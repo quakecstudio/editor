@@ -317,6 +317,15 @@ impl Checker<'_> {
         if matches!(kind, Assign::Store) {
             self.pointer_store(&lhs, &stored, &target);
         }
+        // An accessor's store, and a compound one through a pointer, are not followed.
+        if matches!(lhs.reference, Reference::Accessor(_))
+            || matches!(
+                (&lhs.reference, kind),
+                (Reference::Pointer(_), Assign::Compound(..))
+            )
+        {
+            self.followed = false;
+        }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
         if lhs.readonly {
             let message = format!("Assignment to constant {}", lhs.label());
@@ -796,7 +805,11 @@ impl Checker<'_> {
             .local_type(start)
             .is_some_and(|ty| self.etype(&ty) == Some(Etype::Vector));
         let elements: Vec<ast::Expr> = aggregate.elements().collect();
-        if self.global || !vector || self.env.local_static(start) || elements.len() != 3 {
+        if self.global {
+            return Ok(());
+        }
+        if !vector || self.env.local_static(start) || elements.len() != 3 {
+            self.followed = false;
             return Ok(());
         }
         let local = self.env.reference(start);
@@ -916,7 +929,11 @@ impl Checker<'_> {
         let Reference::Pointer(pointer) = &lhs.reference else {
             return;
         };
-        if self.global || pointer.index.is_some() || pointer.named.is_none() {
+        if self.global {
+            return;
+        }
+        if pointer.index.is_some() || pointer.named.is_none() {
+            self.followed = false;
             return;
         }
         let storep = self.storep_op(target);
@@ -944,7 +961,11 @@ impl Checker<'_> {
         let Reference::Element(element) = &lhs.reference else {
             return;
         };
-        if element.index.known().is_some() || element.vector || self.global {
+        if element.index.known().is_some() || self.global {
+            return;
+        }
+        if element.vector {
+            self.followed = false;
             return;
         }
         let parameter = |slot| Some(ir::Name::Parameter(slot));
@@ -1034,8 +1055,15 @@ impl Checker<'_> {
             self.locals.push((at, def));
         }
         self.local_size(declarator)?;
-        if let Some(ast::Initializer::Aggregate(aggregate)) = declarator.initializer() {
-            return self.vector_aggregate(declarator, &aggregate);
+        match declarator.initializer() {
+            Some(ast::Initializer::Aggregate(aggregate)) => {
+                return self.vector_aggregate(declarator, &aggregate);
+            }
+            // A nested function and a builtin local are compiled from the syntax tree.
+            Some(ast::Initializer::Body(_) | ast::Initializer::Builtin(_)) => {
+                self.followed = false;
+            }
+            Some(ast::Initializer::Value(_)) | None => {}
         }
         let Some(ast::Initializer::Value(init)) = declarator.initializer() else {
             return Ok(());

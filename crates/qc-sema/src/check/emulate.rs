@@ -141,10 +141,11 @@ impl Checker<'_> {
             self.emitted = self.emitted.saturating_add(1);
             // An opcode the target lacks is emulated by the code generator, which follows the
             // value; the intermediate layer holds no fragment of it.
-            if !self.env.target_at(span.start).valid(op)
-                && let Some(builder) = &mut self.fragment
-            {
-                builder.give_up();
+            if !self.env.target_at(span.start).valid(op) {
+                self.followed = false;
+                if let Some(builder) = &mut self.fragment {
+                    builder.give_up();
+                }
             }
             // Its value decides no folding or emulation; the comparison warnings read no value.
             if self.env.target_at(span.start).valid(op) {
@@ -568,6 +569,7 @@ impl Checker<'_> {
                     if op == Op::ModF {
                         return Ok(self.helper_call(function, (lhs, rhs), result));
                     }
+                    self.followed = false;
                     if let Some(builder) = &mut self.fragment {
                         builder.give_up();
                     }
@@ -734,6 +736,7 @@ impl Checker<'_> {
         result: Value,
     ) -> Result<Value, Fatal> {
         if helper.is_some_and(|helper| self.env.defines(helper)) {
+            self.followed = false;
             if let Some(builder) = &mut self.fragment {
                 builder.give_up();
             }
@@ -854,6 +857,7 @@ impl Checker<'_> {
             _ => ("RShiftUInt", Op::DivU),
         };
         if self.env.defines(helper) {
+            self.followed = false;
             return Ok(result);
         }
         // A shift by a constant is a product or quotient by `QCC_MakeIntConst(1<<n)`; by

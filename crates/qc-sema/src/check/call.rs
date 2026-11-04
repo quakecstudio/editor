@@ -638,6 +638,22 @@ impl Checker<'_> {
         written: Option<Type>,
         call: &ast::CallExpr,
     ) -> Result<Option<Value>, Fatal> {
+        let value = self.intrinsic_value(name, args, written, call)?;
+        // Of the intrinsics only `random` and `_` are followed statement by statement.
+        if value.is_some() && !matches!(name, "random" | "_") {
+            self.followed = false;
+        }
+        Ok(value)
+    }
+
+    /// [`Checker::intrinsic`]'s value, before it is known whether the call was one.
+    fn intrinsic_value(
+        &mut self,
+        name: &str,
+        args: &[ast::Expr],
+        written: Option<Type>,
+        call: &ast::CallExpr,
+    ) -> Result<Option<Value>, Fatal> {
         let span = call.syntax().span();
         let string = || Value::of(Type::Simple(SimpleType::String));
         // `QCC_PR_Expression` reads their first argument whatever follows the `(`.

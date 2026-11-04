@@ -759,6 +759,7 @@ pub struct TypedBody {
     origins: Vec<(u32, usize)>,
     locals: Vec<(u32, DefId)>,
     start: usize,
+    followed: bool,
 }
 
 impl TypedBody {
@@ -787,6 +788,14 @@ impl TypedBody {
     #[must_use]
     pub fn generated(&self) -> &[ir::BodyStatement] {
         &self.generated
+    }
+
+    /// Whether [`TypedBody::generated`] holds every statement the body generates: false when the
+    /// checker read a construct whose statements it does not follow, which the code generator
+    /// then writes from the syntax tree.
+    #[must_use]
+    pub const fn followed(&self) -> bool {
+        self.followed
     }
 
     /// Where the body starts in its file, a byte offset: which of a definition's bodies it is.

@@ -152,6 +152,7 @@ pub(super) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         origins: Vec::new(),
         locals: Vec::new(),
         start: body.syntax().span().start,
+        followed: false,
     }
 }
 

@@ -1542,6 +1542,27 @@ fn a_generated_wrap_calls_its_prior() {
     assert_eq!(statements[1], (Op::Call1, Some(Name::Prior)));
 }
 
+// The checker says whether it followed every statement a body generates: not a body with a
+// builtin or nested function local, or an aggregate other than a vector's
+#[test]
+fn a_generated_body_says_whether_it_followed_every_statement() {
+    let body = |source: &str| {
+        let index = super::fte_index_of(source);
+        let t = index
+            .defs
+            .iter()
+            .position(|d| d.name == "t")
+            .map(DefId::new)
+            .unwrap();
+        index.bodies[&t].followed()
+    };
+    assert!(body("float k; void() t = { k = random(); };"));
+    assert!(!body("void() t = { local float(float x) g = #1; };"));
+    assert!(!body("void() t = { local void() f = { }; };"));
+    assert!(!body("void() t = { float a[2] = { 1, 2 }; };"));
+    assert!(body("void() t = { vector v = { 1, 2, 3 }; };"));
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

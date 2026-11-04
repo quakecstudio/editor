@@ -58,6 +58,9 @@ pub(super) struct Checker<'e> {
     pub(super) locals: Vec<(u32, DefId)>,
     /// Whether a bare `return` returned the function's `ret*` local (FTE-18.10).
     pub(super) ret_local: bool,
+    /// Whether every statement the body generates is in [`Checker::generated`]: false once the
+    /// checker reads a construct whose statements it does not follow.
+    pub(super) followed: bool,
     /// The generated `CALL` whose value [`Checker::live_return`] is.
     pub(super) live_call: Option<u32>,
     /// Each call whose value a statement copied out of the return global, and the copy, which
@@ -128,6 +131,7 @@ impl<'e> Checker<'e> {
             origins: Vec::new(),
             locals: Vec::new(),
             ret_local: false,
+            followed: true,
             live_call: None,
             copies: Vec::new(),
             fragment: None,
@@ -166,6 +170,7 @@ impl<'e> Checker<'e> {
             origins: self.origins,
             locals: self.locals,
             start: 0,
+            followed: self.followed,
         }
     }
 
