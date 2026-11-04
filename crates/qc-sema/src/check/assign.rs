@@ -311,7 +311,7 @@ impl Checker<'_> {
         // FTEF-19.78: an element at an index that is no constant is stored by the array's
         // `ArraySet*` function: the index and the value stored to its parameters, then `CALL2`.
         if matches!(kind, Assign::Store | Assign::Compound(..)) {
-            self.array_set(&lhs, &stored, &target);
+            self.array_set(&lhs, &stored, &target, span)?;
         }
         self.field_store(&lhs, &stored, &target);
         if matches!(kind, Assign::Store) {
@@ -776,7 +776,7 @@ impl Checker<'_> {
             operand.ty.clone()
         };
         self.store_mismatch(&updated, operand, &target, span)?;
-        self.array_set(operand, &updated, &target);
+        self.array_set(operand, &updated, &target, span)?;
         self.field_store(operand, &updated, &target);
         self.definition_store(operand, &updated, &target, span)?;
         let folded = updated.temp.is_some() && updated.temp == self.last_temp;
@@ -957,27 +957,40 @@ impl Checker<'_> {
     /// FTEF-19.78: the store of `stored` to the element `lhs` at an index that is no constant,
     /// by the array's `ArraySet*` function: the index stored to its first parameter unless it
     /// folds, the value to its second, then `CALL2`.
-    fn array_set(&mut self, lhs: &Value, stored: &Value, target: &Type) {
+    fn array_set(
+        &mut self,
+        lhs: &Value,
+        stored: &Value,
+        target: &Type,
+        span: Span,
+    ) -> Result<(), Fatal> {
         let Reference::Element(element) = &lhs.reference else {
-            return;
+            return Ok(());
         };
         if element.index.known().is_some() || self.global {
-            return;
+            return Ok(());
         }
         if element.vector {
             self.followed = false;
-            return;
+            return Ok(());
         }
         let parameter = |slot| Some(ir::Name::Parameter(slot));
-        if element.index.temp.is_some() && element.index.temp == self.last_temp {
-            self.fold_into(&element.index, parameter(0));
+        // A vector array's setter takes the element's index, its words' divided by 3.
+        let index = if self.etype(target) == Some(Etype::Vector) {
+            let three = Value::constant(Constant::float(3.0));
+            self.emit(Op::DivF, &element.index, &three, span)?
+        } else {
+            element.index.clone()
+        };
+        if index.temp.is_some() && index.temp == self.last_temp {
+            self.fold_into(&index, parameter(0));
         } else {
             self.generated.push(ir::BodyStatement {
-                a: self.name_of(&element.index),
+                a: self.name_of(&index),
                 b: parameter(0),
                 ..ir::BodyStatement::bare(Op::StoreF)
             });
-            self.read_returned(&element.index);
+            self.read_returned(&index);
         }
         let words = self.env.layout(target).map_or(1, |l| l.words);
         self.generated.push(ir::BodyStatement {
@@ -991,6 +1004,7 @@ impl Checker<'_> {
             ..ir::BodyStatement::bare(Op::Call2)
         });
         self.last_temp = None;
+        Ok(())
     }
 
     /// FTEF-29.3: a store to an array named bare, its head, is "left operand must be an
