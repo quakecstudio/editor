@@ -712,9 +712,10 @@ groups:
     - P2-26
     - P2-07
     deliverable:
-    - qc-codegen support for the L-01 spec sections
+    - qc-codegen support for the L-01 spec sections, and FTE's target (`-Tfte`, `#pragma target fte`) with its extended progs format and opcodes, which qc-codegen refuses today (E0331, E0320)
     acceptance:
     - FTEQCC corpus mods compile and pass conformance against pinned-FTEQCC output
+    - A program under `#pragma target fte` that uses pointers, `&` and the FTE opcodes compiles to the progs the pinned FTEQCC writes under the same target
     verify:
     - Conformance suite
   - key: L-02
