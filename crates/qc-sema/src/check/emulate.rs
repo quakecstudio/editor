@@ -122,7 +122,7 @@ impl Checker<'_> {
         self.not_of_return = None;
         if lhs.returned || rhs.returned {
             if matches!(op, Op::NotF | Op::NotFnc | Op::NotEnt) {
-                self.not_of_return = self.live_return;
+                self.not_of_return = self.live_return.map(|words| (words, self.live_call));
             }
             self.live_return = None;
         }
@@ -210,15 +210,9 @@ impl Checker<'_> {
                 .is_some_and(|t| t.etype() != Etype::Void)
         };
         if let Some(index) = made {
-            // A call's value read after its copy is the copy (FTE-18.13).
-            let copy = self.return_copy;
-            let name = |value: &Value| match (value.returned, value.made, copy) {
-                (true, None, Some(copy)) => Some(ir::Name::Made(copy)),
-                _ => value.name(),
-            };
             let (a, b) = (
-                reads(0).then(|| name(lhs)).flatten(),
-                reads(1).then(|| name(rhs)).flatten(),
+                reads(0).then(|| self.name_of(lhs)).flatten(),
+                reads(1).then(|| self.name_of(rhs)).flatten(),
             );
             let c = row.makes_value().then_some(ir::Name::Made(index));
             if let Some(statement) = usize::try_from(index)
@@ -328,9 +322,34 @@ impl Checker<'_> {
                 b: copy.map(ir::Name::Made),
                 ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
             });
-            self.return_copy = copy;
+            if let (Some(call), Some(copy)) = (self.live_call.take(), copy) {
+                self.copies.push((call, copy));
+            }
             self.last_temp = None;
         }
+    }
+
+    /// The index of the last statement generated, if there is one.
+    pub(super) fn last_made(&self) -> Option<u32> {
+        u32::try_from(self.generated.len().checked_sub(1)?).ok()
+    }
+
+    /// What `value` names as an operand of the next generated statement: a call's value read
+    /// after its copy out of the return global is the copy (FTE-18.13).
+    pub(super) fn name_of(&self, value: &Value) -> Option<ir::Name> {
+        self.copied(value.name(), value.call)
+    }
+
+    /// `name`, or the copy of the value of the generated `CALL` `call` when `name` is the
+    /// return global and a statement copied the value out of it (FTE-18.13).
+    pub(super) fn copied(&self, name: Option<ir::Name>, call: Option<u32>) -> Option<ir::Name> {
+        if name == Some(ir::Name::Return)
+            && let Some(call) = call
+            && let Some(&(_, copy)) = self.copies.iter().rev().find(|(of, _)| *of == call)
+        {
+            return Some(ir::Name::Made(copy));
+        }
+        name
     }
 
     pub(super) fn generate(&mut self, op: Op, span: Span) {

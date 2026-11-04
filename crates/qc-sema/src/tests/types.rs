@@ -946,6 +946,48 @@ fn a_generated_body_names_its_jumps() {
     );
 }
 
+// FTE-18.13, FTEF-29.13: a call's value a later call copied out of the return global is
+// named by its copy where an argument store reads it; a postfix's value and its step read the
+// copy of the old value, and an element at a constant index is stored to its own word
+#[test]
+fn a_generated_body_names_copies_of_values() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "float(float x) f; float(float a, float b) g; float k; float r[3]; \
+        void() t = { k = g(f(1), f(2)); k = (k--) > 0; r[2] = k; };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let generated = index.bodies[&def("t")].generated();
+    let made = |at: usize| u32::try_from(at).ok().map(Name::Made);
+    let copy = generated
+        .iter()
+        .position(|s| s.op == Op::StoreF && s.a == Some(Name::Return))
+        .unwrap();
+    assert_eq!(generated[copy].b, made(copy));
+    let first = generated
+        .iter()
+        .position(|s| s.b == Some(Name::Parameter(0)) && s.a == made(copy));
+    assert!(first.is_some(), "the copy is stored to g's first parameter");
+    let old = generated
+        .iter()
+        .position(|s| s.op == Op::StoreF && s.a == Some(Name::Def(def("k"), 0)))
+        .unwrap();
+    assert_eq!(generated[old].b, made(old));
+    let step = &generated[old.wrapping_add(1)];
+    assert_eq!((step.op, step.a), (Op::AddF, made(old)));
+    let test = generated.iter().find(|s| s.op == Op::GtF).unwrap();
+    assert_eq!(test.a, made(old));
+    let element = generated.iter().rev().find(|s| s.op == Op::StoreF).unwrap();
+    assert_eq!(element.b, Some(Name::Def(def("r"), 2)));
+}
+
 // QC-13.6, FTEF-29.13: the generated body names STATE's think function, a local's initialiser
 // store the local, a string literal argument its bytes, and `random`'s call its builtin, its scaling
 // `low + (high - low) * value` reading the return global

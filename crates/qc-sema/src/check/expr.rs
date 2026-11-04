@@ -41,16 +41,18 @@ pub(super) struct Checker<'e> {
     pub(super) live_return: Option<u32>,
     /// The words of the call's value the last statement generated, a `NOT_*`, read: live again
     /// if a short `IFNOT` drops the `NOT` (FTEF-34.16).
-    pub(super) not_of_return: Option<u32>,
+    pub(super) not_of_return: Option<(u32, Option<u32>)>,
     /// The opcode of the jump the last [`Checker::branch`] tested for, `IF` or `IFNOT`.
     pub(super) branch_op: Option<Op>,
     /// What the conditional jump the last [`Checker::branch`] chose tests.
     pub(super) branch_condition: Option<ir::Name>,
     /// The bytes of each string literal the generated body names, by [`ir::Name::String`].
     pub(super) strings: Vec<Vec<u8>>,
-    /// The statement that copied the last call's value out of the return global, which a
-    /// statement reading the value after the copy reads (FTE-18.13).
-    pub(super) return_copy: Option<u32>,
+    /// The generated `CALL` whose value [`Checker::live_return`] is.
+    pub(super) live_call: Option<u32>,
+    /// Each call whose value a statement copied out of the return global, and the copy, which
+    /// a statement reading the value after the copy reads (FTE-18.13).
+    pub(super) copies: Vec<(u32, u32)>,
     /// The fragment of the binary operator being checked, if any.
     pub(super) fragment: Option<ir::Builder>,
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
@@ -112,7 +114,8 @@ impl<'e> Checker<'e> {
             branch_op: None,
             branch_condition: None,
             strings: Vec::new(),
-            return_copy: None,
+            live_call: None,
+            copies: Vec::new(),
             fragment: None,
             in_condition: false,
             addressed: HashSet::new(),

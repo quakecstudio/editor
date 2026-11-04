@@ -122,13 +122,17 @@ impl Checker<'_> {
                     _ => self.emit(load, &Value::unknown(), &Value::unknown(), span)?,
                 };
                 // The load reads the entity and the field.
+                let entity = match &value.reference {
+                    Reference::Field(field) => self.copied(field.entity, field.entity_call),
+                    _ => None,
+                };
                 if let Reference::Field(field) = &value.reference
                     && let Some(statement) = loaded
                         .made
                         .and_then(|made| usize::try_from(made).ok())
                         .and_then(|made| self.generated.get_mut(made))
                 {
-                    statement.a = field.entity;
+                    statement.a = entity;
                     statement.b = field.def.map(|def| ir::Name::Def(def, 0));
                 }
                 Ok(Value {
@@ -166,6 +170,7 @@ impl Checker<'_> {
                     sym,
                     name,
                     returned: called,
+                    call: if called { self.live_call } else { value.call },
                     ..value
                 })
             }
@@ -377,7 +382,7 @@ impl Checker<'_> {
             self.generated.push(ir::BodyStatement::bare(Op::Call1));
             self.last_temp = None;
             self.live_return = Some(self.env.layout(&element.ty).map_or(1, |l| l.words));
-            self.return_copy = None;
+            self.live_call = self.last_made();
         }
         Ok(true)
     }

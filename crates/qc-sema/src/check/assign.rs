@@ -19,7 +19,7 @@ use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::opcodes::row;
-use crate::check::reference::word_type;
+use crate::check::reference::{eval_int, word_type};
 use crate::check::truth::Test;
 use crate::check::{Constness, Reference, Value};
 use crate::ir;
@@ -284,7 +284,7 @@ impl Checker<'_> {
             self.opcodes.insert((span.start, span.end), store);
             if lhs.reference == Reference::Global && !folded {
                 self.emit(store, &stored, &Value::unknown(), span)?;
-                self.name_last(store, stored.name(), lhs.name());
+                self.name_last(store, self.name_of(&stored), lhs.name());
             }
             if lhs.reference == Reference::Global && folded {
                 self.fold_into(&stored, lhs.name());
@@ -293,17 +293,29 @@ impl Checker<'_> {
         // FTEF-31.10: an element at a constant index is a word of the array's definition, stored
         // as a definition is, unless the value folds into the statement that made it.
         if let Reference::Element(element) = &lhs.reference
-            && element.index.known().is_some()
+            && let Some(index) = element.index.known()
             && matches!(kind, Assign::Store)
             && !self.global
-            && !folded
         {
-            self.generated.push(ir::BodyStatement {
-                a: stored.name(),
-                b: lhs.name(),
-                ..ir::BodyStatement::bare(Checker::store_op(self.etype(&target)))
+            // The element's word, as a read of it at a constant index names it.
+            let word = eval_int(index).map(|word| u32::from_le_bytes(word.to_le_bytes()));
+            let to = word.and_then(|word| {
+                Value {
+                    sym: lhs.sym.at(word),
+                    ..Value::of(Type::Unknown)
+                }
+                .name()
             });
-            self.last_temp = None;
+            if folded {
+                self.fold_into(&stored, to);
+            } else {
+                self.generated.push(ir::BodyStatement {
+                    a: self.name_of(&stored),
+                    b: to,
+                    ..ir::BodyStatement::bare(Checker::store_op(self.etype(&target)))
+                });
+                self.last_temp = None;
+            }
         }
         // FTEF-19.78: an element at an index that is no constant is stored by the array's
         // `ArraySet*` function: the index and the value stored to its parameters, then `CALL2`.
@@ -341,13 +353,13 @@ impl Checker<'_> {
             if let Reference::Field(field) = &lhs.reference {
                 let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
                 self.generated.push(ir::BodyStatement {
-                    a: field.entity,
+                    a: self.copied(field.entity, field.entity_call),
                     b: field.def.map(|def| ir::Name::Def(def, 0)),
                     c: address,
                     ..ir::BodyStatement::bare(Op::Address)
                 });
                 self.generated.push(ir::BodyStatement {
-                    a: stored.name(),
+                    a: self.name_of(&stored),
                     b: address,
                     ..ir::BodyStatement::bare(storep)
                 });
@@ -669,9 +681,10 @@ impl Checker<'_> {
         } else {
             self.etype(&operand.ty)
         };
+        let mut copy = None;
         if let Some(etype) = etype {
             let step = if increment { 1 } else { -1 };
-            self.step(&operand, etype, step, discarded(postfix.syntax()), span)?;
+            copy = self.step(&operand, etype, step, discarded(postfix.syntax()), span)?;
         }
         // The value before the update, a temporary, named by its type (`QCC_GetSRefName`); an
         // array's head is the pointer it reads as.
@@ -685,13 +698,15 @@ impl Checker<'_> {
             postinc: true,
             reference: Reference::Global,
             name: None,
+            made: copy.or(operand.made),
             ..operand
         })
     }
 
     /// FTEF-29.5: the update of a postfix's operand of basic type `etype` by `step`, one of its
     /// type added by the opcode for it and stored back as an assignment is: `QCC_PR_DiscardRef`'s
-    /// when its value is `discarded`, else `QCC_RefToDef`'s.
+    /// when its value is `discarded`, else `QCC_RefToDef`'s; the generated copy of the old
+    /// value, if one was made.
     fn step(
         &mut self,
         operand: &Value,
@@ -699,23 +714,35 @@ impl Checker<'_> {
         step: i8,
         discarded: bool,
         span: Span,
-    ) -> Result<(), Fatal> {
+    ) -> Result<Option<u32>, Fatal> {
         if operand
             .bitfield
             .is_some_and(|bitfield| bitfield.offset != 0)
         {
             let message = "post increment operator on bitfield".to_owned();
-            return self.fatal(Code::E0322, span, message).map(drop);
+            return self.fatal(Code::E0322, span, message).map(|_| None);
         }
         let old = Value {
             constness: Constness::Variable,
             ..self.read(operand.clone(), span)?
         };
         // FTEF-29.13: a value the postfix gives is the old one, copied to a temporary first.
+        let mut copy = None;
         if !discarded && operand.reference == Reference::Global {
             let store = Checker::store_op(self.etype(&operand.ty));
             self.emit(store, &old, &Value::unknown(), span)?;
+            copy = self
+                .generated
+                .last()
+                .filter(|statement| statement.op == store)
+                .and(self.last_made());
+            self.name_last(store, self.name_of(&old), copy.map(ir::Name::Made));
         }
+        // The step adds to the copy.
+        let old = Value {
+            made: copy.or(old.made),
+            ..old
+        };
         // `switch(ref->cast->type)`: a bitfield, or an 8- or 16-bit integer, is `ev_bitfld`,
         // which only a discarded value steps, by the type it is read as.
         let narrow = matches!(
@@ -755,7 +782,7 @@ impl Checker<'_> {
             | Etype::Enum
             | Etype::Boolean => {
                 let message = "post increment operator not supported with this type".to_owned();
-                return self.fatal(Code::E0322, span, message).map(drop);
+                return self.fatal(Code::E0322, span, message).map(|_| None);
             }
         };
         // `QCC_StoreSRefToRef`: an integer stepping a string warns of the store; an array's
@@ -770,7 +797,7 @@ impl Checker<'_> {
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
         self.freed_again(operand, span);
-        Ok(())
+        Ok(copy)
     }
 
     /// FTEF-29.3: a store to an array named bare, its head, is "left operand must be an
@@ -892,7 +919,7 @@ impl Checker<'_> {
                     .and_then(|name| self.env.reference(name.span().start))
                     .map(|def| ir::Name::Def(def, 0));
                 self.generated.push(ir::BodyStatement {
-                    a: value.name(),
+                    a: self.name_of(&value),
                     b: local,
                     ..ir::BodyStatement::bare(Checker::store_op(self.etype(&ty)))
                 });

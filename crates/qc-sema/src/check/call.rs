@@ -234,6 +234,7 @@ impl Checker<'_> {
         self.verify_arguments(&name, &values, span);
         self.generate_call(&values, span);
         self.call_fragment(&function, count, (func.name(), &values), &field_loads, span);
+        let call = self.last_made();
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
         for (reference, param) in passed.iter().zip(&params) {
             let Some(reference) = reference.as_ref().filter(|_| param.out) else {
@@ -250,12 +251,13 @@ impl Checker<'_> {
         let words = self.env.layout(&function.ret).map_or(1, |l| l.words);
         if !self.global && words > 0 && function.ret != Type::Simple(SimpleType::Void) {
             self.live_return = Some(words);
-            self.return_copy = None;
+            self.live_call = call;
         }
         // FTEF-29.15: the value is an alias of `def_ret`, which may be assigned to, unless a
         // return larger than a vector is read back into a temporary.
         Ok(Value {
             returned: true,
+            call,
             readonly: self.is_large(&function.ret),
             ..Value::of(function.ret.clone())
         })
@@ -362,7 +364,7 @@ impl Checker<'_> {
                 }
                 if !folded {
                     self.generated.push(ir::BodyStatement {
-                        a: value.name(),
+                        a: self.name_of(value),
                         b: u8::try_from(slot).ok().map(ir::Name::Parameter),
                         ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
                     });
@@ -482,6 +484,7 @@ impl Checker<'_> {
             a: callee,
             ..ir::BodyStatement::bare(Op::Call0)
         });
+        let call = self.last_made();
         self.last_temp = None;
         let mut statement = |op, a, b| {
             let made = u32::try_from(self.generated.len()).ok();
@@ -496,7 +499,7 @@ impl Checker<'_> {
         let made = match args {
             [] => {
                 self.live_return = Some(1);
-                self.return_copy = None;
+                self.live_call = call;
                 None
             }
             [scale] => statement(Op::MulF, Some(ir::Name::Return), scale.name()),
@@ -506,7 +509,11 @@ impl Checker<'_> {
                 statement(Op::AddF, scaled.map(ir::Name::Made), low.name())
             }
         };
-        Value { made, ..float }
+        Value {
+            made,
+            call,
+            ..float
+        }
     }
 
     pub(super) fn generate_call(&mut self, values: &[Value], span: Span) {

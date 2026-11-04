@@ -234,6 +234,8 @@ pub(crate) struct Value {
     pub(crate) made: Option<u32>,
     /// The index of a string literal's bytes among the body's strings.
     pub(crate) string: Option<u32>,
+    /// The index of the generated `CALL` whose value in the return global this is.
+    pub(crate) call: Option<u32>,
 }
 
 /// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
@@ -358,6 +360,7 @@ impl Value {
             returned: false,
             made: None,
             string: None,
+            call: None,
         }
     }
 
@@ -497,6 +500,7 @@ impl Value {
                 def,
                 dot: None,
                 entity: base.name(),
+                entity_call: base.call,
             })),
             ..Self::of(ty)
         }
@@ -604,6 +608,8 @@ pub(crate) struct FieldRef {
     pub(crate) dot: Option<Span>,
     /// What the entity names as an operand of a generated body's statement.
     pub(crate) entity: Option<ir::Name>,
+    /// The generated `CALL` whose value the entity is, when it is one.
+    pub(crate) entity_call: Option<u32>,
 }
 
 /// An array's element or a vector's component; the index is the model's to read only when it is

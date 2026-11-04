@@ -74,8 +74,9 @@ impl Checker<'_> {
         self.layout.truncate(mark.at());
         self.generated
             .truncate(usize::try_from(mark.made()).unwrap_or(usize::MAX));
+        let kept = self.next_made();
         self.live_return = None;
-        self.return_copy = None;
+        self.copies.retain(|&(call, _)| call < kept);
     }
 
     /// Names the target of each jump of the body whose target is known, and its condition
@@ -237,7 +238,7 @@ impl Checker<'_> {
         let value = self.value(Some(expr.clone()))?;
         self.generated(&expr, &value, line, before);
         self.jump(Step::Return, Op::Return, None, line);
-        self.name_last(Op::Return, value.name(), None);
+        self.name_last(Op::Return, self.name_of(&value), None);
         if value.ty == Type::Unknown || ret == Type::Unknown || value.null() {
             return Ok(());
         }
@@ -471,7 +472,7 @@ impl Checker<'_> {
                 let (op, condition) = match last {
                     Some(value) => match self.drops_not(&value) {
                         Some(operand) => (Op::IfI, operand),
-                        None => (Op::IfnotI, value.name()),
+                        None => (Op::IfnotI, self.name_of(&value)),
                     },
                     None => (Op::IfnotI, None),
                 };

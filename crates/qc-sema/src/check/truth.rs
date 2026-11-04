@@ -124,8 +124,9 @@ impl Checker<'_> {
             return None;
         }
         let dropped = self.generated.pop();
-        if let Some(words) = self.not_of_return.take() {
+        if let Some((words, call)) = self.not_of_return.take() {
             self.live_return = Some(words);
+            self.live_call = call;
         }
         Some(dropped.and_then(|statement| statement.a))
     }
@@ -134,7 +135,7 @@ impl Checker<'_> {
         let Some(etype) = self.env.shape(&value.ty).map(|shape| shape.etype) else {
             return Ok(());
         };
-        let mut condition = value.name();
+        let mut condition = self.name_of(value);
         match etype {
             Etype::String => {
                 let stop = if jump == Jump::If { "." } else { "" };
@@ -195,7 +196,7 @@ impl Checker<'_> {
         let copies = self.live_return.is_some();
         self.clobber_return();
         if copies && condition == Some(ir::Name::Return) {
-            condition = self.return_copy.map(ir::Name::Made);
+            condition = self.name_of(value);
         }
         self.branch_condition = condition;
         Ok(())
