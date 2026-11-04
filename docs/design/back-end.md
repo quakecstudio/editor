@@ -44,11 +44,13 @@ array's getter or setter. Beside it:
 | `followed()` | whether the checker followed every statement; false at a construct it does not model yet: switches, labels, most intrinsics, struct copies, calls taking parameter defaults, emulations the code generator lowers itself |
 | `BodyStatement::uses`, `temp_words` | which operands an opcode reads or writes, and the temporary each statement takes as it is generated (QC-21.5) |
 
-Under FTEQCC, `qc-codegen` writes a body from it (`compile/body.rs`) when the body was followed,
-every operand its opcodes use is named and it calls no function with parameter defaults: each
-effect made where the body makes it, each statement's temporary allocated in creation order,
-each name resolved to its global. Any other body, and every vanilla body, is still compiled by
-walking the syntax tree (`compile.rs`). A probe over the corpora and the generated programs of
+In either dialect, `qc-codegen` writes a body from it (`compile/body.rs`) when the body was
+followed, every operand its opcodes use is named and it calls no function with parameter
+defaults: each effect made where the body makes it, each statement's temporary allocated in
+creation order, each name resolved to its global. Any other body is still compiled by walking
+the syntax tree (`compile.rs`). The vanilla checker generates a body as `qcc` emits it
+(`check/vanilla.rs`); all of id 1.01's bodies but two are written from it, and the vanilla
+output of the corpus and 2,000 generated programs is byte for byte the walk's. A probe over the corpora and the generated programs of
 seed 1 measured the model against the walk: of 48,599 bodies, 47,883 are followed and identical,
 statement by statement and operand by operand, and the writer declines the rest. The FTEQCC
 differential over 200 generated programs agrees with the writer on.
@@ -140,9 +142,9 @@ before and after the step and requires the same bytes.
    `qc-sema` builds it from each checked body, emulations included; `qc-codegen` writes the
    progs from it instead of walking the syntax tree. Under way: the whole body
    (`TypedBody::generated`) and its writer cover the bodies the checker follows; what remains
-   is the constructs it does not follow yet and the vanilla profile, after which the walk goes. Allocation gives every temporary a new
-   slot in creation order and layout places blocks as FTE-21.7 says, so the progs is byte for
-   byte the same. The checker's emulation warnings then read the lowering, and
+   is the constructs it does not follow yet, after which the walk goes. Allocation gives every
+   temporary a new slot in creation order and layout places blocks as FTE-21.7 says, so the
+   progs is byte for byte the same. The checker's emulation warnings then read the lowering, and
    `check/emulate.rs`'s model of emitted code goes.
 3. **Profile passes.** The FTEQCC branches move out of the lowering into passes, one
    behaviour per change, each with its spec statements and a test of its own.
