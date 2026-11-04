@@ -785,10 +785,6 @@ impl<'a> Compiler<'a> {
     /// `PR_ParseImmediateStatements` (QC-13): a body's parameters, state header and
     /// statements, or a builtin number; then the function's record (QC-13.9, QC-21.4,
     /// QC-25.2).
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one function definition is one unit: its storage, its body and its record"
-    )]
     fn function(
         &mut self,
         (written, declarator): (&Written, &ast::Declarator),
@@ -882,14 +878,12 @@ impl<'a> Compiler<'a> {
                 self.body_first = self.program.statements.len();
                 self.body_return = Some(ValueType::Of(function_type.ret.clone()));
                 self.ret_local = None;
-                // Under FTEQCC a body the semantic model followed in full is written from its
+                // A body the semantic model followed in full is written from its
                 // generated statements, the intermediate layer's whole body; any other is
                 // walked.
                 let written = match self.typed_body() {
-                    Some(typed) if self.dialect.has_fteqcc_extensions() => {
-                        self.write_body(typed, span)?
-                    }
-                    Some(_) | None => false,
+                    Some(typed) => self.write_body(typed, span)?,
+                    None => false,
                 };
                 if !written {
                     self.walk_body(body, &function_type, span)?;

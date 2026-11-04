@@ -542,6 +542,13 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.lookup_global(&format!("{name}{suffix}"))
     }
 
+    fn field_component(&self, def: DefId) -> bool {
+        self.resolver
+            .facts
+            .get(def.index())
+            .is_some_and(|facts| facts.field_component)
+    }
+
     fn in_class(&self) -> bool {
         self.in_class
     }

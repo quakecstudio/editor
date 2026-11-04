@@ -119,6 +119,9 @@ pub(crate) trait Env {
     fn helper(&self, name: &str) -> Option<DefId>;
     /// The component `word` of the vector definition `def`, its `_x`, `_y` or `_z` (QC-11.7).
     fn component(&self, def: DefId, word: u32) -> Option<DefId>;
+    /// Whether `def` is a `.vector` field's component of `qcc`'s `type_floatfield`, no type
+    /// written in the source (QC-11.12).
+    fn field_component(&self, def: DefId) -> bool;
     /// Whether [`Env::helper`] finds a definition named `name`.
     fn defines(&self, name: &str) -> bool {
         self.helper(name).is_some()

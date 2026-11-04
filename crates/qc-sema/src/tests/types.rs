@@ -873,6 +873,118 @@ fn a_checked_body_keeps_the_statements_it_generated() {
     );
 }
 
+// spec QC-13.6, QC-13.7, QC-14.3, QC-14.4, QC-17.3, QC-17.7, QC-18.3, QC-18.4: a vanilla
+// body is generated as `qcc` emits it: its `STATE` first, a field assignment's load turned to
+// `ADDRESS` and stored through, a vector field's address keeping the two further words its
+// load took, each argument stored with `STORE_V` as it is read, then `CALLn`, an `if`'s jumps,
+// a `return` and the closing `DONE`
+#[test]
+fn a_vanilla_body_is_generated_as_qcc_emits_it() {
+    use crate::ir::{Effect, Name};
+    use qc_preproc::Op;
+    let source = ".vector o; .float fl; entity e; float a; void(float x, vector y) f; \
+        void() t = [1, t] { e.o = '1 2 3'; e.fl = a; a = e.fl + 2; f(a, e.o); \
+        if (a) a = 1; else a = 2; return a; };";
+    let index = super::index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let body = &index.bodies[&def("t")];
+    assert!(body.followed());
+    let generated = body.generated();
+    assert_eq!(
+        generated.iter().map(|s| s.op).collect::<Vec<_>>(),
+        [
+            Op::State,
+            Op::Address,
+            Op::StorepV,
+            Op::Address,
+            Op::StorepF,
+            Op::LoadF,
+            Op::AddF,
+            Op::StoreF,
+            Op::StoreV,
+            Op::LoadV,
+            Op::StoreV,
+            Op::Call2,
+            Op::IfnotI,
+            Op::StoreF,
+            Op::Goto,
+            Op::StoreF,
+            Op::Return,
+            Op::Done,
+        ]
+    );
+    let a = Some(Name::Def(def("a"), 0));
+    assert_eq!(generated[0].b, Some(Name::Def(def("t"), 0)));
+    assert_eq!(
+        (generated[1].a, generated[1].b, generated[1].c),
+        (
+            Some(Name::Def(def("e"), 0)),
+            Some(Name::Def(def("o"), 0)),
+            Some(Name::Made(1))
+        )
+    );
+    assert_eq!(generated[2].b, Some(Name::Made(1)));
+    assert!(body.effects().contains(&(2, Effect::Temp(2))));
+    assert_eq!((generated[4].a, generated[4].b), (a, Some(Name::Made(3))));
+    assert_eq!(
+        (generated[6].a, generated[7].a, generated[7].b),
+        (Some(Name::Made(5)), Some(Name::Made(6)), a)
+    );
+    assert_eq!(
+        (generated[8].a, generated[8].b),
+        (a, Some(Name::Parameter(0)))
+    );
+    assert_eq!(
+        (generated[10].a, generated[10].b),
+        (Some(Name::Made(9)), Some(Name::Parameter(1)))
+    );
+    assert_eq!(generated[11].a, Some(Name::Def(def("f"), 0)));
+    assert_eq!(
+        (generated[12].a, generated[12].b),
+        (a, Some(Name::Jump(15)))
+    );
+    assert_eq!(generated[14].a, Some(Name::Jump(16)));
+    assert_eq!(generated[16].a, a);
+}
+
+// spec QC-17.4, QC-11.10: a vanilla body is not followed where a field load before a plain
+// name's assignment retypes the name, or a local is initialised once as a global is; a call's
+// value is the return global
+#[test]
+fn a_vanilla_body_declines_what_it_does_not_follow() {
+    use crate::ir::Name;
+    let source = "entity e; .float fl; float a; float() g; \
+        void() t = { e.fl; a = 2; };\
+        void() u = { local float x = 1; a = x; };\
+        void() w = { a = g() + g(); };";
+    let index = super::index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    assert!(!index.bodies[&def("t")].followed());
+    assert!(!index.bodies[&def("u")].followed());
+    let w = &index.bodies[&def("w")];
+    assert!(w.followed());
+    let add = w
+        .generated()
+        .iter()
+        .find(|s| s.op == qc_preproc::Op::AddF)
+        .unwrap();
+    assert_eq!((add.a, add.b), (Some(Name::Return), Some(Name::Return)));
+}
+
 // QC-14.4, QC-14.5, FTEF-34.16: the generated body holds its jumps: an `if`'s `IFNOT`, an
 // `IF` where the test was `!x` of a float, a `while`'s test and `GOTO` back, a `return`'s
 // `RETURN`

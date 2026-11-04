@@ -462,17 +462,8 @@ impl Checker<'_> {
             ];
             builder.push(store, reads, ir::Destination::Nothing);
         }
-        let call = match passed {
-            0 => Op::Call0,
-            1 => Op::Call1,
-            2 => Op::Call2,
-            3 => Op::Call3,
-            4 => Op::Call4,
-            5 => Op::Call5,
-            6 => Op::Call6,
-            7 => Op::Call7,
-            8 => Op::Call8,
-            _ => return,
+        let Some(call) = call_opcode(passed) else {
+            return;
         };
         let callee = [Some(Some(ir::Operand::Input(ir::Input::Left))), None];
         builder.push(call, callee, ir::Destination::Nothing);
@@ -1025,5 +1016,21 @@ fn variant_parameter(function: &FunctionType, slot: usize) -> bool {
             other => other,
         };
         matches!(held, Type::Named(name) if &**name == "__variant")
+    })
+}
+
+/// `CALL0` to `CALL8`, the call of `passed` arguments, the opcode of the count (QC-18.3).
+pub(super) const fn call_opcode(passed: usize) -> Option<Op> {
+    Some(match passed {
+        0 => Op::Call0,
+        1 => Op::Call1,
+        2 => Op::Call2,
+        3 => Op::Call3,
+        4 => Op::Call4,
+        5 => Op::Call5,
+        6 => Op::Call6,
+        7 => Op::Call7,
+        8 => Op::Call8,
+        _ => return None,
     })
 }
