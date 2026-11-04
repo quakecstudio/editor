@@ -963,3 +963,63 @@ fn focus_shortcuts_reach_out_of_the_editor() {
     let map = harness.get_by_role_and_label(Role::Button, Text::Map.get());
     assert!(map.is_focused());
 }
+
+// PRIN-3: each binding's keys run its own command and no other, so Shift+Cmd+Z redoes rather
+// than undoing again, outside the editor as in it.
+#[test]
+fn each_shortcut_runs_only_its_own_command() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    let ember = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember");
+    app.shell_mut().open_project(&ember).unwrap();
+    frame(&ctx, &mut app);
+    let defs = ember.join("defs.qc");
+    let offset = fs::read_to_string(&defs).unwrap().find("bounces").unwrap();
+    app.shell_mut()
+        .execute(
+            "symbol.rename",
+            json!({ "path": defs, "offset": offset, "name": "hops" }),
+        )
+        .unwrap();
+    let depths = |app: &App| {
+        let session = app.shell().session();
+        (session.undo_depth(), session.redo_depth())
+    };
+    assert_eq!(depths(&app), (1, 0));
+    for (command, after) in [("edit.undo", (0, 1)), ("edit.redo", (1, 0))] {
+        let shortcut = keymap::shortcut(command).unwrap();
+        frame_with(
+            &ctx,
+            &mut app,
+            vec![key(shortcut.logical_key, shortcut.modifiers)],
+        );
+        assert_eq!(depths(&app), after, "{command}");
+    }
+}
+
+// PRIN-3: the bindings are matched most specific first, every binding once, so no shortcut
+// that holds another's keys and more is taken by the other.
+#[test]
+fn bindings_are_matched_most_specific_first() {
+    let order = keymap::in_match_order();
+    assert_eq!(order.len(), keymap::BINDINGS.len());
+    for binding in keymap::BINDINGS {
+        assert!(order.contains(&binding));
+    }
+    let at = |command: &str| order.iter().position(|b| b.command == command).unwrap();
+    assert!(at("edit.redo") < at("edit.undo"));
+    for (i, earlier) in order.iter().enumerate() {
+        for later in order.iter().skip(i + 1) {
+            let (a, b) = (earlier.shortcut, later.shortcut);
+            let same_key = a.logical_key == b.logical_key;
+            assert!(
+                !(same_key
+                    && b.modifiers.contains(a.modifiers)
+                    && !a.modifiers.contains(b.modifiers)),
+                "{} is matched before {}, whose keys hold its own",
+                earlier.command,
+                later.command
+            );
+        }
+    }
+}

@@ -896,13 +896,8 @@ profile (DIFF-12.19); everything else runs under id's.
 - **BUILTIN-18.18** `num_for_edict(e)` (#512) is `PF_num_for_edict`: "G_FLOAT (OFS_RETURN) =
   G_EDICTNUM (OFS_PARM0);", the edict's number, and `NUM_FOR_EDICT`'s error for a value that
   is no edict (BUILTIN-2.7).
-- **BUILTIN-18.19** `stof(s)` (#81) is `PF_stof`, "G_FLOAT (OFS_RETURN) = atof (G_STRING
-  (OFS_PARM0));": C's `atof`, `strtod` of the longest prefix that is a number, rounded to a
-  float. After white space and an optional sign it reads a decimal number with an optional
-  point and an exponent taken only when a digit follows its `e` and sign, a hexadecimal one
-  after `0x` with an optional `p` exponent, or `inf`, `infinity` or `nan` in any case; with
-  none it is 0. A decimal number is rounded correctly, as glibc's `strtod` does; a hexadecimal
-  one is exact up to 13 digits. This is not `Q_atof` (BUILTIN-11.7), which `cvar` uses.
+- **BUILTIN-18.19** **Withdrawn** 2026-11-04: it said a hexadecimal number is exact up to 13
+  digits, but C rounds it correctly at any length (#717); replaced by BUILTIN-18.25.
 - **BUILTIN-18.20** `clienttype(e)` (#455) is `PF_clienttype`: `e` through `G_EDICT` and
   `NUM_FOR_EDICT` (BUILTIN-2.7); an edict that is no client slot (`i >= svs.maxclients`, the
   world among them, as `NUM_FOR_EDICT (ed) - 1` wraps) is 3, `CLIENTTYPE_NOTACLIENT`; an active
@@ -958,6 +953,17 @@ profile (DIFF-12.19); everything else runs under id's.
   Source: Novum/vkQuake@27789d7333a46674474d871137bb71e056719628, `Quake/pr_ext.c`, `tokenizeqc`,
   `PF_Tokenize`, `PF_tokenize_console`, `PF_tokenizebyseparator`, `PF_ArgV`,
   `PF_argv_start_index`, `PF_argv_end_index`; `Quake/common.c`, `COM_ParseEx`.
+- **BUILTIN-18.25** `stof(s)` (#81) is `PF_stof`, "G_FLOAT (OFS_RETURN) = atof (G_STRING
+  (OFS_PARM0));": C's `atof`, `strtod` of the longest prefix that is a number, rounded to a
+  float. After white space and an optional sign it reads a decimal number with an optional point
+  and an exponent taken only when a digit follows its `e` and sign, a hexadecimal one after `0x`
+  with an optional `p` exponent, or `inf`, `infinity` or `nan` in any case; with none it is 0. A
+  decimal number is rounded correctly, as glibc's `strtod` does, and so is a hexadecimal one,
+  whatever its digits and exponent: C99 (N1256) 7.20.1.3 paragraph 5, "If the subject sequence
+  has the hexadecimal form and FLT_RADIX is a power of 2, the value resulting from the
+  conversion is correctly rounded." So `0x1.` and 300 `0` digits then `p0` is 1, and
+  `0x1.000001000000081` is the double `0x1.0000010000001p+0`, whose float is `0x1.000002p+0`.
+  This is not `Q_atof` (BUILTIN-11.7), which `cvar` uses.
 
 ## Test vectors
 

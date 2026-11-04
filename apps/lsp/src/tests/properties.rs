@@ -59,15 +59,18 @@ fn encoding() -> impl Strategy<Value = Encoding> {
     prop_oneof![Just(Encoding::Utf16), Just(Encoding::Utf8)]
 }
 
-/// A path component with no `/`, no `\` (a separator on Windows, which [`from_path`] turns into
-/// one everywhere) and not a drive letter's `x:` (which [`to_path`] reads as a Windows drive on
-/// every host): P2-161 is that defect, and this property covers every other path.
+/// A path component with no `/`: on Windows no `\`, its separator, and not a drive letter's
+/// `x:`; on any other host both are bytes of a name like any other (P2-161).
 fn component() -> impl Strategy<Value = String> {
-    "[a-zA-Z0-9 ._~%#?:@!$&'()*+,;=\u{e9}\u{4e2d}-]{1,8}"
+    let windows = cfg!(windows);
+    "[a-zA-Z0-9 ._~%#?:@!$&'()*+,;=\\\\\u{e9}\u{4e2d}-]{1,8}"
         .prop_filter("not . or ..", |c| c != "." && c != "..")
-        .prop_filter("not a drive letter", |c| {
+        .prop_filter("a separator on Windows", move |c| {
+            !(windows && c.contains('\\'))
+        })
+        .prop_filter("a drive letter on Windows", move |c| {
             let b = c.as_bytes();
-            !(b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':')
+            !(windows && b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':')
         })
 }
 
@@ -184,8 +187,9 @@ proptest! {
     ) {
         let lines = LineIndex::new(&text, encoding);
         let mut last = Position::default();
-        // P2-161: an offset inside a character is left out, as no answer names one.
-        for offset in boundaries(&text).into_iter().chain([text.len() + 2]) {
+        // P2-161: an offset inside a character is that character's position, so every offset
+        // is in order, not only a character's start.
+        for offset in (0..=text.len()).chain([text.len() + 2]) {
             let position = lines.position(offset);
             prop_assert!(position >= last, "{offset}: {position:?} before {last:?}");
             last = position;

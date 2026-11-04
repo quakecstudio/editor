@@ -75,4 +75,6 @@ arbitrary bytes:
 - `sprintf`'s text stops at 1023 bytes for any format and arguments, and a format with no
   directive is itself (BUILTIN-18.8).
 - `atof` reads back every finite double Rust writes, after white space and a sign, ignoring
-  what follows the number (BUILTIN-18.19).
+  what follows the number, and every finite double written exactly in hexadecimal, padded with
+  zero digits, bit for bit: a hexadecimal number is correctly rounded at any length
+  (BUILTIN-18.25).

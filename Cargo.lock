@@ -3025,10 +3025,13 @@ name = "qs-bench"
 version = "2026.10.0"
 dependencies = [
  "criterion",
+ "eframe",
  "qc-codegen",
  "qc-progs",
  "qc-project",
  "qc-sema",
+ "quakec-studio",
+ "serde_json",
 ]
 
 [[package]]

@@ -110,3 +110,28 @@ fn the_build_gets_each_project_module() {
     assert_eq!(module.names, ["a.qc", "sub/b.qc"]);
     assert_eq!(module.input.compiled.len(), 2);
 }
+
+// spec PRJ-2.8: the editor's dialect reads a project with no `quakec.toml`; a project file's
+// dialect, vanilla when it names none, wins over it
+#[test]
+fn a_project_files_dialect_wins_over_the_editors() {
+    const FILES: &[(&str, &str)] = &[("a.qc", "void() f = { float x = 1; x += 2; };\n")];
+    const NAMES_NONE: &[(&str, &str)] = &[(
+        "quakec.toml",
+        "[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n",
+    )];
+    let errors = |extra: &'static [(&'static str, &'static str)]| {
+        let mut host = host(&ProjectSpec {
+            files: FILES,
+            extra,
+            dialect: Some(qc_project::Dialect::Fteqcc),
+            ..ProjectSpec::default()
+        });
+        host.diagnostics(&path("a.qc"))
+            .iter()
+            .filter(|d| d.is_error())
+            .count()
+    };
+    assert_eq!(errors(&[]), 0, "a bare project takes the editor's");
+    assert!(errors(NAMES_NONE) > 0, "the project file's default wins");
+}

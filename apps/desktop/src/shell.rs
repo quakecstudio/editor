@@ -386,7 +386,7 @@ impl Shell {
         }
         // The editor, with its own undo history, takes its keys itself.
         let editing = ui.memory(|m| m.has_focus(Id::new(EDITOR_AREA)));
-        for binding in keymap::BINDINGS {
+        for binding in keymap::in_match_order() {
             if editing && binding.scope == Scope::Shell {
                 continue;
             }

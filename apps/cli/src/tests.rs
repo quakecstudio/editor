@@ -6,6 +6,7 @@
     reason = "test code: a failed unwrap or match is a failed test"
 )]
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use qs_workbench::FsLoader;
@@ -13,8 +14,8 @@ use serde_json::Value;
 
 use super::{Exit, Open, Refused, Request, parse, run};
 
-fn args(list: &[&str]) -> Vec<String> {
-    list.iter().map(|s| (*s).to_owned()).collect()
+fn args(list: &[&str]) -> Vec<OsString> {
+    list.iter().map(OsString::from).collect()
 }
 
 /// What a test project holds; the default is one that builds.
@@ -364,5 +365,52 @@ fn run_refuses_parameters_that_are_not_an_object() {
         let (exit, out, err) = cli(&["run", "commands.list", params]);
         assert_eq!(exit, Exit::Failure, "{params}: {out}");
         assert!(err.starts_with("quakec-ide: "), "{params}: {err}");
+    }
+}
+
+// PRJ-2.8 and the README: `--dialect` reads a project with no `quakec.toml` in that dialect,
+// so a project file's dialect, vanilla when it names none, wins over the option.
+#[test]
+fn the_project_file_dialect_wins_over_the_option() {
+    let dir = project(
+        "toml-dialect",
+        &ProjectSpec {
+            world: "void() worldspawn = { float x = 1; x += 2; };\n",
+        },
+    );
+    std::fs::write(
+        dir.join("quakec.toml"),
+        "[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        cli(&["check", text(&dir), "--dialect", "fteqcc"]).0,
+        Exit::Problems
+    );
+    std::fs::write(
+        dir.join("quakec.toml"),
+        "[project]\ndialect = \"fteqcc\"\n\n[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        cli(&["check", text(&dir), "--dialect", "vanilla"]).0,
+        Exit::Success
+    );
+}
+
+// No spec statement: a project path that is not UTF-8 is refused with exit status 2 and a
+// message naming it, not a panic.
+#[cfg(unix)]
+#[test]
+fn a_path_that_is_not_utf8_is_refused() {
+    use std::os::unix::ffi::OsStrExt as _;
+    let path = OsString::from(std::ffi::OsStr::from_bytes(b"a\xff"));
+    for verb in ["build", "check"] {
+        let list = [OsString::from(verb), path.clone()];
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let exit = run(&list, FsLoader, &mut out, &mut err);
+        assert_eq!(exit, Exit::Failure, "{verb}");
+        let err = String::from_utf8(err).unwrap();
+        assert!(err.contains("a\u{fffd}: the path is not Unicode"), "{err}");
     }
 }

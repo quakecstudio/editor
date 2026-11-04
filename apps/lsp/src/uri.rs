@@ -12,10 +12,38 @@
 
 use std::path::{Path, PathBuf};
 
+/// Whose rules a path follows: a drive letter and `\` separators are Windows's alone, and on
+/// any other host `/c:/x` is the absolute path it spells and `\` a byte of a file's name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Host {
+    /// Windows.
+    Windows,
+    /// Linux, macOS and the other hosts with one root.
+    Unix,
+}
+
+/// The host this server runs on.
+const HOST: Host = if cfg!(windows) {
+    Host::Windows
+} else {
+    Host::Unix
+};
+
 /// The path a `file` URI names; `None` for another scheme or a URI with a host other than
 /// `localhost`.
 #[must_use]
 pub fn to_path(uri: &str) -> Option<PathBuf> {
+    to_path_on(uri, HOST)
+}
+
+/// The `file` URI of `path`.
+#[must_use]
+pub fn from_path(path: &Path) -> String {
+    from_path_on(path, HOST)
+}
+
+/// [`to_path`] by the rules of `host`.
+pub(crate) fn to_path_on(uri: &str, host: Host) -> Option<PathBuf> {
     let rest = strip_scheme(uri)?;
     let (authority, path) = rest.split_at(rest.find('/')?);
     if !(authority.is_empty() || authority.eq_ignore_ascii_case("localhost")) {
@@ -25,7 +53,8 @@ pub fn to_path(uri: &str) -> Option<PathBuf> {
     let decoded = String::from_utf8(percent_decode(path)).ok()?;
     // `/c:/x` names the Windows path `c:/x`.
     let bytes = decoded.as_bytes();
-    let drive = bytes.len() >= 3
+    let drive = host == Host::Windows
+        && bytes.len() >= 3
         && bytes.get(1).is_some_and(u8::is_ascii_alphabetic)
         && bytes.get(2) == Some(&b':');
     if drive {
@@ -35,13 +64,18 @@ pub fn to_path(uri: &str) -> Option<PathBuf> {
     }
 }
 
-/// The `file` URI of `path`.
-#[must_use]
-pub fn from_path(path: &Path) -> String {
-    let text = path.to_string_lossy().replace('\\', "/");
+/// [`from_path`] by the rules of `host`.
+pub(crate) fn from_path_on(path: &Path, host: Host) -> String {
+    let lossy = path.to_string_lossy();
+    let text = match host {
+        Host::Windows => lossy.replace('\\', "/"),
+        Host::Unix => lossy.into_owned(),
+    };
     let mut out = String::from("file://");
     let bytes = text.as_bytes();
-    let drive = bytes.first().is_some_and(u8::is_ascii_alphabetic) && bytes.get(1) == Some(&b':');
+    let drive = host == Host::Windows
+        && bytes.first().is_some_and(u8::is_ascii_alphabetic)
+        && bytes.get(1) == Some(&b':');
     if drive {
         out.push('/');
     }

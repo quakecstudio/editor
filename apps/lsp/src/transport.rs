@@ -9,7 +9,7 @@
 //! in bytes. This header is required." (`specs/lsp/3.18/specification.md`).
 
 use std::fmt;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read as _, Write};
 
 /// Why a message could not be read.
 #[derive(Debug)]
@@ -24,11 +24,17 @@ pub enum TransportError {
     Truncated,
     /// A message is longer than [`MAX_CONTENT`].
     TooLarge(usize),
+    /// A header line runs past [`MAX_HEADER_LINE`] bytes with no line break.
+    LongHeader,
 }
 
 /// The longest content part read, 256 MiB: the base protocol sets no limit, and a length past
 /// any real message would otherwise be allocated whole before a byte of it is read.
 pub const MAX_CONTENT: usize = 1 << 28;
+
+/// The longest header line read, its `\r\n` included, 8 KiB: the base protocol's two header
+/// fields are short, and a line with no break would otherwise be read whole.
+pub const MAX_HEADER_LINE: usize = 1 << 13;
 
 impl fmt::Display for TransportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -37,6 +43,7 @@ impl fmt::Display for TransportError {
             Self::BadHeader(line) => write!(f, "bad header line {line:?}"),
             Self::NoLength => f.write_str("a message has no Content-Length"),
             Self::Truncated => f.write_str("the input ended inside a message"),
+            Self::LongHeader => write!(f, "a header line is longer than {MAX_HEADER_LINE} bytes"),
             Self::TooLarge(length) => {
                 write!(
                     f,
@@ -66,7 +73,11 @@ pub fn read_message<R: BufRead>(input: &mut R) -> Result<Option<Vec<u8>>, Transp
     let mut first = true;
     loop {
         let mut line = Vec::new();
-        let read = input.read_until(b'\n', &mut line)?;
+        let limit = u64::try_from(MAX_HEADER_LINE).unwrap_or(u64::MAX);
+        let read = input.by_ref().take(limit).read_until(b'\n', &mut line)?;
+        if read == MAX_HEADER_LINE && !line.ends_with(b"\n") {
+            return Err(TransportError::LongHeader);
+        }
         if read == 0 {
             return if first {
                 Ok(None)

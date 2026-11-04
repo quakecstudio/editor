@@ -10,10 +10,13 @@ publish.workspace = true
 
 [dev-dependencies]
 criterion = { workspace = true }
+eframe = { workspace = true }
 qc-codegen = { workspace = true }
 qc-progs = { workspace = true }
 qc-project = { workspace = true }
 qc-sema = { workspace = true }
+quakec-studio = { workspace = true }
+serde_json = { workspace = true, features = ["std"] }
 
 [[bench]]
 name = "budgets"
