@@ -1,7 +1,7 @@
 # The compiler's back end
 
-How `crates/qc-codegen` should turn the semantic model's checked program into a `progs.dat`,
-and how it gets there from what it does today. It carries
+How `crates/qc-codegen` turns the semantic model's checked program into a `progs.dat`, and
+what is still to come. It carries
 [ADR-0020](../adr/0020-compiler-compatibility-tiers.md) and issue
 [#685](https://github.com/quakecstudio/editor/issues/685) (L-14, COMP-11). Read
 [`semantic-model.md`](semantic-model.md) first: this document starts where it stops.
@@ -30,36 +30,43 @@ lowered from it, and passes over that layer before the progs is written.
 
 ## Where it stands
 
-The checker (`qc-sema/src/check`) now keeps, for each function body, the whole body as FTEQCC
-generates it: `TypedBody::generated`, a list of `ir::BodyStatement`s in emission order, each an
-opcode whose operands are `ir::Name`s: a definition's word, an immediate, a string literal, the
-value a statement made (`Made`) or a word of it (`MadeWord`), the return global or a word of it,
-a parameter slot, a jump's target statement, the `__va_list`, the `ret*` local, `prior`, an
-array's getter or setter. Beside it:
+The intermediate layer is `qc_sema::ir`, and the checker (`qc-sema/src/check`) lowers each
+function body into it as it checks it: `TypedBody::generated`, the body's statements in emission
+order, each an `ir::BodyStatement` whose operands are `ir::Name`s, values rather than offsets: a
+definition's word, an immediate or a word of one, a string literal, the value a statement made
+(`Made`) or a word of it (`MadeWord`), the return global or a word of it, a parameter slot or its
+default, a jump's target statement, the `__va_list`, the `ret*` local, `prior`, an array's getter
+or setter, a nested function's number. An opcode the target lacks is emulated there, once, where
+the checker raises the warnings the emulation gives. Beside the statements:
 
 | `TypedBody` holds | What it is for |
 | --- | --- |
+| `effects()` | what the body makes without a statement reading it, in order: each local it declares, a fold's immediate, a block of words taken before the statements that write it (a vector or a struct), what a dropped branch or `NOT` named (FTE-3.6, FTEF-34.16), a constant local's or an `autocvar`'s initial value, a nested function, and where each `for` loop begins and ends (FTEF-19.78) |
 | `origin(i)` | the source statement each statement was generated in, for the `.lno` (QC-27.19) |
-| `effects()` | what the body makes without a statement reading it, in order: each local it declares, a fold's immediate, and what a dropped branch or `NOT` named and the temporaries they took (FTE-3.6, FTEF-34.16) |
-| `followed()` | whether the checker followed every statement; false at a construct it does not model yet: switches, labels, most intrinsics, struct copies, calls taking parameter defaults, emulations the code generator lowers itself |
+| `followed()` | whether the checker followed every statement; false only at the constructs no program of the corpora or the generated programs uses, such as a builtin local |
 | `BodyStatement::uses`, `temp_words` | which operands an opcode reads or writes, and the temporary each statement takes as it is generated (QC-21.5) |
 
-In either dialect, `qc-codegen` writes a body from it (`compile/body.rs`) when the body was
-followed, every operand its opcodes use is named and it calls no function with parameter
-defaults: each effect made where the body makes it, each statement's temporary allocated in
-creation order, each name resolved to its global. Any other body is still compiled by walking
-the syntax tree (`compile.rs`). The vanilla checker generates a body as `qcc` emits it
-(`check/vanilla.rs`); all of id 1.01's bodies but two are written from it, and the vanilla
-output of the corpus and 2,000 generated programs is byte for byte the walk's. A probe over the corpora and the generated programs of
-seed 1 measured the model against the walk: of 48,599 bodies, 47,883 are followed and identical,
-statement by statement and operand by operand, and the writer declines the rest. The FTEQCC
-differential over 200 generated programs agrees with the writer on.
+The vanilla checker generates a body as id's `qcc` emits it (`check/vanilla.rs`), the FTEQCC
+checker as FTEQCC does. `qc-codegen` writes every body from the layer (`compile/body.rs`): each
+effect made where the body makes it, each value given its slot by the allocation pass, each name
+resolved to its global. There is no syntax walk; a body the checker did not follow is an internal
+error. The code generator's own work is declarations and global initialisers (their values from
+`ModuleIndex::initial_value`), the array functions FTEQCC synthesises, precaches, and writing the
+progs and its `.lno`.
 
-What is still worked out a second time in `qc-codegen`:
+The passes are chosen by the dialect's profile (`back_end.rs`, `BackEnd::of`):
 
-| Crosses the boundary today | Worked out again in `qc-codegen` |
-| --- | --- |
-| `ModuleIndex`: definitions, their facts, struct shapes, constant values, each name use's definition; `TypedBody`: types at a span, binary operators' opcodes and fragments, the whole body | for walked bodies: every type (`Compiler::type_of`), conversions (`floats_of`, `int_as_float`, `float_of_int`), folding and the opcode choice (`ops::select`) |
+| Pass | Vanilla | FTEQCC | Where |
+| --- | --- | --- | --- |
+| Allocation | each value a new slot in creation order (QC-21.5) | the same | `compile/allocate.rs`, `CreationOrder` |
+| Layout | parameters, locals and temporaries among the globals as they are met (QC-21.4) | a block per function after every global (FTE-21.7) | `program.rs`, `open_block`, `resolve_blocks` |
+
+Every body of the corpus codebases that compile and of 2,000 generated programs of seed 1 is
+written from the layer. The vanilla output is byte for byte what it was when the syntax walk
+wrote it. Under FTEQCC the output differs from the walk's in allocation, temporaries taken in
+creation order, and where the walk was wrong: a constant vector's component is a constant that
+FTEQCC folds (FTEF-31.9). The compiler differentials find no divergence from the oracles beyond
+the defects ADR-0020 lets the harness prove.
 
 ## The target
 
@@ -129,28 +136,22 @@ index (ADR-0020, tier 3). In the `Ir` that is a property of two passes, not of t
 
 ## Getting there
 
-Each step keeps every differential green, and the first two change no output. A golden check
-compiles every corpus codebase and the generated programs of seed 1 with the code generator
-before and after the step and requires the same bytes.
+Each step kept every differential green. A golden check compiled every corpus codebase and the
+generated programs of seed 1 before and after each one.
 
 1. **`TypedBody` as documented.** The checker keeps each expression's type, conversion,
-   constant value and the opcode `QCC_PR_ChooseOpcode` picks, and `qc-codegen` reads them:
-   `type_of`, `ops::select` and the conversion and folding helpers become lookups. The output
-   is unchanged. The types and the binary operators' opcodes were measured to agree already
-   (#688).
-2. **`Ir` with a creation-order allocator.** `qc_sema::ir` is the layer, and the lowering in
-   `qc-sema` builds it from each checked body, emulations included; `qc-codegen` writes the
-   progs from it instead of walking the syntax tree. Under way: the whole body
-   (`TypedBody::generated`) and its writer cover the bodies the checker follows; what remains
-   is the constructs it does not follow yet, after which the walk goes. Allocation gives every
-   temporary a new slot in creation order and layout places blocks as FTE-21.7 says, so the
-   progs is byte for byte the same. The checker's emulation warnings then read the lowering, and
-   `check/emulate.rs`'s model of emitted code goes.
-3. **Profile passes.** The FTEQCC branches move out of the lowering into passes, one
-   behaviour per change, each with its spec statements and a test of its own.
-4. **What the passes make possible**: the oracle-defect proof of #649 can read the `Ir`; L-04's
-   optimisations, a GMQCC profile (L-02) and the FTE extended format become passes and
-   writers.
+   constant value and the opcode `QCC_PR_ChooseOpcode` picks (#688). Done.
+2. **`Ir` with a creation-order allocator.** The checker lowers each body into
+   `TypedBody::generated`, emulations included, and `qc-codegen` writes the progs from it. The
+   syntax walk, its operand types and conversions, its inline emulations and the per-operator
+   fragments it read are removed; allocation and layout are passes the profile chooses. Done
+   (#685).
+3. **Profile passes.** The FTEQCC behaviours the lowering still makes as it generates, the
+   folding of a store into the statement that made its value (`opt_assignments`, FTE-18.12) and
+   the return global's copies (FTE-18.13), move into passes over the layer, one behaviour per
+   change, each with its spec statements and a test of its own.
+4. **What the passes make possible**: the oracle-defect proof of #649 can read the layer; L-04's
+   optimisations, a GMQCC profile (L-02) and the FTE extended format become passes and writers.
 
 ## Decided
 
