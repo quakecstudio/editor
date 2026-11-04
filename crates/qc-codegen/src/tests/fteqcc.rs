@@ -3519,3 +3519,22 @@ fn a_vector_constructor_folds_its_first_word() {
         ]
     );
 }
+
+// spec FTEF-18.5, FTE-18.13: `a, b` reads `a`, discards it, and is `b`, so a call's value on
+// the left is freed and no later call copies it out of the return global
+#[test]
+fn a_comma_discards_its_left_call() {
+    let p = fte_progs(
+        "float() g = #1;\nvoid(float x) h = #2;\nfloat a;\nvoid() t = { h((g(), a)); };\n",
+    );
+    let (a, g, h) = (global(&p, "a"), global(&p, "g"), global(&p, "h"));
+    assert_eq!(
+        body(&p, "t"),
+        [
+            st(Opcode::Call0, g, 0, 0),
+            st(StoreF, a, 4, 0),
+            st(Opcode::Call1, h, 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}

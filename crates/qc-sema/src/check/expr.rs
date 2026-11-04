@@ -438,6 +438,16 @@ impl<'e> Checker<'e> {
     /// A binary operator: the opcode `QCC_PR_ChooseOpcode` picks for its operands gives its type
     /// (FTEF-23.4).
     fn binary(&mut self, binary: &ast::BinaryExpr) -> Checked {
+        // FTEF-18.5: `a, b` reads `a`, discards it, and is `b`.
+        if binary.op() == Some(BinaryOp::Comma) {
+            let discarded = self.value(binary.lhs())?;
+            // FTE-18.13: a call's value nothing reads is freed, so no clobber copies it.
+            if discarded.returned && self.live_call == discarded.call {
+                self.live_return = None;
+                self.live_call = None;
+            }
+            return self.value(binary.rhs());
+        }
         let lhs = self.value(binary.lhs())?;
         let rhs = self.value(binary.rhs())?;
         Ok(self
