@@ -20,7 +20,8 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer::{Pointee, int};
-use crate::check::{Bitfield, ElementRef, MemberArray, Reference, Sym, Value};
+use crate::check::{Bitfield, ElementRef, FieldRef, MemberArray, Reference, Sym, Value};
+use crate::ir;
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -120,8 +121,30 @@ impl Checker<'_> {
                     }
                     _ => self.emit(load, &Value::unknown(), &Value::unknown(), span)?,
                 };
+                // The load reads the entity and the field.
+                let entity = match &value.reference {
+                    Reference::Field(field) => self.copied(field.entity, field.entity_call),
+                    _ => None,
+                };
+                if let Reference::Field(field) = &value.reference
+                    && let Some(statement) = loaded
+                        .made
+                        .and_then(|made| usize::try_from(made).ok())
+                        .and_then(|made| self.generated.get_mut(made))
+                {
+                    statement.a = entity;
+                    statement.b = field.def.map(|def| ir::Name::Def(def, 0));
+                }
+                // A load of a call's entity reads it out of the return global.
+                if entity == Some(ir::Name::Return) {
+                    self.live_return = None;
+                    self.live_call = None;
+                }
+                // The loaded value is the load's, which no later read loads again.
                 Ok(Value {
                     temp: loaded.temp,
+                    made: loaded.made,
+                    reference: Reference::Global,
                     ..value
                 })
             }
@@ -153,6 +176,8 @@ impl Checker<'_> {
                     reference: Reference::Global,
                     sym,
                     name,
+                    returned: called,
+                    call: if called { self.live_call } else { value.call },
                     ..value
                 })
             }
@@ -291,6 +316,43 @@ impl Checker<'_> {
         })
     }
 
+    /// An entity's `.vector` field `base` indexed by `at`, `e.(fv[i])`: an index past the
+    /// vector "(.vector) array index out of bounds", a constant one the component's field, any
+    /// other the element at the index.
+    fn field_vector_index(
+        &mut self,
+        base: &Value,
+        label: String,
+        at: Value,
+        constant: Option<i32>,
+        span: Span,
+    ) -> Checked {
+        if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
+            let message = "(.vector) array index out of bounds".to_owned();
+            return self.fatal(Code::E0333, span, message);
+        }
+        // At a constant index it is the component's field, read by `LOAD_F`.
+        if let (Reference::Field(field), Some(i)) = (&base.reference, constant)
+            && let Some(component) = field
+                .def
+                .and_then(|def| self.env.component(def, u32::from_le_bytes(i.to_le_bytes())))
+        {
+            return Ok(Value {
+                reference: Reference::Field(Box::new(FieldRef {
+                    def: Some(component),
+                    ..field.as_ref().clone()
+                })),
+                readonly: base.readonly,
+                ..Value::of(Type::Simple(SimpleType::Float))
+            });
+        }
+        Ok(Value {
+            reference: Reference::element(label, at, false),
+            readonly: base.readonly,
+            ..Value::of(Type::Simple(SimpleType::Float))
+        })
+    }
+
     /// FTEF-31.2: `QCC_LoadFromArray`'s index: as an integer by `OP_LOADA_*` when the target has
     /// them, or `OP_GLOAD_*`; as a float by `OP_FETCH_GBL_*` for a global array with its length
     /// before it; else by the `ArrayGet` function, a float, a vector's component index divided
@@ -341,6 +403,14 @@ impl Checker<'_> {
             self.emit(Op::DivF, &float, &three, span)?;
             return Ok(false);
         }
+        // A vector array's getter takes the element's index, its words' divided by 3.
+        let divided = self.etype_of(&element.ty) == Some(Etype::Vector) && !self.global;
+        let float = if divided {
+            let three = Value::constant(Constant::float(3.0));
+            self.emit(Op::DivF, &float, &three, span)?
+        } else {
+            float
+        };
         // FTEF-6.24: a struct's member array is read by the struct's `ArrayGet`, which returns
         // the struct: one of more than three words is returned through storage `OP_PUSH`
         // makes.
@@ -353,6 +423,35 @@ impl Checker<'_> {
             .is_some_and(|layout| layout.words > 3);
         if big_struct {
             self.simple_statement(Op::Push, span)?;
+        }
+        // FTEF-19.78: the read is `ArrayGet*`'s call: the index stored to its parameter unless
+        // it folds, `CALL1`, the value the call's in the return global.
+        if !self.global {
+            // A held index is not folded into, but the quotient of a vector array's is new.
+            if float.temp.is_some() && float.temp == self.last_temp && (!self.index_held || divided)
+            {
+                self.fold_into(&float, Some(ir::Name::Parameter(0)));
+            } else {
+                self.generated.push(ir::BodyStatement {
+                    a: self.name_of(&float),
+                    b: Some(ir::Name::Parameter(0)),
+                    ..ir::BodyStatement::bare(Op::StoreF)
+                });
+                // The store reads a call's value, which the getter's call need not copy.
+                if float.returned {
+                    self.live_return = None;
+                    self.live_call = None;
+                }
+            }
+            self.clobber_return();
+            self.local_array_function(element.sym.def());
+            self.generated.push(ir::BodyStatement {
+                a: element.sym.def().map(ir::Name::ArrayGet),
+                ..ir::BodyStatement::bare(Op::Call1)
+            });
+            self.last_temp = None;
+            self.live_return = Some(self.env.layout(&element.ty).map_or(1, |l| l.words));
+            self.live_call = self.last_made();
         }
         Ok(true)
     }
@@ -567,15 +666,7 @@ impl Checker<'_> {
             }
             // An entity's `.vector` field indexed is the field's component, `e.(fv[i])`.
             (Some(Etype::Vector), _) if matches!(base.reference, Reference::Field(_)) => {
-                if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
-                    let message = "(.vector) array index out of bounds".to_owned();
-                    return self.fatal(Code::E0333, span, message);
-                }
-                Ok(Value {
-                    reference: Reference::element(label, at, false),
-                    readonly: base.readonly,
-                    ..Value::of(Type::Simple(SimpleType::Float))
-                })
+                self.field_vector_index(&base, label, at, constant, span)
             }
             (Some(Etype::Vector), _) => {
                 if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
@@ -736,6 +827,23 @@ impl Checker<'_> {
     pub(super) fn address_of(&mut self, value: Value, span: Span) -> Checked {
         let pointer_to = |ty: &Type| Value::of(Type::Pointer(ty.clone().into()));
         match value.reference.clone() {
+            // `OP_ADDRESS` of the entity and the field, into a temporary a store may fold.
+            Reference::Field(field) if !self.global => {
+                let made = self.next_made();
+                self.generated.push(ir::BodyStatement {
+                    a: self.copied(field.entity, field.entity_call),
+                    b: field.def.map(|def| ir::Name::Def(def, 0)),
+                    c: Some(ir::Name::Made(made)),
+                    ..ir::BodyStatement::bare(Op::Address)
+                });
+                let temp = Some(self.env.temps().take(1));
+                self.last_temp = temp;
+                Ok(Value {
+                    temp,
+                    made: Some(made),
+                    ..pointer_to(&value.ty)
+                })
+            }
             Reference::Field(_) | Reference::Accessor(_) => Ok(pointer_to(&value.ty)),
             // FTEF-6.24: a member array through a pointer is the pointer plus its offset.
             Reference::ArrayHead(Some(MemberArray {

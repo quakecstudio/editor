@@ -276,3 +276,17 @@ fn a_field_of_an_unresolved_type_is_not_checked() {
         []
     );
 }
+
+// spec QC-11.12, QC-18.8: a vector field's component is of `qcc`'s `type_floatfield`, which no
+// `.float` parameter is, so passing it is "type mismatch on parm N"
+#[test]
+fn a_field_component_is_no_float_field_argument() {
+    assert_eq!(
+        vanilla(".vector fv;\nvoid(.float x) g = #1;\nvoid() f = { g(fv_x); };\n"),
+        [d(Code::E0306, "type mismatch on parm 0")]
+    );
+    assert_eq!(
+        vanilla(".float ff;\nvoid(.float x) g = #1;\nvoid() f = { g(ff); };\n"),
+        []
+    );
+}

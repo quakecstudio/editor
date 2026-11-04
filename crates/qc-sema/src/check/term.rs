@@ -199,6 +199,7 @@ impl Checker<'_> {
         self.opcodes.insert((span.start, span.end), op);
         let updated = self.emit(op, &variable, &by, span)?;
         let updated = self.bit_copy(&updated, operand, span)?;
+        self.update_stores(operand, &updated, &ty, span)?;
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
         self.freed_again(operand, span);
@@ -226,7 +227,7 @@ impl Checker<'_> {
         match (etype, &operand.ty) {
             (Some(Etype::Pointer), Type::Pointer(pointee)) => Ok(Value {
                 readonly: false,
-                reference: Reference::pointer(operand.label(), None),
+                reference: Reference::dereferenced(operand.label(), self.name_of(&operand)),
                 name: operand.name,
                 ..Value::of(pointee.as_ref().clone())
             }),

@@ -16,7 +16,7 @@
 use qc_diag::Span;
 use qc_progs::Function;
 use qc_progs::opcode::Opcode;
-use qc_sema::{FileId, FunctionType, Location, SimpleType, Type};
+use qc_sema::{DefId, FileId, FunctionType, Location, SimpleType, Type};
 use qc_syntax::ast::{self, AstNode};
 use qc_types::Etype;
 
@@ -405,6 +405,23 @@ impl Compiler<'_> {
         self.clobber_aliases(span)?;
         self.program.emit(Opcode::Call1, operand(ofs).at(span)?, 0);
         Ok(self.alias(ret))
+    }
+
+    /// The getter of the array definition `id`, or with `set` its setter, which a body the
+    /// semantic model wrote calls (`ir::Name::ArrayGet`, `ir::Name::ArraySet`).
+    pub(super) fn array_accessor(&mut self, id: DefId, set: bool, span: Span) -> Lowered<usize> {
+        let place = self.program.get_def(self.index, id).at(span)?;
+        let def = self.program.def(place).at(span)?;
+        let array = Array {
+            place,
+            ofs: def.ofs,
+            elem: def.ty.clone(),
+            count: def.count.at(span)?,
+            words: type_words(self.index, &def.ty),
+            location: self.index.def(id).at(span)?.location,
+        };
+        let access = if set { Access::Set } else { Access::Get };
+        self.array_function(&array, access, span)
     }
 
     /// The getter of `array`, `ArrayGet*NAME` of type `T(float)`, or its setter,

@@ -46,7 +46,7 @@ use crate::cast::{ConstType, Literal, Source};
 use crate::lower::LiteralValue;
 use crate::resolve::{AccessorFacts, Layout};
 use crate::symbol::{DefId, Definition};
-use crate::ty::Type;
+use crate::ty::{FunctionType, Type};
 use constant::{Constant, unquoted};
 
 use crate::ir;
@@ -117,6 +117,11 @@ pub(crate) trait Env {
     /// The definition named `name` visible where the body is, as
     /// `QCC_PR_GetSRef(NULL, name, pr_scope, false, ...)` finds an emulation's helper.
     fn helper(&self, name: &str) -> Option<DefId>;
+    /// The component `word` of the vector definition `def`, its `_x`, `_y` or `_z` (QC-11.7).
+    fn component(&self, def: DefId, word: u32) -> Option<DefId>;
+    /// Whether `def` is a `.vector` field's component of `qcc`'s `type_floatfield`, no type
+    /// written in the source (QC-11.12).
+    fn field_component(&self, def: DefId) -> bool;
     /// Whether [`Env::helper`] finds a definition named `name`.
     fn defines(&self, name: &str) -> bool {
         self.helper(name).is_some()
@@ -190,6 +195,10 @@ pub(crate) struct FunctionFacts {
     pub(crate) accumulate: bool,
     /// Whether it takes `...`, so it has a `__va_list`.
     pub(crate) variadic: bool,
+    /// The parameters it names before any `...`.
+    pub(crate) params: usize,
+    /// Its type, which a `__wrap` body's `prior` has (FTEF-15.11).
+    pub(crate) own: Option<FunctionType>,
 }
 
 /// What a type is at bottom, as FTEQCC's checker reads it.
@@ -230,6 +239,17 @@ pub(crate) struct Value {
     /// Whether it is a call's return value, an alias of `OFS_RETURN` that a statement which
     /// clobbers the aliases copies to a temporary first (`QCC_ClobberDef`, FTEF-30.13).
     pub(crate) returned: bool,
+    /// The index of the statement of the generated body that made the value, if one did.
+    pub(crate) made: Option<u32>,
+    /// The index of a string literal's bytes among the body's strings.
+    pub(crate) string: Option<u32>,
+    /// The index of the generated `CALL` whose value in the return global this is.
+    pub(crate) call: Option<u32>,
+    /// The word of the value [`Value::made`] names that this is, a vector's component.
+    pub(crate) word: u32,
+    /// A number literal's constant and the immediate the code generator places it in, the
+    /// lexer's float of its text: the value's name while it is still that constant.
+    pub(crate) literal: Option<Box<(Constant, ir::Immediate)>>,
 }
 
 /// FTEQCC's temporaries (`tempsinfo`), kept across the module's functions: each one's word
@@ -352,6 +372,11 @@ impl Value {
             temp: None,
             ir: None,
             returned: false,
+            made: None,
+            string: None,
+            call: None,
+            word: 0,
+            literal: None,
         }
     }
 
@@ -361,6 +386,36 @@ impl Value {
             constness: Constness::Known(constant),
             sym: Sym::Immediate(constant),
             ..Self::of(constant.ty.value_type())
+        }
+    }
+
+    /// What the value names as an operand of a generated body's statement: the statement that
+    /// made it, the return global for a call's value, a definition's word, or an immediate.
+    pub(crate) fn name(&self) -> Option<ir::Name> {
+        if let Some(made) = self.made {
+            return Some(match self.word {
+                0 => ir::Name::Made(made),
+                word => ir::Name::MadeWord(made, word),
+            });
+        }
+        if self.returned {
+            return Some(match self.word {
+                0 => ir::Name::Return,
+                word => ir::Name::ReturnWord(word),
+            });
+        }
+        if let Some(string) = self.string {
+            return Some(ir::Name::String(string));
+        }
+        if let Some(&(constant, immediate)) = self.literal.as_deref()
+            && self.known() == Some(constant)
+        {
+            return Some(ir::Name::Immediate(immediate));
+        }
+        match self.sym {
+            Sym::Def(def, _, word) => Some(ir::Name::Def(def, word)),
+            Sym::Immediate(constant) => constant.immediate().map(ir::Name::Immediate),
+            Sym::Temp => None,
         }
     }
 
@@ -466,7 +521,14 @@ impl Value {
     pub(crate) fn field_of(base: &Self, field: String, ty: Type, def: Option<DefId>) -> Self {
         Self {
             readonly: false,
-            reference: Reference::field(base.label(), field, def),
+            reference: Reference::Field(Box::new(FieldRef {
+                base: base.label(),
+                field,
+                def,
+                dot: None,
+                entity: base.name(),
+                entity_call: base.call,
+            })),
             ..Self::of(ty)
         }
     }
@@ -571,6 +633,10 @@ pub(crate) struct FieldRef {
     /// The span of the `.` of the `e.f` it was read from, by which its load is kept as a
     /// fragment of the intermediate layer.
     pub(crate) dot: Option<Span>,
+    /// What the entity names as an operand of a generated body's statement.
+    pub(crate) entity: Option<ir::Name>,
+    /// The generated `CALL` whose value the entity is, when it is one.
+    pub(crate) entity_call: Option<u32>,
 }
 
 /// An array's element or a vector's component; the index is the model's to read only when it is
@@ -592,19 +658,11 @@ pub(crate) struct PointerRef {
     pub(crate) base: String,
     /// The index, an element's.
     pub(crate) index: Option<Value>,
+    /// What the pointer names as an operand of a generated body's statement, `*p`'s `p`.
+    pub(crate) named: Option<ir::Name>,
 }
 
 impl Reference {
-    /// The field `field` of the entity labelled `base`, `def` its definition.
-    pub(crate) fn field(base: String, field: String, def: Option<DefId>) -> Self {
-        Self::Field(Box::new(FieldRef {
-            base,
-            field,
-            def,
-            dot: None,
-        }))
-    }
-
     /// The element at `index` of the definition labelled `base`, a vector's component when
     /// `vector`.
     pub(crate) fn element(base: String, index: Value, vector: bool) -> Self {
@@ -622,7 +680,20 @@ impl Reference {
 
     /// What the pointer labelled `base` points at, at `index`.
     pub(crate) fn pointer(base: String, index: Option<Value>) -> Self {
-        Self::Pointer(Box::new(PointerRef { base, index }))
+        Self::Pointer(Box::new(PointerRef {
+            base,
+            index,
+            named: None,
+        }))
+    }
+
+    /// `*p` of the pointer labelled `base` that names `named` as an operand.
+    pub(crate) fn dereferenced(base: String, named: Option<ir::Name>) -> Self {
+        Self::Pointer(Box::new(PointerRef {
+            base,
+            index: None,
+            named,
+        }))
     }
 }
 
@@ -695,6 +766,13 @@ pub struct TypedBody {
     types: HashMap<(usize, usize), Type>,
     opcodes: HashMap<(usize, usize), qc_preproc::Op>,
     fragments: ir::Fragments,
+    generated: Vec<ir::BodyStatement>,
+    strings: Vec<Vec<u8>>,
+    origins: Vec<(u32, usize)>,
+    locals: Vec<(u32, DefId)>,
+    start: usize,
+    followed: bool,
+    effects: Vec<(u32, ir::Effect)>,
 }
 
 impl TypedBody {
@@ -716,6 +794,63 @@ impl TypedBody {
     #[must_use]
     pub fn fragment_at(&self, span: Span) -> Option<&ir::Fragment> {
         self.fragments.at(span)
+    }
+
+    /// The opcodes of the statements the check generated for the body, in order: the model of
+    /// the whole body the intermediate layer is being built from (`docs/design/back-end.md`).
+    #[must_use]
+    pub fn generated(&self) -> &[ir::BodyStatement] {
+        &self.generated
+    }
+
+    /// Whether [`TypedBody::generated`] holds every statement the body generates: false when the
+    /// checker read a construct whose statements it does not follow, which the code generator
+    /// then writes from the syntax tree.
+    #[must_use]
+    pub const fn followed(&self) -> bool {
+        self.followed
+    }
+
+    /// What the body makes without a statement that reads it, in order, each with the index of
+    /// the generated statement it is made before: each local it declares, the immediate a fold
+    /// makes (FTEF-26.2), and each definition, immediate, array function and temporary a
+    /// statement FTEQCC generates and takes out again named or took (FTE-3.6, FTEF-34.16).
+    #[must_use]
+    pub fn effects(&self) -> &[(u32, ir::Effect)] {
+        &self.effects
+    }
+
+    /// Where the body starts in its file, a byte offset: which of a definition's bodies it is.
+    #[must_use]
+    pub const fn start(&self) -> usize {
+        self.start
+    }
+
+    /// Each local the body declares, in order, with the index of the generated statement it is
+    /// declared before.
+    #[must_use]
+    pub fn locals(&self) -> &[(u32, DefId)] {
+        &self.locals
+    }
+
+    /// Where the source statement the generated statement `index` was recorded at starts, a
+    /// byte offset; `None` before the body's first statement, which the function's name is.
+    #[must_use]
+    pub fn origin(&self, index: usize) -> Option<usize> {
+        let index = u32::try_from(index).ok()?;
+        let at = self.origins.partition_point(|&(first, _)| first <= index);
+        self.origins
+            .get(at.checked_sub(1)?)
+            .map(|&(_, origin)| origin)
+    }
+
+    /// The bytes of the string literal [`ir::Name::String`] `index` names, as FTEQCC's lexer
+    /// reads them.
+    #[must_use]
+    pub fn string(&self, index: u32) -> Option<&[u8]> {
+        self.strings
+            .get(usize::try_from(index).ok()?)
+            .map(Vec::as_slice)
     }
 }
 
@@ -758,15 +893,51 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
         .ancestors()
         .skip(1)
         .any(|node| node.kind() == qc_syntax::SyntaxKind::FunctionBody);
+    // FTE-18.6: a variadic function first stores, before its `STATE`, each parameter slot after its named ones to
+    // its `__va_list`.
+    if checker.function.variadic {
+        checker.variadic_prologue();
+    }
+    // QC-13.6: `[frame, think]` is the body's first statement, `STATE`.
+    // QC-13.6: `STATE` of the frame number and the think function.
+    if let Some(state) = body.state() {
+        let frame = state
+            .frame()
+            .and_then(|frame| checker.literal(&frame).name());
+        let think = state
+            .next()
+            .and_then(|next| checker.env.reference(next.span().start))
+            .map(|def| ir::Name::Def(def, 0));
+        checker.generated.push(ir::BodyStatement {
+            a: frame,
+            b: think,
+            ..ir::BodyStatement::bare(qc_preproc::Op::State)
+        });
+    }
     if let Some(block) = body.block()
         && checker.start_function(block.syntax().span())
     {
         checker.block(&block);
+        checker.name_jumps();
         let end = block
             .syntax()
             .token_of(qc_syntax::SyntaxKind::RBrace)
             .map_or_else(|| block.syntax().span(), |brace| brace.span());
         checker.finish_function(end);
     }
-    checker.finish()
+    // FTE-18.10: a body that made the `ret*` local returns it once more before its `DONE`.
+    if checker.ret_local {
+        checker.generated.push(ir::BodyStatement {
+            a: Some(ir::Name::RetLocal),
+            ..ir::BodyStatement::bare(qc_preproc::Op::Return)
+        });
+    }
+    // QC-13.7: the body ends with `DONE`.
+    checker
+        .generated
+        .push(ir::BodyStatement::bare(qc_preproc::Op::Done));
+    TypedBody {
+        start: body.syntax().span().start,
+        ..checker.finish()
+    }
 }

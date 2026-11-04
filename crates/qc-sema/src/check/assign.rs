@@ -18,10 +18,13 @@ use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::opcodes;
 use crate::check::opcodes::row;
-use crate::check::reference::word_type;
+use crate::check::reference::{eval_int, word_type};
 use crate::check::truth::Test;
+use crate::check::truth::words;
 use crate::check::{Constness, Reference, Value};
+use crate::ir;
 use crate::ty::{SimpleType, Type};
 
 /// What an assignment operator stores (FTEF-29.2).
@@ -234,19 +237,41 @@ impl Checker<'_> {
             .map_or_else(|| binary.syntax().span(), |t| t.span());
         let in_condition = self.in_condition;
         let lhs = self.expr_of(binary.lhs())?;
-        // FTEF-29.1: `lhsr->postinc` and `lhsr->readonly`, before the value is read.
+        self.assignable(&lhs, span)?;
+        #[expect(
+            clippy::question_mark,
+            reason = "QC-27.16: `?` adds a copy of the value to the frame each nested `=` adds"
+        )]
+        let rhs = match self.value(binary.rhs()) {
+            Ok(rhs) => rhs,
+            Err(fatal) => return Err(fatal),
+        };
+        self.store_assigned(binary, (kind, span, in_condition), lhs, rhs)
+    }
+
+    /// FTEF-29.1: `lhsr->postinc` and `lhsr->readonly`, before the value is read.
+    fn assignable(&mut self, lhs: &Value, span: Span) -> Result<(), Fatal> {
         if lhs.postinc {
-            return self.fatal(
-                Code::E0322,
-                span,
-                "Assignment to post-inc result".to_owned(),
-            );
+            let message = "Assignment to post-inc result".to_owned();
+            return self.fatal(Code::E0322, span, message).map(drop);
         }
         if lhs.readonly && lhs.ty != Type::Unknown {
             self.env
                 .report(Code::W0241, span, "Assignment to const".to_owned());
         }
-        let rhs = self.value(binary.rhs())?;
+        Ok(())
+    }
+
+    /// The store of an assignment's value `rhs` to `lhs`, of `kind` at `span`; a function of
+    /// its own, so that what it holds is not in the frame each nested `=` adds (QC-27.16).
+    #[inline(never)]
+    fn store_assigned(
+        &mut self,
+        binary: &ast::BinaryExpr,
+        (kind, span, in_condition): (Assign, Span, bool),
+        lhs: Value,
+        rhs: Value,
+    ) -> Checked {
         if in_condition {
             let message = "suggest parenthesis for assignment used as truth value".to_owned();
             self.env.report(Code::W0242, span, message);
@@ -276,14 +301,65 @@ impl Checker<'_> {
         };
         // FTEF-29.13: a store to a definition is its `OP_STORE_*`, unless it folds into the
         // statement that made the value's temporary (`opt_assignments`).
-        let folded = stored.temp.is_some() && stored.temp == self.last_temp;
+        // DIFF-14.11: not into a statement whose result is wider than the value, a vector whose
+        // first word is stored.
+        let wider = self.generated.last().is_some_and(|last| {
+            let made = opcodes::row(last.op).map(|row| row.types[2].etype());
+            let stored = self.etype(&target);
+            made.map_or(1, words) > stored.map_or(1, words)
+        });
+        let folded = stored.temp.is_some() && stored.temp == self.last_temp && !wider;
         if matches!(kind, Assign::Store) {
             let store = Checker::store_op(self.etype(&target));
             // The store chosen for the `=`, which the code generator reads.
             self.opcodes.insert((span.start, span.end), store);
             if lhs.reference == Reference::Global && !folded {
                 self.emit(store, &stored, &Value::unknown(), span)?;
+                self.name_last(store, self.name_of(&stored), lhs.name());
+                // A converting store a helper emulates ends with a plain store of its value.
+                match store {
+                    Op::StoreIf => self.name_last(Op::StoreF, None, lhs.name()),
+                    Op::StoreFi => self.name_last(Op::StoreI, None, lhs.name()),
+                    _ => {}
+                }
+                // An assignment whose value is read is still the call's, in the return global
+                // (FTE-18.13).
+                if stored.returned && !self.global && !discarded(binary.syntax()) {
+                    self.live_return = Some(self.env.layout(&stored.ty).map_or(1, |l| l.words));
+                    self.live_call = stored.call;
+                }
             }
+            if lhs.reference == Reference::Global && folded {
+                self.fold_into(&stored, lhs.name());
+            }
+        }
+        if matches!(kind, Assign::Compound(..)) {
+            self.definition_store(&lhs, &stored, &target, span)?;
+        }
+        if matches!(kind, Assign::Store | Assign::Compound(..)) {
+            self.element_store(&lhs, &stored, &target, folded);
+        }
+        // FTEF-19.78: an element at an index that is no constant is stored by the array's
+        // `ArraySet*` function: the index and the value stored to its parameters, then `CALL2`.
+        if matches!(kind, Assign::Store | Assign::Compound(..)) {
+            self.array_set(&lhs, &stored, &target, span)?;
+        }
+        self.field_store(&lhs, &stored, &target);
+        if matches!(kind, Assign::Store) {
+            self.pointer_store(&lhs, &stored, &target);
+        }
+        // A struct's or a union's store is word groups the body does not follow (FTE-14.5).
+        if matches!(self.etype(&target), Some(Etype::Struct | Etype::Union)) {
+            self.followed = false;
+        }
+        // An accessor's store, and a compound one through a pointer, are not followed.
+        if matches!(lhs.reference, Reference::Accessor(_))
+            || matches!(
+                (&lhs.reference, kind),
+                (Reference::Pointer(_), Assign::Compound(..))
+            )
+        {
+            self.followed = false;
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
         if lhs.readonly {
@@ -300,6 +376,22 @@ impl Checker<'_> {
         if matches!(kind, Assign::Compound(..)) {
             self.freed_again(&lhs, span);
         }
+        // A store folded into the statement that made the value leaves the value in the
+        // definition, which a store of the assignment's own value reads and no store folds
+        // into again.
+        let stored = if folded && lhs.reference == Reference::Global && !self.global {
+            Value {
+                sym: lhs.sym,
+                temp: None,
+                made: None,
+                call: None,
+                returned: false,
+                string: None,
+                ..stored
+            }
+        } else {
+            stored
+        };
         Ok(Value {
             ty: lhs.ty,
             readonly: true,
@@ -372,7 +464,11 @@ impl Checker<'_> {
         }
         // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read, which for a string's character
         // is the load's own type (FTEF-31.18).
-        let read = self.read(lhs.clone(), span)?;
+        // The update stores to the element again, so its index is held.
+        self.index_held = true;
+        let read = self.read(lhs.clone(), span);
+        self.index_held = false;
+        let read = read?;
         let (to, read_ty) = match lhs.reference {
             Reference::Character(_) => (self.etype(&read.ty).unwrap_or(to), read.ty.clone()),
             _ => (to, lhs.ty.clone()),
@@ -600,9 +696,10 @@ impl Checker<'_> {
         } else {
             self.etype(&operand.ty)
         };
+        let mut copy = None;
         if let Some(etype) = etype {
             let step = if increment { 1 } else { -1 };
-            self.step(&operand, etype, step, discarded(postfix.syntax()), span)?;
+            copy = self.step(&operand, etype, step, discarded(postfix.syntax()), span)?;
         }
         // The value before the update, a temporary, named by its type (`QCC_GetSRefName`); an
         // array's head is the pointer it reads as.
@@ -616,13 +713,15 @@ impl Checker<'_> {
             postinc: true,
             reference: Reference::Global,
             name: None,
+            made: copy.or(operand.made),
             ..operand
         })
     }
 
     /// FTEF-29.5: the update of a postfix's operand of basic type `etype` by `step`, one of its
     /// type added by the opcode for it and stored back as an assignment is: `QCC_PR_DiscardRef`'s
-    /// when its value is `discarded`, else `QCC_RefToDef`'s.
+    /// when its value is `discarded`, else `QCC_RefToDef`'s; the generated copy of the old
+    /// value, if one was made.
     fn step(
         &mut self,
         operand: &Value,
@@ -630,23 +729,40 @@ impl Checker<'_> {
         step: i8,
         discarded: bool,
         span: Span,
-    ) -> Result<(), Fatal> {
+    ) -> Result<Option<u32>, Fatal> {
         if operand
             .bitfield
             .is_some_and(|bitfield| bitfield.offset != 0)
         {
             let message = "post increment operator on bitfield".to_owned();
-            return self.fatal(Code::E0322, span, message).map(drop);
+            return self.fatal(Code::E0322, span, message).map(|_| None);
         }
+        self.index_held = true;
+        let old = self.read(operand.clone(), span);
+        self.index_held = false;
         let old = Value {
             constness: Constness::Variable,
-            ..self.read(operand.clone(), span)?
+            ..old?
         };
         // FTEF-29.13: a value the postfix gives is the old one, copied to a temporary first.
-        if !discarded && operand.reference == Reference::Global {
+        let mut copy = None;
+        // The old value is copied first: a definition's, and an element's the getter left in
+        // the return global.
+        if !discarded && (operand.reference == Reference::Global || old.returned) {
             let store = Checker::store_op(self.etype(&operand.ty));
             self.emit(store, &old, &Value::unknown(), span)?;
+            copy = self
+                .generated
+                .last()
+                .filter(|statement| statement.op == store)
+                .and(self.last_made());
+            self.name_last(store, self.name_of(&old), copy.map(ir::Name::Made));
         }
+        // The step adds to the copy.
+        let old = Value {
+            made: copy.or(old.made),
+            ..old
+        };
         // `switch(ref->cast->type)`: a bitfield, or an 8- or 16-bit integer, is `ev_bitfld`,
         // which only a discarded value steps, by the type it is read as.
         let narrow = matches!(
@@ -686,7 +802,7 @@ impl Checker<'_> {
             | Etype::Enum
             | Etype::Boolean => {
                 let message = "post increment operator not supported with this type".to_owned();
-                return self.fatal(Code::E0322, span, message).map(drop);
+                return self.fatal(Code::E0322, span, message).map(|_| None);
             }
         };
         // `QCC_StoreSRefToRef`: an integer stepping a string warns of the store; an array's
@@ -697,10 +813,264 @@ impl Checker<'_> {
             operand.ty.clone()
         };
         self.store_mismatch(&updated, operand, &target, span)?;
+        self.update_stores(operand, &updated, &target, span)?;
         let updated = self.bit_copy(&updated, operand, span)?;
         self.store_reference(operand, &updated, span)?;
         self.not_an_lvalue(operand, span);
         self.freed_again(operand, span);
+        Ok(copy)
+    }
+
+    /// FTE-13.1: `vector v = {x, y, z};` of a local not `static`, each element read and
+    /// stored to its component in turn by `STORE_F`, as `QCC_PR_ParseInitializerType` stores an
+    /// aggregate's elements; any other aggregate is not followed.
+    fn vector_aggregate(
+        &mut self,
+        declarator: &ast::Declarator,
+        aggregate: &ast::AggregateInit,
+    ) -> Result<(), Fatal> {
+        let Some(name) = declarator.name() else {
+            return Ok(());
+        };
+        let start = name.span().start;
+        let vector = self
+            .env
+            .local_type(start)
+            .is_some_and(|ty| self.etype(&ty) == Some(Etype::Vector));
+        let elements: Vec<ast::Expr> = aggregate.elements().collect();
+        if self.global {
+            return Ok(());
+        }
+        if !vector || self.env.local_static(start) || elements.len() != 3 {
+            self.followed = false;
+            return Ok(());
+        }
+        let local = self.env.reference(start);
+        for (word, element) in (0_u32..).zip(elements) {
+            let value = self.value(Some(element))?;
+            self.generated.push(ir::BodyStatement {
+                a: self.name_of(&value),
+                b: local.map(|def| ir::Name::Def(def, word)),
+                ..ir::BodyStatement::bare(Op::StoreF)
+            });
+            self.read_returned(&value);
+            self.last_temp = None;
+        }
+        Ok(())
+    }
+
+    /// FTE-6.4: the store of `stored` to the field `lhs` of type `target`, a compound one's
+    /// and a postfix's too: its `ADDRESS`, made after the value, and `STOREP_*` of the field's
+    /// type through it.
+    fn field_store(&mut self, lhs: &Value, stored: &Value, target: &Type) {
+        let Reference::Field(field) = &lhs.reference else {
+            return;
+        };
+        if self.global {
+            return;
+        }
+        // A store through a call's entity is not followed (FTE-18.13).
+        if field.entity_call.is_some() {
+            self.followed = false;
+        }
+        let storep = self.storep_op(target);
+        let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
+        self.generated.push(ir::BodyStatement {
+            a: self.copied(field.entity, field.entity_call),
+            b: field.def.map(|def| ir::Name::Def(def, 0)),
+            c: address,
+            ..ir::BodyStatement::bare(Op::Address)
+        });
+        self.generated.push(ir::BodyStatement {
+            a: self.name_of(stored),
+            b: address,
+            ..ir::BodyStatement::bare(storep)
+        });
+        self.read_returned(stored);
+        self.last_temp = None;
+    }
+
+    /// The store an update, a postfix's or a prefix's, makes of `updated` to `operand` of type
+    /// `target`: by the array's setter, through the field's address, to the definition, or to
+    /// a constant-index element, folding into the statement that made the value where it can.
+    pub(super) fn update_stores(
+        &mut self,
+        operand: &Value,
+        updated: &Value,
+        target: &Type,
+        span: Span,
+    ) -> Result<(), Fatal> {
+        self.array_set(operand, updated, target, span)?;
+        self.field_store(operand, updated, target);
+        let folded = updated.temp.is_some() && updated.temp == self.last_temp;
+        self.definition_store(operand, updated, target, span)?;
+        self.element_store(operand, updated, target, folded);
+        Ok(())
+    }
+
+    /// FTEF-29.13: the store of `stored` to the definition `lhs` of type `target` by a compound
+    /// assignment or a postfix: folded into the statement that made the value
+    /// (`opt_assignments`), else its `OP_STORE_*`.
+    fn definition_store(
+        &mut self,
+        lhs: &Value,
+        stored: &Value,
+        target: &Type,
+        span: Span,
+    ) -> Result<(), Fatal> {
+        if self.global || lhs.reference != Reference::Global {
+            return Ok(());
+        }
+        if stored.temp.is_some() && stored.temp == self.last_temp {
+            self.fold_into(stored, lhs.name());
+            return Ok(());
+        }
+        let store = Checker::store_op(self.etype(target));
+        self.emit(store, stored, &Value::unknown(), span)?;
+        self.name_last(store, self.name_of(stored), lhs.name());
+        Ok(())
+    }
+
+    /// FTEF-31.10: the store of `stored` to the element `lhs` at a constant index, a word of
+    /// the array's definition, stored as a definition is unless the value folds into the
+    /// statement that made it (`folded`).
+    fn element_store(&mut self, lhs: &Value, stored: &Value, target: &Type, folded: bool) {
+        let Reference::Element(element) = &lhs.reference else {
+            return;
+        };
+        let Some(index) = element.index.known() else {
+            return;
+        };
+        if self.global {
+            return;
+        }
+        // The element's word, as a read of it at a constant index names it.
+        let word = eval_int(index).map(|word| u32::from_le_bytes(word.to_le_bytes()));
+        let to = word.and_then(|word| {
+            Value {
+                sym: lhs.sym.at(word),
+                ..Value::of(Type::Unknown)
+            }
+            .name()
+        });
+        if folded {
+            self.fold_into(stored, to);
+        } else {
+            self.generated.push(ir::BodyStatement {
+                a: self.name_of(stored),
+                b: to,
+                ..ir::BodyStatement::bare(Checker::store_op(self.etype(target)))
+            });
+            self.read_returned(stored);
+            self.last_temp = None;
+        }
+    }
+
+    /// `STOREP_*` of a value of type `target`, by its basic type.
+    fn storep_op(&self, target: &Type) -> Op {
+        match self.etype(target) {
+            Some(Etype::Vector) => Op::StorepV,
+            Some(Etype::String) => Op::StorepS,
+            Some(Etype::Entity) => Op::StorepEnt,
+            Some(Etype::Field) => Op::StorepFld,
+            Some(Etype::Function) => Op::StorepFnc,
+            _ => Op::StorepF,
+        }
+    }
+
+    /// FTEF-31.3: the store of `stored` through the pointer `lhs`, `*p = v`, of type `target`:
+    /// `STOREP_*` of the value through the pointer.
+    fn pointer_store(&mut self, lhs: &Value, stored: &Value, target: &Type) {
+        let Reference::Pointer(pointer) = &lhs.reference else {
+            return;
+        };
+        if self.global {
+            return;
+        }
+        if pointer.index.is_some() || pointer.named.is_none() {
+            self.followed = false;
+            return;
+        }
+        let storep = self.storep_op(target);
+        self.generated.push(ir::BodyStatement {
+            a: self.name_of(stored),
+            b: pointer.named,
+            ..ir::BodyStatement::bare(storep)
+        });
+        self.read_returned(stored);
+        self.last_temp = None;
+    }
+
+    /// A local array's getter or setter, which a `for` forgets at its end (FTEF-19.78), is not
+    /// followed statement by statement.
+    pub(super) fn local_array_function(&mut self, array: Option<crate::DefId>) {
+        if array
+            .and_then(|def| self.env.definition(def))
+            .is_some_and(|d| d.owner.is_some())
+        {
+            self.followed = false;
+        }
+    }
+
+    /// A store's read of `value`: a call's value is then out of the return global's keeping.
+    fn read_returned(&mut self, value: &Value) {
+        if value.returned {
+            self.live_return = None;
+            self.live_call = None;
+        }
+    }
+
+    /// FTEF-19.78: the store of `stored` to the element `lhs` at an index that is no constant,
+    /// by the array's `ArraySet*` function: the index stored to its first parameter unless it
+    /// folds, the value to its second, then `CALL2`.
+    fn array_set(
+        &mut self,
+        lhs: &Value,
+        stored: &Value,
+        target: &Type,
+        span: Span,
+    ) -> Result<(), Fatal> {
+        let Reference::Element(element) = &lhs.reference else {
+            return Ok(());
+        };
+        if element.index.known().is_some() || self.global {
+            return Ok(());
+        }
+        if element.vector {
+            self.followed = false;
+            return Ok(());
+        }
+        let parameter = |slot| Some(ir::Name::Parameter(slot));
+        // A vector array's setter takes the element's index, its words' divided by 3.
+        let index = if self.etype(target) == Some(Etype::Vector) {
+            let three = Value::constant(Constant::float(3.0));
+            self.emit(Op::DivF, &element.index, &three, span)?
+        } else {
+            element.index.clone()
+        };
+        if index.temp.is_some() && index.temp == self.last_temp {
+            self.fold_into(&index, parameter(0));
+        } else {
+            self.generated.push(ir::BodyStatement {
+                a: self.name_of(&index),
+                b: parameter(0),
+                ..ir::BodyStatement::bare(Op::StoreF)
+            });
+            self.read_returned(&index);
+        }
+        let words = self.env.layout(target).map_or(1, |l| l.words);
+        self.generated.push(ir::BodyStatement {
+            a: self.name_of(stored),
+            b: parameter(1),
+            ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+        });
+        self.clobber_return();
+        self.local_array_function(lhs.sym.def());
+        self.generated.push(ir::BodyStatement {
+            a: lhs.sym.def().map(ir::Name::ArraySet),
+            ..ir::BodyStatement::bare(Op::Call2)
+        });
+        self.last_temp = None;
         Ok(())
     }
 
@@ -757,7 +1127,27 @@ impl Checker<'_> {
 
     /// [`Checker::local`] of one declarator: its size, then its value cast to its type.
     fn local_declarator(&mut self, declarator: &ast::Declarator) -> Result<(), Fatal> {
+        // The local is declared before its value is read, where the next statement goes.
+        if let Some(def) = declarator
+            .name()
+            .and_then(|name| self.env.reference(name.span().start))
+        {
+            let at = self.next_made();
+            self.locals.push((at, def));
+            self.effects
+                .push((at, ir::Effect::Make(ir::Name::Def(def, 0))));
+        }
         self.local_size(declarator)?;
+        match declarator.initializer() {
+            Some(ast::Initializer::Aggregate(aggregate)) => {
+                return self.vector_aggregate(declarator, &aggregate);
+            }
+            // A nested function and a builtin local are compiled from the syntax tree.
+            Some(ast::Initializer::Body(_) | ast::Initializer::Builtin(_)) => {
+                self.followed = false;
+            }
+            Some(ast::Initializer::Value(_)) | None => {}
+        }
         let Some(ast::Initializer::Value(init)) = declarator.initializer() else {
             return Ok(());
         };
@@ -770,6 +1160,10 @@ impl Checker<'_> {
         };
         if value.ty == Type::Unknown {
             return Ok(());
+        }
+        // A struct's or a union's initialiser is copied in word groups the body does not follow.
+        if matches!(self.etype(&ty), Some(Etype::Struct | Etype::Union)) {
+            self.followed = false;
         }
         let span = init.syntax().span();
         let resolver_casts = match &init {
@@ -799,6 +1193,36 @@ impl Checker<'_> {
             && self.env.local_static(name.span().start)
         {
             self.constant_initialiser(&value, &name.text_lossless(), span);
+        }
+        // FTEF-29.13: a local's value is stored to it unless it folds into the statement that
+        // made it (`opt_assignments`); a `static` one is its initial value instead.
+        let is_static = declarator
+            .name()
+            .is_some_and(|name| self.env.local_static(name.span().start));
+        if !self.global && !is_static && declarator.array_suffixes().next().is_none() {
+            if value.returned {
+                self.live_return = None;
+            }
+            let folded = value.temp.is_some() && value.temp == self.last_temp;
+            if folded {
+                let local = declarator
+                    .name()
+                    .and_then(|name| self.env.reference(name.span().start))
+                    .map(|def| ir::Name::Def(def, 0));
+                self.fold_into(&value, local);
+            }
+            if !folded {
+                let local = declarator
+                    .name()
+                    .and_then(|name| self.env.reference(name.span().start))
+                    .map(|def| ir::Name::Def(def, 0));
+                self.generated.push(ir::BodyStatement {
+                    a: self.name_of(&value),
+                    b: local,
+                    ..ir::BodyStatement::bare(Checker::store_op(self.etype(&ty)))
+                });
+                self.last_temp = None;
+            }
         }
         // FTEF-2.12: an 8- or 16-bit local is initialised as a bitfield at bit 0
         // (`QCC_PR_GenerateInitializerType`), packed into its word; an array of 8-bit ones
@@ -870,12 +1294,12 @@ pub(super) fn string_bytes(expr: &ast::Expr) -> Option<Vec<u8>> {
     if literal.kind() != Some(ast::LiteralKind::String) {
         return None;
     }
-    lexed_string(&literal.token()?.text_lossless())
+    lexed_string(literal.token()?.text())
 }
 
 /// The bytes of the one quoted string `text`, with its escapes read as FTEQCC's lexer reads them.
-pub(super) fn lexed_string(text: &str) -> Option<Vec<u8>> {
-    let lexed = qc_lexer::lex_with(text.as_bytes(), qc_syntax::Dialect::Fteqcc);
+pub(super) fn lexed_string(text: &[u8]) -> Option<Vec<u8>> {
+    let lexed = qc_lexer::lex_with(text, qc_syntax::Dialect::Fteqcc);
     match lexed.tokens.as_slice() {
         [token] => match &token.kind {
             qc_lexer::TokenKind::String(bytes) => Some(bytes.clone()),

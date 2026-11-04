@@ -109,6 +109,28 @@ impl BodyEnv<'_, '_> {
     }
 }
 
+impl BodyEnv<'_, '_> {
+    /// FTE-15.8: the constant a number literal initialising `def` is: for an `int` or an
+    /// `unsigned`, the integer it converts to, C's conversion of the float, not its bits.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "spec FTE-15.8: the conversion is C's (int) or (unsigned) of the float"
+    )]
+    fn number_constant(&self, def: DefId, value: f32) -> Constant {
+        let scalar = self
+            .resolver
+            .index
+            .def(def)
+            .and_then(|d| self.resolver.resolved(&d.ty).fteqcc_scalar());
+        match scalar {
+            Some(CScalar::Integer) => Constant::int(value as i32),
+            Some(CScalar::Uint) => Constant::uint(value as u32),
+            _ => Constant::float(value),
+        }
+    }
+}
+
 impl Env for BodyEnv<'_, '_> {
     fn temps(&mut self) -> &mut Temps {
         &mut self.resolver.temps
@@ -272,10 +294,13 @@ impl Env for BodyEnv<'_, '_> {
 
     fn function(&self) -> FunctionFacts {
         let def = self.owner.and_then(|owner| self.resolver.index.def(owner));
-        let (ret, variadic) = match def.map(|d| self.resolver.resolved(&d.ty)) {
-            Some(Type::Function(function)) => (function.ret.clone(), function.variadic),
-            Some(_) | None => (Type::Unknown, false),
+        let own = match def.map(|d| self.resolver.resolved(&d.ty)) {
+            Some(Type::Function(function)) => Some(function.as_ref().clone()),
+            Some(_) | None => None,
         };
+        let (ret, variadic, params) = own.as_ref().map_or((Type::Unknown, false, 0), |f| {
+            (f.ret.clone(), f.variadic, f.params.len())
+        });
         FunctionFacts {
             // `pr_scope->name`, a member function's `CLASS::NAME` (FTEF-21.23), and a nested
             // function's `def?def->name:""` (FTEF-18.39).
@@ -293,6 +318,8 @@ impl Env for BodyEnv<'_, '_> {
                 .and_then(|owner| self.resolver.facts.get(owner.index()))
                 .is_some_and(|f| f.accumulate),
             variadic,
+            params,
+            own,
         }
     }
 
@@ -414,7 +441,7 @@ impl Env for BodyEnv<'_, '_> {
         }
         match self.resolver.literals.get(&def) {
             Some(LiteralValue::Float(bits)) => {
-                Constness::Known(Constant::float(f32::from_bits(*bits)))
+                Constness::Known(self.number_constant(def, f32::from_bits(*bits)))
             }
             Some(LiteralValue::Vector(bits)) => {
                 Constness::Known(Constant::vector(bits.map(f32::from_bits)))
@@ -507,6 +534,19 @@ impl Env for BodyEnv<'_, '_> {
 
     fn helper(&self, name: &str) -> Option<DefId> {
         self.resolver.lookup_global(name)
+    }
+
+    fn component(&self, def: DefId, word: u32) -> Option<DefId> {
+        let suffix = ["_x", "_y", "_z"].get(usize::try_from(word).ok()?)?;
+        let name = &self.resolver.index.def(def)?.name;
+        self.resolver.lookup_global(&format!("{name}{suffix}"))
+    }
+
+    fn field_component(&self, def: DefId) -> bool {
+        self.resolver
+            .facts
+            .get(def.index())
+            .is_some_and(|facts| facts.field_component)
     }
 
     fn in_class(&self) -> bool {

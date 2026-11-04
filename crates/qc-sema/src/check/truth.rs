@@ -17,6 +17,7 @@ use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::ir;
 use crate::ty::Type;
 
 /// Which of FTEQCC's tests of a value is made.
@@ -109,18 +110,51 @@ impl Checker<'_> {
     /// warns "if (string) tests for null, not empty" (with a full stop for `jump` `If`); a vector
     /// is `!v` under `ifvector`, else warns that only its first element is tested; a double or
     /// 64-bit value is compared with 0; anything else warns "conditional type mismatch".
+    /// FTEF-34.16: an `IFNOT` of `value`, the temporary the statement before made by `NOT_F`,
+    /// `NOT_FNC` or `NOT_ENT`, drops that statement and is an `IF` of its operand, a call's
+    /// value it read then live again; the dropped statement's operand when it dropped one.
+    pub(super) fn drops_not(&mut self, value: &Value) -> Option<Option<ir::Name>> {
+        // At global scope no statement is generated, so there is none to drop.
+        let drops = !self.global
+            && value.temp.is_some()
+            && value.temp == self.last_temp
+            && self
+                .generated
+                .last()
+                .is_some_and(|s| matches!(s.op, Op::NotF | Op::NotFnc | Op::NotEnt));
+        if !drops {
+            return None;
+        }
+        // The `NOT`'s temporary, and what it named, are still made.
+        let last = self.generated.len().saturating_sub(1);
+        let effects = self.dropped_effects(last);
+        let dropped = self.generated.pop();
+        let at = self.next_made();
+        self.effects
+            .extend(effects.into_iter().map(|effect| (at, effect)));
+        if let Some((words, call)) = self.not_of_return.take() {
+            self.live_return = Some(words);
+            self.live_call = call;
+        }
+        Some(dropped.and_then(|statement| statement.a))
+    }
+
     pub(super) fn branch(&mut self, value: &Value, jump: Jump, span: Span) -> Result<(), Fatal> {
         let Some(etype) = self.env.shape(&value.ty).map(|shape| shape.etype) else {
             return Ok(());
         };
+        let mut condition = self.name_of(value);
+        let mut flipped = false;
         match etype {
             Etype::String => {
                 let stop = if jump == Jump::If { "." } else { "" };
                 let message = format!("if (string) tests for null, not empty{stop}");
                 self.env.report(Code::W0245, span, message);
             }
+            // `OP_NOT_V`, then the other jump: `OP_IF_I` for `IFNOT`, `OP_IFNOT_I` for `IF`.
             Etype::Vector if self.env.flags_at(span.start).has(FteFlag::Ifvector) => {
-                self.emit(Op::NotV, value, &Value::unknown(), span)?;
+                condition = self.emit(Op::NotV, value, &Value::unknown(), span)?.name();
+                flipped = true;
             }
             Etype::Vector => {
                 let message =
@@ -128,15 +162,19 @@ impl Checker<'_> {
                 self.env.report(Code::W0246, span, message.to_owned());
             }
             Etype::Double => {
-                self.emit(
-                    Op::NeD,
-                    value,
-                    &Value::constant(Constant::double(0.0)),
-                    span,
-                )?;
+                condition = self
+                    .emit(
+                        Op::NeD,
+                        value,
+                        &Value::constant(Constant::double(0.0)),
+                        span,
+                    )?
+                    .name();
             }
             Etype::Int64 | Etype::Uint64 => {
-                self.emit(Op::NeI64, value, &Value::constant(Constant::int64(0)), span)?;
+                condition = self
+                    .emit(Op::NeI64, value, &Value::constant(Constant::int64(0)), span)?
+                    .name();
             }
             Etype::Variant | Etype::Struct | Etype::Union | Etype::Void | Etype::Enum => {
                 let message = format!("conditional type mismatch: {}", etype.basic_name());
@@ -151,6 +189,37 @@ impl Checker<'_> {
             | Etype::Boolean
             | Etype::Float => {}
         }
+        // FTEF-34.16: an `IFNOT` of the temporary the statement before made by `NOT_F`,
+        // `NOT_FNC` or `NOT_ENT` drops that statement and is an `IF` of its operand, a call's
+        // value it read then live again.
+        self.branch_op = Some(if (jump == Jump::If) != flipped {
+            Op::IfI
+        } else {
+            Op::IfnotI
+        });
+        // FTE-18.13: a call's value still live is copied before the jump looks for a `NOT` to
+        // drop, which the copy then follows; a `NOT` it drops makes its own call's value live
+        // again, copied below.
+        let live = self.live_return.is_some();
+        let call = self.live_call;
+        self.clobber_return();
+        if live {
+            condition = self.copied(condition, call);
+        }
+        if jump == Jump::IfNot
+            && let Some(operand) = self.drops_not(value)
+        {
+            self.branch_op = Some(Op::IfI);
+            condition = operand;
+        }
+        // FTE-18.13: the jump copies a call's value still to be read, its own condition's too.
+        let copies = self.live_return.is_some();
+        let call = self.live_call;
+        self.clobber_return();
+        if copies {
+            condition = self.copied(condition, call);
+        }
+        self.branch_condition = condition;
         Ok(())
     }
 
@@ -165,75 +234,132 @@ impl Checker<'_> {
         // each is a function of its own, so that a nested ternary's frame stays small (QC-27.15).
         let span = ternary.syntax().span();
         let (middle, last) = ternary.arms();
-        #[expect(
-            clippy::question_mark,
-            reason = "QC-27.15: `?` adds a copy of the value to the frame each nested ternary adds"
-        )]
-        let condition = match self.value(ternary.condition()) {
-            Ok(condition) => condition,
+        let test = match self.ternary_condition(ternary, middle.is_some(), span) {
+            Ok(Tested::Jump(test)) => test,
+            Ok(Tested::Kept(kept, test)) => return self.ternary_last(*kept, test, last, span),
+            Ok(Tested::Constant(condition, constant)) => {
+                return self.constant_ternary(*condition, constant, middle, last);
+            }
             Err(fatal) => return Err(fatal),
         };
+        let before = self.emitted;
+        let kept = match self.value(middle) {
+            Ok(value) => self.middle_arm(value, before, span),
+            Err(fatal) => Err(fatal),
+        };
+        match kept {
+            Ok(kept) => self.ternary_last(kept, test, last, span),
+            Err(fatal) => Err(fatal),
+        }
+    }
+
+    /// A ternary's condition, read and tested: the `IFNOT` past the middle arm when there is
+    /// one, else the condition kept as the first arm (`a ?: b`); a constant one in an
+    /// initialiser chooses an arm. A function of its own, so that the condition is not in the
+    /// frame the middle arm's nesting adds (QC-27.15).
+    #[inline(never)]
+    fn ternary_condition(
+        &mut self,
+        ternary: &ast::TernaryExpr,
+        middle: bool,
+        span: Span,
+    ) -> Result<Tested, Fatal> {
+        let condition = self.value(ternary.condition())?;
         if self.global
             && let Some(constant) = condition.known()
         {
-            return self.constant_ternary(condition, constant, middle, last);
+            return Ok(Tested::Constant(Box::new(condition), constant));
         }
-        let kept = match middle {
-            None => self.condition_arm(condition, span),
-            Some(middle) => {
-                let tested = self.test_condition(&condition, span);
-                drop(condition);
-                let before = self.emitted;
-                match tested.and_then(|()| self.value(Some(middle))) {
-                    Ok(value) => self.middle_arm(value, before, span),
-                    Err(fatal) => Err(fatal),
-                }
-            }
-        };
-        let Ok((kept, kept_null)) = kept else {
-            return Err(Fatal);
-        };
+        if middle {
+            return self.test_condition(&condition, span).map(Tested::Jump);
+        }
+        let mut test = None;
+        let kept = self.condition_arm(condition, &mut test, span)?;
+        Ok(Tested::Kept(Box::new(kept), test))
+    }
+
+    /// A ternary's `GOTO` past its last arm, the arm, and the jumps named; a function of its
+    /// own, so that what it holds is not in the frame the middle arm's nesting adds (QC-27.15).
+    #[inline(never)]
+    fn ternary_last(
+        &mut self,
+        (kept, kept_null, result): (Value, bool, Option<u32>),
+        test: Option<u32>,
+        last: Option<ast::Expr>,
+        span: Span,
+    ) -> Checked {
         self.generate(Op::Goto, span);
+        let goto = self.last_made();
         let before = self.emitted;
-        match self.value(last) {
-            Ok(other) => self.last_arm(kept, kept_null, other, before, span),
+        let value = match self.value(last) {
+            Ok(other) => self.last_arm((kept, kept_null), other, before, result, span),
             Err(fatal) => Err(fatal),
+        }?;
+        self.name_ternary_jumps(test, goto);
+        Ok(Value {
+            made: result,
+            ..value
+        })
+    }
+
+    /// Names the jumps of a `?:`: the test's `IFNOT` to the last arm, after the `GOTO` at
+    /// `goto`, and the `GOTO` to the end.
+    fn name_ternary_jumps(&mut self, test: Option<u32>, goto: Option<u32>) {
+        let end = self.next_made();
+        let after_goto = goto.map(|goto| goto.saturating_add(1));
+        let at = |index: Option<u32>| index.and_then(|index| usize::try_from(index).ok());
+        if let Some(statement) = at(test).and_then(|index| self.generated.get_mut(index)) {
+            statement.b = after_goto.map(ir::Name::Jump);
+        }
+        if let Some(statement) = at(goto).and_then(|index| self.generated.get_mut(index)) {
+            statement.a = Some(ir::Name::Jump(end));
         }
     }
 
     /// The `IFNOT` (or `IF` of a vector under `ifvector`) that skips the first arm.
     #[inline(never)]
-    fn test_condition(&mut self, condition: &Value, span: Span) -> Result<(), Fatal> {
+    fn test_condition(&mut self, condition: &Value, span: Span) -> Result<Option<u32>, Fatal> {
         self.branch(condition, Jump::IfNot, span)?;
-        // `QCC_Generate_OP_IFNOT` of a vector under `ifvector` tests `!v` by `OP_IF_I`.
-        let vector = self.etype_of(&condition.ty) == Some(Etype::Vector)
-            && self.env.flags_at(span.start).has(FteFlag::Ifvector);
-        self.generate(if vector { Op::IfI } else { Op::IfnotI }, span);
-        Ok(())
+        // The jump `branch` chose: `OP_IF_I` of a vector's `!v` under `ifvector`, or of a `NOT`
+        // the short `IFNOT` dropped (FTEF-34.16).
+        let op = self.branch_op.take().unwrap_or(Op::IfnotI);
+        self.generate(op, span);
+        let jump = self.last_made();
+        let tested = self.branch_condition.take();
+        if let Some(statement) = self.generated.last_mut() {
+            statement.a = tested;
+        }
+        Ok(jump)
     }
 
-    /// `c ?: b`: the condition stored as the first arm, and whether it is a null.
+    /// `c ?: b`: the condition stored as the first arm, whether it is a null, and the
+    /// generated statement whose value is the result; `test` the test's `IFNOT`.
     #[inline(never)]
-    fn condition_arm(&mut self, condition: Value, span: Span) -> Result<(Value, bool), Fatal> {
-        self.test_condition(&condition, span)?;
+    fn condition_arm(
+        &mut self,
+        condition: Value,
+        test: &mut Option<u32>,
+        span: Span,
+    ) -> Result<(Value, bool, Option<u32>), Fatal> {
+        *test = self.test_condition(&condition, span)?;
         let null = condition.known().is_some_and(Constant::null);
         // `(r.cast->size>=3)?OP_STORE_V:OP_STORE_F`, after the `IFNOT`.
         let words = self.env.layout(&condition.ty).map_or(1, |l| l.words);
         let op = if words >= 3 { Op::StoreV } else { Op::StoreF };
         self.clobber_returned(Some(op), &condition, span)?;
-        self.arm_store(Some(op), &condition, self.emitted, span)?;
-        Ok((condition, null))
+        let result = self.arm_store(Some(op), &condition, self.emitted, None, span)?;
+        Ok((condition, null, result))
     }
 
-    /// The middle arm read since `before` emitted statements, stored by its size, and whether it
-    /// is a null.
+    /// The middle arm read since `before` emitted statements, stored by its size, whether it
+    /// is a null, and the generated statement whose value is the result.
     #[inline(never)]
     fn middle_arm(
         &mut self,
         value: Value,
         before: usize,
         span: Span,
-    ) -> Result<(Value, bool), Fatal> {
+    ) -> Result<(Value, bool, Option<u32>), Fatal> {
         let value = self.stored_arm(value, span)?;
         let null = value.known().is_some_and(Constant::null);
         // `switch(r.cast->size)`: the first arm is stored by its size, and one of more than three
@@ -250,19 +376,19 @@ impl Checker<'_> {
             }
         };
         self.clobber_returned(op, &value, span)?;
-        self.arm_store(op, &value, before, span)?;
-        Ok((value, null))
+        let result = self.arm_store(op, &value, before, None, span)?;
+        Ok((value, null, result))
     }
 
-    /// The last arm read since `before` emitted statements, stored by its type, after the arms'
-    /// types are compared.
+    /// The last arm read since `before` emitted statements, stored by its type to the first
+    /// arm's `result`, after the arms' types are compared.
     #[inline(never)]
     fn last_arm(
         &mut self,
-        kept: Value,
-        kept_null: bool,
+        (kept, kept_null): (Value, bool),
         other: Value,
         before: usize,
+        result: Option<u32>,
         span: Span,
     ) -> Checked {
         let other = self.stored_arm(other, span)?;
@@ -272,7 +398,7 @@ impl Checker<'_> {
             Some(Etype::Double | Etype::Struct | Etype::Union | Etype::Enum) => None,
             etype => Some(Self::store_op(etype)),
         };
-        self.compare_then_store(kept, kept_null, other, op, before, span)
+        self.compare_then_store((kept, kept_null), other, op, (before, result), span)
     }
 
     /// FTEF-30.15: at global scope a constant condition picks its arm, the other read and
@@ -309,16 +435,19 @@ impl Checker<'_> {
     #[inline(never)]
     fn compare_then_store(
         &mut self,
-        kept: Value,
-        kept_null: bool,
+        (kept, kept_null): (Value, bool),
         other: Value,
         op: Option<Op>,
-        before: usize,
+        (before, result): (usize, Option<u32>),
         span: Span,
     ) -> Checked {
         let stored = other.clone();
+        // Arms of two basic types are reconciled in ways the body does not follow.
+        if self.etype_of(&kept.ty) != self.etype_of(&other.ty) {
+            self.followed = false;
+        }
         let value = self.arms(kept, kept_null, other, span)?;
-        self.arm_store(op, &stored, before, span)?;
+        self.arm_store(op, &stored, before, result, span)?;
         Ok(value)
     }
 
@@ -326,8 +455,23 @@ impl Checker<'_> {
     /// the aliases, a call's return value among them, to temporaries first (`QCC_ClobberDef`).
     fn clobber_returned(&mut self, op: Option<Op>, value: &Value, span: Span) -> Result<(), Fatal> {
         if let Some(op) = op.filter(|_| value.returned) {
+            // FTE-18.13: the copy is of the call's whole value, a vector's by `STORE_V`, though
+            // the arm reads one word of it (`QCC_ClobberDef`).
+            let op = match self.live_return {
+                Some(3) => Op::StoreV,
+                Some(_) => Op::StoreF,
+                None => op,
+            };
             let operand = Value::of(value.ty.clone());
             self.emit(op, &operand, &operand, span)?;
+            let copy = self.last_made();
+            self.name_last(op, Some(ir::Name::Return), copy.map(ir::Name::Made));
+            if let (Some(call), Some(copy)) = (value.call, copy) {
+                self.copies.push((call, copy));
+            }
+            // The copy is `QCC_ClobberDef`'s, after which the return global holds nothing live.
+            self.live_return = None;
+            self.live_call = None;
         }
         Ok(())
     }
@@ -335,22 +479,42 @@ impl Checker<'_> {
     /// FTEF-30.3: an arm's store, `op` through `QCC_PR_StatementFlags`, which folds it into the
     /// statement that made the arm's temporary when the arm made one since `before` emitted
     /// statements (`opt_assignments`); a call's return value is no such temporary (FTEF-30.13).
+    /// The store writes the value of the generated statement `into`, the first arm's, or for
+    /// the first arm its own; returns the statement whose value the store wrote.
     fn arm_store(
         &mut self,
         op: Option<Op>,
         value: &Value,
         before: usize,
+        into: Option<u32>,
         span: Span,
-    ) -> Result<(), Fatal> {
+    ) -> Result<Option<u32>, Fatal> {
         let folded = value.temp.is_some()
             && value.temp == self.last_temp
             && self.emitted > before
             && !value.returned;
-        if let Some(op) = op.filter(|_| !folded && value.ty != Type::Unknown) {
-            let operand = Value::of(value.ty.clone());
-            self.emit(op, &operand, &operand, span)?;
+        if folded {
+            if into.is_some() {
+                self.fold_into(value, into.map(ir::Name::Made));
+            }
+            return Ok(into.or(value.made));
         }
-        Ok(())
+        let Some(op) = op.filter(|_| value.ty != Type::Unknown) else {
+            return Ok(into);
+        };
+        let operand = Value::of(value.ty.clone());
+        let named = self.name_of(value);
+        // The store reads a call's value out of the return global, which holds it no longer.
+        if value.returned {
+            self.live_return = None;
+            self.live_call = None;
+        }
+        self.emit(op, &operand, &operand, span)?;
+        let stored = into.or_else(|| self.last_made());
+        self.name_last(op, named, stored.map(ir::Name::Made));
+        // The store made no temporary a later store folds into.
+        self.last_temp = None;
+        Ok(stored)
     }
 
     /// FTEF-30.3: the type of `?:` from its arms, `kept` the condition or middle arm and
@@ -448,7 +612,7 @@ impl Checker<'_> {
 }
 
 /// The words a value of basic type `etype` takes, `type->size`.
-const fn words(etype: Etype) -> u32 {
+pub(super) const fn words(etype: Etype) -> u32 {
     match etype {
         Etype::Vector => 3,
         Etype::Int64 | Etype::Uint64 | Etype::Double => 2,
@@ -459,4 +623,14 @@ const fn words(etype: Etype) -> u32 {
 /// Whether `ty` is a truth value, `__bfloat` or `__bint`.
 pub(super) fn is_truth(ty: &Type) -> bool {
     matches!(ty.fteqcc_scalar(), Some(CScalar::Bool | CScalar::BFloat))
+}
+
+/// A ternary's condition once read (`Checker::ternary_condition`).
+enum Tested {
+    /// Tested by the `IFNOT` generated at this index, if one was.
+    Jump(Option<u32>),
+    /// Kept as the first arm, with whether it is null and its temporary, and its test.
+    Kept(Box<(Value, bool, Option<u32>)>, Option<u32>),
+    /// A constant, in an initialiser, which chooses the arm.
+    Constant(Box<Value>, Constant),
 }

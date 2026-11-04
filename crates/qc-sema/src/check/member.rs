@@ -19,7 +19,8 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer;
 use crate::check::reference::expected_after;
-use crate::check::{Bitfield, Constness, MemberArray, Reference, Value};
+use crate::check::{Bitfield, Constness, ElementRef, FieldRef, MemberArray, Reference, Value};
+use crate::ir;
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -112,46 +113,16 @@ impl Checker<'_> {
                 }
                 value
             }
-            Etype::Vector => self.vector_component(&base, &selector)?,
+            Etype::Vector => {
+                let bare = !matches!(field.base(), Some(ast::Expr::Paren(_)));
+                self.vector_component(&base, &selector, bare)?
+            }
             Etype::Field if shape.holds == Some(Etype::Vector) => self.swizzle(
                 &selector,
                 Type::Field(Type::Simple(SimpleType::Float).into()),
             )?,
             Etype::String => self.string_method(&base, &selector)?,
-            Etype::Struct | Etype::Union => {
-                if self.env.struct_of_no_size(&base.ty) {
-                    return self.not_defined_yet(&base.ty, field.syntax().span());
-                }
-                let (member, offset) = self.struct_member(&base.ty, &selector);
-                let word = member.bitfield.map_or_else(
-                    || offset.map_or(0, |(units, align)| units.saturating_mul(align) >> 5),
-                    |bitfield| bitfield.word,
-                );
-                match &base.reference {
-                    // `(*p).a` and `p[i].a` are members through the pointer.
-                    Reference::Pointer(pointer) => {
-                        let span = field.syntax().span();
-                        let index = self.member_index(pointer.index.as_ref(), offset, span)?;
-                        Value {
-                            reference: Reference::pointer(pointer.base.clone(), Some(index)),
-                            ..member
-                        }
-                    }
-                    // `st.f` is the struct's own definition at the member's offset
-                    // (`QCC_PR_BuildRef` of its sym), no temporary.
-                    _ if member.is_array_head() => Value {
-                        sym: base.sym.at(word),
-                        name: base.name.clone(),
-                        ..member
-                    },
-                    _ => Value {
-                        sym: base.sym.at(word),
-                        name: base.name.clone(),
-                        reference: base.reference.clone(),
-                        ..member
-                    },
-                }
-            }
+            Etype::Struct | Etype::Union => self.struct_value(&base, field, &selector)?,
             Etype::Field if matches!(shape.holds, Some(Etype::Struct | Etype::Union)) => {
                 let Type::Field(held) = &base.ty else {
                     return Ok(Value::unknown());
@@ -331,7 +302,7 @@ impl Checker<'_> {
     /// A vector's component, `v.x` (FTEF-24.2): of a constant vector, a constant, its float
     /// (FTEF-26.13; `QCC_SRef_EvalConst` reads the word the reference names), read through the
     /// vector at the component's index (`REF_ARRAY`, FTEF-32.17).
-    fn vector_component(&mut self, base: &Value, selector: &ast::Expr) -> Checked {
+    fn vector_component(&mut self, base: &Value, selector: &ast::Expr, bare: bool) -> Checked {
         let component = self.swizzle(selector, Type::Simple(SimpleType::Float))?;
         let word = selector_name(selector).and_then(|(name, _)| match name.as_str() {
             "x" | "r" => Some(0),
@@ -341,6 +312,16 @@ impl Checker<'_> {
         });
         Ok(match (base.constness, word) {
             (Constness::Known(constant), Some(word)) if constant.is_vector() => {
+                // Where FTEQCC reads the word as a constant the body does not follow (FTEF-31.9).
+                self.followed = false;
+                // The vector is placed before its word is read.
+                if !self.global
+                    && let Some(immediate) = constant.immediate()
+                {
+                    let at = self.next_made();
+                    self.effects
+                        .push((at, ir::Effect::Make(ir::Name::Immediate(immediate))));
+                }
                 let value = constant.v().get(word).copied().unwrap_or_default();
                 Value {
                     reference: Reference::element(
@@ -349,6 +330,53 @@ impl Checker<'_> {
                         true,
                     ),
                     ..Value::constant(Constant::float(value))
+                }
+            }
+            // A field named bare, `e.fv.y`, is its component's field, which a statement of it
+            // alone does not load (FTE-13.18).
+            (_, Some(word))
+                if bare
+                    && !self.global
+                    && let Reference::Field(field) = &base.reference
+                    && let Some(component_def) = field.def.and_then(|def| {
+                        self.env
+                            .component(def, u32::try_from(word).unwrap_or(u32::MAX))
+                    }) =>
+            {
+                Value {
+                    reference: Reference::Field(Box::new(FieldRef {
+                        def: Some(component_def),
+                        ..field.as_ref().clone()
+                    })),
+                    readonly: base.readonly,
+                    ..component.clone()
+                }
+            }
+            // Another vector is read, a field's by `LOAD_V`, and the component is its word.
+            (_, Some(word)) if !self.global => {
+                let span = selector.syntax().span();
+                let read = self.read(base.clone(), span)?;
+                let word = u32::try_from(word).unwrap_or_default();
+                match read.made {
+                    // The component is a word of the load's temporary: its first word is the
+                    // temporary a later statement may fold into (FTE-18.12).
+                    Some(made) => Value {
+                        made: Some(made),
+                        word,
+                        temp: read.temp.map(|temp| temp.saturating_add(word)),
+                        ..component
+                    },
+                    // A call's vector is the return global, whose word the component is.
+                    None if read.returned => Value {
+                        returned: true,
+                        call: read.call,
+                        word,
+                        ..component
+                    },
+                    None => Value {
+                        sym: read.sym.at(word),
+                        ..component
+                    },
                 }
             }
             _ => component,
@@ -456,6 +484,86 @@ impl Checker<'_> {
             ..Value::of(member.ty)
         };
         (value, offset)
+    }
+
+    /// FTEF-6: the member `selector` of the struct or union `base` read by `field`: through a
+    /// pointer, the member through it; else the definition's word at the member's offset, of
+    /// an element at an index no constant the index plus the word.
+    fn struct_value(
+        &mut self,
+        base: &Value,
+        field: &ast::FieldExpr,
+        selector: &ast::Expr,
+    ) -> Checked {
+        if self.env.struct_of_no_size(&base.ty) {
+            return self.not_defined_yet(&base.ty, field.syntax().span());
+        }
+        let (member, offset) = self.struct_member(&base.ty, selector);
+        let word = member.bitfield.map_or_else(
+            || offset.map_or(0, |(units, align)| units.saturating_mul(align) >> 5),
+            |bitfield| bitfield.word,
+        );
+        Ok(match &base.reference {
+            // `(*p).a` and `p[i].a` are members through the pointer.
+            Reference::Pointer(pointer) => {
+                let span = field.syntax().span();
+                let index = self.member_index(pointer.index.as_ref(), offset, span)?;
+                Value {
+                    reference: Reference::pointer(pointer.base.clone(), Some(index)),
+                    ..member
+                }
+            }
+            // `st.f` is the struct's own definition at the member's offset
+            // (`QCC_PR_BuildRef` of its sym), no temporary.
+            _ if member.is_array_head() => Value {
+                sym: base.sym.at(word),
+                name: base.name.clone(),
+                ..member
+            },
+            // `a[i].f` of an index no constant is the element at the index plus the
+            // member's word.
+            Reference::Element(element)
+                if element.index.known().is_none() && word != 0 && !self.global =>
+            {
+                let span = field.syntax().span();
+                self.element_member(base, element, member, word, span)?
+            }
+            _ => Value {
+                sym: base.sym.at(word),
+                name: base.name.clone(),
+                reference: base.reference.clone(),
+                ..member
+            },
+        })
+    }
+
+    /// `a[i].f` of a struct array at an index no constant: the element at the index plus the
+    /// member's `word`, by `OP_ADD_I` of an integer index and `OP_ADD_F` of a float one.
+    fn element_member(
+        &mut self,
+        base: &Value,
+        element: &ElementRef,
+        member: Value,
+        word: u32,
+        span: Span,
+    ) -> Checked {
+        let (add, by) = match self.etype_of(&element.index.ty) {
+            Some(Etype::Integer) => (
+                Op::AddI,
+                Constant::int(i32::try_from(word).unwrap_or_default()),
+            ),
+            _ => (
+                Op::AddF,
+                Constant::float(f32::from(u16::try_from(word).unwrap_or_default())),
+            ),
+        };
+        let index = self.emit(add, &element.index, &Value::constant(by), span)?;
+        Ok(Value {
+            sym: base.sym,
+            name: base.name.clone(),
+            reference: Reference::element(element.base.clone(), index, element.vector),
+            ..member
+        })
     }
 
     /// FTEF-6.19: the index of a member through a pointer (`QCC_PR_ParseRefArrayPointer`), its

@@ -13,7 +13,7 @@ use qc_preproc::{FteFlag, Op};
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
 use crate::cast::Source;
-use crate::check::assign::assign_spelling;
+use crate::check::assign::{assign_spelling, lexed_string};
 use crate::check::constant::{Constant, unquoted};
 use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::emulate::conversion_opcodes;
@@ -34,6 +34,41 @@ pub(super) struct Checker<'e> {
     pub(super) opcodes: HashMap<(usize, usize), Op>,
     /// The fragments lowered so far.
     pub(super) fragments: ir::Fragments,
+    /// Every statement the body generates, in order (`docs/design/back-end.md`).
+    pub(super) generated: Vec<ir::BodyStatement>,
+    /// The words of a call's value still to be read from the return global, which a call or
+    /// a jump made before it is read copies out first (FTE-18.13).
+    pub(super) live_return: Option<u32>,
+    /// The words of the call's value the last statement generated, a `NOT_*`, read: live again
+    /// if a short `IFNOT` drops the `NOT` (FTEF-34.16).
+    pub(super) not_of_return: Option<(u32, Option<u32>)>,
+    /// The opcode of the jump the last [`Checker::branch`] tested for, `IF` or `IFNOT`.
+    pub(super) branch_op: Option<Op>,
+    /// What the conditional jump the last [`Checker::branch`] chose tests.
+    pub(super) branch_condition: Option<ir::Name>,
+    /// The bytes of each string literal the generated body names, by [`ir::Name::String`].
+    pub(super) strings: Vec<Vec<u8>>,
+    /// Whether an update reads an element it stores to again, whose index is then held and so
+    /// not folded into the read's parameter.
+    pub(super) index_held: bool,
+    /// Where each statement of the source starts, by the index of the first generated
+    /// statement after it starts: the line each generated statement is recorded at.
+    pub(super) origins: Vec<(u32, usize)>,
+    /// Each local the body declares, by the index of the next generated statement then.
+    pub(super) locals: Vec<(u32, DefId)>,
+    /// Whether a bare `return` returned the function's `ret*` local (FTE-18.10).
+    pub(super) ret_local: bool,
+    /// Whether every statement the body generates is in [`Checker::generated`]: false once the
+    /// checker reads a construct whose statements it does not follow.
+    pub(super) followed: bool,
+    /// The names the body makes without a statement that reads them, by the index of the next
+    /// generated statement then: a fold's immediate, and what a dropped branch named.
+    pub(super) effects: Vec<(u32, ir::Effect)>,
+    /// The generated `CALL` whose value [`Checker::live_return`] is.
+    pub(super) live_call: Option<u32>,
+    /// Each call whose value a statement copied out of the return global, and the copy, which
+    /// a statement reading the value after the copy reads (FTE-18.13).
+    pub(super) copies: Vec<(u32, u32)>,
     /// The fragment of the binary operator being checked, if any.
     pub(super) fragment: Option<ir::Builder>,
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
@@ -89,6 +124,20 @@ impl<'e> Checker<'e> {
             types: HashMap::new(),
             opcodes: HashMap::new(),
             fragments: ir::Fragments::default(),
+            generated: Vec::new(),
+            live_return: None,
+            not_of_return: None,
+            branch_op: None,
+            branch_condition: None,
+            strings: Vec::new(),
+            index_held: false,
+            origins: Vec::new(),
+            locals: Vec::new(),
+            ret_local: false,
+            followed: true,
+            effects: Vec::new(),
+            live_call: None,
+            copies: Vec::new(),
             fragment: None,
             in_condition: false,
             addressed: HashSet::new(),
@@ -120,6 +169,13 @@ impl<'e> Checker<'e> {
             types: self.types,
             opcodes: self.opcodes,
             fragments: self.fragments,
+            generated: self.generated,
+            strings: self.strings,
+            origins: self.origins,
+            locals: self.locals,
+            start: 0,
+            followed: self.followed,
+            effects: self.effects,
         }
     }
 
@@ -207,7 +263,7 @@ impl<'e> Checker<'e> {
         })
     }
 
-    fn literal(&mut self, literal: &ast::Literal) -> Value {
+    pub(super) fn literal(&mut self, literal: &ast::Literal) -> Value {
         let Some(token) = literal.token() else {
             return Value::unknown();
         };
@@ -215,8 +271,14 @@ impl<'e> Checker<'e> {
             Some(ast::LiteralKind::String) => {
                 let written = String::from_utf8_lossy(&literal.syntax().text()).into_owned();
                 let text = unquoted(&written);
+                let string = lexed_string(token.text()).and_then(|bytes| {
+                    let index = u32::try_from(self.strings.len()).ok()?;
+                    self.strings.push(bytes);
+                    Some(index)
+                });
                 Value {
                     text: Some(text.as_str().into()),
+                    string,
                     ..Value::constant(Constant::string(text.is_empty()))
                 }
             }
@@ -253,7 +315,26 @@ impl<'e> Checker<'e> {
                         Some(_) | None => Value::of(Type::Simple(SimpleType::Float)),
                     };
                 }
-                Value::constant(Constant::of_number(&text, flags))
+                let constant = Constant::of_number(&text, flags);
+                // The code generator places a number as the lexer reads it, a float.
+                let lexed = qc_lexer::lex_with(token.text(), qc_syntax::Dialect::Fteqcc);
+                let literal = match lexed.tokens.as_slice() {
+                    [lexed] => match lexed.kind {
+                        qc_lexer::TokenKind::Float(value) => Some((
+                            constant,
+                            ir::Immediate {
+                                kind: ir::ImmediateKind::Float,
+                                words: [value.to_bits(), 0, 0],
+                            },
+                        )),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                Value {
+                    literal: literal.map(Box::new),
+                    ..Value::constant(constant)
+                }
             }
             None => Value::unknown(),
         }

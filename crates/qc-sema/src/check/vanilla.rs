@@ -14,10 +14,12 @@ use qc_diag::{Code, Span};
 use qc_preproc::Op;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp, LiteralKind};
 
+use crate::check::assign::lexed_string;
+use crate::check::call::call_opcode;
 use crate::check::expr::Fatal;
 use crate::check::{Env, TypedBody};
-use crate::ir;
 use crate::ty::{SimpleType, Type};
+use crate::{DefId, ir};
 
 /// A basic type as `pr_opcodes` names its operands' (`etype_t`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,6 +124,20 @@ type Typed = Result<Option<Type>, Fatal>;
 struct Vanilla<'e> {
     env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
+    /// The statements the body generates as `qcc` emits them (`TypedBody::generated`).
+    generated: Vec<ir::BodyStatement>,
+    /// What each expression's value names, by its span.
+    names: HashMap<(usize, usize), ir::Name>,
+    /// Where each source statement starts, by the next generated statement then.
+    origins: Vec<(u32, usize)>,
+    /// Each local declared, by the next generated statement then.
+    locals: Vec<(u32, DefId)>,
+    /// What the body makes without a statement reading it: locals and literals' immediates.
+    effects: Vec<(u32, ir::Effect)>,
+    /// The bytes of each string literal named.
+    strings: Vec<Vec<u8>>,
+    /// Whether every statement is in `generated`.
+    followed: bool,
     /// The opcode of each binary operator, by its token's span (QC-16.1).
     opcodes: HashMap<(usize, usize), Op>,
     /// Each binary operator's fragment, its one statement (`docs/design/back-end.md`).
@@ -136,17 +152,42 @@ pub(super) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     let mut checker = Vanilla {
         env,
         types: HashMap::new(),
+        generated: Vec::new(),
+        names: HashMap::new(),
+        origins: Vec::new(),
+        locals: Vec::new(),
+        effects: Vec::new(),
+        strings: Vec::new(),
+        followed: true,
         opcodes: HashMap::new(),
         fragments: ir::Fragments::default(),
         returned: None,
     };
+    // QC-13.6: `STATE` of the frame number and the think function, the body's first.
+    if let Some(state) = body.state() {
+        let frame = state.frame().and_then(|frame| checker.literal_name(&frame));
+        let think = state
+            .next()
+            .and_then(|next| checker.env.reference(next.span().start))
+            .map(|def| ir::Name::Def(def, 0));
+        checker.push(Op::State, [frame, think, None]);
+    }
     if let Some(block) = body.block() {
         checker.block(&block);
     }
+    // QC-13.7: the body ends with `DONE`.
+    checker.push(Op::Done, [None, None, None]);
     TypedBody {
         types: checker.types,
         opcodes: checker.opcodes,
         fragments: checker.fragments,
+        generated: checker.generated,
+        strings: checker.strings,
+        origins: checker.origins,
+        locals: checker.locals,
+        start: body.syntax().span().start,
+        followed: checker.followed,
+        effects: checker.effects,
     }
 }
 
@@ -166,31 +207,190 @@ impl Vanilla<'_> {
     }
 
     /// `PR_ParseStatement`: the expressions of a statement are typed; a condition is any type.
+    /// Its statements are `qcc`'s: an `if`'s `IFNOT` past its branch, and a `GOTO` past an
+    /// `else`; a `while`'s test, `IFNOT` past the loop and `GOTO` back; a `do`'s `IF` back; a
+    /// `return`'s `RETURN` (QC-14.3 to QC-14.6).
     fn statement(&mut self, stmt: &ast::Stmt) -> Result<(), Fatal> {
+        let at = self.next();
+        self.origins.push((at, stmt.syntax().span().start));
         match stmt {
             ast::Stmt::Block(block) => self.block(block),
             ast::Stmt::Expr(s) => {
                 self.expr_of(s.expr())?;
             }
             ast::Stmt::Return(s) => {
-                self.expr_of(s.value())?;
+                let value = s.value();
+                self.expr_of(value.clone())?;
+                let named = value.and_then(|value| self.name(&value));
+                self.push(Op::Return, [named, None, None]);
             }
             ast::Stmt::If(s) => {
-                self.expr_of(s.condition())?;
+                let condition = s.condition();
+                self.expr_of(condition.clone())?;
+                let tested = condition.and_then(|c| self.name(&c));
+                let test = self.push(Op::IfnotI, [tested, None, None]);
                 let _then: Result<(), Fatal> = self.statement_of(s.then_branch());
-                let _else: Result<(), Fatal> = self.statement_of(s.else_branch());
+                if let Some(else_branch) = s.else_branch() {
+                    let skip = self.push(Op::Goto, [None, None, None]);
+                    self.target(test, 1);
+                    let _else: Result<(), Fatal> = self.statement(&else_branch);
+                    self.target(skip, 0);
+                } else {
+                    self.target(test, 1);
+                }
             }
             ast::Stmt::While(s) => {
-                self.expr_of(s.condition())?;
+                let top = self.next();
+                let condition = s.condition();
+                self.expr_of(condition.clone())?;
+                let tested = condition.and_then(|c| self.name(&c));
+                let test = self.push(Op::IfnotI, [tested, None, None]);
                 let _body: Result<(), Fatal> = self.statement_of(s.body());
+                self.push(Op::Goto, [Some(ir::Name::Jump(top)), None, None]);
+                self.target(test, 1);
             }
             ast::Stmt::Do(s) => {
+                let top = self.next();
                 let _body: Result<(), Fatal> = self.statement_of(s.body());
-                self.expr_of(s.condition())?;
+                let condition = s.condition();
+                self.expr_of(condition.clone())?;
+                let tested = condition.and_then(|c| self.name(&c));
+                self.push(Op::IfI, [tested, Some(ir::Name::Jump(top)), None]);
             }
-            _ => {}
+            ast::Stmt::Local(local) => self.local(local),
+            ast::Stmt::Empty(_) => {}
+            _ => self.followed = false,
         }
         Ok(())
+    }
+
+    /// A `local` declaration: each local declared where it is (QC-11.10); one with an
+    /// initialiser is initialised once, as a global is, which the body does not follow.
+    fn local(&mut self, local: &ast::LocalDecl) {
+        for declarator in local.declarators() {
+            if declarator.initializer().is_some() {
+                self.followed = false;
+            }
+            if let Some(def) = declarator
+                .name()
+                .and_then(|name| self.env.reference(name.span().start))
+            {
+                let at = self.next();
+                self.locals.push((at, def));
+                self.effects
+                    .push((at, ir::Effect::Make(ir::Name::Def(def, 0))));
+            }
+        }
+    }
+
+    /// The index the next generated statement takes.
+    fn next(&self) -> u32 {
+        u32::try_from(self.generated.len()).unwrap_or(u32::MAX)
+    }
+
+    /// Generates `op` of the operands; its index.
+    fn push(&mut self, op: Op, [a, b, c]: [Option<ir::Name>; 3]) -> u32 {
+        let at = self.next();
+        self.generated.push(ir::BodyStatement { op, a, b, c });
+        at
+    }
+
+    /// Generates `op` of `a` and `b` into a new temporary (QC-21.5), which it names.
+    fn made(&mut self, op: Op, a: Option<ir::Name>, b: Option<ir::Name>) -> ir::Name {
+        let at = self.next();
+        let made = ir::Name::Made(at);
+        self.push(op, [a, b, Some(made)]);
+        made
+    }
+
+    /// Points operand `slot` (0 `a`, 1 `b`) of the jump at `jump` at the next statement.
+    fn target(&mut self, jump: u32, slot: usize) {
+        let next = Some(ir::Name::Jump(self.next()));
+        if let Some(statement) = usize::try_from(jump)
+            .ok()
+            .and_then(|at| self.generated.get_mut(at))
+        {
+            if slot == 0 {
+                statement.a = next;
+            } else {
+                statement.b = next;
+            }
+        }
+    }
+
+    /// What `expr`'s value names, once it is checked.
+    fn name(&self, expr: &ast::Expr) -> Option<ir::Name> {
+        let span = expr.syntax().span();
+        self.names.get(&(span.start, span.end)).copied()
+    }
+
+    /// Records that the value of the expression at `span` is `name`.
+    fn name_span(&mut self, span: Span, name: Option<ir::Name>) {
+        match name {
+            Some(name) => {
+                self.names.insert((span.start, span.end), name);
+            }
+            None => self.followed = false,
+        }
+    }
+
+    /// QC-17.3: turns the last statement, a `LOAD_*` of the assignment's `target`, into
+    /// `ADDRESS`, whether it did; a vector's keeps the three words its value took (QC-17.7).
+    /// A last `LOAD_*` that is not the target's retypes the target (QC-17.4), which the model
+    /// does not follow.
+    fn address_of_last(&mut self, target: Option<&ast::Expr>) -> bool {
+        let Some(last) = self.generated.last_mut() else {
+            return false;
+        };
+        let words = match last.op {
+            Op::LoadV => 2,
+            Op::LoadF | Op::LoadS | Op::LoadEnt | Op::LoadFld | Op::LoadFnc => 0,
+            _ => return false,
+        };
+        last.op = Op::Address;
+        if words > 0 {
+            let at = self.next();
+            self.effects.push((at, ir::Effect::Temp(words)));
+        }
+        if !target.is_some_and(is_field) {
+            self.followed = false;
+        }
+        true
+    }
+
+    /// Records that `expr`'s value is `name`.
+    fn set_name(&mut self, expr: &ast::Expr, name: Option<ir::Name>) {
+        self.name_span(expr.syntax().span(), name);
+    }
+
+    /// QC-4, QC-5, QC-6: a literal's immediate as the lexer reads its text, made where it is
+    /// read (`PR_ParseImmediate`).
+    fn literal_name(&mut self, literal: &ast::Literal) -> Option<ir::Name> {
+        let token = literal.token()?;
+        let lexed = qc_lexer::lex_with(token.text(), qc_syntax::Dialect::Vanilla);
+        let name = match lexed.tokens.as_slice() {
+            [lexed] => match &lexed.kind {
+                qc_lexer::TokenKind::Float(value) => ir::Name::Immediate(ir::Immediate {
+                    kind: ir::ImmediateKind::Float,
+                    words: [value.to_bits(), 0, 0],
+                }),
+                qc_lexer::TokenKind::Vector(value) => ir::Name::Immediate(ir::Immediate {
+                    kind: ir::ImmediateKind::Vector,
+                    words: value.map(f32::to_bits),
+                }),
+                qc_lexer::TokenKind::String(_) => {
+                    let bytes = lexed_string(token.text())?;
+                    let index = u32::try_from(self.strings.len()).ok()?;
+                    self.strings.push(bytes);
+                    ir::Name::String(index)
+                }
+                _ => return None,
+            },
+            _ => return None,
+        };
+        let at = self.next();
+        self.effects.push((at, ir::Effect::Make(name)));
+        Some(name)
     }
 
     fn expr_of(&mut self, expr: Option<ast::Expr>) -> Typed {
@@ -200,13 +400,23 @@ impl Vanilla<'_> {
         }
     }
 
-    /// The type of `expr`, recorded.
+    /// The type of `expr`, recorded, and what its value names.
     fn expr(&mut self, expr: &ast::Expr) -> Typed {
         let ty = self.term(expr)?;
         if let Some(ty) = &ty {
             let span = expr.syntax().span();
             self.types.insert((span.start, span.end), ty.clone());
         }
+        let named = match expr {
+            ast::Expr::Literal(literal) => self.literal_name(literal),
+            ast::Expr::Name(name) => name
+                .name()
+                .and_then(|token| self.env.reference(token.span().start))
+                .map(|def| ir::Name::Def(def, 0)),
+            ast::Expr::Paren(paren) => paren.expr().and_then(|inner| self.name(&inner)),
+            _ => self.name(expr),
+        };
+        self.set_name(expr, named);
         Ok(ty)
     }
 
@@ -267,6 +477,9 @@ impl Vanilla<'_> {
         if let Some(fragment) = fragment.finish(made, [None, None]) {
             self.fragments.insert(not.syntax().span(), fragment);
         }
+        let operand = not.operand().and_then(|operand| self.name(&operand));
+        let named = self.made(opcode, operand, None);
+        self.name_span(not.syntax().span(), Some(named));
         Ok(Some(Type::Simple(SimpleType::Float)))
     }
 
@@ -280,7 +493,11 @@ impl Vanilla<'_> {
             return Ok(None);
         };
         let lhs = self.expr_of(binary.lhs())?;
+        // QC-17.3: before an assignment's value is read, a `LOAD_*` its target ended with
+        // becomes `ADDRESS` of the field, which `STOREP_*` stores through (`PR_Expression`).
+        let through = op == BinaryOp::Assign && self.address_of_last(binary.lhs().as_ref());
         let rhs = self.expr_of(binary.rhs())?;
+        let named = [binary.lhs(), binary.rhs()].map(|side| side.and_then(|e| self.name(&e)));
         // QC-18.9: a call's value is the one return global, retyped by each call, so an operand
         // that is a call has the type of the last call read, the other operand's included.
         let lhs = if binary.lhs().as_ref().is_some_and(is_call) {
@@ -323,6 +540,14 @@ impl Vanilla<'_> {
                 Basic::Float | Basic::Void => Op::StoreF,
             };
             self.opcodes.insert((span.start, span.end), store);
+            let [target, value] = named;
+            if through {
+                self.push(store_through(store), [value, target, None]);
+            } else {
+                self.push(store, [value, target, None]);
+            }
+            // QC-17.6: an assignment's value is what it stored (`PR_Statement`).
+            self.name_span(binary.syntax().span(), value);
             return Ok(Some(rhs));
         }
         let Some(spelling) = spelling(op) else {
@@ -343,6 +568,9 @@ impl Vanilla<'_> {
                 if let Some(fragment) = fragment.finish(made, [None, None]) {
                     self.fragments.insert(span, fragment);
                 }
+                let [left, right] = named;
+                let value = self.made(opcode, left, right);
+                self.name_span(binary.syntax().span(), Some(value));
                 Ok(Some(match result {
                     Basic::Vector => Type::Simple(SimpleType::Vector),
                     _ => Type::Simple(SimpleType::Float),
@@ -362,6 +590,7 @@ impl Vanilla<'_> {
             .map_or_else(|| field.syntax().span(), |dot| dot.span());
         let base = self.expr_of(field.base())?;
         let selector = self.expr_of(field.field())?;
+        let named = [field.base(), field.field()].map(|side| side.and_then(|e| self.name(&e)));
         let (Some(base), Some(selector)) = (base, selector) else {
             return Ok(None);
         };
@@ -395,6 +624,9 @@ impl Vanilla<'_> {
         if let Some(fragment) = fragment.finish(made, [None, None]) {
             self.fragments.insert(span, fragment);
         }
+        let [entity, selected] = named;
+        let value = self.made(opcode, entity, selected);
+        self.name_span(field.syntax().span(), Some(value));
         Ok(Some(loaded))
     }
 
@@ -404,7 +636,8 @@ impl Vanilla<'_> {
     /// nine or more "More than eight parameters". With none, no count is checked.
     fn call(&mut self, call: &ast::CallExpr) -> Typed {
         let span = call.syntax().span();
-        let Some(callee) = self.expr_of(call.callee())? else {
+        let callee_expr = call.callee();
+        let Some(callee) = self.expr_of(callee_expr.clone())? else {
             for arg in call
                 .args()
                 .into_iter()
@@ -428,9 +661,17 @@ impl Vanilla<'_> {
                 return Err(Fatal);
             }
             let ty = self.expr(arg)?;
+            // QC-18.3: each argument stored to its parameter slot as it is read, `STORE_V`
+            // whatever its type: "a vector copy will copy everything".
+            let value = self.name(arg);
+            let slot = u8::try_from(at).ok().map(ir::Name::Parameter);
+            self.push(Op::StoreV, [value, slot, None]);
+            // QC-11.12: a field component's type is none a parameter is declared with.
+            let component =
+                matches!(value, Some(ir::Name::Def(def, _)) if self.env.field_component(def));
             if fixed
                 && let (Some(ty), Some(param)) = (ty, function.params.get(at))
-                && (ty != *param || param.holds_variadic())
+                && (ty != *param || param.holds_variadic() || component)
             {
                 let message = format!("type mismatch on parm {at}");
                 self.env.report(Code::E0306, arg.syntax().span(), message);
@@ -447,8 +688,38 @@ impl Vanilla<'_> {
                 .report(Code::E0307, span, "More than eight parameters".to_owned());
             return Err(Fatal);
         }
+        // QC-18.3, QC-18.4: `CALLn` of the callee; the call's value is the return global.
+        let callee_name = callee_expr.and_then(|e| self.name(&e));
+        match call_opcode(args.len()) {
+            Some(op) => {
+                self.push(op, [callee_name, None, None]);
+            }
+            None => self.followed = false,
+        }
+        self.name_span(span, Some(ir::Name::Return));
         self.returned = Some(function.ret.clone());
         Ok(Some(function.ret.clone()))
+    }
+}
+
+/// Whether `expr` is a field read, in parentheses or not.
+fn is_field(expr: &ast::Expr) -> bool {
+    match expr {
+        ast::Expr::Field(_) => true,
+        ast::Expr::Paren(paren) => paren.expr().as_ref().is_some_and(is_field),
+        _ => false,
+    }
+}
+
+/// `STOREP_*` of the type `store` stores, which stores through a pointer (QC-17.3).
+const fn store_through(store: Op) -> Op {
+    match store {
+        Op::StoreV => Op::StorepV,
+        Op::StoreS => Op::StorepS,
+        Op::StoreEnt => Op::StorepEnt,
+        Op::StoreFld => Op::StorepFld,
+        Op::StoreFnc => Op::StorepFnc,
+        _ => Op::StorepF,
     }
 }
 

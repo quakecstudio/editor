@@ -118,22 +118,39 @@ impl Checker<'_> {
         rhs: &Value,
         span: Span,
     ) -> Result<Value, Fatal> {
-        let result = replaced(op);
-        // A function's definition is a constant FTEQCC folds no opcode of (FTEF-26.12).
+        // A statement reading a call's value reads it from the return global; a fold that
+        // gives an operand back reads nothing.
+        self.not_of_return = None;
         let opaque =
             |value: &Value| value.constness == Constness::Opaque && !value.ty.is_function();
+        let folds_to_operand = !opaque(lhs)
+            && !opaque(rhs)
+            && matches!(
+                fold(op, lhs.known(), rhs.known(), &mut Vec::new()),
+                Some(Folded::Left | Folded::Right)
+            );
+        if (lhs.returned || rhs.returned) && !folds_to_operand {
+            if matches!(op, Op::NotF | Op::NotFnc | Op::NotEnt) {
+                self.not_of_return = self.live_return.map(|words| (words, self.live_call));
+            }
+            self.live_return = None;
+        }
+        let result = replaced(op);
+        // A function's definition is a constant FTEQCC folds no opcode of (FTEF-26.12).
         if opaque(lhs) || opaque(rhs) {
             self.emitted = self.emitted.saturating_add(1);
             // An opcode the target lacks is emulated by the code generator, which follows the
             // value; the intermediate layer holds no fragment of it.
-            if !self.env.target_at(span.start).valid(op)
-                && let Some(builder) = &mut self.fragment
-            {
-                builder.give_up();
+            if !self.env.target_at(span.start).valid(op) {
+                self.followed = false;
+                if let Some(builder) = &mut self.fragment {
+                    builder.give_up();
+                }
             }
             // Its value decides no folding or emulation; the comparison warnings read no value.
             if self.env.target_at(span.start).valid(op) {
                 self.compare(op, lhs, rhs, span);
+                self.generate(op, span);
             }
             let result = self.statement_temps(op, lhs, rhs, result);
             return Ok(Value {
@@ -163,9 +180,20 @@ impl Checker<'_> {
             self.generate(op, span);
             return Ok(self.statement_temps(op, lhs, rhs, result));
         }
+        let before = self.generated.len();
         let emulated = self.emulate(op, lhs, rhs, span, result)?;
-        // A refused opcode is still the statement it was (`badopcode`), its result a temporary.
-        if emulated.temp.is_none() && emulated.known().is_none() && emulated.sym == Sym::Temp {
+        // An emulation that generated no statement and left no constant is one the code
+        // generator lowers itself, which the body does not follow.
+        if self.generated.len() == before && emulated.known().is_none() && !self.global {
+            self.followed = false;
+        }
+        // A refused opcode is still the statement it was (`badopcode`), its result a temporary;
+        // a helper's call leaves its value in the return global instead.
+        if emulated.temp.is_none()
+            && emulated.known().is_none()
+            && emulated.sym == Sym::Temp
+            && !emulated.returned
+        {
             return Ok(self.statement_temps(op, lhs, rhs, emulated));
         }
         Ok(emulated)
@@ -184,6 +212,36 @@ impl Checker<'_> {
             return result;
         };
         let result = self.lowered(op, row, lhs, rhs, result);
+        // The generated statement's operands: what each value it reads names, and its own value.
+        let made = self
+            .generated
+            .len()
+            .checked_sub(1)
+            .and_then(|index| u32::try_from(index).ok())
+            .filter(|&index| {
+                usize::try_from(index)
+                    .ok()
+                    .and_then(|index| self.generated.get(index))
+                    .is_some_and(|statement| statement.op == op)
+            });
+        let reads = |slot: usize| {
+            row.types
+                .get(slot)
+                .is_some_and(|t| t.etype() != Etype::Void)
+        };
+        if let Some(index) = made {
+            let (a, b) = (
+                reads(0).then(|| self.name_of(lhs)).flatten(),
+                reads(1).then(|| self.name_of(rhs)).flatten(),
+            );
+            let c = row.makes_value().then_some(ir::Name::Made(index));
+            if let Some(statement) = usize::try_from(index)
+                .ok()
+                .and_then(|index| self.generated.get_mut(index))
+            {
+                *statement = ir::BodyStatement { op, a, b, c };
+            }
+        }
         if !row.makes_value() {
             return result;
         }
@@ -194,12 +252,23 @@ impl Checker<'_> {
         };
         let temp = Some(self.env.temps().take(words));
         self.last_temp = temp;
-        Value { temp, ..result }
+        Value {
+            temp,
+            made,
+            ..result
+        }
     }
 
     /// Records `constant` as an immediate the fragment being lowered made, when there is one; a
     /// kind of constant the layer does not hold leaves the fragment unheld.
     pub(super) fn made(&mut self, constant: Constant) {
+        if !self.global
+            && let Some(immediate) = constant.immediate()
+        {
+            let at = self.next_made();
+            self.effects
+                .push((at, ir::Effect::Make(ir::Name::Immediate(immediate))));
+        }
         let Some(builder) = &mut self.fragment else {
             return;
         };
@@ -248,7 +317,77 @@ impl Checker<'_> {
 
     /// FTEF-34.9: the statement `op` generated, which at global scope (`!pr_scope`) is the error
     /// "Unable to generate statements at global scope (OPNAME).".
+    /// Names the operands `a` and `b` of the last generated statement when it is `op`.
+    pub(super) fn name_last(&mut self, op: Op, a: Option<ir::Name>, b: Option<ir::Name>) {
+        if let Some(statement) = self.generated.last_mut()
+            && statement.op == op
+        {
+            statement.a = a.or(statement.a);
+            statement.b = b.or(statement.b);
+        }
+    }
+
+    /// FTEF-29.13: the store of `value` folded into the statement that made it, which then
+    /// writes `to` instead.
+    pub(super) fn fold_into(&mut self, value: &Value, to: Option<ir::Name>) {
+        if let Some(statement) = value
+            .made
+            .and_then(|made| usize::try_from(made).ok())
+            .and_then(|made| self.generated.get_mut(made))
+        {
+            statement.c = to;
+        }
+    }
+
+    /// FTE-18.13: `QCC_ClobberDef(&def_ret)`: a call's value still to be read is copied out of
+    /// the return global, by its size, before a call or a jump overwrites or leaves it.
+    pub(super) fn clobber_return(&mut self) {
+        if let Some(words) = self.live_return.take() {
+            let copy = u32::try_from(self.generated.len()).ok();
+            self.generated.push(ir::BodyStatement {
+                a: Some(ir::Name::Return),
+                b: copy.map(ir::Name::Made),
+                ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+            });
+            if let (Some(call), Some(copy)) = (self.live_call.take(), copy) {
+                self.copies.push((call, copy));
+            }
+            self.last_temp = None;
+        }
+    }
+
+    /// The index of the last statement generated, if there is one.
+    pub(super) fn last_made(&self) -> Option<u32> {
+        u32::try_from(self.generated.len().checked_sub(1)?).ok()
+    }
+
+    /// What `value` names as an operand of the next generated statement: a call's value read
+    /// after its copy out of the return global is the copy (FTE-18.13).
+    pub(super) fn name_of(&self, value: &Value) -> Option<ir::Name> {
+        self.copied(value.name(), value.call)
+    }
+
+    /// `name`, or the copy of the value of the generated `CALL` `call` when `name` is the
+    /// return global and a statement copied the value out of it (FTE-18.13).
+    pub(super) fn copied(&self, name: Option<ir::Name>, call: Option<u32>) -> Option<ir::Name> {
+        let word = match name {
+            Some(ir::Name::Return) => 0,
+            Some(ir::Name::ReturnWord(word)) => word,
+            _ => return name,
+        };
+        if let Some(call) = call
+            && let Some(&(_, copy)) = self.copies.iter().rev().find(|(of, _)| *of == call)
+        {
+            return Some(match word {
+                0 => ir::Name::Made(copy),
+                word => ir::Name::MadeWord(copy, word),
+            });
+        }
+        name
+    }
+
     pub(super) fn generate(&mut self, op: Op, span: Span) {
+        self.generated.push(ir::BodyStatement::bare(op));
         if self.global {
             let message = format!(
                 "Unable to generate statements at global scope ({}).",
@@ -307,16 +446,62 @@ impl Checker<'_> {
             let callee = [Some(Some(ir::Operand::Def(function))), None];
             builder.push(Op::Call2, callee, ir::Destination::Nothing);
         }
+        let call = self.helper_statements(function, &[lhs, rhs]);
         for offset in [lhs.temp, rhs.temp].into_iter().flatten() {
             self.env.temps().free(offset);
         }
         let temp = Some(self.env.temps().take(1));
-        self.last_temp = temp;
+        // In a function the value is the call's, in the return global, which no store folds
+        // into.
+        self.last_temp = if call.is_some() { None } else { temp };
         Value {
             ir: Some(ir::Operand::Return),
             temp,
+            returned: call.is_some(),
+            call,
+            made: None,
             ..result
         }
+    }
+
+    /// The generated statements of a call of the helper `function` with `operands`: each
+    /// stored to its parameter, only the first folding into the statement that made it
+    /// (FTE-18.12), then `CALL1` or `CALL2`; the call's index, its value then in the return
+    /// global.
+    fn helper_statements(&mut self, function: DefId, operands: &[&Value]) -> Option<u32> {
+        if self.global {
+            return None;
+        }
+        for (slot, &operand) in (0_u8..).zip(operands) {
+            let parameter = Some(ir::Name::Parameter(slot));
+            if slot == 0 && operand.temp.is_some() && operand.temp == self.last_temp {
+                self.fold_into(operand, parameter);
+            } else {
+                self.generated.push(ir::BodyStatement {
+                    a: self.name_of(operand),
+                    b: parameter,
+                    ..ir::BodyStatement::bare(Op::StoreF)
+                });
+            }
+            if operand.returned {
+                self.live_return = None;
+                self.live_call = None;
+            }
+        }
+        self.clobber_return();
+        let op = if operands.len() == 1 {
+            Op::Call1
+        } else {
+            Op::Call2
+        };
+        self.generated.push(ir::BodyStatement {
+            a: Some(ir::Name::Def(function, 0)),
+            ..ir::BodyStatement::bare(op)
+        });
+        let call = self.last_made();
+        self.live_return = Some(1);
+        self.live_call = call;
+        call
     }
 
     /// FTEF-27.2: the emulation of `op`, which the target lacks.
@@ -397,6 +582,7 @@ impl Checker<'_> {
                     if op == Op::ModF {
                         return Ok(self.helper_call(function, (lhs, rhs), result));
                     }
+                    self.followed = false;
                     if let Some(builder) = &mut self.fragment {
                         builder.give_up();
                     }
@@ -522,6 +708,8 @@ impl Checker<'_> {
     /// The vector operator whose float one of each word is `word_op` (`Emulation::ByWord`):
     /// `result`, a vector temporary, its three words written in turn.
     fn by_word(&mut self, word_op: Op, (lhs, rhs): (&Value, &Value), result: Value) -> Value {
+        // Its three statements are the fragment's; the body does not follow them.
+        self.followed = false;
         let temp = self.env.temps().take(3);
         // A store of the vector folds into no word's statement (`opt_assignments` reads c).
         self.last_temp = None;
@@ -563,6 +751,7 @@ impl Checker<'_> {
         result: Value,
     ) -> Result<Value, Fatal> {
         if helper.is_some_and(|helper| self.env.defines(helper)) {
+            self.followed = false;
             if let Some(builder) = &mut self.fragment {
                 builder.give_up();
             }
@@ -604,6 +793,35 @@ impl Checker<'_> {
             _ => return Ok(result),
         };
         if helpers.iter().any(|name| self.env.defines(name)) {
+            // FTE-19.8: a conversion opcode is the helper's call of the value; a store's
+            // conversion is not followed yet.
+            let helper = helpers.iter().find_map(|name| self.env.helper(name));
+            if let (Some(function), Op::ConvItof | Op::ConvFtoi | Op::ConvUf) = (helper, op) {
+                let call = self.helper_statements(function, &[value]);
+                return Ok(Value {
+                    returned: call.is_some(),
+                    call,
+                    made: None,
+                    temp: None,
+                    ..result
+                });
+            }
+            // A store's conversion is the call, then the store of its value, which the
+            // assignment names the target of.
+            if let (Some(function), Op::StoreIf | Op::StoreFi) = (helper, op)
+                && self.helper_statements(function, &[value]).is_some()
+            {
+                self.live_return = None;
+                self.live_call = None;
+                self.generated.push(ir::BodyStatement {
+                    a: Some(ir::Name::Return),
+                    ..ir::BodyStatement::bare(if op == Op::StoreIf {
+                        Op::StoreF
+                    } else {
+                        Op::StoreI
+                    })
+                });
+            }
             return Ok(result);
         }
         if op == Op::ConvUf {
@@ -654,6 +872,7 @@ impl Checker<'_> {
             _ => ("RShiftUInt", Op::DivU),
         };
         if self.env.defines(helper) {
+            self.followed = false;
             return Ok(result);
         }
         // A shift by a constant is a product or quotient by `QCC_MakeIntConst(1<<n)`; by

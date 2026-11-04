@@ -85,7 +85,18 @@ impl Checker<'_> {
                     Some(format!("{}::{}", self.env.definition(class)?.name, d.name))
                 }),
         };
-        let mut func = self.read(callee, callee_span)?;
+        // FTEF-15.11: in a `__wrap` body `prior`, which no definition names, is the function it
+        // wraps, of the function's own type.
+        let prior = match call.callee() {
+            Some(ast::Expr::Name(name)) => name.name().is_some_and(|token| {
+                token.text_lossless() == "prior" && self.env.reference(token.span().start).is_none()
+            }),
+            _ => false,
+        };
+        let mut func = match self.function.own.clone().filter(|_| prior) {
+            Some(own) => Value::of(Type::Function(own.into())),
+            None => self.read(callee, callee_span)?,
+        };
         if method_name.is_some() {
             func.name = method_name;
         }
@@ -140,6 +151,9 @@ impl Checker<'_> {
         }
         let slots = call.args().map(|list| list.slots()).unwrap_or_default();
         let mut passed = Vec::new();
+        // FTE-18.11: a field argument is loaded straight into its slot after every argument is
+        // read, so its load is held back from the generated statements until then.
+        let mut field_loads: Vec<(usize, Vec<ir::BodyStatement>)> = Vec::new();
         let mut values = Vec::new();
         for (at, slot) in slots.iter().enumerate() {
             let Some(arg) = slot else {
@@ -169,12 +183,29 @@ impl Checker<'_> {
                 );
                 self.env.report(Code::W0252, arg_span, message);
             }
+            let mark = self.generated.len();
             let mut value = self.read(reference.clone(), arg_span)?;
+            if matches!(reference.reference, Reference::Field(_)) {
+                let load = self.generated.split_off(mark.min(self.generated.len()));
+                field_loads.push((at, load));
+            }
             if let Some(param) = function.params.get(at)
                 && value.ty != Type::Unknown
                 && !self.env.typecmp(&value.ty, param)
             {
+                // A field argument converted is loaded into the conversion's own slot
+                // (FTE-18.11), which the body does not follow.
+                if matches!(reference.reference, Reference::Field(_)) {
+                    self.followed = false;
+                }
                 value = self.cast_to(&value, param, arg_span)?;
+            }
+            // A field argument of a call's entity stays referenced across later calls, which
+            // the body does not follow (FTE-18.13).
+            if let Reference::Field(field) = &reference.reference
+                && field.entity_call.is_some()
+            {
+                self.followed = false;
             }
             passed.push(Some(reference));
             self.record_call_path(&name, at, arg);
@@ -225,7 +256,13 @@ impl Checker<'_> {
         }
         self.verify_arguments(&name, &values, span);
         self.generate_call(&values, span);
-        self.call_fragment(&function, count, &values, span);
+        let callee = if prior {
+            Some(ir::Name::Prior)
+        } else {
+            func.name()
+        };
+        self.call_fragment(&function, count, (callee, &values), &field_loads, span);
+        let call = self.last_made();
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
         for (reference, param) in passed.iter().zip(&params) {
             let Some(reference) = reference.as_ref().filter(|_| param.out) else {
@@ -239,10 +276,16 @@ impl Checker<'_> {
             let returned = Value::of(reference.ty.clone());
             self.store_reference(reference, &returned, span)?;
         }
+        let words = self.env.layout(&function.ret).map_or(1, |l| l.words);
+        if !self.global && words > 0 && function.ret != Type::Simple(SimpleType::Void) {
+            self.live_return = Some(words);
+            self.live_call = call;
+        }
         // FTEF-29.15: the value is an alias of `def_ret`, which may be assigned to, unless a
         // return larger than a vector is read back into a temporary.
         Ok(Value {
             returned: true,
+            call,
             readonly: self.is_large(&function.ret),
             ..Value::of(function.ret.clone())
         })
@@ -305,7 +348,8 @@ impl Checker<'_> {
         &mut self,
         function: &FunctionType,
         count: usize,
-        values: &[Value],
+        (callee, values): (Option<ir::Name>, &[Value]),
+        field_loads: &[(usize, Vec<ir::BodyStatement>)],
         span: Span,
     ) {
         // The arguments written and each parameter after them that takes its default
@@ -316,6 +360,85 @@ impl Checker<'_> {
         } else {
             count.min(function.params.len())
         };
+        // In a function, the statements of the call: each argument a parameter takes stored to
+        // its slot unless the statement before made it (FTE-18.12), then the call.
+        if !self.global {
+            // `copyop[2] = OP_LOAD_V; copyop[0] = OP_LOAD_F;`: by the field's size, not its type.
+            for (slot, load) in field_loads.iter().filter(|(slot, _)| *slot < passed) {
+                let slot = u8::try_from(*slot).ok().map(ir::Name::Parameter);
+                let by_size = load.iter().map(|&s| ir::BodyStatement {
+                    op: if s.op == Op::LoadV { s.op } else { Op::LoadF },
+                    c: slot,
+                    ..s
+                });
+                self.generated.extend(by_size);
+            }
+            // FTE-18.12: only the first store can fold, into the statement that made its
+            // value; every later one follows a store or a load.
+            let mut first = field_loads.iter().all(|(slot, _)| *slot >= passed);
+            for (slot, value) in values.iter().take(passed).enumerate() {
+                if value.returned {
+                    self.live_return = None;
+                }
+                if field_loads.iter().any(|(at, _)| *at == slot) {
+                    continue;
+                }
+                let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
+                let vector = words == 3 || variant_parameter(function, slot);
+                let folded = first && value.temp.is_some() && value.temp == self.last_temp;
+                first = false;
+                if folded {
+                    let slot = u8::try_from(slot).ok().map(ir::Name::Parameter);
+                    self.fold_into(value, slot);
+                }
+                if !folded {
+                    self.generated.push(ir::BodyStatement {
+                        a: self.name_of(value),
+                        b: u8::try_from(slot).ok().map(ir::Name::Parameter),
+                        ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
+                    });
+                }
+            }
+            // FTE-18.7: each parameter after the arguments that takes its default is stored it.
+            // Which defaults the code generator keeps (FTE-18.8) the model does not know, so a
+            // call that takes one is not followed.
+            if values.len() < passed {
+                self.followed = false;
+            }
+            for slot in values.len()..passed {
+                let words = function
+                    .params
+                    .get(slot)
+                    .and_then(|param| self.env.layout(param))
+                    .map_or(1, |l| l.words);
+                let vector = words == 3 || variant_parameter(function, slot);
+                let slot = u8::try_from(slot).ok();
+                self.generated.push(ir::BodyStatement {
+                    a: slot.map(ir::Name::Default),
+                    b: slot.map(ir::Name::Parameter),
+                    ..ir::BodyStatement::bare(if vector { Op::StoreV } else { Op::StoreF })
+                });
+            }
+            let call = [
+                Op::Call0,
+                Op::Call1,
+                Op::Call2,
+                Op::Call3,
+                Op::Call4,
+                Op::Call5,
+                Op::Call6,
+                Op::Call7,
+                Op::Call8,
+            ];
+            if let Some(&call) = call.get(passed) {
+                self.clobber_return();
+                self.generated.push(ir::BodyStatement {
+                    a: callee,
+                    ..ir::BodyStatement::bare(call)
+                });
+                self.last_temp = None;
+            }
+        }
         let mut builder = ir::Builder::new();
         for slot in 0..passed {
             let ty = values
@@ -323,13 +446,7 @@ impl Checker<'_> {
                 .map(|value| &value.ty)
                 .or_else(|| function.params.get(slot));
             let words = ty.and_then(|ty| self.env.layout(ty)).map_or(1, |l| l.words);
-            let variant = function.params.get(slot).is_some_and(|param| {
-                let held = match param {
-                    Type::Field(inner) => inner.as_ref(),
-                    other => other,
-                };
-                matches!(held, Type::Named(name) if &**name == "__variant")
-            });
+            let variant = variant_parameter(function, slot);
             let store = match words {
                 3 => Op::StoreV,
                 _ if variant => Op::StoreV,
@@ -345,23 +462,111 @@ impl Checker<'_> {
             ];
             builder.push(store, reads, ir::Destination::Nothing);
         }
-        let call = match passed {
-            0 => Op::Call0,
-            1 => Op::Call1,
-            2 => Op::Call2,
-            3 => Op::Call3,
-            4 => Op::Call4,
-            5 => Op::Call5,
-            6 => Op::Call6,
-            7 => Op::Call7,
-            8 => Op::Call8,
-            _ => return,
+        let Some(call) = call_opcode(passed) else {
+            return;
         };
         let callee = [Some(Some(ir::Operand::Input(ir::Input::Left))), None];
         builder.push(call, callee, ir::Destination::Nothing);
         if let Some(fragment) = builder.finish(Some(ir::Operand::Return), [None, None]) {
             self.fragments.insert(span, fragment);
         }
+    }
+
+    /// `random()`, `random(scale)` and `random(low, high)`: each argument made a float, of
+    /// which another type is "type mismatch on parm N".
+    fn random(&mut self, args: &[ast::Expr], call: &ast::CallExpr) -> Checked {
+        let span = call.syntax().span();
+        let mut values = Vec::new();
+        for (at, arg) in args.iter().take(2).enumerate() {
+            let value = self.value(Some(arg.clone()))?;
+            let supplied = self.supplied(
+                &value,
+                &Type::Simple(SimpleType::Float),
+                arg.syntax().span(),
+            )?;
+            if self.etype_of(&value.ty).is_some_and(|e| e != Etype::Float)
+                && self.etype_of(&value.ty) != Some(Etype::Integer)
+            {
+                let message = format!("type mismatch on parm {}", at.saturating_add(1));
+                return self.fatal(Code::E0340, span, message);
+            }
+            values.push(supplied);
+        }
+        let callee = match call.callee() {
+            Some(ast::Expr::Name(name)) => name
+                .name()
+                .and_then(|token| self.env.reference(token.span().start))
+                .map(|def| ir::Name::Def(def, 0)),
+            _ => None,
+        };
+        self.random_statements(callee, &values, span)
+    }
+
+    /// The statements of `random` of `callee` with the arguments `args` in a function: the
+    /// call of the builtin, then its value scaled, `* scale` for one argument and
+    /// `low + (high - low) * value` for two; the value, the return global's with none.
+    fn random_statements(
+        &mut self,
+        callee: Option<ir::Name>,
+        args: &[Value],
+        span: Span,
+    ) -> Checked {
+        let float = Value {
+            returned: args.is_empty(),
+            ..Value::of(Type::Simple(SimpleType::Float))
+        };
+        if self.global {
+            return Ok(float);
+        }
+        self.clobber_return();
+        self.generated.push(ir::BodyStatement {
+            a: callee,
+            ..ir::BodyStatement::bare(Op::Call0)
+        });
+        let call = self.last_made();
+        self.last_temp = None;
+        let made = match args {
+            [] => {
+                self.live_return = Some(1);
+                self.live_call = call;
+                None
+            }
+            [scale] => self.push_made(Op::MulF, Some(ir::Name::Return), scale.name()),
+            [low, high, ..] => {
+                // `high - low`, which folds when both are constants (`QCC_PR_StatementFlags`).
+                let range = match (high.known(), low.known()) {
+                    (Some(_), Some(_)) => self.emit(Op::SubF, high, low, span)?.name(),
+                    _ => self
+                        .push_made(Op::SubF, high.name(), low.name())
+                        .map(ir::Name::Made),
+                };
+                let scaled = self.push_made(Op::MulF, Some(ir::Name::Return), range);
+                self.push_made(Op::AddF, scaled.map(ir::Name::Made), low.name())
+            }
+        };
+        // A scaled value is its last statement's temporary, which a store may fold into.
+        let temp = made.map(|_| self.env.temps().take(1));
+        if temp.is_some() {
+            self.last_temp = temp;
+        }
+        Ok(Value {
+            made,
+            call,
+            temp,
+            ..float
+        })
+    }
+
+    /// Generates `op` of `a` and `b` into a value of its own; the statement's index.
+    fn push_made(&mut self, op: Op, a: Option<ir::Name>, b: Option<ir::Name>) -> Option<u32> {
+        let made = u32::try_from(self.generated.len()).ok();
+        self.generated.push(ir::BodyStatement {
+            a,
+            b,
+            c: made.map(ir::Name::Made),
+            ..ir::BodyStatement::bare(op)
+        });
+        made
     }
 
     pub(super) fn generate_call(&mut self, values: &[Value], span: Span) {
@@ -454,6 +659,22 @@ impl Checker<'_> {
         written: Option<Type>,
         call: &ast::CallExpr,
     ) -> Result<Option<Value>, Fatal> {
+        let value = self.intrinsic_value(name, args, written, call)?;
+        // Of the intrinsics only `random` and `_` are followed statement by statement.
+        if value.is_some() && !matches!(name, "random" | "_") {
+            self.followed = false;
+        }
+        Ok(value)
+    }
+
+    /// [`Checker::intrinsic`]'s value, before it is known whether the call was one.
+    fn intrinsic_value(
+        &mut self,
+        name: &str,
+        args: &[ast::Expr],
+        written: Option<Type>,
+        call: &ast::CallExpr,
+    ) -> Result<Option<Value>, Fatal> {
         let span = call.syntax().span();
         let string = || Value::of(Type::Simple(SimpleType::String));
         // `QCC_PR_Expression` reads their first argument whatever follows the `(`.
@@ -502,23 +723,7 @@ impl Checker<'_> {
                 let number = self.emit(qc_preproc::Op::DivI, &index, &first, span)?;
                 Ok(Some(number))
             }
-            "random" => {
-                for (at, arg) in args.iter().take(2).enumerate() {
-                    let value = self.value(Some(arg.clone()))?;
-                    self.supplied(
-                        &value,
-                        &Type::Simple(SimpleType::Float),
-                        arg.syntax().span(),
-                    )?;
-                    if self.etype_of(&value.ty).is_some_and(|e| e != Etype::Float)
-                        && self.etype_of(&value.ty) != Some(Etype::Integer)
-                    {
-                        let message = format!("type mismatch on parm {}", at.saturating_add(1));
-                        return self.fatal(Code::E0340, span, message).map(Some);
-                    }
-                }
-                Ok(Some(Value::of(Type::Simple(SimpleType::Float))))
-            }
+            "random" => self.random(args, call).map(Some),
             "alloca" => {
                 if let Some(arg) = args.first() {
                     let size = self.value(Some(arg.clone()))?;
@@ -738,7 +943,7 @@ impl Checker<'_> {
                 .name()
                 .and_then(|t| self.env.reference(t.span().start))
                 .and_then(|def| self.env.string_text(def))
-                .and_then(|text| lexed_string(&format!("\"{text}\""))),
+                .and_then(|text| lexed_string(format!("\"{text}\"").as_bytes())),
             _ => None,
         };
         if let Some(bytes) = bytes {
@@ -800,4 +1005,32 @@ fn type_params(function: &FunctionType) -> Vec<ParamFacts> {
                 })
         })
         .collect()
+}
+
+/// FTE-18.9: whether `function`'s parameter `slot` is a variant or a field of one, which an
+/// argument is stored to by three words, its `size`.
+fn variant_parameter(function: &FunctionType, slot: usize) -> bool {
+    function.params.get(slot).is_some_and(|param| {
+        let held = match param {
+            Type::Field(inner) => inner.as_ref(),
+            other => other,
+        };
+        matches!(held, Type::Named(name) if &**name == "__variant")
+    })
+}
+
+/// `CALL0` to `CALL8`, the call of `passed` arguments, the opcode of the count (QC-18.3).
+pub(super) const fn call_opcode(passed: usize) -> Option<Op> {
+    Some(match passed {
+        0 => Op::Call0,
+        1 => Op::Call1,
+        2 => Op::Call2,
+        3 => Op::Call3,
+        4 => Op::Call4,
+        5 => Op::Call5,
+        6 => Op::Call6,
+        7 => Op::Call7,
+        8 => Op::Call8,
+        _ => return None,
+    })
 }
