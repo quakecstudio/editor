@@ -1184,6 +1184,30 @@ fn a_generated_postfix_on_a_field_stores_through_its_address() {
     assert_eq!(statements[3], (Op::StorepF, made(1), made(2)));
 }
 
+// FTEF-6, FTEF-19.78: a member of a struct array's element at an index no constant is read
+// at the element's index plus the member's word, by `OP_ADD_F` of a float index
+#[test]
+fn a_generated_struct_element_member_adds_its_word_to_the_index() {
+    use crate::ir::{Immediate, ImmediateKind, Name};
+    use qc_preproc::Op;
+    let source = "struct { float a; float b; } arr[4]; float i, k; void() t = { k = arr[i].b; };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let generated = index.bodies[&t].generated();
+    let one = Some(Name::Immediate(Immediate {
+        kind: ImmediateKind::Float,
+        words: [1.0_f32.to_bits(), 0, 0],
+    }));
+    let add = generated.iter().position(|s| s.op == Op::AddF).unwrap();
+    assert_eq!(generated[add].b, one);
+    assert_eq!(generated[add.wrapping_add(1)].op, Op::Call1);
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

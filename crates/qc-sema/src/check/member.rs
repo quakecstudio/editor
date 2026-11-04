@@ -19,7 +19,7 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer;
 use crate::check::reference::expected_after;
-use crate::check::{Bitfield, Constness, MemberArray, Reference, Value};
+use crate::check::{Bitfield, Constness, ElementRef, MemberArray, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -118,40 +118,7 @@ impl Checker<'_> {
                 Type::Field(Type::Simple(SimpleType::Float).into()),
             )?,
             Etype::String => self.string_method(&base, &selector)?,
-            Etype::Struct | Etype::Union => {
-                if self.env.struct_of_no_size(&base.ty) {
-                    return self.not_defined_yet(&base.ty, field.syntax().span());
-                }
-                let (member, offset) = self.struct_member(&base.ty, &selector);
-                let word = member.bitfield.map_or_else(
-                    || offset.map_or(0, |(units, align)| units.saturating_mul(align) >> 5),
-                    |bitfield| bitfield.word,
-                );
-                match &base.reference {
-                    // `(*p).a` and `p[i].a` are members through the pointer.
-                    Reference::Pointer(pointer) => {
-                        let span = field.syntax().span();
-                        let index = self.member_index(pointer.index.as_ref(), offset, span)?;
-                        Value {
-                            reference: Reference::pointer(pointer.base.clone(), Some(index)),
-                            ..member
-                        }
-                    }
-                    // `st.f` is the struct's own definition at the member's offset
-                    // (`QCC_PR_BuildRef` of its sym), no temporary.
-                    _ if member.is_array_head() => Value {
-                        sym: base.sym.at(word),
-                        name: base.name.clone(),
-                        ..member
-                    },
-                    _ => Value {
-                        sym: base.sym.at(word),
-                        name: base.name.clone(),
-                        reference: base.reference.clone(),
-                        ..member
-                    },
-                }
-            }
+            Etype::Struct | Etype::Union => self.struct_value(&base, field, &selector)?,
             Etype::Field if matches!(shape.holds, Some(Etype::Struct | Etype::Union)) => {
                 let Type::Field(held) = &base.ty else {
                     return Ok(Value::unknown());
@@ -473,6 +440,86 @@ impl Checker<'_> {
             ..Value::of(member.ty)
         };
         (value, offset)
+    }
+
+    /// FTEF-6: the member `selector` of the struct or union `base` read by `field`: through a
+    /// pointer, the member through it; else the definition's word at the member's offset, of
+    /// an element at an index no constant the index plus the word.
+    fn struct_value(
+        &mut self,
+        base: &Value,
+        field: &ast::FieldExpr,
+        selector: &ast::Expr,
+    ) -> Checked {
+        if self.env.struct_of_no_size(&base.ty) {
+            return self.not_defined_yet(&base.ty, field.syntax().span());
+        }
+        let (member, offset) = self.struct_member(&base.ty, selector);
+        let word = member.bitfield.map_or_else(
+            || offset.map_or(0, |(units, align)| units.saturating_mul(align) >> 5),
+            |bitfield| bitfield.word,
+        );
+        Ok(match &base.reference {
+            // `(*p).a` and `p[i].a` are members through the pointer.
+            Reference::Pointer(pointer) => {
+                let span = field.syntax().span();
+                let index = self.member_index(pointer.index.as_ref(), offset, span)?;
+                Value {
+                    reference: Reference::pointer(pointer.base.clone(), Some(index)),
+                    ..member
+                }
+            }
+            // `st.f` is the struct's own definition at the member's offset
+            // (`QCC_PR_BuildRef` of its sym), no temporary.
+            _ if member.is_array_head() => Value {
+                sym: base.sym.at(word),
+                name: base.name.clone(),
+                ..member
+            },
+            // `a[i].f` of an index no constant is the element at the index plus the
+            // member's word.
+            Reference::Element(element)
+                if element.index.known().is_none() && word != 0 && !self.global =>
+            {
+                let span = field.syntax().span();
+                self.element_member(base, element, member, word, span)?
+            }
+            _ => Value {
+                sym: base.sym.at(word),
+                name: base.name.clone(),
+                reference: base.reference.clone(),
+                ..member
+            },
+        })
+    }
+
+    /// `a[i].f` of a struct array at an index no constant: the element at the index plus the
+    /// member's `word`, by `OP_ADD_I` of an integer index and `OP_ADD_F` of a float one.
+    fn element_member(
+        &mut self,
+        base: &Value,
+        element: &ElementRef,
+        member: Value,
+        word: u32,
+        span: Span,
+    ) -> Checked {
+        let (add, by) = match self.etype_of(&element.index.ty) {
+            Some(Etype::Integer) => (
+                Op::AddI,
+                Constant::int(i32::try_from(word).unwrap_or_default()),
+            ),
+            _ => (
+                Op::AddF,
+                Constant::float(f32::from(u16::try_from(word).unwrap_or_default())),
+            ),
+        };
+        let index = self.emit(add, &element.index, &Value::constant(by), span)?;
+        Ok(Value {
+            sym: base.sym,
+            name: base.name.clone(),
+            reference: Reference::element(element.base.clone(), index, element.vector),
+            ..member
+        })
     }
 
     /// FTEF-6.19: the index of a member through a pointer (`QCC_PR_ParseRefArrayPointer`), its
