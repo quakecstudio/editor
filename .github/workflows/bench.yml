@@ -28,7 +28,7 @@ env:
 jobs:
   bench:
     name: Benchmarks
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     permissions:
       contents: read
     steps:
