@@ -1,43 +1,58 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Temporary allocation, a pass over a fragment of the intermediate layer
-//! (`docs/design/back-end.md`, "Allocation"): every temporary gets a slot of its own, never
-//! reused, taken in the order the lowering made the temporaries (QC-21.5). Today's FTEQCC
-//! profile allocates the same way; an FTEQCC-exact mode that reuses slots as `QCC_GetTemp`
-//! does would be another pass here (ADR-0020).
+//! Temporary allocation, a pass over a body of the intermediate layer
+//! (`docs/design/back-end.md`, "Allocation"): each value a statement makes gets a slot of its
+//! own, never reused, taken in the order the statements make them (QC-21.5), a block of words
+//! before the statements that write it. Today's FTEQCC profile allocates the same way; an
+//! FTEQCC-exact mode that reuses slots as `QCC_GetTemp` does would be another pass here
+//! (ADR-0020).
 
-use qc_sema::ir;
-use qc_types::Etype;
+use std::collections::HashMap;
 
-use super::Step;
+use qc_sema::ir::BodyStatement;
+
 use crate::Internal;
 use crate::program::Program;
 
-/// A temporary's slot: its first global and its basic type.
-pub(super) type Slot = (u32, Etype);
+/// The slots of the values a body's statements make, by the index of the statement that makes
+/// each, taken from the program in creation order.
+#[derive(Debug, Default)]
+pub(super) struct CreationOrder {
+    slots: HashMap<u32, u32>,
+}
 
-/// Each of `fragment`'s temporaries a new slot from `program`, in order: a vector taken before
-/// its words are written three words, a statement's value the words of its row's result.
-pub(super) fn creation_order(
-    fragment: &ir::Fragment,
-    steps: &[Step],
-    program: &mut Program,
-) -> Result<Vec<Slot>, Internal> {
-    let mut slots = Vec::with_capacity(fragment.temps.len());
-    for temp in &fragment.temps {
-        let etype = match *temp {
-            ir::Temp::Vector(_) => Etype::Vector,
-            ir::Temp::Made(index) => match steps.get(usize::from(index)) {
-                Some(Step::Row(row)) => row.c,
-                Some(Step::Parameter | Step::Word | Step::Call(_)) | None => {
-                    return Err(Internal::Unlowered);
-                }
-            },
-        };
-        let words = if etype == Etype::Vector { 3 } else { 1 };
-        slots.push((program.allocate(words)?, etype));
+impl CreationOrder {
+    /// The temporary `statement`, at `index`, takes as it is generated, if it takes one: a new
+    /// slot of its value's words.
+    pub(super) fn statement(
+        &mut self,
+        program: &mut Program,
+        statement: &BodyStatement,
+        index: u32,
+    ) -> Result<(), Internal> {
+        if let Some(words) = statement.temp_words(index) {
+            let slot = program.allocate(words)?;
+            self.slots.insert(index, slot);
+        }
+        Ok(())
     }
-    Ok(slots)
+
+    /// A block of `words` words taken before the statement at `index`, whose value it is.
+    pub(super) fn block(
+        &mut self,
+        program: &mut Program,
+        index: u32,
+        words: u32,
+    ) -> Result<(), Internal> {
+        let slot = program.allocate(words)?;
+        self.slots.insert(index, slot);
+        Ok(())
+    }
+
+    /// The first global of the value the statement at `made` made.
+    pub(super) fn slot(&self, made: u32) -> Option<u32> {
+        self.slots.get(&made).copied()
+    }
 }
 
 #[cfg(test)]
@@ -47,51 +62,44 @@ mod tests {
         reason = "test code: a failed unwrap is a failed test"
     )]
 
-    use qc_progs::opcode::Opcode;
-    use qc_sema::ir::{Fragment, Temp};
-    use qc_types::Etype;
+    use qc_preproc::Op;
+    use qc_sema::ir::{BodyStatement, Name};
 
-    use super::{Step, creation_order};
-    use crate::ops;
+    use super::CreationOrder;
     use crate::program::Program;
 
-    // spec QC-21.5: each temporary gets a new slot, never reused, in the order the lowering
-    // took them: a vector taken before its words are written three words, a value its row's
-    // result's
+    // spec QC-21.5: each value a statement makes takes a new slot, never reused, in the order
+    // the statements make them: a vector's three words, a float's one, a block its words taken
+    // before the statements that write it; a statement that makes no value takes none
     #[test]
-    fn each_temporary_takes_a_new_slot_in_creation_order() {
-        let row = |opcode| {
-            ops::ROWS
-                .iter()
-                .find(|row| row.opcode == opcode)
-                .copied()
-                .unwrap()
-        };
-        let steps = [
-            Step::Row(row(Opcode::MulVf)),
-            Step::Row(row(Opcode::BitAnd)),
-        ];
-        let fragment = Fragment {
-            temps: vec![Temp::Made(0), Temp::Vector(1), Temp::Made(1)],
-            ..Fragment::default()
+    fn each_value_takes_a_new_slot_in_creation_order() {
+        let made = |op, index| BodyStatement {
+            c: Some(Name::Made(index)),
+            ..BodyStatement::bare(op)
         };
         let mut program = Program::new();
         let first = program.allocate(0).unwrap();
-        let slots = creation_order(&fragment, &steps, &mut program).unwrap();
-        assert_eq!(
-            slots,
-            [
-                (first, Etype::Vector),
-                (first + 3, Etype::Vector),
-                (first + 6, Etype::Float),
-            ]
-        );
-        assert_eq!(program.allocate(0).unwrap(), first + 7, "no slot is reused");
-        let call = [Step::Call(Opcode::Call2)];
-        let made = Fragment {
-            temps: vec![Temp::Made(0)],
-            ..Fragment::default()
+        let mut order = CreationOrder::default();
+        order
+            .statement(&mut program, &made(Op::MulVf, 0), 0)
+            .unwrap();
+        order.block(&mut program, 1, 2).unwrap();
+        let store = BodyStatement {
+            b: Some(Name::MadeWord(1, 0)),
+            ..BodyStatement::bare(Op::StoreF)
         };
-        assert!(creation_order(&made, &call, &mut program).is_err());
+        order.statement(&mut program, &store, 1).unwrap();
+        order
+            .statement(&mut program, &made(Op::AddF, 2), 2)
+            .unwrap();
+        assert_eq!(
+            [order.slot(0), order.slot(1), order.slot(2)],
+            [Some(first), Some(first + 3), Some(first + 5)]
+        );
+        assert_eq!(program.allocate(0).unwrap(), first + 6, "no slot is reused");
+        order
+            .statement(&mut program, &BodyStatement::bare(Op::Goto), 3)
+            .unwrap();
+        assert_eq!(order.slot(3), None);
     }
 }

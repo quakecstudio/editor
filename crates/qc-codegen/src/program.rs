@@ -14,7 +14,6 @@
 //! statements as `PR_Statement` does, a new temporary for every result (QC-21.5).
 
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use qc_progs::opcode::Opcode;
 use qc_progs::{Function, Statement};
@@ -90,23 +89,6 @@ impl ValueType {
             Self::FloatField => Some(Self::Of(Type::Simple(SimpleType::Float))),
             Self::Of(Type::Field(inner)) => Some(Self::Of(Type::clone(inner))),
             Self::Of(_) => None,
-        }
-    }
-
-    /// A pointer to a value of this type, `QCC_PR_PointerType` (FTEF-31.4).
-    pub(crate) fn pointer_to(&self) -> Self {
-        let inner = match self {
-            Self::FloatField => Type::Field(Rc::new(Type::Simple(SimpleType::Float))),
-            Self::Of(ty) => ty.clone(),
-        };
-        Self::Of(Type::Pointer(Rc::new(inner)))
-    }
-
-    /// For a pointer type, the type of what it points to (FTEF-6.18).
-    pub(crate) fn pointee(&self) -> Option<Self> {
-        match self {
-            Self::Of(Type::Pointer(inner)) => Some(Self::Of(Type::clone(inner))),
-            Self::Of(_) | Self::FloatField => None,
         }
     }
 

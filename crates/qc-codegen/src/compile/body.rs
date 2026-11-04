@@ -7,8 +7,6 @@
 //! resolved to its global. A body the semantic model did not follow in full, or that names
 //! something the writer cannot resolve, is left to the syntax walk.
 
-use std::collections::HashMap;
-
 use qc_diag::Span;
 use qc_progs::opcode::Opcode;
 use qc_sema::ir::{BodyStatement, Effect, Name};
@@ -16,6 +14,7 @@ use qc_sema::lower::{Qualifier, declares};
 use qc_sema::{DefId, FileId, TypedBody};
 use qc_syntax::ast::{self, AstNode as _};
 
+use super::allocate::CreationOrder;
 use super::{At, Compiler, Lowered, Written, literal_of};
 use crate::Internal;
 use crate::program::{Literal, OFS_RETURN, operand, type_words};
@@ -51,7 +50,9 @@ impl Compiler<'_> {
         named: Span,
     ) -> Lowered<()> {
         let generated = body.generated();
-        let mut slots: HashMap<u32, u32> = HashMap::new();
+        // QC-21.5: the allocation pass the profile chooses, each value a new slot in creation
+        // order (ADR-0020).
+        let mut slots = CreationOrder::default();
         // The global the first parameter slot was last stored from, which a precache records.
         let mut first_argument = None;
         let mut effects = body.effects().iter().peekable();
@@ -61,12 +62,10 @@ impl Compiler<'_> {
             while let Some(&&(at, effect)) = effects.peek()
                 && at <= index
             {
-                // QC-21.5: a vector taken before its words are written, the value of this
-                // statement, which writes its first word.
                 match effect {
+                    // A block taken before its words are written, the value of this statement.
                     Effect::Block(words) => {
-                        let slot = self.program.allocate(words).at(named)?;
-                        slots.insert(index, slot);
+                        slots.block(&mut self.program, index, words).at(named)?;
                     }
                     Effect::ForBegin => loops.push(self.array_functions.len()),
                     // FTEF-19.78: the local arrays' functions the loop made are forgotten.
@@ -90,10 +89,9 @@ impl Compiler<'_> {
                 .at(named)?;
             let origin = body.origin(at).unwrap_or(named.start);
             self.program.origin = Some((self.file, origin));
-            if let Some(words) = statement.temp_words(index) {
-                let slot = self.program.allocate(words).at(named)?;
-                slots.insert(index, slot);
-            }
+            slots
+                .statement(&mut self.program, statement, index)
+                .at(named)?;
             let op = u32::try_from(statement.op.number())
                 .ok()
                 .and_then(Opcode::from_number)
@@ -145,6 +143,29 @@ impl Compiler<'_> {
             }
         }
         Ok(())
+    }
+
+    /// The global holding `expr` of file `file` with no statement: a literal's immediate, made now
+    /// if there is none (QC-20), or a name's definition, as a parameter's default and an
+    /// initialiser's constant read them.
+    pub(super) fn constant_place(
+        &mut self,
+        file: FileId,
+        expr: &ast::Expr,
+        span: Span,
+    ) -> Lowered<usize> {
+        match expr {
+            ast::Expr::Literal(_) => {
+                let literal = literal_of(expr, self.dialect).at(span)?;
+                self.program.immediate(&literal).at(span)
+            }
+            ast::Expr::Name(name) => {
+                let token = name.name().at(span)?;
+                let id = self.names.def(file, token.span(), None).at(span)?;
+                self.program.get_def(self.index, id).at(span)
+            }
+            _ => Err(Internal::Unlowered).at(span),
+        }
     }
 
     /// FTEF-18.2: the nested function the local `local` of the body `syntax` is given, numbered
@@ -205,7 +226,7 @@ impl Compiler<'_> {
         &mut self,
         effect: Effect,
         index: u32,
-        made: (&TypedBody, &HashMap<u32, u32>),
+        made: (&TypedBody, &CreationOrder),
         span: Span,
     ) -> Lowered<()> {
         let name = match effect {
@@ -385,7 +406,7 @@ impl Compiler<'_> {
         &mut self,
         name: Name,
         index: u32,
-        (body, slots): (&TypedBody, &HashMap<u32, u32>),
+        (body, slots): (&TypedBody, &CreationOrder),
         span: Span,
     ) -> Lowered<i32> {
         let ofs = match name {
@@ -421,8 +442,8 @@ impl Compiler<'_> {
                 let place = self.program.immediate(&Literal::String(bytes)).at(span)?;
                 self.program.def(place).at(span)?.ofs
             }
-            Name::Made(made) => *slots.get(&made).at(span)?,
-            Name::MadeWord(made, word) => slots.get(&made).at(span)?.checked_add(word).at(span)?,
+            Name::Made(made) => slots.slot(made).at(span)?,
+            Name::MadeWord(made, word) => slots.slot(made).at(span)?.checked_add(word).at(span)?,
             Name::Return => OFS_RETURN,
             Name::ReturnWord(word) => OFS_RETURN.checked_add(word).at(span)?,
             Name::Parameter(slot) => self.parameter_slot(usize::from(slot), span)?,
@@ -462,11 +483,8 @@ impl Compiler<'_> {
                     .map_err(|_| Internal::TooLarge)
                     .at(span)?;
                 let (file, default) = self.default_of(body.generated(), at, slot).at(span)?;
-                let here = std::mem::replace(&mut self.file, file);
-                let value = self.expr(&default);
-                self.file = here;
-                let value = value?;
-                self.operand_of(&value)
+                let place = self.constant_place(file, &default, span)?;
+                self.program.def(place).at(span)?.ofs
             }
         };
         operand(ofs).at(span)
