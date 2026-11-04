@@ -1452,6 +1452,38 @@ fn a_generated_for_stores_the_local_its_clause_declares() {
     assert_eq!(body.generated()[1].op, Op::LtF);
 }
 
+// FTE-13.1, FTEF-31.8: a vector local's aggregate stores each element to its component, and a
+// `.vector` field at a constant index is its component's field, read by `LOAD_F`
+#[test]
+fn a_generated_aggregate_stores_each_component() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "entity self; .vector md; void() t = { vector v = { self.md[0], 2, 3 }; };";
+    let index = super::fte_index_of(source);
+    let def = |name: &str| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == name)
+            .map(DefId::new)
+            .unwrap()
+    };
+    let body = &index.bodies[&def("t")];
+    let generated = body.generated();
+    let v = body.locals().first().map(|&(_, id)| id).unwrap();
+    assert_eq!(generated[0].op, Op::LoadF);
+    assert_eq!(generated[0].b, Some(Name::Def(def("md_x"), 0)));
+    let stores: Vec<_> = generated[1..4].iter().map(|s| (s.op, s.b)).collect();
+    assert_eq!(
+        stores,
+        [
+            (Op::StoreF, Some(Name::Def(v, 0))),
+            (Op::StoreF, Some(Name::Def(v, 1))),
+            (Op::StoreF, Some(Name::Def(v, 2))),
+        ]
+    );
+}
+
 // FTEF-30.3: `c ? a : b` tests `c` by an `IFNOT` to the last arm, past the first arm's store and
 // the `GOTO` to the end; both arms store to the first arm's temporary, the ternary's value
 #[test]

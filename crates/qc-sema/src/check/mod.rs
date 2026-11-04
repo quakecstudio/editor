@@ -117,6 +117,8 @@ pub(crate) trait Env {
     /// The definition named `name` visible where the body is, as
     /// `QCC_PR_GetSRef(NULL, name, pr_scope, false, ...)` finds an emulation's helper.
     fn helper(&self, name: &str) -> Option<DefId>;
+    /// The component `word` of the vector definition `def`, its `_x`, `_y` or `_z` (QC-11.7).
+    fn component(&self, def: DefId, word: u32) -> Option<DefId>;
     /// Whether [`Env::helper`] finds a definition named `name`.
     fn defines(&self, name: &str) -> bool {
         self.helper(name).is_some()

@@ -773,6 +773,40 @@ impl Checker<'_> {
         Ok(copy)
     }
 
+    /// FTE-13.1: `vector v = {x, y, z};` of a local not `static`, each element read and
+    /// stored to its component in turn by `STORE_F`, as `QCC_PR_ParseInitializerType` stores an
+    /// aggregate's elements; any other aggregate is not followed.
+    fn vector_aggregate(
+        &mut self,
+        declarator: &ast::Declarator,
+        aggregate: &ast::AggregateInit,
+    ) -> Result<(), Fatal> {
+        let Some(name) = declarator.name() else {
+            return Ok(());
+        };
+        let start = name.span().start;
+        let vector = self
+            .env
+            .local_type(start)
+            .is_some_and(|ty| self.etype(&ty) == Some(Etype::Vector));
+        let elements: Vec<ast::Expr> = aggregate.elements().collect();
+        if self.global || !vector || self.env.local_static(start) || elements.len() != 3 {
+            return Ok(());
+        }
+        let local = self.env.reference(start);
+        for (word, element) in (0_u32..).zip(elements) {
+            let value = self.value(Some(element))?;
+            self.generated.push(ir::BodyStatement {
+                a: self.name_of(&value),
+                b: local.map(|def| ir::Name::Def(def, word)),
+                ..ir::BodyStatement::bare(Op::StoreF)
+            });
+            self.read_returned(&value);
+            self.last_temp = None;
+        }
+        Ok(())
+    }
+
     /// FTE-6.4: the store of `stored` to the field `lhs` of type `target`, a compound one's
     /// and a postfix's too: its `ADDRESS`, made after the value, and `STOREP_*` of the field's
     /// type through it.
@@ -994,6 +1028,9 @@ impl Checker<'_> {
             self.locals.push((at, def));
         }
         self.local_size(declarator)?;
+        if let Some(ast::Initializer::Aggregate(aggregate)) = declarator.initializer() {
+            return self.vector_aggregate(declarator, &aggregate);
+        }
         let Some(ast::Initializer::Value(init)) = declarator.initializer() else {
             return Ok(());
         };

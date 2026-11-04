@@ -514,6 +514,12 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.lookup_global(name)
     }
 
+    fn component(&self, def: DefId, word: u32) -> Option<DefId> {
+        let suffix = ["_x", "_y", "_z"].get(usize::try_from(word).ok()?)?;
+        let name = &self.resolver.index.def(def)?.name;
+        self.resolver.lookup_global(&format!("{name}{suffix}"))
+    }
+
     fn in_class(&self) -> bool {
         self.in_class
     }

@@ -20,7 +20,7 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::pointer::{Pointee, int};
-use crate::check::{Bitfield, ElementRef, MemberArray, Reference, Sym, Value};
+use crate::check::{Bitfield, ElementRef, FieldRef, MemberArray, Reference, Sym, Value};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
 
@@ -308,6 +308,43 @@ impl Checker<'_> {
             ty: Type::Named(parent.into()),
             sym: Sym::Temp,
             ..extended
+        })
+    }
+
+    /// An entity's `.vector` field `base` indexed by `at`, `e.(fv[i])`: an index past the
+    /// vector "(.vector) array index out of bounds", a constant one the component's field, any
+    /// other the element at the index.
+    fn field_vector_index(
+        &mut self,
+        base: &Value,
+        label: String,
+        at: Value,
+        constant: Option<i32>,
+        span: Span,
+    ) -> Checked {
+        if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
+            let message = "(.vector) array index out of bounds".to_owned();
+            return self.fatal(Code::E0333, span, message);
+        }
+        // At a constant index it is the component's field, read by `LOAD_F`.
+        if let (Reference::Field(field), Some(i)) = (&base.reference, constant)
+            && let Some(component) = field
+                .def
+                .and_then(|def| self.env.component(def, u32::from_le_bytes(i.to_le_bytes())))
+        {
+            return Ok(Value {
+                reference: Reference::Field(Box::new(FieldRef {
+                    def: Some(component),
+                    ..field.as_ref().clone()
+                })),
+                readonly: base.readonly,
+                ..Value::of(Type::Simple(SimpleType::Float))
+            });
+        }
+        Ok(Value {
+            reference: Reference::element(label, at, false),
+            readonly: base.readonly,
+            ..Value::of(Type::Simple(SimpleType::Float))
         })
     }
 
@@ -613,15 +650,7 @@ impl Checker<'_> {
             }
             // An entity's `.vector` field indexed is the field's component, `e.(fv[i])`.
             (Some(Etype::Vector), _) if matches!(base.reference, Reference::Field(_)) => {
-                if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
-                    let message = "(.vector) array index out of bounds".to_owned();
-                    return self.fatal(Code::E0333, span, message);
-                }
-                Ok(Value {
-                    reference: Reference::element(label, at, false),
-                    readonly: base.readonly,
-                    ..Value::of(Type::Simple(SimpleType::Float))
-                })
+                self.field_vector_index(&base, label, at, constant, span)
             }
             (Some(Etype::Vector), _) => {
                 if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
