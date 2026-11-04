@@ -485,7 +485,13 @@ impl Value {
     pub(crate) fn field_of(base: &Self, field: String, ty: Type, def: Option<DefId>) -> Self {
         Self {
             readonly: false,
-            reference: Reference::field(base.label(), field, def),
+            reference: Reference::Field(Box::new(FieldRef {
+                base: base.label(),
+                field,
+                def,
+                dot: None,
+                entity: base.name(),
+            })),
             ..Self::of(ty)
         }
     }
@@ -590,6 +596,8 @@ pub(crate) struct FieldRef {
     /// The span of the `.` of the `e.f` it was read from, by which its load is kept as a
     /// fragment of the intermediate layer.
     pub(crate) dot: Option<Span>,
+    /// What the entity names as an operand of a generated body's statement.
+    pub(crate) entity: Option<ir::Name>,
 }
 
 /// An array's element or a vector's component; the index is the model's to read only when it is
@@ -621,6 +629,7 @@ impl Reference {
             field,
             def,
             dot: None,
+            entity: None,
         }))
     }
 

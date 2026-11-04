@@ -296,6 +296,16 @@ impl Checker<'_> {
 
     /// FTEF-34.9: the statement `op` generated, which at global scope (`!pr_scope`) is the error
     /// "Unable to generate statements at global scope (OPNAME).".
+    /// Names the operands `a` and `b` of the last generated statement when it is `op`.
+    pub(super) fn name_last(&mut self, op: Op, a: Option<ir::Name>, b: Option<ir::Name>) {
+        if let Some(statement) = self.generated.last_mut()
+            && statement.op == op
+        {
+            statement.a = a.or(statement.a);
+            statement.b = b.or(statement.b);
+        }
+    }
+
     /// FTEF-29.13: the store of `value` folded into the statement that made it, which then
     /// writes `to` instead.
     pub(super) fn fold_into(&mut self, value: &Value, to: Option<ir::Name>) {

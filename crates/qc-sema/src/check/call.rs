@@ -361,11 +361,11 @@ impl Checker<'_> {
                     self.fold_into(value, slot);
                 }
                 if !folded {
-                    self.generated.push(ir::BodyStatement::bare(if words == 3 {
-                        Op::StoreV
-                    } else {
-                        Op::StoreF
-                    }));
+                    self.generated.push(ir::BodyStatement {
+                        a: value.name(),
+                        b: u8::try_from(slot).ok().map(ir::Name::Parameter),
+                        ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+                    });
                 }
             }
             let call = [

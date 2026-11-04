@@ -284,6 +284,7 @@ impl Checker<'_> {
             self.opcodes.insert((span.start, span.end), store);
             if lhs.reference == Reference::Global && !folded {
                 self.emit(store, &stored, &Value::unknown(), span)?;
+                self.name_last(store, stored.name(), lhs.name());
             }
             if lhs.reference == Reference::Global && folded {
                 self.fold_into(&stored, lhs.name());
@@ -297,10 +298,11 @@ impl Checker<'_> {
             && !self.global
             && !folded
         {
-            self.generated
-                .push(ir::BodyStatement::bare(Checker::store_op(
-                    self.etype(&target),
-                )));
+            self.generated.push(ir::BodyStatement {
+                a: stored.name(),
+                b: lhs.name(),
+                ..ir::BodyStatement::bare(Checker::store_op(self.etype(&target)))
+            });
             self.last_temp = None;
         }
         // FTEF-19.78: an element at an index that is no constant is stored by the array's
@@ -336,8 +338,20 @@ impl Checker<'_> {
                 Some(Etype::Function) => Op::StorepFnc,
                 _ => Op::StorepF,
             };
-            self.generated.push(ir::BodyStatement::bare(Op::Address));
-            self.generated.push(ir::BodyStatement::bare(storep));
+            if let Reference::Field(field) = &lhs.reference {
+                let address = u32::try_from(self.generated.len()).ok().map(ir::Name::Made);
+                self.generated.push(ir::BodyStatement {
+                    a: field.entity,
+                    b: field.def.map(|def| ir::Name::Def(def, 0)),
+                    c: address,
+                    ..ir::BodyStatement::bare(Op::Address)
+                });
+                self.generated.push(ir::BodyStatement {
+                    a: stored.name(),
+                    b: address,
+                    ..ir::BodyStatement::bare(storep)
+                });
+            }
             self.last_temp = None;
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
@@ -873,8 +887,15 @@ impl Checker<'_> {
                 self.fold_into(&value, local);
             }
             if !folded {
-                self.generated
-                    .push(ir::BodyStatement::bare(Checker::store_op(self.etype(&ty))));
+                let local = declarator
+                    .name()
+                    .and_then(|name| self.env.reference(name.span().start))
+                    .map(|def| ir::Name::Def(def, 0));
+                self.generated.push(ir::BodyStatement {
+                    a: value.name(),
+                    b: local,
+                    ..ir::BodyStatement::bare(Checker::store_op(self.etype(&ty)))
+                });
                 self.last_temp = None;
             }
         }

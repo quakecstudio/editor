@@ -121,6 +121,16 @@ impl Checker<'_> {
                     }
                     _ => self.emit(load, &Value::unknown(), &Value::unknown(), span)?,
                 };
+                // The load reads the entity and the field.
+                if let Reference::Field(field) = &value.reference
+                    && let Some(statement) = loaded
+                        .made
+                        .and_then(|made| usize::try_from(made).ok())
+                        .and_then(|made| self.generated.get_mut(made))
+                {
+                    statement.a = field.entity;
+                    statement.b = field.def.map(|def| ir::Name::Def(def, 0));
+                }
                 Ok(Value {
                     temp: loaded.temp,
                     made: loaded.made,
