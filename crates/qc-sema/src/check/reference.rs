@@ -777,6 +777,23 @@ impl Checker<'_> {
     pub(super) fn address_of(&mut self, value: Value, span: Span) -> Checked {
         let pointer_to = |ty: &Type| Value::of(Type::Pointer(ty.clone().into()));
         match value.reference.clone() {
+            // `OP_ADDRESS` of the entity and the field, into a temporary a store may fold.
+            Reference::Field(field) if !self.global => {
+                let made = self.next_made();
+                self.generated.push(ir::BodyStatement {
+                    a: self.copied(field.entity, field.entity_call),
+                    b: field.def.map(|def| ir::Name::Def(def, 0)),
+                    c: Some(ir::Name::Made(made)),
+                    ..ir::BodyStatement::bare(Op::Address)
+                });
+                let temp = Some(self.env.temps().take(1));
+                self.last_temp = temp;
+                Ok(Value {
+                    temp,
+                    made: Some(made),
+                    ..pointer_to(&value.ty)
+                })
+            }
             Reference::Field(_) | Reference::Accessor(_) => Ok(pointer_to(&value.ty)),
             // FTEF-6.24: a member array through a pointer is the pointer plus its offset.
             Reference::ArrayHead(Some(MemberArray {
