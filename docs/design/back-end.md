@@ -30,20 +30,34 @@ lowered from it, and passes over that layer before the progs is written.
 
 ## Where it stands
 
+The checker (`qc-sema/src/check`) now keeps, for each function body, the whole body as FTEQCC
+generates it: `TypedBody::generated`, a list of `ir::BodyStatement`s in emission order, each an
+opcode whose operands are `ir::Name`s: a definition's word, an immediate, a string literal, the
+value a statement made (`Made`) or a word of it (`MadeWord`), the return global or a word of it,
+a parameter slot, a jump's target statement, the `__va_list`, the `ret*` local, `prior`, an
+array's getter or setter. Beside it:
+
+| `TypedBody` holds | What it is for |
+| --- | --- |
+| `origin(i)` | the source statement each statement was generated in, for the `.lno` (QC-27.19) |
+| `effects()` | what the body makes without a statement reading it, in order: each local it declares, a fold's immediate, and what a dropped branch or `NOT` named and the temporaries they took (FTE-3.6, FTEF-34.16) |
+| `followed()` | whether the checker followed every statement; false at a construct it does not model yet: switches, labels, most intrinsics, struct copies, calls taking parameter defaults, emulations the code generator lowers itself |
+| `BodyStatement::uses`, `temp_words` | which operands an opcode reads or writes, and the temporary each statement takes as it is generated (QC-21.5) |
+
+Under FTEQCC, `qc-codegen` writes a body from it (`compile/body.rs`) when the body was followed,
+every operand its opcodes use is named and it calls no function with parameter defaults: each
+effect made where the body makes it, each statement's temporary allocated in creation order,
+each name resolved to its global. Any other body, and every vanilla body, is still compiled by
+walking the syntax tree (`compile.rs`). A probe over the corpora and the generated programs of
+seed 1 measured the model against the walk: of 48,599 bodies, 47,883 are followed and identical,
+statement by statement and operand by operand, and the writer declines the rest. The FTEQCC
+differential over 200 generated programs agrees with the writer on.
+
+What is still worked out a second time in `qc-codegen`:
+
 | Crosses the boundary today | Worked out again in `qc-codegen` |
 | --- | --- |
-| `ModuleIndex`: the definition list, the facts of each definition, struct shapes, constant values, and the definition each name use resolves to, which `Compiler::def_of` looks up by the name's span | |
-| `TypedBody`: the type at an expression's span, read in one place (casts, `compile.rs`) | every other type (`Compiler::type_of`, carried on each value from the opcode `ops::select` chose), the conversion of an operand (`floats_of`, `int_as_float`, `float_of_int`), constant folding (`folded`, `folded_with_one_constant`) and the choice of opcode (`ops::select`) |
-
-`semantic-model.md` describes `TypedBody` as an arena of expressions, each with its type, the
-definition it names and the conversion applied, and says `qc-codegen` walks it. That
-`TypedBody` was never built: the type is the only part recorded, keyed by span. The checker
-(`qc-sema/src/check`, about 11,800 lines) does the rest of the work for its diagnostics and
-throws it away; the code generator (`compile.rs` and `compile/arrays.rs`, about 5,300 lines)
-walks each file's syntax tree, takes each name's definition from the semantic model, and does
-the rest a second time, emitting statements and choosing
-global offsets as it goes. FTEQCC's code-generation behaviour is spread through it as 52
-dialect branches.
+| `ModuleIndex`: definitions, their facts, struct shapes, constant values, each name use's definition; `TypedBody`: types at a span, binary operators' opcodes and fragments, the whole body | for walked bodies: every type (`Compiler::type_of`), conversions (`floats_of`, `int_as_float`, `float_of_int`), folding and the opcode choice (`ops::select`) |
 
 ## The target
 
@@ -124,7 +138,9 @@ before and after the step and requires the same bytes.
    (#688).
 2. **`Ir` with a creation-order allocator.** `qc_sema::ir` is the layer, and the lowering in
    `qc-sema` builds it from each checked body, emulations included; `qc-codegen` writes the
-   progs from it instead of walking the syntax tree. Allocation gives every temporary a new
+   progs from it instead of walking the syntax tree. Under way: the whole body
+   (`TypedBody::generated`) and its writer cover the bodies the checker follows; what remains
+   is the constructs it does not follow yet and the vanilla profile, after which the walk goes. Allocation gives every temporary a new
    slot in creation order and layout places blocks as FTE-21.7 says, so the progs is byte for
    byte the same. The checker's emulation warnings then read the lowering, and
    `check/emulate.rs`'s model of emitted code goes.
