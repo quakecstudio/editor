@@ -276,6 +276,7 @@ variant qc_sema::cast::Source::Typed
 variant qc_sema::ir::Destination::Nothing
 variant qc_sema::ir::Destination::Value
 variant qc_sema::ir::Destination::Word
+variant qc_sema::ir::Effect::Constant
 variant qc_sema::ir::Effect::ForBegin
 variant qc_sema::ir::Effect::ForEnd
 variant qc_sema::ir::Effect::Make

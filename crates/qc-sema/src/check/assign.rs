@@ -1005,7 +1005,7 @@ impl Checker<'_> {
     }
 
     /// A local array's aggregate initialiser: a constant one is its value at compile time, as a
-    /// global's is (FTEF-32.13), which the body does not follow; any other stores each element's
+    /// global's is (FTEF-32.13), which the code generator writes; any other stores each element's
     /// value to its element in turn by the `STORE_*` of its type, or folds it into the statement
     /// that made it (FTEF-32.15, FTEF-29.13).
     fn array_aggregate(
@@ -1018,10 +1018,16 @@ impl Checker<'_> {
             .syntax()
             .parent()
             .is_some_and(|decl| declares(&decl, &Qualifier::Const));
-        // Its words are set where the code generator declares the local, which the writer does
-        // not do yet.
+        // Its words are its value at compile time, which the code generator writes.
         if constant {
-            self.followed = false;
+            match local {
+                Some(local) => {
+                    let at = self.next_made();
+                    self.effects
+                        .push((at, ir::Effect::Constant(ir::Name::Def(local, 0))));
+                }
+                None => self.followed = false,
+            }
             return Ok(());
         }
         let Some(ty) = declarator

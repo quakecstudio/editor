@@ -13,7 +13,7 @@ use qc_diag::Span;
 use qc_progs::opcode::Opcode;
 use qc_sema::ir::{BodyStatement, Effect, Name};
 use qc_sema::{FileId, TypedBody};
-use qc_syntax::ast;
+use qc_syntax::ast::{self, AstNode as _};
 
 use super::{At, Compiler, Lowered};
 use crate::Internal;
@@ -23,7 +23,12 @@ impl Compiler<'_> {
     /// Writes `body`'s statements as the code of the function being compiled, `named` the span
     /// of its name, the origin of the statements before its first source statement. Whether it
     /// wrote them: a body [`writable`] refuses is left to the syntax walk.
-    pub(super) fn write_body(&mut self, body: &TypedBody, named: Span) -> Lowered<bool> {
+    pub(super) fn write_body(
+        &mut self,
+        body: &TypedBody,
+        syntax: &ast::FunctionBody,
+        named: Span,
+    ) -> Lowered<bool> {
         // A bare `return` names the `ret*` local under FTEQCC (FTE-18.10); id's `qcc` writes
         // `RETURN` of nothing whatever the function returns (QC-13.8).
         let ret_local = self.returns_value() && self.dialect.has_fteqcc_extensions();
@@ -54,6 +59,7 @@ impl Compiler<'_> {
                         let mark = loops.pop().unwrap_or(self.array_functions.len());
                         self.forget_local_array_functions(mark);
                     }
+                    Effect::Constant(local) => self.constant_local(syntax, local, named)?,
                     Effect::Make(_) | Effect::Temp(_) => {
                         self.effect(effect, index, (body, &slots), named)?;
                     }
@@ -109,6 +115,7 @@ impl Compiler<'_> {
                     let mark = loops.pop().unwrap_or(self.array_functions.len());
                     self.forget_local_array_functions(mark);
                 }
+                Effect::Constant(local) => self.constant_local(syntax, local, named)?,
                 Effect::Make(_) | Effect::Temp(_) | Effect::Vector => {
                     self.effect(effect, end, (body, &slots), named)?;
                 }
@@ -138,7 +145,7 @@ impl Compiler<'_> {
                 self.program.allocate(3).at(span)?;
                 return Ok(());
             }
-            Effect::ForBegin | Effect::ForEnd => return Ok(()),
+            Effect::ForBegin | Effect::ForEnd | Effect::Constant(_) => return Ok(()),
         };
         self.resolve(name, index, made, span)?;
         if let Name::Def(id, _) = name
@@ -146,6 +153,40 @@ impl Compiler<'_> {
         {
             self.locals_end = self.program.next_global().at(span)?;
         }
+        Ok(())
+    }
+
+    /// FTEF-32.13: the constant local `local` of the body `syntax` holds its aggregate
+    /// initialiser's words at compile time, as a global does.
+    fn constant_local(
+        &mut self,
+        syntax: &ast::FunctionBody,
+        local: Name,
+        span: Span,
+    ) -> Lowered<()> {
+        let Name::Def(id, _) = local else {
+            return Err(Internal::Unlowered).at(span);
+        };
+        let at = self.index.def(id).at(span)?.location.span.start;
+        let aggregate = syntax
+            .syntax()
+            .descendants()
+            .filter_map(ast::Declarator::cast)
+            .find(|declarator| {
+                declarator
+                    .name()
+                    .is_some_and(|name| name.span().start == at)
+            })
+            .and_then(|declarator| match declarator.initializer() {
+                Some(ast::Initializer::Aggregate(aggregate)) => Some(aggregate),
+                _ => None,
+            })
+            .at(span)?;
+        let place = self.program.get_def(self.index, id).at(span)?;
+        let def = self.program.def(place).at(span)?;
+        let (ty, count) = (def.ty.clone(), def.count);
+        let words = self.aggregate_words(&ty, count, &aggregate)?;
+        self.program.initialise_words(place, &words).at(span)?;
         Ok(())
     }
 

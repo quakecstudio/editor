@@ -1772,7 +1772,7 @@ fn a_generated_body_says_whether_it_followed_every_statement() {
     assert!(!body("void() t = { local float(float x) g = #1; };"));
     assert!(!body("void() t = { local void() f = { }; };"));
     assert!(body("void() t = { float a[2] = { 1, 2 }; };"));
-    assert!(!body("void() t = { const float a[2] = { 1, 2 }; };"));
+    assert!(body("void() t = { const float a[2] = { 1, 2 }; };"));
     assert!(body("void() t = { vector v = { 1, 2, 3 }; };"));
 }
 

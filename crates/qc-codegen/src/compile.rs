@@ -882,7 +882,7 @@ impl<'a> Compiler<'a> {
                 // generated statements, the intermediate layer's whole body; any other is
                 // walked.
                 let written = match self.typed_body() {
-                    Some(typed) => self.write_body(typed, span)?,
+                    Some(typed) => self.write_body(typed, body, span)?,
                     None => false,
                 };
                 if !written {
