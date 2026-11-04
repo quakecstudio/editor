@@ -4012,7 +4012,14 @@ impl<'a> Compiler<'a> {
         }
         let a = self.type_of(to).etype();
         let b = self.type_of(value).etype();
-        let Some(row) = ops::select(Operator::Assign, a, b, None) else {
+        // The store the semantic model chose for the `=` at `span`, when it fits the operands.
+        let chosen = self
+            .typed_body()
+            .and_then(|body| body.opcode_at(span))
+            .and_then(|op| u32::try_from(op.number()).ok())
+            .and_then(ops::row_of)
+            .filter(|row| row.operator == Operator::Assign && (row.a, row.b) == (a, b));
+        let Some(row) = chosen.or_else(|| ops::select(Operator::Assign, a, b, None)) else {
             return Self::mismatch(Operator::Assign, span);
         };
         let from = self.operand_of(value);

@@ -277,9 +277,13 @@ impl Checker<'_> {
         // FTEF-29.13: a store to a definition is its `OP_STORE_*`, unless it folds into the
         // statement that made the value's temporary (`opt_assignments`).
         let folded = stored.temp.is_some() && stored.temp == self.last_temp;
-        if matches!(kind, Assign::Store) && lhs.reference == Reference::Global && !folded {
+        if matches!(kind, Assign::Store) {
             let store = Checker::store_op(self.etype(&target));
-            self.emit(store, &stored, &Value::unknown(), span)?;
+            // The store chosen for the `=`, which the code generator reads.
+            self.opcodes.insert((span.start, span.end), store);
+            if lhs.reference == Reference::Global && !folded {
+                self.emit(store, &stored, &Value::unknown(), span)?;
+            }
         }
         // FTEF-29.3: `QCC_StoreSRefToRef`.
         if lhs.readonly {

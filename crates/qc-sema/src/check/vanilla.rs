@@ -313,6 +313,16 @@ impl Vanilla<'_> {
             if a != b || !stored {
                 return self.mismatch("=", span);
             }
+            // The `STORE_*` of the target's type, which the code generator reads.
+            let store = match a {
+                Basic::Vector => Op::StoreV,
+                Basic::String => Op::StoreS,
+                Basic::Entity => Op::StoreEnt,
+                Basic::Field => Op::StoreFld,
+                Basic::Function => Op::StoreFnc,
+                Basic::Float | Basic::Void => Op::StoreF,
+            };
+            self.opcodes.insert((span.start, span.end), store);
             return Ok(Some(rhs));
         }
         let Some(spelling) = spelling(op) else {
