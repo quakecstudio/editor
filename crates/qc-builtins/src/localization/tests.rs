@@ -265,3 +265,39 @@ fn reviewer_the_text_ends_at_its_first_zero() {
     assert_eq!(value(&loc, "$e"), None);
     assert_eq!(loc.len(), 3);
 }
+
+// spec RRE-1.7: an unescaped `"` ends an unquoted value too, with no trim, so the parse goes on
+// to the next line; the key is the text before the first `=`, so a later `=` is the value's
+// (P2-R1B re-review)
+#[test]
+fn rereview_a_quote_or_an_equals_inside_a_value() {
+    let loc = Localization::loc_load_file(b"k = ab\"cd  \nm = \"x=y\" \na=b=c\n");
+    assert_eq!(value(&loc, "$k").unwrap(), b"ab");
+    assert_eq!(value(&loc, "$m").unwrap(), b"x=y");
+    assert_eq!(value(&loc, "$a").unwrap(), b"b=c");
+    assert_eq!(loc.len(), 3);
+}
+
+// spec RRE-1.7: only spaces and tabs start a line, but q_isspace trims before the `=`, so a
+// vertical tab that starts a line is the key's and a form feed before the `=` is not
+// (P2-R1B re-review)
+#[test]
+fn rereview_a_vertical_tab_starts_the_key() {
+    let loc = Localization::loc_load_file(b" \t\x0bk\x0c \t= v\n");
+    assert_eq!(value(&loc, "$\x0bk").unwrap(), b"v");
+    assert_eq!(value(&loc, "$k"), None);
+    assert_eq!(value(&loc, "$\x0bk\x0c"), None);
+}
+
+// spec RRE-1.7: white space after the `=` (a tab and a carriage return here) that reaches the
+// line's end leaves an empty value; an opening quote with no closing one is trimmed as an
+// unquoted value, whose trim, reaching the line's own `\n`, keeps one blank and ends the file
+// (P2-R1B re-review)
+#[test]
+fn rereview_an_empty_value_and_an_unclosed_quote() {
+    let loc = Localization::loc_load_file(b"k =\t\r\nm = \"ab  \nn = \"z\"\n");
+    assert_eq!(value(&loc, "$k").unwrap(), b"");
+    assert_eq!(value(&loc, "$m").unwrap(), b"ab ");
+    assert_eq!(value(&loc, "$n"), None);
+    assert_eq!(loc.len(), 2);
+}

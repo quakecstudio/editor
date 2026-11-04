@@ -411,6 +411,19 @@ fn atof_signs() {
     assert_eq!(atof(b"0x.8"), 0.5);
 }
 
+// spec BUILTIN-18.19: a hexadecimal number needs a digit after `0x`, else the `0` alone is
+// read; its point and exponent letters take either case (P2-R1B re-review)
+#[test]
+fn rereview_atof_hexadecimal_edges() {
+    use crate::atof::atof;
+    assert_eq!(atof(b"0x").to_bits(), 0.0_f64.to_bits());
+    assert_eq!(atof(b"-0x.p1").to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(atof(b"0xg"), 0.0);
+    assert_eq!(atof(b"0X1P+3"), 8.0);
+    assert_eq!(atof(b"0x1.8p1"), 3.0);
+    assert_eq!(atof(b" \t-0xA.8"), -10.5);
+}
+
 // spec BUILTIN-18.17: each row of strconv's table is reached by a byte of its own: the white,
 // red, special (`rednum` 3 and 4) digit rows, each case of each half of the letters, and the
 // punctuation of each half; a control byte (under 16 in its half) is kept whatever the
