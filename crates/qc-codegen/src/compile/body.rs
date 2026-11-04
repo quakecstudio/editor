@@ -64,8 +64,8 @@ impl Compiler<'_> {
                 // QC-21.5: a vector taken before its words are written, the value of this
                 // statement, which writes its first word.
                 match effect {
-                    Effect::Vector => {
-                        let slot = self.program.allocate(3).at(named)?;
+                    Effect::Block(words) => {
+                        let slot = self.program.allocate(words).at(named)?;
                         slots.insert(index, slot);
                     }
                     Effect::ForBegin => loops.push(self.array_functions.len()),
@@ -139,7 +139,7 @@ impl Compiler<'_> {
                 Effect::Nested(Name::Def(local, _)) => {
                     self.nested_local(syntax, local, named)?;
                 }
-                Effect::Make(_) | Effect::Temp(_) | Effect::Vector | Effect::Nested(_) => {
+                Effect::Make(_) | Effect::Temp(_) | Effect::Block(_) | Effect::Nested(_) => {
                     self.effect(effect, end, (body, &slots), named)?;
                 }
             }
@@ -214,9 +214,9 @@ impl Compiler<'_> {
                 self.program.allocate(words).at(span)?;
                 return Ok(());
             }
-            // A vector whose statements were dropped is still taken (QC-21.5).
-            Effect::Vector => {
-                self.program.allocate(3).at(span)?;
+            // A block whose statements were dropped is still taken (QC-21.5).
+            Effect::Block(words) => {
+                self.program.allocate(words).at(span)?;
                 return Ok(());
             }
             Effect::ForBegin
@@ -479,6 +479,10 @@ fn writable(body: &TypedBody, returns_value: bool) -> bool {
             .and_then(|at| generated.get(at))
             .and_then(|statement| statement.made_words(made))
             .is_some()
+            || body
+                .effects()
+                .iter()
+                .any(|&(at, effect)| at == made && matches!(effect, Effect::Block(_)))
     };
     generated.iter().all(|statement| {
         let named = [statement.a, statement.b, statement.c];

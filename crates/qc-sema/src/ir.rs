@@ -218,9 +218,10 @@ pub enum Effect {
     Make(Name),
     /// A temporary of this many words a dropped statement took (QC-21.5).
     Temp(u32),
-    /// A vector temporary taken before its words are written (QC-21.5), the value of the
-    /// statement it is made at, which writes its first word and the next two the others.
-    Vector,
+    /// A temporary of this many words taken before its words are written (QC-21.5), a vector's
+    /// or a struct's, the value of the statement it is made at: the words the statements after
+    /// it write, `MadeWord` of that statement.
+    Block(u32),
     /// The constant local the name names is given its aggregate initialiser's words at compile
     /// time, as a global is (FTEF-32.13).
     Constant(Name),
@@ -343,7 +344,7 @@ impl BodyStatement {
     #[must_use]
     pub fn temp_words(&self, index: u32) -> Option<u32> {
         let row = opcode_row(self.op)?;
-        // A word of a vector an `Effect::Vector` took takes none of its own.
+        // A word of a block an `Effect::Block` took takes none of its own.
         if matches!(self.c, Some(Name::MadeWord(..))) {
             return None;
         }
@@ -365,8 +366,8 @@ impl BodyStatement {
     /// its own, `c`, and a copy's for a store into a value of its own, `b`.
     #[must_use]
     pub fn made_words(&self, index: u32) -> Option<u32> {
-        // The first word of a vector an `Effect::Vector` took, which is the vector, written as
-        // a result or stored.
+        // The first word of a block an `Effect::Block` took, which is the block, written as a
+        // result or stored.
         if self.c == Some(Name::MadeWord(index, 0)) || self.b == Some(Name::MadeWord(index, 0)) {
             return Some(3);
         }

@@ -499,7 +499,7 @@ impl Checker<'_> {
         let first = folds.unwrap_or_else(|| self.next_made());
         if !self.global {
             let at = self.effects.partition_point(|&(at, _)| at <= first);
-            self.effects.insert(at, (first, ir::Effect::Vector));
+            self.effects.insert(at, (first, ir::Effect::Block(3)));
             if let Some(statement) = folds
                 .and_then(|made| usize::try_from(made).ok())
                 .and_then(|made| self.generated.get_mut(made))

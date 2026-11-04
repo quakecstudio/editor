@@ -583,7 +583,7 @@ impl Checker<'_> {
         if self
             .effects
             .iter()
-            .any(|&(at, effect)| at >= from && effect == ir::Effect::Vector)
+            .any(|&(at, effect)| at >= from && matches!(effect, ir::Effect::Block(_)))
         {
             self.followed = false;
         }

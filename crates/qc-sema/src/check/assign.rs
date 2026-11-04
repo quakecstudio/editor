@@ -1257,7 +1257,7 @@ impl Checker<'_> {
             // through an array's getter, is not followed yet.
             let from = self
                 .name_of(&value)
-                .filter(|name| matches!(name, ir::Name::Def(..)));
+                .filter(|name| matches!(name, ir::Name::Def(..) | ir::Name::Made(_)));
             if let Some(local) = local.filter(|_| self.env.typecmp(&value.ty, &ty) && !self.global)
                 && from.is_some()
                 && declarator.array_suffixes().next().is_none()

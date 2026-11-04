@@ -737,7 +737,7 @@ impl Checker<'_> {
         let made = (!self.global).then_some(first);
         if made.is_some() {
             let operands = [self.name_of(lhs), self.name_of(rhs)];
-            self.effects.push((first, ir::Effect::Vector));
+            self.effects.push((first, ir::Effect::Block(3)));
             for word in 0..3 {
                 let [a, b] = operands.map(|name| name.and_then(|name| name.word(word)));
                 self.generated.push(ir::BodyStatement {

@@ -277,13 +277,13 @@ variant qc_sema::ir::Destination::Nothing
 variant qc_sema::ir::Destination::Value
 variant qc_sema::ir::Destination::Word
 variant qc_sema::ir::Effect::Autocvar
+variant qc_sema::ir::Effect::Block
 variant qc_sema::ir::Effect::Constant
 variant qc_sema::ir::Effect::ForBegin
 variant qc_sema::ir::Effect::ForEnd
 variant qc_sema::ir::Effect::Make
 variant qc_sema::ir::Effect::Nested
 variant qc_sema::ir::Effect::Temp
-variant qc_sema::ir::Effect::Vector
 variant qc_sema::ir::ImmediateKind::Float
 variant qc_sema::ir::ImmediateKind::Integer
 variant qc_sema::ir::ImmediateKind::Vector
