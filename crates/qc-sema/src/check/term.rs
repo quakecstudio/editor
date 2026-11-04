@@ -53,19 +53,12 @@ impl Checker<'_> {
             }
         };
         match op {
-            // `~e` and `-e` are fragments kept by the expression's span, as `!e` is.
             UnaryOp::BitNot | UnaryOp::Neg => {
-                let lowered =
-                    self.lowering(span, &operand, &Value::unknown(), |checker, operand, _| {
-                        if op == UnaryOp::Neg {
-                            checker.negate(operand, span).map(Some)
-                        } else {
-                            checker
-                                .test(Test::BitNot, operand, span, "Type mismatch: ~%s")
-                                .map(Some)
-                        }
-                    })?;
-                Ok(lowered.unwrap_or_else(Value::unknown))
+                if op == UnaryOp::Neg {
+                    self.negate(&operand, span)
+                } else {
+                    self.test(Test::BitNot, &operand, span, "Type mismatch: ~%s")
+                }
             }
             UnaryOp::Plus => {
                 if self.etype_of(&operand.ty).is_some_and(signed_arithmetic) {
@@ -101,13 +94,7 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         }
         let span = not.syntax().span();
-        // The `NOT_*` statement, or its fold, is the fragment kept by the expression's span.
-        let lowered = self.lowering(span, &operand, &Value::unknown(), |checker, operand, _| {
-            checker
-                .test(Test::Not, operand, span, "Type mismatch: !%s")
-                .map(Some)
-        })?;
-        Ok(lowered.unwrap_or_else(Value::unknown))
+        self.test(Test::Not, &operand, span, "Type mismatch: !%s")
     }
 
     /// FTEF-30.4: `-e`, `0 - e` of the operand's type, a truth value taken for its parent's;
@@ -417,28 +404,7 @@ impl Checker<'_> {
         let Some(values) = components.into_iter().collect::<Option<Vec<Value>>>() else {
             return Ok(Value::of(Type::Simple(SimpleType::Vector)));
         };
-        // The components are the fragment's inputs, by their number; the constructor's
-        // statements the fragment kept by its span (`docs/design/back-end.md`).
-        let values: Vec<Value> = values
-            .into_iter()
-            .enumerate()
-            .map(|(at, value)| Value {
-                ir: u8::try_from(at)
-                    .ok()
-                    .map(|n| ir::Operand::Input(ir::Input::Argument(n))),
-                ..value
-            })
-            .collect();
-        let outer = self.fragment.replace(ir::Builder::new());
-        let built = self.vector_of(values, span);
-        let builder = std::mem::replace(&mut self.fragment, outer);
-        let value = built?;
-        if let Some(fragment) =
-            builder.and_then(|builder| builder.finish(value.operand(), [None, None]))
-        {
-            self.fragments.insert(span, fragment);
-        }
-        Ok(value)
+        self.vector_of(values, span)
     }
 
     /// [`Checker::vector`] of its components, each read and a float or an integer.
@@ -482,7 +448,6 @@ impl Checker<'_> {
         }
         // Each component stored to its word of a vector temporary (`QCC_GetTemp(type_vector)`),
         // taken before the first store (QC-21.5).
-        let temp = self.fragment.as_mut().and_then(ir::Builder::vector);
         // FTE-18.12: the first word's store folds into the statement that made its value when
         // that is the last one (`opt_assignments`), which then writes the word; every later
         // store follows a store. The vector is then taken before that statement.
@@ -512,26 +477,14 @@ impl Checker<'_> {
                 continue;
             }
             if self.etype_of(&value.ty) == Some(Etype::Integer) {
-                if let Some(builder) = &mut self.fragment {
-                    builder.give_up();
-                }
                 self.emit(Op::StoreIf, value, &Value::unknown(), span)?;
             } else {
                 self.generate(Op::StoreF, span);
                 let to = ir::Name::MadeWord(first, u32::from(word));
                 self.name_last(Op::StoreF, self.name_of(value), Some(to));
-                if let (Some(builder), Some(temp)) = (&mut self.fragment, temp) {
-                    let to = ir::Operand::Temp(temp).word(word);
-                    builder.push(
-                        Op::StoreF,
-                        [Some(value.operand()), Some(to)],
-                        ir::Destination::Nothing,
-                    );
-                }
             }
         }
         Ok(Value {
-            ir: temp.map(ir::Operand::Temp),
             made: (!self.global).then_some(first),
             ..Value::of(Type::Simple(SimpleType::Vector))
         })

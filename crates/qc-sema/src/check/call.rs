@@ -296,12 +296,11 @@ impl Checker<'_> {
         }
         // FTE-18.7: an empty slot is given its parameter's default.
         let defaulted: Vec<bool> = passed.iter().map(Option::is_none).collect();
-        self.call_fragment(
+        self.call_statements(
             &function,
             passed_count,
             (callee, &values, &defaulted),
             &field_loads,
-            span,
         );
         let call = self.last_made();
         // `out` arguments are stored back after the call (`QCC_PR_GenerateFunctionCallRef`).
@@ -373,25 +372,17 @@ impl Checker<'_> {
         Ok(Value::of(param.clone()))
     }
 
-    /// FTEF-34.9: the statements a call generates, each argument stored to its parameter by its
-    /// words, `OP_STORE_V`, `OP_STORE_I64` where the target has it, else `OP_STORE_F`, then
-    /// `OP_CALLn`; on a target with `OP_CALL1H` the first two arguments of at most three words
-    /// are passed as they are, with no store, and the call is `OP_CALLnH`. An argument of more
-    /// than three words is copied three at a time, each three a parameter, by the widest store
-    /// the target has for the words left (`QCC_PR_GenerateFunctionCallRef`). Only at global
-    /// scope do they matter.
-    /// QC-18.3, FTE-18.9: a call of `function` as a fragment of the intermediate layer kept by
-    /// the call's span: each argument a parameter takes stored to its slot by its size,
-    /// `STORE_V` for three words or a variant's and `STORE_F` for one, then `CALLn` of the
-    /// callee, the fragment's left input; its value the return global. An argument of more
-    /// than three words leaves no fragment.
-    fn call_fragment(
+    /// QC-18.3, FTE-18.9, FTE-18.11, FTE-18.12: the statements a call of `function` generates
+    /// in a function: each field argument loaded into its slot, then each other argument a
+    /// parameter takes stored to its slot by its size, `STORE_V` for three words or a variant's
+    /// and `STORE_F` for one, the first folded into the statement that made it, then each
+    /// default a parameter takes, then `CALLn` of the callee; its value the return global.
+    fn call_statements(
         &mut self,
         function: &FunctionType,
         count: usize,
         (callee, values, defaulted): (Option<ir::Name>, &[Value], &[bool]),
         field_loads: &[FieldLoad],
-        span: Span,
     ) {
         // The arguments written and each parameter after them that takes its default
         // (FTE-18.7), of which a parameter takes its own.
@@ -494,37 +485,6 @@ impl Checker<'_> {
                 });
                 self.last_temp = None;
             }
-        }
-        let mut builder = ir::Builder::new();
-        for slot in 0..passed {
-            let ty = values
-                .get(slot)
-                .map(|value| &value.ty)
-                .or_else(|| function.params.get(slot));
-            let words = ty.and_then(|ty| self.env.layout(ty)).map_or(1, |l| l.words);
-            let variant = variant_parameter(function, slot);
-            let store = match words {
-                3 => Op::StoreV,
-                _ if variant => Op::StoreV,
-                1 => Op::StoreF,
-                _ => return,
-            };
-            let Ok(slot) = u8::try_from(slot) else {
-                return;
-            };
-            let reads = [
-                Some(Some(ir::Operand::Input(ir::Input::Argument(slot)))),
-                Some(Some(ir::Operand::Parameter(slot))),
-            ];
-            builder.push(store, reads, ir::Destination::Nothing);
-        }
-        let Some(call) = call_opcode(passed) else {
-            return;
-        };
-        let callee = [Some(Some(ir::Operand::Input(ir::Input::Left))), None];
-        builder.push(call, callee, ir::Destination::Nothing);
-        if let Some(fragment) = builder.finish(Some(ir::Operand::Return), [None, None]) {
-            self.fragments.insert(span, fragment);
         }
     }
 

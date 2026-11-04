@@ -18,7 +18,7 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
 use crate::check::fold::{Folded, fold};
-use crate::check::opcodes::{Opcode, row};
+use crate::check::opcodes::row;
 use crate::check::{Constness, Sym, Value};
 use crate::ir;
 use crate::ty::Type;
@@ -143,9 +143,6 @@ impl Checker<'_> {
             // value; the intermediate layer holds no fragment of it.
             if !self.env.target_at(span.start).valid(op) {
                 self.followed = false;
-                if let Some(builder) = &mut self.fragment {
-                    builder.give_up();
-                }
             }
             // Its value decides no folding or emulation; the comparison warnings read no value.
             if self.env.target_at(span.start).valid(op) {
@@ -211,12 +208,8 @@ impl Checker<'_> {
             self.env.temps().free(offset);
         }
         let Some(row) = row(op) else {
-            if let Some(builder) = &mut self.fragment {
-                builder.give_up();
-            }
             return result;
         };
-        let result = self.lowered(op, row, lhs, rhs, result);
         // The generated statement's operands: what each value it reads names, and its own value.
         let made = self
             .generated
@@ -264,8 +257,8 @@ impl Checker<'_> {
         }
     }
 
-    /// Records `constant` as an immediate the fragment being lowered made, when there is one; a
-    /// kind of constant the layer does not hold leaves the fragment unheld.
+    /// Records `constant` as an immediate the body makes where it is (FTEF-26.2), in a
+    /// function.
     pub(super) fn made(&mut self, constant: Constant) {
         if !self.global
             && let Some(immediate) = constant.immediate()
@@ -274,35 +267,6 @@ impl Checker<'_> {
             self.effects
                 .push((at, ir::Effect::Make(ir::Name::Immediate(immediate))));
         }
-        let Some(builder) = &mut self.fragment else {
-            return;
-        };
-        match constant.immediate() {
-            Some(immediate) => builder.made(immediate),
-            None => builder.give_up(),
-        }
-    }
-
-    /// The statement `op` of `lhs` and `rhs` added to the fragment being lowered, when there is
-    /// one: an operand its row reads that the fragment cannot name means it holds the
-    /// operator no longer. `result` is given the statement's value as its operand.
-    fn lowered(&mut self, op: Op, row: &Opcode, lhs: &Value, rhs: &Value, result: Value) -> Value {
-        let Some(builder) = &mut self.fragment else {
-            return result;
-        };
-        let reads = |value: &Value, slot: usize| {
-            row.types
-                .get(slot)
-                .is_some_and(|t| t.etype() != Etype::Void)
-                .then(|| value.operand())
-        };
-        let c = if row.makes_value() {
-            ir::Destination::Value
-        } else {
-            ir::Destination::Nothing
-        };
-        let ir = builder.push(op, [reads(lhs, 0), reads(rhs, 1)], c);
-        Value { ir, ..result }
     }
 
     /// FTEF-34.9: the store a value of basic type `etype` is copied by, `OP_STORE_*`.
@@ -440,17 +404,6 @@ impl Checker<'_> {
         (lhs, rhs): (&Value, &Value),
         result: Value,
     ) -> Value {
-        if let Some(builder) = &mut self.fragment {
-            for (operand, slot) in [(lhs, 0), (rhs, 1)] {
-                let reads = [
-                    Some(operand.operand()),
-                    Some(Some(ir::Operand::Parameter(slot))),
-                ];
-                builder.push(Op::StoreF, reads, ir::Destination::Nothing);
-            }
-            let callee = [Some(Some(ir::Operand::Def(function))), None];
-            builder.push(Op::Call2, callee, ir::Destination::Nothing);
-        }
         let call = self.helper_statements(function, &[lhs, rhs]);
         for offset in [lhs.temp, rhs.temp].into_iter().flatten() {
             self.env.temps().free(offset);
@@ -460,7 +413,6 @@ impl Checker<'_> {
         // into.
         self.last_temp = if call.is_some() { None } else { temp };
         Value {
-            ir: Some(ir::Operand::Return),
             temp,
             returned: call.is_some(),
             call,
@@ -532,24 +484,6 @@ impl Checker<'_> {
         result: Value,
     ) -> Result<Value, Fatal> {
         let emulation = emulation(op);
-        // The intermediate layer holds the emulations that are statements emitted in turn;
-        // the others the code generator still lowers itself.
-        if !matches!(
-            emulation,
-            Emulation::ConvertRight(..)
-                | Emulation::ConvertLeft(..)
-                | Emulation::Remainder(..)
-                | Emulation::Reciprocal(..)
-                | Emulation::Complement(_)
-                | Emulation::ByWord(_)
-                | Emulation::Clear { .. }
-                | Emulation::Xor { .. }
-                | Emulation::Instead(_)
-                | Emulation::Swapped(_)
-        ) && let Some(builder) = &mut self.fragment
-        {
-            builder.give_up();
-        }
         match emulation {
             Emulation::ConvertRight(conv, then) => {
                 let rhs = self.emit(conv, rhs, &Value::unknown(), span)?;
@@ -601,9 +535,6 @@ impl Checker<'_> {
                         return Ok(self.helper_call(function, (lhs, rhs), result));
                     }
                     self.followed = false;
-                    if let Some(builder) = &mut self.fragment {
-                        builder.give_up();
-                    }
                     return Ok(result);
                 }
                 let &[div, ref rest @ .., mul, sub] = steps else {
@@ -699,9 +630,6 @@ impl Checker<'_> {
         let target = self.env.target_at(span.start);
         if let Some(store) = store.filter(|&store| target.valid(store)) {
             // The store opcode is not held by the intermediate layer yet.
-            if let Some(builder) = &mut self.fragment {
-                builder.give_up();
-            }
             self.generate(store, span);
             return Ok(replaced(store));
         }
@@ -750,28 +678,9 @@ impl Checker<'_> {
         }
         // A store of the vector folds into no word's statement (`opt_assignments` reads c).
         self.last_temp = None;
-        let mut ir = None;
-        if let Some(builder) = &mut self.fragment {
-            match (lhs.operand(), rhs.operand()) {
-                (Some(a), Some(b)) => {
-                    if let Some(vector) = builder.vector() {
-                        for word in 0..3 {
-                            builder.push(
-                                word_op,
-                                [Some(a.word(word)), Some(b.word(word))],
-                                ir::Destination::Word(vector, word),
-                            );
-                        }
-                        ir = Some(ir::Operand::Temp(vector));
-                    }
-                }
-                _ => builder.give_up(),
-            }
-        }
         // Plain statements, which report nothing at global scope (FTEF-34.9).
         Value {
             temp: Some(temp),
-            ir,
             made,
             word: 0,
             ..result
@@ -791,9 +700,6 @@ impl Checker<'_> {
     ) -> Result<Value, Fatal> {
         if helper.is_some_and(|helper| self.env.defines(helper)) {
             self.followed = false;
-            if let Some(builder) = &mut self.fragment {
-                builder.give_up();
-            }
             return Ok(result);
         }
         let not_b = self.emit(not, rhs, &Value::unknown(), span)?;

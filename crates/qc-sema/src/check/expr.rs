@@ -32,8 +32,6 @@ pub(super) struct Checker<'e> {
     pub(super) env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
     pub(super) opcodes: HashMap<(usize, usize), Op>,
-    /// The fragments lowered so far.
-    pub(super) fragments: ir::Fragments,
     /// Every statement the body generates, in order (`docs/design/back-end.md`).
     pub(super) generated: Vec<ir::BodyStatement>,
     /// The words of a call's value still to be read from the return global, which a call or
@@ -78,8 +76,6 @@ pub(super) struct Checker<'e> {
     /// Each call whose value a statement copied out of the return global, and the copy, which
     /// a statement reading the value after the copy reads (FTE-18.13).
     pub(super) copies: Vec<(u32, u32)>,
-    /// The fragment of the binary operator being checked, if any.
-    pub(super) fragment: Option<ir::Builder>,
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
     /// (FTEQCC's `conditional`).
     pub(super) in_condition: bool,
@@ -132,7 +128,6 @@ impl<'e> Checker<'e> {
             env,
             types: HashMap::new(),
             opcodes: HashMap::new(),
-            fragments: ir::Fragments::default(),
             generated: Vec::new(),
             live_return: None,
             not_of_return: None,
@@ -150,7 +145,6 @@ impl<'e> Checker<'e> {
             keeps_condition: false,
             live_call: None,
             copies: Vec::new(),
-            fragment: None,
             in_condition: false,
             addressed: HashSet::new(),
             returned: false,
@@ -180,7 +174,6 @@ impl<'e> Checker<'e> {
         TypedBody {
             types: self.types,
             opcodes: self.opcodes,
-            fragments: self.fragments,
             generated: self.generated,
             strings: self.strings,
             origins: self.origins,
@@ -493,40 +486,7 @@ impl<'e> Checker<'e> {
         lhs: &Value,
         rhs: &Value,
     ) -> Result<Option<Value>, Fatal> {
-        self.lowering(span, lhs, rhs, |checker, lhs, rhs| {
-            checker.operator_lowered(op, span, lhs, rhs)
-        })
-    }
-
-    /// `lower` of `lhs` and `rhs` tagged as the inputs of a fragment of the intermediate layer,
-    /// kept by `span` when the layer holds every step of it.
-    pub(super) fn lowering(
-        &mut self,
-        span: Span,
-        lhs: &Value,
-        rhs: &Value,
-        lower: impl FnOnce(&mut Self, &Value, &Value) -> Result<Option<Value>, Fatal>,
-    ) -> Result<Option<Value>, Fatal> {
-        let inputs = [lhs, rhs].map(|value| value.known().and_then(Constant::immediate));
-        let lhs = Value {
-            ir: Some(ir::Operand::Input(ir::Input::Left)),
-            ..lhs.clone()
-        };
-        let rhs = Value {
-            ir: Some(ir::Operand::Input(ir::Input::Right)),
-            ..rhs.clone()
-        };
-        let outer = self.fragment.replace(ir::Builder::new());
-        let checked = lower(self, &lhs, &rhs);
-        let builder = std::mem::replace(&mut self.fragment, outer);
-        let Ok(Some(value)) = checked else {
-            return checked;
-        };
-        if let Some(fragment) = builder.and_then(|builder| builder.finish(value.operand(), inputs))
-        {
-            self.fragments.insert(span, fragment);
-        }
-        Ok(Some(value))
+        self.operator_lowered(op, span, lhs, rhs)
     }
 
     /// [`Checker::operator_at`] once its inputs are tagged.
@@ -612,8 +572,6 @@ impl<'e> Checker<'e> {
                     }
                     _ => row.value_type(),
                 },
-                // A converted operand is a temporary the intermediate layer does not name.
-                ir: if kept || value.null() { value.ir } else { None },
                 ..value.clone()
             }
         };
