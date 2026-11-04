@@ -215,9 +215,38 @@ pub enum Effect {
     Make(Name),
     /// A temporary of this many words a dropped statement took (QC-21.5).
     Temp(u32),
+    /// A vector temporary taken before its words are written (QC-21.5), the value of the
+    /// statement it is made at, which writes its first word and the next two the others.
+    Vector,
 }
 
 impl Name {
+    /// Word `word` of what it names, if it names something by words: a definition's, a
+    /// value's, an immediate's or the return global's.
+    #[must_use]
+    pub const fn word(self, word: u32) -> Option<Self> {
+        Some(match self {
+            Self::Def(def, at) => Self::Def(def, at.saturating_add(word)),
+            Self::Made(made) => Self::MadeWord(made, word),
+            Self::MadeWord(made, at) => Self::MadeWord(made, at.saturating_add(word)),
+            Self::Immediate(immediate) => Self::ImmediateWord(immediate, word),
+            Self::ImmediateWord(immediate, at) => {
+                Self::ImmediateWord(immediate, at.saturating_add(word))
+            }
+            Self::Return => Self::ReturnWord(word),
+            Self::ReturnWord(at) => Self::ReturnWord(at.saturating_add(word)),
+            Self::Parameter(_)
+            | Self::VaList(_)
+            | Self::Default(_)
+            | Self::RetLocal
+            | Self::Prior
+            | Self::Jump(_)
+            | Self::String(_)
+            | Self::ArrayGet(_)
+            | Self::ArraySet(_) => return None,
+        })
+    }
+
     /// Whether it names something the compiler makes the first time it is named: a
     /// definition, an immediate, an array function, an extra parameter slot, the `ret*` local.
     #[must_use]
@@ -295,6 +324,10 @@ impl BodyStatement {
     #[must_use]
     pub fn temp_words(&self, index: u32) -> Option<u32> {
         let row = opcode_row(self.op)?;
+        // A word of a vector an `Effect::Vector` took takes none of its own.
+        if matches!(self.c, Some(Name::MadeWord(..))) {
+            return None;
+        }
         let etype = if row.makes_value() {
             row.types[2].etype()
         } else if self.b == Some(Name::Made(index)) {
@@ -313,6 +346,10 @@ impl BodyStatement {
     /// its own, `c`, and a copy's for a store into a value of its own, `b`.
     #[must_use]
     pub fn made_words(&self, index: u32) -> Option<u32> {
+        // The first word of a vector an `Effect::Vector` took, which is the vector.
+        if self.c == Some(Name::MadeWord(index, 0)) {
+            return Some(3);
+        }
         let made = Some(Name::Made(index));
         let etype = if self.c == made {
             opcode_row(self.op)?.types[2].etype()

@@ -574,6 +574,16 @@ impl Checker<'_> {
         let mut step_statements = self
             .generated
             .split_off(before_step.min(self.generated.len()));
+        // A vector the step took is made where the step was read, which the moved statements
+        // would no longer follow.
+        let from = u32::try_from(before_step).unwrap_or(u32::MAX);
+        if self
+            .effects
+            .iter()
+            .any(|&(at, effect)| at >= from && effect == ir::Effect::Vector)
+        {
+            self.followed = false;
+        }
         self.statement_of(s.body());
         let next = self.here();
         // The step's statements move after the body's, and the values they make with them.

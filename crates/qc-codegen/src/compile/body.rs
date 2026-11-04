@@ -36,7 +36,14 @@ impl Compiler<'_> {
             while let Some(&&(at, effect)) = effects.peek()
                 && at <= index
             {
-                self.effect(effect, index, (body, &slots), named)?;
+                // QC-21.5: a vector taken before its words are written, the value of this
+                // statement, which writes its first word.
+                if effect == Effect::Vector {
+                    let slot = self.program.allocate(3).at(named)?;
+                    slots.insert(index, slot);
+                } else {
+                    self.effect(effect, index, (body, &slots), named)?;
+                }
                 effects.next();
             }
             let at = usize::try_from(index)
@@ -101,6 +108,11 @@ impl Compiler<'_> {
             Effect::Make(name) => name,
             Effect::Temp(words) => {
                 self.program.allocate(words).at(span)?;
+                return Ok(());
+            }
+            // A vector whose statements were dropped is still taken (QC-21.5).
+            Effect::Vector => {
+                self.program.allocate(3).at(span)?;
                 return Ok(());
             }
         };

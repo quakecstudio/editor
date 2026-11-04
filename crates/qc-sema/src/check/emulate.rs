@@ -708,9 +708,28 @@ impl Checker<'_> {
     /// The vector operator whose float one of each word is `word_op` (`Emulation::ByWord`):
     /// `result`, a vector temporary, its three words written in turn.
     fn by_word(&mut self, word_op: Op, (lhs, rhs): (&Value, &Value), result: Value) -> Value {
-        // Its three statements are the fragment's; the body does not follow them.
-        self.followed = false;
         let temp = self.env.temps().take(3);
+        // A call's vector read word by word stays the return global's to copy later, which the
+        // body does not follow.
+        if lhs.returned || rhs.returned {
+            self.followed = false;
+        }
+        // In a function, the vector is taken, then each word's statement writes its word.
+        let first = self.next_made();
+        let made = (!self.global).then_some(first);
+        if made.is_some() {
+            let operands = [self.name_of(lhs), self.name_of(rhs)];
+            self.effects.push((first, ir::Effect::Vector));
+            for word in 0..3 {
+                let [a, b] = operands.map(|name| name.and_then(|name| name.word(word)));
+                self.generated.push(ir::BodyStatement {
+                    op: word_op,
+                    a,
+                    b,
+                    c: Some(ir::Name::MadeWord(first, word)),
+                });
+            }
+        }
         // A store of the vector folds into no word's statement (`opt_assignments` reads c).
         self.last_temp = None;
         let mut ir = None;
@@ -735,6 +754,8 @@ impl Checker<'_> {
         Value {
             temp: Some(temp),
             ir,
+            made,
+            word: 0,
             ..result
         }
     }

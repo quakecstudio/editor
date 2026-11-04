@@ -3472,3 +3472,29 @@ fn an_if_of_a_constant_vectors_component_keeps_one_branch() {
         [st(StoreF, immediate(&p, 8.0), gf0, 0), st(Done, 0, 0, 0)]
     );
 }
+
+// spec QC-21.5, FTE-19.12: a vector `&` or `|` with no opcode of its own on the target is each
+// word's float opcode into a vector temporary taken before its words are written, which the
+// store then copies
+#[test]
+fn a_vector_bitwise_operator_writes_each_word_of_its_temporary() {
+    let p = fte_progs("vector a, b, c;\nvoid() t = { c = a & b; c = (a | b) & a; };\n");
+    let t = body(&p, "t");
+    let (a, b, c) = (global(&p, "a"), global(&p, "b"), global(&p, "c"));
+    assert_eq!(
+        opcodes(&t),
+        ops(&[
+            BitAnd, BitAnd, BitAnd, StoreV, BitOr, BitOr, BitOr, BitAnd, BitAnd, BitAnd, StoreV,
+            Done
+        ])
+    );
+    let first = t[0].c;
+    for word in 0..3 {
+        let w = usize::try_from(word).unwrap();
+        assert_eq!((t[w].a, t[w].b, t[w].c), (a + word, b + word, first + word));
+        let or = t[4 + w].c;
+        assert_eq!(or, first + 3 + word, "the next vector follows the first");
+        assert_eq!((t[7 + w].a, t[7 + w].b), (or, a + word));
+    }
+    assert_eq!((t[3].a, t[3].b), (first, c));
+}
