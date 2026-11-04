@@ -985,6 +985,60 @@ fn a_vanilla_body_declines_what_it_does_not_follow() {
     assert_eq!((add.a, add.b), (Some(Name::Return), Some(Name::Return)));
 }
 
+// spec FTE-3.1, FTE-3.8: a switch is generated as FTEQCC lowers it on the vanilla opcodes: a
+// `GOTO` to the tests past the body, the body, a `GOTO` past the tests, then each case tested
+// in order, a value by `EQ_F` and `IF`, a 0 by `IFNOT` of the value, a range by `GE_F`, `LE_F`
+// and `AND_F`, and a `GOTO` to `default:`
+#[test]
+fn a_generated_body_holds_a_switch() {
+    use crate::ir::Name;
+    use qc_preproc::Op;
+    let source = "float a; void() t = { switch (a) { case 1: a = 2; break; case 0: a = 3; \
+        case 4 .. 6: a = 5; default: a = 4; } };";
+    let index = super::fte_index_of(source);
+    let t = index
+        .defs
+        .iter()
+        .position(|d| d.name == "t")
+        .map(DefId::new)
+        .unwrap();
+    let body = &index.bodies[&t];
+    assert!(body.followed());
+    let generated = body.generated();
+    let jump = |at| Some(Name::Jump(at));
+    assert_eq!(
+        generated
+            .iter()
+            .map(|s| (
+                s.op,
+                s.a.filter(|a| matches!(a, Name::Jump(_))),
+                s.b.filter(|b| matches!(b, Name::Jump(_)))
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (Op::Goto, jump(7), None),
+            (Op::StoreF, None, None),
+            (Op::Goto, jump(15), None),
+            (Op::StoreF, None, None),
+            (Op::StoreF, None, None),
+            (Op::StoreF, None, None),
+            (Op::Goto, jump(15), None),
+            (Op::EqF, None, None),
+            (Op::IfI, None, jump(1)),
+            (Op::IfnotI, None, jump(3)),
+            (Op::GeF, None, None),
+            (Op::LeF, None, None),
+            (Op::AndF, None, None),
+            (Op::IfI, None, jump(4)),
+            (Op::Goto, jump(5), None),
+            (Op::Done, None, None),
+        ]
+    );
+    let a = Some(Name::Def(DefId::new(0), 0));
+    assert_eq!((generated[8].a, generated[9].a), (Some(Name::Made(7)), a));
+    assert_eq!(generated[13].a, Some(Name::Made(12)));
+}
+
 // QC-14.4, QC-14.5, FTEF-34.16: the generated body holds its jumps: an `if`'s `IFNOT`, an
 // `IF` where the test was `!x` of a float, a `while`'s test and `GOTO` back, a `return`'s
 // `RETURN`

@@ -102,6 +102,11 @@ impl Checker<'_> {
     /// after it.
     fn truncate(&mut self, mark: Mark) {
         self.layout.truncate(mark.at());
+        // FTE-3.6: a `case` label the dropped statements recorded is forgotten
+        // (`if (pr_cases[i] >= newstatementcount)`).
+        for cases in &mut self.switches {
+            cases.retain(|case| case.at.at() < mark.at());
+        }
         let from = usize::try_from(mark.made()).unwrap_or(usize::MAX);
         // What the dropped statements named is still made, and the temporaries they took still
         // taken, in their order.
@@ -596,8 +601,6 @@ impl Checker<'_> {
     /// else a comparison of each `case` with the value after the body; each case value is made
     /// the switch's type, and a type no comparison takes is "Bad switch type".
     fn switch(&mut self, s: &ast::SwitchStmt, line: u32) -> Result<(), Fatal> {
-        // A switch's table of cases is not followed statement by statement.
-        self.followed = false;
         let span = s.syntax().span();
         let breaks = self.layout.marks().0;
         let value = self.condition(s.scrutinee())?;
@@ -639,7 +642,10 @@ impl Checker<'_> {
             Some(Step::Return | Step::Done | Step::Goto) => here.at() != body.at(),
             Some(Step::Branch | Step::Other) | None => false,
         };
-        let patch2 = (!jumps_out || self.layout.jumps_to(0, here))
+        // FTE-3.7: a `case` or `default` label at the statement after the body is a jump to it
+        // (`QCC_AStatementJumpsTo` reads `pr_cases`).
+        let labelled = cases.iter().any(|case| case.at == here);
+        let patch2 = (!jumps_out || labelled || self.layout.jumps_to(0, here))
             .then(|| self.jump(Step::Goto, Op::Goto, None, line));
         let table = self.here();
         self.layout.patch(patch1, table);
