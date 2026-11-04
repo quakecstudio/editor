@@ -296,6 +296,25 @@ impl Checker<'_> {
             self.generated.push(Checker::store_op(self.etype(&target)));
             self.last_temp = None;
         }
+        // FTEF-19.78: an element at an index that is no constant is stored by the array's
+        // `ArraySet*` function: the index and the value stored to its parameters, then `CALL2`.
+        if let Reference::Element(element) = &lhs.reference
+            && element.index.known().is_none()
+            && !element.vector
+            && matches!(kind, Assign::Store)
+            && !self.global
+        {
+            let index_folded = element.index.temp.is_some() && element.index.temp == self.last_temp;
+            if !index_folded {
+                self.generated.push(Op::StoreF);
+            }
+            let words = self.env.layout(&target).map_or(1, |l| l.words);
+            self.generated
+                .push(if words == 3 { Op::StoreV } else { Op::StoreF });
+            self.clobber_return();
+            self.generated.push(Op::Call2);
+            self.last_temp = None;
+        }
         // FTE-6.4: a field's store, a compound one's too, is its `ADDRESS`, made after the
         // value, and `STOREP_*` of the field's type through it.
         if matches!(lhs.reference, Reference::Field(_)) && !self.global {

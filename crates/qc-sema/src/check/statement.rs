@@ -406,7 +406,9 @@ impl Checker<'_> {
                 self.value(Some(expr))?;
             }
         }
-        let step_statements = self.generated.split_off(before_step.min(self.generated.len()));
+        let step_statements = self
+            .generated
+            .split_off(before_step.min(self.generated.len()));
         self.statement_of(s.body());
         self.generated.extend(step_statements);
         let next = self.layout.here();

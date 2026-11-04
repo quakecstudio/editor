@@ -153,6 +153,7 @@ impl Checker<'_> {
                     reference: Reference::Global,
                     sym,
                     name,
+                    returned: called,
                     ..value
                 })
             }
@@ -353,6 +354,17 @@ impl Checker<'_> {
             .is_some_and(|layout| layout.words > 3);
         if big_struct {
             self.simple_statement(Op::Push, span)?;
+        }
+        // FTEF-19.78: the read is `ArrayGet*`'s call: the index stored to its parameter unless
+        // it folds, `CALL1`, the value the call's in the return global.
+        if !self.global {
+            if !(float.temp.is_some() && float.temp == self.last_temp) {
+                self.generated.push(Op::StoreF);
+            }
+            self.clobber_return();
+            self.generated.push(Op::Call1);
+            self.last_temp = None;
+            self.live_return = Some(self.env.layout(&element.ty).map_or(1, |l| l.words));
         }
         Ok(true)
     }
