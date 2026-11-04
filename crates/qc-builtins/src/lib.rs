@@ -40,6 +40,8 @@ pub mod table;
 pub mod tokenize;
 
 #[cfg(test)]
+mod properties;
+#[cfg(test)]
 mod tests;
 
 pub use dispatch::MockBuiltins;

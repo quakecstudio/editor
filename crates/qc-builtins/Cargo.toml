@@ -14,5 +14,8 @@ qc-progs = { workspace = true }
 qc-types = { workspace = true }
 qc-vm = { workspace = true }
 
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
 [lints]
 workspace = true

@@ -2858,6 +2858,7 @@ checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 name = "qc-builtins"
 version = "2026.10.0"
 dependencies = [
+ "proptest",
  "qc-edict",
  "qc-progs",
  "qc-types",
