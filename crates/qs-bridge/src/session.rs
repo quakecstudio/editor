@@ -241,7 +241,17 @@ fn version(text: &str) -> Option<(u32, u32)> {
     Some((major.parse().ok()?, minor.parse().ok()?))
 }
 
-/// Checks `value` against the schema `name`, `-32602` when it fails (BRIDGE-4.2).
+/// Checks `value` against the schema `name` of `docs/spec/bridge-schema/` (without `.json`),
+/// `-32602` when it fails (BRIDGE-4.2), `-32603` for a schema that does not exist.
+///
+/// # Errors
+///
+/// The error that says why.
+pub fn check_schema(name: &str, value: &Value) -> Result<(), RpcError> {
+    check(name, value)
+}
+
+/// [`check_schema`].
 fn check(name: &str, value: &Value) -> Result<(), RpcError> {
     let validator = validator(name)
         .ok_or_else(|| RpcError::new(ErrorCode::InternalError, format!("no schema {name}")))?;
