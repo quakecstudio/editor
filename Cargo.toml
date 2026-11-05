@@ -150,6 +150,8 @@ qc-vm = { path = "crates/qc-vm" }
 qs-bsp = { path = "crates/qs-bsp" }
 qs-commands = { path = "crates/qs-commands" }
 qs-editor-view = { path = "crates/qs-editor-view" }
+qs-engine = { path = "crates/qs-engine" }
+qs-install = { path = "crates/qs-install" }
 qs-layout = { path = "crates/qs-layout" }
 qs-log = { path = "crates/qs-log" }
 qs-map = { path = "crates/qs-map" }

@@ -1,0 +1,22 @@
+[package]
+name = "qs-engine"
+description = "The IDE's client for the preview host: run roots, launching the host and the bridge protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The bridge's socket or named pipe (BRIDGE-1.1), as the host serves it.
+interprocess = { workspace = true }
+qs-bridge = { workspace = true }
+qs-install = { workspace = true }
+# FS_GAMENAME, the run root's own `id1`.
+qs-vfs = { workspace = true }
+serde_json = { workspace = true, features = ["std"] }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

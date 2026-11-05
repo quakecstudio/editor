@@ -48,6 +48,10 @@ pub(crate) struct Args {
     /// No sound device, the engine's `-nosound`.
     #[arg(long)]
     pub(crate) nosound: bool,
+    /// No window and no sound: frames of 1/72 of a second, the bridge served between them,
+    /// for a client's tests; needs `-bridge`.
+    #[arg(long, requires = "bridge")]
+    pub(crate) headless: bool,
     /// A free camera instead of the player.
     #[arg(long)]
     pub(crate) fly: bool,

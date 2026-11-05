@@ -802,6 +802,19 @@ jobs:
       - name: Decode the LibreQuake lite asset
         if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo run --release -p qs-vfs --example walk -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+      # cpal, the preview host's sound output, links ALSA on Linux; the runner image has
+      # pkg-config but not ALSA's headers.
+      - name: Install ALSA's headers for the preview host's sound
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev
+      # P3-06: qs-engine's bridge client against the real preview host, headless, launched
+      # through a run root over LibreQuake's id1: a symbolic link, or a junction on Windows,
+      # and a Unix socket, or a named pipe on Windows.
+      - name: Run the bridge client against the headless preview host
+        if: env.CI_PATH == 'full'
+        run: cargo xtask bridge-client "$QS_TEST_ASSETS/librequake-lite"
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: env.CI_PATH == 'full' && github.ref == 'refs/heads/main' && steps.downloads-cache.outputs.cache-hit != 'true'
         with:
