@@ -22,6 +22,7 @@ absolute-paths-allowed-crates = [
     "egui_wgpu",
     "epaint",
     "image",
+    "interprocess",
     "jsonschema",
     "junction",
     "miniz_oxide",
