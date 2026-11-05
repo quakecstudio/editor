@@ -80,6 +80,10 @@ pub fn record_to_json(record: &Record) -> String {
             ));
             push_changes(&mut out, changes);
         }
+        Record::Frame { frame, changes } => {
+            out.push_str(&format!("{{\"t\":\"frame\",\"frame\":{frame}"));
+            push_changes(&mut out, changes);
+        }
         Record::String { value, text } => {
             out.push_str(&format!(
                 "{{\"t\":\"string\",\"value\":\"{value:08x}\",\"text\":{}",
@@ -394,6 +398,11 @@ fn parse_record(line: &str) -> Result<Record, LineError> {
                 message,
                 changes,
             }
+        }
+        "frame" => {
+            let frame = object.u32("frame")?;
+            let changes = object.changes()?;
+            Record::Frame { frame, changes }
         }
         "string" => {
             let value = object.bits("value")?;

@@ -25,12 +25,13 @@ pub(crate) fn fresh_dir(name: &str) -> PathBuf {
     fresh(&format!("oracles/{name}"))
 }
 
-/// Oracles whose programs `exec` runs, named `qcc`, `vm-oracle` and `fteqcc`, working in
-/// `work`.
+/// Oracles whose programs `exec` runs, named `qcc`, `vm-oracle`, `engine-oracle` and
+/// `fteqcc`, working in `work`.
 pub(crate) fn fake_oracles<'a>(work: &Path, exec: &'a dyn Exec) -> Oracles<'a> {
     Oracles {
         qcc: PathBuf::from("qcc"),
         vm: PathBuf::from("vm-oracle"),
+        engine: PathBuf::from("engine-oracle"),
         fteqcc: PathBuf::from("fteqcc"),
         fteqcc_fixed: PathBuf::from("fteqcc-fixed"),
         work: work.to_path_buf(),

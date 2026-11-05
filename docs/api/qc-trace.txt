@@ -2,6 +2,7 @@ const qc_trace::TRACE_HEADER_SIZE
 const qc_trace::TRACE_MAGIC
 const qc_trace::TRACE_TAG_ERROR
 const qc_trace::TRACE_TAG_EXIT
+const qc_trace::TRACE_TAG_FRAME
 const qc_trace::TRACE_TAG_RUN
 const qc_trace::TRACE_TAG_STEP
 const qc_trace::TRACE_TAG_STRING
@@ -89,6 +90,7 @@ variant qc_trace::JsonFault::UnknownKey
 variant qc_trace::JsonFault::UnknownRecordType
 variant qc_trace::Record::Error
 variant qc_trace::Record::Exit
+variant qc_trace::Record::Frame
 variant qc_trace::Record::Run
 variant qc_trace::Record::Step
 variant qc_trace::Record::String

@@ -58,6 +58,7 @@ fn tag(record: &Record) -> u8 {
         Record::Exit { .. } => 3,
         Record::Error { .. } => 4,
         Record::String { .. } => 5,
+        Record::Frame { .. } => 6,
     }
 }
 
@@ -121,7 +122,9 @@ fn record_statement(record: &Record) -> i32 {
     match record {
         Record::Step(step) => step.statement,
         Record::Error { statement, .. } => *statement,
-        Record::Run { .. } | Record::Exit { .. } | Record::String { .. } => -1,
+        Record::Run { .. } | Record::Exit { .. } | Record::Frame { .. } | Record::String { .. } => {
+            -1
+        }
     }
 }
 

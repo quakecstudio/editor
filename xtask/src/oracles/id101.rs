@@ -288,6 +288,8 @@ fn run_scenario(
                 ));
             }
             Record::Exit { .. } => {}
+            // TRACE-4.11: only the engine oracle writes frame records.
+            Record::Frame { .. } => problems.push("a frame record in a VM trace".to_owned()),
         }
     }
     if steps == 0 {
