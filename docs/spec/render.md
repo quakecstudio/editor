@@ -575,7 +575,11 @@ alias pipeline, with QuakeSpasm's shader formula for a vertex normal.
   four influences a vertex and skins the baked pose by the frame's joints, which agrees for a
   vertex on one joint, and the preview host computes every frame by the sum, every weight kept.
   A vertex's normal is `MD5_ComputeNormals`': the sum of `cross(v1 - v0, v2 - v0)` normalised
-  over its triangles, normalised, a zero vector left zero; the preview host makes it for every
+  over its triangles, normalised, a zero vector left zero. The triangles are wound as an
+  `.mdl`'s are, which the alias pipeline's culling draws (REND-1.10), and for that winding the
+  cross product points into the model, so every vertex took the facing-away shade of REND-12.5
+  and a rerelease view model drew nearly black; the preview host takes `cross(v2 - v0, v1 -
+  v0)`, the outward normal, so an MD5 model lights as its `.mdl` does, and makes it for every
   frame.
 - **REND-12.3** Each animation frame is one frame of one pose shown for 0.1 seconds (MD5-3.10);
   a frame out of range draws frame 0. The triangles are the mesh's, in its order, each corner

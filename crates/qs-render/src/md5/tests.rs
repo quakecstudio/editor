@@ -234,9 +234,9 @@ fn vertices_are_shaded_by_their_normals() {
     );
     assert_eq!(normal_dot([0.0, 0.0, 1.0], [0.0, 0.0, 1.0]), 2.0);
     assert!((normal_dot([0.0, 0.0, -1.0], [0.0, 0.0, 1.0]) - 31.0 / 44.0).abs() < 1e-6);
-    // The triangle's normal is (1, 0, -1) normalised: across yaw 0's light, shade 1, and
-    // straight away from yaw 180's, 1 - 13/44; times light 100's shadelight, capped at
-    // 192 - 100 over 200 (REND-4.7).
+    // The triangle's normal points out of its clockwise side, (-1, 0, 1) normalised: across
+    // yaw 0's light, shade 1, and straight into yaw 180's, 2; times light 100's
+    // shadelight, capped at 192 - 100 over 200 (REND-4.7).
     let model = model(&Md5Spec::default());
     let (lit, _) = draw(&model, &entity(0));
     assert!((lit[0].shade - 0.46).abs() < 1e-4, "{}", lit[0].shade);
@@ -244,11 +244,7 @@ fn vertices_are_shaded_by_their_normals() {
         &model,
         &AliasEntity::new([0.0; 3], [0.0, 180.0, 0.0], 0, 0, 100.0),
     );
-    assert!(
-        (away[0].shade - 0.46 * 31.0 / 44.0).abs() < 1e-4,
-        "{}",
-        away[0].shade
-    );
+    assert!((away[0].shade - 0.92).abs() < 1e-4, "{}", away[0].shade);
 }
 
 // spec REND-12.4: skin `n` frame `f` is `progs/<shader>_<nn>_<ff>`, frames until one is

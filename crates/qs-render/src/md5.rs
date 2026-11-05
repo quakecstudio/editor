@@ -262,7 +262,8 @@ fn frame_joints(mesh: &Md5Mesh, anim: &Md5Anim, frame: u64) -> Vec<Joint> {
 
 /// Each vertex of `surface` with `joints`: the sum over its weights of `bias` times the
 /// weight's position through its joint, and its normal, the normalised sum of the normals
-/// of its triangles, as `MD5_ComputeNormals` makes them (REND-12.2).
+/// of its triangles as `MD5_ComputeNormals` sums them, turned to point out of a triangle
+/// wound as Quake winds its own (REND-12.2).
 fn surface_vertices(surface: &Md5Surface, joints: &[Joint]) -> Vec<Vertex> {
     let positions: Vec<[f32; 3]> = (0..surface.num_verts)
         .map(|v| {
@@ -288,7 +289,7 @@ fn surface_vertices(surface: &Md5Surface, joints: &[Joint]) -> Vec<Vertex> {
         else {
             continue;
         };
-        let normal = normalize(cross(sub(p1, p0), sub(p2, p0)));
+        let normal = normalize(cross(sub(p2, p0), sub(p1, p0)));
         for vertex in [a, b, c] {
             if let Some(sum) = normals.get_mut(vertex) {
                 *sum = add(*sum, normal);
