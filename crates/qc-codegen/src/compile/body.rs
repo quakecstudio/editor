@@ -108,6 +108,14 @@ impl Compiler<'_> {
                 }
             }
             self.program.emit_operands(op, operands);
+            // FTE-21.8: an operand in a shared temporary takes its real offset at the end.
+            for (operand, name) in (0_u8..).zip([statement.a, statement.b, statement.c]) {
+                if let Some(Name::Made(made) | Name::MadeWord(made, _)) = name
+                    && slots.is_shared(made)
+                {
+                    self.program.mark_shared(operand);
+                }
+            }
             // FTE-18.4: a precache builtin's first argument is recorded.
             let [a, _, _] = operands;
             match (statement.b, statement.c) {
@@ -212,7 +220,9 @@ impl Compiler<'_> {
     ) -> Lowered<()> {
         let name = match effect {
             Effect::Make(name) => name,
-            Effect::Temp(words) => return slots.dropped(&mut self.program, words).at(span),
+            Effect::Temp(words) => {
+                return slots.dropped(&mut self.program, index, words).at(span);
+            }
             // A block taken before its words are written, the value of this statement; one
             // whose statements were dropped is still taken (QC-21.5).
             Effect::Block(words) => return slots.block(&mut self.program, index, words).at(span),
@@ -485,7 +495,7 @@ fn writable(body: &TypedBody, returns_value: bool) -> bool {
 
 /// The arguments a call the semantic model generates passes, `CALL0` to `CALL8`; `None` for
 /// any other opcode.
-fn call_count(op: qc_preproc::Op) -> Option<usize> {
+pub(super) fn call_count(op: qc_preproc::Op) -> Option<usize> {
     use qc_preproc::Op;
     Some(match op {
         Op::Call0 => 0,

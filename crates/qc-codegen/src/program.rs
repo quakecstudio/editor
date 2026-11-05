@@ -167,16 +167,22 @@ const BLOCK_BASE: u32 = 1 << 20;
 /// range, so no two functions' definitions or temporaries share a virtual offset.
 const BLOCK_SPAN: u32 = 1 << 16;
 
-/// The first virtual offset of the module's shared temporaries (FTE-21.8), below every block's
-/// and above every global the module may have: real ones, after every block, when they are
-/// laid out.
-const SHARED_BASE: u32 = 1 << 19;
+/// The first virtual offset of the module's shared temporaries (FTE-21.8), just below every
+/// block's and above every global the module may have while any wait: real ones, after every
+/// block, when they are laid out.
+const SHARED_BASE: u32 = BLOCK_BASE - (1 << 16);
+
+/// The first virtual offset of the open block's locked temporaries (FTE-21.8): above its
+/// parameters and locals while its body is compiled, moved after them when it closes.
+const LOCKED_BASE: u32 = BLOCK_BASE + (1 << 15);
 
 /// A function's block of private locals while its body is compiled (FTE-21.9).
 #[derive(Debug)]
 struct Block {
     /// The next virtual offset.
     next: u32,
+    /// The next virtual offset of its locked temporaries (FTE-21.8).
+    locked_next: u32,
     /// The first definition made since the block opened.
     defs_from: usize,
     /// The first statement made since the block opened.
@@ -235,6 +241,9 @@ pub(crate) struct Program {
     /// The module's shared temporaries, each its virtual offset and words, in the order they
     /// were made, laid out by [`Program::resolve_shared_temps`] (FTE-21.8).
     shared: Vec<(u32, u32)>,
+    /// The statement operands that name a shared temporary: the statement and the operand,
+    /// 0 for `a`, 1 for `b`, 2 for `c`.
+    shared_sites: Vec<(usize, u8)>,
 }
 
 impl Program {
@@ -256,7 +265,29 @@ impl Program {
             block: None,
             pending_blocks: Vec::new(),
             shared: Vec::new(),
+            shared_sites: Vec::new(),
         }
+    }
+
+    /// FTE-21.8: a locked temporary of `words` words, in the open block after its locals once
+    /// it closes, else the next globals; returns its first offset.
+    pub(crate) fn locked_temp(&mut self, words: u32) -> Result<u32, Internal> {
+        let Some(block) = &mut self.block else {
+            return self.allocate_global(words);
+        };
+        let ofs = block.locked_next;
+        block.locked_next = ofs.checked_add(words).ok_or(Internal::TooLarge)?;
+        if block.locked_next > BLOCK_BASE + BLOCK_SPAN {
+            return Err(Internal::TooLarge);
+        }
+        Ok(ofs)
+    }
+
+    /// FTE-21.8: operand `operand` (0 `a`, 1 `b`, 2 `c`) of the last statement names a shared
+    /// temporary, which [`Program::resolve_shared_temps`] gives its real offset.
+    pub(crate) fn mark_shared(&mut self, operand: u8) {
+        let at = self.statements.len().saturating_sub(1);
+        self.shared_sites.push((at, operand));
     }
 
     /// FTE-21.8: the module's shared temporaries so far, each its virtual offset and words.
@@ -290,21 +321,21 @@ impl Program {
             None => return Ok(()),
         };
         let base = self.allocate_global(len)?;
-        let end = SHARED_BASE.checked_add(len).ok_or(Internal::TooLarge)?;
-        // A jump's operand is an offset among the statements, not a global (QC-22), and no
-        // program has `SHARED_BASE` statements.
-        for statement in &mut self.statements {
-            for operand in [&mut statement.a, &mut statement.b, &mut statement.c] {
-                if let Ok(ofs) = u32::try_from(*operand)
-                    && (SHARED_BASE..end).contains(&ofs)
-                {
-                    let real = ofs
-                        .checked_sub(SHARED_BASE)
-                        .and_then(|o| o.checked_add(base))
-                        .ok_or(Internal::TooLarge)?;
-                    *operand = i32::try_from(real).map_err(|_| Internal::TooLarge)?;
-                }
-            }
+        // Only the operands that name one: another operand that holds a number in their range,
+        // a jump's offset or a bound, is not a global.
+        for (at, operand) in core::mem::take(&mut self.shared_sites) {
+            let statement = self.statements.get_mut(at).ok_or(Internal::NoDefinition)?;
+            let field = match operand {
+                0 => &mut statement.a,
+                1 => &mut statement.b,
+                _ => &mut statement.c,
+            };
+            let real = u32::try_from(*field)
+                .ok()
+                .and_then(|ofs| ofs.checked_sub(SHARED_BASE))
+                .and_then(|o| o.checked_add(base))
+                .ok_or(Internal::TooLarge)?;
+            *field = i32::try_from(real).map_err(|_| Internal::TooLarge)?;
         }
         self.shared.clear();
         Ok(())
@@ -315,6 +346,7 @@ impl Program {
     pub(crate) fn open_block(&mut self) {
         self.block = Some(Block {
             next: BLOCK_BASE,
+            locked_next: LOCKED_BASE,
             defs_from: self.defs.len(),
             statements_from: self.statements.len(),
             inits: Vec::new(),
@@ -324,7 +356,34 @@ impl Program {
     /// FTE-21.9: closes the open block as the one of function `record`, to be laid out with
     /// the module's others; returns its words, the record's `locals`.
     pub(crate) fn close_block(&mut self, record: usize) -> Result<u32, Internal> {
-        let block = self.block.take().ok_or(Internal::NoDefinition)?;
+        let mut block = self.block.take().ok_or(Internal::NoDefinition)?;
+        // FTE-21.8: the locked temporaries follow the parameters and locals, as
+        // `QCC_RemapLockedTemps` makes them locals at the function's end.
+        let locked = block
+            .locked_next
+            .checked_sub(LOCKED_BASE)
+            .ok_or(Internal::TooLarge)?;
+        if locked > 0 {
+            let to = block.next;
+            for statement in self
+                .statements
+                .get_mut(block.statements_from..)
+                .ok_or(Internal::NoDefinition)?
+            {
+                for operand in [&mut statement.a, &mut statement.b, &mut statement.c] {
+                    if let Ok(ofs) = u32::try_from(*operand)
+                        && (LOCKED_BASE..block.locked_next).contains(&ofs)
+                    {
+                        let real = ofs
+                            .checked_sub(LOCKED_BASE)
+                            .and_then(|o| o.checked_add(to))
+                            .ok_or(Internal::TooLarge)?;
+                        *operand = i32::try_from(real).map_err(|_| Internal::TooLarge)?;
+                    }
+                }
+            }
+            block.next = to.checked_add(locked).ok_or(Internal::TooLarge)?;
+        }
         let len = block
             .next
             .checked_sub(BLOCK_BASE)
@@ -444,6 +503,10 @@ impl Program {
         if let Some(block) = &mut self.block {
             let ofs = block.next;
             block.next = ofs.checked_add(words).ok_or(Internal::TooLarge)?;
+            // The locked temporaries' virtual offsets start above the block's own.
+            if block.next > LOCKED_BASE {
+                return Err(Internal::TooLarge);
+            }
             return Ok(ofs);
         }
         self.allocate_global(words)
@@ -959,8 +1022,8 @@ mod tests {
     use crate::Internal;
 
     // spec FTE-21.8: the shared temporaries are laid out after every global made so far, each
-    // operand among them taking its real offset; an operand outside them keeps its own, and a
-    // module with none lays out nothing
+    // operand marked as naming one taking its real offset; any other keeps its own, whatever
+    // its number, and a module with none lays out nothing
     #[test]
     fn shared_temporaries_are_laid_out_after_the_globals() {
         let mut program = Program::new();
@@ -972,15 +1035,49 @@ mod tests {
         program.statements.push(Statement {
             op: 1,
             a: shared + 1,
-            b: 7,
+            b: shared,
             c: shared,
         });
+        program.mark_shared(0);
+        program.mark_shared(2);
         program.resolve_shared_temps().unwrap();
         let base = i32::try_from(globals).unwrap();
         let statement = program.statements.last().unwrap();
-        assert_eq!((statement.a, statement.b, statement.c), (base + 1, 7, base));
+        assert_eq!(
+            (statement.a, statement.b, statement.c),
+            (base + 1, shared, base),
+            "only the operands marked"
+        );
         assert_eq!(program.globals.len(), globals + 4);
         assert!(program.shared_temps().is_empty());
+    }
+
+    // spec FTE-21.8, FTE-21.9: a locked temporary is laid out after the block's locals, even one
+    // declared after it
+    #[test]
+    fn locked_temporaries_follow_the_locals() {
+        let mut program = Program::new();
+        program.open_block();
+        let a = program.allocate(1).unwrap();
+        let locked = program.locked_temp(1).unwrap();
+        let b = program.allocate(1).unwrap();
+        for ofs in [a, b, locked] {
+            let ofs = i32::try_from(ofs).unwrap();
+            program.statements.push(Statement {
+                op: 1,
+                a: ofs,
+                b: 0,
+                c: 0,
+            });
+        }
+        assert_eq!(
+            program.close_block(0).unwrap(),
+            3,
+            "two locals and the locked one"
+        );
+        let at: Vec<i32> = program.statements.iter().skip(1).map(|s| s.a).collect();
+        let differences: Vec<i32> = at.iter().map(|ofs| ofs - at.first().unwrap()).collect();
+        assert_eq!(differences, [0, 1, 2], "{at:?}");
     }
 
     // spec FTE-21.8: the shared temporaries end below the first block's virtual offset, and

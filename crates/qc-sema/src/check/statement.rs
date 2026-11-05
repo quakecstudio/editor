@@ -136,11 +136,11 @@ impl Checker<'_> {
         let mut dropped = Vec::new();
         for (index, statement) in (first..).zip(statements) {
             while let Some((_, effect)) = between.next_if(|&(at, _)| at <= index) {
-                dropped.push(effect);
+                dropped.push(dropped_block(effect));
             }
             dropped.extend(Self::statement_effects(statement, index));
         }
-        dropped.extend(between.map(|(_, effect)| effect));
+        dropped.extend(between.map(|(_, effect)| dropped_block(effect)));
         self.generated.truncate(from);
         let kept = self.next_made();
         self.effects
@@ -1193,5 +1193,15 @@ impl Checker<'_> {
             Some(name) => name.split(':').next().unwrap_or(name).to_owned(),
             None => type_name,
         }
+    }
+}
+
+/// A dropped statement's effect as it is made before the statement after the drop: a block it
+/// took is a temporary nothing reads, since the value it was is gone and the next statement's
+/// value has that statement's index.
+const fn dropped_block(effect: ir::Effect) -> ir::Effect {
+    match effect {
+        ir::Effect::Block(words) => ir::Effect::Temp(words),
+        other => other,
     }
 }

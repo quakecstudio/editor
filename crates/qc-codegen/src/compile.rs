@@ -637,7 +637,7 @@ impl<'a> Compiler<'a> {
             }
             FunctionInit::Body(body) => {
                 self.parameters(written.ty.as_ref(), declarator, span)?;
-                // FTE-21.6: FTEQCC's record counts the parameters among the locals, so a call
+                // FTE-21.10: FTEQCC's record counts the parameters among the locals, so a call
                 // that enters the function again restores them; id's `qcc` counts only up to
                 // the last `local` declaration (QC-21.4).
                 if self.dialect == Dialect::Fteqcc {
@@ -670,7 +670,7 @@ impl<'a> Compiler<'a> {
                 .at(span)?;
         }
         let s_name = self.program.copy_string(&latin1(&record_name)).at(span)?;
-        // FTE-21.6: FTEQCC's record counts the named parameters of a variadic function
+        // FTE-21.10: FTEQCC's record counts the named parameters of a variadic function
         // (`funcs[i].numparms = p`); id's `qcc` writes -1 (QC-13.3).
         let numparms = if function_type.variadic && !self.dialect.has_fteqcc_extensions() {
             -1

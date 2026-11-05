@@ -1277,7 +1277,7 @@ fn static_and_constant_locals_are_outside_the_record() {
     }
 }
 
-// spec FTE-21.6: under FTEQCC a function's record counts its parameters among its locals, so a
+// spec FTE-21.10: under FTEQCC a function's record counts its parameters among its locals, so a
 // nested call restores them; id's qcc counts none for a function with no `local` (QC-21.4)
 #[test]
 fn an_fteqcc_record_counts_its_parameters_among_its_locals() {
@@ -3000,7 +3000,7 @@ fn a_ternarys_arms_are_stored_by_size_then_by_type() {
     );
 }
 
-// spec FTE-21.6: a variadic function's record counts its named parameters, 0 for `entity(...)`
+// spec FTE-21.10: a variadic function's record counts its named parameters, 0 for `entity(...)`
 // and 1 for `float(float a, ...)`; spec FTE-18.6: its `__va_list` is a static taking the
 // globals before its parameters, outside the locals the record counts
 #[test]

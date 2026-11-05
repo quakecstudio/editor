@@ -7,10 +7,11 @@
 //! a slot once nothing reads the value in it, from the module's shared temporaries, and gives a
 //! value still read after a call a slot of the function's own block (FTE-21.8).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use qc_preproc::Op;
 use qc_sema::ir::{BodyStatement, Effect, Name};
+
+use super::body::call_count;
 
 use crate::Internal;
 use crate::program::Program;
@@ -54,12 +55,29 @@ impl Slots {
         }
     }
 
-    /// The temporary of `words` words a dropped statement took: a slot under id's allocation
-    /// (QC-21.5), none when slots are reused, since nothing reads it.
-    pub(super) fn dropped(&mut self, program: &mut Program, words: u32) -> Result<(), Internal> {
+    /// The temporary of `words` words a dropped statement took before the statement at
+    /// `index`: a slot under id's allocation (QC-21.5); under reuse a shared one of its size,
+    /// taken and freed as FTEQCC took it before rewinding, which nothing reads (FTE-21.8).
+    pub(super) fn dropped(
+        &mut self,
+        program: &mut Program,
+        index: u32,
+        words: u32,
+    ) -> Result<(), Internal> {
         match self {
             Self::CreationOrder(_) => program.allocate(words).map(|_| ()),
-            Self::Overlapping(_) => Ok(()),
+            Self::Overlapping(overlapping) => overlapping
+                .shared_place(program, index, words, None)
+                .map(|_| ()),
+        }
+    }
+
+    /// Whether the value the statement at `made` made is in one of the module's shared
+    /// temporaries, which are laid out last (FTE-21.8).
+    pub(super) fn is_shared(&self, made: u32) -> bool {
+        match self {
+            Self::CreationOrder(_) => false,
+            Self::Overlapping(overlapping) => overlapping.shared.contains(&made),
         }
     }
 
@@ -128,6 +146,8 @@ pub(super) struct Overlapping {
     held: Vec<Option<u32>>,
     /// The slot each value was given.
     slots: HashMap<u32, u32>,
+    /// The values given a shared slot.
+    shared: HashSet<u32>,
 }
 
 impl Overlapping {
@@ -163,7 +183,7 @@ impl Overlapping {
                     _ => {}
                 }
             }
-            if is_call(statement.op) {
+            if call_count(statement.op).is_some() {
                 calls.push(index);
             }
         }
@@ -181,9 +201,13 @@ impl Overlapping {
                 }
             }
         }
+        // `calls` is in statement order: the first after a value's statement decides.
         let mut locked: Vec<u32> = last
             .iter()
-            .filter(|&(&made, &end)| calls.iter().any(|&call| made < call && call < end))
+            .filter(|&(&made, &end)| {
+                let first = calls.partition_point(|&call| call <= made);
+                calls.get(first).is_some_and(|&call| call < end)
+            })
             .map(|(&made, _)| made)
             .collect();
         locked.sort_unstable();
@@ -192,73 +216,59 @@ impl Overlapping {
             locked,
             held: Vec::new(),
             slots: HashMap::new(),
+            shared: HashSet::new(),
         }
     }
 
-    /// The slot of `words` words the value made at `index` takes: a new one of the function's
-    /// block when it is locked, else the first of the module's shared slots of its size that no
-    /// value of this body still holds at `index`, the operands of the statement that makes it
-    /// included, or a new shared one after the last (`QCC_GetTemp`).
+    /// The slot of `words` words the value made at `index` takes. Each takes the first of the
+    /// module's shared slots of its size that no value of this body holds at `index`, the
+    /// operands of the statement that makes it included, or a new shared one after the last
+    /// (`QCC_GetTemp`), and holds it to its last statement; a locked value then takes a slot
+    /// of the function's block after its locals instead, as `QCC_RemapLockedTemps` moves it
+    /// once the function ends, its shared one still taken.
     fn take(&mut self, program: &mut Program, index: u32, words: u32) -> Result<(), Internal> {
-        if self.slots.contains_key(&index) {
-            return Ok(());
-        }
         let end = self.last.get(&index).copied().unwrap_or(index);
-        if self.locked.binary_search(&index).is_ok() {
-            let slot = program.allocate(words)?;
-            self.slots.insert(index, slot);
-            return Ok(());
-        }
+        let shared = self.shared_place(program, index, words, Some(end))?;
+        let slot = if self.locked.binary_search(&index).is_ok() {
+            program.locked_temp(words)?
+        } else {
+            self.shared.insert(index);
+            shared
+        };
+        self.slots.insert(index, slot);
+        Ok(())
+    }
+
+    /// The first of the module's shared slots of `words` words that no value of this body holds
+    /// at `index`, or a new one after the last, held to `until` when given; returns its virtual
+    /// offset.
+    fn shared_place(
+        &mut self,
+        program: &mut Program,
+        index: u32,
+        words: u32,
+        until: Option<u32>,
+    ) -> Result<u32, Internal> {
         let shared = program.shared_temps();
         self.held.resize(shared.len(), None);
         let free = shared
             .iter()
             .zip(&self.held)
-            .position(|(&(_, size), held)| size == words && held.is_none_or(|until| until < index));
-        let place = match free {
-            Some(place) => place,
+            .position(|(&(_, size), held)| size == words && held.is_none_or(|end| end < index));
+        let (place, slot) = match free.and_then(|p| shared.get(p).map(|&(slot, _)| (p, slot))) {
+            Some(found) => found,
             None => {
                 let place = shared.len();
-                program.shared_temp(words)?;
+                let slot = program.shared_temp(words)?;
                 self.held.push(None);
-                place
+                (place, slot)
             }
         };
-        let slot = program
-            .shared_temps()
-            .get(place)
-            .map(|&(slot, _)| slot)
-            .ok_or(Internal::TooLarge)?;
-        if let Some(held) = self.held.get_mut(place) {
-            *held = Some(end);
+        if let (Some(until), Some(held)) = (until, self.held.get_mut(place)) {
+            *held = Some(until);
         }
-        self.slots.insert(index, slot);
-        Ok(())
+        Ok(slot)
     }
-}
-
-/// Whether `op` calls a function, which may run any other and reuse the shared slots.
-const fn is_call(op: Op) -> bool {
-    matches!(
-        op,
-        Op::Call0
-            | Op::Call1
-            | Op::Call2
-            | Op::Call3
-            | Op::Call4
-            | Op::Call5
-            | Op::Call6
-            | Op::Call7
-            | Op::Call8
-            | Op::Call1h
-            | Op::Call2h
-            | Op::Call3h
-            | Op::Call4h
-            | Op::Call5h
-            | Op::Call6h
-            | Op::Call7h
-            | Op::Call8h
-    )
 }
 
 #[cfg(test)]
@@ -344,8 +354,8 @@ mod tests {
         assert_eq!(shared, [1, 1, 3], "three shared slots in all");
     }
 
-    // spec FTE-21.8: a value still read after a call takes a slot of the function's own block,
-    // not a shared one, as QCC_LockActiveTemps and QCC_RemapLockedTemps keep it
+    // spec FTE-21.8: a value still read after a call is read from a slot of the function's own
+    // block, not a shared one, as QCC_LockActiveTemps and QCC_RemapLockedTemps keep it
     #[test]
     fn a_value_read_after_a_call_is_the_functions_own() {
         let mut program = Program::new();
@@ -360,7 +370,13 @@ mod tests {
         let slots = allocate(&mut program, &body, &[]);
         assert_eq!(slots[0], Some(first), "a new slot of the program's own");
         assert_eq!(slots[1], Some(first + 1));
-        assert!(program.shared_temps().is_empty());
+        let shared: Vec<u32> = program.shared_temps().iter().map(|&(ofs, _)| ofs).collect();
+        assert_eq!(
+            shared.len(),
+            2,
+            "each still takes a shared slot, as QCC_GetTemp did"
+        );
+        assert!(slots.iter().flatten().all(|slot| !shared.contains(slot)));
         let before = [
             makes(Op::MulF, 0, None, None),
             reads(Op::StoreF, Some(Name::Made(0))),
@@ -422,17 +438,26 @@ mod tests {
         assert_eq!(next[0], slots[0], "a new body starts with every slot free");
     }
 
-    // spec FTE-21.8: a temporary a dropped statement took takes no slot when slots are reused,
-    // and one under id's allocation (QC-21.5)
+    // spec FTE-21.8: a temporary a dropped statement took is taken and freed among the shared
+    // slots, as FTEQCC took it before rewinding, so the next value may take it again; under
+    // id's allocation it is a new slot (QC-21.5)
     #[test]
-    fn a_dropped_temporary_takes_a_slot_only_under_ids_allocation() {
+    fn a_dropped_temporary_is_taken_and_freed() {
         let mut program = Program::new();
         let first = program.allocate(0).unwrap();
         let mut overlapping = Slots::Overlapping(Overlapping::new(&[], &[]));
-        overlapping.dropped(&mut program, 3).unwrap();
-        assert_eq!(program.allocate(0).unwrap(), first);
+        overlapping.dropped(&mut program, 0, 3).unwrap();
+        assert_eq!(program.allocate(0).unwrap(), first, "no global of its own");
+        let shared: Vec<u32> = program.shared_temps().iter().map(|&(_, w)| w).collect();
+        assert_eq!(shared, [3], "a shared slot of its size");
+        overlapping.dropped(&mut program, 0, 3).unwrap();
+        assert_eq!(
+            program.shared_temps().len(),
+            1,
+            "freed: the next takes it again"
+        );
         let mut order = Slots::CreationOrder(CreationOrder::default());
-        order.dropped(&mut program, 3).unwrap();
+        order.dropped(&mut program, 0, 3).unwrap();
         assert_eq!(program.allocate(0).unwrap(), first + 3);
     }
 
