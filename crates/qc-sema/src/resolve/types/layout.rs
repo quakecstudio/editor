@@ -247,6 +247,10 @@ impl Resolver<'_> {
                 self.index.constants.insert(DefId::new(i));
             }
             pending.push(def.ty.clone());
+            // A pointer's target, which `->` reads members of (FTEF-4.1).
+            if let Type::Pointer(target) = &def.ty {
+                pending.push(target.as_ref().clone());
+            }
         }
         for (id, constant) in &self.integer_items {
             if let Some(value) = constant.initial_value() {
