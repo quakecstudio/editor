@@ -111,6 +111,9 @@ similar_names = "allow"
 
 [workspace.dependencies]
 cc = { version = "=1.8.0", default-features = false }
+# The preview host's sound output: one cross-platform audio device API (Core Audio, WASAPI,
+# ALSA); the mixer itself is the qs-sound port.
+cpal = { version = "=0.18.2", default-features = false }
 clap = { version = "=4.6.7", default-features = false }
 criterion = { version = "=0.8.2", default-features = false }
 eframe = { version = "=0.36.2", default-features = false }

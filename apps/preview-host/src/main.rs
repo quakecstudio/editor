@@ -4,6 +4,7 @@
 //! P3-02).
 
 mod args;
+mod audio;
 mod bridge;
 mod game;
 mod load;

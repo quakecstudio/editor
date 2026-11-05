@@ -8,9 +8,7 @@ use qs_bsp::{Bsp, BspLoader, Lit};
 use qs_client::{Client, ModelInfo, Models, Random};
 use qs_mdl::mdl::Mdl;
 use qs_mdl::spr::Sprite;
-use qs_render::{
-    Camera, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
-};
+use qs_render::{Camera, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface};
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::patch_builtins;
 use qs_sim::{LoadOptions, World};
@@ -18,6 +16,7 @@ use qs_vfs::zip::Zip;
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 use crate::args::{Args, Show};
+use crate::audio::{Audio, Device};
 use crate::game::Game;
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
@@ -51,6 +50,7 @@ pub(crate) struct Loaded {
     pub(crate) play: Play,
     pub(crate) camera: Camera,
     pub(crate) game: Game,
+    pub(crate) audio: Audio,
     pub(crate) client: Client,
     pub(crate) bsp: Bsp<'static>,
     pub(crate) describer: Describer,
@@ -85,10 +85,23 @@ impl Models for Describer {
 /// `rand ()` for the client: a linear congruential generator over C's `RAND_MAX`.
 pub(crate) struct Rand(u32);
 
-impl Random for Rand {
-    fn rand(&mut self) -> i32 {
+impl Rand {
+    fn next(&mut self) -> i32 {
         self.0 = self.0.wrapping_mul(1_103_515_245).wrapping_add(12345);
         i32::try_from((self.0 >> 1) & 0x7fff_ffff).unwrap_or(0)
+    }
+}
+
+/// The client and the sound share the engine's one `rand ()`.
+impl Random for Rand {
+    fn rand(&mut self) -> i32 {
+        self.next()
+    }
+}
+
+impl qs_sound::Random for Rand {
+    fn rand(&mut self) -> i32 {
+        self.next()
     }
 }
 
@@ -171,9 +184,17 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
     let mut describer = Describer { read: reader()? };
     let mut rand = Rand(1);
     let packets = game.world_mut().take_messages().packets;
-    client
+    let events = client
         .frame(0.0, &packets, &mut describer, &mut rand)
         .map_err(|e| format!("client: {e}"))?;
+    let sounds = reader()?;
+    let output = if args.nosound {
+        Device::None
+    } else {
+        Device::Default
+    };
+    let mut audio = Audio::open(Box::new(move |name: &str| sounds(name)), output);
+    audio.handle(&events, &mut rand);
     let mut pics = Pics::new();
     pics.add_wad(&read("gfx.wad")?, &palette)
         .map_err(|e| e.to_string())?;
@@ -262,6 +283,7 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
         mesh,
         play,
         game,
+        audio,
         client,
         bsp,
         describer,

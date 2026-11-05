@@ -125,6 +125,9 @@ impl Bridge {
     }
 
     fn send(&mut self, message: &Message) {
+        if !self.open {
+            return;
+        }
         let sent = self
             .outgoing
             .lock()

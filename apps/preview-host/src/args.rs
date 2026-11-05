@@ -45,6 +45,9 @@ pub(crate) struct Args {
     /// Start a free camera at the map's first water or sky.
     #[arg(long, value_enum)]
     pub(crate) show: Option<Show>,
+    /// No sound device, the engine's `-nosound`.
+    #[arg(long)]
+    pub(crate) nosound: bool,
     /// A free camera instead of the player.
     #[arg(long)]
     pub(crate) fly: bool,

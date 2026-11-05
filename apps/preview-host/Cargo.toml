@@ -15,9 +15,12 @@ path = "src/main.rs"
 [dependencies]
 # The command line (ADR-0008).
 clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
+# The sound device, which plays qs-sound's mixed frames.
+cpal = { workspace = true }
 # The window, as the IDE draws its own (ADR-0003); eframe's defaults without `default_fonts`,
 # whose fonts are not bundled (ADR-0010).
 eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }
+qc-builtins = { workspace = true }
 qc-progs = { workspace = true }
 qs-bridge = { workspace = true }
 qs-bsp = { workspace = true }
@@ -27,6 +30,7 @@ qs-paths = { workspace = true }
 qs-mdl = { workspace = true }
 qs-render = { workspace = true }
 qs-sim = { workspace = true }
+qs-sound = { workspace = true }
 qs-vfs = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
 tracing = { workspace = true }

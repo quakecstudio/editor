@@ -18,6 +18,7 @@ use qs_client::Client;
 use qs_render::{Camera, MapMesh, MapRenderer, Play, View};
 
 use crate::args::Args;
+use crate::audio::Audio;
 use crate::bridge::Bridge;
 use crate::game::Game;
 use crate::load::{Describer, Loaded, Rand};
@@ -34,11 +35,7 @@ const LONGEST: f64 = 0.1;
 
 /// Opens the window on the map `loaded` holds and runs the game until it closes or the
 /// bridge's client stops it.
-pub(crate) fn run(
-    args: &Args,
-    loaded: Loaded,
-    bridge: Option<Bridge>,
-) -> Result<(), String> {
+pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result<(), String> {
     let benchmark = args.benchmark;
     if benchmark.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
         return Err("--benchmark needs a positive number of seconds".to_owned());
@@ -54,6 +51,7 @@ pub(crate) fn run(
         play,
         camera,
         game,
+        audio,
         client,
         bsp,
         describer,
@@ -100,6 +98,7 @@ pub(crate) fn run(
                 triangles,
                 play,
                 game,
+                audio,
                 bridge,
                 client,
                 bsp,
@@ -128,6 +127,7 @@ struct Viewer {
     triangles: usize,
     play: Play,
     game: Game,
+    audio: Audio,
     /// The IDE's connection, when the host was started with `-bridge`.
     bridge: Option<Bridge>,
     client: Client,
@@ -175,13 +175,14 @@ impl eframe::App for Viewer {
         // The client reads what the server wrote and advances its clock by the server's
         // frame, as the host does when both run in one process.
         let packets = self.game.world_mut().take_messages().packets;
-        if let Err(error) = self.client.frame(
+        match self.client.frame(
             frametime_f32(frametime),
             &packets,
             &mut self.describer,
             &mut self.rand,
         ) {
-            tracing::warn!(%error, "client");
+            Ok(events) => self.audio.handle(&events, &mut self.rand),
+            Err(error) => tracing::warn!(%error, "client"),
         }
         let aspect = rect.width() / rect.height().max(1.0);
         if self.benchmark.is_some() {
@@ -198,6 +199,13 @@ impl eframe::App for Viewer {
         let time = now.duration_since(self.started);
 
         let scene = self.client.scene();
+        // `S_Update (r_origin, vpn, vright, vup)`, once a host frame.
+        self.audio.update(
+            &self.bsp,
+            scene.view.origin,
+            scene.view.angles,
+            f64::from(seconds),
+        );
         let hud = self.client.hud();
         // The 2D layer keeps GLQuake's 640 wide console, as tall as the window's shape.
         self.play.screen = [CONWIDTH, screen_height(aspect)];
