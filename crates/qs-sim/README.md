@@ -50,6 +50,9 @@ server runs them. Collision, monster movement, physics and the player all follow
   `World::take_host_command()`: id's console (PHYS-13), run in each frame before the server
   frame as `_Host_Frame` runs `Cbuf_Execute`; what it printed, a line each; and the `map`,
   `changelevel`, `restart`, `save`, `load` or `quit` it left for the host (PHYS-13.6).
+- `World::reload(old, new)`: a progs loaded again over the running map (WORLD-10), the edicts
+  kept and each global and field carried by name and type, its values translated into the new
+  progs; the `Migration` it returns counts what was carried and lists what was lost or added.
 - `debug::Debugger` with `World::set_debugger` and `World::evaluate(progs, text)`: a frame
   stopped before a QuakeC statement, the steps and breakpoints that replay it from a clone of
   the world (WORLD-9.1 to WORLD-9.4), and watch expressions (WORLD-9.5).

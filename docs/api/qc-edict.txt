@@ -37,6 +37,7 @@ fn qc_edict::store::EdictStore::set_field
 fn qc_edict::store::EdictStore::set_num_edicts
 fn qc_edict::store::EdictStore::take_events
 fn qc_edict::store::EdictStore::track
+fn qc_edict::store::EdictStore::with_layout
 fn qc_edict::system::field_by_name
 fn qc_edict::system::global_by_name
 impl qc_edict::layout::LayoutError: core::error::Error

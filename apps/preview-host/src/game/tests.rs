@@ -92,6 +92,12 @@ fn progs() -> Vec<u8> {
 
 /// [`progs`] and its `.lno`'s line of each statement.
 fn progs_with_lines() -> (Vec<u8>, Vec<i32>) {
+    let (bytes, lno) = progs_of(SOURCE);
+    (bytes, lno.lines)
+}
+
+/// The progs and `.lno` `qc-codegen` writes for `source` after the system definitions.
+fn progs_of(source: &str) -> (Vec<u8>, qc_lno::LnoFile) {
     let mut defs = String::new();
     for var in SYSTEM_GLOBALS {
         writeln!(defs, "{} {};", type_name(var.etype), var.name).unwrap();
@@ -101,7 +107,7 @@ fn progs_with_lines() -> (Vec<u8>, Vec<i32>) {
         writeln!(defs, ".{} {};", type_name(var.etype), var.name).unwrap();
     }
     defs.push_str("void end_sys_fields;\n");
-    let files = [("defs.qc", defs), ("t.qc", SOURCE.to_owned())];
+    let files = [("defs.qc", defs), ("t.qc", source.to_owned())];
     let mut db = Db::new();
     let mut input = ModuleInput::default();
     for (i, (name, text)) in files.iter().enumerate() {
@@ -115,10 +121,7 @@ fn progs_with_lines() -> (Vec<u8>, Vec<i32>) {
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
     let compiled = compile_module(&mut db, &input, |id| names[id.index()].clone())
         .unwrap_or_else(|e| panic!("the test progs did not compile: {e:?}"));
-    (
-        qc_progs::write(&compiled.progs).unwrap(),
-        compiled.lno.lines,
-    )
+    (qc_progs::write(&compiled.progs).unwrap(), compiled.lno)
 }
 
 fn plane(dist: f32) -> Plane {
@@ -310,7 +313,7 @@ fn the_game_offers_its_commands() {
     for command in super::COMMANDS {
         assert_eq!(capabilities[command], true, "{command}");
     }
-    assert_ne!(capabilities["reload"], true, "reload comes with P3-03");
+    assert_eq!(capabilities["reload"], true, "P3-03");
 }
 
 // spec BRIDGE-3.1: progs/loaded names the progs and its counts; map/loaded the map and its
@@ -1158,4 +1161,134 @@ fn a_frame_runs_for_its_frametime() {
     assert!(game.frame(0.025));
     let ran = game.world().time() - start;
     assert!((ran - 0.075).abs() < 1e-6, "ran {ran}");
+}
+
+/// Gives `game` the search path a reload reads: `progs.dat` and `progs.lno` of `source`.
+fn serve(game: &mut Game, source: &str) {
+    let (bytes, lno) = progs_of(source);
+    let lno = lno.write().unwrap();
+    game.set_files(Rc::new(move |name: &str| match name {
+        "progs.dat" => Some(bytes.clone()),
+        "progs.lno" => Some(lno.clone()),
+        _ => None,
+    }));
+}
+
+/// The dog's `frags` after the frames run so far.
+fn dog_frags(game: &Game) -> f32 {
+    let progs = Progs::read(game.progs()).unwrap();
+    game.world()
+        .edict_fields(&progs, 2)
+        .unwrap()
+        .into_iter()
+        .find(|f| f.name == "frags")
+        .map(|f| match f.value {
+            qs_sim::QcValue::Float(value) => value,
+            _ => panic!("frags is a float"),
+        })
+        .unwrap()
+}
+
+/// A dog at edict 2.
+const DOG: &str = "{\n\"classname\" \"monster_dog\"\n\"origin\" \"0 0 40\"\n}\n";
+
+// spec BRIDGE-4.1: reload loads the progs over the running map, migrating its values, and its
+// result counts them and lists what was lost and added; it sends progs/loaded
+// spec WORLD-10.4: the dog's think is rebound by name, so its new code runs
+#[test]
+fn a_reload_changes_a_monsters_think_while_it_runs() {
+    let (mut game, mut session) = game_with(DOG);
+    for _ in 0..3 {
+        game.frame(0.1);
+    }
+    let before = dog_frags(&game);
+    assert!(before > 0.0);
+    serve(
+        &mut game,
+        &SOURCE
+            .replace(
+                "self.frags = self.frags + 1;",
+                "self.frags = self.frags + 10;",
+            )
+            .replace(".float count;", ".float count; .float bark;"),
+    );
+    game.take_events();
+    let result = call(&mut game, &mut session, "reload", &json!({})).unwrap();
+    assert!(result["migrated"].as_u64().unwrap() > 0);
+    assert_eq!(result["lost"], json!([]));
+    assert_eq!(
+        result["added"],
+        json!([{ "name": "bark", "kind": "field", "reason": "added" }])
+    );
+    assert_eq!(methods(&events(&mut game)), ["progs/loaded"]);
+    game.frame(0.1);
+    game.frame(0.1);
+    assert!(
+        dog_frags(&game) >= before + 10.0,
+        "the new think ran: {}",
+        dog_frags(&game)
+    );
+}
+
+// spec BRIDGE-4.1: a reload while paused keeps the game paused and says so with reason reload
+// spec BRIDGE-4.8: one naming a file that is not there is refused with nothing changed
+#[test]
+fn a_reload_while_paused_stays_paused() {
+    let (mut game, mut session) = game_with(DOG);
+    serve(&mut game, SOURCE);
+    let missing = call(
+        &mut game,
+        &mut session,
+        "reload",
+        &json!({ "progs": "nothere.dat" }),
+    )
+    .unwrap_err();
+    assert_eq!(missing.code, ErrorCode::InvalidParams);
+    call(&mut game, &mut session, "pause", &json!({})).unwrap();
+    game.take_events();
+    call(&mut game, &mut session, "reload", &json!({})).unwrap();
+    let events = events(&mut game);
+    assert_eq!(methods(&events), ["progs/loaded", "state/changed"]);
+    assert_eq!(events[1].1["reason"], "reload");
+    assert_eq!(game.state, super::State::Paused);
+}
+
+// spec BRIDGE-4.8: a breakpoint is resolved again at its file and line in the reloaded progs
+// spec BRIDGE-4.7: a reload while a frame is stopped at a statement is refused
+#[test]
+fn a_reload_keeps_breakpoints_at_their_lines() {
+    let (mut game, mut session) = game_with(DOG);
+    let line = source_line("    self.health = 50;");
+    call(
+        &mut game,
+        &mut session,
+        "breakpoint/set",
+        &json!({ "file": "t.qc", "line": line }),
+    )
+    .unwrap();
+    for _ in 0..5 {
+        game.frame(0.1);
+        if game.state == super::State::Paused {
+            break;
+        }
+    }
+    serve(
+        &mut game,
+        &SOURCE.replace("self.health = 50;", "self.health = 60;"),
+    );
+    let refused = call(&mut game, &mut session, "reload", &json!({})).unwrap_err();
+    assert_eq!(refused.code, ErrorCode::StoppedInFrame);
+    call(&mut game, &mut session, "resume", &json!({})).unwrap();
+    game.take_events();
+    call(&mut game, &mut session, "reload", &json!({})).unwrap();
+    assert_eq!(game.breakpoints.len(), 1, "kept");
+    for _ in 0..5 {
+        game.frame(0.1);
+        if game.state == super::State::Paused {
+            break;
+        }
+    }
+    let hits = events_named(&mut game, "breakpoint/hit");
+    assert_eq!(hits.len(), 1, "it stops at the same line of the new progs");
+    assert_eq!(hits[0]["location"]["line"], line);
 }

@@ -36,6 +36,32 @@
     },
     "time": {
       "type": "number"
+    },
+    "added": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "global",
+              "field",
+              "function"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "reason"
+        ]
+      }
     }
   },
   "required": [

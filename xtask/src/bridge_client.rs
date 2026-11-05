@@ -113,18 +113,17 @@ fn capabilities(client: &Client) -> Result<(), String> {
         "breakpoint/clear",
         "evaluate",
         "console",
+        "reload",
     ] {
         expect(
             client.offers(command),
             &format!("the host offers {command}"),
         )?;
     }
-    for command in ["screenshot", "reload"] {
-        expect(
-            !client.offers(command),
-            &format!("a headless host leaves out {command}"),
-        )?;
-    }
+    expect(
+        !client.offers("screenshot"),
+        "a headless host leaves out screenshot",
+    )?;
     Ok(())
 }
 
@@ -172,6 +171,21 @@ fn suite(client: &mut Client, map: &str) -> Result<Vec<String>, String> {
         "a breakpoint at no statement is refused",
     )?;
     steps.push("breakpoint/set".to_owned());
+
+    // BRIDGE-4.1, WORLD-10: the running progs loaded again over the map migrates its values
+    // and loses nothing.
+    let reloaded = client
+        .request("reload", json!({}))
+        .map_err(|e| format!("reload: {e}"))?;
+    expect(
+        reloaded
+            .get("migrated")
+            .and_then(Value::as_u64)
+            .is_some_and(|n| n > 0)
+            && reloaded.get("lost") == Some(&json!([])),
+        "reload migrates the running progs and loses nothing",
+    )?;
+    steps.push("reload".to_owned());
 
     client.pause().map_err(|e| format!("pause: {e}"))?;
     let before = time(

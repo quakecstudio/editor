@@ -222,6 +222,30 @@ impl EdictStore {
         })
     }
 
+    /// This store's edicts with the field slots of `layout`, all zero, for a progs loaded
+    /// again over the running map (WORLD-10.1): `num_edicts`, the client slots, each edict's
+    /// free flag and `freetime`, and whether events are recorded, are this store's.
+    #[must_use]
+    pub fn with_layout(&self, layout: EdictLayout) -> Self {
+        let entityfields = layout.entityfields();
+        let edicts = self
+            .edicts
+            .iter()
+            .map(|edict| Edict {
+                free: edict.free,
+                freetime: edict.freetime,
+                fields: vec![Slot::ZERO; entityfields].into_boxed_slice(),
+            })
+            .collect();
+        Self {
+            layout,
+            edicts,
+            num_edicts: self.num_edicts,
+            maxclients: self.maxclients,
+            events: self.events.as_ref().map(|_| Vec::new()),
+        }
+    }
+
     /// Starts or stops recording what happens to the edicts (BRIDGE-3.1); stopping drops
     /// what was recorded.
     pub fn track(&mut self, on: bool) {
