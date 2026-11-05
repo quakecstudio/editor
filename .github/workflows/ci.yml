@@ -165,6 +165,13 @@ jobs:
         with:
           shared-key: clippy-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # cpal, the preview host's sound output, links ALSA on Linux; the runner image has
+      # pkg-config but not ALSA's headers.
+      - name: Install ALSA's headers for the preview host's sound
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
   test:
@@ -208,6 +215,13 @@ jobs:
         with:
           shared-key: debug-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # cpal, the preview host's sound output, links ALSA on Linux; the runner image has
+      # pkg-config but not ALSA's headers.
+      - name: Install ALSA's headers for the preview host's sound
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev
       # The UI snapshot harness (P2-21) renders through wgpu with no window: on Linux with
       # Mesa's software Vulkan driver, on macOS with Metal and on Windows with WARP.
       - name: Install a software Vulkan driver for the snapshot harness
@@ -308,6 +322,13 @@ jobs:
         with:
           shared-key: build-${{ matrix.target }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # cpal, the preview host's sound output, links ALSA on Linux; the runner image has
+      # pkg-config but not ALSA's headers.
+      - name: Install ALSA's headers for the preview host's sound
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev
       - name: Build
         if: env.CI_PATH == 'full'
         shell: bash
