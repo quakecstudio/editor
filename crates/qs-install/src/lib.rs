@@ -436,8 +436,9 @@ impl<'a, F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'a, F, R> {
     /// The entry `name` of the directory `dir` of kind `kind`, as FS-3.7 matches game
     /// directories and archives: an entry with exactly that name, else the first entry in
     /// name order that matches it ASCII case-insensitively, so the path keeps the name on
-    /// disk. A link is not listed as a directory ([`qs_vfs::StdFs`]), so when no entry
-    /// matches, the exact name is tried by opening it, which follows links.
+    /// disk; a link to a directory is found as a directory (FS-3.11). When no entry matches,
+    /// the exact name is tried by opening it, which follows any link the listing did not
+    /// name.
     fn child(&self, dir: &Path, name: &str, kind: EntryKind) -> Option<PathBuf> {
         let found = qs_vfs::find_entry(self.fs.read_dir(dir).ok()?, name, kind);
         if let Some(entry) = found {
@@ -445,7 +446,7 @@ impl<'a, F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'a, F, R> {
         }
         let path = dir.join(name);
         let exists = match kind {
-            EntryKind::Dir => self.fs.read_dir(&path).is_ok(),
+            EntryKind::Dir | EntryKind::DirLink => self.fs.read_dir(&path).is_ok(),
             EntryKind::File => self.fs.open(&path).is_ok() && self.fs.read_dir(&path).is_err(),
             EntryKind::Other => false,
         };

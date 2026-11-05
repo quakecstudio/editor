@@ -731,7 +731,8 @@ impl<H: HostFs> Vfs<H> {
                     location: Location::Loose(child),
                 }),
                 EntryKind::Dir => self.walk(element, &child, &format!("{name}/"), files),
-                EntryKind::Other => {}
+                // FS-3.11: a link to a directory is not descended into.
+                EntryKind::DirLink | EntryKind::Other => {}
             }
         }
     }
