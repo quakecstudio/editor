@@ -649,8 +649,10 @@ fn commands(text: &[u8]) -> Vec<Vec<u8>> {
     out
 }
 
+mod inspect;
 mod save;
 #[cfg(test)]
 pub(crate) mod tests;
 
+pub use inspect::{NamedValue, QcValue};
 pub use save::{SAVEGAME_VERSION, SaveError, SaveGame};

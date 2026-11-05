@@ -1,0 +1,26 @@
+[package]
+name = "preview-host"
+description = "The preview host: the game in its own window, our engine on qs-sim, qs-render and qs-sound, with the IDE bridge server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "preview-host"
+path = "src/main.rs"
+
+[dependencies]
+# The command line (ADR-0008).
+clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
+qs-bridge = { workspace = true }
+qs-log = { workspace = true }
+qs-paths = { workspace = true }
+qs-sim = { workspace = true }
+serde_json = { workspace = true, features = ["std"] }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

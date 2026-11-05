@@ -2826,6 +2826,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
 
 [[package]]
+name = "preview-host"
+version = "2026.10.0"
+dependencies = [
+ "clap",
+ "qs-bridge",
+ "qs-log",
+ "qs-paths",
+ "qs-sim",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
