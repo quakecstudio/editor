@@ -557,6 +557,19 @@ mod mock_engine {
         assert_eq!(cvars.text("nope"), None);
     }
 
+    // spec BUILTIN-11.7: a setting's value is its text read by Q_atof; one that does not
+    // exist has none
+    #[test]
+    fn a_settings_value_is_its_text_read_by_q_atof() {
+        let mut cvars = Cvars::default();
+        assert_eq!(cvars.value("skill"), Some(1.0));
+        cvars.create("sv_gravity", "0x20");
+        assert_eq!(cvars.value("sv_gravity"), Some(32.0));
+        assert!(cvars.set("sv_gravity", "-2.5x"));
+        assert_eq!(cvars.value("sv_gravity"), Some(-2.5));
+        assert_eq!(cvars.value("nope"), None);
+    }
+
     // spec DIFF-6.2: the random source advances state = state*mult + inc, returning
     // (state >> 16) & 0x7fff; the shift and mask are pinned by a seeded draw.
     #[test]

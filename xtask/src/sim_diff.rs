@@ -50,26 +50,30 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     for map in &args.maps {
         // DIFF-16.5: the route on another map is the same script with that map line.
         let script = out.join(format!("{map}.route"));
-        let replaced = text
-            .lines()
-            .map(|line| {
-                if line.starts_with("map ") {
-                    format!("map {map}")
-                } else {
-                    line.to_owned()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        fs::write(&script, format!("{replaced}\n"))
-            .map_err(|e| format!("{}: {e}", script.display()))?;
-        let on_map = Route {
+        let replaced = on_map(&text, map);
+        fs::write(&script, replaced).map_err(|e| format!("{}: {e}", script.display()))?;
+        let rerouted = Route {
             map: map.clone(),
             ..route.clone()
         };
-        passed &= compare(&built, &script, &on_map, &out, &args.engine)?;
+        passed &= compare(&built, &script, &rerouted, &out, &args.engine)?;
     }
     Ok(passed)
+}
+
+/// The route `text` with its `map` lines naming `map` (DIFF-16.5).
+fn on_map(text: &str, map: &str) -> String {
+    let mut out = String::new();
+    for line in text.lines() {
+        if line.starts_with("map ") {
+            out.push_str("map ");
+            out.push_str(map);
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out
 }
 
 /// Plays `route`, the script at `script`, through both and compares every frame.

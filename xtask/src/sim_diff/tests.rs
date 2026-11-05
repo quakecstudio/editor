@@ -7,7 +7,7 @@
 
 use qs_sim::{NamedValue, QcValue, State, UserCmd};
 
-use super::{Route, Step, differences};
+use super::{Route, Step, differences, on_map};
 
 fn named(name: &str, value: QcValue) -> NamedValue {
     NamedValue {
@@ -83,4 +83,14 @@ fn the_first_difference_is_named() {
         12,
         "at most 12"
     );
+}
+
+// spec DIFF-16.5: a route on another map is the same script with its map line replaced
+#[test]
+fn a_route_on_another_map_replaces_its_map_line() {
+    let text = "# start\nmap start\nframes 2\n";
+    assert_eq!(on_map(text, "e1m1"), "# start\nmap e1m1\nframes 2\n");
+    let route = Route::parse(&on_map(text, "dm3")).unwrap();
+    assert_eq!(route.map, "dm3");
+    assert_eq!(route.steps, [Step::Frames(2)]);
 }
