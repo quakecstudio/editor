@@ -431,6 +431,94 @@ frametime it is given; the viewer paces its frames that way.
   e1m8, changes the game from then on.
 - **PHYS-12.3** The settings belong to the host, not the level: a level change or a restart
   keeps them as they were (`Cvar_Set` writes the process's `cvar_t`).
+## PHYS-13 The console
+
+**Source:** `WinQuake/cmd.c`, `Cbuf_Execute`, `Cmd_ExecuteString`, `Cmd_Wait_f`,
+`Cmd_Echo_f`, `Cmd_Alias_f`, `Cmd_Exec_f`, `Cmd_StuffCmds_f`, `Cmd_ForwardToServer`;
+`WinQuake/cvar.c`, `Cvar_Command`, `Cvar_FindVar`, `Cvar_SetValue`; `WinQuake/host_cmd.c`,
+`Host_InitCommands` and the commands it adds; `WinQuake/pr_edict.c`, `ED_Print`,
+`ED_PrintEdicts`, `ED_PrintEdict_f`, `ED_Count`, `PR_ValueString`; `WinQuake/pr_exec.c`,
+`PR_Profile_f`, `PR_ExecuteProgram`; `WinQuake/common.c`, `COM_Path_f`; `WinQuake/cl_main.c`
+and `WinQuake/net_main.c` for `_cl_name`, `_cl_color` and `hostname`.
+
+The console runs the text a person types, or the progs' `localcmd` adds, on the single-player
+host: a client and a server in one process (`cmd_source == src_command`).
+
+### Behaviour
+
+- **PHYS-13.1** `Cbuf_Execute` runs the buffer a line at a time until it is empty: a line ends
+  at a line feed, or at a `;` when the `"` counted from the start of the buffer are even (a
+  `;` inside a quoted string does not end it). `Cmd_ExecuteString` splits the line with
+  `Cmd_TokenizeString` (PHYS-11.1) and does nothing with no words; else the first word, ASCII
+  case-insensitively, names a command; failing that an alias (PHYS-13.2); failing that a
+  setting (PHYS-13.3). The commands are `cmd.c`'s (`stuffcmds`, `exec`, `echo`, `alias`, `cmd`,
+  `wait`), `Host_InitCommands`' and `ED_Init`'s and `COM_Init`'s debug prints. `echo` prints
+  each argument and a space, then a line feed.
+- **PHYS-13.2** `wait` stops the buffer after its line; the rest runs in the next frame.
+  `alias` with no name prints "Current alias commands:" and `<name> : <text>` for each, the
+  newest first; with a name of 32 bytes or more it prints "Alias name is too long"; else the
+  alias's text is each argument after the name followed by a space, then a line feed, replacing
+  the text of an alias of exactly that name (`strcmp`) or added first. An alias runs by putting
+  its text before the rest of the buffer (`Cbuf_InsertText`), and is found ASCII
+  case-insensitively. `exec <file>` prints "couldn't exec `<file>`" when the file is not found,
+  else "execing `<file>`" and puts the file's text before the rest of the buffer; with other
+  than one argument it prints its usage, "exec <filename> : execute a script file".
+  `stuffcmds` with an argument prints "stuffcmds : execute command line parameters"; alone it
+  runs the command line's `+` commands, of which the preview host has none.
+- **PHYS-13.3** A first word that is no command or alias names a setting by its exact name
+  (`Q_strcmp`): alone it prints `"<name>" is "<text>"`, with arguments the first becomes its
+  text. A word that is none of these prints `Unknown command "<word>"`.
+- **PHYS-13.4** `god`, `notarget`, `fly`, `noclip`, `give`, `kill`, `pause`, `say`,
+  `say_team`, `tell` and `ping` from the console go to the server (`Cmd_ForwardToServer`) as a
+  string command (PHYS-11.1): the command's name and a space, then `Cmd_Args` when there is an
+  argument and a line feed when there is none; `cmd` sends only its arguments, or a line feed.
+  With no connection each prints `Can't "<name>", not connected`. `name` alone prints
+  `"name" is "<_cl_name>"`; else the one argument, or with more `Cmd_Args`, cut to 15 bytes,
+  becomes `_cl_name` unless it already is, and when connected the command goes to the server
+  as above (the server gets the cut name only when it was `Cmd_Args`, which `newName[15] = 0`
+  wrote into). `color` alone prints `"color" is "<top> <bottom>"` from `_cl_color` and the
+  usage `color <0-13> [0-13]`; else it reads the colours as PHYS-11.7 does and sets
+  `_cl_color` to `top * 16 + bottom` printed with `%f` (`Cvar_SetValue`), and when connected
+  forwards the command. `_cl_name` starts as "player", `_cl_color` as "0" and `hostname` as
+  "UNNAMED".
+- **PHYS-13.5** `status` prints `host:    <hostname>`, `version: 1.09` (`%4.2f` of
+  `VERSION`), `map:     <map>`, `players: <n> active (1 max)` and an empty line, then for the
+  connected player `#1  <name, padded and cut to 16>  <frags, %3i>  <h>:<mm>:<ss>` and
+  `   LOCAL`, the loopback server address (`net_loop.c`). `version` prints `Version 1.09`
+  and an `Exe:` line. `prespawn`, `spawn` and `begin` print "`<name>` is not valid from the
+  console". `kick` from the console of a single-player game changes nothing the console tests
+  read.
+- **PHYS-13.6** `map <name>`, `changelevel <name>` (exactly one argument, else its usage
+  "changelevel <levelname> : continue game on a new level"), `restart`, `save <name>` and
+  `load <name>` (exactly one argument, else "save <savename> : save a game" and "load
+  <savename> : load a game"), and `quit` are carried out by the host. `save` refuses a name
+  holding `..` with "Relative pathnames are not allowed.". The buffer stops at such a command
+  and the rest of it runs once the host has carried it out.
+- **PHYS-13.7** `edict <n>` (`Q_atoi`) prints `ED_Print` of edict `n`, or "Bad edict number"
+  for an `n` at or past `num_edicts`; `edicts` prints "`<num_edicts>` entities" and each edict.
+  `ED_Print` prints "FREE" for a free edict; else an empty line, `EDICT <n>:` and, for each
+  field def after the first whose name's second last byte is not `_` and whose slots (three
+  for a vector, else one) are not all zero, the name padded with spaces to 15 bytes and its
+  `PR_ValueString`: a string's text, `entity <n>`, `<function>()`, `.<field>`, `void`, a
+  float `%5.1f`, a vector `'%5.1f %5.1f %5.1f'`, `pointer`, or `bad type <n>`.
+  `edictcount` prints `num_edicts`, `active`, `view`, `touch` and `step`, each `:%3i`: the
+  edicts, those in use, those with a `model`, a `solid` and `movetype` `MOVETYPE_STEP`.
+  `profile` prints, for the ten functions that ran the most statements since it last ran
+  (`pr_xfunction->profile++` for each statement), most first and the first of equals by
+  index, `%7i` of the count and the name, then sets every count to 0. `path` prints "Current
+  search path:" and each element, an archive as `<file> (<n> files)`.
+- **PHYS-13.8** Where the preview host differs from id's host, deliberately: `version`'s
+  `Exe:` line names QuakeC Studio and its version instead of the build's `__TIME__` and
+  `__DATE__`; `status` prints the connected time as `0:00:00`, since id's is
+  `Sys_FloatTime`'s wall clock; `edict` with an `n` below 0 prints "Bad edict number", where
+  id's `ED_PrintNum` reads outside the edicts; a field name of one byte is printed, where id's
+  `name[strlen(name)-2]` reads before it; `map` with no name does nothing, where id's spawns
+  `maps/.bsp` and fails; `kick` does nothing, where id's could drop the only client; and the
+  profile counts do not wrap at `2^31`. `demos`, `startdemos`, `stopdemo`, `connect`,
+  `reconnect`, `changelevel2`, `please`, `viewmodel`, `viewframe`, `viewnext`, `viewprev` and
+  `mcache` are not part of the preview host, which plays no demos and has no remote server,
+  and print `Unknown command`.
+
 ## Constants
 
 | Name | Value | Source |

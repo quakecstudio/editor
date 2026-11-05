@@ -3,6 +3,7 @@
 //! Reading a map from the user's Quake install (P1-19): its server, its client, what the
 //! renderer draws, and where a free camera stands in it.
 
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use qc_lno::LnoFile;
@@ -14,13 +15,13 @@ use qs_mdl::spr::Sprite;
 use qs_render::{Camera, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface};
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::patch_builtins;
-use qs_sim::{HostState, LoadOptions, SpawnParms, World};
+use qs_sim::{HostState, LoadOptions, SaveGame, SpawnParms, World};
 use qs_vfs::zip::Zip;
-use qs_vfs::{LoadedFile, StdFs, Vfs};
+use qs_vfs::{Element, LoadedFile, StdFs, Vfs};
 
 use crate::args::{Args, Show};
 use crate::audio::{Audio, Device};
-use crate::game::{Game, Reporting};
+use crate::game::{Game, HostAction, Reporting};
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
 const EYE_HEIGHT: f32 = 22.0;
@@ -120,6 +121,7 @@ pub(crate) fn load(
     map: &str,
     carried: Option<SpawnParms>,
     host: Option<HostState>,
+    save: Option<&SaveGame>,
 ) -> Result<Loaded, String> {
     let map = map.to_owned();
     let engine = args.engine();
@@ -182,10 +184,25 @@ pub(crate) fn load(
         carried,
         registration: vfs.registration(),
         host,
+        // PHYS-13.7: `COM_Path_f`'s lines, an archive with its count of files.
+        search_path: vfs
+            .elements()
+            .iter()
+            .map(|element| match element {
+                Element::Archive(archive) => {
+                    format!("{} ({} files)", archive.name(), archive.file_count())
+                }
+                Element::Directory(directory) => directory.name().to_owned(),
+            })
+            .collect(),
     };
     let mut world =
         World::load(&progs, &map, &bsp, reader()?, options).map_err(|e| e.to_string())?;
     world.settle(&progs).map_err(|e| e.to_string())?;
+    // PHYS-10.5: a saved game is read over the settled map before the client enters.
+    if let Some(save) = save {
+        world.restore(&progs, save).map_err(|e| e.to_string())?;
+    }
     world.connect(&progs).map_err(|e| e.to_string())?;
     let reporting = if args.bridge.is_some() {
         Reporting::Bridge
@@ -400,3 +417,78 @@ fn localization(vfs: &Vfs<StdFs>, args: &Args) -> Result<Option<Vec<u8>>, String
 
 #[cfg(test)]
 mod tests;
+
+/// What the host does after a host command (PHYS-13.6).
+pub(crate) enum Acted {
+    /// Plays this level now.
+    Load(Box<Loaded>),
+    /// Stops.
+    Quit,
+    /// Goes on as it was.
+    Stay,
+}
+
+/// The game directory, id's `com_gamedir`: the base directory's `-game` folder, else `id1`.
+fn game_dir(args: &Args) -> PathBuf {
+    let base = args.basedir.clone().unwrap_or_else(|| PathBuf::from("."));
+    base.join(args.game.as_deref().unwrap_or("id1"))
+}
+
+/// `<name>.sav` in the game directory, `COM_DefaultExtension (name, ".sav")`.
+fn save_path(args: &Args, name: &str) -> PathBuf {
+    let mut file = name.to_owned();
+    if Path::new(name).extension().is_none() {
+        file.push_str(".sav");
+    }
+    game_dir(args).join(file)
+}
+
+/// Carries out `action` (PHYS-13.6): a level loaded, the game saved or loaded as
+/// `Host_Savegame_f` and `Host_Loadgame_f` do, or the host stopped.
+pub(crate) fn act(args: &Args, game: &mut Game, action: HostAction) -> Acted {
+    match action {
+        HostAction::Level(next) => match load(args, &next.map, next.carried, Some(next.host), None)
+        {
+            Ok(loaded) => Acted::Load(Box::new(loaded)),
+            Err(error) => {
+                tracing::warn!(%error, map = next.map, "the next level did not load");
+                Acted::Stay
+            }
+        },
+        HostAction::Save(name) => {
+            let path = save_path(args, &name);
+            game.console_line(&format!("Saving game to {}...\n", path.display()));
+            if let Some(text) = game.save() {
+                match std::fs::write(&path, text) {
+                    Ok(()) => game.console_line("done.\n"),
+                    Err(_) => game.console_line("ERROR: couldn't open.\n"),
+                }
+            }
+            Acted::Stay
+        }
+        HostAction::Load(name) => {
+            let path = save_path(args, &name);
+            game.console_line(&format!("Loading game from {}...\n", path.display()));
+            let Ok(text) = std::fs::read(&path) else {
+                game.console_line("ERROR: couldn't open.\n");
+                return Acted::Stay;
+            };
+            let save = match SaveGame::read(&text) {
+                Ok(save) => save,
+                Err(error) => {
+                    game.console_line(&format!("{error}\n"));
+                    return Acted::Stay;
+                }
+            };
+            let host = game.world().host_state();
+            match load(args, &save.map, None, Some(host), Some(&save)) {
+                Ok(loaded) => Acted::Load(Box::new(loaded)),
+                Err(error) => {
+                    game.console_line(&format!("{error}\n"));
+                    Acted::Stay
+                }
+            }
+        }
+        HostAction::Quit => Acted::Quit,
+    }
+}

@@ -279,3 +279,35 @@ pub fn resolve(progs: &Progs<'_>, lines: &[i32], file: &str, line: i32) -> Optio
     }
     best
 }
+
+/// The observer of a frame's runs (WORLD-9.1, PHYS-13.7): each statement counted against its
+/// function, as id's `pr_xfunction->profile++` counts it, then the debugger asked, when there
+/// is one.
+pub(crate) struct Watch<'a> {
+    pub(crate) debugger: Option<&'a mut Debugger>,
+    pub(crate) profile: &'a mut Vec<u64>,
+}
+
+impl Observer for Watch<'_> {
+    fn run(&mut self, _machine: &Machine, _function: i32) {}
+
+    fn step(&mut self, _m: &Machine, _f: i32, _s: i32, _o: u16, _b: Option<u32>) {}
+
+    fn exit(&mut self, _machine: &Machine) {}
+
+    fn error(&mut self, _machine: &Machine, _error: &RunError) {}
+
+    fn stop_before(&mut self, machine: &Machine, function: i32, statement: i32) -> bool {
+        if let Ok(index) = usize::try_from(function) {
+            if self.profile.len() <= index {
+                self.profile.resize(index.saturating_add(1), 0);
+            }
+            if let Some(count) = self.profile.get_mut(index) {
+                *count = count.saturating_add(1);
+            }
+        }
+        self.debugger
+            .as_mut()
+            .is_some_and(|debugger| debugger.stop_before(machine, function, statement))
+    }
+}

@@ -7,9 +7,7 @@
 use qc_progs::Progs;
 use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::Camera;
-use qs_sim::{
-    EdictChange, EditError, HostCommand, HostState, SpawnParms, World, WorldError, command_words,
-};
+use qs_sim::{EdictChange, EditError, HostCommand, HostState, SpawnParms, World, WorldError};
 use serde_json::{Map, Value, json};
 
 use crate::screenshot::{Frame, encode};
@@ -146,6 +144,19 @@ pub(crate) struct Eye {
 struct Shot {
     id: Id,
     size: Option<(u32, u32)>,
+}
+
+/// What the host does for a command the console met (PHYS-13.6).
+#[derive(Clone, Debug)]
+pub(crate) enum HostAction {
+    /// Loads a level.
+    Level(NextLevel),
+    /// Saves the game as `<name>.sav` in the game directory.
+    Save(String),
+    /// Loads the game in `<name>.sav`.
+    Load(String),
+    /// Stops.
+    Quit,
 }
 
 /// The level to load next, what the player carries into it (PHYS-10.4) and what the host
@@ -287,12 +298,18 @@ impl Game {
     /// `SV_SaveSpawnparms` keeps (PHYS-10.4); after `restart`, this level with the parms it
     /// was entered with (PHYS-10.6). A level change whose `SetChangeParms` fails stops the
     /// game instead.
-    pub(crate) fn level_change(&mut self) -> Option<NextLevel> {
+    pub(crate) fn host_action(&mut self) -> Option<HostAction> {
         let host = self.world.host_state();
-        match self.world.take_host_command()? {
-            HostCommand::Restart => Some(NextLevel {
+        let action = match self.world.take_host_command()? {
+            HostCommand::Restart => HostAction::Level(NextLevel {
                 map: self.world.map().to_owned(),
                 carried: self.world.carried(),
+                host,
+            }),
+            // PHYS-13.6: a new game, carrying nothing.
+            HostCommand::Map(map) => HostAction::Level(NextLevel {
+                map,
+                carried: None,
                 host,
             }),
             HostCommand::Changelevel(map) => {
@@ -301,18 +318,46 @@ impl Game {
                     .map_err(|error| WorldError::Progs(error.message))
                     .and_then(|kept| kept);
                 match kept {
-                    Ok(kept) => Some(NextLevel {
+                    Ok(kept) => HostAction::Level(NextLevel {
                         map,
                         carried: Some(kept),
                         host,
                     }),
                     Err(error) => {
                         self.fail(None, &error);
-                        None
+                        return None;
                     }
                 }
             }
+            HostCommand::Save(name) => HostAction::Save(name),
+            HostCommand::Load(name) => HostAction::Load(name),
+            HostCommand::Quit => HostAction::Quit,
+        };
+        Some(action)
+    }
+
+    /// The game saved, `save_game` (PHYS-10.5): its text, or why there is none, printed to
+    /// the console as id's `Host_Savegame_f` prints it.
+    pub(crate) fn save(&mut self) -> Option<Vec<u8>> {
+        let saved = self
+            .with_progs(|game, progs| game.world.save_game(progs))
+            .ok()?;
+        match saved {
+            Ok(text) => Some(text),
+            Err(error) => {
+                self.console_line(&format!("{error}\n"));
+                None
+            }
         }
+    }
+
+    /// A line on the console, as `console/line` (BRIDGE-3.1).
+    pub(crate) fn console_line(&mut self, text: &str) {
+        let time = self.world.time();
+        self.events.push((
+            "console/line",
+            json!({ "text": text.trim_end_matches('\n'), "level": "print", "time": time }),
+        ));
     }
 
     /// Whether the client asked the host to stop.
@@ -613,26 +658,26 @@ impl Game {
         Ok(self.time())
     }
 
-    fn console(&mut self, params: &Value) -> Value {
+    /// `console` (BRIDGE-4.1, PHYS-13): the text goes in the console's buffer and runs now,
+    /// each line printed coming back as `console/line`.
+    fn console(&mut self, progs: &Progs<'_>, params: &Value) -> Value {
         let text = params
             .get("command")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        for words in command_words(text.as_bytes()) {
-            let name = words
-                .first()
-                .map(|w| String::from_utf8_lossy(w).into_owned());
-            // `Cmd_ExecuteString`: `Con_Printf ("Unknown command \"%s\"\n", Cmd_Argv(0))`.
-            self.events.push((
-                "console/line",
-                json!({
-                    "text": format!("Unknown command \"{}\"", name.unwrap_or_default()),
-                    "level": "print",
-                    "time": self.world.time(),
-                }),
-            ));
-        }
+        self.world.console(text);
+        self.world.console("\n");
+        self.world.execute_console(progs);
+        self.report_console();
         json!({})
+    }
+
+    /// The console's printed lines since the last report, as `console/line` (BRIDGE-3.1).
+    pub(crate) fn report_console(&mut self) {
+        for line in self.world.take_console_output() {
+            let text = String::from_utf8_lossy(&line).into_owned();
+            self.console_line(&text);
+        }
     }
 }
 
@@ -743,7 +788,7 @@ impl Game {
                 self.report_changes(progs);
                 Ok(json!({ "edict": qs_sim::CLIENT_EDICT }))
             }
-            "console" => Ok(self.console(params)),
+            "console" => Ok(self.console(progs, params)),
             "pick" => self.pick(progs, params),
             _ => Err(RpcError::new(
                 ErrorCode::MethodNotFound,

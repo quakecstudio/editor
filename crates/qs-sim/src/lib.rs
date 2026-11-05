@@ -8,6 +8,7 @@
 mod builtins;
 mod client;
 pub mod collision;
+mod console;
 pub mod debug;
 #[cfg(test)]
 mod fixtures;

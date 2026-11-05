@@ -25,7 +25,14 @@ and `--help` lists every option. `--headless` (with `-bridge`) opens no window a
 device: it runs frames of 1/72 of a second and serves the bridge between them, leaving
 `screenshot` out of its capabilities, for `cargo xtask bridge-client`.
 
-The bridge offers `inspect`, `pause`, `resume`, `step` (a whole frame), `field/set`,
-`entity/spawn`, `entity/edit`, `entity/remove`, `player/spawn_at` and `console`, and sends
-`progs/loaded`, `map/loaded`, `edict/spawned`, `edict/changed`, `edict/removed`, `qc/error`,
-`state/changed` and `console/line`. The commands' conformance tests are in `src/game/tests.rs`.
+The bridge offers `inspect`, `pause`, `resume`, `step` (a frame, or a QuakeC statement, `in`,
+`over` or `out`), `breakpoint/set`, `breakpoint/clear`, `evaluate`, `field/set`,
+`entity/spawn`, `entity/edit`, `entity/remove`, `player/spawn_at`, `pick`, `screenshot` and
+`console`, and sends `progs/loaded`, `map/loaded`, `edict/spawned`, `edict/changed`,
+`edict/removed`, `qc/error`, `breakpoint/hit`, `state/changed` and `console/line`. The QuakeC
+debugger stops a frame before a statement and goes on by replaying the frame from a copy of
+the world taken before it (WORLD-9); `progs.lno` beside the progs gives it files and lines.
+`console` runs id's console (PHYS-13): its commands, aliases and settings, the commands it
+forwards to the server, and `map`, `changelevel`, `restart`, `save`, `load` and `quit`, which
+the host carries out, saving to `<basedir>/<game>/<name>.sav`. The commands' conformance tests
+are in `src/game/tests.rs`.

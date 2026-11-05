@@ -138,6 +138,8 @@ struct Route {
 enum Step {
     /// A client string command, read in the next frame.
     Command(String),
+    /// A line typed at the server's console, run in the next frame (DIFF-16.6).
+    Console(String),
     /// The move sent each frame from now on.
     Move(UserCmd),
     /// Frames to run.
@@ -169,6 +171,7 @@ impl Route {
                         .ok_or(format!("line {at}: frametime is above 0, at most 1"))?;
                 }
                 "cmd" => route.steps.push(Step::Command(rest.to_owned())),
+                "console" => route.steps.push(Step::Console(rest.to_owned())),
                 "move" => route.steps.push(Step::Move(parse_move(rest, at)?)),
                 "frames" => route.steps.push(Step::Frames(
                     rest.parse()
@@ -272,6 +275,10 @@ impl Game {
             match step {
                 Step::Move(next) => cmd = *next,
                 Step::Command(text) => world.client_command(text),
+                Step::Console(text) => {
+                    world.console(text);
+                    world.console("\n");
+                }
                 Step::Frames(count) => {
                     for _ in 0..*count {
                         frame = frame.saturating_add(1);

@@ -660,6 +660,10 @@ int main(int argc, char **argv) {
         }
         if (strncmp(line, "cmd ", 4) == 0) {
             send_command(line + 4);
+        } else if (strncmp(line, "console ", 8) == 0) {
+            // Typed at the server's console: the next frame's Cbuf_Execute runs it.
+            Cbuf_AddText(line + 8);
+            Cbuf_AddText("\n");
         } else if (strncmp(line, "move ", 5) == 0) {
             read_move(line + 5, &move, number);
         } else if (strncmp(line, "frames ", 7) == 0) {

@@ -382,7 +382,7 @@ impl World {
 
 impl World {
     /// Field slot `slot` of edict `n`, 0 past the fields.
-    pub(super) fn slot_of(&self, n: usize, slot: usize) -> Slot {
+    pub(crate) fn slot_of(&self, n: usize, slot: usize) -> Slot {
         self.machine
             .edicts()
             .field(EdictNumber::new(n), slot)
@@ -390,7 +390,7 @@ impl World {
     }
 
     /// The system field `name` of edict `n`.
-    pub(super) fn field(&self, n: usize, name: &str) -> Slot {
+    pub(crate) fn field(&self, n: usize, name: &str) -> Slot {
         self.slot_of(n, field_slot(name))
     }
 
@@ -408,7 +408,7 @@ impl World {
     }
 
     /// The text of the string value `value`: a string-table offset, or an engine string.
-    pub(super) fn string_value(&self, progs: &Progs<'_>, value: Slot) -> Option<Vec<u8>> {
+    pub(crate) fn string_value(&self, progs: &Progs<'_>, value: Slot) -> Option<Vec<u8>> {
         let value = value.as_i32();
         if value >= 0 {
             return progs.string(value).map(<[u8]>::to_vec);

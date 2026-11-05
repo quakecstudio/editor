@@ -6,8 +6,12 @@
 
 /// Every setting `SV_Init` and `Host_InitLocal` register that the server reads, and the
 /// default each is declared with (`WinQuake/sv_main.c`, `sv_phys.c`, `sv_user.c`,
-/// `pr_cmds.c`, `host.c`); `skill`, `deathmatch`, `coop` and `teamplay` the engine already has.
-pub(crate) const SERVER_SETTINGS: [(&str, &str); 21] = [
+/// `pr_cmds.c`, `host.c`, `net_main.c`, `cl_main.c`); `skill`, `deathmatch`, `coop` and
+/// `teamplay` the engine already has.
+pub(crate) const SERVER_SETTINGS: [(&str, &str); 24] = [
+    ("hostname", "UNNAMED"),
+    ("_cl_name", "player"),
+    ("_cl_color", "0"),
     ("sv_maxvelocity", "2000"),
     ("sv_gravity", "800"),
     ("sv_friction", "4"),

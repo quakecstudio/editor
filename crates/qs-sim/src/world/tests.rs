@@ -2606,6 +2606,8 @@ fn only_a_changelevel_with_one_argument_names_a_level() {
     let mut run = player(&ledge(), "", "", "");
     let mut take = |buffer: &[u8]| {
         run.world.builtins.mock.engine_mut().command_buffer = buffer.to_vec();
+        run.world.execute_console(&Progs::read(&run.progs).unwrap());
+        run.world.builtins.mock.engine_mut().command_buffer.clear();
         match run.world.take_host_command() {
             Some(super::HostCommand::Changelevel(map)) => Some(map),
             _ => None,
@@ -2721,6 +2723,8 @@ fn restart_asks_for_this_level_again() {
     let mut run = player(&ledge(), "", "", "");
     let mut take = |buffer: &[u8]| {
         run.world.builtins.mock.engine_mut().command_buffer = buffer.to_vec();
+        run.world.execute_console(&Progs::read(&run.progs).unwrap());
+        run.world.builtins.mock.engine_mut().command_buffer.clear();
         run.world.take_host_command()
     };
     assert_eq!(take(b"restart\n"), Some(super::HostCommand::Restart));

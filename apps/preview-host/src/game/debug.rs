@@ -193,6 +193,7 @@ impl Game {
             debugger.run_to_breakpoint(0);
         }
         self.report_changes(progs);
+        self.report_console();
         match outcome {
             Ok(()) => FrameEnd::Ran,
             Err(error) => {

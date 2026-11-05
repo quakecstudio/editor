@@ -27,7 +27,7 @@ use qs_bsp::{
 use qs_sim::{LoadOptions, World};
 use serde_json::{Value, json};
 
-use super::{Eye, Game, Reporting, Screen};
+use super::{Eye, Game, HostAction, NextLevel, Reporting, Screen};
 use crate::screenshot::Frame;
 
 /// The QuakeC the tests run: a crate the map places, a counter `StartFrame` raises, a
@@ -641,14 +641,16 @@ fn console_output_comes_back_as_lines() {
         &mut game,
         &mut session,
         "console",
-        &json!({ "command": "fly; \"me\" now" }),
+        &json!({ "command": "nosuch; \"me\" now; color" }),
     )
     .unwrap();
     assert_eq!(result, json!({}));
     let lines = events(&mut game);
-    assert_eq!(methods(&lines), ["console/line", "console/line"]);
-    assert_eq!(lines[0].1["text"], "Unknown command \"fly\"");
+    assert_eq!(methods(&lines), ["console/line"; 4]);
+    assert_eq!(lines[0].1["text"], "Unknown command \"nosuch\"");
     assert_eq!(lines[1].1["text"], "Unknown command \"me\"");
+    assert_eq!(lines[2].1["text"], "\"color\" is \"0 0\"", "one line each");
+    assert_eq!(lines[3].1["text"], "color <0-13> [0-13]");
 }
 
 // spec BRIDGE-3.1: each frame reports the fields written during it
@@ -922,12 +924,12 @@ fn a_level_change_carries_the_players_parms() {
     for _ in 0..3 {
         idle.frame(0.1);
     }
-    assert!(idle.level_change().is_none());
+    assert!(idle.host_action().is_none());
     let (mut game, _session) = game_with("{\n\"classname\" \"info_exit\"\n}\n");
     let mut change = None;
     for _ in 0..10 {
         game.frame(0.1);
-        change = game.level_change();
+        change = level(game.host_action());
         if change.is_some() {
             break;
         }
@@ -944,7 +946,7 @@ fn a_level_change_carries_the_players_parms() {
         Some(100.0),
         "parm1 is the player's health"
     );
-    assert!(game.level_change().is_none(), "taken once");
+    assert!(game.host_action().is_none(), "taken once");
 }
 
 // spec PHYS-10.6: restart asks for this level again, with the parms it was entered with: none
@@ -955,7 +957,7 @@ fn a_restart_loads_this_level_again() {
     let mut change = None;
     for _ in 0..10 {
         game.frame(0.1);
-        change = game.level_change();
+        change = level(game.host_action());
         if change.is_some() {
             break;
         }
@@ -963,6 +965,14 @@ fn a_restart_loads_this_level_again() {
     let next = change.expect("a restart");
     assert_eq!(next.map, "test");
     assert!(next.carried.is_none(), "a new game carries nothing");
+}
+
+/// The level `action` asks for, if it asks for one.
+fn level(action: Option<HostAction>) -> Option<NextLevel> {
+    match action {
+        Some(HostAction::Level(next)) => Some(next),
+        _ => None,
+    }
 }
 
 /// The line `text` starts on in [`SOURCE`], counted from 1: the test progs' `t.qc`.
