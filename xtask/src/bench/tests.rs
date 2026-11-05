@@ -7,6 +7,7 @@
 )]
 
 use super::*;
+use crate::parse_cli;
 use crate::test_dirs::fresh;
 
 fn root() -> PathBuf {
@@ -61,10 +62,6 @@ fn run(key: &str, passed: bool, results: Vec<BenchResult>) -> Run {
         accepted: false,
         results,
     }
-}
-
-fn args(list: &[&str]) -> Vec<String> {
-    list.iter().map(|arg| (*arg).to_owned()).collect()
 }
 
 #[test]
@@ -353,40 +350,37 @@ fn the_baseline_is_the_last_passing_run_on_the_same_host() {
 #[test]
 fn arguments_parse_and_bad_ones_are_rejected() {
     assert_eq!(
-        parse_args(&args(&[])).unwrap(),
-        Options {
+        parse_cli::<Args, &str>(&[]).unwrap(),
+        Args {
+            show: None,
             history: None,
             accept: false,
-            show_history: false
         }
     );
     assert_eq!(
-        parse_args(&args(&["--accept", "--history", "h.json"])).unwrap(),
-        Options {
+        parse_cli::<Args, _>(&["--accept", "--history", "h.json"]).unwrap(),
+        Args {
+            show: None,
             history: Some(PathBuf::from("h.json")),
             accept: true,
-            show_history: false
         }
     );
-    assert!(parse_args(&args(&["history"])).unwrap().show_history);
-    assert!(
-        parse_args(&args(&["--history"]))
-            .unwrap_err()
-            .contains("needs a path")
-    );
-    assert!(parse_args(&args(&["--accept", "--accept"])).is_err());
-    assert!(
-        parse_args(&args(&["history", "--accept"]))
-            .unwrap_err()
-            .contains("only applies")
+    assert_eq!(
+        parse_cli::<Args, _>(&["history"]).unwrap().show,
+        Some(Show::History)
     );
     assert!(
-        parse_args(&args(&["--fast"]))
-            .unwrap_err()
-            .contains("\"--fast\"")
+        parse_cli::<Args, _>(&["--history"]).is_err(),
+        "needs a path"
     );
-    assert!(parse_args(&args(&["history", "history"])).is_err());
-    assert!(parse_args(&args(&["--history", "a", "--history", "b"])).is_err());
+    assert!(parse_cli::<Args, _>(&["--accept", "--accept"]).is_err());
+    assert!(
+        parse_cli::<Args, _>(&["history", "--accept"]).is_err(),
+        "--accept only applies to a run"
+    );
+    assert!(parse_cli::<Args, _>(&["--fast"]).is_err());
+    assert!(parse_cli::<Args, _>(&["history", "history"]).is_err());
+    assert!(parse_cli::<Args, _>(&["--history", "a", "--history", "b"]).is_err());
 }
 
 #[test]
@@ -546,7 +540,13 @@ fn bench_history_prints_the_recorded_runs() {
     let dir = scratch("print");
     let path = dir.join("history.json");
     let path_arg = path.to_str().unwrap();
-    assert!(main(&root(), &args(&["history", "--history", path_arg])).unwrap());
+    assert!(
+        main(
+            &root(),
+            &parse_cli::<Args, _>(&["history", "--history", path_arg]).unwrap()
+        )
+        .unwrap()
+    );
     let mut first = run(
         "ref-mac",
         true,
@@ -561,7 +561,13 @@ fn bench_history_prints_the_recorded_runs() {
         runs: vec![first, second],
     };
     save_history(&path, &history).unwrap();
-    assert!(main(&root(), &args(&["history", "--history", path_arg])).unwrap());
+    assert!(
+        main(
+            &root(),
+            &parse_cli::<Args, _>(&["history", "--history", path_arg]).unwrap()
+        )
+        .unwrap()
+    );
     let printed = format_history(&history);
     assert!(
         printed.contains("2023-11-14T22:13:20Z 0123456789ab ref-mac passed"),
@@ -577,7 +583,7 @@ fn bench_history_prints_the_recorded_runs() {
         format_history(&History::default()),
         "bench: no runs recorded\n"
     );
-    assert!(main(&root(), &args(&["--bogus"])).is_err());
+    assert!(parse_cli::<Args, _>(&["--bogus"]).is_err());
 }
 
 #[test]

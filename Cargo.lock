@@ -3070,6 +3070,7 @@ dependencies = [
 name = "qs-differential"
 version = "2026.10.0"
 dependencies = [
+ "clap",
  "qc-builtins",
  "qc-codegen",
  "qc-edict",
@@ -3088,6 +3089,7 @@ dependencies = [
 name = "qs-editor-view"
 version = "2026.10.0"
 dependencies = [
+ "clap",
  "eframe",
  "egui",
  "proptest",
@@ -3097,6 +3099,7 @@ dependencies = [
 name = "qs-install"
 version = "2026.10.0"
 dependencies = [
+ "clap",
  "junction",
  "proptest",
  "qs-pak",
@@ -3159,6 +3162,7 @@ version = "2026.10.0"
 name = "qs-render"
 version = "2026.10.0"
 dependencies = [
+ "clap",
  "eframe",
  "egui-wgpu",
  "egui_kittest",
@@ -3302,6 +3306,7 @@ dependencies = [
 name = "quakec-studio"
 version = "2026.10.0"
 dependencies = [
+ "clap",
  "eframe",
  "egui_kittest",
  "image",
@@ -5046,6 +5051,7 @@ name = "xtask"
 version = "2026.10.0"
 dependencies = [
  "cc",
+ "clap",
  "miniz_oxide 0.9.1",
  "qc-codegen",
  "qc-lexer",

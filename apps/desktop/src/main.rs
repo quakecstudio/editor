@@ -9,12 +9,21 @@ use eframe::egui;
 use quakec_studio::App;
 use quakec_studio::strings::Text;
 
+/// `quakec-studio [<project>]`.
+#[derive(clap::Parser, Debug)]
+#[command(name = "quakec-studio", about = "The QuakeC Studio desktop app")]
+struct Args {
+    /// A project directory to open.
+    project: Option<PathBuf>,
+}
+
 #[expect(
     clippy::print_stderr,
     reason = "a binary's crate root reports why the window could not open, or why logging is \
               off, to the person who ran it"
 )]
 fn main() -> ExitCode {
+    let Args { project } = <Args as clap::Parser>::parse();
     let dirs = qs_paths::current();
     let logging = dirs.as_ref().map_err(ToString::to_string).and_then(|dirs| {
         qs_log::init(&qs_log::LogConfig::for_app(dirs)).map_err(|error| error.to_string())
@@ -27,8 +36,6 @@ fn main() -> ExitCode {
         );
     }
     let layout_file = dirs.ok().map(|dirs| qs_layout::layout_path(dirs.data()));
-    // The one argument, if any, is a project directory to open.
-    let project = std::env::args_os().nth(1).map(PathBuf::from);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(Text::AppName.get())

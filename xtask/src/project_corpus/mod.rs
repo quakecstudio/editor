@@ -31,8 +31,26 @@ use qc_project::{Code, Form, Module, Project, Via, open};
 use crate::lex_corpus::progs_src_names;
 use crate::oracles;
 
-const USAGE: &str = "usage: cargo xtask project-corpus [--files] [--fteqcc] \
-                     [--progs <progs.dat>] [--expect-warning <code>=<modules>] <dir>...";
+/// `cargo xtask project-corpus [--files] [--fteqcc] [--progs <progs.dat>] [--expect-warning
+/// <code>=<modules>] <dir>...`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// Check each file's module instead of each project.
+    #[arg(long)]
+    files: bool,
+    /// Also compile each module with the pinned FTEQCC.
+    #[arg(long)]
+    fteqcc: bool,
+    /// The progs.dat the one directory's modules compile to.
+    #[arg(long, value_name = "progs.dat")]
+    progs: Option<PathBuf>,
+    /// A warning code and how many modules give it, `<code>=<modules>`.
+    #[arg(long = "expect-warning", value_name = "code=modules", value_parser = parse_expected)]
+    expected: Option<(Code, usize)>,
+    /// The codebase directories.
+    #[arg(required = true)]
+    dirs: Vec<PathBuf>,
+}
 
 /// Every `.src` file under `dir`, sorted.
 fn src_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
@@ -205,7 +223,7 @@ fn report(module: &Module) -> bool {
 
 /// Parses `<code>=<modules>`, the code a warning.
 fn parse_expected(arg: &str) -> Result<(Code, usize), String> {
-    let bad = || format!("--expect-warning takes <warning code>=<modules>, not {arg}\n{USAGE}");
+    let bad = || format!("--expect-warning takes <warning code>=<modules>, not {arg}");
     let (code, count) = arg.split_once('=').ok_or_else(bad)?;
     let code = Code::ALL
         .into_iter()
@@ -215,26 +233,18 @@ fn parse_expected(arg: &str) -> Result<(Code, usize), String> {
 }
 
 /// Runs the check on the directories in `args`.
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    let mut progs = None;
-    let mut files = false;
-    let mut run_fteqcc = false;
-    let mut expected: Option<(Code, usize)> = None;
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
+    let Args {
+        files,
+        fteqcc: run_fteqcc,
+        progs,
+        expected,
+        dirs,
+    } = args;
+    let (files, run_fteqcc, expected) = (*files, *run_fteqcc, *expected);
     let mut warned = 0_usize;
-    let mut dirs = Vec::new();
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        match arg.as_str() {
-            "--progs" => progs = Some(PathBuf::from(rest.next().ok_or(USAGE)?)),
-            "--files" => files = true,
-            "--fteqcc" => run_fteqcc = true,
-            "--expect-warning" => expected = Some(parse_expected(rest.next().ok_or(USAGE)?)?),
-            flag if flag.starts_with("--") => return Err(format!("unknown flag {flag}\n{USAGE}")),
-            dir => dirs.push(PathBuf::from(dir)),
-        }
-    }
-    if dirs.is_empty() || (progs.is_some() && dirs.len() != 1) {
-        return Err(USAGE.to_owned());
+    if progs.is_some() && dirs.len() != 1 {
+        return Err("--progs takes one directory".to_owned());
     }
     // Build the pinned FTEQCC up front (a no-op when it is already built), so a failure to
     // build it is reported once, not once per directory.
@@ -244,7 +254,7 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
         None
     };
     let mut ok = true;
-    for dir in &dirs {
+    for dir in dirs {
         let projects = projects(dir)?;
         let modules: Vec<&Module> = projects.iter().flat_map(|p| &p.modules).collect();
         if modules.is_empty() {
@@ -317,7 +327,8 @@ mod tests {
 
     use qc_progs::{Function, ProgsFile, write};
 
-    use super::{main, parse_expected};
+    use super::{Args, main, parse_expected};
+    use crate::parse_cli;
     use crate::test_dirs::fresh;
     use qc_project::Code;
 
@@ -344,7 +355,9 @@ mod tests {
     }
 
     fn run(args: &[String]) -> Result<bool, String> {
-        main(Path::new("."), args)
+        let words: Vec<&str> = args.iter().map(String::as_str).collect();
+        let parsed = parse_cli::<Args, _>(&words).map_err(|e| e.to_string())?;
+        main(Path::new("."), &parsed)
     }
 
     fn path(dir: &Path) -> String {
@@ -433,12 +446,8 @@ mod tests {
     fn a_codebase_without_a_module_or_with_bad_arguments_fails() {
         let empty = codebase("project-empty", &[("readme.txt", "x")]);
         assert!(!run(&[path(&empty)]).unwrap());
-        assert!(run(&[]).unwrap_err().contains("usage"));
-        assert!(
-            run(&["--fast".to_owned()])
-                .unwrap_err()
-                .contains("unknown flag")
-        );
+        assert!(run(&[]).unwrap_err().contains("required"));
+        assert!(run(&["--fast".to_owned()]).unwrap_err().contains("--fast"));
         assert!(run(&["--progs".to_owned()]).is_err());
         let two = [
             "--progs".to_owned(),
@@ -446,7 +455,7 @@ mod tests {
             path(&empty),
             path(&empty),
         ];
-        assert!(run(&two).unwrap_err().contains("usage"));
+        assert!(run(&two).unwrap_err().contains("one directory"));
         assert!(run(&["--progs".to_owned(), "p.dat".to_owned(), path(&empty)]).is_err());
         assert!(run(&[path(&empty.join("nowhere"))]).is_err());
     }

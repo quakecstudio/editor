@@ -17,20 +17,22 @@ use crate::{Report, print_outcome};
 /// The reference, relative to the workspace root.
 pub(crate) const REFERENCE: &str = "docs/commands.md";
 
-const USAGE: &str = "usage: cargo xtask commands [--check]";
+/// `cargo xtask commands [--check]`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// Check the reference instead of writing it.
+    #[arg(long)]
+    check: bool,
+}
 
 /// Runs `cargo xtask commands` with the arguments `args`.
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    match args {
-        [] => {
-            fs::write(root.join(REFERENCE), reference()?)
-                .map_err(|e| format!("{REFERENCE}: {e}"))?;
-            eprintln!("commands: wrote {REFERENCE}");
-            Ok(true)
-        }
-        [flag] if flag == "--check" => Ok(print_outcome("commands", check(root))),
-        _ => Err(USAGE.to_owned()),
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
+    if args.check {
+        return Ok(print_outcome("commands", check(root)));
     }
+    fs::write(root.join(REFERENCE), reference()?).map_err(|e| format!("{REFERENCE}: {e}"))?;
+    eprintln!("commands: wrote {REFERENCE}");
+    Ok(true)
 }
 
 /// Checks that `docs/commands.md` is what the registry renders.
@@ -97,19 +99,15 @@ mod tests {
     use super::*;
     use crate::test_dirs;
 
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(|&a| a.to_owned()).collect()
-    }
-
     #[test]
     fn writing_then_checking_passes_and_an_edit_fails_the_check() {
         let root = test_dirs::fresh("commands-reference");
         fs::create_dir_all(root.join("docs")).unwrap();
 
         assert!(check(&root).unwrap_err().contains(REFERENCE));
-        assert_eq!(main(&root, &[]), Ok(true));
+        assert_eq!(main(&root, &Args { check: false }), Ok(true));
         assert!(check(&root).unwrap().problems.is_empty());
-        assert_eq!(main(&root, &args(&["--check"])), Ok(true));
+        assert_eq!(main(&root, &Args { check: true }), Ok(true));
 
         let path = root.join(REFERENCE);
         let edited = fs::read_to_string(&path)
@@ -117,14 +115,13 @@ mod tests {
             .replace("edit.undo", "edit.undone");
         fs::write(&path, edited).unwrap();
         assert_eq!(check(&root).unwrap().problems.len(), 1);
-        assert_eq!(main(&root, &args(&["--check"])), Ok(false));
+        assert_eq!(main(&root, &Args { check: true }), Ok(false));
     }
 
     #[test]
     fn other_arguments_are_a_usage_error() {
-        let root = Path::new(".");
         for bad in [&["--write"][..], &["--check", "--check"]] {
-            assert_eq!(main(root, &args(bad)), Err(USAGE.to_owned()));
+            assert!(crate::parse_cli::<Args, _>(bad).is_err(), "{bad:?}");
         }
     }
 }

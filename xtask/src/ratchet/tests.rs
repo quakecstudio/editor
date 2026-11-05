@@ -7,6 +7,7 @@
 )]
 
 use super::*;
+use crate::parse_cli;
 use crate::test_dirs::fresh;
 
 fn root() -> PathBuf {
@@ -612,17 +613,22 @@ fn the_history_appends_one_run_each_time() {
 
 #[test]
 fn the_command_line_takes_a_history_and_measurement_files() {
-    let args = |text: &str| -> Vec<String> { text.split_whitespace().map(str::to_owned).collect() };
     assert_eq!(
-        parse_args(&args("--history h.json a.json b.json")).unwrap(),
-        (
-            Some(PathBuf::from("h.json")),
-            vec![PathBuf::from("a.json"), PathBuf::from("b.json")]
-        )
+        parse_cli::<Args, _>(&["--history", "h.json", "a.json", "b.json"]).unwrap(),
+        Args {
+            history: Some(PathBuf::from("h.json")),
+            files: vec![PathBuf::from("a.json"), PathBuf::from("b.json")]
+        }
     );
-    assert_eq!(parse_args(&[]).unwrap(), (None, Vec::new()));
-    assert!(parse_args(&args("--history")).is_err());
-    assert!(parse_args(&args("--fast")).is_err());
+    assert_eq!(
+        parse_cli::<Args, &str>(&[]).unwrap(),
+        Args {
+            history: None,
+            files: Vec::new()
+        }
+    );
+    assert!(parse_cli::<Args, _>(&["--history"]).is_err());
+    assert!(parse_cli::<Args, _>(&["--fast"]).is_err());
 }
 
 /// A scratch repository with the files `main` reads and `ratchets` committed
@@ -642,28 +648,25 @@ fn checkout(name: &str, ratchets: &str) -> PathBuf {
 #[test]
 fn the_command_passes_a_clean_file_and_fails_a_low_measurement() {
     let dir = checkout("main-clean", BASE);
-    assert!(main(&dir, &[]).unwrap());
+    assert!(main(&dir, &parse_cli::<Args, &str>(&[]).unwrap()).unwrap());
 
     let flakes = root().join("xtask/fixtures/readiness/flakes/recorded/flakes.json");
     let history = dir.join("history.json");
-    let args = [
-        "--history".to_owned(),
-        history.display().to_string(),
-        flakes.display().to_string(),
-    ];
+    let (history_arg, flakes_arg) = (history.display().to_string(), flakes.display().to_string());
+    let args = parse_cli::<Args, _>(&["--history", &history_arg, &flakes_arg]).unwrap();
     assert!(!main(&dir, &args).unwrap());
     let history: History = serde_json::from_str(&fs::read_to_string(&history).unwrap()).unwrap();
     assert!(!history.runs[0].passed);
     assert!(history.runs[0].crates.contains_key("fx-flakes"));
 
-    assert!(main(&dir, &["missing.json".to_owned()]).is_err());
+    assert!(main(&dir, &parse_cli::<Args, _>(&["missing.json"]).unwrap()).is_err());
 }
 
 #[test]
 fn the_command_fails_a_lowered_file() {
     let dir = checkout("main-lowered", BASE);
     fs::write(dir.join(FILE), edit("lines = 95", "lines = 94")).unwrap();
-    assert!(!main(&dir, &[]).unwrap());
+    assert!(!main(&dir, &parse_cli::<Args, &str>(&[]).unwrap()).unwrap());
 }
 
 #[test]

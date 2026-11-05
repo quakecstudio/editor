@@ -13,8 +13,6 @@ use std::path::{Path, PathBuf};
 
 use qs_map::{MapFile, TexDef, qbsp};
 
-const USAGE: &str = "usage: cargo xtask map-corpus <dir>...";
-
 /// Every `.map` file under `dir`, sorted.
 fn maps(dir: &Path) -> Result<Vec<PathBuf>, String> {
     let mut found = Vec::new();
@@ -71,17 +69,22 @@ fn check(path: &Path) -> Result<String, String> {
     ))
 }
 
+/// `cargo xtask map-corpus <dir>...`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// The directories of `.map` files.
+    #[arg(required = true)]
+    dirs: Vec<PathBuf>,
+}
+
 /// Runs the check on the directories in `args`.
-pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
-    if args.is_empty() || args.iter().any(|arg| arg.starts_with("--")) {
-        return Err(USAGE.to_owned());
-    }
+pub(crate) fn main(_root: &Path, args: &Args) -> Result<bool, String> {
     let mut ok = true;
     let mut count = 0_usize;
-    for dir in args {
-        let files = maps(Path::new(dir))?;
+    for dir in &args.dirs {
+        let files = maps(dir)?;
         if files.is_empty() {
-            return Err(format!("no .map files under {dir}"));
+            return Err(format!("no .map files under {}", dir.display()));
         }
         for path in &files {
             count = count.saturating_add(1);
@@ -115,7 +118,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use super::main;
+    use super::{Args, main};
     use crate::test_dirs::fresh;
 
     fn dir(name: &str) -> PathBuf {
@@ -134,7 +137,7 @@ mod tests {
     }
 
     fn run(dir: &Path) -> Result<bool, String> {
-        main(Path::new("."), &[dir.display().to_string()])
+        crate::run_cli::<Args, _>(&[dir.display().to_string()], |a| main(Path::new("."), a))
     }
 
     #[test]
@@ -158,7 +161,13 @@ mod tests {
         let maps = dir("map-corpus-empty");
         assert!(run(&maps).unwrap_err().contains("no .map files"));
         assert!(run(&maps.join("nowhere")).is_err());
-        assert!(main(Path::new("."), &[]).unwrap_err().contains("usage"));
-        assert!(main(Path::new("."), &["--all".to_owned()]).is_err());
+        assert!(
+            crate::run_cli::<Args, &str>(&[], |a| main(Path::new("."), a))
+                .unwrap_err()
+                .contains("Usage")
+        );
+        assert!(
+            crate::run_cli::<Args, _>(&["--all".to_owned()], |a| main(Path::new("."), a)).is_err()
+        );
     }
 }

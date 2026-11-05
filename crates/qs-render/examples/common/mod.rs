@@ -135,6 +135,75 @@ impl Random for Rand {
     }
 }
 
+/// The examples' command line: the install, its game directory, the map and how it is shown.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// The game's root, the engine's `-basedir`.
+    #[arg(long)]
+    pub(crate) basedir: String,
+    /// The game directory over `id1`, the engine's `-game`.
+    #[arg(long)]
+    pub(crate) game: Option<String>,
+    /// The mission pack `rogue`, the engine's `-rogue`.
+    #[arg(long)]
+    pub(crate) rogue: bool,
+    /// The mission pack `hipnotic`, the engine's `-hipnotic`.
+    #[arg(long)]
+    pub(crate) hipnotic: bool,
+    /// GLQuake's `-gamma` (REND-3.1).
+    #[arg(long, default_value_t = GAMMA)]
+    pub(crate) gamma: f32,
+    /// Brush models without QuakeSpasm's `gl_zfix` (REND-1.12).
+    #[arg(long)]
+    pub(crate) nozfix: bool,
+    /// Where the camera starts: x, y, z and yaw.
+    #[arg(long, num_args = 4, value_names = ["x", "y", "z", "yaw"], allow_negative_numbers = true)]
+    pub(crate) at: Option<Vec<f32>>,
+    /// Start at the map's first water or sky.
+    #[arg(long, value_enum)]
+    pub(crate) show: Option<Show>,
+    /// A free camera instead of the player.
+    #[arg(long)]
+    pub(crate) fly: bool,
+    /// No vsync, a free camera turning slowly, and after this many seconds the frame rate on
+    /// stdout and exit (P2-152).
+    #[arg(long, value_name = "seconds")]
+    pub(crate) benchmark: Option<f32>,
+    /// Where the window opens, to put it on a chosen display.
+    #[arg(long, num_args = 2, value_names = ["x", "y"], allow_negative_numbers = true)]
+    pub(crate) position: Option<Vec<f32>>,
+    /// The map.
+    #[arg(default_value = "e1m1")]
+    pub(crate) map: String,
+}
+
+/// What `--show` starts at.
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub(crate) enum Show {
+    /// The map's first water.
+    Water,
+    /// The map's first sky.
+    Sky,
+}
+
+impl Args {
+    /// The engine's command line for the game filesystem: `-basedir`, `-game`, `-rogue` and
+    /// `-hipnotic`.
+    fn engine(&self) -> Vec<String> {
+        let mut engine = vec!["-basedir".to_owned(), self.basedir.clone()];
+        if let Some(game) = &self.game {
+            engine.extend(["-game".to_owned(), game.clone()]);
+        }
+        if self.rogue {
+            engine.push("-rogue".to_owned());
+        }
+        if self.hipnotic {
+            engine.push("-hipnotic".to_owned());
+        }
+        engine
+    }
+}
+
 /// Reads the map the command line names (`e1m1` by default) from the install that `-basedir`
 /// and `-game` name, the engine's own options, which every other argument is passed on as;
 /// starts its server, connects its client and reads the models the server precached.
@@ -142,42 +211,19 @@ impl Random for Rand {
     clippy::too_many_lines,
     reason = "one pass from the command line to a loaded map reads best in the order it runs"
 )]
-pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
-    let mut map = "e1m1".to_owned();
-    let mut engine = Vec::new();
-    let mut show = None;
-    // `-at x y z yaw`: where the camera starts, looking a little down.
-    let mut at: Option<[f32; 4]> = None;
-    let mut zfix = true;
-    let mut gamma = GAMMA;
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        if arg == "-gamma" {
-            // GLQuake's `-gamma` (REND-3.1).
-            gamma = rest
-                .next()
-                .and_then(|g| g.parse().ok())
-                .ok_or("-gamma takes a number")?;
-        } else if arg == "-nozfix" {
-            zfix = false;
-        } else if arg == "-at" {
-            let mut next = || rest.next().and_then(|v| v.parse::<f32>().ok());
-            at = Some([next(), next(), next(), next()].map(|v| v.unwrap_or(0.0)));
-        } else if arg == "-show" {
-            show = match rest.next().map(String::as_str) {
-                Some("water") => Some(Surface::Turbulent),
-                Some("sky") => Some(Surface::Sky),
-                other => return Err(format!("-show takes water or sky, not {other:?}")),
-            };
-        } else if arg.starts_with('-') {
-            engine.push(arg.clone());
-            if let Some(value) = rest.next() {
-                engine.push(value.clone());
-            }
-        } else {
-            map.clone_from(arg);
-        }
-    }
+pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
+    let map = args.map.clone();
+    let engine = args.engine();
+    let show = args.show.map(|show| match show {
+        Show::Water => Surface::Turbulent,
+        Show::Sky => Surface::Sky,
+    });
+    let at: Option<[f32; 4]> = args
+        .at
+        .as_deref()
+        .and_then(|values| <[f32; 4]>::try_from(values).ok());
+    let zfix = !args.nozfix;
+    let gamma = args.gamma;
     let vfs = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
     let read = |name: &str| -> Result<Vec<u8>, String> {
         vfs.load(name.as_bytes())
