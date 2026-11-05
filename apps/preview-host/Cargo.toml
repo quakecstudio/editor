@@ -23,6 +23,8 @@ eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }
 # The screenshot's PNG (BRIDGE-4.1).
 image = { workspace = true, features = ["png"] }
 qc-builtins = { workspace = true }
+# The bridge's socket or named pipe (BRIDGE-1.1).
+interprocess = { workspace = true }
 qc-progs = { workspace = true }
 qs-bridge = { workspace = true }
 qs-bsp = { workspace = true }

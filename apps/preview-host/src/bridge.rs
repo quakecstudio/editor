@@ -4,10 +4,13 @@
 //! of their own and handed to the game loop, which answers them between two server frames
 //! (BRIDGE-4.3) and sends the events.
 
-use std::io::{BufReader, Read, Write};
+use std::io::{self, BufReader, Read, Write};
+use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
 
+use interprocess::local_socket::traits::{Listener as _, ListenerExt as _};
+use interprocess::local_socket::{GenericFilePath, ListenerOptions, Stream, ToFsName as _};
 use qs_bridge::{Host, Id, Message, RpcError, Session, read_frame, write_frame};
 use serde_json::Value;
 
@@ -46,28 +49,28 @@ impl Bridge {
         }
     }
 
-    /// Listens at `path` and serves the first client (BRIDGE-1.1): a second connection is
-    /// closed at once.
+    /// Listens at `path`, a Unix domain socket on macOS and Linux and a named pipe
+    /// `\\.\pipe\<name>` on Windows, and serves the first client (BRIDGE-1.1): a second
+    /// connection is closed at once. A socket file a host before this one left behind is
+    /// replaced.
     ///
     /// # Errors
     ///
-    /// Whatever binding or accepting fails with.
-    #[cfg(unix)]
-    pub(crate) fn listen(path: &std::path::Path) -> std::io::Result<Self> {
-        use std::os::unix::net::UnixListener;
-        // A socket file a host before this one left behind.
-        if path.exists() {
-            std::fs::remove_file(path)?;
-        }
-        let listener = UnixListener::bind(path)?;
-        let (stream, _) = listener.accept()?;
+    /// Whatever naming, binding or accepting fails with.
+    pub(crate) fn listen(path: &Path) -> io::Result<Self> {
+        let name = path.as_os_str().to_fs_name::<GenericFilePath>()?;
+        let listener = ListenerOptions::new()
+            .name(name)
+            .try_overwrite(true)
+            .create_sync()?;
+        let stream = listener.accept()?;
         std::thread::spawn(move || {
             for second in listener.incoming() {
                 drop(second);
             }
         });
-        let write = stream.try_clone()?;
-        Ok(Self::over(stream, write))
+        let shared = Shared(Arc::new(stream));
+        Ok(Self::over(shared.clone(), shared))
     }
 
     /// Whether the client is still connected.
@@ -145,6 +148,26 @@ impl Bridge {
             tracing::warn!("the bridge client went away");
             self.open = false;
         }
+    }
+}
+
+/// One connection for the reader thread and the writer both: `&Stream` reads and writes.
+#[derive(Clone)]
+struct Shared(Arc<Stream>);
+
+impl Read for Shared {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        (&*self.0).read(buf)
+    }
+}
+
+impl Write for Shared {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        (&*self.0).write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        (&*self.0).flush()
     }
 }
 

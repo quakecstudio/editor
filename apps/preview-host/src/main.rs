@@ -55,18 +55,8 @@ fn run(args: &args::Args) -> Result<(), String> {
     window::run(args, loaded, bridge)
 }
 
-/// Waits for the IDE at the bridge's socket (BRIDGE-1.1).
-#[cfg(unix)]
+/// Waits for the IDE at the bridge's socket or named pipe (BRIDGE-1.1).
 fn listen(path: &std::path::Path) -> Result<bridge::Bridge, String> {
     tracing::info!(path = %path.display(), "waiting for the IDE");
     bridge::Bridge::listen(path).map_err(|e| format!("{}: {e}", path.display()))
-}
-
-/// The bridge's Windows transport, a named pipe, is not built yet.
-#[cfg(not(unix))]
-fn listen(path: &std::path::Path) -> Result<bridge::Bridge, String> {
-    Err(format!(
-        "{}: the bridge needs a Unix socket on this system",
-        path.display()
-    ))
 }

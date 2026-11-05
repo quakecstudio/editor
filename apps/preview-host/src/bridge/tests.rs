@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#![cfg(unix)]
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
@@ -8,8 +7,11 @@
 )]
 
 use std::io::BufReader;
-use std::os::unix::net::UnixStream;
-use std::time::Duration;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use interprocess::local_socket::traits::Stream as _;
+use interprocess::local_socket::{GenericFilePath, Stream, ToFsName as _};
 
 use qs_bridge::{Answer, Capabilities, Host, HostInfo, Id, read_frame, write_frame};
 use serde_json::{Value, json};
@@ -38,21 +40,66 @@ impl Host for Fake {
     fn shutdown(&mut self) {}
 }
 
-/// A bridge over one end of a socket pair, and the client's end.
-fn pair() -> (Bridge, UnixStream) {
-    let (host, client) = UnixStream::pair().unwrap();
-    client
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
-    let write = host.try_clone().unwrap();
-    (Bridge::over(host, write), client)
+/// The tests' sockets so far, for a name of each test's own.
+static SOCKETS: AtomicUsize = AtomicUsize::new(0);
+
+/// A socket or named pipe name of this test's own (BRIDGE-1.1).
+fn socket_path() -> PathBuf {
+    let name = format!(
+        "preview-host-{}-{}",
+        std::process::id(),
+        SOCKETS.fetch_add(1, Ordering::Relaxed)
+    );
+    if cfg!(windows) {
+        PathBuf::from(format!(r"\\.\pipe\{name}"))
+    } else {
+        std::env::temp_dir().join(format!("{name}.sock"))
+    }
 }
 
-fn send(client: &mut UnixStream, value: &Value) {
+/// A bridge listening at a path of its own, and a client connected to it.
+fn pair() -> (Bridge, Stream) {
+    let path = socket_path();
+    let at = path.clone();
+    let host = std::thread::spawn(move || Bridge::listen(&at).unwrap());
+    let client = loop {
+        let name = path.as_os_str().to_fs_name::<GenericFilePath>().unwrap();
+        if let Ok(stream) = Stream::connect(name) {
+            break stream;
+        }
+        std::thread::yield_now();
+    };
+    (host.join().unwrap(), client)
+}
+
+// spec BRIDGE-1.1: the host serves one client; a second connection is closed at once
+#[test]
+fn a_second_client_is_turned_away() {
+    let path = socket_path();
+    let at = path.clone();
+    let host = std::thread::spawn(move || Bridge::listen(&at).unwrap());
+    let connect = || loop {
+        let name = path.as_os_str().to_fs_name::<GenericFilePath>().unwrap();
+        if let Ok(stream) = Stream::connect(name) {
+            break stream;
+        }
+        std::thread::yield_now();
+    };
+    let first = connect();
+    let _bridge = host.join().unwrap();
+    let second = connect();
+    assert!(
+        read_frame(&mut BufReader::new(&second)).unwrap().is_none(),
+        "closed"
+    );
+    drop(first);
+}
+
+fn send(client: &mut Stream, value: &Value) {
     write_frame(client, value.to_string().as_bytes()).unwrap();
 }
 
-fn receive(client: &UnixStream) -> Value {
+fn receive(client: &Stream) -> Value {
     let content = read_frame(&mut BufReader::new(client)).unwrap().unwrap();
     serde_json::from_slice(&content).unwrap()
 }

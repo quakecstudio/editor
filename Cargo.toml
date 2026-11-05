@@ -123,6 +123,9 @@ egui_kittest = { version = "=0.36.2", default-features = false }
 epaint = { version = "=0.36.2", default-features = false }
 image = { version = "=0.25.10", default-features = false }
 # JSON Schema 2020-12 validation of the bridge protocol schemas in qs-tests (P3-01, #89).
+# The bridge's transport (BRIDGE-1.1): a Unix domain socket or a Windows named pipe behind one
+# safe API; the workspace denies the unsafe code a named pipe needs through the system API.
+interprocess = { version = "=2.4.7", default-features = false }
 jsonschema = { version = "=0.60.2", default-features = false }
 junction = { version = "=2.1.0", default-features = false }
 miniz_oxide = { version = "=0.9.1", default-features = false }
