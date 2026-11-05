@@ -153,6 +153,7 @@ qs-paths = { path = "crates/qs-paths" }
 qs-porting-example = { path = "crates/qs-porting-example" }
 qs-render = { path = "crates/qs-render" }
 qs-settings = { path = "crates/qs-settings" }
+qs-bridge = { path = "crates/qs-bridge" }
 qs-client = { path = "crates/qs-client" }
 qs-sim = { path = "crates/qs-sim" }
 qs-sound = { path = "crates/qs-sound" }

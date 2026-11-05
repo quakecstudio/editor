@@ -3037,6 +3037,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-bridge"
+version = "2026.10.0"
+dependencies = [
+ "jsonschema",
+ "serde_json",
+]
+
+[[package]]
 name = "qs-bsp"
 version = "2026.10.0"
 dependencies = [
