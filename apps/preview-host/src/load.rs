@@ -373,3 +373,6 @@ fn localization(vfs: &Vfs<StdFs>, args: &Args) -> Result<Option<Vec<u8>>, String
         .and_then(|mut archive| archive.read(RRE_LOC_FILE))
         .map_err(|e| format!("{}: {e}", kpf.display()))
 }
+
+#[cfg(test)]
+mod tests;
