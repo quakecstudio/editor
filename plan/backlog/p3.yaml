@@ -347,6 +347,8 @@ issues:
   depends:
   - P1-19
   - P2-17
+  # Its second criterion makes Play work, which P3-12 builds.
+  - P3-12
   deliverable:
   - A first-run panel, also reachable from settings, shown when no game data is found or the rerelease or pak1.pak is missing
   - 'It explains, per OS and store, how to get the files (on a Mac: download the GOG Windows installer and extract it with innoextract, or download with steamcmd; Epic and Game Pass have only the rerelease), offers a folder picker, and shows what the chosen folder contains and lacks'
