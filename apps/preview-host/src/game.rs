@@ -31,6 +31,15 @@ const COMMANDS: [&str; 11] = [
 /// How far `pick`'s ray reaches, in map units.
 const PICK_REACH: f32 = 8192.0;
 
+/// Whether the host draws frames, and so can answer `screenshot`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Screen {
+    /// The game's window.
+    Window,
+    /// `--headless`: nothing is drawn, and `screenshot` is not offered.
+    Headless,
+}
+
 /// Whether the server clock runs (BRIDGE-4.1, "pause, resume").
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
@@ -144,6 +153,8 @@ pub(crate) struct Game {
     responses: Vec<Response>,
     /// Whether the host was asked to stop (BRIDGE-2.5).
     stopped: bool,
+    /// Whether frames are drawn.
+    screen: Screen,
 }
 
 impl Game {
@@ -161,7 +172,13 @@ impl Game {
             shots: Vec::new(),
             responses: Vec::new(),
             stopped: false,
+            screen: Screen::Window,
         }
+    }
+
+    /// Makes this a game no window draws (`--headless`).
+    pub(crate) const fn set_screen(&mut self, screen: Screen) {
+        self.screen = screen;
     }
 
     /// The events raised since the last call, oldest first.
@@ -575,11 +592,12 @@ impl Host for Game {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities::of(COMMANDS)
+        let drawn = |command: &&str| self.screen == Screen::Window || *command != "screenshot";
+        Capabilities::of(COMMANDS.into_iter().filter(drawn))
     }
 
     fn call(&mut self, id: &Id, method: &str, params: &Value) -> Answer {
-        if method == "screenshot" {
+        if method == "screenshot" && self.screen == Screen::Window {
             let size = |name: &str| {
                 params
                     .get(name)

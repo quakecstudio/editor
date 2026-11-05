@@ -18,7 +18,7 @@ use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
 use qc_progs::Progs;
 use qc_sema::{Db, FileId, ModuleInput};
 use qc_types::Etype;
-use qs_bridge::{ErrorCode, Id, Message, RpcError, Session, check_schema};
+use qs_bridge::{ErrorCode, Host as _, Id, Message, RpcError, Session, check_schema};
 use qs_bsp::{
     BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_NUM_AMBIENTS, Bsp, BspVersion, ClipNode, Leaf, Lump,
     Model, Node, Plane,
@@ -26,7 +26,7 @@ use qs_bsp::{
 use qs_sim::{LoadOptions, World};
 use serde_json::{Value, json};
 
-use super::{Eye, Game, Reporting};
+use super::{Eye, Game, Reporting, Screen};
 use crate::screenshot::Frame;
 
 /// The QuakeC the tests run: a crate the map places, a counter `StartFrame` raises, a
@@ -755,6 +755,32 @@ fn a_screenshot_is_answered_with_the_next_frame() {
             (Id::Number(8), json!(2), json!(3))
         ]
     );
+}
+
+// spec BRIDGE-2.3: a headless host draws nothing, so it leaves screenshot out of its
+// capabilities and the session refuses one as unsupported; the rest are as the window's
+#[test]
+fn a_headless_host_offers_no_screenshot() {
+    let (mut game, mut session) = game();
+    game.set_screen(Screen::Headless);
+    let capabilities = game.capabilities();
+    for command in super::COMMANDS {
+        assert_eq!(
+            capabilities.accepts(command),
+            command != "screenshot",
+            "{command}"
+        );
+    }
+    let reply = session.handle(&mut game, request(7, "screenshot", &json!({})));
+    let Some(Message::Response {
+        outcome: Err(error),
+        ..
+    }) = reply.response
+    else {
+        panic!("a headless screenshot was not refused");
+    };
+    assert_eq!(error.code, ErrorCode::Unsupported);
+    assert!(!game.wants_screenshot());
 }
 
 // spec BRIDGE-3.3: a step whose frame fails pauses once, with reason error, not step

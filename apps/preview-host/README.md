@@ -21,7 +21,9 @@ archive instead of the game root. The map defaults to `start`.
 W, A, S and D move, Space jumps, Q and E swim, Shift runs, the mouse button fires, 1 to 8
 change weapons, and a click in the window captures the mouse to look around (Escape frees it). `--fly` is a free camera, `--benchmark <seconds>`
 measures the frame rate (P2-152), `--position <x> <y>` opens the window on a chosen display,
-and `--help` lists every option.
+and `--help` lists every option. `--headless` (with `-bridge`) opens no window and no sound
+device: it runs frames of 1/72 of a second and serves the bridge between them, leaving
+`screenshot` out of its capabilities, for `cargo xtask bridge-client`.
 
 The bridge offers `inspect`, `pause`, `resume`, `step` (a whole frame), `field/set`,
 `entity/spawn`, `entity/edit`, `entity/remove`, `player/spawn_at` and `console`, and sends
