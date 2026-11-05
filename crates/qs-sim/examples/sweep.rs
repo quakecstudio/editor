@@ -121,10 +121,14 @@ fn run(
                 .map(LoadedFile::into_bytes)
         }))
     };
+    let registration = Vfs::new(StdFs, engine, ".")
+        .map_err(|e| format!("{e:?}"))?
+        .registration();
     let options = LoadOptions {
         localization,
         builtins,
         carried: None,
+        registration,
     };
     let mut world =
         World::load(progs, map, &bsp, models()?, options.clone()).map_err(|e| e.to_string())?;

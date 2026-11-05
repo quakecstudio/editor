@@ -2660,3 +2660,33 @@ fn console_text_splits_into_commands_and_words() {
     assert_eq!(words, expected);
     assert!(super::command_words(b"").is_empty());
 }
+
+// spec FS-4.5: the progs read `registered` as 1 in the full game and 0 in the shareware
+// episode
+#[test]
+fn the_progs_read_whether_the_game_is_registered() {
+    let source = "float(string s) cvar = #45;\nfloat reg;\n\
+        void() StartFrame = { reg = cvar(\"registered\"); };\n";
+    let read = |registration| {
+        let options = LoadOptions {
+            registration,
+            ..LoadOptions::default()
+        };
+        let mut run = running_with(&ledge(), source, "", Vec::new(), options);
+        run.frames(1, 0.1).unwrap();
+        let progs = Progs::read(&run.progs).unwrap();
+        run.world
+            .named_globals(&progs)
+            .into_iter()
+            .find(|g| g.name == "reg")
+            .map(|g| g.value)
+    };
+    assert_eq!(
+        read(qs_vfs::Registration::Registered),
+        Some(super::QcValue::Float(1.0))
+    );
+    assert_eq!(
+        read(qs_vfs::Registration::Shareware),
+        Some(super::QcValue::Float(0.0))
+    );
+}

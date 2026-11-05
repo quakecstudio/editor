@@ -181,8 +181,8 @@ fn main() -> Result<(), String> {
     let vfs = Vfs::new(StdFs, &args, ".").map_err(|error| error.to_string())?;
     println!("game directory: {}", vfs.game_dir());
     println!(
-        "registered: {}, modified: {}",
-        vfs.is_registered(),
+        "registered: {:?}, modified: {}",
+        vfs.registration(),
         vfs.is_modified()
     );
     for element in vfs.elements() {

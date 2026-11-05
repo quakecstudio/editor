@@ -5,6 +5,7 @@ const qs_vfs::FS_POP_TABLE
 const qs_vfs::RRE_KPF
 enum qs_vfs::Element
 enum qs_vfs::Location
+enum qs_vfs::Registration
 enum qs_vfs::VfsError
 enum qs_vfs::host::EntryKind
 enum qs_vfs::zip::ZipError
@@ -23,18 +24,19 @@ fn qs_vfs::LoadedFile::bytes
 fn qs_vfs::LoadedFile::bytes_with_nul
 fn qs_vfs::LoadedFile::into_bytes
 fn qs_vfs::LoadedFile::size
+fn qs_vfs::Registration::cvar
 fn qs_vfs::Vfs::elements
 fn qs_vfs::Vfs::files
 fn qs_vfs::Vfs::find
 fn qs_vfs::Vfs::game_dir
 fn qs_vfs::Vfs::host
 fn qs_vfs::Vfs::is_modified
-fn qs_vfs::Vfs::is_registered
 fn qs_vfs::Vfs::load
 fn qs_vfs::Vfs::load_rerelease
 fn qs_vfs::Vfs::load_wad
 fn qs_vfs::Vfs::new
 fn qs_vfs::Vfs::read
+fn qs_vfs::Vfs::registration
 fn qs_vfs::host::HostFs::open
 fn qs_vfs::host::HostFs::read_dir
 fn qs_vfs::host::find_entry
@@ -67,6 +69,8 @@ variant qs_vfs::Element::Archive
 variant qs_vfs::Element::Directory
 variant qs_vfs::Location::Entry
 variant qs_vfs::Location::Loose
+variant qs_vfs::Registration::Registered
+variant qs_vfs::Registration::Shareware
 variant qs_vfs::VfsError::Archive
 variant qs_vfs::VfsError::CorruptedDataFile
 variant qs_vfs::VfsError::CouldntLoadPackfile

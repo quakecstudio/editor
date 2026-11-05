@@ -228,6 +228,10 @@ restricted by FS-3.4.
   stops with the fatal error `You must have the registered version to use modified games`.
 - **FS-4.4** After the check, FS-3.4 applies to every lookup in a shareware game and to
   none in a registered one.
+- **FS-4.5** A registered game sets the setting `registered`, `{"registered","0"}` in
+  `common.c`, to 1: `COM_CheckRegistered` ends with `Cvar_Set ("registered", "1")`, and QuakeC
+  reads it with `cvar ("registered")`, as `trigger_onlyregistered` and the start map's episode
+  gates do. A shareware game leaves it 0.
 
 ### Constants
 

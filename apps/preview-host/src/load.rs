@@ -17,7 +17,7 @@ use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 use crate::args::{Args, Show};
 use crate::audio::{Audio, Device};
-use crate::game::Game;
+use crate::game::{Game, Reporting};
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
 const EYE_HEIGHT: f32 = 22.0;
@@ -172,12 +172,18 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
             .unwrap_or_default(),
         builtins,
         carried: None,
+        registration: vfs.registration(),
     };
     let mut world =
         World::load(&progs, &map, &bsp, reader()?, options).map_err(|e| e.to_string())?;
     world.settle(&progs).map_err(|e| e.to_string())?;
     world.connect(&progs).map_err(|e| e.to_string())?;
-    let mut game = Game::new(world, progs_bytes.to_vec());
+    let reporting = if args.bridge.is_some() {
+        Reporting::Bridge
+    } else {
+        Reporting::Off
+    };
+    let mut game = Game::new(world, progs_bytes.to_vec(), reporting);
     game.announce("progs.dat", &map);
     // The client reads the serverinfo and the spawn messages the connection wrote.
     let mut client = Client::new(qs_client::Game::Standard);

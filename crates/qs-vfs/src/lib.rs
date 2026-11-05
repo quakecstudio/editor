@@ -292,6 +292,28 @@ pub struct Vfs<H> {
     registered: bool,
 }
 
+/// Whether the game is the full one or the shareware episode (FS-4.2).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Registration {
+    /// No `gfx/pop.lmp`: the shareware episode.
+    #[default]
+    Shareware,
+    /// `gfx/pop.lmp` holds id's table: the full game.
+    Registered,
+}
+
+impl Registration {
+    /// The text of the `registered` setting the engine leaves for QuakeC: `"0"` by default,
+    /// `"1"` once `COM_CheckRegistered` finds the full game (FS-4.5).
+    #[must_use]
+    pub const fn cvar(self) -> &'static str {
+        match self {
+            Self::Shareware => "0",
+            Self::Registered => "1",
+        }
+    }
+}
+
 impl<H: HostFs> Vfs<H> {
     /// Builds the search path for the command-line `args` (the arguments after the program
     /// name), then checks for the registered game: id's `COM_InitFilesystem` followed by
@@ -433,6 +455,17 @@ impl<H: HostFs> Vfs<H> {
 
     /// id's `COM_CheckRegistered`.
     ///
+    /// Whether the search path holds the full game or the shareware episode, id's
+    /// `static_registered` (FS-4.2).
+    #[must_use]
+    pub const fn registration(&self) -> Registration {
+        if self.registered {
+            Registration::Registered
+        } else {
+            Registration::Shareware
+        }
+    }
+
     /// Implements FS-4: the lookup of `gfx/pop.lmp` runs as registered (FS-4.1).
     fn com_check_registered(&mut self) -> Result<(), VfsError> {
         let pop = self.load(FS_POP_PATH.as_bytes())?;
@@ -478,12 +511,6 @@ impl<H: HostFs> Vfs<H> {
     #[must_use]
     pub const fn is_modified(&self) -> bool {
         self.modified
-    }
-
-    /// Whether the game is registered, id's `static_registered` (FS-4.2).
-    #[must_use]
-    pub const fn is_registered(&self) -> bool {
-        self.registered
     }
 
     /// Finds `name` on the search path, id's `COM_FindFile`: the file from the first element,

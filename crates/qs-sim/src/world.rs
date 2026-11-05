@@ -22,6 +22,7 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::convert::double_to_float;
 use qc_vm::{Machine, NoObserver, RunError, ServerState};
 use qs_bsp::Bsp;
+use qs_vfs::Registration;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
@@ -124,6 +125,9 @@ pub struct LoadOptions {
     /// What the level the player left carries into this one, `None` for a new game
     /// (PHYS-10.4).
     pub carried: Option<SpawnParms>,
+    /// Whether the install is the full game, which sets the `registered` setting the progs
+    /// read (FS-4.5).
+    pub registration: Registration,
 }
 
 /// What `SV_SaveSpawnparms` keeps across a level change: `serverflags`, "for cross level
@@ -176,6 +180,10 @@ impl World {
         engine.clients_active = vec![false; MAXCLIENTS];
         // RRE-1.6: QuakeSpasm loads the file when the host starts, before any map spawns.
         engine.localization = options.localization;
+        // FS-4.5: `registered`, 0 until `COM_CheckRegistered` finds the full game.
+        engine
+            .cvars
+            .create("registered", options.registration.cvar());
         let mut world = Self {
             machine,
             builtins: SimBuiltins::new(
@@ -212,6 +220,7 @@ impl World {
         let mut spawner = Spawner {
             world: &mut world,
             progs,
+            state: ServerState::Loading,
         };
         spawn::load_from_file(&mut spawner, entities, false, 1).map_err(WorldError::Spawn)?;
         world.builtins.mock.engine_mut().server_active = true;
@@ -536,6 +545,10 @@ fn whole(value: f32) -> Option<usize> {
 struct Spawner<'a, 'p> {
     world: &'a mut World,
     progs: &'a Progs<'p>,
+    /// `sv.state` while the spawn functions run: loading for the map's entities, where the
+    /// precache builtins work, active for an entity spawned in play, where they stop the run
+    /// (`PF_precache_model`: "Precache can only be done in spawn functions").
+    state: ServerState,
 }
 
 impl SpawnHost for Spawner<'_, '_> {
@@ -607,7 +620,7 @@ impl SpawnHost for Spawner<'_, '_> {
         self.world.set_global("self", Slot::from_i32(value));
         self.world.machine.execute_program(
             self.progs,
-            ServerState::Loading,
+            self.state,
             &mut self.world.builtins,
             &mut NoObserver,
             function,
