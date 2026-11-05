@@ -128,6 +128,7 @@ impl Game {
     }
 
     /// The progs the world runs.
+    #[cfg(test)]
     pub(crate) fn progs(&self) -> &[u8] {
         &self.progs
     }

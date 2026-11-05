@@ -2830,6 +2830,7 @@ name = "preview-host"
 version = "2026.10.0"
 dependencies = [
  "clap",
+ "eframe",
  "qc-codegen",
  "qc-edict",
  "qc-progs",
@@ -2837,9 +2838,13 @@ dependencies = [
  "qc-types",
  "qs-bridge",
  "qs-bsp",
+ "qs-client",
  "qs-log",
+ "qs-mdl",
  "qs-paths",
+ "qs-render",
  "qs-sim",
+ "qs-vfs",
  "serde_json",
  "tracing",
 ]
@@ -3189,18 +3194,13 @@ version = "2026.10.0"
 name = "qs-render"
 version = "2026.10.0"
 dependencies = [
- "clap",
- "eframe",
  "egui-wgpu",
  "egui_kittest",
  "epaint",
  "image",
- "qc-progs",
  "qs-bsp",
  "qs-client",
  "qs-mdl",
- "qs-sim",
- "qs-vfs",
  "qs-wad",
 ]
 

@@ -1,22 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! What the examples share: reading a map from a Quake install, running its server and its
-//! client, and where to stand in it.
-
-use std::io::Write as _;
+//! Reading a map from the user's Quake install (P1-19): its server, its client, what the
+//! renderer draws, and where a free camera stands in it.
 
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader, Lit};
-use qs_client::{Client, Game, ModelInfo, Models, Random};
+use qs_client::{Client, ModelInfo, Models, Random};
 use qs_mdl::mdl::Mdl;
 use qs_mdl::spr::Sprite;
 use qs_render::{
-    Camera, Extras, GAMMA, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
+    Camera, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
 };
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::patch_builtins;
 use qs_sim::{LoadOptions, World};
+use qs_vfs::zip::Zip;
 use qs_vfs::{LoadedFile, StdFs, Vfs};
+
+use crate::args::{Args, Show};
+use crate::game::Game;
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
 const EYE_HEIGHT: f32 = 22.0;
@@ -48,56 +50,11 @@ pub(crate) struct Loaded {
     pub(crate) mesh: MapMesh,
     pub(crate) play: Play,
     pub(crate) camera: Camera,
-    pub(crate) sim: Sim,
+    pub(crate) game: Game,
     pub(crate) client: Client,
     pub(crate) bsp: Bsp<'static>,
     pub(crate) describer: Describer,
     pub(crate) rand: Rand,
-}
-
-/// The map's server: its world and the progs it runs on, kept for the life of the viewer.
-pub(crate) struct Sim {
-    world: World,
-    progs: &'static [u8],
-}
-
-/// `Host_FilterTime`: no frame comes sooner than 1/72 of a second after the last.
-const FRAME: f64 = 1.0 / 72.0;
-/// `Host_FilterTime`'s longest frame.
-const LONGEST: f64 = 0.1;
-
-impl Sim {
-    /// `Host_FilterTime`: when 1/72 of a second has passed since the last frame, one frame of
-    /// the time that passed, at most 0.1; the frame's length, 0 when none ran.
-    pub(crate) fn advance(&mut self, seconds: f64, behind: &mut f64) -> Result<f64, String> {
-        *behind += seconds;
-        if *behind < FRAME {
-            return Ok(0.0);
-        }
-        let frametime = behind.min(LONGEST);
-        *behind = 0.0;
-        let progs = Progs::read(self.progs).map_err(|e| e.to_string())?;
-        self.world
-            .frame(&progs, frametime)
-            .map_err(|e| e.to_string())?;
-        Ok(frametime)
-    }
-
-    /// The player enters the game.
-    pub(crate) fn connect(&mut self) -> Result<(), String> {
-        let progs = Progs::read(self.progs).map_err(|e| e.to_string())?;
-        self.world.connect(&progs).map_err(|e| e.to_string())
-    }
-
-    /// What the player asks for from the next frame.
-    pub(crate) fn command(&mut self, cmd: qs_sim::UserCmd) {
-        self.world.set_command(cmd);
-    }
-
-    /// The packets the server wrote to the client since the last call.
-    pub(crate) fn packets(&mut self) -> Vec<Vec<u8>> {
-        self.world.take_messages().packets
-    }
 }
 
 /// A file of the install by name, `None` when it is not on the search path.
@@ -135,85 +92,9 @@ impl Random for Rand {
     }
 }
 
-/// The examples' command line: the install, its game directory, the map and how it is shown.
-#[derive(clap::Parser, Debug)]
-pub(crate) struct Args {
-    /// The game's root, the engine's `-basedir`; the current directory when not given.
-    #[arg(long)]
-    pub(crate) basedir: Option<String>,
-    /// The game directory over `id1`, the engine's `-game`.
-    #[arg(long)]
-    pub(crate) game: Option<String>,
-    /// The mission pack `rogue`, the engine's `-rogue`.
-    #[arg(long)]
-    pub(crate) rogue: bool,
-    /// The mission pack `hipnotic`, the engine's `-hipnotic`.
-    #[arg(long)]
-    pub(crate) hipnotic: bool,
-    /// GLQuake's `-gamma` (REND-3.1).
-    #[arg(long, default_value_t = GAMMA)]
-    pub(crate) gamma: f32,
-    /// Brush models without QuakeSpasm's `gl_zfix` (REND-1.12).
-    #[arg(long)]
-    pub(crate) nozfix: bool,
-    /// Where the camera starts: x, y, z and yaw.
-    #[arg(long, num_args = 4, value_names = ["x", "y", "z", "yaw"], allow_negative_numbers = true)]
-    pub(crate) at: Option<Vec<f32>>,
-    /// Start at the map's first water or sky.
-    #[arg(long, value_enum)]
-    pub(crate) show: Option<Show>,
-    /// A free camera instead of the player.
-    #[arg(long)]
-    pub(crate) fly: bool,
-    /// No vsync, a free camera turning slowly, and after this many seconds the frame rate on
-    /// stdout and exit (P2-152).
-    #[arg(long, value_name = "seconds")]
-    pub(crate) benchmark: Option<f32>,
-    /// Where the window opens, to put it on a chosen display.
-    #[arg(long, num_args = 2, value_names = ["x", "y"], allow_negative_numbers = true)]
-    pub(crate) position: Option<Vec<f32>>,
-    /// The map.
-    #[arg(default_value = "e1m1")]
-    pub(crate) map: String,
-    /// Any other engine options for the game filesystem, after `--`: `-path`, `-proghack`
-    /// and the like, as the engine reads them.
-    #[arg(last = true)]
-    pub(crate) engine: Vec<String>,
-}
-
-/// What `--show` starts at.
-#[derive(clap::ValueEnum, Clone, Copy, Debug)]
-pub(crate) enum Show {
-    /// The map's first water.
-    Water,
-    /// The map's first sky.
-    Sky,
-}
-
-impl Args {
-    /// The engine's command line for the game filesystem: `-basedir`, `-game`, `-rogue`,
-    /// `-hipnotic` and the options after `--`.
-    fn engine(&self) -> Vec<String> {
-        let mut engine = Vec::new();
-        if let Some(basedir) = &self.basedir {
-            engine.extend(["-basedir".to_owned(), basedir.clone()]);
-        }
-        if let Some(game) = &self.game {
-            engine.extend(["-game".to_owned(), game.clone()]);
-        }
-        if self.rogue {
-            engine.push("-rogue".to_owned());
-        }
-        if self.hipnotic {
-            engine.push("-hipnotic".to_owned());
-        }
-        engine.extend(self.engine.iter().cloned());
-        engine
-    }
-}
-
-/// Reads the map `args` names (`e1m1` by default) from the install `--basedir` and `--game`
-/// name, with the engine options after `--` passed on to the game filesystem; starts its server, connects its client and reads the models the server precached.
+/// Reads the map `args` names from the install `-basedir` and `-game` name, with the engine
+/// options after `--` passed on to the game filesystem; starts its server, connects its
+/// client and reads the models the server precached.
 #[expect(
     clippy::too_many_lines,
     reason = "one pass from the command line to a loaded map reads best in the order it runs"
@@ -248,8 +129,7 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
     // RRE-4.1: QuakeSpasm gives the rerelease's named functions their builtins as it loads the
     // progs, and RRE-4.2 its table then runs to 92.
     let builtins = patch_builtins(&mut progs_bytes);
-    let progs_bytes: &'static [u8] = Vec::leak(progs_bytes);
-    let progs = Progs::read(progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
+    let progs = Progs::read(&progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
     // The world reads the other models the progs precaches, such as the health boxes, from the
     // same search path; so do the client and the renderer.
     let reader = || -> Result<Reader, String> {
@@ -272,9 +152,7 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
     };
     // RRE-1.6, RRE-1.10: the rerelease's strings, read before the map as QuakeSpasm's
     // `LOC_Init` reads them, from the search path, the base directory or `QuakeEX.kpf`.
-    let text = vfs
-        .load_rerelease(RRE_LOC_FILE)
-        .map_err(|e| format!("{RRE_LOC_FILE}: {e}"))?;
+    let text = localization(&vfs, args)?;
     let options = LoadOptions {
         localization: text
             .map(|text| Localization::loc_load_file(&text))
@@ -285,16 +163,14 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
     let mut world =
         World::load(&progs, &map, &bsp, reader()?, options).map_err(|e| e.to_string())?;
     world.settle(&progs).map_err(|e| e.to_string())?;
-    let mut sim = Sim {
-        world,
-        progs: progs_bytes,
-    };
-    sim.connect()?;
+    world.connect(&progs).map_err(|e| e.to_string())?;
+    let mut game = Game::new(world, progs_bytes.to_vec());
+    game.announce("progs.dat", &map);
     // The client reads the serverinfo and the spawn messages the connection wrote.
-    let mut client = Client::new(Game::Standard);
+    let mut client = Client::new(qs_client::Game::Standard);
     let mut describer = Describer { read: reader()? };
     let mut rand = Rand(1);
-    let packets = sim.packets();
+    let packets = game.world_mut().take_messages().packets;
     client
         .frame(0.0, &packets, &mut describer, &mut rand)
         .map_err(|e| format!("client: {e}"))?;
@@ -321,7 +197,7 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
         })
         .collect();
     let mut others: Vec<(String, Vec<(Placement, usize)>)> = Vec::new();
-    for entity in sim.world.entities().into_iter().skip(1) {
+    for entity in game.world().entities().into_iter().skip(1) {
         if entity.model.ends_with(".bsp") && !entity.model.starts_with("maps/") {
             let placement = Placement {
                 model: 0,
@@ -341,10 +217,7 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
     let lit_bytes = read(&format!("maps/{map}.lit")).ok();
     let lit = lit_bytes.as_deref().and_then(|bytes| {
         Lit::read(bytes, bsp.lighting.len())
-            .map_err(|error| {
-                let mut err = std::io::stderr().lock();
-                writeln!(err, "maps/{map}.lit: {error}").ok();
-            })
+            .map_err(|error| tracing::warn!(%error, "maps/{map}.lit"))
             .ok()
     });
     let mut builder = MeshBuilder::new(&palette);
@@ -388,7 +261,7 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
         map,
         mesh,
         play,
-        sim,
+        game,
         client,
         bsp,
         describer,
@@ -457,4 +330,24 @@ fn start(entities: &[u8]) -> Option<Camera> {
         }
     }
     None
+}
+
+/// The rerelease's strings (RRE-1.6): with `-kpf`, from the search path, else that archive
+/// (ADR-0008); without it, wherever QuakeSpasm's `LOC_LoadFile` finds them (RRE-1.10).
+fn localization(vfs: &Vfs<StdFs>, args: &Args) -> Result<Option<Vec<u8>>, String> {
+    let Some(kpf) = &args.kpf else {
+        return vfs
+            .load_rerelease(RRE_LOC_FILE)
+            .map_err(|e| format!("{RRE_LOC_FILE}: {e}"));
+    };
+    if let Some(file) = vfs
+        .load(RRE_LOC_FILE.as_bytes())
+        .map_err(|e| format!("{RRE_LOC_FILE}: {e}"))?
+    {
+        return Ok(Some(file.into_bytes()));
+    }
+    let file = std::fs::File::open(kpf).map_err(|e| format!("{}: {e}", kpf.display()))?;
+    Zip::open(file)
+        .and_then(|mut archive| archive.read(RRE_LOC_FILE))
+        .map_err(|e| format!("{}: {e}", kpf.display()))
 }

@@ -1,22 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A map viewer: reads a map from a Quake install through the game filesystem and draws its
-//! world with `qs-render` inside an egui window (P5-05). It is a development tool, not the app.
+//! The game's window (ADR-0004): the player's keys and mouse, the host loop at
+//! `Host_FilterTime`'s pace, the client reading the server's messages, `qs-render` drawing the
+//! scene, and the bridge answered between two server frames (BRIDGE-4.3).
 //!
-//! ```text
-//! cargo run --release -p qs-render --example view -- --basedir <game root> [--game <dir>] [map]
-//! ```
-//!
-//! The map defaults to `e1m1`. You play it: W, A, S and D move, Space jumps, Q and E swim
-//! down and up, Shift runs, the mouse button fires, and dragging with the mouse looks around;
-//! the view, the weapon, the status bar and the centre print are the client's, read from the
-//! server's messages as id's client reads them. `--fly` gives a free camera instead, Space and
-//! C rising and sinking. `--gamma <g>` is GLQuake's, 0.7 by default, and
-//! `--show water` or `--show sky` starts at the map's first water or sky. `--benchmark <seconds>`
-//! presents without vsync, turns a free camera slowly and, after that many seconds, prints the
-//! average frame rate, the slowest frame and the time the frames' work took on the CPU, then
-//! exits (P2-152); `--position <x> <y>` opens the window at that point, on a chosen display.
-//! `--help` lists every option.
+//! W, A, S and D move, Space jumps, Q and E swim down and up, Shift runs, the mouse button
+//! fires, the number keys pick a weapon and dragging with the mouse looks around. `--fly`
+//! gives a free camera instead, Space and C rising and sinking.
 
 use std::io::Write as _;
 use std::time::Instant;
@@ -27,15 +17,28 @@ use qs_bsp::Bsp;
 use qs_client::Client;
 use qs_render::{Camera, MapMesh, MapRenderer, Play, View};
 
-mod common;
+use crate::args::Args;
+use crate::bridge::Bridge;
+use crate::game::Game;
+use crate::load::{Describer, Loaded, Rand};
 
 /// Map units a second walking, and running with Shift.
 const SPEEDS: [f32; 2] = [320.0, 960.0];
 /// Degrees turned per point the mouse drags.
 const TURN: f32 = 0.25;
 
-fn main() -> Result<(), String> {
-    let args = <common::Args as clap::Parser>::parse();
+/// `Host_FilterTime`: no frame comes sooner than 1/72 of a second after the last.
+const FRAME: f64 = 1.0 / 72.0;
+/// `Host_FilterTime`'s longest frame.
+const LONGEST: f64 = 0.1;
+
+/// Opens the window on the map `loaded` holds and runs the game until it closes or the
+/// bridge's client stops it.
+pub(crate) fn run(
+    args: &Args,
+    loaded: Loaded,
+    bridge: Option<Bridge>,
+) -> Result<(), String> {
     let benchmark = args.benchmark;
     if benchmark.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
         return Err("--benchmark needs a positive number of seconds".to_owned());
@@ -45,19 +48,19 @@ fn main() -> Result<(), String> {
         .position
         .as_deref()
         .and_then(|values| <[f32; 2]>::try_from(values).ok());
-    let common::Loaded {
+    let Loaded {
         map,
         mesh,
         play,
         camera,
-        sim,
+        game,
         client,
         bsp,
         describer,
         rand,
-    } = common::load(&args)?;
+    } = loaded;
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title(format!("qs-render: {map}"))
+        .with_title(format!("QuakeC Studio preview: {map}"))
         .with_inner_size([1280.0, 800.0]);
     if let Some(at) = position {
         viewport = viewport.with_position(at);
@@ -75,7 +78,7 @@ fn main() -> Result<(), String> {
     };
     let triangles = mesh.indices.len().checked_div(3).unwrap_or(0);
     eframe::run_native(
-        "qs-render view",
+        "preview-host",
         options,
         Box::new(move |cc| {
             let state = cc
@@ -96,7 +99,8 @@ fn main() -> Result<(), String> {
                 camera,
                 triangles,
                 play,
-                sim,
+                game,
+                bridge,
                 client,
                 bsp,
                 describer,
@@ -123,11 +127,13 @@ struct Viewer {
     camera: Camera,
     triangles: usize,
     play: Play,
-    sim: common::Sim,
+    game: Game,
+    /// The IDE's connection, when the host was started with `-bridge`.
+    bridge: Option<Bridge>,
     client: Client,
     bsp: Bsp<'static>,
-    describer: common::Describer,
-    rand: common::Rand,
+    describer: Describer,
+    rand: Rand,
     fly: bool,
     /// The view angles last given to the client, to tell a `svc_setangle` from them.
     last_set: [f32; 2],
@@ -157,28 +163,25 @@ impl eframe::App for Viewer {
         let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
         let drag = response.drag_delta();
         self.camera.turn(-drag.x * TURN, drag.y * TURN);
-        let frametime = if self.fly {
+        // The bridge's commands run between two server frames (BRIDGE-4.3).
+        self.serve_bridge(ui);
+        if self.fly {
             self.fly_around(ui, seconds);
-            match self.sim.advance(f64::from(seconds), &mut self.behind) {
-                Ok(frametime) => frametime,
-                Err(error) => {
-                    report_server_error(&error);
-                    0.0
-                }
-            }
         } else {
-            self.play(ui, f64::from(seconds))
-        };
+            self.steer(ui);
+        }
+        let frametime = self.advance(f64::from(seconds));
+        self.serve_bridge(ui);
         // The client reads what the server wrote and advances its clock by the server's
         // frame, as the host does when both run in one process.
-        let packets = self.sim.packets();
+        let packets = self.game.world_mut().take_messages().packets;
         if let Err(error) = self.client.frame(
             frametime_f32(frametime),
             &packets,
             &mut self.describer,
             &mut self.rand,
         ) {
-            report_server_error(&format!("client: {error}"));
+            tracing::warn!(%error, "client");
         }
         let aspect = rect.width() / rect.height().max(1.0);
         if self.benchmark.is_some() {
@@ -226,7 +229,7 @@ impl eframe::App for Viewer {
         let [x, y, z] = self.camera.origin;
         ui.ctx()
             .send_viewport_cmd(egui::ViewportCommand::Title(format!(
-                "qs-render: {}  {} triangles  {entities} entities  ({x:.0} {y:.0} {z:.0})  {:.0} fps",
+                "QuakeC Studio preview: {}  {} triangles  {entities} entities  ({x:.0} {y:.0} {z:.0})  {:.0} fps",
                 self.map,
                 self.triangles,
                 1.0 / seconds.max(1e-3)
@@ -260,9 +263,40 @@ impl eframe::App for Viewer {
 }
 
 impl Viewer {
-    /// The player: the keys and the view as `CL_BaseMove` makes the command, then the
-    /// server's frame; the eye is the client's. The frame's length, 0 when none ran.
-    fn play(&mut self, ui: &egui::Ui, seconds: f64) -> f64 {
+    /// `Host_FilterTime`: when 1/72 of a second has passed since the last frame, one server
+    /// frame of the time that passed, at most 0.1; the frame's length, 0 when none ran.
+    fn advance(&mut self, seconds: f64) -> f64 {
+        self.behind += seconds;
+        if self.behind < FRAME {
+            return 0.0;
+        }
+        let frametime = self.behind.min(LONGEST);
+        self.behind = 0.0;
+        if self.game.frame(frametime) {
+            frametime
+        } else {
+            0.0
+        }
+    }
+
+    /// Answers the bridge's messages and sends the game's events; closes the window when the
+    /// client asked the host to stop or went away (BRIDGE-1.1, BRIDGE-2.5).
+    fn serve_bridge(&mut self, ui: &egui::Ui) {
+        let Some(bridge) = &mut self.bridge else {
+            return;
+        };
+        let open = bridge.poll(&mut self.game);
+        for (method, params) in self.game.take_events() {
+            bridge.event(method, params);
+        }
+        if !open || self.game.stopped() {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    /// The player: the keys and the view as `CL_BaseMove` makes the command for the next
+    /// server frame; the eye is the client's.
+    fn steer(&mut self, ui: &egui::Ui) {
         // The server's `svc_setangle` turned the client's view: follow it.
         let [pitch, yaw, _] = self.client.viewangles();
         if pitch.to_bits() != self.last_set[0].to_bits()
@@ -306,14 +340,7 @@ impl Viewer {
                 impulse,
             }
         });
-        self.sim.command(cmd);
-        match self.sim.advance(seconds, &mut self.behind) {
-            Ok(frametime) => frametime,
-            Err(error) => {
-                report_server_error(&error);
-                0.0
-            }
-        }
+        self.game.world_mut().set_command(cmd);
     }
 
     /// The free camera of `-fly`.
@@ -356,10 +383,4 @@ fn screen_height(aspect: f32) -> i32 {
 )]
 fn frametime_f32(frametime: f64) -> f32 {
     frametime as f32
-}
-
-/// A server error stops the frame but not the viewer: it is printed.
-fn report_server_error(error: &str) {
-    let mut err = std::io::stderr().lock();
-    writeln!(err, "server: {error}").ok();
 }

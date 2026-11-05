@@ -71,6 +71,7 @@ impl Bridge {
     }
 
     /// Whether the client is still connected.
+    #[cfg(test)]
     pub(crate) const fn is_open(&self) -> bool {
         self.open
     }

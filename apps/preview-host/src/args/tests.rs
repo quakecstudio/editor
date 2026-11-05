@@ -52,3 +52,18 @@ fn a_game_that_is_a_path_is_refused() {
     }
     assert!(parse(&["-unknown"]).is_err());
 }
+
+// ADR-0008: the game filesystem gets the engine's own options, those after `--` last
+#[test]
+fn the_game_filesystem_gets_the_engine_options() {
+    let args = parse(&[
+        "-basedir", "/g", "-game", "mod", "--rogue", "e1m1", "--", "-path", "x",
+    ])
+    .unwrap();
+    assert_eq!(
+        args.engine(),
+        ["-basedir", "/g", "-game", "mod", "-rogue", "-path", "x"]
+    );
+    assert!(parse(&[]).unwrap().engine().is_empty());
+    assert_eq!(parse(&["--hipnotic"]).unwrap().engine(), ["-hipnotic"]);
+}
