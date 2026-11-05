@@ -158,7 +158,7 @@ pub(crate) enum LiteralSharing {
     Constants,
 }
 
-/// The first virtual offset of a function's block of private locals (FTE-21.7): parameters,
+/// The first virtual offset of a function's block of private locals (FTE-21.9): parameters,
 /// locals and temporaries take offsets from here while the body is compiled, and real ones,
 /// after every global, static and immediate, when the module's blocks are laid out.
 const BLOCK_BASE: u32 = 1 << 20;
@@ -167,7 +167,12 @@ const BLOCK_BASE: u32 = 1 << 20;
 /// range, so no two functions' definitions or temporaries share a virtual offset.
 const BLOCK_SPAN: u32 = 1 << 16;
 
-/// A function's block of private locals while its body is compiled (FTE-21.7).
+/// The first virtual offset of the module's shared temporaries (FTE-21.8), below every block's
+/// and above every global the module may have: real ones, after every block, when they are
+/// laid out.
+const SHARED_BASE: u32 = 1 << 19;
+
+/// A function's block of private locals while its body is compiled (FTE-21.9).
 #[derive(Debug)]
 struct Block {
     /// The next virtual offset.
@@ -181,7 +186,7 @@ struct Block {
 }
 
 /// A function's block of private locals, closed and waiting for its real offsets
-/// (FTE-21.7).
+/// (FTE-21.9).
 #[derive(Debug)]
 struct PendingBlock {
     /// The function record whose `parm_start` the block becomes.
@@ -223,10 +228,13 @@ pub(crate) struct Program {
     pub(crate) size_fields: u32,
     /// Which definitions a literal may share a word with.
     pub(crate) literal_sharing: LiteralSharing,
-    /// The block of the function whose body is being compiled, under FTEQCC (FTE-21.7).
+    /// The block of the function whose body is being compiled, under FTEQCC (FTE-21.9).
     block: Option<Block>,
-    /// The blocks closed so far, laid out by [`Program::resolve_blocks`] (FTE-21.7).
+    /// The blocks closed so far, laid out by [`Program::resolve_blocks`] (FTE-21.9).
     pending_blocks: Vec<PendingBlock>,
+    /// The module's shared temporaries, each its virtual offset and words, in the order they
+    /// were made, laid out by [`Program::resolve_shared_temps`] (FTE-21.8).
+    shared: Vec<(u32, u32)>,
 }
 
 impl Program {
@@ -247,10 +255,62 @@ impl Program {
             literal_sharing: LiteralSharing::Initialised,
             block: None,
             pending_blocks: Vec::new(),
+            shared: Vec::new(),
         }
     }
 
-    /// FTE-21.7: opens the block of private locals of the function whose body follows: until
+    /// FTE-21.8: the module's shared temporaries so far, each its virtual offset and words.
+    pub(crate) fn shared_temps(&self) -> &[(u32, u32)] {
+        &self.shared
+    }
+
+    /// FTE-21.8: a new shared temporary of `words` words after the last, `QCC_GetTemp`'s
+    /// `tempsused += size`; returns its virtual offset.
+    pub(crate) fn shared_temp(&mut self, words: u32) -> Result<u32, Internal> {
+        let ofs = match self.shared.last() {
+            Some(&(ofs, size)) => ofs.checked_add(size).ok_or(Internal::TooLarge)?,
+            None => SHARED_BASE,
+        };
+        if ofs.checked_add(words).is_none_or(|end| end > BLOCK_BASE) {
+            return Err(Internal::TooLarge);
+        }
+        self.shared.push((ofs, words));
+        Ok(ofs)
+    }
+
+    /// FTE-21.8: `QCC_FinaliseTemps`: lays the shared temporaries out after every global,
+    /// static, immediate and block made so far, each statement operand among them taking its
+    /// real offset.
+    pub(crate) fn resolve_shared_temps(&mut self) -> Result<(), Internal> {
+        let len = match self.shared.last() {
+            Some(&(ofs, size)) => ofs
+                .checked_add(size)
+                .and_then(|end| end.checked_sub(SHARED_BASE))
+                .ok_or(Internal::TooLarge)?,
+            None => return Ok(()),
+        };
+        let base = self.allocate_global(len)?;
+        let end = SHARED_BASE.checked_add(len).ok_or(Internal::TooLarge)?;
+        // A jump's operand is an offset among the statements, not a global (QC-22), and no
+        // program has `SHARED_BASE` statements.
+        for statement in &mut self.statements {
+            for operand in [&mut statement.a, &mut statement.b, &mut statement.c] {
+                if let Ok(ofs) = u32::try_from(*operand)
+                    && (SHARED_BASE..end).contains(&ofs)
+                {
+                    let real = ofs
+                        .checked_sub(SHARED_BASE)
+                        .and_then(|o| o.checked_add(base))
+                        .ok_or(Internal::TooLarge)?;
+                    *operand = i32::try_from(real).map_err(|_| Internal::TooLarge)?;
+                }
+            }
+        }
+        self.shared.clear();
+        Ok(())
+    }
+
+    /// FTE-21.9: opens the block of private locals of the function whose body follows: until
     /// [`Program::close_block`], a local, a parameter or a temporary takes a virtual offset.
     pub(crate) fn open_block(&mut self) {
         self.block = Some(Block {
@@ -261,7 +321,7 @@ impl Program {
         });
     }
 
-    /// FTE-21.7: closes the open block as the one of function `record`, to be laid out with
+    /// FTE-21.9: closes the open block as the one of function `record`, to be laid out with
     /// the module's others; returns its words, the record's `locals`.
     pub(crate) fn close_block(&mut self, record: usize) -> Result<u32, Internal> {
         let block = self.block.take().ok_or(Internal::NoDefinition)?;
@@ -340,7 +400,7 @@ impl Program {
         Ok(())
     }
 
-    /// FTE-21.7: the block closed as function `from`'s becomes function `to`'s, as a wrap
+    /// FTE-21.9: the block closed as function `from`'s becomes function `to`'s, as a wrap
     /// moves the record of the body it wraps to the end (FTEF-15.11).
     pub(crate) fn rekey_block(&mut self, from: usize, to: usize) {
         for block in &mut self.pending_blocks {
@@ -350,7 +410,7 @@ impl Program {
         }
     }
 
-    /// FTE-21.7: `QCC_UnmarshalLocals`: lays out every closed block after every global,
+    /// FTE-21.9: `QCC_UnmarshalLocals`: lays out every closed block after every global,
     /// static and immediate made so far, in the order of the function records: each block's
     /// definitions and statement operands take their real offsets and its record its
     /// `parm_start`.
@@ -379,7 +439,7 @@ impl Program {
     }
 
     /// Takes the next `words` offsets (QC-21.2), of the open block for a local, a parameter or
-    /// a temporary (FTE-21.7), else of the globals; returns the first.
+    /// a temporary (FTE-21.9), else of the globals; returns the first.
     pub(crate) fn allocate(&mut self, words: u32) -> Result<u32, Internal> {
         if let Some(block) = &mut self.block {
             let ofs = block.next;
@@ -401,6 +461,13 @@ impl Program {
     /// static, an immediate or a generated definition; returns the first.
     pub(crate) fn allocate_global(&mut self, words: u32) -> Result<u32, Internal> {
         let ofs = self.next_global()?;
+        // FTE-21.8: the globals stay below the shared temporaries' virtual offsets while any
+        // are waiting to be laid out.
+        if !self.shared.is_empty()
+            && ofs.checked_add(words).is_none_or(|end| end > SHARED_BASE)
+        {
+            return Err(Internal::TooLarge);
+        }
         let words = usize::try_from(words).map_err(|_| Internal::TooLarge)?;
         let len = self
             .globals
@@ -422,7 +489,7 @@ impl Program {
 
     /// Writes `words` from global offset `ofs`.
     pub(crate) fn set_words(&mut self, ofs: u32, words: &[u32]) -> Result<(), Internal> {
-        // FTE-21.7: a word of the open block is written when the block is laid out.
+        // FTE-21.9: a word of the open block is written when the block is laid out.
         if ofs >= BLOCK_BASE {
             let block = self.block.as_mut().ok_or(Internal::TooLarge)?;
             block.inits.push((ofs, words.to_vec()));
@@ -494,7 +561,7 @@ impl Program {
                 _ => written.clone(),
             })
         });
-        // FTE-21.7: a function's own definition takes the open block's offsets, a global the
+        // FTE-21.9: a function's own definition takes the open block's offsets, a global the
         // globals' whatever block is open.
         let in_block = definition.owner.is_some() && self.block.is_some();
         let ofs = if in_block {
@@ -879,4 +946,55 @@ pub(crate) fn component(index: &ModuleIndex, vector: DefId, suffix: &str) -> Opt
                 .find(|(_, d)| named(d) && (d.owner.is_none() || d.owner == base.owner))
         })
         .map(|(id, _)| id)
+}
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        clippy::indexing_slicing,
+        reason = "test code: a failed unwrap or index is a failed test"
+    )]
+
+    use qc_progs::Statement;
+
+    use super::{BLOCK_BASE, Program, SHARED_BASE};
+    use crate::Internal;
+
+    // spec FTE-21.8: the shared temporaries are laid out after every global made so far, each
+    // operand among them taking its real offset; an operand outside them keeps its own, and a
+    // module with none lays out nothing
+    #[test]
+    fn shared_temporaries_are_laid_out_after_the_globals() {
+        let mut program = Program::new();
+        program.resolve_shared_temps().unwrap();
+        let globals = program.globals.len();
+        assert_eq!(program.shared_temp(1).unwrap(), SHARED_BASE);
+        assert_eq!(program.shared_temp(3).unwrap(), SHARED_BASE + 1);
+        let shared = i32::try_from(SHARED_BASE).unwrap();
+        program.statements.push(Statement {
+            op: 1,
+            a: shared + 1,
+            b: 7,
+            c: shared,
+        });
+        program.resolve_shared_temps().unwrap();
+        let base = i32::try_from(globals).unwrap();
+        let statement = program.statements.last().unwrap();
+        assert_eq!((statement.a, statement.b, statement.c), (base + 1, 7, base));
+        assert_eq!(program.globals.len(), globals + 4);
+        assert!(program.shared_temps().is_empty());
+    }
+
+    // spec FTE-21.8: the shared temporaries end below the first block's virtual offset, and
+    // while any wait the globals stay below theirs
+    #[test]
+    fn shared_temporaries_and_globals_keep_to_their_ranges() {
+        let mut program = Program::new();
+        program.shared_temp(BLOCK_BASE - SHARED_BASE).unwrap();
+        assert_eq!(program.shared_temp(1), Err(Internal::TooLarge));
+        let room = SHARED_BASE - u32::try_from(program.globals.len()).unwrap();
+        assert_eq!(program.allocate_global(room + 1), Err(Internal::TooLarge));
+        assert!(program.allocate_global(room).is_ok());
+    }
 }

@@ -171,9 +171,10 @@ fn constants_and_enum_items_share_their_slot_with_an_immediate_record() {
     );
 }
 
-// spec FTE-21.7: a function's parameters, locals and temporaries are one block after every
-// immediate of the module, the temporaries counted in its locals, and the blocks follow the
-// records' order
+// spec FTE-21.9: a function's parameters and locals are one block after every immediate of the
+// module, and the blocks follow the records' order
+// spec FTE-21.8: a temporary no call separates from its reads is one of the module's shared
+// temporaries, laid out after every block, and one still held takes a new one
 #[test]
 fn a_functions_locals_and_temporaries_are_one_block_after_the_immediates() {
     let p = fte_progs(
@@ -187,20 +188,23 @@ fn a_functions_locals_and_temporaries_are_one_block_after_the_immediates() {
         two < base && three < base && four < base,
         "{two} {three} {four} < {base}"
     );
-    // `p`, `a`, the product's temporary and the sum's, which the fold into `x` leaves unused:
-    // this compiler reuses no temporary (FTEF-27.16).
-    assert_eq!(t.locals, 4);
+    // `p` and `a`; the product's temporary and the sum's, which the fold into `x` leaves
+    // unused, are shared, after `u`'s empty block, the sum's a second one, since the product
+    // is still read by the statement that makes it.
+    assert_eq!(t.locals, 2);
+    assert_eq!((u.parm_start, u.locals), (base + 2, 0));
+    let shared = u.parm_start;
     assert_eq!(
         body(&p, "t"),
         [
             st(StoreF, two, base + 1, 0),
-            st(MulF, base + 1, three, base + 2),
-            st(AddF, base + 2, base, x),
+            st(MulF, base + 1, three, shared),
+            st(AddF, shared, base, x),
             st(Done, 0, 0, 0),
         ]
     );
-    assert_eq!((u.parm_start, u.locals), (base + 4, 1));
     assert_eq!(body(&p, "u"), [st(MulF, x, four, x), st(Done, 0, 0, 0)]);
+    assert_eq!(p.globals.len(), usize::try_from(shared + 2).unwrap());
 }
 
 // spec FTE-13.6: a constant index is the element's global, with no statement
@@ -1741,7 +1745,7 @@ fn a_wrap_calls_the_body_it_moved() {
     );
 }
 
-// spec FTE-21.7, FTEF-15.11: the moved body's block of locals goes with its record, so the
+// spec FTE-21.9, FTEF-15.11: the moved body's block of locals goes with its record, so the
 // wrapper and `prior*NAME` each have a block of their own, the moved one's after the
 // wrapper's, and each body reads its parameter at its own block
 #[test]
@@ -3473,9 +3477,11 @@ fn an_if_of_a_constant_vectors_component_keeps_one_branch() {
     );
 }
 
-// spec QC-21.5, FTE-19.12: a vector `&` or `|` with no opcode of its own on the target is each
-// word's float opcode into a vector temporary taken before its words are written, which the
-// store then copies
+// spec FTE-19.12: a vector `&` or `|` with no opcode of its own on the target is each word's
+// float opcode into a vector temporary taken before its words are written, which the store
+// then copies
+// spec FTE-21.8: once the store has read it, the next vector takes the same shared slot, and
+// a vector made from it takes another
 #[test]
 fn a_vector_bitwise_operator_writes_each_word_of_its_temporary() {
     let p = fte_progs("vector a, b, c;\nvoid() t = { c = a & b; c = (a | b) & a; };\n");
@@ -3493,8 +3499,9 @@ fn a_vector_bitwise_operator_writes_each_word_of_its_temporary() {
         let w = usize::try_from(word).unwrap();
         assert_eq!((t[w].a, t[w].b, t[w].c), (a + word, b + word, first + word));
         let or = t[4 + w].c;
-        assert_eq!(or, first + 3 + word, "the next vector follows the first");
+        assert_eq!(or, first + word, "the next vector reuses the first's slot");
         assert_eq!((t[7 + w].a, t[7 + w].b), (or, a + word));
+        assert_eq!(t[7 + w].c, first + 3 + word, "the and of it takes another");
     }
     assert_eq!((t[3].a, t[3].b), (first, c));
 }
@@ -3606,4 +3613,44 @@ fn a_call_value_read_word_by_word_is_copied_by_the_next_statement() {
             st(Done, 0, 0, 0),
         ]
     );
+}
+
+// spec FTEF-27.12: `1i * f`, emulated as the float multiply of its converted operands, folds to
+// `f`, so an element stored by the setter is stored from the `?:` value itself
+#[test]
+fn an_emulated_multiply_by_one_is_its_other_operand() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nenum { EN_A };\nfloat arr[4]; float d, g;\n\
+         void() t = { arr[d & 3] = ((495 || EN_A) * (g ? 3 : d)); };\n",
+    );
+    let t = body(&p, "t");
+    let (d, g) = (global(&p, "d"), global(&p, "g"));
+    let (index, value) = (t[0].c, t[2].b);
+    assert_eq!(
+        t,
+        [
+            st(BitAnd, d, immediate(&p, 3.0), index),
+            st(IfNot, g, 3, 0),
+            st(StoreF, immediate(&p, 3.0), value, 0),
+            st(Goto, 2, 0, 0),
+            st(StoreF, d, value, 0),
+            st(StoreF, index, 4, 0),
+            st(StoreF, value, 7, 0),
+            st(Call2, global(&p, "ArraySet*arr"), 0, 0),
+            st(Done, 0, 0, 0),
+        ]
+    );
+}
+
+// spec FTEF-19.78, FTE-13.8: a `for` loop in a branch a constant condition drops still makes
+// the accessors its statements named, the setter first, before what follows the branch
+#[test]
+fn a_dropped_branchs_accessors_are_made_before_what_follows() {
+    let p = fte_progs(
+        "void(string e) error = #10;\nfloat arr[4]; float d, g;\n\
+         void() t = { if (0) { for (d = 0; d < 3; d++) { g = g * 2 + d * 3 - g / 4 + d; } \
+         arr[d & 3] = d; } arr[d & 3] |= d; };\n",
+    );
+    let names: Vec<String> = p.functions.iter().map(|f| string(&p, f.s_name)).collect();
+    assert_eq!(names, ["", "error", "t", "ArraySet*arr", "ArrayGet*arr"]);
 }

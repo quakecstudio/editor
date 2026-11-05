@@ -18,7 +18,7 @@ use qc_syntax::ast::{self, AstNode as _};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::allocate::CreationOrder;
+use super::allocate::{CreationOrder, Overlapping, Slots};
 use super::{At, Compiler, Lowered, Written, literal_of};
 use crate::Internal;
 use crate::back_end::Allocation;
@@ -64,7 +64,10 @@ impl Compiler<'_> {
         let generated = body.generated();
         // QC-21.5: the allocation pass the profile chooses (ADR-0020).
         let mut slots = match self.back_end.allocation {
-            Allocation::CreationOrder => CreationOrder::default(),
+            Allocation::CreationOrder => Slots::CreationOrder(CreationOrder::default()),
+            Allocation::Overlapping => {
+                Slots::Overlapping(Overlapping::new(generated, body.effects()))
+            }
         };
         // The global the first parameter slot was last stored from, which a precache records.
         let mut first_argument = None;
@@ -204,15 +207,12 @@ impl Compiler<'_> {
         &mut self,
         effect: Effect,
         index: u32,
-        (body, slots, loops): (&TypedBody, &mut CreationOrder, &mut Vec<usize>),
+        (body, slots, loops): (&TypedBody, &mut Slots, &mut Vec<usize>),
         (syntax, span): (&BodySyntax, Span),
     ) -> Lowered<()> {
         let name = match effect {
             Effect::Make(name) => name,
-            Effect::Temp(words) => {
-                self.program.allocate(words).at(span)?;
-                return Ok(());
-            }
+            Effect::Temp(words) => return slots.dropped(&mut self.program, words).at(span),
             // A block taken before its words are written, the value of this statement; one
             // whose statements were dropped is still taken (QC-21.5).
             Effect::Block(words) => return slots.block(&mut self.program, index, words).at(span),
@@ -363,7 +363,7 @@ impl Compiler<'_> {
         &mut self,
         name: Name,
         index: u32,
-        (body, slots): (&TypedBody, &CreationOrder),
+        (body, slots): (&TypedBody, &Slots),
         span: Span,
     ) -> Lowered<i32> {
         let ofs = match name {

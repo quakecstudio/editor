@@ -601,7 +601,7 @@ impl<'a> Compiler<'a> {
         }
         let locals_start = self.program.next_global().at(span)?;
         self.locals_end = locals_start;
-        // FTE-21.7: under the block layout the parameters, locals and temporaries of a body form
+        // FTE-21.9: under the block layout the parameters, locals and temporaries of a body form
         // a block laid out after every global, static and immediate of the module
         // (`QCC_UnmarshalLocals`).
         let block = self.back_end.layout == Layout::Blocks && matches!(init, FunctionInit::Body(_));
@@ -693,7 +693,7 @@ impl<'a> Compiler<'a> {
             .at(span)?;
         let mut parm_start = operand(locals_start).at(span)?;
         if block {
-            // FTE-21.7: the block's words, temporaries among them, are the record's locals;
+            // FTE-21.9: the block's words, temporaries among them, are the record's locals;
             // its `parm_start` is set when the module's blocks are laid out.
             let record = wrapped.unwrap_or(self.program.functions.len());
             let len = self.program.close_block(record).at(span)?;
@@ -839,7 +839,7 @@ impl<'a> Compiler<'a> {
             .at(span)?;
         let prior_number = operand_index(self.program.functions.len()).at(span)?;
         self.program.functions.push(moved);
-        // FTE-21.7: the moved body's block of locals goes with its record.
+        // FTE-21.9: the moved body's block of locals goes with its record.
         self.program.rekey_block(
             number,
             usize::try_from(prior_number).map_err(|_| Abort::Internal(Internal::TooLarge, span))?,

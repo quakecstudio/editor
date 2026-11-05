@@ -13,8 +13,9 @@ name values. This crate reads each compiled file's declarations, the expansion
 the definition each name is from the semantic model (QC-12). It builds what `qcc` builds, in
 the same order: the definition list and the global area, each definition placed when first met
 (QC-21), literals shared by value (QC-20), each body written from the layer by the passes its
-dialect's profile chooses (`back_end.rs`: allocation by creation order, QC-21.5, and the layout
-of locals and temporaries, QC-21.4 or FTE-21.7), the functions in the order their definitions
+dialect's profile chooses (`back_end.rs`: allocation by creation order, QC-21.5, or FTEQCC's overlapping temporaries,
+FTE-21.8, and the layout
+of locals and temporaries, QC-21.4 or FTE-21.9), the functions in the order their definitions
 end (QC-25.2) and the string table (QC-25.4); then `progdefs.h`, whose CRC the header carries,
 and the progs tables (QC-25). The type rules of expressions and their errors are the semantic
 model's (QC-16 to QC-19, QCD-4). The precache lists `qcc -copy` reads are kept beside the
