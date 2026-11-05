@@ -254,6 +254,10 @@ pub(crate) fn entity(classname: &str, origin: &str, keys: &str) -> String {
 }
 
 impl World {
+    pub(crate) fn set_float_field(&mut self, n: usize, name: &str, value: f32) {
+        self.set_field(n, field_slot(name), Slot::from_f32(value));
+    }
+
     pub(crate) fn float(&self, n: usize, name: &str) -> f32 {
         self.machine
             .edicts()
@@ -2531,4 +2535,114 @@ fn the_light_styles_are_the_ones_worldspawn_sets() {
     assert_eq!(world.light_style(10), Some("mmamammmmammamamaaamammma"));
     assert_eq!(world.light_style(1), None);
     assert_eq!(world.light_style(64), None, "past the 64 styles");
+}
+
+// spec PHYS-10.4: changelevel's command names the next level; SV_SaveSpawnparms keeps
+// serverflags and the parms SetChangeParms leaves with self the client; the next level loads
+// with that serverflags and the client spawns with the kept parms, SetNewParms not run
+#[test]
+fn a_level_change_carries_the_spawn_parms_and_serverflags() {
+    let more = "void(string s) changelevel = #70;\n\
+        void() SetNewParms = { parm1 = 5; };\n\
+        void() SetChangeParms = { parm1 = self.health + 7; parm2 = 3; };\n\
+        void() StartFrame = { if (time > 1.5) { serverflags = 4; changelevel(\"e1m2\"); } };\n";
+    let put = "self.health = parm1; self.armorvalue = serverflags;";
+    let progs = player_progs(put, "", more);
+    let mut first = player_from(&ledge(), progs.clone(), LoadOptions::default());
+    assert_eq!(
+        first.world.float(1, "health"),
+        5.0,
+        "a new game runs SetNewParms"
+    );
+    assert_eq!(first.world.take_changelevel(), None, "none asked for yet");
+    first.frames(10, 0.1).unwrap();
+    assert_eq!(first.world.take_changelevel().as_deref(), Some("e1m2"));
+    assert_eq!(first.world.take_changelevel(), None, "taken once");
+    let parsed = Progs::read(&first.progs).unwrap();
+    let kept = first.world.save_spawn_parms(&parsed).unwrap();
+    assert_eq!(kept.parms()[..3], [12.0, 3.0, 0.0]);
+    assert_eq!(kept.serverflags(), 4.0);
+    let options = LoadOptions {
+        carried: Some(kept),
+        ..LoadOptions::default()
+    };
+    let next = player_from(&ledge(), progs, options);
+    assert_eq!(
+        next.world.float(1, "health"),
+        12.0,
+        "the kept parm1, not SetNewParms' 5"
+    );
+    assert_eq!(
+        next.world.float(1, "armorvalue"),
+        4.0,
+        "serverflags carried"
+    );
+}
+
+// spec PHYS-10.4: Host_Changelevel_f takes exactly one argument; commands split at a line
+// end or a semicolon outside quotes and are matched without case; words are COM_Parse's
+#[test]
+fn only_a_changelevel_with_one_argument_names_a_level() {
+    let mut run = player(&ledge(), "", "", "");
+    let mut take = |buffer: &[u8]| {
+        run.world.builtins.mock.engine_mut().command_buffer = buffer.to_vec();
+        run.world.take_changelevel()
+    };
+    assert_eq!(take(b"changelevel e2m1\n").as_deref(), Some("e2m1"));
+    assert_eq!(take(b"changelevel\n"), None);
+    assert_eq!(take(b"changelevel a b\n"), None);
+    assert_eq!(
+        take(b"echo hi; changelevel start\n").as_deref(),
+        Some("start")
+    );
+    assert_eq!(take(b"changelevelx e1m1\n"), None);
+    assert_eq!(
+        take(b"changelevel \"e3m1\"\n").as_deref(),
+        Some("e3m1"),
+        "a quoted word"
+    );
+    assert_eq!(
+        take(b"echo \"a;b\"; changelevel e4m1").as_deref(),
+        Some("e4m1")
+    );
+    assert_eq!(
+        take(b"echo \"x; changelevel e4m2\"\n"),
+        None,
+        "inside quotes"
+    );
+    assert_eq!(
+        take(b"CHANGELEVEL e1m3\n").as_deref(),
+        Some("e1m3"),
+        "Q_strcasecmp"
+    );
+    assert_eq!(
+        take(b"changelevel start:2\n"),
+        None,
+        "`:` is a word of its own"
+    );
+    assert_eq!(
+        take(b"changelevel e1m4 // a comment\n").as_deref(),
+        Some("e1m4")
+    );
+    assert!(
+        run.world.builtins.mock.engine().command_buffer.is_empty(),
+        "the buffer is emptied"
+    );
+}
+
+// spec PHYS-10.4: a client not yet active keeps its parms through SV_SaveSpawnparms
+#[test]
+fn an_inactive_client_keeps_its_parms_across_a_level_change() {
+    let more = "void() SetChangeParms = { parm1 = 99; };\n";
+    let progs_bytes = player_progs("", "", more);
+    let mut run = running_from(
+        &ledge(),
+        progs_bytes,
+        "",
+        Vec::new(),
+        LoadOptions::default(),
+    );
+    let progs = Progs::read(&run.progs).unwrap();
+    let kept = run.world.save_spawn_parms(&progs).unwrap();
+    assert_eq!(kept.parms(), [0.0; 16], "SetChangeParms did not run");
 }

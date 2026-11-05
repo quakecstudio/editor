@@ -280,6 +280,7 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
             .map(|text| Localization::loc_load_file(&text))
             .unwrap_or_default(),
         builtins,
+        carried: None,
     };
     let mut world =
         World::load(&progs, &map, &bsp, reader()?, options).map_err(|e| e.to_string())?;

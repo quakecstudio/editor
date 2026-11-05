@@ -256,9 +256,11 @@ stop.
 
 ## PHYS-10 Entering the game
 
-**Source:** `WinQuake/sv_main.c`, `SV_ConnectClient`, `SV_WriteClientdataToMessage`;
-`WinQuake/host_cmd.c`, `Host_Spawn_f`; `WinQuake/host.c`, `Host_ServerFrame`,
-`Host_FilterTime`.
+**Source:** `WinQuake/sv_main.c`, `SV_ConnectClient`, `SV_WriteClientdataToMessage`,
+`SV_SaveSpawnparms`, `SV_SpawnServer`; `WinQuake/host_cmd.c`, `Host_Spawn_f`,
+`Host_Changelevel_f`, `Host_SavegameComment`, `Host_Savegame_f`, `Host_Loadgame_f`;
+`WinQuake/pr_edict.c`, `PR_UglyValueString`, `ED_Write`, `ED_WriteGlobals`, `ED_ParseGlobals`,
+`ED_ParseEdict`; `WinQuake/cmd.c`, `Cbuf_Execute`; `WinQuake/host.c`, `Host_ServerFrame`, `Host_FilterTime`.
 
 ### Behaviour
 
@@ -271,6 +273,50 @@ stop.
   cleared.
 - **PHYS-10.3** A server frame sets the `frametime` global, runs each spawned client's
   command (PHYS-9), then the physics (PHYS-1).
+- **PHYS-10.4** `changelevel` appends `changelevel <map>` to the host's command buffer
+  (BUILTIN-11.6), which `Cbuf_Execute` runs as commands split at a line end or at a `;` outside
+  quotes ("don't break if inside a quoted string"), each tokenized by `Cmd_TokenizeString` into
+  `COM_Parse`'s words (a quoted run one word, `{ } ( ) ' :` each a word, `//` to the line's end
+  a comment) and its name matched with `Q_strcasecmp`; `Host_Changelevel_f` takes it only with
+  exactly one argument (`if (Cmd_Argc() != 2)`, the usage message otherwise), then
+  `SV_SaveSpawnparms ()` and `SV_SpawnServer (level)`. `SV_SaveSpawnparms` keeps
+  `svs.serverflags = pr_global_struct->serverflags` and, for each active client (`if
+  (!host_client->active) continue;`, so one not yet active keeps its parms), sets `self` to its
+  edict, runs `SetChangeParms` and keeps `parm1` to `parm16` in its `spawn_parms`.
+  `SV_SpawnServer` sets `pr_global_struct->serverflags = svs.serverflags` ("serverflags are for
+  cross level information (sigils)") before the entities spawn. A client already connected is
+  not connected again, so `SetNewParms` does not run; `Host_Spawn_f` copies its kept
+  `spawn_parms` into `parm1` to `parm16` before `ClientConnect` and `PutClientInServer`
+  (PHYS-10.1). `qs-sim` takes the level and the kept parms through `World::take_changelevel` and
+  `World::save_spawn_parms`; the host loads the next world with them.
+- **PHYS-10.5** `Host_Savegame_f` refuses with no game ("Not playing a local game."), in an
+  intermission ("Can't save in intermission.", the host's to check, as `cl.intermission` is the
+  client's) and with a dead player ("Can't savegame with a dead player"), and writes
+  `SAVEGAME_VERSION` 5; the comment, `SAVEGAME_COMMENT_LENGTH` 39 characters of spaces, the
+  level's name from the start and `kills:%3i/%3i` of the monsters killed and the total from 22,
+  every space then `_` ("convert space to _ to make stdio happy"); each of the 16 spawn parms as
+  `%f`; `current_skill` as `%d`; `sv.name`; `sv.time` as `%f`; the 64 light styles, `m` for one
+  not set; then `ED_WriteGlobals`, `{`, each global with `DEF_SAVEGLOBAL` of type string, float
+  or entity as `"name" "value"`, `}`; and `ED_Write` of each edict below `num_edicts`: `{`, for
+  a used one every field definition from the second whose name's last but one character is not
+  `_` ("skip _x, _y, _z vars") and whose slots are not all 0, `}`. Only a global whose type is
+  exactly string, float or entity is written, and a field of a type id's tables do not have is
+  written `bad type <n>`. `PR_UglyValueString` writes a string's text, an entity's edict number,
+  a function's or a field's name, `void`, a float `%f` and a vector three. `Host_Loadgame_f`
+  reads the version ("Savegame is version %i, not %i"), the comment, the parms, the skill as
+  `(int)(tfloat + 0.1)` ("so we can load 1.06 save files"), the map and the time with `fscanf`,
+  spawns the map with `SV_SpawnServer`, reads the 64 styles, then each block of bytes up to and
+  including its first `}`, or to a zero byte, which ends it (`if (r == EOF || !r) break;`) with
+  `while (!feof(f))` reading on after it, or to the end, at most 32767 ("Loadgame buffer
+  overflow"), whose first token must be `{` ("First token isn't a brace"): the first
+  `ED_ParseGlobals`, each key a global by `ED_FindGlobal` (one naming none passed over) read
+  through `ED_ParseEpair`, and each later edict `entnum` cleared, `free` false, read by
+  `ED_ParseEdict`, which frees one with no pair (`if (!init) ent->free = true;`), and linked
+  when not free; then `sv.num_edicts = entnum`, `sv.time` and the client's spawn parms. With
+  `sv.loadgame`, `SV_ConnectClient` keeps the client's parms and `Host_Spawn_f` runs nothing
+  ("loaded games are fully inited allready"). The preview host plays at skill 1, so a save holds
+  1 and a load spawns the map at skill 1; a value naming nothing, which `PR_UglyValueString`
+  reads past an array for, is an error, and a freed edict's `freetime` is 0.
 
 The frame's length is the host's: `Host_FilterTime` runs a frame once 1/72 of a second has
 passed since the last, its `frametime` the time passed, 0.001 to 0.1. `qs-sim` takes the

@@ -218,6 +218,15 @@ impl EdictStore {
         self.num_edicts
     }
 
+    /// Sets `sv.num_edicts` to `count`, as `Host_Loadgame_f` does after reading a saved
+    /// game's edicts (`sv.num_edicts = entnum`, PHYS-10.5), the one place it can shrink; a
+    /// count past the array is not set.
+    pub fn set_num_edicts(&mut self, count: usize) {
+        if count <= self.edicts.len() {
+            self.num_edicts = count;
+        }
+    }
+
     /// The client slot count, id's `svs.maxclients` (EDICT-5.1).
     #[must_use]
     pub const fn maxclients(&self) -> usize {
