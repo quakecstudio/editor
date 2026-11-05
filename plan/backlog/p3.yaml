@@ -468,7 +468,7 @@ issues:
   verify:
   - Implementer review; spec-citation ratchet
 - key: P3-23
-  title: 'Engine oracle: id''s engine, built from the pinned source, tracing every server frame'
+  title: 'Engine oracle: id''s server, built from the pinned source, tracing every server frame'
   labels:
   - c-tools
   - area:preview
@@ -481,7 +481,7 @@ issues:
   depends:
   - P1-11
   deliverable:
-  - 'oracles/engine: id''s engine (WinQuake, from the pinned id-Software/Quake commit in docs/porting.md) built headless by cargo xtask oracles, with a headless harness that steps server frames from a scripted input file and writes a per-frame trace of edicts and globals (docs/spec/trace.md extended), offscreen screenshots at given frames and the mixed audio buffer'
+  - 'oracles/engine: id''s server (WinQuake''s sv_*, world, brush model loading and the progs, from the pinned id-Software/Quake commit in docs/porting.md) built headless by cargo xtask oracles, with a harness that steps server frames at a fixed frame time from a scripted input file of client commands and writes a per-frame trace of edicts and globals (docs/spec/trace.md extended). Justin chose the server first (2026-11-05): the screenshots and the mixed audio come with P3-28'
   acceptance:
   - A scripted route through a corpus map gives the same trace on two runs and on all three OSes
   - The oracle is never part of the shipped app or required to build it
@@ -583,6 +583,7 @@ issues:
   - P3-27
   - P3-23
   deliverable:
+  - 'oracles/engine grown to id''s whole engine headless: the client, the software renderer and the sound mixer with null video and a captured DMA buffer, writing offscreen screenshots at given frames and the mixed audio buffer of a scripted route'
   - Screenshot comparisons with the engine oracle at fixed frames of scripted routes, with per-map tolerances recorded in docs/spec/engine/, and the same for audio
   acceptance:
   - Every id1 map and the rerelease start map pass within the recorded tolerances; a deliberate lighting bug fails
