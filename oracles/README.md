@@ -37,7 +37,7 @@ This directory holds only our code, all GPL-3.0-or-later:
 | --- | --- |
 | [`vm/quakedef.h`](vm/quakedef.h) | The declarations id's code needs, with id's names, and the build's redirections below |
 | [`vm/host.c`](vm/host.c) | The command line, memory, loading a progs, the run wrapper and statement hook, errors |
-| [`vm/trace.c`](vm/trace.c) | The binary trace encoder (TRACE-5) and change sets (TRACE-3), from the spec alone |
+| [`trace/trace.c`](trace/trace.c) | The binary trace encoder (TRACE-5) and change sets (TRACE-3), from the spec alone, which the VM and engine oracles share; each build gives it its own `oracle.h` |
 | [`vm/scenario.c`](vm/scenario.c) | Scenarios (DIFF-2), the map (DIFF-3), clients (DIFF-4), frames (DIFF-5), the end (DIFF-8) |
 | [`vm/engine.c`](vm/engine.c) | The mock engine: settings, buffers, model bounds, linking, the empty world, `rand`, map keys |
 | [`vm/builtins.c`](vm/builtins.c) | The builtin table, the builtins that are ours, and the vector stubs |

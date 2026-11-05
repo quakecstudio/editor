@@ -22,6 +22,71 @@ commit = "bf4ac424ce754894ac8f1dae6a3981954bc9852d"
 "WinQuake/sv_phys.c" = "4c65e087e2a86fa6fb1883e0ec050ce0469cb31242f4c2243ac28d974826952e"
 "WinQuake/sv_main.c" = "8cd794da3c9173888a2b72f60b1ba0d244c32a6fddc0e326ba03f5f7ae17714b"
 
+# The engine oracle (P3-23) compiles id's server whole with id's own headers, quakedef.h among
+# them, so its files are kept apart from the VM oracle's, whose quakedef.h is ours
+# (oracles/README.md, "The engine oracle"). Same repository and commit as above.
+[[upstream]]
+id = "quake-engine"
+repo = "id-Software/Quake"
+commit = "bf4ac424ce754894ac8f1dae6a3981954bc9852d"
+
+[upstream.files]
+"WinQuake/bspfile.h" = "7765b458a744879b253020f5039d7ed950fe52b2a0945ebfdd2f1027f53db700"
+"WinQuake/cdaudio.h" = "8bb410e536d6ce0e077cf229bc5fb77cf7ae7501d2e71179ee4211b5cd7c0207"
+"WinQuake/client.h" = "884dd5388eb45d28ba1a2c749b6379f638a1b4adea8d3f683764ed4f24e77fd0"
+"WinQuake/cmd.c" = "d61003668f8586aaa629c13ed8d979d692606230eb30c59f80d1c3024dd8edb9"
+"WinQuake/cmd.h" = "99ca99629e32c7711da8fe15d775257db3c2e82ed002527700fc7d87caf2d1a3"
+"WinQuake/common.c" = "0c0d2cb048f2a088ff8e478d0642d594c0cdb27cf222eeacd68fcdf79e9631e0"
+"WinQuake/common.h" = "1fffb6991393af49b0291e7f2bb609df49a180e2c4bd4d786b97d9ea7d71369f"
+"WinQuake/console.h" = "6a3165abff55e700b336231482d0f91807ecaa5b92f43be9619d3ad700ef36cd"
+"WinQuake/crc.c" = "549ea3a1ca39a60e7fe82eaa55510970082ab89364ad9904be8b32f2aaecfb54"
+"WinQuake/crc.h" = "cc7b9d14b3d7cbaf5c59226243d9f882a3396440a9ed905ccee6d84256c55798"
+"WinQuake/cvar.c" = "cd381320c10e85a4a0a4b3ec5c254326a77172bf58c1dfb92354cce8000b39cd"
+"WinQuake/cvar.h" = "a7c534e9aba9e9f618f09a5c901b815e6a5ff4d582fdeb4046f71c17005d5efa"
+"WinQuake/d_iface.h" = "16ade10fd30bcbc69aa541fd0940a20ec8faf3d8bfab64e6f01c26a6b74cae7c"
+"WinQuake/draw.h" = "5a661fd88e0224ad59353dd9024f135089337ca7fcea0188159cc37442d3e674"
+"WinQuake/host.c" = "5f16220fdd2b34e4d6c1d60a9542a951c9a379b53e030af4a19811533498b5f1"
+"WinQuake/host_cmd.c" = "39fd5b8bc3f08d90954217e4000253208d6e2b4053d29ec42dc94e5da0d174e8"
+"WinQuake/input.h" = "21f3c6ff84db0edd35ecfc446891d6e0003ffe34d487c94e498a9bf58da5a39e"
+"WinQuake/keys.h" = "5e2511a5f5319441de1d98ce748dd32de88b088397d54be481b308d6e3498b55"
+"WinQuake/mathlib.c" = "68bbe9d6f50c1dcb0ce4adde75dd97a162e8d957ef9e65506b93880cbe6f4115"
+"WinQuake/mathlib.h" = "d738ca0d4a2c0179b552854481afb324004d95e3fe578ce9fd7c2eed0a5afc87"
+"WinQuake/menu.h" = "404ce3e8d39bc91a04754faff7866cbf48c7416612a1dd19fdea4d894f04074d"
+"WinQuake/model.c" = "0fc19d64c76f4b80f9a898fa2afe9202b8683c24793c057afba104dedaafbeda"
+"WinQuake/model.h" = "61048ae2f29de24f09618b6b1a0552d078a0b1799a7b6caa684dddd8d72186a3"
+"WinQuake/modelgen.h" = "1af78ac12387e348df2da0ddcc85c8ccbe3870da159bb86f74a60d69cca04fda"
+"WinQuake/net.h" = "5a7dbb64e051ae636176e1d2d206326cbd5f7a4e67ab3e04431551ab8ce53e0b"
+"WinQuake/pr_cmds.c" = "24be89ddb3a27ba2bcc90868f6bb884b069490d97d2c84c631844d63bd38b075"
+"WinQuake/pr_comp.h" = "30c8f32cb84bdb6ab31b79873390526e4a7bcc56ee14ea2b6b98dc274f5639ff"
+"WinQuake/pr_edict.c" = "90467fdbc99ffb557afae0a828e82c6d2e3d38e7509707fe4a6842578798f28c"
+"WinQuake/pr_exec.c" = "43cc7181ee0a74f43e32045fb77f05767041fa1d94ef69f4cc8532d933340b8b"
+"WinQuake/progdefs.h" = "19f6787c93bde2fddacb956b8130eb14f4f891516f846166608fab15522e0f36"
+"WinQuake/progdefs.q1" = "e81793ac2f78dc2a461d5de78c65937060ebb272c876bdf12250aec2b673d30c"
+"WinQuake/progs.h" = "2ba22bcae0bf4915970876e902064448c4191653968b3a2a2c5bdfade8005596"
+"WinQuake/protocol.h" = "f48a144e3a9c523fb9e9432851fa84b8e9326a0e964b3a346693e1154821c381"
+"WinQuake/quakedef.h" = "323355bb0413fc2f19d1bfeb41536edf732451e427203b085758318dc4ec23f4"
+"WinQuake/r_local.h" = "070a95a64ff72f4f4f60e01b37bb6271c9e19b53fb208ef53f46beb85b9cbe29"
+"WinQuake/r_shared.h" = "68240ebd7643b78382be3200d29328dfaf187aa42a6da271c0a669e56d3f9f3f"
+"WinQuake/render.h" = "c21a651dec5719f72241ca43dc0f9f4d34fbc7b77d7bbb2857ed86275eea4011"
+"WinQuake/sbar.h" = "76eb2b6a3cc8f49812b86d758f7790701ab724b3d85a3649c8654f575d32d321"
+"WinQuake/screen.h" = "5b889200a07e3288487b63244a9d04b04d700f0fb13868a0a4821e848bc89997"
+"WinQuake/server.h" = "a408184fe7a6261953d3b40f53df7020e43702abece1746206d736bc1ca59a5d"
+"WinQuake/sound.h" = "c3d18c65f381b7afdececb6cbed96c14a405516c18e0a0457830c7ba7259ec2b"
+"WinQuake/spritegn.h" = "f3f707d9c4ccb8963e3aa4c014afa46ea7efc2f7724e768cc41838c18fde52ab"
+"WinQuake/sv_main.c" = "8cd794da3c9173888a2b72f60b1ba0d244c32a6fddc0e326ba03f5f7ae17714b"
+"WinQuake/sv_move.c" = "aea150d48835fb7c6ea2c24d01495622598510c39d08074856d67ffa07eeb92a"
+"WinQuake/sv_phys.c" = "4c65e087e2a86fa6fb1883e0ec050ce0469cb31242f4c2243ac28d974826952e"
+"WinQuake/sv_user.c" = "536f6227f23083b6a59e70976eef9445aa991ba8b1ec6efaa37c758270cdd8d9"
+"WinQuake/sys.h" = "1dbd5e878eb5e350010e6955f5e5b7208de887f35216c91ae74f4afb751bb4ae"
+"WinQuake/vid.h" = "6dc94194b318f5fd4ebc7adda4da49486c11450ff34f43f6bb0d14b514c15894"
+"WinQuake/view.c" = "02f1224bdbdb5ec6b64ed76fe2d0bdaa016b03c9e78f681cfbb4dd99a11b4606"
+"WinQuake/view.h" = "5534d00f1491479f715969fec20b91e32e41a3af53dbb80ab6208c364b07c803"
+"WinQuake/wad.h" = "2791cfc7619069afcfc7f82098b8d2bcbd93216619535bb962a881a528487c4d"
+"WinQuake/world.c" = "258b9a79a35fd40bc6e06cf9d1b426818c407e1f3fd05820bfb8d215654a354d"
+"WinQuake/world.h" = "2afb7c444c80c276537710c92bb5e0c5e1ccee61a6bdd94d4ca4cbd0776772e1"
+"WinQuake/zone.c" = "67cb8b207c7b2e3b128d4f79f2b5efad7b9bfe95d45da15704974eef42a4032b"
+"WinQuake/zone.h" = "aec01740b4937228223d3487d8f5fc5e30216055738375c7b605f882fbd6e938"
+
 [[upstream]]
 id = "quake-tools"
 repo = "id-Software/Quake-Tools"
@@ -109,3 +174,19 @@ functions = [
   "PF_WriteChar", "PF_WriteShort", "PF_WriteLong", "PF_WriteAngle", "PF_WriteCoord",
   "PF_makestatic", "PF_setspawnparms", "PF_changelevel", "PF_Fixme",
 ]
+
+# The engine oracle's functions of id's host.c and view.c, which the server calls and which
+# their files keep beside the client's (oracles/engine/extracted.h declares what they read at
+# file scope).
+[[extract]]
+oracle = "engine"
+file = "WinQuake/host.c"
+functions = [
+  "SV_ClientPrintf", "SV_BroadcastPrintf", "Host_ClientCommands", "SV_DropClient",
+  "Host_ShutdownServer", "Host_ClearMemory",
+]
+
+[[extract]]
+oracle = "engine"
+file = "WinQuake/view.c"
+functions = ["V_CalcRoll"]

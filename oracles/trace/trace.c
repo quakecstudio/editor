@@ -14,6 +14,7 @@
 #define TRACE_TAG_EXIT 0x03
 #define TRACE_TAG_ERROR 0x04
 #define TRACE_TAG_STRING 0x05
+#define TRACE_TAG_FRAME 0x06
 
 typedef struct {
     byte *data;
@@ -222,6 +223,14 @@ void qs_trace_error(int function, int statement, const char *message) {
     put_svar(&out, function);
     put_svar(&out, statement);
     put_text(&out, message);
+    put_changes();
+    end_record();
+}
+
+// TRACE-4.11, TRACE-5.8: the engine oracle's record of one server frame.
+void qs_trace_frame(unsigned frame) {
+    begin_change_record(TRACE_TAG_FRAME);
+    put_uvar(&out, frame);
     put_changes();
     end_record();
 }
