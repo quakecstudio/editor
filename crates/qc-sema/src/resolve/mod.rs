@@ -121,6 +121,8 @@ pub struct ModuleIndex {
     /// The definitions FTEQCC holds constant, `def->constant` (FTEF-19.3): an initialised
     /// global that is no `var`, an enum's item, a function.
     pub(crate) constants: HashSet<DefId>,
+    /// Each FTEQCC class's type-name definition by its name, and its parent's (FTEF-17.1).
+    pub(crate) classes: HashMap<String, (DefId, Option<DefId>)>,
 }
 
 /// A struct's or union's layout as FTEQCC places it (FTEF-6.13): the words it takes and where
@@ -202,6 +204,34 @@ impl ModuleIndex {
     #[must_use]
     pub fn diagnostics(&self) -> &[FileDiagnostic] {
         &self.diagnostics
+    }
+
+    /// The members of the class the type `ty` names, its own first in declaration order and
+    /// then each parent's (FTEF-17.3, FTEF-24.6); empty when `ty` names no class.
+    #[must_use]
+    pub fn class_members(&self, ty: &Type) -> Vec<DefId> {
+        let resolved = self.aliases.get(ty).unwrap_or(ty);
+        let mut class = resolved
+            .type_name()
+            .and_then(|name| self.classes.get(name))
+            .map(|&(class, _)| class);
+        let mut out = Vec::new();
+        for _ in 0..MAX_CLASS_DEPTH {
+            let Some(current) = class else {
+                break;
+            };
+            out.extend(
+                self.definitions()
+                    .filter(|(_, def)| def.member_of == Some(current))
+                    .map(|(id, _)| id),
+            );
+            class = self
+                .classes
+                .values()
+                .find(|&&(c, _)| c == current)
+                .and_then(|&(_, parent)| parent);
+        }
+        out
     }
 
     /// The types of the body of the function `def`, when it has one (`crate::check`).
@@ -959,6 +989,12 @@ impl<'a> Resolver<'a> {
     fn finish(mut self) -> ModuleIndex {
         self.check_undefined_functions();
         self.record_shapes();
+        let classes: HashMap<String, (DefId, Option<DefId>)> = self
+            .class_names
+            .iter()
+            .map(|(name, &class)| (name.clone(), (class, self.parent_of(class))))
+            .collect();
+        self.index.classes = classes;
         self.index
     }
 }

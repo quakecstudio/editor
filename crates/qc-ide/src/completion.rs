@@ -6,19 +6,22 @@
 //! resolves at its position in compilation order (QC-12.5), so the names visible in a function
 //! body are the globals, functions and fields declared before the cursor, and that function's
 //! parameters and the locals declared before it. With FTEQCC's autoprototyping every global is
-//! visible (FTE-22.3). After a member access, `.` or `->`,
-//! only fields are offered, since a field access names a field (QC-16.6); the members of an
-//! FTEQCC vector (`.x`, FTE-9.1) and class are not offered there yet. The client filters the
-//! list by what has been typed, as the protocol's completion model lets it.
+//! visible (FTE-22.3). After a member access, `.` or `->`, the members of what the access is
+//! made on are offered: `x`, `y` and `z` for an FTEQCC vector (FTE-9.1), the members of a
+//! class and its parents and then the entity fields for a class (FTEF-17.3), and the fields
+//! for an entity or a base whose type is not known, since a field access names a field
+//! (QC-16.6). The client filters the list by what has been typed, as the protocol's completion
+//! model lets it.
 
 use std::collections::HashSet;
 use std::path::Path;
 
+use qc_diag::Span;
 use qc_project::Loader;
-use qc_sema::{DefId, DefKind, Definition, FileId, ModuleIndex};
+use qc_sema::{DefId, DefKind, Definition, FileId, ModuleIndex, SimpleType, Type};
 
 use crate::host::AnalysisHost;
-use crate::syntax::{after_member_access, enclosing_function};
+use crate::syntax::{enclosing_function, member_access};
 
 /// One name to offer.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,10 +55,32 @@ impl<L: Loader> AnalysisHost<L> {
         } else {
             declared_before(index, file, offset)
         };
-        let fields_only = after_member_access(parse, offset);
+        let access = member_access(parse, offset);
+        let fields_only = access.is_some();
         let function: Option<DefId> = enclosing_function(parse, offset)
             .and_then(|name| index.definition_at(file, name.span().start))
             .map(|(def, _)| def);
+        let base = access
+            .flatten()
+            .map(|span| base_type(index, file, function, span));
+        // FTE-9.1: a vector's members are its three components.
+        if state.dialect == qc_syntax::Dialect::Fteqcc
+            && base == Some(Type::Simple(SimpleType::Vector))
+        {
+            return ["x", "y", "z"]
+                .into_iter()
+                .map(|label| Completion {
+                    label: label.to_owned(),
+                    kind: DefKind::Field,
+                    detail: Type::Simple(SimpleType::Float).fteqcc_name(),
+                })
+                .collect();
+        }
+        // FTEF-17.3: a class's members, its own and its parents', come before the fields.
+        let members = base
+            .as_ref()
+            .map(|ty| index.class_members(ty))
+            .unwrap_or_default();
         let visible = |id: usize, def: &Definition| -> bool {
             if def.generated || def.member_of.is_some() {
                 return false;
@@ -79,6 +104,15 @@ impl<L: Loader> AnalysisHost<L> {
         };
         let mut seen: HashSet<&str> = HashSet::new();
         let mut out = Vec::new();
+        for def in members.iter().filter_map(|&id| index.def(id)) {
+            if seen.insert(def.name.as_str()) {
+                out.push(Completion {
+                    label: def.name.clone(),
+                    kind: def.kind,
+                    detail: def.ty.fteqcc_name(),
+                });
+            }
+        }
         for (id, def) in index.defs().iter().enumerate() {
             if visible(id, def) && seen.insert(def.name.as_str()) {
                 out.push(Completion {
@@ -111,4 +145,21 @@ fn declared_before(index: &ModuleIndex, file: FileId, offset: usize) -> Option<u
         Some(id) => id.checked_add(1),
         None => first,
     }
+}
+
+/// The type of the expression at `span`, the base of a member access: as the check typed it in
+/// the body of `function`, else, for a name, its definition's type; unknown otherwise.
+fn base_type(index: &ModuleIndex, file: FileId, function: Option<DefId>, span: Span) -> Type {
+    let typed = function
+        .and_then(|function| index.body(function))
+        .and_then(|body| body.type_at(span))
+        .cloned();
+    typed
+        .or_else(|| {
+            index
+                .definition_at(file, span.start)
+                .and_then(|(def, _)| index.def(def))
+                .map(|def| def.ty.clone())
+        })
+        .unwrap_or(Type::Unknown)
 }

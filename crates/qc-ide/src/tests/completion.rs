@@ -32,8 +32,8 @@ fn completion_at_file_level() {
     assert_eq!(labels(text, "/*here*/", 0), ["g", "f"]);
 }
 
-// After `.` only fields are offered, since a field access names a field (QC-16.6; the
-// statement is the compiler's to pin).
+// After `.` on an entity only fields are offered, since a field access names a field
+// (QC-16.6; the statement is the compiler's to pin).
 #[test]
 fn completion_after_a_member_access() {
     let text = "entity e;\n.float hp;\n.vector org;\nvoid() f = { e.hp = 1; };\n";
@@ -79,4 +79,78 @@ fn completion_leaves_out_later_globals() {
         .map(|c| c.label)
         .collect();
     assert_eq!(at_start, ["early", "f", "late"]);
+}
+
+/// The labels offered at the `n`-th `needle` of the one-file FTEQCC project `text`.
+fn fteqcc_labels(text: &str, needle: &str, n: usize) -> Vec<String> {
+    let mut host = super::host(&super::ProjectSpec {
+        files: &[("a.qc", text)],
+        dialect: Some(qc_project::Dialect::Fteqcc),
+        ..super::ProjectSpec::default()
+    });
+    host.completions(&path("a.qc"), nth(text, needle, n))
+        .into_iter()
+        .map(|c| c.label)
+        .collect()
+}
+
+// spec FTE-9.1: after `.` on a vector its members are its components, `x`, `y` and `z`, in an
+// FTEQCC module; a vanilla module has no members of a vector and offers the fields
+#[test]
+fn completion_after_a_vector_offers_its_components() {
+    let text = "vector v;\n.float hp;\nvoid() f = { v.x = 1; };\n";
+    assert_eq!(fteqcc_labels(text, "x = 1", 0), ["x", "y", "z"]);
+    let local = "void() f = { local vector dir; dir.y = 2; };\n";
+    assert_eq!(fteqcc_labels(local, "y = 2", 0), ["x", "y", "z"]);
+    assert_eq!(labels(text, "x = 1", 0), ["hp"]);
+    // While the member is still being typed: `v.` and nothing after it.
+    let typing = "vector v;\nvoid() f = { v.";
+    let mut host = super::host(&super::ProjectSpec {
+        files: &[("a.qc", typing)],
+        dialect: Some(qc_project::Dialect::Fteqcc),
+        ..super::ProjectSpec::default()
+    });
+    let at_end: Vec<String> = host
+        .completions(&path("a.qc"), typing.len())
+        .into_iter()
+        .map(|c| c.label)
+        .collect();
+    assert_eq!(at_end, ["x", "y", "z"]);
+}
+
+// spec FTEF-17.3: after `this.` in a class method the members of its class and then of its
+// parents come first, then the entity fields; after `self.` the fields
+#[test]
+fn completion_after_this_offers_the_class_members() {
+    let text = "\
+.float health;
+class Base
+{
+\tfloat m_flBase;
+\tvirtual void Spawned(void);
+};
+class Thing : Base
+{
+\tfloat m_flTime;
+\tvirtual void Spawned(void);
+};
+entity self;
+void Base::Spawned(void) { };
+void Thing::Spawned(void) { this.m_flTime = 1; };
+void() user = { self.health = 1; };
+";
+    let got = fteqcc_labels(text, "m_flTime = 1", 0);
+    let at = |name: &str| got.iter().position(|label| label == name);
+    let (time, base, health) = (at("m_flTime"), at("m_flBase"), at("health"));
+    assert!(
+        time.is_some() && base.is_some() && health.is_some(),
+        "{got:?}"
+    );
+    assert!(
+        time < base && base < health,
+        "own, then the parent's, then fields: {got:?}"
+    );
+    let entity = fteqcc_labels(text, "health = 1", 0);
+    assert!(entity.contains(&"health".to_owned()), "{entity:?}");
+    assert!(!entity.contains(&"m_flTime".to_owned()), "{entity:?}");
 }

@@ -40,20 +40,12 @@ edit.
 | Find-references | `references` | `ModuleIndex::references`, across every module that compiles the definition's file |
 | Rename | `prepare_rename`, `rename` | Every declaration and use, a vector's components with it (QC-11.7); refused for a name the engine binds (EDICT-2.2, EDICT-3.2, EDICT-3.4), through a macro (QC-9.7), and unless the edited modules resolve to the same definitions, uses and diagnostics; a function or field a map may name comes with a caution (EDICT-8.2, EDICT-8.6), which the server turns into edits the modder confirms (ADR-0019) |
 | Hover | `hover` | The declaration as written, its comment, and for a builtin the target engine's entry and every engine's (ENGT-3.9, ENGT-3.11) |
-| Completion | `completions` | The globals declared before the cursor (QC-12.5; all with autoprototyping, FTE-22.3), and the enclosing function's parameters and earlier locals (QC-12.1); only fields after `.` or `->` (QC-16.6) |
+| Completion | `completions` | The globals declared before the cursor (QC-12.5; all with autoprototyping, FTE-22.3), and the enclosing function's parameters and earlier locals (QC-12.1); after `.` or `->` the members of what the access is made on: a vector's `x`, `y` and `z` (FTE-9.1), a class's and its parents' members then the fields (FTEF-17.3), the fields otherwise (QC-16.6) |
 | Highlighting | `highlights` | Each resolved name by what it names, with declaration, constant (QC-11.6, vanilla) and builtin modifiers |
 | Inlay hints | `parameter_hints` | The parameter name of each argument (QC-13.5), from the declaration that names them (QC-13.11) |
 | Diagnostics | `diagnostics`, `all_diagnostics` | The project graph's, the preprocessor's and parser's, the semantic model's, and `W0311` for the target engine |
 
 A position just after a name names it, as an editor's cursor at the end of a word does.
-
-## What it is not, yet
-
-- Completion after `.` offers fields only: an FTEQCC vector's `.x`, `.y` and `.z` (FTE-9.1) and a
-  class's members need the type of what the access is made on, which the semantic model does not
-  compute yet.
-- A new `#include` line takes effect when the project is read again (`reload`, which the language
-  server calls on save), not as it is typed.
 
 ## Tests
 

@@ -238,10 +238,11 @@ pub(crate) fn enclosing_function(parse: &Parse, offset: usize) -> Option<SyntaxT
         .and_then(|d| d.name())
 }
 
-/// Whether the token before the name at `offset`, or before `offset` itself, is a member
-/// access: `.` or `->`.
-pub(crate) fn after_member_access(parse: &Parse, offset: usize) -> bool {
-    let mut previous = None;
+/// The member access, `.` or `->`, just before the name at `offset` or before `offset`
+/// itself, and the span of what the access is made on, the base of the field expression it is
+/// in; `None` when the cursor does not follow an access.
+pub(crate) fn member_access(parse: &Parse, offset: usize) -> Option<Option<Span>> {
+    let mut previous: Option<SyntaxToken> = None;
     for token in parse.syntax().tokens() {
         let span = token.span();
         if span.start >= offset {
@@ -252,8 +253,13 @@ pub(crate) fn after_member_access(parse: &Parse, offset: usize) -> bool {
             break;
         }
         if !is_trivia(token.kind()) {
-            previous = Some(token.kind());
+            previous = Some(token);
         }
     }
-    matches!(previous, Some(SyntaxKind::Dot | SyntaxKind::Arrow))
+    let access = previous.filter(|t| matches!(t.kind(), SyntaxKind::Dot | SyntaxKind::Arrow))?;
+    let base = enclosing(&access)
+        .find_map(ast::FieldExpr::cast)
+        .and_then(|field| field.base())
+        .map(|base| base.syntax().span());
+    Some(base)
 }
