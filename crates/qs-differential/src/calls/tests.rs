@@ -142,7 +142,7 @@ fn compile_fteqcc(source: &str) -> Vec<u8> {
 // spec DIFF-12.11: a function definition whose value is a QuakeC function of its name is no
 // local, whichever of the functions sharing the name it holds: FTEQCC makes an `ArrayGet*a`
 // for each `for` statement that subscripts a local array (FTEF-19.78), each a global made
-// while the body is read, below the body's block of locals (FTE-21.7).
+// while the body is read, below the body's block of locals (FTE-21.9).
 #[test]
 fn an_array_function_made_in_a_body_is_not_a_local() {
     let bytes = compile_fteqcc(

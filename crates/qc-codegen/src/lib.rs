@@ -11,7 +11,7 @@
 //! builds what `qcc` builds, in the same order: the definition list and the global area, where
 //! each definition is placed when first met (QC-21), literals shared by value (QC-20), each
 //! body written from the layer by the passes its dialect's profile chooses (`back_end.rs`:
-//! allocation, QC-21.5, and layout, QC-21.4 and FTE-21.7), the functions in the order their
+//! allocation, QC-21.5, and layout, QC-21.4 and FTE-21.9), the functions in the order their
 //! definitions end (QC-25.2) and the string table (QC-25.4); then `progdefs.h`, whose CRC the
 //! header carries, and the tables of the progs (QC-25). The behaviour is ported from
 //! `qcc/pr_comp.c` and `qcc/qcc.c` at
@@ -222,12 +222,22 @@ fn compile_lowered(
                 internal,
             })?;
     }
-    // FTE-21.7: every function's block of private locals is laid out after the globals,
+    // FTE-21.9: every function's block of private locals is laid out after the globals,
     // statics and immediates of the module, before the array functions' own; under id's layout
     // there is none.
     compiler
         .program
         .resolve_blocks()
+        .map_err(|internal| CompileError::Internal {
+            file: FileId::new(0),
+            span: Span::new(0, 0),
+            internal,
+        })?;
+    // FTE-21.8: then the module's shared temporaries, as `QCC_FinaliseTemps` follows
+    // `QCC_UnmarshalLocals`.
+    compiler
+        .program
+        .resolve_shared_temps()
         .map_err(|internal| CompileError::Internal {
             file: FileId::new(0),
             span: Span::new(0, 0),

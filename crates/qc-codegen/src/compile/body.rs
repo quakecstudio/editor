@@ -18,7 +18,7 @@ use qc_syntax::ast::{self, AstNode as _};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::allocate::CreationOrder;
+use super::allocate::{CreationOrder, Overlapping, Slots};
 use super::{At, Compiler, Lowered, Written, literal_of};
 use crate::Internal;
 use crate::back_end::Allocation;
@@ -64,7 +64,10 @@ impl Compiler<'_> {
         let generated = body.generated();
         // QC-21.5: the allocation pass the profile chooses (ADR-0020).
         let mut slots = match self.back_end.allocation {
-            Allocation::CreationOrder => CreationOrder::default(),
+            Allocation::CreationOrder => Slots::CreationOrder(CreationOrder::default()),
+            Allocation::Overlapping => {
+                Slots::Overlapping(Overlapping::new(generated, body.effects()))
+            }
         };
         // The global the first parameter slot was last stored from, which a precache records.
         let mut first_argument = None;
@@ -105,6 +108,14 @@ impl Compiler<'_> {
                 }
             }
             self.program.emit_operands(op, operands);
+            // FTE-21.8: an operand in a shared temporary takes its real offset at the end.
+            for (operand, name) in (0_u8..).zip([statement.a, statement.b, statement.c]) {
+                if let Some(Name::Made(made) | Name::MadeWord(made, _)) = name
+                    && slots.is_shared(made)
+                {
+                    self.program.mark_shared(operand);
+                }
+            }
             // FTE-18.4: a precache builtin's first argument is recorded.
             let [a, _, _] = operands;
             match (statement.b, statement.c) {
@@ -204,14 +215,13 @@ impl Compiler<'_> {
         &mut self,
         effect: Effect,
         index: u32,
-        (body, slots, loops): (&TypedBody, &mut CreationOrder, &mut Vec<usize>),
+        (body, slots, loops): (&TypedBody, &mut Slots, &mut Vec<usize>),
         (syntax, span): (&BodySyntax, Span),
     ) -> Lowered<()> {
         let name = match effect {
             Effect::Make(name) => name,
             Effect::Temp(words) => {
-                self.program.allocate(words).at(span)?;
-                return Ok(());
+                return slots.dropped(&mut self.program, index, words).at(span);
             }
             // A block taken before its words are written, the value of this statement; one
             // whose statements were dropped is still taken (QC-21.5).
@@ -363,7 +373,7 @@ impl Compiler<'_> {
         &mut self,
         name: Name,
         index: u32,
-        (body, slots): (&TypedBody, &CreationOrder),
+        (body, slots): (&TypedBody, &Slots),
         span: Span,
     ) -> Lowered<i32> {
         let ofs = match name {
@@ -485,7 +495,7 @@ fn writable(body: &TypedBody, returns_value: bool) -> bool {
 
 /// The arguments a call the semantic model generates passes, `CALL0` to `CALL8`; `None` for
 /// any other opcode.
-fn call_count(op: qc_preproc::Op) -> Option<usize> {
+pub(super) fn call_count(op: qc_preproc::Op) -> Option<usize> {
     use qc_preproc::Op;
     Some(match op {
         Op::Call0 => 0,

@@ -1032,7 +1032,56 @@ empty (QC-14.2).
   produced it. A macro written `if (CheckContentsDamage()) return;` and used with a `;` after it
   makes one (`rerelease-mg1/ai.qc`, `rerelease-mg1/monsters/tarbaby.qc`). This profile reports
   `W0204` (QCD-7.19) for every one, since the parser does not see expansions.
-- **FTE-21.6** A QuakeC function's record counts its parameters among its `locals`, so
+- **FTE-21.6** **Withdrawn** 2026-11-05, replaced by FTE-21.10: it said `qc-codegen` counts a
+  function's temporaries among its `locals`; only the ones it locks are (FTE-21.8).
+- **FTE-21.7** **Withdrawn** 2026-11-05, replaced by FTE-21.8 and FTE-21.9: it said this
+  compiler reuses no temporary, so its blocks were wider than FTEQCC's; it now reuses them as
+  FTEQCC does (FTE-21.8).
+- **FTE-21.8** Under `opt_overlaptemps`, on by default (`{&opt_overlaptemps, "r", 1,
+  FLAG_ASDEFAULT, "overlaptemps", ...}`), a statement's result takes the first of the module's
+  temporaries, in the order they were made, that no reference holds and that has the result's
+  size (`if (!tempsinfo[u].def->refcount && tempsinfo[u].size == type->size) break;`), else a
+  new one after the last (`tempsused += size;`); the temporaries are the module's, not a
+  function's, and are laid out after every block (`QCC_UnmarshalLocals ();` then
+  `QCC_FinaliseTemps ();`, which gives each `tempsinfo[i].def->ofs = numpr_globals;
+  numpr_globals += tempsinfo[i].size;`). A temporary still held when a call is generated is
+  locked (`QCC_LockActiveTemps`: `if (tempsinfo[u].def->refcount && u != excludeofs)
+  tempsinfo[u].locked = true;`), and when the function ends each locked temporary becomes a
+  local of the function, every statement of it that names the temporary naming the local
+  instead (`QCC_RemapLockedTemps`, `QCC_RemapLockedTemp`, `QCC_MakeLocked`), so a callee's
+  temporaries never overwrite a value its caller reads after the call. This compiler allocates
+  the same way from the intermediate layer: a value is held from the statement that makes it
+  to the last that names it, and while it is live at the start of a loop, to the loop's back
+  jump; a value whose range has a `CALL` strictly inside it takes a slot of the function's own
+  block (FTE-21.9); any other takes the first shared temporary of its size that no value of the
+  body holds at the statement that makes it, else a new one. The statement's operands are
+  still held there, so a result never takes an operand's slot, as the fixed FTEQCC frees them
+  (DIFF-14.7), where the pinned FTEQCC frees them first. A temporary a statement takes and
+  nothing reads, such as the one a fold leaves, takes a slot as any other. A locked value takes
+  its shared slot too, as `QCC_GetTemp` gave it one before `QCC_RemapLockedTemp` made it a
+  local, and is read from a slot of its function's block after the locals. A temporary a
+  dropped statement took is taken among the shared ones and freed, as `QCC_UngenerateStatements`
+  forgets the dropped statements' gotos, labels, breaks, continues and cases and not their
+  temporaries; the dropped statements are taken one after another, where FTEQCC held each
+  until its expression ended, a deliberate difference in where an unnamed temporary sits that
+  no value depends on. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_GetTemp`, `QCC_FreeTemp`, `QCC_LockActiveTemps`,
+  `QCC_RemapLockedTemps`, `QCC_FinaliseTemps`; `engine/qclib/qccmain.c`, `optimisations`.
+- **FTE-21.9** A function's parameters, locals and locked temporaries (FTE-21.8) form one block
+  of globals laid out when the progs is written, after every global, static and immediate of
+  the module: `QCC_UnmarshalLocals` finalises first every global and static (`if
+  (!d->localscope || d->isstatic) QCC_FinaliseDef(d);`), then each function's static and
+  initialised constant locals, then, in the order of the function records, each function's
+  private locals (`for (d = functions[i].firstlocal; d; d = d->nextlocal) if (!d->isstatic &&
+  !(d->constant && d->initialized)) QCC_FinaliseDef(d);`), so an immediate a body makes sits
+  below every block and a block's words are contiguous, its parameters first, then its locals,
+  then the temporaries it locks (FTE-21.8).
+  This compiler lays its blocks out the same way, and gives an initialised constant local its
+  storage where the body is read, as a static's (FTEF-32.16), where FTEQCC lays it out after
+  every global. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qccmain.c`, `QCC_UnmarshalLocals`.
+
+- **FTE-21.10** A QuakeC function's record counts its parameters among its `locals`, so
   `PR_EnterFunction` saves them when a call enters the function again and `PR_LeaveFunction`
   restores them: `QCC_WriteData` sets `funcs[i].parm_start = local->ofs;` at the first
   parameter, adds each parameter's size, `funcs[i].locals += size;`, and then each used local
@@ -1042,30 +1091,13 @@ empty (QC-14.2).
   `ai_run(12)` reaches `ai_run(16)` through `CheckAnyAttack`, `WizardCheckAttack` and
   `wiz_run1`, and then calls `movetogoal(dist)` with 12; the pinned FTEQCC's record of `ai_run`
   has `locals` 1. `qc-codegen` counts the parameters and every global from them to the end of
-  the last `local` declaration, its temporaries among them. The record's `numparms` is the
+  the last `local` declaration, then the temporaries it locks (FTE-21.8). The record's
+  `numparms` is the
   count of the named parameters given space, `funcs[i].numparms = p;` after the loop over
   `functions[i].type->num_parms` of them, a variadic function's too: `entity(...) f` has
   `numparms` 0 and `float(float a, ...) g` 1, where id's `qcc` writes -1 for any variadic
   function (QC-13.3), so `PR_EnterFunction` copies the named parameters of a variadic call.
 
-- **FTE-21.7** A function's parameters, locals and temporaries form one block of globals laid
-  out when the progs is written, after every global, static and immediate of the module:
-  `QCC_UnmarshalLocals` finalises first every global and static (`if (!d->localscope ||
-  d->isstatic) QCC_FinaliseDef(d);`), then each function's static and initialised constant
-  locals, then, in the order of the function records, each function's private locals (`for (d
-  = functions[i].firstlocal; d; d = d->nextlocal) if (!d->isstatic && !(d->constant &&
-  d->initialized)) QCC_FinaliseDef(d);`), its temporaries among them, so an immediate a body
-  makes sits below every block and a block's words are contiguous: in a program whose `fn0`
-  reads `n < 2`, the immediate `2` is at 236 and `fn0`'s block at 249 to 258, its parameters,
-  then its locals, then its temporaries, with `locals` 10. A statement that writes three words
-  to a one-word temporary (FTE-9.3's `LOAD_V` into a `?:`'s temporary) therefore reaches the
-  next temporaries, never an immediate. This compiler lays its blocks out the same way but
-  reuses no temporary (FTEF-27.16), so a block is wider than FTEQCC's where FTEQCC reuses
-  one, and the blocks after it start later; and it gives an initialised constant local its
-  storage where the body is read, as a static's (FTEF-32.16), where FTEQCC lays it out after
-  every global. Source:
-  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qccmain.c`,
-  `QCC_UnmarshalLocals`; `engine/qclib/qcc_pr_comp.c`, `QCC_GetTemp`.
 ## FTE-22 Name resolution
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_GetDef`, `QCC_PR_ParseInitializerType_Internal`,
