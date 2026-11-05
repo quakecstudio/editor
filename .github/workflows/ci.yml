@@ -335,6 +335,27 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: cargo build --profile ci --locked --workspace --target "$TARGET"
+      # P3-02: the preview host as an artifact with its SHA-256 beside it.
+      - name: Package the preview host
+        if: env.CI_PATH == 'full'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          NAME: ${{ matrix.name }}
+        run: |
+          exe=preview-host
+          if [ "$RUNNER_OS" = Windows ]; then exe=preview-host.exe; fi
+          mkdir -p "dist/$NAME"
+          cp "target/$TARGET/ci/$exe" "dist/$NAME/"
+          (cd "dist/$NAME" && sha256sum "$exe" > "$exe.sha256" && cat "$exe.sha256")
+      - name: Keep the preview host
+        if: env.CI_PATH == 'full'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preview-host-${{ matrix.name }}
+          path: dist/${{ matrix.name }}
+          retention-days: 7
+          if-no-files-found: error
 
   build-macos:
     name: Build (macos-universal)
@@ -376,6 +397,18 @@ jobs:
             echo "no binaries to combine" >&2
             exit 1
           fi
+      - name: Package the preview host
+        run: |
+          mkdir -p dist/macos-universal
+          cp target/universal-apple-darwin/ci/preview-host dist/macos-universal/
+          (cd dist/macos-universal && shasum -a 256 preview-host > preview-host.sha256 && cat preview-host.sha256)
+      - name: Keep the preview host
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preview-host-macos-universal
+          path: dist/macos-universal
+          retention-days: 7
+          if-no-files-found: error
 
   xtask-ci:
     name: cargo xtask ci
