@@ -20,8 +20,9 @@ use qs_render::{Camera, MapMesh, MapRenderer, Play, View};
 use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::Bridge;
-use crate::game::Game;
+use crate::game::{Eye, Game};
 use crate::load::{Describer, Loaded, Rand};
+use crate::screenshot::Frame;
 
 /// Map units a second walking, and running with Shift.
 const SPEEDS: [f32; 2] = [320.0, 960.0];
@@ -199,6 +200,20 @@ impl eframe::App for Viewer {
         let time = now.duration_since(self.started);
 
         let scene = self.client.scene();
+        let (origin, angles) = if self.fly {
+            (
+                self.camera.origin,
+                [self.camera.pitch, self.camera.yaw, 0.0],
+            )
+        } else {
+            (scene.view.origin, scene.view.angles)
+        };
+        self.game.set_eye(Eye {
+            origin,
+            angles,
+            fov_x: self.camera.fov_x,
+            aspect,
+        });
         // `S_Update (r_origin, vpn, vright, vup)`, once a host frame.
         self.audio.update(
             &self.bsp,
@@ -293,9 +308,30 @@ impl Viewer {
         let Some(bridge) = &mut self.bridge else {
             return;
         };
+        // The screenshot asked for last frame, now drawn.
+        let shot = ui.input(|input| {
+            input.events.iter().find_map(|event| match event {
+                egui::Event::Screenshot { image, .. } => Some(Frame {
+                    width: u32::try_from(image.size[0]).unwrap_or(0),
+                    height: u32::try_from(image.size[1]).unwrap_or(0),
+                    rgba: image.as_raw().to_vec(),
+                }),
+                _ => None,
+            })
+        });
+        if let Some(frame) = shot {
+            self.game.screenshot_taken(&frame);
+        }
         let open = bridge.poll(&mut self.game);
+        for (id, outcome) in self.game.take_responses() {
+            bridge.respond(id, outcome);
+        }
         for (method, params) in self.game.take_events() {
             bridge.event(method, params);
+        }
+        if self.game.wants_screenshot() {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
         }
         if !open || self.game.stopped() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);

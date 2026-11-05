@@ -6,6 +6,7 @@ enum qs_bridge::framing::FrameError
 enum qs_bridge::message::ErrorCode
 enum qs_bridge::message::Id
 enum qs_bridge::message::Message
+enum qs_bridge::session::Answer
 field qs_bridge::message::RpcError.code
 field qs_bridge::message::RpcError.data
 field qs_bridge::message::RpcError.message
@@ -42,6 +43,7 @@ struct qs_bridge::session::HostInfo
 struct qs_bridge::session::Reply
 struct qs_bridge::session::Session
 trait qs_bridge::session::Host
+use qs_bridge::Answer = session::Answer
 use qs_bridge::BRIDGE_COMMANDS = session::BRIDGE_COMMANDS
 use qs_bridge::BRIDGE_CONTENT_TYPE = framing::BRIDGE_CONTENT_TYPE
 use qs_bridge::BRIDGE_MAX_CONTENT = framing::BRIDGE_MAX_CONTENT
@@ -82,3 +84,5 @@ variant qs_bridge::message::Id::Text
 variant qs_bridge::message::Message::Notification
 variant qs_bridge::message::Message::Request
 variant qs_bridge::message::Message::Response
+variant qs_bridge::session::Answer::Later
+variant qs_bridge::session::Answer::Now

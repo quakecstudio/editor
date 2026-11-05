@@ -2,6 +2,7 @@
 
 #![expect(
     clippy::unwrap_used,
+    clippy::arithmetic_side_effects,
     clippy::expect_used,
     clippy::indexing_slicing,
     clippy::panic,
@@ -17,7 +18,7 @@ use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
 use qc_progs::Progs;
 use qc_sema::{Db, FileId, ModuleInput};
 use qc_types::Etype;
-use qs_bridge::{ErrorCode, Message, RpcError, Session, check_schema};
+use qs_bridge::{ErrorCode, Id, Message, RpcError, Session, check_schema};
 use qs_bsp::{
     BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_NUM_AMBIENTS, Bsp, BspVersion, ClipNode, Leaf, Lump,
     Model, Node, Plane,
@@ -25,13 +26,15 @@ use qs_bsp::{
 use qs_sim::{LoadOptions, World};
 use serde_json::{Value, json};
 
-use super::Game;
+use super::{Eye, Game};
+use crate::screenshot::Frame;
 
 /// The QuakeC the tests run: a crate the map places, a counter `StartFrame` raises, a
 /// thinker that fails and the entry points; every progs precaches the player's model, which
 /// the baselines need (NET-2.1).
 const SOURCE: &str = "\
 void(entity e, vector o) setorigin = #2;
+void(entity e, vector min, vector max) setsize = #4;
 entity() spawn = #14;
 void(entity e) remove = #15;
 string(string s) precache_model = #20;
@@ -48,7 +51,7 @@ void() ClientDisconnect = {};
 void() SetNewParms = {};
 void() SetChangeParms = {};
 void() worldspawn = { precache_model(\"progs/player.mdl\"); };
-void() item_crate = { self.count = 3; };
+void() item_crate = { self.count = 3; self.solid = 2; setsize(self, '-8 -8 -8', '8 8 8'); setorigin(self, self.origin); };
 .void() nothing;
 void() broken = { self.nothing(); };
 void() info_fail = { self.think = broken; self.nextthink = 0.05; };
@@ -281,7 +284,7 @@ fn the_game_offers_its_commands() {
     for command in super::COMMANDS {
         assert_eq!(capabilities[command], true, "{command}");
     }
-    for later in ["reload", "breakpoint/set", "evaluate", "pick", "screenshot"] {
+    for later in ["reload", "breakpoint/set", "breakpoint/clear", "evaluate"] {
         assert_ne!(capabilities[later], true, "{later}");
     }
 }
@@ -645,4 +648,98 @@ fn shutdown_stops_the_game() {
     assert!(!game.stopped());
     session.handle(&mut game, request(9, "shutdown", &json!({})));
     assert!(game.stopped());
+}
+
+/// The eye at `origin` looking along `angles`, a square view with GLQuake's `fov 90`.
+fn eye(origin: [f32; 3], angles: [f32; 3]) -> Eye {
+    Eye {
+        origin,
+        angles,
+        fov_x: 90.0,
+        aspect: 1.0,
+    }
+}
+
+// spec BRIDGE-4.1: pick names the edict under a point of the window and where the ray stops;
+// the world, or nothing, names no edict
+#[test]
+fn pick_finds_the_edict_under_a_point() {
+    let (mut game, mut session) = game();
+    let early = call(
+        &mut game,
+        &mut session,
+        "pick",
+        &json!({ "x": 0.5, "y": 0.5 }),
+    );
+    assert_eq!(code(early), ErrorCode::InternalError, "nothing drawn yet");
+    game.set_eye(eye([-100.0, 0.0, 40.0], [0.0, 0.0, 0.0]));
+    let hit = call(
+        &mut game,
+        &mut session,
+        "pick",
+        &json!({ "x": 0.5, "y": 0.5 }),
+    )
+    .unwrap();
+    assert_eq!(hit["edict"], 2, "the crate");
+    let x = hit["point"][0].as_f64().unwrap();
+    assert!((x + 8.0).abs() < 0.1, "{hit}");
+    // The bottom of the view looks 45 degrees down, at the floor.
+    let floor = call(
+        &mut game,
+        &mut session,
+        "pick",
+        &json!({ "x": 0.5, "y": 1.0 }),
+    )
+    .unwrap();
+    assert_eq!(floor.get("edict"), None);
+    assert!(floor["point"][2].as_f64().unwrap().abs() < 0.1, "{floor}");
+    let up = call(
+        &mut game,
+        &mut session,
+        "pick",
+        &json!({ "x": 0.5, "y": 0.0 }),
+    )
+    .unwrap();
+    assert_eq!(up, json!({}), "nothing above");
+}
+
+fn frame(width: u32, height: u32) -> Frame {
+    Frame {
+        width,
+        height,
+        rgba: vec![128; usize::try_from(width * height * 4).unwrap()],
+    }
+}
+
+// spec BRIDGE-4.1: a screenshot waits for the next frame drawn, then is answered with it as a
+// PNG at the size asked; each waiting request gets its own response
+#[test]
+fn a_screenshot_is_answered_with_the_next_frame() {
+    let (mut game, mut session) = game();
+    assert!(!game.wants_screenshot());
+    let reply = session.handle(&mut game, request(7, "screenshot", &json!({})));
+    assert_eq!(reply.response, None, "answered later");
+    let sized = request(8, "screenshot", &json!({ "width": 2, "height": 3 }));
+    assert_eq!(session.handle(&mut game, sized).response, None);
+    assert!(game.wants_screenshot());
+    assert!(game.take_responses().is_empty());
+    game.screenshot_taken(&frame(4, 4));
+    assert!(!game.wants_screenshot());
+    let responses = game.take_responses();
+    assert_eq!(responses.len(), 2);
+    let sizes: Vec<(Id, Value, Value)> = responses
+        .into_iter()
+        .map(|(id, outcome)| {
+            let result = outcome.unwrap();
+            check_schema("screenshot.result", &result).unwrap();
+            (id, result["width"].clone(), result["height"].clone())
+        })
+        .collect();
+    assert_eq!(
+        sizes,
+        [
+            (Id::Number(7), json!(4), json!(4)),
+            (Id::Number(8), json!(2), json!(3))
+        ]
+    );
 }

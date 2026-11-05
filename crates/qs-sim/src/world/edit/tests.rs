@@ -137,3 +137,41 @@ fn checking_a_field_value_writes_nothing() {
     );
     assert_eq!(run.world.float(1, "health"), 100.0);
 }
+
+// spec WORLD-8.4: a line traced through the world stops at the first entity's box or the
+// world it meets; the world and an empty line name no edict
+#[test]
+fn a_line_finds_the_entity_it_hits() {
+    let more = "void() info_box = { self.solid = 2; \
+        setsize(self, '-8 -8 -8', '8 8 8'); setorigin(self, self.origin); };\n";
+    let mut run = player_from(
+        &ledge(),
+        player_progs("self.health = 100;", "", more),
+        LoadOptions::default(),
+    );
+    let progs_bytes = run.progs.clone();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    let pairs = [
+        ("classname".to_owned(), "info_box".to_owned()),
+        ("origin".to_owned(), "50 0 40".to_owned()),
+    ];
+    let n = run.world.spawn_entity(&progs, &pairs).unwrap();
+    let hit = run
+        .world
+        .trace_line(&progs, [50.0, -100.0, 40.0], [50.0, 100.0, 40.0])
+        .unwrap();
+    assert_eq!(hit.edict, Some(n));
+    assert!((hit.point.unwrap()[1] + 8.0).abs() < 0.1, "{:?}", hit.point);
+    let over = run
+        .world
+        .trace_line(&progs, [50.0, -100.0, 200.0], [50.0, 100.0, 200.0])
+        .unwrap();
+    assert_eq!(over.edict, None);
+    assert_eq!(over.point, None, "nothing met");
+    let down = run
+        .world
+        .trace_line(&progs, [50.0, -50.0, 100.0], [50.0, -50.0, -100.0])
+        .unwrap();
+    assert_eq!(down.edict, None, "the floor is the world");
+    assert!(down.point.unwrap()[2].abs() < 0.1, "{:?}", down.point);
+}

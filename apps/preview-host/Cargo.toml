@@ -20,6 +20,8 @@ cpal = { workspace = true }
 # The window, as the IDE draws its own (ADR-0003); eframe's defaults without `default_fonts`,
 # whose fonts are not bundled (ADR-0010).
 eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }
+# The screenshot's PNG (BRIDGE-4.1).
+image = { workspace = true, features = ["png"] }
 qc-builtins = { workspace = true }
 qc-progs = { workspace = true }
 qs-bridge = { workspace = true }

@@ -97,6 +97,8 @@ field qs_sim::world::Entity.skin
 field qs_sim::world::LoadOptions.builtins
 field qs_sim::world::LoadOptions.carried
 field qs_sim::world::LoadOptions.localization
+field qs_sim::world::edit::LineHit.edict
+field qs_sim::world::edit::LineHit.point
 field qs_sim::world::inspect::NamedValue.name
 field qs_sim::world::inspect::NamedValue.value
 field qs_sim::world::save::SaveGame.comment
@@ -206,6 +208,7 @@ fn qs_sim::world::edit::World::move_player
 fn qs_sim::world::edit::World::remove_entity
 fn qs_sim::world::edit::World::set_field_value
 fn qs_sim::world::edit::World::spawn_entity
+fn qs_sim::world::edit::World::trace_line
 fn qs_sim::world::inspect::World::classname
 fn qs_sim::world::inspect::World::edict_fields
 fn qs_sim::world::inspect::World::in_use
@@ -251,6 +254,7 @@ struct qs_sim::world::Entity
 struct qs_sim::world::LoadOptions
 struct qs_sim::world::SpawnParms
 struct qs_sim::world::World
+struct qs_sim::world::edit::LineHit
 struct qs_sim::world::inspect::NamedValue
 struct qs_sim::world::save::SaveGame
 trait qs_sim::collision::Host
@@ -261,6 +265,7 @@ use qs_sim::ClientMessages = messages::ClientMessages
 use qs_sim::EdictChange = world::EdictChange
 use qs_sim::EditError = world::EditError
 use qs_sim::Entity = world::Entity
+use qs_sim::LineHit = world::LineHit
 use qs_sim::LoadOptions = world::LoadOptions
 use qs_sim::Message = messages::Message
 use qs_sim::ModelFiles = builtins::ModelFiles
@@ -321,6 +326,7 @@ use qs_sim::command_words = world::command_words
 use qs_sim::localization = qc_builtins::localization
 use qs_sim::world::EdictChange = changes::EdictChange
 use qs_sim::world::EditError = edit::EditError
+use qs_sim::world::LineHit = edit::LineHit
 use qs_sim::world::NamedValue = inspect::NamedValue
 use qs_sim::world::QcValue = inspect::QcValue
 use qs_sim::world::SAVEGAME_VERSION = save::SAVEGAME_VERSION

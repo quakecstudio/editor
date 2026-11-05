@@ -27,6 +27,6 @@ pub use messages::{
 pub use physics::Sound;
 pub use qc_builtins::localization;
 pub use world::{
-    CLIENT_EDICT, EdictChange, EditError, Entity, LoadOptions, NamedValue, QcValue,
+    CLIENT_EDICT, EdictChange, EditError, Entity, LineHit, LoadOptions, NamedValue, QcValue,
     SAVEGAME_VERSION, SaveError, SaveGame, SpawnParms, World, WorldError, command_words,
 };

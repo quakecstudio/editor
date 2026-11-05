@@ -8,6 +8,7 @@ mod audio;
 mod bridge;
 mod game;
 mod load;
+mod screenshot;
 mod values;
 mod window;
 

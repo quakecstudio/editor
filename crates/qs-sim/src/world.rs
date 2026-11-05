@@ -673,6 +673,6 @@ mod save;
 pub(crate) mod tests;
 
 pub use changes::EdictChange;
-pub use edit::EditError;
+pub use edit::{EditError, LineHit};
 pub use inspect::{NamedValue, QcValue};
 pub use save::{SAVEGAME_VERSION, SaveError, SaveGame};

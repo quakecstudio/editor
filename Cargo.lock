@@ -2973,6 +2973,7 @@ dependencies = [
  "clap",
  "cpal",
  "eframe",
+ "image",
  "qc-builtins",
  "qc-codegen",
  "qc-edict",

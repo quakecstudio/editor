@@ -11,7 +11,7 @@ use std::io::BufReader;
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
-use qs_bridge::{Capabilities, Host, HostInfo, RpcError, read_frame, write_frame};
+use qs_bridge::{Answer, Capabilities, Host, HostInfo, Id, read_frame, write_frame};
 use serde_json::{Value, json};
 
 use super::Bridge;
@@ -31,8 +31,8 @@ impl Host for Fake {
         Capabilities::of(["pause"])
     }
 
-    fn call(&mut self, _method: &str, _params: &Value) -> Result<Value, RpcError> {
-        Ok(json!({}))
+    fn call(&mut self, _id: &Id, _method: &str, _params: &Value) -> Answer {
+        Answer::Now(Ok(json!({})))
     }
 
     fn shutdown(&mut self) {}

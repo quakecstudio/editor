@@ -92,6 +92,17 @@ pub struct HostInfo {
     pub engine: String,
 }
 
+/// How a host answers a command.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Answer {
+    /// The result or the error, sent at once.
+    Now(Result<Value, RpcError>),
+    /// Nothing yet: the host sends the response itself when it has it, as `screenshot` waits
+    /// for the next frame drawn. A response carries its request's `id`, so the client matches
+    /// it to the request whatever came between.
+    Later,
+}
+
 /// The preview host as the session drives it.
 pub trait Host {
     /// Its name, version and engine.
@@ -100,12 +111,10 @@ pub trait Host {
     /// The capability-flagged commands it accepts.
     fn capabilities(&self) -> Capabilities;
 
-    /// Runs `method` with `params`, which have passed their schema (BRIDGE-4.2).
-    ///
-    /// # Errors
-    ///
-    /// The command's error (BRIDGE-7).
-    fn call(&mut self, method: &str, params: &Value) -> Result<Value, RpcError>;
+    /// Runs the request `id`'s `method` with `params`, which have passed their schema
+    /// (BRIDGE-4.2): its result or error (BRIDGE-7) now, or later, when the host sends the
+    /// response for `id` itself.
+    fn call(&mut self, id: &Id, method: &str, params: &Value) -> Answer;
 
     /// Stops the game, for `shutdown` (BRIDGE-2.5).
     fn shutdown(&mut self);
@@ -187,7 +196,10 @@ impl Session {
             host.shutdown();
             return Reply::to(id, Ok(Value::Null));
         }
-        Reply::to(id, host.call(&method, &params))
+        match host.call(&id, &method, &params) {
+            Answer::Now(outcome) => Reply::to(id, outcome),
+            Answer::Later => Reply::none(),
+        }
     }
 
     /// `initialize` (BRIDGE-2.1, BRIDGE-2.2, BRIDGE-2.4).

@@ -11,9 +11,10 @@
 use serde_json::{Value, json};
 
 use super::{
-    BRIDGE_COMMANDS, Capabilities, Host, HostInfo, Reply, Session, event, is_flagged, schema_checks,
+    Answer, BRIDGE_COMMANDS, Capabilities, Host, HostInfo, Reply, Session, event, is_flagged,
+    schema_checks,
 };
-use crate::message::{ErrorCode, Id, Message, RpcError};
+use crate::message::{ErrorCode, Id, Message};
 
 /// A host that accepts `pause` and `step`, and records what it is asked.
 #[derive(Default)]
@@ -32,12 +33,15 @@ impl Host for Fake {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities::of(["pause", "step", "initialize"])
+        Capabilities::of(["pause", "step", "screenshot", "initialize"])
     }
 
-    fn call(&mut self, method: &str, _params: &Value) -> Result<Value, RpcError> {
+    fn call(&mut self, _id: &Id, method: &str, _params: &Value) -> Answer {
         self.calls.push(method.to_owned());
-        Ok(json!({}))
+        if method == "screenshot" {
+            return Answer::Later;
+        }
+        Answer::Now(Ok(json!({})))
     }
 
     fn shutdown(&mut self) {
@@ -148,6 +152,18 @@ fn commands_are_checked_before_they_run() {
     assert!(host.calls.is_empty());
     assert!(outcome(session.handle(&mut host, request("step", json!({ "kind": "over" })))).is_ok());
     assert_eq!(host.calls, ["step"]);
+}
+
+// spec BRIDGE-4.1: a command the host answers later, as screenshot waits for a frame, gets
+// no response from the session; the host sends it
+#[test]
+fn a_command_answered_later_has_no_response_yet() {
+    let mut host = Fake::default();
+    let mut session = initialized(&mut host);
+    let reply = session.handle(&mut host, request("screenshot", json!({})));
+    assert_eq!(reply.response, None);
+    assert!(!reply.close);
+    assert_eq!(host.calls, ["screenshot"]);
 }
 
 // spec BRIDGE-2.5: shutdown stops the game and is answered with null

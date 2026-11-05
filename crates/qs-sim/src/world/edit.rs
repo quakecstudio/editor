@@ -9,6 +9,7 @@ use qc_types::{DefType, Etype, Slot};
 
 use super::{CLIENT, Spawner, World};
 use crate::builtins::SimCall;
+use crate::collision::MoveKind;
 use crate::spawn::{SpawnHost, apply_key};
 use crate::world::QcValue;
 
@@ -245,6 +246,39 @@ impl World {
         call.set_float(CLIENT, "fixangle", 1.0);
         call.link(CLIENT, false)
             .map_err(|e| EditError::Spawn(e.to_string()))
+    }
+}
+
+/// What a line traced through the world hits, for the bridge's `pick` (BRIDGE-4.1).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LineHit {
+    /// The edict hit, `None` for the world or nothing.
+    pub edict: Option<usize>,
+    /// Where the line stopped, `None` when it met nothing.
+    pub point: Option<[f32; 3]>,
+}
+
+impl World {
+    /// `traceline (start, end, FALSE, player)`: the line from `start` to `end` through the
+    /// world and its entities, the player passed through (WORLD-8.4).
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when the trace stops the engine (`Sys_Error`).
+    pub fn trace_line(
+        &mut self,
+        progs: &Progs<'_>,
+        start: [f32; 3],
+        end: [f32; 3],
+    ) -> Result<LineHit, super::WorldError> {
+        let call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        let trace = call
+            .trace((start, [0.0; 3], [0.0; 3], end), MoveKind::Normal, CLIENT)
+            .map_err(super::WorldError::Frame)?;
+        Ok(LineHit {
+            edict: trace.ent.filter(|&n| n != 0),
+            point: (trace.fraction < 1.0).then_some(trace.endpos),
+        })
     }
 }
 

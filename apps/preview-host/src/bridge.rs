@@ -8,7 +8,7 @@ use std::io::{BufReader, Read, Write};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
 
-use qs_bridge::{Host, Message, Session, read_frame, write_frame};
+use qs_bridge::{Host, Id, Message, RpcError, Session, read_frame, write_frame};
 use serde_json::Value;
 
 /// What the reader thread hands the game loop.
@@ -115,6 +115,14 @@ impl Bridge {
                 Incoming::Closed => self.open = false,
             }
         }
+    }
+
+    /// Sends the response to request `id`, which the host answered later.
+    pub(crate) fn respond(&mut self, id: Id, outcome: Result<Value, RpcError>) {
+        self.send(&Message::Response {
+            id: Some(id),
+            outcome,
+        });
     }
 
     /// Sends the event `method` with `params`, once the session is initialized (BRIDGE-2.2).

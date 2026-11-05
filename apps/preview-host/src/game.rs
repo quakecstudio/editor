@@ -5,14 +5,16 @@
 //! raises.
 
 use qc_progs::Progs;
-use qs_bridge::{Capabilities, ErrorCode, Host, HostInfo, RpcError};
+use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
+use qs_render::Camera;
 use qs_sim::{EdictChange, EditError, World, WorldError, command_words};
 use serde_json::{Map, Value, json};
 
+use crate::screenshot::{Frame, encode};
 use crate::values::{from_json, named_json, to_json};
 
-/// The commands the game accepts; `pick` and `screenshot` come with the window.
-const COMMANDS: [&str; 9] = [
+/// The commands the game accepts.
+const COMMANDS: [&str; 11] = [
     "console",
     "pause",
     "resume",
@@ -22,7 +24,12 @@ const COMMANDS: [&str; 9] = [
     "entity/remove",
     "entity/edit",
     "player/spawn_at",
+    "pick",
+    "screenshot",
 ];
+
+/// How far `pick`'s ray reaches, in map units.
+const PICK_REACH: f32 = 8192.0;
 
 /// Whether the server clock runs (BRIDGE-4.1, "pause, resume").
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +89,29 @@ impl Applied {
 /// An event for the bridge to send: its method and parameters (BRIDGE-3.1).
 pub(crate) type Event = (&'static str, Value);
 
+/// Where the window's view looks from, for `pick` (BRIDGE-4.1).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Eye {
+    /// The eye's origin.
+    pub(crate) origin: [f32; 3],
+    /// Its pitch, yaw and roll.
+    pub(crate) angles: [f32; 3],
+    /// The field of view across, in degrees.
+    pub(crate) fov_x: f32,
+    /// The view's width per unit of height.
+    pub(crate) aspect: f32,
+}
+
+/// A `screenshot` waiting for the next frame drawn, and the size it asked for.
+#[derive(Clone, Debug)]
+struct Shot {
+    id: Id,
+    size: Option<(u32, u32)>,
+}
+
+/// A response the game sends after the command's request was answered later.
+pub(crate) type Response = (Id, Result<Value, RpcError>);
+
 /// The game: its world, the progs it runs, and what the bridge has asked of it.
 pub(crate) struct Game {
     world: World,
@@ -89,6 +119,12 @@ pub(crate) struct Game {
     state: State,
     held: Vec<Held>,
     events: Vec<Event>,
+    /// Where the window last looked from, `None` before it has drawn.
+    eye: Option<Eye>,
+    /// The screenshots asked for since the last frame drawn.
+    shots: Vec<Shot>,
+    /// The responses of commands answered later, to send.
+    responses: Vec<Response>,
     /// Whether the host was asked to stop (BRIDGE-2.5).
     stopped: bool,
 }
@@ -103,6 +139,9 @@ impl Game {
             state: State::Running,
             held: Vec::new(),
             events: Vec::new(),
+            eye: None,
+            shots: Vec::new(),
+            responses: Vec::new(),
             stopped: false,
         }
     }
@@ -110,6 +149,39 @@ impl Game {
     /// The events raised since the last call, oldest first.
     pub(crate) fn take_events(&mut self) -> Vec<Event> {
         core::mem::take(&mut self.events)
+    }
+
+    /// The responses of commands answered later since the last call.
+    pub(crate) fn take_responses(&mut self) -> Vec<Response> {
+        core::mem::take(&mut self.responses)
+    }
+
+    /// Where the window's view looks from now.
+    pub(crate) const fn set_eye(&mut self, eye: Eye) {
+        self.eye = Some(eye);
+    }
+
+    /// Whether a `screenshot` waits for the next frame drawn.
+    pub(crate) const fn wants_screenshot(&self) -> bool {
+        !self.shots.is_empty()
+    }
+
+    /// Answers every waiting `screenshot` with `frame`, the frame just drawn.
+    pub(crate) fn screenshot_taken(&mut self, frame: &Frame) {
+        let time = self.world.time();
+        for shot in core::mem::take(&mut self.shots) {
+            let copy = Frame {
+                width: frame.width,
+                height: frame.height,
+                rgba: frame.rgba.clone(),
+            };
+            let outcome = encode(copy, shot.size)
+                .map(|(png, width, height)| {
+                    json!({ "png": png, "width": width, "height": height, "time": time })
+                })
+                .map_err(|why| RpcError::new(ErrorCode::InternalError, why));
+            self.responses.push((shot.id, outcome));
+        }
     }
 
     /// Whether the client asked the host to stop.
@@ -460,8 +532,24 @@ impl Host for Game {
         Capabilities::of(COMMANDS)
     }
 
-    fn call(&mut self, method: &str, params: &Value) -> Result<Value, RpcError> {
-        self.with_progs(|game, progs| game.dispatch(progs, method, params))?
+    fn call(&mut self, id: &Id, method: &str, params: &Value) -> Answer {
+        if method == "screenshot" {
+            let size = |name: &str| {
+                params
+                    .get(name)
+                    .and_then(Value::as_u64)
+                    .and_then(|n| u32::try_from(n).ok())
+            };
+            self.shots.push(Shot {
+                id: id.clone(),
+                size: size("width").zip(size("height")),
+            });
+            return Answer::Later;
+        }
+        Answer::Now(
+            self.with_progs(|game, progs| game.dispatch(progs, method, params))
+                .and_then(|outcome| outcome),
+        )
     }
 
     fn shutdown(&mut self) {
@@ -531,12 +619,63 @@ impl Game {
                 Ok(json!({ "edict": qs_sim::CLIENT_EDICT }))
             }
             "console" => Ok(self.console(params)),
+            "pick" => self.pick(progs, params),
             _ => Err(RpcError::new(
                 ErrorCode::MethodNotFound,
                 format!("{method} is not a command"),
             )),
         }
     }
+}
+
+impl Game {
+    /// `pick`: the edict under the point `x`, `y` of the window, as fractions of its width
+    /// and height from the top left, and where the ray from the eye stops (BRIDGE-4.1).
+    fn pick(&mut self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {
+        let eye = self
+            .eye
+            .ok_or_else(|| RpcError::new(ErrorCode::InternalError, "nothing is drawn yet"))?;
+        let fraction = |name: &str| {
+            params
+                .get(name)
+                .and_then(Value::as_f64)
+                .map_or(0.5, f64_to_f32)
+        };
+        let camera = Camera {
+            origin: eye.origin,
+            pitch: eye.angles[0],
+            yaw: eye.angles[1],
+            fov_x: eye.fov_x,
+        };
+        // Clip space runs from -1 at the left and bottom to 1 at the right and top.
+        let at = [fraction("x") * 2.0 - 1.0, 1.0 - fraction("y") * 2.0];
+        let (origin, direction) = camera.ray(eye.aspect, at);
+        let mut end = origin;
+        for (point, along) in end.iter_mut().zip(direction) {
+            *point += along * PICK_REACH;
+        }
+        let hit = self
+            .world
+            .trace_line(progs, origin, end)
+            .map_err(|e| RpcError::new(ErrorCode::InternalError, e.to_string()))?;
+        let mut result = Map::new();
+        if let Some(edict) = hit.edict {
+            result.insert("edict".to_owned(), json!(edict));
+        }
+        if let Some(point) = hit.point {
+            result.insert("point".to_owned(), json!(point));
+        }
+        Ok(Value::Object(result))
+    }
+}
+
+/// A JSON number as a float, rounded as C rounds a double to a float.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a fraction of the window, exact enough in f32"
+)]
+const fn f64_to_f32(value: f64) -> f32 {
+    value as f32
 }
 
 /// The error an edit answers with (BRIDGE-7.1).
