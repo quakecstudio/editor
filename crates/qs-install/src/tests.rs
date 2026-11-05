@@ -499,6 +499,26 @@ fn examining_a_real_folder_without_game_data() {
     assert!(install.original.unwrap().pak0.ends_with("PAK0.PAK"));
 }
 
+// spec FS-3.11: a game folder that is a link to a directory is a game folder, as a run root
+// links them
+#[cfg(not(windows))]
+#[test]
+fn linked_game_folders_are_found() {
+    let dir = TempDir::new("linked");
+    let id1 = stand_in_install(&dir);
+    let ad = dir.path().join("mods").join("ad");
+    fs::create_dir_all(&ad).unwrap();
+    fs::write(ad.join("pak0.pak"), pak("ad")).unwrap();
+    let root = dir.path().join("root");
+    fs::create_dir_all(&root).unwrap();
+    std::os::unix::fs::symlink(&id1, root.join("id1")).unwrap();
+    std::os::unix::fs::symlink(&ad, root.join("ad")).unwrap();
+    let base = examine_folder(&root).unwrap().original.unwrap();
+    assert_eq!(base.id1, root.join("id1"));
+    let names: Vec<&str> = base.game_dirs.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(names, ["ad"]);
+}
+
 #[test]
 fn the_host_filesystem_resolves_links_for_deduplication() {
     let dir = TempDir::new("canonical");

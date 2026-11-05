@@ -15,7 +15,8 @@ use std::time::Duration;
 use interprocess::local_socket::traits::Listener as _;
 use interprocess::local_socket::{GenericFilePath, ListenerOptions, ToFsName as _};
 use qs_bridge::{
-    Answer, Capabilities, Host, HostInfo, Id, Message, Session, read_frame, write_frame,
+    Answer, Capabilities, ErrorCode, Host, HostInfo, Id, Message, Session, event, read_frame,
+    write_frame,
 };
 use qs_install::GameBase;
 use serde_json::{Value, json};
@@ -146,7 +147,7 @@ fn run_root_links_are_repaired() {
         Err(RunRootError::Link(_))
     ));
     assert!(real.join("kept").is_dir(), "a real folder is never removed");
-    for bad in ["", ".", "..", "a/b", "c:d"] {
+    for bad in ["", ".", "..", "a/b", "c:d", "id1", "ID1"] {
         assert!(
             matches!(
                 prepare_run_root(&project, Flavour::Original, &again, bad),
@@ -348,7 +349,13 @@ fn the_client_speaks_the_bridge() {
     assert!(events.iter().all(|e| e.method == "console/line"));
     // The host answers a step with bad parameters with -32602 (BRIDGE-4.2).
     let bad = client.request("step", json!({ "kind": "sideways" }));
-    assert!(matches!(bad, Err(ClientError::Rpc { code: -32602, .. })));
+    assert!(matches!(
+        bad,
+        Err(ClientError::Rpc {
+            code: ErrorCode::InvalidParams,
+            ..
+        })
+    ));
     let waited = client
         .wait_event("console/line", Duration::from_secs(5))
         .unwrap();
@@ -369,4 +376,46 @@ fn a_missing_or_closed_host_is_an_error() {
         client.initialize("tests"),
         Err(ClientError::Closed)
     ));
+}
+
+/// A host that sends `console/line` events without end and answers nothing.
+struct Chatty {
+    frame: Vec<u8>,
+    at: usize,
+}
+
+impl Chatty {
+    fn new() -> Self {
+        let mut frame = Vec::new();
+        let line = event(
+            "console/line",
+            json!({ "text": "x", "level": "print", "time": 0 }),
+        );
+        write_frame(&mut frame, &line.to_bytes()).unwrap();
+        Self { frame, at: 0 }
+    }
+}
+
+impl std::io::Read for Chatty {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        for byte in buf.iter_mut() {
+            *byte = self.frame[self.at];
+            self.at = self
+                .at
+                .wrapping_add(1)
+                .checked_rem(self.frame.len())
+                .unwrap();
+        }
+        Ok(buf.len())
+    }
+}
+
+// spec BRIDGE-3.1: the host's events between two answers do not stretch a wait; an event that
+// never comes times out however many others do
+#[test]
+fn a_wait_ends_on_time_while_other_events_come() {
+    let mut client = Client::over(Chatty::new(), std::io::sink());
+    let waited = client.wait_event("map/loaded", Duration::from_millis(50));
+    assert!(matches!(waited, Err(ClientError::Timeout)), "{waited:?}");
+    assert!(!client.take_events().is_empty());
 }

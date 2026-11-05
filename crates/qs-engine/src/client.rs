@@ -11,11 +11,13 @@ use std::io::{self, BufReader, Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use interprocess::local_socket::traits::Stream as _;
 use interprocess::local_socket::{GenericFilePath, Stream, ToFsName as _};
-use qs_bridge::{BRIDGE_PROTOCOL_VERSION, Id, Message, is_flagged, read_frame, write_frame};
+use qs_bridge::{
+    BRIDGE_PROTOCOL_VERSION, ErrorCode, Id, Message, is_flagged, read_frame, write_frame,
+};
 use serde_json::{Value, json};
 
 /// An event the host sent (BRIDGE-3.1): its method and parameters.
@@ -37,7 +39,7 @@ pub enum ClientError {
     /// The host answered with an error (BRIDGE-7.1).
     Rpc {
         /// Its code.
-        code: i64,
+        code: ErrorCode,
         /// Its message, for the person.
         message: String,
     },
@@ -52,7 +54,9 @@ impl fmt::Display for ClientError {
         match self {
             Self::Io(error) => write!(f, "the bridge: {error}"),
             Self::Closed => f.write_str("the preview host closed the bridge"),
-            Self::Rpc { code, message } => write!(f, "the preview host: {message} ({code})"),
+            Self::Rpc { code, message } => {
+                write!(f, "the preview host: {message} ({})", code.code())
+            }
             Self::Unsupported(method) => {
                 write!(f, "the preview host does not offer {method}")
             }
@@ -216,14 +220,15 @@ impl Client {
             params,
         };
         write_frame(&mut self.write, &message.to_bytes()).map_err(ClientError::Io)?;
+        let deadline = deadline_after(ANSWER_WITHIN);
         loop {
-            match self.next_message(ANSWER_WITHIN)? {
+            match self.next_message(deadline)? {
                 Message::Response {
                     id: Some(Id::Number(answered)),
                     outcome,
                 } if answered == id => {
                     return outcome.map_err(|error| ClientError::Rpc {
-                        code: error.code.code(),
+                        code: error.code,
                         message: error.message,
                     });
                 }
@@ -237,8 +242,14 @@ impl Client {
         }
     }
 
-    fn next_message(&self, within: Duration) -> Result<Message, ClientError> {
-        match self.incoming.recv_timeout(within) {
+    /// The next message, waiting until `deadline`: the whole wait's limit, so a host that
+    /// keeps sending other messages does not stretch it.
+    fn next_message(&self, deadline: Instant) -> Result<Message, ClientError> {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(ClientError::Timeout);
+        }
+        match self.incoming.recv_timeout(left) {
             Ok(Some(message)) => Ok(message),
             Ok(None) | Err(RecvTimeoutError::Disconnected) => Err(ClientError::Closed),
             Err(RecvTimeoutError::Timeout) => Err(ClientError::Timeout),
@@ -266,8 +277,9 @@ impl Client {
         {
             return Ok(event);
         }
+        let deadline = deadline_after(within);
         loop {
-            match self.next_message(within)? {
+            match self.next_message(deadline)? {
                 Message::Notification { method: m, params } if m == method => {
                     return Ok(BridgeEvent { method: m, params });
                 }
@@ -453,6 +465,12 @@ impl Client {
     pub fn shutdown(&mut self) -> Result<Value, ClientError> {
         self.request("shutdown", json!({}))
     }
+}
+
+/// `within` from now; one past the clock's reach is now, so the wait times out at once.
+fn deadline_after(within: Duration) -> Instant {
+    let now = Instant::now();
+    now.checked_add(within).unwrap_or(now)
 }
 
 /// Key-values as BRIDGE-5.2 writes them.

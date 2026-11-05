@@ -757,6 +757,31 @@ fn a_screenshot_is_answered_with_the_next_frame() {
     );
 }
 
+// spec BRIDGE-3.1: a level change keeps what the old level owed the client: its events
+// first, then the new level's, and the screenshots still waiting for a frame
+#[test]
+fn the_next_level_carries_what_the_last_one_owed() {
+    let (mut old, mut session) = game();
+    old.announce("progs.dat", "old");
+    let reply = session.handle(&mut old, request(7, "screenshot", &json!({})));
+    assert_eq!(reply.response, None);
+    let (mut next, _) = game();
+    next.announce("progs.dat", "next");
+    next.carry_from(old);
+    let maps: Vec<Value> = next
+        .take_events()
+        .into_iter()
+        .filter(|(method, _)| *method == "map/loaded")
+        .map(|(_, params)| params["map"].clone())
+        .collect();
+    assert_eq!(maps, [json!("old"), json!("next")]);
+    assert!(next.wants_screenshot());
+    next.screenshot_taken(&frame(1, 1));
+    let responses = next.take_responses();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].0, Id::Number(7));
+}
+
 // spec BRIDGE-2.3: a headless host draws nothing, so it leaves screenshot out of its
 // capabilities and the session refuses one as unsupported; the rest are as the window's
 #[test]

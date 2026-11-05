@@ -361,7 +361,8 @@ impl Viewer {
         self.play = play;
         self.eye = camera.origin;
         self.camera = camera;
-        self.game = game;
+        let old = core::mem::replace(&mut self.game, game);
+        self.game.carry_from(old);
         self.audio = audio;
         self.client = client;
         self.bsp = bsp;

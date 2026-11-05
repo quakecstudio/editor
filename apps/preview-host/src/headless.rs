@@ -28,15 +28,19 @@ pub(crate) fn run(args: &Args, loaded: Loaded, mut bridge: Bridge) -> Result<(),
         if !serve(&mut bridge, &mut world.game) {
             return Ok(());
         }
-        world.game.frame(FRAME);
+        let ran = world.game.frame(FRAME);
         if let Some((map, carried)) = world.game.level_change() {
             match load(args, &map, carried) {
-                Ok(loaded) => world = Headless::new(loaded),
+                Ok(loaded) => {
+                    let old = core::mem::replace(&mut world, Headless::new(loaded));
+                    world.game.carry_from(old.game);
+                }
                 Err(error) => tracing::warn!(%error, map, "the next level did not load"),
             }
             continue;
         }
-        world.read_messages();
+        // The client's clock stands while the server's does, as the window's.
+        world.read_messages(if ran { FRAME } else { 0.0 });
         next = next.checked_add(frame).unwrap_or(next);
         if let Some(wait) = next.checked_duration_since(Instant::now()) {
             std::thread::sleep(wait);
@@ -75,9 +79,9 @@ impl Headless {
 
     /// The client's frame: it reads what the server wrote, and the eye `pick` looks from is
     /// the client's view.
-    fn read_messages(&mut self) {
+    fn read_messages(&mut self, frametime: f64) {
         let packets = self.game.world_mut().take_messages().packets;
-        let seconds = frametime_f32(FRAME);
+        let seconds = frametime_f32(frametime);
         if let Err(error) =
             self.client
                 .frame(seconds, &packets, &mut self.describer, &mut self.rand)

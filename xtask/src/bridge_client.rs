@@ -140,6 +140,9 @@ fn suite(client: &mut Client, map: &str) -> Result<Vec<String>, String> {
     )?;
     steps.push("an unoffered command is refused".to_owned());
 
+    // `wait_event` looks at the events already received first: those are dropped so the
+    // event waited for is the one this command causes.
+    client.take_events();
     client
         .console("nosuchcommand")
         .map_err(|e| format!("console: {e}"))?;
@@ -192,10 +195,15 @@ fn suite(client: &mut Client, map: &str) -> Result<Vec<String>, String> {
         field(&player, "health") != Some(health.clone()),
         "the field waits",
     )?;
+    client.take_events();
     client.resume().map_err(|e| format!("resume: {e}"))?;
-    client
+    let running = client
         .wait_event("state/changed", WITHIN)
         .map_err(|e| format!("state/changed: {e}"))?;
+    expect(
+        text(&running.params, "state") == "running",
+        "resume says the game runs",
+    )?;
     let player = client
         .inspect(InspectWhat::Edict(1))
         .map_err(|e| e.to_string())?;

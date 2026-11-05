@@ -15,8 +15,9 @@ use crate::run_root::RunRoot;
 /// The preview host's executable name.
 const HOST_NAME: &str = "preview-host";
 
-/// How often, and how far apart, the client tries the host's socket while it starts.
-const CONNECT_ATTEMPTS: u32 = 200;
+/// How often, and how far apart, the client tries the host's socket while it starts: for a
+/// minute, since the host loads the whole map before it listens.
+const CONNECT_ATTEMPTS: u32 = 1200;
 const CONNECT_PAUSE: Duration = Duration::from_millis(50);
 
 /// What to launch.
@@ -34,7 +35,8 @@ pub struct LaunchSpec {
     pub extra: Vec<String>,
 }
 
-/// A host that is running, and the client connected to it.
+/// A host that is running, and the client connected to it. The caller owns the process: it
+/// sends `shutdown` and waits for it, or kills it.
 pub struct Running {
     /// The host's process.
     pub child: Child,
@@ -129,8 +131,9 @@ pub fn launch(spec: &LaunchSpec, client_name: &str) -> Result<Running, LaunchErr
     match connect(&mut child, &spec.socket, client_name) {
         Ok(client) => Ok(Running { child, client }),
         Err(error) => {
-            // The host is of no use without its bridge.
-            if let Err(kill) = child.kill() {
+            // The host is of no use without its bridge; it is waited for, so it leaves no
+            // process behind.
+            if let Err(kill) = child.kill().and_then(|()| child.wait().map(drop)) {
                 tracing::warn!(%kill, "the preview host could not be stopped");
             }
             Err(error)

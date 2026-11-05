@@ -407,7 +407,7 @@ impl<'a, F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'a, F, R> {
             let Some(name) = entry.name.to_str() else {
                 continue;
             };
-            if entry.kind != EntryKind::Dir
+            if !entry.kind.serves_as(EntryKind::Dir)
                 || name.eq_ignore_ascii_case(qs_vfs::FS_GAMENAME)
                 || name.eq_ignore_ascii_case(RERELEASE_DIR)
             {

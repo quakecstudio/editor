@@ -176,6 +176,18 @@ impl Game {
         }
     }
 
+    /// Takes over what `old`, the level this one replaces, still owes the bridge's client:
+    /// its events, before this level's own, the responses it made later and the screenshots
+    /// waiting for a frame, so a command whose frame changed the level is still answered.
+    pub(crate) fn carry_from(&mut self, mut old: Self) {
+        let mine = core::mem::take(&mut self.events);
+        self.events = core::mem::take(&mut old.events);
+        self.events.extend(mine);
+        self.responses.splice(0..0, old.responses);
+        self.shots.splice(0..0, old.shots);
+        self.stopped |= old.stopped;
+    }
+
     /// Makes this a game no window draws (`--headless`).
     pub(crate) const fn set_screen(&mut self, screen: Screen) {
         self.screen = screen;

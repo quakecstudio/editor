@@ -3299,6 +3299,7 @@ dependencies = [
  "interprocess",
  "qs-bridge",
  "qs-install",
+ "qs-vfs",
  "serde_json",
  "tracing",
 ]

@@ -94,7 +94,7 @@ impl From<LinkError> for RunRootError {
 ///
 /// # Errors
 ///
-/// [`RunRootError`] for a mod name that is not one folder name, a link that cannot be made
+/// [`RunRootError`] for a mod name that is not one folder name or is `id1` in any case, a link that cannot be made
 /// (a real folder in its place, an install that is gone) or a folder that cannot be made.
 pub fn prepare_run_root(
     project: &Path,
@@ -102,9 +102,11 @@ pub fn prepare_run_root(
     base: &GameBase,
     mod_name: &str,
 ) -> Result<RunRoot, RunRootError> {
+    // The run root's own `id1` link holds the install's; a mod of that name would repoint it.
     let plain = !mod_name.is_empty()
         && mod_name != "."
         && mod_name != ".."
+        && !mod_name.eq_ignore_ascii_case(qs_vfs::FS_GAMENAME)
         && !mod_name.contains(['/', '\\', ':']);
     if !plain {
         return Err(RunRootError::BadModName(mod_name.to_owned()));

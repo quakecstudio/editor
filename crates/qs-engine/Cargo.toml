@@ -13,6 +13,8 @@ publish.workspace = true
 interprocess = { workspace = true }
 qs-bridge = { workspace = true }
 qs-install = { workspace = true }
+# FS_GAMENAME, the run root's own `id1`.
+qs-vfs = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
 
