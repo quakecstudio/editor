@@ -3671,3 +3671,20 @@ fn a_case_before_a_dropped_branch_keeps_its_label() {
         .count();
     assert_eq!(tests, 2, "a test for each case: {t:?}");
 }
+
+// spec DIFF-14.10: a `case` whose first statement is an `if (0)` keeps its label, where the
+// pinned FTEQCC forgets the label at the statement it rewinds to
+#[test]
+fn a_case_at_a_dropped_branchs_start_keeps_its_label() {
+    let p = fte_progs(
+        "float d, g;\n\
+         void() t = { switch (d) { case 1: g = 1; break; case 2: if (0) { g = 3; } g = 2; \
+         break; } };\n",
+    );
+    let t = body(&p, "t");
+    let tests = t
+        .iter()
+        .filter(|s| s.op == u32::from(EqF.number()) && s.a == global(&p, "d"))
+        .count();
+    assert_eq!(tests, 2, "a test for each case: {t:?}");
+}

@@ -109,12 +109,13 @@ impl Checker<'_> {
     /// after it.
     fn truncate(&mut self, mark: Mark) {
         self.layout.truncate(mark.at());
-        // FTE-3.6: a `case` label the dropped statements recorded is forgotten
-        // (`if (pr_cases[i] >= newstatementcount)`), by its place among the generated
-        // statements: the layout holds no statement for a condition's comparison, so a label
-        // just before a dropped `if` has the layout's place of the statements dropped after it.
+        // FTE-3.6: a `case` label the dropped statements recorded is forgotten, by its place
+        // among the generated statements, since the layout holds no statement for a
+        // condition's comparison. A label at the statement rewound to is the label of the
+        // `case` whose first statement is the dropped `if`, and is kept: FTEQCC's
+        // `if (pr_cases[i] >= newstatementcount)` forgets it too, a defect (DIFF-14.10).
         for cases in &mut self.switches {
-            cases.retain(|case| case.at.made() < mark.made());
+            cases.retain(|case| case.at.made() <= mark.made());
         }
         let from = usize::try_from(mark.made()).unwrap_or(usize::MAX);
         // What the dropped statements named is still made, and the temporaries they took still
