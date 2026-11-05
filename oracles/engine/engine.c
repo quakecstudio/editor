@@ -130,8 +130,11 @@ void Sys_Error(char *error, ...) {
     exit(QS_EXIT_ENGINE);
 }
 
-// Host_Error: id's host drops the server and goes on; here the run ends. A QuakeC run error
-// (PR_RunError calls Host_Error) is the trace's last record, an error record (TRACE-4.6).
+// Host_Error: id's host drops the server and goes on; here the run ends, with an error record
+// as the trace's last (TRACE-4.6, TRACE-4.11). Of id's files compiled here, only a QuakeC run
+// error says "Program error" (PR_RunError, PF_error, PF_objerror), and only then is the function
+// and statement the VM's; the others (PR_ExecuteProgram's NULL function, the entity parser's
+// errors) are blamed on no function. One before the trace opens stops the engine (exit 4).
 void Host_Error(char *error, ...) {
     char text[1024];
     va_list args;
@@ -143,15 +146,25 @@ void Host_Error(char *error, ...) {
         text[--length] = 0;
     fprintf(stderr, "engine-oracle: Host_Error: %s\n", text);
     if (trace_open) {
-        int function = pr_xfunction ? (int)(pr_xfunction - pr_functions) : -1;
-        qs_trace_error(function, pr_xstatement, text);
+        qboolean in_qc = strcmp(text, "Program error") == 0 && pr_xfunction;
+        int function = in_qc ? (int)(pr_xfunction - pr_functions) : -1;
+        qs_trace_error(function, in_qc ? pr_xstatement : -1, text);
         trace_open = false;
         exit(qs_trace_close() ? QS_EXIT_TRACED : QS_EXIT_IO);
     }
-    exit(QS_EXIT_REFUSED);
+    exit(QS_EXIT_ENGINE);
 }
 
 void Sys_Quit(void) { exit(QS_EXIT_TRACED); }
+
+// rand, as the VM oracle's (DIFF-6.2): a 32-bit state from 1, so a run's random numbers are
+// the same on every OS. id's files call it through oracles/engine/rand.h.
+static unsigned random_state = 1;
+
+int qs_rand(void) {
+    random_state = random_state * 1103515245u + 12345u;
+    return (int)((random_state >> 16) & 0x7fff);
+}
 
 // The clock: the host's own time, advanced by each frame, never the wall clock.
 double Sys_FloatTime(void) { return realtime; }
@@ -429,7 +442,7 @@ static void init_local(void) {
 
 // Host_ServerFrame of WinQuake's host.c (the build without FPS_20).
 static void server_frame(void) {
-    pr_global_struct->frametime = host_frametime;
+    pr_global_struct->frametime = (float)host_frametime;
     SV_ClearDatagram();
     SV_CheckForNewClients();
     SV_RunClients();
@@ -468,10 +481,16 @@ static void start(int argc, char **argv, const char *map, const char *trace_path
     // id's filesystem builds `<basedir>/<gamedir>/<name>` in buffers of MAX_OSPATH bytes, a name
     // up to MAX_QPATH, with no check (COM_AddGameDirectory, COM_FindFile): a longer base
     // directory overflows them, which is undefined, so it is refused here.
+    size_t basedir = 1, gamedir = 3; // ".", and "id1"
     for (int i = 1; i + 1 < argc; i++) {
-        if (strcmp(argv[i], "-basedir") == 0 && strlen(argv[i + 1]) + MAX_QPATH + 8 > MAX_OSPATH)
-            refuse(line, "-basedir is too long for id's MAX_OSPATH (keep it under 56 bytes)");
+        if (strcmp(argv[i], "-basedir") == 0)
+            basedir = strlen(argv[i + 1]);
+        else if (strcmp(argv[i], "-game") == 0)
+            gamedir = strlen(argv[i + 1]) > gamedir ? strlen(argv[i + 1]) : gamedir;
     }
+    // The two separators and the terminating NUL.
+    if (basedir + gamedir + MAX_QPATH + 3 > MAX_OSPATH)
+        refuse(line, "-basedir and -game are too long for id's MAX_OSPATH buffers");
     host_parms.basedir = ".";
     host_parms.memsize = QS_MEMORY;
     host_parms.membase = qs_memory;
@@ -610,14 +629,20 @@ int main(int argc, char **argv) {
             int count;
             if (!read_integer(line + 7, 1, 1000000, &count))
                 refuse(number, "frames is a count from 1");
+            // _Host_Frame's steps for a local server with no client of its own to draw: rand,
+            // the time (Host_FilterTime), the console, the client's move (CL_SendCmd), the
+            // server frame and host_time.
             for (int i = 0; i < count; i++) {
-                if (svs.clients[0].spawned)
-                    send_move(&move);
+                rand();
                 host_frametime = frametime;
                 realtime += frametime;
+                Cbuf_Execute();
+                if (svs.clients[0].spawned)
+                    send_move(&move);
                 outgoing_read = 0;
                 server_frame();
                 outgoing_count = 0;
+                host_time += host_frametime;
                 // An impulse goes once, as id's client clears in_impulse after sending it.
                 move.impulse = 0;
                 qs_trace_frame(++frame);

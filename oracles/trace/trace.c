@@ -41,7 +41,7 @@ static void reserve(buffer_t *b, size_t more) {
         size *= 2;
     byte *data = realloc(b->data, size);
     if (!data) {
-        fprintf(stderr, "vm-oracle: out of memory\n");
+        fprintf(stderr, "trace: out of memory\n");
         exit(QS_EXIT_IO);
     }
     b->data = data;
@@ -129,7 +129,7 @@ void qs_trace_header(unsigned progs_crc, int numstrings) {
     snap_globals = calloc((size_t)snap_numglobals + 1, sizeof(int));
     snap_fields = calloc((size_t)sv.max_edicts * (size_t)snap_entityfields + 1, sizeof(int));
     if (!snap_globals || !snap_fields) {
-        fprintf(stderr, "vm-oracle: out of memory\n");
+        fprintf(stderr, "trace: out of memory\n");
         exit(QS_EXIT_IO);
     }
     memcpy(snap_globals, pr_globals, (size_t)snap_numglobals * sizeof(int));

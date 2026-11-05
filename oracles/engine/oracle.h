@@ -3,7 +3,7 @@
 //
 // The engine oracle's own interfaces, over id's own headers (WinQuake/quakedef.h, fetched by
 // checksum): the exit codes, the engine strings the trace writer reports, and the trace writer
-// it shares with the VM oracle (oracles/vm/trace.c, trace.md TRACE-5).
+// it shares with the VM oracle (oracles/trace/trace.c, trace.md TRACE-5).
 
 #ifndef QS_ORACLE_H
 #define QS_ORACLE_H
@@ -24,7 +24,7 @@
 // or has changed since its last record (TRACE-4.10).
 void qs_emit_string_records(void);
 
-// The trace writer (oracles/vm/trace.c).
+// The trace writer (oracles/trace/trace.c).
 qboolean qs_trace_open(const char *path);
 void qs_trace_header(unsigned progs_crc, int numstrings);
 void qs_trace_error(int function, int statement, const char *message);

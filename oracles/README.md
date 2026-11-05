@@ -250,10 +250,16 @@ failure 3, and id's `Sys_Error` 4.
 
 `cargo xtask oracles engine` builds the oracles, runs the script twice and checks that the two
 traces are the same bytes and that `qc-trace` reads them as an engine trace (frame records
-numbered from 1, string records). Engine string values are offsets into the oracle's memory, so
-they differ from one build to another: `--expect` compares the trace's canonical form, each
-engine string value numbered by when its first string record comes (from `0xffff0000`), with a
-canonical trace recorded with `--record`. [`engine/routes/start.route`](engine/routes/start.route)
+numbered from 1, string records, and an error record last). Engine string values are offsets
+into the oracle's memory, so they differ from one build to another: `--expect` compares the
+trace's canonical form, each engine string value numbered by when its first string record comes
+(from `0xffff0000`), with a canonical trace recorded with `--record`. String records are written
+only for slots the progs declares as strings, so an engine string left in an untyped slot (the
+return value, a parameter, a temporary) keeps its raw offset; a route that leaves one there
+differs between builds, and the check fails on it rather than passing. id's calls to `rand` go to
+the VM oracle's generator (DIFF-6.2, `engine/rand.h`), so the random numbers are the same on every
+OS, and each frame runs `_Host_Frame`'s steps for a local server: `rand`, the time, the console,
+the client's move, `Host_ServerFrame` and `host_time`. [`engine/routes/start.route`](engine/routes/start.route)
 walks, turns, jumps, fires and changes weapon through LibreQuake's start map, and
 `start.expected.jsonl` beside it is its recording; CI's Test Assets jobs play it on Linux, macOS
 and Windows against that recording (`docs/ci.md`).

@@ -72,9 +72,10 @@ pub(super) fn check(
         if ours != recorded {
             let at = first_difference(&ours, &recorded);
             println!(
-                "FAIL  engine {}: the trace differs from {} at record {at}",
+                "FAIL  engine {}: the trace differs from {} at record {at}: {}",
                 script.display(),
-                expected.display()
+                expected.display(),
+                describe(ours.records.get(at), recorded.records.get(at))
             );
             return Ok(false);
         }
@@ -179,11 +180,62 @@ fn first_difference(a: &Trace, b: &Trace) -> usize {
         .unwrap_or_else(|| a.records.len().min(b.records.len()))
 }
 
+/// What differs between our record and the recorded one: for two frames, the first slots
+/// whose values differ, each as `<slot>: <ours> recorded <theirs>` (`-` for no change);
+/// otherwise both records' JSON.
+fn describe(ours: Option<&Record>, recorded: Option<&Record>) -> String {
+    const SHOWN: usize = 8;
+    let (Some(Record::Frame { changes: a, .. }), Some(Record::Frame { changes: b, .. })) =
+        (ours, recorded)
+    else {
+        let json = |record: Option<&Record>| {
+            record.map_or_else(|| "no record".to_owned(), qc_trace::record_to_json)
+        };
+        return format!(
+            "ours {} recorded {}",
+            json(ours).trim_end(),
+            json(recorded).trim_end()
+        );
+    };
+    let slots = |changes: &Changes| -> BTreeMap<String, u32> {
+        let mut slots = BTreeMap::new();
+        for g in changes.globals() {
+            slots.insert(format!("global {}", g.slot), g.bits);
+        }
+        for f in changes.fields() {
+            slots.insert(format!("edict {} field {}", f.edict, f.field), f.bits);
+        }
+        slots
+    };
+    let (a, b) = (slots(a), slots(b));
+    let bits = |value: Option<&u32>| value.map_or_else(|| "-".to_owned(), |v| format!("{v:08x}"));
+    let mut shown = Vec::new();
+    for key in a
+        .keys()
+        .chain(b.keys())
+        .collect::<std::collections::BTreeSet<_>>()
+    {
+        if a.get(key) != b.get(key) {
+            shown.push(format!(
+                "{key}: {} recorded {}",
+                bits(a.get(key)),
+                bits(b.get(key))
+            ));
+        }
+    }
+    let more = shown.len().saturating_sub(SHOWN);
+    shown.truncate(SHOWN);
+    if more > 0 {
+        shown.push(format!("and {more} more"));
+    }
+    shown.join(", ")
+}
+
 /// The number of frame records, or why the records are not an engine trace's: frames and
 /// strings only, the frames numbered from 1 in order (TRACE-4.11).
 fn summary(records: &[Record]) -> Result<u32, String> {
     let mut frames = 0_u32;
-    for record in records {
+    for (at, record) in records.iter().enumerate() {
         match record {
             Record::Frame { frame, .. } => {
                 let next = frames.saturating_add(1);
@@ -193,8 +245,14 @@ fn summary(records: &[Record]) -> Result<u32, String> {
                 frames = next;
             }
             Record::String { .. } => {}
-            Record::Run { .. } | Record::Step(_) | Record::Exit { .. } | Record::Error { .. } => {
-                return Err("an engine trace holds frame and string records only".to_owned());
+            Record::Error { .. } if at.saturating_add(1) == records.len() => {}
+            Record::Error { .. } => {
+                return Err("an engine trace's error record is its last".to_owned());
+            }
+            Record::Run { .. } | Record::Step(_) | Record::Exit { .. } => {
+                return Err(
+                    "an engine trace holds frame and string records, and one error last".to_owned(),
+                );
             }
         }
     }

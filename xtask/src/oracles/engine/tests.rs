@@ -8,9 +8,9 @@
     reason = "test code: a failed unwrap, index or panic is a failed test"
 )]
 
-use qc_trace::{Changes, Record, Text};
+use qc_trace::{Changes, GlobalChange, Record, Text};
 
-use super::summary;
+use super::{describe, summary};
 
 fn frame(frame: u32) -> Record {
     Record::Frame {
@@ -20,7 +20,7 @@ fn frame(frame: u32) -> Record {
 }
 
 // spec TRACE-4.11: an engine trace's records are frames, numbered from 1 in order, and
-// strings; anything else is not one
+// strings, with one error record last; anything else is not one
 #[test]
 fn an_engine_trace_is_frames_and_strings() {
     let string = Record::String {
@@ -35,6 +35,21 @@ fn an_engine_trace_is_frames_and_strings() {
         changes: Changes::default(),
     };
     assert!(summary(&[frame(1), exit]).is_err());
+    let error = Record::Error {
+        function: 3,
+        statement: 40,
+        message: Text::new(b"NULL function".to_vec()).expect("no NUL"),
+        changes: Changes::default(),
+    };
+    assert_eq!(
+        summary(&[frame(1), error.clone()]),
+        Ok(1),
+        "a run error ends the trace"
+    );
+    assert!(
+        summary(&[error, frame(1)]).is_err(),
+        "an error is the last record"
+    );
 }
 
 fn header() -> qc_trace::Header {
@@ -79,4 +94,25 @@ fn the_canonical_form_numbers_engine_strings() {
     assert_ne!(one, other);
     assert_eq!(super::first_difference(&one, &other), 1);
     assert_eq!(super::first_difference(&one, &one), 3);
+}
+
+#[test]
+fn a_difference_names_the_slots_that_differ() {
+    let with = |bits: &[(u32, u32)]| Record::Frame {
+        frame: 1,
+        changes: Changes::new(
+            bits.iter()
+                .map(|&(slot, bits)| GlobalChange { slot, bits })
+                .collect(),
+            Vec::new(),
+        )
+        .unwrap(),
+    };
+    let ours = with(&[(28, 0x384), (31, 1)]);
+    let recorded = with(&[(28, 0x8214), (31, 1), (40, 2)]);
+    assert_eq!(
+        describe(Some(&ours), Some(&recorded)),
+        "global 28: 00000384 recorded 00008214, global 40: - recorded 00000002"
+    );
+    assert!(describe(Some(&ours), None).ends_with("recorded no record"));
 }

@@ -498,6 +498,12 @@ fn stamp(root: &Path, compiler: &Compiler) -> Result<String, String> {
     let mut files = Vec::new();
     collect_files(&root.join("oracles"), &mut files)?;
     files.sort();
+    // Only what the build reads: the C, its headers and `sources.toml`. The engine oracle's
+    // routes and their recordings are data a run reads, and editing them rebuilds nothing.
+    files.retain(|file| {
+        file.extension()
+            .is_some_and(|extension| extension == "c" || extension == "h" || extension == "toml")
+    });
     for file in files {
         let bytes = fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
         let name = file
@@ -781,16 +787,21 @@ fn compile_engine(
     let ours = ENGINE_HARNESS
         .iter()
         .map(|file| (root.join(file), Code::Ours));
+    let rand = root.join("oracles/engine/rand.h");
     let mut engine_objects = Vec::new();
     for (source, code) in upstream.chain(ours) {
         let object = objects.join(format!("engine_{}.o", stem(&source)));
+        let forced_include = match code {
+            Code::Upstream => Some(rand.as_path()),
+            Code::Ours => None,
+        };
         compiler.object(
             &Unit {
                 source: &source,
                 code,
                 includes: &includes,
                 defines: &[],
-                forced_include: None,
+                forced_include,
             },
             &object,
         )?;

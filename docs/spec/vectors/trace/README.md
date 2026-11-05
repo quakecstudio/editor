@@ -30,6 +30,6 @@ prints the JSON as TRACE-6 says, for the header and the eleven records above. Bu
 Apple clang 21 (`cc -std=c11 -Wall -Wextra -O2`, no warnings), its binary output was
 byte-identical to the bytes of `sample.hex`, and its JSON output is `sample.jsonl` as committed. `qc-trace`'s
 encoder produces the same bytes from the same values. The program is not committed; the
-VM oracle's encoder ([`oracles/vm/trace.c`](../../../../oracles/vm/trace.c)), also written from
+oracles' encoder ([`oracles/trace/trace.c`](../../../../oracles/trace/trace.c)), also written from
 `trace.md` alone, is checked on every oracle run: `cargo xtask oracles` decodes each trace it
 writes with `qc-trace` and requires encoding the result to give back the same bytes.

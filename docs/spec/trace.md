@@ -151,7 +151,8 @@ runtime error), and the engine strings of PROGS-11.6.
 - **TRACE-4.11** A frame record is written by the engine oracle after each server frame it runs
   (`Host_ServerFrame`): the frame's number, counting from 1, and a change set holding every
   global and field the frame changed. A trace of the engine has frame records and string records
-  only: its runs are not traced statement by statement.
+  only, and an error record last when a QuakeC run error stops it (TRACE-4.6): its runs are not
+  traced statement by statement.
 
 ## TRACE-5 Binary form
 
@@ -220,10 +221,10 @@ and slower than the binary form and is not what the runner compares by default.
   are no blank lines.
 - **TRACE-6.2** The header is
   `{"trace":"qc-trace","version":1,"progs_crc":N,"edict_size":N,"field_offset":N,"entityfields":N,"numstrings":N}`.
-- **TRACE-6.3** A record's `t` key names it: `run`, `step`, `exit`, `error` or `string`. A run
-  has `function`; a step has `function`, `statement`, `opcode` and, only when it has one,
-  `builtin`; an error has `function`, `statement` and `message`; a string has `value` and
-  `text`. Every change-carrying record also has `globals`, an array of `[slot, bits]`, and
+- **TRACE-6.3** A record's `t` key names it: `run`, `step`, `exit`, `error`, `string` or
+  `frame`. A run has `function`; a step has `function`, `statement`, `opcode` and, only when it
+  has one, `builtin`; an error has `function`, `statement` and `message`; a string has `value`
+  and `text`; a frame has `frame`. Every change-carrying record also has `globals`, an array of `[slot, bits]`, and
   `fields`, an array of `[edict, field, bits]`, each empty when there are no changes.
   Numbers are JSON integers.
 - **TRACE-6.4** A 32-bit pattern (`bits`, and a string record's `value`) is a JSON string of
