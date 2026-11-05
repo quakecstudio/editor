@@ -116,6 +116,11 @@ impl Md5Model {
             Some(bytes) => {
                 let anim = Md5Anim::read(&bytes).map_err(error)?;
                 anim.check_mesh(&mesh).map_err(error)?;
+                // REND-12.2: every frame is made here, so a count larger than the file is
+                // refused, as MD5-3.11 bounds the components.
+                if anim.num_frames > u64::try_from(bytes.len()).unwrap_or(u64::MAX) {
+                    return Err(AliasError::Md5(format!("{anim_path} has too many frames")));
+                }
                 Some(anim)
             }
             None => None,

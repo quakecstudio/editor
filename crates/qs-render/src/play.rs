@@ -13,6 +13,8 @@
 //! `R_RenderView` and the 2D layer over it (REND-4.11, REND-7, REND-10, REND-11, PART-3.2,
 //! VIEW-4.6, HUD-1 to HUD-3).
 
+use std::sync::Arc;
+
 use qs_bsp::Bsp;
 use qs_client::{Anchor, HUD_SBAR_HEIGHT, Hud, HudItem, Placed, Scene, SceneEntity};
 use qs_wad::{Conchars, QPic, WAD_CONCHARS_TRANSPARENT, Wad};
@@ -21,7 +23,7 @@ use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, TORCHES, enti
 use crate::camera::Camera;
 use crate::gpu::{
     AliasDraw, Assets, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame, PLAYER_SKINS,
-    SpriteDraw, SpriteFrame, View,
+    PlayerSkin, SkinKey, SpriteDraw, SpriteFrame, View,
 };
 use crate::light::light_point;
 use crate::md5::Md5Model;
@@ -269,28 +271,31 @@ pub struct Play {
     skybox: Option<Skybox>,
 }
 
-/// What each player slot's translated skin was made from: its model's precache index, its
-/// skin and its colours (REND-4.13).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct PlayerSkins([Option<(usize, usize, i32)>; PLAYER_SKINS]);
+/// Each player slot's translated skin and what it was made from (REND-4.13).
+#[derive(Clone, Debug, Default, PartialEq)]
+struct PlayerSkins([Option<PlayerSkin>; PLAYER_SKINS]);
 
 impl PlayerSkins {
-    /// Slot `slot`'s skin, `model`'s `skin` in `colors`, when it is not what the slot holds
-    /// (`CL_ParseUpdate` and `CL_NewTranslation` calling `R_TranslatePlayerSkin`).
-    fn remake(
+    /// Slot `slot`'s skin, `model`'s `key.skin` in `key.colors`, made again only when it is
+    /// not what the slot holds (`CL_ParseUpdate` and `CL_NewTranslation` calling
+    /// `R_TranslatePlayerSkin`).
+    fn wear(
         &mut self,
         slot: usize,
-        (index, model, skin): (usize, &AliasModel, usize),
-        colors: i32,
+        key: SkinKey,
+        model: &AliasModel,
         palette: &Palette,
-    ) -> Option<Image> {
+    ) -> Option<PlayerSkin> {
         let held = self.0.get_mut(slot)?;
-        let made = Some((index, skin, colors));
-        if *held == made {
-            return None;
+        if held.as_ref().is_none_or(|skin| skin.key != key) {
+            let image = model.translated(key.skin, key.colors, palette)?;
+            *held = Some(PlayerSkin {
+                slot,
+                key,
+                image: Arc::new(image),
+            });
         }
-        *held = made;
-        model.translated(skin, colors, palette)
+        held.clone()
     }
 }
 
@@ -337,11 +342,21 @@ impl Play {
     ) -> Result<(), PlayError> {
         self.models.clear();
         for name in names {
+            let torch = TORCHES.contains(&name.as_str());
+            let replacement = match self.md5_replacement(name, read, rank) {
+                Some((md5, bytes)) => {
+                    match Md5Model::read(&md5, &bytes, read, &self.palette, torch) {
+                        Ok(model) => Some(model),
+                        // REND-12.1: an MD5 model that does not read leaves its `.mdl`.
+                        Err(_) if read(name).is_some() => None,
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+                None => None,
+            };
             let model = if let Some(n) = name.strip_prefix('*') {
                 n.parse().map_or(Model::None, Model::Submodel)
-            } else if let Some((md5, bytes)) = self.md5_replacement(name, read, rank) {
-                let torch = TORCHES.contains(&name.as_str());
-                let model = Md5Model::read(&md5, &bytes, read, &self.palette, torch)?;
+            } else if let Some(model) = replacement {
                 let first = self.skins.len();
                 self.skins.extend_from_slice(model.images());
                 Model::Md5(model, first)
@@ -485,13 +500,17 @@ impl Play {
                         kind == AliasKind::Player && entity.colormap != 0 && s < PLAYER_SKINS
                     });
                     if let (Some(slot), Some(draw)) = (slot, models.draws.last_mut()) {
-                        let skin = (entity.model, model, alias.skin);
-                        let colors = scene.colors.get(slot).copied().unwrap_or(0);
-                        player_skins.extend(
-                            self.player_skins
-                                .remake(slot, skin, colors, &self.palette)
-                                .map(|image| (slot, image)),
-                        );
+                        let key = SkinKey {
+                            model: entity.model,
+                            skin: alias.skin,
+                            colors: scene.colors.get(slot).copied().unwrap_or(0),
+                        };
+                        player_skins.extend(self.player_skins.wear(
+                            slot,
+                            key,
+                            model,
+                            &self.palette,
+                        ));
                         draw.skin = self.skins.len().saturating_add(slot);
                     }
                 }

@@ -431,11 +431,14 @@ sky are REND-2.3.
   `bytes_per_line` pixels, a byte from 0xC0 a run of `byte & 0x3F` of the next byte, writing
   from the row's start, so the next row overwrites the padding and anything past the width.
   `Image_LoadTGA` stores rows from the top, flipping a file without attribute bit 0x20. The
-  preview host reads the TGA with the `image` crate, and diverges where QuakeSpasm stops or
-  reads outside the file: a file it cannot read, or a PCX that ends before its pixels or its
-  palette, is a face not read. A face not read is black instead of `notexture`'s debug
-  checkerboard, and the faces share one texture array at the first read face's size, a face of
-  another size taken at its nearest texels.
+  first file found decides: a `.tga` that does not read is a face not read, not the `.pcx`
+  beside it. The preview host reads the TGA with the `image` crate, and diverges where
+  QuakeSpasm stops or reads outside the file: a file it cannot read, a PCX that ends before its
+  pixels or its palette, or one whose `bytes_per_line` is less than its width (whose rows
+  QuakeSpasm leaves zero, so a small file could ask for gigabytes), is a face not read. A face
+  not read is black instead of `notexture`'s debug checkerboard, and the faces share one texture
+  array at the first read face's size, a face of another size taken at its nearest texels; a box
+  larger than the device's largest texture keeps the scrolling layers.
 - **REND-8.3** `Sky_DrawSky` draws the sky faces into the depth buffer before the world, then
   draws the box's six faces at `gl_farclip / sqrt(3)` around `r_origin` with
   `glDepthFunc(GL_GEQUAL)` and no depth write, so the box shows only through the sky faces; `#if
@@ -560,9 +563,12 @@ alias pipeline, with QuakeSpasm's shader formula for a vertex normal.
   `progs/x.mdl` with `progs/x.md5mesh` by default, so a rerelease install shows its MD5 models,
   with `md5_models` off as QuakeSpasm-Spiked's default: the MD5 model is used when it is found
   and the `.mdl` is not found on an earlier search-path element. A mesh or animation that does
-  not read (MD5-2, MD5-3) is an error naming the file. A torch `.mdl` (REND-4.7) gives its MD5
-  model full light.
-- **REND-12.2** Without an `.md5anim` (MD5-3.1) the model has one frame, the mesh's joints,
+  not read (MD5-2, MD5-3), which QuakeSpasm-Spiked stops on, leaves the `.mdl` drawn; with no
+  `.mdl` it is an error naming the file. A torch `.mdl` (REND-4.7) gives its MD5 model full
+  light.
+- **REND-12.2** Every frame is made when the model is read, so an animation whose `numFrames` is
+  larger than its file in bytes is refused (`<file> has too many frames`), as MD5-3.11 bounds
+  the components. Without an `.md5anim` (MD5-3.1) the model has one frame, the mesh's joints,
   which are absolute: `Mod_LoadMD5MeshModel` inverts them directly ("absolute, so we can just
   invert now"). An animation frame's poses (MD5-3.7) are relative: QuakeSpasm-Spiked
   concatenates each onto its parent's, in joint order ("concat it onto the parent
@@ -593,9 +599,10 @@ alias pipeline, with QuakeSpasm's shader formula for a vertex normal.
   the name with `.dds`, `.tga`, `.png`, `.jpeg`, `.jpg` and `.pcx` in turn, as it is, then under
   `textures/`, then its last path part under `textures/`, and at last `<name>.lmp`. The four
   slots (REND-4.2) are filled as "this stuff is hideous" fills them: one frame in all four, two
-  or three as frames 0, 1, 0, 1, four in order. The preview host reads no `.dds`, passes over a
-  file that does not read, and draws a mesh with no skin white; the `_luma`, `_glow`, `_pants`
-  and `_shirt` images are not read, so an MD5 player wears no colours (REND-4.13).
+  or three as frames 0, 1, 0, 1, four in order. The first file found decides, as
+  `Image_LoadImage` returns its loader's result: one that does not read gives no image. The
+  preview host reads no `.dds`, and draws a mesh with no skin white; the `_luma`, `_glow`,
+  `_pants` and `_shirt` images are not read, so an MD5 player wears no colours (REND-4.13).
 - **REND-12.5** QuakeSpasm's GLSL alias shader shades a vertex by its normal:
   `r_avertexnormal_dot` is `1.0 + dot * (13.0 / 44.0)` when `dot(vertexnormal, ShadeVector)` is
   below 0 ("this reproduces anorm_dots within as reasonable a degree of tolerance") and `1.0 +

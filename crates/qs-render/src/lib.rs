@@ -33,7 +33,7 @@ pub use alias::{
 pub use camera::Camera;
 pub use gpu::{
     AliasDraw, Assets, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, MapRenderer, ModelFrame,
-    SpriteDraw, SpriteFrame, View,
+    PlayerSkin, SkinKey, SpriteDraw, SpriteFrame, View,
 };
 pub use light::light_point;
 pub use md5::Md5Model;

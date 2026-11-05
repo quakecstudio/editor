@@ -164,7 +164,7 @@ fn pcx_runs_decode_through_its_palette() {
 }
 
 // spec REND-8.2: a run past the line's end is dropped with the padding, and a line shorter
-// than the picture leaves the row's rest zero
+// than the picture is refused
 #[test]
 fn pcx_lines_are_cut_and_padded_to_the_picture() {
     let long = read_pcx(&pcx(&PcxSpec {
@@ -177,12 +177,21 @@ fn pcx_lines_are_cut_and_padded_to_the_picture() {
     assert_eq!(long.rgba, [colour(4), colour(4)].concat());
     let short = read_pcx(&pcx(&PcxSpec {
         size: [3, 1],
-        bytes_per_line: 1,
-        data: vec![6],
+        bytes_per_line: 2,
+        data: vec![6, 6],
         ..PcxSpec::default()
-    }))
-    .unwrap();
-    assert_eq!(short.rgba, [colour(6), [0; 4], [0; 4]].concat());
+    }));
+    assert_eq!(short, None, "a line shorter than the picture");
+    let empty = read_pcx(&pcx(&PcxSpec {
+        size: [65_530, 65_530],
+        bytes_per_line: 0,
+        data: Vec::new(),
+        ..PcxSpec::default()
+    }));
+    assert_eq!(
+        empty, None,
+        "no line makes no 65530 by 65530 picture from no data"
+    );
 }
 
 // spec REND-8.2: a PCX that is not 8-bit, one-plane, run-length version 5, or that ends
@@ -223,7 +232,7 @@ fn lmp(index: u8) -> Vec<u8> {
 
 // spec REND-12.4: a skin is found as a TGA, then a PNG, a JPEG and a PCX, as it is, then
 // under `textures/`, then its last part under `textures/`, and at last as an LMP through
-// the palette; a file that does not read is passed over
+// the palette; the first file found decides, though it does not read
 #[test]
 fn images_are_found_in_quakespasm_spikeds_order() {
     let red = |shade: u8| solid([1, 1], [shade, 0, 0, 255]);
@@ -262,9 +271,15 @@ fn images_are_found_in_quakespasm_spikeds_order() {
     assert_eq!(
         first(vec![
             ("progs/ogre_00_00.tga", b"bad".to_vec()),
+            ("progs/ogre_00_00.png", red(6)),
             ("progs/ogre_00_00.lmp", lmp(5)),
         ]),
+        None,
+        "the first file found decides, though it does not read"
+    );
+    assert_eq!(
+        first(vec![("progs/ogre_00_00.lmp", lmp(5))]),
         Some(palette().rgba(5).to_vec()),
-        "a TGA that does not read, then the LMP"
+        "the LMP when no other file is found"
     );
 }

@@ -120,3 +120,17 @@ fn a_larger_face_is_taken_at_its_nearest_texels() {
     let bk: Vec<[u8; 2]> = layers[16..32].chunks(4).map(|p| [p[0], p[1]]).collect();
     assert_eq!(bk, [[0, 0], [2, 0], [0, 2], [2, 2]]);
 }
+
+// spec REND-8.2: the first file found decides, so a TGA that does not read is a face not
+// read, not the PCX beside it
+#[test]
+fn a_tga_that_does_not_read_is_not_passed_over() {
+    let read = files(vec![
+        ("gfx/env/brt.tga".to_owned(), b"bad".to_vec()),
+        ("gfx/env/brt.pcx".to_owned(), pcx(&PcxSpec::default())),
+        ("gfx/env/bbk.tga".to_owned(), solid([1, 1], [7, 7, 7, 255])),
+    ]);
+    let skybox = Skybox::load("b", &read).unwrap();
+    assert_eq!(skybox.size(), [1, 1], "bk is the first face read");
+    assert_eq!(&skybox.layers()[..4], [0, 0, 0, 255]);
+}

@@ -84,9 +84,11 @@ impl Skybox {
         }
         let faces = SKY_SIDES.map(|side| {
             let file = format!("gfx/env/{name}{side}");
-            read(&format!("{file}.tga"))
-                .and_then(|bytes| read_tga(&bytes))
-                .or_else(|| read(&format!("{file}.pcx")).and_then(|bytes| read_pcx(&bytes)))
+            // The first file found decides, as `Image_LoadImage` returns its loader's result.
+            match read(&format!("{file}.tga")) {
+                Some(bytes) => read_tga(&bytes),
+                None => read(&format!("{file}.pcx")).and_then(|bytes| read_pcx(&bytes)),
+            }
         });
         faces.iter().any(Option::is_some).then_some(Self { faces })
     }

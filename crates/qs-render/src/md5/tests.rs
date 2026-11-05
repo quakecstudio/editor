@@ -346,3 +346,28 @@ fn a_bad_mesh_or_animation_is_refused() {
     );
     assert!(matches!(error, Err(AliasError::Md5(_))));
 }
+
+// spec REND-12.2: an animation asking for more frames than its file has bytes is refused,
+// as every frame is made when the model is read
+#[test]
+fn an_animation_with_too_many_frames_is_refused() {
+    let anim = md5anim(&Md5Spec::default())
+        .map(|text| {
+            String::from_utf8(text)
+                .unwrap()
+                .replace("numFrames 2", "numFrames 4000000000")
+        })
+        .unwrap();
+    let read = files(vec![("progs/ogre.md5anim".to_owned(), anim.into_bytes())]);
+    let error = Md5Model::read(
+        "progs/ogre.md5mesh",
+        &md5mesh(&Md5Spec::default()),
+        &read,
+        &palette(),
+        false,
+    );
+    assert!(
+        matches!(error, Err(AliasError::Md5(ref m)) if m == "progs/ogre.md5anim has too many frames"),
+        "{error:?}"
+    );
+}

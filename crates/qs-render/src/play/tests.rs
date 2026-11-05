@@ -454,7 +454,8 @@ fn fog_fades_over_its_time() {
 }
 
 // spec REND-4.13: a player entity wearing colours is drawn with its slot's translated skin,
-// remade only when its model, skin or colours change; heads and non-players keep theirs
+// sent each frame and remade only when its model, skin or colours change; heads and
+// non-players keep theirs
 #[test]
 fn players_wear_their_slots_translated_skins() {
     let mut play = play();
@@ -488,16 +489,26 @@ fn players_wear_their_slots_translated_skins() {
     let drawn: Vec<usize> = first.models.draws.iter().map(|d| d.skin).collect();
     assert_eq!(drawn, [skins + 1, 0, 0]);
     assert_eq!(first.player_skins.len(), 1);
-    let (slot, image) = &first.player_skins[0];
-    assert_eq!(*slot, 1);
-    assert_eq!(image.rgba[4], palette().rgba(64)[0]);
+    let worn = &first.player_skins[0];
+    assert_eq!(worn.slot, 1);
+    assert_eq!(
+        (worn.key.model, worn.key.skin, worn.key.colors),
+        (1, 0, 0x40)
+    );
+    assert_eq!(worn.image.rgba[4], palette().rgba(64)[0]);
+    // Each frame sends the slot's skin, so a renderer made later or a frame not painted
+    // catches up; unchanged colours send the same image, not a new translation.
     let again = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
     assert_eq!(again.models.draws[0].skin, skins + 1);
-    assert!(again.player_skins.is_empty(), "unchanged colours are kept");
+    assert_eq!(again.player_skins.len(), 1);
+    assert!(std::sync::Arc::ptr_eq(
+        &again.player_skins[0].image,
+        &worn.image
+    ));
     scene.colors[1] = 0x50;
     let changed = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
-    assert_eq!(changed.player_skins.len(), 1);
-    assert_eq!(changed.player_skins[0].1.rgba[4], palette().rgba(80)[0]);
+    assert_eq!(changed.player_skins[0].key.colors, 0x50);
+    assert_eq!(changed.player_skins[0].image.rgba[4], palette().rgba(80)[0]);
 }
 
 // spec REND-8.1: the worldspawn's `skyfog` is the fog's share of the sky
@@ -590,4 +601,26 @@ fn md5_entities_are_drawn_with_their_skins() {
     assert_eq!(callback.models.draws[0].skin, 0);
     assert_eq!(callback.models.draws[0].count, 3);
     assert_eq!(callback.models.vertices.len(), 3);
+}
+
+// spec REND-12.1: an MD5 model that does not read leaves its `.mdl`; with no `.mdl` it is an
+// error naming the file
+#[test]
+fn an_md5_model_that_does_not_read_leaves_its_mdl() {
+    let alias = mdl(&MdlSpec::default());
+    let load = |with_mdl: bool| {
+        let mut play = play();
+        let read = |name: &str| match name {
+            "progs/ogre.mdl" => with_mdl.then(|| alias.clone()),
+            "progs/ogre.md5mesh" => Some(b"MD5V broken".to_vec()),
+            _ => None,
+        };
+        let names = [String::new(), "progs/ogre.mdl".to_owned()];
+        play.load_models(&names, &read, &|_| Some(0))
+            .map(|()| matches!(play.models[1], Model::Alias(..)))
+    };
+    assert_eq!(load(true), Ok(true));
+    assert!(
+        matches!(load(false), Err(PlayError::Model(ref m)) if m.starts_with("progs/ogre.md5mesh"))
+    );
 }

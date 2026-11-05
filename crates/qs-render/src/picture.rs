@@ -20,7 +20,8 @@ type Decoder = fn(&[u8]) -> Option<Image>;
 /// QuakeSpasm-Spiked's `Image_LoadImage`, as the MD5 skins are found (REND-12.4): `name`
 /// with each extension in turn, `.tga`, `.png`, `.jpeg`, `.jpg` and `.pcx`, as it is, then
 /// under `textures/`, then its last path part under `textures/`; at last `name.lmp` through
-/// `palette`. A file found that does not read is passed over.
+/// `palette`. The first file found decides: one that does not read gives no image, as
+/// QuakeSpasm-Spiked returns its loader's result.
 pub(crate) fn load_image(
     name: &str,
     read: &dyn Fn(&str) -> Option<Vec<u8>>,
@@ -45,8 +46,10 @@ pub(crate) fn load_image(
                 .iter()
                 .map(move |(ext, decoder)| (place, ext, decoder))
         })
-        .find_map(|(place, ext, decoder)| read(&format!("{place}.{ext}")).and_then(|b| decoder(&b)))
-        .or_else(|| {
+        .find_map(|(place, ext, decoder)| {
+            read(&format!("{place}.{ext}")).map(|bytes| decoder(&bytes))
+        })
+        .unwrap_or_else(|| {
             let bytes = read(&format!("{name}.lmp"))?;
             QPic::parse(&bytes).ok().map(|pic| pic_image(&pic, palette))
         })
@@ -79,8 +82,7 @@ const PCX_RUN_LENGTH: u8 = 0x3f;
 
 /// `Image_LoadPCX`: an 8-bit, one-plane, run-length PCX of version 5 through the palette at
 /// its end. Each row decodes `bytes_per_line` pixels and keeps its first `xmax - xmin + 1`,
-/// as the next row's start overwrites the rest in QuakeSpasm, and a line shorter than that
-/// leaves the rest of the row zero. `None` for any other file, or
+/// as the next row's start overwrites the rest in QuakeSpasm. `None` for any other file, or
 /// one that ends before its pixels, where QuakeSpasm stops with an error or reads past its
 /// end (REND-8.2).
 pub(crate) fn read_pcx(bytes: &[u8]) -> Option<Image> {
@@ -98,6 +100,11 @@ pub(crate) fn read_pcx(bytes: &[u8]) -> Option<Image> {
     let width = short(8)?.checked_sub(short(4)?)?.checked_add(1)?;
     let height = short(10)?.checked_sub(short(6)?)?.checked_add(1)?;
     let line = usize::from(short(66)?);
+    // A line shorter than the picture would make it from no data at all; QuakeSpasm leaves
+    // the hunk's zeroes there, and the preview host refuses it (REND-8.2).
+    if line < usize::from(width) {
+        return None;
+    }
     let palette = bytes.get(bytes.len().checked_sub(PCX_PALETTE)?..)?;
     let mut data = bytes.get(PCX_HEADER..)?.iter().copied();
     let mut rgba = Vec::new();
@@ -112,12 +119,7 @@ pub(crate) fn read_pcx(bytes: &[u8]) -> Option<Image> {
             }
             row.extend(core::iter::repeat_n(value, usize::from(run)));
         }
-        for x in 0..usize::from(width) {
-            // A line shorter than the picture leaves the hunk's zeroes.
-            let Some(&index) = row.get(x) else {
-                rgba.extend([0; 4]);
-                continue;
-            };
+        for &index in row.iter().take(usize::from(width)) {
             let at = usize::from(index).checked_mul(3)?;
             let colour = palette.get(at..at.checked_add(3)?)?;
             rgba.extend(colour);

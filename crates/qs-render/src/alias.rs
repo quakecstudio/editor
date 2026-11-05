@@ -264,12 +264,6 @@ impl AliasModel {
         })
     }
 
-    /// Whether it is a torch, which GLQuake draws at full light (REND-4.7).
-    #[must_use]
-    pub const fn is_torch(&self) -> bool {
-        self.torch
-    }
-
     /// Whether the model turns on its own, `EF_ROTATE` (REND-4.9).
     #[must_use]
     pub const fn rotates(&self) -> bool {
@@ -430,8 +424,6 @@ pub(crate) fn rotate_for_entity(origin: [f32; 3], turn: [f32; 3], position: [f32
     [x + dx, y + dy, z + dz]
 }
 
-/// Every skin's pixels as `Mod_LoadAllSkins` uploads them, and each skin's four slots
-/// (REND-4.1, REND-4.2).
 /// `TOP_RANGE` and `BOTTOM_RANGE` (`WinQuake/render.h`): the first palette index of the
 /// shirt's sixteen colours and of the trousers'.
 const TOP_RANGE: usize = 16;

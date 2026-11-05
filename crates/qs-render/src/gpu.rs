@@ -9,6 +9,8 @@ use egui_wgpu::wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder};
 use egui_wgpu::wgpu::{
     self, BindGroup, BindGroupLayout, Buffer, Device, Queue, RenderPipeline, Sampler, TextureFormat,
 };
+use std::sync::Arc;
+
 use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 
 use crate::alias::AliasVertex;
@@ -63,6 +65,8 @@ pub struct MapRenderer {
     skins: Vec<BindGroup>,
     /// The layout and the sampler a skin is bound with, for a player skin set later.
     skin_binding: (BindGroupLayout, Sampler),
+    /// What each player skin slot holds, `None` while it is the white placeholder.
+    player_keys: [Option<SkinKey>; PLAYER_SKINS],
     /// This frame's alias triangles, and the view model's.
     alias: Grown,
     alias_draws: Vec<AliasDraw>,
@@ -159,6 +163,29 @@ pub struct AliasDraw {
     pub first: u32,
     /// Its vertices, three a triangle.
     pub count: u32,
+}
+
+/// What a player slot's translated skin was made from (REND-4.13).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SkinKey {
+    /// The model's precache index.
+    pub model: usize,
+    /// The skin.
+    pub skin: usize,
+    /// The slot's colours, shirt high and trousers low.
+    pub colors: i32,
+}
+
+/// A player slot's translated skin, sent with every frame that draws the player; the
+/// renderer uploads it when its key is not the one the slot holds (REND-4.13).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlayerSkin {
+    /// The client slot, 0 to 15.
+    pub slot: usize,
+    /// What the image was made from.
+    pub key: SkinKey,
+    /// The skin in the slot's colours.
+    pub image: Arc<Image>,
 }
 
 /// The alias models of one frame: their vertices and the runs drawn with each skin.
@@ -513,7 +540,12 @@ impl MapRenderer {
                 | wgpu::TextureUsages::COPY_SRC,
         );
         let lightmap = lightmap_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let skybox = upload_skybox(device, queue, assets.skybox);
+        // REND-8.2: a box whose faces the device cannot hold keeps the scrolling layers.
+        let limit = device.limits().max_texture_dimension_2d;
+        let fitting = assets
+            .skybox
+            .filter(|skybox| skybox.size().iter().all(|&side| side <= limit));
+        let skybox = upload_skybox(device, queue, fitting);
         let shared = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("qs-render view and lightmap"),
             layout: &shared_layout,
@@ -624,6 +656,7 @@ impl MapRenderer {
             alias_pipeline,
             skins,
             skin_binding: (texture_layout.clone(), mipmapped.clone()),
+            player_keys: [None; PLAYER_SKINS],
             alias: Grown::new("qs-render alias vertices", ALIAS_VERTEX_BYTES),
             alias_draws: Vec::new(),
             weapon: Grown::new("qs-render view model vertices", ALIAS_VERTEX_BYTES),
@@ -646,7 +679,7 @@ impl MapRenderer {
             model_count,
             shown: vec![true; model_count],
             lightmap: lightmap_texture,
-            skybox: assets.skybox.map(Skybox::size),
+            skybox: fitting.map(Skybox::size),
         }
     }
 
@@ -673,20 +706,24 @@ impl MapRenderer {
         self.alias_draws.clone_from(&models.draws);
     }
 
-    /// Sets player skin `slot`, a client slot's skin in its colours (REND-4.13), to `image`,
-    /// mipmapped and filtered as any skin is (REND-4.3). The skin a draw names is the models'
-    /// skins' count plus `slot`.
-    pub fn set_player_skin(&mut self, device: &Device, queue: &Queue, slot: usize, image: &Image) {
+    /// Sets player skin `skin.slot`, a client slot's skin in its colours (REND-4.13), to its
+    /// image, mipmapped and filtered as any skin is (REND-4.3), unless the slot already holds
+    /// its key. The skin a draw names is the models' skins' count plus the slot.
+    pub fn set_player_skin(&mut self, device: &Device, queue: &Queue, skin: &PlayerSkin) {
+        let Some(held) = self.player_keys.get_mut(skin.slot) else {
+            return;
+        };
+        if *held == Some(skin.key) {
+            return;
+        }
+        *held = Some(skin.key);
         let (layout, sampler) = &self.skin_binding;
         let at = self
             .skins
             .len()
             .saturating_sub(PLAYER_SKINS)
-            .saturating_add(slot);
-        if slot >= PLAYER_SKINS {
-            return;
-        }
-        let texture = upload_levels(device, queue, &mip_levels(image));
+            .saturating_add(skin.slot);
+        let texture = upload_levels(device, queue, &mip_levels(&skin.image));
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("qs-render player skin"),
             layout,
@@ -1219,8 +1256,8 @@ pub struct MapCallback {
     pub placements: Vec<Option<[[f32; 4]; 4]>>,
     /// The lightmap made again for this frame's light styles, when they changed (REND-5.5).
     pub lightmap: Option<Image>,
-    /// The player skins whose colours changed this frame, by slot (REND-4.13).
-    pub player_skins: Vec<(usize, Image)>,
+    /// The translated skin of each player drawn this frame (REND-4.13).
+    pub player_skins: Vec<PlayerSkin>,
 }
 
 impl CallbackTrait for MapCallback {
@@ -1245,8 +1282,8 @@ impl CallbackTrait for MapCallback {
             if let Some(lightmap) = &self.lightmap {
                 renderer.set_lightmap(queue, lightmap);
             }
-            for (slot, image) in &self.player_skins {
-                renderer.set_player_skin(device, queue, *slot, image);
+            for skin in &self.player_skins {
+                renderer.set_player_skin(device, queue, skin);
             }
         }
         Vec::new()
@@ -1522,6 +1559,34 @@ mod tests {
         // The view spans x -8 to 72 and y -24 to 56: the face's corner (0, 0) is 8 units from
         // the view's left edge and 24 from its top, 6 and 19 pixels; beyond it is the clear.
         assert_eq!(pixel(&image, 2, 2), [0, 0, 0, 255]);
+    }
+
+    // spec REND-4.13: a player skin is uploaded when its key is not the one its slot holds;
+    // a slot past the sixteen is ignored
+    #[test]
+    fn player_skins_are_uploaded_when_their_key_changes() {
+        let (state, mut renderer, _) = renderer();
+        let image = std::sync::Arc::new(Image {
+            width: 1,
+            height: 1,
+            rgba: vec![9; 4],
+        });
+        let skin = |slot, colors| super::PlayerSkin {
+            slot,
+            key: super::SkinKey {
+                model: 1,
+                skin: 0,
+                colors,
+            },
+            image: image.clone(),
+        };
+        assert_eq!(renderer.player_keys[3], None);
+        renderer.set_player_skin(&state.device, &state.queue, &skin(3, 0x40));
+        assert_eq!(renderer.player_keys[3].map(|k| k.colors), Some(0x40));
+        renderer.set_player_skin(&state.device, &state.queue, &skin(3, 0x50));
+        assert_eq!(renderer.player_keys[3].map(|k| k.colors), Some(0x50));
+        renderer.set_player_skin(&state.device, &state.queue, &skin(16, 0x40));
+        assert!(renderer.player_keys.iter().filter(|k| k.is_some()).count() == 1);
     }
 
     /// The colour of each quadrant of the test skybox's `dn` face, left to right, top to
