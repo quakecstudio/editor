@@ -493,7 +493,10 @@ host: a client and a server in one process (`cmd_source == src_command`).
   `load <name>` (exactly one argument, else "save <savename> : save a game" and "load
   <savename> : load a game"), and `quit` are carried out by the host. `save` refuses a name
   holding `..` with "Relative pathnames are not allowed.". The buffer stops at such a command
-  and the rest of it runs once the host has carried it out.
+  and the rest of it runs once the host has carried it out. The frame that met it runs no
+  server frame and gives back its `rand ()` draw: id runs the command and then the server
+  frame in one host frame with one draw, and the host runs that server frame once it has
+  acted.
 - **PHYS-13.7** `edict <n>` (`Q_atoi`) prints `ED_Print` of edict `n`, or "Bad edict number"
   for an `n` at or past `num_edicts`; `edicts` prints "`<num_edicts>` entities" and each edict.
   `ED_Print` prints "FREE" for a free edict; else an empty line, `EDICT <n>:` and, for each

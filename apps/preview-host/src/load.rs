@@ -440,7 +440,12 @@ fn save_path(args: &Args, name: &str) -> PathBuf {
     if Path::new(name).extension().is_none() {
         file.push_str(".sav");
     }
-    game_dir(args).join(file)
+    // `sprintf ("%s/%s", com_gamedir, name)`: the name stays under the game directory, even
+    // one that is absolute on its own.
+    let mut path = game_dir(args).into_os_string();
+    path.push("/");
+    path.push(file);
+    PathBuf::from(path)
 }
 
 /// Carries out `action` (PHYS-13.6): a level loaded, the game saved or loaded as

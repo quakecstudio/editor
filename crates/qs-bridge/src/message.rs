@@ -58,6 +58,9 @@ pub enum ErrorCode {
     BadValue,
     /// `-32007`: a breakpoint id or line the host cannot resolve (BRIDGE-4.5).
     NoSuchBreakpoint,
+    /// `-32008`: a command that changes the world while a frame is stopped at a statement
+    /// (BRIDGE-4.6).
+    StoppedInFrame,
 }
 
 impl ErrorCode {
@@ -77,6 +80,7 @@ impl ErrorCode {
             Self::Unsupported => -32005,
             Self::BadValue => -32006,
             Self::NoSuchBreakpoint => -32007,
+            Self::StoppedInFrame => -32008,
         }
     }
 }

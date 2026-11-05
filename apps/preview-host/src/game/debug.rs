@@ -148,13 +148,13 @@ impl Game {
     /// Runs a frame of `frametime` from the world as it is, snapshotting it first when a
     /// debugger may stop it (WORLD-9.2).
     pub(super) fn run_frame(&mut self, progs: &Progs<'_>, frametime: f64) -> FrameEnd {
-        if self.world.debugger().is_some() {
+        if self.world.debugger().is_some_and(Debugger::may_stop) {
             self.snapshot = Some(Snapshot {
                 world: self.world.clone(),
                 frametime,
             });
         }
-        self.finish_frame(progs)
+        self.finish_frame_of(progs, frametime)
     }
 
     /// Replays the stopped frame from its snapshot with the debugger's new rule (WORLD-9.2).
@@ -168,22 +168,16 @@ impl Game {
         self.finish_frame_of(progs, snapshot.frametime)
     }
 
-    fn finish_frame(&mut self, progs: &Progs<'_>) -> FrameEnd {
-        let frametime = self
-            .snapshot
-            .as_ref()
-            .map_or(self.last_frametime, |s| s.frametime);
-        self.finish_frame_of(progs, frametime)
-    }
-
     /// Runs the frame and answers for how it ended: on to the next frame's breakpoints, paused
     /// at a stop (BRIDGE-3.3), or failed with its `qc/error`.
     fn finish_frame_of(&mut self, progs: &Progs<'_>, frametime: f64) -> FrameEnd {
-        self.last_frametime = frametime;
         let outcome = self.world.frame(progs, frametime);
         if let Err(WorldError::Frame(error)) = &outcome
             && error.kind == ErrorKind::Interrupted
         {
+            // The half frame's messages never reach the client: the frame replays from its
+            // snapshot, which writes them again (WORLD-9.2).
+            drop(self.world.take_messages());
             self.stopped_at(progs, error.trace.clone());
             return FrameEnd::Stopped;
         }

@@ -99,6 +99,16 @@ fn a_breakpoint_stops_the_think_before_its_line() {
         Some(health),
         "a path ending in the file"
     );
+    assert_eq!(
+        resolve(
+            &progs,
+            &lines,
+            "C:\\mod\\src\\t.qc",
+            line_of("self.health = 2")
+        ),
+        Some(health),
+        "a Windows path"
+    );
     run.world
         .debugger_mut()
         .unwrap()
@@ -199,11 +209,82 @@ fn stepping_replays_the_frame() {
 #[test]
 fn a_debugger_without_breakpoints_changes_nothing() {
     let (mut run, _) = ticking();
-    assert!(!run.world.debugger().unwrap().has_breakpoints());
+    assert!(!run.world.debugger().unwrap().may_stop());
     run.frames(3, 0.1).unwrap();
     assert_eq!(run.world.float(2, "armorvalue"), 3.0);
     run.world.debugger_mut().unwrap().finish();
+    assert!(!run.world.debugger().unwrap().may_stop());
     run.frames(1, 0.1).unwrap();
+}
+
+// spec WORLD-9.2: a host snapshots a frame only when its debugger may stop it: a breakpoint
+// set, or a step under way
+#[test]
+fn a_debugger_may_stop_only_with_a_breakpoint_or_a_step() {
+    let mut debugger = Debugger::new(Vec::new());
+    assert!(!debugger.may_stop());
+    debugger.set_breakpoint(3, true);
+    assert!(debugger.may_stop());
+    debugger.set_breakpoint(3, false);
+    assert!(!debugger.may_stop(), "cleared");
+    debugger.stop_at_first();
+    assert!(debugger.may_stop(), "a step");
+    debugger.run_to_breakpoint(0);
+    assert!(!debugger.may_stop());
+}
+
+// spec WORLD-9.3: over and out stay in the run they started in, so stepping over the last
+// line of one ticker's think does not stop in the next ticker's
+#[test]
+fn over_and_out_stop_only_in_their_own_run() {
+    let (progs_bytes, lines) = compile_with_lines(SOURCE);
+    let entities = format!(
+        "{}{}",
+        entity("ticker", "0 0 0", ""),
+        entity("ticker", "64 0 0", "")
+    );
+    let mut run = running_from(
+        &ledge(),
+        progs_bytes,
+        &entities,
+        Vec::new(),
+        LoadOptions::default(),
+    );
+    run.world.set_debugger(Some(Debugger::new(lines.clone())));
+    let progs_bytes = run.progs.clone();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    let last = resolve(
+        &progs,
+        &lines,
+        "t.qc",
+        line_of("self.nextthink = time + 0.1"),
+    )
+    .unwrap();
+    run.world.debugger_mut().unwrap().set_breakpoint(last, true);
+    let (snapshot, stop) = until_stopped(&mut run);
+    run.world
+        .debugger_mut()
+        .unwrap()
+        .set_breakpoint(last, false);
+    for kind in [StepKind::Over, StepKind::Out] {
+        run.world.debugger_mut().unwrap().step_from(kind, &stop);
+        assert_eq!(
+            replay(&mut run, &snapshot),
+            None,
+            "{kind:?}: the frame ends"
+        );
+        assert_eq!(
+            run.world.float(3, "armorvalue"),
+            3.0,
+            "the other ticker ran"
+        );
+    }
+    run.world
+        .debugger_mut()
+        .unwrap()
+        .step_from(StepKind::In, &stop);
+    let into = replay(&mut run, &snapshot).unwrap();
+    assert!(into.run > stop.run, "in stops at whatever runs next");
 }
 
 // spec WORLD-9.5: a watch expression is a constant, a local of the frame's function before a
@@ -234,6 +315,16 @@ fn watch_expressions_read_the_stopped_state() {
     assert_eq!(eval("'1 2 3'"), Ok(QcValue::Vector([1.0, 2.0, 3.0])));
     assert_eq!(eval("\"hi\""), Ok(QcValue::String(b"hi".to_vec())));
     assert_eq!(eval("nosuch"), Err(EvalError::Unknown("nosuch".to_owned())));
+    let helper = progs
+        .functions()
+        .iter()
+        .position(|f| progs.string(f.s_name) == Some(b"helper".as_slice()))
+        .map(|i| i32::try_from(i).unwrap());
+    assert_eq!(
+        run.world.evaluate(&progs, helper, "n"),
+        Err(EvalError::Unknown("n".to_owned())),
+        "another function's local is not a global"
+    );
     assert_eq!(
         eval("self.nosuch"),
         Err(EvalError::Unknown("nosuch".to_owned()))

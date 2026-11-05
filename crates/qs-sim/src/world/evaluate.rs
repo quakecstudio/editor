@@ -103,7 +103,12 @@ impl World {
             if local {
                 return Ok(self.global_value(progs, etype, first));
             }
-            if global.is_none() {
+            // Another function's local is not a global.
+            let anyones_local = progs
+                .functions()
+                .iter()
+                .any(|f| ofs >= f.parm_start && ofs < f.parm_start.saturating_add(f.locals));
+            if global.is_none() && !anyones_local {
                 global = Some((etype, first));
             }
         }

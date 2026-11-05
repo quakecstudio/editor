@@ -1019,8 +1019,16 @@ fn a_scripted_debug_session() {
 
     // The dog thinks within a frame or two and stops on the breakpoint's line.
     for _ in 0..5 {
-        game.frame(0.1);
+        let ran = game.frame(0.1);
         if game.state == super::State::Paused {
+            assert!(
+                !ran,
+                "the stopped frame has not run, so the client's clock stands"
+            );
+            assert!(
+                game.world_mut().take_messages().packets.is_empty(),
+                "nor are its first messages sent"
+            );
             break;
         }
     }
@@ -1030,6 +1038,19 @@ fn a_scripted_debug_session() {
     assert_eq!(hits[0]["self"], json!(2), "the dog is edict 2");
     assert_eq!(hits[0]["location"]["line"], line);
     assert!(!game.frame(0.1), "paused, no frame runs");
+    // spec BRIDGE-4.6: what changes the world at once waits until the frame has ended
+    for (method, params) in [
+        ("console", json!({ "command": "sv_gravity 1" })),
+        ("entity/spawn", json!({ "classname": "info_null" })),
+        ("entity/remove", json!({ "edict": 2 })),
+        (
+            "player/spawn_at",
+            json!({ "origin": [0, 0, 0], "angles": [0, 0, 0] }),
+        ),
+    ] {
+        let refused = call(&mut game, &mut session, method, &params).unwrap_err();
+        assert_eq!(refused.code, ErrorCode::StoppedInFrame, "{method}");
+    }
 
     // inspect self and watch it, where it stopped: frags has gone up, health not yet set.
     let watched = |game: &mut Game, session: &mut Session, text: &str| {
@@ -1126,4 +1147,15 @@ fn a_scripted_debug_session() {
         events_named(&mut game, "breakpoint/hit").is_empty(),
         "cleared"
     );
+}
+
+// spec WORLD-9.1: with no debugger a frame runs for the frametime it is given, as without one
+#[test]
+fn a_frame_runs_for_its_frametime() {
+    let (mut game, _session) = game();
+    let start = game.world().time();
+    assert!(game.frame(0.05));
+    assert!(game.frame(0.025));
+    let ran = game.world().time() - start;
+    assert!((ran - 0.075).abs() < 1e-6, "ran {ran}");
 }

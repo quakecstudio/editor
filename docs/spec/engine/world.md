@@ -289,8 +289,10 @@ statements are what each asks of the world.
 - **WORLD-9.3** The rules, each after the skipped statements: at a breakpoint; one statement
   (`statement`); the next statement on another line or at another depth (`in`, which enters a
   call the line makes); the next statement on another line at the same depth or any statement
-  shallower (`over`, which runs the line's calls); any statement shallower (`out`). `in`,
-  `over` and `out` stop at a breakpoint on the way. Without a `.lno` each statement is a line of
+  shallower (`over`, which runs the line's calls); any statement shallower (`out`). `over` and
+  `out` stop only in the run the engine started that they stepped from: past its end the
+  engine runs functions that are not its callers. `in`, `over` and `out` stop at a breakpoint
+  on the way. Without a `.lno` each statement is a line of
   its own. A step from between two frames stops at the next frame's first statement.
 - **WORLD-9.4** A statement's location is its function's name and, with a `.lno` (LNO-1), its
   function's file (`s_file`) and the statement's line (BRIDGE-3.4). A breakpoint at a file and

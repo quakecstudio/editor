@@ -329,7 +329,7 @@ fn unknown_members_pass_and_wrong_value_types_fail() {
 #[test]
 fn the_error_codes_are_in_range_and_distinct() {
     let codes = methods_in_table(&spec_text(), "## BRIDGE-7 Errors");
-    assert_eq!(codes.len(), 12, "{codes:?}");
+    assert_eq!(codes.len(), 13, "{codes:?}");
     for code in &codes {
         let code: i32 = code.parse().unwrap();
         assert!(

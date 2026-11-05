@@ -102,6 +102,10 @@ impl World {
     /// `Cbuf_Execute` (PHYS-13.1): runs the buffer's lines in order until it is empty, a `wait`
     /// leaves the rest for the next frame, or a host command waits for the host (PHYS-13.6).
     pub fn execute_console(&mut self, progs: &Progs<'_>) {
+        // PHYS-13.6: the rest waits until the host has carried out the command before it.
+        if self.pending_host.is_some() {
+            return;
+        }
         loop {
             let buffer = core::mem::take(&mut self.builtins.mock.engine_mut().command_buffer);
             if buffer.is_empty() {

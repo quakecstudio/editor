@@ -447,3 +447,42 @@ fn the_deliberate_differences_from_ids_host() {
         );
     }
 }
+
+// spec PHYS-13.6: while a host command waits for the host, the buffer does not run, so a
+// second one cannot replace it and nothing after it runs on the old level
+#[test]
+fn a_waiting_host_command_holds_the_buffer() {
+    let mut run = connected();
+    assert!(console(&mut run, "save s1; quit; echo after\n").is_empty());
+    assert!(console(&mut run, "").is_empty(), "still waiting");
+    assert_eq!(
+        run.world.take_host_command(),
+        Some(HostCommand::Save("s1".to_owned()))
+    );
+    assert!(console(&mut run, "").is_empty());
+    assert_eq!(run.world.take_host_command(), Some(HostCommand::Quit));
+    assert_eq!(console(&mut run, ""), ["after "]);
+}
+
+// spec PHYS-13.6: a frame that stops at a host command runs no server frame and gives back
+// its random draw, as id draws once for the command and the frame after it
+#[test]
+fn a_frame_stopped_for_the_host_keeps_the_random_source() {
+    let mut run = connected();
+    let before = run.world.builtins.mock.engine().rng;
+    let time = run.world.time();
+    run.world.console("save s1\n");
+    run.frames(1, 0.1).unwrap();
+    assert_eq!(run.world.builtins.mock.engine().rng, before);
+    assert!(
+        (run.world.time() - time).abs() < f64::EPSILON,
+        "no server frame ran"
+    );
+    assert!(run.world.take_host_command().is_some());
+    run.frames(1, 0.1).unwrap();
+    assert_ne!(
+        run.world.builtins.mock.engine().rng,
+        before,
+        "the next frame draws"
+    );
+}

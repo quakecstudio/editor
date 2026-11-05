@@ -369,14 +369,18 @@ impl World {
     /// [`WorldError::Frame`] when a function the frame runs fails, or the engine stops.
     pub fn frame(&mut self, progs: &Progs<'_>, frametime: f64) -> Result<(), WorldError> {
         // MOVE-6.2: `_Host_Frame`'s `rand ();`, "keep the random time dependent".
+        let before = self.builtins.mock.engine().rng;
         let _discarded = self.builtins.mock.engine_mut().rng.next_rand();
         if let Some(debugger) = &mut self.builtins.debugger {
             debugger.begin_frame();
         }
         // PHYS-13.1: `_Host_Frame`'s `Cbuf_Execute`, before the server frame; a host command
-        // it meets waits for the host, and this frame does not run (PHYS-13.6).
+        // it meets waits for the host, and this frame does not run (PHYS-13.6). id runs the
+        // command and then the server frame in one host frame with one `rand ()`, so the draw
+        // is given back for the frame the host runs after it has acted.
         self.execute_console(progs);
         if self.pending_host.is_some() {
+            self.builtins.mock.engine_mut().rng = before;
             return Ok(());
         }
         {

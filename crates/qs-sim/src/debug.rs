@@ -29,13 +29,15 @@ pub enum StepKind {
 enum Rule {
     /// At a breakpoint, after the first `skip` statements.
     Breakpoints { skip: u64 },
-    /// As `kind` says from the statement `skip` stopped at, `depth` deep on `line`, or at a
-    /// breakpoint on the way for every kind but a single statement.
+    /// As `kind` says from the statement `skip` stopped at, `depth` deep on `line` in the
+    /// frame's `run`th run, or at a breakpoint on the way for every kind but a single
+    /// statement.
     Step {
         kind: StepKind,
         skip: u64,
         depth: usize,
         line: Option<i32>,
+        run: u64,
     },
     /// Never: the frame runs to its end.
     Finish,
@@ -53,6 +55,8 @@ pub struct Stop {
     pub statement: i32,
     /// The call depth.
     pub depth: usize,
+    /// Which of the frame's runs, counted from 1, the engine started (WORLD-9.3).
+    pub run: u64,
     /// The breakpoint it stopped at, when it did.
     pub breakpoint: Option<i32>,
 }
@@ -65,6 +69,7 @@ pub struct Debugger {
     lines: Vec<i32>,
     rule: Rule,
     count: u64,
+    runs: u64,
     stop: Option<Stop>,
 }
 
@@ -78,6 +83,7 @@ impl Debugger {
             lines,
             rule: Rule::Breakpoints { skip: 0 },
             count: 0,
+            runs: 0,
             stop: None,
         }
     }
@@ -91,10 +97,15 @@ impl Debugger {
         }
     }
 
-    /// Whether any breakpoint is set: a host snapshots each frame only then.
+    /// Whether the next frame may stop, at a breakpoint or a step: a host snapshots a frame
+    /// only then (WORLD-9.2).
     #[must_use]
-    pub fn has_breakpoints(&self) -> bool {
-        !self.breakpoints.is_empty()
+    pub fn may_stop(&self) -> bool {
+        match self.rule {
+            Rule::Step { .. } => true,
+            Rule::Breakpoints { .. } => !self.breakpoints.is_empty(),
+            Rule::Finish => false,
+        }
     }
 
     /// The next frame stops at a breakpoint after the first `skip` statements: 0 for a new
@@ -110,6 +121,7 @@ impl Debugger {
             skip: from.count,
             depth: from.depth,
             line: self.line_of(from.statement),
+            run: from.run,
         };
     }
 
@@ -121,6 +133,7 @@ impl Debugger {
             skip: 0,
             depth: 0,
             line: None,
+            run: 0,
         };
     }
 
@@ -138,7 +151,15 @@ impl Debugger {
     /// A frame starts: its statements are counted from 0 (WORLD-9.2).
     pub(crate) const fn begin_frame(&mut self) {
         self.count = 0;
+        self.runs = 0;
         self.stop = None;
+    }
+
+    /// The engine starts a run of `depth` 0, not one a builtin nests (VM-18).
+    pub(crate) fn begin_run(&mut self, depth: usize) {
+        if depth == 0 {
+            self.runs = self.runs.saturating_add(1);
+        }
     }
 
     /// The source line of `statement`, `None` without a `.lno`.
@@ -160,17 +181,23 @@ impl Debugger {
                 skip,
                 depth: from,
                 line,
+                run,
             } => {
                 if self.count <= skip {
                     return false;
                 }
                 // Without a .lno every statement is a line of its own.
                 let other_line = line.is_none() || self.line_of(statement) != line;
+                // Over and out stay in the run they started in: past its end the engine runs
+                // other functions, which are not this one's callers.
+                let same_run = self.runs == run;
                 match kind {
                     StepKind::Statement => true,
                     StepKind::In => breakpoint || depth != from || other_line,
-                    StepKind::Over => breakpoint || depth < from || (depth == from && other_line),
-                    StepKind::Out => breakpoint || depth < from,
+                    StepKind::Over => {
+                        breakpoint || (same_run && (depth < from || (depth == from && other_line)))
+                    }
+                    StepKind::Out => breakpoint || (same_run && depth < from),
                 }
             }
         }
@@ -178,7 +205,9 @@ impl Debugger {
 }
 
 impl Observer for Debugger {
-    fn run(&mut self, _machine: &Machine, _function: i32) {}
+    fn run(&mut self, machine: &Machine, _function: i32) {
+        self.begin_run(machine.depth());
+    }
 
     fn step(&mut self, _m: &Machine, _f: i32, _s: i32, _o: u16, _b: Option<u32>) {}
 
@@ -197,6 +226,7 @@ impl Observer for Debugger {
             function,
             statement,
             depth,
+            run: self.runs,
             breakpoint: self.breakpoints.contains(&statement).then_some(statement),
         });
         true
@@ -252,8 +282,11 @@ pub fn resolve(progs: &Progs<'_>, lines: &[i32], file: &str, line: i32) -> Optio
         .filter(|&s| s > 0)
         .collect();
     starts.sort_unstable();
+    // A Windows client's separators are the compiler's `/`.
+    let file = file.replace('\\', "/");
+    let file = file.as_str();
     let matches_file = |name: &[u8]| {
-        let name = String::from_utf8_lossy(name);
+        let name = String::from_utf8_lossy(name).replace('\\', "/");
         name == file || file.ends_with(&format!("/{name}")) || name.ends_with(&format!("/{file}"))
     };
     let mut best: Option<i32> = None;
@@ -289,7 +322,11 @@ pub(crate) struct Watch<'a> {
 }
 
 impl Observer for Watch<'_> {
-    fn run(&mut self, _machine: &Machine, _function: i32) {}
+    fn run(&mut self, machine: &Machine, _function: i32) {
+        if let Some(debugger) = self.debugger.as_mut() {
+            debugger.begin_run(machine.depth());
+        }
+    }
 
     fn step(&mut self, _m: &Machine, _f: i32, _s: i32, _o: u16, _b: Option<u32>) {}
 

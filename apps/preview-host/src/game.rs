@@ -197,8 +197,6 @@ pub(crate) struct Game {
     snapshot: Option<Snapshot>,
     /// Where the frame stopped, while it is stopped.
     halted: Option<Stopped>,
-    /// The time of the frame last run, for a step between frames.
-    last_frametime: f64,
 }
 
 impl Game {
@@ -222,7 +220,6 @@ impl Game {
             next_breakpoint: 0,
             snapshot: None,
             halted: None,
-            last_frametime: STEP_FRAME,
         }
     }
 
@@ -415,10 +412,15 @@ impl Game {
             return false;
         }
         let ran = self.with_progs(|game, progs| game.run_frame(progs, frametime));
-        if let Err(error) = ran {
-            self.fail(None, &WorldError::Progs(error.message));
+        match ran {
+            // A frame stopped at a statement has not run yet: the client's clock stands.
+            Ok(FrameEnd::Stopped) => false,
+            Ok(_) => true,
+            Err(error) => {
+                self.fail(None, &WorldError::Progs(error.message));
+                true
+            }
         }
-        true
     }
 
     /// Runs `f` with the progs read from its bytes; the error says why they did not read.
@@ -512,6 +514,18 @@ impl Game {
             State::Running => Err(RpcError::new(
                 ErrorCode::NotPaused,
                 "the game is running; pause it first",
+            )),
+        }
+    }
+
+    /// BRIDGE-4.6: a command that changes the world at once is refused while a frame is
+    /// stopped at a statement, since going on replays the frame from before it (WORLD-9.2).
+    fn require_between_frames(&self) -> Result<(), RpcError> {
+        match self.halted {
+            None => Ok(()),
+            Some(_) => Err(RpcError::new(
+                ErrorCode::StoppedInFrame,
+                "a frame is stopped at a statement; step or resume to its end first",
             )),
         }
     }
@@ -754,6 +768,7 @@ impl Game {
             "step" => self.step(progs, params),
             "field/set" => self.field_set(progs, params),
             "entity/spawn" => {
+                self.require_between_frames()?;
                 let mut pairs = vec![(
                     "classname".to_owned(),
                     params
@@ -771,6 +786,7 @@ impl Game {
                 Ok(json!({ "edict": edict }))
             }
             "entity/remove" => {
+                self.require_between_frames()?;
                 let edict = edict_param(params)?;
                 self.world
                     .remove_entity(progs, edict)
@@ -780,6 +796,7 @@ impl Game {
             }
             "entity/edit" => self.entity_edit(progs, params),
             "player/spawn_at" => {
+                self.require_between_frames()?;
                 let origin = vector_param(params, "origin");
                 let angles = vector_param(params, "angles");
                 self.world
@@ -788,7 +805,10 @@ impl Game {
                 self.report_changes(progs);
                 Ok(json!({ "edict": qs_sim::CLIENT_EDICT }))
             }
-            "console" => Ok(self.console(progs, params)),
+            "console" => {
+                self.require_between_frames()?;
+                Ok(self.console(progs, params))
+            }
             "pick" => self.pick(progs, params),
             _ => Err(RpcError::new(
                 ErrorCode::MethodNotFound,

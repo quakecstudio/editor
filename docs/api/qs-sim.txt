@@ -93,6 +93,7 @@ field qs_sim::debug::Stop.breakpoint
 field qs_sim::debug::Stop.count
 field qs_sim::debug::Stop.depth
 field qs_sim::debug::Stop.function
+field qs_sim::debug::Stop.run
 field qs_sim::debug::Stop.statement
 field qs_sim::messages::ClientMessages.packets
 field qs_sim::physics::Sound.entity
@@ -168,7 +169,7 @@ fn qs_sim::console::World::console
 fn qs_sim::console::World::execute_console
 fn qs_sim::console::World::take_console_output
 fn qs_sim::debug::Debugger::finish
-fn qs_sim::debug::Debugger::has_breakpoints
+fn qs_sim::debug::Debugger::may_stop
 fn qs_sim::debug::Debugger::new
 fn qs_sim::debug::Debugger::run_to_breakpoint
 fn qs_sim::debug::Debugger::set_breakpoint

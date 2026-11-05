@@ -78,6 +78,7 @@ variant qs_bridge::message::ErrorCode::NoSuchEdict
 variant qs_bridge::message::ErrorCode::NotInitialized
 variant qs_bridge::message::ErrorCode::NotPaused
 variant qs_bridge::message::ErrorCode::ParseError
+variant qs_bridge::message::ErrorCode::StoppedInFrame
 variant qs_bridge::message::ErrorCode::Unsupported
 variant qs_bridge::message::Id::Number
 variant qs_bridge::message::Id::Text
