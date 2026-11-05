@@ -889,6 +889,8 @@ fn trace_lines(trace: &Trace, vector: &Vector) -> Result<(Vec<Line>, End), Strin
                 return Ok((done, End::Error(Some(message))));
             }
             Record::String { .. } => {}
+            // TRACE-4.11: only the engine oracle writes frame records.
+            Record::Frame { .. } => return Err("a frame record in a VM trace".to_owned()),
         }
     }
     if !stack.is_empty() || runs == 0 {

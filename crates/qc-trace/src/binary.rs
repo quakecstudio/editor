@@ -4,8 +4,8 @@
 
 use crate::{
     Changes, FieldChange, GlobalChange, Header, Record, Step, TRACE_HEADER_SIZE, TRACE_MAGIC,
-    TRACE_TAG_ERROR, TRACE_TAG_EXIT, TRACE_TAG_RUN, TRACE_TAG_STEP, TRACE_TAG_STRING,
-    TRACE_UVAR_MAX_BYTES, TRACE_VERSION, Text, Trace, TraceError,
+    TRACE_TAG_ERROR, TRACE_TAG_EXIT, TRACE_TAG_FRAME, TRACE_TAG_RUN, TRACE_TAG_STEP,
+    TRACE_TAG_STRING, TRACE_UVAR_MAX_BYTES, TRACE_VERSION, Text, Trace, TraceError,
 };
 
 /// Builtin flag byte of a step without a builtin (TRACE-5.6).
@@ -83,6 +83,11 @@ pub fn encode_record(record: &Record, out: &mut Vec<u8>) {
             put_svar(out, *function);
             put_svar(out, *statement);
             put_text(out, message);
+            put_changes(out, changes);
+        }
+        Record::Frame { frame, changes } => {
+            out.push(TRACE_TAG_FRAME);
+            put_uvar(out, *frame);
             put_changes(out, changes);
         }
         Record::String { value, text } => {
@@ -244,6 +249,11 @@ impl Reader<'_> {
                     message,
                     changes,
                 })
+            }
+            TRACE_TAG_FRAME => {
+                let frame = self.uvar(start)?;
+                let changes = self.changes(start)?;
+                Ok(Record::Frame { frame, changes })
             }
             TRACE_TAG_STRING => {
                 let value = self.word(start)?;
