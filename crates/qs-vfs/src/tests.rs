@@ -8,8 +8,6 @@
 
 use std::path::PathBuf;
 
-use crate::{EntryKind, HostFs as _};
-
 use qs_pak::PakError;
 use qs_wad::WadError;
 
@@ -792,6 +790,8 @@ fn host_filesystem_links() {
 #[cfg(unix)]
 #[test]
 fn a_link_to_a_directory_is_looked_up_through() {
+    use crate::{EntryKind, HostFs as _};
+
     let install = TempTree::new("linked-install");
     install.file("id1/pak0.pak", &pak(&[("a.txt", "pak")]));
     install.file("id1/gfx/pop.lmp", &pop_lmp(&[]));
