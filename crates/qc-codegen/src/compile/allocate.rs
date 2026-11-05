@@ -150,7 +150,10 @@ impl Overlapping {
         let mut loops = Vec::new();
         let mut calls = Vec::new();
         for (index, statement) in (0_u32..).zip(generated) {
-            for name in [statement.a, statement.b, statement.c].into_iter().flatten() {
+            for name in [statement.a, statement.b, statement.c]
+                .into_iter()
+                .flatten()
+            {
                 match name {
                     Name::Made(made) | Name::MadeWord(made, _) => {
                         let end = last.entry(made).or_insert(index);
@@ -208,9 +211,10 @@ impl Overlapping {
         }
         let shared = program.shared_temps();
         self.held.resize(shared.len(), None);
-        let free = shared.iter().zip(&self.held).position(|(&(_, size), held)| {
-            size == words && held.is_none_or(|until| until < index)
-        });
+        let free = shared
+            .iter()
+            .zip(&self.held)
+            .position(|(&(_, size), held)| size == words && held.is_none_or(|until| until < index));
         let place = match free {
             Some(place) => place,
             None => {
@@ -261,7 +265,8 @@ const fn is_call(op: Op) -> bool {
 mod tests {
     #![expect(
         clippy::unwrap_used,
-        reason = "test code: a failed unwrap is a failed test"
+        clippy::indexing_slicing,
+        reason = "test code: a failed unwrap or index is a failed test"
     )]
 
     use qc_preproc::Op;
@@ -323,9 +328,19 @@ mod tests {
         let slots = allocate(&mut program, &body, &[]);
         assert_ne!(slots[1], slots[0], "the operand is still held");
         assert_eq!(slots[3], slots[0], "the first value is dead");
-        assert!(slots[4].is_some() && slots[4] != slots[1], "a vector takes no float's slot");
-        assert_eq!(slots[6], slots[4], "a dead vector's slot is a vector's again");
-        let shared: Vec<u32> = program.shared_temps().iter().map(|&(_, words)| words).collect();
+        assert!(
+            slots[4].is_some() && slots[4] != slots[1],
+            "a vector takes no float's slot"
+        );
+        assert_eq!(
+            slots[6], slots[4],
+            "a dead vector's slot is a vector's again"
+        );
+        let shared: Vec<u32> = program
+            .shared_temps()
+            .iter()
+            .map(|&(_, words)| words)
+            .collect();
         assert_eq!(shared, [1, 1, 3], "three shared slots in all");
     }
 
@@ -371,7 +386,10 @@ mod tests {
             reads(Op::Goto, Some(Name::Jump(1))),
         ];
         let slots = allocate(&mut program, &body, &[]);
-        assert_ne!(slots[2], slots[0], "the first value is read again on the next pass");
+        assert_ne!(
+            slots[2], slots[0],
+            "the first value is read again on the next pass"
+        );
         let straight = [
             makes(Op::MulF, 0, None, None),
             reads(Op::StoreF, Some(Name::Made(0))),
@@ -396,7 +414,10 @@ mod tests {
             reads(Op::StoreF, word(2)),
         ];
         let slots = allocate(&mut program, &body, &[(0, Effect::Block(3))]);
-        assert!(slots[0].is_some() && slots[1] != slots[0], "the block is still held");
+        assert!(
+            slots[0].is_some() && slots[1] != slots[0],
+            "the block is still held"
+        );
         let next = allocate(&mut program, &[makes(Op::MulVf, 0, None, None)], &[]);
         assert_eq!(next[0], slots[0], "a new body starts with every slot free");
     }

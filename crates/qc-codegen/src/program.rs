@@ -463,9 +463,7 @@ impl Program {
         let ofs = self.next_global()?;
         // FTE-21.8: the globals stay below the shared temporaries' virtual offsets while any
         // are waiting to be laid out.
-        if !self.shared.is_empty()
-            && ofs.checked_add(words).is_none_or(|end| end > SHARED_BASE)
-        {
+        if !self.shared.is_empty() && ofs.checked_add(words).is_none_or(|end| end > SHARED_BASE) {
             return Err(Internal::TooLarge);
         }
         let words = usize::try_from(words).map_err(|_| Internal::TooLarge)?;
@@ -952,8 +950,7 @@ pub(crate) fn component(index: &ModuleIndex, vector: DefId, suffix: &str) -> Opt
 mod tests {
     #![expect(
         clippy::unwrap_used,
-        clippy::indexing_slicing,
-        reason = "test code: a failed unwrap or index is a failed test"
+        reason = "test code: a failed unwrap is a failed test"
     )]
 
     use qc_progs::Statement;
