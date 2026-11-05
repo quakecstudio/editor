@@ -5,6 +5,7 @@
 
 mod args;
 mod bridge;
+mod game;
 mod values;
 
 use std::process::ExitCode;

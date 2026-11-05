@@ -107,3 +107,33 @@ fn the_player_moves_as_a_teleporter_moves_it() {
     assert_eq!(run.world.vector(1, "angles"), [0.0, 90.0, 0.0]);
     assert_eq!(run.world.float(1, "fixangle"), 1.0);
 }
+
+// spec BRIDGE-4.4: an edit held while paused is checked when it is asked for: a value of
+// another type, or naming nothing, is refused then, and checking writes nothing
+#[test]
+fn checking_a_field_value_writes_nothing() {
+    let run = running();
+    let progs = Progs::read(&run.progs).unwrap();
+    let check = |name: &str, value: QcValue| run.world.check_field_value(&progs, 1, name, &value);
+    assert!(check("health", QcValue::Float(7.0)).is_ok());
+    assert!(check("netname", QcValue::String(b"x".to_vec())).is_ok());
+    assert!(check("think", QcValue::Function("tick".to_owned())).is_ok());
+    assert!(matches!(
+        check("think", QcValue::Function("x".to_owned())),
+        Err(EditError::BadValue(_))
+    ));
+    assert!(matches!(
+        check("health", QcValue::Vector([0.0; 3])),
+        Err(EditError::BadValue(_))
+    ));
+    assert!(matches!(
+        check("owner", QcValue::Entity(9000)),
+        Err(EditError::BadValue(_))
+    ));
+    assert_eq!(
+        run.world
+            .check_field_value(&progs, 500, "health", &QcValue::Float(1.0)),
+        Err(EditError::NoSuchEdict(500))
+    );
+    assert_eq!(run.world.float(1, "health"), 100.0);
+}

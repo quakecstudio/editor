@@ -45,7 +45,10 @@ const MOVETYPE_PUSH: f32 = 7.0;
 /// The client slots a single-player world has.
 const MAXCLIENTS: usize = 1;
 /// The single player's edict.
-const CLIENT: usize = 1;
+const CLIENT: usize = CLIENT_EDICT;
+
+/// The player's edict, the one client's slot (EDICT-5.1).
+pub const CLIENT_EDICT: usize = 1;
 /// `EDICT_SETTLE_FRAMETIME`: the two frames the server runs before play (EDICT-8.9).
 const SETTLE_FRAMETIME: f64 = 0.1;
 
@@ -358,21 +361,15 @@ impl World {
     /// only with exactly one argument (PHYS-10.4). The buffer is emptied.
     pub fn take_changelevel(&mut self) -> Option<String> {
         let buffer = core::mem::take(&mut self.builtins.mock.engine_mut().command_buffer);
-        commands(&buffer).into_iter().find_map(|command| {
-            // `Cmd_TokenizeString`'s words, each as `COM_Parse` reads it.
-            let mut parser = Parser::new(&command);
-            let mut words = Vec::new();
-            while let Token::Word(word) = parser.next_token() {
-                words.push(word);
-            }
-            // `Cmd_ExecuteString` matches the name with `Q_strcasecmp`.
-            match words.as_slice() {
+        command_words(&buffer)
+            .into_iter()
+            .find_map(|words| match words.as_slice() {
+                // `Cmd_ExecuteString` matches the name with `Q_strcasecmp`.
                 [name, map] if name.eq_ignore_ascii_case(b"changelevel") => {
                     Some(String::from_utf8_lossy(map).into_owned())
                 }
                 _ => None,
-            }
-        })
+            })
     }
 
     /// `SV_SaveSpawnparms`: `serverflags`, then, with `self` the client, `SetChangeParms`
@@ -649,12 +646,33 @@ fn commands(text: &[u8]) -> Vec<Vec<u8>> {
     out
 }
 
+/// The commands of console text with their words: `Cbuf_Execute`'s commands, each split
+/// as `Cmd_TokenizeString` splits it with `COM_Parse`; a command with no words, which
+/// `Cmd_ExecuteString` skips, is left out.
+#[must_use]
+pub fn command_words(text: &[u8]) -> Vec<Vec<Vec<u8>>> {
+    commands(text)
+        .into_iter()
+        .map(|command| {
+            let mut parser = Parser::new(&command);
+            let mut words = Vec::new();
+            while let Token::Word(word) = parser.next_token() {
+                words.push(word);
+            }
+            words
+        })
+        .filter(|words| !words.is_empty())
+        .collect()
+}
+
+mod changes;
 mod edit;
 mod inspect;
 mod save;
 #[cfg(test)]
 pub(crate) mod tests;
 
+pub use changes::EdictChange;
 pub use edit::EditError;
 pub use inspect::{NamedValue, QcValue};
 pub use save::{SAVEGAME_VERSION, SaveError, SaveGame};

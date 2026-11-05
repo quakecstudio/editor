@@ -27,6 +27,7 @@ const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_EASY
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_HARD
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_MEDIUM
 const qs_sim::spawn::SPAWNFLAGS_SLOT
+const qs_sim::world::CLIENT_EDICT
 const qs_sim::world::save::SAVEGAME_VERSION
 enum qs_sim::collision::CollisionError
 enum qs_sim::collision::Solid
@@ -37,6 +38,7 @@ enum qs_sim::spawn::LoadError
 enum qs_sim::spawn::SpawnError
 enum qs_sim::spawn::Token
 enum qs_sim::world::WorldError
+enum qs_sim::world::changes::EdictChange
 enum qs_sim::world::edit::EditError
 enum qs_sim::world::inspect::QcValue
 enum qs_sim::world::save::SaveError
@@ -195,6 +197,10 @@ fn qs_sim::world::World::take_messages
 fn qs_sim::world::World::take_set_angle
 fn qs_sim::world::World::take_sounds
 fn qs_sim::world::World::time
+fn qs_sim::world::changes::World::take_changes
+fn qs_sim::world::changes::World::track_changes
+fn qs_sim::world::command_words
+fn qs_sim::world::edit::World::check_field_value
 fn qs_sim::world::edit::World::edit_entity
 fn qs_sim::world::edit::World::move_player
 fn qs_sim::world::edit::World::remove_entity
@@ -204,6 +210,7 @@ fn qs_sim::world::inspect::World::classname
 fn qs_sim::world::inspect::World::edict_fields
 fn qs_sim::world::inspect::World::in_use
 fn qs_sim::world::inspect::World::named_globals
+fn qs_sim::world::inspect::World::num_edicts
 fn qs_sim::world::save::SaveGame::read
 fn qs_sim::world::save::World::restore
 fn qs_sim::world::save::World::save_game
@@ -249,7 +256,9 @@ struct qs_sim::world::save::SaveGame
 trait qs_sim::collision::Host
 trait qs_sim::spawn::SpawnHost
 type qs_sim::builtins::ModelFiles
+use qs_sim::CLIENT_EDICT = world::CLIENT_EDICT
 use qs_sim::ClientMessages = messages::ClientMessages
+use qs_sim::EdictChange = world::EdictChange
 use qs_sim::EditError = world::EditError
 use qs_sim::Entity = world::Entity
 use qs_sim::LoadOptions = world::LoadOptions
@@ -308,7 +317,9 @@ use qs_sim::collision::link_edict = area::link_edict
 use qs_sim::collision::recursive_hull_check = trace::recursive_hull_check
 use qs_sim::collision::sv_move = area::sv_move
 use qs_sim::collision::test_entity_position = area::test_entity_position
+use qs_sim::command_words = world::command_words
 use qs_sim::localization = qc_builtins::localization
+use qs_sim::world::EdictChange = changes::EdictChange
 use qs_sim::world::EditError = edit::EditError
 use qs_sim::world::NamedValue = inspect::NamedValue
 use qs_sim::world::QcValue = inspect::QcValue
@@ -346,6 +357,9 @@ variant qs_sim::spawn::Token::Word
 variant qs_sim::world::WorldError::Frame
 variant qs_sim::world::WorldError::Progs
 variant qs_sim::world::WorldError::Spawn
+variant qs_sim::world::changes::EdictChange::Changed
+variant qs_sim::world::changes::EdictChange::Removed
+variant qs_sim::world::changes::EdictChange::Spawned
 variant qs_sim::world::edit::EditError::BadValue
 variant qs_sim::world::edit::EditError::Kept
 variant qs_sim::world::edit::EditError::NoSuchEdict

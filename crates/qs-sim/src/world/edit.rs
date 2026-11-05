@@ -56,6 +56,28 @@ impl World {
         name: &str,
         value: &QcValue,
     ) -> Result<(), EditError> {
+        let first = self.check_field_value(progs, n, name, value)?;
+        let slots = self.slots_of(progs, value)?;
+        for (i, slot) in slots.into_iter().enumerate() {
+            self.set_field(n, first.saturating_add(i), slot);
+        }
+        Ok(())
+    }
+
+    /// Whether [`World::set_field_value`] would write field `name` of edict `n` with `value`,
+    /// writing nothing, for an edit held until the game resumes (BRIDGE-4.4); the field's
+    /// first slot.
+    ///
+    /// # Errors
+    ///
+    /// The [`EditError`] the write would fail with.
+    pub fn check_field_value(
+        &self,
+        progs: &Progs<'_>,
+        n: usize,
+        name: &str,
+        value: &QcValue,
+    ) -> Result<usize, EditError> {
         if !self.in_use(n) {
             return Err(EditError::NoSuchEdict(n));
         }
@@ -70,21 +92,28 @@ impl World {
         if !matches_type(etype, value) {
             return Err(EditError::BadValue(format!("{name} is not of that type")));
         }
-        let first = usize::try_from(def.ofs).unwrap_or(usize::MAX);
-        let slots = self.slots_of(progs, value)?;
-        for (i, slot) in slots.into_iter().enumerate() {
-            self.set_field(n, first.saturating_add(i), slot);
+        // A string is made only when written; every other value resolves here.
+        if !matches!(value, QcValue::String(_)) {
+            self.resolve(progs, value)?;
         }
-        Ok(())
+        Ok(usize::try_from(def.ofs).unwrap_or(usize::MAX))
     }
 
-    /// The slots `value` is stored in.
+    /// The slots `value` is stored in, a string made for a string.
     fn slots_of(&mut self, progs: &Progs<'_>, value: &QcValue) -> Result<Vec<Slot>, EditError> {
+        match value {
+            QcValue::String(text) => Ok(vec![Slot::from_i32(self.make_string(text.clone()))]),
+            other => self.resolve(progs, other),
+        }
+    }
+
+    /// The slots a value other than a string is stored in.
+    fn resolve(&self, progs: &Progs<'_>, value: &QcValue) -> Result<Vec<Slot>, EditError> {
         let bad = |what: &str| EditError::BadValue(format!("no {what} of that name or number"));
         Ok(match value {
             QcValue::Float(f) => vec![Slot::from_f32(*f)],
             QcValue::Vector(v) => v.map(Slot::from_f32).to_vec(),
-            QcValue::String(text) => vec![Slot::from_i32(self.make_string(text.clone()))],
+            QcValue::Void | QcValue::String(_) => Vec::new(),
             QcValue::Entity(n) => {
                 let number = i32::try_from(*n).map_err(|_| bad("edict"))?;
                 let entity = self
@@ -114,7 +143,6 @@ impl World {
                     .ok_or_else(|| bad("function"))?;
                 vec![Slot::from_i32(index)]
             }
-            QcValue::Void => Vec::new(),
         })
     }
 

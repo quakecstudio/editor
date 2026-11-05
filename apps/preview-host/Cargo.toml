@@ -15,12 +15,21 @@ path = "src/main.rs"
 [dependencies]
 # The command line (ADR-0008).
 clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
+qc-progs = { workspace = true }
 qs-bridge = { workspace = true }
 qs-log = { workspace = true }
 qs-paths = { workspace = true }
 qs-sim = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
+
+[dev-dependencies]
+# A world for the bridge's conformance tests: a progs compiled from QuakeC and a floor.
+qc-codegen = { workspace = true }
+qc-edict = { workspace = true }
+qc-sema = { workspace = true }
+qc-types = { workspace = true }
+qs-bsp = { workspace = true }
 
 [lints]
 workspace = true

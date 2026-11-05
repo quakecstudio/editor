@@ -25,7 +25,7 @@ use crate::system::{
 };
 use crate::{
     EDICT_HEADER_SIZE, EDICT_MAX_FIELDS, EDICT_SYS_FIELDS_END, EDICT_SYS_GLOBALS_END, EdictError,
-    EdictLayout, EdictStore, LayoutError,
+    EdictEvent, EdictLayout, EdictStore, LayoutError,
 };
 
 /// The id 1.01 field count the spec's vectors use: 105 system fields, no mod fields.
@@ -938,4 +938,42 @@ fn clone_from_takes_another_layout() {
         narrow.field(EdictNumber::new(3), 150),
         Some(Slot::from_i32(8))
     );
+}
+
+// The preview host's record of what happened to the edicts (BRIDGE-3.1): nothing until
+// tracking starts, then every allocation, free and write in order, a write of the same value
+// included; taking empties it and stopping drops it.
+#[test]
+fn tracking_records_allocations_frees_and_writes() {
+    let mut store = store(1);
+    let n = store.alloc(0.0).unwrap();
+    store.set_field(n, 3, Slot::from_f32(1.0)).unwrap();
+    assert!(store.take_events().is_empty());
+
+    store.track(true);
+    let m = store.alloc(0.0).unwrap();
+    store.set_field(m, 3, Slot::from_f32(1.0)).unwrap();
+    store.set_field(m, 3, Slot::from_f32(1.0)).unwrap();
+    assert!(store.set_field(m, usize::MAX, Slot::ZERO).is_err());
+    store.free(n, 1.0);
+    store.free(EdictNumber::new(LIMIT_MAX_EDICTS), 1.0);
+    assert_eq!(
+        store.take_events(),
+        [
+            EdictEvent::Allocated(m),
+            EdictEvent::Written(m, 3),
+            EdictEvent::Written(m, 3),
+            EdictEvent::Freed(n),
+        ]
+    );
+    assert!(store.take_events().is_empty());
+
+    store.set_field(m, 4, Slot::ZERO).unwrap();
+    let mut copy = store.clone();
+    assert_eq!(copy.take_events(), [EdictEvent::Written(m, 4)]);
+    let mut into = self::store(1);
+    into.clone_from(&store);
+    assert_eq!(into.take_events(), [EdictEvent::Written(m, 4)]);
+    store.track(false);
+    assert!(store.take_events().is_empty());
 }

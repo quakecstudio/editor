@@ -2830,7 +2830,13 @@ name = "preview-host"
 version = "2026.10.0"
 dependencies = [
  "clap",
+ "qc-codegen",
+ "qc-edict",
+ "qc-progs",
+ "qc-sema",
+ "qc-types",
  "qs-bridge",
+ "qs-bsp",
  "qs-log",
  "qs-paths",
  "qs-sim",

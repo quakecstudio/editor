@@ -46,6 +46,12 @@ impl World {
         n < edicts.num_edicts() && edicts.is_free(EdictNumber::new(n)) == Some(false)
     }
 
+    /// `sv.num_edicts`: every edict below it has been used on this map (EDICT-1.4).
+    #[must_use]
+    pub fn num_edicts(&self) -> usize {
+        self.machine.edicts().num_edicts()
+    }
+
     /// Every field of edict `n` with its value, `None` when it is not in use: each field
     /// definition after the first, but a vector's `_x`, `_y` and `_z`, as `ED_Print` lists
     /// them.
@@ -59,18 +65,21 @@ impl World {
                 .field_defs()
                 .iter()
                 .skip(1)
-                .filter_map(|def| {
-                    let (name, etype, first) = named(progs, def)?;
-                    let slots: Vec<Slot> = (0..etype.slot_count())
-                        .map(|i| self.slot_of(n, first.saturating_add(i)))
-                        .collect();
-                    Some(NamedValue {
-                        name,
-                        value: self.value(progs, etype, &slots),
-                    })
-                })
+                .filter_map(|def| self.field_value(progs, n, def))
                 .collect(),
         )
+    }
+
+    /// Field `def` of edict `n` with its value, `None` for a definition [`named`] skips.
+    pub(super) fn field_value(&self, progs: &Progs<'_>, n: usize, def: Def) -> Option<NamedValue> {
+        let (name, etype, first) = named(progs, def)?;
+        let slots: Vec<Slot> = (0..etype.slot_count())
+            .map(|i| self.slot_of(n, first.saturating_add(i)))
+            .collect();
+        Some(NamedValue {
+            name,
+            value: self.value(progs, etype, &slots),
+        })
     }
 
     /// Every named global with its value, but a vector's `_x`, `_y` and `_z` and the
@@ -154,7 +163,7 @@ impl World {
 
 /// A definition's name, type and first slot, `None` for one with no name or a vector's
 /// component.
-fn named(progs: &Progs<'_>, def: Def) -> Option<(String, Etype, usize)> {
+pub(super) fn named(progs: &Progs<'_>, def: Def) -> Option<(String, Etype, usize)> {
     let name = progs.string(def.s_name).filter(|n| !n.is_empty())?;
     let components = [&b"_x"[..], b"_y", b"_z"];
     if components.iter().any(|c| name.ends_with(c)) {

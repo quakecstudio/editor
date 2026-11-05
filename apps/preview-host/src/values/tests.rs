@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#![expect(clippy::unwrap_used, reason = "test code: a failed unwrap is a failed test")]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "test code: a failed index is a failed test"
+)]
 
 use qs_bridge::check_schema;
 use qs_sim::{NamedValue, QcValue};
@@ -27,7 +30,10 @@ fn values_round_trip_through_the_schema() {
     for value in every() {
         let written = to_json(&value);
         let params = json!({ "edict": 1, "field": "f", "value": written });
-        assert!(check_schema("field.set.params", &params).is_ok(), "{written}");
+        assert!(
+            check_schema("field.set.params", &params).is_ok(),
+            "{written}"
+        );
         assert_eq!(from_json(&written), Some(value));
     }
     assert_eq!(from_json(&json!({ "type": "matrix", "value": 1 })), None);

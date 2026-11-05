@@ -2646,3 +2646,17 @@ fn an_inactive_client_keeps_its_parms_across_a_level_change() {
     let kept = run.world.save_spawn_parms(&progs).unwrap();
     assert_eq!(kept.parms(), [0.0; 16], "SetChangeParms did not run");
 }
+
+// spec PHYS-10.4: console text splits into commands at a newline or a semicolon outside
+// quotes, each into its words as COM_Parse reads them; an empty command is skipped
+#[test]
+fn console_text_splits_into_commands_and_words() {
+    let words = super::command_words(b"map e1m1; god\n\n  ;say \"a;b\" c");
+    let expected: Vec<Vec<Vec<u8>>> = vec![
+        vec![b"map".to_vec(), b"e1m1".to_vec()],
+        vec![b"god".to_vec()],
+        vec![b"say".to_vec(), b"a;b".to_vec(), b"c".to_vec()],
+    ];
+    assert_eq!(words, expected);
+    assert!(super::command_words(b"").is_empty());
+}
