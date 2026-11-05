@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 egui-wgpu = { workspace = true }
 epaint = { workspace = true }
+# The TGA faces of a skybox (REND-8.2).
+image = { workspace = true, features = ["tga"] }
 qs-bsp = { workspace = true }
 qs-client = { workspace = true }
 qs-mdl = { workspace = true }

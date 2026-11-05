@@ -247,6 +247,7 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     play.zfix = zfix;
     play.load_models(client.model_names(), &reader()?)
         .map_err(|e| e.to_string())?;
+    play.load_sky(&reader()?);
     // The world, then every brush submodel `*n` at the origin, so the mesh's model `n` is the
     // submodel `n`; then each entity showing a BSP of its own, such as a health box.
     let placements: Vec<Placement> = (0..bsp.models.len())

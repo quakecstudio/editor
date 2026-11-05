@@ -404,9 +404,11 @@ The client's dynamic lights (CLIENT-5.5, CLIENT-5.7) light the faces near them f
 
 ## REND-8 Skyboxes
 
-**Source:** `Quake/gl_sky.c`, `Sky_NewMap`, `Sky_LoadSkyBox`, `Sky_DrawSkyBox`
-(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`). The two scrolling layers of
-id's sky are REND-2.3.
+**Source:** `Quake/gl_sky.c`, `Sky_NewMap`, `Sky_LoadSkyBox`, `Sky_ProjectPoly`,
+`Sky_EmitSkyBoxVertex`, `Sky_DrawSkyBox` and `Sky_DrawSky`; `Quake/image.c`, `Image_LoadImage`,
+`Image_LoadTGA` and `Image_LoadPCX`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`). The two scrolling layers of id's
+sky are REND-2.3.
 
 ### Behaviour
 
@@ -417,6 +419,36 @@ id's sky are REND-2.3.
   the fog colour (REND-10) blended over the sky, only while the fog density is above 0 and
   `skyfog` is above 0 (`Fog_GetDensity() > 0 && skyfog > 0`). The preview host draws a skybox
   when the map names one, under ADR-0012.
+- **REND-8.2** QuakeSpasm's `Sky_NewMap` reads the worldspawn's keys, a leading `_` and trailing
+  spaces dropped, and calls `Sky_LoadSkyBox (value)` for each `sky`, `skyname` and `qlsky` in
+  turn, so the last one read decides, an empty value turning the box off; `skyfog` is `atof
+  (value)`, 0 for text that is not a number. `Sky_LoadSkyBox` reads `gfx/env/<name><suf[i]>` for
+  `suf` `rt`, `bk`, `lf`, `ft`, `up`, `dn` through `Image_LoadImage`, which tries `<file>.tga`,
+  then `<file>.pcx`. A face it cannot read is `notexture`; when none is read it "go[es] back to
+  scrolling sky". `Image_LoadPCX` takes only signature 0x0A, version 5, encoding 1, 8 bits a
+  pixel and one colour plane (`Sys_Error` otherwise); the picture is `xmax - xmin + 1` by `ymax
+  - ymin + 1`, the palette the file's last 768 bytes, and each row decodes until
+  `bytes_per_line` pixels, a byte from 0xC0 a run of `byte & 0x3F` of the next byte, writing
+  from the row's start, so the next row overwrites the padding and anything past the width.
+  `Image_LoadTGA` stores rows from the top, flipping a file without attribute bit 0x20. The
+  preview host reads the TGA with the `image` crate, and diverges where QuakeSpasm stops or
+  reads outside the file: a file it cannot read, or a PCX that ends before its pixels or its
+  palette, is a face not read. A face not read is black instead of `notexture`'s debug
+  checkerboard, and the faces share one texture array at the first read face's size, a face of
+  another size taken at its nearest texels.
+- **REND-8.3** `Sky_DrawSky` draws the sky faces into the depth buffer before the world, then
+  draws the box's six faces at `gl_farclip / sqrt(3)` around `r_origin` with
+  `glDepthFunc(GL_GEQUAL)` and no depth write, so the box shows only through the sky faces; `#if
+  1 /* FIXME */` always draws whole faces, `skymins` -1 and `skymaxs` 1. A direction `v` falls
+  on `Sky_ProjectPoly`'s axis: 0 or 1 (+x, -x) when `|v[0]|` is larger than both others, else 2
+  or 3 (+y, -y) when `|v[1]|` is, else 4 or 5 (+z, -z). Its `vec_to_st[axis]` gives `s` and `t`
+  from -1 to 1 as signed components over the axis's: {-2,3,1}, {2,3,-1}, {1,3,2}, {-1,3,-2},
+  {-2,-1,3}, {-2,1,-3}. `Sky_EmitSkyBoxVertex` makes them `(s+1)*0.5` and `(t+1)*0.5`, then `s *
+  (w-1)/w + 0.5/w` to "avoid bilerp seam", and `1 - t`, on the texture
+  `skybox_textures[skytexorder[axis]]`, `skytexorder` {0,2,1,3,4,5}. With fog, `skyfog` of the
+  fog colour is blended over the box (REND-8.1), and the box is not drawn when `skyfog >= 1`.
+  The preview host samples the box for each sky fragment along the direction from the eye, which
+  is the same picture.
 
 ### Constants
 

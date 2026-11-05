@@ -26,6 +26,7 @@ use crate::gpu::{
 use crate::light::light_point;
 use crate::mesh::{Image, MapMesh, Palette, Placement};
 use crate::particles::particle_triangles;
+use crate::skybox::{SkyKeys, Skybox, sky_parse_worldspawn};
 use crate::sprite::{Eye, SpriteEntity, SpriteError, SpriteModel, angle_vectors};
 use crate::styles::LightStyles;
 
@@ -257,6 +258,9 @@ pub struct Play {
     pub zfix: bool,
     /// Each player slot's translated skin (REND-4.13).
     player_skins: PlayerSkins,
+    /// The skybox the worldspawn names (REND-8.2), and the box once read.
+    sky: SkyKeys,
+    skybox: Option<Skybox>,
 }
 
 /// What each player slot's translated skin was made from: its model's precache index, its
@@ -289,6 +293,7 @@ impl Play {
     /// 640 by 480 2D layer.
     #[must_use]
     pub fn new(palette: Palette, pics: Pics, entities: &[u8]) -> Self {
+        let sky = sky_parse_worldspawn(entities);
         Self {
             palette,
             pics,
@@ -298,10 +303,12 @@ impl Play {
             instances: Vec::new(),
             fog: FogState::new(fog_parse_worldspawn(entities)),
             water_alpha: 1.0,
-            skyfog: 0.5,
+            skyfog: sky.skyfog,
             screen: [640, 480],
             zfix: true,
             player_skins: PlayerSkins::default(),
+            sky,
+            skybox: None,
         }
     }
 
@@ -345,6 +352,12 @@ impl Play {
         Ok(())
     }
 
+    /// Reads the skybox the worldspawn names through `read` (REND-8.2); a map naming none,
+    /// or one whose faces are all missing, keeps the scrolling layers.
+    pub fn load_sky(&mut self, read: &dyn Fn(&str) -> Option<Vec<u8>>) {
+        self.skybox = Skybox::load(&self.sky.name, read);
+    }
+
     /// Records that entity `entity`'s external brush model is the mesh's model `mesh_model`.
     pub fn add_instance(&mut self, entity: usize, mesh_model: usize) {
         self.instances.push((entity, mesh_model));
@@ -357,6 +370,7 @@ impl Play {
             skins: &self.skins,
             frames: &self.frames,
             pics: self.pics.images(),
+            skybox: self.skybox.as_ref(),
         }
     }
 

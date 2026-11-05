@@ -20,6 +20,7 @@ mod mesh;
 mod particles;
 mod pick;
 mod play;
+mod skybox;
 mod sprite;
 mod styles;
 
@@ -40,5 +41,6 @@ pub use mesh::{
 pub use particles::{ParticleVertex, particle_texture, particle_triangles};
 pub use pick::Hit;
 pub use play::{FogState, Pics, Play, PlayError, fog_parse_worldspawn};
+pub use skybox::{SKY_SIDES, SkyKeys, Skybox, sky_parse_worldspawn};
 pub use sprite::{Eye, SpriteEntity, SpriteError, SpriteModel, SpriteVertex};
 pub use styles::{LightStyles, MAX_LIGHTSTYLES};

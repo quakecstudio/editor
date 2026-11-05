@@ -14,6 +14,7 @@ use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 use crate::alias::AliasVertex;
 use crate::mesh::{Animation, Batch, Image, MapMesh, Placement, Surface, frame, mip_levels};
 use crate::particles::{ParticleVertex, particle_texture};
+use crate::skybox::Skybox;
 use crate::sprite::SpriteVertex;
 
 /// The bytes of a [`crate::mesh::Vertex`] on the GPU: position, texture and light coordinates.
@@ -27,8 +28,10 @@ const PARTICLE_VERTEX_BYTES: u64 = 9 * 4;
 /// The bytes of a [`FlatVertex`]: position, texture coordinates and colour.
 const FLAT_VERTEX_BYTES: u64 = 8 * 4;
 /// The bytes of the view's uniform: a 4 by 4 matrix, the eye's position and the time, the
-/// fog, and the parameters.
-const VIEW_BYTES: u64 = 28 * 4;
+/// fog, the parameters and the skybox's.
+const VIEW_BYTES: u64 = 32 * 4;
+/// A skybox's faces, one texture layer each (REND-8.2).
+const SKY_FACES: u32 = 6;
 /// `glDepthRange (gldepthmin, gldepthmin + 0.3*(gldepthmax-gldepthmin))`: the view model is
 /// drawn in the nearest 0.3 of the depth range, so it never pokes into walls (REND-4.11).
 const VIEW_MODEL_DEPTH: f32 = 0.3;
@@ -91,6 +94,8 @@ pub struct MapRenderer {
     shown: Vec<bool>,
     /// The lightmap atlas, written again as the light styles change (REND-5.5).
     lightmap: wgpu::Texture,
+    /// The skybox's face size, `None` for the scrolling layers (REND-8.2).
+    skybox: Option<[u32; 2]>,
 }
 
 /// A vertex buffer that grows to what a frame needs.
@@ -233,6 +238,9 @@ pub struct Assets<'a> {
     /// The 2D pictures: `gfx.wad`'s, the `gfx/*.lmp` files and the console characters
     /// (HUD-1 to HUD-3).
     pub pics: &'a [Image],
+    /// The map's skybox, drawn where the sky faces are; `None` for the scrolling layers
+    /// (REND-8.2).
+    pub skybox: Option<&'a Skybox>,
 }
 
 /// The pipeline of each kind of surface, an index into [`MapRenderer`]'s pipelines.
@@ -311,6 +319,17 @@ impl MapRenderer {
                 },
                 texture_entry(1),
                 sampler_entry(2),
+                // The skybox's six faces (REND-8.2).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -494,6 +513,7 @@ impl MapRenderer {
                 | wgpu::TextureUsages::COPY_SRC,
         );
         let lightmap = lightmap_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let skybox = upload_skybox(device, queue, assets.skybox);
         let shared = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("qs-render view and lightmap"),
             layout: &shared_layout,
@@ -509,6 +529,10 @@ impl MapRenderer {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&linear),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&skybox),
                 },
             ],
         });
@@ -622,6 +646,7 @@ impl MapRenderer {
             model_count,
             shown: vec![true; model_count],
             lightmap: lightmap_texture,
+            skybox: assets.skybox.map(Skybox::size),
         }
     }
 
@@ -764,6 +789,10 @@ impl MapRenderer {
             0.0
         };
         let params = [view.water_alpha, skyfog, view.screen[0], view.screen[1]];
+        // REND-8.2: whether the sky is the box, and its faces' size.
+        let sky = self
+            .skybox
+            .map_or([0.0; 4], |[w, h]| [1.0, f32_of_u32(w), f32_of_u32(h), 0.0]);
         let bytes: Vec<u8> = view
             .clip_from_world
             .iter()
@@ -771,6 +800,7 @@ impl MapRenderer {
             .chain(&eye_time)
             .chain(&fog)
             .chain(&params)
+            .chain(&sky)
             .flat_map(|v| v.to_ne_bytes())
             .collect();
         queue.write_buffer(&self.view, 0, &bytes);
@@ -1030,6 +1060,40 @@ fn sampler(device: &Device, filter: wgpu::FilterMode, address: wgpu::AddressMode
     })
 }
 
+/// The skybox's faces as one texture of six layers, a black texel each with no skybox
+/// (REND-8.2).
+fn upload_skybox(device: &Device, queue: &Queue, skybox: Option<&Skybox>) -> wgpu::TextureView {
+    let [width, height] = skybox.map_or([1, 1], Skybox::size);
+    let data = skybox.map_or_else(
+        || [0, 0, 0, 255].repeat(usize::try_from(SKY_FACES).unwrap_or(0)),
+        Skybox::layers,
+    );
+    device
+        .create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: Some("qs-render skybox"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: SKY_FACES,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            TextureDataOrder::LayerMajor,
+            &data,
+        )
+        .create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        })
+}
+
 /// `image` as a texture's view, with no mipmaps.
 fn upload(device: &Device, queue: &Queue, image: &Image) -> wgpu::TextureView {
     upload_levels(device, queue, core::slice::from_ref(image))
@@ -1132,7 +1196,7 @@ impl View {
 /// `r_wateralpha`'s default (REND-9.1).
 const REND_WATERALPHA: f32 = 1.0;
 /// `r_skyfog`'s default (REND-8.1).
-const REND_SKYFOG: f32 = 0.5;
+pub(crate) const REND_SKYFOG: f32 = 0.5;
 /// `vid.conwidth = 640` when `-conwidth` is not given; `vid.conheight = vid.conwidth*3 / 4`.
 const CONWIDTH: f32 = 640.0;
 
@@ -1217,6 +1281,14 @@ const fn f32_of_i32(value: i32) -> f32 {
     value as f32
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a skybox face's pixels, far below f32's exact range"
+)]
+const fn f32_of_u32(value: u32) -> f32 {
+    value as f32
+}
+
 #[cfg(test)]
 mod tests {
     #![expect(
@@ -1231,7 +1303,7 @@ mod tests {
     use egui_wgpu::wgpu::naga::front::wgsl;
     use egui_wgpu::wgpu::naga::valid::{Capabilities, ValidationFlags, Validator};
 
-    use qs_bsp::SURF_DRAWTURB;
+    use qs_bsp::{SURF_DRAWSKY, SURF_DRAWTURB};
 
     use super::{
         ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, FlatDraw, FlatFrame, FlatVertex, Fog,
@@ -1243,6 +1315,8 @@ mod tests {
     use crate::mesh::Image;
     use crate::mesh::tests::{MapSpec, bsp, palette, samples};
     use crate::particles::ParticleVertex;
+    use crate::skybox::Skybox;
+    use crate::skybox::tests::{TgaSpec, solid, tga};
     use crate::sprite::SpriteVertex;
     use crate::{LightStyles, MapMesh};
     use egui_wgpu::CallbackTrait as _;
@@ -1448,6 +1522,115 @@ mod tests {
         // The view spans x -8 to 72 and y -24 to 56: the face's corner (0, 0) is 8 units from
         // the view's left edge and 24 from its top, 6 and 19 pixels; beyond it is the clear.
         assert_eq!(pixel(&image, 2, 2), [0, 0, 0, 255]);
+    }
+
+    /// The colour of each quadrant of the test skybox's `dn` face, left to right, top to
+    /// bottom.
+    const QUADRANTS: [[u8; 4]; 4] = [
+        [200, 0, 0, 255],
+        [0, 200, 0, 255],
+        [0, 0, 200, 255],
+        [200, 200, 0, 255],
+    ];
+
+    /// A skybox whose faces are each one grey, `rt` 10, `bk` 20, `lf` 30, `ft` 40 and `up` 50,
+    /// but `dn`, 64 by 64 in [`QUADRANTS`].
+    fn skybox() -> Skybox {
+        let mut dn = Vec::new();
+        for y in 0..64 {
+            for x in 0..64 {
+                dn.extend(QUADRANTS[usize::from(y >= 32) * 2 + usize::from(x >= 32)]);
+            }
+        }
+        let read = move |name: &str| match name {
+            "gfx/env/tdn.tga" => Some(tga(&TgaSpec {
+                width: 64,
+                height: 64,
+                rgba: dn.clone(),
+                top_down: true,
+            })),
+            _ => {
+                let side = ["rt", "bk", "lf", "ft", "up"]
+                    .iter()
+                    .position(|side| name == format!("gfx/env/t{side}.tga"))?;
+                let grey = u8::try_from(side + 1).unwrap() * 10;
+                Some(solid([64, 64], [grey, grey, grey, 255]))
+            }
+        };
+        Skybox::load("t", &read).unwrap()
+    }
+
+    /// The test face as sky, seen from above, drawn with `skybox`'s faces.
+    fn sky_frame(skybox: &Skybox, view: View) -> Vec<u8> {
+        let spec = MapSpec {
+            flags: SURF_DRAWSKY,
+            ..seen_from_above()
+        };
+        let assets = Assets {
+            skybox: Some(skybox),
+            ..Assets::default()
+        };
+        let (state, renderer, _) = renderer_of(&spec, &[255], &assets);
+        let callback = MapCallback { view, ..frame() };
+        render(&state, renderer, &callback, BLACK)
+    }
+
+    // spec REND-8.3: looking down, the sky face shows the `dn` face, its `vec_to_st` s from
+    // -y and t from x. The view's up is +x and its right -y (`AngleVectors` at pitch 90), 1.25
+    // units a pixel at 40 below: pixel (20, 25) is world (40.75, 31), s -0.375 and t 0.22, the
+    // top left quadrant; pixel (44, 40) is (22, 1), s 0.375 and t -0.25, the bottom right
+    #[test]
+    fn the_sky_shows_the_skybox_face_it_looks_through() {
+        let image = sky_frame(&skybox(), looking_down());
+        assert_eq!(pixel(&image, 20, 25), QUADRANTS[0]);
+        assert_eq!(pixel(&image, 44, 40), QUADRANTS[3]);
+        assert_eq!(pixel(&image, 2, 2), [0, 0, 0, 255], "no sky face there");
+    }
+
+    // spec REND-8.3: the face is the direction's largest axis, through `skytexorder`: +x `rt`,
+    // -x `lf`, +y `bk`, -y `ft`; each view looks at the sky face's middle from 60 away and
+    // 40 above, so the horizontal axis is the largest
+    #[test]
+    fn each_direction_shows_its_skybox_face() {
+        let skybox = skybox();
+        for ([dx, dy], yaw, grey) in [
+            ([-1.0, 0.0], 0.0, 10),
+            ([1.0, 0.0], 180.0, 30),
+            ([0.0, -1.0], 90.0, 20),
+            ([0.0, 1.0], 270.0, 40),
+        ] {
+            let eye = [32.0 + 60.0 * dx, 16.0 + 60.0 * dy, 40.0];
+            let pitch = (40.0_f32 / 60.0).atan().to_degrees();
+            let view = View::new(
+                Camera::clip_from_view(eye, [pitch, yaw, 0.0], 90.0, 1.0),
+                eye,
+                0.0,
+            );
+            let image = sky_frame(&skybox, view);
+            assert_eq!(pixel(&image, 32, 32), [grey, grey, grey, 255], "yaw {yaw}");
+        }
+    }
+
+    // spec REND-8.1: with fog, `skyfog` of the fog's colour over the skybox; 1 is all fog
+    #[test]
+    fn the_fog_covers_the_skybox_by_its_share() {
+        let skybox = skybox();
+        let fogged = |skyfog: f32| {
+            let mut view = looking_down();
+            view.fog = Fog {
+                color: [1.0, 1.0, 1.0],
+                density: 0.001,
+            };
+            view.skyfog = skyfog;
+            pixel(&sky_frame(&skybox, view), 20, 25)
+        };
+        assert_eq!(fogged(0.0), QUADRANTS[0]);
+        assert!(
+            near(fogged(0.5), [227, 128, 128, 255], 1),
+            "{:?}",
+            fogged(0.5)
+        );
+        assert_eq!(fogged(1.0), [255, 255, 255, 255]);
     }
 
     // spec REND-10.4: a fragment's colour is mixed toward the fog colour by

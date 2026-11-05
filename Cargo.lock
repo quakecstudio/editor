@@ -3161,6 +3161,7 @@ dependencies = [
  "egui-wgpu",
  "egui_kittest",
  "epaint",
+ "image",
  "qc-progs",
  "qs-bsp",
  "qs-client",

@@ -5,8 +5,9 @@ drawn as GLQuake draws them, inside egui's render pass through a paint callback 
 the map view and the preview host share one renderer.
 
 - **Layer:** L7 UI. It depends on `qs-bsp`, `qs-mdl` and `qs-wad` (L0), `qs-client` (L4),
-  `egui-wgpu` and `epaint`; its examples also on `qs-vfs`, `qc-progs` and `qs-sim`.
-- **Spec sections:** REND-1 to REND-7 and REND-9 to REND-11 of
+  `egui-wgpu`, `epaint` and `image` (its TGA reader); its examples also on `qs-vfs`,
+  `qc-progs` and `qs-sim`.
+- **Spec sections:** REND-1 to REND-11 of
   [`render.md`](../../docs/spec/render.md); PART-3.2 of
   [`engine/particles.md`](../../docs/spec/engine/particles.md); the drawing of HUD-1 to HUD-3
   of [`engine/hud.md`](../../docs/spec/engine/hud.md) and of VIEW-4.6.
@@ -15,14 +16,15 @@ the map view and the preview host share one renderer.
   `R_BuildLightMap`, `R_AddDynamicLights`, `R_DrawBrushModel`), `WinQuake/gl_rlight.c`
   (`R_LightPoint`, `R_PushDlights`, `R_MarkLights`, `R_AnimateLight`), `WinQuake/gl_rmain.c`
   (`R_DrawAliasModel`, `R_DrawViewModel`, `R_PolyBlend`, `R_RotateForEntity`),
-  `WinQuake/gl_rmisc.c` (`R_TranslatePlayerSkin`),
-  `WinQuake/r_part.c` (`R_DrawParticles`), `WinQuake/gl_draw.c` (`Draw_Character`,
-  `Draw_Pic`, `Draw_Fill`, `GL_Set2D`), `WinQuake/sbar.c` (`Sbar_DrawPic`); from
+  `WinQuake/gl_rmisc.c` (`R_TranslatePlayerSkin`), `WinQuake/r_part.c` (`R_DrawParticles`),
+  `WinQuake/gl_draw.c` (`Draw_Character`, `Draw_Pic`, `Draw_Fill`, `GL_Set2D`),
+  `WinQuake/sbar.c` (`Sbar_DrawPic`); from
   sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`, `Quake/r_alias.c`
   (`GL_DrawAliasFrame`, the pose blend), `Quake/r_sprite.c` (`R_GetSpriteFrame`,
   `R_DrawSpriteModel`) and `Quake/gl_fog.c` (`Fog_ParseWorldspawn`, `Fog_Update`,
-  `Fog_GetColor`, `Fog_GetDensity`). Coloured light (REND-6) is QuakeSpasm's behaviour,
-  described in the spec; none of its code is ported.
+  `Fog_GetColor`, `Fog_GetDensity`), `Quake/gl_sky.c` (`Sky_NewMap`, `Sky_LoadSkyBox`) and
+  `Quake/image.c` (`Image_LoadImage`, `Image_LoadPCX`). Coloured light (REND-6) is QuakeSpasm's
+  behaviour, described in the spec; none of its code is ported.
 - **Shipped:** yes.
 
 ## Public shape
@@ -59,14 +61,17 @@ the map view and the preview host share one renderer.
   map's fog (`FogState`), the view model's and the players' light floors, each player's skin
   in its slot's shirt and trouser colours (REND-4.13), and the status
   bar, the scoreboards and the centre print as quads.
+- `Skybox::load(name, read)`: the six `gfx/env` faces a worldspawn's `sky` key names, as TGA
+  or PCX (REND-8.2); `Play::load_sky` reads the map's, and `Assets::skybox` gives it to the
+  renderer, which draws it through the sky faces (REND-8.3).
 - `Camera`: a free camera in Quake's axes and its clip-space matrix, and
   `Camera::clip_from_view` for the client's view angles.
 
 ## What it is not, yet
 
-Skyboxes (REND-8, which need an image reader for the `gfx/env` files) are not drawn, nor is `gl_flashblend` (REND-7.4,
-off in the FitzQuake lineage). Each model has its own matrix (`MapRenderer::set_placements`),
-and a brush entity out of the client's visible list is not drawn.
+`gl_flashblend` (REND-7.4, off in the FitzQuake lineage) is not drawn. Each model has its own
+matrix (`MapRenderer::set_placements`), and a brush entity out of the client's visible list is
+not drawn.
 
 ## Trying it
 

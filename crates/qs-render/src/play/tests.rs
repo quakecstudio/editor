@@ -15,6 +15,7 @@ use crate::alias::tests::{MdlSpec, SkinSpec, mdl};
 use crate::gpu::{FlatDraw, Fog};
 use crate::mesh::tests::{MapSpec, bsp, palette, samples};
 use crate::mesh::{Image, MapMesh};
+use crate::skybox::tests::solid;
 
 /// A WAD2 of picture lumps: each a name, a size and one palette index for every pixel.
 fn wad(lumps: &[(&str, [i32; 2], u8)]) -> Vec<u8> {
@@ -494,4 +495,24 @@ fn players_wear_their_slots_translated_skins() {
     let changed = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
     assert_eq!(changed.player_skins.len(), 1);
     assert_eq!(changed.player_skins[0].1.rgba[4], palette().rgba(80)[0]);
+}
+
+// spec REND-8.1: the worldspawn's `skyfog` is the fog's share of the sky
+// spec REND-8.2: the skybox the worldspawn names is read through the game's files and given
+// to the renderer; a map naming none, or one with no face, keeps the layers
+#[test]
+fn the_worldspawn_sets_the_sky() {
+    let read = |name: &str| (name == "gfx/env/cloudsdn.tga").then(|| solid([1, 1], [1; 4]));
+    let mut named = Play::new(palette(), pics(), br#"{ "sky" "clouds" "skyfog" "0.2" }"#);
+    assert_eq!(named.skyfog, 0.2);
+    assert!(named.assets().skybox.is_none(), "not read yet");
+    named.load_sky(&read);
+    assert_eq!(named.assets().skybox.unwrap().size(), [1, 1]);
+    let mut missing = Play::new(palette(), pics(), br#"{ "sky" "gone" }"#);
+    missing.load_sky(&read);
+    assert!(missing.assets().skybox.is_none());
+    let mut plain = play();
+    assert_eq!(plain.skyfog, 0.5);
+    plain.load_sky(&read);
+    assert!(plain.assets().skybox.is_none());
 }
