@@ -256,9 +256,9 @@ stop.
 
 ## PHYS-10 Entering the game
 
-**Source:** `WinQuake/sv_main.c`, `SV_ConnectClient`, `SV_WriteClientdataToMessage`;
-`WinQuake/host_cmd.c`, `Host_Spawn_f`; `WinQuake/host.c`, `Host_ServerFrame`,
-`Host_FilterTime`.
+**Source:** `WinQuake/sv_main.c`, `SV_ConnectClient`, `SV_WriteClientdataToMessage`,
+`SV_SaveSpawnparms`, `SV_SpawnServer`; `WinQuake/host_cmd.c`, `Host_Spawn_f`,
+`Host_Changelevel_f`; `WinQuake/cmd.c`, `Cbuf_Execute`; `WinQuake/host.c`, `Host_ServerFrame`, `Host_FilterTime`.
 
 ### Behaviour
 
@@ -271,6 +271,19 @@ stop.
   cleared.
 - **PHYS-10.3** A server frame sets the `frametime` global, runs each spawned client's
   command (PHYS-9), then the physics (PHYS-1).
+- **PHYS-10.4** `changelevel` appends `changelevel <map>` to the host's command buffer
+  (BUILTIN-11.6), which `Cbuf_Execute` runs as commands split at a line end or at a `;` outside
+  quotes ("don't break if inside a quoted string"), each tokenized with a quoted run one word;
+  `Host_Changelevel_f` takes it only with exactly one argument (`if (Cmd_Argc() != 2)`, the
+  usage message otherwise), then `SV_SaveSpawnparms ()` and `SV_SpawnServer (level)`.
+  `SV_SaveSpawnparms` keeps `svs.serverflags = pr_global_struct->serverflags` and, for each
+  active client, sets `self` to its edict, runs `SetChangeParms` and keeps `parm1` to `parm16`
+  in its `spawn_parms`. `SV_SpawnServer` sets `pr_global_struct->serverflags = svs.serverflags`
+  ("serverflags are for cross level information (sigils)") before the entities spawn. A client
+  already connected is not connected again, so `SetNewParms` does not run; `Host_Spawn_f` copies
+  its kept `spawn_parms` into `parm1` to `parm16` before `ClientConnect` and `PutClientInServer`
+  (PHYS-10.1). `qs-sim` takes the level and the kept parms through `World::take_changelevel` and
+  `World::save_spawn_parms`; the host loads the next world with them.
 
 The frame's length is the host's: `Host_FilterTime` runs a frame once 1/72 of a second has
 passed since the last, its `frametime` the time passed, 0.001 to 0.1. `qs-sim` takes the

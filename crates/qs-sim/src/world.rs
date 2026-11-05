@@ -2,7 +2,9 @@
 // Copyright (C) 1996-1997 Id Software, Inc.
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/sv_main.c, SV_SpawnServer
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/sv_main.c, SV_SpawnServer, SV_SaveSpawnparms
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/host_cmd.c, Host_Changelevel_f
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/cmd.c, Cbuf_Execute
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_edict.c, ED_Alloc, ED_Free, ED_FindField, ED_FindFunction
 
 //! A map's world: the progs' VM with a map's entities spawned in it, as `SV_SpawnServer` spawns
@@ -95,6 +97,8 @@ pub struct World {
     pub(crate) builtins: SimBuiltins,
     /// The client's command, once it has entered the game (PHYS-9.6, PHYS-10).
     player: Option<UserCmd>,
+    /// The spawn parms the level the player left kept, used in place of `SetNewParms`'.
+    carried: Option<SpawnParms>,
 }
 
 /// What the host gives a world besides its map and progs.
@@ -106,6 +110,32 @@ pub struct LoadOptions {
     /// The builtin table, as [`crate::rerelease::patch_builtins`] chose it for the progs
     /// (RRE-4.2).
     pub builtins: BuiltinTable,
+    /// What the level the player left carries into this one, `None` for a new game
+    /// (PHYS-10.4).
+    pub carried: Option<SpawnParms>,
+}
+
+/// What `SV_SaveSpawnparms` keeps across a level change: `serverflags`, "for cross level
+/// information (sigils)", and the client's `parm1` to `parm16` after `SetChangeParms`
+/// (PHYS-10.4).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SpawnParms {
+    serverflags: Slot,
+    parms: [Slot; 16],
+}
+
+impl SpawnParms {
+    /// `parm1` to `parm16` as floats, as the progs reads them.
+    #[must_use]
+    pub fn parms(&self) -> [f32; 16] {
+        self.parms.map(Slot::as_f32)
+    }
+
+    /// `serverflags` as a float.
+    #[must_use]
+    pub fn serverflags(&self) -> f32 {
+        self.serverflags.as_f32()
+    }
 }
 
 impl World {
@@ -146,6 +176,7 @@ impl World {
                 options.builtins,
             ),
             player: None,
+            carried: options.carried,
         };
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
@@ -157,7 +188,11 @@ impl World {
         // EDICT-11.4: the globals.
         let mapname = world.make_string(map.as_bytes().to_vec());
         world.set_global("mapname", Slot::from_i32(mapname));
-        world.set_global("serverflags", Slot::from_f32(0.0));
+        // PHYS-10.4: `pr_global_struct->serverflags = svs.serverflags`, 0 for a new game.
+        let serverflags = options
+            .carried
+            .map_or(Slot::from_f32(0.0), |c| c.serverflags);
+        world.set_global("serverflags", serverflags);
         world.set_global("time", Slot::from_f32(1.0));
         // EDICT-8: the entities, for single player at the normal skill.
         let mut spawner = Spawner {
@@ -261,9 +296,15 @@ impl World {
         call.flush_signon();
         call.prespawn();
         call.flush_signon();
-        let new_parms = call.global("SetNewParms").as_i32();
-        call.run(new_parms).map_err(WorldError::Frame)?;
-        let parms: Vec<Slot> = (1..=16).map(|n| call.global(&format!("parm{n}"))).collect();
+        // PHYS-10.4: after a level change the client's kept parms, not `SetNewParms`'.
+        let parms: Vec<Slot> = match self.carried {
+            Some(carried) => carried.parms.to_vec(),
+            None => {
+                let new_parms = call.global("SetNewParms").as_i32();
+                call.run(new_parms).map_err(WorldError::Frame)?;
+                (1..=16).map(|n| call.global(&format!("parm{n}"))).collect()
+            }
+        };
         let fields = call.context.machine_view().edicts().layout().entityfields();
         for slot in 0..fields {
             // A slot past the edict's fields is not written.
@@ -291,6 +332,37 @@ impl World {
         call.begin();
         self.player = Some(UserCmd::default());
         Ok(())
+    }
+
+    /// The level the progs asked for with `changelevel` since the last call: the command it
+    /// appended to the host's buffer, `changelevel <map>`, which `Host_Changelevel_f` takes
+    /// only with exactly one argument (PHYS-10.4). The buffer is emptied.
+    pub fn take_changelevel(&mut self) -> Option<String> {
+        let buffer = core::mem::take(&mut self.builtins.mock.engine_mut().command_buffer);
+        commands(&String::from_utf8_lossy(&buffer))
+            .into_iter()
+            .find_map(|command| match tokens(&command).as_slice() {
+                [name, map] if name == "changelevel" => Some(map.clone()),
+                _ => None,
+            })
+    }
+
+    /// `SV_SaveSpawnparms`: `serverflags`, then, with `self` the client, `SetChangeParms`
+    /// and the client's `parm1` to `parm16`, for the next level's [`LoadOptions::carried`]
+    /// (PHYS-10.4).
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when `SetChangeParms` fails.
+    pub fn save_spawn_parms(&mut self, progs: &Progs<'_>) -> Result<SpawnParms, WorldError> {
+        let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        let serverflags = call.global("serverflags");
+        let value = call.value_of(CLIENT);
+        call.set_global("self", Slot::from_i32(value));
+        let change = call.global("SetChangeParms").as_i32();
+        call.run(change).map_err(WorldError::Frame)?;
+        let parms = core::array::from_fn(|n| call.global(&format!("parm{}", n.saturating_add(1))));
+        Ok(SpawnParms { serverflags, parms })
     }
 
     /// What the player asks for from the next frame on (PHYS-9.6).
@@ -519,6 +591,53 @@ impl SpawnHost for Spawner<'_, '_> {
             .edicts_mut()
             .free(EdictNumber::new(edict), clock);
     }
+}
+
+/// `Cbuf_Execute`'s commands in `text`: split at a line end, or at a `;` outside quotes
+/// ("don't break if inside a quoted string") (PHYS-10.4).
+fn commands(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut line = String::new();
+    let mut quoted = false;
+    for c in text.chars() {
+        if c == '"' {
+            quoted = !quoted;
+        }
+        if c == '\n' || (c == ';' && !quoted) {
+            out.push(core::mem::take(&mut line));
+            quoted = false;
+        } else {
+            line.push(c);
+        }
+    }
+    out.push(line);
+    out
+}
+
+/// `Cmd_TokenizeString`'s words of `command`, as `COM_Parse` reads them: a quoted run is one
+/// word without its quotes, anything else ends at white space (PHYS-10.4).
+fn tokens(command: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut chars = command.chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
+        } else if c == '"' {
+            chars.next();
+            out.push(chars.by_ref().take_while(|&c| c != '"').collect());
+        } else {
+            let mut word = String::new();
+            while let Some(&c) = chars.peek() {
+                if c.is_whitespace() {
+                    break;
+                }
+                word.push(c);
+                chars.next();
+            }
+            out.push(word);
+        }
+    }
+    out
 }
 
 #[cfg(test)]

@@ -21,6 +21,8 @@ qs-porting-example = { workspace = true }
 [dev-dependencies]
 qc-codegen = { workspace = true }
 qc-sema = { workspace = true }
+# The sweep example reads an install through the game filesystem.
+qs-vfs = { workspace = true }
 
 [lints]
 workspace = true

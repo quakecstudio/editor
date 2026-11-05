@@ -26,4 +26,4 @@ pub use messages::{
 };
 pub use physics::Sound;
 pub use qc_builtins::localization;
-pub use world::{Entity, LoadOptions, World, WorldError};
+pub use world::{Entity, LoadOptions, SpawnParms, World, WorldError};

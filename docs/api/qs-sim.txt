@@ -89,6 +89,7 @@ field qs_sim::world::Entity.number
 field qs_sim::world::Entity.origin
 field qs_sim::world::Entity.skin
 field qs_sim::world::LoadOptions.builtins
+field qs_sim::world::LoadOptions.carried
 field qs_sim::world::LoadOptions.localization
 fn qs_sim::collision::Collision::add_brush
 fn qs_sim::collision::Collision::area
@@ -166,15 +167,19 @@ fn qs_sim::spawn::c_atof
 fn qs_sim::spawn::c_atoi
 fn qs_sim::spawn::inhibited
 fn qs_sim::spawn::load_from_file
+fn qs_sim::world::SpawnParms::parms
+fn qs_sim::world::SpawnParms::serverflags
 fn qs_sim::world::World::connect
 fn qs_sim::world::World::entities
 fn qs_sim::world::World::frame
 fn qs_sim::world::World::light_style
 fn qs_sim::world::World::load
 fn qs_sim::world::World::player_view
+fn qs_sim::world::World::save_spawn_parms
 fn qs_sim::world::World::set_command
 fn qs_sim::world::World::set_standard_quake
 fn qs_sim::world::World::settle
+fn qs_sim::world::World::take_changelevel
 fn qs_sim::world::World::take_messages
 fn qs_sim::world::World::take_set_angle
 fn qs_sim::world::World::take_sounds
@@ -210,6 +215,7 @@ struct qs_sim::spawn::FieldDef
 struct qs_sim::spawn::Parser
 struct qs_sim::world::Entity
 struct qs_sim::world::LoadOptions
+struct qs_sim::world::SpawnParms
 struct qs_sim::world::World
 trait qs_sim::collision::Host
 trait qs_sim::spawn::SpawnHost
@@ -232,6 +238,7 @@ use qs_sim::NET_SIGNON_SIZE = messages::NET_SIGNON_SIZE
 use qs_sim::NET_VERSION = messages::NET_VERSION
 use qs_sim::SimBuiltins = builtins::SimBuiltins
 use qs_sim::Sound = physics::Sound
+use qs_sim::SpawnParms = world::SpawnParms
 use qs_sim::UserCmd = client::UserCmd
 use qs_sim::World = world::World
 use qs_sim::WorldError = world::WorldError
