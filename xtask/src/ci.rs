@@ -172,29 +172,32 @@ impl Step {
     }
 }
 
-const USAGE: &str = "usage: cargo xtask ci [--skip <step>[,<step>...]]";
+/// `cargo xtask ci [--skip <step>[,<step>...]]`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// Steps not to run, by name, separated by commas.
+    #[arg(long, value_name = "step,...", allow_hyphen_values = true)]
+    skip: Option<String>,
+}
 
-/// Runs `cargo xtask ci` with the arguments `args`: every step of `steps`
-/// except those `--skip` names. Returns whether every step run passed, or an
-/// error for a malformed argument or a name no step has.
-pub(crate) fn main(root: &Path, args: &[String], steps: &[Step]) -> Result<bool, String> {
+/// Runs `cargo xtask ci`: every step of `steps` except those `--skip` names. Returns whether
+/// every step run passed, or an error for a name no step has.
+pub(crate) fn main(root: &Path, args: &Args, steps: &[Step]) -> Result<bool, String> {
     let skip = parse_skip(args, steps)?;
     Ok(run(root, steps, &skip))
 }
 
 /// The names of the steps `args` skips; each must name a step of `steps`.
-fn parse_skip<'a>(args: &'a [String], steps: &[Step]) -> Result<Vec<&'a str>, String> {
-    let list = match args {
-        [] => return Ok(Vec::new()),
-        [flag, list] if flag == "--skip" => list,
-        _ => return Err(USAGE.to_owned()),
+fn parse_skip<'a>(args: &'a Args, steps: &[Step]) -> Result<Vec<&'a str>, String> {
+    let Some(list) = &args.skip else {
+        return Ok(Vec::new());
     };
     let mut skip = Vec::new();
     for name in list.split(',') {
         if !steps.iter().any(|step| step.name() == name) {
             let names: Vec<&str> = steps.iter().map(Step::name).collect();
             return Err(format!(
-                "no step is named {name:?}; the steps are {}\n{USAGE}",
+                "no step is named {name:?}; the steps are {}",
                 names.join(", ")
             ));
         }
@@ -273,6 +276,7 @@ mod pr_body_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parse_cli;
 
     #[test]
     fn ci_runs_every_check_the_issue_names() {
@@ -350,6 +354,17 @@ mod tests {
         list.iter().map(|arg| (*arg).to_owned()).collect()
     }
 
+    /// `cargo xtask ci` with `list`.
+    fn cli(list: &[&str]) -> Args {
+        parse_cli::<Args, _>(list).unwrap_or(Args { skip: None })
+    }
+
+    /// The steps `list` skips, or why not.
+    fn skips(list: &[&str]) -> Result<Vec<String>, String> {
+        let parsed = parse_cli::<Args, _>(list).map_err(|e| e.to_string())?;
+        parse_skip(&parsed, &STEPS).map(|names| names.into_iter().map(str::to_owned).collect())
+    }
+
     #[test]
     fn every_step_has_its_own_name() {
         let names: Vec<&str> = STEPS.iter().map(Step::name).collect();
@@ -376,12 +391,15 @@ mod tests {
 
     #[test]
     fn skip_names_exactly_the_steps_it_lists() {
-        assert_eq!(parse_skip(&[], &STEPS), Ok(Vec::new()));
-        let skip = args(&["--skip", "fmt,clippy,nextest,deny"]);
-        let names = parse_skip(&skip, &STEPS).unwrap_or_default();
-        assert_eq!(names, ["fmt", "clippy", "nextest", "deny"]);
-        let skip = args(&["--skip", "clippy-fixtures"]);
-        assert_eq!(parse_skip(&skip, &STEPS), Ok(vec!["clippy-fixtures"]));
+        assert_eq!(skips(&[]), Ok(Vec::new()));
+        assert_eq!(
+            skips(&["--skip", "fmt,clippy,nextest,deny"]),
+            Ok(args(&["fmt", "clippy", "nextest", "deny"]))
+        );
+        assert_eq!(
+            skips(&["--skip", "clippy-fixtures"]),
+            Ok(args(&["clippy-fixtures"]))
+        );
     }
 
     #[test]
@@ -423,7 +441,7 @@ mod tests {
             &["--skip", "fmt,"],
             &["--skip", "cargo fmt --all --check"],
         ] {
-            let error = parse_skip(&args(bad), &STEPS).err().unwrap_or_default();
+            let error = skips(bad).err().unwrap_or_default();
             assert!(error.contains("no step is named"), "{bad:?}: {error}");
             assert!(error.contains("fmt, plan, plan-tests"), "{bad:?}: {error}");
         }
@@ -433,29 +451,25 @@ mod tests {
             &["fmt"],
             &["--skip", "fmt", "--skip", "nextest"],
         ] {
-            assert_eq!(
-                parse_skip(&args(bad), &STEPS),
-                Err(USAGE.to_owned()),
-                "{bad:?}"
-            );
+            assert!(parse_cli::<Args, _>(bad).is_err(), "{bad:?}");
         }
     }
 
     #[test]
     fn a_skipped_step_does_not_run_and_the_others_do() {
         let steps = [Step::Cargo(&["--version"]), Step::Xtask("no-such-check")];
-        assert!(main(root(), &args(&["--skip", "no-such-check"]), &steps).unwrap_or(false));
-        assert!(!main(root(), &args(&["--skip", "--version"]), &steps).unwrap_or(true));
-        assert!(!main(root(), &[], &steps).unwrap_or(true));
+        assert!(main(root(), &cli(&["--skip", "no-such-check"]), &steps).unwrap_or(false));
+        assert!(!main(root(), &cli(&["--skip", "--version"]), &steps).unwrap_or(true));
+        assert!(!main(root(), &cli(&[]), &steps).unwrap_or(true));
         let steps = [
             Step::Xtask("no-such-check"),
             Step::Program("missing", "no-such-program-xtask-ci", &[]),
         ];
-        assert!(!main(root(), &args(&["--skip", "no-such-check"]), &steps).unwrap_or(true));
-        assert!(!main(root(), &args(&["--skip", "missing"]), &steps).unwrap_or(true));
-        let skip = args(&["--skip", "missing,no-such-check"]);
+        assert!(!main(root(), &cli(&["--skip", "no-such-check"]), &steps).unwrap_or(true));
+        assert!(!main(root(), &cli(&["--skip", "missing"]), &steps).unwrap_or(true));
+        let skip = cli(&["--skip", "missing,no-such-check"]);
         assert!(main(root(), &skip, &steps).unwrap_or(false));
-        assert!(main(root(), &args(&["--skip", "nothing"]), &steps).is_err());
+        assert!(main(root(), &cli(&["--skip", "nothing"]), &steps).is_err());
     }
 
     #[test]
@@ -491,7 +505,7 @@ mod tests {
         );
         let lists = quoted.get(1..).unwrap_or_default();
         for list in lists {
-            for name in parse_skip(&args(&["--skip", list]), &STEPS).unwrap_or_default() {
+            for name in skips(&["--skip", list]).unwrap_or_default() {
                 let step = STEPS.iter().find(|step| step.name() == name);
                 let label = step.map(Step::label).unwrap_or_default();
                 assert!(workflow.contains(&format!("run: {label}\n")), "{label}");

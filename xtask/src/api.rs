@@ -28,31 +28,33 @@ pub(crate) const DIR: &str = "docs/api";
 /// The layers whose crates are library crates with a public API boundary.
 const LIBRARY_LAYERS: [&str; 6] = ["L0", "L1", "L2", "L3", "L4", "L5"];
 
-const USAGE: &str = "usage: cargo xtask api [--check]";
+/// `cargo xtask api [--check]`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// Check the lists instead of writing them.
+    #[arg(long)]
+    check: bool,
+}
 
 /// Runs `cargo xtask api` with the arguments `args`.
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    match args {
-        [] => {
-            let dir = root.join(DIR);
-            fs::create_dir_all(&dir).map_err(|e| format!("{DIR}: {e}"))?;
-            let crates = library_crates(root)?;
-            for stale in stale_lists(root, &crates)? {
-                let path = dir.join(&stale);
-                fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-                eprintln!("api: removed {DIR}/{stale}");
-            }
-            for krate in crates {
-                let path = dir.join(format!("{}.txt", krate.name));
-                fs::write(&path, krate.listing()?)
-                    .map_err(|e| format!("{}: {e}", path.display()))?;
-                eprintln!("api: wrote {DIR}/{}.txt", krate.name);
-            }
-            Ok(true)
-        }
-        [flag] if flag == "--check" => Ok(print_outcome("api", check(root))),
-        _ => Err(USAGE.to_owned()),
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
+    if args.check {
+        return Ok(print_outcome("api", check(root)));
     }
+    let dir = root.join(DIR);
+    fs::create_dir_all(&dir).map_err(|e| format!("{DIR}: {e}"))?;
+    let crates = library_crates(root)?;
+    for stale in stale_lists(root, &crates)? {
+        let path = dir.join(&stale);
+        fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        eprintln!("api: removed {DIR}/{stale}");
+    }
+    for krate in crates {
+        let path = dir.join(format!("{}.txt", krate.name));
+        fs::write(&path, krate.listing()?).map_err(|e| format!("{}: {e}", path.display()))?;
+        eprintln!("api: wrote {DIR}/{}.txt", krate.name);
+    }
+    Ok(true)
 }
 
 /// Checks that each library crate's list in `docs/api/` is what its source gives, and that
@@ -462,7 +464,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use super::{DIR, check, main};
+    use super::{Args, DIR, check, main};
     use crate::test_dirs::fresh as fresh_dir;
 
     /// A workspace of one library crate `lib` in L0 whose public items are `source`.
@@ -506,7 +508,7 @@ mod tests {
         fs::write(src.join("private.rs"), "pub struct Hidden(pub u8);\n").unwrap();
         fs::create_dir_all(src.join("outer")).unwrap();
         fs::write(src.join("outer").join("deep.rs"), "pub fn bottom() {}\n").unwrap();
-        assert!(main(&dir, &[]).unwrap());
+        assert!(main(&dir, &Args { check: false }).unwrap());
         let listing = fs::read_to_string(dir.join(DIR).join("lib.txt")).unwrap();
         let expected = "\
             enum lib::E\n\
@@ -542,14 +544,14 @@ mod tests {
         workspace(&dir, "pub fn one() {}\n");
         let src = dir.join("crates").join("lib").join("src");
         assert!(!check(&dir).unwrap().problems.is_empty(), "no list yet");
-        assert!(main(&dir, &[]).unwrap());
+        assert!(main(&dir, &Args { check: false }).unwrap());
         assert!(check(&dir).unwrap().problems.is_empty());
         fs::write(src.join("lib.rs"), "pub fn one() {}\npub fn two() {}\n").unwrap();
         let report = check(&dir).unwrap();
         assert_eq!(report.problems.len(), 1);
         assert!(report.problems[0].contains("docs/api/lib.txt differs"));
-        assert!(main(&dir, &["--check".to_owned()]).is_ok());
-        assert!(main(&dir, &["--other".to_owned()]).is_err());
+        assert!(main(&dir, &Args { check: true }).is_ok());
+        assert!(crate::parse_cli::<Args, _>(&["--other"]).is_err());
     }
 
     // P2-154: a list left for a crate that is no library crate fails the check, and the
@@ -558,7 +560,7 @@ mod tests {
     fn a_stale_list_fails_the_check_and_is_removed() {
         let dir = fresh_dir("api-stale");
         workspace(&dir, "pub fn one() {}\n");
-        assert!(main(&dir, &[]).unwrap());
+        assert!(main(&dir, &Args { check: false }).unwrap());
         fs::write(dir.join(DIR).join("gone.txt"), "fn gone::f\n").unwrap();
         let report = check(&dir).unwrap();
         assert!(
@@ -567,7 +569,7 @@ mod tests {
                 .iter()
                 .any(|p| p.contains("docs/api/gone.txt lists no library crate"))
         );
-        assert!(main(&dir, &[]).unwrap());
+        assert!(main(&dir, &Args { check: false }).unwrap());
         assert!(!dir.join(DIR).join("gone.txt").exists());
         assert!(check(&dir).unwrap().problems.is_empty());
     }

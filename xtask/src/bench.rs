@@ -34,9 +34,6 @@ const CRITERION_HOME: &str = "target/xtask/bench/criterion";
 const REGRESSION_RATIO: f64 = 1.10;
 const HISTORY_VERSION: u32 = 1;
 
-const USAGE: &str = "usage: cargo xtask bench [--history <path>] [--accept]\n       \
-                     cargo xtask bench history [--history <path>]";
-
 /// Which summary of the samples a budget is checked against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -144,22 +141,38 @@ struct Sample {
     times: Vec<f64>,
 }
 
-/// The parsed command line.
-#[derive(Debug, PartialEq)]
-struct Options {
+/// `cargo xtask bench [--history <path>] [--accept]`, or `cargo xtask bench history
+/// [--history <path>]`.
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+pub(crate) struct Args {
+    /// Print the recorded runs instead of running.
+    #[command(subcommand)]
+    show: Option<Show>,
+    /// The history file, `target/xtask/bench/history.json` by default.
+    #[arg(long, global = true)]
     history: Option<PathBuf>,
+    /// Record a failing run as the new baseline.
+    #[arg(long)]
     accept: bool,
-    show_history: bool,
+}
+
+/// `bench`'s one subcommand.
+#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
+enum Show {
+    /// Print the recorded runs.
+    History,
 }
 
 /// Runs `cargo xtask bench` with the arguments after `bench`.
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    let options = parse_args(args)?;
+pub(crate) fn main(root: &Path, options: &Args) -> Result<bool, String> {
     let history_path = options
         .history
         .clone()
         .unwrap_or_else(|| root.join(DEFAULT_HISTORY));
-    if options.show_history {
+    if options.show.is_some() && options.accept {
+        return Err("--accept only applies to a run".to_owned());
+    }
+    if options.show.is_some() {
         let history = load_history(&history_path)?;
         print!("{}", format_history(&history));
         return Ok(true);
@@ -206,32 +219,6 @@ fn baseline<'a>(history: &'a History, host_key: &str) -> Option<&'a Run> {
         .iter()
         .rev()
         .find(|run| run.passed && run.host.key == host_key)
-}
-
-fn parse_args(args: &[String]) -> Result<Options, String> {
-    let mut options = Options {
-        history: None,
-        accept: false,
-        show_history: false,
-    };
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "history" if !options.show_history => options.show_history = true,
-            "--accept" if !options.accept => options.accept = true,
-            "--history" if options.history.is_none() => {
-                let Some(path) = args.next() else {
-                    return Err(format!("--history needs a path\n{USAGE}"));
-                };
-                options.history = Some(PathBuf::from(path));
-            }
-            other => return Err(format!("unexpected argument {other:?}\n{USAGE}")),
-        }
-    }
-    if options.show_history && options.accept {
-        return Err(format!("--accept only applies to a run\n{USAGE}"));
-    }
-    Ok(options)
 }
 
 /// Reads the budget table between the `perf-budgets` markers.
@@ -315,7 +302,7 @@ fn parse_duration(text: &str) -> Option<f64> {
 /// Fetches id 1.01 into the asset cache, which a second run reads offline, and returns its
 /// directory.
 fn fetch_id1(root: &Path) -> Result<PathBuf, String> {
-    if !corpus::main(root, &["fetch".to_owned(), ID1.to_owned()])? {
+    if !corpus::main(root, &corpus::Args::fetch(vec![ID1.to_owned()]))? {
         return Err(format!("cannot fetch {ID1} for id1_recompile"));
     }
     let cache = corpus::asset_cache().ok_or("no asset cache: set QS_TEST_ASSETS")?;

@@ -9,6 +9,8 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The binaries' command lines.
+clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 qc-builtins.workspace = true
 qc-edict.workspace = true
 qc-progs.workspace = true

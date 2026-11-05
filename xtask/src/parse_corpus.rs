@@ -19,31 +19,21 @@ use qc_syntax::recovery::check_deletions_with;
 
 use crate::lex_corpus::progs_src_names;
 
-#[derive(Debug, Default)]
-struct Options {
+/// `cargo xtask parse-corpus [--vanilla] [--fteqcc] [--deletions] <dir>...`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// Fail on an error in a file `progs.src` lists.
+    #[arg(long)]
     vanilla: bool,
+    /// Parse with the FTEQCC dialect.
+    #[arg(long)]
     fteqcc: bool,
+    /// Check that deleting each token recovers.
+    #[arg(long)]
     deletions: bool,
+    /// The codebase directories.
+    #[arg(required = true)]
     dirs: Vec<PathBuf>,
-}
-
-const USAGE: &str = "usage: cargo xtask parse-corpus [--vanilla] [--fteqcc] [--deletions] <dir>...";
-
-fn options(args: &[String]) -> Result<Options, String> {
-    let mut options = Options::default();
-    for arg in args {
-        match arg.as_str() {
-            "--vanilla" => options.vanilla = true,
-            "--fteqcc" => options.fteqcc = true,
-            "--deletions" => options.deletions = true,
-            flag if flag.starts_with("--") => return Err(format!("unknown flag {flag}\n{USAGE}")),
-            dir => options.dirs.push(PathBuf::from(dir)),
-        }
-    }
-    if options.dirs.is_empty() {
-        return Err(USAGE.to_owned());
-    }
-    Ok(options)
 }
 
 /// Every `.qc` and `.qh` file under `dir`, sorted.
@@ -69,8 +59,7 @@ fn sources(dir: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 /// Runs the check on the directories in `args`.
-pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
-    let options = options(args)?;
+pub(crate) fn main(_root: &Path, options: &Args) -> Result<bool, String> {
     let dialect = if options.fteqcc {
         Dialect::Fteqcc
     } else {
@@ -160,7 +149,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use super::main;
+    use super::{Args, main};
     use crate::test_dirs::fresh;
 
     fn codebase(name: &str, files: &[(&str, &str)]) -> PathBuf {
@@ -175,7 +164,7 @@ mod tests {
     fn run(flags: &[&str], dir: &Path) -> Result<bool, String> {
         let mut args: Vec<String> = flags.iter().map(|flag| (*flag).to_owned()).collect();
         args.push(dir.display().to_string());
-        main(Path::new("."), &args)
+        crate::run_cli::<Args, _>(&args, |a| main(Path::new("."), a))
     }
 
     #[test]
@@ -238,8 +227,12 @@ mod tests {
     fn bad_arguments_and_empty_directories_are_errors() {
         let dir = codebase("parse-empty", &[("readme.txt", "x")]);
         assert!(run(&[], &dir).unwrap_err().contains("no .qc or .qh"));
-        assert!(run(&["--fast"], &dir).unwrap_err().contains("unknown flag"));
-        assert!(main(Path::new("."), &[]).unwrap_err().contains("usage"));
+        assert!(run(&["--fast"], &dir).unwrap_err().contains("--fast"));
+        assert!(
+            crate::run_cli::<Args, &str>(&[], |a| main(Path::new("."), a))
+                .unwrap_err()
+                .contains("Usage")
+        );
         let unlisted = codebase("parse-no-src", &[("a.qc", "float x;\n")]);
         assert!(
             run(&["--vanilla"], &unlisted)

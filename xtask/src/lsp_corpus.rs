@@ -27,8 +27,6 @@ use serde_json::{Value, json};
 
 use crate::oracles::rerelease::autoprototypes;
 
-const USAGE: &str = "usage: cargo xtask lsp-corpus [--write] <dir>";
-
 /// Where the golden files are, under the repository root.
 const GOLDEN: &str = "docs/spec/vectors/lsp";
 
@@ -119,21 +117,19 @@ const COMPLETIONS: [(&str, &str); 2] = [("combat.qc", "save = ceil"), ("combat.q
 /// The file whose inlay hints are asked for.
 const HINTS: &str = "combat.qc";
 
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    let mut write = false;
-    let mut dirs = Vec::new();
-    for arg in args {
-        if arg == "--write" {
-            write = true;
-        } else if arg.starts_with("--") {
-            return Err(format!("unknown flag {arg}\n{USAGE}"));
-        } else {
-            dirs.push(PathBuf::from(arg));
-        }
-    }
-    let [dir] = dirs.as_slice() else {
-        return Err(USAGE.to_owned());
-    };
+/// `cargo xtask lsp-corpus [--write] <dir>`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// Write the golden file instead of comparing with it.
+    #[arg(long)]
+    write: bool,
+    /// The codebase directory.
+    dir: PathBuf,
+}
+
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
+    let write = args.write;
+    let dir = &args.dir;
     let dir = std::path::absolute(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let name = dir
         .file_name()

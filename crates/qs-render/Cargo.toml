@@ -20,6 +20,8 @@ qs-mdl = { workspace = true }
 qs-wad = { workspace = true }
 
 [dev-dependencies]
+# The examples' command lines.
+clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 # A headless wgpu device for the GPU tests.
 egui_kittest = { workspace = true, features = ["wgpu"] }
 eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }

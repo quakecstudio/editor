@@ -33,8 +33,6 @@ use qc_types::{DefType, Etype};
 
 use crate::oracles::rerelease::autoprototypes;
 
-const USAGE: &str = "usage: cargo xtask sema-corpus [--write] <dir>[=<progs.dat>]...";
-
 /// Where the golden files are, under the repository root.
 const GOLDEN: &str = "docs/spec/vectors/sema";
 
@@ -47,28 +45,33 @@ struct Target {
     progs: Option<PathBuf>,
 }
 
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    let mut write = false;
-    let mut targets = Vec::new();
-    for arg in args {
-        if arg == "--write" {
-            write = true;
-        } else if arg.starts_with("--") {
-            return Err(format!("unknown flag {arg}\n{USAGE}"));
-        } else {
+/// `cargo xtask sema-corpus [--write] <dir>[=<progs.dat>]...`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// Write the golden files instead of comparing with them.
+    #[arg(long)]
+    write: bool,
+    /// Each codebase directory, with `=<progs.dat>` for a compiled progs to compare.
+    #[arg(required = true)]
+    targets: Vec<String>,
+}
+
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
+    let write = args.write;
+    let targets: Vec<Target> = args
+        .targets
+        .iter()
+        .map(|arg| {
             let (dir, progs) = match arg.split_once('=') {
                 Some((dir, progs)) => (dir, Some(PathBuf::from(progs))),
                 None => (arg.as_str(), None),
             };
-            targets.push(Target {
+            Target {
                 dir: PathBuf::from(dir),
                 progs,
-            });
-        }
-    }
-    if targets.is_empty() {
-        return Err(USAGE.to_owned());
-    }
+            }
+        })
+        .collect();
     let mut ok = true;
     for target in &targets {
         ok &= check(root, target, write)?;
@@ -561,12 +564,9 @@ mod tests {
     #[test]
     fn a_target_takes_its_progs_after_an_equals_sign_and_flags_are_checked() {
         let root = Path::new(".");
-        assert!(main(root, &[]).is_err());
-        assert!(
-            main(root, &["--nope".to_owned()])
-                .unwrap_err()
-                .contains("--nope")
-        );
-        assert!(main(root, &["/no/such/dir".to_owned()]).is_err());
+        let run = |list: &[&str]| crate::run_cli::<Args, _>(list, |a| main(root, a));
+        assert!(run(&[]).is_err());
+        assert!(run(&["--nope"]).unwrap_err().contains("--nope"));
+        assert!(run(&["/no/such/dir"]).is_err());
     }
 }

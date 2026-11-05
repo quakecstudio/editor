@@ -23,14 +23,22 @@ use std::process::Command;
 
 use crate::oracles;
 
+/// `cargo xtask differential [--fast | --full]`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// The CI subset, the default.
+    #[arg(long, conflicts_with = "full")]
+    #[expect(dead_code, reason = "read by clap only: it says the default out loud")]
+    fast: bool,
+    /// Every scenario.
+    #[arg(long)]
+    full: bool,
+}
+
 /// Runs `cargo xtask differential [--fast | --full]`.
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    let mode = match args {
-        [] => "fast",
-        [flag] if flag == "--fast" => "fast",
-        [flag] if flag == "--full" => "full",
-        _ => return Err("usage: cargo xtask differential [--fast | --full]".to_owned()),
-    };
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
+    // `--fast` is the default; clap refuses it beside `--full`.
+    let mode = if args.full { "full" } else { "fast" };
     // Build the oracles so the VM oracle binary exists (P1-11); the suite runs it per scenario.
     let oracles = oracles::build(root)?;
     let assets = asset_root()?;
