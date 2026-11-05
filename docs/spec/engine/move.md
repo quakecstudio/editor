@@ -119,6 +119,20 @@ turn (MOVE-3), stopping at the first that succeeds.
 - **MOVE-5.3** Else it draws one `rand()`; when `(rand()&3) == 1`, or else when the step
   toward `ideal_yaw` (MOVE-3) fails, it chooses a new direction toward the goal (MOVE-4).
 
+## MOVE-6 The random source
+
+**Source:** `WinQuake/host.c`, `_Host_Frame`; the generator is DIFF-6.2's.
+
+### Behaviour
+
+- **MOVE-6.1** The random source starts at state 1, where the engine oracle's DIFF-6.2 generator
+  starts; id's server never calls `srand`.
+- **MOVE-6.2** Each host frame draws one value and discards it before its server frame, as
+  `_Host_Frame` does: "// keep the random time dependent" then `rand ();`. The two frames a map
+  settles in (EDICT-8.9) are not host frames and draw none.
+- **MOVE-6.3** The random source belongs to the process, not the level: a level change or a
+  restart goes on from the state the last level left.
+
 ## Constants
 
 | Name | Value | Source |

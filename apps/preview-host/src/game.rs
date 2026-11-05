@@ -7,7 +7,9 @@
 use qc_progs::Progs;
 use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::Camera;
-use qs_sim::{EdictChange, EditError, HostCommand, SpawnParms, World, WorldError, command_words};
+use qs_sim::{
+    EdictChange, EditError, HostCommand, HostState, SpawnParms, World, WorldError, command_words,
+};
 use serde_json::{Map, Value, json};
 
 use crate::screenshot::{Frame, encode};
@@ -135,6 +137,15 @@ struct Shot {
     size: Option<(u32, u32)>,
 }
 
+/// The level to load next, what the player carries into it (PHYS-10.4) and what the host
+/// keeps from this one (MOVE-6.3, PHYS-12.3).
+#[derive(Clone, Debug)]
+pub(crate) struct NextLevel {
+    pub(crate) map: String,
+    pub(crate) carried: Option<SpawnParms>,
+    pub(crate) host: HostState,
+}
+
 /// A response the game sends after the command's request was answered later.
 pub(crate) type Response = (Id, Result<Value, RpcError>);
 
@@ -236,16 +247,25 @@ impl Game {
     /// `SV_SaveSpawnparms` keeps (PHYS-10.4); after `restart`, this level with the parms it
     /// was entered with (PHYS-10.6). A level change whose `SetChangeParms` fails stops the
     /// game instead.
-    pub(crate) fn level_change(&mut self) -> Option<(String, Option<SpawnParms>)> {
+    pub(crate) fn level_change(&mut self) -> Option<NextLevel> {
+        let host = self.world.host_state();
         match self.world.take_host_command()? {
-            HostCommand::Restart => Some((self.world.map().to_owned(), self.world.carried())),
+            HostCommand::Restart => Some(NextLevel {
+                map: self.world.map().to_owned(),
+                carried: self.world.carried(),
+                host,
+            }),
             HostCommand::Changelevel(map) => {
                 let kept = self
                     .with_progs(|game, progs| game.world.save_spawn_parms(progs))
                     .map_err(|error| WorldError::Progs(error.message))
                     .and_then(|kept| kept);
                 match kept {
-                    Ok(kept) => Some((map, Some(kept))),
+                    Ok(kept) => Some(NextLevel {
+                        map,
+                        carried: Some(kept),
+                        host,
+                    }),
                     Err(error) => {
                         self.fail(&error);
                         None

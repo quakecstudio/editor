@@ -9,6 +9,7 @@ use qc_types::{DefType, EntityRef, Etype, Slot};
 
 use super::World;
 use super::save::known;
+use super::state::{RawState, State, read_globals, read_state, typed_value};
 
 /// A QuakeC value with its type (BRIDGE-5.1).
 #[derive(Clone, Debug, PartialEq)]
@@ -86,28 +87,7 @@ impl World {
     /// functions' and fields' own definitions, whose values are their code and offsets.
     #[must_use]
     pub fn named_globals(&self, progs: &Progs<'_>) -> Vec<NamedValue> {
-        progs
-            .global_defs()
-            .iter()
-            .filter_map(|def| {
-                let (name, etype, first) = named(progs, def)?;
-                if matches!(etype, Etype::Function | Etype::Field) {
-                    return None;
-                }
-                let slots: Vec<Slot> = (0..etype.slot_count())
-                    .map(|i| {
-                        i32::try_from(first.saturating_add(i))
-                            .ok()
-                            .and_then(|slot| self.machine.global(slot).ok())
-                            .unwrap_or(Slot::ZERO)
-                    })
-                    .collect();
-                Some(NamedValue {
-                    name,
-                    value: self.value(progs, etype, &slots),
-                })
-            })
-            .collect()
+        read_globals(progs, self)
     }
 
     /// Edict `n`'s `classname`, empty when it has none.
@@ -119,45 +99,41 @@ impl World {
 
     /// The value `slots` hold as `etype`.
     fn value(&self, progs: &Progs<'_>, etype: Etype, slots: &[Slot]) -> QcValue {
-        let first = slots.first().copied().unwrap_or(Slot::ZERO);
-        let name = |offset: i32| {
-            progs
-                .string(offset)
-                .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
-                .unwrap_or_default()
-        };
-        match etype {
-            Etype::Float => QcValue::Float(first.as_f32()),
-            Etype::Vector => {
-                let mut vector = [0.0; 3];
-                for (out, slot) in vector.iter_mut().zip(slots) {
-                    *out = slot.as_f32();
-                }
-                QcValue::Vector(vector)
-            }
-            Etype::String => QcValue::String(self.string_value(progs, first).unwrap_or_default()),
-            Etype::Entity => QcValue::Entity(
-                self.machine
-                    .edicts()
-                    .num_for_edict(EntityRef::from(first))
-                    .map_or(0, EdictNumber::index),
-            ),
-            Etype::Field => QcValue::Field(
-                u32::try_from(first.as_i32())
-                    .ok()
-                    .and_then(|ofs| progs.ed_field_at_ofs(ofs))
-                    .map(|def| name(def.s_name))
-                    .unwrap_or_default(),
-            ),
-            Etype::Function => QcValue::Function(
-                usize::try_from(first.as_i32())
-                    .ok()
-                    .and_then(|index| progs.functions().get(index))
-                    .map(|function| name(function.s_name))
-                    .unwrap_or_default(),
-            ),
-            Etype::Void | Etype::Pointer => QcValue::Void,
-        }
+        typed_value(progs, self, etype, slots)
+    }
+
+    /// The whole state, every edict below `num_edicts` included, free or not (P3-25).
+    #[must_use]
+    pub fn state(&self, progs: &Progs<'_>) -> State {
+        read_state(progs, self)
+    }
+}
+
+impl RawState for World {
+    fn global(&self, slot: usize) -> Slot {
+        i32::try_from(slot)
+            .ok()
+            .and_then(|slot| self.machine.global(slot).ok())
+            .unwrap_or(Slot::ZERO)
+    }
+
+    fn field(&self, edict: usize, slot: usize) -> Slot {
+        self.slot_of(edict, slot)
+    }
+
+    fn num_edicts(&self) -> usize {
+        self.machine.edicts().num_edicts()
+    }
+
+    fn entity(&self, value: Slot) -> usize {
+        self.machine
+            .edicts()
+            .num_for_edict(EntityRef::from(value))
+            .map_or(0, EdictNumber::index)
+    }
+
+    fn string(&self, progs: &Progs<'_>, value: Slot) -> Vec<u8> {
+        self.string_value(progs, value).unwrap_or_default()
     }
 }
 

@@ -243,7 +243,8 @@ frames <n>           # run n server frames with the current move; the impulse go
 ```
 
 `engine`, `map` and `frametime` come before the frames. The trace is the header, then for each
-frame a frame record holding what the frame changed, with a string record before it for each
+frame a frame record holding what the frame changed, after frame 0, the state the map loaded to
+(TRACE-4.12), with a string record before it for each
 engine string that is new or whose text changed (TRACE-4.10). A QuakeC run error ends the trace
 with an error record, exit status 0; a refused script or command line is exit status 2, an I/O
 failure 3, and id's `Sys_Error` 4.
@@ -263,6 +264,15 @@ the client's move, `Host_ServerFrame` and `host_time`. [`engine/routes/start.rou
 walks, turns, jumps, fires and changes weapon through LibreQuake's start map, and
 `start.expected.jsonl` beside it is its recording; CI's Test Assets jobs play it on Linux, macOS
 and Windows against that recording (`docs/ci.md`).
+
+`cargo xtask sim-diff <route> [--map <name>]... [-- <engine word>...]` plays a route through
+the engine oracle and through `qs-sim` and compares the two states after the map loads and
+after every frame: every named global and every named field of every edict, each read by its
+type, so entities compare as edict numbers and strings as their text (DIFF-16). The first
+frame that differs fails the run with up to 12 of its differences, each with its edict and
+classname. `--map` plays the route on other maps; CI plays the start route on LibreQuake's start
+map, the nightly Differential run on every LibreQuake map, and id1's maps are played by hand
+from an install, for example `-- -basedir /path/to/quake`.
 
 ## FTEQCC and the rerelease
 

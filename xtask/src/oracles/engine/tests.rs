@@ -19,22 +19,30 @@ fn frame(frame: u32) -> Record {
     }
 }
 
-// spec TRACE-4.11: an engine trace's records are frames, numbered from 1 in order, and
-// strings, with one error record last; anything else is not one
+// spec TRACE-4.11, TRACE-4.12: an engine trace's records are frame 0, then frames numbered
+// from 1 in order, and strings, with one error record last; anything else is not one
 #[test]
 fn an_engine_trace_is_frames_and_strings() {
     let string = Record::String {
         value: 7,
         text: Text::new(b"e1m1".to_vec()).expect("no NUL"),
     };
-    assert_eq!(summary(&[frame(1), string.clone(), frame(2)]), Ok(2));
+    assert_eq!(
+        summary(&[frame(0), frame(1), string.clone(), frame(2)]),
+        Ok(2)
+    );
     assert_eq!(summary(&[]), Ok(0));
-    assert!(summary(&[frame(2)]).is_err(), "frame 1 missing");
-    assert!(summary(&[frame(1), frame(1)]).is_err(), "a repeat");
+    assert_eq!(summary(&[frame(0)]), Ok(0));
+    assert!(summary(&[frame(1)]).is_err(), "frame 0 missing");
+    assert!(summary(&[frame(0), frame(2)]).is_err(), "frame 1 missing");
+    assert!(
+        summary(&[frame(0), frame(1), frame(1)]).is_err(),
+        "a repeat"
+    );
     let exit = Record::Exit {
         changes: Changes::default(),
     };
-    assert!(summary(&[frame(1), exit]).is_err());
+    assert!(summary(&[frame(0), exit]).is_err());
     let error = Record::Error {
         function: 3,
         statement: 40,
@@ -42,7 +50,7 @@ fn an_engine_trace_is_frames_and_strings() {
         changes: Changes::default(),
     };
     assert_eq!(
-        summary(&[frame(1), error.clone()]),
+        summary(&[frame(0), frame(1), error.clone()]),
         Ok(1),
         "a run error ends the trace"
     );

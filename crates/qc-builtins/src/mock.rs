@@ -16,6 +16,7 @@
 //! (DIFF-6.5), and the DIFF-6.2 random source.
 
 use crate::localization::Localization;
+use crate::math::q_atof;
 use crate::tokenize::Tokens;
 
 /// The settings the mock keeps, with the texts of DIFF-2.4.
@@ -49,6 +50,13 @@ impl Cvars {
             .iter()
             .find(|(key, _)| key == name)
             .map(|(_, value)| value.as_str())
+    }
+
+    /// The value of the setting named `name`, its text read as id's `Q_atof` reads it into
+    /// `cvar->value` (BUILTIN-11.7), or `None` when there is none.
+    #[must_use]
+    pub fn value(&self, name: &str) -> Option<f32> {
+        self.text(name).map(q_atof)
     }
 
     /// Sets the text of `name` when it is a known setting, else does nothing (BUILTIN-11.8,

@@ -436,8 +436,47 @@ static void init_local(void) {
     svs.maxclients = 1;
     svs.maxclientslimit = 4;
     svs.clients = Hunk_AllocName(svs.maxclientslimit * sizeof(client_t), "clients");
+    // R_InitTextures, which a game with a client runs and a dedicated server does not: the
+    // texture a texinfo whose texture is missing is given (Mod_LoadTexinfo), a 16 by 16
+    // checkerboard and its mips, its name all zeros. Without it, such a map crashes the server
+    // in Mod_LoadFaces, which reads the texture's name.
+    r_notexture_mip = Hunk_AllocName(sizeof(texture_t) + 16 * 16 + 8 * 8 + 4 * 4 + 2 * 2, "notexture");
+    r_notexture_mip->width = r_notexture_mip->height = 16;
+    r_notexture_mip->offsets[0] = sizeof(texture_t);
+    r_notexture_mip->offsets[1] = r_notexture_mip->offsets[0] + 16 * 16;
+    r_notexture_mip->offsets[2] = r_notexture_mip->offsets[1] + 8 * 8;
+    r_notexture_mip->offsets[3] = r_notexture_mip->offsets[2] + 4 * 4;
+    for (int m = 0; m < 4; m++) {
+        byte *dest = (byte *)r_notexture_mip + r_notexture_mip->offsets[m];
+        for (int y = 0; y < (16 >> m); y++)
+            for (int x = 0; x < (16 >> m); x++)
+                *dest++ = ((y < (8 >> m)) ^ (x < (8 >> m))) ? 0 : 0xff;
+    }
     Cvar_SetValue("deathmatch", 0.0);
     host_time = 1.0;
+}
+
+// CL_SignonReply's answers, each in the frame after the server's signon message that asks for
+// it, as a local client sends them: the client connects in frame 1 (SV_CheckForNewClients),
+// sends prespawn in frame 2, its name and colour (cl_name and cl_color, "player" and 0 by
+// default) and spawn in frame 3, and begin in frame 4. Sent all in one frame, the signon and
+// the spawn messages of a large map overflow the client's message, and the server drops it.
+static void signon_reply(unsigned frame) {
+    switch (frame) {
+    case 2:
+        send_command("prespawn");
+        break;
+    case 3:
+        send_command("name \"player\"\n");
+        send_command("color 0 0\n");
+        send_command("spawn ");
+        break;
+    case 4:
+        send_command("begin");
+        break;
+    default:
+        break;
+    }
 }
 
 // Host_ServerFrame of WinQuake's host.c (the build without FPS_20).
@@ -522,11 +561,9 @@ static void start(int argc, char **argv, const char *map, const char *trace_path
     }
     trace_open = true;
     qs_trace_header((unsigned)pr_crc, progs->numstrings);
-    // The client asks to enter the game in the first frame of all, as id's client does once
-    // it has the server's signon messages.
-    send_command("prespawn");
-    send_command("spawn");
-    send_command("begin");
+    // TRACE-4.12: frame 0, the state the map loaded to.
+    qs_trace_state(0);
+
 }
 
 // `move <pitch> <yaw> <roll> <forward> <side> <up> <buttons> <impulse>`.
@@ -633,10 +670,12 @@ int main(int argc, char **argv) {
             // the time (Host_FilterTime), the console, the client's move (CL_SendCmd), the
             // server frame and host_time.
             for (int i = 0; i < count; i++) {
-                rand();
+                // id's `rand ();`, which rand.h sends to qs_rand in id's files, not here.
+                qs_rand();
                 host_frametime = frametime;
                 realtime += frametime;
                 Cbuf_Execute();
+                signon_reply(frame + 1);
                 if (svs.clients[0].spawned)
                     send_move(&move);
                 outgoing_read = 0;

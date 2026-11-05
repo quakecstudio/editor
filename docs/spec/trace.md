@@ -153,6 +153,10 @@ runtime error), and the engine strings of PROGS-11.6.
   global and field the frame changed. A trace of the engine has frame records and string records
   only, and an error record last when a QuakeC run error stops it (TRACE-4.6): its runs are not
   traced statement by statement.
+- **TRACE-4.12** Before its first server frame the engine oracle writes frame 0: the state the
+  map loaded to, every global and field slot of every edict below `num_edicts` that is not zero,
+  as the changes from all-zero globals and fields. A trace of the engine starts with it, so a
+  comparison sees the whole state and not only what the frames changed.
 
 ## TRACE-5 Binary form
 

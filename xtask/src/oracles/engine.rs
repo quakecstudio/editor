@@ -32,23 +32,7 @@ pub(super) fn check(
 ) -> Result<bool, String> {
     let again = trace.with_extension("again");
     for out in [trace, again.as_path()] {
-        let output = oracles
-            .exec
-            .output(
-                Command::new(&oracles.engine)
-                    .arg(script)
-                    .arg(out)
-                    .args(engine),
-            )
-            .map_err(|e| format!("{}: {e}", oracles.engine.display()))?;
-        if !output.status.success() {
-            return Err(format!(
-                "engine-oracle {} stopped with {}: {}",
-                script.display(),
-                output.status,
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
-        }
+        run_once(oracles, script, out, engine)?;
     }
     let first = fs::read(trace).map_err(|e| format!("{}: {e}", trace.display()))?;
     let second = fs::read(&again).map_err(|e| format!("{}: {e}", again.display()))?;
@@ -91,6 +75,34 @@ pub(super) fn check(
         }
     );
     Ok(true)
+}
+
+/// Runs `script` through the engine oracle once, writing the trace to `out`.
+pub(super) fn run_once(
+    oracles: &Oracles<'_>,
+    script: &Path,
+    out: &Path,
+    engine: &[String],
+) -> Result<(), String> {
+    let output = oracles
+        .exec
+        .output(
+            Command::new(&oracles.engine)
+                .arg(script)
+                .arg(out)
+                .args(engine),
+        )
+        .map_err(|e| format!("{}: {e}", oracles.engine.display()))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "engine-oracle {} stopped with {}: {}",
+            script.display(),
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
 }
 
 /// Writes the canonical JSON form of the trace at `trace` to `out`, for `--expect`.
@@ -231,18 +243,19 @@ fn describe(ours: Option<&Record>, recorded: Option<&Record>) -> String {
     shown.join(", ")
 }
 
-/// The number of frame records, or why the records are not an engine trace's: frames and
-/// strings only, the frames numbered from 1 in order (TRACE-4.11).
-fn summary(records: &[Record]) -> Result<u32, String> {
-    let mut frames = 0_u32;
+/// The number of server frames, or why the records are not an engine trace's: frames and
+/// strings only, frame 0 the loaded state (TRACE-4.12) and then the server frames numbered
+/// from 1 in order (TRACE-4.11).
+pub(crate) fn summary(records: &[Record]) -> Result<u32, String> {
+    let mut last: Option<u32> = None;
     for (at, record) in records.iter().enumerate() {
         match record {
             Record::Frame { frame, .. } => {
-                let next = frames.saturating_add(1);
+                let next = last.map_or(0, |n| n.saturating_add(1));
                 if *frame != next {
                     return Err(format!("frame {frame} where frame {next} was due"));
                 }
-                frames = next;
+                last = Some(next);
             }
             Record::String { .. } => {}
             Record::Error { .. } if at.saturating_add(1) == records.len() => {}
@@ -256,7 +269,7 @@ fn summary(records: &[Record]) -> Result<u32, String> {
             }
         }
     }
-    Ok(frames)
+    Ok(last.unwrap_or(0))
 }
 
 #[cfg(test)]

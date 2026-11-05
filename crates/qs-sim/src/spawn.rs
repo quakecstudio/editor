@@ -149,6 +149,11 @@ impl<'a> Parser<'a> {
         Self { data, pos: 0 }
     }
 
+    /// How far into the data the cursor is.
+    pub(crate) const fn position(&self) -> usize {
+        self.pos
+    }
+
     /// The byte at the cursor, or `None` at the end.
     fn peek(&self) -> Option<u8> {
         self.data.get(self.pos).copied()

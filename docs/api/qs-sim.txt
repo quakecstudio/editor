@@ -13,7 +13,6 @@ const qs_sim::collision::trace::DIST_EPSILON
 const qs_sim::messages::NET_FAT_PVS_DISTANCE
 const qs_sim::messages::NET_GAME_COOP
 const qs_sim::messages::NET_GAME_DEATHMATCH
-const qs_sim::messages::NET_IDEALPITCH_SCALE
 const qs_sim::messages::NET_MAX_DATAGRAM
 const qs_sim::messages::NET_MAX_FORWARD
 const qs_sim::messages::NET_MAX_MSGLEN
@@ -38,6 +37,7 @@ enum qs_sim::spawn::LoadError
 enum qs_sim::spawn::SpawnError
 enum qs_sim::spawn::Token
 enum qs_sim::world::HostCommand
+enum qs_sim::world::Signon
 enum qs_sim::world::WorldError
 enum qs_sim::world::changes::EdictChange
 enum qs_sim::world::edit::EditError
@@ -97,6 +97,7 @@ field qs_sim::world::Entity.origin
 field qs_sim::world::Entity.skin
 field qs_sim::world::LoadOptions.builtins
 field qs_sim::world::LoadOptions.carried
+field qs_sim::world::LoadOptions.host
 field qs_sim::world::LoadOptions.localization
 field qs_sim::world::LoadOptions.registration
 field qs_sim::world::edit::LineHit.edict
@@ -108,6 +109,8 @@ field qs_sim::world::save::SaveGame.map
 field qs_sim::world::save::SaveGame.parms
 field qs_sim::world::save::SaveGame.skill
 field qs_sim::world::save::SaveGame.time
+field qs_sim::world::state::State.edicts
+field qs_sim::world::state::State.globals
 fn qs_sim::collision::Collision::add_brush
 fn qs_sim::collision::Collision::area
 fn qs_sim::collision::Collision::leafs_of
@@ -187,9 +190,12 @@ fn qs_sim::spawn::load_from_file
 fn qs_sim::world::SpawnParms::parms
 fn qs_sim::world::SpawnParms::serverflags
 fn qs_sim::world::World::carried
+fn qs_sim::world::World::client_command
 fn qs_sim::world::World::connect
+fn qs_sim::world::World::connect_next_frame
 fn qs_sim::world::World::entities
 fn qs_sim::world::World::frame
+fn qs_sim::world::World::host_state
 fn qs_sim::world::World::light_style
 fn qs_sim::world::World::load
 fn qs_sim::world::World::map
@@ -198,6 +204,7 @@ fn qs_sim::world::World::save_spawn_parms
 fn qs_sim::world::World::set_command
 fn qs_sim::world::World::set_standard_quake
 fn qs_sim::world::World::settle
+fn qs_sim::world::World::signon
 fn qs_sim::world::World::take_host_command
 fn qs_sim::world::World::take_messages
 fn qs_sim::world::World::take_set_angle
@@ -218,9 +225,16 @@ fn qs_sim::world::inspect::World::edict_fields
 fn qs_sim::world::inspect::World::in_use
 fn qs_sim::world::inspect::World::named_globals
 fn qs_sim::world::inspect::World::num_edicts
+fn qs_sim::world::inspect::World::state
 fn qs_sim::world::save::SaveGame::read
 fn qs_sim::world::save::World::restore
 fn qs_sim::world::save::World::save_game
+fn qs_sim::world::state::RawState::entity
+fn qs_sim::world::state::RawState::field
+fn qs_sim::world::state::RawState::global
+fn qs_sim::world::state::RawState::num_edicts
+fn qs_sim::world::state::RawState::string
+fn qs_sim::world::state::read_state
 impl qs_sim::builtins::SimBuiltins: Builtins
 impl qs_sim::collision::CollisionError: core::error::Error
 impl qs_sim::collision::CollisionError: core::fmt::Display
@@ -255,14 +269,17 @@ struct qs_sim::physics::Sound
 struct qs_sim::spawn::FieldDef
 struct qs_sim::spawn::Parser
 struct qs_sim::world::Entity
+struct qs_sim::world::HostState
 struct qs_sim::world::LoadOptions
 struct qs_sim::world::SpawnParms
 struct qs_sim::world::World
 struct qs_sim::world::edit::LineHit
 struct qs_sim::world::inspect::NamedValue
 struct qs_sim::world::save::SaveGame
+struct qs_sim::world::state::State
 trait qs_sim::collision::Host
 trait qs_sim::spawn::SpawnHost
+trait qs_sim::world::state::RawState
 type qs_sim::builtins::ModelFiles
 use qs_sim::CLIENT_EDICT = world::CLIENT_EDICT
 use qs_sim::ClientMessages = messages::ClientMessages
@@ -270,6 +287,7 @@ use qs_sim::EdictChange = world::EdictChange
 use qs_sim::EditError = world::EditError
 use qs_sim::Entity = world::Entity
 use qs_sim::HostCommand = world::HostCommand
+use qs_sim::HostState = world::HostState
 use qs_sim::LineHit = world::LineHit
 use qs_sim::LoadOptions = world::LoadOptions
 use qs_sim::Message = messages::Message
@@ -277,7 +295,6 @@ use qs_sim::ModelFiles = builtins::ModelFiles
 use qs_sim::NET_FAT_PVS_DISTANCE = messages::NET_FAT_PVS_DISTANCE
 use qs_sim::NET_GAME_COOP = messages::NET_GAME_COOP
 use qs_sim::NET_GAME_DEATHMATCH = messages::NET_GAME_DEATHMATCH
-use qs_sim::NET_IDEALPITCH_SCALE = messages::NET_IDEALPITCH_SCALE
 use qs_sim::NET_MAX_DATAGRAM = messages::NET_MAX_DATAGRAM
 use qs_sim::NET_MAX_FORWARD = messages::NET_MAX_FORWARD
 use qs_sim::NET_MAX_MSGLEN = messages::NET_MAX_MSGLEN
@@ -287,12 +304,15 @@ use qs_sim::NET_SIGNON_SIZE = messages::NET_SIGNON_SIZE
 use qs_sim::NET_VERSION = messages::NET_VERSION
 use qs_sim::NamedValue = world::NamedValue
 use qs_sim::QcValue = world::QcValue
+use qs_sim::RawState = world::RawState
 use qs_sim::SAVEGAME_VERSION = world::SAVEGAME_VERSION
 use qs_sim::SaveError = world::SaveError
 use qs_sim::SaveGame = world::SaveGame
+use qs_sim::Signon = world::Signon
 use qs_sim::SimBuiltins = builtins::SimBuiltins
 use qs_sim::Sound = physics::Sound
 use qs_sim::SpawnParms = world::SpawnParms
+use qs_sim::State = world::State
 use qs_sim::UserCmd = client::UserCmd
 use qs_sim::World = world::World
 use qs_sim::WorldError = world::WorldError
@@ -329,14 +349,18 @@ use qs_sim::collision::sv_move = area::sv_move
 use qs_sim::collision::test_entity_position = area::test_entity_position
 use qs_sim::command_words = world::command_words
 use qs_sim::localization = qc_builtins::localization
+use qs_sim::read_state = world::read_state
 use qs_sim::world::EdictChange = changes::EdictChange
 use qs_sim::world::EditError = edit::EditError
 use qs_sim::world::LineHit = edit::LineHit
 use qs_sim::world::NamedValue = inspect::NamedValue
 use qs_sim::world::QcValue = inspect::QcValue
+use qs_sim::world::RawState = state::RawState
 use qs_sim::world::SAVEGAME_VERSION = save::SAVEGAME_VERSION
 use qs_sim::world::SaveError = save::SaveError
 use qs_sim::world::SaveGame = save::SaveGame
+use qs_sim::world::State = state::State
+use qs_sim::world::read_state = state::read_state
 variant qs_sim::collision::CollisionError::BadNode
 variant qs_sim::collision::CollisionError::PushWithoutBsp
 variant qs_sim::collision::CollisionError::SolidBspWithoutPush
@@ -367,6 +391,10 @@ variant qs_sim::spawn::Token::End
 variant qs_sim::spawn::Token::Word
 variant qs_sim::world::HostCommand::Changelevel
 variant qs_sim::world::HostCommand::Restart
+variant qs_sim::world::Signon::Begin
+variant qs_sim::world::Signon::Connect
+variant qs_sim::world::Signon::Prespawn
+variant qs_sim::world::Signon::Spawn
 variant qs_sim::world::WorldError::Frame
 variant qs_sim::world::WorldError::Progs
 variant qs_sim::world::WorldError::Spawn

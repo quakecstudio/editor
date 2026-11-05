@@ -18,13 +18,11 @@ use qs_bsp::Bsp;
 use qs_client::Client;
 use qs_render::{Camera, MapMesh, MapRenderer, Play, View};
 
-use qs_sim::SpawnParms;
-
 use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
-use crate::game::{Eye, Game};
+use crate::game::{Eye, Game, NextLevel};
 use crate::load::{Describer, Loaded, Rand, load};
 use crate::screenshot::Frame;
 
@@ -200,8 +198,8 @@ impl eframe::App for Viewer {
         }
         let frametime = self.advance(f64::from(seconds));
         // `Host_Changelevel_f` and `Host_Restart_f`: a level, with what the player carries.
-        if let Some((map, carried)) = self.game.level_change() {
-            self.change_level(window, &map, carried);
+        if let Some(next) = self.game.level_change() {
+            self.change_level(window, next);
             return;
         }
         self.serve_bridge(ui);
@@ -325,8 +323,9 @@ impl eframe::App for Viewer {
 impl Viewer {
     /// Loads `map` in place of this one, the player carrying `carried`, and gives the
     /// renderer its world (PHYS-10.4); a map that does not load leaves this one running.
-    fn change_level(&mut self, window: &eframe::Frame, map: &str, carried: Option<SpawnParms>) {
-        let loaded = match load(&self.args, map, carried) {
+    fn change_level(&mut self, window: &eframe::Frame, next: NextLevel) {
+        let map = next.map.as_str();
+        let loaded = match load(&self.args, map, next.carried, Some(next.host)) {
             Ok(loaded) => loaded,
             Err(error) => {
                 tracing::warn!(%error, map, "the next level did not load");

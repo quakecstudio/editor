@@ -29,6 +29,7 @@ use qs_bsp::Bsp;
 use crate::builtins::{FL_ONGROUND, SimCall, parm_float, parm_raw, parm_vector};
 use crate::client::wire_angle;
 use crate::collision::{CONTENTS_SOLID, MoveKind};
+use crate::settings::Setting;
 use crate::spawn::c_atof;
 
 /// `MAX_DATAGRAM`: the unreliable and reliable datagrams' size (NET-1.2).
@@ -51,8 +52,6 @@ pub const NET_FAT_PVS_DISTANCE: f32 = 8.0;
 pub const NET_PACKET_SLACK: usize = 16;
 /// `MAX_FORWARD`: the traces `SV_SetIdealPitch` makes (NET-4.2).
 pub const NET_MAX_FORWARD: usize = 6;
-/// `sv_idealpitchscale`'s default (NET-4.2).
-pub const NET_IDEALPITCH_SCALE: f32 = 0.8;
 /// `MAX_LIGHTSTYLES`, the styles the spawn message lists (NET-2.4).
 const MAX_LIGHTSTYLES: usize = 64;
 /// `DEFAULT_VIEWHEIGHT` (NET-4.4).
@@ -285,6 +284,27 @@ impl Vis {
         }
     }
 
+    /// `Mod_PointInLeaf (p, sv.worldmodel)`: the leaf `p` is in, walking to a node's front
+    /// child when `p` is strictly in front of its plane (BSP-21.1); `None` with no nodes.
+    pub(crate) fn point_in_leaf(&self, p: [f32; 3]) -> Option<usize> {
+        let mut child = 0_i32;
+        for _ in 0..=self.nodes.len() {
+            let Ok(node) = usize::try_from(child) else {
+                return usize::try_from((-1_i32).wrapping_sub(child)).ok();
+            };
+            let &(planenum, children) = self.nodes.get(node)?;
+            let (normal, dist) = self.planes.get(planenum).copied()?;
+            let d = p[0] * normal[0] + p[1] * normal[1] + p[2] * normal[2] - dist;
+            child = if d > 0.0 { children[0] } else { children[1] };
+        }
+        None
+    }
+
+    /// Leaf `leaf`'s PVS row, `Mod_LeafPVS` (BSP-6.2): every leaf's for leaf 0.
+    pub(crate) fn leaf_row(&self, leaf: usize) -> Option<&[u8]> {
+        self.pvs.get(leaf).map(Vec::as_slice)
+    }
+
     /// `SV_FatPVS (org)`: the PVS of every non-solid leaf within 8 units of `org` (NET-3.1).
     pub(crate) fn fat_pvs(&self, org: [f32; 3]) -> Vec<u8> {
         let mut fat = vec![0; self.row];
@@ -402,7 +422,7 @@ impl ServerMessages {
 
 impl SimCall<'_, '_, '_> {
     /// The text of a QuakeC string value: a progs string, or an engine string.
-    fn string_text(&self, value: i32) -> Vec<u8> {
+    pub(crate) fn string_text(&self, value: i32) -> Vec<u8> {
         if value >= 0 {
             self.context
                 .progs()
@@ -1347,7 +1367,8 @@ impl SimCall<'_, '_, '_> {
         if steps < 2 {
             return Ok(());
         }
-        self.set_float(ent, "idealpitch", -int_to_float(dir) * NET_IDEALPITCH_SCALE);
+        let scale = self.setting(Setting::IdealPitchScale);
+        self.set_float(ent, "idealpitch", -int_to_float(dir) * scale);
         Ok(())
     }
 }
