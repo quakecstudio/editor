@@ -294,6 +294,30 @@ fn printed_and_written_strings_are_localized_with_a_file_loaded() {
     );
 }
 
+// spec RRE-1.9: centerprint reads its text with PF_VarString, so the centre print a client
+// is sent is the localized format, a placeholder past the arguments empty; with no file it
+// is the text as it is
+#[test]
+fn the_centre_print_is_localized_with_a_file_loaded() {
+    let centred = |options: LoadOptions| {
+        let pre = "centerprint(self, \"$qc_hi\");";
+        let mut run = player_with_options(&ledge(), "", pre, "", options);
+        run.packets();
+        run.frames(1, 0.1).unwrap();
+        let all = run.packets().concat();
+        let at = all.iter().position(|&b| b == 26).unwrap();
+        let text = &all[at + 1..];
+        let end = text.iter().position(|&b| b == 0).unwrap();
+        String::from_utf8(text[..end].to_vec()).unwrap()
+    };
+    assert_eq!(centred(LoadOptions::default()), "$qc_hi");
+    let options = LoadOptions {
+        localization: Localization::loc_load_file(b"qc_hi = \"Hi {}!\"\n"),
+        ..LoadOptions::default()
+    };
+    assert_eq!(centred(options), "Hi !");
+}
+
 // spec NET-1.4: a change of frags sends svc_updatefrags to every active client, once, and
 // the reliable datagram is appended to the client's message and cleared
 #[test]

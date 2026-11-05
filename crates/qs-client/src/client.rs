@@ -965,6 +965,7 @@ impl Client {
                 })
                 .collect(),
             lightstyles: self.lightstyles.clone(),
+            colors: self.scores.iter().map(|score| score.colors).collect(),
         }
     }
 

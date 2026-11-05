@@ -11,6 +11,9 @@ publish.workspace = true
 [dependencies]
 egui-wgpu = { workspace = true }
 epaint = { workspace = true }
+# The TGA faces of a skybox (REND-8.2), and the TGA, PNG and JPEG skins of an MD5 model
+# (REND-12.4).
+image = { workspace = true, features = ["jpeg", "png", "tga"] }
 qs-bsp = { workspace = true }
 qs-client = { workspace = true }
 qs-mdl = { workspace = true }

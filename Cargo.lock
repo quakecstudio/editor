@@ -1655,6 +1655,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -3161,6 +3163,7 @@ dependencies = [
  "egui-wgpu",
  "egui_kittest",
  "epaint",
+ "image",
  "qc-progs",
  "qs-bsp",
  "qs-client",
