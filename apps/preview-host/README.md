@@ -12,8 +12,10 @@ cargo run --release -p preview-host -- -basedir <game root> [-game <dir>] [-kpf 
     [-bridge <socket>] [map]
 ```
 
-`-basedir`, `-game`, `-kpf` and `-bridge` take one dash, as the engines and ADR-0008 write
-them; `-game` is a single directory name. `-kpf` reads the rerelease's localization from that
+clap reads the command line. `-basedir`, `-game`, `-kpf` and `-bridge` are written with one
+dash because ADR-0008 launches every engine, this one included, with `-basedir <run root>
+-game <mod>`; the host gives those four words their second dash before clap reads them, so
+`--basedir` works too, and every other option takes two. `-game` is a single directory name. `-kpf` reads the rerelease's localization from that
 archive instead of the game root. The map defaults to `start`.
 
 W, A, S and D move, Space jumps, Q and E swim, Shift runs, the mouse button fires, 1 to 8
