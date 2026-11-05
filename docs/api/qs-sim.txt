@@ -329,6 +329,7 @@ variant qs_sim::world::save::SaveError::BlockOverflow
 variant qs_sim::world::save::SaveError::DeadPlayer
 variant qs_sim::world::save::SaveError::Link
 variant qs_sim::world::save::SaveError::NoBrace
+variant qs_sim::world::save::SaveError::NotPlaying
 variant qs_sim::world::save::SaveError::Parse
 variant qs_sim::world::save::SaveError::TooManyEdicts
 variant qs_sim::world::save::SaveError::Truncated
