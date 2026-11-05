@@ -258,7 +258,9 @@ stop.
 
 **Source:** `WinQuake/sv_main.c`, `SV_ConnectClient`, `SV_WriteClientdataToMessage`,
 `SV_SaveSpawnparms`, `SV_SpawnServer`; `WinQuake/host_cmd.c`, `Host_Spawn_f`,
-`Host_Changelevel_f`; `WinQuake/cmd.c`, `Cbuf_Execute`; `WinQuake/host.c`, `Host_ServerFrame`, `Host_FilterTime`.
+`Host_Changelevel_f`, `Host_SavegameComment`, `Host_Savegame_f`, `Host_Loadgame_f`;
+`WinQuake/pr_edict.c`, `PR_UglyValueString`, `ED_Write`, `ED_WriteGlobals`, `ED_ParseGlobals`,
+`ED_ParseEdict`; `WinQuake/cmd.c`, `Cbuf_Execute`; `WinQuake/host.c`, `Host_ServerFrame`, `Host_FilterTime`.
 
 ### Behaviour
 
@@ -284,6 +286,30 @@ stop.
   its kept `spawn_parms` into `parm1` to `parm16` before `ClientConnect` and `PutClientInServer`
   (PHYS-10.1). `qs-sim` takes the level and the kept parms through `World::take_changelevel` and
   `World::save_spawn_parms`; the host loads the next world with them.
+- **PHYS-10.5** `Host_Savegame_f` refuses a dead player ("Can't savegame with a dead player")
+  and writes `SAVEGAME_VERSION` 5; the comment, `SAVEGAME_COMMENT_LENGTH` 39 characters of
+  spaces, the level's name from the start and `kills:%3i/%3i` of the monsters killed and the
+  total from 22, every space then `_` ("convert space to _ to make stdio happy"); each of the 16
+  spawn parms as `%f`; `current_skill` as `%d`; `sv.name`; `sv.time` as `%f`; the 64 light
+  styles, `m` for one not set; then `ED_WriteGlobals`, `{`, each global with `DEF_SAVEGLOBAL` of
+  type string, float or entity as `"name" "value"`, `}`; and `ED_Write` of each edict below
+  `num_edicts`: `{`, for a used one every field definition from the second whose name's last but
+  one character is not `_` ("skip _x, _y, _z vars") and whose slots are not all 0, `}`.
+  `PR_UglyValueString` writes a string's text, an entity's edict number, a function's or a
+  field's name, `void`, a float `%f` and a vector three. `Host_Loadgame_f` reads the version
+  ("Savegame is version %i, not %i"), the comment, the parms, the skill as `(int)(tfloat + 0.1)`
+  ("so we can load 1.06 save files"), the map and the time with `fscanf`, spawns the map with
+  `SV_SpawnServer`, reads the 64 styles, then each block of bytes up to and including its first
+  `}`, a zero byte or the end, at most 32767 ("Loadgame buffer overflow"), whose first token
+  must be `{` ("First token isn't a brace"): the first `ED_ParseGlobals`, each key a global by
+  `ED_FindGlobal` (one naming none passed over) read through `ED_ParseEpair`, and each later
+  edict `entnum` cleared, `free` false, read by `ED_ParseEdict`, which frees one with no pair
+  (`if (!init) ent->free = true;`), and linked when not free; then `sv.num_edicts = entnum`,
+  `sv.time` and the client's spawn parms. With `sv.loadgame`, `SV_ConnectClient` keeps the
+  client's parms and `Host_Spawn_f` runs nothing ("loaded games are fully inited allready"). The
+  preview host plays at skill 1, so a save holds 1 and a load spawns the map at skill 1; a value
+  naming nothing, which `PR_UglyValueString` reads past an array for, is an error, and a freed
+  edict's `freetime` is 0.
 
 The frame's length is the host's: `Host_FilterTime` runs a frame once 1/72 of a second has
 passed since the last, its `frametime` the time passed, 0.001 to 0.1. `qs-sim` takes the
