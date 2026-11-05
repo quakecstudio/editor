@@ -235,6 +235,13 @@ void qs_trace_frame(unsigned frame) {
     end_record();
 }
 
+// TRACE-4.12: the whole state as a frame record, every global and field set against zero.
+void qs_trace_state(unsigned frame) {
+    memset(snap_globals, 0, (size_t)snap_numglobals * sizeof(int));
+    memset(snap_fields, 0, (size_t)sv.max_edicts * (size_t)snap_entityfields * sizeof(int));
+    qs_trace_frame(frame);
+}
+
 void qs_trace_string(int value, const char *text) {
     put_byte(&out, TRACE_TAG_STRING);
     put_word(&out, (unsigned)value);

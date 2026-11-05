@@ -30,6 +30,7 @@ void qs_trace_header(unsigned progs_crc, int numstrings);
 void qs_trace_error(int function, int statement, const char *message);
 void qs_trace_string(int value, const char *text);
 void qs_trace_frame(unsigned frame);
+void qs_trace_state(unsigned frame);
 qboolean qs_trace_close(void);
 
 #endif

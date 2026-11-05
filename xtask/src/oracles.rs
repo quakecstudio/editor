@@ -549,6 +549,17 @@ pub(crate) fn vm_oracle(root: &Path) -> PathBuf {
     locate(root, &System).vm
 }
 
+/// Runs `script` once through the engine oracle, writing its trace to `trace` (DIFF-16.1);
+/// `engine` is the engine's command line.
+pub(crate) fn engine_trace(
+    oracles: &Oracles<'_>,
+    script: &Path,
+    trace: &Path,
+    engine: &[String],
+) -> Result<(), String> {
+    engine::run_once(oracles, script, trace, engine)
+}
+
 /// Fetches, generates and compiles every oracle, unless the stamp shows they are current.
 pub(crate) fn build(root: &Path) -> Result<Oracles<'static>, String> {
     build_with(root, &System, &CURL)
