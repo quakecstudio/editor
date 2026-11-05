@@ -80,7 +80,7 @@ fn a_run_root_links_the_install_and_the_mod() {
     let project = dir.0.join("project");
     let root = prepare_run_root(&project, Flavour::Original, &base, "mymod").unwrap();
     assert_eq!(root.path, project.join("build/run/original"));
-    assert_eq!(root.game, "mymod");
+    assert_eq!(root.game.as_deref(), Some("mymod"));
     assert_eq!(root.kpf, None);
     assert!(resolves_to(&root.path.join("id1"), &base.id1));
     assert!(resolves_to(
@@ -157,15 +157,15 @@ fn run_root_links_are_repaired() {
     }
 }
 
-// ADR-0008: the host is launched with -basedir, -game, -kpf when passed, then -bridge, the
-// extra words and the map
+// ADR-0008: the host is launched with -basedir, -game when there is a mod, -kpf when passed,
+// then -bridge, the extra words and the map
 #[test]
 fn the_host_command_line() {
     let spec = LaunchSpec {
         host: PathBuf::from("/app/preview-host"),
         run_root: RunRoot {
             path: PathBuf::from("/p/build/run/rerelease"),
-            game: "mymod".to_owned(),
+            game: Some("mymod".to_owned()),
             kpf: Some(PathBuf::from("/q/QuakeEX.kpf")),
         },
         map: Some("e1m1".to_owned()),
@@ -208,6 +208,26 @@ fn the_host_command_line() {
         .collect();
     assert!(!args.iter().any(|a| a == "-kpf"));
     assert_eq!(args.last().map(String::as_str), Some("/tmp/b.sock"));
+    let id1 = LaunchSpec {
+        run_root: RunRoot {
+            game: None,
+            ..plain.run_root.clone()
+        },
+        ..plain
+    };
+    let args: Vec<String> = host_command(&id1)
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        args,
+        [
+            "-basedir",
+            "/p/build/run/rerelease",
+            "-bridge",
+            "/tmp/b.sock"
+        ]
+    );
 }
 
 // P3-06: the host comes from the path the user set, else from beside the app; a missing one

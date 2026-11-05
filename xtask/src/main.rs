@@ -92,6 +92,7 @@ mod adr;
 mod api;
 mod attribution;
 mod bench;
+mod bridge_client;
 mod ci;
 mod codegen_corpus;
 mod commands;
@@ -152,6 +153,8 @@ enum Task {
     Assets(corpus::AssetsArgs),
     /// The performance budgets.
     Bench(bench::Args),
+    /// The bridge client against the real preview host, headless.
+    BridgeClient(bridge_client::Args),
     /// The lints reject what they target.
     ClippyFixtures,
     /// Every corpus codebase compiles with our compiler.
@@ -231,6 +234,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::Api(args) => ("api", api::main(root, args)),
         Task::Assets(args) => ("assets", corpus::assets_main(root, args)),
         Task::Bench(args) => ("bench", bench::main(root, args)),
+        Task::BridgeClient(args) => ("bridge-client", bridge_client::main(root, args)),
         Task::CodegenCorpus(args) => ("codegen-corpus", codegen_corpus::main(root, args)),
         Task::Commands(args) => ("commands", commands::main(root, args)),
         Task::CompilerDiff(args) => ("compiler-diff", compiler_diff::main(root, args)),

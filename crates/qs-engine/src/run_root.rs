@@ -36,8 +36,10 @@ impl Flavour {
 pub struct RunRoot {
     /// The run root: what the host is given with `-basedir`.
     pub path: PathBuf,
-    /// The mod's folder name in it: what the host is given with `-game`.
-    pub game: String,
+    /// The mod's folder name in it: what the host is given with `-game`. `None` plays
+    /// `id1` alone, as a game root whose `id1` is not the registered game must be played: id's
+    /// engine refuses a mod there (`COM_CheckRegistered`, FS-4.5).
+    pub game: Option<String>,
     /// The rerelease's `QuakeEX.kpf` to give the host with `-kpf`, on Windows, where a
     /// junction cannot link a file (ADR-0008).
     pub kpf: Option<PathBuf>,
@@ -122,7 +124,7 @@ pub fn prepare_run_root(
     };
     Ok(RunRoot {
         path: root,
-        game: mod_name.to_owned(),
+        game: Some(mod_name.to_owned()),
         kpf,
     })
 }

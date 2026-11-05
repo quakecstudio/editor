@@ -6,7 +6,7 @@
 
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, Command, ExitStatus};
 use std::time::Duration;
 
 use crate::client::{Client, ClientError};
@@ -49,6 +49,8 @@ pub enum LaunchError {
     NotFound(PathBuf),
     /// The process did not start.
     Spawn(std::io::Error),
+    /// The host stopped before its bridge connected, with this status.
+    Exited(ExitStatus),
     /// The bridge did not connect or initialize.
     Bridge(ClientError),
 }
@@ -58,6 +60,7 @@ impl fmt::Display for LaunchError {
         match self {
             Self::NotFound(path) => write!(f, "no preview host at {}", path.display()),
             Self::Spawn(error) => write!(f, "the preview host did not start: {error}"),
+            Self::Exited(status) => write!(f, "the preview host stopped as it started: {status}"),
             Self::Bridge(error) => write!(f, "{error}"),
         }
     }
@@ -68,7 +71,7 @@ impl std::error::Error for LaunchError {
         match self {
             Self::Spawn(error) => Some(error),
             Self::Bridge(error) => Some(error),
-            Self::NotFound(_) => None,
+            Self::NotFound(_) | Self::Exited(_) => None,
         }
     }
 }
@@ -94,16 +97,16 @@ pub fn locate_host(configured: Option<&Path>, app: &Path) -> Result<PathBuf, Lau
     }
 }
 
-/// The command that starts the host for `spec` (ADR-0008): `-basedir`, `-game`, `-kpf` when
+/// The command that starts the host for `spec` (ADR-0008): `-basedir`, `-game` when there is a
+/// mod, `-kpf` when
 /// the run root passes the file, `-bridge`, then the extra words and the map.
 #[must_use]
 pub fn host_command(spec: &LaunchSpec) -> Command {
     let mut command = Command::new(&spec.host);
-    command
-        .arg("-basedir")
-        .arg(&spec.run_root.path)
-        .arg("-game")
-        .arg(&spec.run_root.game);
+    command.arg("-basedir").arg(&spec.run_root.path);
+    if let Some(game) = &spec.run_root.game {
+        command.arg("-game").arg(game);
+    }
     if let Some(kpf) = &spec.run_root.kpf {
         command.arg("-kpf").arg(kpf);
     }
@@ -123,16 +126,36 @@ pub fn host_command(spec: &LaunchSpec) -> Command {
 /// that started is stopped again.
 pub fn launch(spec: &LaunchSpec, client_name: &str) -> Result<Running, LaunchError> {
     let mut child = host_command(spec).spawn().map_err(LaunchError::Spawn)?;
-    let connected = Client::connect(&spec.socket, CONNECT_ATTEMPTS, CONNECT_PAUSE)
-        .and_then(|mut client| client.initialize(client_name).map(|_| client));
-    match connected {
+    match connect(&mut child, &spec.socket, client_name) {
         Ok(client) => Ok(Running { child, client }),
         Err(error) => {
             // The host is of no use without its bridge.
             if let Err(kill) = child.kill() {
                 tracing::warn!(%kill, "the preview host could not be stopped");
             }
-            Err(LaunchError::Bridge(error))
+            Err(error)
         }
     }
+}
+
+/// Connects to the host `child` starts at `socket` and initializes the bridge, trying while
+/// the host runs; a host that stops first is [`LaunchError::Exited`].
+fn connect(child: &mut Child, socket: &Path, client_name: &str) -> Result<Client, LaunchError> {
+    let mut last = ClientError::Timeout;
+    for _ in 0..CONNECT_ATTEMPTS {
+        if let Some(status) = child.try_wait().map_err(LaunchError::Spawn)? {
+            return Err(LaunchError::Exited(status));
+        }
+        match Client::connect(socket, 1, Duration::ZERO) {
+            Ok(mut client) => {
+                client
+                    .initialize(client_name)
+                    .map_err(LaunchError::Bridge)?;
+                return Ok(client);
+            }
+            Err(error) => last = error,
+        }
+        std::thread::sleep(CONNECT_PAUSE);
+    }
+    Err(LaunchError::Bridge(last))
 }

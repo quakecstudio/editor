@@ -116,6 +116,7 @@ cargo xtask engines [--check]             # regenerate (or check) the engine-tar
 cargo xtask compiler-diff [--fast]       # the compiler differential's CI subset: qcc against qc-codegen on id 1.01, 32 rounds
 cargo xtask compiler-diff --full <codebase>  # 128 rounds over one codebase (id-1.01, a rerelease codebase or a corpus mod); up to an hour each, so run them one at a time or in parallel
 cargo xtask compiler-diff --functions <codebase>...  # each function of an FTEQCC codebase cut into a program of its own and called alone (DIFF-15)
+cargo xtask bridge-client <game root>      # qs-engine's client against the real preview host, headless (LibreQuake in CI)
 cargo xtask commands [--check]            # regenerate (or check) docs/commands.md from the command registry
 cargo xtask api [--check]                 # regenerate (or check) docs/api/<crate>.txt, each L0 to L5 crate's public items; the audit is docs/audits/api-surface.md
 
