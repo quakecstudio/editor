@@ -39,7 +39,10 @@ fn an_edicts_fields_are_typed_values() {
         Some(&QcValue::Function("tick".to_owned()))
     );
     assert_eq!(value(&fields, "owner"), Some(&QcValue::Entity(0)));
-    assert!(matches!(value(&fields, "view_ofs"), Some(QcValue::Vector([_, _, z])) if *z == 22.0));
+    assert_eq!(
+        value(&fields, "view_ofs"),
+        Some(&QcValue::Vector([0.0, 0.0, 22.0]))
+    );
     assert!(
         value(&fields, "origin_x").is_none(),
         "a vector's components are not listed"
