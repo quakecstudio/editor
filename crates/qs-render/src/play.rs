@@ -13,19 +13,23 @@
 //! `R_RenderView` and the 2D layer over it (REND-4.11, REND-7, REND-10, REND-11, PART-3.2,
 //! VIEW-4.6, HUD-1 to HUD-3).
 
+use std::sync::Arc;
+
 use qs_bsp::Bsp;
 use qs_client::{Anchor, HUD_SBAR_HEIGHT, Hud, HudItem, Placed, Scene, SceneEntity};
 use qs_wad::{Conchars, QPic, WAD_CONCHARS_TRANSPARENT, Wad};
 
-use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, entity_light};
+use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, TORCHES, entity_light};
 use crate::camera::Camera;
 use crate::gpu::{
-    AliasDraw, Assets, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame, SpriteDraw,
-    SpriteFrame, View,
+    AliasDraw, Assets, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame, PLAYER_SKINS,
+    PlayerSkin, SkinKey, SpriteDraw, SpriteFrame, View,
 };
 use crate::light::light_point;
+use crate::md5::Md5Model;
 use crate::mesh::{Image, MapMesh, Palette, Placement};
 use crate::particles::particle_triangles;
+use crate::skybox::{SkyKeys, Skybox, sky_parse_worldspawn};
 use crate::sprite::{Eye, SpriteEntity, SpriteError, SpriteModel, angle_vectors};
 use crate::styles::LightStyles;
 
@@ -169,7 +173,7 @@ impl Pics {
 }
 
 /// A picture's pixels through `palette`, index 255 transparent.
-fn pic_image(pic: &QPic<'_>, palette: &Palette) -> Image {
+pub(crate) fn pic_image(pic: &QPic<'_>, palette: &Palette) -> Image {
     Image {
         width: u32::try_from(pic.width).unwrap_or(0).max(1),
         height: u32::try_from(pic.height).unwrap_or(0).max(1),
@@ -224,6 +228,8 @@ fn conchars_image(chars: &Conchars<'_>, palette: &Palette) -> Image {
 enum Model {
     /// An `.mdl`, and the index of its first skin among the renderer's skins.
     Alias(AliasModel, usize),
+    /// The MD5 model that replaces an `.mdl`, and its first skin's index (REND-12.1).
+    Md5(Md5Model, usize),
     /// A `.spr`, and the index of its first frame among the renderer's frames.
     Sprite(SpriteModel, usize),
     /// A brush model of the map, `*n`: the mesh's model `n`.
@@ -255,6 +261,42 @@ pub struct Play {
     pub screen: [i32; 2],
     /// QuakeSpasm's `gl_zfix` for brush models (REND-1.12).
     pub zfix: bool,
+    /// Whether an `.mdl` is drawn as the rerelease's MD5 model where there is one
+    /// (REND-12.1).
+    pub md5_models: bool,
+    /// Each player slot's translated skin (REND-4.13).
+    player_skins: PlayerSkins,
+    /// The skybox the worldspawn names (REND-8.2), and the box once read.
+    sky: SkyKeys,
+    skybox: Option<Skybox>,
+}
+
+/// Each player slot's translated skin and what it was made from (REND-4.13).
+#[derive(Clone, Debug, Default, PartialEq)]
+struct PlayerSkins([Option<PlayerSkin>; PLAYER_SKINS]);
+
+impl PlayerSkins {
+    /// Slot `slot`'s skin, `model`'s `key.skin` in `key.colors`, made again only when it is
+    /// not what the slot holds (`CL_ParseUpdate` and `CL_NewTranslation` calling
+    /// `R_TranslatePlayerSkin`).
+    fn wear(
+        &mut self,
+        slot: usize,
+        key: SkinKey,
+        model: &AliasModel,
+        palette: &Palette,
+    ) -> Option<PlayerSkin> {
+        let held = self.0.get_mut(slot)?;
+        if held.as_ref().is_none_or(|skin| skin.key != key) {
+            let image = model.translated(key.skin, key.colors, palette)?;
+            *held = Some(PlayerSkin {
+                slot,
+                key,
+                image: Arc::new(image),
+            });
+        }
+        held.clone()
+    }
 }
 
 impl Play {
@@ -262,6 +304,7 @@ impl Play {
     /// 640 by 480 2D layer.
     #[must_use]
     pub fn new(palette: Palette, pics: Pics, entities: &[u8]) -> Self {
+        let sky = sky_parse_worldspawn(entities);
         Self {
             palette,
             pics,
@@ -271,15 +314,22 @@ impl Play {
             instances: Vec::new(),
             fog: FogState::new(fog_parse_worldspawn(entities)),
             water_alpha: 1.0,
-            skyfog: 0.5,
+            skyfog: sky.skyfog,
             screen: [640, 480],
             zfix: true,
+            md5_models: true,
+            player_skins: PlayerSkins::default(),
+            sky,
+            skybox: None,
         }
     }
 
     /// Reads every model the client precached, `names` by index, through `read`: alias
     /// models and sprites as images for the renderer, `*n` as the mesh's model `n`, and any
     /// other `.bsp` as an external brush model whose instances [`Play::add_instance`] places.
+    /// With [`Play::md5_models`], an `.mdl` is its MD5 model where `rank`, the search-path
+    /// element a file is found in, the first 0, does not put the `.mdl` before it
+    /// (REND-12.1).
     ///
     /// # Errors
     ///
@@ -288,11 +338,28 @@ impl Play {
         &mut self,
         names: &[String],
         read: &dyn Fn(&str) -> Option<Vec<u8>>,
+        rank: &dyn Fn(&str) -> Option<usize>,
     ) -> Result<(), PlayError> {
         self.models.clear();
         for name in names {
+            let torch = TORCHES.contains(&name.as_str());
+            let replacement = match self.md5_replacement(name, read, rank) {
+                Some((md5, bytes)) => {
+                    match Md5Model::read(&md5, &bytes, read, &self.palette, torch) {
+                        Ok(model) => Some(model),
+                        // REND-12.1: an MD5 model that does not read leaves its `.mdl`.
+                        Err(_) if read(name).is_some() => None,
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+                None => None,
+            };
             let model = if let Some(n) = name.strip_prefix('*') {
                 n.parse().map_or(Model::None, Model::Submodel)
+            } else if let Some(model) = replacement {
+                let first = self.skins.len();
+                self.skins.extend_from_slice(model.images());
+                Model::Md5(model, first)
             } else if name.ends_with(".mdl") {
                 let bytes =
                     read(name).ok_or_else(|| PlayError::Model(format!("{name}: missing")))?;
@@ -317,6 +384,32 @@ impl Play {
         Ok(())
     }
 
+    /// Reads the skybox the worldspawn names through `read` (REND-8.2); a map naming none,
+    /// or one whose faces are all missing, keeps the scrolling layers.
+    pub fn load_sky(&mut self, read: &dyn Fn(&str) -> Option<Vec<u8>>) {
+        self.skybox = Skybox::load(&self.sky.name, read);
+    }
+
+    /// `r_replacemodels`' look for `name`'s MD5 model, `progs/x.md5mesh` for `progs/x.mdl`:
+    /// its name and bytes when it is found and the `.mdl` is not found on an earlier
+    /// search-path element ("Ignoring %s from lower priority path"), with [`Play::md5_models`] on
+    /// (REND-12.1).
+    fn md5_replacement(
+        &self,
+        name: &str,
+        read: &dyn Fn(&str) -> Option<Vec<u8>>,
+        rank: &dyn Fn(&str) -> Option<usize>,
+    ) -> Option<(String, Vec<u8>)> {
+        let stem = name.strip_suffix(".mdl").filter(|_| self.md5_models)?;
+        let md5 = format!("{stem}.md5mesh");
+        let found = rank(&md5)?;
+        if rank(name).is_some_and(|mdl| mdl < found) {
+            return None;
+        }
+        let bytes = read(&md5)?;
+        Some((md5, bytes))
+    }
+
     /// Records that entity `entity`'s external brush model is the mesh's model `mesh_model`.
     pub fn add_instance(&mut self, entity: usize, mesh_model: usize) {
         self.instances.push((entity, mesh_model));
@@ -329,6 +422,7 @@ impl Play {
             skins: &self.skins,
             frames: &self.frames,
             pics: self.pics.images(),
+            skybox: self.skybox.as_ref(),
         }
     }
 
@@ -336,8 +430,12 @@ impl Play {
     /// unit of height, the alias models lit from `bsp`, and `mesh` relit for the frame's
     /// styles and dynamic lights (REND-5.5, REND-7).
     #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "R_DrawEntitiesOnList, R_DrawViewModel and the 2D layer in R_RenderView's order, read as one"
+    )]
     pub fn frame(
-        &self,
+        &mut self,
         scene: &Scene,
         hud: &Hud,
         bsp: &Bsp<'_>,
@@ -371,11 +469,12 @@ impl Play {
         if let Some(world) = placements.first_mut() {
             *world = Some(Placement::WORLD.matrix());
         }
+        let mut player_skins = Vec::new();
         let light = |origin| light_point(bsp, &styles, origin);
         // R_DrawEntitiesOnList: the alias and brush models, then the sprites.
         for entity in scene.entities.iter().chain(&scene.statics) {
             match self.models.get(entity.model) {
-                Some(Model::Alias(model, first)) => {
+                Some(drawn @ (Model::Alias(..) | Model::Md5(..))) => {
                     let kind = if entity.entity >= 1 && entity.entity <= scene.maxclients {
                         AliasKind::Player
                     } else {
@@ -392,7 +491,28 @@ impl Play {
                         blend: entity.poses,
                         kind,
                     };
-                    draw_alias(model, *first, &alias, scene.time, &mut models);
+                    drawn.draw_alias(&alias, scene.time, &mut models);
+                    let Model::Alias(model, _) = drawn else {
+                        continue;
+                    };
+                    // REND-4.13: a player wearing colours is drawn with its slot's skin.
+                    let slot = entity.entity.checked_sub(1).filter(|&s| {
+                        kind == AliasKind::Player && entity.colormap != 0 && s < PLAYER_SKINS
+                    });
+                    if let (Some(slot), Some(draw)) = (slot, models.draws.last_mut()) {
+                        let key = SkinKey {
+                            model: entity.model,
+                            skin: alias.skin,
+                            colors: scene.colors.get(slot).copied().unwrap_or(0),
+                        };
+                        player_skins.extend(self.player_skins.wear(
+                            slot,
+                            key,
+                            model,
+                            &self.palette,
+                        ));
+                        draw.skin = self.skins.len().saturating_add(slot);
+                    }
                 }
                 Some(Model::Sprite(model, first)) => {
                     let sprite = SpriteEntity {
@@ -427,7 +547,9 @@ impl Play {
         }
         // R_DrawViewModel (REND-4.11).
         let mut weapon = ModelFrame::default();
-        if let Some(Model::Alias(model, first)) = self.models.get(refdef.weapon.model) {
+        if let Some(drawn @ (Model::Alias(..) | Model::Md5(..))) =
+            self.models.get(refdef.weapon.model)
+        {
             let lit = entity_light(
                 light(refdef.weapon.origin),
                 AliasKind::ViewModel,
@@ -443,7 +565,7 @@ impl Play {
                 blend: scene.weapon_poses,
                 kind: AliasKind::ViewModel,
             };
-            draw_alias(model, *first, &alias, scene.time, &mut weapon);
+            drawn.draw_alias(&alias, scene.time, &mut weapon);
         }
         let screen = self.screen.map(f32_of_i32);
         let mut flat = FlatFrame::default();
@@ -478,6 +600,7 @@ impl Play {
             flat,
             placements,
             lightmap,
+            player_skins,
         }
     }
 
@@ -589,6 +712,28 @@ impl Play {
                     color,
                 );
             }
+        }
+    }
+}
+
+impl Model {
+    /// An alias or an MD5 model's triangles for `entity` into `out`, a run for each skin
+    /// (REND-4, REND-12); nothing for another model.
+    fn draw_alias(&self, entity: &AliasEntity, time: f32, out: &mut ModelFrame) {
+        match self {
+            Self::Alias(model, first) => draw_alias(model, *first, entity, time, out),
+            Self::Md5(model, first) => {
+                let mut start = out.vertices.len();
+                for (count, image) in model.draw(entity, f64::from(time), &mut out.vertices) {
+                    out.draws.push(AliasDraw {
+                        skin: first.saturating_add(image),
+                        first: u32_of(start),
+                        count: u32_of(count),
+                    });
+                    start = start.saturating_add(count);
+                }
+            }
+            Self::Sprite(..) | Self::Submodel(_) | Self::External | Self::None => {}
         }
     }
 }

@@ -180,6 +180,7 @@ field qs_client::scene::PoseBlend.blend
 field qs_client::scene::PoseBlend.current
 field qs_client::scene::PoseBlend.previous
 field qs_client::scene::Scene.blend
+field qs_client::scene::Scene.colors
 field qs_client::scene::Scene.entities
 field qs_client::scene::Scene.lights
 field qs_client::scene::Scene.lightstyles

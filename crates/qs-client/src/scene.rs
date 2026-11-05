@@ -83,4 +83,7 @@ pub struct Scene {
     pub particles: Vec<SceneParticle>,
     /// Each light style's string (CLIENT-1.4, REND-5), empty when unset.
     pub lightstyles: Vec<Vec<u8>>,
+    /// Each client slot's colours, shirt high and trousers low, `cl.scores[i].colors`
+    /// (CLIENT-1.6), which its player's skin is drawn in (REND-4.13).
+    pub colors: Vec<i32>,
 }

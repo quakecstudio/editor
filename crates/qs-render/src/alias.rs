@@ -30,16 +30,16 @@ const TORCH_LIGHT: f32 = 256.0;
 /// `shadelight = shadelight / 200.0` (REND-4.7).
 const SHADE_SCALE: f32 = 200.0;
 /// The models given full light (REND-4.7).
-const TORCHES: [&str; 2] = ["progs/flame2.mdl", "progs/flame.mdl"];
+pub(crate) const TORCHES: [&str; 2] = ["progs/flame2.mdl", "progs/flame.mdl"];
 /// `if (e == &cl.viewent && ambientlight < 24)`: the view model's floor (REND-4.11).
 const VIEW_MODEL_FLOOR: f32 = 24.0;
 /// `if (ambientlight < 8)` for a player: the players' floor (REND-4.11).
 const PLAYER_FLOOR: f32 = 8.0;
 /// `(int)(cl.time*10) & 3`: a skin group's frames step ten times a second, over four slots
 /// (REND-4.2).
-const SKIN_RATE: f64 = 10.0;
+pub(crate) const SKIN_RATE: f64 = 10.0;
 /// The slots a skin has, `gl_texturenum[i][4]` (REND-4.2).
-const SKIN_SLOTS: usize = 4;
+pub(crate) const SKIN_SLOTS: usize = 4;
 /// `anglemod(100*cl.time)`: degrees a second an `EF_ROTATE` model turns (REND-4.9).
 const ROTATE_RATE: f64 = 100.0;
 /// `anglemod`'s steps in a turn, `65536/360.0` (REND-4.9).
@@ -56,12 +56,14 @@ const TRANSPARENT: u8 = 255;
 pub enum AliasError {
     /// The file is not a model `qs-mdl` reads.
     Mdl(String),
+    /// An MD5 mesh or its animation does not read, or they do not go together (REND-12.1).
+    Md5(String),
 }
 
 impl core::fmt::Display for AliasError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Mdl(message) => f.write_str(message),
+            Self::Mdl(message) | Self::Md5(message) => f.write_str(message),
         }
     }
 }
@@ -154,6 +156,9 @@ struct Corner {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AliasModel {
     images: Vec<Image>,
+    /// Each image's 8-bit texels, after `Mod_FloodFillSkin`, which a player's colours
+    /// translate (REND-4.13).
+    texels: Vec<Vec<u8>>,
     skins: Vec<[usize; SKIN_SLOTS]>,
     /// Each pose's vertices: position in the model and normal index.
     poses: Vec<Vec<([f32; 3], u8)>>,
@@ -175,7 +180,7 @@ impl AliasModel {
         let header = &mdl.header;
         let width = usize::try_from(header.skinwidth).unwrap_or(0);
         let height = usize::try_from(header.skinheight).unwrap_or(0);
-        let (images, skins) = skin_images(bytes, &mdl, palette, (width, height));
+        let (images, texels, skins) = skin_images(bytes, &mdl, palette, (width, height));
         let mut poses = Vec::new();
         let mut frames = Vec::new();
         for entry in &mdl.frames {
@@ -220,6 +225,7 @@ impl AliasModel {
             .collect();
         Ok(Self {
             images,
+            texels,
             skins,
             poses,
             frames,
@@ -233,6 +239,29 @@ impl AliasModel {
     #[must_use]
     pub fn images(&self) -> &[Image] {
         &self.images
+    }
+
+    /// Skin `skin`'s first image, or skin 0's for a skin the model does not have, in the
+    /// colours `colors` of a client slot, shirt in the high four bits and
+    /// trousers in the low four, through `palette`: `R_TranslatePlayerSkin`'s table, the
+    /// sixteen shirt colours from `TOP_RANGE` 16 and the trousers' from `BOTTOM_RANGE` 96
+    /// moved to the chosen rows, a row from 128 on reversed (REND-4.13). `None` only if the
+    /// model had no skins, which [`Self::read`] refuses.
+    #[must_use]
+    pub fn translated(&self, skin: usize, colors: i32, palette: &Palette) -> Option<Image> {
+        let slots = self.skins.get(skin).or_else(|| self.skins.first())?;
+        let image = slots.first().copied()?;
+        let texels = self.texels.get(image)?;
+        let base = self.images.get(image)?;
+        let table = translation(colors);
+        Some(Image {
+            width: base.width,
+            height: base.height,
+            rgba: texels
+                .iter()
+                .flat_map(|&p| palette.rgba(table.get(usize::from(p)).copied().unwrap_or(p)))
+                .collect(),
+        })
     }
 
     /// Whether the model turns on its own, `EF_ROTATE` (REND-4.9).
@@ -395,14 +424,47 @@ pub(crate) fn rotate_for_entity(origin: [f32; 3], turn: [f32; 3], position: [f32
     [x + dx, y + dy, z + dz]
 }
 
-/// Every skin's pixels as `Mod_LoadAllSkins` uploads them, and each skin's four slots
-/// (REND-4.1, REND-4.2).
+/// `TOP_RANGE` and `BOTTOM_RANGE` (`WinQuake/render.h`): the first palette index of the
+/// shirt's sixteen colours and of the trousers'.
+const TOP_RANGE: usize = 16;
+const BOTTOM_RANGE: usize = 96;
+
+/// `R_TranslatePlayerSkin`'s table for the colours `colors`: every index itself, but the
+/// shirt's and trousers' rows, each moved to its chosen row, a row from 128 on reversed ("the
+/// artists made some backwards ranges.  sigh.") (REND-4.13).
+fn translation(colors: i32) -> [u8; 256] {
+    let mut table = [0_u8; 256];
+    for (i, entry) in (0..=255_u8).zip(table.iter_mut()) {
+        *entry = i;
+    }
+    let top = u8::try_from(colors & 0xf0).unwrap_or(0);
+    let bottom = u8::try_from((colors & 15) << 4).unwrap_or(0);
+    for i in 0..16_u8 {
+        let row = |start: u8| {
+            if start < 128 {
+                start.saturating_add(i)
+            } else {
+                start.saturating_add(15).saturating_sub(i)
+            }
+        };
+        let i = usize::from(i);
+        if let Some(entry) = table.get_mut(TOP_RANGE.saturating_add(i)) {
+            *entry = row(top);
+        }
+        if let Some(entry) = table.get_mut(BOTTOM_RANGE.saturating_add(i)) {
+            *entry = row(bottom);
+        }
+    }
+    table
+}
+
+/// Each skin image, its 8-bit texels and each skin's four slots (REND-4.1, REND-4.2).
 fn skin_images(
     bytes: &[u8],
     mdl: &Mdl<'_>,
     palette: &Palette,
     (width, height): (usize, usize),
-) -> (Vec<Image>, Vec<[usize; SKIN_SLOTS]>) {
+) -> (Vec<Image>, Vec<Vec<u8>>, Vec<[usize; SKIN_SLOTS]>) {
     let size = width.saturating_mul(height);
     let filled = palette.filled_colour();
     // A copy of the file from the first skin's type on: `Mod_FloodFillSkin` fills the
@@ -410,6 +472,7 @@ fn skin_images(
     let mut data = bytes.get(MDL_HEADER_SIZE..).unwrap_or_default().to_vec();
     let first = 4..4_usize.saturating_add(size);
     let mut images = Vec::new();
+    let mut texels = Vec::new();
     let mut skins = Vec::new();
     let mut at = 0_usize;
     let mut upload = |data: &mut Vec<u8>, from: usize| -> Option<usize> {
@@ -417,6 +480,7 @@ fn skin_images(
             flood_fill_skin(skin, (width, height), filled);
         }
         let pixels = data.get(from..from.checked_add(size)?)?;
+        texels.push(pixels.to_vec());
         images.push(Image {
             width: u32::try_from(width).ok()?,
             height: u32::try_from(height).ok()?,
@@ -455,7 +519,7 @@ fn skin_images(
             at = from;
         }
     }
-    (images, skins)
+    (images, texels, skins)
 }
 
 /// `Mod_FloodFillSkin`: the background, the region of `skin`'s first pixel's colour joined to
@@ -518,7 +582,7 @@ fn word(bytes: &[u8], at: usize) -> Option<i32> {
 }
 
 /// C's `(int)` of a non-negative double, as an index; 0 for a negative or NaN value.
-fn whole(value: f64) -> usize {
+pub(crate) fn whole(value: f64) -> usize {
     usize::try_from(truncate(value)).unwrap_or(0)
 }
 
@@ -568,4 +632,4 @@ fn i64_of(value: usize) -> i64 {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
