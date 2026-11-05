@@ -978,3 +978,23 @@ fn tracking_records_allocations_frees_and_writes() {
     store.track(false);
     assert!(store.take_events().is_empty());
 }
+
+// spec WORLD-10.1: a store given another layout keeps num_edicts, the client slots and each
+// edict's free flag and freetime, with every field slot of the new layout zero
+#[test]
+fn a_store_with_another_layout_keeps_its_edicts() {
+    let mut old = store(1);
+    let a = old.alloc(5.0).unwrap();
+    let b = old.alloc(5.0).unwrap();
+    old.set_field(a, 0, Slot::from_f32(1.0)).unwrap();
+    old.free(b, 7.0);
+    let wider = EdictLayout::new(FIELDS_105 + 3, GLOBALS_128).unwrap();
+    let new = old.with_layout(wider);
+    assert_eq!(new.num_edicts(), old.num_edicts());
+    assert_eq!(new.maxclients(), 1);
+    assert_eq!(new.is_free(a), Some(false));
+    assert_eq!(new.is_free(b), Some(true));
+    assert_eq!(new.freetime(b), Some(7.0));
+    assert_eq!(new.fields(a).unwrap().len(), FIELDS_105 + 3);
+    assert!(new.fields(a).unwrap().iter().all(|s| *s == Slot::ZERO));
+}

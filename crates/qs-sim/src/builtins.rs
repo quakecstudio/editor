@@ -108,7 +108,7 @@ pub struct SimBuiltins {
     /// The messages to the client (NET-1 to NET-5).
     pub(crate) messages: ServerMessages,
     /// id's table, or the rerelease's with its builtins 79 to 92 (RRE-4.2).
-    table: BuiltinTable,
+    pub(crate) table: BuiltinTable,
     /// The debugger, the frames' runs' observer when a host debugs (WORLD-9).
     pub(crate) debugger: Option<Debugger>,
     /// The statements each function has run since `profile` last printed, id's

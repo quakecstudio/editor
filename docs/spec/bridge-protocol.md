@@ -168,6 +168,17 @@ A command is a request from the client, answered with a result on success or an 
   `-32008` (stopped in frame) and nothing changes: going on replays the frame from the world
   before it, which would drop their changes. `field/set` and `entity/edit` are held as
   BRIDGE-4.4 says.
+- **BRIDGE-4.7** While a frame is stopped at a statement, `reload` is answered with `-32008` too,
+  for the same reason.
+- **BRIDGE-4.8** `reload` reads its `progs`, a host path when absolute and otherwise a name on the
+  game's search path, or with none the name the running progs was read by, and its `.lno`
+  beside it with the extension `lno`; a name that is not there is answered with `-32602`
+  (invalid params) and nothing changes. The progs is loaded over the map as WORLD-10 says;
+  each breakpoint is resolved again at the file and line it was set at, and one that no longer
+  resolves is cleared, its id listed in the result's `breakpoints_cleared`. The changes the old
+  progs made are reported first; the migration's own writes are not changes. The result is
+  WORLD-10.5's report: `migrated`, `lost` and `added`, each change its `name`, `kind` and
+  `reason`, and the VM time.
 
 ## BRIDGE-5 Values
 
