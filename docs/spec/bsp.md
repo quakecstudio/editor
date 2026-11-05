@@ -1450,3 +1450,22 @@ same as the x86-64 build for every input but `version-30` (BSP-20.2) and the mes
 The same two builds loaded the vectors of BSP-12.7 (2026-10-16): both stopped on `contents-0`
 with a segmentation fault, loaded `contents-0-submodel` with node 1's front child in hull 0
 -954437178, and loaded `contents-0-unnamed` with leaf 2's contents 0 (BSP-20.19).
+
+## BSP-21 The leaf a point is in
+
+**Source:** `WinQuake/model.c`, `Mod_PointInLeaf`; `WinQuake/snd_dma.c`,
+`S_UpdateAmbientSounds`, which calls it for the listener's ambient levels (BSP-12.4)
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
+
+### Behaviour
+
+- **BSP-21.1** `Mod_PointInLeaf (p, model)` finds the leaf holding the point `p`: from the
+  model's first node, while the node is not a leaf (`node->contents < 0` names a leaf), `d =
+  DotProduct (p,plane->normal) - plane->dist` in `float`, and the walk goes to `children[0]`
+  when `d > 0`, else to `children[1]`; a point on a plane goes to the back. `crates/qs-bsp`'s
+  `Bsp::point_in_leaf` walks node 0's tree, the world's, with each child read as BSP-7.2 writes
+  it, and returns the leaf's index.
+- **BSP-21.2** id's `Mod_PointInLeaf` stops the engine with `Sys_Error ("Mod_PointInLeaf: bad
+  model")` for a model with no nodes. `Bsp::point_in_leaf` returns no leaf for a BSP with no
+  nodes, and for a tree that does not reach a leaf within as many steps as it has nodes, a cycle
+  id's loader does not reject and its walk would never leave.

@@ -2,7 +2,7 @@
 // Copyright (C) 1996-1997 Id Software, Inc.
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/model.c, Mod_LoadBrushModel, Mod_LoadVertexes, Mod_LoadEdges, Mod_LoadSurfedges, Mod_LoadTextures, Mod_LoadLighting, Mod_LoadPlanes, Mod_LoadTexinfo, CalcSurfaceExtents, Mod_LoadFaces, Mod_LoadMarksurfaces, Mod_LoadVisibility, Mod_LoadLeafs, Mod_LoadNodes, Mod_LoadClipnodes, Mod_LoadEntities, Mod_LoadSubmodels, Mod_MakeHull0, RadiusFromBounds, Mod_DecompressVis, Mod_LeafPVS
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/model.c, Mod_LoadBrushModel, Mod_LoadVertexes, Mod_LoadEdges, Mod_LoadSurfedges, Mod_LoadTextures, Mod_LoadLighting, Mod_LoadPlanes, Mod_LoadTexinfo, CalcSurfaceExtents, Mod_LoadFaces, Mod_LoadMarksurfaces, Mod_LoadVisibility, Mod_LoadLeafs, Mod_LoadNodes, Mod_LoadClipnodes, Mod_LoadEntities, Mod_LoadSubmodels, Mod_MakeHull0, RadiusFromBounds, Mod_DecompressVis, Mod_LeafPVS, Mod_PointInLeaf
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_model.c, CalcSurfaceExtents, Mod_LoadLeafs
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/world.c, SV_HullForEntity
 
@@ -1766,6 +1766,32 @@ impl<'a> Bsp<'a> {
     pub fn vis_row_size(&self) -> usize {
         let visleafs = self.models.first().map_or(0, |model| model.visleafs);
         usize::try_from(visleafs.saturating_add(7) >> 3).unwrap_or(0)
+    }
+
+    /// The leaf the point `p` is in, id's `Mod_PointInLeaf` over the world's nodes: the walk
+    /// goes to a node's front child when `p` is strictly in front of its plane, else to its
+    /// back child (BSP-21.1). `None` for a BSP with no nodes, where id stops the engine, and
+    /// for a tree that reaches no leaf (BSP-21.2).
+    ///
+    /// Implements BSP-21.
+    #[must_use]
+    pub fn point_in_leaf(&self, p: [f32; 3]) -> Option<usize> {
+        let mut node = self.nodes.first()?;
+        for _ in 0..self.nodes.len() {
+            let plane = self.planes.get(node.planenum)?;
+            let [a, b, c] = plane.normal;
+            let d = p[0] * a + p[1] * b + p[2] * c - plane.dist;
+            let child = if d > 0.0 {
+                node.children[0]
+            } else {
+                node.children[1]
+            };
+            match usize::try_from(child) {
+                Ok(next) => node = self.nodes.get(next)?,
+                Err(_) => return leaf_of(child),
+            }
+        }
+        None
     }
 
     /// The leaves `leaf` sees, id's `Mod_LeafPVS` and `Mod_DecompressVis`: bit `k` is leaf
