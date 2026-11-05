@@ -23,6 +23,7 @@ use qs_sim::SpawnParms;
 use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::Bridge;
+use crate::contents::contents_at;
 use crate::game::{Eye, Game};
 use crate::load::{Describer, Loaded, Rand, load};
 use crate::screenshot::Frame;
@@ -92,6 +93,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
         ..eframe::NativeOptions::default()
     };
     let triangles = mesh.indices.len().checked_div(3).unwrap_or(0);
+    let camera_origin = camera.origin;
     eframe::run_native(
         "preview-host",
         options,
@@ -124,6 +126,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 rand,
                 fly,
                 pointer: Pointer::Free,
+                eye: camera_origin,
                 last_set: [f32::NAN; 2],
                 behind: 0.0,
                 started: Instant::now(),
@@ -158,6 +161,8 @@ struct Viewer {
     fly: bool,
     /// Whether the window holds the mouse.
     pointer: Pointer,
+    /// Where the eye was last frame, for the contents shift.
+    eye: [f32; 3],
     /// The view angles last given to the client, to tell a `svc_setangle` from them.
     last_set: [f32; 2],
     behind: f64,
@@ -194,7 +199,7 @@ impl eframe::App for Viewer {
             self.steer(ui);
         }
         let frametime = self.advance(f64::from(seconds));
-        // `Host_Changelevel_f`: the next level, with what the player carries.
+        // `Host_Changelevel_f` and `Host_Restart_f`: a level, with what the player carries.
         if let Some((map, carried)) = self.game.level_change() {
             self.change_level(window, &map, carried);
             return;
@@ -226,6 +231,9 @@ impl eframe::App for Viewer {
         }
         let time = now.duration_since(self.started);
 
+        // `R_SetupFrame`'s `V_SetContentsColor (r_viewleaf->contents)`: the leaf the eye was
+        // in last frame tints this one (VIEW-4.3).
+        self.client.set_contents(contents_at(&self.bsp, self.eye));
         let scene = self.client.scene();
         let (origin, angles) = if self.fly {
             (
@@ -235,6 +243,7 @@ impl eframe::App for Viewer {
         } else {
             (scene.view.origin, scene.view.angles)
         };
+        self.eye = origin;
         self.game.set_eye(Eye {
             origin,
             angles,
@@ -315,8 +324,8 @@ impl eframe::App for Viewer {
 impl Viewer {
     /// Loads `map` in place of this one, the player carrying `carried`, and gives the
     /// renderer its world (PHYS-10.4); a map that does not load leaves this one running.
-    fn change_level(&mut self, window: &eframe::Frame, map: &str, carried: SpawnParms) {
-        let loaded = match load(&self.args, map, Some(carried)) {
+    fn change_level(&mut self, window: &eframe::Frame, map: &str, carried: Option<SpawnParms>) {
+        let loaded = match load(&self.args, map, carried) {
             Ok(loaded) => loaded,
             Err(error) => {
                 tracing::warn!(%error, map, "the next level did not load");
@@ -349,6 +358,7 @@ impl Viewer {
         self.map = map;
         self.mesh = mesh;
         self.play = play;
+        self.eye = camera.origin;
         self.camera = camera;
         self.game = game;
         self.audio = audio;

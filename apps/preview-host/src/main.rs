@@ -6,6 +6,7 @@
 mod args;
 mod audio;
 mod bridge;
+mod contents;
 mod game;
 mod load;
 mod screenshot;

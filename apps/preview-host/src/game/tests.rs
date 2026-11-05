@@ -38,6 +38,7 @@ void(entity e, vector min, vector max) setsize = #4;
 entity() spawn = #14;
 void(entity e) remove = #15;
 void(string s) changelevel = #70;
+void(string s) localcmd = #46;
 string(string s) precache_model = #20;
 float frames;
 .float count;
@@ -56,6 +57,8 @@ void() item_crate = { self.count = 3; self.solid = 2; setsize(self, '-8 -8 -8', 
 .void() nothing;
 void() broken = { self.nothing(); };
 void() leave = { changelevel(\"e1m2\"); };
+void() again = { localcmd(\"restart\\n\"); };
+void() info_restart = { self.think = again; self.nextthink = 0.05; };
 void() info_exit = { self.think = leave; self.nextthink = 0.05; };
 void() info_fail = { self.think = broken; self.nextthink = 0.05; };
 ";
@@ -121,7 +124,7 @@ fn leaf(contents: i32) -> Leaf {
 }
 
 /// A floor at z = 0, solid below; for the player's hull, at z = 24.
-fn floor(entities: &'static [u8]) -> Bsp<'static> {
+pub(crate) fn floor(entities: &'static [u8]) -> Bsp<'static> {
     Bsp {
         version: BspVersion::Bsp29,
         lumps: [Lump::default(); BSP_HEADER_LUMPS],
@@ -856,6 +859,28 @@ fn a_level_change_carries_the_players_parms() {
     }
     let (map, kept) = change.expect("a level change");
     assert_eq!(map, "e1m2");
-    assert_eq!(kept.parms()[0], 100.0, "parm1 is the player's health");
+    assert_eq!(
+        kept.map(|kept| kept.parms()[0]),
+        Some(100.0),
+        "parm1 is the player's health"
+    );
     assert!(game.level_change().is_none(), "taken once");
+}
+
+// spec PHYS-10.6: restart asks for this level again, with the parms it was entered with: none
+// in a new game
+#[test]
+fn a_restart_loads_this_level_again() {
+    let (mut game, _session) = game_with("{\n\"classname\" \"info_restart\"\n}\n");
+    let mut change = None;
+    for _ in 0..10 {
+        game.frame(0.1);
+        change = game.level_change();
+        if change.is_some() {
+            break;
+        }
+    }
+    let (map, kept) = change.expect("a restart");
+    assert_eq!(map, "test");
+    assert!(kept.is_none(), "a new game carries nothing");
 }

@@ -7,7 +7,7 @@
 use qc_progs::Progs;
 use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::Camera;
-use qs_sim::{EdictChange, EditError, SpawnParms, World, WorldError, command_words};
+use qs_sim::{EdictChange, EditError, HostCommand, SpawnParms, World, WorldError, command_words};
 use serde_json::{Map, Value, json};
 
 use crate::screenshot::{Frame, encode};
@@ -202,20 +202,26 @@ impl Game {
         }
     }
 
-    /// The level the progs asked for with `changelevel` since the last call, with what the
-    /// player carries into it: `SV_SaveSpawnparms` as `Host_Changelevel_f` runs it
-    /// (PHYS-10.4). A level change whose `SetChangeParms` fails stops the game instead.
-    pub(crate) fn level_change(&mut self) -> Option<(String, SpawnParms)> {
-        let map = self.world.take_changelevel()?;
-        let kept = self
-            .with_progs(|game, progs| game.world.save_spawn_parms(progs))
-            .map_err(|error| WorldError::Progs(error.message))
-            .and_then(|kept| kept);
-        match kept {
-            Ok(kept) => Some((map, kept)),
-            Err(error) => {
-                self.fail(&error);
-                None
+    /// The level the progs asked the host for since the last call, and what the player
+    /// carries into it: after `changelevel`, the next level with the parms
+    /// `SV_SaveSpawnparms` keeps (PHYS-10.4); after `restart`, this level with the parms it
+    /// was entered with (PHYS-10.6). A level change whose `SetChangeParms` fails stops the
+    /// game instead.
+    pub(crate) fn level_change(&mut self) -> Option<(String, Option<SpawnParms>)> {
+        match self.world.take_host_command()? {
+            HostCommand::Restart => Some((self.world.map().to_owned(), self.world.carried())),
+            HostCommand::Changelevel(map) => {
+                let kept = self
+                    .with_progs(|game, progs| game.world.save_spawn_parms(progs))
+                    .map_err(|error| WorldError::Progs(error.message))
+                    .and_then(|kept| kept);
+                match kept {
+                    Ok(kept) => Some((map, Some(kept))),
+                    Err(error) => {
+                        self.fail(&error);
+                        None
+                    }
+                }
             }
         }
     }
@@ -767,4 +773,4 @@ fn keyvalues(params: &Value) -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
