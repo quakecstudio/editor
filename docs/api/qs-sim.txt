@@ -97,6 +97,7 @@ field qs_sim::world::Entity.skin
 field qs_sim::world::LoadOptions.builtins
 field qs_sim::world::LoadOptions.carried
 field qs_sim::world::LoadOptions.localization
+field qs_sim::world::LoadOptions.registration
 field qs_sim::world::edit::LineHit.edict
 field qs_sim::world::edit::LineHit.point
 field qs_sim::world::inspect::NamedValue.name

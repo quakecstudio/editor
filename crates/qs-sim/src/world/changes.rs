@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use qc_edict::EdictEvent;
-use qc_progs::{Def, Progs};
+use qc_progs::Progs;
 
 use super::World;
 use super::inspect::named;
@@ -45,9 +45,27 @@ impl World {
     /// field written (BRIDGE-3.2).
     pub fn take_changes(&mut self, progs: &Progs<'_>) -> Vec<EdictChange> {
         let events = self.machine.edicts_mut().take_events();
+        if events.is_empty() {
+            return Vec::new();
+        }
+        let defs = progs.field_defs();
+        // The field definition, as [`named`] lists them, that holds each slot.
+        let mut owner: Vec<Option<usize>> = Vec::new();
+        for (index, def) in defs.iter().enumerate() {
+            let Some((_, etype, first)) = named(progs, def) else {
+                continue;
+            };
+            for slot in first..first.saturating_add(etype.slot_count()) {
+                if owner.len() <= slot {
+                    owner.resize(slot.saturating_add(1), None);
+                }
+                if let Some(cell) = owner.get_mut(slot) {
+                    *cell = Some(index);
+                }
+            }
+        }
         let mut changes = Vec::new();
         // For each edict, whether each field definition was written.
-        let defs = progs.field_defs();
         let mut written: BTreeMap<usize, Vec<bool>> = BTreeMap::new();
         for event in events {
             match event {
@@ -65,13 +83,14 @@ impl World {
                     changes.push(EdictChange::Removed(n.index()));
                 }
                 EdictEvent::Written(n, slot) => {
+                    let Some(index) = owner.get(slot).copied().flatten() else {
+                        continue;
+                    };
                     let marks = written
                         .entry(n.index())
                         .or_insert_with(|| vec![false; defs.len()]);
-                    for (mark, def) in marks.iter_mut().zip(defs.iter()) {
-                        if covers(progs, def, slot) {
-                            *mark = true;
-                        }
+                    if let Some(mark) = marks.get_mut(index) {
+                        *mark = true;
                     }
                 }
             }
@@ -97,13 +116,6 @@ impl World {
         }
         changes
     }
-}
-
-/// Whether field `def`, as [`named`] lists it, holds slot `slot`.
-fn covers(progs: &Progs<'_>, def: Def, slot: usize) -> bool {
-    named(progs, def).is_some_and(|(_, etype, first)| {
-        slot >= first && slot < first.saturating_add(etype.slot_count())
-    })
 }
 
 #[cfg(test)]

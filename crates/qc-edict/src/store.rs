@@ -452,7 +452,8 @@ impl EdictStore {
     /// all again (EDICT-7.4). The clock `now` is `sv.time`, a `double`. Does nothing for a
     /// number the array does not hold.
     pub fn free(&mut self, number: EdictNumber, now: f64) {
-        if number.index() < self.edicts.len() {
+        // Freeing a free edict again (EDICT-7.4) frees nothing more.
+        if self.is_free(number) == Some(false) {
             self.record(EdictEvent::Freed(number));
         }
         let Some(edict) = self.edicts.get_mut(number.index()) else {

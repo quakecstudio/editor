@@ -942,7 +942,7 @@ fn clone_from_takes_another_layout() {
 
 // The preview host's record of what happened to the edicts (BRIDGE-3.1): nothing until
 // tracking starts, then every allocation, free and write in order, a write of the same value
-// included; taking empties it and stopping drops it.
+// included and a second free of a free edict not; taking empties it and stopping drops it.
 #[test]
 fn tracking_records_allocations_frees_and_writes() {
     let mut store = store(1);
@@ -955,6 +955,7 @@ fn tracking_records_allocations_frees_and_writes() {
     store.set_field(m, 3, Slot::from_f32(1.0)).unwrap();
     store.set_field(m, 3, Slot::from_f32(1.0)).unwrap();
     assert!(store.set_field(m, usize::MAX, Slot::ZERO).is_err());
+    store.free(n, 1.0);
     store.free(n, 1.0);
     store.free(EdictNumber::new(LIMIT_MAX_EDICTS), 1.0);
     assert_eq!(

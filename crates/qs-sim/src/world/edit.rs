@@ -6,6 +6,7 @@
 
 use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
+use qc_vm::ServerState;
 
 use super::{CLIENT, Spawner, World};
 use crate::builtins::SimCall;
@@ -62,7 +63,19 @@ impl World {
         for (i, slot) in slots.into_iter().enumerate() {
             self.set_field(n, first.saturating_add(i), slot);
         }
-        Ok(())
+        self.relink(progs, n)
+    }
+
+    /// `SV_LinkEdict (ent, false)` after an edit, so the world's collision sees the edict
+    /// where its fields now put it: its origin, its size, its `solid` (WORLD-3). The world
+    /// itself is never linked.
+    fn relink(&mut self, progs: &Progs<'_>, n: usize) -> Result<(), EditError> {
+        if n == 0 {
+            return Ok(());
+        }
+        SimCall::frame(&mut self.machine, progs, &mut self.builtins)
+            .link(n, false)
+            .map_err(|e| EditError::Spawn(e.to_string()))
     }
 
     /// Whether [`World::set_field_value`] would write field `name` of edict `n` with `value`,
@@ -160,7 +173,11 @@ impl World {
         progs: &Progs<'_>,
         pairs: &[(String, String)],
     ) -> Result<usize, EditError> {
-        let mut spawner = Spawner { world: self, progs };
+        let mut spawner = Spawner {
+            world: self,
+            progs,
+            state: ServerState::Active,
+        };
         let n = spawner
             .allocate(false)
             .map_err(|e| EditError::Spawn(e.to_string()))?;
@@ -179,9 +196,11 @@ impl World {
             spawner.free(n);
             return Err(EditError::Spawn(format!("no spawn function {classname:?}")));
         };
-        spawner
-            .spawn(n, function)
-            .map_err(|e| EditError::Spawn(e.to_string()))?;
+        // A spawn that fails is undone, as the map's loader would stop on it.
+        if let Err(error) = spawner.spawn(n, function) {
+            spawner.free(n);
+            return Err(EditError::Spawn(error.to_string()));
+        }
         Ok(n)
     }
 
@@ -199,12 +218,16 @@ impl World {
         if !self.in_use(n) {
             return Err(EditError::NoSuchEdict(n));
         }
-        let mut spawner = Spawner { world: self, progs };
+        let mut spawner = Spawner {
+            world: self,
+            progs,
+            state: ServerState::Active,
+        };
         for (key, value) in pairs {
             apply_key(&mut spawner, n, key.as_bytes(), value.as_bytes())
                 .map_err(|e| EditError::BadValue(e.to_string()))?;
         }
-        Ok(())
+        self.relink(progs, n)
     }
 
     /// Frees edict `n`, `ED_Free`, which unlinks it; the world and the player are kept.
@@ -219,7 +242,12 @@ impl World {
         if n == 0 || n == CLIENT {
             return Err(EditError::Kept(n));
         }
-        Spawner { world: self, progs }.free(n);
+        Spawner {
+            world: self,
+            progs,
+            state: ServerState::Active,
+        }
+        .free(n);
         Ok(())
     }
 

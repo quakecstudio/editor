@@ -86,6 +86,23 @@ impl Applied {
     }
 }
 
+/// Whether anyone hears the game's events.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Reporting {
+    /// The IDE is connected over the bridge: every event is raised (BRIDGE-3.1).
+    Bridge,
+    /// The game is played on its own: the edicts' changes are not recorded.
+    Off,
+}
+
+/// How a server frame ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FrameEnd {
+    Ran,
+    /// It stopped with a run error, which paused the game (BRIDGE-3.3).
+    Failed,
+}
+
 /// An event for the bridge to send: its method and parameters (BRIDGE-3.1).
 pub(crate) type Event = (&'static str, Value);
 
@@ -131,8 +148,9 @@ pub(crate) struct Game {
 
 impl Game {
     /// The game of `world`, loaded from `progs`, running.
-    pub(crate) fn new(mut world: World, progs: Vec<u8>) -> Self {
-        world.track_changes(true);
+    pub(crate) fn new(mut world: World, progs: Vec<u8>, reporting: Reporting) -> Self {
+        // The edicts' events cost a record of every field write; only a client reads them.
+        world.track_changes(reporting == Reporting::Bridge);
         Self {
             world,
             progs,
@@ -256,11 +274,15 @@ impl Game {
         outcome
     }
 
-    fn run_frame(&mut self, progs: &Progs<'_>, frametime: f64) {
+    fn run_frame(&mut self, progs: &Progs<'_>, frametime: f64) -> FrameEnd {
         let outcome = self.world.frame(progs, frametime);
         self.report_changes(progs);
-        if let Err(error) = outcome {
-            self.fail(&error);
+        match outcome {
+            Ok(()) => FrameEnd::Ran,
+            Err(error) => {
+                self.fail(&error);
+                FrameEnd::Failed
+            }
         }
     }
 
@@ -479,8 +501,8 @@ impl Game {
         self.require_paused()?;
         match params.get("kind").and_then(Value::as_str) {
             Some("frame") => {
-                self.run_frame(progs, STEP_FRAME);
-                if self.state == State::Paused {
+                // A frame that fails has said why it paused (BRIDGE-3.3).
+                if self.run_frame(progs, STEP_FRAME) == FrameEnd::Ran {
                     self.state_changed(Some(Reason::Step), None);
                 }
                 Ok(self.time())

@@ -120,6 +120,11 @@ impl Bridge {
         }
     }
 
+    /// Whether the client has initialized the session, so events may be sent (BRIDGE-2.2).
+    pub(crate) const fn is_initialized(&self) -> bool {
+        self.session.is_initialized()
+    }
+
     /// Sends the response to request `id`, which the host answered later.
     pub(crate) fn respond(&mut self, id: Id, outcome: Result<Value, RpcError>) {
         self.send(&Message::Response {

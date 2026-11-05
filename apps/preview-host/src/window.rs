@@ -179,6 +179,7 @@ impl eframe::App for Viewer {
         let rect = ui.max_rect();
         let response = ui.allocate_rect(rect, egui::Sense::click());
         self.hold_pointer(ui, response.clicked());
+        self.take_screenshot(ui);
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
         if self.fly {
@@ -321,9 +322,33 @@ impl Viewer {
     /// client asked the host to stop or went away (BRIDGE-1.1, BRIDGE-2.5).
     fn serve_bridge(&mut self, ui: &egui::Ui) {
         let Some(bridge) = &mut self.bridge else {
+            // No one hears the events of a game played on its own.
+            drop(self.game.take_events());
             return;
         };
-        // The screenshot asked for last frame, now drawn.
+        let open = bridge.poll(&mut self.game);
+        for (id, outcome) in self.game.take_responses() {
+            bridge.respond(id, outcome);
+        }
+        // The events wait for `initialize`, so the client hears the progs and the map load
+        // however late it initializes (BRIDGE-2.2).
+        if bridge.is_initialized() {
+            for (method, params) in self.game.take_events() {
+                bridge.event(method, params);
+            }
+        }
+        if self.game.wants_screenshot() {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+        }
+        if !open || self.game.stopped() {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    /// Answers the waiting `screenshot`s with the frame drawn last, once a frame, before
+    /// any new request is read.
+    fn take_screenshot(&mut self, ui: &egui::Ui) {
         let shot = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
                 egui::Event::Screenshot { image, .. } => Some(Frame {
@@ -336,20 +361,6 @@ impl Viewer {
         });
         if let Some(frame) = shot {
             self.game.screenshot_taken(&frame);
-        }
-        let open = bridge.poll(&mut self.game);
-        for (id, outcome) in self.game.take_responses() {
-            bridge.respond(id, outcome);
-        }
-        for (method, params) in self.game.take_events() {
-            bridge.event(method, params);
-        }
-        if self.game.wants_screenshot() {
-            ui.ctx()
-                .send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
-        }
-        if !open || self.game.stopped() {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
 

@@ -26,7 +26,7 @@ use qs_bsp::{
 use qs_sim::{LoadOptions, World};
 use serde_json::{Value, json};
 
-use super::{Eye, Game};
+use super::{Eye, Game, Reporting};
 use crate::screenshot::Frame;
 
 /// The QuakeC the tests run: a crate the map places, a counter `StartFrame` raises, a
@@ -178,7 +178,7 @@ fn game_with(entities: &str) -> (Game, Session) {
     )
     .expect("the world loads");
     world.connect(&progs).unwrap();
-    let mut game = Game::new(world, bytes.clone());
+    let mut game = Game::new(world, bytes.clone(), Reporting::Bridge);
     let mut session = Session::new();
     let init = request(
         0,
@@ -385,7 +385,14 @@ fn field_set_applies_now_or_on_resume() {
     assert_eq!(float_field(&mut game, &mut session, 2, "count"), 5.0);
     let changed = events(&mut game);
     assert_eq!(methods(&changed), ["edict/changed"]);
-    assert_eq!(changed[0].1["fields"][0]["name"], "count");
+    // The field, and the bounds relinking the edict writes (WORLD-3).
+    let names: Vec<&Value> = changed[0].1["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| &f["name"])
+        .collect();
+    assert!(names.contains(&&json!("count")), "{names:?}");
 
     call(&mut game, &mut session, "pause", &json!({})).unwrap();
     events(&mut game);
@@ -742,4 +749,86 @@ fn a_screenshot_is_answered_with_the_next_frame() {
             (Id::Number(8), json!(2), json!(3))
         ]
     );
+}
+
+// spec BRIDGE-3.3: a step whose frame fails pauses once, with reason error, not step
+#[test]
+fn a_failed_step_pauses_once_for_the_error() {
+    let (mut game, mut session) = game_with("{\n\"classname\" \"info_fail\"\n}\n");
+    call(&mut game, &mut session, "pause", &json!({})).unwrap();
+    events(&mut game);
+    let mut raised = Vec::new();
+    for _ in 0..10 {
+        call(&mut game, &mut session, "step", &json!({ "kind": "frame" })).unwrap();
+        raised.extend(events(&mut game));
+        if raised.iter().any(|(m, _)| *m == "qc/error") {
+            break;
+        }
+    }
+    let at = raised
+        .iter()
+        .position(|(m, _)| *m == "qc/error")
+        .expect("a qc/error");
+    let after: Vec<&Value> = raised[at..]
+        .iter()
+        .filter(|(m, _)| *m == "state/changed")
+        .map(|(_, p)| p)
+        .collect();
+    assert_eq!(after.len(), 1, "{raised:?}");
+    assert_eq!(after[0]["reason"], "error");
+}
+
+// spec BRIDGE-3.1: a game no client hears records no edict changes
+#[test]
+fn a_game_played_alone_records_no_changes() {
+    let bytes = progs();
+    let progs_read = Progs::read(&bytes).unwrap();
+    let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{CRATE}");
+    let map = floor(Box::leak(lump.into_bytes().into_boxed_slice()));
+    let mut world = World::load(
+        &progs_read,
+        "test",
+        &map,
+        Box::new(|_| None),
+        LoadOptions::default(),
+    )
+    .unwrap();
+    world.connect(&progs_read).unwrap();
+    let mut game = Game::new(world, bytes.clone(), Reporting::Off);
+    for _ in 0..3 {
+        assert!(game.frame(0.1));
+    }
+    assert!(game.take_events().is_empty());
+}
+
+// spec BRIDGE-4.4: a field set moves the edict in the world too: a pick finds it at its new
+// origin, not its old one
+#[test]
+fn a_moved_edict_is_found_where_it_now_is() {
+    let (mut game, mut session) = game();
+    call(
+        &mut game,
+        &mut session,
+        "field/set",
+        &json!({ "edict": 2, "field": "origin", "value": { "type": "vector", "value": [0, 200, 40] } }),
+    )
+    .unwrap();
+    game.set_eye(eye([-100.0, 0.0, 40.0], [0.0, 0.0, 0.0]));
+    let old = call(
+        &mut game,
+        &mut session,
+        "pick",
+        &json!({ "x": 0.5, "y": 0.5 }),
+    )
+    .unwrap();
+    assert_eq!(old.get("edict"), None, "{old}");
+    game.set_eye(eye([-100.0, 200.0, 40.0], [0.0, 0.0, 0.0]));
+    let new = call(
+        &mut game,
+        &mut session,
+        "pick",
+        &json!({ "x": 0.5, "y": 0.5 }),
+    )
+    .unwrap();
+    assert_eq!(new["edict"], 2, "{new}");
 }
