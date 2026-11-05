@@ -37,6 +37,8 @@ enum qs_sim::spawn::LoadError
 enum qs_sim::spawn::SpawnError
 enum qs_sim::spawn::Token
 enum qs_sim::world::WorldError
+enum qs_sim::world::edit::EditError
+enum qs_sim::world::inspect::QcValue
 enum qs_sim::world::save::SaveError
 field qs_sim::client::UserCmd.angles
 field qs_sim::client::UserCmd.buttons
@@ -93,6 +95,8 @@ field qs_sim::world::Entity.skin
 field qs_sim::world::LoadOptions.builtins
 field qs_sim::world::LoadOptions.carried
 field qs_sim::world::LoadOptions.localization
+field qs_sim::world::inspect::NamedValue.name
+field qs_sim::world::inspect::NamedValue.value
 field qs_sim::world::save::SaveGame.comment
 field qs_sim::world::save::SaveGame.map
 field qs_sim::world::save::SaveGame.parms
@@ -191,6 +195,15 @@ fn qs_sim::world::World::take_messages
 fn qs_sim::world::World::take_set_angle
 fn qs_sim::world::World::take_sounds
 fn qs_sim::world::World::time
+fn qs_sim::world::edit::World::edit_entity
+fn qs_sim::world::edit::World::move_player
+fn qs_sim::world::edit::World::remove_entity
+fn qs_sim::world::edit::World::set_field_value
+fn qs_sim::world::edit::World::spawn_entity
+fn qs_sim::world::inspect::World::classname
+fn qs_sim::world::inspect::World::edict_fields
+fn qs_sim::world::inspect::World::in_use
+fn qs_sim::world::inspect::World::named_globals
 fn qs_sim::world::save::SaveGame::read
 fn qs_sim::world::save::World::restore
 fn qs_sim::world::save::World::save_game
@@ -201,6 +214,8 @@ impl qs_sim::spawn::SpawnError: core::error::Error
 impl qs_sim::spawn::SpawnError: core::fmt::Display
 impl qs_sim::world::WorldError: core::error::Error
 impl qs_sim::world::WorldError: core::fmt::Display
+impl qs_sim::world::edit::EditError: core::error::Error
+impl qs_sim::world::edit::EditError: core::fmt::Display
 impl qs_sim::world::save::SaveError: core::error::Error
 impl qs_sim::world::save::SaveError: core::fmt::Display
 mod qs_sim::collision
@@ -229,11 +244,13 @@ struct qs_sim::world::Entity
 struct qs_sim::world::LoadOptions
 struct qs_sim::world::SpawnParms
 struct qs_sim::world::World
+struct qs_sim::world::inspect::NamedValue
 struct qs_sim::world::save::SaveGame
 trait qs_sim::collision::Host
 trait qs_sim::spawn::SpawnHost
 type qs_sim::builtins::ModelFiles
 use qs_sim::ClientMessages = messages::ClientMessages
+use qs_sim::EditError = world::EditError
 use qs_sim::Entity = world::Entity
 use qs_sim::LoadOptions = world::LoadOptions
 use qs_sim::Message = messages::Message
@@ -249,6 +266,8 @@ use qs_sim::NET_PACKET_SLACK = messages::NET_PACKET_SLACK
 use qs_sim::NET_PROTOCOL_VERSION = messages::NET_PROTOCOL_VERSION
 use qs_sim::NET_SIGNON_SIZE = messages::NET_SIGNON_SIZE
 use qs_sim::NET_VERSION = messages::NET_VERSION
+use qs_sim::NamedValue = world::NamedValue
+use qs_sim::QcValue = world::QcValue
 use qs_sim::SAVEGAME_VERSION = world::SAVEGAME_VERSION
 use qs_sim::SaveError = world::SaveError
 use qs_sim::SaveGame = world::SaveGame
@@ -290,6 +309,9 @@ use qs_sim::collision::recursive_hull_check = trace::recursive_hull_check
 use qs_sim::collision::sv_move = area::sv_move
 use qs_sim::collision::test_entity_position = area::test_entity_position
 use qs_sim::localization = qc_builtins::localization
+use qs_sim::world::EditError = edit::EditError
+use qs_sim::world::NamedValue = inspect::NamedValue
+use qs_sim::world::QcValue = inspect::QcValue
 use qs_sim::world::SAVEGAME_VERSION = save::SAVEGAME_VERSION
 use qs_sim::world::SaveError = save::SaveError
 use qs_sim::world::SaveGame = save::SaveGame
@@ -324,6 +346,18 @@ variant qs_sim::spawn::Token::Word
 variant qs_sim::world::WorldError::Frame
 variant qs_sim::world::WorldError::Progs
 variant qs_sim::world::WorldError::Spawn
+variant qs_sim::world::edit::EditError::BadValue
+variant qs_sim::world::edit::EditError::Kept
+variant qs_sim::world::edit::EditError::NoSuchEdict
+variant qs_sim::world::edit::EditError::NoSuchField
+variant qs_sim::world::edit::EditError::Spawn
+variant qs_sim::world::inspect::QcValue::Entity
+variant qs_sim::world::inspect::QcValue::Field
+variant qs_sim::world::inspect::QcValue::Float
+variant qs_sim::world::inspect::QcValue::Function
+variant qs_sim::world::inspect::QcValue::String
+variant qs_sim::world::inspect::QcValue::Vector
+variant qs_sim::world::inspect::QcValue::Void
 variant qs_sim::world::save::SaveError::BadValue
 variant qs_sim::world::save::SaveError::BlockOverflow
 variant qs_sim::world::save::SaveError::DeadPlayer
