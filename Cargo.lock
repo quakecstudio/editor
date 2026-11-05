@@ -3190,6 +3190,7 @@ dependencies = [
 name = "qs-sim"
 version = "2026.10.0"
 dependencies = [
+ "clap",
  "qc-builtins",
  "qc-codegen",
  "qc-edict",
@@ -3200,6 +3201,7 @@ dependencies = [
  "qs-bsp",
  "qs-mdl",
  "qs-porting-example",
+ "qs-vfs",
 ]
 
 [[package]]

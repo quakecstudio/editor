@@ -27,6 +27,7 @@ const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_EASY
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_HARD
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_MEDIUM
 const qs_sim::spawn::SPAWNFLAGS_SLOT
+const qs_sim::world::save::SAVEGAME_VERSION
 enum qs_sim::collision::CollisionError
 enum qs_sim::collision::Solid
 enum qs_sim::collision::area::MoveKind
@@ -36,6 +37,7 @@ enum qs_sim::spawn::LoadError
 enum qs_sim::spawn::SpawnError
 enum qs_sim::spawn::Token
 enum qs_sim::world::WorldError
+enum qs_sim::world::save::SaveError
 field qs_sim::client::UserCmd.angles
 field qs_sim::client::UserCmd.buttons
 field qs_sim::client::UserCmd.forward
@@ -89,7 +91,13 @@ field qs_sim::world::Entity.number
 field qs_sim::world::Entity.origin
 field qs_sim::world::Entity.skin
 field qs_sim::world::LoadOptions.builtins
+field qs_sim::world::LoadOptions.carried
 field qs_sim::world::LoadOptions.localization
+field qs_sim::world::save::SaveGame.comment
+field qs_sim::world::save::SaveGame.map
+field qs_sim::world::save::SaveGame.parms
+field qs_sim::world::save::SaveGame.skill
+field qs_sim::world::save::SaveGame.time
 fn qs_sim::collision::Collision::add_brush
 fn qs_sim::collision::Collision::area
 fn qs_sim::collision::Collision::leafs_of
@@ -166,19 +174,26 @@ fn qs_sim::spawn::c_atof
 fn qs_sim::spawn::c_atoi
 fn qs_sim::spawn::inhibited
 fn qs_sim::spawn::load_from_file
+fn qs_sim::world::SpawnParms::parms
+fn qs_sim::world::SpawnParms::serverflags
 fn qs_sim::world::World::connect
 fn qs_sim::world::World::entities
 fn qs_sim::world::World::frame
 fn qs_sim::world::World::light_style
 fn qs_sim::world::World::load
 fn qs_sim::world::World::player_view
+fn qs_sim::world::World::save_spawn_parms
 fn qs_sim::world::World::set_command
 fn qs_sim::world::World::set_standard_quake
 fn qs_sim::world::World::settle
+fn qs_sim::world::World::take_changelevel
 fn qs_sim::world::World::take_messages
 fn qs_sim::world::World::take_set_angle
 fn qs_sim::world::World::take_sounds
 fn qs_sim::world::World::time
+fn qs_sim::world::save::SaveGame::read
+fn qs_sim::world::save::World::restore
+fn qs_sim::world::save::World::save_game
 impl qs_sim::builtins::SimBuiltins: Builtins
 impl qs_sim::collision::CollisionError: core::error::Error
 impl qs_sim::collision::CollisionError: core::fmt::Display
@@ -186,6 +201,8 @@ impl qs_sim::spawn::SpawnError: core::error::Error
 impl qs_sim::spawn::SpawnError: core::fmt::Display
 impl qs_sim::world::WorldError: core::error::Error
 impl qs_sim::world::WorldError: core::fmt::Display
+impl qs_sim::world::save::SaveError: core::error::Error
+impl qs_sim::world::save::SaveError: core::fmt::Display
 mod qs_sim::collision
 mod qs_sim::rerelease
 mod qs_sim::spawn
@@ -210,7 +227,9 @@ struct qs_sim::spawn::FieldDef
 struct qs_sim::spawn::Parser
 struct qs_sim::world::Entity
 struct qs_sim::world::LoadOptions
+struct qs_sim::world::SpawnParms
 struct qs_sim::world::World
+struct qs_sim::world::save::SaveGame
 trait qs_sim::collision::Host
 trait qs_sim::spawn::SpawnHost
 type qs_sim::builtins::ModelFiles
@@ -230,8 +249,12 @@ use qs_sim::NET_PACKET_SLACK = messages::NET_PACKET_SLACK
 use qs_sim::NET_PROTOCOL_VERSION = messages::NET_PROTOCOL_VERSION
 use qs_sim::NET_SIGNON_SIZE = messages::NET_SIGNON_SIZE
 use qs_sim::NET_VERSION = messages::NET_VERSION
+use qs_sim::SAVEGAME_VERSION = world::SAVEGAME_VERSION
+use qs_sim::SaveError = world::SaveError
+use qs_sim::SaveGame = world::SaveGame
 use qs_sim::SimBuiltins = builtins::SimBuiltins
 use qs_sim::Sound = physics::Sound
+use qs_sim::SpawnParms = world::SpawnParms
 use qs_sim::UserCmd = client::UserCmd
 use qs_sim::World = world::World
 use qs_sim::WorldError = world::WorldError
@@ -267,6 +290,9 @@ use qs_sim::collision::recursive_hull_check = trace::recursive_hull_check
 use qs_sim::collision::sv_move = area::sv_move
 use qs_sim::collision::test_entity_position = area::test_entity_position
 use qs_sim::localization = qc_builtins::localization
+use qs_sim::world::SAVEGAME_VERSION = save::SAVEGAME_VERSION
+use qs_sim::world::SaveError = save::SaveError
+use qs_sim::world::SaveGame = save::SaveGame
 variant qs_sim::collision::CollisionError::BadNode
 variant qs_sim::collision::CollisionError::PushWithoutBsp
 variant qs_sim::collision::CollisionError::SolidBspWithoutPush
@@ -298,3 +324,13 @@ variant qs_sim::spawn::Token::Word
 variant qs_sim::world::WorldError::Frame
 variant qs_sim::world::WorldError::Progs
 variant qs_sim::world::WorldError::Spawn
+variant qs_sim::world::save::SaveError::BadValue
+variant qs_sim::world::save::SaveError::BlockOverflow
+variant qs_sim::world::save::SaveError::DeadPlayer
+variant qs_sim::world::save::SaveError::Link
+variant qs_sim::world::save::SaveError::NoBrace
+variant qs_sim::world::save::SaveError::NotPlaying
+variant qs_sim::world::save::SaveError::Parse
+variant qs_sim::world::save::SaveError::TooManyEdicts
+variant qs_sim::world::save::SaveError::Truncated
+variant qs_sim::world::save::SaveError::Version

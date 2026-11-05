@@ -33,6 +33,7 @@ fn qc_edict::store::EdictStore::new
 fn qc_edict::store::EdictStore::num_edicts
 fn qc_edict::store::EdictStore::num_for_edict
 fn qc_edict::store::EdictStore::set_field
+fn qc_edict::store::EdictStore::set_num_edicts
 fn qc_edict::system::field_by_name
 fn qc_edict::system::global_by_name
 impl qc_edict::layout::LayoutError: core::error::Error
