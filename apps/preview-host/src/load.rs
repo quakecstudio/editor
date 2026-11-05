@@ -3,6 +3,8 @@
 //! Reading a map from the user's Quake install (P1-19): its server, its client, what the
 //! renderer draws, and where a free camera stands in it.
 
+use std::rc::Rc;
+
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader, Lit};
 use qs_client::{Client, ModelInfo, Models, Random};
@@ -58,7 +60,7 @@ pub(crate) struct Loaded {
 }
 
 /// A file of the install by name, `None` when it is not on the search path.
-type Reader = Box<dyn Fn(&str) -> Option<Vec<u8>>>;
+type Reader = Rc<dyn Fn(&str) -> Option<Vec<u8>>>;
 /// The search-path element a file is found in, the first 0.
 type Ranker = Box<dyn Fn(&str) -> Option<usize>>;
 
@@ -152,7 +154,7 @@ pub(crate) fn load(
     // same search path; so do the client and the renderer.
     let reader = || -> Result<Reader, String> {
         let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
-        Ok(Box::new(move |name: &str| {
+        Ok(Rc::new(move |name: &str| {
             files
                 .load(name.as_bytes())
                 .ok()
@@ -218,9 +220,9 @@ pub(crate) fn load(
     }
     let mut play = Play::new(palette.clone(), pics, bsp.entities());
     play.zfix = zfix;
-    play.load_models(client.model_names(), &reader()?, &ranker()?)
+    play.load_models(client.model_names(), &*reader()?, &ranker()?)
         .map_err(|e| e.to_string())?;
-    play.load_sky(&reader()?);
+    play.load_sky(&*reader()?);
     // The world, then every brush submodel `*n` at the origin, so the mesh's model `n` is the
     // submodel `n`; then each entity showing a BSP of its own, such as a health box.
     let placements: Vec<Placement> = (0..bsp.models.len())

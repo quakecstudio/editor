@@ -27,6 +27,7 @@ use qs_vfs::Registration;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
+use crate::debug::Debugger;
 use crate::host_commands::SignonCommand;
 use crate::messages::ClientMessages;
 #[cfg(test)]
@@ -102,7 +103,9 @@ pub struct Entity {
     pub skin: f32,
 }
 
-/// A map's world: the VM with its entities spawned, linked in the world's collision.
+/// A map's world: the VM with its entities spawned, linked in the world's collision. A clone
+/// is a snapshot the debugger replays a frame from (WORLD-9).
+#[derive(Clone)]
 pub struct World {
     machine: Machine,
     pub(crate) builtins: SimBuiltins,
@@ -335,6 +338,9 @@ impl World {
     pub fn frame(&mut self, progs: &Progs<'_>, frametime: f64) -> Result<(), WorldError> {
         // MOVE-6.2: `_Host_Frame`'s `rand ();`, "keep the random time dependent".
         let _discarded = self.builtins.mock.engine_mut().rng.next_rand();
+        if let Some(debugger) = &mut self.builtins.debugger {
+            debugger.begin_frame();
+        }
         {
             let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
             // Host_ServerFrame (NET-1.2): frametime, the datagram cleared, then the clients'
@@ -395,6 +401,28 @@ impl World {
             rng: engine.rng,
             cvars: engine.cvars.clone(),
         }
+    }
+
+    /// The debugger the frames run with, `None` to run without one (WORLD-9.1).
+    pub fn set_debugger(&mut self, debugger: Option<Debugger>) {
+        self.builtins.debugger = debugger;
+    }
+
+    /// The debugger, to set breakpoints and rules and to read where a run stopped.
+    pub fn debugger_mut(&mut self) -> Option<&mut Debugger> {
+        self.builtins.debugger.as_mut()
+    }
+
+    /// The debugger, to read where a run stopped.
+    #[must_use]
+    pub const fn debugger(&self) -> Option<&Debugger> {
+        self.builtins.debugger.as_ref()
+    }
+
+    /// The machine, for reading the call stack and the locals while stopped (WORLD-9.5).
+    #[must_use]
+    pub const fn machine(&self) -> &Machine {
+        &self.machine
     }
 
     /// The client connects in the next frame, at its `SV_CheckForNewClients` (PHYS-10.7);

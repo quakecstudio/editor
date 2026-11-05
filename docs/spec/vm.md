@@ -561,6 +561,19 @@ moving an entity (`builtins.md`). That run is nested inside the run that called 
   VM-19.2 and VM-19.6. id has no message for them, so the message is the implementation's.
   VM-2.2 is the host error of VM-2.1.
 
+
+## VM-20 Stopping a run
+
+**Source:** this project; id's engine has no debugger.
+
+### Behaviour
+
+- **VM-20.1** Before each statement executes, after VM-3.1's runaway count and VM-3.3's range
+  check, the host's observer is asked whether to stop. When it says yes the run ends with the
+  error `interrupted`, its function and statement the ones that would have run, and the
+  machine as it was before that statement: nothing of it has executed. Like a host error it
+  leaves the call depth where it was, so the stack is that of the stopped statement. A nested
+  run (VM-18) is asked as its outer run is, and its stop ends every run (VM-18.4).
 ## Test vectors
 
 The vectors are small programs with the expected changes to the globals and fields after

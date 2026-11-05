@@ -12,6 +12,8 @@
 //! on this crate's collision (WORLD-8) and movement (MOVE).
 
 use qc_builtins::math::vector_normalize;
+use std::rc::Rc;
+
 use qc_builtins::mock::{BUILTIN_CHECKCLIENT_INTERVAL, BUILTIN_FL_NOTARGET, ModelBounds};
 use qc_builtins::{MockBuiltins, MockEngine};
 use qc_edict::EdictNumber;
@@ -26,6 +28,7 @@ use qs_mdl::Sprite;
 use crate::collision::{
     Body, Collision, CollisionError, Host, MoveKind, Solid, Trace, link_edict, sv_move,
 };
+use crate::debug::Debugger;
 use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages};
 use crate::physics::{Sound, dot};
 use crate::rerelease::{BuiltinTable, RRE_NUM_BUILTINS};
@@ -91,9 +94,10 @@ const MOVETYPE_PUSH: f32 = 7.0;
 pub(crate) const FL_ONGROUND: i32 = 512;
 
 /// Reads a model file the progs precaches, such as `maps/b_bh25.bsp`.
-pub type ModelFiles = Box<dyn Fn(&str) -> Option<Vec<u8>>>;
+pub type ModelFiles = Rc<dyn Fn(&str) -> Option<Vec<u8>>>;
 
 /// The builtins a world runs its progs with.
+#[derive(Clone)]
 pub struct SimBuiltins {
     /// The engine state builtins read and write, and every builtin but the world's.
     pub(crate) mock: MockBuiltins,
@@ -105,6 +109,8 @@ pub struct SimBuiltins {
     pub(crate) messages: ServerMessages,
     /// id's table, or the rerelease's with its builtins 79 to 92 (RRE-4.2).
     table: BuiltinTable,
+    /// The debugger, the frames' runs' observer when a host debugs (WORLD-9).
+    pub(crate) debugger: Option<Debugger>,
     /// Whether the server is paused, `sv.paused` (PHYS-11.8).
     pub(crate) paused: bool,
     /// The client's name, `host_client->name`, which `spawn` gives its `netname`.
@@ -147,6 +153,7 @@ impl SimBuiltins {
             sounds: Vec::new(),
             messages: ServerMessages::new(map, crc),
             table,
+            debugger: None,
             paused: false,
             client_name: b"player".to_vec(),
             checkpvs: Vec::new(),
@@ -402,7 +409,26 @@ impl Vm<'_, '_, '_> {
         match self {
             Self::Builtin(context) => context.execute_program(sim, function),
             Self::Frame { machine, progs } => {
-                machine.execute_program(progs, ServerState::Active, sim, &mut NoObserver, function)
+                // WORLD-9.1: the debugger, when there is one, watches the run; it is lent so the
+                // builtins and it are not borrowed twice.
+                let Some(mut debugger) = sim.debugger.take() else {
+                    return machine.execute_program(
+                        progs,
+                        ServerState::Active,
+                        sim,
+                        &mut NoObserver,
+                        function,
+                    );
+                };
+                let outcome = machine.execute_program(
+                    progs,
+                    ServerState::Active,
+                    sim,
+                    &mut debugger,
+                    function,
+                );
+                sim.debugger = Some(debugger);
+                outcome
             }
         }
     }

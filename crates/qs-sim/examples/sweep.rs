@@ -10,6 +10,7 @@
 //! ```
 
 use std::io::Write as _;
+use std::rc::Rc;
 
 use qc_progs::Progs;
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
@@ -113,7 +114,7 @@ fn run(
         qs_bsp::Bsp::read(&bytes, qs_bsp::BspLoader::default()).map_err(|e| e.message(&name))?;
     let models = || -> Result<qs_sim::ModelFiles, String> {
         let files = Vfs::new(StdFs, engine, ".").map_err(|e| format!("{e:?}"))?;
-        Ok(Box::new(move |name: &str| {
+        Ok(Rc::new(move |name: &str| {
             files
                 .load(name.as_bytes())
                 .ok()

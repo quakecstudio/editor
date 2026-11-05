@@ -12,6 +12,7 @@
 use qc_edict::EdictNumber;
 use std::fmt::Write as _;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use qc_builtins::mock::Rng;
 use qc_codegen::compile_module;
@@ -88,6 +89,12 @@ const ENTRY_POINTS: &str = "void() main = {};\nvoid() StartFrame = {};\n\
 /// The progs `qc-codegen` writes for `source` after the system defs, the builtins and the
 /// entry points.
 pub(crate) fn compile(source: &str) -> Vec<u8> {
+    compile_with_lines(source).0
+}
+
+/// [`compile`]'s progs and the source line of each statement, from the `.lno` (LNO-1); the
+/// source is the file `t.qc`, its first line line 1.
+pub(crate) fn compile_with_lines(source: &str) -> (Vec<u8>, Vec<i32>) {
     let mut defs = String::new();
     for var in SYSTEM_GLOBALS {
         writeln!(defs, "{} {};", type_name(var.etype), var.name).unwrap();
@@ -131,7 +138,10 @@ pub(crate) fn compile(source: &str) -> Vec<u8> {
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
     let compiled = compile_module(&mut db, &input, |id| names[id.index()].clone())
         .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
-    qc_progs::write(&compiled.progs).unwrap()
+    (
+        qc_progs::write(&compiled.progs).unwrap(),
+        compiled.lno.lines,
+    )
 }
 
 /// A floor at z = 0 for x below 100, and a pit floor at z = -30 past it; for the player's
@@ -231,7 +241,7 @@ pub(crate) fn running_from(
     let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{entities}");
     let mut map = bsp(spec);
     map.entity_lump = Box::leak(lump.into_bytes().into_boxed_slice());
-    let read = Box::new(move |name: &str| {
+    let read = Rc::new(move |name: &str| {
         files
             .iter()
             .find(|(n, _)| n == name)
@@ -2720,5 +2730,6 @@ fn restart_asks_for_this_level_again() {
     assert_eq!(run.world.carried(), None, "a new game");
 }
 
+mod debug;
 mod engine;
 mod host;

@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use qc_progs::Progs;
 use qc_trace::{Record, Trace};
@@ -247,7 +248,7 @@ impl Game {
             Bsp::read(&self.bsp_bytes, BspLoader::default()).map_err(|e| e.message(&self.map))?;
         // One search path, as the preview host keeps one.
         let files = Vfs::new(StdFs, &self.engine, ".").map_err(|e| format!("{e:?}"))?;
-        let reader = Box::new(move |name: &str| {
+        let reader = Rc::new(move |name: &str| {
             files
                 .load(name.as_bytes())
                 .ok()

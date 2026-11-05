@@ -12,6 +12,7 @@
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use qc_codegen::compile_module;
 use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
@@ -179,7 +180,7 @@ fn game_with(entities: &str) -> (Game, Session) {
         &progs,
         "test",
         &map,
-        Box::new(|_| None),
+        Rc::new(|_| None),
         LoadOptions::default(),
     )
     .expect("the world loads");
@@ -846,7 +847,7 @@ fn a_game_played_alone_records_no_changes() {
         &progs_read,
         "test",
         &map,
-        Box::new(|_| None),
+        Rc::new(|_| None),
         LoadOptions::default(),
     )
     .unwrap();

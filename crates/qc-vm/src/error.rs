@@ -124,6 +124,9 @@ pub enum ErrorKind {
         /// The message `Sys_Error` is given, as it goes into the trace's error record (DIFF-8.2).
         message: String,
     },
+    /// The host's observer stopped the run before a statement (VM-20.1), as a debugger does
+    /// at a breakpoint. id's engine has no such stop.
+    Interrupted,
 }
 
 impl ErrorKind {
@@ -156,7 +159,9 @@ impl ErrorKind {
     #[must_use]
     pub const fn resets_depth(&self) -> bool {
         match self {
-            Self::NullRunFunction | Self::Host { .. } | Self::Fatal { .. } => false,
+            Self::NullRunFunction | Self::Host { .. } | Self::Fatal { .. } | Self::Interrupted => {
+                false
+            }
             Self::NullCallFunction
             | Self::StackOverflow
             | Self::LocalsStackOverflow
@@ -185,7 +190,8 @@ impl ErrorKind {
             | Self::AssignmentToWorld
             | Self::Divergence(_)
             | Self::Builtin { .. }
-            | Self::Host { .. } => false,
+            | Self::Host { .. }
+            | Self::Interrupted => false,
         }
     }
 }
@@ -205,6 +211,7 @@ impl fmt::Display for ErrorKind {
             Self::Builtin { message } | Self::Host { message } | Self::Fatal { message } => {
                 f.write_str(message)
             }
+            Self::Interrupted => f.write_str("interrupted"),
         }
     }
 }
