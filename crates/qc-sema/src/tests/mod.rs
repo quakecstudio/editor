@@ -30,6 +30,7 @@ mod dialect_builtins;
 mod dialect_full;
 mod dialect_resolution;
 mod dialect_statements;
+mod dropped_branches;
 mod emulation;
 mod expansion;
 mod flags;
