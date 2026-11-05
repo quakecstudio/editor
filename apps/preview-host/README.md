@@ -19,7 +19,7 @@ dash because ADR-0008 launches every engine, this one included, with `-basedir <
 archive instead of the game root. The map defaults to `start`.
 
 W, A, S and D move, Space jumps, Q and E swim, Shift runs, the mouse button fires, 1 to 8
-change weapons and dragging looks around. `--fly` is a free camera, `--benchmark <seconds>`
+change weapons, and a click in the window captures the mouse to look around (Escape frees it). `--fly` is a free camera, `--benchmark <seconds>`
 measures the frame rate (P2-152), `--position <x> <y>` opens the window on a chosen display,
 and `--help` lists every option.
 

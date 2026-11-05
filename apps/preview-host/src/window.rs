@@ -5,8 +5,9 @@
 //! scene, and the bridge answered between two server frames (BRIDGE-4.3).
 //!
 //! W, A, S and D move, Space jumps, Q and E swim down and up, Shift runs, the mouse button
-//! fires, the number keys pick a weapon and dragging with the mouse looks around. `--fly`
-//! gives a free camera instead, Space and C rising and sinking.
+//! fires, the number keys pick a weapon and the mouse looks around once a click in the window
+//! has captured it; Escape frees it. `--fly` gives a free camera instead, Space and C rising
+//! and sinking.
 
 use std::io::Write as _;
 use std::time::Instant;
@@ -26,8 +27,20 @@ use crate::screenshot::Frame;
 
 /// Map units a second walking, and running with Shift.
 const SPEEDS: [f32; 2] = [320.0, 960.0];
-/// Degrees turned per point the mouse drags.
-const TURN: f32 = 0.25;
+/// Degrees turned per unit the mouse moves: `sensitivity` 3 times `m_yaw` and `m_pitch`
+/// 0.022, id's defaults (`WinQuake/cl_main.c`), as `IN_MouseMove` turns the view
+/// (`WinQuake/in_win.c`).
+const TURN: f32 = 3.0 * 0.022;
+
+/// Whether the window holds the mouse, as an engine does in play.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pointer {
+    /// The pointer is the system's; a click in the window captures it.
+    Free,
+    /// The pointer is hidden and locked: moving the mouse turns the view, and its button
+    /// fires. Escape, or the window losing focus, frees it.
+    Captured,
+}
 
 /// `Host_FilterTime`: no frame comes sooner than 1/72 of a second after the last.
 const FRAME: f64 = 1.0 / 72.0;
@@ -106,6 +119,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 describer,
                 rand,
                 fly,
+                pointer: Pointer::Free,
                 last_set: [f32::NAN; 2],
                 behind: 0.0,
                 started: Instant::now(),
@@ -136,6 +150,8 @@ struct Viewer {
     describer: Describer,
     rand: Rand,
     fly: bool,
+    /// Whether the window holds the mouse.
+    pointer: Pointer,
     /// The view angles last given to the client, to tell a `svc_setangle` from them.
     last_set: [f32; 2],
     behind: f64,
@@ -161,9 +177,8 @@ impl eframe::App for Viewer {
         let seconds = frame.min(0.1);
         self.last = now;
         let rect = ui.max_rect();
-        let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
-        let drag = response.drag_delta();
-        self.camera.turn(-drag.x * TURN, drag.y * TURN);
+        let response = ui.allocate_rect(rect, egui::Sense::click());
+        self.hold_pointer(ui, response.clicked());
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
         if self.fly {
@@ -338,6 +353,42 @@ impl Viewer {
         }
     }
 
+    /// Captures the mouse on a click and frees it on Escape or when the window loses focus;
+    /// while it is held, its motion turns the view (`IN_MouseMove`).
+    fn hold_pointer(&mut self, ui: &egui::Ui, clicked: bool) {
+        let (escape, focused, motion) = ui.input(|input| {
+            let mut motion = [0.0_f32; 2];
+            for event in &input.events {
+                if let egui::Event::MouseMoved(delta) = event {
+                    motion[0] += delta.x;
+                    motion[1] += delta.y;
+                }
+            }
+            (input.key_pressed(egui::Key::Escape), input.focused, motion)
+        });
+        let next = match self.pointer {
+            Pointer::Free if clicked => Pointer::Captured,
+            Pointer::Captured if escape || !focused => Pointer::Free,
+            same => same,
+        };
+        if next != self.pointer {
+            let (grab, visible) = match next {
+                Pointer::Captured => (egui::CursorGrab::Locked, false),
+                Pointer::Free => (egui::CursorGrab::None, true),
+            };
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::CursorGrab(grab));
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::CursorVisible(visible));
+            self.pointer = next;
+        } else if self.pointer == Pointer::Captured {
+            // `cl.viewangles[YAW] -= m_yaw.value * mouse_x`,
+            // `cl.viewangles[PITCH] += m_pitch.value * mouse_y`.
+            let [x, y] = motion;
+            self.camera.turn(-x * TURN, y * TURN);
+        }
+    }
+
     /// The player: the keys and the view as `CL_BaseMove` makes the command for the next
     /// server frame; the eye is the client's.
     fn steer(&mut self, ui: &egui::Ui) {
@@ -358,7 +409,8 @@ impl Viewer {
             let key = |k: egui::Key| f32::from(u8::from(input.key_down(k)));
             // cl_movespeedkey
             let speed = if input.modifiers.shift { 2.0 } else { 1.0 };
-            let attack = u8::from(input.pointer.primary_down());
+            let held = self.pointer == Pointer::Captured;
+            let attack = u8::from(held && input.pointer.primary_down());
             let impulse = (1..=8_u8)
                 .find(|n| {
                     let key = match n {
