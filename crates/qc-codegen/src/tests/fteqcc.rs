@@ -3654,3 +3654,20 @@ fn a_dropped_branchs_accessors_are_made_before_what_follows() {
     let names: Vec<String> = p.functions.iter().map(|f| string(&p, f.s_name)).collect();
     assert_eq!(names, ["", "error", "t", "ArraySet*arr", "ArrayGet*arr"]);
 }
+
+// spec FTE-3.6: a `case` whose first statement is an `if` a constant condition drops keeps its
+// label, which is before the dropped statements: only a label among them is forgotten
+#[test]
+fn a_case_before_a_dropped_branch_keeps_its_label() {
+    let p = fte_progs(
+        "float d, g; vector a, b;\n\
+         void() t = { switch (d) { case 1: g = 1; break; case 2: if ((a == b) && 0) { g = 3; } \
+         g = 2; break; } };\n",
+    );
+    let t = body(&p, "t");
+    let tests = t
+        .iter()
+        .filter(|s| s.op == u32::from(EqF.number()) && s.a == global(&p, "d"))
+        .count();
+    assert_eq!(tests, 2, "a test for each case: {t:?}");
+}
