@@ -285,7 +285,8 @@ impl eframe::App for Viewer {
             .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
         // egui's fonts are not bundled (their licenses are outside deny.toml's), so the stats
         // go in the title bar.
-        let [x, y, z] = self.camera.origin;
+        // The eye: the client's in play, the free camera's with `--fly`.
+        let [x, y, z] = self.eye;
         ui.ctx()
             .send_viewport_cmd(egui::ViewportCommand::Title(format!(
                 "QuakeC Studio preview: {}  {} triangles  {entities} entities  ({x:.0} {y:.0} {z:.0})  {:.0} fps",
