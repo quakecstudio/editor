@@ -1031,11 +1031,7 @@ fn a_missing_install_is_an_error_and_makes_no_link() {
     let target = dir.path().join("uninstalled").join("id1");
     let error = link_dir(&target, &link).unwrap_err();
     assert!(matches!(&error, LinkError::MissingTarget(path) if *path == target));
-    assert!(
-        error
-            .to_string()
-            .ends_with("is not there to link to")
-    );
+    assert!(error.to_string().ends_with("is not there to link to"));
     assert!(fs::symlink_metadata(&link).is_err());
     let file = dir.path().join("file");
     fs::write(&file, b"x").unwrap();

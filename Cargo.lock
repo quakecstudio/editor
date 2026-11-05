@@ -3293,6 +3293,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-engine"
+version = "2026.10.0"
+dependencies = [
+ "interprocess",
+ "qs-bridge",
+ "qs-install",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "qs-install"
 version = "2026.10.0"
 dependencies = [
