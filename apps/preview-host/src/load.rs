@@ -219,6 +219,7 @@ pub(crate) fn load(
         .map(|lno| lno.lines)
         .unwrap_or_default();
     game.set_lines(lines);
+    game.set_files(reader()?);
     game.announce("progs.dat", &map);
     // The client reads the serverinfo and the spawn messages the connection wrote.
     let mut client = Client::new(qs_client::Game::Standard);

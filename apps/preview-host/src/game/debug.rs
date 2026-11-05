@@ -15,10 +15,13 @@ use super::{FrameEnd, Game, Reason, State};
 use crate::values::to_json;
 
 /// A breakpoint the client set: its id and the statement it stops before.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Breakpoint {
     pub(crate) id: u64,
     pub(crate) statement: i32,
+    /// The file and line it was set at, resolved again when the progs is reloaded.
+    pub(crate) file: String,
+    pub(crate) line: i32,
 }
 
 /// The world before the frame the debugger may stop, and that frame's time (WORLD-9.2).
@@ -115,7 +118,12 @@ impl Game {
         })?;
         let id = self.next_breakpoint;
         self.next_breakpoint = id.saturating_add(1);
-        self.breakpoints.push(Breakpoint { id, statement });
+        self.breakpoints.push(Breakpoint {
+            id,
+            statement,
+            file: file.to_owned(),
+            line,
+        });
         self.debugger().set_breakpoint(statement, true);
         let function = function_of(progs, statement);
         Ok(json!({ "id": id, "location": self.location_json(progs, function, statement) }))

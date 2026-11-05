@@ -922,6 +922,7 @@ mod changes;
 mod edit;
 mod evaluate;
 mod inspect;
+mod reload;
 mod save;
 mod state;
 #[cfg(test)]
@@ -931,5 +932,6 @@ pub use changes::EdictChange;
 pub use edit::{EditError, LineHit};
 pub use evaluate::EvalError;
 pub use inspect::{NamedValue, QcValue};
+pub use reload::{Change, ChangeKind, Migration, Reason};
 pub use save::{SAVEGAME_VERSION, SaveError, SaveGame};
 pub use state::{RawState, State, read_state};

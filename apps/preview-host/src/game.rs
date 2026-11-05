@@ -14,11 +14,13 @@ use crate::screenshot::{Frame, encode};
 use crate::values::{from_json, named_json, to_json};
 
 mod debug;
+mod reload;
 
 use debug::{Breakpoint, Snapshot, Step, Stopped};
 
 /// The commands the game accepts.
-const COMMANDS: [&str; 14] = [
+const COMMANDS: [&str; 15] = [
+    "reload",
     "breakpoint/set",
     "breakpoint/clear",
     "evaluate",
@@ -61,6 +63,7 @@ enum Reason {
     Step,
     Error,
     Breakpoint,
+    Reload,
 }
 
 impl Reason {
@@ -70,6 +73,7 @@ impl Reason {
             Self::Step => "step",
             Self::Error => "error",
             Self::Breakpoint => "breakpoint",
+            Self::Reload => "reload",
         }
     }
 }
@@ -197,6 +201,10 @@ pub(crate) struct Game {
     snapshot: Option<Snapshot>,
     /// Where the frame stopped, while it is stopped.
     halted: Option<Stopped>,
+    /// Reads a file of the game's search path, for `reload`; `None` until the host gives it.
+    files: Option<qs_sim::ModelFiles>,
+    /// The name the progs was read by, which `reload` reads again by default.
+    progs_path: String,
 }
 
 impl Game {
@@ -220,7 +228,15 @@ impl Game {
             next_breakpoint: 0,
             snapshot: None,
             halted: None,
+            files: None,
+            progs_path: "progs.dat".to_owned(),
         }
+    }
+
+    /// The reader of the game's search path, which `reload` reads the progs and its `.lno`
+    /// with (BRIDGE-4.1).
+    pub(crate) fn set_files(&mut self, files: qs_sim::ModelFiles) {
+        self.files = Some(files);
     }
 
     /// The source line of each statement, from the `.lno` beside the progs (LNO-1).
@@ -381,23 +397,11 @@ impl Game {
     /// `progs/loaded` for the progs at `path`, and `map/loaded` (BRIDGE-3.1).
     pub(crate) fn announce(&mut self, path: &str, map: &str) {
         let time = self.world.time();
-        let Ok(header) = Progs::read(&self.progs).map(|progs| *progs.header()) else {
-            return;
-        };
-        let progs_loaded = json!({
-            "path": path,
-            "crc": header.crc,
-            "version": header.version,
-            "functions": header.numfunctions,
-            "globals": header.numglobals,
-            "fields": header.numfielddefs,
-            "lno": !self.lines.is_empty(),
-            "time": time,
-        });
         let entities = (0..self.world.num_edicts())
             .filter(|&n| self.world.in_use(n))
             .count();
-        self.events.push(("progs/loaded", progs_loaded));
+        self.progs_path = path.to_owned();
+        self.progs_loaded(path);
         self.events.push((
             "map/loaded",
             json!({ "map": map, "entities": entities, "time": time }),
@@ -713,6 +717,10 @@ impl Host for Game {
     }
 
     fn call(&mut self, id: &Id, method: &str, params: &Value) -> Answer {
+        // A reload replaces the progs every other command reads through.
+        if method == "reload" {
+            return Answer::Now(self.reload(params));
+        }
         if method == "screenshot" && self.screen == Screen::Window {
             let size = |name: &str| {
                 params

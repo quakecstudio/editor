@@ -307,6 +307,46 @@ statements are what each asks of the world.
   a field read from what is not an entity, or other text has no value. The frame's function's
   locals are read where they live, in the globals, so an outer frame of a recursive function
   reads the innermost one's.
+## WORLD-10 Reloading the progs
+
+**Source:** this project's design (P3-03, [#91](https://github.com/quakecstudio/editor/issues/91)):
+id's engine loads a progs only with a new map (`PR_LoadProgs` from `SV_SpawnServer`); the
+preview host loads one over the running map, keeping its state as a savegame keeps it, by name
+(`ED_WriteGlobals`, `ED_Write` and their parsers, `WinQuake/pr_edict.c`).
+
+### Behaviour
+
+- **WORLD-10.1** A reload makes a new machine for the new progs, whose globals start at the new
+  progs' values; its edicts are the running ones, `num_edicts`, each edict's free flag and
+  `freetime` kept, every field slot of the new progs' layout starting at 0. The time, the
+  settings, the engine strings and the collision links are the world's and stay; the builtin
+  table is the one the new progs was patched with (RRE-4.2); the debugger and the profile
+  counts, which number the old progs' statements and functions, are dropped.
+- **WORLD-10.2** A named global the old progs and the new one name once each, both with one type,
+  and that is not a function's local, keeps its running value, translated (WORLD-10.4), unless
+  that value is still its initial value in the old progs: it then has its initial value in the
+  new one, so a constant, a function's or a field's own definition and an initialised global
+  follow the edited code while what the game changed is kept, a function or field stored in a
+  global variable included. One only the old progs has is reported removed, one only the new
+  progs has added, a function's or field's own definition as that function or field; one of
+  another type is reported with both types and has its new initial value. A name given to more
+  than one global in either progs, as a compiler names its immediates, pairs nothing, and a
+  name ending in `_x`, `_y` or `_z` is a vector's component only when that vector is
+  defined.
+- **WORLD-10.3** A field both progs name with one type is carried for every edict in use below
+  `num_edicts`, each value translated; one of another type is reported with both types and is
+  0; one only the new progs has is reported added and is 0, and one only the old progs has is
+  reported removed.
+- **WORLD-10.4** A value is translated by its type: an entity names the same edict in the new
+  layout, whose edict size may differ; a string of the old progs' table is the string of the
+  new table with its text, else an engine string of it, and an engine string is itself; a field
+  and a function are those of their name, and a name the new progs lacks is a lost reference,
+  reported with where the value was (`edict 2 .think`, `global nextfn`), and the value 0; any
+  other value is its bits. The functions only one progs names are reported removed or added.
+- **WORLD-10.5** The report counts the values carried and lists each change as its kind
+  (`global`, `field` or `function`), its name and the reason: `removed`, `added`, `type changed
+  from T to U`, or `removed, and PLACE named it: now 0`.
+
 ## Constants
 
 | Name | Value | Source |

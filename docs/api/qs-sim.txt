@@ -44,6 +44,8 @@ enum qs_sim::world::changes::EdictChange
 enum qs_sim::world::edit::EditError
 enum qs_sim::world::evaluate::EvalError
 enum qs_sim::world::inspect::QcValue
+enum qs_sim::world::reload::ChangeKind
+enum qs_sim::world::reload::Reason
 enum qs_sim::world::save::SaveError
 field qs_sim::client::UserCmd.angles
 field qs_sim::client::UserCmd.buttons
@@ -116,6 +118,12 @@ field qs_sim::world::edit::LineHit.edict
 field qs_sim::world::edit::LineHit.point
 field qs_sim::world::inspect::NamedValue.name
 field qs_sim::world::inspect::NamedValue.value
+field qs_sim::world::reload::Change.kind
+field qs_sim::world::reload::Change.name
+field qs_sim::world::reload::Change.reason
+field qs_sim::world::reload::Migration.added
+field qs_sim::world::reload::Migration.lost
+field qs_sim::world::reload::Migration.migrated
 field qs_sim::world::save::SaveGame.comment
 field qs_sim::world::save::SaveGame.map
 field qs_sim::world::save::SaveGame.parms
@@ -257,6 +265,8 @@ fn qs_sim::world::inspect::World::in_use
 fn qs_sim::world::inspect::World::named_globals
 fn qs_sim::world::inspect::World::num_edicts
 fn qs_sim::world::inspect::World::state
+fn qs_sim::world::reload::ChangeKind::name
+fn qs_sim::world::reload::World::reload
 fn qs_sim::world::save::SaveGame::read
 fn qs_sim::world::save::World::restore
 fn qs_sim::world::save::World::save_game
@@ -277,6 +287,7 @@ impl qs_sim::world::WorldError: core::fmt::Display
 impl qs_sim::world::edit::EditError: core::error::Error
 impl qs_sim::world::edit::EditError: core::fmt::Display
 impl qs_sim::world::evaluate::EvalError: fmt::Display
+impl qs_sim::world::reload::Reason: core::fmt::Display
 impl qs_sim::world::save::SaveError: core::error::Error
 impl qs_sim::world::save::SaveError: core::fmt::Display
 mod qs_sim::collision
@@ -312,6 +323,8 @@ struct qs_sim::world::SpawnParms
 struct qs_sim::world::World
 struct qs_sim::world::edit::LineHit
 struct qs_sim::world::inspect::NamedValue
+struct qs_sim::world::reload::Change
+struct qs_sim::world::reload::Migration
 struct qs_sim::world::save::SaveGame
 struct qs_sim::world::state::State
 trait qs_sim::collision::Host
@@ -319,6 +332,8 @@ trait qs_sim::spawn::SpawnHost
 trait qs_sim::world::state::RawState
 type qs_sim::builtins::ModelFiles
 use qs_sim::CLIENT_EDICT = world::CLIENT_EDICT
+use qs_sim::Change = world::Change
+use qs_sim::ChangeKind = world::ChangeKind
 use qs_sim::ClientMessages = messages::ClientMessages
 use qs_sim::EdictChange = world::EdictChange
 use qs_sim::EditError = world::EditError
@@ -329,6 +344,7 @@ use qs_sim::HostState = world::HostState
 use qs_sim::LineHit = world::LineHit
 use qs_sim::LoadOptions = world::LoadOptions
 use qs_sim::Message = messages::Message
+use qs_sim::Migration = world::Migration
 use qs_sim::ModelFiles = builtins::ModelFiles
 use qs_sim::NET_FAT_PVS_DISTANCE = messages::NET_FAT_PVS_DISTANCE
 use qs_sim::NET_GAME_COOP = messages::NET_GAME_COOP
@@ -343,6 +359,7 @@ use qs_sim::NET_VERSION = messages::NET_VERSION
 use qs_sim::NamedValue = world::NamedValue
 use qs_sim::QcValue = world::QcValue
 use qs_sim::RawState = world::RawState
+use qs_sim::Reason = world::Reason
 use qs_sim::SAVEGAME_VERSION = world::SAVEGAME_VERSION
 use qs_sim::SaveError = world::SaveError
 use qs_sim::SaveGame = world::SaveGame
@@ -388,13 +405,17 @@ use qs_sim::collision::test_entity_position = area::test_entity_position
 use qs_sim::command_words = world::command_words
 use qs_sim::localization = qc_builtins::localization
 use qs_sim::read_state = world::read_state
+use qs_sim::world::Change = reload::Change
+use qs_sim::world::ChangeKind = reload::ChangeKind
 use qs_sim::world::EdictChange = changes::EdictChange
 use qs_sim::world::EditError = edit::EditError
 use qs_sim::world::EvalError = evaluate::EvalError
 use qs_sim::world::LineHit = edit::LineHit
+use qs_sim::world::Migration = reload::Migration
 use qs_sim::world::NamedValue = inspect::NamedValue
 use qs_sim::world::QcValue = inspect::QcValue
 use qs_sim::world::RawState = state::RawState
+use qs_sim::world::Reason = reload::Reason
 use qs_sim::world::SAVEGAME_VERSION = save::SAVEGAME_VERSION
 use qs_sim::world::SaveError = save::SaveError
 use qs_sim::world::SaveGame = save::SaveGame
@@ -463,6 +484,13 @@ variant qs_sim::world::inspect::QcValue::Function
 variant qs_sim::world::inspect::QcValue::String
 variant qs_sim::world::inspect::QcValue::Vector
 variant qs_sim::world::inspect::QcValue::Void
+variant qs_sim::world::reload::ChangeKind::Field
+variant qs_sim::world::reload::ChangeKind::Function
+variant qs_sim::world::reload::ChangeKind::Global
+variant qs_sim::world::reload::Reason::Added
+variant qs_sim::world::reload::Reason::Referenced
+variant qs_sim::world::reload::Reason::Removed
+variant qs_sim::world::reload::Reason::TypeChanged
 variant qs_sim::world::save::SaveError::BadValue
 variant qs_sim::world::save::SaveError::BlockOverflow
 variant qs_sim::world::save::SaveError::DeadPlayer
