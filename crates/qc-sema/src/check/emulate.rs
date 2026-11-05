@@ -190,11 +190,13 @@ impl Checker<'_> {
             self.followed = false;
         }
         // A refused opcode is still the statement it was (`badopcode`), its result a temporary;
-        // a helper's call leaves its value in the return global instead.
+        // a helper's call leaves its value in the return global instead, and an emulation that
+        // gives back a value the body names, as `1i * f` gives `f`, is that value.
         if emulated.temp.is_none()
             && emulated.known().is_none()
             && emulated.sym == Sym::Temp
             && !emulated.returned
+            && self.name_of(&emulated).is_none()
         {
             return Ok(self.statement_temps(op, lhs, rhs, emulated));
         }
