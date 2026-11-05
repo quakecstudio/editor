@@ -17,11 +17,12 @@ fn named(name: &str, value: QcValue) -> NamedValue {
 }
 
 // spec DIFF-16.1: a route is read as the engine oracle reads its script
+// spec DIFF-16.6: a console line is a step of its own, its text as written
 #[test]
 fn a_route_reads_as_the_oracle_reads_it() {
     let route = Route::parse(
         "# a comment\nengine -nosound\nmap start\nframetime 0.02\nmove 0 90 0 200 -350 0 1 2\n\
-         frames 3\ncmd god\n",
+         frames 3\ncmd god\nconsole alias a \"sv_gravity 1\"; a\n",
     )
     .unwrap();
     assert_eq!(route.engine, ["-nosound"]);
@@ -40,6 +41,7 @@ fn a_route_reads_as_the_oracle_reads_it() {
             }),
             Step::Frames(3),
             Step::Command("god".to_owned()),
+            Step::Console("alias a \"sv_gravity 1\"; a".to_owned()),
         ]
     );
     assert!(Route::parse("frames 1\n").is_err(), "no map");

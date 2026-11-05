@@ -25,7 +25,9 @@ image = { workspace = true, features = ["png"] }
 qc-builtins = { workspace = true }
 # The bridge's socket or named pipe (BRIDGE-1.1).
 interprocess = { workspace = true }
+qc-lno = { workspace = true }
 qc-progs = { workspace = true }
+qc-vm = { workspace = true }
 qs-bridge = { workspace = true }
 qs-bsp = { workspace = true }
 qs-client = { workspace = true }

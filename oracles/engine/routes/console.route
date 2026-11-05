@@ -1,0 +1,16 @@
+# A route of console lines through the start map (DIFF-16.6, PHYS-13): settings set directly,
+# through an alias and after a wait, a missing exec, and the debug prints, which change nothing.
+# CI plays it as start.route: `cargo xtask sim-diff oracles/engine/routes/console.route --
+# -basedir "$QS_TEST_ASSETS/librequake-lite"`.
+map start
+frames 72
+console alias low "sv_gravity 100; echo low gravity"; echo set; wait; low
+move 0 0 0 0 0 0 2 0
+frames 72
+console sv_maxspeed 100; SV_FRICTION 1; sv_friction 1; exec nothere.cfg
+move 0 90 0 400 0 0 0 0
+frames 72
+console edict 1; edicts; edictcount; profile; path; status; version; sv_gravity
+console alias up "sv_gravity 800; sv_maxspeed 320; sv_friction 4"; up
+move 0 180 0 200 200 0 2 0
+frames 144

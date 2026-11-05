@@ -12,6 +12,7 @@
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use qc_codegen::compile_module;
 use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
@@ -26,7 +27,7 @@ use qs_bsp::{
 use qs_sim::{LoadOptions, World};
 use serde_json::{Value, json};
 
-use super::{Eye, Game, Reporting, Screen};
+use super::{Eye, Game, HostAction, NextLevel, Reporting, Screen};
 use crate::screenshot::Frame;
 
 /// The QuakeC the tests run: a crate the map places, a counter `StartFrame` raises, a
@@ -61,6 +62,16 @@ void() again = { localcmd(\"restart\\n\"); };
 void() info_restart = { self.think = again; self.nextthink = 0.05; };
 void() info_exit = { self.think = leave; self.nextthink = 0.05; };
 void() info_fail = { self.think = broken; self.nextthink = 0.05; };
+void() growl = {
+    self.count = 9;
+};
+void() dog_think = {
+    self.frags = self.frags + 1;
+    self.health = 50;
+    growl();
+    self.nextthink = time + 0.1;
+};
+void() monster_dog = { self.think = dog_think; self.nextthink = 0.05; };
 ";
 
 fn type_name(etype: Etype) -> &'static str {
@@ -76,6 +87,11 @@ fn type_name(etype: Etype) -> &'static str {
 
 /// The progs `qc-codegen` writes for [`SOURCE`] after the system definitions.
 fn progs() -> Vec<u8> {
+    progs_with_lines().0
+}
+
+/// [`progs`] and its `.lno`'s line of each statement.
+fn progs_with_lines() -> (Vec<u8>, Vec<i32>) {
     let mut defs = String::new();
     for var in SYSTEM_GLOBALS {
         writeln!(defs, "{} {};", type_name(var.etype), var.name).unwrap();
@@ -99,7 +115,10 @@ fn progs() -> Vec<u8> {
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
     let compiled = compile_module(&mut db, &input, |id| names[id.index()].clone())
         .unwrap_or_else(|e| panic!("the test progs did not compile: {e:?}"));
-    qc_progs::write(&compiled.progs).unwrap()
+    (
+        qc_progs::write(&compiled.progs).unwrap(),
+        compiled.lno.lines,
+    )
 }
 
 fn plane(dist: f32) -> Plane {
@@ -171,7 +190,7 @@ const CRATE: &str = "{\n\"classname\" \"item_crate\"\n\"origin\" \"0 0 40\"\n}\n
 /// The game of the test progs on the floor with `entities`, its player in the game, and an
 /// initialized session.
 fn game_with(entities: &str) -> (Game, Session) {
-    let bytes = progs();
+    let (bytes, lines) = progs_with_lines();
     let progs = Progs::read(&bytes).unwrap();
     let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{entities}");
     let map = floor(Box::leak(lump.into_bytes().into_boxed_slice()));
@@ -179,12 +198,13 @@ fn game_with(entities: &str) -> (Game, Session) {
         &progs,
         "test",
         &map,
-        Box::new(|_| None),
+        Rc::new(|_| None),
         LoadOptions::default(),
     )
     .expect("the world loads");
     world.connect(&progs).unwrap();
     let mut game = Game::new(world, bytes.clone(), Reporting::Bridge);
+    game.set_lines(lines);
     let mut session = Session::new();
     let init = request(
         0,
@@ -290,9 +310,7 @@ fn the_game_offers_its_commands() {
     for command in super::COMMANDS {
         assert_eq!(capabilities[command], true, "{command}");
     }
-    for later in ["reload", "breakpoint/set", "breakpoint/clear", "evaluate"] {
-        assert_ne!(capabilities[later], true, "{later}");
-    }
+    assert_ne!(capabilities["reload"], true, "reload comes with P3-03");
 }
 
 // spec BRIDGE-3.1: progs/loaded names the progs and its counts; map/loaded the map and its
@@ -357,13 +375,19 @@ fn step_runs_one_frame_while_paused() {
     assert_eq!(last["state"], "paused");
     assert_eq!(last["reason"], "step");
     assert!(!game.frame(0.1), "still paused");
-    let statement = call(
+    // spec WORLD-9.3: a statement step from between two frames stops at the next frame's
+    // first statement, here StartFrame's
+    call(
         &mut game,
         &mut session,
         "step",
         &json!({ "kind": "statement" }),
-    );
-    assert_eq!(code(statement), ErrorCode::Unsupported);
+    )
+    .unwrap();
+    let raised = events(&mut game);
+    let (_, last) = raised.last().unwrap();
+    assert_eq!(last["reason"], "step");
+    assert_eq!(last["location"]["function"], "StartFrame");
     let bad = call(
         &mut game,
         &mut session,
@@ -617,14 +641,16 @@ fn console_output_comes_back_as_lines() {
         &mut game,
         &mut session,
         "console",
-        &json!({ "command": "fly; \"me\" now" }),
+        &json!({ "command": "nosuch; \"me\" now; color" }),
     )
     .unwrap();
     assert_eq!(result, json!({}));
     let lines = events(&mut game);
-    assert_eq!(methods(&lines), ["console/line", "console/line"]);
-    assert_eq!(lines[0].1["text"], "Unknown command \"fly\"");
+    assert_eq!(methods(&lines), ["console/line"; 4]);
+    assert_eq!(lines[0].1["text"], "Unknown command \"nosuch\"");
     assert_eq!(lines[1].1["text"], "Unknown command \"me\"");
+    assert_eq!(lines[2].1["text"], "\"color\" is \"0 0\"", "one line each");
+    assert_eq!(lines[3].1["text"], "color <0-13> [0-13]");
 }
 
 // spec BRIDGE-3.1: each frame reports the fields written during it
@@ -846,7 +872,7 @@ fn a_game_played_alone_records_no_changes() {
         &progs_read,
         "test",
         &map,
-        Box::new(|_| None),
+        Rc::new(|_| None),
         LoadOptions::default(),
     )
     .unwrap();
@@ -898,12 +924,12 @@ fn a_level_change_carries_the_players_parms() {
     for _ in 0..3 {
         idle.frame(0.1);
     }
-    assert!(idle.level_change().is_none());
+    assert!(idle.host_action().is_none());
     let (mut game, _session) = game_with("{\n\"classname\" \"info_exit\"\n}\n");
     let mut change = None;
     for _ in 0..10 {
         game.frame(0.1);
-        change = game.level_change();
+        change = level(game.host_action());
         if change.is_some() {
             break;
         }
@@ -920,7 +946,7 @@ fn a_level_change_carries_the_players_parms() {
         Some(100.0),
         "parm1 is the player's health"
     );
-    assert!(game.level_change().is_none(), "taken once");
+    assert!(game.host_action().is_none(), "taken once");
 }
 
 // spec PHYS-10.6: restart asks for this level again, with the parms it was entered with: none
@@ -931,7 +957,7 @@ fn a_restart_loads_this_level_again() {
     let mut change = None;
     for _ in 0..10 {
         game.frame(0.1);
-        change = game.level_change();
+        change = level(game.host_action());
         if change.is_some() {
             break;
         }
@@ -939,4 +965,197 @@ fn a_restart_loads_this_level_again() {
     let next = change.expect("a restart");
     assert_eq!(next.map, "test");
     assert!(next.carried.is_none(), "a new game carries nothing");
+}
+
+/// The level `action` asks for, if it asks for one.
+fn level(action: Option<HostAction>) -> Option<NextLevel> {
+    match action {
+        Some(HostAction::Level(next)) => Some(next),
+        _ => None,
+    }
+}
+
+/// The line `text` starts on in [`SOURCE`], counted from 1: the test progs' `t.qc`.
+fn source_line(text: &str) -> i64 {
+    let at = SOURCE.find(text).unwrap();
+    i64::try_from(SOURCE.get(..at).unwrap().matches('\n').count() + 1).unwrap()
+}
+
+/// The events since the last call with method `method`.
+fn events_named(game: &mut Game, method: &str) -> Vec<Value> {
+    game.take_events()
+        .into_iter()
+        .filter(|(m, _)| *m == method)
+        .map(|(_, params)| params)
+        .collect()
+}
+
+// spec WORLD-9.1, WORLD-9.4: a breakpoint at a line of a monster's think stops the frame there,
+// raising breakpoint/hit with its location and self, then state/changed to paused
+// spec WORLD-9.3, WORLD-9.2: stepping over and out replays the frame; resume runs it on
+// spec WORLD-9.5: self's fields are inspected and watched where it stopped
+#[test]
+fn a_scripted_debug_session() {
+    let dog = "{\n\"classname\" \"monster_dog\"\n\"origin\" \"0 0 40\"\n}\n";
+    let (mut game, mut session) = game_with(dog);
+    let line = source_line("    self.health = 50;");
+    let set = call(
+        &mut game,
+        &mut session,
+        "breakpoint/set",
+        &json!({ "file": "t.qc", "line": line }),
+    )
+    .unwrap();
+    assert_eq!(set["location"]["function"], "dog_think");
+    assert_eq!(set["location"]["line"], line);
+    let id = set["id"].clone();
+    let missing = call(
+        &mut game,
+        &mut session,
+        "breakpoint/set",
+        &json!({ "file": "t.qc", "line": 10_000 }),
+    );
+    assert_eq!(missing.unwrap_err().code, ErrorCode::NoSuchBreakpoint);
+
+    // The dog thinks within a frame or two and stops on the breakpoint's line.
+    for _ in 0..5 {
+        let ran = game.frame(0.1);
+        if game.state == super::State::Paused {
+            assert!(
+                !ran,
+                "the stopped frame has not run, so the client's clock stands"
+            );
+            assert!(
+                game.world_mut().take_messages().packets.is_empty(),
+                "nor are its first messages sent"
+            );
+            break;
+        }
+    }
+    let hits = events_named(&mut game, "breakpoint/hit");
+    assert_eq!(hits.len(), 1, "one hit");
+    assert_eq!(hits[0]["breakpoint"], id);
+    assert_eq!(hits[0]["self"], json!(2), "the dog is edict 2");
+    assert_eq!(hits[0]["location"]["line"], line);
+    assert!(!game.frame(0.1), "paused, no frame runs");
+    // spec BRIDGE-4.6: what changes the world at once waits until the frame has ended
+    for (method, params) in [
+        ("console", json!({ "command": "sv_gravity 1" })),
+        ("entity/spawn", json!({ "classname": "info_null" })),
+        ("entity/remove", json!({ "edict": 2 })),
+        (
+            "player/spawn_at",
+            json!({ "origin": [0, 0, 0], "angles": [0, 0, 0] }),
+        ),
+    ] {
+        let refused = call(&mut game, &mut session, method, &params).unwrap_err();
+        assert_eq!(refused.code, ErrorCode::StoppedInFrame, "{method}");
+    }
+
+    // inspect self and watch it, where it stopped: frags has gone up, health not yet set.
+    let watched = |game: &mut Game, session: &mut Session, text: &str| {
+        call(game, session, "evaluate", &json!({ "expression": text })).unwrap()["value"].clone()
+    };
+    assert_eq!(
+        watched(&mut game, &mut session, "self.frags"),
+        json!({ "type": "float", "value": 1.0 })
+    );
+    assert_eq!(
+        watched(&mut game, &mut session, "self.health"),
+        json!({ "type": "float", "value": 0.0 })
+    );
+    let fields = call(
+        &mut game,
+        &mut session,
+        "inspect",
+        &json!({ "what": "edict", "edict": 2 }),
+    )
+    .unwrap();
+    let frags = fields["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "frags")
+        .unwrap()["value"]
+        .clone();
+    assert_eq!(frags, json!({ "type": "float", "value": 1.0 }));
+    let stack = call(
+        &mut game,
+        &mut session,
+        "inspect",
+        &json!({ "what": "stack" }),
+    )
+    .unwrap();
+    assert_eq!(stack["stack"][0]["function"], "dog_think");
+    assert_eq!(stack["stack"][0]["index"], 0);
+
+    // over: the line runs, and it stops on the next.
+    call(&mut game, &mut session, "step", &json!({ "kind": "over" })).unwrap();
+    assert_eq!(
+        watched(&mut game, &mut session, "self.health"),
+        json!({ "type": "float", "value": 50.0 })
+    );
+    let changed = events_named(&mut game, "state/changed");
+    assert_eq!(changed.last().unwrap()["reason"], "step");
+    assert_eq!(
+        changed.last().unwrap()["location"]["line"],
+        source_line("    growl();")
+    );
+
+    // in, then out of growl.
+    call(&mut game, &mut session, "step", &json!({ "kind": "in" })).unwrap();
+    let stack = call(
+        &mut game,
+        &mut session,
+        "inspect",
+        &json!({ "what": "stack" }),
+    )
+    .unwrap();
+    assert_eq!(stack["stack"][0]["function"], "growl");
+    assert_eq!(stack["stack"][1]["function"], "dog_think");
+    call(&mut game, &mut session, "step", &json!({ "kind": "out" })).unwrap();
+    assert_eq!(
+        watched(&mut game, &mut session, "self.count"),
+        json!({ "type": "float", "value": 9.0 })
+    );
+
+    // resume: the frame runs on and the game runs; the next think stops again.
+    call(
+        &mut game,
+        &mut session,
+        "breakpoint/clear",
+        &json!({ "id": id }),
+    )
+    .unwrap();
+    assert_eq!(
+        call(
+            &mut game,
+            &mut session,
+            "breakpoint/clear",
+            &json!({ "id": id })
+        )
+        .unwrap_err()
+        .code,
+        ErrorCode::NoSuchBreakpoint
+    );
+    call(&mut game, &mut session, "resume", &json!({})).unwrap();
+    assert_eq!(game.state, super::State::Running);
+    for _ in 0..4 {
+        assert!(game.frame(0.1));
+    }
+    assert!(
+        events_named(&mut game, "breakpoint/hit").is_empty(),
+        "cleared"
+    );
+}
+
+// spec WORLD-9.1: with no debugger a frame runs for the frametime it is given, as without one
+#[test]
+fn a_frame_runs_for_its_frametime() {
+    let (mut game, _session) = game();
+    let start = game.world().time();
+    assert!(game.frame(0.05));
+    assert!(game.frame(0.025));
+    let ran = game.world().time() - start;
+    assert!((ran - 0.075).abs() < 1e-6, "ran {ran}");
 }

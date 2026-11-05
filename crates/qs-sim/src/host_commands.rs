@@ -111,7 +111,7 @@ pub(crate) fn tokenize(text: &[u8]) -> Words {
 }
 
 /// C's `atoi`: leading whitespace, a sign, then decimal digits, stopping at anything else.
-fn atoi(text: &[u8]) -> i32 {
+pub(crate) fn atoi(text: &[u8]) -> i32 {
     let mut bytes = text
         .iter()
         .skip_while(|c| c.is_ascii_whitespace())

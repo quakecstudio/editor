@@ -168,6 +168,12 @@ impl Archive {
         &self.name
     }
 
+    /// The files the archive holds, `pack->numfiles` (PAK-2), as `path` prints it.
+    #[must_use]
+    pub fn file_count(&self) -> usize {
+        self.pak.entries().len()
+    }
+
     /// The archive's host path.
     #[must_use]
     pub fn path(&self) -> &Path {

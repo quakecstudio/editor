@@ -22,8 +22,8 @@ use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
-use crate::game::{Eye, Game, NextLevel};
-use crate::load::{Describer, Loaded, Rand, load};
+use crate::game::{Eye, Game};
+use crate::load::{Acted, Describer, Loaded, Rand, act};
 use crate::screenshot::Frame;
 
 /// Map units a second walking, and running with Shift.
@@ -197,10 +197,16 @@ impl eframe::App for Viewer {
             self.steer(ui);
         }
         let frametime = self.advance(f64::from(seconds));
-        // `Host_Changelevel_f` and `Host_Restart_f`: a level, with what the player carries.
-        if let Some(next) = self.game.level_change() {
-            self.change_level(window, next);
-            return;
+        // PHYS-13.6: a level with what the player carries, a save, a load or quit.
+        if let Some(action) = self.game.host_action() {
+            match act(&self.args, &mut self.game, action) {
+                Acted::Load(loaded) => {
+                    self.change_level(window, *loaded);
+                    return;
+                }
+                Acted::Quit => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
+                Acted::Stay => {}
+            }
         }
         self.serve_bridge(ui);
         // The client reads what the server wrote and advances its clock by the server's
@@ -323,15 +329,7 @@ impl eframe::App for Viewer {
 impl Viewer {
     /// Loads `map` in place of this one, the player carrying `carried`, and gives the
     /// renderer its world (PHYS-10.4); a map that does not load leaves this one running.
-    fn change_level(&mut self, window: &eframe::Frame, next: NextLevel) {
-        let map = next.map.as_str();
-        let loaded = match load(&self.args, map, next.carried, Some(next.host)) {
-            Ok(loaded) => loaded,
-            Err(error) => {
-                tracing::warn!(%error, map, "the next level did not load");
-                return;
-            }
-        };
+    fn change_level(&mut self, window: &eframe::Frame, loaded: Loaded) {
         let Loaded {
             map,
             mesh,

@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
+use std::rc::Rc;
 
 use qs_sim::{LoadOptions, World};
 
@@ -46,7 +47,7 @@ fn main() -> Result<(), String> {
         .and_then(std::path::Path::parent)
         .map(std::path::Path::to_path_buf)
         .unwrap_or_default();
-    let files = Box::new(move |name: &str| std::fs::read(root.join(name)).ok());
+    let files = Rc::new(move |name: &str| std::fs::read(root.join(name)).ok());
     let mut world =
         World::load(&progs, map, &bsp, files, LoadOptions::default()).map_err(|e| e.to_string())?;
     world.settle(&progs).map_err(|e| e.to_string())?;

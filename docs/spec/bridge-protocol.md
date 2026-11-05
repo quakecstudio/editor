@@ -163,6 +163,11 @@ A command is a request from the client, answered with a result on success or an 
   edict); a breakpoint id the host does not hold, or a file and line with no statement, with
   `-32007` (no such breakpoint). A file path is relative to the project's root, as the `.lno`
   and the compiler name files.
+- **BRIDGE-4.6** While a frame is stopped at a statement (`breakpoint/hit`, or a step that
+  stopped), `entity/spawn`, `entity/remove`, `player/spawn_at` and `console` are answered with
+  `-32008` (stopped in frame) and nothing changes: going on replays the frame from the world
+  before it, which would drop their changes. `field/set` and `entity/edit` are held as
+  BRIDGE-4.4 says.
 
 ## BRIDGE-5 Values
 
@@ -221,6 +226,7 @@ A command is a request from the client, answered with a result on success or an 
   | `-32005` | unsupported | a command whose capability is off (BRIDGE-2.3) |
   | `-32006` | bad value | a value of the wrong type for a field (BRIDGE-4.4) |
   | `-32007` | no such breakpoint | a breakpoint id or line the host cannot resolve (BRIDGE-4.5) |
+  | `-32008` | stopped in frame | a command that changes the world while a frame is stopped (BRIDGE-4.6) |
 
 - **BRIDGE-7.2** An error's `message` is for the person; its `data`, when present, is an
   object the schema of the command may describe; a client acts on the `code`, never on the

@@ -267,6 +267,46 @@ statements are what each asks of the world.
   `v_forward` scaled by the dot product of (its origin less `ent`'s) with `v_forward`, its z
   replaced by that difference's z, normalized; without one, `v_forward`.
 
+
+## WORLD-9 Debugging
+
+**Source:** this project; id's engine has no debugger. VM-20 is the stop it is built on.
+
+### Behaviour
+
+- **WORLD-9.1** A world may run its frames with a debugger, the VM's observer for every run a
+  frame starts (thinks, touches, the client's functions, physics callbacks); runs outside a
+  frame, such as the map's spawn functions, run without one. The debugger counts the
+  statements a frame asks about from 0 and stops the run before a statement its rule names,
+  recording the count, the function, the statement, the call depth and the breakpoint if one;
+  the frame then fails with VM-20.1's `interrupted`. With no breakpoint and its rule to stop at
+  breakpoints, or set to finish, it stops nothing and the frames run as without it.
+- **WORLD-9.2** A world is cloned before a frame a debugger may stop. A stop is gone on from by
+  replaying the frame from that clone with a rule that skips the statements the stop's count
+  covers: the world is deterministic (MOVE-6, DIFF-16), so the replay runs the same
+  statements to the same state, and the debugger stops where the rule next says. Replaying with
+  no stop left runs the frame to its end, as the frame would have.
+- **WORLD-9.3** The rules, each after the skipped statements: at a breakpoint; one statement
+  (`statement`); the next statement on another line or at another depth (`in`, which enters a
+  call the line makes); the next statement on another line at the same depth or any statement
+  shallower (`over`, which runs the line's calls); any statement shallower (`out`). `over` and
+  `out` stop only in the run the engine started that they stepped from: past its end the
+  engine runs functions that are not its callers. `in`, `over` and `out` stop at a breakpoint
+  on the way. Without a `.lno` each statement is a line of
+  its own. A step from between two frames stops at the next frame's first statement.
+- **WORLD-9.4** A statement's location is its function's name and, with a `.lno` (LNO-1), its
+  function's file (`s_file`) and the statement's line (BRIDGE-3.4). A breakpoint at a file and
+  line is the first statement, by index, whose line is that line in a function whose file is
+  the file, or ends with `/` and the file's name, or whose name ends with `/` and the file; a
+  line no statement is on resolves to nothing (BRIDGE-4.5).
+- **WORLD-9.5** A watch expression (BRIDGE-4.1, `evaluate`) is, after its surrounding spaces, a
+  number, a vector `'x y z'`, a string `"..."`, or a name followed by any number of `.field`s.
+  The name is a local of the frame's function (a definition within its locals, `parm_start` to
+  `parm_start + locals`) before a global; each field is read from the entity the part before it
+  gives, by the field's definition. Its value is a typed value (BRIDGE-5.1). A name nothing has,
+  a field read from what is not an entity, or other text has no value. The frame's function's
+  locals are read where they live, in the globals, so an outer frame of a recursive function
+  reads the innermost one's.
 ## Constants
 
 | Name | Value | Source |

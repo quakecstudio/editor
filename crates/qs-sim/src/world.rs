@@ -27,6 +27,7 @@ use qs_vfs::Registration;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
+use crate::debug::Debugger;
 use crate::host_commands::SignonCommand;
 use crate::messages::ClientMessages;
 #[cfg(test)]
@@ -102,7 +103,9 @@ pub struct Entity {
     pub skin: f32,
 }
 
-/// A map's world: the VM with its entities spawned, linked in the world's collision.
+/// A map's world: the VM with its entities spawned, linked in the world's collision. A clone
+/// is a snapshot the debugger replays a frame from (WORLD-9).
+#[derive(Clone)]
 pub struct World {
     machine: Machine,
     pub(crate) builtins: SimBuiltins,
@@ -110,9 +113,17 @@ pub struct World {
     player: Option<UserCmd>,
     /// The string commands the client sent since the last frame, which it reads first
     /// (PHYS-11.1).
-    commands: Vec<Vec<u8>>,
+    pub(crate) commands: Vec<Vec<u8>>,
     /// Whether the client connects in the next frame (PHYS-10.7).
     connecting: bool,
+    /// The lines the console printed since they were taken (PHYS-13).
+    pub(crate) console_out: Vec<u8>,
+    /// A host command the console asked for, waiting for the host (PHYS-13.6).
+    pub(crate) pending_host: Option<HostCommand>,
+    /// The console's aliases, newest first (PHYS-13.2).
+    pub(crate) aliases: Vec<(String, String)>,
+    /// The search path the host gave, for `path` (PHYS-13.7).
+    pub(crate) search_path: Vec<String>,
     /// The spawn parms the level the player left kept, used in place of `SetNewParms`'.
     carried: Option<SpawnParms>,
     /// The client's spawn parms, `host_client->spawn_parms`, which a saved game keeps.
@@ -141,6 +152,9 @@ pub struct LoadOptions {
     /// What the last level's host had, kept for this one: `None` for a new game, where the
     /// random source starts at 1 and the settings at their defaults (MOVE-6.3, PHYS-12.3).
     pub host: Option<HostState>,
+    /// The search path's elements as the engine names them, most important first, for the
+    /// console's `path` (PHYS-13.7).
+    pub search_path: Vec<String>,
 }
 
 /// What lives in id's engine for the whole process, not one level: the C library's random
@@ -150,6 +164,9 @@ pub struct LoadOptions {
 pub struct HostState {
     rng: Rng,
     cvars: Cvars,
+    /// The console's text not yet run and its aliases (PHYS-13.6).
+    buffer: Vec<u8>,
+    aliases: Vec<(String, String)>,
 }
 
 /// The stages of a client's entry, `CL_SignonReply`'s answers and the server's commands for
@@ -173,6 +190,14 @@ pub enum HostCommand {
     Changelevel(String),
     /// `restart`: this level again, as single player's `respawn` asks (PHYS-10.6).
     Restart,
+    /// `map <map>`: a new game on the map, carrying nothing (PHYS-13.6).
+    Map(String),
+    /// `save <name>`: the game saved as `<name>.sav` (PHYS-10.5, PHYS-13.6).
+    Save(String),
+    /// `load <name>`: the game in `<name>.sav` loaded (PHYS-10.5, PHYS-13.6).
+    Load(String),
+    /// `quit`: the host stops.
+    Quit,
 }
 
 /// What `SV_SaveSpawnparms` keeps across a level change: `serverflags`, "for cross level
@@ -221,11 +246,17 @@ impl World {
         let submodels = bsp.models.len().saturating_sub(1);
         // MOVE-6.1: the random source starts at state 1.
         let mut engine = MockEngine::new(map, submodels, RANDOM_SEED);
+        let aliases = options
+            .host
+            .as_ref()
+            .map(|h| h.aliases.clone())
+            .unwrap_or_default();
         match options.host {
             // MOVE-6.3, PHYS-12.3: the last level's random state and settings go on.
             Some(host) => {
                 engine.rng = host.rng;
                 engine.cvars = host.cvars;
+                engine.command_buffer = host.buffer;
             }
             // PHYS-12.1: the server's and the host's settings, with id's defaults.
             None => {
@@ -256,6 +287,10 @@ impl World {
             player: None,
             commands: Vec::new(),
             connecting: false,
+            console_out: Vec::new(),
+            pending_host: None,
+            aliases,
+            search_path: options.search_path,
             carried: options.carried,
             spawn_parms: [Slot::ZERO; 16],
             loaded: false,
@@ -334,7 +369,20 @@ impl World {
     /// [`WorldError::Frame`] when a function the frame runs fails, or the engine stops.
     pub fn frame(&mut self, progs: &Progs<'_>, frametime: f64) -> Result<(), WorldError> {
         // MOVE-6.2: `_Host_Frame`'s `rand ();`, "keep the random time dependent".
+        let before = self.builtins.mock.engine().rng;
         let _discarded = self.builtins.mock.engine_mut().rng.next_rand();
+        if let Some(debugger) = &mut self.builtins.debugger {
+            debugger.begin_frame();
+        }
+        // PHYS-13.1: `_Host_Frame`'s `Cbuf_Execute`, before the server frame; a host command
+        // it meets waits for the host, and this frame does not run (PHYS-13.6). id runs the
+        // command and then the server frame in one host frame with one `rand ()`, so the draw
+        // is given back for the frame the host runs after it has acted.
+        self.execute_console(progs);
+        if self.pending_host.is_some() {
+            self.builtins.mock.engine_mut().rng = before;
+            return Ok(());
+        }
         {
             let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
             // Host_ServerFrame (NET-1.2): frametime, the datagram cleared, then the clients'
@@ -394,7 +442,38 @@ impl World {
         HostState {
             rng: engine.rng,
             cvars: engine.cvars.clone(),
+            buffer: engine.command_buffer.clone(),
+            aliases: self.aliases.clone(),
         }
+    }
+
+    /// The debugger the frames run with, `None` to run without one (WORLD-9.1).
+    pub fn set_debugger(&mut self, debugger: Option<Debugger>) {
+        self.builtins.debugger = debugger;
+    }
+
+    /// The debugger, to set breakpoints and rules and to read where a run stopped.
+    pub fn debugger_mut(&mut self) -> Option<&mut Debugger> {
+        self.builtins.debugger.as_mut()
+    }
+
+    /// The debugger, made over `lines` (WORLD-9.4) when the world has none yet.
+    pub fn debugger_or_new(&mut self, lines: &[i32]) -> &mut Debugger {
+        self.builtins
+            .debugger
+            .get_or_insert_with(|| Debugger::new(lines.to_vec()))
+    }
+
+    /// The debugger, to read where a run stopped.
+    #[must_use]
+    pub const fn debugger(&self) -> Option<&Debugger> {
+        self.builtins.debugger.as_ref()
+    }
+
+    /// The machine, for reading the call stack and the locals while stopped (WORLD-9.5).
+    #[must_use]
+    pub const fn machine(&self) -> &Machine {
+        &self.machine
     }
 
     /// The client connects in the next frame, at its `SV_CheckForNewClients` (PHYS-10.7);
@@ -515,21 +594,12 @@ impl World {
         call.spawn_message(CLIENT).map_err(WorldError::Frame)
     }
 
-    /// The first command for the host the progs appended to its buffer since the last call:
-    /// `changelevel <map>`, which `Host_Changelevel_f` takes only with exactly one argument
-    /// (PHYS-10.4), or `restart`, `Host_Restart_f` (PHYS-10.6). The buffer is emptied.
+    /// The command for the host the console met in the last frame's `Cbuf_Execute`, from the
+    /// player or the progs' `localcmd` (PHYS-13.6): `changelevel <map>`, which
+    /// `Host_Changelevel_f` takes only with exactly one argument (PHYS-10.4), `restart`
+    /// (PHYS-10.6), `map`, `save`, `load` or `quit`. It is taken once.
     pub fn take_host_command(&mut self) -> Option<HostCommand> {
-        let buffer = core::mem::take(&mut self.builtins.mock.engine_mut().command_buffer);
-        command_words(&buffer)
-            .into_iter()
-            .find_map(|words| match words.as_slice() {
-                // `Cmd_ExecuteString` matches the name with `Q_strcasecmp`.
-                [name, map] if name.eq_ignore_ascii_case(b"changelevel") => Some(
-                    HostCommand::Changelevel(String::from_utf8_lossy(map).into_owned()),
-                ),
-                [name, ..] if name.eq_ignore_ascii_case(b"restart") => Some(HostCommand::Restart),
-                _ => None,
-            })
+        self.pending_host.take()
     }
 
     /// The map's name, `sv.name`, which `restart` spawns again (PHYS-10.6).
@@ -850,6 +920,7 @@ pub fn command_words(text: &[u8]) -> Vec<Vec<Vec<u8>>> {
 
 mod changes;
 mod edit;
+mod evaluate;
 mod inspect;
 mod save;
 mod state;
@@ -858,6 +929,7 @@ pub(crate) mod tests;
 
 pub use changes::EdictChange;
 pub use edit::{EditError, LineHit};
+pub use evaluate::EvalError;
 pub use inspect::{NamedValue, QcValue};
 pub use save::{SAVEGAME_VERSION, SaveError, SaveGame};
 pub use state::{RawState, State, read_state};

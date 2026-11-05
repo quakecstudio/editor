@@ -152,3 +152,20 @@ fn the_mod_and_the_kpf_come_from_the_command_line() {
         b"$qc_test = \"loose\"\n"
     );
 }
+
+// spec PHYS-13.6: a save's name stays under the game directory, `.sav` added when it has no
+// extension, as `sprintf ("%s/%s", com_gamedir, name)` keeps it
+#[test]
+fn a_save_stays_in_the_game_directory() {
+    let args = args(&["-basedir", "/q", "-game", "mod"]);
+    assert_eq!(super::save_path(&args, "s1"), Path::new("/q/mod/s1.sav"));
+    assert_eq!(
+        super::save_path(&args, "s1.txt"),
+        Path::new("/q/mod/s1.txt")
+    );
+    let absolute = super::save_path(&args, "/etc/x");
+    assert!(absolute.starts_with("/q/mod"), "{absolute:?}");
+    assert_eq!(absolute, Path::new("/q/mod//etc/x.sav"));
+    let plain = super::save_path(&self::args(&["-basedir", "/q"]), "s1");
+    assert_eq!(plain, Path::new("/q/id1/s1.sav"));
+}

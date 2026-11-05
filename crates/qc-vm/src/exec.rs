@@ -122,6 +122,13 @@ pub trait Observer {
     fn exit(&mut self, machine: &Machine);
     /// A runtime error ended the run (TRACE-4.6).
     fn error(&mut self, machine: &Machine, error: &RunError);
+
+    /// Whether to stop the run before `statement` of `function` executes (VM-20.1); the run
+    /// then ends with [`ErrorKind::Interrupted`], the machine as it was before the statement.
+    /// Never, unless an observer says so.
+    fn stop_before(&mut self, _machine: &Machine, _function: i32, _statement: i32) -> bool {
+        false
+    }
 }
 
 /// An [`Observer`] that records nothing.
@@ -320,6 +327,11 @@ pub(crate) fn run_inner(
 
         let step_function = machine.xfunction;
         let step_statement = machine.xstatement;
+
+        // VM-20.1: the host's observer may stop the run here, before the statement runs.
+        if observer.stop_before(machine, step_function, step_statement) {
+            return Err(machine.run_error(progs, ErrorKind::Interrupted));
+        }
 
         // VM-3.4: an opcode above 65 fails with Bad opcode.
         let Some(opcode) = Opcode::from_number(statement.op) else {

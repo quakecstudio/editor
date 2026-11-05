@@ -76,6 +76,15 @@ fn no_options() {
     assert_eq!(lookup(&vfs, "f.txt").as_deref(), Some("pak0-f"));
     assert_eq!(lookup(&vfs, "b.txt").as_deref(), Some("id1-loose-b"));
     assert_eq!(FS_GAMENAME, "id1");
+    let counts: Vec<usize> = vfs
+        .elements()
+        .iter()
+        .filter_map(|element| match element {
+            Element::Archive(archive) => Some(archive.file_count()),
+            Element::Directory(_) => None,
+        })
+        .collect();
+    assert_eq!(counts, [1, 3], "the entries each archive holds (PAK-2)");
 }
 
 // spec FS-1.5: the archive scan stops at the first missing number; pak3 is never loaded.

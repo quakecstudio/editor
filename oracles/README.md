@@ -239,6 +239,7 @@ map <name>           # the map to start (Host_Map_f)
 frametime <seconds>  # each server frame's host_frametime, 1/72 by default
 move <pitch> <yaw> <roll> <forward> <side> <up> <buttons> <impulse>
 cmd <text>           # a console command the client sends (clc_stringcmd), in the next frame
+console <text>       # a line typed at the server's console (Cbuf_AddText), run in the next frame
 frames <n>           # run n server frames with the current move; the impulse goes once
 ```
 

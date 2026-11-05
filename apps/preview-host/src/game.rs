@@ -7,16 +7,21 @@
 use qc_progs::Progs;
 use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::Camera;
-use qs_sim::{
-    EdictChange, EditError, HostCommand, HostState, SpawnParms, World, WorldError, command_words,
-};
+use qs_sim::{EdictChange, EditError, HostCommand, HostState, SpawnParms, World, WorldError};
 use serde_json::{Map, Value, json};
 
 use crate::screenshot::{Frame, encode};
 use crate::values::{from_json, named_json, to_json};
 
+mod debug;
+
+use debug::{Breakpoint, Snapshot, Step, Stopped};
+
 /// The commands the game accepts.
-const COMMANDS: [&str; 11] = [
+const COMMANDS: [&str; 14] = [
+    "breakpoint/set",
+    "breakpoint/clear",
+    "evaluate",
     "console",
     "pause",
     "resume",
@@ -55,6 +60,7 @@ enum Reason {
     Pause,
     Step,
     Error,
+    Breakpoint,
 }
 
 impl Reason {
@@ -63,6 +69,7 @@ impl Reason {
             Self::Pause => "pause",
             Self::Step => "step",
             Self::Error => "error",
+            Self::Breakpoint => "breakpoint",
         }
     }
 }
@@ -112,6 +119,8 @@ enum FrameEnd {
     Ran,
     /// It stopped with a run error, which paused the game (BRIDGE-3.3).
     Failed,
+    /// The debugger stopped it, which paused the game mid-frame (WORLD-9.1).
+    Stopped,
 }
 
 /// An event for the bridge to send: its method and parameters (BRIDGE-3.1).
@@ -135,6 +144,19 @@ pub(crate) struct Eye {
 struct Shot {
     id: Id,
     size: Option<(u32, u32)>,
+}
+
+/// What the host does for a command the console met (PHYS-13.6).
+#[derive(Clone, Debug)]
+pub(crate) enum HostAction {
+    /// Loads a level.
+    Level(NextLevel),
+    /// Saves the game as `<name>.sav` in the game directory.
+    Save(String),
+    /// Loads the game in `<name>.sav`.
+    Load(String),
+    /// Stops.
+    Quit,
 }
 
 /// The level to load next, what the player carries into it (PHYS-10.4) and what the host
@@ -166,6 +188,15 @@ pub(crate) struct Game {
     stopped: bool,
     /// Whether frames are drawn.
     screen: Screen,
+    /// The source line of each statement, from the progs' `.lno`; empty without one.
+    lines: Vec<i32>,
+    /// The breakpoints the client set, and the next id to give.
+    breakpoints: Vec<Breakpoint>,
+    next_breakpoint: u64,
+    /// The world before the frame the debugger may stop (WORLD-9.2).
+    snapshot: Option<Snapshot>,
+    /// Where the frame stopped, while it is stopped.
+    halted: Option<Stopped>,
 }
 
 impl Game {
@@ -184,7 +215,17 @@ impl Game {
             responses: Vec::new(),
             stopped: false,
             screen: Screen::Window,
+            lines: Vec::new(),
+            breakpoints: Vec::new(),
+            next_breakpoint: 0,
+            snapshot: None,
+            halted: None,
         }
+    }
+
+    /// The source line of each statement, from the `.lno` beside the progs (LNO-1).
+    pub(crate) fn set_lines(&mut self, lines: Vec<i32>) {
+        self.lines = lines;
     }
 
     /// Takes over what `old`, the level this one replaces, still owes the bridge's client:
@@ -197,6 +238,13 @@ impl Game {
         self.responses.splice(0..0, old.responses);
         self.shots.splice(0..0, old.shots);
         self.stopped |= old.stopped;
+        // The breakpoints stay set on the next level, which runs the same progs.
+        self.lines = old.lines;
+        self.next_breakpoint = old.next_breakpoint;
+        for breakpoint in old.breakpoints {
+            self.debugger().set_breakpoint(breakpoint.statement, true);
+            self.breakpoints.push(breakpoint);
+        }
     }
 
     /// Makes this a game no window draws (`--headless`).
@@ -247,12 +295,18 @@ impl Game {
     /// `SV_SaveSpawnparms` keeps (PHYS-10.4); after `restart`, this level with the parms it
     /// was entered with (PHYS-10.6). A level change whose `SetChangeParms` fails stops the
     /// game instead.
-    pub(crate) fn level_change(&mut self) -> Option<NextLevel> {
+    pub(crate) fn host_action(&mut self) -> Option<HostAction> {
         let host = self.world.host_state();
-        match self.world.take_host_command()? {
-            HostCommand::Restart => Some(NextLevel {
+        let action = match self.world.take_host_command()? {
+            HostCommand::Restart => HostAction::Level(NextLevel {
                 map: self.world.map().to_owned(),
                 carried: self.world.carried(),
+                host,
+            }),
+            // PHYS-13.6: a new game, carrying nothing.
+            HostCommand::Map(map) => HostAction::Level(NextLevel {
+                map,
+                carried: None,
                 host,
             }),
             HostCommand::Changelevel(map) => {
@@ -261,18 +315,46 @@ impl Game {
                     .map_err(|error| WorldError::Progs(error.message))
                     .and_then(|kept| kept);
                 match kept {
-                    Ok(kept) => Some(NextLevel {
+                    Ok(kept) => HostAction::Level(NextLevel {
                         map,
                         carried: Some(kept),
                         host,
                     }),
                     Err(error) => {
-                        self.fail(&error);
-                        None
+                        self.fail(None, &error);
+                        return None;
                     }
                 }
             }
+            HostCommand::Save(name) => HostAction::Save(name),
+            HostCommand::Load(name) => HostAction::Load(name),
+            HostCommand::Quit => HostAction::Quit,
+        };
+        Some(action)
+    }
+
+    /// The game saved, `save_game` (PHYS-10.5): its text, or why there is none, printed to
+    /// the console as id's `Host_Savegame_f` prints it.
+    pub(crate) fn save(&mut self) -> Option<Vec<u8>> {
+        let saved = self
+            .with_progs(|game, progs| game.world.save_game(progs))
+            .ok()?;
+        match saved {
+            Ok(text) => Some(text),
+            Err(error) => {
+                self.console_line(&format!("{error}\n"));
+                None
+            }
         }
+    }
+
+    /// A line on the console, as `console/line` (BRIDGE-3.1).
+    pub(crate) fn console_line(&mut self, text: &str) {
+        let time = self.world.time();
+        self.events.push((
+            "console/line",
+            json!({ "text": text.trim_end_matches('\n'), "level": "print", "time": time }),
+        ));
     }
 
     /// Whether the client asked the host to stop.
@@ -309,7 +391,7 @@ impl Game {
             "functions": header.numfunctions,
             "globals": header.numglobals,
             "fields": header.numfielddefs,
-            "lno": false,
+            "lno": !self.lines.is_empty(),
             "time": time,
         });
         let entities = (0..self.world.num_edicts())
@@ -330,10 +412,15 @@ impl Game {
             return false;
         }
         let ran = self.with_progs(|game, progs| game.run_frame(progs, frametime));
-        if let Err(error) = ran {
-            self.fail(&WorldError::Progs(error.message));
+        match ran {
+            // A frame stopped at a statement has not run yet: the client's clock stands.
+            Ok(FrameEnd::Stopped) => false,
+            Ok(_) => true,
+            Err(error) => {
+                self.fail(None, &WorldError::Progs(error.message));
+                true
+            }
         }
-        true
     }
 
     /// Runs `f` with the progs read from its bytes; the error says why they did not read.
@@ -347,40 +434,30 @@ impl Game {
         outcome
     }
 
-    fn run_frame(&mut self, progs: &Progs<'_>, frametime: f64) -> FrameEnd {
-        let outcome = self.world.frame(progs, frametime);
-        self.report_changes(progs);
-        match outcome {
-            Ok(()) => FrameEnd::Ran,
-            Err(error) => {
-                self.fail(&error);
-                FrameEnd::Failed
-            }
-        }
-    }
-
     /// The `qc/error` of a failed frame, then the pause it causes (BRIDGE-3.3).
-    fn fail(&mut self, error: &WorldError) {
+    fn fail(&mut self, progs: Option<&Progs<'_>>, error: &WorldError) {
         let time = self.world.time();
         let mut params = Map::new();
         params.insert("message".to_owned(), json!(error.to_string()));
         params.insert("time".to_owned(), json!(time));
         let mut location = None;
         if let WorldError::Frame(run) = error {
-            let stack: Vec<Value> = run
-                .trace
-                .iter()
-                .enumerate()
-                .map(|(index, entry)| json!({ "index": index, "function": entry.name }))
-                .collect();
-            location = run
-                .trace
-                .first()
-                .map(|innermost| json!({ "function": innermost.name }));
-            if let Some(location) = &location {
-                params.insert("location".to_owned(), location.clone());
+            // BRIDGE-3.4: with a .lno each frame names its file and line. The progs are the
+            // caller's, or read again when it holds none.
+            let bytes = self.progs.clone();
+            let read = Progs::read(&bytes).ok();
+            if let Some(progs) = progs.or(read.as_ref()) {
+                let stack = self.stack_json(progs, &run.trace);
+                location = run
+                    .trace
+                    .iter()
+                    .find(|entry| entry.function > 0)
+                    .map(|inner| self.location_json(progs, inner.function, inner.statement));
+                if let Some(location) = &location {
+                    params.insert("location".to_owned(), location.clone());
+                }
+                params.insert("stack".to_owned(), Value::Array(stack));
             }
-            params.insert("stack".to_owned(), Value::Array(stack));
         }
         tracing::warn!(%error, "the game stopped");
         self.events.push(("qc/error", Value::Object(params)));
@@ -441,6 +518,18 @@ impl Game {
         }
     }
 
+    /// BRIDGE-4.6: a command that changes the world at once is refused while a frame is
+    /// stopped at a statement, since going on replays the frame from before it (WORLD-9.2).
+    fn require_between_frames(&self) -> Result<(), RpcError> {
+        match self.halted {
+            None => Ok(()),
+            Some(_) => Err(RpcError::new(
+                ErrorCode::StoppedInFrame,
+                "a frame is stopped at a statement; step or resume to its end first",
+            )),
+        }
+    }
+
     fn require_in_use(&self, edict: usize) -> Result<(), RpcError> {
         if self.world.in_use(edict) {
             Ok(())
@@ -470,9 +559,11 @@ impl Game {
                 "time": time,
             })),
             // Paused between two frames, no QuakeC is running: the stack is empty.
+            // Paused between two frames no QuakeC is running and the stack is empty; at a stop
+            // it is the stopped run's (WORLD-9.1).
             Some("stack") => {
                 self.require_paused()?;
-                Ok(json!({ "stack": [], "time": time }))
+                Ok(json!({ "stack": self.stack_now(progs), "time": time }))
             }
             Some("entities") => {
                 let entities: Vec<Value> = (0..self.world.num_edicts())
@@ -572,42 +663,35 @@ impl Game {
 
     fn step(&mut self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {
         self.require_paused()?;
-        match params.get("kind").and_then(Value::as_str) {
-            Some("frame") => {
-                // A frame that fails has said why it paused (BRIDGE-3.3).
-                if self.run_frame(progs, STEP_FRAME) == FrameEnd::Ran {
-                    self.state_changed(Some(Reason::Step), None);
-                }
-                Ok(self.time())
-            }
-            // Statement stepping comes with the debugger (P3-04).
-            _ => Err(RpcError::new(
-                ErrorCode::Unsupported,
-                "only a whole frame can be stepped",
-            )),
-        }
+        let step = params
+            .get("kind")
+            .and_then(Value::as_str)
+            .and_then(Step::from_name)
+            .ok_or_else(|| RpcError::new(ErrorCode::InvalidParams, "no such step"))?;
+        self.debug_step(progs, step, STEP_FRAME);
+        Ok(self.time())
     }
 
-    fn console(&mut self, params: &Value) -> Value {
+    /// `console` (BRIDGE-4.1, PHYS-13): the text goes in the console's buffer and runs now,
+    /// each line printed coming back as `console/line`.
+    fn console(&mut self, progs: &Progs<'_>, params: &Value) -> Value {
         let text = params
             .get("command")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        for words in command_words(text.as_bytes()) {
-            let name = words
-                .first()
-                .map(|w| String::from_utf8_lossy(w).into_owned());
-            // `Cmd_ExecuteString`: `Con_Printf ("Unknown command \"%s\"\n", Cmd_Argv(0))`.
-            self.events.push((
-                "console/line",
-                json!({
-                    "text": format!("Unknown command \"{}\"", name.unwrap_or_default()),
-                    "level": "print",
-                    "time": self.world.time(),
-                }),
-            ));
-        }
+        self.world.console(text);
+        self.world.console("\n");
+        self.world.execute_console(progs);
+        self.report_console();
         json!({})
+    }
+
+    /// The console's printed lines since the last report, as `console/line` (BRIDGE-3.1).
+    pub(crate) fn report_console(&mut self) {
+        for line in self.world.take_console_output() {
+            let text = String::from_utf8_lossy(&line).into_owned();
+            self.console_line(&text);
+        }
     }
 }
 
@@ -670,16 +754,21 @@ impl Game {
                 Ok(self.time())
             }
             "resume" => {
-                if self.state == State::Paused {
+                // WORLD-9.2: a stopped frame goes on first; it may stop again.
+                if self.state == State::Paused && self.resume_from_stop(progs) {
                     self.apply_held(progs);
                     self.state = State::Running;
                     self.state_changed(None, None);
                 }
                 Ok(self.time())
             }
+            "breakpoint/set" => self.breakpoint_set(progs, params),
+            "breakpoint/clear" => self.breakpoint_clear(params),
+            "evaluate" => self.evaluate(progs, params),
             "step" => self.step(progs, params),
             "field/set" => self.field_set(progs, params),
             "entity/spawn" => {
+                self.require_between_frames()?;
                 let mut pairs = vec![(
                     "classname".to_owned(),
                     params
@@ -697,6 +786,7 @@ impl Game {
                 Ok(json!({ "edict": edict }))
             }
             "entity/remove" => {
+                self.require_between_frames()?;
                 let edict = edict_param(params)?;
                 self.world
                     .remove_entity(progs, edict)
@@ -706,6 +796,7 @@ impl Game {
             }
             "entity/edit" => self.entity_edit(progs, params),
             "player/spawn_at" => {
+                self.require_between_frames()?;
                 let origin = vector_param(params, "origin");
                 let angles = vector_param(params, "angles");
                 self.world
@@ -714,7 +805,10 @@ impl Game {
                 self.report_changes(progs);
                 Ok(json!({ "edict": qs_sim::CLIENT_EDICT }))
             }
-            "console" => Ok(self.console(params)),
+            "console" => {
+                self.require_between_frames()?;
+                Ok(self.console(progs, params))
+            }
             "pick" => self.pick(progs, params),
             _ => Err(RpcError::new(
                 ErrorCode::MethodNotFound,

@@ -8,15 +8,15 @@ server runs them. Collision, monster movement, physics and the player all follow
   and `qc-progs`, `qc-types`, `qs-bsp` and `qs-mdl` (L0). Its tests also compile QuakeC with
   `qc-sema` and `qc-codegen`; its examples use `qs-vfs` and `clap`.
 - **Spec sections:** WORLD-1 to WORLD-8 of [`world.md`](../../docs/spec/engine/world.md),
-  MOVE-1 to MOVE-5 of [`move.md`](../../docs/spec/engine/move.md), PHYS-1 to PHYS-10 of
-  [`physics.md`](../../docs/spec/engine/physics.md), NET-1 to NET-5 of
+  MOVE-1 to MOVE-5 of [`move.md`](../../docs/spec/engine/move.md), PHYS-1 to PHYS-13 of
+  [`physics.md`](../../docs/spec/engine/physics.md), WORLD-9 (the debugger), NET-1 to NET-5 of
   [`net.md`](../../docs/spec/engine/net.md), and the spawning of EDICT-8; the rerelease's
   localization (RRE-1) is `qc-builtins`', and its local sounds (RRE-2.1, RRE-2.4) and named builtins
   (RRE-4) are here.
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`:
   `WinQuake/world.c`, `sv_move.c`, `sv_phys.c`, `sv_user.c`, `sv_main.c` (`SV_SpawnServer`
-  and the message writers) and `host_cmd.c` (the signon commands, `Host_Changelevel_f`, `Host_Savegame_f`, `Host_Loadgame_f`), `cmd.c` (`Cbuf_Execute`), with parts of
-  `pr_cmds.c`, `pr_edict.c`, `model.c`, `common.c`, `mathlib.c` and `view.c`. Each file's
+  and the message writers) and `host_cmd.c` (the signon commands, `Host_Changelevel_f`, `Host_Savegame_f`, `Host_Loadgame_f`), `cmd.c` (the command buffer, aliases and `Cmd_ForwardToServer`), `cvar.c` (`Cvar_Command`), with parts of
+  `pr_cmds.c`, `pr_edict.c` (the edict prints), `pr_exec.c` (`PR_Profile_f`), `model.c`, `common.c`, `mathlib.c` and `view.c`. Each file's
   header lists its functions.
 - **Shipped:** yes.
 
@@ -40,12 +40,19 @@ server runs them. Collision, monster movement, physics and the player all follow
   the messages, kept for the viewer until the client crate reads them.
 - `World::set_standard_quake(standard)`: `-rogue` and `-hipnotic` send the weapon as a bit
   index (NET-4.4).
-- `World::take_changelevel()` and `World::save_spawn_parms(progs)`: the level `changelevel`
+- `World::take_host_command()` and `World::save_spawn_parms(progs)`: the level `changelevel`
   asked for, and `SV_SaveSpawnparms`' `SpawnParms`, which `LoadOptions::carried` gives the
   next world (PHYS-10.4).
 - `World::save_game(progs)`, `SaveGame::read(text)` and `World::restore(progs, save)`:
   `Host_Savegame_f`'s file, and `Host_Loadgame_f` reading it back over the map freshly spawned
   (PHYS-10.5).
+- `World::console(text)`, `World::execute_console(progs)`, `World::take_console_output()` and
+  `World::take_host_command()`: id's console (PHYS-13), run in each frame before the server
+  frame as `_Host_Frame` runs `Cbuf_Execute`; what it printed, a line each; and the `map`,
+  `changelevel`, `restart`, `save`, `load` or `quit` it left for the host (PHYS-13.6).
+- `debug::Debugger` with `World::set_debugger` and `World::evaluate(progs, text)`: a frame
+  stopped before a QuakeC statement, the steps and breakpoints that replay it from a clone of
+  the world (WORLD-9.1 to WORLD-9.4), and watch expressions (WORLD-9.5).
 - `examples/sweep.rs`: every map of an install run, saved, loaded and run again, the record
   of P3-24's acceptance (`--basedir <root> [--game <dir>] [--seconds <s>]`).
 - `LoadOptions`, the host's part of `World::load`: the rerelease's keyed strings, parsed from

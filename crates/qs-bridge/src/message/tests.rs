@@ -112,6 +112,7 @@ fn the_codes_are_the_specs() {
         (ErrorCode::Unsupported, -32005),
         (ErrorCode::BadValue, -32006),
         (ErrorCode::NoSuchBreakpoint, -32007),
+        (ErrorCode::StoppedInFrame, -32008),
     ] {
         assert_eq!(code.code(), number, "{code:?}");
     }

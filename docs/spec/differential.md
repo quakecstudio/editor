@@ -1228,3 +1228,11 @@ oracle is the engine oracle (P3-23, TRACE-4.11, TRACE-4.12): id's server from th
   jobs play `oracles/engine/routes/start.route` on LibreQuake's start map on Linux, macOS and
   Windows; the nightly Differential run plays it on every map of LibreQuake's lite asset; id1's
   maps and the rerelease's, which no CI job has, are played by hand from an install.
+- **DIFF-16.6** A route's `console <text>` line is typed at the server's console: the oracle
+  adds the text and a line feed to the command buffer (`Cbuf_AddText`) and `qs-sim` to its
+  console (PHYS-13.1), and both run it in the next frame, before its server frame, as
+  `_Host_Frame` runs `Cbuf_Execute`. The oracle has no client of its own, so a command the
+  client's console forwards (PHYS-13.4) does not run there, and a command the host carries out
+  (PHYS-13.6) is left to the preview host; `oracles/engine/routes/console.route` plays the
+  console's settings, aliases, `wait`, `exec` and debug prints through both. CI's Test Assets
+  jobs play it on LibreQuake's start map.

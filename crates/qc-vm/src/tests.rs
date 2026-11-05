@@ -691,6 +691,76 @@ mod coverage {
         assert_eq!(machine.depth(), 0);
     }
 
+    /// An observer that stops the run before statement `at`.
+    struct StopAt {
+        at: i32,
+        asked: Vec<i32>,
+    }
+
+    impl Observer for StopAt {
+        fn run(&mut self, _machine: &Machine, _function: i32) {}
+        fn step(&mut self, _m: &Machine, _f: i32, _s: i32, _o: u16, _b: Option<u32>) {}
+        fn exit(&mut self, _machine: &Machine) {}
+        fn error(&mut self, _machine: &Machine, _error: &RunError) {}
+        fn stop_before(&mut self, _machine: &Machine, _function: i32, statement: i32) -> bool {
+            self.asked.push(statement);
+            statement == self.at
+        }
+    }
+
+    // spec VM-20.1: the observer is asked before each statement; a stop ends the run as
+    // interrupted at that statement, before it runs, with the call depth kept
+    #[test]
+    fn an_observer_stops_a_run_before_a_statement() {
+        // f1 calls f2; f2 stores 101 into 102 then returns.
+        let bytes = harness::ProgsBuilder::default()
+            .functions(vec![
+                Func {
+                    first_statement: 1,
+                    ..Func::default()
+                },
+                Func {
+                    first_statement: 3,
+                    ..Func::default()
+                },
+            ])
+            .statements(&[
+                Stmt::op("CALL0", 100, 0, 0),
+                Stmt::op("DONE", 0, 0, 0),
+                Stmt::op("STORE_F", 101, 102, 0),
+                Stmt::op("DONE", 0, 0, 0),
+            ])
+            .globals_init(&[(100, 2), (101, 7)])
+            .build();
+        let progs = read(&bytes);
+        let mut machine = Machine::new(&progs, 0).unwrap();
+        let mut observer = StopAt {
+            at: 3,
+            asked: Vec::new(),
+        };
+        let error = machine
+            .execute_program(
+                &progs,
+                ServerState::Active,
+                &mut NoBuiltins,
+                &mut observer,
+                1,
+            )
+            .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Interrupted);
+        assert_eq!((error.function, error.statement), (2, 3));
+        assert_eq!(error.kind.to_string(), "interrupted");
+        assert_eq!(observer.asked, [1, 3]);
+        assert_eq!(
+            machine.global(102).unwrap(),
+            Slot::ZERO,
+            "statement 3 did not run"
+        );
+        assert_eq!(machine.depth(), 2, "the call depth is kept: f1 and f2");
+        assert!(!ErrorKind::Interrupted.is_fatal());
+        assert!(!ErrorKind::Interrupted.resets_depth());
+    }
+
     // spec TRACE-4.1, TRACE-3.4: the Trace observer records the run and its changes, and
     // reports the edict field count; records() is non-empty after a run and entityfields() is
     // the progs' field count.

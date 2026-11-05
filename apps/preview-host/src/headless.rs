@@ -13,7 +13,7 @@ use qs_client::Client;
 use crate::args::Args;
 use crate::bridge::{Bridge, serve};
 use crate::game::{Eye, Game, Screen};
-use crate::load::{Describer, Loaded, Rand, load};
+use crate::load::{Acted, Describer, Loaded, Rand, act};
 use crate::window::{FRAME, frametime_f32};
 
 /// The view's width per unit of height `pick` assumes: the window's first size, 1280 by 800.
@@ -29,17 +29,16 @@ pub(crate) fn run(args: &Args, loaded: Loaded, mut bridge: Bridge) -> Result<(),
             return Ok(());
         }
         let ran = world.game.frame(FRAME);
-        if let Some(next) = world.game.level_change() {
-            match load(args, &next.map, next.carried, Some(next.host)) {
-                Ok(loaded) => {
-                    let old = core::mem::replace(&mut world, Headless::new(loaded));
+        if let Some(action) = world.game.host_action() {
+            match act(args, &mut world.game, action) {
+                Acted::Load(loaded) => {
+                    let old = core::mem::replace(&mut world, Headless::new(*loaded));
                     world.game.carry_from(old.game);
+                    continue;
                 }
-                Err(error) => {
-                    tracing::warn!(%error, map = next.map, "the next level did not load");
-                }
+                Acted::Quit => return Ok(()),
+                Acted::Stay => {}
             }
-            continue;
         }
         // The client's clock stands while the server's does, as the window's.
         world.read_messages(if ran { FRAME } else { 0.0 });

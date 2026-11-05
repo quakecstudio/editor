@@ -11,6 +11,7 @@ enum qs_vfs::host::EntryKind
 enum qs_vfs::zip::ZipError
 field qs_vfs::host::DirEntry.kind
 field qs_vfs::host::DirEntry.name
+fn qs_vfs::Archive::file_count
 fn qs_vfs::Archive::name
 fn qs_vfs::Archive::pak
 fn qs_vfs::Archive::path

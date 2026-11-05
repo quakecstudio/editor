@@ -579,6 +579,13 @@ jobs:
         run: |
           cargo xtask sim-diff oracles/engine/routes/start.route \
             -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+      # P3-04 (DIFF-16.6): console lines, the settings, aliases and waits they run, the same in
+      # qs-sim as in id's server.
+      - name: Compare the console with id's server
+        if: env.CI_PATH == 'full'
+        run: |
+          cargo xtask sim-diff oracles/engine/routes/console.route \
+            -- -basedir "$QS_TEST_ASSETS/librequake-lite"
       # The source is the same on every OS, so one runner checks it.
       - name: Write id 1.01 to the asset cache
         if: env.CI_PATH == 'full' && runner.os == 'Linux'

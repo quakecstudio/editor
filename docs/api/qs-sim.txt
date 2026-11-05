@@ -32,6 +32,7 @@ enum qs_sim::collision::CollisionError
 enum qs_sim::collision::Solid
 enum qs_sim::collision::area::MoveKind
 enum qs_sim::collision::hull::EntityHull
+enum qs_sim::debug::StepKind
 enum qs_sim::rerelease::BuiltinTable
 enum qs_sim::spawn::LoadError
 enum qs_sim::spawn::SpawnError
@@ -41,6 +42,7 @@ enum qs_sim::world::Signon
 enum qs_sim::world::WorldError
 enum qs_sim::world::changes::EdictChange
 enum qs_sim::world::edit::EditError
+enum qs_sim::world::evaluate::EvalError
 enum qs_sim::world::inspect::QcValue
 enum qs_sim::world::save::SaveError
 field qs_sim::client::UserCmd.angles
@@ -84,6 +86,15 @@ field qs_sim::collision::trace::Trace.plane
 field qs_sim::collision::trace::Trace.startsolid
 field qs_sim::collision::trace::TracePlane.dist
 field qs_sim::collision::trace::TracePlane.normal
+field qs_sim::debug::Location.function
+field qs_sim::debug::Location.source
+field qs_sim::debug::Location.statement
+field qs_sim::debug::Stop.breakpoint
+field qs_sim::debug::Stop.count
+field qs_sim::debug::Stop.depth
+field qs_sim::debug::Stop.function
+field qs_sim::debug::Stop.run
+field qs_sim::debug::Stop.statement
 field qs_sim::messages::ClientMessages.packets
 field qs_sim::physics::Sound.entity
 field qs_sim::physics::Sound.sample
@@ -100,6 +111,7 @@ field qs_sim::world::LoadOptions.carried
 field qs_sim::world::LoadOptions.host
 field qs_sim::world::LoadOptions.localization
 field qs_sim::world::LoadOptions.registration
+field qs_sim::world::LoadOptions.search_path
 field qs_sim::world::edit::LineHit.edict
 field qs_sim::world::edit::LineHit.point
 field qs_sim::world::inspect::NamedValue.name
@@ -153,6 +165,19 @@ fn qs_sim::collision::hull::hull_for_entity
 fn qs_sim::collision::trace::Trace::new
 fn qs_sim::collision::trace::clip_move_to_entity
 fn qs_sim::collision::trace::recursive_hull_check
+fn qs_sim::console::World::console
+fn qs_sim::console::World::execute_console
+fn qs_sim::console::World::take_console_output
+fn qs_sim::debug::Debugger::finish
+fn qs_sim::debug::Debugger::may_stop
+fn qs_sim::debug::Debugger::new
+fn qs_sim::debug::Debugger::run_to_breakpoint
+fn qs_sim::debug::Debugger::set_breakpoint
+fn qs_sim::debug::Debugger::step_from
+fn qs_sim::debug::Debugger::stop_at_first
+fn qs_sim::debug::Debugger::stopped
+fn qs_sim::debug::locate
+fn qs_sim::debug::resolve
 fn qs_sim::messages::Message::bytes
 fn qs_sim::messages::Message::clear
 fn qs_sim::messages::Message::is_empty
@@ -193,15 +218,20 @@ fn qs_sim::world::World::carried
 fn qs_sim::world::World::client_command
 fn qs_sim::world::World::connect
 fn qs_sim::world::World::connect_next_frame
+fn qs_sim::world::World::debugger
+fn qs_sim::world::World::debugger_mut
+fn qs_sim::world::World::debugger_or_new
 fn qs_sim::world::World::entities
 fn qs_sim::world::World::frame
 fn qs_sim::world::World::host_state
 fn qs_sim::world::World::light_style
 fn qs_sim::world::World::load
+fn qs_sim::world::World::machine
 fn qs_sim::world::World::map
 fn qs_sim::world::World::player_view
 fn qs_sim::world::World::save_spawn_parms
 fn qs_sim::world::World::set_command
+fn qs_sim::world::World::set_debugger
 fn qs_sim::world::World::set_standard_quake
 fn qs_sim::world::World::settle
 fn qs_sim::world::World::signon
@@ -220,6 +250,7 @@ fn qs_sim::world::edit::World::remove_entity
 fn qs_sim::world::edit::World::set_field_value
 fn qs_sim::world::edit::World::spawn_entity
 fn qs_sim::world::edit::World::trace_line
+fn qs_sim::world::evaluate::World::evaluate
 fn qs_sim::world::inspect::World::classname
 fn qs_sim::world::inspect::World::edict_fields
 fn qs_sim::world::inspect::World::in_use
@@ -238,15 +269,18 @@ fn qs_sim::world::state::read_state
 impl qs_sim::builtins::SimBuiltins: Builtins
 impl qs_sim::collision::CollisionError: core::error::Error
 impl qs_sim::collision::CollisionError: core::fmt::Display
+impl qs_sim::debug::Debugger: Observer
 impl qs_sim::spawn::SpawnError: core::error::Error
 impl qs_sim::spawn::SpawnError: core::fmt::Display
 impl qs_sim::world::WorldError: core::error::Error
 impl qs_sim::world::WorldError: core::fmt::Display
 impl qs_sim::world::edit::EditError: core::error::Error
 impl qs_sim::world::edit::EditError: core::fmt::Display
+impl qs_sim::world::evaluate::EvalError: fmt::Display
 impl qs_sim::world::save::SaveError: core::error::Error
 impl qs_sim::world::save::SaveError: core::fmt::Display
 mod qs_sim::collision
+mod qs_sim::debug
 mod qs_sim::rerelease
 mod qs_sim::spawn
 struct qs_sim::builtins::SimBuiltins
@@ -263,6 +297,9 @@ struct qs_sim::collision::hull::HullSet
 struct qs_sim::collision::hull::Plane
 struct qs_sim::collision::trace::Trace
 struct qs_sim::collision::trace::TracePlane
+struct qs_sim::debug::Debugger
+struct qs_sim::debug::Location
+struct qs_sim::debug::Stop
 struct qs_sim::messages::ClientMessages
 struct qs_sim::messages::Message
 struct qs_sim::physics::Sound
@@ -286,6 +323,7 @@ use qs_sim::ClientMessages = messages::ClientMessages
 use qs_sim::EdictChange = world::EdictChange
 use qs_sim::EditError = world::EditError
 use qs_sim::Entity = world::Entity
+use qs_sim::EvalError = world::EvalError
 use qs_sim::HostCommand = world::HostCommand
 use qs_sim::HostState = world::HostState
 use qs_sim::LineHit = world::LineHit
@@ -352,6 +390,7 @@ use qs_sim::localization = qc_builtins::localization
 use qs_sim::read_state = world::read_state
 use qs_sim::world::EdictChange = changes::EdictChange
 use qs_sim::world::EditError = edit::EditError
+use qs_sim::world::EvalError = evaluate::EvalError
 use qs_sim::world::LineHit = edit::LineHit
 use qs_sim::world::NamedValue = inspect::NamedValue
 use qs_sim::world::QcValue = inspect::QcValue
@@ -377,6 +416,10 @@ variant qs_sim::collision::area::MoveKind::NoMonsters
 variant qs_sim::collision::area::MoveKind::Normal
 variant qs_sim::collision::hull::EntityHull::Box
 variant qs_sim::collision::hull::EntityHull::Brush
+variant qs_sim::debug::StepKind::In
+variant qs_sim::debug::StepKind::Out
+variant qs_sim::debug::StepKind::Over
+variant qs_sim::debug::StepKind::Statement
 variant qs_sim::rerelease::BuiltinTable::Id
 variant qs_sim::rerelease::BuiltinTable::Rerelease
 variant qs_sim::spawn::LoadError::Run
@@ -390,7 +433,11 @@ variant qs_sim::spawn::SpawnError::ParseError
 variant qs_sim::spawn::Token::End
 variant qs_sim::spawn::Token::Word
 variant qs_sim::world::HostCommand::Changelevel
+variant qs_sim::world::HostCommand::Load
+variant qs_sim::world::HostCommand::Map
+variant qs_sim::world::HostCommand::Quit
 variant qs_sim::world::HostCommand::Restart
+variant qs_sim::world::HostCommand::Save
 variant qs_sim::world::Signon::Begin
 variant qs_sim::world::Signon::Connect
 variant qs_sim::world::Signon::Prespawn
@@ -406,6 +453,9 @@ variant qs_sim::world::edit::EditError::Kept
 variant qs_sim::world::edit::EditError::NoSuchEdict
 variant qs_sim::world::edit::EditError::NoSuchField
 variant qs_sim::world::edit::EditError::Spawn
+variant qs_sim::world::evaluate::EvalError::NotAnEntity
+variant qs_sim::world::evaluate::EvalError::Syntax
+variant qs_sim::world::evaluate::EvalError::Unknown
 variant qs_sim::world::inspect::QcValue::Entity
 variant qs_sim::world::inspect::QcValue::Field
 variant qs_sim::world::inspect::QcValue::Float
