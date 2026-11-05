@@ -102,6 +102,8 @@ impl Sim {
 
 /// A file of the install by name, `None` when it is not on the search path.
 type Reader = Box<dyn Fn(&str) -> Option<Vec<u8>>>;
+/// The search-path element a file is found in, the first 0.
+type Ranker = Box<dyn Fn(&str) -> Option<usize>>;
 
 /// The models the client asks about, read from the install.
 pub(crate) struct Describer {
@@ -207,6 +209,14 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
                 .map(LoadedFile::into_bytes)
         }))
     };
+    // The search-path element a file is found in, which decides whether an MD5 model
+    // replaces its `.mdl` (REND-12.1).
+    let ranker = || -> Result<Ranker, String> {
+        let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
+        Ok(Box::new(move |name: &str| {
+            files.find(name.as_bytes()).map(|file| file.element())
+        }))
+    };
     // RRE-1.6, RRE-1.10: the rerelease's strings, read before the map as QuakeSpasm's
     // `LOC_Init` reads them, from the search path, the base directory or `QuakeEX.kpf`.
     let text = vfs
@@ -245,7 +255,7 @@ pub(crate) fn load(args: &[String]) -> Result<Loaded, String> {
     }
     let mut play = Play::new(palette.clone(), pics, bsp.entities());
     play.zfix = zfix;
-    play.load_models(client.model_names(), &reader()?)
+    play.load_models(client.model_names(), &reader()?, &ranker()?)
         .map_err(|e| e.to_string())?;
     play.load_sky(&reader()?);
     // The world, then every brush submodel `*n` at the origin, so the mesh's model `n` is the

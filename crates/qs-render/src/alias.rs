@@ -30,16 +30,16 @@ const TORCH_LIGHT: f32 = 256.0;
 /// `shadelight = shadelight / 200.0` (REND-4.7).
 const SHADE_SCALE: f32 = 200.0;
 /// The models given full light (REND-4.7).
-const TORCHES: [&str; 2] = ["progs/flame2.mdl", "progs/flame.mdl"];
+pub(crate) const TORCHES: [&str; 2] = ["progs/flame2.mdl", "progs/flame.mdl"];
 /// `if (e == &cl.viewent && ambientlight < 24)`: the view model's floor (REND-4.11).
 const VIEW_MODEL_FLOOR: f32 = 24.0;
 /// `if (ambientlight < 8)` for a player: the players' floor (REND-4.11).
 const PLAYER_FLOOR: f32 = 8.0;
 /// `(int)(cl.time*10) & 3`: a skin group's frames step ten times a second, over four slots
 /// (REND-4.2).
-const SKIN_RATE: f64 = 10.0;
+pub(crate) const SKIN_RATE: f64 = 10.0;
 /// The slots a skin has, `gl_texturenum[i][4]` (REND-4.2).
-const SKIN_SLOTS: usize = 4;
+pub(crate) const SKIN_SLOTS: usize = 4;
 /// `anglemod(100*cl.time)`: degrees a second an `EF_ROTATE` model turns (REND-4.9).
 const ROTATE_RATE: f64 = 100.0;
 /// `anglemod`'s steps in a turn, `65536/360.0` (REND-4.9).
@@ -56,12 +56,14 @@ const TRANSPARENT: u8 = 255;
 pub enum AliasError {
     /// The file is not a model `qs-mdl` reads.
     Mdl(String),
+    /// An MD5 mesh or its animation does not read, or they do not go together (REND-12.1).
+    Md5(String),
 }
 
 impl core::fmt::Display for AliasError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Mdl(message) => f.write_str(message),
+            Self::Mdl(message) | Self::Md5(message) => f.write_str(message),
         }
     }
 }
@@ -260,6 +262,12 @@ impl AliasModel {
                 .flat_map(|&p| palette.rgba(table.get(usize::from(p)).copied().unwrap_or(p)))
                 .collect(),
         })
+    }
+
+    /// Whether it is a torch, which GLQuake draws at full light (REND-4.7).
+    #[must_use]
+    pub const fn is_torch(&self) -> bool {
+        self.torch
     }
 
     /// Whether the model turns on its own, `EF_ROTATE` (REND-4.9).
@@ -582,7 +590,7 @@ fn word(bytes: &[u8], at: usize) -> Option<i32> {
 }
 
 /// C's `(int)` of a non-negative double, as an index; 0 for a negative or NaN value.
-fn whole(value: f64) -> usize {
+pub(crate) fn whole(value: f64) -> usize {
     usize::try_from(truncate(value)).unwrap_or(0)
 }
 

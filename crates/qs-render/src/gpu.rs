@@ -1315,8 +1315,8 @@ mod tests {
     use crate::mesh::Image;
     use crate::mesh::tests::{MapSpec, bsp, palette, samples};
     use crate::particles::ParticleVertex;
+    use crate::picture::tests::{TgaSpec, solid, tga};
     use crate::skybox::Skybox;
-    use crate::skybox::tests::{TgaSpec, solid, tga};
     use crate::sprite::SpriteVertex;
     use crate::{LightStyles, MapMesh};
     use egui_wgpu::CallbackTrait as _;

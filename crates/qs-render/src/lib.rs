@@ -16,9 +16,11 @@ mod anorm_dots;
 mod camera;
 mod gpu;
 mod light;
+mod md5;
 mod mesh;
 mod particles;
 mod pick;
+mod picture;
 mod play;
 mod skybox;
 mod sprite;
@@ -34,6 +36,7 @@ pub use gpu::{
     SpriteDraw, SpriteFrame, View,
 };
 pub use light::light_point;
+pub use md5::Md5Model;
 pub use mesh::{
     Animation, Batch, Extras, GAMMA, Image, Lightmaps, MapMesh, MeshBuilder, MeshError, Palette,
     Placement, REND_MAX_DLIGHTS, Surface, Vertex, frame, mip_levels,

@@ -537,3 +537,72 @@ type, which the preview host does (ADR-0012).
   and `origin + down * up + right * right` with the frame's `up`, `down`, `left` and `right`
   (SPR-2) and the texture's `(0, tmax)`, `(0, 0)`, `(smax, 0)`, `(smax, tmax)`; transparent
   texels are cut by alpha test.
+
+## REND-12 MD5 models
+
+**Source:** `Quake/gl_model.c`, `Mod_LoadModel`; `Quake/gl_mesh.c`, `Mod_LoadMD5MeshModel`,
+`MD5_BakeInfluences`, `MD5_ComputeNormals` and `MD5Anim_Load`; `Quake/r_alias.c`,
+`R_SetupAliasFrame`; `Quake/image.c`, `Image_LoadImage`; `Quake/gl_model.h`, `MAX_SKINS`
+(Shpoike/Quakespasm@`4c0c55f7830715cf8670f586c7be01ebce262d23`, cited for description only, as
+[`md5.md`](md5.md) says); `Quake/r_alias.c`, `GLAlias_CreateShaders` and `R_DrawAliasModel`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`). The files are MD5-1 to MD5-3.
+
+The rerelease replaces id1's `.mdl` models with skeletal MD5 models. id's rerelease engine is
+not published; QuakeSpasm-Spiked reads the files, and the preview host draws them through the
+alias pipeline, with QuakeSpasm's shader formula for a vertex normal.
+
+### Behaviour
+
+- **REND-12.1** QuakeSpasm-Spiked's `Mod_LoadModel` tries each extension of `r_replacemodels`
+  (default empty) in place of a model's, and passes over a file found when the original is on a
+  later search-path element ("Ignoring %s from lower priority path"); it then picks the loader
+  by the file's first four bytes, `MD5V` for MD5 (MD5-2.1). The preview host replaces
+  `progs/x.mdl` with `progs/x.md5mesh` by default, so a rerelease install shows its MD5 models,
+  with `md5_models` off as QuakeSpasm-Spiked's default: the MD5 model is used when it is found
+  and the `.mdl` is not found on an earlier search-path element. A mesh or animation that does
+  not read (MD5-2, MD5-3) is an error naming the file. A torch `.mdl` (REND-4.7) gives its MD5
+  model full light.
+- **REND-12.2** Without an `.md5anim` (MD5-3.1) the model has one frame, the mesh's joints,
+  which are absolute: `Mod_LoadMD5MeshModel` inverts them directly ("absolute, so we can just
+  invert now"). An animation frame's poses (MD5-3.7) are relative: QuakeSpasm-Spiked
+  concatenates each onto its parent's, in joint order ("concat it onto the parent
+  (relative->abs)"), the position turned by the parent's orientation and moved to its position,
+  the orientations multiplied. A joint whose parent is not before it reads a pose not yet made
+  in QuakeSpasm-Spiked; the preview host places it as if it had none. A vertex in a frame is the
+  sum over its weights (MD5-2.12) of `bias * (joint orientation * weight position + joint
+  position)`, as the mesh's own pose bakes it (`weight[idx].pos[...] =
+  MD5FLOAT()*weight[idx].pos[3]`, then `Matrix3x4_RM_Transform4`); QuakeSpasm-Spiked then keeps
+  four influences a vertex and skins the baked pose by the frame's joints, which agrees for a
+  vertex on one joint, and the preview host computes every frame by the sum, every weight kept.
+  A vertex's normal is `MD5_ComputeNormals`': the sum of `cross(v1 - v0, v2 - v0)` normalised
+  over its triangles, normalised, a zero vector left zero; the preview host makes it for every
+  frame.
+- **REND-12.3** Each animation frame is one frame of one pose shown for 0.1 seconds (MD5-3.10);
+  a frame out of range draws frame 0. The triangles are the mesh's, in its order, each corner
+  with its vertex's `s` and `t`, and are turned and moved as an alias model is (REND-4.5). Two
+  frames blend by the lerp fraction (CLIENT-7.3) as REND-4.12 blends poses, positions and
+  shades; QuakeSpasm-Spiked blends the joints' matrices instead. Each mesh of the file is drawn
+  with its own skin.
+- **REND-12.4** A mesh's skins are found from its shader name (MD5-2.13): for `n` from 0 up to
+  `MAX_SKINS` (32), frames `f` from 0 to 3 of `progs/<shader>_<nn>_<ff>` until one is missing; a
+  skin with no frame 0 ends the skins. Each is found by QuakeSpasm-Spiked's `Image_LoadImage`:
+  the name with `.dds`, `.tga`, `.png`, `.jpeg`, `.jpg` and `.pcx` in turn, as it is, then under
+  `textures/`, then its last path part under `textures/`, and at last `<name>.lmp`. The four
+  slots (REND-4.2) are filled as "this stuff is hideous" fills them: one frame in all four, two
+  or three as frames 0, 1, 0, 1, four in order. The preview host reads no `.dds`, passes over a
+  file that does not read, and draws a mesh with no skin white; the `_luma`, `_glow`, `_pants`
+  and `_shirt` images are not read, so an MD5 player wears no colours (REND-4.13).
+- **REND-12.5** QuakeSpasm's GLSL alias shader shades a vertex by its normal:
+  `r_avertexnormal_dot` is `1.0 + dot * (13.0 / 44.0)` when `dot(vertexnormal, ShadeVector)` is
+  below 0 ("this reproduces anorm_dots within as reasonable a degree of tolerance") and `1.0 +
+  dot` otherwise, the two poses' mixed by the blend and times the light. `ShadeVector` is
+  `(cos(-a), sin(-a), 1)` normalised, `a = (quantizedangle / 16.0) * 2.0 * 3.14159` and
+  `quantizedangle = ((int)(e->angles[1] * (SHADEDOT_QUANT / 360.0))) & (SHADEDOT_QUANT - 1)`
+  (`R_DrawAliasModel`). The preview host shades an MD5 vertex so, times REND-4.7's `shadelight`,
+  clamped to 0 to 1.
+
+### Constants
+
+| Constant | Value | Source |
+| --- | --- | --- |
+| `MAX_SKINS` | 32 | QuakeSpasm-Spiked `gl_model.h` |

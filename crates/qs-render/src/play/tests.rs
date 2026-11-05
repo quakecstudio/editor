@@ -10,12 +10,13 @@
 use qs_client::{Anchor, DynamicLight, Hud, HudItem, Placed, Scene, SceneEntity, SceneParticle};
 use qs_wad::{WAD_MAGIC, WAD_TYP_QPIC};
 
-use super::{FogState, Pics, Play, PlayError, fog_parse_worldspawn};
+use super::{FogState, Model, Pics, Play, PlayError, fog_parse_worldspawn};
 use crate::alias::tests::{MdlSpec, SkinSpec, mdl};
 use crate::gpu::{FlatDraw, Fog};
+use crate::md5::tests::{Md5Spec, md5mesh};
 use crate::mesh::tests::{MapSpec, bsp, palette, samples};
 use crate::mesh::{Image, MapMesh};
-use crate::skybox::tests::solid;
+use crate::picture::tests::solid;
 
 /// A WAD2 of picture lumps: each a name, a size and one palette index for every pixel.
 fn wad(lumps: &[(&str, [i32; 2], u8)]) -> Vec<u8> {
@@ -461,9 +462,11 @@ fn players_wear_their_slots_translated_skins() {
         skins: vec![SkinSpec::Single([0].into_iter().chain([16; 15]).collect())],
         ..MdlSpec::default()
     });
-    play.load_models(&[String::new(), "progs/player.mdl".to_owned()], &|_| {
-        Some(bytes.clone())
-    })
+    play.load_models(
+        &[String::new(), "progs/player.mdl".to_owned()],
+        &|name| name.ends_with(".mdl").then(|| bytes.clone()),
+        &|name| name.ends_with(".mdl").then_some(0),
+    )
     .unwrap();
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
@@ -515,4 +518,76 @@ fn the_worldspawn_sets_the_sky() {
     assert_eq!(plain.skyfog, 0.5);
     plain.load_sky(&read);
     assert!(plain.assets().skybox.is_none());
+}
+
+// spec REND-12.1: with MD5 models on, an `.mdl` is drawn as `<stem>.md5mesh` when it is
+// found and the `.mdl` is not on an earlier search-path element; off, or with no MD5
+// model, the `.mdl` is drawn
+#[test]
+fn md5_models_replace_their_mdl() {
+    let alias = mdl(&MdlSpec::default());
+    let mesh = md5mesh(&Md5Spec {
+        frames: None,
+        ..Md5Spec::default()
+    });
+    let names = [String::new(), "progs/ogre.mdl".to_owned()];
+    let kind = |md5_models: bool, mdl_rank: Option<usize>, md5_rank: Option<usize>| {
+        let mut play = play();
+        play.md5_models = md5_models;
+        let read = |name: &str| match name {
+            "progs/ogre.mdl" => mdl_rank.map(|_| alias.clone()),
+            "progs/ogre.md5mesh" => md5_rank.map(|_| mesh.clone()),
+            _ => None,
+        };
+        let rank = |name: &str| match name {
+            "progs/ogre.mdl" => mdl_rank,
+            "progs/ogre.md5mesh" => md5_rank,
+            _ => None,
+        };
+        play.load_models(&names, &read, &rank).unwrap();
+        match &play.models[1] {
+            Model::Alias(..) => "mdl",
+            Model::Md5(..) => "md5",
+            _ => "other",
+        }
+    };
+    assert_eq!(kind(true, Some(1), Some(1)), "md5", "the same element");
+    assert_eq!(kind(true, Some(2), Some(1)), "md5", "the MD5 earlier");
+    assert_eq!(kind(true, Some(0), Some(1)), "mdl", "the .mdl earlier");
+    assert_eq!(kind(true, None, Some(0)), "md5", "no .mdl");
+    assert_eq!(kind(true, Some(0), None), "mdl", "no MD5");
+    assert_eq!(kind(false, Some(1), Some(1)), "mdl", "MD5 models off");
+}
+
+// spec REND-12.3: an MD5 entity is drawn as an alias model, a run per part with its skin
+#[test]
+fn md5_entities_are_drawn_with_their_skins() {
+    let mut play = play();
+    let mesh = md5mesh(&Md5Spec {
+        frames: None,
+        ..Md5Spec::default()
+    });
+    play.load_models(
+        &[String::new(), "progs/ogre.mdl".to_owned()],
+        &|name| (name == "progs/ogre.md5mesh").then(|| mesh.clone()),
+        &|name| (name == "progs/ogre.md5mesh").then_some(0),
+    )
+    .unwrap();
+    assert_eq!(play.skins.len(), 1, "the white skin of a part with none");
+    let lighting = samples(&[50]);
+    let bsp = bsp(&MapSpec::default(), &lighting);
+    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let scene = Scene {
+        entities: vec![SceneEntity {
+            entity: 5,
+            model: 1,
+            ..SceneEntity::default()
+        }],
+        ..Scene::default()
+    };
+    let callback = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
+    assert_eq!(callback.models.draws.len(), 1);
+    assert_eq!(callback.models.draws[0].skin, 0);
+    assert_eq!(callback.models.draws[0].count, 3);
+    assert_eq!(callback.models.vertices.len(), 3);
 }
