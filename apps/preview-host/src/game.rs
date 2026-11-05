@@ -7,7 +7,7 @@
 use qc_progs::Progs;
 use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::Camera;
-use qs_sim::{EdictChange, EditError, World, WorldError, command_words};
+use qs_sim::{EdictChange, EditError, SpawnParms, World, WorldError, command_words};
 use serde_json::{Map, Value, json};
 
 use crate::screenshot::{Frame, encode};
@@ -199,6 +199,24 @@ impl Game {
                 })
                 .map_err(|why| RpcError::new(ErrorCode::InternalError, why));
             self.responses.push((shot.id, outcome));
+        }
+    }
+
+    /// The level the progs asked for with `changelevel` since the last call, with what the
+    /// player carries into it: `SV_SaveSpawnparms` as `Host_Changelevel_f` runs it
+    /// (PHYS-10.4). A level change whose `SetChangeParms` fails stops the game instead.
+    pub(crate) fn level_change(&mut self) -> Option<(String, SpawnParms)> {
+        let map = self.world.take_changelevel()?;
+        let kept = self
+            .with_progs(|game, progs| game.world.save_spawn_parms(progs))
+            .map_err(|error| WorldError::Progs(error.message))
+            .and_then(|kept| kept);
+        match kept {
+            Ok(kept) => Some((map, kept)),
+            Err(error) => {
+                self.fail(&error);
+                None
+            }
         }
     }
 

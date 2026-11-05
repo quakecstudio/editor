@@ -11,7 +11,7 @@ use qs_mdl::spr::Sprite;
 use qs_render::{Camera, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface};
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::patch_builtins;
-use qs_sim::{LoadOptions, World};
+use qs_sim::{LoadOptions, SpawnParms, World};
 use qs_vfs::zip::Zip;
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
@@ -105,15 +105,15 @@ impl qs_sound::Random for Rand {
     }
 }
 
-/// Reads the map `args` names from the install `-basedir` and `-game` name, with the engine
-/// options after `--` passed on to the game filesystem; starts its server, connects its
-/// client and reads the models the server precached.
+/// Reads `map` from the install `-basedir` and `-game` name, with the engine options after
+/// `--` passed on to the game filesystem; starts its server with what the level before it
+/// `carried` (PHYS-10.4), connects its client and reads the models the server precached.
 #[expect(
     clippy::too_many_lines,
     reason = "one pass from the command line to a loaded map reads best in the order it runs"
 )]
-pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
-    let map = args.map.clone();
+pub(crate) fn load(args: &Args, map: &str, carried: Option<SpawnParms>) -> Result<Loaded, String> {
+    let map = map.to_owned();
     let engine = args.engine();
     let show = args.show.map(|show| match show {
         Show::Water => Surface::Turbulent,
@@ -171,7 +171,7 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
             .map(|text| Localization::loc_load_file(&text))
             .unwrap_or_default(),
         builtins,
-        carried: None,
+        carried,
         registration: vfs.registration(),
     };
     let mut world =

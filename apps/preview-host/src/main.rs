@@ -47,7 +47,7 @@ fn main() -> ExitCode {
 }
 
 fn run(args: &args::Args) -> Result<(), String> {
-    let loaded = load::load(args)?;
+    let loaded = load::load(args, &args.map, None)?;
     let bridge = match &args.bridge {
         Some(path) => Some(listen(path)?),
         None => None,

@@ -37,6 +37,7 @@ void(entity e, vector o) setorigin = #2;
 void(entity e, vector min, vector max) setsize = #4;
 entity() spawn = #14;
 void(entity e) remove = #15;
+void(string s) changelevel = #70;
 string(string s) precache_model = #20;
 float frames;
 .float count;
@@ -49,11 +50,13 @@ void() ClientConnect = {};
 void() PutClientInServer = { self.classname = \"player\"; self.health = 100; };
 void() ClientDisconnect = {};
 void() SetNewParms = {};
-void() SetChangeParms = {};
+void() SetChangeParms = { parm1 = self.health; };
 void() worldspawn = { precache_model(\"progs/player.mdl\"); };
 void() item_crate = { self.count = 3; self.solid = 2; setsize(self, '-8 -8 -8', '8 8 8'); setorigin(self, self.origin); };
 .void() nothing;
 void() broken = { self.nothing(); };
+void() leave = { changelevel(\"e1m2\"); };
+void() info_exit = { self.think = leave; self.nextthink = 0.05; };
 void() info_fail = { self.think = broken; self.nextthink = 0.05; };
 ";
 
@@ -831,4 +834,28 @@ fn a_moved_edict_is_found_where_it_now_is() {
     )
     .unwrap();
     assert_eq!(new["edict"], 2, "{new}");
+}
+
+// spec PHYS-10.4: changelevel names the next level, and the player carries the parms
+// SetChangeParms leaves; no level is asked for before it
+#[test]
+fn a_level_change_carries_the_players_parms() {
+    let (mut idle, _session) = game();
+    for _ in 0..3 {
+        idle.frame(0.1);
+    }
+    assert!(idle.level_change().is_none());
+    let (mut game, _session) = game_with("{\n\"classname\" \"info_exit\"\n}\n");
+    let mut change = None;
+    for _ in 0..10 {
+        game.frame(0.1);
+        change = game.level_change();
+        if change.is_some() {
+            break;
+        }
+    }
+    let (map, kept) = change.expect("a level change");
+    assert_eq!(map, "e1m2");
+    assert_eq!(kept.parms()[0], 100.0, "parm1 is the player's health");
+    assert!(game.level_change().is_none(), "taken once");
 }

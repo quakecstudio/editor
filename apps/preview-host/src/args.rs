@@ -12,7 +12,7 @@ use qs_render::GAMMA;
 const ENGINE_OPTIONS: [&str; 4] = ["-basedir", "-game", "-kpf", "-bridge"];
 
 /// `preview-host [-basedir PATH] [-game NAME] [-kpf PATH] [-bridge PATH] [map]`.
-#[derive(clap::Parser, Debug, PartialEq)]
+#[derive(clap::Parser, Clone, Debug, PartialEq)]
 #[command(name = "preview-host", about = "The QuakeC Studio preview host")]
 pub(crate) struct Args {
     /// The game root holding `id1`.

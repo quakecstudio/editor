@@ -18,11 +18,13 @@ use qs_bsp::Bsp;
 use qs_client::Client;
 use qs_render::{Camera, MapMesh, MapRenderer, Play, View};
 
+use qs_sim::SpawnParms;
+
 use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::Bridge;
 use crate::game::{Eye, Game};
-use crate::load::{Describer, Loaded, Rand};
+use crate::load::{Describer, Loaded, Rand, load};
 use crate::screenshot::Frame;
 
 /// Map units a second walking, and running with Shift.
@@ -50,6 +52,7 @@ const LONGEST: f64 = 0.1;
 /// Opens the window on the map `loaded` holds and runs the game until it closes or the
 /// bridge's client stops it.
 pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result<(), String> {
+    let args = args.clone();
     let benchmark = args.benchmark;
     if benchmark.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
         return Err("--benchmark needs a positive number of seconds".to_owned());
@@ -106,6 +109,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
             );
             state.renderer.write().callback_resources.insert(renderer);
             Ok(Box::new(Viewer {
+                args,
                 map,
                 mesh,
                 camera,
@@ -136,6 +140,8 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
 }
 
 struct Viewer {
+    /// The command line, for the next level's load.
+    args: Args,
     map: String,
     mesh: MapMesh,
     camera: Camera,
@@ -171,7 +177,7 @@ struct Viewer {
 }
 
 impl eframe::App for Viewer {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, window: &mut eframe::Frame) {
         let now = Instant::now();
         let frame = now.duration_since(self.last).as_secs_f32();
         let seconds = frame.min(0.1);
@@ -188,6 +194,11 @@ impl eframe::App for Viewer {
             self.steer(ui);
         }
         let frametime = self.advance(f64::from(seconds));
+        // `Host_Changelevel_f`: the next level, with what the player carries.
+        if let Some((map, carried)) = self.game.level_change() {
+            self.change_level(window, &map, carried);
+            return;
+        }
         self.serve_bridge(ui);
         // The client reads what the server wrote and advances its clock by the server's
         // frame, as the host does when both run in one process.
@@ -302,6 +313,53 @@ impl eframe::App for Viewer {
 }
 
 impl Viewer {
+    /// Loads `map` in place of this one, the player carrying `carried`, and gives the
+    /// renderer its world (PHYS-10.4); a map that does not load leaves this one running.
+    fn change_level(&mut self, window: &eframe::Frame, map: &str, carried: SpawnParms) {
+        let loaded = match load(&self.args, map, Some(carried)) {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                tracing::warn!(%error, map, "the next level did not load");
+                return;
+            }
+        };
+        let Loaded {
+            map,
+            mesh,
+            play,
+            camera,
+            game,
+            audio,
+            client,
+            bsp,
+            describer,
+            rand,
+        } = loaded;
+        if let Some(state) = window.wgpu_render_state() {
+            let renderer = MapRenderer::new(
+                &state.device,
+                &state.queue,
+                (state.target_format, wgpu::TextureFormat::Depth32Float),
+                &mesh,
+                &play.assets(),
+            );
+            state.renderer.write().callback_resources.insert(renderer);
+        }
+        self.triangles = mesh.indices.len().checked_div(3).unwrap_or(0);
+        self.map = map;
+        self.mesh = mesh;
+        self.play = play;
+        self.camera = camera;
+        self.game = game;
+        self.audio = audio;
+        self.client = client;
+        self.bsp = bsp;
+        self.describer = describer;
+        self.rand = rand;
+        self.last_set = [f32::NAN; 2];
+        self.behind = 0.0;
+    }
+
     /// `Host_FilterTime`: when 1/72 of a second has passed since the last frame, one server
     /// frame of the time that passed, at most 0.1; the frame's length, 0 when none ran.
     fn advance(&mut self, seconds: f64) -> f64 {
