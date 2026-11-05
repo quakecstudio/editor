@@ -100,6 +100,34 @@ fn socket_path() -> PathBuf {
     }
 }
 
+/// BRIDGE-2.3: the commands a headless host offers, and those it leaves out.
+fn capabilities(client: &Client) -> Result<(), String> {
+    for command in [
+        "pause",
+        "resume",
+        "step",
+        "field/set",
+        "entity/spawn",
+        "pick",
+        "breakpoint/set",
+        "breakpoint/clear",
+        "evaluate",
+        "console",
+    ] {
+        expect(
+            client.offers(command),
+            &format!("the host offers {command}"),
+        )?;
+    }
+    for command in ["screenshot", "reload"] {
+        expect(
+            !client.offers(command),
+            &format!("a headless host leaves out {command}"),
+        )?;
+    }
+    Ok(())
+}
+
 /// Every step, each named when it passed; the first that fails stops the suite.
 fn suite(client: &mut Client, map: &str) -> Result<Vec<String>, String> {
     let mut steps = Vec::new();
@@ -112,25 +140,7 @@ fn suite(client: &mut Client, map: &str) -> Result<Vec<String>, String> {
     )?;
     steps.push(format!("map/loaded {map}"));
 
-    for command in [
-        "pause",
-        "resume",
-        "step",
-        "field/set",
-        "entity/spawn",
-        "pick",
-    ] {
-        expect(
-            client.offers(command),
-            &format!("the host offers {command}"),
-        )?;
-    }
-    for command in ["screenshot", "reload", "breakpoint/set"] {
-        expect(
-            !client.offers(command),
-            &format!("a headless host leaves out {command}"),
-        )?;
-    }
+    capabilities(client)?;
     steps.push("capabilities".to_owned());
 
     let refused = client.screenshot(None);
@@ -154,6 +164,14 @@ fn suite(client: &mut Client, map: &str) -> Result<Vec<String>, String> {
         "console/line names the command",
     )?;
     steps.push("console".to_owned());
+
+    // BRIDGE-4.5: a breakpoint at a line no statement is on is refused.
+    let missing = client.request("breakpoint/set", json!({ "file": "nosuch.qc", "line": 1 }));
+    expect(
+        matches!(&missing, Err(qs_engine::ClientError::Rpc { code, .. }) if code.code() == -32007),
+        "a breakpoint at no statement is refused",
+    )?;
+    steps.push("breakpoint/set".to_owned());
 
     client.pause().map_err(|e| format!("pause: {e}"))?;
     let before = time(
