@@ -29,12 +29,16 @@ impl Game {
             .to_owned();
         let mut bytes = self.read_file(&path)?;
         // RRE-4.1: the rerelease's named builtins, as the progs was patched when loaded.
-        let _table = patch_builtins(&mut bytes);
+        let table = patch_builtins(&mut bytes);
         let new = Progs::read(&bytes)
             .map_err(|e| RpcError::new(ErrorCode::InvalidParams, format!("{path}: {e}")))?;
         let old_bytes = core::mem::take(&mut self.progs);
         let migration = match Progs::read(&old_bytes) {
-            Ok(old) => self.world.reload(&old, &new),
+            Ok(old) => {
+                // The changes the old progs made are reported before its values move.
+                self.report_changes(&old);
+                self.world.reload(&old, &new, table)
+            }
             Err(error) => Err(qs_sim::WorldError::Progs(error.to_string())),
         };
         let migration = match migration {
@@ -53,7 +57,7 @@ impl Game {
             .map(|lno| lno.lines)
             .unwrap_or_default();
         self.lines = lines;
-        self.rebind_breakpoints(&new);
+        let cleared = self.rebind_breakpoints(&new);
         self.snapshot = None;
         self.progs = bytes;
         self.progs_path = path.clone();
@@ -61,7 +65,7 @@ impl Game {
         if self.state == State::Paused {
             self.state_changed(Some(Reason::Reload), None);
         }
-        Ok(result_json(&migration, self.world.time()))
+        Ok(result_json(&migration, &cleared, self.world.time()))
     }
 
     /// The bytes of `path`: a host path when it is absolute, else a name on the game's search
@@ -78,15 +82,19 @@ impl Game {
     }
 
     /// Each breakpoint resolved again at its file and line in `progs`; one that no longer
-    /// resolves is cleared. The world's new debugger, which [`World::reload`] dropped, holds
-    /// those kept.
-    fn rebind_breakpoints(&mut self, progs: &Progs<'_>) {
+    /// resolves is cleared, and its id returned. The world's new debugger, which
+    /// `World::reload` dropped, holds those kept.
+    fn rebind_breakpoints(&mut self, progs: &Progs<'_>) -> Vec<u64> {
         let lines = self.lines.clone();
         let mut kept = Vec::new();
+        let mut cleared = Vec::new();
         for mut breakpoint in core::mem::take(&mut self.breakpoints) {
-            if let Some(statement) = resolve(progs, &lines, &breakpoint.file, breakpoint.line) {
-                breakpoint.statement = statement;
-                kept.push(breakpoint);
+            match resolve(progs, &lines, &breakpoint.file, breakpoint.line) {
+                Some(statement) => {
+                    breakpoint.statement = statement;
+                    kept.push(breakpoint);
+                }
+                None => cleared.push(breakpoint.id),
             }
         }
         if !kept.is_empty() {
@@ -96,6 +104,7 @@ impl Game {
             }
         }
         self.breakpoints = kept;
+        cleared
     }
 
     /// `progs/loaded` for the progs now running (BRIDGE-3.1).
@@ -126,9 +135,9 @@ fn lno_path(path: &str) -> String {
         .into_owned()
 }
 
-/// `reload`'s result (BRIDGE-4.1): how many values migrated, what was lost and why, and what
-/// only the new progs has.
-fn result_json(migration: &Migration, time: f64) -> Value {
+/// `reload`'s result (BRIDGE-4.8): how many values migrated, what was lost and why, what only
+/// the new progs has, and the breakpoints `cleared`.
+fn result_json(migration: &Migration, cleared: &[u64], time: f64) -> Value {
     let list = |changes: &[Change]| -> Vec<Value> {
         changes
             .iter()
@@ -139,6 +148,7 @@ fn result_json(migration: &Migration, time: f64) -> Value {
         "migrated": migration.migrated,
         "lost": list(&migration.lost),
         "added": list(&migration.added),
+        "breakpoints_cleared": cleared,
         "time": time,
     })
 }

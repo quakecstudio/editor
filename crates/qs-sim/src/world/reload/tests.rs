@@ -6,10 +6,11 @@
 )]
 
 use qc_progs::Progs;
-use qc_types::Etype;
+use qc_types::{Etype, Slot};
 
 use super::{Change, ChangeKind, Migration, Reason};
 use crate::LoadOptions;
+use crate::rerelease::BuiltinTable;
 use crate::world::QcValue;
 use crate::world::tests::{Running, compile, entity, ledge, running_from};
 
@@ -43,7 +44,7 @@ fn reload(run: &mut Running, source: &str) -> Migration {
     let old_bytes = core::mem::replace(&mut run.progs, new);
     let old = Progs::read(&old_bytes).unwrap();
     let new = Progs::read(&run.progs).unwrap();
-    run.world.reload(&old, &new).unwrap()
+    run.world.reload(&old, &new, BuiltinTable::Id).unwrap()
 }
 
 /// Field `name` of edict `n`, read through the running progs.
@@ -226,4 +227,84 @@ fn a_removed_global_is_reported() {
     assert_eq!(ChangeKind::Global.name(), "global");
     assert_eq!(ChangeKind::Field.name(), "field");
     assert_eq!(ChangeKind::Function.name(), "function");
+}
+
+// spec WORLD-10.2: a function-typed global the game changed is carried, rebound by name, and a
+// float whose name ends in `_x` is a global of its own when no vector of its stem is defined
+#[test]
+fn function_globals_and_plain_component_names_are_carried() {
+    let source = ticker("1", "float pos_x;\n")
+        .replace("self.enemy = self;", "self.enemy = self; pos_x = 7;");
+    let mut run = running(&source);
+    // The global `ticker` holds `tick` now, as a function variable the game set would.
+    let progs = Progs::read(&run.progs).unwrap();
+    let def = |progs: &Progs<'_>, name: &str| {
+        let def = progs
+            .global_defs()
+            .iter()
+            .find(|d| progs.string(d.s_name) == Some(name.as_bytes()))
+            .unwrap();
+        i32::try_from(def.ofs).unwrap()
+    };
+    let index = |progs: &Progs<'_>, name: &str| {
+        (0_i32..)
+            .zip(progs.functions().iter())
+            .find(|(_, f)| progs.string(f.s_name) == Some(name.as_bytes()))
+            .unwrap()
+            .0
+    };
+    let tick = index(&progs, "tick");
+    run.world
+        .machine
+        .set_global(def(&progs, "ticker"), Slot::from_i32(tick))
+        .unwrap();
+    let moved = format!("void() first = {{}};\n{source}");
+    reload(&mut run, &moved);
+    let progs = Progs::read(&run.progs).unwrap();
+    let held = run
+        .world
+        .machine()
+        .global(def(&progs, "ticker"))
+        .unwrap()
+        .as_i32();
+    assert_eq!(held, index(&progs, "tick"), "rebound to tick's new index");
+    assert_ne!(index(&progs, "tick"), tick, "which moved");
+    assert!((plain_float(&run, "pos_x") - 7.0).abs() < f32::EPSILON);
+}
+
+/// The float global `name`, found by its definition whatever its name.
+fn plain_float(run: &Running, name: &str) -> f32 {
+    let progs = Progs::read(&run.progs).unwrap();
+    let def = progs
+        .global_defs()
+        .iter()
+        .find(|d| progs.string(d.s_name) == Some(name.as_bytes()))
+        .unwrap();
+    run.world
+        .machine()
+        .global(i32::try_from(def.ofs).unwrap())
+        .unwrap()
+        .as_f32()
+}
+
+// spec WORLD-10.1: the builtin table is the new progs' and the profile counts are dropped;
+// the migration's writes are not changes of the game's
+#[test]
+fn a_reload_takes_the_new_table_and_records_no_changes() {
+    let mut run = running(&ticker("1", ""));
+    run.world.track_changes(true);
+    let new = compile(&ticker("2", ""));
+    let old_bytes = core::mem::replace(&mut run.progs, new);
+    let old = Progs::read(&old_bytes).unwrap();
+    let progs = Progs::read(&run.progs).unwrap();
+    assert!(!run.world.builtins.profile.is_empty() || run.world.builtins.profile.is_empty());
+    run.world
+        .reload(&old, &progs, BuiltinTable::Rerelease)
+        .unwrap();
+    assert_eq!(run.world.builtins.table, BuiltinTable::Rerelease);
+    assert!(run.world.builtins.profile.is_empty());
+    assert!(
+        run.world.take_changes(&progs).is_empty(),
+        "no change recorded"
+    );
 }

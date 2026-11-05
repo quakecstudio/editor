@@ -1292,3 +1292,30 @@ fn a_reload_keeps_breakpoints_at_their_lines() {
     assert_eq!(hits.len(), 1, "it stops at the same line of the new progs");
     assert_eq!(hits[0]["location"]["line"], line);
 }
+
+// spec BRIDGE-4.8: a breakpoint whose line has no statement in the reloaded progs is cleared,
+// and the result lists its id; the reload's own writes send no edict/changed
+#[test]
+fn a_reload_lists_the_breakpoints_it_cleared() {
+    let (mut game, mut session) = game_with(DOG);
+    let line = source_line("    self.health = 50;");
+    let set = call(
+        &mut game,
+        &mut session,
+        "breakpoint/set",
+        &json!({ "file": "t.qc", "line": line }),
+    )
+    .unwrap();
+    serve(&mut game, &SOURCE.replace("    self.health = 50;", ""));
+    game.take_events();
+    let result = call(&mut game, &mut session, "reload", &json!({})).unwrap();
+    assert_eq!(result["breakpoints_cleared"], json!([set["id"]]));
+    assert!(game.breakpoints.is_empty());
+    assert_eq!(methods(&events(&mut game)), ["progs/loaded"]);
+    game.frame(0.1);
+    let changed = events_named(&mut game, "edict/changed");
+    assert!(
+        changed.len() <= 2,
+        "only what the frame changed: {changed:?}"
+    );
+}

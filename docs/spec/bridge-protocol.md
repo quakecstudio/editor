@@ -175,8 +175,10 @@ A command is a request from the client, answered with a result on success or an 
   beside it with the extension `lno`; a name that is not there is answered with `-32602`
   (invalid params) and nothing changes. The progs is loaded over the map as WORLD-10 says;
   each breakpoint is resolved again at the file and line it was set at, and one that no longer
-  resolves is cleared. The result is WORLD-10.5's report: `migrated`, `lost` and `added`, each
-  change its `name`, `kind` and `reason`, and the VM time.
+  resolves is cleared, its id listed in the result's `breakpoints_cleared`. The changes the old
+  progs made are reported first; the migration's own writes are not changes. The result is
+  WORLD-10.5's report: `migrated`, `lost` and `added`, each change its `name`, `kind` and
+  `reason`, and the VM time.
 
 ## BRIDGE-5 Values
 
