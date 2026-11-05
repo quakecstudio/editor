@@ -424,7 +424,9 @@ impl<L: Loader> AnalysisHost<L> {
     }
 
     /// Sets the text of the open file `path`, which replaces its text on disk. Editing a
-    /// project file or a `progs.src` reads the project again.
+    /// project file or a `progs.src`, or a line of a QuakeC file that may be a directive
+    /// (PRJ-5.1), such as an `#include`, reads the project again, so the module's file graph
+    /// follows the text being typed.
     ///
     /// # Errors
     ///
@@ -432,8 +434,12 @@ impl<L: Loader> AnalysisHost<L> {
     /// open.
     pub fn set_overlay(&mut self, path: &Path, text: Vec<u8>) -> Result<(), ProjectError> {
         let path = normalize(path);
-        self.overlays.insert(path.clone(), text.clone());
+        let before = self.overlays.insert(path.clone(), text.clone());
         if is_project_file(&path) {
+            return self.reload();
+        }
+        let before = before.or_else(|| self.loader.load(&path).ok());
+        if before.is_some_and(|before| directive_lines(&before) != directive_lines(&text)) {
             return self.reload();
         }
         let mut found = false;
@@ -467,6 +473,13 @@ impl<L: Loader> AnalysisHost<L> {
             return self.reload();
         }
         let text = self.loader.load(&path).unwrap_or_default();
+        let open: Option<Vec<u8>> = self
+            .modules
+            .iter()
+            .find_map(|m| m.file_id(&path).map(|file| m.db.file_text(file).to_vec()));
+        if open.is_some_and(|open| directive_lines(&open) != directive_lines(&text)) {
+            return self.reload();
+        }
         for module in &mut self.modules {
             if let Some(file) = module.file_id(&path) {
                 module.set_text(file, text.clone());
@@ -562,6 +575,16 @@ impl<L: Loader> AnalysisHost<L> {
 
 /// Whether editing `path` changes the project's modules or their files: a `quakec.toml` or a
 /// `.src` file (PRJ-1.1, PRJ-4).
+/// The lines of `text` that may be directives: each whose first byte that is not white space is
+/// `#` (PRJ-5.1). A change to them may change a module's file graph: an `#include`, an
+/// `#includelist` or the `#ifdef` and `#define` lines that choose between them.
+fn directive_lines(text: &[u8]) -> Vec<&[u8]> {
+    text.split(|&b| b == b'\n')
+        .filter(|line| line.trim_ascii_start().first() == Some(&b'#'))
+        .map(<[u8]>::trim_ascii_end)
+        .collect()
+}
+
 fn is_project_file(path: &Path) -> bool {
     path.file_name().is_some_and(|n| n == "quakec.toml")
         || path

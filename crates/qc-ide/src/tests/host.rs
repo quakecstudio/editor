@@ -61,6 +61,40 @@ fn editing_the_progs_src_reads_the_project_again() {
     assert!(!host.files().contains(&path("b.qc")));
 }
 
+// spec PRJ-5.1: typing an `#include` line in an open file reads the module's files again, so
+// a name the included file declares resolves, and deleting the line makes it unknown again,
+// with no save between
+#[test]
+fn typing_an_include_reads_the_modules_files_again() {
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", "void() f = { x = 1; };\n")],
+        extra: &[("b.qh", "float x;\n")],
+        ..ProjectSpec::default()
+    });
+    let plain = "void() f = { x = 1; };\n";
+    let at = |text: &str| nth(text, "x", 0);
+    assert_eq!(host.definition(&path("a.qc"), at(plain)), None);
+    let included = "#include \"b.qh\"\nvoid() f = { x = 1; };\n";
+    host.set_overlay(&path("a.qc"), included.as_bytes().to_vec())
+        .unwrap();
+    assert!(host.files().contains(&path("b.qh")));
+    assert!(host.definition(&path("a.qc"), at(included)).is_some());
+    // An edit that leaves the directive lines alone keeps the graph.
+    let renamed = "#include \"b.qh\"\nvoid() g = { x = 1; };\n";
+    host.set_overlay(&path("a.qc"), renamed.as_bytes().to_vec())
+        .unwrap();
+    assert!(host.definition(&path("a.qc"), at(renamed)).is_some());
+    host.set_overlay(&path("a.qc"), plain.as_bytes().to_vec())
+        .unwrap();
+    assert!(!host.files().contains(&path("b.qh")));
+    assert_eq!(host.definition(&path("a.qc"), at(plain)), None);
+    // Closing the file goes back to its text on disk, and the graph with it.
+    host.set_overlay(&path("a.qc"), included.as_bytes().to_vec())
+        .unwrap();
+    host.remove_overlay(&path("a.qc")).unwrap();
+    assert!(!host.files().contains(&path("b.qh")));
+}
+
 // spec PRJ-1.2: a directory with no project is no error, and a bad project file is
 #[test]
 fn opening_a_directory() {
