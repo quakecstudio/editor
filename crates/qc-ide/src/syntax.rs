@@ -238,10 +238,18 @@ pub(crate) fn enclosing_function(parse: &Parse, offset: usize) -> Option<SyntaxT
         .and_then(|d| d.name())
 }
 
+/// A member access just before the cursor: its operator and what it is made on.
+pub(crate) struct MemberAccess {
+    /// `.` or the FTEQCC `->`.
+    pub(crate) operator: SyntaxKind,
+    /// The base of the field expression the operator is in, when the tree has one.
+    pub(crate) base: Option<ast::Expr>,
+}
+
 /// The member access, `.` or `->`, just before the name at `offset` or before `offset`
-/// itself, and the span of what the access is made on, the base of the field expression it is
-/// in; `None` when the cursor does not follow an access.
-pub(crate) fn member_access(parse: &Parse, offset: usize) -> Option<Option<Span>> {
+/// itself, with the base of the field expression the operator belongs to; `None` when the
+/// cursor does not follow an access.
+pub(crate) fn member_access(parse: &Parse, offset: usize) -> Option<MemberAccess> {
     let mut previous: Option<SyntaxToken> = None;
     for token in parse.syntax().tokens() {
         let span = token.span();
@@ -257,9 +265,9 @@ pub(crate) fn member_access(parse: &Parse, offset: usize) -> Option<Option<Span>
         }
     }
     let access = previous.filter(|t| matches!(t.kind(), SyntaxKind::Dot | SyntaxKind::Arrow))?;
-    let base = enclosing(&access)
-        .find_map(ast::FieldExpr::cast)
-        .and_then(|field| field.base())
-        .map(|base| base.syntax().span());
-    Some(base)
+    let base = ast::FieldExpr::cast(access.parent()).and_then(|field| field.base());
+    Some(MemberAccess {
+        operator: access.kind(),
+        base,
+    })
 }

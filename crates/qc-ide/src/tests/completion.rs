@@ -95,14 +95,14 @@ fn fteqcc_labels(text: &str, needle: &str, n: usize) -> Vec<String> {
 }
 
 // spec FTE-9.1: after `.` on a vector its members are its components, `x`, `y` and `z`, in an
-// FTEQCC module; a vanilla module has no members of a vector and offers the fields
+// FTEQCC module; in a vanilla module a vector has no members, so nothing is offered
 #[test]
 fn completion_after_a_vector_offers_its_components() {
     let text = "vector v;\n.float hp;\nvoid() f = { v.x = 1; };\n";
     assert_eq!(fteqcc_labels(text, "x = 1", 0), ["x", "y", "z"]);
     let local = "void() f = { local vector dir; dir.y = 2; };\n";
     assert_eq!(fteqcc_labels(local, "y = 2", 0), ["x", "y", "z"]);
-    assert_eq!(labels(text, "x = 1", 0), ["hp"]);
+    assert!(labels(text, "x = 1", 0).is_empty());
     // While the member is still being typed: `v.` and nothing after it.
     let typing = "vector v;\nvoid() f = { v.";
     let mut host = super::host(&super::ProjectSpec {
@@ -153,4 +153,62 @@ void() user = { self.health = 1; };
     let entity = fteqcc_labels(text, "health = 1", 0);
     assert!(entity.contains(&"health".to_owned()), "{entity:?}");
     assert!(!entity.contains(&"m_flTime".to_owned()), "{entity:?}");
+}
+
+// spec FTEF-17.3: the base is read from the file as written, so comments, indentation and a
+// macro before the cursor do not move it; a chain reads each member's type, a typedef stands
+// for its type, and a vector member's components the compiler makes are not offered
+#[test]
+fn completion_reads_the_base_through_real_code() {
+    let text = "\
+// A header comment.
+#define TWO 2
+typedef vector vec3_t;
+class Thing
+{
+\tvector m_vecDir;
+\tfloat m_flTime;
+\tvirtual void Spawned(void);
+};
+vec3_t dir;
+void Thing::Spawned(void)
+{
+    /* indented, after a macro */ local float n = TWO;
+    this.m_flTime = n;
+    this.m_vecDir.z = 1;
+    dir.y = 2;
+};
+";
+    let members = fteqcc_labels(text, "m_flTime = n", 0);
+    assert!(members.contains(&"m_vecDir".to_owned()), "{members:?}");
+    assert!(
+        !members.iter().any(|m| m.starts_with("m_vecDir_")),
+        "no generated components: {members:?}"
+    );
+    assert_eq!(fteqcc_labels(text, "z = 1", 0), ["x", "y", "z"], "a chain");
+    assert_eq!(
+        fteqcc_labels(text, "y = 2", 0),
+        ["x", "y", "z"],
+        "a typedef"
+    );
+    let paren = "vector v;\nvoid() f = { (v).x = 1; };\n";
+    assert_eq!(
+        fteqcc_labels(paren, "x = 1", 0),
+        ["x", "y", "z"],
+        "in parentheses"
+    );
+}
+
+// spec FTEF-6.13: a struct's members are offered after `.`, and nothing else; a float has none
+#[test]
+fn completion_after_a_struct_offers_its_members() {
+    let text = "struct S { float a; vector b; };\nS s;\n.float hp;\nfloat f;\n\
+                void() g = { s.a = 1; f.x = 2; };\n";
+    assert_eq!(fteqcc_labels(text, "a = 1", 0), ["a", "b"]);
+    assert!(fteqcc_labels(text, "x = 2", 0).is_empty());
+    // FTEF-4.1: after `->` a pointer's target; a vector takes `.`, not `->`.
+    let pointer = "struct S { float a; vector b; };\nS *p;\nvector v;\n\
+                   void() g = { p->a = 1; v->x = 2; };\n";
+    assert_eq!(fteqcc_labels(pointer, "a = 1", 0), ["a", "b"]);
+    assert!(fteqcc_labels(pointer, "x = 2", 0).is_empty());
 }
