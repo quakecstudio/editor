@@ -2580,7 +2580,7 @@ fn a_level_change_carries_the_spawn_parms_and_serverflags() {
 }
 
 // spec PHYS-10.4: Host_Changelevel_f takes exactly one argument; commands split at a line
-// end or a semicolon outside quotes, and a quoted word is one argument
+// end or a semicolon outside quotes and are matched without case; words are COM_Parse's
 #[test]
 fn only_a_changelevel_with_one_argument_names_a_level() {
     let mut run = player(&ledge(), "", "", "");
@@ -2610,8 +2610,39 @@ fn only_a_changelevel_with_one_argument_names_a_level() {
         None,
         "inside quotes"
     );
+    assert_eq!(
+        take(b"CHANGELEVEL e1m3\n").as_deref(),
+        Some("e1m3"),
+        "Q_strcasecmp"
+    );
+    assert_eq!(
+        take(b"changelevel start:2\n"),
+        None,
+        "`:` is a word of its own"
+    );
+    assert_eq!(
+        take(b"changelevel e1m4 // a comment\n").as_deref(),
+        Some("e1m4")
+    );
     assert!(
         run.world.builtins.mock.engine().command_buffer.is_empty(),
         "the buffer is emptied"
     );
+}
+
+// spec PHYS-10.4: a client not yet active keeps its parms through SV_SaveSpawnparms
+#[test]
+fn an_inactive_client_keeps_its_parms_across_a_level_change() {
+    let more = "void() SetChangeParms = { parm1 = 99; };\n";
+    let progs_bytes = player_progs("", "", more);
+    let mut run = running_from(
+        &ledge(),
+        progs_bytes,
+        "",
+        Vec::new(),
+        LoadOptions::default(),
+    );
+    let progs = Progs::read(&run.progs).unwrap();
+    let kept = run.world.save_spawn_parms(&progs).unwrap();
+    assert_eq!(kept.parms(), [0.0; 16], "SetChangeParms did not run");
 }

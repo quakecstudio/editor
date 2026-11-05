@@ -32,7 +32,9 @@ use crate::physics::Sound;
 use crate::rerelease::BuiltinTable;
 use qc_builtins::localization::Localization;
 
-use crate::spawn::{self, FieldDef, LoadError, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
+use crate::spawn::{
+    self, FieldDef, LoadError, Parser, SPAWNFLAGS_SLOT, SpawnError, SpawnHost, Token,
+};
 
 /// `MAP_START_TIME` (EDICT-8.1): the server's clock while the map's entities spawn.
 const MAP_START_TIME: f64 = 1.0;
@@ -356,17 +358,26 @@ impl World {
     /// only with exactly one argument (PHYS-10.4). The buffer is emptied.
     pub fn take_changelevel(&mut self) -> Option<String> {
         let buffer = core::mem::take(&mut self.builtins.mock.engine_mut().command_buffer);
-        commands(&String::from_utf8_lossy(&buffer))
-            .into_iter()
-            .find_map(|command| match tokens(&command).as_slice() {
-                [name, map] if name == "changelevel" => Some(map.clone()),
+        commands(&buffer).into_iter().find_map(|command| {
+            // `Cmd_TokenizeString`'s words, each as `COM_Parse` reads it.
+            let mut parser = Parser::new(&command);
+            let mut words = Vec::new();
+            while let Token::Word(word) = parser.next_token() {
+                words.push(word);
+            }
+            // `Cmd_ExecuteString` matches the name with `Q_strcasecmp`.
+            match words.as_slice() {
+                [name, map] if name.eq_ignore_ascii_case(b"changelevel") => {
+                    Some(String::from_utf8_lossy(map).into_owned())
+                }
                 _ => None,
-            })
+            }
+        })
     }
 
     /// `SV_SaveSpawnparms`: `serverflags`, then, with `self` the client, `SetChangeParms`
-    /// and the client's `parm1` to `parm16`, for the next level's [`LoadOptions::carried`]
-    /// (PHYS-10.4).
+    /// and the client's `parm1` to `parm16`, for the next level's [`LoadOptions::carried`];
+    /// a client not yet active keeps the parms it has (PHYS-10.4).
     ///
     /// # Errors
     ///
@@ -374,6 +385,13 @@ impl World {
     pub fn save_spawn_parms(&mut self, progs: &Progs<'_>) -> Result<SpawnParms, WorldError> {
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         let serverflags = call.global("serverflags");
+        // `if (!host_client->active) continue;`
+        if self.player.is_none() {
+            return Ok(SpawnParms {
+                serverflags,
+                parms: self.spawn_parms,
+            });
+        }
         let value = call.value_of(CLIENT);
         call.set_global("self", Slot::from_i32(value));
         let change = call.global("SetChangeParms").as_i32();
@@ -612,15 +630,15 @@ impl SpawnHost for Spawner<'_, '_> {
 
 /// `Cbuf_Execute`'s commands in `text`: split at a line end, or at a `;` outside quotes
 /// ("don't break if inside a quoted string") (PHYS-10.4).
-fn commands(text: &str) -> Vec<String> {
+fn commands(text: &[u8]) -> Vec<Vec<u8>> {
     let mut out = Vec::new();
-    let mut line = String::new();
+    let mut line = Vec::new();
     let mut quoted = false;
-    for c in text.chars() {
-        if c == '"' {
+    for &c in text {
+        if c == b'"' {
             quoted = !quoted;
         }
-        if c == '\n' || (c == ';' && !quoted) {
+        if c == b'\n' || (c == b';' && !quoted) {
             out.push(core::mem::take(&mut line));
             quoted = false;
         } else {
@@ -628,32 +646,6 @@ fn commands(text: &str) -> Vec<String> {
         }
     }
     out.push(line);
-    out
-}
-
-/// `Cmd_TokenizeString`'s words of `command`, as `COM_Parse` reads them: a quoted run is one
-/// word without its quotes, anything else ends at white space (PHYS-10.4).
-fn tokens(command: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut chars = command.chars().peekable();
-    while let Some(&c) = chars.peek() {
-        if c.is_whitespace() {
-            chars.next();
-        } else if c == '"' {
-            chars.next();
-            out.push(chars.by_ref().take_while(|&c| c != '"').collect());
-        } else {
-            let mut word = String::new();
-            while let Some(&c) = chars.peek() {
-                if c.is_whitespace() {
-                    break;
-                }
-                word.push(c);
-                chars.next();
-            }
-            out.push(word);
-        }
-    }
     out
 }
 

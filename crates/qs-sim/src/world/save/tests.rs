@@ -9,8 +9,11 @@
 
 use qc_progs::Progs;
 
+use qc_types::Slot;
+
 use super::{SaveError, SaveGame, next_block};
 use crate::LoadOptions;
+use crate::world::field_slot;
 use crate::world::tests::{Running, ledge, player_from, player_progs, running_from};
 
 /// A progs whose player keeps a counter across saves, with a saved global and a thing spawned.
@@ -165,7 +168,8 @@ fn the_header_is_read_as_fscanf_reads_it() {
 }
 
 // spec PHYS-10.5: each block is read up to its first `}`, even one inside a string, or to
-// the end or a zero byte; a block of 32767 bytes or more overflows
+// a zero byte, after which the next block is read, or to the end; a block of 32767 bytes or
+// more overflows
 #[test]
 fn blocks_end_at_their_first_closing_brace() {
     let (block, rest) = next_block(b"{ \"a\" \"x}y\" }\n{ }").unwrap();
@@ -173,7 +177,10 @@ fn blocks_end_at_their_first_closing_brace() {
     assert_eq!(rest, b"y\" }\n{ }");
     let (block, rest) = next_block(b"{ \"a\" \0 \"b\" }").unwrap();
     assert_eq!(block, b"{ \"a\" ");
-    assert!(rest.is_empty(), "a zero byte ends the read");
+    assert_eq!(
+        rest, b" \"b\" }",
+        "a zero byte ends the block and is passed over"
+    );
     let long = vec![b' '; 32767];
     assert_eq!(next_block(&long), Err(SaveError::BlockOverflow));
     assert!(next_block(&long[..32766]).is_ok());
@@ -213,4 +220,25 @@ fn a_broken_block_is_refused() {
         with(format!("{{\n}}\n{many}").as_bytes()),
         Err(SaveError::TooManyEdicts)
     );
+}
+
+// spec PHYS-10.5: "Not playing a local game." before the player has entered
+#[test]
+fn a_world_with_no_player_cannot_be_saved() {
+    let run = running_from(&ledge(), progs(), "", Vec::new(), LoadOptions::default());
+    let progs = Progs::read(&run.progs).unwrap();
+    assert_eq!(run.world.save_game(&progs), Err(SaveError::NotPlaying));
+}
+
+// spec PHYS-10.5: the comment keeps the level name's bytes, a high-bit one included
+#[test]
+fn the_comment_keeps_the_level_names_bytes() {
+    let mut run = running();
+    let message = run.world.make_string(b"Gold \xe9".to_vec());
+    run.world
+        .set_field(0, field_slot("message"), Slot::from_i32(message));
+    let text = save(&run);
+    let comment = text.split(|&b| b == b'\n').nth(1).unwrap();
+    assert_eq!(comment.len(), 39);
+    assert_eq!(&comment[..7], b"Gold_\xe9_");
 }

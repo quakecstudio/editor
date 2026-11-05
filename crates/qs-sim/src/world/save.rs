@@ -11,7 +11,7 @@
 
 use qc_edict::EdictNumber;
 use qc_edict::system::global_by_name;
-use qc_progs::Progs;
+use qc_progs::{PROGS_DEF_SAVEGLOBAL, Progs};
 use qc_types::{DefType, EntityRef, Etype, Slot};
 
 use super::{CLIENT, Spawner, World, field_slot};
@@ -53,6 +53,8 @@ pub struct SaveGame {
 /// Why a saved game could not be written or read (PHYS-10.5).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SaveError {
+    /// "Not playing a local game.": no player has entered the game.
+    NotPlaying,
     /// "Can't savegame with a dead player".
     DeadPlayer,
     /// "Savegame is version <n>, not 5".
@@ -80,6 +82,7 @@ pub enum SaveError {
 impl core::fmt::Display for SaveError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            Self::NotPlaying => f.write_str("Not playing a local game."),
             Self::DeadPlayer => f.write_str("Can't savegame with a dead player"),
             Self::Version(version) => {
                 write!(f, "Savegame is version {version}, not {SAVEGAME_VERSION}")
@@ -152,27 +155,32 @@ impl World {
     /// [`SaveError::DeadPlayer`] while the player's health is 0 or less, and
     /// [`SaveError::BadValue`] for a value that names nothing.
     pub fn save_game(&self, progs: &Progs<'_>) -> Result<Vec<u8>, SaveError> {
-        if self.player.is_some() && self.float_field(CLIENT, "health") <= 0.0 {
+        if self.player.is_none() {
+            return Err(SaveError::NotPlaying);
+        }
+        if self.float_field(CLIENT, "health") <= 0.0 {
             return Err(SaveError::DeadPlayer);
         }
-        let mut out = String::new();
-        let line = |out: &mut String, text: &str| {
-            out.push_str(text);
-            out.push('\n');
+        let mut bytes = Vec::new();
+        let line = |out: &mut Vec<u8>, text: &[u8]| {
+            out.extend_from_slice(text);
+            out.push(b'\n');
         };
-        line(&mut out, &SAVEGAME_VERSION.to_string());
-        line(&mut out, &self.savegame_comment(progs));
+        line(&mut bytes, SAVEGAME_VERSION.to_string().as_bytes());
+        line(&mut bytes, &self.savegame_comment(progs));
         for parm in self.spawn_parms {
-            line(&mut out, &c_float(parm.as_f32()));
+            line(&mut bytes, c_float(parm.as_f32()).as_bytes());
         }
         // `current_skill`: the world plays at skill 1.
-        line(&mut out, "1");
-        line(&mut out, &self.map);
-        line(&mut out, &c_double(self.time()));
+        line(&mut bytes, b"1");
+        line(&mut bytes, self.map.as_bytes());
+        line(&mut bytes, c_double(self.time()).as_bytes());
         for style in 0..MAX_LIGHTSTYLES {
-            line(&mut out, self.light_style(style).unwrap_or("m"));
+            line(
+                &mut bytes,
+                self.light_style(style).unwrap_or("m").as_bytes(),
+            );
         }
-        let mut bytes = out.into_bytes();
         self.write_globals(progs, &mut bytes)?;
         for n in 0..self.machine.edicts().num_edicts() {
             self.write_edict(progs, n, &mut bytes)?;
@@ -280,7 +288,7 @@ impl World {
 
     /// `Host_SavegameComment`: the level's name, the world's `message`, from the start and
     /// `kills:%3i/%3i` from 22, in 39 characters, every space an `_`.
-    fn savegame_comment(&self, progs: &Progs<'_>) -> String {
+    fn savegame_comment(&self, progs: &Progs<'_>) -> Vec<u8> {
         let mut text = vec![b' '; SAVEGAME_COMMENT_LENGTH];
         let message = self
             .string_value(progs, self.field(0, "message"))
@@ -296,11 +304,9 @@ impl World {
         for (at, byte) in text.iter_mut().skip(SAVEGAME_KILLS_AT).zip(kills.bytes()) {
             *at = byte;
         }
-        let text: Vec<u8> = text
-            .into_iter()
+        text.into_iter()
             .map(|b| if b == b' ' { b'_' } else { b })
-            .collect();
-        String::from_utf8_lossy(&text).into_owned()
+            .collect()
     }
 
     /// `ED_WriteGlobals`: `{`, each global marked `DEF_SAVEGLOBAL` of type string, float or
@@ -311,10 +317,11 @@ impl World {
             if !def.is_save_global() {
                 continue;
             }
-            let etype = known(def.def_type());
-            if !matches!(etype, Etype::String | Etype::Float | Etype::Entity) {
-                continue;
-            }
+            // Only a type that is ev_string, ev_float or ev_entity is written.
+            let etype = match def.def_type() {
+                DefType::Known(etype @ (Etype::String | Etype::Float | Etype::Entity)) => etype,
+                DefType::Known(_) | DefType::Unknown(_) => continue,
+            };
             let name = progs.string(def.s_name).unwrap_or_default();
             let slot = i32::try_from(def.ofs).unwrap_or(i32::MAX);
             let value = self.machine.global(slot).unwrap_or(Slot::ZERO);
@@ -337,15 +344,24 @@ impl World {
                 if name.len() >= 2 && name.get(name.len().saturating_sub(2)) == Some(&b'_') {
                     continue;
                 }
-                let etype = known(def.def_type());
                 let first = usize::try_from(def.ofs).unwrap_or(usize::MAX);
-                let values: Vec<Slot> = (0..etype.slot_count())
+                // A type id's tables do not have: one slot, written `bad type <n>`.
+                let (etype, slots) = match def.def_type() {
+                    DefType::Known(etype) => (Some(etype), etype.slot_count()),
+                    DefType::Unknown(_) => (None, 1),
+                };
+                let values: Vec<Slot> = (0..slots)
                     .map(|i| self.slot_of(n, first.saturating_add(i)))
                     .collect();
                 if values.iter().all(|v| v.bits() == 0) {
                     continue;
                 }
-                let text = self.ugly_value(progs, etype, &values, name)?;
+                let text = match etype {
+                    Some(etype) => self.ugly_value(progs, etype, &values, name)?,
+                    None => {
+                        format!("bad type {}", def.type_bits & !PROGS_DEF_SAVEGLOBAL).into_bytes()
+                    }
+                };
                 write_pair(out, name, &text);
             }
         }
@@ -530,8 +546,9 @@ impl<'a> Words<'a> {
     }
 }
 
-/// `Host_Loadgame_f`'s read of one block: bytes up to and including the first `}`, or to the
-/// end or a zero byte; the block, and what follows it.
+/// `Host_Loadgame_f`'s read of one block: bytes up to and including the first `}`, or to a
+/// zero byte, which ends the block and is passed over, or to the end; the block, and what
+/// follows it.
 ///
 /// # Errors
 ///
@@ -551,12 +568,8 @@ fn next_block(rest: &[u8]) -> Result<(&[u8], &[u8]), SaveError> {
         return Err(SaveError::BlockOverflow);
     }
     let (block, after) = rest.split_at(end);
-    // A zero byte ends the read; what follows it is not read.
-    let after = if after.first() == Some(&0) {
-        &[][..]
-    } else {
-        after
-    };
+    // `if (r == EOF || !r) break;` ends the block; `while (!feof(f))` reads on after it.
+    let after = after.strip_prefix(&[0]).unwrap_or(after);
     Ok((block, after))
 }
 

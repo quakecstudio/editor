@@ -14,7 +14,7 @@ use std::io::Write as _;
 use qc_progs::Progs;
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::{BuiltinTable, patch_builtins};
-use qs_sim::{LoadOptions, SaveGame, UserCmd, World};
+use qs_sim::{LoadOptions, SaveError, SaveGame, UserCmd, World};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 /// The frame the host runs at, `sys_ticrate`'s 0.05 doubled to the 0.1 a frame can last.
@@ -132,9 +132,11 @@ fn run(
     world.connect(progs).map_err(|e| e.to_string())?;
     play(&mut world, progs, seconds)?;
     // PHYS-10.5: saved, read back over a fresh spawn of the map, and played on.
-    let Ok(saved) = world.save_game(progs) else {
+    let saved = match world.save_game(progs) {
+        Ok(saved) => saved,
         // A dead player cannot be saved; the map ran.
-        return Ok(());
+        Err(SaveError::DeadPlayer) => return Ok(()),
+        Err(error) => return Err(format!("saving: {error}")),
     };
     let game = SaveGame::read(&saved).map_err(|e| format!("reading its save: {e}"))?;
     let mut back =
