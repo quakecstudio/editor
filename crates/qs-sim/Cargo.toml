@@ -21,6 +21,8 @@ qs-porting-example = { workspace = true }
 [dev-dependencies]
 qc-codegen = { workspace = true }
 qc-sema = { workspace = true }
+# The examples' command lines.
+clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 # The sweep example reads an install through the game filesystem.
 qs-vfs = { workspace = true }
 

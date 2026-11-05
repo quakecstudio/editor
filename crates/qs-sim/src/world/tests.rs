@@ -254,6 +254,10 @@ pub(crate) fn entity(classname: &str, origin: &str, keys: &str) -> String {
 }
 
 impl World {
+    pub(crate) fn set_float_field(&mut self, n: usize, name: &str, value: f32) {
+        self.set_field(n, field_slot(name), Slot::from_f32(value));
+    }
+
     pub(crate) fn float(&self, n: usize, name: &str) -> f32 {
         self.machine
             .edicts()

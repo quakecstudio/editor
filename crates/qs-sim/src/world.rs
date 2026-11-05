@@ -99,6 +99,12 @@ pub struct World {
     player: Option<UserCmd>,
     /// The spawn parms the level the player left kept, used in place of `SetNewParms`'.
     carried: Option<SpawnParms>,
+    /// The client's spawn parms, `host_client->spawn_parms`, which a saved game keeps.
+    spawn_parms: [Slot; 16],
+    /// Whether a saved game was read into this world, `sv.loadgame` (PHYS-10.5).
+    loaded: bool,
+    /// The map's name, `sv.name`.
+    map: String,
 }
 
 /// What the host gives a world besides its map and progs.
@@ -177,6 +183,9 @@ impl World {
             ),
             player: None,
             carried: options.carried,
+            spawn_parms: [Slot::ZERO; 16],
+            loaded: false,
+            map: map.to_owned(),
         };
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
@@ -296,15 +305,23 @@ impl World {
         call.flush_signon();
         call.prespawn();
         call.flush_signon();
+        // PHYS-10.5: a saved game's world is "fully inited allready": no spawn functions.
+        if self.loaded {
+            call.spawn_message(CLIENT).map_err(WorldError::Frame)?;
+            call.begin();
+            self.player = Some(UserCmd::default());
+            return Ok(());
+        }
         // PHYS-10.4: after a level change the client's kept parms, not `SetNewParms`'.
-        let parms: Vec<Slot> = match self.carried {
-            Some(carried) => carried.parms.to_vec(),
+        let parms: [Slot; 16] = match self.carried {
+            Some(carried) => carried.parms,
             None => {
                 let new_parms = call.global("SetNewParms").as_i32();
                 call.run(new_parms).map_err(WorldError::Frame)?;
-                (1..=16).map(|n| call.global(&format!("parm{n}"))).collect()
+                core::array::from_fn(|n| call.global(&format!("parm{}", n.saturating_add(1))))
             }
         };
+        self.spawn_parms = parms;
         let fields = call.context.machine_view().edicts().layout().entityfields();
         for slot in 0..fields {
             // A slot past the edict's fields is not written.
@@ -640,5 +657,8 @@ fn tokens(command: &str) -> Vec<String> {
     out
 }
 
+mod save;
 #[cfg(test)]
 pub(crate) mod tests;
+
+pub use save::{SAVEGAME_VERSION, SaveError, SaveGame};

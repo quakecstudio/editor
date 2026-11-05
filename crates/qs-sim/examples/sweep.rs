@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Runs every map of an install through its game's progs, the player standing still, and
-//! reports each map's first QuakeC error: the record for P3-24's acceptance, "id1 and rerelease
+//! Runs every map of an install through its game's progs, the player standing still, then
+//! saves it, loads the save over a fresh spawn of the map and plays on, and reports each map's
+//! first QuakeC error: the record for P3-24's acceptance, "id1 and rerelease
 //! progs run on every corpus map without a QC error".
 //!
 //! ```text
-//! cargo run --release -p qs-sim --example sweep -- -basedir <game root> [-game <dir>] [-seconds <s>]
+//! cargo run --release -p qs-sim --example sweep -- --basedir <game root> [--game <dir>] [--seconds <s>]
 //! ```
 
 use std::io::Write as _;
@@ -13,24 +14,35 @@ use std::io::Write as _;
 use qc_progs::Progs;
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::{BuiltinTable, patch_builtins};
-use qs_sim::{LoadOptions, UserCmd, World};
+use qs_sim::{LoadOptions, SaveGame, UserCmd, World};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 /// The frame the host runs at, `sys_ticrate`'s 0.05 doubled to the 0.1 a frame can last.
 const FRAME: f64 = 0.1;
 
+/// Runs every map of an install through its game's progs.
+#[derive(clap::Parser)]
+struct Args {
+    /// The game's root, the engine's `-basedir`.
+    #[arg(long)]
+    basedir: String,
+    /// The game directory over `id1`, the engine's `-game`.
+    #[arg(long)]
+    game: Option<String>,
+    /// The seconds each map runs before it is saved and loaded.
+    #[arg(long, default_value_t = 60.0)]
+    seconds: f64,
+}
+
 fn main() -> Result<(), String> {
-    let mut engine = Vec::new();
-    let mut seconds = 60.0;
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        let value = args.next().ok_or_else(|| format!("{arg} needs a value"))?;
-        if arg == "-seconds" {
-            seconds = value.parse().map_err(|_| "-seconds is a number")?;
-        } else {
-            engine.push(arg);
-            engine.push(value);
-        }
+    let Args {
+        basedir,
+        game,
+        seconds,
+    } = <Args as clap::Parser>::parse();
+    let mut engine = vec!["-basedir".to_owned(), basedir];
+    if let Some(game) = game {
+        engine.extend(["-game".to_owned(), game]);
     }
     let vfs = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
     let read = |name: &str| {
@@ -99,22 +111,44 @@ fn run(
     let bytes = read(&name).ok_or_else(|| format!("{name} is missing"))?;
     let bsp =
         qs_bsp::Bsp::read(&bytes, qs_bsp::BspLoader::default()).map_err(|e| e.message(&name))?;
-    let files = Vfs::new(StdFs, engine, ".").map_err(|e| format!("{e:?}"))?;
-    let models: qs_sim::ModelFiles = Box::new(move |name: &str| {
-        files
-            .load(name.as_bytes())
-            .ok()
-            .flatten()
-            .map(LoadedFile::into_bytes)
-    });
+    let models = || -> Result<qs_sim::ModelFiles, String> {
+        let files = Vfs::new(StdFs, engine, ".").map_err(|e| format!("{e:?}"))?;
+        Ok(Box::new(move |name: &str| {
+            files
+                .load(name.as_bytes())
+                .ok()
+                .flatten()
+                .map(LoadedFile::into_bytes)
+        }))
+    };
     let options = LoadOptions {
         localization,
         builtins,
         carried: None,
     };
-    let mut world = World::load(progs, map, &bsp, models, options).map_err(|e| e.to_string())?;
+    let mut world =
+        World::load(progs, map, &bsp, models()?, options.clone()).map_err(|e| e.to_string())?;
     world.settle(progs).map_err(|e| e.to_string())?;
     world.connect(progs).map_err(|e| e.to_string())?;
+    play(&mut world, progs, seconds)?;
+    // PHYS-10.5: saved, read back over a fresh spawn of the map, and played on.
+    let Ok(saved) = world.save_game(progs) else {
+        // A dead player cannot be saved; the map ran.
+        return Ok(());
+    };
+    let game = SaveGame::read(&saved).map_err(|e| format!("reading its save: {e}"))?;
+    let mut back =
+        World::load(progs, &game.map, &bsp, models()?, options).map_err(|e| e.to_string())?;
+    back.settle(progs).map_err(|e| e.to_string())?;
+    back.restore(progs, &game)
+        .map_err(|e| format!("restoring its save: {e}"))?;
+    back.connect(progs).map_err(|e| e.to_string())?;
+    play(&mut back, progs, 5.0).map_err(|e| format!("after loading: {e}"))?;
+    Ok(())
+}
+
+/// `seconds` of frames with the player standing still.
+fn play(world: &mut World, progs: &Progs<'_>, seconds: f64) -> Result<(), String> {
     let mut time = 0.0;
     while time < seconds {
         world.set_command(UserCmd::default());
