@@ -584,6 +584,12 @@ fn bench_history_prints_the_recorded_runs() {
         "bench: no runs recorded\n"
     );
     assert!(parse_cli::<Args, _>(&["--bogus"]).is_err());
+    let both = parse_cli::<Args, _>(&["--accept", "history"]).unwrap();
+    assert!(
+        main(&root(), &both)
+            .unwrap_err()
+            .contains("only applies to a run")
+    );
 }
 
 #[test]

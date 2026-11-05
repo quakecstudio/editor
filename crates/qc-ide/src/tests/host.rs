@@ -7,6 +7,7 @@ use std::path::Path;
 use qc_project::MemoryLoader;
 
 use super::{ProjectSpec, host, nth, one, path};
+use crate::host::directive_lines;
 use crate::{AnalysisHost, Config};
 
 // spec QC-12.5: an open file's text replaces the text on disk until it is closed
@@ -168,4 +169,62 @@ fn a_project_files_dialect_wins_over_the_editors() {
     };
     assert_eq!(errors(&[]), 0, "a bare project takes the editor's");
     assert!(errors(NAMES_NONE) > 0, "the project file's default wins");
+}
+
+// spec PRJ-5.1: the lines that may be directives are read after a byte order mark, with a `\`
+// joining the next line; PRJ-5.3: every line of an `#includelist` names files
+#[test]
+fn the_lines_an_edit_rereads_the_graph_for() {
+    let lines = |text: &str| directive_lines(text.as_bytes());
+    assert_eq!(
+        lines("\u{feff}#include \"b.qh\"\nfloat x;\n")[0],
+        b"#include \"b.qh\""
+    );
+    assert_ne!(
+        lines("#include \\\n\"b.qh\"\n"),
+        lines("#include \\\n\"c.qh\"\n")
+    );
+    assert_ne!(
+        lines("#includelist\na.qc\n#endlist\n"),
+        lines("#includelist\na.qc\nb.qc\n#endlist\n")
+    );
+    assert_eq!(
+        lines("float a;\n#define X\n"),
+        lines("float b;\n#define X\n")
+    );
+}
+
+// spec PRJ-5.3: typing an entry in an open file's `#includelist` adds the file to the module
+#[test]
+fn typing_an_includelist_entry_reads_the_modules_files_again() {
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", "#includelist\n#endlist\n")],
+        extra: &[("b.qc", "float y;\n")],
+        dialect: Some(qc_project::Dialect::Fteqcc),
+        ..ProjectSpec::default()
+    });
+    assert!(!host.files().contains(&path("b.qc")));
+    host.set_overlay(&path("a.qc"), b"#includelist\nb.qc\n#endlist\n".to_vec())
+        .unwrap();
+    assert!(host.files().contains(&path("b.qc")));
+}
+
+// spec PRJ-1.2: an edit to a QuakeC file while the project file does not open keeps the
+// analysis, and is no error
+#[test]
+fn a_directive_edit_while_the_project_does_not_open_keeps_the_analysis() {
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", "float x;\nvoid() f = { x = 1; };\n")],
+        extra: &[("b.qh", "float z;\n")],
+        ..ProjectSpec::default()
+    });
+    assert!(
+        host.set_overlay(&path("quakec.toml"), b"bad [".to_vec())
+            .is_err()
+    );
+    let text = "#include \"b.qh\"\nfloat x;\nvoid() f = { x = 1; };\n";
+    assert!(
+        host.set_overlay(&path("a.qc"), text.as_bytes().to_vec())
+            .is_ok()
+    );
 }

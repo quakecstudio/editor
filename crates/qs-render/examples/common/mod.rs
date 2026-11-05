@@ -138,9 +138,9 @@ impl Random for Rand {
 /// The examples' command line: the install, its game directory, the map and how it is shown.
 #[derive(clap::Parser, Debug)]
 pub(crate) struct Args {
-    /// The game's root, the engine's `-basedir`.
+    /// The game's root, the engine's `-basedir`; the current directory when not given.
     #[arg(long)]
-    pub(crate) basedir: String,
+    pub(crate) basedir: Option<String>,
     /// The game directory over `id1`, the engine's `-game`.
     #[arg(long)]
     pub(crate) game: Option<String>,
@@ -175,6 +175,10 @@ pub(crate) struct Args {
     /// The map.
     #[arg(default_value = "e1m1")]
     pub(crate) map: String,
+    /// Any other engine options for the game filesystem, after `--`: `-path`, `-proghack`
+    /// and the like, as the engine reads them.
+    #[arg(last = true)]
+    pub(crate) engine: Vec<String>,
 }
 
 /// What `--show` starts at.
@@ -187,10 +191,13 @@ pub(crate) enum Show {
 }
 
 impl Args {
-    /// The engine's command line for the game filesystem: `-basedir`, `-game`, `-rogue` and
-    /// `-hipnotic`.
+    /// The engine's command line for the game filesystem: `-basedir`, `-game`, `-rogue`,
+    /// `-hipnotic` and the options after `--`.
     fn engine(&self) -> Vec<String> {
-        let mut engine = vec!["-basedir".to_owned(), self.basedir.clone()];
+        let mut engine = Vec::new();
+        if let Some(basedir) = &self.basedir {
+            engine.extend(["-basedir".to_owned(), basedir.clone()]);
+        }
         if let Some(game) = &self.game {
             engine.extend(["-game".to_owned(), game.clone()]);
         }
@@ -200,13 +207,13 @@ impl Args {
         if self.hipnotic {
             engine.push("-hipnotic".to_owned());
         }
+        engine.extend(self.engine.iter().cloned());
         engine
     }
 }
 
-/// Reads the map the command line names (`e1m1` by default) from the install that `-basedir`
-/// and `-game` name, the engine's own options, which every other argument is passed on as;
-/// starts its server, connects its client and reads the models the server precached.
+/// Reads the map `args` names (`e1m1` by default) from the install `--basedir` and `--game`
+/// name, with the engine options after `--` passed on to the game filesystem; starts its server, connects its client and reads the models the server precached.
 #[expect(
     clippy::too_many_lines,
     reason = "one pass from the command line to a loaded map reads best in the order it runs"
@@ -229,7 +236,7 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
         vfs.load(name.as_bytes())
             .map_err(|e| format!("{name}: {e:?}"))?
             .map(LoadedFile::into_bytes)
-            .ok_or_else(|| format!("{name} is not on the search path; is -basedir the game root?"))
+            .ok_or_else(|| format!("{name} is not on the search path; is --basedir the game root?"))
     };
     let palette = Palette::read(&read("gfx/palette.lmp")?)
         .map_err(|e| e.to_string())?

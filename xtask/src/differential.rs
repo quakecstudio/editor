@@ -28,6 +28,7 @@ use crate::oracles;
 pub(crate) struct Args {
     /// The CI subset, the default.
     #[arg(long, conflicts_with = "full")]
+    #[expect(dead_code, reason = "read by clap only: it says the default out loud")]
     fast: bool,
     /// Every scenario.
     #[arg(long)]
@@ -36,10 +37,8 @@ pub(crate) struct Args {
 
 /// Runs `cargo xtask differential [--fast | --full]`.
 pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
-    let mode = match (args.fast, args.full) {
-        (_, true) => "full",
-        _ => "fast",
-    };
+    // `--fast` is the default; clap refuses it beside `--full`.
+    let mode = if args.full { "full" } else { "fast" };
     // Build the oracles so the VM oracle binary exists (P1-11); the suite runs it per scenario.
     let oracles = oracles::build(root)?;
     let assets = asset_root()?;

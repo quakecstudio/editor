@@ -41,25 +41,20 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     if args.check {
         return Ok(print_outcome("api", check(root)));
     }
-    {
-        {
-            let dir = root.join(DIR);
-            fs::create_dir_all(&dir).map_err(|e| format!("{DIR}: {e}"))?;
-            let crates = library_crates(root)?;
-            for stale in stale_lists(root, &crates)? {
-                let path = dir.join(&stale);
-                fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-                eprintln!("api: removed {DIR}/{stale}");
-            }
-            for krate in crates {
-                let path = dir.join(format!("{}.txt", krate.name));
-                fs::write(&path, krate.listing()?)
-                    .map_err(|e| format!("{}: {e}", path.display()))?;
-                eprintln!("api: wrote {DIR}/{}.txt", krate.name);
-            }
-            Ok(true)
-        }
+    let dir = root.join(DIR);
+    fs::create_dir_all(&dir).map_err(|e| format!("{DIR}: {e}"))?;
+    let crates = library_crates(root)?;
+    for stale in stale_lists(root, &crates)? {
+        let path = dir.join(&stale);
+        fs::remove_file(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        eprintln!("api: removed {DIR}/{stale}");
     }
+    for krate in crates {
+        let path = dir.join(format!("{}.txt", krate.name));
+        fs::write(&path, krate.listing()?).map_err(|e| format!("{}: {e}", path.display()))?;
+        eprintln!("api: wrote {DIR}/{}.txt", krate.name);
+    }
+    Ok(true)
 }
 
 /// Checks that each library crate's list in `docs/api/` is what its source gives, and that

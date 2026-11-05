@@ -169,6 +169,9 @@ pub(crate) fn main(root: &Path, options: &Args) -> Result<bool, String> {
         .history
         .clone()
         .unwrap_or_else(|| root.join(DEFAULT_HISTORY));
+    if options.show.is_some() && options.accept {
+        return Err("--accept only applies to a run".to_owned());
+    }
     if options.show.is_some() {
         let history = load_history(&history_path)?;
         print!("{}", format_history(&history));
