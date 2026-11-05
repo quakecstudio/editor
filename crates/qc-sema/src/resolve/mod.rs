@@ -112,8 +112,9 @@ pub struct ModuleIndex {
     /// The elements of each array definition whose size the model knows, `arraysize`
     /// (FTEF-19.8): a written number, or the count of an unsized array's initialiser.
     pub(crate) arrays: HashMap<DefId, u32>,
-    /// The layout of each struct or union type a definition, or a member of another, is
-    /// written with, by the type as written (FTEF-6.13), when the model lays it out.
+    /// The layout of each struct or union type a definition, a pointer a definition is written
+    /// with, or a member of another, is written with, by the type as written (FTEF-6.13), when
+    /// the model lays it out.
     pub(crate) structs: HashMap<Type, StructShape>,
     /// The type each named type a definition is written with stands for, when it is another:
     /// a typedef's, or an enum's base type (FTEF-7.2, FTEF-19.10).
@@ -121,6 +122,10 @@ pub struct ModuleIndex {
     /// The definitions FTEQCC holds constant, `def->constant` (FTEF-19.3): an initialised
     /// global that is no `var`, an enum's item, a function.
     pub(crate) constants: HashSet<DefId>,
+    /// Each FTEQCC class's type-name definition by its name (FTEF-17.1).
+    pub(crate) class_names: HashMap<String, DefId>,
+    /// Each FTEQCC class's parent, by the classes' type-name definitions.
+    pub(crate) class_parents: HashMap<DefId, DefId>,
 }
 
 /// A struct's or union's layout as FTEQCC places it (FTEF-6.13): the words it takes and where
@@ -202,6 +207,32 @@ impl ModuleIndex {
     #[must_use]
     pub fn diagnostics(&self) -> &[FileDiagnostic] {
         &self.diagnostics
+    }
+
+    /// The members of the class the type `ty` names, its own first in declaration order and
+    /// then each parent's (FTEF-17.3, FTEF-24.6); the components the compiler makes for a
+    /// vector member are left out, as they are for a vector field. Empty when `ty` names no
+    /// class.
+    #[must_use]
+    pub fn class_members(&self, ty: &Type) -> Vec<DefId> {
+        let resolved = self.aliases.get(ty).unwrap_or(ty);
+        let mut class = resolved
+            .type_name()
+            .and_then(|name| self.class_names.get(name))
+            .copied();
+        let mut out = Vec::new();
+        for _ in 0..MAX_CLASS_DEPTH {
+            let Some(current) = class else {
+                break;
+            };
+            out.extend(
+                self.definitions()
+                    .filter(|(_, def)| def.member_of == Some(current) && !def.generated)
+                    .map(|(id, _)| id),
+            );
+            class = self.class_parents.get(&current).copied();
+        }
+        out
     }
 
     /// The types of the body of the function `def`, when it has one (`crate::check`).
@@ -959,6 +990,13 @@ impl<'a> Resolver<'a> {
     fn finish(mut self) -> ModuleIndex {
         self.check_undefined_functions();
         self.record_shapes();
+        let parents: HashMap<DefId, DefId> = self
+            .class_names
+            .values()
+            .filter_map(|&class| Some((class, self.parent_of(class)?)))
+            .collect();
+        self.index.class_names = self.class_names.clone();
+        self.index.class_parents = parents;
         self.index
     }
 }

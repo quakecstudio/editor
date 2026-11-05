@@ -423,3 +423,40 @@ fn a_typedef_of_a_class_is_the_class() {
         unknown("q", "C2")
     );
 }
+
+// spec FTEF-17.3: a class's members are its own, in declaration order, then its parents';
+// a type that names no class has none
+#[test]
+fn a_class_lists_its_members_and_its_parents() {
+    let mut db = Db::new();
+    db.set_dialect(Dialect::Fteqcc);
+    let source = "entity self;\nclass Base { float a; float b; };\n\
+        class Mid : Base { float c; };\nclass Top : Mid { float d; };\nclass Other { float e; };\n";
+    db.set_file(
+        FileId::new(0),
+        PathBuf::from("t.qc"),
+        source.as_bytes().to_vec(),
+    );
+    let analysis = db.analyze_module(&ModuleInput {
+        compiled: vec![FileId::new(0)],
+        command_line: CommandLine::new::<&str>(&[]),
+        ..ModuleInput::default()
+    });
+    let index = &analysis.index;
+    let names = |class: &str| -> Vec<String> {
+        index
+            .class_members(&crate::Type::Named(class.into()))
+            .into_iter()
+            .filter_map(|id| index.def(id).map(|def| def.name.clone()))
+            .collect()
+    };
+    assert_eq!(names("Top"), ["d", "c", "a", "b"]);
+    assert_eq!(names("Base"), ["a", "b"]);
+    assert_eq!(names("Other"), ["e"]);
+    assert!(names("Nothing").is_empty());
+    assert!(
+        index
+            .class_members(&crate::Type::Simple(crate::SimpleType::Vector))
+            .is_empty()
+    );
+}
