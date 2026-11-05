@@ -15,8 +15,15 @@ use serde_json::{Map, Value, json};
 use crate::screenshot::{Frame, encode};
 use crate::values::{from_json, named_json, to_json};
 
+mod debug;
+
+use debug::{Breakpoint, Snapshot, Step, Stopped};
+
 /// The commands the game accepts.
-const COMMANDS: [&str; 11] = [
+const COMMANDS: [&str; 14] = [
+    "breakpoint/set",
+    "breakpoint/clear",
+    "evaluate",
     "console",
     "pause",
     "resume",
@@ -55,6 +62,7 @@ enum Reason {
     Pause,
     Step,
     Error,
+    Breakpoint,
 }
 
 impl Reason {
@@ -63,6 +71,7 @@ impl Reason {
             Self::Pause => "pause",
             Self::Step => "step",
             Self::Error => "error",
+            Self::Breakpoint => "breakpoint",
         }
     }
 }
@@ -112,6 +121,8 @@ enum FrameEnd {
     Ran,
     /// It stopped with a run error, which paused the game (BRIDGE-3.3).
     Failed,
+    /// The debugger stopped it, which paused the game mid-frame (WORLD-9.1).
+    Stopped,
 }
 
 /// An event for the bridge to send: its method and parameters (BRIDGE-3.1).
@@ -166,6 +177,17 @@ pub(crate) struct Game {
     stopped: bool,
     /// Whether frames are drawn.
     screen: Screen,
+    /// The source line of each statement, from the progs' `.lno`; empty without one.
+    lines: Vec<i32>,
+    /// The breakpoints the client set, and the next id to give.
+    breakpoints: Vec<Breakpoint>,
+    next_breakpoint: u64,
+    /// The world before the frame the debugger may stop (WORLD-9.2).
+    snapshot: Option<Snapshot>,
+    /// Where the frame stopped, while it is stopped.
+    halted: Option<Stopped>,
+    /// The time of the frame last run, for a step between frames.
+    last_frametime: f64,
 }
 
 impl Game {
@@ -184,7 +206,18 @@ impl Game {
             responses: Vec::new(),
             stopped: false,
             screen: Screen::Window,
+            lines: Vec::new(),
+            breakpoints: Vec::new(),
+            next_breakpoint: 0,
+            snapshot: None,
+            halted: None,
+            last_frametime: STEP_FRAME,
         }
+    }
+
+    /// The source line of each statement, from the `.lno` beside the progs (LNO-1).
+    pub(crate) fn set_lines(&mut self, lines: Vec<i32>) {
+        self.lines = lines;
     }
 
     /// Takes over what `old`, the level this one replaces, still owes the bridge's client:
@@ -197,6 +230,13 @@ impl Game {
         self.responses.splice(0..0, old.responses);
         self.shots.splice(0..0, old.shots);
         self.stopped |= old.stopped;
+        // The breakpoints stay set on the next level, which runs the same progs.
+        self.lines = old.lines;
+        self.next_breakpoint = old.next_breakpoint;
+        for breakpoint in old.breakpoints {
+            self.debugger().set_breakpoint(breakpoint.statement, true);
+            self.breakpoints.push(breakpoint);
+        }
     }
 
     /// Makes this a game no window draws (`--headless`).
@@ -267,7 +307,7 @@ impl Game {
                         host,
                     }),
                     Err(error) => {
-                        self.fail(&error);
+                        self.fail(None, &error);
                         None
                     }
                 }
@@ -309,7 +349,7 @@ impl Game {
             "functions": header.numfunctions,
             "globals": header.numglobals,
             "fields": header.numfielddefs,
-            "lno": false,
+            "lno": !self.lines.is_empty(),
             "time": time,
         });
         let entities = (0..self.world.num_edicts())
@@ -331,7 +371,7 @@ impl Game {
         }
         let ran = self.with_progs(|game, progs| game.run_frame(progs, frametime));
         if let Err(error) = ran {
-            self.fail(&WorldError::Progs(error.message));
+            self.fail(None, &WorldError::Progs(error.message));
         }
         true
     }
@@ -347,40 +387,30 @@ impl Game {
         outcome
     }
 
-    fn run_frame(&mut self, progs: &Progs<'_>, frametime: f64) -> FrameEnd {
-        let outcome = self.world.frame(progs, frametime);
-        self.report_changes(progs);
-        match outcome {
-            Ok(()) => FrameEnd::Ran,
-            Err(error) => {
-                self.fail(&error);
-                FrameEnd::Failed
-            }
-        }
-    }
-
     /// The `qc/error` of a failed frame, then the pause it causes (BRIDGE-3.3).
-    fn fail(&mut self, error: &WorldError) {
+    fn fail(&mut self, progs: Option<&Progs<'_>>, error: &WorldError) {
         let time = self.world.time();
         let mut params = Map::new();
         params.insert("message".to_owned(), json!(error.to_string()));
         params.insert("time".to_owned(), json!(time));
         let mut location = None;
         if let WorldError::Frame(run) = error {
-            let stack: Vec<Value> = run
-                .trace
-                .iter()
-                .enumerate()
-                .map(|(index, entry)| json!({ "index": index, "function": entry.name }))
-                .collect();
-            location = run
-                .trace
-                .first()
-                .map(|innermost| json!({ "function": innermost.name }));
-            if let Some(location) = &location {
-                params.insert("location".to_owned(), location.clone());
+            // BRIDGE-3.4: with a .lno each frame names its file and line. The progs are the
+            // caller's, or read again when it holds none.
+            let bytes = self.progs.clone();
+            let read = Progs::read(&bytes).ok();
+            if let Some(progs) = progs.or(read.as_ref()) {
+                let stack = self.stack_json(progs, &run.trace);
+                location = run
+                    .trace
+                    .iter()
+                    .find(|entry| entry.function > 0)
+                    .map(|inner| self.location_json(progs, inner.function, inner.statement));
+                if let Some(location) = &location {
+                    params.insert("location".to_owned(), location.clone());
+                }
+                params.insert("stack".to_owned(), Value::Array(stack));
             }
-            params.insert("stack".to_owned(), Value::Array(stack));
         }
         tracing::warn!(%error, "the game stopped");
         self.events.push(("qc/error", Value::Object(params)));
@@ -470,9 +500,11 @@ impl Game {
                 "time": time,
             })),
             // Paused between two frames, no QuakeC is running: the stack is empty.
+            // Paused between two frames no QuakeC is running and the stack is empty; at a stop
+            // it is the stopped run's (WORLD-9.1).
             Some("stack") => {
                 self.require_paused()?;
-                Ok(json!({ "stack": [], "time": time }))
+                Ok(json!({ "stack": self.stack_now(progs), "time": time }))
             }
             Some("entities") => {
                 let entities: Vec<Value> = (0..self.world.num_edicts())
@@ -572,20 +604,13 @@ impl Game {
 
     fn step(&mut self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {
         self.require_paused()?;
-        match params.get("kind").and_then(Value::as_str) {
-            Some("frame") => {
-                // A frame that fails has said why it paused (BRIDGE-3.3).
-                if self.run_frame(progs, STEP_FRAME) == FrameEnd::Ran {
-                    self.state_changed(Some(Reason::Step), None);
-                }
-                Ok(self.time())
-            }
-            // Statement stepping comes with the debugger (P3-04).
-            _ => Err(RpcError::new(
-                ErrorCode::Unsupported,
-                "only a whole frame can be stepped",
-            )),
-        }
+        let step = params
+            .get("kind")
+            .and_then(Value::as_str)
+            .and_then(Step::from_name)
+            .ok_or_else(|| RpcError::new(ErrorCode::InvalidParams, "no such step"))?;
+        self.debug_step(progs, step, STEP_FRAME);
+        Ok(self.time())
     }
 
     fn console(&mut self, params: &Value) -> Value {
@@ -670,13 +695,17 @@ impl Game {
                 Ok(self.time())
             }
             "resume" => {
-                if self.state == State::Paused {
+                // WORLD-9.2: a stopped frame goes on first; it may stop again.
+                if self.state == State::Paused && self.resume_from_stop(progs) {
                     self.apply_held(progs);
                     self.state = State::Running;
                     self.state_changed(None, None);
                 }
                 Ok(self.time())
             }
+            "breakpoint/set" => self.breakpoint_set(progs, params),
+            "breakpoint/clear" => self.breakpoint_clear(params),
+            "evaluate" => self.evaluate(progs, params),
             "step" => self.step(progs, params),
             "field/set" => self.field_set(progs, params),
             "entity/spawn" => {

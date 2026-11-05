@@ -5,6 +5,7 @@
 
 use std::rc::Rc;
 
+use qc_lno::LnoFile;
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader, Lit};
 use qs_client::{Client, ModelInfo, Models, Random};
@@ -192,6 +193,15 @@ pub(crate) fn load(
         Reporting::Off
     };
     let mut game = Game::new(world, progs_bytes.to_vec(), reporting);
+    // BRIDGE-3.4, WORLD-9.4: the line of each statement, from the `.lno` beside the progs when
+    // it is one for this progs (LNO-4.1).
+    let lines = read("progs.lno")
+        .ok()
+        .and_then(|bytes| LnoFile::read(&bytes).ok())
+        .filter(|lno| lno.matches_header(progs.header()).is_ok())
+        .map(|lno| lno.lines)
+        .unwrap_or_default();
+    game.set_lines(lines);
     game.announce("progs.dat", &map);
     // The client reads the serverinfo and the spawn messages the connection wrote.
     let mut client = Client::new(qs_client::Game::Standard);

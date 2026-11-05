@@ -413,6 +413,13 @@ impl World {
         self.builtins.debugger.as_mut()
     }
 
+    /// The debugger, made over `lines` (WORLD-9.4) when the world has none yet.
+    pub fn debugger_or_new(&mut self, lines: &[i32]) -> &mut Debugger {
+        self.builtins
+            .debugger
+            .get_or_insert_with(|| Debugger::new(lines.to_vec()))
+    }
+
     /// The debugger, to read where a run stopped.
     #[must_use]
     pub const fn debugger(&self) -> Option<&Debugger> {
