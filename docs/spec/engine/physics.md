@@ -258,7 +258,7 @@ stop.
 
 **Source:** `WinQuake/sv_main.c`, `SV_ConnectClient`, `SV_WriteClientdataToMessage`,
 `SV_SaveSpawnparms`, `SV_SpawnServer`; `WinQuake/host_cmd.c`, `Host_Spawn_f`,
-`Host_Changelevel_f`, `Host_SavegameComment`, `Host_Savegame_f`, `Host_Loadgame_f`;
+`Host_Changelevel_f`, `Host_Restart_f`, `Host_SavegameComment`, `Host_Savegame_f`, `Host_Loadgame_f`;
 `WinQuake/pr_edict.c`, `PR_UglyValueString`, `ED_Write`, `ED_WriteGlobals`, `ED_ParseGlobals`,
 `ED_ParseEdict`; `WinQuake/cmd.c`, `Cbuf_Execute`; `WinQuake/host.c`, `Host_ServerFrame`, `Host_FilterTime`.
 
@@ -287,7 +287,7 @@ stop.
   cross level information (sigils)") before the entities spawn. A client already connected is
   not connected again, so `SetNewParms` does not run; `Host_Spawn_f` copies its kept
   `spawn_parms` into `parm1` to `parm16` before `ClientConnect` and `PutClientInServer`
-  (PHYS-10.1). `qs-sim` takes the level and the kept parms through `World::take_changelevel` and
+  (PHYS-10.1). `qs-sim` takes the level and the kept parms through `World::take_host_command` and
   `World::save_spawn_parms`; the host loads the next world with them.
 - **PHYS-10.5** `Host_Savegame_f` refuses with no game ("Not playing a local game."), in an
   intermission ("Can't save in intermission.", the host's to check, as `cl.intermission` is the
@@ -321,6 +321,12 @@ stop.
 The frame's length is the host's: `Host_FilterTime` runs a frame once 1/72 of a second has
 passed since the last, its `frametime` the time passed, 0.001 to 0.1. `qs-sim` takes the
 frametime it is given; the viewer paces its frames that way.
+- **PHYS-10.6** `restart`, which single player's `respawn` appends with `localcmd` after a
+  death, runs `Host_Restart_f`: with a server active it copies `sv.name` and runs
+  `SV_SpawnServer (mapname)` without `SV_SaveSpawnparms`, so the client spawns again with the
+  `spawn_parms` it entered the level with (`SetNewParms`' in a new game); its arguments are not
+  read. `qs-sim` gives it as `HostCommand::Restart`, with `World::map` and `World::carried` for
+  the host to load the level again.
 
 ## Constants
 

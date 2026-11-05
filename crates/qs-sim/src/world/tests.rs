@@ -2554,10 +2554,13 @@ fn a_level_change_carries_the_spawn_parms_and_serverflags() {
         5.0,
         "a new game runs SetNewParms"
     );
-    assert_eq!(first.world.take_changelevel(), None, "none asked for yet");
+    assert_eq!(first.world.take_host_command(), None, "none asked for yet");
     first.frames(10, 0.1).unwrap();
-    assert_eq!(first.world.take_changelevel().as_deref(), Some("e1m2"));
-    assert_eq!(first.world.take_changelevel(), None, "taken once");
+    assert_eq!(
+        first.world.take_host_command(),
+        Some(super::HostCommand::Changelevel("e1m2".to_owned()))
+    );
+    assert_eq!(first.world.take_host_command(), None, "taken once");
     let parsed = Progs::read(&first.progs).unwrap();
     let kept = first.world.save_spawn_parms(&parsed).unwrap();
     assert_eq!(kept.parms()[..3], [12.0, 3.0, 0.0]);
@@ -2586,7 +2589,10 @@ fn only_a_changelevel_with_one_argument_names_a_level() {
     let mut run = player(&ledge(), "", "", "");
     let mut take = |buffer: &[u8]| {
         run.world.builtins.mock.engine_mut().command_buffer = buffer.to_vec();
-        run.world.take_changelevel()
+        match run.world.take_host_command() {
+            Some(super::HostCommand::Changelevel(map)) => Some(map),
+            _ => None,
+        }
     };
     assert_eq!(take(b"changelevel e2m1\n").as_deref(), Some("e2m1"));
     assert_eq!(take(b"changelevel\n"), None);
@@ -2689,4 +2695,20 @@ fn the_progs_read_whether_the_game_is_registered() {
         read(qs_vfs::Registration::Shareware),
         Some(super::QcValue::Float(0.0))
     );
+}
+
+// spec PHYS-10.6: `restart` asks for this level again, whatever follows it, and the world
+// keeps its name and the parms it was entered with
+#[test]
+fn restart_asks_for_this_level_again() {
+    let mut run = player(&ledge(), "", "", "");
+    let mut take = |buffer: &[u8]| {
+        run.world.builtins.mock.engine_mut().command_buffer = buffer.to_vec();
+        run.world.take_host_command()
+    };
+    assert_eq!(take(b"restart\n"), Some(super::HostCommand::Restart));
+    assert_eq!(take(b"RESTART now\n"), Some(super::HostCommand::Restart));
+    assert_eq!(take(b"restarts\n"), None);
+    assert_eq!(run.world.map(), "test");
+    assert_eq!(run.world.carried(), None, "a new game");
 }

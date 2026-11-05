@@ -37,6 +37,7 @@ enum qs_sim::rerelease::BuiltinTable
 enum qs_sim::spawn::LoadError
 enum qs_sim::spawn::SpawnError
 enum qs_sim::spawn::Token
+enum qs_sim::world::HostCommand
 enum qs_sim::world::WorldError
 enum qs_sim::world::changes::EdictChange
 enum qs_sim::world::edit::EditError
@@ -185,17 +186,19 @@ fn qs_sim::spawn::inhibited
 fn qs_sim::spawn::load_from_file
 fn qs_sim::world::SpawnParms::parms
 fn qs_sim::world::SpawnParms::serverflags
+fn qs_sim::world::World::carried
 fn qs_sim::world::World::connect
 fn qs_sim::world::World::entities
 fn qs_sim::world::World::frame
 fn qs_sim::world::World::light_style
 fn qs_sim::world::World::load
+fn qs_sim::world::World::map
 fn qs_sim::world::World::player_view
 fn qs_sim::world::World::save_spawn_parms
 fn qs_sim::world::World::set_command
 fn qs_sim::world::World::set_standard_quake
 fn qs_sim::world::World::settle
-fn qs_sim::world::World::take_changelevel
+fn qs_sim::world::World::take_host_command
 fn qs_sim::world::World::take_messages
 fn qs_sim::world::World::take_set_angle
 fn qs_sim::world::World::take_sounds
@@ -266,6 +269,7 @@ use qs_sim::ClientMessages = messages::ClientMessages
 use qs_sim::EdictChange = world::EdictChange
 use qs_sim::EditError = world::EditError
 use qs_sim::Entity = world::Entity
+use qs_sim::HostCommand = world::HostCommand
 use qs_sim::LineHit = world::LineHit
 use qs_sim::LoadOptions = world::LoadOptions
 use qs_sim::Message = messages::Message
@@ -361,6 +365,8 @@ variant qs_sim::spawn::SpawnError::NoFreeEdicts
 variant qs_sim::spawn::SpawnError::ParseError
 variant qs_sim::spawn::Token::End
 variant qs_sim::spawn::Token::Word
+variant qs_sim::world::HostCommand::Changelevel
+variant qs_sim::world::HostCommand::Restart
 variant qs_sim::world::WorldError::Frame
 variant qs_sim::world::WorldError::Progs
 variant qs_sim::world::WorldError::Spawn
