@@ -305,7 +305,7 @@ fn the_centre_print_is_localized_with_a_file_loaded() {
         run.packets();
         run.frames(1, 0.1).unwrap();
         let all = run.packets().concat();
-        let at = all.iter().position(|&b| b == 26).expect("svc_centerprint");
+        let at = all.iter().position(|&b| b == 26).unwrap();
         let text = &all[at + 1..];
         let end = text.iter().position(|&b| b == 0).unwrap();
         String::from_utf8(text[..end].to_vec()).unwrap()
