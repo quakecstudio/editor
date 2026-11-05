@@ -11,6 +11,7 @@ use qs_client::{Anchor, DynamicLight, Hud, HudItem, Placed, Scene, SceneEntity, 
 use qs_wad::{WAD_MAGIC, WAD_TYP_QPIC};
 
 use super::{FogState, Pics, Play, PlayError, fog_parse_worldspawn};
+use crate::alias::tests::{MdlSpec, SkinSpec, mdl};
 use crate::gpu::{FlatDraw, Fog};
 use crate::mesh::tests::{MapSpec, bsp, palette, samples};
 use crate::mesh::{Image, MapMesh};
@@ -89,7 +90,7 @@ fn hud(anchor: Anchor, items: Vec<HudItem>) -> Hud {
 type Quad = ([f32; 2], [f32; 2]);
 
 /// `play`'s 2D layer for `hud` over a frame with no blend: each draw with its quads.
-fn layer(play: &Play, hud: &Hud) -> Vec<(FlatDraw, Vec<Quad>)> {
+fn layer(play: &mut Play, hud: &Hud) -> Vec<(FlatDraw, Vec<Quad>)> {
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
     let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
@@ -167,7 +168,7 @@ fn conchars_index_0_is_transparent() {
 // is centred too (HUD-2.2)
 #[test]
 fn bar_items_are_centred_at_the_bottom() {
-    let play = play();
+    let mut play = play();
     let sbar = HudItem::Pic {
         name: "sbar".to_owned(),
         x: 0,
@@ -178,7 +179,10 @@ fn bar_items_are_centred_at_the_bottom() {
         x: 24,
         y: -24,
     };
-    let bar = layer(&play, &hud(Anchor::Bar, vec![sbar.clone(), num.clone()]));
+    let bar = layer(
+        &mut play,
+        &hud(Anchor::Bar, vec![sbar.clone(), num.clone()]),
+    );
     assert_eq!(bar.len(), 2, "two pictures, two draws");
     assert_eq!(bar[0].1, [([160.0, 456.0], [320.0, 24.0])]);
     assert_eq!(bar[0].0.pic, Some(0));
@@ -189,15 +193,15 @@ fn bar_items_are_centred_at_the_bottom() {
         ..hud(Anchor::Bar, vec![sbar.clone()])
     };
     assert_eq!(
-        layer(&play, &deathmatch)[0].1,
+        layer(&mut play, &deathmatch)[0].1,
         [([0.0, 456.0], [320.0, 24.0])]
     );
     assert_eq!(
-        layer(&play, &hud(Anchor::Centered, vec![sbar.clone()]))[0].1,
+        layer(&mut play, &hud(Anchor::Centered, vec![sbar.clone()]))[0].1,
         [([160.0, 0.0], [320.0, 24.0])]
     );
     assert_eq!(
-        layer(&play, &hud(Anchor::Screen, vec![sbar.clone()]))[0].1,
+        layer(&mut play, &hud(Anchor::Screen, vec![sbar.clone()]))[0].1,
         [([0.0, 0.0], [320.0, 24.0])]
     );
     // A picture that is not loaded draws nothing.
@@ -206,9 +210,9 @@ fn bar_items_are_centred_at_the_bottom() {
         x: 0,
         y: 0,
     };
-    assert!(layer(&play, &hud(Anchor::Bar, vec![missing])).is_empty());
+    assert!(layer(&mut play, &hud(Anchor::Bar, vec![missing])).is_empty());
     // Two pictures of one texture join one draw.
-    let twice = layer(&play, &hud(Anchor::Bar, vec![sbar.clone(), sbar]));
+    let twice = layer(&mut play, &hud(Anchor::Bar, vec![sbar.clone(), sbar]));
     assert_eq!(twice.len(), 1);
     assert_eq!(twice[0].0.count, 12);
 }
@@ -216,7 +220,7 @@ fn bar_items_are_centred_at_the_bottom() {
 // spec HUD-2.3: a `.lmp` with no x is centred, `(vid.width - pic->width) / 2`
 #[test]
 fn lmp_pictures_centre_when_asked() {
-    let play = play();
+    let mut play = play();
     let centred = HudItem::Lmp {
         path: "gfx/ranking.lmp".to_owned(),
         x: None,
@@ -227,7 +231,7 @@ fn lmp_pictures_centre_when_asked() {
         x: Some(64),
         y: 24,
     };
-    let out = layer(&play, &hud(Anchor::Screen, vec![centred, placed]));
+    let out = layer(&mut play, &hud(Anchor::Screen, vec![centred, placed]));
     assert_eq!(
         out[0].1,
         [([270.0, 8.0], [100.0, 20.0]), ([64.0, 24.0], [100.0, 20.0])]
@@ -238,10 +242,10 @@ fn lmp_pictures_centre_when_asked() {
 // a space and a character above the screen are not drawn
 #[test]
 fn characters_come_from_the_console_font() {
-    let play = play();
+    let mut play = play();
     let ch = |x, y, ch| HudItem::Char { x, y, ch };
     let out = layer(
-        &play,
+        &mut play,
         &hud(
             Anchor::Screen,
             vec![
@@ -277,9 +281,9 @@ fn characters_come_from_the_console_font() {
 // spec HUD-1.5: a fill is a rectangle of the palette colour, untextured
 #[test]
 fn fills_are_palette_colours() {
-    let play = play();
+    let mut play = play();
     let out = layer(
-        &play,
+        &mut play,
         &hud(
             Anchor::Screen,
             vec![HudItem::Fill {
@@ -322,7 +326,7 @@ fn fills_are_palette_colours() {
 // spec VIEW-4.6: the blend is drawn over the whole view before the bar, unless its alpha is 0
 #[test]
 fn the_view_blend_comes_first_when_it_has_alpha() {
-    let play = play();
+    let mut play = play();
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
     let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
@@ -353,7 +357,7 @@ fn the_view_blend_comes_first_when_it_has_alpha() {
 // are carried
 #[test]
 fn a_frame_carries_the_lights_the_particles_and_the_world() {
-    let play = play();
+    let mut play = play();
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
     let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
@@ -445,4 +449,49 @@ fn fog_fades_over_its_time() {
     assert_eq!(state.at(40.0), seen(0.001, 0.0));
     state.update(fog(0.0, 0.5), 0.0, 40.0);
     assert_eq!(state.at(40.0).color, [128.0 / 255.0; 3]);
+}
+
+// spec REND-4.13: a player entity wearing colours is drawn with its slot's translated skin,
+// remade only when its model, skin or colours change; heads and non-players keep theirs
+#[test]
+fn players_wear_their_slots_translated_skins() {
+    let mut play = play();
+    let bytes = mdl(&MdlSpec {
+        skins: vec![SkinSpec::Single([0].into_iter().chain([16; 15]).collect())],
+        ..MdlSpec::default()
+    });
+    play.load_models(&[String::new(), "progs/player.mdl".to_owned()], &|_| {
+        Some(bytes.clone())
+    })
+    .unwrap();
+    let lighting = samples(&[50]);
+    let bsp = bsp(&MapSpec::default(), &lighting);
+    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let entity = |entity, colormap| SceneEntity {
+        entity,
+        model: 1,
+        colormap,
+        ..SceneEntity::default()
+    };
+    let mut scene = Scene {
+        maxclients: 2,
+        colors: vec![0, 0x40],
+        entities: vec![entity(2, 2), entity(1, 0), entity(3, 3)],
+        ..Scene::default()
+    };
+    let skins = play.skins.len();
+    let first = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
+    let drawn: Vec<usize> = first.models.draws.iter().map(|d| d.skin).collect();
+    assert_eq!(drawn, [skins + 1, 0, 0]);
+    assert_eq!(first.player_skins.len(), 1);
+    let (slot, image) = &first.player_skins[0];
+    assert_eq!(*slot, 1);
+    assert_eq!(image.rgba[4], palette().rgba(64)[0]);
+    let again = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
+    assert_eq!(again.models.draws[0].skin, skins + 1);
+    assert!(again.player_skins.is_empty(), "unchanged colours are kept");
+    scene.colors[1] = 0x50;
+    let changed = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
+    assert_eq!(changed.player_skins.len(), 1);
+    assert_eq!(changed.player_skins[0].1.rgba[4], palette().rgba(80)[0]);
 }

@@ -20,8 +20,8 @@ use qs_wad::{Conchars, QPic, WAD_CONCHARS_TRANSPARENT, Wad};
 use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, entity_light};
 use crate::camera::Camera;
 use crate::gpu::{
-    AliasDraw, Assets, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame, SpriteDraw,
-    SpriteFrame, View,
+    AliasDraw, Assets, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame, PLAYER_SKINS,
+    SpriteDraw, SpriteFrame, View,
 };
 use crate::light::light_point;
 use crate::mesh::{Image, MapMesh, Palette, Placement};
@@ -255,6 +255,33 @@ pub struct Play {
     pub screen: [i32; 2],
     /// QuakeSpasm's `gl_zfix` for brush models (REND-1.12).
     pub zfix: bool,
+    /// Each player slot's translated skin (REND-4.13).
+    player_skins: PlayerSkins,
+}
+
+/// What each player slot's translated skin was made from: its model's precache index, its
+/// skin and its colours (REND-4.13).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct PlayerSkins([Option<(usize, usize, i32)>; PLAYER_SKINS]);
+
+impl PlayerSkins {
+    /// Slot `slot`'s skin, `model`'s `skin` in `colors`, when it is not what the slot holds
+    /// (`CL_ParseUpdate` and `CL_NewTranslation` calling `R_TranslatePlayerSkin`).
+    fn remake(
+        &mut self,
+        slot: usize,
+        (index, model, skin): (usize, &AliasModel, usize),
+        colors: i32,
+        palette: &Palette,
+    ) -> Option<Image> {
+        let held = self.0.get_mut(slot)?;
+        let made = Some((index, skin, colors));
+        if *held == made {
+            return None;
+        }
+        *held = made;
+        model.translated(skin, colors, palette)
+    }
 }
 
 impl Play {
@@ -274,6 +301,7 @@ impl Play {
             skyfog: 0.5,
             screen: [640, 480],
             zfix: true,
+            player_skins: PlayerSkins::default(),
         }
     }
 
@@ -337,7 +365,7 @@ impl Play {
     /// styles and dynamic lights (REND-5.5, REND-7).
     #[must_use]
     pub fn frame(
-        &self,
+        &mut self,
         scene: &Scene,
         hud: &Hud,
         bsp: &Bsp<'_>,
@@ -371,6 +399,7 @@ impl Play {
         if let Some(world) = placements.first_mut() {
             *world = Some(Placement::WORLD.matrix());
         }
+        let mut player_skins = Vec::new();
         let light = |origin| light_point(bsp, &styles, origin);
         // R_DrawEntitiesOnList: the alias and brush models, then the sprites.
         for entity in scene.entities.iter().chain(&scene.statics) {
@@ -393,6 +422,20 @@ impl Play {
                         kind,
                     };
                     draw_alias(model, *first, &alias, scene.time, &mut models);
+                    // REND-4.13: a player wearing colours is drawn with its slot's skin.
+                    let slot = entity.entity.checked_sub(1).filter(|&s| {
+                        kind == AliasKind::Player && entity.colormap != 0 && s < PLAYER_SKINS
+                    });
+                    if let (Some(slot), Some(draw)) = (slot, models.draws.last_mut()) {
+                        let skin = (entity.model, model, alias.skin);
+                        let colors = scene.colors.get(slot).copied().unwrap_or(0);
+                        player_skins.extend(
+                            self.player_skins
+                                .remake(slot, skin, colors, &self.palette)
+                                .map(|image| (slot, image)),
+                        );
+                        draw.skin = self.skins.len().saturating_add(slot);
+                    }
                 }
                 Some(Model::Sprite(model, first)) => {
                     let sprite = SpriteEntity {
@@ -478,6 +521,7 @@ impl Play {
             flat,
             placements,
             lightmap,
+            player_skins,
         }
     }
 

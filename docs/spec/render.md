@@ -186,7 +186,9 @@ decide how bright and how smooth a frame looks.
 `Mod_FloodFillSkin`, `Mod_LoadAllSkins` and `Mod_LoadAliasGroup`; `WinQuake/gl_mesh.c`,
 `BuildTris`; `WinQuake/gl_rlight.c`, `R_LightPoint` and `RecursiveLightPoint`;
 `WinQuake/anorm_dots.h`; `WinQuake/cl_main.c`, `CL_RelinkEntities`; `WinQuake/mathlib.c`,
-`anglemod`; `WinQuake/gl_vidnt.c`, `VID_SetPalette`
+`anglemod`; `WinQuake/gl_vidnt.c`, `VID_SetPalette`; `WinQuake/gl_rmisc.c`,
+`R_TranslatePlayerSkin`; `WinQuake/cl_parse.c`, `CL_ParseUpdate` and `CL_NewTranslation`;
+`WinQuake/render.h`, `TOP_RANGE` and `BOTTOM_RANGE`
 (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`). The colour clamp is OpenGL 1.1,
 section 2.13.6. The pose blend is `Quake/r_alias.c`, `GL_DrawAliasFrame`
 (sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`).
@@ -284,6 +286,20 @@ world's light below the entity.
   `(sum over its styles of sample * style value) >> 8` at sample `(dt>>4) *
   ((extents[0]>>4)+1) + (ds>>4)`, the style values as REND-5.6 says. A leaf hit with nothing
   gives 0.
+- **REND-4.13** `R_TranslatePlayerSkin (playernum)` (`gl_rmisc.c`) builds an identity table,
+  then for `i` in 0 to 15 sets `translate[TOP_RANGE+i]` to `top+i` and
+  `translate[BOTTOM_RANGE+i]` to `bottom+i`, or `top+15-i` and `bottom+15-i` for a row of 128 or
+  more ("the artists made some backwards ranges"), with `top = colors & 0xf0`, `bottom = (colors
+  &15)<<4`, `colors` the slot's `cl.scores[playernum].colors`, and `TOP_RANGE` 16 and
+  `BOTTOM_RANGE` 96 (`render.h`). It translates `texels[skinnum]` of
+  `cl_entities[1+playernum]`'s alias model, the 8-bit pixels after REND-4.1's flood fill and a
+  group's first image, or `texels[0]` for a skin number out of range, into `playertextures +
+  playernum`. `CL_ParseUpdate` calls it when a player's model or skin number changes and
+  `CL_NewTranslation` when its colours do (`cl_parse.c`). `R_DrawAliasModel` binds
+  `playertextures - 1 + i` instead of the skin for entity `i` from 1 to `cl.maxclients` when its
+  colormap is not `vid.colormap`, that is, a nonzero colormap ("Heads are just uncolored"). The
+  renderer keeps one translated skin per slot, up to 16, remade when the entity's model, skin or
+  colours change.
 
 ### Constants
 

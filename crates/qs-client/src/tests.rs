@@ -500,6 +500,7 @@ fn every_command_is_read() {
     assert_eq!(client.scores()[0].name, b"Ranger");
     assert_eq!(client.scores()[0].frags, -2);
     assert_eq!(client.scores()[0].colors, 0x4d);
+    assert_eq!(client.scene().colors[0], 0x4d, "the scene carries each slot's colours");
     assert!(client.paused());
     assert_eq!(client.stats()[stat::MONSTERS], 1);
     assert_eq!(client.stats()[stat::SECRETS], 1);

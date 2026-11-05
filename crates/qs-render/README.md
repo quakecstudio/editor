@@ -15,6 +15,7 @@ the map view and the preview host share one renderer.
   `R_BuildLightMap`, `R_AddDynamicLights`, `R_DrawBrushModel`), `WinQuake/gl_rlight.c`
   (`R_LightPoint`, `R_PushDlights`, `R_MarkLights`, `R_AnimateLight`), `WinQuake/gl_rmain.c`
   (`R_DrawAliasModel`, `R_DrawViewModel`, `R_PolyBlend`, `R_RotateForEntity`),
+  `WinQuake/gl_rmisc.c` (`R_TranslatePlayerSkin`),
   `WinQuake/r_part.c` (`R_DrawParticles`), `WinQuake/gl_draw.c` (`Draw_Character`,
   `Draw_Pic`, `Draw_Fill`, `GL_Set2D`), `WinQuake/sbar.c` (`Sbar_DrawPic`); from
   sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`, `Quake/r_alias.c`
@@ -55,15 +56,15 @@ the map view and the preview host share one renderer.
   size) and a frame's models, sprites, particles and 2D quads, in `R_RenderView`'s order.
 - `Play`: a `qs_client::Scene` and `Hud` turned into a `MapCallback`: the models the client
   precached (`load_models`), the pictures (`Pics`, from `gfx.wad` and the `.lmp` files), the
-  map's fog (`FogState`), the view model's and the players' light floors, and the status
+  map's fog (`FogState`), the view model's and the players' light floors, each player's skin
+  in its slot's shirt and trouser colours (REND-4.13), and the status
   bar, the scoreboards and the centre print as quads.
 - `Camera`: a free camera in Quake's axes and its clip-space matrix, and
   `Camera::clip_from_view` for the client's view angles.
 
 ## What it is not, yet
 
-Player colours (the colormap's shirt and pants translation) and skyboxes (REND-8, which need
-an image reader for the `gfx/env` files) are not drawn, nor is `gl_flashblend` (REND-7.4,
+Skyboxes (REND-8, which need an image reader for the `gfx/env` files) are not drawn, nor is `gl_flashblend` (REND-7.4,
 off in the FitzQuake lineage). Each model has its own matrix (`MapRenderer::set_placements`),
 and a brush entity out of the client's visible list is not drawn.
 

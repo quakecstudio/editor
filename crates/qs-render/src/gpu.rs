@@ -6,7 +6,9 @@
 //! particles, the view model, the water, the view blend and the 2D layer.
 
 use egui_wgpu::wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder};
-use egui_wgpu::wgpu::{self, BindGroup, Buffer, Device, Queue, RenderPipeline, TextureFormat};
+use egui_wgpu::wgpu::{
+    self, BindGroup, BindGroupLayout, Buffer, Device, Queue, RenderPipeline, Sampler, TextureFormat,
+};
 use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 
 use crate::alias::AliasVertex;
@@ -53,8 +55,11 @@ pub struct MapRenderer {
     animations: Vec<Option<Animation>>,
     /// The pipeline of alias models (REND-4).
     alias_pipeline: RenderPipeline,
-    /// Each alias skin image, bound as a surface texture.
+    /// Each alias skin image, bound as a surface texture, then [`PLAYER_SKINS`] player skins,
+    /// each a client slot's skin in its colours (REND-4.13).
     skins: Vec<BindGroup>,
+    /// The layout and the sampler a skin is bound with, for a player skin set later.
+    skin_binding: (BindGroupLayout, Sampler),
     /// This frame's alias triangles, and the view model's.
     alias: Grown,
     alias_draws: Vec<AliasDraw>,
@@ -135,6 +140,10 @@ impl Grown {
 const MODEL_STRIDE: u64 = 256;
 /// The bytes of one model's matrix.
 const MATRIX_BYTES: u64 = 16 * 4;
+
+/// The player skins the renderer keeps after the models' skins, one per client slot,
+/// GLQuake's `playertextures` for `MAX_SCOREBOARD` 16 clients (REND-4.13).
+pub(crate) const PLAYER_SKINS: usize = 16;
 
 /// One run of a frame's alias vertices, drawn with one skin image.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -525,7 +534,7 @@ impl MapRenderer {
                 })
             };
         // REND-4.3: a skin is mipmapped and filtered as a world texture is.
-        let skins = assets
+        let mut skins: Vec<BindGroup> = assets
             .skins
             .iter()
             .map(|image| {
@@ -533,6 +542,16 @@ impl MapRenderer {
                 bind(&texture, &mipmapped, &texture)
             })
             .collect();
+        // REND-4.13: each player skin starts white, until its slot's colours set it.
+        let blank = Image {
+            width: 1,
+            height: 1,
+            rgba: vec![255; 4],
+        };
+        for _ in 0..PLAYER_SKINS {
+            let texture = upload_levels(device, queue, &mip_levels(&blank));
+            skins.push(bind(&texture, &mipmapped, &texture));
+        }
         // A sprite frame and a picture keep their transparent texels: no mipmaps, filtered
         // linearly as `GL_LoadTexture (..., alpha)` filters them.
         let plain = |image: &Image| {
@@ -580,6 +599,7 @@ impl MapRenderer {
             animations: mesh.animations.clone(),
             alias_pipeline,
             skins,
+            skin_binding: (texture_layout.clone(), mipmapped.clone()),
             alias: Grown::new("qs-render alias vertices", ALIAS_VERTEX_BYTES),
             alias_draws: Vec::new(),
             weapon: Grown::new("qs-render view model vertices", ALIAS_VERTEX_BYTES),
@@ -626,6 +646,43 @@ impl MapRenderer {
         self.alias
             .write(device, queue, &alias_bytes(&models.vertices));
         self.alias_draws.clone_from(&models.draws);
+    }
+
+    /// Sets player skin `slot`, a client slot's skin in its colours (REND-4.13), to `image`,
+    /// mipmapped and filtered as any skin is (REND-4.3). The skin a draw names is the models'
+    /// skins' count plus `slot`.
+    pub fn set_player_skin(&mut self, device: &Device, queue: &Queue, slot: usize, image: &Image) {
+        let (layout, sampler) = &self.skin_binding;
+        let at = self
+            .skins
+            .len()
+            .saturating_sub(PLAYER_SKINS)
+            .saturating_add(slot);
+        if slot >= PLAYER_SKINS {
+            return;
+        }
+        let texture = upload_levels(device, queue, &mip_levels(image));
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("qs-render player skin"),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&texture),
+                },
+            ],
+        });
+        if let Some(entry) = self.skins.get_mut(at) {
+            *entry = group;
+        }
     }
 
     /// Sets the view model drawn next, in the nearest 0.3 of the depth range (REND-4.11).
@@ -1098,6 +1155,8 @@ pub struct MapCallback {
     pub placements: Vec<Option<[[f32; 4]; 4]>>,
     /// The lightmap made again for this frame's light styles, when they changed (REND-5.5).
     pub lightmap: Option<Image>,
+    /// The player skins whose colours changed this frame, by slot (REND-4.13).
+    pub player_skins: Vec<(usize, Image)>,
 }
 
 impl CallbackTrait for MapCallback {
@@ -1121,6 +1180,9 @@ impl CallbackTrait for MapCallback {
             }
             if let Some(lightmap) = &self.lightmap {
                 renderer.set_lightmap(queue, lightmap);
+            }
+            for (slot, image) in &self.player_skins {
+                renderer.set_player_skin(device, queue, *slot, image);
             }
         }
         Vec::new()
@@ -1252,6 +1314,7 @@ mod tests {
             flat: FlatFrame::default(),
             placements: Vec::new(),
             lightmap: None,
+            player_skins: Vec::new(),
         }
     }
 
@@ -1676,6 +1739,7 @@ mod tests {
             flat: FlatFrame::default(),
             placements: Vec::new(),
             lightmap: Some(mesh.lightmap.clone()),
+            player_skins: Vec::new(),
         };
         let mut encoder = state.device.create_command_encoder(&Default::default());
         let screen = egui_wgpu::ScreenDescriptor {

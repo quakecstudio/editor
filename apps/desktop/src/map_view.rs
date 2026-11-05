@@ -71,6 +71,7 @@ impl MapView {
                 flat: qs_render::FlatFrame::default(),
                 placements: Vec::new(),
                 lightmap: None,
+                player_skins: Vec::new(),
             },
         ));
     }
