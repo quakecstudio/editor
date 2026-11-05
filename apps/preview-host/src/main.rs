@@ -54,11 +54,11 @@ fn run(args: &args::Args) -> Result<(), String> {
             nosound: true,
             ..args.clone()
         };
-        let loaded = load::load(&args, &args.map, None)?;
+        let loaded = load::load(&args, &args.map, None, None)?;
         let path = args.bridge.as_deref().ok_or("--headless needs -bridge")?;
         return headless::run(&args, loaded, listen(path)?);
     }
-    let loaded = load::load(args, &args.map, None)?;
+    let loaded = load::load(args, &args.map, None, None)?;
     let bridge = match &args.bridge {
         Some(path) => Some(listen(path)?),
         None => None,

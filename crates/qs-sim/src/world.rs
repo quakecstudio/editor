@@ -15,6 +15,7 @@
 //! frames that drop monsters to the floor and run their thinks are the rest of P3-24.
 
 use qc_builtins::MockEngine;
+use qc_builtins::mock::{Cvars, Rng};
 use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
 use qc_progs::Progs;
@@ -26,6 +27,7 @@ use qs_vfs::Registration;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
+use crate::host_commands::SignonCommand;
 use crate::messages::ClientMessages;
 #[cfg(test)]
 use crate::messages::ServerMessages;
@@ -109,6 +111,8 @@ pub struct World {
     /// The string commands the client sent since the last frame, which it reads first
     /// (PHYS-11.1).
     commands: Vec<Vec<u8>>,
+    /// Whether the client connects in the next frame (PHYS-10.7).
+    connecting: bool,
     /// The spawn parms the level the player left kept, used in place of `SetNewParms`'.
     carried: Option<SpawnParms>,
     /// The client's spawn parms, `host_client->spawn_parms`, which a saved game keeps.
@@ -134,6 +138,18 @@ pub struct LoadOptions {
     /// Whether the install is the full game, which sets the `registered` setting the progs
     /// read (FS-4.5).
     pub registration: Registration,
+    /// What the last level's host had, kept for this one: `None` for a new game, where the
+    /// random source starts at 1 and the settings at their defaults (MOVE-6.3, PHYS-12.3).
+    pub host: Option<HostState>,
+}
+
+/// What lives in id's engine for the whole process, not one level: the C library's random
+/// state and the settings (MOVE-6.3, PHYS-12.3). [`World::host_state`] takes it from one level
+/// for the next.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HostState {
+    rng: Rng,
+    cvars: Cvars,
 }
 
 /// The stages of a client's entry, `CL_SignonReply`'s answers and the server's commands for
@@ -205,9 +221,18 @@ impl World {
         let submodels = bsp.models.len().saturating_sub(1);
         // MOVE-6.1: the random source starts at state 1.
         let mut engine = MockEngine::new(map, submodels, RANDOM_SEED);
-        // PHYS-12.1: the server's and the host's settings, with id's defaults.
-        for (name, value) in SERVER_SETTINGS {
-            engine.cvars.create(name, value);
+        match options.host {
+            // MOVE-6.3, PHYS-12.3: the last level's random state and settings go on.
+            Some(host) => {
+                engine.rng = host.rng;
+                engine.cvars = host.cvars;
+            }
+            // PHYS-12.1: the server's and the host's settings, with id's defaults.
+            None => {
+                for (name, value) in SERVER_SETTINGS {
+                    engine.cvars.create(name, value);
+                }
+            }
         }
         engine.clock = MAP_START_TIME;
         engine.server_active = false;
@@ -230,6 +255,7 @@ impl World {
             ),
             player: None,
             commands: Vec::new(),
+            connecting: false,
             carried: options.carried,
             spawn_parms: [Slot::ZERO; 16],
             loaded: false,
@@ -309,36 +335,72 @@ impl World {
     pub fn frame(&mut self, progs: &Progs<'_>, frametime: f64) -> Result<(), WorldError> {
         // MOVE-6.2: `_Host_Frame`'s `rand ();`, "keep the random time dependent".
         let _discarded = self.builtins.mock.engine_mut().rng.next_rand();
+        {
+            let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+            // Host_ServerFrame (NET-1.2): frametime, the datagram cleared, then the clients'
+            // moves, then the physics, then the messages.
+            call.set_global("frametime", Slot::from_f32(double_to_float(frametime)));
+            call.sim.messages.datagram.clear();
+            // The mock engine counts the datagram's bytes beside the sim's (NET-5.1): it
+            // empties with it.
+            call.sim.mock.engine_mut().buffers.unreliable = 0;
+        }
+        // PHYS-10.7: `SV_CheckForNewClients`, then `SV_RunClients` reading the client's string
+        // commands, before its move (PHYS-11.1), whether or not it has spawned yet.
+        if core::mem::take(&mut self.connecting) {
+            self.signon(progs, Signon::Connect)?;
+        }
+        if self.builtins.messages.client.active {
+            for text in core::mem::take(&mut self.commands) {
+                let spawned = self.player.is_some();
+                let stage = SimCall::frame(&mut self.machine, progs, &mut self.builtins)
+                    .client_command(CLIENT, &text, spawned)
+                    .map_err(WorldError::Frame)?;
+                match stage {
+                    Some(SignonCommand::Prespawn) => self.signon(progs, Signon::Prespawn)?,
+                    Some(SignonCommand::Spawn) => self.signon(progs, Signon::Spawn)?,
+                    Some(SignonCommand::Begin) => self.signon(progs, Signon::Begin)?,
+                    None => {}
+                }
+            }
+        }
         let clients = self.builtins.mock.engine().clients_active.clone();
         let player = self.player;
-        let commands = core::mem::take(&mut self.commands);
+        // PHYS-11.8: paused, the client's move is read but not thought, and no physics runs.
+        let paused = self.builtins.paused;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
-        let t = double_to_float(frametime);
-        // Host_ServerFrame (NET-1.2): frametime, the datagram cleared, then the clients'
-        // moves, then the physics, then the messages.
-        call.set_global("frametime", Slot::from_f32(t));
-        call.sim.messages.datagram.clear();
-        // The mock engine counts the datagram's bytes beside the sim's (NET-5.1): it empties
-        // with it.
-        call.sim.mock.engine_mut().buffers.unreliable = 0;
-        // PHYS-11.1: the client's string commands, read before its move.
-        if player.is_some() {
-            for text in &commands {
-                call.client_command(CLIENT, text)
+        if let Some(cmd) = player {
+            let cmd = call.read_move(CLIENT, &cmd);
+            if !paused {
+                call.client_think(CLIENT, &cmd, frametime)
                     .map_err(WorldError::Frame)?;
             }
         }
-        if let Some(cmd) = player {
-            let cmd = call.read_move(CLIENT, &cmd);
-            call.client_think(CLIENT, &cmd, frametime)
+        if !paused {
+            call.physics(frametime, &clients)
                 .map_err(WorldError::Frame)?;
         }
-        call.physics(frametime, &clients)
-            .map_err(WorldError::Frame)?;
         call.send_client_messages().map_err(WorldError::Frame)?;
         // The reliable datagram went out with the messages (NET-1.4).
         call.sim.mock.engine_mut().buffers.reliable = 0;
         Ok(())
+    }
+
+    /// The random state and the settings, for the next level's [`LoadOptions::host`]
+    /// (MOVE-6.3, PHYS-12.3).
+    #[must_use]
+    pub fn host_state(&self) -> HostState {
+        let engine = self.builtins.mock.engine();
+        HostState {
+            rng: engine.rng,
+            cvars: engine.cvars.clone(),
+        }
+    }
+
+    /// The client connects in the next frame, at its `SV_CheckForNewClients` (PHYS-10.7);
+    /// it then sends `prespawn`, `spawn` and `begin` as string commands.
+    pub fn connect_next_frame(&mut self) {
+        self.connecting = true;
     }
 
     /// The player enters the game, as `SV_ConnectClient` and `Host_Spawn_f` bring a client in
@@ -420,7 +482,7 @@ impl World {
     /// `Host_Spawn_f` (PHYS-10.1): the client's edict cleared and named, its parms set, then
     /// `ClientConnect` and `PutClientInServer`, and the spawn message (NET-2.4).
     fn signon_spawn(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
-        let name = self.make_string(b"player".to_vec());
+        let name = self.make_string(self.builtins.client_name.clone());
         let parms = self.spawn_parms;
         let loaded = self.loaded;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);

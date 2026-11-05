@@ -11,7 +11,7 @@ use qs_mdl::spr::Sprite;
 use qs_render::{Camera, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface};
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::patch_builtins;
-use qs_sim::{LoadOptions, SpawnParms, World};
+use qs_sim::{HostState, LoadOptions, SpawnParms, World};
 use qs_vfs::zip::Zip;
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
@@ -112,7 +112,12 @@ impl qs_sound::Random for Rand {
     clippy::too_many_lines,
     reason = "one pass from the command line to a loaded map reads best in the order it runs"
 )]
-pub(crate) fn load(args: &Args, map: &str, carried: Option<SpawnParms>) -> Result<Loaded, String> {
+pub(crate) fn load(
+    args: &Args,
+    map: &str,
+    carried: Option<SpawnParms>,
+    host: Option<HostState>,
+) -> Result<Loaded, String> {
     let map = map.to_owned();
     let engine = args.engine();
     let show = args.show.map(|show| match show {
@@ -173,6 +178,7 @@ pub(crate) fn load(args: &Args, map: &str, carried: Option<SpawnParms>) -> Resul
         builtins,
         carried,
         registration: vfs.registration(),
+        host,
     };
     let mut world =
         World::load(&progs, &map, &bsp, reader()?, options).map_err(|e| e.to_string())?;

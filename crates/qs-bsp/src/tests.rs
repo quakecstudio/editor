@@ -1868,25 +1868,6 @@ fn a_point_finds_its_leaf() {
     assert_eq!(bsp.point_in_leaf([0.0, 2.0, -1.0]), Some(1), "d = 0.4");
 }
 
-// spec BSP-21.1, BSP-6.2: a map's visibility kept on its own finds the leaves and reads the
-// rows the map itself does
-#[test]
-fn visibility_answers_as_the_map_does() {
-    let mut spec = BspSpec::default();
-    spec.models[0].visleafs = 16;
-    spec.visibility = vec![0x00, 0x00, 0x07, 0x08, 0x00];
-    let bsp = read(&spec).unwrap();
-    let vis = Visibility::of(&bsp);
-    for leaf in 0..bsp.leafs.len() {
-        assert_eq!(vis.leaf_pvs(leaf), bsp.leaf_pvs(leaf), "leaf {leaf}");
-    }
-    assert!(vis.leaf_pvs(bsp.leafs.len()).is_err());
-    for p in [[5.0, 5.0, 0.0], [-100.0, 3.0, 2.0], [64.0, 64.0, 1.0]] {
-        assert_eq!(vis.point_in_leaf(p), bsp.point_in_leaf(p));
-    }
-    assert_eq!(Visibility::default().point_in_leaf([0.0; 3]), None);
-}
-
 // spec BSP-21.2: no nodes, a plane that does not exist, or a tree that reaches no leaf
 // give no leaf
 #[test]

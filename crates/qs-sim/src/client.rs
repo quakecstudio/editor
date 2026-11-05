@@ -15,12 +15,10 @@ use qc_types::Slot;
 use qc_vm::convert::{double_to_float, float_to_int};
 use qc_vm::{ErrorKind, RunError};
 
-use crate::builtins::{FL_NOTARGET, FL_ONGROUND, SimCall};
+use crate::builtins::{FL_ONGROUND, SimCall};
 use crate::collision::{CONTENTS_WATER, MoveKind, Solid, Trace, test_entity_position};
-use crate::messages::SVC_PRINT;
 use crate::physics::MoveType;
 use crate::settings::Setting;
-use crate::world::command_words;
 
 /// The air speed an airborne player may add toward, `wishspd > 30` (PHYS-9.4).
 const AIR_SPEED: f32 = 30.0;
@@ -40,8 +38,6 @@ const EDGE_DEPTH: f32 = 34.0;
 const SINK: f32 = 60.0;
 /// Swimming is this much of the wished speed (PHYS-9.5).
 const SWIM_SCALE: f32 = 0.7;
-/// `FL_GODMODE` (`WinQuake/server.h`), which `god` toggles (PHYS-11.3).
-const FL_GODMODE: i32 = 64;
 /// A punch fades at 10 degrees a second (PHYS-9.1).
 const PUNCH_FADE: f32 = 10.0;
 
@@ -138,68 +134,6 @@ impl SimCall<'_, '_, '_> {
             self.set_float(ent, "impulse", f32::from(cmd.impulse));
         }
         cmd
-    }
-
-    /// A string command the client sent, as `SV_ReadClientMessage` passes it to
-    /// `Cmd_ExecuteString` (PHYS-11): `god`, `notarget`, `noclip`, `fly` and `kill` change the
-    /// player; any other is ignored.
-    pub(crate) fn client_command(&mut self, ent: usize, text: &[u8]) -> Result<(), RunError> {
-        let Some(words) = command_words(text).into_iter().next() else {
-            return Ok(());
-        };
-        let Some(name) = words.first().map(|w| w.to_ascii_lowercase()) else {
-            return Ok(());
-        };
-        // PHYS-11.2: in deathmatch, no client is privileged.
-        let cheat = self.global("deathmatch").as_f32() == 0.0;
-        match name.as_slice() {
-            b"god" if cheat => self.toggle_flag(ent, FL_GODMODE, "godmode"),
-            b"notarget" if cheat => self.toggle_flag(ent, FL_NOTARGET, "notarget"),
-            b"noclip" if cheat => self.toggle_movetype(ent, MoveType::Noclip, "noclip"),
-            b"fly" if cheat => self.toggle_movetype(ent, MoveType::Fly, "flymode"),
-            b"kill" => {
-                // PHYS-11.4: `Host_Kill_f`.
-                if self.float(ent, "health") <= 0.0 {
-                    self.client_printf("Can't suicide -- allready dead!\n");
-                    return Ok(());
-                }
-                self.set_time(self.clock());
-                let value = self.value_of(ent);
-                self.set_global("self", Slot::from_i32(value));
-                let function = self.global("ClientKill").as_i32();
-                self.run(function)?;
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    /// PHYS-11.3: `Host_God_f` and `Host_Notarget_f`: the flag toggled, then
-    /// `"<what> ON"` or `"<what> OFF"` printed to the client.
-    fn toggle_flag(&mut self, ent: usize, flag: i32, what: &str) {
-        let flags = self.flags(ent) ^ flag;
-        self.set_flags(ent, flags);
-        let state = if flags & flag == 0 { "OFF" } else { "ON" };
-        self.client_printf(&format!("{what} {state}\n"));
-    }
-
-    /// PHYS-11.3: `Host_Noclip_f` and `Host_Fly_f`: `movetype` becomes `to`, or `MOVETYPE_WALK`
-    /// when it is already `to`, then `"<what> ON"` or `"<what> OFF"` printed to the client.
-    fn toggle_movetype(&mut self, ent: usize, to: MoveType, what: &str) {
-        let (next, state) = if self.movetype(ent) == to {
-            (MoveType::Walk, "OFF")
-        } else {
-            (to, "ON")
-        };
-        self.set_float(ent, "movetype", next.to_float());
-        self.client_printf(&format!("{what} {state}\n"));
-    }
-
-    /// `SV_ClientPrintf`: `svc_print` and the text to the client.
-    fn client_printf(&mut self, text: &str) {
-        let message = &mut self.sim.messages.client.message;
-        message.write_byte(SVC_PRINT);
-        message.write_string(text.as_bytes());
     }
 
     /// `SV_ClientThink` (PHYS-9.1, PHYS-9.2).

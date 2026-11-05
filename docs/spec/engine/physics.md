@@ -144,6 +144,12 @@ Doors, platforms and trains are `SOLID_BSP` with `MOVETYPE_PUSH`. Their clock is
   multiplied by `host_frametime`, a double; `velocity[2]` is widened to double, the difference
   taken in double, and the result rounded to float once.
 
+- **PHYS-6.6** `SV_CheckVelocity`'s NaN test is id's `IS_NAN(x)`, `((*(int *)&x) & nanmask) ==
+  nanmask` with `nanmask` `255<<23` (`WinQuake/mathlib.h`, `mathlib.c`): every exponent bit
+  set, so an infinity counts as a NaN and becomes 0 too. A velocity component is zeroed first
+  and then bounded: `if (velocity > sv_maxvelocity) velocity = sv_maxvelocity; else if
+  (velocity < -sv_maxvelocity) velocity = -sv_maxvelocity;`, two comparisons, so a negative
+  `sv_maxvelocity` gives `sv_maxvelocity` for every component above it.
 ## PHYS-7 Sliding
 
 **Source:** `WinQuake/sv_phys.c`, `SV_FlyMove`.
@@ -342,30 +348,37 @@ frametime it is given; the viewer paces its frames that way.
   the host to load the level again.
 
 
-- **PHYS-10.7** A client enters in four stages, each run by the server in its own frame before
-  that frame's moves and physics: `SV_ConnectClient` (the slot active, the serverinfo sent, the
-  spawn parms chosen as PHYS-10.1 and PHYS-10.4 say), then the client's `prespawn` (the map's
-  signon data sent, `Host_PreSpawn_f`), then its `spawn` (the edict made and `ClientConnect` and
-  `PutClientInServer` run, `Host_Spawn_f`), then its `begin` (`Host_Begin_f`), after which its
-  moves are read. A local client answers each stage's signon message in the next frame
+- **PHYS-10.7** A client enters in four stages, each run by the server in its own frame after
+  the frame's discarded draw (MOVE-6.2) and `frametime`, before its moves and physics:
+  `SV_ConnectClient` from `SV_CheckForNewClients` (the slot active, the serverinfo sent, the
+  spawn parms chosen as PHYS-10.1 and PHYS-10.4 say), then the client's string command
+  `prespawn` (the map's signon data sent, `Host_PreSpawn_f`), then `spawn` (the edict cleared,
+  named with the client's name, and `ClientConnect` and `PutClientInServer` run,
+  `Host_Spawn_f`), then `begin` (`Host_Begin_f`), after which its moves are thought. A local client answers each stage's signon message in the next frame
   (`CL_SignonReply`), so the four take frames 1 to 4. From the first stage the client is
   active, so the frames' physics run `PlayerPreThink` and `PlayerPostThink` on its edict before
   it has spawned (`SV_Physics_Client` tests `active`, not `spawned`).
 ## PHYS-11 The client's string commands
 
 **Source:** `WinQuake/sv_user.c`, `SV_ReadClientMessage`; `WinQuake/host_cmd.c`, `Host_God_f`,
-`Host_Notarget_f`, `Host_Noclip_f`, `Host_Fly_f`, `Host_Kill_f`; `WinQuake/cmd.c`,
-`Cmd_ExecuteString`.
+`Host_Notarget_f`, `Host_Noclip_f`, `Host_Fly_f`, `Host_Kill_f`, `Host_Give_f`, `Host_Name_f`,
+`Host_Color_f`, `Host_Pause_f`; `WinQuake/cmd.c`, `Cmd_TokenizeString`, `Cmd_ExecuteString`.
 
 ### Behaviour
 
-- **PHYS-11.1** A string command the client sent is read in the next server frame, before the
-  client's move and think, in the order sent (`SV_RunClients` reads the client's messages
-  first). Its first word names the command, matched ASCII case-insensitively
-  (`Q_strcasecmp (cmd_argv[0],cmd->name)`).
-- **PHYS-11.2** `god`, `notarget`, `noclip` and `fly` do nothing when the `deathmatch` global is
-  not 0: they test `pr_global_struct->deathmatch && !host_client->privileged`, and no server
-  file sets `privileged`.
+- **PHYS-11.1** A string command the client sent is read in the next server frame, in the order
+  sent, before the client's move, whether or not it has spawned, once the client is active
+  (`SV_RunClients` reads every active client's messages). It runs only when its text starts,
+  ASCII case-insensitively, with one of `status`, `god`, `notarget`, `fly`, `name`, `noclip`,
+  `say`, `say_team`, `tell`, `color`, `kill`, `pause`, `spawn`, `begin`, `prespawn`, `kick`,
+  `ping`, `give` or `ban` (`Q_strncasecmp (s, "<name>", <length>)`); then
+  `Cmd_TokenizeString` splits its first line into words with `COM_Parse` (a `;` separates
+  nothing, at most 80 words), keeping the text from the second word on as `cmd_args`, and the
+  first word names the command, matched ASCII case-insensitively. A word the server has no
+  command for does nothing.
+- **PHYS-11.2** `god`, `notarget`, `noclip`, `fly` and `give` do nothing when the `deathmatch`
+  global is not 0: they test `pr_global_struct->deathmatch && !host_client->privileged`, and no
+  server file sets `privileged`.
 - **PHYS-11.3** `god` toggles `FL_GODMODE` (64) in the player's `flags` and `notarget`
   `FL_NOTARGET` (128); each prints `godmode ON`, `godmode OFF`, `notarget ON` or `notarget OFF`
   and a line feed to the client. `noclip` sets `movetype` to `MOVETYPE_NOCLIP`, or to
@@ -374,11 +387,26 @@ frametime it is given; the viewer paces its frames that way.
 - **PHYS-11.4** `kill`, for a player whose `health` is above 0, sets `time` to the server's
   time and `self` to the player and runs `ClientKill`; otherwise it prints "Can't suicide --
   allready dead!" and a line feed to the client.
-- **PHYS-11.5** The other commands `SV_ReadClientMessage` accepts (`status`, `name`, `say`,
-  `say_team`, `tell`, `color`, `pause`, `kick`, `ping`, `give`, `ban`, and the signon's
-  `prespawn`, `spawn` and `begin`) do not change the simulation in a single-player game
-  this way, and `qs-sim` ignores them; a command it does not accept is ignored too.
-
+- **PHYS-11.5** `prespawn` and `spawn` run their signon stage (PHYS-10.7) unless the client has
+  spawned ("prespawn not valid -- allready spawned", "Spawn not valid -- allready spawned"),
+  and `begin` runs its stage. `status`, `say`, `say_team`, `tell`, `ping`, `kick` and `ban`
+  change no edict or global; `qs-sim` runs none of them.
+- **PHYS-11.6** `give <what> <n>`, with `n` read by C's `atoi`, in the original game (the
+  `-rogue` and `-hipnotic` variants, which `qs-sim` does not tell apart, are not described):
+  a digit 2 to 9 adds `IT_SHOTGUN << (digit - 2)` to `items`; `s`, `n`, `r`, `h` and `c` set
+  `ammo_shells`, `ammo_nails`, `ammo_rockets`, `health` and `ammo_cells` to `n`; anything else
+  does nothing.
+- **PHYS-11.7** `name` with one argument makes it the client's name, with more `cmd_args`, cut
+  to 15 bytes (`newName[15] = 0`); the player's `netname` becomes it and `svc_updatename`, the
+  slot and the name go in the reliable datagram. `color <top> [<bottom>]` reads each with
+  `atoi`, one giving both, keeps each `& 15` and at most 13, sets the player's `team` to
+  `bottom + 1`, and puts `svc_updatecolors`, the slot and `top * 16 + bottom` in the reliable
+  datagram. With no argument neither changes anything.
+- **PHYS-11.8** `pause`, with the `pausable` setting 0, prints "Pause not allowed." to the
+  client; otherwise it toggles `sv.paused`, prints "`<netname>` paused the game" or "unpaused
+  the game" to the client and puts `svc_setpause` and the new state in the reliable datagram.
+  While paused the client's move is read but its think does not run and no physics runs, so
+  the server's time stands (`SV_RunClients`, `Host_ServerFrame`: `if (!sv.paused ...)`).
 
 ## PHYS-12 The server's settings
 
@@ -401,6 +429,8 @@ frametime it is given; the viewer paces its frames that way.
   (NET-4.2), `sv_aim` (WORLD-8.8) and `sv_nostep`, which ends `SV_WalkMove` before it tries
   to step up (PHYS-8.3). A progs that sets one, as `worldspawn` sets `sv_gravity` to 100 on
   e1m8, changes the game from then on.
+- **PHYS-12.3** The settings belong to the host, not the level: a level change or a restart
+  keeps them as they were (`Cvar_Set` writes the process's `cvar_t`).
 ## Constants
 
 | Name | Value | Source |

@@ -56,6 +56,8 @@ pub(crate) enum Setting {
     NoStep,
     /// `teamplay`, which `aim` reads (WORLD-8.8).
     Teamplay,
+    /// `pausable`, which lets a client pause (PHYS-11.8).
+    Pausable,
 }
 
 impl Setting {
@@ -73,6 +75,7 @@ impl Setting {
             Self::Aim => "sv_aim",
             Self::NoStep => "sv_nostep",
             Self::Teamplay => "teamplay",
+            Self::Pausable => "pausable",
         }
     }
 }

@@ -13,10 +13,7 @@ use qc_progs::Progs;
 use qc_trace::{Record, Trace};
 use qc_types::Slot;
 use qs_bsp::{Bsp, BspLoader};
-use qs_sim::rerelease::patch_builtins;
-use qs_sim::{
-    LoadOptions, NamedValue, QcValue, RawState, Signon, State, UserCmd, World, read_state,
-};
+use qs_sim::{LoadOptions, NamedValue, QcValue, RawState, State, UserCmd, World, read_state};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 use crate::oracles;
@@ -96,32 +93,33 @@ fn compare(
     engine.extend(engine_words.iter().cloned());
     let game = Game::load(&engine, &route.map)?;
     let progs = Progs::read(&game.progs).map_err(|e| format!("progs.dat: {e}"))?;
-    let oracle = oracle_states(&progs, &trace)?;
-    let ours = game.play(&progs, route)?;
-    if oracle.len() != ours.len() {
-        println!(
-            "FAIL  sim-diff {}: the oracle ran {} frames and qs-sim {}",
-            script.display(),
-            oracle.len().saturating_sub(1),
-            ours.len().saturating_sub(1)
-        );
+    let mut oracle = OracleFrames::new(&progs, &trace)?;
+    let mut failure = None;
+    let frames = game.play(&progs, route, |frame, mine| {
+        let Some(theirs) = oracle.next_state()? else {
+            failure = Some(format!(
+                "the oracle ran {} frames, qs-sim more",
+                frame.saturating_sub(1)
+            ));
+            return Ok(false);
+        };
+        let found = differences(&theirs, mine);
+        if found.is_empty() {
+            return Ok(true);
+        }
+        failure = Some(format!("frame {frame}:\n      {}", found.join("\n      ")));
+        Ok(false)
+    })?;
+    if failure.is_none() && oracle.next_state()?.is_some() {
+        failure = Some(format!("qs-sim ran {frames} frames, the oracle more"));
+    }
+    if let Some(failure) = failure {
+        println!("FAIL  sim-diff {}: {failure}", script.display());
         return Ok(false);
     }
-    for (frame, (theirs, mine)) in oracle.iter().zip(&ours).enumerate() {
-        let found = differences(theirs, mine);
-        if !found.is_empty() {
-            println!(
-                "FAIL  sim-diff {}: frame {frame}:\n      {}",
-                script.display(),
-                found.join("\n      ")
-            );
-            return Ok(false);
-        }
-    }
     println!(
-        "ok    sim-diff {}: {} frames the same in id's server and qs-sim",
-        script.display(),
-        oracle.len().saturating_sub(1)
+        "ok    sim-diff {}: {frames} frames the same in id's server and qs-sim",
+        script.display()
     );
     Ok(true)
 }
@@ -237,32 +235,38 @@ impl Game {
         })
     }
 
-    /// The state after the map loads and after each frame of `route` (DIFF-16.1).
-    fn play(&self, progs: &Progs<'_>, route: &Route) -> Result<Vec<State>, String> {
-        let mut patched = self.progs.clone();
-        let builtins = patch_builtins(&mut patched);
+    /// Plays `route`, giving `visit` the state after the map loads and after each frame
+    /// (DIFF-16.1); stops when `visit` says to, and returns the frames visited.
+    fn play(
+        &self,
+        progs: &Progs<'_>,
+        route: &Route,
+        mut visit: impl FnMut(usize, &State) -> Result<bool, String>,
+    ) -> Result<usize, String> {
         let bsp =
             Bsp::read(&self.bsp_bytes, BspLoader::default()).map_err(|e| e.message(&self.map))?;
-        let engine = self.engine.clone();
+        // One search path, as the preview host keeps one.
+        let files = Vfs::new(StdFs, &self.engine, ".").map_err(|e| format!("{e:?}"))?;
         let reader = Box::new(move |name: &str| {
-            Vfs::new(StdFs, &engine, ".")
-                .ok()?
+            files
                 .load(name.as_bytes())
                 .ok()
                 .flatten()
                 .map(LoadedFile::into_bytes)
         });
+        // DIFF-16.1: id's server runs the progs as it is, with id's builtin table.
         let options = LoadOptions {
-            builtins,
             registration: self.vfs.registration(),
             ..LoadOptions::default()
         };
         let mut world =
             World::load(progs, &self.map, &bsp, reader, options).map_err(|e| e.to_string())?;
         world.settle(progs).map_err(|e| e.to_string())?;
-        let mut states = vec![world.state(progs)];
+        let mut frame = 0_usize;
+        if !visit(frame, &world.state(progs))? {
+            return Ok(frame);
+        }
         let mut cmd = UserCmd::default();
-        let mut frame = 0_u32;
         for step in &route.steps {
             match step {
                 Step::Move(next) => cmd = *next,
@@ -270,31 +274,34 @@ impl Game {
                 Step::Frames(count) => {
                     for _ in 0..*count {
                         frame = frame.saturating_add(1);
-                        // DIFF-16.1, PHYS-10.7: the client enters a stage a frame, then moves.
-                        let stage = match frame {
-                            1 => Some(Signon::Connect),
-                            2 => Some(Signon::Prespawn),
-                            3 => Some(Signon::Spawn),
-                            4 => Some(Signon::Begin),
-                            _ => None,
-                        };
-                        if let Some(stage) = stage {
-                            world.signon(progs, stage).map_err(|e| e.to_string())?;
-                        } else {
-                            world.set_command(cmd);
+                        // DIFF-16.1, PHYS-10.7: the client connects in frame 1 and answers
+                        // each signon stage in the next frame, as the oracle's client does.
+                        match frame {
+                            1 => world.connect_next_frame(),
+                            2 => world.client_command("prespawn"),
+                            3 => {
+                                world.client_command("name \"player\"\n");
+                                world.client_command("color 0 0\n");
+                                world.client_command("spawn ");
+                            }
+                            4 => world.client_command("begin"),
+                            _ => {}
                         }
+                        world.set_command(cmd);
                         world
                             .frame(progs, route.frametime)
-                            .map_err(|e| format!("frame {}: {e}", states.len()))?;
+                            .map_err(|e| format!("frame {frame}: {e}"))?;
                         drop(world.take_messages());
                         // An impulse is sent once.
                         cmd.impulse = 0;
-                        states.push(world.state(progs));
+                        if !visit(frame, &world.state(progs))? {
+                            return Ok(frame);
+                        }
                     }
                 }
             }
         }
-        Ok(states)
+        Ok(frame)
     }
 }
 
@@ -347,65 +354,84 @@ impl RawState for Replayed<'_> {
     }
 }
 
-/// The oracle's state at frame 0 and after each frame: the trace's frame records applied in
-/// order to all-zero globals and fields (TRACE-4.12), its strings as its string records say.
-fn oracle_states(progs: &Progs<'_>, trace: &Trace) -> Result<Vec<State>, String> {
-    let header = &trace.header;
-    let mut replayed = Replayed {
-        progs,
-        globals: Vec::new(),
-        fields: Vec::new(),
-        edict_size: i64::from(header.edict_size()).max(1),
-        strings: BTreeMap::new(),
-    };
-    let entityfields =
-        usize::try_from(header.entityfields()).map_err(|_| "a field count past usize")?;
-    let mut states = Vec::new();
-    for record in &trace.records {
-        match record {
-            Record::String { value, text } => {
-                replayed.strings.insert(*value, text.as_bytes().to_vec());
-            }
-            Record::Frame { changes, .. } => {
-                for change in changes.globals() {
-                    let slot = usize::try_from(change.slot).map_err(|_| "a slot past usize")?;
-                    if replayed.globals.len() <= slot {
-                        replayed.globals.resize(slot.saturating_add(1), Slot::ZERO);
-                    }
-                    if let Some(cell) = replayed.globals.get_mut(slot) {
-                        *cell = Slot::from_bits(change.bits);
-                    }
+/// The oracle's state at frame 0 and after each frame, one at a time: the trace's frame
+/// records applied in order to all-zero globals and fields (TRACE-4.12), its strings as its
+/// string records say.
+struct OracleFrames<'p, 't> {
+    replayed: Replayed<'p>,
+    records: core::slice::Iter<'t, Record>,
+    entityfields: usize,
+}
+
+impl<'p, 't> OracleFrames<'p, 't> {
+    fn new(progs: &'p Progs<'p>, trace: &'t Trace) -> Result<Self, String> {
+        let header = &trace.header;
+        Ok(Self {
+            replayed: Replayed {
+                progs,
+                globals: Vec::new(),
+                fields: Vec::new(),
+                edict_size: i64::from(header.edict_size()).max(1),
+                strings: BTreeMap::new(),
+            },
+            records: trace.records.iter(),
+            entityfields: usize::try_from(header.entityfields())
+                .map_err(|_| "a field count past usize")?,
+        })
+    }
+
+    /// The next frame's state, `None` after the last.
+    fn next_state(&mut self) -> Result<Option<State>, String> {
+        for record in self.records.by_ref() {
+            let replayed = &mut self.replayed;
+            match record {
+                Record::String { value, text } => {
+                    replayed.strings.insert(*value, text.as_bytes().to_vec());
                 }
-                for change in changes.fields() {
-                    let edict = usize::try_from(change.edict).map_err(|_| "an edict past usize")?;
-                    let field = usize::try_from(change.field).map_err(|_| "a field past usize")?;
-                    if replayed.fields.len() <= edict {
-                        replayed
+                Record::Frame { changes, .. } => {
+                    for change in changes.globals() {
+                        let slot = usize::try_from(change.slot).map_err(|_| "a slot past usize")?;
+                        if replayed.globals.len() <= slot {
+                            replayed.globals.resize(slot.saturating_add(1), Slot::ZERO);
+                        }
+                        if let Some(cell) = replayed.globals.get_mut(slot) {
+                            *cell = Slot::from_bits(change.bits);
+                        }
+                    }
+                    for change in changes.fields() {
+                        let edict =
+                            usize::try_from(change.edict).map_err(|_| "an edict past usize")?;
+                        let field =
+                            usize::try_from(change.field).map_err(|_| "a field past usize")?;
+                        if replayed.fields.len() <= edict {
+                            replayed.fields.resize(
+                                edict.saturating_add(1),
+                                vec![Slot::ZERO; self.entityfields],
+                            );
+                        }
+                        if let Some(cell) = replayed
                             .fields
-                            .resize(edict.saturating_add(1), vec![Slot::ZERO; entityfields]);
+                            .get_mut(edict)
+                            .and_then(|row| row.get_mut(field))
+                        {
+                            *cell = Slot::from_bits(change.bits);
+                        }
                     }
-                    if let Some(cell) = replayed
-                        .fields
-                        .get_mut(edict)
-                        .and_then(|row| row.get_mut(field))
-                    {
-                        *cell = Slot::from_bits(change.bits);
-                    }
+                    return Ok(Some(read_state(replayed.progs, &*replayed)));
                 }
-                states.push(read_state(replayed.progs, &replayed));
-            }
-            Record::Error { message, .. } => {
-                return Err(format!(
-                    "the oracle stopped on an error: {}",
-                    String::from_utf8_lossy(message.as_bytes())
-                ));
-            }
-            Record::Run { .. } | Record::Step(_) | Record::Exit { .. } => {
-                return Err("not an engine trace".to_owned());
+                Record::Error { message, .. } => {
+                    return Err(format!(
+                        "the oracle stopped on an error: {}",
+                        String::from_utf8_lossy(message.as_bytes())
+                    ));
+                }
+                Record::Run { .. } | Record::Step(_) | Record::Exit { .. } => {
+                    return Err("not an engine trace".to_owned());
+                }
             }
         }
+        Ok(None)
     }
-    Ok(states)
 }
 
 /// The most differences one frame's report names (DIFF-16.4).

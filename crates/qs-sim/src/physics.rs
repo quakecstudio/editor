@@ -489,11 +489,11 @@ impl SimCall<'_, '_, '_> {
         let velocity = self.vector(ent, "velocity");
         let origin = self.vector(ent, "origin");
         let max = self.setting(Setting::MaxVelocity);
+        // PHYS-6.6: `IS_NAN` zeroes a component first, then id's two comparisons bound it, not
+        // a clamp: a progs may set sv_maxvelocity below 0.
         let velocity = velocity.map(|v| {
-            // id's two comparisons, not a clamp: a progs may set sv_maxvelocity below 0.
-            if v.is_nan() {
-                0.0
-            } else if v > max {
+            let v = if is_nan(v) { 0.0 } else { v };
+            if v > max {
                 max
             } else if v < -max {
                 -max
@@ -501,7 +501,7 @@ impl SimCall<'_, '_, '_> {
                 v
             }
         });
-        let origin = origin.map(|v| if v.is_nan() { 0.0 } else { v });
+        let origin = origin.map(|v| if is_nan(v) { 0.0 } else { v });
         self.set_vector(ent, "velocity", velocity);
         self.set_vector(ent, "origin", origin);
     }
@@ -656,6 +656,13 @@ fn clip_velocity(velocity: [f32; 3], normal: [f32; 3], overbounce: f32) -> ([f32
 /// `!v[0] && !v[1] && !v[2]`.
 fn is_zero(v: [f32; 3]) -> bool {
     v.iter().all(|c| *c == 0.0)
+}
+
+/// id's `IS_NAN(x)`, `((*(int *)&x) & nanmask) == nanmask` with `nanmask` `255<<23`: every
+/// exponent bit set, so an infinity is one too (PHYS-6.6).
+const fn is_nan(x: f32) -> bool {
+    const NANMASK: u32 = 255 << 23;
+    x.to_bits() & NANMASK == NANMASK
 }
 
 /// `DotProduct`.

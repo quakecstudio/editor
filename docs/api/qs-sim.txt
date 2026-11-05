@@ -97,6 +97,7 @@ field qs_sim::world::Entity.origin
 field qs_sim::world::Entity.skin
 field qs_sim::world::LoadOptions.builtins
 field qs_sim::world::LoadOptions.carried
+field qs_sim::world::LoadOptions.host
 field qs_sim::world::LoadOptions.localization
 field qs_sim::world::LoadOptions.registration
 field qs_sim::world::edit::LineHit.edict
@@ -191,8 +192,10 @@ fn qs_sim::world::SpawnParms::serverflags
 fn qs_sim::world::World::carried
 fn qs_sim::world::World::client_command
 fn qs_sim::world::World::connect
+fn qs_sim::world::World::connect_next_frame
 fn qs_sim::world::World::entities
 fn qs_sim::world::World::frame
+fn qs_sim::world::World::host_state
 fn qs_sim::world::World::light_style
 fn qs_sim::world::World::load
 fn qs_sim::world::World::map
@@ -266,6 +269,7 @@ struct qs_sim::physics::Sound
 struct qs_sim::spawn::FieldDef
 struct qs_sim::spawn::Parser
 struct qs_sim::world::Entity
+struct qs_sim::world::HostState
 struct qs_sim::world::LoadOptions
 struct qs_sim::world::SpawnParms
 struct qs_sim::world::World
@@ -283,6 +287,7 @@ use qs_sim::EdictChange = world::EdictChange
 use qs_sim::EditError = world::EditError
 use qs_sim::Entity = world::Entity
 use qs_sim::HostCommand = world::HostCommand
+use qs_sim::HostState = world::HostState
 use qs_sim::LineHit = world::LineHit
 use qs_sim::LoadOptions = world::LoadOptions
 use qs_sim::Message = messages::Message

@@ -12,7 +12,7 @@
 //! on this crate's collision (WORLD-8) and movement (MOVE).
 
 use qc_builtins::math::vector_normalize;
-use qc_builtins::mock::{BUILTIN_CHECKCLIENT_INTERVAL, ModelBounds};
+use qc_builtins::mock::{BUILTIN_CHECKCLIENT_INTERVAL, BUILTIN_FL_NOTARGET, ModelBounds};
 use qc_builtins::{MockBuiltins, MockEngine};
 use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
@@ -20,7 +20,7 @@ use qc_progs::Progs;
 use qc_types::{EntityRef, PROGS_OFS_RETURN, Slot, ofs_parm};
 use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 use qc_vm::{Builtins, Context, ErrorKind, Machine, NoObserver, RunError, ServerState};
-use qs_bsp::{Bsp, BspLoader, Visibility};
+use qs_bsp::{Bsp, BspLoader};
 use qs_mdl::Sprite;
 
 use crate::collision::{
@@ -89,8 +89,6 @@ const DROP_DEPTH: f32 = 256.0;
 const MOVETYPE_PUSH: f32 = 7.0;
 /// `FL_ONGROUND`.
 pub(crate) const FL_ONGROUND: i32 = 512;
-/// `FL_NOTARGET` (`WinQuake/server.h`), which `checkclient` passes over (WORLD-8.7).
-pub(crate) const FL_NOTARGET: i32 = 128;
 
 /// Reads a model file the progs precaches, such as `maps/b_bh25.bsp`.
 pub type ModelFiles = Box<dyn Fn(&str) -> Option<Vec<u8>>>;
@@ -107,8 +105,10 @@ pub struct SimBuiltins {
     pub(crate) messages: ServerMessages,
     /// id's table, or the rerelease's with its builtins 79 to 92 (RRE-4.2).
     table: BuiltinTable,
-    /// The map's visibility, for `checkclient` (WORLD-8.7).
-    vis: Visibility,
+    /// Whether the server is paused, `sv.paused` (PHYS-11.8).
+    pub(crate) paused: bool,
+    /// The client's name, `host_client->name`, which `spawn` gives its `netname`.
+    pub(crate) client_name: Vec<u8>,
     /// The PVS of the client `checkclient` chose last, id's `checkpvs`.
     checkpvs: Vec<u8>,
     files: ModelFiles,
@@ -147,7 +147,8 @@ impl SimBuiltins {
             sounds: Vec::new(),
             messages: ServerMessages::new(map, crc),
             table,
-            vis: Visibility::of(map),
+            paused: false,
+            client_name: b"player".to_vec(),
             checkpvs: Vec::new(),
             files,
         }
@@ -595,7 +596,6 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         }
     }
 
-    /// The edict `self` names.
     /// The value of the server setting `setting` (PHYS-12.2).
     pub(crate) fn setting(&self, setting: Setting) -> f32 {
         self.sim
@@ -606,6 +606,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
             .unwrap_or(0.0)
     }
 
+    /// The edict `self` names.
     pub(crate) fn self_edict(&self) -> usize {
         self.edict_of(self.global("self").as_i32())
     }
@@ -670,6 +671,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         let view = self.eye(me);
         let visible = self
             .sim
+            .messages
             .vis
             .point_in_leaf(view)
             .and_then(|leaf| leaf.checked_sub(1))
@@ -810,7 +812,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
             let n = usize::try_from(i).unwrap_or(0);
             let skip = self.is_free(n)
                 || self.float(n, "health") <= 0.0
-                || self.flags(n) & FL_NOTARGET != 0;
+                || self.flags(n) & BUILTIN_FL_NOTARGET != 0;
             if !skip {
                 break;
             }
@@ -820,11 +822,11 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         let org = self.eye(n);
         // A point in no leaf, where id stops the engine, or a PVS that does not read, sees
         // nothing.
-        self.sim.checkpvs = self
-            .sim
-            .vis
+        let vis = &self.sim.messages.vis;
+        self.sim.checkpvs = vis
             .point_in_leaf(org)
-            .and_then(|leaf| self.sim.vis.leaf_pvs(leaf).ok())
+            .and_then(|leaf| vis.leaf_row(leaf))
+            .map(<[u8]>::to_vec)
             .unwrap_or_default();
         i
     }

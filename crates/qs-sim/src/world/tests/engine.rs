@@ -130,7 +130,7 @@ fn the_settings_are_read() {
     assert_eq!(run.world.vector(4, "velocity")[2], -10.0, "sv_gravity 100");
 }
 
-// spec PHYS-6.3: sv_maxvelocity is compared as id does, so a negative one bounds without
+// spec PHYS-6.6: sv_maxvelocity is compared as id does, so a negative one bounds without
 // failing
 #[test]
 fn a_negative_max_velocity_does_not_fail() {
@@ -213,4 +213,67 @@ fn a_plane_hit_from_behind_has_positive_zeros() {
     assert!(run.world.float(2, "frags") < 1.0, "the plane is hit");
     assert_eq!(x, 1.0);
     assert_eq!((y.to_bits(), z.to_bits()), (0, 0), "+0, not -0");
+}
+
+// spec PHYS-6.6: an infinity is a NaN to IS_NAN, so it becomes 0, and a zeroed component is
+// still bounded
+#[test]
+fn an_infinite_velocity_is_zeroed_then_bounded() {
+    let source = "void(string var, string val) cvar_set = #72;\n\
+        void() odd = { cvar_set(\"sv_maxvelocity\", \"-5\"); };\n\
+        void() fast = { self.movetype = 0; local float big; big = 1000000 * 1000000 * 1000000 * 1000000; \
+        self.velocity = '1 0 0' * big * big; };\n";
+    let fast = entity("fast", "0 0 0", "");
+    let mut run = run_on(&MapSpec::default(), source, &fast);
+    let check = |run: &mut Running, edict: usize| {
+        let progs = Progs::read(&run.progs).unwrap();
+        let mut call = crate::builtins::SimCall::frame(
+            &mut run.world.machine,
+            &progs,
+            &mut run.world.builtins,
+        );
+        call.check_velocity(edict);
+    };
+    check(&mut run, 2);
+    assert_eq!(run.world.vector(2, "velocity")[0], 0.0, "inf is zeroed");
+    let mut odd = run_on(
+        &MapSpec::default(),
+        source,
+        &[entity("odd", "0 0 0", ""), fast].concat(),
+    );
+    check(&mut odd, 3);
+    assert_eq!(
+        odd.world.vector(3, "velocity")[0],
+        -5.0,
+        "zeroed, then 0 > -5"
+    );
+}
+
+// spec MOVE-6.3: the random source goes on from one level to the next
+// spec PHYS-12.3: so do the settings, as a progs or the player left them
+#[test]
+fn the_host_state_goes_on_to_the_next_level() {
+    let source = "void(string var, string val) cvar_set = #72;\n\
+        void() roll = { self.frags = random(); cvar_set(\"noexit\", \"1\"); };\n\
+        float(string s) cvar = #45;\n\
+        void() reader = { self.frags = cvar(\"noexit\"); };\n";
+    let first = run_on(&MapSpec::default(), source, &entity("roll", "0 0 0", ""));
+    let host = first.world.host_state();
+    let next = running_from(
+        &MapSpec::default(),
+        first.progs.clone(),
+        &[entity("reader", "0 0 0", ""), entity("roll", "0 0 0", "")].concat(),
+        Vec::new(),
+        LoadOptions {
+            host: Some(host),
+            ..LoadOptions::default()
+        },
+    );
+    assert_eq!(next.world.float(2, "frags"), 1.0, "noexit kept");
+    let fresh = run_on(&MapSpec::default(), source, &entity("roll", "0 0 0", ""));
+    assert_ne!(
+        next.world.float(3, "frags"),
+        fresh.world.float(2, "frags"),
+        "the second level's draw is the one after the first's"
+    );
 }

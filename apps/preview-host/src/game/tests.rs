@@ -908,10 +908,15 @@ fn a_level_change_carries_the_players_parms() {
             break;
         }
     }
-    let (map, kept) = change.expect("a level change");
-    assert_eq!(map, "e1m2");
+    let next = change.expect("a level change");
+    assert_eq!(next.map, "e1m2");
     assert_eq!(
-        kept.map(|kept| kept.parms()[0]),
+        next.host,
+        game.world().host_state(),
+        "the host's state goes on"
+    );
+    assert_eq!(
+        next.carried.map(|kept| kept.parms()[0]),
         Some(100.0),
         "parm1 is the player's health"
     );
@@ -931,7 +936,7 @@ fn a_restart_loads_this_level_again() {
             break;
         }
     }
-    let (map, kept) = change.expect("a restart");
-    assert_eq!(map, "test");
-    assert!(kept.is_none(), "a new game carries nothing");
+    let next = change.expect("a restart");
+    assert_eq!(next.map, "test");
+    assert!(next.carried.is_none(), "a new game carries nothing");
 }

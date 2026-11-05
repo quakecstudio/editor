@@ -130,6 +130,8 @@ turn (MOVE-3), stopping at the first that succeeds.
 - **MOVE-6.2** Each host frame draws one value and discards it before its server frame, as
   `_Host_Frame` does: "// keep the random time dependent" then `rand ();`. The two frames a map
   settles in (EDICT-8.9) are not host frames and draw none.
+- **MOVE-6.3** The random source belongs to the process, not the level: a level change or a
+  restart goes on from the state the last level left.
 
 ## Constants
 

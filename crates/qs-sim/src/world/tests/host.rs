@@ -101,9 +101,10 @@ fn the_cheats_toggle_and_say_so() {
 }
 
 // spec PHYS-11.2: in deathmatch the cheats do nothing
-// spec PHYS-11.5: the other commands, and ones the server does not have, change nothing
+// spec PHYS-11.1: a command the prefixes do not allow, or one with a space before it, is not
+// run, and one the server does not have does nothing
 #[test]
-fn deathmatch_and_other_commands_change_nothing() {
+fn deathmatch_and_unknown_commands_change_nothing() {
     let mut run = player(
         &ledge(),
         "setorigin(self, '0 0 200'); deathmatch = 1;",
@@ -111,12 +112,129 @@ fn deathmatch_and_other_commands_change_nothing() {
         "",
     );
     let flags = run.world.float(P, "flags");
-    for command in ["god", "noclip", "say hello", "godx", "name bob", ""] {
+    for command in ["god", "noclip", "give h 5", "godx", ""] {
         run.world.client_command(command);
     }
     run.frames(1, FRAME).unwrap();
     assert_eq!(run.world.float(P, "flags"), flags);
     assert_eq!(run.world.float(P, "movetype"), 3.0);
+    assert_eq!(run.world.float(P, "health"), 100.0);
+    let mut run = player(&ledge(), "setorigin(self, '0 0 200');", "", "");
+    for command in [" god", "noclip;god", "sv_gravity 5"] {
+        run.world.client_command(command);
+    }
+    run.frames(1, FRAME).unwrap();
+    assert_eq!(
+        float_to_int(run.world.float(P, "flags")) & 64,
+        0,
+        "no godmode"
+    );
+    assert_eq!(
+        run.world.float(P, "movetype"),
+        3.0,
+        "noclip;god is one unknown word"
+    );
+}
+
+// spec PHYS-11.6: give sets ammunition and health to the number and adds a weapon by digit
+#[test]
+fn give_gives() {
+    let mut run = player(
+        &ledge(),
+        "setorigin(self, '0 0 200'); self.items = 0;",
+        "",
+        "",
+    );
+    for command in [
+        "give h 250",
+        "give s 30",
+        "give n 40",
+        "give r 5",
+        "give c 9",
+        "give 3",
+    ] {
+        run.world.client_command(command);
+    }
+    run.frames(1, FRAME).unwrap();
+    let w = &run.world;
+    assert_eq!(w.float(P, "health"), 250.0);
+    assert_eq!(
+        [
+            w.float(P, "ammo_shells"),
+            w.float(P, "ammo_nails"),
+            w.float(P, "ammo_rockets"),
+            w.float(P, "ammo_cells")
+        ],
+        [30.0, 40.0, 5.0, 9.0]
+    );
+    assert_eq!(w.float(P, "items"), 2.0, "give 3: IT_SHOTGUN << 1");
+}
+
+// spec PHYS-11.7: name sets the netname, cut to 15 bytes; color sets team to bottom + 1
+#[test]
+fn name_and_color_change_the_player() {
+    let mut run = player(&ledge(), "setorigin(self, '0 0 200');", "", "");
+    run.world.client_command("name abcdefghijklmnopqrst");
+    run.world.client_command("color 3 20");
+    run.frames(1, FRAME).unwrap();
+    let progs = qc_progs::Progs::read(&run.progs).unwrap();
+    let fields = run.world.edict_fields(&progs, P).unwrap();
+    let netname = fields.iter().find(|f| f.name == "netname").unwrap();
+    assert_eq!(
+        netname.value,
+        crate::QcValue::String(b"abcdefghijklmno".to_vec())
+    );
+    // 20 & 15 is 4, at most 13: team 5.
+    assert_eq!(run.world.float(P, "team"), 5.0);
+}
+
+// spec PHYS-11.8: pause stops the physics and the client's think until it is sent again
+#[test]
+fn pause_stops_the_game() {
+    let mut run = player(&ledge(), "setorigin(self, '0 0 200');", "", "");
+    run.world.client_command("pause");
+    run.frames(1, FRAME).unwrap();
+    let time = run.world.time();
+    assert!(printed(&mut run, b"player paused the game\n"));
+    run.frames(3, FRAME).unwrap();
+    assert_eq!(run.world.time(), time, "the clock stands");
+    run.world.client_command("pause");
+    run.frames(1, FRAME).unwrap();
+    assert!(run.world.time() > time);
+}
+
+// spec PHYS-10.7: commands sent before the client spawns are read once it is active, and the
+// signon's own commands spawn it
+#[test]
+fn commands_before_the_spawn_are_kept() {
+    let more = "void() SetNewParms = { parm1 = 7; };\n";
+    let put = "self.frags = parm1; self.movetype = 0; setorigin(self, '0 0 100');";
+    let progs = super::player_progs(put, "", more);
+    let mut run = super::running_from(
+        &ledge(),
+        progs,
+        "",
+        Vec::new(),
+        crate::LoadOptions::default(),
+    );
+    run.world.client_command("god");
+    run.frames(1, FRAME).unwrap();
+    assert!(
+        !printed(&mut run, b"godmode"),
+        "not read before the client connects"
+    );
+    run.world.connect_next_frame();
+    run.world.client_command("prespawn");
+    run.frames(1, FRAME).unwrap();
+    assert!(
+        printed(&mut run, b"godmode ON\n"),
+        "god, sent before the client connected, was read once it was"
+    );
+    run.world.client_command("spawn ");
+    run.frames(1, FRAME).unwrap();
+    assert_eq!(run.world.float(P, "frags"), 7.0, "spawned");
+    // Host_Spawn_f clears the edict, so the godmode set before is gone.
+    assert_eq!(float_to_int(run.world.float(P, "flags")) & 64, 0);
 }
 
 // spec PHYS-11.4: kill runs ClientKill on a living player, and only says so on a dead one
@@ -137,4 +255,21 @@ fn kill_runs_client_kill() {
     dead.frames(1, FRAME).unwrap();
     assert_eq!(dead.world.float(P, "frags"), 0.0);
     assert!(printed(&mut dead, b"Can't suicide -- allready dead!\n"));
+}
+
+// spec PHYS-11.5: once spawned, prespawn and spawn do nothing, and say changes no edict
+#[test]
+fn a_spawned_client_cannot_spawn_again() {
+    let put = "self.frags = self.frags + 1; setorigin(self, '0 0 200');";
+    let mut run = player(&ledge(), put, "", "");
+    let frags = run.world.float(P, "frags");
+    for command in ["prespawn", "spawn ", "say hello"] {
+        run.world.client_command(command);
+    }
+    run.frames(1, FRAME).unwrap();
+    assert_eq!(
+        run.world.float(P, "frags"),
+        frags,
+        "PutClientInServer ran once"
+    );
 }

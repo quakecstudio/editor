@@ -185,9 +185,6 @@ fn qs_bsp::Face::style_count
 fn qs_bsp::LumpId::index
 fn qs_bsp::LumpId::name
 fn qs_bsp::Texture::mip
-fn qs_bsp::Visibility::leaf_pvs
-fn qs_bsp::Visibility::of
-fn qs_bsp::Visibility::point_in_leaf
 fn qs_bsp::ent::ent_file_names
 fn qs_bsp::hull_for_size
 fn qs_bsp::lit::Lit::read
@@ -222,7 +219,6 @@ struct qs_bsp::Node
 struct qs_bsp::Plane
 struct qs_bsp::Texinfo
 struct qs_bsp::Texture
-struct qs_bsp::Visibility
 struct qs_bsp::lit::FoundLit
 struct qs_bsp::lit::Lit
 struct qs_bsp::lit::PathId

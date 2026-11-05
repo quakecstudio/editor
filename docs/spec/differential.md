@@ -1204,9 +1204,11 @@ oracle is the engine oracle (P3-23, TRACE-4.11, TRACE-4.12): id's server from th
 - **DIFF-16.1** `cargo xtask sim-diff <route> [-- <engine word>...]` plays one route, in the engine
   oracle's script form (`oracles/README.md`, "The engine oracle"), through the engine oracle and
   through `qs-sim`, on the same game directory, map, progs and frame time. `qs-sim` loads the
-  map and settles it; the player enters a stage a frame in frames 1 to 4 as PHYS-10.7 says, as
-  the oracle's local client answers the signon; from frame 5 each frame takes the route's
-  move, and the move's impulse is sent once.
+  map and settles it, running the progs as it is with id's builtin table, as id's server does;
+  the client connects in frame 1 and sends `prespawn` in frame 2, its name, colour and `spawn`
+  in frame 3 and `begin` in frame 4, as PHYS-10.7 says and the oracle's local client does; from
+  frame 5 each frame takes the route's move, the move's impulse sent once. The two are compared
+  a frame at a time, as each produces it.
 - **DIFF-16.2** The state compared is every named global, but a vector's `_x`, `_y` and `_z` and
   the functions' and fields' own definitions, and every named field of every edict below
   `num_edicts`, free or not, each read by its definition's type: a float and a vector by their

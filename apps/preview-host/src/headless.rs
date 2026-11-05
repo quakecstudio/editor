@@ -29,13 +29,15 @@ pub(crate) fn run(args: &Args, loaded: Loaded, mut bridge: Bridge) -> Result<(),
             return Ok(());
         }
         let ran = world.game.frame(FRAME);
-        if let Some((map, carried)) = world.game.level_change() {
-            match load(args, &map, carried) {
+        if let Some(next) = world.game.level_change() {
+            match load(args, &next.map, next.carried, Some(next.host)) {
                 Ok(loaded) => {
                     let old = core::mem::replace(&mut world, Headless::new(loaded));
                     world.game.carry_from(old.game);
                 }
-                Err(error) => tracing::warn!(%error, map, "the next level did not load"),
+                Err(error) => {
+                    tracing::warn!(%error, map = next.map, "the next level did not load");
+                }
             }
             continue;
         }
