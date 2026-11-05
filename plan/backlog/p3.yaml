@@ -85,10 +85,13 @@ issues:
   - P1-28
   deliverable:
   - Breakpoints by source line via .lno, step in/over/out, call stack, watch expressions, entity tree snapshot
+  - "id's command layer, ported whole into qs-sim: the console path (Cbuf, Cmd_ExecuteString) with one command table that the bridge's console command and the IDE's console reach; id's host commands (map, changelevel, restart, save, load, status, say, say_team, tell, kick, ping); cmd.c's alias, exec, echo and wait; cvars set and read from the console; the debug prints (edict, edicts, edictcount, profile, version, path). Demos, viewthing and the network commands are listed in docs/spec/ as out of scope for a local preview host"
   acceptance:
   - Breaking in a monster's think, stepping and inspecting self fields works on all three OSes
+  - A scripted console session runs each ported command, and those the engine oracle can run match id's server
   verify:
   - Scripted debug session test
+  - Scripted console session test, and cargo xtask sim-diff on a route that uses the console commands
 - key: P3-05
   title: Headless mode for the preview host
   labels:
