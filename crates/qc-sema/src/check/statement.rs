@@ -85,16 +85,23 @@ impl Checker<'_> {
     /// What the generated statements from `from` on make: each one's operands and the temporary
     /// it took, in order.
     pub(super) fn dropped_effects(&self, from: usize) -> Vec<ir::Effect> {
-        let mut effects = Vec::new();
         let statements = self.generated.get(from..).unwrap_or_default();
-        for (index, statement) in (u32::try_from(from).unwrap_or(u32::MAX)..).zip(statements) {
-            let make =
-                |name: Option<ir::Name>| name.filter(ir::Name::is_made_once).map(ir::Effect::Make);
-            effects.extend(make(statement.a));
-            effects.extend(make(statement.b));
-            effects.extend(statement.temp_words(index).map(ir::Effect::Temp));
-            effects.extend(make(statement.c));
-        }
+        (u32::try_from(from).unwrap_or(u32::MAX)..)
+            .zip(statements)
+            .flat_map(|(index, statement)| Self::statement_effects(statement, index))
+            .collect()
+    }
+
+    /// What the generated `statement`, at `index`, makes: each of its operands' names made
+    /// once and the temporary it took, in order.
+    fn statement_effects(statement: &ir::BodyStatement, index: u32) -> Vec<ir::Effect> {
+        let make =
+            |name: Option<ir::Name>| name.filter(ir::Name::is_made_once).map(ir::Effect::Make);
+        let mut effects = Vec::new();
+        effects.extend(make(statement.a));
+        effects.extend(make(statement.b));
+        effects.extend(statement.temp_words(index).map(ir::Effect::Temp));
+        effects.extend(make(statement.c));
         effects
     }
 
@@ -109,8 +116,28 @@ impl Checker<'_> {
         }
         let from = usize::try_from(mark.made()).unwrap_or(usize::MAX);
         // What the dropped statements named is still made, and the temporaries they took still
-        // taken, in their order.
-        let dropped = self.dropped_effects(from);
+        // taken, in their order, among what the body recorded between them (a `for` loop's
+        // bounds), all now before the statement that follows: the effects stay in the order
+        // of the statements they come before.
+        let first = mark.made();
+        let mut between = Vec::new();
+        self.effects.retain(|&(at, effect)| {
+            let moved = at >= first;
+            if moved {
+                between.push((at, effect));
+            }
+            !moved
+        });
+        let statements = self.generated.get(from..).unwrap_or_default();
+        let mut between = between.into_iter().peekable();
+        let mut dropped = Vec::new();
+        for (index, statement) in (first..).zip(statements) {
+            while let Some((_, effect)) = between.next_if(|&(at, _)| at <= index) {
+                dropped.push(effect);
+            }
+            dropped.extend(Self::statement_effects(statement, index));
+        }
+        dropped.extend(between.map(|(_, effect)| effect));
         self.generated.truncate(from);
         let kept = self.next_made();
         self.effects
