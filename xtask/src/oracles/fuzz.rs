@@ -30,32 +30,49 @@ pub(crate) const TARGETS: [(&str, &str); 3] = [
 ];
 
 const DEFAULT_SECONDS: u64 = 60;
-const USAGE: &str =
-    "usage: cargo xtask oracles fuzz <scenario | init | progs | all> [--time <seconds>]";
 
 /// The lines of a failed target's log that are printed.
 const LOG_TAIL: usize = 60;
 
-#[derive(Debug, PartialEq, Eq)]
-struct Options {
-    targets: Vec<(&'static str, &'static str)>,
+/// `cargo xtask oracles fuzz <scenario | init | progs | all>... [--time <seconds>]`.
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+pub(crate) struct Args {
+    /// The targets, or `all`.
+    #[arg(required = true, value_parser = ["scenario", "init", "progs", "all"])]
+    targets: Vec<String>,
+    /// Seconds each target runs.
+    #[arg(long = "time", default_value_t = DEFAULT_SECONDS, value_parser = clap::value_parser!(u64).range(1..))]
     seconds: u64,
+}
+
+impl Args {
+    /// The targets named, `all` each of [`TARGETS`], as a name and its define.
+    fn chosen(&self) -> Vec<(&'static str, &'static str)> {
+        let mut chosen = Vec::new();
+        for name in &self.targets {
+            chosen.extend(
+                TARGETS
+                    .into_iter()
+                    .filter(|(target, _)| name == "all" || target == name),
+            );
+        }
+        chosen
+    }
 }
 
 /// Builds and runs the targets `args` names, with the programs `exec` runs and the files `net`
 /// fetches.
 pub(crate) fn run(
     root: &Path,
-    args: &[&str],
+    options: &Args,
     exec: &dyn Exec,
     net: &dyn Net,
 ) -> Result<bool, String> {
-    let options = parse_args(args)?;
     let sources = read_sources(root)?;
     let cache = root.join(OUT).join("src");
     fetch(&sources, &cache, net)?;
     let mut ok = true;
-    for (name, define) in options.targets {
+    for (name, define) in options.chosen() {
         let dir = root.join(OUT).join("fuzz").join(name);
         let binary = build(root, &sources, &cache, &dir, define, exec)?;
         let corpus = dir.join("corpus");
@@ -72,35 +89,6 @@ pub(crate) fn run(
         ok &= passed;
     }
     Ok(ok)
-}
-
-fn parse_args(args: &[&str]) -> Result<Options, String> {
-    let mut targets = Vec::new();
-    let mut seconds = DEFAULT_SECONDS;
-    let mut words = args.iter();
-    while let Some(word) = words.next() {
-        match *word {
-            "--time" => {
-                seconds = words
-                    .next()
-                    .and_then(|text| text.parse::<u64>().ok())
-                    .filter(|seconds| *seconds > 0)
-                    .ok_or_else(|| format!("--time takes a number of seconds\n{USAGE}"))?;
-            }
-            "all" => targets.extend(TARGETS),
-            name => {
-                let target = TARGETS
-                    .into_iter()
-                    .find(|(target, _)| *target == name)
-                    .ok_or_else(|| format!("no fuzz target {name:?}\n{USAGE}"))?;
-                targets.push(target);
-            }
-        }
-    }
-    if targets.is_empty() {
-        return Err(USAGE.to_owned());
-    }
-    Ok(Options { targets, seconds })
 }
 
 /// Builds the target that `define` selects in `dir`; returns its executable.
@@ -219,6 +207,7 @@ mod tests {
 
     use super::*;
     use crate::oracles::testing::fresh_dir;
+    use crate::parse_cli;
 
     fn root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -229,15 +218,11 @@ mod tests {
 
     #[test]
     fn the_command_line_names_targets_and_a_time() {
-        assert_eq!(
-            parse_args(&["all"]).unwrap(),
-            Options {
-                targets: TARGETS.to_vec(),
-                seconds: DEFAULT_SECONDS
-            }
-        );
-        let one = parse_args(&["init", "--time", "600"]).unwrap();
-        assert_eq!(one.targets, [("init", "QS_FUZZ_INIT")]);
+        let all = parse_cli::<Args, _>(&["all"]).unwrap();
+        assert_eq!(all.chosen(), TARGETS.to_vec());
+        assert_eq!(all.seconds, DEFAULT_SECONDS);
+        let one = parse_cli::<Args, _>(&["init", "--time", "600"]).unwrap();
+        assert_eq!(one.chosen(), [("init", "QS_FUZZ_INIT")]);
         assert_eq!(one.seconds, 600);
         for bad in [
             &[][..],
@@ -246,7 +231,7 @@ mod tests {
             &["init", "--time", "0"],
             &["init", "--time", "x"],
         ] {
-            assert!(parse_args(bad).is_err(), "{bad:?}");
+            assert!(parse_cli::<Args, _>(bad).is_err(), "{bad:?}");
         }
     }
 

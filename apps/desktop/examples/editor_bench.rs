@@ -194,13 +194,18 @@ impl eframe::App for Bench {
     }
 }
 
+/// Measures the editor's keystrokes in the real app.
+#[derive(clap::Parser, Debug)]
+struct Args {
+    /// Where the measurements are written.
+    out: PathBuf,
+    /// The host the measurements are recorded for.
+    #[arg(default_value = "local")]
+    host: String,
+}
+
 fn main() -> ExitCode {
-    let mut args = std::env::args().skip(1);
-    let Some(out) = args.next().map(PathBuf::from) else {
-        eprintln!("usage: editor_bench <out-dir> [host]");
-        return ExitCode::from(2);
-    };
-    let host = args.next().unwrap_or_else(|| "local".to_owned());
+    let Args { out, host } = <Args as clap::Parser>::parse();
     let dir = std::env::temp_dir().join(format!("quakec-studio-bench-{}", std::process::id()));
     let file = match write_project(&dir) {
         Ok(file) => file,

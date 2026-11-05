@@ -304,13 +304,18 @@ fn seconds_to_ns(seconds: f32) -> u64 {
     (f64::from(seconds.max(0.0)) * 1e9) as u64
 }
 
+/// Measures the editor view's frame times on a scripted session.
+#[derive(clap::Parser, Debug)]
+struct Args {
+    /// Where the measurements are written.
+    out: PathBuf,
+    /// The host the measurements are recorded for.
+    #[arg(default_value = "local")]
+    host: String,
+}
+
 fn main() -> ExitCode {
-    let mut args = std::env::args().skip(1);
-    let Some(out) = args.next().map(PathBuf::from) else {
-        eprintln!("usage: bench <out-dir> [host]");
-        return ExitCode::from(2);
-    };
-    let host = args.next().unwrap_or_else(|| "local".to_owned());
+    let Args { out, host } = <Args as clap::Parser>::parse();
     let text = (0..LINES)
         .map(|i| format!("float x{i} = {i}; // line {i} of the benchmark file"))
         .collect::<Vec<_>>()

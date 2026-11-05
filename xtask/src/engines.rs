@@ -40,8 +40,6 @@ const MANIFEST: &str = "corpus/manifest.toml";
 /// The corpus source the rerelease pin must agree with.
 const RERELEASE_CORPUS_SOURCE: &str = "quake-rerelease-qc";
 
-const USAGE: &str = "usage: cargo xtask engines [--check]";
-
 /// The module kinds a table may be for (PRJ-3.1): server, client and menu QuakeC.
 const KINDS: [&str; 3] = ["ssqc", "csqc", "menuqc"];
 
@@ -162,13 +160,16 @@ pub(crate) struct Facts {
     pub(crate) extensions: Vec<String>,
 }
 
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    let check = match args {
-        [] => false,
-        [flag] if flag == "--check" => true,
-        _ => return Err(USAGE.to_owned()),
-    };
-    run(root, check, &CURL)
+/// `cargo xtask engines [--check]`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// Check the tables instead of writing them.
+    #[arg(long)]
+    check: bool,
+}
+
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
+    run(root, args.check, &CURL)
 }
 
 fn run(root: &Path, check: bool, net: &dyn Net) -> Result<bool, String> {

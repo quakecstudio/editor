@@ -84,8 +84,9 @@ server is `qs-sim`, the client `qs-client` reads its messages, and the renderer 
 client's scene and HUD:
 
 ```bash
-cargo run --release -p qs-render --example view -- -basedir <game root> [-game <dir>] [map]
+cargo run --release -p qs-render --example view -- --basedir <game root> [--game <dir>] [map]
 ```
 
 W, A, S and D move, Space jumps, Q and E swim, Shift runs, the mouse button fires, 1 to 8
-change weapons and dragging looks around; `-fly` is a free camera.
+change weapons and dragging looks around; `--fly` is a free camera, and `--help` lists every
+option.

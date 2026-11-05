@@ -30,8 +30,31 @@ use qc_trace::decode;
 use qs_differential::runner::{self, Mode};
 use qs_differential::suite::SuiteError;
 
+/// `differential --mode <fast|full> --oracle <vm-oracle> --assets <asset cache>`.
+#[derive(clap::Parser, Debug)]
+struct Args {
+    /// The CI subset or every scenario.
+    #[arg(long, default_value = "fast", value_parser = mode)]
+    mode: Mode,
+    /// The VM oracle binary, which `cargo xtask oracles` builds.
+    #[arg(long, value_name = "vm-oracle")]
+    oracle: PathBuf,
+    /// The asset cache.
+    #[arg(long, value_name = "asset cache")]
+    assets: PathBuf,
+}
+
+/// The mode `text` names.
+fn mode(text: &str) -> Result<Mode, String> {
+    match text {
+        "fast" => Ok(Mode::Fast),
+        "full" => Ok(Mode::Full),
+        other => Err(format!("--mode takes fast or full, not {other:?}")),
+    }
+}
+
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = <Args as clap::Parser>::parse();
     match run(&args) {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
@@ -42,48 +65,7 @@ fn main() -> ExitCode {
     }
 }
 
-/// The parsed command line: the mode, the oracle binary and the asset cache.
-struct Options {
-    mode: Mode,
-    oracle: PathBuf,
-    assets: PathBuf,
-}
-
-const USAGE: &str =
-    "usage: differential --mode <fast|full> --oracle <vm-oracle> --assets <asset cache>";
-
-fn parse(args: &[String]) -> Result<Options, String> {
-    let mut mode = Mode::Fast;
-    let mut oracle = None;
-    let mut assets = None;
-    let mut rest = args.iter();
-    while let Some(flag) = rest.next() {
-        match flag.as_str() {
-            "--mode" => {
-                mode = match rest.next().map(String::as_str) {
-                    Some("fast") => Mode::Fast,
-                    Some("full") => Mode::Full,
-                    other => return Err(format!("--mode takes fast or full, not {other:?}")),
-                };
-            }
-            "--oracle" => {
-                oracle = Some(PathBuf::from(rest.next().ok_or("--oracle needs a path")?));
-            }
-            "--assets" => {
-                assets = Some(PathBuf::from(rest.next().ok_or("--assets needs a path")?));
-            }
-            other => return Err(format!("unknown argument {other:?}\n{USAGE}")),
-        }
-    }
-    Ok(Options {
-        mode,
-        oracle: oracle.ok_or(USAGE)?,
-        assets: assets.ok_or(USAGE)?,
-    })
-}
-
-fn run(args: &[String]) -> Result<bool, String> {
-    let options = parse(args)?;
+fn run(options: &Args) -> Result<bool, String> {
     if !options.oracle.is_file() {
         return Err(format!(
             "the VM oracle is not at {}; run `cargo xtask oracles` first",

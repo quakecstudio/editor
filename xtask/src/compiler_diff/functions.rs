@@ -60,10 +60,7 @@ struct Body {
 /// Runs the per-function differential over each codebase `ids` names (DIFF-15).
 pub(super) fn run(root: &Path, ids: &[String]) -> Result<bool, String> {
     if ids.is_empty() {
-        return Err(format!(
-            "--functions takes one or more codebases\n{}",
-            super::USAGE
-        ));
+        return Err("--functions takes one or more codebases".to_owned());
     }
     for id in ids {
         if rerelease::fteqcc_args(id).is_none() {

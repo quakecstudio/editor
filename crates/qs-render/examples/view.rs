@@ -4,18 +4,19 @@
 //! world with `qs-render` inside an egui window (P5-05). It is a development tool, not the app.
 //!
 //! ```text
-//! cargo run --release -p qs-render --example view -- -basedir <game root> [-game <dir>] [map]
+//! cargo run --release -p qs-render --example view -- --basedir <game root> [--game <dir>] [map]
 //! ```
 //!
 //! The map defaults to `e1m1`. You play it: W, A, S and D move, Space jumps, Q and E swim
 //! down and up, Shift runs, the mouse button fires, and dragging with the mouse looks around;
 //! the view, the weapon, the status bar and the centre print are the client's, read from the
-//! server's messages as id's client reads them. `-fly` gives a free camera instead, Space and
-//! C rising and sinking. `-gamma <g>` is GLQuake's, 0.7 by default, and
-//! `-show water` or `-show sky` starts at the map's first water or sky. `-benchmark <seconds>`
+//! server's messages as id's client reads them. `--fly` gives a free camera instead, Space and
+//! C rising and sinking. `--gamma <g>` is GLQuake's, 0.7 by default, and
+//! `--show water` or `--show sky` starts at the map's first water or sky. `--benchmark <seconds>`
 //! presents without vsync, turns a free camera slowly and, after that many seconds, prints the
 //! average frame rate, the slowest frame and the time the frames' work took on the CPU, then
-//! exits (P2-152); `-position <x> <y>` opens the window at that point, on a chosen display.
+//! exits (P2-152); `--position <x> <y>` opens the window at that point, on a chosen display.
+//! `--help` lists every option.
 
 use std::io::Write as _;
 use std::time::Instant;
@@ -34,25 +35,16 @@ const SPEEDS: [f32; 2] = [320.0, 960.0];
 const TURN: f32 = 0.25;
 
 fn main() -> Result<(), String> {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
-    // `-fly`: a free camera instead of the player.
-    let fly = args.iter().any(|a| a == "-fly");
-    args.retain(|a| a != "-fly");
-    // `-benchmark <seconds>`: no vsync, a free camera turning slowly, and after that many
-    // seconds the average frame rate on stdout and exit (P2-152).
-    let benchmark = take_numbers(&mut args, "-benchmark", 1)?.and_then(|v| match v.as_slice() {
-        [seconds] => Some(*seconds),
-        _ => None,
-    });
+    let args = <common::Args as clap::Parser>::parse();
+    let benchmark = args.benchmark;
     if benchmark.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
-        return Err("-benchmark needs a positive number of seconds".to_owned());
+        return Err("--benchmark needs a positive number of seconds".to_owned());
     }
-    let fly = fly || benchmark.is_some();
-    // `-position <x> <y>`: where the window opens, to put it on a chosen display.
-    let position = take_numbers(&mut args, "-position", 2)?.and_then(|v| match v.as_slice() {
-        [x, y] => Some([*x, *y]),
-        _ => None,
-    });
+    let fly = args.fly || benchmark.is_some();
+    let position = args
+        .position
+        .as_deref()
+        .and_then(|values| <[f32; 2]>::try_from(values).ok());
     let common::Loaded {
         map,
         mesh,
@@ -123,27 +115,6 @@ fn main() -> Result<(), String> {
         }),
     )
     .map_err(|e| e.to_string())
-}
-
-/// Takes the flag `name` and the `count` numbers after it out of `args`, when it is there.
-fn take_numbers(
-    args: &mut Vec<String>,
-    name: &str,
-    count: usize,
-) -> Result<Option<Vec<f32>>, String> {
-    let Some(i) = args.iter().position(|a| a == name) else {
-        return Ok(None);
-    };
-    let end = i.saturating_add(count);
-    let values: Vec<f32> = args
-        .get(i.saturating_add(1)..=end)
-        .ok_or_else(|| format!("{name} needs {count} number(s)"))?
-        .iter()
-        .map(|s| s.parse::<f32>())
-        .collect::<Result<_, _>>()
-        .map_err(|e| format!("{name}: {e}"))?;
-    args.drain(i..=end);
-    Ok(Some(values))
 }
 
 struct Viewer {

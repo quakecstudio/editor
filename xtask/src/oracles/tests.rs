@@ -15,6 +15,7 @@ use std::process::Command;
 use super::testing::{fresh_dir, root, sample_suite};
 use super::*;
 use crate::exec::{Fake, Reply};
+use crate::parse_cli;
 
 /// What a fake source file of id's holds.
 const PR_EDICT: &str = "/* a comment */\nedict_t *ED_Alloc (void)\n{\n\treturn 0;\n}\n";
@@ -233,8 +234,9 @@ fn an_extract_from_a_file_not_fetched_is_an_error() {
     assert!(build_with(&dir, &fake, &files).is_err());
 }
 
-fn words(text: &str) -> Vec<String> {
-    text.split_whitespace().map(str::to_owned).collect()
+/// `cargo xtask oracles` with `text`.
+fn cli(text: &str) -> Result<Args, clap::Error> {
+    parse_cli(&text.split_whitespace().collect::<Vec<_>>())
 }
 
 #[test]
@@ -243,53 +245,82 @@ fn every_command_of_cargo_xtask_oracles_runs() {
     let fake = Fake::new(tools(0));
     // A dozen cases stand for the cross product: the commands are what is tested here.
     let suite = || sample_suite().0;
-    assert!(run(&dir, &words("build"), &fake, &files, &suite).unwrap());
+    assert!(run(&dir, &cli("build").unwrap(), &fake, &files, &suite).unwrap());
     // The fake VM oracle writes no trace, so every check that reads one fails.
-    assert!(!run(&dir, &[], &fake, &files, &suite).unwrap());
+    assert!(!run(&dir, &cli("").unwrap(), &fake, &files, &suite).unwrap());
     // The recorded mode runs the VM checks, then reads the fixture, which this root has none of.
-    let recorded = run(&dir, &words("--recorded"), &fake, &files, &suite).unwrap_err();
+    let recorded = run(&dir, &cli("--recorded").unwrap(), &fake, &files, &suite).unwrap_err();
     assert!(recorded.contains("builtin-outcomes.json"), "{recorded}");
-    assert!(!run(&dir, &words("scenarios defaults"), &fake, &files, &suite).unwrap());
+    assert!(
+        !run(
+            &dir,
+            &cli("scenarios defaults").unwrap(),
+            &fake,
+            &files,
+            &suite
+        )
+        .unwrap()
+    );
     // The fake compilers write no progs.dat, so the builtin differential fails too.
-    assert!(!run(&dir, &words("builtins"), &fake, &files, &suite).unwrap());
+    assert!(!run(&dir, &cli("builtins").unwrap(), &fake, &files, &suite).unwrap());
     // spec FTEF-14.50: where `unsigned long` is 32 bits the fixture is not recorded at all.
-    let recording = run(&dir, &words("builtins --record"), &fake, &files, &suite);
+    let recording = run(
+        &dir,
+        &cli("builtins --record").unwrap(),
+        &fake,
+        &files,
+        &suite,
+    );
     if super::builtins::ULong::HOST == super::builtins::ULong::Bits64 {
         assert!(!recording.unwrap());
     } else {
         assert!(recording.is_err());
     }
-    assert!(run(&dir, &words("builtins again"), &fake, &files, &suite).is_err());
+    assert!(cli("builtins again").is_err());
     // The fake qcc writes no progs.dat and the fake root records no codegen outcomes.
-    assert!(!run(&dir, &words("codegen"), &fake, &files, &suite).unwrap());
-    assert!(!run(&dir, &words("codegen --record"), &fake, &files, &suite).unwrap());
-    assert!(run(&dir, &words("codegen again"), &fake, &files, &suite).is_err());
+    assert!(!run(&dir, &cli("codegen").unwrap(), &fake, &files, &suite).unwrap());
+    assert!(
+        !run(
+            &dir,
+            &cli("codegen --record").unwrap(),
+            &fake,
+            &files,
+            &suite
+        )
+        .unwrap()
+    );
+    assert!(cli("codegen again").is_err());
     // spec DIFF-13.4: the grammar differential reads its fixture, which this root has none of.
-    let recorded = run(&dir, &words("grammar --recorded"), &fake, &files, &suite).unwrap_err();
+    let recorded = run(
+        &dir,
+        &cli("grammar --recorded").unwrap(),
+        &fake,
+        &files,
+        &suite,
+    )
+    .unwrap_err();
     assert!(recorded.contains("grammar-outcomes.json"), "{recorded}");
-    assert!(!run(&dir, &words("grammar"), &fake, &files, &suite).unwrap());
-    assert!(run(&dir, &words("grammar again"), &fake, &files, &suite).is_err());
-    assert!(run(&dir, &words("id101 nowhere"), &fake, &files, &suite).is_err());
+    assert!(!run(&dir, &cli("grammar").unwrap(), &fake, &files, &suite).unwrap());
+    assert!(cli("grammar again").is_err());
+    assert!(run(&dir, &cli("id101 nowhere").unwrap(), &fake, &files, &suite).is_err());
     let codebases = fresh_dir("oracles-commands-codebases");
-    assert!(run(&dir, &words("rerelease"), &fake, &files, &suite).is_err());
+    assert!(cli("rerelease").is_err());
     assert!(
         run(
             &dir,
-            &["rerelease".to_owned(), codebases.display().to_string()],
+            &cli(&format!("rerelease {}", codebases.display())).unwrap(),
             &fake,
             &files,
             &suite
         )
         .is_err()
     );
+    assert!(cli("unknown").is_err());
     assert!(
-        run(&dir, &words("unknown"), &fake, &files, &suite)
-            .err()
-            .unwrap()
-            .contains("usage")
+        cli("--recorded build").is_err(),
+        "--recorded is the whole run's"
     );
-    assert!(run(&dir, &words("fuzz"), &fake, &files, &suite).is_err());
-    assert!(super::main(&dir, &words("unknown")).is_err());
+    assert!(cli("fuzz").is_err());
 }
 
 #[test]
@@ -304,7 +335,7 @@ fn a_trace_prints_as_json() {
     fs::write(&trace, bytes).unwrap();
     let fake = Fake::new(tools(0));
     let files = Files::default();
-    let args = ["json".to_owned(), trace.display().to_string()];
+    let args = parse_cli::<Args, _>(&["json".to_owned(), trace.display().to_string()]).unwrap();
     assert!(run(&dir, &args, &fake, &files, &suite).unwrap());
     fs::write(&trace, b"not a trace").unwrap();
     assert!(run(&dir, &args, &fake, &files, &suite).is_err());
@@ -322,7 +353,7 @@ fn the_fuzz_targets_build_seed_and_run() {
     if Compiler::find(&dir, Instrument::Fuzz, &fake).is_err() {
         let error = run(
             &dir,
-            &words("fuzz scenario --time 5"),
+            &cli("fuzz scenario --time 5").unwrap(),
             &fake,
             &files,
             &suite,
@@ -334,7 +365,7 @@ fn the_fuzz_targets_build_seed_and_run() {
     assert!(
         run(
             &dir,
-            &words("fuzz scenario --time 5"),
+            &cli("fuzz scenario --time 5").unwrap(),
             &fake,
             &files,
             &suite
@@ -354,6 +385,15 @@ fn the_fuzz_targets_build_seed_and_run() {
         },
         None => Reply::exit(77),
     });
-    assert!(!run(&dir, &words("fuzz init --time 5"), &crashes, &files, &suite).unwrap());
+    assert!(
+        !run(
+            &dir,
+            &cli("fuzz init --time 5").unwrap(),
+            &crashes,
+            &files,
+            &suite
+        )
+        .unwrap()
+    );
     assert!(dir.join(OUT).join("fuzz/init/fuzz.log").is_file());
 }

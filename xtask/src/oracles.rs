@@ -141,69 +141,129 @@ pub(crate) struct Oracles<'a> {
     pub(crate) exec: &'a dyn Exec,
 }
 
-/// Runs `cargo xtask oracles [build | id101 <dir> | rerelease <dir> | json <trace>]`.
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
+/// `cargo xtask oracles [--recorded | build | scenarios [<name>...] | fuzz <target>...
+/// [--time <s>] | builtins [--record | --recorded] | codegen [--record] | grammar [--record |
+/// --recorded] | id101 <codebase directory> | rerelease <directory of codebases> | json
+/// <trace>]`.
+#[derive(clap::Parser, Debug)]
+#[command(args_conflicts_with_subcommands = true)]
+pub(crate) struct Args {
+    /// The builtin and grammar differentials against their recorded outcomes, and the
+    /// compiler differential left to `cargo test`: what pull requests run (docs/ci.md).
+    #[arg(long)]
+    recorded: bool,
+    #[command(subcommand)]
+    command: Option<OracleCommand>,
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum OracleCommand {
+    /// The builtin differential.
+    Builtins(Recording),
+    /// The compiler differential.
+    Codegen {
+        /// Record the oracles' outcomes.
+        #[arg(long)]
+        record: bool,
+    },
+    /// The grammar differential.
+    Grammar(Recording),
+    /// Fuzz the VM oracle's targets.
+    Fuzz(fuzz::Args),
+    /// The VM vectors' scenarios, every one when none is named.
+    Scenarios {
+        /// The scenarios.
+        names: Vec<String>,
+    },
+    /// Build the oracles and print where they are.
+    Build,
+    /// id 1.01's codebase through qcc and our compiler.
+    Id101 {
+        /// The codebase directory.
+        dir: PathBuf,
+    },
+    /// The rerelease's codebases through FTEQCC and our compiler.
+    Rerelease {
+        /// The directory of codebases.
+        dir: PathBuf,
+    },
+    /// A trace file as JSON.
+    Json {
+        /// The trace.
+        trace: PathBuf,
+    },
+}
+
+/// Whether a differential records the oracles' outcomes or checks the ones recorded.
+#[derive(clap::Args, Debug)]
+struct Recording {
+    /// Record the oracles' outcomes.
+    #[arg(long, conflicts_with = "recorded")]
+    record: bool,
+    /// Check against the recorded outcomes, without the oracles.
+    #[arg(long)]
+    recorded: bool,
+}
+
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     run(root, args, &System, &CURL, &builtins::Suite::all)
 }
 
-/// [`main`] with the programs `exec` runs, the files `net` fetches and the cases `suite` makes
-/// for the builtin differential, made only when a command runs it.
+/// [`main`] with the programs `exec` runs, the files `net` fetches and the builtin suite.
 fn run(
     root: &Path,
-    args: &[String],
+    args: &Args,
     exec: &dyn Exec,
     net: &dyn Net,
     suite: &dyn Fn() -> builtins::Suite,
 ) -> Result<bool, String> {
     let build = || build_with(root, exec, net);
-    let words: Vec<&str> = args.iter().map(String::as_str).collect();
-    match words.as_slice() {
-        [] => {
-            let oracles = build()?;
-            let vectors = vectors::check(root, &oracles)?;
-            let numbers = numbers::check(root, &oracles)?;
-            let probes = probes::check(&oracles)?;
-            let scenarios = scenarios::check(&oracles, None)?;
-            let builtins = builtins::check(root, &oracles, false, &suite())?;
-            let codegen = codegen::check(root, &oracles, false)?;
-            let grammar = grammar::check(root, &oracles, false)?;
-            Ok([
-                vectors, numbers, probes, scenarios, builtins, codegen, grammar,
-            ]
-            .iter()
-            .all(|passed| *passed))
-        }
+    let Some(command) = &args.command else {
+        let oracles = build()?;
+        let vectors = vectors::check(root, &oracles)?;
+        let numbers = numbers::check(root, &oracles)?;
+        let probes = probes::check(&oracles)?;
+        let scenarios = scenarios::check(&oracles, None)?;
         // The same, the builtin differential against the outcomes its fixture records rather
         // than the oracles, about a minute where the live run takes half an hour, and the
         // compiler differential left to `cargo test`, which checks it against its recorded
-        // outcomes: what pull requests run unless they change the oracles or the differentials'
-        // cases (docs/ci.md).
-        ["--recorded"] => {
-            let oracles = build()?;
-            let vectors = vectors::check(root, &oracles)?;
-            let numbers = numbers::check(root, &oracles)?;
-            let probes = probes::check(&oracles)?;
-            let scenarios = scenarios::check(&oracles, None)?;
+        // outcomes: what pull requests run unless they change the oracles or the
+        // differentials' cases (docs/ci.md).
+        if args.recorded {
             let builtins = builtins::check_recorded(root, &suite())?;
             let grammar = grammar::check_recorded(root)?;
-            Ok([vectors, numbers, probes, scenarios, builtins, grammar]
+            return Ok([vectors, numbers, probes, scenarios, builtins, grammar]
                 .iter()
-                .all(|passed| *passed))
+                .all(|passed| *passed));
         }
-        ["builtins"] => builtins::check(root, &build()?, false, &suite()),
-        ["builtins", "--record"] => builtins::check(root, &build()?, true, &suite()),
-        ["builtins", "--recorded"] => builtins::check_recorded(root, &suite()),
-        ["codegen"] => codegen::check(root, &build()?, false),
-        ["codegen", "--record"] => codegen::check(root, &build()?, true),
-        ["grammar"] => grammar::check(root, &build()?, false),
-        ["grammar", "--record"] => grammar::check(root, &build()?, true),
-        ["grammar", "--recorded"] => grammar::check_recorded(root),
-        ["fuzz", rest @ ..] => fuzz::run(root, rest, exec, net),
-        ["scenarios", names @ ..] => {
+        let builtins = builtins::check(root, &oracles, false, &suite())?;
+        let codegen = codegen::check(root, &oracles, false)?;
+        let grammar = grammar::check(root, &oracles, false)?;
+        return Ok([
+            vectors, numbers, probes, scenarios, builtins, codegen, grammar,
+        ]
+        .iter()
+        .all(|passed| *passed));
+    };
+    match command {
+        OracleCommand::Builtins(Recording { recorded: true, .. }) => {
+            builtins::check_recorded(root, &suite())
+        }
+        OracleCommand::Builtins(Recording { record, .. }) => {
+            builtins::check(root, &build()?, *record, &suite())
+        }
+        OracleCommand::Codegen { record } => codegen::check(root, &build()?, *record),
+        OracleCommand::Grammar(Recording { recorded: true, .. }) => grammar::check_recorded(root),
+        OracleCommand::Grammar(Recording { record, .. }) => {
+            grammar::check(root, &build()?, *record)
+        }
+        OracleCommand::Fuzz(options) => fuzz::run(root, options, exec, net),
+        OracleCommand::Scenarios { names } => {
             let oracles = build()?;
-            scenarios::check(&oracles, Some(names))
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            scenarios::check(&oracles, Some(&names))
         }
-        ["build"] => {
+        OracleCommand::Build => {
             let oracles = build()?;
             println!("oracles: qcc at {}", oracles.qcc.display());
             println!("oracles: vm-oracle at {}", oracles.vm.display());
@@ -214,27 +274,21 @@ fn run(
             );
             Ok(true)
         }
-        ["id101", dir] => {
+        OracleCommand::Id101 { dir } => {
             let oracles = build()?;
-            id101::check(&oracles, Path::new(dir))
+            id101::check(&oracles, dir)
         }
-        ["rerelease", dir] => {
+        OracleCommand::Rerelease { dir } => {
             let oracles = build()?;
-            rerelease::check(&oracles, Path::new(dir))
+            rerelease::check(&oracles, dir)
         }
-        ["json", trace] => {
-            let bytes = fs::read(trace).map_err(|e| format!("{trace}: {e}"))?;
-            let trace = qc_trace::decode(&bytes).map_err(|e| format!("{trace}: {e:?}"))?;
-            print!("{}", qc_trace::to_json(&trace));
+        OracleCommand::Json { trace } => {
+            let name = trace.display();
+            let bytes = fs::read(trace).map_err(|e| format!("{name}: {e}"))?;
+            let decoded = qc_trace::decode(&bytes).map_err(|e| format!("{name}: {e:?}"))?;
+            print!("{}", qc_trace::to_json(&decoded));
             Ok(true)
         }
-        _ => Err(
-            "usage: cargo xtask oracles [--recorded | build | scenarios [<name>...] \
-             | fuzz <target> [--time <s>] \
-             | builtins [--record | --recorded] | codegen [--record] | id101 <codebase directory> \
-             | rerelease <directory of codebases> | json <trace>]"
-                .to_owned(),
-        ),
     }
 }
 

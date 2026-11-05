@@ -176,6 +176,15 @@ impl ModuleState {
     }
 }
 
+/// What [`AnalysisHost::read_again`] keeps when the project no longer opens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Keep {
+    /// Nothing: the host has no project modules, as after a bad project file.
+    Nothing,
+    /// The modules as they were: an edit to a QuakeC file leaves the analysis alone.
+    OnError,
+}
+
 /// The analysis host. Open a project with [`AnalysisHost::open`], give it the text of the files
 /// an editor has open with [`AnalysisHost::set_overlay`], and ask it questions; each feature is
 /// a method in its own module of this crate.
@@ -253,7 +262,12 @@ impl<L: Loader> AnalysisHost<L> {
     /// A module whose files and settings are unchanged keeps its database, with the text of each
     /// file that is not open read again, so only what changed on disk is analysed again.
     pub fn reload(&mut self) -> Result<(), ProjectError> {
-        let mut old = std::mem::take(&mut self.modules);
+        self.read_again(Keep::Nothing)
+    }
+
+    /// [`AnalysisHost::reload`]; with [`Keep::OnError`] a project that no longer opens leaves the
+    /// modules as they were, so an edit to a QuakeC file never loses the analysis.
+    fn read_again(&mut self, keep: Keep) -> Result<(), ProjectError> {
         let opened = match self.root.clone() {
             Some(root) => {
                 let mut loader = OverlayLoader {
@@ -268,6 +282,10 @@ impl<L: Loader> AnalysisHost<L> {
             }
             None => Ok(None),
         };
+        if keep == Keep::OnError && opened.is_err() {
+            return Ok(());
+        }
+        let mut old = std::mem::take(&mut self.modules);
         let result = match opened {
             Ok(Some(project)) => {
                 self.add_project(&project, &mut old);
@@ -424,7 +442,9 @@ impl<L: Loader> AnalysisHost<L> {
     }
 
     /// Sets the text of the open file `path`, which replaces its text on disk. Editing a
-    /// project file or a `progs.src` reads the project again.
+    /// project file or a `progs.src`, or a line of a QuakeC file that may be a directive
+    /// (PRJ-5.1), such as an `#include`, reads the project again, so the module's file graph
+    /// follows the text being typed.
     ///
     /// # Errors
     ///
@@ -432,9 +452,13 @@ impl<L: Loader> AnalysisHost<L> {
     /// open.
     pub fn set_overlay(&mut self, path: &Path, text: Vec<u8>) -> Result<(), ProjectError> {
         let path = normalize(path);
-        self.overlays.insert(path.clone(), text.clone());
+        let before = self.overlays.insert(path.clone(), text.clone());
         if is_project_file(&path) {
             return self.reload();
+        }
+        let before = before.or_else(|| self.loader.load(&path).ok());
+        if before.is_some_and(|before| directive_lines(&before) != directive_lines(&text)) {
+            return self.read_again(Keep::OnError);
         }
         let mut found = false;
         for module in &mut self.modules {
@@ -467,6 +491,11 @@ impl<L: Loader> AnalysisHost<L> {
             return self.reload();
         }
         let text = self.loader.load(&path).unwrap_or_default();
+        // The open text the modules still hold, now the overlay is gone.
+        let open = self.text(&path);
+        if open.is_some_and(|open| directive_lines(&open) != directive_lines(&text)) {
+            return self.read_again(Keep::OnError);
+        }
         for module in &mut self.modules {
             if let Some(file) = module.file_id(&path) {
                 module.set_text(file, text.clone());
@@ -567,4 +596,39 @@ fn is_project_file(path: &Path) -> bool {
         || path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("src"))
+}
+
+/// The UTF-8 byte order mark a file may start with, which the graph skips (PRJ-5.1).
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
+/// The lines of `text` that may choose a module's files (PRJ-5.1, PRJ-5.3): each logical line,
+/// a `\` at a line's end joining the next, whose first byte that is not white space is `#`,
+/// after a byte order mark at the start; and every line between an `#includelist` and its
+/// `#endlist`, each a list of files. An `#include`, a list's entries and the `#ifdef` and
+/// `#define` lines that choose between them are all among them.
+pub(crate) fn directive_lines(text: &[u8]) -> Vec<Vec<u8>> {
+    let text = text.strip_prefix(UTF8_BOM).unwrap_or(text);
+    let mut lines = Vec::new();
+    let mut logical: Vec<u8> = Vec::new();
+    let mut in_list = false;
+    for raw in text.split(|&b| b == b'\n') {
+        let raw = raw.trim_ascii_end();
+        if let Some(head) = raw.strip_suffix(b"\\") {
+            logical.extend_from_slice(head);
+            continue;
+        }
+        logical.extend_from_slice(raw);
+        let line = core::mem::take(&mut logical);
+        let word = line.trim_ascii_start();
+        if word.starts_with(b"#includelist") {
+            in_list = true;
+        } else if word.starts_with(b"#endlist") {
+            in_list = false;
+        }
+        if in_list || word.first() == Some(&b'#') {
+            lines.push(line);
+        }
+    }
+    lines.push(logical);
+    lines
 }

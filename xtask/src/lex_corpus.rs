@@ -12,12 +12,16 @@ use std::path::{Path, PathBuf};
 use qc_lexer::{LineIndex, lex};
 use qc_preproc::{FsLoader, Preprocessor};
 
+/// `cargo xtask lex-corpus <codebase directory>`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// The codebase directory.
+    dir: PathBuf,
+}
+
 /// Runs the check on the codebase directory in `args`.
-pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
-    let [dir] = args else {
-        return Err("usage: cargo xtask lex-corpus <codebase directory>".to_owned());
-    };
-    let dir = Path::new(dir);
+pub(crate) fn main(_root: &Path, args: &Args) -> Result<bool, String> {
+    let dir = args.dir.as_path();
     let mut files: Vec<PathBuf> = fs::read_dir(dir)
         .map_err(|e| format!("{}: {e}", dir.display()))?
         .filter_map(Result::ok)
@@ -113,7 +117,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use super::{main, progs_src_names};
+    use super::{Args, main, progs_src_names};
     use crate::test_dirs::fresh;
 
     fn codebase(name: &str, files: &[(&str, &str)]) -> PathBuf {
@@ -125,7 +129,7 @@ mod tests {
     }
 
     fn run(dir: &Path) -> Result<bool, String> {
-        main(Path::new("."), &[dir.display().to_string()])
+        crate::run_cli::<Args, _>(&[dir.display().to_string()], |a| main(Path::new("."), a))
     }
 
     #[test]
@@ -169,7 +173,11 @@ mod tests {
         let empty = codebase("lex-empty", &[("readme.txt", "x")]);
         assert!(run(&empty).unwrap_err().contains("no .qc files"));
         assert!(run(&empty.join("nowhere")).is_err());
-        assert!(main(Path::new("."), &[]).unwrap_err().contains("usage"));
+        assert!(
+            crate::run_cli::<Args, &str>(&[], |a| main(Path::new("."), a))
+                .unwrap_err()
+                .contains("Usage")
+        );
         assert!(progs_src_names(&empty.join("progs.src")).is_err());
     }
 }
