@@ -22,6 +22,7 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::convert::double_to_float;
 use qc_vm::{Machine, NoObserver, RunError, ServerState};
 use qs_bsp::Bsp;
+use qs_vfs::Registration;
 
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
@@ -45,7 +46,10 @@ const MOVETYPE_PUSH: f32 = 7.0;
 /// The client slots a single-player world has.
 const MAXCLIENTS: usize = 1;
 /// The single player's edict.
-const CLIENT: usize = 1;
+const CLIENT: usize = CLIENT_EDICT;
+
+/// The player's edict, the one client's slot (EDICT-5.1).
+pub const CLIENT_EDICT: usize = 1;
 /// `EDICT_SETTLE_FRAMETIME`: the two frames the server runs before play (EDICT-8.9).
 const SETTLE_FRAMETIME: f64 = 0.1;
 
@@ -121,6 +125,18 @@ pub struct LoadOptions {
     /// What the level the player left carries into this one, `None` for a new game
     /// (PHYS-10.4).
     pub carried: Option<SpawnParms>,
+    /// Whether the install is the full game, which sets the `registered` setting the progs
+    /// read (FS-4.5).
+    pub registration: Registration,
+}
+
+/// A command the progs leave for the host with `localcmd` or `changelevel`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HostCommand {
+    /// `changelevel <map>`: the next level (PHYS-10.4).
+    Changelevel(String),
+    /// `restart`: this level again, as single player's `respawn` asks (PHYS-10.6).
+    Restart,
 }
 
 /// What `SV_SaveSpawnparms` keeps across a level change: `serverflags`, "for cross level
@@ -173,6 +189,10 @@ impl World {
         engine.clients_active = vec![false; MAXCLIENTS];
         // RRE-1.6: QuakeSpasm loads the file when the host starts, before any map spawns.
         engine.localization = options.localization;
+        // FS-4.5: `registered`, 0 until `COM_CheckRegistered` finds the full game.
+        engine
+            .cvars
+            .create("registered", options.registration.cvar());
         let mut world = Self {
             machine,
             builtins: SimBuiltins::new(
@@ -209,6 +229,7 @@ impl World {
         let mut spawner = Spawner {
             world: &mut world,
             progs,
+            state: ServerState::Loading,
         };
         spawn::load_from_file(&mut spawner, entities, false, 1).map_err(WorldError::Spawn)?;
         world.builtins.mock.engine_mut().server_active = true;
@@ -353,26 +374,34 @@ impl World {
         Ok(())
     }
 
-    /// The level the progs asked for with `changelevel` since the last call: the command it
-    /// appended to the host's buffer, `changelevel <map>`, which `Host_Changelevel_f` takes
-    /// only with exactly one argument (PHYS-10.4). The buffer is emptied.
-    pub fn take_changelevel(&mut self) -> Option<String> {
+    /// The first command for the host the progs appended to its buffer since the last call:
+    /// `changelevel <map>`, which `Host_Changelevel_f` takes only with exactly one argument
+    /// (PHYS-10.4), or `restart`, `Host_Restart_f` (PHYS-10.6). The buffer is emptied.
+    pub fn take_host_command(&mut self) -> Option<HostCommand> {
         let buffer = core::mem::take(&mut self.builtins.mock.engine_mut().command_buffer);
-        commands(&buffer).into_iter().find_map(|command| {
-            // `Cmd_TokenizeString`'s words, each as `COM_Parse` reads it.
-            let mut parser = Parser::new(&command);
-            let mut words = Vec::new();
-            while let Token::Word(word) = parser.next_token() {
-                words.push(word);
-            }
-            // `Cmd_ExecuteString` matches the name with `Q_strcasecmp`.
-            match words.as_slice() {
-                [name, map] if name.eq_ignore_ascii_case(b"changelevel") => {
-                    Some(String::from_utf8_lossy(map).into_owned())
-                }
+        command_words(&buffer)
+            .into_iter()
+            .find_map(|words| match words.as_slice() {
+                // `Cmd_ExecuteString` matches the name with `Q_strcasecmp`.
+                [name, map] if name.eq_ignore_ascii_case(b"changelevel") => Some(
+                    HostCommand::Changelevel(String::from_utf8_lossy(map).into_owned()),
+                ),
+                [name, ..] if name.eq_ignore_ascii_case(b"restart") => Some(HostCommand::Restart),
                 _ => None,
-            }
-        })
+            })
+    }
+
+    /// The map's name, `sv.name`, which `restart` spawns again (PHYS-10.6).
+    #[must_use]
+    pub fn map(&self) -> &str {
+        &self.map
+    }
+
+    /// The parms the player entered this level with, `None` in a new game, which `restart`
+    /// keeps (PHYS-10.6).
+    #[must_use]
+    pub const fn carried(&self) -> Option<SpawnParms> {
+        self.carried
     }
 
     /// `SV_SaveSpawnparms`: `serverflags`, then, with `self` the client, `SetChangeParms`
@@ -539,6 +568,10 @@ fn whole(value: f32) -> Option<usize> {
 struct Spawner<'a, 'p> {
     world: &'a mut World,
     progs: &'a Progs<'p>,
+    /// `sv.state` while the spawn functions run: loading for the map's entities, where the
+    /// precache builtins work, active for an entity spawned in play, where they stop the run
+    /// (`PF_precache_model`: "Precache can only be done in spawn functions").
+    state: ServerState,
 }
 
 impl SpawnHost for Spawner<'_, '_> {
@@ -610,7 +643,7 @@ impl SpawnHost for Spawner<'_, '_> {
         self.world.set_global("self", Slot::from_i32(value));
         self.world.machine.execute_program(
             self.progs,
-            ServerState::Loading,
+            self.state,
             &mut self.world.builtins,
             &mut NoObserver,
             function,
@@ -649,8 +682,33 @@ fn commands(text: &[u8]) -> Vec<Vec<u8>> {
     out
 }
 
+/// The commands of console text with their words: `Cbuf_Execute`'s commands, each split
+/// as `Cmd_TokenizeString` splits it with `COM_Parse`; a command with no words, which
+/// `Cmd_ExecuteString` skips, is left out.
+#[must_use]
+pub fn command_words(text: &[u8]) -> Vec<Vec<Vec<u8>>> {
+    commands(text)
+        .into_iter()
+        .map(|command| {
+            let mut parser = Parser::new(&command);
+            let mut words = Vec::new();
+            while let Token::Word(word) = parser.next_token() {
+                words.push(word);
+            }
+            words
+        })
+        .filter(|words| !words.is_empty())
+        .collect()
+}
+
+mod changes;
+mod edit;
+mod inspect;
 mod save;
 #[cfg(test)]
 pub(crate) mod tests;
 
+pub use changes::EdictChange;
+pub use edit::{EditError, LineHit};
+pub use inspect::{NamedValue, QcValue};
 pub use save::{SAVEGAME_VERSION, SaveError, SaveGame};

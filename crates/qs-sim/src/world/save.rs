@@ -14,6 +14,8 @@ use qc_edict::system::global_by_name;
 use qc_progs::{PROGS_DEF_SAVEGLOBAL, Progs};
 use qc_types::{DefType, EntityRef, Etype, Slot};
 
+use qc_vm::ServerState;
+
 use super::{CLIENT, Spawner, World, field_slot};
 use crate::builtins::SimCall;
 use crate::spawn::{FieldDef, Parser, SpawnError, Token, c_atof, parse_saved_edict, parse_value};
@@ -223,7 +225,11 @@ impl World {
             }
             let number = EdictNumber::new(n);
             self.machine.edicts_mut().clear_edict(number);
-            let mut spawner = Spawner { world: self, progs };
+            let mut spawner = Spawner {
+                world: self,
+                progs,
+                state: ServerState::Loading,
+            };
             let init = parse_saved_edict(&mut spawner, &mut parser, n).map_err(SaveError::Parse)?;
             if init {
                 linked.push(n);
@@ -274,7 +280,11 @@ impl World {
                 slot: usize::try_from(def.ofs).unwrap_or(usize::MAX),
                 etype: known(def.def_type()),
             };
-            let mut spawner = Spawner { world: self, progs };
+            let mut spawner = Spawner {
+                world: self,
+                progs,
+                state: ServerState::Loading,
+            };
             parse_value(&mut spawner, field, &value, &mut |host, slot, value| {
                 if let Ok(slot) = i32::try_from(slot) {
                     // A slot past the globals is not written.
@@ -372,7 +382,7 @@ impl World {
 
 impl World {
     /// Field slot `slot` of edict `n`, 0 past the fields.
-    fn slot_of(&self, n: usize, slot: usize) -> Slot {
+    pub(super) fn slot_of(&self, n: usize, slot: usize) -> Slot {
         self.machine
             .edicts()
             .field(EdictNumber::new(n), slot)
@@ -380,7 +390,7 @@ impl World {
     }
 
     /// The system field `name` of edict `n`.
-    fn field(&self, n: usize, name: &str) -> Slot {
+    pub(super) fn field(&self, n: usize, name: &str) -> Slot {
         self.slot_of(n, field_slot(name))
     }
 
@@ -398,7 +408,7 @@ impl World {
     }
 
     /// The text of the string value `value`: a string-table offset, or an engine string.
-    fn string_value(&self, progs: &Progs<'_>, value: Slot) -> Option<Vec<u8>> {
+    pub(super) fn string_value(&self, progs: &Progs<'_>, value: Slot) -> Option<Vec<u8>> {
         let value = value.as_i32();
         if value >= 0 {
             return progs.string(value).map(<[u8]>::to_vec);
@@ -462,7 +472,7 @@ impl World {
 }
 
 /// A definition's type, `ev_float` for an unknown one as the spawner reads it.
-fn known(def: DefType) -> Etype {
+pub(super) fn known(def: DefType) -> Etype {
     match def {
         DefType::Known(etype) => etype,
         DefType::Unknown(_) => Etype::Float,

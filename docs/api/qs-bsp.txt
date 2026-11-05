@@ -176,6 +176,7 @@ fn qs_bsp::Bsp::face_samples
 fn qs_bsp::Bsp::face_vertices
 fn qs_bsp::Bsp::hull0
 fn qs_bsp::Bsp::leaf_pvs
+fn qs_bsp::Bsp::point_in_leaf
 fn qs_bsp::Bsp::read
 fn qs_bsp::Bsp::vis_row_size
 fn qs_bsp::BspError::message

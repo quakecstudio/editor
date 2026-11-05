@@ -1,0 +1,88 @@
+const qs_bridge::framing::BRIDGE_CONTENT_TYPE
+const qs_bridge::framing::BRIDGE_MAX_CONTENT
+const qs_bridge::session::BRIDGE_COMMANDS
+const qs_bridge::session::BRIDGE_PROTOCOL_VERSION
+enum qs_bridge::framing::FrameError
+enum qs_bridge::message::ErrorCode
+enum qs_bridge::message::Id
+enum qs_bridge::message::Message
+enum qs_bridge::session::Answer
+field qs_bridge::message::RpcError.code
+field qs_bridge::message::RpcError.data
+field qs_bridge::message::RpcError.message
+field qs_bridge::session::HostInfo.engine
+field qs_bridge::session::HostInfo.name
+field qs_bridge::session::HostInfo.version
+field qs_bridge::session::Reply.close
+field qs_bridge::session::Reply.response
+fn qs_bridge::framing::read_frame
+fn qs_bridge::framing::write_frame
+fn qs_bridge::message::ErrorCode::code
+fn qs_bridge::message::Message::parse
+fn qs_bridge::message::Message::to_bytes
+fn qs_bridge::message::Message::to_json
+fn qs_bridge::message::RpcError::new
+fn qs_bridge::session::Capabilities::accepts
+fn qs_bridge::session::Capabilities::of
+fn qs_bridge::session::Host::call
+fn qs_bridge::session::Host::capabilities
+fn qs_bridge::session::Host::info
+fn qs_bridge::session::Host::shutdown
+fn qs_bridge::session::Session::handle
+fn qs_bridge::session::Session::is_initialized
+fn qs_bridge::session::Session::new
+fn qs_bridge::session::check_schema
+fn qs_bridge::session::event
+fn qs_bridge::session::is_flagged
+impl qs_bridge::framing::FrameError: From<io::Error>
+impl qs_bridge::framing::FrameError: core::error::Error
+impl qs_bridge::framing::FrameError: core::fmt::Display
+struct qs_bridge::message::RpcError
+struct qs_bridge::session::Capabilities
+struct qs_bridge::session::HostInfo
+struct qs_bridge::session::Reply
+struct qs_bridge::session::Session
+trait qs_bridge::session::Host
+use qs_bridge::Answer = session::Answer
+use qs_bridge::BRIDGE_COMMANDS = session::BRIDGE_COMMANDS
+use qs_bridge::BRIDGE_CONTENT_TYPE = framing::BRIDGE_CONTENT_TYPE
+use qs_bridge::BRIDGE_MAX_CONTENT = framing::BRIDGE_MAX_CONTENT
+use qs_bridge::BRIDGE_PROTOCOL_VERSION = session::BRIDGE_PROTOCOL_VERSION
+use qs_bridge::Capabilities = session::Capabilities
+use qs_bridge::ErrorCode = message::ErrorCode
+use qs_bridge::FrameError = framing::FrameError
+use qs_bridge::Host = session::Host
+use qs_bridge::HostInfo = session::HostInfo
+use qs_bridge::Id = message::Id
+use qs_bridge::Message = message::Message
+use qs_bridge::Reply = session::Reply
+use qs_bridge::RpcError = message::RpcError
+use qs_bridge::Session = session::Session
+use qs_bridge::check_schema = session::check_schema
+use qs_bridge::event = session::event
+use qs_bridge::is_flagged = session::is_flagged
+use qs_bridge::read_frame = framing::read_frame
+use qs_bridge::write_frame = framing::write_frame
+variant qs_bridge::framing::FrameError::ContentType
+variant qs_bridge::framing::FrameError::Header
+variant qs_bridge::framing::FrameError::Io
+variant qs_bridge::framing::FrameError::TooLarge
+variant qs_bridge::message::ErrorCode::BadValue
+variant qs_bridge::message::ErrorCode::IncompatibleVersion
+variant qs_bridge::message::ErrorCode::InternalError
+variant qs_bridge::message::ErrorCode::InvalidParams
+variant qs_bridge::message::ErrorCode::InvalidRequest
+variant qs_bridge::message::ErrorCode::MethodNotFound
+variant qs_bridge::message::ErrorCode::NoSuchBreakpoint
+variant qs_bridge::message::ErrorCode::NoSuchEdict
+variant qs_bridge::message::ErrorCode::NotInitialized
+variant qs_bridge::message::ErrorCode::NotPaused
+variant qs_bridge::message::ErrorCode::ParseError
+variant qs_bridge::message::ErrorCode::Unsupported
+variant qs_bridge::message::Id::Number
+variant qs_bridge::message::Id::Text
+variant qs_bridge::message::Message::Notification
+variant qs_bridge::message::Message::Request
+variant qs_bridge::message::Message::Response
+variant qs_bridge::session::Answer::Later
+variant qs_bridge::session::Answer::Now

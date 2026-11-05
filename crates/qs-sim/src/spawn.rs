@@ -369,7 +369,7 @@ pub(crate) fn parse_value<H: SpawnHost>(
 /// Applies one `"key" "value"` pair, with the key fix-ups of EDICT-8.2 before the type
 /// conversion: the `angle`/`light` renames, the trailing-space trim, the `_` skip and the
 /// unknown-field skip.
-fn apply_key<H: SpawnHost>(
+pub(crate) fn apply_key<H: SpawnHost>(
     host: &mut H,
     edict: usize,
     key: &[u8],

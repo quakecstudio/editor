@@ -2554,10 +2554,13 @@ fn a_level_change_carries_the_spawn_parms_and_serverflags() {
         5.0,
         "a new game runs SetNewParms"
     );
-    assert_eq!(first.world.take_changelevel(), None, "none asked for yet");
+    assert_eq!(first.world.take_host_command(), None, "none asked for yet");
     first.frames(10, 0.1).unwrap();
-    assert_eq!(first.world.take_changelevel().as_deref(), Some("e1m2"));
-    assert_eq!(first.world.take_changelevel(), None, "taken once");
+    assert_eq!(
+        first.world.take_host_command(),
+        Some(super::HostCommand::Changelevel("e1m2".to_owned()))
+    );
+    assert_eq!(first.world.take_host_command(), None, "taken once");
     let parsed = Progs::read(&first.progs).unwrap();
     let kept = first.world.save_spawn_parms(&parsed).unwrap();
     assert_eq!(kept.parms()[..3], [12.0, 3.0, 0.0]);
@@ -2586,7 +2589,10 @@ fn only_a_changelevel_with_one_argument_names_a_level() {
     let mut run = player(&ledge(), "", "", "");
     let mut take = |buffer: &[u8]| {
         run.world.builtins.mock.engine_mut().command_buffer = buffer.to_vec();
-        run.world.take_changelevel()
+        match run.world.take_host_command() {
+            Some(super::HostCommand::Changelevel(map)) => Some(map),
+            _ => None,
+        }
     };
     assert_eq!(take(b"changelevel e2m1\n").as_deref(), Some("e2m1"));
     assert_eq!(take(b"changelevel\n"), None);
@@ -2645,4 +2651,64 @@ fn an_inactive_client_keeps_its_parms_across_a_level_change() {
     let progs = Progs::read(&run.progs).unwrap();
     let kept = run.world.save_spawn_parms(&progs).unwrap();
     assert_eq!(kept.parms(), [0.0; 16], "SetChangeParms did not run");
+}
+
+// spec PHYS-10.4: console text splits into commands at a newline or a semicolon outside
+// quotes, each into its words as COM_Parse reads them; an empty command is skipped
+#[test]
+fn console_text_splits_into_commands_and_words() {
+    let words = super::command_words(b"map e1m1; god\n\n  ;say \"a;b\" c");
+    let expected: Vec<Vec<Vec<u8>>> = vec![
+        vec![b"map".to_vec(), b"e1m1".to_vec()],
+        vec![b"god".to_vec()],
+        vec![b"say".to_vec(), b"a;b".to_vec(), b"c".to_vec()],
+    ];
+    assert_eq!(words, expected);
+    assert!(super::command_words(b"").is_empty());
+}
+
+// spec FS-4.5: the progs read `registered` as 1 in the full game and 0 in the shareware
+// episode
+#[test]
+fn the_progs_read_whether_the_game_is_registered() {
+    let source = "float(string s) cvar = #45;\nfloat reg;\n\
+        void() StartFrame = { reg = cvar(\"registered\"); };\n";
+    let read = |registration| {
+        let options = LoadOptions {
+            registration,
+            ..LoadOptions::default()
+        };
+        let mut run = running_with(&ledge(), source, "", Vec::new(), options);
+        run.frames(1, 0.1).unwrap();
+        let progs = Progs::read(&run.progs).unwrap();
+        run.world
+            .named_globals(&progs)
+            .into_iter()
+            .find(|g| g.name == "reg")
+            .map(|g| g.value)
+    };
+    assert_eq!(
+        read(qs_vfs::Registration::Registered),
+        Some(super::QcValue::Float(1.0))
+    );
+    assert_eq!(
+        read(qs_vfs::Registration::Shareware),
+        Some(super::QcValue::Float(0.0))
+    );
+}
+
+// spec PHYS-10.6: `restart` asks for this level again, whatever follows it, and the world
+// keeps its name and the parms it was entered with
+#[test]
+fn restart_asks_for_this_level_again() {
+    let mut run = player(&ledge(), "", "", "");
+    let mut take = |buffer: &[u8]| {
+        run.world.builtins.mock.engine_mut().command_buffer = buffer.to_vec();
+        run.world.take_host_command()
+    };
+    assert_eq!(take(b"restart\n"), Some(super::HostCommand::Restart));
+    assert_eq!(take(b"RESTART now\n"), Some(super::HostCommand::Restart));
+    assert_eq!(take(b"restarts\n"), None);
+    assert_eq!(run.world.map(), "test");
+    assert_eq!(run.world.carried(), None, "a new game");
 }

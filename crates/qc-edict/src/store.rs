@@ -148,6 +148,20 @@ pub struct EdictStore {
     edicts: Vec<Edict>,
     num_edicts: usize,
     maxclients: usize,
+    /// What has happened to the edicts since tracking began, `None` when it is off.
+    events: Option<Vec<EdictEvent>>,
+}
+
+/// Something that happened to an edict, which the preview host reports to the IDE
+/// (BRIDGE-3.1): an allocation, a free, or a field slot written, whatever the value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdictEvent {
+    /// [`EdictStore::alloc`] took the edict.
+    Allocated(EdictNumber),
+    /// [`EdictStore::free`] freed it.
+    Freed(EdictNumber),
+    /// [`EdictStore::set_field`] wrote the field slot.
+    Written(EdictNumber, usize),
 }
 
 // Written out so that `clone_from` reaches each edict's own `clone_from` (see `Edict`).
@@ -158,6 +172,7 @@ impl Clone for EdictStore {
             edicts: self.edicts.clone(),
             num_edicts: self.num_edicts,
             maxclients: self.maxclients,
+            events: self.events.clone(),
         }
     }
 
@@ -167,11 +182,13 @@ impl Clone for EdictStore {
             edicts,
             num_edicts,
             maxclients,
+            events,
         } = source;
         self.layout = *layout;
         self.edicts.clone_from(edicts);
         self.num_edicts = *num_edicts;
         self.maxclients = *maxclients;
+        self.events.clone_from(events);
     }
 }
 
@@ -201,7 +218,29 @@ impl EdictStore {
             edicts,
             num_edicts,
             maxclients,
+            events: None,
         })
+    }
+
+    /// Starts or stops recording what happens to the edicts (BRIDGE-3.1); stopping drops
+    /// what was recorded.
+    pub fn track(&mut self, on: bool) {
+        self.events = on.then(Vec::new);
+    }
+
+    /// What has happened to the edicts since the last call, oldest first; empty when
+    /// tracking is off.
+    pub fn take_events(&mut self) -> Vec<EdictEvent> {
+        self.events
+            .as_mut()
+            .map(core::mem::take)
+            .unwrap_or_default()
+    }
+
+    fn record(&mut self, event: EdictEvent) {
+        if let Some(events) = &mut self.events {
+            events.push(event);
+        }
     }
 
     /// The layout of this store's edicts.
@@ -307,6 +346,7 @@ impl EdictStore {
             .and_then(|edict| edict.fields.get_mut(field))
             .ok_or(EdictError::NoField { number, field })?;
         *slot = value;
+        self.record(EdictEvent::Written(number, field));
         Ok(())
     }
 
@@ -388,6 +428,7 @@ impl EdictStore {
             });
             if qualifies {
                 self.clear_edict(number);
+                self.record(EdictEvent::Allocated(number));
                 return Ok(number);
             }
         }
@@ -398,6 +439,7 @@ impl EdictStore {
         let number = EdictNumber::new(self.num_edicts);
         self.num_edicts = self.num_edicts.saturating_add(1);
         self.clear_edict(number);
+        self.record(EdictEvent::Allocated(number));
         Ok(number)
     }
 
@@ -410,6 +452,10 @@ impl EdictStore {
     /// all again (EDICT-7.4). The clock `now` is `sv.time`, a `double`. Does nothing for a
     /// number the array does not hold.
     pub fn free(&mut self, number: EdictNumber, now: f64) {
+        // Freeing a free edict again (EDICT-7.4) frees nothing more.
+        if self.is_free(number) == Some(false) {
+            self.record(EdictEvent::Freed(number));
+        }
         let Some(edict) = self.edicts.get_mut(number.index()) else {
             return;
         };

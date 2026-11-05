@@ -1820,3 +1820,72 @@ fn exercise_with(bytes: &[u8], loader: BspLoader) {
         let _edited = replace_entities(bytes, b"{\n}\n", loader);
     }
 }
+
+fn split(planenum: usize, children: [i32; 2]) -> Node {
+    Node {
+        planenum,
+        children,
+        mins: [0.0; 3],
+        maxs: [0.0; 3],
+        firstface: 0,
+        numfaces: 0,
+    }
+}
+
+// spec BSP-21.1: the walk goes to the front child when the point is strictly in front of
+// the node's plane, else the back, until a leaf: a point on a plane is behind it
+#[test]
+fn a_point_finds_its_leaf() {
+    let mut bsp = read(&BspSpec::default()).unwrap();
+    let plane = |normal: [f32; 3], dist: f32| Plane {
+        normal,
+        dist,
+        plane_type: 0,
+        signbits: 0,
+    };
+    // Node 0 splits at x = 0; in front, node 1 splits at z = 10 into leaves 2 and 3; behind
+    // is leaf 1.
+    bsp.planes = vec![plane([1.0, 0.0, 0.0], 0.0), plane([0.0, 0.0, 1.0], 10.0)];
+    bsp.nodes = vec![split(0, [1, -2]), split(1, [-3, -4])];
+    assert_eq!(bsp.point_in_leaf([5.0, 0.0, 20.0]), Some(2));
+    assert_eq!(bsp.point_in_leaf([5.0, 0.0, 0.0]), Some(3));
+    assert_eq!(
+        bsp.point_in_leaf([5.0, 0.0, 10.0]),
+        Some(3),
+        "on the plane: behind"
+    );
+    assert_eq!(
+        bsp.point_in_leaf([0.0, 0.0, 20.0]),
+        Some(1),
+        "on the plane: behind"
+    );
+    assert_eq!(bsp.point_in_leaf([-5.0, 0.0, 20.0]), Some(1));
+    // A slanted plane: every component of the dot product counts.
+    bsp.planes = vec![plane([0.0, 0.6, 0.8], 0.0)];
+    bsp.nodes = vec![split(0, [-2, -3])];
+    assert_eq!(bsp.point_in_leaf([0.0, -1.0, 2.0]), Some(1), "d = 1");
+    assert_eq!(bsp.point_in_leaf([0.0, 1.0, -1.0]), Some(2), "d = -0.2");
+    assert_eq!(bsp.point_in_leaf([0.0, 2.0, -1.0]), Some(1), "d = 0.4");
+}
+
+// spec BSP-21.2: no nodes, a plane that does not exist, or a tree that reaches no leaf
+// give no leaf
+#[test]
+fn a_point_in_no_tree_has_no_leaf() {
+    let mut bsp = read(&BspSpec::default()).unwrap();
+    bsp.planes = vec![Plane {
+        normal: [1.0, 0.0, 0.0],
+        dist: 0.0,
+        plane_type: 0,
+        signbits: 0,
+    }];
+    bsp.nodes = Vec::new();
+    assert_eq!(bsp.point_in_leaf([1.0; 3]), None);
+    bsp.nodes = vec![split(0, [0, -1])];
+    assert_eq!(bsp.point_in_leaf([1.0; 3]), None, "a cycle");
+    assert_eq!(bsp.point_in_leaf([-1.0; 3]), Some(0));
+    bsp.nodes = vec![split(5, [-1, -1])];
+    assert_eq!(bsp.point_in_leaf([1.0; 3]), None, "no plane 5");
+    bsp.nodes = vec![split(0, [7, -1])];
+    assert_eq!(bsp.point_in_leaf([1.0; 3]), None, "no node 7");
+}

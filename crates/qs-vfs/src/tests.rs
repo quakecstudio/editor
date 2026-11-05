@@ -13,7 +13,8 @@ use qs_wad::WadError;
 
 use crate::fixtures::{MemFs, pak, pak_with_extra, pop_lmp, unmodified_pak, wad, zip};
 use crate::{
-    Element, FS_GAMENAME, FS_POP_PATH, FS_POP_SIZE, FS_POP_TABLE, FileRef, Location, Vfs, VfsError,
+    Element, FS_GAMENAME, FS_POP_PATH, FS_POP_SIZE, FS_POP_TABLE, FileRef, Location, Registration,
+    Vfs, VfsError,
 };
 
 /// No command-line arguments.
@@ -372,7 +373,7 @@ fn case_insensitive_host_names() {
         .file("Q/Mod/PROGS.DAT", b"upper");
     let vfs = Vfs::new(tree, &["-game", "mod"], "Q").unwrap();
     assert_eq!(path_names(&vfs), ["Q/mod", "Q/id1/pak0.pak", "Q/id1"]);
-    assert!(vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Registered);
     assert_eq!(lookup(&vfs, "progs/player.mdl").as_deref(), Some("mdl"));
     assert_eq!(lookup(&vfs, "PROGS/PLAYER.MDL").as_deref(), Some("mdl"));
     assert_eq!(lookup(&vfs, "progs.dat").as_deref(), Some("mod"));
@@ -446,10 +447,10 @@ fn registered_by_loose_pop() {
     assert_eq!(FS_POP_TABLE[127], 0x0000);
     assert_eq!(FS_POP_TABLE[124], 0x6400);
     let vfs = spec_vfs(&[]);
-    assert!(vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Registered);
     let tree = MemFs::default().file("id1/gfx/pop.lmp", &pop_lmp(b"trailing bytes"));
     let vfs = Vfs::new(tree, NO_ARGS, ".").unwrap();
-    assert!(vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Registered);
     assert!(!vfs.is_modified());
 }
 
@@ -458,7 +459,7 @@ fn registered_by_loose_pop() {
 fn pop_check() {
     let tree = MemFs::default().file("id1/x.txt", b"x");
     let vfs = Vfs::new(tree, NO_ARGS, ".").unwrap();
-    assert!(!vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Shareware);
     let mut wrong = pop_lmp(&[]);
     wrong[21] ^= 1;
     for bad in [wrong, pop_lmp(&[])[..255].to_vec(), Vec::new()] {
@@ -494,7 +495,7 @@ fn modified_shareware_is_fatal() {
     let unmodified = MemFs::default().file("id1/pak0.pak", &unmodified_pak(&[("x", "y")]));
     let vfs = Vfs::new(unmodified, NO_ARGS, ".").unwrap();
     assert!(!vfs.is_modified());
-    assert!(!vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Shareware);
 }
 
 // spec FS-3.4: in shareware, directory elements are skipped for names with `/` or `\`;
@@ -512,7 +513,7 @@ fn shareware_restricts_loose_subdirectories() {
         .file("id1/maps/start.bsp", b"loose-start")
         .file("id1/back\\slash.txt", b"bs");
     let vfs = Vfs::new(tree, NO_ARGS, ".").unwrap();
-    assert!(!vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Shareware);
     assert_eq!(lookup(&vfs, "progs.dat").as_deref(), Some("loose-progs"));
     assert_eq!(lookup(&vfs, "maps/e1m1.bsp"), None);
     assert_eq!(lookup(&vfs, "maps\\e1m1.bsp"), None);
@@ -749,7 +750,7 @@ fn host_filesystem() {
     tree.file("ID1/sub/deeper/x.txt", b"x");
     let base = tree.0.to_str().unwrap();
     let vfs = Vfs::new(crate::StdFs, NO_ARGS, base).unwrap();
-    assert!(vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Registered);
     assert_eq!(vfs.elements().len(), 2);
     assert_eq!(lookup(&vfs, "a.txt").as_deref(), Some("pak"));
     assert_eq!(lookup(&vfs, "maps/start.bsp").as_deref(), Some("start"));
@@ -837,4 +838,13 @@ fn a_rerelease_file_is_looked_up_as_loc_loadfile_does() {
         .file("q/localization/loc_english.txt", b"x")
         .unreadable("q/localization/loc_english.txt");
     assert_eq!(load(unreadable).unwrap().unwrap(), b"from kpf");
+}
+
+// spec FS-4.5: the `registered` setting is 1 for the full game and 0 for the shareware
+// episode
+#[test]
+fn the_registered_setting_follows_the_game() {
+    assert_eq!(Registration::Registered.cvar(), "1");
+    assert_eq!(Registration::Shareware.cvar(), "0");
+    assert_eq!(Registration::default(), Registration::Shareware);
 }

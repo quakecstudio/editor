@@ -1,0 +1,50 @@
+[package]
+name = "preview-host"
+description = "The preview host: the game in its own window, our engine on qs-sim, qs-render and qs-sound, with the IDE bridge server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "preview-host"
+path = "src/main.rs"
+
+[dependencies]
+# The command line (ADR-0008).
+clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
+# The sound device, which plays qs-sound's mixed frames.
+cpal = { workspace = true }
+# The window, as the IDE draws its own (ADR-0003); eframe's defaults without `default_fonts`,
+# whose fonts are not bundled (ADR-0010).
+eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }
+# The screenshot's PNG (BRIDGE-4.1).
+image = { workspace = true, features = ["png"] }
+qc-builtins = { workspace = true }
+# The bridge's socket or named pipe (BRIDGE-1.1).
+interprocess = { workspace = true }
+qc-progs = { workspace = true }
+qs-bridge = { workspace = true }
+qs-bsp = { workspace = true }
+qs-client = { workspace = true }
+qs-log = { workspace = true }
+qs-paths = { workspace = true }
+qs-mdl = { workspace = true }
+qs-render = { workspace = true }
+qs-sim = { workspace = true }
+qs-sound = { workspace = true }
+qs-vfs = { workspace = true }
+serde_json = { workspace = true, features = ["std"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# A world for the bridge's conformance tests: a progs compiled from QuakeC and a floor.
+qc-codegen = { workspace = true }
+qc-edict = { workspace = true }
+qc-sema = { workspace = true }
+qc-types = { workspace = true }
+
+[lints]
+workspace = true

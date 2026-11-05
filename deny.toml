@@ -37,6 +37,7 @@ confidence-threshold = 0.8
 # vouch: OpenSSL is not GPL-compatible and is left out, and GPL-3.0-or-later is
 # allowed because it is this project's own license.
 allow = [
+    "0BSD",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
