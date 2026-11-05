@@ -30,7 +30,7 @@ pub use messages::{
 pub use physics::Sound;
 pub use qc_builtins::localization;
 pub use world::{
-    CLIENT_EDICT, EdictChange, EditError, Entity, HostCommand, HostState, LineHit, LoadOptions,
-    NamedValue, QcValue, RawState, SAVEGAME_VERSION, SaveError, SaveGame, Signon, SpawnParms,
-    State, World, WorldError, command_words, read_state,
+    CLIENT_EDICT, EdictChange, EditError, Entity, EvalError, HostCommand, HostState, LineHit,
+    LoadOptions, NamedValue, QcValue, RawState, SAVEGAME_VERSION, SaveError, SaveGame, Signon,
+    SpawnParms, State, World, WorldError, command_words, read_state,
 };

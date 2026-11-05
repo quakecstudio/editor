@@ -878,6 +878,7 @@ pub fn command_words(text: &[u8]) -> Vec<Vec<Vec<u8>>> {
 
 mod changes;
 mod edit;
+mod evaluate;
 mod inspect;
 mod save;
 mod state;
@@ -886,6 +887,7 @@ pub(crate) mod tests;
 
 pub use changes::EdictChange;
 pub use edit::{EditError, LineHit};
+pub use evaluate::EvalError;
 pub use inspect::{NamedValue, QcValue};
 pub use save::{SAVEGAME_VERSION, SaveError, SaveGame};
 pub use state::{RawState, State, read_state};

@@ -8,13 +8,15 @@ use qc_vm::ErrorKind;
 
 use super::{Running, compile_with_lines, entity, ledge, running_from};
 use crate::debug::{Debugger, StepKind, Stop, locate, resolve};
-use crate::{LoadOptions, World, WorldError};
+use crate::{EvalError, LoadOptions, QcValue, World, WorldError};
 
 /// A ticker whose think sets three fields on three lines and calls a helper on a fourth.
 const SOURCE: &str = "void() helper = {
     self.ammo_shells = 4;
 };
 void() tick = {
+    local float n;
+    n = 5;
     self.frags = 1;
     self.health = 2;
     helper();
@@ -202,4 +204,45 @@ fn a_debugger_without_breakpoints_changes_nothing() {
     assert_eq!(run.world.float(2, "armorvalue"), 3.0);
     run.world.debugger_mut().unwrap().finish();
     run.frames(1, 0.1).unwrap();
+}
+
+// spec WORLD-9.5: a watch expression is a constant, a local of the frame's function before a
+// global, or a field path read entity by entity
+#[test]
+fn watch_expressions_read_the_stopped_state() {
+    let (mut run, lines) = ticking();
+    let progs_bytes = run.progs.clone();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    let health = resolve(&progs, &lines, "t.qc", line_of("self.health = 2")).unwrap();
+    run.world
+        .debugger_mut()
+        .unwrap()
+        .set_breakpoint(health, true);
+    let (_, stop) = until_stopped(&mut run);
+    let at = Some(stop.function);
+    let eval = |text: &str| run.world.evaluate(&progs, at, text);
+    assert_eq!(eval("self.frags"), Ok(QcValue::Float(1.0)));
+    assert_eq!(eval(" self.health "), Ok(QcValue::Float(0.0)));
+    assert_eq!(eval("n"), Ok(QcValue::Float(5.0)), "a local");
+    assert_eq!(
+        eval("self.owner.health"),
+        Ok(QcValue::Float(0.0)),
+        "the world's"
+    );
+    assert_eq!(eval("self"), Ok(QcValue::Entity(2)));
+    assert_eq!(eval("42"), Ok(QcValue::Float(42.0)));
+    assert_eq!(eval("'1 2 3'"), Ok(QcValue::Vector([1.0, 2.0, 3.0])));
+    assert_eq!(eval("\"hi\""), Ok(QcValue::String(b"hi".to_vec())));
+    assert_eq!(eval("nosuch"), Err(EvalError::Unknown("nosuch".to_owned())));
+    assert_eq!(
+        eval("self.nosuch"),
+        Err(EvalError::Unknown("nosuch".to_owned()))
+    );
+    assert_eq!(
+        eval("self.frags.health"),
+        Err(EvalError::NotAnEntity("self.frags".to_owned()))
+    );
+    assert_eq!(eval("1 + 2"), Err(EvalError::Syntax));
+    assert_eq!(eval("'1 2'"), Err(EvalError::Syntax));
+    assert_eq!(eval("self..frags"), Err(EvalError::Syntax));
 }
