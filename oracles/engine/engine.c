@@ -9,7 +9,7 @@
 // unchanged by cargo xtask oracles (the [[extract]] entries of oracles/sources.toml) or written
 // out below with the function it stands in for named.
 //
-//   engine-oracle [--console] <script> <trace>
+//   engine-oracle [--console] <script> <trace> [<engine word>...]
 //
 // The script is described in oracles/README.md ("The engine oracle").
 
@@ -465,6 +465,13 @@ static qboolean read_integer(const char *word, long low, long high, int *out) {
 // Starts the engine as Host_Init does for a dedicated server with no video, sound or input,
 // with `argv` as its command line, loads `map` (Host_Map_f), and opens the trace.
 static void start(int argc, char **argv, const char *map, const char *trace_path, int line) {
+    // id's filesystem builds `<basedir>/<gamedir>/<name>` in buffers of MAX_OSPATH bytes, a name
+    // up to MAX_QPATH, with no check (COM_AddGameDirectory, COM_FindFile): a longer base
+    // directory overflows them, which is undefined, so it is refused here.
+    for (int i = 1; i + 1 < argc; i++) {
+        if (strcmp(argv[i], "-basedir") == 0 && strlen(argv[i + 1]) + MAX_QPATH + 8 > MAX_OSPATH)
+            refuse(line, "-basedir is too long for id's MAX_OSPATH (keep it under 56 bytes)");
+    }
     host_parms.basedir = ".";
     host_parms.memsize = QS_MEMORY;
     host_parms.membase = qs_memory;
@@ -534,8 +541,8 @@ int main(int argc, char **argv) {
         console_on = true;
         arg++;
     }
-    if (argc - arg != 2) {
-        fprintf(stderr, "usage: engine-oracle [--console] <script> <trace>\n");
+    if (argc - arg < 2) {
+        fprintf(stderr, "usage: engine-oracle [--console] <script> <trace> [<engine word>...]\n");
         return QS_EXIT_REFUSED;
     }
     const char *script_path = argv[arg];
@@ -548,8 +555,16 @@ int main(int argc, char **argv) {
 
     char line[QS_MAX_LINE];
     int number = 0;
+    // The engine's command line: the words after the trace, then the script's `engine` lines.
     char *engine_argv[64] = {"engine-oracle"};
     int engine_argc = 1;
+    for (int i = arg + 2; i < argc; i++) {
+        if (engine_argc >= 63) {
+            fprintf(stderr, "engine-oracle: too many engine words\n");
+            return QS_EXIT_REFUSED;
+        }
+        engine_argv[engine_argc++] = argv[i];
+    }
     char map[MAX_QPATH] = "";
     double frametime = 1.0 / 72.0;
     qboolean started = false;

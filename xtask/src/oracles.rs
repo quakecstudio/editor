@@ -238,6 +238,15 @@ enum OracleCommand {
         script: PathBuf,
         /// Where the trace goes.
         trace: PathBuf,
+        /// A recorded trace in canonical JSON form that this one must equal.
+        #[arg(long)]
+        expect: Option<PathBuf>,
+        /// Write the trace's canonical JSON form here, to record it.
+        #[arg(long)]
+        record: Option<PathBuf>,
+        /// The engine's command line, after `--`: `-basedir <dir>` and the like.
+        #[arg(last = true)]
+        engine: Vec<String>,
     },
     /// A trace file as JSON.
     Json {
@@ -335,9 +344,19 @@ fn run(
             let oracles = build()?;
             rerelease::check(&oracles, dir)
         }
-        OracleCommand::Engine { script, trace } => {
+        OracleCommand::Engine {
+            script,
+            trace,
+            expect,
+            record,
+            engine,
+        } => {
             let oracles = build()?;
-            engine::check(&oracles, script, trace)
+            let passed = engine::check(&oracles, script, trace, expect.as_deref(), engine)?;
+            if passed && let Some(out) = record {
+                engine::record(trace, out)?;
+            }
+            Ok(passed)
         }
         OracleCommand::Json { trace } => {
             let name = trace.display();
