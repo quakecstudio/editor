@@ -8,6 +8,7 @@ mod audio;
 mod bridge;
 mod contents;
 mod game;
+mod headless;
 mod load;
 mod screenshot;
 mod values;
@@ -48,6 +49,15 @@ fn main() -> ExitCode {
 }
 
 fn run(args: &args::Args) -> Result<(), String> {
+    if args.headless {
+        let args = args::Args {
+            nosound: true,
+            ..args.clone()
+        };
+        let loaded = load::load(&args, &args.map, None)?;
+        let path = args.bridge.as_deref().ok_or("--headless needs -bridge")?;
+        return headless::run(&args, loaded, listen(path)?);
+    }
     let loaded = load::load(args, &args.map, None)?;
     let bridge = match &args.bridge {
         Some(path) => Some(listen(path)?),

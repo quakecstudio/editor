@@ -14,6 +14,8 @@ use interprocess::local_socket::{GenericFilePath, ListenerOptions, Stream, ToFsN
 use qs_bridge::{Host, Id, Message, RpcError, Session, read_frame, write_frame};
 use serde_json::Value;
 
+use crate::game::Game;
+
 /// What the reader thread hands the game loop.
 #[derive(Debug)]
 enum Incoming {
@@ -200,3 +202,20 @@ fn read_messages(read: impl Read, sender: &Sender<Incoming>) {
 
 #[cfg(test)]
 mod tests;
+
+/// One round of the bridge between two server frames (BRIDGE-4.3): answers the messages that
+/// came, sends the responses the game made later and, once the client has initialized, the
+/// game's events (BRIDGE-2.2). Returns whether the host keeps running: not once the client
+/// went away or asked it to stop (BRIDGE-1.1, BRIDGE-2.5).
+pub(crate) fn serve(bridge: &mut Bridge, game: &mut Game) -> bool {
+    let open = bridge.poll(game);
+    for (id, outcome) in game.take_responses() {
+        bridge.respond(id, outcome);
+    }
+    if bridge.is_initialized() {
+        for (method, params) in game.take_events() {
+            bridge.event(method, params);
+        }
+    }
+    open && !game.stopped()
+}

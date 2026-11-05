@@ -22,7 +22,7 @@ use qs_sim::SpawnParms;
 
 use crate::args::Args;
 use crate::audio::Audio;
-use crate::bridge::Bridge;
+use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game};
 use crate::load::{Describer, Loaded, Rand, load};
@@ -46,7 +46,7 @@ enum Pointer {
 }
 
 /// `Host_FilterTime`: no frame comes sooner than 1/72 of a second after the last.
-const FRAME: f64 = 1.0 / 72.0;
+pub(crate) const FRAME: f64 = 1.0 / 72.0;
 /// `Host_FilterTime`'s longest frame.
 const LONGEST: f64 = 0.1;
 
@@ -361,7 +361,8 @@ impl Viewer {
         self.play = play;
         self.eye = camera.origin;
         self.camera = camera;
-        self.game = game;
+        let old = core::mem::replace(&mut self.game, game);
+        self.game.carry_from(old);
         self.audio = audio;
         self.client = client;
         self.bsp = bsp;
@@ -395,22 +396,12 @@ impl Viewer {
             drop(self.game.take_events());
             return;
         };
-        let open = bridge.poll(&mut self.game);
-        for (id, outcome) in self.game.take_responses() {
-            bridge.respond(id, outcome);
-        }
-        // The events wait for `initialize`, so the client hears the progs and the map load
-        // however late it initializes (BRIDGE-2.2).
-        if bridge.is_initialized() {
-            for (method, params) in self.game.take_events() {
-                bridge.event(method, params);
-            }
-        }
+        let running = serve(bridge, &mut self.game);
         if self.game.wants_screenshot() {
             ui.ctx()
                 .send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
         }
-        if !open || self.game.stopped() {
+        if !running {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
@@ -557,6 +548,6 @@ fn screen_height(aspect: f32) -> i32 {
     clippy::cast_possible_truncation,
     reason = "a frame of at most 0.1 seconds, exact enough in f32"
 )]
-fn frametime_f32(frametime: f64) -> f32 {
+pub(crate) fn frametime_f32(frametime: f64) -> f32 {
     frametime as f32
 }

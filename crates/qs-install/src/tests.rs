@@ -499,6 +499,26 @@ fn examining_a_real_folder_without_game_data() {
     assert!(install.original.unwrap().pak0.ends_with("PAK0.PAK"));
 }
 
+// spec FS-3.11: a game folder that is a link to a directory is a game folder, as a run root
+// links them
+#[cfg(not(windows))]
+#[test]
+fn linked_game_folders_are_found() {
+    let dir = TempDir::new("linked");
+    let id1 = stand_in_install(&dir);
+    let ad = dir.path().join("mods").join("ad");
+    fs::create_dir_all(&ad).unwrap();
+    fs::write(ad.join("pak0.pak"), pak("ad")).unwrap();
+    let root = dir.path().join("root");
+    fs::create_dir_all(&root).unwrap();
+    std::os::unix::fs::symlink(&id1, root.join("id1")).unwrap();
+    std::os::unix::fs::symlink(&ad, root.join("ad")).unwrap();
+    let base = examine_folder(&root).unwrap().original.unwrap();
+    assert_eq!(base.id1, root.join("id1"));
+    let names: Vec<&str> = base.game_dirs.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(names, ["ad"]);
+}
+
 #[test]
 fn the_host_filesystem_resolves_links_for_deduplication() {
     let dir = TempDir::new("canonical");
@@ -1031,11 +1051,7 @@ fn a_missing_install_is_an_error_and_makes_no_link() {
     let target = dir.path().join("uninstalled").join("id1");
     let error = link_dir(&target, &link).unwrap_err();
     assert!(matches!(&error, LinkError::MissingTarget(path) if *path == target));
-    assert!(
-        error
-            .to_string()
-            .ends_with("is not a directory that exists")
-    );
+    assert!(error.to_string().ends_with("is not there to link to"));
     assert!(fs::symlink_metadata(&link).is_err());
     let file = dir.path().join("file");
     fs::write(&file, b"x").unwrap();
@@ -1132,4 +1148,47 @@ fn a_game_dir_whose_name_is_not_utf8_is_skipped() {
     let _ignored = fs::remove_dir_all(&dir);
     let base = install.unwrap().original.unwrap();
     assert!(base.game_dirs.is_empty(), "{:?}", base.game_dirs);
+}
+
+// ADR-0008: on macOS and Linux the rerelease's run root links QuakeEX.kpf as a file: made,
+// left alone when right, repaired when it leads elsewhere, never over a real file, and an
+// error when the file is gone
+#[cfg(not(windows))]
+#[test]
+fn the_kpf_is_linked_as_a_file() {
+    use crate::link_file;
+    let dir = TempDir::new("kpf");
+    let kpf = dir.path().join("rerelease").join("QuakeEX.kpf");
+    fs::create_dir_all(kpf.parent().unwrap()).unwrap();
+    fs::write(&kpf, b"kpf").unwrap();
+    let link = dir.path().join("run").join("QuakeEX.kpf");
+    assert_eq!(link_file(&kpf, &link).unwrap(), LinkOutcome::Created);
+    assert_eq!(fs::read(&link).unwrap(), b"kpf");
+    assert_eq!(link_file(&kpf, &link).unwrap(), LinkOutcome::Unchanged);
+    let other = dir.path().join("other.kpf");
+    fs::write(&other, b"other").unwrap();
+    assert_eq!(link_file(&other, &link).unwrap(), LinkOutcome::Repaired);
+    assert_eq!(fs::read(&link).unwrap(), b"other");
+    assert!(matches!(
+        link_file(&dir.path().join("gone.kpf"), &link),
+        Err(LinkError::MissingTarget(_))
+    ));
+    assert!(
+        matches!(
+            link_file(dir.path(), &link),
+            Err(LinkError::MissingTarget(_))
+        ),
+        "a directory is not a file"
+    );
+    let real = dir.path().join("real.kpf");
+    fs::write(&real, b"real").unwrap();
+    assert!(matches!(
+        link_file(&kpf, &real),
+        Err(LinkError::Occupied(_))
+    ));
+    assert_eq!(
+        fs::read(&real).unwrap(),
+        b"real",
+        "a real file is never removed"
+    );
 }

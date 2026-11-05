@@ -37,6 +37,7 @@ fn qs_vfs::Vfs::load_wad
 fn qs_vfs::Vfs::new
 fn qs_vfs::Vfs::read
 fn qs_vfs::Vfs::registration
+fn qs_vfs::host::EntryKind::serves_as
 fn qs_vfs::host::HostFs::open
 fn qs_vfs::host::HostFs::read_dir
 fn qs_vfs::host::find_entry
@@ -79,6 +80,7 @@ variant qs_vfs::VfsError::ModifiedShareware
 variant qs_vfs::VfsError::Wad
 variant qs_vfs::VfsError::WadNotFound
 variant qs_vfs::host::EntryKind::Dir
+variant qs_vfs::host::EntryKind::DirLink
 variant qs_vfs::host::EntryKind::File
 variant qs_vfs::host::EntryKind::Other
 variant qs_vfs::zip::ZipError::CentralOutside

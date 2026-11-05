@@ -183,6 +183,11 @@ open it for reading".
   `findhandle` uses slots 1 to 9; every loaded archive holds one for the whole session, and
   running out is the fatal error `out of handles`. That is a limit of one host's file
   layer, not of the format.
+- **FS-3.11** A symbolic link, or a Windows junction, to a directory is a directory to every
+  lookup: a game directory, an archive's folder or a loose file's path may pass through
+  one, as the host follows it when id's engine opens the joined path (FS-3.3). A listing of
+  a directory element's files does not descend into one, so a link loop cannot hang it; a
+  link to a file is a file.
 
 ### Constants
 

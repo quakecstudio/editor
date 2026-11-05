@@ -18,7 +18,7 @@ use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
 use qc_progs::Progs;
 use qc_sema::{Db, FileId, ModuleInput};
 use qc_types::Etype;
-use qs_bridge::{ErrorCode, Id, Message, RpcError, Session, check_schema};
+use qs_bridge::{ErrorCode, Host as _, Id, Message, RpcError, Session, check_schema};
 use qs_bsp::{
     BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_NUM_AMBIENTS, Bsp, BspVersion, ClipNode, Leaf, Lump,
     Model, Node, Plane,
@@ -26,7 +26,7 @@ use qs_bsp::{
 use qs_sim::{LoadOptions, World};
 use serde_json::{Value, json};
 
-use super::{Eye, Game, Reporting};
+use super::{Eye, Game, Reporting, Screen};
 use crate::screenshot::Frame;
 
 /// The QuakeC the tests run: a crate the map places, a counter `StartFrame` raises, a
@@ -755,6 +755,57 @@ fn a_screenshot_is_answered_with_the_next_frame() {
             (Id::Number(8), json!(2), json!(3))
         ]
     );
+}
+
+// spec BRIDGE-3.1: a level change keeps what the old level owed the client: its events
+// first, then the new level's, and the screenshots still waiting for a frame
+#[test]
+fn the_next_level_carries_what_the_last_one_owed() {
+    let (mut old, mut session) = game();
+    old.announce("progs.dat", "old");
+    let reply = session.handle(&mut old, request(7, "screenshot", &json!({})));
+    assert_eq!(reply.response, None);
+    let (mut next, _) = game();
+    next.announce("progs.dat", "next");
+    next.carry_from(old);
+    let maps: Vec<Value> = next
+        .take_events()
+        .into_iter()
+        .filter(|(method, _)| *method == "map/loaded")
+        .map(|(_, params)| params["map"].clone())
+        .collect();
+    assert_eq!(maps, [json!("old"), json!("next")]);
+    assert!(next.wants_screenshot());
+    next.screenshot_taken(&frame(1, 1));
+    let responses = next.take_responses();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].0, Id::Number(7));
+}
+
+// spec BRIDGE-2.3: a headless host draws nothing, so it leaves screenshot out of its
+// capabilities and the session refuses one as unsupported; the rest are as the window's
+#[test]
+fn a_headless_host_offers_no_screenshot() {
+    let (mut game, mut session) = game();
+    game.set_screen(Screen::Headless);
+    let capabilities = game.capabilities();
+    for command in super::COMMANDS {
+        assert_eq!(
+            capabilities.accepts(command),
+            command != "screenshot",
+            "{command}"
+        );
+    }
+    let reply = session.handle(&mut game, request(7, "screenshot", &json!({})));
+    let Some(Message::Response {
+        outcome: Err(error),
+        ..
+    }) = reply.response
+    else {
+        panic!("a headless screenshot was not refused");
+    };
+    assert_eq!(error.code, ErrorCode::Unsupported);
+    assert!(!game.wants_screenshot());
 }
 
 // spec BRIDGE-3.3: a step whose frame fails pauses once, with reason error, not step
