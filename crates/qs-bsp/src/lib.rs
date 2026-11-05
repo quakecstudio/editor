@@ -840,6 +840,106 @@ fn range(
 
 /// The leaf a node's child names: a negative child `c` is leaf `-1 - c` (BSP-7.2); `None`
 /// for a child of 0 or more, which is a node.
+/// The leaf `p` is in, BSP-21 over `nodes` and `planes`: [`Bsp::point_in_leaf`] and
+/// [`Visibility::point_in_leaf`].
+fn point_in_leaf(nodes: &[Node], planes: &[Plane], p: [f32; 3]) -> Option<usize> {
+    let mut node = nodes.first()?;
+    for _ in 0..nodes.len() {
+        let plane = planes.get(node.planenum)?;
+        let [a, b, c] = plane.normal;
+        let d = p[0] * a + p[1] * b + p[2] * c - plane.dist;
+        let child = if d > 0.0 {
+            node.children[0]
+        } else {
+            node.children[1]
+        };
+        match usize::try_from(child) {
+            Ok(next) => node = nodes.get(next)?,
+            Err(_) => return leaf_of(child),
+        }
+    }
+    None
+}
+
+/// The leaves `leaf` sees, BSP-6.2 to BSP-6.5 over `leafs` and `visibility` with rows of `row`
+/// bytes: [`Bsp::leaf_pvs`] and [`Visibility::leaf_pvs`].
+fn leaf_pvs(
+    leafs: &[Leaf],
+    visibility: &[u8],
+    row: usize,
+    leaf: usize,
+) -> Result<Vec<u8>, BspError> {
+    let found = leafs.get(leaf).ok_or(BspError::BadIndex {
+        lump: LumpId::Leafs,
+        element: leaf,
+    })?;
+    let Ok(start) = usize::try_from(found.visofs) else {
+        return Ok(vec![0xFF; row]);
+    };
+    if leaf == 0 || visibility.is_empty() {
+        return Ok(vec![0xFF; row]);
+    }
+    let truncated = BspError::VisTruncated { leaf };
+    let mut input = visibility.get(start..).ok_or(truncated.clone())?.iter();
+    let mut out = Vec::new();
+    // A do-while in id's code: at least one byte or run is read.
+    loop {
+        let byte = *input.next().ok_or(truncated.clone())?;
+        if byte == 0 {
+            let count = *input.next().ok_or(truncated.clone())?;
+            out.extend(core::iter::repeat_n(0, usize::from(count)));
+        } else {
+            out.push(byte);
+        }
+        if out.len() >= row {
+            break;
+        }
+    }
+    out.truncate(row);
+    Ok(out)
+}
+
+/// What the server needs of a map for `checkclient`'s visibility test, kept after the map's
+/// bytes are gone: the world's nodes and planes, its leaves and its visibility lump
+/// (BSP-6, BSP-21).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Visibility {
+    nodes: Vec<Node>,
+    planes: Vec<Plane>,
+    leafs: Vec<Leaf>,
+    data: Vec<u8>,
+    row: usize,
+}
+
+impl Visibility {
+    /// The visibility of `bsp`.
+    #[must_use]
+    pub fn of(bsp: &Bsp<'_>) -> Self {
+        Self {
+            nodes: bsp.nodes.clone(),
+            planes: bsp.planes.clone(),
+            leafs: bsp.leafs.clone(),
+            data: bsp.visibility.to_vec(),
+            row: bsp.vis_row_size(),
+        }
+    }
+
+    /// The leaf `p` is in, as [`Bsp::point_in_leaf`] finds it.
+    #[must_use]
+    pub fn point_in_leaf(&self, p: [f32; 3]) -> Option<usize> {
+        point_in_leaf(&self.nodes, &self.planes, p)
+    }
+
+    /// The leaves `leaf` sees, as [`Bsp::leaf_pvs`] reads them.
+    ///
+    /// # Errors
+    ///
+    /// As [`Bsp::leaf_pvs`].
+    pub fn leaf_pvs(&self, leaf: usize) -> Result<Vec<u8>, BspError> {
+        leaf_pvs(&self.leafs, &self.data, self.row, leaf)
+    }
+}
+
 fn leaf_of(child: i32) -> Option<usize> {
     usize::try_from(child.wrapping_neg().wrapping_sub(1)).ok()
 }
@@ -1776,22 +1876,7 @@ impl<'a> Bsp<'a> {
     /// Implements BSP-21.
     #[must_use]
     pub fn point_in_leaf(&self, p: [f32; 3]) -> Option<usize> {
-        let mut node = self.nodes.first()?;
-        for _ in 0..self.nodes.len() {
-            let plane = self.planes.get(node.planenum)?;
-            let [a, b, c] = plane.normal;
-            let d = p[0] * a + p[1] * b + p[2] * c - plane.dist;
-            let child = if d > 0.0 {
-                node.children[0]
-            } else {
-                node.children[1]
-            };
-            match usize::try_from(child) {
-                Ok(next) => node = self.nodes.get(next)?,
-                Err(_) => return leaf_of(child),
-            }
-        }
-        None
+        point_in_leaf(&self.nodes, &self.planes, p)
     }
 
     /// The leaves `leaf` sees, id's `Mod_LeafPVS` and `Mod_DecompressVis`: bit `k` is leaf
@@ -1806,39 +1891,7 @@ impl<'a> Bsp<'a> {
     /// [`BspError::VisTruncated`] when its set runs past the lump, and
     /// [`BspError::BadIndex`] for a leaf that does not exist.
     pub fn leaf_pvs(&self, leaf: usize) -> Result<Vec<u8>, BspError> {
-        let row = self.vis_row_size();
-        let found = self.leafs.get(leaf).ok_or(BspError::BadIndex {
-            lump: LumpId::Leafs,
-            element: leaf,
-        })?;
-        let Ok(start) = usize::try_from(found.visofs) else {
-            return Ok(vec![0xFF; row]);
-        };
-        if leaf == 0 || self.visibility.is_empty() {
-            return Ok(vec![0xFF; row]);
-        }
-        let truncated = BspError::VisTruncated { leaf };
-        let mut input = self
-            .visibility
-            .get(start..)
-            .ok_or(truncated.clone())?
-            .iter();
-        let mut out = Vec::new();
-        // A do-while in id's code: at least one byte or run is read.
-        loop {
-            let byte = *input.next().ok_or(truncated.clone())?;
-            if byte == 0 {
-                let count = *input.next().ok_or(truncated.clone())?;
-                out.extend(core::iter::repeat_n(0, usize::from(count)));
-            } else {
-                out.push(byte);
-            }
-            if out.len() >= row {
-                break;
-            }
-        }
-        out.truncate(row);
-        Ok(out)
+        leaf_pvs(&self.leafs, self.visibility, self.vis_row_size(), leaf)
     }
 
     /// Hull 0 as clipnodes, id's `Mod_MakeHull0`: each node with its plane, a child node

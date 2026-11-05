@@ -31,6 +31,7 @@ use crate::messages::ClientMessages;
 use crate::messages::ServerMessages;
 use crate::physics::Sound;
 use crate::rerelease::BuiltinTable;
+use crate::settings::SERVER_SETTINGS;
 use qc_builtins::localization::Localization;
 
 use crate::spawn::{
@@ -50,6 +51,8 @@ const CLIENT: usize = CLIENT_EDICT;
 
 /// The player's edict, the one client's slot (EDICT-5.1).
 pub const CLIENT_EDICT: usize = 1;
+/// The random source's first state (MOVE-6.1).
+const RANDOM_SEED: u32 = 1;
 /// `EDICT_SETTLE_FRAMETIME`: the two frames the server runs before play (EDICT-8.9).
 const SETTLE_FRAMETIME: f64 = 0.1;
 
@@ -103,6 +106,9 @@ pub struct World {
     pub(crate) builtins: SimBuiltins,
     /// The client's command, once it has entered the game (PHYS-9.6, PHYS-10).
     player: Option<UserCmd>,
+    /// The string commands the client sent since the last frame, which it reads first
+    /// (PHYS-11.1).
+    commands: Vec<Vec<u8>>,
     /// The spawn parms the level the player left kept, used in place of `SetNewParms`'.
     carried: Option<SpawnParms>,
     /// The client's spawn parms, `host_client->spawn_parms`, which a saved game keeps.
@@ -128,6 +134,20 @@ pub struct LoadOptions {
     /// Whether the install is the full game, which sets the `registered` setting the progs
     /// read (FS-4.5).
     pub registration: Registration,
+}
+
+/// The stages of a client's entry, `CL_SignonReply`'s answers and the server's commands for
+/// them (PHYS-10.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Signon {
+    /// `SV_ConnectClient`: the client's slot taken and its spawn parms chosen.
+    Connect,
+    /// `prespawn`, `Host_PreSpawn_f`: the map's signon data sent.
+    Prespawn,
+    /// `spawn`, `Host_Spawn_f`: the player's edict made.
+    Spawn,
+    /// `begin`, `Host_Begin_f`: the player moves from the next frame.
+    Begin,
 }
 
 /// A command the progs leave for the host with `localcmd` or `changelevel`.
@@ -183,7 +203,12 @@ impl World {
         let machine =
             Machine::new(progs, MAXCLIENTS).map_err(|e| WorldError::Progs(e.to_string()))?;
         let submodels = bsp.models.len().saturating_sub(1);
-        let mut engine = MockEngine::new(map, submodels, 0);
+        // MOVE-6.1: the random source starts at state 1.
+        let mut engine = MockEngine::new(map, submodels, RANDOM_SEED);
+        // PHYS-12.1: the server's and the host's settings, with id's defaults.
+        for (name, value) in SERVER_SETTINGS {
+            engine.cvars.create(name, value);
+        }
         engine.clock = MAP_START_TIME;
         engine.server_active = false;
         engine.clients_active = vec![false; MAXCLIENTS];
@@ -204,6 +229,7 @@ impl World {
                 options.builtins,
             ),
             player: None,
+            commands: Vec::new(),
             carried: options.carried,
             spawn_parms: [Slot::ZERO; 16],
             loaded: false,
@@ -281,8 +307,11 @@ impl World {
     ///
     /// [`WorldError::Frame`] when a function the frame runs fails, or the engine stops.
     pub fn frame(&mut self, progs: &Progs<'_>, frametime: f64) -> Result<(), WorldError> {
+        // MOVE-6.2: `_Host_Frame`'s `rand ();`, "keep the random time dependent".
+        let _discarded = self.builtins.mock.engine_mut().rng.next_rand();
         let clients = self.builtins.mock.engine().clients_active.clone();
         let player = self.player;
+        let commands = core::mem::take(&mut self.commands);
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         let t = double_to_float(frametime);
         // Host_ServerFrame (NET-1.2): frametime, the datagram cleared, then the clients'
@@ -292,9 +321,16 @@ impl World {
         // The mock engine counts the datagram's bytes beside the sim's (NET-5.1): it empties
         // with it.
         call.sim.mock.engine_mut().buffers.unreliable = 0;
+        // PHYS-11.1: the client's string commands, read before its move.
+        if player.is_some() {
+            for text in &commands {
+                call.client_command(CLIENT, text)
+                    .map_err(WorldError::Frame)?;
+            }
+        }
         if let Some(cmd) = player {
             let cmd = call.read_move(CLIENT, &cmd);
-            call.client_think(CLIENT, &cmd, t)
+            call.client_think(CLIENT, &cmd, frametime)
                 .map_err(WorldError::Frame)?;
         }
         call.physics(frametime, &clients)
@@ -306,37 +342,70 @@ impl World {
     }
 
     /// The player enters the game, as `SV_ConnectClient` and `Host_Spawn_f` bring a client in
-    /// (PHYS-10): `SetNewParms`, the client's edict cleared and named, then `ClientConnect`
-    /// and `PutClientInServer`.
+    /// (PHYS-10): every stage of [`Signon`] at once, as a host that does not count the frames
+    /// between them does.
     ///
     /// # Errors
     ///
     /// [`WorldError::Frame`] when a function fails.
     pub fn connect(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
+        for stage in [
+            Signon::Connect,
+            Signon::Prespawn,
+            Signon::Spawn,
+            Signon::Begin,
+        ] {
+            self.signon(progs, stage)?;
+        }
+        Ok(())
+    }
+
+    /// One stage of the player's entry (PHYS-10.7): a local client's take a frame each, the
+    /// server running each before that frame's moves and physics.
+    ///
+    /// # Errors
+    ///
+    /// [`WorldError::Frame`] when a function fails.
+    pub fn signon(&mut self, progs: &Progs<'_>, stage: Signon) -> Result<(), WorldError> {
+        match stage {
+            Signon::Connect => self.signon_connect(progs),
+            Signon::Prespawn => {
+                let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+                call.prespawn();
+                call.flush_signon();
+                Ok(())
+            }
+            Signon::Spawn => self.signon_spawn(progs),
+            Signon::Begin => {
+                let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+                call.begin();
+                self.player = Some(UserCmd::default());
+                Ok(())
+            }
+        }
+    }
+
+    /// `SV_ConnectClient` (PHYS-10.7): the client is active, the serverinfo is sent, and its
+    /// spawn parms are `SetNewParms`', or what it carries from the last level (PHYS-10.4).
+    fn signon_connect(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
         if let Some(active) = self.builtins.mock.engine_mut().clients_active.first_mut() {
             *active = true;
         }
         self.builtins.messages.client.active = true;
-        let name = self.make_string(b"player".to_vec());
+        let carried = self.carried;
+        let loaded = self.loaded;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         if call.sim.messages.baselines.is_empty() {
             call.create_baselines().map_err(WorldError::Frame)?;
         }
-        // NET-2.2, NET-2.3: the serverinfo and the prespawn answer, each sent as id sends it
-        // at the end of the frame the stage ran in.
+        // NET-2.2: the serverinfo, sent at the end of the frame the stage ran in.
         call.send_serverinfo(CLIENT);
         call.flush_signon();
-        call.prespawn();
-        call.flush_signon();
-        // PHYS-10.5: a saved game's world is "fully inited allready": no spawn functions.
-        if self.loaded {
-            call.spawn_message(CLIENT).map_err(WorldError::Frame)?;
-            call.begin();
-            self.player = Some(UserCmd::default());
+        // PHYS-10.5: a saved game's world keeps the parms it saved.
+        if loaded {
             return Ok(());
         }
-        // PHYS-10.4: after a level change the client's kept parms, not `SetNewParms`'.
-        let parms: [Slot; 16] = match self.carried {
+        let parms: [Slot; 16] = match carried {
             Some(carried) => carried.parms,
             None => {
                 let new_parms = call.global("SetNewParms").as_i32();
@@ -345,6 +414,20 @@ impl World {
             }
         };
         self.spawn_parms = parms;
+        Ok(())
+    }
+
+    /// `Host_Spawn_f` (PHYS-10.1): the client's edict cleared and named, its parms set, then
+    /// `ClientConnect` and `PutClientInServer`, and the spawn message (NET-2.4).
+    fn signon_spawn(&mut self, progs: &Progs<'_>) -> Result<(), WorldError> {
+        let name = self.make_string(b"player".to_vec());
+        let parms = self.spawn_parms;
+        let loaded = self.loaded;
+        let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
+        // PHYS-10.5: a saved game's world is "fully inited allready": no spawn functions.
+        if loaded {
+            return call.spawn_message(CLIENT).map_err(WorldError::Frame);
+        }
         let fields = call.context.machine_view().edicts().layout().entityfields();
         for slot in 0..fields {
             // A slot past the edict's fields is not written.
@@ -367,11 +450,7 @@ impl World {
             let function = call.global(entry).as_i32();
             call.run(function).map_err(WorldError::Frame)?;
         }
-        // NET-2.4, NET-2.5: the spawn message and the begin, then the message is sent.
-        call.spawn_message(CLIENT).map_err(WorldError::Frame)?;
-        call.begin();
-        self.player = Some(UserCmd::default());
-        Ok(())
+        call.spawn_message(CLIENT).map_err(WorldError::Frame)
     }
 
     /// The first command for the host the progs appended to its buffer since the last call:
@@ -427,6 +506,12 @@ impl World {
         call.run(change).map_err(WorldError::Frame)?;
         let parms = core::array::from_fn(|n| call.global(&format!("parm{}", n.saturating_add(1))));
         Ok(SpawnParms { serverflags, parms })
+    }
+
+    /// A string command from the client, such as `god`, read at the start of the next frame
+    /// (PHYS-11).
+    pub fn client_command(&mut self, text: &str) {
+        self.commands.push(text.as_bytes().to_vec());
     }
 
     /// What the player asks for from the next frame on (PHYS-9.6).
@@ -705,6 +790,7 @@ mod changes;
 mod edit;
 mod inspect;
 mod save;
+mod state;
 #[cfg(test)]
 pub(crate) mod tests;
 
@@ -712,3 +798,4 @@ pub use changes::EdictChange;
 pub use edit::{EditError, LineHit};
 pub use inspect::{NamedValue, QcValue};
 pub use save::{SAVEGAME_VERSION, SaveError, SaveGame};
+pub use state::{RawState, State, read_state};

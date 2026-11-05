@@ -29,6 +29,7 @@ use qs_bsp::Bsp;
 use crate::builtins::{FL_ONGROUND, SimCall, parm_float, parm_raw, parm_vector};
 use crate::client::wire_angle;
 use crate::collision::{CONTENTS_SOLID, MoveKind};
+use crate::settings::Setting;
 use crate::spawn::c_atof;
 
 /// `MAX_DATAGRAM`: the unreliable and reliable datagrams' size (NET-1.2).
@@ -51,8 +52,6 @@ pub const NET_FAT_PVS_DISTANCE: f32 = 8.0;
 pub const NET_PACKET_SLACK: usize = 16;
 /// `MAX_FORWARD`: the traces `SV_SetIdealPitch` makes (NET-4.2).
 pub const NET_MAX_FORWARD: usize = 6;
-/// `sv_idealpitchscale`'s default (NET-4.2).
-pub const NET_IDEALPITCH_SCALE: f32 = 0.8;
 /// `MAX_LIGHTSTYLES`, the styles the spawn message lists (NET-2.4).
 const MAX_LIGHTSTYLES: usize = 64;
 /// `DEFAULT_VIEWHEIGHT` (NET-4.4).
@@ -1347,7 +1346,8 @@ impl SimCall<'_, '_, '_> {
         if steps < 2 {
             return Ok(());
         }
-        self.set_float(ent, "idealpitch", -int_to_float(dir) * NET_IDEALPITCH_SCALE);
+        let scale = self.setting(Setting::IdealPitchScale);
+        self.set_float(ent, "idealpitch", -int_to_float(dir) * scale);
         Ok(())
     }
 }

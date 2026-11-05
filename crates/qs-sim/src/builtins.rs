@@ -11,7 +11,8 @@
 //! The server's builtins: `qc-builtins`' for the engine state it keeps, and the world builtins
 //! on this crate's collision (WORLD-8) and movement (MOVE).
 
-use qc_builtins::mock::ModelBounds;
+use qc_builtins::math::vector_normalize;
+use qc_builtins::mock::{BUILTIN_CHECKCLIENT_INTERVAL, ModelBounds};
 use qc_builtins::{MockBuiltins, MockEngine};
 use qc_edict::EdictNumber;
 use qc_edict::system::{field_by_name, global_by_name};
@@ -19,15 +20,16 @@ use qc_progs::Progs;
 use qc_types::{EntityRef, PROGS_OFS_RETURN, Slot, ofs_parm};
 use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 use qc_vm::{Builtins, Context, ErrorKind, Machine, NoObserver, RunError, ServerState};
-use qs_bsp::{Bsp, BspLoader};
+use qs_bsp::{Bsp, BspLoader, Visibility};
 use qs_mdl::Sprite;
 
 use crate::collision::{
     Body, Collision, CollisionError, Host, MoveKind, Solid, Trace, link_edict, sv_move,
 };
 use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages};
-use crate::physics::Sound;
+use crate::physics::{Sound, dot};
 use crate::rerelease::{BuiltinTable, RRE_NUM_BUILTINS};
+use crate::settings::Setting;
 
 /// `setorigin`.
 const SETORIGIN: u32 = 2;
@@ -39,6 +41,12 @@ const SETSIZE: u32 = 4;
 const REMOVE: u32 = 15;
 /// `traceline`.
 const TRACELINE: u32 = 16;
+/// `checkclient`, builtin 17 (WORLD-8.7).
+const CHECKCLIENT: u32 = 17;
+/// `aim`, builtin 44 (WORLD-8.8).
+const AIM: u32 = 44;
+/// `DAMAGE_AIM` (`WinQuake/server.h`): what `aim` aims at (WORLD-8.8).
+const DAMAGE_AIM: f32 = 2.0;
 /// `precache_model`.
 const PRECACHE_MODEL: u32 = 20;
 /// `walkmove`.
@@ -81,6 +89,8 @@ const DROP_DEPTH: f32 = 256.0;
 const MOVETYPE_PUSH: f32 = 7.0;
 /// `FL_ONGROUND`.
 pub(crate) const FL_ONGROUND: i32 = 512;
+/// `FL_NOTARGET` (`WinQuake/server.h`), which `checkclient` passes over (WORLD-8.7).
+pub(crate) const FL_NOTARGET: i32 = 128;
 
 /// Reads a model file the progs precaches, such as `maps/b_bh25.bsp`.
 pub type ModelFiles = Box<dyn Fn(&str) -> Option<Vec<u8>>>;
@@ -97,6 +107,10 @@ pub struct SimBuiltins {
     pub(crate) messages: ServerMessages,
     /// id's table, or the rerelease's with its builtins 79 to 92 (RRE-4.2).
     table: BuiltinTable,
+    /// The map's visibility, for `checkclient` (WORLD-8.7).
+    vis: Visibility,
+    /// The PVS of the client `checkclient` chose last, id's `checkpvs`.
+    checkpvs: Vec<u8>,
     files: ModelFiles,
 }
 
@@ -133,6 +147,8 @@ impl SimBuiltins {
             sounds: Vec::new(),
             messages: ServerMessages::new(map, crc),
             table,
+            vis: Visibility::of(map),
+            checkpvs: Vec::new(),
             files,
         }
     }
@@ -312,6 +328,8 @@ impl Builtins for SimBuiltins {
                 Ok(())
             }
             TRACELINE => SimCall::new(context, self).traceline(),
+            CHECKCLIENT => SimCall::new(context, self).checkclient(),
+            AIM => SimCall::new(context, self).aim(),
             DROPTOFLOOR => SimCall::new(context, self).droptofloor(),
             WALKMOVE => SimCall::new(context, self).walkmove(),
             MOVETOGOAL => SimCall::new(context, self).move_to_goal(),
@@ -578,6 +596,16 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     }
 
     /// The edict `self` names.
+    /// The value of the server setting `setting` (PHYS-12.2).
+    pub(crate) fn setting(&self, setting: Setting) -> f32 {
+        self.sim
+            .mock
+            .engine()
+            .cvars
+            .value(setting.name())
+            .unwrap_or(0.0)
+    }
+
     pub(crate) fn self_edict(&self) -> usize {
         self.edict_of(self.global("self").as_i32())
     }
@@ -619,6 +647,210 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         self.set_global("trace_plane_dist", Slot::from_f32(trace.plane.dist));
         let ent = self.value_of(trace.ent.unwrap_or(0));
         self.set_global("trace_ent", Slot::from_i32(ent));
+        Ok(())
+    }
+
+    /// `PF_checkclient` (WORLD-8.7, BUILTIN-14.3): the client `self` might see, or the world.
+    fn checkclient(&mut self) -> Result<(), RunError> {
+        let clock = self.clock();
+        let state = self.sim.mock.engine().checkclient;
+        if clock - state.last_check_time >= BUILTIN_CHECKCLIENT_INTERVAL {
+            let chosen = self.new_check_client(state.last_check);
+            let check = &mut self.sim.mock.engine_mut().checkclient;
+            check.last_check = chosen;
+            check.last_check_time = clock;
+        }
+        let chosen = usize::try_from(self.sim.mock.engine().checkclient.last_check).unwrap_or(0);
+        if self.is_free(chosen) || self.float(chosen, "health") <= 0.0 {
+            return self.set_return_entity(0);
+        }
+        // "if current entity can't possibly see the check entity, return 0": the leaf at
+        // self's eye, numbered from the first after leaf 0, must be in the stored PVS.
+        let me = self.self_edict();
+        let view = self.eye(me);
+        let visible = self
+            .sim
+            .vis
+            .point_in_leaf(view)
+            .and_then(|leaf| leaf.checked_sub(1))
+            .is_some_and(|l| {
+                self.sim
+                    .checkpvs
+                    .get(l >> 3)
+                    .is_some_and(|byte| byte & (1 << (l & 7)) != 0)
+            });
+        self.set_return_entity(if visible { chosen } else { 0 })
+    }
+
+    /// `PF_aim (ent, speed)` (WORLD-8.8): `v_forward`, or the direction toward the edict to
+    /// `DAMAGE_AIM` closest to it within `sv_aim`'s cone that a straight line from 20 above
+    /// `ent`'s origin reaches.
+    #[expect(
+        clippy::float_cmp,
+        clippy::float_cmp_const,
+        reason = "spec WORLD-8.8: id compares takedamage and team exactly as floats"
+    )]
+    fn aim(&mut self) -> Result<(), RunError> {
+        let ent = parm_edict(&self.context, 0)?;
+        let mut start = self.vector(ent, "origin");
+        start[2] += 20.0;
+        let forward = self.global_vector("v_forward");
+        let end = [
+            start[0] + 2048.0 * forward[0],
+            start[1] + 2048.0 * forward[1],
+            start[2] + 2048.0 * forward[2],
+        ];
+        // "try sending a trace straight"
+        let teamplay = self.setting(Setting::Teamplay) != 0.0;
+        let team = self.float(ent, "team");
+        let trace = self.trace((start, [0.0; 3], [0.0; 3], end), MoveKind::Normal, ent)?;
+        if let Some(hit) = trace.ent
+            && self.float(hit, "takedamage") == DAMAGE_AIM
+            && (!teamplay || team <= 0.0 || team != self.float(hit, "team"))
+        {
+            return self.set_return_vector(forward);
+        }
+        // "try all possible entities"
+        let mut bestdist = self.setting(Setting::Aim);
+        let mut bestent = None;
+        let edicts = self.context.machine_view().edicts().num_edicts();
+        for check in 1..edicts {
+            if self.float(check, "takedamage") != DAMAGE_AIM || check == ent {
+                continue;
+            }
+            // "don't aim at teammate"
+            if teamplay && team > 0.0 && team == self.float(check, "team") {
+                continue;
+            }
+            let origin = self.vector(check, "origin");
+            let mins = self.vector(check, "mins");
+            let maxs = self.vector(check, "maxs");
+            // `origin[j] + 0.5*(mins[j] + maxs[j])`, in double (PHYS-9.7's rule).
+            let mut end = [0.0_f32; 3];
+            for (((e, o), lo), hi) in end.iter_mut().zip(origin).zip(mins).zip(maxs) {
+                *e = double_to_float(f64::from(o) + 0.5 * f64::from(lo + hi));
+            }
+            let (dir, _) =
+                vector_normalize([end[0] - start[0], end[1] - start[1], end[2] - start[2]]);
+            let dist = dot(dir, forward);
+            // "to far to turn"
+            if dist < bestdist {
+                continue;
+            }
+            let trace = self.trace((start, [0.0; 3], [0.0; 3], end), MoveKind::Normal, ent)?;
+            if trace.ent == Some(check) {
+                bestdist = dist;
+                bestent = Some(check);
+            }
+        }
+        let Some(best) = bestent else {
+            return self.set_return_vector(forward);
+        };
+        let to = self.vector(best, "origin");
+        let from = self.vector(ent, "origin");
+        let dir = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+        let dist = dot(dir, forward);
+        let mut end = forward.map(|c| c * dist);
+        end[2] = dir[2];
+        let (end, _) = vector_normalize(end);
+        self.set_return_vector(end)
+    }
+
+    /// The system global vector `name`.
+    fn global_vector(&self, name: &str) -> [f32; 3] {
+        let Some(first) = global_by_name(name).and_then(|v| i32::try_from(v.slot).ok()) else {
+            return [0.0; 3];
+        };
+        core::array::from_fn(|i| {
+            let slot = first.saturating_add(i32::try_from(i).unwrap_or(0));
+            self.context
+                .machine_view()
+                .global(slot)
+                .map_or(0.0, Slot::as_f32)
+        })
+    }
+
+    /// Returns the vector `value`.
+    fn set_return_vector(&mut self, value: [f32; 3]) -> Result<(), RunError> {
+        for (i, v) in (0..).zip(value) {
+            if self
+                .context
+                .machine()
+                .set_global(
+                    i32::from(PROGS_OFS_RETURN).saturating_add(i),
+                    Slot::from_f32(v),
+                )
+                .is_err()
+            {
+                // OFS_RETURN's three slots are always globals.
+            }
+        }
+        Ok(())
+    }
+
+    /// `PF_newcheckclient` (WORLD-8.7): from after `check`, the next client edict that is not
+    /// free, has health above 0 and no `FL_NOTARGET`, or `check` itself when none other does;
+    /// its PVS is stored.
+    fn new_check_client(&mut self, check: i32) -> i32 {
+        let maxclients =
+            i32::try_from(self.context.machine_view().edicts().maxclients()).unwrap_or(1);
+        let check = check.max(1).min(maxclients);
+        let mut i = if check == maxclients {
+            1
+        } else {
+            check.saturating_add(1)
+        };
+        loop {
+            if i == maxclients.saturating_add(1) {
+                i = 1;
+            }
+            if i == check {
+                break;
+            }
+            let n = usize::try_from(i).unwrap_or(0);
+            let skip = self.is_free(n)
+                || self.float(n, "health") <= 0.0
+                || self.flags(n) & FL_NOTARGET != 0;
+            if !skip {
+                break;
+            }
+            i = i.saturating_add(1);
+        }
+        let n = usize::try_from(i).unwrap_or(0);
+        let org = self.eye(n);
+        // A point in no leaf, where id stops the engine, or a PVS that does not read, sees
+        // nothing.
+        self.sim.checkpvs = self
+            .sim
+            .vis
+            .point_in_leaf(org)
+            .and_then(|leaf| self.sim.vis.leaf_pvs(leaf).ok())
+            .unwrap_or_default();
+        i
+    }
+
+    /// Edict `n`'s `origin + view_ofs`.
+    fn eye(&self, n: usize) -> [f32; 3] {
+        let origin = self.vector(n, "origin");
+        let view_ofs = self.vector(n, "view_ofs");
+        [
+            origin[0] + view_ofs[0],
+            origin[1] + view_ofs[1],
+            origin[2] + view_ofs[2],
+        ]
+    }
+
+    /// Returns the entity value of edict `n`.
+    fn set_return_entity(&mut self, n: usize) -> Result<(), RunError> {
+        let value = self.value_of(n);
+        if self
+            .context
+            .machine()
+            .set_global(i32::from(PROGS_OFS_RETURN), Slot::from_i32(value))
+            .is_err()
+        {
+            // OFS_RETURN is always a global.
+        }
         Ok(())
     }
 

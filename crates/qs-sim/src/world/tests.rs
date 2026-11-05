@@ -167,6 +167,7 @@ pub(crate) fn ledge_over(pit: f32) -> MapSpec {
                 children: [CONTENTS_EMPTY, CONTENTS_SOLID],
             },
         ],
+        ..MapSpec::default()
     }
 }
 
@@ -682,7 +683,8 @@ fn movetogoal_steps_toward_the_goal() {
     ]
     .concat();
     let world = world(&source, &entities);
-    // The first draw of seed 0 is 0, so the step toward ideal_yaw 0 is tried, and taken.
+    // The first draw of seed 1 is 16838, whose `& 3` is 2, not 1, so the step toward ideal_yaw
+    // 0 is tried, and taken.
     assert_eq!(world.vector(3, "origin")[0], 30.0);
     assert_eq!(world.float(3, "frags"), 7.0);
     // Within 10 of the goal with an enemy: no move.
@@ -743,6 +745,7 @@ fn pillar() -> MapSpec {
                 children: [CONTENTS_EMPTY, CONTENTS_SOLID],
             },
         ],
+        ..MapSpec::default()
     }
 }
 
@@ -769,9 +772,9 @@ fn chase_after(spec: &MapSpec, skip: usize, goal: &str, chaser: &str, keys: &str
 
 const EAST: &str = "\"ideal_yaw\" \"0\"\n\"speed\" \"10\"\n\"yaw_speed\" \"360\"\n";
 
-/// The draws of seed 0's random source, from the first.
+/// The draws of the world's random source, from the first: seed 1 (MOVE-6.1).
 fn draws(count: usize) -> Vec<u32> {
-    let mut rng = Rng::new(0);
+    let mut rng = Rng::new(1);
     (0..count).map(|_| rng.next_rand()).collect()
 }
 
@@ -780,7 +783,7 @@ fn skip_where(first: impl Fn(u32) -> bool, second: impl Fn(u32) -> bool) -> usiz
     let all = draws(200);
     (0..199)
         .find(|&n| first(all[n]) && second(all[n + 1]))
-        .expect("seed 0 has such a pair of draws")
+        .expect("seed 1 has such a pair of draws")
 }
 
 // spec MOVE-4.1: the headings toward the goal are its sides on x and y beyond 10
@@ -811,7 +814,7 @@ fn a_chaser_takes_the_diagonal() {
 #[test]
 fn the_search_order_follows_rand() {
     let world = chase(&ledge(), "80 0 30", "80 0 30", EAST);
-    // Seed 0: movetogoal's draw, the swap's, then the order's.
+    // Seed 1: movetogoal's draw, the swap's, then the order's.
     let ascending = draws(3)[2] & 1 != 0;
     let y = world.vector(3, "origin")[1];
     assert_eq!(y, if ascending { 10.0 } else { -10.0 });
@@ -858,6 +861,7 @@ fn well(depth: f32) -> MapSpec {
             planenum: 6,
             children: [CONTENTS_EMPTY, CONTENTS_SOLID],
         }],
+        ..MapSpec::default()
     }
 }
 
@@ -930,6 +934,7 @@ fn tunnel() -> MapSpec {
                 children: [CONTENTS_EMPTY, CONTENTS_SOLID],
             },
         ],
+        ..MapSpec::default()
     }
 }
 
@@ -1553,7 +1558,7 @@ pub(crate) fn moved(run: &mut Running, cmd: UserCmd, count: usize, frametime: f6
     &run.world
 }
 
-const P: usize = 1;
+pub(crate) const P: usize = 1;
 
 fn close(got: f32, want: f32) -> bool {
     (got - want).abs() < 1e-3
@@ -1819,6 +1824,7 @@ fn pool() -> MapSpec {
             planenum: 2,
             children: [CONTENTS_EMPTY, CONTENTS_SOLID],
         }],
+        ..MapSpec::default()
     }
 }
 
@@ -2470,6 +2476,7 @@ fn corner() -> MapSpec {
                 children: [CONTENTS_EMPTY, CONTENTS_SOLID],
             },
         ],
+        ..MapSpec::default()
     }
 }
 
@@ -2712,3 +2719,6 @@ fn restart_asks_for_this_level_again() {
     assert_eq!(run.world.map(), "test");
     assert_eq!(run.world.carried(), None, "a new game");
 }
+
+mod engine;
+mod host;

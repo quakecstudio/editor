@@ -101,6 +101,10 @@ the impact.
   `endpos` `mid`, and it returns false ("backup past 0"); else `midf` and `mid` are computed
   again from the new `frac`. When `mid` is out of the solid, `fraction` is `midf`, `endpos` is
   `mid`, and it returns false.
+- **WORLD-3.7** The negated plane of WORLD-3.6 is `VectorSubtract (vec3_origin, plane->normal,
+  trace->plane.normal)` and `trace->plane.dist = -plane->dist`: each normal component is
+  `0 - n`, so a zero component is +0, never -0, while the distance is negated (+0 becomes -0).
+  The sign of a zero carries into the velocity the plane clips (PHYS-7).
 
 ## WORLD-4 Clipping a move to one entity
 
@@ -245,6 +249,23 @@ statements are what each asks of the world.
   `self` when its `flags` has one of `FL_ONGROUND`, `FL_FLY` and `FL_SWIM`; it saves `self`
   before the step and restores it after, since a touch may change it. `checkbottom (e)` is
   MOVE-1 and `pointcontents (v)` is WORLD-2.2.
+- **WORLD-8.7** `checkclient ()` is BUILTIN-14.3 on the map (`PF_checkclient`,
+  `PF_newcheckclient`): the stored PVS is `Mod_LeafPVS` of the leaf at the chosen client's
+  `origin + view_ofs` (BSP-21.1, BSP-6.2; leaf 0's is every leaf), and `self`'s eye leaf
+  `leaf` is in it when bit `(leaf - 1) & 7` of byte `(leaf - 1) >> 3` is set; leaf 0 never is.
+  The choice cycles from after the last over client edicts 1 to `maxclients`, skipping one
+  that is free, has `health` 0 or less or has `FL_NOTARGET`, and stops at the last choice
+  itself when none other qualifies.
+- **WORLD-8.8** `aim (ent, speed)` (`PF_aim`) starts 20 above `ent`'s `origin`. A line along
+  `v_forward` 2048 long (`SV_Move` of a point, `MOVE_NORMAL`, passing `ent`) that hits an edict
+  whose `takedamage` is `DAMAGE_AIM` (2), not of `ent`'s team when `teamplay` is set and
+  `ent`'s `team` is above 0, returns `v_forward`. Otherwise every edict from 1 below
+  `num_edicts` with `takedamage` 2, not `ent`, and not a teammate as before, is tried: its
+  centre `origin + 0.5 * (mins + maxs)` (in double, PHYS-9.7), the direction to it normalized
+  and its dot product with `v_forward`; one below the best so far (from `sv_aim`, 0.93) is
+  skipped, and one a line to the centre hits becomes the best. With a best, the result is
+  `v_forward` scaled by the dot product of (its origin less `ent`'s) with `v_forward`, its z
+  replaced by that difference's z, normalized; without one, `v_forward`.
 
 ## Constants
 

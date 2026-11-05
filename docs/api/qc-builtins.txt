@@ -86,6 +86,7 @@ fn qc_builtins::math::vtos
 fn qc_builtins::mock::Cvars::create
 fn qc_builtins::mock::Cvars::set
 fn qc_builtins::mock::Cvars::text
+fn qc_builtins::mock::Cvars::value
 fn qc_builtins::mock::EngineProfile::builtin_limit
 fn qc_builtins::mock::EngineProfile::precache_limit
 fn qc_builtins::mock::EngineStrings::make

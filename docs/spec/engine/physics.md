@@ -139,6 +139,10 @@ Doors, platforms and trains are `SOLID_BSP` with `MOVETYPE_PUSH`. Their clock is
 - **PHYS-6.4** `SV_AddGravity` lowers `velocity[2]` by `gravity * sv_gravity * frametime`,
   `gravity` the entity's progs field of that name when the progs has it and it is not 0, else 1;
   `sv_gravity` is 800.
+- **PHYS-6.5** The arithmetic is C's for `ent->v.velocity[2] -= ent_gravity * sv_gravity.value *
+  host_frametime;`: `gravity * sv_gravity` is a float product; it is widened to double and
+  multiplied by `host_frametime`, a double; `velocity[2]` is widened to double, the difference
+  taken in double, and the result rounded to float once.
 
 ## PHYS-7 Sliding
 
@@ -253,6 +257,15 @@ stop.
   `MSG_WriteAngle`, `((int)f*256/360) & 255`, read back as a signed byte times `360.0/256`;
   each move through `MSG_WriteShort`, the float to an int kept to 16 bits. It sets `v_angle`,
   `button0` from bit 0 and `button2` from bit 1, and `impulse` when it is not 0.
+- **PHYS-9.7** `host_frametime` is a C `double`, so each expression that uses it is evaluated in
+  double and rounded to float once, where it is stored: `DropPunchAngle`'s `len -=
+  10*host_frametime`; `SV_UserFriction`'s `speed - host_frametime*control*friction`;
+  `SV_Accelerate`'s `sv_accelerate.value*host_frametime*wishspeed`; `SV_AirAccelerate`'s and
+  `SV_WaterMove`'s `sv_accelerate.value*wishspeed * host_frametime`, whose first product is a
+  float one; `SV_WaterMove`'s `speed - host_frametime * speed * sv_friction.value`;
+  `SV_WalkMove`'s `-STEPSIZE + oldvel[2]*host_frametime`; and `SV_Physics_Pusher`'s
+  `thinktime < ent->v.ltime + host_frametime`, compared in double. A function that takes it as
+  a `float` parameter (`SV_FlyMove`, `VectorMA`, `VectorScale`) gets it rounded to float.
 
 ## PHYS-10 Entering the game
 
@@ -328,6 +341,66 @@ frametime it is given; the viewer paces its frames that way.
   read. `qs-sim` gives it as `HostCommand::Restart`, with `World::map` and `World::carried` for
   the host to load the level again.
 
+
+- **PHYS-10.7** A client enters in four stages, each run by the server in its own frame before
+  that frame's moves and physics: `SV_ConnectClient` (the slot active, the serverinfo sent, the
+  spawn parms chosen as PHYS-10.1 and PHYS-10.4 say), then the client's `prespawn` (the map's
+  signon data sent, `Host_PreSpawn_f`), then its `spawn` (the edict made and `ClientConnect` and
+  `PutClientInServer` run, `Host_Spawn_f`), then its `begin` (`Host_Begin_f`), after which its
+  moves are read. A local client answers each stage's signon message in the next frame
+  (`CL_SignonReply`), so the four take frames 1 to 4. From the first stage the client is
+  active, so the frames' physics run `PlayerPreThink` and `PlayerPostThink` on its edict before
+  it has spawned (`SV_Physics_Client` tests `active`, not `spawned`).
+## PHYS-11 The client's string commands
+
+**Source:** `WinQuake/sv_user.c`, `SV_ReadClientMessage`; `WinQuake/host_cmd.c`, `Host_God_f`,
+`Host_Notarget_f`, `Host_Noclip_f`, `Host_Fly_f`, `Host_Kill_f`; `WinQuake/cmd.c`,
+`Cmd_ExecuteString`.
+
+### Behaviour
+
+- **PHYS-11.1** A string command the client sent is read in the next server frame, before the
+  client's move and think, in the order sent (`SV_RunClients` reads the client's messages
+  first). Its first word names the command, matched ASCII case-insensitively
+  (`Q_strcasecmp (cmd_argv[0],cmd->name)`).
+- **PHYS-11.2** `god`, `notarget`, `noclip` and `fly` do nothing when the `deathmatch` global is
+  not 0: they test `pr_global_struct->deathmatch && !host_client->privileged`, and no server
+  file sets `privileged`.
+- **PHYS-11.3** `god` toggles `FL_GODMODE` (64) in the player's `flags` and `notarget`
+  `FL_NOTARGET` (128); each prints `godmode ON`, `godmode OFF`, `notarget ON` or `notarget OFF`
+  and a line feed to the client. `noclip` sets `movetype` to `MOVETYPE_NOCLIP`, or to
+  `MOVETYPE_WALK` when it is already that, printing `noclip ON` or `noclip OFF`; `fly` the same
+  with `MOVETYPE_FLY` and `flymode`.
+- **PHYS-11.4** `kill`, for a player whose `health` is above 0, sets `time` to the server's
+  time and `self` to the player and runs `ClientKill`; otherwise it prints "Can't suicide --
+  allready dead!" and a line feed to the client.
+- **PHYS-11.5** The other commands `SV_ReadClientMessage` accepts (`status`, `name`, `say`,
+  `say_team`, `tell`, `color`, `pause`, `kick`, `ping`, `give`, `ban`, and the signon's
+  `prespawn`, `spawn` and `begin`) do not change the simulation in a single-player game
+  this way, and `qs-sim` ignores them; a command it does not accept is ignored too.
+
+
+## PHYS-12 The server's settings
+
+**Source:** `WinQuake/sv_main.c`, `SV_Init`; `WinQuake/host.c`, `Host_InitLocal`; the
+`cvar_t` declarations of `sv_phys.c`, `sv_user.c`, `pr_cmds.c` and `host.c`.
+
+### Behaviour
+
+- **PHYS-12.1** A world has the settings `SV_Init` and `Host_InitLocal` register, with the
+  defaults they are declared with: `sv_maxvelocity` 2000, `sv_gravity` 800, `sv_friction` 4,
+  `edgefriction` 2, `sv_stopspeed` 100, `sv_maxspeed` 320, `sv_accelerate` 10,
+  `sv_idealpitchscale` 0.8, `sv_aim` 0.93, `sv_nostep` 0, `host_framerate` 0, `host_speeds` 0,
+  `sys_ticrate` 0.05, `serverprofile` 0, `fraglimit` 0, `timelimit` 0, `samelevel` 0,
+  `noexit` 0, `developer` 0, `pausable` 1 and `temp1` 0, besides `skill`, `deathmatch`, `coop`
+  and `teamplay` (BUILTIN-11.8). `cvar` reads them and `cvar_set` changes them.
+- **PHYS-12.2** The physics read a setting's value where id's code reads `<setting>.value`
+  (its text read by `Q_atof`, BUILTIN-11.7), each frame: `sv_gravity` (PHYS-6.4),
+  `sv_maxvelocity` (PHYS-6.3), `sv_friction`, `edgefriction` and `sv_stopspeed` (PHYS-9.3),
+  `sv_maxspeed` and `sv_accelerate` (PHYS-9.2, PHYS-9.4, PHYS-9.5), `sv_idealpitchscale`
+  (NET-4.2), `sv_aim` (WORLD-8.8) and `sv_nostep`, which ends `SV_WalkMove` before it tries
+  to step up (PHYS-8.3). A progs that sets one, as `worldspawn` sets `sv_gravity` to 100 on
+  e1m8, changes the game from then on.
 ## Constants
 
 | Name | Value | Source |
