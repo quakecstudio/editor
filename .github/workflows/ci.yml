@@ -572,6 +572,13 @@ jobs:
             "$RUNNER_TEMP_DIR/start.trace" \
             --expect oracles/engine/routes/start.expected.jsonl \
             -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+      # P3-25 (DIFF-16): the same route through qs-sim, the same state as id's server's after
+      # the map loads and after every frame.
+      - name: Compare qs-sim with id's server on the route
+        if: env.CI_PATH == 'full'
+        run: |
+          cargo xtask sim-diff oracles/engine/routes/start.route \
+            -- -basedir "$QS_TEST_ASSETS/librequake-lite"
       # The source is the same on every OS, so one runner checks it.
       - name: Write id 1.01 to the asset cache
         if: env.CI_PATH == 'full' && runner.os == 'Linux'

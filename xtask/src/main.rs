@@ -122,6 +122,7 @@ mod ratchet;
 mod readiness;
 mod repo;
 mod sema_corpus;
+mod sim_diff;
 mod test_code;
 #[cfg(test)]
 mod test_dirs;
@@ -176,6 +177,8 @@ enum Task {
     FteqccCoverage(fteqcc_coverage::Args),
     /// The FTEQCC corpus mods' full-dialect classes.
     FteqccFullCoverage(fteqcc_full_coverage::Args),
+    /// The server simulation differential: qs-sim against id's server on a route.
+    SimDiff(sim_diff::Args),
     /// Every module parses and resolves under the FTEQCC profile.
     FteqccProfile(fteqcc_profile::Args),
     /// Run the fuzz targets.
@@ -253,6 +256,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::Ratchet(args) => ("ratchet", ratchet::main(root, args)),
         Task::Readiness(args) => ("readiness", readiness::main(root, args)),
         Task::SemaCorpus(args) => ("sema-corpus", sema_corpus::main(root, args)),
+        Task::SimDiff(args) => ("sim-diff", sim_diff::main(root, args)),
         Task::Adr => return print_outcome("adr", adr::check(root)),
         Task::Attribution => return print_outcome("attribution", attribution::run(root)),
         Task::ClippyFixtures => {

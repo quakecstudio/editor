@@ -92,6 +92,44 @@ jobs:
       - name: Run the full differential VM suite
         run: cargo xtask differential --full
 
+  # P3-25 (DIFF-16.5): the server simulation differential on every map of LibreQuake's lite
+  # asset, on each OS.
+  sim-diff:
+    name: Simulation differential (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - name: Point QS_TEST_ASSETS outside the source tree
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/test-assets/downloads
+          key: test-assets-${{ runner.os }}-${{ hashFiles('corpus/manifest.toml') }}
+      - name: Fetch the test assets
+        run: cargo xtask assets fetch
+      - name: Compare qs-sim with id's server on every LibreQuake map
+        run: |
+          cargo xtask sim-diff oracles/engine/routes/start.route \
+            --map start --map dev --map lq_e0m1 --map lq_e0m2 --map lq_e0m3 --map lq_e0m4 \
+            --map lq_e0m5 --map lq_e0m6 --map lq_e0m7 --map lq_e0m8 \
+            -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+
   # P2-09 and P2-10: the compiler differential's nightly run, 128 rounds of calls to every
   # function of one codebase as its oracle compiles it (id's qcc for id 1.01, the pinned FTEQCC
   # for the rerelease and the corpus mods at the bar), against qc-codegen with fold off and on

@@ -29,6 +29,8 @@ qs-workbench = { workspace = true }
 qs-map = { workspace = true }
 qs-pak = { workspace = true }
 qs-vfs = { workspace = true }
+qs-bsp = { workspace = true }
+qs-sim = { workspace = true }
 quakec-lsp = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }

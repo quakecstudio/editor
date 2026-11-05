@@ -1195,3 +1195,34 @@ both have `numstrings` 1000.
 | 2000 with text `1` | 70000 with text `1` | yes | engine strings, same text |
 | 2000 with text `1` | 70000 with text `2` | no | engine strings, different text |
 | 500 | 500 | yes | equal bits: an offset into the string table |
+
+## DIFF-16 The server simulation differential
+
+**Source:** this project (P3-25, [#239](https://github.com/quakecstudio/editor/issues/239)). The
+oracle is the engine oracle (P3-23, TRACE-4.11, TRACE-4.12): id's server from the pinned commit.
+
+- **DIFF-16.1** `cargo xtask sim-diff <route> [-- <engine word>...]` plays one route, in the engine
+  oracle's script form (`oracles/README.md`, "The engine oracle"), through the engine oracle and
+  through `qs-sim`, on the same game directory, map, progs and frame time. `qs-sim` loads the
+  map and settles it; the player enters a stage a frame in frames 1 to 4 as PHYS-10.7 says, as
+  the oracle's local client answers the signon; from frame 5 each frame takes the route's
+  move, and the move's impulse is sent once.
+- **DIFF-16.2** The state compared is every named global, but a vector's `_x`, `_y` and `_z` and
+  the functions' and fields' own definitions, and every named field of every edict below
+  `num_edicts`, free or not, each read by its definition's type: a float and a vector by their
+  bits, an entity as the edict it names (the oracle's by its own edict size), a string as its
+  text (the oracle's from the progs' string table or its string records), a field and a function
+  by name. Slots no definition names (the return value, the parameters, the temporaries) are not
+  compared, a deliberate choice: their entity and engine string values are offsets into each
+  program's memory, which differ between id's 64-bit build and the 32-bit layout `qs-sim`
+  models (EDICT-1.1), and nothing says which of their values are entities or strings.
+- **DIFF-16.3** The states are compared after the map loads (frame 0) and after each server
+  frame. An edict past one side's `num_edicts` reads as all zeros on that side.
+- **DIFF-16.4** The first frame with a difference fails the run: the frame and its differences,
+  globals first and then edict by edict, each the global, or the edict, its classname and its
+  field, with both values, at most 12 of them, are reported, and the comparison stops there.
+- **DIFF-16.5** `--map <name>`, repeated, plays the route on each map named in turn: the same
+  script with its `map` line replaced. The run passes when every map does. CI's Test Assets
+  jobs play `oracles/engine/routes/start.route` on LibreQuake's start map on Linux, macOS and
+  Windows; the nightly Differential run plays it on every map of LibreQuake's lite asset; id1's
+  maps and the rerelease's, which no CI job has, are played by hand from an install.
