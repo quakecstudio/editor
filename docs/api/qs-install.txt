@@ -46,6 +46,7 @@ fn qs_install::known::KnownFile::is_registered_pak1
 fn qs_install::known::identify
 fn qs_install::known::size_and_md5
 fn qs_install::link::link_dir
+fn qs_install::link::link_file
 fn qs_install::registry::Registry::string
 impl qs_install::link::LinkError: fmt::Display
 impl qs_install::link::LinkError: std::error::Error
@@ -72,6 +73,7 @@ use qs_install::Release = known::Release
 use qs_install::SystemRegistry = registry::SystemRegistry
 use qs_install::identify = known::identify
 use qs_install::link_dir = link::link_dir
+use qs_install::link_file = link::link_file
 use qs_install::size_and_md5 = known::size_and_md5
 variant qs_install::Edition::Registered
 variant qs_install::Edition::Rerelease

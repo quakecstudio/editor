@@ -28,6 +28,8 @@ mod stores;
 mod vdf;
 
 pub use known::{FS_KNOWN_FILES, FileStatus, KnownFile, Release, identify, size_and_md5};
+#[cfg(not(windows))]
+pub use link::link_file;
 pub use link::{LinkError, LinkOutcome, link_dir};
 pub use registry::{Registry, SystemRegistry};
 

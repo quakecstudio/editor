@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The directory links of ADR-0008's run roots: a symbolic link on macOS and Linux, a
-//! junction on Windows, which needs no privileges.
+//! junction on Windows, which needs no privileges; and on macOS and Linux the file link the
+//! rerelease's run root makes to `QuakeEX.kpf`, which a junction cannot link (Windows passes
+//! the file with `-kpf` instead).
 
 use std::fmt;
 use std::fs;
@@ -22,7 +24,8 @@ pub enum LinkOutcome {
 /// Why [`link_dir`] failed.
 #[derive(Debug)]
 pub enum LinkError {
-    /// The target is not an existing directory, such as an install that has been removed.
+    /// The target is not an existing directory, or for [`link_file`] an existing file, such
+    /// as an install that has been removed.
     MissingTarget(PathBuf),
     /// A real file or directory, not a link, is at the link's path. It is never removed.
     Occupied(PathBuf),
@@ -39,7 +42,7 @@ impl fmt::Display for LinkError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingTarget(path) => {
-                write!(f, "{} is not a directory that exists", path.display())
+                write!(f, "{} is not there to link to", path.display())
             }
             Self::Occupied(path) => write!(
                 f,
@@ -84,6 +87,34 @@ pub fn link_dir(target: &Path, link: &Path) -> Result<LinkOutcome, LinkError> {
         .ok()
         .filter(|path| path.is_dir())
         .ok_or_else(|| LinkError::MissingTarget(target.to_path_buf()))?;
+    make_link(&canonical_target, link, create_link)
+}
+
+/// Makes `link` a symbolic link to the file `target`, creating `link`'s parent folders, or
+/// repairs a link already there that leads elsewhere or is broken, as [`link_dir`] does for
+/// a directory. macOS and Linux only: a Windows junction links only a directory.
+///
+/// # Errors
+///
+/// [`LinkError::MissingTarget`] when `target` is not an existing file, and the other errors
+/// of [`link_dir`].
+#[cfg(not(windows))]
+pub fn link_file(target: &Path, link: &Path) -> Result<LinkOutcome, LinkError> {
+    let canonical_target = fs::canonicalize(target)
+        .ok()
+        .filter(|path| path.is_file())
+        .ok_or_else(|| LinkError::MissingTarget(target.to_path_buf()))?;
+    make_link(&canonical_target, link, |target, link| {
+        std::os::unix::fs::symlink(target, link)
+    })
+}
+
+/// Makes or repairs the link at `link` to `canonical_target`, with `create` making it.
+fn make_link(
+    canonical_target: &Path,
+    link: &Path,
+    create: impl FnOnce(&Path, &Path) -> io::Result<()>,
+) -> Result<LinkOutcome, LinkError> {
     let outcome = match fs::symlink_metadata(link) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => LinkOutcome::Created,
         Err(error) => return Err(io_error(link)(error)),
@@ -91,7 +122,7 @@ pub fn link_dir(target: &Path, link: &Path) -> Result<LinkOutcome, LinkError> {
             if !is_link(link, &metadata) {
                 return Err(LinkError::Occupied(link.to_path_buf()));
             }
-            if fs::canonicalize(link).is_ok_and(|resolved| resolved == canonical_target) {
+            if fs::canonicalize(link).is_ok_and(|resolved| resolved == *canonical_target) {
                 return Ok(LinkOutcome::Unchanged);
             }
             remove_link(link).map_err(io_error(link))?;
@@ -104,7 +135,7 @@ pub fn link_dir(target: &Path, link: &Path) -> Result<LinkOutcome, LinkError> {
     {
         fs::create_dir_all(parent).map_err(io_error(parent))?;
     }
-    create_link(&canonical_target, link).map_err(io_error(link))?;
+    create(canonical_target, link).map_err(io_error(link))?;
     Ok(outcome)
 }
 
