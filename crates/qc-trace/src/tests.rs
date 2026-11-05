@@ -12,9 +12,10 @@ use proptest::prelude::*;
 
 use super::{
     Changes, FieldChange, GlobalChange, Header, JsonFault, Record, Step, StringValue,
-    TRACE_HEADER_SIZE, TRACE_MAGIC, TRACE_TAG_ERROR, TRACE_TAG_EXIT, TRACE_TAG_RUN, TRACE_TAG_STEP,
-    TRACE_TAG_STRING, TRACE_UVAR_MAX_BYTES, TRACE_VERSION, Text, Trace, TraceError, decode, encode,
-    encode_header, encode_record, from_json, header_to_json, record_to_json, to_json,
+    TRACE_HEADER_SIZE, TRACE_MAGIC, TRACE_TAG_ERROR, TRACE_TAG_EXIT, TRACE_TAG_FRAME,
+    TRACE_TAG_RUN, TRACE_TAG_STEP, TRACE_TAG_STRING, TRACE_UVAR_MAX_BYTES, TRACE_VERSION, Text,
+    Trace, TraceError, decode, encode, encode_header, encode_record, from_json, header_to_json,
+    record_to_json, to_json,
 };
 
 const SAMPLE_JSONL: &str = include_str!("../../../docs/spec/vectors/trace/sample.jsonl");
@@ -722,8 +723,8 @@ fn readers_reject_malformed_streams() {
         Err(TraceError::UnknownTag { offset: at, tag: 0 })
     );
     assert_eq!(
-        decode(&with_records(&[0x06])),
-        Err(TraceError::UnknownTag { offset: at, tag: 6 })
+        decode(&with_records(&[0x07])),
+        Err(TraceError::UnknownTag { offset: at, tag: 7 })
     );
     let flag = with_records(&[TRACE_TAG_STEP, 0, 0, 0, 2, 0, 0]);
     assert_eq!(
@@ -1300,6 +1301,7 @@ fn any_record() -> impl Strategy<Value = Record> {
         )
             .prop_map(|(f, s, o, b, c)| step(f, s, o, b, c)),
         any_changes().prop_map(|changes| Record::Exit { changes }),
+        (any::<u32>(), any_changes()).prop_map(|(frame, changes)| Record::Frame { frame, changes }),
         (any::<i32>(), any::<i32>(), any_text(), any_changes()).prop_map(
             |(function, statement, message, changes)| {
                 Record::Error {
@@ -1409,4 +1411,44 @@ fn reviewer_negative_engine_string_values_resolve() {
         StringValue::Engine(&text(b"start"))
     );
     assert_eq!(decoded.string_value(4, bits(-3)), StringValue::Unknown);
+}
+
+// spec TRACE-4.11: a frame record holds the frame's number and its change set
+// spec TRACE-5.8: it is the tag 0x06, a uvar frame number, then a change set
+#[test]
+fn a_frame_record_encodes_its_number_and_changes() {
+    let record = Record::Frame {
+        frame: 300,
+        changes: globals(&[(3, 0x3f80_0000)]),
+    };
+    assert_eq!(
+        record_bytes(&record),
+        [TRACE_TAG_FRAME, 0xac, 0x02, 1, 3, 0x00, 0x00, 0x80, 0x3f, 0]
+    );
+    assert_eq!(record.changes(), Some(&globals(&[(3, 0x3f80_0000)])));
+    let trace = decode(&with_records(&record_bytes(&record))).unwrap();
+    assert_eq!(trace.records, [record]);
+    let cut = with_records(&[TRACE_TAG_FRAME, 1]);
+    assert_eq!(
+        decode(&cut),
+        Err(TraceError::Truncated {
+            offset: TRACE_HEADER_SIZE
+        })
+    );
+}
+
+// spec TRACE-6.7: a frame record's JSON line has `t` `frame`, `frame`, then the changes
+#[test]
+fn a_frame_record_in_json() {
+    let record = Record::Frame {
+        frame: 2,
+        changes: fields(&[(1, 10, 0x4000_0000)]),
+    };
+    let line = record_to_json(&record);
+    assert_eq!(
+        line,
+        "{\"t\":\"frame\",\"frame\":2,\"globals\":[],\"fields\":[[1,10,\"40000000\"]]}\n"
+    );
+    let parsed = from_json(&json_with(&[line.trim_end()])).unwrap();
+    assert_eq!(parsed.records, [record]);
 }

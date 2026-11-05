@@ -1116,6 +1116,7 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
                 qc_trace::Record::Run { .. }
                 | qc_trace::Record::Exit { .. }
                 | qc_trace::Record::Error { .. }
+                | qc_trace::Record::Frame { .. }
                 | qc_trace::Record::String { .. } => None,
             })
             .collect();

@@ -142,10 +142,20 @@ fn the_oracles_are_built_once_from_the_files_fetched() {
     );
     assert!(dir.join(OUT).join("bin/stamp").is_file());
     let compiles = fake.seen.lock().unwrap().len();
-    // qcc, FTEQCC, the VM oracle and the fixed FTEQCC (DIFF-14.12): each source, then each
-    // link.
-    let sources = QCC_FILES.len() + 2 * FTEQCC_FILES.len() + 2 + VM_HARNESS.len();
-    assert_eq!(compiles, sources + 4);
+    // qcc, FTEQCC, the VM oracle, the engine oracle and the fixed FTEQCC (DIFF-14.12): each
+    // source, then each link.
+    let sources = QCC_FILES.len()
+        + 2 * FTEQCC_FILES.len()
+        + 2
+        + VM_HARNESS.len()
+        + ENGINE_FILES.len()
+        + ENGINE_HARNESS.len();
+    assert_eq!(compiles, sources + 5);
+    assert!(
+        oracles
+            .engine
+            .ends_with(Compiler::executable("engine-oracle"))
+    );
     let fixed =
         fs::read_to_string(dir.join(OUT).join("src/fteqcc-fixed").join(defects::FILE)).unwrap();
     assert!(defects::FIXES.iter().all(|fix| fixed.contains(fix.replace)));

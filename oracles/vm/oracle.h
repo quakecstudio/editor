@@ -40,6 +40,7 @@ void qs_trace_step(int function, int statement, int opcode, int builtin);
 void qs_trace_exit(void);
 void qs_trace_error(int function, int statement, const char *message);
 void qs_trace_string(int value, const char *text);
+void qs_trace_frame(unsigned frame);
 qboolean qs_trace_close(void);
 void qs_trace_flush_on_crash(void);
 

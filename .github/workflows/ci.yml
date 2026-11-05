@@ -560,6 +560,18 @@ jobs:
       - name: Check the rerelease precaches
         if: env.CI_PATH == 'full'
         run: cargo xtask assets precache
+      # P3-23: id's server, built from the pinned source, plays a route through LibreQuake's
+      # start map twice with the same trace, the same as recorded on every OS.
+      - name: Play a route through id's server
+        if: env.CI_PATH == 'full'
+        shell: bash
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          cargo xtask oracles engine oracles/engine/routes/start.route \
+            "$RUNNER_TEMP_DIR/start.trace" \
+            --expect oracles/engine/routes/start.expected.jsonl \
+            -- -basedir "$QS_TEST_ASSETS/librequake-lite"
       # The source is the same on every OS, so one runner checks it.
       - name: Write id 1.01 to the asset cache
         if: env.CI_PATH == 'full' && runner.os == 'Linux'

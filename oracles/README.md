@@ -10,10 +10,12 @@ exist (ARCH-2: the Rust side talks to them through files and their exit status).
 | Oracle | What it is | Binary |
 | --- | --- | --- |
 | VM oracle | id's `WinQuake/pr_exec.c` in a host that implements [`docs/spec/differential.md`](../docs/spec/differential.md) and writes the trace of [`docs/spec/trace.md`](../docs/spec/trace.md) | `target/oracles/bin/vm-oracle` |
+| Engine oracle | id's server, `WinQuake/sv_*.c` and what it runs on, whole, played headless from a script, writing a frame record per server frame (TRACE-4.11) | `target/oracles/bin/engine-oracle` |
 | qcc | id's QuakeC compiler, `qcc/` of Quake-Tools, built unchanged | `target/oracles/bin/qcc` |
 | FTEQCC | The command-line compiler in `engine/qclib/` of fte-team/fteqw, built unchanged without zlib | `target/oracles/bin/fteqcc` |
 
-Later oracles (id's engine; the map tools) join this directory.
+Later oracles (id's renderer and mixer for screenshots and audio, P3-28; the map tools) join
+this directory.
 
 ## Sources
 
@@ -21,8 +23,11 @@ No third-party code is committed (LIC-7). [`sources.toml`](sources.toml) pins ev
 build uses to a commit and to its SHA-256: id's files to the upstreams in
 [`docs/porting.md`](../docs/porting.md#upstreams), FTEQCC's to the fteqw commit that
 [`progs.md`](../docs/spec/progs.md) and [`lno.md`](../docs/spec/lno.md) cite; `cargo xtask oracles` downloads each from `raw.githubusercontent.com` and refuses a
-file whose SHA-256 differs. The files are kept in `target/oracles/src/`. id's `quakedef.h` is
-never fetched: [`vm/quakedef.h`](vm/quakedef.h) stands in for it.
+file whose SHA-256 differs. The files are kept in `target/oracles/src/`, one directory per
+upstream. The VM oracle's upstream, `quake`, never fetches id's `quakedef.h`:
+[`vm/quakedef.h`](vm/quakedef.h) stands in for it, and `pr_exec.c` would find id's beside it
+first. The engine oracle compiles id's files with id's own headers, so they are a second
+upstream of the same commit, `quake-engine`, in a directory of their own.
 
 The VM oracle compiles `WinQuake/pr_exec.c` whole, and the id functions listed under
 `[[extract]]` in `sources.toml`, which the build copies unchanged out of the fetched files into
@@ -37,7 +42,7 @@ This directory holds only our code, all GPL-3.0-or-later:
 | --- | --- |
 | [`vm/quakedef.h`](vm/quakedef.h) | The declarations id's code needs, with id's names, and the build's redirections below |
 | [`vm/host.c`](vm/host.c) | The command line, memory, loading a progs, the run wrapper and statement hook, errors |
-| [`vm/trace.c`](vm/trace.c) | The binary trace encoder (TRACE-5) and change sets (TRACE-3), from the spec alone |
+| [`trace/trace.c`](trace/trace.c) | The binary trace encoder (TRACE-5) and change sets (TRACE-3), from the spec alone, which the VM and engine oracles share; each build gives it its own `oracle.h` |
 | [`vm/scenario.c`](vm/scenario.c) | Scenarios (DIFF-2), the map (DIFF-3), clients (DIFF-4), frames (DIFF-5), the end (DIFF-8) |
 | [`vm/engine.c`](vm/engine.c) | The mock engine: settings, buffers, model bounds, linking, the empty world, `rand`, map keys |
 | [`vm/builtins.c`](vm/builtins.c) | The builtin table, the builtins that are ours, and the vector stubs |
@@ -198,6 +203,66 @@ DIFF-6.6:
 
 The vectors in [`builtins.txt`](../docs/spec/vectors/vm/builtins.txt) run id's builtins
 (`builtins: engine`) and pin each of these; `cargo xtask oracles` runs them with the others.
+
+## The engine oracle
+
+```text
+engine-oracle [--console] <script> <trace> [<engine word>...]
+cargo xtask oracles engine <script> <trace> [--expect <jsonl>] [--record <jsonl>] [-- <engine word>...]
+```
+
+id's server as id's dedicated server runs it, from the `quake-engine` files whole: `sv_main.c`,
+`sv_phys.c`, `sv_move.c`, `sv_user.c`, `world.c`, `model.c`, `pr_edict.c`, `pr_exec.c`,
+`pr_cmds.c`, `common.c`, `cvar.c`, `cmd.c`, `zone.c`, `mathlib.c`, `crc.c` and `host_cmd.c`,
+with the functions of `host.c` and `view.c` the server calls copied unchanged
+(`[[extract]]` with `oracle = "engine"`). [`engine/engine.c`](engine/engine.c) is the host,
+ours: `Host_Init` for a dedicated server with one client slot, `Host_ServerFrame` as the build
+without `FPS_20` has it, the console, files and a clock that only the frames move. The network
+is one local client: it connects in the first frame (`NET_CheckNewConnections`), sends
+`prespawn`, `spawn` and `begin` as id's client does, and from then on a `clc_move` each frame,
+written with id's `MSG_Write*` as `CL_SendMove` writes it, so id's `SV_ReadClientMove` reads
+the angles, the moves, the buttons and the impulse. What the server sends back is not read: the
+trace is of the server's state. The client's, renderer's and menu's functions the server names
+are empty, and [`engine/extracted.h`](engine/extracted.h) declares what the copied functions
+read at their files' scope.
+
+The hunk is one static block of 64 MiB, so the progs' strings, the strings `ED_NewString` makes
+and id's static string buffers are all within 32 bits of `pr_strings` on a 64-bit host. id's
+filesystem builds paths in buffers of `MAX_OSPATH` (128) bytes without a check, so a `-basedir`
+of more than 56 bytes is refused rather than overrun.
+
+The script, one command a line, `#` a comment:
+
+```text
+engine <word>        # a word of the engine's command line, after those given after <trace>
+map <name>           # the map to start (Host_Map_f)
+frametime <seconds>  # each server frame's host_frametime, 1/72 by default
+move <pitch> <yaw> <roll> <forward> <side> <up> <buttons> <impulse>
+cmd <text>           # a console command the client sends (clc_stringcmd), in the next frame
+frames <n>           # run n server frames with the current move; the impulse goes once
+```
+
+`engine`, `map` and `frametime` come before the frames. The trace is the header, then for each
+frame a frame record holding what the frame changed, with a string record before it for each
+engine string that is new or whose text changed (TRACE-4.10). A QuakeC run error ends the trace
+with an error record, exit status 0; a refused script or command line is exit status 2, an I/O
+failure 3, and id's `Sys_Error` 4.
+
+`cargo xtask oracles engine` builds the oracles, runs the script twice and checks that the two
+traces are the same bytes and that `qc-trace` reads them as an engine trace (frame records
+numbered from 1, string records, and an error record last). Engine string values are offsets
+into the oracle's memory, so they differ from one build to another: `--expect` compares the
+trace's canonical form, each engine string value numbered by when its first string record comes
+(from `0xffff0000`), with a canonical trace recorded with `--record`. String records are written
+only for slots the progs declares as strings, so an engine string left in an untyped slot (the
+return value, a parameter, a temporary) keeps its raw offset; a route that leaves one there
+differs between builds, and the check fails on it rather than passing. id's calls to `rand` go to
+the VM oracle's generator (DIFF-6.2, `engine/rand.h`), so the random numbers are the same on every
+OS, and each frame runs `_Host_Frame`'s steps for a local server: `rand`, the time, the console,
+the client's move, `Host_ServerFrame` and `host_time`. [`engine/routes/start.route`](engine/routes/start.route)
+walks, turns, jumps, fires and changes weapon through LibreQuake's start map, and
+`start.expected.jsonl` beside it is its recording; CI's Test Assets jobs play it on Linux, macOS
+and Windows against that recording (`docs/ci.md`).
 
 ## FTEQCC and the rerelease
 

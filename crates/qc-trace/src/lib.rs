@@ -49,6 +49,8 @@ pub const TRACE_TAG_EXIT: u8 = 0x03;
 pub const TRACE_TAG_ERROR: u8 = 0x04;
 /// Tag byte of a string record (TRACE-5.6).
 pub const TRACE_TAG_STRING: u8 = 0x05;
+/// Tag byte of a frame record (TRACE-5.8).
+pub const TRACE_TAG_FRAME: u8 = 0x06;
 
 /// Bytes per field slot, used to turn a field index into a pointer offset (TRACE-7.2).
 const FIELD_SLOT_BYTES: u64 = 4;
@@ -490,6 +492,13 @@ pub enum Record {
         /// Changes since the previous record.
         changes: Changes,
     },
+    /// A server frame of the engine oracle ended (TRACE-4.11).
+    Frame {
+        /// The frame's number, counting from 1.
+        frame: u32,
+        /// What the frame changed.
+        changes: Changes,
+    },
     /// A string value outside the string table now names this text (TRACE-4.10).
     String {
         /// The 32-bit string value.
@@ -507,7 +516,8 @@ impl Record {
             Self::Run { changes, .. }
             | Self::Step(Step { changes, .. })
             | Self::Exit { changes }
-            | Self::Error { changes, .. } => Some(changes),
+            | Self::Error { changes, .. }
+            | Self::Frame { changes, .. } => Some(changes),
             Self::String { .. } => None,
         }
     }

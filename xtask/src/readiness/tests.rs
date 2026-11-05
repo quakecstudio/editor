@@ -689,7 +689,7 @@ fn the_oracles_c_is_every_source_and_header_under_oracles() {
         .collect();
     for want in [
         "oracles/vm/host.c",
-        "oracles/vm/trace.c",
+        "oracles/trace/trace.c",
         "oracles/vm/scenario.c",
         "oracles/vm/oracle.h",
         "oracles/qcc/compat.h",
