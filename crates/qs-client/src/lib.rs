@@ -9,8 +9,10 @@
 //! to VIEW-4.
 
 mod client;
+mod console;
 mod entity;
 mod hud;
+mod menu;
 mod message;
 mod models;
 mod particles;
@@ -29,12 +31,20 @@ pub use client::{
     ClientLimits, Event, Game, HUD_DEFAULT_LINES, Hud, LerpSettings, ParseError, Score, SoundRef,
     SoundStart, stat,
 };
+pub use console::{
+    CON_CURSOR_SPEED, CON_HISTORY, CON_MAX_LINE, CON_NOTIFY_TIME, CON_NUM_TIMES, CON_SPEED,
+    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Console, ConsoleKey, KeyDest, Typed,
+};
 pub use entity::{Baseline, Entity, Lerp, LerpFlags};
 pub use hud::{
     Anchor, CenterPrint, HUD_CENTER_LINE_LENGTH, HUD_CENTER_MAX, HUD_CENTERTIME, HUD_FLASH_FRAMES,
     HUD_GAME_DEATHMATCH, HUD_ITEMS, HUD_LOW_AMMO, HUD_LOW_ARMOR, HUD_LOW_HEALTH, HUD_NUM_WIDTH,
     HUD_PRINTSPEED, HUD_SBAR_HEIGHT, HUD_WEAPONS, HudInput, HudItem, Placed, color_for_map,
     intermission_overlay, sort_frags, status_bar,
+};
+pub use menu::{
+    MENU_HELP_PAGES, MENU_SAVEGAMES, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey, MenuSettings,
+    MenuState, save_comment,
 };
 pub use message::Reader;
 pub use models::{FrameInfo, ModelInfo, ModelKind, Models, Random, SYNCTYPE_RAND, flags};

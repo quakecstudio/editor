@@ -52,6 +52,13 @@ pub(crate) struct Args {
     /// No sound device, the engine's `-nosound`.
     #[arg(long)]
     pub(crate) nosound: bool,
+    /// A CD image's cue sheet whose audio tracks are the music (SND-6.4); without it,
+    /// `game.cue` in the game root when there is one, as GOG's release keeps its CD.
+    #[arg(long)]
+    pub(crate) cd_image: Option<PathBuf>,
+    /// No CD music, QuakeSpasm's `-nocdaudio`.
+    #[arg(long)]
+    pub(crate) nocdaudio: bool,
     /// No window and no sound: frames of 1/72 of a second, the bridge served between them,
     /// and `screenshot` drawn offscreen; for scenario runs, CI and a client's tests; needs
     /// `-bridge`.
@@ -75,6 +82,9 @@ pub(crate) struct Args {
     /// file, as the view oracle plays the same script in id's engine (VIEWDIFF-1).
     #[arg(long, num_args = 2, value_names = ["script", "audio"])]
     pub(crate) view_script: Option<Vec<std::path::PathBuf>>,
+    /// The size `--view-script` draws its shots at, 320 by 240 without it (VIEWDIFF-2.1).
+    #[arg(long, num_args = 2, value_names = ["width", "height"])]
+    pub(crate) view_size: Option<Vec<u32>>,
     /// Where the window opens, to put it on a chosen display.
     #[arg(long, num_args = 2, value_names = ["x", "y"], allow_negative_numbers = true)]
     pub(crate) position: Option<Vec<f32>>,

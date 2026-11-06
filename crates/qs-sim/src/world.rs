@@ -34,7 +34,7 @@ use crate::messages::ClientMessages;
 use crate::messages::ServerMessages;
 use crate::physics::Sound;
 use crate::rerelease::BuiltinTable;
-use crate::settings::SERVER_SETTINGS;
+use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
 use qc_builtins::localization::Localization;
 
 use crate::spawn::{
@@ -120,6 +120,8 @@ pub struct World {
     pub(crate) console_out: Vec<u8>,
     /// A host command the console asked for, waiting for the host (PHYS-13.6).
     pub(crate) pending_host: Option<HostCommand>,
+    /// The client's commands the console met, in order, waiting for the host (CON-6.1).
+    pub(crate) client_commands: Vec<ClientCommand>,
     /// The console's aliases, newest first (PHYS-13.2).
     pub(crate) aliases: Vec<(String, String)>,
     /// The search path the host gave, for `path` (PHYS-13.7).
@@ -203,6 +205,48 @@ pub enum HostCommand {
     Quit,
 }
 
+/// A command the client runs, not the server: id's `console.c` and `menu.c` register them
+/// with the client's console (CON-6.1). The console hands them to the host in order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientCommand {
+    /// `toggleconsole`, `Con_ToggleConsole_f`.
+    ToggleConsole,
+    /// `clear`, `Con_Clear_f`.
+    Clear,
+    /// `togglemenu`, `M_ToggleMenu_f`.
+    ToggleMenu,
+    /// `menu_main`, `M_Menu_Main_f`.
+    MenuMain,
+    /// `menu_singleplayer`, `M_Menu_SinglePlayer_f`.
+    MenuSinglePlayer,
+    /// `menu_load`, `M_Menu_Load_f`.
+    MenuLoad,
+    /// `menu_save`, `M_Menu_Save_f`.
+    MenuSave,
+    /// `menu_options`, `M_Menu_Options_f`.
+    MenuOptions,
+    /// `help`, `M_Menu_Help_f`.
+    Help,
+    /// `menu_quit`, `M_Menu_Quit_f`.
+    MenuQuit,
+}
+
+impl ClientCommand {
+    /// Every client command with its name, as the client registers it.
+    pub const ALL: [(&'static str, Self); 10] = [
+        ("toggleconsole", Self::ToggleConsole),
+        ("clear", Self::Clear),
+        ("togglemenu", Self::ToggleMenu),
+        ("menu_main", Self::MenuMain),
+        ("menu_singleplayer", Self::MenuSinglePlayer),
+        ("menu_load", Self::MenuLoad),
+        ("menu_save", Self::MenuSave),
+        ("menu_options", Self::MenuOptions),
+        ("help", Self::Help),
+        ("menu_quit", Self::MenuQuit),
+    ];
+}
+
 /// What `SV_SaveSpawnparms` keeps across a level change: `serverflags`, "for cross level
 /// information (sigils)", and the client's `parm1` to `parm16` after `SetChangeParms`
 /// (PHYS-10.4).
@@ -264,7 +308,7 @@ impl World {
             }
             // PHYS-12.1: the server's and the host's settings, with id's defaults.
             None => {
-                for (name, value) in SERVER_SETTINGS {
+                for (name, value) in SERVER_SETTINGS.iter().chain(&CLIENT_SETTINGS) {
                     engine.cvars.create(name, value);
                 }
             }
@@ -293,6 +337,7 @@ impl World {
             connecting: false,
             console_out: Vec::new(),
             pending_host: None,
+            client_commands: Vec::new(),
             aliases,
             search_path: options.search_path,
             carried: options.carried,
@@ -604,6 +649,24 @@ impl World {
     /// (PHYS-10.6), `map`, `save`, `load` or `quit`. It is taken once.
     pub fn take_host_command(&mut self) -> Option<HostCommand> {
         self.pending_host.take()
+    }
+
+    /// The client's commands the console met since the last call, in order (CON-6.1).
+    pub fn take_client_commands(&mut self) -> Vec<ClientCommand> {
+        core::mem::take(&mut self.client_commands)
+    }
+
+    /// A setting's value, `Cvar_VariableValue`: `None` for a name no one registered.
+    #[must_use]
+    pub fn setting(&self, name: &str) -> Option<f32> {
+        self.builtins.mock.engine().cvars.value(name)
+    }
+
+    /// `Cvar_SetValue`: the setting `name` to `value`, written as C's `%f` writes it; false
+    /// for a name no one registered.
+    pub fn set_setting(&mut self, name: &str, value: f32) -> bool {
+        let text = format!("{value:.6}");
+        self.builtins.mock.engine_mut().cvars.set(name, &text)
     }
 
     /// The map's name, `sv.name`, which `restart` spawns again (PHYS-10.6).

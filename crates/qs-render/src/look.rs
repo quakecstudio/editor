@@ -72,6 +72,46 @@ impl Look {
         }
     }
 
+    /// `Draw_FadeScreen`'s black over the view behind a menu: QuakeSpasm's "`glColor4f (0, 0,
+    /// 0, 0.5)`", GLQuake's 0.8 (REND-13.7).
+    #[must_use]
+    pub const fn fade_alpha(self) -> f32 {
+        match self {
+            Self::QuakeSpasm => 0.5,
+            Self::GlQuake => 0.8,
+        }
+    }
+
+    /// The console background's alpha for a console `lines` high on a screen `height` high,
+    /// `forced` up or not: QuakeSpasm's "`alpha = (con_forcedup) ? 1.0f : scr_conalpha.value`",
+    /// `scr_conalpha` "0.5"; GLQuake's opaque past three quarters of the screen, else
+    /// `1.2 * lines` over that (CON-3.2, REND-13.7).
+    #[must_use]
+    pub fn console_alpha(self, lines: i32, height: i32, forced: bool) -> f32 {
+        match self {
+            Self::QuakeSpasm if forced => 1.0,
+            Self::QuakeSpasm => 0.5,
+            Self::GlQuake => {
+                let three_quarters = height.saturating_mul(3) >> 2;
+                if lines > three_quarters {
+                    1.0
+                } else {
+                    (1.2 * f32_of(lines) / f32_of(three_quarters.max(1))).min(1.0)
+                }
+            }
+        }
+    }
+
+    /// Whether the 2D layer is the window's own size, QuakeSpasm's canvases at scale 1, rather
+    /// than GLQuake's 640 wide layer (REND-13.7).
+    #[must_use]
+    pub const fn native_2d(self) -> bool {
+        match self {
+            Self::QuakeSpasm => true,
+            Self::GlQuake => false,
+        }
+    }
+
     /// The field of view across for `fov_x` on an image `aspect` wide per unit of height:
     /// QuakeSpasm's `AdaptFovx`, which keeps the height a 4:3 image of `fov_x` would have
     /// (REND-13.6); GLQuake's is `fov_x` (REND-3.4).
@@ -105,6 +145,11 @@ fn adapt_fov_x(fov_x: f32, aspect: f32) -> f32 {
     )]
     let a = (a * 360.0 / core::f64::consts::PI) as f32;
     a
+}
+
+/// A pixel count as a float, exactly for any screen.
+fn f32_of(n: i32) -> f32 {
+    f32::from(i16::try_from(n).unwrap_or(i16::MAX))
 }
 
 #[cfg(test)]

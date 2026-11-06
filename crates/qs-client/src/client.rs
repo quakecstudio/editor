@@ -433,6 +433,10 @@ pub struct Hud {
     /// Whether the game is deathmatch, which draws the bar from the screen's left instead of
     /// centred (HUD-1).
     pub deathmatch: bool,
+    /// The console or its notify lines, drawn after the bar (CON-2, CON-3).
+    pub console: Vec<Placed>,
+    /// The menu, drawn last.
+    pub menu: Vec<Placed>,
 }
 
 /// One scoreboard entry, `scoreboard_t` (CLIENT-1.4).
@@ -731,6 +735,8 @@ impl Client {
             overlay,
             center: self.center_items.clone(),
             deathmatch: self.gametype == HUD_GAME_DEATHMATCH,
+            console: Vec::new(),
+            menu: Vec::new(),
         }
     }
 
@@ -1294,6 +1300,16 @@ impl Client {
         self.scores = vec![Score::default(); self.maxclients];
         self.gametype = r.byte();
         self.levelname = r.string();
+        // CLIENT-1.7: "separate the printfs so the server message can have a color": the
+        // divider, then the level's name after the colour byte 2.
+        let mut divider = b"\n\n\x1d".to_vec();
+        divider.extend([0x1e; 35]);
+        divider.extend(b"\x1f\n\n");
+        events.push(Event::Print(divider));
+        let mut name = vec![2];
+        name.extend_from_slice(&self.levelname);
+        name.push(b'\n');
+        events.push(Event::Print(name));
         let mut model_names = Vec::new();
         loop {
             let name = r.string();

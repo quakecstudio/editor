@@ -15,7 +15,7 @@ use eframe::egui_wgpu::wgpu;
 use qs_bsp::Bsp;
 use std::path::Path;
 
-use qs_client::{Client, Hud};
+use qs_client::{Client, Console, Hud, KeyDest, Menu, MenuFrame, MenuSettings};
 use qs_render::{MapMesh, MapRenderer, Offscreen, Play};
 
 use crate::args::Args;
@@ -162,9 +162,7 @@ pub(crate) fn timerefresh(
 }
 
 /// The size the view oracle draws at: 320 by 240, square pixels at 4:3 (VIEWDIFF-2.1).
-const VIEW_SIZE: [u32; 2] = [320, 240];
-/// Its width per unit of height.
-const VIEW_ASPECT: f32 = 4.0 / 3.0;
+pub(crate) const VIEW_SIZE: [u32; 2] = [320, 240];
 
 /// `--view-script <script> <audio>` (P3-28): the map of `loaded` played as `script` says, its
 /// shots written as binary PPMs and the sound mixed meanwhile written to `audio` as 16-bit
@@ -174,11 +172,32 @@ const VIEW_ASPECT: f32 = 4.0 / 3.0;
 ///
 /// Why the GPU device, a frame, the player's place or a file failed, or that the map asked
 /// the host to change level, start a game or quit.
-pub(crate) fn view_script(loaded: Loaded, script: &ViewScript, audio: &Path) -> Result<(), String> {
+pub(crate) fn view_script(
+    loaded: Loaded,
+    script: &ViewScript,
+    audio: &Path,
+    size: [u32; 2],
+) -> Result<(), String> {
     let offscreen = Offscreen::new(DEPTH).map_err(|error| error.to_string())?;
     let mut drawer = Drawer::new(offscreen);
     let mut world = Headless::new(loaded, Some(&drawer));
     let mut sound = world.audio.take_captured();
+    let [width, height] = size;
+    let aspect = f32::from(u16::try_from(width).unwrap_or(1))
+        / f32::from(u16::try_from(height).unwrap_or(1).max(1));
+    // REND-13.7: QuakeSpasm's 2D layer is the image's own size, GLQuake's 640 wide.
+    let screen = if world.mesh.look.native_2d() {
+        [
+            i32::try_from(width).unwrap_or(0),
+            i32::try_from(height).unwrap_or(0),
+        ]
+    } else {
+        [CONWIDTH, screen_height(aspect)]
+    };
+    let mut overlay = Overlay::default();
+    for text in core::mem::take(&mut world.printed) {
+        overlay.console.print(&text, 0.0);
+    }
     for step in &script.steps {
         match step {
             Step::Frames(count) => {
@@ -188,6 +207,7 @@ pub(crate) fn view_script(loaded: Loaded, script: &ViewScript, audio: &Path) -> 
                         return Err("the map changed level, started a game or quit".into());
                     }
                     world.read_messages(if ran { FRAME } else { 0.0 });
+                    overlay.frame(screen);
                 }
             }
             Step::Place { origin, angles } => {
@@ -195,9 +215,20 @@ pub(crate) fn view_script(loaded: Loaded, script: &ViewScript, audio: &Path) -> 
                     .game
                     .place_player(*origin, [angles[0], angles[1], 0.0])?;
             }
+            Step::ToggleConsole => overlay.dest = overlay.console.toggle(overlay.dest, true),
+            Step::ToggleMenu => {
+                overlay.dest = match overlay.dest {
+                    KeyDest::Console => overlay.console.toggle(overlay.dest, true),
+                    dest => overlay.menu.toggle(dest),
+                };
+            }
             Step::Shot(path) => {
-                let callback = world.view_callback(VIEW_ASPECT);
-                let frame = drawer.draw(callback, VIEW_SIZE)?;
+                world.play.screen = screen;
+                let game = world.game.world();
+                let settings = MenuSettings::read(&|name| game.setting(name).unwrap_or(0.0));
+                let hud = overlay.hud(screen, world.mesh.look.native_2d(), settings);
+                let callback = world.view_callback(aspect, hud);
+                let frame = drawer.draw(callback, size)?;
                 std::fs::write(path, ppm(&frame))
                     .map_err(|error| format!("{}: {error}", path.display()))?;
             }
@@ -206,6 +237,65 @@ pub(crate) fn view_script(loaded: Loaded, script: &ViewScript, audio: &Path) -> 
     }
     let bytes: Vec<u8> = sound.iter().flat_map(|s| s.to_le_bytes()).collect();
     std::fs::write(audio, bytes).map_err(|error| format!("{}: {error}", audio.display()))
+}
+
+/// The console and the menu a view script opens over the view (CON, MENU), and the time and
+/// height the console has slid to.
+#[derive(Default)]
+struct Overlay {
+    console: Console,
+    menu: Menu,
+    dest: KeyDest,
+    realtime: f64,
+    lines: i32,
+}
+
+impl Overlay {
+    /// One frame of 1/72 of a second: the console slides (CON-3.1).
+    fn frame(&mut self, screen: [i32; 2]) {
+        self.realtime += FRAME;
+        self.console.resize(screen[0]);
+        self.lines = self
+            .console
+            .slide(screen[1], false, self.dest, frametime_f32(FRAME));
+    }
+
+    /// The console and the menu as the window draws them on `screen`, in QuakeSpasm's layout
+    /// when `native` (CON-5), the options showing `settings`.
+    fn hud(&mut self, screen: [i32; 2], native: bool, settings: MenuSettings) -> Hud {
+        let [_, height] = screen;
+        let console = if self.lines > 0 && native {
+            let version = format!("QuakeC Studio {}", env!("CARGO_PKG_VERSION"));
+            let typing = self.dest == KeyDest::Console;
+            self.console.draw_quakespasm(
+                self.lines,
+                height,
+                self.realtime,
+                typing,
+                version.as_bytes(),
+            )
+        } else if self.lines > 0 {
+            let typing = self.dest == KeyDest::Console;
+            self.console.draw(self.lines, height, self.realtime, typing)
+        } else {
+            self.console.notify(self.realtime)
+        };
+        let down = self.lines > 0 && self.dest != KeyDest::Game;
+        let (menu, _) = self.menu.draw(&MenuFrame {
+            dest: self.dest,
+            host_time: self.realtime,
+            realtime: self.realtime,
+            console_down: down,
+            console_forced: false,
+            screen_height: height,
+            settings,
+        });
+        Hud {
+            console,
+            menu,
+            ..Hud::default()
+        }
+    }
 }
 
 /// `frame` as a binary PPM, `P6`, its alpha dropped (VIEWDIFF-1.2).
@@ -230,6 +320,8 @@ struct Headless {
     bsp: Bsp<'static>,
     /// The sound, mixed and dropped, or kept for `--view-script`.
     audio: Audio,
+    /// What the map's first client frame printed (CLIENT-1.7).
+    printed: Vec<Vec<u8>>,
 }
 
 impl Headless {
@@ -245,6 +337,7 @@ impl Headless {
             play,
             bsp,
             audio,
+            printed,
             ..
         } = loaded;
         match drawer {
@@ -272,6 +365,7 @@ impl Headless {
             play,
             bsp,
             audio,
+            printed,
         }
     }
 
@@ -304,7 +398,7 @@ impl Headless {
     /// The client's view alone, on an image `aspect` wide per unit of height: no status bar,
     /// centre print or weapon, as the view oracle draws it with `viewsize 120` and
     /// `r_drawviewmodel 0` (P3-28).
-    fn view_callback(&mut self, aspect: f32) -> qs_render::MapCallback {
+    fn view_callback(&mut self, aspect: f32, hud: Hud) -> qs_render::MapCallback {
         // `V_SetContentsColor`: the leaf the eye is in tints the view (VIEW-4.3), before the
         // scene that carries the tint is taken.
         let origin = self.client.scene().view.origin;
@@ -312,12 +406,14 @@ impl Headless {
         let mut scene = self.client.scene();
         scene.view.weapon.model = 0;
         self.play
-            .frame(&scene, &Hud::default(), &self.bsp, &mut self.mesh, aspect)
+            .frame(&scene, &hud, &self.bsp, &mut self.mesh, aspect)
     }
 
     /// The client's frame: it reads what the server wrote, and the eye `pick` looks from is
     /// the client's view.
     fn read_messages(&mut self, frametime: f64) {
+        // The console on the screen is the window's; with none, what it would show goes.
+        self.game.take_printed();
         let packets = self.game.world_mut().take_messages().packets;
         let seconds = frametime_f32(frametime);
         match self

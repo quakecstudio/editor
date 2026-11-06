@@ -80,6 +80,10 @@ eighth of a unit and angles to 1.40625 degrees.
   or more ("the artists made some backwards ranges"). An entity whose colormap byte is `c`
   (1 to `maxclients`) is drawn through client `c`'s translation; 0 is the plain colormap, and
   more than `maxclients` is a fatal error.
+- **CLIENT-1.7** After the level name is read, the client prints a divider, two line feeds,
+  `\35`, 35 of `\36`, `\37` and two line feeds, then the level name after the colour byte 2
+  and a line feed ("`Con_Printf ("%c%s\n", 2, str);`"), so the console shows the level's name
+  in the other colour below a rule.
 
 ### Constants
 

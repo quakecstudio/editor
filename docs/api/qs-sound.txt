@@ -7,6 +7,7 @@ const qs_sound::mixer::SND_DEFAULT_VOLUME
 const qs_sound::mixer::SND_FIRST_STATIC
 const qs_sound::mixer::SND_MAX_CHANNELS
 const qs_sound::mixer::SND_MAX_DYNAMIC_CHANNELS
+const qs_sound::mixer::SND_MAX_RAW_SAMPLES
 const qs_sound::mixer::SND_MIXAHEAD
 const qs_sound::mixer::SND_NOMINAL_CLIP_DIST
 const qs_sound::mixer::SND_NUM_AMBIENTS
@@ -17,11 +18,14 @@ const qs_sound::mixer::SND_PAINTBUFFER_SIZE
 const qs_sound::mixer::SND_STATIC_ATTENUATION_DIVISOR
 const qs_sound::music::RRE_MUSIC_DIR
 const qs_sound::music::RRE_MUSIC_EXTENSIONS
+const qs_sound::music::SND_CD_RATE
+const qs_sound::music::SND_CD_SECTOR
 const qs_sound::sfx::SND_MAX_NAME
 const qs_sound::sfx::SND_MAX_SFX
 enum qs_sound::mixer::Ambient
 enum qs_sound::mixer::ListenerLeaf
 enum qs_sound::mixer::LoopPaint
+enum qs_sound::music::Read
 enum qs_sound::sfx::Loaded
 enum qs_sound::sfx::SoundError
 enum qs_sound::sfx::Width
@@ -56,6 +60,11 @@ field qs_sound::mixer::Start.entnum
 field qs_sound::mixer::Start.fvol
 field qs_sound::mixer::Start.origin
 field qs_sound::mixer::Start.sfx
+field qs_sound::music::CueSheet.file
+field qs_sound::music::CueSheet.tracks
+field qs_sound::music::CueTrack.end
+field qs_sound::music::CueTrack.number
+field qs_sound::music::CueTrack.start
 field qs_sound::music::Track.looping
 field qs_sound::music::Track.number
 fn qs_sound::mixer::Ambient::index
@@ -67,6 +76,8 @@ fn qs_sound::mixer::Mixer::new
 fn qs_sound::mixer::Mixer::paint_channels
 fn qs_sound::mixer::Mixer::painted
 fn qs_sound::mixer::Mixer::precache_ambients
+fn qs_sound::mixer::Mixer::raw_room
+fn qs_sound::mixer::Mixer::raw_samples
 fn qs_sound::mixer::Mixer::set_settings
 fn qs_sound::mixer::Mixer::settings
 fn qs_sound::mixer::Mixer::sound_time
@@ -74,11 +85,24 @@ fn qs_sound::mixer::Mixer::speed
 fn qs_sound::mixer::Mixer::start_sound
 fn qs_sound::mixer::Mixer::static_sound
 fn qs_sound::mixer::Mixer::stop_all
+fn qs_sound::mixer::Mixer::stop_raw
 fn qs_sound::mixer::Mixer::stop_sound
 fn qs_sound::mixer::Mixer::take_messages
 fn qs_sound::mixer::Mixer::total_channels
 fn qs_sound::mixer::Mixer::update
 fn qs_sound::mixer::Random::rand
+fn qs_sound::music::CueSheet::read
+fn qs_sound::music::CueSheet::track
+fn qs_sound::music::Music::new
+fn qs_sound::music::Music::play
+fn qs_sound::music::Music::playing
+fn qs_sound::music::Music::set_paused
+fn qs_sound::music::Music::stop
+fn qs_sound::music::Music::update
+fn qs_sound::music::MusicStream::channels
+fn qs_sound::music::MusicStream::rate
+fn qs_sound::music::MusicStream::read
+fn qs_sound::music::MusicStream::rewind
 fn qs_sound::music::track_files
 fn qs_sound::output::NullOutput::frames
 fn qs_sound::output::Output::write
@@ -112,37 +136,49 @@ struct qs_sound::mixer::Mixer
 struct qs_sound::mixer::MixerSpec
 struct qs_sound::mixer::Settings
 struct qs_sound::mixer::Start
+struct qs_sound::music::CueSheet
+struct qs_sound::music::CueTrack
+struct qs_sound::music::Music
 struct qs_sound::music::Track
 struct qs_sound::output::NullOutput
 struct qs_sound::sfx::SfxId
 struct qs_sound::sfx::SoundData
 struct qs_sound::sfx::SoundTable
 trait qs_sound::mixer::Random
+trait qs_sound::music::MusicStream
 trait qs_sound::output::Output
 type qs_sound::sfx::Reader
 use qs_sound::Ambient = mixer::Ambient
 use qs_sound::Channel = mixer::Channel
+use qs_sound::CueSheet = music::CueSheet
+use qs_sound::CueTrack = music::CueTrack
 use qs_sound::Listener = mixer::Listener
 use qs_sound::ListenerLeaf = mixer::ListenerLeaf
 use qs_sound::Loaded = sfx::Loaded
 use qs_sound::LoopPaint = mixer::LoopPaint
 use qs_sound::Mixer = mixer::Mixer
 use qs_sound::MixerSpec = mixer::MixerSpec
+use qs_sound::Music = music::Music
+use qs_sound::MusicStream = music::MusicStream
 use qs_sound::NullOutput = output::NullOutput
 use qs_sound::Output = output::Output
 use qs_sound::RRE_MUSIC_DIR = music::RRE_MUSIC_DIR
 use qs_sound::RRE_MUSIC_EXTENSIONS = music::RRE_MUSIC_EXTENSIONS
 use qs_sound::Random = mixer::Random
+use qs_sound::Read = music::Read
 use qs_sound::Reader = sfx::Reader
 use qs_sound::SND_AMBIENT_FADE = mixer::SND_AMBIENT_FADE
 use qs_sound::SND_AMBIENT_LEVEL = mixer::SND_AMBIENT_LEVEL
 use qs_sound::SND_AMBIENT_MIN_VOLUME = mixer::SND_AMBIENT_MIN_VOLUME
 use qs_sound::SND_BUFFER_FRAMES = mixer::SND_BUFFER_FRAMES
+use qs_sound::SND_CD_RATE = music::SND_CD_RATE
+use qs_sound::SND_CD_SECTOR = music::SND_CD_SECTOR
 use qs_sound::SND_DEFAULT_VOLUME = mixer::SND_DEFAULT_VOLUME
 use qs_sound::SND_FIRST_STATIC = mixer::SND_FIRST_STATIC
 use qs_sound::SND_MAX_CHANNELS = mixer::SND_MAX_CHANNELS
 use qs_sound::SND_MAX_DYNAMIC_CHANNELS = mixer::SND_MAX_DYNAMIC_CHANNELS
 use qs_sound::SND_MAX_NAME = sfx::SND_MAX_NAME
+use qs_sound::SND_MAX_RAW_SAMPLES = mixer::SND_MAX_RAW_SAMPLES
 use qs_sound::SND_MAX_SFX = sfx::SND_MAX_SFX
 use qs_sound::SND_MIXAHEAD = mixer::SND_MIXAHEAD
 use qs_sound::SND_NOMINAL_CLIP_DIST = mixer::SND_NOMINAL_CLIP_DIST
@@ -170,6 +206,9 @@ variant qs_sound::mixer::ListenerLeaf::NoWorld
 variant qs_sound::mixer::ListenerLeaf::Outside
 variant qs_sound::mixer::LoopPaint::Fixed
 variant qs_sound::mixer::LoopPaint::Id
+variant qs_sound::music::Read::End
+variant qs_sound::music::Read::Failed
+variant qs_sound::music::Read::Samples
 variant qs_sound::sfx::Loaded::Data
 variant qs_sound::sfx::Loaded::Missing
 variant qs_sound::sfx::Loaded::Refused

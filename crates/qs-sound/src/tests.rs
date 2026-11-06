@@ -759,7 +759,7 @@ fn painting_mixes_and_loops() {
     assert_eq!(taken[0], i16::MAX, "clamped");
 }
 
-// spec RRE-3.1: a track's files are music/track<NN>.<ext> for each extension, in order
+// spec RRE-3.4: a track's files are music/track<NN>.<ext> for each extension, in order
 #[test]
 fn track_files_name_the_candidates() {
     assert_eq!(

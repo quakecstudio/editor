@@ -94,6 +94,19 @@ pub enum HudItem {
         /// The character.
         ch: u8,
     },
+    /// The console's background, `gfx/conback.lmp` across the screen with its top at
+    /// `lines - height`, translucent when `lines` is at most three quarters of `height`
+    /// (CON-3.2).
+    ConsoleBack {
+        /// The console's height in pixels.
+        lines: i32,
+        /// The screen's height.
+        height: i32,
+        /// `con_forcedup`: the console up with no game to show (CON-3.1).
+        forced: bool,
+    },
+    /// `Draw_FadeScreen`: the screen darkened, black at alpha 0.8 over it (MENU-1.3).
+    Fade,
     /// A rectangle of a palette colour.
     Fill {
         /// Its left edge.

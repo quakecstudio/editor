@@ -409,7 +409,8 @@ mod tests {
             ]
         );
         let counts: Vec<usize> = upstreams.iter().map(|u| u.copyrights.len()).collect();
-        assert_eq!(counts, [1, 1, 1, 3, 5, 6, 1]);
+        // QuakeSpasm's row lists its three common lines and bgmusic.c's two (docs/porting.md).
+        assert_eq!(counts, [1, 1, 1, 5, 5, 6, 1]);
         assert!(upstreams[4].copyrights.contains(&SPIKE.to_owned()));
         assert!(super::upstreams("## Upstreams\n| `a/b` | `not a copyright` |\n").is_err());
         assert!(super::upstreams("# no table\n").is_err());

@@ -77,7 +77,12 @@ fn run(args: &args::Args) -> Result<(), String> {
         let script = view_script::ViewScript::parse(&text)?;
         // `load` keeps the sound for a view script (VIEWDIFF-1.3).
         let loaded = load::load(args, &script.map, None, None, None)?;
-        return headless::view_script(loaded, &script, &audio);
+        let size = args
+            .view_size
+            .as_deref()
+            .and_then(|values| <[u32; 2]>::try_from(values).ok())
+            .unwrap_or(headless::VIEW_SIZE);
+        return headless::view_script(loaded, &script, &audio, size);
     }
     if args.headless {
         let args = args::Args {

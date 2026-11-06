@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2007-2008 Kristian Duske
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/cmd.c, Cbuf_Execute, Cbuf_InsertText, Cmd_ExecuteString, Cmd_Wait_f, Cmd_Echo_f, Cmd_Alias_f, Cmd_Exec_f, Cmd_StuffCmds_f, Cmd_ForwardToServer
@@ -8,6 +11,7 @@
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_edict.c, ED_Print, ED_PrintEdicts, ED_PrintEdict_f, ED_Count, PR_ValueString
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_exec.c, PR_Profile_f
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/common.c, COM_Path_f
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cmd.c, Cmd_List_f, Cmd_AddCommand
 
 //! The console (PHYS-13): id's command buffer and `Cmd_ExecuteString` for text from the console
 //! or the progs' `localcmd`, with one table of commands: `cmd.c`'s, the settings, the commands
@@ -18,7 +22,8 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::convert::float_to_int;
 
 use crate::host_commands::{Words, atoi, tokenize};
-use crate::world::{HostCommand, RawState as _, World};
+use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
+use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
 /// `VERSION` (`WinQuake/quakedef.h`), which `version` and `status` print.
 const VERSION: &str = "1.09";
@@ -31,12 +36,66 @@ const FORWARDED: [&str; 11] = [
     "god", "notarget", "fly", "noclip", "give", "kill", "pause", "say", "say_team", "tell", "ping",
 ];
 
+/// Every command [`World::execute_console`] runs, its own and the forwarded ones, in name
+/// order, for completion (CON-4.3).
+const COMMANDS: [&str; 37] = [
+    "alias",
+    "begin",
+    "changelevel",
+    "cmd",
+    "cmdlist",
+    "color",
+    "echo",
+    "edict",
+    "edictcount",
+    "edicts",
+    "exec",
+    "fly",
+    "give",
+    "god",
+    "kick",
+    "kill",
+    "load",
+    "map",
+    "name",
+    "noclip",
+    "notarget",
+    "path",
+    "pause",
+    "ping",
+    "prespawn",
+    "profile",
+    "quit",
+    "restart",
+    "save",
+    "say",
+    "say_team",
+    "spawn",
+    "status",
+    "stuffcmds",
+    "tell",
+    "version",
+    "wait",
+];
+
 /// `MOVETYPE_STEP` (`WinQuake/server.h`), which `edictcount` counts.
 const MOVETYPE_STEP: f32 = 4.0;
 
 /// A count one more, as `ED_Count`'s `++`, which an edict count cannot overflow.
 const fn add_one(count: usize) -> usize {
     count.saturating_add(1)
+}
+
+/// Every command's name, the server's and the client's (CON-6.1), in `strcmp` order, as
+/// QuakeSpasm's `Cmd_AddCommand` keeps its list.
+fn command_names() -> Vec<&'static str> {
+    let mut names: Vec<&str> = COMMANDS
+        .iter()
+        .copied()
+        .chain(ClientCommand::ALL.iter().map(|(name, _)| *name))
+        .collect();
+    names.sort_unstable();
+    names
 }
 
 /// What a line of the buffer leaves the rest of the buffer to do.
@@ -85,6 +144,27 @@ impl World {
             .extend_from_slice(text.as_bytes());
     }
 
+    /// `Cmd_CompleteCommand`, then `Cvar_CompleteVariable`: the first command, else the first
+    /// setting, whose name starts with `partial`, in name order; none for an empty `partial`
+    /// (CON-4.3).
+    #[must_use]
+    pub fn complete(&self, partial: &str) -> Option<String> {
+        if partial.is_empty() {
+            return None;
+        }
+        let mut settings: Vec<&str> = SERVER_SETTINGS
+            .iter()
+            .chain(&CLIENT_SETTINGS)
+            .map(|(name, _)| *name)
+            .collect();
+        settings.sort_unstable();
+        command_names()
+            .iter()
+            .chain(&settings)
+            .find(|name| name.starts_with(partial))
+            .map(|name| (*name).to_owned())
+    }
+
     /// The lines the console printed since the last call, each without its line feed; text
     /// after the last line feed waits for the rest of its line.
     pub fn take_console_output(&mut self) -> Vec<Vec<u8>> {
@@ -125,6 +205,30 @@ impl World {
         }
     }
 
+    /// QuakeSpasm's `Cmd_List_f` (CON-6.2): each command whose name starts with the first
+    /// argument, case-sensitively, in name order, then the count.
+    fn cmdlist(&mut self, words: &Words) {
+        let partial = words
+            .argv
+            .get(1)
+            .map(|w| String::from_utf8_lossy(w).into_owned());
+        let mut count = 0_usize;
+        for name in command_names() {
+            if partial
+                .as_ref()
+                .is_some_and(|p| !name.starts_with(p.as_str()))
+            {
+                continue;
+            }
+            self.print(format!("   {name}\n"));
+            count = count.saturating_add(1);
+        }
+        match partial {
+            Some(partial) => self.print(format!("{count} commands beginning with \"{partial}\"\n")),
+            None => self.print(format!("{count} commands\n")),
+        }
+    }
+
     /// `Con_Printf`.
     fn print(&mut self, text: impl AsRef<[u8]>) {
         self.console_out.extend_from_slice(text.as_ref());
@@ -145,8 +249,13 @@ impl World {
                 .map(|w| String::from_utf8_lossy(w).into_owned())
                 .unwrap_or_default()
         };
+        if let Some((_, command)) = ClientCommand::ALL.iter().find(|(n, _)| *n == name) {
+            self.client_commands.push(*command);
+            return Flow::Next;
+        }
         match name.as_str() {
             "wait" => return Flow::Wait,
+            "cmdlist" => self.cmdlist(&words),
             "echo" => self.echo(&words),
             "alias" => self.alias(&words),
             "exec" => self.exec(&words),
