@@ -221,11 +221,7 @@ impl<'a> Compiler<'a> {
                 // error: it is the warning it was, and `-w` silences it. Its headers define
                 // variables without `extern` (d_local.h's `sadjust`), which C compilers merged
                 // as common symbols until GCC 10 and clang 11 stopped: `-fcommon` merges them.
-                command.args([
-                    "-w",
-                    "-Wno-error=implicit-function-declaration",
-                    "-fcommon",
-                ]);
+                command.args(["-w", "-Wno-error=implicit-function-declaration", "-fcommon"]);
             }
             if self.instrument == Instrument::Fuzz {
                 command.args(FUZZ_FLAGS).arg("-DQS_FUZZ");
