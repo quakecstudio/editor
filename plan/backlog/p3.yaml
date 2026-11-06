@@ -326,7 +326,7 @@ issues:
   - P3-04
   - P3-06
   deliverable:
-  - 'tests/engine: headless host scenarios using the open test assets on all three OSes'
+  - 'xtask/src/bridge_client.rs and the CI workflow''s bridge-client step: the headless host driven through the bridge on LibreQuake (the open test assets) on all three OSes, then the rerelease''s QuakeC built by quakec-ide reloaded over the map, stopped at a breakpoint and inspected'
   acceptance:
   - Reload, breakpoint, inspect and set-field scenarios pass on every OS
   - The rerelease QuakeC runs a headless scenario on the open test assets

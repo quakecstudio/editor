@@ -18,7 +18,7 @@ const WITHIN: Duration = Duration::from_secs(20);
 /// The mod the run root links, an empty build output.
 const MOD: &str = "bridgetest";
 
-/// `cargo xtask bridge-client <game root> [--map <name>]`.
+/// `cargo xtask bridge-client <game root> [--map <name>] [--progs <progs.dat>]`.
 #[derive(clap::Parser, Debug)]
 pub(crate) struct Args {
     /// A game root holding `id1`, such as LibreQuake's.
@@ -26,6 +26,11 @@ pub(crate) struct Args {
     /// The map to start on.
     #[arg(long, default_value = "start")]
     map: String,
+    /// A progs, with its `.lno` beside it, to reload over the map and debug, such as the
+    /// rerelease's QuakeC built by `quakec-ide` (P3-17): a breakpoint in its `PlayerPreThink`
+    /// is set, hit, inspected and cleared.
+    #[arg(long)]
+    progs: Option<PathBuf>,
 }
 
 /// Builds the host, runs the suite and reports each step.
@@ -60,7 +65,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         extra: vec!["--headless".to_owned()],
     };
     let mut running = launch(&spec, "cargo xtask bridge-client").map_err(|e| e.to_string())?;
-    let outcome = suite(&mut running.client, &args.map);
+    let outcome = suite(&mut running.client, &args.map, args.progs.as_deref());
     if outcome.is_err() {
         // The host is of no use once a step failed.
         running.child.kill().ok();
@@ -166,7 +171,7 @@ fn screenshots(client: &mut Client) -> Result<(), String> {
 }
 
 /// Every step, each named when it passed; the first that fails stops the suite.
-fn suite(client: &mut Client, map: &str) -> Result<Vec<String>, String> {
+fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<String>, String> {
     let mut steps = Vec::new();
     let loaded = client
         .wait_event("map/loaded", WITHIN)
@@ -329,9 +334,92 @@ fn suite(client: &mut Client, map: &str) -> Result<Vec<String>, String> {
     expect(hit.get("point").is_some(), "pick says where the ray stops")?;
     steps.push("player/spawn_at and pick".to_owned());
 
+    if let Some(progs) = progs {
+        other_progs(client, progs, &mut steps)?;
+    }
+
     client.shutdown().map_err(|e| format!("shutdown: {e}"))?;
     steps.push("shutdown".to_owned());
     Ok(steps)
+}
+
+/// The progs at `progs` reloaded over the map and debugged (P3-17, BRIDGE-4.8): its
+/// `PlayerPreThink`, which runs each frame for the player, stops at a breakpoint set by file
+/// and line, the stack is inspected there, and the breakpoint is cleared.
+fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Result<(), String> {
+    let path = progs.to_str().ok_or("--progs is not Unicode")?;
+    let reloaded = client
+        .request("reload", json!({ "progs": path }))
+        .map_err(|e| format!("reload {path}: {e}"))?;
+    expect(
+        reloaded.get("lost").is_some(),
+        "reload of another progs reports what it migrated and lost",
+    )?;
+    steps.push(format!("reload {}", progs.display()));
+
+    // The first line after `PlayerPreThink`'s header with a statement on it (BRIDGE-4.5).
+    let source = progs
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .map(|project| project.join("client.qc"))
+        .ok_or("--progs is not in a project's build directory")?;
+    let code =
+        std::fs::read_to_string(&source).map_err(|e| format!("{}: {e}", source.display()))?;
+    let header = code
+        .lines()
+        .position(|line| line.contains("PlayerPreThink") && line.contains("void"))
+        .ok_or("client.qc has no PlayerPreThink")?;
+    let mut set = None;
+    for offset in 1..40 {
+        let line = u32::try_from(header.saturating_add(1).saturating_add(offset)).unwrap_or(0);
+        if let Ok(answer) = client.set_breakpoint("client.qc", line) {
+            set = Some(answer);
+            break;
+        }
+    }
+    let set = set.ok_or("no line of PlayerPreThink takes a breakpoint")?;
+    let id = set
+        .get("id")
+        .and_then(Value::as_u64)
+        .ok_or("breakpoint/set gives an id")?;
+    client.take_events();
+    let hit = client
+        .wait_event("breakpoint/hit", WITHIN)
+        .map_err(|e| format!("breakpoint/hit: {e}"))?;
+    let location = hit.params.get("location").cloned().unwrap_or_default();
+    expect(
+        text_of(&location, "function") == "PlayerPreThink"
+            && text_of(&location, "file") == "client.qc",
+        "the breakpoint stops in PlayerPreThink in client.qc",
+    )?;
+    let stack = client
+        .inspect(InspectWhat::Stack)
+        .map_err(|e| e.to_string())?;
+    let frames = stack
+        .get("stack")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    expect(frames > 0, "stopped, the stack has PlayerPreThink's frame")?;
+    client
+        .clear_breakpoint(id)
+        .map_err(|e| format!("breakpoint/clear: {e}"))?;
+    client.take_events();
+    client.resume().map_err(|e| format!("resume: {e}"))?;
+    let running = client
+        .wait_event("state/changed", WITHIN)
+        .map_err(|e| format!("state/changed: {e}"))?;
+    expect(
+        text(&running.params, "state") == "running",
+        "cleared and resumed, the game runs",
+    )?;
+    steps.push("breakpoint/set, hit, inspect the stack and clear in client.qc".to_owned());
+    Ok(())
+}
+
+/// The string `key` of `value`, empty when it is not one.
+fn text_of<'a>(value: &'a Value, key: &str) -> &'a str {
+    value.get(key).and_then(Value::as_str).unwrap_or_default()
 }
 
 fn expect(holds: bool, what: &str) -> Result<(), String> {

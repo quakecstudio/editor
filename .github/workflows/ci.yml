@@ -820,10 +820,15 @@ jobs:
           sudo apt-get install -y --no-install-recommends libasound2-dev mesa-vulkan-drivers
       # P3-06: qs-engine's bridge client against the real preview host, headless, launched
       # through a run root over LibreQuake's id1: a symbolic link, or a junction on Windows,
-      # and a Unix socket, or a named pipe on Windows.
+      # and a Unix socket, or a named pipe on Windows. P3-17: then the rerelease's QuakeC,
+      # built above, reloaded over the map, stopped at a breakpoint and inspected.
       - name: Run the bridge client against the headless preview host
         if: env.CI_PATH == 'full'
-        run: cargo xtask bridge-client "$QS_TEST_ASSETS/librequake-lite"
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          cargo xtask bridge-client "$QS_TEST_ASSETS/librequake-lite" \
+            --progs "$RUNNER_TEMP_DIR/rerelease-cli/build/rerelease-cli/progs.dat"
       # P3-19, SCN-2.5: a scenario played in qs-sim on LibreQuake's start map ten times gives
       # the same result each time, on each OS.
       - name: Play the start scenario ten times
