@@ -439,6 +439,7 @@ dependencies = [
  "qs-mdl",
  "qs-porting-example",
  "qs-vfs",
+ "serde",
 ]
 
 [[package]]

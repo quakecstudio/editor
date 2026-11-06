@@ -19,7 +19,7 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 | `keystroke` | PRIN-5 | 8.33 ms | p99 | [#714](https://github.com/quakecstudio/editor/issues/714) P2-166 | active |
 | `check_after_typing` | PRIN-5 | 100 ms | p95 | [#714](https://github.com/quakecstudio/editor/issues/714) P2-166 | active |
 | `id1_recompile` | PRIN-5 | 200 ms | median | [#67](https://github.com/quakecstudio/editor/issues/67) P2-11 | active |
-| `save_to_game` | ENG-13 | 1 s | p95 | [#100](https://github.com/quakecstudio/editor/issues/100) P3-12 | pending |
+| `save_to_game` | ENG-13 | 1 s | p95 | [#100](https://github.com/quakecstudio/editor/issues/100) P3-12 | active |
 <!-- /perf-budgets -->
 
 - **`open_project_and_type`:** open a 50,000-line QuakeC project in the editor and type the first
@@ -42,6 +42,13 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
   macOS, Windows and Linux**, measured with real windowed engines, not only the headless preview
   host ([#93](https://github.com/quakecstudio/editor/issues/93)). The benchmark needs a display
   and an engine, so it is measured on the reference machines below; the CI runners have neither.
+  With `QS_BENCH_GAME` naming a game root holding `id1`, `cargo xtask bench` builds the release
+  preview host and the benchmark plays a copy of id 1.01's QuakeC on e1m1 in its window. Each
+  iteration makes `id1_recompile`'s edit to `W_FireAxe`, or takes it back, saves, and times
+  `preview.reload` (the build and the reload, BRIDGE-4.8) and a `screenshot`, which the host
+  answers once it has drawn the next frame. Without `QS_BENCH_GAME` the benchmark is a
+  placeholder and the row is judged as pending; on a reference machine it refuses to run
+  without one. ref-mac, GOG install, 2026-11-06: p95 77.04 ms.
 
 ## How the harness works
 

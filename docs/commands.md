@@ -33,6 +33,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
+| [`scenario.run`](#scenariorun) | Builds the open project and plays a scenario file on it in the server simulation, answering whether each assertion held, with the values read, and writing its screenshots beside it. |
 | [`settings.get`](#settingsget) | Gives one setting's value and where it comes from. |
 | [`settings.list`](#settingslist) | Lists every setting with its default, its value and where the value comes from. |
 | [`settings.reset`](#settingsreset) | Removes a setting from the user's or the project's settings file and writes the file. |
@@ -711,6 +712,31 @@ Parameters:
     "path"
   ],
   "title": "OpenProjectParams",
+  "type": "object"
+}
+```
+
+## `scenario.run`
+
+Builds the open project and plays a scenario file on it in the server simulation, answering whether each assertion held, with the values read, and writing its screenshots beside it.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `scenario.run`.",
+  "properties": {
+    "path": {
+      "description": "The scenario file (`docs/spec/scenario.md`).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "ScenarioRunParams",
   "type": "object"
 }
 ```

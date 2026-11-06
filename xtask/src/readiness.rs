@@ -157,6 +157,11 @@ impl Shard {
     pub(crate) fn count(self) -> u64 {
         self.count
     }
+
+    /// Whether the `item`th of a list falls to this shard: every n-th, from the k-th.
+    pub(crate) fn holds(self, item: usize) -> bool {
+        u64::try_from(item).is_ok_and(|item| item.checked_rem(self.count) == Some(self.index))
+    }
 }
 
 impl std::fmt::Display for Shard {

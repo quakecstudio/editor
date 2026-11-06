@@ -3235,6 +3235,7 @@ dependencies = [
  "qc-progs",
  "qc-project",
  "qc-sema",
+ "qs-workbench",
  "quakec-studio",
  "serde_json",
 ]
@@ -3311,6 +3312,7 @@ name = "qs-engine"
 version = "2026.10.0"
 dependencies = [
  "interprocess",
+ "proptest",
  "qs-bridge",
  "qs-install",
  "qs-vfs",
@@ -3425,6 +3427,7 @@ dependencies = [
  "qs-mdl",
  "qs-porting-example",
  "qs-vfs",
+ "serde",
 ]
 
 [[package]]
@@ -3494,9 +3497,12 @@ dependencies = [
  "qc-progs",
  "qc-project",
  "qc-sema",
+ "qs-bsp",
  "qs-commands",
  "qs-engine",
  "qs-install",
+ "qs-sim",
+ "qs-vfs",
  "schemars",
  "serde",
  "serde_json",

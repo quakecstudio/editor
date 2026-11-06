@@ -824,6 +824,13 @@ jobs:
       - name: Run the bridge client against the headless preview host
         if: env.CI_PATH == 'full'
         run: cargo xtask bridge-client "$QS_TEST_ASSETS/librequake-lite"
+      # P3-19, SCN-2.5: a scenario played in qs-sim on LibreQuake's start map ten times gives
+      # the same result each time, on each OS.
+      - name: Play the start scenario ten times
+        if: env.CI_PATH == 'full'
+        run: |
+          cargo xtask scenario xtask/fixtures/scenarios/start.scenario --repeat 10 -- \
+            -basedir "$QS_TEST_ASSETS/librequake-lite"
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: env.CI_PATH == 'full' && github.ref == 'refs/heads/main' && steps.downloads-cache.outputs.cache-hit != 'true'
         with:

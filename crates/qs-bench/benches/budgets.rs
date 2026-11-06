@@ -184,9 +184,101 @@ fn id1_recompile(group: &mut BenchmarkGroup<'_, WallTime>) {
     });
 }
 
-/// Save a QuakeC file to the change visible in a windowed engine (P3-12).
+/// The variable naming a game root holding `id1` (a Steam or GOG install, or LibreQuake's)
+/// that `save_to_game` plays in the windowed preview host; with none, as on the CI runners,
+/// which have no display and no game, the benchmark is a placeholder.
+const GAME_DIR: &str = "QS_BENCH_GAME";
+/// The variable naming the preview host to play in, which `cargo xtask bench` builds and sets
+/// when [`GAME_DIR`] is set.
+const HOST: &str = "QS_PREVIEW_HOST";
+/// The map `save_to_game` plays.
+const MAP: &str = "e1m1";
+/// The size of the screenshot that waits for the next frame drawn: as small as the host takes.
+const SHOT: (u32, u32) = (8, 5);
+
+/// Save a QuakeC file to the change visible in a windowed engine (P3-12, ENG-13).
+///
+/// A copy of id 1.01's QuakeC is the open project, playing [`MAP`] in the windowed preview host
+/// on the game [`GAME_DIR`] names. Each iteration makes the edit `id1_recompile` makes to
+/// `W_FireAxe`, or takes it back, saves the file, and times `preview.reload`, which builds the
+/// project and reloads its progs in the running game (BRIDGE-4.8), and a `screenshot`, which the
+/// host answers once it has drawn the next frame (BRIDGE-4.9): compile, reload and the next
+/// rendered frame, from the save.
 fn save_to_game(group: &mut BenchmarkGroup<'_, WallTime>) {
-    placeholder(group, "save_to_game");
+    let Some(game) = std::env::var_os(GAME_DIR).map(PathBuf::from) else {
+        // A reference machine holds the budget (`docs/perf-budgets.md`), so it measures it.
+        let host = std::env::var("QS_BENCH_HOST").unwrap_or_default();
+        assert!(
+            !host.starts_with("ref-"),
+            "{host} is a reference machine: set {GAME_DIR} to a game root for save_to_game"
+        );
+        placeholder(group, "save_to_game");
+        return;
+    };
+    let source = PathBuf::from(std::env::var_os(ID1_DIR).unwrap_or_else(|| {
+        panic!("{ID1_DIR} is not set: run the benchmarks through cargo xtask bench")
+    }));
+    let host = std::env::var_os(HOST).map_or_else(
+        || panic!("{HOST} is not set: cargo xtask bench sets it with {GAME_DIR}"),
+        PathBuf::from,
+    );
+    let project = std::env::temp_dir().join(format!("qs-bench-save-{}", std::process::id()));
+    if project.exists() {
+        fs::remove_dir_all(&project).expect("the old copy is removed");
+    }
+    fs::create_dir_all(&project).expect("the project directory is made");
+    for entry in fs::read_dir(&source).expect("id 1.01's directory reads") {
+        let path = entry.expect("an entry reads").path();
+        if path.is_file() {
+            let name = path.file_name().expect("a file has a name");
+            fs::copy(&path, project.join(name)).expect("an id 1.01 file copies");
+        }
+    }
+    let edited = project.join(EDITED_FILE);
+    let original = fs::read_to_string(&edited).expect("weapons.qc reads");
+    assert!(
+        original.contains(EDITED_LINE),
+        "W_FireAxe starts as expected"
+    );
+    let variants = [original.replacen(EDITED_LINE, EDITED_TO, 1), original];
+    let mut workbench =
+        qs_workbench::Workbench::new(qs_workbench::FsLoader, qs_workbench::Config::default());
+    workbench.open_project(&project).expect("the copy opens");
+    let mut preview = qs_workbench::Preview::new(qs_workbench::PreviewConfig {
+        host: Some(host),
+        app: PathBuf::new(),
+        game: Some(game),
+        extra: vec!["--nosound".to_owned()],
+    });
+    preview
+        .play(&mut workbench, Some(MAP.to_owned()))
+        .expect("the game plays in the windowed host");
+    let mut turns = variants.iter().cycle();
+    group.bench_function("save_to_game", |bencher| {
+        bencher.iter_custom(|iterations| {
+            let mut spent = Duration::ZERO;
+            for _ in 0..iterations {
+                let text = turns.next().expect("a cycle never ends");
+                workbench
+                    .update(&edited, text.as_bytes().to_vec())
+                    .expect("the edit is taken");
+                workbench.save(&edited).expect("the file saves");
+                let start = std::time::Instant::now();
+                preview
+                    .reload(&mut workbench)
+                    .expect("the game reloads")
+                    .expect("a game runs");
+                preview
+                    .client()
+                    .expect("a game runs")
+                    .screenshot(Some(SHOT))
+                    .expect("the next frame is drawn");
+                spent = spent.saturating_add(start.elapsed());
+            }
+            spent
+        });
+    });
+    preview.stop();
 }
 
 /// The frame that checks the project again once typing pauses (P2-166): one character typed,

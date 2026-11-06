@@ -11,8 +11,7 @@
 
 use std::time::{Duration, Instant};
 
-use eframe::egui;
-use eframe::egui_wgpu::{self, ScreenDescriptor, wgpu};
+use eframe::egui_wgpu::wgpu;
 use qs_bsp::Bsp;
 use qs_client::Client;
 use qs_render::{MapMesh, MapRenderer, Offscreen, Play};
@@ -22,7 +21,7 @@ use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Screen};
 use crate::load::{Acted, Describer, Loaded, Rand, act};
-use crate::screenshot::Frame;
+use crate::screenshot::{Drawer, Frame};
 use crate::window::{CONWIDTH, FRAME, frametime_f32, screen_height};
 
 /// The view's width per unit of height `pick` assumes: the window's first size, 1280 by 800.
@@ -35,10 +34,7 @@ const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// Runs the game of `loaded` until the bridge's client stops the host or goes away.
 pub(crate) fn run(args: &Args, loaded: Loaded, mut bridge: Bridge) -> Result<(), String> {
     let mut offscreen = match Offscreen::new(DEPTH) {
-        Ok(offscreen) => Some(Drawer {
-            offscreen,
-            ctx: egui::Context::default(),
-        }),
+        Ok(offscreen) => Some(Drawer::new(offscreen)),
         Err(error) => {
             tracing::warn!(%error, "no screenshots");
             None
@@ -80,12 +76,6 @@ pub(crate) fn run(args: &Args, loaded: Loaded, mut bridge: Bridge) -> Result<(),
     }
 }
 
-/// The offscreen device and the egui context a frame is laid out in.
-struct Drawer {
-    offscreen: Offscreen,
-    ctx: egui::Context,
-}
-
 /// What a headless host keeps of a loaded map.
 struct Headless {
     game: Game,
@@ -115,7 +105,7 @@ impl Headless {
         } = loaded;
         match drawer {
             Some(drawer) => {
-                let state = drawer.offscreen.state();
+                let state = drawer.offscreen().state();
                 let renderer = MapRenderer::new(
                     &state.device,
                     &state.queue,
@@ -155,42 +145,7 @@ impl Headless {
         let callback = self
             .play
             .frame(&scene, &hud, &self.bsp, &mut self.mesh, ASPECT);
-        let [width, height] = SIZE;
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(
-                    f32::from(u16::try_from(width).unwrap_or(1280)),
-                    f32::from(u16::try_from(height).unwrap_or(800)),
-                ),
-            )),
-            ..egui::RawInput::default()
-        };
-        let mut callback = Some(callback);
-        let mut output = drawer.ctx.run_ui(input, |ui| {
-            if let Some(callback) = callback.take() {
-                let rect = ui.max_rect();
-                ui.painter()
-                    .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
-            }
-        });
-        drawer.offscreen.update_textures(&mut output.textures_delta);
-        let primitives = drawer
-            .ctx
-            .tessellate(output.shapes, output.pixels_per_point);
-        let screen = ScreenDescriptor {
-            pixels_per_point: output.pixels_per_point,
-            size_in_pixels: SIZE,
-        };
-        let pixels = drawer
-            .offscreen
-            .render(&primitives, &screen)
-            .map_err(|error| error.to_string())?;
-        Ok(Frame {
-            width: pixels.width,
-            height: pixels.height,
-            rgba: pixels.rgba,
-        })
+        drawer.draw(callback, SIZE)
     }
 
     /// The client's frame: it reads what the server wrote, and the eye `pick` looks from is

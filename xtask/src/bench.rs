@@ -181,10 +181,11 @@ pub(crate) fn main(root: &Path, options: &Args) -> Result<bool, String> {
     let criterion_home = root.join(CRITERION_HOME);
     let id1 = fetch_id1(root)?;
     run_benchmarks(root, &criterion_home, &id1)?;
+    let measured = std::env::var_os(GAME_DIR).is_some();
     let mut results = Vec::new();
     for budget in &budgets {
         let sample = read_sample(&criterion_home, &budget.name)?;
-        results.push(summarise(budget, &sample)?);
+        results.push(summarise(&judged_here(budget, measured), &sample)?);
     }
     let mut history = load_history(&history_path)?;
     let host = host();
@@ -315,7 +316,8 @@ fn run_benchmarks(root: &Path, criterion_home: &Path, id1: &Path) -> Result<(), 
             .map_err(|error| format!("cannot clear {}: {error}", criterion_home.display()))?;
     }
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let status = Command::new(cargo)
+    let mut bench = Command::new(&cargo);
+    bench
         .args([
             "bench",
             "--locked",
@@ -326,7 +328,30 @@ fn run_benchmarks(root: &Path, criterion_home: &Path, id1: &Path) -> Result<(), 
         ])
         .env("CRITERION_HOME", criterion_home)
         .env("QS_BENCH_ID1", id1)
-        .current_dir(root)
+        .current_dir(root);
+    // save_to_game plays in the windowed preview host when QS_BENCH_GAME names a game: the
+    // host is built as the app ships it and named to the benchmark.
+    if std::env::var_os("QS_BENCH_GAME").is_some() {
+        let built = Command::new(&cargo)
+            .args([
+                "build",
+                "--locked",
+                "--release",
+                "--package",
+                "preview-host",
+            ])
+            .current_dir(root)
+            .status()
+            .map_err(|error| format!("cannot build the preview host: {error}"))?;
+        if !built.success() {
+            return Err(format!("cargo build of the preview host failed: {built}"));
+        }
+        let host = root
+            .join("target/release")
+            .join(format!("preview-host{}", std::env::consts::EXE_SUFFIX));
+        bench.env("QS_PREVIEW_HOST", host);
+    }
+    let status = bench
         .status()
         .map_err(|error| format!("cannot run cargo bench: {error}"))?;
     if status.success() {
@@ -442,6 +467,23 @@ enum Machine {
     Reference,
     /// Any other host.
     Other,
+}
+
+/// The variable naming the game `save_to_game` plays in the windowed preview host.
+const GAME_DIR: &str = "QS_BENCH_GAME";
+/// The budgets measured only with a game and a display, which the CI runners have not: with no
+/// [`GAME_DIR`] their benchmark is a placeholder.
+const GAME_BUDGETS: [&str; 1] = ["save_to_game"];
+
+/// `budget` as this run judges it: a budget that needs a game is pending when none is set,
+/// since its benchmark measured a placeholder. A reference machine always sets one: the
+/// benchmark fails there without it.
+fn judged_here(budget: &Budget, game: bool) -> Budget {
+    let mut budget = budget.clone();
+    if !game && GAME_BUDGETS.contains(&budget.name.as_str()) {
+        budget.status = Status::Pending;
+    }
+    budget
 }
 
 /// The reference machines' host keys.

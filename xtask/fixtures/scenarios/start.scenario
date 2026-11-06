@@ -1,0 +1,20 @@
+# A scenario on the start map of the game directory the command line names: LibreQuake's in CI
+# (`cargo xtask scenario xtask/fixtures/scenarios/start.scenario --repeat 10 -- -basedir
+# "$QS_TEST_ASSETS/librequake-lite"`). It plays ten times on each OS and must give the same
+# result each time (SCN-2.5, P3-19).
+map start
+seed 1996
+frames 4
+expect field 0 classname == "worldspawn"
+expect field player classname == "player"
+expect field player health == 100
+move 0 90 0 200 0 0 0 0
+frames 72
+expect global time > 1
+move 0 90 0 0 350 0 2 0
+frames 36
+move 10 180 0 200 0 0 1 2
+frames 72
+expect field player health == 100
+expect field player weapon > 0
+screenshot walked

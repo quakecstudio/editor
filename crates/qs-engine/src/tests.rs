@@ -3,7 +3,9 @@
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
-    reason = "test code: a failed unwrap or index is a failed test"
+    clippy::arithmetic_side_effects,
+    reason = "test code: a failed unwrap or index is a failed test; the reference encoder's \
+              shifts are of small counts"
 )]
 
 use std::fs;
@@ -23,7 +25,7 @@ use serde_json::{Value, json};
 
 use crate::{
     Client, ClientError, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRoot, RunRootError,
-    StepKind, WindowPlacement, host_command, locate_host, prepare_run_root,
+    StepKind, WindowPlacement, base64_decode, host_command, locate_host, prepare_run_root,
 };
 
 /// A folder removed when the test ends.
@@ -462,4 +464,60 @@ fn polling_takes_the_events_without_waiting() {
         result = client.poll_events();
     }
     assert!(matches!(result, Err(ClientError::Closed)), "{result:?}");
+}
+
+/// `bytes` in base64 as RFC 4648 section 4 writes it, `=` padded: the reference the decoder is
+/// checked against.
+fn base64_encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let word = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for n in 0..4 {
+            if n <= chunk.len() {
+                let index = (word >> (18 - 6 * n)) & 63;
+                out.push(char::from(ALPHABET[index as usize]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+// No spec statement: a screenshot's PNG is read from RFC 4648's base64, its test vectors
+// decoding to their text, and text that is not base64 is refused
+#[test]
+fn base64_decodes_the_rfc_vectors() {
+    for (text, bytes) in [
+        ("", ""),
+        ("Zg==", "f"),
+        ("Zm8=", "fo"),
+        ("Zm9v", "foo"),
+        ("Zm9vYg==", "foob"),
+        ("Zm9vYmE=", "fooba"),
+        ("Zm9vYmFy", "foobar"),
+    ] {
+        assert_eq!(
+            base64_decode(text).as_deref(),
+            Some(bytes.as_bytes()),
+            "{text}"
+        );
+    }
+    for bad in ["Zg=", "Z===", "Zg==Zm9v", "Zm9!", "Zm9", "===="] {
+        assert_eq!(base64_decode(bad), None, "{bad}");
+    }
+}
+
+proptest::proptest! {
+    // No spec statement: whatever bytes are encoded decode back
+    #[test]
+    fn base64_round_trips(bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..300)) {
+        proptest::prop_assert_eq!(base64_decode(&base64_encode(&bytes)), Some(bytes));
+    }
 }

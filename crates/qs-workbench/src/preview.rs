@@ -27,6 +27,7 @@ use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
 pub mod debug;
 pub mod dock;
 pub mod entities;
+pub mod scenario;
 
 use debug::{Debugger, Location, StopReason};
 use dock::DockFrame;
@@ -851,6 +852,8 @@ pub const WATCH: &str = "preview.watch";
 pub const UNWATCH: &str = "preview.unwatch";
 /// The id of the command that docks the game's window beside the IDE's.
 pub const DOCK: &str = "preview.dock";
+/// The id of the command that plays a scenario file (SCN-2.6).
+pub const SCENARIO_RUN: &str = "scenario.run";
 /// The id of the command that steps the stopped game by a statement, into, over or out.
 pub const STEP_BY: &str = "preview.step_by";
 
@@ -1289,7 +1292,38 @@ impl<C: HasPreview + 'static> Command<C> for ReloadCommand {
     }
 }
 
-/// Registers the `preview.*` commands.
+/// The parameters of `scenario.run`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioRunParams {
+    /// The scenario file (`docs/spec/scenario.md`).
+    pub path: PathBuf,
+}
+
+/// `scenario.run`: builds the open project and plays a scenario on its program (SCN-2.6).
+struct ScenarioRunCommand;
+
+impl<C: HasPreview + 'static> Command<C> for ScenarioRunCommand {
+    const ID: &'static str = SCENARIO_RUN;
+    const SUMMARY: &'static str = "Builds the open project and plays a scenario file on it in \
+        the server simulation, answering whether each assertion held, with the values read, and \
+        writing its screenshots beside it.";
+    type Params = ScenarioRunParams;
+    type Output = scenario::ScenarioRun;
+    type Error = scenario::ScenarioRunError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        ScenarioRunParams { path }: ScenarioRunParams,
+    ) -> Result<Outcome<scenario::ScenarioRun, C>, scenario::ScenarioRunError> {
+        let (workbench, preview) = context.workbench_and_preview();
+        let ran = preview.run_scenario(workbench, &path)?;
+        Ok(Outcome::outside_history(ran))
+    }
+}
+
+/// Registers the `preview.*` commands and `scenario.run`.
 ///
 /// # Errors
 ///
@@ -1305,6 +1339,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(ControlCommand::<StopControl>(core::marker::PhantomData))?;
     registry.register(ControlCommand::<PollControl>(core::marker::PhantomData))?;
     registry.register(ReloadCommand)?;
+    registry.register(ScenarioRunCommand)?;
     registry.register(SelectCommand)?;
     registry.register(PickCommand)?;
     registry.register(SetFieldCommand)?;

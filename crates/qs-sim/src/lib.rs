@@ -17,6 +17,7 @@ mod messages;
 mod movement;
 mod physics;
 pub mod rerelease;
+pub mod scenario;
 mod settings;
 pub mod spawn;
 mod world;

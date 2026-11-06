@@ -7,7 +7,9 @@
 
 use qs_sim::{NamedValue, QcValue, State, UserCmd};
 
-use super::{Route, Step, differences, on_map};
+use qs_sim::scenario::{Scenario, Step};
+
+use super::{differences, on_map};
 
 fn named(name: &str, value: QcValue) -> NamedValue {
     NamedValue {
@@ -16,11 +18,12 @@ fn named(name: &str, value: QcValue) -> NamedValue {
     }
 }
 
-// spec DIFF-16.1: a route is read as the engine oracle reads its script
+// spec DIFF-16.1: a route is read as the engine oracle reads its script, as a scenario
+// (SCN-1.2)
 // spec DIFF-16.6: a console line is a step of its own, its text as written
 #[test]
 fn a_route_reads_as_the_oracle_reads_it() {
-    let route = Route::parse(
+    let route = Scenario::parse(
         "# a comment\nengine -nosound\nmap start\nframetime 0.02\nmove 0 90 0 200 -350 0 1 2\n\
          frames 3\ncmd god\nconsole alias a \"sv_gravity 1\"; a\n",
     )
@@ -44,12 +47,12 @@ fn a_route_reads_as_the_oracle_reads_it() {
             Step::Console("alias a \"sv_gravity 1\"; a".to_owned()),
         ]
     );
-    assert!(Route::parse("frames 1\n").is_err(), "no map");
-    assert!(Route::parse("map a\nframes 0\n").is_err());
-    assert!(Route::parse("map a\nmove 1 2 3\n").is_err());
-    assert!(Route::parse("map a\nmove 0 0 0 40000 0 0 0 0\n").is_err());
-    assert!(Route::parse("map a\nframetime 2\n").is_err());
-    assert!(Route::parse("map a\nfly\n").is_err());
+    assert!(Scenario::parse("frames 1\n").is_err(), "no map");
+    assert!(Scenario::parse("map a\nframes 0\n").is_err());
+    assert!(Scenario::parse("map a\nmove 1 2 3\n").is_err());
+    assert!(Scenario::parse("map a\nmove 0 0 0 40000 0 0 0 0\n").is_err());
+    assert!(Scenario::parse("map a\nframetime 2\n").is_err());
+    assert!(Scenario::parse("map a\nfly\n").is_err());
 }
 
 // spec DIFF-16.3, DIFF-16.4: a frame's differences are named with both values, floats by
@@ -92,7 +95,7 @@ fn the_first_difference_is_named() {
 fn a_route_on_another_map_replaces_its_map_line() {
     let text = "# start\nmap start\nframes 2\n";
     assert_eq!(on_map(text, "e1m1"), "# start\nmap e1m1\nframes 2\n");
-    let route = Route::parse(&on_map(text, "dm3")).unwrap();
+    let route = Scenario::parse(&on_map(text, "dm3")).unwrap();
     assert_eq!(route.map, "dm3");
     assert_eq!(route.steps, [Step::Frames(2)]);
 }

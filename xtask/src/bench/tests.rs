@@ -665,3 +665,24 @@ fn only_a_reference_machine_judges_the_budget() {
     );
     assert!(evaluate(&[over], None, Machine::Other).failures.is_empty());
 }
+
+// No spec statement: a budget that needs a game is judged only by a run that played one; any
+// other budget, and that one with a game, keeps its status
+#[test]
+fn a_game_budget_is_pending_without_a_game() {
+    let row = |name: &str| Budget {
+        name: name.to_owned(),
+        budget_ns: 1e9,
+        statistic: Statistic::P95,
+        status: Status::Active,
+    };
+    assert_eq!(
+        judged_here(&row("save_to_game"), false).status,
+        Status::Pending
+    );
+    assert_eq!(
+        judged_here(&row("save_to_game"), true).status,
+        Status::Active
+    );
+    assert_eq!(judged_here(&row("keystroke"), false).status, Status::Active);
+}

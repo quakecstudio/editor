@@ -16,7 +16,7 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use qs_bsp::Bsp;
 use qs_client::Client;
-use qs_render::{Camera, MapMesh, MapRenderer, Play, View};
+use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
 use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
 use crate::args::Args;
@@ -25,7 +25,7 @@ use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
 use crate::load::{Acted, Describer, Loaded, Rand, act};
-use crate::screenshot::Frame;
+use crate::screenshot::Drawer;
 
 /// Map units a second walking, and running with Shift.
 const SPEEDS: [f32; 2] = [320.0, 960.0];
@@ -122,7 +122,13 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
             if wayland {
                 game.set_screen(Screen::FixedWindow);
             }
+            // Screenshots are drawn offscreen on the window's own device (BRIDGE-4.9).
+            let drawer = Some(Drawer::new(Offscreen::from_state(
+                state.clone(),
+                wgpu::TextureFormat::Depth32Float,
+            )));
             Ok(Box::new(Viewer {
+                drawer,
                 args,
                 map,
                 mesh,
@@ -172,6 +178,8 @@ struct Viewer {
     describer: Describer,
     rand: Rand,
     fly: bool,
+    /// Draws `screenshot`'s frames on the window's device.
+    drawer: Option<Drawer>,
     /// Whether the window holds the mouse.
     pointer: Pointer,
     /// The placement applied last frame, whose result is logged this one.
@@ -205,7 +213,6 @@ impl eframe::App for Viewer {
         let rect = ui.max_rect();
         let response = ui.allocate_rect(rect, egui::Sense::click());
         self.hold_pointer(ui, response.clicked());
-        self.take_screenshot(ui);
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
         if self.fly {
@@ -302,6 +309,26 @@ impl eframe::App for Viewer {
             .draws
             .len()
             .saturating_add(callback.sprites.draws.len());
+        if self.game.wants_screenshot() {
+            // BRIDGE-4.9: the frame drawn again offscreen at the window's size, from the same
+            // callback, on the window's device.
+            let pixels = ui.ctx().pixels_per_point();
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a window's size in pixels, rounded, a few thousand at most"
+            )]
+            let size = [rect.width(), rect.height()].map(|n| (n * pixels).round().max(1.0) as u32);
+            match self
+                .drawer
+                .as_mut()
+                .map(|drawer| drawer.draw(callback.clone(), size))
+            {
+                Some(Ok(frame)) => self.game.screenshot_taken(&frame),
+                Some(Err(why)) => self.game.screenshot_failed(&why),
+                None => self.game.screenshot_failed("no GPU device"),
+            }
+        }
         ui.painter()
             .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
         // egui's fonts are not bundled (their licenses are outside deny.toml's), so the stats
@@ -420,30 +447,8 @@ impl Viewer {
             place(ui.ctx(), placement);
             self.placed = Some(placement);
         }
-        if self.game.wants_screenshot() {
-            ui.ctx()
-                .send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
-        }
         if !running {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-        }
-    }
-
-    /// Answers the waiting `screenshot`s with the frame drawn last, once a frame, before
-    /// any new request is read.
-    fn take_screenshot(&mut self, ui: &egui::Ui) {
-        let shot = ui.input(|input| {
-            input.events.iter().find_map(|event| match event {
-                egui::Event::Screenshot { image, .. } => Some(Frame {
-                    width: u32::try_from(image.size[0]).unwrap_or(0),
-                    height: u32::try_from(image.size[1]).unwrap_or(0),
-                    rgba: image.as_raw().to_vec(),
-                }),
-                _ => None,
-            })
-        });
-        if let Some(frame) = shot {
-            self.game.screenshot_taken(&frame);
         }
     }
 

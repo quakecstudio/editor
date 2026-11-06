@@ -122,6 +122,7 @@ mod project_corpus;
 mod ratchet;
 mod readiness;
 mod repo;
+mod scenario;
 mod sema_corpus;
 mod sim_diff;
 mod test_code;
@@ -180,6 +181,8 @@ enum Task {
     FteqccCoverage(fteqcc_coverage::Args),
     /// The FTEQCC corpus mods' full-dialect classes.
     FteqccFullCoverage(fteqcc_full_coverage::Args),
+    /// A scenario played in qs-sim on a game, repeated, each result the same (SCN-2.5).
+    Scenario(scenario::Args),
     /// The server simulation differential: qs-sim against id's server on a route.
     SimDiff(sim_diff::Args),
     /// Every module parses and resolves under the FTEQCC profile.
@@ -260,6 +263,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::Ratchet(args) => ("ratchet", ratchet::main(root, args)),
         Task::Readiness(args) => ("readiness", readiness::main(root, args)),
         Task::SemaCorpus(args) => ("sema-corpus", sema_corpus::main(root, args)),
+        Task::Scenario(args) => ("scenario", scenario::main(root, args)),
         Task::SimDiff(args) => ("sim-diff", sim_diff::main(root, args)),
         Task::Adr => return print_outcome("adr", adr::check(root)),
         Task::Attribution => return print_outcome("attribution", attribution::run(root)),

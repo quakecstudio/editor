@@ -18,5 +18,9 @@ qs-vfs = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
 
+[dev-dependencies]
+# The base64 decoder's round trip.
+proptest = { workspace = true, features = ["std"] }
+
 [lints]
 workspace = true

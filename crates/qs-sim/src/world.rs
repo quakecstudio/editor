@@ -155,6 +155,9 @@ pub struct LoadOptions {
     /// The search path's elements as the engine names them, most important first, for the
     /// console's `path` (PHYS-13.7).
     pub search_path: Vec<String>,
+    /// The state the random source starts at in a new game, a scenario's `seed` (SCN-1.3);
+    /// `None` for MOVE-6.1's 1. A level carrying the last one's host state keeps its source.
+    pub seed: Option<u32>,
 }
 
 /// What lives in id's engine for the whole process, not one level: the C library's random
@@ -244,8 +247,9 @@ impl World {
         let machine =
             Machine::new(progs, MAXCLIENTS).map_err(|e| WorldError::Progs(e.to_string()))?;
         let submodels = bsp.models.len().saturating_sub(1);
-        // MOVE-6.1: the random source starts at state 1.
-        let mut engine = MockEngine::new(map, submodels, RANDOM_SEED);
+        // MOVE-6.1: the random source starts at state 1, or at a scenario's seed (SCN-1.3).
+        let seed = options.seed.unwrap_or(RANDOM_SEED);
+        let mut engine = MockEngine::new(map, submodels, seed);
         let aliases = options
             .host
             .as_ref()
