@@ -149,6 +149,9 @@ pub const LIMIT_MAX_MODELS: usize = 256;
 pub const VKQUAKE_MAX_SOUNDS: usize = 2048;
 /// vkQuake's `MAX_MODELS` (BUILTIN-18.3).
 pub const VKQUAKE_MAX_MODELS: usize = 8192;
+/// vkQuake's runaway count in LIMIT-4.3's terms: a run executes at most 0x1000000 statements
+/// (BUILTIN-18.26).
+pub const VKQUAKE_RUNAWAY: u32 = 0x0100_0001;
 
 /// What a builtin number the profile's dispatch does not implement does.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -180,6 +183,16 @@ impl EngineProfile {
         match self {
             Self::Id => Some(qc_vm::LIMIT_NUM_BUILTINS),
             Self::VkQuake => None,
+        }
+    }
+
+    /// The count each run's runaway counter starts from (LIMIT-4.3): id's
+    /// [`qc_vm::LIMIT_RUNAWAY`], or vkQuake's [`VKQUAKE_RUNAWAY`] (BUILTIN-18.26).
+    #[must_use]
+    pub const fn runaway(self) -> u32 {
+        match self {
+            Self::Id => qc_vm::LIMIT_RUNAWAY,
+            Self::VkQuake => VKQUAKE_RUNAWAY,
         }
     }
 

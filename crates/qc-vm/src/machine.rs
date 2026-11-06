@@ -67,6 +67,9 @@ pub struct Machine {
     /// and cleared at the start of each run (VM-2.3). This VM traces every statement through
     /// its own hook, so the flag changes nothing observable (DIFF-6.7).
     pub(crate) trace_flag: bool,
+    /// The count each run's runaway counter starts from (LIMIT-4.1, LIMIT-4.3): id's
+    /// [`LIMIT_RUNAWAY`](crate::LIMIT_RUNAWAY) unless the engine's is set.
+    pub(crate) runaway: u32,
 }
 
 // Written out so that `clone_from` copies into the machine's own allocations: the compiler
@@ -83,6 +86,7 @@ impl Clone for Machine {
             xstatement: 0,
             argc: 0,
             trace_flag: false,
+            runaway: crate::LIMIT_RUNAWAY,
         };
         machine.clone_from(self);
         machine
@@ -99,6 +103,7 @@ impl Clone for Machine {
             xstatement,
             argc,
             trace_flag,
+            runaway,
         } = source;
         self.globals.clone_from(globals);
         self.edicts.clone_from(edicts);
@@ -109,6 +114,7 @@ impl Clone for Machine {
         self.xstatement = *xstatement;
         self.argc = *argc;
         self.trace_flag = *trace_flag;
+        self.runaway = *runaway;
     }
 }
 
@@ -138,7 +144,15 @@ impl Machine {
             xstatement: 0,
             argc: 0,
             trace_flag: false,
+            runaway: crate::LIMIT_RUNAWAY,
         })
+    }
+
+    /// Sets the count each later run's runaway counter starts from, an engine's limit in place
+    /// of id's [`LIMIT_RUNAWAY`](crate::LIMIT_RUNAWAY) (LIMIT-4.3): a run executes at most one
+    /// statement fewer than `count`. A `count` of 0 is taken as 1, so no statement runs.
+    pub const fn set_runaway(&mut self, count: u32) {
+        self.runaway = if count == 0 { 1 } else { count };
     }
 
     /// The globals, slots 0 to `numglobals - 1`, without the slack past them (VM-1.5).

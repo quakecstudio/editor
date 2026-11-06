@@ -4,8 +4,8 @@
 //! family of cases, and the line above it cites the statements it pins.
 
 use super::{
-    Arg, Case, Check, Input, Program, RETURN, Val, WORLDSPAWN, Want, field, global, raw_scenario,
-    scenario, scenario_with_map, ty,
+    Arg, Case, Check, Input, PARMS, Program, RETURN, Val, WORLDSPAWN, Want, field, global,
+    raw_scenario, scenario, scenario_with_map, ty,
 };
 
 /// Every case, in the order `cargo xtask oracles` runs them.
@@ -25,6 +25,8 @@ pub(super) fn all() -> Vec<Case> {
         entities_file(),
         default_entities(),
         input_lines(),
+        command_lines(),
+        command_without_a_parser(),
         engine_state(),
         precache_lists(),
         world_fields(),
@@ -35,6 +37,7 @@ pub(super) fn all() -> Vec<Case> {
     ];
     cases.extend(skill_is_rounded_and_clamped());
     cases.extend(refusals());
+    cases.extend(command_refusals());
     cases.push(last_line_without_a_line_feed());
     cases.push(relative_scenario_path());
     cases.extend(refused_progs());
@@ -388,6 +391,60 @@ fn input_lines() -> Case {
             Want::Field(1, field::IMPULSE, f(255.0)),
         ]),
     ]))
+}
+
+// spec DIFF-2.10, DIFF-4.4: each `command` line runs `SV_ParseClientCommand` at the start of its
+// frame, after the inputs and before `StartFrame`, with `PARM0` an engine string of its words
+// joined by one space, `time` the clock and `self` the client; one starting `spawn`, `begin` or
+// `prespawn` in any case runs nothing.
+fn command_lines() -> Case {
+    let mut p = Program::new();
+    let parse = p.func("SV_ParseClientCommand", &done(Vec::new()));
+    let start = start_frame(&mut p, Vec::new());
+    let parm0 = PARMS.first().copied().unwrap_or_default();
+    Case::new(
+        "command-lines",
+        p,
+        scenario(
+            "maxclients 2\nclients 2\nframes 2\ncommand 1 1 say  hi\ncommand 1 2 SPAWN x\n\
+             command 2 1 Begin\ncommand 2 2 prespawnx\ncommand 2 1 spaw\ncommand 2 2 begi\n",
+        ),
+    )
+    .check(Check::Seq(vec![
+        Want::All(vec![
+            Want::Run(parse),
+            Want::Global(parm0, Val::EngineText("say hi")),
+            Want::Global(global::SELF, Val::Entity(1)),
+        ]),
+        // Frame 1's StartFrame set `time` to 1.2, so frame 2's command changes it to 1.3; the
+        // clients entering set it to 1.2 before frame 1.
+        Want::Run(start),
+        Want::All(vec![
+            Want::Run(parse),
+            Want::Global(parm0, Val::EngineText("spaw")),
+            Want::Global(global::TIME, f(1.3)),
+        ]),
+        Want::All(vec![
+            Want::Run(parse),
+            Want::Global(parm0, Val::EngineText("begi")),
+            Want::Global(global::SELF, Val::Entity(2)),
+        ]),
+        Want::Run(start),
+    ]))
+    .check(Check::Count(Want::Run(parse), 3))
+}
+
+// spec DIFF-4.4: a progs without `SV_ParseClientCommand` runs nothing for a command.
+fn command_without_a_parser() -> Case {
+    let mut p = Program::new();
+    let start = start_frame(&mut p, Vec::new());
+    Case::new(
+        "command-without-a-parser",
+        p,
+        scenario("clients 1\nframes 1\ncommand 1 1 say hi\n"),
+    )
+    .check(Check::Never(Want::String("say hi")))
+    .check(Check::Count(Want::Run(start), 3))
 }
 
 // spec DIFF-3.2: `deathmatch` becomes 0 when `coop` is not, the clock is 1.0 when the map
@@ -752,6 +809,50 @@ fn refusals() -> Vec<Case> {
         .check(Check::Exit(2, "cannot read the entities")),
     );
     cases
+}
+
+// spec DIFF-2.10: a command with no word, or a frame or edict out of range, is refused.
+// spec DIFF-2.9: a command's frame after the last frame, or edict not a client that enters, is
+// refused too, with exit status 2 and no trace.
+fn command_refusals() -> Vec<Case> {
+    let refused: [(&str, &str, &'static str); 6] = [
+        (
+            "command-no-words",
+            "clients 1\ncommand 1 1\n",
+            "command takes",
+        ),
+        (
+            "command-frame-zero",
+            "clients 1\ncommand 0 1 say\n",
+            "command takes",
+        ),
+        (
+            "command-edict-zero",
+            "clients 1\ncommand 1 0 say\n",
+            "an edict from 1",
+        ),
+        (
+            "command-edict-17",
+            "clients 1\ncommand 1 17 say\n",
+            "an edict from 1",
+        ),
+        (
+            "command-after-last-frame",
+            "clients 1\nframes 2\ncommand 3 1 say\n",
+            "after the last frame",
+        ),
+        (
+            "command-not-a-client",
+            "clients 1\ncommand 1 2 say\n",
+            "not a client that enters",
+        ),
+    ];
+    refused
+        .into_iter()
+        .map(|(name, lines, message)| {
+            Case::new(name, Program::new(), scenario(lines)).check(Check::Exit(2, message))
+        })
+        .collect()
 }
 
 // spec DIFF-3.1, TRACE-1.3: a progs that is refused, or has fewer than 92 globals or 105

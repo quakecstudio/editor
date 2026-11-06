@@ -39,6 +39,7 @@ fn scenario(map: &str) -> Scenario {
         models: Vec::new(),
         cvars: Vec::new(),
         inputs: Vec::new(),
+        commands: Vec::new(),
     }
 }
 

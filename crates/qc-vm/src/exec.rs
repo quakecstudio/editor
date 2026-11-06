@@ -294,7 +294,7 @@ pub(crate) fn run_inner(
     // VM-2.3: the run's exit depth is the depth before entering, its own runaway counter and
     // its own cleared trace flag.
     let exit_depth = machine.stack.len();
-    let mut runaway = crate::LIMIT_RUNAWAY;
+    let mut runaway = machine.runaway;
     machine.trace_flag = false;
 
     // VM-15: enter the function. An error entering the run's own function is before its first

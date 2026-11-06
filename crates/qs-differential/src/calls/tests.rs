@@ -676,6 +676,7 @@ fn a_codebase_runs_every_scenario() {
         reported.lock().unwrap().push((name.to_owned(), done, of));
     };
     let report = run_codebase(
+        "",
         Oracle::Qcc,
         &progs,
         &folded,
@@ -702,6 +703,7 @@ fn a_codebase_runs_every_scenario() {
     assert_eq!(report.executed, union);
     assert!(
         run_codebase(
+            "",
             Oracle::Qcc,
             b"",
             &folded,
@@ -2148,4 +2150,20 @@ fn debug_compile_file() {
     let out = std::path::Path::new(&file).with_file_name("ours-dbg.dat");
     std::fs::write(&out, qc_progs::write(&compiled.progs).unwrap()).unwrap();
     eprintln!("wrote {}", out.display());
+}
+
+// spec DIFF-12.19: a world set up under vkQuake's profile takes its runaway count, so a spawn
+// function that runs 200000 statements finishes there and fails with id's runaway under id's
+#[test]
+fn a_vkquake_world_runs_past_ids_runaway() {
+    let progs = compile("float x;\nvoid() worldspawn = { x = 0; while (x < 50000) x = x + 1; };\n");
+    let progs = Progs::read(&progs).unwrap();
+    let scenario = scenario();
+    let vkquake = World::new(&progs, &scenario, WORLD, EngineProfile::VkQuake);
+    assert!(vkquake.is_ok(), "{:?}", vkquake.err());
+    let Err(CallsError::Setup(message)) = World::new(&progs, &scenario, WORLD, EngineProfile::Id)
+    else {
+        panic!("id's runaway ends the setup");
+    };
+    assert!(message.contains("Runaway"), "{message}");
 }

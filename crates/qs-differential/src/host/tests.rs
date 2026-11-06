@@ -20,7 +20,7 @@ use qc_edict::system::global_by_name;
 use qc_trace::{Record, StringValue, Text};
 use qc_types::Etype;
 
-use crate::scenario::{Cvar, DIFF_DEFAULT_FRAMETIME, DIFF_DEFAULT_SEED, Scenario};
+use crate::scenario::{Command, Cvar, DIFF_DEFAULT_FRAMETIME, DIFF_DEFAULT_SEED, Scenario};
 
 use super::fixture::{ExtraField, FuncSpec, ProgsBuilder, Stmt};
 use super::{Ended, run_scenario};
@@ -42,6 +42,7 @@ fn scenario(map: &str) -> Scenario {
         models: Vec::new(),
         cvars: Vec::new(),
         inputs: Vec::new(),
+        commands: Vec::new(),
     }
 }
 
@@ -290,6 +291,134 @@ fn a_client_enters_and_gets_a_netname() {
     // SetNewParms, ClientConnect and PutClientInServer each ran (DIFF-4.1): with the clients,
     // the run count grows beyond the settle frames and the spawn.
     assert!(run_records(&output.trace.records) >= 6);
+}
+
+/// [`progs_with_spawn`] for a worldspawn, with `SV_ParseClientCommand` as function
+/// [`PARSE_FUNCTION`], a body of its own.
+fn progs_with_parse_command() -> Vec<u8> {
+    let entry = |name: &'static str, first_statement| FuncSpec {
+        name,
+        first_statement,
+        ..FuncSpec::default()
+    };
+    ProgsBuilder::default()
+        .statement(Stmt::op("DONE", 0, 0, 0))
+        .statement(Stmt::op("DONE", 0, 0, 0))
+        .function(entry("worldspawn", 1))
+        .function(entry("SV_ParseClientCommand", 2))
+        .function(entry("StartFrame", 1))
+        .function(entry("PlayerPreThink", 1))
+        .function(entry("PlayerPostThink", 1))
+        .function(entry("ClientConnect", 1))
+        .function(entry("PutClientInServer", 1))
+        .function(entry("SetNewParms", 1))
+        .function(entry("ClientDisconnect", 1))
+        .build()
+}
+
+/// `SV_ParseClientCommand`'s function index in [`progs_with_parse_command`].
+const PARSE_FUNCTION: i32 = 2;
+
+/// Two clients, three frames and the command lines `commands` of (frame, edict, text).
+fn command_scenario(commands: &[(u32, u32, &str)]) -> Scenario {
+    let mut scn = scenario("test");
+    scn.maxclients = 2;
+    scn.clients = 2;
+    scn.frames = 3;
+    scn.commands = commands
+        .iter()
+        .map(|&(frame, edict, text)| Command {
+            frame,
+            edict,
+            text: text.as_bytes().to_vec(),
+        })
+        .collect();
+    scn
+}
+
+// spec DIFF-4.4: a command runs SV_ParseClientCommand with PARM0 an engine string of it, time
+// the clock and self the client, in file order; one starting spawn, begin or prespawn in any
+// case runs nothing
+#[test]
+fn a_command_runs_the_progs_parser() {
+    let scn = command_scenario(&[
+        (2, 1, "say hi"),
+        (2, 2, "SPAWN now"),
+        (3, 1, "Begin"),
+        (3, 2, "prespawnx"),
+        (3, 1, "spaw"),
+        (3, 2, "begi"),
+    ]);
+    let entities = b"{\n\"classname\" \"worldspawn\"\n}\n";
+    let output = run_scenario(&scn, &progs_with_parse_command(), entities).expect("runs");
+    assert_eq!(output.ended, Ended::Normally);
+    let records = &output.trace.records;
+    let slot = |name: &str| {
+        u32::try_from(global_by_name(name).expect("a system global").slot).expect("small")
+    };
+    let runs: Vec<_> = records
+        .iter()
+        .enumerate()
+        .filter_map(|(at, r)| match r {
+            Record::Run { function, changes } if *function == PARSE_FUNCTION => {
+                let global = |slot: u32| {
+                    changes
+                        .globals()
+                        .iter()
+                        .find(|g| g.slot == slot)
+                        .map(|g| g.bits)
+                };
+                Some((at, global(4), global(slot("self")), global(slot("time"))))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(runs.len(), 3, "say hi, spaw and begi: {runs:?}");
+    let texts: Vec<Vec<u8>> = runs
+        .iter()
+        .map(|&(at, parm0, _, _)| {
+            let parm0 = parm0.expect("PARM0 set");
+            records[..at]
+                .iter()
+                .rev()
+                .find_map(|r| match r {
+                    Record::String { value, text } if *value == parm0 => {
+                        Some(text.as_bytes().to_vec())
+                    }
+                    _ => None,
+                })
+                .expect("PARM0 is an engine string")
+        })
+        .collect();
+    assert_eq!(
+        texts,
+        [b"say hi".to_vec(), b"spaw".to_vec(), b"begi".to_vec()]
+    );
+    // Each frame's physics leaves self at the last client, edict 2, so each command's self is
+    // a change: edict 1, edict 1 again in frame 3, then edict 2, whose value is twice edict 1's.
+    let selves: Vec<_> = runs.iter().map(|r| r.2).collect();
+    let one = selves[0].expect("self set to edict 1");
+    assert_ne!(one, 0);
+    assert_eq!(selves, [Some(one), Some(one), Some(2 * one)]);
+    // Frame 2 starts with the clock at 1.0 + 0.1 * 2 + 0.1: the time the frame's StartFrame
+    // then sees.
+    let frame_2 = f32::from_bits(runs[0].3.expect("time set"));
+    assert!((frame_2 - 1.3).abs() < 1e-6, "{frame_2}");
+}
+
+// spec DIFF-4.4: a progs without SV_ParseClientCommand runs nothing for a command
+#[test]
+fn a_command_without_the_parser_runs_nothing() {
+    let scn = command_scenario(&[(1, 1, "say hi")]);
+    let entities = b"{\n\"classname\" \"worldspawn\"\n}\n";
+    let with = run_scenario(&scn, &progs_with_spawn("worldspawn"), entities).expect("runs");
+    let without = run_scenario(
+        &command_scenario(&[]),
+        &progs_with_spawn("worldspawn"),
+        entities,
+    )
+    .expect("runs");
+    assert_eq!(with.trace.records, without.trace.records);
 }
 
 // spec DIFF-3.1: a progs that cannot back an edict store ends the scenario before the trace.

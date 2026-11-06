@@ -964,6 +964,11 @@ profile (DIFF-12.19); everything else runs under id's.
   conversion is correctly rounded." So `0x1.` and 300 `0` digits then `p0` is 1, and
   `0x1.000001000000081` is the double `0x1.0000010000001p+0`, whose float is `0x1.000002p+0`.
   This is not `Q_atof` (BUILTIN-11.7), which `cvar` uses.
+- **BUILTIN-18.26** A run executes at most `VKQUAKE_RUNAWAY` statements, 0x1000000, in place
+  of LIMIT-4.1's 99999: `PR_ExecuteProgram` counts up from 0 and fails before the statement
+  that brings its count above it, "if (++profile > 0x1000000) // spike -- was decimal 100000,
+  0x10000000 in QSS" then `PR_RunError ("runaway loop error")`. So its counter in LIMIT-4.3's
+  terms starts from 0x1000001.
 
 ## Test vectors
 

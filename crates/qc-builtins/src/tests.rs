@@ -2929,6 +2929,14 @@ mod bodies {
         }
     }
 
+    // spec BUILTIN-18.26: vkQuake's runs execute at most 0x1000000 statements, a counter from
+    // 0x1000001; id's from LIMIT_RUNAWAY
+    #[test]
+    fn vkquake_runs_longer() {
+        assert_eq!(EngineProfile::VkQuake.runaway(), 0x0100_0001);
+        assert_eq!(EngineProfile::Id.runaway(), qc_vm::LIMIT_RUNAWAY);
+    }
+
     // spec BUILTIN-18.3: vkQuake's precache lists hold 2048 sounds and 8192 models, id's 256
     // each
     #[test]
