@@ -591,7 +591,7 @@ issues:
   acceptance:
   - Every id1 map and the rerelease start map pass within the recorded tolerances; a deliberate lighting bug fails
   verify:
-  - Nightly job on all three OSes
+  - Nightly job on Linux and macOS; id's Windows client needs its DirectX and SciTech MGL drivers, so the view oracle is not built on Windows (VIEWDIFF-2.6, 2026-11-06)
 - key: P3-31
   title: Complete FTEQCC vector and class members after a member access
   labels:

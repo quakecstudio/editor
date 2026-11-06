@@ -7,7 +7,7 @@ the map view and the preview host share one renderer.
 - **Layer:** L7 UI. It depends on `qs-bsp`, `qs-mdl` and `qs-wad` (L0), `qs-client` (L4),
   `egui-wgpu`, `epaint` and `image` (its TGA reader); its examples also on `qs-vfs`,
   `qc-progs` and `qs-sim`.
-- **Spec sections:** REND-1 to REND-12 of
+- **Spec sections:** REND-1 to REND-13 of
   [`render.md`](../../docs/spec/render.md); PART-3.2 of
   [`engine/particles.md`](../../docs/spec/engine/particles.md); the drawing of HUD-1 to HUD-3
   of [`engine/hud.md`](../../docs/spec/engine/hud.md) and of VIEW-4.6.
@@ -51,6 +51,9 @@ the map view and the preview host share one renderer.
 - `Md5Model::read(name, bytes, read, palette, torch)`: a rerelease MD5 model, its frames'
   vertices from the joints and its skins from the shader names, drawn as an alias model;
   `Play` draws one in place of the `.mdl` it replaces (REND-12).
+- `Look`: QuakeSpasm's look by default (palette as it is, trilinear mipmaps, glowing
+  fullbright texels, overbright light, the view widened to the window) or GLQuake's, which
+  `MeshBuilder::new` and `MapMesh::build` take and the renderer draws (REND-13).
 - `SpriteModel::read(name, bytes, palette)`: a `.spr`'s frames; `draw(entity, time, eye,
   out)` appends the quad facing the eye by the sprite's type (REND-11).
 - `particle_triangles(particles, palette, eye)`: a triangle per particle (PART-3.2).

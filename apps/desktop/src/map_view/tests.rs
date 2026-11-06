@@ -23,7 +23,7 @@ use eframe::egui::{self, TexturesDelta};
 use eframe::egui_wgpu::{self, ScreenDescriptor};
 use egui_kittest::{Harness, OsThreshold, SnapshotOptions, TestRenderer};
 use qs_render::{
-    Batch, Camera, Image, MeshBuilder, Offscreen, Palette, Placement, Surface, Vertex,
+    Batch, Camera, Image, Look, MeshBuilder, Offscreen, Palette, Placement, Surface, Vertex,
 };
 
 use super::DEPTH_FORMAT;
@@ -62,10 +62,11 @@ impl TestRenderer for DepthRenderer {
 }
 
 /// A floor of squares in a checker of two colours, 256 units across at z = 0, full
-/// bright: the corner texel of the lightmap is always 255 (REND-1.6).
+/// bright: the corner texel of the lightmap is always 255 (REND-1.6), in GLQuake's look so
+/// the light is not doubled (REND-13.5).
 fn checker_floor() -> qs_render::MapMesh {
     let palette = Palette::read(&[0; 768]).unwrap();
-    let mut mesh = MeshBuilder::new(&palette).finish();
+    let mut mesh = MeshBuilder::new(&palette, Look::GlQuake).finish();
     let corner = |x: f32, y: f32, s: f32, t: f32| Vertex {
         position: [x, y, 0.0],
         texture: [s, t],

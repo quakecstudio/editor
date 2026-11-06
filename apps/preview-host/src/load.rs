@@ -134,7 +134,8 @@ pub(crate) fn load(
         .as_deref()
         .and_then(|values| <[f32; 4]>::try_from(values).ok());
     let zfix = !args.nozfix;
-    let gamma = args.gamma;
+    let look = args.look.look();
+    let gamma = args.gamma.unwrap_or(look.gamma());
     let vfs = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
     let read = |name: &str| -> Result<Vec<u8>, String> {
         vfs.load(name.as_bytes())
@@ -231,7 +232,9 @@ pub(crate) fn load(
         .frame(0.0, &packets, &mut describer, &mut rand)
         .map_err(|e| format!("client: {e}"))?;
     let sounds = reader()?;
-    let output = if args.nosound {
+    let output = if args.view_script.is_some() {
+        Device::Capture
+    } else if args.nosound {
         Device::None
     } else {
         Device::Default
@@ -249,6 +252,7 @@ pub(crate) fn load(
     }
     let mut play = Play::new(palette.clone(), pics, bsp.entities());
     play.zfix = zfix;
+    play.look = look;
     play.load_models(client.model_names(), &*reader()?, &ranker()?)
         .map_err(|e| e.to_string())?;
     play.load_sky(&*reader()?);
@@ -262,7 +266,7 @@ pub(crate) fn load(
         .collect();
     let mut others: Vec<(String, Vec<(Placement, usize)>)> = Vec::new();
     for entity in game.world().entities().into_iter().skip(1) {
-        if entity.model.ends_with(".bsp") && !entity.model.starts_with("maps/") {
+        if is_external_brush_model(&entity.model, &name) {
             let placement = Placement {
                 model: 0,
                 origin: entity.origin,
@@ -284,7 +288,7 @@ pub(crate) fn load(
             .map_err(|error| tracing::warn!(%error, "maps/{map}.lit"))
             .ok()
     });
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, look);
     let extras = Extras {
         lit: lit.as_ref(),
         ..Extras::default()
@@ -333,6 +337,13 @@ pub(crate) fn load(
         rand,
         camera,
     })
+}
+
+/// Whether an entity's `model` is a brush model of a BSP of its own, drawn from that file:
+/// any `.bsp`, the health and ammo boxes and the barrels of `maps/b_*.bsp` among them, but the
+/// map's own, `world`, whose models are the mesh's.
+fn is_external_brush_model(model: &str, world: &str) -> bool {
+    model.ends_with(".bsp") && model != world
 }
 
 /// A camera looking at the middle of the first batch of `surface` in the map: above water

@@ -275,7 +275,13 @@ impl eframe::App for Viewer {
         self.game.set_eye(Eye {
             origin,
             angles,
-            fov_x: self.camera.fov_x,
+            // The view's width as it is drawn: the free camera's own, else widened by the look
+            // (REND-13.6).
+            fov_x: if self.fly {
+                self.camera.fov_x
+            } else {
+                self.mesh.look.fov_x(self.camera.fov_x, aspect)
+            },
             aspect,
         });
         // `S_Update (r_origin, vpn, vright, vup)`, once a host frame.

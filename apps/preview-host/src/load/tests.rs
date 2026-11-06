@@ -12,7 +12,7 @@ use qs_sim::localization::RRE_LOC_FILE;
 use qs_vfs::zip::crc32;
 use qs_vfs::{FS_POP_PATH, FS_POP_TABLE, LoadedFile, StdFs, Vfs};
 
-use super::localization;
+use super::{is_external_brush_model, localization};
 use crate::args::{Args, engine_style};
 
 /// A game root removed when the test ends.
@@ -168,4 +168,16 @@ fn a_save_stays_in_the_game_directory() {
     assert_eq!(absolute, Path::new("/q/mod//etc/x.sav"));
     let plain = super::save_path(&self::args(&["-basedir", "/q"]), "s1");
     assert_eq!(plain, Path::new("/q/id1/s1.sav"));
+}
+
+// spec REND-1.9: an entity showing a BSP of its own is drawn from it, the health and ammo boxes
+// of `maps/b_*.bsp` too; the map's own BSP is the world, and a model or submodel is not a BSP
+#[test]
+fn boxes_and_barrels_are_external_brush_models() {
+    let world = "maps/e4m6.bsp";
+    assert!(is_external_brush_model("maps/b_bh25.bsp", world));
+    assert!(is_external_brush_model("maps/b_explob.bsp", world));
+    assert!(!is_external_brush_model(world, world));
+    assert!(!is_external_brush_model("progs/player.mdl", world));
+    assert!(!is_external_brush_model("*1", world));
 }

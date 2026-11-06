@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use qs_render::GAMMA;
+use qs_render::Look;
 
 /// The engine-style options, each written with one dash as the engines and ADR-0008 write
 /// them; clap reads them with two.
@@ -33,9 +33,13 @@ pub(crate) struct Args {
     /// The mission pack `hipnotic`, the engine's `-hipnotic`.
     #[arg(long)]
     pub(crate) hipnotic: bool,
-    /// GLQuake's `-gamma` (REND-3.1).
-    #[arg(long, default_value_t = GAMMA)]
-    pub(crate) gamma: f32,
+    /// How frames look: QuakeSpasm's (gamma 1, trilinear filtering, glowing fullbrights,
+    /// overbright light, the view widened to the window's shape) or GLQuake's (REND-13).
+    #[arg(long = "look", value_enum, default_value_t = LookArg::Quakespasm)]
+    pub(crate) look: LookArg,
+    /// GLQuake's `-gamma` (REND-3.1); without it, the look's (REND-13.2).
+    #[arg(long)]
+    pub(crate) gamma: Option<f32>,
     /// Brush models without QuakeSpasm's `gl_zfix` (REND-1.12).
     #[arg(long)]
     pub(crate) nozfix: bool,
@@ -66,6 +70,11 @@ pub(crate) struct Args {
     /// then id's line and a JSON line of the times on stdout (P3-29, ENG-17).
     #[arg(long, num_args = 3, value_names = ["x", "y", "z"], allow_negative_numbers = true)]
     pub(crate) timerefresh: Option<Vec<f32>>,
+    /// Plays a view script with no window (P3-28): its map, frames, places and shots at 320 by
+    /// 240 with no status bar or weapon, and the sound mixed meanwhile written to the second
+    /// file, as the view oracle plays the same script in id's engine (VIEWDIFF-1).
+    #[arg(long, num_args = 2, value_names = ["script", "audio"])]
+    pub(crate) view_script: Option<Vec<std::path::PathBuf>>,
     /// Where the window opens, to put it on a chosen display.
     #[arg(long, num_args = 2, value_names = ["x", "y"], allow_negative_numbers = true)]
     pub(crate) position: Option<Vec<f32>>,
@@ -79,6 +88,26 @@ pub(crate) struct Args {
     /// and the like, as the engine reads them.
     #[arg(last = true)]
     pub(crate) engine: Vec<String>,
+}
+
+/// What `--look` names (REND-13).
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum LookArg {
+    /// QuakeSpasm's look.
+    #[default]
+    Quakespasm,
+    /// GLQuake's look.
+    Glquake,
+}
+
+impl LookArg {
+    /// The renderer's look.
+    pub(crate) const fn look(self) -> Look {
+        match self {
+            Self::Quakespasm => Look::QuakeSpasm,
+            Self::Glquake => Look::GlQuake,
+        }
+    }
 }
 
 /// What `--show` starts at.

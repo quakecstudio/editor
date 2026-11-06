@@ -12,6 +12,7 @@ mod headless;
 mod load;
 mod screenshot;
 mod values;
+mod view_script;
 mod window;
 
 use std::process::ExitCode;
@@ -65,6 +66,18 @@ fn run(args: &args::Args) -> Result<(), String> {
         std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes())
             .map_err(|e| e.to_string())?;
         return Ok(());
+    }
+    if let Some([script, audio]) = args
+        .view_script
+        .as_deref()
+        .and_then(|values| <[std::path::PathBuf; 2]>::try_from(values.to_vec()).ok())
+    {
+        let text = std::fs::read_to_string(&script)
+            .map_err(|error| format!("{}: {error}", script.display()))?;
+        let script = view_script::ViewScript::parse(&text)?;
+        // `load` keeps the sound for a view script (VIEWDIFF-1.3).
+        let loaded = load::load(args, &script.map, None, None, None)?;
+        return headless::view_script(loaded, &script, &audio);
     }
     if args.headless {
         let args = args::Args {

@@ -26,8 +26,9 @@ use crate::gpu::{
     PlayerSkin, SkinKey, SpriteDraw, SpriteFrame, View,
 };
 use crate::light::light_point;
+use crate::look::Look;
 use crate::md5::Md5Model;
-use crate::mesh::{Image, MapMesh, Palette, Placement};
+use crate::mesh::{Image, MapMesh, Palette, Placement, fullbright_split};
 use crate::particles::particle_triangles;
 use crate::skybox::{SkyKeys, Skybox, sky_parse_worldspawn};
 use crate::sprite::{Eye, SpriteEntity, SpriteError, SpriteModel, angle_vectors};
@@ -248,6 +249,8 @@ pub struct Play {
     /// Each precached model, by the client's index.
     models: Vec<Model>,
     skins: Vec<Image>,
+    /// Each skin's fullbright texels, when the look lights them and it has any (REND-13.4).
+    skin_glows: Vec<Option<Image>>,
     frames: Vec<Image>,
     /// Each external brush model instance: its entity number and the mesh's model index.
     instances: Vec<(usize, usize)>,
@@ -264,6 +267,9 @@ pub struct Play {
     /// Whether an `.mdl` is drawn as the rerelease's MD5 model where there is one
     /// (REND-12.1).
     pub md5_models: bool,
+    /// The look a skin's fullbright texels and the view's width are drawn in, the mesh's
+    /// (REND-13); set before [`Play::load_models`].
+    pub look: Look,
     /// Each player slot's translated skin (REND-4.13).
     player_skins: PlayerSkins,
     /// The skybox the worldspawn names (REND-8.2), and the box once read.
@@ -310,6 +316,7 @@ impl Play {
             pics,
             models: Vec::new(),
             skins: Vec::new(),
+            skin_glows: Vec::new(),
             frames: Vec::new(),
             instances: Vec::new(),
             fog: FogState::new(fog_parse_worldspawn(entities)),
@@ -318,6 +325,7 @@ impl Play {
             screen: [640, 480],
             zfix: true,
             md5_models: true,
+            look: Look::default(),
             player_skins: PlayerSkins::default(),
             sky,
             skybox: None,
@@ -359,13 +367,33 @@ impl Play {
             } else if let Some(model) = replacement {
                 let first = self.skins.len();
                 self.skins.extend_from_slice(model.images());
+                self.skin_glows.resize(self.skins.len(), None);
                 Model::Md5(model, first)
             } else if name.ends_with(".mdl") {
                 let bytes =
                     read(name).ok_or_else(|| PlayError::Model(format!("{name}: missing")))?;
                 let model = AliasModel::read(name, &bytes, &self.palette)?;
                 let first = self.skins.len();
-                self.skins.extend_from_slice(model.images());
+                for (image, texels) in model.images().iter().zip(model.texels()) {
+                    // REND-13.4: a skin with fullbright texels glows with them.
+                    let split = self
+                        .look
+                        .fullbrights()
+                        .then(|| {
+                            fullbright_split(texels, (image.width, image.height), &self.palette)
+                        })
+                        .flatten();
+                    match split {
+                        Some([lit, glow]) => {
+                            self.skins.push(lit);
+                            self.skin_glows.push(Some(glow));
+                        }
+                        None => {
+                            self.skins.push(image.clone());
+                            self.skin_glows.push(None);
+                        }
+                    }
+                }
                 Model::Alias(model, first)
             } else if name.ends_with(".spr") {
                 let bytes =
@@ -420,6 +448,7 @@ impl Play {
     pub fn assets(&self) -> Assets<'_> {
         Assets {
             skins: &self.skins,
+            skin_glows: &self.skin_glows,
             frames: &self.frames,
             pics: self.pics.images(),
             skybox: self.skybox.as_ref(),
@@ -581,7 +610,13 @@ impl Play {
         }
         self.draw_hud(hud, &mut flat);
         let mut view = View::new(
-            Camera::clip_from_view(refdef.origin, refdef.angles, FOV_X, aspect),
+            // REND-3.4, REND-13.6: `fov` across, widened as QuakeSpasm's `fov_adapt` widens it.
+            Camera::clip_from_view(
+                refdef.origin,
+                refdef.angles,
+                mesh.look.fov_x(FOV_X, aspect),
+                aspect,
+            ),
             refdef.origin,
             scene.time,
         );
@@ -716,7 +751,7 @@ impl Play {
 
 impl Model {
     /// An alias or an MD5 model's triangles for `entity` into `out`, a run for each skin
-    /// (REND-4, REND-12); nothing for another model.
+    /// (REND-4, REND-13); nothing for another model.
     fn draw_alias(&self, entity: &AliasEntity, time: f32, out: &mut ModelFrame) {
         match self {
             Self::Alias(model, first) => draw_alias(model, *first, entity, time, out),

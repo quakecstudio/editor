@@ -14,6 +14,7 @@ use std::sync::Arc;
 use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 
 use crate::alias::AliasVertex;
+use crate::look::Look;
 use crate::mesh::{
     Animation, Batch, Image, LightmapPatch, MapMesh, Placement, Surface, frame, mip_levels,
 };
@@ -33,7 +34,7 @@ const PARTICLE_VERTEX_BYTES: u64 = 9 * 4;
 const FLAT_VERTEX_BYTES: u64 = 8 * 4;
 /// The bytes of the view's uniform: a 4 by 4 matrix, the eye's position and the time, the
 /// fog, the parameters and the skybox's.
-const VIEW_BYTES: u64 = 32 * 4;
+const VIEW_BYTES: u64 = 36 * 4;
 /// A skybox's faces, one texture layer each (REND-8.2).
 const SKY_FACES: u32 = 6;
 /// `glDepthRange (gldepthmin, gldepthmin + 0.3*(gldepthmax-gldepthmin))`: the view model is
@@ -65,8 +66,10 @@ pub struct MapRenderer {
     /// Each alias skin image, bound as a surface texture, then [`PLAYER_SKINS`] player skins,
     /// each a client slot's skin in its colours (REND-4.13).
     skins: Vec<BindGroup>,
-    /// The layout and the sampler a skin is bound with, for a player skin set later.
-    skin_binding: (BindGroupLayout, Sampler),
+    /// What the world's shader multiplies a lightmap texel by (REND-13.5).
+    light_scale: f32,
+    /// The skins' layout and sampler, and the glow of a skin with none (REND-13.4).
+    skin_binding: (BindGroupLayout, Sampler, wgpu::TextureView),
     /// What each player skin slot holds, `None` while it is the white placeholder.
     player_keys: [Option<SkinKey>; PLAYER_SKINS],
     /// This frame's alias triangles, and the view model's.
@@ -262,6 +265,9 @@ pub struct FlatFrame {
 pub struct Assets<'a> {
     /// Every alias model's skin images (REND-4.3).
     pub skins: &'a [Image],
+    /// Each skin's glow, its fullbright texels, in the order of [`Assets::skins`]; a skin
+    /// past its end or with `None` has none (REND-13.4).
+    pub skin_glows: &'a [Option<Image>],
     /// Every sprite's frame images (REND-11.2).
     pub frames: &'a [Image],
     /// The 2D pictures: `gfx.wad`'s, the `gfx/*.lmp` files and the console characters
@@ -524,7 +530,7 @@ impl MapRenderer {
             mapped_at_creation: false,
         });
         // Textures keep Quake's sharp texels; the lightmap is smoothed, as GLQuake draws it.
-        let mipmapped = device.create_sampler(&world_sampler());
+        let mipmapped = device.create_sampler(&world_sampler(mesh.look));
         let linear_repeat = sampler(device, wgpu::FilterMode::Linear, wgpu::AddressMode::Repeat);
         let linear = sampler(
             device,
@@ -591,13 +597,32 @@ impl MapRenderer {
                     ],
                 })
             };
+        // The glow of a texture with no fullbright texels (REND-13.4).
+        let black = upload(
+            device,
+            queue,
+            &Image {
+                width: 1,
+                height: 1,
+                rgba: vec![0, 0, 0, 255],
+            },
+        );
         // REND-4.3: a skin is mipmapped and filtered as a world texture is.
         let mut skins: Vec<BindGroup> = assets
             .skins
             .iter()
-            .map(|image| {
+            .enumerate()
+            .map(|(n, image)| {
                 let texture = upload_levels(device, queue, &mip_levels(image));
-                bind(&texture, &mipmapped, &texture)
+                let glow = assets
+                    .skin_glows
+                    .get(n)
+                    .and_then(Option::as_ref)
+                    .map_or_else(
+                        || black.clone(),
+                        |glow| upload_levels(device, queue, &mip_levels(glow)),
+                    );
+                bind(&texture, &mipmapped, &glow)
             })
             .collect();
         // REND-4.13: each player skin starts white, until its slot's colours set it.
@@ -608,7 +633,7 @@ impl MapRenderer {
         };
         for _ in 0..PLAYER_SKINS {
             let texture = upload_levels(device, queue, &mip_levels(&blank));
-            skins.push(bind(&texture, &mipmapped, &texture));
+            skins.push(bind(&texture, &mipmapped, &black));
         }
         // A sprite frame and a picture keep their transparent texels: no mipmaps, filtered
         // linearly as `GL_LoadTexture (..., alpha)` filters them.
@@ -638,9 +663,15 @@ impl MapRenderer {
                         upload(device, queue, alpha),
                         &linear_repeat,
                     ),
+                    // REND-13.4: a texture's glow is its second binding, black when it has
+                    // none, filtered and mipmapped as the texture is.
                     None => {
                         let texture = upload_levels(device, queue, &mip_levels(image));
-                        (texture.clone(), texture, &mipmapped)
+                        let glow = mesh.glows.get(slot).and_then(Option::as_ref).map_or_else(
+                            || black.clone(),
+                            |glow| upload_levels(device, queue, &mip_levels(glow)),
+                        );
+                        (texture, glow, &mipmapped)
                     }
                 };
                 bind(&texture, filter, &second)
@@ -657,7 +688,8 @@ impl MapRenderer {
             animations: mesh.animations.clone(),
             alias_pipeline,
             skins,
-            skin_binding: (texture_layout.clone(), mipmapped.clone()),
+            light_scale: mesh.look.light_scale(),
+            skin_binding: (texture_layout.clone(), mipmapped.clone(), black.clone()),
             player_keys: [None; PLAYER_SKINS],
             alias: Grown::new("qs-render alias vertices", ALIAS_VERTEX_BYTES),
             alias_draws: Vec::new(),
@@ -719,7 +751,7 @@ impl MapRenderer {
             return;
         }
         *held = Some(skin.key);
-        let (layout, sampler) = &self.skin_binding;
+        let (layout, sampler, black) = &self.skin_binding;
         let at = self
             .skins
             .len()
@@ -740,7 +772,7 @@ impl MapRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&texture),
+                    resource: wgpu::BindingResource::TextureView(black),
                 },
             ],
         });
@@ -849,6 +881,8 @@ impl MapRenderer {
         let sky = self
             .skybox
             .map_or([0.0; 4], |[w, h]| [1.0, f32_of_u32(w), f32_of_u32(h), 0.0]);
+        // REND-13.5: what a lightmap texel is multiplied by, the mesh's look's.
+        let look = [self.light_scale, 0.0, 0.0, 0.0];
         let bytes: Vec<u8> = view
             .clip_from_world
             .iter()
@@ -857,6 +891,7 @@ impl MapRenderer {
             .chain(&fog)
             .chain(&params)
             .chain(&sky)
+            .chain(&look)
             .flat_map(|v| v.to_ne_bytes())
             .collect();
         queue.write_buffer(&self.view, 0, &bytes);
@@ -1092,14 +1127,19 @@ fn primitive(pass: Pass) -> wgpu::PrimitiveState {
 
 /// REND-3.3: world textures are filtered `GL_LINEAR_MIPMAP_NEAREST` when smaller and
 /// `GL_LINEAR` when larger, and repeat.
-fn world_sampler() -> wgpu::SamplerDescriptor<'static> {
+fn world_sampler(look: Look) -> wgpu::SamplerDescriptor<'static> {
     wgpu::SamplerDescriptor {
         label: Some("qs-render world texture"),
         address_mode_u: wgpu::AddressMode::Repeat,
         address_mode_v: wgpu::AddressMode::Repeat,
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        // REND-3.3: GLQuake's nearest level; REND-13.3: QuakeSpasm's blend of the two nearest.
+        mipmap_filter: if look.trilinear() {
+            wgpu::MipmapFilterMode::Linear
+        } else {
+            wgpu::MipmapFilterMode::Nearest
+        },
         ..wgpu::SamplerDescriptor::default()
     }
 }
@@ -1370,6 +1410,7 @@ mod tests {
     };
     use crate::alias::AliasVertex;
     use crate::camera::Camera;
+    use crate::look::Look;
     use crate::mesh::tests::{MapSpec, bsp, palette, samples};
     use crate::mesh::{Image, LightmapPatch};
     use crate::particles::ParticleVertex;
@@ -1402,7 +1443,7 @@ mod tests {
             egui_wgpu::RendererOptions::default(),
         );
         let lighting = samples(lighting);
-        let mesh = MapMesh::build(&bsp(spec, &lighting), &palette()).unwrap();
+        let mesh = MapMesh::build(&bsp(spec, &lighting), &palette(), Look::GlQuake).unwrap();
         let renderer = MapRenderer::new(&state.device, &state.queue, FORMATS, &mesh, assets);
         (state, renderer, mesh)
     }
@@ -1847,6 +1888,7 @@ mod tests {
         }];
         let assets = Assets {
             skins: &skin,
+            skin_glows: &[],
             ..Assets::default()
         };
         // A triangle 10 below the face, behind it from the eye.
@@ -2103,30 +2145,29 @@ mod tests {
     // spec REND-1.7: the surface is its texture's colour times the lightmap's light, in a
     // shader every backend accepts
     // spec REND-6.2: each channel by the lightmap's own channel
+    // spec REND-13.5: the light is multiplied by the look's scale, 2 with overbright
+    // spec REND-13.4: the glow is added over the lit texture, then the sum clamped
     #[test]
     fn the_shader_validates_and_darkens_the_texture_by_the_light() {
         let module = wgsl::parse_str(SHADER).unwrap();
         Validator::new(ValidationFlags::all(), Capabilities::empty())
             .validate(&module)
             .unwrap();
-        assert!(
-            SHADER.contains(
-                "let light = textureSample(lightmap, lightmap_sampler, input.light).rgb;"
-            )
-        );
-        assert!(
-            SHADER.contains("return vec4<f32>(fogged(colour.rgb * light, input.world), OPAQUE);")
-        );
+        assert!(SHADER.contains(
+            "let light = textureSample(lightmap, lightmap_sampler, input.light).rgb * view.look.x;"
+        ));
+        assert!(SHADER.contains("clamp(colour.rgb * light + glow, "));
     }
 
     // spec REND-4.8: an alias model's skin is multiplied by its vertex's shade
+    // spec REND-13.4: and its glow added over it
     #[test]
     fn the_shader_modulates_a_skin_by_its_shade() {
         let module = wgsl::parse_str(SHADER).unwrap();
         Validator::new(ValidationFlags::all(), Capabilities::empty())
             .validate(&module)
             .unwrap();
-        assert!(SHADER.contains("fogged(colour.rgb * input.shade, input.world), OPAQUE);"));
+        assert!(SHADER.contains("clamp(colour.rgb * input.shade + glow, "));
     }
 
     // spec REND-2.2: water ripples by 8 sin of `t*0.125 + realtime`, over 64
@@ -2180,15 +2221,30 @@ mod tests {
         assert!(SHADER.contains("mix(solid.rgb, alpha.rgb, alpha.a)"));
         assert!(SHADER.contains("sky_st(flat, time * SKY_SOLID_SPEED)"));
         assert!(SHADER.contains(
-            "textureSample(sky_alpha, surface_sampler, sky_st(flat, time * SKY_ALPHA_SPEED))"
+            "textureSample(second, surface_sampler, sky_st(flat, time * SKY_ALPHA_SPEED))"
         ));
+    }
+
+    // spec REND-13.3: in QuakeSpasm's look world textures blend their two nearest mip levels
+    #[test]
+    fn quakespasm_s_world_textures_filter_trilinearly() {
+        use egui_wgpu::wgpu::{FilterMode, MipmapFilterMode};
+        let world = super::world_sampler(Look::QuakeSpasm);
+        assert_eq!(
+            (world.min_filter, world.mag_filter, world.mipmap_filter),
+            (
+                FilterMode::Linear,
+                FilterMode::Linear,
+                MipmapFilterMode::Linear
+            )
+        );
     }
 
     // spec REND-3.3: world textures are linear within the nearest mip level, repeating
     #[test]
     fn world_textures_filter_as_gl_linear_mipmap_nearest() {
         use egui_wgpu::wgpu::{AddressMode, FilterMode, MipmapFilterMode};
-        let world = super::world_sampler();
+        let world = super::world_sampler(Look::GlQuake);
         assert_eq!(
             (world.min_filter, world.mag_filter, world.mipmap_filter),
             (

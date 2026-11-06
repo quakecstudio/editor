@@ -512,6 +512,22 @@ impl Game {
         }
     }
 
+    /// Moves the player to `origin`, facing `angles`, at rest, as `player/spawn_at` does
+    /// (BRIDGE-4.9): for `--view-script`'s `place` (VIEWDIFF-1.2).
+    ///
+    /// # Errors
+    ///
+    /// Why the progs did not read or the player could not be moved.
+    pub(crate) fn place_player(
+        &mut self,
+        origin: [f32; 3],
+        angles: [f32; 3],
+    ) -> Result<(), String> {
+        self.with_progs(|game, progs| game.world.move_player(progs, origin, angles))
+            .map_err(|error| error.message)?
+            .map_err(|error| error.to_string())
+    }
+
     /// Runs `f` with the progs read from its bytes; the error says why they did not read.
     fn with_progs<T>(&mut self, f: impl FnOnce(&mut Self, &Progs<'_>) -> T) -> Result<T, RpcError> {
         let bytes = core::mem::take(&mut self.progs);

@@ -13,15 +13,19 @@ use std::time::{Duration, Instant};
 
 use eframe::egui_wgpu::wgpu;
 use qs_bsp::Bsp;
-use qs_client::Client;
+use std::path::Path;
+
+use qs_client::{Client, Hud};
 use qs_render::{MapMesh, MapRenderer, Offscreen, Play};
 
 use crate::args::Args;
+use crate::audio::Audio;
 use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Screen};
 use crate::load::{Acted, Describer, Loaded, Rand, act};
 use crate::screenshot::{Drawer, Frame};
+use crate::view_script::{Step, ViewScript};
 use crate::window::{CONWIDTH, FRAME, frametime_f32, screen_height};
 
 /// The view's width per unit of height `pick` assumes: the window's first size, 1280 by 800.
@@ -157,6 +161,62 @@ pub(crate) fn timerefresh(
     Ok(format!("{first:.6} seconds ({fps:.6} fps)\n{json}"))
 }
 
+/// The size the view oracle draws at: 320 by 240, square pixels at 4:3 (VIEWDIFF-2.1).
+const VIEW_SIZE: [u32; 2] = [320, 240];
+/// Its width per unit of height.
+const VIEW_ASPECT: f32 = 4.0 / 3.0;
+
+/// `--view-script <script> <audio>` (P3-28): the map of `loaded` played as `script` says, its
+/// shots written as binary PPMs and the sound mixed meanwhile written to `audio` as 16-bit
+/// little-endian stereo at 11025 Hz, as the view oracle writes them (VIEWDIFF-1, VIEWDIFF-2).
+///
+/// # Errors
+///
+/// Why the GPU device, a frame, the player's place or a file failed, or that the map asked
+/// the host to change level, start a game or quit.
+pub(crate) fn view_script(loaded: Loaded, script: &ViewScript, audio: &Path) -> Result<(), String> {
+    let offscreen = Offscreen::new(DEPTH).map_err(|error| error.to_string())?;
+    let mut drawer = Drawer::new(offscreen);
+    let mut world = Headless::new(loaded, Some(&drawer));
+    let mut sound = world.audio.take_captured();
+    for step in &script.steps {
+        match step {
+            Step::Frames(count) => {
+                for _ in 0..*count {
+                    let ran = world.game.frame(FRAME);
+                    if world.game.host_action().is_some() {
+                        return Err("the map changed level, started a game or quit".into());
+                    }
+                    world.read_messages(if ran { FRAME } else { 0.0 });
+                }
+            }
+            Step::Place { origin, angles } => {
+                world
+                    .game
+                    .place_player(*origin, [angles[0], angles[1], 0.0])?;
+            }
+            Step::Shot(path) => {
+                let callback = world.view_callback(VIEW_ASPECT);
+                let frame = drawer.draw(callback, VIEW_SIZE)?;
+                std::fs::write(path, ppm(&frame))
+                    .map_err(|error| format!("{}: {error}", path.display()))?;
+            }
+        }
+        sound.extend(world.audio.take_captured());
+    }
+    let bytes: Vec<u8> = sound.iter().flat_map(|s| s.to_le_bytes()).collect();
+    std::fs::write(audio, bytes).map_err(|error| format!("{}: {error}", audio.display()))
+}
+
+/// `frame` as a binary PPM, `P6`, its alpha dropped (VIEWDIFF-1.2).
+fn ppm(frame: &Frame) -> Vec<u8> {
+    let mut bytes = format!("P6\n{} {}\n255\n", frame.width, frame.height).into_bytes();
+    for &[r, g, b, _] in frame.rgba.as_chunks::<4>().0 {
+        bytes.extend([r, g, b]);
+    }
+    bytes
+}
+
 /// What a headless host keeps of a loaded map.
 struct Headless {
     game: Game,
@@ -168,6 +228,8 @@ struct Headless {
     mesh: MapMesh,
     play: Play,
     bsp: Bsp<'static>,
+    /// The sound, mixed and dropped, or kept for `--view-script`.
+    audio: Audio,
 }
 
 impl Headless {
@@ -182,6 +244,7 @@ impl Headless {
             mesh,
             play,
             bsp,
+            audio,
             ..
         } = loaded;
         match drawer {
@@ -208,6 +271,7 @@ impl Headless {
             mesh,
             play,
             bsp,
+            audio,
         }
     }
 
@@ -237,22 +301,45 @@ impl Headless {
             .frame(&scene, &hud, &self.bsp, &mut self.mesh, ASPECT)
     }
 
+    /// The client's view alone, on an image `aspect` wide per unit of height: no status bar,
+    /// centre print or weapon, as the view oracle draws it with `viewsize 120` and
+    /// `r_drawviewmodel 0` (P3-28).
+    fn view_callback(&mut self, aspect: f32) -> qs_render::MapCallback {
+        // `V_SetContentsColor`: the leaf the eye is in tints the view (VIEW-4.3), before the
+        // scene that carries the tint is taken.
+        let origin = self.client.scene().view.origin;
+        self.client.set_contents(contents_at(&self.bsp, origin));
+        let mut scene = self.client.scene();
+        scene.view.weapon.model = 0;
+        self.play
+            .frame(&scene, &Hud::default(), &self.bsp, &mut self.mesh, aspect)
+    }
+
     /// The client's frame: it reads what the server wrote, and the eye `pick` looks from is
     /// the client's view.
     fn read_messages(&mut self, frametime: f64) {
         let packets = self.game.world_mut().take_messages().packets;
         let seconds = frametime_f32(frametime);
-        if let Err(error) =
-            self.client
-                .frame(seconds, &packets, &mut self.describer, &mut self.rand)
+        match self
+            .client
+            .frame(seconds, &packets, &mut self.describer, &mut self.rand)
         {
-            tracing::warn!(%error, "client");
+            // The sound is mixed only when it is kept, for `--view-script`.
+            Ok(events) if self.audio.captures() => self.audio.handle(&events, &mut self.rand),
+            Ok(_) => {}
+            Err(error) => tracing::warn!(%error, "client"),
         }
         let view = self.client.scene().view;
+        // `S_Update (r_origin, vpn, vright, vup)`, once a host frame.
+        if self.audio.captures() {
+            self.audio
+                .update(&self.bsp, view.origin, view.angles, frametime);
+        }
         self.game.set_eye(Eye {
             origin: view.origin,
             angles: view.angles,
-            fov_x: self.fov_x,
+            // The view's width as it is drawn, widened by the look (REND-13.6).
+            fov_x: self.mesh.look.fov_x(self.fov_x, ASPECT),
             aspect: ASPECT,
         });
     }

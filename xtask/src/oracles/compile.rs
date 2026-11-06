@@ -77,6 +77,12 @@ pub(crate) struct Compiler<'a> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Code {
     Upstream,
+    /// Upstream code whose headers define variables without `extern` (d_local.h's `sadjust`),
+    /// which C compilers merged as common symbols until GCC 10 and clang 11 stopped:
+    /// `-fcommon` merges them. Only the view oracle's files need it, and only they get it: it
+    /// moves globals, and qcc's overflow on more than eight parameters then crashes instead of
+    /// reporting its error.
+    UpstreamCommon,
     Ours,
 }
 
@@ -210,13 +216,23 @@ impl<'a> Compiler<'a> {
                 .arg(format!("/Fo{}", out.display()));
         } else {
             command.args(GNU_FLAGS);
-            if unit.code == Code::Ours {
-                command.args(["-Wall", "-Wextra", "-Werror"]);
-                if self.instrument == Instrument::Coverage {
-                    command.args(COVERAGE_FLAGS).arg("-DQS_COVERAGE");
+            // id's C calls a few functions before any declaration (chase.c's
+            // `SV_RecursiveHullCheck`), which C89 allowed and clang 16 and GCC 14 make an
+            // error: it is the warning it was, and `-w` silences it.
+            let upstream = ["-w", "-Wno-error=implicit-function-declaration"];
+            match unit.code {
+                Code::Ours => {
+                    command.args(["-Wall", "-Wextra", "-Werror"]);
+                    if self.instrument == Instrument::Coverage {
+                        command.args(COVERAGE_FLAGS).arg("-DQS_COVERAGE");
+                    }
                 }
-            } else {
-                command.arg("-w");
+                Code::Upstream => {
+                    command.args(upstream);
+                }
+                Code::UpstreamCommon => {
+                    command.args(upstream).arg("-fcommon");
+                }
             }
             if self.instrument == Instrument::Fuzz {
                 command.args(FUZZ_FLAGS).arg("-DQS_FUZZ");
@@ -349,6 +365,8 @@ mod tests {
         .unwrap();
         msvc.link(&[PathBuf::from("a.obj")], Path::new("bin.exe"))
             .unwrap();
+        gnu.object(&unit(Code::UpstreamCommon, &[], None), Path::new("c.o"))
+            .unwrap();
         let seen = fake.seen.lock().unwrap();
         let gnu_flags = GNU_FLAGS.join(" ");
         assert_eq!(
@@ -357,7 +375,9 @@ mod tests {
         );
         assert_eq!(
             seen[1],
-            format!("cc {gnu_flags} -w -DQS_ENGINE -include compat.h -c a.c -o b.o")
+            format!(
+                "cc {gnu_flags} -w -Wno-error=implicit-function-declaration -DQS_ENGINE -include compat.h -c a.c -o b.o"
+            )
         );
         assert_eq!(seen[2], "cc a.o -o bin -lm");
         let msvc_flags = MSVC_FLAGS.join(" ");
@@ -370,6 +390,13 @@ mod tests {
             format!("cl.exe {msvc_flags} /w /DQS_ENGINE /FIcompat.h /c a.c /Fob.obj")
         );
         assert_eq!(seen[5], "cl.exe /nologo a.obj /Febin.exe");
+        assert_eq!(
+            seen[6],
+            format!(
+                "cc {gnu_flags} -w -Wno-error=implicit-function-declaration -fcommon -DQS_ENGINE -c a.c -o c.o"
+            ),
+            "only the view oracle's files merge common symbols"
+        );
     }
 
     #[test]

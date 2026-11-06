@@ -8,6 +8,7 @@
     reason = "test code: a failed unwrap or index is a failed test; exact inputs give exact floats; the atlas's offsets are small"
 )]
 
+use crate::look::Look;
 use qs_bsp::{
     BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_MIPTEX_HEADER_SIZE, Bsp, BspVersion, Face, Lit, Lump,
     Model, Node, Plane, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo, Texture,
@@ -147,7 +148,7 @@ pub(crate) fn samples(values: &[u8]) -> Vec<u8> {
 }
 
 fn build(spec: &MapSpec, lighting: &[u8]) -> MapMesh {
-    MapMesh::build(&bsp(spec, lighting), &palette()).unwrap()
+    MapMesh::build(&bsp(spec, lighting), &palette(), Look::GlQuake).unwrap()
 }
 
 // spec REND-1.1: the polygon is the surfedges' vertices in order, the first end of a positive
@@ -289,7 +290,10 @@ fn a_map_with_no_world_model_is_refused() {
     let lighting = samples(&[64]);
     let mut map = bsp(&MapSpec::default(), &lighting);
     map.models.clear();
-    assert_eq!(MapMesh::build(&map, &palette()), Err(MeshError::NoWorld));
+    assert_eq!(
+        MapMesh::build(&map, &palette(), Look::GlQuake),
+        Err(MeshError::NoWorld)
+    );
 }
 
 // spec REND-2.1: an animated texture is the frame for (int)(time*10) % anim_total, found by
@@ -330,7 +334,7 @@ fn a_turbulent_face_keeps_its_raw_coordinates() {
     let lighting = samples(&[10]);
     let mut map = bsp(&spec, &lighting);
     map.texinfo[0].vecs[0][3] = 5.0;
-    let mesh = MapMesh::build(&map, &palette()).unwrap();
+    let mesh = MapMesh::build(&map, &palette(), Look::GlQuake).unwrap();
     assert_eq!(mesh.vertices[2].texture, [64.0, 32.0]);
     assert_eq!(mesh.batches[0].surface, super::Surface::Turbulent);
 }
@@ -366,7 +370,7 @@ fn a_sky_is_a_solid_and_an_alpha_layer() {
         texture.offsets = [header, 0, 0, 0];
         texture.pixels = Box::leak(pixels.into_boxed_slice());
     }
-    let mesh = MapMesh::build(&map, &palette()).unwrap();
+    let mesh = MapMesh::build(&map, &palette(), Look::GlQuake).unwrap();
     let [solid, alpha] = mesh.skies[0].as_ref().unwrap();
     assert_eq!((solid.width, solid.height, alpha.width), (128, 128, 128));
     assert!(
@@ -435,7 +439,7 @@ fn mip_levels_follow_gl_resample_and_gl_mipmap() {
 fn a_placed_model_moves_and_turns_its_corners() {
     let world = bsp(&MapSpec::default(), &[]);
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     let placed = Placement {
         model: 0,
         origin: [100.0, 200.0, 300.0],
@@ -504,7 +508,7 @@ fn a_second_bsps_textures_follow_the_firsts() {
         alternate: None,
     });
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     builder.add(&world, &[Placement::WORLD]).unwrap();
     builder.add(&other, &[Placement::WORLD]).unwrap();
     let mesh = builder.finish();
@@ -520,7 +524,7 @@ fn a_second_bsps_textures_follow_the_firsts() {
 fn a_placement_of_a_missing_model_is_refused() {
     let world = bsp(&MapSpec::default(), &[]);
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     let missing = Placement {
         model: 1,
         ..Placement::WORLD
@@ -543,9 +547,19 @@ fn an_empty_cycle_is_not_animated() {
         alternate: None,
     };
     map.textures[0].as_mut().unwrap().animation = Some(cycle(0));
-    assert_eq!(MapMesh::build(&map, &palette()).unwrap().animations, [None]);
+    assert_eq!(
+        MapMesh::build(&map, &palette(), Look::GlQuake)
+            .unwrap()
+            .animations,
+        [None]
+    );
     map.textures[0].as_mut().unwrap().animation = Some(cycle(1));
-    assert!(MapMesh::build(&map, &palette()).unwrap().animations[0].is_some());
+    assert!(
+        MapMesh::build(&map, &palette(), Look::GlQuake)
+            .unwrap()
+            .animations[0]
+            .is_some()
+    );
 }
 
 // spec REND-1.11: the world's faces come before every entity's, in batches of their own
@@ -553,7 +567,7 @@ fn an_empty_cycle_is_not_animated() {
 fn the_world_is_drawn_before_entities() {
     let world = bsp(&MapSpec::default(), &[]);
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     let lift = Placement {
         model: 0,
         origin: [0.0, 0.0, 5.0],
@@ -713,6 +727,105 @@ fn changes_grow_one_rectangle_a_block() {
     }
 }
 
+/// 16 by 16 pixels of index 7 with a fullbright 230 and 255 in the first row.
+static FULLBRIGHT_PIXELS: [u8; 256] = {
+    let mut pixels = [7; 256];
+    pixels[1] = 230;
+    pixels[2] = 255;
+    pixels
+};
+
+/// The test map with [`FULLBRIGHT_PIXELS`] for its texture.
+fn fullbright_bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
+    let mut bsp = bsp(spec, lighting);
+    if let Some(Some(texture)) = bsp.textures.get_mut(0) {
+        texture.pixels = &FULLBRIGHT_PIXELS;
+    }
+    bsp
+}
+
+// spec REND-13.4: in QuakeSpasm's look a texture with an index of 224 or above is split: its
+// own texels black there, its glow those texels' colours and black elsewhere
+#[test]
+fn fullbright_texels_glow_in_quakespasm_s_look() {
+    let lighting = samples(&[50]);
+    let mesh = MapMesh::build(
+        &fullbright_bsp(&MapSpec::default(), &lighting),
+        &palette(),
+        Look::QuakeSpasm,
+    )
+    .unwrap();
+    let texture = &mesh.textures[0].rgba;
+    let glow = mesh.glows[0].as_ref().unwrap();
+    let colour = |i: u8| [i, i.wrapping_mul(2), i.wrapping_mul(3), 255];
+    assert_eq!(
+        texture[..12],
+        [colour(7), [0, 0, 0, 255], [0, 0, 0, 255]].concat()
+    );
+    assert_eq!(
+        glow.rgba[..12],
+        [[0, 0, 0, 255], colour(230), colour(255)].concat()
+    );
+    assert_eq!((glow.width, glow.height), (16, 16));
+}
+
+// spec REND-13.4: GLQuake's look, a texture with no fullbright index and a liquid have no
+// glow, and their texels are the palette's
+#[test]
+fn only_quakespasm_s_regular_textures_glow() {
+    let lighting = samples(&[50]);
+    let glq = MapMesh::build(
+        &fullbright_bsp(&MapSpec::default(), &lighting),
+        &palette(),
+        Look::GlQuake,
+    )
+    .unwrap();
+    assert_eq!(glq.glows, [None]);
+    assert_eq!(glq.textures[0].rgba[4..8], [230, 204, 178, 255]);
+    let plain = MapMesh::build(
+        &bsp(&MapSpec::default(), &lighting),
+        &palette(),
+        Look::QuakeSpasm,
+    )
+    .unwrap();
+    assert_eq!(plain.glows, [None]);
+    let water = MapSpec {
+        flags: SURF_DRAWTURB,
+        ..MapSpec::default()
+    };
+    let liquid = MapMesh::build(
+        &fullbright_bsp(&water, &lighting),
+        &palette(),
+        Look::QuakeSpasm,
+    )
+    .unwrap();
+    assert_eq!(liquid.glows, [None]);
+}
+
+// spec REND-13.5: with overbright a texel's sum is shifted by 8, so 50's sum of 12800 is 50,
+// where GLQuake's 7 makes it 100; the unsigned sum is capped at 255
+#[test]
+fn overbright_shifts_the_light_by_eight() {
+    let lighting = samples(&[50]);
+    let qs = MapMesh::build(
+        &bsp(&MapSpec::default(), &lighting),
+        &palette(),
+        Look::QuakeSpasm,
+    )
+    .unwrap();
+    assert_eq!(texel(&qs, 0, 0), [50, 50, 50, 255]);
+    // "z" is 550: 50 * 550 >> 8 is 107; 255 * 550 >> 8 is 547, capped.
+    assert_eq!(texel_for(&qs, &style(0, b"z"))[0], 107);
+    let bright = samples(&[255]);
+    let capped = MapMesh::build(
+        &bsp(&MapSpec::default(), &bright),
+        &palette(),
+        Look::QuakeSpasm,
+    )
+    .unwrap();
+    assert_eq!(texel_for(&capped, &style(0, b"z"))[0], 255);
+}
+
 /// A `.lit` file for `lighting`: each byte's triple `(b, 2b, 3b)`, wrapped.
 fn lit_file(lighting: &[u8]) -> Vec<u8> {
     let mut file = b"QLIT".to_vec();
@@ -732,7 +845,7 @@ fn a_lit_file_lights_each_channel() {
     let lit = Lit::read(&file, lighting.len()).unwrap();
     let map = bsp(&MapSpec::default(), &lighting);
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     let extras = Extras {
         lit: Some(&lit),
         ..Extras::default()
@@ -758,7 +871,7 @@ fn a_texture_may_carry_its_own_palette() {
     let shared = palette();
     let own_bytes: Vec<u8> = (0..=255_u8).flat_map(|i| [255 - i, 0, i]).collect();
     let own = Palette::read(&own_bytes).unwrap();
-    let mut builder = MeshBuilder::new(&shared);
+    let mut builder = MeshBuilder::new(&shared, Look::GlQuake);
     let palettes = [Some(own.clone())];
     let extras = Extras {
         palettes: &palettes,
@@ -997,7 +1110,7 @@ fn brush_models_are_lit_through_their_own_nodes() {
         angles: [0.0; 3],
     };
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     builder.add(&bsp, &[Placement::WORLD, moved]).unwrap();
     // The world's BSP again as an instanced model, its model 0 with `firstface` 0.
     let instanced = Placement {
@@ -1027,7 +1140,7 @@ fn brush_models_are_lit_through_their_own_nodes() {
 fn light_point_ignores_the_dynamic_lights() {
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let before = light_point(&bsp, &LightStyles::unset(), [8.0, 8.0, 10.0]);
     assert!(
         !mesh
