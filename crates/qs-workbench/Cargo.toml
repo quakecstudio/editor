@@ -16,12 +16,14 @@ qc-progs = { workspace = true }
 qc-sema = { workspace = true }
 qc-project = { workspace = true }
 qs-commands = { workspace = true }
+qs-engine = { workspace = true }
+qs-install = { workspace = true }
 schemars = { workspace = true, features = ["derive", "std"] }
 serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
 tracing = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
-serde_json = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true

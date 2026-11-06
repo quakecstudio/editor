@@ -32,6 +32,16 @@ an edit, so both commands run outside the edit history
   editor's text of each open file, its progs.dat written to its output and its .lno beside it
   (PRJ-3.2, LNO-1.4), a module with errors writing nothing; and the project's problems, as
   `ModuleBuilt` and `Reported` values the commands return.
+- Tabs, as Zed keeps them: each file opened gets one (`tabs`), the most recent first in
+  `history`; `close_file` and `file.close` close one, returning to the tab open before it
+  (Zed's `activate_on_close: "history"`), its unsaved text kept; `is_unsaved` marks a file
+  edited since it was saved; `OpenFile::symbol_at` names the definition a caret is in, for the
+  breadcrumb.
+- `RecentProjects` and `recent_path`: the projects opened most recently, kept in the data
+  directory, for the Project section to offer before a project is open.
+- The play loop and the debugger (`preview`, `debug`, `entities`): the preview host started
+  on the project's program, its entities, the debugger's breakpoints, stack and watches, and
+  the `preview.*` commands.
 - `HasWorkbench` and `register`: the commands for any context with a `Workbench`.
 - `OPEN_PROJECT`, `OPEN_FILE` and their parameter types, so the app runs them without
   spelling their ids.

@@ -10,7 +10,7 @@ use std::fmt;
 use std::io::{self, BufReader, Read, Write};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
 use interprocess::local_socket::traits::Stream as _;
@@ -261,6 +261,34 @@ impl Client {
         self.events.drain(..).collect()
     }
 
+    /// The events received so far and those waiting to be read, oldest first, without waiting
+    /// for more; `Err(ClientError::Closed)` once the host closed the connection and every event
+    /// before it was taken.
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::Closed`] when the connection is closed and no event is left.
+    pub fn poll_events(&mut self) -> Result<Vec<BridgeEvent>, ClientError> {
+        let mut closed = false;
+        loop {
+            match self.incoming.try_recv() {
+                Ok(Some(Message::Notification { method, params })) => {
+                    self.events.push_back(BridgeEvent { method, params });
+                }
+                Ok(Some(Message::Response { .. } | Message::Request { .. })) => {}
+                Ok(None) | Err(TryRecvError::Disconnected) => {
+                    closed = true;
+                    break;
+                }
+                Err(TryRecvError::Empty) => break,
+            }
+        }
+        if closed && self.events.is_empty() {
+            return Err(ClientError::Closed);
+        }
+        Ok(self.take_events())
+    }
+
     /// Waits up to `within` for the event `method`, keeping every other event; the events
     /// already received are looked at first.
     ///
@@ -455,6 +483,24 @@ impl Client {
     /// The request's [`ClientError`].
     pub fn set_breakpoint(&mut self, file: &str, line: u32) -> Result<Value, ClientError> {
         self.request("breakpoint/set", json!({ "file": file, "line": line }))
+    }
+
+    /// `breakpoint/clear` (BRIDGE-4.1) of the breakpoint `breakpoint/set` gave `id`.
+    ///
+    /// # Errors
+    ///
+    /// The request's [`ClientError`].
+    pub fn clear_breakpoint(&mut self, id: u64) -> Result<Value, ClientError> {
+        self.request("breakpoint/clear", json!({ "id": id }))
+    }
+
+    /// `evaluate` (BRIDGE-4.1): `expression`'s value while stopped in a frame.
+    ///
+    /// # Errors
+    ///
+    /// The request's [`ClientError`].
+    pub fn evaluate(&mut self, expression: &str) -> Result<Value, ClientError> {
+        self.request("evaluate", json!({ "expression": expression }))
     }
 
     /// `shutdown` (BRIDGE-2.5): the host stops its game and answers.

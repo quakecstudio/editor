@@ -63,6 +63,59 @@ pub fn search<'a>(
     found
 }
 
+/// One item another finder's query matches, such as a file of the project, and where.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Found<'a, T> {
+    /// The item.
+    pub item: &'a T,
+    /// The bytes of its name the query's characters matched, merged into runs.
+    pub name_hits: Vec<Range<usize>>,
+    /// The bytes of its longer text the query's characters matched, merged into runs.
+    pub text_hits: Vec<Range<usize>>,
+    score: i64,
+}
+
+/// Every item of `items` that `query` matches, best first. `texts` gives each item's name and
+/// a longer text, such as a file's name and its path: they are matched as [`search`] matches a
+/// command's summary and its id, the name scoring more, as a finder of files puts a match in
+/// the file's name before one in its folders. Of two that score the same, the shorter text
+/// comes first, then the order given. An empty query matches every item, in the order given.
+#[must_use]
+pub fn find<'a, T>(
+    items: impl IntoIterator<Item = &'a T>,
+    texts: impl Fn(&T) -> (&str, &str),
+    query: &str,
+) -> Vec<Found<'a, T>> {
+    let needle: Vec<char> = query
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect();
+    let mut found: Vec<(usize, Found<'a, T>)> = Vec::new();
+    for item in items {
+        let (name, text) = texts(item);
+        let (score, name_hits, text_hits) = match (fuzzy(name, &needle), fuzzy(text, &needle)) {
+            (None, None) => continue,
+            (Some((n, hits)), None) => (n.saturating_add(SUMMARY_BONUS), hits, Vec::new()),
+            (None, Some((t, hits))) => (t, Vec::new(), hits),
+            (Some((n, name_hits)), Some((t, text_hits))) => {
+                (n.saturating_add(SUMMARY_BONUS).max(t), name_hits, text_hits)
+            }
+        };
+        let item = Found {
+            item,
+            name_hits,
+            text_hits,
+            score,
+        };
+        found.push((text.len(), item));
+    }
+    if !needle.is_empty() {
+        found.sort_by_key(|(len, m)| (std::cmp::Reverse(m.score), *len));
+    }
+    found.into_iter().map(|(_, m)| m).collect()
+}
+
 /// What a match in the summary is worth over the same match in the id.
 const SUMMARY_BONUS: i64 = 5;
 /// What a matched character is worth.
@@ -160,7 +213,7 @@ mod tests {
         reason = "test code: a failed unwrap is a failed test"
     )]
 
-    use super::{fuzzy, search};
+    use super::{find, fuzzy, search};
     use crate::{Command, NoParams, Outcome, Registry};
 
     #[derive(Debug)]
@@ -338,5 +391,41 @@ mod tests {
         assert_eq!(words.1, vec![7_usize..9], "the run at a word's start");
         let earliest = fuzzy("display the preview player", &needle("pla")).unwrap();
         assert_eq!(earliest.1, vec![3_usize..6], "the run in Dis-pla-y");
+    }
+
+    // UI-10: a finder matches each item's name and its longer text as the palette matches a
+    // summary and an id: a match in a file's name comes before one in its folders, the shorter
+    // of two equal matches comes first, an empty query keeps the order given and no match is
+    // no item
+    #[test]
+    fn find_ranks_any_items_by_their_name_then_their_text() {
+        let files = [
+            ("items.qc", "src/items.qc"),
+            ("weapons.qc", "src/weapons.qc"),
+            ("world.qc", "weapons/world.qc"),
+            ("defs.qc", "defs.qc"),
+        ];
+        let paths = |query: &str| -> Vec<&str> {
+            find(&files, |f| *f, query)
+                .iter()
+                .map(|m| m.item.1)
+                .collect()
+        };
+        assert_eq!(paths(""), files.map(|f| f.1));
+        assert_eq!(paths("weap"), ["src/weapons.qc", "weapons/world.qc"]);
+        assert_eq!(paths("w o r l d"), ["weapons/world.qc"]);
+        assert!(paths("zzz").is_empty());
+        let found = find(&files, |f| *f, "defs");
+        let defs = found.first().unwrap();
+        assert_eq!(defs.name_hits, vec![0_usize..4]);
+        assert_eq!(defs.text_hits, vec![0_usize..4]);
+        let folder = find(&files, |f| *f, "src");
+        let items = folder.first().unwrap();
+        assert!(items.name_hits.is_empty(), "only the path holds it");
+        assert_eq!(items.text_hits, vec![0_usize..3]);
+        // Two equal matches: the shorter text first.
+        let tied = [("x.qc", "aa/x.qc"), ("x.qc", "a/x.qc")];
+        let order: Vec<&str> = find(&tied, |f| *f, "x").iter().map(|m| m.item.1).collect();
+        assert_eq!(order, ["a/x.qc", "aa/x.qc"]);
     }
 }

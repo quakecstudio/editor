@@ -13,6 +13,7 @@
 //!
 //! Every string comes from [`crate::strings`]; a test fails on a string literal here.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::containers::panel::PanelState;
@@ -27,14 +28,25 @@ use qs_layout::{
     TogglePanelParams,
 };
 use qs_render::{Camera, MapMesh};
+use qs_workbench::debug::Location;
 use qs_workbench::{
-    AtParams, COMPLETE, Candidate, Config, DEFINITION, FsLoader, HOVER, HasWorkbench, HoverInfo,
-    OPEN_FILE, OPEN_PROJECT, OpenFile, OpenFileParams, OpenProjectParams, Place, REFERENCES,
-    RENAME, RenameParams, SAVE_FILE, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
+    AtParams, CLOSE_FILE, COMPLETE, Candidate, CloseFileParams, Config, DEFINITION, EntryKind,
+    FsLoader, HOVER, HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT, OpenFile,
+    OpenFileParams, OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState, Preview,
+    PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RecentProjects,
+    RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
 };
+use qs_workbench::{
+    BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, STEP_BY, StepByParams, UNWATCH,
+    UnwatchParams, WATCH, WatchParams,
+};
+use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
+use crate::debugger::{self, DebugAction, DebugInput};
 use crate::editor::{Editor, Popup, Request};
+use crate::entities::{self, EntityAction, Outliner, Properties};
 use crate::fallback::{SystemFonts, families};
+use crate::finder::FileFinder;
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
 use crate::map_view::{self, MapView};
@@ -50,6 +62,14 @@ pub struct Workspace {
     pub layout: Layout,
     /// The open project and file.
     pub workbench: Workbench<FsLoader>,
+    /// The play loop: the preview host, when it runs.
+    pub preview: Preview,
+}
+
+impl HasPreview for Workspace {
+    fn workbench_and_preview(&mut self) -> (&mut Workbench<FsLoader>, &mut Preview) {
+        (&mut self.workbench, &mut self.preview)
+    }
 }
 
 impl HasWorkbench for Workspace {
@@ -74,6 +94,7 @@ pub(crate) enum Area {
     StatusBar,
     Panel(Panel),
     Palette,
+    Finder,
     Editor,
     Section(Text),
 }
@@ -119,6 +140,8 @@ pub struct Shell {
     pub(crate) drawn: [Option<f32>; 3],
     /// The command palette.
     pub(crate) palette: Palette,
+    /// The file finder.
+    pub(crate) finder: FileFinder,
     symbol_scope: SymbolScope,
     editor: Option<Editor>,
     system_fonts: SystemFonts,
@@ -130,6 +153,26 @@ pub struct Shell {
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
     /// layout's when the window opens, so the keyboard moves only when a focus command runs.
     focus_applied: u64,
+    /// The last play-loop command's error, shown on the toolbar until the next one.
+    preview_error: Option<String>,
+    /// The Entities outliner's filter.
+    outliner: Outliner,
+    /// The Properties panel's edits.
+    properties: Properties,
+    /// The text typed in the Debugger tab's watch box and the console's command box.
+    debug_input: DebugInput,
+    /// Where the game last stopped that the editor was taken to.
+    shown_stop: Option<Location>,
+    /// The line, from 1, of the file to show once it is open in the editor.
+    pending_line: Option<(PathBuf, u32)>,
+    /// The editors of the tabs not shown, with their carets and undo histories.
+    parked: BTreeMap<PathBuf, Editor>,
+    /// The projects opened most recently, and the file they are kept in.
+    recent: (RecentProjects, Option<PathBuf>),
+    /// The project open in the last frame, to see when another opens.
+    seen_root: Option<PathBuf>,
+    /// Why the last project asked for did not open.
+    project_error: Option<String>,
 }
 
 impl Shell {
@@ -148,9 +191,11 @@ impl Shell {
         let mut registry = Registry::new();
         qs_layout::register(&mut registry)?;
         qs_workbench::register(&mut registry)?;
+        qs_workbench::register_preview(&mut registry)?;
         let workspace = Workspace {
             layout,
             workbench: Workbench::new(FsLoader, config),
+            preview: Preview::new(preview_config()),
         };
         Ok(Self {
             session: Session::new(workspace, registry),
@@ -161,6 +206,7 @@ impl Shell {
             centre_tab: CentreTab::default(),
             drawn: [None; 3],
             palette: Palette::default(),
+            finder: FileFinder::default(),
             symbol_scope: SymbolScope::default(),
             editor: None,
             system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
@@ -168,6 +214,16 @@ impl Shell {
             map: None,
             covered: None,
             focus_applied: layout.focus_requests,
+            preview_error: None,
+            outliner: Outliner::default(),
+            properties: Properties::default(),
+            debug_input: DebugInput::default(),
+            shown_stop: None,
+            pending_line: None,
+            parked: BTreeMap::new(),
+            recent: (RecentProjects::default(), None),
+            seen_root: None,
+            project_error: None,
         })
     }
 
@@ -245,6 +301,76 @@ impl Shell {
     /// Gives the editor the keyboard, as a click in it does.
     pub fn focus_editor(&self, ctx: &egui::Context) {
         ctx.memory_mut(|m| m.request_focus(Id::new(EDITOR_AREA)));
+    }
+
+    /// Reads the recent projects from `file`, and keeps them there.
+    pub fn set_recent_file(&mut self, file: PathBuf) {
+        self.recent = (RecentProjects::load(&file), Some(file));
+    }
+
+    /// The projects opened most recently, the latest first.
+    #[must_use]
+    pub fn recent_projects(&self) -> &[PathBuf] {
+        self.recent.0.projects()
+    }
+
+    /// Asks for a project folder with the system's dialog, as Zed's Open does by default
+    /// (`use_system_path_prompts`), and opens it.
+    pub fn open_folder(&mut self) {
+        let picked = rfd::FileDialog::new()
+            .set_title(Text::OpenFolderTitle.get())
+            .pick_folder();
+        if let Some(folder) = picked {
+            self.open_asked(&folder);
+        }
+    }
+
+    /// Opens the project in `folder`, saying why when it does not open; a recent project that
+    /// no longer opens comes off the list.
+    fn open_asked(&mut self, folder: &Path) {
+        // A folder with no project file opens empty, as Zed opens any folder; one that is not
+        // there any more, as a recent project may be, does not.
+        let opened = if folder.is_dir() {
+            self.open_project(folder).map_err(|error| error.to_string())
+        } else {
+            Err(format!("{} {}", Text::FolderGone.get(), folder.display()))
+        };
+        match opened {
+            Ok(()) => self.project_error = None,
+            Err(error) => {
+                self.project_error = Some(error.to_string());
+                self.recent.0.forget(folder);
+                self.save_recent();
+            }
+        }
+    }
+
+    /// Puts the project just opened first in the recent projects.
+    fn note_project(&mut self) {
+        let root = self
+            .session
+            .context()
+            .workbench
+            .root()
+            .map(Path::to_path_buf);
+        if root == self.seen_root {
+            return;
+        }
+        if let Some(root) = &root
+            && self.recent.0.opened(root)
+        {
+            self.save_recent();
+        }
+        self.seen_root = root;
+    }
+
+    /// Writes the recent projects to their file, if they have one.
+    fn save_recent(&self) {
+        if let Some(file) = &self.recent.1
+            && let Err(error) = self.recent.0.save(file)
+        {
+            tracing::warn!(%error, "recent projects not written");
+        }
     }
 
     /// Gives the shell the window's wgpu device and formats, which the map view draws with.
@@ -346,6 +472,15 @@ impl Shell {
 
     /// Draws the window for one frame.
     pub fn ui(&mut self, ui: &mut Ui) {
+        if self.session.context().preview.state() != PlayState::Stopped {
+            let _: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
+        }
+        self.follow_stop();
+        self.note_project();
+        if self.session.context().preview.state() != PlayState::Stopped {
+            // The host's events are read each frame; a running game asks for frames.
+            ui.ctx().request_repaint_after(PREVIEW_POLL);
+        }
         self.keys(ui);
         let pending = self.pending_focus();
         self.toolbar(ui);
@@ -370,6 +505,35 @@ impl Shell {
                 Err(error) => self.palette.failed(error.to_string()),
             }
         }
+        let workbench = &self.session.context().workbench;
+        // The files opened most recently first, then the rest in the tree's order.
+        let mut files = workbench.history().to_vec();
+        for entry in workbench.tree() {
+            if let EntryKind::File(path) = &entry.kind
+                && !files.contains(path)
+            {
+                files.push(path.clone());
+            }
+        }
+        let open = workbench.open().map(|open| open.path().to_path_buf());
+        let chosen = self.finder.show(
+            ui,
+            Id::new(Area::Finder),
+            &self.theme,
+            (workbench.root(), open.as_deref()),
+            &files,
+        );
+        match chosen {
+            Some((path, Some(line))) => {
+                self.pending_line = Some((path.clone(), line));
+                self.jump(Jump { path, offset: 0 });
+            }
+            Some((path, None)) => {
+                let offset = self.parked.get(&path).map_or(0, Editor::caret_offset);
+                self.jump(Jump { path, offset });
+            }
+            None => {}
+        }
         let dragging = ui.input(|input| input.pointer.any_down());
         self.save_if_changed(dragging);
     }
@@ -378,10 +542,20 @@ impl Shell {
     /// command (`keymap`), the editor's own keys left to it while it has the keyboard.
     fn keys(&mut self, ui: &Ui) {
         if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_PALETTE)) {
+            self.finder.close();
             self.palette.open();
             return;
         }
-        if self.palette.is_open() {
+        if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FOLDER)) {
+            self.open_folder();
+            return;
+        }
+        if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FILE_FINDER)) {
+            self.palette.close();
+            self.finder.open();
+            return;
+        }
+        if self.palette.is_open() || self.finder.is_open() {
             return;
         }
         // The editor, with its own undo history, takes its keys itself.
@@ -406,27 +580,21 @@ impl Shell {
         let fill = theme.color(Token::SurfaceToolbar);
         let mut toggled = None;
         let mut open_palette = false;
+        let mut control = None;
+        let preview = &self.session.context().preview;
+        let state = preview.state();
+        let failed = self.preview_error.is_some();
+        let status = self
+            .preview_error
+            .clone()
+            .or_else(|| preview.status().map(str::to_owned));
         egui::Panel::top(Id::new(Area::Toolbar))
             .exact_size(theme.size.toolbar)
             .frame(egui::Frame::NONE.fill(fill).inner_margin(theme.space(1)))
             .show(ui, |ui| {
                 name_area(ui, accesskit::Role::Toolbar, Text::Toolbar);
                 ui.horizontal_centered(|ui| {
-                    let play = Button::new(
-                        RichText::new(labelled(Icon::Play, Text::Play))
-                            .color(theme.color(Token::TextOnAccent)),
-                    )
-                    .fill(theme.color(Token::Accent));
-                    let not_yet = Text::NotYetAvailable.get();
-                    ui.add_enabled(false, play).on_disabled_hover_text(not_yet);
-                    for (icon, text) in [
-                        (Icon::Pause, Text::Pause),
-                        (Icon::Step, Text::Step),
-                        (Icon::Restart, Text::RestartMap),
-                    ] {
-                        ui.add_enabled(false, Button::new(labelled(icon, text)).frame(false))
-                            .on_disabled_hover_text(not_yet);
-                    }
+                    control = play_controls(ui, theme, state);
                     ui.separator();
                     ui.label(Text::PreviewHost.get());
                     ui.label(
@@ -434,6 +602,15 @@ impl Shell {
                             .small()
                             .color(theme.color(Token::TextMuted)),
                     );
+                    if let Some(status) = &status {
+                        let colour = if failed {
+                            theme.color(Token::StatusError)
+                        } else {
+                            theme.color(Token::StatusOk)
+                        };
+                        status_dot(ui, colour);
+                        ui.label(RichText::new(status.as_str()).color(colour));
+                    }
                     ui.with_layout(EguiLayout::right_to_left(Align::Center), |ui| {
                         for (panel, icon, text) in [
                             (Panel::Right, Icon::PanelRight, Text::ToggleRightPanel),
@@ -473,6 +650,130 @@ impl Shell {
         if open_palette {
             self.palette.open();
         }
+        if let Some(id) = control {
+            self.control(id);
+        }
+    }
+
+    /// Runs the play-loop command `id` from the toolbar, keeping its error for the toolbar to
+    /// show until the next command.
+    fn control(&mut self, id: &str) {
+        let result = if id == PLAY {
+            serde_json::to_value(PlayParams::default())
+                .map_err(ShellError::from)
+                .and_then(|params| Ok(self.session.execute(id, params)?))
+        } else {
+            self.session
+                .execute(id, serde_json::json!({}))
+                .map_err(ShellError::from)
+        };
+        self.preview_error = result.err().map(|error| error.to_string());
+    }
+
+    /// Runs what the outliner or the Properties panel asked for: a selection or a field's new
+    /// value through its command, or the definition of a function opened.
+    fn entity_action(&mut self, action: EntityAction) {
+        let result = match action {
+            EntityAction::Select(edict) => {
+                self.run::<_, SelectedEntity>(SELECT, &SelectParams { edict })
+            }
+            EntityAction::SetField { field, value } => {
+                self.run::<_, SelectedEntity>(SET_FIELD, &SetFieldParams { field, value })
+            }
+            EntityAction::Open(name) => {
+                let place = self
+                    .session
+                    .context()
+                    .workbench
+                    .project_symbols()
+                    .iter()
+                    .find(|symbol| symbol.name.eq_ignore_ascii_case(&name))
+                    .map(|symbol| Jump {
+                        path: symbol.range.path.clone(),
+                        offset: symbol.range.span.start,
+                    });
+                if let Some(place) = place {
+                    self.jump(place);
+                }
+                return;
+            }
+        };
+        if result.is_none() {
+            self.preview_error = Some(Text::EditFailed.get().to_owned());
+        }
+    }
+
+    /// Runs what the Debugger tab, the console's box or a click in the editor's gutter asked
+    /// for, through its command, or shows a line in the editor.
+    fn debug_action(&mut self, action: DebugAction) {
+        let ran = match action {
+            DebugAction::Step(kind) => self
+                .run::<_, PreviewStatus>(STEP_BY, &StepByParams { kind })
+                .is_some(),
+            DebugAction::Watch(expression) => self
+                .run::<_, ()>(WATCH, &WatchParams { expression })
+                .is_some(),
+            DebugAction::Unwatch(index) => self
+                .run::<_, PreviewStatus>(UNWATCH, &UnwatchParams { index })
+                .is_some(),
+            DebugAction::Breakpoint { file, line } => self
+                .run::<_, ()>(BREAKPOINT, &BreakpointParams { file, line })
+                .is_some(),
+            DebugAction::Console(command) => self
+                .run::<_, ()>(CONSOLE, &ConsoleParams { command })
+                .is_some(),
+            DebugAction::Show { file, line } => {
+                self.show_line(&file, line);
+                true
+            }
+        };
+        if !ran {
+            self.preview_error = Some(Text::EditFailed.get().to_owned());
+        }
+    }
+
+    /// Opens `file`, relative to the project's root, at `line`, from 1.
+    fn show_line(&mut self, file: &Path, line: u32) {
+        let Some(root) = self.session.context().workbench.root() else {
+            return;
+        };
+        let path = root.join(file);
+        self.pending_line = Some((path.clone(), line));
+        self.jump(Jump { path, offset: 0 });
+    }
+
+    /// Takes the editor to where the game stopped, once for each stop.
+    fn follow_stop(&mut self) {
+        let stop = self
+            .session
+            .context()
+            .preview
+            .debugger()
+            .stopped()
+            .map(|(_, at)| at.clone());
+        if stop == self.shown_stop {
+            return;
+        }
+        if let Some(Location {
+            file: Some(file),
+            line: Some(line),
+            ..
+        }) = &stop
+        {
+            self.show_line(file, *line);
+        }
+        self.shown_stop = stop;
+    }
+
+    /// Reloads the running game after a save, its error shown on the toolbar.
+    fn reload_after_save(&mut self) {
+        if self.session.context().preview.state() == PlayState::Stopped {
+            return;
+        }
+        let reloaded: Option<PreviewStatus> = self.run(RELOAD, &serde_json::json!({}));
+        if reloaded.is_none() {
+            self.preview_error = Some(Text::ReloadFailed.get().to_owned());
+        }
     }
 
     /// The area a focus command named since the last frame, if one ran (QA-9): the command
@@ -505,11 +806,12 @@ impl Shell {
                     for (icon, value) in [(Icon::Error, errors), (Icon::Warning, warnings)] {
                         ui.label(RichText::new(count(icon, value)).small().color(muted));
                     }
-                    ui.label(
-                        RichText::new(Text::PreviewStopped.get())
-                            .small()
-                            .color(muted),
-                    );
+                    let running = match self.session.context().preview.state() {
+                        PlayState::Stopped => Text::PreviewStopped,
+                        PlayState::Playing => Text::PreviewRunning,
+                        PlayState::Paused => Text::PreviewPaused,
+                    };
+                    ui.label(RichText::new(running.get()).small().color(muted));
                 });
             });
     }
@@ -531,6 +833,15 @@ impl Shell {
         let bottom_tab = &mut self.bottom_tab;
         let scope = &mut self.symbol_scope;
         let workbench = &self.session.context().workbench;
+        let preview = &self.session.context().preview;
+        let outliner = &mut self.outliner;
+        let properties = &mut self.properties;
+        let debug_input = &mut self.debug_input;
+        let recent_projects = self.recent.0.projects();
+        let project_error = self.project_error.as_deref();
+        let mut open: Option<Option<PathBuf>> = None;
+        let mut entity_action = None;
+        let mut debug_action = None;
         let mut jump = None;
         let mut expanded = state.visible;
         // A size the layout was given by a command, not by a drag of the panel's edge, is
@@ -575,23 +886,67 @@ impl Shell {
                 name_area(ui, accesskit::Role::Pane, name);
                 match panel {
                     Panel::Left => {
-                        jump = left(ui, theme, workbench, scope, focus);
+                        let recent = (recent_projects, project_error);
+                        match left(ui, theme, (workbench, recent), scope, focus) {
+                            Some(LeftAction::Jump(to)) => jump = Some(to),
+                            Some(LeftAction::Open(folder)) => open = Some(Some(folder)),
+                            Some(LeftAction::OpenFolder) => open = Some(None),
+                            None => {}
+                        }
                         ui.add_space(theme.space(3));
-                        section(ui, theme, Text::Entities, Text::NotPlaying);
+                        if preview.state() == PlayState::Stopped {
+                            section(ui, theme, Text::Entities, Text::NotPlaying);
+                        } else {
+                            heading(ui, theme, Text::Entities);
+                            entity_action = entities::outliner(ui, theme, preview, outliner);
+                        }
                     }
                     Panel::Right => {
-                        let properties = section(ui, theme, Text::Properties, Text::NotPlaying);
+                        let heading = if preview.state() == PlayState::Stopped {
+                            section(ui, theme, Text::Properties, Text::NotPlaying)
+                        } else {
+                            let heading = heading(ui, theme, Text::Properties);
+                            if let Some(action) =
+                                entities::properties(ui, theme, preview, properties)
+                            {
+                                entity_action = Some(action);
+                            }
+                            heading
+                        };
                         if focus {
-                            properties.request_focus();
+                            heading.request_focus();
                         }
                         ui.add_space(theme.space(3));
                         section(ui, theme, Text::Agent, Text::NoAgent);
                     }
-                    Panel::Bottom => jump = bottom(ui, theme, bottom_tab, workbench, focus),
+                    Panel::Bottom => {
+                        match bottom(
+                            ui,
+                            theme,
+                            bottom_tab,
+                            (workbench, preview, debug_input),
+                            focus,
+                        ) {
+                            Some(BottomAction::Jump(to)) => jump = Some(to),
+                            Some(BottomAction::Debug(action)) => debug_action = Some(action),
+                            None => {}
+                        }
+                    }
                 }
             });
         if let Some(jump) = jump {
             self.jump(jump);
+        }
+        if let Some(action) = entity_action {
+            self.entity_action(action);
+        }
+        if let Some(action) = debug_action {
+            self.debug_action(action);
+        }
+        match open {
+            Some(Some(folder)) => self.open_asked(&folder),
+            Some(None) => self.open_folder(),
+            None => {}
         }
         // A panel dragged shut is hidden through its command too.
         if expanded != state.visible
@@ -675,7 +1030,10 @@ impl Shell {
                     None
                 }
                 Request::Save => {
-                    let _: Option<()> = self.run(SAVE_FILE, &SaveFileParams { path });
+                    let saved: Option<()> = self.run(SAVE_FILE, &SaveFileParams { path });
+                    if saved.is_some() {
+                        self.reload_after_save();
+                    }
                     None
                 }
                 Request::Definition(offset) => {
@@ -760,15 +1118,35 @@ impl Shell {
             let path = editor.path.clone();
             let _: Option<()> = self.run(UPDATE_FILE, &UpdateFileParams { path, text });
         }
-        let open = self.session.context().workbench.open();
+        let workbench = &self.session.context().workbench;
+        let tabs = workbench.tabs();
+        self.parked.retain(|path, _| tabs.contains(path));
+        let open = workbench.open();
         match (open, &mut self.editor) {
             (None, _) => self.editor = None,
             (Some(open), Some(editor)) if editor.path == open.path() => {
                 editor.sync(open, &self.theme);
             }
             (Some(open), _) => {
-                self.editor = Some(Editor::new(Id::new(EDITOR_AREA), open, &self.theme));
+                if let Some(old) = self.editor.take()
+                    && tabs.contains(&old.path)
+                {
+                    self.parked.insert(old.path.clone(), old);
+                }
+                let editor = match self.parked.remove(open.path()) {
+                    Some(mut editor) => {
+                        editor.sync(open, &self.theme);
+                        editor
+                    }
+                    None => Editor::new(Id::new(EDITOR_AREA), open, &self.theme),
+                };
+                self.editor = Some(editor);
             }
+        }
+        if let Some(editor) = self.editor.as_mut()
+            && let Some((_, line)) = self.pending_line.take_if(|(path, _)| *path == editor.path)
+        {
+            editor.go_to_line(line_index(line));
         }
     }
 
@@ -803,17 +1181,35 @@ impl Shell {
             self.focus_editor(ui.ctx());
         }
         let theme = &self.theme;
+        let workbench = &self.session.context().workbench;
+        let open = workbench.open().map(OpenFile::path);
+        let mut chosen = None;
         egui::Frame::NONE
             .fill(theme.color(Token::SurfaceTabs))
             .inner_margin(egui::Margin::symmetric(8, 0))
             .show(ui, |ui| {
                 ui.set_height(theme.size.tabs);
                 ui.horizontal_centered(|ui| {
-                    for (tab, text) in [
-                        (CentreTab::Editor, Text::Editor),
-                        (CentreTab::Game, Text::Game),
-                        (CentreTab::Map, Text::Map),
-                    ] {
+                    let editing = self.centre_tab == CentreTab::Editor;
+                    for path in workbench.tabs() {
+                        let shown = editing && open == Some(path.as_path());
+                        if let Some(action) =
+                            file_tab(ui, theme, path, workbench.is_unsaved(path), shown)
+                        {
+                            chosen = Some(action);
+                        }
+                    }
+                    let centre = if workbench.tabs().is_empty() {
+                        [
+                            (CentreTab::Editor, Text::Editor),
+                            (CentreTab::Game, Text::Game),
+                            (CentreTab::Map, Text::Map),
+                        ]
+                        .as_slice()
+                    } else {
+                        [(CentreTab::Game, Text::Game), (CentreTab::Map, Text::Map)].as_slice()
+                    };
+                    for &(tab, text) in centre {
                         let response = ui.selectable_value(&mut self.centre_tab, tab, text.get());
                         if focus && !editor_shown && self.centre_tab == tab {
                             response.request_focus();
@@ -821,10 +1217,56 @@ impl Shell {
                     }
                 });
             });
+        let switched = chosen.is_some();
+        match chosen {
+            Some(TabAction::Show(path)) => {
+                let offset = self
+                    .parked
+                    .get(&path)
+                    .or(self.editor.as_ref().filter(|e| e.path == path))
+                    .map_or(0, Editor::caret_offset);
+                self.jump(Jump { path, offset });
+            }
+            Some(TabAction::Close(path)) => {
+                let _: Option<()> = self.run(CLOSE_FILE, &CloseFileParams { path });
+            }
+            None => {}
+        }
+        if switched {
+            self.sync_editor();
+        }
+        let theme = &self.theme;
         if self.centre_tab == CentreTab::Editor
             && let Some(editor) = &mut self.editor
         {
+            let context = self.session.context();
+            let file = context
+                .workbench
+                .root()
+                .and_then(|root| editor.path.strip_prefix(root).ok())
+                .map(Path::to_path_buf);
+            if let Some(file) = &file {
+                let debugger = context.preview.debugger();
+                let lines = debugger.lines_of(file).map(line_index);
+                editor.view.set_breakpoints(lines);
+                let paused = debugger
+                    .stopped()
+                    .and_then(|(_, at)| (at.file.as_deref() == Some(file)).then_some(at.line?));
+                editor.view.set_paused(paused.map(line_index));
+            }
+            breadcrumb(
+                ui,
+                theme,
+                context.workbench.root(),
+                editor,
+                context.workbench.open(),
+            );
             let requests = editor.show(ui, theme, &view_style(theme));
+            let clicked = editor.view.take_gutter_click();
+            if let (Some(file), Some(line)) = (file, clicked) {
+                let line = u32::try_from(line.saturating_add(1)).unwrap_or(u32::MAX);
+                self.debug_action(DebugAction::Breakpoint { file, line });
+            }
             // The panels drawn before the editor this frame show what the requests change on
             // the next.
             if !requests.is_empty() {
@@ -856,6 +1298,109 @@ impl Shell {
             ui.allocate_response(egui::Vec2::ZERO, Sense::hover());
         });
     }
+}
+
+/// The open file's path under the project, each folder a step, and the definition the caret
+/// is in, as mockup 01 draws it above the code: `src / weapons.qc / W_FireEmber`.
+fn breadcrumb(
+    ui: &mut Ui,
+    theme: &Theme,
+    root: Option<&Path>,
+    editor: &Editor,
+    open: Option<&OpenFile>,
+) {
+    let path = root
+        .and_then(|root| editor.path.strip_prefix(root).ok())
+        .unwrap_or(&editor.path);
+    let muted = theme.color(Token::TextMuted);
+    let separator = Text::PathSeparator.get();
+    let frame = egui::Frame::NONE.inner_margin(egui::Margin::symmetric(BREADCRUMB_INDENT, 4));
+    frame.show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (n, step) in path.components().enumerate() {
+                if n > 0 {
+                    ui.label(RichText::new(separator).small().color(muted));
+                }
+                ui.label(
+                    RichText::new(step.as_os_str().to_string_lossy())
+                        .small()
+                        .color(muted),
+                );
+            }
+            let symbol = open
+                .filter(|open| open.path() == editor.path)
+                .and_then(|open| open.symbol_at(editor.caret_offset()));
+            if let Some(symbol) = symbol {
+                ui.label(RichText::new(separator).small().color(muted));
+                ui.label(
+                    RichText::new(&symbol.name)
+                        .small()
+                        .monospace()
+                        .color(theme.color(Token::CodeFunction)),
+                );
+            }
+        })
+    });
+}
+
+/// The breadcrumb's indent, in points: the gutter's padding, so it lines up with the line
+/// numbers below it.
+const BREADCRUMB_INDENT: i8 = 12;
+
+/// What a click on a file's tab asks for.
+enum TabAction {
+    /// Show the file in the editor.
+    Show(PathBuf),
+    /// Close its tab.
+    Close(PathBuf),
+}
+
+/// A file's tab: its name, a dot when it is unsaved, and a button that closes it.
+fn file_tab(
+    ui: &mut Ui,
+    theme: &Theme,
+    path: &Path,
+    unsaved: bool,
+    shown: bool,
+) -> Option<TabAction> {
+    let name = path
+        .file_name()
+        .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy());
+    let label = if unsaved {
+        format!("{name} {}", Text::UnsavedMark.get())
+    } else {
+        name.into_owned()
+    };
+    let mut action = None;
+    let tab = ui
+        .selectable_label(shown, label)
+        .on_hover_text(path.to_string_lossy());
+    // A screen reader says it is a tab, not one more button; the tree's row is the button.
+    ui.ctx().accesskit_node_builder(tab.id, |node| {
+        node.set_role(accesskit::Role::Tab);
+    });
+    if tab.clicked() {
+        action = Some(TabAction::Show(path.to_path_buf()));
+    }
+    // The close button keeps its place and shows on hover, as Zed's default
+    // `show_close_button: "hover"` does, so the tabs do not move under the pointer.
+    let close = Button::new(RichText::new(Text::Remove.get()).color(egui::Color32::TRANSPARENT))
+        .frame(false);
+    let close = ui.add(close).on_hover_text(Text::CloseTabHint.get());
+    if tab.hovered() || close.hovered() {
+        ui.painter().text(
+            close.rect.center(),
+            egui::Align2::CENTER_CENTER,
+            Text::Remove.get(),
+            egui::FontId::default(),
+            theme.color(Token::TextMuted),
+        );
+    }
+    if close.clicked() {
+        action = Some(TabAction::Close(path.to_path_buf()));
+    }
+    action
 }
 
 /// The size a drag of a panel's edge gave it: its size this frame, when the pointer is held
@@ -920,10 +1465,10 @@ const SYMBOLS_SHARE: f32 = 0.4;
 fn left(
     ui: &mut Ui,
     theme: &Theme,
-    workbench: &Workbench<FsLoader>,
+    (workbench, (recent, error)): (&Workbench<FsLoader>, (&[PathBuf], Option<&str>)),
     scope: &mut SymbolScope,
     focus: bool,
-) -> Option<Jump> {
+) -> Option<LeftAction> {
     let height = ui.available_height();
     let mut jump = None;
     let project = heading(ui, theme, Text::Project);
@@ -931,7 +1476,11 @@ fn left(
         project.request_focus();
     }
     match workbench.root() {
-        None => note(ui, theme, Text::NoProject),
+        None => {
+            if let Some(action) = no_project(ui, theme, recent, error) {
+                return Some(action);
+            }
+        }
         Some(root) => {
             ui.label(RichText::new(project::root_name(root)).strong());
             let open = workbench.open().map(OpenFile::path);
@@ -939,7 +1488,14 @@ fn left(
                 .id_salt(Area::Section(Text::Project))
                 .max_height(height * TREE_SHARE)
                 .auto_shrink([false, true])
-                .show(ui, |ui| jump = project::tree_ui(ui, workbench.tree(), open));
+                .show(ui, |ui| {
+                    let rows = project::Rows {
+                        open,
+                        unsaved: &|path| workbench.is_unsaved(path),
+                        mark: theme.color(Token::StatusWarn),
+                    };
+                    jump = project::tree_ui(ui, workbench.tree(), &rows);
+                });
         }
     }
     ui.add_space(theme.space(3));
@@ -952,7 +1508,56 @@ fn left(
         workbench.project_symbols(),
         height * SYMBOLS_SHARE,
     );
-    jump.or(symbols)
+    jump.or(symbols).map(LeftAction::Jump)
+}
+
+/// What a click in the left panel asks for.
+enum LeftAction {
+    /// Open a file at a place.
+    Jump(Jump),
+    /// Open this project folder.
+    Open(PathBuf),
+    /// Ask for a project folder with the system's dialog.
+    OpenFolder,
+}
+
+/// The Project section with no project open: an Open Folder button, why the last one did not
+/// open, and the recent projects, each a row that opens it, as Zed's welcome page offers them.
+fn no_project(
+    ui: &mut Ui,
+    theme: &Theme,
+    recent: &[PathBuf],
+    error: Option<&str>,
+) -> Option<LeftAction> {
+    let mut action = None;
+    note(ui, theme, Text::NoProject);
+    if ui.button(Text::OpenFolderButton.get()).clicked() {
+        action = Some(LeftAction::OpenFolder);
+    }
+    if let Some(error) = error {
+        ui.add(
+            egui::Label::new(RichText::new(error).color(theme.color(Token::StatusError))).wrap(),
+        );
+    }
+    if recent.is_empty() {
+        return action;
+    }
+    ui.add_space(theme.space(2));
+    ui.label(
+        RichText::new(Text::RecentProjects.get())
+            .small()
+            .color(theme.color(Token::TextMuted)),
+    );
+    for folder in recent {
+        let name = project::root_name(folder);
+        let row = ui
+            .add(Button::new(name).frame_when_inactive(false))
+            .on_hover_text(folder.to_string_lossy());
+        if row.clicked() {
+            action = Some(LeftAction::Open(folder.clone()));
+        }
+    }
+    action
 }
 
 /// The editor's colours and font, from the theme's tokens.
@@ -968,6 +1573,9 @@ pub(crate) fn view_style(theme: &Theme) -> ViewStyle {
         added: theme.color(Token::DiffAdded),
         removed: theme.color(Token::StatusErrorBg),
         removed_text: theme.color(Token::TextOnError),
+        paused_line: theme.color(Token::DebugPausedLine),
+        paused_mark: theme.color(Token::StatusWarn),
+        breakpoint: theme.color(Token::StatusError),
     }
 }
 
@@ -976,15 +1584,23 @@ fn note(ui: &mut Ui, theme: &Theme, text: Text) {
     ui.add(egui::Label::new(RichText::new(text.get()).color(theme.color(Token::TextMuted))).wrap());
 }
 
-/// The bottom panel: its tabs, and the Problems list or the selected tab's placeholder; the
-/// problem chosen, if any.
+/// What a click or a typed line in the bottom panel asks for.
+enum BottomAction {
+    /// Open the problem's place.
+    Jump(Jump),
+    /// What the Debugger tab or the console's box asked for.
+    Debug(DebugAction),
+}
+
+/// The bottom panel: its tabs, and the Problems list, the console or the Debugger tab; what a
+/// click in it asked for, if anything.
 fn bottom(
     ui: &mut Ui,
     theme: &Theme,
     tab: &mut BottomTab,
-    workbench: &Workbench<FsLoader>,
+    (workbench, preview, input): (&Workbench<FsLoader>, &Preview, &mut DebugInput),
     focus: bool,
-) -> Option<Jump> {
+) -> Option<BottomAction> {
     let problems = workbench.problems();
     ui.horizontal(|ui| {
         for (value, text) in [
@@ -1003,14 +1619,89 @@ fn bottom(
         }
     });
     ui.separator();
-    let message = match tab {
-        BottomTab::Problems => return project::problems_ui(ui, theme, problems, workbench.root()),
-        BottomTab::Console => Text::ConsoleIdle,
-        BottomTab::Debugger => Text::DebuggerIdle,
-    };
-    note(ui, theme, message);
-    None
+    match tab {
+        BottomTab::Problems => {
+            project::problems_ui(ui, theme, problems, workbench.root()).map(BottomAction::Jump)
+        }
+        BottomTab::Console if preview.state() != PlayState::Stopped => {
+            debugger::console(ui, theme, preview, input).map(BottomAction::Debug)
+        }
+        BottomTab::Console => {
+            note(ui, theme, Text::ConsoleIdle);
+            None
+        }
+        BottomTab::Debugger => {
+            debugger::debugger_ui(ui, theme, preview, input).map(BottomAction::Debug)
+        }
+    }
 }
+
+/// A line counted from 1, as the bridge and the debugger count them, counted from 0 as the
+/// editor does.
+fn line_index(line: u32) -> usize {
+    usize::try_from(line.saturating_sub(1)).unwrap_or(usize::MAX)
+}
+
+/// The toolbar's play controls for the game's `state`: the command a click chose, if any.
+/// Play starts a stopped game and stops a running one; Pause pauses it and shows it paused;
+/// Resume takes Play's place while paused; Step and Restart map need a running game.
+fn play_controls(ui: &mut Ui, theme: &Theme, state: PlayState) -> Option<&'static str> {
+    let mut chosen = None;
+    let (icon, text, id) = match state {
+        PlayState::Stopped => (Icon::Play, Text::Play, PLAY),
+        PlayState::Playing => (Icon::Play, Text::Playing, STOP),
+        PlayState::Paused => (Icon::Play, Text::Resume, RESUME),
+    };
+    let primary =
+        Button::new(RichText::new(labelled(icon, text)).color(theme.color(Token::TextOnAccent)))
+            .fill(theme.color(Token::Accent));
+    let hover = if state == PlayState::Playing {
+        Text::StopHint
+    } else {
+        text
+    };
+    if ui.add(primary).on_hover_text(hover.get()).clicked() {
+        chosen = Some(id);
+    }
+    let running = state != PlayState::Stopped;
+    let pause_text = if state == PlayState::Paused {
+        Text::Paused
+    } else {
+        Text::Pause
+    };
+    let pause = Button::new(labelled(Icon::Pause, pause_text))
+        .frame(state == PlayState::Paused)
+        .selected(state == PlayState::Paused);
+    if ui.add_enabled(state == PlayState::Playing, pause).clicked() {
+        chosen = Some(PAUSE);
+    }
+    for (icon, text, id) in [
+        (Icon::Step, Text::Step, STEP),
+        (Icon::Restart, Text::RestartMap, RESTART),
+    ] {
+        let button = Button::new(labelled(icon, text)).frame(false);
+        if ui.add_enabled(running, button).clicked() {
+            chosen = Some(id);
+        }
+    }
+    chosen
+}
+
+/// Where the play loop finds the host and the game, for this app's executable.
+fn preview_config() -> PreviewConfig {
+    PreviewConfig::from_env(std::env::current_exe().unwrap_or_default())
+}
+
+/// A small filled circle in `colour`, before a status line.
+fn status_dot(ui: &mut Ui, colour: egui::Color32) {
+    let size = ui.text_style_height(&egui::TextStyle::Small);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    ui.painter()
+        .circle_filled(rect.center(), size / 4.0, colour);
+}
+
+/// How often a frame reads the running host's events.
+const PREVIEW_POLL: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// An icon and its label, as one string for a button.
 /// Whether `layout`, a panel's size in the layout, was set by a command rather than by a drag of

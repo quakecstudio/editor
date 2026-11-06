@@ -171,6 +171,91 @@ fn problems_are_by_path_then_source_order() {
     assert!(order.iter().any(|(p, _)| *p == path("code/world.qc")));
 }
 
+// No spec statement: each file opened gets one tab, in the order first opened; closing the
+// open file's tab opens the one open before it (Zed's `activate_on_close: "history"`), else
+// none; a tab not there is an error; opening another project closes every tab
+#[test]
+fn tabs_open_once_and_close_to_the_last_one_open() {
+    let mut workbench = opened(PROJECT);
+    let (defs, world, src) = (path("defs.qc"), path("code/world.qc"), path("progs.src"));
+    for file in [&defs, &world, &defs, &src] {
+        workbench.open_file(file, 0).unwrap();
+    }
+    assert_eq!(workbench.tabs(), [defs.clone(), world.clone(), src.clone()]);
+    assert_eq!(
+        workbench.history(),
+        [src.clone(), defs.clone(), world.clone()]
+    );
+    workbench.open_file(&world, 0).unwrap();
+    workbench.close_file(&world).unwrap();
+    assert_eq!(workbench.open().unwrap().path(), src, "open before world");
+    workbench.open_file(&defs, 0).unwrap();
+    workbench.close_file(&defs).unwrap();
+    assert_eq!(workbench.open().unwrap().path(), src, "not the neighbour");
+    workbench.open_file(&defs, 0).unwrap();
+    workbench.close_file(&src).unwrap();
+    assert_eq!(
+        workbench.open().unwrap().path(),
+        defs,
+        "a tab not open stays"
+    );
+    assert!(matches!(
+        workbench.close_file(&world),
+        Err(WorkbenchError::NoFile { .. })
+    ));
+    workbench.close_file(&defs).unwrap();
+    assert!(workbench.open().is_none());
+    assert!(workbench.tabs().is_empty());
+    workbench.open_file(&defs, 0).unwrap();
+    workbench.open_file(&world, 0).unwrap();
+    // Closing a tab that is not the open file leaves the open file.
+    workbench.close_file(&defs).unwrap();
+    assert_eq!(workbench.open().unwrap().path(), world);
+    workbench.open_project(Path::new(ROOT)).unwrap();
+    assert!(workbench.tabs().is_empty());
+}
+
+// No spec statement: an edit marks a file unsaved until it is saved; a closed tab keeps its
+// unsaved text, shown when it is opened again
+#[test]
+fn edits_are_unsaved_until_saved_and_survive_a_closed_tab() {
+    let dir = std::env::temp_dir().join(format!("qs-workbench-unsaved-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("defs.qc");
+    std::fs::write(dir.join("progs.src"), "progs.dat\ndefs.qc\n").unwrap();
+    std::fs::write(&file, "float a;\n").unwrap();
+    let mut workbench = Workbench::new(qc_project::FsLoader, Config::default());
+    workbench.open_project(&dir).unwrap();
+    workbench.open_file(&file, 0).unwrap();
+    assert!(!workbench.is_unsaved(&file));
+    workbench.update(&file, b"float b;\n".to_vec()).unwrap();
+    assert!(workbench.is_unsaved(&file));
+    workbench.close_file(&file).unwrap();
+    workbench.open_file(&file, 0).unwrap();
+    assert_eq!(workbench.open().unwrap().text(), b"float b;\n");
+    assert!(workbench.is_unsaved(&file));
+    workbench.save(&file).unwrap();
+    assert!(!workbench.is_unsaved(&file));
+    assert_eq!(std::fs::read(&file).unwrap(), b"float b;\n");
+}
+
+// No spec statement: the breadcrumb names the last definition written at or before the caret,
+// none before the first
+#[test]
+fn the_definition_at_a_caret_is_the_last_one_before_it() {
+    let mut workbench = opened(PROJECT);
+    workbench.open_file(&path("defs.qc"), 0).unwrap();
+    let open = workbench.open().unwrap();
+    let names: Vec<_> = open.outline().iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["health", "speed"]);
+    let at = |offset| open.symbol_at(offset).map(|s| s.name.as_str());
+    let speed = open.outline()[1].range.span.start;
+    assert_eq!(at(0), None, "before the first name");
+    assert_eq!(at(speed - 1), Some("health"));
+    assert_eq!(at(speed), Some("speed"));
+    assert_eq!(at(usize::MAX), Some("speed"));
+}
+
 #[test]
 fn opening_a_file_moves_its_caret_and_counts_each_open() {
     let mut workbench = opened(PROJECT);

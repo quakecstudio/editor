@@ -26,6 +26,12 @@ pub struct Binding {
     pub scope: Scope,
 }
 
+/// Opens a project folder with the system's dialog, as Zed's Cmd+O does.
+pub const OPEN_FOLDER: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
+
+/// Opens the file finder, as in VS Code and Zed.
+pub const OPEN_FILE_FINDER: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::P);
+
 /// Opens the command palette, as in VS Code and Zed.
 pub const OPEN_PALETTE: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P);

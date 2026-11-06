@@ -35,6 +35,10 @@ fn main() -> ExitCode {
             Text::LoggingOff.get()
         );
     }
+    let recent_file = dirs
+        .as_ref()
+        .ok()
+        .map(|dirs| qs_workbench::recent_path(dirs.data()));
     let layout_file = dirs.ok().map(|dirs| qs_layout::layout_path(dirs.data()));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -52,6 +56,9 @@ fn main() -> ExitCode {
             let mut app = App::new(&cc.egui_ctx, layout_file)?;
             app.shell_mut()
                 .set_render_state(cc.wgpu_render_state.clone());
+            if let Some(file) = recent_file {
+                app.shell_mut().set_recent_file(file);
+            }
             if let Some(project) = &project
                 && let Err(error) = app.shell_mut().open_project(project)
             {
