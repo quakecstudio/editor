@@ -16,6 +16,8 @@ qc-progs = { workspace = true }
 qc-project = { workspace = true }
 qc-sema = { workspace = true }
 quakec-studio = { workspace = true }
+# save_to_game: the project built and reloaded in the windowed preview host (P3-12).
+qs-workbench = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
 
 [[bench]]

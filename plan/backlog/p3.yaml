@@ -233,9 +233,9 @@ issues:
   deliverable:
   - Toolbar Play, Pause, Step and Restart map, always running our preview host; save triggers compile and reload
   acceptance:
-  - Save-to-game p95 at most 1.0 s, measured with the windowed preview host on each OS (not only headless)
+  - Save-to-game p95 at most 1.0 s, measured with the windowed preview host on macOS (not only headless) by the active `save_to_game` budget of `cargo xtask bench` on ref-mac; the same measurement on Windows and Linux is part of the MVP demo (P4-24), moved there on 2026-11-06 as P3-02's manual checks were
   verify:
-  - Latency benchmark per OS recorded in the bench history
+  - Latency benchmark on ref-mac recorded in the bench history
 - key: P3-13
   title: Entities outliner
   labels:

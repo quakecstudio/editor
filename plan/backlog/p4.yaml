@@ -420,6 +420,7 @@ issues:
   - On Windows and on Linux, the preview host loads id1 and the rerelease from the user's install and plays e1m1 from start to exit with keyboard and mouse (moved here from P3-02 by Justin on 2026-11-06)
   - 'The preview host launched through the run roots (ADR-0008) plays the original game (id1) and the rerelease from a Steam install and from a GOG install on macOS, Windows and Linux, and the install is unchanged afterwards, for example `find <install> -newer <marker>` printing nothing (moved here from P3-06 by Justin on 2026-11-06)'
   - On Windows, a program built for the KEX target loads in the KEX rerelease (moved here from P3-09 on 2026-11-06, as P3-02's and P3-06's manual checks were)
+  - On ref-windows and ref-linux, `QS_BENCH_GAME=<install> cargo xtask bench` passes the `save_to_game` budget, save-to-game p95 at most 1.0 s in the windowed preview host (moved here from P3-12 on 2026-11-06)
 
   verify:
   - Recordings and eval report attached, with the Windows and Linux `find` output, bench.sh results and IME recordings
