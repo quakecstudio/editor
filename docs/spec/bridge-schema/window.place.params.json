@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/window.place.params.json",
+  "title": "window/place request params (BRIDGE-4.10)",
+  "type": "object",
+  "properties": {
+    "x": {
+      "type": "number"
+    },
+    "y": {
+      "type": "number"
+    },
+    "width": {
+      "type": "number",
+      "minimum": 1
+    },
+    "height": {
+      "type": "number",
+      "minimum": 1
+    },
+    "above": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "x",
+    "y",
+    "width",
+    "height",
+    "above"
+  ]
+}

@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use qc_progs::Progs;
 use qc_vm::{Machine, Observer, RunError};
 
-/// How far a step goes from where the run stopped (BRIDGE-4.1, WORLD-9.3).
+/// How far a step goes from where the run stopped (BRIDGE-4.9, WORLD-9.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StepKind {
     /// One statement.
@@ -270,7 +270,7 @@ pub fn locate(progs: &Progs<'_>, lines: &[i32], function: i32, statement: i32) -
     }
 }
 
-/// The statement a breakpoint at `line` of `file` stops before (BRIDGE-4.1, WORLD-9.4): the
+/// The statement a breakpoint at `line` of `file` stops before (BRIDGE-4.9, WORLD-9.4): the
 /// first, in statement order, of a function whose file is `file` (or ends with `/` and it,
 /// or is its last component) whose `.lno` line is `line`.
 #[must_use]

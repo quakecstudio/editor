@@ -49,7 +49,7 @@ pub enum ChangeKind {
 }
 
 impl ChangeKind {
-    /// The name the bridge gives it: `global`, `field` or `function` (BRIDGE-4.1).
+    /// The name the bridge gives it: `global`, `field` or `function` (BRIDGE-4.9).
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {

@@ -100,7 +100,7 @@ fn socket_path() -> PathBuf {
     }
 }
 
-/// BRIDGE-2.3: the commands a headless host offers, and those it leaves out.
+/// BRIDGE-2.6: the commands a headless host offers, and those it leaves out.
 fn capabilities(client: &Client) -> Result<(), String> {
     for command in [
         "pause",
@@ -121,13 +121,18 @@ fn capabilities(client: &Client) -> Result<(), String> {
             &format!("the host offers {command}"),
         )?;
     }
+    // BRIDGE-4.10: with no window there is nothing to place.
+    expect(
+        !client.offers("window/place"),
+        "a headless host leaves out window/place",
+    )?;
     Ok(())
 }
 
 /// The base64 of a PNG's first bytes, `\x89PNG\r\n\x1a\n`.
 const PNG_BASE64: &str = "iVBORw0KGgo";
 
-/// P3-05, BRIDGE-4.1: a headless host draws its view offscreen at the window's first size, and
+/// P3-05, BRIDGE-4.9: a headless host draws its view offscreen at the window's first size, and
 /// at the size asked; paused, the same frame twice is the same image.
 fn screenshots(client: &mut Client) -> Result<(), String> {
     let shot = |client: &mut Client, size| {
@@ -209,7 +214,7 @@ fn suite(client: &mut Client, map: &str) -> Result<Vec<String>, String> {
     )?;
     steps.push("breakpoint/set".to_owned());
 
-    // BRIDGE-4.1, WORLD-10: the running progs loaded again over the map migrates its values
+    // BRIDGE-4.9, WORLD-10: the running progs loaded again over the map migrates its values
     // and loses nothing.
     let reloaded = client
         .request("reload", json!({}))

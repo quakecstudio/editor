@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! What the bridge's editing commands change (BRIDGE-4.1, BRIDGE-4.4): one field written with
+//! What the bridge's editing commands change (BRIDGE-4.9, BRIDGE-4.4): one field written with
 //! a typed value, an entity spawned or edited as the map spawns them (EDICT-8), freed, or the
 //! player moved.
 
@@ -277,7 +277,7 @@ impl World {
     }
 }
 
-/// What a line traced through the world hits, for the bridge's `pick` (BRIDGE-4.1).
+/// What a line traced through the world hits, for the bridge's `pick` (BRIDGE-4.9).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LineHit {
     /// The edict hit, `None` for the world or nothing.

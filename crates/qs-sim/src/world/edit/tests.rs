@@ -93,7 +93,7 @@ fn an_entity_spawns_as_a_map_entity_does() {
     assert_eq!(run.world.remove_entity(&progs, 1), Err(EditError::Kept(1)));
 }
 
-// spec BRIDGE-4.1: the player is moved as a teleporter moves it: the origin, the angles with
+// spec BRIDGE-4.9: the player is moved as a teleporter moves it: the origin, the angles with
 // fixangle, and no velocity
 #[test]
 fn the_player_moves_as_a_teleporter_moves_it() {

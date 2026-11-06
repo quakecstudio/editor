@@ -192,4 +192,12 @@ pub(crate) const SCHEMAS: &[(&str, &str)] = &[
         "value",
         include_str!("../../../docs/spec/bridge-schema/value.json"),
     ),
+    (
+        "window.place.params",
+        include_str!("../../../docs/spec/bridge-schema/window.place.params.json"),
+    ),
+    (
+        "window.place.result",
+        include_str!("../../../docs/spec/bridge-schema/window.place.result.json"),
+    ),
 ];

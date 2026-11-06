@@ -156,7 +156,7 @@ fn the_bridge_closes_with_the_client() {
     assert!(!bridge.poll(&mut Fake));
 }
 
-// spec BRIDGE-2.4: initialize with another major closes the connection
+// spec BRIDGE-2.7: initialize with another major closes the connection
 #[test]
 fn another_major_closes_the_bridge() {
     let (mut bridge, mut client) = pair();

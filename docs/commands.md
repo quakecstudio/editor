@@ -15,6 +15,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
 | [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
+| [`preview.dock`](#previewdock) | Docks the game's window beside the IDE's window, given where the IDE's window is and whether it has the focus. |
 | [`preview.pause`](#previewpause) | Pauses the running game between frames. |
 | [`preview.pick`](#previewpick) | Selects the edict under a point of the game's window. |
 | [`preview.play`](#previewplay) | Builds the open project and starts the preview host on its program, stopping a game already running. |
@@ -265,6 +266,64 @@ Parameters:
     "command"
   ],
   "title": "ConsoleParams",
+  "type": "object"
+}
+```
+
+## `preview.dock`
+
+Docks the game's window beside the IDE's window, given where the IDE's window is and whether it has the focus.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The IDE's window as the desktop has it, in logical points.",
+  "properties": {
+    "focused": {
+      "description": "Whether the IDE's window has the keyboard focus.",
+      "type": "boolean"
+    },
+    "height": {
+      "description": "Its height.",
+      "format": "float",
+      "type": "number"
+    },
+    "screen_width": {
+      "default": null,
+      "description": "The width of the screen the window is on, when the windowing system says.",
+      "format": "float",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "width": {
+      "description": "Its width.",
+      "format": "float",
+      "type": "number"
+    },
+    "x": {
+      "description": "The left edge of the IDE's window, its frame included.",
+      "format": "float",
+      "type": "number"
+    },
+    "y": {
+      "description": "Its top edge.",
+      "format": "float",
+      "type": "number"
+    }
+  },
+  "required": [
+    "x",
+    "y",
+    "width",
+    "height",
+    "focused"
+  ],
+  "title": "DockFrame",
   "type": "object"
 }
 ```

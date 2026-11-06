@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/window.place.result.json",
+  "title": "window/place response result (BRIDGE-4.10)",
+  "type": "null"
+}

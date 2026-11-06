@@ -21,6 +21,8 @@ pub enum Text {
     PreviewHost,
     /// Where the preview host's window is.
     PreviewDocked,
+    /// Where the game's window is when its host cannot place it (Wayland).
+    PreviewOwnWindow,
     /// The command search box's hint.
     SearchCommands,
     /// The Project panel's heading.
@@ -241,7 +243,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 115] = [
+    pub const ALL: [Self; 116] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -249,6 +251,7 @@ impl Text {
         Self::RestartMap,
         Self::PreviewHost,
         Self::PreviewDocked,
+        Self::PreviewOwnWindow,
         Self::SearchCommands,
         Self::Project,
         Self::Entities,
@@ -370,6 +373,7 @@ impl Text {
             Self::RestartMap => "Restart map",
             Self::PreviewHost => "Preview host",
             Self::PreviewDocked => "docked right",
+            Self::PreviewOwnWindow => "in its own window",
             Self::SearchCommands => "Search commands",
             Self::Project => "Project",
             Self::Entities => "Entities",

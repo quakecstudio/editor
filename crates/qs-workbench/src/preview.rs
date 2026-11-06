@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use qc_project::Loader;
 use qs_engine::{
     Client, ClientError, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRootError, Running,
-    StepKind, launch, locate_host, prepare_run_root,
+    StepKind, WindowPlacement, launch, locate_host, prepare_run_root,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -25,10 +25,12 @@ use schemars::JsonSchema;
 use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
 
 pub mod debug;
+pub mod dock;
 pub mod entities;
 pub mod scenario;
 
 use debug::{Debugger, Location, StopReason};
+use dock::DockFrame;
 
 use entities::Entities;
 
@@ -194,6 +196,8 @@ pub struct Preview {
     pending: Vec<(u32, String, String)>,
     /// The breakpoints, where the game stopped, its stack and the watches.
     debugger: Debugger,
+    /// The IDE's window as last told, and the placement last sent to the host.
+    dock: (Option<DockFrame>, Option<WindowPlacement>),
 }
 
 impl core::fmt::Debug for Preview {
@@ -219,7 +223,41 @@ impl Preview {
             entities: Entities::new(),
             pending: Vec::new(),
             debugger: Debugger::new(),
+            dock: (None, None),
         }
+    }
+
+    /// Docks the game's window beside the IDE's window `frame` (P3-11): the host is told
+    /// with `window/place` when the placement changes, and the next game opens there. A host
+    /// that cannot place its window (Wayland) is left where it opened.
+    ///
+    /// # Errors
+    ///
+    /// The bridge's error.
+    pub fn dock(&mut self, frame: DockFrame) -> Result<(), PreviewError> {
+        self.dock.0 = Some(frame);
+        let placement = frame.placement();
+        if self.dock.1 == Some(placement) {
+            return Ok(());
+        }
+        let Some(client) = self.client() else {
+            return Ok(());
+        };
+        if !client.offers("window/place") {
+            return Ok(());
+        }
+        client.place_window(placement)?;
+        self.dock.1 = Some(placement);
+        Ok(())
+    }
+
+    /// Whether the game's window follows the IDE: no game runs, or its host places its window
+    /// (BRIDGE-4.10).
+    #[must_use]
+    pub fn docks(&self) -> bool {
+        self.live
+            .as_ref()
+            .is_none_or(|live| live.running.client.offers("window/place"))
     }
 
     /// The breakpoints, where the game stopped, its stack and the watches.
@@ -479,12 +517,22 @@ impl Preview {
             .map_err(PreviewError::RunRoot)?;
         let host = locate_host(self.config.host.as_deref(), &self.config.app)
             .map_err(PreviewError::Launch)?;
+        let mut extra = self.config.extra.clone();
+        // The window opens where it docks; `window/place` then sets its frame exactly.
+        if let Some(frame) = self.dock.0 {
+            let at = frame.placement();
+            extra.extend(["--position", &at.x.to_string(), &at.y.to_string()].map(str::to_owned));
+            extra.extend(
+                ["--size", &at.width.to_string(), &at.height.to_string()].map(str::to_owned),
+            );
+        }
+        self.dock.1 = None;
         let spec = LaunchSpec {
             host,
             run_root,
             map,
             socket: socket_path(),
-            extra: self.config.extra.clone(),
+            extra,
         };
         let running = launch(&spec, "QuakeC Studio").map_err(PreviewError::Launch)?;
         self.live = Some(Live { running, progs });
@@ -514,7 +562,7 @@ impl Preview {
         self.client().ok_or(PreviewError::NotRunning)
     }
 
-    /// Pauses the game between frames (BRIDGE-4.1).
+    /// Pauses the game between frames (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -525,7 +573,7 @@ impl Preview {
         Ok(())
     }
 
-    /// Resumes a paused game (BRIDGE-4.1).
+    /// Resumes a paused game (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -802,6 +850,8 @@ pub const CONSOLE: &str = "preview.console";
 pub const WATCH: &str = "preview.watch";
 /// The id of the command that takes a watch away.
 pub const UNWATCH: &str = "preview.unwatch";
+/// The id of the command that docks the game's window beside the IDE's.
+pub const DOCK: &str = "preview.dock";
 /// The id of the command that plays a scenario file (SCN-2.6).
 pub const SCENARIO_RUN: &str = "scenario.run";
 /// The id of the command that steps the stopped game by a statement, into, over or out.
@@ -1047,6 +1097,17 @@ impl Act for ConsoleAct {
     }
 }
 
+struct DockAct;
+impl Act for DockAct {
+    const ID: &'static str = DOCK;
+    const SUMMARY: &'static str = "Docks the game's window beside the IDE's window, given \
+        where the IDE's window is and whether it has the focus.";
+    type Params = DockFrame;
+    fn act(preview: &mut Preview, frame: DockFrame) -> Result<(), PreviewError> {
+        preview.dock(frame)
+    }
+}
+
 struct WatchAct;
 impl Act for WatchAct {
     const ID: &'static str = WATCH;
@@ -1285,6 +1346,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(ActCommand::<BreakpointAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<ConsoleAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<WatchAct>(core::marker::PhantomData))?;
+    registry.register(ActCommand::<DockAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<UnwatchAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<StepByAct>(core::marker::PhantomData))?;
     Ok(())
