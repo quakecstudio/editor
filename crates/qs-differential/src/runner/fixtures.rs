@@ -170,22 +170,31 @@ const CRMOD_COMMANDS: &[&str] = &[
     "ra",
 ];
 
-/// crmod7's own scenarios: its client commands in deathmatch, and a match its two players
-/// ready for (impulse 120) and play to the time limit, its commands typed after the end.
+/// crmod7's own scenarios: its client commands in deathmatch, and a match: two players on teams
+/// of their own colours (`setinfo bottomcolor`), ready (impulse 120), kept from going idle by
+/// an impulse every 15 seconds, typing the commands while the match runs, and then the match's
+/// end, which crmod7 calls when no player moves (the mock moves nothing, DIFF-1.5).
 fn crmod_scenarios() -> Vec<ScenarioSpec> {
     let mut commands =
         String::from("map dm3\nmaxclients 4\nclients 2\ncvar deathmatch 1\nframes 400\n");
     for (n, command) in (10_u32..).step_by(5).zip(CRMOD_COMMANDS) {
         commands.push_str(&format!("command {n} 1 {command}\n"));
     }
-    let mut matched = String::from(concat!(
-        "map dm3\nmaxclients 4\nclients 2\ncvar deathmatch 1\ncvar samelevel 2\n",
-        "cvar timelimit 1\nframes 1200\ninput 10 1 impulse 120\ninput 10 2 impulse 120\n",
-        "command 300 1 say hello\n",
-    ));
-    for (n, command) in (1000_u32..).step_by(3).zip(CRMOD_COMMANDS) {
-        matched.push_str(&format!("command {n} 2 {command}\n"));
-    }
+    let crmod_match = |frames: u32| {
+        let mut text = format!(
+            "map dm3\nmaxclients 4\nclients 2\ncvar deathmatch 1\ncvar samelevel 2\n\
+             cvar scratch3 2\ncvar timelimit 2\nframes {frames}\n\
+             command 5 1 setinfo bottomcolor 4\ncommand 5 2 setinfo bottomcolor 13\n\
+             input 50 1 impulse 120\ninput 50 2 impulse 120\n"
+        );
+        for n in (100..frames).step_by(150) {
+            text.push_str(&format!("input {n} 1 impulse 1\ninput {n} 2 impulse 1\n"));
+        }
+        for (n, command) in (200_u32..).zip(CRMOD_COMMANDS) {
+            text.push_str(&format!("command {n} 2 {command}\n"));
+        }
+        text
+    };
     vec![
         ScenarioSpec {
             name: "crmod-commands",
@@ -194,7 +203,12 @@ fn crmod_scenarios() -> Vec<ScenarioSpec> {
         },
         ScenarioSpec {
             name: "crmod-match",
-            directives: matched,
+            directives: crmod_match(300),
+            entities: Some(entities(DEATHMATCH)),
+        },
+        ScenarioSpec {
+            name: "crmod-match-end",
+            directives: crmod_match(900),
             entities: Some(entities(DEATHMATCH)),
         },
     ]
