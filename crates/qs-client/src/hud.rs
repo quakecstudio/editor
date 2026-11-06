@@ -94,6 +94,15 @@ pub enum HudItem {
         /// The character.
         ch: u8,
     },
+    /// The console's background, `gfx/conback.lmp` across the screen with its top at
+    /// `lines - height`, translucent when `lines` is at most three quarters of `height`
+    /// (CON-3.2).
+    ConsoleBack {
+        /// The console's height in pixels.
+        lines: i32,
+        /// The screen's height.
+        height: i32,
+    },
     /// A rectangle of a palette colour.
     Fill {
         /// Its left edge.

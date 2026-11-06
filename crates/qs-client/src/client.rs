@@ -433,6 +433,10 @@ pub struct Hud {
     /// Whether the game is deathmatch, which draws the bar from the screen's left instead of
     /// centred (HUD-1).
     pub deathmatch: bool,
+    /// The console or its notify lines, drawn after the bar (CON-2, CON-3).
+    pub console: Vec<Placed>,
+    /// The menu, drawn last.
+    pub menu: Vec<Placed>,
 }
 
 /// One scoreboard entry, `scoreboard_t` (CLIENT-1.4).
@@ -731,6 +735,8 @@ impl Client {
             overlay,
             center: self.center_items.clone(),
             deathmatch: self.gametype == HUD_GAME_DEATHMATCH,
+            console: Vec::new(),
+            menu: Vec::new(),
         }
     }
 

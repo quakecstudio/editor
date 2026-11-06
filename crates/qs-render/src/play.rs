@@ -49,6 +49,8 @@ const CHAR_OFF_TOP: i32 = -8;
 const PIC_TRANSPARENT: u8 = 255;
 /// The name the console characters are kept under among the pictures.
 const CONCHARS: &str = "conchars";
+/// The console's background (CON-3.2).
+const CONBACK: &str = "gfx/conback.lmp";
 /// `fov`, the field of view across: `scr_fov` (REND-3.4).
 const FOV_X: f32 = 90.0;
 /// A colour that leaves a texel as it is.
@@ -671,6 +673,10 @@ impl Play {
         for item in &hud.center {
             self.draw_item(item, 0, 0, flat);
         }
+        // `SCR_DrawConsole` after `Sbar_Draw`, then `M_Draw` (CON-3).
+        for Placed { item, .. } in hud.console.iter().chain(&hud.menu) {
+            self.draw_item(item, 0, 0, flat);
+        }
     }
 
     /// One item at its anchor's offset.
@@ -724,6 +730,29 @@ impl Play {
                 let at = [f32_of_i32(x.saturating_add(dx)), f32_of_i32(y)];
                 let texture = [[column, row], [column + CHAR_CELL, row + CHAR_CELL]];
                 quad(flat, Some(pic), false, at, [CHAR_SIDE; 2], texture, WHITE);
+            }
+            HudItem::ConsoleBack { lines, height } => {
+                // `Draw_ConsoleBackground`: opaque below three quarters, else `Draw_AlphaPic`
+                // at `1.2 * lines / y` (CON-3.2).
+                if let Some((pic, _)) = self.pics.get(CONBACK) {
+                    let three_quarters = height.saturating_mul(3) >> 2;
+                    let alpha = if *lines > three_quarters {
+                        1.0
+                    } else {
+                        (1.2 * f32_of_i32(*lines) / f32_of_i32(three_quarters.max(1))).min(1.0)
+                    };
+                    let at = [0.0, f32_of_i32(lines.saturating_sub(*height))];
+                    let size = [f32_of_i32(self.screen[0]), f32_of_i32(*height)];
+                    quad(
+                        flat,
+                        Some(pic),
+                        false,
+                        at,
+                        size,
+                        [[0.0, 0.0], [1.0, 1.0]],
+                        [1.0, 1.0, 1.0, alpha],
+                    );
+                }
             }
             HudItem::Fill { x, y, w, h, color } => {
                 // `Draw_Fill`: `host_basepal[c*3]/255.0`, the colour before the gamma.

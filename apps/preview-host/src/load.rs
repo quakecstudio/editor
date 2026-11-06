@@ -38,12 +38,14 @@ const NOLERP: [&str; 9] = [
     "progs/v_xfist.mdl",
     "progs/h2stuff/newfire.mdl",
 ];
-/// The 2D pictures the HUD reads from files rather than `gfx.wad` (HUD-2).
-const LMPS: [&str; 4] = [
+/// The 2D pictures the HUD and the console read from files rather than `gfx.wad` (HUD-2,
+/// CON-3.2).
+const LMPS: [&str; 5] = [
     "gfx/ranking.lmp",
     "gfx/complete.lmp",
     "gfx/inter.lmp",
     "gfx/finale.lmp",
+    "gfx/conback.lmp",
 ];
 
 /// A map read from an install: its name, its mesh, its play assets and where its player

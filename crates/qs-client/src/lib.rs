@@ -9,6 +9,7 @@
 //! to VIEW-4.
 
 mod client;
+mod console;
 mod entity;
 mod hud;
 mod message;
@@ -28,6 +29,10 @@ pub use client::{
     CLIENT_ROTATE_SPEED, CLIENT_SIGNONS, CLIENT_TELEPORT_DISTANCE, CLIENT_TENT_SOUNDS, Client,
     ClientLimits, Event, Game, HUD_DEFAULT_LINES, Hud, LerpSettings, ParseError, Score, SoundRef,
     SoundStart, stat,
+};
+pub use console::{
+    CON_CURSOR_SPEED, CON_HISTORY, CON_MAX_LINE, CON_NOTIFY_TIME, CON_NUM_TIMES, CON_SPEED,
+    CON_TEXTSIZE, Console, ConsoleKey, KeyDest, Typed,
 };
 pub use entity::{Baseline, Entity, Lerp, LerpFlags};
 pub use hud::{
