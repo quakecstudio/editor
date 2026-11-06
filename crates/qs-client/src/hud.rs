@@ -103,6 +103,8 @@ pub enum HudItem {
         /// The screen's height.
         height: i32,
     },
+    /// `Draw_FadeScreen`: the screen darkened, black at alpha 0.8 over it (MENU-1.3).
+    Fade,
     /// A rectangle of a palette colour.
     Fill {
         /// Its left edge.

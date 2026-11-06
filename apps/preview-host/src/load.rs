@@ -40,12 +40,47 @@ const NOLERP: [&str; 9] = [
 ];
 /// The 2D pictures the HUD and the console read from files rather than `gfx.wad` (HUD-2,
 /// CON-3.2).
-const LMPS: [&str; 5] = [
+const LMPS: [&str; 39] = [
     "gfx/ranking.lmp",
     "gfx/complete.lmp",
     "gfx/inter.lmp",
     "gfx/finale.lmp",
     "gfx/conback.lmp",
+    // The menus' (MENU).
+    "gfx/qplaque.lmp",
+    "gfx/ttl_main.lmp",
+    "gfx/mainmenu.lmp",
+    "gfx/ttl_sgl.lmp",
+    "gfx/sp_menu.lmp",
+    "gfx/menudot1.lmp",
+    "gfx/menudot2.lmp",
+    "gfx/menudot3.lmp",
+    "gfx/menudot4.lmp",
+    "gfx/menudot5.lmp",
+    "gfx/menudot6.lmp",
+    "gfx/help0.lmp",
+    "gfx/help1.lmp",
+    "gfx/help2.lmp",
+    "gfx/help3.lmp",
+    "gfx/help4.lmp",
+    "gfx/help5.lmp",
+    "gfx/box_tl.lmp",
+    "gfx/box_ml.lmp",
+    "gfx/box_bl.lmp",
+    "gfx/box_tm.lmp",
+    "gfx/box_mm.lmp",
+    "gfx/box_mm2.lmp",
+    "gfx/box_bm.lmp",
+    "gfx/box_tr.lmp",
+    "gfx/box_mr.lmp",
+    "gfx/box_br.lmp",
+    "gfx/p_option.lmp",
+    "gfx/p_load.lmp",
+    "gfx/p_save.lmp",
+    "gfx/bigbox.lmp",
+    "gfx/menuplyr.lmp",
+    "gfx/p_multi.lmp",
+    "gfx/mp_menu.lmp",
 ];
 
 /// A map read from an install: its name, its mesh, its play assets and where its player

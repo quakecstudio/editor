@@ -11,6 +11,7 @@
 mod client;
 mod console;
 mod entity;
+mod menu;
 mod hud;
 mod message;
 mod models;
@@ -34,6 +35,7 @@ pub use console::{
     CON_CURSOR_SPEED, CON_HISTORY, CON_MAX_LINE, CON_NOTIFY_TIME, CON_NUM_TIMES, CON_SPEED,
     CON_TEXTSIZE, Console, ConsoleKey, KeyDest, Typed,
 };
+pub use menu::{MENU_HELP_PAGES, Menu, MenuEvent, MenuKey, MenuState};
 pub use entity::{Baseline, Entity, Lerp, LerpFlags};
 pub use hud::{
     Anchor, CenterPrint, HUD_CENTER_LINE_LENGTH, HUD_CENTER_MAX, HUD_CENTERTIME, HUD_FLASH_FRAMES,

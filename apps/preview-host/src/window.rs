@@ -15,7 +15,7 @@ use std::time::Instant;
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use qs_bsp::Bsp;
-use qs_client::{Client, Console, ConsoleKey, Event, KeyDest, Typed};
+use qs_client::{Client, Console, ConsoleKey, Event, KeyDest, Menu, MenuEvent, MenuKey, Random as _, Typed};
 use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
 use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
@@ -24,7 +24,7 @@ use crate::audio::Audio;
 use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
-use crate::load::{Acted, Describer, Loaded, Rand, act};
+use crate::load::{Acted, Describer, Loaded, Rand, act, load};
 use crate::screenshot::Drawer;
 
 /// Map units a second walking, and running with Shift.
@@ -157,6 +157,8 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 longest_work: 0.0,
                 console: Console::new(),
                 dest: KeyDest::Game,
+                menu: Menu::new(),
+                asked: Vec::new(),
             }))
         }),
     )
@@ -207,6 +209,9 @@ struct Viewer {
     /// The console on the screen and where keys go (CON).
     console: Console,
     dest: KeyDest,
+    /// The menu (MENU), and what it asked of the host this frame: a new game or quitting.
+    menu: Menu,
+    asked: Vec<MenuEvent>,
 }
 
 impl eframe::App for Viewer {
@@ -231,6 +236,20 @@ impl eframe::App for Viewer {
             self.steer(ui);
         }
         let frametime = self.advance(f64::from(seconds));
+        // MENU-3.2, MENU-5.2: the menu's new game, `map start` from nothing carried, and quit.
+        for asked in core::mem::take(&mut self.asked) {
+            match asked {
+                MenuEvent::NewGame => match load(&self.args, "start", None, None, None) {
+                    Ok(loaded) => {
+                        self.change_level(window, loaded);
+                        return;
+                    }
+                    Err(error) => tracing::warn!(%error, "the new game did not load"),
+                },
+                MenuEvent::Quit => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
+                MenuEvent::Sound(_) => {}
+            }
+        }
         // PHYS-13.6: a level with what the player carries, a save, a load or quit.
         if let Some(action) = self.game.host_action() {
             match act(&self.args, &mut self.game, action) {
@@ -310,6 +329,17 @@ impl eframe::App for Viewer {
         self.client
             .set_screen(self.play.screen[0], self.play.screen[1]);
         hud.console = self.console_items(seconds);
+        let console_down = !hud.console.is_empty() && self.dest != KeyDest::Game;
+        let (menu, sound) = self.menu.draw(
+            self.dest,
+            self.started.elapsed().as_secs_f64(),
+            console_down,
+            self.play.screen[1],
+        );
+        hud.menu = menu;
+        if let Some(sound) = sound {
+            self.audio.local(sound, &mut self.rand);
+        }
         let mut callback = self
             .play
             .frame(&scene, &hud, &self.bsp, &mut self.mesh, aspect);
@@ -579,8 +609,26 @@ impl Viewer {
                     key: egui::Key::Escape,
                     pressed: true,
                     ..
-                } if self.dest == KeyDest::Console => {
-                    self.dest = self.console.toggle(self.dest, true);
+                } => {
+                    // `Key_Event`'s Escape: the menu's own key in the menu, else
+                    // `M_ToggleMenu_f`, which from the console toggles the console (MENU-1.1).
+                    match self.dest {
+                        KeyDest::Console => self.dest = self.console.toggle(self.dest, true),
+                        KeyDest::Menu => self.menu_key(MenuKey::Escape),
+                        KeyDest::Game => self.dest = self.menu.toggle(self.dest),
+                    }
+                }
+                egui::Event::Key {
+                    key, pressed: true, ..
+                } if self.dest == KeyDest::Menu => {
+                    if let Some(key) = menu_key(key) {
+                        self.menu_key(key);
+                    }
+                }
+                egui::Event::Text(text) if self.dest == KeyDest::Menu => {
+                    for c in text.bytes() {
+                        self.menu_key(MenuKey::Char(c));
+                    }
                 }
                 egui::Event::Key {
                     key, pressed: true, ..
@@ -596,6 +644,20 @@ impl Viewer {
                     }
                 }
                 _ => {}
+            }
+        }
+    }
+
+    /// One key into the menu, what it asks of the host done: a sound, a new game, or quitting
+    /// (MENU).
+    fn menu_key(&mut self, key: MenuKey) {
+        let random = self.rand.rand();
+        let (dest, events) = self.menu.key(key, random);
+        self.dest = dest;
+        for event in events {
+            match event {
+                MenuEvent::Sound(name) => self.audio.local(name, &mut self.rand),
+                MenuEvent::NewGame | MenuEvent::Quit => self.asked.push(event),
             }
         }
     }
@@ -660,6 +722,19 @@ impl Viewer {
             );
         });
     }
+}
+
+/// The menu key an egui key is, if it is one the menu reads (MENU-1.2); printable keys come as
+/// text instead.
+const fn menu_key(key: egui::Key) -> Option<MenuKey> {
+    Some(match key {
+        egui::Key::ArrowUp => MenuKey::Up,
+        egui::Key::ArrowDown => MenuKey::Down,
+        egui::Key::ArrowLeft => MenuKey::Left,
+        egui::Key::ArrowRight => MenuKey::Right,
+        egui::Key::Enter => MenuKey::Enter,
+        _ => return None,
+    })
 }
 
 /// The console key an egui key is, if it is one the console reads (CON-4); printable keys

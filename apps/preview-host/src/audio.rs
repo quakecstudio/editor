@@ -197,6 +197,11 @@ impl Audio {
         }
     }
 
+    /// `S_LocalSound` of the sound named `name`, as the menu plays its clicks (MENU-1.3).
+    pub(crate) fn local(&mut self, name: &str, rand: &mut dyn Random) {
+        self.mixer.local_sound(&mut self.table, rand, name);
+    }
+
     /// Whether the mixed frames are kept, for `--view-script`.
     pub(crate) const fn captures(&self) -> bool {
         match self.sink {

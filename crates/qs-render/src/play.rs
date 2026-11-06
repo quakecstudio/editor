@@ -756,6 +756,19 @@ impl Play {
                     );
                 }
             }
+            HudItem::Fade => {
+                // `Draw_FadeScreen`: "glColor4f (0, 0, 0, 0.8)" over the whole screen, blended.
+                let size = [self.screen[0], self.screen[1]].map(f32_of_i32);
+                quad(
+                    flat,
+                    None,
+                    true,
+                    [0.0, 0.0],
+                    size,
+                    [[0.0, 0.0], [1.0, 1.0]],
+                    [0.0, 0.0, 0.0, 0.8],
+                );
+            }
             HudItem::Fill { x, y, w, h, color } => {
                 // `Draw_Fill`: `host_basepal[c*3]/255.0`, the colour before the gamma.
                 let [r, g, b, _] = self.palette.rgba(u8::try_from(*color).unwrap_or(0));
