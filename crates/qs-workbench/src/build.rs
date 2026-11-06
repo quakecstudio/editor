@@ -7,7 +7,9 @@
 use std::path::{Path, PathBuf};
 
 use qc_codegen::{CompileError, Compiled, compile_module};
+use qc_engines::{Engine, Unloadable};
 use qc_ide::ModuleBuild;
+use qc_progs::{Progs, ReadOptions};
 use qc_project::Loader;
 use qc_sema::FileDiagnostic;
 use serde::{Deserialize, Serialize};
@@ -116,6 +118,7 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
         db,
         input,
         names,
+        engine,
     } = module;
     let compiled = compile_module(db, input, |id| {
         names.get(id.index()).cloned().unwrap_or_default()
@@ -136,8 +139,24 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
     };
     let (built, problems) = match compiled {
         Ok(compiled) => {
-            write_program(output, &compiled)?;
-            (true, compiled.warnings.iter().map(report).collect())
+            let mut problems: Vec<Reported> = compiled.warnings.iter().map(report).collect();
+            let progs = program_bytes(output, &compiled)?;
+            match unloadable(engine, &progs) {
+                // ENGT-3.12: a program its engine cannot load is not written.
+                Some(why) => {
+                    problems.push(Reported {
+                        place: None,
+                        gravity: Gravity::Error,
+                        code: "target".to_owned(),
+                        message: why.to_string(),
+                    });
+                    (false, problems)
+                }
+                None => {
+                    write_program(output, &progs, &compiled)?;
+                    (true, problems)
+                }
+            }
         }
         Err(CompileError::Diagnostics(errors)) => (false, errors.iter().map(report).collect()),
         Err(error) => (
@@ -158,15 +177,33 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
     })
 }
 
-/// Writes `compiled`'s program to `output` and its line map beside it, making the directory.
-fn write_program(output: &Path, compiled: &Compiled) -> Result<(), WorkbenchError> {
+/// `compiled`'s program as `output` will hold it.
+fn program_bytes(output: &Path, compiled: &Compiled) -> Result<Vec<u8>, WorkbenchError> {
+    qc_progs::write(&compiled.progs).map_err(|e| WorkbenchError::Save {
+        path: output.to_path_buf(),
+        error: std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")),
+    })
+}
+
+/// Why `engine` cannot load `progs`, the bytes of a program (ENGT-3.12).
+fn unloadable(engine: Engine, progs: &[u8]) -> Option<Unloadable> {
+    // The engine's own checks, the header's CRC among them, are not this one's.
+    let options = ReadOptions {
+        check_header_crc: false,
+    };
+    let read = Progs::read_with(progs, &options).ok()?;
+    let version = read.header().version;
+    engine.unloadable(version, read.statements().iter().map(|s| s.op))
+}
+
+/// Writes `progs`, `compiled`'s program, to `output` and its line map beside it, making the
+/// directory.
+fn write_program(output: &Path, progs: &[u8], compiled: &Compiled) -> Result<(), WorkbenchError> {
     let save = |path: &Path, error| WorkbenchError::Save {
         path: path.to_path_buf(),
         error,
     };
     let invalid = |error: String| std::io::Error::new(std::io::ErrorKind::InvalidData, error);
-    let progs =
-        qc_progs::write(&compiled.progs).map_err(|e| save(output, invalid(format!("{e:?}"))))?;
     let lno_path = output.with_extension("lno");
     let lno = compiled
         .lno

@@ -256,6 +256,13 @@ own builtin tables are fact sources, so its table is what its source implements.
   builtin number can mean a different builtin in each kind: in `fteqw`, `#5` is
   `lightstylestatic` for server and `bprint` for menu QuakeC, and in DarkPlaces `#1` is
   `makevectors` for client and `checkextension` for menu QuakeC.
+- **ENGT-3.12** KEX loads what the rerelease's own build makes: a version 6 progs whose
+  statements use only id's opcodes, 0 to 65 (PROGS-8). The rerelease's codebases are built with
+  FTEQCC's `-Tid` (`xtask/src/oracles/rerelease.rs`, which checks each output is so); KEX's
+  engine is not open source, so nothing says it loads more. A program for KEX that is another
+  version, such as FTE's 32-bit layout for more than 65530 globals (FTE-24.1), or that uses
+  another opcode, is refused when built, with the reason, and not written. Its strings are
+  written as they are, a `$` key included, which the engine localizes (RRE-1.3).
 
 ## ENGT-4 Missing builtins
 

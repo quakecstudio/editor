@@ -1427,3 +1427,33 @@ fn declared_builtins_key_each_name() {
         None
     );
 }
+
+// spec ENGT-3.12: KEX loads a version 6 progs of id's opcodes; another version or a higher
+// opcode is refused with the reason, and no other engine is held to it
+#[test]
+fn kex_loads_only_what_the_rereleases_build_makes() {
+    use crate::Unloadable;
+    assert_eq!(Engine::Kex.unloadable(6, [0, 31, 65]), None);
+    assert_eq!(Engine::Kex.unloadable(7, [0]), Some(Unloadable::Version(7)));
+    assert_eq!(
+        Engine::Kex.unloadable(6, [1, 66, 70]),
+        Some(Unloadable::Opcode {
+            statement: 1,
+            opcode: 66
+        })
+    );
+    assert_eq!(Engine::Vanilla.unloadable(7, [99]), None);
+    assert_eq!(Engine::Fteqw.unloadable(7, [99]), None);
+    assert_eq!(
+        Unloadable::Version(7).to_string(),
+        "the program is version 7; the KEX rerelease loads version 6"
+    );
+    assert_eq!(
+        Unloadable::Opcode {
+            statement: 1,
+            opcode: 66
+        }
+        .to_string(),
+        "statement 1 has opcode 66; the KEX rerelease has id's opcodes 0 to 65"
+    );
+}

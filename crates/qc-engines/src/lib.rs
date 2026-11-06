@@ -230,7 +230,63 @@ impl Layer {
     }
 }
 
+/// Why an engine cannot load a program (ENGT-3.12).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unloadable {
+    /// The program is this version, not 6.
+    Version(i32),
+    /// A statement, at this index, has this opcode, which id's VM lacks.
+    Opcode {
+        /// The statement's index.
+        statement: usize,
+        /// Its opcode.
+        opcode: u32,
+    },
+}
+
+impl core::fmt::Display for Unloadable {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Version(version) => write!(
+                f,
+                "the program is version {version}; the KEX rerelease loads version 6"
+            ),
+            Self::Opcode { statement, opcode } => write!(
+                f,
+                "statement {statement} has opcode {opcode}; the KEX rerelease has id's \
+                 opcodes 0 to 65"
+            ),
+        }
+    }
+}
+
+/// The highest opcode id's VM has (PROGS-8).
+const ID_LAST_OPCODE: u32 = 65;
+
 impl Engine {
+    /// Why the engine cannot load a program of `version` whose statements have `opcodes`, in
+    /// order; `None` when it can (ENGT-3.12). Only KEX, which the IDE cannot run, is held to
+    /// the rerelease's own build: every engine the preview host or a launch runs reports its
+    /// own errors.
+    #[must_use]
+    pub fn unloadable(
+        self,
+        version: i32,
+        opcodes: impl IntoIterator<Item = u32>,
+    ) -> Option<Unloadable> {
+        if self != Self::Kex {
+            return None;
+        }
+        if version != 6 {
+            return Some(Unloadable::Version(version));
+        }
+        opcodes
+            .into_iter()
+            .enumerate()
+            .find(|&(_, opcode)| opcode > ID_LAST_OPCODE)
+            .map(|(statement, opcode)| Unloadable::Opcode { statement, opcode })
+    }
+
     /// Every engine, in the order of ENGT-3.9.
     pub const ALL: [Self; 7] = [
         Self::Vanilla,

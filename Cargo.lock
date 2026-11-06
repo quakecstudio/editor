@@ -3476,6 +3476,7 @@ name = "qs-workbench"
 version = "2026.10.0"
 dependencies = [
  "qc-codegen",
+ "qc-engines",
  "qc-ide",
  "qc-progs",
  "qc-project",

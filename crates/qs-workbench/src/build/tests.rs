@@ -185,3 +185,74 @@ fn the_build_reads_the_project_in_the_editors_dialect() {
     fte.open_project(&dir).unwrap();
     assert!(fte.build().unwrap()[0].built);
 }
+
+/// A workbench over `spec`'s bare project, read in the FTEQCC dialect for the KEX rerelease.
+fn for_kex(dir: &Path, spec: &ProjectSpec) -> Workbench<MemoryLoader> {
+    let mut workbench = workbench(dir, spec);
+    workbench.set_config(Config {
+        dialect: Some(Dialect::Fteqcc),
+        target: Some(qc_project::Target::Rerelease),
+        ..Config::default()
+    });
+    workbench.open_project(dir).unwrap();
+    workbench
+}
+
+// spec ENGT-3.12: a program for KEX is written as the rerelease's build makes it, a `$` key
+// string as it is
+#[test]
+fn a_kex_program_keeps_its_localized_keys() {
+    let dir = root("kex");
+    let spec = ProjectSpec {
+        world: "string msg;\nvoid() worldspawn = { msg = \"$qc_need_silver_key\"; };\n",
+    };
+    let mut workbench = for_kex(&dir, &spec);
+    let built = workbench.build().unwrap();
+    assert!(built[0].built, "{:?}", built[0].problems);
+    let progs = std::fs::read(&built[0].output).unwrap();
+    let read = Progs::read_with(
+        &progs,
+        &ReadOptions {
+            check_header_crc: false,
+        },
+    )
+    .unwrap();
+    assert_eq!(read.header().version, 6);
+    assert!(
+        progs
+            .windows(b"$qc_need_silver_key\0".len())
+            .any(|w| w == b"$qc_need_silver_key\0")
+    );
+}
+
+// spec ENGT-3.12: a program KEX cannot load, FTE's 32-bit layout for more than 65530 globals
+// (FTE-24.1), is refused with the reason and not written
+#[test]
+fn a_program_kex_cannot_load_is_not_written() {
+    let dir = root("kex-refused");
+    let mut world = String::new();
+    for n in 0..66_000 {
+        world.push_str(&format!("float g{n};\n"));
+    }
+    world.push_str("void() worldspawn = { g0 = 1; };\n");
+    let spec = ProjectSpec {
+        world: Box::leak(world.into_boxed_str()),
+    };
+    let mut workbench = for_kex(&dir, &spec);
+    let built = workbench.build().unwrap();
+    assert!(!built[0].built);
+    let refused = built[0]
+        .problems
+        .iter()
+        .find(|p| p.code == "target")
+        .unwrap();
+    assert_eq!(refused.gravity, Gravity::Error);
+    assert!(
+        refused
+            .message
+            .contains("the KEX rerelease loads version 6"),
+        "{}",
+        refused.message
+    );
+    assert!(!built[0].output.exists(), "nothing written");
+}
