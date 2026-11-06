@@ -92,6 +92,10 @@ Code uses these names, never the bare numbers. Implemented by `qc-progs` (LIMIT-
   `runaway loop error` without executing, so one call executes at most 99999 statements.
 - **LIMIT-4.2** Statements run by a nested `PR_ExecuteProgram` count against the nested call's
   own counter, not the outer one.
+- **LIMIT-4.3** An engine with another limit starts each run's counter from its own count
+  instead, with LIMIT-4.1's rule unchanged: a run executes at most one statement fewer than
+  the count. vkQuake's is BUILTIN-18.26. id's code has one count, so the choice is the mock's
+  engine profile (BUILTIN-18), and a count of 0 is taken as 1, which no engine has.
 
 ### Constants
 

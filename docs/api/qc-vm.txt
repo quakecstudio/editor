@@ -48,6 +48,7 @@ fn qc_vm::machine::Machine::localstack_used
 fn qc_vm::machine::Machine::new
 fn qc_vm::machine::Machine::set_global
 fn qc_vm::machine::Machine::set_global3
+fn qc_vm::machine::Machine::set_runaway
 fn qc_vm::machine::Machine::set_tracing
 fn qc_vm::machine::Machine::tracing
 fn qc_vm::trace::Trace::entityfields

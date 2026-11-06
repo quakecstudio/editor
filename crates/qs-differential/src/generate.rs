@@ -293,6 +293,7 @@ fn scenario() -> Scenario {
         frametime: DIFF_DEFAULT_FRAMETIME,
         seed: DIFF_DEFAULT_SEED,
         inputs: Vec::new(),
+        commands: Vec::new(),
     }
 }
 

@@ -15,7 +15,7 @@
 use qc_edict::EdictNumber;
 use qc_edict::system::{SysField, SysGlobal};
 use qc_progs::Progs;
-use qc_types::Slot;
+use qc_types::{PROGS_OFS_PARM0, Slot};
 use qc_vm::{ErrorKind, RunError};
 
 use crate::scenario::Input;
@@ -25,6 +25,17 @@ use super::{
     MOVETYPE_NOCLIP, MOVETYPE_NONE, MOVETYPE_PUSH, MOVETYPE_STEP, MOVETYPE_TOSS, MOVETYPE_WALK,
     ftoi,
 };
+
+/// DIFF-4.4: whether `text` starts, in any case, with `spawn`, `begin` or `prespawn`: the
+/// sign-on commands vkQuake keeps from `SV_ParseClientCommand` (`q_strncasecmp`).
+fn is_signon(text: &[u8]) -> bool {
+    [b"spawn".as_slice(), b"begin", b"prespawn"]
+        .iter()
+        .any(|word| {
+            text.get(..word.len())
+                .is_some_and(|start| start.eq_ignore_ascii_case(word))
+        })
+}
 
 /// The fatal error the physics frame raises on a bad movetype (DIFF-5.3, DIFF-5.4).
 ///
@@ -59,10 +70,11 @@ impl Host<'_> {
         let frametime = t as f32;
         self.set_global(SysGlobal::Frametime, Slot::from_f32(frametime));
 
-        // DIFF-5.1: empty the unreliable datagram, apply the frame's input, run the physics
-        // frame, empty the reliable datagram, clear the muzzle flashes.
+        // DIFF-5.1: empty the unreliable datagram, apply the frame's input and commands, run
+        // the physics frame, empty the reliable datagram, clear the muzzle flashes.
         self.builtins.engine_mut().buffers.unreliable = 0;
         self.apply_inputs(frame);
+        self.run_commands(progs, frame)?;
         self.physics(progs, t)?;
         self.builtins.engine_mut().buffers.reliable = 0;
         self.clear_muzzle_flashes();
@@ -95,6 +107,43 @@ impl Host<'_> {
                 }
             }
         }
+    }
+
+    /// DIFF-4.4: run the scenario's `command` lines for frame `frame`, in file order, as
+    /// vkQuake's `SV_ReadClientMessage` runs a `clc_stringcmd`: a command not starting
+    /// `spawn`, `begin` or `prespawn` in any case goes to the progs' `SV_ParseClientCommand`,
+    /// with `PARM0` the command as an engine string, `time` the clock and `self` the client.
+    /// Any other command, or every command of a progs without the function, runs nothing.
+    fn run_commands(&mut self, progs: &Progs<'_>, frame: u32) -> Result<(), RunError> {
+        let Some(function) = progs.ed_find_function(b"SV_ParseClientCommand") else {
+            return Ok(());
+        };
+        let Some(function) = progs
+            .functions()
+            .iter()
+            .position(|f| f == function)
+            .and_then(|i| i32::try_from(i).ok())
+        else {
+            return Ok(());
+        };
+        let commands = self.scenario.commands.clone();
+        for command in commands.iter().filter(|c| c.frame == frame) {
+            if is_signon(&command.text) {
+                continue;
+            }
+            let text = self.make_string(command.text.clone());
+            self.set_global_slot(i32::from(PROGS_OFS_PARM0), Slot::from_i32(text));
+            let clock = self.builtins.engine().clock;
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "spec DIFF-4.4: time is the f32 nearest the clock"
+            )]
+            let time = clock as f32;
+            self.set_global(SysGlobal::Time, Slot::from_f32(time));
+            self.set_self(usize::try_from(command.edict).unwrap_or(0));
+            self.run_function(progs, function)?;
+        }
+        Ok(())
     }
 
     /// DIFF-5.3: a physics frame of length `t`, id's `SV_Physics` without the movement.

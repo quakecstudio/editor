@@ -103,8 +103,10 @@ The runner of P1-13 writes scenarios for each corpus codebase; both runners read
   | `frametime` | seconds, greater than 0 and at most 1 | 0.1 (`DIFF_DEFAULT_FRAMETIME`) | The length of each server frame |
   | `seed` | integer 0 to 4294967295 | 1 (`DIFF_DEFAULT_SEED`) | The random state (DIFF-6.2) |
   | `input` | frame, edict, field, values | | A client input (DIFF-4.3) |
+  | `command` | frame, edict, words | | A string command a client sends (DIFF-2.10, DIFF-4.4) |
 
-  `model`, `cvar` and `input` may appear any number of times; every other key at most once.
+  `model`, `cvar`, `input` and `command` may appear any number of times; every other key at
+  most once.
 - **DIFF-2.3** **Withdrawn** 2026-10-16: it did not say which texts are numbers, so the two
   runners could read one scenario differently: C's `strtod` and Rust's `f64` parsing both
   accept `+0.1` and `inf`, and `strtod` accepts hexadecimal; replaced by DIFF-2.7 (integers),
@@ -140,6 +142,12 @@ The runner of P1-13 writes scenarios for each corpus codebase; both runners read
   not an integer or a number as DIFF-2.7 and DIFF-2.8 say or is out of range, a repeated key
   that may appear once, a model name repeated, or no `progs`, is refused before anything runs,
   and no trace is written.
+- **DIFF-2.10** A `command` line is `command <frame> <edict> <word>...`: `<frame>` from 1 to
+  `frames`, `<edict>` from 1 to `clients`, then one or more words. The command is the words
+  joined by one space, so a run of spaces or tabs between two words becomes one space and a
+  command cannot hold a `#` (DIFF-2.1); a line holds at most 16 words, so a command at most 13.
+  A command with no word, a frame or edict out of range, or a word holding a NUL byte is
+  refused (DIFF-2.9).
 
 ### Constants
 
@@ -222,11 +230,30 @@ the map's BSP replaced by the scenario.
 ## DIFF-4 Clients
 
 **Source:** `WinQuake/sv_main.c`, `SV_ConnectClient`; `WinQuake/host_cmd.c`, `Host_Spawn_f`,
-`Host_Begin_f`; `WinQuake/sv_user.c`, `SV_ReadClientMove`.
+`Host_Begin_f`; `WinQuake/sv_user.c`, `SV_ReadClientMove`;
+Novum/vkQuake@27789d7333a46674474d871137bb71e056719628 `Quake/sv_user.c`,
+`SV_ReadClientMessage`.
 
 In id's engine a player connects over the network after the map has started. The mock lets
 `clients` players enter at once, after the settle frames, so that the client code of a progs
-runs; it reads no network input other than the scenario's `input` lines.
+runs; it reads no network input other than the scenario's `input` and `command` lines.
+
+vkQuake hands a client's string command to the progs; `SV_ReadClientMessage` reads, for a
+`clc_stringcmd`:
+
+```c
+if (q_strncasecmp (s, "spawn", 5) && q_strncasecmp (s, "begin", 5) && q_strncasecmp (s, "prespawn", 8) && qcvm->extfuncs.SV_ParseClientCommand)
+{
+	...
+	G_INT (OFS_PARM0) = PR_SetEngineString (s);
+	pr_global_struct->time = qcvm->time;
+	pr_global_struct->self = EDICT_TO_PROG (host_client->edict);
+	PR_ExecuteProgram (qcvm->extfuncs.SV_ParseClientCommand);
+	...
+}
+else
+	Cmd_ExecuteString (s, src_client);
+```
 
 ### Behaviour
 
@@ -246,6 +273,13 @@ runs; it reads no network input other than the scenario's `input` lines.
   `button2` set that field to the value, `impulse` sets `impulse` to the value, and `v_angle`
   sets its three slots to the three values. Nothing else of client input runs: no
   `SV_ClientThink`, so no field other than these is written.
+- **DIFF-4.4** After the `input` lines of frame `k`, its `command` lines run in file order, as
+  vkQuake's `SV_ReadClientMessage` runs a `clc_stringcmd`: when the progs has a function named
+  `SV_ParseClientCommand` and the command does not start, in any case, with `spawn`, `begin`
+  or `prespawn`, `PARM0` is set to an engine string holding the command, `time` to (f32)clock
+  and `self` to the client's edict, and the function runs. The mock has no console commands,
+  so where vkQuake calls `Cmd_ExecuteString` nothing runs. An error in the function ends the
+  scenario as an error in a frame does (DIFF-8).
 
 ### Constants
 
@@ -268,7 +302,7 @@ order of [`edicts.md`](edicts.md) EDICT-9 and EDICT-10) and drops the movement.
 
 - **DIFF-5.1** A server frame of length `T` (the `frametime` directive): sets the global
   `frametime` to (f32)`T`; empties the unreliable datagram; applies the frame's input
-  (DIFF-4.3); runs a physics frame of length `T` (DIFF-5.3), never paused; empties the reliable
+  (DIFF-4.3) and runs its commands (DIFF-4.4); runs a physics frame of length `T` (DIFF-5.3), never paused; empties the reliable
   datagram; and clears `EF_MUZZLEFLASH` in `effects` on edicts 1 to `num_edicts - 1`
   (EDICT-10.7), converting `effects` to an integer and back (BUILTIN-2.1, BUILTIN-2.2).
 - **DIFF-5.2** Server frames are numbered from 1. Frame `k` starts with the clock at 1.0 plus
@@ -877,8 +911,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane
-  Dimensions precaches more sounds than id's engine holds (LIMIT-6.2). Every other codebase
-  runs under id's.
+  Dimensions precaches more sounds than id's engine holds (LIMIT-6.2). Their worlds are set up
+  with vkQuake's runaway count (BUILTIN-18.26, LIMIT-4.3), since crmod7's `say` command and its
+  map-name lookups run more statements in one call than id's 99999; the drawn calls (DIFF-12.2)
+  then run under id's, since a drawn argument often makes a loop that would run vkQuake's
+  0x1000000 statements before it fails. Every other codebase runs under id's.
 
 ## DIFF-13 The FTEQCC grammar differential
 

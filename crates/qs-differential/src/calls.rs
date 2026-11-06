@@ -26,7 +26,7 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::{ErrorKind, Machine, Observer, RunError};
 
 use crate::host::{Host, RunRefused};
-use crate::runner::scenarios;
+use crate::runner::{ScenarioSpec, scenarios};
 use crate::scenario::{self, Scenario};
 
 mod draw;
@@ -323,8 +323,8 @@ impl Oracle {
     }
 }
 
-/// Runs [`run_calls`] on `theirs` and `ours` from each world of [`crate::runner::scenarios`],
-/// `rounds` rounds each (DIFF-12.20, DIFF-12.5); `oracle` compiled `theirs`. `progress` is
+/// Runs [`run_calls`] on `theirs` and `ours` from each world of [`crate::runner::scenarios`]
+/// for `codebase`, `rounds` rounds each (DIFF-12.20, DIFF-12.5); `oracle` compiled `theirs`. `progress` is
 /// told a scenario's name, the functions it has called so far and the functions it will call,
 /// after every `PROGRESS_EVERY` functions and at its end, from the scenario's own thread.
 ///
@@ -332,6 +332,7 @@ impl Oracle {
 ///
 /// [`CallsError`] when a scenario cannot be read, a progs is refused or a world's setup fails.
 pub fn run_codebase(
+    codebase: &str,
     oracle: Oracle,
     theirs: &[u8],
     ours: &[u8],
@@ -340,6 +341,7 @@ pub fn run_codebase(
     progress: &Progress<'_>,
 ) -> Result<CodebaseReport, CallsError> {
     run_scenarios(
+        scenarios(codebase),
         oracle,
         (theirs, ours),
         (rounds, profile),
@@ -348,8 +350,9 @@ pub fn run_codebase(
     )
 }
 
-/// [`run_codebase`] of the functions `called` names.
+/// [`run_codebase`] from the worlds of `specs`, of the functions `called` names.
 fn run_scenarios(
+    specs: Vec<ScenarioSpec>,
     oracle: Oracle,
     (theirs, ours): (&[u8], &[u8]),
     (rounds, profile): (u32, EngineProfile),
@@ -357,7 +360,7 @@ fn run_scenarios(
     progress: &Progress<'_>,
 ) -> Result<CodebaseReport, CallsError> {
     let mut worlds = Vec::new();
-    for spec in scenarios("") {
+    for spec in specs {
         let text = format!("progs progs.dat\n{}", spec.directives);
         let scenario = scenario::read(text.as_bytes(), Path::new("."))
             .map_err(|e| CallsError::Scenario(format!("{}: {e}", spec.name)))?;
@@ -424,6 +427,7 @@ pub fn run_functions(
     functions: &BTreeSet<Vec<u8>>,
 ) -> Result<CodebaseReport, CallsError> {
     run_scenarios(
+        scenarios(""),
         oracle,
         (theirs, ours),
         (rounds, profile),
@@ -1090,6 +1094,9 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
     ) -> Result<Self, CallsError> {
         let mut host = Host::new(scenario, progs).map_err(CallsError::Refused)?;
         host.builtins.engine_mut().profile = profile;
+        // LIMIT-4.3: the engine's runaway count while the world is set up, so a mod's long loop
+        // runs as it does there.
+        host.machine.set_runaway(profile.runaway());
         // DIFF-12.26: a builtin the profile lacks does nothing here, so a function a mod
         // compiles for another engine runs to its end.
         host.builtins.engine_mut().unimplemented = Unimplemented::ReturnsZero;
@@ -1122,6 +1129,9 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
             .collect();
         let setup_executed = executed.iter().map(|e| e.statement).collect();
         host.trace.clear();
+        // DIFF-12.19: the drawn calls run under id's runaway count, the setup alone under the
+        // engine's: a drawn argument often makes a loop that would run the engine's count out.
+        host.machine.set_runaway(qc_vm::LIMIT_RUNAWAY);
         Ok(Self {
             machine: host.machine.clone(),
             builtins: host.builtins.clone(),

@@ -346,7 +346,7 @@ fn pairs(
         let (theirs, ours) = (read(theirs)?, read(ours)?);
         let run = |oracle_progs: &[u8]| match calls {
             Calls::Every(rounds) => {
-                run_codebase(oracle, oracle_progs, &ours, *rounds, engine, &quiet)
+                run_codebase("", oracle, oracle_progs, &ours, *rounds, engine, &quiet)
             }
             Calls::Named(_) => {
                 let functions = name.split(',').map(|f| f.as_bytes().to_vec()).collect();
@@ -503,6 +503,7 @@ fn run(request: Run) -> Result<bool, String> {
                     eprintln!("      {scenario}: {done} of {of} functions called");
                 };
                 let report = run_codebase(
+                    &options.codebase,
                     options.oracle,
                     &theirs,
                     &ours,
