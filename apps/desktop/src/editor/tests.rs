@@ -377,9 +377,20 @@ fn another_files_edits_are_kept_when_the_editor_moves_on() {
     harness.step();
     harness.get_by_label("defs.qc").click();
     harness.run();
-    harness.get_by_label("world.qc").click();
+    // The tab of the unsaved file, not its row in the Project tree, which is marked M.
+    let tab = format!("world.qc {}", Text::UnsavedMark.get());
+    let row = format!("world.qc {}", Text::ModifiedMark.get());
+    assert!(
+        harness.query_by_label(&row).is_some(),
+        "the tree marks it unsaved"
+    );
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Tab, &tab)
+        .click();
     harness.run();
     assert!(text(&harness).starts_with("// kept "));
+    // The tab's own editor came back: the edit is still undoable.
+    assert!(editor_mut(&mut harness).view.state_mut().undo());
 }
 
 #[test]

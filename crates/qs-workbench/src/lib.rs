@@ -20,7 +20,7 @@ mod preview;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -260,6 +260,11 @@ pub struct Workbench<L> {
     problems: Vec<Problem>,
     symbols: Vec<Symbol>,
     open: Option<OpenFile>,
+    /// The files opened since the project was, in the order they were first opened: the
+    /// editor's tabs.
+    tabs: Vec<PathBuf>,
+    /// The files whose text an editor or a command changed since they were last saved.
+    unsaved: BTreeSet<PathBuf>,
     generation: u64,
 }
 
@@ -274,6 +279,8 @@ impl<L: Loader> Workbench<L> {
             problems: Vec::new(),
             symbols: Vec::new(),
             open: None,
+            tabs: Vec::new(),
+            unsaved: BTreeSet::new(),
             generation: 0,
         }
     }
@@ -306,6 +313,8 @@ impl<L: Loader> Workbench<L> {
         self.problems = problems(&mut self.host);
         self.symbols = self.host.workspace_symbols();
         self.open = None;
+        self.tabs.clear();
+        self.unsaved.clear();
         Ok(())
     }
 
@@ -344,8 +353,49 @@ impl<L: Loader> Workbench<L> {
             classes,
         };
         let location = open.location();
+        if !self.tabs.contains(&open.path) {
+            self.tabs.push(open.path.clone());
+        }
         self.open = Some(open);
         Ok(location)
+    }
+
+    /// Closes the tab of `path`. When it is the open file, the tab after it opens, or the one
+    /// before when it was the last, or no file when it was the only one. Its unsaved text is
+    /// kept: opening it again shows it.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkbenchError::NoFile`] when `path` has no tab, or the tab to open next cannot be
+    /// read.
+    pub fn close_file(&mut self, path: &Path) -> Result<(), WorkbenchError> {
+        let path = normalize(path);
+        let at = self
+            .tabs
+            .iter()
+            .position(|tab| *tab == path)
+            .ok_or_else(|| WorkbenchError::NoFile { path: path.clone() })?;
+        self.tabs.remove(at);
+        if self.open.as_ref().is_some_and(|open| open.path == path) {
+            self.open = None;
+            let next = self.tabs.get(at).or_else(|| self.tabs.last()).cloned();
+            if let Some(next) = next {
+                self.open_file(&next, 0)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The editor's tabs: the files opened since the project was, first opened first.
+    #[must_use]
+    pub fn tabs(&self) -> &[PathBuf] {
+        &self.tabs
+    }
+
+    /// Whether the text of `path` changed since it was last saved.
+    #[must_use]
+    pub fn is_unsaved(&self, path: &Path) -> bool {
+        self.unsaved.contains(path)
     }
 
     /// The project directory, once a project is open.

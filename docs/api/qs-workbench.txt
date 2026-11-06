@@ -1,5 +1,6 @@
 const qs_workbench::commands::BUILD_PROJECT
 const qs_workbench::commands::CHECK_PROJECT
+const qs_workbench::commands::CLOSE_FILE
 const qs_workbench::commands::COMPLETE
 const qs_workbench::commands::DEFINITION
 const qs_workbench::commands::HOVER
@@ -52,6 +53,7 @@ field qs_workbench::commands::AtParams.path
 field qs_workbench::commands::Candidate.detail
 field qs_workbench::commands::Candidate.kind
 field qs_workbench::commands::Candidate.label
+field qs_workbench::commands::CloseFileParams.path
 field qs_workbench::commands::HoverInfo.declaration
 field qs_workbench::commands::HoverInfo.docs
 field qs_workbench::commands::HoverInfo.place
@@ -125,6 +127,8 @@ fn qs_workbench::OpenFile::path
 fn qs_workbench::OpenFile::revision
 fn qs_workbench::OpenFile::text
 fn qs_workbench::OpenFile::version
+fn qs_workbench::Workbench::close_file
+fn qs_workbench::Workbench::is_unsaved
 fn qs_workbench::Workbench::new
 fn qs_workbench::Workbench::open
 fn qs_workbench::Workbench::open_file
@@ -133,6 +137,7 @@ fn qs_workbench::Workbench::problems
 fn qs_workbench::Workbench::project_symbols
 fn qs_workbench::Workbench::root
 fn qs_workbench::Workbench::set_config
+fn qs_workbench::Workbench::tabs
 fn qs_workbench::Workbench::tree
 fn qs_workbench::build::Workbench::build
 fn qs_workbench::build::Workbench::check
@@ -229,6 +234,7 @@ struct qs_workbench::build::ModuleBuilt
 struct qs_workbench::build::Reported
 struct qs_workbench::commands::AtParams
 struct qs_workbench::commands::Candidate
+struct qs_workbench::commands::CloseFileParams
 struct qs_workbench::commands::HoverInfo
 struct qs_workbench::commands::OpenFileParams
 struct qs_workbench::commands::OpenProjectParams

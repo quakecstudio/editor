@@ -13,6 +13,7 @@
 //!
 //! Every string comes from [`crate::strings`]; a test fails on a string literal here.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::containers::panel::PanelState;
@@ -29,11 +30,11 @@ use qs_layout::{
 use qs_render::{Camera, MapMesh};
 use qs_workbench::debug::Location;
 use qs_workbench::{
-    AtParams, COMPLETE, Candidate, Config, DEFINITION, FsLoader, HOVER, HasPreview, HasWorkbench,
-    HoverInfo, OPEN_FILE, OPEN_PROJECT, OpenFile, OpenFileParams, OpenProjectParams, PAUSE, PLAY,
-    POLL, Place, PlayParams, PlayState, Preview, PreviewConfig, PreviewStatus, REFERENCES, RELOAD,
-    RENAME, RESTART, RESUME, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE,
-    UpdateFileParams, Workbench,
+    AtParams, CLOSE_FILE, COMPLETE, Candidate, CloseFileParams, Config, DEFINITION, FsLoader,
+    HOVER, HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT, OpenFile, OpenFileParams,
+    OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState, Preview, PreviewConfig,
+    PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RenameParams, SAVE_FILE, STEP,
+    STOP, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
 };
 use qs_workbench::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, STEP_BY, StepByParams, UNWATCH,
@@ -160,6 +161,8 @@ pub struct Shell {
     shown_stop: Option<Location>,
     /// The line, from 1, of the file to show once it is open in the editor.
     pending_line: Option<(PathBuf, u32)>,
+    /// The editors of the tabs not shown, with their carets and undo histories.
+    parked: BTreeMap<PathBuf, Editor>,
 }
 
 impl Shell {
@@ -206,6 +209,7 @@ impl Shell {
             debug_input: DebugInput::default(),
             shown_stop: None,
             pending_line: None,
+            parked: BTreeMap::new(),
         })
     }
 
@@ -976,14 +980,29 @@ impl Shell {
             let path = editor.path.clone();
             let _: Option<()> = self.run(UPDATE_FILE, &UpdateFileParams { path, text });
         }
-        let open = self.session.context().workbench.open();
+        let workbench = &self.session.context().workbench;
+        let tabs = workbench.tabs();
+        self.parked.retain(|path, _| tabs.contains(path));
+        let open = workbench.open();
         match (open, &mut self.editor) {
             (None, _) => self.editor = None,
             (Some(open), Some(editor)) if editor.path == open.path() => {
                 editor.sync(open, &self.theme);
             }
             (Some(open), _) => {
-                self.editor = Some(Editor::new(Id::new(EDITOR_AREA), open, &self.theme));
+                if let Some(old) = self.editor.take()
+                    && tabs.contains(&old.path)
+                {
+                    self.parked.insert(old.path.clone(), old);
+                }
+                let editor = match self.parked.remove(open.path()) {
+                    Some(mut editor) => {
+                        editor.sync(open, &self.theme);
+                        editor
+                    }
+                    None => Editor::new(Id::new(EDITOR_AREA), open, &self.theme),
+                };
+                self.editor = Some(editor);
             }
         }
         if let Some(editor) = self.editor.as_mut()
@@ -1024,17 +1043,35 @@ impl Shell {
             self.focus_editor(ui.ctx());
         }
         let theme = &self.theme;
+        let workbench = &self.session.context().workbench;
+        let open = workbench.open().map(OpenFile::path);
+        let mut chosen = None;
         egui::Frame::NONE
             .fill(theme.color(Token::SurfaceTabs))
             .inner_margin(egui::Margin::symmetric(8, 0))
             .show(ui, |ui| {
                 ui.set_height(theme.size.tabs);
                 ui.horizontal_centered(|ui| {
-                    for (tab, text) in [
-                        (CentreTab::Editor, Text::Editor),
-                        (CentreTab::Game, Text::Game),
-                        (CentreTab::Map, Text::Map),
-                    ] {
+                    let editing = self.centre_tab == CentreTab::Editor;
+                    for path in workbench.tabs() {
+                        let shown = editing && open == Some(path.as_path());
+                        if let Some(action) =
+                            file_tab(ui, theme, path, workbench.is_unsaved(path), shown)
+                        {
+                            chosen = Some(action);
+                        }
+                    }
+                    let centre = if workbench.tabs().is_empty() {
+                        [
+                            (CentreTab::Editor, Text::Editor),
+                            (CentreTab::Game, Text::Game),
+                            (CentreTab::Map, Text::Map),
+                        ]
+                        .as_slice()
+                    } else {
+                        [(CentreTab::Game, Text::Game), (CentreTab::Map, Text::Map)].as_slice()
+                    };
+                    for &(tab, text) in centre {
                         let response = ui.selectable_value(&mut self.centre_tab, tab, text.get());
                         if focus && !editor_shown && self.centre_tab == tab {
                             response.request_focus();
@@ -1042,6 +1079,25 @@ impl Shell {
                     }
                 });
             });
+        let switched = chosen.is_some();
+        match chosen {
+            Some(TabAction::Show(path)) => {
+                let offset = self
+                    .parked
+                    .get(&path)
+                    .or(self.editor.as_ref().filter(|e| e.path == path))
+                    .map_or(0, Editor::caret_offset);
+                self.jump(Jump { path, offset });
+            }
+            Some(TabAction::Close(path)) => {
+                let _: Option<()> = self.run(CLOSE_FILE, &CloseFileParams { path });
+            }
+            None => {}
+        }
+        if switched {
+            self.sync_editor();
+        }
+        let theme = &self.theme;
         if self.centre_tab == CentreTab::Editor
             && let Some(editor) = &mut self.editor
         {
@@ -1097,6 +1153,54 @@ impl Shell {
             ui.allocate_response(egui::Vec2::ZERO, Sense::hover());
         });
     }
+}
+
+/// What a click on a file's tab asks for.
+enum TabAction {
+    /// Show the file in the editor.
+    Show(PathBuf),
+    /// Close its tab.
+    Close(PathBuf),
+}
+
+/// A file's tab: its name, a dot when it is unsaved, and a button that closes it.
+fn file_tab(
+    ui: &mut Ui,
+    theme: &Theme,
+    path: &Path,
+    unsaved: bool,
+    shown: bool,
+) -> Option<TabAction> {
+    let name = path
+        .file_name()
+        .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy());
+    let label = if unsaved {
+        format!("{name} {}", Text::UnsavedMark.get())
+    } else {
+        name.into_owned()
+    };
+    let mut action = None;
+    let tab = ui
+        .selectable_label(shown, label)
+        .on_hover_text(path.to_string_lossy());
+    // A screen reader says it is a tab, not one more button; the tree's row is the button.
+    ui.ctx().accesskit_node_builder(tab.id, |node| {
+        node.set_role(accesskit::Role::Tab);
+    });
+    if tab.clicked() {
+        action = Some(TabAction::Show(path.to_path_buf()));
+    }
+    let close =
+        Button::new(RichText::new(Text::Remove.get()).color(theme.color(Token::TextFaint)))
+            .frame(false);
+    if ui
+        .add(close)
+        .on_hover_text(Text::CloseTabHint.get())
+        .clicked()
+    {
+        action = Some(TabAction::Close(path.to_path_buf()));
+    }
+    action
 }
 
 /// The size a drag of a panel's edge gave it: its size this frame, when the pointer is held
@@ -1180,7 +1284,14 @@ fn left(
                 .id_salt(Area::Section(Text::Project))
                 .max_height(height * TREE_SHARE)
                 .auto_shrink([false, true])
-                .show(ui, |ui| jump = project::tree_ui(ui, workbench.tree(), open));
+                .show(ui, |ui| {
+                    let rows = project::Rows {
+                        open,
+                        unsaved: &|path| workbench.is_unsaved(path),
+                        mark: theme.color(Token::StatusWarn),
+                    };
+                    jump = project::tree_ui(ui, workbench.tree(), &rows);
+                });
         }
     }
     ui.add_space(theme.space(3));

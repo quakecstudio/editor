@@ -9,6 +9,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
+| [`file.close`](#fileclose) | Closes a file's tab, opening the tab beside it when it was         the open file; its unsaved text is kept. |
 | [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
@@ -91,6 +92,31 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `file.close`
+
+Closes a file's tab, opening the tab beside it when it was         the open file; its unsaved text is kept.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `file.close`.",
+  "properties": {
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "CloseFileParams",
   "type": "object"
 }
 ```

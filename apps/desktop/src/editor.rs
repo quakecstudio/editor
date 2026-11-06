@@ -174,11 +174,13 @@ impl Editor {
     pub(crate) fn sync(&mut self, open: &OpenFile, theme: &Theme) {
         if open.version() != self.version {
             self.version = open.version();
-            self.view
-                .state_mut()
-                .replace_text(&String::from_utf8_lossy(open.text()));
-            self.sent = self.view.state().revision();
-            self.seen.0 = self.sent;
+            let text = String::from_utf8_lossy(open.text());
+            // A tab opened again has the text its editor last sent: its undo history stays.
+            if self.view.state().buffer().text() != text {
+                self.view.state_mut().replace_text(&text);
+                self.sent = self.view.state().revision();
+                self.seen.0 = self.sent;
+            }
         }
         if open.generation() != self.generation {
             self.place(open);
@@ -219,7 +221,7 @@ impl Editor {
     }
 
     /// The byte offset of the primary caret.
-    fn caret_offset(&self) -> usize {
+    pub(crate) fn caret_offset(&self) -> usize {
         let state = self.view.state();
         state.buffer().offset(state.primary().head)
     }

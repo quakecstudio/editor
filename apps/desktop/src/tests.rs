@@ -559,7 +559,7 @@ fn the_palette_keys_move_go_back_and_close() {
         .map(|p| p.id.as_str().to_owned());
     assert_eq!(
         prompt.as_deref(),
-        Some("file.open"),
+        Some("file.close"),
         "the fourth command in id order"
     );
     frame_with(&ctx, &mut app, vec![key(egui::Key::Escape, none)]);

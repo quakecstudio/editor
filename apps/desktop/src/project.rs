@@ -10,7 +10,7 @@
 
 use std::path::{Path, PathBuf};
 
-use eframe::egui::{Button, CollapsingHeader, RichText, ScrollArea, Ui};
+use eframe::egui::{self, Button, CollapsingHeader, RichText, ScrollArea, Ui};
 use qs_workbench::{EntryKind, OpenFile, Problem, Severity, Symbol, SymbolKind, TreeEntry};
 
 use crate::icons::Icon;
@@ -36,17 +36,28 @@ pub enum SymbolScope {
     Project,
 }
 
+/// How the tree draws its file rows: the open file selected, and an unsaved file marked `M` in
+/// the colour of modified files.
+pub(crate) struct Rows<'a> {
+    /// The open file.
+    pub(crate) open: Option<&'a Path>,
+    /// Whether a file is unsaved.
+    pub(crate) unsaved: &'a dyn Fn(&Path) -> bool,
+    /// The mark's colour, `status.warn`.
+    pub(crate) mark: egui::Color32,
+}
+
 /// The Project section's tree: each directory a collapsible header, each file a row that opens
-/// it. `open` is the open file, drawn selected.
-pub(crate) fn tree_ui(ui: &mut Ui, entries: &[TreeEntry], open: Option<&Path>) -> Option<Jump> {
+/// it.
+pub(crate) fn tree_ui(ui: &mut Ui, entries: &[TreeEntry], rows: &Rows<'_>) -> Option<Jump> {
     let mut jump = None;
-    level(ui, entries, open, &mut jump);
+    level(ui, entries, rows, &mut jump);
     jump
 }
 
 /// Draws `entries`, whose first is at the shallowest depth among them, recursing into each
 /// directory's entries.
-fn level(ui: &mut Ui, entries: &[TreeEntry], open: Option<&Path>, jump: &mut Option<Jump>) {
+fn level(ui: &mut Ui, entries: &[TreeEntry], rows: &Rows<'_>, jump: &mut Option<Jump>) {
     let mut rest = entries;
     while let Some((entry, after)) = rest.split_first() {
         let children = after
@@ -59,17 +70,16 @@ fn level(ui: &mut Ui, entries: &[TreeEntry], open: Option<&Path>, jump: &mut Opt
                 CollapsingHeader::new(entry.name.as_str())
                     .id_salt((entry.depth, entry.name.as_str(), inside.len()))
                     .default_open(true)
-                    .show(ui, |ui| level(ui, inside, open, jump));
+                    .show(ui, |ui| level(ui, inside, rows, jump));
             }
             EntryKind::File(path) => {
-                let selected = open == Some(path.as_path());
-                if ui
-                    .add(
-                        Button::selectable(selected, entry.name.as_str())
-                            .frame_when_inactive(false),
-                    )
-                    .clicked()
-                {
+                let selected = rows.open == Some(path.as_path());
+                let mut row =
+                    Button::selectable(selected, entry.name.as_str()).frame_when_inactive(false);
+                if (rows.unsaved)(path) {
+                    row = row.right_text(RichText::new(Text::ModifiedMark.get()).color(rows.mark));
+                }
+                if ui.add(row).clicked() {
                     *jump = Some(Jump {
                         path: path.clone(),
                         offset: 0,

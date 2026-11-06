@@ -120,7 +120,7 @@ pub(crate) fn debugger_ui(
                             .monospace()
                             .color(theme.color(Token::CodeConstant)),
                     );
-                    if ui.small_button(Text::RemoveWatch.get()).clicked() {
+                    if ui.small_button(Text::Remove.get()).clicked() {
                         action = Some(DebugAction::Unwatch(index));
                     }
                     ui.end_row();

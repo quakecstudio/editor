@@ -113,12 +113,18 @@ pub enum Text {
     NotStopped,
     /// A watch with no value read yet.
     NotRead,
-    /// The button that takes a watch away.
-    RemoveWatch,
+    /// The button that takes a watch away or closes a tab.
+    Remove,
     /// The hint in the console's filter box.
     FilterConsole,
     /// The console's prompt before its command box.
     ConsolePrompt,
+    /// After a tab's name when its file is unsaved.
+    UnsavedMark,
+    /// What that button does.
+    CloseTabHint,
+    /// Beside an unsaved file in the Project tree.
+    ModifiedMark,
     /// A control that has no action yet.
     NotYetAvailable,
     /// The View menu.
@@ -217,7 +223,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 103] = [
+    pub const ALL: [Self; 106] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -271,9 +277,12 @@ impl Text {
         Self::NoBreakpoints,
         Self::NotStopped,
         Self::NotRead,
-        Self::RemoveWatch,
+        Self::Remove,
         Self::FilterConsole,
         Self::ConsolePrompt,
+        Self::UnsavedMark,
+        Self::CloseTabHint,
+        Self::ModifiedMark,
         Self::NotYetAvailable,
         Self::ViewMenu,
         Self::ToggleLeftPanel,
@@ -382,9 +391,12 @@ impl Text {
                 "The call stack and watches show when the game stops at a breakpoint or a step."
             }
             Self::NotRead => "not read",
-            Self::RemoveWatch => "\u{d7}",
+            Self::Remove => "\u{d7}",
             Self::FilterConsole => "Filter the console",
             Self::ConsolePrompt => "]",
+            Self::UnsavedMark => "\u{25cf}",
+            Self::CloseTabHint => "Close the tab; its unsaved edits are kept",
+            Self::ModifiedMark => "M",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",
             Self::ToggleLeftPanel => "Project and Entities",
