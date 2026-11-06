@@ -39,6 +39,7 @@ mod strftime;
 pub mod table;
 pub mod tokenize;
 pub mod userinfo;
+pub mod vkstrings;
 
 #[cfg(test)]
 mod properties;

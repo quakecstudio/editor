@@ -2338,6 +2338,66 @@ mod bodies {
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
     }
 
+    // spec BUILTIN-18.31: sin (#60), pow (#97) and mod (#245) under vkQuake's profile
+    // spec BUILTIN-18.32: str2chr (#222) reads its offset only when the call passed one, and
+    // chr2str (#223) each argument passed
+    // spec BUILTIN-18.33: strpad (#225) joins the strings after the width; strreplace (#484)
+    // spec BUILTIN-18.34: uri_escape (#510) and uri_unescape (#511)
+    #[test]
+    fn vkquake_string_and_math_builtins_dispatch() {
+        let (strings, offsets) = string_table(&["abc", "b", "XY", "a b", "a%20b"]);
+        let run = |number: u32, argc: u16, parms: &[Result<i32, f32>]| {
+            let mut f = Fixture::new(number, argc, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            for (n, parm) in (0_u16..).zip(parms) {
+                match parm {
+                    Ok(string) => f.set_parm_i(n, *string),
+                    Err(float) => f.set_parm_f(n, *float),
+                }
+            }
+            f.run_ok(ServerState::Active);
+            f
+        };
+        let text = |f: &Fixture| f.engine().strings.text(f.return_i()).map(<[u8]>::to_vec);
+        assert_eq!(run(60, 1, &[Err(0.0)]).return_f(), 0.0);
+        assert_eq!(run(97, 2, &[Err(3.0), Err(2.0)]).return_f(), 9.0);
+        assert_eq!(run(245, 2, &[Err(7.0), Err(4.0)]).return_f(), 3.0);
+        let one = run(222, 1, &[Ok(offsets[0]), Err(2.0)]);
+        assert_eq!(one.return_f(), f32::from(b'a'), "one argument: offset 0");
+        let two = run(222, 2, &[Ok(offsets[0]), Err(2.0)]);
+        assert_eq!(two.return_f(), f32::from(b'c'));
+        let chars = run(223, 2, &[Err(72.0), Err(105.0), Err(33.0)]);
+        assert_eq!(text(&chars), Some(b"Hi".to_vec()), "two of three passed");
+        let padded = run(225, 3, &[Err(-6.0), Ok(offsets[0]), Ok(offsets[1])]);
+        assert_eq!(text(&padded), Some(b"  abcb".to_vec()));
+        let replaced = run(484, 3, &[Ok(offsets[1]), Ok(offsets[2]), Ok(offsets[0])]);
+        assert_eq!(text(&replaced), Some(b"aXYc".to_vec()));
+        assert_eq!(
+            text(&run(510, 1, &[Ok(offsets[3])])),
+            Some(b"a%20b".to_vec())
+        );
+        assert_eq!(text(&run(511, 1, &[Ok(offsets[4])])), Some(b"a b".to_vec()));
+    }
+
+    // spec BUILTIN-18.35: wasfreed (#353) is 1 for a free edict and 0 for one in use
+    #[test]
+    fn wasfreed_reads_the_free_flag() {
+        let run = |free: bool| {
+            let mut f = Fixture::new(353, 1, vec![0], 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.machine.edicts_mut().alloc(1.0).unwrap();
+            if free {
+                f.machine.edicts_mut().free(EdictNumber::new(1), 1.0);
+            }
+            let value = f.machine.edicts().edict_num(1).unwrap();
+            f.set_parm_i(0, value.bits());
+            f.run_ok(ServerState::Active);
+            f.return_f()
+        };
+        assert_eq!(run(true), 1.0);
+        assert_eq!(run(false), 0.0);
+    }
+
     // spec BUILTIN-18.29: forceinfokey on a player slot sets its userinfo as SV_UpdateInfo
     // does, active or not, and a `*` key with it
     #[test]
