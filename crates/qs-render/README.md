@@ -10,7 +10,8 @@ the map view and the preview host share one renderer.
 - **Spec sections:** REND-1 to REND-13 of
   [`render.md`](../../docs/spec/render.md); PART-3.2 of
   [`engine/particles.md`](../../docs/spec/engine/particles.md); the drawing of HUD-1 to HUD-3
-  of [`engine/hud.md`](../../docs/spec/engine/hud.md) and of VIEW-4.6.
+  of [`engine/hud.md`](../../docs/spec/engine/hud.md), of VIEW-4.6, and of the console's
+  background and the menus' fade (CON-3.2, MENU-1.3).
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`,
   `WinQuake/gl_rsurf.c` (`BuildSurfaceDisplayList`, `GL_CreateSurfaceLightmap`,
   `R_BuildLightMap`, `R_AddDynamicLights`, `R_DrawBrushModel`), `WinQuake/gl_rlight.c`

@@ -11,11 +11,13 @@ them (NET), so the client knows exactly what id's client knows.
 - **Spec sections:** CLIENT-1 to CLIENT-8 of [`client.md`](../../docs/spec/engine/client.md),
   PART-1 to PART-3 of [`particles.md`](../../docs/spec/engine/particles.md) and VIEW-1 to
   VIEW-4 of [`view.md`](../../docs/spec/engine/view.md), and the rerelease's
-  `svc_localsound` and `svc_achievement` (RRE-2.2, RRE-2.3, RRE-2.5).
+  `svc_localsound` and `svc_achievement` (RRE-2.2, RRE-2.3, RRE-2.5); CON-1 to CON-5 of
+  [`console.md`](../../docs/spec/engine/console.md) and MENU-1 to MENU-5 of
+  [`menu.md`](../../docs/spec/engine/menu.md).
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`:
   `WinQuake/cl_main.c`, `cl_parse.c`, `cl_tent.c`, `r_part.c`, `view.c` and `common.c`
-  (the readers); and sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`:
-  `Quake/cl_parse.c` (the lerp flags) and `r_alias.c` (`R_SetupAliasFrame`,
+  (the readers), `console.c`, `keys.c` and `menu.c`; and sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`:
+  `Quake/cl_parse.c` (the lerp flags), `console.c` (`Con_DrawConsole`, CON-5) and `r_alias.c` (`R_SetupAliasFrame`,
   `R_SetupEntityTransform`), under ADR-0018. Each file's header lists its functions.
 - **Shipped:** yes.
 
@@ -36,6 +38,10 @@ them (NET), so the client knows exactly what id's client knows.
 - `Client::set_viewangles`, `set_contents`, `set_forwardmove`, `start_pitch_drift`,
   `stop_pitch_drift`, `set_lerp`, `set_view_settings`, `set_gravity`: what the host's input,
   world and settings feed in.
+- `Console`: the console's text, notify lines, slide and input line (CON-1 to CON-5);
+  `Console::key` edits the line and returns what to run, `draw` and `draw_quakespasm` place it.
+- `Menu`: the main, single player, help and quit menus (MENU); `Menu::key` returns the key
+  destination and the `MenuEvent`s (sounds, a new game, quit) the host acts on.
 - `Reader`: `MSG_Read*` over a message's bytes.
 - `Particles`, `ViewState`, `calc_roll`, `calc_bob`, `gamma_table`: the pieces on their own.
 
