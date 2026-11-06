@@ -39,21 +39,47 @@ pub(crate) const SERVER_SETTINGS: [(&str, &str); 24] = [
 /// `WinQuake/cl_input.c` (the speeds), `cl_main.c` (the mouse and look settings),
 /// `gl_screen.c` (`viewsize`), `view.c` (`gamma`) and `snd_dma.c` (the volumes). One
 /// table, as id's one executable has one, so the console and the progs' `cvar` reach them.
-pub(crate) const CLIENT_SETTINGS: [(&str, &str); 14] = [
+pub(crate) const CLIENT_SETTINGS: [(&str, &str); 19] = [
     ("cl_upspeed", "200"),
     ("cl_forwardspeed", "200"),
     ("cl_backspeed", "200"),
     ("cl_sidespeed", "350"),
     ("cl_movespeedkey", "2.0"),
+    ("cl_yawspeed", "140"),
+    ("cl_pitchspeed", "150"),
+    ("cl_anglespeedkey", "1.5"),
     ("lookspring", "0"),
     ("lookstrafe", "0"),
     ("sensitivity", "3"),
     ("m_pitch", "0.022"),
     ("m_yaw", "0.022"),
+    ("m_forward", "1"),
+    ("m_side", "0.8"),
     ("viewsize", "100"),
     ("gamma", "1"),
     ("bgmvolume", "1"),
     ("volume", "0.7"),
+];
+
+/// The settings above that id declares archived (`cvar_t`'s third field `true`), which
+/// `Cvar_WriteVariables` writes to the configuration (INPUT-4.1): `WinQuake/cl_main.c`,
+/// `cl_input.c`, `view.c`, `gl_screen.c` and `snd_dma.c`.
+pub(crate) const ARCHIVED: [&str; 15] = [
+    "_cl_name",
+    "_cl_color",
+    "lookspring",
+    "lookstrafe",
+    "sensitivity",
+    "m_pitch",
+    "m_yaw",
+    "m_forward",
+    "m_side",
+    "cl_forwardspeed",
+    "cl_backspeed",
+    "gamma",
+    "viewsize",
+    "bgmvolume",
+    "volume",
 ];
 
 /// A setting the server's own code reads.

@@ -43,8 +43,8 @@ pub use hud::{
     intermission_overlay, sort_frags, status_bar,
 };
 pub use menu::{
-    MENU_HELP_PAGES, MENU_SAVEGAMES, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey, MenuSettings,
-    MenuState, save_comment,
+    Grabbed, MENU_BINDINGS, MENU_HELP_PAGES, MENU_SAVEGAMES, Menu, MenuEvent, MenuFrame, MenuGame,
+    MenuKey, MenuSettings, MenuState, save_comment,
 };
 pub use message::Reader;
 pub use models::{FrameInfo, ModelInfo, ModelKind, Models, Random, SYNCTYPE_RAND, flags};

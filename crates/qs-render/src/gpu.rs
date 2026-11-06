@@ -882,7 +882,8 @@ impl MapRenderer {
             .skybox
             .map_or([0.0; 4], |[w, h]| [1.0, f32_of_u32(w), f32_of_u32(h), 0.0]);
         // REND-13.5: what a lightmap texel is multiplied by, the mesh's look's.
-        let look = [self.light_scale, 0.0, 0.0, 0.0];
+        // REND-13.9: the gamma every fragment is raised to.
+        let look = [self.light_scale, view.gamma, 0.0, 0.0];
         let bytes: Vec<u8> = view
             .clip_from_world
             .iter()
@@ -1270,6 +1271,8 @@ pub struct View {
     pub skyfog: f32,
     /// The 2D layer's width and height in its units, `vid.width` and `vid.height` (HUD-1).
     pub screen: [f32; 2],
+    /// QuakeSpasm's `gamma` over every fragment, 1 for none (REND-13.9).
+    pub gamma: f32,
 }
 
 impl View {
@@ -1285,6 +1288,7 @@ impl View {
             water_alpha: REND_WATERALPHA,
             skyfog: REND_SKYFOG,
             screen: [CONWIDTH, CONWIDTH * 3.0 / 4.0],
+            gamma: 1.0,
         }
     }
 }

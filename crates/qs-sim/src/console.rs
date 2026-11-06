@@ -22,6 +22,7 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::convert::float_to_int;
 
 use crate::host_commands::{Words, atoi, tokenize};
+use crate::input::Button;
 use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
 use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
@@ -88,14 +89,53 @@ const fn add_one(count: usize) -> usize {
 
 /// Every command's name, the server's and the client's (CON-6.1), in `strcmp` order, as
 /// QuakeSpasm's `Cmd_AddCommand` keeps its list.
-fn command_names() -> Vec<&'static str> {
-    let mut names: Vec<&str> = COMMANDS
+fn command_names() -> Vec<String> {
+    let mut names: Vec<String> = COMMANDS
         .iter()
-        .copied()
-        .chain(ClientCommand::ALL.iter().map(|(name, _)| *name))
+        .chain(ClientCommand::ALL.iter().map(|(name, _)| name))
+        .chain(&KEY_COMMANDS)
+        .map(|name| (*name).to_owned())
         .collect();
+    for (button, _) in Button::ALL {
+        names.push(format!("+{button}"));
+        names.push(format!("-{button}"));
+    }
     names.sort_unstable();
     names
+}
+
+/// The client's commands of `keys.c` and `cl_input.c` that take words (INPUT-1.2, INPUT-2.1).
+const KEY_COMMANDS: [&str; 4] = ["bind", "unbind", "unbindall", "impulse"];
+
+/// The client's command `name` with `words`, when it is one (CON-6.4, INPUT-1.2, INPUT-2.1).
+fn client_command(name: &str, words: &Words) -> Option<ClientCommand> {
+    if let Some((_, command)) = ClientCommand::ALL.iter().find(|(n, _)| *n == name) {
+        return Some(command.clone());
+    }
+    // `KeyDown` and `KeyUp`: "`c = Cmd_Argv(1); if (c[0]) k = atoi(c); else k = -1;`".
+    let key = || {
+        words
+            .argv
+            .get(1)
+            .filter(|word| !word.is_empty())
+            .map(|word| atoi(word))
+    };
+    if let Some(button) = name.strip_prefix('+').and_then(Button::named) {
+        return Some(ClientCommand::Press(button, key()));
+    }
+    if let Some(button) = name.strip_prefix('-').and_then(Button::named) {
+        return Some(ClientCommand::Release(button, key()));
+    }
+    match name {
+        "bind" => Some(ClientCommand::Bind(words.argv.clone())),
+        "unbind" => Some(ClientCommand::Unbind(words.argv.clone())),
+        "unbindall" => Some(ClientCommand::UnbindAll),
+        "impulse" => {
+            let n = words.argv.get(1).map_or(0, |word| atoi(word));
+            Some(ClientCommand::Impulse(n.to_le_bytes()[0]))
+        }
+        _ => None,
+    }
 }
 
 /// What a line of the buffer leaves the rest of the buffer to do.
@@ -158,11 +198,13 @@ impl World {
             .map(|(name, _)| *name)
             .collect();
         settings.sort_unstable();
-        command_names()
+        let commands = command_names();
+        commands
             .iter()
-            .chain(&settings)
+            .map(String::as_str)
+            .chain(settings)
             .find(|name| name.starts_with(partial))
-            .map(|name| (*name).to_owned())
+            .map(str::to_owned)
     }
 
     /// The lines the console printed since the last call, each without its line feed; text
@@ -249,8 +291,8 @@ impl World {
                 .map(|w| String::from_utf8_lossy(w).into_owned())
                 .unwrap_or_default()
         };
-        if let Some((_, command)) = ClientCommand::ALL.iter().find(|(n, _)| *n == name) {
-            self.client_commands.push(*command);
+        if let Some(command) = client_command(&name, &words) {
+            self.client_commands.push(command);
             return Flow::Next;
         }
         match name.as_str() {

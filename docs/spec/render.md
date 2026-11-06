@@ -710,3 +710,13 @@ QuakeSpasm's look by default and GLQuake's as a mode.
   only when the console is forced up (`Draw_ConsoleBackground`: "`alpha = (con_forcedup) ? 1.0f :
   scr_conalpha.value;`"). In GLQuake's look the fade is 0.8 and the background as CON-3.2
   says.
+- **REND-13.9** In QuakeSpasm's look the `gamma` setting is applied to the whole frame, the
+  world, the models, the particles and the 2D layer, as `GLSLGamma_GammaCorrect`
+  (`Quake/gl_rmain.c`) applies it once the frame is drawn: "`gl_FragColor =
+  vec4(pow(frag.rgb, vec3(GammaValue)), 1.0);`", skipped when it is 1. The host draws inside
+  egui's render pass and cannot copy the frame back, so it raises each fragment as it is
+  written, which is the same for an opaque pixel; a blended one is raised before the blend
+  rather than after, our choice. QuakeSpasm's `contrast` is not read here and stays at 1. The
+  client's blend table is built at gamma 1 in this look, since QuakeSpasm's `R_PolyBlend`
+  draws the blend as it is. In GLQuake's look `gamma` only builds the blend table (VIEW-4.7),
+  as GLQuake's `V_UpdatePalette` ramps reach no screen.

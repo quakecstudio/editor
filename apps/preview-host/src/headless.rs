@@ -289,6 +289,7 @@ impl Overlay {
             console_forced: false,
             screen_height: height,
             settings,
+            bound: Vec::new(),
         });
         Hud {
             console,

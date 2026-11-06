@@ -29,12 +29,13 @@ use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
 use crate::debug::Debugger;
 use crate::host_commands::SignonCommand;
+use crate::input::Button;
 use crate::messages::ClientMessages;
 #[cfg(test)]
 use crate::messages::ServerMessages;
 use crate::physics::Sound;
 use crate::rerelease::BuiltinTable;
-use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
+use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
 use qc_builtins::localization::Localization;
 
 use crate::spawn::{
@@ -207,7 +208,7 @@ pub enum HostCommand {
 
 /// A command the client runs, not the server: id's `console.c` and `menu.c` register them
 /// with the client's console (CON-6.1). The console hands them to the host in order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ClientCommand {
     /// `toggleconsole`, `Con_ToggleConsole_f`.
     ToggleConsole,
@@ -229,6 +230,18 @@ pub enum ClientCommand {
     Help,
     /// `menu_quit`, `M_Menu_Quit_f`.
     MenuQuit,
+    /// `bind`, `Key_Bind_f`, with the command's words (INPUT-1.2).
+    Bind(Vec<Vec<u8>>),
+    /// `unbind`, `Key_Unbind_f`, with the command's words.
+    Unbind(Vec<Vec<u8>>),
+    /// `unbindall`, `Key_Unbindall_f`.
+    UnbindAll,
+    /// `impulse <n>`, `IN_Impulse`: `Q_atoi` of the word, as the byte the move sends.
+    Impulse(u8),
+    /// `+<button>`, `KeyDown`, with the key's number when a key sent it (INPUT-2.1).
+    Press(Button, Option<i32>),
+    /// `-<button>`, `KeyUp`, with the key's number when a key sent it.
+    Release(Button, Option<i32>),
 }
 
 impl ClientCommand {
@@ -660,6 +673,17 @@ impl World {
     #[must_use]
     pub fn setting(&self, name: &str) -> Option<f32> {
         self.builtins.mock.engine().cvars.value(name)
+    }
+
+    /// `Cvar_WriteVariables` (INPUT-4.1): each archived setting as "`<name> "<value>"`" and a
+    /// line feed.
+    #[must_use]
+    pub fn archived_settings(&self) -> String {
+        let cvars = &self.builtins.mock.engine().cvars;
+        ARCHIVED
+            .iter()
+            .filter_map(|name| cvars.text(name).map(|text| format!("{name} \"{text}\"\n")))
+            .collect()
     }
 
     /// `Cvar_SetValue`: the setting `name` to `value`, written as C's `%f` writes it; false

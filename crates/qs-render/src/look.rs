@@ -102,6 +102,28 @@ impl Look {
         }
     }
 
+    /// The gamma the whole frame is raised to for the `gamma` setting `gamma` (REND-13.9):
+    /// QuakeSpasm's `GLSLGamma_GammaCorrect` applies it, GLQuake's palette ramps reach no
+    /// screen, so 1 there.
+    #[must_use]
+    pub const fn frame_gamma(self, gamma: f32) -> f32 {
+        match self {
+            Self::QuakeSpasm => gamma,
+            Self::GlQuake => 1.0,
+        }
+    }
+
+    /// The gamma the client's blend table is built with for `gamma` (REND-13.9, VIEW-4.7):
+    /// GLQuake's `V_UpdatePalette` runs the blend through it; QuakeSpasm's `R_PolyBlend` draws
+    /// the blend as it is and corrects the whole frame instead, so 1 there.
+    #[must_use]
+    pub const fn blend_gamma(self, gamma: f32) -> f32 {
+        match self {
+            Self::QuakeSpasm => 1.0,
+            Self::GlQuake => gamma,
+        }
+    }
+
     /// Whether the 2D layer is the window's own size, QuakeSpasm's canvases at scale 1, rather
     /// than GLQuake's 640 wide layer (REND-13.7).
     #[must_use]

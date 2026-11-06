@@ -692,3 +692,23 @@ fn quakespasm_draws_its_canvases() {
     assert_eq!(Look::QuakeSpasm.console_alpha(400, 800, true), 1.0);
     assert!((Look::GlQuake.console_alpha(240, 480, false) - 0.8).abs() < 1e-6);
 }
+
+// spec REND-13.9: QuakeSpasm's look raises the whole frame to gamma and leaves the blend table
+// at 1; GLQuake's leaves the frame and builds the blend table with it
+#[test]
+fn gamma_goes_to_the_frame_or_the_blend_by_look() {
+    assert_eq!(Look::QuakeSpasm.frame_gamma(0.7), 0.7);
+    assert_eq!(Look::QuakeSpasm.blend_gamma(0.7), 1.0);
+    assert_eq!(Look::GlQuake.frame_gamma(0.7), 1.0);
+    assert_eq!(Look::GlQuake.blend_gamma(0.7), 0.7);
+    let lighting = samples(&[50]);
+    let bsp = bsp(&MapSpec::default(), &lighting);
+    for (look, framed) in [(Look::QuakeSpasm, 0.6), (Look::GlQuake, 1.0)] {
+        let mut play = play();
+        play.look = look;
+        play.gamma = 0.6;
+        let mut mesh = MapMesh::build(&bsp, &palette(), look).unwrap();
+        let callback = play.frame(&Scene::default(), &Hud::default(), &bsp, &mut mesh, 1.0);
+        assert_eq!(callback.view.gamma, framed, "{look:?}");
+    }
+}

@@ -13,6 +13,8 @@ pub mod debug;
 #[cfg(test)]
 mod fixtures;
 mod host_commands;
+pub mod input;
+pub mod keys;
 mod messages;
 mod movement;
 mod physics;

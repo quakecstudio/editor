@@ -16,11 +16,13 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use qs_bsp::Bsp;
 use qs_client::{
-    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Client, Console, ConsoleKey, Event, KeyDest, Menu,
-    MenuEvent, MenuFrame, MenuGame, MenuKey, MenuSettings, Random as _, Typed,
+    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Client, Console, ConsoleKey, Event, Grabbed, KeyDest,
+    MENU_BINDINGS, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey, MenuSettings, Random as _, Typed,
 };
 use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
 use qs_sim::ClientCommand;
+use qs_sim::input::{Button, Input, MoveSettings};
+use qs_sim::keys::{Bindings, K_ESCAPE, key_name};
 use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
 use crate::args::Args;
@@ -28,6 +30,10 @@ use crate::audio::Audio;
 use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
+use crate::keys::{
+    STARTUP, config_path, configuration, keynum, modifier_keys, mouse_key, mouse_motion,
+    runs_binding, wheel_key,
+};
 use crate::load::{Acted, Describer, Loaded, Rand, act, saves};
 use crate::screenshot::Drawer;
 
@@ -172,6 +178,12 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 console,
                 dest: KeyDest::Game,
                 menu: Menu::new(),
+                bindings: Bindings::new(),
+                input: Input::new(),
+                motion: [0.0; 2],
+                modifiers: egui::Modifiers::NONE,
+                configured: false,
+                config_file: config_path(),
             }))
         }),
     )
@@ -224,9 +236,40 @@ struct Viewer {
     dest: KeyDest,
     /// The menu (MENU).
     menu: Menu,
+    /// The keys' bindings and the buttons they hold, kept from level to level (INPUT).
+    bindings: Bindings,
+    input: Input,
+    /// The mouse's motion since the last move, for `IN_MouseMove` (INPUT-2.4).
+    motion: [f32; 2],
+    /// The modifier keys as the last frame saw them, for their key events (INPUT-3.1).
+    modifiers: egui::Modifiers,
+    /// Whether `quake.rc` has run, as `Host_Init` runs it once (INPUT-3.3).
+    configured: bool,
+    /// The host's own configuration, run after `quake.rc` and written on exit (INPUT-4).
+    config_file: Option<std::path::PathBuf>,
 }
 
 impl eframe::App for Viewer {
+    /// `Host_WriteConfiguration` at `Host_Shutdown` (INPUT-4.1): the configuration written to
+    /// the host's own file, never to the game's directory.
+    fn on_exit(&mut self) {
+        let Some(path) = &self.config_file else {
+            return;
+        };
+        let text = configuration(
+            &self.bindings.write(),
+            &self.game.world().archived_settings(),
+            self.input.held(Button::MLook),
+        );
+        let written = path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| std::fs::write(path, text));
+        if let Err(error) = written {
+            tracing::warn!(%error, path = %path.display(), "Couldn't write the configuration");
+        }
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "one host frame in Host_Frame's order: input, the server, the client, the sound and the draw, read as one"
@@ -238,14 +281,20 @@ impl eframe::App for Viewer {
         self.last = now;
         let rect = ui.max_rect();
         let response = ui.allocate_rect(rect, egui::Sense::click());
+        // INPUT-3.3: `Host_Init`'s "`Cbuf_InsertText ("exec quake.rc\n");`", once.
+        if !self.configured {
+            self.configured = true;
+            self.run_line(STARTUP);
+        }
         self.type_keys(ui);
+        self.bind_keys(ui);
         self.hold_pointer(ui, response.clicked() && self.dest == KeyDest::Game);
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
         if self.fly {
             self.fly_around(ui, seconds);
         } else {
-            self.steer(ui);
+            self.steer(seconds);
         }
         let frametime = self.advance(f64::from(seconds));
         // The progs' `localcmd` and `stuffcmd` reach the client's commands too.
@@ -346,6 +395,9 @@ impl eframe::App for Viewer {
             console_forced: false,
             screen_height: self.play.screen[1],
             settings: MenuSettings::read(&|name| world.setting(name).unwrap_or(0.0)),
+            bound: self
+                .bindings
+                .names_for(&MENU_BINDINGS.map(|(command, _)| command)),
         });
         hud.menu = menu;
         if let Some(sound) = sound {
@@ -548,15 +600,107 @@ impl Viewer {
             ui.ctx()
                 .send_viewport_cmd(egui::ViewportCommand::CursorVisible(visible));
             self.pointer = next;
-        } else if self.pointer == Pointer::Captured {
-            let [yaw, pitch] = self.game.mouse_turn(motion);
+        } else if self.pointer == Pointer::Captured && self.fly {
+            // The free camera turns as the mouse look of INPUT-2.4 would.
+            let world = self.game.world();
+            let setting = |name: &str| world.setting(name).unwrap_or(0.0);
+            let sensitivity = setting("sensitivity");
+            let yaw = -motion[0] * sensitivity * setting("m_yaw");
+            let pitch = motion[1] * sensitivity * setting("m_pitch");
             self.camera.turn(yaw, pitch);
+        } else if self.pointer == Pointer::Captured {
+            self.motion[0] += motion[0];
+            self.motion[1] += motion[1];
         }
     }
 
-    /// The player: the keys and the view as `CL_BaseMove` makes the command for the next
-    /// server frame; the eye is the client's.
-    fn steer(&mut self, ui: &egui::Ui) {
+    /// `Key_Event` for the bindings (INPUT-3.2): each key going down that runs its binding
+    /// for the key destination adds it to the console's buffer, and each key going up adds
+    /// its `+` binding's `-` command whatever has the keys. Repeats are dropped, the modifier
+    /// keys come from egui's modifier state, and the mouse's buttons and wheel count only
+    /// while the window holds the mouse.
+    fn bind_keys(&mut self, ui: &egui::Ui) {
+        let (events, modifiers) = ui.input(|input| (input.events.clone(), input.modifiers));
+        let mut keys: Vec<(u8, bool)> = Vec::new();
+        let before = modifier_keys(self.modifiers);
+        for (now, was) in modifier_keys(modifiers).into_iter().zip(before) {
+            if now.1 != was.1 {
+                keys.push(now);
+            }
+        }
+        self.modifiers = modifiers;
+        let held = self.pointer == Pointer::Captured
+            || (self.dest == KeyDest::Menu && self.menu.grabbing());
+        for event in events {
+            match event {
+                egui::Event::Key {
+                    key,
+                    pressed,
+                    repeat: false,
+                    ..
+                } => {
+                    if let Some(k) = keynum(key) {
+                        keys.push((k, pressed));
+                    }
+                }
+                egui::Event::PointerButton {
+                    button, pressed, ..
+                } if held => {
+                    if let Some(k) = mouse_key(button) {
+                        keys.push((k, pressed));
+                    }
+                }
+                egui::Event::MouseWheel { delta, .. } if held => {
+                    // A wheel step is a key going down and up at once, as QuakeSpasm sends it.
+                    if let Some(k) = wheel_key(delta.y) {
+                        keys.push((k, true));
+                        keys.push((k, false));
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (key, down) in keys {
+            // MENU-8.3: the keys menu's wait takes the next key going down, whatever it is.
+            if down && self.dest == KeyDest::Menu && self.menu.grabbing() {
+                let name = key_name(key);
+                let grabbed = match key {
+                    K_ESCAPE => Grabbed::Escape,
+                    b'`' => Grabbed::Backquote,
+                    _ => Grabbed::Key(&name),
+                };
+                for event in self.menu.grab(grabbed) {
+                    match event {
+                        MenuEvent::Sound(sound) => self.audio.local(sound, &mut self.rand),
+                        MenuEvent::Run(line) => self.run_line(line.as_bytes()),
+                        MenuEvent::Unbind(_) | MenuEvent::Set { .. } => {}
+                    }
+                }
+                continue;
+            }
+            let text = if down {
+                if !runs_binding(key, self.dest) {
+                    continue;
+                }
+                if let Some(notice) = self.bindings.unbound_notice(key) {
+                    let realtime = self.started.elapsed().as_secs_f64();
+                    self.console.print(notice.as_bytes(), realtime);
+                }
+                self.bindings.down(key)
+            } else {
+                self.bindings.up(key)
+            };
+            if let Some(text) = text {
+                self.run_line(text.strip_suffix(b"\n").unwrap_or(&text));
+            }
+        }
+    }
+
+    /// The player for a frame of `seconds` (INPUT-2): the buttons the bindings hold, the
+    /// mouse's motion and the settings turn the view and make the command for the next server
+    /// frame, as `CL_AdjustAngles`, `CL_BaseMove` and `IN_MouseMove` do; the eye is the
+    /// client's.
+    fn steer(&mut self, seconds: f32) {
         // The server's `svc_setangle` turned the client's view: follow it.
         let [pitch, yaw, _] = self.client.viewangles();
         if pitch.to_bits() != self.last_set[0].to_bits()
@@ -565,48 +709,21 @@ impl Viewer {
             self.camera.pitch = pitch;
             self.camera.yaw = yaw;
         }
-        // CL_AdjustAngles keeps the pitch within -70 and 80.
-        self.camera.pitch = self.camera.pitch.clamp(-70.0, 80.0);
-        self.client
-            .set_viewangles([self.camera.pitch, self.camera.yaw, 0.0]);
+        let world = self.game.world();
+        let settings = MoveSettings::read(&|name| world.setting(name).unwrap_or(0.0));
+        let motion = mouse_motion(self.dest, core::mem::take(&mut self.motion));
+        let mut angles = [self.camera.pitch, self.camera.yaw, 0.0];
+        let (cmd, drift) = self.input.frame(&settings, seconds, &mut angles, motion);
+        self.camera.pitch = angles[0];
+        self.camera.yaw = angles[1];
+        self.client.set_viewangles(angles);
         self.last_set = [self.camera.pitch, self.camera.yaw];
-        // The keys are the console's while it is open (CON-4).
-        let playing = self.dest == KeyDest::Game;
-        let speeds = self.game.move_speeds();
-        let cmd = ui.input(|input| {
-            let key = |k: egui::Key| f32::from(u8::from(playing && input.key_down(k)));
-            let speed = if input.modifiers.shift {
-                speeds.run
-            } else {
-                1.0
-            };
-            let held = self.pointer == Pointer::Captured;
-            let attack = u8::from(playing && held && input.pointer.primary_down());
-            let impulse = (1..=8_u8)
-                .find(|n| {
-                    let key = match n {
-                        1 => egui::Key::Num1,
-                        2 => egui::Key::Num2,
-                        3 => egui::Key::Num3,
-                        4 => egui::Key::Num4,
-                        5 => egui::Key::Num5,
-                        6 => egui::Key::Num6,
-                        7 => egui::Key::Num7,
-                        _ => egui::Key::Num8,
-                    };
-                    playing && input.key_pressed(key)
-                })
-                .unwrap_or(0);
-            qs_sim::UserCmd {
-                angles: [self.camera.pitch, self.camera.yaw, 0.0],
-                forward: (speeds.forward * key(egui::Key::W) - speeds.back * key(egui::Key::S))
-                    * speed,
-                side: (speeds.side * key(egui::Key::D) - speeds.side * key(egui::Key::A)) * speed,
-                up: (speeds.up * key(egui::Key::E) - speeds.up * key(egui::Key::Q)) * speed,
-                buttons: attack | (u8::from(playing && input.key_down(egui::Key::Space)) << 1),
-                impulse,
-            }
-        });
+        if drift.stop {
+            self.client.stop_pitch_drift();
+        }
+        if drift.start {
+            self.client.start_pitch_drift();
+        }
         self.game.world_mut().set_command(cmd);
     }
 
@@ -619,6 +736,10 @@ impl Viewer {
         let realtime = self.started.elapsed().as_secs_f64();
         let height = self.play.screen[1];
         for event in events {
+            // MENU-8.3: while the keys menu waits for a key, the next is its, by number.
+            if self.dest == KeyDest::Menu && self.menu.grabbing() {
+                break;
+            }
             match event {
                 egui::Event::Key {
                     key: egui::Key::Backtick,
@@ -681,6 +802,10 @@ impl Viewer {
             can_save: self.client.intermission() == 0,
             settings: MenuSettings::read(&|name| world.setting(name).unwrap_or(0.0)),
             saves: &slots,
+            keys_bound: &|command| {
+                let keys = self.bindings.keys_for(command.as_bytes());
+                keys.iter().flatten().count()
+            },
         };
         f(&mut self.menu, &game)
     }
@@ -697,6 +822,7 @@ impl Viewer {
                     self.game.world_mut().set_setting(name, value);
                 }
                 MenuEvent::Run(line) => self.run_line(line.as_bytes()),
+                MenuEvent::Unbind(command) => self.bindings.unbind_command(command.as_bytes()),
             }
         }
     }
@@ -773,7 +899,10 @@ impl Viewer {
         let setting = |name: &str| world.setting(name).unwrap_or(0.0);
         let mut view = *self.client.view_settings();
         view.viewsize = setting("viewsize");
-        view.gamma = setting("gamma");
+        // REND-13.9: the frame in QuakeSpasm's look, the blend table in GLQuake's.
+        let gamma = setting("gamma");
+        view.gamma = self.mesh.look.blend_gamma(gamma);
+        self.play.gamma = gamma;
         let volume = setting("volume");
         let music = setting("bgmvolume");
         self.client.set_view_settings(view);
@@ -808,7 +937,47 @@ impl Viewer {
                     let random = self.rand.rand();
                     self.menu.quit(self.dest, random)
                 }
+                // INPUT-1.2, INPUT-2.1: the bindings and the buttons, which print to the console.
+                ClientCommand::Bind(argv) => {
+                    let printed = self.bindings.bind(&argv);
+                    self.print_line(printed.as_deref());
+                    self.dest
+                }
+                ClientCommand::Unbind(argv) => {
+                    let printed = self.bindings.unbind(&argv);
+                    self.print_line(printed.as_deref());
+                    self.dest
+                }
+                ClientCommand::UnbindAll => {
+                    self.bindings.unbind_all();
+                    self.dest
+                }
+                ClientCommand::Impulse(n) => {
+                    self.input.set_impulse(n);
+                    self.dest
+                }
+                ClientCommand::Press(button, key) => {
+                    let printed = self.input.press(button, key);
+                    self.print_line(printed);
+                    self.dest
+                }
+                ClientCommand::Release(button, key) => {
+                    let world = self.game.world();
+                    let lookspring = world.setting("lookspring").unwrap_or(0.0);
+                    if self.input.release(button, key, lookspring).start {
+                        self.client.start_pitch_drift();
+                    }
+                    self.dest
+                }
             };
+        }
+    }
+
+    /// `Con_Printf` of `text`, if any, on the console on the screen.
+    fn print_line(&mut self, text: Option<&str>) {
+        if let Some(text) = text {
+            let realtime = self.started.elapsed().as_secs_f64();
+            self.console.print(text.as_bytes(), realtime);
         }
     }
 
@@ -846,6 +1015,7 @@ const fn menu_key(key: egui::Key) -> Option<MenuKey> {
         egui::Key::ArrowLeft => MenuKey::Left,
         egui::Key::ArrowRight => MenuKey::Right,
         egui::Key::Enter => MenuKey::Enter,
+        egui::Key::Backspace | egui::Key::Delete => MenuKey::Delete,
         _ => return None,
     })
 }

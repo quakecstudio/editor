@@ -9,6 +9,7 @@ mod bridge;
 mod contents;
 mod game;
 mod headless;
+mod keys;
 mod load;
 mod screenshot;
 mod values;

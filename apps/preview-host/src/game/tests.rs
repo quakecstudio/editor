@@ -27,7 +27,7 @@ use qs_bsp::{
 use qs_sim::{LoadOptions, World};
 use serde_json::{Value, json};
 
-use super::{Eye, Game, HostAction, MoveSpeeds, NextLevel, Placement, Reporting, Screen};
+use super::{Eye, Game, HostAction, NextLevel, Placement, Reporting, Screen};
 use crate::screenshot::Frame;
 
 /// The QuakeC the tests run: a crate the map places, a counter `StartFrame` raises, a
@@ -1415,27 +1415,4 @@ fn window_place_refuses_a_bad_frame() {
         assert_eq!(error.code, ErrorCode::InvalidParams, "{params}");
     }
     assert_eq!(game.take_placement(), None);
-}
-
-// spec CON-7.3: the move's speeds, the run factor and the mouse's turn come from the settings
-#[test]
-fn the_settings_steer_the_player() {
-    let (mut game, _) = game();
-    assert_eq!(
-        game.move_speeds(),
-        MoveSpeeds {
-            forward: 200.0,
-            back: 200.0,
-            side: 350.0,
-            up: 200.0,
-            run: 2.0
-        }
-    );
-    assert_eq!(
-        game.mouse_turn([10.0, -5.0]),
-        [-10.0 * 3.0 * 0.022, -5.0 * 3.0 * 0.022]
-    );
-    game.type_console(b"cl_forwardspeed 400; sensitivity 1; m_pitch -0.022");
-    assert_eq!(game.move_speeds().forward, 400.0);
-    assert_eq!(game.mouse_turn([0.0, 2.0]), [0.0, -0.044]);
 }

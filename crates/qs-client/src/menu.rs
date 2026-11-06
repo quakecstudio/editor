@@ -5,7 +5,7 @@
 // Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/menu.c, M_ToggleMenu_f, M_Menu_Main_f, M_Main_Draw, M_Main_Key, M_Menu_SinglePlayer_f, M_SinglePlayer_Draw, M_SinglePlayer_Key, M_ScanSaves, M_Menu_Load_f, M_Menu_Save_f, M_Load_Draw, M_Save_Draw, M_Load_Key, M_Save_Key, M_Menu_Options_f, M_AdjustSliders, M_DrawSlider, M_DrawCheckbox, M_Options_Draw, M_Options_Key, M_Menu_Help_f, M_Help_Draw, M_Help_Key, M_Menu_Quit_f, M_Quit_Draw, M_Quit_Key, M_Draw, M_Keydown, M_Print, M_PrintWhite, M_DrawTextBox
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/menu.c, M_ToggleMenu_f, M_Menu_Main_f, M_Main_Draw, M_Main_Key, M_Menu_SinglePlayer_f, M_SinglePlayer_Draw, M_SinglePlayer_Key, M_ScanSaves, M_Menu_Load_f, M_Menu_Save_f, M_Load_Draw, M_Save_Draw, M_Load_Key, M_Save_Key, M_Menu_Options_f, M_AdjustSliders, M_DrawSlider, M_DrawCheckbox, M_Options_Draw, M_Options_Key, M_Menu_Keys_f, M_UnbindCommand, M_Keys_Draw, M_Keys_Key, M_Menu_Help_f, M_Help_Draw, M_Help_Key, M_Menu_Quit_f, M_Quit_Draw, M_Quit_Key, M_Draw, M_Keydown, M_Print, M_PrintWhite, M_DrawTextBox
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_draw.c, Draw_FadeScreen
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_screen.c, SCR_ModalMessage, SCR_DrawNotifyString
 // Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/gl_screen.c, SCR_DrawNotifyString
@@ -121,6 +121,8 @@ pub enum MenuState {
     Save,
     /// `m_options`.
     Options,
+    /// `m_keys`.
+    Keys,
     /// `m_help`.
     Help,
     /// `m_quit`.
@@ -142,9 +144,33 @@ pub enum MenuKey {
     Right,
     /// Enter.
     Enter,
+    /// Backspace or Delete, which clear a binding in the keys menu (MENU-8.2).
+    Delete,
     /// Any other key, by its code.
     Char(u8),
 }
+
+/// `bindnames`: the commands the keys menu binds and their labels, in its order (MENU-8.1).
+pub const MENU_BINDINGS: [(&str, &str); 18] = [
+    ("+attack", "attack"),
+    ("impulse 10", "change weapon"),
+    ("+jump", "jump / swim up"),
+    ("+forward", "walk forward"),
+    ("+back", "backpedal"),
+    ("+left", "turn left"),
+    ("+right", "turn right"),
+    ("+speed", "run"),
+    ("+moveleft", "step left"),
+    ("+moveright", "step right"),
+    ("+strafe", "sidestep"),
+    ("+lookup", "look up"),
+    ("+lookdown", "look down"),
+    ("centerview", "center view"),
+    ("+mlook", "mouse look"),
+    ("+klook", "keyboard look"),
+    ("+moveup", "swim up"),
+    ("+movedown", "swim down"),
+];
 
 /// What the menu asks of the host.
 #[derive(Clone, Debug, PartialEq)]
@@ -154,6 +180,9 @@ pub enum MenuEvent {
     /// `Cbuf_AddText` of a command line, run by the console (MENU-3.2, MENU-5.2, MENU-6.3,
     /// MENU-7.2).
     Run(String),
+    /// `M_UnbindCommand`: every key whose binding starts with the command made unbound
+    /// (MENU-8.2).
+    Unbind(&'static str),
     /// `Cvar_SetValue` of a setting (MENU-7.4).
     Set {
         /// The setting's name.
@@ -204,6 +233,17 @@ impl MenuSettings {
     }
 }
 
+/// The key the keys menu waits for, as `M_Keys_Key` takes it with `bind_grab` set (MENU-8.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Grabbed<'a> {
+    /// Escape, which binds nothing.
+    Escape,
+    /// The backquote, which binds nothing.
+    Backquote,
+    /// Any other key, by its `Key_KeynumToString` name.
+    Key(&'a str),
+}
+
 /// What the menu reads of the game as a key goes in (MENU-3.2, MENU-6.1, MENU-7.4).
 pub struct MenuGame<'a> {
     /// The next `rand ()`, for a quit prompt's message.
@@ -218,10 +258,12 @@ pub struct MenuGame<'a> {
     /// `M_ScanSaves`' files: the text of `s<n>.sav` for each slot, `None` where there is
     /// none.
     pub saves: &'a dyn Fn() -> [Option<Vec<u8>>; MENU_SAVEGAMES],
+    /// How many keys, none to two, `M_FindKeysForCommand` finds bound to a command (MENU-8.2).
+    pub keys_bound: &'a dyn Fn(&str) -> usize,
 }
 
 /// What a menu's drawing reads: the key destination, the clocks and the screen (MENU-1.3).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MenuFrame {
     /// `key_dest`.
     pub dest: KeyDest,
@@ -237,6 +279,9 @@ pub struct MenuFrame {
     pub screen_height: i32,
     /// The settings the options menu shows.
     pub settings: MenuSettings,
+    /// `M_FindKeysForCommand`'s answer for each of [`MENU_BINDINGS`], the keys' names, for the
+    /// keys menu (MENU-8.1); empty draws every command as unbound.
+    pub bound: Vec<[Option<String>; 2]>,
 }
 
 /// `M_ScanSaves`' reading of a save's text: `fscanf (f, "%i\n", &version)`, then
@@ -270,6 +315,9 @@ pub struct Menu {
     /// `m_filenames` and `loadable`: each slot's comment, `None` for an unused slot.
     slots: Vec<Option<Vec<u8>>>,
     options_cursor: usize,
+    /// `keys_cursor` and `bind_grab`: the keys menu's command and whether it waits for a key.
+    keys_cursor: usize,
+    grab: bool,
     help_page: usize,
     /// `msgNumber`, the quit message shown.
     message: usize,
@@ -381,6 +429,7 @@ impl Menu {
             MenuState::NewGame => self.new_game_key(key, &mut events),
             MenuState::Load | MenuState::Save => self.slot_key(key, &mut events),
             MenuState::Options => self.options_key(key, &game.settings, &mut events),
+            MenuState::Keys => self.keys_key(key, game, &mut events),
             MenuState::Help => self.help_key(key),
             MenuState::Quit => self.quit_key(key, &mut events),
         };
@@ -420,7 +469,7 @@ impl Menu {
                     _ => KeyDest::Menu,
                 }
             }
-            MenuKey::Left | MenuKey::Right | MenuKey::Char(_) => KeyDest::Menu,
+            MenuKey::Left | MenuKey::Right | MenuKey::Delete | MenuKey::Char(_) => KeyDest::Menu,
         }
     }
 
@@ -455,7 +504,7 @@ impl Menu {
                     _ => self.save(KeyDest::Menu, game),
                 }
             }
-            MenuKey::Left | MenuKey::Right | MenuKey::Char(_) => KeyDest::Menu,
+            MenuKey::Left | MenuKey::Right | MenuKey::Delete | MenuKey::Char(_) => KeyDest::Menu,
         }
     }
 
@@ -473,6 +522,7 @@ impl Menu {
             | MenuKey::Left
             | MenuKey::Right
             | MenuKey::Enter
+            | MenuKey::Delete
             | MenuKey::Char(_) => KeyDest::Menu,
         }
     }
@@ -505,7 +555,7 @@ impl Menu {
                 events.push(MenuEvent::Run(format!("save s{}", self.load_cursor)));
                 KeyDest::Game
             }
-            MenuKey::Char(_) => KeyDest::Menu,
+            MenuKey::Delete | MenuKey::Char(_) => KeyDest::Menu,
         }
     }
 
@@ -522,8 +572,7 @@ impl Menu {
             MenuKey::Enter => {
                 self.enter_sound = true;
                 return match self.options_cursor {
-                    // Customize controls: no keys menu yet (MENU-7.2).
-                    0 => KeyDest::Menu,
+                    0 => self.open(MenuState::Keys),
                     1 => {
                         self.state = MenuState::None;
                         KeyDest::Console
@@ -556,7 +605,7 @@ impl Menu {
                 adjust(self.options_cursor, 1, settings, events);
                 KeyDest::Menu
             }
-            MenuKey::Char(_) => KeyDest::Menu,
+            MenuKey::Delete | MenuKey::Char(_) => KeyDest::Menu,
         };
         // "if (options_cursor == 12 && vid_menudrawfn == NULL)": this host has no video menu.
         if self.options_cursor == OPTIONS_VIDEO {
@@ -567,6 +616,107 @@ impl Menu {
             };
         }
         dest
+    }
+
+    /// Whether the keys menu waits for a key to bind, `bind_grab` (MENU-8.3): the host then
+    /// sends the next key going down to [`Menu::grab`].
+    #[must_use]
+    pub const fn grabbing(&self) -> bool {
+        self.grab
+    }
+
+    /// `M_Keys_Key` with `bind_grab` set (MENU-8.3): `misc/menu1.wav`; Escape and the backquote
+    /// bind nothing, any other key binds the command, by its name `Key_KeynumToString` gives.
+    pub fn grab(&mut self, key: Grabbed<'_>) -> Vec<MenuEvent> {
+        let mut events = vec![MenuEvent::Sound("misc/menu1.wav")];
+        if let (Grabbed::Key(name), Some((command, _))) = (key, MENU_BINDINGS.get(self.keys_cursor))
+        {
+            events.push(MenuEvent::Run(format!("bind \"{name}\" \"{command}\"")));
+        }
+        self.grab = false;
+        events
+    }
+
+    /// `M_Keys_Key` (MENU-8.2): Escape back to the options; the arrows move round the
+    /// commands; Enter waits for a key, first unbinding a command two keys hold; Backspace and
+    /// Delete unbind it.
+    fn keys_key(
+        &mut self,
+        key: MenuKey,
+        game: &MenuGame<'_>,
+        events: &mut Vec<MenuEvent>,
+    ) -> KeyDest {
+        let command = MENU_BINDINGS.get(self.keys_cursor).map(|(c, _)| *c);
+        match key {
+            MenuKey::Escape => return self.options(),
+            MenuKey::Left | MenuKey::Up => {
+                events.push(MenuEvent::Sound("misc/menu1.wav"));
+                self.keys_cursor = previous(self.keys_cursor, MENU_BINDINGS.len());
+            }
+            MenuKey::Down | MenuKey::Right => {
+                events.push(MenuEvent::Sound("misc/menu1.wav"));
+                self.keys_cursor = next(self.keys_cursor, MENU_BINDINGS.len());
+            }
+            MenuKey::Enter => {
+                events.push(MenuEvent::Sound("misc/menu2.wav"));
+                if let Some(command) = command
+                    && (game.keys_bound)(command) == 2
+                {
+                    events.push(MenuEvent::Unbind(command));
+                }
+                self.grab = true;
+            }
+            MenuKey::Delete => {
+                events.push(MenuEvent::Sound("misc/menu2.wav"));
+                if let Some(command) = command {
+                    events.push(MenuEvent::Unbind(command));
+                }
+            }
+            MenuKey::Char(_) => {}
+        }
+        KeyDest::Menu
+    }
+
+    /// `M_Keys_Draw` (MENU-8.1).
+    fn draw_keys(&self, out: &mut Vec<Placed>, frame: &MenuFrame) {
+        pic(out, "gfx/ttl_cstm.lmp", None, 4);
+        if self.grab {
+            print(out, 12, 32, b"Press a key or button for this action", true);
+        } else {
+            print(out, 18, 32, b"Enter to change, backspace to clear", true);
+        }
+        let mut y = 48;
+        for (i, (_, label)) in MENU_BINDINGS.iter().enumerate() {
+            print(out, 16, y, label.as_bytes(), true);
+            match frame.bound.get(i) {
+                Some([Some(first), second]) => {
+                    print(out, 140, y, first.as_bytes(), true);
+                    if let Some(second) = second {
+                        let x = 140_i32.saturating_add(
+                            i32::try_from(first.len()).unwrap_or(0).saturating_mul(8),
+                        );
+                        print(out, x.saturating_add(8), y, b"or", true);
+                        print(out, x.saturating_add(32), y, second.as_bytes(), true);
+                    }
+                }
+                _ => print(out, 140, y, b"???", true),
+            }
+            y = y.saturating_add(8);
+        }
+        let row = i32::try_from(self.keys_cursor)
+            .unwrap_or(0)
+            .saturating_mul(8)
+            .saturating_add(48);
+        if self.grab {
+            character(out, 130, row, b'=');
+        } else {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "spec MENU-8.1: `(int)(realtime*4)`, toward zero"
+            )]
+            let blink = ((frame.realtime * 4.0) as i64 & 1) != 0;
+            character(out, 130, row, 12_u8.saturating_add(u8::from(blink)));
+        }
     }
 
     /// `M_Help_Key` (MENU-4.2).
@@ -583,7 +733,7 @@ impl Menu {
                 self.help_page = previous(self.help_page, MENU_HELP_PAGES);
                 KeyDest::Menu
             }
-            MenuKey::Enter | MenuKey::Char(_) => KeyDest::Menu,
+            MenuKey::Enter | MenuKey::Delete | MenuKey::Char(_) => KeyDest::Menu,
         }
     }
 
@@ -611,6 +761,7 @@ impl Menu {
             | MenuKey::Left
             | MenuKey::Right
             | MenuKey::Enter
+            | MenuKey::Delete
             | MenuKey::Char(_) => KeyDest::Menu,
         }
     }
@@ -672,6 +823,7 @@ impl Menu {
                 line_cursor(out, 8, self.load_cursor, frame.realtime);
             }
             MenuState::Options => draw_options(out, &frame.settings, self.options_cursor, frame),
+            MenuState::Keys => self.draw_keys(out, frame),
             MenuState::Help => {
                 if let Some(page) = HELP.get(self.help_page) {
                     pic(out, page, Some(0), 0);

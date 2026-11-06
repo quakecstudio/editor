@@ -129,12 +129,8 @@ mode menu are not a local preview host's and are not described (P3-34).
   have (Windows' adds Use Mouse): Customize controls, Go to console, Reset to defaults, the
   five sliders, the four checkboxes, and Video Options, which a build with no video menu
   (`vid_menudrawfn == NULL`) neither draws nor stops on. This host has no video menu.
-- **MENU-7.2** Escape returns to the main menu. The up and down arrows move, wrapping, with
-  `misc/menu1.wav`; landing on the video item goes to item 11 going up, else to item 0. Enter
-  on Go to console closes the menus and opens the console; on Reset to defaults runs `exec
-  default.cfg`; on Customize controls opens the keys menu, which this host has not got yet,
-  so it stays, our choice while P3-34 is open; on any other item it is the right arrow. The
-  left and right arrows change the item's setting (MENU-7.4).
+- **MENU-7.2** **Withdrawn** 2026-11-06: Customize controls opens the keys menu now;
+  replaced by MENU-7.5.
 - **MENU-7.3** It draws the plaque at (16, 4), `gfx/p_option.lmp` centred at y 4, the twelve
   labels with `M_Print` at (16, 32 + 8 * n), the sliders and checkboxes at x 220, and the
   cursor, character `12 + ((int)(realtime*4)&1)`, at (200, 32 + cursor * 8). A slider is its
@@ -153,6 +149,38 @@ mode menu are not a local preview host's and are not described (P3-34).
   negates `m_pitch`; on Lookspring and Lookstrafe sets `!value`. The sum is C's: a `float`
   setting and a `double` step, stored back as a `float`. Each is set as `Cvar_SetValue` sets
   it, written with `%f`. On any other item only the sound plays.
+
+- **MENU-7.5** Escape returns to the main menu. The up and down arrows move, wrapping, with
+  `misc/menu1.wav`; landing on the video item goes to item 11 going up, else to item 0. Enter
+  on Go to console closes the menus and opens the console; on Reset to defaults runs `exec
+  default.cfg`; on Customize controls opens the keys menu (MENU-8); on any other item it is the right arrow. The
+  left and right arrows change the item's setting (MENU-7.4).
+
+## MENU-8 The keys menu
+
+**Source:** `WinQuake/menu.c`, `bindnames`, `M_Menu_Keys_f`, `M_FindKeysForCommand`,
+`M_UnbindCommand`, `M_Keys_Draw`, `M_Keys_Key`.
+
+### Behaviour
+
+- **MENU-8.1** It lists `bindnames`' eighteen commands in order: `+attack` "attack", `impulse
+  10` "change weapon", `+jump` "jump / swim up", `+forward` "walk forward", `+back`
+  "backpedal", `+left` "turn left", `+right` "turn right", `+speed` "run", `+moveleft` "step
+  left", `+moveright` "step right", `+strafe` "sidestep", `+lookup` "look up", `+lookdown`
+  "look down", `centerview` "center view", `+mlook` "mouse look", `+klook` "keyboard look",
+  `+moveup` "swim up", `+movedown` "swim down". It draws `gfx/ttl_cstm.lmp` centred at y 4;
+  "`Enter to change, backspace to clear`" at (18, 32), or while it waits for a key "`Press a
+  key or button for this action`" at (12, 32); each label at (16, 48 + 8 * n), and at x 140
+  the first key `M_FindKeysForCommand` finds by `Key_KeynumToString`, then "`or`" 8 past it
+  and the second 32 past it, or "`???`" for none; and at (130, 48 + 8 * cursor) `=` while it
+  waits, else character `12 + ((int)(realtime*4)&1)`.
+- **MENU-8.2** Escape returns to the options (`M_Menu_Options_f`); left and up move to the
+  command before, right and down to the one after, wrapping, with `misc/menu1.wav`; Enter
+  plays `misc/menu2.wav`, unbinds the command (INPUT-1.5) when two keys hold it, and waits for
+  a key; Backspace and Delete play `misc/menu2.wav` and unbind it.
+- **MENU-8.3** While it waits, the next key going down is its, whatever it is, mouse buttons
+  included: it plays `misc/menu1.wav` and stops waiting; Escape and the backquote bind
+  nothing; any other key runs "`bind "<key name>" "<command>"`" (`Cbuf_InsertText`).
 
 ### Constants
 
