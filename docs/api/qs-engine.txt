@@ -16,9 +16,11 @@ field qs_engine::launch::Running.client
 field qs_engine::run_root::RunRoot.game
 field qs_engine::run_root::RunRoot.kpf
 field qs_engine::run_root::RunRoot.path
+fn qs_engine::client::Client::clear_breakpoint
 fn qs_engine::client::Client::connect
 fn qs_engine::client::Client::console
 fn qs_engine::client::Client::edit_entity
+fn qs_engine::client::Client::evaluate
 fn qs_engine::client::Client::initialize
 fn qs_engine::client::Client::inspect
 fn qs_engine::client::Client::offers

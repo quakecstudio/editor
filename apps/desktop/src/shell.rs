@@ -27,6 +27,7 @@ use qs_layout::{
     TogglePanelParams,
 };
 use qs_render::{Camera, MapMesh};
+use qs_workbench::debug::Location;
 use qs_workbench::{
     AtParams, COMPLETE, Candidate, Config, DEFINITION, FsLoader, HOVER, HasPreview, HasWorkbench,
     HoverInfo, OPEN_FILE, OPEN_PROJECT, OpenFile, OpenFileParams, OpenProjectParams, PAUSE, PLAY,
@@ -34,8 +35,13 @@ use qs_workbench::{
     RENAME, RESTART, RESUME, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE,
     UpdateFileParams, Workbench,
 };
+use qs_workbench::{
+    BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, STEP_BY, StepByParams, UNWATCH,
+    UnwatchParams, WATCH, WatchParams,
+};
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
+use crate::debugger::{self, DebugAction, DebugInput};
 use crate::editor::{Editor, Popup, Request};
 use crate::entities::{self, EntityAction, Outliner, Properties};
 use crate::fallback::{SystemFonts, families};
@@ -148,6 +154,12 @@ pub struct Shell {
     outliner: Outliner,
     /// The Properties panel's edits.
     properties: Properties,
+    /// The text typed in the Debugger tab's watch box and the console's command box.
+    debug_input: DebugInput,
+    /// Where the game last stopped that the editor was taken to.
+    shown_stop: Option<Location>,
+    /// The line, from 1, of the file to show once it is open in the editor.
+    pending_line: Option<(PathBuf, u32)>,
 }
 
 impl Shell {
@@ -191,6 +203,9 @@ impl Shell {
             preview_error: None,
             outliner: Outliner::default(),
             properties: Properties::default(),
+            debug_input: DebugInput::default(),
+            shown_stop: None,
+            pending_line: None,
         })
     }
 
@@ -372,6 +387,7 @@ impl Shell {
         if self.session.context().preview.state() != PlayState::Stopped {
             let _: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
         }
+        self.follow_stop();
         if self.session.context().preview.state() != PlayState::Stopped {
             // The host's events are read each frame; a running game asks for frames.
             ui.ctx().request_repaint_after(PREVIEW_POLL);
@@ -559,6 +575,68 @@ impl Shell {
         }
     }
 
+    /// Runs what the Debugger tab, the console's box or a click in the editor's gutter asked
+    /// for, through its command, or shows a line in the editor.
+    fn debug_action(&mut self, action: DebugAction) {
+        let ran = match action {
+            DebugAction::Step(kind) => self
+                .run::<_, PreviewStatus>(STEP_BY, &StepByParams { kind })
+                .is_some(),
+            DebugAction::Watch(expression) => self
+                .run::<_, ()>(WATCH, &WatchParams { expression })
+                .is_some(),
+            DebugAction::Unwatch(index) => self
+                .run::<_, PreviewStatus>(UNWATCH, &UnwatchParams { index })
+                .is_some(),
+            DebugAction::Breakpoint { file, line } => self
+                .run::<_, ()>(BREAKPOINT, &BreakpointParams { file, line })
+                .is_some(),
+            DebugAction::Console(command) => self
+                .run::<_, ()>(CONSOLE, &ConsoleParams { command })
+                .is_some(),
+            DebugAction::Show { file, line } => {
+                self.show_line(&file, line);
+                true
+            }
+        };
+        if !ran {
+            self.preview_error = Some(Text::EditFailed.get().to_owned());
+        }
+    }
+
+    /// Opens `file`, relative to the project's root, at `line`, from 1.
+    fn show_line(&mut self, file: &Path, line: u32) {
+        let Some(root) = self.session.context().workbench.root() else {
+            return;
+        };
+        let path = root.join(file);
+        self.pending_line = Some((path.clone(), line));
+        self.jump(Jump { path, offset: 0 });
+    }
+
+    /// Takes the editor to where the game stopped, once for each stop.
+    fn follow_stop(&mut self) {
+        let stop = self
+            .session
+            .context()
+            .preview
+            .debugger()
+            .stopped()
+            .map(|(_, at)| at.clone());
+        if stop == self.shown_stop {
+            return;
+        }
+        if let Some(Location {
+            file: Some(file),
+            line: Some(line),
+            ..
+        }) = &stop
+        {
+            self.show_line(file, *line);
+        }
+        self.shown_stop = stop;
+    }
+
     /// Reloads the running game after a save, its error shown on the toolbar.
     fn reload_after_save(&mut self) {
         if self.session.context().preview.state() == PlayState::Stopped {
@@ -630,7 +708,9 @@ impl Shell {
         let preview = &self.session.context().preview;
         let outliner = &mut self.outliner;
         let properties = &mut self.properties;
+        let debug_input = &mut self.debug_input;
         let mut entity_action = None;
+        let mut debug_action = None;
         let mut jump = None;
         let mut expanded = state.visible;
         // A size the layout was given by a command, not by a drag of the panel's edge, is
@@ -703,7 +783,17 @@ impl Shell {
                         section(ui, theme, Text::Agent, Text::NoAgent);
                     }
                     Panel::Bottom => {
-                        jump = bottom(ui, theme, bottom_tab, (workbench, preview), focus);
+                        match bottom(
+                            ui,
+                            theme,
+                            bottom_tab,
+                            (workbench, preview, debug_input),
+                            focus,
+                        ) {
+                            Some(BottomAction::Jump(to)) => jump = Some(to),
+                            Some(BottomAction::Debug(action)) => debug_action = Some(action),
+                            None => {}
+                        }
                     }
                 }
             });
@@ -712,6 +802,9 @@ impl Shell {
         }
         if let Some(action) = entity_action {
             self.entity_action(action);
+        }
+        if let Some(action) = debug_action {
+            self.debug_action(action);
         }
         // A panel dragged shut is hidden through its command too.
         if expanded != state.visible
@@ -893,6 +986,11 @@ impl Shell {
                 self.editor = Some(Editor::new(Id::new(EDITOR_AREA), open, &self.theme));
             }
         }
+        if let Some(editor) = self.editor.as_mut()
+            && let Some((_, line)) = self.pending_line.take_if(|(path, _)| *path == editor.path)
+        {
+            editor.go_to_line(line_index(line));
+        }
     }
 
     /// Gives egui a system font for each character of the editor's text that the bundled fonts
@@ -947,7 +1045,27 @@ impl Shell {
         if self.centre_tab == CentreTab::Editor
             && let Some(editor) = &mut self.editor
         {
+            let context = self.session.context();
+            let file = context
+                .workbench
+                .root()
+                .and_then(|root| editor.path.strip_prefix(root).ok())
+                .map(Path::to_path_buf);
+            if let Some(file) = &file {
+                let debugger = context.preview.debugger();
+                let lines = debugger.lines_of(file).map(line_index);
+                editor.view.set_breakpoints(lines);
+                let paused = debugger
+                    .stopped()
+                    .and_then(|(_, at)| (at.file.as_deref() == Some(file)).then_some(at.line?));
+                editor.view.set_paused(paused.map(line_index));
+            }
             let requests = editor.show(ui, theme, &view_style(theme));
+            let clicked = editor.view.take_gutter_click();
+            if let (Some(file), Some(line)) = (file, clicked) {
+                let line = u32::try_from(line.saturating_add(1)).unwrap_or(u32::MAX);
+                self.debug_action(DebugAction::Breakpoint { file, line });
+            }
             // The panels drawn before the editor this frame show what the requests change on
             // the next.
             if !requests.is_empty() {
@@ -1091,6 +1209,9 @@ pub(crate) fn view_style(theme: &Theme) -> ViewStyle {
         added: theme.color(Token::DiffAdded),
         removed: theme.color(Token::StatusErrorBg),
         removed_text: theme.color(Token::TextOnError),
+        paused_line: theme.color(Token::DebugPausedLine),
+        paused_mark: theme.color(Token::StatusWarn),
+        breakpoint: theme.color(Token::StatusError),
     }
 }
 
@@ -1099,15 +1220,23 @@ fn note(ui: &mut Ui, theme: &Theme, text: Text) {
     ui.add(egui::Label::new(RichText::new(text.get()).color(theme.color(Token::TextMuted))).wrap());
 }
 
-/// The bottom panel: its tabs, and the Problems list or the selected tab's placeholder; the
-/// problem chosen, if any.
+/// What a click or a typed line in the bottom panel asks for.
+enum BottomAction {
+    /// Open the problem's place.
+    Jump(Jump),
+    /// What the Debugger tab or the console's box asked for.
+    Debug(DebugAction),
+}
+
+/// The bottom panel: its tabs, and the Problems list, the console or the Debugger tab; what a
+/// click in it asked for, if anything.
 fn bottom(
     ui: &mut Ui,
     theme: &Theme,
     tab: &mut BottomTab,
-    (workbench, preview): (&Workbench<FsLoader>, &Preview),
+    (workbench, preview, input): (&Workbench<FsLoader>, &Preview, &mut DebugInput),
     focus: bool,
-) -> Option<Jump> {
+) -> Option<BottomAction> {
     let problems = workbench.problems();
     ui.horizontal(|ui| {
         for (value, text) in [
@@ -1126,17 +1255,29 @@ fn bottom(
         }
     });
     ui.separator();
-    let message = match tab {
-        BottomTab::Problems => return project::problems_ui(ui, theme, problems, workbench.root()),
-        BottomTab::Console if preview.state() != PlayState::Stopped => {
-            console_ui(ui, theme, preview);
-            return None;
+    match tab {
+        BottomTab::Problems => {
+            project::problems_ui(ui, theme, problems, workbench.root()).map(BottomAction::Jump)
         }
-        BottomTab::Console => Text::ConsoleIdle,
-        BottomTab::Debugger => Text::DebuggerIdle,
-    };
-    note(ui, theme, message);
-    None
+        BottomTab::Console if preview.state() != PlayState::Stopped => {
+            let action = debugger::console_input(ui, preview, input);
+            console_ui(ui, theme, preview);
+            action.map(BottomAction::Debug)
+        }
+        BottomTab::Console => {
+            note(ui, theme, Text::ConsoleIdle);
+            None
+        }
+        BottomTab::Debugger => {
+            debugger::debugger_ui(ui, theme, preview, input).map(BottomAction::Debug)
+        }
+    }
+}
+
+/// A line counted from 1, as the bridge and the debugger count them, counted from 0 as the
+/// editor does.
+fn line_index(line: u32) -> usize {
+    usize::try_from(line.saturating_sub(1)).unwrap_or(usize::MAX)
 }
 
 /// The console's lines, newest at the bottom, an error's in the error colour.

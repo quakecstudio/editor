@@ -20,8 +20,10 @@ use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use qs_commands::palette::search;
 use qs_commands::params::{self, Input};
 use qs_layout::{Focus, Layout, Panel};
+use qs_workbench::debug::Location;
 use serde_json::json;
 
+use crate::debugger::place;
 use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::highlighted;
@@ -240,6 +242,7 @@ fn the_ui_code_has_no_string_literals() {
     for (name, source) in [
         ("shell.rs", include_str!("shell.rs")),
         ("entities.rs", include_str!("entities.rs")),
+        ("debugger.rs", include_str!("debugger.rs")),
         ("palette.rs", include_str!("palette.rs")),
         ("project.rs", include_str!("project.rs")),
         ("editor.rs", include_str!("editor.rs")),
@@ -1031,4 +1034,64 @@ fn bindings_are_matched_most_specific_first() {
             );
         }
     }
+}
+
+// No spec statement: the Debugger tab lists a breakpoint set with no game running, which waits
+// for the next game; the step buttons wait for a stop, and unticking the breakpoint clears it
+#[test]
+fn the_debugger_tab_lists_breakpoints_and_steps_only_when_stopped() {
+    let mut harness = accessible();
+    harness
+        .get_by_role_and_label(Role::Button, Text::Debugger.get())
+        .click();
+    harness.run();
+    assert!(
+        harness
+            .query_by_label_contains(Text::NoBreakpoints.get())
+            .is_some()
+    );
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell
+        .execute(
+            qs_workbench::BREAKPOINT,
+            json!({ "file": "src/a.qc", "line": 3 }),
+        )
+        .unwrap();
+    harness.run();
+    assert!(harness.query_by_label_contains("src/a.qc:3").is_some());
+    assert!(
+        harness
+            .query_by_label_contains(Text::NotStopped.get())
+            .is_some()
+    );
+    let step = harness.get_by_role_and_label(Role::Button, Text::StepOver.get());
+    assert!(step.accesskit_node().is_disabled(), "nothing is stopped");
+    harness.get_by_role(Role::CheckBox).click();
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label_contains("src/a.qc:3").is_none());
+}
+
+// No spec statement: a call stack frame reads as its file's name and line, or `engine`
+#[test]
+fn a_frame_reads_as_its_place() {
+    let frame = |file: Option<&str>, line, engine| Location {
+        function: "f".to_owned(),
+        file: file.map(PathBuf::from),
+        line,
+        engine,
+    };
+    assert_eq!(
+        place(&frame(Some("src/weapons.qc"), Some(33), false)),
+        "weapons.qc:33"
+    );
+    assert_eq!(
+        place(&frame(Some("src/weapons.qc"), None, false)),
+        "src/weapons.qc"
+    );
+    assert_eq!(place(&frame(None, Some(3), false)), "");
+    assert_eq!(
+        place(&frame(Some("a.qc"), Some(1), true)),
+        Text::EngineFrame.get()
+    );
 }

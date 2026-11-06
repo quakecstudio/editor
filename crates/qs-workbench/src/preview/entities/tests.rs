@@ -111,6 +111,11 @@ fn values_show_as_quakec_writes_them() {
     let show = |value| entities.show(&value);
     assert_eq!(show(json!({ "type": "float", "value": 21.0 })), "21");
     assert_eq!(show(json!({ "type": "float", "value": 21.34 })), "21.34");
+    // The f32 1.2140386 the bridge widened to f64 reads back at single precision.
+    assert_eq!(
+        show(json!({ "type": "float", "value": f64::from(1.214_038_6_f32) })),
+        "1.2140386"
+    );
     assert_eq!(
         show(json!({ "type": "vector", "value": [412, -96.5, 88] })),
         "'412 -96.5 88'"

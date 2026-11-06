@@ -975,7 +975,7 @@ pub struct UnwatchParams {
 }
 
 /// How `preview.step_by` steps.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum StepBy {
     /// One statement.

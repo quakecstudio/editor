@@ -91,6 +91,8 @@ pub enum Token {
     SurfaceCurrentLine,
     /// A line new in an inline diff.
     DiffAdded,
+    /// The line the debugger is paused on.
+    DebugPausedLine,
     /// A removed line in an inline diff, and an inline diagnostic.
     StatusErrorBg,
     /// Plain code.
@@ -113,7 +115,7 @@ pub enum Token {
 
 impl Token {
     /// Every token the app draws with.
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 31] = [
         Self::SurfaceChrome,
         Self::SurfaceToolbar,
         Self::SurfaceTabs,
@@ -135,6 +137,7 @@ impl Token {
         Self::BorderStrong,
         Self::SurfaceCurrentLine,
         Self::DiffAdded,
+        Self::DebugPausedLine,
         Self::StatusErrorBg,
         Self::TextCode,
         Self::TextOnError,
@@ -171,6 +174,7 @@ impl Token {
             Self::BorderStrong => "border.strong",
             Self::SurfaceCurrentLine => "surface.current_line",
             Self::DiffAdded => "diff.added",
+            Self::DebugPausedLine => "debug.paused_line",
             Self::StatusErrorBg => "status.error_bg",
             Self::TextCode => "text.code",
             Self::TextOnError => "text.on_error",

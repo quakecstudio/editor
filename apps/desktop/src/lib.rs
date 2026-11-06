@@ -15,6 +15,7 @@
 
 pub mod bench;
 mod code_style;
+mod debugger;
 mod editor;
 mod entities;
 mod fallback;

@@ -89,6 +89,32 @@ pub enum Text {
     EditFailed,
     /// After the fields edited while paused.
     SentOnResume,
+    /// The Debugger tab's call stack column.
+    CallStack,
+    /// The Debugger tab's variables and watches column.
+    Watches,
+    /// The Debugger tab's breakpoints column.
+    Breakpoints,
+    /// The hint in the box that adds a watch.
+    AddWatch,
+    /// Steps into the next call.
+    StepIn,
+    /// Steps to the next statement of the function.
+    StepOver,
+    /// Steps out to the caller.
+    StepOut,
+    /// A call stack frame of the engine's, not QuakeC's.
+    EngineFrame,
+    /// The hint in the console's command box.
+    ConsoleCommand,
+    /// The breakpoints column with none set.
+    NoBreakpoints,
+    /// The Debugger tab while the game runs.
+    NotStopped,
+    /// A watch with no value read yet.
+    NotRead,
+    /// The button that takes a watch away.
+    RemoveWatch,
     /// A control that has no action yet.
     NotYetAvailable,
     /// The View menu.
@@ -187,7 +213,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 88] = [
+    pub const ALL: [Self; 101] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -229,6 +255,19 @@ impl Text {
         Self::OpenSpawnFunction,
         Self::EditFailed,
         Self::SentOnResume,
+        Self::CallStack,
+        Self::Watches,
+        Self::Breakpoints,
+        Self::AddWatch,
+        Self::StepIn,
+        Self::StepOver,
+        Self::StepOut,
+        Self::EngineFrame,
+        Self::ConsoleCommand,
+        Self::NoBreakpoints,
+        Self::NotStopped,
+        Self::NotRead,
+        Self::RemoveWatch,
         Self::NotYetAvailable,
         Self::ViewMenu,
         Self::ToggleLeftPanel,
@@ -323,6 +362,21 @@ impl Text {
             Self::OpenSpawnFunction => "Open its spawn function",
             Self::EditFailed => "The game did not take the change; see the log",
             Self::SentOnResume => "edited, sent to the game on Resume",
+            Self::CallStack => "Call stack",
+            Self::Watches => "Variables and watches",
+            Self::Breakpoints => "Breakpoints",
+            Self::AddWatch => "Add a watch, for example self.owner.health",
+            Self::StepIn => "Step in",
+            Self::StepOver => "Step over",
+            Self::StepOut => "Step out",
+            Self::EngineFrame => "engine",
+            Self::ConsoleCommand => "Type a console command, such as impulse 9",
+            Self::NoBreakpoints => "Click a line number to set a breakpoint.",
+            Self::NotStopped => {
+                "The call stack and watches show when the game stops at a breakpoint or a step."
+            }
+            Self::NotRead => "not read",
+            Self::RemoveWatch => "\u{d7}",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",
             Self::ToggleLeftPanel => "Project and Entities",

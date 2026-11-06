@@ -12,6 +12,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
+| [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
+| [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
 | [`preview.pause`](#previewpause) | Pauses the running game between frames. |
 | [`preview.pick`](#previewpick) | Selects the edict under a point of the game's window. |
 | [`preview.play`](#previewplay) | Builds the open project and starts the preview host on its program, stopping a game already running. |
@@ -22,7 +24,10 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.select`](#previewselect) | Selects an edict of the running game and reads its fields for the Properties panel. |
 | [`preview.set_field`](#previewset_field) | Sets a field of the selected edict while the game is paused, the value read as the field's type. |
 | [`preview.step`](#previewstep) | Runs one server frame of the game, pausing it first, and leaves it paused. |
+| [`preview.step_by`](#previewstep_by) | Steps the game stopped in a frame by a statement, into a call, over one or out to the caller. |
 | [`preview.stop`](#previewstop) | Stops the game. |
+| [`preview.unwatch`](#previewunwatch) | Takes a watch away. |
+| [`preview.watch`](#previewwatch) | Adds a watch, an expression read each time the game stops in a frame. |
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
@@ -176,6 +181,63 @@ Parameters:
     "text"
   ],
   "title": "UpdateFileParams",
+  "type": "object"
+}
+```
+
+## `preview.breakpoint`
+
+Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.breakpoint`.",
+  "properties": {
+    "file": {
+      "description": "The file, relative to the project's root.",
+      "type": "string"
+    },
+    "line": {
+      "description": "The line, from 1.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "file",
+    "line"
+  ],
+  "title": "BreakpointParams",
+  "type": "object"
+}
+```
+
+## `preview.console`
+
+Runs a command in the running game's console.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.console`.",
+  "properties": {
+    "command": {
+      "description": "The console command, such as `impulse 9`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command"
+  ],
+  "title": "ConsoleParams",
   "type": "object"
 }
 ```
@@ -391,6 +453,58 @@ Parameters:
 }
 ```
 
+## `preview.step_by`
+
+Steps the game stopped in a frame by a statement, into a call, over one or out to the caller.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "StepBy": {
+      "description": "How `preview.step_by` steps.",
+      "oneOf": [
+        {
+          "const": "statement",
+          "description": "One statement.",
+          "type": "string"
+        },
+        {
+          "const": "in",
+          "description": "Into the next call.",
+          "type": "string"
+        },
+        {
+          "const": "over",
+          "description": "To the next statement of this function.",
+          "type": "string"
+        },
+        {
+          "const": "out",
+          "description": "Out to the caller.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.step_by`.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/StepBy",
+      "description": "A statement, into, over or out."
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "title": "StepByParams",
+  "type": "object"
+}
+```
+
 ## `preview.stop`
 
 Stops the game.
@@ -403,6 +517,58 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.unwatch`
+
+Takes a watch away.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.unwatch`.",
+  "properties": {
+    "index": {
+      "description": "The watch's place in the list, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "index"
+  ],
+  "title": "UnwatchParams",
+  "type": "object"
+}
+```
+
+## `preview.watch`
+
+Adds a watch, an expression read each time the game stops in a frame.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.watch`.",
+  "properties": {
+    "expression": {
+      "description": "The expression, such as `self.owner.health`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "expression"
+  ],
+  "title": "WatchParams",
   "type": "object"
 }
 ```

@@ -9,6 +9,8 @@ const qs_workbench::commands::REFERENCES
 const qs_workbench::commands::RENAME
 const qs_workbench::commands::SAVE_FILE
 const qs_workbench::commands::UPDATE_FILE
+const qs_workbench::preview::BREAKPOINT
+const qs_workbench::preview::CONSOLE
 const qs_workbench::preview::PAUSE
 const qs_workbench::preview::PICK
 const qs_workbench::preview::PLAY
@@ -19,13 +21,18 @@ const qs_workbench::preview::RESUME
 const qs_workbench::preview::SELECT
 const qs_workbench::preview::SET_FIELD
 const qs_workbench::preview::STEP
+const qs_workbench::preview::STEP_BY
 const qs_workbench::preview::STOP
+const qs_workbench::preview::UNWATCH
+const qs_workbench::preview::WATCH
 enum qs_workbench::EntryKind
 enum qs_workbench::WorkbenchError
 enum qs_workbench::build::Gravity
 enum qs_workbench::commands::CandidateKind
 enum qs_workbench::preview::PlayState
 enum qs_workbench::preview::PreviewError
+enum qs_workbench::preview::StepBy
+enum qs_workbench::preview::debug::StopReason
 field qs_workbench::Problem.diagnostic
 field qs_workbench::Problem.location
 field qs_workbench::Problem.path
@@ -66,8 +73,11 @@ field qs_workbench::editing::Change.before
 field qs_workbench::editing::Change.path
 field qs_workbench::editing::Renamed.caution
 field qs_workbench::editing::Renamed.changes
+field qs_workbench::preview::BreakpointParams.file
+field qs_workbench::preview::BreakpointParams.line
 field qs_workbench::preview::ConsoleLine.level
 field qs_workbench::preview::ConsoleLine.text
+field qs_workbench::preview::ConsoleParams.command
 field qs_workbench::preview::PickParams.x
 field qs_workbench::preview::PickParams.y
 field qs_workbench::preview::PlayParams.map
@@ -82,6 +92,19 @@ field qs_workbench::preview::SelectedEntity.classname
 field qs_workbench::preview::SelectedEntity.edict
 field qs_workbench::preview::SetFieldParams.field
 field qs_workbench::preview::SetFieldParams.value
+field qs_workbench::preview::StepByParams.kind
+field qs_workbench::preview::UnwatchParams.index
+field qs_workbench::preview::WatchParams.expression
+field qs_workbench::preview::debug::Breakpoint.file
+field qs_workbench::preview::debug::Breakpoint.function
+field qs_workbench::preview::debug::Breakpoint.id
+field qs_workbench::preview::debug::Breakpoint.line
+field qs_workbench::preview::debug::Location.engine
+field qs_workbench::preview::debug::Location.file
+field qs_workbench::preview::debug::Location.function
+field qs_workbench::preview::debug::Location.line
+field qs_workbench::preview::debug::Watch.expression
+field qs_workbench::preview::debug::Watch.value
 field qs_workbench::preview::entities::Field.name
 field qs_workbench::preview::entities::Field.value
 field qs_workbench::preview::entities::Group.classname
@@ -127,6 +150,8 @@ fn qs_workbench::preview::ConsoleLine::is_error
 fn qs_workbench::preview::HasPreview::workbench_and_preview
 fn qs_workbench::preview::Preview::client
 fn qs_workbench::preview::Preview::console
+fn qs_workbench::preview::Preview::console_command
+fn qs_workbench::preview::Preview::debugger
 fn qs_workbench::preview::Preview::entities
 fn qs_workbench::preview::Preview::new
 fn qs_workbench::preview::Preview::pause
@@ -143,8 +168,31 @@ fn qs_workbench::preview::Preview::set_field
 fn qs_workbench::preview::Preview::state
 fn qs_workbench::preview::Preview::status
 fn qs_workbench::preview::Preview::step
+fn qs_workbench::preview::Preview::step_by
 fn qs_workbench::preview::Preview::stop
+fn qs_workbench::preview::Preview::toggle_breakpoint
+fn qs_workbench::preview::Preview::unwatch
+fn qs_workbench::preview::Preview::watch
 fn qs_workbench::preview::PreviewConfig::from_env
+fn qs_workbench::preview::debug::Debugger::breakpoint_mut
+fn qs_workbench::preview::debug::Debugger::breakpoints
+fn qs_workbench::preview::debug::Debugger::error
+fn qs_workbench::preview::debug::Debugger::failed
+fn qs_workbench::preview::debug::Debugger::lines_of
+fn qs_workbench::preview::debug::Debugger::new
+fn qs_workbench::preview::debug::Debugger::resumed
+fn qs_workbench::preview::debug::Debugger::set_stack
+fn qs_workbench::preview::debug::Debugger::stack
+fn qs_workbench::preview::debug::Debugger::stop
+fn qs_workbench::preview::debug::Debugger::stopped
+fn qs_workbench::preview::debug::Debugger::toggle
+fn qs_workbench::preview::debug::Debugger::unset_all
+fn qs_workbench::preview::debug::Debugger::unwatch
+fn qs_workbench::preview::debug::Debugger::watch
+fn qs_workbench::preview::debug::Debugger::watches
+fn qs_workbench::preview::debug::Debugger::watches_mut
+fn qs_workbench::preview::debug::Location::from_value
+fn qs_workbench::preview::debug::StopReason::of
 fn qs_workbench::preview::entities::Entities::classname
 fn qs_workbench::preview::entities::Entities::clear
 fn qs_workbench::preview::entities::Entities::groups
@@ -169,6 +217,7 @@ impl qs_workbench::preview::Preview: core::fmt::Debug
 impl qs_workbench::preview::PreviewError: From<ClientError>
 impl qs_workbench::preview::PreviewError: core::fmt::Display
 impl qs_workbench::preview::PreviewError: std::error::Error
+mod qs_workbench::preview::debug
 mod qs_workbench::preview::entities
 struct qs_workbench::Location
 struct qs_workbench::OpenFile
@@ -188,7 +237,9 @@ struct qs_workbench::commands::SaveFileParams
 struct qs_workbench::commands::UpdateFileParams
 struct qs_workbench::editing::Change
 struct qs_workbench::editing::Renamed
+struct qs_workbench::preview::BreakpointParams
 struct qs_workbench::preview::ConsoleLine
+struct qs_workbench::preview::ConsoleParams
 struct qs_workbench::preview::PickParams
 struct qs_workbench::preview::PlayParams
 struct qs_workbench::preview::Preview
@@ -197,6 +248,13 @@ struct qs_workbench::preview::PreviewStatus
 struct qs_workbench::preview::SelectParams
 struct qs_workbench::preview::SelectedEntity
 struct qs_workbench::preview::SetFieldParams
+struct qs_workbench::preview::StepByParams
+struct qs_workbench::preview::UnwatchParams
+struct qs_workbench::preview::WatchParams
+struct qs_workbench::preview::debug::Breakpoint
+struct qs_workbench::preview::debug::Debugger
+struct qs_workbench::preview::debug::Location
+struct qs_workbench::preview::debug::Watch
 struct qs_workbench::preview::entities::Entities
 struct qs_workbench::preview::entities::Field
 struct qs_workbench::preview::entities::Group
@@ -205,12 +263,16 @@ trait qs_workbench::commands::HasWorkbench
 trait qs_workbench::preview::HasPreview
 type qs_workbench::commands::HasWorkbench::Loader
 use qs_workbench::* = crate::commands::*
+use qs_workbench::BREAKPOINT = crate::preview::BREAKPOINT
+use qs_workbench::BreakpointParams = crate::preview::BreakpointParams
+use qs_workbench::CONSOLE = crate::preview::CONSOLE
 use qs_workbench::Caution = qc_ide::Caution
 use qs_workbench::Change = crate::editing::Change
 use qs_workbench::Code = qc_ide::Code
 use qs_workbench::Completion = qc_ide::Completion
 use qs_workbench::Config = qc_ide::Config
 use qs_workbench::ConsoleLine = crate::preview::ConsoleLine
+use qs_workbench::ConsoleParams = crate::preview::ConsoleParams
 use qs_workbench::DefKind = qc_ide::DefKind
 use qs_workbench::Diagnostic = qc_ide::Diagnostic
 use qs_workbench::Dialect = qc_project::Dialect
@@ -246,16 +308,24 @@ use qs_workbench::Reported = crate::build::Reported
 use qs_workbench::SELECT = crate::preview::SELECT
 use qs_workbench::SET_FIELD = crate::preview::SET_FIELD
 use qs_workbench::STEP = crate::preview::STEP
+use qs_workbench::STEP_BY = crate::preview::STEP_BY
 use qs_workbench::STOP = crate::preview::STOP
 use qs_workbench::SelectParams = crate::preview::SelectParams
 use qs_workbench::SelectedEntity = crate::preview::SelectedEntity
 use qs_workbench::SetFieldParams = crate::preview::SetFieldParams
 use qs_workbench::Severity = qc_ide::Severity
 use qs_workbench::Span = qc_ide::Span
+use qs_workbench::StepBy = crate::preview::StepBy
+use qs_workbench::StepByParams = crate::preview::StepByParams
 use qs_workbench::Symbol = qc_ide::Symbol
 use qs_workbench::SymbolKind = qc_ide::SymbolKind
 use qs_workbench::SyntaxClass = qc_ide::SyntaxClass
 use qs_workbench::Target = qc_project::Target
+use qs_workbench::UNWATCH = crate::preview::UNWATCH
+use qs_workbench::UnwatchParams = crate::preview::UnwatchParams
+use qs_workbench::WATCH = crate::preview::WATCH
+use qs_workbench::WatchParams = crate::preview::WatchParams
+use qs_workbench::debug = crate::preview::debug
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::register_preview = crate::preview::register_preview
 variant qs_workbench::EntryKind::Directory
@@ -287,3 +357,10 @@ variant qs_workbench::preview::PreviewError::NotRunning
 variant qs_workbench::preview::PreviewError::NothingBuilt
 variant qs_workbench::preview::PreviewError::OutsideBuild
 variant qs_workbench::preview::PreviewError::RunRoot
+variant qs_workbench::preview::StepBy::In
+variant qs_workbench::preview::StepBy::Out
+variant qs_workbench::preview::StepBy::Over
+variant qs_workbench::preview::StepBy::Statement
+variant qs_workbench::preview::debug::StopReason::Breakpoint
+variant qs_workbench::preview::debug::StopReason::Error
+variant qs_workbench::preview::debug::StopReason::Step

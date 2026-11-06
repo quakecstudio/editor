@@ -291,11 +291,20 @@ impl Entities {
     }
 }
 
-/// A number as QuakeC writes it: whole numbers with no point.
+/// A number as QuakeC writes it: whole numbers with no point, and others in the fewest digits
+/// that give back the same single-precision float, since QuakeC's floats are 32-bit and the
+/// bridge widens them (`1.2140386`, not `1.214038610458374`).
 fn number(value: &Value) -> String {
     match value.as_f64() {
         Some(n) if n.fract() == 0.0 && n.abs() < 1e15 => format!("{n:.0}"),
-        Some(n) => format!("{n}"),
+        Some(n) => {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a QuakeC float is an f32 the bridge widened; narrowing gives it back"
+            )]
+            let single = n as f32;
+            format!("{single}")
+        }
         None => value.to_string(),
     }
 }
