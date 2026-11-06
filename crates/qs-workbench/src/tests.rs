@@ -227,6 +227,23 @@ fn edits_are_unsaved_until_saved_and_survive_a_closed_tab() {
     assert_eq!(std::fs::read(&file).unwrap(), b"float b;\n");
 }
 
+// No spec statement: the breadcrumb names the last definition written at or before the caret,
+// none before the first
+#[test]
+fn the_definition_at_a_caret_is_the_last_one_before_it() {
+    let mut workbench = opened(PROJECT);
+    workbench.open_file(&path("defs.qc"), 0).unwrap();
+    let open = workbench.open().unwrap();
+    let names: Vec<_> = open.outline().iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["health", "speed"]);
+    let at = |offset| open.symbol_at(offset).map(|s| s.name.as_str());
+    let speed = open.outline()[1].range.span.start;
+    assert_eq!(at(0), None, "before the first name");
+    assert_eq!(at(speed - 1), Some("health"));
+    assert_eq!(at(speed), Some("speed"));
+    assert_eq!(at(usize::MAX), Some("speed"));
+}
+
 #[test]
 fn opening_a_file_moves_its_caret_and_counts_each_open() {
     let mut workbench = opened(PROJECT);

@@ -1116,6 +1116,13 @@ impl Shell {
                     .and_then(|(_, at)| (at.file.as_deref() == Some(file)).then_some(at.line?));
                 editor.view.set_paused(paused.map(line_index));
             }
+            breadcrumb(
+                ui,
+                theme,
+                context.workbench.root(),
+                editor,
+                context.workbench.open(),
+            );
             let requests = editor.show(ui, theme, &view_style(theme));
             let clicked = editor.view.take_gutter_click();
             if let (Some(file), Some(line)) = (file, clicked) {
@@ -1155,6 +1162,54 @@ impl Shell {
     }
 }
 
+/// The open file's path under the project, each folder a step, and the definition the caret
+/// is in, as mockup 01 draws it above the code: `src / weapons.qc / W_FireEmber`.
+fn breadcrumb(
+    ui: &mut Ui,
+    theme: &Theme,
+    root: Option<&Path>,
+    editor: &Editor,
+    open: Option<&OpenFile>,
+) {
+    let path = root
+        .and_then(|root| editor.path.strip_prefix(root).ok())
+        .unwrap_or(&editor.path);
+    let muted = theme.color(Token::TextMuted);
+    let separator = Text::PathSeparator.get();
+    let frame = egui::Frame::NONE.inner_margin(egui::Margin::symmetric(BREADCRUMB_INDENT, 4));
+    frame.show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for (n, step) in path.components().enumerate() {
+                if n > 0 {
+                    ui.label(RichText::new(separator).small().color(muted));
+                }
+                ui.label(
+                    RichText::new(step.as_os_str().to_string_lossy())
+                        .small()
+                        .color(muted),
+                );
+            }
+            let symbol = open
+                .filter(|open| open.path() == editor.path)
+                .and_then(|open| open.symbol_at(editor.caret_offset()));
+            if let Some(symbol) = symbol {
+                ui.label(RichText::new(separator).small().color(muted));
+                ui.label(
+                    RichText::new(&symbol.name)
+                        .small()
+                        .monospace()
+                        .color(theme.color(Token::CodeFunction)),
+                );
+            }
+        })
+    });
+}
+
+/// The breadcrumb's indent, in points: the gutter's padding, so it lines up with the line
+/// numbers below it.
+const BREADCRUMB_INDENT: i8 = 12;
+
 /// What a click on a file's tab asks for.
 enum TabAction {
     /// Show the file in the editor.
@@ -1190,9 +1245,8 @@ fn file_tab(
     if tab.clicked() {
         action = Some(TabAction::Show(path.to_path_buf()));
     }
-    let close =
-        Button::new(RichText::new(Text::Remove.get()).color(theme.color(Token::TextFaint)))
-            .frame(false);
+    let close = Button::new(RichText::new(Text::Remove.get()).color(theme.color(Token::TextFaint)))
+        .frame(false);
     if ui
         .add(close)
         .on_hover_text(Text::CloseTabHint.get())

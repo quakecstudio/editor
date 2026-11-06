@@ -612,3 +612,24 @@ fn the_editors_colours_are_the_themes() {
         "not the dark defaults"
     );
 }
+
+// No spec statement: the breadcrumb names the file's folders, the file and the definition the
+// caret is in, which the Symbols list names too
+#[test]
+fn the_breadcrumb_follows_the_caret() {
+    let mut harness = harness("src/weapons.qc");
+    let count = |harness: &H, name: &str| harness.query_all_by_label(name).count();
+    caret_at(&mut harness, "ember.bounces", 0, 0);
+    harness.run();
+    assert_eq!(
+        count(&harness, "W_FireEmber"),
+        2,
+        "the list and the breadcrumb"
+    );
+    assert_eq!(count(&harness, "Ember_Touch"), 1, "the list only");
+    assert_eq!(count(&harness, "src"), 2, "the tree and the breadcrumb");
+    caret_at(&mut harness, "Ember_Touch", 0, 0);
+    harness.run();
+    assert_eq!(count(&harness, "W_FireEmber"), 1);
+    assert_eq!(count(&harness, "Ember_Touch"), 2);
+}

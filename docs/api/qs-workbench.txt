@@ -125,6 +125,7 @@ fn qs_workbench::OpenFile::offset
 fn qs_workbench::OpenFile::outline
 fn qs_workbench::OpenFile::path
 fn qs_workbench::OpenFile::revision
+fn qs_workbench::OpenFile::symbol_at
 fn qs_workbench::OpenFile::text
 fn qs_workbench::OpenFile::version
 fn qs_workbench::Workbench::close_file

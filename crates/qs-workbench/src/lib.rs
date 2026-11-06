@@ -231,6 +231,17 @@ impl OpenFile {
         &self.outline
     }
 
+    /// The definition byte `offset` is in, as the breadcrumb names it: the last whose name is
+    /// written at or before it. A QuakeC file is a run of top-level definitions, so the text
+    /// after one name and before the next belongs to the first.
+    #[must_use]
+    pub fn symbol_at(&self, offset: usize) -> Option<&Symbol> {
+        self.outline
+            .iter()
+            .take_while(|symbol| symbol.range.span.start <= offset)
+            .last()
+    }
+
     /// The semantic highlighting of its names, in source order.
     #[must_use]
     pub fn highlights(&self) -> &[Highlight] {

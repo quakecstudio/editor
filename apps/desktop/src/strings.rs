@@ -125,6 +125,8 @@ pub enum Text {
     CloseTabHint,
     /// Beside an unsaved file in the Project tree.
     ModifiedMark,
+    /// Between the steps of the breadcrumb.
+    PathSeparator,
     /// A control that has no action yet.
     NotYetAvailable,
     /// The View menu.
@@ -223,7 +225,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 106] = [
+    pub const ALL: [Self; 107] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -283,6 +285,7 @@ impl Text {
         Self::UnsavedMark,
         Self::CloseTabHint,
         Self::ModifiedMark,
+        Self::PathSeparator,
         Self::NotYetAvailable,
         Self::ViewMenu,
         Self::ToggleLeftPanel,
@@ -397,6 +400,7 @@ impl Text {
             Self::UnsavedMark => "\u{25cf}",
             Self::CloseTabHint => "Close the tab; its unsaved edits are kept",
             Self::ModifiedMark => "M",
+            Self::PathSeparator => " / ",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",
             Self::ToggleLeftPanel => "Project and Entities",
