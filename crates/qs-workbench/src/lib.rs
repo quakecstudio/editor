@@ -274,6 +274,8 @@ pub struct Workbench<L> {
     /// The files opened since the project was, in the order they were first opened: the
     /// editor's tabs.
     tabs: Vec<PathBuf>,
+    /// The tabs' files, the one opened most recently first.
+    history: Vec<PathBuf>,
     /// The files whose text an editor or a command changed since they were last saved.
     unsaved: BTreeSet<PathBuf>,
     generation: u64,
@@ -291,6 +293,7 @@ impl<L: Loader> Workbench<L> {
             symbols: Vec::new(),
             open: None,
             tabs: Vec::new(),
+            history: Vec::new(),
             unsaved: BTreeSet::new(),
             generation: 0,
         }
@@ -325,6 +328,7 @@ impl<L: Loader> Workbench<L> {
         self.symbols = self.host.workspace_symbols();
         self.open = None;
         self.tabs.clear();
+        self.history.clear();
         self.unsaved.clear();
         Ok(())
     }
@@ -367,13 +371,15 @@ impl<L: Loader> Workbench<L> {
         if !self.tabs.contains(&open.path) {
             self.tabs.push(open.path.clone());
         }
+        self.history.retain(|path| *path != open.path);
+        self.history.insert(0, open.path.clone());
         self.open = Some(open);
         Ok(location)
     }
 
-    /// Closes the tab of `path`. When it is the open file, the tab after it opens, or the one
-    /// before when it was the last, or no file when it was the only one. Its unsaved text is
-    /// kept: opening it again shows it.
+    /// Closes the tab of `path`. When it is the open file, the tab open before it opens again,
+    /// as Zed's default `activate_on_close: "history"` does, or no file when it was the only
+    /// one. Its unsaved text is kept: opening it again shows it.
     ///
     /// # Errors
     ///
@@ -387,10 +393,10 @@ impl<L: Loader> Workbench<L> {
             .position(|tab| *tab == path)
             .ok_or_else(|| WorkbenchError::NoFile { path: path.clone() })?;
         self.tabs.remove(at);
+        self.history.retain(|tab| *tab != path);
         if self.open.as_ref().is_some_and(|open| open.path == path) {
             self.open = None;
-            let next = self.tabs.get(at).or_else(|| self.tabs.last()).cloned();
-            if let Some(next) = next {
+            if let Some(next) = self.history.first().cloned() {
                 self.open_file(&next, 0)?;
             }
         }
@@ -401,6 +407,13 @@ impl<L: Loader> Workbench<L> {
     #[must_use]
     pub fn tabs(&self) -> &[PathBuf] {
         &self.tabs
+    }
+
+    /// The tabs' files, the one opened most recently first: the order the file finder lists
+    /// them in before anything is typed.
+    #[must_use]
+    pub fn history(&self) -> &[PathBuf] {
+        &self.history
     }
 
     /// Whether the text of `path` changed since it was last saved.

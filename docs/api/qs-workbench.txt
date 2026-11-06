@@ -129,6 +129,7 @@ fn qs_workbench::OpenFile::symbol_at
 fn qs_workbench::OpenFile::text
 fn qs_workbench::OpenFile::version
 fn qs_workbench::Workbench::close_file
+fn qs_workbench::Workbench::history
 fn qs_workbench::Workbench::is_unsaved
 fn qs_workbench::Workbench::new
 fn qs_workbench::Workbench::open

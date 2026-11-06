@@ -666,3 +666,55 @@ fn the_file_finder_opens_a_file_by_name() {
     harness.run();
     assert!(!app(&harness).shell().finder.is_open());
 }
+
+// UI-14: before anything is typed the finder lists the files opened most recently first and,
+// as Zed's does, selects the one before the file being edited; `name:line` opens the file at
+// that line
+#[test]
+fn the_finder_starts_from_recent_files_and_reads_a_line() {
+    let mut harness = harness("src/weapons.qc");
+    harness.get_by_label("world.qc").click();
+    harness.run();
+    press(&mut harness, Modifiers::COMMAND, Key::P);
+    harness.run();
+    // world.qc is being edited and listed first; Enter opens weapons.qc, the one before it.
+    press(&mut harness, Modifiers::NONE, Key::Enter);
+    harness.run();
+    let open = app(&harness)
+        .shell()
+        .workbench()
+        .open()
+        .unwrap()
+        .path()
+        .to_path_buf();
+    assert!(open.ends_with("src/weapons.qc"), "{}", open.display());
+    press(&mut harness, Modifiers::COMMAND, Key::P);
+    harness.run();
+    harness.event(Event::Text("world:3".to_owned()));
+    harness.run();
+    press(&mut harness, Modifiers::NONE, Key::Enter);
+    harness.run();
+    harness.run();
+    let shell = app(&harness).shell();
+    assert!(
+        shell
+            .workbench()
+            .open()
+            .unwrap()
+            .path()
+            .ends_with("src/world.qc")
+    );
+    assert_eq!(shell.caret().unwrap().1.line, 2, "line 3, from 0");
+}
+
+// No spec statement: a query's last colon and a line number after it ask for that line; any
+// other colon is part of the name
+#[test]
+fn a_finder_query_may_end_in_a_line() {
+    use crate::finder::split_line;
+    assert_eq!(split_line("world.qc:12"), ("world.qc", Some(12)));
+    assert_eq!(split_line("world.qc: 7"), ("world.qc", Some(7)));
+    assert_eq!(split_line("world.qc:0"), ("world.qc:0", None));
+    assert_eq!(split_line("a:b"), ("a:b", None));
+    assert_eq!(split_line("world"), ("world", None));
+}

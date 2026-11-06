@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The file finder (Cmd+P, as in Zed and VS Code): a search over the project's files, a match
-//! in a file's name before one in its folders, each row the name with the matched characters
-//! in the accent and the path beside it; Enter opens the selected file. Drawn as the command
-//! palette is (mockup 04).
+//! The file finder (Cmd+P), modelled on Zed's (`crates/file_finder`): a search over the
+//! project's files, a match in a file's name before one in its folders, each row the name with
+//! the matched characters in the accent and the path beside it; before anything is typed the
+//! files opened most recently come first, the one being edited not selected; `name:line` opens
+//! the file at that line; Enter opens the selected file. Drawn as the command palette is
+//! (mockup 04).
 //!
 //! Every string comes from [`crate::strings`]; a test fails on a string literal here.
 
@@ -44,6 +46,8 @@ pub(crate) struct FileFinder {
     selected: usize,
     /// Whether the query field takes focus in the next frame.
     focus: bool,
+    /// Whether the selection is to be placed afresh, as when it opens.
+    focus_first: bool,
 }
 
 impl FileFinder {
@@ -58,6 +62,7 @@ impl FileFinder {
         self.query.clear();
         self.selected = 0;
         self.focus = true;
+        self.focus_first = true;
     }
 
     /// Closes it.
@@ -65,15 +70,16 @@ impl FileFinder {
         self.open = false;
     }
 
-    /// Draws it over `files`, named under `root`, and returns the file chosen, which closes it.
+    /// Draws it over `files`, the most recently opened first, named under `root`, and returns
+    /// the file chosen and the line asked for, which closes it; `open` is the file being edited.
     pub(crate) fn show(
         &mut self,
         ui: &Ui,
         id: Id,
         theme: &Theme,
-        root: Option<&Path>,
+        (root, open): (Option<&Path>, Option<&Path>),
         files: &[PathBuf],
-    ) -> Option<PathBuf> {
+    ) -> Option<(PathBuf, Option<u32>)> {
         if !self.open {
             return None;
         }
@@ -109,7 +115,7 @@ impl FileFinder {
                         });
                         ui.set_width(WIDTH);
                         ui.set_max_width(WIDTH);
-                        chosen = self.list_ui(ui, theme, &entries);
+                        chosen = self.list_ui(ui, theme, &entries, open);
                     });
             });
         if chosen.is_some() {
@@ -119,12 +125,15 @@ impl FileFinder {
     }
 
     /// The search field and the matching files.
-    fn list_ui(&mut self, ui: &mut Ui, theme: &Theme, entries: &[Entry]) -> Option<PathBuf> {
-        let found = find(
-            entries,
-            |e| (e.name.as_str(), e.shown.as_str()),
-            &self.query,
-        );
+    fn list_ui(
+        &mut self,
+        ui: &mut Ui,
+        theme: &Theme,
+        entries: &[Entry],
+        open: Option<&Path>,
+    ) -> Option<(PathBuf, Option<u32>)> {
+        let (query, line) = split_line(&self.query);
+        let found = find(entries, |e| (e.name.as_str(), e.shown.as_str()), query);
         let (up, down, enter, escape) = ui.input_mut(|i| {
             (
                 i.consume_key(Modifiers::NONE, Key::ArrowUp),
@@ -138,6 +147,15 @@ impl FileFinder {
             return None;
         }
         let last = found.len().saturating_sub(1);
+        if std::mem::take(&mut self.focus_first) {
+            // As Zed's `skip_focus_for_active_in_search`: the file being edited, listed first,
+            // is not the one Enter opens, unless a line in it is asked for.
+            let first_is_open = found
+                .first()
+                .is_some_and(|m| Some(m.item.path.as_path()) == open);
+            self.selected = usize::from(first_is_open && line.is_none() && found.len() > 1);
+        }
+        self.selected = self.selected.min(last);
         if down {
             self.selected = self.selected.saturating_add(1).min(last);
         }
@@ -157,7 +175,8 @@ impl FileFinder {
                 self.focus = false;
             }
             if response.changed() {
-                self.selected = 0;
+                // The matches for the new query are worked out next frame.
+                self.focus_first = true;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(
@@ -215,6 +234,18 @@ impl FileFinder {
                 }
             });
         let pick = clicked.or_else(|| enter.then_some(self.selected))?;
-        Some(found.get(pick)?.item.path.clone())
+        Some((found.get(pick)?.item.path.clone(), line))
+    }
+}
+
+/// The query and the line it asks for: `world.qc:12` is `world.qc` at line 12, as Zed's finder
+/// reads a row after a colon; a colon not followed by a line number is part of the query.
+pub(crate) fn split_line(query: &str) -> (&str, Option<u32>) {
+    match query.rsplit_once(':') {
+        Some((name, line)) => match line.trim().parse::<u32>() {
+            Ok(line) if line > 0 => (name, Some(line)),
+            Ok(_) | Err(_) => (query, None),
+        },
+        None => (query, None),
     }
 }

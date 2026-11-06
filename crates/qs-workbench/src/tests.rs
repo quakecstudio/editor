@@ -172,21 +172,33 @@ fn problems_are_by_path_then_source_order() {
 }
 
 // No spec statement: each file opened gets one tab, in the order first opened; closing the
-// open file's tab opens the one after it, else the one before, else none; a tab not there is
-// an error; opening another project closes every tab
+// open file's tab opens the one open before it (Zed's `activate_on_close: "history"`), else
+// none; a tab not there is an error; opening another project closes every tab
 #[test]
-fn tabs_open_once_and_close_to_a_neighbour() {
+fn tabs_open_once_and_close_to_the_last_one_open() {
     let mut workbench = opened(PROJECT);
     let (defs, world, src) = (path("defs.qc"), path("code/world.qc"), path("progs.src"));
     for file in [&defs, &world, &defs, &src] {
         workbench.open_file(file, 0).unwrap();
     }
     assert_eq!(workbench.tabs(), [defs.clone(), world.clone(), src.clone()]);
+    assert_eq!(
+        workbench.history(),
+        [src.clone(), defs.clone(), world.clone()]
+    );
     workbench.open_file(&world, 0).unwrap();
     workbench.close_file(&world).unwrap();
-    assert_eq!(workbench.open().unwrap().path(), src, "the one after");
+    assert_eq!(workbench.open().unwrap().path(), src, "open before world");
+    workbench.open_file(&defs, 0).unwrap();
+    workbench.close_file(&defs).unwrap();
+    assert_eq!(workbench.open().unwrap().path(), src, "not the neighbour");
+    workbench.open_file(&defs, 0).unwrap();
     workbench.close_file(&src).unwrap();
-    assert_eq!(workbench.open().unwrap().path(), defs, "the one before");
+    assert_eq!(
+        workbench.open().unwrap().path(),
+        defs,
+        "a tab not open stays"
+    );
     assert!(matches!(
         workbench.close_file(&world),
         Err(WorkbenchError::NoFile { .. })

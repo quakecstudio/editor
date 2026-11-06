@@ -426,23 +426,33 @@ impl Shell {
             }
         }
         let workbench = &self.session.context().workbench;
-        let files: Vec<PathBuf> = workbench
-            .tree()
-            .iter()
-            .filter_map(|entry| match &entry.kind {
-                EntryKind::File(path) => Some(path.clone()),
-                EntryKind::Directory => None,
-            })
-            .collect();
-        if let Some(path) = self.finder.show(
+        // The files opened most recently first, then the rest in the tree's order.
+        let mut files = workbench.history().to_vec();
+        for entry in workbench.tree() {
+            if let EntryKind::File(path) = &entry.kind
+                && !files.contains(path)
+            {
+                files.push(path.clone());
+            }
+        }
+        let open = workbench.open().map(|open| open.path().to_path_buf());
+        let chosen = self.finder.show(
             ui,
             Id::new(Area::Finder),
             &self.theme,
-            workbench.root(),
+            (workbench.root(), open.as_deref()),
             &files,
-        ) {
-            let offset = self.parked.get(&path).map_or(0, Editor::caret_offset);
-            self.jump(Jump { path, offset });
+        );
+        match chosen {
+            Some((path, Some(line))) => {
+                self.pending_line = Some((path.clone(), line));
+                self.jump(Jump { path, offset: 0 });
+            }
+            Some((path, None)) => {
+                let offset = self.parked.get(&path).map_or(0, Editor::caret_offset);
+                self.jump(Jump { path, offset });
+            }
+            None => {}
         }
         let dragging = ui.input(|input| input.pointer.any_down());
         self.save_if_changed(dragging);
@@ -1275,13 +1285,21 @@ fn file_tab(
     if tab.clicked() {
         action = Some(TabAction::Show(path.to_path_buf()));
     }
-    let close = Button::new(RichText::new(Text::Remove.get()).color(theme.color(Token::TextFaint)))
+    // The close button keeps its place and shows on hover, as Zed's default
+    // `show_close_button: "hover"` does, so the tabs do not move under the pointer.
+    let close = Button::new(RichText::new(Text::Remove.get()).color(egui::Color32::TRANSPARENT))
         .frame(false);
-    if ui
-        .add(close)
-        .on_hover_text(Text::CloseTabHint.get())
-        .clicked()
-    {
+    let close = ui.add(close).on_hover_text(Text::CloseTabHint.get());
+    if tab.hovered() || close.hovered() {
+        ui.painter().text(
+            close.rect.center(),
+            egui::Align2::CENTER_CENTER,
+            Text::Remove.get(),
+            egui::FontId::default(),
+            theme.color(Token::TextMuted),
+        );
+    }
+    if close.clicked() {
         action = Some(TabAction::Close(path.to_path_buf()));
     }
     action
