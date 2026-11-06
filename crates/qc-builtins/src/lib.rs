@@ -30,6 +30,7 @@ mod atof;
 mod cstring;
 mod dispatch;
 mod error;
+pub mod files;
 pub mod localization;
 pub mod math;
 pub mod mock;

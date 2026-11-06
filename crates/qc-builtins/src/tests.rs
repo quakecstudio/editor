@@ -2965,25 +2965,64 @@ mod bodies {
         }
     }
 
-    // spec BUILTIN-18.10: fopen opens nothing in any mode, after reading its name as a string
+    // spec BUILTIN-18.36: fopen reads its name as a string and its mode as an integer; a file
+    // to read that nothing wrote opens nothing, and one to write is made
+    // spec BUILTIN-18.37: fputs joins its strings and fgets reads the line back once the file
+    // is closed, 0 at the end
+    // spec BUILTIN-18.38: whichpack names the game directory of a written file, and 0 for none
     #[test]
-    fn fopen_opens_nothing() {
-        let (strings, offsets) = string_table(&["configs/levels.cfg"]);
-        for (name, mode, ok) in [
-            (offsets[0], 0.0, true),
-            (offsets[0], 2.0, true),
-            (999_999, 0.0, false),
-        ] {
-            let mut f = Fixture::new(110, 2, strings.clone(), 0);
-            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
-            f.set_parm_i(0, name);
-            f.set_parm_f(1, mode);
-            let result = f.run(ServerState::Active);
-            assert_eq!(result.is_ok(), ok, "{mode}");
-            if ok {
-                assert_eq!(f.return_f(), -1.0);
+    fn files_write_and_read_back() {
+        let (strings, offsets) =
+            string_table(&["configs/levels.cfg", "a", "b", "data/configs/levels.cfg"]);
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = EngineProfile::VkQuake;
+        let call = |engine: &mut MockEngine, number: u32, parms: &[Result<i32, f32>]| {
+            let argc = u16::try_from(parms.len()).unwrap();
+            let mut f = Fixture::new(number, argc, strings.clone(), 0);
+            *f.builtins.engine_mut() = engine.clone();
+            for (n, parm) in (0_u16..).zip(parms) {
+                match parm {
+                    Ok(string) => f.set_parm_i(n, *string),
+                    Err(float) => f.set_parm_f(n, *float),
+                }
             }
-        }
+            let result = f.run(ServerState::Active);
+            *engine = f.builtins.engine().clone();
+            (result, f)
+        };
+        let (result, f) = call(&mut engine, 110, &[Ok(offsets[0]), Err(0.0)]);
+        result.unwrap();
+        assert_eq!(f.return_f(), -1.0);
+        let (result, _) = call(&mut engine, 110, &[Ok(999_999), Err(0.0)]);
+        assert!(result.is_err(), "a bad name is the string error");
+        let (_, f) = call(&mut engine, 503, &[Ok(offsets[3])]);
+        assert_eq!(f.return_i(), 0);
+        let (_, f) = call(&mut engine, 110, &[Ok(offsets[0]), Err(2.9)]);
+        assert_eq!(f.return_f(), 1.0, "mode (int)2.9, write");
+        call(
+            &mut engine,
+            113,
+            &[Err(1.0), Ok(offsets[1]), Ok(offsets[2])],
+        )
+        .0
+        .unwrap();
+        let (result, _) = call(&mut engine, 113, &[Err(1.0), Ok(999_999)]);
+        assert!(result.is_err(), "each string is checked");
+        call(&mut engine, 111, &[Err(1.0)]).0.unwrap();
+        let (_, f) = call(&mut engine, 503, &[Ok(offsets[3])]);
+        assert_eq!(
+            f.engine().strings.text(f.return_i()),
+            Some(b"id1".as_slice())
+        );
+        let (_, f) = call(&mut engine, 110, &[Ok(offsets[0]), Err(0.0)]);
+        assert_eq!(f.return_f(), 1.0);
+        let (_, f) = call(&mut engine, 112, &[Err(1.0)]);
+        assert_eq!(
+            f.engine().strings.text(f.return_i()),
+            Some(b"ab".as_slice())
+        );
+        let (_, f) = call(&mut engine, 112, &[Err(1.0)]);
+        assert_eq!(f.return_i(), 0);
     }
 
     // spec BUILTIN-18.9: strzone joins its arguments into a new string that strunzone frees,

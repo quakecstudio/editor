@@ -1247,6 +1247,9 @@ impl MockBuiltins {
             97 => Some(Self::b_binary(context, vkstrings::pow)),
             99 => Some(self.b_checkextension(context)),
             110 => Some(self.b_fopen(context)),
+            111 => Some(self.b_fclose(context)),
+            112 => Some(self.b_fgets(context)),
+            113 => Some(self.b_fputs(context)),
             114 => Some(self.b_strlen(context)),
             115 => Some(self.b_strcat(context)),
             116 => Some(self.b_substring(context)),
@@ -1278,6 +1281,7 @@ impl MockBuiltins {
             245 => Some(Self::b_binary(context, vkstrings::modulo)),
             353 => Some(Self::b_wasfreed(context)),
             484 => Some(self.b_strreplace(context)),
+            503 => Some(self.b_whichpack(context)),
             510 => Some(self.b_string_map(context, vkstrings::uri_escape)),
             511 => Some(self.b_string_map(context, vkstrings::uri_unescape)),
             233 => Some(read_parm_string(context, &self.engine, 2).map(|_| ())),
@@ -1666,11 +1670,51 @@ impl MockBuiltins {
         write_return_float(context, int_to_float(at))
     }
 
-    /// `fopen(name, mode)`, vkQuake's `PF_fopen` over the mock's empty game directory
-    /// (BUILTIN-18.10): the name is read as a string, then -1, no file.
+    /// `fopen(name, mode)`, vkQuake's `PF_fopen` (BUILTIN-18.36): `name` through `G_STRING`
+    /// and the mode through `(int)`, then the handle, or -1.
     fn b_fopen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _name = read_parm_string(context, &self.engine, 0)?;
-        write_return_float(context, -1.0)
+        let name = read_parm_string(context, &self.engine, 0)?;
+        let mode = read_parm_int(context, 1)?;
+        let handle = self.engine.files.open(cstr(&name), mode);
+        write_return_float(context, handle)
+    }
+
+    /// `fgets(handle)`, vkQuake's `PF_fgets` (BUILTIN-18.37): the next line as a new string, or
+    /// 0.
+    fn b_fgets(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let handle = read_parm_float(context, 0)?;
+        let value = match self.engine.files.gets(handle) {
+            Some(line) => self.engine.strings.make(line),
+            None => 0,
+        };
+        write_return_string(context, value)
+    }
+
+    /// `fputs(handle, s, ...)`, vkQuake's `PF_fputs` (BUILTIN-18.37): the strings from the
+    /// second joined (`PF_VarString (1)`), each checked, then written.
+    fn b_fputs(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let handle = read_parm_float(context, 0)?;
+        let text = joined_string(context, &self.engine, 1)?;
+        self.engine.files.puts(handle, cstr(&text));
+        Ok(())
+    }
+
+    /// `fclose(handle)`, vkQuake's `PF_fclose` (BUILTIN-18.37).
+    fn b_fclose(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let handle = read_parm_float(context, 0)?;
+        self.engine.files.close(handle);
+        Ok(())
+    }
+
+    /// `whichpack(name)`, vkQuake's `PF_whichpack` (BUILTIN-18.38): the game directory of a
+    /// file that exists, as a new string, or 0.
+    fn b_whichpack(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let name = read_parm_string(context, &self.engine, 0)?;
+        let value = match self.engine.files.which_pack(cstr(&name)) {
+            Some(dir) => self.engine.strings.make(dir.to_vec()),
+            None => 0,
+        };
+        write_return_string(context, value)
     }
 
     /// `strzone(s, ...)`, vkQuake's `PF_strzone` (BUILTIN-18.9): every argument's text joined,
