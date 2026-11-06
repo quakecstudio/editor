@@ -132,6 +132,7 @@ fn run(
         registration,
         host: None,
         search_path: Vec::new(),
+        seed: None,
     };
     let mut world =
         World::load(progs, map, &bsp, models()?, options.clone()).map_err(|e| e.to_string())?;

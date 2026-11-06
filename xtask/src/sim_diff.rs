@@ -14,7 +14,8 @@ use qc_progs::Progs;
 use qc_trace::{Record, Trace};
 use qc_types::Slot;
 use qs_bsp::{Bsp, BspLoader};
-use qs_sim::{LoadOptions, NamedValue, QcValue, RawState, State, UserCmd, World, read_state};
+use qs_sim::scenario::{Moment, Scenario, play};
+use qs_sim::{LoadOptions, NamedValue, QcValue, RawState, State, World, read_state};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 use crate::oracles;
@@ -37,7 +38,7 @@ pub(crate) struct Args {
 pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     let text =
         fs::read_to_string(&args.route).map_err(|e| format!("{}: {e}", args.route.display()))?;
-    let route = Route::parse(&text)?;
+    let route = Scenario::parse(&text).map_err(|e| e.to_string())?;
     let built = oracles::build(root)?;
     let out = root.join("target/sim-diff");
     fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
@@ -50,7 +51,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         let script = out.join(format!("{map}.route"));
         let replaced = on_map(&text, map);
         fs::write(&script, replaced).map_err(|e| format!("{}: {e}", script.display()))?;
-        let rerouted = Route {
+        let rerouted = Scenario {
             map: map.clone(),
             ..route.clone()
         };
@@ -78,7 +79,7 @@ fn on_map(text: &str, map: &str) -> String {
 fn compare(
     built: &oracles::Oracles<'_>,
     script: &Path,
-    route: &Route,
+    route: &Scenario,
     out: &Path,
     engine_words: &[String],
 ) -> Result<bool, String> {
@@ -125,90 +126,6 @@ fn compare(
     Ok(true)
 }
 
-/// A route as DIFF-16.1 plays it.
-#[derive(Clone, Debug, Default, PartialEq)]
-struct Route {
-    engine: Vec<String>,
-    map: String,
-    frametime: f64,
-    steps: Vec<Step>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum Step {
-    /// A client string command, read in the next frame.
-    Command(String),
-    /// A line typed at the server's console, run in the next frame (DIFF-16.6).
-    Console(String),
-    /// The move sent each frame from now on.
-    Move(UserCmd),
-    /// Frames to run.
-    Frames(u32),
-}
-
-impl Route {
-    /// Reads a route as the engine oracle's harness does (`oracles/engine/engine.c`, `main`).
-    fn parse(text: &str) -> Result<Self, String> {
-        let mut route = Self {
-            frametime: 1.0 / 72.0,
-            ..Self::default()
-        };
-        for (number, line) in text.lines().enumerate() {
-            let line = line.trim_end_matches('\r');
-            let at = number.saturating_add(1);
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let (word, rest) = line.split_once(' ').unwrap_or((line, ""));
-            match word {
-                "engine" => route.engine.push(rest.to_owned()),
-                "map" => rest.clone_into(&mut route.map),
-                "frametime" => {
-                    route.frametime = rest
-                        .parse()
-                        .ok()
-                        .filter(|t: &f64| *t > 0.0 && *t <= 1.0)
-                        .ok_or(format!("line {at}: frametime is above 0, at most 1"))?;
-                }
-                "cmd" => route.steps.push(Step::Command(rest.to_owned())),
-                "console" => route.steps.push(Step::Console(rest.to_owned())),
-                "move" => route.steps.push(Step::Move(parse_move(rest, at)?)),
-                "frames" => route.steps.push(Step::Frames(
-                    rest.parse()
-                        .ok()
-                        .filter(|n| *n >= 1)
-                        .ok_or(format!("line {at}: frames is a count from 1"))?,
-                )),
-                _ => return Err(format!("line {at}: unknown line")),
-            }
-        }
-        if route.map.is_empty() {
-            return Err("no map line".to_owned());
-        }
-        Ok(route)
-    }
-}
-
-/// `move <pitch> <yaw> <roll> <forward> <side> <up> <buttons> <impulse>`.
-fn parse_move(text: &str, at: usize) -> Result<UserCmd, String> {
-    let words: Vec<&str> = text.split(' ').filter(|w| !w.is_empty()).collect();
-    let bad = || format!("line {at}: move is pitch yaw roll forward side up buttons impulse");
-    let [pitch, yaw, roll, forward, side, up, buttons, impulse] = words[..] else {
-        return Err(bad());
-    };
-    let angle = |w: &str| w.parse::<f32>().map_err(|_| bad());
-    let short = |w: &str| w.parse::<i16>().map(f32::from).map_err(|_| bad());
-    let byte = |w: &str| w.parse::<u8>().map_err(|_| bad());
-    Ok(UserCmd {
-        angles: [angle(pitch)?, angle(yaw)?, angle(roll)?],
-        forward: short(forward)?,
-        side: short(side)?,
-        up: short(up)?,
-        buttons: byte(buttons)?,
-        impulse: byte(impulse)?,
-    })
-}
-
 /// The game as `qs-sim` plays it: the progs and the map from the game directory.
 struct Game {
     /// The engine's command line, the route's `engine` words and the command line's.
@@ -240,11 +157,12 @@ impl Game {
     }
 
     /// Plays `route`, giving `visit` the state after the map loads and after each frame
-    /// (DIFF-16.1); stops when `visit` says to, and returns the frames visited.
+    /// (DIFF-16.1), as a scenario plays (SCN-2.1); stops when `visit` says to, and returns the
+    /// frames visited.
     fn play(
         &self,
         progs: &Progs<'_>,
-        route: &Route,
+        route: &Scenario,
         mut visit: impl FnMut(usize, &State) -> Result<bool, String>,
     ) -> Result<usize, String> {
         let bsp =
@@ -266,50 +184,18 @@ impl Game {
         let mut world =
             World::load(progs, &self.map, &bsp, reader, options).map_err(|e| e.to_string())?;
         world.settle(progs).map_err(|e| e.to_string())?;
-        let mut frame = 0_usize;
-        if !visit(frame, &world.state(progs))? {
-            return Ok(frame);
-        }
-        let mut cmd = UserCmd::default();
-        for step in &route.steps {
-            match step {
-                Step::Move(next) => cmd = *next,
-                Step::Command(text) => world.client_command(text),
-                Step::Console(text) => {
-                    world.console(text);
-                    world.console("\n");
-                }
-                Step::Frames(count) => {
-                    for _ in 0..*count {
-                        frame = frame.saturating_add(1);
-                        // DIFF-16.1, PHYS-10.7: the client connects in frame 1 and answers
-                        // each signon stage in the next frame, as the oracle's client does.
-                        match frame {
-                            1 => world.connect_next_frame(),
-                            2 => world.client_command("prespawn"),
-                            3 => {
-                                world.client_command("name \"player\"\n");
-                                world.client_command("color 0 0\n");
-                                world.client_command("spawn ");
-                            }
-                            4 => world.client_command("begin"),
-                            _ => {}
-                        }
-                        world.set_command(cmd);
-                        world
-                            .frame(progs, route.frametime)
-                            .map_err(|e| format!("frame {frame}: {e}"))?;
-                        drop(world.take_messages());
-                        // An impulse is sent once.
-                        cmd.impulse = 0;
-                        if !visit(frame, &world.state(progs))? {
-                            return Ok(frame);
-                        }
-                    }
-                }
-            }
-        }
-        Ok(frame)
+        // A route's frames are all it has: its assertions and screenshots, if any, are a
+        // scenario's (SCN-1.5, SCN-1.6) and the oracle's harness has none.
+        play(
+            &mut world,
+            progs,
+            route,
+            |moment, frame, world| match moment {
+                Moment::Frame => visit(frame, &world.state(progs)),
+                Moment::Expect(_) | Moment::Screenshot(_) => Ok(true),
+            },
+        )
+        .map_err(|error| error.to_string())
     }
 }
 
