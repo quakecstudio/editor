@@ -6,6 +6,8 @@
 // scoreboards and the centre print (HUD-1 to HUD-3).
 
 // REND-2.2: the peak of `turbsin`, 8 sin(2πi/256), in `WinQuake/gl_warp_sin.h`.
+// REND-13.9: the gamma that leaves the frame as it is.
+const NO_GAMMA: f32 = 1.0;
 const TURB_AMPLITUDE: f32 = 8.0;
 // REND-2.2: `ot*0.125` and `os*0.125` in `EmitWaterPolys`: the coordinate's share of the
 // ripple's angle, in radians per texel.
@@ -72,9 +74,19 @@ struct View {
     params: vec4<f32>,
     // 1 when the sky is a skybox, then its faces' width and height (REND-8.2).
     skybox: vec4<f32>,
-    // What a lightmap texel is multiplied by: 2 with QuakeSpasm's overbright (REND-13.5).
+    // What a lightmap texel is multiplied by: 2 with QuakeSpasm's overbright (REND-13.5), then
+    // the gamma every fragment is raised to, 1 for none (REND-13.9).
     look: vec4<f32>,
 };
+
+// REND-13.9: QuakeSpasm's `GLSLGamma_GammaCorrect`, "`gl_FragColor = vec4(pow(frag.rgb,
+// vec3(GammaValue)), 1.0);`", here on each fragment as it is written.
+fn corrected(colour: vec3<f32>) -> vec3<f32> {
+    if view.look.y == NO_GAMMA {
+        return colour;
+    }
+    return pow(max(colour, vec3<f32>()), vec3<f32>(view.look.y));
+}
 
 // REND-10.4: `GL_EXP2`, `1 - exp (-((density / 64) * z)^2)` of the fragment's distance from
 // the eye, mixing its colour toward the fog's; with no fog the mix is 0.
@@ -130,7 +142,7 @@ fn fragment(input: Out) -> @location(0) vec4<f32> {
     // REND-13.4: "result += texture2D(FullbrightTex, ...)", then "clamp(result, 0.0, 1.0)".
     let glow = textureSample(second, surface_sampler, input.texture).rgb;
     let lit = clamp(colour.rgb * light + glow, vec3<f32>(0.0), vec3<f32>(1.0));
-    return vec4<f32>(fogged(lit, input.world), OPAQUE);
+    return vec4<f32>(corrected(fogged(lit, input.world)), OPAQUE);
 }
 
 // REND-2.2: `(s + 8 sin(t*0.125 + realtime)) / 64`, and t the same way round; REND-9.1:
@@ -142,7 +154,7 @@ fn turbulent(input: Out) -> @location(0) vec4<f32> {
     let s = (st.x + TURB_AMPLITUDE * sin(st.y * TURB_FREQUENCY + time)) / TURB_TILE;
     let t = (st.y + TURB_AMPLITUDE * sin(st.x * TURB_FREQUENCY + time)) / TURB_TILE;
     let colour = textureSample(surface, surface_sampler, vec2<f32>(s, t)).rgb;
-    return vec4<f32>(fogged(colour, input.world), view.params.x);
+    return vec4<f32>(corrected(fogged(colour, input.world)), view.params.x);
 }
 
 // REND-2.3: the solid layer scrolling under the alpha layer, both seen from the eye, or
@@ -152,7 +164,7 @@ fn turbulent(input: Out) -> @location(0) vec4<f32> {
 fn sky(input: Out) -> @location(0) vec4<f32> {
     if (view.skybox.x > NO_SKYBOX) {
         let colour = box_texel(input.world - view.eye_time.xyz);
-        return vec4<f32>(mix(colour, view.fog.rgb, view.params.y), OPAQUE);
+        return vec4<f32>(corrected(mix(colour, view.fog.rgb, view.params.y)), OPAQUE);
     }
     var dir = input.world - view.eye_time.xyz;
     dir.z = dir.z * SKY_FLATTEN;
@@ -162,7 +174,7 @@ fn sky(input: Out) -> @location(0) vec4<f32> {
     let solid = textureSample(surface, surface_sampler, sky_st(flat, time * SKY_SOLID_SPEED));
     let alpha = textureSample(second, surface_sampler, sky_st(flat, time * SKY_ALPHA_SPEED));
     let layers = mix(solid.rgb, alpha.rgb, alpha.a);
-    return vec4<f32>(mix(layers, view.fog.rgb, view.params.y), OPAQUE);
+    return vec4<f32>(corrected(mix(layers, view.fog.rgb, view.params.y)), OPAQUE);
 }
 
 // REND-8.2: `Sky_ProjectPoly`'s face for the direction `v`, by its largest axis, and its
@@ -240,7 +252,7 @@ fn alias_fragment(input: AliasOut) -> @location(0) vec4<f32> {
     // REND-13.4: a skin's glow, black for one with none.
     let glow = textureSample(second, surface_sampler, input.texture).rgb;
     let lit = clamp(colour.rgb * input.shade + glow, vec3<f32>(0.0), vec3<f32>(1.0));
-    return vec4<f32>(fogged(lit, input.world), OPAQUE);
+    return vec4<f32>(corrected(fogged(lit, input.world)), OPAQUE);
 }
 
 struct SpriteIn {
@@ -270,7 +282,7 @@ fn sprite_fragment(input: SpriteOut) -> @location(0) vec4<f32> {
     if colour.a <= ALPHA_TEST {
         discard;
     }
-    return vec4<f32>(fogged(colour.rgb, input.world), OPAQUE);
+    return vec4<f32>(corrected(fogged(colour.rgb, input.world)), OPAQUE);
 }
 
 struct ParticleIn {
@@ -300,7 +312,7 @@ fn particle_vertex(input: ParticleIn) -> ParticleOut {
 @fragment
 fn particle_fragment(input: ParticleOut) -> @location(0) vec4<f32> {
     let texel = textureSample(surface, surface_sampler, input.texture);
-    return vec4<f32>(fogged(input.colour.rgb * texel.rgb, input.world), input.colour.a * texel.a);
+    return vec4<f32>(corrected(fogged(input.colour.rgb * texel.rgb, input.world)), input.colour.a * texel.a);
 }
 
 struct FlatIn {
@@ -335,12 +347,13 @@ fn flat_fragment(input: FlatOut) -> @location(0) vec4<f32> {
     if texel.a <= ALPHA_TEST {
         discard;
     }
-    return texel;
+    return vec4<f32>(corrected(texel.rgb), texel.a);
 }
 
 // A blend over the screen: the view blend (VIEW-4.6) and `Draw_FadeScreen`, with no alpha
 // test.
 @fragment
 fn blend_fragment(input: FlatOut) -> @location(0) vec4<f32> {
-    return textureSample(surface, surface_sampler, input.texture) * input.colour;
+    let texel = textureSample(surface, surface_sampler, input.texture) * input.colour;
+    return vec4<f32>(corrected(texel.rgb), texel.a);
 }

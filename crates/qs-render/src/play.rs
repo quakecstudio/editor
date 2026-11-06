@@ -274,6 +274,8 @@ pub struct Play {
     /// The look a skin's fullbright texels and the view's width are drawn in, the mesh's
     /// (REND-13); set before [`Play::load_models`].
     pub look: Look,
+    /// The `gamma` setting, which QuakeSpasm's look raises every fragment to (REND-13.9).
+    pub gamma: f32,
     /// Each player slot's translated skin (REND-4.13).
     player_skins: PlayerSkins,
     /// The skybox the worldspawn names (REND-8.2), and the box once read.
@@ -330,6 +332,7 @@ impl Play {
             zfix: true,
             md5_models: true,
             look: Look::default(),
+            gamma: 1.0,
             player_skins: PlayerSkins::default(),
             sky,
             skybox: None,
@@ -628,6 +631,7 @@ impl Play {
         view.water_alpha = self.water_alpha;
         view.skyfog = self.skyfog;
         view.screen = screen;
+        view.gamma = self.look.frame_gamma(self.gamma);
         MapCallback {
             view,
             models,

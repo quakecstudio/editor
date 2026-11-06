@@ -909,7 +909,10 @@ impl Viewer {
         let setting = |name: &str| world.setting(name).unwrap_or(0.0);
         let mut view = *self.client.view_settings();
         view.viewsize = setting("viewsize");
-        view.gamma = setting("gamma");
+        // REND-13.9: the frame in QuakeSpasm's look, the blend table in GLQuake's.
+        let gamma = setting("gamma");
+        view.gamma = self.mesh.look.blend_gamma(gamma);
+        self.play.gamma = gamma;
         let volume = setting("volume");
         let music = setting("bgmvolume");
         self.client.set_view_settings(view);
