@@ -97,8 +97,11 @@ The console keeps the last text printed as fixed-width lines in one buffer of
 - **CON-4.2** Enter runs the line without its prompt as a console command, prints it, prompt
   included, then moves the edit line to the next of the 32 (`& 31`), resets the history to it
   and starts it as `]` at position 1.
-- **CON-4.3** Tab replaces the line with the first command, else the first variable, whose
-  name starts with what is typed, then a space, the position after it.
+- **CON-4.3** Tab replaces the line with a command, else a variable, whose name starts with
+  what is typed, then a space, the position after it; nothing typed completes nothing.
+  `Cmd_CompleteCommand` and `Cvar_CompleteVariable` return the first match in their lists,
+  which hold the most recently registered first; this console takes the first by name, our
+  choice, since its commands are qs-sim's console path and not registered one by one.
 - **CON-4.4** Backspace and the left arrow move the position back, not before 1; the text after
   it is not drawn, and is cut off when the line is next drawn (CON-3.4).
 - **CON-4.5** The up arrow steps back through the history, skipping lines with nothing after

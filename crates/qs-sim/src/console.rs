@@ -18,6 +18,7 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::convert::float_to_int;
 
 use crate::host_commands::{Words, atoi, tokenize};
+use crate::settings::SERVER_SETTINGS;
 use crate::world::{HostCommand, RawState as _, World};
 
 /// `VERSION` (`WinQuake/quakedef.h`), which `version` and `status` print.
@@ -29,6 +30,47 @@ const MAX_ALIAS_NAME: usize = 32;
 /// command run with `cmd_source == src_command` (PHYS-13.4).
 const FORWARDED: [&str; 11] = [
     "god", "notarget", "fly", "noclip", "give", "kill", "pause", "say", "say_team", "tell", "ping",
+];
+
+/// Every command [`World::execute_console`] runs, its own and the forwarded ones, in name
+/// order, for completion (CON-4.3).
+const COMMANDS: [&str; 36] = [
+    "alias",
+    "begin",
+    "changelevel",
+    "cmd",
+    "color",
+    "echo",
+    "edict",
+    "edictcount",
+    "edicts",
+    "exec",
+    "fly",
+    "give",
+    "god",
+    "kick",
+    "kill",
+    "load",
+    "map",
+    "name",
+    "noclip",
+    "notarget",
+    "path",
+    "pause",
+    "ping",
+    "prespawn",
+    "profile",
+    "quit",
+    "restart",
+    "save",
+    "say",
+    "say_team",
+    "spawn",
+    "status",
+    "stuffcmds",
+    "tell",
+    "version",
+    "wait",
 ];
 
 /// `MOVETYPE_STEP` (`WinQuake/server.h`), which `edictcount` counts.
@@ -83,6 +125,23 @@ impl World {
             .engine_mut()
             .command_buffer
             .extend_from_slice(text.as_bytes());
+    }
+
+    /// `Cmd_CompleteCommand`, then `Cvar_CompleteVariable`: the first command, else the first
+    /// setting, whose name starts with `partial`, in name order; none for an empty `partial`
+    /// (CON-4.3).
+    #[must_use]
+    pub fn complete(&self, partial: &str) -> Option<String> {
+        if partial.is_empty() {
+            return None;
+        }
+        let mut settings: Vec<&str> = SERVER_SETTINGS.iter().map(|(name, _)| *name).collect();
+        settings.sort_unstable();
+        COMMANDS
+            .iter()
+            .chain(&settings)
+            .find(|name| name.starts_with(partial))
+            .map(|name| (*name).to_owned())
     }
 
     /// The lines the console printed since the last call, each without its line feed; text

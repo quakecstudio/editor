@@ -791,12 +791,37 @@ impl Game {
         json!({})
     }
 
-    /// The console's printed lines since the last report, as `console/line` (BRIDGE-3.1).
-    pub(crate) fn report_console(&mut self) {
-        for line in self.world.take_console_output() {
-            let text = String::from_utf8_lossy(&line).into_owned();
+    /// The console's printed lines since the last report, as `console/line` (BRIDGE-3.1); the
+    /// lines, for the console on the screen.
+    pub(crate) fn report_console(&mut self) -> Vec<Vec<u8>> {
+        let lines = self.world.take_console_output();
+        for line in &lines {
+            let text = String::from_utf8_lossy(line).into_owned();
             self.console_line(&text);
         }
+        lines
+    }
+
+    /// A line typed into the console on the screen run through qs-sim's console path, as
+    /// `Key_Console`'s `Cbuf_AddText` and the next frame's `Cbuf_Execute` run it (CON-4.2); what
+    /// it printed.
+    pub(crate) fn type_console(&mut self, line: &[u8]) -> Vec<Vec<u8>> {
+        self.world.console(&String::from_utf8_lossy(line));
+        self.world.console("\n");
+        if self
+            .with_progs(|game, progs| game.world.execute_console(progs))
+            .is_err()
+        {
+            tracing::warn!("the progs did not read for the console");
+        }
+        self.report_console()
+    }
+
+    /// The command or setting `partial` completes to (CON-4.3).
+    pub(crate) fn complete(&self, partial: &[u8]) -> Option<Vec<u8>> {
+        self.world
+            .complete(&String::from_utf8_lossy(partial))
+            .map(String::into_bytes)
     }
 }
 

@@ -486,3 +486,16 @@ fn a_frame_stopped_for_the_host_keeps_the_random_source() {
         "the next frame draws"
     );
 }
+
+// spec CON-4.3: a command is completed first, then a setting, the first by name; an empty or
+// unknown prefix completes nothing
+#[test]
+fn the_console_completes_commands_then_settings() {
+    let run = connected();
+    assert_eq!(run.world.complete("noc").as_deref(), Some("noclip"));
+    assert_eq!(run.world.complete("edict").as_deref(), Some("edict"));
+    assert_eq!(run.world.complete("sv_g").as_deref(), Some("sv_gravity"));
+    assert_eq!(run.world.complete("s").as_deref(), Some("save"));
+    assert_eq!(run.world.complete(""), None);
+    assert_eq!(run.world.complete("zz"), None);
+}
