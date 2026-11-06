@@ -33,7 +33,7 @@ use crate::mock::{
 };
 use crate::tokenize::MAX_SEPARATORS;
 use crate::userinfo::ClientCommand;
-use crate::{atof, cstring, printf, strconv, strftime};
+use crate::{atof, cstring, printf, strconv, strftime, vkstrings};
 
 /// The builtin dispatch over a mock engine (DIFF-6, DIFF-7).
 ///
@@ -1237,12 +1237,14 @@ impl MockBuiltins {
         context: &mut Context<'_, '_>,
     ) -> Option<Result<(), BuiltinError>> {
         match number {
+            60 => Some(Self::b_unary(context, vkstrings::sin)),
             80 => Some(self.b_infokey(context)),
             81 => Some(self.b_stof(context)),
             93 => Some(self.b_registercvar(context)),
             94 => Some(Self::b_extreme(context, Extreme::Min)),
             95 => Some(Self::b_extreme(context, Extreme::Max)),
             96 => Some(Self::b_bound(context)),
+            97 => Some(Self::b_binary(context, vkstrings::pow)),
             99 => Some(self.b_checkextension(context)),
             110 => Some(self.b_fopen(context)),
             114 => Some(self.b_strlen(context)),
@@ -1253,6 +1255,9 @@ impl MockBuiltins {
             213 => Some(self.b_forceinfokey(context)),
             440 => Some(self.b_clientcommand(context)),
             221 => Some(self.b_strstrofs(context)),
+            222 => Some(self.b_str2chr(context)),
+            223 => Some(self.b_chr2str(context)),
+            225 => Some(self.b_strpad(context)),
             224 => Some(self.b_strconv(context)),
             228 => Some(self.b_strncmp(context, Case::Upper)),
             229 | 230 => Some(self.b_strncmp(context, Case::Lower)),
@@ -1270,6 +1275,11 @@ impl MockBuiltins {
             512 => Some(Self::b_num_for_edict(context)),
             627 => Some(self.b_sprintf(context)),
             232 => Some(read_parm(context, 2).map(|_| ())),
+            245 => Some(Self::b_binary(context, vkstrings::modulo)),
+            353 => Some(Self::b_wasfreed(context)),
+            484 => Some(self.b_strreplace(context)),
+            510 => Some(self.b_string_map(context, vkstrings::uri_escape)),
+            511 => Some(self.b_string_map(context, vkstrings::uri_unescape)),
             233 => Some(read_parm_string(context, &self.engine, 2).map(|_| ())),
             _ => None,
         }
@@ -1710,6 +1720,88 @@ impl MockBuiltins {
             number if number <= maxclients => self.update_info(context, edict, key, value),
             _ => Ok(()),
         }
+    }
+
+    /// A float builtin of one argument: `sin` (BUILTIN-18.31).
+    fn b_unary(context: &mut Context<'_, '_>, f: impl Fn(f32) -> f32) -> Result<(), BuiltinError> {
+        let value = read_parm_float(context, 0)?;
+        write_return_float(context, f(value))
+    }
+
+    /// A float builtin of two arguments: `pow` and `mod` (BUILTIN-18.31).
+    fn b_binary(
+        context: &mut Context<'_, '_>,
+        f: impl Fn(f32, f32) -> f32,
+    ) -> Result<(), BuiltinError> {
+        let a = read_parm_float(context, 0)?;
+        let b = read_parm_float(context, 1)?;
+        write_return_float(context, f(a, b))
+    }
+
+    /// `str2chr(s, ofs)`, vkQuake's `PF_str2chr` (BUILTIN-18.32): `ofs` is read only when the
+    /// call passed it, else 0.
+    fn b_str2chr(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let text = read_parm_string(context, &self.engine, 0)?;
+        let ofs = if context.machine().argc() > 1 {
+            read_parm_int(context, 1)?
+        } else {
+            0
+        };
+        write_return_float(context, vkstrings::str2chr(cstr(&text), ofs))
+    }
+
+    /// `chr2str(c, ...)`, vkQuake's `PF_chr2str` (BUILTIN-18.32): each argument the call
+    /// passed, read as C's `(unsigned int)` of its float.
+    fn b_chr2str(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let argc = u16::try_from(context.machine().argc()).unwrap_or(u16::MAX);
+        let mut codes = Vec::new();
+        for n in 0..argc {
+            codes.push(vkstrings::float_to_unsigned(read_parm_float(context, n)?));
+        }
+        let value = self.engine.strings.make(vkstrings::chr2str(&codes));
+        write_return_string(context, value)
+    }
+
+    /// `strpad(pad, s, ...)`, vkQuake's `PF_strpad` (BUILTIN-18.33): the strings from the
+    /// second joined, as `PF_VarString (1)` joins them.
+    fn b_strpad(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let pad = read_parm_int(context, 0)?;
+        let text = joined_string(context, &self.engine, 1)?;
+        let value = self
+            .engine
+            .strings
+            .make(vkstrings::strpad(pad, cstr(&text)));
+        write_return_string(context, value)
+    }
+
+    /// `strreplace(search, replace, subject)`, vkQuake's `PF_strreplace` (BUILTIN-18.33).
+    fn b_strreplace(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let search = read_parm_string(context, &self.engine, 0)?;
+        let replace = read_parm_string(context, &self.engine, 1)?;
+        let subject = read_parm_string(context, &self.engine, 2)?;
+        let text = vkstrings::strreplace(cstr(&search), cstr(&replace), cstr(&subject));
+        let value = self.engine.strings.make(text);
+        write_return_string(context, value)
+    }
+
+    /// A builtin making a new string of its one string argument: `uri_escape` and
+    /// `uri_unescape` (BUILTIN-18.34).
+    fn b_string_map(
+        &mut self,
+        context: &mut Context<'_, '_>,
+        f: impl Fn(&[u8]) -> Vec<u8>,
+    ) -> Result<(), BuiltinError> {
+        let text = read_parm_string(context, &self.engine, 0)?;
+        let value = self.engine.strings.make(f(cstr(&text)));
+        write_return_string(context, value)
+    }
+
+    /// `wasfreed(e)`, vkQuake's `PF_WasFreed` (BUILTIN-18.35): `e` through `G_EDICT`, then 1
+    /// when it is free and 0 when not.
+    fn b_wasfreed(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let edict = read_parm_edict(context, 0)?;
+        let free = context.machine().edicts().is_free(edict) == Some(true);
+        write_return_float(context, if free { 1.0 } else { 0.0 })
     }
 
     /// `SV_UpdateInfo` of player `edict`'s userinfo (BUILTIN-18.27): a changed value is set and

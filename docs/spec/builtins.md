@@ -1000,6 +1000,34 @@ profile (DIFF-12.19); everything else runs under id's.
   (BUILTIN-18.27); `team` is `t` and "(client->colors & 15) + 1"; `*VIP` and `*spectator` are
   empty and `csqcactive` is `0`. Any other key, and any key on an edict that is no active
   client, is 0, the null string. A text is a new temporary string.
+- **BUILTIN-18.31** `sin(x)` (#60) is `PF_Sin`, "sin (G_FLOAT (OFS_PARM0))", and `pow(a, b)`
+  (#97) `PF_pow`, "pow (G_FLOAT (OFS_PARM0), G_FLOAT (OFS_PARM1))": C's functions of the
+  floats as `double`s, rounded to a float. `mod(a, n)` (#245) is `PF_mod`: 0 when `n` is 0,
+  else "a - (n * (int)(a / n))" in float, `(int)` as BUILTIN-2.1 and BUILTIN-2.2 say.
+- **BUILTIN-18.32** `str2chr(s, ofs)` (#222) is `PF_str2chr`: `ofs` is `(int)` of the second
+  parameter when the call passed one, else 0; a negative `ofs` has the length added; the
+  answer is 0 when `ofs` is not 0 and is negative or past the length, else the byte at `ofs`,
+  unsigned, the terminator at the length. `chr2str(c, ...)` (#223) is `PF_chr2str`: for each
+  argument the call passed, while the text is shorter than `STRINGTEMP_LENGTH - 6` (1018)
+  bytes, the code `u` is C's `(unsigned int)` of the float (on x86-64 the low 32 bits of a
+  64-bit truncation, 0 for a NaN or a value past 64 bits), and the byte is `u` for `0xe000` to
+  `0xe0ff` (its low byte) and for a code below 256 (`qc_isascii`), else `?`; a zero byte ends
+  the text. The text is a new temporary string.
+- **BUILTIN-18.33** `strpad(pad, s, ...)` (#225) is `PF_strpad`: the strings from the second
+  joined (`PF_VarString (1)`), then for a negative `pad` `-pad` less the length spaces, 0 to
+  1023, before the text, and for a positive one the text, cut to 1023 bytes, then `pad` (at
+  most 1023) less the length spaces, never fewer than 0. `strreplace(search, replace,
+  subject)` (#484) is `PF_strreplace`: for an empty `search`, `subject`; else `subject` from
+  the left, each place `search` starts replaced by `replace` and every other byte copied, while
+  the result is shorter than `STRINGTEMP_LENGTH - replacelen - 2` bytes.
+- **BUILTIN-18.34** `uri_escape(s)` (#510) is `PF_uri_escape`: letters, digits, `.`, `-` and `_`
+  copied and any other byte written as `%` and two upper-case hexadecimal digits, while the
+  result is shorter than 1020 bytes. `uri_unescape(s)` (#511) is `PF_uri_unescape`: a `%` and
+  two hexadecimal digits of either case is the byte they name, and any other byte, a `%`
+  without two digits among them, is copied, while the result is shorter than 1022 bytes; a
+  `%00` ends the text.
+- **BUILTIN-18.35** `wasfreed(e)` (#353) is `PF_WasFreed`: `e` through `G_EDICT` (BUILTIN-2.7),
+  then 1 when the edict is free and 0 when not.
 
 ## Test vectors
 
