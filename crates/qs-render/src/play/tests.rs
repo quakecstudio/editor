@@ -380,7 +380,7 @@ fn a_frame_carries_the_lights_the_particles_and_the_world() {
         ..Scene::default()
     };
     let callback = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
-    assert!(callback.lightmap.is_some());
+    assert!(!callback.lightmap.is_empty());
     assert_eq!(callback.particles.len(), 3);
     assert_eq!(callback.placements.len(), 1);
     assert!(callback.placements[0].is_some());
@@ -389,9 +389,9 @@ fn a_frame_carries_the_lights_the_particles_and_the_world() {
     assert_eq!(callback.view.screen, [640.0, 480.0]);
     assert_eq!(callback.view.fog.density, 0.0);
     let again = play.frame(&Scene::default(), &Hud::default(), &bsp, &mut mesh, 1.0);
-    assert!(again.lightmap.is_some(), "the light left");
+    assert!(!again.lightmap.is_empty(), "the light left");
     let still = play.frame(&Scene::default(), &Hud::default(), &bsp, &mut mesh, 1.0);
-    assert!(still.lightmap.is_none());
+    assert!(still.lightmap.is_empty());
 }
 
 // spec REND-10.1: no fog without the key; `fog` read as density then red, green, blue, a

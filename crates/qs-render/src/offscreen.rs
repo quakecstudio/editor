@@ -46,6 +46,17 @@ pub struct Pixels {
 pub struct Offscreen {
     state: RenderState,
     depth: wgpu::TextureFormat,
+    /// The colour and depth targets of the last size drawn, kept for the next frame of that
+    /// size, as a swapchain keeps its images.
+    targets: Option<Targets>,
+}
+
+/// One size's colour and depth targets, and their views.
+struct Targets {
+    size: [u32; 2],
+    target: wgpu::Texture,
+    target_view: wgpu::TextureView,
+    depth_view: wgpu::TextureView,
 }
 
 impl std::fmt::Debug for Offscreen {
@@ -85,14 +96,22 @@ impl Offscreen {
             options,
         ))
         .map_err(|error| OffscreenError::Device(error.to_string()))?;
-        Ok(Self { state, depth })
+        Ok(Self {
+            state,
+            depth,
+            targets: None,
+        })
     }
 
     /// Draws with a render state made elsewhere, whose egui renderer was made with a depth
     /// buffer of `depth`.
     #[must_use]
     pub const fn from_state(state: RenderState, depth: wgpu::TextureFormat) -> Self {
-        Self { state, depth }
+        Self {
+            state,
+            depth,
+            targets: None,
+        }
     }
 
     /// The device, its queue, the target format and egui's renderer, whose callback resources
@@ -134,8 +153,89 @@ impl Offscreen {
         primitives: &[ClippedPrimitive],
         screen: &ScreenDescriptor,
     ) -> Result<Pixels, OffscreenError> {
-        let state = &self.state;
         let [width, height] = screen.size_in_pixels;
+        let target = self.draw(primitives, screen);
+        self.read_back(&target, width, height)
+    }
+
+    /// Draws `primitives` as [`Offscreen::render`] does and submits the work, not waiting for
+    /// the GPU: a run of frames drawn back to back, finished by [`Offscreen::finish`].
+    pub fn submit(&mut self, primitives: &[ClippedPrimitive], screen: &ScreenDescriptor) {
+        drop(self.draw(primitives, screen));
+    }
+
+    /// Waits for the GPU to finish every frame submitted, as `glFinish ()` does.
+    ///
+    /// # Errors
+    ///
+    /// [`OffscreenError::Poll`] when the GPU does not finish.
+    pub fn finish(&self) -> Result<(), OffscreenError> {
+        self.state
+            .device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map(drop)
+            .map_err(|error| OffscreenError::Poll(error.to_string()))
+    }
+
+    /// The targets for a `width` by `height` frame, the colour texture and the two views: the
+    /// last ones when they are that size, else new ones.
+    fn targets(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> (wgpu::Texture, wgpu::TextureView, wgpu::TextureView) {
+        let targets = match self.targets.take() {
+            Some(targets) if targets.size == [width, height] => targets,
+            _ => {
+                let state = &self.state;
+                let extent = wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                };
+                let texture = |format, usage| {
+                    state.device.create_texture(&wgpu::TextureDescriptor {
+                        label: None,
+                        size: extent,
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format,
+                        usage,
+                        view_formats: &[],
+                    })
+                };
+                let target = texture(
+                    state.target_format,
+                    wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                );
+                let depth = texture(self.depth, wgpu::TextureUsages::RENDER_ATTACHMENT);
+                Targets {
+                    size: [width, height],
+                    target_view: target.create_view(&Default::default()),
+                    depth_view: depth.create_view(&Default::default()),
+                    target,
+                }
+            }
+        };
+        let handles = (
+            targets.target.clone(),
+            targets.target_view.clone(),
+            targets.depth_view.clone(),
+        );
+        self.targets = Some(targets);
+        handles
+    }
+
+    /// Draws `primitives` into a new target of `screen`'s size and submits the work.
+    fn draw(
+        &mut self,
+        primitives: &[ClippedPrimitive],
+        screen: &ScreenDescriptor,
+    ) -> wgpu::Texture {
+        let [width, height] = screen.size_in_pixels;
+        let (target, target_view, depth_view) = self.targets(width, height);
+        let state = &self.state;
         let mut encoder = state.device.create_command_encoder(&Default::default());
         let mut renderer = state.renderer.write();
         let user = renderer.update_buffers(
@@ -145,30 +245,6 @@ impl Offscreen {
             primitives,
             screen,
         );
-        let extent = wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        };
-        let texture = |format, usage| {
-            state.device.create_texture(&wgpu::TextureDescriptor {
-                label: None,
-                size: extent,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage,
-                view_formats: &[],
-            })
-        };
-        let target = texture(
-            state.target_format,
-            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        );
-        let depth = texture(self.depth, wgpu::TextureUsages::RENDER_ATTACHMENT);
-        let target_view = target.create_view(&Default::default());
-        let depth_view = depth.create_view(&Default::default());
         {
             let mut pass = encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -199,7 +275,7 @@ impl Offscreen {
         state
             .queue
             .submit(user.into_iter().chain([encoder.finish()]));
-        self.read_back(&target, width, height)
+        target
     }
 
     /// `texture`'s pixels, its rows copied out of wgpu's padded rows.

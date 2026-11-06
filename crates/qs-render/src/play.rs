@@ -452,9 +452,7 @@ impl Play {
             },
             scene.time,
         );
-        let lightmap = mesh
-            .relight_with(&styles, &scene.lights)
-            .then(|| mesh.lightmap.clone());
+        let lightmap = mesh.relight_with(&styles, &scene.lights);
         let refdef = &scene.view;
         let (forward, right, up) = angle_vectors(refdef.angles);
         let eye = Eye {

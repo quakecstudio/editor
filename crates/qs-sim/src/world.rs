@@ -676,6 +676,13 @@ impl World {
         Some(([x + a, y + b, z + c], vector("v_angle")))
     }
 
+    /// The wall time the frames' runs of QuakeC have taken since the world loaded, the
+    /// QuakeC time per frame of the benchmarks (P3-29, ENG-17); the simulation never reads it.
+    #[must_use]
+    pub fn qc_time(&self) -> std::time::Duration {
+        self.builtins.qc_time
+    }
+
     /// The server's time in seconds, `sv.time`.
     #[must_use]
     pub fn time(&self) -> f64 {

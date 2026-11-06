@@ -39,6 +39,36 @@ impl Drawer {
 
     /// `callback`, the view of one frame, drawn at `size` pixels and read back.
     pub(crate) fn draw(&mut self, callback: MapCallback, size: [u32; 2]) -> Result<Frame, String> {
+        let (primitives, screen) = self.layout(callback, size);
+        let pixels = self
+            .offscreen
+            .render(&primitives, &screen)
+            .map_err(|error| error.to_string())?;
+        Ok(Frame {
+            width: pixels.width,
+            height: pixels.height,
+            rgba: pixels.rgba,
+        })
+    }
+
+    /// `callback`, the view of one frame, laid out, drawn at `size` pixels and submitted, not
+    /// waited for; [`Drawer::finish`] waits for every frame submitted.
+    pub(crate) fn submit(&mut self, callback: MapCallback, size: [u32; 2]) {
+        let (primitives, screen) = self.layout(callback, size);
+        self.offscreen.submit(&primitives, &screen);
+    }
+
+    /// Waits for the GPU to finish the frames submitted.
+    pub(crate) fn finish(&self) -> Result<(), String> {
+        self.offscreen.finish().map_err(|error| error.to_string())
+    }
+
+    /// `callback` laid out over a screen of `size` pixels: egui's primitives and the screen.
+    fn layout(
+        &mut self,
+        callback: MapCallback,
+        size: [u32; 2],
+    ) -> (Vec<egui::ClippedPrimitive>, ScreenDescriptor) {
         let [width, height] = size.map(|n| n.max(1));
         let points = |n: u32| f32::from(u16::try_from(n).unwrap_or(u16::MAX));
         let input = egui::RawInput {
@@ -62,15 +92,7 @@ impl Drawer {
             pixels_per_point: output.pixels_per_point,
             size_in_pixels: [width, height],
         };
-        let pixels = self
-            .offscreen
-            .render(&primitives, &screen)
-            .map_err(|error| error.to_string())?;
-        Ok(Frame {
-            width: pixels.width,
-            height: pixels.height,
-            rgba: pixels.rgba,
-        })
+        (primitives, screen)
     }
 }
 

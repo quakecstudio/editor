@@ -181,11 +181,11 @@ pub(crate) fn main(root: &Path, options: &Args) -> Result<bool, String> {
     let criterion_home = root.join(CRITERION_HOME);
     let id1 = fetch_id1(root)?;
     run_benchmarks(root, &criterion_home, &id1)?;
-    let measured = std::env::var_os(GAME_DIR).is_some();
+    let set = |variable: &str| std::env::var_os(variable).is_some();
     let mut results = Vec::new();
     for budget in &budgets {
         let sample = read_sample(&criterion_home, &budget.name)?;
-        results.push(summarise(&judged_here(budget, measured), &sample)?);
+        results.push(summarise(&judged_here(budget, set), &sample)?);
     }
     let mut history = load_history(&history_path)?;
     let host = host();
@@ -329,9 +329,13 @@ fn run_benchmarks(root: &Path, criterion_home: &Path, id1: &Path) -> Result<(), 
         .env("CRITERION_HOME", criterion_home)
         .env("QS_BENCH_ID1", id1)
         .current_dir(root);
-    // save_to_game plays in the windowed preview host when QS_BENCH_GAME names a game: the
-    // host is built as the app ships it and named to the benchmark.
-    if std::env::var_os("QS_BENCH_GAME").is_some() {
+    // save_to_game and the routes play in the preview host when QS_BENCH_GAME or
+    // QS_BENCH_RERELEASE names a game: the host is built as the app ships it and named to the
+    // benchmarks.
+    if [GAME_DIR, RERELEASE_DIR]
+        .iter()
+        .any(|variable| std::env::var_os(variable).is_some())
+    {
         let built = Command::new(&cargo)
             .args([
                 "build",
@@ -469,18 +473,35 @@ enum Machine {
     Other,
 }
 
-/// The variable naming the game `save_to_game` plays in the windowed preview host.
+/// The variable naming the game root holding `id1` that `save_to_game` and the e1m1 route
+/// play in the preview host.
 const GAME_DIR: &str = "QS_BENCH_GAME";
-/// The budgets measured only with a game and a display, which the CI runners have not: with no
-/// [`GAME_DIR`] their benchmark is a placeholder.
-const GAME_BUDGETS: [&str; 1] = ["save_to_game"];
+/// The variable naming the rerelease's game root, holding `id1` and `mg1`, for the mg1 route.
+const RERELEASE_DIR: &str = "QS_BENCH_RERELEASE";
+/// The budgets measured only with a game, which the CI runners have not, and the variable
+/// naming it: with that unset their benchmark is a placeholder.
+const GAME_BUDGETS: [(&str, &str); 9] = [
+    ("save_to_game", GAME_DIR),
+    ("frame_e1m1", GAME_DIR),
+    ("server_frame_e1m1", GAME_DIR),
+    ("quakec_e1m1", GAME_DIR),
+    ("map_load_e1m1", GAME_DIR),
+    ("frame_mg1", RERELEASE_DIR),
+    ("server_frame_mg1", RERELEASE_DIR),
+    ("quakec_mg1", RERELEASE_DIR),
+    ("map_load_mg1", RERELEASE_DIR),
+];
 
-/// `budget` as this run judges it: a budget that needs a game is pending when none is set,
-/// since its benchmark measured a placeholder. A reference machine always sets one: the
-/// benchmark fails there without it.
-fn judged_here(budget: &Budget, game: bool) -> Budget {
+/// `budget` as this run judges it: a budget that needs a game is pending when `set` says its
+/// variable is unset, since its benchmark measured a placeholder. A reference machine always
+/// sets them: the benchmarks fail there without them.
+fn judged_here(budget: &Budget, set: impl Fn(&str) -> bool) -> Budget {
     let mut budget = budget.clone();
-    if !game && GAME_BUDGETS.contains(&budget.name.as_str()) {
+    let needs = GAME_BUDGETS
+        .iter()
+        .find(|(name, _)| *name == budget.name)
+        .map(|(_, variable)| *variable);
+    if needs.is_some_and(|variable| !set(variable)) {
         budget.status = Status::Pending;
     }
     budget

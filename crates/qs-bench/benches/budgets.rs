@@ -281,6 +281,139 @@ fn save_to_game(group: &mut BenchmarkGroup<'_, WallTime>) {
     preview.stop();
 }
 
+/// The variable naming the rerelease's game root, holding `id1` and `mg1`, whose hub the
+/// `*_mg1` benchmarks play; with none they are placeholders.
+const RERELEASE_DIR: &str = "QS_BENCH_RERELEASE";
+
+/// One route of the game benchmarks (P3-29, ENG-17): a map played in the preview host's
+/// `--timerefresh` mode, each measurement its own benchmark.
+struct Route {
+    /// The variable naming the game root.
+    root: &'static str,
+    /// The mod directory, if any.
+    game: Option<&'static str>,
+    /// The map.
+    map: &'static str,
+    /// The eye `timerefresh` turns at: in the map's first room, the player's height.
+    eye: [f32; 3],
+    /// Each benchmark's name: the frame, the server frame, its QuakeC and the map load.
+    names: [&'static str; 4],
+}
+
+/// The routes: id1's e1m1 and the rerelease's mg1 hub, from their starts.
+const ROUTES: [Route; 2] = [
+    Route {
+        root: GAME_DIR,
+        game: None,
+        map: "e1m1",
+        eye: [480.0, -352.0, 110.0],
+        names: [
+            "frame_e1m1",
+            "server_frame_e1m1",
+            "quakec_e1m1",
+            "map_load_e1m1",
+        ],
+    },
+    Route {
+        root: RERELEASE_DIR,
+        game: Some("mg1"),
+        map: "hub",
+        eye: [0.0, -1920.0, 46.0],
+        names: [
+            "frame_mg1",
+            "server_frame_mg1",
+            "quakec_mg1",
+            "map_load_mg1",
+        ],
+    },
+];
+
+/// What the preview host's `--timerefresh` measured, in seconds.
+#[derive(serde::Deserialize)]
+struct Timerefresh {
+    load: f64,
+    server_frame: Vec<f64>,
+    quakec: Vec<f64>,
+    frame: Vec<f64>,
+}
+
+/// `values`, measured by the preview host, as the samples of benchmark `name`: one sample a
+/// value, each iteration of it the value, so the row's statistic is the values' own (P3-29).
+fn recorded(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, values: &[f64]) {
+    assert!(!values.is_empty(), "the preview host measured no {name}");
+    group.sample_size(values.len().max(10));
+    let mut next = values.iter().cycle();
+    group.bench_function(name, |bencher| {
+        bencher.iter_custom(|iterations| {
+            let value = *next.next().expect("a cycle of values never ends");
+            // Each iteration takes exactly the value, so criterion's per-iteration time is it.
+            // Replaying takes no time, so criterion's warm-up asks for many iterations: the
+            // product is a double, not a Duration's integer nanoseconds.
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "bench code: an iteration count past 2^53 rounds, far below a sample's resolution"
+            )]
+            let iterations = iterations as f64;
+            Duration::from_secs_f64(value * iterations)
+        });
+    });
+    group.sample_size(10);
+}
+
+/// The frame time, server-frame time, QuakeC time per frame and map load of each route
+/// (P3-29, ENG-17): the release preview host run once with `--timerefresh`, which loads the
+/// map, times a second of server frames and their QuakeC, then draws id's `timerefresh` 16
+/// times offscreen, each pass finished on the GPU and its mean frame one sample. Without the
+/// route's game root its benchmarks are placeholders.
+fn routes(group: &mut BenchmarkGroup<'_, WallTime>) {
+    for route in &ROUTES {
+        let Some(root) = std::env::var_os(route.root).map(PathBuf::from) else {
+            let host = std::env::var("QS_BENCH_HOST").unwrap_or_default();
+            assert!(
+                !host.starts_with("ref-"),
+                "{host} is a reference machine: set {} for {}",
+                route.root,
+                route.map
+            );
+            for name in route.names {
+                placeholder(group, name);
+            }
+            continue;
+        };
+        let host = std::env::var_os(HOST).map_or_else(
+            || {
+                panic!(
+                    "{HOST} is not set: cargo xtask bench sets it with {}",
+                    route.root
+                )
+            },
+            PathBuf::from,
+        );
+        let mut command = std::process::Command::new(host);
+        command.arg("--basedir").arg(root);
+        if let Some(game) = route.game {
+            command.args(["--game", game]);
+        }
+        command.arg(route.map).arg("--timerefresh");
+        command.args(route.eye.map(|n| n.to_string()));
+        let output = command.output().expect("the preview host runs");
+        assert!(
+            output.status.success(),
+            "timerefresh on {} failed: {}",
+            route.map,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).expect("the report is UTF-8");
+        let json = stdout.lines().nth(1).expect("the report has its JSON line");
+        let measured: Timerefresh = serde_json::from_str(json).expect("the JSON line reads");
+        let [frame, server, quakec, load] = route.names;
+        recorded(group, frame, &measured.frame);
+        recorded(group, server, &measured.server_frame);
+        recorded(group, quakec, &measured.quakec);
+        recorded(group, load, &[measured.load]);
+    }
+}
+
 /// The frame that checks the project again once typing pauses (P2-166): one character typed,
 /// then the frame after the editor's settle time, which sends the text to the project and
 /// checks it, timed alone. The input time is set, not waited for.
@@ -318,6 +451,7 @@ fn budgets(criterion: &mut Criterion) {
     check_after_typing(&mut group);
     id1_recompile(&mut group);
     save_to_game(&mut group);
+    routes(&mut group);
     group.finish();
 }
 
