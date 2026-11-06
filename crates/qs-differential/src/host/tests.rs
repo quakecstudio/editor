@@ -421,6 +421,28 @@ fn a_command_without_the_parser_runs_nothing() {
     assert_eq!(with.trace.records, without.trace.records);
 }
 
+// spec DIFF-2.4: a cvar line for one of the four settings replaces its text, a line for any
+// other name makes a setting of that name, and a later line for a name replaces an earlier one
+#[test]
+fn cvar_lines_make_and_replace_settings() {
+    let mut scn = scenario("test");
+    scn.cvars = [("skill", "3"), ("scratch3", "2"), ("scratch3", "4")]
+        .iter()
+        .map(|&(name, text)| Cvar {
+            name: name.as_bytes().to_vec(),
+            text: text.as_bytes().to_vec(),
+        })
+        .collect();
+    let bytes = progs_with_spawn("worldspawn");
+    let progs = qc_progs::Progs::read(&bytes).expect("a progs");
+    let host = super::Host::new(&scn, &progs).expect("a host");
+    let cvars = &host.builtins.engine().cvars;
+    assert_eq!(cvars.text("skill"), Some("3"));
+    assert_eq!(cvars.text("scratch3"), Some("4"));
+    assert_eq!(cvars.text("deathmatch"), Some("0"));
+    assert_eq!(cvars.text("other"), None);
+}
+
 // spec DIFF-3.1: a progs that cannot back an edict store ends the scenario before the trace.
 #[test]
 fn a_progs_refused_writes_no_trace() {
