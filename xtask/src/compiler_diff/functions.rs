@@ -10,7 +10,9 @@
 //! and `qc-codegen` (DIFF-15.3), and the `compiler-diff` binary calls the group's functions
 //! alone, adding the statements they executed to a list by function and offset (DIFF-15.9).
 //! The statements of the whole codebase that list reaches are its coverage (DIFF-15.5), held to
-//! the bar of DIFF-15.6.
+//! the bar of DIFF-15.6. `--shard k/n` runs every n-th group from the k-th, so a codebase too
+//! big for one CI job's six hours runs as several, and `--merge` holds the shards' lists together
+//! to the bar (DIFF-15.10).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -27,6 +29,7 @@ use super::{FTEQCC_LIMIT, engine, run_binary, write, write_progs};
 use crate::differential::asset_root;
 use crate::oracles::codegen::{self, Profile};
 use crate::oracles::{self, Oracles, rerelease};
+use crate::readiness::Shard;
 
 /// How many functions one cut program holds and calls (DIFF-15.7, DIFF-15.9).
 const GROUP: usize = 64;
@@ -57,8 +60,9 @@ struct Body {
     end: usize,
 }
 
-/// Runs the per-function differential over each codebase `ids` names (DIFF-15).
-pub(super) fn run(root: &Path, ids: &[String]) -> Result<bool, String> {
+/// Runs the per-function differential over each codebase `ids` names (DIFF-15), or `shard`'s
+/// groups of each (DIFF-15.10).
+pub(super) fn run(root: &Path, ids: &[String], shard: Option<Shard>) -> Result<bool, String> {
     if ids.is_empty() {
         return Err("--functions takes one or more codebases".to_owned());
     }
@@ -71,9 +75,52 @@ pub(super) fn run(root: &Path, ids: &[String]) -> Result<bool, String> {
     let codebases = asset_root()?.join("codebase");
     let mut ok = true;
     for id in ids {
-        ok &= codebase(root, &oracles, &codebases, id)?;
+        ok &= codebase(root, &oracles, &codebases, id, shard)?;
     }
     Ok(ok)
+}
+
+/// Holds the statements the shards' `executed` files of codebase `ids`' one codebase list,
+/// together, to its bar (DIFF-15.10); true when they reach it.
+pub(super) fn merge(root: &Path, ids: &[String], executed: &[PathBuf]) -> Result<bool, String> {
+    let [id] = ids else {
+        return Err("--merge takes one codebase".to_owned());
+    };
+    let oracles = oracles::build(root)?;
+    let codebases = asset_root()?.join("codebase");
+    let work = root
+        .join("target")
+        .join("compiler-diff")
+        .join("functions")
+        .join(format!("{id}-merged"));
+    let [whole_path, _] = write_progs(&oracles, &codebases, id, &work)?;
+    let whole = fs::read(&whole_path).map_err(|e| format!("{}: {e}", whole_path.display()))?;
+    let progs = Progs::read(&whole).map_err(|e| format!("{id}: {e}"))?;
+    let mut text = String::new();
+    for file in executed {
+        text.push_str(&fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?);
+        text.push('\n');
+    }
+    let (covered, total) = coverage(&progs, &text);
+    let share = share(covered, total);
+    let passed = share >= bar(id);
+    eprintln!(
+        "{}  {id}: {} shards together, {covered} of {total} statements ({:.1}%, the bar {:.1}%)",
+        if passed { "ok  " } else { "FAIL" },
+        executed.len(),
+        share * 100.0,
+        bar(id) * 100.0
+    );
+    Ok(passed)
+}
+
+/// `covered` of `total` as a fraction, 0 for none.
+fn share(covered: u32, total: u32) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        f64::from(covered) / f64::from(total)
+    }
 }
 
 /// The profile `qc-codegen` compiles codebase `id` in, as the pinned FTEQCC reads it.
@@ -85,7 +132,13 @@ fn profile(id: &str) -> Profile {
 
 /// The per-function differential of codebase `id`: every function cut, compiled and compared,
 /// and the coverage of the runs together; true when it passes (DIFF-15.6).
-fn codebase(root: &Path, oracles: &Oracles, codebases: &Path, id: &str) -> Result<bool, String> {
+fn codebase(
+    root: &Path,
+    oracles: &Oracles,
+    codebases: &Path,
+    id: &str,
+    shard: Option<Shard>,
+) -> Result<bool, String> {
     let work = root
         .join("target")
         .join("compiler-diff")
@@ -114,7 +167,13 @@ fn codebase(root: &Path, oracles: &Oracles, codebases: &Path, id: &str) -> Resul
     }
     let executed = work.join("executed.tsv");
     let mut failures = Vec::new();
-    let groups: Vec<&[&[u8]]> = functions.chunks(GROUP).collect();
+    let all = functions.chunks(GROUP).count();
+    let groups: Vec<&[&[u8]]> = functions
+        .chunks(GROUP)
+        .enumerate()
+        .filter(|(n, _)| shard.is_none_or(|shard| shard.holds(*n)))
+        .map(|(_, group)| group)
+        .collect();
     for (batch, names) in groups.chunks(batch()).enumerate() {
         let dir = work.join(format!("batch-{batch}"));
         let mut pairs = String::new();
@@ -174,23 +233,21 @@ fn codebase(root: &Path, oracles: &Oracles, codebases: &Path, id: &str) -> Resul
     }
     let text = fs::read_to_string(&executed).unwrap_or_default();
     let (covered, total) = coverage(&progs, &text);
-    let share = if total == 0 {
-        0.0
-    } else {
-        f64::from(covered) / f64::from(total)
-    };
+    let share = share(covered, total);
     if !failures.is_empty() {
         eprintln!("{id}: {} failures, each printed above", failures.len());
     }
-    let passed = failures.is_empty() && share >= bar(id);
+    // DIFF-15.10: a shard's coverage is a part; the bar is held to the shards together.
+    let passed = failures.is_empty() && (shard.is_some() || share >= bar(id));
+    let held = match shard {
+        Some(shard) => format!("shard {shard}, the bar left to --merge"),
+        None => format!("the bar {:.1}%", bar(id) * 100.0),
+    };
     eprintln!(
-        "{}  {id}: {} functions run in {} cuts, {covered} of {total} statements ({:.1}%, the bar \
-         {:.1}%)",
+        "{}  {id}: {} cuts of {all} run, {covered} of {total} statements ({:.1}%, {held})",
         if passed { "ok  " } else { "FAIL" },
-        functions.len(),
         groups.len(),
         share * 100.0,
-        bar(id) * 100.0
     );
     Ok(passed)
 }

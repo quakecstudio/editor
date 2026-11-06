@@ -1126,6 +1126,13 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   say and a divergence the fixed FTEQCC agrees with as DIFF-14.5 says. The xtask compiles as
   many groups' programs at once as the machine runs threads, and passes them to one run of the
   binary.
+- **DIFF-15.10** With `--shard k/n`, `--functions` runs only the groups whose place in the
+  list of DIFF-15.7, counting from 0, leaves `k` over when divided by `n`, and passes when no
+  cut failed and no run diverged, its coverage not held to the bar. `--merge <executed>...`
+  with `--functions` and one codebase holds the statements its files list, together, to
+  DIFF-15.6's bar, as the coverage of one run over every group (DIFF-15.5): a statement two
+  shards reached counts once. The nightly runs a codebase whose run does not finish within one
+  CI job's six hours as shards whose lists are merged.
 ## Test vectors
 
 ### Scenario numbers

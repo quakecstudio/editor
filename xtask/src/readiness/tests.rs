@@ -1281,6 +1281,21 @@ fn a_shard_is_k_of_n_with_k_below_n() {
     assert!(Shard::new(0, 0).unwrap_err().contains("at least 1"));
 }
 
+// No spec statement: every item of a list falls to exactly one shard, every n-th from the k-th
+#[test]
+fn each_item_falls_to_one_shard() {
+    let shards: Vec<Shard> = (0..3).map(|k| Shard::new(k, 3).unwrap()).collect();
+    for item in 0..10 {
+        let holding: Vec<u64> = shards
+            .iter()
+            .filter(|shard| shard.holds(item))
+            .map(|shard| shard.index())
+            .collect();
+        assert_eq!(holding, [u64::try_from(item % 3).unwrap()], "item {item}");
+    }
+    assert!(Shard::new(0, 1).unwrap().holds(usize::MAX));
+}
+
 #[test]
 fn a_shard_is_written_in_json_as_its_text() {
     let shard = Shard::new(2, 8).unwrap();
