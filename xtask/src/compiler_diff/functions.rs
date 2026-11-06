@@ -164,6 +164,8 @@ fn codebase(root: &Path, oracles: &Oracles, codebases: &Path, id: &str) -> Resul
                     "fteqcc",
                     "--engine",
                     engine(id),
+                    "--codebase",
+                    id,
                 ],
             )?,
             batch,
@@ -273,6 +275,8 @@ fn setup_functions(root: &Path, whole: &Path, id: &str) -> Result<Vec<Vec<u8>>, 
             "--",
             "--engine",
             engine(id),
+            "--codebase",
+            id,
             "--setup-functions",
         ])
         .arg(whole)
