@@ -6,6 +6,11 @@ enum qs_engine::run_root::Flavour
 enum qs_engine::run_root::RunRootError
 field qs_engine::client::BridgeEvent.method
 field qs_engine::client::BridgeEvent.params
+field qs_engine::client::WindowPlacement.above
+field qs_engine::client::WindowPlacement.height
+field qs_engine::client::WindowPlacement.width
+field qs_engine::client::WindowPlacement.x
+field qs_engine::client::WindowPlacement.y
 field qs_engine::launch::LaunchSpec.extra
 field qs_engine::launch::LaunchSpec.host
 field qs_engine::launch::LaunchSpec.map
@@ -27,6 +32,7 @@ fn qs_engine::client::Client::offers
 fn qs_engine::client::Client::over
 fn qs_engine::client::Client::pause
 fn qs_engine::client::Client::pick
+fn qs_engine::client::Client::place_window
 fn qs_engine::client::Client::poll_events
 fn qs_engine::client::Client::reload
 fn qs_engine::client::Client::remove
@@ -55,6 +61,7 @@ impl qs_engine::run_root::RunRootError: fmt::Display
 impl qs_engine::run_root::RunRootError: std::error::Error
 struct qs_engine::client::BridgeEvent
 struct qs_engine::client::Client
+struct qs_engine::client::WindowPlacement
 struct qs_engine::launch::LaunchSpec
 struct qs_engine::launch::Running
 struct qs_engine::run_root::RunRoot
@@ -69,6 +76,7 @@ use qs_engine::RunRoot = run_root::RunRoot
 use qs_engine::RunRootError = run_root::RunRootError
 use qs_engine::Running = launch::Running
 use qs_engine::StepKind = client::StepKind
+use qs_engine::WindowPlacement = client::WindowPlacement
 use qs_engine::host_command = launch::host_command
 use qs_engine::launch = launch::launch
 use qs_engine::locate_host = launch::locate_host

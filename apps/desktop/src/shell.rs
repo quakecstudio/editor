@@ -29,12 +29,14 @@ use qs_layout::{
 };
 use qs_render::{Camera, MapMesh};
 use qs_workbench::debug::Location;
+use qs_workbench::dock::DockFrame;
 use qs_workbench::{
-    AtParams, CLOSE_FILE, COMPLETE, Candidate, CloseFileParams, Config, DEFINITION, EntryKind,
-    FsLoader, HOVER, HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT, OpenFile,
-    OpenFileParams, OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState, Preview,
-    PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RecentProjects,
-    RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
+    AtParams, CLOSE_FILE, COMPLETE, Candidate, CloseFileParams, Config, DEFINITION, DOCK,
+    EntryKind, FsLoader, HOVER, HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT,
+    OpenFile, OpenFileParams, OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState,
+    Preview, PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME,
+    RecentProjects, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE,
+    UpdateFileParams, Workbench,
 };
 use qs_workbench::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, STEP_BY, StepByParams, UNWATCH,
@@ -169,6 +171,8 @@ pub struct Shell {
     parked: BTreeMap<PathBuf, Editor>,
     /// The projects opened most recently, and the file they are kept in.
     recent: (RecentProjects, Option<PathBuf>),
+    /// The IDE's window as last given to `preview.dock`.
+    dock_frame: Option<DockFrame>,
     /// The project open in the last frame, to see when another opens.
     seen_root: Option<PathBuf>,
     /// Why the last project asked for did not open.
@@ -223,6 +227,7 @@ impl Shell {
             parked: BTreeMap::new(),
             recent: (RecentProjects::default(), None),
             seen_root: None,
+            dock_frame: None,
             project_error: None,
         })
     }
@@ -343,6 +348,30 @@ impl Shell {
                 self.save_recent();
             }
         }
+    }
+
+    /// Tells the preview where the IDE's window is and whether it has the focus, through
+    /// `preview.dock`, when that changed: the game's window follows it (ENG-9).
+    fn dock(&mut self, ui: &Ui) {
+        let frame = ui.input(|input| {
+            let viewport = input.viewport();
+            viewport.outer_rect.map(|outer| DockFrame {
+                x: outer.left(),
+                y: outer.top(),
+                width: outer.width(),
+                height: outer.height(),
+                screen_width: viewport.monitor_size.map(|size| size.x),
+                focused: viewport.focused.unwrap_or(true),
+            })
+        });
+        let Some(frame) = frame else {
+            return;
+        };
+        if self.dock_frame == Some(frame) {
+            return;
+        }
+        self.dock_frame = Some(frame);
+        let _: Option<PreviewStatus> = self.run(DOCK, &frame);
     }
 
     /// Puts the project just opened first in the recent projects.
@@ -477,6 +506,7 @@ impl Shell {
         }
         self.follow_stop();
         self.note_project();
+        self.dock(ui);
         if self.session.context().preview.state() != PlayState::Stopped {
             // The host's events are read each frame; a running game asks for frames.
             ui.ctx().request_repaint_after(PREVIEW_POLL);
@@ -583,6 +613,11 @@ impl Shell {
         let mut control = None;
         let preview = &self.session.context().preview;
         let state = preview.state();
+        let docked = if preview.docks() {
+            Text::PreviewDocked
+        } else {
+            Text::PreviewOwnWindow
+        };
         let failed = self.preview_error.is_some();
         let status = self
             .preview_error
@@ -598,7 +633,7 @@ impl Shell {
                     ui.separator();
                     ui.label(Text::PreviewHost.get());
                     ui.label(
-                        RichText::new(Text::PreviewDocked.get())
+                        RichText::new(docked.get())
                             .small()
                             .color(theme.color(Token::TextMuted)),
                     );

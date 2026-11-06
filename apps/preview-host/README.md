@@ -28,6 +28,17 @@ random sources starting at the engine's fixed state so a run is the same each ti
 With no device it leaves `screenshot` out of its capabilities (BRIDGE-2.6). It is what
 `cargo xtask bridge-client` runs in CI on Linux, macOS and Windows.
 
+**Docking (P3-11, ENG-9).** The IDE opens the window beside its own with `--position` and
+`--size`, then keeps it there with `window/place` (BRIDGE-4.10). It sends a new frame when the
+IDE's window moves, is resized or changes focus, and asks for the window to stay above others
+while the IDE has the focus. The geometry is in `qs_workbench::dock`. The window goes to the
+right of the IDE's when the screen has room for at least 480 points, else over its top right
+corner below the toolbar. On macOS, Windows and X11 the host moves, sizes and raises its
+window. **On Wayland** the compositor places windows and a client can neither move nor raise
+its own, so the host leaves `window/place` out of its capabilities and the window stays where
+the compositor put it; the IDE's toolbar then says the game is in its own window. A headless
+host has no window to place.
+
 The bridge offers `inspect`, `reload` (the progs loaded again over the running map, its globals
 and fields migrated by name and type, WORLD-10), `pause`, `resume`, `step` (a frame, or a QuakeC statement, `in`,
 `over` or `out`), `breakpoint/set`, `breakpoint/clear`, `evaluate`, `field/set`,

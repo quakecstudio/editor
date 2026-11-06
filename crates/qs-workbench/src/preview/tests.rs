@@ -243,3 +243,22 @@ fn stops_reach_the_debugger_and_the_console() {
     game.unwatch(0);
     assert!(game.step_by(qs_engine::StepKind::Over).is_err());
 }
+
+// No spec statement: with no game the IDE's window is remembered for the next game, which opens
+// where it docks, and the toolbar says the window docks
+#[test]
+fn docking_with_no_game_is_kept_for_the_next() {
+    let mut game = preview(None, None);
+    let frame = super::dock::DockFrame {
+        x: 0.0,
+        y: 0.0,
+        width: 1200.0,
+        height: 900.0,
+        screen_width: Some(2560.0),
+        focused: true,
+    };
+    game.dock(frame).unwrap();
+    assert_eq!(game.dock.0, Some(frame));
+    assert_eq!(game.dock.1, None, "nothing was sent");
+    assert!(game.docks());
+}

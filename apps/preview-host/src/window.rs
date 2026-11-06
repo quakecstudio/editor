@@ -138,6 +138,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 rand,
                 fly,
                 pointer: Pointer::Free,
+                placed: None,
                 eye: camera_origin,
                 last_set: [f32::NAN; 2],
                 behind: 0.0,
@@ -173,6 +174,8 @@ struct Viewer {
     fly: bool,
     /// Whether the window holds the mouse.
     pointer: Pointer,
+    /// The placement applied last frame, whose result is logged this one.
+    placed: Option<Placement>,
     /// Where the eye was last frame, for the contents shift.
     eye: [f32; 3],
     /// The view angles last given to the client, to tell a `svc_setangle` from them.
@@ -408,8 +411,14 @@ impl Viewer {
             return;
         };
         let running = serve(bridge, &mut self.game);
+        if let Some(asked) = self.placed.take() {
+            // The frame the windowing system gave, a frame after it was asked for.
+            let outer = ui.input(|input| input.viewport().outer_rect);
+            tracing::info!(?asked, ?outer, "window placed");
+        }
         if let Some(placement) = self.game.take_placement() {
             place(ui.ctx(), placement);
+            self.placed = Some(placement);
         }
         if self.game.wants_screenshot() {
             ui.ctx()
