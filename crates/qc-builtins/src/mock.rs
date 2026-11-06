@@ -18,6 +18,7 @@
 use crate::localization::Localization;
 use crate::math::q_atof;
 use crate::tokenize::Tokens;
+use crate::userinfo::Clients;
 
 /// The settings the mock keeps, with the texts of DIFF-2.4.
 ///
@@ -284,6 +285,8 @@ pub struct MockEngine {
     pub unimplemented: Unimplemented,
     /// The token list vkQuake's tokenize builtins fill and `argv` reads (BUILTIN-18.23).
     pub tokens: Tokens,
+    /// Each client's userinfo, name and colours under vkQuake's profile (BUILTIN-18.27).
+    pub clients: Clients,
     /// The rerelease's localized strings, none unless the host loads them (RRE-1.6).
     pub localization: Localization,
     /// The server clock `sv.time`, a `double` (DIFF-3.2): 1.0 at map start.
@@ -469,6 +472,7 @@ impl MockEngine {
             profile: EngineProfile::Id,
             unimplemented: Unimplemented::Error,
             tokens: Tokens::default(),
+            clients: Clients::default(),
             localization: Localization::default(),
             clock: 1.0,
         }
