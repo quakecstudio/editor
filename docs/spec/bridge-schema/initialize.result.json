@@ -28,7 +28,7 @@
     },
     "capabilities": {
       "type": "object",
-      "description": "Each capability-flagged command, true when the host accepts it (BRIDGE-2.3)",
+      "description": "Each capability-flagged command, true when the host accepts it (BRIDGE-2.6)",
       "properties": {
         "breakpoint/clear": {
           "type": "boolean"
@@ -73,6 +73,9 @@
           "type": "boolean"
         },
         "step": {
+          "type": "boolean"
+        },
+        "window/place": {
           "type": "boolean"
         }
       }

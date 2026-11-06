@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The bridge's `reload` (BRIDGE-4.1, P3-03): the progs read again, or another one, and loaded
+//! The bridge's `reload` (BRIDGE-4.9, P3-03): the progs read again, or another one, and loaded
 //! over the running map by [`World::reload`], which migrates its globals and fields (WORLD-10).
 
 use std::path::Path;

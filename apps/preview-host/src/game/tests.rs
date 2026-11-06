@@ -280,7 +280,7 @@ fn float_field(game: &mut Game, session: &mut Session, edict: usize, name: &str)
         .map_or(Value::Null, |f| f["value"]["value"].clone())
 }
 
-// spec BRIDGE-2.3: the game offers every command it implements, and no other
+// spec BRIDGE-2.6: the game offers every command it implements, and no other
 #[test]
 fn the_game_offers_its_commands() {
     let (mut game, mut session) = game();
@@ -332,7 +332,7 @@ fn loading_announces_the_progs_and_the_map() {
     assert_eq!(raised[1].1["entities"], 3);
 }
 
-// spec BRIDGE-4.1: pause stops the server clock and resume starts it, each answered with the
+// spec BRIDGE-4.9: pause stops the server clock and resume starts it, each answered with the
 // time
 // spec BRIDGE-3.3: pause and resume each send state/changed
 #[test]
@@ -482,7 +482,7 @@ fn an_edict_not_in_use_is_refused() {
     }
 }
 
-// spec BRIDGE-4.1: inspect reads an edict's classname and fields, the named globals, and the
+// spec BRIDGE-4.9: inspect reads an edict's classname and fields, the named globals, and the
 // edicts in use with classname, model and origin
 // spec BRIDGE-4.3: the stack needs the host paused; the rest run at any time
 #[test]
@@ -540,7 +540,7 @@ fn inspect_reads_edicts_globals_and_the_entity_list() {
     assert_eq!(stack["stack"], json!([]));
 }
 
-// spec BRIDGE-4.1: an entity is spawned from a classname and key-values as the map spawns
+// spec BRIDGE-4.9: an entity is spawned from a classname and key-values as the map spawns
 // one, edited the same way, and removed; the world and the player are never removed
 // spec BRIDGE-3.1: spawning and removing send edict/spawned and edict/removed
 #[test]
@@ -608,7 +608,7 @@ fn entities_are_spawned_edited_and_removed() {
     assert_eq!(code(unknown), ErrorCode::InvalidParams);
 }
 
-// spec BRIDGE-4.1: spawn player at moves the player to the origin and angles
+// spec BRIDGE-4.9: spawn player at moves the player to the origin and angles
 #[test]
 fn the_player_is_moved() {
     let (mut game, mut session) = game();
@@ -636,7 +636,7 @@ fn the_player_is_moved() {
     assert_eq!(origin["value"]["value"], json!([64.0, 32.0, 24.0]));
 }
 
-// spec BRIDGE-4.1: a console command's output comes back as console/line events
+// spec BRIDGE-4.9: a console command's output comes back as console/line events
 #[test]
 fn console_output_comes_back_as_lines() {
     let (mut game, mut session) = game();
@@ -702,7 +702,7 @@ fn eye(origin: [f32; 3], angles: [f32; 3]) -> Eye {
     }
 }
 
-// spec BRIDGE-4.1: pick names the edict under a point of the window and where the ray stops;
+// spec BRIDGE-4.9: pick names the edict under a point of the window and where the ray stops;
 // the world, or nothing, names no edict
 #[test]
 fn pick_finds_the_edict_under_a_point() {
@@ -753,7 +753,7 @@ fn frame(width: u32, height: u32) -> Frame {
     }
 }
 
-// spec BRIDGE-4.1: a screenshot waits for the next frame drawn, then is answered with it as a
+// spec BRIDGE-4.9: a screenshot waits for the next frame drawn, then is answered with it as a
 // PNG at the size asked; each waiting request gets its own response
 #[test]
 fn a_screenshot_is_answered_with_the_next_frame() {
@@ -811,7 +811,7 @@ fn the_next_level_carries_what_the_last_one_owed() {
     assert_eq!(responses[0].0, Id::Number(7));
 }
 
-// spec BRIDGE-2.3: a headless host with a GPU device draws offscreen, so it offers screenshot
+// spec BRIDGE-2.6: a headless host with a GPU device draws offscreen, so it offers screenshot
 // as the window does; a frame it could not draw answers each waiting screenshot with an error
 #[test]
 fn an_offscreen_host_offers_screenshot_and_reports_a_failed_frame() {
@@ -842,7 +842,7 @@ fn an_offscreen_host_offers_screenshot_and_reports_a_failed_frame() {
     }
 }
 
-// spec BRIDGE-2.3: a headless host with no GPU device draws nothing, so it leaves screenshot
+// spec BRIDGE-2.6: a headless host with no GPU device draws nothing, so it leaves screenshot
 // out of its capabilities and the session refuses one as unsupported; the rest are as the
 // window's
 #[test]
@@ -1224,7 +1224,7 @@ fn dog_frags(game: &Game) -> f32 {
 /// A dog at edict 2.
 const DOG: &str = "{\n\"classname\" \"monster_dog\"\n\"origin\" \"0 0 40\"\n}\n";
 
-// spec BRIDGE-4.1: reload loads the progs over the running map, migrating its values, and its
+// spec BRIDGE-4.9: reload loads the progs over the running map, migrating its values, and its
 // result counts them and lists what was lost and added; it sends progs/loaded
 // spec WORLD-10.4: the dog's think is rebound by name, so its new code runs
 #[test]
@@ -1262,7 +1262,7 @@ fn a_reload_changes_a_monsters_think_while_it_runs() {
     );
 }
 
-// spec BRIDGE-4.1: a reload while paused keeps the game paused and says so with reason reload
+// spec BRIDGE-4.9: a reload while paused keeps the game paused and says so with reason reload
 // spec BRIDGE-4.8: one naming a file that is not there is refused with nothing changed
 #[test]
 fn a_reload_while_paused_stays_paused() {

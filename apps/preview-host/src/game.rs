@@ -61,7 +61,7 @@ impl Screen {
     }
 }
 
-/// Whether the server clock runs (BRIDGE-4.1, "pause, resume").
+/// Whether the server clock runs (BRIDGE-4.9, "pause, resume").
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
     Running,
@@ -142,7 +142,7 @@ enum FrameEnd {
 /// An event for the bridge to send: its method and parameters (BRIDGE-3.1).
 pub(crate) type Event = (&'static str, Value);
 
-/// Where the window's view looks from, for `pick` (BRIDGE-4.1).
+/// Where the window's view looks from, for `pick` (BRIDGE-4.9).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Eye {
     /// The eye's origin.
@@ -246,7 +246,7 @@ impl Game {
     }
 
     /// The reader of the game's search path, which `reload` reads the progs and its `.lno`
-    /// with (BRIDGE-4.1).
+    /// with (BRIDGE-4.9).
     pub(crate) fn set_files(&mut self, files: qs_sim::ModelFiles) {
         self.files = Some(files);
     }
@@ -696,7 +696,7 @@ impl Game {
         Ok(self.time())
     }
 
-    /// `console` (BRIDGE-4.1, PHYS-13): the text goes in the console's buffer and runs now,
+    /// `console` (BRIDGE-4.9, PHYS-13): the text goes in the console's buffer and runs now,
     /// each line printed coming back as `console/line`.
     fn console(&mut self, progs: &Progs<'_>, params: &Value) -> Value {
         let text = params
@@ -848,7 +848,7 @@ impl Game {
 
 impl Game {
     /// `pick`: the edict under the point `x`, `y` of the window, as fractions of its width
-    /// and height from the top left, and where the ray from the eye stops (BRIDGE-4.1).
+    /// and height from the top left, and where the ray from the eye stops (BRIDGE-4.9).
     fn pick(&mut self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {
         let eye = self
             .eye

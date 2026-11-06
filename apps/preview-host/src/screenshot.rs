@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `screenshot`'s image (BRIDGE-4.1): the frame drawn, scaled to the size asked, as a PNG in
+//! `screenshot`'s image (BRIDGE-4.9): the frame drawn, scaled to the size asked, as a PNG in
 //! base64.
 
 use image::codecs::png::PngEncoder;

@@ -35,7 +35,7 @@ fn frame(width: u32, height: u32) -> Frame {
     }
 }
 
-// spec BRIDGE-4.1: a screenshot is a PNG in base64, at the size drawn or the size asked
+// spec BRIDGE-4.9: a screenshot is a PNG in base64, at the size drawn or the size asked
 #[test]
 fn a_frame_encodes_as_a_png_at_the_size_asked() {
     let (png, width, height) = encode(frame(4, 2), None).unwrap();

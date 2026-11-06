@@ -3,7 +3,7 @@
 //! The bridge client (BRIDGE-1 to BRIDGE-7): requests framed and numbered, each answered by
 //! the response with its id; the host's events kept, in order, as they come between them; and
 //! one method per command, refused before it is sent when the host's capabilities leave it
-//! out (BRIDGE-2.3).
+//! out (BRIDGE-2.6).
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
@@ -43,7 +43,7 @@ pub enum ClientError {
         /// Its message, for the person.
         message: String,
     },
-    /// The host's capabilities leave the command out (BRIDGE-2.3).
+    /// The host's capabilities leave the command out (BRIDGE-2.6).
     Unsupported(String),
     /// No answer came within the time given.
     Timeout,
@@ -74,7 +74,7 @@ impl std::error::Error for ClientError {
     }
 }
 
-/// What `step` runs (BRIDGE-4.1).
+/// What `step` runs (BRIDGE-4.9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StepKind {
     /// One statement.
@@ -101,7 +101,7 @@ impl StepKind {
     }
 }
 
-/// What `inspect` reads (BRIDGE-4.1).
+/// What `inspect` reads (BRIDGE-4.9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InspectWhat {
     /// One edict's classname and fields.
@@ -190,7 +190,7 @@ impl Client {
         Ok(result)
     }
 
-    /// Whether the host offers `method` (BRIDGE-2.3): every command a capability does not
+    /// Whether the host offers `method` (BRIDGE-2.6): every command a capability does not
     /// flag, and each flagged one the host said it has.
     #[must_use]
     pub fn offers(&self, method: &str) -> bool {
@@ -291,7 +291,7 @@ impl Client {
         }
     }
 
-    /// `pause` (BRIDGE-4.1); the server's time.
+    /// `pause` (BRIDGE-4.9); the server's time.
     ///
     /// # Errors
     ///
@@ -300,7 +300,7 @@ impl Client {
         self.request("pause", json!({}))
     }
 
-    /// `resume` (BRIDGE-4.1).
+    /// `resume` (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -309,7 +309,7 @@ impl Client {
         self.request("resume", json!({}))
     }
 
-    /// `step` (BRIDGE-4.1, BRIDGE-4.3).
+    /// `step` (BRIDGE-4.9, BRIDGE-4.3).
     ///
     /// # Errors
     ///
@@ -318,7 +318,7 @@ impl Client {
         self.request("step", json!({ "kind": kind.name() }))
     }
 
-    /// `inspect` (BRIDGE-4.1).
+    /// `inspect` (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -333,7 +333,7 @@ impl Client {
         self.request("inspect", params)
     }
 
-    /// `console` (BRIDGE-4.1); its output comes as `console/line` events.
+    /// `console` (BRIDGE-4.9); its output comes as `console/line` events.
     ///
     /// # Errors
     ///
@@ -342,7 +342,7 @@ impl Client {
         self.request("console", json!({ "command": command }))
     }
 
-    /// `screenshot` (BRIDGE-4.1), at the size asked or the size drawn.
+    /// `screenshot` (BRIDGE-4.9), at the size asked or the size drawn.
     ///
     /// # Errors
     ///
@@ -372,7 +372,7 @@ impl Client {
         )
     }
 
-    /// `pick` (BRIDGE-4.1): `x` and `y` fractions of the window from its top left.
+    /// `pick` (BRIDGE-4.9): `x` and `y` fractions of the window from its top left.
     ///
     /// # Errors
     ///
@@ -381,7 +381,7 @@ impl Client {
         self.request("pick", json!({ "x": x, "y": y }))
     }
 
-    /// `entity/spawn` (BRIDGE-4.1).
+    /// `entity/spawn` (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -397,7 +397,7 @@ impl Client {
         )
     }
 
-    /// `entity/remove` (BRIDGE-4.1).
+    /// `entity/remove` (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -422,7 +422,7 @@ impl Client {
         )
     }
 
-    /// `player/spawn_at` (BRIDGE-4.1).
+    /// `player/spawn_at` (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -438,7 +438,7 @@ impl Client {
         )
     }
 
-    /// `reload` (BRIDGE-4.1), of the progs at `path`, or the running one's again.
+    /// `reload` (BRIDGE-4.9), of the progs at `path`, or the running one's again.
     ///
     /// # Errors
     ///
@@ -448,7 +448,7 @@ impl Client {
         self.request("reload", params)
     }
 
-    /// `breakpoint/set` (BRIDGE-4.1) at `line` of `file`, relative to the project's root.
+    /// `breakpoint/set` (BRIDGE-4.9) at `line` of `file`, relative to the project's root.
     ///
     /// # Errors
     ///

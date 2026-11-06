@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! What the bridge's `inspect` reads (BRIDGE-4.1, BRIDGE-5): an edict's fields and the globals,
+//! What the bridge's `inspect` reads (BRIDGE-4.9, BRIDGE-5): an edict's fields and the globals,
 //! each a typed QuakeC value, between two server frames.
 
 use qc_edict::EdictNumber;

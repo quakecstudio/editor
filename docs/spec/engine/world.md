@@ -299,7 +299,7 @@ statements are what each asks of the world.
   line is the first statement, by index, whose line is that line in a function whose file is
   the file, or ends with `/` and the file's name, or whose name ends with `/` and the file; a
   line no statement is on resolves to nothing (BRIDGE-4.5).
-- **WORLD-9.5** A watch expression (BRIDGE-4.1, `evaluate`) is, after its surrounding spaces, a
+- **WORLD-9.5** A watch expression (BRIDGE-4.9, `evaluate`) is, after its surrounding spaces, a
   number, a vector `'x y z'`, a string `"..."`, or a name followed by any number of `.field`s.
   The name is a local of the frame's function (a definition within its locals, `parm_start` to
   `parm_start + locals`) before a global; each field is read from the entity the part before it

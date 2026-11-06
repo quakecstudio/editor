@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A watch expression's value (WORLD-9.5, BRIDGE-4.1 "watch"): a constant, a global or a local
+//! A watch expression's value (WORLD-9.5, BRIDGE-4.9 "watch"): a constant, a global or a local
 //! of the frame's function, or a field path such as `self.owner.health`.
 
 use std::fmt;

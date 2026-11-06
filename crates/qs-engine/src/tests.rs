@@ -322,7 +322,7 @@ fn serve(path: &Path) {
     });
 }
 
-// BRIDGE-2.1, BRIDGE-2.3: the client initializes, then sends a command the host offers and
+// BRIDGE-2.1, BRIDGE-2.6: the client initializes, then sends a command the host offers and
 // refuses, unsent, one it does not; a host's error comes back with its code
 #[test]
 fn the_client_speaks_the_bridge() {
