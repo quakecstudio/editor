@@ -283,10 +283,12 @@ fn qs_sim::keys::Bindings::bind
 fn qs_sim::keys::Bindings::binding
 fn qs_sim::keys::Bindings::down
 fn qs_sim::keys::Bindings::keys_for
+fn qs_sim::keys::Bindings::names_for
 fn qs_sim::keys::Bindings::new
 fn qs_sim::keys::Bindings::set
 fn qs_sim::keys::Bindings::unbind
 fn qs_sim::keys::Bindings::unbind_all
+fn qs_sim::keys::Bindings::unbind_command
 fn qs_sim::keys::Bindings::unbound_notice
 fn qs_sim::keys::Bindings::up
 fn qs_sim::keys::key_from_name

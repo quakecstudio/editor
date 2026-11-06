@@ -16,13 +16,13 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use qs_bsp::Bsp;
 use qs_client::{
-    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Client, Console, ConsoleKey, Event, KeyDest, Menu,
-    MenuEvent, MenuFrame, MenuGame, MenuKey, MenuSettings, Random as _, Typed,
+    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Client, Console, ConsoleKey, Event, Grabbed, KeyDest,
+    MENU_BINDINGS, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey, MenuSettings, Random as _, Typed,
 };
 use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
 use qs_sim::ClientCommand;
 use qs_sim::input::{Input, MoveSettings};
-use qs_sim::keys::Bindings;
+use qs_sim::keys::{Bindings, K_ESCAPE, key_name};
 use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
 use crate::args::Args;
@@ -371,6 +371,9 @@ impl eframe::App for Viewer {
             console_forced: false,
             screen_height: self.play.screen[1],
             settings: MenuSettings::read(&|name| world.setting(name).unwrap_or(0.0)),
+            bound: self
+                .bindings
+                .names_for(&MENU_BINDINGS.map(|(command, _)| command)),
         });
         hud.menu = menu;
         if let Some(sound) = sound {
@@ -602,7 +605,8 @@ impl Viewer {
             }
         }
         self.modifiers = modifiers;
-        let held = self.pointer == Pointer::Captured;
+        let held = self.pointer == Pointer::Captured
+            || (self.dest == KeyDest::Menu && self.menu.grabbing());
         for event in events {
             match event {
                 egui::Event::Key {
@@ -633,6 +637,23 @@ impl Viewer {
             }
         }
         for (key, down) in keys {
+            // MENU-8.3: the keys menu's wait takes the next key going down, whatever it is.
+            if down && self.dest == KeyDest::Menu && self.menu.grabbing() {
+                let name = key_name(key);
+                let grabbed = match key {
+                    K_ESCAPE => Grabbed::Escape,
+                    b'`' => Grabbed::Backquote,
+                    _ => Grabbed::Key(&name),
+                };
+                for event in self.menu.grab(grabbed) {
+                    match event {
+                        MenuEvent::Sound(sound) => self.audio.local(sound, &mut self.rand),
+                        MenuEvent::Run(line) => self.run_line(line.as_bytes()),
+                        MenuEvent::Unbind(_) | MenuEvent::Set { .. } => {}
+                    }
+                }
+                continue;
+            }
             let text = if down {
                 if !runs_binding(key, self.dest) {
                     continue;
@@ -691,6 +712,10 @@ impl Viewer {
         let realtime = self.started.elapsed().as_secs_f64();
         let height = self.play.screen[1];
         for event in events {
+            // MENU-8.3: while the keys menu waits for a key, the next is its, by number.
+            if self.dest == KeyDest::Menu && self.menu.grabbing() {
+                break;
+            }
             match event {
                 egui::Event::Key {
                     key: egui::Key::Backtick,
@@ -753,6 +778,10 @@ impl Viewer {
             can_save: self.client.intermission() == 0,
             settings: MenuSettings::read(&|name| world.setting(name).unwrap_or(0.0)),
             saves: &slots,
+            keys_bound: &|command| {
+                let keys = self.bindings.keys_for(command.as_bytes());
+                keys.iter().flatten().count()
+            },
         };
         f(&mut self.menu, &game)
     }
@@ -769,6 +798,7 @@ impl Viewer {
                     self.game.world_mut().set_setting(name, value);
                 }
                 MenuEvent::Run(line) => self.run_line(line.as_bytes()),
+                MenuEvent::Unbind(command) => self.bindings.unbind_command(command.as_bytes()),
             }
         }
     }
@@ -958,6 +988,7 @@ const fn menu_key(key: egui::Key) -> Option<MenuKey> {
         egui::Key::ArrowLeft => MenuKey::Left,
         egui::Key::ArrowRight => MenuKey::Right,
         egui::Key::Enter => MenuKey::Enter,
+        egui::Key::Backspace | egui::Key::Delete => MenuKey::Delete,
         _ => return None,
     })
 }

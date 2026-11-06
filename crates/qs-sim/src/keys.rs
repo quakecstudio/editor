@@ -199,6 +199,29 @@ impl Bindings {
         found
     }
 
+    /// `M_UnbindCommand`: every key whose binding starts with `command`, as
+    /// `strncmp (b, command, l)` compares it, set to the empty binding (INPUT-1.4).
+    pub fn unbind_command(&mut self, command: &[u8]) {
+        for binding in self.keys.iter_mut().flatten() {
+            if binding.get(..command.len()) == Some(command) {
+                binding.clear();
+            }
+        }
+    }
+
+    /// Each of `commands`' first two keys by name, `M_FindKeysForCommand` then
+    /// `Key_KeynumToString`, as the keys menu shows them (INPUT-1.4).
+    #[must_use]
+    pub fn names_for(&self, commands: &[&str]) -> Vec<[Option<String>; 2]> {
+        commands
+            .iter()
+            .map(|command| {
+                self.keys_for(command.as_bytes())
+                    .map(|key| key.map(key_name))
+            })
+            .collect()
+    }
+
     /// `Key_SetBinding (key, binding)` (INPUT-1.2): an empty binding is kept as one.
     pub fn set(&mut self, key: u8, binding: &[u8]) {
         if let Some(slot) = self.keys.get_mut(usize::from(key)) {

@@ -6,8 +6,8 @@
 )]
 
 use super::{
-    MENU_HELP_PAGES, MENU_SAVEGAMES, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey, MenuSettings,
-    MenuState, save_comment,
+    Grabbed, MENU_BINDINGS, MENU_HELP_PAGES, MENU_SAVEGAMES, Menu, MenuEvent, MenuFrame, MenuGame,
+    MenuKey, MenuSettings, MenuState, save_comment,
 };
 use crate::console::KeyDest;
 use crate::hud::{Anchor, HudItem, Placed};
@@ -36,6 +36,11 @@ const DEFAULTS: MenuSettings = MenuSettings {
     lookstrafe: 0.0,
 };
 
+/// One key bound to every command.
+fn one_key(_: &str) -> usize {
+    1
+}
+
 /// No saved games.
 fn no_saves() -> [Option<Vec<u8>>; MENU_SAVEGAMES] {
     Default::default()
@@ -49,6 +54,7 @@ fn game(random: i32) -> MenuGame<'static> {
         can_save: true,
         settings: DEFAULTS,
         saves: &no_saves,
+        keys_bound: &one_key,
     }
 }
 
@@ -62,6 +68,7 @@ fn frame(dest: KeyDest, time: f64, console_down: bool) -> MenuFrame {
         console_forced: false,
         screen_height: 480,
         settings: DEFAULTS,
+        bound: Vec::new(),
     }
 }
 
@@ -524,7 +531,7 @@ fn with(change: impl FnOnce(&mut MenuSettings)) -> MenuGame<'static> {
 }
 
 // spec MENU-7.1: thirteen items, the video item skipped: down from 11 goes to 0, up from 0 to 11
-// spec MENU-7.2: Escape to the main menu; the arrows move with menu1.wav
+// spec MENU-7.5: Escape to the main menu; the arrows move with menu1.wav
 #[test]
 fn the_options_skip_the_video_item() {
     let mut menu = options_at(11);
@@ -559,7 +566,8 @@ fn the_options_skip_the_video_item() {
     assert_eq!(menu.state(), MenuState::Main);
 }
 
-// spec MENU-7.2: Enter: controls stay, console opens, defaults exec, a setting goes up
+// spec MENU-7.5: Enter: controls open the keys menu, console opens, defaults exec, a setting
+// goes up
 #[test]
 fn the_options_enter_their_items() {
     let mut menu = options_at(0);
@@ -567,6 +575,7 @@ fn the_options_enter_their_items() {
         menu.key(MenuKey::Enter, &game(0)),
         (KeyDest::Menu, Vec::new())
     );
+    assert_eq!(menu.state(), MenuState::Keys);
     let mut menu = options_at(2);
     assert_eq!(
         menu.key(MenuKey::Enter, &game(0)),
@@ -702,5 +711,125 @@ fn the_options_adjust_their_settings() {
     );
     for item in [0, 1, 2] {
         assert!(adjust(item, MenuKey::Right, &game(0)).is_empty(), "{item}");
+    }
+}
+
+/// The keys menu, its cursor moved down `n` commands.
+fn keys_at(n: usize) -> Menu {
+    let mut menu = options_at(0);
+    menu.key(MenuKey::Enter, &game(0));
+    for _ in 0..n {
+        menu.key(MenuKey::Down, &game(0));
+    }
+    menu
+}
+
+// spec MENU-8.1: the title, the hint, each label, its keys or ???, and the cursor
+#[test]
+fn the_keys_menu_lists_the_commands_and_their_keys() {
+    let mut menu = keys_at(0);
+    let mut frame = frame(KeyDest::Menu, 0.0, false);
+    frame.bound = vec![[None, None]; MENU_BINDINGS.len()];
+    frame.bound[0] = [Some("MOUSE1".to_owned()), Some("CTRL".to_owned())];
+    frame.bound[3] = [Some("w".to_owned()), None];
+    let (items, _) = menu.draw(&frame);
+    assert!(pictures(&items).contains(&("gfx/ttl_cstm.lmp".to_owned(), None, 4)));
+    assert_eq!(
+        red_text(&items, 32, 640).trim(),
+        "Enter to change, backspace to clear"
+    );
+    assert_eq!(row(&items, 32)[0].0, 18);
+    assert_eq!(red_text(&items, 48, 130), "attack");
+    // "MOUSE1" is 6 wide: "or" at 140 + 48 + 8, the second key at 140 + 48 + 32.
+    let keys: Vec<(i32, u8)> = row(&items, 48)
+        .into_iter()
+        .filter(|(x, _)| *x >= 140)
+        .collect();
+    assert_eq!(keys.first(), Some(&(140, b'M' + 128)));
+    assert!(keys.contains(&(196, b'o' + 128)));
+    assert!(keys.contains(&(220, b'C' + 128)));
+    assert_eq!(red_text(&items, 48 + 8 * 3, 130), "walk forward");
+    assert!(row(&items, 48 + 8 * 3).contains(&(140, b'w' + 128)));
+    assert_eq!(
+        row(&items, 48 + 8)
+            .iter()
+            .filter(|(x, _)| *x >= 140)
+            .map(|(_, c)| char::from(c.wrapping_sub(128)))
+            .collect::<String>(),
+        "???"
+    );
+    assert!(row(&items, 48).contains(&(130, 12)));
+    assert_eq!(red_text(&items, 48 + 8 * 17, 130), "swim down");
+}
+
+// spec MENU-8.2: Escape back to the options; the arrows wrap with menu1.wav; Enter waits,
+// unbinding a command two keys hold; Backspace and Delete unbind it
+#[test]
+fn the_keys_menu_moves_and_unbinds() {
+    let mut menu = keys_at(0);
+    assert_eq!(
+        menu.key(MenuKey::Up, &game(0)),
+        (KeyDest::Menu, vec![MenuEvent::Sound("misc/menu1.wav")])
+    );
+    menu.key(MenuKey::Right, &game(0));
+    assert_eq!(
+        menu.key(MenuKey::Delete, &game(0)),
+        (
+            KeyDest::Menu,
+            vec![
+                MenuEvent::Sound("misc/menu2.wav"),
+                MenuEvent::Unbind("+attack")
+            ]
+        )
+    );
+    assert_eq!(
+        menu.key(MenuKey::Enter, &game(0)),
+        (KeyDest::Menu, vec![MenuEvent::Sound("misc/menu2.wav")]),
+        "one key: nothing unbound"
+    );
+    assert!(menu.grabbing());
+    let mut two = keys_at(3);
+    let held_twice = MenuGame {
+        keys_bound: &|command| if command == "+forward" { 2 } else { 0 },
+        ..game(0)
+    };
+    assert_eq!(
+        two.key(MenuKey::Enter, &held_twice).1,
+        [
+            MenuEvent::Sound("misc/menu2.wav"),
+            MenuEvent::Unbind("+forward")
+        ]
+    );
+    let mut back = keys_at(0);
+    back.key(MenuKey::Escape, &game(0));
+    assert_eq!(back.state(), MenuState::Options);
+}
+
+// spec MENU-8.3: while waiting the next key binds the command; Escape and the backquote bind
+// nothing; the hint and the cursor show the wait
+#[test]
+fn the_keys_menu_binds_the_next_key() {
+    let mut menu = keys_at(3);
+    menu.key(MenuKey::Enter, &game(0));
+    let (items, _) = menu.draw(&frame(KeyDest::Menu, 0.0, false));
+    let hint: String = row(&items, 32)
+        .iter()
+        .map(|(_, c)| char::from(c.wrapping_sub(128)))
+        .collect();
+    assert_eq!(hint, "Press a key or button for this action");
+    assert_eq!(row(&items, 32)[0].0, 12);
+    assert!(row(&items, 48 + 8 * 3).contains(&(130, b'=')));
+    assert_eq!(
+        menu.grab(Grabbed::Key("MOUSE2")),
+        [
+            MenuEvent::Sound("misc/menu1.wav"),
+            MenuEvent::Run("bind \"MOUSE2\" \"+forward\"".to_owned())
+        ]
+    );
+    assert!(!menu.grabbing());
+    for key in [Grabbed::Escape, Grabbed::Backquote] {
+        menu.key(MenuKey::Enter, &game(0));
+        assert_eq!(menu.grab(key), [MenuEvent::Sound("misc/menu1.wav")]);
+        assert!(!menu.grabbing());
     }
 }

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#![expect(clippy::unwrap_used, reason = "test code: a failed unwrap is a failed test")]
+#![expect(
+    clippy::unwrap_used,
+    reason = "test code: a failed unwrap is a failed test"
+)]
 
 use super::{
     Bindings, K_AUX1, K_ENTER, K_F1, K_JOY1, K_MOUSE1, K_PAUSE, K_SHIFT, key_from_name, key_name,
@@ -117,4 +120,30 @@ fn keys_for_a_command() {
     keys.set(b'z', b"+forward");
     assert_eq!(keys.keys_for(b"+forward"), [Some(b'a'), Some(b'w')]);
     assert_eq!(keys.keys_for(b"+jump"), [None, None]);
+}
+
+// spec INPUT-1.5: every key whose binding starts with the command is made unbound, others kept
+#[test]
+fn unbind_command_clears_every_key_for_it() {
+    let mut keys = Bindings::new();
+    keys.set(b'w', b"+forward");
+    keys.set(K_F1, b"+forwardx");
+    keys.set(b'a', b"+jump");
+    keys.unbind_command(b"+forward");
+    assert_eq!(keys.binding(b'w'), Some(b"".as_slice()));
+    assert_eq!(
+        keys.binding(K_F1),
+        Some(b"".as_slice()),
+        "it starts with the command"
+    );
+    assert_eq!(keys.binding(b'a'), Some(b"+jump".as_slice()));
+    keys.set(K_MOUSE1, b"+attack");
+    assert_eq!(
+        keys.names_for(&["+attack", "+jump", "+back"]),
+        [
+            [Some("MOUSE1".to_owned()), None],
+            [Some("a".to_owned()), None],
+            [None, None]
+        ]
+    );
 }

@@ -40,7 +40,7 @@ const NOLERP: [&str; 9] = [
 ];
 /// The 2D pictures the HUD and the console read from files rather than `gfx.wad` (HUD-2,
 /// CON-3.2).
-const LMPS: [&str; 39] = [
+const LMPS: [&str; 40] = [
     "gfx/ranking.lmp",
     "gfx/complete.lmp",
     "gfx/inter.lmp",
@@ -75,6 +75,7 @@ const LMPS: [&str; 39] = [
     "gfx/box_mr.lmp",
     "gfx/box_br.lmp",
     "gfx/p_option.lmp",
+    "gfx/ttl_cstm.lmp",
     "gfx/p_load.lmp",
     "gfx/p_save.lmp",
     "gfx/bigbox.lmp",

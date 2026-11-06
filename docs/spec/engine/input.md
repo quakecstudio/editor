@@ -39,6 +39,8 @@ id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d` does it in `WinQuak
   or more with no binding at all prints "`<name> is unbound, hit F4 to set.`" going down.
 - **INPUT-1.4** `M_FindKeysForCommand` gives the first two keys, in number order, whose
   binding starts with the command (`strncmp (b, command, l)` for the command's length).
+- **INPUT-1.5** `M_UnbindCommand` sets every key whose binding starts with the command, as
+  INPUT-1.4 compares them, to the empty binding.
 
 ## INPUT-2 Buttons and the move
 

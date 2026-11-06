@@ -61,6 +61,7 @@ const qs_client::hud::HUD_NUM_WIDTH
 const qs_client::hud::HUD_PRINTSPEED
 const qs_client::hud::HUD_SBAR_HEIGHT
 const qs_client::hud::HUD_WEAPONS
+const qs_client::menu::MENU_BINDINGS
 const qs_client::menu::MENU_HELP_PAGES
 const qs_client::menu::MENU_SAVEGAMES
 const qs_client::models::SYNCTYPE_RAND
@@ -106,6 +107,7 @@ enum qs_client::console::KeyDest
 enum qs_client::console::Typed
 enum qs_client::hud::Anchor
 enum qs_client::hud::HudItem
+enum qs_client::menu::Grabbed
 enum qs_client::menu::MenuEvent
 enum qs_client::menu::MenuKey
 enum qs_client::menu::MenuState
@@ -185,6 +187,7 @@ field qs_client::hud::HudInput.time
 field qs_client::hud::HudInput.viewentity
 field qs_client::hud::Placed.anchor
 field qs_client::hud::Placed.item
+field qs_client::menu::MenuFrame.bound
 field qs_client::menu::MenuFrame.console_down
 field qs_client::menu::MenuFrame.console_forced
 field qs_client::menu::MenuFrame.dest
@@ -193,6 +196,7 @@ field qs_client::menu::MenuFrame.realtime
 field qs_client::menu::MenuFrame.screen_height
 field qs_client::menu::MenuFrame.settings
 field qs_client::menu::MenuGame.can_save
+field qs_client::menu::MenuGame.keys_bound
 field qs_client::menu::MenuGame.random
 field qs_client::menu::MenuGame.saves
 field qs_client::menu::MenuGame.server_active
@@ -347,6 +351,8 @@ fn qs_client::hud::intermission_overlay
 fn qs_client::hud::sort_frags
 fn qs_client::hud::status_bar
 fn qs_client::menu::Menu::draw
+fn qs_client::menu::Menu::grab
+fn qs_client::menu::Menu::grabbing
 fn qs_client::menu::Menu::help
 fn qs_client::menu::Menu::key
 fn qs_client::menu::Menu::load
@@ -496,6 +502,7 @@ use qs_client::Entity = entity::Entity
 use qs_client::Event = client::Event
 use qs_client::FrameInfo = models::FrameInfo
 use qs_client::Game = client::Game
+use qs_client::Grabbed = menu::Grabbed
 use qs_client::HUD_CENTERTIME = hud::HUD_CENTERTIME
 use qs_client::HUD_CENTER_LINE_LENGTH = hud::HUD_CENTER_LINE_LENGTH
 use qs_client::HUD_CENTER_MAX = hud::HUD_CENTER_MAX
@@ -517,6 +524,7 @@ use qs_client::KeyDest = console::KeyDest
 use qs_client::Lerp = entity::Lerp
 use qs_client::LerpFlags = entity::LerpFlags
 use qs_client::LerpSettings = client::LerpSettings
+use qs_client::MENU_BINDINGS = menu::MENU_BINDINGS
 use qs_client::MENU_HELP_PAGES = menu::MENU_HELP_PAGES
 use qs_client::MENU_SAVEGAMES = menu::MENU_SAVEGAMES
 use qs_client::Menu = menu::Menu
@@ -645,10 +653,15 @@ variant qs_client::hud::HudItem::Fade
 variant qs_client::hud::HudItem::Fill
 variant qs_client::hud::HudItem::Lmp
 variant qs_client::hud::HudItem::Pic
+variant qs_client::menu::Grabbed::Backquote
+variant qs_client::menu::Grabbed::Escape
+variant qs_client::menu::Grabbed::Key
 variant qs_client::menu::MenuEvent::Run
 variant qs_client::menu::MenuEvent::Set
 variant qs_client::menu::MenuEvent::Sound
+variant qs_client::menu::MenuEvent::Unbind
 variant qs_client::menu::MenuKey::Char
+variant qs_client::menu::MenuKey::Delete
 variant qs_client::menu::MenuKey::Down
 variant qs_client::menu::MenuKey::Enter
 variant qs_client::menu::MenuKey::Escape
@@ -656,6 +669,7 @@ variant qs_client::menu::MenuKey::Left
 variant qs_client::menu::MenuKey::Right
 variant qs_client::menu::MenuKey::Up
 variant qs_client::menu::MenuState::Help
+variant qs_client::menu::MenuState::Keys
 variant qs_client::menu::MenuState::Load
 variant qs_client::menu::MenuState::Main
 variant qs_client::menu::MenuState::NewGame
