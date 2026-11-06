@@ -2379,6 +2379,56 @@ mod bodies {
         assert_eq!(text(&run(511, 1, &[Ok(offsets[4])])), Some(b"a b".to_vec()));
     }
 
+    // spec BUILTIN-18.39: buf_create (#460) defaults to the type string, bufstr_add (#468) and
+    // bufstr_get (#466) store and read, buf_getsize (#462) counts and leaves the return value
+    // as it was for a buffer not in use, and buf_del (#461) frees the buffer
+    #[test]
+    fn string_buffers_dispatch() {
+        let (strings, offsets) = string_table(&["string", "hello"]);
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = EngineProfile::VkQuake;
+        let call = |engine: &mut MockEngine, number: u32, parms: &[Result<i32, f32>]| {
+            let argc = u16::try_from(parms.len()).unwrap();
+            let mut f = Fixture::new(number, argc, strings.clone(), 0);
+            *f.builtins.engine_mut() = engine.clone();
+            f.machine
+                .set_global(i32::from(PROGS_OFS_RETURN), Slot::from_f32(42.0))
+                .unwrap();
+            for (n, parm) in (0_u16..).zip(parms) {
+                match parm {
+                    Ok(string) => f.set_parm_i(n, *string),
+                    Err(float) => f.set_parm_f(n, *float),
+                }
+            }
+            f.run_ok(ServerState::Active);
+            *engine = f.builtins.engine().clone();
+            f
+        };
+        assert_eq!(call(&mut engine, 460, &[]).return_f(), 1.0);
+        assert_eq!(call(&mut engine, 460, &[Ok(offsets[0])]).return_f(), 2.0);
+        assert_eq!(
+            call(&mut engine, 468, &[Err(1.0), Ok(offsets[1]), Err(0.5)]).return_f(),
+            0.0
+        );
+        assert_eq!(call(&mut engine, 462, &[Err(1.0)]).return_f(), 1.0);
+        let got = call(&mut engine, 466, &[Err(1.0), Err(0.0)]);
+        assert_eq!(
+            got.engine().strings.text(got.return_i()),
+            Some(b"hello".as_slice())
+        );
+        assert_eq!(call(&mut engine, 466, &[Err(1.0), Err(1.0)]).return_i(), 0);
+        call(&mut engine, 461, &[Err(1.0)]);
+        assert_eq!(
+            call(&mut engine, 462, &[Err(1.0)]).return_f(),
+            42.0,
+            "left as it was"
+        );
+        assert_eq!(
+            call(&mut engine, 468, &[Err(1.0), Ok(offsets[1]), Err(1.0)]).return_f(),
+            42.0
+        );
+    }
+
     // spec BUILTIN-18.35: wasfreed (#353) is 1 for a free edict and 0 for one in use
     #[test]
     fn wasfreed_reads_the_free_flag() {

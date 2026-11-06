@@ -1049,6 +1049,21 @@ profile (DIFF-12.19); everything else runs under id's.
 - **BUILTIN-18.38** `whichpack(name)` (#503) is `PF_whichpack`: when `COM_FileExists` finds the
   name, which for the mock is a file QuakeC wrote, its search path's directory without the base
   directory and leading slashes, `id1`, as a new string; else 0.
+- **BUILTIN-18.39** The string buffers are `NUMSTRINGBUFS` 64 lists of strings, a slot of which
+  may be a hole; a handle is the buffer's number plus 1 (`BUFSTRBASE`), and a handle is read as
+  C reads the float less 1: `unsigned int` (the low 32 bits of a 64-bit truncation) for
+  `buf_del`, `bufstr_get` and `bufstr_add`, `(int)` for `buf_getsize`, a number of 64 or more
+  being no buffer. `buf_create(type)` (#460, `PF_buf_create`) takes the type `string` when the
+  call passed none, else reads it with `G_STRING`; for a type other than `string` in any case,
+  or with every buffer in use, -1; else the first buffer not in use, empty, as a handle.
+  `buf_del(handle)` (#461) frees the buffer. `buf_getsize(handle)` (#462) is how many slots
+  the buffer uses, holes among them; for a buffer not in use it writes no return value, so the
+  caller reads what `OFS_RETURN` held. `bufstr_get(handle, index)` (#466) is the string at
+  `index`, as `unsigned int`, as a new temporary string cut to 1023 bytes, and 0 for a hole, an
+  index past the end or a buffer not in use. `bufstr_add(handle, s, order)` (#468) reads `s`
+  with `G_STRING`, then on a buffer in use puts it at the end when `(int)order` is not 0 and
+  otherwise in the first hole or at the end, and returns the index; on a buffer not in use it
+  writes no return value.
 
 ## Test vectors
 

@@ -35,6 +35,7 @@ pub mod localization;
 pub mod math;
 pub mod mock;
 mod printf;
+pub mod strbuf;
 mod strconv;
 mod strftime;
 pub mod table;

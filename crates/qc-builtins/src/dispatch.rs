@@ -1272,6 +1272,11 @@ impl MockBuiltins {
             515 => Some(self.b_argv_index(context, Edge::Start)),
             516 => Some(self.b_argv_index(context, Edge::End)),
             455 => Some(self.b_clienttype(context)),
+            460 => Some(self.b_buf_create(context)),
+            461 => Some(self.b_buf_del(context)),
+            462 => Some(self.b_buf_getsize(context)),
+            466 => Some(self.b_bufstr_get(context)),
+            468 => Some(self.b_bufstr_add(context)),
             478 => Some(self.b_strftime(context)),
             480 => Some(self.b_strcase(context, Case::Lower)),
             481 => Some(self.b_strcase(context, Case::Upper)),
@@ -1838,6 +1843,67 @@ impl MockBuiltins {
         let text = read_parm_string(context, &self.engine, 0)?;
         let value = self.engine.strings.make(f(cstr(&text)));
         write_return_string(context, value)
+    }
+
+    /// `buf_create(type)`, vkQuake's `PF_buf_create` (BUILTIN-18.39): the type `string` when
+    /// the call passed none.
+    fn b_buf_create(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let string_type = if context.machine().argc() > 0 {
+            read_parm_string(context, &self.engine, 0)?
+        } else {
+            b"string".to_vec()
+        };
+        let handle = self.engine.string_buffers.create(cstr(&string_type));
+        write_return_float(context, handle)
+    }
+
+    /// `buf_del(handle)`, vkQuake's `PF_buf_del` (BUILTIN-18.39).
+    fn b_buf_del(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let slot = vkstrings::float_to_unsigned(read_parm_float(context, 0)? - 1.0);
+        self.engine.string_buffers.delete(slot);
+        Ok(())
+    }
+
+    /// `buf_getsize(handle)`, vkQuake's `PF_buf_getsize` (BUILTIN-18.39): the slot through
+    /// `(int)`; a buffer not in use leaves the return value as it was.
+    fn b_buf_getsize(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let slot = float_to_int(read_parm_float(context, 0)? - 1.0);
+        let slot = u32::from_ne_bytes(slot.to_ne_bytes());
+        match self.engine.string_buffers.size(slot) {
+            Some(size) => write_return_float(
+                context,
+                int_to_float(i32::try_from(size).unwrap_or(i32::MAX)),
+            ),
+            None => Ok(()),
+        }
+    }
+
+    /// `bufstr_get(handle, index)`, vkQuake's `PF_bufstr_get` (BUILTIN-18.39): the string as a
+    /// new temporary string, or 0.
+    fn b_bufstr_get(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let slot = vkstrings::float_to_unsigned(read_parm_float(context, 0)? - 1.0);
+        let index = vkstrings::float_to_unsigned(read_parm_float(context, 1)?);
+        let value = match self.engine.string_buffers.get(slot, index) {
+            Some(text) => self.engine.strings.make(text),
+            None => 0,
+        };
+        write_return_string(context, value)
+    }
+
+    /// `bufstr_add(handle, s, order)`, vkQuake's `PF_bufstr_add` (BUILTIN-18.39): `s` read
+    /// first, `order` through `(int)`, true when not 0; a buffer not in use leaves the return
+    /// value as it was.
+    fn b_bufstr_add(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let slot = vkstrings::float_to_unsigned(read_parm_float(context, 0)? - 1.0);
+        let text = read_parm_string(context, &self.engine, 1)?;
+        let at_end = float_to_int(read_parm_float(context, 2)?) != 0;
+        match self.engine.string_buffers.add(slot, cstr(&text), at_end) {
+            Some(index) => write_return_float(
+                context,
+                int_to_float(i32::try_from(index).unwrap_or(i32::MAX)),
+            ),
+            None => Ok(()),
+        }
     }
 
     /// `wasfreed(e)`, vkQuake's `PF_WasFreed` (BUILTIN-18.35): `e` through `G_EDICT`, then 1
