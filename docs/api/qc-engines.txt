@@ -2,6 +2,7 @@ const qc_engines::Engine::ALL
 const qc_engines::tables::SOURCES
 enum qc_engines::BuiltinKey
 enum qc_engines::Engine
+enum qc_engines::Unloadable
 enum qc_engines::check::BuiltinRef
 field qc_engines::Builtin.extensions
 field qc_engines::Builtin.key
@@ -21,10 +22,12 @@ fn qc_engines::Engine::from_target
 fn qc_engines::Engine::has_table
 fn qc_engines::Engine::id
 fn qc_engines::Engine::name
+fn qc_engines::Engine::unloadable
 fn qc_engines::check::BuiltinRef::lookup
 fn qc_engines::check::declared_builtins
 fn qc_engines::check::missing_builtins
 impl qc_engines::Builtin: From<qc_builtins::Builtin>
+impl qc_engines::Unloadable: core::fmt::Display
 mod qc_engines::check
 struct qc_engines::Builtin
 struct qc_engines::Source
@@ -41,5 +44,8 @@ variant qc_engines::Engine::Kex
 variant qc_engines::Engine::QuakeSpasm
 variant qc_engines::Engine::Vanilla
 variant qc_engines::Engine::VkQuake
+variant qc_engines::Unloadable::Globals
+variant qc_engines::Unloadable::Opcode
+variant qc_engines::Unloadable::Version
 variant qc_engines::check::BuiltinRef::Name
 variant qc_engines::check::BuiltinRef::Number
