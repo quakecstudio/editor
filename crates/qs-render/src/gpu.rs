@@ -796,13 +796,19 @@ impl MapRenderer {
 
     /// Writes `patch`, one face's lightmap a relight made again
     /// ([`crate::MapMesh::relight`]), over the texels drawn (REND-5.5, REND-5.7). A patch
-    /// reaching past the lightmap's edge is not written.
+    /// reaching past the lightmap's edge, or whose texels are not its width by its height, is
+    /// not written.
     pub fn set_lightmap(&self, queue: &Queue, patch: &LightmapPatch) {
         let size = self.lightmap.size();
         let image = &patch.image;
         let [x, y] = patch.at;
+        let texels = u64::from(image.width)
+            .checked_mul(u64::from(image.height))
+            .and_then(|n| n.checked_mul(4))
+            .and_then(|n| usize::try_from(n).ok());
         if x.saturating_add(image.width) > size.width
             || y.saturating_add(image.height) > size.height
+            || texels != Some(image.rgba.len())
         {
             return;
         }
@@ -1979,7 +1985,7 @@ mod tests {
     }
 
     // spec REND-5.7: a patch is written where it sits; one reaching past the lightmap's
-    // right or bottom edge is not written
+    // right or bottom edge, or with fewer texels than its size, is not written
     #[test]
     fn only_patches_that_fit_are_written() {
         let (state, renderer, _) = renderer();
@@ -1997,6 +2003,9 @@ mod tests {
         renderer.set_lightmap(&state.queue, &patch(0, 0, size.width + 1, 1));
         renderer.set_lightmap(&state.queue, &patch(0, size.height, 1, 1));
         renderer.set_lightmap(&state.queue, &patch(0, 0, 1, size.height + 1));
+        let mut short = patch(0, 0, 2, 1);
+        short.image.rgba.truncate(4);
+        renderer.set_lightmap(&state.queue, &short);
         assert_eq!(lightmap_row(&state, &renderer), before);
         renderer.set_lightmap(&state.queue, &patch(1, 0, 1, 1));
         let after = lightmap_row(&state, &renderer);

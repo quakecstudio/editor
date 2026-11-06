@@ -34,8 +34,9 @@ const DLIGHT_SCALE: f32 = 256.0;
 const FULL_BRIGHT_SUM: u32 = 255 * 256;
 /// The world units of one lightmap texel, `s*16` (REND-7.2).
 const TEXEL_UNITS: f32 = 16.0;
-/// `MAX_DLIGHTS`: the lights `R_PushDlights` marks, one bit each (REND-7.1).
-pub const REND_MAX_DLIGHTS: usize = 32;
+/// `MAX_DLIGHTS`: the lights `R_PushDlights` marks, one bit each (REND-7.1), QuakeSpasm's 64
+/// (REND-7.7).
+pub const REND_MAX_DLIGHTS: usize = 64;
 /// QuakeSpasm's `DIST_EPSILON`, `(0.03125)`, by which `gl_zfix` moves a brush entity
 /// (REND-1.12).
 const ZFIX: f32 = 0.031_25;
@@ -795,9 +796,9 @@ impl Tree {
     fn mark(
         &self,
         light: &DynamicLight,
-        bit: u32,
+        bit: u64,
         root: i32,
-        (faces, marks): (&[PlacedLight], &mut [u32]),
+        (faces, marks): (&[PlacedLight], &mut [u64]),
         depth: usize,
     ) {
         // "if (node->contents < 0) return": a leaf.
@@ -849,7 +850,7 @@ pub struct Lightmaps {
     /// Each BSP's nodes, which the dynamic lights are pushed through (REND-7.1).
     trees: Vec<Tree>,
     /// Each face's light bits in the image last made (REND-7.1).
-    marks: Vec<u32>,
+    marks: Vec<u64>,
 }
 
 /// The tallest atlas, the height every GPU wgpu supports.
@@ -870,13 +871,13 @@ impl Lightmaps {
     /// `R_PushDlights`: each live light (radius not 0) pushed through every model's nodes;
     /// each face's bits, one per light, in the lights' order, the first 32 (REND-7.1,
     /// REND-7.5).
-    fn mark_lights(&self, lights: &[DynamicLight]) -> Vec<u32> {
-        let mut marks = vec![0_u32; self.faces.len()];
+    fn mark_lights(&self, lights: &[DynamicLight]) -> Vec<u64> {
+        let mut marks = vec![0_u64; self.faces.len()];
         for (i, light) in lights.iter().take(REND_MAX_DLIGHTS).enumerate() {
             if light.radius == 0.0 {
                 continue;
             }
-            let bit = 1_u32 << u32::try_from(i).unwrap_or(0);
+            let bit = 1_u64 << u32::try_from(i).unwrap_or(0);
             for tree in &self.trees {
                 for &root in &tree.roots {
                     tree.mark(
@@ -950,7 +951,7 @@ impl Lightmaps {
 
     /// The atlas for `styles` with `lights` added to the faces `marks` give bits for
     /// (REND-7.2).
-    fn image_with(&self, styles: &LightStyles, lights: &[DynamicLight], marks: &[u32]) -> Image {
+    fn image_with(&self, styles: &LightStyles, lights: &[DynamicLight], marks: &[u64]) -> Image {
         let mut rgba = vec![0_u8; ATLAS_WIDTH.saturating_mul(self.height).saturating_mul(4)];
         if let Some(corner) = rgba.get_mut(..4) {
             corner.copy_from_slice(&[255; 4]);
@@ -1003,7 +1004,7 @@ impl PlacedLight {
 
     /// The face's texels for `styles`, with the lights whose bits are in `bits` added
     /// (REND-7.2): `R_BuildLightMap`'s `blocklights`, then the shift and cap.
-    fn texels(&self, styles: &LightStyles, lights: &[DynamicLight], bits: u32) -> Vec<[u8; 3]> {
+    fn texels(&self, styles: &LightStyles, lights: &[DynamicLight], bits: u64) -> Vec<[u8; 3]> {
         let [smax, tmax] = self.size;
         let size = smax.saturating_mul(tmax);
         // "set to full bright if no light data" skips the dynamic lights too.
@@ -1012,7 +1013,7 @@ impl PlacedLight {
         }
         let (mut sums, colour) = self.light.sums(size, styles);
         for (i, light) in lights.iter().take(REND_MAX_DLIGHTS).enumerate() {
-            if bits & (1_u32 << u32::try_from(i).unwrap_or(0)) == 0 {
+            if bits & (1_u64 << u32::try_from(i).unwrap_or(0)) == 0 {
                 continue;
             }
             self.add_dynamic_light(light, &mut sums);

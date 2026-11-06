@@ -851,6 +851,17 @@ fn a_dynamic_light_brightens_the_texels_near_its_impact() {
     assert_eq!(texel(&mesh, 0, 0)[0], 255);
 }
 
+// spec REND-7.7: the renderer takes 64 lights, QuakeSpasm's `MAX_DLIGHTS`: the 64th marks and
+// lights the face, as id's 32 would not
+#[test]
+fn the_64th_light_is_pushed() {
+    let mut mesh = build(&MapSpec::default(), &samples(&[50]));
+    let mut lights = vec![light([0.0, 0.0, 1000.0], 1.0, 0.0); 63];
+    lights.push(light([0.0, 0.0, 3.0], 5.0, 0.0));
+    assert!(!mesh.relight_with(&LightStyles::unset(), &lights).is_empty());
+    assert_ne!(texel(&mesh, 0, 0)[0], 100);
+}
+
 // spec REND-7.6: a light straddling the node's plane marks the 64 by 32 face only when its
 // impact, clamped to the face's extents, is within its radius: `s*s + t*t + dist*dist <
 // radius*radius`, strictly
@@ -879,7 +890,7 @@ fn a_light_marks_only_a_face_it_reaches() {
 }
 
 // spec REND-7.1: a light is pushed through the nodes: a face is marked only when the
-// light's sphere straddles its node's plane; only the first 32 lights count, and a light of
+// light's sphere straddles its node's plane; only the first 64 lights count, and a light of
 // radius 0 is skipped
 #[test]
 fn lights_mark_the_faces_their_sphere_straddles() {
@@ -909,11 +920,11 @@ fn lights_mark_the_faces_their_sphere_straddles() {
             .is_empty()
     );
     assert_eq!(texel(&mesh, 0, 0)[0], 100);
-    let mut far = vec![light([0.0, 0.0, 1000.0], 1.0, 0.0); 32];
+    let mut far = vec![light([0.0, 0.0, 1000.0], 1.0, 0.0); 64];
     far.push(light([0.0, 0.0, 3.0], 5.0, 0.0));
     assert!(
         mesh.relight_with(&LightStyles::unset(), &far).is_empty(),
-        "the 33rd light is not pushed"
+        "the 65th light is not pushed"
     );
     assert_eq!(texel(&mesh, 0, 0)[0], 100);
     // A map with no lighting lump stays full bright (REND-1.5), and a face with no samples is

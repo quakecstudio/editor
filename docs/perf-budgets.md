@@ -65,9 +65,10 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
   release host runs once per route with `--timerefresh <eye>`: it loads the map (`map_load_*`),
   runs a second of server frames, each timed (`server_frame_*`) with the wall time inside QuakeC
   in it (`quakec_*`), then draws id's `timerefresh` (`R_TimeRefresh_f`: 128 frames turning
-  through a circle, no server frame between them) 16 times offscreen at 1280 by 800, each frame
-  timed from its start to the next one's, the last of a pass to the GPU's finish
-  (`frame_*`). Each measurement is one criterion sample, so the percentiles are the
+  through a circle, no server frame between them) 16 times offscreen at 1280 by 800, each
+  pass finished on the GPU and timed whole, its mean frame one sample (`frame_*`), as
+  QuakeSpasm's `timerefresh` reports it: offscreen nothing holds the CPU back to the GPU, so
+  a frame's own submit time would leave the GPU's work out. Each measurement is one criterion sample, so the percentiles are the
   measurements' own, not averages. With a route's variable unset its benchmarks are
   placeholders and the rows are judged as pending; on a reference machine they refuse to run.
   The eyes: e1m1 `480 -352 110`, the hub `0 -1920 46`.
@@ -88,15 +89,16 @@ ref-mac (Apple M5, 24 GB, macOS 27.2), 2026-11-06, seconds per 128 frames:
 
 The first pass of each run is the slowest; QuakeSpasm reports no per-frame times. Each
 `frame_*` budget is QuakeSpasm's slowest pass as a mean frame, 0.049 s / 128 = 383 us and
-0.463 s / 128 = 3.62 ms, and the margin our engine is allowed is none: our 99th percentile
-frame, the first pass's warm-up included, must be within QuakeSpasm's slowest pass. Our run
-on the same day: e1m1 p99 0.341 ms (median 0.098 ms), the hub p99 2.879 ms (median 2.271 ms).
+0.463 s / 128 = 3.62 ms, and the margin our engine is allowed is none: the 99th percentile of
+our 16 passes' mean frames, which is the slowest pass and so the first, cold one, must be
+within QuakeSpasm's slowest pass, which is its first too. Our run
+on the same day: e1m1 p99 0.172 ms a frame, the hub p99 2.43 ms.
 
 QuakeSpasm has no finer clock for a server frame, its QuakeC or a map load than `host_speeds`,
 which prints whole milliseconds, so those budgets are ours: a server frame within 1 ms and its
 QuakeC within 0.5 ms at the 99th percentile, a fourteenth of the 72 Hz tick, and a map loaded
-within ENG-13's second. Measured the same day: server frames p99 0.52 ms (e1m1) and 0.50 ms
-(hub), QuakeC p99 0.09 ms and 0.04 ms, loads 0.03 s and 0.70 s. The mg3 and Arcane Dimensions
+within ENG-13's second. Measured the same day: server frames p99 0.54 ms (e1m1) and 0.49 ms
+(hub), QuakeC p99 0.10 ms and 0.04 ms, loads 0.02 s and 0.69 s. The mg3 and Arcane Dimensions
 routes, and the Windows and Linux reference machines, are measured in P4-24.
 
 ## How the harness works

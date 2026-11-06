@@ -344,5 +344,6 @@ are of the FitzQuake lineage. id's limits are kept as a mode, as the BSP loader 
   static entities (CLIENT-1.3), 4096 visible entities (CLIENT-5.6), 64 dynamic lights
   (CLIENT-5.7), 32 beams (CLIENT-6.2) and 256 temporary entities (CLIENT-6.4); past each, it
   does what those statements say it does past id's. A new map keeps the limits.
-- **CLIENT-8.2** In the WinQuake mode the client keeps id's limits, the constants of CLIENT-1
-  to CLIENT-6, as those statements say.
+- **CLIENT-8.2** A caller that asks for id's limits (`ClientLimits::WINQUAKE`) gets them, the
+  constants of CLIENT-1 to CLIENT-6, as those statements say: a compatibility mode a caller
+  chooses, as ADR-0012 keeps `BspLoader::WinQuake`.

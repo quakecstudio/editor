@@ -340,6 +340,7 @@ struct Timerefresh {
 /// `values`, measured by the preview host, as the samples of benchmark `name`: one sample a
 /// value, each iteration of it the value, so the row's statistic is the values' own (P3-29).
 fn recorded(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, values: &[f64]) {
+    assert!(!values.is_empty(), "the preview host measured no {name}");
     group.sample_size(values.len().max(10));
     let mut next = values.iter().cycle();
     group.bench_function(name, |bencher| {
@@ -362,8 +363,8 @@ fn recorded(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, values: &[f64]
 /// The frame time, server-frame time, QuakeC time per frame and map load of each route
 /// (P3-29, ENG-17): the release preview host run once with `--timerefresh`, which loads the
 /// map, times a second of server frames and their QuakeC, then draws id's `timerefresh` 16
-/// times offscreen, each frame timed. Without the route's game root its benchmarks are
-/// placeholders.
+/// times offscreen, each pass finished on the GPU and its mean frame one sample. Without the
+/// route's game root its benchmarks are placeholders.
 fn routes(group: &mut BenchmarkGroup<'_, WallTime>) {
     for route in &ROUTES {
         let Some(root) = std::env::var_os(route.root).map(PathBuf::from) else {

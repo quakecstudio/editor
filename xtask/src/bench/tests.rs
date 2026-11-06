@@ -91,6 +91,35 @@ fn the_repository_budget_table_names_every_budget() {
     );
 }
 
+// The route benchmarks read a game, so each must be in GAME_BUDGETS, judged pending when its
+// game is not set; a route left out would pass on a placeholder.
+#[test]
+fn every_game_budget_is_listed_with_its_game() {
+    let budgets = parse_budgets(&repo::read(&root(), BUDGETS_DOC).unwrap()).unwrap();
+    let source = repo::read(&root(), BENCH_SOURCE).unwrap();
+    let routes = ["frame_", "server_frame_", "quakec_", "map_load_"];
+    for budget in &budgets {
+        let routed = routes.iter().any(|prefix| budget.name.starts_with(prefix));
+        let listed = GAME_BUDGETS.iter().any(|(name, _)| *name == budget.name);
+        assert_eq!(
+            routed || budget.name == "save_to_game",
+            listed,
+            "{}",
+            budget.name
+        );
+    }
+    for (name, variable) in GAME_BUDGETS {
+        assert!(
+            budgets.iter().any(|budget| budget.name == name),
+            "{name} has no row"
+        );
+        assert!(
+            source.contains(&format!("\"{variable}\"")),
+            "{variable} is not read"
+        );
+    }
+}
+
 #[test]
 fn every_budget_has_a_named_benchmark() {
     let budgets = parse_budgets(&repo::read(&root(), BUDGETS_DOC).unwrap()).unwrap();

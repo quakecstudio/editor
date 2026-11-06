@@ -415,12 +415,17 @@ The client's dynamic lights (CLIENT-5.5, CLIENT-5.7) light the faces near them f
   the node. A face this skips is one REND-7.2 adds no light to, since REND-7.2's texel distance
   is never less than the straight one, except within a texture unit of the radius, where the two
   truncations to ints can differ; fewer faces are made again.
+- **REND-7.7** The renderer takes the first 64 of the client's lights, QuakeSpasm's
+  `MAX_DLIGHTS` (Quake/client.h at sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`:
+  "`#define MAX_DLIGHTS 64 //johnfitz -- was 32`"), each face keeping a bit for each
+  (Quake/gl_model.h: "`unsigned int dlightbits[(MAX_DLIGHTS + 31) >> 5];`"), where id's keeps 32
+  in one `int`. A client with id's limits (CLIENT-8.2) gives it at most 32.
 
 ### Constants
 
 | Constant | Value | Source |
 | --- | --- | --- |
-| `REND_MAX_DLIGHTS` | 32 | `client.h`, `MAX_DLIGHTS` |
+| `REND_MAX_DLIGHTS` | 64 | QuakeSpasm's `Quake/client.h`, `MAX_DLIGHTS` ("64 //johnfitz -- was 32"); id's `client.h` has 32 (REND-7.7) |
 | `REND_FLASHBLEND_SCALE` | 0.35 | `gl_rlight.c`, `R_RenderDlight` |
 
 ## REND-8 Skyboxes

@@ -90,12 +90,16 @@ const PASSES: u16 = 16;
 /// `--timerefresh <x> <y> <z>` (P3-29, ENG-17): the map of `loaded`, which took `load` to load,
 /// run for a second with each server frame and its QuakeC timed, then id's `timerefresh` from
 /// `eye`, the 128 frames drawn offscreen at the window's first size with no server frame
-/// between them, [`PASSES`] times, each frame timed; then id's line for the first pass and a
-/// JSON line of every measurement, in seconds, for `cargo xtask bench`, on stdout.
+/// between them and finished on the GPU, [`PASSES`] times; then id's line for the first pass
+/// and a JSON line of every measurement, in seconds, for `cargo xtask bench`, on stdout. A
+/// pass's frame time is its mean, as QuakeSpasm's `timerefresh` reports it: offscreen nothing
+/// holds the CPU back to the GPU, so a frame's own submit time leaves the GPU's work out.
 ///
 /// # Errors
 ///
-/// Why the GPU device or a frame failed.
+/// Why the GPU device or a frame failed, or that the map asked the host to change level, start
+/// a game or quit in its first second, which would leave the frames measured on a server the
+/// host would not have kept.
 pub(crate) fn timerefresh(
     loaded: Loaded,
     load: std::time::Duration,
@@ -119,35 +123,29 @@ pub(crate) fn timerefresh(
                 .saturating_sub(before)
                 .as_secs_f64(),
         );
+        if world.game.host_action().is_some() {
+            return Err("the map changed level, started a game or quit in its first second".into());
+        }
         world.read_messages(if ran { FRAME } else { 0.0 });
     }
     let map = world.game.world().map().to_owned();
     let yaw = |i: u16| f32::from(i) / f32::from(TIMEREFRESH_FRAMES) * 360.0;
     let count = f64::from(TIMEREFRESH_FRAMES);
-    let mut frames = Vec::with_capacity(usize::from(PASSES).saturating_mul(128));
-    let mut first = 0.0;
-    for pass in 0..PASSES {
+    let mut passes = Vec::with_capacity(usize::from(PASSES));
+    for _ in 0..PASSES {
         // As `R_TimeRefresh_f` runs in QuakeSpasm (Quake/gl_rmisc.c at
         // sezero/quakespasm@c9c8ee98): the frames drawn back to back, then `glFinish ();`
-        // before the clock stops. Each frame's time runs to the next frame's start; the last
-        // one's to the end of the finish.
+        // before the clock stops.
         let start = std::time::Instant::now();
-        let mut last = start;
         for i in 0..TIMEREFRESH_FRAMES {
             let callback = world.callback(Some((eye, yaw(i))));
             drawer.submit(callback, SIZE);
-            if i.saturating_add(1) < TIMEREFRESH_FRAMES {
-                let now = std::time::Instant::now();
-                frames.push(now.duration_since(last).as_secs_f64());
-                last = now;
-            }
         }
         drawer.finish()?;
-        frames.push(last.elapsed().as_secs_f64());
-        if pass == 0 {
-            first = start.elapsed().as_secs_f64();
-        }
+        passes.push(start.elapsed().as_secs_f64());
     }
+    let first = passes.first().copied().unwrap_or_default();
+    let frames: Vec<f64> = passes.iter().map(|pass| pass / count).collect();
     let json = serde_json::json!({
         "map": map,
         "load": load.as_secs_f64(),
@@ -155,11 +153,8 @@ pub(crate) fn timerefresh(
         "quakec": quakec,
         "frame": frames,
     });
-    Ok(format!(
-        "{} seconds ({:.6} fps)\n{json}",
-        format_args!("{first:.6}"),
-        count / first.max(f64::MIN_POSITIVE)
-    ))
+    let fps = count / first.max(f64::MIN_POSITIVE);
+    Ok(format!("{first:.6} seconds ({fps:.6} fps)\n{json}"))
 }
 
 /// What a headless host keeps of a loaded map.
