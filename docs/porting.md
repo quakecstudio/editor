@@ -27,6 +27,7 @@ a ported file must keep.
 | [`sezero/quakespasm`](https://github.com/sezero/quakespasm), for the preview host ([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)) | `c9c8ee9895961669c4674e8f8ca8c64cc43e38b5` | GPL-2.0-or-later: a file's own header must say "either version 2 of the License, or (at your option) any later version"; `LICENSE.txt` is the GPL-2.0 text | `Copyright (C) 1996-2001 Id Software, Inc.`, `Copyright (C) 2002-2009 John Fitzgibbons and others`, `Copyright (C) 2010-2014 QuakeSpasm developers` |
 | [`andrei-drexler/ironwail`](https://github.com/andrei-drexler/ironwail), for the preview host ([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)) | `08d578136ff43d7d1ef38e636dfbfd3e844be7cd` | GPL-2.0-or-later: a file's own header must say "either version 2 of the License, or (at your option) any later version"; `LICENSE.txt` is the GPL-2.0 text | `Copyright (C) 1996-2001 Id Software, Inc.`, `Copyright (C) 2002-2009 John Fitzgibbons and others`, `Copyright (C) 2010-2014 QuakeSpasm developers`, `Copyright (C) 2016 Spike`, `Copyright (C) 2022 A. Drexler` |
 | [`Novum/vkQuake`](https://github.com/Novum/vkQuake), for the preview host ([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)) | `27789d7333a46674474d871137bb71e056719628` | GPL-2.0-or-later: a file's own header must say "either version 2 of the License, or (at your option) any later version"; `LICENSE.txt` is the GPL-2.0 text | `Copyright (C) 1996-2001 Id Software, Inc.`, `Copyright (C) 2002-2009 John Fitzgibbons and others`, `Copyright (C) 2010-2014 QuakeSpasm developers`, `Copyright (C) 2016 Spike`, `Copyright (C) 2016 Axel Gneiting`, `Copyright (C) 1996-1997 Id Software, Inc.` |
+| [`zed-industries/zed`](https://github.com/zed-industries/zed), for the IDE, its GPL-3.0-or-later crates only ([ADR-0021](adr/0021-zed-porting-upstream.md)) | `4a6121bb0f10c6e8037b741b7dc0a4cd639ae289` | GPL-3.0-or-later: a crate's `Cargo.toml` must say `license = "GPL-3.0-or-later"`; its Apache-2.0 crates (`gpui` among them) and crates with no stated licence are not portable; `LICENSE-GPL` is the GPL-3.0 text. Its source files carry no header, so a port keeps the line of `LICENSE-APACHE` | `Copyright 2022 - 2025 Zed Industries, Inc.` |
 
 The QuakeSpasm lineage's files carry different sets of copyright lines, so their rows list the
 lines most of them carry. A file ported from one of them keeps every `Copyright` line of the
@@ -51,7 +52,10 @@ files carry. FTEQW was added by Justin Plock's decision of 2026-10-20 (ADR-0017)
 compliance review (P4-22) confirms how its version 2 terms combine with ours. QuakeSpasm,
 Ironwail and vkQuake were added by his decision of the same day (ADR-0018), as porting sources
 for the preview host; id's engine stays its oracle ([ADR-0005](adr/0005-default-preview-target.md)),
-and none of the three is built or run in CI.
+and none of the three is built or run in CI. Zed was added by his decision of 2026-11-06
+(ADR-0021), as a porting source for the IDE layers (L5 to L7 and `apps/`) under the same
+clean-port policy; it has no oracle, so a port from it is proved by tests that cite the Zed
+setting, function or test they pin.
 
 ### Porting FTEQCC and the QuakeSpasm lineage: behaviour, not structure
 

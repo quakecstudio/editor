@@ -392,6 +392,7 @@ mod tests {
                 "sezero/quakespasm",
                 "andrei-drexler/ironwail",
                 "Novum/vkQuake",
+                "zed-industries/zed",
             ]
         );
         let firsts: Vec<&str> = upstreams.iter().map(|u| u.copyrights[0].as_str()).collect();
@@ -404,10 +405,11 @@ mod tests {
                 QS_ID,
                 QS_ID,
                 QS_ID,
+                ZED_COPYRIGHT,
             ]
         );
         let counts: Vec<usize> = upstreams.iter().map(|u| u.copyrights.len()).collect();
-        assert_eq!(counts, [1, 1, 1, 3, 5, 6]);
+        assert_eq!(counts, [1, 1, 1, 3, 5, 6, 1]);
         assert!(upstreams[4].copyrights.contains(&SPIKE.to_owned()));
         assert!(super::upstreams("## Upstreams\n| `a/b` | `not a copyright` |\n").is_err());
         assert!(super::upstreams("# no table\n").is_err());
@@ -579,6 +581,8 @@ mod tests {
     const DUSKE: &str = "Copyright (C) 2007-2008 Kristian Duske";
     const SPIKE: &str = "Copyright (C) 2016 Spike";
     const GNEITING: &str = "Copyright (C) 2016 Axel Gneiting";
+    const ZED_COPYRIGHT: &str = "Copyright 2022 - 2025 Zed Industries, Inc.";
+    const ZED: &str = "zed-industries/zed@4a6121bb0f10c6e8037b741b7dc0a4cd639ae289";
 
     /// A header with the given Copyright lines (ours among them where the test puts it) and
     /// one `Ported from` line per citation.
@@ -602,6 +606,19 @@ mod tests {
 
     fn fte_cite() -> String {
         format!("fte-team/fteqw@{FTE_COMMIT}")
+    }
+
+    // ADR-0021: a port from Zed keeps Zed Industries' line above ours; without it, or with it
+    // below ours, H4 fails
+    #[test]
+    fn h4_holds_a_zed_port_to_its_line() {
+        let text = lineage(&[ZED_COPYRIGHT, OUR_COPYRIGHT], &[ZED]);
+        assert!(rules(&text).is_empty(), "{text}");
+        assert_eq!(rules(&lineage(&[OUR_COPYRIGHT], &[ZED])), ["H4"]);
+        assert_eq!(
+            rules(&lineage(&[OUR_COPYRIGHT, ZED_COPYRIGHT], &[ZED])),
+            ["H4"]
+        );
     }
 
     // ADR-0018: a port from the QuakeSpasm lineage keeps its upstream file's lines, including
