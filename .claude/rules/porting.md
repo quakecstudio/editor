@@ -45,6 +45,12 @@ Rules that are easy to miss:
   version"; never their bundled third-party code. A port keeps every `Copyright` line of the
   upstream file's header, in its order, above ours. id's engine stays the oracle (ADR-0005):
   none of the three is built or run in CI.
+- Zed (`zed-industries/zed`) is portable for the IDE layers (L5 to L7 and `apps/`) under the
+  same policy (ADR-0021), but only crates whose `Cargo.toml` says
+  `license = "GPL-3.0-or-later"`; never `gpui` or its other Apache-2.0 crates. Its files have no
+  header, so a port keeps `Copyright 2022 - 2025 Zed Industries, Inc.` above ours. Port the
+  behaviour into egui and our commands, not its entities, actions or settings; tests cite the
+  Zed setting or function they pin.
 - Never commit id's C. Oracles fetch it by commit and checksum.
 - Keep the behaviour, not the C: no globals (they become an explicit context), errors as
   `Err` values, every wrap, truncation and float comparison written out with the `#[expect]`
