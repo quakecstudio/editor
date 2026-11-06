@@ -70,7 +70,7 @@ impl MapView {
                 particles: Vec::new(),
                 flat: qs_render::FlatFrame::default(),
                 placements: Vec::new(),
-                lightmap: None,
+                lightmap: Vec::new(),
                 player_skins: Vec::new(),
             },
         ));

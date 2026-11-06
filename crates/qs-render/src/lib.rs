@@ -39,8 +39,8 @@ pub use gpu::{
 pub use light::light_point;
 pub use md5::Md5Model;
 pub use mesh::{
-    Animation, Batch, Extras, GAMMA, Image, Lightmaps, MapMesh, MeshBuilder, MeshError, Palette,
-    Placement, REND_MAX_DLIGHTS, Surface, Vertex, frame, mip_levels,
+    Animation, Batch, Extras, GAMMA, Image, LightmapPatch, Lightmaps, MapMesh, MeshBuilder,
+    MeshError, Palette, Placement, REND_MAX_DLIGHTS, Surface, Vertex, frame, mip_levels,
 };
 pub use offscreen::{Offscreen, OffscreenError, Pixels};
 pub use particles::{ParticleVertex, particle_texture, particle_triangles};

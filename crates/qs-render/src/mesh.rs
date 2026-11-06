@@ -136,6 +136,15 @@ pub struct Image {
     pub rgba: Vec<u8>,
 }
 
+/// A rectangle of the lightmap atlas a relight made again, and where it sits (REND-5.7).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LightmapPatch {
+    /// The atlas texel of its top left corner.
+    pub at: [u32; 2],
+    /// Its texels.
+    pub image: Image,
+}
+
 /// One corner of a surface's triangles.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vertex {
@@ -228,18 +237,23 @@ impl MapMesh {
         Ok(builder.finish())
     }
 
-    /// Makes [`MapMesh::lightmap`] again for `styles` when a style some face reads changed
-    /// since it was made; whether it did (REND-5.5).
-    pub fn relight(&mut self, styles: &LightStyles) -> bool {
+    /// Makes [`MapMesh::lightmap`] again for `styles` where a style some face reads changed
+    /// since it was made; the rectangles of the atlas made again, none when nothing changed
+    /// (REND-5.5, REND-5.7).
+    pub fn relight(&mut self, styles: &LightStyles) -> Vec<LightmapPatch> {
         self.relight_with(styles, &[])
     }
 
     /// [`MapMesh::relight`] with the frame's dynamic lights added to the faces they reach
-    /// (REND-7.1, REND-7.2): the atlas is made again when a style changed, when a light
-    /// marks a face this frame, or when one did last frame and must be taken off.
-    pub fn relight_with(&mut self, styles: &LightStyles, lights: &[DynamicLight]) -> bool {
+    /// (REND-7.1, REND-7.2): a face is made again when a style it reads changed, when a light
+    /// marks it this frame, or when one did last frame and must be taken off.
+    pub fn relight_with(
+        &mut self,
+        styles: &LightStyles,
+        lights: &[DynamicLight],
+    ) -> Vec<LightmapPatch> {
         let marks = self.lightmaps.mark_lights(lights);
-        let mut changed = false;
+        let mut changes = Changes::default();
         // Only the faces whose light changed are made again, as `R_RenderDynamicLightmaps`
         // rebuilds only a stale or lit face.
         for (index, face) in self.lightmaps.faces.iter().enumerate() {
@@ -250,11 +264,11 @@ impl MapMesh {
             }
             let texels = face.texels(styles, lights, bits);
             face.blit(&texels, &mut self.lightmap.rgba);
-            changed = true;
+            changes.add(face.at, face.size);
         }
         self.lightmaps.applied = *styles;
         self.lightmaps.marks = marks;
-        changed
+        changes.patches(&self.lightmap)
     }
 }
 
@@ -674,6 +688,76 @@ struct LightNode {
     faces: Vec<usize>,
 }
 
+/// The side of the blocks the atlas is cut into for writing its changes, QuakeSpasm's
+/// `LMBLOCK_WIDTH` and `LMBLOCK_HEIGHT` (Quake/glquake.h at sezero/quakespasm@c9c8ee98: 256)
+/// (REND-5.7).
+const LIGHTMAP_BLOCK: usize = 256;
+
+/// The rectangle of each atlas block the faces made again cover, as QuakeSpasm grows a
+/// lightmap's `rectchange` to each face it builds (REND-5.7): keyed by the block of a face's
+/// top left texel, each as left, top, right and bottom.
+#[derive(Default)]
+struct Changes(std::collections::BTreeMap<[usize; 2], [usize; 4]>);
+
+impl Changes {
+    /// The face at `at`, `size` texels, made again.
+    fn add(&mut self, at: [usize; 2], size: [usize; 2]) {
+        let [x, y] = at;
+        let [right, bottom] = [x.saturating_add(size[0]), y.saturating_add(size[1])];
+        let block = [x, y].map(|n| n.checked_div(LIGHTMAP_BLOCK).unwrap_or(0));
+        self.0
+            .entry(block)
+            .and_modify(|[l, t, r, b]| {
+                *l = (*l).min(x);
+                *t = (*t).min(y);
+                *r = (*r).max(right);
+                *b = (*b).max(bottom);
+            })
+            .or_insert([x, y, right, bottom]);
+    }
+
+    /// Each rectangle's texels in `atlas`, clipped to it.
+    fn patches(&self, atlas: &Image) -> Vec<LightmapPatch> {
+        let width = usize::try_from(atlas.width).unwrap_or(0);
+        let height = usize::try_from(atlas.height).unwrap_or(0);
+        let mut patches = Vec::with_capacity(self.0.len());
+        for &[left, top, right, bottom] in self.0.values() {
+            let (right, bottom) = (right.min(width), bottom.min(height));
+            let mut rgba = Vec::new();
+            for row in top..bottom {
+                let start = row
+                    .saturating_mul(width)
+                    .saturating_add(left)
+                    .saturating_mul(4);
+                let end = row
+                    .saturating_mul(width)
+                    .saturating_add(right)
+                    .saturating_mul(4);
+                if let Some(texels) = atlas.rgba.get(start..end) {
+                    rgba.extend_from_slice(texels);
+                }
+            }
+            let (Ok(x), Ok(y), Ok(w), Ok(h)) = (
+                u32::try_from(left),
+                u32::try_from(top),
+                u32::try_from(right.saturating_sub(left)),
+                u32::try_from(bottom.saturating_sub(top)),
+            ) else {
+                continue;
+            };
+            patches.push(LightmapPatch {
+                at: [x, y],
+                image: Image {
+                    width: w,
+                    height: h,
+                    rgba,
+                },
+            });
+        }
+        patches
+    }
+}
+
 /// The nodes of one BSP added to the mesh, and the root of each of its models drawn: the
 /// world's, and each brush model's `hulls[0].firstclipnode` (REND-7.1, REND-7.5).
 #[derive(Clone, Debug, PartialEq)]
@@ -705,10 +789,17 @@ impl Tree {
         Self { nodes, roots }
     }
 
-    /// `R_MarkLights`: sets `bit` in `marks` for every face of a node the light's sphere
-    /// straddles, down from `root` (REND-7.1). A tree is never deeper than its node count;
-    /// a cycle in a damaged one ends there.
-    fn mark(&self, light: &DynamicLight, bit: u32, root: i32, marks: &mut [u32], depth: usize) {
+    /// `R_MarkLights`: sets `bit` in `marks` for each face of `faces` on a node the light's
+    /// sphere straddles that the light reaches, down from `root` (REND-7.1, REND-7.6). A tree
+    /// is never deeper than its node count; a cycle in a damaged one ends there.
+    fn mark(
+        &self,
+        light: &DynamicLight,
+        bit: u32,
+        root: i32,
+        (faces, marks): (&[PlacedLight], &mut [u32]),
+        depth: usize,
+    ) {
         // "if (node->contents < 0) return": a leaf.
         let Some(node) = usize::try_from(root).ok().and_then(|n| self.nodes.get(n)) else {
             return;
@@ -720,20 +811,23 @@ impl Tree {
         let dist = dot3(light.origin, normal) - dist;
         let [front, back] = node.children;
         if dist > light.radius {
-            self.mark(light, bit, front, marks, depth);
+            self.mark(light, bit, front, (faces, marks), depth);
             return;
         }
         if dist < -light.radius {
-            self.mark(light, bit, back, marks, depth);
+            self.mark(light, bit, back, (faces, marks), depth);
             return;
         }
         for &face in &node.faces {
+            if !faces.get(face).is_some_and(|placed| placed.reaches(light)) {
+                continue;
+            }
             if let Some(mark) = marks.get_mut(face) {
                 *mark |= bit;
             }
         }
-        self.mark(light, bit, front, marks, depth);
-        self.mark(light, bit, back, marks, depth);
+        self.mark(light, bit, front, (faces, marks), depth);
+        self.mark(light, bit, back, (faces, marks), depth);
     }
 }
 
@@ -785,7 +879,13 @@ impl Lightmaps {
             let bit = 1_u32 << u32::try_from(i).unwrap_or(0);
             for tree in &self.trees {
                 for &root in &tree.roots {
-                    tree.mark(light, bit, root, &mut marks, tree.nodes.len());
+                    tree.mark(
+                        light,
+                        bit,
+                        root,
+                        (&self.faces, &mut marks),
+                        tree.nodes.len(),
+                    );
                 }
             }
         }
@@ -920,6 +1020,35 @@ impl PlacedLight {
         sums.iter()
             .map(|sum| sum.map(|channel| colour.texel(channel)))
             .collect()
+    }
+
+    /// Whether `light` comes near enough to the face to light it, as QuakeSpasm's
+    /// `R_MarkLights` asks before marking it (REND-7.6): the light's impact on the plane,
+    /// clamped to the face's extents in texture space, within the radius of the light.
+    fn reaches(&self, light: &DynamicLight) -> bool {
+        let (normal, plane_dist) = self.plane;
+        let dist = dot3(light.origin, normal) - plane_dist;
+        let impact = [
+            light.origin[0] - normal[0] * dist,
+            light.origin[1] - normal[1] * dist,
+            light.origin[2] - normal[2] * dist,
+        ];
+        // "s = l+0.5;if (s < 0) s = 0;else if (s > surf->extents[0]) s = surf->extents[0];
+        // s = l - s;": each float assigned to the int `s`, toward zero.
+        let off = |vec: [f32; 4], size: usize, min: i16| -> f64 {
+            let extent = truncate_i32(f32_of_usize(size.saturating_sub(1)) * TEXEL_UNITS);
+            let l = dot3(impact, [vec[0], vec[1], vec[2]]) + vec[3] - f32::from(min);
+            let nearest = truncate_i32(l + 0.5).clamp(0, extent.max(0));
+            f64::from(truncate_i32(l - f32_of_i32(nearest)))
+        };
+        let [svec, tvec] = self.vecs;
+        let [smax, tmax] = self.size;
+        let [smin, tmin] = self.texturemins;
+        let (s, t) = (off(svec, smax, smin), off(tvec, tmax, tmin));
+        // The ints' squares in a double, so a far light cannot overflow them as C's ints do.
+        let dist = f64::from(dist);
+        let radius = f64::from(light.radius);
+        s * s + t * t + dist * dist < radius * radius
     }
 
     /// `R_AddDynamicLights` for one light (REND-7.2).
