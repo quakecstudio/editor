@@ -3236,6 +3236,7 @@ dependencies = [
  "qc-sema",
  "qs-workbench",
  "quakec-studio",
+ "serde",
  "serde_json",
 ]
 

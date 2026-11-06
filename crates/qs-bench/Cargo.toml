@@ -18,6 +18,8 @@ qc-sema = { workspace = true }
 quakec-studio = { workspace = true }
 # save_to_game: the project built and reloaded in the windowed preview host (P3-12).
 qs-workbench = { workspace = true }
+# The routes: the preview host's --timerefresh report (P3-29).
+serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 
 [[bench]]

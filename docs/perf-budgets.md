@@ -20,6 +20,14 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 | `check_after_typing` | PRIN-5 | 100 ms | p95 | [#714](https://github.com/quakecstudio/editor/issues/714) P2-166 | active |
 | `id1_recompile` | PRIN-5 | 200 ms | median | [#67](https://github.com/quakecstudio/editor/issues/67) P2-11 | active |
 | `save_to_game` | ENG-13 | 1 s | p95 | [#100](https://github.com/quakecstudio/editor/issues/100) P3-12 | active |
+| `frame_e1m1` | ENG-17 | 383 us | p99 | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
+| `server_frame_e1m1` | ENG-17 | 1 ms | p99 | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
+| `quakec_e1m1` | ENG-17 | 500 us | p99 | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
+| `map_load_e1m1` | ENG-17 | 1 s | median | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
+| `frame_mg1` | ENG-17 | 3.62 ms | p99 | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
+| `server_frame_mg1` | ENG-17 | 1 ms | p99 | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
+| `quakec_mg1` | ENG-17 | 500 us | p99 | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
+| `map_load_mg1` | ENG-17 | 1 s | median | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
 <!-- /perf-budgets -->
 
 - **`open_project_and_type`:** open a 50,000-line QuakeC project in the editor and type the first
@@ -49,6 +57,47 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
   answers once it has drawn the next frame. Without `QS_BENCH_GAME` the benchmark is a
   placeholder and the row is judged as pending; on a reference machine it refuses to run
   without one. ref-mac, GOG install, 2026-11-06: p95 77.04 ms.
+
+- **The routes (`frame_*`, `server_frame_*`, `quakec_*`, `map_load_*`):** the preview host
+  runs as players' engines do (ENG-17), on two routes: id1's e1m1 from `QS_BENCH_GAME`, and the
+  rerelease's mg1 hub from `QS_BENCH_RERELEASE`, a game root holding `id1` and `mg1`. Each route
+  stands at its start, so the server frames are the map's own with the player idle. The
+  release host runs once per route with `--timerefresh <eye>`: it loads the map (`map_load_*`),
+  runs a second of server frames, each timed (`server_frame_*`) with the wall time inside QuakeC
+  in it (`quakec_*`), then draws id's `timerefresh` (`R_TimeRefresh_f`: 128 frames turning
+  through a circle, no server frame between them) 16 times offscreen at 1280 by 800, each frame
+  timed from its start to the next one's, the last of a pass to the GPU's finish
+  (`frame_*`). Each measurement is one criterion sample, so the percentiles are the
+  measurements' own, not averages. With a route's variable unset its benchmarks are
+  placeholders and the rows are judged as pending; on a reference machine they refuse to run.
+  The eyes: e1m1 `480 -352 110`, the hub `0 -1920 46`.
+
+### QuakeSpasm's numbers
+
+ENG-17 holds the frame time to QuakeSpasm's on the same route and machine. QuakeSpasm is built
+by hand at `sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5` and run only on the
+reference machines, never in CI (ADR-0005): windowed at 1280 by 800, `-nosound`, `vid_vsync
+0`, the map loaded, `setpos` to the route's start, then `timerefresh` five times
+(Quake/gl_rmisc.c: the 128 frames drawn, then `glFinish`, timed together). Three runs each, on
+ref-mac (Apple M5, 24 GB, macOS 27.2), 2026-11-06, seconds per 128 frames:
+
+| Route | Runs | Median | Slowest |
+| --- | --- | --- | --- |
+| e1m1 | 0.047 0.025 0.024 0.020 0.018, 0.049 0.020 0.025 0.020 0.019, 0.041 0.024 0.019 0.018 0.024 | 0.024 | 0.049 |
+| mg1 hub (protocol 666) | 0.344 0.436 0.429 0.410 0.433, 0.300 0.383 0.372 0.375 0.419, 0.311 0.463 0.445 0.448 0.445 | 0.419 | 0.463 |
+
+The first pass of each run is the slowest; QuakeSpasm reports no per-frame times. Each
+`frame_*` budget is QuakeSpasm's slowest pass as a mean frame, 0.049 s / 128 = 383 us and
+0.463 s / 128 = 3.62 ms, and the margin our engine is allowed is none: our 99th percentile
+frame, the first pass's warm-up included, must be within QuakeSpasm's slowest pass. Our run
+on the same day: e1m1 p99 0.341 ms (median 0.098 ms), the hub p99 2.879 ms (median 2.271 ms).
+
+QuakeSpasm has no finer clock for a server frame, its QuakeC or a map load than `host_speeds`,
+which prints whole milliseconds, so those budgets are ours: a server frame within 1 ms and its
+QuakeC within 0.5 ms at the 99th percentile, a fourteenth of the 72 Hz tick, and a map loaded
+within ENG-13's second. Measured the same day: server frames p99 0.52 ms (e1m1) and 0.50 ms
+(hub), QuakeC p99 0.09 ms and 0.04 ms, loads 0.03 s and 0.70 s. The mg3 and Arcane Dimensions
+routes, and the Windows and Linux reference machines, are measured in P4-24.
 
 ## How the harness works
 
