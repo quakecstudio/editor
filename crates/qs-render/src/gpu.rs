@@ -14,7 +14,9 @@ use std::sync::Arc;
 use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 
 use crate::alias::AliasVertex;
-use crate::mesh::{Animation, Batch, Image, MapMesh, Placement, Surface, frame, mip_levels};
+use crate::mesh::{
+    Animation, Batch, Image, LightmapPatch, MapMesh, Placement, Surface, frame, mip_levels,
+};
 use crate::particles::{ParticleVertex, particle_texture};
 use crate::skybox::Skybox;
 use crate::sprite::SpriteVertex;
@@ -792,23 +794,40 @@ impl MapRenderer {
         self.flat_draws.clone_from(&flat.draws);
     }
 
-    /// Writes `image`, the mesh's lightmap made again for new light styles
-    /// ([`crate::MapMesh::relight`]), over the one drawn (REND-5.5). An image of another size
-    /// than the mesh's lightmap is not written.
-    pub fn set_lightmap(&self, queue: &Queue, image: &Image) {
+    /// Writes `patch`, one face's lightmap a relight made again
+    /// ([`crate::MapMesh::relight`]), over the texels drawn (REND-5.5, REND-5.7). A patch
+    /// reaching past the lightmap's edge, or whose texels are not its width by its height, is
+    /// not written.
+    pub fn set_lightmap(&self, queue: &Queue, patch: &LightmapPatch) {
         let size = self.lightmap.size();
-        if (image.width, image.height) != (size.width, size.height) {
+        let image = &patch.image;
+        let [x, y] = patch.at;
+        let texels = u64::from(image.width)
+            .checked_mul(u64::from(image.height))
+            .and_then(|n| n.checked_mul(4))
+            .and_then(|n| usize::try_from(n).ok());
+        if x.saturating_add(image.width) > size.width
+            || y.saturating_add(image.height) > size.height
+            || texels != Some(image.rgba.len())
+        {
             return;
         }
         queue.write_texture(
-            self.lightmap.as_image_copy(),
+            wgpu::TexelCopyTextureInfo {
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                ..self.lightmap.as_image_copy()
+            },
             &image.rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(image.width.saturating_mul(4)),
                 rows_per_image: Some(image.height),
             },
-            size,
+            wgpu::Extent3d {
+                width: image.width,
+                height: image.height,
+                depth_or_array_layers: 1,
+            },
         );
     }
 
@@ -1255,8 +1274,9 @@ pub struct MapCallback {
     pub flat: FlatFrame,
     /// Each of the mesh's models' matrices, the world's first; `None` for one not drawn.
     pub placements: Vec<Option<[[f32; 4]; 4]>>,
-    /// The lightmap made again for this frame's light styles, when they changed (REND-5.5).
-    pub lightmap: Option<Image>,
+    /// The faces' lightmaps made again for this frame's light styles and dynamic lights
+    /// (REND-5.5, REND-5.7).
+    pub lightmap: Vec<LightmapPatch>,
     /// The translated skin of each player drawn this frame (REND-4.13).
     pub player_skins: Vec<PlayerSkin>,
 }
@@ -1280,8 +1300,8 @@ impl CallbackTrait for MapCallback {
             if !self.placements.is_empty() {
                 renderer.set_placements(queue, &self.placements);
             }
-            if let Some(lightmap) = &self.lightmap {
-                renderer.set_lightmap(queue, lightmap);
+            for patch in &self.lightmap {
+                renderer.set_lightmap(queue, patch);
             }
             for skin in &self.player_skins {
                 renderer.set_player_skin(device, queue, skin);
@@ -1350,8 +1370,8 @@ mod tests {
     };
     use crate::alias::AliasVertex;
     use crate::camera::Camera;
-    use crate::mesh::Image;
     use crate::mesh::tests::{MapSpec, bsp, palette, samples};
+    use crate::mesh::{Image, LightmapPatch};
     use crate::particles::ParticleVertex;
     use crate::picture::tests::{TgaSpec, solid, tga};
     use crate::skybox::Skybox;
@@ -1425,7 +1445,7 @@ mod tests {
             particles: Vec::new(),
             flat: FlatFrame::default(),
             placements: Vec::new(),
-            lightmap: None,
+            lightmap: Vec::new(),
             player_skins: Vec::new(),
         }
     }
@@ -1952,23 +1972,46 @@ mod tests {
         buffer.slice(..).get_mapped_range().unwrap().to_vec()
     }
 
-    // spec REND-5.5: a lightmap made again for new styles is written over the one drawn; one
-    // of another size is not
+    // spec REND-5.5: a lightmap made again for new styles is written over the one drawn
     #[test]
     fn a_new_lightmap_is_written_over_the_old() {
         let (state, renderer, mut mesh) = renderer();
         assert_eq!(&lightmap_row(&state, &renderer)[4..8], [100, 100, 100, 255]);
         let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0);
-        assert!(mesh.relight(&off));
-        renderer.set_lightmap(&state.queue, &mesh.lightmap);
+        for patch in mesh.relight(&off) {
+            renderer.set_lightmap(&state.queue, &patch);
+        }
         assert_eq!(&lightmap_row(&state, &renderer)[4..8], [0, 0, 0, 255]);
-        let small = Image {
-            width: 1,
-            height: 1,
-            rgba: vec![9; 4],
+    }
+
+    // spec REND-5.7: a patch is written where it sits; one reaching past the lightmap's
+    // right or bottom edge, or with fewer texels than its size, is not written
+    #[test]
+    fn only_patches_that_fit_are_written() {
+        let (state, renderer, _) = renderer();
+        let size = renderer.lightmap.size();
+        let patch = |x: u32, y: u32, width: u32, height: u32| LightmapPatch {
+            at: [x, y],
+            image: Image {
+                width,
+                height,
+                rgba: vec![7; usize::try_from(width * height * 4).unwrap()],
+            },
         };
-        renderer.set_lightmap(&state.queue, &small);
-        assert_eq!(&lightmap_row(&state, &renderer)[..4], [255, 255, 255, 255]);
+        let before = lightmap_row(&state, &renderer);
+        renderer.set_lightmap(&state.queue, &patch(size.width, 0, 1, 1));
+        renderer.set_lightmap(&state.queue, &patch(0, 0, size.width + 1, 1));
+        renderer.set_lightmap(&state.queue, &patch(0, size.height, 1, 1));
+        renderer.set_lightmap(&state.queue, &patch(0, 0, 1, size.height + 1));
+        let mut short = patch(0, 0, 2, 1);
+        short.image.rgba.truncate(4);
+        renderer.set_lightmap(&state.queue, &short);
+        assert_eq!(lightmap_row(&state, &renderer), before);
+        renderer.set_lightmap(&state.queue, &patch(1, 0, 1, 1));
+        let after = lightmap_row(&state, &renderer);
+        assert_eq!(after[..4], before[..4]);
+        assert_eq!(after[4..8], [7, 7, 7, 7]);
+        assert_eq!(after[8..], before[8..]);
     }
 
     // spec REND-5.5: the paint callback writes the lightmap it carries before drawing
@@ -1976,7 +2019,7 @@ mod tests {
     fn the_callback_writes_its_lightmap() {
         let (state, renderer, mut mesh) = renderer();
         let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0);
-        mesh.relight(&off);
+        let lightmap = mesh.relight(&off);
         let mut resources = egui_wgpu::CallbackResources::default();
         resources.insert(renderer);
         let callback = MapCallback {
@@ -1987,7 +2030,7 @@ mod tests {
             particles: Vec::new(),
             flat: FlatFrame::default(),
             placements: Vec::new(),
-            lightmap: Some(mesh.lightmap.clone()),
+            lightmap,
             player_skins: Vec::new(),
         };
         let mut encoder = state.device.create_command_encoder(&Default::default());

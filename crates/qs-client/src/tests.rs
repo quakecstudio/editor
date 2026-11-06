@@ -17,10 +17,10 @@ use qs_sim::Message;
 
 use crate::{
     CLIENT_MAX_DLIGHTS, CLIENT_MAX_EDICTS, CLIENT_MAX_STATIC_ENTITIES, CLIENT_MAX_TEMP_ENTITIES,
-    CLIENT_MAX_VISEDICTS, CLIENT_SIGNONS, Client, Contents, Event, FrameInfo, Game, LerpSettings,
-    ModelInfo, ModelKind, Models, PART_ABSOLUTE_MIN_PARTICLES, PART_RAMP1, PART_RAMP3, ParseError,
-    ParticleType, Particles, Random, Reader, SoundRef, ViewInput, ViewSettings, ViewState,
-    angledelta, calc_bob, calc_roll, flags, gamma_table, stat,
+    CLIENT_MAX_VISEDICTS, CLIENT_SIGNONS, Client, ClientLimits, Contents, Event, FrameInfo, Game,
+    LerpSettings, ModelInfo, ModelKind, Models, PART_ABSOLUTE_MIN_PARTICLES, PART_RAMP1,
+    PART_RAMP3, ParseError, ParticleType, Particles, Random, Reader, SoundRef, ViewInput,
+    ViewSettings, ViewState, angledelta, calc_bob, calc_roll, flags, gamma_table, stat,
 };
 
 /// `rand ()` returning the values given, then 0.
@@ -245,8 +245,15 @@ fn update(
 
 /// A client past the serverinfo, with the default models, no sounds, and baselines for the
 /// world, the player (model `PLAYER`) and a thing (model `THING` at (100, 0, 0)).
+/// A client connected to a map in the WinQuake mode, whose limits are id's, as the
+/// statements of CLIENT-1 to CLIENT-6 state them (CLIENT-8.2).
 fn connected() -> Client {
-    let mut client = Client::new(Game::Standard);
+    connected_with(ClientLimits::WINQUAKE)
+}
+
+/// A client connected to a map, keeping to `limits`.
+fn connected_with(limits: ClientLimits) -> Client {
+    let mut client = Client::with_limits(Game::Standard, limits);
     let mut packets = vec![serverinfo(&MODELS, &["a.wav", "b.wav"])];
     packets.push(baseline(0, WORLD as i32, [0.0; 3], [0.0; 3]));
     packets.push(baseline(1, PLAYER as i32, [0.0; 3], [0.0; 3]));
@@ -412,6 +419,39 @@ fn baselines_and_statics() {
         client.frame(0.0, &[stat], &mut TestModels, &mut Fixed(vec![])),
         Err(ParseError::TooManyStatics)
     );
+}
+
+// spec CLIENT-8.1: by default a client keeps QuakeSpasm's limits: past id's 128 static
+// entities up to 4096, the next one refused; a map reload keeps the limits
+#[test]
+fn quakespasm_limits_are_the_default() {
+    assert_eq!(ClientLimits::default(), ClientLimits::QUAKESPASM);
+    assert_eq!(
+        (
+            ClientLimits::QUAKESPASM.statics,
+            ClientLimits::QUAKESPASM.visedicts,
+            ClientLimits::QUAKESPASM.dlights,
+            ClientLimits::QUAKESPASM.beams,
+            ClientLimits::QUAKESPASM.temp_entities
+        ),
+        (4096, 4096, 64, 32, 256)
+    );
+    let mut client = connected_with(ClientLimits::default());
+    let mut stat = baseline(0, THING as i32, [5.0, 6.0, 7.0], [0.0, 90.0, 0.0]);
+    stat[0] = 20;
+    stat.remove(1);
+    stat.remove(1);
+    for _ in 0..4096 {
+        frame(&mut client, 0.0, std::slice::from_ref(&stat));
+    }
+    assert_eq!(client.statics().len(), 4096);
+    assert_eq!(
+        client.frame(0.0, &[stat], &mut TestModels, &mut Fixed(vec![])),
+        Err(ParseError::TooManyStatics)
+    );
+    // spec CLIENT-8.2: the WinQuake mode keeps id's
+    assert_eq!(ClientLimits::WINQUAKE.statics, CLIENT_MAX_STATIC_ENTITIES);
+    assert_eq!(ClientLimits::WINQUAKE.dlights, CLIENT_MAX_DLIGHTS);
 }
 
 // spec CLIENT-1.4: each command of a server message; an unknown one and a short one are

@@ -323,3 +323,27 @@ behaviour the option, `r_lerpmodels 0` and `r_lerpmove 0`). The flags: `LERP_MOV
 | `CLIENT_LERP_SINGLE_POSE` | 0.1 | `r_alias.c`, `R_SetupAliasFrame` |
 | `CLIENT_LERP_MOVE_TIME` | 0.1 | `r_alias.c`, `R_SetupEntityTransform` |
 | `CLIENT_U_STEP` | `1 << 5` | `protocol.h`, `U_STEP` (QuakeSpasm; id's `U_NOLERP`) |
+
+## CLIENT-8 Limits
+
+**Source:** `WinQuake/client.h` at id-Software/Quake@`bf4ac424`; `Quake/client.h` at
+sezero/quakespasm@`c9c8ee98`: "#define MAX_DLIGHTS 64 //johnfitz -- was 32", "#define MAX_BEAMS
+32 //johnfitz -- was 24", "#define MAX_TEMP_ENTITIES 256 //johnfitz -- was 64", "#define
+MAX_STATIC_ENTITIES 4096 //ericw -- was 512 //johnfitz -- was 128" and "#define MAX_VISEDICTS
+4096 // larger, now we support BSP2".
+
+A deliberate divergence from id's client: the 2021 rerelease's maps exceed id's limits (the
+start map of Dimension of the Machine, `mg1/maps/hub.bsp`, holds more static entities than 128,
+and id's client stops it with `Too many static entities`), and the engines players run them on
+are of the FitzQuake lineage. id's limits are kept as a mode, as the BSP loader keeps id's
+(ADR-0012).
+
+### Behaviour
+
+- **CLIENT-8.1** By default the client keeps QuakeSpasm's limits in place of id's: 4096
+  static entities (CLIENT-1.3), 4096 visible entities (CLIENT-5.6), 64 dynamic lights
+  (CLIENT-5.7), 32 beams (CLIENT-6.2) and 256 temporary entities (CLIENT-6.4); past each, it
+  does what those statements say it does past id's. A new map keeps the limits.
+- **CLIENT-8.2** A caller that asks for id's limits (`ClientLimits::WINQUAKE`) gets them, the
+  constants of CLIENT-1 to CLIENT-6, as those statements say: a compatibility mode a caller
+  chooses, as ADR-0012 keeps `BspLoader::WinQuake`.

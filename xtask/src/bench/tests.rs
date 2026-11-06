@@ -65,7 +65,7 @@ fn run(key: &str, passed: bool, results: Vec<BenchResult>) -> Run {
 }
 
 #[test]
-fn the_repository_budget_table_names_the_five_budgets() {
+fn the_repository_budget_table_names_every_budget() {
     let budgets = parse_budgets(&repo::read(&root(), BUDGETS_DOC).unwrap()).unwrap();
     let rows: Vec<(&str, f64, Statistic)> = budgets
         .iter()
@@ -79,8 +79,45 @@ fn the_repository_budget_table_names_the_five_budgets() {
             ("check_after_typing", 1e8, Statistic::P95),
             ("id1_recompile", 2e8, Statistic::Median),
             ("save_to_game", 1e9, Statistic::P95),
+            ("frame_e1m1", 383e3, Statistic::P99),
+            ("server_frame_e1m1", 1e6, Statistic::P99),
+            ("quakec_e1m1", 5e5, Statistic::P99),
+            ("map_load_e1m1", 1e9, Statistic::Median),
+            ("frame_mg1", 3.62e6, Statistic::P99),
+            ("server_frame_mg1", 1e6, Statistic::P99),
+            ("quakec_mg1", 5e5, Statistic::P99),
+            ("map_load_mg1", 1e9, Statistic::Median),
         ]
     );
+}
+
+// The route benchmarks read a game, so each must be in GAME_BUDGETS, judged pending when its
+// game is not set; a route left out would pass on a placeholder.
+#[test]
+fn every_game_budget_is_listed_with_its_game() {
+    let budgets = parse_budgets(&repo::read(&root(), BUDGETS_DOC).unwrap()).unwrap();
+    let source = repo::read(&root(), BENCH_SOURCE).unwrap();
+    let routes = ["frame_", "server_frame_", "quakec_", "map_load_"];
+    for budget in &budgets {
+        let routed = routes.iter().any(|prefix| budget.name.starts_with(prefix));
+        let listed = GAME_BUDGETS.iter().any(|(name, _)| *name == budget.name);
+        assert_eq!(
+            routed || budget.name == "save_to_game",
+            listed,
+            "{}",
+            budget.name
+        );
+    }
+    for (name, variable) in GAME_BUDGETS {
+        assert!(
+            budgets.iter().any(|budget| budget.name == name),
+            "{name} has no row"
+        );
+        assert!(
+            source.contains(&format!("\"{variable}\"")),
+            "{variable} is not read"
+        );
+    }
 }
 
 #[test]
@@ -677,12 +714,29 @@ fn a_game_budget_is_pending_without_a_game() {
         status: Status::Active,
     };
     assert_eq!(
-        judged_here(&row("save_to_game"), false).status,
+        judged_here(&row("save_to_game"), |_| false).status,
         Status::Pending
     );
     assert_eq!(
-        judged_here(&row("save_to_game"), true).status,
+        judged_here(&row("save_to_game"), |_| true).status,
         Status::Active
     );
-    assert_eq!(judged_here(&row("keystroke"), false).status, Status::Active);
+    // Each route needs its own game: the mg1 hub the rerelease's.
+    let only_game = |variable: &str| variable == GAME_DIR;
+    assert_eq!(
+        judged_here(&row("frame_e1m1"), only_game).status,
+        Status::Active
+    );
+    assert_eq!(
+        judged_here(&row("frame_mg1"), only_game).status,
+        Status::Pending
+    );
+    assert_eq!(
+        judged_here(&row("map_load_mg1"), |v: &str| v == RERELEASE_DIR).status,
+        Status::Active
+    );
+    assert_eq!(
+        judged_here(&row("keystroke"), |_| false).status,
+        Status::Active
+    );
 }

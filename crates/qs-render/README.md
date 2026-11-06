@@ -33,7 +33,8 @@ the map view and the preview host share one renderer.
 - `MapMesh::build(bsp, palette)`: the world model as vertices, a fan of triangles per face,
   batches by texture, the textures through `Palette`, and every face's light in one lightmap
   atlas (REND-1.1 to REND-1.6, REND-1.8). `MapMesh::relight(styles)` makes the atlas again
-  when a style a face reads changes (REND-5.5), and `MapRenderer::set_lightmap` writes it.
+  when a style a face reads changes (REND-5.5), and `MapRenderer::set_lightmap` writes each
+  256 by 256 block's changed rectangle, as QuakeSpasm uploads its lightmaps (REND-5.7).
 - `LightStyles::at(strings, time)`: `R_AnimateLight`, every style's value from the strings the
   progs set with `lightstyle` (REND-5).
 - `MeshBuilder::add_with(bsp, extras, placements)`: a model lit in colour by its map's
@@ -45,7 +46,8 @@ the map view and the preview host share one renderer.
   `draw(entity, time, out)` appends an entity's shaded triangles for its frame and skin at a
   time (REND-4). `light_point(bsp, point)` is `R_LightPoint`, the light it is shaded by.
 - `MapMesh::relight_with(styles, lights)`: the atlas again with the frame's dynamic lights
-  pushed through the BSP's nodes and added to the faces they reach (REND-7).
+  pushed through the BSP's nodes and added to the faces they reach, each face checked first as
+  QuakeSpasm's `R_MarkLights` does (REND-7, REND-7.6).
 - `Md5Model::read(name, bytes, read, palette, torch)`: a rerelease MD5 model, its frames'
   vertices from the joints and its skins from the shader names, drawn as an alias model;
   `Play` draws one in place of the `.mdl` it replaces (REND-12).

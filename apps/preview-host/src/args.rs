@@ -60,6 +60,12 @@ pub(crate) struct Args {
     /// stdout and exit (P2-152).
     #[arg(long, value_name = "seconds")]
     pub(crate) benchmark: Option<f32>,
+    /// id's `timerefresh` (`R_TimeRefresh_f`) with no window, for `cargo xtask bench`: the
+    /// map loaded and a second of server frames timed, then 128 frames drawn offscreen from this
+    /// eye, the yaw at i/128 of a turn, pitch 0, with no server frame between them, 16 times;
+    /// then id's line and a JSON line of the times on stdout (P3-29, ENG-17).
+    #[arg(long, num_args = 3, value_names = ["x", "y", "z"], allow_negative_numbers = true)]
+    pub(crate) timerefresh: Option<Vec<f32>>,
     /// Where the window opens, to put it on a chosen display.
     #[arg(long, num_args = 2, value_names = ["x", "y"], allow_negative_numbers = true)]
     pub(crate) position: Option<Vec<f32>>,

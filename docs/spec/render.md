@@ -340,6 +340,15 @@ style every frame and rebuilds the lightmaps of the faces whose styles changed.
   atlas; the texels are the same.
 - **REND-5.6** `R_LightPoint` sums `sample * scale` with the same style values into the `int r`,
   so its products wrap the same way, and shifts it right by 8 (`RecursiveLightPoint`).
+- **REND-5.7** Faces made again reach the GPU as QuakeSpasm uploads its lightmaps
+  (`R_UploadLightmap`, Quake/r_brush.c at
+  sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`): each block grows a rectangle,
+  `lm->rectchange`, to every face built in it, and only that is written,
+  "`glTexSubImage2D(GL_TEXTURE_2D, 0, 0, lm->rectchange.t, LMBLOCK_WIDTH, lm->rectchange.h,
+  ...)`", with `LMBLOCK_WIDTH` and `LMBLOCK_HEIGHT` 256 (Quake/glquake.h). This renderer keeps
+  one atlas cut into 256 by 256 blocks; a face counts in the block of its top left texel, and
+  each block's rectangle, clipped to the atlas, is written once a frame, its columns as well as
+  its rows, where QuakeSpasm writes the block's full width. The texels drawn are the same.
 
 ## REND-6 Coloured light
 
@@ -394,12 +403,29 @@ The client's dynamic lights (CLIENT-5.5, CLIENT-5.7) light the faces near them f
   from its model's `hulls[0].firstclipnode`, the model's first node, when the model's
   `firstmodelsurface` is not 0, with the light's origin as it is in the world: the planes are
   the model's own, so a moved entity is lit as if it stood where its model was built.
+- **REND-7.6** As QuakeSpasm's `R_MarkLights` (Quake/gl_rlight.c at
+  sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`, from FitzQuake) does, a face of
+  a node the sphere straddles (REND-7.1) is marked only when the light reaches it: with `impact
+  = origin - normal * dist`, "`l = DotProduct (impact, surf->texinfo->vecs[0]) +
+  surf->texinfo->vecs[0][3] - surf->texturemins[0]; s = l+0.5;if (s < 0) s = 0;else if (s >
+  surf->extents[0]) s = surf->extents[0]; s = l - s;`", `t` the same on the second axis, each
+  assigned to an int toward zero, and the face marked when "`(s*s+t*t+dist*dist) < maxdist`",
+  `maxdist` the radius squared. The squares are summed in a double here, where C's ints would
+  overflow for a light some 46,000 texture units off, our choice. id's code marks every face of
+  the node. A face this skips is one REND-7.2 adds no light to, since REND-7.2's texel distance
+  is never less than the straight one, except within a texture unit of the radius, where the two
+  truncations to ints can differ; fewer faces are made again.
+- **REND-7.7** The renderer takes the first 64 of the client's lights, QuakeSpasm's
+  `MAX_DLIGHTS` (Quake/client.h at sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`:
+  "`#define MAX_DLIGHTS 64 //johnfitz -- was 32`"), each face keeping a bit for each
+  (Quake/gl_model.h: "`unsigned int dlightbits[(MAX_DLIGHTS + 31) >> 5];`"), where id's keeps 32
+  in one `int`. A client with id's limits (CLIENT-8.2) gives it at most 32.
 
 ### Constants
 
 | Constant | Value | Source |
 | --- | --- | --- |
-| `REND_MAX_DLIGHTS` | 32 | `client.h`, `MAX_DLIGHTS` |
+| `REND_MAX_DLIGHTS` | 64 | QuakeSpasm's `Quake/client.h`, `MAX_DLIGHTS` ("64 //johnfitz -- was 32"); id's `client.h` has 32 (REND-7.7) |
 | `REND_FLASHBLEND_SCALE` | 0.35 | `gl_rlight.c`, `R_RenderDlight` |
 
 ## REND-8 Skyboxes
