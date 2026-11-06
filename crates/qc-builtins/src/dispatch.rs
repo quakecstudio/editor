@@ -29,7 +29,7 @@ use crate::math;
 use crate::mock::{
     BUILTIN_CHECKCLIENT_INTERVAL, BUILTIN_FL_FLY, BUILTIN_FL_NOTARGET, BUILTIN_FL_ONGROUND,
     BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
-    MockEngine, Overflow, Precache, Unimplemented,
+    MockEngine, Overflow, Precache, Unimplemented, VKQUAKE_MAX_DATAGRAM,
 };
 use crate::tokenize::MAX_SEPARATORS;
 use crate::userinfo::ClientCommand;
@@ -146,8 +146,10 @@ impl MockBuiltins {
             69 => self.b_makestatic(context),
             // --- class output: network messages (BUILTIN-13) ---
             // WriteByte, WriteChar, WriteShort, WriteLong, WriteCoord, WriteAngle.
-            52 | 53 | 57 => self.b_write(context, 1),
-            54 | 56 => self.b_write(context, 2),
+            52 | 53 => self.b_write(context, 1),
+            57 => self.b_write(context, self.engine.profile.angle_bytes()),
+            56 => self.b_write(context, self.engine.profile.coord_bytes()),
+            54 => self.b_write(context, 2),
             55 => self.b_write(context, 4),
             58 => self.b_write_string(context),
             59 => self.b_write_entity(context),
@@ -499,6 +501,19 @@ fn write_return_vector(context: &mut Context<'_, '_>, value: [f32; 3]) -> Result
         .map_err(|_| BuiltinError::from(RuntimeError::ReturnOutOfRange))
 }
 
+/// Writes vector parameter `n` (`OFS_PARM0 + 3n`), as a builtin writes through `G_VECTOR`.
+fn write_parm_vector(
+    context: &mut Context<'_, '_>,
+    n: u16,
+    value: [f32; 3],
+) -> Result<(), BuiltinError> {
+    let slot = ofs_parm(n).ok_or(BuiltinError::Runtime(RuntimeError::ParameterOutOfRange))?;
+    context
+        .machine()
+        .set_global3(i32::from(slot), value.map(Slot::from_f32))
+        .map_err(|_| BuiltinError::from(RuntimeError::ParameterOutOfRange))
+}
+
 /// Reads system global `global`.
 fn read_system_global(
     context: &mut Context<'_, '_>,
@@ -711,6 +726,7 @@ fn to_run_error(context: &Context<'_, '_>, error: BuiltinError) -> RunError {
         BuiltinError::Runtime(runtime) => ErrorKind::Builtin {
             message: runtime.to_string(),
         },
+        BuiltinError::Nested(error) => return error,
     };
     context.run_error(kind)
 }
@@ -1237,7 +1253,13 @@ impl MockBuiltins {
         context: &mut Context<'_, '_>,
     ) -> Option<Result<(), BuiltinError>> {
         match number {
+            8 => Some(self.b_vk_sound(context)),
+            48 => Some(self.b_vk_particle(context)),
             60 => Some(Self::b_unary(context, vkstrings::sin)),
+            69 => Some(self.b_vk_makestatic(context)),
+            74 => Some(self.b_vk_ambientsound(context)),
+            82 => Some(self.b_multicast(context)),
+            90 => Some(self.b_tracebox(context)),
             80 => Some(self.b_infokey(context)),
             81 => Some(self.b_stof(context)),
             93 => Some(self.b_registercvar(context)),
@@ -1257,6 +1279,8 @@ impl MockBuiltins {
             119 => Some(self.b_strunzone(context)),
             213 => Some(self.b_forceinfokey(context)),
             440 => Some(self.b_clientcommand(context)),
+            453 => Some(self.b_dropclient(context)),
+            513 => Some(write_return_vector(context, [0.0; 3])),
             221 => Some(self.b_strstrofs(context)),
             222 => Some(self.b_str2chr(context)),
             223 => Some(self.b_chr2str(context)),
@@ -1906,6 +1930,162 @@ impl MockBuiltins {
         }
     }
 
+    /// `sound(e, chan, samp, vol, atten)`, vkQuake's `PF_sound` and `SV_StartSound`
+    /// (BUILTIN-18.41): `e` through `G_EDICT` and the sample read first; an empty sample does
+    /// nothing; a volume below 0, an attenuation outside 0 to 4 or a channel outside 0 to 255
+    /// is the host error; a sample not precached does nothing, then `e` through
+    /// `NUM_FOR_EDICT`. The message goes to each client's datagram, which the mock does not
+    /// keep.
+    fn b_vk_sound(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let entity = read_parm_edict(context, 0)?;
+        let channel = read_parm_int(context, 1)?;
+        let sample = read_parm_string(context, &self.engine, 2)?;
+        let volume = float_to_int(read_parm_float(context, 3)? * 255.0);
+        let atten = read_parm_float(context, 4)?;
+        let sample = cstr(&sample);
+        if sample.is_empty() {
+            return Ok(());
+        }
+        if volume < 0 {
+            return Err(BuiltinError::from(FatalError::SoundVolume { volume }));
+        }
+        if atten < 0.0 || atten > 4.0 {
+            return Err(BuiltinError::from(FatalError::SoundAttenuation { atten }));
+        }
+        if !(0..=255).contains(&channel) {
+            return Err(BuiltinError::from(FatalError::SoundChannel { channel }));
+        }
+        let name = String::from_utf8_lossy(sample).into_owned();
+        if self
+            .engine
+            .precache_index(Precache::Sound, &name)
+            .filter(|&i| i >= 1)
+            .is_none()
+        {
+            return Ok(());
+        }
+        if entity.index() >= context.machine().edicts().num_edicts() {
+            return Err(num_for_edict_bad());
+        }
+        Ok(())
+    }
+
+    /// `particle(o, d, color, count)`, vkQuake's `PF_particle` and `SV_StartParticle`
+    /// (BUILTIN-18.41): dropped when the datagram holds more than its size less 18, else 18
+    /// bytes, its coordinates four each.
+    fn b_vk_particle(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let _o = read_parm_vector(context, 0)?;
+        let _d = read_parm_vector(context, 1)?;
+        let _color = read_parm_float(context, 2)?;
+        let _count = read_parm_float(context, 3)?;
+        if self.engine.buffers.unreliable
+            > VKQUAKE_MAX_DATAGRAM.saturating_sub(VKQUAKE_PARTICLE_BYTES)
+        {
+            return Ok(());
+        }
+        self.write_bytes(MessageDest::Broadcast, VKQUAKE_PARTICLE_BYTES)
+    }
+
+    /// `ambientsound(pos, samp, vol, atten)`, vkQuake's `PF_sv_ambientsound` (BUILTIN-18.41):
+    /// a sample not precached, from entry 0, is a console message; any other is kept for the
+    /// clients that connect, not written to a signon buffer.
+    fn b_vk_ambientsound(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let _pos = read_parm_vector(context, 0)?;
+        let _samp = read_parm_string(context, &self.engine, 1)?;
+        let _vol = read_parm_float(context, 2)?;
+        let _atten = read_parm_float(context, 3)?;
+        Ok(())
+    }
+
+    /// `makestatic(e)`, vkQuake's `PF_sv_makestatic` (BUILTIN-18.41): `e` through `G_EDICT`,
+    /// its state kept from its fields, then freed; no signon buffer is written.
+    fn b_vk_makestatic(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let number = read_parm_edict(context, 0)?;
+        let now = self.engine.clock;
+        context.machine().edicts_mut().free(number, now);
+        Ok(())
+    }
+
+    /// `multicast(org, to)`, vkQuake's `PF_multicast` and `SV_Multicast` (BUILTIN-18.40):
+    /// `msg_entity` through `NUM_FOR_EDICT`; `MULTICAST_INIT` (8) puts the multicast buffer in
+    /// the signon buffers, a new one when it does not fit; every kind then empties the
+    /// multicast buffer.
+    fn b_multicast(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let _org = read_parm_vector(context, 0)?;
+        let to = read_parm_int(context, 1)?;
+        let value = read_system_global_entity(context, SysGlobal::MsgEntity)?;
+        let _number = entity_num_for(context, value)?;
+        if to == MULTICAST_INIT {
+            let bytes = self.engine.buffers.multicast;
+            self.engine
+                .reserve_signon(bytes)
+                .map_err(|Overflow| BuiltinError::from(FatalError::SignonBuffers))?;
+            self.write_bytes(MessageDest::Init, bytes)?;
+        }
+        self.engine.buffers.multicast = 0;
+        Ok(())
+    }
+
+    /// `tracebox(v1, mins, maxs, v2, nomonsters, ent)`, vkQuake's `PF_tracebox`
+    /// (BUILTIN-18.42): a start or end holding a NaN is set to 0 0 0 in its parameter, then the
+    /// mock's trace, which hits nothing (DIFF-7.1).
+    fn b_tracebox(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let mut ends = [read_parm_vector(context, 0)?, read_parm_vector(context, 3)?];
+        let _mins = read_parm_vector(context, 1)?;
+        let _maxs = read_parm_vector(context, 2)?;
+        let _nomonsters = read_parm_float(context, 4)?;
+        let _ent = read_parm_edict(context, 5)?;
+        for (end, parm) in ends.iter_mut().zip([0_u16, 3]) {
+            if end.iter().any(|c| c.is_nan()) {
+                *end = [0.0; 3];
+                write_parm_vector(context, parm, *end)?;
+            }
+        }
+        let [_v1, v2] = ends;
+        write_system_global_float(context, SysGlobal::TraceAllsolid, 0.0)?;
+        write_system_global_float(context, SysGlobal::TraceStartsolid, 0.0)?;
+        write_system_global_float(context, SysGlobal::TraceFraction, 1.0)?;
+        write_system_global_float(context, SysGlobal::TraceInwater, 0.0)?;
+        write_system_global_float(context, SysGlobal::TraceInopen, 1.0)?;
+        write_system_vector(context, SysGlobal::TraceEndpos, v2)?;
+        write_system_vector(context, SysGlobal::TracePlaneNormal, [0.0, 0.0, 0.0])?;
+        write_system_global_float(context, SysGlobal::TracePlaneDist, 0.0)?;
+        let world = context
+            .machine()
+            .edicts()
+            .edict_num(0)
+            .map_err(|_| invalid_entity())?;
+        write_system_global(context, SysGlobal::TraceEnt, Slot::from(world))
+    }
+
+    /// `dropclient(e)`, vkQuake's `PF_dropclient` and `SV_DropClient (false)` (BUILTIN-18.43):
+    /// for an active client, `ClientDisconnect` runs with `self` the client, `self` is put back,
+    /// and the slot is no longer active, its name emptied.
+    fn b_dropclient(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let edict = read_parm_edictnum(context, 0)?;
+        if !self.engine.client_active(edict.index()) {
+            return Ok(());
+        }
+        let saved = read_system_global_entity(context, SysGlobal::SelfEntity)?;
+        let client = context
+            .machine()
+            .edicts()
+            .edict_num(i32::try_from(edict.index()).unwrap_or(0))
+            .map_err(|_| invalid_entity())?;
+        write_system_global(context, SysGlobal::SelfEntity, Slot::from(client))?;
+        let disconnect = read_system_global(context, SysGlobal::Clientdisconnect)?.as_i32();
+        context
+            .execute_program(self, disconnect)
+            .map_err(BuiltinError::Nested)?;
+        write_system_global(context, SysGlobal::SelfEntity, Slot::from_i32(saved))?;
+        let slot = edict.index().saturating_sub(1);
+        if let Some(active) = self.engine.clients_active.get_mut(slot) {
+            *active = false;
+        }
+        self.engine.clients.get_mut(slot).clear_name();
+        Ok(())
+    }
+
     /// `wasfreed(e)`, vkQuake's `PF_WasFreed` (BUILTIN-18.35): `e` through `G_EDICT`, then 1
     /// when it is free and 0 when not.
     fn b_wasfreed(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
@@ -1967,6 +2147,12 @@ const BUILTIN_AMBIENTSOUND_BYTES: usize = 1 + 6 + 1 + 1 + 1;
 /// Bytes a `makestatic` message occupies (BUILTIN-12.8): svc, modelindex, frame, colormap,
 /// skin and three (coord, angle) pairs.
 const BUILTIN_MAKESTATIC_BYTES: usize = 1 + 1 + 1 + 1 + 1 + 3 * (2 + 1);
+/// The bytes of vkQuake's `particle` message, and the room `SV_StartParticle` needs
+/// (BUILTIN-18.41): svc, three four-byte coordinates, three direction chars, count and color.
+const VKQUAKE_PARTICLE_BYTES: usize = 1 + 3 * 4 + 3 + 1 + 1;
+/// vkQuake's `MULTICAST_INIT`, the multicast kind that writes the signon buffers (BUILTIN-18.40).
+const MULTICAST_INIT: i32 = 8;
+
 /// `DEFAULT_SOUND_PACKET_VOLUME` (BUILTIN-12.3).
 const BUILTIN_DEFAULT_SOUND_VOLUME: i32 = 255;
 
@@ -2118,6 +2304,7 @@ impl MockBuiltins {
             }
             2 => Ok(MessageDest::All),
             3 => Ok(MessageDest::Init),
+            4 | 5 if self.engine.profile == EngineProfile::VkQuake => Ok(MessageDest::Multicast),
             _ => Err(BuiltinError::from(RuntimeError::WriteDestBad)),
         }
     }

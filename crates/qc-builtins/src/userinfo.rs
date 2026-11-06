@@ -76,6 +76,11 @@ impl ClientInfo {
         self.colors
     }
 
+    /// `SV_DropClient`'s "host_client->name[0] = 0;": the name emptied, the info kept.
+    pub fn clear_name(&mut self) {
+        self.name.clear();
+    }
+
     /// The info string.
     #[must_use]
     pub fn userinfo(&self) -> &[u8] {
