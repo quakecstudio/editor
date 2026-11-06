@@ -70,6 +70,11 @@ within tolerances recorded per map; it is not an exact match.
   !cls.demoplayback)`"). A demo the
   engine cannot play, as the rerelease's are to id's, raises an error that drops the rest of
   that frame's commands.
+- **VIEWDIFF-2.6** The view oracle is built on Linux and macOS only. On Windows id's files take
+  their `_WIN32` paths, which include `winquake.h`: it includes `<ddraw.h>`, `<dsound.h>` and
+  SciTech's `<mgraph.h>` and declares the DirectSound buffer `snd_dma.c` reads, drivers the
+  Windows SDK and the pinned sources do not provide. `cargo xtask view-diff` refuses to run
+  there.
 
 ## VIEWDIFF-3 Comparing frames
 
@@ -98,7 +103,8 @@ within tolerances recorded per map; it is not an exact match.
   route's last three seconds, the player standing still. What comes before, the map loading
   and the player being moved, is left out: the oracle's sound starts when the engine does,
   ours when the map loads, and id's engine plays a sound as it starts.
-- **VIEWDIFF-4.2** When both are silent the sound passes; when one is, it fails.
+- **VIEWDIFF-4.2** When both are silent the sound passes; when one is, it fails. A recording
+  shorter than the 12 windows fails.
 - **VIEWDIFF-4.3** Otherwise the windows both have are compared, ours shifted against the
   oracle's by up to two windows either way: the sound's difference is the least, over the
   shifts, of the sum of the windows' absolute differences over the sum of the oracle's, and it

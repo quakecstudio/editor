@@ -95,7 +95,7 @@ fn a_malformed_frame_fails() {
     assert!(compare_frames(&good, &small).is_err());
 }
 
-// spec VIEWDIFF-4.2: two silent recordings pass, one silent fails
+// spec VIEWDIFF-4.2: two silent recordings pass, one silent fails, a short one fails
 #[test]
 fn silence_is_compared() {
     assert_eq!(
@@ -106,7 +106,11 @@ fn silence_is_compared() {
         compare_sound(&sound(&[0; 14]), &sound(&[9; 14])),
         Sound::OneSilent
     );
-    assert_eq!(compare_sound(&[], &sound(&[9; 14])), Sound::OneSilent);
+    assert_eq!(
+        compare_sound(&sound(&[9; 14]), &sound(&[9; 2])),
+        Sound::Short
+    );
+    assert_eq!(compare_sound(&[], &sound(&[9; 14])), Sound::Short);
 }
 
 // spec VIEWDIFF-4.1: only the last 12 windows count
@@ -250,4 +254,12 @@ fn a_monster_in_earshot_is_found() {
     assert!(!monster_near(&text("monster_ogre", "600 800 0"), start));
     assert!(!monster_near(&text("item_health", "10 0 0"), start));
     assert!(!monster_near(&text("monster_ogre", "nowhere"), start));
+}
+
+// spec VIEWDIFF-2.6: the view oracle is not built on Windows
+#[test]
+fn the_oracle_is_not_built_on_windows() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let source = std::fs::read_to_string(root.join("xtask/src/oracles.rs")).unwrap();
+    assert!(source.contains("if !cfg!(windows) {\n        let view_objects = compile_view("));
 }

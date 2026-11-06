@@ -682,7 +682,7 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     if oracles.qcc.is_file()
         && oracles.vm.is_file()
         && oracles.engine.is_file()
-        && oracles.view.is_file()
+        && (cfg!(windows) || oracles.view.is_file())
         && oracles.fteqcc.is_file()
         && oracles.fteqcc_fixed.is_file()
         && fs::read_to_string(&stamp_file).is_ok_and(|s| s.trim() == stamp_now)
@@ -740,8 +740,11 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     compiler.link(&vm_objects, &oracles.vm)?;
     let engine_objects = compile_engine(root, &sources, &cache, &objects, &compiler)?;
     compiler.link(&engine_objects, &oracles.engine)?;
-    let view_objects = compile_view(root, &cache, &objects, &compiler)?;
-    compiler.link(&view_objects, &oracles.view)?;
+    // VIEWDIFF-2.6: id's Windows client needs its DirectX and MGL drivers.
+    if !cfg!(windows) {
+        let view_objects = compile_view(root, &cache, &objects, &compiler)?;
+        compiler.link(&view_objects, &oracles.view)?;
+    }
     // DIFF-14.12: the same FTEQCC with its defects fixed, from a copy of the tree whose
     // `qcc_pr_comp.c` has every fix of `defects::FIXES` applied.
     let fixed_dir = cache.join("fteqcc-fixed");

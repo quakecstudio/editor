@@ -150,9 +150,12 @@ fn the_oracles_are_built_once_from_the_files_fetched() {
         + VM_HARNESS.len()
         + ENGINE_FILES.len()
         + ENGINE_HARNESS.len()
-        + VIEW_FILES.len()
-        + VIEW_HARNESS.len();
-    assert_eq!(compiles, sources + 6);
+        + if cfg!(windows) {
+            0
+        } else {
+            VIEW_FILES.len() + VIEW_HARNESS.len() + 1
+        };
+    assert_eq!(compiles, sources + 5);
     assert!(
         oracles
             .engine

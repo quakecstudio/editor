@@ -66,7 +66,6 @@ pub struct MapRenderer {
     /// Each alias skin image, bound as a surface texture, then [`PLAYER_SKINS`] player skins,
     /// each a client slot's skin in its colours (REND-4.13).
     skins: Vec<BindGroup>,
-    /// The layout and the sampler a skin is bound with, for a player skin set later.
     /// What the world's shader multiplies a lightmap texel by (REND-13.5).
     light_scale: f32,
     /// The skins' layout and sampler, and the glow of a skin with none (REND-13.4).

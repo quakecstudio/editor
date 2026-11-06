@@ -15,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::release_host;
 use crate::{corpus, repo};
 
 /// The document that holds the budget table.
@@ -336,24 +337,7 @@ fn run_benchmarks(root: &Path, criterion_home: &Path, id1: &Path) -> Result<(), 
         .iter()
         .any(|variable| std::env::var_os(variable).is_some())
     {
-        let built = Command::new(&cargo)
-            .args([
-                "build",
-                "--locked",
-                "--release",
-                "--package",
-                "preview-host",
-            ])
-            .current_dir(root)
-            .status()
-            .map_err(|error| format!("cannot build the preview host: {error}"))?;
-        if !built.success() {
-            return Err(format!("cargo build of the preview host failed: {built}"));
-        }
-        let host = root
-            .join("target/release")
-            .join(format!("preview-host{}", std::env::consts::EXE_SUFFIX));
-        bench.env("QS_PREVIEW_HOST", host);
+        bench.env("QS_PREVIEW_HOST", release_host::build(root)?);
     }
     let status = bench
         .status()

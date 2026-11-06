@@ -163,6 +163,8 @@ pub(crate) fn timerefresh(
 
 /// The size the view oracle draws at: 320 by 240, square pixels at 4:3 (VIEWDIFF-2.1).
 const VIEW_SIZE: [u32; 2] = [320, 240];
+/// Its width per unit of height.
+const VIEW_ASPECT: f32 = 4.0 / 3.0;
 
 /// `--view-script <script> <audio>` (P3-28): the map of `loaded` played as `script` says, its
 /// shots written as binary PPMs and the sound mixed meanwhile written to `audio` as 16-bit
@@ -194,9 +196,7 @@ pub(crate) fn view_script(loaded: Loaded, script: &ViewScript, audio: &Path) -> 
                     .place_player(*origin, [angles[0], angles[1], 0.0])?;
             }
             Step::Shot(path) => {
-                let [width, height] = VIEW_SIZE;
-                let aspect = f32_of_u32(width) / f32_of_u32(height);
-                let callback = world.view_callback(aspect);
+                let callback = world.view_callback(VIEW_ASPECT);
                 let frame = drawer.draw(callback, VIEW_SIZE)?;
                 std::fs::write(path, ppm(&frame))
                     .map_err(|error| format!("{}: {error}", path.display()))?;
@@ -215,11 +215,6 @@ fn ppm(frame: &Frame) -> Vec<u8> {
         bytes.extend([r, g, b]);
     }
     bytes
-}
-
-/// A small pixel count as a float, exactly.
-fn f32_of_u32(n: u32) -> f32 {
-    f32::from(u16::try_from(n).unwrap_or(u16::MAX))
 }
 
 /// What a headless host keeps of a loaded map.
@@ -310,11 +305,12 @@ impl Headless {
     /// centre print or weapon, as the view oracle draws it with `viewsize 120` and
     /// `r_drawviewmodel 0` (P3-28).
     fn view_callback(&mut self, aspect: f32) -> qs_render::MapCallback {
+        // `V_SetContentsColor`: the leaf the eye is in tints the view (VIEW-4.3), before the
+        // scene that carries the tint is taken.
+        let origin = self.client.scene().view.origin;
+        self.client.set_contents(contents_at(&self.bsp, origin));
         let mut scene = self.client.scene();
         scene.view.weapon.model = 0;
-        // `V_SetContentsColor`: the leaf the eye is in tints the view (VIEW-4.3).
-        self.client
-            .set_contents(contents_at(&self.bsp, scene.view.origin));
         self.play
             .frame(&scene, &Hud::default(), &self.bsp, &mut self.mesh, aspect)
     }
@@ -328,14 +324,17 @@ impl Headless {
             .client
             .frame(seconds, &packets, &mut self.describer, &mut self.rand)
         {
-            Ok(events) => self.audio.handle(&events, &mut self.rand),
+            // The sound is mixed only when it is kept, for `--view-script`.
+            Ok(events) if self.audio.captures() => self.audio.handle(&events, &mut self.rand),
+            Ok(_) => {}
             Err(error) => tracing::warn!(%error, "client"),
         }
         let view = self.client.scene().view;
-        // `S_Update (r_origin, vpn, vright, vup)`, once a host frame, silent without
-        // `--view-script`.
-        self.audio
-            .update(&self.bsp, view.origin, view.angles, frametime);
+        // `S_Update (r_origin, vpn, vright, vup)`, once a host frame.
+        if self.audio.captures() {
+            self.audio
+                .update(&self.bsp, view.origin, view.angles, frametime);
+        }
         self.game.set_eye(Eye {
             origin: view.origin,
             angles: view.angles,

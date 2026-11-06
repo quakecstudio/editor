@@ -75,11 +75,8 @@ fn run(args: &args::Args) -> Result<(), String> {
         let text = std::fs::read_to_string(&script)
             .map_err(|error| format!("{}: {error}", script.display()))?;
         let script = view_script::ViewScript::parse(&text)?;
-        let args = args::Args {
-            nosound: true,
-            ..args.clone()
-        };
-        let loaded = load::load(&args, &script.map, None, None, None)?;
+        // `load` keeps the sound for a view script (VIEWDIFF-1.3).
+        let loaded = load::load(args, &script.map, None, None, None)?;
         return headless::view_script(loaded, &script, &audio);
     }
     if args.headless {

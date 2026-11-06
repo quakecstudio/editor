@@ -6,12 +6,13 @@
 //! compared within the map's tolerances in `docs/spec/engine/view-diff.md`.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 use crate::oracles;
+use crate::release_host;
 
 /// The spec whose table holds the tolerances (VIEWDIFF-5).
 const TOLERANCES_DOC: &str = "docs/spec/engine/view-diff.md";
@@ -72,11 +73,16 @@ struct Tolerance {
 /// Plays each map's start through both engines and compares them; returns whether every map
 /// passed.
 pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
+    if cfg!(windows) {
+        // VIEWDIFF-2.6: id's Windows client needs its DirectX and MGL drivers.
+        return Err("the view oracle is built on Linux and macOS only (VIEWDIFF-2.6)".into());
+    }
+    let engine = absolute(&args.engine)?;
     let doc = fs::read_to_string(root.join(TOLERANCES_DOC))
         .map_err(|e| format!("{TOLERANCES_DOC}: {e}"))?;
     let tolerances = parse_tolerances(&doc)?;
     let built = oracles::build(root)?;
-    let host = build_host(root)?;
+    let host = release_host::build(root)?;
     let out = root.join("target/view-diff");
     fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     let maps: Vec<String> = if args.maps.is_empty() {
@@ -87,7 +93,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     let mut passed = true;
     for map in &maps {
         let tolerance = tolerance_of(&tolerances, map)?;
-        let (start, monsters) = player_start(&args.engine, map)?;
+        let (start, monsters) = player_start(&engine, map)?;
         let dir = out.join(map);
         fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         let run = |side: &str| -> Result<(), String> {
@@ -97,13 +103,13 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             let audio = dir.join(format!("{side}.raw"));
             let mut command = if side == "id" {
                 let mut command = Command::new(&built.view);
-                command.arg(&script).arg(&audio).args(&args.engine);
+                command.arg(&script).arg(&audio).args(&engine);
                 command
             } else {
                 let mut command = Command::new(&host);
                 // The host reads `-basedir` and `-game` as the engines write them (ADR-0008).
                 command
-                    .args(&args.engine)
+                    .args(&engine)
                     .args(&args.host_args)
                     .arg("--view-script")
                     .arg(&script)
@@ -160,6 +166,10 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             _ if monsters => (true, "sound not compared: a monster in earshot".to_owned()),
             Sound::Silent => (true, "both silent".to_owned()),
             Sound::OneSilent => (false, "one is silent".to_owned()),
+            Sound::Short => (
+                false,
+                "a recording is shorter than three seconds".to_owned(),
+            ),
             Sound::Difference(difference) => (
                 difference <= tolerance.sound,
                 format!("sound difference {difference:.3}"),
@@ -177,6 +187,24 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     Ok(passed)
 }
 
+/// The engine words with `-basedir`'s directory made absolute: both engines run in the map's
+/// own directory under `target/view-diff`.
+fn absolute(engine: &[String]) -> Result<Vec<String>, String> {
+    let mut words = engine.to_vec();
+    let mut iter = words.iter_mut();
+    while let Some(word) = iter.next() {
+        if word == "-basedir"
+            && let Some(dir) = iter.next()
+        {
+            *dir = std::path::absolute(dir.as_str())
+                .map_err(|e| format!("{dir}: {e}"))?
+                .to_string_lossy()
+                .into_owned();
+        }
+    }
+    Ok(words)
+}
+
 /// Each route's shots: the start's view and the view behind it.
 const SHOTS: [&str; 2] = ["ahead", "behind"];
 
@@ -191,28 +219,6 @@ fn route(map: &str, (origin, yaw): ([f32; 3], f32), side: &str) -> String {
          place {x} {y} {z} 0 {behind}\nframes {PLACE_FRAMES}\nshot {side}-behind.ppm\n\
          frames {SOUND_FRAMES}\n"
     )
-}
-
-/// The release preview host, built as the app ships it.
-fn build_host(root: &Path) -> Result<PathBuf, String> {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let status = Command::new(cargo)
-        .args([
-            "build",
-            "--locked",
-            "--release",
-            "--package",
-            "preview-host",
-        ])
-        .current_dir(root)
-        .status()
-        .map_err(|e| format!("cannot build the preview host: {e}"))?;
-    if !status.success() {
-        return Err(format!("cargo build of the preview host failed: {status}"));
-    }
-    Ok(root
-        .join("target/release")
-        .join(format!("preview-host{}", std::env::consts::EXE_SUFFIX)))
 }
 
 /// The origin and yaw of `map`'s first `info_player_start`, read through the game the engine
@@ -407,6 +413,8 @@ enum Sound {
     Silent,
     /// One has none and the other has (VIEWDIFF-4.2).
     OneSilent,
+    /// One recording is shorter than the windows compared (VIEWDIFF-4.1).
+    Short,
     /// The mean of the windows' absolute differences over the oracle's mean (VIEWDIFF-4.3).
     Difference(f64),
 }
@@ -415,6 +423,9 @@ enum Sound {
 fn compare_sound(id: &[u8], qs: &[u8]) -> Sound {
     let id = envelope(id);
     let qs = envelope(qs);
+    if id.len() < LISTENED || qs.len() < LISTENED {
+        return Sound::Short;
+    }
     let silent = |levels: &[f64]| levels.iter().all(|&level| level == 0.0);
     let (id, qs) = (id.as_slice(), qs.as_slice());
     let (id, qs) = (

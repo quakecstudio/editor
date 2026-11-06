@@ -197,6 +197,14 @@ impl Audio {
         }
     }
 
+    /// Whether the mixed frames are kept, for `--view-script`.
+    pub(crate) const fn captures(&self) -> bool {
+        match self.sink {
+            Sink::Capture(_) => true,
+            Sink::Device { .. } | Sink::Silent(_) => false,
+        }
+    }
+
     /// The frames painted since the last call, left and right interleaved, when the sound is
     /// captured; none otherwise.
     pub(crate) fn take_captured(&mut self) -> Vec<i16> {

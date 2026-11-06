@@ -131,7 +131,8 @@ jobs:
             -- -basedir "$QS_TEST_ASSETS/librequake-lite"
 
   # P3-28 (VIEWDIFF): the preview host's frames and sound against id's whole engine, the view
-  # oracle, on every map of LibreQuake's lite asset, on each OS.
+  # oracle, on every map of LibreQuake's lite asset, on Linux and macOS: id's Windows client
+  # needs its DirectX and MGL drivers (VIEWDIFF-2.6).
   view-diff:
     name: View differential (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -141,7 +142,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     defaults:
       run:
         shell: bash
@@ -155,8 +156,8 @@ jobs:
         with:
           shared-key: view-diff-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # The host draws offscreen through wgpu: on Linux with Mesa's software Vulkan driver, on
-      # macOS with Metal and on Windows with WARP; cpal needs ALSA's headers to build.
+      # The host draws offscreen through wgpu: on Linux with Mesa's software Vulkan driver and on
+      # macOS with Metal; cpal needs ALSA's headers to build on Linux.
       - name: Install a software Vulkan driver and ALSA's headers
         if: runner.os == 'Linux'
         run: |

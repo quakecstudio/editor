@@ -121,6 +121,7 @@ mod ported;
 mod project_corpus;
 mod ratchet;
 mod readiness;
+mod release_host;
 mod repo;
 mod scenario;
 mod sema_corpus;
