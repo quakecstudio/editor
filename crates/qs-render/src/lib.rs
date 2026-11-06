@@ -16,6 +16,7 @@ mod anorm_dots;
 mod camera;
 mod gpu;
 mod light;
+mod look;
 mod md5;
 mod mesh;
 mod offscreen;
@@ -37,6 +38,7 @@ pub use gpu::{
     PlayerSkin, SkinKey, SpriteDraw, SpriteFrame, View,
 };
 pub use light::light_point;
+pub use look::Look;
 pub use md5::Md5Model;
 pub use mesh::{
     Animation, Batch, Extras, GAMMA, Image, Lightmaps, MapMesh, MeshBuilder, MeshError, Palette,
