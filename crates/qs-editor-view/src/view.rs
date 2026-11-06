@@ -2,6 +2,7 @@
 
 //! The editor widget: input to edits, and the visible rows drawn from the layout cache.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use egui::output::IMEOutput;
@@ -40,6 +41,12 @@ pub struct ViewStyle {
     pub removed: Color32,
     /// The text of such a line, `text.on_error`.
     pub removed_text: Color32,
+    /// The background of the line the debugger is paused on, `debug.paused_line`.
+    pub paused_line: Color32,
+    /// The gutter's mark on that line, `status.warn`.
+    pub paused_mark: Color32,
+    /// The gutter's mark on a line with a breakpoint, `status.error`.
+    pub breakpoint: Color32,
 }
 
 impl Default for ViewStyle {
@@ -56,6 +63,9 @@ impl Default for ViewStyle {
             added: Color32::from_rgb(0x24, 0x33, 0x1f),
             removed: Color32::from_rgb(0x3a, 0x22, 0x20),
             removed_text: Color32::from_rgb(0xf2, 0xd2, 0xcc),
+            paused_line: Color32::from_rgb(0x3a, 0x31, 0x22),
+            paused_mark: Color32::from_rgb(0xe2, 0xb0, 0x4a),
+            breakpoint: Color32::from_rgb(0xec, 0x7a, 0x6c),
         }
     }
 }
@@ -88,6 +98,12 @@ pub struct EditorView {
     diff: Option<DiffState>,
     /// Where the primary caret was drawn in the last frame, if it was on screen.
     caret_rect: Option<Rect>,
+    /// The lines, from 0, the gutter marks with a breakpoint.
+    breakpoints: BTreeSet<usize>,
+    /// The line, from 0, the debugger is paused on.
+    paused: Option<usize>,
+    /// The line whose gutter was clicked in the last frame, not yet taken.
+    gutter_click: Option<usize>,
     cache: LayoutCache,
 }
 
@@ -105,8 +121,33 @@ impl EditorView {
             hovered: None,
             diff: None,
             caret_rect: None,
+            breakpoints: BTreeSet::new(),
+            paused: None,
+            gutter_click: None,
             cache: LayoutCache::default(),
         }
+    }
+
+    /// Marks the gutter of `lines`, from 0, with a breakpoint, and no other line.
+    pub fn set_breakpoints(&mut self, lines: impl IntoIterator<Item = usize>) {
+        self.breakpoints = lines.into_iter().collect();
+    }
+
+    /// The lines, from 0, the gutter marks with a breakpoint.
+    #[must_use]
+    pub const fn breakpoints(&self) -> &BTreeSet<usize> {
+        &self.breakpoints
+    }
+
+    /// Highlights `line`, from 0, as the one the debugger is paused on, or no line.
+    pub const fn set_paused(&mut self, line: Option<usize>) {
+        self.paused = line;
+    }
+
+    /// The line, from 0, whose gutter a click landed on since this was last asked, to set or
+    /// clear a breakpoint there; such a click moves no caret.
+    pub const fn take_gutter_click(&mut self) -> Option<usize> {
+        self.gutter_click.take()
     }
 
     /// The text and its selections.
@@ -264,7 +305,13 @@ impl EditorView {
             if let Some(origin) = origin {
                 let at =
                     self.position_at(ui, style, styler, origin, rect.top(), text_left, row_height);
-                self.press(at, modifiers);
+                if origin.x < text_left {
+                    if response.clicked() {
+                        self.gutter_click = Some(at.line);
+                    }
+                } else {
+                    self.press(at, modifiers);
+                }
             }
         }
         self.hovered = match response.hover_pos() {
@@ -595,7 +642,10 @@ impl EditorView {
                     continue;
                 }
             };
-            if added {
+            let paused = self.paused == Some(line);
+            if paused {
+                painter.rect_filled(row_rect, CornerRadius::ZERO, style.paused_line);
+            } else if added {
                 painter.rect_filled(row_rect, CornerRadius::ZERO, style.added);
             } else if line == primary.head.line {
                 painter.rect_filled(row_rect, CornerRadius::ZERO, style.current_line);
@@ -649,6 +699,11 @@ impl EditorView {
                 text_left,
                 number,
             );
+            let marks = Marks {
+                breakpoint: self.breakpoints.contains(&line),
+                paused,
+            };
+            marks.paint(&painter, style, Pos2::new(rect.left(), top), row_height);
             for selection in selections.iter().filter(|s| s.head.line == line) {
                 let mut col = selection.head.col;
                 if *selection == primary
@@ -793,6 +848,41 @@ enum Row {
     Line { line: usize, added: bool },
     /// A line of the base that the text no longer has.
     Removed(String),
+}
+
+/// The marks in a line's gutter, before its number.
+#[derive(Clone, Copy)]
+struct Marks {
+    /// The line has a breakpoint: a dot.
+    breakpoint: bool,
+    /// The debugger is paused on it: an arrow, over the dot.
+    paused: bool,
+}
+
+impl Marks {
+    /// Paints them centred in the space before the numbers of the row whose top left is
+    /// `corner`.
+    fn paint(self, painter: &egui::Painter, style: &ViewStyle, corner: Pos2, row_height: f32) {
+        let mark = Pos2::new(corner.x + GUTTER_PAD / 2.0, corner.y + row_height / 2.0);
+        let radius = (GUTTER_PAD / 2.0 - 1.0).min(row_height / 3.0);
+        if self.breakpoint {
+            painter.circle_filled(mark, radius, style.breakpoint);
+        }
+        if self.paused {
+            let arrow = vec![
+                Pos2::new(mark.x - radius, mark.y - radius),
+                Pos2::new(mark.x, mark.y - radius),
+                Pos2::new(mark.x + radius, mark.y),
+                Pos2::new(mark.x, mark.y + radius),
+                Pos2::new(mark.x - radius, mark.y + radius),
+            ];
+            painter.add(egui::Shape::convex_polygon(
+                arrow,
+                style.paused_mark,
+                egui::Stroke::NONE,
+            ));
+        }
+    }
 }
 
 /// Draws one row's text `galley` at `text_left`, centred in the row at `top` of `row_height`,

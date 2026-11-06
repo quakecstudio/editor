@@ -6,6 +6,9 @@ enum qs_commands::id::IdError
 enum qs_commands::params::FieldKind
 enum qs_commands::params::Input
 enum qs_commands::params::ParamError
+field qs_commands::palette::Found.item
+field qs_commands::palette::Found.name_hits
+field qs_commands::palette::Found.text_hits
 field qs_commands::palette::PaletteMatch.id_hits
 field qs_commands::palette::PaletteMatch.info
 field qs_commands::palette::PaletteMatch.summary_hits
@@ -23,6 +26,7 @@ fn qs_commands::command::UndoStep::redo
 fn qs_commands::command::UndoStep::undo
 fn qs_commands::id::CommandId::as_str
 fn qs_commands::id::CommandId::new
+fn qs_commands::palette::find
 fn qs_commands::palette::search
 fn qs_commands::params::Input::empty
 fn qs_commands::params::fields
@@ -59,6 +63,7 @@ mod qs_commands::params
 struct qs_commands::command::NoParams
 struct qs_commands::command::Outcome
 struct qs_commands::id::CommandId
+struct qs_commands::palette::Found
 struct qs_commands::palette::PaletteMatch
 struct qs_commands::params::Choice
 struct qs_commands::params::Field

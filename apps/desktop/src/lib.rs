@@ -15,8 +15,11 @@
 
 pub mod bench;
 mod code_style;
+mod debugger;
 mod editor;
+mod entities;
 mod fallback;
+mod finder;
 pub mod icons;
 pub mod keymap;
 pub mod map_view;
@@ -111,9 +114,14 @@ impl App {
     pub fn frame(&mut self, ui: &mut egui::Ui) {
         #[cfg(target_os = "macos")]
         if let Some(menu) = &self.menu {
-            for panel in menu.chosen() {
-                if let Err(error) = self.shell.toggle(panel) {
-                    tracing::warn!(%error, "panel toggle failed");
+            for choice in menu.chosen() {
+                match choice {
+                    menu::MenuChoice::OpenFolder => self.shell.open_folder(),
+                    menu::MenuChoice::Toggle(panel) => {
+                        if let Err(error) = self.shell.toggle(panel) {
+                            tracing::warn!(%error, "panel toggle failed");
+                        }
+                    }
                 }
             }
         }

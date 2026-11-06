@@ -252,7 +252,8 @@ fn the_host_is_found_beside_the_app() {
     assert_eq!(locate_host(Some(&configured), &app).unwrap(), configured);
 }
 
-/// A host that offers `pause` and `step` and sends an event before each answer.
+/// A host that offers `pause`, `step`, `breakpoint/clear` and `evaluate` and sends an event
+/// before each answer.
 struct Fake;
 
 impl Host for Fake {
@@ -265,7 +266,13 @@ impl Host for Fake {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities::of(["pause", "step", "window/place"])
+        Capabilities::of([
+            "pause",
+            "step",
+            "breakpoint/clear",
+            "evaluate",
+            "window/place",
+        ])
     }
 
     fn call(&mut self, _id: &Id, method: &str, params: &Value) -> Answer {
@@ -337,6 +344,10 @@ fn the_client_speaks_the_bridge() {
     assert_eq!(paused["method"], "pause");
     let stepped = client.step(StepKind::Frame).unwrap();
     assert_eq!(stepped["params"]["kind"], "frame");
+    let cleared = client.clear_breakpoint(4).unwrap();
+    assert_eq!(cleared["params"], json!({ "id": 4 }));
+    let evaluated = client.evaluate("self.health").unwrap();
+    assert_eq!(evaluated["params"], json!({ "expression": "self.health" }));
     let inspected = client.inspect(InspectWhat::Edict(3)).unwrap();
     assert_eq!(inspected["params"], json!({ "what": "edict", "edict": 3 }));
     assert!(matches!(
@@ -359,7 +370,7 @@ fn the_client_speaks_the_bridge() {
     );
     // Each answer, initialize's too, came after an event, kept in order.
     let events = client.take_events();
-    assert_eq!(events.len(), 5);
+    assert_eq!(events.len(), 7);
     assert!(events.iter().all(|e| e.method == "console/line"));
     // The host answers a step with bad parameters with -32602 (BRIDGE-4.2).
     let bad = client.request("step", json!({ "kind": "sideways" }));
@@ -432,4 +443,23 @@ fn a_wait_ends_on_time_while_other_events_come() {
     let waited = client.wait_event("map/loaded", Duration::from_millis(50));
     assert!(matches!(waited, Err(ClientError::Timeout)), "{waited:?}");
     assert!(!client.take_events().is_empty());
+}
+
+// spec BRIDGE-3.1: polling takes the events already read without waiting for more, and a
+// closed connection is an error once every event before it is taken
+#[test]
+fn polling_takes_the_events_without_waiting() {
+    let mut chatty = Client::over(Chatty::new(), std::io::sink());
+    let start = std::time::Instant::now();
+    let mut seen = 0;
+    while seen == 0 && start.elapsed() < Duration::from_secs(5) {
+        seen = chatty.poll_events().unwrap().len();
+    }
+    assert!(seen > 0, "the reader thread's events arrive");
+    let mut client = Client::over(std::io::empty(), std::io::sink());
+    let mut result = client.poll_events();
+    while matches!(&result, Ok(events) if events.is_empty()) {
+        result = client.poll_events();
+    }
+    assert!(matches!(result, Err(ClientError::Closed)), "{result:?}");
 }
