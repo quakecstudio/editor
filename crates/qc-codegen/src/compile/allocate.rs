@@ -148,6 +148,9 @@ pub(super) struct Overlapping {
     slots: HashMap<u32, u32>,
     /// The values given a shared slot.
     shared: HashSet<u32>,
+    /// The widest any statement writes each value, by the statement that makes it: a
+    /// `?:`'s one-word value its `LOAD_V` arm writes three words of (FTE-9.3).
+    widest: HashMap<u32, u32>,
 }
 
 impl Overlapping {
@@ -169,6 +172,17 @@ impl Overlapping {
         }
         let mut loops = Vec::new();
         let mut calls = Vec::new();
+        let mut widest: HashMap<u32, u32> = HashMap::new();
+        for statement in generated {
+            for name in [statement.b, statement.c].into_iter().flatten() {
+                if let Name::Made(made) = name
+                    && let Some(words) = statement.made_words(made)
+                {
+                    let wide = widest.entry(made).or_insert(words);
+                    *wide = (*wide).max(words);
+                }
+            }
+        }
         for (index, statement) in (0_u32..).zip(generated) {
             for name in [statement.a, statement.b, statement.c]
                 .into_iter()
@@ -217,16 +231,23 @@ impl Overlapping {
             held: Vec::new(),
             slots: HashMap::new(),
             shared: HashSet::new(),
+            widest,
         }
     }
 
     /// The slot of `words` words the value made at `index` takes. Each takes the first of the
     /// module's shared slots of its size that no value of this body holds at `index`, the
     /// operands of the statement that makes it included, or a new shared one after the last
-    /// (`QCC_GetTemp`), and holds it to its last statement; a locked value then takes a slot
+    /// (`QCC_GetTemp`), and holds it to its last statement, as wide as the widest statement
+    /// that writes it; a locked value then takes a slot
     /// of the function's block after its locals instead, as `QCC_RemapLockedTemps` moves it
     /// once the function ends, its shared one still taken.
     fn take(&mut self, program: &mut Program, index: u32, words: u32) -> Result<(), Internal> {
+        // A slot holds every word a statement writes to the value, so none reaches the next.
+        let words = self
+            .widest
+            .get(&index)
+            .map_or(words, |&wide| wide.max(words));
         let end = self.last.get(&index).copied().unwrap_or(index);
         let shared = self.shared_place(program, index, words, Some(end))?;
         let slot = if self.locked.binary_search(&index).is_ok() {
@@ -388,6 +409,34 @@ mod tests {
             program.shared_temps().first().map(|&(ofs, _)| ofs),
             "read before the call: shared"
         );
+    }
+
+    // spec FTE-21.8: a value's slot is as wide as the widest statement that writes it, so a
+    // `?:`'s one-word value its `LOAD_V` arm writes three words of reaches no other value
+    #[test]
+    fn a_slot_holds_every_word_written_to_it() {
+        let mut program = Program::new();
+        let body = [
+            makes(Op::MulVf, 0, None, None),
+            makes(Op::AddF, 1, None, None),
+            BodyStatement {
+                c: Some(Name::Made(1)),
+                ..BodyStatement::bare(Op::LoadV)
+            },
+            reads(Op::MulVf, Some(Name::Made(0))),
+            reads(Op::StoreF, Some(Name::Made(1))),
+        ];
+        let slots = allocate(&mut program, &body, &[]);
+        let shared: Vec<(u32, u32)> = program.shared_temps().to_vec();
+        let words = |slot: Option<u32>| {
+            shared
+                .iter()
+                .find(|&&(ofs, _)| Some(ofs) == slot)
+                .map(|&(_, words)| words)
+        };
+        assert_eq!(words(slots[1]), Some(3), "the LOAD_V's three words");
+        let (a, b) = (slots[0].unwrap(), slots[1].unwrap());
+        assert!(a + 3 <= b || b + 3 <= a, "no overlap: {a} {b}");
     }
 
     // spec FTE-21.8: a value live where a loop starts again is held to the loop's back jump
