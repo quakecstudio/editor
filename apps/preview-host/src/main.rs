@@ -49,6 +49,23 @@ fn main() -> ExitCode {
 }
 
 fn run(args: &args::Args) -> Result<(), String> {
+    if let Some(eye) = args
+        .timerefresh
+        .as_deref()
+        .and_then(|values| <[f32; 3]>::try_from(values).ok())
+    {
+        let args = args::Args {
+            nosound: true,
+            ..args.clone()
+        };
+        let start = std::time::Instant::now();
+        let loaded = load::load(&args, &args.map, None, None, None)?;
+        let line = headless::timerefresh(loaded, start.elapsed(), eye)?;
+        let mut out = std::io::stdout().lock();
+        std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes())
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     if args.headless {
         let args = args::Args {
             nosound: true,

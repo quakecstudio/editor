@@ -114,6 +114,9 @@ pub struct SimBuiltins {
     /// The statements each function has run since `profile` last printed, id's
     /// `dfunction_t.profile` (PHYS-13.7).
     pub(crate) profile: Vec<u64>,
+    /// The wall time the frames' runs of QuakeC have taken, for the QuakeC time benchmark
+    /// (P3-29, ENG-17): measured, never read by the simulation.
+    pub(crate) qc_time: std::time::Duration,
     /// Whether the server is paused, `sv.paused` (PHYS-11.8).
     pub(crate) paused: bool,
     /// The client's name, `host_client->name`, which `spawn` gives its `netname`.
@@ -158,6 +161,7 @@ impl SimBuiltins {
             table,
             debugger: None,
             profile: Vec::new(),
+            qc_time: std::time::Duration::ZERO,
             paused: false,
             client_name: b"player".to_vec(),
             checkpvs: Vec::new(),
@@ -421,8 +425,10 @@ impl Vm<'_, '_, '_> {
                     debugger: debugger.as_mut(),
                     profile: &mut profile,
                 };
+                let start = std::time::Instant::now();
                 let outcome =
                     machine.execute_program(progs, ServerState::Active, sim, &mut watch, function);
+                sim.qc_time = sim.qc_time.saturating_add(start.elapsed());
                 sim.debugger = debugger;
                 sim.profile = profile;
                 outcome

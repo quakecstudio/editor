@@ -278,6 +278,7 @@ fn qs_sim::world::World::load
 fn qs_sim::world::World::machine
 fn qs_sim::world::World::map
 fn qs_sim::world::World::player_view
+fn qs_sim::world::World::qc_time
 fn qs_sim::world::World::save_spawn_parms
 fn qs_sim::world::World::set_command
 fn qs_sim::world::World::set_debugger

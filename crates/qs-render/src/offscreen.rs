@@ -134,6 +134,36 @@ impl Offscreen {
         primitives: &[ClippedPrimitive],
         screen: &ScreenDescriptor,
     ) -> Result<Pixels, OffscreenError> {
+        let [width, height] = screen.size_in_pixels;
+        let target = self.draw(primitives, screen);
+        self.read_back(&target, width, height)
+    }
+
+    /// Draws `primitives` as [`Offscreen::render`] does and submits the work, not waiting for
+    /// the GPU: a run of frames drawn back to back, finished by [`Offscreen::finish`].
+    pub fn submit(&mut self, primitives: &[ClippedPrimitive], screen: &ScreenDescriptor) {
+        drop(self.draw(primitives, screen));
+    }
+
+    /// Waits for the GPU to finish every frame submitted, as `glFinish ()` does.
+    ///
+    /// # Errors
+    ///
+    /// [`OffscreenError::Poll`] when the GPU does not finish.
+    pub fn finish(&self) -> Result<(), OffscreenError> {
+        self.state
+            .device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map(drop)
+            .map_err(|error| OffscreenError::Poll(error.to_string()))
+    }
+
+    /// Draws `primitives` into a new target of `screen`'s size and submits the work.
+    fn draw(
+        &mut self,
+        primitives: &[ClippedPrimitive],
+        screen: &ScreenDescriptor,
+    ) -> wgpu::Texture {
         let state = &self.state;
         let [width, height] = screen.size_in_pixels;
         let mut encoder = state.device.create_command_encoder(&Default::default());
@@ -199,7 +229,7 @@ impl Offscreen {
         state
             .queue
             .submit(user.into_iter().chain([encoder.finish()]));
-        self.read_back(&target, width, height)
+        target
     }
 
     /// `texture`'s pixels, its rows copied out of wgpu's padded rows.
