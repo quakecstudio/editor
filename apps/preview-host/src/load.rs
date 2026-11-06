@@ -266,7 +266,7 @@ pub(crate) fn load(
         .collect();
     let mut others: Vec<(String, Vec<(Placement, usize)>)> = Vec::new();
     for entity in game.world().entities().into_iter().skip(1) {
-        if entity.model.ends_with(".bsp") && !entity.model.starts_with("maps/") {
+        if is_external_brush_model(&entity.model, &name) {
             let placement = Placement {
                 model: 0,
                 origin: entity.origin,
@@ -337,6 +337,13 @@ pub(crate) fn load(
         rand,
         camera,
     })
+}
+
+/// Whether an entity's `model` is a brush model of a BSP of its own, drawn from that file:
+/// any `.bsp`, the health and ammo boxes and the barrels of `maps/b_*.bsp` among them, but the
+/// map's own, `world`, whose models are the mesh's.
+fn is_external_brush_model(model: &str, world: &str) -> bool {
+    model.ends_with(".bsp") && model != world
 }
 
 /// A camera looking at the middle of the first batch of `surface` in the map: above water
