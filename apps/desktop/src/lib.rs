@@ -16,6 +16,7 @@
 pub mod bench;
 mod code_style;
 mod editor;
+mod entities;
 mod fallback;
 pub mod icons;
 pub mod keymap;

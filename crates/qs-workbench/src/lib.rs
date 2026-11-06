@@ -37,8 +37,9 @@ pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
 pub use crate::preview::{
-    ConsoleLine, HasPreview, PAUSE, PLAY, POLL, PlayParams, PlayState, Preview, PreviewConfig,
-    PreviewError, PreviewStatus, RELOAD, RESTART, RESUME, STEP, STOP, register_preview,
+    ConsoleLine, HasPreview, PAUSE, PICK, PLAY, POLL, PickParams, PlayParams, PlayState, Preview,
+    PreviewConfig, PreviewError, PreviewStatus, RELOAD, RESTART, RESUME, SELECT, SET_FIELD, STEP,
+    STOP, SelectParams, SelectedEntity, SetFieldParams, entities, register_preview,
 };
 use qc_project::{ProjectError, normalize};
 use serde::{Deserialize, Serialize};

@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use qc_project::Loader;
 use qs_engine::{
-    Client, ClientError, Flavour, LaunchError, LaunchSpec, RunRootError, Running, StepKind, launch,
-    locate_host, prepare_run_root,
+    Client, ClientError, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRootError, Running,
+    StepKind, launch, locate_host, prepare_run_root,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -23,6 +23,10 @@ use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 
 use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
+
+pub mod entities;
+
+use entities::Entities;
 
 /// The most console lines the preview keeps; older ones are dropped.
 const CONSOLE_LINES: usize = 1000;
@@ -106,6 +110,17 @@ pub enum PreviewError {
     Bridge(ClientError),
     /// The command needs a running host.
     NotRunning,
+    /// Fields are edited only while the game is paused.
+    NotPaused,
+    /// The selected edict has no such field, or nothing is selected.
+    NoField(String),
+    /// The text is not a value of the field's type.
+    BadValue {
+        /// The field.
+        field: String,
+        /// Its type.
+        kind: String,
+    },
 }
 
 impl core::fmt::Display for PreviewError {
@@ -130,6 +145,9 @@ impl core::fmt::Display for PreviewError {
             Self::Launch(error) => write!(f, "{error}"),
             Self::Bridge(error) => write!(f, "{error}"),
             Self::NotRunning => f.write_str("the game is not running"),
+            Self::NotPaused => f.write_str("pause the game to edit its fields"),
+            Self::NoField(field) => write!(f, "the selected entity has no field {field}"),
+            Self::BadValue { field, kind } => write!(f, "{field} takes a {kind}"),
         }
     }
 }
@@ -157,6 +175,11 @@ pub struct Preview {
     console: VecDeque<ConsoleLine>,
     /// The last thing the loop did, for the toolbar: `Reloaded 0.9 s after save`.
     status: Option<String>,
+    /// The game's edicts and the selected one.
+    entities: Entities,
+    /// The edits made while paused, which the host applies on resume (BRIDGE-4.4): each
+    /// edict, field and the value as typed.
+    pending: Vec<(u32, String, String)>,
 }
 
 impl core::fmt::Debug for Preview {
@@ -179,7 +202,105 @@ impl Preview {
             state: PlayState::Stopped,
             console: VecDeque::new(),
             status: None,
+            entities: Entities::new(),
+            pending: Vec::new(),
         }
+    }
+
+    /// The value typed for field `field` of edict `edict` while paused, which the game takes on
+    /// resume.
+    #[must_use]
+    pub fn pending(&self, edict: u32, field: &str) -> Option<&str> {
+        self.pending
+            .iter()
+            .rev()
+            .find(|(e, f, _)| *e == edict && f == field)
+            .map(|(_, _, value)| value.as_str())
+    }
+
+    /// The game's edicts and the selected one.
+    #[must_use]
+    pub const fn entities(&self) -> &Entities {
+        &self.entities
+    }
+
+    /// Reads the game's edicts again (`inspect entities`).
+    ///
+    /// # Errors
+    ///
+    /// [`PreviewError::NotRunning`] with no host, or the bridge's error.
+    pub fn refresh(&mut self) -> Result<(), PreviewError> {
+        let answer = self.live_client()?.inspect(InspectWhat::Entities)?;
+        self.entities.replace(&answer);
+        Ok(())
+    }
+
+    /// Selects edict `edict`, reading its fields (`inspect edict`).
+    ///
+    /// # Errors
+    ///
+    /// [`PreviewError::NotRunning`] with no host, or the bridge's error.
+    pub fn select(&mut self, edict: u32) -> Result<(), PreviewError> {
+        let answer = self.live_client()?.inspect(InspectWhat::Edict(edict))?;
+        self.entities.select(&answer);
+        Ok(())
+    }
+
+    /// Selects the edict under the point `x`, `y` of the game's window, fractions from its top
+    /// left (`pick`); the edict, or `None` when the pick hit none.
+    ///
+    /// # Errors
+    ///
+    /// [`PreviewError::NotRunning`] with no host, or the bridge's error.
+    pub fn pick(&mut self, x: f64, y: f64) -> Result<Option<u32>, PreviewError> {
+        let answer = self.live_client()?.pick(x, y)?;
+        let Some(edict) = answer
+            .get("edict")
+            .and_then(Value::as_u64)
+            .and_then(|n| u32::try_from(n).ok())
+            .filter(|&n| n != 0)
+        else {
+            return Ok(None);
+        };
+        self.select(edict)?;
+        Ok(Some(edict))
+    }
+
+    /// Sets field `field` of the selected edict to the value `text` names, read as the
+    /// field's type, while the game is paused (`field/set`); the edict is then read again.
+    ///
+    /// # Errors
+    ///
+    /// [`PreviewError::NotPaused`] while the game runs, [`PreviewError::NoField`] for a field
+    /// the selected edict lacks, [`PreviewError::BadValue`] for text that is not of its type,
+    /// or the bridge's error.
+    pub fn set_field(&mut self, field: &str, text: &str) -> Result<(), PreviewError> {
+        if self.state != PlayState::Paused {
+            return Err(PreviewError::NotPaused);
+        }
+        let selected = self
+            .entities
+            .selected()
+            .ok_or_else(|| PreviewError::NoField(field.to_owned()))?;
+        let edict = selected.edict;
+        let kind = selected
+            .fields
+            .iter()
+            .find(|f| f.name == field)
+            .map(|f| f.kind().to_owned())
+            .ok_or_else(|| PreviewError::NoField(field.to_owned()))?;
+        let value = entities::parse_value(&kind, text).ok_or_else(|| PreviewError::BadValue {
+            field: field.to_owned(),
+            kind,
+        })?;
+        let answer = self.live_client()?.set_field(edict, field, value)?;
+        // BRIDGE-4.4: while paused between frames the host holds the edit until it resumes.
+        if answer.get("applied").and_then(Value::as_str) == Some("on_resume") {
+            self.pending
+                .push((edict, field.to_owned(), text.trim().to_owned()));
+            return Ok(());
+        }
+        self.select(edict)
     }
 
     /// Whether the game runs, is paused or is stopped.
@@ -234,7 +355,8 @@ impl Preview {
         self.live = Some(Live { running, progs });
         self.state = PlayState::Playing;
         self.status = Some(format!("Playing {mod_name}"));
-        Ok(())
+        self.console.clear();
+        self.refresh()
     }
 
     /// The original game's base directory: the configured folder's, else the first install
@@ -275,7 +397,11 @@ impl Preview {
     pub fn resume(&mut self) -> Result<(), PreviewError> {
         self.live_client()?.resume()?;
         self.state = PlayState::Playing;
-        Ok(())
+        self.pending.clear();
+        match self.entities.selected().map(|s| s.edict) {
+            Some(edict) => self.select(edict),
+            None => Ok(()),
+        }
     }
 
     /// Runs one server frame of a paused game, or one statement when stopped at a breakpoint
@@ -358,6 +484,8 @@ impl Preview {
         }
         self.state = PlayState::Stopped;
         self.status = None;
+        self.entities.clear();
+        self.pending.clear();
     }
 
     /// Reads the host's events: its state changes and console lines; the host closing the
@@ -376,6 +504,7 @@ impl Preview {
                 self.live = None;
                 self.state = PlayState::Stopped;
                 self.status = Some("The game closed".to_owned());
+                self.entities.clear();
             }
         }
     }
@@ -404,7 +533,13 @@ impl Preview {
                     level: level.to_owned(),
                 });
             }
-            _ => {}
+            _ => {
+                if self.entities.take_event(method, params)
+                    && let Err(error) = self.refresh()
+                {
+                    tracing::debug!(%error, "the entities were not read again");
+                }
+            }
         }
     }
 }
@@ -474,6 +609,12 @@ pub const STOP: &str = "preview.stop";
 pub const RELOAD: &str = "preview.reload";
 /// The id of the command that reads the running game's events.
 pub const POLL: &str = "preview.poll";
+/// The id of the command that selects an edict.
+pub const SELECT: &str = "preview.select";
+/// The id of the command that selects the edict under a point of the game's window.
+pub const PICK: &str = "preview.pick";
+/// The id of the command that sets a field of the selected edict.
+pub const SET_FIELD: &str = "preview.set_field";
 
 /// What a `preview.*` command leaves: the play state and the last thing the loop did.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -505,6 +646,118 @@ pub struct PlayParams {
     /// The map to start on; the host's own first map when absent.
     #[serde(default)]
     pub map: Option<String>,
+}
+
+/// The parameters of `preview.select`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SelectParams {
+    /// The edict's number.
+    pub edict: u32,
+}
+
+/// The parameters of `preview.pick`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PickParams {
+    /// The point across the game's window, from 0 at its left to 1 at its right.
+    pub x: f64,
+    /// The point down the game's window, from 0 at its top to 1 at its bottom.
+    pub y: f64,
+}
+
+/// The parameters of `preview.set_field`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SetFieldParams {
+    /// The selected edict's field.
+    pub field: String,
+    /// The value as the Properties panel writes it: `3`, `'1 2 3'`, `"text"`, `player #1`.
+    pub value: String,
+}
+
+/// The selected edict, as `preview.select`, `preview.pick` and `preview.set_field` leave it.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct SelectedEntity {
+    /// The edict's number, or none when nothing is selected.
+    pub edict: Option<u32>,
+    /// Its classname.
+    pub classname: Option<String>,
+}
+
+impl SelectedEntity {
+    fn of(preview: &Preview) -> Self {
+        let selected = preview.entities().selected();
+        Self {
+            edict: selected.map(|s| s.edict),
+            classname: selected.map(|s| s.classname.clone()),
+        }
+    }
+}
+
+/// `preview.select`: selects an edict and reads its fields.
+struct SelectCommand;
+
+impl<C: HasPreview + 'static> Command<C> for SelectCommand {
+    const ID: &'static str = SELECT;
+    const SUMMARY: &'static str = "Selects an edict of the running game and reads its fields \
+        for the Properties panel.";
+    type Params = SelectParams;
+    type Output = SelectedEntity;
+    type Error = PreviewError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        SelectParams { edict }: SelectParams,
+    ) -> Result<Outcome<SelectedEntity, C>, PreviewError> {
+        let (_, preview) = context.workbench_and_preview();
+        preview.select(edict)?;
+        Ok(Outcome::outside_history(SelectedEntity::of(preview)))
+    }
+}
+
+/// `preview.pick`: selects the edict under a point of the game's window.
+struct PickCommand;
+
+impl<C: HasPreview + 'static> Command<C> for PickCommand {
+    const ID: &'static str = PICK;
+    const SUMMARY: &'static str = "Selects the edict under a point of the game's window.";
+    type Params = PickParams;
+    type Output = SelectedEntity;
+    type Error = PreviewError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        PickParams { x, y }: PickParams,
+    ) -> Result<Outcome<SelectedEntity, C>, PreviewError> {
+        let (_, preview) = context.workbench_and_preview();
+        preview.pick(x, y)?;
+        Ok(Outcome::outside_history(SelectedEntity::of(preview)))
+    }
+}
+
+/// `preview.set_field`: sets a field of the selected edict while the game is paused.
+struct SetFieldCommand;
+
+impl<C: HasPreview + 'static> Command<C> for SetFieldCommand {
+    const ID: &'static str = SET_FIELD;
+    const SUMMARY: &'static str = "Sets a field of the selected edict while the game is \
+        paused, the value read as the field's type.";
+    type Params = SetFieldParams;
+    type Output = SelectedEntity;
+    type Error = PreviewError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        SetFieldParams { field, value }: SetFieldParams,
+    ) -> Result<Outcome<SelectedEntity, C>, PreviewError> {
+        let (_, preview) = context.workbench_and_preview();
+        preview.set_field(&field, &value)?;
+        Ok(Outcome::outside_history(SelectedEntity::of(preview)))
+    }
 }
 
 /// One of the controls that act on the running game alone.
@@ -653,6 +906,9 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(ControlCommand::<StopControl>(core::marker::PhantomData))?;
     registry.register(ControlCommand::<PollControl>(core::marker::PhantomData))?;
     registry.register(ReloadCommand)?;
+    registry.register(SelectCommand)?;
+    registry.register(PickCommand)?;
+    registry.register(SetFieldCommand)?;
     Ok(())
 }
 

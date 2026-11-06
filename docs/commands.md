@@ -13,11 +13,14 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
 | [`preview.pause`](#previewpause) | Pauses the running game between frames. |
+| [`preview.pick`](#previewpick) | Selects the edict under a point of the game's window. |
 | [`preview.play`](#previewplay) | Builds the open project and starts the preview host on its program, stopping a game already running. |
 | [`preview.poll`](#previewpoll) | Reads the running game's events: its state changes and console lines. |
 | [`preview.reload`](#previewreload) | Builds the open project and reloads its program in the running game, the map going on; nothing when no game runs. |
 | [`preview.restart`](#previewrestart) | Starts the running game's map again. |
 | [`preview.resume`](#previewresume) | Resumes the paused game. |
+| [`preview.select`](#previewselect) | Selects an edict of the running game and reads its fields for the Properties panel. |
+| [`preview.set_field`](#previewset_field) | Sets a field of the selected edict while the game is paused, the value read as the field's type. |
 | [`preview.step`](#previewstep) | Runs one server frame of the game, pausing it first, and leaves it paused. |
 | [`preview.stop`](#previewstop) | Stops the game. |
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
@@ -193,6 +196,38 @@ Parameters:
 }
 ```
 
+## `preview.pick`
+
+Selects the edict under a point of the game's window.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.pick`.",
+  "properties": {
+    "x": {
+      "description": "The point across the game's window, from 0 at its left to 1 at its right.",
+      "format": "double",
+      "type": "number"
+    },
+    "y": {
+      "description": "The point down the game's window, from 0 at its top to 1 at its bottom.",
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "required": [
+    "x",
+    "y"
+  ],
+  "title": "PickParams",
+  "type": "object"
+}
+```
+
 ## `preview.play`
 
 Builds the open project and starts the preview host on its program, stopping a game already running.
@@ -279,6 +314,63 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.select`
+
+Selects an edict of the running game and reads its fields for the Properties panel.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.select`.",
+  "properties": {
+    "edict": {
+      "description": "The edict's number.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "edict"
+  ],
+  "title": "SelectParams",
+  "type": "object"
+}
+```
+
+## `preview.set_field`
+
+Sets a field of the selected edict while the game is paused, the value read as the field's type.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.set_field`.",
+  "properties": {
+    "field": {
+      "description": "The selected edict's field.",
+      "type": "string"
+    },
+    "value": {
+      "description": "The value as the Properties panel writes it: `3`, `'1 2 3'`, `\"text\"`, `player #1`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field",
+    "value"
+  ],
+  "title": "SetFieldParams",
   "type": "object"
 }
 ```

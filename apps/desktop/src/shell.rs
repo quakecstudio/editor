@@ -34,8 +34,10 @@ use qs_workbench::{
     RENAME, RESTART, RESUME, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE,
     UpdateFileParams, Workbench,
 };
+use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
 use crate::editor::{Editor, Popup, Request};
+use crate::entities::{self, EntityAction, Outliner, Properties};
 use crate::fallback::{SystemFonts, families};
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
@@ -142,6 +144,10 @@ pub struct Shell {
     focus_applied: u64,
     /// The last play-loop command's error, shown on the toolbar until the next one.
     preview_error: Option<String>,
+    /// The Entities outliner's filter.
+    outliner: Outliner,
+    /// The Properties panel's edits.
+    properties: Properties,
 }
 
 impl Shell {
@@ -183,6 +189,8 @@ impl Shell {
             covered: None,
             focus_applied: layout.focus_requests,
             preview_error: None,
+            outliner: Outliner::default(),
+            properties: Properties::default(),
         })
     }
 
@@ -518,6 +526,39 @@ impl Shell {
         self.preview_error = result.err().map(|error| error.to_string());
     }
 
+    /// Runs what the outliner or the Properties panel asked for: a selection or a field's new
+    /// value through its command, or the definition of a function opened.
+    fn entity_action(&mut self, action: EntityAction) {
+        let result = match action {
+            EntityAction::Select(edict) => {
+                self.run::<_, SelectedEntity>(SELECT, &SelectParams { edict })
+            }
+            EntityAction::SetField { field, value } => {
+                self.run::<_, SelectedEntity>(SET_FIELD, &SetFieldParams { field, value })
+            }
+            EntityAction::Open(name) => {
+                let place = self
+                    .session
+                    .context()
+                    .workbench
+                    .project_symbols()
+                    .iter()
+                    .find(|symbol| symbol.name.eq_ignore_ascii_case(&name))
+                    .map(|symbol| Jump {
+                        path: symbol.range.path.clone(),
+                        offset: symbol.range.span.start,
+                    });
+                if let Some(place) = place {
+                    self.jump(place);
+                }
+                return;
+            }
+        };
+        if result.is_none() {
+            self.preview_error = Some(Text::EditFailed.get().to_owned());
+        }
+    }
+
     /// Reloads the running game after a save, its error shown on the toolbar.
     fn reload_after_save(&mut self) {
         if self.session.context().preview.state() == PlayState::Stopped {
@@ -587,6 +628,9 @@ impl Shell {
         let scope = &mut self.symbol_scope;
         let workbench = &self.session.context().workbench;
         let preview = &self.session.context().preview;
+        let outliner = &mut self.outliner;
+        let properties = &mut self.properties;
+        let mut entity_action = None;
         let mut jump = None;
         let mut expanded = state.visible;
         // A size the layout was given by a command, not by a drag of the panel's edge, is
@@ -633,12 +677,27 @@ impl Shell {
                     Panel::Left => {
                         jump = left(ui, theme, workbench, scope, focus);
                         ui.add_space(theme.space(3));
-                        section(ui, theme, Text::Entities, Text::NotPlaying);
+                        if preview.state() == PlayState::Stopped {
+                            section(ui, theme, Text::Entities, Text::NotPlaying);
+                        } else {
+                            heading(ui, theme, Text::Entities);
+                            entity_action = entities::outliner(ui, theme, preview, outliner);
+                        }
                     }
                     Panel::Right => {
-                        let properties = section(ui, theme, Text::Properties, Text::NotPlaying);
+                        let heading = if preview.state() == PlayState::Stopped {
+                            section(ui, theme, Text::Properties, Text::NotPlaying)
+                        } else {
+                            let heading = heading(ui, theme, Text::Properties);
+                            if let Some(action) =
+                                entities::properties(ui, theme, preview, properties)
+                            {
+                                entity_action = Some(action);
+                            }
+                            heading
+                        };
                         if focus {
-                            properties.request_focus();
+                            heading.request_focus();
                         }
                         ui.add_space(theme.space(3));
                         section(ui, theme, Text::Agent, Text::NoAgent);
@@ -650,6 +709,9 @@ impl Shell {
             });
         if let Some(jump) = jump {
             self.jump(jump);
+        }
+        if let Some(action) = entity_action {
+            self.entity_action(action);
         }
         // A panel dragged shut is hidden through its command too.
         if expanded != state.visible

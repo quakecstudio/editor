@@ -239,6 +239,7 @@ fn literal_lines(source: &str) -> Vec<(usize, &str)> {
 fn the_ui_code_has_no_string_literals() {
     for (name, source) in [
         ("shell.rs", include_str!("shell.rs")),
+        ("entities.rs", include_str!("entities.rs")),
         ("palette.rs", include_str!("palette.rs")),
         ("project.rs", include_str!("project.rs")),
         ("editor.rs", include_str!("editor.rs")),

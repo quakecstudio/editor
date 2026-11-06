@@ -73,6 +73,22 @@ pub enum Text {
     Paused,
     /// The toolbar after a reload failed.
     ReloadFailed,
+    /// The Entities filter's hint.
+    FilterEntities,
+    /// An outliner row whose edict has no classname.
+    NoClassname,
+    /// After the outliner's count of edicts in use.
+    Live,
+    /// The Properties panel with nothing selected.
+    NothingSelected,
+    /// The Properties panel while the game runs.
+    ReadOnlyWhilePlaying,
+    /// The Properties panel's link to the selected entity's spawn function.
+    OpenSpawnFunction,
+    /// The toolbar after a selection or a field's edit failed.
+    EditFailed,
+    /// After the fields edited while paused.
+    SentOnResume,
     /// A control that has no action yet.
     NotYetAvailable,
     /// The View menu.
@@ -171,7 +187,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 80] = [
+    pub const ALL: [Self; 88] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -205,6 +221,14 @@ impl Text {
         Self::Resume,
         Self::Paused,
         Self::ReloadFailed,
+        Self::FilterEntities,
+        Self::NoClassname,
+        Self::Live,
+        Self::NothingSelected,
+        Self::ReadOnlyWhilePlaying,
+        Self::OpenSpawnFunction,
+        Self::EditFailed,
+        Self::SentOnResume,
         Self::NotYetAvailable,
         Self::ViewMenu,
         Self::ToggleLeftPanel,
@@ -291,6 +315,14 @@ impl Text {
             Self::Resume => "Resume",
             Self::Paused => "Paused",
             Self::ReloadFailed => "The reload failed; see the Console",
+            Self::FilterEntities => "Filter by classname or number",
+            Self::NoClassname => "(no classname)",
+            Self::Live => "live",
+            Self::NothingSelected => "Select an entity in the Entities list.",
+            Self::ReadOnlyWhilePlaying => "Read only while playing. Pause to edit.",
+            Self::OpenSpawnFunction => "Open its spawn function",
+            Self::EditFailed => "The game did not take the change; see the log",
+            Self::SentOnResume => "edited, sent to the game on Resume",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",
             Self::ToggleLeftPanel => "Project and Entities",

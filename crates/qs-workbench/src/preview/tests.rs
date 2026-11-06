@@ -154,3 +154,53 @@ fn the_mod_is_the_build_folder() {
     assert_eq!(mod_folder(project, Path::new("/p/build/progs.dat")), None);
     assert_eq!(mod_folder(project, Path::new("progs.dat")), None);
 }
+
+// No spec statement: fields are edited only while paused, on a field the selected edict has,
+// with a value of its type; selecting and picking need a running game
+#[test]
+fn field_edits_need_a_paused_game_and_a_field() {
+    let mut game = preview(None, None);
+    assert!(matches!(
+        game.set_field("health", "5"),
+        Err(PreviewError::NotPaused)
+    ));
+    game.state = PlayState::Paused;
+    assert!(
+        matches!(game.set_field("health", "5"), Err(PreviewError::NoField(f)) if f == "health")
+    );
+    game.entities.select(
+        &json!({ "edict": 3, "classname": "monster_army", "fields": [
+        { "name": "health", "value": { "type": "float", "value": 30 } }
+    ] }),
+    );
+    assert!(matches!(
+        game.set_field("armor", "5"),
+        Err(PreviewError::NoField(_))
+    ));
+    let bad = game.set_field("health", "lots").unwrap_err();
+    assert_eq!(bad.to_string(), "health takes a float");
+    assert!(matches!(
+        game.set_field("health", "5"),
+        Err(PreviewError::NotRunning)
+    ));
+    assert!(matches!(game.select(3), Err(PreviewError::NotRunning)));
+    assert!(matches!(game.pick(0.5, 0.5), Err(PreviewError::NotRunning)));
+    assert!(matches!(game.refresh(), Err(PreviewError::NotRunning)));
+    assert_eq!(
+        PreviewError::NotPaused.to_string(),
+        "pause the game to edit its fields"
+    );
+}
+
+// spec BRIDGE-4.4: an edit made while paused is held until resume; the last one typed for a
+// field is the one shown
+#[test]
+fn edits_held_until_resume_are_shown() {
+    let mut game = preview(None, None);
+    game.pending.push((3, "health".to_owned(), "5".to_owned()));
+    game.pending.push((3, "health".to_owned(), "6".to_owned()));
+    game.pending.push((4, "armor".to_owned(), "1".to_owned()));
+    assert_eq!(game.pending(3, "health"), Some("6"));
+    assert_eq!(game.pending(4, "health"), None);
+    assert_eq!(game.pending(3, "armor"), None);
+}
