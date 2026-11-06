@@ -400,7 +400,7 @@ issues:
   - 'apps/preview-host: the backquote key and the console command toggle the console, Escape opens the main menu, keys go where the key destination says, and console lines run through qs-sim''s console path'
   - 'qs-render: the gamma setting applied to the whole frame as QuakeSpasm applies it, so the Brightness slider brightens the screen'
   - 'apps/preview-host: key bindings (bind, unbind, unbindall and the +/- commands) with id1''s default.cfg read, the keys menu that edits them, and +mlook with lookspring and lookstrafe as CL_MouseMove and V_StopPitchDrift read them'
-  - 'qs-sound and apps/preview-host: svc_cdtrack played and looped at bgmvolume, from a cue sheet''s CD audio tracks or from music/track<NN>.<ext> (RRE-3), the music spec statements in docs/spec/'
+  - 'qs-sound and apps/preview-host: svc_cdtrack played and looped at bgmvolume, from a cue sheet''s CD audio tracks or from music/track<NN>.<ext> (RRE-3), the music spec statements in docs/spec/. Done in PR #748: the CD image (SND-6, RRE-3.4, game.cue by default). Left: an Ogg Vorbis decoder (a new workspace dependency, its version and licence checked) for the rerelease''s music/track<NN>.ogg, and the mission packs'' CD images (GOG''s gamea.cue and gamed.cue, which is which to be confirmed) chosen with -rogue and -hipnotic'
   acceptance:
   - 'The console and each menu in scope are drawn and driven as the specs say, each statement cited by a test'
   - '`cargo xtask view-diff` shows the main menu and the console drawn within tolerance of the view oracle'
