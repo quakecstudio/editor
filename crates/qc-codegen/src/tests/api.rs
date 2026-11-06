@@ -192,9 +192,14 @@ fn fte_statements(depth: u32) -> impl Strategy<Value = String> {
             (fte_expression(2), body.clone())
                 .prop_map(|(c, b)| format!("for (i = 0; i < {c}; i++) {{ {b} }}")),
             // FTEQCC types `!x` as bool, which a float case does not match.
-            (prop_oneof![Just("a"), Just("i"), Just("e.fl")], body.clone(), body).prop_map(
-                |(c, x, y)| format!("switch ({c}) {{ case 1: {x} break; default: {y} }}")
-            ),
+            (
+                prop_oneof![Just("a"), Just("i"), Just("e.fl")],
+                body.clone(),
+                body
+            )
+                .prop_map(|(c, x, y)| format!(
+                    "switch ({c}) {{ case 1: {x} break; default: {y} }}"
+                )),
         ]
     });
     proptest::collection::vec(block, 1..5).prop_map(|s| s.join("\n"))
