@@ -117,6 +117,8 @@ pub enum Text {
     RemoveWatch,
     /// The hint in the console's filter box.
     FilterConsole,
+    /// The console's prompt before its command box.
+    ConsolePrompt,
     /// A control that has no action yet.
     NotYetAvailable,
     /// The View menu.
@@ -215,7 +217,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 102] = [
+    pub const ALL: [Self; 103] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -271,6 +273,7 @@ impl Text {
         Self::NotRead,
         Self::RemoveWatch,
         Self::FilterConsole,
+        Self::ConsolePrompt,
         Self::NotYetAvailable,
         Self::ViewMenu,
         Self::ToggleLeftPanel,
@@ -373,7 +376,7 @@ impl Text {
             Self::StepOver => "Step over",
             Self::StepOut => "Step out",
             Self::EngineFrame => "engine",
-            Self::ConsoleCommand => "Type a console command, such as impulse 9",
+            Self::ConsoleCommand => "Console command, for example impulse 9",
             Self::NoBreakpoints => "Click a line number to set a breakpoint.",
             Self::NotStopped => {
                 "The call stack and watches show when the game stops at a breakpoint or a step."
@@ -381,6 +384,7 @@ impl Text {
             Self::NotRead => "not read",
             Self::RemoveWatch => "\u{d7}",
             Self::FilterConsole => "Filter the console",
+            Self::ConsolePrompt => "]",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",
             Self::ToggleLeftPanel => "Project and Entities",

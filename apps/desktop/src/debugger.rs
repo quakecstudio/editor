@@ -172,8 +172,9 @@ pub(crate) fn debugger_ui(
     action
 }
 
-/// The console while a game runs: a box whose line Enter runs in the game, a filter, and the
-/// lines the filter shows, newest at the bottom, an error's in the error colour.
+/// The console while a game runs, as mockup 01 draws it: the lines the filter shows, newest at
+/// the bottom, an error's in the error colour; under them a `]` prompt whose line Enter runs in
+/// the game, and the filter.
 pub(crate) fn console(
     ui: &mut Ui,
     theme: &Theme,
@@ -181,28 +182,41 @@ pub(crate) fn console(
     input: &mut DebugInput,
 ) -> Option<DebugAction> {
     let mut action = None;
-    ui.columns(2, |columns| {
-        let [command, filter] = columns else {
-            return;
-        };
-        let typed = command.add(
-            egui::TextEdit::singleline(&mut input.console)
-                .hint_text(Text::ConsoleCommand.get())
-                .code_editor()
-                .desired_width(f32::INFINITY),
-        );
-        let entered = typed.lost_focus() && command.input(|i| i.key_pressed(egui::Key::Enter));
-        if entered && !input.console.trim().is_empty() {
-            // The box keeps the keyboard so the next command can be typed at once.
-            typed.request_focus();
-            action = Some(DebugAction::Console(std::mem::take(&mut input.console)));
-        }
-        filter.add(
-            egui::TextEdit::singleline(&mut input.filter)
-                .hint_text(Text::FilterConsole.get())
-                .desired_width(f32::INFINITY),
-        );
-    });
+    egui::Panel::bottom(egui::Id::new(Text::ConsoleCommand.get()))
+        .frame(egui::Frame::NONE)
+        .show(ui, |ui| {
+            ui.columns(2, |columns| {
+                let [command, filter] = columns else {
+                    return;
+                };
+                command.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(Text::ConsolePrompt.get())
+                            .monospace()
+                            .color(theme.color(Token::Accent)),
+                    );
+                    let typed = ui.add(
+                        egui::TextEdit::singleline(&mut input.console)
+                            .hint_text(Text::ConsoleCommand.get())
+                            .code_editor()
+                            .frame(egui::Frame::NONE)
+                            .desired_width(f32::INFINITY),
+                    );
+                    let entered =
+                        typed.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    if entered && !input.console.trim().is_empty() {
+                        // The box keeps the keyboard so the next command can be typed at once.
+                        typed.request_focus();
+                        action = Some(DebugAction::Console(std::mem::take(&mut input.console)));
+                    }
+                });
+                filter.add(
+                    egui::TextEdit::singleline(&mut input.filter)
+                        .hint_text(Text::FilterConsole.get())
+                        .desired_width(f32::INFINITY),
+                );
+            });
+        });
     egui::ScrollArea::vertical()
         .stick_to_bottom(true)
         .auto_shrink([false; 2])
