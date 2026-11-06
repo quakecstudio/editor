@@ -16,6 +16,7 @@ const qc_builtins::mock::LIMIT_MAX_MSGLEN
 const qc_builtins::mock::LIMIT_MAX_SOUNDS
 const qc_builtins::mock::VKQUAKE_MAX_MODELS
 const qc_builtins::mock::VKQUAKE_MAX_SOUNDS
+const qc_builtins::mock::VKQUAKE_RUNAWAY
 const qc_builtins::table::BUILTINS
 const qc_builtins::table::BUILTIN_MAX_NUMBER
 const qc_builtins::tokenize::MAX_QC_TOKENS
@@ -89,6 +90,7 @@ fn qc_builtins::mock::Cvars::text
 fn qc_builtins::mock::Cvars::value
 fn qc_builtins::mock::EngineProfile::builtin_limit
 fn qc_builtins::mock::EngineProfile::precache_limit
+fn qc_builtins::mock::EngineProfile::runaway
 fn qc_builtins::mock::EngineStrings::make
 fn qc_builtins::mock::EngineStrings::set_temp
 fn qc_builtins::mock::EngineStrings::take_temp_change
