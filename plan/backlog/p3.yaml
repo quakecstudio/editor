@@ -371,15 +371,15 @@ issues:
   - P3-24
   - P3-23
   deliverable:
-  - 'docs/perf-budgets.md: new budget rows, each measured by `cargo xtask bench` (crates/qs-bench): frame time at p99 on scripted routes through heavy maps (id1 e1m1, the rerelease''s mg1 and mg3 maps, and an Arcane Dimensions map) on macOS, Windows and Linux; server-frame time and QuakeC (qc-vm) time per frame on the same routes; and map load time'
+  - 'docs/perf-budgets.md: new budget rows, each measured by `cargo xtask bench` (crates/qs-bench): frame time at p99 on routes through id1 e1m1 and the rerelease''s mg1 hub on ref-mac; server-frame time and QuakeC (qc-vm) time per frame on the same routes; and map load time. The mg3 and Arcane Dimensions routes and the Windows and Linux machines are P4-24''s (Justin Plock, 2026-11-06)'
   - 'QuakeSpasm, built at a commit pinned in docs/perf-budgets.md, runs only by hand on the reference machines, on the same maps and routes (ENG-17), and its numbers are recorded in docs/perf-budgets.md as fixed budgets with the machine, date and commit they came from: a performance reference only, since QuakeSpasm is one of the engines players run exported mods on (ADR-0005, Decision); the engine oracle is id''s engine (ADR-0005, P3-23)'
   - 'CI never builds or runs QuakeSpasm, as ADR-0005 (Options, A) says, "no outside engine is used even in CI": `cargo xtask bench` measures our engine and checks it against the fixed budgets. Decided by Justin Plock on 2026-10-20 (#444)'
   acceptance:
-  - 'Each new budget is active with a number, run on the reference machines and recorded in the bench history'
-  - 'docs/perf-budgets.md records QuakeSpasm''s hand-run numbers per route and machine as fixed budgets, with the pinned commit, and states the margin our engine is allowed'
+  - 'Each new budget is active with a number, run on ref-mac and recorded in the bench history'
+  - 'docs/perf-budgets.md records QuakeSpasm''s hand-run numbers per route on ref-mac as fixed budgets, with the pinned commit, and states the margin our engine is allowed'
   - 'Frame time at p99 is no worse than QuakeSpasm''s recorded budget on the same route and machine, within that margin, checked by `cargo xtask bench`; no CI job builds or runs QuakeSpasm'
   verify:
-  - cargo xtask bench on the reference machines; the bench history
+  - cargo xtask bench on ref-mac; the bench history
 - key: P3-18
   title: Phase 3 gate review
   labels:
