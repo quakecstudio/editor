@@ -99,10 +99,12 @@ id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d` does it in `WinQuak
   arrows, Backspace, the page keys, Shift and the wheel); in a menu only when it is
   `menubound` (the F keys). Escape never runs a binding (`Key_Event` handles it first), and the
   backquote is left to the window, which toggles the console with it (CON-4.8, CON-4.9).
-- **INPUT-3.3** The host runs `exec quake.rc` once, before its first frame, as `Host_Init`
-  does ("`Cbuf_InsertText ("exec quake.rc\n");`"); id1's `quake.rc` runs `default.cfg`,
-  `config.cfg` and `autoexec.cfg`, so the player's own bindings and settings apply. The host
-  writes no `config.cfg`.
+- **INPUT-3.3** **Withdrawn** 2026-11-06: the game's `config.cfg` is no longer read; replaced
+  by INPUT-3.6.
+- **INPUT-3.6** The host runs `exec quake.rc` once, before its first frame, as `Host_Init`
+  does ("`Cbuf_InsertText ("exec quake.rc\n");`"). id1's `quake.rc` runs `default.cfg`,
+  `config.cfg` and `autoexec.cfg`; `config.cfg` is the host's own (INPUT-4.3), not the game
+  directory's, which another engine wrote for itself.
 - **INPUT-3.4** QuakeSpasm's `IN_MouseMove` drops the motion while the keys are not the
   game's (`key_dest != key_game`); so does the host, which also frees the mouse then.
 - **INPUT-3.5** In QuakeSpasm's look `exec default.cfg` reads the host's own default instead of
@@ -128,8 +130,11 @@ id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d` does it in `WinQuak
   `sensitivity`, `m_pitch`, `m_yaw`, `m_forward`, `m_side`, `cl_forwardspeed`,
   `cl_backspeed`, `gamma`, `viewsize`, `bgmvolume`, `volume`), then "`+mlook`" when mouse look
   is held, as QuakeSpasm adds it ("`if (in_mlook.state & 1) fprintf (f, "+mlook\n");`").
-- **INPUT-4.2** It writes it to `preview-host.cfg` in the host's config directory
-  (`qs-paths`), never to the game's directory, whose `config.cfg` belongs to the player's own
-  engine. The host runs that file after `quake.rc` (INPUT-3.3), so what the player changed in
-  the host, in its menus or its console, comes back the next time; with no file it runs
-  nothing.
+- **INPUT-4.2** **Withdrawn** 2026-11-06: the host's file is now `config.cfg` itself; replaced
+  by INPUT-4.3.
+- **INPUT-4.3** The host keeps its configuration in `preview-host.cfg` in its config
+  directory (`qs-paths`), written there on exit and never to the game's directory. To the
+  host's console that file is `config.cfg`: `exec config.cfg`, as `quake.rc` runs it, reads
+  it, or nothing before the host has written one. The game directory's `config.cfg` is the
+  saved state of whichever engine last played there, with that engine's bindings, and is not
+  read.

@@ -22,7 +22,7 @@ use qs_vfs::{Element, LoadedFile, StdFs, Vfs};
 use crate::args::{Args, Show};
 use crate::audio::{Audio, CdImage, Device};
 use crate::game::{Game, HostAction, Reporting};
-use crate::keys::with_default_cfg;
+use crate::keys::{config_path, host_files};
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
 const EYE_HEIGHT: f32 = 22.0;
@@ -210,12 +210,10 @@ pub(crate) fn load(
     };
     // INPUT-3.5: in QuakeSpasm's look the host's own `default.cfg` covers id1's.
     let files = || -> Result<Reader, String> {
-        let files = reader()?;
-        Ok(if look.native_2d() {
-            with_default_cfg(files)
-        } else {
-            files
-        })
+        let config = config_path();
+        Ok(host_files(reader()?, look.native_2d(), move || {
+            config.as_ref().and_then(|path| std::fs::read(path).ok())
+        }))
     };
     // The search-path element a file is found in, which decides whether an MD5 model
     // replaces its `.mdl` (REND-12.1).

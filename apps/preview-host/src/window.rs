@@ -31,7 +31,7 @@ use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
 use crate::keys::{
-    CONFIG_FILE, STARTUP, configuration, keynum, modifier_keys, mouse_key, mouse_motion,
+    STARTUP, config_path, configuration, keynum, modifier_keys, mouse_key, mouse_motion,
     runs_binding, wheel_key,
 };
 use crate::load::{Acted, Describer, Loaded, Rand, act, saves};
@@ -183,9 +183,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 motion: [0.0; 2],
                 modifiers: egui::Modifiers::NONE,
                 configured: false,
-                config_file: qs_paths::current()
-                    .ok()
-                    .map(|dirs| dirs.config().join(CONFIG_FILE)),
+                config_file: config_path(),
             }))
         }),
     )
@@ -287,14 +285,6 @@ impl eframe::App for Viewer {
         if !self.configured {
             self.configured = true;
             self.run_line(STARTUP);
-            // INPUT-4.2: what the player changed here last time, after their own configs.
-            if let Some(text) = self
-                .config_file
-                .as_ref()
-                .and_then(|p| std::fs::read(p).ok())
-            {
-                self.run_line(&text);
-            }
         }
         self.type_keys(ui);
         self.bind_keys(ui);

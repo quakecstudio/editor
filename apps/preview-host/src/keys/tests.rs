@@ -64,7 +64,7 @@ fn bindings_run_by_the_key_destination() {
     assert!(menu_bound(K_ESCAPE) && !menu_bound(K_F1 + 12));
 }
 
-// spec INPUT-3.3: the host runs exec quake.rc, as Host_Init does
+// spec INPUT-3.6: the host runs exec quake.rc, as Host_Init does
 #[test]
 fn the_host_starts_with_quake_rc() {
     assert_eq!(STARTUP, b"exec quake.rc");
@@ -79,13 +79,15 @@ fn the_mouse_is_the_games_only() {
 }
 
 // spec INPUT-3.5: default.cfg is the host's own in QuakeSpasm's look, with W, A, S and D and
-// mouse look; every other file is the game's
+// mouse look; the game's in GLQuake's
+// spec INPUT-4.3: config.cfg is the host's own file, empty before it has written one; every
+// other file is the game's
 #[test]
-fn quakespasms_look_reads_the_hosts_default_cfg() {
+fn the_console_reads_the_hosts_default_and_config() {
     let game: qs_sim::ModelFiles = std::rc::Rc::new(|name: &str| {
         (name == "default.cfg" || name == "config.cfg").then(|| b"bind a +lookup\n".to_vec())
     });
-    let files = super::with_default_cfg(game);
+    let files = super::host_files(game.clone(), true, || None);
     let text = String::from_utf8(files("default.cfg").unwrap()).unwrap();
     assert_eq!(files("DEFAULT.CFG").map(|t| t.len()), Some(text.len()));
     for line in [
@@ -99,12 +101,19 @@ fn quakespasms_look_reads_the_hosts_default_cfg() {
     ] {
         assert!(text.lines().any(|l| l == line), "{line}");
     }
-    assert_eq!(files("config.cfg").unwrap(), b"bind a +lookup\n");
+    assert_eq!(files("config.cfg").unwrap(), b"", "the game's is not read");
     assert_eq!(files("autoexec.cfg"), None);
+    let saved = super::host_files(game, false, || Some(b"bind q +jump\n".to_vec()));
+    assert_eq!(saved("config.cfg").unwrap(), b"bind q +jump\n");
+    assert_eq!(
+        saved("default.cfg").unwrap(),
+        b"bind a +lookup\n",
+        "GLQuake's look"
+    );
 }
 
 // spec INPUT-4.1: unbindall, the bindings, the archived settings, then +mlook when held
-// spec INPUT-4.2: the host's own file, preview-host.cfg
+// spec INPUT-4.3: the host's own file, preview-host.cfg
 #[test]
 fn the_configuration_is_written_as_host_writeconfiguration_writes_it() {
     assert_eq!(

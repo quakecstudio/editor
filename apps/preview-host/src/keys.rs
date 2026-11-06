@@ -153,7 +153,7 @@ pub(crate) const fn runs_binding(key: u8, dest: KeyDest) -> bool {
 /// id1's (INPUT-3.5): the movement on W, A, S and D and the mouse looking.
 pub(crate) const DEFAULT_CFG: &[u8] = br#"// QuakeC Studio's default bindings in QuakeSpasm's look (INPUT-3.5). Like QuakeSpasm's own,
 // they put the movement on W, A, S and D, the mouse on attack and the wheel on the weapons;
-// the player's config.cfg, autoexec.cfg and preview-host.cfg run after them.
+// the host's own config.cfg (INPUT-4.3) and the game's autoexec.cfg run after them.
 unbindall
 
 bind w +forward
@@ -205,10 +205,25 @@ bind \ +mlook
 +mlook
 "#;
 
-/// `files` with `default.cfg` read from [`DEFAULT_CFG`] (INPUT-3.5).
-pub(crate) fn with_default_cfg(files: qs_sim::ModelFiles) -> qs_sim::ModelFiles {
+/// The host's configuration file, `preview-host.cfg` in its config directory (INPUT-4.3).
+pub(crate) fn config_path() -> Option<std::path::PathBuf> {
+    qs_paths::current()
+        .ok()
+        .map(|dirs| dirs.config().join(CONFIG_FILE))
+}
+
+/// `files` as the host's console reads them (INPUT-3.5, INPUT-4.3): `config.cfg` is the
+/// host's own configuration, the text `config` gives, or nothing before the host has written
+/// one; with `own_default`, `default.cfg` is [`DEFAULT_CFG`]; every other file is the game's.
+pub(crate) fn host_files(
+    files: qs_sim::ModelFiles,
+    own_default: bool,
+    config: impl Fn() -> Option<Vec<u8>> + 'static,
+) -> qs_sim::ModelFiles {
     std::rc::Rc::new(move |name: &str| {
-        if name.eq_ignore_ascii_case("default.cfg") {
+        if name.eq_ignore_ascii_case("config.cfg") {
+            Some(config().unwrap_or_default())
+        } else if own_default && name.eq_ignore_ascii_case("default.cfg") {
             Some(DEFAULT_CFG.to_vec())
         } else {
             files(name)
