@@ -467,6 +467,68 @@ fn a_hexadecimal_number_is_correctly_rounded() {
     assert_eq!(atof(b"0x1p-1202").to_bits(), 0);
 }
 
+// spec BUILTIN-18.25: at the top of the doubles the largest is itself, a value below the
+// halfway point to 2^1024 rounds down to it, and one at that point rounds to infinity
+// (P2-R1B re-review)
+#[test]
+fn rereview_atof_hexadecimal_overflow_boundary() {
+    use crate::atof::atof;
+    assert_eq!(atof(b"0x1.fffffffffffffp1023"), f64::MAX);
+    assert_eq!(atof(b"0x1fffffffffffffp971"), f64::MAX);
+    assert_eq!(atof(b"0x1.fffffffffffff7ffffp1023"), f64::MAX);
+    assert_eq!(atof(b"0x1.fffffffffffff8p1023"), f64::INFINITY);
+    assert_eq!(atof(b"-0x1.fffffffffffff8p1023"), f64::NEG_INFINITY);
+}
+
+// spec BUILTIN-18.25: at the bottom, half the least subnormal is a tie that rounds to 0, a hair
+// more is the least subnormal, and the subnormal tie just under the least normal rounds up
+// to it; a negative result too small to keep is -0 (P2-R1B re-review)
+#[test]
+fn rereview_atof_hexadecimal_underflow_boundary() {
+    use crate::atof::atof;
+    assert_eq!(atof(b"0x1p-1075").to_bits(), 0);
+    assert_eq!(atof(b"0x1.00001p-1075").to_bits(), 1);
+    assert_eq!(
+        atof(b"0x0.fffffffffffff8p-1022").to_bits(),
+        0x0010_0000_0000_0000
+    );
+    assert_eq!(
+        atof(b"0x0.fffffffffffff7p-1022").to_bits(),
+        0x000F_FFFF_FFFF_FFFF
+    );
+    assert_eq!(atof(b"-0x1p-2000").to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(atof(b"-0x0p0").to_bits(), (-0.0_f64).to_bits());
+}
+
+// spec BUILTIN-18.25: an exponent with more digits than any integer holds still means a value
+// past every double or below every one, and zero digits are 0 whatever the exponent; an
+// exponent that cancels hundreds of fraction digits, and hundreds of leading zero digits, are
+// exact (P2-R1B re-review)
+#[test]
+fn rereview_atof_hexadecimal_huge_exponents_and_zero_runs() {
+    use crate::atof::atof;
+    let zeros = |n: usize| "0".repeat(n);
+    assert_eq!(atof(b"0x1p99999999999999999999999"), f64::INFINITY);
+    assert_eq!(atof(b"0x1p-99999999999999999999999").to_bits(), 0);
+    assert_eq!(atof(b"0x0p99999999999999999999999").to_bits(), 0);
+    assert_eq!(atof(b"0x.0001p99999999999999999999999"), f64::INFINITY);
+    assert_eq!(atof(b"0x1000p-99999999999999999999999").to_bits(), 0);
+    assert_eq!(atof(format!("0x0.{}1p1201", zeros(300)).as_bytes()), 0.125);
+    assert_eq!(atof(format!("0x{}1p0", zeros(400)).as_bytes()), 1.0);
+}
+
+// spec BUILTIN-18.25: a `p` with no digit after it, or after its sign, is not part of the
+// number, and either case of the letter takes the exponent (P2-R1B re-review)
+#[test]
+fn rereview_atof_hexadecimal_exponent_without_digits() {
+    use crate::atof::atof;
+    assert_eq!(atof(b"0x1p"), 1.0);
+    assert_eq!(atof(b"0x1p+"), 1.0);
+    assert_eq!(atof(b"0x1p-x"), 1.0);
+    assert_eq!(atof(b"0x1.8P+1"), 3.0);
+    assert_eq!(atof(b"0x1.8p-1q"), 0.75);
+}
+
 // spec BUILTIN-18.17: each row of strconv's table is reached by a byte of its own: the white,
 // red, special (`rednum` 3 and 4) digit rows, each case of each half of the letters, and the
 // punctuation of each half; a control byte (under 16 in its half) is kept whatever the
@@ -3009,6 +3071,28 @@ mod bodies {
         f.set_parm_i(0, offsets[10]);
         f.run_ok(ServerState::Active);
         assert!(f.return_f().is_nan());
+    }
+
+    // spec BUILTIN-18.25: stof's float is the correctly rounded double rounded again to a
+    // float: #717's long hexadecimal number lies past a float tie and rounds up, an exact
+    // float tie rounds to even, and below the floats half the least subnormal is 0 and a hair
+    // more is that subnormal (P2-R1B re-review)
+    #[test]
+    fn rereview_stof_rounds_a_long_hexadecimal_number_to_the_right_float() {
+        let texts = [
+            "0x1.000001000000081",
+            "0x1.000001p0",
+            "0x1p-150",
+            "0x1.000001p-150",
+        ];
+        let (strings, offsets) = string_table(&texts);
+        for (text, expected) in [(0, 0x3F80_0001), (1, 0x3F80_0000), (2, 0), (3, 1)] {
+            let mut f = Fixture::new(81, 1, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.set_parm_i(0, offsets[text]);
+            f.run_ok(ServerState::Active);
+            assert_eq!(f.return_f().to_bits(), expected, "{}", texts[text]);
+        }
     }
 
     // spec BUILTIN-18.18: num_for_edict is an edict's number; a bad value is NUM_FOR_EDICT's

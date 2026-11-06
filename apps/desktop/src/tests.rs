@@ -1037,6 +1037,39 @@ fn bindings_are_matched_most_specific_first() {
     }
 }
 
+// PRIN-3 (P2-RA re-review): egui ignores an extra Alt as it does an extra Shift, so Alt+Cmd+Z
+// still undoes and Alt+Shift+Cmd+Z still redoes; neither runs the other.
+#[test]
+fn an_extra_alt_runs_the_bindings_own_command() {
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, None).unwrap();
+    let ember = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember");
+    app.shell_mut().open_project(&ember).unwrap();
+    frame(&ctx, &mut app);
+    let defs = ember.join("defs.qc");
+    let offset = fs::read_to_string(&defs).unwrap().find("bounces").unwrap();
+    app.shell_mut()
+        .execute(
+            "symbol.rename",
+            json!({ "path": defs, "offset": offset, "name": "hops" }),
+        )
+        .unwrap();
+    let depths = |app: &App| {
+        let session = app.shell().session();
+        (session.undo_depth(), session.redo_depth())
+    };
+    let alt = egui::Modifiers::ALT;
+    for (command, after) in [("edit.undo", (0, 1)), ("edit.redo", (1, 0))] {
+        let shortcut = keymap::shortcut(command).unwrap();
+        frame_with(
+            &ctx,
+            &mut app,
+            vec![key(shortcut.logical_key, shortcut.modifiers.plus(alt))],
+        );
+        assert_eq!(depths(&app), after, "{command} with Alt");
+    }
+}
+
 // No spec statement: the Debugger tab lists a breakpoint set with no game running, which waits
 // for the next game; the step buttons wait for a stop, and unticking the breakpoint clears it
 #[test]

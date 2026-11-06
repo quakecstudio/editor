@@ -414,3 +414,43 @@ fn a_path_that_is_not_utf8_is_refused() {
         assert!(err.contains("a\u{fffd}: the path is not Unicode"), "{err}");
     }
 }
+
+// No spec statement (P2-RA re-review): `run --project` with a path that is not UTF-8 is
+// refused as `build` and `check` refuse it, before the command runs.
+#[cfg(unix)]
+#[test]
+fn run_refuses_a_project_path_that_is_not_utf8() {
+    use std::os::unix::ffi::OsStrExt as _;
+    let path = OsString::from(std::ffi::OsStr::from_bytes(b"/tmp/q\xfe"));
+    let list = [
+        OsString::from("run"),
+        OsString::from("commands.list"),
+        OsString::from("--project"),
+        path,
+    ];
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    assert_eq!(run(&list, FsLoader, &mut out, &mut err), Exit::Failure);
+    assert!(out.is_empty(), "the command must not run");
+    let err = String::from_utf8(err).unwrap();
+    assert!(err.contains("the path is not Unicode"), "{err}");
+}
+
+// No spec statement (P2-RA re-review): an option value or a command id that is not UTF-8 is
+// a wrong command line, exit status 2 with clap's message, not a panic.
+#[cfg(unix)]
+#[test]
+fn an_argument_that_is_not_utf8_is_a_wrong_command_line() {
+    use std::os::unix::ffi::OsStrExt as _;
+    let bad = OsString::from(std::ffi::OsStr::from_bytes(b"fte\xff"));
+    let word = |s: &str| OsString::from(s);
+    for list in [
+        vec![word("check"), word("."), word("--dialect"), bad.clone()],
+        vec![word("run"), bad.clone()],
+        vec![word("run"), word("commands.list"), bad],
+    ] {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let exit = run(&list, FsLoader, &mut out, &mut err);
+        assert_eq!(exit, Exit::Failure, "{list:?}");
+        assert!(!err.is_empty(), "{list:?}");
+    }
+}
