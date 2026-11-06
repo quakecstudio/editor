@@ -25,7 +25,7 @@ use crate::system::{
 };
 use crate::{
     EDICT_HEADER_SIZE, EDICT_MAX_FIELDS, EDICT_SYS_FIELDS_END, EDICT_SYS_GLOBALS_END, EdictError,
-    EdictLayout, EdictStore, LayoutError,
+    EdictEvent, EdictLayout, EdictStore, LayoutError,
 };
 
 /// The id 1.01 field count the spec's vectors use: 105 system fields, no mod fields.
@@ -938,4 +938,63 @@ fn clone_from_takes_another_layout() {
         narrow.field(EdictNumber::new(3), 150),
         Some(Slot::from_i32(8))
     );
+}
+
+// The preview host's record of what happened to the edicts (BRIDGE-3.1): nothing until
+// tracking starts, then every allocation, free and write in order, a write of the same value
+// included and a second free of a free edict not; taking empties it and stopping drops it.
+#[test]
+fn tracking_records_allocations_frees_and_writes() {
+    let mut store = store(1);
+    let n = store.alloc(0.0).unwrap();
+    store.set_field(n, 3, Slot::from_f32(1.0)).unwrap();
+    assert!(store.take_events().is_empty());
+
+    store.track(true);
+    let m = store.alloc(0.0).unwrap();
+    store.set_field(m, 3, Slot::from_f32(1.0)).unwrap();
+    store.set_field(m, 3, Slot::from_f32(1.0)).unwrap();
+    assert!(store.set_field(m, usize::MAX, Slot::ZERO).is_err());
+    store.free(n, 1.0);
+    store.free(n, 1.0);
+    store.free(EdictNumber::new(LIMIT_MAX_EDICTS), 1.0);
+    assert_eq!(
+        store.take_events(),
+        [
+            EdictEvent::Allocated(m),
+            EdictEvent::Written(m, 3),
+            EdictEvent::Written(m, 3),
+            EdictEvent::Freed(n),
+        ]
+    );
+    assert!(store.take_events().is_empty());
+
+    store.set_field(m, 4, Slot::ZERO).unwrap();
+    let mut copy = store.clone();
+    assert_eq!(copy.take_events(), [EdictEvent::Written(m, 4)]);
+    let mut into = self::store(1);
+    into.clone_from(&store);
+    assert_eq!(into.take_events(), [EdictEvent::Written(m, 4)]);
+    store.track(false);
+    assert!(store.take_events().is_empty());
+}
+
+// spec WORLD-10.1: a store given another layout keeps num_edicts, the client slots and each
+// edict's free flag and freetime, with every field slot of the new layout zero
+#[test]
+fn a_store_with_another_layout_keeps_its_edicts() {
+    let mut old = store(1);
+    let a = old.alloc(5.0).unwrap();
+    let b = old.alloc(5.0).unwrap();
+    old.set_field(a, 0, Slot::from_f32(1.0)).unwrap();
+    old.free(b, 7.0);
+    let wider = EdictLayout::new(FIELDS_105 + 3, GLOBALS_128).unwrap();
+    let new = old.with_layout(wider);
+    assert_eq!(new.num_edicts(), old.num_edicts());
+    assert_eq!(new.maxclients(), 1);
+    assert_eq!(new.is_free(a), Some(false));
+    assert_eq!(new.is_free(b), Some(true));
+    assert_eq!(new.freetime(b), Some(7.0));
+    assert_eq!(new.fields(a).unwrap().len(), FIELDS_105 + 3);
+    assert!(new.fields(a).unwrap().iter().all(|s| *s == Slot::ZERO));
 }

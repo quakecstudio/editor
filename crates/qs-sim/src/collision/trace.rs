@@ -179,9 +179,11 @@ fn check(
         return Ok(false);
     }
     trace.plane = if t1 < 0.0 {
+        // WORLD-3.7: `VectorSubtract (vec3_origin, plane->normal, ...)`, so a zero component
+        // is +0, and `-plane->dist`.
         let [a, b, c] = plane.normal;
         TracePlane {
-            normal: [-a, -b, -c],
+            normal: [0.0 - a, 0.0 - b, 0.0 - c],
             dist: -plane.dist,
         }
     } else {

@@ -92,6 +92,7 @@ mod adr;
 mod api;
 mod attribution;
 mod bench;
+mod bridge_client;
 mod ci;
 mod codegen_corpus;
 mod commands;
@@ -120,96 +121,174 @@ mod ported;
 mod project_corpus;
 mod ratchet;
 mod readiness;
+mod release_host;
 mod repo;
+mod scenario;
 mod sema_corpus;
+mod sim_diff;
 mod test_code;
 #[cfg(test)]
 mod test_dirs;
+mod view_diff;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
-                     deny-fixtures | layers | licenses | attribution | contrast | bench | \
-                     readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
-                     map-corpus | parse-corpus | project-corpus | sema-corpus | lsp-corpus | \
-                     differential | compiler-diff | fteqcc-coverage | fteqcc-full-coverage | \
-                     fteqcc-profile | codegen-corpus | engines | commands>";
+/// `cargo xtask <command>`: the repository's build automation.
+#[derive(clap::Parser, Debug)]
+#[command(name = "cargo xtask", bin_name = "cargo xtask")]
+struct Cli {
+    #[command(subcommand)]
+    command: Task,
+}
 
-/// A command that takes arguments and says itself whether it passed.
-type Command = fn(&Path, &[String]) -> Result<bool, String>;
+/// Each command.
+#[derive(clap::Subcommand, Debug)]
+enum Task {
+    /// Every check CI runs.
+    Ci(ci::Args),
+    /// ADRs follow the template and are indexed.
+    Adr,
+    /// Write or check each library crate's public items.
+    Api(api::Args),
+    /// Every asset is listed in ATTRIBUTION.md.
+    Attribution,
+    /// Fetch or precache the test assets.
+    Assets(corpus::AssetsArgs),
+    /// The performance budgets.
+    Bench(bench::Args),
+    /// The bridge client against the real preview host, headless.
+    BridgeClient(bridge_client::Args),
+    /// The lints reject what they target.
+    ClippyFixtures,
+    /// Every corpus codebase compiles with our compiler.
+    CodegenCorpus(codegen_corpus::Args),
+    /// Write or check docs/commands.md.
+    Commands(commands::Args),
+    /// The compiler differential.
+    CompilerDiff(compiler_diff::Args),
+    /// The theme's colours meet their contrast.
+    Contrast,
+    /// Config files match docs/conventions.md.
+    Conventions,
+    /// The corpus manifest and cache.
+    Corpus(corpus::Args),
+    /// deny.toml rejects bad licenses and wildcards.
+    DenyFixtures,
+    /// The VM differential suite.
+    Differential(differential::Args),
+    /// Write or check the engine-target tables.
+    Engines(engines::Args),
+    /// The rerelease codebases' FTEQCC constructs.
+    FteqccCoverage(fteqcc_coverage::Args),
+    /// The FTEQCC corpus mods' full-dialect classes.
+    FteqccFullCoverage(fteqcc_full_coverage::Args),
+    /// A scenario played in qs-sim on a game, repeated, each result the same (SCN-2.5).
+    Scenario(scenario::Args),
+    /// The server simulation differential: qs-sim against id's server on a route.
+    SimDiff(sim_diff::Args),
+    /// The view differential: the preview host's frames and sound against id's engine.
+    ViewDiff(view_diff::Args),
+    /// Every module parses and resolves under the FTEQCC profile.
+    FteqccProfile(fteqcc_profile::Args),
+    /// Run the fuzz targets.
+    Fuzz(fuzz::Args),
+    /// No crate depends on a higher layer.
+    Layers,
+    /// Every corpus file lexes.
+    LexCorpus(lex_corpus::Args),
+    /// SPDX lines and ported-file headers.
+    Licenses,
+    /// The language server over a codebase, against its golden file.
+    LspCorpus(lsp_corpus::Args),
+    /// Every .map round-trips.
+    MapCorpus(map_corpus::Args),
+    /// Build and run the oracles.
+    Oracles(oracles::Args),
+    /// Every corpus file parses.
+    ParseCorpus(parse_corpus::Args),
+    /// Every corpus project's file graph.
+    ProjectCorpus(project_corpus::Args),
+    /// The readiness ratchets.
+    Ratchet(ratchet::Args),
+    /// Measure one readiness check.
+    Readiness(readiness::Args),
+    /// Every corpus module's index, against its golden file.
+    SemaCorpus(sema_corpus::Args),
+}
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if run(&workspace_root(), &args, &ci::STEPS) {
+    let cli = match <Cli as clap::Parser>::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            // `--help` and `--version` are not failures.
+            let _printed = error.print();
+            return if error.use_stderr() {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            };
+        }
+    };
+    if run(&workspace_root(), &cli.command, &ci::STEPS) {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
     }
 }
 
-/// Runs the command `args` names from `root`, with `ci_steps` as the steps of
-/// `ci`; returns whether it passed.
-fn run(root: &Path, args: &[String], ci_steps: &[ci::Step]) -> bool {
-    if let Some((name, rest)) = args.split_first()
-        && let Some(command) = command(name)
-    {
-        return match command(root, rest) {
-            Ok(passed) => passed,
-            Err(error) => {
-                eprintln!("{name}: {error}");
-                false
-            }
-        };
-    }
-    if let Some((name, rest)) = args.split_first()
-        && name == "ci"
-    {
-        return match ci::main(root, rest, ci_steps) {
-            Ok(passed) => passed,
-            Err(error) => {
-                eprintln!("ci: {error}");
-                false
-            }
-        };
-    }
-    let [command] = args else {
-        eprintln!("{USAGE}");
-        return false;
+/// Runs `task` from `root`, with `ci_steps` as the steps of `ci`; returns whether it passed.
+fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
+    let (name, result) = match task {
+        Task::Ci(args) => ("ci", ci::main(root, args, ci_steps)),
+        Task::Api(args) => ("api", api::main(root, args)),
+        Task::Assets(args) => ("assets", corpus::assets_main(root, args)),
+        Task::Bench(args) => ("bench", bench::main(root, args)),
+        Task::BridgeClient(args) => ("bridge-client", bridge_client::main(root, args)),
+        Task::CodegenCorpus(args) => ("codegen-corpus", codegen_corpus::main(root, args)),
+        Task::Commands(args) => ("commands", commands::main(root, args)),
+        Task::CompilerDiff(args) => ("compiler-diff", compiler_diff::main(root, args)),
+        Task::Corpus(args) => ("corpus", corpus::main(root, args)),
+        Task::Differential(args) => ("differential", differential::main(root, args)),
+        Task::Engines(args) => ("engines", engines::main(root, args)),
+        Task::FteqccCoverage(args) => ("fteqcc-coverage", fteqcc_coverage::main(root, args)),
+        Task::FteqccFullCoverage(args) => (
+            "fteqcc-full-coverage",
+            fteqcc_full_coverage::main(root, args),
+        ),
+        Task::FteqccProfile(args) => ("fteqcc-profile", fteqcc_profile::main(root, args)),
+        Task::Fuzz(args) => ("fuzz", fuzz::main(root, args)),
+        Task::LexCorpus(args) => ("lex-corpus", lex_corpus::main(root, args)),
+        Task::LspCorpus(args) => ("lsp-corpus", lsp_corpus::main(root, args)),
+        Task::MapCorpus(args) => ("map-corpus", map_corpus::main(root, args)),
+        Task::Oracles(args) => ("oracles", oracles::main(root, args)),
+        Task::ParseCorpus(args) => ("parse-corpus", parse_corpus::main(root, args)),
+        Task::ProjectCorpus(args) => ("project-corpus", project_corpus::main(root, args)),
+        Task::Ratchet(args) => ("ratchet", ratchet::main(root, args)),
+        Task::Readiness(args) => ("readiness", readiness::main(root, args)),
+        Task::SemaCorpus(args) => ("sema-corpus", sema_corpus::main(root, args)),
+        Task::Scenario(args) => ("scenario", scenario::main(root, args)),
+        Task::SimDiff(args) => ("sim-diff", sim_diff::main(root, args)),
+        Task::ViewDiff(args) => ("view-diff", view_diff::main(root, args)),
+        Task::Adr => return print_outcome("adr", adr::check(root)),
+        Task::Attribution => return print_outcome("attribution", attribution::run(root)),
+        Task::ClippyFixtures => {
+            return print_outcome("clippy-fixtures", fixtures::clippy(root, &exec::System));
+        }
+        Task::Contrast => return print_outcome("contrast", contrast::check(root)),
+        Task::Conventions => return print_outcome("conventions", conventions::check(root)),
+        Task::DenyFixtures => {
+            return print_outcome("deny-fixtures", fixtures::deny(root, &exec::System));
+        }
+        Task::Layers => return print_outcome("layers", layers::check(root)),
+        Task::Licenses => return print_outcome("licenses", licenses::run(root)),
     };
-    let Some(check) = in_process_check(command) else {
-        eprintln!("unknown command {command:?}\n{USAGE}");
-        return false;
-    };
-    print_outcome(command, check(root))
-}
-
-/// The command named `name`, if it takes arguments.
-fn command(name: &str) -> Option<Command> {
-    match name {
-        "api" => Some(api::main),
-        "assets" => Some(corpus::assets_main),
-        "bench" => Some(bench::main),
-        "codegen-corpus" => Some(codegen_corpus::main),
-        "commands" => Some(commands::main),
-        "compiler-diff" => Some(compiler_diff::main),
-        "corpus" => Some(corpus::main),
-        "differential" => Some(differential::main),
-        "engines" => Some(engines::main),
-        "fteqcc-coverage" => Some(fteqcc_coverage::main),
-        "fteqcc-full-coverage" => Some(fteqcc_full_coverage::main),
-        "fteqcc-profile" => Some(fteqcc_profile::main),
-        "fuzz" => Some(fuzz::main),
-        "lex-corpus" => Some(lex_corpus::main),
-        "lsp-corpus" => Some(lsp_corpus::main),
-        "map-corpus" => Some(map_corpus::main),
-        "oracles" => Some(oracles::main),
-        "parse-corpus" => Some(parse_corpus::main),
-        "project-corpus" => Some(project_corpus::main),
-        "readiness" => Some(readiness::main),
-        "sema-corpus" => Some(sema_corpus::main),
-        "ratchet" => Some(ratchet::main),
-        _ => None,
+    match result {
+        Ok(passed) => passed,
+        Err(error) => {
+            eprintln!("{name}: {error}");
+            false
+        }
     }
 }
 
@@ -258,6 +337,23 @@ pub(crate) fn print_outcome(command: &str, result: Result<Report, String>) -> bo
     }
 }
 
+/// `T` from the command line `args`, after a program name, as clap reads it; for the tests of
+/// each command's options.
+#[cfg(test)]
+pub(crate) fn parse_cli<T: clap::Parser, S: AsRef<str>>(args: &[S]) -> Result<T, clap::Error> {
+    T::try_parse_from(core::iter::once("xtask").chain(args.iter().map(AsRef::as_ref)))
+}
+
+/// `main` on the command line `list` as clap reads it, a parse error as its message.
+#[cfg(test)]
+pub(crate) fn run_cli<T: clap::Parser, S: AsRef<str>>(
+    list: &[S],
+    main: impl FnOnce(&T) -> Result<bool, String>,
+) -> Result<bool, String> {
+    let parsed = parse_cli::<T, S>(list).map_err(|e| e.to_string())?;
+    main(&parsed)
+}
+
 fn workspace_root() -> PathBuf {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
@@ -284,28 +380,49 @@ impl Report {
 
 #[cfg(test)]
 mod tests {
+    use clap::CommandFactory as _;
+
     use super::*;
     use crate::ci::Step;
 
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(|arg| (*arg).to_owned()).collect()
+    /// The task the command line `list` names.
+    fn task<S: AsRef<str>>(list: &[S]) -> Result<Task, clap::Error> {
+        parse_cli::<Cli, S>(list).map(|cli| cli.command)
     }
 
     const PASSING: [Step; 1] = [Step::Cargo(&["--version"])];
     const FAILING: [Step; 1] = [Step::Cargo(&["no-such-command-xtask-main"])];
 
     #[test]
-    fn every_command_with_arguments_is_found() {
+    fn every_command_parses_by_its_name() {
+        for name in [
+            "adr",
+            "attribution",
+            "clippy-fixtures",
+            "contrast",
+            "conventions",
+            "deny-fixtures",
+            "layers",
+            "licenses",
+            "api",
+            "commands",
+            "engines",
+            "bench",
+            "fuzz",
+            "ratchet",
+            "differential",
+            "ci",
+        ] {
+            assert!(task(&[name]).is_ok(), "{name}");
+        }
         for name in [
             "assets",
-            "bench",
+            "codegen-corpus",
             "compiler-diff",
             "corpus",
-            "differential",
             "fteqcc-coverage",
             "fteqcc-full-coverage",
             "fteqcc-profile",
-            "fuzz",
             "lex-corpus",
             "lsp-corpus",
             "map-corpus",
@@ -313,49 +430,100 @@ mod tests {
             "parse-corpus",
             "project-corpus",
             "readiness",
-            "ratchet",
             "sema-corpus",
         ] {
-            assert!(command(name).is_some(), "{name}");
-            assert!(USAGE.contains(name), "{name}");
+            assert!(Cli::command().find_subcommand(name).is_some(), "{name}");
         }
-        assert!(command("ci").is_none());
-        assert!(command("layers").is_none());
+        Cli::command().debug_assert();
     }
 
     #[test]
     fn ci_runs_the_steps_it_is_given() {
         let root = workspace_root();
-        assert!(run(&root, &args(&["ci"]), &PASSING));
-        assert!(!run(&root, &args(&["ci"]), &FAILING));
-        let skip = args(&["ci", "--skip", "no-such-command-xtask-main"]);
+        let ci = |list: &[&str]| task(list).unwrap_or(Task::Layers);
+        assert!(run(&root, &ci(&["ci"]), &PASSING));
+        assert!(!run(&root, &ci(&["ci"]), &FAILING));
+        let skip = ci(&["ci", "--skip", "no-such-command-xtask-main"]);
         assert!(run(&root, &skip, &FAILING));
         assert!(!run(
             &root,
-            &args(&["ci", "--skip", "no-such-step"]),
+            &ci(&["ci", "--skip", "no-such-step"]),
             &PASSING
         ));
-        assert!(!run(&root, &args(&["ci", "--no-such-flag"]), &PASSING));
+        assert!(task(&["ci", "--no-such-flag"]).is_err());
     }
 
     #[test]
     fn an_in_process_check_runs_without_the_ci_steps() {
-        assert!(run(&workspace_root(), &args(&["layers"]), &FAILING));
+        assert!(run(&workspace_root(), &Task::Layers, &FAILING));
     }
 
     #[test]
     fn a_command_with_arguments_reports_its_outcome() {
         let root = workspace_root();
-        assert!(!run(&root, &args(&["ratchet", "--no-such-flag"]), &PASSING));
-        assert!(run(&root, &args(&["ratchet"]), &FAILING));
+        assert!(task(&["ratchet", "--no-such-flag"]).is_err());
+        let ratchet = task(&["ratchet"]).unwrap_or(Task::Adr);
+        assert!(run(&root, &ratchet, &FAILING));
     }
 
     #[test]
     fn a_missing_or_unknown_command_fails() {
-        let root = workspace_root();
-        assert!(!run(&root, &[], &PASSING));
-        assert!(!run(&root, &args(&["no-such-command"]), &PASSING));
-        assert!(!run(&root, &args(&["layers", "extra"]), &PASSING));
+        assert!(task::<&str>(&[]).is_err());
+        assert!(task(&["no-such-command"]).is_err());
+        assert!(task(&["layers", "extra"]).is_err());
+    }
+
+    /// Every command line a workflow runs (a `run:` line or a step's continuation that starts
+    /// with `cargo xtask`), its shell variables and expansions as one word and anything after
+    /// a pipe or `||` dropped, as clap reads it.
+    #[test]
+    fn every_command_line_the_workflows_run_parses() {
+        let dir = workspace_root().join(".github/workflows");
+        let mut seen = 0_usize;
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
+            let mut lines = text.lines().map(str::trim).peekable();
+            while let Some(line) = lines.next() {
+                let line = line.trim_start_matches("run:").trim();
+                let Some(at) = line.find("cargo xtask ") else {
+                    continue;
+                };
+                // Only `VAR=value` assignments may come before the command.
+                let before = line.get(..at).unwrap_or_default();
+                if !before.split_whitespace().all(|word| word.contains('=')) {
+                    continue;
+                }
+                let mut command = line.get(at..).unwrap_or_default().to_owned();
+                while command.ends_with('\\') {
+                    command.pop();
+                    command.push(' ');
+                    command.push_str(lines.next().unwrap_or_default());
+                }
+                let command = command.split(" | ").next().unwrap_or_default();
+                let command = command.split(" || ").next().unwrap_or_default();
+                let words: Vec<String> = command
+                    .split_whitespace()
+                    .skip(2)
+                    .map(|word| {
+                        if word.contains("$SHARD") {
+                            // A shard, `k/n`, as the matrix gives it.
+                            "0/1".to_owned()
+                        } else if word.contains('$') {
+                            "x".to_owned()
+                        } else {
+                            word.trim_matches('"').to_owned()
+                        }
+                    })
+                    .collect();
+                assert!(
+                    task(&words).is_ok(),
+                    "{}: {command}",
+                    entry.path().display()
+                );
+                seen = seen.saturating_add(1);
+            }
+        }
+        assert!(seen >= 20, "{seen} command lines");
     }
 
     #[test]

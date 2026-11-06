@@ -20,14 +20,16 @@ use qc_project::{Dialect, Loader, ModuleKind, Project, ProjectError, Target, nor
 use qc_sema::{Db, FileId, ModuleAnalysis, ModuleInput};
 use qc_syntax::Parse;
 
-/// What the editor or the user says about the project, over what its files say.
+/// What the editor or the user says about the project where its files say nothing.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Config {
-    /// The dialect every module is read in, over the project file's (PRJ-2.8). A project with
-    /// no `quakec.toml` is vanilla otherwise, as `qc_project::open` gives it.
+    /// The dialect a project with no `quakec.toml` is read in, vanilla otherwise as
+    /// `qc_project::open` gives it, and an open file no module compiles; a project file's
+    /// dialect, vanilla when it names none, wins (PRJ-2.8).
     pub dialect: Option<Dialect>,
-    /// The engine every module targets, over the project file's (PRJ-2.9): the engine whose
-    /// builtin table the hover and `W0311` read.
+    /// The engine a project with no `quakec.toml` targets, and an open file no module
+    /// compiles: the engine whose builtin table the hover and `W0311` read; a project file's
+    /// target wins (PRJ-2.9).
     pub target: Option<Target>,
     /// Whether modules resolve with FTEQCC's autoprototyping, `-Fautoproto` (FTE-22.3), which
     /// a project file cannot say.
@@ -85,6 +87,8 @@ pub struct ModuleBuild<'a> {
     pub input: &'a ModuleInput,
     /// The name of each of its files, `names[i]` being `FileId::new(i)`'s.
     pub names: Vec<String>,
+    /// The engine its target selects (ENGT-3.5), which its program must load (ENGT-3.12).
+    pub engine: Engine,
 }
 
 /// Where a module comes from.
@@ -174,6 +178,15 @@ impl ModuleState {
     }
 }
 
+/// What [`AnalysisHost::read_again`] keeps when the project no longer opens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Keep {
+    /// Nothing: the host has no project modules, as after a bad project file.
+    Nothing,
+    /// The modules as they were: an edit to a QuakeC file leaves the analysis alone.
+    OnError,
+}
+
 /// The analysis host. Open a project with [`AnalysisHost::open`], give it the text of the files
 /// an editor has open with [`AnalysisHost::set_overlay`], and ask it questions; each feature is
 /// a method in its own module of this crate.
@@ -251,7 +264,12 @@ impl<L: Loader> AnalysisHost<L> {
     /// A module whose files and settings are unchanged keeps its database, with the text of each
     /// file that is not open read again, so only what changed on disk is analysed again.
     pub fn reload(&mut self) -> Result<(), ProjectError> {
-        let mut old = std::mem::take(&mut self.modules);
+        self.read_again(Keep::Nothing)
+    }
+
+    /// [`AnalysisHost::reload`]; with [`Keep::OnError`] a project that no longer opens leaves the
+    /// modules as they were, so an edit to a QuakeC file never loses the analysis.
+    fn read_again(&mut self, keep: Keep) -> Result<(), ProjectError> {
         let opened = match self.root.clone() {
             Some(root) => {
                 let mut loader = OverlayLoader {
@@ -266,6 +284,10 @@ impl<L: Loader> AnalysisHost<L> {
             }
             None => Ok(None),
         };
+        if keep == Keep::OnError && opened.is_err() {
+            return Ok(());
+        }
+        let mut old = std::mem::take(&mut self.modules);
         let result = match opened {
             Ok(Some(project)) => {
                 self.add_project(&project, &mut old);
@@ -289,9 +311,18 @@ impl<L: Loader> AnalysisHost<L> {
     /// Adds a module for each of `project`'s modules, taking from `old` the state of a module
     /// that is the same.
     fn add_project(&mut self, project: &Project, old: &mut Vec<ModuleState>) {
+        // A project file says the dialect and the target, its defaults when it names neither;
+        // the editor's say them only for a project with none.
+        let bare = project.manifest.is_none();
         for module in &project.modules {
-            let dialect = self.config.dialect.unwrap_or(module.dialect);
-            let target = self.config.target.unwrap_or(module.target);
+            let dialect = match self.config.dialect {
+                Some(dialect) if bare => dialect,
+                Some(_) | None => module.dialect,
+            };
+            let target = match self.config.target {
+                Some(target) if bare => target,
+                Some(_) | None => module.target,
+            };
             let files: Vec<PathBuf> = module
                 .graph
                 .files
@@ -413,7 +444,9 @@ impl<L: Loader> AnalysisHost<L> {
     }
 
     /// Sets the text of the open file `path`, which replaces its text on disk. Editing a
-    /// project file or a `progs.src` reads the project again.
+    /// project file or a `progs.src`, or a line of a QuakeC file that may be a directive
+    /// (PRJ-5.1), such as an `#include`, reads the project again, so the module's file graph
+    /// follows the text being typed.
     ///
     /// # Errors
     ///
@@ -421,9 +454,13 @@ impl<L: Loader> AnalysisHost<L> {
     /// open.
     pub fn set_overlay(&mut self, path: &Path, text: Vec<u8>) -> Result<(), ProjectError> {
         let path = normalize(path);
-        self.overlays.insert(path.clone(), text.clone());
+        let before = self.overlays.insert(path.clone(), text.clone());
         if is_project_file(&path) {
             return self.reload();
+        }
+        let before = before.or_else(|| self.loader.load(&path).ok());
+        if before.is_some_and(|before| directive_lines(&before) != directive_lines(&text)) {
+            return self.read_again(Keep::OnError);
         }
         let mut found = false;
         for module in &mut self.modules {
@@ -456,6 +493,11 @@ impl<L: Loader> AnalysisHost<L> {
             return self.reload();
         }
         let text = self.loader.load(&path).unwrap_or_default();
+        // The open text the modules still hold, now the overlay is gone.
+        let open = self.text(&path);
+        if open.is_some_and(|open| directive_lines(&open) != directive_lines(&text)) {
+            return self.read_again(Keep::OnError);
+        }
         for module in &mut self.modules {
             if let Some(file) = module.file_id(&path) {
                 module.set_text(file, text.clone());
@@ -502,6 +544,7 @@ impl<L: Loader> AnalysisHost<L> {
                 db: &mut module.db,
                 input: &module.input,
                 names,
+                engine: module.engine,
             });
         }
         builds
@@ -556,4 +599,39 @@ fn is_project_file(path: &Path) -> bool {
         || path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("src"))
+}
+
+/// The UTF-8 byte order mark a file may start with, which the graph skips (PRJ-5.1).
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
+/// The lines of `text` that may choose a module's files (PRJ-5.1, PRJ-5.3): each logical line,
+/// a `\` at a line's end joining the next, whose first byte that is not white space is `#`,
+/// after a byte order mark at the start; and every line between an `#includelist` and its
+/// `#endlist`, each a list of files. An `#include`, a list's entries and the `#ifdef` and
+/// `#define` lines that choose between them are all among them.
+pub(crate) fn directive_lines(text: &[u8]) -> Vec<Vec<u8>> {
+    let text = text.strip_prefix(UTF8_BOM).unwrap_or(text);
+    let mut lines = Vec::new();
+    let mut logical: Vec<u8> = Vec::new();
+    let mut in_list = false;
+    for raw in text.split(|&b| b == b'\n') {
+        let raw = raw.trim_ascii_end();
+        if let Some(head) = raw.strip_suffix(b"\\") {
+            logical.extend_from_slice(head);
+            continue;
+        }
+        logical.extend_from_slice(raw);
+        let line = core::mem::take(&mut logical);
+        let word = line.trim_ascii_start();
+        if word.starts_with(b"#includelist") {
+            in_list = true;
+        } else if word.starts_with(b"#endlist") {
+            in_list = false;
+        }
+        if in_list || word.first() == Some(&b'#') {
+            lines.push(line);
+        }
+    }
+    lines.push(logical);
+    lines
 }

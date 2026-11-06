@@ -22,6 +22,8 @@ const qs_client::client::CLIENT_ROTATE_SPEED
 const qs_client::client::CLIENT_SIGNONS
 const qs_client::client::CLIENT_TELEPORT_DISTANCE
 const qs_client::client::CLIENT_TENT_SOUNDS
+const qs_client::client::ClientLimits::QUAKESPASM
+const qs_client::client::ClientLimits::WINQUAKE
 const qs_client::client::HUD_DEFAULT_LINES
 const qs_client::client::stat::ACTIVEWEAPON
 const qs_client::client::stat::AMMO
@@ -94,6 +96,11 @@ enum qs_client::hud::HudItem
 enum qs_client::models::ModelKind
 enum qs_client::particles::ParticleType
 enum qs_client::view::Contents
+field qs_client::client::ClientLimits.beams
+field qs_client::client::ClientLimits.dlights
+field qs_client::client::ClientLimits.statics
+field qs_client::client::ClientLimits.temp_entities
+field qs_client::client::ClientLimits.visedicts
 field qs_client::client::Hud.bar
 field qs_client::client::Hud.center
 field qs_client::client::Hud.deathmatch
@@ -180,6 +187,7 @@ field qs_client::scene::PoseBlend.blend
 field qs_client::scene::PoseBlend.current
 field qs_client::scene::PoseBlend.previous
 field qs_client::scene::Scene.blend
+field qs_client::scene::Scene.colors
 field qs_client::scene::Scene.entities
 field qs_client::scene::Scene.lights
 field qs_client::scene::Scene.lightstyles
@@ -273,6 +281,7 @@ fn qs_client::client::Client::view
 fn qs_client::client::Client::view_settings
 fn qs_client::client::Client::viewangles
 fn qs_client::client::Client::viewentity
+fn qs_client::client::Client::with_limits
 fn qs_client::entity::Entity::has_model
 fn qs_client::entity::Entity::new
 fn qs_client::hud::CenterPrint::draw
@@ -327,6 +336,7 @@ fn qs_client::view::calc_bob
 fn qs_client::view::calc_roll
 fn qs_client::view::gamma_table
 impl qs_client::client::Client: Default
+impl qs_client::client::ClientLimits: Default
 impl qs_client::client::LerpSettings: Default
 impl qs_client::client::ParseError: core::error::Error
 impl qs_client::client::ParseError: core::fmt::Display
@@ -336,6 +346,7 @@ impl qs_client::view::ViewState: Default
 mod qs_client::client::stat
 mod qs_client::models::flags
 struct qs_client::client::Client
+struct qs_client::client::ClientLimits
 struct qs_client::client::Hud
 struct qs_client::client::LerpSettings
 struct qs_client::client::Score
@@ -393,6 +404,7 @@ use qs_client::CLIENT_TELEPORT_DISTANCE = client::CLIENT_TELEPORT_DISTANCE
 use qs_client::CLIENT_TENT_SOUNDS = client::CLIENT_TENT_SOUNDS
 use qs_client::CenterPrint = hud::CenterPrint
 use qs_client::Client = client::Client
+use qs_client::ClientLimits = client::ClientLimits
 use qs_client::Contents = view::Contents
 use qs_client::DynamicLight = scene::DynamicLight
 use qs_client::Entity = entity::Entity

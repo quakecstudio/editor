@@ -149,6 +149,11 @@ impl<'a> Parser<'a> {
         Self { data, pos: 0 }
     }
 
+    /// How far into the data the cursor is.
+    pub(crate) const fn position(&self) -> usize {
+        self.pos
+    }
+
     /// The byte at the cursor, or `None` at the end.
     fn peek(&self) -> Option<u8> {
         self.data.get(self.pos).copied()
@@ -305,34 +310,52 @@ fn parse_epair<H: SpawnHost>(
     field: FieldDef,
     value: &[u8],
 ) -> Result<(), SpawnError> {
+    parse_value(host, field, value, &mut |host, slot, value| {
+        host.set_field(edict, slot, value);
+    })
+}
+
+/// `ED_ParseEpair` into any base: `value` converted by `field`'s type and written through
+/// `write`, which takes the slot from the base, `&ent->v` for an entity's key or
+/// `pr_globals` for `ED_ParseGlobals` (EDICT-8.2, PHYS-10.5).
+///
+/// # Errors
+///
+/// As [`parse_epair`].
+pub(crate) fn parse_value<H: SpawnHost>(
+    host: &mut H,
+    field: FieldDef,
+    value: &[u8],
+    write: &mut dyn FnMut(&mut H, usize, Slot),
+) -> Result<(), SpawnError> {
     match field.etype {
         // ev_string: ED_NewString's escapes, a new engine string (EDICT-8.2, EXAMPLE-1).
         Etype::String => {
             let decoded = qs_porting_example::ed_new_string(value);
             let string = host.make_string(decoded);
-            host.set_field(edict, field.slot, Slot::from_i32(string));
+            write(host, field.slot, Slot::from_i32(string));
         }
         // ev_float: C atof (EDICT-8.2).
-        Etype::Float => host.set_field(edict, field.slot, Slot::from_f32(c_atof(value))),
+        Etype::Float => write(host, field.slot, Slot::from_f32(c_atof(value))),
         // ev_vector: three atof values, a missing component 0 (EDICT-8.3).
         Etype::Vector => {
             let [x, y, z] = parse_vector(value);
-            host.set_field(edict, field.slot, Slot::from_f32(x));
-            host.set_field(edict, field.slot.saturating_add(1), Slot::from_f32(y));
-            host.set_field(edict, field.slot.saturating_add(2), Slot::from_f32(z));
+            write(host, field.slot, Slot::from_f32(x));
+            write(host, field.slot.saturating_add(1), Slot::from_f32(y));
+            write(host, field.slot.saturating_add(2), Slot::from_f32(z));
         }
         // ev_entity: id stores EDICT_TO_PROG(EDICT_NUM(atoi(s))), the entity value of edict
         // atoi(value) (EDICT-8.2, EDICT-1.5); EDICT_NUM fails fatally on a number out of range
         // (EDICT-1.7).
         Etype::Entity => {
             let entity = host.edict_value(c_atoi(value))?;
-            host.set_field(edict, field.slot, Slot::from_i32(entity));
+            write(host, field.slot, Slot::from_i32(entity));
         }
         // ev_function: the function of that name (EDICT-8.2); unknown is a parse error.
         Etype::Function => {
             let name = c_string(value);
             let function = host.find_function(name).ok_or(SpawnError::ParseError)?;
-            host.set_field(edict, field.slot, Slot::from_i32(function));
+            write(host, field.slot, Slot::from_i32(function));
         }
         // ev_field: the value of the global whose slot is the named field's offset: id reads
         // G_INT(ED_FindField(s)->ofs) (EDICT-8.2); an unknown field name is a parse error.
@@ -340,7 +363,7 @@ fn parse_epair<H: SpawnHost>(
             let name = c_string(value);
             let named = host.find_field(name).ok_or(SpawnError::ParseError)?;
             let global = host.global(named.slot).unwrap_or(Slot::ZERO);
-            host.set_field(edict, field.slot, global);
+            write(host, field.slot, global);
         }
         // ev_void and ev_pointer are never a field's declared type a map key names.
         Etype::Void | Etype::Pointer => {}
@@ -351,7 +374,7 @@ fn parse_epair<H: SpawnHost>(
 /// Applies one `"key" "value"` pair, with the key fix-ups of EDICT-8.2 before the type
 /// conversion: the `angle`/`light` renames, the trailing-space trim, the `_` skip and the
 /// unknown-field skip.
-fn apply_key<H: SpawnHost>(
+pub(crate) fn apply_key<H: SpawnHost>(
     host: &mut H,
     edict: usize,
     key: &[u8],
@@ -408,7 +431,40 @@ fn parse_edict<H: SpawnHost>(
     parser: &mut Parser<'_>,
     edict: usize,
 ) -> Result<Parsed, SpawnError> {
+    let (classname, _init) = parse_pairs(host, parser, edict)?;
+    // EDICT-8.5: no classname, or a classname that names no function, frees the entity.
+    let Some(classname) = classname else {
+        return Ok(Parsed::NoSpawn);
+    };
+    match host.find_function(&classname) {
+        Some(function) => Ok(Parsed::Spawn(function)),
+        None => Ok(Parsed::NoSpawn),
+    }
+}
+
+/// `ED_ParseEdict` for a saved game's edict (PHYS-10.5): its keys applied to `edict`, after
+/// the opening `{`; whether any pair was read, id's `init`, without which the edict is free.
+///
+/// # Errors
+///
+/// As [`load_from_file`]'s parse errors.
+pub(crate) fn parse_saved_edict<H: SpawnHost>(
+    host: &mut H,
+    parser: &mut Parser<'_>,
+    edict: usize,
+) -> Result<bool, SpawnError> {
+    parse_pairs(host, parser, edict).map(|(_, init)| init)
+}
+
+/// Every `"key" "value"` pair up to the closing `}`, applied to `edict`: the `classname`
+/// read, and whether any pair was, id's `init`, set once a value is read (EDICT-8.2).
+fn parse_pairs<H: SpawnHost>(
+    host: &mut H,
+    parser: &mut Parser<'_>,
+    edict: usize,
+) -> Result<(Option<Vec<u8>>, bool), SpawnError> {
     let mut classname: Option<Vec<u8>> = None;
+    let mut init = false;
     loop {
         // parse the key
         let keyname = match parser.next_token() {
@@ -423,6 +479,7 @@ fn parse_edict<H: SpawnHost>(
             Token::Word(word) => word,
             Token::End => return Err(SpawnError::EofInEntity),
         };
+        init = true;
 
         // Remember the classname (after the trailing-space trim) for the spawn-function lookup.
         if trim_trailing_spaces(&keyname) == b"classname" {
@@ -431,15 +488,7 @@ fn parse_edict<H: SpawnHost>(
 
         apply_key(host, edict, &keyname, &value)?;
     }
-
-    // EDICT-8.5: no classname, or a classname that names no function, frees the entity.
-    let Some(classname) = classname else {
-        return Ok(Parsed::NoSpawn);
-    };
-    match host.find_function(&classname) {
-        Some(function) => Ok(Parsed::Spawn(function)),
-        None => Ok(Parsed::NoSpawn),
-    }
+    Ok((classname, init))
 }
 
 /// `key` with its trailing spaces removed (EDICT-8.2).

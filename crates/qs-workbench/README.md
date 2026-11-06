@@ -4,11 +4,13 @@ The workbench (UI-2): the open project and the open file, what the Project, Symb
 Problems panels list, the commands that open a project or a file, `project.open` and
 `file.open`, and those that build and check the project, `project.build` and `project.check`.
 
-- **Layer:** L5 commands. It depends on `qs-commands` (L5), `qc-codegen` (L4), `qc-ide` and
-  `qc-sema` (L3), `qc-project` (L2), `qc-progs` (L0), `schemars`, `serde` and `tracing`.
+- **Layer:** L5 commands. It depends on `qs-commands` (L5), `qc-codegen` (L4), `qc-engines`,
+  `qc-ide` and `qc-sema` (L3), `qc-project` (L2), `qc-progs` (L0), `schemars`, `serde` and
+  `tracing`.
 - **Decision:** plan requirement UI-2, P2-19 (#75); not engine behaviour.
-- **Spec sections:** none; it implements a plan requirement, not engine behaviour. A
-  diagnostic's line counts LF bytes only, as the lexer does (QC-1.2).
+- **Spec sections:** ENGT-3.12, the program a KEX rerelease target's build writes, which it
+  refuses when KEX cannot load it; otherwise it implements a plan requirement, not engine
+  behaviour. A diagnostic's line counts LF bytes only, as the lexer does (QC-1.2).
 - **Shipped:** yes.
 
 ## Prior art
@@ -30,6 +32,16 @@ an edit, so both commands run outside the edit history
   editor's text of each open file, its progs.dat written to its output and its .lno beside it
   (PRJ-3.2, LNO-1.4), a module with errors writing nothing; and the project's problems, as
   `ModuleBuilt` and `Reported` values the commands return.
+- Tabs, as Zed keeps them: each file opened gets one (`tabs`), the most recent first in
+  `history`; `close_file` and `file.close` close one, returning to the tab open before it
+  (Zed's `activate_on_close: "history"`), its unsaved text kept; `is_unsaved` marks a file
+  edited since it was saved; `OpenFile::symbol_at` names the definition a caret is in, for the
+  breadcrumb.
+- `RecentProjects` and `recent_path`: the projects opened most recently, kept in the data
+  directory, for the Project section to offer before a project is open.
+- The play loop and the debugger (`preview`, `debug`, `entities`): the preview host started
+  on the project's program, its entities, the debugger's breakpoints, stack and watches, and
+  the `preview.*` commands.
 - `HasWorkbench` and `register`: the commands for any context with a `Workbench`.
 - `OPEN_PROJECT`, `OPEN_FILE` and their parameter types, so the app runs them without
   spelling their ids.

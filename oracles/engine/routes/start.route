@@ -1,0 +1,19 @@
+# A route through the start map of the game directory the command line names: LibreQuake's in
+# CI (`cargo xtask oracles engine oracles/engine/routes/start.route <trace> -- -basedir
+# "$QS_TEST_ASSETS/librequake-lite"`). It stands, walks, turns, jumps, fires and changes weapon,
+# so the frames run the player's physics, the progs' think functions and the builtins.
+map start
+frames 72
+move 0 0 0 200 0 0 0 0
+frames 72
+move 0 90 0 200 0 0 0 0
+frames 72
+move 0 90 0 0 350 0 2 0
+frames 36
+move 10 180 0 200 0 0 1 2
+frames 72
+move 0 270 0 -200 0 0 0 1
+frames 72
+cmd god
+move 0 45 0 200 -350 0 0 0
+frames 144

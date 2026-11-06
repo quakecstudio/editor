@@ -15,8 +15,12 @@
 //! `changelevel` flag, the command buffer and the sizes of the three message buffers
 //! (DIFF-6.5), and the DIFF-6.2 random source.
 
+use crate::files::Files;
 use crate::localization::Localization;
+use crate::math::q_atof;
+use crate::strbuf::StringBuffers;
 use crate::tokenize::Tokens;
+use crate::userinfo::Clients;
 
 /// The settings the mock keeps, with the texts of DIFF-2.4.
 ///
@@ -49,6 +53,13 @@ impl Cvars {
             .iter()
             .find(|(key, _)| key == name)
             .map(|(_, value)| value.as_str())
+    }
+
+    /// The value of the setting named `name`, its text read as id's `Q_atof` reads it into
+    /// `cvar->value` (BUILTIN-11.7), or `None` when there is none.
+    #[must_use]
+    pub fn value(&self, name: &str) -> Option<f32> {
+        self.text(name).map(q_atof)
     }
 
     /// Sets the text of `name` when it is a known setting, else does nothing (BUILTIN-11.8,
@@ -121,8 +132,13 @@ pub struct Buffers {
     pub unreliable: usize,
     /// Bytes in the reliable datagram (`MSG_ALL`).
     pub reliable: usize,
-    /// Bytes in the signon buffer (`MSG_INIT`).
+    /// Bytes in the signon buffer (`MSG_INIT`); under vkQuake's profile, in its last signon
+    /// buffer (BUILTIN-18.40).
     pub signon: usize,
+    /// Signon buffers vkQuake has added past its first (BUILTIN-18.40).
+    pub extra_signon_buffers: usize,
+    /// Bytes in vkQuake's multicast buffer (`MSG_MULTICAST`, BUILTIN-18.40).
+    pub multicast: usize,
 }
 
 /// `LIMIT_MAX_DATAGRAM`, the datagram size (BUILTIN-13.3).
@@ -139,8 +155,18 @@ pub const LIMIT_MAX_MODELS: usize = 256;
 
 /// vkQuake's `MAX_SOUNDS` (BUILTIN-18.3).
 pub const VKQUAKE_MAX_SOUNDS: usize = 2048;
+/// vkQuake's `MAX_DATAGRAM`, the size of its datagrams and multicast buffer (BUILTIN-18.40).
+pub const VKQUAKE_MAX_DATAGRAM: usize = 64_000;
+/// vkQuake's `SIGNON_SIZE`, the size of each of its signon buffers (BUILTIN-18.40).
+pub const VKQUAKE_SIGNON_SIZE: usize = 31_500;
+/// vkQuake's `MAX_SIGNON_BUFFERS` (BUILTIN-18.40).
+pub const VKQUAKE_MAX_SIGNON_BUFFERS: usize = 256;
+
 /// vkQuake's `MAX_MODELS` (BUILTIN-18.3).
 pub const VKQUAKE_MAX_MODELS: usize = 8192;
+/// vkQuake's runaway count in LIMIT-4.3's terms: a run executes at most 0x1000000 statements
+/// (BUILTIN-18.26).
+pub const VKQUAKE_RUNAWAY: u32 = 0x0100_0001;
 
 /// What a builtin number the profile's dispatch does not implement does.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -172,6 +198,52 @@ impl EngineProfile {
         match self {
             Self::Id => Some(qc_vm::LIMIT_NUM_BUILTINS),
             Self::VkQuake => None,
+        }
+    }
+
+    /// The count each run's runaway counter starts from (LIMIT-4.3): id's
+    /// [`qc_vm::LIMIT_RUNAWAY`], or vkQuake's [`VKQUAKE_RUNAWAY`] (BUILTIN-18.26).
+    #[must_use]
+    pub const fn runaway(self) -> u32 {
+        match self {
+            Self::Id => qc_vm::LIMIT_RUNAWAY,
+            Self::VkQuake => VKQUAKE_RUNAWAY,
+        }
+    }
+
+    /// The bytes `WriteAngle` writes: id's one, vkQuake's two (`PRFL_SHORTANGLE`, BUILTIN-18.40).
+    #[must_use]
+    pub const fn angle_bytes(self) -> usize {
+        match self {
+            Self::Id => 1,
+            Self::VkQuake => 2,
+        }
+    }
+
+    /// The bytes `WriteCoord` writes: id's two, vkQuake's four (`PRFL_INT32COORD`, or
+    /// `PRFL_FLOATCOORD` with the extensions, BUILTIN-18.40).
+    #[must_use]
+    pub const fn coord_bytes(self) -> usize {
+        match self {
+            Self::Id => 2,
+            Self::VkQuake => 4,
+        }
+    }
+
+    /// The size of message buffer `dest`, and `None` for a client's reliable message, which
+    /// the mock does not keep (BUILTIN-13.3, BUILTIN-18.40).
+    #[must_use]
+    pub const fn message_limit(self, dest: MessageDest) -> Option<usize> {
+        match (self, dest) {
+            (_, MessageDest::One) => None,
+            (Self::Id, MessageDest::Broadcast | MessageDest::All | MessageDest::Multicast) => {
+                Some(LIMIT_MAX_DATAGRAM)
+            }
+            (Self::Id, MessageDest::Init) => Some(BUILTIN_SIGNON_SIZE),
+            (Self::VkQuake, MessageDest::Broadcast | MessageDest::All | MessageDest::Multicast) => {
+                Some(VKQUAKE_MAX_DATAGRAM)
+            }
+            (Self::VkQuake, MessageDest::Init) => Some(VKQUAKE_SIGNON_SIZE),
         }
     }
 
@@ -215,6 +287,9 @@ pub enum MessageDest {
     All,
     /// 3 `MSG_INIT`: the signon buffer (BUILTIN-13.1).
     Init,
+    /// 4 `MSG_EXT_MULTICAST` or 5 `MSG_EXT_ENTITY` under vkQuake's profile: the multicast
+    /// buffer (BUILTIN-18.40).
+    Multicast,
 }
 
 /// The mock engine fixture (DIFF-6). It answers the class `world` builtins by the
@@ -263,6 +338,12 @@ pub struct MockEngine {
     pub unimplemented: Unimplemented,
     /// The token list vkQuake's tokenize builtins fill and `argv` reads (BUILTIN-18.23).
     pub tokens: Tokens,
+    /// Each client's userinfo, name and colours under vkQuake's profile (BUILTIN-18.27).
+    pub clients: Clients,
+    /// The files QuakeC wrote and the open file table, under vkQuake's profile (BUILTIN-18.36).
+    pub files: Files,
+    /// vkQuake's 64 string buffers (BUILTIN-18.39).
+    pub string_buffers: StringBuffers,
     /// The rerelease's localized strings, none unless the host loads them (RRE-1.6).
     pub localization: Localization,
     /// The server clock `sv.time`, a `double` (DIFF-3.2): 1.0 at map start.
@@ -448,6 +529,9 @@ impl MockEngine {
             profile: EngineProfile::Id,
             unimplemented: Unimplemented::Error,
             tokens: Tokens::default(),
+            clients: Clients::default(),
+            files: Files::default(),
+            string_buffers: StringBuffers::default(),
             localization: Localization::default(),
             clock: 1.0,
         }
@@ -522,10 +606,14 @@ impl MockEngine {
     /// [`Overflow`] when the bytes do not fit, id's `SZ_GetSpace: overflow` (BUILTIN-13.3); the
     /// size is not changed.
     pub fn append_message(&mut self, dest: MessageDest, len: usize) -> Result<(), Overflow> {
-        let (used, limit) = match dest {
-            MessageDest::Broadcast => (&mut self.buffers.unreliable, LIMIT_MAX_DATAGRAM),
-            MessageDest::All => (&mut self.buffers.reliable, LIMIT_MAX_DATAGRAM),
-            MessageDest::Init => (&mut self.buffers.signon, BUILTIN_SIGNON_SIZE),
+        let Some(limit) = self.profile.message_limit(dest) else {
+            return Ok(());
+        };
+        let used = match dest {
+            MessageDest::Broadcast => &mut self.buffers.unreliable,
+            MessageDest::All => &mut self.buffers.reliable,
+            MessageDest::Init => &mut self.buffers.signon,
+            MessageDest::Multicast => &mut self.buffers.multicast,
             MessageDest::One => return Ok(()),
         };
         match used.checked_add(len) {
@@ -535,6 +623,25 @@ impl MockEngine {
             }
             _ => Err(Overflow),
         }
+    }
+
+    /// vkQuake's `SV_ReserveSignonSpace (bytes)` (BUILTIN-18.40): a new, empty signon buffer
+    /// when the bytes do not fit in the last, at most [`VKQUAKE_MAX_SIGNON_BUFFERS`]; the write
+    /// that follows is [`Self::append_message`]'s.
+    ///
+    /// # Errors
+    ///
+    /// [`Overflow`] when a new buffer is needed and there are already 256, vkQuake's
+    /// `SV_AddSignonBuffer overflow`.
+    pub fn reserve_signon(&mut self, bytes: usize) -> Result<(), Overflow> {
+        if self.buffers.signon.saturating_add(bytes) > VKQUAKE_SIGNON_SIZE {
+            if self.buffers.extra_signon_buffers.saturating_add(1) >= VKQUAKE_MAX_SIGNON_BUFFERS {
+                return Err(Overflow);
+            }
+            self.buffers.extra_signon_buffers = self.buffers.extra_signon_buffers.saturating_add(1);
+            self.buffers.signon = 0;
+        }
+        Ok(())
     }
 
     /// Appends `text` to the command buffer `localcmd` and `changelevel` use (BUILTIN-11.5).

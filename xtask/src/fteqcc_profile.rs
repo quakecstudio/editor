@@ -35,8 +35,6 @@ use qc_syntax::parse_with;
 
 use crate::oracles::rerelease::autoprototypes;
 
-const USAGE: &str = "usage: cargo xtask fteqcc-profile [--warnings] <dir>...";
-
 /// Which diagnostics the check prints: errors, which fail it, and with `--warnings` each
 /// warning too, which never fails it, to compare a program's messages with FTEQCC's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,19 +45,27 @@ enum Report {
     Warnings,
 }
 
+/// `cargo xtask fteqcc-profile [--warnings] <dir>...`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// Report warnings as well as errors.
+    #[arg(long)]
+    warnings: bool,
+    /// The codebase directories.
+    #[arg(required = true)]
+    dirs: Vec<PathBuf>,
+}
+
 /// Runs the check on the rerelease codebase directories in `args`, after `--warnings` if it
 /// is given.
-pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
-    let (report, dirs) = match args.split_first() {
-        Some((first, rest)) if first == "--warnings" => (Report::Warnings, rest),
-        _ => (Report::Errors, args),
+pub(crate) fn main(_root: &Path, args: &Args) -> Result<bool, String> {
+    let report = if args.warnings {
+        Report::Warnings
+    } else {
+        Report::Errors
     };
-    let dirs: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
-    if dirs.is_empty() {
-        return Err(USAGE.to_owned());
-    }
     let mut ok = true;
-    for dir in &dirs {
+    for dir in &args.dirs {
         ok &= profile_one(dir, report)?;
     }
     // The vanilla profile must reject every extension with a diagnostic, so the profiles
@@ -262,7 +268,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use super::{main, vanilla_rejects_every_extension};
+    use super::{Args, main, vanilla_rejects_every_extension};
     use crate::test_dirs::fresh;
 
     /// Builds a throwaway codebase directory with a `progs.src` and files.
@@ -278,12 +284,15 @@ mod tests {
     // usage error, as with no arguments.
     #[test]
     fn warnings_is_an_option_before_the_directories() {
-        let usage = main(Path::new("."), &[]).unwrap_err();
-        assert_eq!(
-            main(Path::new("."), &["--warnings".to_owned()]).unwrap_err(),
-            usage
-        );
-        assert!(usage.contains("[--warnings]"), "{usage}");
+        for list in [&[][..], &["--warnings"]] {
+            let usage =
+                crate::run_cli::<Args, &str>(list, |a| main(Path::new("."), a)).unwrap_err();
+            assert!(
+                usage.contains("required arguments were not provided"),
+                "{usage}"
+            );
+            assert!(usage.contains("<DIRS>"), "{usage}");
+        }
         let dir = codebase(
             "warnings-option",
             &[
@@ -295,7 +304,10 @@ mod tests {
             ],
         );
         let arg = dir.to_string_lossy().into_owned();
-        assert!(main(Path::new("."), &["--warnings".to_owned(), arg]).unwrap());
+        assert!(
+            crate::run_cli::<Args, _>(&["--warnings".to_owned(), arg], |a| main(Path::new("."), a))
+                .unwrap()
+        );
     }
 
     // spec FTEF-1.1: a codebase in the full dialect, a class with members defined outside it, a
@@ -325,7 +337,10 @@ mod tests {
                 ),
             ],
         );
-        assert!(main(Path::new("."), &[dir.display().to_string()]).unwrap());
+        assert!(
+            crate::run_cli::<Args, _>(&[dir.display().to_string()], |a| main(Path::new("."), a))
+                .unwrap()
+        );
     }
 
     #[test]
@@ -357,7 +372,10 @@ mod tests {
                 ),
             ],
         );
-        assert!(main(Path::new("."), &[dir.display().to_string()]).unwrap());
+        assert!(
+            crate::run_cli::<Args, _>(&[dir.display().to_string()], |a| main(Path::new("."), a))
+                .unwrap()
+        );
     }
 
     // spec FTE-21.5: the check parses each file after preprocessing, as FTEQCC compiles it, so
@@ -387,7 +405,10 @@ mod tests {
                 ),
             ],
         );
-        assert!(main(Path::new("."), &[dir.display().to_string()]).unwrap());
+        assert!(
+            crate::run_cli::<Args, _>(&[dir.display().to_string()], |a| main(Path::new("."), a))
+                .unwrap()
+        );
     }
 
     // spec FTE-1.2: of the six codebases only `rerelease-mg3` is compiled with `-Fautoproto`,
@@ -424,9 +445,15 @@ mod tests {
             ),
         ];
         let mg3 = codebase("rerelease-mg3", files);
-        assert!(main(Path::new("."), &[mg3.display().to_string()]).unwrap());
+        assert!(
+            crate::run_cli::<Args, _>(&[mg3.display().to_string()], |a| main(Path::new("."), a))
+                .unwrap()
+        );
         let other = codebase("fteqcc-profile-no-autoproto", files);
-        assert!(!main(Path::new("."), &[other.display().to_string()]).unwrap());
+        assert!(
+            !crate::run_cli::<Args, _>(&[other.display().to_string()], |a| main(Path::new("."), a))
+                .unwrap()
+        );
     }
 
     #[test]
@@ -438,12 +465,19 @@ mod tests {
                 ("bad.qc", "void() f = { a = ; };\n"),
             ],
         );
-        assert!(!main(Path::new("."), &[dir.display().to_string()]).unwrap());
+        assert!(
+            !crate::run_cli::<Args, _>(&[dir.display().to_string()], |a| main(Path::new("."), a))
+                .unwrap()
+        );
     }
 
     #[test]
     fn bad_arguments_are_an_error() {
-        assert!(main(Path::new("."), &[]).unwrap_err().contains("usage"));
+        assert!(
+            crate::run_cli::<Args, &str>(&[], |a| main(Path::new("."), a))
+                .unwrap_err()
+                .contains("Usage")
+        );
     }
 
     #[test]

@@ -165,6 +165,13 @@ jobs:
         with:
           shared-key: clippy-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # cpal, the preview host's sound output, links ALSA on Linux; the runner image has
+      # pkg-config but not ALSA's headers.
+      - name: Install ALSA's headers for the preview host's sound
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
   test:
@@ -208,6 +215,13 @@ jobs:
         with:
           shared-key: debug-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # cpal, the preview host's sound output, links ALSA on Linux; the runner image has
+      # pkg-config but not ALSA's headers.
+      - name: Install ALSA's headers for the preview host's sound
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev
       # The UI snapshot harness (P2-21) renders through wgpu with no window: on Linux with
       # Mesa's software Vulkan driver, on macOS with Metal and on Windows with WARP.
       - name: Install a software Vulkan driver for the snapshot harness
@@ -308,12 +322,40 @@ jobs:
         with:
           shared-key: build-${{ matrix.target }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # cpal, the preview host's sound output, links ALSA on Linux; the runner image has
+      # pkg-config but not ALSA's headers.
+      - name: Install ALSA's headers for the preview host's sound
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev
       - name: Build
         if: env.CI_PATH == 'full'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: cargo build --profile ci --locked --workspace --target "$TARGET"
+      # P3-02: the preview host as an artifact with its SHA-256 beside it.
+      - name: Package the preview host
+        if: env.CI_PATH == 'full'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          NAME: ${{ matrix.name }}
+        run: |
+          exe=preview-host
+          if [ "$RUNNER_OS" = Windows ]; then exe=preview-host.exe; fi
+          mkdir -p "dist/$NAME"
+          cp "target/$TARGET/ci/$exe" "dist/$NAME/"
+          (cd "dist/$NAME" && sha256sum "$exe" > "$exe.sha256" && cat "$exe.sha256")
+      - name: Keep the preview host
+        if: env.CI_PATH == 'full'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preview-host-${{ matrix.name }}
+          path: dist/${{ matrix.name }}
+          retention-days: 7
+          if-no-files-found: error
 
   build-macos:
     name: Build (macos-universal)
@@ -355,6 +397,18 @@ jobs:
             echo "no binaries to combine" >&2
             exit 1
           fi
+      - name: Package the preview host
+        run: |
+          mkdir -p dist/macos-universal
+          cp target/universal-apple-darwin/ci/preview-host dist/macos-universal/
+          (cd dist/macos-universal && shasum -a 256 preview-host > preview-host.sha256 && cat preview-host.sha256)
+      - name: Keep the preview host
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preview-host-macos-universal
+          path: dist/macos-universal
+          retention-days: 7
+          if-no-files-found: error
 
   xtask-ci:
     name: cargo xtask ci
@@ -506,6 +560,32 @@ jobs:
       - name: Check the rerelease precaches
         if: env.CI_PATH == 'full'
         run: cargo xtask assets precache
+      # P3-23: id's server, built from the pinned source, plays a route through LibreQuake's
+      # start map twice with the same trace, the same as recorded on every OS.
+      - name: Play a route through id's server
+        if: env.CI_PATH == 'full'
+        shell: bash
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          cargo xtask oracles engine oracles/engine/routes/start.route \
+            "$RUNNER_TEMP_DIR/start.trace" \
+            --expect oracles/engine/routes/start.expected.jsonl \
+            -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+      # P3-25 (DIFF-16): the same route through qs-sim, the same state as id's server's after
+      # the map loads and after every frame.
+      - name: Compare qs-sim with id's server on the route
+        if: env.CI_PATH == 'full'
+        run: |
+          cargo xtask sim-diff oracles/engine/routes/start.route \
+            -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+      # P3-04 (DIFF-16.6): console lines, the settings, aliases and waits they run, the same in
+      # qs-sim as in id's server.
+      - name: Compare the console with id's server
+        if: env.CI_PATH == 'full'
+        run: |
+          cargo xtask sim-diff oracles/engine/routes/console.route \
+            -- -basedir "$QS_TEST_ASSETS/librequake-lite"
       # The source is the same on every OS, so one runner checks it.
       - name: Write id 1.01 to the asset cache
         if: env.CI_PATH == 'full' && runner.os == 'Linux'
@@ -729,6 +809,28 @@ jobs:
       - name: Decode the LibreQuake lite asset
         if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo run --release -p qs-vfs --example walk -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+      # cpal, the preview host's sound output, links ALSA on Linux; the runner image has
+      # pkg-config but not ALSA's headers.
+      # ALSA's headers for the preview host's sound, and Mesa's software Vulkan driver for its
+      # headless screenshots, which draw offscreen through wgpu (P3-05).
+      - name: Install ALSA's headers and Mesa's Vulkan driver for the preview host
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev mesa-vulkan-drivers
+      # P3-06: qs-engine's bridge client against the real preview host, headless, launched
+      # through a run root over LibreQuake's id1: a symbolic link, or a junction on Windows,
+      # and a Unix socket, or a named pipe on Windows.
+      - name: Run the bridge client against the headless preview host
+        if: env.CI_PATH == 'full'
+        run: cargo xtask bridge-client "$QS_TEST_ASSETS/librequake-lite"
+      # P3-19, SCN-2.5: a scenario played in qs-sim on LibreQuake's start map ten times gives
+      # the same result each time, on each OS.
+      - name: Play the start scenario ten times
+        if: env.CI_PATH == 'full'
+        run: |
+          cargo xtask scenario xtask/fixtures/scenarios/start.scenario --repeat 10 -- \
+            -basedir "$QS_TEST_ASSETS/librequake-lite"
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: env.CI_PATH == 'full' && github.ref == 'refs/heads/main' && steps.downloads-cache.outputs.cache-hit != 'true'
         with:

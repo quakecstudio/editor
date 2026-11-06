@@ -39,6 +39,7 @@ v1; where a later issue exists it is linked.
 | Quake 2 and Quake 3 map formats, and writing Half-Life's | Not planned. The map editor reads and writes Quake .map (standard and Valve 220) and writes BSP29, BSP2 and .lit only. Reading Half-Life's BSP version 30 and WAD3 is planned for Phase 5, after the MVP (MAP-24) | [Design doc: Non-goals for v1](design/design-doc.md#summary-and-goals), [Map editor](design/design-doc.md#map-editor) |
 | GMQCC-only syntax | Planned after the MVP | [L-10](https://github.com/quakecstudio/editor/issues/194) spec, [L-02](https://github.com/quakecstudio/editor/issues/186) implementation |
 | A web/WASM build | Planned after the MVP; the UI framework, egui, supports it ([ADR-0003](adr/0003-ui-framework.md)) | [L-07](https://github.com/quakecstudio/editor/issues/191) |
+| Japanese and Chinese input through a real input method, recorded | After the MVP; the editor takes IME events and is tested with synthetic ones (UI-4) | [P2-151](https://github.com/quakecstudio/editor/issues/644) |
 | Quake 2 or Quake 3 game code | Not planned. QuakeC Studio targets QuakeC (progs.dat, csprogs.dat, menu.dat) only | [Design doc: Non-goals for v1](design/design-doc.md#summary-and-goals) |
 
 ## MVP
@@ -84,6 +85,7 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | Web build | Non-goals for v1; MVP scope, Out | [L-07](https://github.com/quakecstudio/editor/issues/191) Web build |
 | ericw-tools class advanced lighting | Map editor, Our own map compiler | [L-12](https://github.com/quakecstudio/editor/issues/195) Advanced lighting (ericw-tools class) |
 | Later engines' improvements in the preview host | Engine bridge; [ADR-0004](adr/0004-preview-host-base.md) | [L-13](https://github.com/quakecstudio/editor/issues/449) Adopt later engines' improvements in the preview host |
+| The compiler differential on a world with movement and collision | Compiler, Testing; split from [P3-33](https://github.com/quakecstudio/editor/issues/689) | [L-15](https://github.com/quakecstudio/editor/issues/737) Run the compiler differential on qs-sim's world |
 | Next-edit suggestions | Editor and UI; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-11](https://github.com/quakecstudio/editor/issues/122) Next-edit suggestions |
 | External agents in the panel over ACP | Editor and UI, Product principles; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-14](https://github.com/quakecstudio/editor/issues/125) Host external agents over ACP |
 | In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update mechanism |

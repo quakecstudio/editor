@@ -54,9 +54,9 @@ depends on it (`layers.toml`); outside the workspace, the `qc_vm` fuzz target
   `cargo xtask compiler-diff` compiles id 1.01 with `qcc` and with `qc-codegen` and runs it, and with `--full` the
   rerelease against the pinned FTEQCC (`calls::Oracle`, DIFF-12.30, DIFF-12.11), adding a row of
   the results table `target/compiler-diff/summary.md` for each pair.
-- `docs/spec/differential.md` DIFF-15: the per-function differential. `calls::run_function`
-  calls one function of a cut program alone, in `FUNCTION_ROUNDS` rounds, from each
-  scenario's world, and `calls::executed_by_function` lists the statements it executed by
+- `docs/spec/differential.md` DIFF-15: the per-function differential. `calls::run_functions`
+  calls the functions of a cut program and nothing else, in `FUNCTION_ROUNDS` rounds, from
+  each scenario's world, and `calls::executed_by_function` lists the statements it executed by
   function and offset; the binary's `--function-pairs` runs them, and
   `cargo xtask compiler-diff --functions` cuts and compiles the programs.
 

@@ -213,6 +213,7 @@ targets = [
 [licenses]
 confidence-threshold = 0.8
 allow = [
+    "0BSD",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",

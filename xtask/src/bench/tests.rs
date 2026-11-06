@@ -7,6 +7,7 @@
 )]
 
 use super::*;
+use crate::parse_cli;
 use crate::test_dirs::fresh;
 
 fn root() -> PathBuf {
@@ -63,12 +64,8 @@ fn run(key: &str, passed: bool, results: Vec<BenchResult>) -> Run {
     }
 }
 
-fn args(list: &[&str]) -> Vec<String> {
-    list.iter().map(|arg| (*arg).to_owned()).collect()
-}
-
 #[test]
-fn the_repository_budget_table_names_the_four_budgets() {
+fn the_repository_budget_table_names_every_budget() {
     let budgets = parse_budgets(&repo::read(&root(), BUDGETS_DOC).unwrap()).unwrap();
     let rows: Vec<(&str, f64, Statistic)> = budgets
         .iter()
@@ -79,10 +76,48 @@ fn the_repository_budget_table_names_the_four_budgets() {
         [
             ("open_project_and_type", 1e9, Statistic::P95),
             ("keystroke", 8.33e6, Statistic::P99),
+            ("check_after_typing", 1e8, Statistic::P95),
             ("id1_recompile", 2e8, Statistic::Median),
             ("save_to_game", 1e9, Statistic::P95),
+            ("frame_e1m1", 383e3, Statistic::P99),
+            ("server_frame_e1m1", 1e6, Statistic::P99),
+            ("quakec_e1m1", 5e5, Statistic::P99),
+            ("map_load_e1m1", 1e9, Statistic::Median),
+            ("frame_mg1", 3.62e6, Statistic::P99),
+            ("server_frame_mg1", 1e6, Statistic::P99),
+            ("quakec_mg1", 5e5, Statistic::P99),
+            ("map_load_mg1", 1e9, Statistic::Median),
         ]
     );
+}
+
+// The route benchmarks read a game, so each must be in GAME_BUDGETS, judged pending when its
+// game is not set; a route left out would pass on a placeholder.
+#[test]
+fn every_game_budget_is_listed_with_its_game() {
+    let budgets = parse_budgets(&repo::read(&root(), BUDGETS_DOC).unwrap()).unwrap();
+    let source = repo::read(&root(), BENCH_SOURCE).unwrap();
+    let routes = ["frame_", "server_frame_", "quakec_", "map_load_"];
+    for budget in &budgets {
+        let routed = routes.iter().any(|prefix| budget.name.starts_with(prefix));
+        let listed = GAME_BUDGETS.iter().any(|(name, _)| *name == budget.name);
+        assert_eq!(
+            routed || budget.name == "save_to_game",
+            listed,
+            "{}",
+            budget.name
+        );
+    }
+    for (name, variable) in GAME_BUDGETS {
+        assert!(
+            budgets.iter().any(|budget| budget.name == name),
+            "{name} has no row"
+        );
+        assert!(
+            source.contains(&format!("\"{variable}\"")),
+            "{variable} is not read"
+        );
+    }
 }
 
 #[test]
@@ -249,16 +284,20 @@ fn pending_budgets_are_never_checked() {
         true,
         vec![result("a", Status::Pending, Statistic::Median, 1.0)],
     );
-    let outcome = evaluate(&[slow], Some(&baseline));
+    let outcome = evaluate(&[slow], Some(&baseline), Machine::Reference);
     assert!(outcome.failures.is_empty() && outcome.regressions.is_empty());
 }
 
 #[test]
 fn an_active_budget_over_its_budget_fails() {
     let at_budget = result("a", Status::Active, Statistic::P95, 1e6);
-    assert!(evaluate(&[at_budget], None).failures.is_empty());
+    assert!(
+        evaluate(&[at_budget], None, Machine::Reference)
+            .failures
+            .is_empty()
+    );
     let over = result("a", Status::Active, Statistic::P95, 1.01e6);
-    let failures = evaluate(&[over], None).failures;
+    let failures = evaluate(&[over], None, Machine::Reference).failures;
     assert_eq!(failures, ["a: p95 1.01 ms is over the budget of 1.00 ms"]);
 }
 
@@ -266,9 +305,16 @@ fn an_active_budget_over_its_budget_fails() {
 fn the_budget_statistic_is_the_one_checked() {
     let mut mixed = result("a", Status::Active, Statistic::Median, 5e5);
     mixed.p99_ns = 5e6;
-    assert!(evaluate(&[mixed.clone()], None).failures.is_empty());
+    assert!(
+        evaluate(&[mixed.clone()], None, Machine::Reference)
+            .failures
+            .is_empty()
+    );
     mixed.statistic = Statistic::P99;
-    assert_eq!(evaluate(&[mixed], None).failures.len(), 1);
+    assert_eq!(
+        evaluate(&[mixed], None, Machine::Reference).failures.len(),
+        1
+    );
 }
 
 #[test]
@@ -279,9 +325,13 @@ fn a_regression_over_ten_percent_is_reported() {
         vec![result("a", Status::Active, Statistic::Median, 1000.0)],
     );
     let within = result("a", Status::Active, Statistic::Median, 1100.0);
-    assert!(evaluate(&[within], Some(&baseline)).regressions.is_empty());
+    assert!(
+        evaluate(&[within], Some(&baseline), Machine::Reference)
+            .regressions
+            .is_empty()
+    );
     let over = result("a", Status::Active, Statistic::Median, 1101.0);
-    let outcome = evaluate(&[over], Some(&baseline));
+    let outcome = evaluate(&[over], Some(&baseline), Machine::Reference);
     assert!(outcome.failures.is_empty());
     assert_eq!(
         outcome.regressions,
@@ -298,7 +348,7 @@ fn a_benchmark_pending_in_the_baseline_is_not_compared() {
     );
     let now_active = result("a", Status::Active, Statistic::Median, 1000.0);
     assert!(
-        evaluate(&[now_active], Some(&baseline))
+        evaluate(&[now_active], Some(&baseline), Machine::Reference)
             .regressions
             .is_empty()
     );
@@ -308,7 +358,11 @@ fn a_benchmark_pending_in_the_baseline_is_not_compared() {
         vec![result("b", Status::Active, Statistic::Median, 1.0)],
     );
     let unrelated = result("a", Status::Active, Statistic::Median, 1000.0);
-    assert!(evaluate(&[unrelated], Some(&other)).regressions.is_empty());
+    assert!(
+        evaluate(&[unrelated], Some(&other), Machine::Reference)
+            .regressions
+            .is_empty()
+    );
 }
 
 #[test]
@@ -333,40 +387,37 @@ fn the_baseline_is_the_last_passing_run_on_the_same_host() {
 #[test]
 fn arguments_parse_and_bad_ones_are_rejected() {
     assert_eq!(
-        parse_args(&args(&[])).unwrap(),
-        Options {
+        parse_cli::<Args, &str>(&[]).unwrap(),
+        Args {
+            show: None,
             history: None,
             accept: false,
-            show_history: false
         }
     );
     assert_eq!(
-        parse_args(&args(&["--accept", "--history", "h.json"])).unwrap(),
-        Options {
+        parse_cli::<Args, _>(&["--accept", "--history", "h.json"]).unwrap(),
+        Args {
+            show: None,
             history: Some(PathBuf::from("h.json")),
             accept: true,
-            show_history: false
         }
     );
-    assert!(parse_args(&args(&["history"])).unwrap().show_history);
-    assert!(
-        parse_args(&args(&["--history"]))
-            .unwrap_err()
-            .contains("needs a path")
-    );
-    assert!(parse_args(&args(&["--accept", "--accept"])).is_err());
-    assert!(
-        parse_args(&args(&["history", "--accept"]))
-            .unwrap_err()
-            .contains("only applies")
+    assert_eq!(
+        parse_cli::<Args, _>(&["history"]).unwrap().show,
+        Some(Show::History)
     );
     assert!(
-        parse_args(&args(&["--fast"]))
-            .unwrap_err()
-            .contains("\"--fast\"")
+        parse_cli::<Args, _>(&["--history"]).is_err(),
+        "needs a path"
     );
-    assert!(parse_args(&args(&["history", "history"])).is_err());
-    assert!(parse_args(&args(&["--history", "a", "--history", "b"])).is_err());
+    assert!(parse_cli::<Args, _>(&["--accept", "--accept"]).is_err());
+    assert!(
+        parse_cli::<Args, _>(&["history", "--accept"]).is_err(),
+        "--accept only applies to a run"
+    );
+    assert!(parse_cli::<Args, _>(&["--fast"]).is_err());
+    assert!(parse_cli::<Args, _>(&["history", "history"]).is_err());
+    assert!(parse_cli::<Args, _>(&["--history", "a", "--history", "b"]).is_err());
 }
 
 #[test]
@@ -526,7 +577,13 @@ fn bench_history_prints_the_recorded_runs() {
     let dir = scratch("print");
     let path = dir.join("history.json");
     let path_arg = path.to_str().unwrap();
-    assert!(main(&root(), &args(&["history", "--history", path_arg])).unwrap());
+    assert!(
+        main(
+            &root(),
+            &parse_cli::<Args, _>(&["history", "--history", path_arg]).unwrap()
+        )
+        .unwrap()
+    );
     let mut first = run(
         "ref-mac",
         true,
@@ -541,7 +598,13 @@ fn bench_history_prints_the_recorded_runs() {
         runs: vec![first, second],
     };
     save_history(&path, &history).unwrap();
-    assert!(main(&root(), &args(&["history", "--history", path_arg])).unwrap());
+    assert!(
+        main(
+            &root(),
+            &parse_cli::<Args, _>(&["history", "--history", path_arg]).unwrap()
+        )
+        .unwrap()
+    );
     let printed = format_history(&history);
     assert!(
         printed.contains("2023-11-14T22:13:20Z 0123456789ab ref-mac passed"),
@@ -557,7 +620,13 @@ fn bench_history_prints_the_recorded_runs() {
         format_history(&History::default()),
         "bench: no runs recorded\n"
     );
-    assert!(main(&root(), &args(&["--bogus"])).is_err());
+    assert!(parse_cli::<Args, _>(&["--bogus"]).is_err());
+    let both = parse_cli::<Args, _>(&["--accept", "history"]).unwrap();
+    assert!(
+        main(&root(), &both)
+            .unwrap_err()
+            .contains("only applies to a run")
+    );
 }
 
 #[test]
@@ -615,4 +684,59 @@ fn the_default_host_key_names_the_os_arch_and_cpu() {
     let host = host();
     assert_eq!(host.os, std::env::consts::OS);
     assert!(!host.key.is_empty());
+}
+
+// No spec statement: a host that is no reference machine, a CI runner, is judged by the 10%
+// regression rule alone; on a reference machine a result over its budget fails.
+#[test]
+fn only_a_reference_machine_judges_the_budget() {
+    let over = result("keystroke", Status::Active, Statistic::P99, 2e7);
+    assert_eq!(Machine::of("ref-mac"), Machine::Reference);
+    assert_eq!(Machine::of("ref-linux"), Machine::Reference);
+    assert_eq!(Machine::of("linux-x86_64-amd-epyc"), Machine::Other);
+    assert_eq!(
+        evaluate(std::slice::from_ref(&over), None, Machine::Reference)
+            .failures
+            .len(),
+        1
+    );
+    assert!(evaluate(&[over], None, Machine::Other).failures.is_empty());
+}
+
+// No spec statement: a budget that needs a game is judged only by a run that played one; any
+// other budget, and that one with a game, keeps its status
+#[test]
+fn a_game_budget_is_pending_without_a_game() {
+    let row = |name: &str| Budget {
+        name: name.to_owned(),
+        budget_ns: 1e9,
+        statistic: Statistic::P95,
+        status: Status::Active,
+    };
+    assert_eq!(
+        judged_here(&row("save_to_game"), |_| false).status,
+        Status::Pending
+    );
+    assert_eq!(
+        judged_here(&row("save_to_game"), |_| true).status,
+        Status::Active
+    );
+    // Each route needs its own game: the mg1 hub the rerelease's.
+    let only_game = |variable: &str| variable == GAME_DIR;
+    assert_eq!(
+        judged_here(&row("frame_e1m1"), only_game).status,
+        Status::Active
+    );
+    assert_eq!(
+        judged_here(&row("frame_mg1"), only_game).status,
+        Status::Pending
+    );
+    assert_eq!(
+        judged_here(&row("map_load_mg1"), |v: &str| v == RERELEASE_DIR).status,
+        Status::Active
+    );
+    assert_eq!(
+        judged_here(&row("keystroke"), |_| false).status,
+        Status::Active
+    );
 }

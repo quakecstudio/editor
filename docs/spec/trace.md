@@ -148,6 +148,15 @@ runtime error), and the engine strings of PROGS-11.6.
   NUL. It is written before the change-carrying record whose change set first shows the
   value, and it carries no change set: it does not reset what the next change set compares
   against (TRACE-3.1).
+- **TRACE-4.11** A frame record is written by the engine oracle after each server frame it runs
+  (`Host_ServerFrame`): the frame's number, counting from 1, and a change set holding every
+  global and field the frame changed. A trace of the engine has frame records and string records
+  only, and an error record last when a QuakeC run error stops it (TRACE-4.6): its runs are not
+  traced statement by statement.
+- **TRACE-4.12** Before its first server frame the engine oracle writes frame 0: the state the
+  map loaded to, every global and field slot of every edict below `num_edicts` that is not zero,
+  as the changes from all-zero globals and fields. A trace of the engine starts with it, so a
+  comparison sees the whole state and not only what the frames changed.
 
 ## TRACE-5 Binary form
 
@@ -185,6 +194,8 @@ runtime error), and the engine strings of PROGS-11.6.
   than 0x00 or 0x01, an opcode above 65535, and a change set that breaks the order of
   TRACE-3.3 or lists a slot twice. Because every value has exactly one encoding, encoding what
   a reader accepted gives back the same bytes.
+- **TRACE-5.8** A frame record is the tag 0x06, a uvar frame number, then a change set; a reader
+  accepts it with the records of TRACE-5.6.
 
 ### Constants
 
@@ -198,6 +209,7 @@ runtime error), and the engine strings of PROGS-11.6.
 | `TRACE_TAG_EXIT` | 0x03 | This spec |
 | `TRACE_TAG_ERROR` | 0x04 | This spec |
 | `TRACE_TAG_STRING` | 0x05 | This spec |
+| `TRACE_TAG_FRAME` | 0x06 | This spec |
 
 ## TRACE-6 JSON debug form
 
@@ -213,10 +225,10 @@ and slower than the binary form and is not what the runner compares by default.
   are no blank lines.
 - **TRACE-6.2** The header is
   `{"trace":"qc-trace","version":1,"progs_crc":N,"edict_size":N,"field_offset":N,"entityfields":N,"numstrings":N}`.
-- **TRACE-6.3** A record's `t` key names it: `run`, `step`, `exit`, `error` or `string`. A run
-  has `function`; a step has `function`, `statement`, `opcode` and, only when it has one,
-  `builtin`; an error has `function`, `statement` and `message`; a string has `value` and
-  `text`. Every change-carrying record also has `globals`, an array of `[slot, bits]`, and
+- **TRACE-6.3** A record's `t` key names it: `run`, `step`, `exit`, `error`, `string` or
+  `frame`. A run has `function`; a step has `function`, `statement`, `opcode` and, only when it
+  has one, `builtin`; an error has `function`, `statement` and `message`; a string has `value`
+  and `text`; a frame has `frame`. Every change-carrying record also has `globals`, an array of `[slot, bits]`, and
   `fields`, an array of `[edict, field, bits]`, each empty when there are no changes.
   Numbers are JSON integers.
 - **TRACE-6.4** A 32-bit pattern (`bits`, and a string record's `value`) is a JSON string of
@@ -232,6 +244,8 @@ and slower than the binary form and is not what the runner compares by default.
   a line, and rejects a missing key, an unknown key, a value of the wrong JSON type, a number
   out of range for its field, bits or text not written as TRACE-6.4 and TRACE-6.5 say, and the
   violations of TRACE-2.3 and TRACE-5.7 that the JSON form can express.
+- **TRACE-6.7** A frame record's `t` is `frame`, and it has `frame`, the frame number, then
+  `globals` and `fields`.
 
 ## TRACE-7 Interpreting values
 

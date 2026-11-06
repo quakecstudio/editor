@@ -1,21 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 1996-2001 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/host.c, Host_ServerFrame
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/sv_phys.c, SV_Physics, SV_Physics_Client, SV_Physics_Pusher, SV_PushMove, SV_RunThink
+// Ported from Novum/vkQuake@27789d7333a46674474d871137bb71e056719628: Quake/sv_user.c, SV_ReadClientMessage
 
 //! The server frame and the physics frame (DIFF-5), without the movement (DIFF-5.8).
 //!
-//! A server frame (DIFF-5.1) sets `frametime`, applies the scenario's input (DIFF-4.3), runs a
-//! physics frame (DIFF-5.3) and clears the muzzle-flash bit (DIFF-5.1). A physics frame runs
+//! A server frame (DIFF-5.1) sets `frametime`, applies the scenario's input (DIFF-4.3), runs
+//! its client commands through the progs' `SV_ParseClientCommand` (DIFF-4.4), runs a physics
+//! frame (DIFF-5.3) and clears the muzzle-flash bit (DIFF-5.1). A physics frame runs
 //! `StartFrame`, then gives each edict its turn: a client by DIFF-5.4, a pusher by DIFF-5.5,
 //! and every other thinking movetype by DIFF-5.6. Nothing moves or collides (DIFF-5.8).
 
 use qc_edict::EdictNumber;
 use qc_edict::system::{SysField, SysGlobal};
 use qc_progs::Progs;
-use qc_types::Slot;
+use qc_types::{PROGS_OFS_PARM0, Slot};
 use qc_vm::{ErrorKind, RunError};
 
 use crate::scenario::Input;
@@ -23,8 +28,19 @@ use crate::scenario::Input;
 use super::{
     EF_MUZZLEFLASH, FL_ITEM, Host, MOVETYPE_BOUNCE, MOVETYPE_FLY, MOVETYPE_FLYMISSILE,
     MOVETYPE_NOCLIP, MOVETYPE_NONE, MOVETYPE_PUSH, MOVETYPE_STEP, MOVETYPE_TOSS, MOVETYPE_WALK,
-    ftoi,
+    f32_of, ftoi,
 };
+
+/// DIFF-4.4: whether `text` starts, in any case, with `spawn`, `begin` or `prespawn`: the
+/// sign-on commands vkQuake keeps from `SV_ParseClientCommand` (`q_strncasecmp`).
+fn is_signon(text: &[u8]) -> bool {
+    [b"spawn".as_slice(), b"begin", b"prespawn"]
+        .iter()
+        .any(|word| {
+            text.get(..word.len())
+                .is_some_and(|start| start.eq_ignore_ascii_case(word))
+        })
+}
 
 /// The fatal error the physics frame raises on a bad movetype (DIFF-5.3, DIFF-5.4).
 ///
@@ -59,10 +75,11 @@ impl Host<'_> {
         let frametime = t as f32;
         self.set_global(SysGlobal::Frametime, Slot::from_f32(frametime));
 
-        // DIFF-5.1: empty the unreliable datagram, apply the frame's input, run the physics
-        // frame, empty the reliable datagram, clear the muzzle flashes.
+        // DIFF-5.1: empty the unreliable datagram, apply the frame's input and commands, run
+        // the physics frame, empty the reliable datagram, clear the muzzle flashes.
         self.builtins.engine_mut().buffers.unreliable = 0;
         self.apply_inputs(frame);
+        self.run_commands(progs, frame)?;
         self.physics(progs, t)?;
         self.builtins.engine_mut().buffers.reliable = 0;
         self.clear_muzzle_flashes();
@@ -95,6 +112,44 @@ impl Host<'_> {
                 }
             }
         }
+    }
+
+    /// DIFF-4.4: run the scenario's `command` lines for frame `frame`, in file order, as
+    /// vkQuake's `SV_ReadClientMessage` runs a `clc_stringcmd`: a command not starting
+    /// `spawn`, `begin` or `prespawn` in any case goes to the progs' `SV_ParseClientCommand`,
+    /// with `PARM0` the command as an engine string, `time` the clock and `self` the client.
+    /// Any other command, or every command of a progs without the function, runs nothing.
+    fn run_commands(&mut self, progs: &Progs<'_>, frame: u32) -> Result<(), RunError> {
+        let scenario = self.scenario;
+        let mut commands = scenario
+            .commands
+            .iter()
+            .filter(|c| c.frame == frame)
+            .peekable();
+        if commands.peek().is_none() {
+            return Ok(());
+        }
+        // ED_FindFunction's search, keeping the index of the first function of the name.
+        let Some(function) = progs
+            .functions()
+            .iter()
+            .position(|f| progs.string(f.s_name) == Some(b"SV_ParseClientCommand".as_slice()))
+            .and_then(|i| i32::try_from(i).ok())
+        else {
+            return Ok(());
+        };
+        for command in commands {
+            if is_signon(&command.text) {
+                continue;
+            }
+            let text = self.make_string(command.text.clone());
+            self.set_global_slot(i32::from(PROGS_OFS_PARM0), Slot::from_i32(text));
+            let time = f32_of(self.builtins.engine().clock);
+            self.set_global(SysGlobal::Time, Slot::from_f32(time));
+            self.set_self(usize::try_from(command.edict).unwrap_or(0));
+            self.run_function(progs, function)?;
+        }
+        Ok(())
     }
 
     /// DIFF-5.3: a physics frame of length `t`, id's `SV_Physics` without the movement.

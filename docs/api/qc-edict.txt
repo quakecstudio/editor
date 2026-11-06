@@ -3,6 +3,7 @@ const qc_edict::EDICT_SYS_GLOBALS_END
 const qc_edict::number::EdictNumber::WORLD
 enum qc_edict::layout::LayoutError
 enum qc_edict::store::EdictError
+enum qc_edict::store::EdictEvent
 field qc_edict::system::SysVar.etype
 field qc_edict::system::SysVar.name
 field qc_edict::system::SysVar.slot
@@ -33,6 +34,10 @@ fn qc_edict::store::EdictStore::new
 fn qc_edict::store::EdictStore::num_edicts
 fn qc_edict::store::EdictStore::num_for_edict
 fn qc_edict::store::EdictStore::set_field
+fn qc_edict::store::EdictStore::set_num_edicts
+fn qc_edict::store::EdictStore::take_events
+fn qc_edict::store::EdictStore::track
+fn qc_edict::store::EdictStore::with_layout
 fn qc_edict::system::field_by_name
 fn qc_edict::system::global_by_name
 impl qc_edict::layout::LayoutError: core::error::Error
@@ -47,6 +52,7 @@ struct qc_edict::number::EdictNumber
 struct qc_edict::store::EdictStore
 struct qc_edict::system::SysVar
 use qc_edict::EdictError = store::EdictError
+use qc_edict::EdictEvent = store::EdictEvent
 use qc_edict::EdictLayout = layout::EdictLayout
 use qc_edict::EdictNumber = number::EdictNumber
 use qc_edict::EdictStore = store::EdictStore
@@ -59,3 +65,6 @@ variant qc_edict::store::EdictError::BadNumber
 variant qc_edict::store::EdictError::BadPointer
 variant qc_edict::store::EdictError::NoField
 variant qc_edict::store::EdictError::NoFreeEdicts
+variant qc_edict::store::EdictEvent::Allocated
+variant qc_edict::store::EdictEvent::Freed
+variant qc_edict::store::EdictEvent::Written

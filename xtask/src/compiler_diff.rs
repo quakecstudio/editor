@@ -32,6 +32,7 @@ use std::process::Command;
 use crate::differential::asset_root;
 use crate::oracles::codegen::Profile;
 use crate::oracles::{self, Oracles, codegen, id101, rerelease};
+use crate::readiness::Shard;
 
 mod functions;
 
@@ -74,27 +75,56 @@ fn engine(id: &str) -> &'static str {
     }
 }
 
-const USAGE: &str = "usage: cargo xtask compiler-diff [--fast [<codebase>...] | --full <codebase>]\n\
-       cargo xtask compiler-diff --generated <count> [--seed <n>]\n\
-       cargo xtask compiler-diff --functions <codebase>...";
+/// `cargo xtask compiler-diff [--fast [<codebase>...] | --full <codebase>]`, `cargo xtask
+/// compiler-diff --generated <count> [--seed <n>]` or `cargo xtask compiler-diff --functions
+/// <codebase>...`.
+#[derive(clap::Parser, Debug)]
+#[command(group(clap::ArgGroup::new("kind").args(["fast", "full", "generated", "functions"])))]
+pub(crate) struct Args {
+    /// The CI subset, 32 rounds; the default.
+    #[arg(long)]
+    fast: bool,
+    /// The nightly run, 128 rounds over the one codebase named.
+    #[arg(long)]
+    full: bool,
+    /// The generated-program differential over this many programs (DIFF-14).
+    #[arg(long, value_name = "count", conflicts_with = "codebases")]
+    generated: Option<u64>,
+    /// The generated programs' seed, 1 unless given.
+    #[arg(long, value_name = "n", requires = "generated")]
+    seed: Option<u64>,
+    /// Each function of each codebase run on its own (DIFF-15).
+    #[arg(long)]
+    functions: bool,
+    /// With `--functions`, only every n-th group of functions from the k-th, written `k/n`;
+    /// the coverage bar is left to `--merge` (DIFF-15.10).
+    #[arg(long, value_name = "k/n", requires = "functions", value_parser = Shard::parse)]
+    shard: Option<Shard>,
+    /// With `--functions` and one codebase, the shards' `executed.tsv` files, whose
+    /// statements together are held to the coverage bar (DIFF-15.10).
+    #[arg(long, value_name = "executed.tsv", num_args = 1.., requires = "functions", conflicts_with = "shard")]
+    merge: Vec<PathBuf>,
+    /// The codebases to compare.
+    codebases: Vec<String>,
+}
 
-/// Runs `cargo xtask compiler-diff [--fast [<codebase>...] | --full <codebase>]`: the CI
-/// subset over id 1.01, or 128 rounds over the one codebase named, which runs for up to an
-/// hour on its own, so that the codebases run one at a time or in parallel, each in its own
-/// directory under `target/compiler-diff/<id>/` with its own results table (DIFF-12.29); or
-/// `--generated <count> [--seed <n>]`, the generated-program differential (DIFF-14); or
-/// `--functions <codebase>...`, each function of each codebase run on its own (DIFF-15).
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    if args.first().is_some_and(|flag| flag == "--generated") {
-        let (count, seed) = parse_generated(args)?;
-        return generated(root, count, seed);
+/// Runs `cargo xtask compiler-diff`: the CI subset over id 1.01, or 128 rounds over the one
+/// codebase named, which runs for up to an hour on its own, so that the codebases run one at a
+/// time or in parallel, each in its own directory under `target/compiler-diff/<id>/` with its
+/// own results table (DIFF-12.29); or `--generated <count> [--seed <n>]`, the
+/// generated-program differential (DIFF-14); or `--functions <codebase>...`, each function of
+/// each codebase run on its own (DIFF-15).
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
+    if let Some(count) = args.generated {
+        return generated(root, count, args.seed.unwrap_or(1));
     }
-    if let Some((flag, ids)) = args.split_first()
-        && flag == "--functions"
-    {
-        return functions::run(root, ids);
+    if args.functions {
+        if !args.merge.is_empty() {
+            return functions::merge(root, &args.codebases, &args.merge);
+        }
+        return functions::run(root, &args.codebases, args.shard);
     }
-    let (mode, selected) = parse(args)?;
+    let (mode, selected) = select(args)?;
     let oracles = oracles::build(root)?;
     let codebases = asset_root()?.join("codebase");
     let out = root.join("target").join("compiler-diff");
@@ -107,27 +137,6 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
         ok &= run_suite(root, mode, id, &progs, &summary)?;
     }
     Ok(ok)
-}
-
-/// `--generated <count> [--seed <n>]`: how many programs, from which seed (1 unless given).
-fn parse_generated(args: &[String]) -> Result<(u64, u64), String> {
-    let mut rest = args.iter().skip(1);
-    let count = rest
-        .next()
-        .ok_or(USAGE)?
-        .parse::<u64>()
-        .map_err(|e| format!("--generated: {e}\n{USAGE}"))?;
-    let seed = match (rest.next().map(String::as_str), rest.next()) {
-        (None, _) => 1,
-        (Some("--seed"), Some(value)) => value
-            .parse::<u64>()
-            .map_err(|e| format!("--seed: {e}\n{USAGE}"))?,
-        _ => return Err(USAGE.to_owned()),
-    };
-    if rest.next().is_some() {
-        return Err(USAGE.to_owned());
-    }
-    Ok((count, seed))
 }
 
 /// How long one FTEQCC run of a generated program may take.
@@ -381,15 +390,12 @@ impl Mode {
 /// to compare: those named after it, each one the mode compares. A fast run with none named
 /// compares its whole subset; a full run names exactly one codebase, each full run being
 /// long enough to run on its own.
-fn parse(args: &[String]) -> Result<(Mode, Vec<&'static str>), String> {
-    let (mode, named) = match args.split_first() {
-        Some((flag, rest)) if flag == "--fast" => (Mode::Fast, rest),
-        Some((flag, rest)) if flag == "--full" => (Mode::Full, rest),
-        _ => (Mode::Fast, args),
-    };
+fn select(args: &Args) -> Result<(Mode, Vec<&'static str>), String> {
+    let mode = if args.full { Mode::Full } else { Mode::Fast };
+    let named = &args.codebases;
     if mode == Mode::Full && named.len() != 1 {
         let all = mode.named().join(", ");
-        return Err(format!("--full takes one codebase: one of {all}\n{USAGE}"));
+        return Err(format!("--full takes one codebase: one of {all}"));
     }
     if named.is_empty() {
         return Ok((mode, mode.codebases()));
@@ -400,7 +406,7 @@ fn parse(args: &[String]) -> Result<(Mode, Vec<&'static str>), String> {
         let id = named_ok
             .iter()
             .find(|id| **id == name.as_str())
-            .ok_or_else(|| format!("{name} is not a codebase this mode compares\n{USAGE}"))?;
+            .ok_or_else(|| format!("{name} is not a codebase this mode compares"))?;
         selected.push(*id);
     }
     Ok((mode, selected))
@@ -500,8 +506,7 @@ mod tests {
     use std::process::Command;
 
     use super::{
-        MODS_AT_BAR, Mode, RERELEASE, VANILLA, VKQUAKE_MODS, engine, parse, parse_generated,
-        write_progs,
+        Args, MODS_AT_BAR, Mode, RERELEASE, VANILLA, VKQUAKE_MODS, engine, select, write_progs,
     };
     use crate::exec::{Fake, Reply};
     use crate::oracles::codegen::{self, Profile};
@@ -588,32 +593,39 @@ mod tests {
         );
     }
 
+    /// The mode and codebases the command line `list` selects.
+    fn parse(list: &[&str]) -> Result<(Mode, Vec<&'static str>), String> {
+        crate::parse_cli::<Args, _>(list)
+            .map_err(|e| e.to_string())
+            .and_then(|args| select(&args))
+    }
+
+    /// The count and seed of a `--generated` command line `list`.
+    fn generated_args(list: &[&str]) -> Result<(u64, u64), String> {
+        let args = crate::parse_cli::<Args, _>(list).map_err(|e| e.to_string())?;
+        let count = args.generated.ok_or("no --generated")?;
+        Ok((count, args.seed.unwrap_or(1)))
+    }
+
     // spec DIFF-12.29: `--fast` and no argument are the CI subset, `--full` the nightly run of
     // exactly one codebase, named; codebases named after the mode are the ones compared, each
     // one the mode compares.
     #[test]
     fn the_mode_is_fast_unless_full_is_asked_for() {
-        let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        assert_eq!(parse(&args(&[])).unwrap(), (Mode::Fast, vec!["id-1.01"]));
-        assert_eq!(parse(&args(&["--fast"])).unwrap().0, Mode::Fast);
-        assert!(
-            parse(&args(&["--full"])).is_err(),
-            "a full run names a codebase"
-        );
-        assert!(parse(&args(&["--full", "rerelease-mg3", "id-1.01"])).is_err());
+        assert_eq!(parse(&[]).unwrap(), (Mode::Fast, vec!["id-1.01"]));
+        assert_eq!(parse(&["--fast"]).unwrap().0, Mode::Fast);
+        assert!(parse(&["--full"]).is_err(), "a full run names a codebase");
+        assert!(parse(&["--full", "rerelease-mg3", "id-1.01"]).is_err());
         assert_eq!(
-            parse(&args(&["--full", "rerelease-mg3"])).unwrap(),
+            parse(&["--full", "rerelease-mg3"]).unwrap(),
             (Mode::Full, vec!["rerelease-mg3"])
         );
         assert_eq!(Mode::Fast.arg(), "fast");
         assert_eq!(Mode::Full.arg(), "full");
-        assert_eq!(
-            parse(&args(&["id-1.01"])).unwrap(),
-            (Mode::Fast, vec!["id-1.01"])
-        );
-        assert!(parse(&args(&["--fast", "rerelease"])).is_err());
-        assert!(parse(&args(&["--slow"])).is_err());
-        assert!(parse(&args(&["--fast", "--full"])).is_err());
+        assert_eq!(parse(&["id-1.01"]).unwrap(), (Mode::Fast, vec!["id-1.01"]));
+        assert!(parse(&["--fast", "rerelease"]).is_err());
+        assert!(parse(&["--slow"]).is_err());
+        assert!(parse(&["--fast", "--full"]).is_err());
     }
 
     // spec DIFF-12.30: the CI subset compares id 1.01; the nightly run adds the rerelease
@@ -626,13 +638,9 @@ mod tests {
         assert_eq!(full.first(), Some(&"id-1.01"));
         assert_eq!(full.len(), 1 + RERELEASE.len() + MODS_AT_BAR.len());
         assert_eq!(RERELEASE.len(), 6, "the six rerelease codebases");
-        let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         for id in RERELEASE {
-            assert_eq!(
-                parse(&args(&["--full", id])).unwrap(),
-                (Mode::Full, vec![id])
-            );
-            assert!(parse(&args(&["--fast", id])).is_err());
+            assert_eq!(parse(&["--full", id]).unwrap(), (Mode::Full, vec![id]));
+            assert!(parse(&["--fast", id]).is_err());
         }
         assert!(RERELEASE.iter().all(|id| rerelease::compiles(id)));
         assert!(VANILLA.iter().all(|id| !rerelease::compiles(id)));
@@ -646,15 +654,11 @@ mod tests {
         assert!(MODS_AT_BAR.iter().all(|id| full.contains(id)));
         assert!(MODS_AT_BAR.iter().all(|id| rerelease::MODS.contains(id)));
         let named = Mode::Full.named();
-        let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         for id in rerelease::MODS {
             assert_eq!(named.iter().filter(|n| **n == id).count(), 1, "{id}");
             assert!(!rerelease::compiles(id));
-            assert_eq!(
-                parse(&args(&["--full", id])).unwrap(),
-                (Mode::Full, vec![id])
-            );
-            assert!(parse(&args(&["--fast", id])).is_err());
+            assert_eq!(parse(&["--full", id]).unwrap(), (Mode::Full, vec![id]));
+            assert!(parse(&["--fast", id]).is_err());
         }
         let pending: Vec<_> = rerelease::MODS
             .into_iter()
@@ -683,20 +687,16 @@ mod tests {
     // 1 unless given
     #[test]
     fn the_generated_run_takes_a_count_and_a_seed() {
-        let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(generated_args(&["--generated", "200"]).unwrap(), (200, 1));
         assert_eq!(
-            parse_generated(&args(&["--generated", "200"])).unwrap(),
-            (200, 1)
-        );
-        assert_eq!(
-            parse_generated(&args(&["--generated", "10", "--seed", "4"])).unwrap(),
+            generated_args(&["--generated", "10", "--seed", "4"]).unwrap(),
             (10, 4)
         );
-        assert!(parse_generated(&args(&["--generated"])).is_err());
-        assert!(parse_generated(&args(&["--generated", "x"])).is_err());
-        assert!(parse_generated(&args(&["--generated", "10", "--seed"])).is_err());
-        assert!(parse_generated(&args(&["--generated", "10", "--rounds", "4"])).is_err());
-        assert!(parse_generated(&args(&["--generated", "10", "--seed", "4", "more"])).is_err());
+        assert!(generated_args(&["--generated"]).is_err());
+        assert!(generated_args(&["--generated", "x"]).is_err());
+        assert!(generated_args(&["--generated", "10", "--seed"]).is_err());
+        assert!(generated_args(&["--generated", "10", "--rounds", "4"]).is_err());
+        assert!(generated_args(&["--generated", "10", "--seed", "4", "more"]).is_err());
     }
 
     // spec DIFF-14.3: the short run is a step of every pull request's Test Assets job and the

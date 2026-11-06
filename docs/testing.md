@@ -4,6 +4,11 @@ No work may build on a layer until that layer's test suite is reliable. This doc
 defines "reliable" as a bar each layer must clear, and how the plan enforces it.
 Requirement IDs (`TEST-n`) are tracked in `plan/requirements.yaml`.
 
+From Phase 3 on, a phase has its gate review alone: the per-layer readiness reviews below are
+the P1 and P2 bar, and no new ones are generated (`plan/gen_readiness.py`). The compiler and VM
+differentials, the fuzz targets and the property tests keep running in CI, the evidence the
+gates read (Justin, 2026-11-04: focus on the MVP and move through the phases faster).
+
 ## How it is enforced
 
 - Every phase has one **readiness issue per layer** it builds (`type:readiness`, keys like

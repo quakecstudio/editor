@@ -111,6 +111,9 @@ similar_names = "allow"
 
 [workspace.dependencies]
 cc = { version = "=1.8.0", default-features = false }
+# The preview host's sound output: one cross-platform audio device API (Core Audio, WASAPI,
+# ALSA); the mixer itself is the qs-sound port.
+cpal = { version = "=0.18.2", default-features = false }
 clap = { version = "=4.6.7", default-features = false }
 criterion = { version = "=0.8.2", default-features = false }
 eframe = { version = "=0.36.2", default-features = false }
@@ -120,11 +123,17 @@ egui_kittest = { version = "=0.36.2", default-features = false }
 epaint = { version = "=0.36.2", default-features = false }
 image = { version = "=0.25.10", default-features = false }
 # JSON Schema 2020-12 validation of the bridge protocol schemas in qs-tests (P3-01, #89).
+# The bridge's transport (BRIDGE-1.1): a Unix domain socket or a Windows named pipe behind one
+# safe API; the workspace denies the unsafe code a named pipe needs through the system API.
+interprocess = { version = "=2.4.7", default-features = false }
 jsonschema = { version = "=0.60.2", default-features = false }
 junction = { version = "=2.1.0", default-features = false }
 miniz_oxide = { version = "=0.9.1", default-features = false }
 muda = { version = "=0.21.2", default-features = false }
+pollster = { version = "=0.4.0", default-features = false }
 proptest = { version = "=1.11.0", default-features = false }
+raw-window-handle = { version = "=0.6.2", default-features = false }
+rfd = { version = "=0.17.2", default-features = false }
 qc-edict = { path = "crates/qc-edict" }
 qc-engines = { path = "crates/qc-engines" }
 qc-ide = { path = "crates/qc-ide" }
@@ -144,6 +153,8 @@ qc-vm = { path = "crates/qc-vm" }
 qs-bsp = { path = "crates/qs-bsp" }
 qs-commands = { path = "crates/qs-commands" }
 qs-editor-view = { path = "crates/qs-editor-view" }
+qs-engine = { path = "crates/qs-engine" }
+qs-install = { path = "crates/qs-install" }
 qs-layout = { path = "crates/qs-layout" }
 qs-log = { path = "crates/qs-log" }
 qs-map = { path = "crates/qs-map" }
@@ -153,6 +164,7 @@ qs-paths = { path = "crates/qs-paths" }
 qs-porting-example = { path = "crates/qs-porting-example" }
 qs-render = { path = "crates/qs-render" }
 qs-settings = { path = "crates/qs-settings" }
+qs-bridge = { path = "crates/qs-bridge" }
 qs-client = { path = "crates/qs-client" }
 qs-sim = { path = "crates/qs-sim" }
 qs-sound = { path = "crates/qs-sound" }
@@ -161,6 +173,7 @@ qs-workbench = { path = "crates/qs-workbench" }
 qs-wad = { path = "crates/qs-wad" }
 qs-wav = { path = "crates/qs-wav" }
 quakec-ide = { path = "apps/cli" }
+quakec-studio = { path = "apps/desktop" }
 quakec-lsp = { path = "apps/lsp" }
 schemars = { version = "=1.2.2", default-features = false }
 serde = { version = "=1.0.229", default-features = false }

@@ -30,11 +30,15 @@ use serde_json::json;
 /// The height of a Problems row, with room to spare, in points.
 const ROW: f32 = 32.0;
 
+/// Lists every problem of a codebase in the Problems panel and clicks each.
+#[derive(clap::Parser, Debug)]
+struct Args {
+    /// The codebase directory.
+    dir: PathBuf,
+}
+
 fn main() -> ExitCode {
-    let Some(dir) = std::env::args_os().nth(1).map(PathBuf::from) else {
-        eprintln!("usage: cargo run -p quakec-studio --example problems_corpus -- <dir>");
-        return ExitCode::FAILURE;
-    };
+    let Args { dir } = <Args as clap::Parser>::parse();
     let mut ok = true;
     for target in [Target::Rerelease, Target::Quake] {
         match check(&dir, target) {

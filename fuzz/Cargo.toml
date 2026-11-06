@@ -25,6 +25,7 @@ qc-trace = { path = "../crates/qc-trace" }
 qc-types = { path = "../crates/qc-types" }
 qc-vm = { path = "../crates/qc-vm" }
 qs-bsp = { path = "../crates/qs-bsp" }
+quakec-lsp = { path = "../apps/lsp" }
 qs-commands = { path = "../crates/qs-commands" }
 qs-differential = { path = "../crates/qs-differential" }
 qs-map = { path = "../crates/qs-map" }
@@ -38,6 +39,13 @@ serde_json = { version = "=1.0.151", default-features = false, features = ["std"
 [[bin]]
 name = "parser"
 path = "fuzz_targets/parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "quakec-lsp"
+path = "fuzz_targets/quakec_lsp.rs"
 test = false
 doc = false
 bench = false

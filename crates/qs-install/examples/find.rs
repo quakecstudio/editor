@@ -19,7 +19,6 @@
     reason = "a command-line example: its output is the report"
 )]
 
-use std::env;
 use std::path::PathBuf;
 
 use qs_install::{FileStatus, GameBase, Install, examine_folder, find_installs, size_and_md5};
@@ -69,8 +68,15 @@ fn print_install(install: &Install) {
     }
 }
 
+/// Finds the Quake installs on this machine, or examines the folders named.
+#[derive(clap::Parser, Debug)]
+struct Args {
+    /// Folders to examine instead of searching.
+    folders: Vec<PathBuf>,
+}
+
 fn main() -> Result<(), String> {
-    let folders: Vec<PathBuf> = env::args_os().skip(1).map(PathBuf::from).collect();
+    let Args { folders } = <Args as clap::Parser>::parse();
     let installs: Vec<Install> = if folders.is_empty() {
         find_installs()
     } else {

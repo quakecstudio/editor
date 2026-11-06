@@ -6,12 +6,20 @@
 //! particles, the view model, the water, the view blend and the 2D layer.
 
 use egui_wgpu::wgpu::util::{BufferInitDescriptor, DeviceExt, TextureDataOrder};
-use egui_wgpu::wgpu::{self, BindGroup, Buffer, Device, Queue, RenderPipeline, TextureFormat};
+use egui_wgpu::wgpu::{
+    self, BindGroup, BindGroupLayout, Buffer, Device, Queue, RenderPipeline, Sampler, TextureFormat,
+};
+use std::sync::Arc;
+
 use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
 
 use crate::alias::AliasVertex;
-use crate::mesh::{Animation, Batch, Image, MapMesh, Placement, Surface, frame, mip_levels};
+use crate::look::Look;
+use crate::mesh::{
+    Animation, Batch, Image, LightmapPatch, MapMesh, Placement, Surface, frame, mip_levels,
+};
 use crate::particles::{ParticleVertex, particle_texture};
+use crate::skybox::Skybox;
 use crate::sprite::SpriteVertex;
 
 /// The bytes of a [`crate::mesh::Vertex`] on the GPU: position, texture and light coordinates.
@@ -25,8 +33,10 @@ const PARTICLE_VERTEX_BYTES: u64 = 9 * 4;
 /// The bytes of a [`FlatVertex`]: position, texture coordinates and colour.
 const FLAT_VERTEX_BYTES: u64 = 8 * 4;
 /// The bytes of the view's uniform: a 4 by 4 matrix, the eye's position and the time, the
-/// fog, and the parameters.
-const VIEW_BYTES: u64 = 28 * 4;
+/// fog, the parameters and the skybox's.
+const VIEW_BYTES: u64 = 36 * 4;
+/// A skybox's faces, one texture layer each (REND-8.2).
+const SKY_FACES: u32 = 6;
 /// `glDepthRange (gldepthmin, gldepthmin + 0.3*(gldepthmax-gldepthmin))`: the view model is
 /// drawn in the nearest 0.3 of the depth range, so it never pokes into walls (REND-4.11).
 const VIEW_MODEL_DEPTH: f32 = 0.3;
@@ -53,8 +63,15 @@ pub struct MapRenderer {
     animations: Vec<Option<Animation>>,
     /// The pipeline of alias models (REND-4).
     alias_pipeline: RenderPipeline,
-    /// Each alias skin image, bound as a surface texture.
+    /// Each alias skin image, bound as a surface texture, then [`PLAYER_SKINS`] player skins,
+    /// each a client slot's skin in its colours (REND-4.13).
     skins: Vec<BindGroup>,
+    /// What the world's shader multiplies a lightmap texel by (REND-13.5).
+    light_scale: f32,
+    /// The skins' layout and sampler, and the glow of a skin with none (REND-13.4).
+    skin_binding: (BindGroupLayout, Sampler, wgpu::TextureView),
+    /// What each player skin slot holds, `None` while it is the white placeholder.
+    player_keys: [Option<SkinKey>; PLAYER_SKINS],
     /// This frame's alias triangles, and the view model's.
     alias: Grown,
     alias_draws: Vec<AliasDraw>,
@@ -86,6 +103,8 @@ pub struct MapRenderer {
     shown: Vec<bool>,
     /// The lightmap atlas, written again as the light styles change (REND-5.5).
     lightmap: wgpu::Texture,
+    /// The skybox's face size, `None` for the scrolling layers (REND-8.2).
+    skybox: Option<[u32; 2]>,
 }
 
 /// A vertex buffer that grows to what a frame needs.
@@ -136,6 +155,10 @@ const MODEL_STRIDE: u64 = 256;
 /// The bytes of one model's matrix.
 const MATRIX_BYTES: u64 = 16 * 4;
 
+/// The player skins the renderer keeps after the models' skins, one per client slot,
+/// GLQuake's `playertextures` for `MAX_SCOREBOARD` 16 clients (REND-4.13).
+pub(crate) const PLAYER_SKINS: usize = 16;
+
 /// One run of a frame's alias vertices, drawn with one skin image.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AliasDraw {
@@ -145,6 +168,29 @@ pub struct AliasDraw {
     pub first: u32,
     /// Its vertices, three a triangle.
     pub count: u32,
+}
+
+/// What a player slot's translated skin was made from (REND-4.13).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SkinKey {
+    /// The model's precache index.
+    pub model: usize,
+    /// The skin.
+    pub skin: usize,
+    /// The slot's colours, shirt high and trousers low.
+    pub colors: i32,
+}
+
+/// A player slot's translated skin, sent with every frame that draws the player; the
+/// renderer uploads it when its key is not the one the slot holds (REND-4.13).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlayerSkin {
+    /// The client slot, 0 to 15.
+    pub slot: usize,
+    /// What the image was made from.
+    pub key: SkinKey,
+    /// The skin in the slot's colours.
+    pub image: Arc<Image>,
 }
 
 /// The alias models of one frame: their vertices and the runs drawn with each skin.
@@ -219,11 +265,17 @@ pub struct FlatFrame {
 pub struct Assets<'a> {
     /// Every alias model's skin images (REND-4.3).
     pub skins: &'a [Image],
+    /// Each skin's glow, its fullbright texels, in the order of [`Assets::skins`]; a skin
+    /// past its end or with `None` has none (REND-13.4).
+    pub skin_glows: &'a [Option<Image>],
     /// Every sprite's frame images (REND-11.2).
     pub frames: &'a [Image],
     /// The 2D pictures: `gfx.wad`'s, the `gfx/*.lmp` files and the console characters
     /// (HUD-1 to HUD-3).
     pub pics: &'a [Image],
+    /// The map's skybox, drawn where the sky faces are; `None` for the scrolling layers
+    /// (REND-8.2).
+    pub skybox: Option<&'a Skybox>,
 }
 
 /// The pipeline of each kind of surface, an index into [`MapRenderer`]'s pipelines.
@@ -302,6 +354,17 @@ impl MapRenderer {
                 },
                 texture_entry(1),
                 sampler_entry(2),
+                // The skybox's six faces (REND-8.2).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -467,7 +530,7 @@ impl MapRenderer {
             mapped_at_creation: false,
         });
         // Textures keep Quake's sharp texels; the lightmap is smoothed, as GLQuake draws it.
-        let mipmapped = device.create_sampler(&world_sampler());
+        let mipmapped = device.create_sampler(&world_sampler(mesh.look));
         let linear_repeat = sampler(device, wgpu::FilterMode::Linear, wgpu::AddressMode::Repeat);
         let linear = sampler(
             device,
@@ -485,6 +548,12 @@ impl MapRenderer {
                 | wgpu::TextureUsages::COPY_SRC,
         );
         let lightmap = lightmap_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // REND-8.2: a box whose faces the device cannot hold keeps the scrolling layers.
+        let limit = device.limits().max_texture_dimension_2d;
+        let fitting = assets
+            .skybox
+            .filter(|skybox| skybox.size().iter().all(|&side| side <= limit));
+        let skybox = upload_skybox(device, queue, fitting);
         let shared = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("qs-render view and lightmap"),
             layout: &shared_layout,
@@ -500,6 +569,10 @@ impl MapRenderer {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&linear),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&skybox),
                 },
             ],
         });
@@ -524,15 +597,44 @@ impl MapRenderer {
                     ],
                 })
             };
+        // The glow of a texture with no fullbright texels (REND-13.4).
+        let black = upload(
+            device,
+            queue,
+            &Image {
+                width: 1,
+                height: 1,
+                rgba: vec![0, 0, 0, 255],
+            },
+        );
         // REND-4.3: a skin is mipmapped and filtered as a world texture is.
-        let skins = assets
+        let mut skins: Vec<BindGroup> = assets
             .skins
             .iter()
-            .map(|image| {
+            .enumerate()
+            .map(|(n, image)| {
                 let texture = upload_levels(device, queue, &mip_levels(image));
-                bind(&texture, &mipmapped, &texture)
+                let glow = assets
+                    .skin_glows
+                    .get(n)
+                    .and_then(Option::as_ref)
+                    .map_or_else(
+                        || black.clone(),
+                        |glow| upload_levels(device, queue, &mip_levels(glow)),
+                    );
+                bind(&texture, &mipmapped, &glow)
             })
             .collect();
+        // REND-4.13: each player skin starts white, until its slot's colours set it.
+        let blank = Image {
+            width: 1,
+            height: 1,
+            rgba: vec![255; 4],
+        };
+        for _ in 0..PLAYER_SKINS {
+            let texture = upload_levels(device, queue, &mip_levels(&blank));
+            skins.push(bind(&texture, &mipmapped, &black));
+        }
         // A sprite frame and a picture keep their transparent texels: no mipmaps, filtered
         // linearly as `GL_LoadTexture (..., alpha)` filters them.
         let plain = |image: &Image| {
@@ -561,9 +663,15 @@ impl MapRenderer {
                         upload(device, queue, alpha),
                         &linear_repeat,
                     ),
+                    // REND-13.4: a texture's glow is its second binding, black when it has
+                    // none, filtered and mipmapped as the texture is.
                     None => {
                         let texture = upload_levels(device, queue, &mip_levels(image));
-                        (texture.clone(), texture, &mipmapped)
+                        let glow = mesh.glows.get(slot).and_then(Option::as_ref).map_or_else(
+                            || black.clone(),
+                            |glow| upload_levels(device, queue, &mip_levels(glow)),
+                        );
+                        (texture, glow, &mipmapped)
                     }
                 };
                 bind(&texture, filter, &second)
@@ -580,6 +688,9 @@ impl MapRenderer {
             animations: mesh.animations.clone(),
             alias_pipeline,
             skins,
+            light_scale: mesh.look.light_scale(),
+            skin_binding: (texture_layout.clone(), mipmapped.clone(), black.clone()),
+            player_keys: [None; PLAYER_SKINS],
             alias: Grown::new("qs-render alias vertices", ALIAS_VERTEX_BYTES),
             alias_draws: Vec::new(),
             weapon: Grown::new("qs-render view model vertices", ALIAS_VERTEX_BYTES),
@@ -602,6 +713,7 @@ impl MapRenderer {
             model_count,
             shown: vec![true; model_count],
             lightmap: lightmap_texture,
+            skybox: fitting.map(Skybox::size),
         }
     }
 
@@ -626,6 +738,47 @@ impl MapRenderer {
         self.alias
             .write(device, queue, &alias_bytes(&models.vertices));
         self.alias_draws.clone_from(&models.draws);
+    }
+
+    /// Sets player skin `skin.slot`, a client slot's skin in its colours (REND-4.13), to its
+    /// image, mipmapped and filtered as any skin is (REND-4.3), unless the slot already holds
+    /// its key. The skin a draw names is the models' skins' count plus the slot.
+    pub fn set_player_skin(&mut self, device: &Device, queue: &Queue, skin: &PlayerSkin) {
+        let Some(held) = self.player_keys.get_mut(skin.slot) else {
+            return;
+        };
+        if *held == Some(skin.key) {
+            return;
+        }
+        *held = Some(skin.key);
+        let (layout, sampler, black) = &self.skin_binding;
+        let at = self
+            .skins
+            .len()
+            .saturating_sub(PLAYER_SKINS)
+            .saturating_add(skin.slot);
+        let texture = upload_levels(device, queue, &mip_levels(&skin.image));
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("qs-render player skin"),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(black),
+                },
+            ],
+        });
+        if let Some(entry) = self.skins.get_mut(at) {
+            *entry = group;
+        }
     }
 
     /// Sets the view model drawn next, in the nearest 0.3 of the depth range (REND-4.11).
@@ -673,23 +826,40 @@ impl MapRenderer {
         self.flat_draws.clone_from(&flat.draws);
     }
 
-    /// Writes `image`, the mesh's lightmap made again for new light styles
-    /// ([`crate::MapMesh::relight`]), over the one drawn (REND-5.5). An image of another size
-    /// than the mesh's lightmap is not written.
-    pub fn set_lightmap(&self, queue: &Queue, image: &Image) {
+    /// Writes `patch`, one face's lightmap a relight made again
+    /// ([`crate::MapMesh::relight`]), over the texels drawn (REND-5.5, REND-5.7). A patch
+    /// reaching past the lightmap's edge, or whose texels are not its width by its height, is
+    /// not written.
+    pub fn set_lightmap(&self, queue: &Queue, patch: &LightmapPatch) {
         let size = self.lightmap.size();
-        if (image.width, image.height) != (size.width, size.height) {
+        let image = &patch.image;
+        let [x, y] = patch.at;
+        let texels = u64::from(image.width)
+            .checked_mul(u64::from(image.height))
+            .and_then(|n| n.checked_mul(4))
+            .and_then(|n| usize::try_from(n).ok());
+        if x.saturating_add(image.width) > size.width
+            || y.saturating_add(image.height) > size.height
+            || texels != Some(image.rgba.len())
+        {
             return;
         }
         queue.write_texture(
-            self.lightmap.as_image_copy(),
+            wgpu::TexelCopyTextureInfo {
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                ..self.lightmap.as_image_copy()
+            },
             &image.rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(image.width.saturating_mul(4)),
                 rows_per_image: Some(image.height),
             },
-            size,
+            wgpu::Extent3d {
+                width: image.width,
+                height: image.height,
+                depth_or_array_layers: 1,
+            },
         );
     }
 
@@ -707,6 +877,12 @@ impl MapRenderer {
             0.0
         };
         let params = [view.water_alpha, skyfog, view.screen[0], view.screen[1]];
+        // REND-8.2: whether the sky is the box, and its faces' size.
+        let sky = self
+            .skybox
+            .map_or([0.0; 4], |[w, h]| [1.0, f32_of_u32(w), f32_of_u32(h), 0.0]);
+        // REND-13.5: what a lightmap texel is multiplied by, the mesh's look's.
+        let look = [self.light_scale, 0.0, 0.0, 0.0];
         let bytes: Vec<u8> = view
             .clip_from_world
             .iter()
@@ -714,6 +890,8 @@ impl MapRenderer {
             .chain(&eye_time)
             .chain(&fog)
             .chain(&params)
+            .chain(&sky)
+            .chain(&look)
             .flat_map(|v| v.to_ne_bytes())
             .collect();
         queue.write_buffer(&self.view, 0, &bytes);
@@ -949,14 +1127,19 @@ fn primitive(pass: Pass) -> wgpu::PrimitiveState {
 
 /// REND-3.3: world textures are filtered `GL_LINEAR_MIPMAP_NEAREST` when smaller and
 /// `GL_LINEAR` when larger, and repeat.
-fn world_sampler() -> wgpu::SamplerDescriptor<'static> {
+fn world_sampler(look: Look) -> wgpu::SamplerDescriptor<'static> {
     wgpu::SamplerDescriptor {
         label: Some("qs-render world texture"),
         address_mode_u: wgpu::AddressMode::Repeat,
         address_mode_v: wgpu::AddressMode::Repeat,
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        // REND-3.3: GLQuake's nearest level; REND-13.3: QuakeSpasm's blend of the two nearest.
+        mipmap_filter: if look.trilinear() {
+            wgpu::MipmapFilterMode::Linear
+        } else {
+            wgpu::MipmapFilterMode::Nearest
+        },
         ..wgpu::SamplerDescriptor::default()
     }
 }
@@ -971,6 +1154,40 @@ fn sampler(device: &Device, filter: wgpu::FilterMode, address: wgpu::AddressMode
         min_filter: filter,
         ..wgpu::SamplerDescriptor::default()
     })
+}
+
+/// The skybox's faces as one texture of six layers, a black texel each with no skybox
+/// (REND-8.2).
+fn upload_skybox(device: &Device, queue: &Queue, skybox: Option<&Skybox>) -> wgpu::TextureView {
+    let [width, height] = skybox.map_or([1, 1], Skybox::size);
+    let data = skybox.map_or_else(
+        || [0, 0, 0, 255].repeat(usize::try_from(SKY_FACES).unwrap_or(0)),
+        Skybox::layers,
+    );
+    device
+        .create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: Some("qs-render skybox"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: SKY_FACES,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            TextureDataOrder::LayerMajor,
+            &data,
+        )
+        .create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        })
 }
 
 /// `image` as a texture's view, with no mipmaps.
@@ -1075,12 +1292,13 @@ impl View {
 /// `r_wateralpha`'s default (REND-9.1).
 const REND_WATERALPHA: f32 = 1.0;
 /// `r_skyfog`'s default (REND-8.1).
-const REND_SKYFOG: f32 = 0.5;
+pub(crate) const REND_SKYFOG: f32 = 0.5;
 /// `vid.conwidth = 640` when `-conwidth` is not given; `vid.conheight = vid.conwidth*3 / 4`.
 const CONWIDTH: f32 = 640.0;
 
 /// One frame of the map view, set before egui's render pass and drawn inside it from the
 /// [`MapRenderer`] in egui's callback resources.
+#[derive(Clone)]
 pub struct MapCallback {
     /// What it is drawn with.
     pub view: View,
@@ -1096,8 +1314,11 @@ pub struct MapCallback {
     pub flat: FlatFrame,
     /// Each of the mesh's models' matrices, the world's first; `None` for one not drawn.
     pub placements: Vec<Option<[[f32; 4]; 4]>>,
-    /// The lightmap made again for this frame's light styles, when they changed (REND-5.5).
-    pub lightmap: Option<Image>,
+    /// The faces' lightmaps made again for this frame's light styles and dynamic lights
+    /// (REND-5.5, REND-5.7).
+    pub lightmap: Vec<LightmapPatch>,
+    /// The translated skin of each player drawn this frame (REND-4.13).
+    pub player_skins: Vec<PlayerSkin>,
 }
 
 impl CallbackTrait for MapCallback {
@@ -1119,8 +1340,11 @@ impl CallbackTrait for MapCallback {
             if !self.placements.is_empty() {
                 renderer.set_placements(queue, &self.placements);
             }
-            if let Some(lightmap) = &self.lightmap {
-                renderer.set_lightmap(queue, lightmap);
+            for patch in &self.lightmap {
+                renderer.set_lightmap(queue, patch);
+            }
+            for skin in &self.player_skins {
+                renderer.set_player_skin(device, queue, skin);
             }
         }
         Vec::new()
@@ -1155,6 +1379,14 @@ const fn f32_of_i32(value: i32) -> f32 {
     value as f32
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a skybox face's pixels, far below f32's exact range"
+)]
+const fn f32_of_u32(value: u32) -> f32 {
+    value as f32
+}
+
 #[cfg(test)]
 mod tests {
     #![expect(
@@ -1169,7 +1401,7 @@ mod tests {
     use egui_wgpu::wgpu::naga::front::wgsl;
     use egui_wgpu::wgpu::naga::valid::{Capabilities, ValidationFlags, Validator};
 
-    use qs_bsp::SURF_DRAWTURB;
+    use qs_bsp::{SURF_DRAWSKY, SURF_DRAWTURB};
 
     use super::{
         ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, FlatDraw, FlatFrame, FlatVertex, Fog,
@@ -1178,9 +1410,12 @@ mod tests {
     };
     use crate::alias::AliasVertex;
     use crate::camera::Camera;
-    use crate::mesh::Image;
+    use crate::look::Look;
     use crate::mesh::tests::{MapSpec, bsp, palette, samples};
+    use crate::mesh::{Image, LightmapPatch};
     use crate::particles::ParticleVertex;
+    use crate::picture::tests::{TgaSpec, solid, tga};
+    use crate::skybox::Skybox;
     use crate::sprite::SpriteVertex;
     use crate::{LightStyles, MapMesh};
     use egui_wgpu::CallbackTrait as _;
@@ -1208,7 +1443,7 @@ mod tests {
             egui_wgpu::RendererOptions::default(),
         );
         let lighting = samples(lighting);
-        let mesh = MapMesh::build(&bsp(spec, &lighting), &palette()).unwrap();
+        let mesh = MapMesh::build(&bsp(spec, &lighting), &palette(), Look::GlQuake).unwrap();
         let renderer = MapRenderer::new(&state.device, &state.queue, FORMATS, &mesh, assets);
         (state, renderer, mesh)
     }
@@ -1251,7 +1486,8 @@ mod tests {
             particles: Vec::new(),
             flat: FlatFrame::default(),
             placements: Vec::new(),
-            lightmap: None,
+            lightmap: Vec::new(),
+            player_skins: Vec::new(),
         }
     }
 
@@ -1387,6 +1623,143 @@ mod tests {
         assert_eq!(pixel(&image, 2, 2), [0, 0, 0, 255]);
     }
 
+    // spec REND-4.13: a player skin is uploaded when its key is not the one its slot holds;
+    // a slot past the sixteen is ignored
+    #[test]
+    fn player_skins_are_uploaded_when_their_key_changes() {
+        let (state, mut renderer, _) = renderer();
+        let image = std::sync::Arc::new(Image {
+            width: 1,
+            height: 1,
+            rgba: vec![9; 4],
+        });
+        let skin = |slot, colors| super::PlayerSkin {
+            slot,
+            key: super::SkinKey {
+                model: 1,
+                skin: 0,
+                colors,
+            },
+            image: image.clone(),
+        };
+        assert_eq!(renderer.player_keys[3], None);
+        renderer.set_player_skin(&state.device, &state.queue, &skin(3, 0x40));
+        assert_eq!(renderer.player_keys[3].map(|k| k.colors), Some(0x40));
+        renderer.set_player_skin(&state.device, &state.queue, &skin(3, 0x50));
+        assert_eq!(renderer.player_keys[3].map(|k| k.colors), Some(0x50));
+        renderer.set_player_skin(&state.device, &state.queue, &skin(16, 0x40));
+        assert!(renderer.player_keys.iter().filter(|k| k.is_some()).count() == 1);
+    }
+
+    /// The colour of each quadrant of the test skybox's `dn` face, left to right, top to
+    /// bottom.
+    const QUADRANTS: [[u8; 4]; 4] = [
+        [200, 0, 0, 255],
+        [0, 200, 0, 255],
+        [0, 0, 200, 255],
+        [200, 200, 0, 255],
+    ];
+
+    /// A skybox whose faces are each one grey, `rt` 10, `bk` 20, `lf` 30, `ft` 40 and `up` 50,
+    /// but `dn`, 64 by 64 in [`QUADRANTS`].
+    fn skybox() -> Skybox {
+        let mut dn = Vec::new();
+        for y in 0..64 {
+            for x in 0..64 {
+                dn.extend(QUADRANTS[usize::from(y >= 32) * 2 + usize::from(x >= 32)]);
+            }
+        }
+        let read = move |name: &str| match name {
+            "gfx/env/tdn.tga" => Some(tga(&TgaSpec {
+                width: 64,
+                height: 64,
+                rgba: dn.clone(),
+                top_down: true,
+            })),
+            _ => {
+                let side = ["rt", "bk", "lf", "ft", "up"]
+                    .iter()
+                    .position(|side| name == format!("gfx/env/t{side}.tga"))?;
+                let grey = u8::try_from(side + 1).unwrap() * 10;
+                Some(solid([64, 64], [grey, grey, grey, 255]))
+            }
+        };
+        Skybox::load("t", &read).unwrap()
+    }
+
+    /// The test face as sky, seen from above, drawn with `skybox`'s faces.
+    fn sky_frame(skybox: &Skybox, view: View) -> Vec<u8> {
+        let spec = MapSpec {
+            flags: SURF_DRAWSKY,
+            ..seen_from_above()
+        };
+        let assets = Assets {
+            skybox: Some(skybox),
+            ..Assets::default()
+        };
+        let (state, renderer, _) = renderer_of(&spec, &[255], &assets);
+        let callback = MapCallback { view, ..frame() };
+        render(&state, renderer, &callback, BLACK)
+    }
+
+    // spec REND-8.3: looking down, the sky face shows the `dn` face, its `vec_to_st` s from
+    // -y and t from x. The view's up is +x and its right -y (`AngleVectors` at pitch 90), 1.25
+    // units a pixel at 40 below: pixel (20, 25) is world (40.75, 31), s -0.375 and t 0.22, the
+    // top left quadrant; pixel (44, 40) is (22, 1), s 0.375 and t -0.25, the bottom right
+    #[test]
+    fn the_sky_shows_the_skybox_face_it_looks_through() {
+        let image = sky_frame(&skybox(), looking_down());
+        assert_eq!(pixel(&image, 20, 25), QUADRANTS[0]);
+        assert_eq!(pixel(&image, 44, 40), QUADRANTS[3]);
+        assert_eq!(pixel(&image, 2, 2), [0, 0, 0, 255], "no sky face there");
+    }
+
+    // spec REND-8.3: the face is the direction's largest axis, through `skytexorder`: +x `rt`,
+    // -x `lf`, +y `bk`, -y `ft`; each view looks at the sky face's middle from 60 away and
+    // 40 above, so the horizontal axis is the largest
+    #[test]
+    fn each_direction_shows_its_skybox_face() {
+        let skybox = skybox();
+        for ([dx, dy], yaw, grey) in [
+            ([-1.0, 0.0], 0.0, 10),
+            ([1.0, 0.0], 180.0, 30),
+            ([0.0, -1.0], 90.0, 20),
+            ([0.0, 1.0], 270.0, 40),
+        ] {
+            let eye = [32.0 + 60.0 * dx, 16.0 + 60.0 * dy, 40.0];
+            let pitch = (40.0_f32 / 60.0).atan().to_degrees();
+            let view = View::new(
+                Camera::clip_from_view(eye, [pitch, yaw, 0.0], 90.0, 1.0),
+                eye,
+                0.0,
+            );
+            let image = sky_frame(&skybox, view);
+            assert_eq!(pixel(&image, 32, 32), [grey, grey, grey, 255], "yaw {yaw}");
+        }
+    }
+
+    // spec REND-8.1: with fog, `skyfog` of the fog's colour over the skybox; 1 is all fog
+    #[test]
+    fn the_fog_covers_the_skybox_by_its_share() {
+        let skybox = skybox();
+        let fogged = |skyfog: f32| {
+            let mut view = looking_down();
+            view.fog = Fog {
+                color: [1.0, 1.0, 1.0],
+                density: 0.001,
+            };
+            view.skyfog = skyfog;
+            pixel(&sky_frame(&skybox, view), 20, 25)
+        };
+        assert_eq!(fogged(0.0), QUADRANTS[0]);
+        assert!(
+            near(fogged(0.5), [227, 128, 128, 255], 1),
+            "{:?}",
+            fogged(0.5)
+        );
+        assert_eq!(fogged(1.0), [255, 255, 255, 255]);
+    }
+
     // spec REND-10.4: a fragment's colour is mixed toward the fog colour by
     // `1 - exp (-((density / 64) * z)^2)` of its distance from the eye
     #[test]
@@ -1515,6 +1888,7 @@ mod tests {
         }];
         let assets = Assets {
             skins: &skin,
+            skin_glows: &[],
             ..Assets::default()
         };
         // A triangle 10 below the face, behind it from the eye.
@@ -1640,23 +2014,46 @@ mod tests {
         buffer.slice(..).get_mapped_range().unwrap().to_vec()
     }
 
-    // spec REND-5.5: a lightmap made again for new styles is written over the one drawn; one
-    // of another size is not
+    // spec REND-5.5: a lightmap made again for new styles is written over the one drawn
     #[test]
     fn a_new_lightmap_is_written_over_the_old() {
         let (state, renderer, mut mesh) = renderer();
         assert_eq!(&lightmap_row(&state, &renderer)[4..8], [100, 100, 100, 255]);
         let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0);
-        assert!(mesh.relight(&off));
-        renderer.set_lightmap(&state.queue, &mesh.lightmap);
+        for patch in mesh.relight(&off) {
+            renderer.set_lightmap(&state.queue, &patch);
+        }
         assert_eq!(&lightmap_row(&state, &renderer)[4..8], [0, 0, 0, 255]);
-        let small = Image {
-            width: 1,
-            height: 1,
-            rgba: vec![9; 4],
+    }
+
+    // spec REND-5.7: a patch is written where it sits; one reaching past the lightmap's
+    // right or bottom edge, or with fewer texels than its size, is not written
+    #[test]
+    fn only_patches_that_fit_are_written() {
+        let (state, renderer, _) = renderer();
+        let size = renderer.lightmap.size();
+        let patch = |x: u32, y: u32, width: u32, height: u32| LightmapPatch {
+            at: [x, y],
+            image: Image {
+                width,
+                height,
+                rgba: vec![7; usize::try_from(width * height * 4).unwrap()],
+            },
         };
-        renderer.set_lightmap(&state.queue, &small);
-        assert_eq!(&lightmap_row(&state, &renderer)[..4], [255, 255, 255, 255]);
+        let before = lightmap_row(&state, &renderer);
+        renderer.set_lightmap(&state.queue, &patch(size.width, 0, 1, 1));
+        renderer.set_lightmap(&state.queue, &patch(0, 0, size.width + 1, 1));
+        renderer.set_lightmap(&state.queue, &patch(0, size.height, 1, 1));
+        renderer.set_lightmap(&state.queue, &patch(0, 0, 1, size.height + 1));
+        let mut short = patch(0, 0, 2, 1);
+        short.image.rgba.truncate(4);
+        renderer.set_lightmap(&state.queue, &short);
+        assert_eq!(lightmap_row(&state, &renderer), before);
+        renderer.set_lightmap(&state.queue, &patch(1, 0, 1, 1));
+        let after = lightmap_row(&state, &renderer);
+        assert_eq!(after[..4], before[..4]);
+        assert_eq!(after[4..8], [7, 7, 7, 7]);
+        assert_eq!(after[8..], before[8..]);
     }
 
     // spec REND-5.5: the paint callback writes the lightmap it carries before drawing
@@ -1664,7 +2061,7 @@ mod tests {
     fn the_callback_writes_its_lightmap() {
         let (state, renderer, mut mesh) = renderer();
         let off = LightStyles::at(|s| (s == 0).then_some(b"a".as_slice()), 0.0);
-        mesh.relight(&off);
+        let lightmap = mesh.relight(&off);
         let mut resources = egui_wgpu::CallbackResources::default();
         resources.insert(renderer);
         let callback = MapCallback {
@@ -1675,7 +2072,8 @@ mod tests {
             particles: Vec::new(),
             flat: FlatFrame::default(),
             placements: Vec::new(),
-            lightmap: Some(mesh.lightmap.clone()),
+            lightmap,
+            player_skins: Vec::new(),
         };
         let mut encoder = state.device.create_command_encoder(&Default::default());
         let screen = egui_wgpu::ScreenDescriptor {
@@ -1747,30 +2145,29 @@ mod tests {
     // spec REND-1.7: the surface is its texture's colour times the lightmap's light, in a
     // shader every backend accepts
     // spec REND-6.2: each channel by the lightmap's own channel
+    // spec REND-13.5: the light is multiplied by the look's scale, 2 with overbright
+    // spec REND-13.4: the glow is added over the lit texture, then the sum clamped
     #[test]
     fn the_shader_validates_and_darkens_the_texture_by_the_light() {
         let module = wgsl::parse_str(SHADER).unwrap();
         Validator::new(ValidationFlags::all(), Capabilities::empty())
             .validate(&module)
             .unwrap();
-        assert!(
-            SHADER.contains(
-                "let light = textureSample(lightmap, lightmap_sampler, input.light).rgb;"
-            )
-        );
-        assert!(
-            SHADER.contains("return vec4<f32>(fogged(colour.rgb * light, input.world), OPAQUE);")
-        );
+        assert!(SHADER.contains(
+            "let light = textureSample(lightmap, lightmap_sampler, input.light).rgb * view.look.x;"
+        ));
+        assert!(SHADER.contains("clamp(colour.rgb * light + glow, "));
     }
 
     // spec REND-4.8: an alias model's skin is multiplied by its vertex's shade
+    // spec REND-13.4: and its glow added over it
     #[test]
     fn the_shader_modulates_a_skin_by_its_shade() {
         let module = wgsl::parse_str(SHADER).unwrap();
         Validator::new(ValidationFlags::all(), Capabilities::empty())
             .validate(&module)
             .unwrap();
-        assert!(SHADER.contains("fogged(colour.rgb * input.shade, input.world), OPAQUE);"));
+        assert!(SHADER.contains("clamp(colour.rgb * input.shade + glow, "));
     }
 
     // spec REND-2.2: water ripples by 8 sin of `t*0.125 + realtime`, over 64
@@ -1824,15 +2221,30 @@ mod tests {
         assert!(SHADER.contains("mix(solid.rgb, alpha.rgb, alpha.a)"));
         assert!(SHADER.contains("sky_st(flat, time * SKY_SOLID_SPEED)"));
         assert!(SHADER.contains(
-            "textureSample(sky_alpha, surface_sampler, sky_st(flat, time * SKY_ALPHA_SPEED))"
+            "textureSample(second, surface_sampler, sky_st(flat, time * SKY_ALPHA_SPEED))"
         ));
+    }
+
+    // spec REND-13.3: in QuakeSpasm's look world textures blend their two nearest mip levels
+    #[test]
+    fn quakespasm_s_world_textures_filter_trilinearly() {
+        use egui_wgpu::wgpu::{FilterMode, MipmapFilterMode};
+        let world = super::world_sampler(Look::QuakeSpasm);
+        assert_eq!(
+            (world.min_filter, world.mag_filter, world.mipmap_filter),
+            (
+                FilterMode::Linear,
+                FilterMode::Linear,
+                MipmapFilterMode::Linear
+            )
+        );
     }
 
     // spec REND-3.3: world textures are linear within the nearest mip level, repeating
     #[test]
     fn world_textures_filter_as_gl_linear_mipmap_nearest() {
         use egui_wgpu::wgpu::{AddressMode, FilterMode, MipmapFilterMode};
-        let world = super::world_sampler();
+        let world = super::world_sampler(Look::GlQuake);
         assert_eq!(
             (world.min_filter, world.mag_filter, world.mipmap_filter),
             (

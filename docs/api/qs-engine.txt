@@ -1,0 +1,109 @@
+enum qs_engine::client::ClientError
+enum qs_engine::client::InspectWhat
+enum qs_engine::client::StepKind
+enum qs_engine::launch::LaunchError
+enum qs_engine::run_root::Flavour
+enum qs_engine::run_root::RunRootError
+field qs_engine::client::BridgeEvent.method
+field qs_engine::client::BridgeEvent.params
+field qs_engine::client::WindowPlacement.above
+field qs_engine::client::WindowPlacement.height
+field qs_engine::client::WindowPlacement.width
+field qs_engine::client::WindowPlacement.x
+field qs_engine::client::WindowPlacement.y
+field qs_engine::launch::LaunchSpec.extra
+field qs_engine::launch::LaunchSpec.host
+field qs_engine::launch::LaunchSpec.map
+field qs_engine::launch::LaunchSpec.run_root
+field qs_engine::launch::LaunchSpec.socket
+field qs_engine::launch::Running.child
+field qs_engine::launch::Running.client
+field qs_engine::run_root::RunRoot.game
+field qs_engine::run_root::RunRoot.kpf
+field qs_engine::run_root::RunRoot.path
+fn qs_engine::client::Client::clear_breakpoint
+fn qs_engine::client::Client::connect
+fn qs_engine::client::Client::console
+fn qs_engine::client::Client::edit_entity
+fn qs_engine::client::Client::evaluate
+fn qs_engine::client::Client::initialize
+fn qs_engine::client::Client::inspect
+fn qs_engine::client::Client::offers
+fn qs_engine::client::Client::over
+fn qs_engine::client::Client::pause
+fn qs_engine::client::Client::pick
+fn qs_engine::client::Client::place_window
+fn qs_engine::client::Client::poll_events
+fn qs_engine::client::Client::reload
+fn qs_engine::client::Client::remove
+fn qs_engine::client::Client::request
+fn qs_engine::client::Client::resume
+fn qs_engine::client::Client::screenshot
+fn qs_engine::client::Client::screenshot_png
+fn qs_engine::client::Client::set_breakpoint
+fn qs_engine::client::Client::set_field
+fn qs_engine::client::Client::shutdown
+fn qs_engine::client::Client::spawn
+fn qs_engine::client::Client::spawn_player_at
+fn qs_engine::client::Client::step
+fn qs_engine::client::Client::take_events
+fn qs_engine::client::Client::wait_event
+fn qs_engine::client::base64_decode
+fn qs_engine::launch::host_command
+fn qs_engine::launch::launch
+fn qs_engine::launch::locate_host
+fn qs_engine::run_root::Flavour::dir_name
+fn qs_engine::run_root::prepare_run_root
+impl qs_engine::client::ClientError: fmt::Display
+impl qs_engine::client::ClientError: std::error::Error
+impl qs_engine::launch::LaunchError: fmt::Display
+impl qs_engine::launch::LaunchError: std::error::Error
+impl qs_engine::run_root::RunRootError: From<LinkError>
+impl qs_engine::run_root::RunRootError: fmt::Display
+impl qs_engine::run_root::RunRootError: std::error::Error
+struct qs_engine::client::BridgeEvent
+struct qs_engine::client::Client
+struct qs_engine::client::WindowPlacement
+struct qs_engine::launch::LaunchSpec
+struct qs_engine::launch::Running
+struct qs_engine::run_root::RunRoot
+use qs_engine::BridgeEvent = client::BridgeEvent
+use qs_engine::Client = client::Client
+use qs_engine::ClientError = client::ClientError
+use qs_engine::Flavour = run_root::Flavour
+use qs_engine::InspectWhat = client::InspectWhat
+use qs_engine::LaunchError = launch::LaunchError
+use qs_engine::LaunchSpec = launch::LaunchSpec
+use qs_engine::RunRoot = run_root::RunRoot
+use qs_engine::RunRootError = run_root::RunRootError
+use qs_engine::Running = launch::Running
+use qs_engine::StepKind = client::StepKind
+use qs_engine::WindowPlacement = client::WindowPlacement
+use qs_engine::base64_decode = client::base64_decode
+use qs_engine::host_command = launch::host_command
+use qs_engine::launch = launch::launch
+use qs_engine::locate_host = launch::locate_host
+use qs_engine::prepare_run_root = run_root::prepare_run_root
+variant qs_engine::client::ClientError::Closed
+variant qs_engine::client::ClientError::Io
+variant qs_engine::client::ClientError::Rpc
+variant qs_engine::client::ClientError::Timeout
+variant qs_engine::client::ClientError::Unsupported
+variant qs_engine::client::InspectWhat::Edict
+variant qs_engine::client::InspectWhat::Entities
+variant qs_engine::client::InspectWhat::Globals
+variant qs_engine::client::InspectWhat::Stack
+variant qs_engine::client::StepKind::Frame
+variant qs_engine::client::StepKind::In
+variant qs_engine::client::StepKind::Out
+variant qs_engine::client::StepKind::Over
+variant qs_engine::client::StepKind::Statement
+variant qs_engine::launch::LaunchError::Bridge
+variant qs_engine::launch::LaunchError::Exited
+variant qs_engine::launch::LaunchError::NotFound
+variant qs_engine::launch::LaunchError::Spawn
+variant qs_engine::run_root::Flavour::Original
+variant qs_engine::run_root::Flavour::Rerelease
+variant qs_engine::run_root::RunRootError::BadModName
+variant qs_engine::run_root::RunRootError::Io
+variant qs_engine::run_root::RunRootError::Link

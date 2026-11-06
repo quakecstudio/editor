@@ -3,7 +3,7 @@
 //! Feeds arbitrary bytes to the readers of `qc-builtins` that take outside text (P2-159): the
 //! rerelease's localization file (RRE-1.7) and `PF_VarString` over it (RRE-1.9), the
 //! tokenizers of client command text (BUILTIN-18.23, BUILTIN-18.24), and vkQuake's `sprintf`
-//! directive reader (BUILTIN-18.8) and C's `atof` behind `stof` (BUILTIN-18.19), run as
+//! directive reader (BUILTIN-18.8) and C's `atof` behind `stof` (BUILTIN-18.25), run as
 //! builtins of `MockBuiltins` on the vkQuake profile. Fails on a panic, and on a result outside
 //! the bounds the statements give.
 
@@ -198,7 +198,7 @@ fn run(number: u32, parms: &[Vec<u8>]) -> Option<(MockBuiltins, Slot)> {
     Some((builtins, result))
 }
 
-/// BUILTIN-18.8, BUILTIN-18.19: `sprintf` of any format and parameters makes a string of at
+/// BUILTIN-18.8, BUILTIN-18.25: `sprintf` of any format and parameters makes a string of at
 /// most 1023 bytes, and `stof` of any string runs.
 fn builtins(parms: &[Vec<u8>]) {
     if parms.is_empty() {

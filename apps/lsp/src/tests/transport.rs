@@ -2,7 +2,7 @@
 
 //! The base protocol's framing.
 
-use crate::transport::{MAX_CONTENT, TransportError, read_message, write_message};
+use crate::transport::{MAX_CONTENT, MAX_HEADER_LINE, TransportError, read_message, write_message};
 
 /// The first message of `input`.
 fn first(input: &[u8]) -> Result<Option<Vec<u8>>, TransportError> {
@@ -102,5 +102,23 @@ fn errors_have_messages() {
     assert_eq!(
         TransportError::TooLarge(7).to_string(),
         format!("a message of 7 bytes is longer than {MAX_CONTENT}")
+    );
+}
+
+// LSP 3.18, "Header Part": "Each header field is terminated by '\r\n'"; a line that runs past
+// `MAX_HEADER_LINE` bytes with no break is refused before it is read whole, and one just under
+// the limit is still read.
+#[test]
+fn a_header_line_is_read_up_to_its_limit() {
+    let long = vec![b'X'; MAX_HEADER_LINE * 4];
+    assert!(matches!(
+        read_message(&mut &long[..]),
+        Err(TransportError::LongHeader)
+    ));
+    let name = "X".repeat(MAX_HEADER_LINE - "X: \r\n".len() - 1);
+    let fits = format!("{name}: y\r\nContent-Length: 2\r\n\r\n{{}}");
+    assert_eq!(
+        read_message(&mut fits.as_bytes()).unwrap(),
+        Some(b"{}".to_vec())
     );
 }

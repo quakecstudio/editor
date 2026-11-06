@@ -28,9 +28,19 @@ pub struct ScenarioSpec {
 }
 
 /// The scenarios for codebase `id`. The id 1.01 and rerelease codebases share the vanilla
-/// entity set; each ignores the classes it has no spawn function for (EDICT-8.5).
+/// entity set; each ignores the classes it has no spawn function for (EDICT-8.5). crmod7 adds
+/// [`crmod_scenarios`], whose code runs from the commands a client types (DIFF-4.4).
 #[must_use]
-pub fn scenarios(_id: &str) -> Vec<ScenarioSpec> {
+pub fn scenarios(id: &str) -> Vec<ScenarioSpec> {
+    let mut specs = shared_scenarios();
+    if id == "crmod7" {
+        specs.extend(crmod_scenarios());
+    }
+    specs
+}
+
+/// The scenarios every codebase runs.
+fn shared_scenarios() -> Vec<ScenarioSpec> {
     vec![
         ScenarioSpec {
             name: "worldspawn",
@@ -95,16 +105,127 @@ pub fn scenarios(_id: &str) -> Vec<ScenarioSpec> {
     ]
 }
 
+/// The commands crmod7's `SV_ParseClientCommand` dispatches, each with the arguments its branch
+/// reads, and a map name, a number and a sign-on command, which take its other paths.
+const CRMOD_COMMANDS: &[&str] = &[
+    "say hello",
+    "say_team hello",
+    "ignore player",
+    "unignore player",
+    "markdemo",
+    "altents",
+    "eyecam 1",
+    "shownick",
+    "suggest dm3",
+    "fraglimit",
+    "fraglimit 10",
+    "timeset",
+    "timeset 5",
+    "admin",
+    "admin 123456",
+    "lockdown",
+    "afkon",
+    "afkoff",
+    "flagstatus",
+    "captimes",
+    "highscores",
+    "highscores dm3",
+    "typingon",
+    "typingoff",
+    "wtstats",
+    "itstats",
+    "dstats",
+    "last",
+    "lastscores",
+    "powerupdrop",
+    "pudrop",
+    "prediction",
+    "quaketag",
+    "qwsucks",
+    "q14ever",
+    "pos_save",
+    "pos_show",
+    "pos_move",
+    "pos_origin 0 0 24",
+    "pos_angles 0 90 0",
+    "leavemealone",
+    "dm3",
+    "nomap",
+    "7",
+    "spawn",
+    "dm",
+    "dm dm3",
+    "ffa",
+    "ctf",
+    "normal",
+    "practice",
+    "match",
+    "match dm3",
+    "dmm4",
+    "airshot",
+    "wipeout",
+    "ctfdmm4",
+    "hh",
+    "ca",
+    "ra",
+];
+
+/// crmod7's own scenarios: its client commands in deathmatch, and a match: two players on teams
+/// of their own colours (`setinfo bottomcolor`), ready (impulse 120), kept from going idle by
+/// an impulse every 15 seconds, typing the commands while the match runs, and then the match's
+/// end, which crmod7 calls when no player moves (the mock moves nothing, DIFF-1.5).
+fn crmod_scenarios() -> Vec<ScenarioSpec> {
+    let mut commands =
+        String::from("map dm3\nmaxclients 4\nclients 2\ncvar deathmatch 1\nframes 400\n");
+    for (n, command) in (10_u32..).step_by(5).zip(CRMOD_COMMANDS) {
+        commands.push_str(&format!("command {n} 1 {command}\n"));
+    }
+    let crmod_match = |frames: u32| {
+        let mut text = format!(
+            "map dm3\nmaxclients 4\nclients 2\ncvar deathmatch 1\ncvar samelevel 2\n\
+             cvar scratch3 2\ncvar timelimit 2\nframes {frames}\n\
+             command 5 1 setinfo bottomcolor 4\ncommand 5 2 setinfo bottomcolor 13\n\
+             input 50 1 impulse 120\ninput 50 2 impulse 120\n"
+        );
+        for n in (100..frames).step_by(150) {
+            text.push_str(&format!("input {n} 1 impulse 1\ninput {n} 2 impulse 1\n"));
+        }
+        for (n, command) in (200_u32..).zip(CRMOD_COMMANDS) {
+            text.push_str(&format!("command {n} 2 {command}\n"));
+        }
+        text
+    };
+    vec![
+        ScenarioSpec {
+            name: "crmod-commands",
+            directives: commands,
+            entities: Some(entities(DEATHMATCH)),
+        },
+        ScenarioSpec {
+            name: "crmod-match",
+            directives: crmod_match(300),
+            entities: Some(entities(DEATHMATCH)),
+        },
+        ScenarioSpec {
+            name: "crmod-match-end",
+            directives: crmod_match(900),
+            entities: Some(entities(DEATHMATCH)),
+        },
+    ]
+}
+
 /// Joins entity blocks into a BSP entity lump (DIFF-2.5); each block is already
 /// `{ "key" "value" ... }`.
 fn entities(blocks: &[&str]) -> Vec<u8> {
     blocks.join("\n").into_bytes()
 }
 
-/// A worldspawn and a player start: the smallest spawnable map (EDICT-8).
+/// A worldspawn, a player start and a deathmatch start, which a deathmatch mod's spawn looks
+/// for: the smallest spawnable map (EDICT-8).
 const MINIMAL: &[&str] = &[
     "{\n\"classname\" \"worldspawn\"\n\"message\" \"differential\"\n\"worldtype\" \"0\"\n\"sounds\" \"1\"\n}",
     "{\n\"classname\" \"info_player_start\"\n\"origin\" \"0 0 24\"\n\"angle\" \"90\"\n}",
+    "{\n\"classname\" \"info_player_deathmatch\"\n\"origin\" \"128 0 24\"\n}",
 ];
 
 /// A full vanilla entity set: the world, starts, every monster, item, weapon, light, and the

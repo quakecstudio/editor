@@ -15,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::release_host;
 use crate::{corpus, repo};
 
 /// The document that holds the budget table.
@@ -33,9 +34,6 @@ const CRITERION_HOME: &str = "target/xtask/bench/criterion";
 /// A run more than this much slower than the baseline is a regression.
 const REGRESSION_RATIO: f64 = 1.10;
 const HISTORY_VERSION: u32 = 1;
-
-const USAGE: &str = "usage: cargo xtask bench [--history <path>] [--accept]\n       \
-                     cargo xtask bench history [--history <path>]";
 
 /// Which summary of the samples a budget is checked against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,22 +142,38 @@ struct Sample {
     times: Vec<f64>,
 }
 
-/// The parsed command line.
-#[derive(Debug, PartialEq)]
-struct Options {
+/// `cargo xtask bench [--history <path>] [--accept]`, or `cargo xtask bench history
+/// [--history <path>]`.
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+pub(crate) struct Args {
+    /// Print the recorded runs instead of running.
+    #[command(subcommand)]
+    show: Option<Show>,
+    /// The history file, `target/xtask/bench/history.json` by default.
+    #[arg(long, global = true)]
     history: Option<PathBuf>,
+    /// Record a failing run as the new baseline.
+    #[arg(long)]
     accept: bool,
-    show_history: bool,
+}
+
+/// `bench`'s one subcommand.
+#[derive(clap::Subcommand, Debug, PartialEq, Eq)]
+enum Show {
+    /// Print the recorded runs.
+    History,
 }
 
 /// Runs `cargo xtask bench` with the arguments after `bench`.
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    let options = parse_args(args)?;
+pub(crate) fn main(root: &Path, options: &Args) -> Result<bool, String> {
     let history_path = options
         .history
         .clone()
         .unwrap_or_else(|| root.join(DEFAULT_HISTORY));
-    if options.show_history {
+    if options.show.is_some() && options.accept {
+        return Err("--accept only applies to a run".to_owned());
+    }
+    if options.show.is_some() {
         let history = load_history(&history_path)?;
         print!("{}", format_history(&history));
         return Ok(true);
@@ -168,15 +182,16 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     let criterion_home = root.join(CRITERION_HOME);
     let id1 = fetch_id1(root)?;
     run_benchmarks(root, &criterion_home, &id1)?;
+    let set = |variable: &str| std::env::var_os(variable).is_some();
     let mut results = Vec::new();
     for budget in &budgets {
         let sample = read_sample(&criterion_home, &budget.name)?;
-        results.push(summarise(budget, &sample)?);
+        results.push(summarise(&judged_here(budget, set), &sample)?);
     }
     let mut history = load_history(&history_path)?;
     let host = host();
     let baseline = baseline(&history, &host.key);
-    let outcome = evaluate(&results, baseline);
+    let outcome = evaluate(&results, baseline, Machine::of(&host.key));
     let passed = outcome.passed(options.accept);
     print!("{}", format_results(&host, &results, baseline));
     let github = on_github(std::env::var_os("GITHUB_ACTIONS").as_deref());
@@ -206,32 +221,6 @@ fn baseline<'a>(history: &'a History, host_key: &str) -> Option<&'a Run> {
         .iter()
         .rev()
         .find(|run| run.passed && run.host.key == host_key)
-}
-
-fn parse_args(args: &[String]) -> Result<Options, String> {
-    let mut options = Options {
-        history: None,
-        accept: false,
-        show_history: false,
-    };
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "history" if !options.show_history => options.show_history = true,
-            "--accept" if !options.accept => options.accept = true,
-            "--history" if options.history.is_none() => {
-                let Some(path) = args.next() else {
-                    return Err(format!("--history needs a path\n{USAGE}"));
-                };
-                options.history = Some(PathBuf::from(path));
-            }
-            other => return Err(format!("unexpected argument {other:?}\n{USAGE}")),
-        }
-    }
-    if options.show_history && options.accept {
-        return Err(format!("--accept only applies to a run\n{USAGE}"));
-    }
-    Ok(options)
 }
 
 /// Reads the budget table between the `perf-budgets` markers.
@@ -315,7 +304,7 @@ fn parse_duration(text: &str) -> Option<f64> {
 /// Fetches id 1.01 into the asset cache, which a second run reads offline, and returns its
 /// directory.
 fn fetch_id1(root: &Path) -> Result<PathBuf, String> {
-    if !corpus::main(root, &["fetch".to_owned(), ID1.to_owned()])? {
+    if !corpus::main(root, &corpus::Args::fetch(vec![ID1.to_owned()]))? {
         return Err(format!("cannot fetch {ID1} for id1_recompile"));
     }
     let cache = corpus::asset_cache().ok_or("no asset cache: set QS_TEST_ASSETS")?;
@@ -328,7 +317,8 @@ fn run_benchmarks(root: &Path, criterion_home: &Path, id1: &Path) -> Result<(), 
             .map_err(|error| format!("cannot clear {}: {error}", criterion_home.display()))?;
     }
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let status = Command::new(cargo)
+    let mut bench = Command::new(&cargo);
+    bench
         .args([
             "bench",
             "--locked",
@@ -339,7 +329,17 @@ fn run_benchmarks(root: &Path, criterion_home: &Path, id1: &Path) -> Result<(), 
         ])
         .env("CRITERION_HOME", criterion_home)
         .env("QS_BENCH_ID1", id1)
-        .current_dir(root)
+        .current_dir(root);
+    // save_to_game and the routes play in the preview host when QS_BENCH_GAME or
+    // QS_BENCH_RERELEASE names a game: the host is built as the app ships it and named to the
+    // benchmarks.
+    if [GAME_DIR, RERELEASE_DIR]
+        .iter()
+        .any(|variable| std::env::var_os(variable).is_some())
+    {
+        bench.env("QS_PREVIEW_HOST", release_host::build(root)?);
+    }
+    let status = bench
         .status()
         .map_err(|error| format!("cannot run cargo bench: {error}"))?;
     if status.success() {
@@ -445,7 +445,67 @@ impl Outcome {
     }
 }
 
-fn evaluate(results: &[BenchResult], baseline: Option<&Run>) -> Outcome {
+/// Whether a host is one of the reference machines the budgets hold on (`docs/perf-budgets.md`,
+/// "Reference machines"): a run elsewhere, a CI runner among them, is judged by the regression
+/// rule alone, since its numbers are not the modder's (decided by Justin on 2026-11-04 for
+/// P2-166).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Machine {
+    /// `ref-mac`, `ref-windows` or `ref-linux`, named by `QS_BENCH_HOST`.
+    Reference,
+    /// Any other host.
+    Other,
+}
+
+/// The variable naming the game root holding `id1` that `save_to_game` and the e1m1 route
+/// play in the preview host.
+const GAME_DIR: &str = "QS_BENCH_GAME";
+/// The variable naming the rerelease's game root, holding `id1` and `mg1`, for the mg1 route.
+const RERELEASE_DIR: &str = "QS_BENCH_RERELEASE";
+/// The budgets measured only with a game, which the CI runners have not, and the variable
+/// naming it: with that unset their benchmark is a placeholder.
+const GAME_BUDGETS: [(&str, &str); 9] = [
+    ("save_to_game", GAME_DIR),
+    ("frame_e1m1", GAME_DIR),
+    ("server_frame_e1m1", GAME_DIR),
+    ("quakec_e1m1", GAME_DIR),
+    ("map_load_e1m1", GAME_DIR),
+    ("frame_mg1", RERELEASE_DIR),
+    ("server_frame_mg1", RERELEASE_DIR),
+    ("quakec_mg1", RERELEASE_DIR),
+    ("map_load_mg1", RERELEASE_DIR),
+];
+
+/// `budget` as this run judges it: a budget that needs a game is pending when `set` says its
+/// variable is unset, since its benchmark measured a placeholder. A reference machine always
+/// sets them: the benchmarks fail there without them.
+fn judged_here(budget: &Budget, set: impl Fn(&str) -> bool) -> Budget {
+    let mut budget = budget.clone();
+    let needs = GAME_BUDGETS
+        .iter()
+        .find(|(name, _)| *name == budget.name)
+        .map(|(_, variable)| *variable);
+    if needs.is_some_and(|variable| !set(variable)) {
+        budget.status = Status::Pending;
+    }
+    budget
+}
+
+/// The reference machines' host keys.
+const REFERENCE_MACHINES: [&str; 3] = ["ref-mac", "ref-windows", "ref-linux"];
+
+impl Machine {
+    /// The machine the host keyed `key` is.
+    fn of(key: &str) -> Self {
+        if REFERENCE_MACHINES.contains(&key) {
+            Self::Reference
+        } else {
+            Self::Other
+        }
+    }
+}
+
+fn evaluate(results: &[BenchResult], baseline: Option<&Run>, machine: Machine) -> Outcome {
     let mut outcome = Outcome::default();
     for result in results {
         if result.status == Status::Pending {
@@ -453,7 +513,7 @@ fn evaluate(results: &[BenchResult], baseline: Option<&Run>) -> Outcome {
         }
         let statistic = result.statistic;
         let value = statistic.of(result);
-        if value > result.budget_ns {
+        if machine == Machine::Reference && value > result.budget_ns {
             outcome.failures.push(format!(
                 "{}: {} {} is over the budget of {}",
                 result.benchmark,

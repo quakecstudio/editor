@@ -44,7 +44,7 @@ issues:
   - 'Command line (ADR-0008): -basedir PATH (the game root holding id1), -game NAME (a single directory name under it) and -kpf PATH (the rerelease''s QuakeEX.kpf, read from that path instead of the basedir)'
   - Builds for macOS universal, Windows x64/arm64, Linux x86_64/aarch64 as CI artifacts with checksums
   acceptance:
-  - Loads id1 and the rerelease from the user's install, plays e1m1 from start to exit with keyboard and mouse on all three OSes, and streams events to a test client
+  - Loads id1 and the rerelease from the user's install, plays e1m1 from start to exit with keyboard and mouse on macOS, and streams events to a test client; the same play on Windows and Linux is part of the MVP demo (P4-24), moved there by Justin on 2026-11-06
   - 'Implements every command in bridge-protocol.md except reload (P3-03) and debugging (P3-04): pause, resume, step, set field, pick, inspect, console, screenshot, spawn player at; each with a conformance
     test'
   - Started with -basedir, -game and -kpf against a fixture game root, it loads the mod from the named directory and the rerelease's localization from the -kpf file, and rejects a -game value that is a path
@@ -85,10 +85,13 @@ issues:
   - P1-28
   deliverable:
   - Breakpoints by source line via .lno, step in/over/out, call stack, watch expressions, entity tree snapshot
+  - "id's command layer, ported whole into qs-sim: the console path (Cbuf, Cmd_ExecuteString) with one command table that the bridge's console command and the IDE's console reach; id's host commands (map, changelevel, restart, save, load, status, say, say_team, tell, kick, ping); cmd.c's alias, exec, echo and wait; cvars set and read from the console; the debug prints (edict, edicts, edictcount, profile, version, path). Demos, viewthing and the network commands are listed in docs/spec/ as out of scope for a local preview host"
   acceptance:
   - Breaking in a monster's think, stepping and inspecting self fields works on all three OSes
+  - A scripted console session runs each ported command, and those the engine oracle can run match id's server
   verify:
   - Scripted debug session test
+  - Scripted console session test, and cargo xtask sim-diff on a route that uses the console commands
 - key: P3-05
   title: Headless mode for the preview host
   labels:
@@ -151,11 +154,9 @@ issues:
   acceptance:
   - The bridge client test suite runs against the real host in headless mode
   - A missing, broken or wrongly targeted run-root link is repaired before the next launch, in tests on fixture installs
-  - 'Recorded launches moved here from P0-22 by ADR-0008: the preview host launched through the run roots plays the original game (id1) and the rerelease from a Steam install and from a GOG install on
-    macOS, Windows and Linux, and the install is unchanged afterwards'
+  - 'The recorded launches through the run roots (ADR-0008) on each OS and store are part of the MVP demo (P4-24), moved there by Justin on 2026-11-06'
   verify:
   - cargo test -p qs-engine
-  - Recorded launches per OS and store attached to the issue
 - key: P3-09
   title: KEX rerelease compile target
   labels:
@@ -170,9 +171,9 @@ issues:
   deliverable:
   - 'KEX target profile: builtins, output layout and localization string handling; no launch support'
   acceptance:
-  - Output loads in the KEX rerelease on Windows (manual check)
+  - A build for the KEX target refuses a program KEX cannot load, with the reason, writing nothing, and keeps a string's `$` localization key as written (ENGT-3.12), in tests; the load in the KEX rerelease on Windows is part of the MVP demo (P4-24), moved there on 2026-11-06 as P3-02's and P3-06's manual checks were
   verify:
-  - Recorded manual test
+  - cargo test -p qs-workbench
 - key: P3-10
   title: State-loss analysis and reload warnings
   labels:
@@ -232,9 +233,9 @@ issues:
   deliverable:
   - Toolbar Play, Pause, Step and Restart map, always running our preview host; save triggers compile and reload
   acceptance:
-  - Save-to-game p95 at most 1.0 s, measured with the windowed preview host on each OS (not only headless)
+  - Save-to-game p95 at most 1.0 s, measured with the windowed preview host on macOS (not only headless) by the active `save_to_game` budget of `cargo xtask bench` on ref-mac; the same measurement on Windows and Linux is part of the MVP demo (P4-24), moved there on 2026-11-06 as P3-02's manual checks were
   verify:
-  - Latency benchmark per OS recorded in the bench history
+  - Latency benchmark on ref-mac recorded in the bench history
 - key: P3-13
   title: Entities outliner
   labels:
@@ -344,6 +345,8 @@ issues:
   depends:
   - P1-19
   - P2-17
+  # Its second criterion makes Play work, which P3-12 builds.
+  - P3-12
   deliverable:
   - A first-run panel, also reachable from settings, shown when no game data is found or the rerelease or pak1.pak is missing
   - 'It explains, per OS and store, how to get the files (on a Mac: download the GOG Windows installer and extract it with innoextract, or download with steamcmd; Epic and Game Pass have only the rerelease), offers a folder picker, and shows what the chosen folder contains and lacks'
@@ -368,15 +371,15 @@ issues:
   - P3-24
   - P3-23
   deliverable:
-  - 'docs/perf-budgets.md: new budget rows, each measured by `cargo xtask bench` (crates/qs-bench): frame time at p99 on scripted routes through heavy maps (id1 e1m1, the rerelease''s mg1 and mg3 maps, and an Arcane Dimensions map) on macOS, Windows and Linux; server-frame time and QuakeC (qc-vm) time per frame on the same routes; and map load time'
+  - 'docs/perf-budgets.md: new budget rows, each measured by `cargo xtask bench` (crates/qs-bench): frame time at p99 on routes through id1 e1m1 and the rerelease''s mg1 hub on ref-mac; server-frame time and QuakeC (qc-vm) time per frame on the same routes; and map load time. The mg3 and Arcane Dimensions routes and the Windows and Linux machines are P4-24''s (Justin Plock, 2026-11-06)'
   - 'QuakeSpasm, built at a commit pinned in docs/perf-budgets.md, runs only by hand on the reference machines, on the same maps and routes (ENG-17), and its numbers are recorded in docs/perf-budgets.md as fixed budgets with the machine, date and commit they came from: a performance reference only, since QuakeSpasm is one of the engines players run exported mods on (ADR-0005, Decision); the engine oracle is id''s engine (ADR-0005, P3-23)'
   - 'CI never builds or runs QuakeSpasm, as ADR-0005 (Options, A) says, "no outside engine is used even in CI": `cargo xtask bench` measures our engine and checks it against the fixed budgets. Decided by Justin Plock on 2026-10-20 (#444)'
   acceptance:
-  - 'Each new budget is active with a number, run on the reference machines and recorded in the bench history'
-  - 'docs/perf-budgets.md records QuakeSpasm''s hand-run numbers per route and machine as fixed budgets, with the pinned commit, and states the margin our engine is allowed'
+  - 'Each new budget is active with a number, run on ref-mac and recorded in the bench history'
+  - 'docs/perf-budgets.md records QuakeSpasm''s hand-run numbers per route on ref-mac as fixed budgets, with the pinned commit, and states the margin our engine is allowed'
   - 'Frame time at p99 is no worse than QuakeSpasm''s recorded budget on the same route and machine, within that margin, checked by `cargo xtask bench`; no CI job builds or runs QuakeSpasm'
   verify:
-  - cargo xtask bench on the reference machines; the bench history
+  - cargo xtask bench on ref-mac; the bench history
 - key: P3-18
   title: Phase 3 gate review
   labels:
@@ -468,7 +471,7 @@ issues:
   verify:
   - Implementer review; spec-citation ratchet
 - key: P3-23
-  title: 'Engine oracle: id''s engine, built from the pinned source, tracing every server frame'
+  title: 'Engine oracle: id''s server, built from the pinned source, tracing every server frame'
   labels:
   - c-tools
   - area:preview
@@ -481,7 +484,7 @@ issues:
   depends:
   - P1-11
   deliverable:
-  - 'oracles/engine: id''s engine (WinQuake, from the pinned id-Software/Quake commit in docs/porting.md) built headless by cargo xtask oracles, with a headless harness that steps server frames from a scripted input file and writes a per-frame trace of edicts and globals (docs/spec/trace.md extended), offscreen screenshots at given frames and the mixed audio buffer'
+  - 'oracles/engine: id''s server (WinQuake''s sv_*, world, brush model loading and the progs, from the pinned id-Software/Quake commit in docs/porting.md) built headless by cargo xtask oracles, with a harness that steps server frames at a fixed frame time from a scripted input file of client commands and writes a per-frame trace of edicts and globals (docs/spec/trace.md extended). Justin chose the server first (2026-11-05): the screenshots and the mixed audio come with P3-28'
   acceptance:
   - A scripted route through a corpus map gives the same trace on two runs and on all three OSes
   - The oracle is never part of the shipped app or required to build it
@@ -583,11 +586,12 @@ issues:
   - P3-27
   - P3-23
   deliverable:
+  - 'oracles/engine grown to id''s whole engine headless: the client, the software renderer and the sound mixer with null video and a captured DMA buffer, writing offscreen screenshots at given frames and the mixed audio buffer of a scripted route'
   - Screenshot comparisons with the engine oracle at fixed frames of scripted routes, with per-map tolerances recorded in docs/spec/engine/, and the same for audio
   acceptance:
   - Every id1 map and the rerelease start map pass within the recorded tolerances; a deliberate lighting bug fails
   verify:
-  - Nightly job on all three OSes
+  - Nightly job on Linux and macOS; id's Windows client needs its DirectX and SciTech MGL drivers, so the view oracle is not built on Windows (VIEWDIFF-2.6, 2026-11-06)
 - key: P3-31
   title: Complete FTEQCC vector and class members after a member access
   labels:

@@ -36,66 +36,110 @@ use manifest::Manifest;
 
 const MANIFEST: &str = "corpus/manifest.toml";
 
-/// Runs `cargo xtask corpus <verify | fetch | build> ...`.
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
+/// `cargo xtask corpus verify [--online] | fetch [--dest <dir>] [<id>...] | build [--dest <dir>]
+/// [<id>...]`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    #[command(subcommand)]
+    command: CorpusCommand,
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum CorpusCommand {
+    /// Check the manifest and the repository.
+    Verify {
+        /// Also check every source online.
+        #[arg(long)]
+        online: bool,
+    },
+    /// Download codebases into the cache.
+    Fetch(Selection),
+    /// Build codebases in the cache.
+    Build(Selection),
+}
+
+/// The cache and the entries a command takes.
+#[derive(clap::Args, Debug)]
+struct Selection {
+    /// The cache directory, `$QS_TEST_ASSETS` or the user's cache by default.
+    #[arg(long)]
+    dest: Option<PathBuf>,
+    /// The manifest ids, every one when none is named.
+    ids: Vec<String>,
+}
+
+impl Args {
+    /// `cargo xtask corpus fetch <id>...` into the default cache.
+    pub(crate) fn fetch(ids: Vec<String>) -> Self {
+        Self {
+            command: CorpusCommand::Fetch(Selection { dest: None, ids }),
+        }
+    }
+}
+
+/// Runs `cargo xtask corpus`.
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     run(root, args, &CURL)
 }
 
 /// [`main`] with the files `net` fetches.
-fn run(root: &Path, args: &[String], net: &dyn Net) -> Result<bool, String> {
-    let usage = "usage: cargo xtask corpus verify [--online] \
-                 | fetch [--dest <dir>] [<id>...] | build [--dest <dir>] [<id>...]";
-    let Some((command, rest)) = args.split_first() else {
-        return Err(usage.to_owned());
-    };
+fn run(root: &Path, args: &Args, net: &dyn Net) -> Result<bool, String> {
     let m = Manifest::load(&root.join(MANIFEST))?;
-    match command.as_str() {
-        "verify" => {
-            let online = match rest {
-                [] => false,
-                [flag] if flag == "--online" => true,
-                _ => return Err(usage.to_owned()),
-            };
-            Ok(report(cmd_verify(root, &m, online.then_some(net))))
-        }
-        "fetch" | "build" => {
-            let (dest, ids) = dest_and_ids(root, rest)?;
+    match &args.command {
+        CorpusCommand::Verify { online } => Ok(report(cmd_verify(root, &m, online.then_some(net)))),
+        CorpusCommand::Fetch(selection) | CorpusCommand::Build(selection) => {
+            let dest = cache_dest(root, selection.dest.as_deref())?;
             let mut errs = verify::check(&m);
             if errs.is_empty() {
-                errs = if command == "fetch" {
-                    fetch::cmd_fetch(&m, &dest, &ids, net)
+                errs = if matches!(args.command, CorpusCommand::Fetch(_)) {
+                    fetch::cmd_fetch(&m, &dest, &selection.ids, net)
                 } else {
-                    build::cmd_build(root, &m, &dest, &ids, net)
+                    build::cmd_build(root, &m, &dest, &selection.ids, net)
                 };
             }
             Ok(report(errs))
         }
-        _ => Err(usage.to_owned()),
     }
 }
 
-/// Runs `cargo xtask assets <fetch | precache> [--dest <dir>]`.
-pub(crate) fn assets_main(root: &Path, args: &[String]) -> Result<bool, String> {
+/// `cargo xtask assets <fetch | precache> [--dest <dir>]`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct AssetsArgs {
+    #[command(subcommand)]
+    command: AssetsCommand,
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum AssetsCommand {
+    /// Download the test assets.
+    Fetch {
+        /// The cache directory.
+        #[arg(long)]
+        dest: Option<PathBuf>,
+    },
+    /// Download and unpack them into the cache.
+    Precache {
+        /// The cache directory.
+        #[arg(long)]
+        dest: Option<PathBuf>,
+    },
+}
+
+/// Runs `cargo xtask assets`.
+pub(crate) fn assets_main(root: &Path, args: &AssetsArgs) -> Result<bool, String> {
     assets_run(root, args, &CURL)
 }
 
 /// [`assets_main`] with the files `net` fetches.
-fn assets_run(root: &Path, args: &[String], net: &dyn Net) -> Result<bool, String> {
-    let usage = "usage: cargo xtask assets <fetch | precache> [--dest <dir>]";
-    let Some((command, rest)) = args.split_first() else {
-        return Err(usage.to_owned());
-    };
-    let (dest, ids) = dest_and_ids(root, rest)?;
-    if !ids.is_empty() {
-        return Err(usage.to_owned());
-    }
+fn assets_run(root: &Path, args: &AssetsArgs, net: &dyn Net) -> Result<bool, String> {
+    let (AssetsCommand::Fetch { dest } | AssetsCommand::Precache { dest }) = &args.command;
+    let dest = cache_dest(root, dest.as_deref())?;
     let m = Manifest::load(&root.join(MANIFEST))?;
     let mut errs = verify::check(&m);
     if errs.is_empty() {
-        errs = match command.as_str() {
-            "fetch" => assets::cmd_fetch(&m, &dest, net),
-            "precache" => assets::cmd_precache(&m, &dest, net),
-            _ => return Err(usage.to_owned()),
+        errs = match args.command {
+            AssetsCommand::Fetch { .. } => assets::cmd_fetch(&m, &dest, net),
+            AssetsCommand::Precache { .. } => assets::cmd_precache(&m, &dest, net),
         };
     }
     Ok(report(errs))
@@ -155,22 +199,10 @@ fn tracked_files(root: &Path) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// Splits `[--dest <dir>] [<id>...]`, and checks the cache is outside the source tree.
-fn dest_and_ids(root: &Path, args: &[String]) -> Result<(PathBuf, Vec<String>), String> {
-    let mut dest = None;
-    let mut ids = Vec::new();
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        if arg == "--dest" {
-            let dir = args.next().ok_or("--dest needs a directory")?;
-            dest = Some(PathBuf::from(dir));
-        } else if arg.starts_with('-') {
-            return Err(format!("unknown option {arg}"));
-        } else {
-            ids.push(arg.clone());
-        }
-    }
+/// The cache `dest` names, or the default one, checked to be outside the source tree.
+fn cache_dest(root: &Path, dest: Option<&Path>) -> Result<PathBuf, String> {
     let dest = dest
+        .map(Path::to_path_buf)
         .or_else(|| default_dest(&|key| env::var_os(key).map(PathBuf::from)))
         .ok_or("no cache directory: set QS_TEST_ASSETS or pass --dest")?;
     let dest = env::current_dir()
@@ -182,7 +214,7 @@ fn dest_and_ids(root: &Path, args: &[String]) -> Result<(PathBuf, Vec<String>), 
             dest.display()
         ));
     }
-    Ok((dest, ids))
+    Ok(dest)
 }
 
 /// `path` with its symlinks and `..` resolved, one part at a time: each prefix that exists is
@@ -246,8 +278,9 @@ mod tests {
 
     use std::path::{Path, PathBuf};
 
-    use super::{assets_run, default_dest, dest_and_ids, run, safe_member};
+    use super::{Args, AssetsArgs, assets_run, cache_dest, default_dest, run, safe_member};
     use crate::download::Net;
+    use crate::parse_cli;
     use crate::test_dirs::claim;
 
     /// A network where every file is missing.
@@ -270,8 +303,14 @@ mod tests {
             .to_path_buf()
     }
 
-    fn args(text: &str) -> Vec<String> {
-        text.split_whitespace().map(str::to_owned).collect()
+    /// `cargo xtask corpus` with `text`.
+    fn cli(text: &str) -> Result<Args, clap::Error> {
+        parse_cli(&text.split_whitespace().collect::<Vec<_>>())
+    }
+
+    /// `cargo xtask assets` with `text`.
+    fn assets(text: &str) -> Result<AssetsArgs, clap::Error> {
+        parse_cli(&text.split_whitespace().collect::<Vec<_>>())
     }
 
     /// A cache directory outside the repository, as the source tree refuses one,
@@ -289,11 +328,11 @@ mod tests {
 
     #[test]
     fn verify_checks_the_manifest_and_the_repository() {
-        assert!(run(&root(), &args("verify"), &Offline).unwrap());
-        assert!(!run(&root(), &args("verify --online"), &Offline).unwrap());
-        assert!(run(&root(), &args("verify --fast"), &Offline).is_err());
-        assert!(run(&root(), &args("unknown"), &Offline).is_err());
-        assert!(run(&root(), &[], &Offline).is_err());
+        assert!(run(&root(), &cli("verify").unwrap(), &Offline).unwrap());
+        assert!(!run(&root(), &cli("verify --online").unwrap(), &Offline).unwrap());
+        assert!(cli("verify --fast").is_err());
+        assert!(cli("unknown").is_err());
+        assert!(cli("").is_err());
     }
 
     #[test]
@@ -302,7 +341,7 @@ mod tests {
         assert!(
             !run(
                 &root(),
-                &args(&format!("fetch --dest {dest} id-1.01")),
+                &cli(&format!("fetch --dest {dest} id-1.01")).unwrap(),
                 &Offline
             )
             .unwrap()
@@ -310,30 +349,25 @@ mod tests {
         assert!(
             !run(
                 &root(),
-                &args(&format!("build --dest {dest} copper")),
+                &cli(&format!("build --dest {dest} copper")).unwrap(),
                 &Offline
             )
             .unwrap()
         );
-        assert!(run(&root(), &args("fetch --dest"), &Offline).is_err());
-        assert!(run(&root(), &args("fetch --quick"), &Offline).is_err());
+        assert!(cli("fetch --dest").is_err());
+        assert!(cli("fetch --quick").is_err());
     }
 
     #[test]
     fn assets_run_their_commands() {
         let dest = cache("assets");
-        assert!(!assets_run(&root(), &args(&format!("fetch --dest {dest}")), &Offline).unwrap());
-        assert!(!assets_run(&root(), &args(&format!("precache --dest {dest}")), &Offline).unwrap());
-        assert!(assets_run(&root(), &args(&format!("check --dest {dest}")), &Offline).is_err());
-        assert!(
-            assets_run(
-                &root(),
-                &args(&format!("fetch --dest {dest} extra")),
-                &Offline
-            )
-            .is_err()
-        );
-        assert!(assets_run(&root(), &[], &Offline).is_err());
+        let fetch = assets(&format!("fetch --dest {dest}")).unwrap();
+        assert!(!assets_run(&root(), &fetch, &Offline).unwrap());
+        let precache = assets(&format!("precache --dest {dest}")).unwrap();
+        assert!(!assets_run(&root(), &precache, &Offline).unwrap());
+        assert!(assets(&format!("check --dest {dest}")).is_err());
+        assert!(assets(&format!("fetch --dest {dest} extra")).is_err());
+        assert!(assets("").is_err());
     }
 
     /// An offline network that remembers what was asked of it.
@@ -355,15 +389,9 @@ mod tests {
     #[test]
     fn fetch_downloads_the_codebase() {
         let net = Recording::default();
-        let fetch = args(&format!("fetch --dest {} id-1.01", cache("fetch")));
+        let fetch = cli(&format!("fetch --dest {} id-1.01", cache("fetch"))).unwrap();
         assert!(!run(&root(), &fetch, &net).unwrap());
         assert_eq!(net.0.borrow().len(), 1, "{:?}", net.0.borrow());
-    }
-
-    #[test]
-    fn the_entry_points_need_a_command() {
-        assert!(super::main(&root(), &[]).is_err());
-        assert!(super::assets_main(&root(), &[]).is_err());
     }
 
     fn env<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<PathBuf> + 'a {
@@ -397,15 +425,10 @@ mod tests {
     fn a_cache_inside_the_source_tree_is_refused() {
         let root = std::env::current_dir().unwrap();
         let inside = root.join("target").display().to_string();
-        let err = dest_and_ids(&root, &["--dest".to_owned(), inside]).unwrap_err();
+        let err = cache_dest(&root, Some(Path::new(&inside))).unwrap_err();
         assert!(err.contains("inside the source tree"), "{err}");
-        let outside = Path::new("/elsewhere/cache").display().to_string();
-        let args = ["--dest".to_owned(), outside, "id-1.01".to_owned()];
-        let (dest, ids) = dest_and_ids(&root.join("sub"), &args).unwrap();
+        let dest = cache_dest(&root.join("sub"), Some(Path::new("/elsewhere/cache"))).unwrap();
         assert!(dest.ends_with("cache"));
-        assert_eq!(ids, ["id-1.01"]);
-        assert!(dest_and_ids(&root, &["--dest".to_owned()]).is_err());
-        assert!(dest_and_ids(&root, &["--online".to_owned()]).is_err());
     }
 
     #[test]
@@ -419,23 +442,16 @@ mod tests {
             .join("..")
             .join(&name)
             .join("cache");
-        let err =
-            dest_and_ids(&root, &["--dest".to_owned(), through.display().to_string()]).unwrap_err();
+        let err = cache_dest(&root, Some(Path::new(&through.display().to_string()))).unwrap_err();
         assert!(err.contains("inside the source tree"), "{err}");
         let back_out = root.join("not-yet").join("..").join("target");
-        assert!(
-            dest_and_ids(
-                &root,
-                &["--dest".to_owned(), back_out.display().to_string()]
-            )
-            .is_err()
-        );
+        assert!(cache_dest(&root, Some(Path::new(&back_out.display().to_string()))).is_err());
         let beside = root
             .join("not-yet")
             .join("..")
             .join("..")
             .join("elsewhere-cache");
-        assert!(dest_and_ids(&root, &["--dest".to_owned(), beside.display().to_string()]).is_ok());
+        assert!(cache_dest(&root, Some(Path::new(&beside.display().to_string()))).is_ok());
     }
 
     #[cfg(unix)]
@@ -449,10 +465,10 @@ mod tests {
         }
         std::os::unix::fs::symlink(root(), &link).unwrap();
         let dest = link.join("not-yet").join("cache").display().to_string();
-        let err = dest_and_ids(&root(), &["--dest".to_owned(), dest]).unwrap_err();
+        let err = cache_dest(&root(), Some(Path::new(&dest))).unwrap_err();
         assert!(err.contains("inside the source tree"), "{err}");
         let beside = dir.join("cache").display().to_string();
-        assert!(dest_and_ids(&root(), &["--dest".to_owned(), beside]).is_ok());
+        assert!(cache_dest(&root(), Some(Path::new(&beside))).is_ok());
     }
 
     #[test]

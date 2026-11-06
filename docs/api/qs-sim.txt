@@ -13,7 +13,6 @@ const qs_sim::collision::trace::DIST_EPSILON
 const qs_sim::messages::NET_FAT_PVS_DISTANCE
 const qs_sim::messages::NET_GAME_COOP
 const qs_sim::messages::NET_GAME_DEATHMATCH
-const qs_sim::messages::NET_IDEALPITCH_SCALE
 const qs_sim::messages::NET_MAX_DATAGRAM
 const qs_sim::messages::NET_MAX_FORWARD
 const qs_sim::messages::NET_MAX_MSGLEN
@@ -22,20 +21,40 @@ const qs_sim::messages::NET_PROTOCOL_VERSION
 const qs_sim::messages::NET_SIGNON_SIZE
 const qs_sim::messages::NET_VERSION
 const qs_sim::rerelease::RRE_NUM_BUILTINS
+const qs_sim::scenario::SCN_FRAMETIME
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_DEATHMATCH
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_EASY
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_HARD
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_MEDIUM
 const qs_sim::spawn::SPAWNFLAGS_SLOT
+const qs_sim::world::CLIENT_EDICT
+const qs_sim::world::save::SAVEGAME_VERSION
 enum qs_sim::collision::CollisionError
 enum qs_sim::collision::Solid
 enum qs_sim::collision::area::MoveKind
 enum qs_sim::collision::hull::EntityHull
+enum qs_sim::debug::StepKind
 enum qs_sim::rerelease::BuiltinTable
+enum qs_sim::scenario::Edict
+enum qs_sim::scenario::Expected
+enum qs_sim::scenario::Moment
+enum qs_sim::scenario::Op
+enum qs_sim::scenario::PlayError
+enum qs_sim::scenario::Step
+enum qs_sim::scenario::Target
 enum qs_sim::spawn::LoadError
 enum qs_sim::spawn::SpawnError
 enum qs_sim::spawn::Token
+enum qs_sim::world::HostCommand
+enum qs_sim::world::Signon
 enum qs_sim::world::WorldError
+enum qs_sim::world::changes::EdictChange
+enum qs_sim::world::edit::EditError
+enum qs_sim::world::evaluate::EvalError
+enum qs_sim::world::inspect::QcValue
+enum qs_sim::world::reload::ChangeKind
+enum qs_sim::world::reload::Reason
+enum qs_sim::world::save::SaveError
 field qs_sim::client::UserCmd.angles
 field qs_sim::client::UserCmd.buttons
 field qs_sim::client::UserCmd.forward
@@ -77,9 +96,47 @@ field qs_sim::collision::trace::Trace.plane
 field qs_sim::collision::trace::Trace.startsolid
 field qs_sim::collision::trace::TracePlane.dist
 field qs_sim::collision::trace::TracePlane.normal
+field qs_sim::debug::Location.function
+field qs_sim::debug::Location.source
+field qs_sim::debug::Location.statement
+field qs_sim::debug::Stop.breakpoint
+field qs_sim::debug::Stop.count
+field qs_sim::debug::Stop.depth
+field qs_sim::debug::Stop.function
+field qs_sim::debug::Stop.run
+field qs_sim::debug::Stop.statement
 field qs_sim::messages::ClientMessages.packets
 field qs_sim::physics::Sound.entity
 field qs_sim::physics::Sound.sample
+field qs_sim::scenario::Check.found
+field qs_sim::scenario::Check.line
+field qs_sim::scenario::Check.passed
+field qs_sim::scenario::Check.text
+field qs_sim::scenario::Expectation.line
+field qs_sim::scenario::Expectation.op
+field qs_sim::scenario::Expectation.target
+field qs_sim::scenario::Expectation.text
+field qs_sim::scenario::Expectation.value
+field qs_sim::scenario::Report.checks
+field qs_sim::scenario::Report.error
+field qs_sim::scenario::Report.frames
+field qs_sim::scenario::Report.passed
+field qs_sim::scenario::Report.screenshots
+field qs_sim::scenario::Scenario.engine
+field qs_sim::scenario::Scenario.frametime
+field qs_sim::scenario::Scenario.map
+field qs_sim::scenario::Scenario.seed
+field qs_sim::scenario::Scenario.start
+field qs_sim::scenario::Scenario.steps
+field qs_sim::scenario::ScenarioError.line
+field qs_sim::scenario::ScenarioError.message
+field qs_sim::scenario::Shot.angles
+field qs_sim::scenario::Shot.eye
+field qs_sim::scenario::Shot.frame
+field qs_sim::scenario::Shot.name
+field qs_sim::scenario::Shot.origin
+field qs_sim::scenario::Start.origin
+field qs_sim::scenario::Start.yaw
 field qs_sim::spawn::FieldDef.etype
 field qs_sim::spawn::FieldDef.slot
 field qs_sim::world::Entity.angles
@@ -89,7 +146,29 @@ field qs_sim::world::Entity.number
 field qs_sim::world::Entity.origin
 field qs_sim::world::Entity.skin
 field qs_sim::world::LoadOptions.builtins
+field qs_sim::world::LoadOptions.carried
+field qs_sim::world::LoadOptions.host
 field qs_sim::world::LoadOptions.localization
+field qs_sim::world::LoadOptions.registration
+field qs_sim::world::LoadOptions.search_path
+field qs_sim::world::LoadOptions.seed
+field qs_sim::world::edit::LineHit.edict
+field qs_sim::world::edit::LineHit.point
+field qs_sim::world::inspect::NamedValue.name
+field qs_sim::world::inspect::NamedValue.value
+field qs_sim::world::reload::Change.kind
+field qs_sim::world::reload::Change.name
+field qs_sim::world::reload::Change.reason
+field qs_sim::world::reload::Migration.added
+field qs_sim::world::reload::Migration.lost
+field qs_sim::world::reload::Migration.migrated
+field qs_sim::world::save::SaveGame.comment
+field qs_sim::world::save::SaveGame.map
+field qs_sim::world::save::SaveGame.parms
+field qs_sim::world::save::SaveGame.skill
+field qs_sim::world::save::SaveGame.time
+field qs_sim::world::state::State.edicts
+field qs_sim::world::state::State.globals
 fn qs_sim::collision::Collision::add_brush
 fn qs_sim::collision::Collision::area
 fn qs_sim::collision::Collision::leafs_of
@@ -132,6 +211,19 @@ fn qs_sim::collision::hull::hull_for_entity
 fn qs_sim::collision::trace::Trace::new
 fn qs_sim::collision::trace::clip_move_to_entity
 fn qs_sim::collision::trace::recursive_hull_check
+fn qs_sim::console::World::console
+fn qs_sim::console::World::execute_console
+fn qs_sim::console::World::take_console_output
+fn qs_sim::debug::Debugger::finish
+fn qs_sim::debug::Debugger::may_stop
+fn qs_sim::debug::Debugger::new
+fn qs_sim::debug::Debugger::run_to_breakpoint
+fn qs_sim::debug::Debugger::set_breakpoint
+fn qs_sim::debug::Debugger::step_from
+fn qs_sim::debug::Debugger::stop_at_first
+fn qs_sim::debug::Debugger::stopped
+fn qs_sim::debug::locate
+fn qs_sim::debug::resolve
 fn qs_sim::messages::Message::bytes
 fn qs_sim::messages::Message::clear
 fn qs_sim::messages::Message::is_empty
@@ -150,6 +242,9 @@ fn qs_sim::messages::Message::write_long
 fn qs_sim::messages::Message::write_short
 fn qs_sim::messages::Message::write_string
 fn qs_sim::rerelease::patch_builtins
+fn qs_sim::scenario::Scenario::parse
+fn qs_sim::scenario::play
+fn qs_sim::scenario::run
 fn qs_sim::spawn::Parser::new
 fn qs_sim::spawn::Parser::next_token
 fn qs_sim::spawn::SpawnHost::allocate
@@ -166,28 +261,84 @@ fn qs_sim::spawn::c_atof
 fn qs_sim::spawn::c_atoi
 fn qs_sim::spawn::inhibited
 fn qs_sim::spawn::load_from_file
+fn qs_sim::world::SpawnParms::parms
+fn qs_sim::world::SpawnParms::serverflags
+fn qs_sim::world::World::carried
+fn qs_sim::world::World::client_command
 fn qs_sim::world::World::connect
+fn qs_sim::world::World::connect_next_frame
+fn qs_sim::world::World::debugger
+fn qs_sim::world::World::debugger_mut
+fn qs_sim::world::World::debugger_or_new
 fn qs_sim::world::World::entities
 fn qs_sim::world::World::frame
+fn qs_sim::world::World::host_state
 fn qs_sim::world::World::light_style
 fn qs_sim::world::World::load
+fn qs_sim::world::World::machine
+fn qs_sim::world::World::map
 fn qs_sim::world::World::player_view
+fn qs_sim::world::World::qc_time
+fn qs_sim::world::World::save_spawn_parms
 fn qs_sim::world::World::set_command
+fn qs_sim::world::World::set_debugger
 fn qs_sim::world::World::set_standard_quake
 fn qs_sim::world::World::settle
+fn qs_sim::world::World::signon
+fn qs_sim::world::World::take_host_command
 fn qs_sim::world::World::take_messages
 fn qs_sim::world::World::take_set_angle
 fn qs_sim::world::World::take_sounds
 fn qs_sim::world::World::time
+fn qs_sim::world::changes::World::take_changes
+fn qs_sim::world::changes::World::track_changes
+fn qs_sim::world::command_words
+fn qs_sim::world::edit::World::check_field_value
+fn qs_sim::world::edit::World::edit_entity
+fn qs_sim::world::edit::World::move_player
+fn qs_sim::world::edit::World::remove_entity
+fn qs_sim::world::edit::World::set_field_value
+fn qs_sim::world::edit::World::spawn_entity
+fn qs_sim::world::edit::World::trace_line
+fn qs_sim::world::evaluate::World::evaluate
+fn qs_sim::world::inspect::World::classname
+fn qs_sim::world::inspect::World::edict_fields
+fn qs_sim::world::inspect::World::in_use
+fn qs_sim::world::inspect::World::named_globals
+fn qs_sim::world::inspect::World::num_edicts
+fn qs_sim::world::inspect::World::state
+fn qs_sim::world::reload::ChangeKind::name
+fn qs_sim::world::reload::World::reload
+fn qs_sim::world::save::SaveGame::read
+fn qs_sim::world::save::World::restore
+fn qs_sim::world::save::World::save_game
+fn qs_sim::world::state::RawState::entity
+fn qs_sim::world::state::RawState::field
+fn qs_sim::world::state::RawState::global
+fn qs_sim::world::state::RawState::num_edicts
+fn qs_sim::world::state::RawState::string
+fn qs_sim::world::state::read_state
 impl qs_sim::builtins::SimBuiltins: Builtins
 impl qs_sim::collision::CollisionError: core::error::Error
 impl qs_sim::collision::CollisionError: core::fmt::Display
+impl qs_sim::debug::Debugger: Observer
+impl qs_sim::scenario::PlayError: fmt::Display
+impl qs_sim::scenario::ScenarioError: fmt::Display
+impl qs_sim::scenario::ScenarioError: std::error::Error
 impl qs_sim::spawn::SpawnError: core::error::Error
 impl qs_sim::spawn::SpawnError: core::fmt::Display
 impl qs_sim::world::WorldError: core::error::Error
 impl qs_sim::world::WorldError: core::fmt::Display
+impl qs_sim::world::edit::EditError: core::error::Error
+impl qs_sim::world::edit::EditError: core::fmt::Display
+impl qs_sim::world::evaluate::EvalError: fmt::Display
+impl qs_sim::world::reload::Reason: core::fmt::Display
+impl qs_sim::world::save::SaveError: core::error::Error
+impl qs_sim::world::save::SaveError: core::fmt::Display
 mod qs_sim::collision
+mod qs_sim::debug
 mod qs_sim::rerelease
+mod qs_sim::scenario
 mod qs_sim::spawn
 struct qs_sim::builtins::SimBuiltins
 struct qs_sim::client::UserCmd
@@ -203,26 +354,54 @@ struct qs_sim::collision::hull::HullSet
 struct qs_sim::collision::hull::Plane
 struct qs_sim::collision::trace::Trace
 struct qs_sim::collision::trace::TracePlane
+struct qs_sim::debug::Debugger
+struct qs_sim::debug::Location
+struct qs_sim::debug::Stop
 struct qs_sim::messages::ClientMessages
 struct qs_sim::messages::Message
 struct qs_sim::physics::Sound
+struct qs_sim::scenario::Check
+struct qs_sim::scenario::Expectation
+struct qs_sim::scenario::Report
+struct qs_sim::scenario::Scenario
+struct qs_sim::scenario::ScenarioError
+struct qs_sim::scenario::Shot
+struct qs_sim::scenario::Start
 struct qs_sim::spawn::FieldDef
 struct qs_sim::spawn::Parser
 struct qs_sim::world::Entity
+struct qs_sim::world::HostState
 struct qs_sim::world::LoadOptions
+struct qs_sim::world::SpawnParms
 struct qs_sim::world::World
+struct qs_sim::world::edit::LineHit
+struct qs_sim::world::inspect::NamedValue
+struct qs_sim::world::reload::Change
+struct qs_sim::world::reload::Migration
+struct qs_sim::world::save::SaveGame
+struct qs_sim::world::state::State
 trait qs_sim::collision::Host
 trait qs_sim::spawn::SpawnHost
+trait qs_sim::world::state::RawState
 type qs_sim::builtins::ModelFiles
+use qs_sim::CLIENT_EDICT = world::CLIENT_EDICT
+use qs_sim::Change = world::Change
+use qs_sim::ChangeKind = world::ChangeKind
 use qs_sim::ClientMessages = messages::ClientMessages
+use qs_sim::EdictChange = world::EdictChange
+use qs_sim::EditError = world::EditError
 use qs_sim::Entity = world::Entity
+use qs_sim::EvalError = world::EvalError
+use qs_sim::HostCommand = world::HostCommand
+use qs_sim::HostState = world::HostState
+use qs_sim::LineHit = world::LineHit
 use qs_sim::LoadOptions = world::LoadOptions
 use qs_sim::Message = messages::Message
+use qs_sim::Migration = world::Migration
 use qs_sim::ModelFiles = builtins::ModelFiles
 use qs_sim::NET_FAT_PVS_DISTANCE = messages::NET_FAT_PVS_DISTANCE
 use qs_sim::NET_GAME_COOP = messages::NET_GAME_COOP
 use qs_sim::NET_GAME_DEATHMATCH = messages::NET_GAME_DEATHMATCH
-use qs_sim::NET_IDEALPITCH_SCALE = messages::NET_IDEALPITCH_SCALE
 use qs_sim::NET_MAX_DATAGRAM = messages::NET_MAX_DATAGRAM
 use qs_sim::NET_MAX_FORWARD = messages::NET_MAX_FORWARD
 use qs_sim::NET_MAX_MSGLEN = messages::NET_MAX_MSGLEN
@@ -230,8 +409,18 @@ use qs_sim::NET_PACKET_SLACK = messages::NET_PACKET_SLACK
 use qs_sim::NET_PROTOCOL_VERSION = messages::NET_PROTOCOL_VERSION
 use qs_sim::NET_SIGNON_SIZE = messages::NET_SIGNON_SIZE
 use qs_sim::NET_VERSION = messages::NET_VERSION
+use qs_sim::NamedValue = world::NamedValue
+use qs_sim::QcValue = world::QcValue
+use qs_sim::RawState = world::RawState
+use qs_sim::Reason = world::Reason
+use qs_sim::SAVEGAME_VERSION = world::SAVEGAME_VERSION
+use qs_sim::SaveError = world::SaveError
+use qs_sim::SaveGame = world::SaveGame
+use qs_sim::Signon = world::Signon
 use qs_sim::SimBuiltins = builtins::SimBuiltins
 use qs_sim::Sound = physics::Sound
+use qs_sim::SpawnParms = world::SpawnParms
+use qs_sim::State = world::State
 use qs_sim::UserCmd = client::UserCmd
 use qs_sim::World = world::World
 use qs_sim::WorldError = world::WorldError
@@ -266,7 +455,25 @@ use qs_sim::collision::link_edict = area::link_edict
 use qs_sim::collision::recursive_hull_check = trace::recursive_hull_check
 use qs_sim::collision::sv_move = area::sv_move
 use qs_sim::collision::test_entity_position = area::test_entity_position
+use qs_sim::command_words = world::command_words
 use qs_sim::localization = qc_builtins::localization
+use qs_sim::read_state = world::read_state
+use qs_sim::world::Change = reload::Change
+use qs_sim::world::ChangeKind = reload::ChangeKind
+use qs_sim::world::EdictChange = changes::EdictChange
+use qs_sim::world::EditError = edit::EditError
+use qs_sim::world::EvalError = evaluate::EvalError
+use qs_sim::world::LineHit = edit::LineHit
+use qs_sim::world::Migration = reload::Migration
+use qs_sim::world::NamedValue = inspect::NamedValue
+use qs_sim::world::QcValue = inspect::QcValue
+use qs_sim::world::RawState = state::RawState
+use qs_sim::world::Reason = reload::Reason
+use qs_sim::world::SAVEGAME_VERSION = save::SAVEGAME_VERSION
+use qs_sim::world::SaveError = save::SaveError
+use qs_sim::world::SaveGame = save::SaveGame
+use qs_sim::world::State = state::State
+use qs_sim::world::read_state = state::read_state
 variant qs_sim::collision::CollisionError::BadNode
 variant qs_sim::collision::CollisionError::PushWithoutBsp
 variant qs_sim::collision::CollisionError::SolidBspWithoutPush
@@ -283,8 +490,39 @@ variant qs_sim::collision::area::MoveKind::NoMonsters
 variant qs_sim::collision::area::MoveKind::Normal
 variant qs_sim::collision::hull::EntityHull::Box
 variant qs_sim::collision::hull::EntityHull::Brush
+variant qs_sim::debug::StepKind::In
+variant qs_sim::debug::StepKind::Out
+variant qs_sim::debug::StepKind::Over
+variant qs_sim::debug::StepKind::Statement
 variant qs_sim::rerelease::BuiltinTable::Id
 variant qs_sim::rerelease::BuiltinTable::Rerelease
+variant qs_sim::scenario::Edict::Classname
+variant qs_sim::scenario::Edict::Number
+variant qs_sim::scenario::Edict::Player
+variant qs_sim::scenario::Expected::Entity
+variant qs_sim::scenario::Expected::Float
+variant qs_sim::scenario::Expected::String
+variant qs_sim::scenario::Expected::Vector
+variant qs_sim::scenario::Moment::Expect
+variant qs_sim::scenario::Moment::Frame
+variant qs_sim::scenario::Moment::Screenshot
+variant qs_sim::scenario::Op::Eq
+variant qs_sim::scenario::Op::Ge
+variant qs_sim::scenario::Op::Gt
+variant qs_sim::scenario::Op::Le
+variant qs_sim::scenario::Op::Lt
+variant qs_sim::scenario::Op::Ne
+variant qs_sim::scenario::PlayError::Frame
+variant qs_sim::scenario::PlayError::Start
+variant qs_sim::scenario::PlayError::Visit
+variant qs_sim::scenario::Step::Command
+variant qs_sim::scenario::Step::Console
+variant qs_sim::scenario::Step::Expect
+variant qs_sim::scenario::Step::Frames
+variant qs_sim::scenario::Step::Move
+variant qs_sim::scenario::Step::Screenshot
+variant qs_sim::scenario::Target::Field
+variant qs_sim::scenario::Target::Global
 variant qs_sim::spawn::LoadError::Run
 variant qs_sim::spawn::LoadError::Spawn
 variant qs_sim::spawn::SpawnError::BadEdictNumber
@@ -295,6 +533,51 @@ variant qs_sim::spawn::SpawnError::NoFreeEdicts
 variant qs_sim::spawn::SpawnError::ParseError
 variant qs_sim::spawn::Token::End
 variant qs_sim::spawn::Token::Word
+variant qs_sim::world::HostCommand::Changelevel
+variant qs_sim::world::HostCommand::Load
+variant qs_sim::world::HostCommand::Map
+variant qs_sim::world::HostCommand::Quit
+variant qs_sim::world::HostCommand::Restart
+variant qs_sim::world::HostCommand::Save
+variant qs_sim::world::Signon::Begin
+variant qs_sim::world::Signon::Connect
+variant qs_sim::world::Signon::Prespawn
+variant qs_sim::world::Signon::Spawn
 variant qs_sim::world::WorldError::Frame
 variant qs_sim::world::WorldError::Progs
 variant qs_sim::world::WorldError::Spawn
+variant qs_sim::world::changes::EdictChange::Changed
+variant qs_sim::world::changes::EdictChange::Removed
+variant qs_sim::world::changes::EdictChange::Spawned
+variant qs_sim::world::edit::EditError::BadValue
+variant qs_sim::world::edit::EditError::Kept
+variant qs_sim::world::edit::EditError::NoSuchEdict
+variant qs_sim::world::edit::EditError::NoSuchField
+variant qs_sim::world::edit::EditError::Spawn
+variant qs_sim::world::evaluate::EvalError::NotAnEntity
+variant qs_sim::world::evaluate::EvalError::Syntax
+variant qs_sim::world::evaluate::EvalError::Unknown
+variant qs_sim::world::inspect::QcValue::Entity
+variant qs_sim::world::inspect::QcValue::Field
+variant qs_sim::world::inspect::QcValue::Float
+variant qs_sim::world::inspect::QcValue::Function
+variant qs_sim::world::inspect::QcValue::String
+variant qs_sim::world::inspect::QcValue::Vector
+variant qs_sim::world::inspect::QcValue::Void
+variant qs_sim::world::reload::ChangeKind::Field
+variant qs_sim::world::reload::ChangeKind::Function
+variant qs_sim::world::reload::ChangeKind::Global
+variant qs_sim::world::reload::Reason::Added
+variant qs_sim::world::reload::Reason::Referenced
+variant qs_sim::world::reload::Reason::Removed
+variant qs_sim::world::reload::Reason::TypeChanged
+variant qs_sim::world::save::SaveError::BadValue
+variant qs_sim::world::save::SaveError::BlockOverflow
+variant qs_sim::world::save::SaveError::DeadPlayer
+variant qs_sim::world::save::SaveError::Link
+variant qs_sim::world::save::SaveError::NoBrace
+variant qs_sim::world::save::SaveError::NotPlaying
+variant qs_sim::world::save::SaveError::Parse
+variant qs_sim::world::save::SaveError::TooManyEdicts
+variant qs_sim::world::save::SaveError::Truncated
+variant qs_sim::world::save::SaveError::Version

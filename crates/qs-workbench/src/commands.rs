@@ -51,6 +51,9 @@ pub const UPDATE_FILE: &str = "file.update";
 /// The id of the command that writes a file to disk.
 pub const SAVE_FILE: &str = "file.save";
 
+/// The id of `file.close`.
+pub const CLOSE_FILE: &str = "file.close";
+
 /// The id of the command that finds where a name is defined.
 pub const DEFINITION: &str = "symbol.definition";
 
@@ -80,6 +83,7 @@ pub fn register<C: HasWorkbench + 'static>(
     registry.register(OpenFileCommand)?;
     registry.register(UpdateFile)?;
     registry.register(SaveFile)?;
+    registry.register(CloseFile)?;
     registry.register(Definition)?;
     registry.register(References)?;
     registry.register(HoverCommand)?;
@@ -257,6 +261,34 @@ pub struct UpdateFileParams {
     pub path: PathBuf,
     /// Its whole new text.
     pub text: String,
+}
+
+/// The parameters of `file.close`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CloseFileParams {
+    /// The file.
+    pub path: PathBuf,
+}
+
+/// `file.close`: closes a file's tab.
+struct CloseFile;
+
+impl<C: HasWorkbench + 'static> Command<C> for CloseFile {
+    const ID: &'static str = CLOSE_FILE;
+    const SUMMARY: &'static str = "Closes a file's tab, opening the tab beside it when it was         the open file; its unsaved text is kept.";
+    type Params = CloseFileParams;
+    type Output = ();
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: CloseFileParams,
+    ) -> Result<Outcome<(), C>, WorkbenchError> {
+        context.workbench().close_file(&params.path)?;
+        Ok(Outcome::outside_history(()))
+    }
 }
 
 /// `file.update`: takes an editor's text of a file, unsaved.

@@ -26,7 +26,7 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::{ErrorKind, Machine, Observer, RunError};
 
 use crate::host::{Host, RunRefused};
-use crate::runner::scenarios;
+use crate::runner::{ScenarioSpec, scenarios};
 use crate::scenario::{self, Scenario};
 
 mod draw;
@@ -212,9 +212,9 @@ pub type Progress<'a> = dyn Fn(&str, usize, usize) + Sync + 'a;
 pub const FAST_ROUNDS: u32 = 32;
 /// The rounds of calls to each function in the nightly run (DIFF-12.29).
 pub const FULL_ROUNDS: u32 = 128;
-/// The rounds of calls to the one function of a per-function run (DIFF-15.4): twice the
-/// nightly run's, since the run calls nothing else.
-pub const FUNCTION_ROUNDS: u32 = 256;
+/// The rounds of calls to each function of a per-function run (DIFF-15.9): the nightly run's,
+/// so a codebase's per-function runs take about as long as its nightly run.
+pub const FUNCTION_ROUNDS: u32 = FULL_ROUNDS;
 /// The most rounds a function is called in, as a multiple of the rounds asked for, when its
 /// body still has statements no call executed (DIFF-12.16).
 pub const EXTRA_ROUNDS: u32 = 4;
@@ -323,15 +323,17 @@ impl Oracle {
     }
 }
 
-/// Runs [`run_calls`] on `theirs` and `ours` from each world of [`crate::runner::scenarios`],
-/// `rounds` rounds each (DIFF-12.20, DIFF-12.5); `oracle` compiled `theirs`. `progress` is
-/// told a scenario's name, the functions it has called so far and the functions it will call,
-/// after every `PROGRESS_EVERY` functions and at its end, from the scenario's own thread.
+/// Runs [`run_calls`] on `theirs` and `ours` from each world of [`crate::runner::scenarios`]
+/// for `codebase`, `rounds` rounds each (DIFF-12.20, DIFF-12.5); `oracle` compiled `theirs`.
+/// `progress` is told a scenario's name, the functions it has called so far and the functions
+/// it will call, after every `PROGRESS_EVERY` functions and at its end, from the scenario's
+/// own thread.
 ///
 /// # Errors
 ///
 /// [`CallsError`] when a scenario cannot be read, a progs is refused or a world's setup fails.
 pub fn run_codebase(
+    codebase: &str,
     oracle: Oracle,
     theirs: &[u8],
     ours: &[u8],
@@ -340,6 +342,7 @@ pub fn run_codebase(
     progress: &Progress<'_>,
 ) -> Result<CodebaseReport, CallsError> {
     run_scenarios(
+        scenarios(codebase),
         oracle,
         (theirs, ours),
         (rounds, profile),
@@ -348,8 +351,9 @@ pub fn run_codebase(
     )
 }
 
-/// [`run_codebase`] of the functions `called` names.
+/// [`run_codebase`] from the worlds of `specs`, of the functions `called` names.
 fn run_scenarios(
+    specs: Vec<ScenarioSpec>,
     oracle: Oracle,
     (theirs, ours): (&[u8], &[u8]),
     (rounds, profile): (u32, EngineProfile),
@@ -357,7 +361,7 @@ fn run_scenarios(
     progress: &Progress<'_>,
 ) -> Result<CodebaseReport, CallsError> {
     let mut worlds = Vec::new();
-    for spec in scenarios("") {
+    for spec in specs {
         let text = format!("progs progs.dat\n{}", spec.directives);
         let scenario = scenario::read(text.as_bytes(), Path::new("."))
             .map_err(|e| CallsError::Scenario(format!("{}: {e}", spec.name)))?;
@@ -408,39 +412,42 @@ fn run_scenarios(
     Ok(result)
 }
 
-/// The function of a per-function run (DIFF-15.4), named `function`, called in `rounds` rounds
-/// from the world of each scenario of [`crate::runner::scenarios`], in `theirs` and `ours` as
-/// [`run_codebase`] calls every function.
+/// The functions of a per-function run (DIFF-15.9), named by `functions`, each called in
+/// `rounds` rounds from the world of each scenario of [`crate::runner::scenarios`], in `theirs`
+/// and `ours` as [`run_codebase`] calls every function.
 ///
 /// # Errors
 ///
 /// [`CallsError`] as [`run_codebase`].
-pub fn run_function(
+pub fn run_functions(
+    codebase: &str,
     oracle: Oracle,
     theirs: &[u8],
     ours: &[u8],
     rounds: u32,
     profile: EngineProfile,
-    function: &[u8],
+    functions: &BTreeSet<Vec<u8>>,
 ) -> Result<CodebaseReport, CallsError> {
     run_scenarios(
+        scenarios(codebase),
         oracle,
         (theirs, ours),
         (rounds, profile),
-        Called::Only(function),
+        Called::Only(functions),
         &|_, _, _| {},
     )
 }
 
 /// The functions the world of each scenario of [`crate::runner::scenarios`] runs while it is
 /// set up in the progs `bytes` (DIFF-12.20): the spawn functions of the map's entities, the
-/// client functions and the frames' functions, each by its name, once (DIFF-15.2). A setup
+/// client functions and the frames' functions, each by its name, once (DIFF-15.8). A setup
 /// that ends in an error gives the functions it ran before it.
 ///
 /// # Errors
 ///
 /// [`CallsError`] when a scenario cannot be read or the progs is refused.
 pub fn setup_functions(
+    codebase: &str,
     bytes: &[u8],
     profile: EngineProfile,
 ) -> Result<BTreeSet<Vec<u8>>, CallsError> {
@@ -448,7 +455,7 @@ pub fn setup_functions(
         Progs::read(bytes).map_err(|e| CallsError::Refused(RunRefused::Progs(e.to_string())))?;
     let bodies = bodies(bytes)?;
     let mut names = BTreeSet::new();
-    for spec in scenarios("") {
+    for spec in scenarios(codebase) {
         let text = format!("progs progs.dat\n{}", spec.directives);
         let scenario = scenario::read(text.as_bytes(), Path::new("."))
             .map_err(|e| CallsError::Scenario(format!("{}: {e}", spec.name)))?;
@@ -472,8 +479,8 @@ pub fn setup_functions(
 enum Called<'a> {
     /// Every function with a body (DIFF-12.2).
     Every,
-    /// The functions of this name alone (DIFF-15.4).
-    Only(&'a [u8]),
+    /// The functions of these names alone (DIFF-15.9).
+    Only(&'a BTreeSet<Vec<u8>>),
 }
 
 /// Why a run could not start (DIFF-12.20).
@@ -616,7 +623,7 @@ fn run_calls_reporting(
             .and_modify(|n| *n = n.saturating_add(1))
             .or_insert(0_usize);
         if let Called::Only(only) = called
-            && name != only
+            && !only.contains(name)
         {
             continue;
         }
@@ -1090,6 +1097,9 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
     ) -> Result<Self, CallsError> {
         let mut host = Host::new(scenario, progs).map_err(CallsError::Refused)?;
         host.builtins.engine_mut().profile = profile;
+        // LIMIT-4.3: the engine's runaway count while the world is set up, so a mod's long loop
+        // runs as it does there.
+        host.machine.set_runaway(profile.runaway());
         // DIFF-12.26: a builtin the profile lacks does nothing here, so a function a mod
         // compiles for another engine runs to its end.
         host.builtins.engine_mut().unimplemented = Unimplemented::ReturnsZero;
@@ -1116,11 +1126,15 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
                 qc_trace::Record::Run { .. }
                 | qc_trace::Record::Exit { .. }
                 | qc_trace::Record::Error { .. }
+                | qc_trace::Record::Frame { .. }
                 | qc_trace::Record::String { .. } => None,
             })
             .collect();
         let setup_executed = executed.iter().map(|e| e.statement).collect();
         host.trace.clear();
+        // DIFF-12.19: the drawn calls run under id's runaway count, the setup alone under the
+        // engine's: a drawn argument often makes a loop that would run the engine's count out.
+        host.machine.set_runaway(qc_vm::LIMIT_RUNAWAY);
         Ok(Self {
             machine: host.machine.clone(),
             builtins: host.builtins.clone(),

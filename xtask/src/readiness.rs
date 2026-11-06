@@ -43,10 +43,6 @@ pub(crate) const NIGHTLY: &str = "nightly-2026-10-01";
 /// Consecutive passing runs the flake check needs on each OS (TEST-7).
 pub(crate) const FLAKE_RUNS: u64 = 20;
 
-const USAGE: &str = "usage: cargo xtask readiness <lines | branches | mutation | spec | flakes> \
-                     --out <file.json> [--os <name>] [--shard <k/n>] <crate>...\n       \
-                     --shard measures mutants k of n only (k from 0), as cargo mutants counts them";
-
 /// One readiness check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -161,6 +157,11 @@ impl Shard {
     pub(crate) fn count(self) -> u64 {
         self.count
     }
+
+    /// Whether the `item`th of a list falls to this shard: every n-th, from the k-th.
+    pub(crate) fn holds(self, item: usize) -> bool {
+        u64::try_from(item).is_ok_and(|item| item.checked_rem(self.count) == Some(self.index))
+    }
 }
 
 impl std::fmt::Display for Shard {
@@ -210,16 +211,42 @@ pub(crate) const ORACLES: &str = "oracles";
 /// Where the corpus codebase id 1.01 is, under `QS_TEST_ASSETS`, for the oracles' coverage.
 const ID101: &str = "codebase/id-1.01";
 
-#[derive(Debug, PartialEq, Eq)]
-struct Options {
+/// `cargo xtask readiness <lines | branches | mutation | spec | flakes> --out <file.json> [--os
+/// <name>] [--shard <k/n>] <crate>...`.
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+pub(crate) struct Args {
+    /// The check.
+    #[arg(value_parser = check_named)]
     check: Check,
+    /// The measurement file to write.
+    #[arg(long, value_name = "file.json")]
     out: PathBuf,
+    /// The OS the measurement is recorded for.
+    #[arg(long, value_name = "name", default_value = std::env::consts::OS)]
     os: String,
+    /// Measure mutants k of n only (k from 0), as cargo mutants counts them.
+    #[arg(long, value_name = "k/n", value_parser = Shard::parse)]
     shard: Option<Shard>,
+    /// The crates, by package name or directory.
+    #[arg(required = true)]
     crates: Vec<String>,
 }
 
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
+/// The check `name` names.
+fn check_named(name: &str) -> Result<Check, String> {
+    Check::parse(name)
+        .ok_or_else(|| format!("no check {name:?}: lines, branches, mutation, spec or flakes"))
+}
+
+/// `--shard` divides mutants, so only the mutation check takes it.
+fn check_shard(args: &Args) -> Result<(), String> {
+    if args.shard.is_some() && args.check != Check::Mutation {
+        return Err("--shard divides mutants, so only the mutation check takes it".to_owned());
+    }
+    Ok(())
+}
+
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     let tools = Tools {
         exec: &System,
         assets: std::env::var_os("QS_TEST_ASSETS"),
@@ -239,14 +266,14 @@ struct Tools<'a> {
 }
 
 /// [`main`] with these tools.
-fn run_check(root: &Path, args: &[String], tools: &Tools<'_>) -> Result<bool, String> {
-    let options = parse_args(args)?;
+fn run_check(root: &Path, options: &Args, tools: &Tools<'_>) -> Result<bool, String> {
+    check_shard(options)?;
     // The tools write their reports here and do not create it themselves.
     let scratch = &tools.scratch;
     fs::create_dir_all(scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let mut measurement = Measurement {
         check: options.check,
-        os: options.os,
+        os: options.os.clone(),
         shard: options.shard,
         crates: BTreeMap::new(),
     };
@@ -280,47 +307,6 @@ fn run_check(root: &Path, args: &[String], tools: &Tools<'_>) -> Result<bool, St
     fs::write(&options.out, text).map_err(|error| format!("{}: {error}", options.out.display()))?;
     println!("readiness: wrote {}", options.out.display());
     Ok(true)
-}
-
-fn parse_args(args: &[String]) -> Result<Options, String> {
-    let mut iter = args.iter();
-    let Some(check) = iter.next().and_then(|name| Check::parse(name)) else {
-        return Err(USAGE.to_owned());
-    };
-    let mut out = None;
-    let mut os = std::env::consts::OS.to_owned();
-    let mut shard = None;
-    let mut crates = Vec::new();
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--out" => out = Some(PathBuf::from(iter.next().ok_or(USAGE)?)),
-            "--os" => iter.next().ok_or(USAGE)?.clone_into(&mut os),
-            "--shard" => {
-                let text = iter.next().ok_or(USAGE)?;
-                shard = Some(Shard::parse(text).map_err(|error| format!("{error}\n{USAGE}"))?);
-            }
-            flag if flag.starts_with("--") => return Err(format!("unknown flag {flag}\n{USAGE}")),
-            name => crates.push(name.to_owned()),
-        }
-    }
-    let Some(out) = out else {
-        return Err(format!("--out is required\n{USAGE}"));
-    };
-    if crates.is_empty() {
-        return Err(format!("name at least one crate\n{USAGE}"));
-    }
-    if shard.is_some() && check != Check::Mutation {
-        return Err(format!(
-            "--shard divides mutants, so only the mutation check takes it\n{USAGE}"
-        ));
-    }
-    Ok(Options {
-        check,
-        out,
-        os,
-        shard,
-        crates,
-    })
 }
 
 /// A package name of a workspace member, a crate directory inside the

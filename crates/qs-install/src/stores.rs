@@ -139,7 +139,7 @@ impl<F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'_, F, R> {
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         entries
             .into_iter()
-            .filter(|entry| entry.kind == EntryKind::Dir)
+            .filter(|entry| entry.kind.serves_as(EntryKind::Dir))
             .map(|entry| library.join(entry.name))
             .filter(|folder| {
                 GOG_QUAKE_IDS.iter().any(|id| {

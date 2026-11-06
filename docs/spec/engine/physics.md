@@ -139,7 +139,17 @@ Doors, platforms and trains are `SOLID_BSP` with `MOVETYPE_PUSH`. Their clock is
 - **PHYS-6.4** `SV_AddGravity` lowers `velocity[2]` by `gravity * sv_gravity * frametime`,
   `gravity` the entity's progs field of that name when the progs has it and it is not 0, else 1;
   `sv_gravity` is 800.
+- **PHYS-6.5** The arithmetic is C's for `ent->v.velocity[2] -= ent_gravity * sv_gravity.value *
+  host_frametime;`: `gravity * sv_gravity` is a float product; it is widened to double and
+  multiplied by `host_frametime`, a double; `velocity[2]` is widened to double, the difference
+  taken in double, and the result rounded to float once.
 
+- **PHYS-6.6** `SV_CheckVelocity`'s NaN test is id's `IS_NAN(x)`, `((*(int *)&x) & nanmask) ==
+  nanmask` with `nanmask` `255<<23` (`WinQuake/mathlib.h`, `mathlib.c`): every exponent bit
+  set, so an infinity counts as a NaN and becomes 0 too. A velocity component is zeroed first
+  and then bounded: `if (velocity > sv_maxvelocity) velocity = sv_maxvelocity; else if
+  (velocity < -sv_maxvelocity) velocity = -sv_maxvelocity;`, two comparisons, so a negative
+  `sv_maxvelocity` gives `sv_maxvelocity` for every component above it.
 ## PHYS-7 Sliding
 
 **Source:** `WinQuake/sv_phys.c`, `SV_FlyMove`.
@@ -253,12 +263,23 @@ stop.
   `MSG_WriteAngle`, `((int)f*256/360) & 255`, read back as a signed byte times `360.0/256`;
   each move through `MSG_WriteShort`, the float to an int kept to 16 bits. It sets `v_angle`,
   `button0` from bit 0 and `button2` from bit 1, and `impulse` when it is not 0.
+- **PHYS-9.7** `host_frametime` is a C `double`, so each expression that uses it is evaluated in
+  double and rounded to float once, where it is stored: `DropPunchAngle`'s `len -=
+  10*host_frametime`; `SV_UserFriction`'s `speed - host_frametime*control*friction`;
+  `SV_Accelerate`'s `sv_accelerate.value*host_frametime*wishspeed`; `SV_AirAccelerate`'s and
+  `SV_WaterMove`'s `sv_accelerate.value*wishspeed * host_frametime`, whose first product is a
+  float one; `SV_WaterMove`'s `speed - host_frametime * speed * sv_friction.value`;
+  `SV_WalkMove`'s `-STEPSIZE + oldvel[2]*host_frametime`; and `SV_Physics_Pusher`'s
+  `thinktime < ent->v.ltime + host_frametime`, compared in double. A function that takes it as
+  a `float` parameter (`SV_FlyMove`, `VectorMA`, `VectorScale`) gets it rounded to float.
 
 ## PHYS-10 Entering the game
 
-**Source:** `WinQuake/sv_main.c`, `SV_ConnectClient`, `SV_WriteClientdataToMessage`;
-`WinQuake/host_cmd.c`, `Host_Spawn_f`; `WinQuake/host.c`, `Host_ServerFrame`,
-`Host_FilterTime`.
+**Source:** `WinQuake/sv_main.c`, `SV_ConnectClient`, `SV_WriteClientdataToMessage`,
+`SV_SaveSpawnparms`, `SV_SpawnServer`; `WinQuake/host_cmd.c`, `Host_Spawn_f`,
+`Host_Changelevel_f`, `Host_Restart_f`, `Host_SavegameComment`, `Host_Savegame_f`, `Host_Loadgame_f`;
+`WinQuake/pr_edict.c`, `PR_UglyValueString`, `ED_Write`, `ED_WriteGlobals`, `ED_ParseGlobals`,
+`ED_ParseEdict`; `WinQuake/cmd.c`, `Cbuf_Execute`; `WinQuake/host.c`, `Host_ServerFrame`, `Host_FilterTime`.
 
 ### Behaviour
 
@@ -271,10 +292,235 @@ stop.
   cleared.
 - **PHYS-10.3** A server frame sets the `frametime` global, runs each spawned client's
   command (PHYS-9), then the physics (PHYS-1).
+- **PHYS-10.4** `changelevel` appends `changelevel <map>` to the host's command buffer
+  (BUILTIN-11.6), which `Cbuf_Execute` runs as commands split at a line end or at a `;` outside
+  quotes ("don't break if inside a quoted string"), each tokenized by `Cmd_TokenizeString` into
+  `COM_Parse`'s words (a quoted run one word, `{ } ( ) ' :` each a word, `//` to the line's end
+  a comment) and its name matched with `Q_strcasecmp`; `Host_Changelevel_f` takes it only with
+  exactly one argument (`if (Cmd_Argc() != 2)`, the usage message otherwise), then
+  `SV_SaveSpawnparms ()` and `SV_SpawnServer (level)`. `SV_SaveSpawnparms` keeps
+  `svs.serverflags = pr_global_struct->serverflags` and, for each active client (`if
+  (!host_client->active) continue;`, so one not yet active keeps its parms), sets `self` to its
+  edict, runs `SetChangeParms` and keeps `parm1` to `parm16` in its `spawn_parms`.
+  `SV_SpawnServer` sets `pr_global_struct->serverflags = svs.serverflags` ("serverflags are for
+  cross level information (sigils)") before the entities spawn. A client already connected is
+  not connected again, so `SetNewParms` does not run; `Host_Spawn_f` copies its kept
+  `spawn_parms` into `parm1` to `parm16` before `ClientConnect` and `PutClientInServer`
+  (PHYS-10.1). `qs-sim` takes the level and the kept parms through `World::take_host_command` and
+  `World::save_spawn_parms`; the host loads the next world with them.
+- **PHYS-10.5** `Host_Savegame_f` refuses with no game ("Not playing a local game."), in an
+  intermission ("Can't save in intermission.", the host's to check, as `cl.intermission` is the
+  client's) and with a dead player ("Can't savegame with a dead player"), and writes
+  `SAVEGAME_VERSION` 5; the comment, `SAVEGAME_COMMENT_LENGTH` 39 characters of spaces, the
+  level's name from the start and `kills:%3i/%3i` of the monsters killed and the total from 22,
+  every space then `_` ("convert space to _ to make stdio happy"); each of the 16 spawn parms as
+  `%f`; `current_skill` as `%d`; `sv.name`; `sv.time` as `%f`; the 64 light styles, `m` for one
+  not set; then `ED_WriteGlobals`, `{`, each global with `DEF_SAVEGLOBAL` of type string, float
+  or entity as `"name" "value"`, `}`; and `ED_Write` of each edict below `num_edicts`: `{`, for
+  a used one every field definition from the second whose name's last but one character is not
+  `_` ("skip _x, _y, _z vars") and whose slots are not all 0, `}`. Only a global whose type is
+  exactly string, float or entity is written, and a field of a type id's tables do not have is
+  written `bad type <n>`. `PR_UglyValueString` writes a string's text, an entity's edict number,
+  a function's or a field's name, `void`, a float `%f` and a vector three. `Host_Loadgame_f`
+  reads the version ("Savegame is version %i, not %i"), the comment, the parms, the skill as
+  `(int)(tfloat + 0.1)` ("so we can load 1.06 save files"), the map and the time with `fscanf`,
+  spawns the map with `SV_SpawnServer`, reads the 64 styles, then each block of bytes up to and
+  including its first `}`, or to a zero byte, which ends it (`if (r == EOF || !r) break;`) with
+  `while (!feof(f))` reading on after it, or to the end, at most 32767 ("Loadgame buffer
+  overflow"), whose first token must be `{` ("First token isn't a brace"): the first
+  `ED_ParseGlobals`, each key a global by `ED_FindGlobal` (one naming none passed over) read
+  through `ED_ParseEpair`, and each later edict `entnum` cleared, `free` false, read by
+  `ED_ParseEdict`, which frees one with no pair (`if (!init) ent->free = true;`), and linked
+  when not free; then `sv.num_edicts = entnum`, `sv.time` and the client's spawn parms. With
+  `sv.loadgame`, `SV_ConnectClient` keeps the client's parms and `Host_Spawn_f` runs nothing
+  ("loaded games are fully inited allready"). The preview host plays at skill 1, so a save holds
+  1 and a load spawns the map at skill 1; a value naming nothing, which `PR_UglyValueString`
+  reads past an array for, is an error, and a freed edict's `freetime` is 0.
 
 The frame's length is the host's: `Host_FilterTime` runs a frame once 1/72 of a second has
 passed since the last, its `frametime` the time passed, 0.001 to 0.1. `qs-sim` takes the
 frametime it is given; the viewer paces its frames that way.
+- **PHYS-10.6** `restart`, which single player's `respawn` appends with `localcmd` after a
+  death, runs `Host_Restart_f`: with a server active it copies `sv.name` and runs
+  `SV_SpawnServer (mapname)` without `SV_SaveSpawnparms`, so the client spawns again with the
+  `spawn_parms` it entered the level with (`SetNewParms`' in a new game); its arguments are not
+  read. `qs-sim` gives it as `HostCommand::Restart`, with `World::map` and `World::carried` for
+  the host to load the level again.
+
+
+- **PHYS-10.7** A client enters in four stages, each run by the server in its own frame after
+  the frame's discarded draw (MOVE-6.2) and `frametime`, before its moves and physics:
+  `SV_ConnectClient` from `SV_CheckForNewClients` (the slot active, the serverinfo sent, the
+  spawn parms chosen as PHYS-10.1 and PHYS-10.4 say), then the client's string command
+  `prespawn` (the map's signon data sent, `Host_PreSpawn_f`), then `spawn` (the edict cleared,
+  named with the client's name, and `ClientConnect` and `PutClientInServer` run,
+  `Host_Spawn_f`), then `begin` (`Host_Begin_f`), after which its moves are thought. A local client answers each stage's signon message in the next frame
+  (`CL_SignonReply`), so the four take frames 1 to 4. From the first stage the client is
+  active, so the frames' physics run `PlayerPreThink` and `PlayerPostThink` on its edict before
+  it has spawned (`SV_Physics_Client` tests `active`, not `spawned`).
+## PHYS-11 The client's string commands
+
+**Source:** `WinQuake/sv_user.c`, `SV_ReadClientMessage`; `WinQuake/host_cmd.c`, `Host_God_f`,
+`Host_Notarget_f`, `Host_Noclip_f`, `Host_Fly_f`, `Host_Kill_f`, `Host_Give_f`, `Host_Name_f`,
+`Host_Color_f`, `Host_Pause_f`; `WinQuake/cmd.c`, `Cmd_TokenizeString`, `Cmd_ExecuteString`.
+
+### Behaviour
+
+- **PHYS-11.1** A string command the client sent is read in the next server frame, in the order
+  sent, before the client's move, whether or not it has spawned, once the client is active
+  (`SV_RunClients` reads every active client's messages). It runs only when its text starts,
+  ASCII case-insensitively, with one of `status`, `god`, `notarget`, `fly`, `name`, `noclip`,
+  `say`, `say_team`, `tell`, `color`, `kill`, `pause`, `spawn`, `begin`, `prespawn`, `kick`,
+  `ping`, `give` or `ban` (`Q_strncasecmp (s, "<name>", <length>)`); then
+  `Cmd_TokenizeString` splits its first line into words with `COM_Parse` (a `;` separates
+  nothing, at most 80 words), keeping the text from the second word on as `cmd_args`, and the
+  first word names the command, matched ASCII case-insensitively. A word the server has no
+  command for does nothing.
+- **PHYS-11.2** `god`, `notarget`, `noclip`, `fly` and `give` do nothing when the `deathmatch`
+  global is not 0: they test `pr_global_struct->deathmatch && !host_client->privileged`, and no
+  server file sets `privileged`.
+- **PHYS-11.3** `god` toggles `FL_GODMODE` (64) in the player's `flags` and `notarget`
+  `FL_NOTARGET` (128); each prints `godmode ON`, `godmode OFF`, `notarget ON` or `notarget OFF`
+  and a line feed to the client. `noclip` sets `movetype` to `MOVETYPE_NOCLIP`, or to
+  `MOVETYPE_WALK` when it is already that, printing `noclip ON` or `noclip OFF`; `fly` the same
+  with `MOVETYPE_FLY` and `flymode`.
+- **PHYS-11.4** `kill`, for a player whose `health` is above 0, sets `time` to the server's
+  time and `self` to the player and runs `ClientKill`; otherwise it prints "Can't suicide --
+  allready dead!" and a line feed to the client.
+- **PHYS-11.5** `prespawn` and `spawn` run their signon stage (PHYS-10.7) unless the client has
+  spawned ("prespawn not valid -- allready spawned", "Spawn not valid -- allready spawned"),
+  and `begin` runs its stage. `status`, `say`, `say_team`, `tell`, `ping`, `kick` and `ban`
+  change no edict or global; `qs-sim` runs none of them.
+- **PHYS-11.6** `give <what> <n>`, with `n` read by C's `atoi`, in the original game (the
+  `-rogue` and `-hipnotic` variants, which `qs-sim` does not tell apart, are not described):
+  a digit 2 to 9 adds `IT_SHOTGUN << (digit - 2)` to `items`; `s`, `n`, `r`, `h` and `c` set
+  `ammo_shells`, `ammo_nails`, `ammo_rockets`, `health` and `ammo_cells` to `n`; anything else
+  does nothing.
+- **PHYS-11.7** `name` with one argument makes it the client's name, with more `cmd_args`, cut
+  to 15 bytes (`newName[15] = 0`); the player's `netname` becomes it and `svc_updatename`, the
+  slot and the name go in the reliable datagram. `color <top> [<bottom>]` reads each with
+  `atoi`, one giving both, keeps each `& 15` and at most 13, sets the player's `team` to
+  `bottom + 1`, and puts `svc_updatecolors`, the slot and `top * 16 + bottom` in the reliable
+  datagram. With no argument neither changes anything.
+- **PHYS-11.8** `pause`, with the `pausable` setting 0, prints "Pause not allowed." to the
+  client; otherwise it toggles `sv.paused`, prints "`<netname>` paused the game" or "unpaused
+  the game" to the client and puts `svc_setpause` and the new state in the reliable datagram.
+  While paused the client's move is read but its think does not run and no physics runs, so
+  the server's time stands (`SV_RunClients`, `Host_ServerFrame`: `if (!sv.paused ...)`).
+
+## PHYS-12 The server's settings
+
+**Source:** `WinQuake/sv_main.c`, `SV_Init`; `WinQuake/host.c`, `Host_InitLocal`; the
+`cvar_t` declarations of `sv_phys.c`, `sv_user.c`, `pr_cmds.c` and `host.c`.
+
+### Behaviour
+
+- **PHYS-12.1** A world has the settings `SV_Init` and `Host_InitLocal` register, with the
+  defaults they are declared with: `sv_maxvelocity` 2000, `sv_gravity` 800, `sv_friction` 4,
+  `edgefriction` 2, `sv_stopspeed` 100, `sv_maxspeed` 320, `sv_accelerate` 10,
+  `sv_idealpitchscale` 0.8, `sv_aim` 0.93, `sv_nostep` 0, `host_framerate` 0, `host_speeds` 0,
+  `sys_ticrate` 0.05, `serverprofile` 0, `fraglimit` 0, `timelimit` 0, `samelevel` 0,
+  `noexit` 0, `developer` 0, `pausable` 1 and `temp1` 0, besides `skill`, `deathmatch`, `coop`
+  and `teamplay` (BUILTIN-11.8). `cvar` reads them and `cvar_set` changes them.
+- **PHYS-12.2** The physics read a setting's value where id's code reads `<setting>.value`
+  (its text read by `Q_atof`, BUILTIN-11.7), each frame: `sv_gravity` (PHYS-6.4),
+  `sv_maxvelocity` (PHYS-6.3), `sv_friction`, `edgefriction` and `sv_stopspeed` (PHYS-9.3),
+  `sv_maxspeed` and `sv_accelerate` (PHYS-9.2, PHYS-9.4, PHYS-9.5), `sv_idealpitchscale`
+  (NET-4.2), `sv_aim` (WORLD-8.8) and `sv_nostep`, which ends `SV_WalkMove` before it tries
+  to step up (PHYS-8.3). A progs that sets one, as `worldspawn` sets `sv_gravity` to 100 on
+  e1m8, changes the game from then on.
+- **PHYS-12.3** The settings belong to the host, not the level: a level change or a restart
+  keeps them as they were (`Cvar_Set` writes the process's `cvar_t`).
+## PHYS-13 The console
+
+**Source:** `WinQuake/cmd.c`, `Cbuf_Execute`, `Cmd_ExecuteString`, `Cmd_Wait_f`,
+`Cmd_Echo_f`, `Cmd_Alias_f`, `Cmd_Exec_f`, `Cmd_StuffCmds_f`, `Cmd_ForwardToServer`;
+`WinQuake/cvar.c`, `Cvar_Command`, `Cvar_FindVar`, `Cvar_SetValue`; `WinQuake/host_cmd.c`,
+`Host_InitCommands` and the commands it adds; `WinQuake/pr_edict.c`, `ED_Print`,
+`ED_PrintEdicts`, `ED_PrintEdict_f`, `ED_Count`, `PR_ValueString`; `WinQuake/pr_exec.c`,
+`PR_Profile_f`, `PR_ExecuteProgram`; `WinQuake/common.c`, `COM_Path_f`; `WinQuake/cl_main.c`
+and `WinQuake/net_main.c` for `_cl_name`, `_cl_color` and `hostname`.
+
+The console runs the text a person types, or the progs' `localcmd` adds, on the single-player
+host: a client and a server in one process (`cmd_source == src_command`).
+
+### Behaviour
+
+- **PHYS-13.1** `Cbuf_Execute` runs the buffer a line at a time until it is empty: a line ends
+  at a line feed, or at a `;` when the `"` counted from the start of the buffer are even (a
+  `;` inside a quoted string does not end it). `Cmd_ExecuteString` splits the line with
+  `Cmd_TokenizeString` (PHYS-11.1) and does nothing with no words; else the first word, ASCII
+  case-insensitively, names a command; failing that an alias (PHYS-13.2); failing that a
+  setting (PHYS-13.3). The commands are `cmd.c`'s (`stuffcmds`, `exec`, `echo`, `alias`, `cmd`,
+  `wait`), `Host_InitCommands`' and `ED_Init`'s and `COM_Init`'s debug prints. `echo` prints
+  each argument and a space, then a line feed.
+- **PHYS-13.2** `wait` stops the buffer after its line; the rest runs in the next frame.
+  `alias` with no name prints "Current alias commands:" and `<name> : <text>` for each, the
+  newest first; with a name of 32 bytes or more it prints "Alias name is too long"; else the
+  alias's text is each argument after the name followed by a space, then a line feed, replacing
+  the text of an alias of exactly that name (`strcmp`) or added first. An alias runs by putting
+  its text before the rest of the buffer (`Cbuf_InsertText`), and is found ASCII
+  case-insensitively. `exec <file>` prints "couldn't exec `<file>`" when the file is not found,
+  else "execing `<file>`" and puts the file's text before the rest of the buffer; with other
+  than one argument it prints its usage, "exec <filename> : execute a script file".
+  `stuffcmds` with an argument prints "stuffcmds : execute command line parameters"; alone it
+  runs the command line's `+` commands, of which the preview host has none.
+- **PHYS-13.3** A first word that is no command or alias names a setting by its exact name
+  (`Q_strcmp`): alone it prints `"<name>" is "<text>"`, with arguments the first becomes its
+  text. A word that is none of these prints `Unknown command "<word>"`.
+- **PHYS-13.4** `god`, `notarget`, `fly`, `noclip`, `give`, `kill`, `pause`, `say`,
+  `say_team`, `tell` and `ping` from the console go to the server (`Cmd_ForwardToServer`) as a
+  string command (PHYS-11.1): the command's name and a space, then `Cmd_Args` when there is an
+  argument and a line feed when there is none; `cmd` sends only its arguments, or a line feed.
+  With no connection each prints `Can't "<name>", not connected`. `name` alone prints
+  `"name" is "<_cl_name>"`; else the one argument, or with more `Cmd_Args`, cut to 15 bytes,
+  becomes `_cl_name` unless it already is, and when connected the command goes to the server
+  as above (the server gets the cut name only when it was `Cmd_Args`, which `newName[15] = 0`
+  wrote into). `color` alone prints `"color" is "<top> <bottom>"` from `_cl_color` and the
+  usage `color <0-13> [0-13]`; else it reads the colours as PHYS-11.7 does and sets
+  `_cl_color` to `top * 16 + bottom` printed with `%f` (`Cvar_SetValue`), and when connected
+  forwards the command. `_cl_name` starts as "player", `_cl_color` as "0" and `hostname` as
+  "UNNAMED".
+- **PHYS-13.5** `status` prints `host:    <hostname>`, `version: 1.09` (`%4.2f` of
+  `VERSION`), `map:     <map>`, `players: <n> active (1 max)` and an empty line, then for the
+  connected player `#1  <name, padded and cut to 16>  <frags, %3i>  <h>:<mm>:<ss>` and
+  `   LOCAL`, the loopback server address (`net_loop.c`). `version` prints `Version 1.09`
+  and an `Exe:` line. `prespawn`, `spawn` and `begin` print "`<name>` is not valid from the
+  console". `kick` from the console of a single-player game changes nothing the console tests
+  read.
+- **PHYS-13.6** `map <name>`, `changelevel <name>` (exactly one argument, else its usage
+  "changelevel <levelname> : continue game on a new level"), `restart`, `save <name>` and
+  `load <name>` (exactly one argument, else "save <savename> : save a game" and "load
+  <savename> : load a game"), and `quit` are carried out by the host. `save` refuses a name
+  holding `..` with "Relative pathnames are not allowed.". The buffer stops at such a command
+  and the rest of it runs once the host has carried it out. The frame that met it runs no
+  server frame and gives back its `rand ()` draw: id runs the command and then the server
+  frame in one host frame with one draw, and the host runs that server frame once it has
+  acted.
+- **PHYS-13.7** `edict <n>` (`Q_atoi`) prints `ED_Print` of edict `n`, or "Bad edict number"
+  for an `n` at or past `num_edicts`; `edicts` prints "`<num_edicts>` entities" and each edict.
+  `ED_Print` prints "FREE" for a free edict; else an empty line, `EDICT <n>:` and, for each
+  field def after the first whose name's second last byte is not `_` and whose slots (three
+  for a vector, else one) are not all zero, the name padded with spaces to 15 bytes and its
+  `PR_ValueString`: a string's text, `entity <n>`, `<function>()`, `.<field>`, `void`, a
+  float `%5.1f`, a vector `'%5.1f %5.1f %5.1f'`, `pointer`, or `bad type <n>`.
+  `edictcount` prints `num_edicts`, `active`, `view`, `touch` and `step`, each `:%3i`: the
+  edicts, those in use, those with a `model`, a `solid` and `movetype` `MOVETYPE_STEP`.
+  `profile` prints, for the ten functions that ran the most statements since it last ran
+  (`pr_xfunction->profile++` for each statement), most first and the first of equals by
+  index, `%7i` of the count and the name, then sets every count to 0. `path` prints "Current
+  search path:" and each element, an archive as `<file> (<n> files)`.
+- **PHYS-13.8** Where the preview host differs from id's host, deliberately: `version`'s
+  `Exe:` line names QuakeC Studio and its version instead of the build's `__TIME__` and
+  `__DATE__`; `status` prints the connected time as `0:00:00`, since id's is
+  `Sys_FloatTime`'s wall clock; `edict` with an `n` below 0 prints "Bad edict number", where
+  id's `ED_PrintNum` reads outside the edicts; a field name of one byte is printed, where id's
+  `name[strlen(name)-2]` reads before it; `map` with no name does nothing, where id's spawns
+  `maps/.bsp` and fails; `kick` does nothing, where id's could drop the only client; and the
+  profile counts do not wrap at `2^31`. `demos`, `startdemos`, `stopdemo`, `connect`,
+  `reconnect`, `changelevel2`, `please`, `viewmodel`, `viewframe`, `viewnext`, `viewprev` and
+  `mcache` are not part of the preview host, which plays no demos and has no remote server,
+  and print `Unknown command`.
 
 ## Constants
 

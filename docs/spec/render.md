@@ -186,7 +186,9 @@ decide how bright and how smooth a frame looks.
 `Mod_FloodFillSkin`, `Mod_LoadAllSkins` and `Mod_LoadAliasGroup`; `WinQuake/gl_mesh.c`,
 `BuildTris`; `WinQuake/gl_rlight.c`, `R_LightPoint` and `RecursiveLightPoint`;
 `WinQuake/anorm_dots.h`; `WinQuake/cl_main.c`, `CL_RelinkEntities`; `WinQuake/mathlib.c`,
-`anglemod`; `WinQuake/gl_vidnt.c`, `VID_SetPalette`
+`anglemod`; `WinQuake/gl_vidnt.c`, `VID_SetPalette`; `WinQuake/gl_rmisc.c`,
+`R_TranslatePlayerSkin`; `WinQuake/cl_parse.c`, `CL_ParseUpdate` and `CL_NewTranslation`;
+`WinQuake/render.h`, `TOP_RANGE` and `BOTTOM_RANGE`
 (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`). The colour clamp is OpenGL 1.1,
 section 2.13.6. The pose blend is `Quake/r_alias.c`, `GL_DrawAliasFrame`
 (sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`).
@@ -284,6 +286,20 @@ world's light below the entity.
   `(sum over its styles of sample * style value) >> 8` at sample `(dt>>4) *
   ((extents[0]>>4)+1) + (ds>>4)`, the style values as REND-5.6 says. A leaf hit with nothing
   gives 0.
+- **REND-4.13** `R_TranslatePlayerSkin (playernum)` (`gl_rmisc.c`) builds an identity table,
+  then for `i` in 0 to 15 sets `translate[TOP_RANGE+i]` to `top+i` and
+  `translate[BOTTOM_RANGE+i]` to `bottom+i`, or `top+15-i` and `bottom+15-i` for a row of 128 or
+  more ("the artists made some backwards ranges"), with `top = colors & 0xf0`, `bottom = (colors
+  &15)<<4`, `colors` the slot's `cl.scores[playernum].colors`, and `TOP_RANGE` 16 and
+  `BOTTOM_RANGE` 96 (`render.h`). It translates `texels[skinnum]` of
+  `cl_entities[1+playernum]`'s alias model, the 8-bit pixels after REND-4.1's flood fill and a
+  group's first image, or `texels[0]` for a skin number out of range, into `playertextures +
+  playernum`. `CL_ParseUpdate` calls it when a player's model or skin number changes and
+  `CL_NewTranslation` when its colours do (`cl_parse.c`). `R_DrawAliasModel` binds
+  `playertextures - 1 + i` instead of the skin for entity `i` from 1 to `cl.maxclients` when its
+  colormap is not `vid.colormap`, that is, a nonzero colormap ("Heads are just uncolored"). The
+  renderer keeps one translated skin per slot, up to 16, remade when the entity's model, skin or
+  colours change.
 
 ### Constants
 
@@ -324,6 +340,15 @@ style every frame and rebuilds the lightmaps of the faces whose styles changed.
   atlas; the texels are the same.
 - **REND-5.6** `R_LightPoint` sums `sample * scale` with the same style values into the `int r`,
   so its products wrap the same way, and shifts it right by 8 (`RecursiveLightPoint`).
+- **REND-5.7** Faces made again reach the GPU as QuakeSpasm uploads its lightmaps
+  (`R_UploadLightmap`, Quake/r_brush.c at
+  sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`): each block grows a rectangle,
+  `lm->rectchange`, to every face built in it, and only that is written,
+  "`glTexSubImage2D(GL_TEXTURE_2D, 0, 0, lm->rectchange.t, LMBLOCK_WIDTH, lm->rectchange.h,
+  ...)`", with `LMBLOCK_WIDTH` and `LMBLOCK_HEIGHT` 256 (Quake/glquake.h). This renderer keeps
+  one atlas cut into 256 by 256 blocks; a face counts in the block of its top left texel, and
+  each block's rectangle, clipped to the atlas, is written once a frame, its columns as well as
+  its rows, where QuakeSpasm writes the block's full width. The texels drawn are the same.
 
 ## REND-6 Coloured light
 
@@ -378,19 +403,38 @@ The client's dynamic lights (CLIENT-5.5, CLIENT-5.7) light the faces near them f
   from its model's `hulls[0].firstclipnode`, the model's first node, when the model's
   `firstmodelsurface` is not 0, with the light's origin as it is in the world: the planes are
   the model's own, so a moved entity is lit as if it stood where its model was built.
+- **REND-7.6** As QuakeSpasm's `R_MarkLights` (Quake/gl_rlight.c at
+  sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`, from FitzQuake) does, a face of
+  a node the sphere straddles (REND-7.1) is marked only when the light reaches it: with `impact
+  = origin - normal * dist`, "`l = DotProduct (impact, surf->texinfo->vecs[0]) +
+  surf->texinfo->vecs[0][3] - surf->texturemins[0]; s = l+0.5;if (s < 0) s = 0;else if (s >
+  surf->extents[0]) s = surf->extents[0]; s = l - s;`", `t` the same on the second axis, each
+  assigned to an int toward zero, and the face marked when "`(s*s+t*t+dist*dist) < maxdist`",
+  `maxdist` the radius squared. The squares are summed in a double here, where C's ints would
+  overflow for a light some 46,000 texture units off, our choice. id's code marks every face of
+  the node. A face this skips is one REND-7.2 adds no light to, since REND-7.2's texel distance
+  is never less than the straight one, except within a texture unit of the radius, where the two
+  truncations to ints can differ; fewer faces are made again.
+- **REND-7.7** The renderer takes the first 64 of the client's lights, QuakeSpasm's
+  `MAX_DLIGHTS` (Quake/client.h at sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`:
+  "`#define MAX_DLIGHTS 64 //johnfitz -- was 32`"), each face keeping a bit for each
+  (Quake/gl_model.h: "`unsigned int dlightbits[(MAX_DLIGHTS + 31) >> 5];`"), where id's keeps 32
+  in one `int`. A client with id's limits (CLIENT-8.2) gives it at most 32.
 
 ### Constants
 
 | Constant | Value | Source |
 | --- | --- | --- |
-| `REND_MAX_DLIGHTS` | 32 | `client.h`, `MAX_DLIGHTS` |
+| `REND_MAX_DLIGHTS` | 64 | QuakeSpasm's `Quake/client.h`, `MAX_DLIGHTS` ("64 //johnfitz -- was 32"); id's `client.h` has 32 (REND-7.7) |
 | `REND_FLASHBLEND_SCALE` | 0.35 | `gl_rlight.c`, `R_RenderDlight` |
 
 ## REND-8 Skyboxes
 
-**Source:** `Quake/gl_sky.c`, `Sky_NewMap`, `Sky_LoadSkyBox`, `Sky_DrawSkyBox`
-(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`). The two scrolling layers of
-id's sky are REND-2.3.
+**Source:** `Quake/gl_sky.c`, `Sky_NewMap`, `Sky_LoadSkyBox`, `Sky_ProjectPoly`,
+`Sky_EmitSkyBoxVertex`, `Sky_DrawSkyBox` and `Sky_DrawSky`; `Quake/image.c`, `Image_LoadImage`,
+`Image_LoadTGA` and `Image_LoadPCX`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`). The two scrolling layers of id's
+sky are REND-2.3.
 
 ### Behaviour
 
@@ -401,6 +445,39 @@ id's sky are REND-2.3.
   the fog colour (REND-10) blended over the sky, only while the fog density is above 0 and
   `skyfog` is above 0 (`Fog_GetDensity() > 0 && skyfog > 0`). The preview host draws a skybox
   when the map names one, under ADR-0012.
+- **REND-8.2** QuakeSpasm's `Sky_NewMap` reads the worldspawn's keys, a leading `_` and trailing
+  spaces dropped, and calls `Sky_LoadSkyBox (value)` for each `sky`, `skyname` and `qlsky` in
+  turn, so the last one read decides, an empty value turning the box off; `skyfog` is `atof
+  (value)`, 0 for text that is not a number. `Sky_LoadSkyBox` reads `gfx/env/<name><suf[i]>` for
+  `suf` `rt`, `bk`, `lf`, `ft`, `up`, `dn` through `Image_LoadImage`, which tries `<file>.tga`,
+  then `<file>.pcx`. A face it cannot read is `notexture`; when none is read it "go[es] back to
+  scrolling sky". `Image_LoadPCX` takes only signature 0x0A, version 5, encoding 1, 8 bits a
+  pixel and one colour plane (`Sys_Error` otherwise); the picture is `xmax - xmin + 1` by `ymax
+  - ymin + 1`, the palette the file's last 768 bytes, and each row decodes until
+  `bytes_per_line` pixels, a byte from 0xC0 a run of `byte & 0x3F` of the next byte, writing
+  from the row's start, so the next row overwrites the padding and anything past the width.
+  `Image_LoadTGA` stores rows from the top, flipping a file without attribute bit 0x20. The
+  first file found decides: a `.tga` that does not read is a face not read, not the `.pcx`
+  beside it. The preview host reads the TGA with the `image` crate, and diverges where
+  QuakeSpasm stops or reads outside the file: a file it cannot read, a PCX that ends before its
+  pixels or its palette, or one whose `bytes_per_line` is less than its width (whose rows
+  QuakeSpasm leaves zero, so a small file could ask for gigabytes), is a face not read. A face
+  not read is black instead of `notexture`'s debug checkerboard, and the faces share one texture
+  array at the first read face's size, a face of another size taken at its nearest texels; a box
+  larger than the device's largest texture keeps the scrolling layers.
+- **REND-8.3** `Sky_DrawSky` draws the sky faces into the depth buffer before the world, then
+  draws the box's six faces at `gl_farclip / sqrt(3)` around `r_origin` with
+  `glDepthFunc(GL_GEQUAL)` and no depth write, so the box shows only through the sky faces; `#if
+  1 /* FIXME */` always draws whole faces, `skymins` -1 and `skymaxs` 1. A direction `v` falls
+  on `Sky_ProjectPoly`'s axis: 0 or 1 (+x, -x) when `|v[0]|` is larger than both others, else 2
+  or 3 (+y, -y) when `|v[1]|` is, else 4 or 5 (+z, -z). Its `vec_to_st[axis]` gives `s` and `t`
+  from -1 to 1 as signed components over the axis's: {-2,3,1}, {2,3,-1}, {1,3,2}, {-1,3,-2},
+  {-2,-1,3}, {-2,1,-3}. `Sky_EmitSkyBoxVertex` makes them `(s+1)*0.5` and `(t+1)*0.5`, then `s *
+  (w-1)/w + 0.5/w` to "avoid bilerp seam", and `1 - t`, on the texture
+  `skybox_textures[skytexorder[axis]]`, `skytexorder` {0,2,1,3,4,5}. With fog, `skyfog` of the
+  fog colour is blended over the box (REND-8.1), and the box is not drawn when `skyfog >= 1`.
+  The preview host samples the box for each sky fragment along the direction from the eye, which
+  is the same picture.
 
 ### Constants
 
@@ -489,3 +566,133 @@ type, which the preview host does (ADR-0012).
   and `origin + down * up + right * right` with the frame's `up`, `down`, `left` and `right`
   (SPR-2) and the texture's `(0, tmax)`, `(0, 0)`, `(smax, 0)`, `(smax, tmax)`; transparent
   texels are cut by alpha test.
+
+## REND-12 MD5 models
+
+**Source:** `Quake/gl_model.c`, `Mod_LoadModel`; `Quake/gl_mesh.c`, `Mod_LoadMD5MeshModel`,
+`MD5_BakeInfluences`, `MD5_ComputeNormals` and `MD5Anim_Load`; `Quake/r_alias.c`,
+`R_SetupAliasFrame`; `Quake/image.c`, `Image_LoadImage`; `Quake/gl_model.h`, `MAX_SKINS`
+(Shpoike/Quakespasm@`4c0c55f7830715cf8670f586c7be01ebce262d23`, cited for description only, as
+[`md5.md`](md5.md) says); `Quake/r_alias.c`, `GLAlias_CreateShaders` and `R_DrawAliasModel`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`). The files are MD5-1 to MD5-3.
+
+The rerelease replaces id1's `.mdl` models with skeletal MD5 models. id's rerelease engine is
+not published; QuakeSpasm-Spiked reads the files, and the preview host draws them through the
+alias pipeline, with QuakeSpasm's shader formula for a vertex normal.
+
+### Behaviour
+
+- **REND-12.1** QuakeSpasm-Spiked's `Mod_LoadModel` tries each extension of `r_replacemodels`
+  (default empty) in place of a model's, and passes over a file found when the original is on a
+  later search-path element ("Ignoring %s from lower priority path"); it then picks the loader
+  by the file's first four bytes, `MD5V` for MD5 (MD5-2.1). The preview host replaces
+  `progs/x.mdl` with `progs/x.md5mesh` by default, so a rerelease install shows its MD5 models,
+  with `md5_models` off as QuakeSpasm-Spiked's default: the MD5 model is used when it is found
+  and the `.mdl` is not found on an earlier search-path element. A mesh or animation that does
+  not read (MD5-2, MD5-3), which QuakeSpasm-Spiked stops on, leaves the `.mdl` drawn; with no
+  `.mdl` it is an error naming the file. A torch `.mdl` (REND-4.7) gives its MD5 model full
+  light.
+- **REND-12.2** Every frame is made when the model is read, so an animation whose `numFrames` is
+  larger than its file in bytes is refused (`<file> has too many frames`), as MD5-3.11 bounds
+  the components. Without an `.md5anim` (MD5-3.1) the model has one frame, the mesh's joints,
+  which are absolute: `Mod_LoadMD5MeshModel` inverts them directly ("absolute, so we can just
+  invert now"). An animation frame's poses (MD5-3.7) are relative: QuakeSpasm-Spiked
+  concatenates each onto its parent's, in joint order ("concat it onto the parent
+  (relative->abs)"), the position turned by the parent's orientation and moved to its position,
+  the orientations multiplied. A joint whose parent is not before it reads a pose not yet made
+  in QuakeSpasm-Spiked; the preview host places it as if it had none. A vertex in a frame is the
+  sum over its weights (MD5-2.12) of `bias * (joint orientation * weight position + joint
+  position)`, as the mesh's own pose bakes it (`weight[idx].pos[...] =
+  MD5FLOAT()*weight[idx].pos[3]`, then `Matrix3x4_RM_Transform4`); QuakeSpasm-Spiked then keeps
+  four influences a vertex and skins the baked pose by the frame's joints, which agrees for a
+  vertex on one joint, and the preview host computes every frame by the sum, every weight kept.
+  A vertex's normal is `MD5_ComputeNormals`': the sum of `cross(v1 - v0, v2 - v0)` normalised
+  over its triangles, normalised, a zero vector left zero. The triangles are wound as an
+  `.mdl`'s are, which the alias pipeline's culling draws (REND-1.10), and for that winding the
+  cross product points into the model, so every vertex took the facing-away shade of REND-12.5
+  and a rerelease view model drew nearly black; the preview host takes `cross(v2 - v0, v1 -
+  v0)`, the outward normal, so an MD5 model lights as its `.mdl` does, and makes it for every
+  frame.
+- **REND-12.3** Each animation frame is one frame of one pose shown for 0.1 seconds (MD5-3.10);
+  a frame out of range draws frame 0. The triangles are the mesh's, in its order, each corner
+  with its vertex's `s` and `t`, and are turned and moved as an alias model is (REND-4.5). Two
+  frames blend by the lerp fraction (CLIENT-7.3) as REND-4.12 blends poses, positions and
+  shades; QuakeSpasm-Spiked blends the joints' matrices instead. Each mesh of the file is drawn
+  with its own skin.
+- **REND-12.4** A mesh's skins are found from its shader name (MD5-2.13): for `n` from 0 up to
+  `MAX_SKINS` (32), frames `f` from 0 to 3 of `progs/<shader>_<nn>_<ff>` until one is missing; a
+  skin with no frame 0 ends the skins. Each is found by QuakeSpasm-Spiked's `Image_LoadImage`:
+  the name with `.dds`, `.tga`, `.png`, `.jpeg`, `.jpg` and `.pcx` in turn, as it is, then under
+  `textures/`, then its last path part under `textures/`, and at last `<name>.lmp`. The four
+  slots (REND-4.2) are filled as "this stuff is hideous" fills them: one frame in all four, two
+  or three as frames 0, 1, 0, 1, four in order. The first file found decides, as
+  `Image_LoadImage` returns its loader's result: one that does not read gives no image. The
+  preview host reads no `.dds`, and draws a mesh with no skin white; the `_luma`, `_glow`,
+  `_pants` and `_shirt` images are not read, so an MD5 player wears no colours (REND-4.13).
+- **REND-12.5** QuakeSpasm's GLSL alias shader shades a vertex by its normal:
+  `r_avertexnormal_dot` is `1.0 + dot * (13.0 / 44.0)` when `dot(vertexnormal, ShadeVector)` is
+  below 0 ("this reproduces anorm_dots within as reasonable a degree of tolerance") and `1.0 +
+  dot` otherwise, the two poses' mixed by the blend and times the light. `ShadeVector` is
+  `(cos(-a), sin(-a), 1)` normalised, `a = (quantizedangle / 16.0) * 2.0 * 3.14159` and
+  `quantizedangle = ((int)(e->angles[1] * (SHADEDOT_QUANT / 360.0))) & (SHADEDOT_QUANT - 1)`
+  (`R_DrawAliasModel`). The preview host shades an MD5 vertex so, times REND-4.7's `shadelight`,
+  clamped to 0 to 1.
+
+### Constants
+
+| Constant | Value | Source |
+| --- | --- | --- |
+| `MAX_SKINS` | 32 | QuakeSpasm-Spiked `gl_model.h` |
+
+## REND-13 The QuakeSpasm look
+
+**Source:** `Quake/gl_vidsdl.c`, `vid_gamma`; `Quake/gl_rmain.c`, `gl_fullbrights`,
+`gl_overbright` and `GLSLGamma_GammaCorrect`; `Quake/gl_texmgr.c`, `glmodes`, `glmode_idx`
+and `TexMgr_LoadPalette`; `Quake/gl_model.c`, `Mod_LoadTextures` and `Mod_CheckFullbrights`;
+`Quake/r_brush.c`, `R_BuildLightMap`; `Quake/r_world.c` and `Quake/r_alias.c`, their GLSL;
+`Quake/gl_screen.c`, `scr_fov_adapt` and `AdaptFovx`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`).
+
+The engines players run exported mods on draw a frame brighter, sharper and wider than GLQuake:
+QuakeSpasm keeps the palette as it is, filters between mip levels, lets fullbright texels glow,
+lets light go past a texture's colour, and widens the view to the window. This renderer draws
+QuakeSpasm's look by default and GLQuake's as a mode.
+
+### Behaviour
+
+- **REND-13.1** A frame takes one of two looks. QuakeSpasm's is the default: its `gamma`,
+  texture mode, `gl_fullbrights`, `gl_overbright` and `fov_adapt` as they ship (REND-13.2 to
+  REND-13.6). GLQuake's, as REND-1 to REND-7 describe it, is a mode a caller chooses
+  (`Look::GlQuake`), as ADR-0012 keeps `BspLoader::WinQuake`; the preview host's `--look
+  glquake` chooses it.
+- **REND-13.2** QuakeSpasm's gamma defaults to 1 (`Quake/gl_vidsdl.c`: "`cvar_t vid_gamma =
+  {"gamma", "1", CVAR_ARCHIVE};`") and corrects the finished frame, not the palette; at 1
+  nothing is corrected (`Quake/gl_rmain.c`: "`if (vid_gamma.value == 1 && vid_contrast.value ==
+  1)`"). In QuakeSpasm's look the palette is used as it is. A gamma the caller gives still
+  corrects the palette as REND-3.1 says, our choice, so `-gamma` keeps GLQuake's meaning.
+- **REND-13.3** QuakeSpasm's texture mode defaults to the last of its modes
+  (`Quake/gl_texmgr.c`: "`static int glmode_idx = NUM_GLMODES - 1; /* trilinear */`"),
+  "`{GL_LINEAR, GL_LINEAR_MIPMAP_LINEAR, "GL_LINEAR_MIPMAP_LINEAR"}`": a world texture, and a
+  skin filtered as one (REND-4.3), is linear within each of the two nearest mip levels and
+  blends between them, where GLQuake takes the nearest level (REND-3.3).
+- **REND-13.4** With `gl_fullbrights` "1" (`Quake/gl_rmain.c`), a texture with a texel above 223
+  (`Mod_CheckFullbrights`: "`if (*pixels++ > 223)`") is loaded twice (`Mod_LoadTextures`):
+  through the palette with "224-255 ... black" (`d_8to24table_nobright`) and through the one
+  with "0-223 ... black" (`d_8to24table_fbright`, `TexMgr_LoadPalette` in `Quake/gl_texmgr.c`),
+  and the second is added over the lit first: "`result += texture2D(FullbrightTex,
+  gl_TexCoord[0].xy);`" then "`result = clamp(result, 0.0, 1.0);`" (`Quake/r_world.c`). Only a
+  regular texture is split, not the sky or a liquid. An alias model's skin is split and added
+  the same way (`Quake/r_alias.c`, `FullbrightTex`). Here a texture with a palette of its own
+  (MAP-24) and a player's translated skin (REND-4.13) have no glow, our choice.
+- **REND-13.5** With `gl_overbright` "1" (`Quake/gl_rmain.c`), `R_BuildLightMap` shifts each
+  texel's unsigned sum by 8, not 7, and caps it at 255 (`Quake/r_brush.c`: "`if (overbright) { r
+  = *bl++ >> 8; ...`", "`*dest++ = (r > 255)? 255 : r;`"), grey light and coloured alike, and
+  the world's shader doubles it: "`if (UseOverbright) result.rgb *= 2.0;`" (`Quake/r_world.c`),
+  so light can reach twice a texture's colour, before the fullbrights and the clamp (REND-13.4).
+  A map with no light data is 255 either way. Alias models are lit as REND-4.7 says in both
+  looks, our choice: QuakeSpasm's `R_SetupAliasLighting` is not ported.
+- **REND-13.6** With `fov_adapt` "1" (`Quake/gl_screen.c`), the field of view across is
+  `AdaptFovx (scr_fov.value, vid.width, vid.height)`: "`if ((x = height / width) == 0.75) return
+  fov_x; a = atan(0.75 / x * tan(fov_x / 360 * M_PI)); a = a * 360 / M_PI; return a;`", the
+  width that keeps a 4:3 image's height, so 90 is about 100.39 at 16:10. The view's height is
+  then REND-3.4's `CalcFov` of it. The eye a click picks from uses the same width.

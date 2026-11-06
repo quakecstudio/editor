@@ -17,29 +17,29 @@ use super::{
 use crate::mesh::Palette;
 
 /// A skin entry of a test model: one skin, or a group of them.
-enum SkinSpec {
+pub(crate) enum SkinSpec {
     Single(Vec<u8>),
     Group(Vec<Vec<u8>>),
 }
 
 /// A frame entry of a test model: one pose, or a group of poses with their intervals.
-enum FrameSpec {
+pub(crate) enum FrameSpec {
     Single([u8; 3]),
     Group(Vec<[u8; 3]>, Vec<f32>),
 }
 
 /// A one-triangle model on a 4 by 4 skin; each pose moves all three vertices to one place.
-struct MdlSpec {
-    skins: Vec<SkinSpec>,
-    frames: Vec<FrameSpec>,
+pub(crate) struct MdlSpec {
+    pub(crate) skins: Vec<SkinSpec>,
+    pub(crate) frames: Vec<FrameSpec>,
     /// Each vertex's `onseam`.
-    onseam: i32,
-    facesfront: i32,
-    flags: i32,
+    pub(crate) onseam: i32,
+    pub(crate) facesfront: i32,
+    pub(crate) flags: i32,
     /// The normal index of every vertex.
-    normal: u8,
+    pub(crate) normal: u8,
     /// The normal index of every vertex of each frame, where set, else `normal`.
-    frame_normals: Vec<u8>,
+    pub(crate) frame_normals: Vec<u8>,
 }
 
 impl Default for MdlSpec {
@@ -58,7 +58,7 @@ impl Default for MdlSpec {
 
 const SKIN: i32 = 4;
 
-fn mdl(spec: &MdlSpec) -> Vec<u8> {
+pub(crate) fn mdl(spec: &MdlSpec) -> Vec<u8> {
     let mut out = Vec::new();
     let int = |out: &mut Vec<u8>, v: i32| out.extend(v.to_le_bytes());
     let float = |out: &mut Vec<u8>, v: f32| out.extend(v.to_le_bytes());
@@ -536,4 +536,62 @@ fn rotating_models_turn_100_degrees_a_second() {
 fn a_file_that_is_not_a_model_is_refused() {
     let error = AliasModel::read("progs/x.mdl", b"IDPO", &palette()).unwrap_err();
     assert!(error.to_string().contains("progs/x.mdl"), "{error}");
+}
+
+/// A 4 by 4 skin of the palette indices the shirt and trouser ranges start, end and border.
+const PLAYER_SKIN: [u8; 16] = [0, 16, 20, 31, 96, 100, 111, 112, 15, 32, 95, 50, 0, 0, 0, 0];
+
+// spec REND-4.13: the shirt range from 16 and the trouser range from 96 move to the chosen
+// rows, a row from 128 on reversed; every other index is kept
+#[test]
+fn player_colours_move_the_shirt_and_trouser_ranges() {
+    let model = read(
+        &MdlSpec {
+            skins: vec![SkinSpec::Single(PLAYER_SKIN.to_vec())],
+            ..MdlSpec::default()
+        },
+        "progs/player.mdl",
+    );
+    let red = |colors| -> Vec<u8> {
+        let image = model.translated(0, colors, &palette()).unwrap();
+        assert_eq!((image.width, image.height), (4, 4));
+        image.rgba.chunks(4).map(|p| p[0]).collect()
+    };
+    assert_eq!(
+        red(0x4d),
+        [
+            0, 64, 68, 79, 223, 219, 208, 112, 15, 32, 95, 50, 0, 0, 0, 0
+        ]
+    );
+    assert_eq!(
+        red(0xa2),
+        [
+            0, 175, 171, 160, 32, 36, 47, 112, 15, 32, 95, 50, 0, 0, 0, 0
+        ]
+    );
+    assert_eq!(
+        red(0x1),
+        [0, 0, 4, 15, 16, 20, 31, 112, 15, 32, 95, 50, 0, 0, 0, 0]
+    );
+}
+
+// spec REND-4.13: the translated skin is the entity's skin, or skin 0 for one the model does
+// not have
+#[test]
+fn player_colours_translate_the_entitys_skin() {
+    let model = read(
+        &MdlSpec {
+            skins: vec![
+                SkinSpec::Single([0].into_iter().chain([16; 15]).collect()),
+                SkinSpec::Group(vec![vec![17; 16], vec![18; 16]]),
+            ],
+            ..MdlSpec::default()
+        },
+        "progs/player.mdl",
+    );
+    // Pixel 1: skin 0 starts with the filled colour, so its flood fill keeps the rest.
+    let first = |skin| model.translated(skin, 0x30, &palette()).unwrap().rgba[4];
+    assert_eq!(first(0), 48);
+    assert_eq!(first(1), 49, "a group's first image");
+    assert_eq!(first(9), 48, "skin 0 for a skin out of range");
 }

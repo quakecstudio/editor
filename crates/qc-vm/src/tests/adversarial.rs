@@ -18,7 +18,7 @@ use qc_progs::{Progs, ReadOptions};
 use qc_types::Slot;
 
 use super::harness::{self, Func, Stmt};
-use crate::exec::{Builtins, Context, NoBuiltins, NoObserver, ServerState};
+use crate::exec::{Builtins, Context, NoBuiltins, NoObserver, Observer, ServerState};
 use crate::{Divergence, ErrorKind, FieldFault, Machine, RunError};
 use qc_edict::EdictNumber;
 
@@ -109,6 +109,62 @@ fn nested_run_has_its_own_runaway_counter() {
     );
     // Every run ended and the depth is reset (VM-19.6).
     assert_eq!(machine.depth(), 0);
+}
+
+/// Counts the statements a run executes.
+#[derive(Default)]
+struct StepCount(u32);
+
+impl Observer for StepCount {
+    fn run(&mut self, _machine: &Machine, _function: i32) {}
+    fn step(&mut self, _m: &Machine, _f: i32, _s: i32, _o: u16, _b: Option<u32>) {
+        self.0 = self.0.saturating_add(1);
+    }
+    fn exit(&mut self, _machine: &Machine) {}
+    fn error(&mut self, _machine: &Machine, _error: &RunError) {}
+}
+
+/// The statements a run of an endless loop executes before its runaway error, its counter
+/// starting from `count`, or id's when `None`.
+fn steps_before_runaway(count: Option<u32>) -> u32 {
+    let bytes = harness::ProgsBuilder::default()
+        .functions(vec![Func {
+            first_statement: 1,
+            ..Func::default()
+        }])
+        .statements(&[Stmt::op("GOTO", 0, 0, 0)])
+        .build();
+    let progs = read(&bytes);
+    let mut machine = Machine::new(&progs, 0).unwrap();
+    if let Some(count) = count {
+        machine.set_runaway(count);
+    }
+    let mut steps = StepCount::default();
+    let error = machine
+        .execute_program(&progs, ServerState::Active, &mut NoBuiltins, &mut steps, 1)
+        .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Runaway);
+    let mut copy = machine.clone();
+    copy.clone_from(&machine);
+    let mut again = StepCount::default();
+    let again_error = copy
+        .execute_program(&progs, ServerState::Active, &mut NoBuiltins, &mut again, 1)
+        .unwrap_err();
+    assert_eq!(again_error.kind, ErrorKind::Runaway);
+    assert_eq!(again.0, steps.0, "a copy keeps the count");
+    steps.0
+}
+
+// spec LIMIT-4.3: a run's counter starts from the engine's count, so it executes one statement
+// fewer; a count of 0 is taken as 1, so no statement runs
+// spec LIMIT-4.1: id's count, so at most 99999 statements
+#[test]
+fn the_runaway_count_is_the_engines() {
+    assert_eq!(steps_before_runaway(None), 99_999);
+    assert_eq!(steps_before_runaway(Some(250_000)), 249_999);
+    assert_eq!(steps_before_runaway(Some(2)), 1);
+    assert_eq!(steps_before_runaway(Some(1)), 0);
+    assert_eq!(steps_before_runaway(Some(0)), 0);
 }
 
 // spec VM-19.6: a runtime error sets the call depth to 0 but does NOT reset the local stack;

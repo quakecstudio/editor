@@ -17,10 +17,16 @@ qc-vm = { workspace = true }
 qs-bsp = { workspace = true }
 qs-mdl = { workspace = true }
 qs-porting-example = { workspace = true }
+# A scenario's report, which scenario.run returns as JSON (SCN-2.4).
+serde = { workspace = true, features = ["derive"] }
+# Whether the install is the full game (FS-4.5); the sweep example reads an install with it.
+qs-vfs = { workspace = true }
 
 [dev-dependencies]
 qc-codegen = { workspace = true }
 qc-sema = { workspace = true }
+# The examples' command lines.
+clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 
 [lints]
 workspace = true

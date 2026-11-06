@@ -58,6 +58,11 @@ pub(crate) struct MapSpec {
     pub(crate) leafs: Vec<i32>,
     /// The clipnodes of hulls 1 and 2.
     pub(crate) clipnodes: Vec<ClipNode>,
+    /// The visibility lump and, for each leaf, where its row starts (-1 for none); empty, no
+    /// leaf has a row and every leaf sees every other (BSP-6).
+    pub(crate) visibility: Vec<u8>,
+    /// Each leaf's `visofs`, when [`MapSpec::visibility`] is not empty.
+    pub(crate) visofs: Vec<i32>,
 }
 
 impl Default for MapSpec {
@@ -74,6 +79,8 @@ impl Default for MapSpec {
                 planenum: 1,
                 children: [CONTENTS_EMPTY, CONTENTS_SOLID],
             }],
+            visibility: Vec::new(),
+            visofs: Vec::new(),
         }
     }
 }
@@ -86,13 +93,21 @@ pub(crate) fn bsp(spec: &MapSpec) -> Bsp<'static> {
         planes: spec.planes.clone(),
         textures: Vec::new(),
         vertexes: Vec::new(),
-        visibility: b"",
+        visibility: Box::leak(spec.visibility.clone().into_boxed_slice()),
         nodes: spec.nodes.clone(),
         texinfo: Vec::new(),
         faces: Vec::new(),
         lighting: b"",
         clipnodes: spec.clipnodes.clone(),
-        leafs: spec.leafs.iter().map(|&c| leaf(c)).collect(),
+        leafs: spec
+            .leafs
+            .iter()
+            .enumerate()
+            .map(|(n, &c)| Leaf {
+                visofs: spec.visofs.get(n).copied().unwrap_or(-1),
+                ..leaf(c)
+            })
+            .collect(),
         marksurfaces: Vec::new(),
         edges: Vec::new(),
         surfedges: Vec::new(),
@@ -101,7 +116,11 @@ pub(crate) fn bsp(spec: &MapSpec) -> Bsp<'static> {
             maxs: [1000.0, 500.0, 1000.0],
             origin: [0.0; 3],
             headnode: [0; BSP_MAX_MAP_HULLS],
-            visleafs: 0,
+            visleafs: if spec.visibility.is_empty() {
+                0
+            } else {
+                spec.leafs.len().saturating_sub(1).try_into().unwrap_or(0)
+            },
             firstface: 0,
             numfaces: 0,
             radius: 0.0,

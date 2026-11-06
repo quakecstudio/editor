@@ -21,6 +21,8 @@ pub enum Text {
     PreviewHost,
     /// Where the preview host's window is.
     PreviewDocked,
+    /// Where the game's window is when its host cannot place it (Wayland).
+    PreviewOwnWindow,
     /// The command search box's hint.
     SearchCommands,
     /// The Project panel's heading.
@@ -59,6 +61,90 @@ pub enum Text {
     GameStopped,
     /// The status bar while the preview host is stopped.
     PreviewStopped,
+    /// The status bar while the game runs.
+    PreviewRunning,
+    /// The status bar while the game is paused.
+    PreviewPaused,
+    /// The Play button while the game runs.
+    Playing,
+    /// The Play button's hint while the game runs.
+    StopHint,
+    /// The Play button while the game is paused.
+    Resume,
+    /// The Pause button while the game is paused.
+    Paused,
+    /// The toolbar after a reload failed.
+    ReloadFailed,
+    /// The Entities filter's hint.
+    FilterEntities,
+    /// An outliner row whose edict has no classname.
+    NoClassname,
+    /// After the outliner's count of edicts in use.
+    Live,
+    /// The Properties panel with nothing selected.
+    NothingSelected,
+    /// The Properties panel while the game runs.
+    ReadOnlyWhilePlaying,
+    /// The Properties panel's link to the selected entity's spawn function.
+    OpenSpawnFunction,
+    /// The toolbar after a selection or a field's edit failed.
+    EditFailed,
+    /// After the fields edited while paused.
+    SentOnResume,
+    /// The Debugger tab's call stack column.
+    CallStack,
+    /// The Debugger tab's variables and watches column.
+    Watches,
+    /// The Debugger tab's breakpoints column.
+    Breakpoints,
+    /// The hint in the box that adds a watch.
+    AddWatch,
+    /// Steps into the next call.
+    StepIn,
+    /// Steps to the next statement of the function.
+    StepOver,
+    /// Steps out to the caller.
+    StepOut,
+    /// A call stack frame of the engine's, not QuakeC's.
+    EngineFrame,
+    /// The hint in the console's command box.
+    ConsoleCommand,
+    /// The breakpoints column with none set.
+    NoBreakpoints,
+    /// The Debugger tab while the game runs.
+    NotStopped,
+    /// A watch with no value read yet.
+    NotRead,
+    /// The button that takes a watch away or closes a tab.
+    Remove,
+    /// The hint in the console's filter box.
+    FilterConsole,
+    /// The console's prompt before its command box.
+    ConsolePrompt,
+    /// After a tab's name when its file is unsaved.
+    UnsavedMark,
+    /// What that button does.
+    CloseTabHint,
+    /// Beside an unsaved file in the Project tree.
+    ModifiedMark,
+    /// Between the steps of the breadcrumb.
+    PathSeparator,
+    /// The file finder's name for a screen reader.
+    FileFinder,
+    /// The hint in the file finder's field.
+    SearchFiles,
+    /// The file finder with no file matching.
+    NoFileMatch,
+    /// Its Open Folder item.
+    OpenFolderMenu,
+    /// The system dialog's title.
+    OpenFolderTitle,
+    /// The Project section's button with no project open.
+    OpenFolderButton,
+    /// The heading over the recent projects.
+    RecentProjects,
+    /// Before the path of a folder that is not there.
+    FolderGone,
     /// A control that has no action yet.
     NotYetAvailable,
     /// The View menu.
@@ -95,8 +181,8 @@ pub enum Text {
     KeyEnter,
     /// The Symbols section's heading.
     Symbols,
-    /// The Symbols section's switch to the open file's symbols.
-    SymbolsFile,
+    /// The File menu, and the Symbols section's switch to the open file's symbols.
+    File,
     /// The Symbols section's switch to every file's symbols.
     SymbolsAll,
     /// The Symbols section with nothing to list.
@@ -157,7 +243,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 73] = [
+    pub const ALL: [Self; 116] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -165,6 +251,7 @@ impl Text {
         Self::RestartMap,
         Self::PreviewHost,
         Self::PreviewDocked,
+        Self::PreviewOwnWindow,
         Self::SearchCommands,
         Self::Project,
         Self::Entities,
@@ -184,6 +271,48 @@ impl Text {
         Self::NoFileOpen,
         Self::GameStopped,
         Self::PreviewStopped,
+        Self::PreviewRunning,
+        Self::PreviewPaused,
+        Self::Playing,
+        Self::StopHint,
+        Self::Resume,
+        Self::Paused,
+        Self::ReloadFailed,
+        Self::FilterEntities,
+        Self::NoClassname,
+        Self::Live,
+        Self::NothingSelected,
+        Self::ReadOnlyWhilePlaying,
+        Self::OpenSpawnFunction,
+        Self::EditFailed,
+        Self::SentOnResume,
+        Self::CallStack,
+        Self::Watches,
+        Self::Breakpoints,
+        Self::AddWatch,
+        Self::StepIn,
+        Self::StepOver,
+        Self::StepOut,
+        Self::EngineFrame,
+        Self::ConsoleCommand,
+        Self::NoBreakpoints,
+        Self::NotStopped,
+        Self::NotRead,
+        Self::Remove,
+        Self::FilterConsole,
+        Self::ConsolePrompt,
+        Self::UnsavedMark,
+        Self::CloseTabHint,
+        Self::ModifiedMark,
+        Self::PathSeparator,
+        Self::FileFinder,
+        Self::SearchFiles,
+        Self::NoFileMatch,
+        Self::OpenFolderMenu,
+        Self::OpenFolderTitle,
+        Self::OpenFolderButton,
+        Self::RecentProjects,
+        Self::FolderGone,
         Self::NotYetAvailable,
         Self::ViewMenu,
         Self::ToggleLeftPanel,
@@ -202,7 +331,7 @@ impl Text {
         Self::KeyArrows,
         Self::KeyEnter,
         Self::Symbols,
-        Self::SymbolsFile,
+        Self::File,
         Self::SymbolsAll,
         Self::NoSymbols,
         Self::SymbolFunction,
@@ -244,6 +373,7 @@ impl Text {
             Self::RestartMap => "Restart map",
             Self::PreviewHost => "Preview host",
             Self::PreviewDocked => "docked right",
+            Self::PreviewOwnWindow => "in its own window",
             Self::SearchCommands => "Search commands",
             Self::Project => "Project",
             Self::Entities => "Entities",
@@ -263,6 +393,50 @@ impl Text {
             Self::NoFileOpen => "Open a file from the Project panel.",
             Self::GameStopped => "The preview host is not running.",
             Self::PreviewStopped => "Preview host stopped",
+            Self::PreviewRunning => "Preview host running",
+            Self::PreviewPaused => "Preview host paused",
+            Self::Playing => "Playing",
+            Self::StopHint => "Stop the game",
+            Self::Resume => "Resume",
+            Self::Paused => "Paused",
+            Self::ReloadFailed => "The reload failed; see the Console",
+            Self::FilterEntities => "Filter by classname or number",
+            Self::NoClassname => "(no classname)",
+            Self::Live => "live",
+            Self::NothingSelected => "Select an entity in the Entities list.",
+            Self::ReadOnlyWhilePlaying => "Read only while playing. Pause to edit.",
+            Self::OpenSpawnFunction => "Open its spawn function",
+            Self::EditFailed => "The game did not take the change; see the log",
+            Self::SentOnResume => "edited, sent to the game on Resume",
+            Self::CallStack => "Call stack",
+            Self::Watches => "Variables and watches",
+            Self::Breakpoints => "Breakpoints",
+            Self::AddWatch => "Add a watch, for example self.owner.health",
+            Self::StepIn => "Step in",
+            Self::StepOver => "Step over",
+            Self::StepOut => "Step out",
+            Self::EngineFrame => "engine",
+            Self::ConsoleCommand => "Console command, for example impulse 9",
+            Self::NoBreakpoints => "Click a line number to set a breakpoint.",
+            Self::NotStopped => {
+                "The call stack and watches show when the game stops at a breakpoint or a step."
+            }
+            Self::NotRead => "not read",
+            Self::Remove => "\u{d7}",
+            Self::FilterConsole => "Filter the console",
+            Self::ConsolePrompt => "]",
+            Self::UnsavedMark => "\u{25cf}",
+            Self::CloseTabHint => "Close the tab; its unsaved edits are kept",
+            Self::ModifiedMark => "M",
+            Self::PathSeparator => " / ",
+            Self::FileFinder => "File finder",
+            Self::SearchFiles => "Search files by name",
+            Self::NoFileMatch => "No file matches.",
+            Self::OpenFolderMenu => "Open Folder\u{2026}",
+            Self::OpenFolderTitle => "Open a QuakeC project folder",
+            Self::OpenFolderButton => "Open Folder",
+            Self::RecentProjects => "Recent projects",
+            Self::FolderGone => "The folder is no longer there:",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",
             Self::ToggleLeftPanel => "Project and Entities",
@@ -281,7 +455,7 @@ impl Text {
             Self::KeyArrows => "\u{2191}\u{2193}",
             Self::KeyEnter => "enter",
             Self::Symbols => "Symbols",
-            Self::SymbolsFile => "File",
+            Self::File => "File",
             Self::SymbolsAll => "All",
             Self::NoSymbols => "No symbols.",
             Self::SymbolFunction => "function",
@@ -318,6 +492,12 @@ impl Text {
 #[must_use]
 pub fn command_count(shown: usize, total: usize) -> String {
     format!("{shown} of {total} commands")
+}
+
+/// The file finder's count of the files it lists, out of all of them.
+#[must_use]
+pub fn file_count(shown: usize, total: usize) -> String {
+    format!("{shown} of {total} files")
 }
 
 /// The find bar's count of the matches.

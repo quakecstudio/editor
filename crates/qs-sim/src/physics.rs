@@ -16,11 +16,8 @@ use crate::builtins::{FL_ONGROUND, SimCall};
 use crate::collision::{
     CONTENTS_EMPTY, CONTENTS_WATER, MoveKind, Solid, Trace, test_entity_position,
 };
+use crate::settings::Setting;
 
-/// `sv_gravity` (PHYS-6.4).
-const GRAVITY: f32 = 800.0;
-/// `sv_maxvelocity` (PHYS-6.3).
-const MAXVELOCITY: f32 = 2000.0;
 /// `STOP_EPSILON` (PHYS-6.2).
 const STOP_EPSILON: f32 = 0.1;
 /// `MAX_CLIP_PLANES` (PHYS-7.3).
@@ -75,6 +72,22 @@ impl MoveType {
             () if whole(9) => Self::FlyMissile,
             () if whole(10) => Self::Bounce,
             () => Self::Other(value),
+        }
+    }
+
+    /// The `movetype` value that is this one.
+    pub(crate) const fn to_float(self) -> f32 {
+        match self {
+            Self::None => 0.0,
+            Self::Walk => 3.0,
+            Self::Step => 4.0,
+            Self::Fly => 5.0,
+            Self::Toss => 6.0,
+            Self::Push => 7.0,
+            Self::Noclip => 8.0,
+            Self::FlyMissile => 9.0,
+            Self::Bounce => 10.0,
+            Self::Other(value) => value,
         }
     }
 }
@@ -215,13 +228,14 @@ impl SimCall<'_, '_, '_> {
 
     /// `SV_Physics_Pusher` (PHYS-3.1).
     fn physics_pusher(&mut self, ent: usize, frametime: f64) -> Result<(), RunError> {
-        let frametime = double_to_float(frametime);
         let oldltime = self.float(ent, "ltime");
         let thinktime = self.float(ent, "nextthink");
-        let movetime = if thinktime < oldltime + frametime {
+        // PHYS-9.7: `thinktime < ent->v.ltime + host_frametime` is compared in double, and
+        // `movetime = host_frametime` stored as a float.
+        let movetime = if f64::from(thinktime) < f64::from(oldltime) + frametime {
             (thinktime - oldltime).max(0.0)
         } else {
-            frametime
+            double_to_float(frametime)
         };
         if movetime != 0.0 {
             self.push_move(ent, movetime)?;
@@ -456,7 +470,8 @@ impl SimCall<'_, '_, '_> {
     fn physics_step(&mut self, ent: usize, frametime: f64) -> Result<(), RunError> {
         const SUPPORTED: i32 = FL_ONGROUND | 1 | 2;
         if self.flags(ent) & SUPPORTED == 0 {
-            let hitsound = self.vector(ent, "velocity")[2] < GRAVITY * HARD_LANDING;
+            let hitsound =
+                self.vector(ent, "velocity")[2] < self.setting(Setting::Gravity) * HARD_LANDING;
             self.add_gravity(ent, frametime);
             self.check_velocity(ent);
             self.fly_move(ent, double_to_float(frametime), &mut None)?;
@@ -473,14 +488,20 @@ impl SimCall<'_, '_, '_> {
     pub(crate) fn check_velocity(&mut self, ent: usize) {
         let velocity = self.vector(ent, "velocity");
         let origin = self.vector(ent, "origin");
+        let max = self.setting(Setting::MaxVelocity);
+        // PHYS-6.6: `IS_NAN` zeroes a component first, then id's two comparisons bound it, not
+        // a clamp: a progs may set sv_maxvelocity below 0.
         let velocity = velocity.map(|v| {
-            if v.is_nan() {
-                0.0
+            let v = if is_nan(v) { 0.0 } else { v };
+            if v > max {
+                max
+            } else if v < -max {
+                -max
             } else {
-                v.clamp(-MAXVELOCITY, MAXVELOCITY)
+                v
             }
         });
-        let origin = origin.map(|v| if v.is_nan() { 0.0 } else { v });
+        let origin = origin.map(|v| if is_nan(v) { 0.0 } else { v });
         self.set_vector(ent, "velocity", velocity);
         self.set_vector(ent, "origin", origin);
     }
@@ -493,8 +514,14 @@ impl SimCall<'_, '_, '_> {
             .filter(|g| *g != 0.0)
             .unwrap_or(1.0);
         let [x, y, z] = self.vector(ent, "velocity");
-        let fall = double_to_float(f64::from(gravity) * f64::from(GRAVITY) * frametime);
-        self.set_vector(ent, "velocity", [x, y, z - fall]);
+        // PHYS-6.5: the float product `gravity * sv_gravity`, then the rest in double and one
+        // rounding to float, as C evaluates `velocity[2] -= ... * host_frametime`.
+        let fall = f64::from(gravity * self.setting(Setting::Gravity)) * frametime;
+        self.set_vector(
+            ent,
+            "velocity",
+            [x, y, double_to_float(f64::from(z) - fall)],
+        );
     }
 
     /// `SV_FlyMove` (PHYS-7): what blocked the move.
@@ -631,7 +658,15 @@ fn is_zero(v: [f32; 3]) -> bool {
     v.iter().all(|c| *c == 0.0)
 }
 
-fn dot([a, b, c]: [f32; 3], [x, y, z]: [f32; 3]) -> f32 {
+/// id's `IS_NAN(x)`, `((*(int *)&x) & nanmask) == nanmask` with `nanmask` `255<<23`: every
+/// exponent bit set, so an infinity is one too (PHYS-6.6).
+const fn is_nan(x: f32) -> bool {
+    const NANMASK: u32 = 255 << 23;
+    x.to_bits() & NANMASK == NANMASK
+}
+
+/// `DotProduct`.
+pub(crate) fn dot([a, b, c]: [f32; 3], [x, y, z]: [f32; 3]) -> f32 {
     a * x + b * y + c * z
 }
 

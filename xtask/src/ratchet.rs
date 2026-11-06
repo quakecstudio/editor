@@ -46,7 +46,15 @@ pub(crate) const FLAKE_OSES: [&str; 3] = ["linux", "macos", "windows"];
 /// The checks a ratchet records a minimum for.
 const RATCHETED: [Check; 4] = [Check::Lines, Check::Branches, Check::Mutation, Check::Spec];
 
-const USAGE: &str = "usage: cargo xtask ratchet [--history <file.json>] [<measurement.json>...]";
+/// `cargo xtask ratchet [--history <file.json>] [<measurement.json>...]`.
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+pub(crate) struct Args {
+    /// Append the measured numbers to this JSON history.
+    #[arg(long, value_name = "file.json")]
+    history: Option<PathBuf>,
+    /// The measurement files.
+    files: Vec<PathBuf>,
+}
 
 /// `ratchets.toml`.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
@@ -108,8 +116,8 @@ pub(crate) fn parse(text: &str) -> Result<Ratchets, String> {
     toml::from_str(text).map_err(|error| format!("{FILE}: {error}"))
 }
 
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    let (history, files) = parse_args(args)?;
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
+    let Args { history, files } = args;
     let text = fs::read_to_string(root.join(FILE)).map_err(|error| format!("{FILE}: {error}"))?;
     let ratchets = parse(&text)?;
     let keys = readiness_keys(
@@ -125,7 +133,7 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
         .extend(history_problems(&versions(root)?, &members));
 
     let mut measurements = Vec::new();
-    for file in &files {
+    for file in files {
         let text =
             fs::read_to_string(file).map_err(|error| format!("{}: {error}", file.display()))?;
         let measurement: Measurement =
@@ -142,23 +150,9 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
         print!("{}", proposed_minimums(&measured));
     }
     if let Some(path) = history {
-        record(root, &path, passed, &measured)?;
+        record(root, path, passed, &measured)?;
     }
     Ok(print_outcome("ratchet", Ok(report)))
-}
-
-fn parse_args(args: &[String]) -> Result<(Option<PathBuf>, Vec<PathBuf>), String> {
-    let mut history = None;
-    let mut files = Vec::new();
-    let mut iter = args.iter();
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--history" => history = Some(PathBuf::from(iter.next().ok_or(USAGE)?)),
-            flag if flag.starts_with("--") => return Err(format!("unknown flag {flag}\n{USAGE}")),
-            file => files.push(PathBuf::from(file)),
-        }
-    }
-    Ok((history, files))
 }
 
 /// The readiness issue keys (`P1-R0`) in the generated readiness plan.

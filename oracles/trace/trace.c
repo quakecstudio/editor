@@ -14,6 +14,7 @@
 #define TRACE_TAG_EXIT 0x03
 #define TRACE_TAG_ERROR 0x04
 #define TRACE_TAG_STRING 0x05
+#define TRACE_TAG_FRAME 0x06
 
 typedef struct {
     byte *data;
@@ -40,7 +41,7 @@ static void reserve(buffer_t *b, size_t more) {
         size *= 2;
     byte *data = realloc(b->data, size);
     if (!data) {
-        fprintf(stderr, "vm-oracle: out of memory\n");
+        fprintf(stderr, "trace: out of memory\n");
         exit(QS_EXIT_IO);
     }
     b->data = data;
@@ -128,7 +129,7 @@ void qs_trace_header(unsigned progs_crc, int numstrings) {
     snap_globals = calloc((size_t)snap_numglobals + 1, sizeof(int));
     snap_fields = calloc((size_t)sv.max_edicts * (size_t)snap_entityfields + 1, sizeof(int));
     if (!snap_globals || !snap_fields) {
-        fprintf(stderr, "vm-oracle: out of memory\n");
+        fprintf(stderr, "trace: out of memory\n");
         exit(QS_EXIT_IO);
     }
     memcpy(snap_globals, pr_globals, (size_t)snap_numglobals * sizeof(int));
@@ -224,6 +225,21 @@ void qs_trace_error(int function, int statement, const char *message) {
     put_text(&out, message);
     put_changes();
     end_record();
+}
+
+// TRACE-4.11, TRACE-5.8: the engine oracle's record of one server frame.
+void qs_trace_frame(unsigned frame) {
+    begin_change_record(TRACE_TAG_FRAME);
+    put_uvar(&out, frame);
+    put_changes();
+    end_record();
+}
+
+// TRACE-4.12: the whole state as a frame record, every global and field set against zero.
+void qs_trace_state(unsigned frame) {
+    memset(snap_globals, 0, (size_t)snap_numglobals * sizeof(int));
+    memset(snap_fields, 0, (size_t)sv.max_edicts * (size_t)snap_entityfields * sizeof(int));
+    qs_trace_frame(frame);
 }
 
 void qs_trace_string(int value, const char *text) {

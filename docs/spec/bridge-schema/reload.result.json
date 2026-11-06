@@ -36,6 +36,40 @@
     },
     "time": {
       "type": "number"
+    },
+    "added": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "global",
+              "field",
+              "function"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "reason"
+        ]
+      }
+    },
+    "breakpoints_cleared": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "description": "The ids of the breakpoints that no longer resolve, which the reload cleared"
     }
   },
   "required": [

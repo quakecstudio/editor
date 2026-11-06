@@ -22,7 +22,7 @@ use crate::App;
 use crate::fallback::SystemFonts;
 use crate::icons::Icon;
 use crate::shell::{EDITOR_AREA, view_style};
-use crate::strings::{Text, match_count};
+use crate::strings::{Text, file_count, match_count};
 use crate::theme::{Mode, Theme, Token};
 
 /// The test project: `defs.qc` declares `bounces` and the rest; `src/weapons.qc` uses them.
@@ -377,9 +377,20 @@ fn another_files_edits_are_kept_when_the_editor_moves_on() {
     harness.step();
     harness.get_by_label("defs.qc").click();
     harness.run();
-    harness.get_by_label("world.qc").click();
+    // The tab of the unsaved file, not its row in the Project tree, which is marked M.
+    let tab = format!("world.qc {}", Text::UnsavedMark.get());
+    let row = format!("world.qc {}", Text::ModifiedMark.get());
+    assert!(
+        harness.query_by_label(&row).is_some(),
+        "the tree marks it unsaved"
+    );
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Tab, &tab)
+        .click();
     harness.run();
     assert!(text(&harness).starts_with("// kept "));
+    // The tab's own editor came back: the edit is still undoable.
+    assert!(editor_mut(&mut harness).view.state_mut().undo());
 }
 
 #[test]
@@ -600,4 +611,110 @@ fn the_editors_colours_are_the_themes() {
         qs_editor_view::ViewStyle::default(),
         "not the dark defaults"
     );
+}
+
+// No spec statement: the breadcrumb names the file's folders, the file and the definition the
+// caret is in, which the Symbols list names too
+#[test]
+fn the_breadcrumb_follows_the_caret() {
+    let mut harness = harness("src/weapons.qc");
+    let count = |harness: &H, name: &str| harness.query_all_by_label(name).count();
+    caret_at(&mut harness, "ember.bounces", 0, 0);
+    harness.run();
+    assert_eq!(
+        count(&harness, "W_FireEmber"),
+        2,
+        "the list and the breadcrumb"
+    );
+    assert_eq!(count(&harness, "Ember_Touch"), 1, "the list only");
+    assert_eq!(count(&harness, "src"), 2, "the tree and the breadcrumb");
+    caret_at(&mut harness, "Ember_Touch", 0, 0);
+    harness.run();
+    assert_eq!(count(&harness, "W_FireEmber"), 1);
+    assert_eq!(count(&harness, "Ember_Touch"), 2);
+}
+
+// UI-14: Cmd+P opens the file finder over the project's files; typing narrows it to the files
+// whose name or path holds the letters, Enter opens the first, and Escape closes it
+#[test]
+fn the_file_finder_opens_a_file_by_name() {
+    let mut harness = harness("src/weapons.qc");
+    press(&mut harness, Modifiers::COMMAND, Key::P);
+    harness.run();
+    assert!(app(&harness).shell().finder.is_open());
+    assert!(harness.query_by_label(&file_count(3, 3)).is_some());
+    harness.event(Event::Text("wrld".to_owned()));
+    harness.run();
+    assert!(harness.query_by_label(&file_count(1, 3)).is_some());
+    press(&mut harness, Modifiers::NONE, Key::Enter);
+    harness.run();
+    assert!(!app(&harness).shell().finder.is_open());
+    let open = app(&harness)
+        .shell()
+        .workbench()
+        .open()
+        .unwrap()
+        .path()
+        .to_path_buf();
+    assert!(open.ends_with("src/world.qc"), "{}", open.display());
+    press(&mut harness, Modifiers::COMMAND, Key::P);
+    harness.run();
+    harness.event(Event::Text("zzz".to_owned()));
+    harness.run();
+    assert!(harness.query_by_label(Text::NoFileMatch.get()).is_some());
+    press(&mut harness, Modifiers::NONE, Key::Escape);
+    harness.run();
+    assert!(!app(&harness).shell().finder.is_open());
+}
+
+// UI-14: before anything is typed the finder lists the files opened most recently first and,
+// as Zed's does, selects the one before the file being edited; `name:line` opens the file at
+// that line
+#[test]
+fn the_finder_starts_from_recent_files_and_reads_a_line() {
+    let mut harness = harness("src/weapons.qc");
+    harness.get_by_label("world.qc").click();
+    harness.run();
+    press(&mut harness, Modifiers::COMMAND, Key::P);
+    harness.run();
+    // world.qc is being edited and listed first; Enter opens weapons.qc, the one before it.
+    press(&mut harness, Modifiers::NONE, Key::Enter);
+    harness.run();
+    let open = app(&harness)
+        .shell()
+        .workbench()
+        .open()
+        .unwrap()
+        .path()
+        .to_path_buf();
+    assert!(open.ends_with("src/weapons.qc"), "{}", open.display());
+    press(&mut harness, Modifiers::COMMAND, Key::P);
+    harness.run();
+    harness.event(Event::Text("world:3".to_owned()));
+    harness.run();
+    press(&mut harness, Modifiers::NONE, Key::Enter);
+    harness.run();
+    harness.run();
+    let shell = app(&harness).shell();
+    assert!(
+        shell
+            .workbench()
+            .open()
+            .unwrap()
+            .path()
+            .ends_with("src/world.qc")
+    );
+    assert_eq!(shell.caret().unwrap().1.line, 2, "line 3, from 0");
+}
+
+// No spec statement: a query's last colon and a line number after it ask for that line; any
+// other colon is part of the name
+#[test]
+fn a_finder_query_may_end_in_a_line() {
+    use crate::finder::split_line;
+    assert_eq!(split_line("world.qc:12"), ("world.qc", Some(12)));
+    assert_eq!(split_line("world.qc: 7"), ("world.qc", Some(7)));
+    assert_eq!(split_line("world.qc:0"), ("world.qc:0", None));
+    assert_eq!(split_line("a:b"), ("a:b", None));
+    assert_eq!(split_line("world"), ("world", None));
 }

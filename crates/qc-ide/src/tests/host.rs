@@ -7,6 +7,7 @@ use std::path::Path;
 use qc_project::MemoryLoader;
 
 use super::{ProjectSpec, host, nth, one, path};
+use crate::host::directive_lines;
 use crate::{AnalysisHost, Config};
 
 // spec QC-12.5: an open file's text replaces the text on disk until it is closed
@@ -61,6 +62,40 @@ fn editing_the_progs_src_reads_the_project_again() {
     assert!(!host.files().contains(&path("b.qc")));
 }
 
+// spec PRJ-5.1: typing an `#include` line in an open file reads the module's files again, so
+// a name the included file declares resolves, and deleting the line makes it unknown again,
+// with no save between
+#[test]
+fn typing_an_include_reads_the_modules_files_again() {
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", "void() f = { x = 1; };\n")],
+        extra: &[("b.qh", "float x;\n")],
+        ..ProjectSpec::default()
+    });
+    let plain = "void() f = { x = 1; };\n";
+    let at = |text: &str| nth(text, "x", 0);
+    assert_eq!(host.definition(&path("a.qc"), at(plain)), None);
+    let included = "#include \"b.qh\"\nvoid() f = { x = 1; };\n";
+    host.set_overlay(&path("a.qc"), included.as_bytes().to_vec())
+        .unwrap();
+    assert!(host.files().contains(&path("b.qh")));
+    assert!(host.definition(&path("a.qc"), at(included)).is_some());
+    // An edit that leaves the directive lines alone keeps the graph.
+    let renamed = "#include \"b.qh\"\nvoid() g = { x = 1; };\n";
+    host.set_overlay(&path("a.qc"), renamed.as_bytes().to_vec())
+        .unwrap();
+    assert!(host.definition(&path("a.qc"), at(renamed)).is_some());
+    host.set_overlay(&path("a.qc"), plain.as_bytes().to_vec())
+        .unwrap();
+    assert!(!host.files().contains(&path("b.qh")));
+    assert_eq!(host.definition(&path("a.qc"), at(plain)), None);
+    // Closing the file goes back to its text on disk, and the graph with it.
+    host.set_overlay(&path("a.qc"), included.as_bytes().to_vec())
+        .unwrap();
+    host.remove_overlay(&path("a.qc")).unwrap();
+    assert!(!host.files().contains(&path("b.qh")));
+}
+
 // spec PRJ-1.2: a directory with no project is no error, and a bad project file is
 #[test]
 fn opening_a_directory() {
@@ -109,4 +144,87 @@ fn the_build_gets_each_project_module() {
     assert_eq!(module.output, path("build/p/progs.dat"));
     assert_eq!(module.names, ["a.qc", "sub/b.qc"]);
     assert_eq!(module.input.compiled.len(), 2);
+}
+
+// spec PRJ-2.8: the editor's dialect reads a project with no `quakec.toml`; a project file's
+// dialect, vanilla when it names none, wins over it
+#[test]
+fn a_project_files_dialect_wins_over_the_editors() {
+    const FILES: &[(&str, &str)] = &[("a.qc", "void() f = { float x = 1; x += 2; };\n")];
+    const NAMES_NONE: &[(&str, &str)] = &[(
+        "quakec.toml",
+        "[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n",
+    )];
+    let errors = |extra: &'static [(&'static str, &'static str)]| {
+        let mut host = host(&ProjectSpec {
+            files: FILES,
+            extra,
+            dialect: Some(qc_project::Dialect::Fteqcc),
+            ..ProjectSpec::default()
+        });
+        host.diagnostics(&path("a.qc"))
+            .iter()
+            .filter(|d| d.is_error())
+            .count()
+    };
+    assert_eq!(errors(&[]), 0, "a bare project takes the editor's");
+    assert!(errors(NAMES_NONE) > 0, "the project file's default wins");
+}
+
+// spec PRJ-5.1: the lines that may be directives are read after a byte order mark, with a `\`
+// joining the next line; PRJ-5.3: every line of an `#includelist` names files
+#[test]
+fn the_lines_an_edit_rereads_the_graph_for() {
+    let lines = |text: &str| directive_lines(text.as_bytes());
+    assert_eq!(
+        lines("\u{feff}#include \"b.qh\"\nfloat x;\n")[0],
+        b"#include \"b.qh\""
+    );
+    assert_ne!(
+        lines("#include \\\n\"b.qh\"\n"),
+        lines("#include \\\n\"c.qh\"\n")
+    );
+    assert_ne!(
+        lines("#includelist\na.qc\n#endlist\n"),
+        lines("#includelist\na.qc\nb.qc\n#endlist\n")
+    );
+    assert_eq!(
+        lines("float a;\n#define X\n"),
+        lines("float b;\n#define X\n")
+    );
+}
+
+// spec PRJ-5.3: typing an entry in an open file's `#includelist` adds the file to the module
+#[test]
+fn typing_an_includelist_entry_reads_the_modules_files_again() {
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", "#includelist\n#endlist\n")],
+        extra: &[("b.qc", "float y;\n")],
+        dialect: Some(qc_project::Dialect::Fteqcc),
+        ..ProjectSpec::default()
+    });
+    assert!(!host.files().contains(&path("b.qc")));
+    host.set_overlay(&path("a.qc"), b"#includelist\nb.qc\n#endlist\n".to_vec())
+        .unwrap();
+    assert!(host.files().contains(&path("b.qc")));
+}
+
+// spec PRJ-1.2: an edit to a QuakeC file while the project file does not open keeps the
+// analysis, and is no error
+#[test]
+fn a_directive_edit_while_the_project_does_not_open_keeps_the_analysis() {
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", "float x;\nvoid() f = { x = 1; };\n")],
+        extra: &[("b.qh", "float z;\n")],
+        ..ProjectSpec::default()
+    });
+    assert!(
+        host.set_overlay(&path("quakec.toml"), b"bad [".to_vec())
+            .is_err()
+    );
+    let text = "#include \"b.qh\"\nfloat x;\nvoid() f = { x = 1; };\n";
+    assert!(
+        host.set_overlay(&path("a.qc"), text.as_bytes().to_vec())
+            .is_ok()
+    );
 }

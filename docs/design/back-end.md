@@ -58,8 +58,8 @@ The passes are chosen by the dialect's profile (`back_end.rs`, `BackEnd::of`):
 
 | Pass | Vanilla | FTEQCC | Where |
 | --- | --- | --- | --- |
-| Allocation | each value a new slot in creation order (QC-21.5) | the same | `compile/allocate.rs`, `CreationOrder` |
-| Layout | parameters, locals and temporaries among the globals as they are met (QC-21.4) | a block per function after every global (FTE-21.7) | `program.rs`, `open_block`, `resolve_blocks` |
+| Allocation | each value a new slot in creation order (QC-21.5) | a slot reused once its value is dead, from the module's shared temporaries; a value read after a call in the function's block (FTE-21.8) | `compile/allocate.rs`, `CreationOrder`, `Overlapping` |
+| Layout | parameters, locals and temporaries among the globals as they are met (QC-21.4) | a block per function after every global (FTE-21.9) | `program.rs`, `open_block`, `resolve_blocks` |
 
 Every body of the corpus codebases that compile and of 2,000 generated programs of seed 1 is
 written from the layer. The vanilla output is byte for byte what it was when the syntax walk
@@ -98,11 +98,16 @@ flowchart LR
 3. **Passes** over `Ir`, chosen by the dialect profile, each with its spec statements: the
    FTEQCC behaviours now inline in `compile.rs` (`opt_assignments`, FTE-18.12; the return
    global's copies, FTE-18.13; the `?:` result as a local), then optimisations (L-04).
-4. **Allocation**: each temporary gets a slot. Vanilla `qcc` and today's FTEQCC profile take a
-   new slot for every temporary (QC-21.5). An FTEQCC-exact mode, reusing slots as
-   `QCC_GetTemp` does, can be added here later as one pass, if a mod is ever found to need it
-   (ADR-0020).
-5. **Layout and writing**: definitions, blocks (FTE-21.7), immediates and temporaries get
+4. **Allocation**: each temporary gets a slot. Vanilla `qcc` takes a new slot for every
+   temporary (QC-21.5). The FTEQCC profile reuses them as `QCC_GetTemp` does under
+   `opt_overlaptemps` (FTE-21.8): each value's range runs from the statement that makes it to
+   the last that names it, extended to a loop's back jump while it is live at the loop's start;
+   a value whose range holds a call takes a slot of the function's block, as
+   `QCC_RemapLockedTemps` moves it, and any other the first of the module's shared temporaries
+   of its size that is free, laid out after every block. A big mod needs it: Arcane Dimensions
+   had 94,535 globals with a new slot per temporary, where FTEQCC's progs has 22,799 and fits
+   version 6.
+5. **Layout and writing**: definitions, blocks (FTE-21.9), immediates and temporaries get
    their global offsets, then the progs and its `.lno` are written, as `write.rs` does today.
 
 The statements' order stays `qcc`'s: the lowering visits each body in the order `qcc`'s and

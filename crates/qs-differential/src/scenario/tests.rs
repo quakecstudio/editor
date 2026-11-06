@@ -352,6 +352,76 @@ fn an_out_of_range_input_is_refused() {
     assert_eq!(err.line, 0);
 }
 
+// spec DIFF-2.10: a command line's words after the edict are its command, joined by one space,
+// and the lines are kept in file order
+#[test]
+fn command_lines_join_their_words() {
+    let s = read_str(
+        "progs a.dat\nmaxclients 2\nclients 2\nframes 10\ncommand 3 2 say  hello\tthere # a comment\n\
+         command 1 1 ready\n",
+    )
+    .expect("read");
+    assert_eq!(
+        s.commands,
+        [
+            Command {
+                frame: 3,
+                edict: 2,
+                text: b"say hello there".to_vec(),
+            },
+            Command {
+                frame: 1,
+                edict: 1,
+                text: b"ready".to_vec(),
+            },
+        ]
+    );
+    let thirteen = "w ".repeat(13);
+    let s = read_str(&format!("progs a.dat\nclients 1\ncommand 1 1 {thirteen}\n")).expect("13");
+    assert_eq!(
+        s.commands[0].text.len(),
+        25,
+        "thirteen words and twelve spaces"
+    );
+    assert!(
+        read_str(&format!(
+            "progs a.dat\nclients 1\ncommand 1 1 {thirteen}w\n"
+        ))
+        .is_err(),
+        "fourteen words make a line of 17"
+    );
+}
+
+// spec DIFF-2.10: a command with no word, a frame or edict out of range, or a word holding a
+// NUL byte is refused
+// spec DIFF-2.9: a command's frame after the last frame, or edict not a client, is refused at
+// line 0
+#[test]
+fn a_bad_command_line_is_refused() {
+    let base = "progs a.dat\nclients 1\nframes 5\n";
+    for (line, why) in [
+        ("command 1 1", "no word"),
+        ("command 0 1 say", "frame 0"),
+        ("command 1000001 1 say", "frame over the limit"),
+        ("command 1 0 say", "edict 0"),
+        ("command 1 17 say", "edict over 16"),
+        ("command x 1 say", "frame not an integer"),
+    ] {
+        let err = read_str(&format!("{base}{line}\n")).expect_err(why);
+        assert_eq!(err.line, 4, "{why}");
+    }
+    let mut nul = format!("{base}command 1 1 sa").into_bytes();
+    nul.extend_from_slice(b"\0y\n");
+    assert_eq!(read(&nul, Path::new(".")).expect_err("a NUL").line, 4);
+    for (line, why) in [
+        ("command 6 1 say", "after the last frame"),
+        ("command 1 2 say", "not a client"),
+    ] {
+        let err = read_str(&format!("{base}{line}\n")).expect_err(why);
+        assert_eq!(err.line, 0, "{why}");
+    }
+}
+
 // spec DIFF-2.9: a repeated model name is refused
 #[test]
 fn a_repeated_model_name_is_refused() {

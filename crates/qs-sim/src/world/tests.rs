@@ -12,6 +12,7 @@
 use qc_edict::EdictNumber;
 use std::fmt::Write as _;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use qc_builtins::mock::Rng;
 use qc_codegen::compile_module;
@@ -88,6 +89,12 @@ const ENTRY_POINTS: &str = "void() main = {};\nvoid() StartFrame = {};\n\
 /// The progs `qc-codegen` writes for `source` after the system defs, the builtins and the
 /// entry points.
 pub(crate) fn compile(source: &str) -> Vec<u8> {
+    compile_with_lines(source).0
+}
+
+/// [`compile`]'s progs and the source line of each statement, from the `.lno` (LNO-1); the
+/// source is the file `t.qc`, its first line line 1.
+pub(crate) fn compile_with_lines(source: &str) -> (Vec<u8>, Vec<i32>) {
     let mut defs = String::new();
     for var in SYSTEM_GLOBALS {
         writeln!(defs, "{} {};", type_name(var.etype), var.name).unwrap();
@@ -131,7 +138,10 @@ pub(crate) fn compile(source: &str) -> Vec<u8> {
     let names: Vec<String> = files.iter().map(|(n, _)| (*n).to_owned()).collect();
     let compiled = compile_module(&mut db, &input, |id| names[id.index()].clone())
         .unwrap_or_else(|e| panic!("{source:?} did not compile: {e:?}"));
-    qc_progs::write(&compiled.progs).unwrap()
+    (
+        qc_progs::write(&compiled.progs).unwrap(),
+        compiled.lno.lines,
+    )
 }
 
 /// A floor at z = 0 for x below 100, and a pit floor at z = -30 past it; for the player's
@@ -167,6 +177,7 @@ pub(crate) fn ledge_over(pit: f32) -> MapSpec {
                 children: [CONTENTS_EMPTY, CONTENTS_SOLID],
             },
         ],
+        ..MapSpec::default()
     }
 }
 
@@ -230,7 +241,7 @@ pub(crate) fn running_from(
     let lump = format!("{{\n\"classname\" \"worldspawn\"\n}}\n{entities}");
     let mut map = bsp(spec);
     map.entity_lump = Box::leak(lump.into_bytes().into_boxed_slice());
-    let read = Box::new(move |name: &str| {
+    let read = Rc::new(move |name: &str| {
         files
             .iter()
             .find(|(n, _)| n == name)
@@ -254,6 +265,10 @@ pub(crate) fn entity(classname: &str, origin: &str, keys: &str) -> String {
 }
 
 impl World {
+    pub(crate) fn set_float_field(&mut self, n: usize, name: &str, value: f32) {
+        self.set_field(n, field_slot(name), Slot::from_f32(value));
+    }
+
     pub(crate) fn float(&self, n: usize, name: &str) -> f32 {
         self.machine
             .edicts()
@@ -678,7 +693,8 @@ fn movetogoal_steps_toward_the_goal() {
     ]
     .concat();
     let world = world(&source, &entities);
-    // The first draw of seed 0 is 0, so the step toward ideal_yaw 0 is tried, and taken.
+    // The first draw of seed 1 is 16838, whose `& 3` is 2, not 1, so the step toward ideal_yaw
+    // 0 is tried, and taken.
     assert_eq!(world.vector(3, "origin")[0], 30.0);
     assert_eq!(world.float(3, "frags"), 7.0);
     // Within 10 of the goal with an enemy: no move.
@@ -739,6 +755,7 @@ fn pillar() -> MapSpec {
                 children: [CONTENTS_EMPTY, CONTENTS_SOLID],
             },
         ],
+        ..MapSpec::default()
     }
 }
 
@@ -765,9 +782,9 @@ fn chase_after(spec: &MapSpec, skip: usize, goal: &str, chaser: &str, keys: &str
 
 const EAST: &str = "\"ideal_yaw\" \"0\"\n\"speed\" \"10\"\n\"yaw_speed\" \"360\"\n";
 
-/// The draws of seed 0's random source, from the first.
+/// The draws of the world's random source, from the first: seed 1 (MOVE-6.1).
 fn draws(count: usize) -> Vec<u32> {
-    let mut rng = Rng::new(0);
+    let mut rng = Rng::new(1);
     (0..count).map(|_| rng.next_rand()).collect()
 }
 
@@ -776,7 +793,7 @@ fn skip_where(first: impl Fn(u32) -> bool, second: impl Fn(u32) -> bool) -> usiz
     let all = draws(200);
     (0..199)
         .find(|&n| first(all[n]) && second(all[n + 1]))
-        .expect("seed 0 has such a pair of draws")
+        .expect("seed 1 has such a pair of draws")
 }
 
 // spec MOVE-4.1: the headings toward the goal are its sides on x and y beyond 10
@@ -807,7 +824,7 @@ fn a_chaser_takes_the_diagonal() {
 #[test]
 fn the_search_order_follows_rand() {
     let world = chase(&ledge(), "80 0 30", "80 0 30", EAST);
-    // Seed 0: movetogoal's draw, the swap's, then the order's.
+    // Seed 1: movetogoal's draw, the swap's, then the order's.
     let ascending = draws(3)[2] & 1 != 0;
     let y = world.vector(3, "origin")[1];
     assert_eq!(y, if ascending { 10.0 } else { -10.0 });
@@ -854,6 +871,7 @@ fn well(depth: f32) -> MapSpec {
             planenum: 6,
             children: [CONTENTS_EMPTY, CONTENTS_SOLID],
         }],
+        ..MapSpec::default()
     }
 }
 
@@ -926,6 +944,7 @@ fn tunnel() -> MapSpec {
                 children: [CONTENTS_EMPTY, CONTENTS_SOLID],
             },
         ],
+        ..MapSpec::default()
     }
 }
 
@@ -1549,7 +1568,7 @@ pub(crate) fn moved(run: &mut Running, cmd: UserCmd, count: usize, frametime: f6
     &run.world
 }
 
-const P: usize = 1;
+pub(crate) const P: usize = 1;
 
 fn close(got: f32, want: f32) -> bool {
     (got - want).abs() < 1e-3
@@ -1815,6 +1834,7 @@ fn pool() -> MapSpec {
             planenum: 2,
             children: [CONTENTS_EMPTY, CONTENTS_SOLID],
         }],
+        ..MapSpec::default()
     }
 }
 
@@ -2466,6 +2486,7 @@ fn corner() -> MapSpec {
                 children: [CONTENTS_EMPTY, CONTENTS_SOLID],
             },
         ],
+        ..MapSpec::default()
     }
 }
 
@@ -2532,3 +2553,187 @@ fn the_light_styles_are_the_ones_worldspawn_sets() {
     assert_eq!(world.light_style(1), None);
     assert_eq!(world.light_style(64), None, "past the 64 styles");
 }
+
+// spec PHYS-10.4: changelevel's command names the next level; SV_SaveSpawnparms keeps
+// serverflags and the parms SetChangeParms leaves with self the client; the next level loads
+// with that serverflags and the client spawns with the kept parms, SetNewParms not run
+#[test]
+fn a_level_change_carries_the_spawn_parms_and_serverflags() {
+    let more = "void(string s) changelevel = #70;\n\
+        void() SetNewParms = { parm1 = 5; };\n\
+        void() SetChangeParms = { parm1 = self.health + 7; parm2 = 3; };\n\
+        void() StartFrame = { if (time > 1.5) { serverflags = 4; changelevel(\"e1m2\"); } };\n";
+    let put = "self.health = parm1; self.armorvalue = serverflags;";
+    let progs = player_progs(put, "", more);
+    let mut first = player_from(&ledge(), progs.clone(), LoadOptions::default());
+    assert_eq!(
+        first.world.float(1, "health"),
+        5.0,
+        "a new game runs SetNewParms"
+    );
+    assert_eq!(first.world.take_host_command(), None, "none asked for yet");
+    first.frames(10, 0.1).unwrap();
+    assert_eq!(
+        first.world.take_host_command(),
+        Some(super::HostCommand::Changelevel("e1m2".to_owned()))
+    );
+    assert_eq!(first.world.take_host_command(), None, "taken once");
+    let parsed = Progs::read(&first.progs).unwrap();
+    let kept = first.world.save_spawn_parms(&parsed).unwrap();
+    assert_eq!(kept.parms()[..3], [12.0, 3.0, 0.0]);
+    assert_eq!(kept.serverflags(), 4.0);
+    let options = LoadOptions {
+        carried: Some(kept),
+        ..LoadOptions::default()
+    };
+    let next = player_from(&ledge(), progs, options);
+    assert_eq!(
+        next.world.float(1, "health"),
+        12.0,
+        "the kept parm1, not SetNewParms' 5"
+    );
+    assert_eq!(
+        next.world.float(1, "armorvalue"),
+        4.0,
+        "serverflags carried"
+    );
+}
+
+// spec PHYS-10.4: Host_Changelevel_f takes exactly one argument; commands split at a line
+// end or a semicolon outside quotes and are matched without case; words are COM_Parse's
+#[test]
+fn only_a_changelevel_with_one_argument_names_a_level() {
+    let mut run = player(&ledge(), "", "", "");
+    let mut take = |buffer: &[u8]| {
+        run.world.builtins.mock.engine_mut().command_buffer = buffer.to_vec();
+        run.world.execute_console(&Progs::read(&run.progs).unwrap());
+        run.world.builtins.mock.engine_mut().command_buffer.clear();
+        match run.world.take_host_command() {
+            Some(super::HostCommand::Changelevel(map)) => Some(map),
+            _ => None,
+        }
+    };
+    assert_eq!(take(b"changelevel e2m1\n").as_deref(), Some("e2m1"));
+    assert_eq!(take(b"changelevel\n"), None);
+    assert_eq!(take(b"changelevel a b\n"), None);
+    assert_eq!(
+        take(b"echo hi; changelevel start\n").as_deref(),
+        Some("start")
+    );
+    assert_eq!(take(b"changelevelx e1m1\n"), None);
+    assert_eq!(
+        take(b"changelevel \"e3m1\"\n").as_deref(),
+        Some("e3m1"),
+        "a quoted word"
+    );
+    assert_eq!(
+        take(b"echo \"a;b\"; changelevel e4m1").as_deref(),
+        Some("e4m1")
+    );
+    assert_eq!(
+        take(b"echo \"x; changelevel e4m2\"\n"),
+        None,
+        "inside quotes"
+    );
+    assert_eq!(
+        take(b"CHANGELEVEL e1m3\n").as_deref(),
+        Some("e1m3"),
+        "Q_strcasecmp"
+    );
+    assert_eq!(
+        take(b"changelevel start:2\n"),
+        None,
+        "`:` is a word of its own"
+    );
+    assert_eq!(
+        take(b"changelevel e1m4 // a comment\n").as_deref(),
+        Some("e1m4")
+    );
+    assert!(
+        run.world.builtins.mock.engine().command_buffer.is_empty(),
+        "the buffer is emptied"
+    );
+}
+
+// spec PHYS-10.4: a client not yet active keeps its parms through SV_SaveSpawnparms
+#[test]
+fn an_inactive_client_keeps_its_parms_across_a_level_change() {
+    let more = "void() SetChangeParms = { parm1 = 99; };\n";
+    let progs_bytes = player_progs("", "", more);
+    let mut run = running_from(
+        &ledge(),
+        progs_bytes,
+        "",
+        Vec::new(),
+        LoadOptions::default(),
+    );
+    let progs = Progs::read(&run.progs).unwrap();
+    let kept = run.world.save_spawn_parms(&progs).unwrap();
+    assert_eq!(kept.parms(), [0.0; 16], "SetChangeParms did not run");
+}
+
+// spec PHYS-10.4: console text splits into commands at a newline or a semicolon outside
+// quotes, each into its words as COM_Parse reads them; an empty command is skipped
+#[test]
+fn console_text_splits_into_commands_and_words() {
+    let words = super::command_words(b"map e1m1; god\n\n  ;say \"a;b\" c");
+    let expected: Vec<Vec<Vec<u8>>> = vec![
+        vec![b"map".to_vec(), b"e1m1".to_vec()],
+        vec![b"god".to_vec()],
+        vec![b"say".to_vec(), b"a;b".to_vec(), b"c".to_vec()],
+    ];
+    assert_eq!(words, expected);
+    assert!(super::command_words(b"").is_empty());
+}
+
+// spec FS-4.5: the progs read `registered` as 1 in the full game and 0 in the shareware
+// episode
+#[test]
+fn the_progs_read_whether_the_game_is_registered() {
+    let source = "float(string s) cvar = #45;\nfloat reg;\n\
+        void() StartFrame = { reg = cvar(\"registered\"); };\n";
+    let read = |registration| {
+        let options = LoadOptions {
+            registration,
+            ..LoadOptions::default()
+        };
+        let mut run = running_with(&ledge(), source, "", Vec::new(), options);
+        run.frames(1, 0.1).unwrap();
+        let progs = Progs::read(&run.progs).unwrap();
+        run.world
+            .named_globals(&progs)
+            .into_iter()
+            .find(|g| g.name == "reg")
+            .map(|g| g.value)
+    };
+    assert_eq!(
+        read(qs_vfs::Registration::Registered),
+        Some(super::QcValue::Float(1.0))
+    );
+    assert_eq!(
+        read(qs_vfs::Registration::Shareware),
+        Some(super::QcValue::Float(0.0))
+    );
+}
+
+// spec PHYS-10.6: `restart` asks for this level again, whatever follows it, and the world
+// keeps its name and the parms it was entered with
+#[test]
+fn restart_asks_for_this_level_again() {
+    let mut run = player(&ledge(), "", "", "");
+    let mut take = |buffer: &[u8]| {
+        run.world.builtins.mock.engine_mut().command_buffer = buffer.to_vec();
+        run.world.execute_console(&Progs::read(&run.progs).unwrap());
+        run.world.builtins.mock.engine_mut().command_buffer.clear();
+        run.world.take_host_command()
+    };
+    assert_eq!(take(b"restart\n"), Some(super::HostCommand::Restart));
+    assert_eq!(take(b"RESTART now\n"), Some(super::HostCommand::Restart));
+    assert_eq!(take(b"restarts\n"), None);
+    assert_eq!(run.world.map(), "test");
+    assert_eq!(run.world.carried(), None, "a new game");
+}
+
+mod debug;
+mod engine;
+mod host;

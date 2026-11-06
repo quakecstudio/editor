@@ -101,6 +101,10 @@ the impact.
   `endpos` `mid`, and it returns false ("backup past 0"); else `midf` and `mid` are computed
   again from the new `frac`. When `mid` is out of the solid, `fraction` is `midf`, `endpos` is
   `mid`, and it returns false.
+- **WORLD-3.7** The negated plane of WORLD-3.6 is `VectorSubtract (vec3_origin, plane->normal,
+  trace->plane.normal)` and `trace->plane.dist = -plane->dist`: each normal component is
+  `0 - n`, so a zero component is +0, never -0, while the distance is negated (+0 becomes -0).
+  The sign of a zero carries into the velocity the plane clips (PHYS-7).
 
 ## WORLD-4 Clipping a move to one entity
 
@@ -245,6 +249,103 @@ statements are what each asks of the world.
   `self` when its `flags` has one of `FL_ONGROUND`, `FL_FLY` and `FL_SWIM`; it saves `self`
   before the step and restores it after, since a touch may change it. `checkbottom (e)` is
   MOVE-1 and `pointcontents (v)` is WORLD-2.2.
+- **WORLD-8.7** `checkclient ()` is BUILTIN-14.3 on the map (`PF_checkclient`,
+  `PF_newcheckclient`): the stored PVS is `Mod_LeafPVS` of the leaf at the chosen client's
+  `origin + view_ofs` (BSP-21.1, BSP-6.2; leaf 0's is every leaf), and `self`'s eye leaf
+  `leaf` is in it when bit `(leaf - 1) & 7` of byte `(leaf - 1) >> 3` is set; leaf 0 never is.
+  The choice cycles from after the last over client edicts 1 to `maxclients`, skipping one
+  that is free, has `health` 0 or less or has `FL_NOTARGET`, and stops at the last choice
+  itself when none other qualifies.
+- **WORLD-8.8** `aim (ent, speed)` (`PF_aim`) starts 20 above `ent`'s `origin`. A line along
+  `v_forward` 2048 long (`SV_Move` of a point, `MOVE_NORMAL`, passing `ent`) that hits an edict
+  whose `takedamage` is `DAMAGE_AIM` (2), not of `ent`'s team when `teamplay` is set and
+  `ent`'s `team` is above 0, returns `v_forward`. Otherwise every edict from 1 below
+  `num_edicts` with `takedamage` 2, not `ent`, and not a teammate as before, is tried: its
+  centre `origin + 0.5 * (mins + maxs)` (in double, PHYS-9.7), the direction to it normalized
+  and its dot product with `v_forward`; one below the best so far (from `sv_aim`, 0.93) is
+  skipped, and one a line to the centre hits becomes the best. With a best, the result is
+  `v_forward` scaled by the dot product of (its origin less `ent`'s) with `v_forward`, its z
+  replaced by that difference's z, normalized; without one, `v_forward`.
+
+
+## WORLD-9 Debugging
+
+**Source:** this project; id's engine has no debugger. VM-20 is the stop it is built on.
+
+### Behaviour
+
+- **WORLD-9.1** A world may run its frames with a debugger, the VM's observer for every run a
+  frame starts (thinks, touches, the client's functions, physics callbacks); runs outside a
+  frame, such as the map's spawn functions, run without one. The debugger counts the
+  statements a frame asks about from 0 and stops the run before a statement its rule names,
+  recording the count, the function, the statement, the call depth and the breakpoint if one;
+  the frame then fails with VM-20.1's `interrupted`. With no breakpoint and its rule to stop at
+  breakpoints, or set to finish, it stops nothing and the frames run as without it.
+- **WORLD-9.2** A world is cloned before a frame a debugger may stop. A stop is gone on from by
+  replaying the frame from that clone with a rule that skips the statements the stop's count
+  covers: the world is deterministic (MOVE-6, DIFF-16), so the replay runs the same
+  statements to the same state, and the debugger stops where the rule next says. Replaying with
+  no stop left runs the frame to its end, as the frame would have.
+- **WORLD-9.3** The rules, each after the skipped statements: at a breakpoint; one statement
+  (`statement`); the next statement on another line or at another depth (`in`, which enters a
+  call the line makes); the next statement on another line at the same depth or any statement
+  shallower (`over`, which runs the line's calls); any statement shallower (`out`). `over` and
+  `out` stop only in the run the engine started that they stepped from: past its end the
+  engine runs functions that are not its callers. `in`, `over` and `out` stop at a breakpoint
+  on the way. Without a `.lno` each statement is a line of
+  its own. A step from between two frames stops at the next frame's first statement.
+- **WORLD-9.4** A statement's location is its function's name and, with a `.lno` (LNO-1), its
+  function's file (`s_file`) and the statement's line (BRIDGE-3.4). A breakpoint at a file and
+  line is the first statement, by index, whose line is that line in a function whose file is
+  the file, or ends with `/` and the file's name, or whose name ends with `/` and the file; a
+  line no statement is on resolves to nothing (BRIDGE-4.5).
+- **WORLD-9.5** A watch expression (BRIDGE-4.9, `evaluate`) is, after its surrounding spaces, a
+  number, a vector `'x y z'`, a string `"..."`, or a name followed by any number of `.field`s.
+  The name is a local of the frame's function (a definition within its locals, `parm_start` to
+  `parm_start + locals`) before a global; each field is read from the entity the part before it
+  gives, by the field's definition. Its value is a typed value (BRIDGE-5.1). A name nothing has,
+  a field read from what is not an entity, or other text has no value. The frame's function's
+  locals are read where they live, in the globals, so an outer frame of a recursive function
+  reads the innermost one's.
+## WORLD-10 Reloading the progs
+
+**Source:** this project's design (P3-03, [#91](https://github.com/quakecstudio/editor/issues/91)):
+id's engine loads a progs only with a new map (`PR_LoadProgs` from `SV_SpawnServer`); the
+preview host loads one over the running map, keeping its state as a savegame keeps it, by name
+(`ED_WriteGlobals`, `ED_Write` and their parsers, `WinQuake/pr_edict.c`).
+
+### Behaviour
+
+- **WORLD-10.1** A reload makes a new machine for the new progs, whose globals start at the new
+  progs' values; its edicts are the running ones, `num_edicts`, each edict's free flag and
+  `freetime` kept, every field slot of the new progs' layout starting at 0. The time, the
+  settings, the engine strings and the collision links are the world's and stay; the builtin
+  table is the one the new progs was patched with (RRE-4.2); the debugger and the profile
+  counts, which number the old progs' statements and functions, are dropped.
+- **WORLD-10.2** A named global the old progs and the new one name once each, both with one type,
+  and that is not a function's local, keeps its running value, translated (WORLD-10.4), unless
+  that value is still its initial value in the old progs: it then has its initial value in the
+  new one, so a constant, a function's or a field's own definition and an initialised global
+  follow the edited code while what the game changed is kept, a function or field stored in a
+  global variable included. One only the old progs has is reported removed, one only the new
+  progs has added, a function's or field's own definition as that function or field; one of
+  another type is reported with both types and has its new initial value. A name given to more
+  than one global in either progs, as a compiler names its immediates, pairs nothing, and a
+  name ending in `_x`, `_y` or `_z` is a vector's component only when that vector is
+  defined.
+- **WORLD-10.3** A field both progs name with one type is carried for every edict in use below
+  `num_edicts`, each value translated; one of another type is reported with both types and is
+  0; one only the new progs has is reported added and is 0, and one only the old progs has is
+  reported removed.
+- **WORLD-10.4** A value is translated by its type: an entity names the same edict in the new
+  layout, whose edict size may differ; a string of the old progs' table is the string of the
+  new table with its text, else an engine string of it, and an engine string is itself; a field
+  and a function are those of their name, and a name the new progs lacks is a lost reference,
+  reported with where the value was (`edict 2 .think`, `global nextfn`), and the value 0; any
+  other value is its bits. The functions only one progs names are reported removed or added.
+- **WORLD-10.5** The report counts the values carried and lists each change as its kind
+  (`global`, `field` or `function`), its name and the reason: `removed`, `added`, `type changed
+  from T to U`, or `removed, and PLACE named it: now 0`.
 
 ## Constants
 

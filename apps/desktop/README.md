@@ -7,7 +7,8 @@ Sans, JetBrains Mono and Lucide's icons (ADR-0010), and the macOS menu bar throu
 - **Layer:** apps. It depends on `qs-layout`, `qs-workbench` and `qs-commands` (L5),
   `qs-editor-view` and `qs-render` (L7), `qs-log` and `qs-paths` (L0), `eframe`, `skrifa` for the system font
   fallback, and on macOS `muda`.
-- **Spec sections:** none; it implements plan requirements UI-2, UI-14, UI-15 and CONV-16.
+- **Spec sections:** none; it implements plan requirements, not engine behaviour.
+- **Requirements:** UI-2, UI-14, UI-15 and CONV-16.
 - **Shipped:** yes.
 
 ## What it shows

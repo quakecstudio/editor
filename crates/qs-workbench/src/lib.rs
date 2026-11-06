@@ -16,10 +16,12 @@
 mod build;
 mod commands;
 mod editing;
+mod preview;
+mod recent;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -35,6 +37,17 @@ pub use qc_project::{Dialect, FsLoader, Loader, Target};
 pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
+pub use crate::preview::{
+    BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
+    ScenarioRunParams, StepBy, StepByParams, UNWATCH, UnwatchParams, WATCH, WatchParams, debug,
+    dock, scenario,
+};
+pub use crate::preview::{
+    ConsoleLine, HasPreview, PAUSE, PICK, PLAY, POLL, PickParams, PlayParams, PlayState, Preview,
+    PreviewConfig, PreviewError, PreviewStatus, RELOAD, RESTART, RESUME, SELECT, SET_FIELD, STEP,
+    STOP, SelectParams, SelectedEntity, SetFieldParams, entities, register_preview,
+};
+pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
 use qc_project::{ProjectError, normalize};
 use serde::{Deserialize, Serialize};
 
@@ -221,6 +234,17 @@ impl OpenFile {
         &self.outline
     }
 
+    /// The definition byte `offset` is in, as the breadcrumb names it: the last whose name is
+    /// written at or before it. A QuakeC file is a run of top-level definitions, so the text
+    /// after one name and before the next belongs to the first.
+    #[must_use]
+    pub fn symbol_at(&self, offset: usize) -> Option<&Symbol> {
+        self.outline
+            .iter()
+            .take_while(|symbol| symbol.range.span.start <= offset)
+            .last()
+    }
+
     /// The semantic highlighting of its names, in source order.
     #[must_use]
     pub fn highlights(&self) -> &[Highlight] {
@@ -250,6 +274,13 @@ pub struct Workbench<L> {
     problems: Vec<Problem>,
     symbols: Vec<Symbol>,
     open: Option<OpenFile>,
+    /// The files opened since the project was, in the order they were first opened: the
+    /// editor's tabs.
+    tabs: Vec<PathBuf>,
+    /// The tabs' files, the one opened most recently first.
+    history: Vec<PathBuf>,
+    /// The files whose text an editor or a command changed since they were last saved.
+    unsaved: BTreeSet<PathBuf>,
     generation: u64,
 }
 
@@ -264,6 +295,9 @@ impl<L: Loader> Workbench<L> {
             problems: Vec::new(),
             symbols: Vec::new(),
             open: None,
+            tabs: Vec::new(),
+            history: Vec::new(),
+            unsaved: BTreeSet::new(),
             generation: 0,
         }
     }
@@ -296,6 +330,9 @@ impl<L: Loader> Workbench<L> {
         self.problems = problems(&mut self.host);
         self.symbols = self.host.workspace_symbols();
         self.open = None;
+        self.tabs.clear();
+        self.history.clear();
+        self.unsaved.clear();
         Ok(())
     }
 
@@ -334,8 +371,58 @@ impl<L: Loader> Workbench<L> {
             classes,
         };
         let location = open.location();
+        if !self.tabs.contains(&open.path) {
+            self.tabs.push(open.path.clone());
+        }
+        self.history.retain(|path| *path != open.path);
+        self.history.insert(0, open.path.clone());
         self.open = Some(open);
         Ok(location)
+    }
+
+    /// Closes the tab of `path`. When it is the open file, the tab open before it opens again,
+    /// as Zed's default `activate_on_close: "history"` does, or no file when it was the only
+    /// one. Its unsaved text is kept: opening it again shows it.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkbenchError::NoFile`] when `path` has no tab, or the tab to open next cannot be
+    /// read.
+    pub fn close_file(&mut self, path: &Path) -> Result<(), WorkbenchError> {
+        let path = normalize(path);
+        let at = self
+            .tabs
+            .iter()
+            .position(|tab| *tab == path)
+            .ok_or_else(|| WorkbenchError::NoFile { path: path.clone() })?;
+        self.tabs.remove(at);
+        self.history.retain(|tab| *tab != path);
+        if self.open.as_ref().is_some_and(|open| open.path == path) {
+            self.open = None;
+            if let Some(next) = self.history.first().cloned() {
+                self.open_file(&next, 0)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The editor's tabs: the files opened since the project was, first opened first.
+    #[must_use]
+    pub fn tabs(&self) -> &[PathBuf] {
+        &self.tabs
+    }
+
+    /// The tabs' files, the one opened most recently first: the order the file finder lists
+    /// them in before anything is typed.
+    #[must_use]
+    pub fn history(&self) -> &[PathBuf] {
+        &self.history
+    }
+
+    /// Whether the text of `path` changed since it was last saved.
+    #[must_use]
+    pub fn is_unsaved(&self, path: &Path) -> bool {
+        self.unsaved.contains(path)
     }
 
     /// The project directory, once a project is open.

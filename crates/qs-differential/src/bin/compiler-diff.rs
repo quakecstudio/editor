@@ -35,10 +35,10 @@
 //! printing one line per pair, and exits 0 when no pair diverges: a generated
 //! program's calls need not reach 90% of its statements, since every function of it is
 //! called and a bounded loop is left early by its counter. `--function-pairs` reads the same
-//! lines, each named by the one function of a cut program its comparison calls (DIFF-15.4),
-//! and adds the statements of the oracle's progs those calls executed to the `--executed`
+//! lines, each named by the functions of a cut program its comparison calls, separated by
+//! commas (DIFF-15.9), and adds the statements of the oracle's progs those calls executed to the `--executed`
 //! file, by function and offset (DIFF-15.5). `--setup-functions` prints the name of each
-//! function the scenarios' setups run in a progs, one a line (DIFF-15.2).
+//! function the scenarios' setups run in a progs, one a line (DIFF-15.8).
 
 #![expect(
     clippy::print_stdout,
@@ -53,7 +53,7 @@ use qc_builtins::EngineProfile;
 
 use qs_differential::calls::{
     CodebaseReport, FAST_ROUNDS, FULL_ROUNDS, FUNCTION_ROUNDS, Oracle, executed_by_function,
-    run_codebase, run_function, setup_functions, uncovered,
+    run_codebase, run_functions, setup_functions, uncovered,
 };
 use qs_differential::source::{self, FORMS};
 
@@ -70,14 +70,92 @@ const USAGE: &str = "usage: compiler-diff --mode <fast|full> --codebase <id> \
        compiler-diff --setup-functions <progs> [--engine <id|vkquake>]";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match run(&args) {
+    let flags = <Flags as clap::Parser>::parse();
+    match flags.into_run().and_then(run) {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(error) => {
-            eprintln!("compiler-diff: {error}");
+            eprintln!("compiler-diff: {error}\n{USAGE}");
             ExitCode::from(2)
         }
+    }
+}
+
+/// The command line's flags, each form taking the ones it needs (see [`USAGE`]).
+#[derive(clap::Parser, Debug)]
+#[command(name = "compiler-diff")]
+struct Flags {
+    /// The CI subset's rounds, or the nightly run's.
+    #[arg(long, default_value = "fast", value_parser = rounds)]
+    mode: u32,
+    /// The codebase compared.
+    #[arg(long)]
+    codebase: Option<String>,
+    /// The compiler that wrote the oracle's progs.
+    #[arg(long, default_value = "qcc", value_parser = oracle)]
+    oracle: Oracle,
+    /// Whose engine rules the mock follows (BUILTIN-18).
+    #[arg(long, default_value = "id", value_parser = engine)]
+    engine: EngineProfile,
+    /// The results table to add a row to.
+    #[arg(long)]
+    summary: Option<PathBuf>,
+    /// Where to write each function's statements the calls did not execute (DIFF-12.13).
+    #[arg(long)]
+    uncovered: Option<PathBuf>,
+    /// The oracle's progs.
+    #[arg(long)]
+    theirs: Option<PathBuf>,
+    /// Each of our progs.
+    #[arg(long)]
+    ours: Vec<PathBuf>,
+    /// Write generated programs under this directory (DIFF-14.1).
+    #[arg(long)]
+    generate: Option<PathBuf>,
+    /// The generated programs' seed.
+    #[arg(long)]
+    seed: Option<u64>,
+    /// How many programs to generate.
+    #[arg(long)]
+    count: Option<u64>,
+    /// The pairs to compare, one a line (DIFF-14.9).
+    #[arg(long)]
+    pairs: Option<PathBuf>,
+    /// The function pairs to compare (DIFF-15.9).
+    #[arg(long = "function-pairs")]
+    function_pairs: Option<PathBuf>,
+    /// Where the executed statements are added (DIFF-15.5).
+    #[arg(long)]
+    executed: Option<PathBuf>,
+    /// Print the functions each scenario's setup runs in this progs (DIFF-15.8).
+    #[arg(long = "setup-functions")]
+    setup_functions: Option<PathBuf>,
+}
+
+/// The rounds `--mode` names.
+fn rounds(text: &str) -> Result<u32, String> {
+    match text {
+        "fast" => Ok(FAST_ROUNDS),
+        "full" => Ok(FULL_ROUNDS),
+        other => Err(format!("--mode takes fast or full, not {other:?}")),
+    }
+}
+
+/// The oracle `--oracle` names.
+fn oracle(text: &str) -> Result<Oracle, String> {
+    match text {
+        "qcc" => Ok(Oracle::Qcc),
+        "fteqcc" => Ok(Oracle::Fteqcc),
+        other => Err(format!("--oracle takes qcc or fteqcc, not {other:?}")),
+    }
+}
+
+/// The engine `--engine` names.
+fn engine(text: &str) -> Result<EngineProfile, String> {
+    match text {
+        "id" => Ok(EngineProfile::Id),
+        "vkquake" => Ok(EngineProfile::VkQuake),
+        other => Err(format!("--engine takes id or vkquake, not {other:?}")),
     }
 }
 
@@ -108,17 +186,21 @@ enum Run {
     Suite(Options),
     /// Programs of a seed written out (DIFF-14.1).
     Generate(Generate),
-    /// The functions each scenario's setup runs in a progs, one name a line (DIFF-15.2).
+    /// The functions each scenario's setup runs in a progs, one name a line (DIFF-15.8).
     SetupFunctions {
         progs: PathBuf,
         engine: EngineProfile,
+        /// The codebase whose scenarios set the worlds up, or none for the shared ones.
+        codebase: String,
     },
-    /// The pairs a file lists, each compared (DIFF-14.9, DIFF-15.4).
+    /// The pairs a file lists, each compared (DIFF-14.9, DIFF-15.9).
     Pairs {
         file: PathBuf,
         calls: Calls,
         oracle: Oracle,
         engine: EngineProfile,
+        /// The codebase whose scenarios set the worlds up, or none for the shared ones.
+        codebase: String,
     },
 }
 
@@ -126,118 +208,88 @@ enum Run {
 enum Calls {
     /// Every function, in this many rounds (DIFF-14.9).
     Every(u32),
-    /// The one function the line names, in [`FUNCTION_ROUNDS`] rounds, the statements of the
-    /// oracle's progs the calls executed added to this file (DIFF-15.4, DIFF-15.5).
+    /// The functions the line names, separated by commas, each in [`FUNCTION_ROUNDS`] rounds,
+    /// the statements of the oracle's progs the calls executed added to this file (DIFF-15.9,
+    /// DIFF-15.5).
     Named(PathBuf),
 }
 
+/// The run the command line `args` asks for, as clap reads it.
+#[cfg(test)]
 fn parse(args: &[String]) -> Result<Run, String> {
-    let mut rounds = FAST_ROUNDS;
-    let mut codebase = None;
-    let mut oracle = Oracle::Qcc;
-    let mut engine = EngineProfile::Id;
-    let mut summary = None;
-    let mut uncovered = None;
-    let mut theirs = None;
-    let mut ours = Vec::new();
-    let mut generate = None;
-    let mut seed = None;
-    let mut count = None;
-    let mut pairs = None;
-    let mut function_pairs = None;
-    let mut executed = None;
-    let mut setup = None;
-    let mut rest = args.iter();
-    while let Some(flag) = rest.next() {
-        let mut value = || rest.next().ok_or_else(|| format!("{flag} needs a value"));
-        match flag.as_str() {
-            "--mode" => {
-                rounds = match value()?.as_str() {
-                    "fast" => FAST_ROUNDS,
-                    "full" => FULL_ROUNDS,
-                    other => return Err(format!("--mode takes fast or full, not {other:?}")),
-                };
-            }
-            "--codebase" => codebase = Some(value()?.clone()),
-            "--oracle" => {
-                oracle = match value()?.as_str() {
-                    "qcc" => Oracle::Qcc,
-                    "fteqcc" => Oracle::Fteqcc,
-                    other => return Err(format!("--oracle takes qcc or fteqcc, not {other:?}")),
-                };
-            }
-            "--engine" => {
-                engine = match value()?.as_str() {
-                    "id" => EngineProfile::Id,
-                    "vkquake" => EngineProfile::VkQuake,
-                    other => return Err(format!("--engine takes id or vkquake, not {other:?}")),
-                };
-            }
-            "--summary" => summary = Some(PathBuf::from(value()?)),
-            "--uncovered" => uncovered = Some(PathBuf::from(value()?)),
-            "--theirs" => theirs = Some(PathBuf::from(value()?)),
-            "--ours" => ours.push(PathBuf::from(value()?)),
-            "--generate" => generate = Some(PathBuf::from(value()?)),
-            "--seed" => {
-                seed = Some(
-                    value()?
-                        .parse::<u64>()
-                        .map_err(|e| format!("--seed: {e}"))?,
-                )
-            }
-            "--count" => {
-                count = Some(
-                    value()?
-                        .parse::<u64>()
-                        .map_err(|e| format!("--count: {e}"))?,
-                );
-            }
-            "--pairs" => pairs = Some(PathBuf::from(value()?)),
-            "--function-pairs" => function_pairs = Some(PathBuf::from(value()?)),
-            "--executed" => executed = Some(PathBuf::from(value()?)),
-            "--setup-functions" => setup = Some(PathBuf::from(value()?)),
-            other => return Err(format!("unknown argument {other:?}\n{USAGE}")),
+    let words = core::iter::once("compiler-diff").chain(args.iter().map(String::as_str));
+    <Flags as clap::Parser>::try_parse_from(words)
+        .map_err(|e| e.to_string())?
+        .into_run()
+}
+
+impl Flags {
+    /// The run these flags ask for: `--generate`, then `--setup-functions`, `--pairs`,
+    /// `--function-pairs`, else the suite.
+    fn into_run(self) -> Result<Run, String> {
+        let Self {
+            mode: rounds,
+            codebase,
+            oracle,
+            engine,
+            summary,
+            uncovered,
+            theirs,
+            ours,
+            generate,
+            seed,
+            count,
+            pairs,
+            function_pairs,
+            executed,
+            setup_functions: setup,
+        } = self;
+        if let Some(dir) = generate {
+            return Ok(Run::Generate(Generate {
+                dir,
+                seed: seed.ok_or("a missing flag for this form")?,
+                count: count.ok_or("a missing flag for this form")?,
+            }));
         }
-    }
-    if let Some(dir) = generate {
-        return Ok(Run::Generate(Generate {
-            dir,
-            seed: seed.ok_or(USAGE)?,
-            count: count.ok_or(USAGE)?,
-        }));
-    }
-    if let Some(progs) = setup {
-        return Ok(Run::SetupFunctions { progs, engine });
-    }
-    if let Some(file) = pairs {
-        return Ok(Run::Pairs {
-            file,
-            calls: Calls::Every(rounds),
+        if let Some(progs) = setup {
+            return Ok(Run::SetupFunctions {
+                progs,
+                engine,
+                codebase: codebase.unwrap_or_default(),
+            });
+        }
+        if let Some(file) = pairs {
+            return Ok(Run::Pairs {
+                file,
+                calls: Calls::Every(rounds),
+                oracle,
+                engine,
+                codebase: codebase.unwrap_or_default(),
+            });
+        }
+        if let Some(file) = function_pairs {
+            return Ok(Run::Pairs {
+                file,
+                calls: Calls::Named(executed.ok_or("a missing flag for this form")?),
+                oracle,
+                engine,
+                codebase: codebase.unwrap_or_default(),
+            });
+        }
+        if ours.is_empty() {
+            return Err("the suite needs one or more --ours".to_owned());
+        }
+        Ok(Run::Suite(Options {
+            rounds,
+            codebase: codebase.ok_or("a missing flag for this form")?,
             oracle,
             engine,
-        });
+            summary,
+            uncovered,
+            theirs: theirs.ok_or("a missing flag for this form")?,
+            ours,
+        }))
     }
-    if let Some(file) = function_pairs {
-        return Ok(Run::Pairs {
-            file,
-            calls: Calls::Named(executed.ok_or(USAGE)?),
-            oracle,
-            engine,
-        });
-    }
-    if ours.is_empty() {
-        return Err(USAGE.to_owned());
-    }
-    Ok(Run::Suite(Options {
-        rounds,
-        codebase: codebase.ok_or(USAGE)?,
-        oracle,
-        engine,
-        summary,
-        uncovered,
-        theirs: theirs.ok_or(USAGE)?,
-        ours,
-    }))
 }
 
 /// DIFF-14.1: writes the programs `count` of `seed` under `dir`, and the forms they used.
@@ -282,8 +334,8 @@ fn generate(generate: &Generate) -> Result<bool, String> {
 fn pairs(
     file: &PathBuf,
     calls: &Calls,
-    oracle: Oracle,
-    engine: EngineProfile,
+    (oracle, engine): (Oracle, EngineProfile),
+    codebase: &str,
 ) -> Result<bool, String> {
     let text = std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
     let mut all_ok = true;
@@ -303,17 +355,27 @@ fn pairs(
         let read = |path: &str| std::fs::read(path).map_err(|e| format!("{path}: {e}"));
         let (theirs, ours) = (read(theirs)?, read(ours)?);
         let run = |oracle_progs: &[u8]| match calls {
-            Calls::Every(rounds) => {
-                run_codebase(oracle, oracle_progs, &ours, *rounds, engine, &quiet)
-            }
-            Calls::Named(_) => run_function(
+            Calls::Every(rounds) => run_codebase(
+                codebase,
                 oracle,
                 oracle_progs,
                 &ours,
-                FUNCTION_ROUNDS,
+                *rounds,
                 engine,
-                name.as_bytes(),
+                &quiet,
             ),
+            Calls::Named(_) => {
+                let functions = name.split(',').map(|f| f.as_bytes().to_vec()).collect();
+                run_functions(
+                    codebase,
+                    oracle,
+                    oracle_progs,
+                    &ours,
+                    FUNCTION_ROUNDS,
+                    engine,
+                    &functions,
+                )
+            }
         };
         let report = run(&theirs).map_err(|e| format!("{name}: {e}"))?;
         compared = compared.saturating_add(1);
@@ -424,13 +486,17 @@ fn print_divergences(report: &CodebaseReport) {
     }
 }
 
-fn run(args: &[String]) -> Result<bool, String> {
-    let options = match parse(args)? {
+fn run(request: Run) -> Result<bool, String> {
+    let options = match request {
         Run::Suite(options) => options,
         Run::Generate(request) => return generate(&request),
-        Run::SetupFunctions { progs, engine } => {
+        Run::SetupFunctions {
+            progs,
+            engine,
+            codebase,
+        } => {
             let bytes = std::fs::read(&progs).map_err(|e| format!("{}: {e}", progs.display()))?;
-            let names = setup_functions(&bytes, engine).map_err(|e| e.to_string())?;
+            let names = setup_functions(&codebase, &bytes, engine).map_err(|e| e.to_string())?;
             for name in names {
                 println!("{}", String::from_utf8_lossy(&name));
             }
@@ -441,7 +507,8 @@ fn run(args: &[String]) -> Result<bool, String> {
             calls,
             oracle,
             engine,
-        } => return pairs(&file, &calls, oracle, engine),
+            codebase,
+        } => return pairs(&file, &calls, (oracle, engine), &codebase),
     };
     let read = |path: &PathBuf| std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()));
     let theirs = read(&options.theirs)?;
@@ -458,6 +525,7 @@ fn run(args: &[String]) -> Result<bool, String> {
                     eprintln!("      {scenario}: {done} of {of} functions called");
                 };
                 let report = run_codebase(
+                    &options.codebase,
                     options.oracle,
                     &theirs,
                     &ours,
@@ -630,7 +698,9 @@ mod tests {
                 calls: Calls::Every(rounds),
                 oracle,
                 engine,
+                codebase,
             } => {
+                assert_eq!(codebase, "", "no --codebase: the shared scenarios");
                 assert_eq!(file, PathBuf::from("p.tsv"));
                 assert_eq!(rounds, FULL_ROUNDS);
                 assert_eq!(oracle, Oracle::Fteqcc);
@@ -640,7 +710,7 @@ mod tests {
                 unreachable!("not a pairs run")
             }
         }
-        // spec DIFF-15.4: a function-pairs run calls the function each line names and adds the
+        // spec DIFF-15.9: a function-pairs run calls the functions each line names and adds the
         // statements it executed to the file named
         match parse(&args(&[
             "--function-pairs",
@@ -667,16 +737,23 @@ mod tests {
             }
         }
         assert!(parse(&args(&["--function-pairs", "f.tsv"])).is_err());
-        // spec DIFF-15.2: the setup functions of a progs are listed on their own
+        // spec DIFF-15.8: the setup functions of a progs are listed on their own
         match parse(&args(&[
             "--setup-functions",
             "w.dat",
             "--engine",
             "vkquake",
+            "--codebase",
+            "crmod7",
         ]))
         .unwrap()
         {
-            Run::SetupFunctions { progs, engine } => {
+            Run::SetupFunctions {
+                progs,
+                engine,
+                codebase,
+            } => {
+                assert_eq!(codebase, "crmod7");
                 assert_eq!(progs, PathBuf::from("w.dat"));
                 assert_eq!(engine, EngineProfile::VkQuake);
             }

@@ -144,6 +144,7 @@ fn qc_sema::resolve::ModuleIndex::alias
 fn qc_sema::resolve::ModuleIndex::array_len
 fn qc_sema::resolve::ModuleIndex::body
 fn qc_sema::resolve::ModuleIndex::body_at
+fn qc_sema::resolve::ModuleIndex::class_members
 fn qc_sema::resolve::ModuleIndex::def
 fn qc_sema::resolve::ModuleIndex::definitions
 fn qc_sema::resolve::ModuleIndex::defs

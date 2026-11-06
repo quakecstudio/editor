@@ -6,6 +6,7 @@
 // Map spawning and thinking are id's ED_LoadFromFile, SV_RunThink and SV_Physics_Pusher,
 // compiled from the pinned source; the loop around them is this file's.
 
+#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 
@@ -26,6 +27,13 @@ typedef struct {
     float values[3];
 } input_t;
 
+// A `command` line (DIFF-2.10): the words after the edict, joined by one space.
+typedef struct {
+    long frame;
+    long edict;
+    char *text;
+} command_t;
+
 typedef struct {
     char *progs;
     char *entities;
@@ -38,6 +46,8 @@ typedef struct {
     unsigned long seed;
     input_t *inputs;
     int num_inputs;
+    command_t *commands;
+    int num_commands;
 } scenario_t;
 
 static scenario_t scenario;
@@ -367,6 +377,34 @@ static int parse_lines(const char *path, char *text, long size, const char *dir,
                 return refuse(path, line, "out of memory");
             scenario.inputs = grown;
             scenario.inputs[scenario.num_inputs++] = in;
+        } else if (strcmp(key, "command") == 0) {
+            command_t c;
+            if (args < 3 || !qs_parse_integer(words[1], 1, 1000000, &v))
+                return refuse(path, line, "command takes a frame, an edict and a command");
+            c.frame = (long)v;
+            if (!qs_parse_integer(words[2], 1, QS_MAX_CLIENTS, &v))
+                return refuse(path, line, "command takes an edict from 1 to clients");
+            c.edict = (long)v;
+            size_t size = 0;
+            for (int i = 3; i < count; i++)
+                size += lengths[i] + 1;
+            c.text = malloc(size);
+            if (!c.text)
+                return refuse(path, line, "out of memory");
+            c.text[0] = 0;
+            for (int i = 3; i < count; i++) {
+                if (i > 3)
+                    strcat(c.text, " ");
+                strcat(c.text, words[i]);
+            }
+            command_t *grown =
+                realloc(scenario.commands, (size_t)(scenario.num_commands + 1) * sizeof(*grown));
+            if (!grown) {
+                free(c.text);
+                return refuse(path, line, "out of memory");
+            }
+            scenario.commands = grown;
+            scenario.commands[scenario.num_commands++] = c;
         } else {
             return refuse(path, line, "unknown key");
         }
@@ -381,6 +419,12 @@ static int parse_lines(const char *path, char *text, long size, const char *dir,
         if (scenario.inputs[i].edict > scenario.clients)
             return refuse(path, 0, "an input's edict is not a client that enters");
     }
+    for (int i = 0; i < scenario.num_commands; i++) {
+        if (scenario.commands[i].frame > scenario.frames)
+            return refuse(path, 0, "a command's frame is after the last frame");
+        if (scenario.commands[i].edict > scenario.clients)
+            return refuse(path, 0, "a command's edict is not a client that enters");
+    }
     return QS_EXIT_TRACED;
 }
 
@@ -390,6 +434,9 @@ int qs_parse_scenario(const char *path, char *text, long size) {
     free(scenario.progs);
     free(scenario.entities);
     free(scenario.inputs);
+    for (int i = 0; i < scenario.num_commands; i++)
+        free(scenario.commands[i].text);
+    free(scenario.commands);
     memset(&scenario, 0, sizeof(scenario));
     scenario.maxclients = 1;
     scenario.frames = 100;
@@ -519,11 +566,42 @@ static void apply_inputs(long frame) {
     }
 }
 
+// Whether `text` starts with the lowercase `word` in any case, as vkQuake's q_strncasecmp of
+// the word's length reads it.
+static qboolean starts_with_word(const char *text, const char *word) {
+    for (; *word; text++, word++)
+        if (tolower((unsigned char)*text) != *word)
+            return false;
+    return true;
+}
+
+// DIFF-4.4: vkQuake's SV_ReadClientMessage for a clc_stringcmd, Novum/vkQuake@27789d7333a4
+// Quake/sv_user.c: a command not starting spawn, begin or prespawn, in any case, goes to the
+// progs' SV_ParseClientCommand; the mock has no console commands for the others.
+static void run_commands(long frame) {
+    dfunction_t *parse = ED_FindFunction("SV_ParseClientCommand");
+    if (!parse)
+        return;
+    for (int i = 0; i < scenario.num_commands; i++) {
+        command_t *c = &scenario.commands[i];
+        if (c->frame != frame)
+            continue;
+        if (starts_with_word(c->text, "spawn") || starts_with_word(c->text, "begin") ||
+            starts_with_word(c->text, "prespawn"))
+            continue;
+        G_INT(OFS_PARM0) = (int)(qs_engine_string(c->text) - pr_strings);
+        pr_global_struct->time = (float)sv.time;
+        pr_global_struct->self = (int)EDICT_TO_PROG(edict_num((int)c->edict));
+        qs_run((func_t)(parse - pr_functions));
+    }
+}
+
 // DIFF-5.1. Vector mode runs it with frame 0, which no input names.
 void qs_server_frame(double frametime, long frame) {
     pr_global_struct->frametime = (float)frametime;
     SZ_Clear(&sv.datagram);
     apply_inputs(frame);
+    run_commands(frame);
     qs_physics(frametime);
     SZ_Clear(&sv.reliable_datagram);
     for (int i = 1; i < sv.num_edicts; i++) {

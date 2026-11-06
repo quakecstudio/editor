@@ -93,3 +93,29 @@ fn bytes_that_are_not_utf8_in_utf8_positions() {
     assert_eq!(lines.offset(at(0, 2)), 0);
     assert_eq!(lines.offset(at(0, 4)), 2);
 }
+
+// P2-161: an offset inside a character is the position of that character's start, in UTF-8
+// and UTF-16 positions alike, as `offset` reads a position inside one
+#[test]
+fn an_offset_inside_a_character_is_its_start() {
+    let text = "x\u{e9}y\u{1f600}z".as_bytes();
+    for encoding in [Encoding::Utf8, Encoding::Utf16] {
+        let lines = LineIndex::new(text, encoding);
+        assert_eq!(
+            lines.position(2),
+            lines.position(1),
+            "{encoding:?}: inside é"
+        );
+        for inside in [5, 6, 7] {
+            assert_eq!(
+                lines.position(inside),
+                lines.position(4),
+                "{encoding:?}: {inside}"
+            );
+        }
+        assert!(lines.position(8) > lines.position(4), "{encoding:?}");
+    }
+    let utf8 = LineIndex::new(text, Encoding::Utf8);
+    assert_eq!(utf8.position(2).character, 1);
+    assert_eq!(utf8.position(3).character, 3);
+}

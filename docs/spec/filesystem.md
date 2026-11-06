@@ -183,6 +183,11 @@ open it for reading".
   `findhandle` uses slots 1 to 9; every loaded archive holds one for the whole session, and
   running out is the fatal error `out of handles`. That is a limit of one host's file
   layer, not of the format.
+- **FS-3.11** A symbolic link, or a Windows junction, to a directory is a directory to every
+  lookup: a game directory, an archive's folder or a loose file's path may pass through
+  one, as the host follows it when id's engine opens the joined path (FS-3.3). A listing of
+  a directory element's files does not descend into one, so a link loop cannot hang it; a
+  link to a file is a file.
 
 ### Constants
 
@@ -228,6 +233,10 @@ restricted by FS-3.4.
   stops with the fatal error `You must have the registered version to use modified games`.
 - **FS-4.4** After the check, FS-3.4 applies to every lookup in a shareware game and to
   none in a registered one.
+- **FS-4.5** A registered game sets the setting `registered`, `{"registered","0"}` in
+  `common.c`, to 1: `COM_CheckRegistered` ends with `Cvar_Set ("registered", "1")`, and QuakeC
+  reads it with `cvar ("registered")`, as `trigger_onlyregistered` and the start map's episode
+  gates do. A shareware game leaves it 0.
 
 ### Constants
 

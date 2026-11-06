@@ -8,6 +8,7 @@
     reason = "test code: a failed unwrap or index is a failed test; exact inputs give exact floats; the atlas's offsets are small"
 )]
 
+use crate::look::Look;
 use qs_bsp::{
     BSP_HEADER_LUMPS, BSP_MAX_MAP_HULLS, BSP_MIPTEX_HEADER_SIZE, Bsp, BspVersion, Face, Lit, Lump,
     Model, Node, Plane, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo, Texture,
@@ -15,7 +16,7 @@ use qs_bsp::{
 
 use qs_client::DynamicLight;
 
-use super::{Extras, MapMesh, MeshBuilder, MeshError, Palette, Placement};
+use super::{Changes, Extras, Image, MapMesh, MeshBuilder, MeshError, Palette, Placement};
 use crate::light::light_point;
 use crate::styles::LightStyles;
 
@@ -147,7 +148,7 @@ pub(crate) fn samples(values: &[u8]) -> Vec<u8> {
 }
 
 fn build(spec: &MapSpec, lighting: &[u8]) -> MapMesh {
-    MapMesh::build(&bsp(spec, lighting), &palette()).unwrap()
+    MapMesh::build(&bsp(spec, lighting), &palette(), Look::GlQuake).unwrap()
 }
 
 // spec REND-1.1: the polygon is the surfedges' vertices in order, the first end of a positive
@@ -289,7 +290,10 @@ fn a_map_with_no_world_model_is_refused() {
     let lighting = samples(&[64]);
     let mut map = bsp(&MapSpec::default(), &lighting);
     map.models.clear();
-    assert_eq!(MapMesh::build(&map, &palette()), Err(MeshError::NoWorld));
+    assert_eq!(
+        MapMesh::build(&map, &palette(), Look::GlQuake),
+        Err(MeshError::NoWorld)
+    );
 }
 
 // spec REND-2.1: an animated texture is the frame for (int)(time*10) % anim_total, found by
@@ -330,7 +334,7 @@ fn a_turbulent_face_keeps_its_raw_coordinates() {
     let lighting = samples(&[10]);
     let mut map = bsp(&spec, &lighting);
     map.texinfo[0].vecs[0][3] = 5.0;
-    let mesh = MapMesh::build(&map, &palette()).unwrap();
+    let mesh = MapMesh::build(&map, &palette(), Look::GlQuake).unwrap();
     assert_eq!(mesh.vertices[2].texture, [64.0, 32.0]);
     assert_eq!(mesh.batches[0].surface, super::Surface::Turbulent);
 }
@@ -366,7 +370,7 @@ fn a_sky_is_a_solid_and_an_alpha_layer() {
         texture.offsets = [header, 0, 0, 0];
         texture.pixels = Box::leak(pixels.into_boxed_slice());
     }
-    let mesh = MapMesh::build(&map, &palette()).unwrap();
+    let mesh = MapMesh::build(&map, &palette(), Look::GlQuake).unwrap();
     let [solid, alpha] = mesh.skies[0].as_ref().unwrap();
     assert_eq!((solid.width, solid.height, alpha.width), (128, 128, 128));
     assert!(
@@ -435,7 +439,7 @@ fn mip_levels_follow_gl_resample_and_gl_mipmap() {
 fn a_placed_model_moves_and_turns_its_corners() {
     let world = bsp(&MapSpec::default(), &[]);
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     let placed = Placement {
         model: 0,
         origin: [100.0, 200.0, 300.0],
@@ -504,7 +508,7 @@ fn a_second_bsps_textures_follow_the_firsts() {
         alternate: None,
     });
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     builder.add(&world, &[Placement::WORLD]).unwrap();
     builder.add(&other, &[Placement::WORLD]).unwrap();
     let mesh = builder.finish();
@@ -520,7 +524,7 @@ fn a_second_bsps_textures_follow_the_firsts() {
 fn a_placement_of_a_missing_model_is_refused() {
     let world = bsp(&MapSpec::default(), &[]);
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     let missing = Placement {
         model: 1,
         ..Placement::WORLD
@@ -543,9 +547,19 @@ fn an_empty_cycle_is_not_animated() {
         alternate: None,
     };
     map.textures[0].as_mut().unwrap().animation = Some(cycle(0));
-    assert_eq!(MapMesh::build(&map, &palette()).unwrap().animations, [None]);
+    assert_eq!(
+        MapMesh::build(&map, &palette(), Look::GlQuake)
+            .unwrap()
+            .animations,
+        [None]
+    );
     map.textures[0].as_mut().unwrap().animation = Some(cycle(1));
-    assert!(MapMesh::build(&map, &palette()).unwrap().animations[0].is_some());
+    assert!(
+        MapMesh::build(&map, &palette(), Look::GlQuake)
+            .unwrap()
+            .animations[0]
+            .is_some()
+    );
 }
 
 // spec REND-1.11: the world's faces come before every entity's, in batches of their own
@@ -553,7 +567,7 @@ fn an_empty_cycle_is_not_animated() {
 fn the_world_is_drawn_before_entities() {
     let world = bsp(&MapSpec::default(), &[]);
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     let lift = Placement {
         model: 0,
         origin: [0.0, 0.0, 5.0],
@@ -630,24 +644,186 @@ fn a_negative_sum_keeps_its_low_byte() {
 fn relighting_waits_for_a_style_a_face_reads() {
     let mut mesh = build(&MapSpec::default(), &samples(&[50]));
     let first = mesh.lightmap.clone();
-    assert!(!mesh.relight(&LightStyles::unset()), "nothing changed");
-    assert!(!mesh.relight(&style(5, b"a")), "style 5 is no face's");
-    assert!(mesh.relight(&style(0, b"a")));
+    assert!(
+        mesh.relight(&LightStyles::unset()).is_empty(),
+        "nothing changed"
+    );
+    assert!(
+        mesh.relight(&style(5, b"a")).is_empty(),
+        "style 5 is no face's"
+    );
+    assert!(!mesh.relight(&style(0, b"a")).is_empty());
     assert_ne!(mesh.lightmap, first);
     assert_eq!(&mesh.lightmap.rgba[4..8], [0, 0, 0, 255]);
-    assert!(!mesh.relight(&style(0, b"a")), "applied already");
-    assert!(mesh.relight(&LightStyles::unset()));
+    assert!(mesh.relight(&style(0, b"a")).is_empty(), "applied already");
+    assert!(!mesh.relight(&LightStyles::unset()).is_empty());
     assert_eq!(mesh.lightmap, first);
     // A map with no lighting lump, or a face with no samples, reads no style.
     let mut full = build(&MapSpec::default(), &[]);
-    assert!(!full.relight(&style(0, b"a")));
+    assert!(full.relight(&style(0, b"a")).is_empty());
     let dark = MapSpec {
         lightofs: -1,
         ..MapSpec::default()
     };
     let mut dark = build(&dark, &samples(&[50]));
-    assert!(!dark.relight(&style(0, b"a")));
+    assert!(dark.relight(&style(0, b"a")).is_empty());
     assert_eq!(&dark.lightmap.rgba[4..8], [0, 0, 0, 255]);
+}
+
+// spec REND-5.7: a relight answers the rectangle the faces it made again cover, its texels
+// the atlas's
+#[test]
+fn a_relight_answers_the_rectangle_it_changed() {
+    let mut mesh = build(&MapSpec::default(), &samples(&[50]));
+    let patches = mesh.relight(&style(0, b"a"));
+    assert_eq!(patches.len(), 1, "one face, one block");
+    let patch = &patches[0];
+    let face = &mesh.lightmaps.faces[0];
+    assert_eq!(patch.at.map(|n| n as usize), face.at);
+    assert_eq!(
+        [patch.image.width as usize, patch.image.height as usize],
+        face.size
+    );
+    let row = mesh.lightmap.width as usize * 4;
+    let width = patch.image.width as usize * 4;
+    let [x, y] = face.at;
+    for (t, line) in patch.image.rgba.chunks(width).enumerate() {
+        let start = (y + t) * row + x * 4;
+        assert_eq!(line, &mesh.lightmap.rgba[start..start + width], "row {t}");
+    }
+}
+
+// spec REND-5.7: faces in one 256-texel block grow one rectangle; a face in another block has
+// its own; each rectangle is clipped to the atlas
+#[test]
+fn changes_grow_one_rectangle_a_block() {
+    let atlas = Image {
+        width: 512,
+        height: 300,
+        rgba: (0..512_u32 * 300 * 4)
+            .map(|n| u8::try_from(n % 251).unwrap())
+            .collect(),
+    };
+    let mut changes = Changes::default();
+    changes.add([10, 20], [4, 2]);
+    changes.add([100, 5], [3, 3]);
+    changes.add([300, 0], [2, 2]);
+    changes.add([0, 290], [600, 20]);
+    let patches = changes.patches(&atlas);
+    let rects: Vec<_> = patches
+        .iter()
+        .map(|p| (p.at, p.image.width, p.image.height))
+        .collect();
+    assert_eq!(
+        rects,
+        [([10, 5], 93, 17), ([0, 290], 512, 10), ([300, 0], 2, 2)]
+    );
+    for patch in &patches {
+        let [x, y] = patch.at.map(|n| n as usize);
+        let width = patch.image.width as usize * 4;
+        assert_eq!(patch.image.rgba.len(), width * patch.image.height as usize);
+        let start = y * 512 * 4 + x * 4;
+        assert_eq!(patch.image.rgba[..width], atlas.rgba[start..start + width]);
+    }
+}
+
+/// 16 by 16 pixels of index 7 with a fullbright 230 and 255 in the first row.
+static FULLBRIGHT_PIXELS: [u8; 256] = {
+    let mut pixels = [7; 256];
+    pixels[1] = 230;
+    pixels[2] = 255;
+    pixels
+};
+
+/// The test map with [`FULLBRIGHT_PIXELS`] for its texture.
+fn fullbright_bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
+    let mut bsp = bsp(spec, lighting);
+    if let Some(Some(texture)) = bsp.textures.get_mut(0) {
+        texture.pixels = &FULLBRIGHT_PIXELS;
+    }
+    bsp
+}
+
+// spec REND-13.4: in QuakeSpasm's look a texture with an index of 224 or above is split: its
+// own texels black there, its glow those texels' colours and black elsewhere
+#[test]
+fn fullbright_texels_glow_in_quakespasm_s_look() {
+    let lighting = samples(&[50]);
+    let mesh = MapMesh::build(
+        &fullbright_bsp(&MapSpec::default(), &lighting),
+        &palette(),
+        Look::QuakeSpasm,
+    )
+    .unwrap();
+    let texture = &mesh.textures[0].rgba;
+    let glow = mesh.glows[0].as_ref().unwrap();
+    let colour = |i: u8| [i, i.wrapping_mul(2), i.wrapping_mul(3), 255];
+    assert_eq!(
+        texture[..12],
+        [colour(7), [0, 0, 0, 255], [0, 0, 0, 255]].concat()
+    );
+    assert_eq!(
+        glow.rgba[..12],
+        [[0, 0, 0, 255], colour(230), colour(255)].concat()
+    );
+    assert_eq!((glow.width, glow.height), (16, 16));
+}
+
+// spec REND-13.4: GLQuake's look, a texture with no fullbright index and a liquid have no
+// glow, and their texels are the palette's
+#[test]
+fn only_quakespasm_s_regular_textures_glow() {
+    let lighting = samples(&[50]);
+    let glq = MapMesh::build(
+        &fullbright_bsp(&MapSpec::default(), &lighting),
+        &palette(),
+        Look::GlQuake,
+    )
+    .unwrap();
+    assert_eq!(glq.glows, [None]);
+    assert_eq!(glq.textures[0].rgba[4..8], [230, 204, 178, 255]);
+    let plain = MapMesh::build(
+        &bsp(&MapSpec::default(), &lighting),
+        &palette(),
+        Look::QuakeSpasm,
+    )
+    .unwrap();
+    assert_eq!(plain.glows, [None]);
+    let water = MapSpec {
+        flags: SURF_DRAWTURB,
+        ..MapSpec::default()
+    };
+    let liquid = MapMesh::build(
+        &fullbright_bsp(&water, &lighting),
+        &palette(),
+        Look::QuakeSpasm,
+    )
+    .unwrap();
+    assert_eq!(liquid.glows, [None]);
+}
+
+// spec REND-13.5: with overbright a texel's sum is shifted by 8, so 50's sum of 12800 is 50,
+// where GLQuake's 7 makes it 100; the unsigned sum is capped at 255
+#[test]
+fn overbright_shifts_the_light_by_eight() {
+    let lighting = samples(&[50]);
+    let qs = MapMesh::build(
+        &bsp(&MapSpec::default(), &lighting),
+        &palette(),
+        Look::QuakeSpasm,
+    )
+    .unwrap();
+    assert_eq!(texel(&qs, 0, 0), [50, 50, 50, 255]);
+    // "z" is 550: 50 * 550 >> 8 is 107; 255 * 550 >> 8 is 547, capped.
+    assert_eq!(texel_for(&qs, &style(0, b"z"))[0], 107);
+    let bright = samples(&[255]);
+    let capped = MapMesh::build(
+        &bsp(&MapSpec::default(), &bright),
+        &palette(),
+        Look::QuakeSpasm,
+    )
+    .unwrap();
+    assert_eq!(texel_for(&capped, &style(0, b"z"))[0], 255);
 }
 
 /// A `.lit` file for `lighting`: each byte's triple `(b, 2b, 3b)`, wrapped.
@@ -669,7 +845,7 @@ fn a_lit_file_lights_each_channel() {
     let lit = Lit::read(&file, lighting.len()).unwrap();
     let map = bsp(&MapSpec::default(), &lighting);
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     let extras = Extras {
         lit: Some(&lit),
         ..Extras::default()
@@ -695,7 +871,7 @@ fn a_texture_may_carry_its_own_palette() {
     let shared = palette();
     let own_bytes: Vec<u8> = (0..=255_u8).flat_map(|i| [255 - i, 0, i]).collect();
     let own = Palette::read(&own_bytes).unwrap();
-    let mut builder = MeshBuilder::new(&shared);
+    let mut builder = MeshBuilder::new(&shared, Look::GlQuake);
     let palettes = [Some(own.clone())];
     let extras = Extras {
         palettes: &palettes,
@@ -734,14 +910,22 @@ fn texel(mesh: &MapMesh, s: usize, t: usize) -> [u8; 4] {
 fn a_dynamic_light_brightens_the_texels_near_its_impact() {
     let mut mesh = build(&MapSpec::default(), &samples(&[50]));
     // 10 above the face with radius 20: rad 10, so only the impact's texel is within 10.
-    assert!(mesh.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 10.0], 20.0, 0.0)]));
+    assert!(
+        !mesh
+            .relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 10.0], 20.0, 0.0)])
+            .is_empty()
+    );
     // 50 * 256 + 10 * 256 = 15360, >> 7 is 120.
     assert_eq!(texel(&mesh, 0, 0), [120, 120, 120, 255]);
     assert_eq!(texel(&mesh, 1, 0), [100, 100, 100, 255]);
     assert_eq!(texel(&mesh, 0, 1), [100, 100, 100, 255]);
     // Radius 60 at the same height: rad 50; texel (1, 0) is 16 away, (1, 1) is 16 + 8, (2, 0)
     // is 32, (0, 2) is 32, (2, 1) is 32 + 8.
-    assert!(mesh.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 10.0], 60.0, 0.0)]));
+    assert!(
+        !mesh
+            .relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 10.0], 60.0, 0.0)])
+            .is_empty()
+    );
     let value = |add: u32| u8::try_from((50 * 256 + add * 256) >> 7).unwrap();
     assert_eq!(texel(&mesh, 0, 0)[0], value(50));
     assert_eq!(texel(&mesh, 1, 0)[0], value(34));
@@ -751,58 +935,130 @@ fn a_dynamic_light_brightens_the_texels_near_its_impact() {
     assert_eq!(texel(&mesh, 3, 0)[0], value(2));
     assert_eq!(texel(&mesh, 4, 0)[0], 100, "64 away: nothing");
     // The light's `minlight` narrows the reach: rad 50 - 40 = 10 reaches only the impact.
-    assert!(mesh.relight_with(
-        &LightStyles::unset(),
-        &[light([0.0, 0.0, 10.0], 60.0, 40.0)]
-    ));
+    assert!(
+        !mesh
+            .relight_with(
+                &LightStyles::unset(),
+                &[light([0.0, 0.0, 10.0], 60.0, 40.0)]
+            )
+            .is_empty()
+    );
     assert_eq!(texel(&mesh, 0, 0)[0], value(50));
     assert_eq!(texel(&mesh, 1, 0)[0], 100);
     // `rad < minlight` adds nothing at all.
-    assert!(mesh.relight_with(
-        &LightStyles::unset(),
-        &[light([0.0, 0.0, 10.0], 60.0, 55.0)]
-    ));
+    assert!(
+        !mesh
+            .relight_with(
+                &LightStyles::unset(),
+                &[light([0.0, 0.0, 10.0], 60.0, 55.0)]
+            )
+            .is_empty()
+    );
     assert_eq!(texel(&mesh, 0, 0)[0], 100);
     // The sum is capped at 255 after the shift (REND-5.4).
-    assert!(mesh.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 1.0], 500.0, 0.0)]));
+    assert!(
+        !mesh
+            .relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 1.0], 500.0, 0.0)])
+            .is_empty()
+    );
     assert_eq!(texel(&mesh, 0, 0)[0], 255);
 }
 
+// spec REND-7.7: the renderer takes 64 lights, QuakeSpasm's `MAX_DLIGHTS`: the 64th marks and
+// lights the face, as id's 32 would not
+#[test]
+fn the_64th_light_is_pushed() {
+    let mut mesh = build(&MapSpec::default(), &samples(&[50]));
+    let mut lights = vec![light([0.0, 0.0, 1000.0], 1.0, 0.0); 63];
+    lights.push(light([0.0, 0.0, 3.0], 5.0, 0.0));
+    assert!(!mesh.relight_with(&LightStyles::unset(), &lights).is_empty());
+    assert_ne!(texel(&mesh, 0, 0)[0], 100);
+}
+
+// spec REND-7.6: a light straddling the node's plane marks the 64 by 32 face only when its
+// impact, clamped to the face's extents, is within its radius: `s*s + t*t + dist*dist <
+// radius*radius`, strictly
+#[test]
+fn a_light_marks_only_a_face_it_reaches() {
+    let mut mesh = build(&MapSpec::default(), &samples(&[50]));
+    let marks = |mesh: &mut MapMesh, origin: [f32; 3]| {
+        !mesh
+            .relight_with(&LightStyles::unset(), &[light(origin, 5.0, 0.0)])
+            .is_empty()
+    };
+    assert!(!marks(&mut mesh, [200.0, 0.0, 3.0]), "far along the plane");
+    assert!(
+        marks(&mut mesh, [66.0, 0.0, 3.0]),
+        "2 past the edge: 4 + 9 < 25"
+    );
+    assert!(
+        marks(&mut mesh, [68.0, 0.0, 3.0]),
+        "taken off: the mark before"
+    );
+    assert!(
+        !marks(&mut mesh, [68.0, 0.0, 3.0]),
+        "4 past the edge: 16 + 9 is not < 25"
+    );
+    assert!(marks(&mut mesh, [32.0, 16.0, 3.0]), "over the face");
+}
+
 // spec REND-7.1: a light is pushed through the nodes: a face is marked only when the
-// light's sphere straddles its node's plane; only the first 32 lights count, and a light of
+// light's sphere straddles its node's plane; only the first 64 lights count, and a light of
 // radius 0 is skipped
 #[test]
 fn lights_mark_the_faces_their_sphere_straddles() {
     let mut mesh = build(&MapSpec::default(), &samples(&[50]));
     // Wholly in front of the plane: only the front child, a leaf, is visited.
-    assert!(!mesh.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 10.0], 5.0, 0.0)]));
+    assert!(
+        mesh.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 10.0], 5.0, 0.0)])
+            .is_empty()
+    );
     assert_eq!(texel(&mesh, 0, 0)[0], 100);
     // Wholly behind it: the back child only.
-    assert!(!mesh.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, -10.0], 5.0, 0.0)]));
+    assert!(
+        mesh.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, -10.0], 5.0, 0.0)])
+            .is_empty()
+    );
     // Straddling it: marked, from behind as well as in front.
-    assert!(mesh.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, -3.0], 5.0, 0.0)]));
+    assert!(
+        !mesh
+            .relight_with(&LightStyles::unset(), &[light([0.0, 0.0, -3.0], 5.0, 0.0)])
+            .is_empty()
+    );
     assert_eq!(texel(&mesh, 0, 0)[0], 104);
     // A light of radius 0 is skipped: the mark of the frame before is taken off.
-    assert!(mesh.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 3.0], 0.0, 0.0)]));
+    assert!(
+        !mesh
+            .relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 3.0], 0.0, 0.0)])
+            .is_empty()
+    );
     assert_eq!(texel(&mesh, 0, 0)[0], 100);
-    let mut far = vec![light([0.0, 0.0, 1000.0], 1.0, 0.0); 32];
+    let mut far = vec![light([0.0, 0.0, 1000.0], 1.0, 0.0); 64];
     far.push(light([0.0, 0.0, 3.0], 5.0, 0.0));
     assert!(
-        !mesh.relight_with(&LightStyles::unset(), &far),
-        "the 33rd light is not pushed"
+        mesh.relight_with(&LightStyles::unset(), &far).is_empty(),
+        "the 65th light is not pushed"
     );
     assert_eq!(texel(&mesh, 0, 0)[0], 100);
     // A map with no lighting lump stays full bright (REND-1.5), and a face with no samples is
     // lit by the lights alone.
     let mut full = build(&MapSpec::default(), &[]);
-    assert!(full.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 3.0], 5.0, 0.0)]));
+    assert!(
+        !full
+            .relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 3.0], 5.0, 0.0)])
+            .is_empty()
+    );
     assert_eq!(texel(&full, 0, 0)[0], 255);
     let dark = MapSpec {
         lightofs: -1,
         ..MapSpec::default()
     };
     let mut dark = build(&dark, &samples(&[50]));
-    assert!(dark.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 3.0], 5.0, 0.0)]));
+    assert!(
+        !dark
+            .relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 3.0], 5.0, 0.0)])
+            .is_empty()
+    );
     assert_eq!(texel(&dark, 0, 0)[0], 4);
 }
 
@@ -813,16 +1069,19 @@ fn relighting_follows_the_lights_as_they_come_and_go() {
     let mut mesh = build(&MapSpec::default(), &samples(&[50]));
     let first = mesh.lightmap.clone();
     let lights = [light([0.0, 0.0, 3.0], 5.0, 0.0)];
-    assert!(mesh.relight_with(&LightStyles::unset(), &lights));
+    assert!(!mesh.relight_with(&LightStyles::unset(), &lights).is_empty());
     assert!(
-        mesh.relight_with(&LightStyles::unset(), &lights),
+        !mesh.relight_with(&LightStyles::unset(), &lights).is_empty(),
         "every frame while lit"
     );
-    assert!(mesh.relight_with(&LightStyles::unset(), &[]), "taken off");
-    assert_eq!(mesh.lightmap, first);
-    assert!(!mesh.relight_with(&LightStyles::unset(), &[]));
     assert!(
-        mesh.relight_with(&style(0, b"a"), &[]),
+        !mesh.relight_with(&LightStyles::unset(), &[]).is_empty(),
+        "taken off"
+    );
+    assert_eq!(mesh.lightmap, first);
+    assert!(mesh.relight_with(&LightStyles::unset(), &[]).is_empty());
+    assert!(
+        !mesh.relight_with(&style(0, b"a"), &[]).is_empty(),
         "a style still counts"
     );
 }
@@ -851,7 +1110,7 @@ fn brush_models_are_lit_through_their_own_nodes() {
         angles: [0.0; 3],
     };
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     builder.add(&bsp, &[Placement::WORLD, moved]).unwrap();
     // The world's BSP again as an instanced model, its model 0 with `firstface` 0.
     let instanced = Placement {
@@ -861,7 +1120,11 @@ fn brush_models_are_lit_through_their_own_nodes() {
     };
     builder.add(&bsp, &[instanced]).unwrap();
     let mut mesh = builder.finish();
-    assert!(mesh.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 3.0], 5.0, 0.0)]));
+    assert!(
+        !mesh
+            .relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 3.0], 5.0, 0.0)])
+            .is_empty()
+    );
     let width = usize::try_from(mesh.lightmap.width).unwrap();
     let column = |column: usize| mesh.lightmap.rgba[(column) * 4];
     // The faces sit side by side in the atlas's first row: the world's at column 1, the
@@ -877,9 +1140,13 @@ fn brush_models_are_lit_through_their_own_nodes() {
 fn light_point_ignores_the_dynamic_lights() {
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let before = light_point(&bsp, &LightStyles::unset(), [8.0, 8.0, 10.0]);
-    assert!(mesh.relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 3.0], 5.0, 0.0)]));
+    assert!(
+        !mesh
+            .relight_with(&LightStyles::unset(), &[light([0.0, 0.0, 3.0], 5.0, 0.0)])
+            .is_empty()
+    );
     assert_eq!(texel(&mesh, 0, 0)[0], 104);
     let after = light_point(&bsp, &LightStyles::unset(), [8.0, 8.0, 10.0]);
     assert_eq!((before, after), (50, 50));

@@ -5,8 +5,9 @@ drawn as GLQuake draws them, inside egui's render pass through a paint callback 
 the map view and the preview host share one renderer.
 
 - **Layer:** L7 UI. It depends on `qs-bsp`, `qs-mdl` and `qs-wad` (L0), `qs-client` (L4),
-  `egui-wgpu` and `epaint`; its examples also on `qs-vfs`, `qc-progs` and `qs-sim`.
-- **Spec sections:** REND-1 to REND-7 and REND-9 to REND-11 of
+  `egui-wgpu`, `epaint` and `image` (its TGA reader); its examples also on `qs-vfs`,
+  `qc-progs` and `qs-sim`.
+- **Spec sections:** REND-1 to REND-13 of
   [`render.md`](../../docs/spec/render.md); PART-3.2 of
   [`engine/particles.md`](../../docs/spec/engine/particles.md); the drawing of HUD-1 to HUD-3
   of [`engine/hud.md`](../../docs/spec/engine/hud.md) and of VIEW-4.6.
@@ -15,13 +16,16 @@ the map view and the preview host share one renderer.
   `R_BuildLightMap`, `R_AddDynamicLights`, `R_DrawBrushModel`), `WinQuake/gl_rlight.c`
   (`R_LightPoint`, `R_PushDlights`, `R_MarkLights`, `R_AnimateLight`), `WinQuake/gl_rmain.c`
   (`R_DrawAliasModel`, `R_DrawViewModel`, `R_PolyBlend`, `R_RotateForEntity`),
-  `WinQuake/r_part.c` (`R_DrawParticles`), `WinQuake/gl_draw.c` (`Draw_Character`,
-  `Draw_Pic`, `Draw_Fill`, `GL_Set2D`), `WinQuake/sbar.c` (`Sbar_DrawPic`); from
+  `WinQuake/gl_rmisc.c` (`R_TranslatePlayerSkin`), `WinQuake/r_part.c` (`R_DrawParticles`),
+  `WinQuake/gl_draw.c` (`Draw_Character`, `Draw_Pic`, `Draw_Fill`, `GL_Set2D`),
+  `WinQuake/sbar.c` (`Sbar_DrawPic`); from
   sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`, `Quake/r_alias.c`
-  (`GL_DrawAliasFrame`, the pose blend), `Quake/r_sprite.c` (`R_GetSpriteFrame`,
-  `R_DrawSpriteModel`) and `Quake/gl_fog.c` (`Fog_ParseWorldspawn`, `Fog_Update`,
-  `Fog_GetColor`, `Fog_GetDensity`). Coloured light (REND-6) is QuakeSpasm's behaviour,
-  described in the spec; none of its code is ported.
+  (`GL_DrawAliasFrame`, the pose blend; `GLAlias_CreateShaders`, the MD5 shading),
+  `Quake/r_sprite.c` (`R_GetSpriteFrame`, `R_DrawSpriteModel`) and `Quake/gl_fog.c`
+  (`Fog_ParseWorldspawn`, `Fog_Update`, `Fog_GetColor`, `Fog_GetDensity`), `Quake/gl_sky.c`
+  (`Sky_NewMap`, `Sky_LoadSkyBox`) and `Quake/image.c` (`Image_LoadImage`, `Image_LoadPCX`).
+  Coloured light (REND-6) is QuakeSpasm's behaviour, described in the spec; none of its code is
+  ported.
 - **Shipped:** yes.
 
 ## Public shape
@@ -29,7 +33,8 @@ the map view and the preview host share one renderer.
 - `MapMesh::build(bsp, palette)`: the world model as vertices, a fan of triangles per face,
   batches by texture, the textures through `Palette`, and every face's light in one lightmap
   atlas (REND-1.1 to REND-1.6, REND-1.8). `MapMesh::relight(styles)` makes the atlas again
-  when a style a face reads changes (REND-5.5), and `MapRenderer::set_lightmap` writes it.
+  when a style a face reads changes (REND-5.5), and `MapRenderer::set_lightmap` writes each
+  256 by 256 block's changed rectangle, as QuakeSpasm uploads its lightmaps (REND-5.7).
 - `LightStyles::at(strings, time)`: `R_AnimateLight`, every style's value from the strings the
   progs set with `lightstyle` (REND-5).
 - `MeshBuilder::add_with(bsp, extras, placements)`: a model lit in colour by its map's
@@ -41,7 +46,14 @@ the map view and the preview host share one renderer.
   `draw(entity, time, out)` appends an entity's shaded triangles for its frame and skin at a
   time (REND-4). `light_point(bsp, point)` is `R_LightPoint`, the light it is shaded by.
 - `MapMesh::relight_with(styles, lights)`: the atlas again with the frame's dynamic lights
-  pushed through the BSP's nodes and added to the faces they reach (REND-7).
+  pushed through the BSP's nodes and added to the faces they reach, each face checked first as
+  QuakeSpasm's `R_MarkLights` does (REND-7, REND-7.6).
+- `Md5Model::read(name, bytes, read, palette, torch)`: a rerelease MD5 model, its frames'
+  vertices from the joints and its skins from the shader names, drawn as an alias model;
+  `Play` draws one in place of the `.mdl` it replaces (REND-12).
+- `Look`: QuakeSpasm's look by default (palette as it is, trilinear mipmaps, glowing
+  fullbright texels, overbright light, the view widened to the window) or GLQuake's, which
+  `MeshBuilder::new` and `MapMesh::build` take and the renderer draws (REND-13).
 - `SpriteModel::read(name, bytes, palette)`: a `.spr`'s frames; `draw(entity, time, eye,
   out)` appends the quad facing the eye by the sprite's type (REND-11).
 - `particle_triangles(particles, palette, eye)`: a triangle per particle (PART-3.2).
@@ -55,27 +67,25 @@ the map view and the preview host share one renderer.
   size) and a frame's models, sprites, particles and 2D quads, in `R_RenderView`'s order.
 - `Play`: a `qs_client::Scene` and `Hud` turned into a `MapCallback`: the models the client
   precached (`load_models`), the pictures (`Pics`, from `gfx.wad` and the `.lmp` files), the
-  map's fog (`FogState`), the view model's and the players' light floors, and the status
+  map's fog (`FogState`), the view model's and the players' light floors, each player's skin
+  in its slot's shirt and trouser colours (REND-4.13), and the status
   bar, the scoreboards and the centre print as quads.
+- `Skybox::load(name, read)`: the six `gfx/env` faces a worldspawn's `sky` key names, as TGA
+  or PCX (REND-8.2); `Play::load_sky` reads the map's, and `Assets::skybox` gives it to the
+  renderer, which draws it through the sky faces (REND-8.3).
+- `Offscreen`: a wgpu device with no window, and egui's frames, paint callbacks included,
+  drawn into a texture with a depth buffer and read back as RGBA `Pixels`; the headless
+  preview host's `screenshot` and the GPU tests draw with it (P3-05).
 - `Camera`: a free camera in Quake's axes and its clip-space matrix, and
   `Camera::clip_from_view` for the client's view angles.
 
 ## What it is not, yet
 
-Player colours (the colormap's shirt and pants translation) and skyboxes (REND-8, which need
-an image reader for the `gfx/env` files) are not drawn, nor is `gl_flashblend` (REND-7.4,
-off in the FitzQuake lineage). Each model has its own matrix (`MapRenderer::set_placements`),
-and a brush entity out of the client's visible list is not drawn.
+`gl_flashblend` (REND-7.4, off in the FitzQuake lineage) is not drawn. Each model has its own
+matrix (`MapRenderer::set_placements`), and a brush entity out of the client's visible list is
+not drawn.
 
 ## Trying it
 
-`examples/view.rs` plays a map from a Quake install, read through the game filesystem: the
-server is `qs-sim`, the client `qs-client` reads its messages, and the renderer draws the
-client's scene and HUD:
-
-```bash
-cargo run --release -p qs-render --example view -- -basedir <game root> [-game <dir>] [map]
-```
-
-W, A, S and D move, Space jumps, Q and E swim, Shift runs, the mouse button fires, 1 to 8
-change weapons and dragging looks around; `-fly` is a free camera.
+The preview host, `apps/preview-host`, plays a map from a Quake install with this renderer
+drawing the client's scene and HUD; its README has the command line.

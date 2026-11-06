@@ -40,6 +40,7 @@ mod builtins;
 pub(crate) mod codegen;
 mod compile;
 mod defects;
+mod engine;
 mod extract;
 mod fuzz;
 mod grammar;
@@ -65,6 +66,10 @@ use crate::exec::{Exec, System};
 use compile::{Code, Compiler, Instrument, Unit};
 
 const SOURCES: &str = "oracles/sources.toml";
+/// The upstream of id's files the VM oracle compiles (`oracles/sources.toml`).
+const VM_UPSTREAM: &str = "quake";
+/// The upstream of id's files the engine oracle compiles, quakedef.h among them.
+const ENGINE_UPSTREAM: &str = "quake-engine";
 const OUT: &str = "target/oracles";
 
 /// When this environment variable is set and not empty, our harness files are built with
@@ -80,10 +85,126 @@ fn coverage_requested() -> bool {
 /// Our harness files, compiled with every warning an error.
 const VM_HARNESS: [&str; 5] = [
     "oracles/vm/host.c",
-    "oracles/vm/trace.c",
+    "oracles/trace/trace.c",
     "oracles/vm/engine.c",
     "oracles/vm/builtins.c",
     "oracles/vm/scenario.c",
+];
+
+/// The engine oracle's own files (`oracles/engine/`), compiled with every warning an error;
+/// it shares the trace writer.
+const ENGINE_HARNESS: [&str; 3] = [
+    "oracles/engine/engine.c",
+    "oracles/engine/rand.c",
+    "oracles/trace/trace.c",
+];
+
+/// The view oracle's own files (`oracles/engine/`), compiled with every warning an error: the
+/// system, video and sound card that id's whole engine runs on headless (P3-28).
+const VIEW_HARNESS: [&str; 2] = ["oracles/engine/view_host.c", "oracles/engine/rand.c"];
+
+/// The view oracle's files of id's client that call `rand`, given a generator of their own so
+/// that the server's draws are the server oracle's (VIEWDIFF-2.3).
+const VIEW_CLIENT_FILES: [&str; 6] = [
+    "cl_main.c",
+    "cl_parse.c",
+    "cl_tent.c",
+    "menu.c",
+    "r_part.c",
+    "snd_dma.c",
+];
+
+/// id's files the view oracle compiles whole, with id's own headers: the client, the software
+/// renderer with the C stand-ins for its assembly (`nonintel.c`), the mixer, the server, and
+/// the null CD and input drivers and loopback network a headless engine needs.
+const VIEW_FILES: [&str; 67] = [
+    "cd_null.c",
+    "chase.c",
+    "cl_demo.c",
+    "cl_input.c",
+    "cl_main.c",
+    "cl_parse.c",
+    "cl_tent.c",
+    "cmd.c",
+    "common.c",
+    "console.c",
+    "crc.c",
+    "cvar.c",
+    "d_edge.c",
+    "d_fill.c",
+    "d_init.c",
+    "d_modech.c",
+    "d_part.c",
+    "d_polyse.c",
+    "d_scan.c",
+    "d_sky.c",
+    "d_sprite.c",
+    "d_surf.c",
+    "d_vars.c",
+    "d_zpoint.c",
+    "draw.c",
+    "host.c",
+    "host_cmd.c",
+    "in_null.c",
+    "keys.c",
+    "mathlib.c",
+    "menu.c",
+    "model.c",
+    "net_loop.c",
+    "net_main.c",
+    "net_none.c",
+    "net_vcr.c",
+    "nonintel.c",
+    "pr_cmds.c",
+    "pr_edict.c",
+    "pr_exec.c",
+    "r_aclip.c",
+    "r_alias.c",
+    "r_bsp.c",
+    "r_draw.c",
+    "r_edge.c",
+    "r_efrag.c",
+    "r_light.c",
+    "r_main.c",
+    "r_misc.c",
+    "r_part.c",
+    "r_sky.c",
+    "r_sprite.c",
+    "r_surf.c",
+    "r_vars.c",
+    "sbar.c",
+    "screen.c",
+    "snd_dma.c",
+    "snd_mem.c",
+    "snd_mix.c",
+    "sv_main.c",
+    "sv_move.c",
+    "sv_phys.c",
+    "sv_user.c",
+    "view.c",
+    "wad.c",
+    "world.c",
+    "zone.c",
+];
+
+/// id's server files the engine oracle compiles whole, with id's own headers.
+const ENGINE_FILES: [&str; 16] = [
+    "sv_main.c",
+    "sv_phys.c",
+    "sv_move.c",
+    "sv_user.c",
+    "world.c",
+    "model.c",
+    "pr_edict.c",
+    "pr_exec.c",
+    "pr_cmds.c",
+    "common.c",
+    "cvar.c",
+    "cmd.c",
+    "zone.c",
+    "mathlib.c",
+    "crc.c",
+    "host_cmd.c",
 ];
 
 /// The files of id's qcc, compiled unchanged.
@@ -123,14 +244,32 @@ struct Upstream {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Extract {
+    /// The oracle the functions are built into.
+    #[serde(default)]
+    oracle: Target,
     file: String,
     functions: Vec<String>,
+}
+
+/// Which oracle an `[[extract]]` entry feeds.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum Target {
+    /// The VM oracle, over `oracles/vm/quakedef.h`.
+    #[default]
+    Vm,
+    /// The engine oracle, over id's `quakedef.h` and `oracles/engine/extracted.h`.
+    Engine,
 }
 
 /// Where the built oracles are.
 pub(crate) struct Oracles<'a> {
     pub(crate) qcc: PathBuf,
     pub(crate) vm: PathBuf,
+    /// id's server, headless, driven by a script (`oracles/engine/`, TRACE-4.11).
+    pub(crate) engine: PathBuf,
+    /// id's whole engine, headless, writing screenshots and its mixed sound (P3-28).
+    pub(crate) view: PathBuf,
     pub(crate) fteqcc: PathBuf,
     /// FTEQCC with the defects of [`defects::FIXES`] fixed, which proves a divergence an
     /// FTEQCC defect (DIFF-14.12).
@@ -141,72 +280,149 @@ pub(crate) struct Oracles<'a> {
     pub(crate) exec: &'a dyn Exec,
 }
 
-/// Runs `cargo xtask oracles [build | id101 <dir> | rerelease <dir> | json <trace>]`.
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
+/// `cargo xtask oracles [--recorded | build | scenarios [<name>...] | fuzz <target>...
+/// [--time <s>] | builtins [--record | --recorded] | codegen [--record] | grammar [--record |
+/// --recorded] | id101 <codebase directory> | rerelease <directory of codebases> | engine
+/// <script> <trace> | json <trace>]`.
+#[derive(clap::Parser, Debug)]
+#[command(args_conflicts_with_subcommands = true)]
+pub(crate) struct Args {
+    /// The builtin and grammar differentials against their recorded outcomes, and the
+    /// compiler differential left to `cargo test`: what pull requests run (docs/ci.md).
+    #[arg(long)]
+    recorded: bool,
+    #[command(subcommand)]
+    command: Option<OracleCommand>,
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum OracleCommand {
+    /// The builtin differential.
+    Builtins(Recording),
+    /// The compiler differential.
+    Codegen {
+        /// Record the oracles' outcomes.
+        #[arg(long)]
+        record: bool,
+    },
+    /// The grammar differential.
+    Grammar(Recording),
+    /// Fuzz the VM oracle's targets.
+    Fuzz(fuzz::Args),
+    /// The VM vectors' scenarios, every one when none is named.
+    Scenarios {
+        /// The scenarios.
+        names: Vec<String>,
+    },
+    /// Build the oracles and print where they are.
+    Build,
+    /// id 1.01's codebase through qcc and our compiler.
+    Id101 {
+        /// The codebase directory.
+        dir: PathBuf,
+    },
+    /// The rerelease's codebases through FTEQCC and our compiler.
+    Rerelease {
+        /// The directory of codebases.
+        dir: PathBuf,
+    },
+    /// id's server on a script, twice: the traces must agree and decode (P3-23).
+    Engine {
+        /// The script (`oracles/README.md`, "The engine oracle").
+        script: PathBuf,
+        /// Where the trace goes.
+        trace: PathBuf,
+        /// A recorded trace in canonical JSON form that this one must equal.
+        #[arg(long)]
+        expect: Option<PathBuf>,
+        /// Write the trace's canonical JSON form here, to record it.
+        #[arg(long)]
+        record: Option<PathBuf>,
+        /// The engine's command line, after `--`: `-basedir <dir>` and the like.
+        #[arg(last = true)]
+        engine: Vec<String>,
+    },
+    /// A trace file as JSON.
+    Json {
+        /// The trace.
+        trace: PathBuf,
+    },
+}
+
+/// Whether a differential records the oracles' outcomes or checks the ones recorded.
+#[derive(clap::Args, Debug)]
+struct Recording {
+    /// Record the oracles' outcomes.
+    #[arg(long, conflicts_with = "recorded")]
+    record: bool,
+    /// Check against the recorded outcomes, without the oracles.
+    #[arg(long)]
+    recorded: bool,
+}
+
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     run(root, args, &System, &CURL, &builtins::Suite::all)
 }
 
-/// [`main`] with the programs `exec` runs, the files `net` fetches and the cases `suite` makes
-/// for the builtin differential, made only when a command runs it.
+/// [`main`] with the programs `exec` runs, the files `net` fetches and the builtin suite.
 fn run(
     root: &Path,
-    args: &[String],
+    args: &Args,
     exec: &dyn Exec,
     net: &dyn Net,
     suite: &dyn Fn() -> builtins::Suite,
 ) -> Result<bool, String> {
     let build = || build_with(root, exec, net);
-    let words: Vec<&str> = args.iter().map(String::as_str).collect();
-    match words.as_slice() {
-        [] => {
-            let oracles = build()?;
-            let vectors = vectors::check(root, &oracles)?;
-            let numbers = numbers::check(root, &oracles)?;
-            let probes = probes::check(&oracles)?;
-            let scenarios = scenarios::check(&oracles, None)?;
-            let builtins = builtins::check(root, &oracles, false, &suite())?;
-            let codegen = codegen::check(root, &oracles, false)?;
-            let grammar = grammar::check(root, &oracles, false)?;
-            Ok([
-                vectors, numbers, probes, scenarios, builtins, codegen, grammar,
-            ]
-            .iter()
-            .all(|passed| *passed))
-        }
+    let Some(command) = &args.command else {
+        let oracles = build()?;
+        let vectors = vectors::check(root, &oracles)?;
+        let numbers = numbers::check(root, &oracles)?;
+        let probes = probes::check(&oracles)?;
+        let scenarios = scenarios::check(&oracles, None)?;
         // The same, the builtin differential against the outcomes its fixture records rather
         // than the oracles, about a minute where the live run takes half an hour, and the
         // compiler differential left to `cargo test`, which checks it against its recorded
-        // outcomes: what pull requests run unless they change the oracles or the differentials'
-        // cases (docs/ci.md).
-        ["--recorded"] => {
-            let oracles = build()?;
-            let vectors = vectors::check(root, &oracles)?;
-            let numbers = numbers::check(root, &oracles)?;
-            let probes = probes::check(&oracles)?;
-            let scenarios = scenarios::check(&oracles, None)?;
+        // outcomes: what pull requests run unless they change the oracles or the
+        // differentials' cases (docs/ci.md).
+        if args.recorded {
             let builtins = builtins::check_recorded(root, &suite())?;
             let grammar = grammar::check_recorded(root)?;
-            Ok([vectors, numbers, probes, scenarios, builtins, grammar]
+            return Ok([vectors, numbers, probes, scenarios, builtins, grammar]
                 .iter()
-                .all(|passed| *passed))
+                .all(|passed| *passed));
         }
-        ["builtins"] => builtins::check(root, &build()?, false, &suite()),
-        ["builtins", "--record"] => builtins::check(root, &build()?, true, &suite()),
-        ["builtins", "--recorded"] => builtins::check_recorded(root, &suite()),
-        ["codegen"] => codegen::check(root, &build()?, false),
-        ["codegen", "--record"] => codegen::check(root, &build()?, true),
-        ["grammar"] => grammar::check(root, &build()?, false),
-        ["grammar", "--record"] => grammar::check(root, &build()?, true),
-        ["grammar", "--recorded"] => grammar::check_recorded(root),
-        ["fuzz", rest @ ..] => fuzz::run(root, rest, exec, net),
-        ["scenarios", names @ ..] => {
+        let builtins = builtins::check(root, &oracles, false, &suite())?;
+        let codegen = codegen::check(root, &oracles, false)?;
+        let grammar = grammar::check(root, &oracles, false)?;
+        return Ok([
+            vectors, numbers, probes, scenarios, builtins, codegen, grammar,
+        ]
+        .iter()
+        .all(|passed| *passed));
+    };
+    match command {
+        OracleCommand::Builtins(Recording { recorded: true, .. }) => {
+            builtins::check_recorded(root, &suite())
+        }
+        OracleCommand::Builtins(Recording { record, .. }) => {
+            builtins::check(root, &build()?, *record, &suite())
+        }
+        OracleCommand::Codegen { record } => codegen::check(root, &build()?, *record),
+        OracleCommand::Grammar(Recording { recorded: true, .. }) => grammar::check_recorded(root),
+        OracleCommand::Grammar(Recording { record, .. }) => {
+            grammar::check(root, &build()?, *record)
+        }
+        OracleCommand::Fuzz(options) => fuzz::run(root, options, exec, net),
+        OracleCommand::Scenarios { names } => {
             let oracles = build()?;
-            scenarios::check(&oracles, Some(names))
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            scenarios::check(&oracles, Some(&names))
         }
-        ["build"] => {
+        OracleCommand::Build => {
             let oracles = build()?;
             println!("oracles: qcc at {}", oracles.qcc.display());
             println!("oracles: vm-oracle at {}", oracles.vm.display());
+            println!("oracles: engine-oracle at {}", oracles.engine.display());
             println!("oracles: fteqcc at {}", oracles.fteqcc.display());
             println!(
                 "oracles: fteqcc-fixed at {}",
@@ -214,27 +430,35 @@ fn run(
             );
             Ok(true)
         }
-        ["id101", dir] => {
+        OracleCommand::Id101 { dir } => {
             let oracles = build()?;
-            id101::check(&oracles, Path::new(dir))
+            id101::check(&oracles, dir)
         }
-        ["rerelease", dir] => {
+        OracleCommand::Rerelease { dir } => {
             let oracles = build()?;
-            rerelease::check(&oracles, Path::new(dir))
+            rerelease::check(&oracles, dir)
         }
-        ["json", trace] => {
-            let bytes = fs::read(trace).map_err(|e| format!("{trace}: {e}"))?;
-            let trace = qc_trace::decode(&bytes).map_err(|e| format!("{trace}: {e:?}"))?;
-            print!("{}", qc_trace::to_json(&trace));
+        OracleCommand::Engine {
+            script,
+            trace,
+            expect,
+            record,
+            engine,
+        } => {
+            let oracles = build()?;
+            let passed = engine::check(&oracles, script, trace, expect.as_deref(), engine)?;
+            if passed && let Some(out) = record {
+                engine::record(trace, out)?;
+            }
+            Ok(passed)
+        }
+        OracleCommand::Json { trace } => {
+            let name = trace.display();
+            let bytes = fs::read(trace).map_err(|e| format!("{name}: {e}"))?;
+            let decoded = qc_trace::decode(&bytes).map_err(|e| format!("{name}: {e:?}"))?;
+            print!("{}", qc_trace::to_json(&decoded));
             Ok(true)
         }
-        _ => Err(
-            "usage: cargo xtask oracles [--recorded | build | scenarios [<name>...] \
-             | fuzz <target> [--time <s>] \
-             | builtins [--record | --recorded] | codegen [--record] | id101 <codebase directory> \
-             | rerelease <directory of codebases> | json <trace>]"
-                .to_owned(),
-        ),
     }
 }
 
@@ -251,7 +475,10 @@ pub(crate) fn read_sources(root: &Path) -> Result<Sources, String> {
                 upstream.id
             ));
         }
-        if upstream.files.keys().any(|f| f.ends_with("quakedef.h")) {
+        // The VM oracle's sources keep id's quakedef.h out: `pr_exec.c` includes it from its
+        // own directory first, where it would stand in for ours. The engine oracle's own
+        // upstream, kept in a directory of its own, has it.
+        if upstream.id == VM_UPSTREAM && upstream.files.keys().any(|f| f.ends_with("quakedef.h")) {
             return Err(format!(
                 "{SOURCES}: id's quakedef.h must not be fetched; oracles/vm/quakedef.h stands in"
             ));
@@ -296,9 +523,14 @@ pub(crate) fn fetch(sources: &Sources, cache: &Path, net: &dyn Net) -> Result<()
 }
 
 /// Writes one generated file per `[[extract]]` entry: the named functions, copied unchanged.
-fn generate(sources: &Sources, cache: &Path, out: &Path) -> Result<Vec<PathBuf>, String> {
+fn generate(
+    sources: &Sources,
+    cache: &Path,
+    out: &Path,
+    target: Target,
+) -> Result<Vec<PathBuf>, String> {
     let mut generated = Vec::new();
-    for entry in &sources.extract {
+    for entry in sources.extract.iter().filter(|e| e.oracle == target) {
         let upstream = sources
             .upstream
             .iter()
@@ -316,11 +548,16 @@ fn generate(sources: &Sources, cache: &Path, out: &Path) -> Result<Vec<PathBuf>,
         let mut c = format!(
             "/* Generated by cargo xtask oracles: functions copied unchanged from\n   \
              {}@{}: {}.\n   Not part of the repository. */\n#define QS_EXTRACTED_{}\n\
-             #include \"quakedef.h\"\n",
+             #include \"quakedef.h\"\n{}",
             upstream.repo,
             upstream.commit,
             entry.file,
-            stem.to_ascii_uppercase()
+            stem.to_ascii_uppercase(),
+            if target == Target::Engine {
+                "#include \"extracted.h\"\n"
+            } else {
+                ""
+            }
         );
         for name in &entry.functions {
             let function =
@@ -330,7 +567,12 @@ fn generate(sources: &Sources, cache: &Path, out: &Path) -> Result<Vec<PathBuf>,
                 function.line, entry.file, function.text
             ));
         }
-        let file = out.join(format!("id_{stem}.c"));
+        let prefix = if target == Target::Engine {
+            "engine_id"
+        } else {
+            "id"
+        };
+        let file = out.join(format!("{prefix}_{stem}.c"));
         fs::write(&file, c).map_err(|e| format!("{}: {e}", file.display()))?;
         generated.push(file);
     }
@@ -350,6 +592,12 @@ fn stamp(root: &Path, compiler: &Compiler) -> Result<String, String> {
     let mut files = Vec::new();
     collect_files(&root.join("oracles"), &mut files)?;
     files.sort();
+    // Only what the build reads: the C, its headers and `sources.toml`. The engine oracle's
+    // routes and their recordings are data a run reads, and editing them rebuilds nothing.
+    files.retain(|file| {
+        file.extension()
+            .is_some_and(|extension| extension == "c" || extension == "h" || extension == "toml")
+    });
     for file in files {
         let bytes = fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
         let name = file
@@ -381,6 +629,8 @@ fn locate<'a>(root: &Path, exec: &'a dyn Exec) -> Oracles<'a> {
     Oracles {
         qcc: bin.join(Compiler::executable("qcc")),
         vm: bin.join(Compiler::executable("vm-oracle")),
+        engine: bin.join(Compiler::executable("engine-oracle")),
+        view: bin.join(Compiler::executable("view-oracle")),
         fteqcc: bin.join(Compiler::executable("fteqcc")),
         fteqcc_fixed: bin.join(Compiler::executable("fteqcc-fixed")),
         work: out.join("work"),
@@ -392,6 +642,17 @@ fn locate<'a>(root: &Path, exec: &'a dyn Exec) -> Oracles<'a> {
 /// The VM oracle's executable, once built.
 pub(crate) fn vm_oracle(root: &Path) -> PathBuf {
     locate(root, &System).vm
+}
+
+/// Runs `script` once through the engine oracle, writing its trace to `trace` (DIFF-16.1);
+/// `engine` is the engine's command line.
+pub(crate) fn engine_trace(
+    oracles: &Oracles<'_>,
+    script: &Path,
+    trace: &Path,
+    engine: &[String],
+) -> Result<(), String> {
+    engine::run_once(oracles, script, trace, engine)
 }
 
 /// Fetches, generates and compiles every oracle, unless the stamp shows they are current.
@@ -420,6 +681,8 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     let stamp_file = bin.join("stamp");
     if oracles.qcc.is_file()
         && oracles.vm.is_file()
+        && oracles.engine.is_file()
+        && (cfg!(windows) || oracles.view.is_file())
         && oracles.fteqcc.is_file()
         && oracles.fteqcc_fixed.is_file()
         && fs::read_to_string(&stamp_file).is_ok_and(|s| s.trim() == stamp_now)
@@ -475,6 +738,13 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     // The VM oracle: pr_exec.c whole, id's extracted functions, and our harness.
     let vm_objects = compile_vm(root, &sources, &cache, &objects, &compiler, &[])?;
     compiler.link(&vm_objects, &oracles.vm)?;
+    let engine_objects = compile_engine(root, &sources, &cache, &objects, &compiler)?;
+    compiler.link(&engine_objects, &oracles.engine)?;
+    // VIEWDIFF-2.6: id's Windows client needs its DirectX and MGL drivers.
+    if !cfg!(windows) {
+        let view_objects = compile_view(root, &cache, &objects, &compiler)?;
+        compiler.link(&view_objects, &oracles.view)?;
+    }
     // DIFF-14.12: the same FTEQCC with its defects fixed, from a copy of the tree whose
     // `qcc_pr_comp.c` has every fix of `defects::FIXES` applied.
     let fixed_dir = cache.join("fteqcc-fixed");
@@ -494,7 +764,7 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     fs::write(&stamp_file, format!("{stamp_now}\n"))
         .map_err(|e| format!("{}: {e}", stamp_file.display()))?;
     println!(
-        "oracles: built qcc, vm-oracle, fteqcc and fteqcc-fixed in {}",
+        "oracles: built qcc, vm-oracle, engine-oracle, view-oracle, fteqcc and fteqcc-fixed in {}",
         bin.display()
     );
     Ok(oracles)
@@ -574,7 +844,7 @@ pub(crate) fn compile_vm(
         &object,
     )?;
     vm_objects.push(object);
-    for source in generate(sources, cache, objects)? {
+    for source in generate(sources, cache, objects, Target::Vm)? {
         let object = objects.join(format!("vm_{}.o", stem(&source)));
         compiler.object(
             &Unit {
@@ -607,6 +877,92 @@ pub(crate) fn compile_vm(
         vm_objects.push(object);
     }
     Ok(vm_objects)
+}
+
+/// Compiles the engine oracle's objects into `objects`: id's server files whole and the
+/// functions extracted for it, over id's own headers, and our harness; returns the objects to
+/// link.
+fn compile_engine(
+    root: &Path,
+    sources: &Sources,
+    cache: &Path,
+    objects: &Path,
+    compiler: &Compiler,
+) -> Result<Vec<PathBuf>, String> {
+    let quake = cache.join(ENGINE_UPSTREAM).join("WinQuake");
+    let includes = vec![root.join("oracles/engine"), quake.clone()];
+    let upstream = ENGINE_FILES
+        .iter()
+        .map(|file| quake.join(file))
+        .chain(generate(sources, cache, objects, Target::Engine)?)
+        .map(|source| (source, Code::Upstream));
+    let ours = ENGINE_HARNESS
+        .iter()
+        .map(|file| (root.join(file), Code::Ours));
+    let rand = root.join("oracles/engine/rand.h");
+    let mut engine_objects = Vec::new();
+    for (source, code) in upstream.chain(ours) {
+        let object = objects.join(format!("engine_{}.o", stem(&source)));
+        let forced_include = match code {
+            Code::Upstream | Code::UpstreamCommon => Some(rand.as_path()),
+            Code::Ours => None,
+        };
+        compiler.object(
+            &Unit {
+                source: &source,
+                code,
+                includes: &includes,
+                defines: &[],
+                forced_include,
+            },
+            &object,
+        )?;
+        engine_objects.push(object);
+    }
+    Ok(engine_objects)
+}
+
+/// The view oracle's objects: [`VIEW_FILES`] from id's tree, unchanged but for `rand`
+/// (`oracles/engine/rand.h`), and [`VIEW_HARNESS`].
+fn compile_view(
+    root: &Path,
+    cache: &Path,
+    objects: &Path,
+    compiler: &Compiler,
+) -> Result<Vec<PathBuf>, String> {
+    let quake = cache.join(ENGINE_UPSTREAM).join("WinQuake");
+    let includes = vec![root.join("oracles/engine"), quake.clone()];
+    let rand = root.join("oracles/engine/rand.h");
+    let upstream = VIEW_FILES.iter().map(|file| {
+        (
+            quake.join(file),
+            Code::UpstreamCommon,
+            VIEW_CLIENT_FILES.contains(file),
+        )
+    });
+    let ours = VIEW_HARNESS
+        .iter()
+        .map(|file| (root.join(file), Code::Ours, false));
+    let mut view_objects = Vec::new();
+    for (source, code, client) in upstream.chain(ours) {
+        let object = objects.join(format!("view_{}.o", stem(&source)));
+        let forced_include = match code {
+            Code::Upstream | Code::UpstreamCommon => Some(rand.as_path()),
+            Code::Ours => None,
+        };
+        compiler.object(
+            &Unit {
+                source: &source,
+                code,
+                includes: &includes,
+                defines: if client { &["QS_CLIENT_RAND"] } else { &[] },
+                forced_include,
+            },
+            &object,
+        )?;
+        view_objects.push(object);
+    }
+    Ok(view_objects)
 }
 
 fn stem(path: &Path) -> String {

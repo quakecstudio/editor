@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 cc = { workspace = true }
+clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 qc-codegen = { workspace = true }
 miniz_oxide = { workspace = true, features = ["with-alloc"] }
 qc-lexer = { workspace = true }
@@ -22,12 +23,16 @@ qc-syntax = { workspace = true }
 qc-trace = { workspace = true }
 qc-types = { workspace = true }
 qs-commands = { workspace = true }
+qs-engine = { workspace = true }
+qs-install = { workspace = true }
 qs-layout = { workspace = true }
 qs-settings = { workspace = true }
 qs-workbench = { workspace = true }
 qs-map = { workspace = true }
 qs-pak = { workspace = true }
 qs-vfs = { workspace = true }
+qs-bsp = { workspace = true }
+qs-sim = { workspace = true }
 quakec-lsp = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }

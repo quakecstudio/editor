@@ -64,21 +64,25 @@ is required."
 - **BRIDGE-2.2** The host answers `initialize` with the protocol version it speaks, its own
   name, version and engine, and its capabilities (`initialize.result.json`). The host sends no
   event before it has answered.
-- **BRIDGE-2.3** The capabilities are one boolean per capability-flagged command (BRIDGE-4.1):
-  every command but `initialize`, `shutdown` and `inspect`, so a host built without reload
-  (P3-03), debugging (P3-04) or an ENG-14 command says so: `reload`, `breakpoint/set`,
-  `breakpoint/clear`, `step`, `console`, `pause`, `resume`, `field/set`, `pick`,
-  `entity/spawn`, `entity/remove`, `entity/edit`, `player/spawn_at`, `screenshot` and
-  `evaluate`. A command whose flag is absent or `false` is answered with `-32005`
-  (unsupported); the client shows it disabled.
-- **BRIDGE-2.4** A protocol version is `major.minor` in decimal. The host accepts a client
-  whose `major` is its own and answers with its own version; a different `major` is answered
-  with `-32001` (incompatible version) and the host closes the connection. A client reading a
-  higher `minor` than it knows proceeds; it ignores what it does not know (BRIDGE-6). This
-  document describes version `1.0`.
+- **BRIDGE-2.3** **Withdrawn** 2026-11-06: its list of capability-flagged commands gained
+  `window/place` (ENG-9); replaced by BRIDGE-2.6.
+- **BRIDGE-2.4** **Withdrawn** 2026-11-06: the version this document describes is `1.1`;
+  replaced by BRIDGE-2.7.
 - **BRIDGE-2.5** `shutdown` (no parameters, result `null`) asks the host to stop its game and
   answer; the client then closes the connection, which ends the host (BRIDGE-1.1). A client
   that closes without `shutdown` ends it too.
+- **BRIDGE-2.6** The capabilities are one boolean per capability-flagged command (BRIDGE-4.9):
+  every command but `initialize`, `shutdown` and `inspect`, so a host built without reload
+  (P3-03), debugging (P3-04) or an ENG-14 command says so: `reload`, `breakpoint/set`,
+  `breakpoint/clear`, `step`, `console`, `pause`, `resume`, `field/set`, `pick`,
+  `entity/spawn`, `entity/remove`, `entity/edit`, `player/spawn_at`, `screenshot`,
+  `evaluate` and `window/place`. A command whose flag is absent or `false` is answered with `-32005`
+  (unsupported); the client shows it disabled.
+- **BRIDGE-2.7** A protocol version is `major.minor` in decimal. The host accepts a client
+  whose `major` is its own and answers with its own version; a different `major` is answered
+  with `-32001` (incompatible version) and the host closes the connection. A client reading a
+  higher `minor` than it knows proceeds; it ignores what it does not know (BRIDGE-6). This
+  document describes version `1.1`, which added `window/place` (BRIDGE-6.3).
 
 ## BRIDGE-3 Events
 
@@ -120,7 +124,7 @@ An event is a notification from the host. Each carries `time`, the server's cloc
 
 ## BRIDGE-4 Commands
 
-**Source:** this design; ENG-1 and ENG-14.
+**Source:** this design; ENG-1, ENG-9 and ENG-14.
 
 A command is a request from the client, answered with a result on success or an error
 (BRIDGE-7). The parameters and results are under `bridge-schema/<name>.params.json` and
@@ -128,8 +132,40 @@ A command is a request from the client, answered with a result on success or an 
 
 ### Behaviour
 
-- **BRIDGE-4.1** Every operation of the bridge client (ENG-1, ENG-14) maps to a command, and
-  every command to one of them:
+- **BRIDGE-4.1** **Withdrawn** 2026-11-06: the bridge client gained docking (ENG-9),
+  `window/place`; replaced by BRIDGE-4.9.
+- **BRIDGE-4.2** A command's parameters are validated against its schema before it runs; a
+  message that fails is answered with `-32602` (invalid params) and nothing runs.
+- **BRIDGE-4.3** `step`, `inspect` with `stack` and `evaluate` need the host paused; while
+  running they are answered with `-32002` (not paused) and nothing changes. `inspect` with
+  `edict`, `globals` or `entities` runs at any time and reads the state between two server
+  frames, never during one.
+- **BRIDGE-4.4** `field/set` and `entity/edit` while paused are applied in order when the
+  game resumes, and their results say `on_resume`; while running they apply before the next
+  server frame and say `now`. A value of a type other than the field's is answered with
+  `-32006` (bad value) and not applied.
+- **BRIDGE-4.5** An edict number that is not in use is answered with `-32004` (no such
+  edict); a breakpoint id the host does not hold, or a file and line with no statement, with
+  `-32007` (no such breakpoint). A file path is relative to the project's root, as the `.lno`
+  and the compiler name files.
+- **BRIDGE-4.6** While a frame is stopped at a statement (`breakpoint/hit`, or a step that
+  stopped), `entity/spawn`, `entity/remove`, `player/spawn_at` and `console` are answered with
+  `-32008` (stopped in frame) and nothing changes: going on replays the frame from the world
+  before it, which would drop their changes. `field/set` and `entity/edit` are held as
+  BRIDGE-4.4 says.
+- **BRIDGE-4.7** While a frame is stopped at a statement, `reload` is answered with `-32008` too,
+  for the same reason.
+- **BRIDGE-4.8** `reload` reads its `progs`, a host path when absolute and otherwise a name on the
+  game's search path, or with none the name the running progs was read by, and its `.lno`
+  beside it with the extension `lno`; a name that is not there is answered with `-32602`
+  (invalid params) and nothing changes. The progs is loaded over the map as WORLD-10 says;
+  each breakpoint is resolved again at the file and line it was set at, and one that no longer
+  resolves is cleared, its id listed in the result's `breakpoints_cleared`. The changes the old
+  progs made are reported first; the migration's own writes are not changes. The result is
+  WORLD-10.5's report: `migrated`, `lost` and `added`, each change its `name`, `kind` and
+  `reason`, and the VM time.
+- **BRIDGE-4.9** Every operation of the bridge client (ENG-1, ENG-9, ENG-14) maps to a command,
+  and every command to one of them:
 
   | Operation | Method | Flagged | Does |
   | --- | --- | --- | --- |
@@ -148,21 +184,16 @@ A command is a request from the client, answered with a result on success or an 
   | remove entity | `entity/remove` | yes | frees an edict |
   | edit entity | `entity/edit` | yes | sets key-values on an edict as its spawn would parse them (EDICT-8) |
   | spawn player at | `player/spawn_at` | yes | moves the player to an origin and angles, as a teleporter would |
+  | dock | `window/place` | yes | places the host's window at a rectangle of the desktop and keeps it above other windows or not (BRIDGE-4.10), so it stays beside the IDE (ENG-9) |
 
-- **BRIDGE-4.2** A command's parameters are validated against its schema before it runs; a
-  message that fails is answered with `-32602` (invalid params) and nothing runs.
-- **BRIDGE-4.3** `step`, `inspect` with `stack` and `evaluate` need the host paused; while
-  running they are answered with `-32002` (not paused) and nothing changes. `inspect` with
-  `edict`, `globals` or `entities` runs at any time and reads the state between two server
-  frames, never during one.
-- **BRIDGE-4.4** `field/set` and `entity/edit` while paused are applied in order when the
-  game resumes, and their results say `on_resume`; while running they apply before the next
-  server frame and say `now`. A value of a type other than the field's is answered with
-  `-32006` (bad value) and not applied.
-- **BRIDGE-4.5** An edict number that is not in use is answered with `-32004` (no such
-  edict); a breakpoint id the host does not hold, or a file and line with no statement, with
-  `-32007` (no such breakpoint). A file path is relative to the project's root, as the `.lno`
-  and the compiler name files.
+- **BRIDGE-4.10** `window/place` takes the window's outer frame as `x`, `y`, `width` and
+  `height` in the desktop's logical points, from the top left of the main display, and
+  `above`, whether the window stays above other windows (`window.place.params.json`); its
+  result is `null`. The host moves and sizes its window before its next frame and keeps it
+  where it was put until the next `window/place`; a width or height below 1 is answered with
+  `-32602` (invalid params). A host with no window (`--headless`), or one whose windowing
+  system lets a client neither move nor raise its window (Wayland), leaves the capability off
+  (BRIDGE-2.6).
 
 ## BRIDGE-5 Values
 
@@ -214,13 +245,14 @@ A command is a request from the client, answered with a result on success or an 
   | `-32601` | method not found | a request's method is unknown (BRIDGE-6.2) |
   | `-32602` | invalid params | the parameters fail their schema (BRIDGE-4.2) |
   | `-32603` | internal error | the host failed in a way the others do not name |
-  | `-32001` | incompatible version | `initialize` with another major (BRIDGE-2.4) |
+  | `-32001` | incompatible version | `initialize` with another major (BRIDGE-2.7) |
   | `-32002` | not paused | a command that needs a paused host (BRIDGE-4.3) |
   | `-32003` | not initialized | a request before `initialize` (BRIDGE-2.1) |
   | `-32004` | no such edict | an edict number not in use (BRIDGE-4.5) |
-  | `-32005` | unsupported | a command whose capability is off (BRIDGE-2.3) |
+  | `-32005` | unsupported | a command whose capability is off (BRIDGE-2.6) |
   | `-32006` | bad value | a value of the wrong type for a field (BRIDGE-4.4) |
   | `-32007` | no such breakpoint | a breakpoint id or line the host cannot resolve (BRIDGE-4.5) |
+  | `-32008` | stopped in frame | a command that changes the world while a frame is stopped (BRIDGE-4.6) |
 
 - **BRIDGE-7.2** An error's `message` is for the person; its `data`, when present, is an
   object the schema of the command may describe; a client acts on the `code`, never on the

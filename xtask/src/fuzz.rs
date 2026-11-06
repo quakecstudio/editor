@@ -16,30 +16,30 @@ use std::process::Command;
 use crate::exec::{Exec, System};
 use crate::host::parse_host;
 
-const USAGE: &str = "usage: cargo xtask fuzz [<target>...] [--time <duration>]\n       \
-                     <duration> is seconds, or a number with s, m or h (default 60s)";
 const DEFAULT_SECONDS: u64 = 60;
 /// The toolchain cargo-fuzz runs on: it needs nightly for the sanitizer flags.
 const TOOLCHAIN: &str = "+nightly";
 
-/// What to fuzz and for how long.
-#[derive(Debug, PartialEq, Eq)]
-struct Options {
+/// `cargo xtask fuzz [<target>...] [--time <duration>]`: what to fuzz and for how long.
+#[derive(clap::Parser, Debug, PartialEq, Eq)]
+pub(crate) struct Args {
+    /// The targets, every one in `fuzz/` when none is named.
     targets: Vec<String>,
+    /// How long each target runs: seconds, or a number with s, m or h.
+    #[arg(long = "time", value_name = "duration", default_value_t = DEFAULT_SECONDS, value_parser = parse_duration)]
     seconds: u64,
 }
 
-pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
+pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     run(root, args, &System)
 }
 
 /// [`main`] with the programs `exec` runs.
-fn run(root: &Path, args: &[String], exec: &dyn Exec) -> Result<bool, String> {
-    let options = parse_args(args)?;
+fn run(root: &Path, options: &Args, exec: &dyn Exec) -> Result<bool, String> {
     let targets = if options.targets.is_empty() {
         list_targets(root, exec)?
     } else {
-        options.targets
+        options.targets.clone()
     };
     if targets.is_empty() {
         return Err("fuzz/ has no targets".to_owned());
@@ -122,30 +122,9 @@ fn run_args(target: &str, host: &str, seconds: u64) -> Vec<String> {
     ]
 }
 
-fn parse_args(args: &[String]) -> Result<Options, String> {
-    let mut options = Options {
-        targets: Vec::new(),
-        seconds: DEFAULT_SECONDS,
-    };
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--time" => {
-                let value = args
-                    .next()
-                    .ok_or_else(|| format!("--time needs a value\n{USAGE}"))?;
-                options.seconds = parse_duration(value)?;
-            }
-            flag if flag.starts_with('-') => return Err(format!("unknown flag {flag}\n{USAGE}")),
-            target => options.targets.push(target.to_owned()),
-        }
-    }
-    Ok(options)
-}
-
 /// Seconds in `text`: a positive whole number, optionally followed by `s`, `m` or `h`.
 fn parse_duration(text: &str) -> Result<u64, String> {
-    let invalid = || format!("invalid duration {text:?}\n{USAGE}");
+    let invalid = || format!("invalid duration {text:?}: seconds, or a number with s, m or h");
     let (number, unit) = match text.char_indices().last() {
         Some((index, 's' | 'm' | 'h')) => (text.get(..index), text.get(index..)),
         Some(_) => (Some(text), None),
@@ -175,8 +154,9 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
 
-    use super::{DEFAULT_SECONDS, Options, parse_args, parse_duration, run, run_args};
+    use super::{Args, DEFAULT_SECONDS, parse_duration, run, run_args};
     use crate::exec::{Fake, Reply};
+    use crate::parse_cli;
 
     /// cargo-fuzz and rustc as `fails` says: listing two targets, the first run passing and the
     /// second failing when `fails` is set.
@@ -205,7 +185,14 @@ mod tests {
     #[test]
     fn every_listed_target_runs_for_the_host() {
         let fake = Fake::new(tools(false));
-        assert!(run(Path::new("."), &args(&["--time", "2m"]), &fake).unwrap());
+        assert!(
+            run(
+                Path::new("."),
+                &parse_cli::<Args, _>(&["--time", "2m"]).unwrap(),
+                &fake
+            )
+            .unwrap()
+        );
         let seen = fake.seen.lock().unwrap();
         assert_eq!(seen[0], "cargo +nightly fuzz list");
         assert_eq!(seen[1], "rustc +nightly -vV");
@@ -218,9 +205,23 @@ mod tests {
     #[test]
     fn a_failing_target_stops_the_run() {
         let fake = Fake::new(tools(true));
-        assert!(!run(Path::new("."), &args(&[]), &fake).unwrap());
+        assert!(
+            !run(
+                Path::new("."),
+                &parse_cli::<Args, &str>(&[]).unwrap(),
+                &fake
+            )
+            .unwrap()
+        );
         let named = Fake::new(tools(false));
-        assert!(run(Path::new("."), &args(&["qs-map"]), &named).unwrap());
+        assert!(
+            run(
+                Path::new("."),
+                &parse_cli::<Args, _>(&["qs-map"]).unwrap(),
+                &named
+            )
+            .unwrap()
+        );
         assert_eq!(
             named.seen.lock().unwrap().len(),
             2,
@@ -236,32 +237,62 @@ mod tests {
             ..Reply::default()
         });
         assert!(
-            run(Path::new("."), &args(&[]), &fails)
-                .unwrap_err()
-                .contains("cargo fuzz list failed")
+            run(
+                Path::new("."),
+                &parse_cli::<Args, &str>(&[]).unwrap(),
+                &fails
+            )
+            .unwrap_err()
+            .contains("cargo fuzz list failed")
         );
         assert!(
-            run(Path::new("."), &args(&["qs-map"]), &fails)
-                .unwrap_err()
-                .contains("rustc -vV failed")
+            run(
+                Path::new("."),
+                &parse_cli::<Args, _>(&["qs-map"]).unwrap(),
+                &fails
+            )
+            .unwrap_err()
+            .contains("rustc -vV failed")
         );
         let empty = Fake::new(|_: &Command| Reply::exit(0));
         assert!(
-            run(Path::new("."), &args(&[]), &empty)
-                .unwrap_err()
-                .contains("no targets")
+            run(
+                Path::new("."),
+                &parse_cli::<Args, &str>(&[]).unwrap(),
+                &empty
+            )
+            .unwrap_err()
+            .contains("no targets")
         );
         assert!(
-            run(Path::new("."), &args(&["qs-map"]), &empty)
-                .unwrap_err()
-                .contains("no host")
+            run(
+                Path::new("."),
+                &parse_cli::<Args, _>(&["qs-map"]).unwrap(),
+                &empty
+            )
+            .unwrap_err()
+            .contains("no host")
         );
         let cannot = Fake::new(|_: &Command| Reply {
             cannot_run: true,
             ..Reply::default()
         });
-        assert!(run(Path::new("."), &args(&[]), &cannot).is_err());
-        assert!(run(Path::new("."), &args(&["qs-map"]), &cannot).is_err());
+        assert!(
+            run(
+                Path::new("."),
+                &parse_cli::<Args, &str>(&[]).unwrap(),
+                &cannot
+            )
+            .is_err()
+        );
+        assert!(
+            run(
+                Path::new("."),
+                &parse_cli::<Args, _>(&["qs-map"]).unwrap(),
+                &cannot
+            )
+            .is_err()
+        );
     }
 
     fn args(list: &[&str]) -> Vec<String> {
@@ -270,7 +301,7 @@ mod tests {
 
     #[test]
     fn the_entry_point_refuses_a_bad_duration() {
-        assert!(super::main(Path::new("."), &args(&["--time", "ten"])).is_err());
+        assert!(parse_cli::<Args, _>(&["--time", "ten"]).is_err());
     }
 
     #[test]
@@ -288,21 +319,22 @@ mod tests {
     #[test]
     fn arguments() {
         assert_eq!(
-            parse_args(&[]).unwrap(),
-            Options {
+            parse_cli::<Args, &str>(&[]).unwrap(),
+            Args {
                 targets: Vec::new(),
                 seconds: DEFAULT_SECONDS
             }
         );
         assert_eq!(
-            parse_args(&args(&["qc-progs", "--time", "10m"])).unwrap(),
-            Options {
+            parse_cli::<Args, _>(&["qc-progs", "--time", "10m"]).unwrap(),
+            Args {
                 targets: args(&["qc-progs"]),
                 seconds: 600
             }
         );
-        assert!(parse_args(&args(&["--time"])).is_err());
-        assert!(parse_args(&args(&["--jobs", "2"])).is_err());
+        assert!(parse_cli::<Args, _>(&["--time"]).is_err());
+        assert!(parse_cli::<Args, _>(&["--jobs", "2"]).is_err());
+        assert!(parse_cli::<Args, _>(&["--time", "0"]).is_err());
     }
 
     #[test]

@@ -27,60 +27,22 @@
 )]
 
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use eframe::egui;
 use quakec_studio::App;
+use quakec_studio::bench::{FILES, LINES_PER_FILE, TYPED, caret_offset, write_project};
 use serde_json::json;
 
 /// One frame at 120 Hz, in nanoseconds: the pass bar of ADR-0003.
 const FRAME_NS: u64 = 8_333_333;
 /// PRIN-5's budget to open a project and show a file.
 const OPEN: Duration = Duration::from_secs(1);
-/// The project's files of QuakeC, and each one's lines.
-const FILES: usize = 25;
-const LINES_PER_FILE: usize = 2_000;
-/// The file the editor shows, and the line typed at.
-const MIDDLE_FILE: usize = 12;
-const MIDDLE_LINE: usize = 1_000;
-/// The text typed, one character a frame.
-const TYPED: &str = "self.speed = self.speed * 0.7; // slow down";
 /// How long the check phase idles after typing: twice the editor's settle time.
 const IDLE: Duration = Duration::from_millis(600);
-
-/// Writes the benchmark project into `dir`: `defs.qc` and `FILES` files of `LINES_PER_FILE`
-/// lines of functions; the middle file's path.
-fn write_project(dir: &Path) -> Result<PathBuf, String> {
-    let io = |e: std::io::Error| format!("{}: {e}", dir.display());
-    std::fs::create_dir_all(dir).map_err(io)?;
-    let mut src = String::from("progs.dat\ndefs.qc\n");
-    let defs = "entity self;\nfloat time;\n.float health;\n.float speed;\n\
-                void(entity e) remove = #15;\n";
-    std::fs::write(dir.join("defs.qc"), defs).map_err(io)?;
-    for file in 0..FILES {
-        let mut text = String::new();
-        let mut function = 0_usize;
-        while text.lines().count() < LINES_PER_FILE {
-            writeln!(
-                text,
-                "void() f{file}_{function} =\n{{\n\tlocal float x;\n\tx = self.health + time;\n\
-                 \tif (x > 10)\n\t\tself.speed = x * 0.5;\n\telse\n\t\tself.speed = 0;\n\
-                 \tself.health = self.health - 1;\n}};\n"
-            )
-            .map_err(|e| e.to_string())?;
-            function = function.saturating_add(1);
-        }
-        let name = format!("f{file}.qc");
-        std::fs::write(dir.join(&name), text).map_err(io)?;
-        src.push_str(&name);
-        src.push('\n');
-    }
-    std::fs::write(dir.join("progs.src"), src).map_err(io)?;
-    Ok(dir.join(format!("f{MIDDLE_FILE}.qc")))
-}
 
 /// A phase of the benchmark.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -232,13 +194,18 @@ impl eframe::App for Bench {
     }
 }
 
+/// Measures the editor's keystrokes in the real app.
+#[derive(clap::Parser, Debug)]
+struct Args {
+    /// Where the measurements are written.
+    out: PathBuf,
+    /// The host the measurements are recorded for.
+    #[arg(default_value = "local")]
+    host: String,
+}
+
 fn main() -> ExitCode {
-    let mut args = std::env::args().skip(1);
-    let Some(out) = args.next().map(PathBuf::from) else {
-        eprintln!("usage: editor_bench <out-dir> [host]");
-        return ExitCode::from(2);
-    };
-    let host = args.next().unwrap_or_else(|| "local".to_owned());
+    let Args { out, host } = <Args as clap::Parser>::parse();
     let dir = std::env::temp_dir().join(format!("quakec-studio-bench-{}", std::process::id()));
     let file = match write_project(&dir) {
         Ok(file) => file,
@@ -262,11 +229,7 @@ fn main() -> ExitCode {
             let shell = app.shell_mut();
             shell.open_project(&dir)?;
             // The caret goes to the middle of the file.
-            let text = std::fs::read_to_string(&file)?;
-            let offset = text
-                .match_indices('\n')
-                .nth(MIDDLE_LINE)
-                .map_or(0, |(at, _)| at.saturating_add(1));
+            let offset = caret_offset(&std::fs::read_to_string(&file)?);
             shell.execute("file.open", json!({ "path": file, "offset": offset }))?;
             Ok(Box::new(Bench {
                 app,

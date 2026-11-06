@@ -69,7 +69,7 @@ fn calling_progs() -> Vec<u8> {
     .unwrap()
 }
 
-// spec DIFF-15.1: a block is emptied only when it runs from `{` to `}` with every conditional
+// spec DIFF-15.7: a block is emptied only when it runs from `{` to `}` with every conditional
 // directive in it closed in it
 #[test]
 fn only_a_whole_block_is_emptied() {
@@ -83,7 +83,7 @@ fn only_a_whole_block_is_emptied() {
     assert!(!is_whole_block(b""));
 }
 
-// spec DIFF-15.1: the cut program keeps the bodies of the functions kept and empties every
+// spec DIFF-15.7: the cut program keeps the bodies of the functions kept and empties every
 // other one, leaving the text around them and the files with none as they are
 #[test]
 fn a_cut_empties_every_body_not_kept() {
@@ -125,7 +125,7 @@ fn a_cut_empties_every_body_not_kept() {
     assert!(cut(&bodies, &sources, &names(&["f", "g", "h"])).is_empty());
 }
 
-// spec DIFF-15.2: a function's calls by name are the functions the globals its CALLs read
+// spec DIFF-15.8: a function's calls by name are the functions the globals its CALLs read
 // hold; a call through a variable, whose global holds no function, adds none, and the kept
 // functions are the closure of the calls, through any depth and any cycle
 #[test]
@@ -150,6 +150,7 @@ fn the_kept_functions_are_the_closure_of_the_calls() {
 // spec DIFF-15.5: a statement of the whole progs is covered when the runs list its function's
 // name and its offset in that body; an offset past the body or a name the progs has not adds
 // nothing, and the total leaves out statement 0
+// spec DIFF-15.10: the shards' lists merged count a statement two of them reached once
 #[test]
 fn coverage_counts_the_listed_statements_of_each_body() {
     let bytes = calling_progs();
@@ -160,9 +161,12 @@ fn coverage_counts_the_listed_statements_of_each_body() {
         (2, 3)
     );
     assert_eq!(coverage(&progs, "f\t0\nf\t1\ng\t0\n"), (3, 3));
+    // DIFF-15.10: the shards' lists together, a statement two of them reached counted once.
+    let shards = ["f\t0\ng\t0\n", "f\t0\n", "f\t1\n"].concat();
+    assert_eq!(coverage(&progs, &shards), (3, 3));
 }
 
-// spec DIFF-15.1: every function body at file level is found in its source file, whatever
+// spec DIFF-15.7: every function body at file level is found in its source file, whatever
 // form defines it, and a body a macro writes and a `__wrap` body are left out
 #[test]
 fn the_bodies_are_found_in_their_files() {

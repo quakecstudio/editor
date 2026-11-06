@@ -130,6 +130,17 @@ impl Input {
     }
 }
 
+/// A `command` line: a string command a client sends at a frame (DIFF-2.10, DIFF-4.4).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Command {
+    /// The frame the command runs at (DIFF-5.1), 1 to `frames`.
+    pub frame: u32,
+    /// The client edict that sends it, 1 to `clients`.
+    pub edict: u32,
+    /// The command: the line's words after the edict, joined by one space.
+    pub text: Vec<u8>,
+}
+
 /// A `cvar` setting and its text (DIFF-2.4).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cvar {
@@ -177,6 +188,8 @@ pub struct Scenario {
     pub cvars: Vec<Cvar>,
     /// The `input` directives, in file order (DIFF-4.3).
     pub inputs: Vec<Input>,
+    /// The `command` directives, in file order (DIFF-4.4).
+    pub commands: Vec<Command>,
 }
 
 /// One directive key that may appear at most once (`once` in `scenario.c`).
@@ -326,6 +339,7 @@ struct Builder {
     models: Vec<ModelBounds>,
     cvars: Vec<Cvar>,
     inputs: Vec<Input>,
+    commands: Vec<Command>,
     seen: [bool; ONCE_KEYS.len()],
 }
 
@@ -345,6 +359,7 @@ impl Builder {
             models: Vec::new(),
             cvars: Vec::new(),
             inputs: Vec::new(),
+            commands: Vec::new(),
             seen: [false; ONCE_KEYS.len()],
         }
     }
@@ -440,6 +455,7 @@ impl Builder {
             "model" => self.model(args, at)?,
             "cvar" => self.cvar(args, at)?,
             "input" => self.input(args, at)?,
+            "command" => self.command(args, at)?,
             _ => return Err(refuse(at, "unknown key")),
         }
         Ok(())
@@ -555,6 +571,22 @@ impl Builder {
         Ok(())
     }
 
+    /// A `command` line: a frame, an edict and the command's words (DIFF-2.10).
+    fn command(&mut self, args: &[Word<'_>], at: usize) -> Result<(), Refused> {
+        let [frame, edict, first, rest @ ..] = args else {
+            return Err(refuse(at, "command takes a frame, an edict and a command"));
+        };
+        let frame = integer(*frame, 1, DIFF_MAX_FRAMES.into(), at, "command frame")?;
+        let edict = integer(*edict, 1, DIFF_MAX_CLIENTS.into(), at, "command edict")?;
+        let mut text = first.bytes.to_vec();
+        for word in rest {
+            text.push(b' ');
+            text.extend_from_slice(word.bytes);
+        }
+        self.commands.push(Command { frame, edict, text });
+        Ok(())
+    }
+
     /// The whole-file checks of DIFF-2.9, reported at line 0 as the oracle reports them.
     fn finish(self) -> Result<Scenario, Refused> {
         let progs = self.progs.ok_or_else(|| refuse(0, "no progs"))?;
@@ -567,6 +599,14 @@ impl Builder {
             }
             if input.edict() > self.clients {
                 return Err(refuse(0, "an input's edict is not a client that enters"));
+            }
+        }
+        for command in &self.commands {
+            if command.frame > self.frames {
+                return Err(refuse(0, "a command's frame is after the last frame"));
+            }
+            if command.edict > self.clients {
+                return Err(refuse(0, "a command's edict is not a client that enters"));
             }
         }
         Ok(Scenario {
@@ -582,6 +622,7 @@ impl Builder {
             models: self.models,
             cvars: self.cvars,
             inputs: self.inputs,
+            commands: self.commands,
         })
     }
 }

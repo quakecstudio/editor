@@ -13,7 +13,8 @@ use qs_wad::WadError;
 
 use crate::fixtures::{MemFs, pak, pak_with_extra, pop_lmp, unmodified_pak, wad, zip};
 use crate::{
-    Element, FS_GAMENAME, FS_POP_PATH, FS_POP_SIZE, FS_POP_TABLE, FileRef, Location, Vfs, VfsError,
+    Element, FS_GAMENAME, FS_POP_PATH, FS_POP_SIZE, FS_POP_TABLE, FileRef, Location, Registration,
+    Vfs, VfsError,
 };
 
 /// No command-line arguments.
@@ -75,6 +76,15 @@ fn no_options() {
     assert_eq!(lookup(&vfs, "f.txt").as_deref(), Some("pak0-f"));
     assert_eq!(lookup(&vfs, "b.txt").as_deref(), Some("id1-loose-b"));
     assert_eq!(FS_GAMENAME, "id1");
+    let counts: Vec<usize> = vfs
+        .elements()
+        .iter()
+        .filter_map(|element| match element {
+            Element::Archive(archive) => Some(archive.file_count()),
+            Element::Directory(_) => None,
+        })
+        .collect();
+    assert_eq!(counts, [1, 3], "the entries each archive holds (PAK-2)");
 }
 
 // spec FS-1.5: the archive scan stops at the first missing number; pak3 is never loaded.
@@ -372,7 +382,7 @@ fn case_insensitive_host_names() {
         .file("Q/Mod/PROGS.DAT", b"upper");
     let vfs = Vfs::new(tree, &["-game", "mod"], "Q").unwrap();
     assert_eq!(path_names(&vfs), ["Q/mod", "Q/id1/pak0.pak", "Q/id1"]);
-    assert!(vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Registered);
     assert_eq!(lookup(&vfs, "progs/player.mdl").as_deref(), Some("mdl"));
     assert_eq!(lookup(&vfs, "PROGS/PLAYER.MDL").as_deref(), Some("mdl"));
     assert_eq!(lookup(&vfs, "progs.dat").as_deref(), Some("mod"));
@@ -446,10 +456,10 @@ fn registered_by_loose_pop() {
     assert_eq!(FS_POP_TABLE[127], 0x0000);
     assert_eq!(FS_POP_TABLE[124], 0x6400);
     let vfs = spec_vfs(&[]);
-    assert!(vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Registered);
     let tree = MemFs::default().file("id1/gfx/pop.lmp", &pop_lmp(b"trailing bytes"));
     let vfs = Vfs::new(tree, NO_ARGS, ".").unwrap();
-    assert!(vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Registered);
     assert!(!vfs.is_modified());
 }
 
@@ -458,7 +468,7 @@ fn registered_by_loose_pop() {
 fn pop_check() {
     let tree = MemFs::default().file("id1/x.txt", b"x");
     let vfs = Vfs::new(tree, NO_ARGS, ".").unwrap();
-    assert!(!vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Shareware);
     let mut wrong = pop_lmp(&[]);
     wrong[21] ^= 1;
     for bad in [wrong, pop_lmp(&[])[..255].to_vec(), Vec::new()] {
@@ -494,7 +504,7 @@ fn modified_shareware_is_fatal() {
     let unmodified = MemFs::default().file("id1/pak0.pak", &unmodified_pak(&[("x", "y")]));
     let vfs = Vfs::new(unmodified, NO_ARGS, ".").unwrap();
     assert!(!vfs.is_modified());
-    assert!(!vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Shareware);
 }
 
 // spec FS-3.4: in shareware, directory elements are skipped for names with `/` or `\`;
@@ -512,7 +522,7 @@ fn shareware_restricts_loose_subdirectories() {
         .file("id1/maps/start.bsp", b"loose-start")
         .file("id1/back\\slash.txt", b"bs");
     let vfs = Vfs::new(tree, NO_ARGS, ".").unwrap();
-    assert!(!vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Shareware);
     assert_eq!(lookup(&vfs, "progs.dat").as_deref(), Some("loose-progs"));
     assert_eq!(lookup(&vfs, "maps/e1m1.bsp"), None);
     assert_eq!(lookup(&vfs, "maps\\e1m1.bsp"), None);
@@ -749,7 +759,7 @@ fn host_filesystem() {
     tree.file("ID1/sub/deeper/x.txt", b"x");
     let base = tree.0.to_str().unwrap();
     let vfs = Vfs::new(crate::StdFs, NO_ARGS, base).unwrap();
-    assert!(vfs.is_registered());
+    assert_eq!(vfs.registration(), Registration::Registered);
     assert_eq!(vfs.elements().len(), 2);
     assert_eq!(lookup(&vfs, "a.txt").as_deref(), Some("pak"));
     assert_eq!(lookup(&vfs, "maps/start.bsp").as_deref(), Some("start"));
@@ -760,7 +770,7 @@ fn host_filesystem() {
     assert!(names.contains(&b"sub/deeper/x.txt".to_vec()));
 }
 
-// spec FS-3.3: a symbolic link to a file is a file; a link to a directory is not walked, so
+// spec FS-3.11: a symbolic link to a file is a file; a link to a directory is not walked, so
 // a link loop cannot hang the listing.
 #[cfg(unix)]
 #[test]
@@ -782,6 +792,51 @@ fn host_filesystem_links() {
             b"real.txt".to_vec()
         ]
     );
+}
+
+// spec FS-3.11: a game directory and a loose file's folder may be links to directories, as
+// ADR-0008's run roots link the install's id1 and the mod's build output
+#[cfg(unix)]
+#[test]
+fn a_link_to_a_directory_is_looked_up_through() {
+    use crate::{EntryKind, HostFs as _};
+
+    let install = TempTree::new("linked-install");
+    install.file("id1/pak0.pak", &pak(&[("a.txt", "pak")]));
+    install.file("id1/gfx/pop.lmp", &pop_lmp(&[]));
+    install.file("id1/maps/start.bsp", b"start");
+    let output = TempTree::new("linked-output");
+    output.file("progs.dat", b"progs");
+    let root = TempTree::new("linked-root");
+    std::os::unix::fs::symlink(install.0.join("id1"), root.0.join("id1")).unwrap();
+    std::os::unix::fs::symlink(&output.0, root.0.join("mymod")).unwrap();
+    let base = root.0.to_str().unwrap();
+    let vfs = Vfs::new(crate::StdFs, &["-game", "mymod"], base).unwrap();
+    assert_eq!(vfs.registration(), Registration::Registered);
+    assert_eq!(lookup(&vfs, "a.txt").as_deref(), Some("pak"));
+    assert_eq!(lookup(&vfs, "maps/start.bsp").as_deref(), Some("start"));
+    assert_eq!(lookup(&vfs, "progs.dat").as_deref(), Some("progs"));
+    let kinds = crate::StdFs.read_dir(&root.0).unwrap();
+    assert!(kinds.iter().all(|entry| entry.kind == EntryKind::DirLink));
+    // A link to nothing is neither.
+    std::os::unix::fs::symlink(root.0.join("gone"), root.0.join("broken")).unwrap();
+    let broken = crate::StdFs.read_dir(&root.0).unwrap();
+    let broken = broken.iter().find(|entry| entry.name == "broken").unwrap();
+    assert_eq!(broken.kind, EntryKind::Other);
+}
+
+// spec FS-3.11: a link to a directory serves a lookup for a directory, and nothing else does
+// anything but its own kind
+#[test]
+fn what_each_entry_kind_serves_as() {
+    use crate::EntryKind::{Dir, DirLink, File, Other};
+    let kinds = [File, Dir, DirLink, Other];
+    for kind in kinds {
+        for want in kinds {
+            let serves = kind == want || (kind == DirLink && want == Dir);
+            assert_eq!(kind.serves_as(want), serves, "{kind:?} for {want:?}");
+        }
+    }
 }
 
 // spec RRE-1.10: a rerelease file is read from the search path, else from the base directory,
@@ -837,4 +892,13 @@ fn a_rerelease_file_is_looked_up_as_loc_loadfile_does() {
         .file("q/localization/loc_english.txt", b"x")
         .unreadable("q/localization/loc_english.txt");
     assert_eq!(load(unreadable).unwrap().unwrap(), b"from kpf");
+}
+
+// spec FS-4.5: the `registered` setting is 1 for the full game and 0 for the shareware
+// episode
+#[test]
+fn the_registered_setting_follows_the_game() {
+    assert_eq!(Registration::Registered.cvar(), "1");
+    assert_eq!(Registration::Shareware.cvar(), "0");
+    assert_eq!(Registration::default(), Registration::Shareware);
 }

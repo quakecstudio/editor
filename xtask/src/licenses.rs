@@ -33,9 +33,12 @@ const SPECS_MANIFEST: &str = "specs/manifest.tsv";
 
 const SOURCE_EXTENSIONS: [&str; 7] = ["rs", "py", "sh", "c", "h", "qc", "wgsl"];
 const SOURCE_NAMES: [&str; 1] = ["Makefile"];
-// `src` is a QuakeC project's file list, `progs.src`, which carries no license line.
-const TEXT_EXTENSIONS: [&str; 13] = [
-    "md", "toml", "yaml", "yml", "json", "jsonl", "lock", "html", "txt", "tsv", "csv", "hex", "src",
+// `src` is a QuakeC project's file list, `progs.src`, which carries no license line; `route`
+// is an engine oracle script (oracles/README.md), and `scenario` a scenario, a route with assertions
+// (docs/spec/scenario.md).
+const TEXT_EXTENSIONS: [&str; 15] = [
+    "md", "toml", "yaml", "yml", "json", "jsonl", "lock", "html", "txt", "tsv", "csv", "hex",
+    "src", "route", "scenario",
 ];
 const TEXT_NAMES: [&str; 3] = [LICENSE_FILE, ".gitignore", ".gitattributes"];
 const COMMENT_OPENERS: [&str; 6] = ["//", "#", "<!--", "/*", "*", "--"];

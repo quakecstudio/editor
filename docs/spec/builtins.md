@@ -793,13 +793,9 @@ profile (DIFF-12.19); everything else runs under id's.
 - **BUILTIN-18.3** The precache lists hold `MAX_SOUNDS` 2048 sounds and `MAX_MODELS` 8192
   models ("#define MAX_MODELS 8192 // johnfitz -- was 256", "#define MAX_SOUNDS 2048 //
   johnfitz -- was 256"), in place of LIMIT-6.2's 256 each.
-- **BUILTIN-18.4** `forceinfokey(player, key, value)` (#213) is `PF_sv_forceinfokey`: the
-  player through `G_EDICTNUM`, so a bad one is `NUM_FOR_EDICT`'s error (BUILTIN-2.7), then the
-  key and value strings, then `SV_UpdateInfo`. On the world (`if (!edict)`) a cvar registered
-  with `CVAR_SERVERINFO` (`fraglimit`, `timelimit`, `teamplay` and `noexit` in `Quake/host.c`) is
-  set with `Cvar_Set`, which `cvar` reads back. Every other key goes to the server's or the
-  player's info string and the network, which the mock does not keep: no builtin it ports reads
-  an info string back.
+- **BUILTIN-18.4** **Withdrawn** 2026-11-06: it said the mock keeps no player info string, which
+  stopped holding once `clientcommand` and `setinfo` read and decode one; replaced by
+  BUILTIN-18.29.
 - **BUILTIN-18.5** `clientstat(num, type, fld)` (#232) and `globalstat(num, type, name)` (#233)
   are `PF_clientstat` and `PF_globalstat`: they choose what the server sends a client as stat
   `num` (`PR_CustomStat`), which no builtin reads back, so they change nothing QuakeC sees.
@@ -844,27 +840,15 @@ profile (DIFF-12.19); everything else runs under id's.
   refuses it ("attempt to get a non-existant string"): the mock's string error (BUILTIN-2.8). A
   string `strzone` did not make, or one already freed, is left as it is ("string wasn't
   strzoned" is only a console warning). A freed value is not reused.
-- **BUILTIN-18.10** `fopen(name, mode)` (#110) is `PF_fopen`, which reads `name` with `G_STRING`
-  and returns -1 when it opens nothing ("G_FLOAT (OFS_RETURN) = -1; // assume failure"). The
-  mock's game directory is empty and cannot be written, so every `fopen` returns -1: a file to
-  read is not there, as in a game directory without it, and one to write or append is not
-  made, where vkQuake would create it. A file is no input the two progs could share, so the
-  mock keeps none.
+- **BUILTIN-18.10** **Withdrawn** 2026-11-06: it made every `fopen` open nothing, which stopped
+  holding once the mock keeps the files QuakeC writes; replaced by BUILTIN-18.36.
 - **BUILTIN-18.11** `cvar_string(name)` (#448) is `PF_cvar_string`: for a known setting a new
   temporary string holding its text (`var->string` for server QuakeC), cut to 1023 bytes; for
   `game`, when no setting has the name, the game's directory names (`COM_GetGameNames`), which
   for the mock's game is `id1`; for any other name 0, the null string.
-- **BUILTIN-18.12** `infokey(e, key)` (#80) is `PF_infokey_s`, which reads `e` with
-  `G_EDICTNUM` (BUILTIN-2.7) and `key` with `G_STRING` and answers from fixed sources, not from
-  the info strings `forceinfokey` sets (BUILTIN-18.4). On the world, `*version` is
-  `ENGINE_NAME_AND_VER`, `vkQuake 1.37.1` (`Quake/quakever.h`). On an active client: `ip` is its
-  socket's address, `LOCAL` for the local loop (`Quake/net_loop.c`), which every client of the
-  mock is; `ping` is `%f` of its average ping, `0.000000`, as the mock's clients never ping;
-  `protocol` is `rmq999`, vkQuake's default protocol ("int sv_protocol = PROTOCOL_RMQ;"); `name` is `player` and `topcolor`,
-  `bottomcolor` and `csqcactive` are `0`, the name and colours a client enters with (DIFF-4.1);
-  `team` is `t1`, `t` and the bottom colour plus 1; `*VIP` and `*spectator` are empty. Any other
-  key, and any key on an edict that is no active client, is 0, the null string. A text is a new
-  temporary string.
+- **BUILTIN-18.12** **Withdrawn** 2026-11-06: it gave a client's name and colours as the fixed
+  texts a client enters with, which stopped holding once `setinfo` and `forceinfokey` change
+  them; replaced by BUILTIN-18.30.
 - **BUILTIN-18.13** `print(s, ...)` (#339) is `PF_print`, which writes each argument the call
   passed, read with `G_STRING`, to the console. The mock has no console, so it reads and checks
   them, as `dprint` does (BUILTIN-11.3).
@@ -896,13 +880,8 @@ profile (DIFF-12.19); everything else runs under id's.
 - **BUILTIN-18.18** `num_for_edict(e)` (#512) is `PF_num_for_edict`: "G_FLOAT (OFS_RETURN) =
   G_EDICTNUM (OFS_PARM0);", the edict's number, and `NUM_FOR_EDICT`'s error for a value that
   is no edict (BUILTIN-2.7).
-- **BUILTIN-18.19** `stof(s)` (#81) is `PF_stof`, "G_FLOAT (OFS_RETURN) = atof (G_STRING
-  (OFS_PARM0));": C's `atof`, `strtod` of the longest prefix that is a number, rounded to a
-  float. After white space and an optional sign it reads a decimal number with an optional
-  point and an exponent taken only when a digit follows its `e` and sign, a hexadecimal one
-  after `0x` with an optional `p` exponent, or `inf`, `infinity` or `nan` in any case; with
-  none it is 0. A decimal number is rounded correctly, as glibc's `strtod` does; a hexadecimal
-  one is exact up to 13 digits. This is not `Q_atof` (BUILTIN-11.7), which `cvar` uses.
+- **BUILTIN-18.19** **Withdrawn** 2026-11-04: it said a hexadecimal number is exact up to 13
+  digits, but C rounds it correctly at any length (#717); replaced by BUILTIN-18.25.
 - **BUILTIN-18.20** `clienttype(e)` (#455) is `PF_clienttype`: `e` through `G_EDICT` and
   `NUM_FOR_EDICT` (BUILTIN-2.7); an edict that is no client slot (`i >= svs.maxclients`, the
   world among them, as `NUM_FOR_EDICT (ed) - 1` wraps) is 3, `CLIENTTYPE_NOTACLIENT`; an active
@@ -958,6 +937,175 @@ profile (DIFF-12.19); everything else runs under id's.
   Source: Novum/vkQuake@27789d7333a46674474d871137bb71e056719628, `Quake/pr_ext.c`, `tokenizeqc`,
   `PF_Tokenize`, `PF_tokenize_console`, `PF_tokenizebyseparator`, `PF_ArgV`,
   `PF_argv_start_index`, `PF_argv_end_index`; `Quake/common.c`, `COM_ParseEx`.
+- **BUILTIN-18.25** `stof(s)` (#81) is `PF_stof`, "G_FLOAT (OFS_RETURN) = atof (G_STRING
+  (OFS_PARM0));": C's `atof`, `strtod` of the longest prefix that is a number, rounded to a
+  float. After white space and an optional sign it reads a decimal number with an optional point
+  and an exponent taken only when a digit follows its `e` and sign, a hexadecimal one after `0x`
+  with an optional `p` exponent, or `inf`, `infinity` or `nan` in any case; with none it is 0. A
+  decimal number is rounded correctly, as glibc's `strtod` does, and so is a hexadecimal one,
+  whatever its digits and exponent: C99 (N1256) 7.20.1.3 paragraph 5, "If the subject sequence
+  has the hexadecimal form and FLT_RADIX is a power of 2, the value resulting from the
+  conversion is correctly rounded." So `0x1.` and 300 `0` digits then `p0` is 1, and
+  `0x1.000001000000081` is the double `0x1.0000010000001p+0`, whose float is `0x1.000002p+0`.
+  This is not `Q_atof` (BUILTIN-11.7), which `cvar` uses.
+- **BUILTIN-18.26** A run executes at most `VKQUAKE_RUNAWAY` statements, 0x1000000, in place
+  of LIMIT-4.1's 99999: `PR_ExecuteProgram` counts up from 0 and fails before the statement
+  that brings its count above it, "if (++profile > 0x1000000) // spike -- was decimal 100000,
+  0x10000000 in QSS" then `PR_RunError ("runaway loop error")`. So its counter in LIMIT-4.3's
+  terms starts from 0x1000001.
+- **BUILTIN-18.27** Each client slot has a userinfo string of `\key\value` pairs,
+  `SERVER_INFO_STRING_SIZE` 8192 bytes with its zero, and the name and colours decoded from it;
+  a client enters with `\name\player\topcolor\0\bottomcolor\0`, named `player` with colours 0
+  (DIFF-4.1), what the mock's client would send. `SV_UpdateInfo` of a key on player slot `n`
+  (`Quake/cl_main.c`) reads the key's old value (`Info_GetKey` into 1024 bytes) and, when the
+  new one differs, sets it (`Info_SetKey`, `Quake/common.c`: the old pair removed, then for a
+  value that is not empty `\key\value` appended, unless the key is empty, either holds a `\`, or
+  the string would reach the size less one) and decodes the string (`SV_DecodeUserInfo`):
+  `top` and `bot` are `atoi` of `topcolor` and `bottomcolor` (each read into 64 bytes), "&
+  15", and 13 when above 13; "client->edict->v.team = bot + 1;" and "client->colors = (top <<
+  4) | bot;"; the name is `name`, `unnamed` when it is empty, and when it differs from the kept
+  name it is kept, cut to 31 bytes (`name[32]`), and `netname` is set to a new engine string of
+  it, so a name over 31 bytes is set again at every decode. The network messages it sends are
+  not kept (DIFF-6.5). `atoi` is glibc's: white space, a sign, digits, a value past a `long`
+  that `long`'s limit, then its low 32 bits as C's `(int)` on x86-64.
+- **BUILTIN-18.28** `clientcommand(e, s)` (#440) is `PF_clientcommand`: `e` through `G_EDICT`
+  (BUILTIN-2.7) and `NUM_FOR_EDICT` (BUILTIN-2.9), `s` through `G_STRING`; for an edict whose
+  slot is an active client, "Cmd_ExecuteString (str, src_client);", and otherwise only a console
+  message. `Cmd_TokenizeString` reads the words `COM_Parse` reads up to the first line feed, at
+  most 80, each cut to 1023 bytes, and the first is matched without case. From a client only a
+  command registered with `Cmd_AddCommand_ClientCommand` runs ("if (src == src_client &&
+  cmd->srctype != src_client)" prints and runs nothing), and `Quake/host_cmd.c` registers two:
+  `serverinfo`, which prints, and `setinfo` (`Host_Setinfo_f`), which with exactly two
+  arguments and a key not starting with `*` is `SV_UpdateInfo` of the client's own slot
+  (BUILTIN-18.27), and otherwise prints. So `color`, `say` and every other command do nothing
+  from `clientcommand`.
+- **BUILTIN-18.29** `forceinfokey(player, key, value)` (#213) is `PF_sv_forceinfokey`: the
+  player through `G_EDICTNUM` (BUILTIN-2.7), the key and value through `G_STRING`, then
+  `SV_UpdateInfo`. On the world a cvar registered with `CVAR_SERVERINFO` (`fraglimit`,
+  `timelimit`, `teamplay` and `noexit` in `Quake/host.c`) is set with `Cvar_Set`, which `cvar`
+  reads back, and any other key goes to the server's info string, which no builtin the mock
+  ports reads. On slot 1 to `maxclients`, active or not, the key is set in that slot's userinfo
+  as BUILTIN-18.27 says, a `*` key included. Past `maxclients` nothing changes.
+- **BUILTIN-18.30** `infokey(e, key)` (#80) is `PF_infokey_s`, which reads `e` with
+  `G_EDICTNUM` (BUILTIN-2.7) and `key` with `G_STRING`. On the world, `*version` is
+  `ENGINE_NAME_AND_VER`, `vkQuake 1.37.1` (`Quake/quakever.h`). On an active client: `ip` is its
+  socket's address, `LOCAL` for the local loop (`Quake/net_loop.c`), which every client of the
+  mock is; `ping` is `%f` of its average ping, `0.000000`, as the mock's clients never ping;
+  `protocol` is `rmq999`, vkQuake's default protocol; `name` is the client's name, and
+  `topcolor` and `bottomcolor` are `%u` of "client->colors >> 4" and "client->colors & 15"
+  (BUILTIN-18.27); `team` is `t` and "(client->colors & 15) + 1"; `*VIP` and `*spectator` are
+  empty and `csqcactive` is `0`. Any other key, and any key on an edict that is no active
+  client, is 0, the null string. A text is a new temporary string.
+- **BUILTIN-18.31** `sin(x)` (#60) is `PF_Sin`, "sin (G_FLOAT (OFS_PARM0))", and `pow(a, b)`
+  (#97) `PF_pow`, "pow (G_FLOAT (OFS_PARM0), G_FLOAT (OFS_PARM1))": C's functions of the
+  floats as `double`s, rounded to a float. `mod(a, n)` (#245) is `PF_mod`: 0 when `n` is 0,
+  else "a - (n * (int)(a / n))" in float, `(int)` as BUILTIN-2.1 and BUILTIN-2.2 say.
+- **BUILTIN-18.32** `str2chr(s, ofs)` (#222) is `PF_str2chr`: `ofs` is `(int)` of the second
+  parameter when the call passed one, else 0; a negative `ofs` has the length added; the
+  answer is 0 when `ofs` is not 0 and is negative or past the length, else the byte at `ofs`,
+  unsigned, the terminator at the length. `chr2str(c, ...)` (#223) is `PF_chr2str`: for each
+  argument the call passed, while the text is shorter than `STRINGTEMP_LENGTH - 6` (1018)
+  bytes, the code `u` is C's `(unsigned int)` of the float (on x86-64 the low 32 bits of a
+  64-bit truncation, 0 for a NaN or a value past 64 bits), and the byte is `u` for `0xe000` to
+  `0xe0ff` (its low byte) and for a code below 256 (`qc_isascii`), else `?`; a zero byte ends
+  the text. The text is a new temporary string.
+- **BUILTIN-18.33** `strpad(pad, s, ...)` (#225) is `PF_strpad`: the strings from the second
+  joined (`PF_VarString (1)`), then for a negative `pad` `-pad` less the length spaces, 0 to
+  1023, before the text, and for a positive one the text, cut to 1023 bytes, then `pad` (at
+  most 1023) less the length spaces, never fewer than 0. `strreplace(search, replace,
+  subject)` (#484) is `PF_strreplace`: for an empty `search`, `subject`; else `subject` from
+  the left, each place `search` starts replaced by `replace` and every other byte copied, while
+  the result is shorter than `STRINGTEMP_LENGTH - replacelen - 2` bytes.
+- **BUILTIN-18.34** `uri_escape(s)` (#510) is `PF_uri_escape`: letters, digits, `.`, `-` and `_`
+  copied and any other byte written as `%` and two upper-case hexadecimal digits, while the
+  result is shorter than 1020 bytes. `uri_unescape(s)` (#511) is `PF_uri_unescape`: a `%` and
+  two hexadecimal digits of either case is the byte they name, and any other byte, a `%`
+  without two digits among them, is copied, while the result is shorter than 1022 bytes; a
+  `%00` ends the text.
+- **BUILTIN-18.35** `wasfreed(e)` (#353) is `PF_WasFreed`: `e` through `G_EDICT` (BUILTIN-2.7),
+  then 1 when the edict is free and 0 when not.
+- **BUILTIN-18.36** `fopen(name, mode)` (#110) is `PF_fopen`: `name` through `G_STRING`, the
+  mode through `(int)`, and -1 ("assume failure") unless a file opens. `QC_FixFileName` refuses
+  an empty name and one holding `:`, `\` or `..` or starting with `/`; otherwise the file is
+  `data/<name>`, and a read may also fall back to `<name>` itself, except for a name whose
+  extension (`COM_FileGetExtension`: the bytes after the last `.` that is not the name's last
+  byte, none when they hold a `/`) is `cfg` in any case, outside `configs/`, `particles/`,
+  `huds/` and `models/`. Mode 0 reads, mode 1 appends and mode 2 writes; any other mode opens
+  nothing. The mock's game directory starts empty, so a file opens to read only when QuakeC
+  wrote it in this run; writing and appending (`w+b`, then a seek to the end) make the file at
+  once and empty it. A file opened is given the lowest free slot, and the handle is the slot
+  plus 1 (`QC_FILE_BASE`).
+- **BUILTIN-18.37** `fgets(handle)` (#112), `fputs(handle, s, ...)` (#113) and `fclose(handle)`
+  (#111) are `PF_fgets`, `PF_fputs` and `PF_fclose`. The slot is C's `size_t` of the float less
+  1, so a handle from just above 0 to below 2 is the first, and one that is not an open file
+  does nothing but warn. `fgets` on a file open to read gives the next line as a new string:
+  its bytes up to a line feed or the end, at most the first 1023 of them (`s` stops at the
+  buffer's last byte, which the terminator then overwrites), less a carriage return at its
+  end, and 0 when nothing is left; on any other handle 0. `fputs` joins the strings from the
+  second (`PF_VarString (1)`, each checked) and, on a file open to write or append, writes
+  them. The mock holds what a file is written until it is closed, when the file holds it, as
+  stdio's buffer holds a short write, and a read sees the file as it was when it was opened.
+  `fclose` closes the file.
+- **BUILTIN-18.38** `whichpack(name)` (#503) is `PF_whichpack`: when `COM_FileExists` finds the
+  name, which for the mock is a file QuakeC wrote, its search path's directory without the base
+  directory and leading slashes, `id1`, as a new string; else 0.
+- **BUILTIN-18.39** The string buffers are `NUMSTRINGBUFS` 64 lists of strings, a slot of which
+  may be a hole; a handle is the buffer's number plus 1 (`BUFSTRBASE`), and a handle is read as
+  C reads the float less 1: `unsigned int` (the low 32 bits of a 64-bit truncation) for
+  `buf_del`, `bufstr_get` and `bufstr_add`, `(int)` for `buf_getsize`, a number of 64 or more
+  being no buffer. `buf_create(type)` (#460, `PF_buf_create`) takes the type `string` when the
+  call passed none, else reads it with `G_STRING`; for a type other than `string` in any case,
+  or with every buffer in use, -1; else the first buffer not in use, empty, as a handle.
+  `buf_del(handle)` (#461) frees the buffer. `buf_getsize(handle)` (#462) is how many slots
+  the buffer uses, holes among them; for a buffer not in use it writes no return value, so the
+  caller reads what `OFS_RETURN` held. `bufstr_get(handle, index)` (#466) is the string at
+  `index`, as `unsigned int`, as a new temporary string cut to 1023 bytes, and 0 for a hole, an
+  index past the end or a buffer not in use. `bufstr_add(handle, s, order)` (#468) reads `s`
+  with `G_STRING`, then on a buffer in use puts it at the end when `(int)order` is not 0 and
+  otherwise in the first hole or at the end, and returns the index; on a buffer not in use it
+  writes no return value.
+- **BUILTIN-18.40** vkQuake's message buffers: the unreliable and reliable datagrams and the
+  multicast buffer are `MAX_DATAGRAM` 64000 bytes ("#define MAX_DATAGRAM 64000 // max length of
+  unreliable message //johnfitz -- was 1024"), and each signon buffer `SIGNON_SIZE` 31500;
+  a write that does not fit is `SZ_GetSpace`'s fatal error, as BUILTIN-13.3 says. `WriteDest`
+  also takes `MSG_EXT_MULTICAST` (4) and `MSG_EXT_ENTITY` (5), both the multicast buffer.
+  The server runs `PROTOCOL_RMQ` with `PRFL_SHORTANGLE` and a four-byte coordinate
+  (`PRFL_INT32COORD`, or `PRFL_FLOATCOORD` with the protocol extensions), so `WriteAngle`
+  writes 2 bytes and `WriteCoord` 4. `multicast(org, to)` (#82) is `PF_multicast`: the origin
+  through `G_VECTOR`, `to` through `(int)` and `msg_entity` through `NUM_FOR_EDICT`
+  (BUILTIN-2.9); then `SV_Multicast` sends the buffer to the clients `to` names, which the mock
+  does not keep (DIFF-6.5), except that `MULTICAST_INIT` (8) first reserves its size in the
+  signon buffers (`SV_ReserveSignonSpace`: a new, empty buffer when it does not fit in the last,
+  a 257th being the fatal error `SV_AddSignonBuffer overflow`) and writes it there; every kind
+  then empties the multicast buffer. A `Write*` to `MSG_INIT` writes the last signon buffer
+  without reserving.
+- **BUILTIN-18.41** vkQuake's `sound(e, chan, samp, vol, atten)` (#8) is `PF_sound` then
+  `SV_StartSound`: `e` through `G_EDICT` (BUILTIN-2.7), `chan` through `(int)`, `samp` through
+  `G_STRING`, and the volume `(int)(vol * 255)`; an empty sample does nothing; then the host
+  errors of BUILTIN-12.1 for a volume below 0 (one above 255 is 255), an attenuation outside 0
+  to 4 and a channel outside 0 to 255 (vkQuake's range); a sample not in the sound list from
+  entry 1 does nothing; then `e` through `NUM_FOR_EDICT`. The message goes to each spawned
+  client's own datagram, which the mock does not keep. `particle(o, d, color, count)` (#48) is
+  `PF_particle` then `SV_StartParticle`: dropped when the datagram holds more than 64000 less
+  18 bytes, else 18 bytes (the four-byte coordinates of BUILTIN-18.40). `ambientsound` (#74)
+  keeps the sound for clients that connect later, so it writes no signon buffer, and
+  `makestatic(e)` (#69) reads `e` through `G_EDICT`, keeps its state in the static entity list
+  and frees it, writing no signon buffer. The mock does not read the extension fields
+  `SV_BuildEntityState` reads for that state; `tag_entity`, read through `NUM_FOR_EDICT` when
+  it is not 0, is the one whose bad value would be an error.
+- **BUILTIN-18.42** `tracebox(v1, mins, maxs, v2, nomonsters, ent)` (#90) is `PF_tracebox`: the
+  four vectors through `G_VECTOR`, `nomonsters` through `G_FLOAT` and `ent` through `G_EDICT`;
+  then a start or end with a NaN in it is set to 0 0 0 in its parameter ("v1[0] = v1[1] = v1[2]
+  = 0"), and the trace is the mock's, which hits nothing (DIFF-7.1): `trace_allsolid` and
+  `trace_startsolid` 0, `trace_fraction` 1, `trace_inwater` 0, `trace_inopen` 1,
+  `trace_endpos` the end, the plane 0, and `trace_ent` the world.
+- **BUILTIN-18.43** `dropclient(e)` (#453) is `PF_dropclient`: `e` through `G_EDICT` and
+  `NUM_FOR_EDICT`; for an active client, `SV_DropClient (false)`: `ClientDisconnect` runs with
+  `self` the client, an error in it ending every run (VM-18.4), and `self` is put back; then
+  the slot is no longer active and its name is empty ("host_client->name[0] = 0;"). For any
+  other edict nothing happens.
+- **BUILTIN-18.44** `uri_get(...)` (#513) is `PF_uri_get`, "G_VECTORSET (OFS_RETURN, 0, 0, 0);":
+  it reads no parameter, starts no request and returns 0 0 0.
 
 ## Test vectors
 

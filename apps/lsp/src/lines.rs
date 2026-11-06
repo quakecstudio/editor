@@ -43,23 +43,6 @@ impl Encoding {
             Self::Utf8 => c.len_utf8(),
         }
     }
-
-    /// The code units `text` is in this encoding, each sequence that is not UTF-8 counted as
-    /// the U+FFFD a client decodes it to: one UTF-16 unit, three UTF-8 ones.
-    fn units(self, text: &[u8]) -> usize {
-        let mut out = 0_usize;
-        for chunk in text.utf8_chunks() {
-            let valid = match self {
-                Self::Utf16 => chunk.valid().encode_utf16().count(),
-                Self::Utf8 => chunk.valid().len(),
-            };
-            out = out.saturating_add(valid);
-            if !chunk.invalid().is_empty() {
-                out = out.saturating_add(self.width(char::REPLACEMENT_CHARACTER));
-            }
-        }
-        out
-    }
 }
 
 /// A position in a document: a zero-based line and a character offset in that line.
@@ -125,7 +108,8 @@ impl<'a> LineIndex<'a> {
         (start, self.text.get(start..end).unwrap_or_default())
     }
 
-    /// The position of byte `offset`; an offset past the end is the end.
+    /// The position of byte `offset`; an offset past the end is the end, and one inside a
+    /// character the position of that character's start, as [`LineIndex::offset`] reads it.
     #[must_use]
     pub fn position(&self, offset: usize) -> Position {
         let offset = offset.min(self.text.len());
@@ -135,7 +119,13 @@ impl<'a> LineIndex<'a> {
             .saturating_sub(1);
         let (start, bytes) = self.line(line);
         let within = offset.saturating_sub(start).min(bytes.len());
-        let character = self.encoding.units(bytes.get(..within).unwrap_or_default());
+        let mut character = 0_usize;
+        for (c, at, len) in characters(bytes) {
+            if at.saturating_add(len) > within {
+                break;
+            }
+            character = character.saturating_add(self.encoding.width(c));
+        }
         Position {
             line: u32::try_from(line).unwrap_or(u32::MAX),
             character: u32::try_from(character).unwrap_or(u32::MAX),
@@ -164,20 +154,35 @@ impl<'a> LineIndex<'a> {
         let (start, bytes) = self.line(line);
         let wanted = usize::try_from(position.character).unwrap_or(usize::MAX);
         let mut units = 0_usize;
-        let mut at = 0_usize;
-        for chunk in bytes.utf8_chunks() {
+        for (c, at, _) in characters(bytes) {
+            let width = self.encoding.width(c);
+            if units.saturating_add(width) > wanted {
+                return start.saturating_add(at);
+            }
+            units = units.saturating_add(width);
+        }
+        start.saturating_add(bytes.len())
+    }
+}
+
+/// Each character of `line` as a client decodes it, a sequence that is not UTF-8 being one
+/// U+FFFD, with the byte it starts at and its length in bytes.
+fn characters(line: &[u8]) -> impl Iterator<Item = (char, usize, usize)> + '_ {
+    let mut at = 0_usize;
+    line.utf8_chunks()
+        .flat_map(|chunk| {
             let invalid = (!chunk.invalid().is_empty())
                 .then_some((char::REPLACEMENT_CHARACTER, chunk.invalid().len()));
-            let characters = chunk.valid().chars().map(|c| (c, c.len_utf8()));
-            for (c, bytes) in characters.chain(invalid) {
-                let width = self.encoding.width(c);
-                if units.saturating_add(width) > wanted {
-                    return start.saturating_add(at);
-                }
-                units = units.saturating_add(width);
-                at = at.saturating_add(bytes);
-            }
-        }
-        start.saturating_add(at)
-    }
+            chunk
+                .valid()
+                .chars()
+                .map(|c| (c, c.len_utf8()))
+                .chain(invalid)
+                .collect::<Vec<_>>()
+        })
+        .map(move |(c, len)| {
+            let start = at;
+            at = at.saturating_add(len);
+            (c, start, len)
+        })
 }

@@ -9,12 +9,31 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
+| [`file.close`](#fileclose) | Closes a file's tab, opening the tab beside it when it was         the open file; its unsaved text is kept. |
 | [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
+| [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
+| [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
+| [`preview.dock`](#previewdock) | Docks the game's window beside the IDE's window, given where the IDE's window is and whether it has the focus. |
+| [`preview.pause`](#previewpause) | Pauses the running game between frames. |
+| [`preview.pick`](#previewpick) | Selects the edict under a point of the game's window. |
+| [`preview.play`](#previewplay) | Builds the open project and starts the preview host on its program, stopping a game already running. |
+| [`preview.poll`](#previewpoll) | Reads the running game's events: its state changes and console lines. |
+| [`preview.reload`](#previewreload) | Builds the open project and reloads its program in the running game, the map going on; nothing when no game runs. |
+| [`preview.restart`](#previewrestart) | Starts the running game's map again. |
+| [`preview.resume`](#previewresume) | Resumes the paused game. |
+| [`preview.select`](#previewselect) | Selects an edict of the running game and reads its fields for the Properties panel. |
+| [`preview.set_field`](#previewset_field) | Sets a field of the selected edict while the game is paused, the value read as the field's type. |
+| [`preview.step`](#previewstep) | Runs one server frame of the game, pausing it first, and leaves it paused. |
+| [`preview.step_by`](#previewstep_by) | Steps the game stopped in a frame by a statement, into a call, over one or out to the caller. |
+| [`preview.stop`](#previewstop) | Stops the game. |
+| [`preview.unwatch`](#previewunwatch) | Takes a watch away. |
+| [`preview.watch`](#previewwatch) | Adds a watch, an expression read each time the game stops in a frame. |
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
+| [`scenario.run`](#scenariorun) | Builds the open project and plays a scenario file on it in the server simulation, answering whether each assertion held, with the values read, and writing its screenshots beside it. |
 | [`settings.get`](#settingsget) | Gives one setting's value and where it comes from. |
 | [`settings.list`](#settingslist) | Lists every setting with its default, its value and where the value comes from. |
 | [`settings.reset`](#settingsreset) | Removes a setting from the user's or the project's settings file and writes the file. |
@@ -75,6 +94,31 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `file.close`
+
+Closes a file's tab, opening the tab beside it when it was         the open file; its unsaved text is kept.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `file.close`.",
+  "properties": {
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "CloseFileParams",
   "type": "object"
 }
 ```
@@ -169,6 +213,452 @@ Parameters:
 }
 ```
 
+## `preview.breakpoint`
+
+Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.breakpoint`.",
+  "properties": {
+    "file": {
+      "description": "The file, relative to the project's root.",
+      "type": "string"
+    },
+    "line": {
+      "description": "The line, from 1.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "file",
+    "line"
+  ],
+  "title": "BreakpointParams",
+  "type": "object"
+}
+```
+
+## `preview.console`
+
+Runs a command in the running game's console.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.console`.",
+  "properties": {
+    "command": {
+      "description": "The console command, such as `impulse 9`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command"
+  ],
+  "title": "ConsoleParams",
+  "type": "object"
+}
+```
+
+## `preview.dock`
+
+Docks the game's window beside the IDE's window, given where the IDE's window is and whether it has the focus.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The IDE's window as the desktop has it, in logical points.",
+  "properties": {
+    "focused": {
+      "description": "Whether the IDE's window has the keyboard focus.",
+      "type": "boolean"
+    },
+    "height": {
+      "description": "Its height.",
+      "format": "float",
+      "type": "number"
+    },
+    "screen_width": {
+      "default": null,
+      "description": "The width of the screen the window is on, when the windowing system says.",
+      "format": "float",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "width": {
+      "description": "Its width.",
+      "format": "float",
+      "type": "number"
+    },
+    "x": {
+      "description": "The left edge of the IDE's window, its frame included.",
+      "format": "float",
+      "type": "number"
+    },
+    "y": {
+      "description": "Its top edge.",
+      "format": "float",
+      "type": "number"
+    }
+  },
+  "required": [
+    "x",
+    "y",
+    "width",
+    "height",
+    "focused"
+  ],
+  "title": "DockFrame",
+  "type": "object"
+}
+```
+
+## `preview.pause`
+
+Pauses the running game between frames.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.pick`
+
+Selects the edict under a point of the game's window.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.pick`.",
+  "properties": {
+    "x": {
+      "description": "The point across the game's window, from 0 at its left to 1 at its right.",
+      "format": "double",
+      "type": "number"
+    },
+    "y": {
+      "description": "The point down the game's window, from 0 at its top to 1 at its bottom.",
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "required": [
+    "x",
+    "y"
+  ],
+  "title": "PickParams",
+  "type": "object"
+}
+```
+
+## `preview.play`
+
+Builds the open project and starts the preview host on its program, stopping a game already running.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.play`.",
+  "properties": {
+    "map": {
+      "default": null,
+      "description": "The map to start on; the host's own first map when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "PlayParams",
+  "type": "object"
+}
+```
+
+## `preview.poll`
+
+Reads the running game's events: its state changes and console lines.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.reload`
+
+Builds the open project and reloads its program in the running game, the map going on; nothing when no game runs.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.restart`
+
+Starts the running game's map again.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.resume`
+
+Resumes the paused game.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.select`
+
+Selects an edict of the running game and reads its fields for the Properties panel.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.select`.",
+  "properties": {
+    "edict": {
+      "description": "The edict's number.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "edict"
+  ],
+  "title": "SelectParams",
+  "type": "object"
+}
+```
+
+## `preview.set_field`
+
+Sets a field of the selected edict while the game is paused, the value read as the field's type.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.set_field`.",
+  "properties": {
+    "field": {
+      "description": "The selected edict's field.",
+      "type": "string"
+    },
+    "value": {
+      "description": "The value as the Properties panel writes it: `3`, `'1 2 3'`, `\"text\"`, `player #1`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field",
+    "value"
+  ],
+  "title": "SetFieldParams",
+  "type": "object"
+}
+```
+
+## `preview.step`
+
+Runs one server frame of the game, pausing it first, and leaves it paused.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.step_by`
+
+Steps the game stopped in a frame by a statement, into a call, over one or out to the caller.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "StepBy": {
+      "description": "How `preview.step_by` steps.",
+      "oneOf": [
+        {
+          "const": "statement",
+          "description": "One statement.",
+          "type": "string"
+        },
+        {
+          "const": "in",
+          "description": "Into the next call.",
+          "type": "string"
+        },
+        {
+          "const": "over",
+          "description": "To the next statement of this function.",
+          "type": "string"
+        },
+        {
+          "const": "out",
+          "description": "Out to the caller.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.step_by`.",
+  "properties": {
+    "kind": {
+      "$ref": "#/$defs/StepBy",
+      "description": "A statement, into, over or out."
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "title": "StepByParams",
+  "type": "object"
+}
+```
+
+## `preview.stop`
+
+Stops the game.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.unwatch`
+
+Takes a watch away.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.unwatch`.",
+  "properties": {
+    "index": {
+      "description": "The watch's place in the list, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "index"
+  ],
+  "title": "UnwatchParams",
+  "type": "object"
+}
+```
+
+## `preview.watch`
+
+Adds a watch, an expression read each time the game stops in a frame.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.watch`.",
+  "properties": {
+    "expression": {
+      "description": "The expression, such as `self.owner.health`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "expression"
+  ],
+  "title": "WatchParams",
+  "type": "object"
+}
+```
+
 ## `project.build`
 
 Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno.
@@ -222,6 +712,31 @@ Parameters:
     "path"
   ],
   "title": "OpenProjectParams",
+  "type": "object"
+}
+```
+
+## `scenario.run`
+
+Builds the open project and plays a scenario file on it in the server simulation, answering whether each assertion held, with the values read, and writing its screenshots beside it.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `scenario.run`.",
+  "properties": {
+    "path": {
+      "description": "The scenario file (`docs/spec/scenario.md`).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "ScenarioRunParams",
   "type": "object"
 }
 ```

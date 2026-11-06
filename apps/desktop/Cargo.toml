@@ -17,6 +17,8 @@ name = "quakec-studio"
 path = "src/main.rs"
 
 [dependencies]
+# The command line: the project to open.
+clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 # eframe's defaults without `default_fonts`, whose fonts are not bundled (ADR-0003, ADR-0010),
 # with `accesskit` for screen readers (P2-23, #79): its Linux backend pulls in zvariant and
 # zbus_names, whose RUSTSEC-2026-0370 to -0372 notices deny.toml ignores with their reasons.
@@ -35,6 +37,11 @@ serde_json = { workspace = true, features = ["std"] }
 skrifa = { workspace = true, features = ["std"] }
 toml = { workspace = true, features = ["parse", "serde", "std"] }
 tracing = { workspace = true, features = ["std"] }
+
+# The system's Open Folder dialog, as Zed uses by default (`use_system_path_prompts`):
+# NSOpenPanel on macOS, IFileOpenDialog on Windows, the xdg-desktop-portal file chooser on
+# Linux, whose libdbus it loads when the dialog opens.
+rfd = { workspace = true, features = ["xdg-portal"] }
 
 [dev-dependencies]
 # The offscreen snapshot harness (P2-21): egui's own, rendering through wgpu with no window and

@@ -172,10 +172,19 @@ class ReadinessRule(unittest.TestCase):
         self.assertEqual(sorted(by_key["G"]["depends"]), ["R", "RB"])
 
     def test_missing_readiness_flagged(self):
-        issues = [built("D", "L0-formats"), built("X", "L1-vm", ("D",))]
+        # A phase that reviews some layer must review each one built on.
+        issues = [built("D", "L0-formats"), built("X", "L1-vm", ("D",)),
+                  built("R", "L2-syntax", kind="type:readiness")]
         check.add_readiness_dependencies(issues)
         errors = issues[1].get("_errors", [])
         self.assertTrue(any("no readiness issue exists" in e for e in errors), errors)
+
+    def test_a_phase_with_no_readiness_needs_none(self):
+        # From P3 on a phase has its gate review alone (Justin, 2026-11-04).
+        issues = [built("D", "L0-formats"), built("X", "L1-vm", ("D",))]
+        check.add_readiness_dependencies(issues)
+        self.assertEqual(issues[1].get("_errors", []), [])
+        self.assertEqual(issues[1]["depends"], ["D"])
 
 
 class ScopeRule(unittest.TestCase):

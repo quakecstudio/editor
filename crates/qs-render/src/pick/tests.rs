@@ -7,6 +7,7 @@
 
 use super::{add, cross, intersect, sub, transform};
 use crate::camera::Camera;
+use crate::look::Look;
 use crate::mesh::tests::{MapSpec, bsp, palette, samples};
 use crate::mesh::{MapMesh, MeshBuilder, Placement};
 
@@ -16,7 +17,7 @@ fn two_floors() -> MapMesh {
     let lighting = samples(&[50]);
     let world = bsp(&MapSpec::default(), &lighting);
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     let raised = Placement {
         origin: [0.0, 0.0, 10.0],
         ..Placement::WORLD
@@ -69,7 +70,7 @@ fn a_ray_that_misses_or_points_away_hits_nothing() {
         None,
         "along it"
     );
-    let empty = MeshBuilder::new(&palette()).finish();
+    let empty = MeshBuilder::new(&palette(), Look::GlQuake).finish();
     assert_eq!(empty.pick([0.0; 3], DOWN, &[]), None);
 }
 
@@ -123,7 +124,7 @@ fn a_tie_goes_to_the_surface_drawn_first() {
     let lighting = samples(&[50]);
     let world = bsp(&MapSpec::default(), &lighting);
     let palette = palette();
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
     builder
         .add(&world, &[Placement::WORLD, Placement::WORLD])
         .unwrap();

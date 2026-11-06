@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use super::*;
 use crate::exec::{Fake, Reply};
+use crate::parse_cli;
 use crate::ratchet::judge;
 use crate::test_dirs::{claim, fresh};
 
@@ -564,12 +565,20 @@ fn args(text: &str) -> Vec<String> {
     text.split_whitespace().map(str::to_owned).collect()
 }
 
+/// The readiness command line `args`, as clap reads it and as `run_check` checks it.
+fn parse_args(args: &[String]) -> Result<Args, String> {
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    let parsed = parse_cli::<Args, _>(&words).map_err(|e| e.to_string())?;
+    check_shard(&parsed)?;
+    Ok(parsed)
+}
+
 #[test]
 fn the_command_line_names_a_check_an_output_and_crates() {
     let options = parse_args(&args("flakes --os linux --out m.json a b")).unwrap();
     assert_eq!(
         options,
-        Options {
+        Args {
             check: Check::Flakes,
             out: PathBuf::from("m.json"),
             os: "linux".to_owned(),
@@ -638,7 +647,7 @@ fn measuring_writes_a_measurement_file() {
     command.push(out.display().to_string());
     command.push("crates/fx-spec".to_owned());
     assert!(!scratch(&repo).exists());
-    assert!(main(&repo, &command).unwrap());
+    assert!(main(&repo, &parse_args(&command).unwrap()).unwrap());
     assert!(scratch(&repo).is_dir());
     let measurement: Measurement =
         serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
@@ -649,7 +658,7 @@ fn measuring_writes_a_measurement_file() {
     let mut command = args("spec --out");
     command.push(missing.display().to_string());
     command.push("no-such-crate".to_owned());
-    assert!(main(&repo, &command).is_err());
+    assert!(main(&repo, &parse_args(&command).unwrap()).is_err());
     assert!(
         !missing.exists(),
         "nothing is written when a crate cannot be measured"
@@ -680,7 +689,7 @@ fn the_oracles_c_is_every_source_and_header_under_oracles() {
         .collect();
     for want in [
         "oracles/vm/host.c",
-        "oracles/vm/trace.c",
+        "oracles/trace/trace.c",
         "oracles/vm/scenario.c",
         "oracles/vm/oracle.h",
         "oracles/qcc/compat.h",
@@ -720,7 +729,7 @@ fn the_oracles_have_no_mutation_score_and_say_why() {
     command.push(ORACLES.to_owned());
     // `main` makes the real scratch directory, and writes nothing in it here.
     claim(&scratch(&root()));
-    assert!(main(&root(), &command).unwrap());
+    assert!(main(&root(), &parse_args(&command).unwrap()).unwrap());
     let measurement: Measurement =
         serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
     assert!(measurement.crates.is_empty(), "{measurement:?}");
@@ -1236,7 +1245,14 @@ fn a_measurement_runs_the_check_for_each_crate_named() {
     command.push(out.display().to_string());
     command.push(format!("{FIXTURES}/flakes"));
     command.push(ORACLES.to_owned());
-    assert!(run_check(&root(), &command, &tools(&fake, "run")).unwrap());
+    assert!(
+        run_check(
+            &root(),
+            &parse_args(&command).unwrap(),
+            &tools(&fake, "run")
+        )
+        .unwrap()
+    );
     let measurement: Measurement =
         serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
     assert_eq!(measurement.crates.len(), 2);
@@ -1263,6 +1279,21 @@ fn a_shard_is_k_of_n_with_k_below_n() {
             .contains("less than the count")
     );
     assert!(Shard::new(0, 0).unwrap_err().contains("at least 1"));
+}
+
+// No spec statement: every item of a list falls to exactly one shard, every n-th from the k-th
+#[test]
+fn each_item_falls_to_one_shard() {
+    let shards: Vec<Shard> = (0..3).map(|k| Shard::new(k, 3).unwrap()).collect();
+    for item in 0..10 {
+        let holding: Vec<u64> = shards
+            .iter()
+            .filter(|shard| shard.holds(item))
+            .map(|shard| shard.index())
+            .collect();
+        assert_eq!(holding, [u64::try_from(item % 3).unwrap()], "item {item}");
+    }
+    assert!(Shard::new(0, 1).unwrap().holds(usize::MAX));
 }
 
 #[test]
@@ -1352,7 +1383,14 @@ fn a_sharded_measurement_records_its_shard() {
     let mut command = args("mutation --os linux --shard 2/3 --out");
     command.push(out.display().to_string());
     command.push(format!("{FIXTURES}/mutation"));
-    assert!(run_check(&root(), &command, &tools(&fake, "run-shard")).unwrap());
+    assert!(
+        run_check(
+            &root(),
+            &parse_args(&command).unwrap(),
+            &tools(&fake, "run-shard")
+        )
+        .unwrap()
+    );
     let measurement: Measurement =
         serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
     assert_eq!(measurement.shard, Some(Shard::new(2, 3).unwrap()));

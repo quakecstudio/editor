@@ -417,10 +417,9 @@ fn the_pinned_c_readings() {
 // spec ENGT-1.2: the command takes only --check
 #[test]
 fn the_command_takes_only_check() {
-    let args = ["--write".to_owned()];
-    assert!(super::main(&root(), &args).is_err());
-    let args = ["--check".to_owned(), "x".to_owned()];
-    assert!(super::main(&root(), &args).is_err());
+    assert!(crate::parse_cli::<super::Args, _>(&["--write"]).is_err());
+    assert!(crate::parse_cli::<super::Args, _>(&["--check", "x"]).is_err());
+    assert!(crate::parse_cli::<super::Args, _>(&["--check"]).is_ok());
 }
 
 // spec ENGT-2.1: only the key, name, signature and extensions of each builtin, and the

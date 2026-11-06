@@ -26,6 +26,12 @@ pub struct Binding {
     pub scope: Scope,
 }
 
+/// Opens a project folder with the system's dialog, as Zed's Cmd+O does.
+pub const OPEN_FOLDER: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
+
+/// Opens the file finder, as in VS Code and Zed.
+pub const OPEN_FILE_FINDER: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::P);
+
 /// Opens the command palette, as in VS Code and Zed.
 pub const OPEN_PALETTE: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P);
@@ -64,6 +70,30 @@ pub const BINDINGS: [Binding; 6] = [
         scope: Scope::Everywhere,
     },
 ];
+
+/// Every binding in the order its keys are matched, the most modifiers first: egui's
+/// `consume_shortcut` takes a shortcut whatever extra Shift is held ("you should match most
+/// specific shortcuts first"), so Shift+Cmd+Z is matched as redo before Cmd+Z can take it as
+/// undo.
+#[must_use]
+pub fn in_match_order() -> Vec<Binding> {
+    let mut bindings = BINDINGS.to_vec();
+    bindings.sort_by_key(|binding| std::cmp::Reverse(held(binding.shortcut.modifiers)));
+    bindings
+}
+
+/// How many modifier keys `modifiers` holds; `COMMAND` is the platform's Cmd or Ctrl, counted
+/// once.
+fn held(modifiers: Modifiers) -> usize {
+    [
+        modifiers.alt,
+        modifiers.shift,
+        modifiers.command || modifiers.ctrl || modifiers.mac_cmd,
+    ]
+    .into_iter()
+    .filter(|&down| down)
+    .count()
+}
 
 /// The shortcut bound to `command`, if any.
 #[must_use]

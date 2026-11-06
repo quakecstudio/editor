@@ -18,6 +18,8 @@ serde_json = { workspace = true, features = ["std"] }
 junction = { workspace = true }
 
 [dev-dependencies]
+# The example's command line.
+clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 proptest = { workspace = true, features = ["std"] }
 
 [lints]

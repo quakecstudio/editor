@@ -1,0 +1,17 @@
+[package]
+name = "qs-bridge"
+description = "The IDE bridge protocol: framing, JSON-RPC messages, the session and its schemas, shared by the preview host and the IDE's client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Each command's parameters are checked against its schema before it runs (BRIDGE-4.2).
+jsonschema = { workspace = true }
+serde_json = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

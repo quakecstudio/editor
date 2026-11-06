@@ -1766,7 +1766,6 @@ issues:
   - P2-147
   - P2-148
   - P2-150
-  - P2-151
   - P2-152
   - P2-153
   - P2-154
@@ -3047,26 +3046,6 @@ issues:
   verify:
   - cargo test -p qs-settings
   - cargo xtask fuzz qs-settings --time 10m
-- key: P2-151
-  title: Record IME composition in the code editor through each OS's input method
-  labels:
-  - L7-ui
-  - area:editor
-  - type:test
-  - needs:human
-  size: S
-  reqs:
-  - UI-4
-  summary: |
-    Split from P2-18 (#74). The editor takes IME preedit and commit events through winit and places the candidate window at the caret (qs-editor-view, tested with synthetic events), but only a person typing through the real input method can show Japanese and Chinese composition working, as ADR-0003 asks. Decided 2026-11-02: macOS now, on the reference Mac; Windows and Linux at the MVP acceptance demo (P4-24), where those machines are in hand.
-  depends:
-  - P2-18
-  deliverable:
-  - 'docs/spikes/data/ref-mac/: a recording or screenshots of Japanese and Chinese text composed in the code editor through macOS''s input method, with the steps followed'
-  acceptance:
-  - Japanese and Chinese text composed through the real input method of macOS appears in the editor as committed, with the candidate window at the caret (ADR-0003)
-  verify:
-  - The recordings or screenshots under docs/spikes/data/ref-mac/
 - key: P2-153
   title: Hold the compiler to FTEQCC on generated QuakeC programs
   labels:
@@ -3482,7 +3461,7 @@ issues:
   deliverable:
   - 'crates/qs-bench/benches/budgets.rs: `open_project_and_type` and `keystroke` measuring the editor headless on the editor_bench project of 50,000 lines, and their docs/perf-budgets.md rows `active`'
   - 'The check after typing kept off the frame, or within one frame, or a budget of its own with its reason in docs/perf-budgets.md'
-  - 'editor_bench results for each reference machine in docs/spikes/data/'
+  - 'editor_bench results for ref-mac in docs/spikes/data/; ref-windows and ref-linux wait for those machines (Justin, 2026-11-04: no Windows or Linux desktop to measure on)'
   acceptance:
   - 'cargo xtask bench checks both rows against their budgets and the 10% regression rule, linked from a Bench workflow run'
   verify:

@@ -122,6 +122,13 @@ pub trait Observer {
     fn exit(&mut self, machine: &Machine);
     /// A runtime error ended the run (TRACE-4.6).
     fn error(&mut self, machine: &Machine, error: &RunError);
+
+    /// Whether to stop the run before `statement` of `function` executes (VM-20.1); the run
+    /// then ends with [`ErrorKind::Interrupted`], the machine as it was before the statement.
+    /// Never, unless an observer says so.
+    fn stop_before(&mut self, _machine: &Machine, _function: i32, _statement: i32) -> bool {
+        false
+    }
 }
 
 /// An [`Observer`] that records nothing.
@@ -287,7 +294,7 @@ pub(crate) fn run_inner(
     // VM-2.3: the run's exit depth is the depth before entering, its own runaway counter and
     // its own cleared trace flag.
     let exit_depth = machine.stack.len();
-    let mut runaway = crate::LIMIT_RUNAWAY;
+    let mut runaway = machine.runaway;
     machine.trace_flag = false;
 
     // VM-15: enter the function. An error entering the run's own function is before its first
@@ -320,6 +327,11 @@ pub(crate) fn run_inner(
 
         let step_function = machine.xfunction;
         let step_statement = machine.xstatement;
+
+        // VM-20.1: the host's observer may stop the run here, before the statement runs.
+        if observer.stop_before(machine, step_function, step_statement) {
+            return Err(machine.run_error(progs, ErrorKind::Interrupted));
+        }
 
         // VM-3.4: an opcode above 65 fails with Bad opcode.
         let Some(opcode) = Opcode::from_number(statement.op) else {

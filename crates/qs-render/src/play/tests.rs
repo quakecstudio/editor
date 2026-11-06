@@ -7,13 +7,17 @@
     reason = "test code: a failed unwrap or index is a failed test; the WAD's offsets are small"
 )]
 
+use crate::look::Look;
 use qs_client::{Anchor, DynamicLight, Hud, HudItem, Placed, Scene, SceneEntity, SceneParticle};
 use qs_wad::{WAD_MAGIC, WAD_TYP_QPIC};
 
-use super::{FogState, Pics, Play, PlayError, fog_parse_worldspawn};
+use super::{FogState, Model, Pics, Play, PlayError, fog_parse_worldspawn};
+use crate::alias::tests::{MdlSpec, SkinSpec, mdl};
 use crate::gpu::{FlatDraw, Fog};
+use crate::md5::tests::{Md5Spec, md5mesh};
 use crate::mesh::tests::{MapSpec, bsp, palette, samples};
 use crate::mesh::{Image, MapMesh};
+use crate::picture::tests::solid;
 
 /// A WAD2 of picture lumps: each a name, a size and one palette index for every pixel.
 fn wad(lumps: &[(&str, [i32; 2], u8)]) -> Vec<u8> {
@@ -89,10 +93,10 @@ fn hud(anchor: Anchor, items: Vec<HudItem>) -> Hud {
 type Quad = ([f32; 2], [f32; 2]);
 
 /// `play`'s 2D layer for `hud` over a frame with no blend: each draw with its quads.
-fn layer(play: &Play, hud: &Hud) -> Vec<(FlatDraw, Vec<Quad>)> {
+fn layer(play: &mut Play, hud: &Hud) -> Vec<(FlatDraw, Vec<Quad>)> {
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let callback = play.frame(&Scene::default(), hud, &bsp, &mut mesh, 1.0);
     let flat = callback.flat;
     flat.draws
@@ -167,7 +171,7 @@ fn conchars_index_0_is_transparent() {
 // is centred too (HUD-2.2)
 #[test]
 fn bar_items_are_centred_at_the_bottom() {
-    let play = play();
+    let mut play = play();
     let sbar = HudItem::Pic {
         name: "sbar".to_owned(),
         x: 0,
@@ -178,7 +182,10 @@ fn bar_items_are_centred_at_the_bottom() {
         x: 24,
         y: -24,
     };
-    let bar = layer(&play, &hud(Anchor::Bar, vec![sbar.clone(), num.clone()]));
+    let bar = layer(
+        &mut play,
+        &hud(Anchor::Bar, vec![sbar.clone(), num.clone()]),
+    );
     assert_eq!(bar.len(), 2, "two pictures, two draws");
     assert_eq!(bar[0].1, [([160.0, 456.0], [320.0, 24.0])]);
     assert_eq!(bar[0].0.pic, Some(0));
@@ -189,15 +196,15 @@ fn bar_items_are_centred_at_the_bottom() {
         ..hud(Anchor::Bar, vec![sbar.clone()])
     };
     assert_eq!(
-        layer(&play, &deathmatch)[0].1,
+        layer(&mut play, &deathmatch)[0].1,
         [([0.0, 456.0], [320.0, 24.0])]
     );
     assert_eq!(
-        layer(&play, &hud(Anchor::Centered, vec![sbar.clone()]))[0].1,
+        layer(&mut play, &hud(Anchor::Centered, vec![sbar.clone()]))[0].1,
         [([160.0, 0.0], [320.0, 24.0])]
     );
     assert_eq!(
-        layer(&play, &hud(Anchor::Screen, vec![sbar.clone()]))[0].1,
+        layer(&mut play, &hud(Anchor::Screen, vec![sbar.clone()]))[0].1,
         [([0.0, 0.0], [320.0, 24.0])]
     );
     // A picture that is not loaded draws nothing.
@@ -206,9 +213,9 @@ fn bar_items_are_centred_at_the_bottom() {
         x: 0,
         y: 0,
     };
-    assert!(layer(&play, &hud(Anchor::Bar, vec![missing])).is_empty());
+    assert!(layer(&mut play, &hud(Anchor::Bar, vec![missing])).is_empty());
     // Two pictures of one texture join one draw.
-    let twice = layer(&play, &hud(Anchor::Bar, vec![sbar.clone(), sbar]));
+    let twice = layer(&mut play, &hud(Anchor::Bar, vec![sbar.clone(), sbar]));
     assert_eq!(twice.len(), 1);
     assert_eq!(twice[0].0.count, 12);
 }
@@ -216,7 +223,7 @@ fn bar_items_are_centred_at_the_bottom() {
 // spec HUD-2.3: a `.lmp` with no x is centred, `(vid.width - pic->width) / 2`
 #[test]
 fn lmp_pictures_centre_when_asked() {
-    let play = play();
+    let mut play = play();
     let centred = HudItem::Lmp {
         path: "gfx/ranking.lmp".to_owned(),
         x: None,
@@ -227,7 +234,7 @@ fn lmp_pictures_centre_when_asked() {
         x: Some(64),
         y: 24,
     };
-    let out = layer(&play, &hud(Anchor::Screen, vec![centred, placed]));
+    let out = layer(&mut play, &hud(Anchor::Screen, vec![centred, placed]));
     assert_eq!(
         out[0].1,
         [([270.0, 8.0], [100.0, 20.0]), ([64.0, 24.0], [100.0, 20.0])]
@@ -238,10 +245,10 @@ fn lmp_pictures_centre_when_asked() {
 // a space and a character above the screen are not drawn
 #[test]
 fn characters_come_from_the_console_font() {
-    let play = play();
+    let mut play = play();
     let ch = |x, y, ch| HudItem::Char { x, y, ch };
     let out = layer(
-        &play,
+        &mut play,
         &hud(
             Anchor::Screen,
             vec![
@@ -261,7 +268,7 @@ fn characters_come_from_the_console_font() {
     // 'A' is 65: row 4, column 1 of the grid, each cell a 16th.
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let callback = play.frame(
         &Scene::default(),
         &hud(Anchor::Screen, vec![ch(0, 0, b'A')]),
@@ -277,9 +284,9 @@ fn characters_come_from_the_console_font() {
 // spec HUD-1.5: a fill is a rectangle of the palette colour, untextured
 #[test]
 fn fills_are_palette_colours() {
-    let play = play();
+    let mut play = play();
     let out = layer(
-        &play,
+        &mut play,
         &hud(
             Anchor::Screen,
             vec![HudItem::Fill {
@@ -296,7 +303,7 @@ fn fills_are_palette_colours() {
     assert_eq!(out[0].1, [([10.0, 20.0], [28.0, 4.0])]);
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let callback = play.frame(
         &Scene::default(),
         &hud(
@@ -322,10 +329,10 @@ fn fills_are_palette_colours() {
 // spec VIEW-4.6: the blend is drawn over the whole view before the bar, unless its alpha is 0
 #[test]
 fn the_view_blend_comes_first_when_it_has_alpha() {
-    let play = play();
+    let mut play = play();
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let hud = hud(
         Anchor::Screen,
         vec![HudItem::Pic {
@@ -353,10 +360,10 @@ fn the_view_blend_comes_first_when_it_has_alpha() {
 // are carried
 #[test]
 fn a_frame_carries_the_lights_the_particles_and_the_world() {
-    let play = play();
+    let mut play = play();
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let scene = Scene {
         lights: vec![DynamicLight {
             origin: [0.0, 0.0, 3.0],
@@ -374,7 +381,7 @@ fn a_frame_carries_the_lights_the_particles_and_the_world() {
         ..Scene::default()
     };
     let callback = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
-    assert!(callback.lightmap.is_some());
+    assert!(!callback.lightmap.is_empty());
     assert_eq!(callback.particles.len(), 3);
     assert_eq!(callback.placements.len(), 1);
     assert!(callback.placements[0].is_some());
@@ -383,9 +390,9 @@ fn a_frame_carries_the_lights_the_particles_and_the_world() {
     assert_eq!(callback.view.screen, [640.0, 480.0]);
     assert_eq!(callback.view.fog.density, 0.0);
     let again = play.frame(&Scene::default(), &Hud::default(), &bsp, &mut mesh, 1.0);
-    assert!(again.lightmap.is_some(), "the light left");
+    assert!(!again.lightmap.is_empty(), "the light left");
     let still = play.frame(&Scene::default(), &Hud::default(), &bsp, &mut mesh, 1.0);
-    assert!(still.lightmap.is_none());
+    assert!(still.lightmap.is_empty());
 }
 
 // spec REND-10.1: no fog without the key; `fog` read as density then red, green, blue, a
@@ -445,4 +452,176 @@ fn fog_fades_over_its_time() {
     assert_eq!(state.at(40.0), seen(0.001, 0.0));
     state.update(fog(0.0, 0.5), 0.0, 40.0);
     assert_eq!(state.at(40.0).color, [128.0 / 255.0; 3]);
+}
+
+// spec REND-4.13: a player entity wearing colours is drawn with its slot's translated skin,
+// sent each frame and remade only when its model, skin or colours change; heads and
+// non-players keep theirs
+#[test]
+fn players_wear_their_slots_translated_skins() {
+    let mut play = play();
+    let bytes = mdl(&MdlSpec {
+        skins: vec![SkinSpec::Single([0].into_iter().chain([16; 15]).collect())],
+        ..MdlSpec::default()
+    });
+    play.load_models(
+        &[String::new(), "progs/player.mdl".to_owned()],
+        &|name| name.ends_with(".mdl").then(|| bytes.clone()),
+        &|name| name.ends_with(".mdl").then_some(0),
+    )
+    .unwrap();
+    let lighting = samples(&[50]);
+    let bsp = bsp(&MapSpec::default(), &lighting);
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
+    let entity = |entity, colormap| SceneEntity {
+        entity,
+        model: 1,
+        colormap,
+        ..SceneEntity::default()
+    };
+    let mut scene = Scene {
+        maxclients: 2,
+        colors: vec![0, 0x40],
+        entities: vec![entity(2, 2), entity(1, 0), entity(3, 3)],
+        ..Scene::default()
+    };
+    let skins = play.skins.len();
+    let first = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
+    let drawn: Vec<usize> = first.models.draws.iter().map(|d| d.skin).collect();
+    assert_eq!(drawn, [skins + 1, 0, 0]);
+    assert_eq!(first.player_skins.len(), 1);
+    let worn = &first.player_skins[0];
+    assert_eq!(worn.slot, 1);
+    assert_eq!(
+        (worn.key.model, worn.key.skin, worn.key.colors),
+        (1, 0, 0x40)
+    );
+    assert_eq!(worn.image.rgba[4], palette().rgba(64)[0]);
+    // Each frame sends the slot's skin, so a renderer made later or a frame not painted
+    // catches up; unchanged colours send the same image, not a new translation.
+    let again = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
+    assert_eq!(again.models.draws[0].skin, skins + 1);
+    assert_eq!(again.player_skins.len(), 1);
+    assert!(std::sync::Arc::ptr_eq(
+        &again.player_skins[0].image,
+        &worn.image
+    ));
+    scene.colors[1] = 0x50;
+    let changed = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
+    assert_eq!(changed.player_skins[0].key.colors, 0x50);
+    assert_eq!(changed.player_skins[0].image.rgba[4], palette().rgba(80)[0]);
+}
+
+// spec REND-8.1: the worldspawn's `skyfog` is the fog's share of the sky
+// spec REND-8.2: the skybox the worldspawn names is read through the game's files and given
+// to the renderer; a map naming none, or one with no face, keeps the layers
+#[test]
+fn the_worldspawn_sets_the_sky() {
+    let read = |name: &str| (name == "gfx/env/cloudsdn.tga").then(|| solid([1, 1], [1; 4]));
+    let mut named = Play::new(palette(), pics(), br#"{ "sky" "clouds" "skyfog" "0.2" }"#);
+    assert_eq!(named.skyfog, 0.2);
+    assert!(named.assets().skybox.is_none(), "not read yet");
+    named.load_sky(&read);
+    assert_eq!(named.assets().skybox.unwrap().size(), [1, 1]);
+    let mut missing = Play::new(palette(), pics(), br#"{ "sky" "gone" }"#);
+    missing.load_sky(&read);
+    assert!(missing.assets().skybox.is_none());
+    let mut plain = play();
+    assert_eq!(plain.skyfog, 0.5);
+    plain.load_sky(&read);
+    assert!(plain.assets().skybox.is_none());
+}
+
+// spec REND-12.1: with MD5 models on, an `.mdl` is drawn as `<stem>.md5mesh` when it is
+// found and the `.mdl` is not on an earlier search-path element; off, or with no MD5
+// model, the `.mdl` is drawn
+#[test]
+fn md5_models_replace_their_mdl() {
+    let alias = mdl(&MdlSpec::default());
+    let mesh = md5mesh(&Md5Spec {
+        frames: None,
+        ..Md5Spec::default()
+    });
+    let names = [String::new(), "progs/ogre.mdl".to_owned()];
+    let kind = |md5_models: bool, mdl_rank: Option<usize>, md5_rank: Option<usize>| {
+        let mut play = play();
+        play.md5_models = md5_models;
+        let read = |name: &str| match name {
+            "progs/ogre.mdl" => mdl_rank.map(|_| alias.clone()),
+            "progs/ogre.md5mesh" => md5_rank.map(|_| mesh.clone()),
+            _ => None,
+        };
+        let rank = |name: &str| match name {
+            "progs/ogre.mdl" => mdl_rank,
+            "progs/ogre.md5mesh" => md5_rank,
+            _ => None,
+        };
+        play.load_models(&names, &read, &rank).unwrap();
+        match &play.models[1] {
+            Model::Alias(..) => "mdl",
+            Model::Md5(..) => "md5",
+            _ => "other",
+        }
+    };
+    assert_eq!(kind(true, Some(1), Some(1)), "md5", "the same element");
+    assert_eq!(kind(true, Some(2), Some(1)), "md5", "the MD5 earlier");
+    assert_eq!(kind(true, Some(0), Some(1)), "mdl", "the .mdl earlier");
+    assert_eq!(kind(true, None, Some(0)), "md5", "no .mdl");
+    assert_eq!(kind(true, Some(0), None), "mdl", "no MD5");
+    assert_eq!(kind(false, Some(1), Some(1)), "mdl", "MD5 models off");
+}
+
+// spec REND-12.3: an MD5 entity is drawn as an alias model, a run per part with its skin
+#[test]
+fn md5_entities_are_drawn_with_their_skins() {
+    let mut play = play();
+    let mesh = md5mesh(&Md5Spec {
+        frames: None,
+        ..Md5Spec::default()
+    });
+    play.load_models(
+        &[String::new(), "progs/ogre.mdl".to_owned()],
+        &|name| (name == "progs/ogre.md5mesh").then(|| mesh.clone()),
+        &|name| (name == "progs/ogre.md5mesh").then_some(0),
+    )
+    .unwrap();
+    assert_eq!(play.skins.len(), 1, "the white skin of a part with none");
+    let lighting = samples(&[50]);
+    let bsp = bsp(&MapSpec::default(), &lighting);
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
+    let scene = Scene {
+        entities: vec![SceneEntity {
+            entity: 5,
+            model: 1,
+            ..SceneEntity::default()
+        }],
+        ..Scene::default()
+    };
+    let callback = play.frame(&scene, &Hud::default(), &bsp, &mut mesh, 1.0);
+    assert_eq!(callback.models.draws.len(), 1);
+    assert_eq!(callback.models.draws[0].skin, 0);
+    assert_eq!(callback.models.draws[0].count, 3);
+    assert_eq!(callback.models.vertices.len(), 3);
+}
+
+// spec REND-12.1: an MD5 model that does not read leaves its `.mdl`; with no `.mdl` it is an
+// error naming the file
+#[test]
+fn an_md5_model_that_does_not_read_leaves_its_mdl() {
+    let alias = mdl(&MdlSpec::default());
+    let load = |with_mdl: bool| {
+        let mut play = play();
+        let read = |name: &str| match name {
+            "progs/ogre.mdl" => with_mdl.then(|| alias.clone()),
+            "progs/ogre.md5mesh" => Some(b"MD5V broken".to_vec()),
+            _ => None,
+        };
+        let names = [String::new(), "progs/ogre.mdl".to_owned()];
+        play.load_models(&names, &read, &|_| Some(0))
+            .map(|()| matches!(play.models[1], Model::Alias(..)))
+    };
+    assert_eq!(load(true), Ok(true));
+    assert!(
+        matches!(load(false), Err(PlayError::Model(ref m)) if m.starts_with("progs/ogre.md5mesh"))
+    );
 }

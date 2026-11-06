@@ -9,22 +9,31 @@
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
+use std::rc::Rc;
 
 use qs_sim::{LoadOptions, World};
 
+/// Lists the entities a map spawns through its game's progs.
+#[derive(clap::Parser)]
+struct Args {
+    /// The map, `maps/x.bsp`; other models are read beside its directory.
+    bsp: String,
+    /// The game's `progs.dat`.
+    progs: String,
+    /// Server frames of a tenth of a second to run first.
+    #[arg(default_value_t = 0)]
+    frames: usize,
+}
+
 fn main() -> Result<(), String> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let (bsp_path, progs, frames) = match args.as_slice() {
-        [bsp, progs] => (bsp, progs, 0),
-        [bsp, progs, frames] => (
-            bsp,
-            progs,
-            frames.parse().map_err(|_| "frames is a number")?,
-        ),
-        _ => return Err("usage: entities <maps/x.bsp> <progs.dat> [frames]".to_owned()),
-    };
+    let Args {
+        bsp: bsp_path,
+        progs,
+        frames,
+    } = <Args as clap::Parser>::parse();
+    let bsp_path = &bsp_path;
     let read = |path: &String| std::fs::read(path).map_err(|e| format!("{path}: {e}"));
-    let (bsp_bytes, progs_bytes) = (read(bsp_path)?, read(progs)?);
+    let (bsp_bytes, progs_bytes) = (read(bsp_path)?, read(&progs)?);
     let map = std::path::Path::new(bsp_path)
         .file_stem()
         .and_then(|s| s.to_str())
@@ -38,7 +47,7 @@ fn main() -> Result<(), String> {
         .and_then(std::path::Path::parent)
         .map(std::path::Path::to_path_buf)
         .unwrap_or_default();
-    let files = Box::new(move |name: &str| std::fs::read(root.join(name)).ok());
+    let files = Rc::new(move |name: &str| std::fs::read(root.join(name)).ok());
     let mut world =
         World::load(&progs, map, &bsp, files, LoadOptions::default()).map_err(|e| e.to_string())?;
     world.settle(&progs).map_err(|e| e.to_string())?;

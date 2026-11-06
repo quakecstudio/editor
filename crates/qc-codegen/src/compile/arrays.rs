@@ -157,7 +157,7 @@ impl Compiler<'_> {
     /// made, in the order they were made, after every file (FTE-13.8, FTE-13.11).
     pub(crate) fn emit_array_functions(&mut self) -> Result<(), (Internal, FileId, Span)> {
         for mut made in std::mem::take(&mut self.array_functions) {
-            // FTE-21.7: a local array's offset is real only once its block is laid out.
+            // FTE-21.9: a local array's offset is real only once its block is laid out.
             if let Some(def) = self.program.def(made.array.place) {
                 made.array.ofs = def.ofs;
             }

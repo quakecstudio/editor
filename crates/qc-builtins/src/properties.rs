@@ -85,6 +85,26 @@ fn command_text() -> impl Strategy<Value = Vec<u8>> {
     (part.clone(), word, part).prop_map(|(head, word, tail)| [head, word, tail].concat())
 }
 
+/// `value` written exactly in hexadecimal, as C's `%a` would write it: the sign, `0x1.` or a
+/// subnormal's `0x0.`, its 13 mantissa digits and its binary exponent, with `lead` zero digits
+/// before the first and `trail` after the last.
+fn exact_hex(value: f64, lead: usize, trail: usize) -> String {
+    let bits = value.to_bits();
+    let sign = if bits >> 63 == 1 { "-" } else { "" };
+    let field = (bits >> 52) & 0x7ff;
+    let mantissa = bits & ((1 << 52) - 1);
+    let (whole, exponent) = if field == 0 {
+        (0, -1022)
+    } else {
+        (1, i64::try_from(field).unwrap() - 1023)
+    };
+    format!(
+        "{sign}0x{}{whole}.{mantissa:013x}{}p{exponent}",
+        "0".repeat(lead),
+        "0".repeat(trail)
+    )
+}
+
 proptest! {
     // spec RRE-1.7: LOC_LoadFile reads the text up to its first zero and skips a UTF-8 byte
     // order mark: `key = "value"` lines read back by key whatever follows the zero, with or
@@ -193,7 +213,7 @@ proptest! {
         prop_assert_eq!(text, plain[..plain.len().min(TEMP_TEXT)].to_vec());
     }
 
-    // spec BUILTIN-18.19: atof rounds a decimal number correctly, after white space and a
+    // spec BUILTIN-18.25: atof rounds a decimal number correctly, after white space and a
     // sign, and reads only the longest prefix that is a number
     #[test]
     fn atof_reads_a_decimal_number_exactly(
@@ -205,5 +225,18 @@ proptest! {
             let read = atof(format!("{space}{text}{tail}").as_bytes());
             prop_assert_eq!(read.to_bits(), value.to_bits(), "{}", text);
         }
+    }
+
+    // spec BUILTIN-18.25: a hexadecimal number is correctly rounded whatever its digits, so every
+    // finite double written exactly in hexadecimal, padded with zero digits on either side,
+    // reads back bit for bit
+    #[test]
+    fn atof_reads_an_exact_hexadecimal_number_back(
+        value in any::<f64>().prop_filter("finite", |v| v.is_finite()),
+        lead in 0_usize..300,
+        trail in 0_usize..300,
+    ) {
+        let text = exact_hex(value, lead, trail);
+        prop_assert_eq!(atof(text.as_bytes()).to_bits(), value.to_bits(), "{}", text);
     }
 }

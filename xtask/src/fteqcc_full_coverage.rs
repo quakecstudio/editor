@@ -99,17 +99,20 @@ impl Kind {
     }
 }
 
-const USAGE: &str = "usage: cargo xtask fteqcc-full-coverage <dir>...";
+/// `cargo xtask fteqcc-full-coverage <dir>...`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// The FTEQCC corpus mod directories.
+    #[arg(required = true)]
+    dirs: Vec<PathBuf>,
+}
 
 /// Runs the check on the FTEQCC corpus mod directories in `args`.
-pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
-    let dirs: Vec<PathBuf> = args.iter().map(PathBuf::from).collect();
-    if dirs.is_empty() {
-        return Err(USAGE.to_owned());
-    }
+pub(crate) fn main(_root: &Path, args: &Args) -> Result<bool, String> {
+    let dirs = &args.dirs;
     let mut totals: BTreeMap<Kind, usize> = BTreeMap::new();
     let mut ok = true;
-    for dir in &dirs {
+    for dir in dirs {
         let files = sources(dir)?;
         if files.is_empty() {
             return Err(format!("no .qc, .qh or .h files under {}", dir.display()));
@@ -323,7 +326,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use super::{Kind, classify, in_spec, is_suffix, main};
+    use super::{Args, Kind, classify, in_spec, is_suffix, main};
     use crate::test_dirs::fresh;
 
     fn codebase(name: &str, files: &[(&str, &str)]) -> PathBuf {
@@ -430,11 +433,18 @@ mod tests {
                  };\n",
             )],
         );
-        assert!(main(Path::new("."), &[dir.display().to_string()]).unwrap());
-        assert!(main(Path::new("."), &[]).unwrap_err().contains("usage"));
+        assert!(
+            crate::run_cli::<Args, _>(&[dir.display().to_string()], |a| main(Path::new("."), a))
+                .unwrap()
+        );
+        assert!(
+            crate::run_cli::<Args, &str>(&[], |a| main(Path::new("."), a))
+                .unwrap_err()
+                .contains("Usage")
+        );
         let empty = codebase("fteqcc-full-coverage-empty", &[("readme.txt", "x")]);
         assert!(
-            main(Path::new("."), &[empty.display().to_string()])
+            crate::run_cli::<Args, _>(&[empty.display().to_string()], |a| main(Path::new("."), a))
                 .unwrap_err()
                 .contains("no .qc")
         );

@@ -103,8 +103,10 @@ The runner of P1-13 writes scenarios for each corpus codebase; both runners read
   | `frametime` | seconds, greater than 0 and at most 1 | 0.1 (`DIFF_DEFAULT_FRAMETIME`) | The length of each server frame |
   | `seed` | integer 0 to 4294967295 | 1 (`DIFF_DEFAULT_SEED`) | The random state (DIFF-6.2) |
   | `input` | frame, edict, field, values | | A client input (DIFF-4.3) |
+  | `command` | frame, edict, words | | A string command a client sends (DIFF-2.10, DIFF-4.4) |
 
-  `model`, `cvar` and `input` may appear any number of times; every other key at most once.
+  `model`, `cvar`, `input` and `command` may appear any number of times; every other key at
+  most once.
 - **DIFF-2.3** **Withdrawn** 2026-10-16: it did not say which texts are numbers, so the two
   runners could read one scenario differently: C's `strtod` and Rust's `f64` parsing both
   accept `+0.1` and `inf`, and `strtod` accepts hexadecimal; replaced by DIFF-2.7 (integers),
@@ -140,6 +142,12 @@ The runner of P1-13 writes scenarios for each corpus codebase; both runners read
   not an integer or a number as DIFF-2.7 and DIFF-2.8 say or is out of range, a repeated key
   that may appear once, a model name repeated, or no `progs`, is refused before anything runs,
   and no trace is written.
+- **DIFF-2.10** A `command` line is `command <frame> <edict> <word>...`: `<frame>` from 1 to
+  `frames`, `<edict>` from 1 to `clients`, then one or more words. The command is the words
+  joined by one space, so a run of spaces or tabs between two words becomes one space and a
+  command cannot hold a `#` (DIFF-2.1); a line holds at most 16 words, so a command at most 13.
+  A command with no word, a frame or edict out of range, or a word holding a NUL byte is
+  refused (DIFF-2.9).
 
 ### Constants
 
@@ -222,11 +230,30 @@ the map's BSP replaced by the scenario.
 ## DIFF-4 Clients
 
 **Source:** `WinQuake/sv_main.c`, `SV_ConnectClient`; `WinQuake/host_cmd.c`, `Host_Spawn_f`,
-`Host_Begin_f`; `WinQuake/sv_user.c`, `SV_ReadClientMove`.
+`Host_Begin_f`; `WinQuake/sv_user.c`, `SV_ReadClientMove`;
+Novum/vkQuake@27789d7333a46674474d871137bb71e056719628 `Quake/sv_user.c`,
+`SV_ReadClientMessage`.
 
 In id's engine a player connects over the network after the map has started. The mock lets
 `clients` players enter at once, after the settle frames, so that the client code of a progs
-runs; it reads no network input other than the scenario's `input` lines.
+runs; it reads no network input other than the scenario's `input` and `command` lines.
+
+vkQuake hands a client's string command to the progs; `SV_ReadClientMessage` reads, for a
+`clc_stringcmd`:
+
+```c
+if (q_strncasecmp (s, "spawn", 5) && q_strncasecmp (s, "begin", 5) && q_strncasecmp (s, "prespawn", 8) && qcvm->extfuncs.SV_ParseClientCommand)
+{
+	...
+	G_INT (OFS_PARM0) = PR_SetEngineString (s);
+	pr_global_struct->time = qcvm->time;
+	pr_global_struct->self = EDICT_TO_PROG (host_client->edict);
+	PR_ExecuteProgram (qcvm->extfuncs.SV_ParseClientCommand);
+	...
+}
+else
+	Cmd_ExecuteString (s, src_client);
+```
 
 ### Behaviour
 
@@ -246,6 +273,13 @@ runs; it reads no network input other than the scenario's `input` lines.
   `button2` set that field to the value, `impulse` sets `impulse` to the value, and `v_angle`
   sets its three slots to the three values. Nothing else of client input runs: no
   `SV_ClientThink`, so no field other than these is written.
+- **DIFF-4.4** After the `input` lines of frame `k`, its `command` lines run in file order, as
+  vkQuake's `SV_ReadClientMessage` runs a `clc_stringcmd`: when the progs has a function named
+  `SV_ParseClientCommand` and the command does not start, in any case, with `spawn`, `begin`
+  or `prespawn`, `PARM0` is set to an engine string holding the command, `time` to (f32)clock
+  and `self` to the client's edict, and the function runs. The mock has no console commands,
+  so where vkQuake calls `Cmd_ExecuteString` nothing runs. An error in the function ends the
+  scenario as an error in a frame does (DIFF-8).
 
 ### Constants
 
@@ -268,7 +302,7 @@ order of [`edicts.md`](edicts.md) EDICT-9 and EDICT-10) and drops the movement.
 
 - **DIFF-5.1** A server frame of length `T` (the `frametime` directive): sets the global
   `frametime` to (f32)`T`; empties the unreliable datagram; applies the frame's input
-  (DIFF-4.3); runs a physics frame of length `T` (DIFF-5.3), never paused; empties the reliable
+  (DIFF-4.3) and runs its commands (DIFF-4.4); runs a physics frame of length `T` (DIFF-5.3), never paused; empties the reliable
   datagram; and clears `EF_MUZZLEFLASH` in `effects` on edicts 1 to `num_edicts - 1`
   (EDICT-10.7), converting `effects` to an integer and back (BUILTIN-2.1, BUILTIN-2.2).
 - **DIFF-5.2** Server frames are numbered from 1. Frame `k` starts with the clock at 1.0 plus
@@ -666,7 +700,7 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   inside a QuakeC function's locals (from `parm_start`, `locals` slots) is a local and is not
   compared, unless it is a function definition whose value is a QuakeC function of its name,
   as a state's `[frame, next]` declares `next` inside the body (an `ArrayGet*NAME` or
-  `ArraySet*NAME` made inside a body is a global below the body's block, FTE-21.7; several
+  `ArraySet*NAME` made inside a body is a global below the body's block, FTE-21.9; several
   functions share such a name, one for each `for` statement that subscripts a local array,
   FTEF-19.78, and the one judged is the function the slot holds); (3) every other named global of
   the first progs at a slot other than 0 must be found among ours in the same order, the next
@@ -694,7 +728,7 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
   inside a QuakeC function's locals (from `parm_start`, `locals` slots) is a local and is not
   compared, unless it is a function definition whose value is a QuakeC function of its name,
   as a state's `[frame, next]` declares `next` inside the body (an `ArrayGet*NAME` or
-  `ArraySet*NAME` made inside a body is a global below the body's block, FTE-21.7; several
+  `ArraySet*NAME` made inside a body is a global below the body's block, FTE-21.9; several
   functions share such a name, one for each `for` statement that subscripts a local array,
   FTEF-19.78, and the one judged is the function the slot holds); (3) every other named global of
   the first progs at a slot other than 0 must be found among ours in the same order, the next
@@ -877,8 +911,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane
-  Dimensions precaches more sounds than id's engine holds (LIMIT-6.2). Every other codebase
-  runs under id's.
+  Dimensions precaches more sounds than id's engine holds (LIMIT-6.2). Their worlds are set up
+  with vkQuake's runaway count (BUILTIN-18.26, LIMIT-4.3), since crmod7's `say` command and its
+  map-name lookups run more statements in one call than id's 99999; the drawn calls (DIFF-12.2)
+  then run under id's, since a drawn argument often makes a loop that would run vkQuake's
+  0x1000000 statements before it fails. Every other codebase runs under id's.
 
 ## DIFF-13 The FTEQCC grammar differential
 
@@ -969,7 +1006,7 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   `QCC_PR_RefExpression`), and `opt_assignments` folds the statement that made an arm into it.
   An arm `(e.v).x` is `LOAD_V` into a temporary (FTE-9.3), so the fold makes the `LOAD_V`
   write three words from the local, the two globals after it included: another local, or the
-  first local of the next function's block (FTE-21.7). Generated programs 555 and 1108 of seed
+  first local of the next function's block (FTE-21.9). Generated programs 555 and 1108 of seed
   1 read a value it overwrote. The fix makes a one-word arm's local a vector, three words of
   storage, read and written as the arm's type.
 - **DIFF-14.7** FTEQCC defect: `QCC_PR_StatementFlags` frees a statement's operands before it
@@ -1033,41 +1070,19 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
 **Source:** this project (P2-153, [#649](https://github.com/quakecstudio/editor/issues/649)).
 The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's.
 
-- **DIFF-15.1** `cargo xtask compiler-diff --functions <codebase>...` cuts each function of a
-  codebase the pinned FTEQCC compiles (a rerelease codebase or a corpus mod) into a program of
-  its own: the codebase's files, every declaration kept, with the body of every function at file
-  level emptied to `{}` but those of the functions DIFF-15.2 keeps. A body is found from the
-  semantic model's parse of each compiled file's expansion, its block located in a source file
-  (QC-9.7); one whose block is not one span of one file from `{` to `}` with each `#if`,
-  `#ifdef` and `#ifndef` in it closed by an `#endif` in it (a body a macro writes, or one a
-  directive splits), and the body of a `__wrap` or `__accumulate` definition, is never emptied:
-  FTEQCC refuses a wrapper that does not call `prior` ("Wrapper function ... does not refer to
-  its prior function"). An emptied function that returns a value returns nothing, which FTEQCC
-  warns of (Q206) and both compilers compile.
-- **DIFF-15.2** The functions kept for a function `f` are `f`, the functions the setup of each
-  scenario of DIFF-12.20 runs in the codebase's whole progs (the spawn functions of the map's
-  entities, `worldspawn` among them, the client functions and the frames' functions, which the
-  `compiler-diff` binary's `--setup-functions <progs>` lists), and every function any of them
-  calls by name, through any depth of calls, so each call starts from the world a whole-codebase
-  run starts from: with the setup's bodies emptied, `worldspawn` precaches nothing, the mock
-  refuses `setmodel` and `sound`, and no entity holds the functions a `touch` or `think` names
-  (DIFF-12.15). The calls of a function are read from the codebase's progs compiled by the
-  pinned FTEQCC, the function whose index is held by the global each `CALL0` to `CALL8` of its
-  body calls; a call through a variable or a field, whose global holds no function, keeps none,
-  so the function such a call reaches is emptied in the cut and called empty.
+- **DIFF-15.1** **Withdrawn** 2026-11-04: it cut one program per function, which, once every cut
+  kept the world's setup (DIFF-15.8), compiled nearly the whole codebase once per function;
+  replaced by DIFF-15.7.
+- **DIFF-15.2** **Withdrawn** 2026-11-04: it kept the functions for one function; replaced by
+  DIFF-15.8, which keeps them for a group.
 - **DIFF-15.3** Each cut program is compiled in a copy of the codebase's directory by the fixed
   FTEQCC (DIFF-14.12) and the pinned FTEQCC with the arguments the codebase is compiled with
   (DIFF-12.30, DIFF-12.18), and by `qc-codegen` in the FTEQCC dialect. A cut either FTEQCC
   refuses is a defect of the cut, and one `qc-codegen` refuses when FTEQCC compiled it is a
   divergence; either fails the run, its function named and what the compiler printed kept in
   `failed/<function>.log`.
-- **DIFF-15.4** The `compiler-diff` binary's `--function-pairs <file> --executed <file>` reads
-  lines of the function, the pinned FTEQCC's progs, ours and the fixed FTEQCC's, and calls only
-  that function, in `FUNCTION_ROUNDS` (256) rounds, twice DIFF-12.29's nightly 128, with
-  DIFF-12.16's further batches, from the world of each scenario of DIFF-12.20, as a
-  whole-codebase run calls every function, comparing the calls as DIFF-12.3 and DIFF-12.11 say
-  and a divergence the fixed FTEQCC agrees with as DIFF-14.5 says. The xtask passes the cut
-  programs 64 at a time.
+- **DIFF-15.4** **Withdrawn** 2026-11-04: it called one function per cut in 256 rounds; replaced
+  by DIFF-15.9, a group per cut in the nightly 128.
 - **DIFF-15.5** Each run adds the statements of the pinned FTEQCC's progs its calls and its
   world's setup executed to the `--executed` file as `<name>\t<offset>` lines: the function
   whose body holds the statement, a body running from its first statement to the next
@@ -1079,6 +1094,45 @@ The oracle is the pinned FTEQCC (`docs/porting.md`); the comparison is DIFF-12's
   and its coverage (DIFF-15.5) is at least DIFF-12.5's 90%, crmod7 its accepted 87.7% (#661);
   decided by Justin on 2026-11-04 for #649.
 
+- **DIFF-15.7** `cargo xtask compiler-diff --functions <codebase>...` cuts the functions of a
+  codebase the pinned FTEQCC compiles (a rerelease codebase or a corpus mod), in groups of 64 in
+  the order their bodies are found, into a program for each group: the codebase's files, every
+  declaration kept, with the body of every function at file level emptied to `{}` but those of
+  the functions DIFF-15.8 keeps. A body is found from the semantic model's parse of each
+  compiled file's expansion, its block located in a source file (QC-9.7); one whose block is not
+  one span of one file from `{` to `}` with each `#if`, `#ifdef` and `#ifndef` in it closed by
+  an `#endif` in it (a body a macro writes, or one a directive splits), and the body of a
+  `__wrap` or `__accumulate` definition, is never emptied: FTEQCC refuses a wrapper that does
+  not call `prior` ("Wrapper function ... does not refer to its prior function"). An emptied
+  function that returns a value returns nothing, which FTEQCC warns of (Q206) and both compilers
+  compile.
+- **DIFF-15.8** The functions kept for a group are the group's functions, the functions the
+  setup of each scenario of DIFF-12.20 runs in the codebase's whole progs (the spawn functions
+  of the map's entities, `worldspawn` among them, the client functions and the frames'
+  functions, which the `compiler-diff` binary's `--setup-functions <progs>` lists), and every
+  function any of them calls by name, through any depth of calls, so each call starts from the
+  world a whole-codebase run starts from: with the setup's bodies emptied, `worldspawn`
+  precaches nothing, the mock refuses `setmodel` and `sound`, and no entity holds the functions
+  a `touch` or `think` names (DIFF-12.15). The calls of a function are read from the codebase's
+  progs compiled by the pinned FTEQCC, the function whose index is held by the global each
+  `CALL0` to `CALL8` of its body calls; a call through a variable or a field, whose global holds
+  no function, keeps none, so the function such a call reaches is emptied in the cut and called
+  empty.
+- **DIFF-15.9** The `compiler-diff` binary's `--function-pairs <file> --executed <file>` reads
+  lines of the group's functions separated by commas, the pinned FTEQCC's progs, ours and the
+  fixed FTEQCC's, and calls only those functions, each in `FUNCTION_ROUNDS` rounds, DIFF-12.29's
+  nightly 128, with DIFF-12.16's further batches, from the world of each scenario of DIFF-12.20,
+  as a whole-codebase run calls every function, comparing the calls as DIFF-12.3 and DIFF-12.11
+  say and a divergence the fixed FTEQCC agrees with as DIFF-14.5 says. The xtask compiles as
+  many groups' programs at once as the machine runs threads, and passes them to one run of the
+  binary.
+- **DIFF-15.10** With `--shard k/n`, `--functions` runs only the groups whose place in the
+  list of DIFF-15.7, counting from 0, leaves `k` over when divided by `n`, and passes when no
+  cut failed and no run diverged, its coverage not held to the bar. `--merge <executed>...`
+  with `--functions` and one codebase holds the statements its files list, together, to
+  DIFF-15.6's bar, as the coverage of one run over every group (DIFF-15.5): a statement two
+  shards reached counts once. The nightly runs a codebase whose run does not finish within one
+  CI job's six hours as shards whose lists are merged.
 ## Test vectors
 
 ### Scenario numbers
@@ -1185,3 +1239,44 @@ both have `numstrings` 1000.
 | 2000 with text `1` | 70000 with text `1` | yes | engine strings, same text |
 | 2000 with text `1` | 70000 with text `2` | no | engine strings, different text |
 | 500 | 500 | yes | equal bits: an offset into the string table |
+
+## DIFF-16 The server simulation differential
+
+**Source:** this project (P3-25, [#239](https://github.com/quakecstudio/editor/issues/239)). The
+oracle is the engine oracle (P3-23, TRACE-4.11, TRACE-4.12): id's server from the pinned commit.
+
+- **DIFF-16.1** `cargo xtask sim-diff <route> [-- <engine word>...]` plays one route, in the engine
+  oracle's script form (`oracles/README.md`, "The engine oracle"), through the engine oracle and
+  through `qs-sim`, on the same game directory, map, progs and frame time. `qs-sim` loads the
+  map and settles it, running the progs as it is with id's builtin table, as id's server does;
+  the client connects in frame 1 and sends `prespawn` in frame 2, its name, colour and `spawn`
+  in frame 3 and `begin` in frame 4, as PHYS-10.7 says and the oracle's local client does; from
+  frame 5 each frame takes the route's move, the move's impulse sent once. The two are compared
+  a frame at a time, as each produces it.
+- **DIFF-16.2** The state compared is every named global, but a vector's `_x`, `_y` and `_z` and
+  the functions' and fields' own definitions, and every named field of every edict below
+  `num_edicts`, free or not, each read by its definition's type: a float and a vector by their
+  bits, an entity as the edict it names (the oracle's by its own edict size), a string as its
+  text (the oracle's from the progs' string table or its string records), a field and a function
+  by name. Slots no definition names (the return value, the parameters, the temporaries) are not
+  compared, a deliberate choice: their entity and engine string values are offsets into each
+  program's memory, which differ between id's 64-bit build and the 32-bit layout `qs-sim`
+  models (EDICT-1.1), and nothing says which of their values are entities or strings.
+- **DIFF-16.3** The states are compared after the map loads (frame 0) and after each server
+  frame. An edict past one side's `num_edicts` reads as all zeros on that side.
+- **DIFF-16.4** The first frame with a difference fails the run: the frame and its differences,
+  globals first and then edict by edict, each the global, or the edict, its classname and its
+  field, with both values, at most 12 of them, are reported, and the comparison stops there.
+- **DIFF-16.5** `--map <name>`, repeated, plays the route on each map named in turn: the same
+  script with its `map` line replaced. The run passes when every map does. CI's Test Assets
+  jobs play `oracles/engine/routes/start.route` on LibreQuake's start map on Linux, macOS and
+  Windows; the nightly Differential run plays it on every map of LibreQuake's lite asset; id1's
+  maps and the rerelease's, which no CI job has, are played by hand from an install.
+- **DIFF-16.6** A route's `console <text>` line is typed at the server's console: the oracle
+  adds the text and a line feed to the command buffer (`Cbuf_AddText`) and `qs-sim` to its
+  console (PHYS-13.1), and both run it in the next frame, before its server frame, as
+  `_Host_Frame` runs `Cbuf_Execute`. The oracle has no client of its own, so a command the
+  client's console forwards (PHYS-13.4) does not run there, and a command the host carries out
+  (PHYS-13.6) is left to the preview host; `oracles/engine/routes/console.route` plays the
+  console's settings, aliases, `wait`, `exec` and debug prints through both. CI's Test Assets
+  jobs play it on LibreQuake's start map.

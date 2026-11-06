@@ -70,6 +70,50 @@ pub const CLIENT_BEAM_TIME: f32 = 0.2;
 pub const CLIENT_BEAM_STEP: f32 = 30.0;
 /// `DEFAULT_VIEWHEIGHT` (CLIENT-3.1).
 pub const CLIENT_DEFAULT_VIEWHEIGHT: f32 = 22.0;
+/// How many static entities, visible entities, dynamic lights, beams and temporary entities a
+/// client keeps (CLIENT-8): QuakeSpasm's by default, id's in the WinQuake mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClientLimits {
+    /// Static entities (CLIENT-1.3).
+    pub statics: usize,
+    /// Entities drawn in a frame (CLIENT-5.6).
+    pub visedicts: usize,
+    /// Dynamic lights (CLIENT-5.7).
+    pub dlights: usize,
+    /// Beams (CLIENT-6.2).
+    pub beams: usize,
+    /// Temporary entities (CLIENT-6.4).
+    pub temp_entities: usize,
+}
+
+impl ClientLimits {
+    /// id's, `WinQuake/client.h` (CLIENT-8.2).
+    pub const WINQUAKE: Self = Self {
+        statics: CLIENT_MAX_STATIC_ENTITIES,
+        visedicts: CLIENT_MAX_VISEDICTS,
+        dlights: CLIENT_MAX_DLIGHTS,
+        beams: CLIENT_MAX_BEAMS,
+        temp_entities: CLIENT_MAX_TEMP_ENTITIES,
+    };
+    /// QuakeSpasm's, `Quake/client.h` at sezero/quakespasm@c9c8ee98 (CLIENT-8.1):
+    /// `MAX_STATIC_ENTITIES 4096`, `MAX_VISEDICTS 4096`, `MAX_DLIGHTS 64`, `MAX_BEAMS 32`,
+    /// `MAX_TEMP_ENTITIES 256`.
+    pub const QUAKESPASM: Self = Self {
+        statics: 4096,
+        visedicts: 4096,
+        dlights: 64,
+        beams: 32,
+        temp_entities: 256,
+    };
+}
+
+impl Default for ClientLimits {
+    /// QuakeSpasm's (CLIENT-8.1).
+    fn default() -> Self {
+        Self::QUAKESPASM
+    }
+}
+
 /// `MAX_CL_STATS` (CLIENT-1.4).
 pub const CLIENT_MAX_STATS: usize = 32;
 /// `sb_lines` at the default view size of 100: the bar and the inventory (HUD-1.1).
@@ -488,10 +532,12 @@ pub struct Client {
     scores: Vec<Score>,
     entities: Vec<Entity>,
     statics: Vec<Entity>,
-    dlights: [DLight; CLIENT_MAX_DLIGHTS],
+    /// The limits it keeps to (CLIENT-8).
+    limits: ClientLimits,
+    dlights: Vec<DLight>,
     /// Where an impossible light index would land, never read.
     spare_light: DLight,
-    beams: [Beam; CLIENT_MAX_BEAMS],
+    beams: Vec<Beam>,
     particles: Particles,
     view: ViewState,
     view_settings: ViewSettings,
@@ -532,8 +578,15 @@ impl Client {
     /// A client with nothing connected, `CL_ClearState` (CLIENT-1.1).
     #[must_use]
     pub fn new(game: Game) -> Self {
+        Self::with_limits(game, ClientLimits::default())
+    }
+
+    /// A client of `game` keeping to `limits` (CLIENT-8).
+    #[must_use]
+    pub fn with_limits(game: Game, limits: ClientLimits) -> Self {
         Self {
             game,
+            limits,
             lerp: LerpSettings::default(),
             time: 0.0,
             oldtime: 0.0,
@@ -560,9 +613,9 @@ impl Client {
             scores: Vec::new(),
             entities: Vec::new(),
             statics: Vec::new(),
-            dlights: [DLight::default(); CLIENT_MAX_DLIGHTS],
+            dlights: vec![DLight::default(); limits.dlights.max(1)],
             spare_light: DLight::default(),
-            beams: [Beam::default(); CLIENT_MAX_BEAMS],
+            beams: vec![Beam::default(); limits.beams],
             particles: Particles::default(),
             view: ViewState::default(),
             view_settings: ViewSettings::default(),
@@ -593,7 +646,7 @@ impl Client {
         let gravity = self.gravity;
         let screen = self.screen;
         let bar_lines = self.bar_lines;
-        *self = Self::new(game);
+        *self = Self::with_limits(game, self.limits);
         self.lerp = lerp;
         self.view_settings = view_settings;
         self.gravity = gravity;
@@ -965,6 +1018,7 @@ impl Client {
                 })
                 .collect(),
             lightstyles: self.lightstyles.clone(),
+            colors: self.scores.iter().map(|score| score.colors).collect(),
         }
     }
 
@@ -1477,7 +1531,7 @@ impl Client {
 
     /// `CL_ParseStatic` (CLIENT-1.3).
     fn parse_static(&mut self, r: &mut Reader<'_>) -> Result<(), ParseError> {
-        if self.statics.len() >= CLIENT_MAX_STATIC_ENTITIES {
+        if self.statics.len() >= self.limits.statics {
             return Err(ParseError::TooManyStatics);
         }
         let baseline = parse_baseline(r);
@@ -1657,7 +1711,7 @@ impl Client {
         let index = index
             .or_else(|| self.dlights.iter().position(|dl| dl.die < time))
             .unwrap_or(0)
-            .min(CLIENT_MAX_DLIGHTS.saturating_sub(1));
+            .min(self.dlights.len().saturating_sub(1));
         // The index is within the array; the fallback never runs.
         let fallback = &mut self.spare_light;
         let dl = self.dlights.get_mut(index).unwrap_or(fallback);
@@ -1867,7 +1921,7 @@ impl Client {
             if i == viewentity {
                 continue;
             }
-            if self.visedicts.len() < CLIENT_MAX_VISEDICTS {
+            if self.visedicts.len() < self.limits.visedicts {
                 let scene = self.scene_entity(i);
                 self.visedicts.push(scene);
             }
@@ -1963,7 +2017,8 @@ impl Client {
                 .copied()
                 .unwrap_or(0);
             while d > 0.0 {
-                if self.visedicts.len() >= CLIENT_MAX_VISEDICTS || count >= CLIENT_MAX_TEMP_ENTITIES
+                if self.visedicts.len() >= self.limits.visedicts
+                    || count >= self.limits.temp_entities
                 {
                     return;
                 }

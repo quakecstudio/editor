@@ -13,11 +13,30 @@ use std::path::{Path, PathBuf};
 pub enum EntryKind {
     /// A regular file, or a symbolic link to one.
     File,
-    /// A directory. Symbolic links to directories are [`EntryKind::Other`], so a walk never
-    /// loops.
+    /// A directory.
     Dir,
+    /// A symbolic link, or a Windows junction, to a directory: a directory to every lookup, as
+    /// the host follows it when id's engine opens a path through it, but not descended into by
+    /// a listing, so a link loop cannot hang one (FS-3.11).
+    DirLink,
     /// Anything else.
     Other,
+}
+
+impl EntryKind {
+    /// Whether an entry of this kind is found by a lookup for `want`: a link to a directory is
+    /// found as a directory (FS-3.11).
+    #[must_use]
+    pub const fn serves_as(self, want: Self) -> bool {
+        match (self, want) {
+            (Self::DirLink, Self::Dir | Self::DirLink)
+            | (Self::Dir, Self::Dir)
+            | (Self::File, Self::File)
+            | (Self::Other, Self::Other) => true,
+            (Self::Dir | Self::File | Self::Other, _)
+            | (Self::DirLink, Self::File | Self::Other) => false,
+        }
+    }
 }
 
 /// One entry of a directory listing.
@@ -34,7 +53,7 @@ pub struct DirEntry {
 /// case-insensitively, so a path keeps the name on disk.
 #[must_use]
 pub fn find_entry(mut entries: Vec<DirEntry>, name: &str, kind: EntryKind) -> Option<DirEntry> {
-    entries.retain(|entry| entry.kind == kind);
+    entries.retain(|entry| entry.kind.serves_as(kind));
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     let index = entries
         .iter()
@@ -89,12 +108,15 @@ impl HostFs for StdFs {
         for entry in fs::read_dir(path)? {
             let entry = entry?;
             let file_type = entry.file_type()?;
+            let target = || fs::metadata(entry.path());
             let kind = if file_type.is_dir() {
                 EntryKind::Dir
             } else if file_type.is_file()
-                || (file_type.is_symlink() && fs::metadata(entry.path()).is_ok_and(|m| m.is_file()))
+                || (file_type.is_symlink() && target().is_ok_and(|m| m.is_file()))
             {
                 EntryKind::File
+            } else if file_type.is_symlink() && target().is_ok_and(|m| m.is_dir()) {
+                EntryKind::DirLink
             } else {
                 EntryKind::Other
             };

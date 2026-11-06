@@ -15,16 +15,19 @@ use qc_sema::{Db, FileId, ModuleInput};
 
 use crate::oracles::rerelease::autoprototypes;
 
-const USAGE: &str = "usage: cargo xtask codegen-corpus <codebase directory>...";
+/// `cargo xtask codegen-corpus <codebase directory>...`.
+#[derive(clap::Parser, Debug)]
+pub(crate) struct Args {
+    /// The codebase directories.
+    #[arg(required = true)]
+    dirs: Vec<PathBuf>,
+}
 
 /// Runs `cargo xtask codegen-corpus` with the arguments `args`.
-pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
-    if args.is_empty() {
-        return Err(USAGE.to_owned());
-    }
+pub(crate) fn main(_root: &Path, args: &Args) -> Result<bool, String> {
     let mut ok = true;
-    for dir in args.iter().map(PathBuf::from) {
-        let project = open(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    for dir in &args.dirs {
+        let project = open(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         let autoproto = dir
             .file_name()
             .and_then(|name| name.to_str())

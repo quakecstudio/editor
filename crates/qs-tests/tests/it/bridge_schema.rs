@@ -118,7 +118,7 @@ fn every_schema_compiles() {
     }
 }
 
-// spec BRIDGE-3.1, BRIDGE-4.1: every example validates against the schema its name starts
+// spec BRIDGE-3.1, BRIDGE-4.9: every example validates against the schema its name starts
 // with, and every schema has at least one example
 #[test]
 fn every_example_validates() {
@@ -167,7 +167,7 @@ fn the_events_table_matches_the_schemas() {
     }
 }
 
-// spec BRIDGE-4.1, BRIDGE-2.3: every bridge client operation but launch maps to a command
+// spec BRIDGE-4.9, BRIDGE-2.6: every bridge client operation but launch maps to a command
 // with a params and a result schema, and the capability-flagged ones are exactly the flags
 // `initialize.result.json` declares
 #[test]
@@ -230,7 +230,7 @@ fn the_commands_table_matches_the_schemas_and_capabilities() {
     assert!(listed.contains("-32005"), "the unsupported code is listed");
 }
 
-// spec BRIDGE-1.4, BRIDGE-2.4: the envelope is a request, a notification or a response with
+// spec BRIDGE-1.4, BRIDGE-2.7: the envelope is a request, a notification or a response with
 // exactly one of result and error, and a version is major.minor
 #[test]
 fn the_envelope_and_the_version_shape() {
@@ -329,7 +329,7 @@ fn unknown_members_pass_and_wrong_value_types_fail() {
 #[test]
 fn the_error_codes_are_in_range_and_distinct() {
     let codes = methods_in_table(&spec_text(), "## BRIDGE-7 Errors");
-    assert_eq!(codes.len(), 12, "{codes:?}");
+    assert_eq!(codes.len(), 13, "{codes:?}");
     for code in &codes {
         let code: i32 = code.parse().unwrap();
         assert!(
