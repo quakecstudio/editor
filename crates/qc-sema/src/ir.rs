@@ -11,7 +11,7 @@ use qc_preproc::Op;
 
 use crate::DefId;
 use crate::check::etype::Etype;
-use crate::check::opcodes::row as opcode_row;
+use crate::check::opcodes::{Assoc, row as opcode_row};
 
 /// A constant a statement names: the words of its value and the kind of immediate that holds
 /// them.
@@ -248,10 +248,13 @@ impl BodyStatement {
             return Some(3);
         }
         let made = Some(Name::Made(index));
-        let etype = if self.c == made {
-            opcode_row(self.op)?.types[2].etype()
-        } else if self.b == made {
-            opcode_row(self.op)?.types[1].etype()
+        let row = opcode_row(self.op)?;
+        // Only an operand the statement writes: `c` of an opcode that makes a value, `b` of a
+        // store; a value it reads as `b` or `c` takes none of its words from it.
+        let etype = if self.c == made && row.makes_value() {
+            row.types[2].etype()
+        } else if self.b == made && row.assoc == Assoc::Right {
+            row.types[1].etype()
         } else {
             return None;
         };
@@ -301,6 +304,35 @@ mod tests {
             ..BodyStatement::bare(Op::AddF)
         };
         assert_eq!(folded.temp_words(5), Some(1));
+    }
+
+    // spec FTE-21.8: a value takes the words a statement writes into it, its result's or a
+    // store's, and none from a statement that only reads it
+    #[test]
+    fn made_words_counts_only_writes() {
+        let with = |op, b, c| BodyStatement {
+            b,
+            c,
+            ..BodyStatement::bare(op)
+        };
+        let made = Some(Name::Made(2));
+        assert_eq!(
+            with(Op::MulFv, None, made).made_words(2),
+            Some(3),
+            "a result"
+        );
+        assert_eq!(
+            with(Op::StoreV, made, None).made_words(2),
+            Some(3),
+            "a store's copy"
+        );
+        assert_eq!(with(Op::MulVf, made, None).made_words(2), None, "read as b");
+        assert_eq!(
+            with(Op::StoreV, None, made).made_words(2),
+            None,
+            "not b of a store"
+        );
+        assert_eq!(with(Op::AddF, None, None).made_words(2), None);
     }
 
     // A word of a definition, a value, an immediate or the return global is named, offset from
