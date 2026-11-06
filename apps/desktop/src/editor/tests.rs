@@ -22,7 +22,7 @@ use crate::App;
 use crate::fallback::SystemFonts;
 use crate::icons::Icon;
 use crate::shell::{EDITOR_AREA, view_style};
-use crate::strings::{Text, match_count};
+use crate::strings::{Text, file_count, match_count};
 use crate::theme::{Mode, Theme, Token};
 
 /// The test project: `defs.qc` declares `bounces` and the rest; `src/weapons.qc` uses them.
@@ -632,4 +632,37 @@ fn the_breadcrumb_follows_the_caret() {
     harness.run();
     assert_eq!(count(&harness, "W_FireEmber"), 1);
     assert_eq!(count(&harness, "Ember_Touch"), 2);
+}
+
+// UI-14: Cmd+P opens the file finder over the project's files; typing narrows it to the files
+// whose name or path holds the letters, Enter opens the first, and Escape closes it
+#[test]
+fn the_file_finder_opens_a_file_by_name() {
+    let mut harness = harness("src/weapons.qc");
+    press(&mut harness, Modifiers::COMMAND, Key::P);
+    harness.run();
+    assert!(app(&harness).shell().finder.is_open());
+    assert!(harness.query_by_label(&file_count(3, 3)).is_some());
+    harness.event(Event::Text("wrld".to_owned()));
+    harness.run();
+    assert!(harness.query_by_label(&file_count(1, 3)).is_some());
+    press(&mut harness, Modifiers::NONE, Key::Enter);
+    harness.run();
+    assert!(!app(&harness).shell().finder.is_open());
+    let open = app(&harness)
+        .shell()
+        .workbench()
+        .open()
+        .unwrap()
+        .path()
+        .to_path_buf();
+    assert!(open.ends_with("src/world.qc"), "{}", open.display());
+    press(&mut harness, Modifiers::COMMAND, Key::P);
+    harness.run();
+    harness.event(Event::Text("zzz".to_owned()));
+    harness.run();
+    assert!(harness.query_by_label(Text::NoFileMatch.get()).is_some());
+    press(&mut harness, Modifiers::NONE, Key::Escape);
+    harness.run();
+    assert!(!app(&harness).shell().finder.is_open());
 }

@@ -30,11 +30,11 @@ use qs_layout::{
 use qs_render::{Camera, MapMesh};
 use qs_workbench::debug::Location;
 use qs_workbench::{
-    AtParams, CLOSE_FILE, COMPLETE, Candidate, CloseFileParams, Config, DEFINITION, FsLoader,
-    HOVER, HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT, OpenFile, OpenFileParams,
-    OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState, Preview, PreviewConfig,
-    PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RenameParams, SAVE_FILE, STEP,
-    STOP, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
+    AtParams, CLOSE_FILE, COMPLETE, Candidate, CloseFileParams, Config, DEFINITION, EntryKind,
+    FsLoader, HOVER, HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT, OpenFile,
+    OpenFileParams, OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState, Preview,
+    PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RenameParams,
+    SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
 };
 use qs_workbench::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, STEP_BY, StepByParams, UNWATCH,
@@ -46,6 +46,7 @@ use crate::debugger::{self, DebugAction, DebugInput};
 use crate::editor::{Editor, Popup, Request};
 use crate::entities::{self, EntityAction, Outliner, Properties};
 use crate::fallback::{SystemFonts, families};
+use crate::finder::FileFinder;
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
 use crate::map_view::{self, MapView};
@@ -93,6 +94,7 @@ pub(crate) enum Area {
     StatusBar,
     Panel(Panel),
     Palette,
+    Finder,
     Editor,
     Section(Text),
 }
@@ -138,6 +140,8 @@ pub struct Shell {
     pub(crate) drawn: [Option<f32>; 3],
     /// The command palette.
     pub(crate) palette: Palette,
+    /// The file finder.
+    pub(crate) finder: FileFinder,
     symbol_scope: SymbolScope,
     editor: Option<Editor>,
     system_fonts: SystemFonts,
@@ -196,6 +200,7 @@ impl Shell {
             centre_tab: CentreTab::default(),
             drawn: [None; 3],
             palette: Palette::default(),
+            finder: FileFinder::default(),
             symbol_scope: SymbolScope::default(),
             editor: None,
             system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
@@ -420,6 +425,25 @@ impl Shell {
                 Err(error) => self.palette.failed(error.to_string()),
             }
         }
+        let workbench = &self.session.context().workbench;
+        let files: Vec<PathBuf> = workbench
+            .tree()
+            .iter()
+            .filter_map(|entry| match &entry.kind {
+                EntryKind::File(path) => Some(path.clone()),
+                EntryKind::Directory => None,
+            })
+            .collect();
+        if let Some(path) = self.finder.show(
+            ui,
+            Id::new(Area::Finder),
+            &self.theme,
+            workbench.root(),
+            &files,
+        ) {
+            let offset = self.parked.get(&path).map_or(0, Editor::caret_offset);
+            self.jump(Jump { path, offset });
+        }
         let dragging = ui.input(|input| input.pointer.any_down());
         self.save_if_changed(dragging);
     }
@@ -428,10 +452,16 @@ impl Shell {
     /// command (`keymap`), the editor's own keys left to it while it has the keyboard.
     fn keys(&mut self, ui: &Ui) {
         if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_PALETTE)) {
+            self.finder.close();
             self.palette.open();
             return;
         }
-        if self.palette.is_open() {
+        if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FILE_FINDER)) {
+            self.palette.close();
+            self.finder.open();
+            return;
+        }
+        if self.palette.is_open() || self.finder.is_open() {
             return;
         }
         // The editor, with its own undo history, takes its keys itself.

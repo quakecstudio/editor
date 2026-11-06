@@ -127,6 +127,12 @@ pub enum Text {
     ModifiedMark,
     /// Between the steps of the breadcrumb.
     PathSeparator,
+    /// The file finder's name for a screen reader.
+    FileFinder,
+    /// The hint in the file finder's field.
+    SearchFiles,
+    /// The file finder with no file matching.
+    NoFileMatch,
     /// A control that has no action yet.
     NotYetAvailable,
     /// The View menu.
@@ -225,7 +231,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 107] = [
+    pub const ALL: [Self; 110] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -286,6 +292,9 @@ impl Text {
         Self::CloseTabHint,
         Self::ModifiedMark,
         Self::PathSeparator,
+        Self::FileFinder,
+        Self::SearchFiles,
+        Self::NoFileMatch,
         Self::NotYetAvailable,
         Self::ViewMenu,
         Self::ToggleLeftPanel,
@@ -401,6 +410,9 @@ impl Text {
             Self::CloseTabHint => "Close the tab; its unsaved edits are kept",
             Self::ModifiedMark => "M",
             Self::PathSeparator => " / ",
+            Self::FileFinder => "File finder",
+            Self::SearchFiles => "Search files by name",
+            Self::NoFileMatch => "No file matches.",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",
             Self::ToggleLeftPanel => "Project and Entities",
@@ -456,6 +468,12 @@ impl Text {
 #[must_use]
 pub fn command_count(shown: usize, total: usize) -> String {
     format!("{shown} of {total} commands")
+}
+
+/// The file finder's count of the files it lists, out of all of them.
+#[must_use]
+pub fn file_count(shown: usize, total: usize) -> String {
+    format!("{shown} of {total} files")
 }
 
 /// The find bar's count of the matches.

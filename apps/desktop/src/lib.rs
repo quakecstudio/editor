@@ -19,6 +19,7 @@ mod debugger;
 mod editor;
 mod entities;
 mod fallback;
+mod finder;
 pub mod icons;
 pub mod keymap;
 pub mod map_view;
