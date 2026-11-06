@@ -27,7 +27,7 @@ use qs_bsp::{
 use qs_sim::{LoadOptions, World};
 use serde_json::{Value, json};
 
-use super::{Eye, Game, HostAction, NextLevel, Reporting, Screen};
+use super::{Eye, Game, HostAction, NextLevel, Placement, Reporting, Screen};
 use crate::screenshot::Frame;
 
 /// The QuakeC the tests run: a crate the map places, a counter `StartFrame` raises, a
@@ -819,7 +819,11 @@ fn an_offscreen_host_offers_screenshot_and_reports_a_failed_frame() {
     game.set_screen(Screen::Offscreen);
     let capabilities = game.capabilities();
     for command in super::COMMANDS {
-        assert!(capabilities.accepts(command), "{command}");
+        assert_eq!(
+            capabilities.accepts(command),
+            command != "window/place",
+            "{command}"
+        );
     }
     for id in [7, 8] {
         let reply = session.handle(&mut game, request(id, "screenshot", &json!({})));
@@ -853,7 +857,7 @@ fn a_headless_host_with_no_device_offers_no_screenshot() {
     for command in super::COMMANDS {
         assert_eq!(
             capabilities.accepts(command),
-            command != "screenshot",
+            !matches!(command, "screenshot" | "window/place"),
             "{command}"
         );
     }
@@ -1350,4 +1354,65 @@ fn a_reload_lists_the_breakpoints_it_cleared() {
         changed.len() <= 2,
         "only what the frame changed: {changed:?}"
     );
+}
+
+// spec BRIDGE-4.10: a window the host can place offers window/place, and a placement asked for
+// is taken once by the next frame; a window on Wayland, or no window, does not offer it
+#[test]
+fn window_place_is_kept_for_the_next_frame() {
+    let (mut game, mut session) = game();
+    assert!(game.capabilities().accepts("window/place"));
+    let params = json!({ "x": 1290, "y": 25.5, "width": 800, "height": 528, "above": true });
+    let reply = session.handle(&mut game, request(7, "window/place", &params));
+    let Some(Message::Response {
+        outcome: Ok(result),
+        ..
+    }) = reply.response
+    else {
+        panic!("window/place was not answered");
+    };
+    assert_eq!(result, Value::Null);
+    assert_eq!(
+        game.take_placement(),
+        Some(Placement {
+            x: 1290.0,
+            y: 25.5,
+            width: 800.0,
+            height: 528.0,
+            above: true,
+        })
+    );
+    assert_eq!(game.take_placement(), None, "taken once");
+    for screen in [Screen::FixedWindow, Screen::Offscreen, Screen::Headless] {
+        game.set_screen(screen);
+        assert!(!game.capabilities().accepts("window/place"), "{screen:?}");
+    }
+    game.set_screen(Screen::FixedWindow);
+    assert!(
+        game.capabilities().accepts("screenshot"),
+        "a fixed window still draws"
+    );
+}
+
+// spec BRIDGE-4.2, BRIDGE-4.10: a width or height below 1, or a missing member, is invalid
+// params and places nothing
+#[test]
+fn window_place_refuses_a_bad_frame() {
+    let (mut game, mut session) = game();
+    for params in [
+        json!({ "x": 0, "y": 0, "width": 0, "height": 528, "above": true }),
+        json!({ "x": 0, "y": 0, "width": 800, "height": 0.5, "above": false }),
+        json!({ "x": 0, "y": 0, "width": 800, "height": 528 }),
+    ] {
+        let reply = session.handle(&mut game, request(7, "window/place", &params));
+        let Some(Message::Response {
+            outcome: Err(error),
+            ..
+        }) = reply.response
+        else {
+            panic!("{params} was not refused");
+        };
+        assert_eq!(error.code, ErrorCode::InvalidParams, "{params}");
+    }
+    assert_eq!(game.take_placement(), None);
 }

@@ -101,6 +101,23 @@ impl StepKind {
     }
 }
 
+/// Where `window/place` puts the host's window (BRIDGE-4.10): its outer frame in the desktop's
+/// logical points, from the top left of the main display, and whether it stays above other
+/// windows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WindowPlacement {
+    /// The frame's left edge.
+    pub x: f32,
+    /// Its top edge.
+    pub y: f32,
+    /// Its width, at least 1.
+    pub width: f32,
+    /// Its height, at least 1.
+    pub height: f32,
+    /// Whether it stays above other windows.
+    pub above: bool,
+}
+
 /// What `inspect` reads (BRIDGE-4.9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InspectWhat {
@@ -379,6 +396,26 @@ impl Client {
     /// The request's [`ClientError`].
     pub fn pick(&mut self, x: f64, y: f64) -> Result<Value, ClientError> {
         self.request("pick", json!({ "x": x, "y": y }))
+    }
+
+    /// `window/place` (BRIDGE-4.10): moves and sizes the host's window to `placement`.
+    ///
+    /// # Errors
+    ///
+    /// The request's [`ClientError`]: [`ClientError::Unsupported`] from a host that cannot place
+    /// its window (`--headless`, Wayland).
+    pub fn place_window(&mut self, placement: WindowPlacement) -> Result<Value, ClientError> {
+        let WindowPlacement {
+            x,
+            y,
+            width,
+            height,
+            above,
+        } = placement;
+        self.request(
+            "window/place",
+            json!({ "x": x, "y": y, "width": width, "height": height, "above": above }),
+        )
     }
 
     /// `entity/spawn` (BRIDGE-4.9).

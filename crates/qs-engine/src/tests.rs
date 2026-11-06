@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 
 use crate::{
     Client, ClientError, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRoot, RunRootError,
-    StepKind, host_command, locate_host, prepare_run_root,
+    StepKind, WindowPlacement, host_command, locate_host, prepare_run_root,
 };
 
 /// A folder removed when the test ends.
@@ -265,7 +265,7 @@ impl Host for Fake {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities::of(["pause", "step"])
+        Capabilities::of(["pause", "step", "window/place"])
     }
 
     fn call(&mut self, _id: &Id, method: &str, params: &Value) -> Answer {
@@ -343,9 +343,23 @@ fn the_client_speaks_the_bridge() {
         client.screenshot(None),
         Err(ClientError::Unsupported(method)) if method == "screenshot"
     ));
+    // BRIDGE-4.10: window/place sends the frame and whether it stays above.
+    let placed = client
+        .place_window(WindowPlacement {
+            x: 1290.0,
+            y: 25.0,
+            width: 800.0,
+            height: 528.0,
+            above: false,
+        })
+        .unwrap();
+    assert_eq!(
+        placed["params"],
+        json!({ "x": 1290.0, "y": 25.0, "width": 800.0, "height": 528.0, "above": false })
+    );
     // Each answer, initialize's too, came after an event, kept in order.
     let events = client.take_events();
-    assert_eq!(events.len(), 4);
+    assert_eq!(events.len(), 5);
     assert!(events.iter().all(|e| e.method == "console/line"));
     // The host answers a step with bad parameters with -32602 (BRIDGE-4.2).
     let bad = client.request("step", json!({ "kind": "sideways" }));

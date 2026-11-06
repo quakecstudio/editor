@@ -63,6 +63,9 @@ pub(crate) struct Args {
     /// Where the window opens, to put it on a chosen display.
     #[arg(long, num_args = 2, value_names = ["x", "y"], allow_negative_numbers = true)]
     pub(crate) position: Option<Vec<f32>>,
+    /// The window's size when it opens, in points; 1280 by 800 without it.
+    #[arg(long, num_args = 2, value_names = ["width", "height"])]
+    pub(crate) size: Option<Vec<f32>>,
     /// The map to start on.
     #[arg(default_value = "start")]
     pub(crate) map: String,

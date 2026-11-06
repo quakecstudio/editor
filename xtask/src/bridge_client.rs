@@ -121,6 +121,11 @@ fn capabilities(client: &Client) -> Result<(), String> {
             &format!("the host offers {command}"),
         )?;
     }
+    // BRIDGE-4.10: with no window there is nothing to place.
+    expect(
+        !client.offers("window/place"),
+        "a headless host leaves out window/place",
+    )?;
     Ok(())
 }
 

@@ -19,7 +19,7 @@ mod reload;
 use debug::{Breakpoint, Snapshot, Step, Stopped};
 
 /// The commands the game accepts.
-const COMMANDS: [&str; 15] = [
+const COMMANDS: [&str; 16] = [
     "reload",
     "breakpoint/set",
     "breakpoint/clear",
@@ -35,16 +35,21 @@ const COMMANDS: [&str; 15] = [
     "player/spawn_at",
     "pick",
     "screenshot",
+    "window/place",
 ];
 
 /// How far `pick`'s ray reaches, in map units.
 const PICK_REACH: f32 = 8192.0;
 
-/// Whether the host draws frames, and so can answer `screenshot`.
+/// Whether the host draws frames, and so can answer `screenshot`, and whether it can place its
+/// window, and so can answer `window/place`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Screen {
-    /// The game's window.
+    /// The game's window, which the host moves and sizes when asked.
     Window,
+    /// The game's window on a windowing system that lets a client neither move nor raise its
+    /// window (Wayland): `window/place` is not offered (BRIDGE-4.10).
+    FixedWindow,
     /// `--headless` with a GPU device: a frame is drawn offscreen when `screenshot` asks.
     Offscreen,
     /// `--headless` with no GPU device: nothing is drawn, and `screenshot` is not offered.
@@ -55,9 +60,61 @@ impl Screen {
     /// Whether it can draw a frame for `screenshot`.
     const fn draws(self) -> bool {
         match self {
-            Self::Window | Self::Offscreen => true,
+            Self::Window | Self::FixedWindow | Self::Offscreen => true,
             Self::Headless => false,
         }
+    }
+
+    /// Whether it has a window it can move, size and raise.
+    const fn places(self) -> bool {
+        match self {
+            Self::Window => true,
+            Self::FixedWindow | Self::Offscreen | Self::Headless => false,
+        }
+    }
+
+    /// Whether it offers `command`.
+    fn offers(self, command: &str) -> bool {
+        match command {
+            "screenshot" => self.draws(),
+            "window/place" => self.places(),
+            _ => true,
+        }
+    }
+}
+
+/// Where `window/place` puts the window (BRIDGE-4.10): its outer frame in the desktop's
+/// logical points, and whether it stays above other windows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Placement {
+    /// The frame's left edge.
+    pub(crate) x: f32,
+    /// Its top edge.
+    pub(crate) y: f32,
+    /// Its width, at least 1.
+    pub(crate) width: f32,
+    /// Its height, at least 1.
+    pub(crate) height: f32,
+    /// Whether it stays above other windows.
+    pub(crate) above: bool,
+}
+
+impl Placement {
+    /// The placement `window/place`'s parameters ask for; the schema has checked their types
+    /// and that the size is at least 1 (BRIDGE-4.2).
+    fn of(params: &Value) -> Option<Self> {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "desktop coordinates in points, far inside f32's range"
+        )]
+        let number = |name: &str| params.get(name).and_then(Value::as_f64).map(|n| n as f32);
+        Some(Self {
+            x: number("x")?,
+            y: number("y")?,
+            width: number("width")?,
+            height: number("height")?,
+            above: params.get("above").and_then(Value::as_bool)?,
+        })
     }
 }
 
@@ -198,6 +255,8 @@ pub(crate) struct Game {
     eye: Option<Eye>,
     /// The screenshots asked for since the last frame drawn.
     shots: Vec<Shot>,
+    /// Where `window/place` last asked the window to go, not yet applied.
+    placement: Option<Placement>,
     /// The responses of commands answered later, to send.
     responses: Vec<Response>,
     /// Whether the host was asked to stop (BRIDGE-2.5).
@@ -232,6 +291,7 @@ impl Game {
             events: Vec::new(),
             eye: None,
             shots: Vec::new(),
+            placement: None,
             responses: Vec::new(),
             stopped: false,
             screen: Screen::Window,
@@ -293,6 +353,11 @@ impl Game {
     /// Where the window's view looks from now.
     pub(crate) const fn set_eye(&mut self, eye: Eye) {
         self.eye = Some(eye);
+    }
+
+    /// Where `window/place` asked the window to go since the last call.
+    pub(crate) const fn take_placement(&mut self) -> Option<Placement> {
+        self.placement.take()
     }
 
     /// Whether a `screenshot` waits for the next frame drawn.
@@ -732,14 +797,29 @@ impl Host for Game {
     }
 
     fn capabilities(&self) -> Capabilities {
-        let drawn = |command: &&str| self.screen.draws() || *command != "screenshot";
-        Capabilities::of(COMMANDS.into_iter().filter(drawn))
+        Capabilities::of(
+            COMMANDS
+                .into_iter()
+                .filter(|command| self.screen.offers(command)),
+        )
     }
 
     fn call(&mut self, id: &Id, method: &str, params: &Value) -> Answer {
         // A reload replaces the progs every other command reads through.
         if method == "reload" {
             return Answer::Now(self.reload(params));
+        }
+        if method == "window/place" {
+            return Answer::Now(match Placement::of(params) {
+                Some(placement) => {
+                    self.placement = Some(placement);
+                    Ok(Value::Null)
+                }
+                None => Err(RpcError::new(
+                    ErrorCode::InvalidParams,
+                    "window/place takes x, y, width, height and above".to_owned(),
+                )),
+            });
         }
         if method == "screenshot" && self.screen.draws() {
             let size = |name: &str| {

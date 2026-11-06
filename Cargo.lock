@@ -3018,6 +3018,7 @@ dependencies = [
  "qs-sim",
  "qs-sound",
  "qs-vfs",
+ "raw-window-handle",
  "serde_json",
  "tracing",
 ]

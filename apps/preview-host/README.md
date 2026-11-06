@@ -25,7 +25,7 @@ and `--help` lists every option. `--headless` (with `-bridge`) opens no window a
 device (P3-05): it runs frames of 1/72 of a second and serves the bridge between them, its
 random sources starting at the engine's fixed state so a run is the same each time, and draws
 `screenshot` offscreen at 1280 by 800 on a GPU device with no window (`qs_render::Offscreen`).
-With no device it leaves `screenshot` out of its capabilities (BRIDGE-2.3). It is what
+With no device it leaves `screenshot` out of its capabilities (BRIDGE-2.6). It is what
 `cargo xtask bridge-client` runs in CI on Linux, macOS and Windows.
 
 The bridge offers `inspect`, `reload` (the progs loaded again over the running map, its globals
