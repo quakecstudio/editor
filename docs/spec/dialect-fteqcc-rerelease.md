@@ -1054,7 +1054,10 @@ empty (QC-14.2).
   to the last that names it, and while it is live at the start of a loop, to the loop's back
   jump; a value whose range has a `CALL` strictly inside it takes a slot of the function's own
   block (FTE-21.9); any other takes the first shared temporary of its size that no value of the
-  body holds at the statement that makes it, else a new one. The statement's operands are
+  body holds at the statement that makes it, else a new one. A value's size is the widest any
+  statement writes it, so the three words a `LOAD_V` arm writes to a one-word `?:` value
+  (FTE-9.3) reach no other value, as the fixed FTEQCC's vector `ternary` local holds them
+  (DIFF-14.6). The statement's operands are
   still held there, so a result never takes an operand's slot, as the fixed FTEQCC frees them
   (DIFF-14.7), where the pinned FTEQCC frees them first. A temporary a statement takes and
   nothing reads, such as the one a fold leaves, takes a slot as any other. A locked value takes
