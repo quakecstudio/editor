@@ -16,7 +16,8 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use qs_bsp::Bsp;
 use qs_client::{
-    Client, Console, ConsoleKey, Event, KeyDest, Menu, MenuEvent, MenuKey, Random as _, Typed,
+    Client, Console, ConsoleKey, Event, KeyDest, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey,
+    MenuSettings, Random as _, Typed,
 };
 use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
 use qs_sim::ClientCommand;
@@ -27,15 +28,11 @@ use crate::audio::Audio;
 use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
-use crate::load::{Acted, Describer, Loaded, Rand, act, load};
+use crate::load::{Acted, Describer, Loaded, Rand, act, saves};
 use crate::screenshot::Drawer;
 
 /// Map units a second walking, and running with Shift.
 const SPEEDS: [f32; 2] = [320.0, 960.0];
-/// Degrees turned per unit the mouse moves: `sensitivity` 3 times `m_yaw` and `m_pitch`
-/// 0.022, id's defaults (`WinQuake/cl_main.c`), as `IN_MouseMove` turns the view
-/// (`WinQuake/in_win.c`).
-const TURN: f32 = 3.0 * 0.022;
 
 /// Whether the window holds the mouse, as an engine does in play.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,7 +167,6 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 console,
                 dest: KeyDest::Game,
                 menu: Menu::new(),
-                asked: Vec::new(),
             }))
         }),
     )
@@ -221,9 +217,8 @@ struct Viewer {
     /// The console on the screen and where keys go (CON).
     console: Console,
     dest: KeyDest,
-    /// The menu (MENU), and what it asked of the host this frame: a new game or quitting.
+    /// The menu (MENU).
     menu: Menu,
-    asked: Vec<MenuEvent>,
 }
 
 impl eframe::App for Viewer {
@@ -250,20 +245,7 @@ impl eframe::App for Viewer {
         let frametime = self.advance(f64::from(seconds));
         // The progs' `localcmd` and `stuffcmd` reach the client's commands too.
         self.client_commands();
-        // MENU-3.2, MENU-5.2: the menu's new game, `map start` from nothing carried, and quit.
-        for asked in core::mem::take(&mut self.asked) {
-            match asked {
-                MenuEvent::NewGame => match load(&self.args, "start", None, None, None) {
-                    Ok(loaded) => {
-                        self.change_level(window, loaded);
-                        return;
-                    }
-                    Err(error) => tracing::warn!(%error, "the new game did not load"),
-                },
-                MenuEvent::Quit => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
-                MenuEvent::Sound(_) => {}
-            }
-        }
+        self.apply_settings();
         // PHYS-13.6: a level with what the player carries, a save, a load or quit.
         if let Some(action) = self.game.host_action() {
             match act(&self.args, &mut self.game, action) {
@@ -349,12 +331,16 @@ impl eframe::App for Viewer {
             .set_screen(self.play.screen[0], self.play.screen[1]);
         hud.console = self.console_items(seconds);
         let console_down = !hud.console.is_empty() && self.dest != KeyDest::Game;
-        let (menu, sound) = self.menu.draw(
-            self.dest,
-            self.started.elapsed().as_secs_f64(),
+        let world = self.game.world();
+        let realtime = self.started.elapsed().as_secs_f64();
+        let (menu, sound) = self.menu.draw(&MenuFrame {
+            dest: self.dest,
+            host_time: realtime,
+            realtime,
             console_down,
-            self.play.screen[1],
-        );
+            screen_height: self.play.screen[1],
+            settings: MenuSettings::read(&|name| world.setting(name).unwrap_or(0.0)),
+        });
         hud.menu = menu;
         if let Some(sound) = sound {
             self.audio.local(sound, &mut self.rand);
@@ -555,10 +541,8 @@ impl Viewer {
                 .send_viewport_cmd(egui::ViewportCommand::CursorVisible(visible));
             self.pointer = next;
         } else if self.pointer == Pointer::Captured {
-            // `cl.viewangles[YAW] -= m_yaw.value * mouse_x`,
-            // `cl.viewangles[PITCH] += m_pitch.value * mouse_y`.
-            let [x, y] = motion;
-            self.camera.turn(-x * TURN, y * TURN);
+            let [yaw, pitch] = self.game.mouse_turn(motion);
+            self.camera.turn(yaw, pitch);
         }
     }
 
@@ -580,10 +564,14 @@ impl Viewer {
         self.last_set = [self.camera.pitch, self.camera.yaw];
         // The keys are the console's while it is open (CON-4).
         let playing = self.dest == KeyDest::Game;
+        let speeds = self.game.move_speeds();
         let cmd = ui.input(|input| {
             let key = |k: egui::Key| f32::from(u8::from(playing && input.key_down(k)));
-            // cl_movespeedkey
-            let speed = if input.modifiers.shift { 2.0 } else { 1.0 };
+            let speed = if input.modifiers.shift {
+                speeds.run
+            } else {
+                1.0
+            };
             let held = self.pointer == Pointer::Captured;
             let attack = u8::from(playing && held && input.pointer.primary_down());
             let impulse = (1..=8_u8)
@@ -603,10 +591,10 @@ impl Viewer {
                 .unwrap_or(0);
             qs_sim::UserCmd {
                 angles: [self.camera.pitch, self.camera.yaw, 0.0],
-                // cl_forwardspeed, cl_backspeed, cl_sidespeed, cl_upspeed
-                forward: (200.0 * key(egui::Key::W) - 200.0 * key(egui::Key::S)) * speed,
-                side: (350.0 * key(egui::Key::D) - 350.0 * key(egui::Key::A)) * speed,
-                up: (200.0 * key(egui::Key::E) - 200.0 * key(egui::Key::Q)) * speed,
+                forward: (speeds.forward * key(egui::Key::W) - speeds.back * key(egui::Key::S))
+                    * speed,
+                side: (speeds.side * key(egui::Key::D) - speeds.side * key(egui::Key::A)) * speed,
+                up: (speeds.up * key(egui::Key::E) - speeds.up * key(egui::Key::Q)) * speed,
                 buttons: attack | (u8::from(playing && input.key_down(egui::Key::Space)) << 1),
                 impulse,
             }
@@ -672,18 +660,49 @@ impl Viewer {
         }
     }
 
-    /// One key into the menu, what it asks of the host done: a sound, a new game, or quitting
-    /// (MENU).
-    fn menu_key(&mut self, key: MenuKey) {
+    /// `f` on the menu with what it reads of the game (MENU-3.2, MENU-6.1, MENU-7.4): the next
+    /// `rand ()`, a game running, whether it may be saved, the settings and the save slots.
+    fn with_menu<R>(&mut self, f: impl FnOnce(&mut Menu, &MenuGame<'_>) -> R) -> R {
         let random = self.rand.rand();
-        let (dest, events) = self.menu.key(key, random);
+        let world = self.game.world();
+        let args = &self.args;
+        let slots = || saves(args);
+        let game = MenuGame {
+            random,
+            server_active: true,
+            can_save: self.client.intermission() == 0,
+            settings: MenuSettings::read(&|name| world.setting(name).unwrap_or(0.0)),
+            saves: &slots,
+        };
+        f(&mut self.menu, &game)
+    }
+
+    /// One key into the menu, what it asks of the host done: a sound, a setting, or a line for
+    /// the console, such as `map start`, `load s0` or `quit` (MENU).
+    fn menu_key(&mut self, key: MenuKey) {
+        let (dest, events) = self.with_menu(|menu, game| menu.key(key, game));
         self.dest = dest;
         for event in events {
             match event {
                 MenuEvent::Sound(name) => self.audio.local(name, &mut self.rand),
-                MenuEvent::NewGame | MenuEvent::Quit => self.asked.push(event),
+                MenuEvent::Set { name, value } => {
+                    self.game.world_mut().set_setting(name, value);
+                }
+                MenuEvent::Run(line) => self.run_line(line.as_bytes()),
             }
         }
+    }
+
+    /// `line` run on the console, what it prints printed and the client's commands it met
+    /// run (CON-4.2, CON-6.1).
+    fn run_line(&mut self, line: &[u8]) {
+        let realtime = self.started.elapsed().as_secs_f64();
+        for printed in self.game.type_console(line) {
+            let mut text = printed;
+            text.push(b'\n');
+            self.console.print(&text, realtime);
+        }
+        self.client_commands();
     }
 
     /// `svc_print`: the server's text for the console (CON-1).
@@ -724,13 +743,21 @@ impl Viewer {
             .console
             .key(key, height, realtime, &|partial| game.complete(partial));
         if let Typed::Run(line) = typed {
-            for printed in self.game.type_console(&line) {
-                let mut text = printed;
-                text.push(b'\n');
-                self.console.print(&text, realtime);
-            }
-            self.client_commands();
+            self.run_line(&line);
         }
+    }
+
+    /// The client's settings as the console and the menus left them (CON-7.2): the view size
+    /// and gamma for the view, the volume for the mixer.
+    fn apply_settings(&mut self) {
+        let world = self.game.world();
+        let setting = |name: &str| world.setting(name).unwrap_or(0.0);
+        let mut view = *self.client.view_settings();
+        view.viewsize = setting("viewsize");
+        view.gamma = setting("gamma");
+        let volume = setting("volume");
+        self.client.set_view_settings(view);
+        self.audio.set_volume(volume);
     }
 
     /// The client's commands the console met, run in order (CON-6.1).
@@ -749,6 +776,12 @@ impl Viewer {
                 ClientCommand::ToggleMenu => self.menu.toggle(self.dest),
                 ClientCommand::MenuMain => self.menu.main(),
                 ClientCommand::MenuSinglePlayer => self.menu.single_player(),
+                ClientCommand::MenuLoad => self.with_menu(Menu::load),
+                ClientCommand::MenuSave => {
+                    let dest = self.dest;
+                    self.with_menu(|menu, game| menu.save(dest, game))
+                }
+                ClientCommand::MenuOptions => self.menu.options(),
                 ClientCommand::Help => self.menu.help(),
                 ClientCommand::MenuQuit => {
                     let random = self.rand.rand();

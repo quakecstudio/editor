@@ -285,7 +285,9 @@ fn qs_sim::world::World::qc_time
 fn qs_sim::world::World::save_spawn_parms
 fn qs_sim::world::World::set_command
 fn qs_sim::world::World::set_debugger
+fn qs_sim::world::World::set_setting
 fn qs_sim::world::World::set_standard_quake
+fn qs_sim::world::World::setting
 fn qs_sim::world::World::settle
 fn qs_sim::world::World::signon
 fn qs_sim::world::World::take_client_commands
@@ -540,8 +542,11 @@ variant qs_sim::spawn::Token::End
 variant qs_sim::spawn::Token::Word
 variant qs_sim::world::ClientCommand::Clear
 variant qs_sim::world::ClientCommand::Help
+variant qs_sim::world::ClientCommand::MenuLoad
 variant qs_sim::world::ClientCommand::MenuMain
+variant qs_sim::world::ClientCommand::MenuOptions
 variant qs_sim::world::ClientCommand::MenuQuit
+variant qs_sim::world::ClientCommand::MenuSave
 variant qs_sim::world::ClientCommand::MenuSinglePlayer
 variant qs_sim::world::ClientCommand::ToggleConsole
 variant qs_sim::world::ClientCommand::ToggleMenu

@@ -42,7 +42,10 @@ pub use hud::{
     HUD_PRINTSPEED, HUD_SBAR_HEIGHT, HUD_WEAPONS, HudInput, HudItem, Placed, color_for_map,
     intermission_overlay, sort_frags, status_bar,
 };
-pub use menu::{MENU_HELP_PAGES, Menu, MenuEvent, MenuKey, MenuState};
+pub use menu::{
+    MENU_HELP_PAGES, MENU_SAVEGAMES, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey, MenuSettings,
+    MenuState, save_comment,
+};
 pub use message::Reader;
 pub use models::{FrameInfo, ModelInfo, ModelKind, Models, Random, SYNCTYPE_RAND, flags};
 pub use particles::{

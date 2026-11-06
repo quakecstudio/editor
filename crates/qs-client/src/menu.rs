@@ -2,11 +2,12 @@
 // Copyright (C) 1996-1997 Id Software, Inc.
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/menu.c, M_ToggleMenu_f, M_Menu_Main_f, M_Main_Draw, M_Main_Key, M_Menu_SinglePlayer_f, M_SinglePlayer_Draw, M_SinglePlayer_Key, M_Menu_Help_f, M_Help_Draw, M_Help_Key, M_Menu_Quit_f, M_Quit_Draw, M_Quit_Key, M_Draw, M_Keydown, M_Print, M_PrintWhite, M_DrawTextBox
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/menu.c, M_ToggleMenu_f, M_Menu_Main_f, M_Main_Draw, M_Main_Key, M_Menu_SinglePlayer_f, M_SinglePlayer_Draw, M_SinglePlayer_Key, M_ScanSaves, M_Menu_Load_f, M_Menu_Save_f, M_Load_Draw, M_Save_Draw, M_Load_Key, M_Save_Key, M_Menu_Options_f, M_AdjustSliders, M_DrawSlider, M_DrawCheckbox, M_Options_Draw, M_Options_Key, M_Menu_Help_f, M_Help_Draw, M_Help_Key, M_Menu_Quit_f, M_Quit_Draw, M_Quit_Key, M_Draw, M_Keydown, M_Print, M_PrintWhite, M_DrawTextBox
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_draw.c, Draw_FadeScreen
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_screen.c, SCR_ModalMessage, SCR_DrawNotifyString
 
-//! The menus a local player uses (MENU): main, single player, help and the quit prompt, drawn
-//! over a faded view and driven by keys.
+//! The menus a local player uses (MENU): main, single player, load and save, options, help and
+//! the quit prompt, drawn over a faded view and driven by keys.
 
 use crate::console::KeyDest;
 use crate::hud::{Anchor, HudItem, Placed};
@@ -15,6 +16,16 @@ use crate::hud::{Anchor, HudItem, Placed};
 const MAIN_ITEMS: usize = 5;
 /// `SINGLEPLAYER_ITEMS` (MENU-3.1).
 const SINGLEPLAYER_ITEMS: usize = 3;
+/// `MAX_SAVEGAMES`: the load and save menus' slots (MENU-6.1).
+pub const MENU_SAVEGAMES: usize = 12;
+/// `SAVEGAME_COMMENT_LENGTH`: a slot's characters (MENU-6.1).
+const SAVEGAME_COMMENT_LENGTH: usize = 39;
+/// `OPTIONS_ITEMS` of a build other than Windows' (MENU-7.1).
+const OPTIONS_ITEMS: usize = 13;
+/// The options' video item, which a host with no video menu skips (MENU-7.1).
+const OPTIONS_VIDEO: usize = 12;
+/// `SLIDER_RANGE` (MENU-7.3).
+const SLIDER_RANGE: i32 = 10;
 /// `NUM_HELP_PAGES` (MENU-4.1).
 pub const MENU_HELP_PAGES: usize = 6;
 /// The cursor's six frames, `gfx/menudot1.lmp` to `gfx/menudot6.lmp` (MENU-2.1).
@@ -98,6 +109,14 @@ pub enum MenuState {
     Main,
     /// `m_singleplayer`.
     SinglePlayer,
+    /// `SCR_ModalMessage`'s question before a new game while a game runs (MENU-3.2).
+    NewGame,
+    /// `m_load`.
+    Load,
+    /// `m_save`.
+    Save,
+    /// `m_options`.
+    Options,
     /// `m_help`.
     Help,
     /// `m_quit`.
@@ -124,14 +143,114 @@ pub enum MenuKey {
 }
 
 /// What the menu asks of the host.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MenuEvent {
     /// `S_LocalSound` of the sound named (MENU-1.3).
     Sound(&'static str),
-    /// A new game: `maxplayers 1` and `map start` (MENU-3.2).
-    NewGame,
-    /// `Host_Quit_f` (MENU-5.2).
-    Quit,
+    /// `Cbuf_AddText` of a command line, run by the console (MENU-3.2, MENU-5.2, MENU-6.3,
+    /// MENU-7.2).
+    Run(String),
+    /// `Cvar_SetValue` of a setting (MENU-7.4).
+    Set {
+        /// The setting's name.
+        name: &'static str,
+        /// Its new value.
+        value: f32,
+    },
+}
+
+/// The settings the options menu shows and changes, as the host holds them (MENU-7).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MenuSettings {
+    /// `viewsize`.
+    pub viewsize: f32,
+    /// `gamma`.
+    pub gamma: f32,
+    /// `sensitivity`.
+    pub sensitivity: f32,
+    /// `bgmvolume`.
+    pub bgmvolume: f32,
+    /// `volume`.
+    pub volume: f32,
+    /// `cl_forwardspeed`, which Always Run reads.
+    pub forwardspeed: f32,
+    /// `m_pitch`, negative when the mouse is inverted.
+    pub m_pitch: f32,
+    /// `lookspring`.
+    pub lookspring: f32,
+    /// `lookstrafe`.
+    pub lookstrafe: f32,
+}
+
+impl MenuSettings {
+    /// The settings, each read by its name from `setting`.
+    #[must_use]
+    pub fn read(setting: &dyn Fn(&str) -> f32) -> Self {
+        Self {
+            viewsize: setting("viewsize"),
+            gamma: setting("gamma"),
+            sensitivity: setting("sensitivity"),
+            bgmvolume: setting("bgmvolume"),
+            volume: setting("volume"),
+            forwardspeed: setting("cl_forwardspeed"),
+            m_pitch: setting("m_pitch"),
+            lookspring: setting("lookspring"),
+            lookstrafe: setting("lookstrafe"),
+        }
+    }
+}
+
+/// What the menu reads of the game as a key goes in (MENU-3.2, MENU-6.1, MENU-7.4).
+pub struct MenuGame<'a> {
+    /// The next `rand ()`, for a quit prompt's message.
+    pub random: i32,
+    /// `sv.active`: a game runs.
+    pub server_active: bool,
+    /// What `M_Menu_Save_f` asks: a game runs, it is not at an intermission, and it has one
+    /// player.
+    pub can_save: bool,
+    /// The settings now.
+    pub settings: MenuSettings,
+    /// `M_ScanSaves`' files: the text of `s<n>.sav` for each slot, `None` where there is
+    /// none.
+    pub saves: &'a dyn Fn() -> [Option<Vec<u8>>; MENU_SAVEGAMES],
+}
+
+/// What a menu's drawing reads: the key destination, the clocks and the screen (MENU-1.3).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MenuFrame {
+    /// `key_dest`.
+    pub dest: KeyDest,
+    /// `host_time`, which turns the spinning cursor.
+    pub host_time: f64,
+    /// `realtime`, which blinks the line cursors.
+    pub realtime: f64,
+    /// Whether the console is down, its background under the menu instead of the fade.
+    pub console_down: bool,
+    /// The screen's height.
+    pub screen_height: i32,
+    /// The settings the options menu shows.
+    pub settings: MenuSettings,
+}
+
+/// `M_ScanSaves`' reading of a save's text: `fscanf (f, "%i\n", &version)`, then
+/// `fscanf (f, "%79s\n", name)`, the first 39 characters kept and each `_` made a space
+/// (MENU-6.1).
+#[must_use]
+pub fn save_comment(text: &[u8]) -> Vec<u8> {
+    let rest = text.trim_ascii_start();
+    let digits = rest
+        .iter()
+        .enumerate()
+        .take_while(|&(i, &c)| c.is_ascii_digit() || (i == 0 && (c == b'-' || c == b'+')))
+        .count();
+    let rest = rest.get(digits..).unwrap_or_default().trim_ascii_start();
+    rest.iter()
+        .take_while(|c| !c.is_ascii_whitespace())
+        .take(79)
+        .take(SAVEGAME_COMMENT_LENGTH)
+        .map(|&c| if c == b'_' { b' ' } else { c })
+        .collect()
 }
 
 /// The menu's state: what is shown, each menu's cursor and the quit prompt's (MENU).
@@ -140,6 +259,11 @@ pub struct Menu {
     state: MenuState,
     main_cursor: usize,
     singleplayer_cursor: usize,
+    /// `load_cursor`, the load and save menus' slot.
+    load_cursor: usize,
+    /// `m_filenames` and `loadable`: each slot's comment, `None` for an unused slot.
+    slots: Vec<Option<Vec<u8>>>,
+    options_cursor: usize,
     help_page: usize,
     /// `msgNumber`, the quit message shown.
     message: usize,
@@ -210,14 +334,46 @@ impl Menu {
         self.open(MenuState::Quit)
     }
 
-    /// `M_Keydown`: `key` in the menu shown, `random` the next `rand ()` for a quit prompt;
-    /// the destination after it and what it asks of the host (MENU-1.2 to MENU-5.2).
-    pub fn key(&mut self, key: MenuKey, random: i32) -> (KeyDest, Vec<MenuEvent>) {
+    /// `M_Menu_Load_f`: the load menu, its slots scanned (MENU-6.1).
+    pub fn load(&mut self, game: &MenuGame<'_>) -> KeyDest {
+        self.scan(game);
+        self.open(MenuState::Load)
+    }
+
+    /// `M_Menu_Save_f`: the save menu, its slots scanned, only when `game.can_save`; else
+    /// nothing changes (MENU-6.1).
+    pub fn save(&mut self, dest: KeyDest, game: &MenuGame<'_>) -> KeyDest {
+        if !game.can_save {
+            return dest;
+        }
+        self.scan(game);
+        self.open(MenuState::Save)
+    }
+
+    /// `M_Menu_Options_f`: the options (MENU-7.1).
+    pub fn options(&mut self) -> KeyDest {
+        self.open(MenuState::Options)
+    }
+
+    /// `M_ScanSaves` (MENU-6.1).
+    fn scan(&mut self, game: &MenuGame<'_>) {
+        self.slots = (game.saves)()
+            .into_iter()
+            .map(|text| text.map(|text| save_comment(&text)))
+            .collect();
+    }
+
+    /// `M_Keydown`: `key` in the menu shown, with what it reads of `game`; the destination
+    /// after it and what it asks of the host (MENU-1.2 to MENU-7.4).
+    pub fn key(&mut self, key: MenuKey, game: &MenuGame<'_>) -> (KeyDest, Vec<MenuEvent>) {
         let mut events = Vec::new();
         let dest = match self.state {
             MenuState::None => KeyDest::Game,
-            MenuState::Main => self.main_key(key, random, &mut events),
-            MenuState::SinglePlayer => self.singleplayer_key(key, &mut events),
+            MenuState::Main => self.main_key(key, game, &mut events),
+            MenuState::SinglePlayer => self.singleplayer_key(key, game, &mut events),
+            MenuState::NewGame => self.new_game_key(key, &mut events),
+            MenuState::Load | MenuState::Save => self.slot_key(key, &mut events),
+            MenuState::Options => self.options_key(key, &game.settings, &mut events),
             MenuState::Help => self.help_key(key),
             MenuState::Quit => self.quit_key(key, &mut events),
         };
@@ -225,7 +381,12 @@ impl Menu {
     }
 
     /// `M_Main_Key` (MENU-2.2).
-    fn main_key(&mut self, key: MenuKey, random: i32, events: &mut Vec<MenuEvent>) -> KeyDest {
+    fn main_key(
+        &mut self,
+        key: MenuKey,
+        game: &MenuGame<'_>,
+        events: &mut Vec<MenuEvent>,
+    ) -> KeyDest {
         match key {
             MenuKey::Escape => {
                 self.state = MenuState::None;
@@ -245,12 +406,10 @@ impl Menu {
                 self.enter_sound = true;
                 match self.main_cursor {
                     0 => self.open(MenuState::SinglePlayer),
-                    3 => {
-                        self.help_page = 0;
-                        self.open(MenuState::Help)
-                    }
-                    4 => self.quit(KeyDest::Menu, random),
-                    // Multiplayer and the options are not this menu's (MENU-2.3).
+                    2 => self.options(),
+                    3 => self.help(),
+                    4 => self.quit(KeyDest::Menu, game.random),
+                    // Multiplayer is not this menu's (MENU-2.3).
                     _ => KeyDest::Menu,
                 }
             }
@@ -259,7 +418,12 @@ impl Menu {
     }
 
     /// `M_SinglePlayer_Key` (MENU-3.2).
-    fn singleplayer_key(&mut self, key: MenuKey, events: &mut Vec<MenuEvent>) -> KeyDest {
+    fn singleplayer_key(
+        &mut self,
+        key: MenuKey,
+        game: &MenuGame<'_>,
+        events: &mut Vec<MenuEvent>,
+    ) -> KeyDest {
         match key {
             MenuKey::Escape => self.open(MenuState::Main),
             MenuKey::Down => {
@@ -274,17 +438,128 @@ impl Menu {
             }
             MenuKey::Enter => {
                 self.enter_sound = true;
-                if self.singleplayer_cursor == 0 {
-                    self.state = MenuState::None;
-                    events.push(MenuEvent::NewGame);
-                    KeyDest::Game
-                } else {
-                    // Load and save are not this menu's yet (MENU-3.3).
-                    KeyDest::Menu
+                match self.singleplayer_cursor {
+                    0 if game.server_active => {
+                        self.state = MenuState::NewGame;
+                        KeyDest::Menu
+                    }
+                    0 => new_game(&mut self.state, events),
+                    1 => self.load(game),
+                    _ => self.save(KeyDest::Menu, game),
                 }
             }
             MenuKey::Left | MenuKey::Right | MenuKey::Char(_) => KeyDest::Menu,
         }
+    }
+
+    /// `SCR_ModalMessage`'s answer before a new game: `y` starts it, `n` or Escape go back to
+    /// the single player menu, any other key waits (MENU-3.2).
+    fn new_game_key(&mut self, key: MenuKey, events: &mut Vec<MenuEvent>) -> KeyDest {
+        match key {
+            MenuKey::Char(b'y' | b'Y') => new_game(&mut self.state, events),
+            MenuKey::Escape | MenuKey::Char(b'n' | b'N') => {
+                self.state = MenuState::SinglePlayer;
+                KeyDest::Menu
+            }
+            MenuKey::Up
+            | MenuKey::Down
+            | MenuKey::Left
+            | MenuKey::Right
+            | MenuKey::Enter
+            | MenuKey::Char(_) => KeyDest::Menu,
+        }
+    }
+
+    /// `M_Load_Key` and `M_Save_Key` (MENU-6.2, MENU-6.3).
+    fn slot_key(&mut self, key: MenuKey, events: &mut Vec<MenuEvent>) -> KeyDest {
+        match key {
+            MenuKey::Escape => self.open(MenuState::SinglePlayer),
+            MenuKey::Up | MenuKey::Left => {
+                events.push(MenuEvent::Sound("misc/menu1.wav"));
+                self.load_cursor = previous(self.load_cursor, MENU_SAVEGAMES);
+                KeyDest::Menu
+            }
+            MenuKey::Down | MenuKey::Right => {
+                events.push(MenuEvent::Sound("misc/menu1.wav"));
+                self.load_cursor = next(self.load_cursor, MENU_SAVEGAMES);
+                KeyDest::Menu
+            }
+            MenuKey::Enter if self.state == MenuState::Load => {
+                events.push(MenuEvent::Sound("misc/menu2.wav"));
+                if !matches!(self.slots.get(self.load_cursor), Some(Some(_))) {
+                    return KeyDest::Menu;
+                }
+                self.state = MenuState::None;
+                events.push(MenuEvent::Run(format!("load s{}", self.load_cursor)));
+                KeyDest::Game
+            }
+            MenuKey::Enter => {
+                self.state = MenuState::None;
+                events.push(MenuEvent::Run(format!("save s{}", self.load_cursor)));
+                KeyDest::Game
+            }
+            MenuKey::Char(_) => KeyDest::Menu,
+        }
+    }
+
+    /// `M_Options_Key` (MENU-7.2): Escape to the main menu; Enter on an item that is not a
+    /// setting, else the setting up; the arrows move or change it; the video item skipped.
+    fn options_key(
+        &mut self,
+        key: MenuKey,
+        settings: &MenuSettings,
+        events: &mut Vec<MenuEvent>,
+    ) -> KeyDest {
+        let dest = match key {
+            MenuKey::Escape => return self.open(MenuState::Main),
+            MenuKey::Enter => {
+                self.enter_sound = true;
+                return match self.options_cursor {
+                    // Customize controls: no keys menu yet (MENU-7.2).
+                    0 => KeyDest::Menu,
+                    1 => {
+                        self.state = MenuState::None;
+                        KeyDest::Console
+                    }
+                    2 => {
+                        events.push(MenuEvent::Run("exec default.cfg".to_owned()));
+                        KeyDest::Menu
+                    }
+                    _ => {
+                        adjust(self.options_cursor, 1, settings, events);
+                        KeyDest::Menu
+                    }
+                };
+            }
+            MenuKey::Up => {
+                events.push(MenuEvent::Sound("misc/menu1.wav"));
+                self.options_cursor = previous(self.options_cursor, OPTIONS_ITEMS);
+                KeyDest::Menu
+            }
+            MenuKey::Down => {
+                events.push(MenuEvent::Sound("misc/menu1.wav"));
+                self.options_cursor = next(self.options_cursor, OPTIONS_ITEMS);
+                KeyDest::Menu
+            }
+            MenuKey::Left => {
+                adjust(self.options_cursor, -1, settings, events);
+                KeyDest::Menu
+            }
+            MenuKey::Right => {
+                adjust(self.options_cursor, 1, settings, events);
+                KeyDest::Menu
+            }
+            MenuKey::Char(_) => KeyDest::Menu,
+        };
+        // "if (options_cursor == 12 && vid_menudrawfn == NULL)": this host has no video menu.
+        if self.options_cursor == OPTIONS_VIDEO {
+            self.options_cursor = if key == MenuKey::Up {
+                OPTIONS_VIDEO.saturating_sub(1)
+            } else {
+                0
+            };
+        }
+        dest
     }
 
     /// `M_Help_Key` (MENU-4.2).
@@ -320,7 +595,8 @@ impl Menu {
                 }
             },
             MenuKey::Char(b'y' | b'Y') => {
-                events.push(MenuEvent::Quit);
+                // `Host_Quit_f`, which the console's `quit` runs.
+                events.push(MenuEvent::Run("quit".to_owned()));
                 KeyDest::Console
             }
             MenuKey::Up
@@ -332,48 +608,62 @@ impl Menu {
         }
     }
 
-    /// `M_Draw` with `dest` the key destination at `host_time`, over the console's background
-    /// when the console is down (`console_down`), else the faded view; and `misc/menu2.wav`
-    /// when a menu was entered since the last draw (MENU-1.3).
-    pub fn draw(
-        &mut self,
-        dest: KeyDest,
-        host_time: f64,
-        console_down: bool,
-        screen_height: i32,
-    ) -> (Vec<Placed>, Option<&'static str>) {
-        if self.state == MenuState::None || dest != KeyDest::Menu {
+    /// `M_Draw` for `frame`: over the console's background when the console is down, else
+    /// the faded view; and `misc/menu2.wav` when a menu was entered since the last draw
+    /// (MENU-1.3).
+    pub fn draw(&mut self, frame: &MenuFrame) -> (Vec<Placed>, Option<&'static str>) {
+        if self.state == MenuState::None || frame.dest != KeyDest::Menu {
             return (Vec::new(), None);
         }
         let mut out = Vec::new();
         out.push(Placed {
             anchor: Anchor::Screen,
-            item: if console_down {
+            item: if frame.console_down && self.state != MenuState::NewGame {
                 HudItem::ConsoleBack {
-                    lines: screen_height,
-                    height: screen_height,
+                    lines: frame.screen_height,
+                    height: frame.screen_height,
                 }
             } else {
                 HudItem::Fade
             },
         });
-        self.draw_state(self.state, host_time, &mut out);
+        self.draw_state(self.state, frame, &mut out);
         let sound = core::mem::take(&mut self.enter_sound).then_some("misc/menu2.wav");
         (out, sound)
     }
 
     /// The menu `state` drawn into `out`.
-    fn draw_state(&self, state: MenuState, host_time: f64, out: &mut Vec<Placed>) {
+    fn draw_state(&self, state: MenuState, frame: &MenuFrame, out: &mut Vec<Placed>) {
         match state {
             MenuState::None => {}
             MenuState::Main => {
                 plaque(out, "gfx/ttl_main.lmp", "gfx/mainmenu.lmp");
-                cursor(out, self.main_cursor, host_time);
+                cursor(out, self.main_cursor, frame.host_time);
             }
             MenuState::SinglePlayer => {
                 plaque(out, "gfx/ttl_sgl.lmp", "gfx/sp_menu.lmp");
-                cursor(out, self.singleplayer_cursor, host_time);
+                cursor(out, self.singleplayer_cursor, frame.host_time);
             }
+            MenuState::NewGame => notify_string(out, NEW_GAME_QUESTION),
+            MenuState::Load | MenuState::Save => {
+                let title = if state == MenuState::Load {
+                    "gfx/p_load.lmp"
+                } else {
+                    "gfx/p_save.lmp"
+                };
+                pic(out, title, None, 4);
+                let mut y = 32;
+                for n in 0..MENU_SAVEGAMES {
+                    let name = match self.slots.get(n) {
+                        Some(Some(name)) => name.as_slice(),
+                        _ => b"--- UNUSED SLOT ---",
+                    };
+                    print(out, 16, y, name, true);
+                    y = y.saturating_add(8);
+                }
+                line_cursor(out, 8, self.load_cursor, frame.realtime);
+            }
+            MenuState::Options => draw_options(out, &frame.settings, self.options_cursor, frame),
             MenuState::Help => {
                 if let Some(page) = HELP.get(self.help_page) {
                     pic(out, page, Some(0), 0);
@@ -382,7 +672,7 @@ impl Menu {
             MenuState::Quit => {
                 // MENU-5.1: drawn over the menu it came from, as `m_recursiveDraw` does.
                 if let Some(from) = self.quit_from {
-                    self.draw_state(from, host_time, out);
+                    self.draw_state(from, frame, out);
                 }
                 text_box(out, 56, 76, 24, 4);
                 let lines = QUIT_MESSAGES.get(self.message).or(QUIT_MESSAGES.first());
@@ -391,6 +681,169 @@ impl Menu {
                 }
             }
         }
+    }
+}
+
+/// A new game (MENU-3.2): the menus closed and `map start` run.
+fn new_game(state: &mut MenuState, events: &mut Vec<MenuEvent>) -> KeyDest {
+    *state = MenuState::None;
+    events.push(MenuEvent::Run("map start".to_owned()));
+    KeyDest::Game
+}
+
+/// C's `value += dir * step` of a `float` setting and a `double` step, kept within `low` and
+/// `high` as `M_AdjustSliders` keeps it (MENU-7.4).
+fn step(value: f32, dir: i32, step: f64, low: f32, high: f32) -> f32 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "spec MENU-7.4: the double sum stored back in the float setting"
+    )]
+    let moved = (f64::from(value) + f64::from(dir) * step) as f32;
+    moved.clamp(low, high)
+}
+
+/// `!value` of a setting read as a float: 1 for 0, else 0.
+fn not(value: f32) -> f32 {
+    if value == 0.0 { 1.0 } else { 0.0 }
+}
+
+/// `M_AdjustSliders (dir)` at the options' item `cursor` (MENU-7.4): `misc/menu3.wav`, then
+/// the item's setting moved or turned over.
+fn adjust(cursor: usize, dir: i32, settings: &MenuSettings, events: &mut Vec<MenuEvent>) {
+    events.push(MenuEvent::Sound("misc/menu3.wav"));
+    let mut set = |name: &'static str, value: f32| events.push(MenuEvent::Set { name, value });
+    match cursor {
+        3 => set("viewsize", step(settings.viewsize, dir, 10.0, 30.0, 120.0)),
+        4 => set(
+            "gamma",
+            step(settings.gamma, dir.saturating_neg(), 0.05, 0.5, 1.0),
+        ),
+        5 => set(
+            "sensitivity",
+            step(settings.sensitivity, dir, 0.5, 1.0, 11.0),
+        ),
+        6 => set("bgmvolume", step(settings.bgmvolume, dir, 0.1, 0.0, 1.0)),
+        7 => set("volume", step(settings.volume, dir, 0.1, 0.0, 1.0)),
+        8 => {
+            let speed = if settings.forwardspeed > 200.0 {
+                200.0
+            } else {
+                400.0
+            };
+            set("cl_forwardspeed", speed);
+            set("cl_backspeed", speed);
+        }
+        9 => set("m_pitch", -settings.m_pitch),
+        10 => set("lookspring", not(settings.lookspring)),
+        11 => set("lookstrafe", not(settings.lookstrafe)),
+        _ => {}
+    }
+}
+
+/// The question `SCR_ModalMessage` asks before a new game while one runs (MENU-3.2).
+const NEW_GAME_QUESTION: &[u8] = b"Are you sure you want to\nstart a new game?\n";
+
+/// The options' labels, `M_Print` at x 16 from y 32, 8 apart (MENU-7.3).
+const OPTIONS_LABELS: [&str; 12] = [
+    "    Customize controls",
+    "         Go to console",
+    "     Reset to defaults",
+    "           Screen size",
+    "            Brightness",
+    "           Mouse Speed",
+    "       CD Music Volume",
+    "          Sound Volume",
+    "            Always Run",
+    "          Invert Mouse",
+    "            Lookspring",
+    "            Lookstrafe",
+];
+
+/// `M_Options_Draw` (MENU-7.3): the plaque and title, the labels, the five sliders and the
+/// four checkboxes at x 220, and the blinking cursor at x 200.
+fn draw_options(out: &mut Vec<Placed>, settings: &MenuSettings, at: usize, frame: &MenuFrame) {
+    pic(out, "gfx/qplaque.lmp", Some(16), 4);
+    pic(out, "gfx/p_option.lmp", None, 4);
+    let mut y = 32;
+    for label in OPTIONS_LABELS {
+        print(out, 16, y, label.as_bytes(), true);
+        y = y.saturating_add(8);
+    }
+    let v = |value: f32| f64::from(value);
+    slider(out, 56, (v(settings.viewsize) - 30.0) / (120.0 - 30.0));
+    slider(out, 64, (1.0 - v(settings.gamma)) / 0.5);
+    slider(out, 72, (v(settings.sensitivity) - 1.0) / 10.0);
+    slider(out, 80, v(settings.bgmvolume));
+    slider(out, 88, v(settings.volume));
+    checkbox(out, 96, settings.forwardspeed > 200.0);
+    checkbox(out, 104, settings.m_pitch < 0.0);
+    checkbox(out, 112, settings.lookspring != 0.0);
+    checkbox(out, 120, settings.lookstrafe != 0.0);
+    line_cursor(out, 200, at, frame.realtime);
+}
+
+/// `M_DrawSlider (220, y, range)`: the range kept within 0 and 1, the ends 128 and 130 around
+/// ten 129s, and 131 at `x + (SLIDER_RANGE-1)*8 * range` (MENU-7.3).
+fn slider(out: &mut Vec<Placed>, y: i32, range: f64) {
+    let x = 220;
+    let range = range.clamp(0.0, 1.0);
+    character(out, x - 8, y, 128);
+    let mut cx = x;
+    for _ in 0..SLIDER_RANGE {
+        character(out, cx, y, 129);
+        cx = cx.saturating_add(8);
+    }
+    character(out, cx, y, 130);
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "spec MENU-7.3: C's float argument to M_DrawCharacter's int, toward zero"
+    )]
+    let knob = (f64::from(x) + f64::from((SLIDER_RANGE - 1) * 8) * range) as i32;
+    character(out, knob, y, 131);
+}
+
+/// `M_DrawCheckbox (220, y, on)`: `on` or `off` in red (MENU-7.3).
+fn checkbox(out: &mut Vec<Placed>, y: i32, on: bool) {
+    print(out, 220, y, if on { b"on" } else { b"off" }, true);
+}
+
+/// The line cursor at `x`, `32 + cursor*8`: character `12+((int)(realtime*4)&1)`, as the
+/// load, save and options menus draw it (MENU-6.1, MENU-7.3).
+fn line_cursor(out: &mut Vec<Placed>, x: i32, cursor: usize, realtime: f64) {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "spec MENU-6.1: `(int)(realtime*4)`, toward zero"
+    )]
+    let blink = ((realtime * 4.0) as i64 & 1) != 0;
+    let y = i32::try_from(cursor)
+        .unwrap_or(0)
+        .saturating_mul(8)
+        .saturating_add(32);
+    character(out, x, y, 12_u8.saturating_add(u8::from(blink)));
+}
+
+/// `M_DrawCharacter`: `num` at `x`, `y` of the centred menu.
+fn character(out: &mut Vec<Placed>, x: i32, y: i32, num: u8) {
+    out.push(Placed {
+        anchor: Anchor::Centered,
+        item: HudItem::Char { x, y, ch: num },
+    });
+}
+
+/// `SCR_DrawNotifyString` as QuakeSpasm places it (MENU-3.2): each line of `text`, up to 40
+/// characters, centred in the 320 wide menu, from y `200 * 0.35`, 8 apart.
+fn notify_string(out: &mut Vec<Placed>, text: &[u8]) {
+    let mut y = 70;
+    let mut lines = text.split(|&c| c == b'\n').peekable();
+    while let Some(line) = lines.next() {
+        if line.is_empty() && lines.peek().is_none() {
+            break;
+        }
+        let line = line.get(..line.len().min(40)).unwrap_or_default();
+        let width = i32::try_from(line.len()).unwrap_or(0).saturating_mul(8);
+        // `(320 - l*8)/2` of a line of at most 40 characters, never below 0.
+        print(out, 320_i32.saturating_sub(width) >> 1, y, line, false);
+        y = y.saturating_add(8);
     }
 }
 

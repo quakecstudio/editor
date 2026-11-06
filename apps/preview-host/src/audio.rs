@@ -197,6 +197,13 @@ impl Audio {
         }
     }
 
+    /// The `volume` setting, the master volume (SND-5.4, CON-7.2).
+    pub(crate) const fn set_volume(&mut self, volume: f32) {
+        let mut settings = *self.mixer.settings();
+        settings.volume = volume;
+        self.mixer.set_settings(settings);
+    }
+
     /// `S_LocalSound` of the sound named `name`, as the menu plays its clicks (MENU-1.3).
     pub(crate) fn local(&mut self, name: &str, rand: &mut dyn Random) {
         self.mixer.local_sound(&mut self.table, rand, name);

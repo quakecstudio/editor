@@ -40,8 +40,10 @@ them (NET), so the client knows exactly what id's client knows.
   world and settings feed in.
 - `Console`: the console's text, notify lines, slide and input line (CON-1 to CON-5);
   `Console::key` edits the line and returns what to run, `draw` and `draw_quakespasm` place it.
-- `Menu`: the main, single player, help and quit menus (MENU); `Menu::key` returns the key
-  destination and the `MenuEvent`s (sounds, a new game, quit) the host acts on.
+- `Menu`: the main, single player, load, save, options, help and quit menus (MENU);
+  `Menu::key` reads the game through a `MenuGame` and returns the key destination and the
+  `MenuEvent`s the host acts on: sounds, settings to set and console lines to run (`map
+  start`, `load s0`, `quit`). `Menu::draw` places it for a `MenuFrame`.
 - `Reader`: `MSG_Read*` over a message's bytes.
 - `Particles`, `ViewState`, `calc_roll`, `calc_bob`, `gamma_table`: the pieces on their own.
 

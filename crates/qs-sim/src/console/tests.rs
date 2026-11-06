@@ -500,7 +500,7 @@ fn the_console_completes_commands_then_settings() {
     assert_eq!(run.world.complete("zz"), None);
 }
 
-// spec CON-6.1: the client's commands go to the client in order, with nothing printed and the
+// spec CON-6.4: the client's commands go to the client in order, with nothing printed and the
 // server's commands of the line run; help is one of them
 #[test]
 fn the_clients_commands_go_to_the_client() {
@@ -525,11 +525,12 @@ fn the_clients_commands_go_to_the_client() {
     }
     assert_eq!(
         run.world.complete("menu_s").as_deref(),
-        Some("menu_singleplayer")
+        Some("menu_save"),
+        "the first by name"
     );
     assert_eq!(
-        console(&mut run, "menu_options\n"),
-        ["Unknown command \"menu_options\""]
+        console(&mut run, "menu_keys\n"),
+        ["Unknown command \"menu_keys\""]
     );
 }
 
@@ -557,4 +558,40 @@ fn cmdlist_lists_the_commands() {
         console(&mut run, "cmdlist CH\n"),
         ["0 commands beginning with \"CH\""]
     );
+}
+
+// spec CON-7.1: the client's settings are in the one table, with id's defaults, read and set by
+// the console and by the host
+#[test]
+fn the_clients_settings_have_ids_defaults() {
+    let mut run = connected();
+    for (name, value) in [
+        ("cl_upspeed", 200.0),
+        ("cl_forwardspeed", 200.0),
+        ("cl_backspeed", 200.0),
+        ("cl_sidespeed", 350.0),
+        ("cl_movespeedkey", 2.0),
+        ("lookspring", 0.0),
+        ("lookstrafe", 0.0),
+        ("sensitivity", 3.0),
+        ("m_pitch", 0.022),
+        ("m_yaw", 0.022),
+        ("viewsize", 100.0),
+        ("gamma", 1.0),
+        ("bgmvolume", 1.0),
+        ("volume", 0.7),
+    ] {
+        assert_eq!(run.world.setting(name), Some(value), "{name}");
+    }
+    assert_eq!(console(&mut run, "viewsize\n"), ["\"viewsize\" is \"100\""]);
+    assert!(console(&mut run, "viewsize 110\n").is_empty());
+    assert_eq!(run.world.setting("viewsize"), Some(110.0));
+    assert!(run.world.set_setting("volume", 0.8));
+    assert_eq!(
+        console(&mut run, "volume\n"),
+        ["\"volume\" is \"0.800000\""]
+    );
+    assert!(!run.world.set_setting("no_such_setting", 1.0));
+    assert_eq!(run.world.setting("no_such_setting"), None);
+    assert_eq!(run.world.complete("sensi").as_deref(), Some("sensitivity"));
 }

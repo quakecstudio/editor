@@ -61,6 +61,7 @@ const qs_client::hud::HUD_PRINTSPEED
 const qs_client::hud::HUD_SBAR_HEIGHT
 const qs_client::hud::HUD_WEAPONS
 const qs_client::menu::MENU_HELP_PAGES
+const qs_client::menu::MENU_SAVEGAMES
 const qs_client::models::SYNCTYPE_RAND
 const qs_client::models::flags::GIB
 const qs_client::models::flags::GRENADE
@@ -183,6 +184,26 @@ field qs_client::hud::HudInput.time
 field qs_client::hud::HudInput.viewentity
 field qs_client::hud::Placed.anchor
 field qs_client::hud::Placed.item
+field qs_client::menu::MenuFrame.console_down
+field qs_client::menu::MenuFrame.dest
+field qs_client::menu::MenuFrame.host_time
+field qs_client::menu::MenuFrame.realtime
+field qs_client::menu::MenuFrame.screen_height
+field qs_client::menu::MenuFrame.settings
+field qs_client::menu::MenuGame.can_save
+field qs_client::menu::MenuGame.random
+field qs_client::menu::MenuGame.saves
+field qs_client::menu::MenuGame.server_active
+field qs_client::menu::MenuGame.settings
+field qs_client::menu::MenuSettings.bgmvolume
+field qs_client::menu::MenuSettings.forwardspeed
+field qs_client::menu::MenuSettings.gamma
+field qs_client::menu::MenuSettings.lookspring
+field qs_client::menu::MenuSettings.lookstrafe
+field qs_client::menu::MenuSettings.m_pitch
+field qs_client::menu::MenuSettings.sensitivity
+field qs_client::menu::MenuSettings.viewsize
+field qs_client::menu::MenuSettings.volume
 field qs_client::models::FrameInfo.first_pose
 field qs_client::models::FrameInfo.interval
 field qs_client::models::FrameInfo.poses
@@ -324,12 +345,17 @@ fn qs_client::hud::status_bar
 fn qs_client::menu::Menu::draw
 fn qs_client::menu::Menu::help
 fn qs_client::menu::Menu::key
+fn qs_client::menu::Menu::load
 fn qs_client::menu::Menu::main
 fn qs_client::menu::Menu::new
+fn qs_client::menu::Menu::options
 fn qs_client::menu::Menu::quit
+fn qs_client::menu::Menu::save
 fn qs_client::menu::Menu::single_player
 fn qs_client::menu::Menu::state
 fn qs_client::menu::Menu::toggle
+fn qs_client::menu::MenuSettings::read
+fn qs_client::menu::save_comment
 fn qs_client::message::Reader::angle
 fn qs_client::message::Reader::bad
 fn qs_client::message::Reader::byte
@@ -400,6 +426,9 @@ struct qs_client::hud::CenterPrint
 struct qs_client::hud::HudInput
 struct qs_client::hud::Placed
 struct qs_client::menu::Menu
+struct qs_client::menu::MenuFrame
+struct qs_client::menu::MenuGame
+struct qs_client::menu::MenuSettings
 struct qs_client::message::Reader
 struct qs_client::models::FrameInfo
 struct qs_client::models::ModelInfo
@@ -484,9 +513,13 @@ use qs_client::Lerp = entity::Lerp
 use qs_client::LerpFlags = entity::LerpFlags
 use qs_client::LerpSettings = client::LerpSettings
 use qs_client::MENU_HELP_PAGES = menu::MENU_HELP_PAGES
+use qs_client::MENU_SAVEGAMES = menu::MENU_SAVEGAMES
 use qs_client::Menu = menu::Menu
 use qs_client::MenuEvent = menu::MenuEvent
+use qs_client::MenuFrame = menu::MenuFrame
+use qs_client::MenuGame = menu::MenuGame
 use qs_client::MenuKey = menu::MenuKey
+use qs_client::MenuSettings = menu::MenuSettings
 use qs_client::MenuState = menu::MenuState
 use qs_client::ModelInfo = models::ModelInfo
 use qs_client::ModelKind = models::ModelKind
@@ -545,6 +578,7 @@ use qs_client::color_for_map = hud::color_for_map
 use qs_client::flags = models::flags
 use qs_client::gamma_table = view::gamma_table
 use qs_client::intermission_overlay = hud::intermission_overlay
+use qs_client::save_comment = menu::save_comment
 use qs_client::sort_frags = hud::sort_frags
 use qs_client::stat = client::stat
 use qs_client::status_bar = hud::status_bar
@@ -606,8 +640,8 @@ variant qs_client::hud::HudItem::Fade
 variant qs_client::hud::HudItem::Fill
 variant qs_client::hud::HudItem::Lmp
 variant qs_client::hud::HudItem::Pic
-variant qs_client::menu::MenuEvent::NewGame
-variant qs_client::menu::MenuEvent::Quit
+variant qs_client::menu::MenuEvent::Run
+variant qs_client::menu::MenuEvent::Set
 variant qs_client::menu::MenuEvent::Sound
 variant qs_client::menu::MenuKey::Char
 variant qs_client::menu::MenuKey::Down
@@ -617,9 +651,13 @@ variant qs_client::menu::MenuKey::Left
 variant qs_client::menu::MenuKey::Right
 variant qs_client::menu::MenuKey::Up
 variant qs_client::menu::MenuState::Help
+variant qs_client::menu::MenuState::Load
 variant qs_client::menu::MenuState::Main
+variant qs_client::menu::MenuState::NewGame
 variant qs_client::menu::MenuState::None
+variant qs_client::menu::MenuState::Options
 variant qs_client::menu::MenuState::Quit
+variant qs_client::menu::MenuState::Save
 variant qs_client::menu::MenuState::SinglePlayer
 variant qs_client::models::ModelKind::Alias
 variant qs_client::models::ModelKind::Brush

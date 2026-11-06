@@ -817,12 +817,52 @@ impl Game {
         self.report_console()
     }
 
+    /// `CL_BaseMove`'s speeds and the run key's factor, from the settings (CON-7.2).
+    pub(crate) fn move_speeds(&self) -> MoveSpeeds {
+        let setting = |name: &str| self.world.setting(name).unwrap_or(0.0);
+        MoveSpeeds {
+            forward: setting("cl_forwardspeed"),
+            back: setting("cl_backspeed"),
+            side: setting("cl_sidespeed"),
+            up: setting("cl_upspeed"),
+            run: setting("cl_movespeedkey"),
+        }
+    }
+
+    /// `IN_MouseMove`'s turn for the mouse's `motion` (CON-7.2): `mouse_x *= sensitivity.value`,
+    /// then `cl.viewangles[YAW] -= m_yaw.value * mouse_x` and
+    /// `cl.viewangles[PITCH] += m_pitch.value * mouse_y`; the yaw and pitch to add.
+    pub(crate) fn mouse_turn(&self, motion: [f32; 2]) -> [f32; 2] {
+        let setting = |name: &str| self.world.setting(name).unwrap_or(0.0);
+        let sensitivity = setting("sensitivity");
+        let [x, y] = motion;
+        [
+            -(x * sensitivity) * setting("m_yaw"),
+            y * sensitivity * setting("m_pitch"),
+        ]
+    }
+
     /// The command or setting `partial` completes to (CON-4.3).
     pub(crate) fn complete(&self, partial: &[u8]) -> Option<Vec<u8>> {
         self.world
             .complete(&String::from_utf8_lossy(partial))
             .map(String::into_bytes)
     }
+}
+
+/// `CL_BaseMove`'s speeds, units a second a key, and the run key's factor (CON-7.2).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MoveSpeeds {
+    /// `cl_forwardspeed`.
+    pub(crate) forward: f32,
+    /// `cl_backspeed`.
+    pub(crate) back: f32,
+    /// `cl_sidespeed`.
+    pub(crate) side: f32,
+    /// `cl_upspeed`.
+    pub(crate) up: f32,
+    /// `cl_movespeedkey`.
+    pub(crate) run: f32,
 }
 
 /// The frame a `step` of kind `frame` runs: `Host_FilterTime`'s shortest, 1/72 of a second.

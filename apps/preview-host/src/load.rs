@@ -9,7 +9,7 @@ use std::rc::Rc;
 use qc_lno::LnoFile;
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader, Lit};
-use qs_client::{Client, Event, ModelInfo, Models, Random};
+use qs_client::{Client, Event, MENU_SAVEGAMES, ModelInfo, Models, Random};
 use qs_mdl::mdl::Mdl;
 use qs_mdl::spr::Sprite;
 use qs_render::{Camera, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface};
@@ -493,6 +493,13 @@ pub(crate) enum Acted {
 fn game_dir(args: &Args) -> PathBuf {
     let base = args.basedir.clone().unwrap_or_else(|| PathBuf::from("."));
     base.join(args.game.as_deref().unwrap_or("id1"))
+}
+
+/// `M_ScanSaves`' files (MENU-6.1): the text of `s0.sav` to `s11.sav` in the game directory,
+/// `None` for each that does not open.
+pub(crate) fn saves(args: &Args) -> [Option<Vec<u8>>; MENU_SAVEGAMES] {
+    let dir = game_dir(args);
+    core::array::from_fn(|n| std::fs::read(dir.join(format!("s{n}.sav"))).ok())
 }
 
 /// `<name>.sav` in the game directory, `COM_DefaultExtension (name, ".sav")`.

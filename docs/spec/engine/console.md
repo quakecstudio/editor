@@ -166,14 +166,16 @@ and `Cmd_AddCommand` (sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b
 
 ### Behaviour
 
-- **CON-6.1** The client's console runs the client's commands as well as the server's:
+- **CON-6.1** **Withdrawn** 2026-11-06: the load, save and options menus' commands are
+  known; replaced by CON-6.4.
+- **CON-6.4** The client's console runs the client's commands as well as the server's:
   `toggleconsole` and `clear` (`Con_Init`), and `togglemenu`, `menu_main`, `menu_singleplayer`,
-  `help` and `menu_quit` (`M_Init`). id runs each where `Cmd_ExecuteString` meets it; here the
+  `menu_load`, `menu_save`, `menu_options`, `help` and `menu_quit` (`M_Init`). id runs each where `Cmd_ExecuteString` meets it; here the
   server's console passes them on in order and the client runs them after the text it was
   given, our choice: none of them reads or changes what the server's commands do. `help` is "`Cmd_AddCommand ("help", M_Menu_Help_f);`": it opens the help
-  menu on page 0, and prints nothing. id's `M_Init` also registers the load, save, multiplayer,
-  setup, options, keys and video menus' commands; this host has none of those menus yet
-  (MENU-2.3, MENU-3.3), so they are unknown commands while P3-34 is open.
+  menu on page 0, and prints nothing. id's `M_Init` also registers the multiplayer, setup,
+  keys and video menus' commands; this host has none of those menus (MENU-2.4, MENU-7.2), so
+  they are unknown commands.
 - **CON-6.2** `cmdlist`, QuakeSpasm's `Cmd_List_f`, prints "`   <name>`" for each command whose
   name starts with its first argument (`Q_strncmp`, case-sensitive), every command with none,
   in `strcmp` order, as `Cmd_AddCommand` inserts "each entry in alphabetical order"; then
@@ -185,3 +187,22 @@ and `Cmd_AddCommand` (sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b
   key_lines[edit_line][1] == '/') Cbuf_AddText (key_lines[edit_line]+2);`". QuakeWorld sends
   any other line as chat; this console runs it as a command, as WinQuake's does. Our choice,
   asked for by Justin on 2026-11-06. The echoed line keeps what was typed.
+
+## CON-7 The client's settings
+
+**Source:** `WinQuake/cl_input.c`, `cl_main.c`, `gl_screen.c`, `view.c` and `snd_dma.c` (the
+declarations); `WinQuake/cl_input.c`, `CL_BaseMove`; `WinQuake/in_win.c`, `IN_MouseMove`
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
+
+### Behaviour
+
+- **CON-7.1** The client's settings are in the one table with the server's (PHYS-12.1), so
+  the console, the menus and the progs' `cvar` read and set them, with id's defaults:
+  `cl_upspeed` "200", `cl_forwardspeed` "200", `cl_backspeed` "200", `cl_sidespeed` "350",
+  `cl_movespeedkey` "2.0", `lookspring` "0", `lookstrafe` "0", `sensitivity` "3", `m_pitch`
+  "0.022", `m_yaw` "0.022", `viewsize` "100", `gamma` "1", `bgmvolume` "1" and `volume` "0.7".
+- **CON-7.2** The preview host reads them each frame: the move's speeds and the run key's
+  factor as `CL_BaseMove` does, the mouse turned by `sensitivity` times `m_yaw` and `m_pitch`
+  as `IN_MouseMove` does, `viewsize` and `gamma` for the view (VIEW-3.6, VIEW-4.7), and
+  `volume` for the mixer (SND-5.4). `bgmvolume`, `lookspring` and `lookstrafe` are kept and
+  shown but change nothing yet: this host plays no CD music and has no mouse-look key.

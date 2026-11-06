@@ -34,7 +34,7 @@ use crate::messages::ClientMessages;
 use crate::messages::ServerMessages;
 use crate::physics::Sound;
 use crate::rerelease::BuiltinTable;
-use crate::settings::SERVER_SETTINGS;
+use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
 use qc_builtins::localization::Localization;
 
 use crate::spawn::{
@@ -219,6 +219,12 @@ pub enum ClientCommand {
     MenuMain,
     /// `menu_singleplayer`, `M_Menu_SinglePlayer_f`.
     MenuSinglePlayer,
+    /// `menu_load`, `M_Menu_Load_f`.
+    MenuLoad,
+    /// `menu_save`, `M_Menu_Save_f`.
+    MenuSave,
+    /// `menu_options`, `M_Menu_Options_f`.
+    MenuOptions,
     /// `help`, `M_Menu_Help_f`.
     Help,
     /// `menu_quit`, `M_Menu_Quit_f`.
@@ -227,12 +233,15 @@ pub enum ClientCommand {
 
 impl ClientCommand {
     /// Every client command with its name, as the client registers it.
-    pub const ALL: [(&'static str, Self); 7] = [
+    pub const ALL: [(&'static str, Self); 10] = [
         ("toggleconsole", Self::ToggleConsole),
         ("clear", Self::Clear),
         ("togglemenu", Self::ToggleMenu),
         ("menu_main", Self::MenuMain),
         ("menu_singleplayer", Self::MenuSinglePlayer),
+        ("menu_load", Self::MenuLoad),
+        ("menu_save", Self::MenuSave),
+        ("menu_options", Self::MenuOptions),
         ("help", Self::Help),
         ("menu_quit", Self::MenuQuit),
     ];
@@ -299,7 +308,7 @@ impl World {
             }
             // PHYS-12.1: the server's and the host's settings, with id's defaults.
             None => {
-                for (name, value) in SERVER_SETTINGS {
+                for (name, value) in SERVER_SETTINGS.iter().chain(&CLIENT_SETTINGS) {
                     engine.cvars.create(name, value);
                 }
             }
@@ -645,6 +654,19 @@ impl World {
     /// The client's commands the console met since the last call, in order (CON-6.1).
     pub fn take_client_commands(&mut self) -> Vec<ClientCommand> {
         core::mem::take(&mut self.client_commands)
+    }
+
+    /// A setting's value, `Cvar_VariableValue`: `None` for a name no one registered.
+    #[must_use]
+    pub fn setting(&self, name: &str) -> Option<f32> {
+        self.builtins.mock.engine().cvars.value(name)
+    }
+
+    /// `Cvar_SetValue`: the setting `name` to `value`, written as C's `%f` writes it; false
+    /// for a name no one registered.
+    pub fn set_setting(&mut self, name: &str, value: f32) -> bool {
+        let text = format!("{value:.6}");
+        self.builtins.mock.engine_mut().cvars.set(name, &text)
     }
 
     /// The map's name, `sv.name`, which `restart` spawns again (PHYS-10.6).

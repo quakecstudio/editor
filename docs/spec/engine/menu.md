@@ -5,9 +5,9 @@ never renumbered, never reused, withdrawn rather than deleted.
 
 Describes the menus a local player uses, as id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`
 implements them in `WinQuake/menu.c`, drawn over the view as GLQuake's `WinQuake/gl_draw.c`
-fades it. Implemented by `qs-client` (`menu.rs`) and driven by the preview host. The
-multiplayer and network menus and the video mode menu are not a local preview host's and are
-not described (P3-34).
+fades it, with `WinQuake/gl_screen.c`'s `SCR_ModalMessage`. Implemented by `qs-client`
+(`menu.rs`) and driven by the preview host. The multiplayer and network menus and the video
+mode menu are not a local preview host's and are not described (P3-34).
 
 ## MENU-1 Opening, keys and drawing
 
@@ -42,8 +42,10 @@ not described (P3-34).
 - **MENU-2.2** Escape closes the menus for the game. The arrows move the cursor down and up,
   wrapping round. Enter opens the menu of the item: single player, multiplayer, options, help
   or quit.
-- **MENU-2.3** This menu has no multiplayer or options menu yet: Enter on those items stays in
-  the main menu, our choice while P3-34 is open.
+- **MENU-2.3** **Withdrawn** 2026-11-06: the options menu is built (MENU-7); replaced by
+  MENU-2.4.
+- **MENU-2.4** This host has no multiplayer menu: Enter on that item stays in the main menu,
+  our choice. Enter on the options item opens the options (MENU-7.1).
 
 ## MENU-3 The single player menu
 
@@ -54,12 +56,19 @@ not described (P3-34).
 
 - **MENU-3.1** It draws as the main menu does with `gfx/ttl_sgl.lmp` and `gfx/sp_menu.lmp`, 3
   items (`SINGLEPLAYER_ITEMS`).
-- **MENU-3.2** Escape returns to the main menu; the arrows move and wrap. Enter on New Game
-  closes the menus and starts a game: id's adds "`maxplayers 1`" and "`map start`" to the
-  command buffer, first asking "Are you sure you want to\nstart a new game?" when a server is
-  running (`SCR_ModalMessage`). This menu starts the start map at once without asking, our
-  choice while P3-34 is open.
-- **MENU-3.3** Load and save are not this menu's yet: Enter on them stays in the menu.
+- **MENU-3.2** **Withdrawn** 2026-11-06: New Game now asks first; replaced by MENU-3.4.
+- **MENU-3.3** **Withdrawn** 2026-11-06: the load and save menus are built (MENU-6);
+  replaced by MENU-3.5.
+- **MENU-3.4** Escape returns to the main menu; the arrows move and wrap. Enter on New Game
+  with a server running asks "Are you sure you want to\nstart a new game?\n"
+  (`SCR_ModalMessage`): drawn over the faded view, each line of up to 40 characters centred,
+  from y `200 * 0.35` 8 apart in the 320 wide menu, as QuakeSpasm's `SCR_DrawNotifyString`
+  places it (id's from `vid.height*0.35` of the screen), in both looks, our choice. `y` closes
+  the menus and runs `map start`; `n` or Escape go back to this menu; any other key waits.
+  With no server running it does not ask. id also adds "`maxplayers 1`", which this host,
+  always single player, does not have.
+- **MENU-3.5** Enter on Load opens the load menu (MENU-6.1); on Save, the save menu when the
+  game may be saved (MENU-6.1), else nothing.
 
 ## MENU-4 Help
 
@@ -86,8 +95,66 @@ not described (P3-34).
 - **MENU-5.2** Escape, `n` and `N` return to the menu it came from, else to the game; `y` and
   `Y` quit (`Host_Quit_f`); any other key does nothing.
 
+## MENU-6 Load and save
+
+**Source:** `WinQuake/menu.c`, `M_ScanSaves`, `M_Menu_Load_f`, `M_Menu_Save_f`,
+`M_Load_Draw`, `M_Save_Draw`, `M_Load_Key`, `M_Save_Key`.
+
+### Behaviour
+
+- **MENU-6.1** Opening either menu scans the 12 slots (`MAX_SAVEGAMES`): `s<n>.sav` in the
+  game directory, whose name is "`fscanf (f, "%i\n", &version); fscanf (f, "%79s\n",
+  name);`", its first 39 characters (`SAVEGAME_COMMENT_LENGTH`) kept and each `_` made a
+  space; a slot whose file does not open is "`--- UNUSED SLOT ---`" and cannot be loaded. The
+  save menu opens only when a game runs, it is not at an intermission and it has one player.
+  Each draws `gfx/p_load.lmp` or `gfx/p_save.lmp` centred at y 4, the slots with `M_Print` at
+  (16, 32 + 8 * n), and the cursor, character `12 + ((int)(realtime*4)&1)`, at (8, 32 +
+  cursor * 8). The two share one cursor.
+- **MENU-6.2** Escape returns to the single player menu; up and left move to the slot before,
+  down and right to the one after, wrapping, each with `misc/menu1.wav`.
+- **MENU-6.3** Enter in the load menu plays `misc/menu2.wav`; on a slot that can be loaded it
+  closes the menus and runs `load s<n>`, else nothing more. Enter in the save menu closes the
+  menus and runs `save s<n>`.
+
+## MENU-7 Options
+
+**Source:** `WinQuake/menu.c`, `M_Menu_Options_f`, `M_AdjustSliders`, `M_DrawSlider`,
+`M_DrawCheckbox`, `M_Options_Draw`, `M_Options_Key`.
+
+### Behaviour
+
+- **MENU-7.1** The options have `OPTIONS_ITEMS` 13 items, as id's builds other than Windows'
+  have (Windows' adds Use Mouse): Customize controls, Go to console, Reset to defaults, the
+  five sliders, the four checkboxes, and Video Options, which a build with no video menu
+  (`vid_menudrawfn == NULL`) neither draws nor stops on. This host has no video menu.
+- **MENU-7.2** Escape returns to the main menu. The up and down arrows move, wrapping, with
+  `misc/menu1.wav`; landing on the video item goes to item 11 going up, else to item 0. Enter
+  on Go to console closes the menus and opens the console; on Reset to defaults runs `exec
+  default.cfg`; on Customize controls opens the keys menu, which this host has not got yet,
+  so it stays, our choice while P3-34 is open; on any other item it is the right arrow. The
+  left and right arrows change the item's setting (MENU-7.4).
+- **MENU-7.3** It draws the plaque at (16, 4), `gfx/p_option.lmp` centred at y 4, the twelve
+  labels with `M_Print` at (16, 32 + 8 * n), the sliders and checkboxes at x 220, and the
+  cursor, character `12 + ((int)(realtime*4)&1)`, at (200, 32 + cursor * 8). A slider is its
+  range kept within 0 and 1, character 128 at x - 8, ten 129s from x, 130 after them, and 131
+  at `x + (SLIDER_RANGE-1)*8 * range` (`SLIDER_RANGE` 10). The ranges: Screen size
+  `(viewsize - 30) / (120 - 30)`, Brightness `(1.0 - gamma) / 0.5`, Mouse Speed
+  `(sensitivity - 1)/10`, CD Music Volume `bgmvolume`, Sound Volume `volume`. A checkbox is
+  "on" or "off" with `M_Print`: Always Run when `cl_forwardspeed` passes 200, Invert Mouse
+  when `m_pitch` is below 0, Lookspring and Lookstrafe when set.
+- **MENU-7.4** `M_AdjustSliders (dir)` plays `misc/menu3.wav`, then on Screen size adds `dir *
+  10` to `viewsize` within 30 and 120; on Brightness takes `dir * 0.05` from `gamma` within
+  0.5 and 1; on Mouse Speed adds `dir * 0.5` to `sensitivity` within 1 and 11; on CD Music
+  Volume adds `dir * 0.1` to `bgmvolume` (a build other than Windows'), and on Sound Volume
+  `dir * 0.1` to `volume`, each within 0 and 1; on Always Run sets `cl_forwardspeed` and
+  `cl_backspeed` to 200 when `cl_forwardspeed` passes 200, else to 400; on Invert Mouse
+  negates `m_pitch`; on Lookspring and Lookstrafe sets `!value`. The sum is C's: a `float`
+  setting and a `double` step, stored back as a `float`. Each is set as `Cvar_SetValue` sets
+  it, written with `%f`. On any other item only the sound plays.
+
 ### Constants
 
 | Name | Value | Source |
 | --- | --- | --- |
 | `MENU_HELP_PAGES` | 6 | `WinQuake/menu.c`, `NUM_HELP_PAGES` |
+| `MENU_SAVEGAMES` | 12 | `WinQuake/menu.c`, `MAX_SAVEGAMES` |

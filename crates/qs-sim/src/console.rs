@@ -18,7 +18,7 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::convert::float_to_int;
 
 use crate::host_commands::{Words, atoi, tokenize};
-use crate::settings::SERVER_SETTINGS;
+use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
 use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
 /// `VERSION` (`WinQuake/quakedef.h`), which `version` and `status` print.
@@ -148,7 +148,11 @@ impl World {
         if partial.is_empty() {
             return None;
         }
-        let mut settings: Vec<&str> = SERVER_SETTINGS.iter().map(|(name, _)| *name).collect();
+        let mut settings: Vec<&str> = SERVER_SETTINGS
+            .iter()
+            .chain(&CLIENT_SETTINGS)
+            .map(|(name, _)| *name)
+            .collect();
         settings.sort_unstable();
         command_names()
             .iter()

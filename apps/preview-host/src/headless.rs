@@ -15,7 +15,7 @@ use eframe::egui_wgpu::wgpu;
 use qs_bsp::Bsp;
 use std::path::Path;
 
-use qs_client::{Client, Console, Hud, KeyDest, Menu};
+use qs_client::{Client, Console, Hud, KeyDest, Menu, MenuFrame, MenuSettings};
 use qs_render::{MapMesh, MapRenderer, Offscreen, Play};
 
 use crate::args::Args;
@@ -224,7 +224,9 @@ pub(crate) fn view_script(
             }
             Step::Shot(path) => {
                 world.play.screen = screen;
-                let hud = overlay.hud(screen, world.mesh.look.native_2d());
+                let game = world.game.world();
+                let settings = MenuSettings::read(&|name| game.setting(name).unwrap_or(0.0));
+                let hud = overlay.hud(screen, world.mesh.look.native_2d(), settings);
                 let callback = world.view_callback(aspect, hud);
                 let frame = drawer.draw(callback, size)?;
                 std::fs::write(path, ppm(&frame))
@@ -259,8 +261,8 @@ impl Overlay {
     }
 
     /// The console and the menu as the window draws them on `screen`, in QuakeSpasm's layout
-    /// when `native` (CON-5).
-    fn hud(&mut self, screen: [i32; 2], native: bool) -> Hud {
+    /// when `native` (CON-5), the options showing `settings`.
+    fn hud(&mut self, screen: [i32; 2], native: bool, settings: MenuSettings) -> Hud {
         let [_, height] = screen;
         let console = if self.lines > 0 && native {
             let version = format!("QuakeC Studio {}", env!("CARGO_PKG_VERSION"));
@@ -272,7 +274,14 @@ impl Overlay {
             self.console.notify(self.realtime)
         };
         let down = self.lines > 0 && self.dest != KeyDest::Game;
-        let (menu, _) = self.menu.draw(self.dest, self.realtime, down, height);
+        let (menu, _) = self.menu.draw(&MenuFrame {
+            dest: self.dest,
+            host_time: self.realtime,
+            realtime: self.realtime,
+            console_down: down,
+            screen_height: height,
+            settings,
+        });
         Hud {
             console,
             menu,
