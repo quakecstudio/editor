@@ -22,6 +22,7 @@ use qs_vfs::{Element, LoadedFile, StdFs, Vfs};
 use crate::args::{Args, Show};
 use crate::audio::{Audio, CdImage, Device};
 use crate::game::{Game, HostAction, Reporting};
+use crate::keys::with_default_cfg;
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
 const EYE_HEIGHT: f32 = 22.0;
@@ -207,6 +208,15 @@ pub(crate) fn load(
                 .map(LoadedFile::into_bytes)
         }))
     };
+    // INPUT-3.5: in QuakeSpasm's look the host's own `default.cfg` covers id1's.
+    let files = || -> Result<Reader, String> {
+        let files = reader()?;
+        Ok(if look.native_2d() {
+            with_default_cfg(files)
+        } else {
+            files
+        })
+    };
     // The search-path element a file is found in, which decides whether an MD5 model
     // replaces its `.mdl` (REND-12.1).
     let ranker = || -> Result<Ranker, String> {
@@ -240,7 +250,7 @@ pub(crate) fn load(
         seed: None,
     };
     let mut world =
-        World::load(&progs, &map, &bsp, reader()?, options).map_err(|e| e.to_string())?;
+        World::load(&progs, &map, &bsp, files()?, options).map_err(|e| e.to_string())?;
     world.settle(&progs).map_err(|e| e.to_string())?;
     // PHYS-10.5: a saved game is read over the settled map before the client enters.
     if let Some(save) = save {
@@ -262,7 +272,7 @@ pub(crate) fn load(
         .map(|lno| lno.lines)
         .unwrap_or_default();
     game.set_lines(lines);
-    game.set_files(reader()?);
+    game.set_files(files()?);
     game.announce("progs.dat", &map);
     // The client reads the serverinfo and the spawn messages the connection wrote.
     let mut client = Client::new(qs_client::Game::Standard);

@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "test code: a failed unwrap is a failed test"
+)]
+
 use eframe::egui;
 use qs_client::KeyDest;
 use qs_sim::keys::{
@@ -71,4 +76,41 @@ fn the_mouse_is_the_games_only() {
     assert_eq!(mouse_motion(KeyDest::Game, [3.0, -1.0]), [3.0, -1.0]);
     assert_eq!(mouse_motion(KeyDest::Console, [3.0, -1.0]), [0.0; 2]);
     assert_eq!(mouse_motion(KeyDest::Menu, [3.0, -1.0]), [0.0; 2]);
+}
+
+// spec INPUT-3.5: default.cfg is the host's own in QuakeSpasm's look, with W, A, S and D and
+// mouse look; every other file is the game's
+#[test]
+fn quakespasms_look_reads_the_hosts_default_cfg() {
+    let game: qs_sim::ModelFiles = std::rc::Rc::new(|name: &str| {
+        (name == "default.cfg" || name == "config.cfg").then(|| b"bind a +lookup\n".to_vec())
+    });
+    let files = super::with_default_cfg(game);
+    let text = String::from_utf8(files("default.cfg").unwrap()).unwrap();
+    assert_eq!(files("DEFAULT.CFG").map(|t| t.len()), Some(text.len()));
+    for line in [
+        "unbindall",
+        "bind w +forward",
+        "bind a +moveleft",
+        "bind s +back",
+        "bind d +moveright",
+        "bind MOUSE1 +attack",
+        "+mlook",
+    ] {
+        assert!(text.lines().any(|l| l == line), "{line}");
+    }
+    assert_eq!(files("config.cfg").unwrap(), b"bind a +lookup\n");
+    assert_eq!(files("autoexec.cfg"), None);
+}
+
+// spec INPUT-4.1: unbindall, the bindings, the archived settings, then +mlook when held
+// spec INPUT-4.2: the host's own file, preview-host.cfg
+#[test]
+fn the_configuration_is_written_as_host_writeconfiguration_writes_it() {
+    assert_eq!(
+        super::configuration("bind \"w\" \"+forward\"\n", "volume \"0.7\"\n", true),
+        "unbindall\nbind \"w\" \"+forward\"\nvolume \"0.7\"\n+mlook\n"
+    );
+    assert_eq!(super::configuration("", "", false), "unbindall\n");
+    assert_eq!(super::CONFIG_FILE, "preview-host.cfg");
 }

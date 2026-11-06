@@ -105,3 +105,31 @@ id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d` does it in `WinQuak
   writes no `config.cfg`.
 - **INPUT-3.4** QuakeSpasm's `IN_MouseMove` drops the motion while the keys are not the
   game's (`key_dest != key_game`); so does the host, which also frees the mouse then.
+- **INPUT-3.5** In QuakeSpasm's look `exec default.cfg` reads the host's own default instead of
+  the game's, as QuakeSpasm's `quakespasm.pak`, ahead of id1 on the search path, covers id1's
+  with its own (`Misc/qs_pak/default.cfg`, the source of `Quake/default_cfg.h`): its bindings
+  put the movement on W, A, S and D, as QuakeSpasm's do, and it holds `+mlook`. The text is
+  the host's, written for it (`DEFAULT_CFG` in `apps/preview-host/src/keys.rs`). In GLQuake's look the
+  game's `default.cfg` is read.
+
+## INPUT-4 The host's configuration
+
+**Source:** `WinQuake/host.c`, `Host_WriteConfiguration`; `WinQuake/keys.c`,
+`Key_WriteBindings`; `WinQuake/cvar.c`, `Cvar_WriteVariables`
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`); `Quake/host.c`,
+`Host_WriteConfiguration` (sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`).
+
+### Behaviour
+
+- **INPUT-4.1** On exit the host writes its configuration as `Host_WriteConfiguration` writes
+  `config.cfg`: "`unbindall`", then `Key_WriteBindings`' "`bind "<key>" "<binding>"`" for every
+  key whose binding is not empty, in number order, then `Cvar_WriteVariables`' "`<name>
+  "<value>"`" for every archived setting (`_cl_name`, `_cl_color`, `lookspring`, `lookstrafe`,
+  `sensitivity`, `m_pitch`, `m_yaw`, `m_forward`, `m_side`, `cl_forwardspeed`,
+  `cl_backspeed`, `gamma`, `viewsize`, `bgmvolume`, `volume`), then "`+mlook`" when mouse look
+  is held, as QuakeSpasm adds it ("`if (in_mlook.state & 1) fprintf (f, "+mlook\n");`").
+- **INPUT-4.2** It writes it to `preview-host.cfg` in the host's config directory
+  (`qs-paths`), never to the game's directory, whose `config.cfg` belongs to the player's own
+  engine. The host runs that file after `quake.rc` (INPUT-3.3), so what the player changed in
+  the host, in its menus or its console, comes back the next time; with no file it runs
+  nothing.

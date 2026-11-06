@@ -147,3 +147,18 @@ fn unbind_command_clears_every_key_for_it() {
         ]
     );
 }
+
+// spec INPUT-4.1: Key_WriteBindings writes each key with a binding that is not empty, in number
+// order, by its name
+#[test]
+fn bindings_are_written_in_key_order() {
+    let mut keys = Bindings::new();
+    keys.set(b'w', b"+forward");
+    keys.set(b' ', b"+jump");
+    keys.set(b'e', b"");
+    keys.set(K_MOUSE1, b"echo \"hi\"");
+    assert_eq!(
+        keys.write(),
+        "bind \"SPACE\" \"+jump\"\nbind \"w\" \"+forward\"\nbind \"MOUSE1\" \"echo \"hi\"\"\n"
+    );
+}

@@ -222,6 +222,27 @@ impl Bindings {
             .collect()
     }
 
+    /// `Key_WriteBindings` (INPUT-4.1): each key with a binding that is not empty, in number
+    /// order, as "`bind "<key>" "<binding>"`" and a line feed.
+    #[must_use]
+    pub fn write(&self) -> String {
+        let mut text = String::new();
+        for (key, binding) in self.keys.iter().enumerate() {
+            let (Ok(key), Some(binding)) = (u8::try_from(key), binding) else {
+                continue;
+            };
+            if binding.is_empty() {
+                continue;
+            }
+            text.push_str(&format!(
+                "bind \"{}\" \"{}\"\n",
+                key_name(key),
+                String::from_utf8_lossy(binding)
+            ));
+        }
+        text
+    }
+
     /// `Key_SetBinding (key, binding)` (INPUT-1.2): an empty binding is kept as one.
     pub fn set(&mut self, key: u8, binding: &[u8]) {
         if let Some(slot) = self.keys.get_mut(usize::from(key)) {

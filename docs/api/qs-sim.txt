@@ -291,6 +291,7 @@ fn qs_sim::keys::Bindings::unbind_all
 fn qs_sim::keys::Bindings::unbind_command
 fn qs_sim::keys::Bindings::unbound_notice
 fn qs_sim::keys::Bindings::up
+fn qs_sim::keys::Bindings::write
 fn qs_sim::keys::key_from_name
 fn qs_sim::keys::key_name
 fn qs_sim::messages::Message::bytes
@@ -332,6 +333,7 @@ fn qs_sim::spawn::inhibited
 fn qs_sim::spawn::load_from_file
 fn qs_sim::world::SpawnParms::parms
 fn qs_sim::world::SpawnParms::serverflags
+fn qs_sim::world::World::archived_settings
 fn qs_sim::world::World::carried
 fn qs_sim::world::World::client_command
 fn qs_sim::world::World::connect

@@ -61,6 +61,27 @@ pub(crate) const CLIENT_SETTINGS: [(&str, &str); 19] = [
     ("volume", "0.7"),
 ];
 
+/// The settings above that id declares archived (`cvar_t`'s third field `true`), which
+/// `Cvar_WriteVariables` writes to the configuration (INPUT-4.1): `WinQuake/cl_main.c`,
+/// `cl_input.c`, `view.c`, `gl_screen.c` and `snd_dma.c`.
+pub(crate) const ARCHIVED: [&str; 15] = [
+    "_cl_name",
+    "_cl_color",
+    "lookspring",
+    "lookstrafe",
+    "sensitivity",
+    "m_pitch",
+    "m_yaw",
+    "m_forward",
+    "m_side",
+    "cl_forwardspeed",
+    "cl_backspeed",
+    "gamma",
+    "viewsize",
+    "bgmvolume",
+    "volume",
+];
+
 /// A setting the server's own code reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Setting {

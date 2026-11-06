@@ -35,7 +35,7 @@ use crate::messages::ClientMessages;
 use crate::messages::ServerMessages;
 use crate::physics::Sound;
 use crate::rerelease::BuiltinTable;
-use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
+use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
 use qc_builtins::localization::Localization;
 
 use crate::spawn::{
@@ -673,6 +673,17 @@ impl World {
     #[must_use]
     pub fn setting(&self, name: &str) -> Option<f32> {
         self.builtins.mock.engine().cvars.value(name)
+    }
+
+    /// `Cvar_WriteVariables` (INPUT-4.1): each archived setting as "`<name> "<value>"`" and a
+    /// line feed.
+    #[must_use]
+    pub fn archived_settings(&self) -> String {
+        let cvars = &self.builtins.mock.engine().cvars;
+        ARCHIVED
+            .iter()
+            .filter_map(|name| cvars.text(name).map(|text| format!("{name} \"{text}\"\n")))
+            .collect()
     }
 
     /// `Cvar_SetValue`: the setting `name` to `value`, written as C's `%f` writes it; false

@@ -21,7 +21,7 @@ use qs_client::{
 };
 use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
 use qs_sim::ClientCommand;
-use qs_sim::input::{Input, MoveSettings};
+use qs_sim::input::{Button, Input, MoveSettings};
 use qs_sim::keys::{Bindings, K_ESCAPE, key_name};
 use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
@@ -31,7 +31,8 @@ use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
 use crate::keys::{
-    STARTUP, keynum, modifier_keys, mouse_key, mouse_motion, runs_binding, wheel_key,
+    CONFIG_FILE, STARTUP, configuration, keynum, modifier_keys, mouse_key, mouse_motion,
+    runs_binding, wheel_key,
 };
 use crate::load::{Acted, Describer, Loaded, Rand, act, saves};
 use crate::screenshot::Drawer;
@@ -182,6 +183,9 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 motion: [0.0; 2],
                 modifiers: egui::Modifiers::NONE,
                 configured: false,
+                config_file: qs_paths::current()
+                    .ok()
+                    .map(|dirs| dirs.config().join(CONFIG_FILE)),
             }))
         }),
     )
@@ -243,9 +247,31 @@ struct Viewer {
     modifiers: egui::Modifiers,
     /// Whether `quake.rc` has run, as `Host_Init` runs it once (INPUT-3.3).
     configured: bool,
+    /// The host's own configuration, run after `quake.rc` and written on exit (INPUT-4).
+    config_file: Option<std::path::PathBuf>,
 }
 
 impl eframe::App for Viewer {
+    /// `Host_WriteConfiguration` at `Host_Shutdown` (INPUT-4.1): the configuration written to
+    /// the host's own file, never to the game's directory.
+    fn on_exit(&mut self) {
+        let Some(path) = &self.config_file else {
+            return;
+        };
+        let text = configuration(
+            &self.bindings.write(),
+            &self.game.world().archived_settings(),
+            self.input.held(Button::MLook),
+        );
+        let written = path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| std::fs::write(path, text));
+        if let Err(error) = written {
+            tracing::warn!(%error, path = %path.display(), "Couldn't write the configuration");
+        }
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "one host frame in Host_Frame's order: input, the server, the client, the sound and the draw, read as one"
@@ -261,6 +287,14 @@ impl eframe::App for Viewer {
         if !self.configured {
             self.configured = true;
             self.run_line(STARTUP);
+            // INPUT-4.2: what the player changed here last time, after their own configs.
+            if let Some(text) = self
+                .config_file
+                .as_ref()
+                .and_then(|p| std::fs::read(p).ok())
+            {
+                self.run_line(&text);
+            }
         }
         self.type_keys(ui);
         self.bind_keys(ui);

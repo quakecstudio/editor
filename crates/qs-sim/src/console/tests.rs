@@ -595,3 +595,18 @@ fn the_clients_settings_have_ids_defaults() {
     assert_eq!(run.world.setting("no_such_setting"), None);
     assert_eq!(run.world.complete("sensi").as_deref(), Some("sensitivity"));
 }
+
+// spec INPUT-4.1: Cvar_WriteVariables writes the archived settings with their text, and only them
+#[test]
+fn the_archived_settings_are_written() {
+    let mut run = connected();
+    console(&mut run, "volume 0.5; cl_upspeed 999\n");
+    let text = run.world.archived_settings();
+    assert!(
+        text.starts_with("_cl_name \"player\"\n_cl_color \"0\"\n"),
+        "{text}"
+    );
+    assert!(text.contains("\nvolume \"0.5\"\n"), "{text}");
+    assert!(!text.contains("cl_upspeed"), "not archived");
+    assert_eq!(text.lines().count(), 15);
+}

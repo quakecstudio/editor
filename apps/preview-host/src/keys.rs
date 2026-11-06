@@ -149,6 +149,89 @@ pub(crate) const fn runs_binding(key: u8, dest: KeyDest) -> bool {
     }
 }
 
+/// The host's own `default.cfg` in QuakeSpasm's look, as QuakeSpasm's `quakespasm.pak` covers
+/// id1's (INPUT-3.5): the movement on W, A, S and D and the mouse looking.
+pub(crate) const DEFAULT_CFG: &[u8] = br#"// QuakeC Studio's default bindings in QuakeSpasm's look (INPUT-3.5). Like QuakeSpasm's own,
+// they put the movement on W, A, S and D, the mouse on attack and the wheel on the weapons;
+// the player's config.cfg, autoexec.cfg and preview-host.cfg run after them.
+unbindall
+
+bind w +forward
+bind s +back
+bind a +moveleft
+bind d +moveright
+bind e +moveup
+bind c +movedown
+bind SPACE +jump
+bind SHIFT +speed
+bind ALT +strafe
+bind CTRL +attack
+bind MOUSE1 +attack
+
+bind UPARROW +forward
+bind DOWNARROW +back
+bind LEFTARROW +left
+bind RIGHTARROW +right
+bind , +moveleft
+bind . +moveright
+bind PGDN +lookup
+bind DEL +lookdown
+bind END centerview
+
+bind TAB +showscores
+
+bind 1 "impulse 1"
+bind 2 "impulse 2"
+bind 3 "impulse 3"
+bind 4 "impulse 4"
+bind 5 "impulse 5"
+bind 6 "impulse 6"
+bind 7 "impulse 7"
+bind 8 "impulse 8"
+bind 0 "impulse 0"
+bind / "impulse 10"
+bind MWHEELDOWN "impulse 10"
+bind MWHEELUP "impulse 12"
+
+bind F1 "help"
+bind F2 "menu_save"
+bind F3 "menu_load"
+bind F4 "menu_options"
+bind F6 "echo Quicksaving...; wait; save quick"
+bind F9 "echo Quickloading...; wait; load quick"
+bind F10 "quit"
+
+bind \ +mlook
++mlook
+"#;
+
+/// `files` with `default.cfg` read from [`DEFAULT_CFG`] (INPUT-3.5).
+pub(crate) fn with_default_cfg(files: qs_sim::ModelFiles) -> qs_sim::ModelFiles {
+    std::rc::Rc::new(move |name: &str| {
+        if name.eq_ignore_ascii_case("default.cfg") {
+            Some(DEFAULT_CFG.to_vec())
+        } else {
+            files(name)
+        }
+    })
+}
+
+/// The configuration the host writes as `Host_WriteConfiguration` writes `config.cfg`
+/// (INPUT-4.1): `unbindall`, every binding, the archived settings, and `+mlook` when mouse
+/// look is held, as QuakeSpasm adds it.
+pub(crate) fn configuration(bindings: &str, settings: &str, mlook: bool) -> String {
+    let mut text = String::from("unbindall\n");
+    text.push_str(bindings);
+    text.push_str(settings);
+    if mlook {
+        text.push_str("+mlook\n");
+    }
+    text
+}
+
+/// The host's configuration's file name in its config directory (INPUT-4.2).
+pub(crate) const CONFIG_FILE: &str = "preview-host.cfg";
+
 /// `Host_Init`'s "`Cbuf_InsertText ("exec quake.rc\n");`", the line the host runs once
 /// before its first frame (INPUT-3.3).
 pub(crate) const STARTUP: &[u8] = b"exec quake.rc";
