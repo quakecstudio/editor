@@ -1152,7 +1152,8 @@ fn preview_config() -> PreviewConfig {
 fn status_dot(ui: &mut Ui, colour: egui::Color32) {
     let size = ui.text_style_height(&egui::TextStyle::Small);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
-    ui.painter().circle_filled(rect.center(), size / 4.0, colour);
+    ui.painter()
+        .circle_filled(rect.center(), size / 4.0, colour);
 }
 
 /// How often a frame reads the running host's events.
