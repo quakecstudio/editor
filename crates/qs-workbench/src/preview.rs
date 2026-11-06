@@ -92,6 +92,14 @@ impl ConsoleLine {
     pub fn is_error(&self) -> bool {
         self.level == "error"
     }
+
+    /// Whether the console's filter shows it: its text holds `filter`, without regard to case,
+    /// or the filter is blank.
+    #[must_use]
+    pub fn matches(&self, filter: &str) -> bool {
+        let filter = filter.trim();
+        filter.is_empty() || self.text.to_lowercase().contains(&filter.to_lowercase())
+    }
 }
 
 /// Why a preview command did not do what it was asked.

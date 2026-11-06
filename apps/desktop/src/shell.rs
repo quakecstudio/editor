@@ -1260,9 +1260,7 @@ fn bottom(
             project::problems_ui(ui, theme, problems, workbench.root()).map(BottomAction::Jump)
         }
         BottomTab::Console if preview.state() != PlayState::Stopped => {
-            let action = debugger::console_input(ui, preview, input);
-            console_ui(ui, theme, preview);
-            action.map(BottomAction::Debug)
+            debugger::console(ui, theme, preview, input).map(BottomAction::Debug)
         }
         BottomTab::Console => {
             note(ui, theme, Text::ConsoleIdle);
@@ -1278,27 +1276,6 @@ fn bottom(
 /// editor does.
 fn line_index(line: u32) -> usize {
     usize::try_from(line.saturating_sub(1)).unwrap_or(usize::MAX)
-}
-
-/// The console's lines, newest at the bottom, an error's in the error colour.
-fn console_ui(ui: &mut Ui, theme: &Theme, preview: &Preview) {
-    egui::ScrollArea::vertical()
-        .stick_to_bottom(true)
-        .auto_shrink([false; 2])
-        .show(ui, |ui| {
-            for line in preview.console() {
-                let colour = if line.is_error() {
-                    theme.color(Token::StatusError)
-                } else {
-                    theme.color(Token::TextCode)
-                };
-                ui.label(
-                    RichText::new(line.text.trim_end())
-                        .monospace()
-                        .color(colour),
-                );
-            }
-        });
 }
 
 /// The toolbar's play controls for the game's `state`: the command a click chose, if any.

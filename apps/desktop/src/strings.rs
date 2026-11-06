@@ -115,6 +115,8 @@ pub enum Text {
     NotRead,
     /// The button that takes a watch away.
     RemoveWatch,
+    /// The hint in the console's filter box.
+    FilterConsole,
     /// A control that has no action yet.
     NotYetAvailable,
     /// The View menu.
@@ -213,7 +215,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 101] = [
+    pub const ALL: [Self; 102] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -268,6 +270,7 @@ impl Text {
         Self::NotStopped,
         Self::NotRead,
         Self::RemoveWatch,
+        Self::FilterConsole,
         Self::NotYetAvailable,
         Self::ViewMenu,
         Self::ToggleLeftPanel,
@@ -377,6 +380,7 @@ impl Text {
             }
             Self::NotRead => "not read",
             Self::RemoveWatch => "\u{d7}",
+            Self::FilterConsole => "Filter the console",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",
             Self::ToggleLeftPanel => "Project and Entities",

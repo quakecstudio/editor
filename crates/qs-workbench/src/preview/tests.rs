@@ -131,6 +131,11 @@ fn events_set_the_state_and_the_console() {
     assert_eq!(lines.len(), 1000);
     assert_eq!(lines[0].text, "line 5", "the oldest dropped");
     assert_eq!(lines[999].level, "print");
+    // The filter keeps the lines holding its text, in any case.
+    let shown = game.console().filter(|l| l.matches(" LINE 100")).count();
+    assert_eq!(shown, 6, "line 100, and line 1000 to line 1004");
+    assert_eq!(game.console().filter(|l| l.matches("  ")).count(), 1000);
+    assert_eq!(game.console().filter(|l| l.matches("nothing")).count(), 0);
     game.take_event("console/line", &json!({}));
     assert_eq!(game.console().last().unwrap().text, "");
     assert_eq!(

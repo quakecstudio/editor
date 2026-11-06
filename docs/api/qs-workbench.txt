@@ -147,6 +147,7 @@ fn qs_workbench::editing::Workbench::save
 fn qs_workbench::editing::Workbench::text
 fn qs_workbench::editing::Workbench::update
 fn qs_workbench::preview::ConsoleLine::is_error
+fn qs_workbench::preview::ConsoleLine::matches
 fn qs_workbench::preview::HasPreview::workbench_and_preview
 fn qs_workbench::preview::Preview::client
 fn qs_workbench::preview::Preview::console
