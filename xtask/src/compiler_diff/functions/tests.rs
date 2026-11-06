@@ -150,6 +150,7 @@ fn the_kept_functions_are_the_closure_of_the_calls() {
 // spec DIFF-15.5: a statement of the whole progs is covered when the runs list its function's
 // name and its offset in that body; an offset past the body or a name the progs has not adds
 // nothing, and the total leaves out statement 0
+// spec DIFF-15.10: the shards' lists merged count a statement two of them reached once
 #[test]
 fn coverage_counts_the_listed_statements_of_each_body() {
     let bytes = calling_progs();
@@ -160,6 +161,9 @@ fn coverage_counts_the_listed_statements_of_each_body() {
         (2, 3)
     );
     assert_eq!(coverage(&progs, "f\t0\nf\t1\ng\t0\n"), (3, 3));
+    // DIFF-15.10: the shards' lists together, a statement two of them reached counted once.
+    let shards = ["f\t0\ng\t0\n", "f\t0\n", "f\t1\n"].concat();
+    assert_eq!(coverage(&progs, &shards), (3, 3));
 }
 
 // spec DIFF-15.7: every function body at file level is found in its source file, whatever

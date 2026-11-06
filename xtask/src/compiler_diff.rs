@@ -32,6 +32,7 @@ use std::process::Command;
 use crate::differential::asset_root;
 use crate::oracles::codegen::Profile;
 use crate::oracles::{self, Oracles, codegen, id101, rerelease};
+use crate::readiness::Shard;
 
 mod functions;
 
@@ -95,6 +96,14 @@ pub(crate) struct Args {
     /// Each function of each codebase run on its own (DIFF-15).
     #[arg(long)]
     functions: bool,
+    /// With `--functions`, only every n-th group of functions from the k-th, written `k/n`;
+    /// the coverage bar is left to `--merge` (DIFF-15.10).
+    #[arg(long, value_name = "k/n", requires = "functions", value_parser = Shard::parse)]
+    shard: Option<Shard>,
+    /// With `--functions` and one codebase, the shards' `executed.tsv` files, whose
+    /// statements together are held to the coverage bar (DIFF-15.10).
+    #[arg(long, value_name = "executed.tsv", num_args = 1.., requires = "functions", conflicts_with = "shard")]
+    merge: Vec<PathBuf>,
     /// The codebases to compare.
     codebases: Vec<String>,
 }
@@ -110,7 +119,10 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         return generated(root, count, args.seed.unwrap_or(1));
     }
     if args.functions {
-        return functions::run(root, &args.codebases);
+        if !args.merge.is_empty() {
+            return functions::merge(root, &args.codebases, &args.merge);
+        }
+        return functions::run(root, &args.codebases, args.shard);
     }
     let (mode, selected) = select(args)?;
     let oracles = oracles::build(root)?;
