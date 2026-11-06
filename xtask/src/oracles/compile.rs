@@ -218,8 +218,14 @@ impl<'a> Compiler<'a> {
             } else {
                 // id's C calls a few functions before any declaration (chase.c's
                 // `SV_RecursiveHullCheck`), which C89 allowed and clang 16 and GCC 14 make an
-                // error: it is the warning it was, and `-w` silences it.
-                command.args(["-w", "-Wno-error=implicit-function-declaration"]);
+                // error: it is the warning it was, and `-w` silences it. Its headers define
+                // variables without `extern` (d_local.h's `sadjust`), which C compilers merged
+                // as common symbols until GCC 10 and clang 11 stopped: `-fcommon` merges them.
+                command.args([
+                    "-w",
+                    "-Wno-error=implicit-function-declaration",
+                    "-fcommon",
+                ]);
             }
             if self.instrument == Instrument::Fuzz {
                 command.args(FUZZ_FLAGS).arg("-DQS_FUZZ");
@@ -361,7 +367,7 @@ mod tests {
         assert_eq!(
             seen[1],
             format!(
-                "cc {gnu_flags} -w -Wno-error=implicit-function-declaration -DQS_ENGINE -include compat.h -c a.c -o b.o"
+                "cc {gnu_flags} -w -Wno-error=implicit-function-declaration -fcommon -DQS_ENGINE -include compat.h -c a.c -o b.o"
             )
         );
         assert_eq!(seen[2], "cc a.o -o bin -lm");

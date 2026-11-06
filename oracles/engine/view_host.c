@@ -131,7 +131,7 @@ void Sys_LowFPPrecision(void) {}
 #define QS_WIDTH 320
 #define QS_HEIGHT 240
 
-viddef_t vid;
+// `vid` itself is screen.c's.
 static byte vid_buffer[QS_WIDTH * QS_HEIGHT];
 static short zbuffer[QS_WIDTH * QS_HEIGHT];
 static byte surfcache[1024 * 1024];
