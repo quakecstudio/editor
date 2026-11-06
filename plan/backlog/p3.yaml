@@ -171,9 +171,9 @@ issues:
   deliverable:
   - 'KEX target profile: builtins, output layout and localization string handling; no launch support'
   acceptance:
-  - Output loads in the KEX rerelease on Windows (manual check)
+  - A build for the KEX target refuses a program KEX cannot load, with the reason, writing nothing, and keeps a string's `$` localization key as written (ENGT-3.12), in tests; the load in the KEX rerelease on Windows is part of the MVP demo (P4-24), moved there on 2026-11-06 as P3-02's and P3-06's manual checks were
   verify:
-  - Recorded manual test
+  - cargo test -p qs-workbench
 - key: P3-10
   title: State-loss analysis and reload warnings
   labels:

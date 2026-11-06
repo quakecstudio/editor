@@ -419,6 +419,7 @@ issues:
   - On Windows and on Linux, Japanese and Chinese text composed through the real input method appears in the editor as committed, with the candidate window at the caret, recorded under docs/spikes/data/ (ADR-0003; decided 2026-11-02, moved here from P2-151)
   - On Windows and on Linux, the preview host loads id1 and the rerelease from the user's install and plays e1m1 from start to exit with keyboard and mouse (moved here from P3-02 by Justin on 2026-11-06)
   - 'The preview host launched through the run roots (ADR-0008) plays the original game (id1) and the rerelease from a Steam install and from a GOG install on macOS, Windows and Linux, and the install is unchanged afterwards, for example `find <install> -newer <marker>` printing nothing (moved here from P3-06 by Justin on 2026-11-06)'
+  - On Windows, a program built for the KEX target loads in the KEX rerelease (moved here from P3-09 on 2026-11-06, as P3-02's and P3-06's manual checks were)
 
   verify:
   - Recordings and eval report attached, with the Windows and Linux `find` output, bench.sh results and IME recordings
