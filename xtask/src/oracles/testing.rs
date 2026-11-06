@@ -32,6 +32,7 @@ pub(crate) fn fake_oracles<'a>(work: &Path, exec: &'a dyn Exec) -> Oracles<'a> {
         qcc: PathBuf::from("qcc"),
         vm: PathBuf::from("vm-oracle"),
         engine: PathBuf::from("engine-oracle"),
+        view: PathBuf::from("view-oracle"),
         fteqcc: PathBuf::from("fteqcc"),
         fteqcc_fixed: PathBuf::from("fteqcc-fixed"),
         work: work.to_path_buf(),

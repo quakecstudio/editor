@@ -26,6 +26,9 @@ pub(crate) enum Device {
     Default,
     /// None: the mixer runs and its frames are dropped.
     None,
+    /// None: the mixer runs at the oracle's rate and its frames are kept, for
+    /// `--view-script` (P3-28).
+    Capture,
 }
 
 /// Where the mixed frames go.
@@ -38,6 +41,18 @@ enum Sink {
     },
     /// No device: the frames are counted and dropped.
     Silent(NullOutput),
+    /// No device: the frames are kept, left and right interleaved.
+    Capture(Captured),
+}
+
+/// The frames a capture keeps.
+#[derive(Default)]
+struct Captured(Vec<i16>);
+
+impl Output for Captured {
+    fn write(&mut self, frames: &[i16]) {
+        self.0.extend_from_slice(frames);
+    }
 }
 
 /// The mixed frames waiting for the device, left and right interleaved, and how many samples
@@ -72,6 +87,10 @@ impl Audio {
         let opened = match output {
             Device::Default => device(),
             Device::None => Err("-nosound".to_owned()),
+            Device::Capture => Ok((
+                qs_sound::SND_ORACLE_SPEED,
+                Sink::Capture(Captured::default()),
+            )),
         };
         let (speed, sink) = match opened {
             Ok((speed, sink)) => (speed, sink),
@@ -169,11 +188,21 @@ impl Audio {
         let output: &mut dyn Output = match &mut self.sink {
             Sink::Device { queue, .. } => queue,
             Sink::Silent(null) => null,
+            Sink::Capture(captured) => captured,
         };
         self.mixer
             .update(&mut self.table, listener, leaf, frametime, output);
         for message in self.mixer.take_messages() {
             tracing::debug!(%message, "sound");
+        }
+    }
+
+    /// The frames painted since the last call, left and right interleaved, when the sound is
+    /// captured; none otherwise.
+    pub(crate) fn take_captured(&mut self) -> Vec<i16> {
+        match &mut self.sink {
+            Sink::Capture(captured) => core::mem::take(&mut captured.0),
+            Sink::Device { .. } | Sink::Silent(_) => Vec::new(),
         }
     }
 

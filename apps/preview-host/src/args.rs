@@ -70,6 +70,11 @@ pub(crate) struct Args {
     /// then id's line and a JSON line of the times on stdout (P3-29, ENG-17).
     #[arg(long, num_args = 3, value_names = ["x", "y", "z"], allow_negative_numbers = true)]
     pub(crate) timerefresh: Option<Vec<f32>>,
+    /// Plays a view script with no window (P3-28): its map, frames, places and shots at 320 by
+    /// 240 with no status bar or weapon, and the sound mixed meanwhile written to the second
+    /// file, as the view oracle plays the same script in id's engine (VIEWDIFF-1).
+    #[arg(long, num_args = 2, value_names = ["script", "audio"])]
+    pub(crate) view_script: Option<Vec<std::path::PathBuf>>,
     /// Where the window opens, to put it on a chosen display.
     #[arg(long, num_args = 2, value_names = ["x", "y"], allow_negative_numbers = true)]
     pub(crate) position: Option<Vec<f32>>,

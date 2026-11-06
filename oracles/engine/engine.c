@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "oracle.h"
+#include "rand.h"
 
 // One block holds the hunk, so the progs' strings, the strings ED_NewString makes and id's
 // static string buffers are all within 32 bits of pr_strings on a 64-bit host (EDICT-13.1).
@@ -156,15 +157,6 @@ void Host_Error(char *error, ...) {
 }
 
 void Sys_Quit(void) { exit(QS_EXIT_TRACED); }
-
-// rand, as the VM oracle's (DIFF-6.2): a 32-bit state from 1, so a run's random numbers are
-// the same on every OS. id's files call it through oracles/engine/rand.h.
-static unsigned random_state = 1;
-
-int qs_rand(void) {
-    random_state = random_state * 1103515245u + 12345u;
-    return (int)((random_state >> 16) & 0x7fff);
-}
 
 // The clock: the host's own time, advanced by each frame, never the wall clock.
 double Sys_FloatTime(void) { return realtime; }

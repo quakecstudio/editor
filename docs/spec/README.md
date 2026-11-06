@@ -144,6 +144,7 @@ Each section holds, in this order:
 | `SPR` | [`spr.md`](spr.md) | SPR sprites: header, frames and frame groups | [#235](https://github.com/quakecstudio/editor/issues/235) |
 | `TRACE` | [`trace.md`](trace.md) | The shared VM trace format: per-statement records, binary and JSON forms, reading engine-specific values | [#36](https://github.com/quakecstudio/editor/issues/36) |
 | `VIEW` | [`engine/view.md`](engine/view.md) | The view: roll and bob, pitch drift, the eye and the weapon with damage kicks, idle sway and step smoothing, the intermission view, and the colour shifts for contents, damage, bonus items and powerups, as `view.c` does | [#236](https://github.com/quakecstudio/editor/issues/236) |
+| `VIEWDIFF` | [`engine/view-diff.md`](engine/view-diff.md) | The view differential: the script both engines play, how the view is drawn, how frames and sound are compared, and the tolerances per map | [#242](https://github.com/quakecstudio/editor/issues/242) |
 | `VM` | [`vm.md`](vm.md) | QC virtual machine execution: opcodes, calls, the local stack, errors | [#26](https://github.com/quakecstudio/editor/issues/26) |
 | `WAD` | [`wad2.md`](wad2.md) | WAD2 archives: header, directory, lump lookup, the lumps the engine reads | [#29](https://github.com/quakecstudio/editor/issues/29) |
 | `WAV` | [`wav.md`](wav.md) | WAV sounds: chunks, the header and loop points `GetWavinfo` reads, what `S_LoadSound` plays | [#235](https://github.com/quakecstudio/editor/issues/235) |

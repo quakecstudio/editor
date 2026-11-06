@@ -216,7 +216,10 @@ impl<'a> Compiler<'a> {
                     command.args(COVERAGE_FLAGS).arg("-DQS_COVERAGE");
                 }
             } else {
-                command.arg("-w");
+                // id's C calls a few functions before any declaration (chase.c's
+                // `SV_RecursiveHullCheck`), which C89 allowed and clang 16 and GCC 14 make an
+                // error: it is the warning it was, and `-w` silences it.
+                command.args(["-w", "-Wno-error=implicit-function-declaration"]);
             }
             if self.instrument == Instrument::Fuzz {
                 command.args(FUZZ_FLAGS).arg("-DQS_FUZZ");

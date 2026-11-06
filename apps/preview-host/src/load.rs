@@ -232,7 +232,9 @@ pub(crate) fn load(
         .frame(0.0, &packets, &mut describer, &mut rand)
         .map_err(|e| format!("client: {e}"))?;
     let sounds = reader()?;
-    let output = if args.nosound {
+    let output = if args.view_script.is_some() {
+        Device::Capture
+    } else if args.nosound {
         Device::None
     } else {
         Device::Default

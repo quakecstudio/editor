@@ -93,7 +93,88 @@ const VM_HARNESS: [&str; 5] = [
 
 /// The engine oracle's own files (`oracles/engine/`), compiled with every warning an error;
 /// it shares the trace writer.
-const ENGINE_HARNESS: [&str; 2] = ["oracles/engine/engine.c", "oracles/trace/trace.c"];
+const ENGINE_HARNESS: [&str; 3] = [
+    "oracles/engine/engine.c",
+    "oracles/engine/rand.c",
+    "oracles/trace/trace.c",
+];
+
+/// The view oracle's own files (`oracles/engine/`), compiled with every warning an error: the
+/// system, video and sound card that id's whole engine runs on headless (P3-28).
+const VIEW_HARNESS: [&str; 2] = ["oracles/engine/view_host.c", "oracles/engine/rand.c"];
+
+/// id's files the view oracle compiles whole, with id's own headers: the client, the software
+/// renderer with the C stand-ins for its assembly (`nonintel.c`), the mixer, the server, and
+/// the null CD and input drivers and loopback network a headless engine needs.
+const VIEW_FILES: [&str; 67] = [
+    "cd_null.c",
+    "chase.c",
+    "cl_demo.c",
+    "cl_input.c",
+    "cl_main.c",
+    "cl_parse.c",
+    "cl_tent.c",
+    "cmd.c",
+    "common.c",
+    "console.c",
+    "crc.c",
+    "cvar.c",
+    "d_edge.c",
+    "d_fill.c",
+    "d_init.c",
+    "d_modech.c",
+    "d_part.c",
+    "d_polyse.c",
+    "d_scan.c",
+    "d_sky.c",
+    "d_sprite.c",
+    "d_surf.c",
+    "d_vars.c",
+    "d_zpoint.c",
+    "draw.c",
+    "host.c",
+    "host_cmd.c",
+    "in_null.c",
+    "keys.c",
+    "mathlib.c",
+    "menu.c",
+    "model.c",
+    "net_loop.c",
+    "net_main.c",
+    "net_none.c",
+    "net_vcr.c",
+    "nonintel.c",
+    "pr_cmds.c",
+    "pr_edict.c",
+    "pr_exec.c",
+    "r_aclip.c",
+    "r_alias.c",
+    "r_bsp.c",
+    "r_draw.c",
+    "r_edge.c",
+    "r_efrag.c",
+    "r_light.c",
+    "r_main.c",
+    "r_misc.c",
+    "r_part.c",
+    "r_sky.c",
+    "r_sprite.c",
+    "r_surf.c",
+    "r_vars.c",
+    "sbar.c",
+    "screen.c",
+    "snd_dma.c",
+    "snd_mem.c",
+    "snd_mix.c",
+    "sv_main.c",
+    "sv_move.c",
+    "sv_phys.c",
+    "sv_user.c",
+    "view.c",
+    "wad.c",
+    "world.c",
+    "zone.c",
+];
 
 /// id's server files the engine oracle compiles whole, with id's own headers.
 const ENGINE_FILES: [&str; 16] = [
@@ -176,6 +257,8 @@ pub(crate) struct Oracles<'a> {
     pub(crate) vm: PathBuf,
     /// id's server, headless, driven by a script (`oracles/engine/`, TRACE-4.11).
     pub(crate) engine: PathBuf,
+    /// id's whole engine, headless, writing screenshots and its mixed sound (P3-28).
+    pub(crate) view: PathBuf,
     pub(crate) fteqcc: PathBuf,
     /// FTEQCC with the defects of [`defects::FIXES`] fixed, which proves a divergence an
     /// FTEQCC defect (DIFF-14.12).
@@ -536,6 +619,7 @@ fn locate<'a>(root: &Path, exec: &'a dyn Exec) -> Oracles<'a> {
         qcc: bin.join(Compiler::executable("qcc")),
         vm: bin.join(Compiler::executable("vm-oracle")),
         engine: bin.join(Compiler::executable("engine-oracle")),
+        view: bin.join(Compiler::executable("view-oracle")),
         fteqcc: bin.join(Compiler::executable("fteqcc")),
         fteqcc_fixed: bin.join(Compiler::executable("fteqcc-fixed")),
         work: out.join("work"),
@@ -587,6 +671,7 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     if oracles.qcc.is_file()
         && oracles.vm.is_file()
         && oracles.engine.is_file()
+        && oracles.view.is_file()
         && oracles.fteqcc.is_file()
         && oracles.fteqcc_fixed.is_file()
         && fs::read_to_string(&stamp_file).is_ok_and(|s| s.trim() == stamp_now)
@@ -644,6 +729,8 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     compiler.link(&vm_objects, &oracles.vm)?;
     let engine_objects = compile_engine(root, &sources, &cache, &objects, &compiler)?;
     compiler.link(&engine_objects, &oracles.engine)?;
+    let view_objects = compile_view(root, &cache, &objects, &compiler)?;
+    compiler.link(&view_objects, &oracles.view)?;
     // DIFF-14.12: the same FTEQCC with its defects fixed, from a copy of the tree whose
     // `qcc_pr_comp.c` has every fix of `defects::FIXES` applied.
     let fixed_dir = cache.join("fteqcc-fixed");
@@ -663,7 +750,7 @@ fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Orac
     fs::write(&stamp_file, format!("{stamp_now}\n"))
         .map_err(|e| format!("{}: {e}", stamp_file.display()))?;
     println!(
-        "oracles: built qcc, vm-oracle, engine-oracle, fteqcc and fteqcc-fixed in {}",
+        "oracles: built qcc, vm-oracle, engine-oracle, view-oracle, fteqcc and fteqcc-fixed in {}",
         bin.display()
     );
     Ok(oracles)
@@ -819,6 +906,45 @@ fn compile_engine(
         engine_objects.push(object);
     }
     Ok(engine_objects)
+}
+
+/// The view oracle's objects: [`VIEW_FILES`] from id's tree, unchanged but for `rand`
+/// (`oracles/engine/rand.h`), and [`VIEW_HARNESS`].
+fn compile_view(
+    root: &Path,
+    cache: &Path,
+    objects: &Path,
+    compiler: &Compiler,
+) -> Result<Vec<PathBuf>, String> {
+    let quake = cache.join(ENGINE_UPSTREAM).join("WinQuake");
+    let includes = vec![root.join("oracles/engine"), quake.clone()];
+    let rand = root.join("oracles/engine/rand.h");
+    let upstream = VIEW_FILES
+        .iter()
+        .map(|file| (quake.join(file), Code::Upstream));
+    let ours = VIEW_HARNESS
+        .iter()
+        .map(|file| (root.join(file), Code::Ours));
+    let mut view_objects = Vec::new();
+    for (source, code) in upstream.chain(ours) {
+        let object = objects.join(format!("view_{}.o", stem(&source)));
+        let forced_include = match code {
+            Code::Upstream => Some(rand.as_path()),
+            Code::Ours => None,
+        };
+        compiler.object(
+            &Unit {
+                source: &source,
+                code,
+                includes: &includes,
+                defines: &[],
+                forced_include,
+            },
+            &object,
+        )?;
+        view_objects.push(object);
+    }
+    Ok(view_objects)
 }
 
 fn stem(path: &Path) -> String {
