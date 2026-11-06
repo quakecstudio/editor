@@ -1417,7 +1417,7 @@ fn window_place_refuses_a_bad_frame() {
     assert_eq!(game.take_placement(), None);
 }
 
-// spec CON-7.2: the move's speeds, the run factor and the mouse's turn come from the settings
+// spec CON-7.3: the move's speeds, the run factor and the mouse's turn come from the settings
 #[test]
 fn the_settings_steer_the_player() {
     let (mut game, _) = game();

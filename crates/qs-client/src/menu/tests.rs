@@ -59,6 +59,7 @@ fn frame(dest: KeyDest, time: f64, console_down: bool) -> MenuFrame {
         host_time: time,
         realtime: time,
         console_down,
+        console_forced: false,
         screen_height: 480,
         settings: DEFAULTS,
     }
@@ -112,7 +113,8 @@ fn the_menu_draws_over_a_fade_with_its_sounds() {
         down[0].item,
         HudItem::ConsoleBack {
             lines: 480,
-            height: 480
+            height: 480,
+            forced: false
         }
     );
     assert!(menu.draw(&frame(KeyDest::Game, 0.0, false)).0.is_empty());
@@ -149,9 +151,9 @@ fn the_quit_prompt_prints_its_message() {
         .collect();
     assert_eq!(first, b" Milord, methinks that  ");
     assert_eq!(
-        menu.quit(KeyDest::Menu, 3),
-        KeyDest::Menu,
-        "asked again, nothing changes"
+        menu.quit(KeyDest::Console, 3),
+        KeyDest::Console,
+        "asked again, nothing changes, the destination neither"
     );
 }
 
@@ -197,7 +199,7 @@ fn the_main_menu_moves_and_wraps() {
 }
 
 // spec MENU-3.1: the single player menu's title and items
-// spec MENU-3.4: New Game asks first while a game runs: y starts the start map, n and Escape go
+// spec MENU-3.6: New Game asks first while a game runs: y starts the start map, n and Escape go
 // back, any other key waits; with no game it starts at once
 #[test]
 fn single_player_asks_before_a_new_game() {

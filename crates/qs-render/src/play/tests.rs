@@ -640,7 +640,11 @@ fn the_console_background_shows_while_it_slides() {
     let back = |lines| Hud {
         console: vec![Placed {
             anchor: Anchor::Screen,
-            item: HudItem::ConsoleBack { lines, height: 480 },
+            item: HudItem::ConsoleBack {
+                lines,
+                height: 480,
+                forced: false,
+            },
         }],
         ..Hud::default()
     };
@@ -660,9 +664,9 @@ fn the_console_background_shows_while_it_slides() {
     assert!(!full.last().unwrap().0.blend, "opaque past three quarters");
 }
 
-// spec REND-13.7: in QuakeSpasm's look the menus' 320 by 200 canvas is centred both ways and
+// spec REND-13.8: in QuakeSpasm's look the menus' 320 by 200 canvas is centred both ways and
 // the bar's at the bottom centre, each at scale 1, the fade is 0.5 and the console background
-// 0.5 unless it fills the screen
+// 0.5 unless it is forced up
 #[test]
 fn quakespasm_draws_its_canvases() {
     let mut play = play();
@@ -679,7 +683,12 @@ fn quakespasm_draws_its_canvases() {
     assert_eq!(bar[0].1, [([480.0, 776.0], [320.0, 24.0])]);
     assert_eq!(Look::QuakeSpasm.fade_alpha(), 0.5);
     assert_eq!(Look::GlQuake.fade_alpha(), 0.8);
-    assert_eq!(Look::QuakeSpasm.console_alpha(400, 800), 0.5);
-    assert_eq!(Look::QuakeSpasm.console_alpha(800, 800), 1.0);
-    assert!((Look::GlQuake.console_alpha(240, 480) - 0.8).abs() < 1e-6);
+    assert_eq!(Look::QuakeSpasm.console_alpha(400, 800, false), 0.5);
+    assert_eq!(
+        Look::QuakeSpasm.console_alpha(800, 800, false),
+        0.5,
+        "full height, not forced"
+    );
+    assert_eq!(Look::QuakeSpasm.console_alpha(400, 800, true), 1.0);
+    assert!((Look::GlQuake.console_alpha(240, 480, false) - 0.8).abs() < 1e-6);
 }

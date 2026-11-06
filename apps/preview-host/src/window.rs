@@ -16,8 +16,8 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use qs_bsp::Bsp;
 use qs_client::{
-    Client, Console, ConsoleKey, Event, KeyDest, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey,
-    MenuSettings, Random as _, Typed,
+    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Client, Console, ConsoleKey, Event, KeyDest, Menu,
+    MenuEvent, MenuFrame, MenuGame, MenuKey, MenuSettings, Random as _, Typed,
 };
 use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
 use qs_sim::ClientCommand;
@@ -77,7 +77,12 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
     } = loaded;
     // The console's first lines: the host's, as `Host_Init` prints the engine's, then what the
     // map's first frame printed (CLIENT-1.7).
-    let mut console = Console::new();
+    // CON-5.6: QuakeSpasm's text size in its look, whose console is as wide as the window.
+    let mut console = Console::with_text_size(if mesh.look.native_2d() {
+        CON_TEXTSIZE_QUAKESPASM
+    } else {
+        CON_TEXTSIZE
+    });
     let banner = format!("QuakeC Studio preview host {}\n", env!("CARGO_PKG_VERSION"));
     console.print(banner.as_bytes(), 0.0);
     for text in &printed {
@@ -338,6 +343,7 @@ impl eframe::App for Viewer {
             host_time: realtime,
             realtime,
             console_down,
+            console_forced: false,
             screen_height: self.play.screen[1],
             settings: MenuSettings::read(&|name| world.setting(name).unwrap_or(0.0)),
         });
@@ -527,7 +533,9 @@ impl Viewer {
         });
         let next = match self.pointer {
             Pointer::Free if clicked => Pointer::Captured,
-            Pointer::Captured if escape || !focused => Pointer::Free,
+            // The console and the menus take the keys and free the mouse, as QuakeSpasm's
+            // `IN_Deactivate` does.
+            Pointer::Captured if escape || !focused || self.dest != KeyDest::Game => Pointer::Free,
             same => same,
         };
         if next != self.pointer {
@@ -616,7 +624,7 @@ impl Viewer {
                     key: egui::Key::Backtick,
                     pressed: true,
                     ..
-                } => self.dest = self.console.toggle(self.dest, true),
+                } => self.dest = self.console.backquote(self.dest, true),
                 egui::Event::Key {
                     key: egui::Key::Escape,
                     pressed: true,
@@ -696,12 +704,8 @@ impl Viewer {
     /// `line` run on the console, what it prints printed and the client's commands it met
     /// run (CON-4.2, CON-6.1).
     fn run_line(&mut self, line: &[u8]) {
-        let realtime = self.started.elapsed().as_secs_f64();
-        for printed in self.game.type_console(line) {
-            let mut text = printed;
-            text.push(b'\n');
-            self.console.print(&text, realtime);
-        }
+        self.game.type_console(line);
+        self.show_printed();
         self.client_commands();
     }
 
@@ -709,9 +713,22 @@ impl Viewer {
     fn print_events(&mut self, events: &[Event]) {
         let realtime = self.started.elapsed().as_secs_f64();
         for event in events {
-            if let Event::Print(text) = event {
-                self.console.print(text, realtime);
+            // `Con_Print`'s `S_LocalSound ("misc/talk.wav")` for text marked 1 (CON-1.2).
+            if let Event::Print(text) = event
+                && self.console.print(text, realtime)
+            {
+                self.audio.local("misc/talk.wav", &mut self.rand);
             }
+        }
+        self.show_printed();
+    }
+
+    /// What the game's console printed, from typing, the progs, the bridge or the host, on
+    /// the console on the screen (CON-1).
+    fn show_printed(&mut self) {
+        let realtime = self.started.elapsed().as_secs_f64();
+        for line in self.game.take_printed() {
+            self.console.print(&line, realtime);
         }
     }
 
@@ -722,13 +739,15 @@ impl Viewer {
         let [width, height] = self.play.screen;
         self.console.resize(width);
         let lines = self.console.slide(height, false, self.dest, seconds);
+        // CON-3.4: `Con_DrawInput` draws only while the keys are the console's.
+        let typing = self.dest == KeyDest::Console;
         if lines > 0 && self.mesh.look.native_2d() {
             // CON-5: QuakeSpasm's layout, with this host's name for the version.
             let version = format!("QuakeC Studio {}", env!("CARGO_PKG_VERSION"));
             self.console
-                .draw_quakespasm(lines, height, realtime, version.as_bytes())
+                .draw_quakespasm(lines, height, realtime, typing, version.as_bytes())
         } else if lines > 0 {
-            self.console.draw(lines, height, realtime, true)
+            self.console.draw(lines, height, realtime, typing)
         } else if self.dest == KeyDest::Game {
             self.console.notify(realtime)
         } else {
@@ -795,6 +814,10 @@ impl Viewer {
 
     /// The free camera of `-fly`.
     fn fly_around(&mut self, ui: &egui::Ui, seconds: f32) {
+        // The keys are the console's or the menu's while either is open.
+        if self.dest != KeyDest::Game {
+            return;
+        }
         ui.input(|input| {
             let speed = SPEEDS
                 .get(usize::from(input.modifiers.shift))

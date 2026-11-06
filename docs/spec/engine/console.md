@@ -119,6 +119,9 @@ The console keeps the last text printed as fixed-width lines in one buffer of
   console. Either way the notify times are cleared. id1's `default.cfg` binds it to the
   backquote and `~` ("`bind \` "toggleconsole"`"), and the backquote is never typed into the
   line (`Key_Init`: "`consolekeys['\`'] = false;`"), so it reaches the binding.
+- **CON-4.9** In a menu the backquote does nothing: `Key_Event` runs a key's binding there only
+  for a `menubound` key ("`key_dest == key_menu && menubound[key]`"), which `Key_Init` makes
+  Escape and the F keys, and gives the rest to `M_Keydown`, which has no case for it.
 
 ## CON-5 QuakeSpasm's console
 
@@ -143,6 +146,13 @@ In QuakeSpasm's look (REND-13.7) the console is drawn as QuakeSpasm draws it.
 - **CON-5.4** The version is drawn at the bottom right, its last character at column
   `con_linewidth + 1`: QuakeSpasm's "`QuakeSpasm 0.97.0`", this host's `QuakeC Studio` and its
   version.
+- **CON-5.5** Since drawing does not cut the line (CON-5.3), Backspace and the down arrow back
+  to the edit line cut it at the position themselves, as id's next draw would (CON-3.4), in
+  both looks; a key that follows in the same frame, which id's line would still hold the rest
+  for, sees it cut. Our choice.
+- **CON-5.6** In QuakeSpasm's look the console's text is QuakeSpasm's "`#define CON_TEXTSIZE
+  (1024 * 1024)`" bytes, since its console is as wide as the window and 16384 bytes would hold
+  fewer lines than it shows. The farthest back it scrolls (CON-4.6) is never below 0.
 
 ### Constants
 
@@ -201,8 +211,11 @@ declarations); `WinQuake/cl_input.c`, `CL_BaseMove`; `WinQuake/in_win.c`, `IN_Mo
   `cl_upspeed` "200", `cl_forwardspeed` "200", `cl_backspeed` "200", `cl_sidespeed` "350",
   `cl_movespeedkey` "2.0", `lookspring` "0", `lookstrafe` "0", `sensitivity` "3", `m_pitch`
   "0.022", `m_yaw` "0.022", `viewsize` "100", `gamma` "1", `bgmvolume` "1" and `volume` "0.7".
-- **CON-7.2** The preview host reads them each frame: the move's speeds and the run key's
+- **CON-7.2** **Withdrawn** 2026-11-06: `bgmvolume` now sets the CD music's volume (SND-6.2);
+  replaced by CON-7.3.
+- **CON-7.3** The preview host reads them each frame: the move's speeds and the run key's
   factor as `CL_BaseMove` does, the mouse turned by `sensitivity` times `m_yaw` and `m_pitch`
   as `IN_MouseMove` does, `viewsize` and `gamma` for the view (VIEW-3.6, VIEW-4.7), and
-  `volume` for the mixer (SND-5.4). `bgmvolume`, `lookspring` and `lookstrafe` are kept and
-  shown but change nothing yet: this host plays no CD music and has no mouse-look key.
+  `volume` for the mixer (SND-5.4), and `bgmvolume` for the music (SND-6.2). `lookspring` and
+  `lookstrafe` are kept and shown but change nothing yet: this host has no mouse-look key
+  (P3-34).

@@ -82,14 +82,14 @@ impl Look {
         }
     }
 
-    /// The console background's alpha for a console `lines` high on a screen `height` high:
-    /// QuakeSpasm's `scr_conalpha` "0.5", or 1 when the console fills the screen as it does
-    /// forced up; GLQuake's opaque past three quarters of the screen, else `1.2 * lines` over
-    /// that (CON-3.2, REND-13.7).
+    /// The console background's alpha for a console `lines` high on a screen `height` high,
+    /// `forced` up or not: QuakeSpasm's "`alpha = (con_forcedup) ? 1.0f : scr_conalpha.value`",
+    /// `scr_conalpha` "0.5"; GLQuake's opaque past three quarters of the screen, else
+    /// `1.2 * lines` over that (CON-3.2, REND-13.7).
     #[must_use]
-    pub fn console_alpha(self, lines: i32, height: i32) -> f32 {
+    pub fn console_alpha(self, lines: i32, height: i32, forced: bool) -> f32 {
         match self {
-            Self::QuakeSpasm if lines >= height => 1.0,
+            Self::QuakeSpasm if forced => 1.0,
             Self::QuakeSpasm => 0.5,
             Self::GlQuake => {
                 let three_quarters = height.saturating_mul(3) >> 2;

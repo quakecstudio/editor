@@ -231,6 +231,8 @@ pub struct MenuFrame {
     pub realtime: f64,
     /// Whether the console is down, its background under the menu instead of the fade.
     pub console_down: bool,
+    /// `con_forcedup`, which makes that background opaque in QuakeSpasm's look (REND-13.8).
+    pub console_forced: bool,
     /// The screen's height.
     pub screen_height: i32,
     /// The settings the options menu shows.
@@ -330,8 +332,9 @@ impl Menu {
 
     /// `M_Menu_Quit_f`: the quit prompt over `dest`, its message `random & 7` (MENU-5.1).
     pub fn quit(&mut self, dest: KeyDest, random: i32) -> KeyDest {
+        // "`if (m_state == m_quit) return;`": the key destination stays as it was.
         if self.state == MenuState::Quit {
-            return KeyDest::Menu;
+            return dest;
         }
         self.quit_from = (dest == KeyDest::Menu).then_some(self.state);
         self.message = usize::try_from(random & 7).unwrap_or(0);
@@ -626,6 +629,7 @@ impl Menu {
                 HudItem::ConsoleBack {
                     lines: frame.screen_height,
                     height: frame.screen_height,
+                    forced: frame.console_forced,
                 }
             } else {
                 HudItem::Fade

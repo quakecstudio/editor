@@ -102,6 +102,8 @@ pub enum HudItem {
         lines: i32,
         /// The screen's height.
         height: i32,
+        /// `con_forcedup`: the console up with no game to show (CON-3.1).
+        forced: bool,
     },
     /// `Draw_FadeScreen`: the screen darkened, black at alpha 0.8 over it (MENU-1.3).
     Fade,

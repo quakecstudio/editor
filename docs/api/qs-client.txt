@@ -47,6 +47,7 @@ const qs_client::console::CON_NOTIFY_TIME
 const qs_client::console::CON_NUM_TIMES
 const qs_client::console::CON_SPEED
 const qs_client::console::CON_TEXTSIZE
+const qs_client::console::CON_TEXTSIZE_QUAKESPASM
 const qs_client::hud::HUD_CENTERTIME
 const qs_client::hud::HUD_CENTER_LINE_LENGTH
 const qs_client::hud::HUD_CENTER_MAX
@@ -185,6 +186,7 @@ field qs_client::hud::HudInput.viewentity
 field qs_client::hud::Placed.anchor
 field qs_client::hud::Placed.item
 field qs_client::menu::MenuFrame.console_down
+field qs_client::menu::MenuFrame.console_forced
 field qs_client::menu::MenuFrame.dest
 field qs_client::menu::MenuFrame.host_time
 field qs_client::menu::MenuFrame.realtime
@@ -319,6 +321,7 @@ fn qs_client::client::Client::view_settings
 fn qs_client::client::Client::viewangles
 fn qs_client::client::Client::viewentity
 fn qs_client::client::Client::with_limits
+fn qs_client::console::Console::backquote
 fn qs_client::console::Console::clear
 fn qs_client::console::Console::current
 fn qs_client::console::Console::draw
@@ -333,6 +336,7 @@ fn qs_client::console::Console::resize
 fn qs_client::console::Console::slide
 fn qs_client::console::Console::toggle
 fn qs_client::console::Console::typed
+fn qs_client::console::Console::with_text_size
 fn qs_client::entity::Entity::has_model
 fn qs_client::entity::Entity::new
 fn qs_client::hud::CenterPrint::draw
@@ -480,6 +484,7 @@ use qs_client::CON_NOTIFY_TIME = console::CON_NOTIFY_TIME
 use qs_client::CON_NUM_TIMES = console::CON_NUM_TIMES
 use qs_client::CON_SPEED = console::CON_SPEED
 use qs_client::CON_TEXTSIZE = console::CON_TEXTSIZE
+use qs_client::CON_TEXTSIZE_QUAKESPASM = console::CON_TEXTSIZE_QUAKESPASM
 use qs_client::CenterPrint = hud::CenterPrint
 use qs_client::Client = client::Client
 use qs_client::ClientLimits = client::ClientLimits

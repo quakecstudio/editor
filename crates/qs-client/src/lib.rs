@@ -33,7 +33,7 @@ pub use client::{
 };
 pub use console::{
     CON_CURSOR_SPEED, CON_HISTORY, CON_MAX_LINE, CON_NOTIFY_TIME, CON_NUM_TIMES, CON_SPEED,
-    CON_TEXTSIZE, Console, ConsoleKey, KeyDest, Typed,
+    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Console, ConsoleKey, KeyDest, Typed,
 };
 pub use entity::{Baseline, Entity, Lerp, LerpFlags};
 pub use hud::{

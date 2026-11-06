@@ -143,12 +143,28 @@ impl MusicStream for CdTrackStream {
         if bytes == 0 {
             return Read::End;
         }
-        let mut raw = vec![0_u8; bytes];
-        let read = match self.file.read(&mut raw) {
+        // Whole stereo frames only: a short read keeps the frames it got and goes back over
+        // the part of one it did not finish, so the left and right samples stay in step.
+        let mut raw = Vec::with_capacity(bytes);
+        let wanted = u64::try_from(bytes).unwrap_or(0);
+        let got = match (&mut self.file).take(wanted).read_to_end(&mut raw) {
             Ok(0) => return Read::End,
-            Ok(read) => read & !1,
+            Ok(got) => got,
             Err(_) => return Read::Failed(-1),
         };
+        let read = got & !3;
+        if read == 0 {
+            return Read::End;
+        }
+        let over = i64::try_from(got.saturating_sub(read)).unwrap_or(0);
+        if over > 0
+            && self
+                .file
+                .seek(SeekFrom::Current(over.saturating_neg()))
+                .is_err()
+        {
+            return Read::Failed(-1);
+        }
         let (pairs, _) = raw.get(..read).unwrap_or_default().as_chunks::<2>();
         for (sample, pair) in out.iter_mut().zip(pairs) {
             *sample = i16::from_le_bytes(*pair);

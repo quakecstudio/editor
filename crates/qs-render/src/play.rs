@@ -752,11 +752,15 @@ impl Play {
                 let texture = [[column, row], [column + CHAR_CELL, row + CHAR_CELL]];
                 quad(flat, Some(pic), false, at, [CHAR_SIDE; 2], texture, WHITE);
             }
-            HudItem::ConsoleBack { lines, height } => {
+            HudItem::ConsoleBack {
+                lines,
+                height,
+                forced,
+            } => {
                 // `Draw_ConsoleBackground`: opaque below three quarters, else `Draw_AlphaPic`
                 // at `1.2 * lines / y` (CON-3.2).
                 if let Some((pic, _)) = self.pics.get(CONBACK) {
-                    let alpha = self.look.console_alpha(*lines, *height);
+                    let alpha = self.look.console_alpha(*lines, *height, *forced);
                     let at = [0.0, f32_of_i32(lines.saturating_sub(*height))];
                     let size = [f32_of_i32(width), f32_of_i32(*height)];
                     // `Draw_AlphaPic` blends with the alpha test off; `Draw_Pic` tests it.

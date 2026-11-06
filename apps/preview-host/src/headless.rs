@@ -266,10 +266,17 @@ impl Overlay {
         let [_, height] = screen;
         let console = if self.lines > 0 && native {
             let version = format!("QuakeC Studio {}", env!("CARGO_PKG_VERSION"));
-            self.console
-                .draw_quakespasm(self.lines, height, self.realtime, version.as_bytes())
+            let typing = self.dest == KeyDest::Console;
+            self.console.draw_quakespasm(
+                self.lines,
+                height,
+                self.realtime,
+                typing,
+                version.as_bytes(),
+            )
         } else if self.lines > 0 {
-            self.console.draw(self.lines, height, self.realtime, true)
+            let typing = self.dest == KeyDest::Console;
+            self.console.draw(self.lines, height, self.realtime, typing)
         } else {
             self.console.notify(self.realtime)
         };
@@ -279,6 +286,7 @@ impl Overlay {
             host_time: self.realtime,
             realtime: self.realtime,
             console_down: down,
+            console_forced: false,
             screen_height: height,
             settings,
         });
@@ -404,6 +412,8 @@ impl Headless {
     /// The client's frame: it reads what the server wrote, and the eye `pick` looks from is
     /// the client's view.
     fn read_messages(&mut self, frametime: f64) {
+        // The console on the screen is the window's; with none, what it would show goes.
+        self.game.take_printed();
         let packets = self.game.world_mut().take_messages().packets;
         let seconds = frametime_f32(frametime);
         match self

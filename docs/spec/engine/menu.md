@@ -59,14 +59,16 @@ mode menu are not a local preview host's and are not described (P3-34).
 - **MENU-3.2** **Withdrawn** 2026-11-06: New Game now asks first; replaced by MENU-3.4.
 - **MENU-3.3** **Withdrawn** 2026-11-06: the load and save menus are built (MENU-6);
   replaced by MENU-3.5.
-- **MENU-3.4** Escape returns to the main menu; the arrows move and wrap. Enter on New Game
+- **MENU-3.4** **Withdrawn** 2026-11-06: it left out id's `disconnect`; replaced by MENU-3.6.
+- **MENU-3.6** Escape returns to the main menu; the arrows move and wrap. Enter on New Game
   with a server running asks "Are you sure you want to\nstart a new game?\n"
   (`SCR_ModalMessage`): drawn over the faded view, each line of up to 40 characters centred,
   from y `200 * 0.35` 8 apart in the 320 wide menu, as QuakeSpasm's `SCR_DrawNotifyString`
   places it (id's from `vid.height*0.35` of the screen), in both looks, our choice. `y` closes
   the menus and runs `map start`; `n` or Escape go back to this menu; any other key waits.
-  With no server running it does not ask. id also adds "`maxplayers 1`", which this host,
-  always single player, does not have.
+  With no server running it does not ask. id first adds "`disconnect`" when a server is
+  running and "`maxplayers 1`"; this host has neither command, being one single player game
+  whose `map` replaces the level (PHYS-13.6), and runs `map start` alone, our choice.
 - **MENU-3.5** Enter on Load opens the load menu (MENU-6.1); on Save, the save menu when the
   game may be saved (MENU-6.1), else nothing.
 

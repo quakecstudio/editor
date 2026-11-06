@@ -195,7 +195,8 @@ fn the_console_draws_its_rows() {
         items[0].item,
         HudItem::ConsoleBack {
             lines: 240,
-            height: 480
+            height: 480,
+            forced: false
         }
     );
     // 28 rows from y 0: the newest, beta, at 27 * 8 = 216.
@@ -325,9 +326,7 @@ fn history_recalls_earlier_lines() {
     console.key(ConsoleKey::Down, 480, 1.0, &none);
     assert_eq!(console.typed(), b"two");
     console.key(ConsoleKey::Down, 480, 1.0, &none);
-    // The prompt and the position reset; drawing the line ends it there (CON-3.4).
-    assert_eq!(console.typed(), b"two");
-    console.draw(240, 480, 1.0, true);
+    // The prompt and the position reset, the line cut there (CON-5.5).
     assert_eq!(console.typed(), b"");
     assert_eq!(
         console.key(ConsoleKey::Down, 480, 1.0, &none),
@@ -371,7 +370,7 @@ fn only_printable_keys_are_typed() {
 
 /// QuakeSpasm's console of `console` at half a 480-high screen, at `realtime`.
 fn quakespasm(console: &mut Console, realtime: f64) -> Vec<Placed> {
-    console.draw_quakespasm(240, 480, realtime, b"QuakeC Studio 1")
+    console.draw_quakespasm(240, 480, realtime, true, b"QuakeC Studio 1")
 }
 
 // spec CON-5.1: laid out at the screen's height and moved up by what is not shown: the
@@ -389,13 +388,14 @@ fn quakespasm_lays_out_its_rows_from_the_bottom() {
         items[0].item,
         HudItem::ConsoleBack {
             lines: 240,
-            height: 480
+            height: 480,
+            forced: false
         }
     );
     // 30 rows, 28 of text: moved up by 240, the newest at 480 - 16 - 8 - 240.
     assert_eq!(row_at(&items, 216), "line 39");
     assert_eq!(row_at(&items, 0), "line 12");
-    assert!(console.draw_quakespasm(0, 480, 1.0, b"v").is_empty());
+    assert!(console.draw_quakespasm(0, 480, 1.0, true, b"v").is_empty());
     console.key(ConsoleKey::PageUp, 480, 1.0, &none);
     let back = quakespasm(&mut console, 1.0);
     assert_eq!(row_at(&back, 200), "line 35");
@@ -415,7 +415,8 @@ fn quakespasm_draws_the_whole_input_line() {
     }
     console.key(ConsoleKey::Back, 480, 1.0, &none);
     let lit = quakespasm(&mut console, 1.0);
-    assert_eq!(row_at(&lit, 224).trim_end_matches('\x0b'), "]map");
+    // Backspace cut the line (CON-5.5); the cursor sits after it, at the position.
+    assert_eq!(row_at(&lit, 224).trim_end_matches('\x0b'), "]ma");
     assert!(lit.iter().any(|p| p.item
         == HudItem::Char {
             x: 32,
@@ -428,7 +429,8 @@ fn quakespasm_draws_the_whole_input_line() {
             .iter()
             .any(|p| matches!(p.item, HudItem::Char { ch: 11, .. }))
     );
-    assert_eq!(row_at(&dark, 224), "]map");
+    assert_eq!(row_at(&dark, 224), "]ma");
+    assert_eq!(console.typed(), b"ma", "drawing leaves the line as it is");
 }
 
 // spec CON-5.4: the version at the bottom right, its last character at column linewidth + 1
@@ -468,4 +470,67 @@ fn a_leading_slash_is_dropped() {
         let echoed = format!("]{}", String::from_utf8_lossy(typed));
         assert_eq!(text(&console, console.current()), echoed);
     }
+}
+
+// spec CON-4.9: in a menu the backquote does nothing; elsewhere it is the console's toggle
+#[test]
+fn the_backquote_is_the_menus_in_a_menu() {
+    let mut console = wide();
+    assert_eq!(console.backquote(KeyDest::Menu, true), KeyDest::Menu);
+    assert_eq!(console.backquote(KeyDest::Game, true), KeyDest::Console);
+    assert_eq!(console.backquote(KeyDest::Console, true), KeyDest::Game);
+}
+
+// spec CON-5.5: Backspace and the down arrow back to the edit line cut the line at the position
+#[test]
+fn backspace_and_down_cut_the_line() {
+    let mut console = wide();
+    for c in b"map e1m1" {
+        console.key(ConsoleKey::Char(*c), 480, 1.0, &none);
+    }
+    for _ in 0..4 {
+        console.key(ConsoleKey::Back, 480, 1.0, &none);
+    }
+    assert_eq!(console.typed(), b"map ");
+    assert_eq!(
+        console.key(ConsoleKey::Enter, 480, 1.0, &none),
+        Typed::Run(b"map ".to_vec())
+    );
+    for c in b"god" {
+        console.key(ConsoleKey::Char(*c), 480, 1.0, &none);
+    }
+    console.key(ConsoleKey::Up, 480, 1.0, &none);
+    assert_eq!(console.typed(), b"map ");
+    console.key(ConsoleKey::Down, 480, 1.0, &none);
+    assert_eq!(
+        console.typed(),
+        b"",
+        "back on the edit line, its prompt alone"
+    );
+}
+
+// spec CON-5.6: QuakeSpasm's text size holds the lines a wide console shows; the scrollback
+// never goes below 0
+#[test]
+fn quakespasm_keeps_more_text_and_scrolls_back_from_zero() {
+    let mut small = Console::new();
+    small.resize(2560);
+    // 16384 / 318 = 51 lines on a 1440-high screen of 180 rows: no scrolling back at all.
+    small.key(ConsoleKey::PageUp, 1440, 1.0, &none);
+    small.print(b"one\ntwo\n", 1.0);
+    assert_eq!(text(&small, small.current()), "two");
+    small.key(ConsoleKey::Home, 1440, 1.0, &none);
+    let shown = small.draw(720, 1440, 1.0, false);
+    assert!(
+        row_at(&shown, 720 - 16 - 8).contains("two"),
+        "not scrolled past the text"
+    );
+    let mut large = Console::with_text_size(super::CON_TEXTSIZE_QUAKESPASM);
+    large.resize(2560);
+    for n in 0..300 {
+        large.print(format!("line {n}\n").as_bytes(), 1.0);
+    }
+    large.key(ConsoleKey::PageUp, 1440, 1.0, &none);
+    let back = large.draw(720, 1440, 1.0, false);
+    assert_eq!(row_at(&back, 720 - 16 - 8), "line 297");
 }
