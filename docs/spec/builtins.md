@@ -1064,6 +1064,48 @@ profile (DIFF-12.19); everything else runs under id's.
   with `G_STRING`, then on a buffer in use puts it at the end when `(int)order` is not 0 and
   otherwise in the first hole or at the end, and returns the index; on a buffer not in use it
   writes no return value.
+- **BUILTIN-18.40** vkQuake's message buffers: the unreliable and reliable datagrams and the
+  multicast buffer are `MAX_DATAGRAM` 64000 bytes ("#define MAX_DATAGRAM 64000 // max length of
+  unreliable message //johnfitz -- was 1024"), and each signon buffer `SIGNON_SIZE` 31500;
+  a write that does not fit is `SZ_GetSpace`'s fatal error, as BUILTIN-13.3 says. `WriteDest`
+  also takes `MSG_EXT_MULTICAST` (4) and `MSG_EXT_ENTITY` (5), both the multicast buffer.
+  The server runs `PROTOCOL_RMQ` with `PRFL_SHORTANGLE` and a four-byte coordinate
+  (`PRFL_INT32COORD`, or `PRFL_FLOATCOORD` with the protocol extensions), so `WriteAngle`
+  writes 2 bytes and `WriteCoord` 4. `multicast(org, to)` (#82) is `PF_multicast`: the origin
+  through `G_VECTOR`, `to` through `(int)` and `msg_entity` through `NUM_FOR_EDICT`
+  (BUILTIN-2.9); then `SV_Multicast` sends the buffer to the clients `to` names, which the mock
+  does not keep (DIFF-6.5), except that `MULTICAST_INIT` (8) first reserves its size in the
+  signon buffers (`SV_ReserveSignonSpace`: a new, empty buffer when it does not fit in the last,
+  a 257th being the fatal error `SV_AddSignonBuffer overflow`) and writes it there; every kind
+  then empties the multicast buffer. A `Write*` to `MSG_INIT` writes the last signon buffer
+  without reserving.
+- **BUILTIN-18.41** vkQuake's `sound(e, chan, samp, vol, atten)` (#8) is `PF_sound` then
+  `SV_StartSound`: `e` through `G_EDICT` (BUILTIN-2.7), `chan` through `(int)`, `samp` through
+  `G_STRING`, and the volume `(int)(vol * 255)`; an empty sample does nothing; then the host
+  errors of BUILTIN-12.1 for a volume below 0 (one above 255 is 255), an attenuation outside 0
+  to 4 and a channel outside 0 to 255 (vkQuake's range); a sample not in the sound list from
+  entry 1 does nothing; then `e` through `NUM_FOR_EDICT`. The message goes to each spawned
+  client's own datagram, which the mock does not keep. `particle(o, d, color, count)` (#48) is
+  `PF_particle` then `SV_StartParticle`: dropped when the datagram holds more than 64000 less
+  18 bytes, else 18 bytes (the four-byte coordinates of BUILTIN-18.40). `ambientsound` (#74)
+  keeps the sound for clients that connect later, so it writes no signon buffer, and
+  `makestatic(e)` (#69) reads `e` through `G_EDICT`, keeps its state in the static entity list
+  and frees it, writing no signon buffer. The mock does not read the extension fields
+  `SV_BuildEntityState` reads for that state; `tag_entity`, read through `NUM_FOR_EDICT` when
+  it is not 0, is the one whose bad value would be an error.
+- **BUILTIN-18.42** `tracebox(v1, mins, maxs, v2, nomonsters, ent)` (#90) is `PF_tracebox`: the
+  four vectors through `G_VECTOR`, `nomonsters` through `G_FLOAT` and `ent` through `G_EDICT`;
+  then a start or end with a NaN in it is set to 0 0 0 in its parameter ("v1[0] = v1[1] = v1[2]
+  = 0"), and the trace is the mock's, which hits nothing (DIFF-7.1): `trace_allsolid` and
+  `trace_startsolid` 0, `trace_fraction` 1, `trace_inwater` 0, `trace_inopen` 1,
+  `trace_endpos` the end, the plane 0, and `trace_ent` the world.
+- **BUILTIN-18.43** `dropclient(e)` (#453) is `PF_dropclient`: `e` through `G_EDICT` and
+  `NUM_FOR_EDICT`; for an active client, `SV_DropClient (false)`: `ClientDisconnect` runs with
+  `self` the client, an error in it ending every run (VM-18.4), and `self` is put back; then
+  the slot is no longer active and its name is empty ("host_client->name[0] = 0;"). For any
+  other edict nothing happens.
+- **BUILTIN-18.44** `uri_get(...)` (#513) is `PF_uri_get`, "G_VECTORSET (OFS_RETURN, 0, 0, 0);":
+  it reads no parameter, starts no request and returns 0 0 0.
 
 ## Test vectors
 
