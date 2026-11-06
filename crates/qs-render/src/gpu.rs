@@ -1239,6 +1239,7 @@ const CONWIDTH: f32 = 640.0;
 
 /// One frame of the map view, set before egui's render pass and drawn inside it from the
 /// [`MapRenderer`] in egui's callback resources.
+#[derive(Clone)]
 pub struct MapCallback {
     /// What it is drawn with.
     pub view: View,

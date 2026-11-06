@@ -49,7 +49,8 @@ pub(crate) struct Args {
     #[arg(long)]
     pub(crate) nosound: bool,
     /// No window and no sound: frames of 1/72 of a second, the bridge served between them,
-    /// for a client's tests; needs `-bridge`.
+    /// and `screenshot` drawn offscreen; for scenario runs, CI and a client's tests; needs
+    /// `-bridge`.
     #[arg(long, requires = "bridge")]
     pub(crate) headless: bool,
     /// A free camera instead of the player.

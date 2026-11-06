@@ -3388,6 +3388,7 @@ dependencies = [
  "egui_kittest",
  "epaint",
  "image",
+ "pollster 0.4.0",
  "qs-bsp",
  "qs-client",
  "qs-mdl",

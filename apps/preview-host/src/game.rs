@@ -45,8 +45,20 @@ const PICK_REACH: f32 = 8192.0;
 pub(crate) enum Screen {
     /// The game's window.
     Window,
-    /// `--headless`: nothing is drawn, and `screenshot` is not offered.
+    /// `--headless` with a GPU device: a frame is drawn offscreen when `screenshot` asks.
+    Offscreen,
+    /// `--headless` with no GPU device: nothing is drawn, and `screenshot` is not offered.
     Headless,
+}
+
+impl Screen {
+    /// Whether it can draw a frame for `screenshot`.
+    const fn draws(self) -> bool {
+        match self {
+            Self::Window | Self::Offscreen => true,
+            Self::Headless => false,
+        }
+    }
 }
 
 /// Whether the server clock runs (BRIDGE-4.1, "pause, resume").
@@ -303,6 +315,14 @@ impl Game {
                 })
                 .map_err(|why| RpcError::new(ErrorCode::InternalError, why));
             self.responses.push((shot.id, outcome));
+        }
+    }
+
+    /// Answers every waiting `screenshot` with `why` the frame could not be drawn.
+    pub(crate) fn screenshot_failed(&mut self, why: &str) {
+        for shot in core::mem::take(&mut self.shots) {
+            let error = RpcError::new(ErrorCode::InternalError, why.to_owned());
+            self.responses.push((shot.id, Err(error)));
         }
     }
 
@@ -712,7 +732,7 @@ impl Host for Game {
     }
 
     fn capabilities(&self) -> Capabilities {
-        let drawn = |command: &&str| self.screen == Screen::Window || *command != "screenshot";
+        let drawn = |command: &&str| self.screen.draws() || *command != "screenshot";
         Capabilities::of(COMMANDS.into_iter().filter(drawn))
     }
 
@@ -721,7 +741,7 @@ impl Host for Game {
         if method == "reload" {
             return Answer::Now(self.reload(params));
         }
-        if method == "screenshot" && self.screen == Screen::Window {
+        if method == "screenshot" && self.screen.draws() {
             let size = |name: &str| {
                 params
                     .get(name)

@@ -22,8 +22,11 @@ W, A, S and D move, Space jumps, Q and E swim, Shift runs, the mouse button fire
 change weapons, and a click in the window captures the mouse to look around (Escape frees it). `--fly` is a free camera, `--benchmark <seconds>`
 measures the frame rate (P2-152), `--position <x> <y>` opens the window on a chosen display,
 and `--help` lists every option. `--headless` (with `-bridge`) opens no window and no sound
-device: it runs frames of 1/72 of a second and serves the bridge between them, leaving
-`screenshot` out of its capabilities, for `cargo xtask bridge-client`.
+device (P3-05): it runs frames of 1/72 of a second and serves the bridge between them, its
+random sources starting at the engine's fixed state so a run is the same each time, and draws
+`screenshot` offscreen at 1280 by 800 on a GPU device with no window (`qs_render::Offscreen`).
+With no device it leaves `screenshot` out of its capabilities (BRIDGE-2.3). It is what
+`cargo xtask bridge-client` runs in CI on Linux, macOS and Windows.
 
 The bridge offers `inspect`, `reload` (the progs loaded again over the running map, its globals
 and fields migrated by name and type, WORLD-10), `pause`, `resume`, `step` (a frame, or a QuakeC statement, `in`,

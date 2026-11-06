@@ -3,8 +3,8 @@
 //! `cargo xtask bridge-client <game root>`: `qs-engine`'s client against the real preview host
 //! (P3-06). It builds the host, makes a run root over the game root's `id1` as ADR-0008 does,
 //! launches the host in it with `--headless` on `id1` alone, and sends every command the host offers,
-//! checking each answer, then that the commands it leaves out are refused before they are
-//! sent (BRIDGE-2.3) and that `shutdown` stops it (BRIDGE-2.5).
+//! checking each answer, its offscreen `screenshot` included (P3-05), then that a method it
+//! does not know is refused (BRIDGE-6.2) and that `shutdown` stops it (BRIDGE-2.5).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -114,15 +114,48 @@ fn capabilities(client: &Client) -> Result<(), String> {
         "evaluate",
         "console",
         "reload",
+        "screenshot",
     ] {
         expect(
             client.offers(command),
             &format!("the host offers {command}"),
         )?;
     }
+    Ok(())
+}
+
+/// The base64 of a PNG's first bytes, `\x89PNG\r\n\x1a\n`.
+const PNG_BASE64: &str = "iVBORw0KGgo";
+
+/// P3-05, BRIDGE-4.1: a headless host draws its view offscreen at the window's first size, and
+/// at the size asked; paused, the same frame twice is the same image.
+fn screenshots(client: &mut Client) -> Result<(), String> {
+    let shot = |client: &mut Client, size| {
+        client
+            .screenshot(size)
+            .map_err(|e| format!("screenshot: {e}"))
+    };
+    let full = shot(client, None)?;
     expect(
-        !client.offers("screenshot"),
-        "a headless host leaves out screenshot",
+        full.get("width") == Some(&json!(1280)) && full.get("height") == Some(&json!(800)),
+        "a screenshot is 1280 by 800",
+    )?;
+    expect(
+        text(&full, "png").starts_with(PNG_BASE64),
+        "a screenshot is a PNG",
+    )?;
+    let small = shot(client, Some((320, 200)))?;
+    expect(
+        small.get("width") == Some(&json!(320)) && small.get("height") == Some(&json!(200)),
+        "a screenshot is the size asked",
+    )?;
+    client.pause().map_err(|e| format!("pause: {e}"))?;
+    let first = shot(client, None)?;
+    let second = shot(client, None)?;
+    client.resume().map_err(|e| format!("resume: {e}"))?;
+    expect(
+        text(&first, "png") == text(&second, "png"),
+        "paused, the same frame draws the same image",
     )?;
     Ok(())
 }
@@ -142,12 +175,16 @@ fn suite(client: &mut Client, map: &str) -> Result<Vec<String>, String> {
     capabilities(client)?;
     steps.push("capabilities".to_owned());
 
-    let refused = client.screenshot(None);
+    // BRIDGE-6.2: a method the host does not know is answered with -32601 (method not found).
+    let unknown = client.request("entity/teleport", json!({}));
     expect(
-        matches!(refused, Err(qs_engine::ClientError::Unsupported(_))),
-        "screenshot is refused before it is sent",
+        matches!(&unknown, Err(qs_engine::ClientError::Rpc { code, .. }) if code.code() == -32601),
+        "an unknown method is answered as not found",
     )?;
-    steps.push("an unoffered command is refused".to_owned());
+    steps.push("an unknown method is refused".to_owned());
+
+    screenshots(client)?;
+    steps.push("screenshot, offscreen".to_owned());
 
     // `wait_event` looks at the events already received first: those are dropped so the
     // event waited for is the one this command causes.

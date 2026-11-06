@@ -130,6 +130,7 @@ jsonschema = { version = "=0.60.2", default-features = false }
 junction = { version = "=2.1.0", default-features = false }
 miniz_oxide = { version = "=0.9.1", default-features = false }
 muda = { version = "=0.21.2", default-features = false }
+pollster = { version = "=0.4.0", default-features = false }
 proptest = { version = "=1.11.0", default-features = false }
 rfd = { version = "=0.17.2", default-features = false }
 qc-edict = { path = "crates/qc-edict" }

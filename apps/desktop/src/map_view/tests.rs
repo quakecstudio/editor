@@ -20,40 +20,25 @@
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, TexturesDelta};
-use eframe::egui_wgpu::{self, RenderState, ScreenDescriptor, wgpu};
+use eframe::egui_wgpu::{self, ScreenDescriptor};
 use egui_kittest::{Harness, OsThreshold, SnapshotOptions, TestRenderer};
-use qs_render::{Batch, Camera, Image, MeshBuilder, Palette, Placement, Surface, Vertex};
+use qs_render::{
+    Batch, Camera, Image, MeshBuilder, Offscreen, Palette, Placement, Surface, Vertex,
+};
 
 use super::DEPTH_FORMAT;
 use crate::App;
 use crate::shell::CentreTab;
 
-/// egui-kittest's wgpu test renderer, with a depth buffer in its render pass as the app's
-/// window has (`depth_buffer: 32`).
+/// egui-kittest's test renderer as `qs_render::Offscreen`, with a depth buffer in its render
+/// pass as the app's window has (`depth_buffer: 32`).
 struct DepthRenderer {
-    state: RenderState,
+    offscreen: Offscreen,
 }
 
 impl TestRenderer for DepthRenderer {
     fn handle_delta(&mut self, delta: &mut TexturesDelta) {
-        let mut renderer = self.state.renderer.write();
-        // A hash map's order does not matter: each texture is set or freed on its own.
-        #[expect(
-            clippy::iter_over_hash_type,
-            reason = "each texture is handled on its own"
-        )]
-        for (id, images) in delta.set.drain() {
-            for image in images {
-                renderer.update_texture(&self.state.device, &self.state.queue, id, &image);
-            }
-        }
-        #[expect(
-            clippy::iter_over_hash_type,
-            reason = "each texture is handled on its own"
-        )]
-        for id in delta.free.drain() {
-            renderer.free_texture(&id);
-        }
+        self.offscreen.update_textures(delta);
     }
 
     fn render(
@@ -61,128 +46,19 @@ impl TestRenderer for DepthRenderer {
         ctx: &egui::Context,
         output: &egui::FullOutput,
     ) -> Result<image::RgbaImage, String> {
-        let state = &self.state;
         let size = ctx.content_rect().size() * ctx.pixels_per_point();
-        let [width, height] = [size.x.round(), size.y.round()].map(|v| v as u32);
         let screen = ScreenDescriptor {
             pixels_per_point: ctx.pixels_per_point(),
-            size_in_pixels: [width, height],
+            size_in_pixels: [size.x.round(), size.y.round()].map(|v| v as u32),
         };
         let tessellated = ctx.tessellate(output.shapes.clone(), ctx.pixels_per_point());
-        let mut encoder = state.device.create_command_encoder(&Default::default());
-        let mut renderer = state.renderer.write();
-        let user = renderer.update_buffers(
-            &state.device,
-            &state.queue,
-            &mut encoder,
-            &tessellated,
-            &screen,
-        );
-        let extent = wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        };
-        let target = state.device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: extent,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: state.target_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let depth = state.device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: extent,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let target_view = target.create_view(&Default::default());
-        let depth_view = depth.create_view(&Default::default());
-        {
-            let mut pass = encoder
-                .begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &target_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: wgpu::StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &depth_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Discard,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    ..Default::default()
-                })
-                .forget_lifetime();
-            renderer.render(&mut pass, &tessellated, &screen);
-        }
-        drop(renderer);
-        state
-            .queue
-            .submit(user.into_iter().chain([encoder.finish()]));
-        read_back(state, &target, width, height)
+        let pixels = self
+            .offscreen
+            .render(&tessellated, &screen)
+            .map_err(|error| error.to_string())?;
+        image::RgbaImage::from_raw(pixels.width, pixels.height, pixels.rgba)
+            .ok_or_else(|| "no image".to_owned())
     }
-}
-
-/// `texture`'s pixels, read back from the GPU.
-fn read_back(
-    state: &RenderState,
-    texture: &wgpu::Texture,
-    width: u32,
-    height: u32,
-) -> Result<image::RgbaImage, String> {
-    let unpadded = width * 4;
-    let padded =
-        unpadded.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-    let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: u64::from(padded) * u64::from(height),
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let mut encoder = state.device.create_command_encoder(&Default::default());
-    encoder.copy_texture_to_buffer(
-        texture.as_image_copy(),
-        wgpu::TexelCopyBufferInfo {
-            buffer: &buffer,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(padded),
-                rows_per_image: None,
-            },
-        },
-        texture.size(),
-    );
-    state.queue.submit([encoder.finish()]);
-    buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-    state
-        .device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .map_err(|e| e.to_string())?;
-    let data = buffer
-        .slice(..)
-        .get_mapped_range()
-        .map_err(|e| e.to_string())?;
-    let pixels: Vec<u8> = data
-        .chunks(padded as usize)
-        .flat_map(|row| row.iter().take(unpadded as usize).copied())
-        .collect();
-    image::RgbaImage::from_raw(width, height, pixels).ok_or_else(|| "no image".to_owned())
 }
 
 /// A floor of squares in a checker of two colours, 256 units across at z = 0, full
@@ -257,7 +133,7 @@ fn the_map_view_draws_in_the_window() {
         .with_size([1440.0, 900.0])
         .with_pixels_per_point(1.0)
         .renderer(DepthRenderer {
-            state: state.clone(),
+            offscreen: Offscreen::from_state(state.clone(), DEPTH_FORMAT),
         })
         .build_ui_state(
             |ui, app: &mut Option<App>| {

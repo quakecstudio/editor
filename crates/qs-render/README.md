@@ -68,6 +68,9 @@ the map view and the preview host share one renderer.
 - `Skybox::load(name, read)`: the six `gfx/env` faces a worldspawn's `sky` key names, as TGA
   or PCX (REND-8.2); `Play::load_sky` reads the map's, and `Assets::skybox` gives it to the
   renderer, which draws it through the sky faces (REND-8.3).
+- `Offscreen`: a wgpu device with no window, and egui's frames, paint callbacks included,
+  drawn into a texture with a depth buffer and read back as RGBA `Pixels`; the headless
+  preview host's `screenshot` and the GPU tests draw with it (P3-05).
 - `Camera`: a free camera in Quake's axes and its clip-space matrix, and
   `Camera::clip_from_view` for the client's view angles.
 

@@ -1,14 +1,78 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `screenshot`'s image (BRIDGE-4.1): the frame drawn, scaled to the size asked, as a PNG in
-//! base64.
+//! `screenshot`'s image (BRIDGE-4.9): the frame drawn offscreen, by the window's device or the
+//! headless host's, scaled to the size asked, as a PNG in base64.
 
+use eframe::egui;
+use eframe::egui_wgpu::{self, ScreenDescriptor};
 use image::codecs::png::PngEncoder;
 use image::imageops::{FilterType, resize};
 use image::{ExtendedColorType, ImageEncoder, RgbaImage};
+use qs_render::{MapCallback, Offscreen};
 
 /// RFC 4648's base64 alphabet.
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// Draws a frame's paint callback offscreen for `screenshot`: on a device with no window in
+/// the headless host, and on the window's own in the windowed one, whose renderer is in that
+/// device's callback resources. The window's view is drawn again, not captured: eframe's
+/// capture of the window's surface never answered on macOS, as its read-back waits for a device
+/// poll nothing makes.
+pub(crate) struct Drawer {
+    offscreen: Offscreen,
+    ctx: egui::Context,
+}
+
+impl Drawer {
+    /// A drawer on `offscreen`'s device.
+    pub(crate) fn new(offscreen: Offscreen) -> Self {
+        Self {
+            offscreen,
+            ctx: egui::Context::default(),
+        }
+    }
+
+    /// The device, to give the map's renderer to.
+    pub(crate) const fn offscreen(&self) -> &Offscreen {
+        &self.offscreen
+    }
+
+    /// `callback`, the view of one frame, drawn at `size` pixels and read back.
+    pub(crate) fn draw(&mut self, callback: MapCallback, size: [u32; 2]) -> Result<Frame, String> {
+        let [width, height] = size.map(|n| n.max(1));
+        let points = |n: u32| f32::from(u16::try_from(n).unwrap_or(u16::MAX));
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(points(width), points(height)),
+            )),
+            ..egui::RawInput::default()
+        };
+        let mut callback = Some(callback);
+        let mut output = self.ctx.run_ui(input, |ui| {
+            if let Some(callback) = callback.take() {
+                let rect = ui.max_rect();
+                ui.painter()
+                    .add(egui_wgpu::Callback::new_paint_callback(rect, callback));
+            }
+        });
+        self.offscreen.update_textures(&mut output.textures_delta);
+        let primitives = self.ctx.tessellate(output.shapes, output.pixels_per_point);
+        let screen = ScreenDescriptor {
+            pixels_per_point: output.pixels_per_point,
+            size_in_pixels: [width, height],
+        };
+        let pixels = self
+            .offscreen
+            .render(&primitives, &screen)
+            .map_err(|error| error.to_string())?;
+        Ok(Frame {
+            width: pixels.width,
+            height: pixels.height,
+            rgba: pixels.rgba,
+        })
+    }
+}
 
 /// A frame of `width` by `height` pixels, RGBA row by row from the top.
 pub(crate) struct Frame {
