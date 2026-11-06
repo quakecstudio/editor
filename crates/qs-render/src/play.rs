@@ -743,10 +743,12 @@ impl Play {
                     };
                     let at = [0.0, f32_of_i32(lines.saturating_sub(*height))];
                     let size = [f32_of_i32(self.screen[0]), f32_of_i32(*height)];
+                    // `Draw_AlphaPic` blends with the alpha test off; `Draw_Pic` tests it.
+                    let translucent = *lines <= three_quarters;
                     quad(
                         flat,
                         Some(pic),
-                        false,
+                        translucent,
                         at,
                         size,
                         [[0.0, 0.0], [1.0, 1.0]],

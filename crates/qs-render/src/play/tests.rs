@@ -72,6 +72,7 @@ fn pics() -> Pics {
     lmp.extend(20_i32.to_le_bytes());
     lmp.extend(core::iter::repeat_n(2_u8, 2000));
     pics.add_lmp("gfx/ranking.lmp", &lmp, &palette()).unwrap();
+    pics.add_lmp("gfx/conback.lmp", &lmp, &palette()).unwrap();
     pics
 }
 
@@ -624,4 +625,33 @@ fn an_md5_model_that_does_not_read_leaves_its_mdl() {
     assert!(
         matches!(load(false), Err(PlayError::Model(ref m)) if m.starts_with("progs/ogre.md5mesh"))
     );
+}
+
+// spec CON-3.2: the console's background across the screen with its top at `lines - height`,
+// blended with no alpha test at `1.2 * lines / (height * 3 / 4)` while it is at most three
+// quarters of the screen, so it shows as it slides; above that, opaque and alpha tested
+#[test]
+fn the_console_background_shows_while_it_slides() {
+    let mut play = play();
+    let back = |lines| Hud {
+        console: vec![Placed {
+            anchor: Anchor::Screen,
+            item: HudItem::ConsoleBack { lines, height: 480 },
+        }],
+        ..Hud::default()
+    };
+    let half = layer(&mut play, &back(240));
+    let (draw, quads) = half.last().unwrap();
+    assert!(draw.blend, "translucent while sliding");
+    assert_eq!(quads[0], ([0.0, -240.0], [640.0, 480.0]));
+    let lighting = samples(&[50]);
+    let bsp = bsp(&MapSpec::default(), &lighting);
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
+    let callback = play.frame(&Scene::default(), &back(120), &bsp, &mut mesh, 1.0);
+    let last = callback.flat.draws.last().unwrap();
+    let first = usize::try_from(last.first).unwrap();
+    let alpha = callback.flat.vertices[first].color[3];
+    assert!((alpha - 1.2 * 120.0 / 360.0).abs() < 1e-6, "{alpha}");
+    let full = layer(&mut play, &back(400));
+    assert!(!full.last().unwrap().0.blend, "opaque past three quarters");
 }
