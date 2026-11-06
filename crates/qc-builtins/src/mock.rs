@@ -18,6 +18,7 @@
 use crate::files::Files;
 use crate::localization::Localization;
 use crate::math::q_atof;
+use crate::strbuf::StringBuffers;
 use crate::tokenize::Tokens;
 use crate::userinfo::Clients;
 
@@ -290,6 +291,8 @@ pub struct MockEngine {
     pub clients: Clients,
     /// The files QuakeC wrote and the open file table, under vkQuake's profile (BUILTIN-18.36).
     pub files: Files,
+    /// vkQuake's 64 string buffers (BUILTIN-18.39).
+    pub string_buffers: StringBuffers,
     /// The rerelease's localized strings, none unless the host loads them (RRE-1.6).
     pub localization: Localization,
     /// The server clock `sv.time`, a `double` (DIFF-3.2): 1.0 at map start.
@@ -477,6 +480,7 @@ impl MockEngine {
             tokens: Tokens::default(),
             clients: Clients::default(),
             files: Files::default(),
+            string_buffers: StringBuffers::default(),
             localization: Localization::default(),
             clock: 1.0,
         }

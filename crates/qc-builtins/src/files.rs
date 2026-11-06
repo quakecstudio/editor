@@ -236,7 +236,9 @@ fn handle_index(handle: f32, len: usize) -> Option<usize> {
         return None;
     }
     // `float_to_int` truncates toward zero; a value past an int's range is no slot either.
-    usize::try_from(float_to_int(index)).ok().filter(|&n| n < len)
+    usize::try_from(float_to_int(index))
+        .ok()
+        .filter(|&n| n < len)
 }
 
 #[cfg(test)]
