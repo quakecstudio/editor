@@ -529,14 +529,14 @@ impl Viewer {
 }
 
 /// GLQuake's console width, `vid.conwidth` (HUD-1).
-const CONWIDTH: i32 = 640;
+pub(crate) const CONWIDTH: i32 = 640;
 
 /// The 2D layer's height for a window `aspect` wide per unit of height.
 #[expect(
     clippy::cast_possible_truncation,
     reason = "a rounded height of a few hundred units"
 )]
-fn screen_height(aspect: f32) -> i32 {
+pub(crate) fn screen_height(aspect: f32) -> i32 {
     (f32::from(u16::try_from(CONWIDTH).unwrap_or(640)) / aspect.max(0.1)).round() as i32
 }
 

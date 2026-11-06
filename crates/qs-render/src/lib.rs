@@ -18,6 +18,7 @@ mod gpu;
 mod light;
 mod md5;
 mod mesh;
+mod offscreen;
 mod particles;
 mod pick;
 mod picture;
@@ -41,6 +42,7 @@ pub use mesh::{
     Animation, Batch, Extras, GAMMA, Image, Lightmaps, MapMesh, MeshBuilder, MeshError, Palette,
     Placement, REND_MAX_DLIGHTS, Surface, Vertex, frame, mip_levels,
 };
+pub use offscreen::{Offscreen, OffscreenError, Pixels};
 pub use particles::{ParticleVertex, particle_texture, particle_triangles};
 pub use pick::Hit;
 pub use play::{FogState, Pics, Play, PlayError, fog_parse_worldspawn};

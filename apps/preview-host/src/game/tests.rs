@@ -811,10 +811,42 @@ fn the_next_level_carries_what_the_last_one_owed() {
     assert_eq!(responses[0].0, Id::Number(7));
 }
 
-// spec BRIDGE-2.3: a headless host draws nothing, so it leaves screenshot out of its
-// capabilities and the session refuses one as unsupported; the rest are as the window's
+// spec BRIDGE-2.3: a headless host with a GPU device draws offscreen, so it offers screenshot
+// as the window does; a frame it could not draw answers each waiting screenshot with an error
 #[test]
-fn a_headless_host_offers_no_screenshot() {
+fn an_offscreen_host_offers_screenshot_and_reports_a_failed_frame() {
+    let (mut game, mut session) = game();
+    game.set_screen(Screen::Offscreen);
+    let capabilities = game.capabilities();
+    for command in super::COMMANDS {
+        assert!(capabilities.accepts(command), "{command}");
+    }
+    for id in [7, 8] {
+        let reply = session.handle(&mut game, request(id, "screenshot", &json!({})));
+        assert!(reply.response.is_none(), "answered after the next frame");
+    }
+    assert!(game.wants_screenshot());
+    game.screenshot_failed("the GPU did not finish the frame");
+    assert!(!game.wants_screenshot());
+    let responses = game.take_responses();
+    let ids: Vec<_> = responses.iter().map(|(id, _)| id.clone()).collect();
+    assert_eq!(ids, [Id::Number(7), Id::Number(8)]);
+    for (_, outcome) in responses {
+        let error = outcome.unwrap_err();
+        assert_eq!(error.code, ErrorCode::InternalError);
+        assert!(
+            error.message.contains("did not finish"),
+            "{}",
+            error.message
+        );
+    }
+}
+
+// spec BRIDGE-2.3: a headless host with no GPU device draws nothing, so it leaves screenshot
+// out of its capabilities and the session refuses one as unsupported; the rest are as the
+// window's
+#[test]
+fn a_headless_host_with_no_device_offers_no_screenshot() {
     let (mut game, mut session) = game();
     game.set_screen(Screen::Headless);
     let capabilities = game.capabilities();
