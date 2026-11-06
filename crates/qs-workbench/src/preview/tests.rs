@@ -204,3 +204,37 @@ fn edits_held_until_resume_are_shown() {
     assert_eq!(game.pending(4, "health"), None);
     assert_eq!(game.pending(3, "armor"), None);
 }
+
+// spec BRIDGE-3.3: state/changed to paused at a breakpoint stops the debugger there, to running
+// forgets it; qc/error is an error line in the console
+#[test]
+fn stops_reach_the_debugger_and_the_console() {
+    let mut game = preview(None, None);
+    game.take_event(
+        "state/changed",
+        &json!({ "state": "paused", "reason": "breakpoint",
+        "location": { "function": "Ember_Touch", "file": "src/weapons.qc", "line": 33 } }),
+    );
+    assert_eq!(game.state(), PlayState::Paused);
+    assert_eq!(game.debugger().stopped().unwrap().1.function, "Ember_Touch");
+    game.take_event(
+        "state/changed",
+        &json!({ "state": "paused", "reason": "pause" }),
+    );
+    game.take_event("state/changed", &json!({ "state": "running" }));
+    assert!(game.debugger().stopped().is_none());
+    game.take_event("qc/error", &json!({ "message": "NULL function" }));
+    assert!(game.console().last().unwrap().is_error());
+    assert_eq!(game.debugger().error(), Some("NULL function"));
+    // Without a game a breakpoint is kept for the next; a console command needs one.
+    game.toggle_breakpoint(Path::new("src/a.qc"), 3).unwrap();
+    assert_eq!(game.debugger().breakpoints().len(), 1);
+    assert!(matches!(
+        game.console_command("impulse 9"),
+        Err(PreviewError::NotRunning)
+    ));
+    game.watch("time").unwrap();
+    assert_eq!(game.debugger().watches().len(), 1);
+    game.unwatch(0);
+    assert!(game.step_by(qs_engine::StepKind::Over).is_err());
+}

@@ -24,7 +24,10 @@ use schemars::JsonSchema;
 
 use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
 
+pub mod debug;
 pub mod entities;
+
+use debug::{Debugger, Location, StopReason};
 
 use entities::Entities;
 
@@ -180,6 +183,8 @@ pub struct Preview {
     /// The edits made while paused, which the host applies on resume (BRIDGE-4.4): each
     /// edict, field and the value as typed.
     pending: Vec<(u32, String, String)>,
+    /// The breakpoints, where the game stopped, its stack and the watches.
+    debugger: Debugger,
 }
 
 impl core::fmt::Debug for Preview {
@@ -204,7 +209,128 @@ impl Preview {
             status: None,
             entities: Entities::new(),
             pending: Vec::new(),
+            debugger: Debugger::new(),
         }
+    }
+
+    /// The breakpoints, where the game stopped, its stack and the watches.
+    #[must_use]
+    pub const fn debugger(&self) -> &Debugger {
+        &self.debugger
+    }
+
+    /// Adds the breakpoint at `line` of `file`, relative to the project's root, or takes it
+    /// away when there is one; set in or cleared from the running game too
+    /// (`breakpoint/set`, `breakpoint/clear`).
+    ///
+    /// # Errors
+    ///
+    /// The bridge's error; the breakpoint is kept for the next game.
+    pub fn toggle_breakpoint(&mut self, file: &Path, line: u32) -> Result<(), PreviewError> {
+        match self.debugger.toggle(file, line) {
+            Some(removed) => {
+                if let (Some(id), Some(client)) = (removed.id, self.client()) {
+                    client.clear_breakpoint(id)?;
+                }
+                Ok(())
+            }
+            None if self.live.is_some() => self.set_breakpoint(file, line),
+            None => Ok(()),
+        }
+    }
+
+    /// Sets the breakpoint at `line` of `file` in the running game, keeping its id.
+    fn set_breakpoint(&mut self, file: &Path, line: u32) -> Result<(), PreviewError> {
+        let name = file.to_string_lossy().replace('\\', "/");
+        let answer = self.live_client()?.set_breakpoint(&name, line)?;
+        if let Some(breakpoint) = self.debugger.breakpoint_mut(file, line) {
+            breakpoint.id = answer.get("id").and_then(Value::as_u64);
+            breakpoint.function = answer
+                .get("location")
+                .and_then(Location::from_value)
+                .map(|l| l.function);
+        }
+        Ok(())
+    }
+
+    /// Sets every breakpoint in the game that started; one the host refuses is logged.
+    fn set_breakpoints(&mut self) {
+        let lines: Vec<_> = self
+            .debugger
+            .breakpoints()
+            .iter()
+            .map(|b| (b.file.clone(), b.line))
+            .collect();
+        for (file, line) in lines {
+            if let Err(error) = self.set_breakpoint(&file, line) {
+                tracing::debug!(%error, file = %file.display(), line, "breakpoint not set");
+            }
+        }
+    }
+
+    /// Adds the watch `expression`, read while the game is stopped in a frame.
+    ///
+    /// # Errors
+    ///
+    /// The bridge's error when it is read at once.
+    pub fn watch(&mut self, expression: &str) -> Result<(), PreviewError> {
+        self.debugger.watch(expression);
+        self.read_watches()
+    }
+
+    /// Takes away watch `index`.
+    pub fn unwatch(&mut self, index: usize) {
+        self.debugger.unwatch(index);
+    }
+
+    /// Reads each watch's value while stopped in a frame (`evaluate`).
+    fn read_watches(&mut self) -> Result<(), PreviewError> {
+        if self.debugger.stopped().is_none() {
+            return Ok(());
+        }
+        let expressions: Vec<String> = self
+            .debugger
+            .watches()
+            .iter()
+            .map(|w| w.expression.clone())
+            .collect();
+        let mut values = Vec::new();
+        for expression in &expressions {
+            let value = match self.live_client()?.evaluate(expression) {
+                Ok(answer) => answer.get("value").map(|value| self.entities.show(value)),
+                Err(error) => Some(error.to_string()),
+            };
+            values.push(value);
+        }
+        for (watch, value) in self.debugger.watches_mut().iter_mut().zip(values) {
+            watch.value = value;
+        }
+        Ok(())
+    }
+
+    /// Runs `command` in the game's console (`console`); its output comes as console lines.
+    ///
+    /// # Errors
+    ///
+    /// [`PreviewError::NotRunning`] with no host, or the bridge's error.
+    pub fn console_command(&mut self, command: &str) -> Result<(), PreviewError> {
+        self.push_line(&format!("] {command}"), "print");
+        self.live_client()?.console(command)?;
+        Ok(())
+    }
+
+    /// Steps the game stopped in a frame by `kind`: a statement, into a call, over one or out
+    /// to the caller (BRIDGE-4.3); a game paused between frames steps a frame.
+    ///
+    /// # Errors
+    ///
+    /// [`PreviewError::NotRunning`] with no host, or the bridge's error.
+    pub fn step_by(&mut self, kind: StepKind) -> Result<(), PreviewError> {
+        if self.debugger.stopped().is_none() {
+            return self.step();
+        }
+        self.live_client()?.step(kind)?;
+        Ok(())
     }
 
     /// The value typed for field `field` of edict `edict` while paused, which the game takes on
@@ -356,6 +482,7 @@ impl Preview {
         self.state = PlayState::Playing;
         self.status = Some(format!("Playing {mod_name}"));
         self.console.clear();
+        self.set_breakpoints();
         self.refresh()
     }
 
@@ -398,6 +525,7 @@ impl Preview {
         self.live_client()?.resume()?;
         self.state = PlayState::Playing;
         self.pending.clear();
+        self.debugger.resumed();
         match self.entities.selected().map(|s| s.edict) {
             Some(edict) => self.select(edict),
             None => Ok(()),
@@ -486,6 +614,7 @@ impl Preview {
         self.status = None;
         self.entities.clear();
         self.pending.clear();
+        self.debugger.unset_all();
     }
 
     /// Reads the host's events: its state changes and console lines; the host closing the
@@ -513,25 +642,19 @@ impl Preview {
     /// line.
     fn take_event(&mut self, method: &str, params: &Value) {
         match method {
-            "state/changed" => {
-                self.state = match params.get("state").and_then(Value::as_str) {
-                    Some("paused") => PlayState::Paused,
-                    _ => PlayState::Playing,
-                };
-            }
+            "state/changed" => self.state_changed(params),
             "console/line" => {
                 let text = params.get("text").and_then(Value::as_str).unwrap_or("");
                 let level = params
                     .get("level")
                     .and_then(Value::as_str)
                     .unwrap_or("print");
-                if self.console.len() == CONSOLE_LINES {
-                    self.console.pop_front();
-                }
-                self.console.push_back(ConsoleLine {
-                    text: text.to_owned(),
-                    level: level.to_owned(),
-                });
+                self.push_line(text, level);
+            }
+            "qc/error" => {
+                let message = params.get("message").and_then(Value::as_str).unwrap_or("");
+                self.debugger.failed(message);
+                self.push_line(message, "error");
             }
             _ => {
                 if self.entities.take_event(method, params)
@@ -540,6 +663,53 @@ impl Preview {
                     tracing::debug!(%error, "the entities were not read again");
                 }
             }
+        }
+    }
+}
+
+impl Preview {
+    /// A line for the console, the oldest dropped past [`CONSOLE_LINES`].
+    fn push_line(&mut self, text: &str, level: &str) {
+        if self.console.len() == CONSOLE_LINES {
+            self.console.pop_front();
+        }
+        self.console.push_back(ConsoleLine {
+            text: text.to_owned(),
+            level: level.to_owned(),
+        });
+    }
+
+    /// `state/changed` (BRIDGE-3.3): the play state; stopped in a frame, where and why, and
+    /// the stack and the watches read; running again, none of them.
+    fn state_changed(&mut self, params: &Value) {
+        let paused = params.get("state").and_then(Value::as_str) == Some("paused");
+        self.state = if paused {
+            PlayState::Paused
+        } else {
+            PlayState::Playing
+        };
+        if !paused {
+            self.debugger.resumed();
+            return;
+        }
+        let reason = params
+            .get("reason")
+            .and_then(Value::as_str)
+            .and_then(StopReason::of);
+        let location = params.get("location").and_then(Location::from_value);
+        let (Some(reason), Some(location)) = (reason, location) else {
+            return;
+        };
+        self.debugger.stop(reason, location);
+        let read = self
+            .live_client()
+            .and_then(|client| Ok(client.inspect(InspectWhat::Stack)?));
+        match read {
+            Ok(answer) => self.debugger.set_stack(&answer),
+            Err(error) => tracing::debug!(%error, "the stack was not read"),
+        }
+        if let Err(error) = self.read_watches() {
+            tracing::debug!(%error, "the watches were not read");
         }
     }
 }
@@ -615,6 +785,16 @@ pub const SELECT: &str = "preview.select";
 pub const PICK: &str = "preview.pick";
 /// The id of the command that sets a field of the selected edict.
 pub const SET_FIELD: &str = "preview.set_field";
+/// The id of the command that adds or takes away a breakpoint.
+pub const BREAKPOINT: &str = "preview.breakpoint";
+/// The id of the command that runs a console command in the game.
+pub const CONSOLE: &str = "preview.console";
+/// The id of the command that adds a watch.
+pub const WATCH: &str = "preview.watch";
+/// The id of the command that takes a watch away.
+pub const UNWATCH: &str = "preview.unwatch";
+/// The id of the command that steps the stopped game by a statement, into, over or out.
+pub const STEP_BY: &str = "preview.step_by";
 
 /// What a `preview.*` command leaves: the play state and the last thing the loop did.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -757,6 +937,156 @@ impl<C: HasPreview + 'static> Command<C> for SetFieldCommand {
         let (_, preview) = context.workbench_and_preview();
         preview.set_field(&field, &value)?;
         Ok(Outcome::outside_history(SelectedEntity::of(preview)))
+    }
+}
+
+/// The parameters of `preview.breakpoint`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BreakpointParams {
+    /// The file, relative to the project's root.
+    pub file: PathBuf,
+    /// The line, from 1.
+    pub line: u32,
+}
+
+/// The parameters of `preview.console`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConsoleParams {
+    /// The console command, such as `impulse 9`.
+    pub command: String,
+}
+
+/// The parameters of `preview.watch`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WatchParams {
+    /// The expression, such as `self.owner.health`.
+    pub expression: String,
+}
+
+/// The parameters of `preview.unwatch`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UnwatchParams {
+    /// The watch's place in the list, from 0.
+    pub index: usize,
+}
+
+/// How `preview.step_by` steps.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum StepBy {
+    /// One statement.
+    Statement,
+    /// Into the next call.
+    In,
+    /// To the next statement of this function.
+    Over,
+    /// Out to the caller.
+    Out,
+}
+
+impl StepBy {
+    const fn kind(self) -> StepKind {
+        match self {
+            Self::Statement => StepKind::Statement,
+            Self::In => StepKind::In,
+            Self::Over => StepKind::Over,
+            Self::Out => StepKind::Out,
+        }
+    }
+}
+
+/// The parameters of `preview.step_by`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StepByParams {
+    /// A statement, into, over or out.
+    pub kind: StepBy,
+}
+
+/// A `preview.*` command whose parameters say what it does to the preview.
+trait Act: Send + Sync {
+    const ID: &'static str;
+    const SUMMARY: &'static str;
+    type Params: serde::de::DeserializeOwned + JsonSchema;
+    fn act(preview: &mut Preview, params: Self::Params) -> Result<(), PreviewError>;
+}
+
+struct BreakpointAct;
+impl Act for BreakpointAct {
+    const ID: &'static str = BREAKPOINT;
+    const SUMMARY: &'static str = "Adds a breakpoint at a line of a file, or takes it away \
+        when there is one; set in the running game too and in each game that starts.";
+    type Params = BreakpointParams;
+    fn act(preview: &mut Preview, p: BreakpointParams) -> Result<(), PreviewError> {
+        preview.toggle_breakpoint(&p.file, p.line)
+    }
+}
+
+struct ConsoleAct;
+impl Act for ConsoleAct {
+    const ID: &'static str = CONSOLE;
+    const SUMMARY: &'static str = "Runs a command in the running game's console.";
+    type Params = ConsoleParams;
+    fn act(preview: &mut Preview, p: ConsoleParams) -> Result<(), PreviewError> {
+        preview.console_command(&p.command)
+    }
+}
+
+struct WatchAct;
+impl Act for WatchAct {
+    const ID: &'static str = WATCH;
+    const SUMMARY: &'static str = "Adds a watch, an expression read each time the game stops \
+        in a frame.";
+    type Params = WatchParams;
+    fn act(preview: &mut Preview, p: WatchParams) -> Result<(), PreviewError> {
+        preview.watch(&p.expression)
+    }
+}
+
+struct UnwatchAct;
+impl Act for UnwatchAct {
+    const ID: &'static str = UNWATCH;
+    const SUMMARY: &'static str = "Takes a watch away.";
+    type Params = UnwatchParams;
+    fn act(preview: &mut Preview, p: UnwatchParams) -> Result<(), PreviewError> {
+        preview.unwatch(p.index);
+        Ok(())
+    }
+}
+
+struct StepByAct;
+impl Act for StepByAct {
+    const ID: &'static str = STEP_BY;
+    const SUMMARY: &'static str = "Steps the game stopped in a frame by a statement, into a \
+        call, over one or out to the caller.";
+    type Params = StepByParams;
+    fn act(preview: &mut Preview, p: StepByParams) -> Result<(), PreviewError> {
+        preview.step_by(p.kind.kind())
+    }
+}
+
+/// An [`Act`] as a command.
+struct ActCommand<A>(core::marker::PhantomData<A>);
+
+impl<A: Act + 'static, C: HasPreview + 'static> Command<C> for ActCommand<A> {
+    const ID: &'static str = A::ID;
+    const SUMMARY: &'static str = A::SUMMARY;
+    type Params = A::Params;
+    type Output = PreviewStatus;
+    type Error = PreviewError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: A::Params,
+    ) -> Result<Outcome<PreviewStatus, C>, PreviewError> {
+        let (_, preview) = context.workbench_and_preview();
+        A::act(preview, params)?;
+        Ok(Outcome::outside_history(PreviewStatus::of(preview)))
     }
 }
 
@@ -909,6 +1239,11 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(SelectCommand)?;
     registry.register(PickCommand)?;
     registry.register(SetFieldCommand)?;
+    registry.register(ActCommand::<BreakpointAct>(core::marker::PhantomData))?;
+    registry.register(ActCommand::<ConsoleAct>(core::marker::PhantomData))?;
+    registry.register(ActCommand::<WatchAct>(core::marker::PhantomData))?;
+    registry.register(ActCommand::<UnwatchAct>(core::marker::PhantomData))?;
+    registry.register(ActCommand::<StepByAct>(core::marker::PhantomData))?;
     Ok(())
 }
 

@@ -252,7 +252,8 @@ fn the_host_is_found_beside_the_app() {
     assert_eq!(locate_host(Some(&configured), &app).unwrap(), configured);
 }
 
-/// A host that offers `pause` and `step` and sends an event before each answer.
+/// A host that offers `pause`, `step`, `breakpoint/clear` and `evaluate` and sends an event
+/// before each answer.
 struct Fake;
 
 impl Host for Fake {
@@ -265,7 +266,7 @@ impl Host for Fake {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities::of(["pause", "step"])
+        Capabilities::of(["pause", "step", "breakpoint/clear", "evaluate"])
     }
 
     fn call(&mut self, _id: &Id, method: &str, params: &Value) -> Answer {
@@ -337,6 +338,10 @@ fn the_client_speaks_the_bridge() {
     assert_eq!(paused["method"], "pause");
     let stepped = client.step(StepKind::Frame).unwrap();
     assert_eq!(stepped["params"]["kind"], "frame");
+    let cleared = client.clear_breakpoint(4).unwrap();
+    assert_eq!(cleared["params"], json!({ "id": 4 }));
+    let evaluated = client.evaluate("self.health").unwrap();
+    assert_eq!(evaluated["params"], json!({ "expression": "self.health" }));
     let inspected = client.inspect(InspectWhat::Edict(3)).unwrap();
     assert_eq!(inspected["params"], json!({ "what": "edict", "edict": 3 }));
     assert!(matches!(
@@ -345,7 +350,7 @@ fn the_client_speaks_the_bridge() {
     ));
     // Each answer, initialize's too, came after an event, kept in order.
     let events = client.take_events();
-    assert_eq!(events.len(), 4);
+    assert_eq!(events.len(), 6);
     assert!(events.iter().all(|e| e.method == "console/line"));
     // The host answers a step with bad parameters with -32602 (BRIDGE-4.2).
     let bad = client.request("step", json!({ "kind": "sideways" }));

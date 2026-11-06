@@ -37,6 +37,10 @@ pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
 pub use crate::preview::{
+    BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, STEP_BY, StepBy, StepByParams, UNWATCH,
+    UnwatchParams, WATCH, WatchParams, debug,
+};
+pub use crate::preview::{
     ConsoleLine, HasPreview, PAUSE, PICK, PLAY, POLL, PickParams, PlayParams, PlayState, Preview,
     PreviewConfig, PreviewError, PreviewStatus, RELOAD, RESTART, RESUME, SELECT, SET_FIELD, STEP,
     STOP, SelectParams, SelectedEntity, SetFieldParams, entities, register_preview,

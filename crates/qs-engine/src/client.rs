@@ -485,6 +485,24 @@ impl Client {
         self.request("breakpoint/set", json!({ "file": file, "line": line }))
     }
 
+    /// `breakpoint/clear` (BRIDGE-4.1) of the breakpoint `breakpoint/set` gave `id`.
+    ///
+    /// # Errors
+    ///
+    /// The request's [`ClientError`].
+    pub fn clear_breakpoint(&mut self, id: u64) -> Result<Value, ClientError> {
+        self.request("breakpoint/clear", json!({ "id": id }))
+    }
+
+    /// `evaluate` (BRIDGE-4.1): `expression`'s value while stopped in a frame.
+    ///
+    /// # Errors
+    ///
+    /// The request's [`ClientError`].
+    pub fn evaluate(&mut self, expression: &str) -> Result<Value, ClientError> {
+        self.request("evaluate", json!({ "expression": expression }))
+    }
+
     /// `shutdown` (BRIDGE-2.5): the host stops its game and answers.
     ///
     /// # Errors
