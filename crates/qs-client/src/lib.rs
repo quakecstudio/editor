@@ -11,8 +11,8 @@
 mod client;
 mod console;
 mod entity;
-mod menu;
 mod hud;
+mod menu;
 mod message;
 mod models;
 mod particles;
@@ -35,7 +35,6 @@ pub use console::{
     CON_CURSOR_SPEED, CON_HISTORY, CON_MAX_LINE, CON_NOTIFY_TIME, CON_NUM_TIMES, CON_SPEED,
     CON_TEXTSIZE, Console, ConsoleKey, KeyDest, Typed,
 };
-pub use menu::{MENU_HELP_PAGES, Menu, MenuEvent, MenuKey, MenuState};
 pub use entity::{Baseline, Entity, Lerp, LerpFlags};
 pub use hud::{
     Anchor, CenterPrint, HUD_CENTER_LINE_LENGTH, HUD_CENTER_MAX, HUD_CENTERTIME, HUD_FLASH_FRAMES,
@@ -43,6 +42,7 @@ pub use hud::{
     HUD_PRINTSPEED, HUD_SBAR_HEIGHT, HUD_WEAPONS, HudInput, HudItem, Placed, color_for_map,
     intermission_overlay, sort_frags, status_bar,
 };
+pub use menu::{MENU_HELP_PAGES, Menu, MenuEvent, MenuKey, MenuState};
 pub use message::Reader;
 pub use models::{FrameInfo, ModelInfo, ModelKind, Models, Random, SYNCTYPE_RAND, flags};
 pub use particles::{

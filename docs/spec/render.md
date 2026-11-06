@@ -696,3 +696,14 @@ QuakeSpasm's look by default and GLQuake's as a mode.
   fov_x; a = atan(0.75 / x * tan(fov_x / 360 * M_PI)); a = a * 360 / M_PI; return a;`", the
   width that keeps a 4:3 image's height, so 90 is about 100.39 at 16:10. The view's height is
   then REND-3.4's `CalcFov` of it. The eye a click picks from uses the same width.
+
+- **REND-13.7** QuakeSpasm draws its 2D layer on canvases (`GL_SetCanvas` in
+  `Quake/gl_draw.c`) at the window's own size, not GLQuake's 640 wide layer: the console, the
+  notify lines and the centre print at scale 1 (`scr_conscale` "1"); the menus' 320 by 200
+  canvas centred both ways ("`glViewport (glx + (glwidth - 320*s) / 2, gly + (glheight -
+  200*s) / 2, ...)`", `s` 1 with `scr_menuscale` "1"); and the bar's 320 wide canvas at the
+  bottom centre at scale 1 (`scr_sbarscale` "1"). The fade behind a menu is "`glColor4f (0, 0,
+  0, 0.5)`" (`Draw_FadeScreen`), and the console's background is `scr_conalpha` "0.5", opaque
+  when it fills the screen (`Draw_ConsoleBackground`: "`alpha = (con_forcedup) ? 1.0f :
+  scr_conalpha.value;`"). In GLQuake's look the fade is 0.8 and the background as CON-3.2
+  says.

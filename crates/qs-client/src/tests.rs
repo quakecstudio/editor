@@ -3184,7 +3184,10 @@ fn a_new_server_prints_its_level_name() {
             _ => None,
         })
         .collect();
-    let divider = printed.iter().position(|text| text.starts_with(b"\n\n\x1d")).unwrap();
+    let divider = printed
+        .iter()
+        .position(|text| text.starts_with(b"\n\n\x1d"))
+        .unwrap();
     assert_eq!(printed[divider].len(), 2 + 1 + 35 + 1 + 2);
     assert_eq!(printed[divider + 1][0], 2);
     assert!(printed[divider + 1].ends_with(b"\n"));

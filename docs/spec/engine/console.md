@@ -120,6 +120,30 @@ The console keeps the last text printed as fixed-width lines in one buffer of
   backquote and `~` ("`bind \` "toggleconsole"`"), and the backquote is never typed into the
   line (`Key_Init`: "`consolekeys['\`'] = false;`"), so it reaches the binding.
 
+## CON-5 QuakeSpasm's console
+
+**Source:** `Quake/console.c`, `Con_DrawConsole` and `Con_DrawInput`; `Quake/gl_draw.c`,
+`GL_SetCanvas` (`CANVAS_CONSOLE`) (sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`).
+
+In QuakeSpasm's look (REND-13.7) the console is drawn as QuakeSpasm draws it.
+
+### Behaviour
+
+- **CON-5.1** The console is laid out at the screen's full height and moved up by what is not
+  shown (`CANVAS_CONSOLE`: "`lines = vid.conheight - (scr_con_current * vid.conheight /
+  glheight)`"): its background as CON-3.2 places it, `(lines + 7) / 8` rows counted up from the
+  bottom, two of them left for the input line and the version.
+- **CON-5.2** The text's rows end 16 above the bottom; while scrolled back the last two give
+  way to a blank row and a row of `^` every fourth column.
+- **CON-5.3** The input line is drawn 16 above the bottom from the prestep CON-3.4 gives, up to
+  the end of its text, with a block cursor at the position when `(int)(realtime *
+  con_cursorspeed) & 1` is 0; the line is not cut off by drawing it, unlike CON-3.4.
+  QuakeSpasm resets the blink on each key and draws an insert or overwrite cursor picture; this
+  console draws character 11, our choice.
+- **CON-5.4** The version is drawn at the bottom right, its last character at column
+  `con_linewidth + 1`: QuakeSpasm's "`QuakeSpasm 0.97.0`", this host's `QuakeC Studio` and its
+  version.
+
 ### Constants
 
 | Name | Value | Source |

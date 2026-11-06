@@ -293,7 +293,13 @@ impl Console {
     /// `SCR_SetUpToDrawConsole`'s height: the console forced up, else half the screen with the
     /// console the destination, else none, the drawn height moving toward it by
     /// [`CON_SPEED`] a second over `frametime` (CON-3.1); the height to draw.
-    pub fn slide(&mut self, screen_height: i32, forced: bool, dest: KeyDest, frametime: f32) -> i32 {
+    pub fn slide(
+        &mut self,
+        screen_height: i32,
+        forced: bool,
+        dest: KeyDest,
+        frametime: f32,
+    ) -> i32 {
         let screen = f32_of(screen_height);
         if forced {
             self.height = screen;
@@ -317,12 +323,19 @@ impl Console {
     pub fn notify(&self, realtime: f64) -> Vec<Placed> {
         let mut out = Vec::new();
         let mut v = 0;
-        let first = self.current.saturating_sub(i64_of(CON_NUM_TIMES)).saturating_add(1);
+        let first = self
+            .current
+            .saturating_sub(i64_of(CON_NUM_TIMES))
+            .saturating_add(1);
         for i in first..=self.current {
             let Ok(index) = usize::try_from(i) else {
                 continue;
             };
-            let time = self.times.get(index % CON_NUM_TIMES).copied().unwrap_or(0.0);
+            let time = self
+                .times
+                .get(index % CON_NUM_TIMES)
+                .copied()
+                .unwrap_or(0.0);
             // `if (time == 0) continue;`: a line never timed.
             let unset = time <= 0.0;
             if unset || realtime - time > CON_NOTIFY_TIME {
@@ -337,7 +350,13 @@ impl Console {
     /// `Con_DrawConsole`: the console `lines` pixels high on a screen `screen_height` high at
     /// `realtime`, the input line with it when `input`, which then ends the line at its
     /// position (CON-3.2 to CON-3.4).
-    pub fn draw(&mut self, lines: i32, screen_height: i32, realtime: f64, input: bool) -> Vec<Placed> {
+    pub fn draw(
+        &mut self,
+        lines: i32,
+        screen_height: i32,
+        realtime: f64,
+        input: bool,
+    ) -> Vec<Placed> {
         if lines <= 0 {
             return Vec::new();
         }
@@ -350,7 +369,10 @@ impl Console {
         }];
         let rows = lines.saturating_sub(16) >> 3;
         let mut y = lines.saturating_sub(16).saturating_sub(rows << 3);
-        let first = self.current.saturating_sub(i64::from(rows)).saturating_add(1);
+        let first = self
+            .current
+            .saturating_sub(i64::from(rows))
+            .saturating_add(1);
         for i in first..=self.current {
             let j = i.saturating_sub(self.backscroll).max(0);
             chars(&mut out, self.line(j), 8, y);
@@ -358,6 +380,99 @@ impl Console {
         }
         if input {
             self.draw_input(&mut out, lines, realtime);
+        }
+        out
+    }
+
+    /// QuakeSpasm's `Con_DrawConsole` and `Con_DrawInput`: the console `lines` pixels high on a
+    /// screen `height` high, laid out at full height and moved up by what is not shown
+    /// (`CANVAS_CONSOLE`): `(lines + 7) / 8 - 2` rows of text ending 16 above the bottom, a row
+    /// of `^` under them while scrolled back, the input line 16 above the bottom with a block
+    /// cursor on even beats of `realtime * 4`, and `version` at the bottom right (CON-5).
+    pub fn draw_quakespasm(
+        &mut self,
+        lines: i32,
+        height: i32,
+        realtime: f64,
+        version: &[u8],
+    ) -> Vec<Placed> {
+        if lines <= 0 {
+            return Vec::new();
+        }
+        let shift = lines.saturating_sub(height);
+        let mut out = vec![Placed {
+            anchor: Anchor::Screen,
+            item: HudItem::ConsoleBack { lines, height },
+        }];
+        let all = lines.saturating_add(7) >> 3;
+        let mut y = height.saturating_sub(all.saturating_mul(8));
+        let rows = all.saturating_sub(2);
+        let back = if self.backscroll > 0 { 2 } else { 0 };
+        let first = self
+            .current
+            .saturating_sub(i64::from(rows))
+            .saturating_add(1);
+        for i in first..=self.current.saturating_sub(back) {
+            let j = i.saturating_sub(self.backscroll).max(0);
+            chars(&mut out, self.line(j), 8, y.saturating_add(shift));
+            y = y.saturating_add(8);
+        }
+        if self.backscroll > 0 {
+            y = y.saturating_add(8);
+            let arrows: Vec<u8> = (0..self.linewidth)
+                .map(|x| if x % 4 == 0 { b'^' } else { b' ' })
+                .collect();
+            chars(&mut out, &arrows, 8, y.saturating_add(shift));
+        }
+        let input_y = height.saturating_sub(16).saturating_add(shift);
+        let start = if self.pos >= self.linewidth {
+            self.pos.saturating_add(1).saturating_sub(self.linewidth)
+        } else {
+            0
+        };
+        let line = *self.edit_line();
+        let typed: Vec<u8> = line
+            .iter()
+            .skip(start)
+            .take_while(|&&c| c != 0)
+            .take(self.linewidth)
+            .copied()
+            .collect();
+        chars(&mut out, &typed, 8, input_y);
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "spec CON-5.3: `(int)(realtime*con_cursorspeed)`, toward zero"
+        )]
+        let beat = ((realtime * CON_CURSOR_SPEED) as i64) & 1;
+        if beat == 0 {
+            let column =
+                i32::try_from(self.pos.saturating_sub(start).saturating_add(1)).unwrap_or(0);
+            out.push(Placed {
+                anchor: Anchor::Screen,
+                item: HudItem::Char {
+                    x: column.saturating_mul(8),
+                    y: input_y,
+                    ch: 11,
+                },
+            });
+        }
+        let width = i32::try_from(self.linewidth).unwrap_or(0);
+        let length = i32::try_from(version.len()).unwrap_or(0);
+        let x = width
+            .saturating_sub(length)
+            .saturating_add(2)
+            .saturating_mul(8);
+        let mut at = x;
+        for &c in version {
+            out.push(Placed {
+                anchor: Anchor::Screen,
+                item: HudItem::Char {
+                    x: at,
+                    y: height.saturating_sub(8).saturating_add(shift),
+                    ch: c,
+                },
+            });
+            at = at.saturating_add(8);
         }
         out
     }
@@ -374,10 +489,11 @@ impl Console {
         if let Some(cursor) = text.get_mut(self.pos) {
             *cursor = if blink == 0 { 10 } else { 11 };
         }
-        for c in text.iter_mut().skip(self.pos.saturating_add(1)).take(
-            self.linewidth
-                .saturating_sub(self.pos.saturating_add(1)),
-        ) {
+        for c in text
+            .iter_mut()
+            .skip(self.pos.saturating_add(1))
+            .take(self.linewidth.saturating_sub(self.pos.saturating_add(1)))
+        {
             *c = b' ';
         }
         let start = if self.pos >= self.linewidth {
@@ -488,7 +604,10 @@ impl Console {
                 }
             }
             ConsoleKey::PageUp => {
-                self.backscroll = self.backscroll.saturating_add(2).min(self.most_back(screen_height));
+                self.backscroll = self
+                    .backscroll
+                    .saturating_add(2)
+                    .min(self.most_back(screen_height));
             }
             ConsoleKey::PageDown => self.backscroll = self.backscroll.saturating_sub(2).max(0),
             ConsoleKey::Home => self.backscroll = self.most_back(screen_height),
@@ -509,12 +628,19 @@ impl Console {
 
     /// Whether history line `n` has anything after its prompt (CON-4.5).
     fn has_text(&self, n: usize) -> bool {
-        self.lines.get(n).and_then(|line| line.get(1)).is_some_and(|&b| b != 0)
+        self.lines
+            .get(n)
+            .and_then(|line| line.get(1))
+            .is_some_and(|&b| b != 0)
     }
 
     /// The history line copied into the edit line, the position at its end (CON-4.5).
     fn recall(&mut self) {
-        let from = self.lines.get(self.history).copied().unwrap_or([0; CON_MAX_LINE]);
+        let from = self
+            .lines
+            .get(self.history)
+            .copied()
+            .unwrap_or([0; CON_MAX_LINE]);
         self.with_edit(|line| *line = from);
         self.pos = from.iter().position(|&b| b == 0).unwrap_or(CON_MAX_LINE);
     }

@@ -19,7 +19,9 @@ fn wide() -> Console {
 
 /// The text of `console`'s line `n`, its trailing spaces dropped.
 fn text(console: &Console, n: i64) -> String {
-    String::from_utf8_lossy(console.line(n)).trim_end().to_owned()
+    String::from_utf8_lossy(console.line(n))
+        .trim_end()
+        .to_owned()
 }
 
 /// No completion.
@@ -46,7 +48,10 @@ fn row_at(items: &[Placed], y: i32) -> String {
 fn the_width_follows_the_screen_and_keeps_the_text() {
     let mut console = Console::new();
     assert_eq!(console.line_width(), 38);
-    assert_eq!(console.current(), i64::try_from(CON_TEXTSIZE / 38).unwrap() - 1);
+    assert_eq!(
+        console.current(),
+        i64::try_from(CON_TEXTSIZE / 38).unwrap() - 1
+    );
     console.print(b"first\nsecond\n", 1.0);
     console.resize(640);
     assert_eq!(console.line_width(), 78);
@@ -64,7 +69,10 @@ fn the_width_follows_the_screen_and_keeps_the_text() {
 fn a_marker_byte_colours_the_text() {
     let mut console = wide();
     assert!(console.print(b"\x01hi\n", 1.0));
-    assert_eq!(console.line(console.current())[..2], [b'h' | 128, b'i' | 128]);
+    assert_eq!(
+        console.line(console.current())[..2],
+        [b'h' | 128, b'i' | 128]
+    );
     assert!(!console.print(b"\x02yo\n", 1.0));
     assert_eq!(console.line(console.current())[0], b'y' | 128);
     assert!(!console.print(b"plain\n", 1.0));
@@ -100,7 +108,11 @@ fn newlines_and_carriage_returns() {
     assert_eq!(text(&console, current - 1), "one");
     assert_eq!(text(&console, current), "two");
     console.print(b"\rthree", 1.0);
-    assert_eq!(console.current(), current, "the next text is on the same line");
+    assert_eq!(
+        console.current(),
+        current,
+        "the next text is on the same line"
+    );
     assert_eq!(text(&console, current), "three");
     console.print(b"\rfour\n", 1.0);
     assert_eq!(text(&console, current), "four");
@@ -114,7 +126,11 @@ fn clear_and_scrollback() {
     console.key(ConsoleKey::PageUp, 480, 1.0, &none);
     console.print(b"more\n", 1.0);
     let lines = console.draw(240, 480, 1.0, false);
-    assert!(lines.iter().any(|p| row_at(std::slice::from_ref(p), 216) == "m"));
+    assert!(
+        lines
+            .iter()
+            .any(|p| row_at(std::slice::from_ref(p), 216) == "m")
+    );
     console.clear();
     assert_eq!(text(&console, console.current()), "");
 }
@@ -133,7 +149,10 @@ fn notify_lines_show_for_three_seconds() {
         HudItem::Char { x, .. } => x >= 8,
         _ => false,
     }));
-    assert!(console.notify(8.5).is_empty(), "more than three seconds later");
+    assert!(
+        console.notify(8.5).is_empty(),
+        "more than three seconds later"
+    );
 }
 
 // spec CON-2.3: toggling clears the notify times
@@ -203,7 +222,12 @@ fn the_input_line_blinks_its_cursor() {
         .collect();
     assert_eq!(&input[..5], b"]map\x0a");
     let odd = console.draw(240, 480, 1.3, true);
-    assert!(odd.iter().any(|p| p.item == HudItem::Char { x: 40, y: 224, ch: 11 }));
+    assert!(odd.iter().any(|p| p.item
+        == HudItem::Char {
+            x: 40,
+            y: 224,
+            ch: 11
+        }));
     let mut long = wide();
     for _ in 0..90 {
         long.key(ConsoleKey::Char(b'z'), 480, 1.0, &none);
@@ -227,11 +251,19 @@ fn enter_runs_the_line() {
     for c in b"god" {
         console.key(ConsoleKey::Char(*c), 480, 1.0, &none);
     }
-    assert_eq!(console.key(ConsoleKey::Enter, 480, 1.0, &none), Typed::Run(b"god".to_vec()));
+    assert_eq!(
+        console.key(ConsoleKey::Enter, 480, 1.0, &none),
+        Typed::Run(b"god".to_vec())
+    );
     assert_eq!(text(&console, console.current()), "]god");
     assert_eq!(console.typed(), b"");
     for n in 0..CON_HISTORY + 2 {
-        console.key(ConsoleKey::Char(b'a' + u8::try_from(n % 26).unwrap()), 480, 1.0, &none);
+        console.key(
+            ConsoleKey::Char(b'a' + u8::try_from(n % 26).unwrap()),
+            480,
+            1.0,
+            &none,
+        );
         console.key(ConsoleKey::Enter, 480, 1.0, &none);
     }
     assert_eq!(console.typed(), b"", "the ring of 32 wraps");
@@ -260,7 +292,11 @@ fn back_moves_the_position() {
     }
     console.key(ConsoleKey::Back, 480, 1.0, &none);
     console.draw(240, 480, 1.0, true);
-    assert_eq!(console.typed(), b"a", "drawn, the line ends at the position");
+    assert_eq!(
+        console.typed(),
+        b"a",
+        "drawn, the line ends at the position"
+    );
     console.key(ConsoleKey::Char(b'c'), 480, 1.0, &none);
     assert_eq!(console.typed(), b"ac");
     for _ in 0..5 {
@@ -293,7 +329,10 @@ fn history_recalls_earlier_lines() {
     assert_eq!(console.typed(), b"two");
     console.draw(240, 480, 1.0, true);
     assert_eq!(console.typed(), b"");
-    assert_eq!(console.key(ConsoleKey::Down, 480, 1.0, &none), Typed::Nothing);
+    assert_eq!(
+        console.key(ConsoleKey::Down, 480, 1.0, &none),
+        Typed::Nothing
+    );
 }
 
 // spec CON-4.6: page up and down scroll 2 lines within 0 and the limit; Home and End go to
@@ -328,4 +367,83 @@ fn only_printable_keys_are_typed() {
         console.key(ConsoleKey::Char(b'q'), 480, 1.0, &none);
     }
     assert_eq!(console.typed().len(), 254);
+}
+
+/// QuakeSpasm's console of `console` at half a 480-high screen, at `realtime`.
+fn quakespasm(console: &mut Console, realtime: f64) -> Vec<Placed> {
+    console.draw_quakespasm(240, 480, realtime, b"QuakeC Studio 1")
+}
+
+// spec CON-5.1: laid out at the screen's height and moved up by what is not shown: the
+// background first, `(lines + 7) / 8` rows up from the bottom
+// spec CON-5.2: the text ends 16 above the bottom; scrolled back, a blank row and `^` every
+// fourth column take the last two
+#[test]
+fn quakespasm_lays_out_its_rows_from_the_bottom() {
+    let mut console = wide();
+    for n in 0..40 {
+        console.print(format!("line {n}\n").as_bytes(), 1.0);
+    }
+    let items = quakespasm(&mut console, 1.0);
+    assert_eq!(
+        items[0].item,
+        HudItem::ConsoleBack {
+            lines: 240,
+            height: 480
+        }
+    );
+    // 30 rows, 28 of text: moved up by 240, the newest at 480 - 16 - 8 - 240.
+    assert_eq!(row_at(&items, 216), "line 39");
+    assert_eq!(row_at(&items, 0), "line 12");
+    assert!(console.draw_quakespasm(0, 480, 1.0, b"v").is_empty());
+    console.key(ConsoleKey::PageUp, 480, 1.0, &none);
+    let back = quakespasm(&mut console, 1.0);
+    assert_eq!(row_at(&back, 200), "line 35");
+    assert_eq!(row_at(&back, 208), "");
+    let arrows = row_at(&back, 216);
+    assert!(arrows.starts_with("^   ^   ^"), "{arrows}");
+    assert_eq!(arrows.matches('^').count(), 78usize.div_ceil(4));
+}
+
+// spec CON-5.3: the input line 16 above the bottom, not cut off at the position, a block cursor
+// when `(int)(realtime * 4) & 1` is 0
+#[test]
+fn quakespasm_draws_the_whole_input_line() {
+    let mut console = wide();
+    for c in b"map" {
+        console.key(ConsoleKey::Char(*c), 480, 1.0, &none);
+    }
+    console.key(ConsoleKey::Back, 480, 1.0, &none);
+    let lit = quakespasm(&mut console, 1.0);
+    assert_eq!(row_at(&lit, 224).trim_end_matches('\x0b'), "]map");
+    assert!(lit.iter().any(|p| p.item
+        == HudItem::Char {
+            x: 32,
+            y: 224,
+            ch: 11
+        }));
+    let dark = quakespasm(&mut console, 1.3);
+    assert!(
+        !dark
+            .iter()
+            .any(|p| matches!(p.item, HudItem::Char { ch: 11, .. }))
+    );
+    assert_eq!(row_at(&dark, 224), "]map");
+}
+
+// spec CON-5.4: the version at the bottom right, its last character at column linewidth + 1
+#[test]
+fn quakespasm_draws_its_version_bottom_right() {
+    let mut console = wide();
+    let items = quakespasm(&mut console, 1.3);
+    assert_eq!(row_at(&items, 232).trim_start(), "QuakeC Studio 1");
+    let last = items
+        .iter()
+        .filter_map(|p| match p.item {
+            HudItem::Char { x, y: 232, .. } => Some(x),
+            _ => None,
+        })
+        .max()
+        .unwrap();
+    assert_eq!(last, (78 + 1) * 8);
 }

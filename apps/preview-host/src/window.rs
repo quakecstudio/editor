@@ -15,7 +15,9 @@ use std::time::Instant;
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use qs_bsp::Bsp;
-use qs_client::{Client, Console, ConsoleKey, Event, KeyDest, Menu, MenuEvent, MenuKey, Random as _, Typed};
+use qs_client::{
+    Client, Console, ConsoleKey, Event, KeyDest, Menu, MenuEvent, MenuKey, Random as _, Typed,
+};
 use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
 use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
@@ -78,10 +80,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
     // The console's first lines: the host's, as `Host_Init` prints the engine's, then what the
     // map's first frame printed (CLIENT-1.7).
     let mut console = Console::new();
-    let banner = format!(
-        "QuakeC Studio preview host {}\n",
-        env!("CARGO_PKG_VERSION")
-    );
+    let banner = format!("QuakeC Studio preview host {}\n", env!("CARGO_PKG_VERSION"));
     console.print(banner.as_bytes(), 0.0);
     for text in &printed {
         console.print(text, 0.0);
@@ -336,8 +335,13 @@ impl eframe::App for Viewer {
             f64::from(seconds),
         );
         let mut hud = self.client.hud();
-        // The 2D layer keeps GLQuake's 640 wide console, as tall as the window's shape.
-        self.play.screen = [CONWIDTH, screen_height(aspect)];
+        // REND-13.7: QuakeSpasm's 2D layer is the window's own size in points; GLQuake's keeps
+        // its 640 wide console, as tall as the window's shape.
+        self.play.screen = if self.mesh.look.native_2d() {
+            [points(rect.width()), points(rect.height())]
+        } else {
+            [CONWIDTH, screen_height(aspect)]
+        };
         self.client
             .set_screen(self.play.screen[0], self.play.screen[1]);
         hud.console = self.console_items(seconds);
@@ -696,7 +700,12 @@ impl Viewer {
         let [width, height] = self.play.screen;
         self.console.resize(width);
         let lines = self.console.slide(height, false, self.dest, seconds);
-        if lines > 0 {
+        if lines > 0 && self.mesh.look.native_2d() {
+            // CON-5: QuakeSpasm's layout, with this host's name for the version.
+            let version = format!("QuakeC Studio {}", env!("CARGO_PKG_VERSION"));
+            self.console
+                .draw_quakespasm(lines, height, realtime, version.as_bytes())
+        } else if lines > 0 {
             self.console.draw(lines, height, realtime, true)
         } else if self.dest == KeyDest::Game {
             self.console.notify(realtime)
@@ -801,6 +810,15 @@ fn place(ctx: &egui::Context, placement: Placement) {
         egui::WindowLevel::Normal
     };
     ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
+}
+
+/// A window length in points as the 2D layer's whole units, toward zero.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a window's size in points, far inside i32, toward zero as vid.width is an int"
+)]
+fn points(length: f32) -> i32 {
+    length.max(0.0) as i32
 }
 
 /// GLQuake's console width, `vid.conwidth` (HUD-1).

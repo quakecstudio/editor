@@ -319,6 +319,11 @@ int main(int argc, char **argv) {
             // slide would have left it in the frames not drawn.
             scr_con_current = 0;
             block_drawing = false;
+        } else if (!strcmp(text, "toggleconsole") || !strcmp(text, "togglemenu")) {
+            // VIEWDIFF-1.2: id's own commands, run at once.
+            Cbuf_AddText(text);
+            Cbuf_AddText("\n");
+            Cbuf_Execute();
         } else if (!strncmp(text, "shot ", 5) && text[5]) {
             if (!write_shot(text + 5))
                 return QS_EXIT_IO;

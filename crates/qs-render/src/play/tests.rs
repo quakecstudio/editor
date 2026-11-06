@@ -76,8 +76,12 @@ fn pics() -> Pics {
     pics
 }
 
+/// A play in GLQuake's look, which the HUD and console statements describe; QuakeSpasm's
+/// canvases are tested on their own (REND-13.7).
 fn play() -> Play {
-    Play::new(palette(), pics(), b"")
+    let mut play = Play::new(palette(), pics(), b"");
+    play.look = Look::GlQuake;
+    play
 }
 
 fn hud(anchor: Anchor, items: Vec<HudItem>) -> Hud {
@@ -133,7 +137,7 @@ fn pictures_come_from_the_wad_and_the_lmp_files() {
     let (_, ranking) = pics.get("gfx/ranking.lmp").unwrap();
     assert_eq!((ranking.width, ranking.height), (100, 20));
     assert_eq!(pics.get("missing"), None);
-    assert_eq!(pics.images().len(), 5);
+    assert_eq!(pics.images().len(), 6);
     // A replaced picture keeps its index.
     let mut pics = pics;
     pics.add(
@@ -145,7 +149,7 @@ fn pictures_come_from_the_wad_and_the_lmp_files() {
         },
     );
     assert_eq!(pics.get("sbar").unwrap().0, 0);
-    assert_eq!(pics.images().len(), 5);
+    assert_eq!(pics.images().len(), 6);
     let mut bad = Pics::new();
     assert!(matches!(
         bad.add_wad(b"WAD3", &palette()),
@@ -654,4 +658,28 @@ fn the_console_background_shows_while_it_slides() {
     assert!((alpha - 1.2 * 120.0 / 360.0).abs() < 1e-6, "{alpha}");
     let full = layer(&mut play, &back(400));
     assert!(!full.last().unwrap().0.blend, "opaque past three quarters");
+}
+
+// spec REND-13.7: in QuakeSpasm's look the menus' 320 by 200 canvas is centred both ways and
+// the bar's at the bottom centre, each at scale 1, the fade is 0.5 and the console background
+// 0.5 unless it fills the screen
+#[test]
+fn quakespasm_draws_its_canvases() {
+    let mut play = play();
+    play.look = Look::QuakeSpasm;
+    play.screen = [1280, 800];
+    let sbar = HudItem::Pic {
+        name: "sbar".to_owned(),
+        x: 0,
+        y: 0,
+    };
+    let menu = layer(&mut play, &hud(Anchor::Centered, vec![sbar.clone()]));
+    assert_eq!(menu[0].1, [([480.0, 300.0], [320.0, 24.0])]);
+    let bar = layer(&mut play, &hud(Anchor::Bar, vec![sbar]));
+    assert_eq!(bar[0].1, [([480.0, 776.0], [320.0, 24.0])]);
+    assert_eq!(Look::QuakeSpasm.fade_alpha(), 0.5);
+    assert_eq!(Look::GlQuake.fade_alpha(), 0.8);
+    assert_eq!(Look::QuakeSpasm.console_alpha(400, 800), 0.5);
+    assert_eq!(Look::QuakeSpasm.console_alpha(800, 800), 1.0);
+    assert!((Look::GlQuake.console_alpha(240, 480) - 0.8).abs() < 1e-6);
 }

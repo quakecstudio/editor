@@ -75,6 +75,9 @@ pub(crate) struct Args {
     /// file, as the view oracle plays the same script in id's engine (VIEWDIFF-1).
     #[arg(long, num_args = 2, value_names = ["script", "audio"])]
     pub(crate) view_script: Option<Vec<std::path::PathBuf>>,
+    /// The size `--view-script` draws its shots at, 320 by 240 without it (VIEWDIFF-2.1).
+    #[arg(long, num_args = 2, value_names = ["width", "height"])]
+    pub(crate) view_size: Option<Vec<u32>>,
     /// Where the window opens, to put it on a chosen display.
     #[arg(long, num_args = 2, value_names = ["x", "y"], allow_negative_numbers = true)]
     pub(crate) position: Option<Vec<f32>>,

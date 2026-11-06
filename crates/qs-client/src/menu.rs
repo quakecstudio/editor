@@ -253,8 +253,7 @@ impl Menu {
             }
             MenuKey::Up => {
                 events.push(MenuEvent::Sound("misc/menu1.wav"));
-                self.singleplayer_cursor =
-                    previous(self.singleplayer_cursor, SINGLEPLAYER_ITEMS);
+                self.singleplayer_cursor = previous(self.singleplayer_cursor, SINGLEPLAYER_ITEMS);
                 KeyDest::Menu
             }
             MenuKey::Enter => {
@@ -450,7 +449,11 @@ fn print(out: &mut Vec<Placed>, x: i32, y: i32, text: &[u8], red: bool) {
 /// `M_DrawTextBox`: the box of `gfx/box_*.lmp` around `width` by `lines` characters at `x`,
 /// `y` (MENU-5.1).
 fn text_box(out: &mut Vec<Placed>, x: i32, y: i32, width: i32, lines: i32) {
-    let column = |out: &mut Vec<Placed>, cx: i32, top: &str, middle: &dyn Fn(i32) -> &'static str, bottom: &str| {
+    let column = |out: &mut Vec<Placed>,
+                  cx: i32,
+                  top: &str,
+                  middle: &dyn Fn(i32) -> &'static str,
+                  bottom: &str| {
         pic(out, top, Some(cx), y);
         let mut cy = y;
         for n in 0..lines {
@@ -459,7 +462,13 @@ fn text_box(out: &mut Vec<Placed>, x: i32, y: i32, width: i32, lines: i32) {
         }
         pic(out, bottom, Some(cx), cy.saturating_add(8));
     };
-    column(out, x, "gfx/box_tl.lmp", &|_| "gfx/box_ml.lmp", "gfx/box_bl.lmp");
+    column(
+        out,
+        x,
+        "gfx/box_tl.lmp",
+        &|_| "gfx/box_ml.lmp",
+        "gfx/box_bl.lmp",
+    );
     let mut cx = x.saturating_add(8);
     let mut left = width;
     while left > 0 {
@@ -468,13 +477,25 @@ fn text_box(out: &mut Vec<Placed>, x: i32, y: i32, width: i32, lines: i32) {
             out,
             cx,
             "gfx/box_tm.lmp",
-            &|n| if n >= 1 { "gfx/box_mm2.lmp" } else { "gfx/box_mm.lmp" },
+            &|n| {
+                if n >= 1 {
+                    "gfx/box_mm2.lmp"
+                } else {
+                    "gfx/box_mm.lmp"
+                }
+            },
             "gfx/box_bm.lmp",
         );
         left = left.saturating_sub(2);
         cx = cx.saturating_add(16);
     }
-    column(out, cx, "gfx/box_tr.lmp", &|_| "gfx/box_mr.lmp", "gfx/box_br.lmp");
+    column(
+        out,
+        cx,
+        "gfx/box_tr.lmp",
+        &|_| "gfx/box_mr.lmp",
+        "gfx/box_br.lmp",
+    );
 }
 
 #[cfg(test)]
