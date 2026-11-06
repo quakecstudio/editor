@@ -134,7 +134,8 @@ pub(crate) fn load(
         .as_deref()
         .and_then(|values| <[f32; 4]>::try_from(values).ok());
     let zfix = !args.nozfix;
-    let gamma = args.gamma;
+    let look = args.look.look();
+    let gamma = args.gamma.unwrap_or(look.gamma());
     let vfs = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
     let read = |name: &str| -> Result<Vec<u8>, String> {
         vfs.load(name.as_bytes())
@@ -249,6 +250,7 @@ pub(crate) fn load(
     }
     let mut play = Play::new(palette.clone(), pics, bsp.entities());
     play.zfix = zfix;
+    play.look = look;
     play.load_models(client.model_names(), &*reader()?, &ranker()?)
         .map_err(|e| e.to_string())?;
     play.load_sky(&*reader()?);
@@ -284,7 +286,7 @@ pub(crate) fn load(
             .map_err(|error| tracing::warn!(%error, "maps/{map}.lit"))
             .ok()
     });
-    let mut builder = MeshBuilder::new(&palette);
+    let mut builder = MeshBuilder::new(&palette, look);
     let extras = Extras {
         lit: lit.as_ref(),
         ..Extras::default()

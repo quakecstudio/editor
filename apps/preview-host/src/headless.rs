@@ -252,7 +252,8 @@ impl Headless {
         self.game.set_eye(Eye {
             origin: view.origin,
             angles: view.angles,
-            fov_x: self.fov_x,
+            // The view's width as it is drawn, widened by the look (REND-13.6).
+            fov_x: self.mesh.look.fov_x(self.fov_x, ASPECT),
             aspect: ASPECT,
         });
     }

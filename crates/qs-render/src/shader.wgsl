@@ -72,6 +72,8 @@ struct View {
     params: vec4<f32>,
     // 1 when the sky is a skybox, then its faces' width and height (REND-8.2).
     skybox: vec4<f32>,
+    // What a lightmap texel is multiplied by: 2 with QuakeSpasm's overbright (REND-13.5).
+    look: vec4<f32>,
 };
 
 // REND-10.4: `GL_EXP2`, `1 - exp (-((density / 64) * z)^2)` of the fragment's distance from
@@ -90,8 +92,9 @@ fn fogged(colour: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
 @group(0) @binding(3) var skybox: texture_2d_array<f32>;
 @group(1) @binding(0) var surface: texture_2d<f32>;
 @group(1) @binding(1) var surface_sampler: sampler;
-// The sky's alpha layer; for any other surface, its texture again.
-@group(1) @binding(2) var sky_alpha: texture_2d<f32>;
+// The sky's alpha layer; for any other surface or skin, its glow, black when it has none
+// (REND-13.4).
+@group(1) @binding(2) var second: texture_2d<f32>;
 // The model's matrix: where a brush entity stands now (REND-1.9); the world's moves nothing.
 @group(2) @binding(0) var<uniform> model: mat4x4<f32>;
 
@@ -123,8 +126,11 @@ fn vertex(input: In) -> Out {
 @fragment
 fn fragment(input: Out) -> @location(0) vec4<f32> {
     let colour = textureSample(surface, surface_sampler, input.texture);
-    let light = textureSample(lightmap, lightmap_sampler, input.light).rgb;
-    return vec4<f32>(fogged(colour.rgb * light, input.world), OPAQUE);
+    let light = textureSample(lightmap, lightmap_sampler, input.light).rgb * view.look.x;
+    // REND-13.4: "result += texture2D(FullbrightTex, ...)", then "clamp(result, 0.0, 1.0)".
+    let glow = textureSample(second, surface_sampler, input.texture).rgb;
+    let lit = clamp(colour.rgb * light + glow, vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(fogged(lit, input.world), OPAQUE);
 }
 
 // REND-2.2: `(s + 8 sin(t*0.125 + realtime)) / 64`, and t the same way round; REND-9.1:
@@ -154,7 +160,7 @@ fn sky(input: Out) -> @location(0) vec4<f32> {
     let flat = dir.xy * length;
     let time = view.eye_time.w;
     let solid = textureSample(surface, surface_sampler, sky_st(flat, time * SKY_SOLID_SPEED));
-    let alpha = textureSample(sky_alpha, surface_sampler, sky_st(flat, time * SKY_ALPHA_SPEED));
+    let alpha = textureSample(second, surface_sampler, sky_st(flat, time * SKY_ALPHA_SPEED));
     let layers = mix(solid.rgb, alpha.rgb, alpha.a);
     return vec4<f32>(mix(layers, view.fog.rgb, view.params.y), OPAQUE);
 }
@@ -231,7 +237,10 @@ fn alias_vertex(input: AliasIn) -> AliasOut {
 @fragment
 fn alias_fragment(input: AliasOut) -> @location(0) vec4<f32> {
     let colour = textureSample(surface, surface_sampler, input.texture);
-    return vec4<f32>(fogged(colour.rgb * input.shade, input.world), OPAQUE);
+    // REND-13.4: a skin's glow, black for one with none.
+    let glow = textureSample(second, surface_sampler, input.texture).rgb;
+    let lit = clamp(colour.rgb * input.shade + glow, vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(fogged(lit, input.world), OPAQUE);
 }
 
 struct SpriteIn {

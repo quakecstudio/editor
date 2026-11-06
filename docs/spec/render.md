@@ -643,3 +643,56 @@ alias pipeline, with QuakeSpasm's shader formula for a vertex normal.
 | Constant | Value | Source |
 | --- | --- | --- |
 | `MAX_SKINS` | 32 | QuakeSpasm-Spiked `gl_model.h` |
+
+## REND-13 The QuakeSpasm look
+
+**Source:** `Quake/gl_vidsdl.c`, `vid_gamma`; `Quake/gl_rmain.c`, `gl_fullbrights`,
+`gl_overbright` and `GLSLGamma_GammaCorrect`; `Quake/gl_texmgr.c`, `glmodes`, `glmode_idx`
+and `TexMgr_LoadPalette`; `Quake/gl_model.c`, `Mod_LoadTextures` and `Mod_CheckFullbrights`;
+`Quake/r_brush.c`, `R_BuildLightMap`; `Quake/r_world.c` and `Quake/r_alias.c`, their GLSL;
+`Quake/gl_screen.c`, `scr_fov_adapt` and `AdaptFovx`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`).
+
+The engines players run exported mods on draw a frame brighter, sharper and wider than GLQuake:
+QuakeSpasm keeps the palette as it is, filters between mip levels, lets fullbright texels glow,
+lets light go past a texture's colour, and widens the view to the window. This renderer draws
+QuakeSpasm's look by default and GLQuake's as a mode.
+
+### Behaviour
+
+- **REND-13.1** A frame takes one of two looks. QuakeSpasm's is the default: its `gamma`,
+  texture mode, `gl_fullbrights`, `gl_overbright` and `fov_adapt` as they ship (REND-13.2 to
+  REND-13.6). GLQuake's, as REND-1 to REND-7 describe it, is a mode a caller chooses
+  (`Look::GlQuake`), as ADR-0012 keeps `BspLoader::WinQuake`; the preview host's `--look
+  glquake` chooses it.
+- **REND-13.2** QuakeSpasm's gamma defaults to 1 (`Quake/gl_vidsdl.c`: "`cvar_t vid_gamma =
+  {"gamma", "1", CVAR_ARCHIVE};`") and corrects the finished frame, not the palette; at 1
+  nothing is corrected (`Quake/gl_rmain.c`: "`if (vid_gamma.value == 1 && vid_contrast.value ==
+  1)`"). In QuakeSpasm's look the palette is used as it is. A gamma the caller gives still
+  corrects the palette as REND-3.1 says, our choice, so `-gamma` keeps GLQuake's meaning.
+- **REND-13.3** QuakeSpasm's texture mode defaults to the last of its modes
+  (`Quake/gl_texmgr.c`: "`static int glmode_idx = NUM_GLMODES - 1; /* trilinear */`"),
+  "`{GL_LINEAR, GL_LINEAR_MIPMAP_LINEAR, "GL_LINEAR_MIPMAP_LINEAR"}`": a world texture, and a
+  skin filtered as one (REND-4.3), is linear within each of the two nearest mip levels and
+  blends between them, where GLQuake takes the nearest level (REND-3.3).
+- **REND-13.4** With `gl_fullbrights` "1" (`Quake/gl_rmain.c`), a texture with a texel above 223
+  (`Mod_CheckFullbrights`: "`if (*pixels++ > 223)`") is loaded twice (`Mod_LoadTextures`):
+  through the palette with "224-255 ... black" (`d_8to24table_nobright`) and through the one
+  with "0-223 ... black" (`d_8to24table_fbright`, `TexMgr_LoadPalette` in `Quake/gl_texmgr.c`),
+  and the second is added over the lit first: "`result += texture2D(FullbrightTex,
+  gl_TexCoord[0].xy);`" then "`result = clamp(result, 0.0, 1.0);`" (`Quake/r_world.c`). Only a
+  regular texture is split, not the sky or a liquid. An alias model's skin is split and added
+  the same way (`Quake/r_alias.c`, `FullbrightTex`). Here a texture with a palette of its own
+  (MAP-24) and a player's translated skin (REND-4.13) have no glow, our choice.
+- **REND-13.5** With `gl_overbright` "1" (`Quake/gl_rmain.c`), `R_BuildLightMap` shifts each
+  texel's unsigned sum by 8, not 7, and caps it at 255 (`Quake/r_brush.c`: "`if (overbright) { r
+  = *bl++ >> 8; ...`", "`*dest++ = (r > 255)? 255 : r;`"), grey light and coloured alike, and
+  the world's shader doubles it: "`if (UseOverbright) result.rgb *= 2.0;`" (`Quake/r_world.c`),
+  so light can reach twice a texture's colour, before the fullbrights and the clamp (REND-13.4).
+  A map with no light data is 255 either way. Alias models are lit as REND-4.7 says in both
+  looks, our choice: QuakeSpasm's `R_SetupAliasLighting` is not ported.
+- **REND-13.6** With `fov_adapt` "1" (`Quake/gl_screen.c`), the field of view across is
+  `AdaptFovx (scr_fov.value, vid.width, vid.height)`: "`if ((x = height / width) == 0.75) return
+  fov_x; a = atan(0.75 / x * tan(fov_x / 360 * M_PI)); a = a * 360 / M_PI; return a;`", the
+  width that keeps a 4:3 image's height, so 90 is about 100.39 at 16:10. The view's height is
+  then REND-3.4's `CalcFov` of it. The eye a click picks from uses the same width.

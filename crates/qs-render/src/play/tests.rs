@@ -7,6 +7,7 @@
     reason = "test code: a failed unwrap or index is a failed test; the WAD's offsets are small"
 )]
 
+use crate::look::Look;
 use qs_client::{Anchor, DynamicLight, Hud, HudItem, Placed, Scene, SceneEntity, SceneParticle};
 use qs_wad::{WAD_MAGIC, WAD_TYP_QPIC};
 
@@ -95,7 +96,7 @@ type Quad = ([f32; 2], [f32; 2]);
 fn layer(play: &mut Play, hud: &Hud) -> Vec<(FlatDraw, Vec<Quad>)> {
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let callback = play.frame(&Scene::default(), hud, &bsp, &mut mesh, 1.0);
     let flat = callback.flat;
     flat.draws
@@ -267,7 +268,7 @@ fn characters_come_from_the_console_font() {
     // 'A' is 65: row 4, column 1 of the grid, each cell a 16th.
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let callback = play.frame(
         &Scene::default(),
         &hud(Anchor::Screen, vec![ch(0, 0, b'A')]),
@@ -302,7 +303,7 @@ fn fills_are_palette_colours() {
     assert_eq!(out[0].1, [([10.0, 20.0], [28.0, 4.0])]);
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let callback = play.frame(
         &Scene::default(),
         &hud(
@@ -331,7 +332,7 @@ fn the_view_blend_comes_first_when_it_has_alpha() {
     let mut play = play();
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let hud = hud(
         Anchor::Screen,
         vec![HudItem::Pic {
@@ -362,7 +363,7 @@ fn a_frame_carries_the_lights_the_particles_and_the_world() {
     let mut play = play();
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let scene = Scene {
         lights: vec![DynamicLight {
             origin: [0.0, 0.0, 3.0],
@@ -471,7 +472,7 @@ fn players_wear_their_slots_translated_skins() {
     .unwrap();
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let entity = |entity, colormap| SceneEntity {
         entity,
         model: 1,
@@ -587,7 +588,7 @@ fn md5_entities_are_drawn_with_their_skins() {
     assert_eq!(play.skins.len(), 1, "the white skin of a part with none");
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
-    let mut mesh = MapMesh::build(&bsp, &palette()).unwrap();
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let scene = Scene {
         entities: vec![SceneEntity {
             entity: 5,

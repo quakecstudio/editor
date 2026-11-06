@@ -241,6 +241,11 @@ impl AliasModel {
         &self.images
     }
 
+    /// Every skin image's 8-bit texels, in the order of [`AliasModel::images`].
+    pub(crate) fn texels(&self) -> &[Vec<u8>] {
+        &self.texels
+    }
+
     /// Skin `skin`'s first image, or skin 0's for a skin the model does not have, in the
     /// colours `colors` of a client slot, shirt in the high four bits and
     /// trousers in the low four, through `palette`: `R_TranslatePlayerSkin`'s table, the

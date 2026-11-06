@@ -275,7 +275,8 @@ impl eframe::App for Viewer {
         self.game.set_eye(Eye {
             origin,
             angles,
-            fov_x: self.camera.fov_x,
+            // The view's width as it is drawn, widened by the look (REND-13.6).
+            fov_x: self.mesh.look.fov_x(self.camera.fov_x, aspect),
             aspect,
         });
         // `S_Update (r_origin, vpn, vright, vup)`, once a host frame.

@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2007-2008 Kristian Duske
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_rlight.c, R_PushDlights, R_MarkLights
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_rsurf.c, BuildSurfaceDisplayList, GL_CreateSurfaceLightmap, R_BuildLightMap
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/gl_rlight.c, R_MarkLights
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/r_brush.c, R_BuildLightMap, R_UploadLightmap
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/gl_texmgr.c, TexMgr_LoadPalette
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/gl_model.c, Mod_CheckFullbrights, Mod_LoadTextures
 
 //! A BSP's world surfaces as the GPU draws them (REND-1): each face a fan of triangles with its
 //! texture and lightmap coordinates, the textures through the palette, and every face's light
@@ -17,6 +24,7 @@ use qs_bsp::{Bsp, Face, Lit, SURF_DRAWSKY, SURF_DRAWTURB, Texinfo};
 use qs_client::DynamicLight;
 
 use crate::alias::rotate_for_entity;
+use crate::look::Look;
 use crate::styles::LightStyles;
 
 /// GLQuake's `vid_gamma` on any card but a 3Dfx, "default to 0.7 on non-3dfx hardware"
@@ -208,6 +216,9 @@ pub struct MapMesh {
     pub batches: Vec<Batch>,
     /// The BSP's textures through the palette, a missing one as a 1 by 1 black image.
     pub textures: Vec<Image>,
+    /// Each texture's fullbright texels, glowing over its lit ones, when the look lights them
+    /// and the texture has any (REND-13.4); its own texels then have them black.
+    pub glows: Vec<Option<Image>>,
     /// For each sky texture, its two layers, the solid one and the alpha one (REND-2.3).
     pub skies: Vec<Option<[Image; 2]>>,
     /// Each texture's frames, `None` for one that does not animate (REND-2.1).
@@ -223,17 +234,20 @@ pub struct MapMesh {
     /// Each model's placement when the mesh was built, the world first; a model's vertices
     /// are its own, drawn moved by its placement's matrix (REND-1.9).
     pub models: Vec<Placement>,
+    /// The look it was built in, which the renderer draws it in (REND-13).
+    pub look: Look,
 }
 
 impl MapMesh {
-    /// The world model of `bsp`, its textures read through `palette` (REND-1).
+    /// The world model of `bsp`, its textures read through `palette`, in `look` (REND-1,
+    /// REND-13).
     ///
     /// # Errors
     ///
     /// [`MeshError::NoWorld`] when the BSP has no model, and [`MeshError::AtlasTooLarge`] when
     /// the lightmaps do not fit one texture.
-    pub fn build(bsp: &Bsp<'_>, palette: &Palette) -> Result<Self, MeshError> {
-        let mut builder = MeshBuilder::new(palette);
+    pub fn build(bsp: &Bsp<'_>, palette: &Palette, look: Look) -> Result<Self, MeshError> {
+        let mut builder = MeshBuilder::new(palette, look);
         builder.add(bsp, &[Placement::WORLD])?;
         Ok(builder.finish())
     }
@@ -263,7 +277,7 @@ impl MapMesh {
             if bits == 0 && before == 0 && !face.stale(styles, &self.lightmaps.applied) {
                 continue;
             }
-            let texels = face.texels(styles, lights, bits);
+            let texels = face.texels(styles, lights, bits, self.lightmaps.look);
             face.blit(&texels, &mut self.lightmap.rgba);
             changes.add(face.at, face.size);
         }
@@ -355,6 +369,8 @@ pub struct MeshBuilder<'p> {
     palette: &'p Palette,
     atlas: Lightmaps,
     textures: Vec<Image>,
+    glows: Vec<Option<Image>>,
+    look: Look,
     skies: Vec<Option<[Image; 2]>>,
     animations: Vec<Option<Animation>>,
     surfaces: Vec<Surface>,
@@ -364,12 +380,15 @@ pub struct MeshBuilder<'p> {
 }
 
 impl<'p> MeshBuilder<'p> {
-    /// An empty mesh whose textures are read through `palette`.
+    /// An empty mesh whose textures are read through `palette`, lit and coloured as `look`
+    /// lights and colours them (REND-13).
     #[must_use]
-    pub fn new(palette: &'p Palette) -> Self {
+    pub fn new(palette: &'p Palette, look: Look) -> Self {
         Self {
             palette,
-            atlas: Lightmaps::new(),
+            atlas: Lightmaps::new(look),
+            look,
+            glows: Vec::new(),
             textures: Vec::new(),
             skies: Vec::new(),
             animations: Vec::new(),
@@ -480,12 +499,30 @@ impl<'p> MeshBuilder<'p> {
         // A texture with a palette of its own is read through it; the others through the
         // mesh's (MAP-24).
         let palette_of = |slot: usize| extras.palette(slot).unwrap_or(self.palette);
-        self.textures
-            .extend(bsp.textures.iter().enumerate().map(|(slot, texture)| {
-                texture
-                    .as_ref()
-                    .map_or_else(black, |t| image(t, palette_of(slot)))
-            }));
+        for (slot, texture) in bsp.textures.iter().enumerate() {
+            let Some(texture) = texture.as_ref() else {
+                self.textures.push(black());
+                self.glows.push(None);
+                continue;
+            };
+            // REND-13.4: a regular texture read through the game's palette, not the sky or a
+            // liquid, nor one with a palette of its own.
+            let regular =
+                surfaces.get(slot) == Some(&Surface::Lit) && extras.palette(slot).is_none();
+            let split = (self.look.fullbrights() && regular)
+                .then(|| texture_split(texture, self.palette))
+                .flatten();
+            match split {
+                Some([lit, glow]) => {
+                    self.textures.push(lit);
+                    self.glows.push(Some(glow));
+                }
+                None => {
+                    self.textures.push(image(texture, palette_of(slot)));
+                    self.glows.push(None);
+                }
+            }
+        }
         self.skies
             .extend(bsp.textures.iter().zip(&surfaces).enumerate().map(
                 |(slot, (texture, &surface))| {
@@ -518,6 +555,7 @@ impl<'p> MeshBuilder<'p> {
             indices: Vec::new(),
             batches: Vec::new(),
             textures: self.textures,
+            glows: self.glows,
             skies: self.skies,
             animations: self.animations,
             lightmap: self.atlas.image(&LightStyles::unset()),
@@ -525,6 +563,7 @@ impl<'p> MeshBuilder<'p> {
             mins,
             maxs,
             models: self.models.clone(),
+            look: self.look,
         };
         // REND-1.11: the world's batches, then each entity's.
         for model in 0..self.models.len() {
@@ -851,14 +890,17 @@ pub struct Lightmaps {
     trees: Vec<Tree>,
     /// Each face's light bits in the image last made (REND-7.1).
     marks: Vec<u64>,
+    /// How a texel's sum is shifted, the look's (REND-13.5).
+    look: Look,
 }
 
 /// The tallest atlas, the height every GPU wgpu supports.
 const ATLAS_MAX_HEIGHT: usize = 8192;
 
 impl Lightmaps {
-    fn new() -> Self {
+    fn new(look: Look) -> Self {
         Self {
+            look,
             faces: Vec::new(),
             cursor: [1, 0, 1],
             height: 1,
@@ -958,7 +1000,7 @@ impl Lightmaps {
         }
         for (index, face) in self.faces.iter().enumerate() {
             let bits = marks.get(index).copied().unwrap_or(0);
-            face.blit(&face.texels(styles, lights, bits), &mut rgba);
+            face.blit(&face.texels(styles, lights, bits, self.look), &mut rgba);
         }
         Image {
             width: u32_of(ATLAS_WIDTH),
@@ -1004,7 +1046,13 @@ impl PlacedLight {
 
     /// The face's texels for `styles`, with the lights whose bits are in `bits` added
     /// (REND-7.2): `R_BuildLightMap`'s `blocklights`, then the shift and cap.
-    fn texels(&self, styles: &LightStyles, lights: &[DynamicLight], bits: u64) -> Vec<[u8; 3]> {
+    fn texels(
+        &self,
+        styles: &LightStyles,
+        lights: &[DynamicLight],
+        bits: u64,
+        look: Look,
+    ) -> Vec<[u8; 3]> {
         let [smax, tmax] = self.size;
         let size = smax.saturating_mul(tmax);
         // "set to full bright if no light data" skips the dynamic lights too.
@@ -1019,7 +1067,7 @@ impl PlacedLight {
             self.add_dynamic_light(light, &mut sums);
         }
         sums.iter()
-            .map(|sum| sum.map(|channel| colour.texel(channel)))
+            .map(|sum| sum.map(|channel| colour.texel(channel, look)))
             .collect()
     }
 
@@ -1154,17 +1202,20 @@ const fn f32_of_i32(value: i32) -> f32 {
 }
 
 impl Colour {
-    /// One channel's texel from its sum.
-    fn texel(self, sum: u32) -> u8 {
-        match self {
+    /// One channel's texel from its sum in `look`.
+    fn texel(self, sum: u32, look: Look) -> u8 {
+        match (look, self) {
             // REND-5.4: GLQuake reads the sum into a signed `t`, shifts it and caps it at
             // 255; the GL texture keeps the low byte of what is left.
-            Self::Grey => {
+            (Look::GlQuake, Self::Grey) => {
                 let t = sum.cast_signed() >> LIGHT_SHIFT;
                 u8::try_from(t.min(255).rem_euclid(256)).unwrap_or(u8::MAX)
             }
-            // REND-6.2: QuakeSpasm shifts the unsigned sum and caps it at 255.
-            Self::Lit => u8::try_from(sum >> LIGHT_SHIFT).unwrap_or(u8::MAX),
+            // REND-6.2: QuakeSpasm shifts the unsigned sum and caps it at 255; REND-13.5: by
+            // 8 with `gl_overbright`, grey or coloured.
+            (Look::GlQuake, Self::Lit) | (Look::QuakeSpasm, _) => {
+                u8::try_from(sum >> look.light_shift()).unwrap_or(u8::MAX)
+            }
         }
     }
 }
@@ -1230,6 +1281,47 @@ fn image(texture: &qs_bsp::Texture<'_>, palette: &Palette) -> Image {
             pixels.iter().flat_map(|&p| palette.rgba(p)).collect()
         },
     }
+}
+
+/// The first fullbright index: "`if (*pixels++ > 223)`" (`Mod_CheckFullbrights`, REND-13.4).
+const FULLBRIGHT_FIRST: u8 = 224;
+
+/// REND-13.4: `texture`'s first mip level split by [`fullbright_split`].
+fn texture_split(texture: &qs_bsp::Texture<'_>, palette: &Palette) -> Option<[Image; 2]> {
+    fullbright_split(texture.mip(0)?, (texture.width, texture.height), palette)
+}
+
+/// REND-13.4: the 8-bit `pixels` of a `width` by `height` image split as QuakeSpasm loads a
+/// texture or skin with fullbrights, through `TexMgr_LoadPalette`'s two palettes: its own
+/// texels with "224-255 ... black" (`d_8to24table_nobright`), and its glow with "0-223 ...
+/// black" (`d_8to24table_fbright`); `None` when no texel is 224 or above
+/// (`Mod_CheckFullbrights`).
+pub(crate) fn fullbright_split(
+    pixels: &[u8],
+    (width, height): (u32, u32),
+    palette: &Palette,
+) -> Option<[Image; 2]> {
+    if !pixels.iter().any(|&p| p >= FULLBRIGHT_FIRST) {
+        return None;
+    }
+    let black = [0, 0, 0, 255];
+    let mut lit = Vec::with_capacity(pixels.len().saturating_mul(4));
+    let mut glow = Vec::with_capacity(pixels.len().saturating_mul(4));
+    for &p in pixels {
+        if p >= FULLBRIGHT_FIRST {
+            lit.extend(black);
+            glow.extend(palette.rgba(p));
+        } else {
+            lit.extend(palette.rgba(p));
+            glow.extend(black);
+        }
+    }
+    let layer = |rgba| Image {
+        width: width.max(1),
+        height: height.max(1),
+        rgba,
+    };
+    Some([layer(lit), layer(glow)])
 }
 
 /// The side of a sky layer, `R_InitSky`'s 128 by 128.
