@@ -155,3 +155,33 @@ In QuakeSpasm's look (REND-13.7) the console is drawn as QuakeSpasm draws it.
 | `CON_SPEED` | 300 | `WinQuake/gl_screen.c`, `scr_conspeed`'s default |
 | `CON_MAX_LINE` | 256 | `WinQuake/keys.c`, `MAXCMDLINE` |
 | `CON_HISTORY` | 32 | `WinQuake/keys.c`, `key_lines[32]` |
+
+## CON-6 The client's commands
+
+**Source:** `WinQuake/console.c`, `Con_Init`; `WinQuake/menu.c`, `M_Init`, `M_Menu_Main_f`,
+`M_Menu_SinglePlayer_f`, `M_Menu_Help_f`
+(id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`); `Quake/cmd.c`, `Cmd_List_f`
+and `Cmd_AddCommand` (sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`);
+`QW/client/keys.c`, `Key_Console` (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
+
+### Behaviour
+
+- **CON-6.1** The client's console runs the client's commands as well as the server's:
+  `toggleconsole` and `clear` (`Con_Init`), and `togglemenu`, `menu_main`, `menu_singleplayer`,
+  `help` and `menu_quit` (`M_Init`). id runs each where `Cmd_ExecuteString` meets it; here the
+  server's console passes them on in order and the client runs them after the text it was
+  given, our choice: none of them reads or changes what the server's commands do. `help` is "`Cmd_AddCommand ("help", M_Menu_Help_f);`": it opens the help
+  menu on page 0, and prints nothing. id's `M_Init` also registers the load, save, multiplayer,
+  setup, options, keys and video menus' commands; this host has none of those menus yet
+  (MENU-2.3, MENU-3.3), so they are unknown commands while P3-34 is open.
+- **CON-6.2** `cmdlist`, QuakeSpasm's `Cmd_List_f`, prints "`   <name>`" for each command whose
+  name starts with its first argument (`Q_strncmp`, case-sensitive), every command with none,
+  in `strcmp` order, as `Cmd_AddCommand` inserts "each entry in alphabetical order"; then
+  "`<n> commands`", with "` beginning with "<partial>"`" after it when an argument was given.
+  id's WinQuake has no command that lists the commands; QuakeSpasm's is taken, our choice.
+- **CON-6.3** A line entered with `\` or `/` first runs without it. WinQuake's `Key_Console`
+  runs the line as typed ("`Cbuf_AddText (key_lines[edit_line]+1);`"), and QuakeSpasm's too;
+  QuakeWorld's runs it without: "`if (key_lines[edit_line][1] == '\\' ||
+  key_lines[edit_line][1] == '/') Cbuf_AddText (key_lines[edit_line]+2);`". QuakeWorld sends
+  any other line as chat; this console runs it as a command, as WinQuake's does. Our choice,
+  asked for by Justin on 2026-11-06. The echoed line keeps what was typed.

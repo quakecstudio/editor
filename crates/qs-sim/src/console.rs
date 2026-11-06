@@ -19,7 +19,7 @@ use qc_vm::convert::float_to_int;
 
 use crate::host_commands::{Words, atoi, tokenize};
 use crate::settings::SERVER_SETTINGS;
-use crate::world::{HostCommand, RawState as _, World};
+use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
 /// `VERSION` (`WinQuake/quakedef.h`), which `version` and `status` print.
 const VERSION: &str = "1.09";
@@ -34,11 +34,12 @@ const FORWARDED: [&str; 11] = [
 
 /// Every command [`World::execute_console`] runs, its own and the forwarded ones, in name
 /// order, for completion (CON-4.3).
-const COMMANDS: [&str; 36] = [
+const COMMANDS: [&str; 37] = [
     "alias",
     "begin",
     "changelevel",
     "cmd",
+    "cmdlist",
     "color",
     "echo",
     "edict",
@@ -79,6 +80,18 @@ const MOVETYPE_STEP: f32 = 4.0;
 /// A count one more, as `ED_Count`'s `++`, which an edict count cannot overflow.
 const fn add_one(count: usize) -> usize {
     count.saturating_add(1)
+}
+
+/// Every command's name, the server's and the client's (CON-6.1), in `strcmp` order, as
+/// QuakeSpasm's `Cmd_AddCommand` keeps its list.
+fn command_names() -> Vec<&'static str> {
+    let mut names: Vec<&str> = COMMANDS
+        .iter()
+        .copied()
+        .chain(ClientCommand::ALL.iter().map(|(name, _)| *name))
+        .collect();
+    names.sort_unstable();
+    names
 }
 
 /// What a line of the buffer leaves the rest of the buffer to do.
@@ -137,7 +150,7 @@ impl World {
         }
         let mut settings: Vec<&str> = SERVER_SETTINGS.iter().map(|(name, _)| *name).collect();
         settings.sort_unstable();
-        COMMANDS
+        command_names()
             .iter()
             .chain(&settings)
             .find(|name| name.starts_with(partial))
@@ -184,6 +197,30 @@ impl World {
         }
     }
 
+    /// QuakeSpasm's `Cmd_List_f` (CON-6.2): each command whose name starts with the first
+    /// argument, case-sensitively, in name order, then the count.
+    fn cmdlist(&mut self, words: &Words) {
+        let partial = words
+            .argv
+            .get(1)
+            .map(|w| String::from_utf8_lossy(w).into_owned());
+        let mut count = 0_usize;
+        for name in command_names() {
+            if partial
+                .as_ref()
+                .is_some_and(|p| !name.starts_with(p.as_str()))
+            {
+                continue;
+            }
+            self.print(format!("   {name}\n"));
+            count = count.saturating_add(1);
+        }
+        match partial {
+            Some(partial) => self.print(format!("{count} commands beginning with \"{partial}\"\n")),
+            None => self.print(format!("{count} commands\n")),
+        }
+    }
+
     /// `Con_Printf`.
     fn print(&mut self, text: impl AsRef<[u8]>) {
         self.console_out.extend_from_slice(text.as_ref());
@@ -204,8 +241,13 @@ impl World {
                 .map(|w| String::from_utf8_lossy(w).into_owned())
                 .unwrap_or_default()
         };
+        if let Some((_, command)) = ClientCommand::ALL.iter().find(|(n, _)| *n == name) {
+            self.client_commands.push(*command);
+            return Flow::Next;
+        }
         match name.as_str() {
             "wait" => return Flow::Wait,
+            "cmdlist" => self.cmdlist(&words),
             "echo" => self.echo(&words),
             "alias" => self.alias(&words),
             "exec" => self.exec(&words),

@@ -210,3 +210,20 @@ fn the_quit_prompt_answers_its_keys() {
         (KeyDest::Console, vec![MenuEvent::Quit])
     );
 }
+
+// spec CON-6.1: menu_main, menu_singleplayer and help open their menus, help on page 0
+#[test]
+fn the_menu_commands_open_their_menus() {
+    let mut menu = Menu::new();
+    assert_eq!(menu.help(), KeyDest::Menu);
+    assert_eq!(menu.state(), MenuState::Help);
+    menu.key(MenuKey::Right, 0);
+    menu.main();
+    assert_eq!(menu.state(), MenuState::Main);
+    menu.help();
+    let (items, sound) = menu.draw(KeyDest::Menu, 0.0, false, 480);
+    assert_eq!(pictures(&items), [("gfx/help0.lmp".to_owned(), Some(0), 0)]);
+    assert_eq!(sound, Some("misc/menu2.wav"));
+    assert_eq!(menu.single_player(), KeyDest::Menu);
+    assert_eq!(menu.state(), MenuState::SinglePlayer);
+}

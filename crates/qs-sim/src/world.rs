@@ -120,6 +120,8 @@ pub struct World {
     pub(crate) console_out: Vec<u8>,
     /// A host command the console asked for, waiting for the host (PHYS-13.6).
     pub(crate) pending_host: Option<HostCommand>,
+    /// The client's commands the console met, in order, waiting for the host (CON-6.1).
+    pub(crate) client_commands: Vec<ClientCommand>,
     /// The console's aliases, newest first (PHYS-13.2).
     pub(crate) aliases: Vec<(String, String)>,
     /// The search path the host gave, for `path` (PHYS-13.7).
@@ -201,6 +203,39 @@ pub enum HostCommand {
     Load(String),
     /// `quit`: the host stops.
     Quit,
+}
+
+/// A command the client runs, not the server: id's `console.c` and `menu.c` register them
+/// with the client's console (CON-6.1). The console hands them to the host in order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientCommand {
+    /// `toggleconsole`, `Con_ToggleConsole_f`.
+    ToggleConsole,
+    /// `clear`, `Con_Clear_f`.
+    Clear,
+    /// `togglemenu`, `M_ToggleMenu_f`.
+    ToggleMenu,
+    /// `menu_main`, `M_Menu_Main_f`.
+    MenuMain,
+    /// `menu_singleplayer`, `M_Menu_SinglePlayer_f`.
+    MenuSinglePlayer,
+    /// `help`, `M_Menu_Help_f`.
+    Help,
+    /// `menu_quit`, `M_Menu_Quit_f`.
+    MenuQuit,
+}
+
+impl ClientCommand {
+    /// Every client command with its name, as the client registers it.
+    pub const ALL: [(&'static str, Self); 7] = [
+        ("toggleconsole", Self::ToggleConsole),
+        ("clear", Self::Clear),
+        ("togglemenu", Self::ToggleMenu),
+        ("menu_main", Self::MenuMain),
+        ("menu_singleplayer", Self::MenuSinglePlayer),
+        ("help", Self::Help),
+        ("menu_quit", Self::MenuQuit),
+    ];
 }
 
 /// What `SV_SaveSpawnparms` keeps across a level change: `serverflags`, "for cross level
@@ -293,6 +328,7 @@ impl World {
             connecting: false,
             console_out: Vec::new(),
             pending_host: None,
+            client_commands: Vec::new(),
             aliases,
             search_path: options.search_path,
             carried: options.carried,
@@ -604,6 +640,11 @@ impl World {
     /// (PHYS-10.6), `map`, `save`, `load` or `quit`. It is taken once.
     pub fn take_host_command(&mut self) -> Option<HostCommand> {
         self.pending_host.take()
+    }
+
+    /// The client's commands the console met since the last call, in order (CON-6.1).
+    pub fn take_client_commands(&mut self) -> Vec<ClientCommand> {
+        core::mem::take(&mut self.client_commands)
     }
 
     /// The map's name, `sv.name`, which `restart` spawns again (PHYS-10.6).

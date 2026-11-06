@@ -40,6 +40,13 @@ const qs_client::client::stat::TOTALMONSTERS
 const qs_client::client::stat::TOTALSECRETS
 const qs_client::client::stat::WEAPON
 const qs_client::client::stat::WEAPONFRAME
+const qs_client::console::CON_CURSOR_SPEED
+const qs_client::console::CON_HISTORY
+const qs_client::console::CON_MAX_LINE
+const qs_client::console::CON_NOTIFY_TIME
+const qs_client::console::CON_NUM_TIMES
+const qs_client::console::CON_SPEED
+const qs_client::console::CON_TEXTSIZE
 const qs_client::hud::HUD_CENTERTIME
 const qs_client::hud::HUD_CENTER_LINE_LENGTH
 const qs_client::hud::HUD_CENTER_MAX
@@ -53,6 +60,7 @@ const qs_client::hud::HUD_NUM_WIDTH
 const qs_client::hud::HUD_PRINTSPEED
 const qs_client::hud::HUD_SBAR_HEIGHT
 const qs_client::hud::HUD_WEAPONS
+const qs_client::menu::MENU_HELP_PAGES
 const qs_client::models::SYNCTYPE_RAND
 const qs_client::models::flags::GIB
 const qs_client::models::flags::GRENADE
@@ -91,8 +99,14 @@ enum qs_client::client::Event
 enum qs_client::client::Game
 enum qs_client::client::ParseError
 enum qs_client::client::SoundRef
+enum qs_client::console::ConsoleKey
+enum qs_client::console::KeyDest
+enum qs_client::console::Typed
 enum qs_client::hud::Anchor
 enum qs_client::hud::HudItem
+enum qs_client::menu::MenuEvent
+enum qs_client::menu::MenuKey
+enum qs_client::menu::MenuState
 enum qs_client::models::ModelKind
 enum qs_client::particles::ParticleType
 enum qs_client::view::Contents
@@ -103,7 +117,9 @@ field qs_client::client::ClientLimits.temp_entities
 field qs_client::client::ClientLimits.visedicts
 field qs_client::client::Hud.bar
 field qs_client::client::Hud.center
+field qs_client::client::Hud.console
 field qs_client::client::Hud.deathmatch
+field qs_client::client::Hud.menu
 field qs_client::client::Hud.overlay
 field qs_client::client::LerpSettings.models
 field qs_client::client::LerpSettings.moves
@@ -282,6 +298,20 @@ fn qs_client::client::Client::view_settings
 fn qs_client::client::Client::viewangles
 fn qs_client::client::Client::viewentity
 fn qs_client::client::Client::with_limits
+fn qs_client::console::Console::clear
+fn qs_client::console::Console::current
+fn qs_client::console::Console::draw
+fn qs_client::console::Console::draw_quakespasm
+fn qs_client::console::Console::key
+fn qs_client::console::Console::line
+fn qs_client::console::Console::line_width
+fn qs_client::console::Console::new
+fn qs_client::console::Console::notify
+fn qs_client::console::Console::print
+fn qs_client::console::Console::resize
+fn qs_client::console::Console::slide
+fn qs_client::console::Console::toggle
+fn qs_client::console::Console::typed
 fn qs_client::entity::Entity::has_model
 fn qs_client::entity::Entity::new
 fn qs_client::hud::CenterPrint::draw
@@ -291,6 +321,15 @@ fn qs_client::hud::color_for_map
 fn qs_client::hud::intermission_overlay
 fn qs_client::hud::sort_frags
 fn qs_client::hud::status_bar
+fn qs_client::menu::Menu::draw
+fn qs_client::menu::Menu::help
+fn qs_client::menu::Menu::key
+fn qs_client::menu::Menu::main
+fn qs_client::menu::Menu::new
+fn qs_client::menu::Menu::quit
+fn qs_client::menu::Menu::single_player
+fn qs_client::menu::Menu::state
+fn qs_client::menu::Menu::toggle
 fn qs_client::message::Reader::angle
 fn qs_client::message::Reader::bad
 fn qs_client::message::Reader::byte
@@ -340,6 +379,7 @@ impl qs_client::client::ClientLimits: Default
 impl qs_client::client::LerpSettings: Default
 impl qs_client::client::ParseError: core::error::Error
 impl qs_client::client::ParseError: core::fmt::Display
+impl qs_client::console::Console: Default
 impl qs_client::particles::Particles: Default
 impl qs_client::view::ViewSettings: Default
 impl qs_client::view::ViewState: Default
@@ -351,6 +391,7 @@ struct qs_client::client::Hud
 struct qs_client::client::LerpSettings
 struct qs_client::client::Score
 struct qs_client::client::SoundStart
+struct qs_client::console::Console
 struct qs_client::entity::Baseline
 struct qs_client::entity::Entity
 struct qs_client::entity::Lerp
@@ -358,6 +399,7 @@ struct qs_client::entity::LerpFlags
 struct qs_client::hud::CenterPrint
 struct qs_client::hud::HudInput
 struct qs_client::hud::Placed
+struct qs_client::menu::Menu
 struct qs_client::message::Reader
 struct qs_client::models::FrameInfo
 struct qs_client::models::ModelInfo
@@ -402,9 +444,18 @@ use qs_client::CLIENT_ROTATE_SPEED = client::CLIENT_ROTATE_SPEED
 use qs_client::CLIENT_SIGNONS = client::CLIENT_SIGNONS
 use qs_client::CLIENT_TELEPORT_DISTANCE = client::CLIENT_TELEPORT_DISTANCE
 use qs_client::CLIENT_TENT_SOUNDS = client::CLIENT_TENT_SOUNDS
+use qs_client::CON_CURSOR_SPEED = console::CON_CURSOR_SPEED
+use qs_client::CON_HISTORY = console::CON_HISTORY
+use qs_client::CON_MAX_LINE = console::CON_MAX_LINE
+use qs_client::CON_NOTIFY_TIME = console::CON_NOTIFY_TIME
+use qs_client::CON_NUM_TIMES = console::CON_NUM_TIMES
+use qs_client::CON_SPEED = console::CON_SPEED
+use qs_client::CON_TEXTSIZE = console::CON_TEXTSIZE
 use qs_client::CenterPrint = hud::CenterPrint
 use qs_client::Client = client::Client
 use qs_client::ClientLimits = client::ClientLimits
+use qs_client::Console = console::Console
+use qs_client::ConsoleKey = console::ConsoleKey
 use qs_client::Contents = view::Contents
 use qs_client::DynamicLight = scene::DynamicLight
 use qs_client::Entity = entity::Entity
@@ -428,9 +479,15 @@ use qs_client::HUD_WEAPONS = hud::HUD_WEAPONS
 use qs_client::Hud = client::Hud
 use qs_client::HudInput = hud::HudInput
 use qs_client::HudItem = hud::HudItem
+use qs_client::KeyDest = console::KeyDest
 use qs_client::Lerp = entity::Lerp
 use qs_client::LerpFlags = entity::LerpFlags
 use qs_client::LerpSettings = client::LerpSettings
+use qs_client::MENU_HELP_PAGES = menu::MENU_HELP_PAGES
+use qs_client::Menu = menu::Menu
+use qs_client::MenuEvent = menu::MenuEvent
+use qs_client::MenuKey = menu::MenuKey
+use qs_client::MenuState = menu::MenuState
 use qs_client::ModelInfo = models::ModelInfo
 use qs_client::ModelKind = models::ModelKind
 use qs_client::Models = models::Models
@@ -459,6 +516,7 @@ use qs_client::Score = client::Score
 use qs_client::Shift = view::Shift
 use qs_client::SoundRef = client::SoundRef
 use qs_client::SoundStart = client::SoundStart
+use qs_client::Typed = console::Typed
 use qs_client::VIEW_BOB = view::VIEW_BOB
 use qs_client::VIEW_BOBCYCLE = view::VIEW_BOBCYCLE
 use qs_client::VIEW_BOBUP = view::VIEW_BOBUP
@@ -524,13 +582,45 @@ variant qs_client::client::ParseError::TooManyStatics
 variant qs_client::client::ParseError::Version
 variant qs_client::client::SoundRef::Index
 variant qs_client::client::SoundRef::Name
+variant qs_client::console::ConsoleKey::Back
+variant qs_client::console::ConsoleKey::Char
+variant qs_client::console::ConsoleKey::Down
+variant qs_client::console::ConsoleKey::End
+variant qs_client::console::ConsoleKey::Enter
+variant qs_client::console::ConsoleKey::Home
+variant qs_client::console::ConsoleKey::PageDown
+variant qs_client::console::ConsoleKey::PageUp
+variant qs_client::console::ConsoleKey::Tab
+variant qs_client::console::ConsoleKey::Up
+variant qs_client::console::KeyDest::Console
+variant qs_client::console::KeyDest::Game
+variant qs_client::console::KeyDest::Menu
+variant qs_client::console::Typed::Nothing
+variant qs_client::console::Typed::Run
 variant qs_client::hud::Anchor::Bar
 variant qs_client::hud::Anchor::Centered
 variant qs_client::hud::Anchor::Screen
 variant qs_client::hud::HudItem::Char
+variant qs_client::hud::HudItem::ConsoleBack
+variant qs_client::hud::HudItem::Fade
 variant qs_client::hud::HudItem::Fill
 variant qs_client::hud::HudItem::Lmp
 variant qs_client::hud::HudItem::Pic
+variant qs_client::menu::MenuEvent::NewGame
+variant qs_client::menu::MenuEvent::Quit
+variant qs_client::menu::MenuEvent::Sound
+variant qs_client::menu::MenuKey::Char
+variant qs_client::menu::MenuKey::Down
+variant qs_client::menu::MenuKey::Enter
+variant qs_client::menu::MenuKey::Escape
+variant qs_client::menu::MenuKey::Left
+variant qs_client::menu::MenuKey::Right
+variant qs_client::menu::MenuKey::Up
+variant qs_client::menu::MenuState::Help
+variant qs_client::menu::MenuState::Main
+variant qs_client::menu::MenuState::None
+variant qs_client::menu::MenuState::Quit
+variant qs_client::menu::MenuState::SinglePlayer
 variant qs_client::models::ModelKind::Alias
 variant qs_client::models::ModelKind::Brush
 variant qs_client::models::ModelKind::Sprite

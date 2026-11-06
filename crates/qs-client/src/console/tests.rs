@@ -447,3 +447,25 @@ fn quakespasm_draws_its_version_bottom_right() {
         .unwrap();
     assert_eq!(last, (78 + 1) * 8);
 }
+
+// spec CON-6.3: a leading `/` or `\` is dropped from the line run, not from the line echoed
+#[test]
+fn a_leading_slash_is_dropped() {
+    for (typed, run) in [
+        (&b"/help"[..], &b"help"[..]),
+        (b"\\cmdlist", b"cmdlist"),
+        (b"//x", b"/x"),
+        (b"map e1m1", b"map e1m1"),
+    ] {
+        let mut console = wide();
+        for c in typed {
+            console.key(ConsoleKey::Char(*c), 480, 1.0, &none);
+        }
+        assert_eq!(
+            console.key(ConsoleKey::Enter, 480, 1.0, &none),
+            Typed::Run(run.to_vec())
+        );
+        let echoed = format!("]{}", String::from_utf8_lossy(typed));
+        assert_eq!(text(&console, console.current()), echoed);
+    }
+}

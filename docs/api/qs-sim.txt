@@ -28,6 +28,7 @@ const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_HARD
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_MEDIUM
 const qs_sim::spawn::SPAWNFLAGS_SLOT
 const qs_sim::world::CLIENT_EDICT
+const qs_sim::world::ClientCommand::ALL
 const qs_sim::world::save::SAVEGAME_VERSION
 enum qs_sim::collision::CollisionError
 enum qs_sim::collision::Solid
@@ -45,6 +46,7 @@ enum qs_sim::scenario::Target
 enum qs_sim::spawn::LoadError
 enum qs_sim::spawn::SpawnError
 enum qs_sim::spawn::Token
+enum qs_sim::world::ClientCommand
 enum qs_sim::world::HostCommand
 enum qs_sim::world::Signon
 enum qs_sim::world::WorldError
@@ -211,6 +213,7 @@ fn qs_sim::collision::hull::hull_for_entity
 fn qs_sim::collision::trace::Trace::new
 fn qs_sim::collision::trace::clip_move_to_entity
 fn qs_sim::collision::trace::recursive_hull_check
+fn qs_sim::console::World::complete
 fn qs_sim::console::World::console
 fn qs_sim::console::World::execute_console
 fn qs_sim::console::World::take_console_output
@@ -285,6 +288,7 @@ fn qs_sim::world::World::set_debugger
 fn qs_sim::world::World::set_standard_quake
 fn qs_sim::world::World::settle
 fn qs_sim::world::World::signon
+fn qs_sim::world::World::take_client_commands
 fn qs_sim::world::World::take_host_command
 fn qs_sim::world::World::take_messages
 fn qs_sim::world::World::take_set_angle
@@ -387,6 +391,7 @@ type qs_sim::builtins::ModelFiles
 use qs_sim::CLIENT_EDICT = world::CLIENT_EDICT
 use qs_sim::Change = world::Change
 use qs_sim::ChangeKind = world::ChangeKind
+use qs_sim::ClientCommand = world::ClientCommand
 use qs_sim::ClientMessages = messages::ClientMessages
 use qs_sim::EdictChange = world::EdictChange
 use qs_sim::EditError = world::EditError
@@ -533,6 +538,13 @@ variant qs_sim::spawn::SpawnError::NoFreeEdicts
 variant qs_sim::spawn::SpawnError::ParseError
 variant qs_sim::spawn::Token::End
 variant qs_sim::spawn::Token::Word
+variant qs_sim::world::ClientCommand::Clear
+variant qs_sim::world::ClientCommand::Help
+variant qs_sim::world::ClientCommand::MenuMain
+variant qs_sim::world::ClientCommand::MenuQuit
+variant qs_sim::world::ClientCommand::MenuSinglePlayer
+variant qs_sim::world::ClientCommand::ToggleConsole
+variant qs_sim::world::ClientCommand::ToggleMenu
 variant qs_sim::world::HostCommand::Changelevel
 variant qs_sim::world::HostCommand::Load
 variant qs_sim::world::HostCommand::Map

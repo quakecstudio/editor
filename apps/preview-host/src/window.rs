@@ -19,6 +19,7 @@ use qs_client::{
     Client, Console, ConsoleKey, Event, KeyDest, Menu, MenuEvent, MenuKey, Random as _, Typed,
 };
 use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
+use qs_sim::ClientCommand;
 use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
 use crate::args::Args;
@@ -247,6 +248,8 @@ impl eframe::App for Viewer {
             self.steer(ui);
         }
         let frametime = self.advance(f64::from(seconds));
+        // The progs' `localcmd` and `stuffcmd` reach the client's commands too.
+        self.client_commands();
         // MENU-3.2, MENU-5.2: the menu's new game, `map start` from nothing carried, and quit.
         for asked in core::mem::take(&mut self.asked) {
             match asked {
@@ -726,6 +729,32 @@ impl Viewer {
                 text.push(b'\n');
                 self.console.print(&text, realtime);
             }
+            self.client_commands();
+        }
+    }
+
+    /// The client's commands the console met, run in order (CON-6.1).
+    fn client_commands(&mut self) {
+        for command in self.game.world_mut().take_client_commands() {
+            self.dest = match command {
+                ClientCommand::ToggleConsole => self.console.toggle(self.dest, true),
+                ClientCommand::Clear => {
+                    self.console.clear();
+                    self.dest
+                }
+                // `M_ToggleMenu_f`: from the console, the console's toggle (MENU-1.1).
+                ClientCommand::ToggleMenu if self.dest == KeyDest::Console => {
+                    self.console.toggle(self.dest, true)
+                }
+                ClientCommand::ToggleMenu => self.menu.toggle(self.dest),
+                ClientCommand::MenuMain => self.menu.main(),
+                ClientCommand::MenuSinglePlayer => self.menu.single_player(),
+                ClientCommand::Help => self.menu.help(),
+                ClientCommand::MenuQuit => {
+                    let random = self.rand.rand();
+                    self.menu.quit(self.dest, random)
+                }
+            };
         }
     }
 

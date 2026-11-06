@@ -499,3 +499,62 @@ fn the_console_completes_commands_then_settings() {
     assert_eq!(run.world.complete(""), None);
     assert_eq!(run.world.complete("zz"), None);
 }
+
+// spec CON-6.1: the client's commands go to the client in order, with nothing printed and the
+// server's commands of the line run; help is one of them
+#[test]
+fn the_clients_commands_go_to_the_client() {
+    use crate::world::ClientCommand;
+    let mut run = connected();
+    assert_eq!(
+        console(&mut run, "help; echo a; TOGGLEMENU; clear\n"),
+        ["a "]
+    );
+    assert_eq!(
+        run.world.take_client_commands(),
+        [
+            ClientCommand::Help,
+            ClientCommand::ToggleMenu,
+            ClientCommand::Clear
+        ]
+    );
+    assert!(run.world.take_client_commands().is_empty(), "taken once");
+    for (name, command) in ClientCommand::ALL {
+        assert!(console(&mut run, &format!("{name}\n")).is_empty());
+        assert_eq!(run.world.take_client_commands(), [command], "{name}");
+    }
+    assert_eq!(
+        run.world.complete("menu_s").as_deref(),
+        Some("menu_singleplayer")
+    );
+    assert_eq!(
+        console(&mut run, "menu_options\n"),
+        ["Unknown command \"menu_options\""]
+    );
+}
+
+// spec CON-6.2: cmdlist prints every command in strcmp order and the count; with a prefix only
+// the names starting with it, case-sensitively
+#[test]
+fn cmdlist_lists_the_commands() {
+    let mut run = connected();
+    let all = console(&mut run, "cmdlist\n");
+    let names: Vec<&str> = all[..all.len() - 1]
+        .iter()
+        .map(|l| l.trim_start())
+        .collect();
+    let mut sorted = names.clone();
+    sorted.sort_unstable();
+    assert_eq!(names, sorted);
+    assert!(all[0].starts_with("   "));
+    assert!(names.contains(&"help") && names.contains(&"cmdlist") && names.contains(&"map"));
+    assert_eq!(all.last().unwrap(), &format!("{} commands", names.len()));
+    assert_eq!(
+        console(&mut run, "cmdlist ch\n"),
+        ["   changelevel", "1 commands beginning with \"ch\""]
+    );
+    assert_eq!(
+        console(&mut run, "cmdlist CH\n"),
+        ["0 commands beginning with \"CH\""]
+    );
+}

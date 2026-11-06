@@ -177,6 +177,22 @@ impl Menu {
         }
     }
 
+    /// `M_Menu_Main_f`, the `menu_main` command (CON-6.1): the main menu.
+    pub fn main(&mut self) -> KeyDest {
+        self.open(MenuState::Main)
+    }
+
+    /// `M_Menu_SinglePlayer_f`, the `menu_singleplayer` command (CON-6.1).
+    pub fn single_player(&mut self) -> KeyDest {
+        self.open(MenuState::SinglePlayer)
+    }
+
+    /// `M_Menu_Help_f`, the `help` command (CON-6.1): help on its first page (MENU-4.1).
+    pub fn help(&mut self) -> KeyDest {
+        self.help_page = 0;
+        self.open(MenuState::Help)
+    }
+
     /// The menu `state` shown, as `M_Menu_Main_f` and its kin show theirs (MENU-1.1).
     fn open(&mut self, state: MenuState) -> KeyDest {
         self.state = state;

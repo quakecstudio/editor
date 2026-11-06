@@ -552,6 +552,11 @@ impl Console {
                     set(line, 1, 0);
                 });
                 self.pos = 1;
+                // CON-6.3: QuakeWorld's leading `\` or `/`, dropped.
+                let run = match run.split_first() {
+                    Some((b'/' | b'\\', rest)) => rest.to_vec(),
+                    _ => run,
+                };
                 return Typed::Run(run);
             }
             ConsoleKey::Tab => {
