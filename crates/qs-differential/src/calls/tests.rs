@@ -26,7 +26,7 @@ use qc_progs::Progs;
 use qc_progs::opcode::Opcode;
 use qc_sema::{Db, FileId, ModuleInput};
 use qc_types::Etype;
-use qc_vm::ServerState;
+use qc_vm::{ErrorKind, ServerState};
 
 use super::draw::{Draw, Drawer, Name, NameKind, Pools, Rng};
 use super::{
@@ -2153,14 +2153,39 @@ fn debug_compile_file() {
 }
 
 // spec DIFF-12.19: a world set up under vkQuake's profile takes its runaway count, so a spawn
-// function that runs 200000 statements finishes there and fails with id's runaway under id's
+// function that runs 200000 statements finishes there and fails with id's runaway under id's;
+// a drawn call of the same loop then runs under id's count
 #[test]
 fn a_vkquake_world_runs_past_ids_runaway() {
-    let progs = compile("float x;\nvoid() worldspawn = { x = 0; while (x < 50000) x = x + 1; };\n");
+    let progs = compile(
+        "float x;\nvoid() worldspawn = { x = 0; while (x < 50000) x = x + 1; };\n\
+         void() spin = { x = 0; while (x < 50000) x = x + 1; };\n",
+    );
     let progs = Progs::read(&progs).unwrap();
     let scenario = scenario();
     let vkquake = World::new(&progs, &scenario, WORLD, EngineProfile::VkQuake);
     assert!(vkquake.is_ok(), "{:?}", vkquake.err());
+    let mut world = vkquake.unwrap();
+    let spin = (0_i32..)
+        .zip(progs.functions().iter())
+        .find(|(_, f)| progs.string(f.s_name) == Some(b"spin".as_slice()))
+        .unwrap()
+        .0;
+    let context = super::draw::Context {
+        self_edict: 0,
+        other_edict: 0,
+        fields: Vec::new(),
+        globals: Vec::new(),
+        parms: Vec::new(),
+        server: ServerState::Active,
+    };
+    let outcome = world.call(spin, &context);
+    assert_eq!(
+        outcome.kind,
+        Some(ErrorKind::Runaway),
+        "{:?}",
+        outcome.error
+    );
     let Err(CallsError::Setup(message)) = World::new(&progs, &scenario, WORLD, EngineProfile::Id)
     else {
         panic!("id's runaway ends the setup");

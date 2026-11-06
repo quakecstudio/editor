@@ -1094,7 +1094,8 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
     ) -> Result<Self, CallsError> {
         let mut host = Host::new(scenario, progs).map_err(CallsError::Refused)?;
         host.builtins.engine_mut().profile = profile;
-        // LIMIT-4.3: the engine's runaway count, so a mod's long loop runs as it does there.
+        // LIMIT-4.3: the engine's runaway count while the world is set up, so a mod's long loop
+        // runs as it does there.
         host.machine.set_runaway(profile.runaway());
         // DIFF-12.26: a builtin the profile lacks does nothing here, so a function a mod
         // compiles for another engine runs to its end.
@@ -1128,6 +1129,9 @@ impl<'a, 'p, 's> World<'a, 'p, 's> {
             .collect();
         let setup_executed = executed.iter().map(|e| e.statement).collect();
         host.trace.clear();
+        // DIFF-12.19: the drawn calls run under id's runaway count, the setup alone under the
+        // engine's: a drawn argument often makes a loop that would run the engine's count out.
+        host.machine.set_runaway(qc_vm::LIMIT_RUNAWAY);
         Ok(Self {
             machine: host.machine.clone(),
             builtins: host.builtins.clone(),

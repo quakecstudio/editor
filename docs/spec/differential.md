@@ -911,10 +911,11 @@ up. Implemented by `qs-differential` (`calls` module, `compiler-diff` binary) an
 - **DIFF-12.19** The corpus mods written for an engine with extension builtins, crmod7 and
   Arcane Dimensions, are set up and called with the mock engine under vkQuake's profile
   (BUILTIN-18): crmod7 calls extension builtins while it sets up its world, and Arcane
-  Dimensions precaches more sounds than id's engine holds (LIMIT-6.2). Their runs take
-  vkQuake's runaway count (BUILTIN-18.26, LIMIT-4.3): crmod7's `say` command and its map-name
-  lookups run more statements in one call than id's 99999. Every other codebase runs under
-  id's.
+  Dimensions precaches more sounds than id's engine holds (LIMIT-6.2). Their worlds are set up
+  with vkQuake's runaway count (BUILTIN-18.26, LIMIT-4.3), since crmod7's `say` command and its
+  map-name lookups run more statements in one call than id's 99999; the drawn calls (DIFF-12.2)
+  then run under id's, since a drawn argument often makes a loop that would run vkQuake's
+  0x1000000 statements before it fails. Every other codebase runs under id's.
 
 ## DIFF-13 The FTEQCC grammar differential
 
