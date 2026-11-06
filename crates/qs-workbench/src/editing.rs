@@ -61,6 +61,7 @@ impl<L: Loader> Workbench<L> {
         self.host
             .set_overlay(&path, text.clone())
             .map_err(WorkbenchError::Project)?;
+        self.unsaved.insert(path.clone());
         if let Some(root) = &self.root {
             self.tree = tree(&self.host.files(), root);
         }
@@ -100,7 +101,12 @@ impl<L: Loader> Workbench<L> {
             .host
             .text(&path)
             .ok_or_else(|| WorkbenchError::NoFile { path: path.clone() })?;
-        std::fs::write(&path, text).map_err(|error| WorkbenchError::Save { path, error })
+        std::fs::write(&path, text).map_err(|error| WorkbenchError::Save {
+            path: path.clone(),
+            error,
+        })?;
+        self.unsaved.remove(&path);
+        Ok(())
     }
 
     /// Where the name at byte `offset` of `path` is defined.

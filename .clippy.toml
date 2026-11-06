@@ -29,6 +29,7 @@ absolute-paths-allowed-crates = [
     "muda",
     "pollster",
     "proptest",
+    "rfd",
     "schemars",
     "serde",
     "serde_json",

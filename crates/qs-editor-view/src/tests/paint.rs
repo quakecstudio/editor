@@ -394,3 +394,69 @@ fn the_caret_rect_is_where_the_primary_caret_was_drawn() {
     harness.frame(Vec::new(), &Plain);
     assert_eq!(harness.view.caret_rect(), None, "scrolled off screen");
 }
+
+/// A press and release of the primary button at (`x`, `y`).
+fn click_at(x: f32, y: f32) -> Vec<Event> {
+    let p = egui::Pos2::new(x, y);
+    vec![
+        Event::PointerMoved(p),
+        Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        },
+        Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        },
+    ]
+}
+
+// No spec statement: a click in the gutter reports its line once and moves no caret; a click
+// on the text reports none
+#[test]
+fn a_gutter_click_reports_its_line_and_leaves_the_caret() {
+    let mut harness = Harness::new("abc\nabc\nabc");
+    let output = harness.frame(Vec::new(), &Plain);
+    let m = measures(&harness, &output);
+    let y = m.row.mul_add(2.5, m.view.top());
+    harness.frame(click_at(m.view.left() + 2.0, y), &Plain);
+    assert_eq!(harness.view.take_gutter_click(), Some(2));
+    assert_eq!(harness.view.take_gutter_click(), None, "taken once");
+    assert_eq!(harness.view.state().primary().head, pos(0, 0));
+    harness.frame(click_at(at(&m, 1.2), y), &Plain);
+    assert_eq!(harness.view.take_gutter_click(), None);
+    assert_eq!(harness.view.state().primary().head, pos(2, 1));
+}
+
+// No spec statement: the paused line has its own background, over the current line's, and the
+// breakpoints are the lines set, from 0
+#[test]
+fn the_paused_line_is_tinted_and_breakpoints_are_kept() {
+    let mut harness = Harness::new("abc\nabc\nabc");
+    harness.view.set_breakpoints([0, 2]);
+    assert_eq!(
+        harness
+            .view
+            .breakpoints()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        [0, 2]
+    );
+    harness.view.set_paused(Some(0));
+    let output = harness.frame(Vec::new(), &Plain);
+    let paused = filled(&output, harness.style.paused_line);
+    assert_eq!(paused.len(), 1);
+    assert!(
+        filled(&output, harness.style.current_line).is_empty(),
+        "the caret's line is the paused one"
+    );
+    harness.view.set_paused(None);
+    let output = harness.frame(Vec::new(), &Plain);
+    assert!(filled(&output, harness.style.paused_line).is_empty());
+    assert_eq!(filled(&output, harness.style.current_line).len(), 1);
+}

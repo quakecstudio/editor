@@ -193,7 +193,10 @@ fn the_open_file_is_selected_in_the_tree() {
     harness.get_by_label("world.qc").click();
     harness.run();
     let selected = |harness: &Harness<'static, Option<App>>, name: &str| {
-        harness.get_by_label(name).accesskit_node().toggled()
+        harness
+            .get_by_role_and_label(egui::accesskit::Role::Button, name)
+            .accesskit_node()
+            .toggled()
             == Some(egui::accesskit::Toggled::True)
     };
     assert!(selected(&harness, "world.qc"));
@@ -207,8 +210,6 @@ fn the_open_file_is_selected_in_the_tree() {
 fn opening_the_shown_file_again_keeps_its_edits() {
     let mut harness = harness();
     harness.get_by_label("weapons.qc").click();
-    harness.run();
-    harness.get_by_label(Text::Editor.get()).click();
     harness.run();
     let id = egui::Id::new(EDITOR_AREA);
     harness.ctx.memory_mut(|m| m.request_focus(id));

@@ -20,8 +20,10 @@ use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use qs_commands::palette::search;
 use qs_commands::params::{self, Input};
 use qs_layout::{Focus, Layout, Panel};
+use qs_workbench::debug::Location;
 use serde_json::json;
 
+use crate::debugger::place;
 use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::highlighted;
@@ -239,6 +241,9 @@ fn literal_lines(source: &str) -> Vec<(usize, &str)> {
 fn the_ui_code_has_no_string_literals() {
     for (name, source) in [
         ("shell.rs", include_str!("shell.rs")),
+        ("entities.rs", include_str!("entities.rs")),
+        ("debugger.rs", include_str!("debugger.rs")),
+        ("finder.rs", include_str!("finder.rs")),
         ("palette.rs", include_str!("palette.rs")),
         ("project.rs", include_str!("project.rs")),
         ("editor.rs", include_str!("editor.rs")),
@@ -555,7 +560,7 @@ fn the_palette_keys_move_go_back_and_close() {
         .map(|p| p.id.as_str().to_owned());
     assert_eq!(
         prompt.as_deref(),
-        Some("file.open"),
+        Some("file.close"),
         "the fourth command in id order"
     );
     frame_with(&ctx, &mut app, vec![key(egui::Key::Escape, none)]);
@@ -807,9 +812,17 @@ fn every_area_and_control_has_a_name() {
     ] {
         harness.get_by_role_and_label(role, text.get());
     }
+    // The palette lists the play loop's commands too, so the toolbar's are the buttons whose
+    // names end with the control's text.
     for text in [Text::Play, Text::Pause, Text::Step, Text::RestartMap] {
-        let button = harness.get_by_label_contains(text.get());
-        assert_eq!(button.accesskit_node().role(), Role::Button, "{text:?}");
+        let found = harness.query_all_by_label_contains(text.get()).any(|node| {
+            node.accesskit_node().role() == Role::Button
+                && node
+                    .accesskit_node()
+                    .label()
+                    .is_some_and(|label| label.ends_with(text.get()))
+        });
+        assert!(found, "{text:?}");
     }
     // The panel toggles say whether their panel is shown.
     let toggle = harness.get_by_role_and_label(Role::Button, Text::ToggleLeftPanel.get());
@@ -1022,4 +1035,122 @@ fn bindings_are_matched_most_specific_first() {
             );
         }
     }
+}
+
+// No spec statement: the Debugger tab lists a breakpoint set with no game running, which waits
+// for the next game; the step buttons wait for a stop, and unticking the breakpoint clears it
+#[test]
+fn the_debugger_tab_lists_breakpoints_and_steps_only_when_stopped() {
+    let mut harness = accessible();
+    harness
+        .get_by_role_and_label(Role::Button, Text::Debugger.get())
+        .click();
+    harness.run();
+    assert!(
+        harness
+            .query_by_label_contains(Text::NoBreakpoints.get())
+            .is_some()
+    );
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell
+        .execute(
+            qs_workbench::BREAKPOINT,
+            json!({ "file": "src/a.qc", "line": 3 }),
+        )
+        .unwrap();
+    harness.run();
+    assert!(harness.query_by_label_contains("src/a.qc:3").is_some());
+    assert!(
+        harness
+            .query_by_label_contains(Text::NotStopped.get())
+            .is_some()
+    );
+    let step = harness.get_by_role_and_label(Role::Button, Text::StepOver.get());
+    assert!(step.accesskit_node().is_disabled(), "nothing is stopped");
+    harness.get_by_role(Role::CheckBox).click();
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label_contains("src/a.qc:3").is_none());
+}
+
+// No spec statement: a call stack frame reads as its file's name and line, or `engine`
+#[test]
+fn a_frame_reads_as_its_place() {
+    let frame = |file: Option<&str>, line, engine| Location {
+        function: "f".to_owned(),
+        file: file.map(PathBuf::from),
+        line,
+        engine,
+    };
+    assert_eq!(
+        place(&frame(Some("src/weapons.qc"), Some(33), false)),
+        "weapons.qc:33"
+    );
+    assert_eq!(
+        place(&frame(Some("src/weapons.qc"), None, false)),
+        "src/weapons.qc"
+    );
+    assert_eq!(place(&frame(None, Some(3), false)), "");
+    assert_eq!(
+        place(&frame(Some("a.qc"), Some(1), true)),
+        Text::EngineFrame.get()
+    );
+}
+
+// No spec statement: with no project open the Project section lists the recent projects; a
+// click opens one, which then comes first in the list and its file; one that no longer opens
+// says why and comes off the list
+#[test]
+fn recent_projects_open_from_the_project_section() {
+    let dir = TempDir::new("recent");
+    let file = qs_workbench::recent_path(&dir.0);
+    let ember = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember");
+    let gone = dir.0.join("gone");
+    let mut recent = qs_workbench::RecentProjects::default();
+    recent.opened(&ember);
+    recent.opened(&gone);
+    recent.save(&file).unwrap();
+    let mut harness = accessible();
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .set_recent_file(file.clone());
+    harness.run();
+    assert!(harness.query_by_label(Text::RecentProjects.get()).is_some());
+    harness.get_by_label("gone").click();
+    harness.run();
+    harness.run();
+    let shell = &harness.state().as_ref().unwrap().shell;
+    assert!(shell.workbench().root().is_none());
+    assert_eq!(
+        shell.recent_projects(),
+        std::slice::from_ref(&ember),
+        "gone came off"
+    );
+    assert!(
+        harness
+            .query_by_label_contains(Text::FolderGone.get())
+            .is_some()
+    );
+    harness.get_by_label("ember").click();
+    harness.run();
+    harness.run();
+    let shell = &harness.state().as_ref().unwrap().shell;
+    assert!(
+        shell
+            .workbench()
+            .root()
+            .is_some_and(|root| root.ends_with("fixtures/ember"))
+    );
+    let saved = qs_workbench::RecentProjects::load(&file);
+    assert_eq!(saved.projects().len(), 1);
+    assert!(
+        saved
+            .projects()
+            .first()
+            .unwrap()
+            .ends_with("fixtures/ember")
+    );
 }

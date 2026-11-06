@@ -174,11 +174,13 @@ impl Editor {
     pub(crate) fn sync(&mut self, open: &OpenFile, theme: &Theme) {
         if open.version() != self.version {
             self.version = open.version();
-            self.view
-                .state_mut()
-                .replace_text(&String::from_utf8_lossy(open.text()));
-            self.sent = self.view.state().revision();
-            self.seen.0 = self.sent;
+            let text = String::from_utf8_lossy(open.text());
+            // A tab opened again has the text its editor last sent: its undo history stays.
+            if self.view.state().buffer().text() != text {
+                self.view.state_mut().replace_text(&text);
+                self.sent = self.view.state().revision();
+                self.seen.0 = self.sent;
+            }
         }
         if open.generation() != self.generation {
             self.place(open);
@@ -200,6 +202,15 @@ impl Editor {
         self.generation = open.generation();
     }
 
+    /// Moves the caret to the start of `line`, from 0, and scrolls it into view, a few lines
+    /// down.
+    pub(crate) fn go_to_line(&mut self, line: usize) {
+        let state = self.view.state_mut();
+        let line = line.min(state.buffer().line_count().saturating_sub(1));
+        state.set_selections(&[Selection::caret(Position::new(line, 0))]);
+        self.view.scroll_to(line.saturating_sub(CONTEXT_LINES));
+    }
+
     /// The editor's text, when it changed since it was last sent; marks it sent.
     pub(crate) fn unsent(&mut self) -> Option<String> {
         let revision = self.view.state().revision();
@@ -210,7 +221,7 @@ impl Editor {
     }
 
     /// The byte offset of the primary caret.
-    fn caret_offset(&self) -> usize {
+    pub(crate) fn caret_offset(&self) -> usize {
         let state = self.view.state();
         state.buffer().offset(state.primary().head)
     }
