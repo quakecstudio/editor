@@ -248,15 +248,29 @@ impl Offscreen {
             .map_err(|error| OffscreenError::ReadBack(error.to_string()))?;
         let row = usize::try_from(padded).map_err(|_| size_error())?;
         let keep = usize::try_from(unpadded).map_err(|_| size_error())?;
-        let rgba: Vec<u8> = data
+        let mut rgba: Vec<u8> = data
             .chunks(row)
             .flat_map(|line| line.iter().take(keep).copied())
             .collect();
+        to_rgba(state.target_format, &mut rgba);
         Ok(Pixels {
             width,
             height,
             rgba,
         })
+    }
+}
+
+/// Puts the bytes of pixels of `format` in RGBA order: a window's surface on macOS is
+/// `Bgra8Unorm`, whose red and blue swap places; RGBA formats stay as they are.
+fn to_rgba(format: wgpu::TextureFormat, bytes: &mut [u8]) {
+    if matches!(
+        format,
+        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+    ) {
+        for pixel in bytes.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+        }
     }
 }
 
@@ -275,7 +289,7 @@ mod tests {
         ClippedPrimitive, Color32, ColorImage, ImageDelta, Mesh, Pos2, Primitive, Rect, TextureId,
     };
 
-    use super::{Offscreen, OffscreenError};
+    use super::{Offscreen, OffscreenError, to_rgba};
 
     /// A screen of `width` by `height` pixels at one pixel a point.
     const fn screen(width: u32, height: u32) -> ScreenDescriptor {
@@ -337,6 +351,22 @@ mod tests {
         offscreen.update_textures(&mut free);
         assert!(free.free.is_empty());
         assert!(format!("{offscreen:?}").contains("Depth32Float"));
+    }
+
+    // P3-05: a BGRA target's pixels are read back in RGBA order; an RGBA target's are as they are
+    #[test]
+    fn pixels_come_back_in_rgba_order() {
+        for format in [
+            wgpu::TextureFormat::Bgra8Unorm,
+            wgpu::TextureFormat::Bgra8UnormSrgb,
+        ] {
+            let mut bytes = [1, 2, 3, 4, 5, 6, 7, 8];
+            to_rgba(format, &mut bytes);
+            assert_eq!(bytes, [3, 2, 1, 4, 7, 6, 5, 8], "{format:?}");
+        }
+        let mut bytes = [1, 2, 3, 4];
+        to_rgba(wgpu::TextureFormat::Rgba8Unorm, &mut bytes);
+        assert_eq!(bytes, [1, 2, 3, 4]);
     }
 
     // No spec statement: each failure says what failed
