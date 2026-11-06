@@ -231,6 +231,7 @@ dependencies = [
  "qc-builtins",
  "qc-diag",
  "qc-lexer",
+ "qc-progs",
  "qc-project",
  "qc-sema",
  "qc-syntax",

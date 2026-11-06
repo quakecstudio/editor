@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use qc_codegen::{CompileError, Compiled, compile_module};
+use qc_engines::Unloadable;
 use qc_ide::ModuleBuild;
 use qc_project::Loader;
 use qc_sema::FileDiagnostic;
@@ -116,6 +117,7 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
         db,
         input,
         names,
+        engine,
     } = module;
     let compiled = compile_module(db, input, |id| {
         names.get(id.index()).cloned().unwrap_or_default()
@@ -136,8 +138,24 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
     };
     let (built, problems) = match compiled {
         Ok(compiled) => {
-            write_program(output, &compiled)?;
-            (true, compiled.warnings.iter().map(report).collect())
+            let mut problems: Vec<Reported> = compiled.warnings.iter().map(report).collect();
+            match engine.unloadable(&compiled.progs) {
+                // ENGT-3.12: a program its engine cannot load is not written.
+                Some(why) => {
+                    problems.push(Reported {
+                        place: None,
+                        gravity: Gravity::Error,
+                        code: "target".to_owned(),
+                        message: unloadable_message(&compiled, why),
+                    });
+                    (false, problems)
+                }
+                None => {
+                    let progs = program_bytes(output, &compiled)?;
+                    write_program(output, &progs, &compiled)?;
+                    (true, problems)
+                }
+            }
         }
         Err(CompileError::Diagnostics(errors)) => (false, errors.iter().map(report).collect()),
         Err(error) => (
@@ -158,15 +176,48 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
     })
 }
 
-/// Writes `compiled`'s program to `output` and its line map beside it, making the directory.
-fn write_program(output: &Path, compiled: &Compiled) -> Result<(), WorkbenchError> {
+/// `compiled`'s program as `output` will hold it.
+fn program_bytes(output: &Path, compiled: &Compiled) -> Result<Vec<u8>, WorkbenchError> {
+    qc_progs::write(&compiled.progs).map_err(|e| WorkbenchError::Save {
+        path: output.to_path_buf(),
+        error: std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")),
+    })
+}
+
+/// Why the engine cannot load `compiled`'s program, a statement's function and line named.
+fn unloadable_message(compiled: &Compiled, why: Unloadable) -> String {
+    let Unloadable::Opcode { statement, .. } = why else {
+        return why.to_string();
+    };
+    let progs = &compiled.progs;
+    let function = i32::try_from(statement).ok().and_then(|at| {
+        progs
+            .functions
+            .iter()
+            .filter(|f| f.first_statement > 0 && f.first_statement <= at)
+            .max_by_key(|f| f.first_statement)
+    });
+    let name = function
+        .and_then(|f| usize::try_from(f.s_name).ok())
+        .and_then(|at| progs.strings.get(at..))
+        .and_then(|rest| rest.split(|&b| b == 0).next())
+        .map(|name| String::from_utf8_lossy(name).into_owned());
+    let line = compiled.lno.lines.get(statement).copied();
+    match (name, line) {
+        (Some(name), Some(line)) => format!("{why}: in {name}, at line {line}"),
+        (Some(name), None) => format!("{why}: in {name}"),
+        (None, _) => why.to_string(),
+    }
+}
+
+/// Writes `progs`, `compiled`'s program, to `output` and its line map beside it, making the
+/// directory.
+fn write_program(output: &Path, progs: &[u8], compiled: &Compiled) -> Result<(), WorkbenchError> {
     let save = |path: &Path, error| WorkbenchError::Save {
         path: path.to_path_buf(),
         error,
     };
     let invalid = |error: String| std::io::Error::new(std::io::ErrorKind::InvalidData, error);
-    let progs =
-        qc_progs::write(&compiled.progs).map_err(|e| save(output, invalid(format!("{e:?}"))))?;
     let lno_path = output.with_extension("lno");
     let lno = compiled
         .lno

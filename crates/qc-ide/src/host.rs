@@ -87,6 +87,8 @@ pub struct ModuleBuild<'a> {
     pub input: &'a ModuleInput,
     /// The name of each of its files, `names[i]` being `FileId::new(i)`'s.
     pub names: Vec<String>,
+    /// The engine its target selects (ENGT-3.5), which its program must load (ENGT-3.12).
+    pub engine: Engine,
 }
 
 /// Where a module comes from.
@@ -542,6 +544,7 @@ impl<L: Loader> AnalysisHost<L> {
                 db: &mut module.db,
                 input: &module.input,
                 names,
+                engine: module.engine,
             });
         }
         builds

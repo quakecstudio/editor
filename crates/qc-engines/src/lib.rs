@@ -34,6 +34,8 @@ pub use tables::SOURCES;
 
 #[cfg(test)]
 use qc_builtins::table::BUILTINS;
+use qc_progs::opcode::Opcode;
+use qc_progs::{PROGS_VERSION, ProgsFile};
 use qc_project::{ModuleKind, Target};
 
 /// How a progs names a builtin to the engine (ENGT-2.4).
@@ -230,7 +232,72 @@ impl Layer {
     }
 }
 
+/// Why an engine cannot load a program (ENGT-3.12).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unloadable {
+    /// The program is this version, not 6.
+    Version(i32),
+    /// The program has this many globals, more than a version 6 operand reaches.
+    Globals(usize),
+    /// A statement, at this index, has this opcode, which id's VM lacks.
+    Opcode {
+        /// The statement's index.
+        statement: usize,
+        /// Its opcode.
+        opcode: u32,
+    },
+}
+
+impl core::fmt::Display for Unloadable {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Version(version) => write!(
+                f,
+                "the program is version {version}; the KEX rerelease loads version 6"
+            ),
+            Self::Globals(count) => write!(
+                f,
+                "the program has {count} globals; a version 6 statement reaches {GLOBALS_REACHED}"
+            ),
+            Self::Opcode { statement, opcode } => write!(
+                f,
+                "statement {statement} has opcode {opcode}, which id's VM, and the KEX \
+                 rerelease, lacks"
+            ),
+        }
+    }
+}
+
+/// The globals a version 6 statement's signed 16-bit operand reaches (FTE-24.2).
+const GLOBALS_REACHED: usize = 32_768;
+
 impl Engine {
+    /// Why the engine cannot load `progs`; `None` when it can (ENGT-3.12). Only KEX, which the
+    /// IDE cannot run, is held to the rerelease's own build: every engine the preview host or
+    /// a launch runs reports its own errors.
+    #[must_use]
+    pub fn unloadable(self, progs: &ProgsFile) -> Option<Unloadable> {
+        if self != Self::Kex {
+            return None;
+        }
+        let version = progs.format.version();
+        if version != PROGS_VERSION {
+            return Some(Unloadable::Version(version));
+        }
+        if progs.globals.len() > GLOBALS_REACHED {
+            return Some(Unloadable::Globals(progs.globals.len()));
+        }
+        progs
+            .statements
+            .iter()
+            .enumerate()
+            .find(|(_, s)| Opcode::from_number(s.op).is_none())
+            .map(|(statement, s)| Unloadable::Opcode {
+                statement,
+                opcode: s.op,
+            })
+    }
+
     /// Every engine, in the order of ENGT-3.9.
     pub const ALL: [Self; 7] = [
         Self::Vanilla,
