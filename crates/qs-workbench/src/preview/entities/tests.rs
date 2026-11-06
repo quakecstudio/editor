@@ -22,7 +22,7 @@ fn listed() -> Entities {
     entities
 }
 
-// spec BRIDGE-4.1: the outliner lists inspect entities' answer grouped by classname, filtered by
+// spec BRIDGE-4.9: the outliner lists inspect entities' answer grouped by classname, filtered by
 // a classname or a number without regard to case
 #[test]
 fn the_list_is_grouped_and_filtered() {

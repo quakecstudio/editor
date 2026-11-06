@@ -216,7 +216,7 @@ impl Debugger {
         self.stopped = Some((reason, location));
     }
 
-    /// The call stack from an `inspect stack` answer (BRIDGE-4.1).
+    /// The call stack from an `inspect stack` answer (BRIDGE-4.9).
     pub fn set_stack(&mut self, answer: &Value) {
         self.stack = answer
             .get("stack")

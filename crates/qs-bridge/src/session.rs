@@ -13,11 +13,11 @@ use serde_json::{Value, json};
 use crate::message::{ErrorCode, Id, Message, RpcError};
 use crate::schemas::SCHEMAS;
 
-/// The protocol version this crate speaks, `major.minor` (BRIDGE-2.4).
-pub const BRIDGE_PROTOCOL_VERSION: (u32, u32) = (1, 0);
+/// The protocol version this crate speaks, `major.minor` (BRIDGE-2.7).
+pub const BRIDGE_PROTOCOL_VERSION: (u32, u32) = (1, 1);
 
-/// Every command, and whether a capability flags it (BRIDGE-2.3, BRIDGE-4.1).
-pub const BRIDGE_COMMANDS: [(&str, bool); 18] = [
+/// Every command, and whether a capability flags it (BRIDGE-2.6, BRIDGE-4.9).
+pub const BRIDGE_COMMANDS: [(&str, bool); 19] = [
     ("initialize", false),
     ("shutdown", false),
     ("inspect", false),
@@ -36,9 +36,10 @@ pub const BRIDGE_COMMANDS: [(&str, bool); 18] = [
     ("player/spawn_at", true),
     ("screenshot", true),
     ("evaluate", true),
+    ("window/place", true),
 ];
 
-/// Whether `method` is a command a capability flags (BRIDGE-2.3); `false` for one that is
+/// Whether `method` is a command a capability flags (BRIDGE-2.6); `false` for one that is
 /// not a command.
 #[must_use]
 pub fn is_flagged(method: &str) -> bool {
@@ -47,7 +48,7 @@ pub fn is_flagged(method: &str) -> bool {
         .any(|&(name, flagged)| flagged && name == method)
 }
 
-/// The capability-flagged commands a host accepts (BRIDGE-2.3).
+/// The capability-flagged commands a host accepts (BRIDGE-2.6).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Capabilities(BTreeSet<String>);
 
@@ -125,7 +126,7 @@ pub trait Host {
 pub struct Reply {
     /// The response to send, if any.
     pub response: Option<Message>,
-    /// Whether the connection closes after it (BRIDGE-2.4).
+    /// Whether the connection closes after it (BRIDGE-2.7).
     pub close: bool,
 }
 
@@ -202,7 +203,7 @@ impl Session {
         }
     }
 
-    /// `initialize` (BRIDGE-2.1, BRIDGE-2.2, BRIDGE-2.4).
+    /// `initialize` (BRIDGE-2.1, BRIDGE-2.2, BRIDGE-2.7).
     fn initialize(&mut self, host: &dyn Host, id: Id, params: &Value) -> Reply {
         if let Err(error) = check("initialize.params", params) {
             return Reply::to(id, Err(error));
@@ -247,7 +248,7 @@ pub fn event(method: &str, params: Value) -> Message {
     }
 }
 
-/// `major.minor` in decimal (BRIDGE-2.4).
+/// `major.minor` in decimal (BRIDGE-2.7).
 fn version(text: &str) -> Option<(u32, u32)> {
     let (major, minor) = text.split_once('.')?;
     Some((major.parse().ok()?, minor.parse().ok()?))

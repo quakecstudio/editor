@@ -38,8 +38,9 @@ pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
 pub use crate::preview::{
-    BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, SCENARIO_RUN, STEP_BY, ScenarioRunParams,
-    StepBy, StepByParams, UNWATCH, UnwatchParams, WATCH, WatchParams, debug, scenario,
+    BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
+    ScenarioRunParams, StepBy, StepByParams, UNWATCH, UnwatchParams, WATCH, WatchParams, debug,
+    dock, scenario,
 };
 pub use crate::preview::{
     ConsoleLine, HasPreview, PAUSE, PICK, PLAY, POLL, PickParams, PlayParams, PlayState, Preview,

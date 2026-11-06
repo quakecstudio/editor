@@ -7,7 +7,7 @@
 //! and level changes load the next map as the window does. The server's and the client's
 //! random sources start at the engine's fixed state (MOVE-6.1), so a run is the same each
 //! time. With a GPU device, `screenshot` draws the client's view offscreen at the window's
-//! first size; with none, the host does not offer it (BRIDGE-2.3).
+//! first size; with none, the host does not offer it (BRIDGE-2.6).
 
 use std::time::{Duration, Instant};
 

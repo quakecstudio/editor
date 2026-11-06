@@ -44,7 +44,7 @@ pub enum ErrorCode {
     InvalidParams,
     /// `-32603`: the host failed in a way the others do not name.
     InternalError,
-    /// `-32001`: `initialize` with another major version (BRIDGE-2.4).
+    /// `-32001`: `initialize` with another major version (BRIDGE-2.7).
     IncompatibleVersion,
     /// `-32002`: a command that needs a paused host (BRIDGE-4.3).
     NotPaused,
@@ -52,7 +52,7 @@ pub enum ErrorCode {
     NotInitialized,
     /// `-32004`: an edict number not in use (BRIDGE-4.5).
     NoSuchEdict,
-    /// `-32005`: a command whose capability is off (BRIDGE-2.3).
+    /// `-32005`: a command whose capability is off (BRIDGE-2.6).
     Unsupported,
     /// `-32006`: a value of the wrong type for a field (BRIDGE-4.4).
     BadValue,

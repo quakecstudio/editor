@@ -17,12 +17,13 @@ use eframe::egui_wgpu::{self, wgpu};
 use qs_bsp::Bsp;
 use qs_client::Client;
 use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
+use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
 use crate::args::Args;
 use crate::audio::Audio;
 use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
-use crate::game::{Eye, Game};
+use crate::game::{Eye, Game, Placement, Screen};
 use crate::load::{Acted, Describer, Loaded, Rand, act};
 use crate::screenshot::Drawer;
 
@@ -73,9 +74,14 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
         describer,
         rand,
     } = loaded;
+    let size = args
+        .size
+        .as_deref()
+        .and_then(|values| <[f32; 2]>::try_from(values).ok())
+        .unwrap_or([1280.0, 800.0]);
     let mut viewport = egui::ViewportBuilder::default()
         .with_title(format!("QuakeC Studio preview: {map}"))
-        .with_inner_size([1280.0, 800.0]);
+        .with_inner_size(size);
     if let Some(at) = position {
         viewport = viewport.with_position(at);
     }
@@ -108,6 +114,14 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 &play.assets(),
             );
             state.renderer.write().callback_resources.insert(renderer);
+            let mut game = game;
+            // BRIDGE-4.10: Wayland lets a client neither move nor raise its window.
+            let wayland = cc
+                .display_handle()
+                .is_ok_and(|handle| matches!(handle.as_raw(), RawDisplayHandle::Wayland(_)));
+            if wayland {
+                game.set_screen(Screen::FixedWindow);
+            }
             // Screenshots are drawn offscreen on the window's own device (BRIDGE-4.9).
             let drawer = Some(Drawer::new(Offscreen::from_state(
                 state.clone(),
@@ -130,6 +144,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 rand,
                 fly,
                 pointer: Pointer::Free,
+                placed: None,
                 eye: camera_origin,
                 last_set: [f32::NAN; 2],
                 behind: 0.0,
@@ -167,6 +182,8 @@ struct Viewer {
     drawer: Option<Drawer>,
     /// Whether the window holds the mouse.
     pointer: Pointer,
+    /// The placement applied last frame, whose result is logged this one.
+    placed: Option<Placement>,
     /// Where the eye was last frame, for the contents shift.
     eye: [f32; 3],
     /// The view angles last given to the client, to tell a `svc_setangle` from them.
@@ -421,6 +438,15 @@ impl Viewer {
             return;
         };
         let running = serve(bridge, &mut self.game);
+        if let Some(asked) = self.placed.take() {
+            // The frame the windowing system gave, a frame after it was asked for.
+            let outer = ui.input(|input| input.viewport().outer_rect);
+            tracing::info!(?asked, ?outer, "window placed");
+        }
+        if let Some(placement) = self.game.take_placement() {
+            place(ui.ctx(), placement);
+            self.placed = Some(placement);
+        }
         if !running {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
@@ -531,6 +557,38 @@ impl Viewer {
             );
         });
     }
+}
+
+/// Moves and sizes the window to `placement`'s outer frame and sets whether it stays above
+/// other windows (BRIDGE-4.10). egui sizes a window by its inside, so the frame's own size, what
+/// the title bar and borders take, is taken off.
+fn place(ctx: &egui::Context, placement: Placement) {
+    let (outer, inner) = ctx.input(|input| {
+        let viewport = input.viewport();
+        (viewport.outer_rect, viewport.inner_rect)
+    });
+    let [frame_x, frame_y] = match (outer, inner) {
+        (Some(outer), Some(inner)) => [
+            (outer.width() - inner.width()).max(0.0),
+            (outer.height() - inner.height()).max(0.0),
+        ],
+        _ => [0.0, 0.0],
+    };
+    let inside = egui::vec2(
+        (placement.width - frame_x).max(1.0),
+        (placement.height - frame_y).max(1.0),
+    );
+    ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(
+        placement.x,
+        placement.y,
+    )));
+    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(inside));
+    let level = if placement.above {
+        egui::WindowLevel::AlwaysOnTop
+    } else {
+        egui::WindowLevel::Normal
+    };
+    ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
 }
 
 /// GLQuake's console width, `vid.conwidth` (HUD-1).

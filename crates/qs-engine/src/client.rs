@@ -3,7 +3,7 @@
 //! The bridge client (BRIDGE-1 to BRIDGE-7): requests framed and numbered, each answered by
 //! the response with its id; the host's events kept, in order, as they come between them; and
 //! one method per command, refused before it is sent when the host's capabilities leave it
-//! out (BRIDGE-2.3).
+//! out (BRIDGE-2.6).
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
@@ -43,7 +43,7 @@ pub enum ClientError {
         /// Its message, for the person.
         message: String,
     },
-    /// The host's capabilities leave the command out (BRIDGE-2.3).
+    /// The host's capabilities leave the command out (BRIDGE-2.6).
     Unsupported(String),
     /// No answer came within the time given.
     Timeout,
@@ -74,7 +74,7 @@ impl std::error::Error for ClientError {
     }
 }
 
-/// What `step` runs (BRIDGE-4.1).
+/// What `step` runs (BRIDGE-4.9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StepKind {
     /// One statement.
@@ -101,7 +101,24 @@ impl StepKind {
     }
 }
 
-/// What `inspect` reads (BRIDGE-4.1).
+/// Where `window/place` puts the host's window (BRIDGE-4.10): its outer frame in the desktop's
+/// logical points, from the top left of the main display, and whether it stays above other
+/// windows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WindowPlacement {
+    /// The frame's left edge.
+    pub x: f32,
+    /// Its top edge.
+    pub y: f32,
+    /// Its width, at least 1.
+    pub width: f32,
+    /// Its height, at least 1.
+    pub height: f32,
+    /// Whether it stays above other windows.
+    pub above: bool,
+}
+
+/// What `inspect` reads (BRIDGE-4.9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InspectWhat {
     /// One edict's classname and fields.
@@ -190,7 +207,7 @@ impl Client {
         Ok(result)
     }
 
-    /// Whether the host offers `method` (BRIDGE-2.3): every command a capability does not
+    /// Whether the host offers `method` (BRIDGE-2.6): every command a capability does not
     /// flag, and each flagged one the host said it has.
     #[must_use]
     pub fn offers(&self, method: &str) -> bool {
@@ -319,7 +336,7 @@ impl Client {
         }
     }
 
-    /// `pause` (BRIDGE-4.1); the server's time.
+    /// `pause` (BRIDGE-4.9); the server's time.
     ///
     /// # Errors
     ///
@@ -328,7 +345,7 @@ impl Client {
         self.request("pause", json!({}))
     }
 
-    /// `resume` (BRIDGE-4.1).
+    /// `resume` (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -337,7 +354,7 @@ impl Client {
         self.request("resume", json!({}))
     }
 
-    /// `step` (BRIDGE-4.1, BRIDGE-4.3).
+    /// `step` (BRIDGE-4.9, BRIDGE-4.3).
     ///
     /// # Errors
     ///
@@ -346,7 +363,7 @@ impl Client {
         self.request("step", json!({ "kind": kind.name() }))
     }
 
-    /// `inspect` (BRIDGE-4.1).
+    /// `inspect` (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -361,7 +378,7 @@ impl Client {
         self.request("inspect", params)
     }
 
-    /// `console` (BRIDGE-4.1); its output comes as `console/line` events.
+    /// `console` (BRIDGE-4.9); its output comes as `console/line` events.
     ///
     /// # Errors
     ///
@@ -370,7 +387,7 @@ impl Client {
         self.request("console", json!({ "command": command }))
     }
 
-    /// `screenshot` (BRIDGE-4.1), at the size asked or the size drawn.
+    /// `screenshot` (BRIDGE-4.9), at the size asked or the size drawn.
     ///
     /// # Errors
     ///
@@ -415,7 +432,7 @@ impl Client {
         )
     }
 
-    /// `pick` (BRIDGE-4.1): `x` and `y` fractions of the window from its top left.
+    /// `pick` (BRIDGE-4.9): `x` and `y` fractions of the window from its top left.
     ///
     /// # Errors
     ///
@@ -424,7 +441,27 @@ impl Client {
         self.request("pick", json!({ "x": x, "y": y }))
     }
 
-    /// `entity/spawn` (BRIDGE-4.1).
+    /// `window/place` (BRIDGE-4.10): moves and sizes the host's window to `placement`.
+    ///
+    /// # Errors
+    ///
+    /// The request's [`ClientError`]: [`ClientError::Unsupported`] from a host that cannot place
+    /// its window (`--headless`, Wayland).
+    pub fn place_window(&mut self, placement: WindowPlacement) -> Result<Value, ClientError> {
+        let WindowPlacement {
+            x,
+            y,
+            width,
+            height,
+            above,
+        } = placement;
+        self.request(
+            "window/place",
+            json!({ "x": x, "y": y, "width": width, "height": height, "above": above }),
+        )
+    }
+
+    /// `entity/spawn` (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -440,7 +477,7 @@ impl Client {
         )
     }
 
-    /// `entity/remove` (BRIDGE-4.1).
+    /// `entity/remove` (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -465,7 +502,7 @@ impl Client {
         )
     }
 
-    /// `player/spawn_at` (BRIDGE-4.1).
+    /// `player/spawn_at` (BRIDGE-4.9).
     ///
     /// # Errors
     ///
@@ -481,7 +518,7 @@ impl Client {
         )
     }
 
-    /// `reload` (BRIDGE-4.1), of the progs at `path`, or the running one's again.
+    /// `reload` (BRIDGE-4.9), of the progs at `path`, or the running one's again.
     ///
     /// # Errors
     ///
@@ -491,7 +528,7 @@ impl Client {
         self.request("reload", params)
     }
 
-    /// `breakpoint/set` (BRIDGE-4.1) at `line` of `file`, relative to the project's root.
+    /// `breakpoint/set` (BRIDGE-4.9) at `line` of `file`, relative to the project's root.
     ///
     /// # Errors
     ///
@@ -500,7 +537,7 @@ impl Client {
         self.request("breakpoint/set", json!({ "file": file, "line": line }))
     }
 
-    /// `breakpoint/clear` (BRIDGE-4.1) of the breakpoint `breakpoint/set` gave `id`.
+    /// `breakpoint/clear` (BRIDGE-4.9) of the breakpoint `breakpoint/set` gave `id`.
     ///
     /// # Errors
     ///
@@ -509,7 +546,7 @@ impl Client {
         self.request("breakpoint/clear", json!({ "id": id }))
     }
 
-    /// `evaluate` (BRIDGE-4.1): `expression`'s value while stopped in a frame.
+    /// `evaluate` (BRIDGE-4.9): `expression`'s value while stopped in a frame.
     ///
     /// # Errors
     ///

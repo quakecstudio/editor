@@ -26,7 +26,7 @@ protocol, [`bridge-protocol.md`](../../docs/spec/bridge-protocol.md), spoken to 
 - `Client`: `initialize`, `offers`, and a method per command (`pause`, `resume`, `step`,
   `inspect`, `console`, `screenshot`, `set_field`, `pick`, `spawn`, `remove`,
   `edit_entity`, `spawn_player_at`, `reload`, `set_breakpoint`, `shutdown`); a command the
-  host's capabilities leave out is refused before it is sent (BRIDGE-2.3). Events are kept
+  host's capabilities leave out is refused before it is sent (BRIDGE-2.6). Events are kept
   in order for `take_events` and `wait_event`.
 
 ## Tests

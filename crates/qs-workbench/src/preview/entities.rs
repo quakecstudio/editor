@@ -126,7 +126,7 @@ impl Entities {
         self.selected = None;
     }
 
-    /// The list from an `inspect entities` answer (BRIDGE-4.1); a selected edict no longer in
+    /// The list from an `inspect entities` answer (BRIDGE-4.9); a selected edict no longer in
     /// use is deselected.
     pub fn replace(&mut self, answer: &Value) {
         self.rows.clear();
@@ -149,7 +149,7 @@ impl Entities {
         }
     }
 
-    /// The selection from an `inspect edict` answer (BRIDGE-4.1).
+    /// The selection from an `inspect edict` answer (BRIDGE-4.9).
     pub fn select(&mut self, answer: &Value) {
         let Some(edict) = edict_of(answer) else {
             return;

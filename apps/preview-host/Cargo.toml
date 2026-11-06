@@ -20,7 +20,7 @@ cpal = { workspace = true }
 # The window, as the IDE draws its own (ADR-0003); eframe's defaults without `default_fonts`,
 # whose fonts are not bundled (ADR-0010).
 eframe = { workspace = true, features = ["wayland", "wgpu", "x11"] }
-# The screenshot's PNG (BRIDGE-4.1).
+# The screenshot's PNG (BRIDGE-4.9).
 image = { workspace = true, features = ["png"] }
 qc-builtins = { workspace = true }
 # The bridge's socket or named pipe (BRIDGE-1.1).
@@ -40,6 +40,9 @@ qs-sound = { workspace = true }
 qs-vfs = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
+# The display the window is on, to know whether the windowing system lets it be placed
+# (BRIDGE-4.10: not on Wayland); eframe's own, already in the tree.
+raw-window-handle = { workspace = true }
 
 [dev-dependencies]
 # A world for the bridge's conformance tests: a progs compiled from QuakeC and a floor.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The bridge's debugging commands on the game (BRIDGE-4.1, WORLD-9): breakpoints by file and
+//! The bridge's debugging commands on the game (BRIDGE-4.9, WORLD-9): breakpoints by file and
 //! line, a frame stopped at one, `step` and `resume` replaying the frame from its snapshot, the
 //! stopped call stack and watch expressions.
 
@@ -38,7 +38,7 @@ pub(crate) struct Stopped {
     pub(crate) stack: Vec<StackEntry>,
 }
 
-/// What a `step` asks for (BRIDGE-4.1).
+/// What a `step` asks for (BRIDGE-4.9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Step {
     /// A statement, into, over or out.
@@ -95,7 +95,7 @@ impl Game {
             .collect()
     }
 
-    /// `breakpoint/set` (BRIDGE-4.1, WORLD-9.4).
+    /// `breakpoint/set` (BRIDGE-4.9, WORLD-9.4).
     pub(super) fn breakpoint_set(
         &mut self,
         progs: &Progs<'_>,
@@ -129,7 +129,7 @@ impl Game {
         Ok(json!({ "id": id, "location": self.location_json(progs, function, statement) }))
     }
 
-    /// `breakpoint/clear` (BRIDGE-4.1).
+    /// `breakpoint/clear` (BRIDGE-4.9).
     pub(super) fn breakpoint_clear(&mut self, params: &Value) -> Result<Value, RpcError> {
         let id = params.get("id").and_then(Value::as_u64);
         let at = self
@@ -235,7 +235,7 @@ impl Game {
         self.state_changed(Some(reason), Some(location));
     }
 
-    /// `step` (BRIDGE-4.1, WORLD-9.3): from a stop, a replay to where `step` goes; from between
+    /// `step` (BRIDGE-4.9, WORLD-9.3): from a stop, a replay to where `step` goes; from between
     /// two frames, the next frame up to its first statement, or the whole frame.
     pub(super) fn debug_step(&mut self, progs: &Progs<'_>, step: Step, frametime: f64) {
         let stop = self.halted.as_ref().map(|s| s.stop);
@@ -260,7 +260,7 @@ impl Game {
         }
     }
 
-    /// `resume` from a stop (BRIDGE-4.1): the frame replayed past it, to a breakpoint or its
+    /// `resume` from a stop (BRIDGE-4.9): the frame replayed past it, to a breakpoint or its
     /// end. Returns whether the game runs again.
     pub(super) fn resume_from_stop(&mut self, progs: &Progs<'_>) -> bool {
         let Some(stopped) = self.halted.clone() else {
@@ -270,7 +270,7 @@ impl Game {
         self.replay(progs) == FrameEnd::Ran
     }
 
-    /// `inspect` with `stack` (BRIDGE-4.1): the stopped frame's, empty between frames.
+    /// `inspect` with `stack` (BRIDGE-4.9): the stopped frame's, empty between frames.
     pub(super) fn stack_now(&self, progs: &Progs<'_>) -> Vec<Value> {
         self.halted
             .as_ref()
@@ -278,7 +278,7 @@ impl Game {
             .unwrap_or_default()
     }
 
-    /// `evaluate` (BRIDGE-4.1, WORLD-9.5) in stack frame `frame`, 0 the innermost.
+    /// `evaluate` (BRIDGE-4.9, WORLD-9.5) in stack frame `frame`, 0 the innermost.
     pub(super) fn evaluate(&self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {
         self.require_paused()?;
         let expression = params
