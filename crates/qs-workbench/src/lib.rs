@@ -17,6 +17,7 @@ mod build;
 mod commands;
 mod editing;
 mod preview;
+mod recent;
 #[cfg(test)]
 mod tests;
 
@@ -45,6 +46,7 @@ pub use crate::preview::{
     PreviewConfig, PreviewError, PreviewStatus, RELOAD, RESTART, RESUME, SELECT, SET_FIELD, STEP,
     STOP, SelectParams, SelectedEntity, SetFieldParams, entities, register_preview,
 };
+pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
 use qc_project::{ProjectError, normalize};
 use serde::{Deserialize, Serialize};
 

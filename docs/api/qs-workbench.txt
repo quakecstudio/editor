@@ -26,6 +26,7 @@ const qs_workbench::preview::STEP_BY
 const qs_workbench::preview::STOP
 const qs_workbench::preview::UNWATCH
 const qs_workbench::preview::WATCH
+const qs_workbench::recent::RECENT_LIMIT
 enum qs_workbench::EntryKind
 enum qs_workbench::WorkbenchError
 enum qs_workbench::build::Gravity
@@ -217,6 +218,12 @@ fn qs_workbench::preview::entities::Field::kind
 fn qs_workbench::preview::entities::Selected::shown
 fn qs_workbench::preview::entities::parse_value
 fn qs_workbench::preview::register_preview
+fn qs_workbench::recent::RecentProjects::forget
+fn qs_workbench::recent::RecentProjects::load
+fn qs_workbench::recent::RecentProjects::opened
+fn qs_workbench::recent::RecentProjects::projects
+fn qs_workbench::recent::RecentProjects::save
+fn qs_workbench::recent::recent_path
 impl qs_workbench::WorkbenchError: Error
 impl qs_workbench::WorkbenchError: fmt::Display
 impl qs_workbench::commands::CandidateKind: From<DefKind>
@@ -268,6 +275,7 @@ struct qs_workbench::preview::entities::Entities
 struct qs_workbench::preview::entities::Field
 struct qs_workbench::preview::entities::Group
 struct qs_workbench::preview::entities::Selected
+struct qs_workbench::recent::RecentProjects
 trait qs_workbench::commands::HasWorkbench
 trait qs_workbench::preview::HasPreview
 type qs_workbench::commands::HasWorkbench::Loader
@@ -308,9 +316,11 @@ use qs_workbench::Preview = crate::preview::Preview
 use qs_workbench::PreviewConfig = crate::preview::PreviewConfig
 use qs_workbench::PreviewError = crate::preview::PreviewError
 use qs_workbench::PreviewStatus = crate::preview::PreviewStatus
+use qs_workbench::RECENT_LIMIT = crate::recent::RECENT_LIMIT
 use qs_workbench::RELOAD = crate::preview::RELOAD
 use qs_workbench::RESTART = crate::preview::RESTART
 use qs_workbench::RESUME = crate::preview::RESUME
+use qs_workbench::RecentProjects = crate::recent::RecentProjects
 use qs_workbench::RenameError = qc_ide::RenameError
 use qs_workbench::Renamed = crate::editing::Renamed
 use qs_workbench::Reported = crate::build::Reported
@@ -336,6 +346,7 @@ use qs_workbench::WATCH = crate::preview::WATCH
 use qs_workbench::WatchParams = crate::preview::WatchParams
 use qs_workbench::debug = crate::preview::debug
 use qs_workbench::entities = crate::preview::entities
+use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File

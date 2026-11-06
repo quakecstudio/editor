@@ -1096,3 +1096,61 @@ fn a_frame_reads_as_its_place() {
         Text::EngineFrame.get()
     );
 }
+
+// No spec statement: with no project open the Project section lists the recent projects; a
+// click opens one, which then comes first in the list and its file; one that no longer opens
+// says why and comes off the list
+#[test]
+fn recent_projects_open_from_the_project_section() {
+    let dir = TempDir::new("recent");
+    let file = qs_workbench::recent_path(&dir.0);
+    let ember = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember");
+    let gone = dir.0.join("gone");
+    let mut recent = qs_workbench::RecentProjects::default();
+    recent.opened(&ember);
+    recent.opened(&gone);
+    recent.save(&file).unwrap();
+    let mut harness = accessible();
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .set_recent_file(file.clone());
+    harness.run();
+    assert!(harness.query_by_label(Text::RecentProjects.get()).is_some());
+    harness.get_by_label("gone").click();
+    harness.run();
+    harness.run();
+    let shell = &harness.state().as_ref().unwrap().shell;
+    assert!(shell.workbench().root().is_none());
+    assert_eq!(
+        shell.recent_projects(),
+        std::slice::from_ref(&ember),
+        "gone came off"
+    );
+    assert!(
+        harness
+            .query_by_label_contains(Text::FolderGone.get())
+            .is_some()
+    );
+    harness.get_by_label("ember").click();
+    harness.run();
+    harness.run();
+    let shell = &harness.state().as_ref().unwrap().shell;
+    assert!(
+        shell
+            .workbench()
+            .root()
+            .is_some_and(|root| root.ends_with("fixtures/ember"))
+    );
+    let saved = qs_workbench::RecentProjects::load(&file);
+    assert_eq!(saved.projects().len(), 1);
+    assert!(
+        saved
+            .projects()
+            .first()
+            .unwrap()
+            .ends_with("fixtures/ember")
+    );
+}

@@ -133,6 +133,16 @@ pub enum Text {
     SearchFiles,
     /// The file finder with no file matching.
     NoFileMatch,
+    /// Its Open Folder item.
+    OpenFolderMenu,
+    /// The system dialog's title.
+    OpenFolderTitle,
+    /// The Project section's button with no project open.
+    OpenFolderButton,
+    /// The heading over the recent projects.
+    RecentProjects,
+    /// Before the path of a folder that is not there.
+    FolderGone,
     /// A control that has no action yet.
     NotYetAvailable,
     /// The View menu.
@@ -169,8 +179,8 @@ pub enum Text {
     KeyEnter,
     /// The Symbols section's heading.
     Symbols,
-    /// The Symbols section's switch to the open file's symbols.
-    SymbolsFile,
+    /// The File menu, and the Symbols section's switch to the open file's symbols.
+    File,
     /// The Symbols section's switch to every file's symbols.
     SymbolsAll,
     /// The Symbols section with nothing to list.
@@ -231,7 +241,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 110] = [
+    pub const ALL: [Self; 115] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -295,6 +305,11 @@ impl Text {
         Self::FileFinder,
         Self::SearchFiles,
         Self::NoFileMatch,
+        Self::OpenFolderMenu,
+        Self::OpenFolderTitle,
+        Self::OpenFolderButton,
+        Self::RecentProjects,
+        Self::FolderGone,
         Self::NotYetAvailable,
         Self::ViewMenu,
         Self::ToggleLeftPanel,
@@ -313,7 +328,7 @@ impl Text {
         Self::KeyArrows,
         Self::KeyEnter,
         Self::Symbols,
-        Self::SymbolsFile,
+        Self::File,
         Self::SymbolsAll,
         Self::NoSymbols,
         Self::SymbolFunction,
@@ -413,6 +428,11 @@ impl Text {
             Self::FileFinder => "File finder",
             Self::SearchFiles => "Search files by name",
             Self::NoFileMatch => "No file matches.",
+            Self::OpenFolderMenu => "Open Folder\u{2026}",
+            Self::OpenFolderTitle => "Open a QuakeC project folder",
+            Self::OpenFolderButton => "Open Folder",
+            Self::RecentProjects => "Recent projects",
+            Self::FolderGone => "The folder is no longer there:",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",
             Self::ToggleLeftPanel => "Project and Entities",
@@ -431,7 +451,7 @@ impl Text {
             Self::KeyArrows => "\u{2191}\u{2193}",
             Self::KeyEnter => "enter",
             Self::Symbols => "Symbols",
-            Self::SymbolsFile => "File",
+            Self::File => "File",
             Self::SymbolsAll => "All",
             Self::NoSymbols => "No symbols.",
             Self::SymbolFunction => "function",

@@ -103,7 +103,7 @@ pub(crate) fn symbols_ui(
 ) -> Option<Jump> {
     ui.horizontal(|ui| {
         for (value, text) in [
-            (SymbolScope::File, Text::SymbolsFile),
+            (SymbolScope::File, Text::File),
             (SymbolScope::Project, Text::SymbolsAll),
         ] {
             ui.selectable_value(scope, value, text.get());

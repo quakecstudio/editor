@@ -33,8 +33,8 @@ use qs_workbench::{
     AtParams, CLOSE_FILE, COMPLETE, Candidate, CloseFileParams, Config, DEFINITION, EntryKind,
     FsLoader, HOVER, HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT, OpenFile,
     OpenFileParams, OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState, Preview,
-    PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RenameParams,
-    SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
+    PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RecentProjects,
+    RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
 };
 use qs_workbench::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, STEP_BY, StepByParams, UNWATCH,
@@ -167,6 +167,12 @@ pub struct Shell {
     pending_line: Option<(PathBuf, u32)>,
     /// The editors of the tabs not shown, with their carets and undo histories.
     parked: BTreeMap<PathBuf, Editor>,
+    /// The projects opened most recently, and the file they are kept in.
+    recent: (RecentProjects, Option<PathBuf>),
+    /// The project open in the last frame, to see when another opens.
+    seen_root: Option<PathBuf>,
+    /// Why the last project asked for did not open.
+    project_error: Option<String>,
 }
 
 impl Shell {
@@ -215,6 +221,9 @@ impl Shell {
             shown_stop: None,
             pending_line: None,
             parked: BTreeMap::new(),
+            recent: (RecentProjects::default(), None),
+            seen_root: None,
+            project_error: None,
         })
     }
 
@@ -292,6 +301,76 @@ impl Shell {
     /// Gives the editor the keyboard, as a click in it does.
     pub fn focus_editor(&self, ctx: &egui::Context) {
         ctx.memory_mut(|m| m.request_focus(Id::new(EDITOR_AREA)));
+    }
+
+    /// Reads the recent projects from `file`, and keeps them there.
+    pub fn set_recent_file(&mut self, file: PathBuf) {
+        self.recent = (RecentProjects::load(&file), Some(file));
+    }
+
+    /// The projects opened most recently, the latest first.
+    #[must_use]
+    pub fn recent_projects(&self) -> &[PathBuf] {
+        self.recent.0.projects()
+    }
+
+    /// Asks for a project folder with the system's dialog, as Zed's Open does by default
+    /// (`use_system_path_prompts`), and opens it.
+    pub fn open_folder(&mut self) {
+        let picked = rfd::FileDialog::new()
+            .set_title(Text::OpenFolderTitle.get())
+            .pick_folder();
+        if let Some(folder) = picked {
+            self.open_asked(&folder);
+        }
+    }
+
+    /// Opens the project in `folder`, saying why when it does not open; a recent project that
+    /// no longer opens comes off the list.
+    fn open_asked(&mut self, folder: &Path) {
+        // A folder with no project file opens empty, as Zed opens any folder; one that is not
+        // there any more, as a recent project may be, does not.
+        let opened = if folder.is_dir() {
+            self.open_project(folder).map_err(|error| error.to_string())
+        } else {
+            Err(format!("{} {}", Text::FolderGone.get(), folder.display()))
+        };
+        match opened {
+            Ok(()) => self.project_error = None,
+            Err(error) => {
+                self.project_error = Some(error.to_string());
+                self.recent.0.forget(folder);
+                self.save_recent();
+            }
+        }
+    }
+
+    /// Puts the project just opened first in the recent projects.
+    fn note_project(&mut self) {
+        let root = self
+            .session
+            .context()
+            .workbench
+            .root()
+            .map(Path::to_path_buf);
+        if root == self.seen_root {
+            return;
+        }
+        if let Some(root) = &root
+            && self.recent.0.opened(root)
+        {
+            self.save_recent();
+        }
+        self.seen_root = root;
+    }
+
+    /// Writes the recent projects to their file, if they have one.
+    fn save_recent(&self) {
+        if let Some(file) = &self.recent.1
+            && let Err(error) = self.recent.0.save(file)
+        {
+            tracing::warn!(%error, "recent projects not written");
+        }
     }
 
     /// Gives the shell the window's wgpu device and formats, which the map view draws with.
@@ -397,6 +476,7 @@ impl Shell {
             let _: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
         }
         self.follow_stop();
+        self.note_project();
         if self.session.context().preview.state() != PlayState::Stopped {
             // The host's events are read each frame; a running game asks for frames.
             ui.ctx().request_repaint_after(PREVIEW_POLL);
@@ -464,6 +544,10 @@ impl Shell {
         if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_PALETTE)) {
             self.finder.close();
             self.palette.open();
+            return;
+        }
+        if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FOLDER)) {
+            self.open_folder();
             return;
         }
         if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FILE_FINDER)) {
@@ -753,6 +837,9 @@ impl Shell {
         let outliner = &mut self.outliner;
         let properties = &mut self.properties;
         let debug_input = &mut self.debug_input;
+        let recent_projects = self.recent.0.projects();
+        let project_error = self.project_error.as_deref();
+        let mut open: Option<Option<PathBuf>> = None;
         let mut entity_action = None;
         let mut debug_action = None;
         let mut jump = None;
@@ -799,7 +886,13 @@ impl Shell {
                 name_area(ui, accesskit::Role::Pane, name);
                 match panel {
                     Panel::Left => {
-                        jump = left(ui, theme, workbench, scope, focus);
+                        let recent = (recent_projects, project_error);
+                        match left(ui, theme, (workbench, recent), scope, focus) {
+                            Some(LeftAction::Jump(to)) => jump = Some(to),
+                            Some(LeftAction::Open(folder)) => open = Some(Some(folder)),
+                            Some(LeftAction::OpenFolder) => open = Some(None),
+                            None => {}
+                        }
                         ui.add_space(theme.space(3));
                         if preview.state() == PlayState::Stopped {
                             section(ui, theme, Text::Entities, Text::NotPlaying);
@@ -849,6 +942,11 @@ impl Shell {
         }
         if let Some(action) = debug_action {
             self.debug_action(action);
+        }
+        match open {
+            Some(Some(folder)) => self.open_asked(&folder),
+            Some(None) => self.open_folder(),
+            None => {}
         }
         // A panel dragged shut is hidden through its command too.
         if expanded != state.visible
@@ -1367,10 +1465,10 @@ const SYMBOLS_SHARE: f32 = 0.4;
 fn left(
     ui: &mut Ui,
     theme: &Theme,
-    workbench: &Workbench<FsLoader>,
+    (workbench, (recent, error)): (&Workbench<FsLoader>, (&[PathBuf], Option<&str>)),
     scope: &mut SymbolScope,
     focus: bool,
-) -> Option<Jump> {
+) -> Option<LeftAction> {
     let height = ui.available_height();
     let mut jump = None;
     let project = heading(ui, theme, Text::Project);
@@ -1378,7 +1476,11 @@ fn left(
         project.request_focus();
     }
     match workbench.root() {
-        None => note(ui, theme, Text::NoProject),
+        None => {
+            if let Some(action) = no_project(ui, theme, recent, error) {
+                return Some(action);
+            }
+        }
         Some(root) => {
             ui.label(RichText::new(project::root_name(root)).strong());
             let open = workbench.open().map(OpenFile::path);
@@ -1406,7 +1508,56 @@ fn left(
         workbench.project_symbols(),
         height * SYMBOLS_SHARE,
     );
-    jump.or(symbols)
+    jump.or(symbols).map(LeftAction::Jump)
+}
+
+/// What a click in the left panel asks for.
+enum LeftAction {
+    /// Open a file at a place.
+    Jump(Jump),
+    /// Open this project folder.
+    Open(PathBuf),
+    /// Ask for a project folder with the system's dialog.
+    OpenFolder,
+}
+
+/// The Project section with no project open: an Open Folder button, why the last one did not
+/// open, and the recent projects, each a row that opens it, as Zed's welcome page offers them.
+fn no_project(
+    ui: &mut Ui,
+    theme: &Theme,
+    recent: &[PathBuf],
+    error: Option<&str>,
+) -> Option<LeftAction> {
+    let mut action = None;
+    note(ui, theme, Text::NoProject);
+    if ui.button(Text::OpenFolderButton.get()).clicked() {
+        action = Some(LeftAction::OpenFolder);
+    }
+    if let Some(error) = error {
+        ui.add(
+            egui::Label::new(RichText::new(error).color(theme.color(Token::StatusError))).wrap(),
+        );
+    }
+    if recent.is_empty() {
+        return action;
+    }
+    ui.add_space(theme.space(2));
+    ui.label(
+        RichText::new(Text::RecentProjects.get())
+            .small()
+            .color(theme.color(Token::TextMuted)),
+    );
+    for folder in recent {
+        let name = project::root_name(folder);
+        let row = ui
+            .add(Button::new(name).frame_when_inactive(false))
+            .on_hover_text(folder.to_string_lossy());
+        if row.clicked() {
+            action = Some(LeftAction::Open(folder.clone()));
+        }
+    }
+    action
 }
 
 /// The editor's colours and font, from the theme's tokens.
