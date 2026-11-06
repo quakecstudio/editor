@@ -133,16 +133,21 @@ them up in `localization/loc_english.txt`, read from the game directory or from
 
 ### Behaviour
 
-- **RRE-3.1** `svc_cdtrack` (CLIENT-1.4) names a track number and a loop track; id's client
-  plays the CD track. The preview host has no CD: it plays the file `music/track<NN>.<ext>`
-  (`NN` the track as two decimal digits) from the game's search path, trying the extensions
-  of the codecs it has and taking the file from the search path entry of highest priority,
-  looping; no file prints `Couldn't find a cdrip for track <n>` and plays nothing.
+- **RRE-3.1** **Withdrawn** 2026-11-06: the preview host plays a CD image's track first, as
+  QuakeSpasm plays a CD first; replaced by RRE-3.4.
 - **RRE-3.2** The rerelease ships its music as `music/track02.ogg` and up in its base
   directory and the mission packs' directories (FS-5); a map's `worldspawn` `sounds` key is
   the track number the server sends.
 - **RRE-3.3** A new track stops the one playing; `BGM_Stop` stops it; the volume is
   `bgmvolume`.
+- **RRE-3.4** `svc_cdtrack` (CLIENT-1.4) names a track number and a loop track; QuakeSpasm
+  plays `(byte)cl.cdtrack`, always looping (`BGM_PlayCDtrack ((byte)cl.cdtrack, true)`):
+  first from the CD (`CDAudio_Play`), which in the preview host is the CD image of SND-6.4;
+  else the file `music/track<NN>.<ext>` (`NN` the track as two decimal digits) from the
+  game's search path, trying the extensions of the codecs it has and taking the file from the
+  search path entry of highest priority; else it prints `Couldn't find a cdrip for track <n>`
+  and plays nothing. The preview host has no codec for the files yet: it plays the CD image's
+  track or nothing, while P3-34 is open.
 
 ### Constants
 

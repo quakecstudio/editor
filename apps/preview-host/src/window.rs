@@ -15,8 +15,12 @@ use std::time::Instant;
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use qs_bsp::Bsp;
-use qs_client::Client;
+use qs_client::{
+    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Client, Console, ConsoleKey, Event, KeyDest, Menu,
+    MenuEvent, MenuFrame, MenuGame, MenuKey, MenuSettings, Random as _, Typed,
+};
 use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
+use qs_sim::ClientCommand;
 use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
 use crate::args::Args;
@@ -24,15 +28,11 @@ use crate::audio::Audio;
 use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
-use crate::load::{Acted, Describer, Loaded, Rand, act};
+use crate::load::{Acted, Describer, Loaded, Rand, act, saves};
 use crate::screenshot::Drawer;
 
 /// Map units a second walking, and running with Shift.
 const SPEEDS: [f32; 2] = [320.0, 960.0];
-/// Degrees turned per unit the mouse moves: `sensitivity` 3 times `m_yaw` and `m_pitch`
-/// 0.022, id's defaults (`WinQuake/cl_main.c`), as `IN_MouseMove` turns the view
-/// (`WinQuake/in_win.c`).
-const TURN: f32 = 3.0 * 0.022;
 
 /// Whether the window holds the mouse, as an engine does in play.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,7 +73,21 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
         bsp,
         describer,
         rand,
+        printed,
     } = loaded;
+    // The console's first lines: the host's, as `Host_Init` prints the engine's, then what the
+    // map's first frame printed (CLIENT-1.7).
+    // CON-5.6: QuakeSpasm's text size in its look, whose console is as wide as the window.
+    let mut console = Console::with_text_size(if mesh.look.native_2d() {
+        CON_TEXTSIZE_QUAKESPASM
+    } else {
+        CON_TEXTSIZE
+    });
+    let banner = format!("QuakeC Studio preview host {}\n", env!("CARGO_PKG_VERSION"));
+    console.print(banner.as_bytes(), 0.0);
+    for text in &printed {
+        console.print(text, 0.0);
+    }
     let size = args
         .size
         .as_deref()
@@ -155,6 +169,9 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 slowest: 0.0,
                 worked: 0.0,
                 longest_work: 0.0,
+                console,
+                dest: KeyDest::Game,
+                menu: Menu::new(),
             }))
         }),
     )
@@ -202,9 +219,18 @@ struct Viewer {
     worked: f32,
     /// The longest such work, in seconds.
     longest_work: f32,
+    /// The console on the screen and where keys go (CON).
+    console: Console,
+    dest: KeyDest,
+    /// The menu (MENU).
+    menu: Menu,
 }
 
 impl eframe::App for Viewer {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one host frame in Host_Frame's order: input, the server, the client, the sound and the draw, read as one"
+    )]
     fn ui(&mut self, ui: &mut egui::Ui, window: &mut eframe::Frame) {
         let now = Instant::now();
         let frame = now.duration_since(self.last).as_secs_f32();
@@ -212,7 +238,8 @@ impl eframe::App for Viewer {
         self.last = now;
         let rect = ui.max_rect();
         let response = ui.allocate_rect(rect, egui::Sense::click());
-        self.hold_pointer(ui, response.clicked());
+        self.type_keys(ui);
+        self.hold_pointer(ui, response.clicked() && self.dest == KeyDest::Game);
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
         if self.fly {
@@ -221,6 +248,9 @@ impl eframe::App for Viewer {
             self.steer(ui);
         }
         let frametime = self.advance(f64::from(seconds));
+        // The progs' `localcmd` and `stuffcmd` reach the client's commands too.
+        self.client_commands();
+        self.apply_settings();
         // PHYS-13.6: a level with what the player carries, a save, a load or quit.
         if let Some(action) = self.game.host_action() {
             match act(&self.args, &mut self.game, action) {
@@ -242,7 +272,10 @@ impl eframe::App for Viewer {
             &mut self.describer,
             &mut self.rand,
         ) {
-            Ok(events) => self.audio.handle(&events, &mut self.rand),
+            Ok(events) => {
+                self.print_events(&events);
+                self.audio.handle(&events, &mut self.rand);
+            }
             Err(error) => tracing::warn!(%error, "client"),
         }
         let aspect = rect.width() / rect.height().max(1.0);
@@ -291,11 +324,33 @@ impl eframe::App for Viewer {
             scene.view.angles,
             f64::from(seconds),
         );
-        let hud = self.client.hud();
-        // The 2D layer keeps GLQuake's 640 wide console, as tall as the window's shape.
-        self.play.screen = [CONWIDTH, screen_height(aspect)];
+        let mut hud = self.client.hud();
+        // REND-13.7: QuakeSpasm's 2D layer is the window's own size in points; GLQuake's keeps
+        // its 640 wide console, as tall as the window's shape.
+        self.play.screen = if self.mesh.look.native_2d() {
+            [points(rect.width()), points(rect.height())]
+        } else {
+            [CONWIDTH, screen_height(aspect)]
+        };
         self.client
             .set_screen(self.play.screen[0], self.play.screen[1]);
+        hud.console = self.console_items(seconds);
+        let console_down = !hud.console.is_empty() && self.dest != KeyDest::Game;
+        let world = self.game.world();
+        let realtime = self.started.elapsed().as_secs_f64();
+        let (menu, sound) = self.menu.draw(&MenuFrame {
+            dest: self.dest,
+            host_time: realtime,
+            realtime,
+            console_down,
+            console_forced: false,
+            screen_height: self.play.screen[1],
+            settings: MenuSettings::read(&|name| world.setting(name).unwrap_or(0.0)),
+        });
+        hud.menu = menu;
+        if let Some(sound) = sound {
+            self.audio.local(sound, &mut self.rand);
+        }
         let mut callback = self
             .play
             .frame(&scene, &hud, &self.bsp, &mut self.mesh, aspect);
@@ -391,7 +446,12 @@ impl Viewer {
             bsp,
             describer,
             rand,
+            printed,
         } = loaded;
+        let realtime = self.started.elapsed().as_secs_f64();
+        for text in &printed {
+            self.console.print(text, realtime);
+        }
         if let Some(state) = window.wgpu_render_state() {
             let renderer = MapRenderer::new(
                 &state.device,
@@ -473,7 +533,9 @@ impl Viewer {
         });
         let next = match self.pointer {
             Pointer::Free if clicked => Pointer::Captured,
-            Pointer::Captured if escape || !focused => Pointer::Free,
+            // The console and the menus take the keys and free the mouse, as QuakeSpasm's
+            // `IN_Deactivate` does.
+            Pointer::Captured if escape || !focused || self.dest != KeyDest::Game => Pointer::Free,
             same => same,
         };
         if next != self.pointer {
@@ -487,10 +549,8 @@ impl Viewer {
                 .send_viewport_cmd(egui::ViewportCommand::CursorVisible(visible));
             self.pointer = next;
         } else if self.pointer == Pointer::Captured {
-            // `cl.viewangles[YAW] -= m_yaw.value * mouse_x`,
-            // `cl.viewangles[PITCH] += m_pitch.value * mouse_y`.
-            let [x, y] = motion;
-            self.camera.turn(-x * TURN, y * TURN);
+            let [yaw, pitch] = self.game.mouse_turn(motion);
+            self.camera.turn(yaw, pitch);
         }
     }
 
@@ -510,12 +570,18 @@ impl Viewer {
         self.client
             .set_viewangles([self.camera.pitch, self.camera.yaw, 0.0]);
         self.last_set = [self.camera.pitch, self.camera.yaw];
+        // The keys are the console's while it is open (CON-4).
+        let playing = self.dest == KeyDest::Game;
+        let speeds = self.game.move_speeds();
         let cmd = ui.input(|input| {
-            let key = |k: egui::Key| f32::from(u8::from(input.key_down(k)));
-            // cl_movespeedkey
-            let speed = if input.modifiers.shift { 2.0 } else { 1.0 };
+            let key = |k: egui::Key| f32::from(u8::from(playing && input.key_down(k)));
+            let speed = if input.modifiers.shift {
+                speeds.run
+            } else {
+                1.0
+            };
             let held = self.pointer == Pointer::Captured;
-            let attack = u8::from(held && input.pointer.primary_down());
+            let attack = u8::from(playing && held && input.pointer.primary_down());
             let impulse = (1..=8_u8)
                 .find(|n| {
                     let key = match n {
@@ -528,24 +594,230 @@ impl Viewer {
                         7 => egui::Key::Num7,
                         _ => egui::Key::Num8,
                     };
-                    input.key_pressed(key)
+                    playing && input.key_pressed(key)
                 })
                 .unwrap_or(0);
             qs_sim::UserCmd {
                 angles: [self.camera.pitch, self.camera.yaw, 0.0],
-                // cl_forwardspeed, cl_backspeed, cl_sidespeed, cl_upspeed
-                forward: (200.0 * key(egui::Key::W) - 200.0 * key(egui::Key::S)) * speed,
-                side: (350.0 * key(egui::Key::D) - 350.0 * key(egui::Key::A)) * speed,
-                up: (200.0 * key(egui::Key::E) - 200.0 * key(egui::Key::Q)) * speed,
-                buttons: attack | (u8::from(input.key_down(egui::Key::Space)) << 1),
+                forward: (speeds.forward * key(egui::Key::W) - speeds.back * key(egui::Key::S))
+                    * speed,
+                side: (speeds.side * key(egui::Key::D) - speeds.side * key(egui::Key::A)) * speed,
+                up: (speeds.up * key(egui::Key::E) - speeds.up * key(egui::Key::Q)) * speed,
+                buttons: attack | (u8::from(playing && input.key_down(egui::Key::Space)) << 1),
                 impulse,
             }
         });
         self.game.world_mut().set_command(cmd);
     }
 
+    /// The keys the console takes (CON-4): the backquote toggles it, as id1's `default.cfg`
+    /// binds it to `toggleconsole` (CON-4.8); while it is open the keys and text go to its line,
+    /// Escape leaves it as `M_ToggleMenu_f` does from the console, and an entered line runs
+    /// through qs-sim's console path, what it prints printed in the console.
+    fn type_keys(&mut self, ui: &egui::Ui) {
+        let events = ui.input(|input| input.events.clone());
+        let realtime = self.started.elapsed().as_secs_f64();
+        let height = self.play.screen[1];
+        for event in events {
+            match event {
+                egui::Event::Key {
+                    key: egui::Key::Backtick,
+                    pressed: true,
+                    ..
+                } => self.dest = self.console.backquote(self.dest, true),
+                egui::Event::Key {
+                    key: egui::Key::Escape,
+                    pressed: true,
+                    ..
+                } => {
+                    // `Key_Event`'s Escape: the menu's own key in the menu, else
+                    // `M_ToggleMenu_f`, which from the console toggles the console (MENU-1.1).
+                    match self.dest {
+                        KeyDest::Console => self.dest = self.console.toggle(self.dest, true),
+                        KeyDest::Menu => self.menu_key(MenuKey::Escape),
+                        KeyDest::Game => self.dest = self.menu.toggle(self.dest),
+                    }
+                }
+                egui::Event::Key {
+                    key, pressed: true, ..
+                } if self.dest == KeyDest::Menu => {
+                    if let Some(key) = menu_key(key) {
+                        self.menu_key(key);
+                    }
+                }
+                egui::Event::Text(text) if self.dest == KeyDest::Menu => {
+                    for c in text.bytes() {
+                        self.menu_key(MenuKey::Char(c));
+                    }
+                }
+                egui::Event::Key {
+                    key, pressed: true, ..
+                } if self.dest == KeyDest::Console => {
+                    if let Some(key) = console_key(key) {
+                        self.console_key(key, height, realtime);
+                    }
+                }
+                egui::Event::Text(text) if self.dest == KeyDest::Console => {
+                    // The backquote and `~` are never typed (CON-4.8).
+                    for c in text.bytes().filter(|&c| c != b'`' && c != b'~') {
+                        self.console_key(ConsoleKey::Char(c), height, realtime);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// `f` on the menu with what it reads of the game (MENU-3.2, MENU-6.1, MENU-7.4): the next
+    /// `rand ()`, a game running, whether it may be saved, the settings and the save slots.
+    fn with_menu<R>(&mut self, f: impl FnOnce(&mut Menu, &MenuGame<'_>) -> R) -> R {
+        let random = self.rand.rand();
+        let world = self.game.world();
+        let args = &self.args;
+        let slots = || saves(args);
+        let game = MenuGame {
+            random,
+            server_active: true,
+            can_save: self.client.intermission() == 0,
+            settings: MenuSettings::read(&|name| world.setting(name).unwrap_or(0.0)),
+            saves: &slots,
+        };
+        f(&mut self.menu, &game)
+    }
+
+    /// One key into the menu, what it asks of the host done: a sound, a setting, or a line for
+    /// the console, such as `map start`, `load s0` or `quit` (MENU).
+    fn menu_key(&mut self, key: MenuKey) {
+        let (dest, events) = self.with_menu(|menu, game| menu.key(key, game));
+        self.dest = dest;
+        for event in events {
+            match event {
+                MenuEvent::Sound(name) => self.audio.local(name, &mut self.rand),
+                MenuEvent::Set { name, value } => {
+                    self.game.world_mut().set_setting(name, value);
+                }
+                MenuEvent::Run(line) => self.run_line(line.as_bytes()),
+            }
+        }
+    }
+
+    /// `line` run on the console, what it prints printed and the client's commands it met
+    /// run (CON-4.2, CON-6.1).
+    fn run_line(&mut self, line: &[u8]) {
+        self.game.type_console(line);
+        self.show_printed();
+        self.client_commands();
+    }
+
+    /// `svc_print`: the server's text for the console (CON-1).
+    fn print_events(&mut self, events: &[Event]) {
+        let realtime = self.started.elapsed().as_secs_f64();
+        for event in events {
+            // `Con_Print`'s `S_LocalSound ("misc/talk.wav")` for text marked 1 (CON-1.2).
+            if let Event::Print(text) = event
+                && self.console.print(text, realtime)
+            {
+                self.audio.local("misc/talk.wav", &mut self.rand);
+            }
+        }
+        self.show_printed();
+    }
+
+    /// What the game's console printed, from typing, the progs, the bridge or the host, on
+    /// the console on the screen (CON-1).
+    fn show_printed(&mut self) {
+        let realtime = self.started.elapsed().as_secs_f64();
+        for line in self.game.take_printed() {
+            self.console.print(&line, realtime);
+        }
+    }
+
+    /// `SCR_SetUpToDrawConsole` and `SCR_DrawConsole` for a frame of `seconds`: the console
+    /// as high as it has slid, else the notify lines in the game (CON-2, CON-3).
+    fn console_items(&mut self, seconds: f32) -> Vec<qs_client::Placed> {
+        let realtime = self.started.elapsed().as_secs_f64();
+        let [width, height] = self.play.screen;
+        self.console.resize(width);
+        let lines = self.console.slide(height, false, self.dest, seconds);
+        // CON-3.4: `Con_DrawInput` draws only while the keys are the console's.
+        let typing = self.dest == KeyDest::Console;
+        if lines > 0 && self.mesh.look.native_2d() {
+            // CON-5: QuakeSpasm's layout, with this host's name for the version.
+            let version = format!("QuakeC Studio {}", env!("CARGO_PKG_VERSION"));
+            self.console
+                .draw_quakespasm(lines, height, realtime, typing, version.as_bytes())
+        } else if lines > 0 {
+            self.console.draw(lines, height, realtime, typing)
+        } else if self.dest == KeyDest::Game {
+            self.console.notify(realtime)
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// One key into the console's line; an entered line runs (CON-4.2).
+    fn console_key(&mut self, key: ConsoleKey, height: i32, realtime: f64) {
+        let game = &self.game;
+        let typed = self
+            .console
+            .key(key, height, realtime, &|partial| game.complete(partial));
+        if let Typed::Run(line) = typed {
+            self.run_line(&line);
+        }
+    }
+
+    /// The client's settings as the console and the menus left them (CON-7.2): the view size
+    /// and gamma for the view, the volume for the mixer.
+    fn apply_settings(&mut self) {
+        let world = self.game.world();
+        let setting = |name: &str| world.setting(name).unwrap_or(0.0);
+        let mut view = *self.client.view_settings();
+        view.viewsize = setting("viewsize");
+        view.gamma = setting("gamma");
+        let volume = setting("volume");
+        let music = setting("bgmvolume");
+        self.client.set_view_settings(view);
+        self.audio.set_volume(volume);
+        self.audio.set_music_volume(music);
+    }
+
+    /// The client's commands the console met, run in order (CON-6.1).
+    fn client_commands(&mut self) {
+        for command in self.game.world_mut().take_client_commands() {
+            self.dest = match command {
+                ClientCommand::ToggleConsole => self.console.toggle(self.dest, true),
+                ClientCommand::Clear => {
+                    self.console.clear();
+                    self.dest
+                }
+                // `M_ToggleMenu_f`: from the console, the console's toggle (MENU-1.1).
+                ClientCommand::ToggleMenu if self.dest == KeyDest::Console => {
+                    self.console.toggle(self.dest, true)
+                }
+                ClientCommand::ToggleMenu => self.menu.toggle(self.dest),
+                ClientCommand::MenuMain => self.menu.main(),
+                ClientCommand::MenuSinglePlayer => self.menu.single_player(),
+                ClientCommand::MenuLoad => self.with_menu(Menu::load),
+                ClientCommand::MenuSave => {
+                    let dest = self.dest;
+                    self.with_menu(|menu, game| menu.save(dest, game))
+                }
+                ClientCommand::MenuOptions => self.menu.options(),
+                ClientCommand::Help => self.menu.help(),
+                ClientCommand::MenuQuit => {
+                    let random = self.rand.rand();
+                    self.menu.quit(self.dest, random)
+                }
+            };
+        }
+    }
+
     /// The free camera of `-fly`.
     fn fly_around(&mut self, ui: &egui::Ui, seconds: f32) {
+        // The keys are the console's or the menu's while either is open.
+        if self.dest != KeyDest::Game {
+            return;
+        }
         ui.input(|input| {
             let speed = SPEEDS
                 .get(usize::from(input.modifiers.shift))
@@ -563,6 +835,36 @@ impl Viewer {
             );
         });
     }
+}
+
+/// The menu key an egui key is, if it is one the menu reads (MENU-1.2); printable keys come as
+/// text instead.
+const fn menu_key(key: egui::Key) -> Option<MenuKey> {
+    Some(match key {
+        egui::Key::ArrowUp => MenuKey::Up,
+        egui::Key::ArrowDown => MenuKey::Down,
+        egui::Key::ArrowLeft => MenuKey::Left,
+        egui::Key::ArrowRight => MenuKey::Right,
+        egui::Key::Enter => MenuKey::Enter,
+        _ => return None,
+    })
+}
+
+/// The console key an egui key is, if it is one the console reads (CON-4); printable keys
+/// come as text instead.
+const fn console_key(key: egui::Key) -> Option<ConsoleKey> {
+    Some(match key {
+        egui::Key::Enter => ConsoleKey::Enter,
+        egui::Key::Tab => ConsoleKey::Tab,
+        egui::Key::Backspace | egui::Key::ArrowLeft => ConsoleKey::Back,
+        egui::Key::ArrowUp => ConsoleKey::Up,
+        egui::Key::ArrowDown => ConsoleKey::Down,
+        egui::Key::PageUp => ConsoleKey::PageUp,
+        egui::Key::PageDown => ConsoleKey::PageDown,
+        egui::Key::Home => ConsoleKey::Home,
+        egui::Key::End => ConsoleKey::End,
+        _ => return None,
+    })
 }
 
 /// Moves and sizes the window to `placement`'s outer frame and sets whether it stays above
@@ -595,6 +897,15 @@ fn place(ctx: &egui::Context, placement: Placement) {
         egui::WindowLevel::Normal
     };
     ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
+}
+
+/// A window length in points as the 2D layer's whole units, toward zero.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a window's size in points, far inside i32, toward zero as vid.width is an int"
+)]
+fn points(length: f32) -> i32 {
+    length.max(0.0) as i32
 }
 
 /// GLQuake's console width, `vid.conwidth` (HUD-1).

@@ -5,6 +5,9 @@
 //! frames played on the system's sound device through `cpal`.
 
 use std::collections::VecDeque;
+use std::fs::File;
+use std::io::{Read as _, Seek as _, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -12,7 +15,8 @@ use qc_builtins::math::makevectors;
 use qs_bsp::Bsp;
 use qs_client::{Event, SoundRef, SoundStart};
 use qs_sound::{
-    Listener, ListenerLeaf, Mixer, MixerSpec, NullOutput, Output, Random, SfxId, SoundTable, Start,
+    CueSheet, CueTrack, Listener, ListenerLeaf, Mixer, MixerSpec, Music, MusicStream, NullOutput,
+    Output, Random, Read, SND_CD_RATE, SfxId, SoundTable, Start,
 };
 
 /// The most seconds of mixed sound waiting for the device; past it new frames are dropped,
@@ -78,12 +82,107 @@ pub(crate) struct Audio {
     /// The server's sound precache, index 1 first (CLIENT-1.1).
     precache: Vec<Option<SfxId>>,
     sink: Sink,
+    /// The CD music and where its tracks come from (SND-6).
+    music: Music,
+    cd: Option<CdImage>,
+    /// `bgmvolume` (CON-7.2).
+    music_volume: f32,
+}
+
+/// A CD image: its cue sheet and the binary file the sheet names (SND-6.4).
+pub(crate) struct CdImage {
+    sheet: CueSheet,
+    file: PathBuf,
+}
+
+impl CdImage {
+    /// The cue sheet at `cue` and its binary file beside it; `None` when it does not read.
+    pub(crate) fn open(cue: &Path) -> Option<Self> {
+        let text = std::fs::read_to_string(cue).ok()?;
+        let sheet = CueSheet::read(&text)?;
+        let file = cue.parent().unwrap_or(Path::new(".")).join(&sheet.file);
+        Some(Self { sheet, file })
+    }
+
+    /// Track `number`'s audio as a stream, if the image has it.
+    fn stream(&self, number: u8) -> Option<CdTrackStream> {
+        let track = self.sheet.track(number)?;
+        let mut file = File::open(&self.file).ok()?;
+        file.seek(SeekFrom::Start(track.start)).ok()?;
+        Some(CdTrackStream {
+            file,
+            track,
+            at: track.start,
+        })
+    }
+}
+
+/// One CD track read from the image: 16-bit little-endian stereo at 44100 Hz (SND-6.4).
+struct CdTrackStream {
+    file: File,
+    track: CueTrack,
+    at: u64,
+}
+
+impl MusicStream for CdTrackStream {
+    fn rate(&self) -> u32 {
+        SND_CD_RATE
+    }
+
+    fn channels(&self) -> u16 {
+        2
+    }
+
+    fn read(&mut self, out: &mut [i16]) -> Read {
+        let wanted = u64::try_from(out.len().saturating_mul(2)).unwrap_or(u64::MAX);
+        let left = self
+            .track
+            .end
+            .map_or(wanted, |end| end.saturating_sub(self.at));
+        let bytes = usize::try_from(wanted.min(left)).unwrap_or(0) & !3;
+        if bytes == 0 {
+            return Read::End;
+        }
+        // Whole stereo frames only: a short read keeps the frames it got and goes back over
+        // the part of one it did not finish, so the left and right samples stay in step.
+        let mut raw = Vec::with_capacity(bytes);
+        let wanted = u64::try_from(bytes).unwrap_or(0);
+        let got = match (&mut self.file).take(wanted).read_to_end(&mut raw) {
+            Ok(0) => return Read::End,
+            Ok(got) => got,
+            Err(_) => return Read::Failed(-1),
+        };
+        let read = got & !3;
+        if read == 0 {
+            return Read::End;
+        }
+        let over = i64::try_from(got.saturating_sub(read)).unwrap_or(0);
+        if over > 0
+            && self
+                .file
+                .seek(SeekFrom::Current(over.saturating_neg()))
+                .is_err()
+        {
+            return Read::Failed(-1);
+        }
+        let (pairs, _) = raw.get(..read).unwrap_or_default().as_chunks::<2>();
+        for (sample, pair) in out.iter_mut().zip(pairs) {
+            *sample = i16::from_le_bytes(*pair);
+        }
+        self.at = self.at.saturating_add(u64::try_from(read).unwrap_or(0));
+        Read::Samples(read >> 1)
+    }
+
+    fn rewind(&mut self) -> bool {
+        self.at = self.track.start;
+        self.file.seek(SeekFrom::Start(self.track.start)).is_ok()
+    }
 }
 
 impl Audio {
     /// The sound of a map whose files `read` reads, on `output`, silent when it does not
     /// open.
-    pub(crate) fn open(read: qs_sound::Reader, output: Device) -> Self {
+    pub(crate) fn open(read: qs_sound::Reader, output: Device, cd: Option<CdImage>) -> Self {
         let opened = match output {
             Device::Default => device(),
             Device::None => Err("-nosound".to_owned()),
@@ -113,6 +212,9 @@ impl Audio {
             table,
             precache: Vec::new(),
             sink,
+            music: Music::new(),
+            cd,
+            music_volume: 1.0,
         }
     }
 
@@ -129,6 +231,8 @@ impl Audio {
                 }
                 Event::Sound(start) => self.start(start, rand),
                 Event::StopSound { entity, channel } => self.mixer.stop_sound(*entity, *channel),
+                // `BGM_PlayCDtrack ((byte)cl.cdtrack, true)` (RRE-3.4).
+                Event::CdTrack { track, .. } => self.play_track(*track),
                 Event::LocalSound(index) => {
                     if let Some(name) = self
                         .sound(*index)
@@ -190,11 +294,46 @@ impl Audio {
             Sink::Silent(null) => null,
             Sink::Capture(captured) => captured,
         };
+        // `BGM_Update` before `S_Update` (SND-6.2).
+        for message in self.music.update(&mut self.mixer, self.music_volume) {
+            tracing::info!(%message, "music");
+        }
         self.mixer
             .update(&mut self.table, listener, leaf, frametime, output);
         for message in self.mixer.take_messages() {
             tracing::debug!(%message, "sound");
         }
+    }
+
+    /// `BGM_PlayCDtrack (track, true)` (RRE-3.4): the CD image's track, looping, else nothing,
+    /// the music before it stopped.
+    fn play_track(&mut self, track: i32) {
+        self.music.stop(&mut self.mixer);
+        // `(byte)cl.cdtrack`.
+        let number = track.to_le_bytes()[0];
+        let Some(stream) = self.cd.as_ref().and_then(|cd| cd.stream(number)) else {
+            tracing::info!(track = number, "Couldn't find a cdrip for track {number}");
+            return;
+        };
+        tracing::info!(track = number, "music: the CD image's track");
+        self.music.play(&mut self.mixer, Box::new(stream), true);
+    }
+
+    /// The `bgmvolume` setting (SND-6.2, CON-7.2).
+    pub(crate) const fn set_music_volume(&mut self, volume: f32) {
+        self.music_volume = volume;
+    }
+
+    /// The `volume` setting, the master volume (SND-5.4, CON-7.2).
+    pub(crate) const fn set_volume(&mut self, volume: f32) {
+        let mut settings = *self.mixer.settings();
+        settings.volume = volume;
+        self.mixer.set_settings(settings);
+    }
+
+    /// `S_LocalSound` of the sound named `name`, as the menu plays its clicks (MENU-1.3).
+    pub(crate) fn local(&mut self, name: &str, rand: &mut dyn Random) {
+        self.mixer.local_sound(&mut self.table, rand, name);
     }
 
     /// Whether the mixed frames are kept, for `--view-script`.

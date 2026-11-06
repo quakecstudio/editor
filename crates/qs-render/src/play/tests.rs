@@ -72,11 +72,16 @@ fn pics() -> Pics {
     lmp.extend(20_i32.to_le_bytes());
     lmp.extend(core::iter::repeat_n(2_u8, 2000));
     pics.add_lmp("gfx/ranking.lmp", &lmp, &palette()).unwrap();
+    pics.add_lmp("gfx/conback.lmp", &lmp, &palette()).unwrap();
     pics
 }
 
+/// A play in GLQuake's look, which the HUD and console statements describe; QuakeSpasm's
+/// canvases are tested on their own (REND-13.7).
 fn play() -> Play {
-    Play::new(palette(), pics(), b"")
+    let mut play = Play::new(palette(), pics(), b"");
+    play.look = Look::GlQuake;
+    play
 }
 
 fn hud(anchor: Anchor, items: Vec<HudItem>) -> Hud {
@@ -132,7 +137,7 @@ fn pictures_come_from_the_wad_and_the_lmp_files() {
     let (_, ranking) = pics.get("gfx/ranking.lmp").unwrap();
     assert_eq!((ranking.width, ranking.height), (100, 20));
     assert_eq!(pics.get("missing"), None);
-    assert_eq!(pics.images().len(), 5);
+    assert_eq!(pics.images().len(), 6);
     // A replaced picture keeps its index.
     let mut pics = pics;
     pics.add(
@@ -144,7 +149,7 @@ fn pictures_come_from_the_wad_and_the_lmp_files() {
         },
     );
     assert_eq!(pics.get("sbar").unwrap().0, 0);
-    assert_eq!(pics.images().len(), 5);
+    assert_eq!(pics.images().len(), 6);
     let mut bad = Pics::new();
     assert!(matches!(
         bad.add_wad(b"WAD3", &palette()),
@@ -624,4 +629,66 @@ fn an_md5_model_that_does_not_read_leaves_its_mdl() {
     assert!(
         matches!(load(false), Err(PlayError::Model(ref m)) if m.starts_with("progs/ogre.md5mesh"))
     );
+}
+
+// spec CON-3.2: the console's background across the screen with its top at `lines - height`,
+// blended with no alpha test at `1.2 * lines / (height * 3 / 4)` while it is at most three
+// quarters of the screen, so it shows as it slides; above that, opaque and alpha tested
+#[test]
+fn the_console_background_shows_while_it_slides() {
+    let mut play = play();
+    let back = |lines| Hud {
+        console: vec![Placed {
+            anchor: Anchor::Screen,
+            item: HudItem::ConsoleBack {
+                lines,
+                height: 480,
+                forced: false,
+            },
+        }],
+        ..Hud::default()
+    };
+    let half = layer(&mut play, &back(240));
+    let (draw, quads) = half.last().unwrap();
+    assert!(draw.blend, "translucent while sliding");
+    assert_eq!(quads[0], ([0.0, -240.0], [640.0, 480.0]));
+    let lighting = samples(&[50]);
+    let bsp = bsp(&MapSpec::default(), &lighting);
+    let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
+    let callback = play.frame(&Scene::default(), &back(120), &bsp, &mut mesh, 1.0);
+    let last = callback.flat.draws.last().unwrap();
+    let first = usize::try_from(last.first).unwrap();
+    let alpha = callback.flat.vertices[first].color[3];
+    assert!((alpha - 1.2 * 120.0 / 360.0).abs() < 1e-6, "{alpha}");
+    let full = layer(&mut play, &back(400));
+    assert!(!full.last().unwrap().0.blend, "opaque past three quarters");
+}
+
+// spec REND-13.8: in QuakeSpasm's look the menus' 320 by 200 canvas is centred both ways and
+// the bar's at the bottom centre, each at scale 1, the fade is 0.5 and the console background
+// 0.5 unless it is forced up
+#[test]
+fn quakespasm_draws_its_canvases() {
+    let mut play = play();
+    play.look = Look::QuakeSpasm;
+    play.screen = [1280, 800];
+    let sbar = HudItem::Pic {
+        name: "sbar".to_owned(),
+        x: 0,
+        y: 0,
+    };
+    let menu = layer(&mut play, &hud(Anchor::Centered, vec![sbar.clone()]));
+    assert_eq!(menu[0].1, [([480.0, 300.0], [320.0, 24.0])]);
+    let bar = layer(&mut play, &hud(Anchor::Bar, vec![sbar]));
+    assert_eq!(bar[0].1, [([480.0, 776.0], [320.0, 24.0])]);
+    assert_eq!(Look::QuakeSpasm.fade_alpha(), 0.5);
+    assert_eq!(Look::GlQuake.fade_alpha(), 0.8);
+    assert_eq!(Look::QuakeSpasm.console_alpha(400, 800, false), 0.5);
+    assert_eq!(
+        Look::QuakeSpasm.console_alpha(800, 800, false),
+        0.5,
+        "full height, not forced"
+    );
+    assert_eq!(Look::QuakeSpasm.console_alpha(400, 800, true), 1.0);
+    assert!((Look::GlQuake.console_alpha(240, 480, false) - 0.8).abs() < 1e-6);
 }

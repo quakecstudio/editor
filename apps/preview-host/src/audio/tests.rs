@@ -2,15 +2,16 @@
 
 #![expect(
     clippy::unwrap_used,
-    reason = "test code: a failed unwrap is a failed test"
+    clippy::indexing_slicing,
+    reason = "test code: a failed unwrap or index is a failed test"
 )]
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use qs_sound::Output;
+use qs_sound::{MusicStream, Output, Read};
 
-use super::{Queue, fill, seconds_of_samples};
+use super::{CdImage, Queue, fill, seconds_of_samples};
 
 fn queue(most: usize) -> Queue {
     Queue {
@@ -47,4 +48,82 @@ fn the_device_takes_stereo_frames_and_silence() {
 #[test]
 fn a_quarter_second_of_samples() {
     assert_eq!(seconds_of_samples(0.25, 48_000), 24_000);
+}
+
+/// A CD image in a fresh directory: `game.cue` and its `game.bin` of `bin` bytes, removed when
+/// the test ends.
+struct Image(std::path::PathBuf);
+
+impl Image {
+    fn new(name: &str, cue: &str, bin: &[u8]) -> Self {
+        let dir =
+            std::env::temp_dir().join(format!("preview-host-cd-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("game.cue"), cue).unwrap();
+        std::fs::write(dir.join("game.bin"), bin).unwrap();
+        Self(dir)
+    }
+
+    fn open(&self) -> CdImage {
+        CdImage::open(&self.0.join("game.cue")).unwrap()
+    }
+}
+
+impl Drop for Image {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.0).ok();
+    }
+}
+
+// spec SND-6.4: a track is read from its INDEX 01 as 16-bit little-endian stereo, whole frames
+// only, to the next track's start, and rewinds to its own start
+#[test]
+fn a_cd_track_reads_whole_frames_of_its_own() {
+    // Track 2 at sector 1, track 3 at sector 2; a sector is 2352 bytes.
+    let mut bin = vec![0_u8; 2352 * 2 + 6];
+    for (i, byte) in bin.iter_mut().enumerate().skip(2352) {
+        *byte = u8::try_from(i % 251).unwrap();
+    }
+    let cue = "FILE \"game.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n\
+               TRACK 02 AUDIO\nINDEX 01 00:00:01\nTRACK 03 AUDIO\nINDEX 01 00:00:02\n";
+    let image = Image::new("frames", cue, &bin);
+    let cd = image.open();
+    let mut two = cd.stream(2).unwrap();
+    assert_eq!((two.rate(), two.channels()), (44100, 2));
+    let mut out = [0_i16; 3];
+    // Three samples asked: one whole frame of two read, the half frame left for the next read.
+    assert_eq!(two.read(&mut out), Read::Samples(2));
+    let first = i16::from_le_bytes([bin[2352], bin[2353]]);
+    assert_eq!(out[0], first);
+    let mut rest = vec![0_i16; 4096];
+    assert_eq!(two.read(&mut rest), Read::Samples(1176 - 2));
+    assert_eq!(
+        rest[0],
+        i16::from_le_bytes([bin[2356], bin[2357]]),
+        "in step after the short read"
+    );
+    assert_eq!(two.read(&mut rest), Read::End, "track 3 starts there");
+    assert!(two.rewind());
+    assert_eq!(two.read(&mut out), Read::Samples(2));
+    assert_eq!(out[0], first);
+    // The last track runs to the end of the file, 6 bytes: one whole frame.
+    let mut three = cd.stream(3).unwrap();
+    assert_eq!(three.read(&mut rest), Read::Samples(2));
+    assert_eq!(three.read(&mut rest), Read::End);
+    assert!(cd.stream(1).is_none(), "the data track is not music");
+    assert!(cd.stream(9).is_none());
+}
+
+// spec SND-6.4: a sheet that does not read, or names a file that is not there, gives no music
+#[test]
+fn a_cd_image_that_does_not_open() {
+    let image = Image::new("broken", "TRACK 02 AUDIO\n", b"");
+    assert!(CdImage::open(&image.0.join("game.cue")).is_none());
+    assert!(CdImage::open(&image.0.join("missing.cue")).is_none());
+    let lost = Image::new(
+        "lost",
+        "FILE \"other.bin\" BINARY\nTRACK 02 AUDIO\nINDEX 01 00:00:00\n",
+        b"",
+    );
+    assert!(lost.open().stream(2).is_none());
 }

@@ -486,3 +486,112 @@ fn a_frame_stopped_for_the_host_keeps_the_random_source() {
         "the next frame draws"
     );
 }
+
+// spec CON-4.3: a command is completed first, then a setting, the first by name; an empty or
+// unknown prefix completes nothing
+#[test]
+fn the_console_completes_commands_then_settings() {
+    let run = connected();
+    assert_eq!(run.world.complete("noc").as_deref(), Some("noclip"));
+    assert_eq!(run.world.complete("edict").as_deref(), Some("edict"));
+    assert_eq!(run.world.complete("sv_g").as_deref(), Some("sv_gravity"));
+    assert_eq!(run.world.complete("s").as_deref(), Some("save"));
+    assert_eq!(run.world.complete(""), None);
+    assert_eq!(run.world.complete("zz"), None);
+}
+
+// spec CON-6.4: the client's commands go to the client in order, with nothing printed and the
+// server's commands of the line run; help is one of them
+#[test]
+fn the_clients_commands_go_to_the_client() {
+    use crate::world::ClientCommand;
+    let mut run = connected();
+    assert_eq!(
+        console(&mut run, "help; echo a; TOGGLEMENU; clear\n"),
+        ["a "]
+    );
+    assert_eq!(
+        run.world.take_client_commands(),
+        [
+            ClientCommand::Help,
+            ClientCommand::ToggleMenu,
+            ClientCommand::Clear
+        ]
+    );
+    assert!(run.world.take_client_commands().is_empty(), "taken once");
+    for (name, command) in ClientCommand::ALL {
+        assert!(console(&mut run, &format!("{name}\n")).is_empty());
+        assert_eq!(run.world.take_client_commands(), [command], "{name}");
+    }
+    assert_eq!(
+        run.world.complete("menu_s").as_deref(),
+        Some("menu_save"),
+        "the first by name"
+    );
+    assert_eq!(
+        console(&mut run, "menu_keys\n"),
+        ["Unknown command \"menu_keys\""]
+    );
+}
+
+// spec CON-6.2: cmdlist prints every command in strcmp order and the count; with a prefix only
+// the names starting with it, case-sensitively
+#[test]
+fn cmdlist_lists_the_commands() {
+    let mut run = connected();
+    let all = console(&mut run, "cmdlist\n");
+    let names: Vec<&str> = all[..all.len() - 1]
+        .iter()
+        .map(|l| l.trim_start())
+        .collect();
+    let mut sorted = names.clone();
+    sorted.sort_unstable();
+    assert_eq!(names, sorted);
+    assert!(all[0].starts_with("   "));
+    assert!(names.contains(&"help") && names.contains(&"cmdlist") && names.contains(&"map"));
+    assert_eq!(all.last().unwrap(), &format!("{} commands", names.len()));
+    assert_eq!(
+        console(&mut run, "cmdlist ch\n"),
+        ["   changelevel", "1 commands beginning with \"ch\""]
+    );
+    assert_eq!(
+        console(&mut run, "cmdlist CH\n"),
+        ["0 commands beginning with \"CH\""]
+    );
+}
+
+// spec CON-7.1: the client's settings are in the one table, with id's defaults, read and set by
+// the console and by the host
+#[test]
+fn the_clients_settings_have_ids_defaults() {
+    let mut run = connected();
+    for (name, value) in [
+        ("cl_upspeed", 200.0),
+        ("cl_forwardspeed", 200.0),
+        ("cl_backspeed", 200.0),
+        ("cl_sidespeed", 350.0),
+        ("cl_movespeedkey", 2.0),
+        ("lookspring", 0.0),
+        ("lookstrafe", 0.0),
+        ("sensitivity", 3.0),
+        ("m_pitch", 0.022),
+        ("m_yaw", 0.022),
+        ("viewsize", 100.0),
+        ("gamma", 1.0),
+        ("bgmvolume", 1.0),
+        ("volume", 0.7),
+    ] {
+        assert_eq!(run.world.setting(name), Some(value), "{name}");
+    }
+    assert_eq!(console(&mut run, "viewsize\n"), ["\"viewsize\" is \"100\""]);
+    assert!(console(&mut run, "viewsize 110\n").is_empty());
+    assert_eq!(run.world.setting("viewsize"), Some(110.0));
+    assert!(run.world.set_setting("volume", 0.8));
+    assert_eq!(
+        console(&mut run, "volume\n"),
+        ["\"volume\" is \"0.800000\""]
+    );
+    assert!(!run.world.set_setting("no_such_setting", 1.0));
+    assert_eq!(run.world.setting("no_such_setting"), None);
+    assert_eq!(run.world.complete("sensi").as_deref(), Some("sensitivity"));
+}

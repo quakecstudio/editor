@@ -29,8 +29,9 @@ within tolerances recorded per map; it is not an exact match.
 - **VIEWDIFF-1.2** Each line after it is one of `frames <n>`, n frames of 1/72 of a second, n a
   number from 0; `place <x> <y> <z> <pitch> <yaw>`, five finite numbers, the player moved there
   looking that way with no velocity and `fixangle` set, as the host's `player/spawn_at` does;
-  and `shot <file>`, the view written to the file as a binary PPM (`P6`, 8 bits a channel). Any
-  other line refuses the script.
+  `shot <file>`, the view written to the file as a binary PPM (`P6`, 8 bits a channel); and
+  `toggleconsole` and `togglemenu`, the console and the main menu opened or closed as those
+  commands do (CON-4.8, MENU-1.1). Any other line refuses the script.
 - **VIEWDIFF-1.3** The sound mixed while the script runs is written to the second file as
   16-bit little-endian samples, left and right interleaved, at 11025 Hz
   (`SND_ORACLE_SPEED`): the oracle's what a sound card would have played by each frame's

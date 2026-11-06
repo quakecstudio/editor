@@ -9,7 +9,7 @@ use std::rc::Rc;
 use qc_lno::LnoFile;
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader, Lit};
-use qs_client::{Client, ModelInfo, Models, Random};
+use qs_client::{Client, Event, MENU_SAVEGAMES, ModelInfo, Models, Random};
 use qs_mdl::mdl::Mdl;
 use qs_mdl::spr::Sprite;
 use qs_render::{Camera, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface};
@@ -20,7 +20,7 @@ use qs_vfs::zip::Zip;
 use qs_vfs::{Element, LoadedFile, StdFs, Vfs};
 
 use crate::args::{Args, Show};
-use crate::audio::{Audio, Device};
+use crate::audio::{Audio, CdImage, Device};
 use crate::game::{Game, HostAction, Reporting};
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
@@ -38,12 +38,49 @@ const NOLERP: [&str; 9] = [
     "progs/v_xfist.mdl",
     "progs/h2stuff/newfire.mdl",
 ];
-/// The 2D pictures the HUD reads from files rather than `gfx.wad` (HUD-2).
-const LMPS: [&str; 4] = [
+/// The 2D pictures the HUD and the console read from files rather than `gfx.wad` (HUD-2,
+/// CON-3.2).
+const LMPS: [&str; 39] = [
     "gfx/ranking.lmp",
     "gfx/complete.lmp",
     "gfx/inter.lmp",
     "gfx/finale.lmp",
+    "gfx/conback.lmp",
+    // The menus' (MENU).
+    "gfx/qplaque.lmp",
+    "gfx/ttl_main.lmp",
+    "gfx/mainmenu.lmp",
+    "gfx/ttl_sgl.lmp",
+    "gfx/sp_menu.lmp",
+    "gfx/menudot1.lmp",
+    "gfx/menudot2.lmp",
+    "gfx/menudot3.lmp",
+    "gfx/menudot4.lmp",
+    "gfx/menudot5.lmp",
+    "gfx/menudot6.lmp",
+    "gfx/help0.lmp",
+    "gfx/help1.lmp",
+    "gfx/help2.lmp",
+    "gfx/help3.lmp",
+    "gfx/help4.lmp",
+    "gfx/help5.lmp",
+    "gfx/box_tl.lmp",
+    "gfx/box_ml.lmp",
+    "gfx/box_bl.lmp",
+    "gfx/box_tm.lmp",
+    "gfx/box_mm.lmp",
+    "gfx/box_mm2.lmp",
+    "gfx/box_bm.lmp",
+    "gfx/box_tr.lmp",
+    "gfx/box_mr.lmp",
+    "gfx/box_br.lmp",
+    "gfx/p_option.lmp",
+    "gfx/p_load.lmp",
+    "gfx/p_save.lmp",
+    "gfx/bigbox.lmp",
+    "gfx/menuplyr.lmp",
+    "gfx/p_multi.lmp",
+    "gfx/mp_menu.lmp",
 ];
 
 /// A map read from an install: its name, its mesh, its play assets and where its player
@@ -59,6 +96,9 @@ pub(crate) struct Loaded {
     pub(crate) bsp: Bsp<'static>,
     pub(crate) describer: Describer,
     pub(crate) rand: Rand,
+    /// What the map's first client frame printed for the console: the server's version line,
+    /// the divider and the level's name (CLIENT-1.7).
+    pub(crate) printed: Vec<Vec<u8>>,
 }
 
 /// A file of the install by name, `None` when it is not on the search path.
@@ -239,7 +279,27 @@ pub(crate) fn load(
     } else {
         Device::Default
     };
-    let mut audio = Audio::open(Box::new(move |name: &str| sounds(name)), output);
+    let printed = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Print(text) => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    // SND-6.4: the CD's music, never in a capture, which id's engine has none of to compare.
+    let cd = match output {
+        Device::Capture => None,
+        Device::Default | Device::None if args.nocdaudio => None,
+        Device::Default | Device::None => args
+            .cd_image
+            .clone()
+            .or_else(|| {
+                let base = args.basedir.clone().unwrap_or_else(|| PathBuf::from("."));
+                Some(base.join("game.cue")).filter(|cue| cue.is_file())
+            })
+            .and_then(|cue| CdImage::open(&cue)),
+    };
+    let mut audio = Audio::open(Box::new(move |name: &str| sounds(name)), output, cd);
     audio.handle(&events, &mut rand);
     let mut pics = Pics::new();
     pics.add_wad(&read("gfx.wad")?, &palette)
@@ -336,6 +396,7 @@ pub(crate) fn load(
         describer,
         rand,
         camera,
+        printed,
     })
 }
 
@@ -445,6 +506,13 @@ pub(crate) enum Acted {
 fn game_dir(args: &Args) -> PathBuf {
     let base = args.basedir.clone().unwrap_or_else(|| PathBuf::from("."));
     base.join(args.game.as_deref().unwrap_or("id1"))
+}
+
+/// `M_ScanSaves`' files (MENU-6.1): the text of `s0.sav` to `s11.sav` in the game directory,
+/// `None` for each that does not open.
+pub(crate) fn saves(args: &Args) -> [Option<Vec<u8>>; MENU_SAVEGAMES] {
+    let dir = game_dir(args);
+    core::array::from_fn(|n| std::fs::read(dir.join(format!("s{n}.sav"))).ok())
 }
 
 /// `<name>.sav` in the game directory, `COM_DefaultExtension (name, ".sav")`.

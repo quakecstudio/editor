@@ -244,3 +244,55 @@ are silent whatever a leaf's level for them (SND-4.3).
 | `SND_DEFAULT_VOLUME` | 0.7 | `snd_dma.c`, `volume` default |
 | `SND_MIXAHEAD` | 0.1 | `snd_dma.c`, `_snd_mixahead` default |
 | `SND_ORACLE_SPEED` | 11025 | `snd_dma.c`, `desired_speed` |
+
+## SND-6 Music
+
+**Source:** sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`: `Quake/snd_dma.c`,
+`S_RawSamples`; `Quake/snd_mix.c`, `S_PaintChannels`; `Quake/bgmusic.c`, `BGM_PlayCDtrack`,
+`BGM_Stop`, `BGM_UpdateStream`, `BGM_Update`. id's engine plays its music from the CD drive,
+which mixes it itself; QuakeSpasm streams it through the mixer, and the preview host does as
+QuakeSpasm does.
+
+### Behaviour
+
+- **SND-6.1** `S_RawSamples (samples, rate, width, channels, data, volume)` raises `s_rawend` to
+  `paintedtime`, then for `i` from 0 takes `src = i * scale`, `scale = (float) rate /
+  shm->speed`, until `src` reaches `samples`, storing frame `src` at `s_rawend &
+  (MAX_RAW_SAMPLES - 1)` multiplied by `intVolume = (int) (256 * volume)` and advancing
+  `s_rawend`; a one-channel frame is both sides. `MAX_RAW_SAMPLES` is 8192. The preview host
+  streams only 16-bit samples (`width` 2).
+- **SND-6.2** `BGM_UpdateStream`, run before `S_Update` each frame, does nothing when the
+  stream is not playing or "`bgmvolume.value <= 0`". Otherwise, while `s_rawend` is less than
+  `paintedtime + MAX_RAW_SAMPLES`, it reads `bufferSamples * rate / shm->speed` frames, at
+  most 16384 bytes, into `S_RawSamples` at `bgmvolume`. At the stream's end a looping stream
+  rewinds, and a second end with nothing read between prints "`Stream keeps returning EOF.`"
+  and stops; a stream that cannot rewind prints "`Stream seek error (%i), stopping.`"; one
+  not looping stops; a read error prints "`Stream read error (%i), stopping.`" and stops.
+  `BGM_Stop` closes the stream and sets `s_rawend = 0`. The preview host's seek error is -1.
+- **SND-6.3** QuakeSpasm's `S_PaintChannels` adds the raw frames from `paintedtime` to the
+  lesser of the block's end and `s_rawend`, when `s_rawend >= paintedtime`, after the
+  channels, each side `s_rawsamples[s].left / 2` ("lower music by 6db to match sfx"). Its
+  paint buffer is 256 times id's: `SND_PaintChannelFrom16` folds `snd_vol` into the channel's
+  volume and drops id's `>> 8`, it halves the channels' sum ("reduce by 6dB"), and its
+  transfer writes `val = *p / 256` with no `snd_vol`. So a sound effect comes out at half
+  id's level and a music sample at `sample * bgmvolume / 2`, unscaled by `volume`. The preview
+  host keeps id's paint and transfer (SND-5.4) and keeps QuakeSpasm's balance: each frame's
+  music, `s_rawsamples[s] >> 8`, is added to the transferred `(sum * snd_vol) >> 8` before the
+  clamp to 16 bits, our choice.
+- **SND-6.4** QuakeSpasm's `CDAudio_Play` plays a disc in a CD drive; the preview host plays a
+  CD image instead, our choice: a cue sheet naming one `BINARY` file, whose `AUDIO` tracks
+  each run from their `INDEX 01` to the next track's `INDEX 00`, else its `INDEX 01`, the last
+  to the file's end, an index `mm:ss:ff` being `(mm * 60 + ss) * 75 + ff` sectors of 2352
+  bytes, `PREGAP` adding nothing to the file. Its audio is 16-bit little-endian stereo at
+  44100 Hz. A sheet with no binary file, more than one file, or a time it cannot read is not
+  used. The cue sheet is `--cd-image`, else `game.cue` in the game root, as GOG's release of
+  Quake keeps its CD; `--nocdaudio` plays none. A capture for the view differential plays no
+  music, since id's engine there has no CD.
+
+### Constants
+
+| Constant | Value | Source |
+| --- | --- | --- |
+| `SND_MAX_RAW_SAMPLES` | 8192 | `q_sound.h`, `MAX_RAW_SAMPLES` |
+| `SND_CD_RATE` | 44100 | the CD audio format |
+| `SND_CD_SECTOR` | 2352 | the CD audio format |

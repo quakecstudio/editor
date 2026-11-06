@@ -20,6 +20,10 @@ pub(crate) enum Step {
     },
     /// `shot <file>`: the view written to the file as a binary PPM.
     Shot(PathBuf),
+    /// `toggleconsole`: the console opened or closed (CON-4.8).
+    ToggleConsole,
+    /// `togglemenu`: the main menu opened or closed (MENU-1.1).
+    ToggleMenu,
 }
 
 /// A view script: its map and its steps (VIEWDIFF-1).
@@ -60,6 +64,11 @@ impl ViewScript {
 
 /// The step `line` is, if it is one.
 fn step(line: &str) -> Option<Step> {
+    match line {
+        "toggleconsole" => return Some(Step::ToggleConsole),
+        "togglemenu" => return Some(Step::ToggleMenu),
+        _ => {}
+    }
     let (word, rest) = line.split_once(' ')?;
     match word {
         "frames" => rest.trim().parse().ok().map(Step::Frames),

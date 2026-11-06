@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use qs_bsp::Bsp;
-use qs_client::{Anchor, HUD_SBAR_HEIGHT, Hud, HudItem, Placed, Scene, SceneEntity};
+use qs_client::{Anchor, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
 use qs_wad::{Conchars, QPic, WAD_CONCHARS_TRANSPARENT, Wad};
 
 use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, TORCHES, entity_light};
@@ -37,6 +37,8 @@ use crate::styles::LightStyles;
 /// The bar's width, which the bar is centred by on a wider screen: `(vid.width - 320)>>1`
 /// (HUD-1).
 const BAR_WIDTH: i32 = 320;
+/// The menus' canvas's height, `CANVAS_MENU`'s 200 (REND-13.7).
+const MENU_HEIGHT: i32 = 200;
 /// A console character's side on the screen, `Draw_Character`'s 8 (HUD-3).
 const CHAR_SIDE: f32 = 8.0;
 /// `frow = row*0.0625`: a character's share of the 16 by 16 `conchars` grid.
@@ -49,6 +51,8 @@ const CHAR_OFF_TOP: i32 = -8;
 const PIC_TRANSPARENT: u8 = 255;
 /// The name the console characters are kept under among the pictures.
 const CONCHARS: &str = "conchars";
+/// The console's background (CON-3.2).
+const CONBACK: &str = "gfx/conback.lmp";
 /// `fov`, the field of view across: `scr_fov` (REND-3.4).
 const FOV_X: f32 = 90.0;
 /// A colour that leaves a texel as it is.
@@ -653,32 +657,57 @@ impl Play {
 
     /// The status bar, the overlay and the centre print as quads (HUD-1 to HUD-3).
     fn draw_hud(&self, hud: &Hud, flat: &mut FlatFrame) {
-        let [width, height] = self.screen;
-        // `Sbar_DrawPic`: `x + ((vid.width - 320)>>1)` unless deathmatch, `y + (vid.height -
-        // SBAR_HEIGHT)` (HUD-1); the deathmatch overlay centres too (HUD-2.2).
-        let centring = width.saturating_sub(BAR_WIDTH) >> 1;
-        for Placed { anchor, item } in hud.bar.iter().chain(&hud.overlay) {
-            let (dx, dy) = match anchor {
-                Anchor::Bar => (
-                    if hud.deathmatch { 0 } else { centring },
-                    height.saturating_sub(HUD_SBAR_HEIGHT),
-                ),
-                Anchor::Screen => (0, 0),
-                Anchor::Centered => (centring, 0),
-            };
-            self.draw_item(item, dx, dy, flat);
-        }
-        for item in &hud.center {
-            self.draw_item(item, 0, 0, flat);
+        let items = hud
+            .bar
+            .iter()
+            .chain(&hud.overlay)
+            .map(|placed| (placed.anchor, &placed.item))
+            .chain(hud.center.iter().map(|item| (Anchor::Screen, item)))
+            // `SCR_DrawConsole` after `Sbar_Draw`, then `M_Draw` (CON-3).
+            .chain(
+                hud.console
+                    .iter()
+                    .chain(&hud.menu)
+                    .map(|placed| (placed.anchor, &placed.item)),
+            );
+        for (anchor, item) in items {
+            let canvas = self.canvas(anchor, hud.deathmatch);
+            let first = flat.vertices.len();
+            self.draw_item(item, canvas.width, flat);
+            canvas.place(flat.vertices.get_mut(first..).unwrap_or_default());
         }
     }
 
-    /// One item at its anchor's offset.
-    fn draw_item(&self, item: &HudItem, dx: i32, dy: i32, flat: &mut FlatFrame) {
+    /// The canvas an item of `anchor` is drawn on (REND-13.7): GLQuake's one 640 wide layer,
+    /// with the bar at its bottom, centred unless deathmatch (HUD-1), and the menus' 320 wide
+    /// area centred across it; or QuakeSpasm's `GL_SetCanvas`, the window's own size, with the
+    /// bar's canvas at its bottom centre and the menus' 320 by 200 centred both ways, each at
+    /// scale 1.
+    fn canvas(&self, anchor: Anchor, deathmatch: bool) -> Canvas {
+        let [width, height] = self.screen;
+        let centring = width.saturating_sub(BAR_WIDTH) >> 1;
+        let at = |x: i32, y: i32, w: i32| Canvas {
+            origin: [f32_of_i32(x), f32_of_i32(y)],
+            scale: 1.0,
+            width: w,
+        };
+        match (anchor, self.look) {
+            (Anchor::Bar, _) if deathmatch => at(0, height.saturating_sub(HUD_SBAR_HEIGHT), width),
+            (Anchor::Bar, _) => at(centring, height.saturating_sub(HUD_SBAR_HEIGHT), BAR_WIDTH),
+            (Anchor::Centered, Look::GlQuake) => at(centring, 0, BAR_WIDTH),
+            (Anchor::Centered, Look::QuakeSpasm) => {
+                at(centring, height.saturating_sub(MENU_HEIGHT) >> 1, BAR_WIDTH)
+            }
+            (Anchor::Screen, _) => at(0, 0, width),
+        }
+    }
+
+    /// One item in its canvas's own coordinates, `width` across, before [`Canvas::place`].
+    fn draw_item(&self, item: &HudItem, width: i32, flat: &mut FlatFrame) {
         match item {
             HudItem::Pic { name, x, y } => {
                 if let Some((pic, image)) = self.pics.get(name) {
-                    let at = [x.saturating_add(dx), y.saturating_add(dy)].map(f32_of_i32);
+                    let at = [*x, *y].map(f32_of_i32);
                     let size = [f32_of_u32(image.width), f32_of_u32(image.height)];
                     quad(
                         flat,
@@ -694,10 +723,8 @@ impl Play {
             HudItem::Lmp { path, x, y } => {
                 if let Some((pic, image)) = self.pics.get(path) {
                     // `Draw_Pic ((vid.width - pic->width)/2, ...)` when centred.
-                    let width = i32::try_from(image.width).unwrap_or(0);
-                    let x =
-                        x.unwrap_or_else(|| self.screen[0].saturating_sub(width).wrapping_div(2));
-                    let at = [x.saturating_add(dx), y.saturating_add(dy)].map(f32_of_i32);
+                    let x = x.unwrap_or_else(|| centred(width, image.width));
+                    let at = [x, *y].map(f32_of_i32);
                     let size = [f32_of_u32(image.width), f32_of_u32(image.height)];
                     quad(
                         flat,
@@ -712,7 +739,7 @@ impl Play {
             }
             HudItem::Char { x, y, ch } => {
                 // `Draw_Character`: the space is not drawn, nor a character above the screen.
-                let y = y.saturating_add(dy);
+                let y = *y;
                 if *ch == SPACE || y <= CHAR_OFF_TOP {
                     return;
                 }
@@ -721,9 +748,46 @@ impl Play {
                 };
                 let row = f32::from(ch >> 4) * CHAR_CELL;
                 let column = f32::from(ch & 15) * CHAR_CELL;
-                let at = [f32_of_i32(x.saturating_add(dx)), f32_of_i32(y)];
+                let at = [f32_of_i32(*x), f32_of_i32(y)];
                 let texture = [[column, row], [column + CHAR_CELL, row + CHAR_CELL]];
                 quad(flat, Some(pic), false, at, [CHAR_SIDE; 2], texture, WHITE);
+            }
+            HudItem::ConsoleBack {
+                lines,
+                height,
+                forced,
+            } => {
+                // `Draw_ConsoleBackground`: opaque below three quarters, else `Draw_AlphaPic`
+                // at `1.2 * lines / y` (CON-3.2).
+                if let Some((pic, _)) = self.pics.get(CONBACK) {
+                    let alpha = self.look.console_alpha(*lines, *height, *forced);
+                    let at = [0.0, f32_of_i32(lines.saturating_sub(*height))];
+                    let size = [f32_of_i32(width), f32_of_i32(*height)];
+                    // `Draw_AlphaPic` blends with the alpha test off; `Draw_Pic` tests it.
+                    let translucent = alpha < 1.0;
+                    quad(
+                        flat,
+                        Some(pic),
+                        translucent,
+                        at,
+                        size,
+                        [[0.0, 0.0], [1.0, 1.0]],
+                        [1.0, 1.0, 1.0, alpha],
+                    );
+                }
+            }
+            HudItem::Fade => {
+                // `Draw_FadeScreen`: black over the whole screen, blended (REND-13.7).
+                let size = [self.screen[0], self.screen[1]].map(f32_of_i32);
+                quad(
+                    flat,
+                    None,
+                    true,
+                    [0.0, 0.0],
+                    size,
+                    [[0.0, 0.0], [1.0, 1.0]],
+                    [0.0, 0.0, 0.0, self.look.fade_alpha()],
+                );
             }
             HudItem::Fill { x, y, w, h, color } => {
                 // `Draw_Fill`: `host_basepal[c*3]/255.0`, the colour before the gamma.
@@ -734,7 +798,7 @@ impl Play {
                     f32::from(b) / 255.0,
                     1.0,
                 ];
-                let at = [x.saturating_add(dx), y.saturating_add(dy)].map(f32_of_i32);
+                let at = [*x, *y].map(f32_of_i32);
                 quad(
                     flat,
                     None,
@@ -786,6 +850,36 @@ fn draw_alias(
         first: u32_of(start),
         count: u32_of(out.vertices.len().saturating_sub(start)),
     });
+}
+
+/// Where a 2D item's canvas sits on the screen: its top left and its scale, and how wide it is
+/// in its own units (REND-13.7).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Canvas {
+    origin: [f32; 2],
+    scale: f32,
+    width: i32,
+}
+
+impl Canvas {
+    /// The vertices drawn in the canvas's units moved onto the screen.
+    fn place(self, vertices: &mut [FlatVertex]) {
+        for vertex in vertices {
+            let [x, y] = vertex.position;
+            vertex.position = [
+                self.origin[0] + x * self.scale,
+                self.origin[1] + y * self.scale,
+            ];
+        }
+    }
+}
+
+/// `(width - pic->width) / 2`: the left edge that centres a picture `image_width` wide in a
+/// canvas `width` wide.
+fn centred(width: i32, image_width: u32) -> i32 {
+    width
+        .saturating_sub(i32::try_from(image_width).unwrap_or(0))
+        .wrapping_div(2)
 }
 
 /// A quad of the 2D layer at `at` of `size`, its texture from `texture[0]` to `texture[1]`,

@@ -251,6 +251,8 @@ pub(crate) struct Game {
     state: State,
     held: Vec<Held>,
     events: Vec<Event>,
+    /// The console's lines since the window last took them, for the console on the screen.
+    printed: Vec<Vec<u8>>,
     /// Where the window last looked from, `None` before it has drawn.
     eye: Option<Eye>,
     /// The screenshots asked for since the last frame drawn.
@@ -289,6 +291,7 @@ impl Game {
             state: State::Running,
             held: Vec::new(),
             events: Vec::new(),
+            printed: Vec::new(),
             eye: None,
             shots: Vec::new(),
             placement: None,
@@ -451,6 +454,9 @@ impl Game {
 
     /// A line on the console, as `console/line` (BRIDGE-3.1).
     pub(crate) fn console_line(&mut self, text: &str) {
+        let mut line = text.trim_end_matches('\n').as_bytes().to_vec();
+        line.push(b'\n');
+        self.printed.push(line);
         let time = self.world.time();
         self.events.push((
             "console/line",
@@ -791,13 +797,82 @@ impl Game {
         json!({})
     }
 
-    /// The console's printed lines since the last report, as `console/line` (BRIDGE-3.1).
+    /// The console's printed lines since the last report, as `console/line` (BRIDGE-3.1) and
+    /// for the console on the screen.
     pub(crate) fn report_console(&mut self) {
         for line in self.world.take_console_output() {
             let text = String::from_utf8_lossy(&line).into_owned();
             self.console_line(&text);
         }
     }
+
+    /// The lines the console printed since the last call, from the player's typing, the
+    /// progs, the bridge or the host, each ending with its line feed.
+    pub(crate) fn take_printed(&mut self) -> Vec<Vec<u8>> {
+        core::mem::take(&mut self.printed)
+    }
+
+    /// A line typed into the console on the screen run through qs-sim's console path, as
+    /// `Key_Console`'s `Cbuf_AddText` and the next frame's `Cbuf_Execute` run it (CON-4.2); what
+    /// it printed waits in [`Game::take_printed`].
+    pub(crate) fn type_console(&mut self, line: &[u8]) {
+        self.world.console(&String::from_utf8_lossy(line));
+        self.world.console("\n");
+        if self
+            .with_progs(|game, progs| game.world.execute_console(progs))
+            .is_err()
+        {
+            tracing::warn!("the progs did not read for the console");
+        }
+        self.report_console()
+    }
+
+    /// `CL_BaseMove`'s speeds and the run key's factor, from the settings (CON-7.2).
+    pub(crate) fn move_speeds(&self) -> MoveSpeeds {
+        let setting = |name: &str| self.world.setting(name).unwrap_or(0.0);
+        MoveSpeeds {
+            forward: setting("cl_forwardspeed"),
+            back: setting("cl_backspeed"),
+            side: setting("cl_sidespeed"),
+            up: setting("cl_upspeed"),
+            run: setting("cl_movespeedkey"),
+        }
+    }
+
+    /// `IN_MouseMove`'s turn for the mouse's `motion` (CON-7.2): `mouse_x *= sensitivity.value`,
+    /// then `cl.viewangles[YAW] -= m_yaw.value * mouse_x` and
+    /// `cl.viewangles[PITCH] += m_pitch.value * mouse_y`; the yaw and pitch to add.
+    pub(crate) fn mouse_turn(&self, motion: [f32; 2]) -> [f32; 2] {
+        let setting = |name: &str| self.world.setting(name).unwrap_or(0.0);
+        let sensitivity = setting("sensitivity");
+        let [x, y] = motion;
+        [
+            -(x * sensitivity) * setting("m_yaw"),
+            y * sensitivity * setting("m_pitch"),
+        ]
+    }
+
+    /// The command or setting `partial` completes to (CON-4.3).
+    pub(crate) fn complete(&self, partial: &[u8]) -> Option<Vec<u8>> {
+        self.world
+            .complete(&String::from_utf8_lossy(partial))
+            .map(String::into_bytes)
+    }
+}
+
+/// `CL_BaseMove`'s speeds, units a second a key, and the run key's factor (CON-7.2).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MoveSpeeds {
+    /// `cl_forwardspeed`.
+    pub(crate) forward: f32,
+    /// `cl_backspeed`.
+    pub(crate) back: f32,
+    /// `cl_sidespeed`.
+    pub(crate) side: f32,
+    /// `cl_upspeed`.
+    pub(crate) up: f32,
+    /// `cl_movespeedkey`.
+    pub(crate) run: f32,
 }
 
 /// The frame a `step` of kind `frame` runs: `Host_FilterTime`'s shortest, 1/72 of a second.

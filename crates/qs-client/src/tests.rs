@@ -331,8 +331,9 @@ fn the_serverinfo_starts_a_map() {
     ));
     assert!(client.model(0).is_none());
     assert!(client.model(12).is_none());
+    // The divider and the level's name come first (CLIENT-1.7).
     assert_eq!(
-        events,
+        events[2..],
         [Event::NewMap {
             level: b"The Test".to_vec(),
             models: MODELS.iter().map(|m| (*m).to_owned()).collect(),
@@ -3166,4 +3167,28 @@ fn the_drift_waits_for_a_frame_after_a_stop() {
     assert!(view.nodrift, "stopped at this very time");
     view.drift_pitch(5.1, 0.2, true, 200.0, 0.0, &mut angles);
     assert!(!view.nodrift);
+}
+
+// spec CLIENT-1.7: a new server prints the divider, then the level's name in the other colour
+#[test]
+fn a_new_server_prints_its_level_name() {
+    let mut client = Client::with_limits(Game::Standard, ClientLimits::WINQUAKE);
+    let packets = vec![serverinfo(&MODELS, &["a.wav", "b.wav"])];
+    let events = client
+        .frame(0.0, &packets, &mut TestModels, &mut Fixed(vec![]))
+        .unwrap();
+    let printed: Vec<&Vec<u8>> = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Print(text) => Some(text),
+            _ => None,
+        })
+        .collect();
+    let divider = printed
+        .iter()
+        .position(|text| text.starts_with(b"\n\n\x1d"))
+        .unwrap();
+    assert_eq!(printed[divider].len(), 2 + 1 + 35 + 1 + 2);
+    assert_eq!(printed[divider + 1][0], 2);
+    assert!(printed[divider + 1].ends_with(b"\n"));
 }
