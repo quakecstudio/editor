@@ -87,7 +87,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     let mut passed = true;
     for map in &maps {
         let tolerance = tolerance_of(&tolerances, map)?;
-        let start = player_start(&args.engine, map)?;
+        let (start, monsters) = player_start(&args.engine, map)?;
         let dir = out.join(map);
         fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         let run = |side: &str| -> Result<(), String> {
@@ -156,6 +156,8 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         };
         let heard = compare_sound(&sound("id")?, &sound("qs")?);
         let (verdict, text) = match heard {
+            // VIEWDIFF-5.3: a monster in earshot idles at random, at other times in each.
+            _ if monsters => (true, "sound not compared: a monster in earshot".to_owned()),
             Sound::Silent => (true, "both silent".to_owned()),
             Sound::OneSilent => (false, "one is silent".to_owned()),
             Sound::Difference(difference) => (
@@ -214,8 +216,8 @@ fn build_host(root: &Path) -> Result<PathBuf, String> {
 }
 
 /// The origin and yaw of `map`'s first `info_player_start`, read through the game the engine
-/// words name (VIEWDIFF-5.1).
-fn player_start(engine: &[String], map: &str) -> Result<([f32; 3], f32), String> {
+/// words name (VIEWDIFF-5.1), and whether a monster stands in earshot of it (VIEWDIFF-5.3).
+fn player_start(engine: &[String], map: &str) -> Result<(([f32; 3], f32), bool), String> {
     let vfs = Vfs::new(StdFs, engine, ".").map_err(|e| format!("{e:?}"))?;
     let name = format!("maps/{map}.bsp");
     let bytes = vfs
@@ -226,15 +228,54 @@ fn player_start(engine: &[String], map: &str) -> Result<([f32; 3], f32), String>
     let bsp =
         qs_bsp::Bsp::read(&bytes, qs_bsp::BspLoader::default()).map_err(|e| e.message(&name))?;
     let text = String::from_utf8_lossy(bsp.entities()).into_owned();
-    start_of(&text).ok_or_else(|| format!("{name} has no info_player_start"))
+    let start = start_of(&text).ok_or_else(|| format!("{name} has no info_player_start"))?;
+    Ok((start, monster_near(&text, start.0)))
+}
+
+/// How far a monster's idle sound carries: `SND_NOMINAL_CLIP_DIST` over an attenuation of 1,
+/// the least an idle sound has (SND-3.2, VIEWDIFF-5.3).
+const EARSHOT: f32 = 1000.0;
+
+/// Whether an entity of the text `text` whose class starts `monster_` stands within
+/// [`EARSHOT`] of `origin` (VIEWDIFF-5.3).
+fn monster_near(text: &str, origin: [f32; 3]) -> bool {
+    entities(text).any(|pairs| {
+        let value = |key: &str| {
+            pairs
+                .chunks(2)
+                .find(|pair| pair.first() == Some(&key))
+                .and_then(|pair| pair.get(1).copied())
+        };
+        value("classname").is_some_and(|class| class.starts_with("monster_"))
+            && value("origin").and_then(vector).is_some_and(|at| {
+                let [dx, dy, dz] = [at[0] - origin[0], at[1] - origin[1], at[2] - origin[2]];
+                (dx * dx + dy * dy + dz * dz).sqrt() < EARSHOT
+            })
+    })
+}
+
+/// Each entity of the text `text` as its quoted words, keys and values in turn.
+fn entities(text: &str) -> impl Iterator<Item = Vec<&str>> {
+    text.split('{').skip(1).filter_map(|entity| {
+        let body = entity.split('}').next()?;
+        Some(body.split('"').skip(1).step_by(2).collect())
+    })
+}
+
+/// The three numbers of `text`, if it is three numbers.
+fn vector(text: &str) -> Option<[f32; 3]> {
+    let numbers: Vec<f32> = text
+        .split_whitespace()
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .ok()?;
+    <[f32; 3]>::try_from(numbers).ok()
 }
 
 /// The first `info_player_start` of the entity text `text`: its `origin`, and its `angle`, 0
 /// without one.
 fn start_of(text: &str) -> Option<([f32; 3], f32)> {
-    for entity in text.split('{').skip(1) {
-        let body = entity.split('}').next()?;
-        let pairs: Vec<&str> = body.split('"').skip(1).step_by(2).collect();
+    for pairs in entities(text) {
         let value = |key: &str| {
             pairs
                 .chunks(2)
@@ -244,19 +285,14 @@ fn start_of(text: &str) -> Option<([f32; 3], f32)> {
         if value("classname") != Some("info_player_start") {
             continue;
         }
-        let numbers: Vec<f32> = value("origin")?
-            .split_whitespace()
-            .map(str::parse)
-            .collect::<Result<_, _>>()
-            .ok()?;
-        let origin = <[f32; 3]>::try_from(numbers).ok()?;
+        let origin = vector(value("origin")?)?;
         let yaw = value("angle").and_then(|a| a.parse().ok()).unwrap_or(0.0);
         return Some((origin, yaw));
     }
     None
 }
 
-/// The tolerances table of `doc` (VIEWDIFF-5.2): map name or `*`, then the three numbers.
+/// The tolerances table of `doc` (VIEWDIFF-5.2): map name or `*`, the three numbers, and why.
 fn parse_tolerances(doc: &str) -> Result<Vec<(String, Tolerance)>, String> {
     let start = doc
         .find(BEGIN)
@@ -268,8 +304,8 @@ fn parse_tolerances(doc: &str) -> Result<Vec<(String, Tolerance)>, String> {
     let mut rows = Vec::new();
     for line in table.lines().filter(|line| line.starts_with('|')).skip(2) {
         let cells: Vec<&str> = line.trim_matches('|').split('|').map(str::trim).collect();
-        let [map, frame, brightness, sound] = <[&str; 4]>::try_from(cells)
-            .map_err(|_| format!("{TOLERANCES_DOC}: a row has not four cells: {line}"))?;
+        let [map, frame, brightness, sound, _why] = <[&str; 5]>::try_from(cells)
+            .map_err(|_| format!("{TOLERANCES_DOC}: a row has not five cells: {line}"))?;
         let number = |cell: &str| {
             cell.parse::<f64>()
                 .map_err(|_| format!("{TOLERANCES_DOC}: not a number: {cell}"))

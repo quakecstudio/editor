@@ -8,8 +8,15 @@
 #include "rand.h"
 
 static unsigned random_state = 1;
+static unsigned client_state = 1;
 
-int qs_rand(void) {
-    random_state = random_state * 1103515245u + 12345u;
-    return (int)((random_state >> 16) & 0x7fff);
+// The generator's next number from `state`.
+static int next(unsigned *state) {
+    *state = *state * 1103515245u + 12345u;
+    return (int)((*state >> 16) & 0x7fff);
 }
+
+int qs_rand(void) { return next(&random_state); }
+
+// The view oracle's client's own, the same generator from 1 (VIEWDIFF-2.3).
+int qs_client_rand(void) { return next(&client_state); }

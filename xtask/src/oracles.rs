@@ -103,6 +103,17 @@ const ENGINE_HARNESS: [&str; 3] = [
 /// system, video and sound card that id's whole engine runs on headless (P3-28).
 const VIEW_HARNESS: [&str; 2] = ["oracles/engine/view_host.c", "oracles/engine/rand.c"];
 
+/// The view oracle's files of id's client that call `rand`, given a generator of their own so
+/// that the server's draws are the server oracle's (VIEWDIFF-2.3).
+const VIEW_CLIENT_FILES: [&str; 6] = [
+    "cl_main.c",
+    "cl_parse.c",
+    "cl_tent.c",
+    "menu.c",
+    "r_part.c",
+    "snd_dma.c",
+];
+
 /// id's files the view oracle compiles whole, with id's own headers: the client, the software
 /// renderer with the C stand-ins for its assembly (`nonintel.c`), the mixer, the server, and
 /// the null CD and input drivers and loopback network a headless engine needs.
@@ -919,14 +930,18 @@ fn compile_view(
     let quake = cache.join(ENGINE_UPSTREAM).join("WinQuake");
     let includes = vec![root.join("oracles/engine"), quake.clone()];
     let rand = root.join("oracles/engine/rand.h");
-    let upstream = VIEW_FILES
-        .iter()
-        .map(|file| (quake.join(file), Code::Upstream));
+    let upstream = VIEW_FILES.iter().map(|file| {
+        (
+            quake.join(file),
+            Code::Upstream,
+            VIEW_CLIENT_FILES.contains(file),
+        )
+    });
     let ours = VIEW_HARNESS
         .iter()
-        .map(|file| (root.join(file), Code::Ours));
+        .map(|file| (root.join(file), Code::Ours, false));
     let mut view_objects = Vec::new();
-    for (source, code) in upstream.chain(ours) {
+    for (source, code, client) in upstream.chain(ours) {
         let object = objects.join(format!("view_{}.o", stem(&source)));
         let forced_include = match code {
             Code::Upstream => Some(rand.as_path()),
@@ -937,7 +952,7 @@ fn compile_view(
                 source: &source,
                 code,
                 includes: &includes,
-                defines: &[],
+                defines: if client { &["QS_CLIENT_RAND"] } else { &[] },
                 forced_include,
             },
             &object,

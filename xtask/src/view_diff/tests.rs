@@ -10,8 +10,8 @@
 )]
 
 use super::{
-    PPM_HEADER, Sound, Tolerance, compare_frames, compare_sound, parse_tolerances, route, start_of,
-    tolerance_of,
+    PPM_HEADER, Sound, Tolerance, compare_frames, compare_sound, monster_near, parse_tolerances,
+    route, start_of, tolerance_of,
 };
 
 /// A 320 by 240 binary PPM of one grey `level`, its pixel `at` set to `other`.
@@ -143,14 +143,16 @@ fn sound_is_compared_over_the_last_windows_at_the_best_shift() {
 // spec VIEWDIFF-5.2: a map's row, else the `*` row; a table without either is refused
 #[test]
 fn tolerances_are_read_per_map() {
-    let doc = "<!-- view-diff -->\n| Map | Frame | Brightness | Sound |\n| --- | --- | --- | --- |\n\
-               | `*` | 6 | 0.15 | 0.35 |\n| `e4m7` | 12 | 0.15 | 0.5 |\n<!-- /view-diff -->\n";
+    let doc = "<!-- view-diff -->\n| Map | Frame | Brightness | Sound | Why |\n| --- | --- | --- | --- | --- |\n\
+               | `*` | 6 | 0.15 | 0.35 | |\n| `e4m7` | 12 | 0.15 | 0.5 | a sky |\n<!-- /view-diff -->\n";
     let rows = parse_tolerances(doc).unwrap();
     assert_eq!(tolerance_of(&rows, "e4m7").unwrap().frame, 12.0);
+    assert_eq!(tolerance_of(&rows, "e4m7").unwrap().sound, 0.5);
     assert_eq!(tolerance_of(&rows, "e1m1").unwrap().sound, 0.35);
     assert!(tolerance_of(&rows[1..], "e1m1").is_err());
     assert!(parse_tolerances("no table").is_err());
     assert!(parse_tolerances(&doc.replace("| 0.35 |", "| loud |")).is_err());
+    assert!(parse_tolerances(&doc.replace(" a sky |", "")).is_err());
 }
 
 // spec VIEWDIFF-5.1: a route settles, then shoots the start's view and the one behind it, then
@@ -223,4 +225,18 @@ fn the_oracle_shares_the_generator() {
     assert!(view.contains(r#"let rand = root.join("oracles/engine/rand.h");"#));
     assert!(view.contains("Code::Upstream => Some(rand.as_path()),"));
     assert!(source.contains(r#"const VIEW_HARNESS: [&str; 2] = ["oracles/engine/view_host.c", "oracles/engine/rand.c"];"#));
+}
+
+// spec VIEWDIFF-5.3: a monster within 1000 units of the start is in earshot; one at 1000 or
+// farther, or any other entity, is not
+#[test]
+fn a_monster_in_earshot_is_found() {
+    let text = |class: &str, origin: &str| {
+        format!("{{\n\"classname\" \"{class}\"\n\"origin\" \"{origin}\"\n}}\n")
+    };
+    let start = [0.0, 0.0, 0.0];
+    assert!(monster_near(&text("monster_ogre", "300 400 0"), start));
+    assert!(!monster_near(&text("monster_ogre", "600 800 0"), start));
+    assert!(!monster_near(&text("item_health", "10 0 0"), start));
+    assert!(!monster_near(&text("monster_ogre", "nowhere"), start));
 }

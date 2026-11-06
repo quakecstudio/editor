@@ -12,6 +12,13 @@
 #include <stdlib.h>
 
 int qs_rand(void);
+int qs_client_rand(void);
+// The view oracle compiles id's client files with QS_CLIENT_RAND: their draws come from a
+// generator of their own, so the server's are the server oracle's (VIEWDIFF-2.3).
+#ifdef QS_CLIENT_RAND
+#define rand qs_client_rand
+#else
 #define rand qs_rand
+#endif
 
 #endif

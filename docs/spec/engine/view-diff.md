@@ -47,8 +47,13 @@ within tolerances recorded per map; it is not an exact match.
 - **VIEWDIFF-2.2** Only the 3D view is compared: the oracle sets `viewsize 120`, `crosshair
   0`, `r_drawviewmodel 0` and `con_notifytime 0` before the map loads, and the host draws no
   status bar, centre print or weapon. The view's colour shift is drawn in both.
-- **VIEWDIFF-2.3** id's code calls the C library's `rand` through the shared generator of
-  DIFF-6.2 (`oracles/engine/rand.c`), so the oracle's frames are the same on every OS.
+- **VIEWDIFF-2.3** id's code calls the C library's `rand` through the generator of DIFF-6.2
+  (`oracles/engine/rand.c`), so the oracle's frames are the same on every OS. In id's engine
+  the client and the server draw from the one `rand`, so every particle or sound the client
+  starts moves the server's sequence; the oracle gives the client's files that call it
+  (`cl_main.c`, `cl_parse.c`, `cl_tent.c`, `menu.c`, `r_part.c`, `snd_dma.c`) the same
+  generator from its own state, so the server draws what the server oracle draws (DIFF-16), as
+  qs-sim does.
 - **VIEWDIFF-2.4** The oracle draws the view only from a `place` to the `shot` after it, keeping
   `block_drawing` set otherwise, as `vid_win.c` does while the game is switched away. id's C
   span drawer, the `nonintel` path of `d_scan.c` used without `id386`, reads outside a surface's
@@ -105,10 +110,22 @@ reads the table between the `view-diff` markers.
   each client hears before the player's view is its listener are over, then the player placed
   at the map's first `info_player_start` at its `angle`, a quarter of a second, a shot, the
   player turned the other way, a quarter of a second, a shot, and three seconds of frames for the sound.
-- **VIEWDIFF-5.2** A map's tolerances are its row of the table, else the `*` row's.
+- **VIEWDIFF-5.2** A map's tolerances are its row of the table, else the `*` row's. A row says
+  why the map's differs from the `*` row.
+- **VIEWDIFF-5.3** A map with a monster, an entity whose class starts `monster_`, within 1000
+  units of the start has its sound not compared, its frames still are: 1000 is as far as an
+  idle sound carries, `SND_NOMINAL_CLIP_DIST` over an attenuation of 1 (SND-3.2). The two
+  servers start at different frames, id's running while its client signs on over the loopback
+  and ours with the player in at once, so a monster's random choice to idle falls at another
+  time in each (on e1m8, e2m4, e3m3, e3m4, e4m5, e4m7 and `end` the sounds that differed were
+  logged from the host: monsters' `idle` sounds), and no shift lines them up.
 
 <!-- view-diff -->
-| Map | Frame | Brightness | Sound |
-| --- | --- | --- | --- |
-| `*` | 6 | 0.15 | 0.35 |
+| Map | Frame | Brightness | Sound | Why |
+| --- | --- | --- | --- | --- |
+| `*` | 6 | 0.15 | 0.35 | |
+| `e3m1` | 6 | 0.85 | 0.35 | a flickering light fills the ahead shot, its style at another phase (1.79 measured) |
+| `e4m4` | 6 | 0.15 | 0.5 | an ambient sound near the start, 0.37 to 0.41 measured |
+| `e4m7` | 14 | 0.15 | 0.35 | the behind shot looks at a scrolling texture at another position (11.4 measured) |
+| `end` | 8 | 0.15 | 0.35 | the water's surface moves (6.8 measured) |
 <!-- /view-diff -->
