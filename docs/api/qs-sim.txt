@@ -10,6 +10,32 @@ const qs_sim::collision::hull::CONTENTS_WATER
 const qs_sim::collision::hull::HULL1
 const qs_sim::collision::hull::HULL2
 const qs_sim::collision::trace::DIST_EPSILON
+const qs_sim::input::Button::ALL
+const qs_sim::keys::K_ALT
+const qs_sim::keys::K_AUX1
+const qs_sim::keys::K_BACKSPACE
+const qs_sim::keys::K_CTRL
+const qs_sim::keys::K_DEL
+const qs_sim::keys::K_DOWNARROW
+const qs_sim::keys::K_END
+const qs_sim::keys::K_ENTER
+const qs_sim::keys::K_ESCAPE
+const qs_sim::keys::K_F1
+const qs_sim::keys::K_HOME
+const qs_sim::keys::K_INS
+const qs_sim::keys::K_JOY1
+const qs_sim::keys::K_LEFTARROW
+const qs_sim::keys::K_MOUSE1
+const qs_sim::keys::K_MWHEELDOWN
+const qs_sim::keys::K_MWHEELUP
+const qs_sim::keys::K_PAUSE
+const qs_sim::keys::K_PGDN
+const qs_sim::keys::K_PGUP
+const qs_sim::keys::K_RIGHTARROW
+const qs_sim::keys::K_SHIFT
+const qs_sim::keys::K_SPACE
+const qs_sim::keys::K_TAB
+const qs_sim::keys::K_UPARROW
 const qs_sim::messages::NET_FAT_PVS_DISTANCE
 const qs_sim::messages::NET_GAME_COOP
 const qs_sim::messages::NET_GAME_DEATHMATCH
@@ -35,6 +61,7 @@ enum qs_sim::collision::Solid
 enum qs_sim::collision::area::MoveKind
 enum qs_sim::collision::hull::EntityHull
 enum qs_sim::debug::StepKind
+enum qs_sim::input::Button
 enum qs_sim::rerelease::BuiltinTable
 enum qs_sim::scenario::Edict
 enum qs_sim::scenario::Expected
@@ -107,6 +134,23 @@ field qs_sim::debug::Stop.depth
 field qs_sim::debug::Stop.function
 field qs_sim::debug::Stop.run
 field qs_sim::debug::Stop.statement
+field qs_sim::input::Drift.start
+field qs_sim::input::Drift.stop
+field qs_sim::input::MoveSettings.anglespeedkey
+field qs_sim::input::MoveSettings.backspeed
+field qs_sim::input::MoveSettings.forwardspeed
+field qs_sim::input::MoveSettings.lookspring
+field qs_sim::input::MoveSettings.lookstrafe
+field qs_sim::input::MoveSettings.m_forward
+field qs_sim::input::MoveSettings.m_pitch
+field qs_sim::input::MoveSettings.m_side
+field qs_sim::input::MoveSettings.m_yaw
+field qs_sim::input::MoveSettings.movespeedkey
+field qs_sim::input::MoveSettings.pitchspeed
+field qs_sim::input::MoveSettings.sensitivity
+field qs_sim::input::MoveSettings.sidespeed
+field qs_sim::input::MoveSettings.upspeed
+field qs_sim::input::MoveSettings.yawspeed
 field qs_sim::messages::ClientMessages.packets
 field qs_sim::physics::Sound.entity
 field qs_sim::physics::Sound.sample
@@ -227,6 +271,26 @@ fn qs_sim::debug::Debugger::stop_at_first
 fn qs_sim::debug::Debugger::stopped
 fn qs_sim::debug::locate
 fn qs_sim::debug::resolve
+fn qs_sim::input::Button::named
+fn qs_sim::input::Input::frame
+fn qs_sim::input::Input::held
+fn qs_sim::input::Input::new
+fn qs_sim::input::Input::press
+fn qs_sim::input::Input::release
+fn qs_sim::input::Input::set_impulse
+fn qs_sim::input::MoveSettings::read
+fn qs_sim::keys::Bindings::bind
+fn qs_sim::keys::Bindings::binding
+fn qs_sim::keys::Bindings::down
+fn qs_sim::keys::Bindings::keys_for
+fn qs_sim::keys::Bindings::new
+fn qs_sim::keys::Bindings::set
+fn qs_sim::keys::Bindings::unbind
+fn qs_sim::keys::Bindings::unbind_all
+fn qs_sim::keys::Bindings::unbound_notice
+fn qs_sim::keys::Bindings::up
+fn qs_sim::keys::key_from_name
+fn qs_sim::keys::key_name
 fn qs_sim::messages::Message::bytes
 fn qs_sim::messages::Message::clear
 fn qs_sim::messages::Message::is_empty
@@ -328,6 +392,7 @@ impl qs_sim::builtins::SimBuiltins: Builtins
 impl qs_sim::collision::CollisionError: core::error::Error
 impl qs_sim::collision::CollisionError: core::fmt::Display
 impl qs_sim::debug::Debugger: Observer
+impl qs_sim::keys::Bindings: Default
 impl qs_sim::scenario::PlayError: fmt::Display
 impl qs_sim::scenario::ScenarioError: fmt::Display
 impl qs_sim::scenario::ScenarioError: std::error::Error
@@ -343,6 +408,8 @@ impl qs_sim::world::save::SaveError: core::error::Error
 impl qs_sim::world::save::SaveError: core::fmt::Display
 mod qs_sim::collision
 mod qs_sim::debug
+mod qs_sim::input
+mod qs_sim::keys
 mod qs_sim::rerelease
 mod qs_sim::scenario
 mod qs_sim::spawn
@@ -363,6 +430,10 @@ struct qs_sim::collision::trace::TracePlane
 struct qs_sim::debug::Debugger
 struct qs_sim::debug::Location
 struct qs_sim::debug::Stop
+struct qs_sim::input::Drift
+struct qs_sim::input::Input
+struct qs_sim::input::MoveSettings
+struct qs_sim::keys::Bindings
 struct qs_sim::messages::ClientMessages
 struct qs_sim::messages::Message
 struct qs_sim::physics::Sound
@@ -501,6 +572,23 @@ variant qs_sim::debug::StepKind::In
 variant qs_sim::debug::StepKind::Out
 variant qs_sim::debug::StepKind::Over
 variant qs_sim::debug::StepKind::Statement
+variant qs_sim::input::Button::Attack
+variant qs_sim::input::Button::Back
+variant qs_sim::input::Button::Down
+variant qs_sim::input::Button::Forward
+variant qs_sim::input::Button::Jump
+variant qs_sim::input::Button::KLook
+variant qs_sim::input::Button::Left
+variant qs_sim::input::Button::LookDown
+variant qs_sim::input::Button::LookUp
+variant qs_sim::input::Button::MLook
+variant qs_sim::input::Button::MoveLeft
+variant qs_sim::input::Button::MoveRight
+variant qs_sim::input::Button::Right
+variant qs_sim::input::Button::Speed
+variant qs_sim::input::Button::Strafe
+variant qs_sim::input::Button::Up
+variant qs_sim::input::Button::Use
 variant qs_sim::rerelease::BuiltinTable::Id
 variant qs_sim::rerelease::BuiltinTable::Rerelease
 variant qs_sim::scenario::Edict::Classname
@@ -540,16 +628,22 @@ variant qs_sim::spawn::SpawnError::NoFreeEdicts
 variant qs_sim::spawn::SpawnError::ParseError
 variant qs_sim::spawn::Token::End
 variant qs_sim::spawn::Token::Word
+variant qs_sim::world::ClientCommand::Bind
 variant qs_sim::world::ClientCommand::Clear
 variant qs_sim::world::ClientCommand::Help
+variant qs_sim::world::ClientCommand::Impulse
 variant qs_sim::world::ClientCommand::MenuLoad
 variant qs_sim::world::ClientCommand::MenuMain
 variant qs_sim::world::ClientCommand::MenuOptions
 variant qs_sim::world::ClientCommand::MenuQuit
 variant qs_sim::world::ClientCommand::MenuSave
 variant qs_sim::world::ClientCommand::MenuSinglePlayer
+variant qs_sim::world::ClientCommand::Press
+variant qs_sim::world::ClientCommand::Release
 variant qs_sim::world::ClientCommand::ToggleConsole
 variant qs_sim::world::ClientCommand::ToggleMenu
+variant qs_sim::world::ClientCommand::Unbind
+variant qs_sim::world::ClientCommand::UnbindAll
 variant qs_sim::world::HostCommand::Changelevel
 variant qs_sim::world::HostCommand::Load
 variant qs_sim::world::HostCommand::Map

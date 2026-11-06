@@ -29,6 +29,7 @@ use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
 use crate::debug::Debugger;
 use crate::host_commands::SignonCommand;
+use crate::input::Button;
 use crate::messages::ClientMessages;
 #[cfg(test)]
 use crate::messages::ServerMessages;
@@ -207,7 +208,7 @@ pub enum HostCommand {
 
 /// A command the client runs, not the server: id's `console.c` and `menu.c` register them
 /// with the client's console (CON-6.1). The console hands them to the host in order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ClientCommand {
     /// `toggleconsole`, `Con_ToggleConsole_f`.
     ToggleConsole,
@@ -229,6 +230,18 @@ pub enum ClientCommand {
     Help,
     /// `menu_quit`, `M_Menu_Quit_f`.
     MenuQuit,
+    /// `bind`, `Key_Bind_f`, with the command's words (INPUT-1.2).
+    Bind(Vec<Vec<u8>>),
+    /// `unbind`, `Key_Unbind_f`, with the command's words.
+    Unbind(Vec<Vec<u8>>),
+    /// `unbindall`, `Key_Unbindall_f`.
+    UnbindAll,
+    /// `impulse <n>`, `IN_Impulse`: `Q_atoi` of the word, as the byte the move sends.
+    Impulse(u8),
+    /// `+<button>`, `KeyDown`, with the key's number when a key sent it (INPUT-2.1).
+    Press(Button, Option<i32>),
+    /// `-<button>`, `KeyUp`, with the key's number when a key sent it.
+    Release(Button, Option<i32>),
 }
 
 impl ClientCommand {
