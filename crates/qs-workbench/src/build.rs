@@ -7,9 +7,8 @@
 use std::path::{Path, PathBuf};
 
 use qc_codegen::{CompileError, Compiled, compile_module};
-use qc_engines::{Engine, Unloadable};
+use qc_engines::Unloadable;
 use qc_ide::ModuleBuild;
-use qc_progs::{Progs, ReadOptions};
 use qc_project::Loader;
 use qc_sema::FileDiagnostic;
 use serde::{Deserialize, Serialize};
@@ -140,19 +139,19 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
     let (built, problems) = match compiled {
         Ok(compiled) => {
             let mut problems: Vec<Reported> = compiled.warnings.iter().map(report).collect();
-            let progs = program_bytes(output, &compiled)?;
-            match unloadable(engine, &progs) {
+            match engine.unloadable(&compiled.progs) {
                 // ENGT-3.12: a program its engine cannot load is not written.
                 Some(why) => {
                     problems.push(Reported {
                         place: None,
                         gravity: Gravity::Error,
                         code: "target".to_owned(),
-                        message: why.to_string(),
+                        message: unloadable_message(&compiled, why),
                     });
                     (false, problems)
                 }
                 None => {
+                    let progs = program_bytes(output, &compiled)?;
                     write_program(output, &progs, &compiled)?;
                     (true, problems)
                 }
@@ -185,15 +184,30 @@ fn program_bytes(output: &Path, compiled: &Compiled) -> Result<Vec<u8>, Workbenc
     })
 }
 
-/// Why `engine` cannot load `progs`, the bytes of a program (ENGT-3.12).
-fn unloadable(engine: Engine, progs: &[u8]) -> Option<Unloadable> {
-    // The engine's own checks, the header's CRC among them, are not this one's.
-    let options = ReadOptions {
-        check_header_crc: false,
+/// Why the engine cannot load `compiled`'s program, a statement's function and line named.
+fn unloadable_message(compiled: &Compiled, why: Unloadable) -> String {
+    let Unloadable::Opcode { statement, .. } = why else {
+        return why.to_string();
     };
-    let read = Progs::read_with(progs, &options).ok()?;
-    let version = read.header().version;
-    engine.unloadable(version, read.statements().iter().map(|s| s.op))
+    let progs = &compiled.progs;
+    let function = i32::try_from(statement).ok().and_then(|at| {
+        progs
+            .functions
+            .iter()
+            .filter(|f| f.first_statement > 0 && f.first_statement <= at)
+            .max_by_key(|f| f.first_statement)
+    });
+    let name = function
+        .and_then(|f| usize::try_from(f.s_name).ok())
+        .and_then(|at| progs.strings.get(at..))
+        .and_then(|rest| rest.split(|&b| b == 0).next())
+        .map(|name| String::from_utf8_lossy(name).into_owned());
+    let line = compiled.lno.lines.get(statement).copied();
+    match (name, line) {
+        (Some(name), Some(line)) => format!("{why}: in {name}, at line {line}"),
+        (Some(name), None) => format!("{why}: in {name}"),
+        (None, _) => why.to_string(),
+    }
 }
 
 /// Writes `progs`, `compiled`'s program, to `output` and its line map beside it, making the

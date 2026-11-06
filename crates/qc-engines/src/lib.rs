@@ -34,6 +34,8 @@ pub use tables::SOURCES;
 
 #[cfg(test)]
 use qc_builtins::table::BUILTINS;
+use qc_progs::opcode::Opcode;
+use qc_progs::{PROGS_VERSION, ProgsFile};
 use qc_project::{ModuleKind, Target};
 
 /// How a progs names a builtin to the engine (ENGT-2.4).
@@ -235,6 +237,8 @@ impl Layer {
 pub enum Unloadable {
     /// The program is this version, not 6.
     Version(i32),
+    /// The program has this many globals, more than a version 6 operand reaches.
+    Globals(usize),
     /// A statement, at this index, has this opcode, which id's VM lacks.
     Opcode {
         /// The statement's index.
@@ -251,40 +255,47 @@ impl core::fmt::Display for Unloadable {
                 f,
                 "the program is version {version}; the KEX rerelease loads version 6"
             ),
+            Self::Globals(count) => write!(
+                f,
+                "the program has {count} globals; a version 6 statement reaches {GLOBALS_REACHED}"
+            ),
             Self::Opcode { statement, opcode } => write!(
                 f,
-                "statement {statement} has opcode {opcode}; the KEX rerelease has id's \
-                 opcodes 0 to 65"
+                "statement {statement} has opcode {opcode}, which id's VM, and the KEX \
+                 rerelease, lacks"
             ),
         }
     }
 }
 
-/// The highest opcode id's VM has (PROGS-8).
-const ID_LAST_OPCODE: u32 = 65;
+/// The globals a version 6 statement's signed 16-bit operand reaches (FTE-24.2).
+const GLOBALS_REACHED: usize = 32_768;
 
 impl Engine {
-    /// Why the engine cannot load a program of `version` whose statements have `opcodes`, in
-    /// order; `None` when it can (ENGT-3.12). Only KEX, which the IDE cannot run, is held to
-    /// the rerelease's own build: every engine the preview host or a launch runs reports its
-    /// own errors.
+    /// Why the engine cannot load `progs`; `None` when it can (ENGT-3.12). Only KEX, which the
+    /// IDE cannot run, is held to the rerelease's own build: every engine the preview host or
+    /// a launch runs reports its own errors.
     #[must_use]
-    pub fn unloadable(
-        self,
-        version: i32,
-        opcodes: impl IntoIterator<Item = u32>,
-    ) -> Option<Unloadable> {
+    pub fn unloadable(self, progs: &ProgsFile) -> Option<Unloadable> {
         if self != Self::Kex {
             return None;
         }
-        if version != 6 {
+        let version = progs.format.version();
+        if version != PROGS_VERSION {
             return Some(Unloadable::Version(version));
         }
-        opcodes
-            .into_iter()
+        if progs.globals.len() > GLOBALS_REACHED {
+            return Some(Unloadable::Globals(progs.globals.len()));
+        }
+        progs
+            .statements
+            .iter()
             .enumerate()
-            .find(|&(_, opcode)| opcode > ID_LAST_OPCODE)
-            .map(|(statement, opcode)| Unloadable::Opcode { statement, opcode })
+            .find(|(_, s)| Opcode::from_number(s.op).is_none())
+            .map(|(statement, s)| Unloadable::Opcode {
+                statement,
+                opcode: s.op,
+            })
     }
 
     /// Every engine, in the order of ENGT-3.9.

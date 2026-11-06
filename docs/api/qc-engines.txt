@@ -44,6 +44,7 @@ variant qc_engines::Engine::Kex
 variant qc_engines::Engine::QuakeSpasm
 variant qc_engines::Engine::Vanilla
 variant qc_engines::Engine::VkQuake
+variant qc_engines::Unloadable::Globals
 variant qc_engines::Unloadable::Opcode
 variant qc_engines::Unloadable::Version
 variant qc_engines::check::BuiltinRef::Name

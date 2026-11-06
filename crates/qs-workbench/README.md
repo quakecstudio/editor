@@ -5,7 +5,8 @@ Problems panels list, the commands that open a project or a file, `project.open`
 `file.open`, and those that build and check the project, `project.build` and `project.check`.
 
 - **Layer:** L5 commands. It depends on `qs-commands` (L5), `qc-codegen` (L4), `qc-engines`,
-  `qc-ide` and `qc-sema` (L3), `qc-project` (L2), `qc-progs` (L0), `schemars`, `serde` and `tracing`.
+  `qc-ide` and `qc-sema` (L3), `qc-project` (L2), `qc-progs` (L0), `schemars`, `serde` and
+  `tracing`.
 - **Decision:** plan requirement UI-2, P2-19 (#75); not engine behaviour.
 - **Spec sections:** ENGT-3.12, the program a KEX rerelease target's build writes, which it
   refuses when KEX cannot load it; otherwise it implements a plan requirement, not engine
