@@ -840,12 +840,8 @@ profile (DIFF-12.19); everything else runs under id's.
   refuses it ("attempt to get a non-existant string"): the mock's string error (BUILTIN-2.8). A
   string `strzone` did not make, or one already freed, is left as it is ("string wasn't
   strzoned" is only a console warning). A freed value is not reused.
-- **BUILTIN-18.10** `fopen(name, mode)` (#110) is `PF_fopen`, which reads `name` with `G_STRING`
-  and returns -1 when it opens nothing ("G_FLOAT (OFS_RETURN) = -1; // assume failure"). The
-  mock's game directory is empty and cannot be written, so every `fopen` returns -1: a file to
-  read is not there, as in a game directory without it, and one to write or append is not
-  made, where vkQuake would create it. A file is no input the two progs could share, so the
-  mock keeps none.
+- **BUILTIN-18.10** **Withdrawn** 2026-11-06: it made every `fopen` open nothing, which stopped
+  holding once the mock keeps the files QuakeC writes; replaced by BUILTIN-18.36.
 - **BUILTIN-18.11** `cvar_string(name)` (#448) is `PF_cvar_string`: for a known setting a new
   temporary string holding its text (`var->string` for server QuakeC), cut to 1023 bytes; for
   `game`, when no setting has the name, the game's directory names (`COM_GetGameNames`), which
@@ -1028,6 +1024,31 @@ profile (DIFF-12.19); everything else runs under id's.
   `%00` ends the text.
 - **BUILTIN-18.35** `wasfreed(e)` (#353) is `PF_WasFreed`: `e` through `G_EDICT` (BUILTIN-2.7),
   then 1 when the edict is free and 0 when not.
+- **BUILTIN-18.36** `fopen(name, mode)` (#110) is `PF_fopen`: `name` through `G_STRING`, the
+  mode through `(int)`, and -1 ("assume failure") unless a file opens. `QC_FixFileName` refuses
+  an empty name and one holding `:`, `\` or `..` or starting with `/`; otherwise the file is
+  `data/<name>`, and a read may also fall back to `<name>` itself, except for a name whose
+  extension (`COM_FileGetExtension`: the bytes after the last `.` that is not the name's last
+  byte, none when they hold a `/`) is `cfg` in any case, outside `configs/`, `particles/`,
+  `huds/` and `models/`. Mode 0 reads, mode 1 appends and mode 2 writes; any other mode opens
+  nothing. The mock's game directory starts empty, so a file opens to read only when QuakeC
+  wrote it in this run; writing and appending (`w+b`, then a seek to the end) make the file at
+  once and empty it. A file opened is given the lowest free slot, and the handle is the slot
+  plus 1 (`QC_FILE_BASE`).
+- **BUILTIN-18.37** `fgets(handle)` (#112), `fputs(handle, s, ...)` (#113) and `fclose(handle)`
+  (#111) are `PF_fgets`, `PF_fputs` and `PF_fclose`. The slot is C's `size_t` of the float less
+  1, so a handle from just above 0 to below 2 is the first, and one that is not an open file
+  does nothing but warn. `fgets` on a file open to read gives the next line as a new string:
+  its bytes up to a line feed or the end, at most the first 1023 of them (`s` stops at the
+  buffer's last byte, which the terminator then overwrites), less a carriage return at its
+  end, and 0 when nothing is left; on any other handle 0. `fputs` joins the strings from the
+  second (`PF_VarString (1)`, each checked) and, on a file open to write or append, writes
+  them. The mock holds what a file is written until it is closed, when the file holds it, as
+  stdio's buffer holds a short write, and a read sees the file as it was when it was opened.
+  `fclose` closes the file.
+- **BUILTIN-18.38** `whichpack(name)` (#503) is `PF_whichpack`: when `COM_FileExists` finds the
+  name, which for the mock is a file QuakeC wrote, its search path's directory without the base
+  directory and leading slashes, `id1`, as a new string; else 0.
 
 ## Test vectors
 

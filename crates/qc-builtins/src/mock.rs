@@ -15,6 +15,7 @@
 //! `changelevel` flag, the command buffer and the sizes of the three message buffers
 //! (DIFF-6.5), and the DIFF-6.2 random source.
 
+use crate::files::Files;
 use crate::localization::Localization;
 use crate::math::q_atof;
 use crate::tokenize::Tokens;
@@ -287,6 +288,8 @@ pub struct MockEngine {
     pub tokens: Tokens,
     /// Each client's userinfo, name and colours under vkQuake's profile (BUILTIN-18.27).
     pub clients: Clients,
+    /// The files QuakeC wrote and the open file table, under vkQuake's profile (BUILTIN-18.36).
+    pub files: Files,
     /// The rerelease's localized strings, none unless the host loads them (RRE-1.6).
     pub localization: Localization,
     /// The server clock `sv.time`, a `double` (DIFF-3.2): 1.0 at map start.
@@ -473,6 +476,7 @@ impl MockEngine {
             unimplemented: Unimplemented::Error,
             tokens: Tokens::default(),
             clients: Clients::default(),
+            files: Files::default(),
             localization: Localization::default(),
             clock: 1.0,
         }
