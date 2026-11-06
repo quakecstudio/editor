@@ -28,6 +28,7 @@ absolute-paths-allowed-crates = [
     "miniz_oxide",
     "muda",
     "proptest",
+    "rfd",
     "schemars",
     "serde",
     "serde_json",
