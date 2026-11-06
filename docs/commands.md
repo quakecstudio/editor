@@ -12,6 +12,14 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
+| [`preview.pause`](#previewpause) | Pauses the running game between frames. |
+| [`preview.play`](#previewplay) | Builds the open project and starts the preview host on its program, stopping a game already running. |
+| [`preview.poll`](#previewpoll) | Reads the running game's events: its state changes and console lines. |
+| [`preview.reload`](#previewreload) | Builds the open project and reloads its program in the running game, the map going on; nothing when no game runs. |
+| [`preview.restart`](#previewrestart) | Starts the running game's map again. |
+| [`preview.resume`](#previewresume) | Resumes the paused game. |
+| [`preview.step`](#previewstep) | Runs one server frame of the game, pausing it first, and leaves it paused. |
+| [`preview.stop`](#previewstop) | Stops the game. |
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
@@ -165,6 +173,144 @@ Parameters:
     "text"
   ],
   "title": "UpdateFileParams",
+  "type": "object"
+}
+```
+
+## `preview.pause`
+
+Pauses the running game between frames.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.play`
+
+Builds the open project and starts the preview host on its program, stopping a game already running.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `preview.play`.",
+  "properties": {
+    "map": {
+      "default": null,
+      "description": "The map to start on; the host's own first map when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "PlayParams",
+  "type": "object"
+}
+```
+
+## `preview.poll`
+
+Reads the running game's events: its state changes and console lines.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.reload`
+
+Builds the open project and reloads its program in the running game, the map going on; nothing when no game runs.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.restart`
+
+Starts the running game's map again.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.resume`
+
+Resumes the paused game.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.step`
+
+Runs one server frame of the game, pausing it first, and leaves it paused.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `preview.stop`
+
+Stops the game.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```

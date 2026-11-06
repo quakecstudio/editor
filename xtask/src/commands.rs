@@ -57,6 +57,7 @@ struct Everything {
     settings: SettingsStore,
     layout: Layout,
     workbench: Workbench<qc_project::MemoryLoader>,
+    preview: qs_workbench::Preview,
 }
 
 impl HasSettings for Everything {
@@ -79,13 +80,25 @@ impl HasWorkbench for Everything {
     }
 }
 
+impl qs_workbench::HasPreview for Everything {
+    fn workbench_and_preview(
+        &mut self,
+    ) -> (
+        &mut Workbench<qc_project::MemoryLoader>,
+        &mut qs_workbench::Preview,
+    ) {
+        (&mut self.workbench, &mut self.preview)
+    }
+}
+
 /// The reference the registry renders: the built-in commands, the settings commands (P2-22),
-/// the layout commands (P2-17) and the workbench commands (P2-19).
+/// the layout commands (P2-17), the workbench commands (P2-19) and the play loop's (P3-12).
 fn reference() -> Result<String, String> {
     let mut registry = Registry::<Everything>::new();
     qs_settings::register(&mut registry).map_err(|e| e.to_string())?;
     qs_layout::register(&mut registry).map_err(|e| e.to_string())?;
     qs_workbench::register(&mut registry).map_err(|e| e.to_string())?;
+    qs_workbench::register_preview(&mut registry).map_err(|e| e.to_string())?;
     Ok(registry.markdown())
 }
 

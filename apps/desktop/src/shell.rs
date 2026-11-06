@@ -28,9 +28,11 @@ use qs_layout::{
 };
 use qs_render::{Camera, MapMesh};
 use qs_workbench::{
-    AtParams, COMPLETE, Candidate, Config, DEFINITION, FsLoader, HOVER, HasWorkbench, HoverInfo,
-    OPEN_FILE, OPEN_PROJECT, OpenFile, OpenFileParams, OpenProjectParams, Place, REFERENCES,
-    RENAME, RenameParams, SAVE_FILE, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
+    AtParams, COMPLETE, Candidate, Config, DEFINITION, FsLoader, HOVER, HasPreview, HasWorkbench,
+    HoverInfo, OPEN_FILE, OPEN_PROJECT, OpenFile, OpenFileParams, OpenProjectParams, PAUSE, PLAY,
+    POLL, Place, PlayParams, PlayState, Preview, PreviewConfig, PreviewStatus, REFERENCES, RELOAD,
+    RENAME, RESTART, RESUME, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE,
+    UpdateFileParams, Workbench,
 };
 
 use crate::editor::{Editor, Popup, Request};
@@ -50,6 +52,14 @@ pub struct Workspace {
     pub layout: Layout,
     /// The open project and file.
     pub workbench: Workbench<FsLoader>,
+    /// The play loop: the preview host, when it runs.
+    pub preview: Preview,
+}
+
+impl HasPreview for Workspace {
+    fn workbench_and_preview(&mut self) -> (&mut Workbench<FsLoader>, &mut Preview) {
+        (&mut self.workbench, &mut self.preview)
+    }
 }
 
 impl HasWorkbench for Workspace {
@@ -130,6 +140,8 @@ pub struct Shell {
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
     /// layout's when the window opens, so the keyboard moves only when a focus command runs.
     focus_applied: u64,
+    /// The last play-loop command's error, shown on the toolbar until the next one.
+    preview_error: Option<String>,
 }
 
 impl Shell {
@@ -148,9 +160,11 @@ impl Shell {
         let mut registry = Registry::new();
         qs_layout::register(&mut registry)?;
         qs_workbench::register(&mut registry)?;
+        qs_workbench::register_preview(&mut registry)?;
         let workspace = Workspace {
             layout,
             workbench: Workbench::new(FsLoader, config),
+            preview: Preview::new(preview_config()),
         };
         Ok(Self {
             session: Session::new(workspace, registry),
@@ -168,6 +182,7 @@ impl Shell {
             map: None,
             covered: None,
             focus_applied: layout.focus_requests,
+            preview_error: None,
         })
     }
 
@@ -346,6 +361,13 @@ impl Shell {
 
     /// Draws the window for one frame.
     pub fn ui(&mut self, ui: &mut Ui) {
+        if self.session.context().preview.state() != PlayState::Stopped {
+            let _: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
+        }
+        if self.session.context().preview.state() != PlayState::Stopped {
+            // The host's events are read each frame; a running game asks for frames.
+            ui.ctx().request_repaint_after(PREVIEW_POLL);
+        }
         self.keys(ui);
         let pending = self.pending_focus();
         self.toolbar(ui);
@@ -406,27 +428,21 @@ impl Shell {
         let fill = theme.color(Token::SurfaceToolbar);
         let mut toggled = None;
         let mut open_palette = false;
+        let mut control = None;
+        let preview = &self.session.context().preview;
+        let state = preview.state();
+        let failed = self.preview_error.is_some();
+        let status = self
+            .preview_error
+            .clone()
+            .or_else(|| preview.status().map(str::to_owned));
         egui::Panel::top(Id::new(Area::Toolbar))
             .exact_size(theme.size.toolbar)
             .frame(egui::Frame::NONE.fill(fill).inner_margin(theme.space(1)))
             .show(ui, |ui| {
                 name_area(ui, accesskit::Role::Toolbar, Text::Toolbar);
                 ui.horizontal_centered(|ui| {
-                    let play = Button::new(
-                        RichText::new(labelled(Icon::Play, Text::Play))
-                            .color(theme.color(Token::TextOnAccent)),
-                    )
-                    .fill(theme.color(Token::Accent));
-                    let not_yet = Text::NotYetAvailable.get();
-                    ui.add_enabled(false, play).on_disabled_hover_text(not_yet);
-                    for (icon, text) in [
-                        (Icon::Pause, Text::Pause),
-                        (Icon::Step, Text::Step),
-                        (Icon::Restart, Text::RestartMap),
-                    ] {
-                        ui.add_enabled(false, Button::new(labelled(icon, text)).frame(false))
-                            .on_disabled_hover_text(not_yet);
-                    }
+                    control = play_controls(ui, theme, state);
                     ui.separator();
                     ui.label(Text::PreviewHost.get());
                     ui.label(
@@ -434,6 +450,15 @@ impl Shell {
                             .small()
                             .color(theme.color(Token::TextMuted)),
                     );
+                    if let Some(status) = &status {
+                        let colour = if failed {
+                            theme.color(Token::StatusError)
+                        } else {
+                            theme.color(Token::StatusOk)
+                        };
+                        status_dot(ui, colour);
+                        ui.label(RichText::new(status.as_str()).color(colour));
+                    }
                     ui.with_layout(EguiLayout::right_to_left(Align::Center), |ui| {
                         for (panel, icon, text) in [
                             (Panel::Right, Icon::PanelRight, Text::ToggleRightPanel),
@@ -473,6 +498,35 @@ impl Shell {
         if open_palette {
             self.palette.open();
         }
+        if let Some(id) = control {
+            self.control(id);
+        }
+    }
+
+    /// Runs the play-loop command `id` from the toolbar, keeping its error for the toolbar to
+    /// show until the next command.
+    fn control(&mut self, id: &str) {
+        let result = if id == PLAY {
+            serde_json::to_value(PlayParams::default())
+                .map_err(ShellError::from)
+                .and_then(|params| Ok(self.session.execute(id, params)?))
+        } else {
+            self.session
+                .execute(id, serde_json::json!({}))
+                .map_err(ShellError::from)
+        };
+        self.preview_error = result.err().map(|error| error.to_string());
+    }
+
+    /// Reloads the running game after a save, its error shown on the toolbar.
+    fn reload_after_save(&mut self) {
+        if self.session.context().preview.state() == PlayState::Stopped {
+            return;
+        }
+        let reloaded: Option<PreviewStatus> = self.run(RELOAD, &serde_json::json!({}));
+        if reloaded.is_none() {
+            self.preview_error = Some(Text::ReloadFailed.get().to_owned());
+        }
     }
 
     /// The area a focus command named since the last frame, if one ran (QA-9): the command
@@ -505,11 +559,12 @@ impl Shell {
                     for (icon, value) in [(Icon::Error, errors), (Icon::Warning, warnings)] {
                         ui.label(RichText::new(count(icon, value)).small().color(muted));
                     }
-                    ui.label(
-                        RichText::new(Text::PreviewStopped.get())
-                            .small()
-                            .color(muted),
-                    );
+                    let running = match self.session.context().preview.state() {
+                        PlayState::Stopped => Text::PreviewStopped,
+                        PlayState::Playing => Text::PreviewRunning,
+                        PlayState::Paused => Text::PreviewPaused,
+                    };
+                    ui.label(RichText::new(running.get()).small().color(muted));
                 });
             });
     }
@@ -531,6 +586,7 @@ impl Shell {
         let bottom_tab = &mut self.bottom_tab;
         let scope = &mut self.symbol_scope;
         let workbench = &self.session.context().workbench;
+        let preview = &self.session.context().preview;
         let mut jump = None;
         let mut expanded = state.visible;
         // A size the layout was given by a command, not by a drag of the panel's edge, is
@@ -587,7 +643,9 @@ impl Shell {
                         ui.add_space(theme.space(3));
                         section(ui, theme, Text::Agent, Text::NoAgent);
                     }
-                    Panel::Bottom => jump = bottom(ui, theme, bottom_tab, workbench, focus),
+                    Panel::Bottom => {
+                        jump = bottom(ui, theme, bottom_tab, (workbench, preview), focus);
+                    }
                 }
             });
         if let Some(jump) = jump {
@@ -675,7 +733,10 @@ impl Shell {
                     None
                 }
                 Request::Save => {
-                    let _: Option<()> = self.run(SAVE_FILE, &SaveFileParams { path });
+                    let saved: Option<()> = self.run(SAVE_FILE, &SaveFileParams { path });
+                    if saved.is_some() {
+                        self.reload_after_save();
+                    }
                     None
                 }
                 Request::Definition(offset) => {
@@ -982,7 +1043,7 @@ fn bottom(
     ui: &mut Ui,
     theme: &Theme,
     tab: &mut BottomTab,
-    workbench: &Workbench<FsLoader>,
+    (workbench, preview): (&Workbench<FsLoader>, &Preview),
     focus: bool,
 ) -> Option<Jump> {
     let problems = workbench.problems();
@@ -1005,12 +1066,97 @@ fn bottom(
     ui.separator();
     let message = match tab {
         BottomTab::Problems => return project::problems_ui(ui, theme, problems, workbench.root()),
+        BottomTab::Console if preview.state() != PlayState::Stopped => {
+            console_ui(ui, theme, preview);
+            return None;
+        }
         BottomTab::Console => Text::ConsoleIdle,
         BottomTab::Debugger => Text::DebuggerIdle,
     };
     note(ui, theme, message);
     None
 }
+
+/// The console's lines, newest at the bottom, an error's in the error colour.
+fn console_ui(ui: &mut Ui, theme: &Theme, preview: &Preview) {
+    egui::ScrollArea::vertical()
+        .stick_to_bottom(true)
+        .auto_shrink([false; 2])
+        .show(ui, |ui| {
+            for line in preview.console() {
+                let colour = if line.is_error() {
+                    theme.color(Token::StatusError)
+                } else {
+                    theme.color(Token::TextCode)
+                };
+                ui.label(
+                    RichText::new(line.text.trim_end())
+                        .monospace()
+                        .color(colour),
+                );
+            }
+        });
+}
+
+/// The toolbar's play controls for the game's `state`: the command a click chose, if any.
+/// Play starts a stopped game and stops a running one; Pause pauses it and shows it paused;
+/// Resume takes Play's place while paused; Step and Restart map need a running game.
+fn play_controls(ui: &mut Ui, theme: &Theme, state: PlayState) -> Option<&'static str> {
+    let mut chosen = None;
+    let (icon, text, id) = match state {
+        PlayState::Stopped => (Icon::Play, Text::Play, PLAY),
+        PlayState::Playing => (Icon::Play, Text::Playing, STOP),
+        PlayState::Paused => (Icon::Play, Text::Resume, RESUME),
+    };
+    let primary =
+        Button::new(RichText::new(labelled(icon, text)).color(theme.color(Token::TextOnAccent)))
+            .fill(theme.color(Token::Accent));
+    let hover = if state == PlayState::Playing {
+        Text::StopHint
+    } else {
+        text
+    };
+    if ui.add(primary).on_hover_text(hover.get()).clicked() {
+        chosen = Some(id);
+    }
+    let running = state != PlayState::Stopped;
+    let pause_text = if state == PlayState::Paused {
+        Text::Paused
+    } else {
+        Text::Pause
+    };
+    let pause = Button::new(labelled(Icon::Pause, pause_text))
+        .frame(state == PlayState::Paused)
+        .selected(state == PlayState::Paused);
+    if ui.add_enabled(state == PlayState::Playing, pause).clicked() {
+        chosen = Some(PAUSE);
+    }
+    for (icon, text, id) in [
+        (Icon::Step, Text::Step, STEP),
+        (Icon::Restart, Text::RestartMap, RESTART),
+    ] {
+        let button = Button::new(labelled(icon, text)).frame(false);
+        if ui.add_enabled(running, button).clicked() {
+            chosen = Some(id);
+        }
+    }
+    chosen
+}
+
+/// Where the play loop finds the host and the game, for this app's executable.
+fn preview_config() -> PreviewConfig {
+    PreviewConfig::from_env(std::env::current_exe().unwrap_or_default())
+}
+
+/// A small filled circle in `colour`, before a status line.
+fn status_dot(ui: &mut Ui, colour: egui::Color32) {
+    let size = ui.text_style_height(&egui::TextStyle::Small);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    ui.painter().circle_filled(rect.center(), size / 4.0, colour);
+}
+
+/// How often a frame reads the running host's events.
+const PREVIEW_POLL: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// An icon and its label, as one string for a button.
 /// Whether `layout`, a panel's size in the layout, was set by a command rather than by a drag of

@@ -81,6 +81,8 @@ pub enum Token {
     StatusError,
     /// Warnings.
     StatusWarn,
+    /// Success: the play loop's status after a reload.
+    StatusOk,
     /// Dividers.
     Border,
     /// Buttons' outlines.
@@ -111,7 +113,7 @@ pub enum Token {
 
 impl Token {
     /// Every token the app draws with.
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 30] = [
         Self::SurfaceChrome,
         Self::SurfaceToolbar,
         Self::SurfaceTabs,
@@ -128,6 +130,7 @@ impl Token {
         Self::Focus,
         Self::StatusError,
         Self::StatusWarn,
+        Self::StatusOk,
         Self::Border,
         Self::BorderStrong,
         Self::SurfaceCurrentLine,
@@ -163,6 +166,7 @@ impl Token {
             Self::Focus => "focus",
             Self::StatusError => "status.error",
             Self::StatusWarn => "status.warn",
+            Self::StatusOk => "status.ok",
             Self::Border => "border",
             Self::BorderStrong => "border.strong",
             Self::SurfaceCurrentLine => "surface.current_line",

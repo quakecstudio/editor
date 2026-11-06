@@ -59,6 +59,20 @@ pub enum Text {
     GameStopped,
     /// The status bar while the preview host is stopped.
     PreviewStopped,
+    /// The status bar while the game runs.
+    PreviewRunning,
+    /// The status bar while the game is paused.
+    PreviewPaused,
+    /// The Play button while the game runs.
+    Playing,
+    /// The Play button's hint while the game runs.
+    StopHint,
+    /// The Play button while the game is paused.
+    Resume,
+    /// The Pause button while the game is paused.
+    Paused,
+    /// The toolbar after a reload failed.
+    ReloadFailed,
     /// A control that has no action yet.
     NotYetAvailable,
     /// The View menu.
@@ -157,7 +171,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 73] = [
+    pub const ALL: [Self; 80] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -184,6 +198,13 @@ impl Text {
         Self::NoFileOpen,
         Self::GameStopped,
         Self::PreviewStopped,
+        Self::PreviewRunning,
+        Self::PreviewPaused,
+        Self::Playing,
+        Self::StopHint,
+        Self::Resume,
+        Self::Paused,
+        Self::ReloadFailed,
         Self::NotYetAvailable,
         Self::ViewMenu,
         Self::ToggleLeftPanel,
@@ -263,6 +284,13 @@ impl Text {
             Self::NoFileOpen => "Open a file from the Project panel.",
             Self::GameStopped => "The preview host is not running.",
             Self::PreviewStopped => "Preview host stopped",
+            Self::PreviewRunning => "Preview host running",
+            Self::PreviewPaused => "Preview host paused",
+            Self::Playing => "Playing",
+            Self::StopHint => "Stop the game",
+            Self::Resume => "Resume",
+            Self::Paused => "Paused",
+            Self::ReloadFailed => "The reload failed; see the Console",
             Self::NotYetAvailable => "Not available yet",
             Self::ViewMenu => "View",
             Self::ToggleLeftPanel => "Project and Entities",

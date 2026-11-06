@@ -807,9 +807,19 @@ fn every_area_and_control_has_a_name() {
     ] {
         harness.get_by_role_and_label(role, text.get());
     }
+    // The palette lists the play loop's commands too, so the toolbar's are the buttons whose
+    // names end with the control's text.
     for text in [Text::Play, Text::Pause, Text::Step, Text::RestartMap] {
-        let button = harness.get_by_label_contains(text.get());
-        assert_eq!(button.accesskit_node().role(), Role::Button, "{text:?}");
+        let found = harness
+            .query_all_by_label_contains(text.get())
+            .any(|node| {
+                node.accesskit_node().role() == Role::Button
+                    && node
+                        .accesskit_node()
+                        .label()
+                        .is_some_and(|label| label.ends_with(text.get()))
+            });
+        assert!(found, "{text:?}");
     }
     // The panel toggles say whether their panel is shown.
     let toggle = harness.get_by_role_and_label(Role::Button, Text::ToggleLeftPanel.get());

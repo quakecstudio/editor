@@ -25,6 +25,7 @@ fn qs_engine::client::Client::offers
 fn qs_engine::client::Client::over
 fn qs_engine::client::Client::pause
 fn qs_engine::client::Client::pick
+fn qs_engine::client::Client::poll_events
 fn qs_engine::client::Client::reload
 fn qs_engine::client::Client::remove
 fn qs_engine::client::Client::request

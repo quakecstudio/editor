@@ -10,7 +10,7 @@ use std::fmt;
 use std::io::{self, BufReader, Read, Write};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
 use interprocess::local_socket::traits::Stream as _;
@@ -259,6 +259,34 @@ impl Client {
     /// The events received so far, oldest first.
     pub fn take_events(&mut self) -> Vec<BridgeEvent> {
         self.events.drain(..).collect()
+    }
+
+    /// The events received so far and those waiting to be read, oldest first, without waiting
+    /// for more; `Err(ClientError::Closed)` once the host closed the connection and every event
+    /// before it was taken.
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::Closed`] when the connection is closed and no event is left.
+    pub fn poll_events(&mut self) -> Result<Vec<BridgeEvent>, ClientError> {
+        let mut closed = false;
+        loop {
+            match self.incoming.try_recv() {
+                Ok(Some(Message::Notification { method, params })) => {
+                    self.events.push_back(BridgeEvent { method, params });
+                }
+                Ok(Some(Message::Response { .. } | Message::Request { .. })) => {}
+                Ok(None) | Err(TryRecvError::Disconnected) => {
+                    closed = true;
+                    break;
+                }
+                Err(TryRecvError::Empty) => break,
+            }
+        }
+        if closed && self.events.is_empty() {
+            return Err(ClientError::Closed);
+        }
+        Ok(self.take_events())
     }
 
     /// Waits up to `within` for the event `method`, keeping every other event; the events

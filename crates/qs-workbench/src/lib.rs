@@ -16,6 +16,7 @@
 mod build;
 mod commands;
 mod editing;
+mod preview;
 #[cfg(test)]
 mod tests;
 
@@ -35,6 +36,10 @@ pub use qc_project::{Dialect, FsLoader, Loader, Target};
 pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
+pub use crate::preview::{
+    ConsoleLine, HasPreview, PAUSE, PLAY, POLL, PlayParams, PlayState, Preview, PreviewConfig,
+    PreviewError, PreviewStatus, RELOAD, RESTART, RESUME, STEP, STOP, register_preview,
+};
 use qc_project::{ProjectError, normalize};
 use serde::{Deserialize, Serialize};
 

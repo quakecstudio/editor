@@ -3484,6 +3484,8 @@ dependencies = [
  "qc-project",
  "qc-sema",
  "qs-commands",
+ "qs-engine",
+ "qs-install",
  "schemars",
  "serde",
  "serde_json",

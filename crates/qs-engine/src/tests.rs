@@ -419,3 +419,22 @@ fn a_wait_ends_on_time_while_other_events_come() {
     assert!(matches!(waited, Err(ClientError::Timeout)), "{waited:?}");
     assert!(!client.take_events().is_empty());
 }
+
+// spec BRIDGE-3.1: polling takes the events already read without waiting for more, and a
+// closed connection is an error once every event before it is taken
+#[test]
+fn polling_takes_the_events_without_waiting() {
+    let mut chatty = Client::over(Chatty::new(), std::io::sink());
+    let start = std::time::Instant::now();
+    let mut seen = 0;
+    while seen == 0 && start.elapsed() < Duration::from_secs(5) {
+        seen = chatty.poll_events().unwrap().len();
+    }
+    assert!(seen > 0, "the reader thread's events arrive");
+    let mut client = Client::over(std::io::empty(), std::io::sink());
+    let mut result = client.poll_events();
+    while matches!(&result, Ok(events) if events.is_empty()) {
+        result = client.poll_events();
+    }
+    assert!(matches!(result, Err(ClientError::Closed)), "{result:?}");
+}
