@@ -391,16 +391,21 @@ issues:
   - ENG-2
   - ENG-15
   summary: |
-    Asked for by Justin on 2026-11-06: the preview host has no escape menu and no console a player can type in. id's command layer is in qs-sim already (P3-08's console path); what is missing is the client's side of WinQuake/console.c (the text buffer, line wrapping, the notify lines and the console drawn sliding down), keys.c's Key_Console line editing and key destinations, and menu.c's menus a local player uses: main, single player (new game, load, save), options (the sliders and toggles that apply to the preview host), help and the quit prompt. The multiplayer and network setup menus and the video mode menu are out of scope for a local preview host.
+    Asked for by Justin on 2026-11-06: the preview host has no escape menu and no console a player can type in. id's command layer is in qs-sim already (P3-08's console path); what is missing is the client's side of WinQuake/console.c (the text buffer, line wrapping, the notify lines and the console drawn sliding down), keys.c's Key_Console line editing and key destinations, and menu.c's menus a local player uses: main, single player (new game, load, save), options (the sliders and toggles that apply to the preview host), help and the quit prompt. The multiplayer and network setup menus and the video mode menu are out of scope for a local preview host. Widened by Justin on 2026-11-06 to what the options set: the brightness over the whole screen, the keys menu with the bindings it edits (and the mouse-look key lookspring and lookstrafe need), and the CD music the CD Music Volume slider sets, played from the GOG release's CD image (its cue sheet's audio tracks) or the rerelease's music/track<NN>.ogg files.
   depends:
   - P3-28
   deliverable:
   - 'docs/spec/engine/console.md and docs/spec/engine/menu.md: the console and the menus as id-Software/Quake@bf4ac424 WinQuake/console.c, keys.c and menu.c draw and drive them, with numbered statements'
   - 'crates/qs-client: the console buffer, its input line and the menu state, ported from those files, with tests citing the statements'
   - 'apps/preview-host: the backquote key and the console command toggle the console, Escape opens the main menu, keys go where the key destination says, and console lines run through qs-sim''s console path'
+  - 'qs-render: the gamma setting applied to the whole frame as QuakeSpasm applies it, so the Brightness slider brightens the screen'
+  - 'apps/preview-host: key bindings (bind, unbind, unbindall and the +/- commands) with id1''s default.cfg read, the keys menu that edits them, and +mlook with lookspring and lookstrafe as CL_MouseMove and V_StopPitchDrift read them'
+  - 'qs-sound and apps/preview-host: svc_cdtrack played and looped at bgmvolume, from a cue sheet''s CD audio tracks or from music/track<NN>.<ext> (RRE-3), the music spec statements in docs/spec/'
   acceptance:
   - 'The console and each menu in scope are drawn and driven as the specs say, each statement cited by a test'
   - '`cargo xtask view-diff` shows the main menu and the console drawn within tolerance of the view oracle'
+  - 'Every option the options menu shows changes what the host does: a test per setting'
+  - 'A map''s CD track plays from a cue sheet image and from track files, tested with generated audio, never game data'
   verify:
   - cargo test -p qs-client -p preview-host
   - cargo xtask view-diff on a route that opens the menu and the console
