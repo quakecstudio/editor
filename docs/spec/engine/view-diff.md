@@ -49,6 +49,14 @@ within tolerances recorded per map; it is not an exact match.
   status bar, centre print or weapon. The view's colour shift is drawn in both.
 - **VIEWDIFF-2.3** id's code calls the C library's `rand` through the shared generator of
   DIFF-6.2 (`oracles/engine/rand.c`), so the oracle's frames are the same on every OS.
+- **VIEWDIFF-2.4** The oracle draws the view only from a `place` to the `shot` after it, keeping
+  `block_drawing` set otherwise, as `vid_win.c` does while the game is switched away. id's C
+  span drawer, the `nonintel` path of `d_scan.c` used without `id386`, reads outside a surface's
+  texture on some of `end`'s frames before the player is placed (`D_DrawSpans8`, found with
+  AddressSanitizer), undefined behaviour the shipped x86 builds, which drew spans in assembly,
+  did not reach. `V_CalcRefdef` smooths the eye's height only in the frames it draws, at most 12
+  units behind and catching up at 80 a second, so a route waits a quarter of a second after each
+  `place` before its `shot` (VIEWDIFF-5.1).
 
 ## VIEWDIFF-3 Comparing frames
 
@@ -73,12 +81,18 @@ within tolerances recorded per map; it is not an exact match.
 ### Behaviour
 
 - **VIEWDIFF-4.1** Each recording becomes the root mean square of its samples, both channels,
-  in windows of a quarter of a second (2756 frames), leading silent windows dropped: the
-  oracle's sound starts when the engine does and ours when the map loads.
+  in windows of a quarter of a second (2756 frames), and the last 12 windows are compared: the
+  route's last three seconds, the player standing still. What comes before, the map loading
+  and the player being moved, is left out: the oracle's sound starts when the engine does,
+  ours when the map loads, and id's engine plays a sound as it starts.
 - **VIEWDIFF-4.2** When both are silent the sound passes; when one is, it fails.
-- **VIEWDIFF-4.3** Otherwise the windows both have are compared: the sound's difference is
-  the mean of the windows' absolute differences over the mean of the oracle's, and it passes
-  when that is at most the map's `sound` tolerance (VIEWDIFF-5).
+- **VIEWDIFF-4.3** Otherwise the windows both have are compared, ours shifted against the
+  oracle's by up to two windows either way: the sound's difference is the least, over the
+  shifts, of the sum of the windows' absolute differences over the sum of the oracle's, and it
+  passes when that is at most the map's `sound` tolerance (VIEWDIFF-5). The shift allows for
+  the engines loading a map in different times and for our mixer painting a tenth of a second
+  ahead (SND-5.1); a sound one starts at random and the other does not is not allowed for: id's
+  client and server draw from one generator (VIEWDIFF-2.3), ours each from its own.
 
 ## VIEWDIFF-5 Tolerances
 
@@ -87,9 +101,10 @@ reads the table between the `view-diff` markers.
 
 ### Behaviour
 
-- **VIEWDIFF-5.1** Each route is a map's start: the player placed at its first
-  `info_player_start`, at its `angle`, then looking the other way, a shot after 72 frames
-  and after each turn, then three seconds of frames for the sound.
+- **VIEWDIFF-5.1** Each route is a map's start: three seconds of frames, so that the sounds
+  each client hears before the player's view is its listener are over, then the player placed
+  at the map's first `info_player_start` at its `angle`, a quarter of a second, a shot, the
+  player turned the other way, a quarter of a second, a shot, and three seconds of frames for the sound.
 - **VIEWDIFF-5.2** A map's tolerances are its row of the table, else the `*` row's.
 
 <!-- view-diff -->

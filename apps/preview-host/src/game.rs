@@ -518,7 +518,11 @@ impl Game {
     /// # Errors
     ///
     /// Why the progs did not read or the player could not be moved.
-    pub(crate) fn place_player(&mut self, origin: [f32; 3], angles: [f32; 3]) -> Result<(), String> {
+    pub(crate) fn place_player(
+        &mut self,
+        origin: [f32; 3],
+        angles: [f32; 3],
+    ) -> Result<(), String> {
         self.with_progs(|game, progs| game.world.move_player(progs, origin, angles))
             .map_err(|error| error.message)?
             .map_err(|error| error.to_string())

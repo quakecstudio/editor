@@ -12,6 +12,7 @@ exist (ARCH-2: the Rust side talks to them through files and their exit status).
 | VM oracle | id's `WinQuake/pr_exec.c` in a host that implements [`docs/spec/differential.md`](../docs/spec/differential.md) and writes the trace of [`docs/spec/trace.md`](../docs/spec/trace.md) | `target/oracles/bin/vm-oracle` |
 | Engine oracle | id's server, `WinQuake/sv_*.c` and what it runs on, whole, played headless from a script, writing a frame record per server frame (TRACE-4.11) | `target/oracles/bin/engine-oracle` |
 | qcc | id's QuakeC compiler, `qcc/` of Quake-Tools, built unchanged | `target/oracles/bin/qcc` |
+| View oracle | id's whole engine, `WinQuake/` with the software renderer, the client and the mixer, headless with our system, video and sound drivers (`engine/view_host.c`), playing a view script and writing its shots and sound (VIEWDIFF) | `target/oracles/bin/view-oracle` |
 | FTEQCC | The command-line compiler in `engine/qclib/` of fte-team/fteqw, built unchanged without zlib | `target/oracles/bin/fteqcc` |
 
 Later oracles (id's renderer and mixer for screenshots and audio, P3-28; the map tools) join

@@ -120,6 +120,7 @@ cargo xtask compiler-diff --functions <codebase> --shard k/n  # every n-th group
 cargo xtask bridge-client <game root>      # qs-engine's client against the real preview host, headless (LibreQuake in CI)
 cargo xtask scenario <file> [--repeat n] [-- <engine words>]  # a scenario in qs-sim, n times, each result the same (SCN-2.5)
 cargo xtask sim-diff <route> [--map <name>]... [-- <engine words>]  # qs-sim against id's server, frame by frame (DIFF-16)
+cargo xtask view-diff [--map <name>]... [-- <engine words>]  # the preview host's frames and sound against id's whole engine, every id1 map's start (VIEWDIFF)
 cargo xtask commands [--check]            # regenerate (or check) docs/commands.md from the command registry
 cargo xtask api [--check]                 # regenerate (or check) docs/api/<crate>.txt, each L0 to L5 crate's public items; the audit is docs/audits/api-surface.md
 

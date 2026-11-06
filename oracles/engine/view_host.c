@@ -271,6 +271,8 @@ int main(int argc, char **argv) {
     Host_Init(&parms);
     Cbuf_AddText("viewsize 120\ncrosshair 0\nr_drawviewmodel 0\ncon_notifytime 0\n");
     char line[1024];
+    // VIEWDIFF-2.4: nothing is drawn but from a place to its shot.
+    block_drawing = true;
     qboolean mapped = false;
     while (fgets(line, sizeof(line), script)) {
         line[strcspn(line, "\r\n")] = 0;
@@ -304,9 +306,14 @@ int main(int argc, char **argv) {
                 return QS_EXIT_REFUSED;
             }
             place(v);
+            // VIEWDIFF-2.4: drawing again, the console up, where SCR_SetUpToDrawConsole's
+            // slide would have left it in the frames not drawn.
+            scr_con_current = 0;
+            block_drawing = false;
         } else if (!strncmp(text, "shot ", 5) && text[5]) {
             if (!write_shot(text + 5))
                 return QS_EXIT_IO;
+            block_drawing = true;
         } else {
             fprintf(stderr, "view-oracle: refused: %s\n", text);
             return QS_EXIT_REFUSED;

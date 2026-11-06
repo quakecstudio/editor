@@ -211,8 +211,8 @@ pub(crate) fn view_script(loaded: Loaded, script: &ViewScript, audio: &Path) -> 
 /// `frame` as a binary PPM, `P6`, its alpha dropped (VIEWDIFF-1.2).
 fn ppm(frame: &Frame) -> Vec<u8> {
     let mut bytes = format!("P6\n{} {}\n255\n", frame.width, frame.height).into_bytes();
-    for pixel in frame.rgba.chunks_exact(4) {
-        bytes.extend(pixel.iter().take(3));
+    for &[r, g, b, _] in frame.rgba.as_chunks::<4>().0 {
+        bytes.extend([r, g, b]);
     }
     bytes
 }

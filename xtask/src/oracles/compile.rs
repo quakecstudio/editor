@@ -360,7 +360,9 @@ mod tests {
         );
         assert_eq!(
             seen[1],
-            format!("cc {gnu_flags} -w -DQS_ENGINE -include compat.h -c a.c -o b.o")
+            format!(
+                "cc {gnu_flags} -w -Wno-error=implicit-function-declaration -DQS_ENGINE -include compat.h -c a.c -o b.o"
+            )
         );
         assert_eq!(seen[2], "cc a.o -o bin -lm");
         let msvc_flags = MSVC_FLAGS.join(" ");
