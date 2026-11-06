@@ -112,4 +112,90 @@ proptest! {
             Err(other) => prop_assert!(false, "{source:?}: {other:?}"),
         }
     }
+
+    // Bodies under the FTEQCC profile built from the rerelease subset's float operators,
+    // compound assignments, increments, conditionals, in-bounds array subscripts, fields and
+    // control flow: the grammar writes only programs FTEQCC accepts, and every one compiles.
+    #[test]
+    fn any_fteqcc_body_of_the_subset_is_lowered(body in fte_statements(3)) {
+        let source = format!(
+            "float a, b;\nentity e;\n.float fl;\nfloat arr[4];\nconst float K = 2;\n\
+             float(float x) h = #1;\nvoid(string m) error = #10;\n\
+             void() f = {{\nlocal float i;\n{body}\n}};\n"
+        );
+        let compiled = super::compile_fteqcc(&source);
+        prop_assert!(compiled.is_ok(), "{source:?}: {compiled:?}");
+    }
+}
+
+/// A float expression of the FTEQCC subset, `depth` operators deep at most.
+fn fte_expression(depth: u32) -> impl Strategy<Value = String> {
+    let leaf = prop_oneof![
+        Just("a".to_owned()),
+        Just("b".to_owned()),
+        Just("i".to_owned()),
+        Just("K".to_owned()),
+        Just("e.fl".to_owned()),
+        Just("arr[0]".to_owned()),
+        Just("arr[3]".to_owned()),
+        (0_u8..10).prop_map(|n| n.to_string()),
+    ];
+    leaf.prop_recursive(depth, 24, 3, |inner| {
+        let binary = [
+            "+", "-", "*", "/", "%", "&", "|", "^", "&&", "||", "==", "!=", "<", ">=",
+        ];
+        prop_oneof![
+            (inner.clone(), 0..binary.len(), inner.clone())
+                .prop_map(move |(l, op, r)| format!("({l} {} {r})", binary[op])),
+            inner.clone().prop_map(|e| format!("!{e}")),
+            inner.clone().prop_map(|e| format!("~{e}")),
+            inner.clone().prop_map(|e| format!("(- {e})")),
+            inner.clone().prop_map(|e| format!("h({e})")),
+            inner.clone().prop_map(|e| format!("arr[({e}) & 3]")),
+            (inner.clone(), inner.clone(), inner)
+                .prop_map(|(c, t, f)| format!("({c} ? {t} : {f})")),
+        ]
+    })
+}
+
+/// The statements of a body of the FTEQCC subset, nested `depth` deep at most.
+fn fte_statements(depth: u32) -> impl Strategy<Value = String> {
+    // A compound assignment to an element its setter stores is not lowered (README), so
+    // `arr[i]` is only stored to.
+    let target = prop_oneof![
+        Just("a"),
+        Just("b"),
+        Just("i"),
+        Just("e.fl"),
+        Just("arr[1]"),
+    ];
+    let assign = ["+=", "-=", "*=", "/=", "|=", "&="];
+    let simple = prop_oneof![
+        (target.clone(), fte_expression(3)).prop_map(|(t, e)| format!("{t} = {e};")),
+        fte_expression(3).prop_map(|e| format!("arr[i] = {e};")),
+        (target.clone(), 0..assign.len(), fte_expression(3))
+            .prop_map(move |(t, op, e)| format!("{t} {} {e};", assign[op])),
+        target.clone().prop_map(|t| format!("{t}++;")),
+        target.prop_map(|t| format!("--{t};")),
+        fte_expression(2).prop_map(|e| format!("h({e});")),
+        Just("return;".to_owned()),
+    ];
+    let block = simple.prop_recursive(depth, 32, 4, |inner| {
+        let body = proptest::collection::vec(inner, 0..4).prop_map(|s| s.join(" "));
+        prop_oneof![
+            (fte_expression(2), body.clone(), body.clone())
+                .prop_map(|(c, t, f)| format!("if ({c}) {{ {t} }} else {{ {f} }}")),
+            (fte_expression(2), body.clone())
+                .prop_map(|(c, b)| format!("while ({c}) {{ {b} if (a) break; }}")),
+            (fte_expression(2), body.clone())
+                .prop_map(|(c, b)| format!("do {{ {b} if (b) continue; }} while ({c});")),
+            (fte_expression(2), body.clone())
+                .prop_map(|(c, b)| format!("for (i = 0; i < {c}; i++) {{ {b} }}")),
+            // FTEQCC types `!x` as bool, which a float case does not match.
+            (prop_oneof![Just("a"), Just("i"), Just("e.fl")], body.clone(), body).prop_map(
+                |(c, x, y)| format!("switch ({c}) {{ case 1: {x} break; default: {y} }}")
+            ),
+        ]
+    });
+    proptest::collection::vec(block, 1..5).prop_map(|s| s.join("\n"))
 }

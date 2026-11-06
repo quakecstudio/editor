@@ -405,3 +405,26 @@ fn a_global_past_32767_is_written_as_its_low_bits() {
     );
     assert!(qc_progs::write(&p).is_ok());
 }
+
+// spec PROGS-22.4: a vanilla program whose statement names a global past 32767 is refused
+// with the writer's error, where one at 32767 is written; the vanilla profile never wraps an
+// operand as FTEQCC's does (FTE-24.2).
+#[test]
+fn a_vanilla_operand_past_32767_is_refused() {
+    let program = |count: i32| {
+        let mut source = String::new();
+        for n in 1..=count {
+            source.push_str(&format!("float g{n};\n"));
+        }
+        source.push_str(&format!("void() f = {{ g{count} = g{count}; }};\n"));
+        compile_source(&source)
+    };
+    let last = 32_767 - 27;
+    let compiled = program(last).unwrap();
+    assert_eq!(global(&compiled.progs, &format!("g{last}")), 32_767);
+    assert!(qc_progs::write(&compiled.progs).is_ok());
+    assert!(matches!(
+        program(last + 1),
+        Err(crate::CompileError::Write(_))
+    ));
+}

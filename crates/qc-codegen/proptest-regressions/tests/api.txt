@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 572bb185fa23b78daf71cf01ef58f5d6b5b1bb976dac7ab101da5e232b09c12b # shrinks to body = "if (a) { do { arr[i]++; if (b) continue; } while (a); } else {  }"
+cc ebc46b12156a4e0f428586a2ae5d695064b23f14384000bc9fc40984e42610b2 # shrinks to body = "arr[i] = a;"
+cc 2f5b2478a9c11909444b0fbbedbd371366028956d3dd8294774029fa2d6e9981 # shrinks to body = "switch (a) { case 1: h(arr[arr[4]]); break; default:  }"
+cc 9098c81cde4018927fc3035a8a5ceab1f129f87efe86b98c84dcad33374867d8 # shrinks to body = "while (a) { switch (a) { case 1: arr[i] = --(a + a); break; default:  } if (a) break; }"

@@ -382,4 +382,70 @@ pub(crate) const CASES: &[Case] = &[
          void() f = { precache_sound(\"a.wav\"); precache_sound(\"a.wav\"); \
          precache_sound2(\"b.wav\"); precache_model(\"m.mdl\"); precache_file(t); };\n",
     ),
+    // The P2-R4 readiness review's cases: limits, nesting and errors the cases above leave out.
+    one(
+        "call-results-as-arguments",
+        "float a, b;\nfloat(float x) h = #1;\nvoid(float p, float q) g = #2;\n\
+         void() f = { g(h(1), h(2)); a = h(a) + h(b); };\n",
+    ),
+    one(
+        "eight-arguments-and-parameters",
+        "float a;\nvoid(float a1, float a2, float a3, float a4, float a5, float a6, float a7, \
+         float a8) g = { a = a8 + a1; };\nvoid() f = { g(1, 2, 3, 4, 5, 6, 7, 8); };\n",
+    ),
+    one(
+        "variadic-eight-of-each-type",
+        "float end_sys_globals;\nfloat a;\nvoid(...) v = #1;\n\
+         void() f = { v(); v(1); v(1, '1 1 1', \"s\", a, a, a, a, a); };\n",
+    ),
+    one(
+        "vector-calls-nested",
+        "float end_sys_globals;\nfloat a;\n\
+         vector(vector p, float q, vector r) g = { return p + r * q; };\n\
+         void() f = { local vector t; t = g('1 2 3', a, g('0 0 1', 2, '3 3 3')); };\n",
+    ),
+    one(
+        "local-in-a-block-used-after",
+        "float a;\nvoid() f = { a = 1; local float b; b = a; { local float c; c = b; } a = c; };\n",
+    ),
+    one(
+        "duplicate-parameter-names",
+        "float a;\nvoid(float a, float a) g = {};\n",
+    ),
+    one(
+        "literal-operands-not-folded",
+        "float end_sys_globals;\nfloat a;\n\
+         void() f = { a = 1 + 1; a = 2 - 2; a = '1 2 3' * '1 1 1'; };\n",
+    ),
+    one(
+        "assignments-as-operands",
+        "float a, b, c;\nvoid() f = { a = b = c = 4; a = (b = 1) + (c = 2); };\n",
+    ),
+    one(
+        "string-field",
+        "float a;\nentity e;\n.string ns;\nstring s;\n\
+         void() f = { s = e.ns; e.ns = s; e.ns = \"q\"; if (e.ns) a = 1; };\n",
+    ),
+    one(
+        "loops-and-dangling-else",
+        "float a;\nvoid() f = { while (a) { if (a) if (a) a = 0; else { do { a = a + 1; } \
+         while (a < 3); } } };\n",
+    ),
+    one(
+        "field-of-a-call",
+        "entity e;\n.float fl;\nfloat a;\nentity() k = #1;\nvoid() f = { a = k().fl; };\n",
+    ),
+    one(
+        "unknown-escape",
+        "string s;\nvoid() f = { s = \"a\\\\b\"; };\n",
+    ),
+    one(
+        "name-too-long",
+        "float ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp;\n",
+    ),
+    one(
+        "name-of-62-characters",
+        "float pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp;\nvoid() f = { \
+         pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp = 1; };\n",
+    ),
 ];
