@@ -205,15 +205,26 @@ fn the_oracle_plays_and_draws_as_the_host_does() {
 #[test]
 fn the_oracle_draws_only_the_view_from_a_place_to_its_shot() {
     let c = harness();
-    assert!(c.contains(
-        r#"Cbuf_AddText("viewsize 120\ncrosshair 0\nr_drawviewmodel 0\ncon_notifytime 0\n");"#
-    ));
     let place = c.find("place(v);").unwrap();
+    for setting in [
+        r#"Cvar_Set("viewsize", "120");"#,
+        r#"Cvar_Set("crosshair", "0");"#,
+        r#"Cvar_Set("r_drawviewmodel", "0");"#,
+        r#"Cvar_Set("con_notifytime", "0");"#,
+    ] {
+        assert!(c[place..].contains(setting), "{setting}");
+    }
     let shot = c.find("write_shot(text + 5)").unwrap();
     let drawing = c[place..].find("block_drawing = false;").unwrap() + place;
     let blocked = c[shot..].find("block_drawing = true;").unwrap() + shot;
     assert!(drawing < shot && blocked > shot);
     assert!(c[place..drawing].contains("scr_con_current = 0;"));
+}
+
+// spec VIEWDIFF-2.5: no demos at start
+#[test]
+fn the_oracle_plays_no_demos() {
+    assert!(harness().contains("cls.demonum = -1;"));
 }
 
 // spec VIEWDIFF-2.3: every id file of the view oracle calls rand through the shared generator

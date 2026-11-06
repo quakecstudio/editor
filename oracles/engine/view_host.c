@@ -12,7 +12,7 @@
 // --view-script plays: `map <name>` first, then `frames <n>`, `place <x> <y> <z> <pitch>
 // <yaw>` and `shot <file>`, blank lines and `#` comments skipped. The view is drawn as the
 // host draws it for the comparison: `viewsize 120` (no status bar), `crosshair 0`,
-// `r_drawviewmodel 0` and `con_notifytime 0` (VIEWDIFF-2.2).
+// `r_drawviewmodel 0` and `con_notifytime 0`, set at each place (VIEWDIFF-2.2).
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -269,7 +269,8 @@ int main(int argc, char **argv) {
     parms.argc = com_argc;
     parms.argv = com_argv;
     Host_Init(&parms);
-    Cbuf_AddText("viewsize 120\ncrosshair 0\nr_drawviewmodel 0\ncon_notifytime 0\n");
+    // VIEWDIFF-2.5: no demos at start, so quake.rc's `startdemos` plays none.
+    cls.demonum = -1;
     char line[1024];
     // VIEWDIFF-2.4: nothing is drawn but from a place to its shot.
     block_drawing = true;
@@ -287,6 +288,9 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "view-oracle: a view script starts with `map <name>`\n");
                 return QS_EXIT_REFUSED;
             }
+            // VIEWDIFF-1.1: on a line of its own, since Cmd_Exec_f inserts a file as it is
+            // and the rerelease's quake.rc ends without a newline.
+            Cbuf_AddText("\n");
             Cbuf_AddText(text);
             Cbuf_AddText("\n");
             mapped = true;
@@ -306,6 +310,11 @@ int main(int argc, char **argv) {
                 return QS_EXIT_REFUSED;
             }
             place(v);
+            // VIEWDIFF-2.2: the view alone, set at each place, after any config the game ran.
+            Cvar_Set("viewsize", "120");
+            Cvar_Set("crosshair", "0");
+            Cvar_Set("r_drawviewmodel", "0");
+            Cvar_Set("con_notifytime", "0");
             // VIEWDIFF-2.4: drawing again, the console up, where SCR_SetUpToDrawConsole's
             // slide would have left it in the frames not drawn.
             scr_con_current = 0;

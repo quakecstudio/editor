@@ -23,7 +23,9 @@ within tolerances recorded per map; it is not an exact match.
 
 - **VIEWDIFF-1.1** A script is lines of text; blank lines and lines starting with `#` are
   skipped, and the first other line is `map <name>`, a name with no space, which both engines
-  load: the oracle through id's `map` command, the host as its map.
+  load: the oracle through id's `map` command, on a line of its own (`Cmd_Exec_f` inserts a
+  file as it is, and the rerelease's `quake.rc` ends without a newline, so a command after it
+  would run on into its last `alias`), the host as its map.
 - **VIEWDIFF-1.2** Each line after it is one of `frames <n>`, n frames of 1/72 of a second, n a
   number from 0; `place <x> <y> <z> <pitch> <yaw>`, five finite numbers, the player moved there
   looking that way with no velocity and `fixangle` set, as the host's `player/spawn_at` does;
@@ -45,8 +47,9 @@ within tolerances recorded per map; it is not an exact match.
   driver sets `vid.aspect` to 1, and the host draws offscreen at that size, so the field of
   view is 90 across in both (REND-13.6 widens nothing at 4:3).
 - **VIEWDIFF-2.2** Only the 3D view is compared: the oracle sets `viewsize 120`, `crosshair
-  0`, `r_drawviewmodel 0` and `con_notifytime 0` before the map loads, and the host draws no
-  status bar, centre print or weapon. The view's colour shift is drawn in both.
+  0`, `r_drawviewmodel 0` and `con_notifytime 0` at each `place`, after whatever the game's
+  configuration set, and the host draws no status bar, centre print or weapon. The view's
+  colour shift is drawn in both.
 - **VIEWDIFF-2.3** id's code calls the C library's `rand` through the generator of DIFF-6.2
   (`oracles/engine/rand.c`), so the oracle's frames are the same on every OS. In id's engine
   the client and the server draw from the one `rand`, so every particle or sound the client
@@ -62,6 +65,11 @@ within tolerances recorded per map; it is not an exact match.
   did not reach. `V_CalcRefdef` smooths the eye's height only in the frames it draws, at most 12
   units behind and catching up at 80 a second, so a route waits a quarter of a second after each
   `place` before its `shot` (VIEWDIFF-5.1).
+- **VIEWDIFF-2.5** The oracle plays no demos at start: it sets `cls.demonum` to -1, so `quake.rc`'s
+  `startdemos` plays none (`Host_Startdemos_f`: "`if (!sv.active && cls.demonum != -1 &&
+  !cls.demoplayback)`"). A demo the
+  engine cannot play, as the rerelease's are to id's, raises an error that drops the rest of
+  that frame's commands.
 
 ## VIEWDIFF-3 Comparing frames
 
@@ -124,6 +132,10 @@ reads the table between the `view-diff` markers.
 | Map | Frame | Brightness | Sound | Why |
 | --- | --- | --- | --- | --- |
 | `*` | 6 | 0.15 | 0.35 | |
+| `lq_e0m1` | 25 | 0.3 | 0.35 | LibreQuake: the sky fills both shots, id's warped and point-sampled, ours QuakeSpasm's filtered sky (18.5 and 1.20 measured) |
+| `lq_e0m2` | 8 | 0.25 | 0.35 | LibreQuake: the sky fills the ahead shot (6.0 and 1.19 measured) |
+| `lq_e0m3` | 13 | 0.3 | 0.35 | LibreQuake: the sky fills the ahead shot (9.9 and 1.22 measured) |
+| `start` | 6 | 0.2 | 0.35 | the rerelease's start shows its skybox through the ahead shot's ceiling, which id's engine does not read (REND-8; 1.16 measured; id1's start 1.02 to 1.04) |
 | `e3m1` | 6 | 0.85 | 0.35 | a flickering light fills the ahead shot, its style at another phase (1.79 measured) |
 | `e4m4` | 6 | 0.15 | 0.5 | an ambient sound near the start, 0.37 to 0.41 measured |
 | `e4m7` | 14 | 0.15 | 0.35 | the behind shot looks at a scrolling texture at another position (11.4 measured) |

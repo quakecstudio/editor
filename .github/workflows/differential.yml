@@ -130,6 +130,55 @@ jobs:
             --map lq_e0m5 --map lq_e0m6 --map lq_e0m7 --map lq_e0m8 \
             -- -basedir "$QS_TEST_ASSETS/librequake-lite"
 
+  # P3-28 (VIEWDIFF): the preview host's frames and sound against id's whole engine, the view
+  # oracle, on every map of LibreQuake's lite asset, on each OS.
+  view-diff:
+    name: View differential (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: view-diff-${{ runner.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The host draws offscreen through wgpu: on Linux with Mesa's software Vulkan driver, on
+      # macOS with Metal and on Windows with WARP; cpal needs ALSA's headers to build.
+      - name: Install a software Vulkan driver and ALSA's headers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev mesa-vulkan-drivers
+      - name: Point QS_TEST_ASSETS outside the source tree
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/test-assets/downloads
+          key: test-assets-${{ runner.os }}-${{ hashFiles('corpus/manifest.toml') }}
+      - name: Fetch the test assets
+        run: cargo xtask assets fetch
+      - name: Compare the preview host with id's engine on every LibreQuake map
+        run: |
+          cargo xtask view-diff \
+            --map start --map dev --map lq_e0m1 --map lq_e0m2 --map lq_e0m3 --map lq_e0m4 \
+            --map lq_e0m5 --map lq_e0m6 --map lq_e0m7 --map lq_e0m8 \
+            -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+
   # P2-09 and P2-10: the compiler differential's nightly run, 128 rounds of calls to every
   # function of one codebase as its oracle compiles it (id's qcc for id 1.01, the pinned FTEQCC
   # for the rerelease and the corpus mods at the bar), against qc-codegen with fold off and on
