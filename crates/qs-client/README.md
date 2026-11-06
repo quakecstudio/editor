@@ -8,7 +8,7 @@ them (NET), so the client knows exactly what id's client knows.
 
 - **Layer:** L4 bridges. It depends on `qc-builtins` and `qc-vm` (L1) and `qs-mdl` (L0);
   its tests build packets with `qs-sim`'s writers.
-- **Spec sections:** CLIENT-1 to CLIENT-7 of [`client.md`](../../docs/spec/engine/client.md),
+- **Spec sections:** CLIENT-1 to CLIENT-8 of [`client.md`](../../docs/spec/engine/client.md),
   PART-1 to PART-3 of [`particles.md`](../../docs/spec/engine/particles.md) and VIEW-1 to
   VIEW-4 of [`view.md`](../../docs/spec/engine/view.md), and the rerelease's
   `svc_localsound` and `svc_achievement` (RRE-2.2, RRE-2.3, RRE-2.5).

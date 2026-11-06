@@ -26,8 +26,8 @@ pub use client::{
     CLIENT_MAX_MODELS, CLIENT_MAX_SCOREBOARD, CLIENT_MAX_SOUNDS, CLIENT_MAX_STATIC_ENTITIES,
     CLIENT_MAX_STATS, CLIENT_MAX_TEMP_ENTITIES, CLIENT_MAX_VISEDICTS, CLIENT_PROTOCOL_VERSION,
     CLIENT_ROTATE_SPEED, CLIENT_SIGNONS, CLIENT_TELEPORT_DISTANCE, CLIENT_TENT_SOUNDS, Client,
-    Event, Game, HUD_DEFAULT_LINES, Hud, LerpSettings, ParseError, Score, SoundRef, SoundStart,
-    stat,
+    ClientLimits, Event, Game, HUD_DEFAULT_LINES, Hud, LerpSettings, ParseError, Score, SoundRef,
+    SoundStart, stat,
 };
 pub use entity::{Baseline, Entity, Lerp, LerpFlags};
 pub use hud::{
