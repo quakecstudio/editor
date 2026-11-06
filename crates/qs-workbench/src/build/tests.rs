@@ -20,13 +20,13 @@ use crate::{
 
 /// What a test project holds; the default is one that builds.
 struct ProjectSpec {
-    world: &'static str,
+    world: String,
 }
 
 impl Default for ProjectSpec {
     fn default() -> Self {
         Self {
-            world: "void() worldspawn = { local float x; x = speed * 2; };\n",
+            world: "void() worldspawn = { local float x; x = speed * 2; };\n".to_owned(),
         }
     }
 }
@@ -48,7 +48,7 @@ fn workbench(root: &Path, spec: &ProjectSpec) -> Workbench<MemoryLoader> {
     for (name, text) in [
         ("progs.src", "progs.dat\ndefs.qc\nworld.qc\n"),
         ("defs.qc", "float speed = 300;\n"),
-        ("world.qc", spec.world),
+        ("world.qc", spec.world.as_str()),
     ] {
         loader.insert(root.join(name), text.as_bytes().to_vec());
     }
@@ -110,7 +110,7 @@ fn a_module_is_written_to_its_output_with_its_line_map() {
 fn a_module_with_an_error_writes_nothing() {
     let dir = root("error");
     let spec = ProjectSpec {
-        world: "void() worldspawn = {\n  missing = 1;\n};\n",
+        world: "void() worldspawn = {\n  missing = 1;\n};\n".to_owned(),
     };
     let mut workbench = opened(&dir, &spec);
     let built = workbench.build().unwrap();
@@ -173,7 +173,7 @@ fn build_and_check_are_commands() {
 fn the_build_reads_the_project_in_the_editors_dialect() {
     let dir = root("dialect");
     let spec = ProjectSpec {
-        world: "void() worldspawn = { float x = 1; x += 2; };\n",
+        world: "void() worldspawn = { float x = 1; x += 2; };\n".to_owned(),
     };
     let mut vanilla = opened(&dir, &spec);
     assert!(!vanilla.build().unwrap()[0].built);
@@ -184,4 +184,74 @@ fn the_build_reads_the_project_in_the_editors_dialect() {
     });
     fte.open_project(&dir).unwrap();
     assert!(fte.build().unwrap()[0].built);
+}
+
+/// A workbench over `spec`'s bare project, read in the FTEQCC dialect for the KEX rerelease.
+fn for_kex(dir: &Path, spec: &ProjectSpec) -> Workbench<MemoryLoader> {
+    let mut workbench = workbench(dir, spec);
+    workbench.set_config(Config {
+        dialect: Some(Dialect::Fteqcc),
+        target: Some(qc_project::Target::Rerelease),
+        ..Config::default()
+    });
+    workbench.open_project(dir).unwrap();
+    workbench
+}
+
+// spec ENGT-3.12: a program for KEX is written as the rerelease's build makes it, a `$` key
+// string as it is
+#[test]
+fn a_kex_program_keeps_its_localized_keys() {
+    let dir = root("kex");
+    let spec = ProjectSpec {
+        world: "string msg;\nvoid() worldspawn = { msg = \"$qc_need_silver_key\"; };\n".to_owned(),
+    };
+    let mut workbench = for_kex(&dir, &spec);
+    let built = workbench.build().unwrap();
+    assert!(built[0].built, "{:?}", built[0].problems);
+    let progs = std::fs::read(&built[0].output).unwrap();
+    let read = Progs::read_with(
+        &progs,
+        &ReadOptions {
+            check_header_crc: false,
+        },
+    )
+    .unwrap();
+    assert_eq!(read.header().version, 6);
+    assert!(
+        progs
+            .windows(b"$qc_need_silver_key\0".len())
+            .any(|w| w == b"$qc_need_silver_key\0")
+    );
+}
+
+// spec ENGT-3.12: a program KEX cannot load, more globals than a version 6 statement reaches,
+// is refused with the reason and not written
+#[test]
+fn a_program_kex_cannot_load_is_not_written() {
+    use std::fmt::Write as _;
+    let dir = root("kex-refused");
+    let mut world = String::new();
+    for n in 0..33_000 {
+        writeln!(world, "float g{n};").unwrap();
+    }
+    world.push_str("void() worldspawn = { g0 = 1; };\n");
+    let spec = ProjectSpec { world };
+    let mut workbench = for_kex(&dir, &spec);
+    let built = workbench.build().unwrap();
+    assert!(!built[0].built);
+    let refused = built[0]
+        .problems
+        .iter()
+        .find(|p| p.code == "target")
+        .unwrap();
+    assert_eq!(refused.gravity, Gravity::Error);
+    assert!(
+        refused
+            .message
+            .contains("a version 6 statement reaches 32768"),
+        "{}",
+        refused.message
+    );
+    assert!(!built[0].output.exists(), "nothing written");
 }

@@ -20,6 +20,7 @@ field qc_ide::host::Config.autoproto
 field qc_ide::host::Config.dialect
 field qc_ide::host::Config.target
 field qc_ide::host::ModuleBuild.db
+field qc_ide::host::ModuleBuild.engine
 field qc_ide::host::ModuleBuild.input
 field qc_ide::host::ModuleBuild.name
 field qc_ide::host::ModuleBuild.names

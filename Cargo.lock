@@ -3108,9 +3108,11 @@ dependencies = [
  "qc-builtins",
  "qc-diag",
  "qc-lexer",
+ "qc-progs",
  "qc-project",
  "qc-sema",
  "qc-syntax",
+ "qc-types",
 ]
 
 [[package]]
@@ -3476,6 +3478,7 @@ name = "qs-workbench"
 version = "2026.10.0"
 dependencies = [
  "qc-codegen",
+ "qc-engines",
  "qc-ide",
  "qc-progs",
  "qc-project",
