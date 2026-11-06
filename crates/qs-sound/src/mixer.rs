@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2007-2008 Kristian Duske
+// Copyright (C) 2010-2011 O. Sezer <sezero@users.sourceforge.net>
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/snd_dma.c, S_StartSound, SND_PickChannel, SND_Spatialize, S_StopSound, S_StopAllSounds, S_StaticSound, S_UpdateAmbientSounds, S_Update, S_Update_, S_LocalSound
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/snd_mix.c, S_PaintChannels, SND_PaintChannelFrom8, SND_PaintChannelFrom16, SND_InitScaletable, S_TransferPaintBuffer, Snd_WriteLinearBlastStereo16
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/snd_dma.c, S_RawSamples
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/snd_mix.c, S_PaintChannels
 
 //! The channels and the mixer (`docs/spec/engine/sound.md` SND-1 to SND-5): a sound starts
 //! on a channel, is placed in stereo by the listener, and the channels are painted into
@@ -47,6 +53,8 @@ pub const SND_MIXAHEAD: f32 = 0.1;
 pub const SND_ORACLE_SPEED: u32 = 11025;
 /// The frames of id's fake DMA buffer, 32768 samples over two channels (SND-5.1).
 pub const SND_BUFFER_FRAMES: usize = 16384;
+/// `MAX_RAW_SAMPLES`: the frames of streamed music the mixer holds (SND-6.1).
+pub const SND_MAX_RAW_SAMPLES: usize = 8192;
 
 /// The ambient channels, by index (SND-1.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -235,6 +243,10 @@ pub struct Mixer {
     settings: Settings,
     /// What the mixer would print to the console.
     messages: Vec<String>,
+    /// `s_rawsamples`: streamed music, already scaled by its volume (SND-6.1).
+    raw: Vec<(i32, i32)>,
+    /// `s_rawend`: the frame after the last streamed one.
+    raw_end: i64,
 }
 
 /// How a mixer is made.
@@ -284,6 +296,67 @@ impl Mixer {
             ambient_sfx: [None; SND_NUM_AMBIENTS],
             settings: spec.settings,
             messages: Vec::new(),
+            raw: vec![(0, 0); SND_MAX_RAW_SAMPLES],
+            raw_end: 0,
+        }
+    }
+
+    /// The frames of streamed music the mixer can take now, `MAX_RAW_SAMPLES - (s_rawend -
+    /// paintedtime)` after `s_rawend` is raised to `paintedtime` (SND-6.2).
+    pub fn raw_room(&mut self) -> usize {
+        if self.raw_end < self.painted {
+            self.raw_end = self.painted;
+        }
+        let ahead = usize::try_from(self.raw_end.saturating_sub(self.painted)).unwrap_or(0);
+        SND_MAX_RAW_SAMPLES.saturating_sub(ahead)
+    }
+
+    /// `s_rawend = 0`, as `BGM_Stop` leaves it (SND-6.2).
+    pub const fn stop_raw(&mut self) {
+        self.raw_end = 0;
+    }
+
+    /// `S_RawSamples (samples, rate, 2, channels, data, volume)` (SND-6.1): `frames` 16-bit
+    /// frames of `channels` interleaved in `data` at `rate`, stepped to the mixer's rate by
+    /// `src = i * scale` and stored scaled by `(int) (256 * volume)`.
+    pub fn raw_samples(
+        &mut self,
+        frames: usize,
+        rate: u32,
+        channels: u16,
+        data: &[i16],
+        volume: f32,
+    ) {
+        if self.raw_end < self.painted {
+            self.raw_end = self.painted;
+        }
+        // `scale = (float) rate / shm->speed`, `intVolume = (int) (256 * volume)`.
+        let scale = int_to_float(i32::try_from(rate).unwrap_or(i32::MAX))
+            / int_to_float(i32::try_from(self.speed).unwrap_or(i32::MAX));
+        let volume = float_to_int(256.0 * volume);
+        let width = usize::from(channels.max(1));
+        let mut i = 0_i32;
+        loop {
+            let src = float_to_int(int_to_float(i) * scale);
+            let Ok(src) = usize::try_from(src) else {
+                break;
+            };
+            if src >= frames {
+                break;
+            }
+            let at = src.saturating_mul(width);
+            let left = data.get(at).copied().map_or(0, i32::from);
+            let right = if channels == 2 {
+                data.get(at.saturating_add(1)).copied().map_or(0, i32::from)
+            } else {
+                left
+            };
+            let slot = usize::try_from(self.raw_end).unwrap_or(0) & (SND_MAX_RAW_SAMPLES - 1);
+            if let Some(pair) = self.raw.get_mut(slot) {
+                *pair = (left.saturating_mul(volume), right.saturating_mul(volume));
+            }
+            self.raw_end = self.raw_end.saturating_add(1);
+            i = i.saturating_add(1);
         }
     }
 
@@ -775,13 +848,32 @@ impl Mixer {
                     }
                 }
             }
+            // SND-6.3: the streamed music, at the level QuakeSpasm plays it beside the sound
+            // effects, not scaled by `volume`.
+            let mut music = vec![(0_i32, 0_i32); frames];
+            if self.raw_end >= self.painted {
+                let stop = end.min(self.raw_end);
+                let mut i = self.painted;
+                while i < stop {
+                    let slot = usize::try_from(i).unwrap_or(0) & (SND_MAX_RAW_SAMPLES - 1);
+                    let at = usize::try_from(i.saturating_sub(self.painted)).unwrap_or(0);
+                    if let (Some(&(left, right)), Some(pair)) =
+                        (self.raw.get(slot), music.get_mut(at))
+                    {
+                        *pair = (left >> 8, right >> 8);
+                    }
+                    i = i.saturating_add(1);
+                }
+            }
             // SND-5.4: `(sum * snd_vol) >> 8`, clamped to 16 bits; SND-5.10: a mono output
             // takes the left sum alone.
             let mut written = Vec::with_capacity(frames.saturating_mul(2));
-            for &(left, right) in paintbuffer.iter().take(frames) {
-                written.push(transfer(left, snd_vol));
+            for (&(left, right), &(music_left, music_right)) in
+                paintbuffer.iter().take(frames).zip(&music)
+            {
+                written.push(transfer(left, snd_vol, music_left));
                 if self.stereo {
-                    written.push(transfer(right, snd_vol));
+                    written.push(transfer(right, snd_vol, music_right));
                 }
             }
             output.write(&written);
@@ -834,9 +926,9 @@ fn paint_channel(
     channel.pos = channel.pos.saturating_add(count);
 }
 
-/// `Snd_WriteLinearBlastStereo16`'s sample: `(sum * snd_vol) >> 8` clamped to 16 bits
-/// (SND-5.4).
-fn transfer(sum: i32, snd_vol: i32) -> i16 {
-    let val = sum.wrapping_mul(snd_vol) >> 8;
+/// `Snd_WriteLinearBlastStereo16`'s sample: `(sum * snd_vol) >> 8`, plus the frame's
+/// `music` (SND-6.3), clamped to 16 bits (SND-5.4).
+fn transfer(sum: i32, snd_vol: i32, music: i32) -> i16 {
+    let val = (sum.wrapping_mul(snd_vol) >> 8).saturating_add(music);
     i16::try_from(val.clamp(i32::from(i16::MIN), i32::from(i16::MAX))).unwrap_or(0)
 }

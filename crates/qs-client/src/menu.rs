@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2007-2008 Kristian Duske
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/menu.c, M_ToggleMenu_f, M_Menu_Main_f, M_Main_Draw, M_Main_Key, M_Menu_SinglePlayer_f, M_SinglePlayer_Draw, M_SinglePlayer_Key, M_ScanSaves, M_Menu_Load_f, M_Menu_Save_f, M_Load_Draw, M_Save_Draw, M_Load_Key, M_Save_Key, M_Menu_Options_f, M_AdjustSliders, M_DrawSlider, M_DrawCheckbox, M_Options_Draw, M_Options_Key, M_Menu_Help_f, M_Help_Draw, M_Help_Key, M_Menu_Quit_f, M_Quit_Draw, M_Quit_Key, M_Draw, M_Keydown, M_Print, M_PrintWhite, M_DrawTextBox
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_draw.c, Draw_FadeScreen
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_screen.c, SCR_ModalMessage, SCR_DrawNotifyString
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/gl_screen.c, SCR_DrawNotifyString
 
 //! The menus a local player uses (MENU): main, single player, load and save, options, help and
 //! the quit prompt, drawn over a faded view and driven by keys.

@@ -756,8 +756,10 @@ impl Viewer {
         view.viewsize = setting("viewsize");
         view.gamma = setting("gamma");
         let volume = setting("volume");
+        let music = setting("bgmvolume");
         self.client.set_view_settings(view);
         self.audio.set_volume(volume);
+        self.audio.set_music_volume(music);
     }
 
     /// The client's commands the console met, run in order (CON-6.1).

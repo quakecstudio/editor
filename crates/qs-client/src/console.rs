@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/console.c, Con_CheckResize, Con_Linefeed, Con_Print, Con_Clear_f, Con_ClearNotify, Con_ToggleConsole_f, Con_DrawNotify, Con_DrawConsole, Con_DrawInput
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/keys.c, Key_Init, Key_Console
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_screen.c, SCR_SetUpToDrawConsole, SCR_DrawConsole
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: QW/client/keys.c, Key_Console
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/console.c, Con_DrawConsole, Con_DrawInput
 
 //! The client's console (CON): the text printed into it, the notify lines, the console drawn
 //! over the view and the line typed into it.

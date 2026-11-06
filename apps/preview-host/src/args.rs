@@ -52,6 +52,13 @@ pub(crate) struct Args {
     /// No sound device, the engine's `-nosound`.
     #[arg(long)]
     pub(crate) nosound: bool,
+    /// A CD image's cue sheet whose audio tracks are the music (SND-6.4); without it,
+    /// `game.cue` in the game root when there is one, as GOG's release keeps its CD.
+    #[arg(long)]
+    pub(crate) cd_image: Option<PathBuf>,
+    /// No CD music, QuakeSpasm's `-nocdaudio`.
+    #[arg(long)]
+    pub(crate) nocdaudio: bool,
     /// No window and no sound: frames of 1/72 of a second, the bridge served between them,
     /// and `screenshot` drawn offscreen; for scenario runs, CI and a client's tests; needs
     /// `-bridge`.

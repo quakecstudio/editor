@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2007-2008 Kristian Duske
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/cmd.c, Cbuf_Execute, Cbuf_InsertText, Cmd_ExecuteString, Cmd_Wait_f, Cmd_Echo_f, Cmd_Alias_f, Cmd_Exec_f, Cmd_StuffCmds_f, Cmd_ForwardToServer
@@ -8,6 +11,7 @@
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_edict.c, ED_Print, ED_PrintEdicts, ED_PrintEdict_f, ED_Count, PR_ValueString
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_exec.c, PR_Profile_f
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/common.c, COM_Path_f
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/cmd.c, Cmd_List_f, Cmd_AddCommand
 
 //! The console (PHYS-13): id's command buffer and `Cmd_ExecuteString` for text from the console
 //! or the progs' `localcmd`, with one table of commands: `cmd.c`'s, the settings, the commands

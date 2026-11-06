@@ -20,7 +20,7 @@ use qs_vfs::zip::Zip;
 use qs_vfs::{Element, LoadedFile, StdFs, Vfs};
 
 use crate::args::{Args, Show};
-use crate::audio::{Audio, Device};
+use crate::audio::{Audio, CdImage, Device};
 use crate::game::{Game, HostAction, Reporting};
 
 /// The height of a player's eyes above its origin, `view_ofs` in id's QuakeC `client.qc`.
@@ -286,7 +286,20 @@ pub(crate) fn load(
             _ => None,
         })
         .collect();
-    let mut audio = Audio::open(Box::new(move |name: &str| sounds(name)), output);
+    // SND-6.4: the CD's music, never in a capture, which id's engine has none of to compare.
+    let cd = match output {
+        Device::Capture => None,
+        Device::Default | Device::None if args.nocdaudio => None,
+        Device::Default | Device::None => args
+            .cd_image
+            .clone()
+            .or_else(|| {
+                let base = args.basedir.clone().unwrap_or_else(|| PathBuf::from("."));
+                Some(base.join("game.cue")).filter(|cue| cue.is_file())
+            })
+            .and_then(|cue| CdImage::open(&cue)),
+    };
+    let mut audio = Audio::open(Box::new(move |name: &str| sounds(name)), output, cd);
     audio.handle(&events, &mut rand);
     let mut pics = Pics::new();
     pics.add_wad(&read("gfx.wad")?, &palette)
