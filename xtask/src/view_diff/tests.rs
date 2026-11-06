@@ -238,7 +238,7 @@ fn the_oracle_shares_the_generator() {
     let source = std::fs::read_to_string(root.join("xtask/src/oracles.rs")).unwrap();
     let view = &source[source.find("fn compile_view(").unwrap()..];
     assert!(view.contains(r#"let rand = root.join("oracles/engine/rand.h");"#));
-    assert!(view.contains("Code::Upstream => Some(rand.as_path()),"));
+    assert!(view.contains("Code::Upstream | Code::UpstreamCommon => Some(rand.as_path()),"));
     assert!(source.contains(r#"const VIEW_HARNESS: [&str; 2] = ["oracles/engine/view_host.c", "oracles/engine/rand.c"];"#));
 }
 

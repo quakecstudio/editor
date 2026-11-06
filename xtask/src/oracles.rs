@@ -904,7 +904,7 @@ fn compile_engine(
     for (source, code) in upstream.chain(ours) {
         let object = objects.join(format!("engine_{}.o", stem(&source)));
         let forced_include = match code {
-            Code::Upstream => Some(rand.as_path()),
+            Code::Upstream | Code::UpstreamCommon => Some(rand.as_path()),
             Code::Ours => None,
         };
         compiler.object(
@@ -936,7 +936,7 @@ fn compile_view(
     let upstream = VIEW_FILES.iter().map(|file| {
         (
             quake.join(file),
-            Code::Upstream,
+            Code::UpstreamCommon,
             VIEW_CLIENT_FILES.contains(file),
         )
     });
@@ -947,7 +947,7 @@ fn compile_view(
     for (source, code, client) in upstream.chain(ours) {
         let object = objects.join(format!("view_{}.o", stem(&source)));
         let forced_include = match code {
-            Code::Upstream => Some(rand.as_path()),
+            Code::Upstream | Code::UpstreamCommon => Some(rand.as_path()),
             Code::Ours => None,
         };
         compiler.object(
