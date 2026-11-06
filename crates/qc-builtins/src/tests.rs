@@ -1204,6 +1204,26 @@ mod bodies {
             ]
         }
 
+        /// A scalar system global by name, as a float.
+        fn global_f(&self, name: &str) -> f32 {
+            let slot = i32::try_from(global_by_name(name).unwrap().slot).unwrap();
+            self.machine.global(slot).unwrap().as_f32()
+        }
+
+        /// Sets an entity-value system global to raw bits.
+        fn set_global_entity_raw(&mut self, name: &str, value: i32) {
+            let slot = i32::try_from(global_by_name(name).unwrap().slot).unwrap();
+            self.machine
+                .set_global(slot, Slot::from_i32(value))
+                .unwrap();
+        }
+
+        /// Vector parameter `n` (`OFS_PARM0 + 3n`).
+        fn parm_v(&self, n: u16) -> [f32; 3] {
+            let slot = i32::from(PROGS_OFS_PARM0) + i32::from(PROGS_PARM_SLOTS) * i32::from(n);
+            [0, 1, 2].map(|i| self.machine.global(slot + i).unwrap().as_f32())
+        }
+
         /// A vector system global by name.
         fn sysglobal_v(&self, name: &str) -> [f32; 3] {
             let slot = i32::try_from(global_by_name(name).unwrap().slot).unwrap();
@@ -2251,8 +2271,8 @@ mod bodies {
         assert_eq!(id.message(), "unimplemented bulitin");
     }
 
-    // spec BUILTIN-18.4: forceinfokey on the world sets a serverinfo cvar and no other; on a
-    // player it sets none, and a bad player is NUM_FOR_EDICT's error
+    // spec BUILTIN-18.29: forceinfokey on the world sets a serverinfo cvar and no other, a player's
+    // key sets no cvar, and a bad player is NUM_FOR_EDICT's error
     #[test]
     fn forceinfokey_sets_serverinfo_cvars_on_the_world() {
         let (strings, offsets) = string_table(&["teamplay", "3", "skill"]);
@@ -2277,6 +2297,438 @@ mod bodies {
         assert_eq!(player.engine().cvars.text("teamplay"), Some("0"));
         let (result, _) = run(edict * 1000, offsets[0]);
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
+    }
+
+    // spec BUILTIN-18.28: clientcommand runs an active client's setinfo, which sets its team
+    // and infokey's answers; a non-client or an inactive slot changes nothing, and a bad
+    // entity is NUM_FOR_EDICT's error
+    // spec BUILTIN-18.30: infokey reads the client's name and colours
+    #[test]
+    fn clientcommand_runs_setinfo_for_an_active_client() {
+        let (strings, offsets) = string_table(&[
+            "setinfo bottomcolor 4",
+            "setinfo name other",
+            "color 4",
+            "bottomcolor",
+            "team",
+            "name",
+        ]);
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = EngineProfile::VkQuake;
+        engine.clients_active = vec![true, false];
+        let run = |engine: &mut MockEngine, number: u32, parms: &[i32], edict: usize| {
+            let mut f = Fixture::new(number, 2, strings.clone(), 2);
+            *f.builtins.engine_mut() = engine.clone();
+            let size = f.machine.edicts().layout().edict_size();
+            let entity = i32::try_from(edict).unwrap() * size;
+            f.set_parm_i(0, entity);
+            for (n, parm) in (1_u16..).zip(parms) {
+                f.set_parm_i(n, *parm);
+            }
+            let result = f.run(ServerState::Active);
+            *engine = f.builtins.engine().clone();
+            (result, f)
+        };
+        let infokey = |engine: &mut MockEngine, key: i32| {
+            let (result, f) = run(engine, 80, &[key], 1);
+            result.unwrap();
+            f.engine().strings.text(f.return_i()).map(<[u8]>::to_vec)
+        };
+        let (result, f) = run(&mut engine, 440, &[offsets[2]], 1);
+        result.unwrap();
+        assert_eq!(f.field_f(1, "team"), 0.0, "color is no client command");
+        let (result, f) = run(&mut engine, 440, &[offsets[0]], 1);
+        result.unwrap();
+        assert_eq!(f.field_f(1, "team"), 5.0);
+        assert_eq!(infokey(&mut engine, offsets[3]), Some(b"4".to_vec()));
+        assert_eq!(infokey(&mut engine, offsets[4]), Some(b"t5".to_vec()));
+        let (result, f) = run(&mut engine, 440, &[offsets[1]], 1);
+        result.unwrap();
+        let netname = f.field_i(1, "netname");
+        assert_eq!(f.engine().strings.text(netname), Some(b"other".as_slice()));
+        assert_eq!(infokey(&mut engine, offsets[5]), Some(b"other".to_vec()));
+        for edict in [0, 2] {
+            let before = engine.clients.clone();
+            let (result, f) = run(&mut engine, 440, &[offsets[0]], edict);
+            result.unwrap();
+            assert_eq!(engine.clients, before, "edict {edict}");
+            assert_eq!(f.field_f(edict, "team"), 0.0);
+        }
+        let (result, _) = run(&mut engine, 440, &[offsets[0]], 1000);
+        assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
+    }
+
+    // spec BUILTIN-18.31: sin (#60), pow (#97) and mod (#245) under vkQuake's profile
+    // spec BUILTIN-18.32: str2chr (#222) reads its offset only when the call passed one, and
+    // chr2str (#223) each argument passed
+    // spec BUILTIN-18.33: strpad (#225) joins the strings after the width; strreplace (#484)
+    // spec BUILTIN-18.34: uri_escape (#510) and uri_unescape (#511)
+    #[test]
+    fn vkquake_string_and_math_builtins_dispatch() {
+        let (strings, offsets) = string_table(&["abc", "b", "XY", "a b", "a%20b"]);
+        let run = |number: u32, argc: u16, parms: &[Result<i32, f32>]| {
+            let mut f = Fixture::new(number, argc, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            for (n, parm) in (0_u16..).zip(parms) {
+                match parm {
+                    Ok(string) => f.set_parm_i(n, *string),
+                    Err(float) => f.set_parm_f(n, *float),
+                }
+            }
+            f.run_ok(ServerState::Active);
+            f
+        };
+        let text = |f: &Fixture| f.engine().strings.text(f.return_i()).map(<[u8]>::to_vec);
+        assert_eq!(run(60, 1, &[Err(0.0)]).return_f(), 0.0);
+        assert_eq!(run(97, 2, &[Err(3.0), Err(2.0)]).return_f(), 9.0);
+        assert_eq!(run(245, 2, &[Err(7.0), Err(4.0)]).return_f(), 3.0);
+        let one = run(222, 1, &[Ok(offsets[0]), Err(2.0)]);
+        assert_eq!(one.return_f(), f32::from(b'a'), "one argument: offset 0");
+        let two = run(222, 2, &[Ok(offsets[0]), Err(2.0)]);
+        assert_eq!(two.return_f(), f32::from(b'c'));
+        let chars = run(223, 2, &[Err(72.0), Err(105.0), Err(33.0)]);
+        assert_eq!(text(&chars), Some(b"Hi".to_vec()), "two of three passed");
+        let padded = run(225, 3, &[Err(-6.0), Ok(offsets[0]), Ok(offsets[1])]);
+        assert_eq!(text(&padded), Some(b"  abcb".to_vec()));
+        let replaced = run(484, 3, &[Ok(offsets[1]), Ok(offsets[2]), Ok(offsets[0])]);
+        assert_eq!(text(&replaced), Some(b"aXYc".to_vec()));
+        assert_eq!(
+            text(&run(510, 1, &[Ok(offsets[3])])),
+            Some(b"a%20b".to_vec())
+        );
+        assert_eq!(text(&run(511, 1, &[Ok(offsets[4])])), Some(b"a b".to_vec()));
+    }
+
+    // spec BUILTIN-18.39: buf_create (#460) defaults to the type string, bufstr_add (#468) and
+    // bufstr_get (#466) store and read, buf_getsize (#462) counts and leaves the return value
+    // as it was for a buffer not in use, and buf_del (#461) frees the buffer
+    #[test]
+    fn string_buffers_dispatch() {
+        let (strings, offsets) = string_table(&["string", "hello"]);
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = EngineProfile::VkQuake;
+        let call = |engine: &mut MockEngine, number: u32, parms: &[Result<i32, f32>]| {
+            let argc = u16::try_from(parms.len()).unwrap();
+            let mut f = Fixture::new(number, argc, strings.clone(), 0);
+            *f.builtins.engine_mut() = engine.clone();
+            f.machine
+                .set_global(i32::from(PROGS_OFS_RETURN), Slot::from_f32(42.0))
+                .unwrap();
+            for (n, parm) in (0_u16..).zip(parms) {
+                match parm {
+                    Ok(string) => f.set_parm_i(n, *string),
+                    Err(float) => f.set_parm_f(n, *float),
+                }
+            }
+            f.run_ok(ServerState::Active);
+            *engine = f.builtins.engine().clone();
+            f
+        };
+        assert_eq!(call(&mut engine, 460, &[]).return_f(), 1.0);
+        assert_eq!(call(&mut engine, 460, &[Ok(offsets[0])]).return_f(), 2.0);
+        assert_eq!(
+            call(&mut engine, 468, &[Err(1.0), Ok(offsets[1]), Err(0.5)]).return_f(),
+            0.0
+        );
+        assert_eq!(call(&mut engine, 462, &[Err(1.0)]).return_f(), 1.0);
+        let got = call(&mut engine, 466, &[Err(1.0), Err(0.0)]);
+        assert_eq!(
+            got.engine().strings.text(got.return_i()),
+            Some(b"hello".as_slice())
+        );
+        assert_eq!(call(&mut engine, 466, &[Err(1.0), Err(1.0)]).return_i(), 0);
+        call(&mut engine, 461, &[Err(1.0)]);
+        assert_eq!(
+            call(&mut engine, 462, &[Err(1.0)]).return_f(),
+            42.0,
+            "left as it was"
+        );
+        assert_eq!(
+            call(&mut engine, 468, &[Err(1.0), Ok(offsets[1]), Err(1.0)]).return_f(),
+            42.0
+        );
+    }
+
+    // spec BUILTIN-18.40: under vkQuake's profile the datagrams hold 64000 bytes, a signon
+    // buffer 31500, WriteAngle writes 2 bytes and WriteCoord 4, and MSG_MULTICAST and
+    // MSG_ENTITY write the multicast buffer
+    #[test]
+    fn vkquake_message_sizes() {
+        use crate::mock::Overflow;
+        let write = |number: u32, dest: f32, profile: EngineProfile| {
+            let mut f = Fixture::new(number, 2, vec![0], 0);
+            f.builtins.engine_mut().profile = profile;
+            f.set_parm_f(0, dest);
+            f.set_parm_f(1, 1.0);
+            let result = f.run(ServerState::Active);
+            (result, f.engine().buffers)
+        };
+        assert_eq!(write(57, 0.0, EngineProfile::VkQuake).1.unreliable, 2);
+        assert_eq!(write(56, 0.0, EngineProfile::VkQuake).1.unreliable, 4);
+        assert_eq!(write(57, 0.0, EngineProfile::Id).1.unreliable, 1);
+        assert_eq!(write(56, 0.0, EngineProfile::Id).1.unreliable, 2);
+        assert_eq!(write(52, 4.0, EngineProfile::VkQuake).1.multicast, 1);
+        assert_eq!(write(52, 5.0, EngineProfile::VkQuake).1.multicast, 1);
+        let (result, _) = write(52, 4.0, EngineProfile::Id);
+        assert_eq!(result.unwrap_err().message(), "WriteDest: bad destination");
+        let (result, _) = write(52, 6.0, EngineProfile::VkQuake);
+        assert_eq!(result.unwrap_err().message(), "WriteDest: bad destination");
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = EngineProfile::VkQuake;
+        assert_eq!(
+            engine.append_message(MessageDest::Broadcast, 64_000),
+            Ok(())
+        );
+        assert_eq!(
+            engine.append_message(MessageDest::Broadcast, 1),
+            Err(Overflow)
+        );
+        assert_eq!(
+            engine.append_message(MessageDest::All, 64_001),
+            Err(Overflow)
+        );
+        assert_eq!(
+            engine.append_message(MessageDest::Multicast, 64_000),
+            Ok(())
+        );
+        assert_eq!(engine.append_message(MessageDest::Init, 31_500), Ok(()));
+        assert_eq!(engine.append_message(MessageDest::Init, 1), Err(Overflow));
+    }
+
+    // spec BUILTIN-18.40: multicast reads msg_entity through NUM_FOR_EDICT; MULTICAST_INIT puts
+    // the multicast buffer in the signon buffers, a new one when it does not fit and at most
+    // 256; every kind empties the multicast buffer
+    #[test]
+    fn multicast_flushes_the_buffer() {
+        let run = |engine: &mut MockEngine, to: f32| {
+            let mut f = Fixture::new(82, 2, vec![0], 0);
+            *f.builtins.engine_mut() = engine.clone();
+            f.set_parm_f(1, to);
+            let result = f.run(ServerState::Active);
+            *engine = f.builtins.engine().clone();
+            result
+        };
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = EngineProfile::VkQuake;
+        engine.buffers.multicast = 100;
+        run(&mut engine, 0.0).unwrap();
+        assert_eq!(engine.buffers.multicast, 0);
+        assert_eq!(engine.buffers.signon, 0, "MULTICAST_ALL_U writes no signon");
+        engine.buffers.multicast = 100;
+        engine.buffers.signon = 31_450;
+        run(&mut engine, 8.0).unwrap();
+        assert_eq!(engine.buffers.signon, 100, "a new signon buffer");
+        assert_eq!(engine.buffers.extra_signon_buffers, 1);
+        assert_eq!(engine.buffers.multicast, 0);
+        engine.buffers.multicast = 100;
+        run(&mut engine, 8.0).unwrap();
+        assert_eq!(engine.buffers.signon, 200, "it fits in the last");
+        engine.buffers.multicast = 31_400;
+        engine.buffers.extra_signon_buffers = 255;
+        assert_eq!(
+            run(&mut engine, 8.0).unwrap_err().message(),
+            "SV_AddSignonBuffer overflow"
+        );
+        engine.buffers.multicast = 40_000;
+        engine.buffers.extra_signon_buffers = 0;
+        engine.buffers.signon = 0;
+        assert_eq!(
+            run(&mut engine, 8.0).unwrap_err().message(),
+            "SZ_GetSpace: overflow without allowoverflow set",
+            "more than one signon buffer holds"
+        );
+        let mut f = Fixture::new(82, 2, vec![0], 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        let size = f.machine.edicts().layout().edict_size();
+        f.set_global_entity_raw("msg_entity", size * 1000);
+        assert_eq!(
+            f.run(ServerState::Active).unwrap_err().message(),
+            "NUM_FOR_EDICT: bad pointer"
+        );
+    }
+
+    // spec BUILTIN-18.41: vkQuake's sound reads its entity with G_EDICT and its sample first,
+    // does nothing for an empty or unprecached sample, takes channels up to 255 and clamps a
+    // volume over 255, and keeps no message
+    #[test]
+    fn vkquake_sound_checks() {
+        let (strings, offsets) = string_table(&["", "s.wav", "other.wav"]);
+        let run = |entity: i32, chan: f32, sample: i32, vol: f32, atten: f32| {
+            let mut f = Fixture::new(8, 5, strings.clone(), 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.builtins
+                .engine_mut()
+                .precache(Precache::Sound, "s.wav")
+                .unwrap();
+            f.set_parm_i(0, entity);
+            f.set_parm_f(1, chan);
+            f.set_parm_i(2, sample);
+            f.set_parm_f(3, vol);
+            f.set_parm_f(4, atten);
+            let result = f.run(ServerState::Active).map_err(|e| e.message());
+            (result, f.engine().buffers.unreliable)
+        };
+        assert_eq!(run(0, 200.0, offsets[1], 2.0, 1.0), (Ok(()), 0));
+        assert_eq!(
+            run(0, 0.0, offsets[0], -1.0, 9.0).0,
+            Ok(()),
+            "empty: nothing"
+        );
+        assert_eq!(run(0, 0.0, offsets[2], 1.0, 1.0).0, Ok(()), "not precached");
+        assert_eq!(
+            run(0, 0.0, offsets[1], -1.0, 1.0).0,
+            Err("SV_StartSound: volume = -255".to_owned())
+        );
+        assert!(
+            run(0, 0.0, offsets[1], 1.0, 5.0)
+                .0
+                .unwrap_err()
+                .contains("attenuation")
+        );
+        assert_eq!(
+            run(0, 256.0, offsets[1], 1.0, 1.0).0,
+            Err("SV_StartSound: channel = 256".to_owned())
+        );
+        assert_eq!(
+            run(0, 0.0, 999_999, 1.0, 1.0).0.unwrap_err(),
+            "invalid string",
+            "the sample before the checks"
+        );
+    }
+
+    // spec BUILTIN-18.41: vkQuake's particle drops a message when the datagram holds more than
+    // 64000 - 18 bytes, else writes 18; ambientsound and makestatic write no signon buffer and
+    // makestatic frees its entity
+    #[test]
+    fn vkquake_particle_ambient_and_static() {
+        let mut f = Fixture::new(48, 4, vec![0], 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.run_ok(ServerState::Active);
+        assert_eq!(f.engine().buffers.unreliable, 18);
+        let mut full = Fixture::new(48, 4, vec![0], 0);
+        full.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        full.builtins.engine_mut().buffers.unreliable = 64_000 - 17;
+        full.run_ok(ServerState::Active);
+        assert_eq!(full.engine().buffers.unreliable, 64_000 - 17, "dropped");
+        let mut edge = Fixture::new(48, 4, vec![0], 0);
+        edge.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        edge.builtins.engine_mut().buffers.unreliable = 64_000 - 18;
+        edge.run_ok(ServerState::Active);
+        assert_eq!(edge.engine().buffers.unreliable, 64_000);
+        let (strings, offsets) = string_table(&["missing.wav"]);
+        let mut ambient = Fixture::new(74, 4, strings, 0);
+        ambient.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        ambient.set_parm_i(1, offsets[0]);
+        ambient.run_ok(ServerState::Active);
+        assert_eq!(ambient.engine().buffers.signon, 0);
+        let mut statics = Fixture::new(69, 1, vec![0], 0);
+        statics.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        statics.machine.edicts_mut().alloc(1.0).unwrap();
+        let value = statics.machine.edicts().edict_num(1).unwrap();
+        statics.set_parm_i(0, value.bits());
+        statics.run_ok(ServerState::Active);
+        assert_eq!(statics.engine().buffers.signon, 0);
+        assert_eq!(
+            statics.machine.edicts().is_free(EdictNumber::new(1)),
+            Some(true)
+        );
+    }
+
+    // spec BUILTIN-18.42: tracebox sets a start or end holding a NaN to 0 0 0 in its parameter
+    // and traces as traceline does, hitting nothing
+    #[test]
+    fn tracebox_clears_nan_ends() {
+        let mut f = Fixture::new(90, 6, vec![0], 0);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.set_parm_v(0, [f32::NAN, 1.0, 2.0]);
+        f.set_parm_v(3, [4.0, 5.0, 6.0]);
+        f.run_ok(ServerState::Active);
+        assert_eq!(f.parm_v(0), [0.0; 3], "the start is cleared");
+        assert_eq!(f.sysglobal_v("trace_endpos"), [4.0, 5.0, 6.0]);
+        assert_eq!(f.global_f("trace_fraction"), 1.0);
+        assert_eq!(f.global_f("trace_inopen"), 1.0);
+        let mut g = Fixture::new(90, 6, vec![0], 0);
+        g.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        g.set_parm_v(3, [1.0, f32::NAN, 1.0]);
+        g.run_ok(ServerState::Active);
+        assert_eq!(g.parm_v(3), [0.0; 3]);
+        assert_eq!(g.sysglobal_v("trace_endpos"), [0.0; 3]);
+    }
+
+    // spec BUILTIN-18.43: dropclient of an edict that is no active client does nothing; of an
+    // active one it runs ClientDisconnect, whose error ends the call
+    // spec BUILTIN-18.44: uri_get returns 0 0 0
+    #[test]
+    fn dropclient_and_uri_get() {
+        let mut f = Fixture::new(453, 1, vec![0], 2);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.builtins.engine_mut().clients_active = vec![false, true];
+        let size = f.machine.edicts().layout().edict_size();
+        f.set_parm_i(0, size);
+        f.run_ok(ServerState::Active);
+        f.set_parm_i(0, 2 * size);
+        let error = f.run(ServerState::Active).unwrap_err();
+        assert_eq!(error.message(), "PR_ExecuteProgram: NULL function");
+        assert_eq!(
+            f.engine().clients_active,
+            [false, true],
+            "the run failed before the slot was freed"
+        );
+        let mut uri = Fixture::new(513, 0, vec![0], 0);
+        uri.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        uri.machine
+            .set_global3(i32::from(PROGS_OFS_RETURN), [Slot::from_f32(9.0); 3])
+            .unwrap();
+        uri.run_ok(ServerState::Active);
+        assert_eq!(uri.return_v(), [0.0; 3]);
+    }
+
+    // spec BUILTIN-18.35: wasfreed (#353) is 1 for a free edict and 0 for one in use
+    #[test]
+    fn wasfreed_reads_the_free_flag() {
+        let run = |free: bool| {
+            let mut f = Fixture::new(353, 1, vec![0], 0);
+            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+            f.machine.edicts_mut().alloc(1.0).unwrap();
+            if free {
+                f.machine.edicts_mut().free(EdictNumber::new(1), 1.0);
+            }
+            let value = f.machine.edicts().edict_num(1).unwrap();
+            f.set_parm_i(0, value.bits());
+            f.run_ok(ServerState::Active);
+            f.return_f()
+        };
+        assert_eq!(run(true), 1.0);
+        assert_eq!(run(false), 0.0);
+    }
+
+    // spec BUILTIN-18.29: forceinfokey on a player slot sets its userinfo as SV_UpdateInfo
+    // does, active or not, and a `*` key with it
+    #[test]
+    fn forceinfokey_sets_a_players_userinfo() {
+        let (strings, offsets) = string_table(&["bottomcolor", "6", "*spectator", "1"]);
+        let mut f = Fixture::new(213, 3, strings, 2);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.builtins.engine_mut().clients_active = vec![true, false];
+        let size = f.machine.edicts().layout().edict_size();
+        f.set_parm_i(0, 2 * size);
+        f.set_parm_i(1, offsets[0]);
+        f.set_parm_i(2, offsets[1]);
+        f.run(ServerState::Active).unwrap();
+        assert_eq!(f.field_f(2, "team"), 7.0);
+        assert_eq!(f.engine().clients.get(1).colors(), 6);
+        f.set_parm_i(1, offsets[2]);
+        f.set_parm_i(2, offsets[3]);
+        f.run(ServerState::Active).unwrap();
+        assert!(
+            f.engine()
+                .clients
+                .get(1)
+                .userinfo()
+                .ends_with(b"\\*spectator\\1"),
+            "{:?}",
+            f.engine().clients.get(1)
+        );
     }
 
     // spec BUILTIN-18.23: tokenize counts the words, argv returns each as an engine string and
@@ -2741,7 +3193,7 @@ mod bodies {
         }
     }
 
-    // spec BUILTIN-18.12: infokey answers the world's *version and an active client's fixed
+    // spec BUILTIN-18.30: infokey answers the world's *version and an active client's fixed
     // keys, and 0 for anything else
     #[test]
     fn infokey_answers_fixed_keys() {
@@ -2817,25 +3269,64 @@ mod bodies {
         }
     }
 
-    // spec BUILTIN-18.10: fopen opens nothing in any mode, after reading its name as a string
+    // spec BUILTIN-18.36: fopen reads its name as a string and its mode as an integer; a file
+    // to read that nothing wrote opens nothing, and one to write is made
+    // spec BUILTIN-18.37: fputs joins its strings and fgets reads the line back once the file
+    // is closed, 0 at the end
+    // spec BUILTIN-18.38: whichpack names the game directory of a written file, and 0 for none
     #[test]
-    fn fopen_opens_nothing() {
-        let (strings, offsets) = string_table(&["configs/levels.cfg"]);
-        for (name, mode, ok) in [
-            (offsets[0], 0.0, true),
-            (offsets[0], 2.0, true),
-            (999_999, 0.0, false),
-        ] {
-            let mut f = Fixture::new(110, 2, strings.clone(), 0);
-            f.builtins.engine_mut().profile = EngineProfile::VkQuake;
-            f.set_parm_i(0, name);
-            f.set_parm_f(1, mode);
-            let result = f.run(ServerState::Active);
-            assert_eq!(result.is_ok(), ok, "{mode}");
-            if ok {
-                assert_eq!(f.return_f(), -1.0);
+    fn files_write_and_read_back() {
+        let (strings, offsets) =
+            string_table(&["configs/levels.cfg", "a", "b", "data/configs/levels.cfg"]);
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = EngineProfile::VkQuake;
+        let call = |engine: &mut MockEngine, number: u32, parms: &[Result<i32, f32>]| {
+            let argc = u16::try_from(parms.len()).unwrap();
+            let mut f = Fixture::new(number, argc, strings.clone(), 0);
+            *f.builtins.engine_mut() = engine.clone();
+            for (n, parm) in (0_u16..).zip(parms) {
+                match parm {
+                    Ok(string) => f.set_parm_i(n, *string),
+                    Err(float) => f.set_parm_f(n, *float),
+                }
             }
-        }
+            let result = f.run(ServerState::Active);
+            *engine = f.builtins.engine().clone();
+            (result, f)
+        };
+        let (result, f) = call(&mut engine, 110, &[Ok(offsets[0]), Err(0.0)]);
+        result.unwrap();
+        assert_eq!(f.return_f(), -1.0);
+        let (result, _) = call(&mut engine, 110, &[Ok(999_999), Err(0.0)]);
+        assert!(result.is_err(), "a bad name is the string error");
+        let (_, f) = call(&mut engine, 503, &[Ok(offsets[3])]);
+        assert_eq!(f.return_i(), 0);
+        let (_, f) = call(&mut engine, 110, &[Ok(offsets[0]), Err(2.9)]);
+        assert_eq!(f.return_f(), 1.0, "mode (int)2.9, write");
+        call(
+            &mut engine,
+            113,
+            &[Err(1.0), Ok(offsets[1]), Ok(offsets[2])],
+        )
+        .0
+        .unwrap();
+        let (result, _) = call(&mut engine, 113, &[Err(1.0), Ok(999_999)]);
+        assert!(result.is_err(), "each string is checked");
+        call(&mut engine, 111, &[Err(1.0)]).0.unwrap();
+        let (_, f) = call(&mut engine, 503, &[Ok(offsets[3])]);
+        assert_eq!(
+            f.engine().strings.text(f.return_i()),
+            Some(b"id1".as_slice())
+        );
+        let (_, f) = call(&mut engine, 110, &[Ok(offsets[0]), Err(0.0)]);
+        assert_eq!(f.return_f(), 1.0);
+        let (_, f) = call(&mut engine, 112, &[Err(1.0)]);
+        assert_eq!(
+            f.engine().strings.text(f.return_i()),
+            Some(b"ab".as_slice())
+        );
+        let (_, f) = call(&mut engine, 112, &[Err(1.0)]);
+        assert_eq!(f.return_i(), 0);
     }
 
     // spec BUILTIN-18.9: strzone joins its arguments into a new string that strunzone frees,

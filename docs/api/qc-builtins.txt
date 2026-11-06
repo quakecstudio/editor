@@ -14,21 +14,29 @@ const qc_builtins::mock::LIMIT_MAX_LIGHTSTYLES
 const qc_builtins::mock::LIMIT_MAX_MODELS
 const qc_builtins::mock::LIMIT_MAX_MSGLEN
 const qc_builtins::mock::LIMIT_MAX_SOUNDS
+const qc_builtins::mock::VKQUAKE_MAX_DATAGRAM
 const qc_builtins::mock::VKQUAKE_MAX_MODELS
+const qc_builtins::mock::VKQUAKE_MAX_SIGNON_BUFFERS
 const qc_builtins::mock::VKQUAKE_MAX_SOUNDS
 const qc_builtins::mock::VKQUAKE_RUNAWAY
+const qc_builtins::mock::VKQUAKE_SIGNON_SIZE
 const qc_builtins::table::BUILTINS
 const qc_builtins::table::BUILTIN_MAX_NUMBER
 const qc_builtins::tokenize::MAX_QC_TOKENS
 const qc_builtins::tokenize::MAX_SEPARATORS
+const qc_builtins::userinfo::SERVER_INFO_STRING_SIZE
 enum qc_builtins::error::BuiltinError
 enum qc_builtins::error::FatalError
 enum qc_builtins::error::RuntimeError
+enum qc_builtins::files::Mode
 enum qc_builtins::mock::EngineProfile
 enum qc_builtins::mock::MessageDest
 enum qc_builtins::mock::Precache
 enum qc_builtins::mock::Unimplemented
 enum qc_builtins::table::Class
+enum qc_builtins::userinfo::ClientCommand
+field qc_builtins::mock::Buffers.extra_signon_buffers
+field qc_builtins::mock::Buffers.multicast
 field qc_builtins::mock::Buffers.reliable
 field qc_builtins::mock::Buffers.signon
 field qc_builtins::mock::Buffers.unreliable
@@ -37,10 +45,12 @@ field qc_builtins::mock::CheckClient.last_check_time
 field qc_builtins::mock::MockEngine.buffers
 field qc_builtins::mock::MockEngine.changelevel_issued
 field qc_builtins::mock::MockEngine.checkclient
+field qc_builtins::mock::MockEngine.clients
 field qc_builtins::mock::MockEngine.clients_active
 field qc_builtins::mock::MockEngine.clock
 field qc_builtins::mock::MockEngine.command_buffer
 field qc_builtins::mock::MockEngine.cvars
+field qc_builtins::mock::MockEngine.files
 field qc_builtins::mock::MockEngine.lightstyles
 field qc_builtins::mock::MockEngine.localization
 field qc_builtins::mock::MockEngine.model_bounds
@@ -49,6 +59,7 @@ field qc_builtins::mock::MockEngine.profile
 field qc_builtins::mock::MockEngine.rng
 field qc_builtins::mock::MockEngine.server_active
 field qc_builtins::mock::MockEngine.sound_precache
+field qc_builtins::mock::MockEngine.string_buffers
 field qc_builtins::mock::MockEngine.strings
 field qc_builtins::mock::MockEngine.tokens
 field qc_builtins::mock::MockEngine.unimplemented
@@ -59,10 +70,18 @@ field qc_builtins::table::Builtin.class
 field qc_builtins::table::Builtin.name
 field qc_builtins::table::Builtin.number
 field qc_builtins::table::Builtin.prototype
+field qc_builtins::userinfo::Decoded.netname
+field qc_builtins::userinfo::Decoded.team
 fn qc_builtins::dispatch::MockBuiltins::engine
 fn qc_builtins::dispatch::MockBuiltins::engine_mut
 fn qc_builtins::dispatch::MockBuiltins::with_engine
 fn qc_builtins::error::BuiltinError::message
+fn qc_builtins::files::Files::close
+fn qc_builtins::files::Files::gets
+fn qc_builtins::files::Files::open
+fn qc_builtins::files::Files::puts
+fn qc_builtins::files::Files::which_pack
+fn qc_builtins::files::Mode::from_number
 fn qc_builtins::localization::Localization::is_empty
 fn qc_builtins::localization::Localization::len
 fn qc_builtins::localization::Localization::loc_get_raw_string
@@ -88,7 +107,10 @@ fn qc_builtins::mock::Cvars::create
 fn qc_builtins::mock::Cvars::set
 fn qc_builtins::mock::Cvars::text
 fn qc_builtins::mock::Cvars::value
+fn qc_builtins::mock::EngineProfile::angle_bytes
 fn qc_builtins::mock::EngineProfile::builtin_limit
+fn qc_builtins::mock::EngineProfile::coord_bytes
+fn qc_builtins::mock::EngineProfile::message_limit
 fn qc_builtins::mock::EngineProfile::precache_limit
 fn qc_builtins::mock::EngineProfile::runaway
 fn qc_builtins::mock::EngineStrings::make
@@ -104,15 +126,42 @@ fn qc_builtins::mock::MockEngine::model_bounds_for
 fn qc_builtins::mock::MockEngine::new
 fn qc_builtins::mock::MockEngine::precache
 fn qc_builtins::mock::MockEngine::precache_index
+fn qc_builtins::mock::MockEngine::reserve_signon
 fn qc_builtins::mock::MockEngine::set_lightstyle
 fn qc_builtins::mock::Rng::new
 fn qc_builtins::mock::Rng::next_rand
+fn qc_builtins::strbuf::StringBuffers::add
+fn qc_builtins::strbuf::StringBuffers::create
+fn qc_builtins::strbuf::StringBuffers::delete
+fn qc_builtins::strbuf::StringBuffers::get
+fn qc_builtins::strbuf::StringBuffers::size
 fn qc_builtins::table::lookup
 fn qc_builtins::tokenize::Tokens::argv
 fn qc_builtins::tokenize::Tokens::end
 fn qc_builtins::tokenize::Tokens::split
 fn qc_builtins::tokenize::Tokens::start
 fn qc_builtins::tokenize::Tokens::tokenize
+fn qc_builtins::userinfo::ClientCommand::parse
+fn qc_builtins::userinfo::ClientInfo::clear_name
+fn qc_builtins::userinfo::ClientInfo::colors
+fn qc_builtins::userinfo::ClientInfo::name
+fn qc_builtins::userinfo::ClientInfo::update
+fn qc_builtins::userinfo::ClientInfo::userinfo
+fn qc_builtins::userinfo::Clients::get
+fn qc_builtins::userinfo::Clients::get_mut
+fn qc_builtins::userinfo::info_get_key
+fn qc_builtins::userinfo::info_remove_key
+fn qc_builtins::userinfo::info_set_key
+fn qc_builtins::vkstrings::chr2str
+fn qc_builtins::vkstrings::float_to_unsigned
+fn qc_builtins::vkstrings::modulo
+fn qc_builtins::vkstrings::pow
+fn qc_builtins::vkstrings::sin
+fn qc_builtins::vkstrings::str2chr
+fn qc_builtins::vkstrings::strpad
+fn qc_builtins::vkstrings::strreplace
+fn qc_builtins::vkstrings::uri_escape
+fn qc_builtins::vkstrings::uri_unescape
 impl qc_builtins::dispatch::MockBuiltins: Builtins
 impl qc_builtins::dispatch::MockBuiltins: Default
 impl qc_builtins::error::BuiltinError: From<FatalError>
@@ -122,12 +171,19 @@ impl qc_builtins::error::BuiltinError: fmt::Display
 impl qc_builtins::error::FatalError: fmt::Display
 impl qc_builtins::error::RuntimeError: fmt::Display
 impl qc_builtins::mock::Cvars: Default
+impl qc_builtins::strbuf::StringBuffers: Default
+impl qc_builtins::userinfo::ClientInfo: Default
+mod qc_builtins::files
 mod qc_builtins::localization
 mod qc_builtins::math
 mod qc_builtins::mock
+mod qc_builtins::strbuf
 mod qc_builtins::table
 mod qc_builtins::tokenize
+mod qc_builtins::userinfo
+mod qc_builtins::vkstrings
 struct qc_builtins::dispatch::MockBuiltins
+struct qc_builtins::files::Files
 struct qc_builtins::localization::Localization
 struct qc_builtins::mock::Buffers
 struct qc_builtins::mock::CheckClient
@@ -137,8 +193,12 @@ struct qc_builtins::mock::MockEngine
 struct qc_builtins::mock::ModelBounds
 struct qc_builtins::mock::Overflow
 struct qc_builtins::mock::Rng
+struct qc_builtins::strbuf::StringBuffers
 struct qc_builtins::table::Builtin
 struct qc_builtins::tokenize::Tokens
+struct qc_builtins::userinfo::ClientInfo
+struct qc_builtins::userinfo::Clients
+struct qc_builtins::userinfo::Decoded
 use qc_builtins::BUILTIN_MAX_NUMBER = table::BUILTIN_MAX_NUMBER
 use qc_builtins::Builtin = table::Builtin
 use qc_builtins::BuiltinError = error::BuiltinError
@@ -152,12 +212,14 @@ use qc_builtins::Unimplemented = mock::Unimplemented
 use qc_builtins::lookup = table::lookup
 variant qc_builtins::error::BuiltinError::Fatal
 variant qc_builtins::error::BuiltinError::Host
+variant qc_builtins::error::BuiltinError::Nested
 variant qc_builtins::error::BuiltinError::Runtime
 variant qc_builtins::error::FatalError::BadPointer
 variant qc_builtins::error::FatalError::BreakStatement
 variant qc_builtins::error::FatalError::MessageOverflow
 variant qc_builtins::error::FatalError::ModelNotPrecached
 variant qc_builtins::error::FatalError::NoFreeEdicts
+variant qc_builtins::error::FatalError::SignonBuffers
 variant qc_builtins::error::FatalError::SoundAttenuation
 variant qc_builtins::error::FatalError::SoundChannel
 variant qc_builtins::error::FatalError::SoundVolume
@@ -183,11 +245,15 @@ variant qc_builtins::error::RuntimeError::Unimplemented
 variant qc_builtins::error::RuntimeError::UnimplementedBuiltin
 variant qc_builtins::error::RuntimeError::WriteDestBad
 variant qc_builtins::error::RuntimeError::WriteDestNotClient
+variant qc_builtins::files::Mode::Append
+variant qc_builtins::files::Mode::Read
+variant qc_builtins::files::Mode::Write
 variant qc_builtins::mock::EngineProfile::Id
 variant qc_builtins::mock::EngineProfile::VkQuake
 variant qc_builtins::mock::MessageDest::All
 variant qc_builtins::mock::MessageDest::Broadcast
 variant qc_builtins::mock::MessageDest::Init
+variant qc_builtins::mock::MessageDest::Multicast
 variant qc_builtins::mock::MessageDest::One
 variant qc_builtins::mock::Precache::Model
 variant qc_builtins::mock::Precache::Sound
@@ -197,3 +263,5 @@ variant qc_builtins::table::Class::Output
 variant qc_builtins::table::Class::Pure
 variant qc_builtins::table::Class::State
 variant qc_builtins::table::Class::World
+variant qc_builtins::userinfo::ClientCommand::Nothing
+variant qc_builtins::userinfo::ClientCommand::Setinfo

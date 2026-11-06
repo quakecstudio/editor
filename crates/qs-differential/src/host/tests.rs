@@ -406,6 +406,45 @@ fn a_command_runs_the_progs_parser() {
     assert!((frame_2 - 1.3).abs() < 1e-6, "{frame_2}");
 }
 
+// spec DIFF-4.4: an error in SV_ParseClientCommand ends the scenario as an error in a frame
+// does, with no frame after it
+#[test]
+fn a_failing_command_ends_the_scenario() {
+    let entry = |name: &'static str, first_statement| FuncSpec {
+        name,
+        first_statement,
+        ..FuncSpec::default()
+    };
+    // The parser calls function 0, the null function, from global 0 (VM-14.6).
+    let bytes = ProgsBuilder::default()
+        .statement(Stmt::op("DONE", 0, 0, 0))
+        .statement(Stmt::op("CALL0", 0, 0, 0))
+        .function(entry("worldspawn", 1))
+        .function(entry("SV_ParseClientCommand", 2))
+        .function(entry("StartFrame", 1))
+        .function(entry("PlayerPreThink", 1))
+        .function(entry("PlayerPostThink", 1))
+        .function(entry("ClientConnect", 1))
+        .function(entry("PutClientInServer", 1))
+        .function(entry("SetNewParms", 1))
+        .function(entry("ClientDisconnect", 1))
+        .build();
+    let entities = b"{\n\"classname\" \"worldspawn\"\n}\n";
+    let output =
+        run_scenario(&command_scenario(&[(2, 1, "say hi")]), &bytes, entities).expect("runs");
+    assert_eq!(output.ended, Ended::Error);
+    let frames_run = output
+        .trace
+        .records
+        .iter()
+        .filter(|r| matches!(r, Record::Run { function, .. } if *function == 3))
+        .count();
+    assert_eq!(
+        frames_run, 3,
+        "StartFrame of the two settle frames and frame 1, not frame 2's"
+    );
+}
+
 // spec DIFF-4.4: a progs without SV_ParseClientCommand runs nothing for a command
 #[test]
 fn a_command_without_the_parser_runs_nothing() {
@@ -419,6 +458,28 @@ fn a_command_without_the_parser_runs_nothing() {
     )
     .expect("runs");
     assert_eq!(with.trace.records, without.trace.records);
+}
+
+// spec DIFF-2.4: a cvar line for one of the four settings replaces its text, a line for any
+// other name makes a setting of that name, and a later line for a name replaces an earlier one
+#[test]
+fn cvar_lines_make_and_replace_settings() {
+    let mut scn = scenario("test");
+    scn.cvars = [("skill", "3"), ("scratch3", "2"), ("scratch3", "4")]
+        .iter()
+        .map(|&(name, text)| Cvar {
+            name: name.as_bytes().to_vec(),
+            text: text.as_bytes().to_vec(),
+        })
+        .collect();
+    let bytes = progs_with_spawn("worldspawn");
+    let progs = qc_progs::Progs::read(&bytes).expect("a progs");
+    let host = super::Host::new(&scn, &progs).expect("a host");
+    let cvars = &host.builtins.engine().cvars;
+    assert_eq!(cvars.text("skill"), Some("3"));
+    assert_eq!(cvars.text("scratch3"), Some("4"));
+    assert_eq!(cvars.text("deathmatch"), Some("0"));
+    assert_eq!(cvars.text("other"), None);
 }
 
 // spec DIFF-3.1: a progs that cannot back an edict store ends the scenario before the trace.

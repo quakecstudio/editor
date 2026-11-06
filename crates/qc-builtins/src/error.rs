@@ -23,6 +23,8 @@ pub enum BuiltinError {
     Host(String),
     /// A fatal error, id's `Sys_Error` (BUILTIN-3.3).
     Fatal(FatalError),
+    /// The error of a run the builtin started, which ends every run as it is (VM-18.4).
+    Nested(qc_vm::RunError),
 }
 
 impl BuiltinError {
@@ -51,6 +53,7 @@ impl fmt::Display for BuiltinError {
             Self::Runtime(error) => write!(f, "{error}"),
             Self::Host(message) => f.write_str(message),
             Self::Fatal(error) => write!(f, "{error}"),
+            Self::Nested(error) => f.write_str(&error.message()),
         }
     }
 }
@@ -186,6 +189,8 @@ pub enum FatalError {
     },
     /// A message write past the buffer, id's `SZ_GetSpace` (BUILTIN-13.3, DIFF-6.5).
     MessageOverflow,
+    /// vkQuake's `SV_AddSignonBuffer overflow`: a 257th signon buffer (BUILTIN-18.40).
+    SignonBuffers,
 }
 
 impl fmt::Display for FatalError {
@@ -205,6 +210,7 @@ impl fmt::Display for FatalError {
             }
             Self::SoundChannel { channel } => write!(f, "SV_StartSound: channel = {channel}"),
             Self::MessageOverflow => f.write_str("SZ_GetSpace: overflow without allowoverflow set"),
+            Self::SignonBuffers => f.write_str("SV_AddSignonBuffer overflow"),
         }
     }
 }

@@ -152,14 +152,14 @@ impl Tokens {
 
 /// C's `char`, signed on x86: `c = *data` makes a byte from 0x80 up negative, so it is
 /// white space to `c <= ' '` and ends a word at `c > 32`.
-const fn signed(byte: u8) -> i8 {
+pub(crate) const fn signed(byte: u8) -> i8 {
     i8::from_ne_bytes([byte])
 }
 
 /// `COM_ParseEx (data, CPE_NOTRUNC)` from byte `at` of `text`, whose first zero or end is the
 /// string's end: the word read and the byte after it, or `None` at the end of the text or for a
 /// word longer than `com_token` holds (BUILTIN-18.23).
-fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> {
+pub(crate) fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> {
     let byte = |at: usize| text.get(at).copied().unwrap_or(0);
     loop {
         // skipwhite: `while ((c = *data) <= ' ')`, the end of the text an end of file.

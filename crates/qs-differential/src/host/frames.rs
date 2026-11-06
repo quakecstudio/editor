@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 1996-2001 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2010-2014 QuakeSpasm developers
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/host.c, Host_ServerFrame
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/sv_phys.c, SV_Physics, SV_Physics_Client, SV_Physics_Pusher, SV_PushMove, SV_RunThink
+// Ported from Novum/vkQuake@27789d7333a46674474d871137bb71e056719628: Quake/sv_user.c, SV_ReadClientMessage
 
 //! The server frame and the physics frame (DIFF-5), without the movement (DIFF-5.8).
 //!
-//! A server frame (DIFF-5.1) sets `frametime`, applies the scenario's input (DIFF-4.3), runs a
-//! physics frame (DIFF-5.3) and clears the muzzle-flash bit (DIFF-5.1). A physics frame runs
+//! A server frame (DIFF-5.1) sets `frametime`, applies the scenario's input (DIFF-4.3), runs
+//! its client commands through the progs' `SV_ParseClientCommand` (DIFF-4.4), runs a physics
+//! frame (DIFF-5.3) and clears the muzzle-flash bit (DIFF-5.1). A physics frame runs
 //! `StartFrame`, then gives each edict its turn: a client by DIFF-5.4, a pusher by DIFF-5.5,
 //! and every other thinking movetype by DIFF-5.6. Nothing moves or collides (DIFF-5.8).
 
@@ -23,7 +28,7 @@ use crate::scenario::Input;
 use super::{
     EF_MUZZLEFLASH, FL_ITEM, Host, MOVETYPE_BOUNCE, MOVETYPE_FLY, MOVETYPE_FLYMISSILE,
     MOVETYPE_NOCLIP, MOVETYPE_NONE, MOVETYPE_PUSH, MOVETYPE_STEP, MOVETYPE_TOSS, MOVETYPE_WALK,
-    ftoi,
+    f32_of, ftoi,
 };
 
 /// DIFF-4.4: whether `text` starts, in any case, with `spawn`, `begin` or `prespawn`: the
@@ -115,30 +120,31 @@ impl Host<'_> {
     /// with `PARM0` the command as an engine string, `time` the clock and `self` the client.
     /// Any other command, or every command of a progs without the function, runs nothing.
     fn run_commands(&mut self, progs: &Progs<'_>, frame: u32) -> Result<(), RunError> {
-        let Some(function) = progs.ed_find_function(b"SV_ParseClientCommand") else {
+        let scenario = self.scenario;
+        let mut commands = scenario
+            .commands
+            .iter()
+            .filter(|c| c.frame == frame)
+            .peekable();
+        if commands.peek().is_none() {
             return Ok(());
-        };
+        }
+        // ED_FindFunction's search, keeping the index of the first function of the name.
         let Some(function) = progs
             .functions()
             .iter()
-            .position(|f| f == function)
+            .position(|f| progs.string(f.s_name) == Some(b"SV_ParseClientCommand".as_slice()))
             .and_then(|i| i32::try_from(i).ok())
         else {
             return Ok(());
         };
-        let commands = self.scenario.commands.clone();
-        for command in commands.iter().filter(|c| c.frame == frame) {
+        for command in commands {
             if is_signon(&command.text) {
                 continue;
             }
             let text = self.make_string(command.text.clone());
             self.set_global_slot(i32::from(PROGS_OFS_PARM0), Slot::from_i32(text));
-            let clock = self.builtins.engine().clock;
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "spec DIFF-4.4: time is the f32 nearest the clock"
-            )]
-            let time = clock as f32;
+            let time = f32_of(self.builtins.engine().clock);
             self.set_global(SysGlobal::Time, Slot::from_f32(time));
             self.set_self(usize::try_from(command.edict).unwrap_or(0));
             self.run_function(progs, function)?;
