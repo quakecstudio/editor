@@ -180,7 +180,10 @@ impl<'s> Host<'s> {
                 core::str::from_utf8(&cvar.name),
                 core::str::from_utf8(&cvar.text),
             ) {
-                engine.cvars.set(name, text);
+                // DIFF-2.4: a line names a setting of its own, or replaces one of the four.
+                if !engine.cvars.set(name, text) {
+                    engine.cvars.create(name, text);
+                }
             }
         }
 

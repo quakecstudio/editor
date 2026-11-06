@@ -679,6 +679,28 @@ groups:
     - Japanese and Chinese text composed through the real input method of macOS appears in the editor as committed, with the candidate window at the caret (ADR-0003)
     verify:
     - The recordings or screenshots under docs/spikes/data/ref-mac/
+  - key: L-15
+    title: Run the compiler differential on qs-sim's world
+    labels:
+    - L4-bridges
+    - area:compiler
+    - type:test
+    size: L
+    reqs:
+    - COMP-8
+    summary: |
+      Split from P3-33 (#689) by Justin on 2026-11-06. The compiler differential calls each function from worlds the mock engine sets up, where nothing moves and every trace hits nothing (DIFF-1.5, DIFF-7.1), so code that runs only when something is hit or moves stays unexecuted: crmod7's `T_Damage`, `Killed`, `ClientObituary`, its `webhook_stats_info` (which needs frags) and `match_log_score` (crmod7 aborts a match no player moves in). qs-sim already runs id's server physics and collision and matches id's server frame by frame (DIFF-16), but takes one client (`MAXCLIENTS` 1) and id's builtins only.
+    depends:
+    - P3-33
+    deliverable:
+    - 'crates/qs-sim: more than one client (connect, signon and the messages per client) and the engine profiles of qc-builtins (vkQuake''s builtins and limits)'
+    - 'crates/qs-differential/src/calls.rs: the compiler differential''s worlds and calls on qs-sim''s world, on LibreQuake maps, with their DIFF-12 statements in docs/spec/differential.md'
+    - 'crates/qs-differential/src/runner/fixtures.rs: scenarios on real maps whose players move, fire and score, and crmod7''s match played to its end'
+    acceptance:
+    - 'Every codebase the nightly compiler differential runs passes on qs-sim''s world, and its coverage is recorded'
+    - 'crmod7''s `T_Damage`, `Killed`, `ClientObituary`, `webhook_stats_info` and `match_log_score` each execute more than half their statements'
+    verify:
+    - cargo xtask compiler-diff --full <codebase> for each codebase of the nightly run
   - key: L-01
     title: 'Spec: FTEQCC code generation beyond the rerelease subset'
     labels:

@@ -190,6 +190,8 @@ enum Run {
     SetupFunctions {
         progs: PathBuf,
         engine: EngineProfile,
+        /// The codebase whose scenarios set the worlds up, or none for the shared ones.
+        codebase: String,
     },
     /// The pairs a file lists, each compared (DIFF-14.9, DIFF-15.9).
     Pairs {
@@ -197,6 +199,8 @@ enum Run {
         calls: Calls,
         oracle: Oracle,
         engine: EngineProfile,
+        /// The codebase whose scenarios set the worlds up, or none for the shared ones.
+        codebase: String,
     },
 }
 
@@ -248,7 +252,11 @@ impl Flags {
             }));
         }
         if let Some(progs) = setup {
-            return Ok(Run::SetupFunctions { progs, engine });
+            return Ok(Run::SetupFunctions {
+                progs,
+                engine,
+                codebase: codebase.unwrap_or_default(),
+            });
         }
         if let Some(file) = pairs {
             return Ok(Run::Pairs {
@@ -256,6 +264,7 @@ impl Flags {
                 calls: Calls::Every(rounds),
                 oracle,
                 engine,
+                codebase: codebase.unwrap_or_default(),
             });
         }
         if let Some(file) = function_pairs {
@@ -264,6 +273,7 @@ impl Flags {
                 calls: Calls::Named(executed.ok_or("a missing flag for this form")?),
                 oracle,
                 engine,
+                codebase: codebase.unwrap_or_default(),
             });
         }
         if ours.is_empty() {
@@ -324,8 +334,8 @@ fn generate(generate: &Generate) -> Result<bool, String> {
 fn pairs(
     file: &PathBuf,
     calls: &Calls,
-    oracle: Oracle,
-    engine: EngineProfile,
+    (oracle, engine): (Oracle, EngineProfile),
+    codebase: &str,
 ) -> Result<bool, String> {
     let text = std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))?;
     let mut all_ok = true;
@@ -345,12 +355,19 @@ fn pairs(
         let read = |path: &str| std::fs::read(path).map_err(|e| format!("{path}: {e}"));
         let (theirs, ours) = (read(theirs)?, read(ours)?);
         let run = |oracle_progs: &[u8]| match calls {
-            Calls::Every(rounds) => {
-                run_codebase("", oracle, oracle_progs, &ours, *rounds, engine, &quiet)
-            }
+            Calls::Every(rounds) => run_codebase(
+                codebase,
+                oracle,
+                oracle_progs,
+                &ours,
+                *rounds,
+                engine,
+                &quiet,
+            ),
             Calls::Named(_) => {
                 let functions = name.split(',').map(|f| f.as_bytes().to_vec()).collect();
                 run_functions(
+                    codebase,
                     oracle,
                     oracle_progs,
                     &ours,
@@ -473,9 +490,13 @@ fn run(request: Run) -> Result<bool, String> {
     let options = match request {
         Run::Suite(options) => options,
         Run::Generate(request) => return generate(&request),
-        Run::SetupFunctions { progs, engine } => {
+        Run::SetupFunctions {
+            progs,
+            engine,
+            codebase,
+        } => {
             let bytes = std::fs::read(&progs).map_err(|e| format!("{}: {e}", progs.display()))?;
-            let names = setup_functions(&bytes, engine).map_err(|e| e.to_string())?;
+            let names = setup_functions(&codebase, &bytes, engine).map_err(|e| e.to_string())?;
             for name in names {
                 println!("{}", String::from_utf8_lossy(&name));
             }
@@ -486,7 +507,8 @@ fn run(request: Run) -> Result<bool, String> {
             calls,
             oracle,
             engine,
-        } => return pairs(&file, &calls, oracle, engine),
+            codebase,
+        } => return pairs(&file, &calls, (oracle, engine), &codebase),
     };
     let read = |path: &PathBuf| std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()));
     let theirs = read(&options.theirs)?;
@@ -676,7 +698,9 @@ mod tests {
                 calls: Calls::Every(rounds),
                 oracle,
                 engine,
+                codebase,
             } => {
+                assert_eq!(codebase, "", "no --codebase: the shared scenarios");
                 assert_eq!(file, PathBuf::from("p.tsv"));
                 assert_eq!(rounds, FULL_ROUNDS);
                 assert_eq!(oracle, Oracle::Fteqcc);
@@ -719,10 +743,17 @@ mod tests {
             "w.dat",
             "--engine",
             "vkquake",
+            "--codebase",
+            "crmod7",
         ]))
         .unwrap()
         {
-            Run::SetupFunctions { progs, engine } => {
+            Run::SetupFunctions {
+                progs,
+                engine,
+                codebase,
+            } => {
+                assert_eq!(codebase, "crmod7");
                 assert_eq!(progs, PathBuf::from("w.dat"));
                 assert_eq!(engine, EngineProfile::VkQuake);
             }

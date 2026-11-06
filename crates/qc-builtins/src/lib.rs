@@ -30,14 +30,18 @@ mod atof;
 mod cstring;
 mod dispatch;
 mod error;
+pub mod files;
 pub mod localization;
 pub mod math;
 pub mod mock;
 mod printf;
+pub mod strbuf;
 mod strconv;
 mod strftime;
 pub mod table;
 pub mod tokenize;
+pub mod userinfo;
+pub mod vkstrings;
 
 #[cfg(test)]
 mod properties;
