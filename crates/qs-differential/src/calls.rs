@@ -324,9 +324,10 @@ impl Oracle {
 }
 
 /// Runs [`run_calls`] on `theirs` and `ours` from each world of [`crate::runner::scenarios`]
-/// for `codebase`, `rounds` rounds each (DIFF-12.20, DIFF-12.5); `oracle` compiled `theirs`. `progress` is
-/// told a scenario's name, the functions it has called so far and the functions it will call,
-/// after every `PROGRESS_EVERY` functions and at its end, from the scenario's own thread.
+/// for `codebase`, `rounds` rounds each (DIFF-12.20, DIFF-12.5); `oracle` compiled `theirs`.
+/// `progress` is told a scenario's name, the functions it has called so far and the functions
+/// it will call, after every `PROGRESS_EVERY` functions and at its end, from the scenario's
+/// own thread.
 ///
 /// # Errors
 ///
@@ -419,6 +420,7 @@ fn run_scenarios(
 ///
 /// [`CallsError`] as [`run_codebase`].
 pub fn run_functions(
+    codebase: &str,
     oracle: Oracle,
     theirs: &[u8],
     ours: &[u8],
@@ -427,7 +429,7 @@ pub fn run_functions(
     functions: &BTreeSet<Vec<u8>>,
 ) -> Result<CodebaseReport, CallsError> {
     run_scenarios(
-        scenarios(""),
+        scenarios(codebase),
         oracle,
         (theirs, ours),
         (rounds, profile),
@@ -445,6 +447,7 @@ pub fn run_functions(
 ///
 /// [`CallsError`] when a scenario cannot be read or the progs is refused.
 pub fn setup_functions(
+    codebase: &str,
     bytes: &[u8],
     profile: EngineProfile,
 ) -> Result<BTreeSet<Vec<u8>>, CallsError> {
@@ -452,7 +455,7 @@ pub fn setup_functions(
         Progs::read(bytes).map_err(|e| CallsError::Refused(RunRefused::Progs(e.to_string())))?;
     let bodies = bodies(bytes)?;
     let mut names = BTreeSet::new();
-    for spec in scenarios("") {
+    for spec in scenarios(codebase) {
         let text = format!("progs progs.dat\n{}", spec.directives);
         let scenario = scenario::read(text.as_bytes(), Path::new("."))
             .map_err(|e| CallsError::Scenario(format!("{}: {e}", spec.name)))?;

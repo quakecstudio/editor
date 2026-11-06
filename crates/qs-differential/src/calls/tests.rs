@@ -1332,7 +1332,7 @@ fn the_setup_functions_are_those_the_setups_run() {
         "float n;\nvoid() helper = { n = 1; };\nvoid() worldspawn = { helper(); };\n\
          void() PutClientInServer = { n = 2; };\nvoid() unused = { n = 3; };\n",
     );
-    let names = super::setup_functions(&bytes, EngineProfile::Id).unwrap();
+    let names = super::setup_functions("", &bytes, EngineProfile::Id).unwrap();
     for name in ["worldspawn", "helper", "PutClientInServer"] {
         assert!(names.contains(name.as_bytes()), "{name}: {names:?}");
     }
@@ -2153,8 +2153,8 @@ fn debug_compile_file() {
 }
 
 // spec DIFF-12.19: a world set up under vkQuake's profile takes its runaway count, so a spawn
-// function that runs 200000 statements finishes there and fails with id's runaway under id's;
-// a drawn call of the same loop then runs under id's count
+// function that runs about 250000 statements finishes there and fails with id's runaway under
+// id's; a drawn call of the same loop then runs under id's count
 #[test]
 fn a_vkquake_world_runs_past_ids_runaway() {
     let progs = compile(
