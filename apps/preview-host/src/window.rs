@@ -73,7 +73,19 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
         bsp,
         describer,
         rand,
+        printed,
     } = loaded;
+    // The console's first lines: the host's, as `Host_Init` prints the engine's, then what the
+    // map's first frame printed (CLIENT-1.7).
+    let mut console = Console::new();
+    let banner = format!(
+        "QuakeC Studio preview host {}\n",
+        env!("CARGO_PKG_VERSION")
+    );
+    console.print(banner.as_bytes(), 0.0);
+    for text in &printed {
+        console.print(text, 0.0);
+    }
     let size = args
         .size
         .as_deref()
@@ -155,7 +167,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
                 slowest: 0.0,
                 worked: 0.0,
                 longest_work: 0.0,
-                console: Console::new(),
+                console,
                 dest: KeyDest::Game,
                 menu: Menu::new(),
                 asked: Vec::new(),
@@ -435,7 +447,12 @@ impl Viewer {
             bsp,
             describer,
             rand,
+            printed,
         } = loaded;
+        let realtime = self.started.elapsed().as_secs_f64();
+        for text in &printed {
+            self.console.print(text, realtime);
+        }
         if let Some(state) = window.wgpu_render_state() {
             let renderer = MapRenderer::new(
                 &state.device,

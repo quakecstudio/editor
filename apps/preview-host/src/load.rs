@@ -9,7 +9,7 @@ use std::rc::Rc;
 use qc_lno::LnoFile;
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader, Lit};
-use qs_client::{Client, ModelInfo, Models, Random};
+use qs_client::{Client, Event, ModelInfo, Models, Random};
 use qs_mdl::mdl::Mdl;
 use qs_mdl::spr::Sprite;
 use qs_render::{Camera, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface};
@@ -96,6 +96,9 @@ pub(crate) struct Loaded {
     pub(crate) bsp: Bsp<'static>,
     pub(crate) describer: Describer,
     pub(crate) rand: Rand,
+    /// What the map's first client frame printed for the console: the server's version line,
+    /// the divider and the level's name (CLIENT-1.7).
+    pub(crate) printed: Vec<Vec<u8>>,
 }
 
 /// A file of the install by name, `None` when it is not on the search path.
@@ -276,6 +279,13 @@ pub(crate) fn load(
     } else {
         Device::Default
     };
+    let printed = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Print(text) => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
     let mut audio = Audio::open(Box::new(move |name: &str| sounds(name)), output);
     audio.handle(&events, &mut rand);
     let mut pics = Pics::new();
@@ -373,6 +383,7 @@ pub(crate) fn load(
         describer,
         rand,
         camera,
+        printed,
     })
 }
 

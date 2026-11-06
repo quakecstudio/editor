@@ -1300,6 +1300,16 @@ impl Client {
         self.scores = vec![Score::default(); self.maxclients];
         self.gametype = r.byte();
         self.levelname = r.string();
+        // CLIENT-1.7: "separate the printfs so the server message can have a color": the
+        // divider, then the level's name after the colour byte 2.
+        let mut divider = b"\n\n\x1d".to_vec();
+        divider.extend([0x1e; 35]);
+        divider.extend(b"\x1f\n\n");
+        events.push(Event::Print(divider));
+        let mut name = vec![2];
+        name.extend_from_slice(&self.levelname);
+        name.push(b'\n');
+        events.push(Event::Print(name));
         let mut model_names = Vec::new();
         loop {
             let name = r.string();
