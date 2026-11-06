@@ -18,6 +18,11 @@ qc-project = { workspace = true }
 qs-commands = { workspace = true }
 qs-engine = { workspace = true }
 qs-install = { workspace = true }
+# scenario.run: the map, the game's files and the server simulation a scenario plays in
+# (SCN-2.1).
+qs-bsp = { workspace = true }
+qs-sim = { workspace = true }
+qs-vfs = { workspace = true }
 schemars = { workspace = true, features = ["derive", "std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }

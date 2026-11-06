@@ -383,6 +383,21 @@ impl Client {
         self.request("screenshot", params)
     }
 
+    /// [`Client::screenshot`]'s PNG, decoded from its base64 (BRIDGE-4.9).
+    ///
+    /// # Errors
+    ///
+    /// The request's [`ClientError`], or [`ClientError::Unsupported`] naming `screenshot` when
+    /// the answer holds no PNG that decodes.
+    pub fn screenshot_png(&mut self, size: Option<(u32, u32)>) -> Result<Vec<u8>, ClientError> {
+        let answer = self.screenshot(size)?;
+        answer
+            .get("png")
+            .and_then(Value::as_str)
+            .and_then(base64_decode)
+            .ok_or_else(|| ClientError::Unsupported("screenshot".to_owned()))
+    }
+
     /// `field/set` (BRIDGE-4.4), `value` a bridge value (BRIDGE-5.1).
     ///
     /// # Errors
@@ -563,4 +578,42 @@ fn read_messages(read: impl Read, sender: &Sender<Option<Message>>) {
             return;
         }
     }
+}
+
+/// `text` decoded from base64 (RFC 4648, section 4, with `=` padding), as the host writes a
+/// screenshot's PNG; `None` for text that is not base64.
+#[must_use]
+pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let value = |c: u8| -> Option<u32> {
+        let index = match c {
+            b'A'..=b'Z' => c.checked_sub(b'A')?,
+            b'a'..=b'z' => c.checked_sub(b'a')?.checked_add(26)?,
+            b'0'..=b'9' => c.checked_sub(b'0')?.checked_add(52)?,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        };
+        Some(u32::from(index))
+    };
+    let bytes = text.trim().as_bytes();
+    if !bytes.len().is_multiple_of(4) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(bytes.len());
+    let (quads, _) = bytes.as_chunks::<4>();
+    let last = quads.len().saturating_sub(1);
+    for (n, quad) in quads.iter().enumerate() {
+        let pad = quad.iter().rev().take_while(|&&c| c == b'=').count();
+        if pad > 2 || (pad > 0 && n != last) {
+            return None;
+        }
+        let mut word = 0_u32;
+        for &c in quad.iter().take(4_usize.saturating_sub(pad)) {
+            word = (word << 6) | value(c)?;
+        }
+        word <<= 6_u32.checked_mul(u32::try_from(pad).ok()?)?;
+        let [_, a, b, c] = word.to_be_bytes();
+        out.extend([a, b, c].into_iter().take(3_usize.saturating_sub(pad)));
+    }
+    Some(out)
 }

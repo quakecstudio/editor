@@ -21,6 +21,7 @@ const qs_sim::messages::NET_PROTOCOL_VERSION
 const qs_sim::messages::NET_SIGNON_SIZE
 const qs_sim::messages::NET_VERSION
 const qs_sim::rerelease::RRE_NUM_BUILTINS
+const qs_sim::scenario::SCN_FRAMETIME
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_DEATHMATCH
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_EASY
 const qs_sim::spawn::EDICT_SPAWNFLAG_NOT_HARD
@@ -34,6 +35,13 @@ enum qs_sim::collision::area::MoveKind
 enum qs_sim::collision::hull::EntityHull
 enum qs_sim::debug::StepKind
 enum qs_sim::rerelease::BuiltinTable
+enum qs_sim::scenario::Edict
+enum qs_sim::scenario::Expected
+enum qs_sim::scenario::Moment
+enum qs_sim::scenario::Op
+enum qs_sim::scenario::PlayError
+enum qs_sim::scenario::Step
+enum qs_sim::scenario::Target
 enum qs_sim::spawn::LoadError
 enum qs_sim::spawn::SpawnError
 enum qs_sim::spawn::Token
@@ -100,6 +108,35 @@ field qs_sim::debug::Stop.statement
 field qs_sim::messages::ClientMessages.packets
 field qs_sim::physics::Sound.entity
 field qs_sim::physics::Sound.sample
+field qs_sim::scenario::Check.found
+field qs_sim::scenario::Check.line
+field qs_sim::scenario::Check.passed
+field qs_sim::scenario::Check.text
+field qs_sim::scenario::Expectation.line
+field qs_sim::scenario::Expectation.op
+field qs_sim::scenario::Expectation.target
+field qs_sim::scenario::Expectation.text
+field qs_sim::scenario::Expectation.value
+field qs_sim::scenario::Report.checks
+field qs_sim::scenario::Report.error
+field qs_sim::scenario::Report.frames
+field qs_sim::scenario::Report.passed
+field qs_sim::scenario::Report.screenshots
+field qs_sim::scenario::Scenario.engine
+field qs_sim::scenario::Scenario.frametime
+field qs_sim::scenario::Scenario.map
+field qs_sim::scenario::Scenario.seed
+field qs_sim::scenario::Scenario.start
+field qs_sim::scenario::Scenario.steps
+field qs_sim::scenario::ScenarioError.line
+field qs_sim::scenario::ScenarioError.message
+field qs_sim::scenario::Shot.angles
+field qs_sim::scenario::Shot.eye
+field qs_sim::scenario::Shot.frame
+field qs_sim::scenario::Shot.name
+field qs_sim::scenario::Shot.origin
+field qs_sim::scenario::Start.origin
+field qs_sim::scenario::Start.yaw
 field qs_sim::spawn::FieldDef.etype
 field qs_sim::spawn::FieldDef.slot
 field qs_sim::world::Entity.angles
@@ -114,6 +151,7 @@ field qs_sim::world::LoadOptions.host
 field qs_sim::world::LoadOptions.localization
 field qs_sim::world::LoadOptions.registration
 field qs_sim::world::LoadOptions.search_path
+field qs_sim::world::LoadOptions.seed
 field qs_sim::world::edit::LineHit.edict
 field qs_sim::world::edit::LineHit.point
 field qs_sim::world::inspect::NamedValue.name
@@ -204,6 +242,9 @@ fn qs_sim::messages::Message::write_long
 fn qs_sim::messages::Message::write_short
 fn qs_sim::messages::Message::write_string
 fn qs_sim::rerelease::patch_builtins
+fn qs_sim::scenario::Scenario::parse
+fn qs_sim::scenario::play
+fn qs_sim::scenario::run
 fn qs_sim::spawn::Parser::new
 fn qs_sim::spawn::Parser::next_token
 fn qs_sim::spawn::SpawnHost::allocate
@@ -280,6 +321,9 @@ impl qs_sim::builtins::SimBuiltins: Builtins
 impl qs_sim::collision::CollisionError: core::error::Error
 impl qs_sim::collision::CollisionError: core::fmt::Display
 impl qs_sim::debug::Debugger: Observer
+impl qs_sim::scenario::PlayError: fmt::Display
+impl qs_sim::scenario::ScenarioError: fmt::Display
+impl qs_sim::scenario::ScenarioError: std::error::Error
 impl qs_sim::spawn::SpawnError: core::error::Error
 impl qs_sim::spawn::SpawnError: core::fmt::Display
 impl qs_sim::world::WorldError: core::error::Error
@@ -293,6 +337,7 @@ impl qs_sim::world::save::SaveError: core::fmt::Display
 mod qs_sim::collision
 mod qs_sim::debug
 mod qs_sim::rerelease
+mod qs_sim::scenario
 mod qs_sim::spawn
 struct qs_sim::builtins::SimBuiltins
 struct qs_sim::client::UserCmd
@@ -314,6 +359,13 @@ struct qs_sim::debug::Stop
 struct qs_sim::messages::ClientMessages
 struct qs_sim::messages::Message
 struct qs_sim::physics::Sound
+struct qs_sim::scenario::Check
+struct qs_sim::scenario::Expectation
+struct qs_sim::scenario::Report
+struct qs_sim::scenario::Scenario
+struct qs_sim::scenario::ScenarioError
+struct qs_sim::scenario::Shot
+struct qs_sim::scenario::Start
 struct qs_sim::spawn::FieldDef
 struct qs_sim::spawn::Parser
 struct qs_sim::world::Entity
@@ -443,6 +495,33 @@ variant qs_sim::debug::StepKind::Over
 variant qs_sim::debug::StepKind::Statement
 variant qs_sim::rerelease::BuiltinTable::Id
 variant qs_sim::rerelease::BuiltinTable::Rerelease
+variant qs_sim::scenario::Edict::Classname
+variant qs_sim::scenario::Edict::Number
+variant qs_sim::scenario::Edict::Player
+variant qs_sim::scenario::Expected::Entity
+variant qs_sim::scenario::Expected::Float
+variant qs_sim::scenario::Expected::String
+variant qs_sim::scenario::Expected::Vector
+variant qs_sim::scenario::Moment::Expect
+variant qs_sim::scenario::Moment::Frame
+variant qs_sim::scenario::Moment::Screenshot
+variant qs_sim::scenario::Op::Eq
+variant qs_sim::scenario::Op::Ge
+variant qs_sim::scenario::Op::Gt
+variant qs_sim::scenario::Op::Le
+variant qs_sim::scenario::Op::Lt
+variant qs_sim::scenario::Op::Ne
+variant qs_sim::scenario::PlayError::Frame
+variant qs_sim::scenario::PlayError::Start
+variant qs_sim::scenario::PlayError::Visit
+variant qs_sim::scenario::Step::Command
+variant qs_sim::scenario::Step::Console
+variant qs_sim::scenario::Step::Expect
+variant qs_sim::scenario::Step::Frames
+variant qs_sim::scenario::Step::Move
+variant qs_sim::scenario::Step::Screenshot
+variant qs_sim::scenario::Target::Field
+variant qs_sim::scenario::Target::Global
 variant qs_sim::spawn::LoadError::Run
 variant qs_sim::spawn::LoadError::Spawn
 variant qs_sim::spawn::SpawnError::BadEdictNumber

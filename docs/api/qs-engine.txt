@@ -33,6 +33,7 @@ fn qs_engine::client::Client::remove
 fn qs_engine::client::Client::request
 fn qs_engine::client::Client::resume
 fn qs_engine::client::Client::screenshot
+fn qs_engine::client::Client::screenshot_png
 fn qs_engine::client::Client::set_breakpoint
 fn qs_engine::client::Client::set_field
 fn qs_engine::client::Client::shutdown
@@ -41,6 +42,7 @@ fn qs_engine::client::Client::spawn_player_at
 fn qs_engine::client::Client::step
 fn qs_engine::client::Client::take_events
 fn qs_engine::client::Client::wait_event
+fn qs_engine::client::base64_decode
 fn qs_engine::launch::host_command
 fn qs_engine::launch::launch
 fn qs_engine::launch::locate_host
@@ -69,6 +71,7 @@ use qs_engine::RunRoot = run_root::RunRoot
 use qs_engine::RunRootError = run_root::RunRootError
 use qs_engine::Running = launch::Running
 use qs_engine::StepKind = client::StepKind
+use qs_engine::base64_decode = client::base64_decode
 use qs_engine::host_command = launch::host_command
 use qs_engine::launch = launch::launch
 use qs_engine::locate_host = launch::locate_host

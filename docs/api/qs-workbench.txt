@@ -19,6 +19,7 @@ const qs_workbench::preview::POLL
 const qs_workbench::preview::RELOAD
 const qs_workbench::preview::RESTART
 const qs_workbench::preview::RESUME
+const qs_workbench::preview::SCENARIO_RUN
 const qs_workbench::preview::SELECT
 const qs_workbench::preview::SET_FIELD
 const qs_workbench::preview::STEP
@@ -35,6 +36,7 @@ enum qs_workbench::preview::PlayState
 enum qs_workbench::preview::PreviewError
 enum qs_workbench::preview::StepBy
 enum qs_workbench::preview::debug::StopReason
+enum qs_workbench::preview::scenario::ScenarioRunError
 field qs_workbench::Problem.diagnostic
 field qs_workbench::Problem.location
 field qs_workbench::Problem.path
@@ -90,6 +92,7 @@ field qs_workbench::preview::PreviewConfig.game
 field qs_workbench::preview::PreviewConfig.host
 field qs_workbench::preview::PreviewStatus.state
 field qs_workbench::preview::PreviewStatus.status
+field qs_workbench::preview::ScenarioRunParams.path
 field qs_workbench::preview::SelectParams.edict
 field qs_workbench::preview::SelectedEntity.classname
 field qs_workbench::preview::SelectedEntity.edict
@@ -115,6 +118,8 @@ field qs_workbench::preview::entities::Group.edicts
 field qs_workbench::preview::entities::Selected.classname
 field qs_workbench::preview::entities::Selected.edict
 field qs_workbench::preview::entities::Selected.fields
+field qs_workbench::preview::scenario::ScenarioRun.images
+field qs_workbench::preview::scenario::ScenarioRun.report
 fn qs_workbench::Location::column
 fn qs_workbench::Location::line
 fn qs_workbench::Location::of
@@ -218,6 +223,9 @@ fn qs_workbench::preview::entities::Field::kind
 fn qs_workbench::preview::entities::Selected::shown
 fn qs_workbench::preview::entities::parse_value
 fn qs_workbench::preview::register_preview
+fn qs_workbench::preview::scenario::Preview::run_scenario
+fn qs_workbench::preview::scenario::image_path
+fn qs_workbench::preview::scenario::play_on_game
 fn qs_workbench::recent::RecentProjects::forget
 fn qs_workbench::recent::RecentProjects::load
 fn qs_workbench::recent::RecentProjects::opened
@@ -232,8 +240,13 @@ impl qs_workbench::preview::Preview: core::fmt::Debug
 impl qs_workbench::preview::PreviewError: From<ClientError>
 impl qs_workbench::preview::PreviewError: core::fmt::Display
 impl qs_workbench::preview::PreviewError: std::error::Error
+impl qs_workbench::preview::scenario::ScenarioRunError: From<ClientError>
+impl qs_workbench::preview::scenario::ScenarioRunError: From<PreviewError>
+impl qs_workbench::preview::scenario::ScenarioRunError: fmt::Display
+impl qs_workbench::preview::scenario::ScenarioRunError: std::error::Error
 mod qs_workbench::preview::debug
 mod qs_workbench::preview::entities
+mod qs_workbench::preview::scenario
 struct qs_workbench::Location
 struct qs_workbench::OpenFile
 struct qs_workbench::Problem
@@ -261,6 +274,7 @@ struct qs_workbench::preview::PlayParams
 struct qs_workbench::preview::Preview
 struct qs_workbench::preview::PreviewConfig
 struct qs_workbench::preview::PreviewStatus
+struct qs_workbench::preview::ScenarioRunParams
 struct qs_workbench::preview::SelectParams
 struct qs_workbench::preview::SelectedEntity
 struct qs_workbench::preview::SetFieldParams
@@ -275,6 +289,7 @@ struct qs_workbench::preview::entities::Entities
 struct qs_workbench::preview::entities::Field
 struct qs_workbench::preview::entities::Group
 struct qs_workbench::preview::entities::Selected
+struct qs_workbench::preview::scenario::ScenarioRun
 struct qs_workbench::recent::RecentProjects
 trait qs_workbench::commands::HasWorkbench
 trait qs_workbench::preview::HasPreview
@@ -324,11 +339,13 @@ use qs_workbench::RecentProjects = crate::recent::RecentProjects
 use qs_workbench::RenameError = qc_ide::RenameError
 use qs_workbench::Renamed = crate::editing::Renamed
 use qs_workbench::Reported = crate::build::Reported
+use qs_workbench::SCENARIO_RUN = crate::preview::SCENARIO_RUN
 use qs_workbench::SELECT = crate::preview::SELECT
 use qs_workbench::SET_FIELD = crate::preview::SET_FIELD
 use qs_workbench::STEP = crate::preview::STEP
 use qs_workbench::STEP_BY = crate::preview::STEP_BY
 use qs_workbench::STOP = crate::preview::STOP
+use qs_workbench::ScenarioRunParams = crate::preview::ScenarioRunParams
 use qs_workbench::SelectParams = crate::preview::SelectParams
 use qs_workbench::SelectedEntity = crate::preview::SelectedEntity
 use qs_workbench::SetFieldParams = crate::preview::SetFieldParams
@@ -348,6 +365,7 @@ use qs_workbench::debug = crate::preview::debug
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
+use qs_workbench::scenario = crate::preview::scenario
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
 variant qs_workbench::WorkbenchError::NoFile
@@ -384,3 +402,11 @@ variant qs_workbench::preview::StepBy::Statement
 variant qs_workbench::preview::debug::StopReason::Breakpoint
 variant qs_workbench::preview::debug::StopReason::Error
 variant qs_workbench::preview::debug::StopReason::Step
+variant qs_workbench::preview::scenario::ScenarioRunError::Bridge
+variant qs_workbench::preview::scenario::ScenarioRunError::Game
+variant qs_workbench::preview::scenario::ScenarioRunError::Launch
+variant qs_workbench::preview::scenario::ScenarioRunError::Parse
+variant qs_workbench::preview::scenario::ScenarioRunError::Preview
+variant qs_workbench::preview::scenario::ScenarioRunError::Read
+variant qs_workbench::preview::scenario::ScenarioRunError::RunRoot
+variant qs_workbench::preview::scenario::ScenarioRunError::Write

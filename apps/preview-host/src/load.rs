@@ -195,6 +195,7 @@ pub(crate) fn load(
                 Element::Directory(directory) => directory.name().to_owned(),
             })
             .collect(),
+        seed: None,
     };
     let mut world =
         World::load(&progs, &map, &bsp, reader()?, options).map_err(|e| e.to_string())?;
