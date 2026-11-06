@@ -2251,8 +2251,8 @@ mod bodies {
         assert_eq!(id.message(), "unimplemented bulitin");
     }
 
-    // spec BUILTIN-18.4: forceinfokey on the world sets a serverinfo cvar and no other; on a
-    // player it sets none, and a bad player is NUM_FOR_EDICT's error
+    // spec BUILTIN-18.29: forceinfokey on the world sets a serverinfo cvar and no other, a player's
+    // key sets no cvar, and a bad player is NUM_FOR_EDICT's error
     #[test]
     fn forceinfokey_sets_serverinfo_cvars_on_the_world() {
         let (strings, offsets) = string_table(&["teamplay", "3", "skill"]);
@@ -2277,6 +2277,94 @@ mod bodies {
         assert_eq!(player.engine().cvars.text("teamplay"), Some("0"));
         let (result, _) = run(edict * 1000, offsets[0]);
         assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
+    }
+
+    // spec BUILTIN-18.28: clientcommand runs an active client's setinfo, which sets its team
+    // and infokey's answers; a non-client or an inactive slot changes nothing, and a bad
+    // entity is NUM_FOR_EDICT's error
+    // spec BUILTIN-18.30: infokey reads the client's name and colours
+    #[test]
+    fn clientcommand_runs_setinfo_for_an_active_client() {
+        let (strings, offsets) = string_table(&[
+            "setinfo bottomcolor 4",
+            "setinfo name other",
+            "color 4",
+            "bottomcolor",
+            "team",
+            "name",
+        ]);
+        let mut engine = MockEngine::new("test", 0, 1);
+        engine.profile = EngineProfile::VkQuake;
+        engine.clients_active = vec![true, false];
+        let run = |engine: &mut MockEngine, number: u32, parms: &[i32], edict: usize| {
+            let mut f = Fixture::new(number, 2, strings.clone(), 2);
+            *f.builtins.engine_mut() = engine.clone();
+            let size = f.machine.edicts().layout().edict_size();
+            let entity = i32::try_from(edict).unwrap() * size;
+            f.set_parm_i(0, entity);
+            for (n, parm) in (1_u16..).zip(parms) {
+                f.set_parm_i(n, *parm);
+            }
+            let result = f.run(ServerState::Active);
+            *engine = f.builtins.engine().clone();
+            (result, f)
+        };
+        let infokey = |engine: &mut MockEngine, key: i32| {
+            let (result, f) = run(engine, 80, &[key], 1);
+            result.unwrap();
+            f.engine().strings.text(f.return_i()).map(<[u8]>::to_vec)
+        };
+        let (result, f) = run(&mut engine, 440, &[offsets[2]], 1);
+        result.unwrap();
+        assert_eq!(f.field_f(1, "team"), 0.0, "color is no client command");
+        let (result, f) = run(&mut engine, 440, &[offsets[0]], 1);
+        result.unwrap();
+        assert_eq!(f.field_f(1, "team"), 5.0);
+        assert_eq!(infokey(&mut engine, offsets[3]), Some(b"4".to_vec()));
+        assert_eq!(infokey(&mut engine, offsets[4]), Some(b"t5".to_vec()));
+        let (result, f) = run(&mut engine, 440, &[offsets[1]], 1);
+        result.unwrap();
+        let netname = f.field_i(1, "netname");
+        assert_eq!(f.engine().strings.text(netname), Some(b"other".as_slice()));
+        assert_eq!(infokey(&mut engine, offsets[5]), Some(b"other".to_vec()));
+        for edict in [0, 2] {
+            let before = engine.clients.clone();
+            let (result, f) = run(&mut engine, 440, &[offsets[0]], edict);
+            result.unwrap();
+            assert_eq!(engine.clients, before, "edict {edict}");
+            assert_eq!(f.field_f(edict, "team"), 0.0);
+        }
+        let (result, _) = run(&mut engine, 440, &[offsets[0]], 1000);
+        assert_eq!(result.unwrap_err().message(), "NUM_FOR_EDICT: bad pointer");
+    }
+
+    // spec BUILTIN-18.29: forceinfokey on a player slot sets its userinfo as SV_UpdateInfo
+    // does, active or not, and a `*` key with it
+    #[test]
+    fn forceinfokey_sets_a_players_userinfo() {
+        let (strings, offsets) = string_table(&["bottomcolor", "6", "*spectator", "1"]);
+        let mut f = Fixture::new(213, 3, strings, 2);
+        f.builtins.engine_mut().profile = EngineProfile::VkQuake;
+        f.builtins.engine_mut().clients_active = vec![true, false];
+        let size = f.machine.edicts().layout().edict_size();
+        f.set_parm_i(0, 2 * size);
+        f.set_parm_i(1, offsets[0]);
+        f.set_parm_i(2, offsets[1]);
+        f.run(ServerState::Active).unwrap();
+        assert_eq!(f.field_f(2, "team"), 7.0);
+        assert_eq!(f.engine().clients.get(1).colors(), 6);
+        f.set_parm_i(1, offsets[2]);
+        f.set_parm_i(2, offsets[3]);
+        f.run(ServerState::Active).unwrap();
+        assert!(
+            f.engine()
+                .clients
+                .get(1)
+                .userinfo()
+                .ends_with(b"\\*spectator\\1"),
+            "{:?}",
+            f.engine().clients.get(1)
+        );
     }
 
     // spec BUILTIN-18.23: tokenize counts the words, argv returns each as an engine string and
@@ -2741,7 +2829,7 @@ mod bodies {
         }
     }
 
-    // spec BUILTIN-18.12: infokey answers the world's *version and an active client's fixed
+    // spec BUILTIN-18.30: infokey answers the world's *version and an active client's fixed
     // keys, and 0 for anything else
     #[test]
     fn infokey_answers_fixed_keys() {

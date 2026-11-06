@@ -38,6 +38,7 @@ mod strconv;
 mod strftime;
 pub mod table;
 pub mod tokenize;
+pub mod userinfo;
 
 #[cfg(test)]
 mod properties;

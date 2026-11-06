@@ -32,6 +32,7 @@ use crate::mock::{
     MockEngine, Overflow, Precache, Unimplemented,
 };
 use crate::tokenize::MAX_SEPARATORS;
+use crate::userinfo::ClientCommand;
 use crate::{atof, cstring, printf, strconv, strftime};
 
 /// The builtin dispatch over a mock engine (DIFF-6, DIFF-7).
@@ -343,6 +344,11 @@ fn checked_edict(context: &mut Context<'_, '_>, value: i32) -> Result<EdictNumbe
         .number(edict_size)
         .and_then(EdictNumber::from_i32)
         .ok_or_else(invalid_entity)
+}
+
+/// A C string's bytes: `text` up to its first zero.
+fn cstr(text: &[u8]) -> &[u8] {
+    text.split(|&b| b == 0).next().unwrap_or_default()
 }
 
 /// Reads entity parameter `n` with the `G_EDICT` check (BUILTIN-2.7).
@@ -1216,7 +1222,7 @@ const VKQUAKE_EXTENSIONS: [&str; 71] = [
 ];
 
 /// The cvars vkQuake registers with `CVAR_SERVERINFO` (`Quake/host.c`), which `forceinfokey`
-/// on the world sets (BUILTIN-18.4).
+/// on the world sets (BUILTIN-18.29).
 const VKQUAKE_SERVERINFO_CVARS: [&str; 4] = ["fraglimit", "timelimit", "teamplay", "noexit"];
 
 impl MockBuiltins {
@@ -1245,6 +1251,7 @@ impl MockBuiltins {
             118 => Some(self.b_strzone(context)),
             119 => Some(self.b_strunzone(context)),
             213 => Some(self.b_forceinfokey(context)),
+            440 => Some(self.b_clientcommand(context)),
             221 => Some(self.b_strstrofs(context)),
             224 => Some(self.b_strconv(context)),
             228 => Some(self.b_strncmp(context, Case::Upper)),
@@ -1308,7 +1315,7 @@ impl MockBuiltins {
         write_return_string(context, value)
     }
 
-    /// `infokey(e, key)`, vkQuake's `PF_infokey_s` (BUILTIN-18.12): the world's `*version`, an
+    /// `infokey(e, key)`, vkQuake's `PF_infokey_s` (BUILTIN-18.30): the world's `*version`, an
     /// active client's fixed keys, and 0 for any other.
     fn b_infokey(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let ent = read_parm_edictnum(context, 0)?.index();
@@ -1316,24 +1323,28 @@ impl MockBuiltins {
         let active = ent
             .checked_sub(1)
             .is_some_and(|slot| self.engine.clients_active.get(slot) == Some(&true));
-        let text: Option<&[u8]> = if ent == 0 {
-            (key == b"*version").then_some(b"vkQuake 1.37.1")
+        let client = self.engine.clients.get(ent.saturating_sub(1));
+        let colors = client.colors();
+        let text: Option<Vec<u8>> = if ent == 0 {
+            (cstr(&key) == b"*version").then(|| b"vkQuake 1.37.1".to_vec())
         } else if active {
-            match key.as_slice() {
-                b"ip" => Some(b"LOCAL"),
-                b"ping" => Some(b"0.000000"),
-                b"protocol" => Some(b"rmq999"),
-                b"name" => Some(b"player"),
-                b"topcolor" | b"bottomcolor" | b"csqcactive" => Some(b"0"),
-                b"team" => Some(b"t1"),
-                b"*VIP" | b"*spectator" => Some(b""),
+            match cstr(&key) {
+                b"ip" => Some(b"LOCAL".to_vec()),
+                b"ping" => Some(b"0.000000".to_vec()),
+                b"protocol" => Some(b"rmq999".to_vec()),
+                b"name" => Some(client.name().to_vec()),
+                b"topcolor" => Some(format!("{}", colors >> 4).into_bytes()),
+                b"bottomcolor" => Some(format!("{}", colors & 15).into_bytes()),
+                b"team" => Some(format!("t{}", (colors & 15).saturating_add(1)).into_bytes()),
+                b"*VIP" | b"*spectator" => Some(Vec::new()),
+                b"csqcactive" => Some(b"0".to_vec()),
                 _ => None,
             }
         } else {
             None
         };
         let value = match text {
-            Some(text) => self.engine.strings.make(text.to_vec()),
+            Some(text) => self.engine.strings.make(text),
             None => 0,
         };
         write_return_string(context, value)
@@ -1676,20 +1687,65 @@ impl MockBuiltins {
     }
 
     /// `forceinfokey(player, key, value)`, vkQuake's `PF_sv_forceinfokey` and `SV_UpdateInfo`
-    /// (BUILTIN-18.4): the player through `G_EDICTNUM`, then the two strings; on the world a
+    /// (BUILTIN-18.29): the player through `G_EDICTNUM`, then the two strings; on the world a
     /// serverinfo cvar is set as `cvar_set` sets it.
     fn b_forceinfokey(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let edict = read_parm_edictnum(context, 0)?;
         let key = read_parm_string(context, &self.engine, 1)?;
         let value = read_parm_string(context, &self.engine, 2)?;
-        let key = String::from_utf8_lossy(&key).into_owned();
-        if edict.index() == 0 && VKQUAKE_SERVERINFO_CVARS.contains(&key.as_str()) {
-            let _existed = self
-                .engine
-                .cvars
-                .set(&key, &String::from_utf8_lossy(&value));
+        let key = cstr(&key);
+        let value = cstr(&value);
+        let maxclients = self.engine.clients_active.len();
+        match edict.index() {
+            0 => {
+                let name = String::from_utf8_lossy(key);
+                if VKQUAKE_SERVERINFO_CVARS.contains(&name.as_ref()) {
+                    let _existed = self
+                        .engine
+                        .cvars
+                        .set(&name, &String::from_utf8_lossy(value));
+                }
+                Ok(())
+            }
+            number if number <= maxclients => self.update_info(context, edict, key, value),
+            _ => Ok(()),
+        }
+    }
+
+    /// `SV_UpdateInfo` of player `edict`'s userinfo (BUILTIN-18.27): a changed value is set and
+    /// decoded, its `team` and, for a new name, its `netname` written to the edict.
+    fn update_info(
+        &mut self,
+        context: &mut Context<'_, '_>,
+        edict: EdictNumber,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<(), BuiltinError> {
+        let slot = edict.index().saturating_sub(1);
+        let Some(decoded) = self.engine.clients.get_mut(slot).update(key, value) else {
+            return Ok(());
+        };
+        write_field_float(context, edict, SysField::Team, decoded.team)?;
+        if let Some(name) = decoded.netname {
+            let netname = self.engine.strings.make(name);
+            write_field_int(context, edict, SysField::Netname, netname)?;
         }
         Ok(())
+    }
+
+    /// `clientcommand(e, s)`, vkQuake's `PF_clientcommand` (BUILTIN-18.28): `e` through
+    /// `G_EDICT` and `NUM_FOR_EDICT`, then `s` run as an active client's command by
+    /// `Cmd_ExecuteString (s, src_client)`; nothing for an edict that is no active client.
+    fn b_clientcommand(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
+        let edict = read_parm_edictnum(context, 0)?;
+        let text = read_parm_string(context, &self.engine, 1)?;
+        if !self.engine.client_active(edict.index()) {
+            return Ok(());
+        }
+        match ClientCommand::parse(cstr(&text)) {
+            ClientCommand::Setinfo { key, value } => self.update_info(context, edict, &key, &value),
+            ClientCommand::Nothing => Ok(()),
+        }
     }
 }
 

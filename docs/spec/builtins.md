@@ -793,13 +793,9 @@ profile (DIFF-12.19); everything else runs under id's.
 - **BUILTIN-18.3** The precache lists hold `MAX_SOUNDS` 2048 sounds and `MAX_MODELS` 8192
   models ("#define MAX_MODELS 8192 // johnfitz -- was 256", "#define MAX_SOUNDS 2048 //
   johnfitz -- was 256"), in place of LIMIT-6.2's 256 each.
-- **BUILTIN-18.4** `forceinfokey(player, key, value)` (#213) is `PF_sv_forceinfokey`: the
-  player through `G_EDICTNUM`, so a bad one is `NUM_FOR_EDICT`'s error (BUILTIN-2.7), then the
-  key and value strings, then `SV_UpdateInfo`. On the world (`if (!edict)`) a cvar registered
-  with `CVAR_SERVERINFO` (`fraglimit`, `timelimit`, `teamplay` and `noexit` in `Quake/host.c`) is
-  set with `Cvar_Set`, which `cvar` reads back. Every other key goes to the server's or the
-  player's info string and the network, which the mock does not keep: no builtin it ports reads
-  an info string back.
+- **BUILTIN-18.4** **Withdrawn** 2026-11-06: it said the mock keeps no player info string, which
+  stopped holding once `clientcommand` and `setinfo` read and decode one; replaced by
+  BUILTIN-18.29.
 - **BUILTIN-18.5** `clientstat(num, type, fld)` (#232) and `globalstat(num, type, name)` (#233)
   are `PF_clientstat` and `PF_globalstat`: they choose what the server sends a client as stat
   `num` (`PR_CustomStat`), which no builtin reads back, so they change nothing QuakeC sees.
@@ -854,17 +850,9 @@ profile (DIFF-12.19); everything else runs under id's.
   temporary string holding its text (`var->string` for server QuakeC), cut to 1023 bytes; for
   `game`, when no setting has the name, the game's directory names (`COM_GetGameNames`), which
   for the mock's game is `id1`; for any other name 0, the null string.
-- **BUILTIN-18.12** `infokey(e, key)` (#80) is `PF_infokey_s`, which reads `e` with
-  `G_EDICTNUM` (BUILTIN-2.7) and `key` with `G_STRING` and answers from fixed sources, not from
-  the info strings `forceinfokey` sets (BUILTIN-18.4). On the world, `*version` is
-  `ENGINE_NAME_AND_VER`, `vkQuake 1.37.1` (`Quake/quakever.h`). On an active client: `ip` is its
-  socket's address, `LOCAL` for the local loop (`Quake/net_loop.c`), which every client of the
-  mock is; `ping` is `%f` of its average ping, `0.000000`, as the mock's clients never ping;
-  `protocol` is `rmq999`, vkQuake's default protocol ("int sv_protocol = PROTOCOL_RMQ;"); `name` is `player` and `topcolor`,
-  `bottomcolor` and `csqcactive` are `0`, the name and colours a client enters with (DIFF-4.1);
-  `team` is `t1`, `t` and the bottom colour plus 1; `*VIP` and `*spectator` are empty. Any other
-  key, and any key on an edict that is no active client, is 0, the null string. A text is a new
-  temporary string.
+- **BUILTIN-18.12** **Withdrawn** 2026-11-06: it gave a client's name and colours as the fixed
+  texts a client enters with, which stopped holding once `setinfo` and `forceinfokey` change
+  them; replaced by BUILTIN-18.30.
 - **BUILTIN-18.13** `print(s, ...)` (#339) is `PF_print`, which writes each argument the call
   passed, read with `G_STRING`, to the console. The mock has no console, so it reads and checks
   them, as `dprint` does (BUILTIN-11.3).
@@ -969,6 +957,49 @@ profile (DIFF-12.19); everything else runs under id's.
   that brings its count above it, "if (++profile > 0x1000000) // spike -- was decimal 100000,
   0x10000000 in QSS" then `PR_RunError ("runaway loop error")`. So its counter in LIMIT-4.3's
   terms starts from 0x1000001.
+- **BUILTIN-18.27** Each client slot has a userinfo string of `\key\value` pairs,
+  `SERVER_INFO_STRING_SIZE` 8192 bytes with its zero, and the name and colours decoded from it;
+  a client enters with `\name\player\topcolor\0\bottomcolor\0`, named `player` with colours 0
+  (DIFF-4.1), what the mock's client would send. `SV_UpdateInfo` of a key on player slot `n`
+  (`Quake/cl_main.c`) reads the key's old value (`Info_GetKey` into 1024 bytes) and, when the
+  new one differs, sets it (`Info_SetKey`, `Quake/common.c`: the old pair removed, then for a
+  value that is not empty `\key\value` appended, unless the key is empty, either holds a `\`, or
+  the string would reach the size less one) and decodes the string (`SV_DecodeUserInfo`):
+  `top` and `bot` are `atoi` of `topcolor` and `bottomcolor` (each read into 64 bytes), "&
+  15", and 13 when above 13; "client->edict->v.team = bot + 1;" and "client->colors = (top <<
+  4) | bot;"; the name is `name`, `unnamed` when it is empty, and when it differs from the kept
+  name it is kept, cut to 31 bytes (`name[32]`), and `netname` is set to a new engine string of
+  it, so a name over 31 bytes is set again at every decode. The network messages it sends are
+  not kept (DIFF-6.5). `atoi` is glibc's: white space, a sign, digits, a value past a `long`
+  that `long`'s limit, then its low 32 bits as C's `(int)` on x86-64.
+- **BUILTIN-18.28** `clientcommand(e, s)` (#440) is `PF_clientcommand`: `e` through `G_EDICT`
+  (BUILTIN-2.7) and `NUM_FOR_EDICT` (BUILTIN-2.9), `s` through `G_STRING`; for an edict whose
+  slot is an active client, "Cmd_ExecuteString (str, src_client);", and otherwise only a console
+  message. `Cmd_TokenizeString` reads the words `COM_Parse` reads up to the first line feed, at
+  most 80, each cut to 1023 bytes, and the first is matched without case. From a client only a
+  command registered with `Cmd_AddCommand_ClientCommand` runs ("if (src == src_client &&
+  cmd->srctype != src_client)" prints and runs nothing), and `Quake/host_cmd.c` registers two:
+  `serverinfo`, which prints, and `setinfo` (`Host_Setinfo_f`), which with exactly two
+  arguments and a key not starting with `*` is `SV_UpdateInfo` of the client's own slot
+  (BUILTIN-18.27), and otherwise prints. So `color`, `say` and every other command do nothing
+  from `clientcommand`.
+- **BUILTIN-18.29** `forceinfokey(player, key, value)` (#213) is `PF_sv_forceinfokey`: the
+  player through `G_EDICTNUM` (BUILTIN-2.7), the key and value through `G_STRING`, then
+  `SV_UpdateInfo`. On the world a cvar registered with `CVAR_SERVERINFO` (`fraglimit`,
+  `timelimit`, `teamplay` and `noexit` in `Quake/host.c`) is set with `Cvar_Set`, which `cvar`
+  reads back, and any other key goes to the server's info string, which no builtin the mock
+  ports reads. On slot 1 to `maxclients`, active or not, the key is set in that slot's userinfo
+  as BUILTIN-18.27 says, a `*` key included. Past `maxclients` nothing changes.
+- **BUILTIN-18.30** `infokey(e, key)` (#80) is `PF_infokey_s`, which reads `e` with
+  `G_EDICTNUM` (BUILTIN-2.7) and `key` with `G_STRING`. On the world, `*version` is
+  `ENGINE_NAME_AND_VER`, `vkQuake 1.37.1` (`Quake/quakever.h`). On an active client: `ip` is its
+  socket's address, `LOCAL` for the local loop (`Quake/net_loop.c`), which every client of the
+  mock is; `ping` is `%f` of its average ping, `0.000000`, as the mock's clients never ping;
+  `protocol` is `rmq999`, vkQuake's default protocol; `name` is the client's name, and
+  `topcolor` and `bottomcolor` are `%u` of "client->colors >> 4" and "client->colors & 15"
+  (BUILTIN-18.27); `team` is `t` and "(client->colors & 15) + 1"; `*VIP` and `*spectator` are
+  empty and `csqcactive` is `0`. Any other key, and any key on an edict that is no active
+  client, is 0, the null string. A text is a new temporary string.
 
 ## Test vectors
 
