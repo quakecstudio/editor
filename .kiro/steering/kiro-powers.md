@@ -121,6 +121,20 @@ The `.claude/` skills and agents use a few Claude Code conventions. When followi
   plan/check.py` (and the same for `status.py`, `apply.py`, `gen_readiness.py` and the `plan`
   unittests). Where a normal `python3` already imports yaml, keep using it; the commands in
   the `.claude/` procedures, `AGENTS.md` and `CLAUDE.md` stay as written.
+- **The `code-review` skill (`/code-review high <pr>`)** - `code-review` is not a file under
+  `.claude/skills/`; it comes from the external Claude Code plugin `dev-agents@claude-dev-agents`
+  (declared in `.claude/settings.json`, sourced from the `bug-ops/claude-plugins` marketplace),
+  so there is no `.claude/` source file to point at. Kiro cannot load that plugin, so a Kiro
+  session has no `code-review` skill to invoke. Where a `.claude/` procedure says to run
+  `/code-review high <pr-number>` (the `work-issue` skill and the `implementer` agent, both at
+  "Land it", step 3), perform the equivalent self-review yourself instead: review the PR's own
+  diff at high effort against `docs/conventions.md`, including "Type design (CONV-17)"; fix every
+  finding on the branch or answer it with a reason; and record the outcome in the "Code review"
+  section of the PR body exactly as `work-issue` "Land it", step 3 describes (the effort level
+  and, for each finding, what it was and whether it was fixed with the commit or answered with
+  the reason, or saying the review found nothing). This self-review is by the agent that wrote
+  the code; it does not replace the independent readiness review of a layer, which needs a
+  reviewer who did not write the code.
 - **The `/goal ...` run block** - the `README.md` "Next run" block and the examples in
   `docs/agents/README.md` are Claude Code auto-mode commands (`/goal Run /run-phase ...`).
   Kiro has the same unattended, goal-driven loop as its Autonomous mode, so run the identical
