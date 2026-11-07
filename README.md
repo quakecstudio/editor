@@ -28,6 +28,7 @@ The run stops when the phase is complete or only work for a person is left; star
 | --- | --- |
 | [`docs/roadmap.md`](docs/roadmap.md) | The overall plan: decisions so far, layers, the phases and their gates, where we are, how to work an issue |
 | [`docs/design/design-doc.md`](docs/design/design-doc.md) | What we are building and why |
+| [`docs/architecture.md`](docs/architecture.md) | A higher-level map of the subsystems: how the IDE and the engine fit together, the process model, and the edit-compile-preview play loop |
 | [`docs/design/README.md`](docs/design/README.md) | The approved mockups and the design language |
 | [`plan/README.md`](plan/README.md) | How the design becomes requirements, issues, phases and gates |
 | [`docs/conventions.md`](docs/conventions.md) | Rust conventions (based on vouch) |
