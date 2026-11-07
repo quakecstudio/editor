@@ -19,6 +19,13 @@ it step by step. This file only records the Kiro-specific translations.
     squash-merges the PR, or queues it if the merge queue is turned back on).
 - **Tools:** the `allowed-tools` list in the source is the intended scope: `gh issue`,
   `gh pr`, `python3 plan/*`, and the two scripts above.
+- **`code-review` skill:** `code-review` is an external Claude Code plugin skill
+  (`dev-agents@claude-dev-agents`), not a `.claude/skills/` file, and Kiro cannot load it.
+  Where the source says to run `/code-review high <pr>`, a Kiro session performs that
+  self-review itself: review the PR's own diff at high effort against `docs/conventions.md`,
+  including "Type design (CONV-17)", fix or answer every finding, and record the outcome in the
+  "Code review" section of the PR body. See the `code-review` note in
+  `.kiro/steering/kiro-powers.md`.
 - **Guardrails apply:** no panics in shipped code, no upward layer dependencies, specs
   quoted not recalled, the four-part porting checklist, never weaken a check to get green,
   and `needs:human` issues are prepared not merged. See `.kiro/steering/guardrails.md`.
