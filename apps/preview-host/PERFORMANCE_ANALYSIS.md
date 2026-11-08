@@ -186,8 +186,10 @@ note on whether it runs every frame. They are grouped into "safe to change" and
   `self.mixer.local_sound`. The owned `String` is created only to end the borrow
   of `self.table` so `self.mixer` can be borrowed mutably. It allocates once per
   `LocalSound` event, which is infrequent (menu-style local sounds), so the
-  severity is low; it can be avoided by restructuring the table and mixer borrows
-  or by looking the name up again inside the mixer call.
+  severity is low. On closer inspection this allocation turns out to be required
+  by the borrow checker and was left as is; see item 2 under "Recommended
+  changes" for why no restructuring removes it without changing behavior or
+  breaking a public `qs-sound` API.
 - `screenshot_taken` clones `frame.rgba` per waiting shot (game). Severity: low,
   not per-frame. `Game::screenshot_taken` builds a `Frame` copy for each waiting
   shot with `rgba: frame.rgba.clone()` (`src/game.rs:378`). This only runs when a
@@ -224,21 +226,50 @@ fixes do not "optimize" a take into something that drops capacity.
 
 ## Recommended changes
 
-The following behavior-preserving changes are recommended for the follow-up
-fix work:
+The three behavior-preserving changes below were identified by this report. Two
+were applied in the follow-up fix work and one was found to be required by the
+borrow checker and left as is. Each entry records what was actually done so the
+report and the diff agree.
 
-1. Collapse the two per-frame `input.events.clone()` calls in `window.rs`
-   (`src/window.rs:735` in `type_keys` and `src/window.rs:623` in `bind_keys`)
-   into a single clone per frame, or into copying only the events each pass
-   consumes, so the egui event vector is not cloned twice per frame. Medium
-   value, runs every frame.
-2. Avoid the per-event `String` allocation in the `LocalSound` branch of
-   `Audio::handle` (`src/audio.rs:236-245`) by restructuring the borrows so the
-   name need not be owned just to satisfy the borrow checker. Low value, only on
-   local-sound events.
-3. On the single-waiting-shot path, move `frame.rgba` into `encode` instead of
-   cloning it in `Game::screenshot_taken` (`src/game.rs:378`). Low value, only
-   when a screenshot is pending.
+1. Done. The two per-frame `input.events.clone()` calls in `window.rs`
+   (`type_keys` and `bind_keys`) were collapsed into a single clone per frame.
+   `Viewer::ui` now reads the frame's events and modifiers once in one
+   `ui.input(|input| (input.events.clone(), input.modifiers))` and passes the
+   borrowed slice to `type_keys(&[egui::Event])` and
+   `bind_keys(&[egui::Event], egui::Modifiers)`. The event vector is cloned once
+   instead of twice; the two passes see the same event order and the same
+   modifier snapshot they saw before, since both reads already read the same
+   frame's fixed egui input, so behavior is unchanged. Medium value, runs every
+   frame.
+2. Left as is (required by the borrow checker). The per-event `String`
+   allocation in the `LocalSound` branch of `Audio::handle` cannot be removed
+   without changing behavior. The name is obtained from `self.table.name(id)`,
+   which borrows `self.table` immutably and returns a `&str` that points into the
+   table; the very next call, `self.mixer.local_sound(&mut self.table, rand,
+   name)`, needs `self.table` borrowed mutably while that same `&str` is passed
+   in. An immutable borrow of `self.table` (the name) therefore cannot be held
+   across the `&mut self.table` call, so the name must be owned first with
+   `str::to_owned`. The obvious alternatives are not behavior-preserving: the
+   mixer's public `local_sound(table, rand, name: &str)` is the only entry point
+   that honours the `nosound` early-return and the "can't cache" message path,
+   and it re-precaches the name (which can reload the sound's data); calling the
+   lower-level `start_sound` with the already-resolved `SfxId` would skip that
+   re-precache and would also need the mixer's private `view_entity` field to
+   build the `Start`, so it is both a behavior change and an API break. Changing
+   `local_sound` to take an `SfxId` would change a public `qs-sound` API and the
+   separate menu `Audio::local` caller, which is out of scope for a
+   behavior-preserving pass. The allocation is low value anyway: it happens once
+   per `LocalSound` event (infrequent, menu-style local sounds), not every frame.
+3. Done. On the single-waiting-shot path (the common case),
+   `Game::screenshot_taken` now moves `frame.rgba` into `encode` instead of
+   cloning it. The method takes `frame: Frame` by value, peels the last waiting
+   shot, clones the pixels only for the earlier shots, and moves the pixels into
+   the final shot's `encode`. Output is identical for zero shots (nothing is
+   answered), one shot (the only shot owns the pixels, no clone), and many shots
+   (each earlier shot still gets its own copy). The two call sites
+   (`window.rs`, `headless.rs`) now pass the owned `Frame`, and the two
+   `screenshot_taken` tests were updated to pass by value. Low value, only when a
+   screenshot is pending.
 
 Deliberately left unchanged:
 

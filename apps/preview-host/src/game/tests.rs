@@ -765,7 +765,7 @@ fn a_screenshot_is_answered_with_the_next_frame() {
     assert_eq!(session.handle(&mut game, sized).response, None);
     assert!(game.wants_screenshot());
     assert!(game.take_responses().is_empty());
-    game.screenshot_taken(&frame(4, 4));
+    game.screenshot_taken(frame(4, 4));
     assert!(!game.wants_screenshot());
     let responses = game.take_responses();
     assert_eq!(responses.len(), 2);
@@ -805,7 +805,7 @@ fn the_next_level_carries_what_the_last_one_owed() {
         .collect();
     assert_eq!(maps, [json!("old"), json!("next")]);
     assert!(next.wants_screenshot());
-    next.screenshot_taken(&frame(1, 1));
+    next.screenshot_taken(frame(1, 1));
     let responses = next.take_responses();
     assert_eq!(responses.len(), 1);
     assert_eq!(responses[0].0, Id::Number(7));

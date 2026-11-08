@@ -286,8 +286,13 @@ impl eframe::App for Viewer {
             self.configured = true;
             self.run_line(STARTUP);
         }
-        self.type_keys(ui);
-        self.bind_keys(ui);
+        // Snapshot this frame's egui events and modifiers once: both key passes read the same
+        // frame's input, so a single clone here feeds `type_keys` and `bind_keys` with the
+        // same event order and the same modifier snapshot the two separate `ui.input` reads
+        // gave before, without cloning the event vector twice.
+        let (events, modifiers) = ui.input(|input| (input.events.clone(), input.modifiers));
+        self.type_keys(&events);
+        self.bind_keys(&events, modifiers);
         self.hold_pointer(ui, response.clicked() && self.dest == KeyDest::Game);
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
@@ -437,7 +442,7 @@ impl eframe::App for Viewer {
                 .as_mut()
                 .map(|drawer| drawer.draw(callback.clone(), size))
             {
-                Some(Ok(frame)) => self.game.screenshot_taken(&frame),
+                Some(Ok(frame)) => self.game.screenshot_taken(frame),
                 Some(Err(why)) => self.game.screenshot_failed(&why),
                 None => self.game.screenshot_failed("no GPU device"),
             }
@@ -619,8 +624,7 @@ impl Viewer {
     /// its `+` binding's `-` command whatever has the keys. Repeats are dropped, the modifier
     /// keys come from egui's modifier state, and the mouse's buttons and wheel count only
     /// while the window holds the mouse.
-    fn bind_keys(&mut self, ui: &egui::Ui) {
-        let (events, modifiers) = ui.input(|input| (input.events.clone(), input.modifiers));
+    fn bind_keys(&mut self, events: &[egui::Event], modifiers: egui::Modifiers) {
         let mut keys: Vec<(u8, bool)> = Vec::new();
         let before = modifier_keys(self.modifiers);
         for (now, was) in modifier_keys(modifiers).into_iter().zip(before) {
@@ -639,15 +643,15 @@ impl Viewer {
                     repeat: false,
                     ..
                 } => {
-                    if let Some(k) = keynum(key) {
-                        keys.push((k, pressed));
+                    if let Some(k) = keynum(*key) {
+                        keys.push((k, *pressed));
                     }
                 }
                 egui::Event::PointerButton {
                     button, pressed, ..
                 } if held => {
-                    if let Some(k) = mouse_key(button) {
-                        keys.push((k, pressed));
+                    if let Some(k) = mouse_key(*button) {
+                        keys.push((k, *pressed));
                     }
                 }
                 egui::Event::MouseWheel { delta, .. } if held => {
@@ -731,8 +735,7 @@ impl Viewer {
     /// binds it to `toggleconsole` (CON-4.8); while it is open the keys and text go to its line,
     /// Escape leaves it as `M_ToggleMenu_f` does from the console, and an entered line runs
     /// through qs-sim's console path, what it prints printed in the console.
-    fn type_keys(&mut self, ui: &egui::Ui) {
-        let events = ui.input(|input| input.events.clone());
+    fn type_keys(&mut self, events: &[egui::Event]) {
         let realtime = self.started.elapsed().as_secs_f64();
         let height = self.play.screen[1];
         for event in events {
@@ -762,7 +765,7 @@ impl Viewer {
                 egui::Event::Key {
                     key, pressed: true, ..
                 } if self.dest == KeyDest::Menu => {
-                    if let Some(key) = menu_key(key) {
+                    if let Some(key) = menu_key(*key) {
                         self.menu_key(key);
                     }
                 }
@@ -774,7 +777,7 @@ impl Viewer {
                 egui::Event::Key {
                     key, pressed: true, ..
                 } if self.dest == KeyDest::Console => {
-                    if let Some(key) = console_key(key) {
+                    if let Some(key) = console_key(*key) {
                         self.console_key(key, height, realtime);
                     }
                 }

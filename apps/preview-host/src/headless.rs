@@ -68,7 +68,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, mut bridge: Bridge) -> Result<(),
         world.read_messages(if ran { FRAME } else { 0.0 });
         if world.game.wants_screenshot() {
             match offscreen.as_mut().map(|drawer| world.draw(drawer)) {
-                Some(Ok(frame)) => world.game.screenshot_taken(&frame),
+                Some(Ok(frame)) => world.game.screenshot_taken(frame),
                 Some(Err(why)) => world.game.screenshot_failed(&why),
                 None => world.game.screenshot_failed("no GPU device"),
             }

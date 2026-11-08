@@ -369,21 +369,47 @@ impl Game {
     }
 
     /// Answers every waiting `screenshot` with `frame`, the frame just drawn.
-    pub(crate) fn screenshot_taken(&mut self, frame: &Frame) {
+    pub(crate) fn screenshot_taken(&mut self, frame: Frame) {
         let time = self.world.time();
-        for shot in core::mem::take(&mut self.shots) {
+        let width = frame.width;
+        let height = frame.height;
+        let mut shots = core::mem::take(&mut self.shots).into_iter();
+        // Peel the last waiting shot so it can move the frame's pixels into `encode` instead
+        // of cloning; every earlier shot still gets its own copy. For zero shots nothing is
+        // answered, for one shot the only shot owns the pixels, and for many shots each shot
+        // gets an identical image, so the result is unchanged.
+        let Some(mut shot) = shots.next() else {
+            return;
+        };
+        for next in shots {
             let copy = Frame {
-                width: frame.width,
-                height: frame.height,
+                width,
+                height,
                 rgba: frame.rgba.clone(),
             };
-            let outcome = encode(copy, shot.size)
-                .map(|(png, width, height)| {
-                    json!({ "png": png, "width": width, "height": height, "time": time })
-                })
-                .map_err(|why| RpcError::new(ErrorCode::InternalError, why));
-            self.responses.push((shot.id, outcome));
+            self.answer_shot(shot, copy, time);
+            shot = next;
         }
+        self.answer_shot(
+            shot,
+            Frame {
+                width,
+                height,
+                rgba: frame.rgba,
+            },
+            time,
+        );
+    }
+
+    /// Encodes `frame` for `shot` and records the answer, as `screenshot_taken` does for each
+    /// waiting shot.
+    fn answer_shot(&mut self, shot: Shot, frame: Frame, time: f64) {
+        let outcome = encode(frame, shot.size)
+            .map(|(png, width, height)| {
+                json!({ "png": png, "width": width, "height": height, "time": time })
+            })
+            .map_err(|why| RpcError::new(ErrorCode::InternalError, why));
+        self.responses.push((shot.id, outcome));
     }
 
     /// Answers every waiting `screenshot` with `why` the frame could not be drawn.
