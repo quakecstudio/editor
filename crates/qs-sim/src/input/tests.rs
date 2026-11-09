@@ -55,7 +55,7 @@ fn keys_hold_and_release_buttons() {
 // spec INPUT-2.2: a press held is 0.5 its first frame and 1 after; pressed and released in one
 // frame 0.25; released 0
 // spec INPUT-2.4: the speeds, strafe, klook, the speed key and the mouse
-// spec CON-7.3: the move's speeds, the run factor and the mouse's turn come from the settings
+// spec CON-7.4: the move's speeds, the run factor and the mouse's turn come from the settings
 #[test]
 fn the_buttons_make_the_move() {
     let settings = defaults();

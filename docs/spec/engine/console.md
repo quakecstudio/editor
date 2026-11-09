@@ -213,9 +213,11 @@ declarations); `WinQuake/cl_input.c`, `CL_BaseMove`; `WinQuake/in_win.c`, `IN_Mo
   "0.022", `m_yaw` "0.022", `viewsize` "100", `gamma` "1", `bgmvolume` "1" and `volume` "0.7".
 - **CON-7.2** **Withdrawn** 2026-11-06: `bgmvolume` now sets the CD music's volume (SND-6.2);
   replaced by CON-7.3.
-- **CON-7.3** The preview host reads them each frame: the move's speeds and the run key's
+- **CON-7.3** **Withdrawn** 2026-11-09: it said `lookspring` and `lookstrafe` change nothing,
+  but `+mlook` reads them (INPUT-2.1, INPUT-2.4). Replaced by CON-7.4.
+- **CON-7.4** The preview host reads them each frame: the move's speeds and the run key's
   factor as `CL_BaseMove` does, the mouse turned by `sensitivity` times `m_yaw` and `m_pitch`
-  as `IN_MouseMove` does, `viewsize` and `gamma` for the view (VIEW-3.6, VIEW-4.7), and
-  `volume` for the mixer (SND-5.4), and `bgmvolume` for the music (SND-6.2). `lookspring` and
-  `lookstrafe` are kept and shown but change nothing yet: this host has no mouse-look key
-  (P3-34).
+  as `IN_MouseMove` does, and `lookspring` and `lookstrafe` with `+mlook` (INPUT-2.1,
+  INPUT-2.4); `viewsize` and `gamma` for the view (VIEW-3.6, VIEW-4.7), `gamma` again for the
+  whole frame in QuakeSpasm's look (REND-13.9); `volume` for the mixer (SND-5.4) and
+  `bgmvolume` for the music (SND-6.2). A setting the world lacks reads as 0.
