@@ -402,10 +402,12 @@ issues:
   reqs:
   - MVP-1
   - PLAT-2
+  - ENG-9
   depends:
   - P4-06
   - P4-09
   - P4-12
+  - P3-11
   - P3-12
   - P4-18
   - P4-07
@@ -425,7 +427,7 @@ issues:
   - On ref-windows and ref-linux, `cargo xtask bench` with `QS_BENCH_HOST` naming the machine, `QS_BENCH_GAME` and `QS_BENCH_RERELEASE` passes the route budgets of docs/perf-budgets.md (frame, server frame, QuakeC, map load on e1m1 and the mg1 hub), its rows and commit committed under docs/spikes/data/ for P4-23's report, with QuakeSpasm at the pinned commit run by hand on each machine and its numbers recorded there; and routes through an mg3 map and an Arcane Dimensions map are added on all three machines the same way (moved here from P3-29 by Justin Plock on 2026-11-06)
 
   verify:
-  - Recordings and eval report attached, with the Windows and Linux `find` output, bench.sh results and IME recordings
+  - Recordings and eval report attached, with the Windows and Linux `find` output, bench.sh results, IME recordings and the docking recordings on macOS, Windows, X11 and Wayland
 - key: P4-27
   title: Write PAK files
   labels:
