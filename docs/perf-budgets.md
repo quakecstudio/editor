@@ -56,7 +56,11 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
   `preview.reload` (the build and the reload, BRIDGE-4.8) and a `screenshot`, which the host
   answers once it has drawn the next frame. Without `QS_BENCH_GAME` the benchmark is a
   placeholder and the row is judged as pending; on a reference machine it refuses to run
-  without one. ref-mac, GOG install, 2026-11-06: p95 77.04 ms.
+  without one. ref-mac (Apple M5, 24 GB), GOG install, 2026-11-06, two runs of
+  `QS_BENCH_GAME=<GOG> QS_BENCH_HOST=ref-mac cargo xtask bench`, each appended to that machine's
+  bench history: p95 77.04 ms, then 71.75 ms
+  ([#745](https://github.com/quakecstudio/editor/pull/745)), which meets P3-12's criterion; the
+  same measurement on ref-windows and ref-linux is the MVP demo's (P4-24).
 
 - **The routes (`frame_*`, `server_frame_*`, `quakec_*`, `map_load_*`):** the preview host
   runs as players' engines do (ENG-17), on two routes: id1's e1m1 from `QS_BENCH_GAME`, and the
