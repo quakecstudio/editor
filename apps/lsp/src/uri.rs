@@ -54,20 +54,11 @@ pub fn from_path(path: &Path) -> String {
 /// [`to_path`] by the rules of `host`.
 pub(crate) fn to_path_on(uri: &str, host: Host) -> Option<PathBuf> {
     let rest = strip_scheme(uri)?;
+    let rest = rest.split(['?', '#']).next().unwrap_or_default();
     let (authority, path) = rest.split_at(rest.find('/')?);
-    let path = path.split(['?', '#']).next().unwrap_or_default();
     let decoded = String::from_utf8(percent_decode(path)).ok()?;
     if !(authority.is_empty() || authority.eq_ignore_ascii_case("localhost")) {
-        // A share: `file://host/share/x` is `\\host\share\x` on Windows, and names no file
-        // of a host with one root.
-        if host == Host::Unix {
-            return None;
-        }
-        let server = String::from_utf8(percent_decode(authority)).ok()?;
-        let mut unc = String::from("\\\\");
-        unc.push_str(&server);
-        unc.push_str(&decoded.replace('/', "\\"));
-        return Some(PathBuf::from(unc));
+        return unc_path(authority, &decoded, host);
     }
     // `/c:/x` names the Windows path `c:/x`.
     let bytes = decoded.as_bytes();
@@ -82,6 +73,25 @@ pub(crate) fn to_path_on(uri: &str, host: Host) -> Option<PathBuf> {
     }
 }
 
+/// The UNC path `\\server\share\...` that a `file` URI with the host `authority` and the
+/// decoded path `path` names on Windows. `None` on a host with one root; for a host that decodes
+/// to nothing, to a separator or to invalid UTF-8; and for the path `/` alone, which names no
+/// share, as vscode-uri's `uriToFsPath` reads a host as a share only `if (uri.authority &&
+/// uri.path.length > 1 && uri.scheme === 'file')`.
+fn unc_path(authority: &str, path: &str, host: Host) -> Option<PathBuf> {
+    if host == Host::Unix || path.len() <= 1 {
+        return None;
+    }
+    let server = String::from_utf8(percent_decode(authority)).ok()?;
+    if server.is_empty() || server.contains(['/', '\\']) {
+        return None;
+    }
+    let mut unc = String::from("\\\\");
+    unc.push_str(&server);
+    unc.push_str(&path.replace('/', "\\"));
+    Some(PathBuf::from(unc))
+}
+
 /// [`from_path`] by the rules of `host`.
 pub(crate) fn from_path_on(path: &Path, host: Host) -> String {
     let lossy = path.to_string_lossy();
@@ -89,15 +99,24 @@ pub(crate) fn from_path_on(path: &Path, host: Host) -> String {
         Host::Windows => lossy.replace('\\', "/"),
         Host::Unix => lossy.into_owned(),
     };
+    // A verbatim path: `//?/UNC/host/share/...` is the share, and `//?/c:/...` the drive path.
+    let text = match text.strip_prefix("//?/") {
+        Some(rest) if host == Host::Windows => match rest.strip_prefix("UNC/") {
+            Some(share) => format!("//{share}"),
+            None => rest.to_owned(),
+        },
+        Some(_) | None => text,
+    };
     let mut out = String::from("file://");
-    // A UNC path, `//host/share/...` once its separators are `/`: the host is the URI's.
-    let unc = (host == Host::Windows)
-        .then(|| text.strip_prefix("//"))
-        .flatten()
-        .filter(|rest| !rest.starts_with('/'));
-    if let Some(rest) = unc {
-        let (server, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
-        push_encoded(&mut out, server.as_bytes());
+    // A UNC path, `//host/share/...` once its separators are `/`: the host is the URI's, in
+    // lower case as vscode-uri's `_asFormatted` writes it (`authority =
+    // authority.toLowerCase();`). A device path, `//./...`, is no share.
+    let unc = text
+        .strip_prefix("//")
+        .map(|rest| rest.split_at(rest.find('/').unwrap_or(rest.len())))
+        .filter(|(server, _)| host == Host::Windows && !matches!(*server, "" | "." | "?"));
+    if let Some((server, path)) = unc {
+        push_encoded(&mut out, server.to_ascii_lowercase().as_bytes());
         out.push('/');
         push_encoded(&mut out, path.strip_prefix('/').unwrap_or(path).as_bytes());
         return out;
@@ -106,16 +125,15 @@ pub(crate) fn from_path_on(path: &Path, host: Host) -> String {
     let drive = host == Host::Windows
         && bytes.first().is_some_and(u8::is_ascii_alphabetic)
         && bytes.get(1) == Some(&b':');
-    if drive {
-        out.push('/');
-    }
-    for (index, &b) in bytes.iter().enumerate() {
-        if drive && index == 1 {
-            out.push(char::from(b));
-        } else {
-            push_encoded(&mut out, &[b]);
+    let bytes = match bytes.split_at_checked(2) {
+        Some((letter, rest)) if drive => {
+            out.push('/');
+            out.push_str(&String::from_utf8_lossy(letter));
+            rest
         }
-    }
+        Some(_) | None => bytes,
+    };
+    push_encoded(&mut out, bytes);
     out
 }
 
@@ -126,7 +144,11 @@ fn push_encoded(out: &mut String, bytes: &[u8]) {
         if keep {
             out.push(char::from(b));
         } else {
-            out.push_str(&format!("%{b:02X}"));
+            out.push('%');
+            for digit in [b >> 4, b & 0x0F] {
+                let hex = char::from_digit(u32::from(digit), 16).unwrap_or('0');
+                out.push(hex.to_ascii_uppercase());
+            }
         }
     }
 }

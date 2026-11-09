@@ -219,10 +219,11 @@ proptest! {
     }
 
     // P3-37: on a Windows host a UNC path `\\host\share\...` is written with its host as the
-    // URI's, as VS Code's `URI.file` writes it, and reads back as that path.
+    // URI's, as VS Code's `URI.file` writes it, and reads back as that path with its host in
+    // lower case.
     #[test]
     fn unc_paths_convert_to_uris_and_back(
-        server in windows_component(),
+        server in windows_component().prop_filter("a verbatim or device prefix", |c| c != "?"),
         parts in prop::collection::vec(windows_component(), 1..5),
     ) {
         let path = format!("\\\\{server}\\{}", parts.join("\\"));
@@ -233,7 +234,9 @@ proptest! {
             rest.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~/%".contains(&b)),
             "{}", written
         );
-        prop_assert_eq!(to_path_on(&written, Host::Windows), Some(PathBuf::from(path)));
+        // vscode-uri writes the host in lower case, and Windows reads a host in any case.
+        let lower = format!("\\\\{}\\{}", server.to_ascii_lowercase(), parts.join("\\"));
+        prop_assert_eq!(to_path_on(&written, Host::Windows), Some(PathBuf::from(lower)));
         prop_assert_eq!(to_path_on(&written, Host::Unix), None);
     }
 

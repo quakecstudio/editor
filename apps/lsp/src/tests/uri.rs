@@ -127,10 +127,40 @@ fn a_uri_host_is_a_unc_share_on_windows() {
         from_path_on(Path::new("\\\\shares\\c$\\far boo"), Host::Windows),
         "file://shares/c%24/far%20boo"
     );
-    // A host with one root keeps refusing a share, and writes `//x` as the path it spells.
-    assert_eq!(to_path_on("file://server/share/x.qc", Host::Unix), None);
+    // A host with one root writes `//x` as the path it spells.
     assert_eq!(
         from_path_on(Path::new("//server/share"), Host::Unix),
         "file:////server/share"
     );
+}
+
+// P3-37: the edges of a share. vscode-uri writes the host in lower case (`authority =
+// authority.toLowerCase();`) and reads a host as a share only `if (uri.authority &&
+// uri.path.length > 1 && uri.scheme === 'file')`; a verbatim path names its share or its drive,
+// and a device path, an empty host, a host that decodes to a separator, and a query or a
+// fragment before the path name no share.
+#[test]
+fn the_edges_of_a_unc_share() {
+    let windows = |uri| to_path_on(uri, Host::Windows);
+    let write = |path| from_path_on(Path::new(path), Host::Windows);
+    assert_eq!(write("\\\\FileSrv\\Mods\\x.qc"), "file://filesrv/Mods/x.qc");
+    assert_eq!(windows("file://server"), None);
+    assert_eq!(windows("file://server/"), None);
+    assert_eq!(windows("file://server/?x"), None);
+    assert_eq!(windows("file://a%2Fb/x.qc"), None);
+    assert_eq!(windows("file://a%5Cb/x.qc"), None);
+    assert_eq!(windows("file://srv#f/x.qc"), None);
+    assert_eq!(windows("file://%FF/x.qc"), None);
+    assert_eq!(
+        windows("file://srv/s/x.qc?q#f"),
+        Some(PathBuf::from("\\\\srv\\s\\x.qc"))
+    );
+    assert_eq!(
+        write("\\\\?\\UNC\\srv\\share\\x.qc"),
+        "file://srv/share/x.qc"
+    );
+    assert_eq!(write("\\\\?\\C:\\q\\a.qc"), "file:///C:/q/a.qc");
+    assert_eq!(write("\\\\.\\pipe\\x"), "file:////./pipe/x");
+    assert_eq!(write("\\\\"), "file:////");
+    assert_eq!(write("//server"), "file://server/");
 }
