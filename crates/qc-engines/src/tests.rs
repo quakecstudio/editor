@@ -48,8 +48,7 @@ fn files_of(parses: &[Parse]) -> Vec<(FileId, &Parse)> {
 /// `engine`.
 fn check_kind(engine: Engine, kind: ModuleKind, files: &[&str]) -> Vec<String> {
     let (parses, index) = module(Dialect::Fteqcc, files);
-    let declared = declared_builtins(&parses, Dialect::Fteqcc);
-    missing_builtins(engine, kind, &files_of(&parses), &index, &declared)
+    missing_builtins(engine, kind, &files_of(&parses), &index, Dialect::Fteqcc)
         .into_iter()
         .map(|d| d.diagnostic.message)
         .collect()
@@ -59,13 +58,12 @@ fn check_kind(engine: Engine, kind: ModuleKind, files: &[&str]) -> Vec<String> {
 /// `engine`.
 fn check_in(dialect: Dialect, engine: Engine, files: &[&str]) -> Vec<FileDiagnostic> {
     let (parses, index) = module(dialect, files);
-    let declared = declared_builtins(&parses, dialect);
     missing_builtins(
         engine,
         ModuleKind::Ssqc,
         &files_of(&parses),
         &index,
-        &declared,
+        dialect,
     )
 }
 
@@ -520,6 +518,22 @@ fn warnings_are_per_call_and_per_file() {
     assert_eq!(found.len(), 2);
     assert!(found.iter().all(|d| d.file == FileId::new(1)));
     assert!(found[0].diagnostic.span < found[1].diagnostic.span);
+}
+
+// spec ENGT-4.2: only the callee of a call warns, the reference looked up in its own file's
+// tree: a missing builtin assigned or named inside another call's arguments is no call, a call
+// of it inside another call's arguments is one, and a call in the second file is found there
+#[test]
+fn only_a_call_of_a_missing_builtin_warns_wherever_it_is() {
+    let decl = "float(float tabsize, float defaulttype) hash_createtab = #287;\n";
+    let assigned = "void() w = { local float() f; f = hash_createtab; };\n";
+    assert!(check(Engine::Vanilla, &[decl, assigned]).is_empty());
+    let nested = "void(float x) take = {};\nvoid() w = { take(hash_createtab(1, 2)); };\n";
+    let found = check(Engine::Vanilla, &[decl, nested]);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].file, FileId::new(1));
+    let both = "void() w = { hash_createtab(1, 2); hash_createtab(3, 4); };\n";
+    assert_eq!(check(Engine::Vanilla, &[decl, both]).len(), 2);
 }
 
 // spec ENGT-4.2: no W0311 when the engine has the number, for a call of a name that is not a

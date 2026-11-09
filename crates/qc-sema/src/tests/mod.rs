@@ -96,7 +96,7 @@ fn resolve(spec: &ModuleSpec<'_>) -> ModuleIndex {
             id
         })
         .collect();
-    db.module_index(&ids)
+    ModuleIndex::clone(&db.module_index(&ids))
 }
 
 /// Resolves a single-file module from `source` and returns its index.

@@ -143,7 +143,7 @@ impl ModuleState {
                 self.kind,
                 &files,
                 &analysis.index,
-                &builtins,
+                self.dialect,
             );
             ModuleData {
                 analysis,
