@@ -2294,7 +2294,7 @@ profile the preprocessor reads them as FTEQCC does.
   #elif" (`E0121`) alone: `if (*pr_file_p != ' ' && *pr_file_p != '\t')
   QCC_PR_ParseError(ERR_UNKNOWNPUCTUATION, "malformed #elif\n");` ends FTEQCC's reading before
   the test that follows. This profile reports it and reads no test and takes no side there, so
-  `#if 0`, `#elif` and `#endif` is that error once, as the pinned FTEQCC gives it (QCD-1.5).
+  `#if 0`, `#elif` and `#endif` is that error once, as the pinned FTEQCC gives it (QCD-1.6).
   Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_FalsePreProcessorIf`.
 - **FTEF-14.77** FTEQCC reads a macro's stored body anew at every use, as the chunk
@@ -2306,7 +2306,7 @@ profile the preprocessor reads them as FTEQCC does.
   second bad byte in the body is a second error. This profile places a chunk's lexical error,
   outside the text a macro used in the chunk took as its arguments (FTEF-14.22), at the byte it
   came from: the stored body's, the same place for every use, or the use's for an argument's
-  bytes, and reports it once there (QCD-1.5: a rule broken at one place is one report there),
+  bytes, and reports it once there (QCD-1.6: a rule broken at one place is one report there),
   however many uses read the body, however deep the use is nested in other macros' expansions,
   and however many times the expansion writes the argument. Two bad bytes in one body are two
   reports at the two bytes; a bad byte in a body and one in an argument of the same use are
@@ -2321,10 +2321,10 @@ profile the preprocessor reads them as FTEQCC does.
   `#define E(x) #5:x` used as `E(ex_a)` warns "'#5' is not a macro parameter in E", as the
   pinned FTEQCC does. FTEQCC gives it at each expansion, located by the use; this profile places
   it at the `#` in the stored body, the same place for every expansion, and gives it once there
-  (QCD-1.5), a deliberate divergence in the count: `#define E(x) #y #x` used twice warns "'#y'
+  (QCD-1.6), a deliberate divergence in the count: `#define E(x) #y #x` used twice warns "'#y'
   is not a macro parameter in E" once, where FTEQCC warns twice.
 - **FTEF-14.79** A diagnostic is given once at a place: a second one with the same code and the
-  same span is not given (QCD-1.5), whatever its text and wherever it is reported from, so a
+  same span is not given (QCD-1.6), whatever its text and wherever it is reported from, so a
   diagnostic this profile places in a macro's stored body, the same place for every use, is
   given once there however many uses read the body, as FTEF-14.77 gives a lexical error and
   FTEF-14.78 the `W0117`. A frame macro reference `$NAME` in the body that names no frame macro
@@ -2335,8 +2335,8 @@ profile the preprocessor reads them as FTEQCC does.
   when their texts differ and once when they are the same: the second `W0115` of an `#append`
   that defines the macro anew (FTEF-14.58), and a pragma's `W0113` for each further NAME
   (FTEF-12.11), so `#pragma flag enable acc caseinsens` gives "Cannot enable/disable
-  keyword/flag via a pragma" once and `#pragma flag enable nosuch acc` two warnings. How those
-  pairs meet QCD-1.5 is P3-40's decision.
+  keyword/flag via a pragma" once and `#pragma flag enable nosuch acc` two warnings. Those
+  pairs are QCD-1.6's exceptions (ADR-0022).
 
 ## FTEF-15 Declarations
 

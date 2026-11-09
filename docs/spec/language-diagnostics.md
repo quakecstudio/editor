@@ -36,13 +36,19 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   filled in as id does. The parser keeps going after an error with recovery of its own
   (LANG-2); the error limit and stop-at-first-file of QC-24 are id's behaviour, not
   requirements on this compiler.
-- **QCD-1.5** The lexer, the preprocessor and the parser report a diagnostic once: no two of the
+- **QCD-1.5** **Withdrawn** 2026-11-09 (P3-40, #763): it allowed only `W0227` two
+  diagnostics with one code and one span, but FTEQCC gives a directive's two different
+  warnings at one place (ADR-0022). Replaced by QCD-1.6.
+- **QCD-1.6** The lexer, the preprocessor and the parser report a diagnostic once: no two of the
   diagnostics they give for one input have the same code and the same span, under any profile.
   A rule broken at one place is one report there, as id's `qcc` and FTEQCC, which stop at their
-  first error, report it once (P2-144's double E0101 was a breach). The one exception is
-  FTEQCC's `W0227` (FTEF-21.6), a warning for each binary operator in the operand of a `!` or
-  `~`, given at the token after the operator's right operand: in `x = ~a - ~b - c;` both `-`
-  end at the `;`, and FTEQCC prints the warning twice.
+  first error, report it once (P2-144's double E0101 was a breach). The exceptions are FTEQCC's
+  own, decided in ADR-0022: `W0227` (FTEF-21.6), a warning for each binary operator in the
+  operand of a `!` or `~`, given at the token after the operator's right operand (in `x = ~a -
+  ~b - c;` both `-` end at the `;`, and FTEQCC prints the warning twice); and a directive's
+  further warning of one code at a span it has warned at in the same run, with another text:
+  the second `W0115` of an `#append` that defines the macro anew (FTEF-14.58) and a pragma's
+  `W0113` for each further NAME (FTEF-12.11). A repeat with the same text is still one report.
 
 ## QCD-2 Lexical errors
 

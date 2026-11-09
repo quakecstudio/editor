@@ -7,7 +7,7 @@
 //! The input is split at its first two NULs into a compiled file `a.qc`, a file it may
 //! `#include` (`b.qh`) and a second compiled file `c.qc`, so macros and frame macros carry
 //! from one file to the next. The check: no panic, every diagnostic is reported once
-//! (QCD-1.5), and every diagnostic and every token lies in a file that was read, inside its text, in a first pass and in the second pass
+//! (QCD-1.6), and every diagnostic and every token lies in a file that was read, inside its text, in a first pass and in the second pass
 //! `Preprocessor::restart` begins (FTE-22.3), which keeps the first pass's frame macros; and the
 //! `#if` evaluator gives an answer for the first line under both profiles.
 
@@ -16,7 +16,7 @@
 use std::path::Path;
 
 use libfuzzer_sys::fuzz_target;
-use qc_lexer::Dialect;
+use qc_lexer::{Code, Dialect};
 use qc_preproc::{FileOutput, MemoryLoader, Preprocessor, SourceMap, cond};
 
 fuzz_target!(|data: &[u8]| {
@@ -64,7 +64,9 @@ fn check_spans(sources: &SourceMap, out: &FileOutput) {
             sources.text(d.span).is_some(),
             "diagnostic outside its file: {d:?}"
         );
-        // QCD-1.5: no two diagnostics with one code and one span.
-        assert!(seen.insert((d.code, d.span)), "diagnostic reported twice: {d:?}");
+        // QCD-1.6: no two diagnostics with one code and one span, but for a directive's
+        // further `W0113` or `W0115` there with another text (ADR-0022).
+        let text = matches!(d.code, Code::W0113 | Code::W0115).then(|| d.message.clone());
+        assert!(seen.insert((d.code, d.span, text)), "diagnostic reported twice: {d:?}");
     }
 }

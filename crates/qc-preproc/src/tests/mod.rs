@@ -1100,7 +1100,7 @@ fn module_defines_hold_before_the_first_file() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
-    // spec QCD-1.5: no two preprocessor diagnostics of one input have the same code and span,
+    // spec QCD-1.6: no two preprocessor diagnostics of one input have the same code and span,
     // in either profile, over text dense in directives, macros and conditionals.
     #[test]
     fn a_preprocessor_diagnostic_is_reported_once(
