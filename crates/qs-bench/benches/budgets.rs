@@ -26,7 +26,7 @@ use quakec_studio::{App, bench};
 use serde_json::json;
 
 use criterion::measurement::WallTime;
-use criterion::{BenchmarkGroup, Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkGroup, Criterion, SamplingMode, criterion_group, criterion_main};
 use qc_codegen::compile_module;
 use qc_sema::{Db, FileId, ModuleInput};
 
@@ -105,14 +105,21 @@ fn open_project_and_type(group: &mut BenchmarkGroup<'_, WallTime>) {
 /// keystrokes never pauses long enough for the check after typing, which `check_after_typing`
 /// times on its own.
 ///
-/// Each sample reflects single keystrokes, not their average (`docs/perf-budgets.md`,
-/// "Percentiles and samples"): every keystroke of a sample is timed alone, and the sample's
-/// time per iteration is its slowest keystroke's, so the p99 is over the slowest single events.
+/// Each sample is one keystroke, not an average (`docs/perf-budgets.md`, "Percentiles and
+/// samples"): the benchmark takes [`KEYSTROKES`] samples in criterion's flat sampling mode over a
+/// measurement time far shorter than one keystroke, so criterion gives every sample one
+/// iteration (`iteration_counts`: `((time_per_sample / met).ceil() as u64).max(1)`), and the p99
+/// is over that many single keystrokes. Should criterion still ask for more than one, each is
+/// timed alone and the sample takes its slowest keystroke's time.
 fn keystroke(group: &mut BenchmarkGroup<'_, WallTime>) {
     let (dir, file) = project();
     let ctx = egui::Context::default();
     let mut app = opened(&ctx, &dir, &file);
     let mut typed = bench::TYPED.chars().cycle();
+    group
+        .sampling_mode(SamplingMode::Flat)
+        .sample_size(KEYSTROKES)
+        .measurement_time(Duration::from_millis(1));
     group.bench_function("keystroke", |bencher| {
         bencher.iter_custom(|iterations| {
             let mut slowest = Duration::ZERO;
@@ -125,7 +132,14 @@ fn keystroke(group: &mut BenchmarkGroup<'_, WallTime>) {
             slowest.saturating_mul(u32::try_from(iterations).unwrap_or(u32::MAX))
         });
     });
+    group
+        .sampling_mode(SamplingMode::Auto)
+        .sample_size(SAMPLES)
+        .measurement_time(MEASUREMENT);
 }
+
+/// The single keystrokes `keystroke` times: enough for a p99 over at least 100 (P3-36).
+const KEYSTROKES: usize = 200;
 
 /// The variable naming id 1.01's QuakeC directory, which `cargo xtask bench` sets from the
 /// asset cache.
@@ -357,7 +371,7 @@ fn recorded(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, values: &[f64]
             Duration::from_secs_f64(value * iterations)
         });
     });
-    group.sample_size(10);
+    group.sample_size(SAMPLES);
 }
 
 /// The frame time, server-frame time, QuakeC time per frame and map load of each route
@@ -440,12 +454,17 @@ fn check_after_typing(group: &mut BenchmarkGroup<'_, WallTime>) {
     });
 }
 
+/// The samples of each benchmark but those that set their own.
+const SAMPLES: usize = 10;
+/// The time criterion measures each benchmark for, but those that set their own.
+const MEASUREMENT: Duration = Duration::from_millis(500);
+
 fn budgets(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group(GROUP);
     group
-        .sample_size(10)
+        .sample_size(SAMPLES)
         .warm_up_time(Duration::from_millis(100))
-        .measurement_time(Duration::from_millis(500));
+        .measurement_time(MEASUREMENT);
     open_project_and_type(&mut group);
     keystroke(&mut group);
     check_after_typing(&mut group);
