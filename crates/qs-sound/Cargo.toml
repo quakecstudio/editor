@@ -12,6 +12,7 @@ publish.workspace = true
 qc-builtins = { workspace = true }
 qc-vm = { workspace = true }
 qs-wav = { workspace = true }
+symphonia = { workspace = true, features = ["ogg", "vorbis"] }
 
 [lints]
 workspace = true

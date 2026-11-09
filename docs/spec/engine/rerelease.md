@@ -140,14 +140,18 @@ them up in `localization/loc_english.txt`, read from the game directory or from
   the track number the server sends.
 - **RRE-3.3** A new track stops the one playing; `BGM_Stop` stops it; the volume is
   `bgmvolume`.
-- **RRE-3.4** `svc_cdtrack` (CLIENT-1.4) names a track number and a loop track; QuakeSpasm
+- **RRE-3.4** **Withdrawn** 2026-11-09: it said the preview host has no codec for the music
+  files; it decodes Ogg Vorbis now. Replaced by RRE-3.5.
+- **RRE-3.5** `svc_cdtrack` (CLIENT-1.4) names a track number and a loop track; QuakeSpasm
   plays `(byte)cl.cdtrack`, always looping (`BGM_PlayCDtrack ((byte)cl.cdtrack, true)`):
   first from the CD (`CDAudio_Play`), which in the preview host is the CD image of SND-6.4;
   else the file `music/track<NN>.<ext>` (`NN` the track as two decimal digits) from the
   game's search path, trying the extensions of the codecs it has and taking the file from the
   search path entry of highest priority; else it prints `Couldn't find a cdrip for track <n>`
-  and plays nothing. The preview host has no codec for the files yet: it plays the CD image's
-  track or nothing, while P3-34 is open.
+  and plays nothing. The preview host's one codec is Ogg Vorbis (`ogg`, QuakeSpasm's
+  `snd_vorbis.c`): the file streams its own rate and its one or two channels as 16-bit
+  samples and rewinds to its start to loop; a file that does not decode, or has more than two
+  channels, is skipped as a missing one.
 
 ### Constants
 

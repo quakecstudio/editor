@@ -11,6 +11,7 @@
 
 mod mixer;
 mod music;
+mod ogg;
 mod output;
 mod sfx;
 #[cfg(test)]
@@ -28,6 +29,7 @@ pub use music::{
     CueSheet, CueTrack, Music, MusicStream, RRE_MUSIC_DIR, RRE_MUSIC_EXTENSIONS, Read, SND_CD_RATE,
     SND_CD_SECTOR, Track, track_files,
 };
+pub use ogg::{OggError, OggStream};
 pub use output::{NullOutput, Output};
 pub use sfx::{
     Loaded, Reader, SND_MAX_NAME, SND_MAX_SFX, SfxId, SoundData, SoundError, SoundTable, Width,

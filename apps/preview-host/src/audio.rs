@@ -16,8 +16,12 @@ use qs_bsp::Bsp;
 use qs_client::{Event, SoundRef, SoundStart};
 use qs_sound::{
     CueSheet, CueTrack, Listener, ListenerLeaf, Mixer, MixerSpec, Music, MusicStream, NullOutput,
-    Output, Random, Read, SND_CD_RATE, SfxId, SoundTable, Start,
+    OggStream, Output, Random, Read, SND_CD_RATE, SfxId, SoundTable, Start, track_files,
 };
+
+/// The music files' extensions this host decodes, of QuakeSpasm's `RRE_MUSIC_EXTENSIONS`
+/// (RRE-3.5).
+const MUSIC_CODECS: [&str; 1] = ["ogg"];
 
 /// The most seconds of mixed sound waiting for the device; past it new frames are dropped,
 /// so a stall never builds up delay.
@@ -85,6 +89,8 @@ pub(crate) struct Audio {
     /// The CD music and where its tracks come from (SND-6).
     music: Music,
     cd: Option<CdImage>,
+    /// Reads `music/track<NN>.ogg` from the game's search path (RRE-3.5).
+    music_files: qs_sound::Reader,
     /// `bgmvolume` (CON-7.4).
     music_volume: f32,
 }
@@ -181,8 +187,13 @@ impl MusicStream for CdTrackStream {
 
 impl Audio {
     /// The sound of a map whose files `read` reads, on `output`, silent when it does not
-    /// open.
-    pub(crate) fn open(read: qs_sound::Reader, output: Device, cd: Option<CdImage>) -> Self {
+    /// open, with its music from the CD image `cd` or the files `music_files` reads.
+    pub(crate) fn open(
+        read: qs_sound::Reader,
+        output: Device,
+        cd: Option<CdImage>,
+        music_files: qs_sound::Reader,
+    ) -> Self {
         let opened = match output {
             Device::Default => device(),
             Device::None => Err("-nosound".to_owned()),
@@ -214,6 +225,7 @@ impl Audio {
             sink,
             music: Music::new(),
             cd,
+            music_files,
             music_volume: 1.0,
         }
     }
@@ -231,7 +243,7 @@ impl Audio {
                 }
                 Event::Sound(start) => self.start(start, rand),
                 Event::StopSound { entity, channel } => self.mixer.stop_sound(*entity, *channel),
-                // `BGM_PlayCDtrack ((byte)cl.cdtrack, true)` (RRE-3.4).
+                // `BGM_PlayCDtrack ((byte)cl.cdtrack, true)` (RRE-3.5).
                 Event::CdTrack { track, .. } => self.play_track(*track),
                 Event::LocalSound(index) => {
                     if let Some(name) = self
@@ -305,18 +317,39 @@ impl Audio {
         }
     }
 
-    /// `BGM_PlayCDtrack (track, true)` (RRE-3.4): the CD image's track, looping, else nothing,
-    /// the music before it stopped.
+    /// `BGM_PlayCDtrack (track, true)` (RRE-3.5): the CD image's track, looping, else the file
+    /// `music/track<NN>.ogg` from the search path, else nothing, the music before it stopped.
     fn play_track(&mut self, track: i32) {
         self.music.stop(&mut self.mixer);
         // `(byte)cl.cdtrack`.
         let number = track.to_le_bytes()[0];
-        let Some(stream) = self.cd.as_ref().and_then(|cd| cd.stream(number)) else {
-            tracing::info!(track = number, "Couldn't find a cdrip for track {number}");
+        if let Some(stream) = self.cd.as_ref().and_then(|cd| cd.stream(number)) {
+            tracing::info!(track = number, "music: the CD image's track");
+            self.music.play(&mut self.mixer, Box::new(stream), true);
             return;
-        };
-        tracing::info!(track = number, "music: the CD image's track");
-        self.music.play(&mut self.mixer, Box::new(stream), true);
+        }
+        match self.track_file(number) {
+            Some(stream) => self.music.play(&mut self.mixer, stream, true),
+            None => tracing::info!(track = number, "Couldn't find a cdrip for track {number}"),
+        }
+    }
+
+    /// The first of `music/track<NN>.<ext>`, for each extension this host decodes, that the
+    /// search path has and that decodes (RRE-3.5).
+    fn track_file(&mut self, number: u8) -> Option<Box<dyn MusicStream>> {
+        for name in track_files(number, &MUSIC_CODECS) {
+            let Some(bytes) = (self.music_files)(&name) else {
+                continue;
+            };
+            match OggStream::new(bytes) {
+                Ok(stream) => {
+                    tracing::info!(track = number, %name, "music: the track's file");
+                    return Some(Box::new(stream));
+                }
+                Err(error) => tracing::warn!(%name, %error, "music"),
+            }
+        }
+        None
     }
 
     /// The `bgmvolume` setting (SND-6.2, CON-7.4).

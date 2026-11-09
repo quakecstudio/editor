@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use qs_sound::{MusicStream, Output, Read};
 
-use super::{CdImage, Queue, fill, seconds_of_samples};
+use super::{Audio, CdImage, Device, Queue, fill, seconds_of_samples};
 
 fn queue(most: usize) -> Queue {
     Queue {
@@ -126,4 +126,24 @@ fn a_cd_image_that_does_not_open() {
         b"",
     );
     assert!(lost.open().stream(2).is_none());
+}
+
+/// The tone `qs-sound`'s Ogg tests decode, generated for them (ATTRIBUTION.md).
+const TONE: &[u8] = include_bytes!("../../../../crates/qs-sound/src/ogg/tone-stereo.ogg");
+
+// spec RRE-3.5: with no CD image the host plays `music/track<NN>.ogg` from the search path,
+// `NN` the track as two digits; no file, or one that does not decode, is no music
+#[test]
+fn a_track_with_no_cd_plays_its_ogg_file() {
+    let files: qs_sound::Reader = Box::new(|name: &str| match name {
+        "music/track02.ogg" => Some(TONE.to_vec()),
+        "music/track05.ogg" => Some(b"not ogg".to_vec()),
+        _ => None,
+    });
+    let mut audio = Audio::open(Box::new(|_: &str| None), Device::None, None, files);
+    let stream = audio.track_file(2).unwrap();
+    assert_eq!((stream.rate(), stream.channels()), (44100, 2));
+    assert!(audio.track_file(3).is_none(), "no file");
+    assert!(audio.track_file(5).is_none(), "a file that does not decode");
+    assert!(audio.track_file(12).is_none());
 }

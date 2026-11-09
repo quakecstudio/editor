@@ -308,7 +308,13 @@ pub(crate) fn load(
             })
             .and_then(|cue| CdImage::open(&cue)),
     };
-    let mut audio = Audio::open(Box::new(move |name: &str| sounds(name)), output, cd);
+    let music = reader()?;
+    let mut audio = Audio::open(
+        Box::new(move |name: &str| sounds(name)),
+        output,
+        cd,
+        Box::new(move |name: &str| music(name)),
+    );
     audio.handle(&events, &mut rand);
     let mut pics = Pics::new();
     pics.add_wad(&read("gfx.wad")?, &palette)

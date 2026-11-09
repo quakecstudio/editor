@@ -178,6 +178,10 @@ quakec-lsp = { path = "apps/lsp" }
 schemars = { version = "=1.2.2", default-features = false }
 serde = { version = "=1.0.229", default-features = false }
 serde_json = { version = "=1.0.151", default-features = false }
+# The rerelease's music, `music/track<NN>.ogg` (RRE-3.5): Ogg and Vorbis only, MPL-2.0.
+# Chosen over `lewton`, whose decoder the qs-ogg fuzz target made allocate 32 GB from a
+# crafted header.
+symphonia = { version = "=0.6.1", default-features = false }
 syn = { version = "=3.0.9", default-features = false }
 skrifa = { version = "=0.44.0", default-features = false }
 toml = { version = "=1.1.6", default-features = false }

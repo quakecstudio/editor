@@ -33,6 +33,7 @@ qs-mdl = { path = "../crates/qs-mdl" }
 qs-pak = { path = "../crates/qs-pak" }
 qs-settings = { path = "../crates/qs-settings" }
 qs-wad = { path = "../crates/qs-wad" }
+qs-sound = { path = "../crates/qs-sound" }
 qs-wav = { path = "../crates/qs-wav" }
 serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
 
@@ -109,6 +110,13 @@ bench = false
 [[bin]]
 name = "qs-mdl"
 path = "fuzz_targets/qs_mdl.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qs-ogg"
+path = "fuzz_targets/qs_ogg.rs"
 test = false
 doc = false
 bench = false
