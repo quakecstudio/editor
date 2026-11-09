@@ -2317,17 +2317,26 @@ profile the preprocessor reads them as FTEQCC does.
 - **FTEF-14.78** In a function-like macro's body a `#` before a token that names no parameter,
   read with `QCC_COM_Parse2`, is written as `#` and the token, and is FTEQCC's warning "'#TOKEN'
   is not a macro parameter in NAME" (`QCC_PR_ParseWarning(0, ...)`, the warning of code 0, with
-  no name, `W0117`), unless the body holds a directive (`if (!c->evil)`, FTEF-14.46). FTEQCC
-  gives it at each expansion; this profile places it at the `#` in the stored body, the same
-  place for every expansion, and gives it once there (QCD-1.5). So `#define E(x) #5:x` used as
-  `E(ex_a)` warns "'#5' is not a macro parameter in E", as the pinned FTEQCC does, and
-  `#define E(x) #y #x` used twice warns "'#y' is not a macro parameter in E" once.
-- **FTEF-14.79** Every diagnostic this profile places in a macro's stored body, the same place
-  for every use, is given once there however many uses read the body, as FTEF-14.77 gives a
-  lexical error and FTEF-14.78 the `W0117`: a frame macro reference `$NAME` in the body that
-  names no frame macro is one `E0106` "Unknown frame macro $NAME" at the body's `$NAME`
-  (FTEF-18.30), not one for each use. A repeat is the same code, span and message; two
-  diagnostics of one code at one place with different messages are both given (P3-40).
+  no name, `W0117`), unless the body holds a directive (`if (!c->evil)`, FTEF-14.46). So
+  `#define E(x) #5:x` used as `E(ex_a)` warns "'#5' is not a macro parameter in E", as the
+  pinned FTEQCC does. FTEQCC gives it at each expansion, located by the use; this profile places
+  it at the `#` in the stored body, the same place for every expansion, and gives it once there
+  (QCD-1.5), a deliberate divergence in the count: `#define E(x) #y #x` used twice warns "'#y'
+  is not a macro parameter in E" once, where FTEQCC warns twice.
+- **FTEF-14.79** A diagnostic is given once at a place: a second one with the same code and the
+  same span is not given (QCD-1.5), whatever its text and wherever it is reported from, so a
+  diagnostic this profile places in a macro's stored body, the same place for every use, is
+  given once there however many uses read the body, as FTEF-14.77 gives a lexical error and
+  FTEF-14.78 the `W0117`. A frame macro reference `$NAME` in the body that names no frame macro
+  is one `E0106` "Unknown frame macro $NAME" at the body's `$NAME` (FTEF-18.30), not one for
+  each use, and a body holding `#define N x` used as `M(1) M(2) M(3)` gives the first "Alternate
+  precompiler definition of N" at the body's `N` and not the two after it, whose texts differ.
+  The one exception is a directive's further warnings in one run, given as FTEQCC gives them
+  when their texts differ and once when they are the same: the second `W0115` of an `#append`
+  that defines the macro anew (FTEF-14.58), and a pragma's `W0113` for each further NAME
+  (FTEF-12.11), so `#pragma flag enable acc caseinsens` gives "Cannot enable/disable
+  keyword/flag via a pragma" once and `#pragma flag enable nosuch acc` two warnings. How those
+  pairs meet QCD-1.5 is P3-40's decision.
 
 ## FTEF-15 Declarations
 

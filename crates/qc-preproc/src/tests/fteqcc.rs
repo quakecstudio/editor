@@ -14,20 +14,12 @@ fn fte(text: &str) -> (String, Vec<Code>) {
     (tokens(&out), codes(&out))
 }
 
-// spec QCD-1.5: no two preprocessor diagnostics of one input share a code and a span, on the
-// `#define` path. The 107-byte crash input from the nightly Fuzz workflow (a macro whose body
-// holds the byte 0x94, used twice) is fed through the same entry points as the qc-preproc fuzz
-// target (preprocess a.qc then c.qc, restart, again).
-#[test]
-fn a_define_body_lexical_error_does_not_collide_across_uses() {
-    const DATA: &[u8] = &[
-        35, 100, 101, 102, 105, 110, 101, 9, 9, 110, 101, 9, 100, 101, 41, 105, 110, 101, 9, 9,
-        110, 101, 9, 9, 9, 9, 9, 9, 9, 9, 126, 126, 9, 9, 47, 148, 10, 9, 9, 9, 9, 9, 9, 9, 9, 9,
-        9, 9, 126, 126, 9, 9, 47, 148, 10, 9, 9, 9, 9, 9, 9, 9, 9, 126, 126, 9, 9, 9, 110, 101, 9,
-        9, 110, 101, 9, 9, 9, 9, 9, 9, 9, 9, 126, 126, 9, 9, 47, 148, 10, 9, 9, 9, 9, 9, 9, 9, 9,
-        9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
-    ];
-    let mut parts = DATA.splitn(3, |b| *b == 0);
+/// Runs `data` as the qc-preproc fuzz target does: split at its first two NULs into `a.qc`,
+/// `b.qh` and `c.qc`, then `a.qc` and `c.qc` preprocessed under the FTEQCC dialect, a restart
+/// and both again, each diagnostic checked to lie in a file that was read and no two to share
+/// a code and a span (QCD-1.5).
+fn fuzz_case(data: &[u8]) {
+    let mut parts = data.splitn(3, |b| *b == 0);
     let a = parts.next().unwrap_or_default();
     let b = parts.next().unwrap_or_default();
     let c = parts.next().unwrap_or_default();
@@ -36,7 +28,10 @@ fn a_define_body_lexical_error_does_not_collide_across_uses() {
     loader.insert("b.qh", b);
     loader.insert("c.qc", c);
     let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
-    let run_pass = |pp: &mut Preprocessor<MemoryLoader>| {
+    for pass in 0..2 {
+        if pass == 1 {
+            pp.restart();
+        }
         for path in ["a.qc", "c.qc"] {
             let out = pp.preprocess_file(Path::new(path)).unwrap();
             let mut seen = std::collections::HashSet::new();
@@ -51,10 +46,23 @@ fn a_define_body_lexical_error_does_not_collide_across_uses() {
                 );
             }
         }
-    };
-    run_pass(&mut pp);
-    pp.restart();
-    run_pass(&mut pp);
+    }
+}
+
+// spec QCD-1.5: no two preprocessor diagnostics of one input share a code and a span, on the
+// `#define` path. The 107-byte crash input from the nightly Fuzz workflow (a macro whose body
+// holds the byte 0x94, used twice) is fed through the same entry points as the qc-preproc fuzz
+// target (preprocess a.qc then c.qc, restart, again).
+#[test]
+fn a_define_body_lexical_error_does_not_collide_across_uses() {
+    const DATA: &[u8] = &[
+        35, 100, 101, 102, 105, 110, 101, 9, 9, 110, 101, 9, 100, 101, 41, 105, 110, 101, 9, 9,
+        110, 101, 9, 9, 9, 9, 9, 9, 9, 9, 126, 126, 9, 9, 47, 148, 10, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+        9, 9, 126, 126, 9, 9, 47, 148, 10, 9, 9, 9, 9, 9, 9, 9, 9, 126, 126, 9, 9, 9, 110, 101, 9,
+        9, 110, 101, 9, 9, 9, 9, 9, 9, 9, 9, 126, 126, 9, 9, 47, 148, 10, 9, 9, 9, 9, 9, 9, 9, 9,
+        9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+    ];
+    fuzz_case(DATA);
 }
 
 /// The `E0123` reports of `files` preprocessed in order under the FTEQCC dialect, as the span
@@ -1302,34 +1310,7 @@ fn fuzz_pack_crash_reports_each_diagnostic_once() {
         35, 112, 97, 99, 107, 56, 101, 97, 143, 40, 164, 48, 229, 10, 93, 229, 239, 11, 48, 0, 0,
         0, 0, 0, 10, 222, 10, 50, 11, 48, 0, 10,
     ];
-    let mut parts = data.splitn(3, |b| *b == 0);
-    let a = parts.next().unwrap_or_default();
-    let b = parts.next().unwrap_or_default();
-    let c = parts.next().unwrap_or_default();
-    let mut loader = MemoryLoader::new();
-    loader.insert("a.qc", a);
-    loader.insert("b.qh", b);
-    loader.insert("c.qc", c);
-    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
-    let run = |pp: &mut Preprocessor<MemoryLoader>| {
-        for path in ["a.qc", "c.qc"] {
-            let out = pp.preprocess_file(Path::new(path)).unwrap();
-            let mut seen = std::collections::HashSet::new();
-            for d in &out.diagnostics {
-                assert!(
-                    pp.sources().text(d.span).is_some(),
-                    "diagnostic outside its file: {d:?}"
-                );
-                assert!(
-                    seen.insert((d.code, d.span)),
-                    "diagnostic reported twice: {d:?}"
-                );
-            }
-        }
-    };
-    run(&mut pp);
-    pp.restart();
-    run(&mut pp);
+    fuzz_case(data);
 }
 
 // spec FTEF-14.79: an unknown frame macro in a stored macro body is reported once at the
@@ -1357,28 +1338,22 @@ fn an_appended_body_frame_macro_does_not_collide_across_uses() {
         50, 102, 0, 0, 0, 0, 0, 0, 0, 52, 255, 255, 255, 255, 255, 255, 255, 255, 254, 255, 255,
         255, 234, 92, 100, 9, 244, 39, 92, 9, 255, 77, 34, 59, 144, 9, 224, 9, 100, 28, 92,
     ];
-    let mut parts = DATA.splitn(3, |b| *b == 0);
-    let a = parts.next().unwrap_or_default();
-    let b = parts.next().unwrap_or_default();
-    let c = parts.next().unwrap_or_default();
-    let mut loader = MemoryLoader::new();
-    loader.insert("a.qc", a);
-    loader.insert("b.qh", b);
-    loader.insert("c.qc", c);
-    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
-    for pass in 0..2 {
-        if pass == 1 {
-            pp.restart();
-        }
-        for path in ["a.qc", "c.qc"] {
-            let out = pp.preprocess_file(Path::new(path)).unwrap();
-            let mut seen = std::collections::HashSet::new();
-            for d in &out.diagnostics {
-                assert!(
-                    seen.insert((d.code, d.span)),
-                    "diagnostic reported twice: {d:?}"
-                );
-            }
-        }
-    }
+    fuzz_case(DATA);
+}
+
+// spec FTEF-14.79: a body holding a directive, used three times, redefines the macro it names
+// at each use; the "Alternate precompiler definition" warnings, whose texts differ, are all at
+// the body's name, one place, so the first is the one report there.
+#[test]
+fn a_directive_in_a_body_warns_once_at_its_name() {
+    let text = "#define M(x) \\\n#define N x\nM(1)\nM(2)\nM(3)\n";
+    fuzz_case(text.as_bytes());
+    let (_, out) = one_fte(text);
+    let warned: Vec<&str> = out
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == Code::W0115)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(warned, ["Alternate precompiler definition of N (1 -> 2)"]);
 }
