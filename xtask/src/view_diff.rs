@@ -31,9 +31,9 @@ const ID1_MAPS: [&str; 38] = [
 
 /// The frames before the first shot: three seconds for the map to load and the client to
 /// settle, so its first sounds, heard before the player's view is the listener's, are over
-/// (VIEWDIFF-5.1).
+/// (VIEWDIFF-5.4).
 const SETTLE_FRAMES: u32 = 216;
-/// The frames after the shots, for the sound: three seconds (VIEWDIFF-5.1).
+/// The frames after the shots, for the sound: three seconds (VIEWDIFF-5.4).
 const SOUND_FRAMES: u32 = 216;
 /// The frames after each place: a quarter of a second, so the eye's step smoothing, 12 units
 /// behind at most and catching up at 80 a second, has settled (VIEWDIFF-2.4).
@@ -223,7 +223,7 @@ fn shot_tolerance(shot: &str, map: Tolerance) -> Tolerance {
 /// `scr_conspeed`'s 300 a second is 0.4 s, so half a second (CON-3.1).
 const CONSOLE_FRAMES: u32 = 36;
 /// The menu's shot's tolerances (VIEWDIFF-5.5): the host draws the menu in QuakeSpasm's look,
-/// the view behind it faded by black at 0.5 (REND-13.7), where id's software engine fades it
+/// the view behind it faded by black at 0.5 (REND-13.8), where id's software engine fades it
 /// darker; on LibreQuake's maps the shot measured differences of 20 to 28.5 and brightnesses of
 /// 1.18 to 1.56 on Linux and macOS.
 const MENU_TOLERANCE: Tolerance = Tolerance {
@@ -233,7 +233,7 @@ const MENU_TOLERANCE: Tolerance = Tolerance {
 };
 /// The console's shot's tolerances (VIEWDIFF-5.5): the host draws the console in QuakeSpasm's
 /// look, its background at `scr_conalpha` 0.5 and its text at the frame's size (CON-5,
-/// REND-13.7), where id's engine draws it opaque; differences of 7.8 to 19.3 and brightnesses of
+/// REND-13.8), where id's engine draws it opaque; differences of 7.8 to 19.3 and brightnesses of
 /// 0.75 to 1.05 were measured.
 const CONSOLE_TOLERANCE: Tolerance = Tolerance {
     frame: 22.0,
@@ -266,7 +266,7 @@ fn route(map: &str, (origin, yaw): ([f32; 3], f32), side: &str) -> String {
 }
 
 /// The origin and yaw of `map`'s first `info_player_start`, read through the game the engine
-/// words name (VIEWDIFF-5.1), and whether a monster stands in earshot of it (VIEWDIFF-5.3).
+/// words name (VIEWDIFF-5.4), and whether a monster stands in earshot of it (VIEWDIFF-5.3).
 fn player_start(engine: &[String], map: &str) -> Result<(([f32; 3], f32), bool), String> {
     let vfs = Vfs::new(StdFs, engine, ".").map_err(|e| format!("{e:?}"))?;
     let name = format!("maps/{map}.bsp");

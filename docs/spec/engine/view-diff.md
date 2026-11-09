@@ -65,7 +65,7 @@ within tolerances recorded per map; it is not an exact match.
   AddressSanitizer), undefined behaviour the shipped x86 builds, which drew spans in assembly,
   did not reach. `V_CalcRefdef` smooths the eye's height only in the frames it draws, at most 12
   units behind and catching up at 80 a second, so a route waits a quarter of a second after each
-  `place` before its `shot` (VIEWDIFF-5.1).
+  `place` before its `shot` (VIEWDIFF-5.4).
 - **VIEWDIFF-2.5** The oracle plays no demos at start: it sets `cls.demonum` to -1, so `quake.rc`'s
   `startdemos` plays none (`Host_Startdemos_f`: "`if (!sv.active && cls.demonum != -1 &&
   !cls.demoplayback)`"). A demo the
@@ -142,7 +142,7 @@ reads the table between the `view-diff` markers.
   frames for the sound. Each shot follows a `place`, after which alone the oracle draws
   (VIEWDIFF-2.4), and the place leaves the console up in the oracle.
 - **VIEWDIFF-5.5** The menu's and the console's shots are held to their own tolerances, not the
-  map's: the host draws them in QuakeSpasm's look (REND-13.7), the view behind the menu faded by
+  map's: the host draws them in QuakeSpasm's look (REND-13.8), the view behind the menu faded by
   black at 0.5 and the console's background at `scr_conalpha` 0.5 with its text at the frame's
   size (CON-5), where id's software engine fades the view darker and draws the console opaque.
   The menu's shot fits within a difference of 32 and a brightness within 0.6 of 1, the console's
