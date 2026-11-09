@@ -31,7 +31,7 @@ use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
 use crate::keys::{
-    STARTUP, config_path, configuration, keynum, modifier_keys, mouse_key, mouse_motion,
+    STARTUP, config_path, configuration, focus, keynum, modifier_keys, mouse_key, mouse_motion,
     runs_binding, wheel_key,
 };
 use crate::load::{Acted, Describer, Loaded, Rand, act, saves};
@@ -541,6 +541,8 @@ impl Viewer {
         }
         let frametime = self.behind.min(LONGEST);
         self.behind = 0.0;
+        // PHYS-11.9: the menu or the console up pauses the game.
+        self.game.world_mut().set_focus(focus(self.dest));
         if self.game.frame(frametime) {
             frametime
         } else {

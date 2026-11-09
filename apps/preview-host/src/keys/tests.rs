@@ -12,8 +12,8 @@ use qs_sim::keys::{
 };
 
 use super::{
-    STARTUP, console_key, keynum, menu_bound, modifier_keys, mouse_key, mouse_motion, runs_binding,
-    wheel_key,
+    STARTUP, console_key, focus, keynum, menu_bound, modifier_keys, mouse_key, mouse_motion,
+    runs_binding, wheel_key,
 };
 
 // spec INPUT-3.1: letters in lower case, digits and punctuation as typed, the named keys by
@@ -122,4 +122,13 @@ fn the_configuration_is_written_as_host_writeconfiguration_writes_it() {
     );
     assert_eq!(super::configuration("", "", false), "unbindall\n");
     assert_eq!(super::CONFIG_FILE, "preview-host.cfg");
+}
+
+// spec PHYS-11.9: the host's key destination is the focus the world's frame reads: the game
+// runs only with the keys going to it
+#[test]
+fn only_the_game_destination_runs_the_game() {
+    assert_eq!(focus(KeyDest::Game), qs_sim::KeyFocus::Game);
+    assert_eq!(focus(KeyDest::Console), qs_sim::KeyFocus::Elsewhere);
+    assert_eq!(focus(KeyDest::Menu), qs_sim::KeyFocus::Elsewhere);
 }
