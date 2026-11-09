@@ -234,7 +234,7 @@ fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<Str
     )?;
     steps.push("reload".to_owned());
 
-    let monster = spawn_monster(client)?;
+    let monster = a_monster(client)?;
 
     client.pause().map_err(|e| format!("pause: {e}"))?;
     let before = time(
@@ -314,23 +314,24 @@ fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<Str
     Ok(steps)
 }
 
-/// A soldier spawned where the player stands, whose health is edited while paused (P3-14).
-fn spawn_monster(client: &mut Client) -> Result<u32, String> {
-    let player = client
-        .inspect(InspectWhat::Edict(1))
+/// The map's lowest-numbered live monster, whose health is edited while paused (P3-14). A
+/// monster is not spawned for it: its spawn function precaches its model and sounds, which
+/// the engine allows only while the map loads (`PF_Precache_*`).
+fn a_monster(client: &mut Client) -> Result<u32, String> {
+    let entities = client
+        .inspect(InspectWhat::Entities)
         .map_err(|e| e.to_string())?;
-    let at = field(&player, "origin")
-        .and_then(|origin| origin.get("value").cloned())
-        .and_then(|value| serde_json::from_value::<[f64; 3]>(value).ok())
-        .ok_or("the player has an origin")?;
-    let origin = format!("{} {} {}", at[0], at[1], at[2]);
-    client
-        .spawn("monster_army", &[("origin", origin.as_str())])
-        .map_err(|e| format!("entity/spawn monster_army: {e}"))?
-        .get("edict")
-        .and_then(Value::as_u64)
+    entities
+        .get("entities")
+        .and_then(Value::as_array)
+        .and_then(|list| {
+            list.iter()
+                .filter(|e| text(e, "classname").starts_with("monster_"))
+                .filter_map(|e| e.get("edict").and_then(Value::as_u64))
+                .min()
+        })
         .and_then(|n| u32::try_from(n).ok())
-        .ok_or_else(|| "entity/spawn gives the monster's edict".to_owned())
+        .ok_or_else(|| "the map has a live monster".to_owned())
 }
 
 /// BRIDGE-4.4, P3-14: paused, a monster's health set waits for the resume, then is the
@@ -367,10 +368,6 @@ fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
         field(&edited, "health") == Some(health),
         "resumed, the monster's health is set",
     )?;
-    // The soldier would fight the player through the steps after this one.
-    client
-        .remove(monster)
-        .map_err(|e| format!("entity/remove: {e}"))?;
     Ok(())
 }
 
