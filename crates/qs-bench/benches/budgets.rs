@@ -101,31 +101,36 @@ fn open_project_and_type(group: &mut BenchmarkGroup<'_, WallTime>) {
 }
 
 /// One keystroke in the code editor to the end of the next frame (P2-18), the project's text
-/// highlighted, headless: each iteration types the next character of `bench::TYPED`. A run of
+/// highlighted, headless: each keystroke types the next character of `bench::TYPED`. A run of
 /// keystrokes never pauses long enough for the check after typing, which `check_after_typing`
 /// times on its own.
 ///
-/// Each sample reflects single keystrokes, not their average (`docs/perf-budgets.md`,
-/// "Percentiles and samples"): every keystroke of a sample is timed alone, and the sample's
-/// time per iteration is its slowest keystroke's, so the p99 is over the slowest single events.
+/// Each sample is one keystroke, not an average (`docs/perf-budgets.md`, "Percentiles and
+/// samples"): after [`WARM_KEYSTROKES`] untimed, [`KEYSTROKES`] keystrokes are each timed alone,
+/// and [`recorded`] makes each of those times one sample, so the p99 is over that many single
+/// keystrokes, whatever iteration counts criterion asks for.
 fn keystroke(group: &mut BenchmarkGroup<'_, WallTime>) {
     let (dir, file) = project();
     let ctx = egui::Context::default();
     let mut app = opened(&ctx, &dir, &file);
     let mut typed = bench::TYPED.chars().cycle();
-    group.bench_function("keystroke", |bencher| {
-        bencher.iter_custom(|iterations| {
-            let mut slowest = Duration::ZERO;
-            for _ in 0..iterations {
-                let c = typed.next().expect("a cycle never ends");
-                let start = std::time::Instant::now();
-                frame(&ctx, &mut app, vec![egui::Event::Text(c.to_string())]);
-                slowest = slowest.max(start.elapsed());
-            }
-            slowest.saturating_mul(u32::try_from(iterations).unwrap_or(u32::MAX))
-        });
-    });
+    let mut type_next = || {
+        let c = typed.next().expect("a cycle never ends");
+        let start = std::time::Instant::now();
+        frame(&ctx, &mut app, vec![egui::Event::Text(c.to_string())]);
+        start.elapsed().as_secs_f64()
+    };
+    for _ in 0..WARM_KEYSTROKES {
+        type_next();
+    }
+    let times: Vec<f64> = (0..KEYSTROKES).map(|_| type_next()).collect();
+    recorded(group, "keystroke", &times);
 }
+
+/// The keystrokes `keystroke` types before it times any, as criterion's warm-up would.
+const WARM_KEYSTROKES: usize = 20;
+/// The single keystrokes `keystroke` times: enough for a p99 over at least 100 (P3-36).
+const KEYSTROKES: usize = 200;
 
 /// The variable naming id 1.01's QuakeC directory, which `cargo xtask bench` sets from the
 /// asset cache.
@@ -337,8 +342,8 @@ struct Timerefresh {
     frame: Vec<f64>,
 }
 
-/// `values`, measured by the preview host, as the samples of benchmark `name`: one sample a
-/// value, each iteration of it the value, so the row's statistic is the values' own (P3-29).
+/// `values`, measured beforehand (by the preview host, or `keystroke`'s timed keystrokes), as the
+/// samples of benchmark `name`: one sample a value, each iteration of it the value, so the row's statistic is the values' own (P3-29).
 fn recorded(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, values: &[f64]) {
     assert!(!values.is_empty(), "the preview host measured no {name}");
     group.sample_size(values.len().max(10));
@@ -357,7 +362,7 @@ fn recorded(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, values: &[f64]
             Duration::from_secs_f64(value * iterations)
         });
     });
-    group.sample_size(10);
+    group.sample_size(SAMPLES);
 }
 
 /// The frame time, server-frame time, QuakeC time per frame and map load of each route
@@ -440,12 +445,17 @@ fn check_after_typing(group: &mut BenchmarkGroup<'_, WallTime>) {
     });
 }
 
+/// The samples of each benchmark but those that set their own.
+const SAMPLES: usize = 10;
+/// The time criterion measures each benchmark for, but those that set their own.
+const MEASUREMENT: Duration = Duration::from_millis(500);
+
 fn budgets(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group(GROUP);
     group
-        .sample_size(10)
+        .sample_size(SAMPLES)
         .warm_up_time(Duration::from_millis(100))
-        .measurement_time(Duration::from_millis(500));
+        .measurement_time(MEASUREMENT);
     open_project_and_type(&mut group);
     keystroke(&mut group);
     check_after_typing(&mut group);
