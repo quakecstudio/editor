@@ -12,7 +12,8 @@ pub(crate) struct HostSettings {
     /// The view's settings: `viewsize` (VIEW-3.6), and `gamma` for the blend table in
     /// GLQuake's look (VIEW-4.7, REND-13.9).
     pub(crate) view: ViewSettings,
-    /// The `gamma` the whole frame is raised to in QuakeSpasm's look (REND-13.9).
+    /// The `gamma` setting for the frame: `Play` raises the whole frame by it in QuakeSpasm's
+    /// look and leaves the frame alone in GLQuake's (`Look::frame_gamma`, REND-13.9).
     pub(crate) frame_gamma: f32,
     /// The mixer's master volume, `volume` (SND-5.4).
     pub(crate) volume: f32,
@@ -21,9 +22,14 @@ pub(crate) struct HostSettings {
 }
 
 impl HostSettings {
-    /// The settings `setting` names, a missing one 0, over the client's current `view` in the
-    /// look `look`.
-    pub(crate) fn read(setting: impl Fn(&str) -> f32, view: ViewSettings, look: Look) -> Self {
+    /// The settings `setting` gives by name, one it lacks 0 (CON-7.4), over the client's
+    /// current `view` in the look `look`.
+    pub(crate) fn read(
+        setting: impl Fn(&str) -> Option<f32>,
+        view: ViewSettings,
+        look: Look,
+    ) -> Self {
+        let setting = |name: &str| setting(name).unwrap_or(0.0);
         let gamma = setting("gamma");
         Self {
             view: ViewSettings {

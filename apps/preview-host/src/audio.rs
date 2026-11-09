@@ -85,7 +85,7 @@ pub(crate) struct Audio {
     /// The CD music and where its tracks come from (SND-6).
     music: Music,
     cd: Option<CdImage>,
-    /// `bgmvolume` (CON-7.2).
+    /// `bgmvolume` (CON-7.4).
     music_volume: f32,
 }
 
@@ -319,12 +319,12 @@ impl Audio {
         self.music.play(&mut self.mixer, Box::new(stream), true);
     }
 
-    /// The `bgmvolume` setting (SND-6.2, CON-7.2).
+    /// The `bgmvolume` setting (SND-6.2, CON-7.4).
     pub(crate) const fn set_music_volume(&mut self, volume: f32) {
         self.music_volume = volume;
     }
 
-    /// The `volume` setting, the master volume (SND-5.4, CON-7.2).
+    /// The `volume` setting, the master volume (SND-5.4, CON-7.4).
     pub(crate) const fn set_volume(&mut self, volume: f32) {
         let mut settings = *self.mixer.settings();
         settings.volume = volume;

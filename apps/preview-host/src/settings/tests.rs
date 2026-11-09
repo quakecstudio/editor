@@ -9,8 +9,8 @@ use qs_render::Look;
 
 use super::HostSettings;
 
-/// The settings id's defaults give the host's frame (`qs_sim::settings`), with `changed` over
-/// them, read in `look`.
+/// id's defaults for the four settings the host reads (CON-7.1: `viewsize` 100, `gamma` 1,
+/// `volume` 0.7, `bgmvolume` 1), with `changed` over them, read in `look`.
 fn read(changed: &[(&str, f32)], look: Look) -> HostSettings {
     let mut values: HashMap<&str, f32> = [
         ("viewsize", 100.0),
@@ -22,7 +22,7 @@ fn read(changed: &[(&str, f32)], look: Look) -> HostSettings {
     .collect();
     values.extend(changed.iter().copied());
     HostSettings::read(
-        |name| values.get(name).copied().unwrap_or(0.0),
+        |name| values.get(name).copied(),
         ViewSettings::default(),
         look,
     )
@@ -82,18 +82,27 @@ fn each_option_reaches_what_the_host_does() {
     );
 }
 
-// spec CON-7.4: in GLQuake's look `gamma` builds the blend table (VIEW-4.7), and the view keeps
-// the client's other settings; a setting the world lacks reads as 0
+// spec CON-7.4: in GLQuake's look `gamma` builds the blend table (VIEW-4.7); the view keeps the
+// client's other settings; a setting the world lacks reads as 0
 #[test]
 fn gamma_goes_to_the_blend_table_in_glquakes_look() {
     let brighter = read(&[("gamma", 0.6)], Look::GlQuake);
     assert_eq!((brighter.frame_gamma, brighter.view.gamma), (0.6, 0.6));
-    let client = ViewSettings::default();
-    assert_eq!(brighter.view.offsets, client.offsets);
-    assert_eq!(brighter.view.idlescale, client.idlescale);
-    let none = HostSettings::read(|_| 0.0, client, Look::QuakeSpasm);
+    let client = ViewSettings {
+        idlescale: 2.5,
+        offsets: [1.0, 2.0, 3.0],
+        cshiftpercent: 50.0,
+        ..ViewSettings::default()
+    };
+    let kept = HostSettings::read(|_| Some(0.8), client, Look::QuakeSpasm).view;
     assert_eq!(
-        (none.view.viewsize, none.volume, none.music),
+        (kept.idlescale, kept.offsets, kept.cshiftpercent),
+        (2.5, [1.0, 2.0, 3.0], 50.0)
+    );
+    let none = HostSettings::read(|_| None, client, Look::GlQuake);
+    assert_eq!(
+        (none.view.viewsize, none.view.gamma, none.frame_gamma),
         (0.0, 0.0, 0.0)
     );
+    assert_eq!((none.volume, none.music), (0.0, 0.0));
 }

@@ -898,7 +898,7 @@ impl Viewer {
     fn apply_settings(&mut self) {
         let world = self.game.world();
         let read = HostSettings::read(
-            |name| world.setting(name).unwrap_or(0.0),
+            |name| world.setting(name),
             *self.client.view_settings(),
             self.mesh.look,
         );
