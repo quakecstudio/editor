@@ -210,9 +210,10 @@ issues:
   deliverable:
   - Window placement beside the IDE that follows focus and resizes with the layout on macOS, Windows, X11 and Wayland (with documented Wayland limits)
   acceptance:
-  - Play opens the game next to the editor on each OS
+  - '`DockFrame::placement` and `window/place` (BRIDGE-4.10) place the host beside the IDE as the tests on main from #742 pin, with the Wayland limits in apps/preview-host/README.md'
+  - 'The recorded check that Play opens the game next to the editor on macOS, Windows, X11 and Wayland is part of the MVP demo (P4-24), moved there by Justin on 2026-11-09'
   verify:
-  - Recorded manual test per OS
+  - cargo test -p qs-workbench -p preview-host
 - key: P3-12
   title: Play loop toolbar
   labels:
