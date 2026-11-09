@@ -12,6 +12,7 @@ mod headless;
 mod keys;
 mod load;
 mod screenshot;
+mod settings;
 mod values;
 mod view_script;
 mod window;

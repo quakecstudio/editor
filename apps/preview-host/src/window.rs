@@ -36,6 +36,7 @@ use crate::keys::{
 };
 use crate::load::{Acted, Describer, Loaded, Rand, act, saves};
 use crate::screenshot::Drawer;
+use crate::settings::HostSettings;
 
 /// Map units a second walking, and running with Shift.
 const SPEEDS: [f32; 2] = [320.0, 960.0];
@@ -892,22 +893,19 @@ impl Viewer {
         }
     }
 
-    /// The client's settings as the console and the menus left them (CON-7.2): the view size
-    /// and gamma for the view, the volume for the mixer.
+    /// The client's settings as the console and the menus left them (CON-7.4): the view size
+    /// and gamma for the view and the frame, the volumes for the mixer and the music.
     fn apply_settings(&mut self) {
         let world = self.game.world();
-        let setting = |name: &str| world.setting(name).unwrap_or(0.0);
-        let mut view = *self.client.view_settings();
-        view.viewsize = setting("viewsize");
-        // REND-13.9: the frame in QuakeSpasm's look, the blend table in GLQuake's.
-        let gamma = setting("gamma");
-        view.gamma = self.mesh.look.blend_gamma(gamma);
-        self.play.gamma = gamma;
-        let volume = setting("volume");
-        let music = setting("bgmvolume");
-        self.client.set_view_settings(view);
-        self.audio.set_volume(volume);
-        self.audio.set_music_volume(music);
+        let read = HostSettings::read(
+            |name| world.setting(name),
+            *self.client.view_settings(),
+            self.mesh.look,
+        );
+        self.client.set_view_settings(read.view);
+        self.play.gamma = read.frame_gamma;
+        self.audio.set_volume(read.volume);
+        self.audio.set_music_volume(read.music);
     }
 
     /// The client's commands the console met, run in order (CON-6.1).

@@ -55,7 +55,7 @@ fn keys_hold_and_release_buttons() {
 // spec INPUT-2.2: a press held is 0.5 its first frame and 1 after; pressed and released in one
 // frame 0.25; released 0
 // spec INPUT-2.4: the speeds, strafe, klook, the speed key and the mouse
-// spec CON-7.3: the move's speeds, the run factor and the mouse's turn come from the settings
+// spec CON-7.4: the move's speeds, the run factor and the mouse's turn come from the settings
 #[test]
 fn the_buttons_make_the_move() {
     let settings = defaults();
@@ -114,6 +114,45 @@ fn the_buttons_make_the_move() {
     let (cmd, _) = mouse.frame(&lookstrafe, 0.0, &mut view, [10.0, 0.0]);
     assert_eq!(cmd.side, 0.8 * 30.0);
     assert_eq!(cmd.angles, view);
+}
+
+// spec CON-7.4: the options menu's Always Run, Mouse Speed and Invert Mouse change the move:
+// `cl_forwardspeed` and `cl_backspeed` 400 run both ways, `sensitivity` scales the mouse's turn
+// and move, and a negative `m_pitch` turns mouse look's pitch the other way
+#[test]
+fn the_options_change_the_move() {
+    let run = MoveSettings {
+        forwardspeed: 400.0,
+        backspeed: 400.0,
+        ..defaults()
+    };
+    let mut angles = [0.0; 3];
+    let mut input = Input::new();
+    input.press(Button::Back, Some(115));
+    input.frame(&run, 0.1, &mut angles, [0.0; 2]);
+    let (cmd, _) = input.frame(&run, 0.1, &mut angles, [0.0; 2]);
+    assert_eq!(cmd.forward, -400.0);
+    let (walk, _) = input.frame(&defaults(), 0.1, &mut angles, [0.0; 2]);
+    assert_eq!(walk.forward, -200.0);
+
+    let fast = MoveSettings {
+        sensitivity: 6.0,
+        ..defaults()
+    };
+    let mut view = [0.0; 3];
+    let (cmd, _) = Input::new().frame(&fast, 0.0, &mut view, [10.0, 5.0]);
+    assert!((view[1] + 1.32).abs() < 1e-4, "{view:?}");
+    assert_eq!(cmd.forward, -30.0);
+
+    let inverted = MoveSettings {
+        m_pitch: -0.022,
+        ..defaults()
+    };
+    let mut mouse = Input::new();
+    mouse.press(Button::MLook, None);
+    let mut view = [0.0; 3];
+    mouse.frame(&inverted, 0.0, &mut view, [0.0, 100.0]);
+    assert!((view[0] + 6.6).abs() < 1e-4, "{view:?}");
 }
 
 /// The yaw `a` as `anglemod` keeps it.
