@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use eframe::egui::{self, RichText, Ui};
+use qs_workbench::entities::Entities;
 use qs_workbench::{PlayState, Preview};
 
 use crate::strings::Text;
@@ -34,6 +35,15 @@ pub(crate) struct Outliner {
     filter: String,
 }
 
+impl Outliner {
+    /// The outliner with `filter` typed in it.
+    pub(crate) fn with_filter(filter: &str) -> Self {
+        Self {
+            filter: filter.to_owned(),
+        }
+    }
+}
+
 /// The Properties panel's own state: the text of each field being edited.
 #[derive(Debug, Default)]
 pub(crate) struct Properties {
@@ -46,10 +56,9 @@ pub(crate) struct Properties {
 pub(crate) fn outliner(
     ui: &mut Ui,
     theme: &Theme,
-    preview: &Preview,
+    entities: &Entities,
     outliner: &mut Outliner,
 ) -> Option<EntityAction> {
-    let entities = preview.entities();
     let muted = theme.color(Token::TextMuted);
     ui.label(
         RichText::new(format_live(entities.len()))

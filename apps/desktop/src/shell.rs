@@ -873,7 +873,7 @@ impl Shell {
         let scope = &mut self.symbol_scope;
         let workbench = &self.session.context().workbench;
         let preview = &self.session.context().preview;
-        let outliner = &mut self.outliner;
+        let tree = &mut self.outliner;
         let properties = &mut self.properties;
         let debug_input = &mut self.debug_input;
         let recent_projects = self.recent.0.projects();
@@ -937,7 +937,7 @@ impl Shell {
                             section(ui, theme, Text::Entities, Text::NotPlaying);
                         } else {
                             heading(ui, theme, Text::Entities);
-                            entity_action = entities::outliner(ui, theme, preview, outliner);
+                            entity_action = entities::outliner(ui, theme, preview.entities(), tree);
                         }
                     }
                     Panel::Right => {

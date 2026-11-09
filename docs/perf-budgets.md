@@ -18,6 +18,7 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 | `open_project_and_type` | PRIN-5 | 1 s | p95 | [#714](https://github.com/quakecstudio/editor/issues/714) P2-166 | active |
 | `keystroke` | PRIN-5 | 8.33 ms | p99 | [#714](https://github.com/quakecstudio/editor/issues/714) P2-166 | active |
 | `check_after_typing` | PRIN-5 | 100 ms | p95 | [#714](https://github.com/quakecstudio/editor/issues/714) P2-166 | active |
+| `entities_outliner` | UI-3 | 8.33 ms | p99 | [#101](https://github.com/quakecstudio/editor/issues/101) P3-13 | active |
 | `id1_recompile` | PRIN-5 | 200 ms | median | [#67](https://github.com/quakecstudio/editor/issues/67) P2-11 | active |
 | `save_to_game` | ENG-13 | 1 s | p95 | [#100](https://github.com/quakecstudio/editor/issues/100) P3-12 | active |
 | `frame_e1m1` | ENG-17 | 383 us | p99 | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
@@ -43,6 +44,10 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
   pause in typing, not per keystroke, and holds the whole project's check, 85.63 ms on ref-mac
   in a window (decided by Justin on 2026-11-04 for P2-166). Moving the check off the frame
   would make it one frame's budget.
+- **`entities_outliner`:** one frame of the Entities outliner over 2,000 live edicts (P3-13,
+  "Stays responsive with 2,000 live edicts"), grouped by classname and filtered, a different
+  filter each frame, laid out and painted headless. At most one frame at 120 Hz, 8.33 ms, at
+  the 99th percentile, as `keystroke`: the outliner is drawn every frame while the game runs.
 - **`id1_recompile`:** edit one function in id1-sized QuakeC and rebuild `progs.dat`
   incrementally. Median under 200 ms.
 - **`save_to_game`:** save a QuakeC file in the editor until the change is visible in a
