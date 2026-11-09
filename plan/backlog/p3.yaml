@@ -538,6 +538,28 @@ issues:
   - The ADR is Accepted, and the follow-up implementing it is filed in plan/
   verify:
   - ADR link
+- key: P3-41
+  title: The preview host pauses a single player game while the menu or the console is up
+  labels:
+  - L4-bridges
+  - area:preview
+  - type:bug
+  size: S
+  reqs:
+  - ENG-15
+  summary: |
+    Found by the self-review of #772. id's engine pauses a single player game while the keys go to the console or a menu: `Host_ServerFrame` runs `SV_Physics` only `if (!sv.paused && (svs.maxclients > 1 || key_dest == key_game) )`, under the comment "always pause in single player if in console or menus", and `SV_RunClients` gates `SV_ClientThink` the same way (id-Software/Quake@bf4ac424, WinQuake/host.c and sv_user.c). The preview host runs the server's frame whatever its key destination, so with the menu or the console up its game goes on while id's stands, and qs-sim's frame-by-frame differential and the view differential's menu and console shots compare two clocks that have parted.
+  environment: |
+    main after #771; qs-sim World::frame, apps/preview-host headless.rs and window.rs
+  depends: []
+  deliverable:
+  - 'crates/qs-sim: a statement PHYS-11.9 in docs/spec/engine/physics.md and the world reading where the client''s keys go, a frame with them elsewhere than the game reading the move but running neither the think nor the physics, as `pause` does (PHYS-11.8)'
+  - 'apps/preview-host: the window and the headless view scripts give the world the key destination before each frame'
+  acceptance:
+  - 'A qs-sim test pins PHYS-11.9: with the keys elsewhere, time and entities stand and the move is still read; a preview-host test that a view script''s menu stops the game''s time'
+  - 'A Differential run on the PR passes the view differential with the menu and console shots, linked in the PR'
+  verify:
+  - cargo test -p qs-sim -p preview-host
 - key: P3-18
   title: Phase 3 gate review
   labels:
@@ -559,6 +581,7 @@ issues:
   - P3-38
   - P3-39
   - P3-40
+  - P3-41
   - P3-22
   - P3-23
   - P3-24
