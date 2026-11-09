@@ -26,6 +26,7 @@ enum qs_sound::mixer::Ambient
 enum qs_sound::mixer::ListenerLeaf
 enum qs_sound::mixer::LoopPaint
 enum qs_sound::music::Read
+enum qs_sound::ogg::OggError
 enum qs_sound::sfx::Loaded
 enum qs_sound::sfx::SoundError
 enum qs_sound::sfx::Width
@@ -104,6 +105,7 @@ fn qs_sound::music::MusicStream::rate
 fn qs_sound::music::MusicStream::read
 fn qs_sound::music::MusicStream::rewind
 fn qs_sound::music::track_files
+fn qs_sound::ogg::OggStream::new
 fn qs_sound::output::NullOutput::frames
 fn qs_sound::output::Output::write
 fn qs_sound::sfx::SfxId::index
@@ -126,6 +128,10 @@ fn qs_sound::sfx::SoundTable::speed
 impl qs_sound::mixer::Listener: Default
 impl qs_sound::mixer::MixerSpec: Default
 impl qs_sound::mixer::Settings: Default
+impl qs_sound::ogg::OggError: From<SymphoniaError>
+impl qs_sound::ogg::OggError: fmt::Display
+impl qs_sound::ogg::OggError: std::error::Error
+impl qs_sound::ogg::OggStream: MusicStream
 impl qs_sound::output::NullOutput: Output
 impl qs_sound::sfx::SoundError: fmt::Display
 impl qs_sound::sfx::SoundError: std::error::Error
@@ -140,6 +146,7 @@ struct qs_sound::music::CueSheet
 struct qs_sound::music::CueTrack
 struct qs_sound::music::Music
 struct qs_sound::music::Track
+struct qs_sound::ogg::OggStream
 struct qs_sound::output::NullOutput
 struct qs_sound::sfx::SfxId
 struct qs_sound::sfx::SoundData
@@ -161,6 +168,8 @@ use qs_sound::MixerSpec = mixer::MixerSpec
 use qs_sound::Music = music::Music
 use qs_sound::MusicStream = music::MusicStream
 use qs_sound::NullOutput = output::NullOutput
+use qs_sound::OggError = ogg::OggError
+use qs_sound::OggStream = ogg::OggStream
 use qs_sound::Output = output::Output
 use qs_sound::RRE_MUSIC_DIR = music::RRE_MUSIC_DIR
 use qs_sound::RRE_MUSIC_EXTENSIONS = music::RRE_MUSIC_EXTENSIONS
@@ -209,6 +218,9 @@ variant qs_sound::mixer::LoopPaint::Id
 variant qs_sound::music::Read::End
 variant qs_sound::music::Read::Failed
 variant qs_sound::music::Read::Samples
+variant qs_sound::ogg::OggError::Channels
+variant qs_sound::ogg::OggError::Decode
+variant qs_sound::ogg::OggError::NoAudio
 variant qs_sound::sfx::Loaded::Data
 variant qs_sound::sfx::Loaded::Missing
 variant qs_sound::sfx::Loaded::Refused

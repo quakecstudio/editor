@@ -35,6 +35,7 @@ absolute-paths-allowed-crates = [
     "serde",
     "serde_json",
     "skrifa",
+    "symphonia",
     "syn",
     "toml",
     "toml_edit",

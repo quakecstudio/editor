@@ -39,3 +39,6 @@ Format: one row per file, the path in backticks relative to the repository root.
 | `apps/desktop/snapshots/shell-editor-only.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/shell-left-hidden.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
 | `apps/desktop/snapshots/shell-resized.png` | QuakeC Studio contributors | Rendered by the app's snapshot harness (`apps/desktop/src/snapshots.rs`) | GPL-3.0-or-later |
+| `crates/qs-sound/src/ogg/tone-mono.ogg` | QuakeC Studio contributors | A 440 Hz sine, 0.25 s at 22050 Hz mono, generated with `ffmpeg -f lavfi -i sine=frequency=440:sample_rate=22050:duration=0.25 -ac 1 -c:a libvorbis -q:a 0` | GPL-3.0-or-later |
+| `crates/qs-sound/src/ogg/tone-stereo.ogg` | QuakeC Studio contributors | A 660 Hz sine, 0.25 s at 44100 Hz stereo, generated with `ffmpeg -f lavfi -i sine=frequency=660:sample_rate=44100:duration=0.25 -ac 2 -c:a libvorbis -q:a 0` | GPL-3.0-or-later |
+| `crates/qs-sound/src/ogg/tone-3ch.ogg` | QuakeC Studio contributors | A 330 Hz sine, 0.1 s at 22050 Hz in three channels, generated with `ffmpeg -f lavfi -i sine=frequency=330:sample_rate=22050:duration=0.1 -ac 3 -c:a libvorbis -q:a 0` | GPL-3.0-or-later |
