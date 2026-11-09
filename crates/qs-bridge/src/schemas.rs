@@ -73,6 +73,10 @@ pub(crate) const SCHEMAS: &[(&str, &str)] = &[
         include_str!("../../../docs/spec/bridge-schema/event.edict.changed.json"),
     ),
     (
+        "event.edict.picked",
+        include_str!("../../../docs/spec/bridge-schema/event.edict.picked.json"),
+    ),
+    (
         "event.edict.removed",
         include_str!("../../../docs/spec/bridge-schema/event.edict.removed.json"),
     ),

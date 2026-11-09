@@ -502,7 +502,11 @@ impl Shell {
     /// Draws the window for one frame.
     pub fn ui(&mut self, ui: &mut Ui) {
         if self.session.context().preview.state() != PlayState::Stopped {
-            let _: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
+            let polled: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
+            // BRIDGE-3.5: a click in the paused game picked an edict; open its spawn function.
+            if let Some(classname) = polled.and_then(|status| status.picked) {
+                self.entity_action(EntityAction::Open(classname));
+            }
         }
         self.follow_stop();
         self.note_project();

@@ -191,6 +191,9 @@ pub struct Preview {
     status: Option<String>,
     /// The game's edicts and the selected one.
     entities: Entities,
+    /// The classname of the edict a click in the game's window picked, for the shell to open
+    /// its spawn function (P3-15).
+    picked: Option<String>,
     /// The edits made while paused, which the host applies on resume (BRIDGE-4.4): each
     /// edict, field and the value as typed.
     pending: Vec<(u32, String, String)>,
@@ -221,6 +224,7 @@ impl Preview {
             console: VecDeque::new(),
             status: None,
             entities: Entities::new(),
+            picked: None,
             pending: Vec::new(),
             debugger: Debugger::new(),
             dock: (None, None),
@@ -677,6 +681,8 @@ impl Preview {
     /// Reads the host's events: its state changes and console lines; the host closing the
     /// bridge stops the preview.
     pub fn poll(&mut self) {
+        // A pick is reported by the poll that read it, and by no later one.
+        self.picked = None;
         let Some(client) = self.client() else {
             return;
         };
@@ -712,6 +718,24 @@ impl Preview {
                 let message = params.get("message").and_then(Value::as_str).unwrap_or("");
                 self.debugger.failed(message);
                 self.push_line(message, "error");
+            }
+            // BRIDGE-3.5: a click in the paused game's window picked an edict; it is selected,
+            // and its spawn function is the shell's to open.
+            "edict/picked" => {
+                let edict = params
+                    .get("edict")
+                    .and_then(Value::as_u64)
+                    .and_then(|n| u32::try_from(n).ok());
+                if let Some(edict) = edict {
+                    self.picked = self
+                        .entities
+                        .classname(edict)
+                        .filter(|classname| !classname.is_empty())
+                        .map(str::to_owned);
+                    if let Err(error) = self.select(edict) {
+                        tracing::debug!(%error, "the picked edict was not read");
+                    }
+                }
             }
             _ => {
                 if self.entities.take_event(method, params)
@@ -864,6 +888,10 @@ pub struct PreviewStatus {
     pub state: String,
     /// The last thing the loop did, such as `Reloaded 0.4 s after save`.
     pub status: Option<String>,
+    /// The classname of the edict a click in the paused game's window picked, read by this
+    /// poll, whose spawn function the shell opens (BRIDGE-3.5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub picked: Option<String>,
 }
 
 impl PreviewStatus {
@@ -876,6 +904,7 @@ impl PreviewStatus {
         Self {
             state: state.to_owned(),
             status: preview.status.clone(),
+            picked: preview.picked.clone(),
         }
     }
 }

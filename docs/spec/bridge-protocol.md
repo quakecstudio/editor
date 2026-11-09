@@ -106,6 +106,7 @@ An event is a notification from the host. Each carries `time`, the server's cloc
   | `edict/spawned` | an edict is allocated (`ED_Alloc`) | its number and classname |
   | `edict/changed` | an edict's fields were written during a server frame | its number and each changed field with its new value, once per frame (BRIDGE-3.2) |
   | `edict/removed` | an edict is freed (`ED_Free`) | its number |
+  | `edict/picked` | a click in the paused game's window hits an edict (BRIDGE-3.5) | its number |
   | `qc/error` | the VM stops with a run error (`PR_RunError`) | the message, where it stopped and the stack |
   | `breakpoint/hit` | execution reaches a breakpoint | the breakpoint's id, where, and `self` |
   | `console/line` | the host prints a line | the text and its level |
@@ -121,6 +122,11 @@ An event is a notification from the host. Each carries `time`, the server's cloc
   keeps the host paused and sends `progs/loaded` then `state/changed` with reason `reload`.
 - **BRIDGE-3.4** A location names the function and, when the progs has a `.lno` (LNO-1),
   the file and line and the statement index; without one it names the function alone.
+- **BRIDGE-3.5** While the game is paused, a primary click in its window traces from the eye
+  through the clicked point as `pick` does (BRIDGE-4.9) and, when the trace hits an edict,
+  sends `edict/picked` with it; the click neither captures the mouse nor runs a frame. A
+  click that hits no edict sends nothing. A running game's click captures the mouse as
+  before.
 
 ## BRIDGE-4 Commands
 

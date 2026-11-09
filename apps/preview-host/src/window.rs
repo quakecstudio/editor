@@ -289,7 +289,20 @@ impl eframe::App for Viewer {
         }
         self.type_keys(ui);
         self.bind_keys(ui);
-        self.hold_pointer(ui, response.clicked() && self.dest == KeyDest::Game);
+        let clicked = response.clicked() && self.dest == KeyDest::Game;
+        // BRIDGE-3.5: a click in the paused game picks the edict under it for the IDE.
+        let picked = clicked && self.game.paused();
+        if picked
+            && let Some(at) = response.interact_pointer_pos()
+            && rect.width() > 0.0
+            && rect.height() > 0.0
+        {
+            self.game.clicked(
+                (at.x - rect.left()) / rect.width(),
+                (at.y - rect.top()) / rect.height(),
+            );
+        }
+        self.hold_pointer(ui, clicked && !picked);
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
         if self.fly {

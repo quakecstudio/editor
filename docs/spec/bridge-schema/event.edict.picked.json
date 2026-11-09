@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/event.edict.picked.json",
+  "title": "edict.picked notification params (BRIDGE-3)",
+  "type": "object",
+  "properties": {
+    "edict": {
+      "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/edict"
+    },
+    "time": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "edict",
+    "time"
+  ]
+}
