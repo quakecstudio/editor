@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use qc_engines::{BuiltinRef, Engine};
 use qc_project::{Dialect, Loader, ModuleKind, Project, ProjectError, Target, normalize};
@@ -103,8 +104,8 @@ pub(crate) enum Origin {
 /// What the features read of one module, derived once per edit.
 #[derive(Debug)]
 pub(crate) struct ModuleData {
-    /// The module read as the compiler reads it.
-    pub(crate) analysis: ModuleAnalysis,
+    /// The module read as the compiler reads it, shared with the database's memo.
+    pub(crate) analysis: Rc<ModuleAnalysis>,
     /// Each file's tree as written, `parses[i]` being `FileId::new(i)`'s.
     pub(crate) parses: Vec<Parse>,
     /// The builtin each global name is declared as (ENGT-4.12, ENGT-4.17).

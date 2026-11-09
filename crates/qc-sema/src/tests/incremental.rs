@@ -143,3 +143,34 @@ fn setting_identical_text_still_advances_but_recomputes_once() {
     let after = db.counts();
     assert_eq!(reruns(before, after), (1, 1, 1));
 }
+
+// P3-35: a memo hit shares the analysis and the index with the memo rather than copying them,
+// so asking again after no edit costs no copy of a large module; an edit computes a new one.
+#[test]
+fn a_memo_hit_shares_the_analysis() {
+    let (mut db, files) = seeded();
+    let first = db.module_index(&files);
+    assert!(std::rc::Rc::ptr_eq(&first, &db.module_index(&files)));
+
+    let mut db = Db::new();
+    let defs = FileId::new(0);
+    let behaviour = FileId::new(1);
+    db.set_file(defs, "/m/defs.qc".into(), b"float shared;".to_vec());
+    db.set_file(
+        behaviour,
+        "/m/w.qc".into(),
+        b"void() w = { shared = 1; };".to_vec(),
+    );
+    let input = crate::ModuleInput {
+        compiled: vec![defs, behaviour],
+        ..crate::ModuleInput::default()
+    };
+    let analysed = db.analyze_module(&input);
+    assert!(std::rc::Rc::ptr_eq(&analysed, &db.analyze_module(&input)));
+    db.set_file(
+        behaviour,
+        "/m/w.qc".into(),
+        b"void() w = { shared = 2; };".to_vec(),
+    );
+    assert!(!std::rc::Rc::ptr_eq(&analysed, &db.analyze_module(&input)));
+}

@@ -9,7 +9,7 @@
 //! FTEQCC dialect, by the engine name of `#0:NAME` (ENGT-4.17), `#"NAME"` or `:NAME`
 //! (ENGT-4.14), read as FTEQCC reads it (ENGT-4.15, ENGT-4.16).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use qc_diag::{Code, Span};
 use qc_lexer::Dialect;
@@ -47,6 +47,9 @@ impl BuiltinRef {
 /// `index` is the module resolved from them ([`qc_sema::resolve_module`]). Returns one
 /// warning per call of a builtin the engine's table for `kind` lacks, in file and then source
 /// order; none when the engine has no table for `kind` ([`Engine::has_table`]).
+///
+/// Only the references to a builtin the engine lacks are looked up in their file's tree, so a
+/// module that declares none costs one pass over its declarations, not over every call.
 #[must_use]
 pub fn missing_builtins(
     engine: Engine,
@@ -59,23 +62,31 @@ pub fn missing_builtins(
         return Vec::new();
     }
     let keys = declared_builtins(files.iter().map(|&(_, parse)| parse), dialect);
-    let callees = callee_names(files);
+    let missing: HashMap<&str, &BuiltinRef> = keys
+        .iter()
+        .filter(|(_, key)| key.lookup(engine, kind).is_none())
+        .map(|(name, key)| (name.as_str(), key))
+        .collect();
+    if missing.is_empty() {
+        return Vec::new();
+    }
+    let parses: HashMap<FileId, &Parse> = files.iter().copied().collect();
     let mut out = Vec::new();
     for reference in index.refs() {
         let location = reference.location;
-        if !callees.contains(&(location.file, location.span)) {
-            continue;
-        }
         let Some(def) = index.def(reference.def) else {
             continue;
         };
         if def.kind != DefKind::Function {
             continue;
         }
-        let Some(key) = keys.get(def.name.as_str()) else {
+        let Some(&key) = missing.get(def.name.as_str()) else {
             continue;
         };
-        if key.lookup(engine, kind).is_some() {
+        let called = parses
+            .get(&location.file)
+            .is_some_and(|parse| names_a_callee(parse, location.span));
+        if !called {
             continue;
         }
         out.push(FileDiagnostic::new(
@@ -170,23 +181,33 @@ pub(crate) fn builtin_number(text: &str, dialect: Dialect) -> Option<u32> {
     u32::try_from(binum).ok().filter(|&number| number >= 1)
 }
 
-/// The file and span of every name that is the callee of a call (ENGT-4.2).
-fn callee_names(files: &[(FileId, &Parse)]) -> HashSet<(FileId, Span)> {
-    let mut callees = HashSet::new();
-    for &(file, parse) in files {
-        let Some(tree) = parse.tree() else {
-            continue;
-        };
-        for node in tree.syntax().descendants() {
-            let Some(call) = ast::CallExpr::cast(node) else {
-                continue;
-            };
-            if let Some(ast::Expr::Name(name)) = call.callee()
-                && let Some(token) = name.name()
-            {
-                callees.insert((file, token.span()));
+/// Whether the token at `span` in `parse` is the name a call expression calls (ENGT-4.2), as in
+/// `f(x)`: the token found by descending to the elements whose span holds it, then the nearest
+/// call above it, whose callee must be that name.
+fn names_a_callee(parse: &Parse, span: Span) -> bool {
+    let Some(tree) = parse.tree() else {
+        return false;
+    };
+    let mut node = tree.syntax().clone();
+    loop {
+        let holding = node
+            .children_with_tokens()
+            .find(|child| child.span().start <= span.start && span.end <= child.span().end);
+        match holding {
+            Some(qc_syntax::SyntaxElement::Node(child)) => node = child,
+            Some(qc_syntax::SyntaxElement::Token(token)) => {
+                if token.span() != span {
+                    return false;
+                }
+                let call = std::iter::once(token.parent())
+                    .chain(token.parent().ancestors())
+                    .find_map(ast::CallExpr::cast);
+                return call.is_some_and(|call| {
+                    matches!(call.callee(), Some(ast::Expr::Name(name))
+                        if name.name().is_some_and(|t| t.span() == span))
+                });
             }
+            None => return false,
         }
     }
-    callees
 }

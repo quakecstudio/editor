@@ -24,6 +24,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use qc_lexer::LineIndex;
 use qc_progs::Progs;
@@ -152,7 +153,7 @@ fn analyze(
     module: &Module,
     dialect: qc_syntax::Dialect,
     autoproto: bool,
-) -> Result<(Db, ModuleAnalysis), String> {
+) -> Result<(Db, Rc<ModuleAnalysis>), String> {
     let mut db = Db::new();
     db.set_dialect(dialect);
     db.set_autoproto(autoproto);

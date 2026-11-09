@@ -46,7 +46,7 @@ fn fte_module(files: &[&str], autoproto: bool) -> ModuleIndex {
             id
         })
         .collect();
-    db.module_index(&ids)
+    ModuleIndex::clone(&db.module_index(&ids))
 }
 
 // spec FTE-6.1: both sides of a compound assignment are value uses, so an unknown name in

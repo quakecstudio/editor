@@ -44,7 +44,7 @@ fn analyse(source: &str, args: &[&str]) -> (Db, Vec<(Code, String)>, crate::Modu
         .diagnostics()
         .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
         .collect();
-    (db, diagnostics, analysis.index)
+    (db, diagnostics, analysis.index.clone())
 }
 
 fn codes(source: &str, args: &[&str]) -> Vec<Code> {

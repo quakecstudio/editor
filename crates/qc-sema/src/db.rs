@@ -31,6 +31,7 @@
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use qc_diag::{Code, Diagnostic};
 use qc_syntax::Parse;
@@ -163,7 +164,7 @@ pub struct Db {
     /// Memoized per-file lowerings.
     lowerings: HashMap<FileId, Memo<FileDecls>>,
     /// The memoized module index over an ordered list of files.
-    module: Option<Memo<(Vec<FileId>, ModuleIndex)>>,
+    module: Option<Memo<(Vec<FileId>, Rc<ModuleIndex>)>>,
     /// Each file's path, for the preprocessor (QC-9.2).
     paths: HashMap<FileId, PathBuf>,
     /// The parse and lowering of each compiled file's last expansion, by the pass it is of:
@@ -172,7 +173,7 @@ pub struct Db {
     /// Where each span of each compiled file's last expansion came from (QC-9.7).
     origins: HashMap<FileId, OriginMap>,
     /// The memoized analysis of a module read through the preprocessor.
-    analysis: Option<Memo<(ModuleInput, ModuleAnalysis)>>,
+    analysis: Option<Memo<(ModuleInput, Rc<ModuleAnalysis>)>>,
     /// Query-run counters.
     counts: Cell<QueryCounts>,
 }
@@ -333,7 +334,7 @@ impl Db {
     /// Recomputes only when the file list changes or one of its files does. The per-file
     /// `Db::lower` results it reads are themselves cached, so an edit to one file
     /// re-lowers only that file and then re-resolves the module from the cached rest.
-    pub fn module_index(&mut self, files: &[FileId]) -> ModuleIndex {
+    pub fn module_index(&mut self, files: &[FileId]) -> Rc<ModuleIndex> {
         let max_revision = files
             .iter()
             .map(|&f| self.file_revision(f))
@@ -343,7 +344,7 @@ impl Db {
             && memo.value.0 == files
             && memo.computed_at >= max_revision
         {
-            return memo.value.1.clone();
+            return Rc::clone(&memo.value.1);
         }
         let lowered: Vec<FileDecls> = files.iter().map(|&f| self.lower(f)).collect();
         self.bump(Query::ModuleIndex);
@@ -354,9 +355,9 @@ impl Db {
             qcfuncs_off: false,
             target: None,
         };
-        let index = resolve_module(&lowered, options);
+        let index = Rc::new(resolve_module(&lowered, options));
         self.module = Some(Memo {
-            value: (files.to_vec(), index.clone()),
+            value: (files.to_vec(), Rc::clone(&index)),
             computed_at: max_revision,
         });
         index
@@ -389,8 +390,10 @@ impl Db {
     ///
     /// Recomputes when any file with a path changes. Preprocessing then runs again, but a
     /// file whose expansion is the same text as before is not parsed or lowered again: an
-    /// edit re-parses only the files whose expansion it changed.
-    pub fn analyze_module(&mut self, input: &ModuleInput) -> ModuleAnalysis {
+    /// edit re-parses only the files whose expansion it changed. The analysis is shared with
+    /// the memo, not copied: a module's index is large, and an editor asks for it at every
+    /// pause in typing.
+    pub fn analyze_module(&mut self, input: &ModuleInput) -> Rc<ModuleAnalysis> {
         let max_revision = self
             .paths
             .keys()
@@ -401,7 +404,7 @@ impl Db {
             && memo.value.0 == *input
             && memo.computed_at >= max_revision
         {
-            return memo.value.1.clone();
+            return Rc::clone(&memo.value.1);
         }
         // FTEF-19.27: the prelude's files are the source form's `progs.src`, parsed as a
         // module's source; a file that is one no longer, or newly, is parsed again.
@@ -530,14 +533,14 @@ impl Db {
             qcfuncs_off: !command_line_flags.is_on(qc_preproc::FteFlag::Qcfuncs),
             target: Some(preprocessed.target),
         };
-        let analysis = ModuleAnalysis {
+        let analysis = Rc::new(ModuleAnalysis {
             index: resolve_mapped(&decls, &sources, options),
             syntax,
             options,
-        };
+        });
         self.remember_origins(input, preprocessed.files);
         self.analysis = Some(Memo {
-            value: (input.clone(), analysis.clone()),
+            value: (input.clone(), Rc::clone(&analysis)),
             computed_at: max_revision,
         });
         analysis
