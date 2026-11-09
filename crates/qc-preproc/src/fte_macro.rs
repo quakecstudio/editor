@@ -922,7 +922,7 @@ struct Writer<'a> {
     limit: usize,
     /// The use, where text that stands nowhere else stands.
     at: FileSpan,
-    /// Each word after a `#` that names no parameter, and where it is (FTEF-14.61).
+    /// Each word after a `#` that names no parameter, and where it is (FTEF-14.78).
     strays: std::cell::RefCell<Vec<(Vec<u8>, FileSpan)>>,
 }
 
@@ -1289,7 +1289,7 @@ impl<L: Loader> Preprocessor<L> {
                     strays: std::cell::RefCell::default(),
                 };
                 let written = writer.write().map(Rc::new);
-                // FTEF-14.61: `if (!c->evil) QCC_PR_ParseWarning(0, "'#%s' is not a macro
+                // FTEF-14.78: `if (!c->evil) QCC_PR_ParseWarning(0, "'#%s' is not a macro
                 // parameter in %s", qcc_token, c->name);`
                 if !mac.evil {
                     for (token, at) in writer.strays.take() {

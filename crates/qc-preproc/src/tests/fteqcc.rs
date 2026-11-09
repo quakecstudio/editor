@@ -1331,3 +1331,54 @@ fn fuzz_pack_crash_reports_each_diagnostic_once() {
     pp.restart();
     run(&mut pp);
 }
+
+// spec FTEF-14.79: an unknown frame macro in a stored macro body is reported once at the
+// body's `$name`, however many times the macro is used. Two uses of `M` read the same body
+// bytes.
+#[test]
+fn an_unknown_frame_macro_in_a_body_is_reported_once() {
+    let (_, codes) = fte("#define M x = $q;\nM M");
+    assert_eq!(codes, [Code::E0106]);
+}
+
+// spec QCD-1.5: the 177-byte crash input from the nightly Fuzz workflow (an `#append` body
+// holding `$-`, used twice from `c.qc`) gives no two diagnostics with one code and one span,
+// fed through the qc-preproc fuzz target's entry points.
+#[test]
+fn an_appended_body_frame_macro_does_not_collide_across_uses() {
+    const DATA: &[u8] = &[
+        35, 97, 112, 112, 101, 110, 100, 117, 254, 1, 50, 102, 255, 234, 9, 100, 93, 39, 244, 41,
+        36, 45, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 177, 0, 0, 0,
+        0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 92, 9, 255, 77,
+        90, 59, 100, 9, 0, 92, 109, 224, 36, 6, 14, 110, 47, 100, 112, 35, 255, 10, 255, 254, 1,
+        50, 102, 0, 0, 0, 0, 0, 0, 0, 52, 255, 255, 255, 255, 255, 255, 255, 255, 254, 255, 255,
+        255, 234, 92, 100, 9, 244, 39, 92, 9, 255, 77, 34, 59, 144, 9, 224, 9, 100, 28, 92,
+    ];
+    let mut parts = DATA.splitn(3, |b| *b == 0);
+    let a = parts.next().unwrap_or_default();
+    let b = parts.next().unwrap_or_default();
+    let c = parts.next().unwrap_or_default();
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", a);
+    loader.insert("b.qh", b);
+    loader.insert("c.qc", c);
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    for pass in 0..2 {
+        if pass == 1 {
+            pp.restart();
+        }
+        for path in ["a.qc", "c.qc"] {
+            let out = pp.preprocess_file(Path::new(path)).unwrap();
+            let mut seen = std::collections::HashSet::new();
+            for d in &out.diagnostics {
+                assert!(
+                    seen.insert((d.code, d.span)),
+                    "diagnostic reported twice: {d:?}"
+                );
+            }
+        }
+    }
+}

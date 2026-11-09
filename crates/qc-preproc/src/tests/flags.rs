@@ -342,7 +342,9 @@ fn other_flags_change_no_token() {
     assert!(codes(&out).is_empty());
     let (_, out) = one_fte(&format!("#pragma flag enable acc caseinsens\n{text}"));
     assert_eq!(tokens(&out), r#"x = 1.5 "a|b" 97 ;"#);
-    assert_eq!(codes(&out), [Code::W0113, Code::W0113]);
+    // QCD-1.5: the two flags' warning has one text and one place, the pragma's, so it is one
+    // report.
+    assert_eq!(codes(&out), [Code::W0113]);
 }
 
 // spec FTEF-14.73: under `-Fcaseinsens` the macro table is searched in any case, by a use, by

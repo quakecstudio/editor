@@ -52,7 +52,7 @@ use fte_directive::{Bytes, FteState, Position, Resume, TextStart, first_nul};
 use fte_macro::{ChunkReader, Text, ends_word};
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
@@ -287,7 +287,7 @@ struct Macro {
     file: FileId,
     name_span: Span,
     /// Under FTEQCC, `cnst->evil`: the body holds a directive (FTEF-14.46), so FTEQCC gives no
-    /// "is not a macro parameter" warning for it (FTEF-14.61).
+    /// "is not a macro parameter" warning for it (FTEF-14.78).
     evil: bool,
     /// The text a module's define gives, whose tokens are at no file's bytes, so each token is
     /// spelled from it (PRJ-5.4); `None` for a macro a file defines.
@@ -897,6 +897,9 @@ struct Run {
     /// Under FTEQCC, its warning settings now, which every warning reported goes through
     /// (FTEF-14.63); `None` under the vanilla dialect.
     warnings: Option<WarningSettings>,
+    /// The code, span and message of every diagnostic in `out`, so that a rule broken at one
+    /// place is reported there once (QCD-1.5, FTEF-14.79).
+    reported: HashSet<(Code, FileSpan, String)>,
     out: FileOutput,
 }
 
@@ -1036,9 +1039,16 @@ impl Run {
         let Some(code) = settings.map_or(Some(code), |s| s.reported_code(code)) else {
             return;
         };
+        // QCD-1.5, FTEF-14.79: a diagnostic already given with this code and message at this
+        // span adds nothing, as when a stored macro body holding an unknown `$name` is used
+        // twice.
+        let message = message.into();
+        if !self.reported.insert((code, span, message.clone())) {
+            return;
+        }
         self.out.diagnostics.push(Diagnostic {
             code,
-            message: message.into(),
+            message,
             span,
         });
     }

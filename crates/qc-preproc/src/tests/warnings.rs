@@ -268,8 +268,8 @@ fn a_pragma_past_fteqcc_s_buffer_is_an_error() {
     assert_eq!(codes(&out), [Code::E0121]);
 }
 
-// spec FTEF-14.61: a `#` in a body before a token that names no parameter warns at each
-// expansion, unless the body holds a directive
+// spec FTEF-14.78: a `#` in a body before a token that names no parameter warns once at the
+// body's `#`, however many expansions, unless the body holds a directive
 #[test]
 fn a_hash_before_no_parameter_warns() {
     assert_eq!(
@@ -278,10 +278,7 @@ fn a_hash_before_no_parameter_warns() {
     );
     assert_eq!(
         warned("#define E(x) #y #x\nE(a)\nE(b)\n"),
-        [
-            (Code::W0117, "'#y' is not a macro parameter in E".to_owned()),
-            (Code::W0117, "'#y' is not a macro parameter in E".to_owned())
-        ]
+        one(Code::W0117, "'#y' is not a macro parameter in E")
     );
     assert!(warned("#define E(x) #x\nE(a)\n").is_empty());
     // An object-like macro writes its body as stored, and so reads no `#`.

@@ -291,7 +291,7 @@ fn body_tokens_are_parse2_s() {
         out.tokens.get(1).map(|t| t.kind.clone()),
         Some(TokenKind::Name("a".to_owned()))
     );
-    // `a"b`, the string's token, names no parameter (FTEF-14.61).
+    // `a"b`, the string's token, names no parameter (FTEF-14.78).
     assert_eq!(codes(&out), vec![Code::W0117, Code::E0101]);
     assert_eq!(fte("#define P(a) a##\"5\"x:ex_a\nP(#)\n").0, "#5:ex_a");
     let long = "n".repeat(1100);
