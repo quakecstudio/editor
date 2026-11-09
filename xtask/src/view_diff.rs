@@ -31,9 +31,9 @@ const ID1_MAPS: [&str; 38] = [
 
 /// The frames before the first shot: three seconds for the map to load and the client to
 /// settle, so its first sounds, heard before the player's view is the listener's, are over
-/// (VIEWDIFF-5.1).
+/// (VIEWDIFF-5.4).
 const SETTLE_FRAMES: u32 = 216;
-/// The frames after the shots, for the sound: three seconds (VIEWDIFF-5.1).
+/// The frames after the shots, for the sound: three seconds (VIEWDIFF-5.4).
 const SOUND_FRAMES: u32 = 216;
 /// The frames after each place: a quarter of a second, so the eye's step smoothing, 12 units
 /// behind at most and catching up at 80 a second, has settled (VIEWDIFF-2.4).
@@ -142,7 +142,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             let frames = compare_frames(&read("id")?, &read("qs")?);
             let (verdict, text) = match frames {
                 Ok(frame) => {
-                    let fits = frame.fits(tolerance);
+                    let fits = frame.fits(shot_tolerance(shot, tolerance));
                     (
                         fits,
                         format!(
@@ -205,24 +205,68 @@ fn absolute(engine: &[String]) -> Result<Vec<String>, String> {
     Ok(words)
 }
 
-/// Each route's shots: the start's view and the view behind it.
-const SHOTS: [&str; 2] = ["ahead", "behind"];
+/// Each route's shots: the start's view, the view behind it, the main menu over the start's
+/// view and the console down over it (VIEWDIFF-5.4).
+const SHOTS: [&str; 4] = ["ahead", "behind", "menu", "console"];
 
-/// The script of `map`'s route for `side`, `id` or `qs` (VIEWDIFF-5.1): settle, then a shot
-/// at the start's angle and one the other way, then the frames for the sound.
+/// The tolerances a shot is held to: the menu's and the console's own, the map's for the view
+/// (VIEWDIFF-5.2, VIEWDIFF-5.5).
+fn shot_tolerance(shot: &str, map: Tolerance) -> Tolerance {
+    match shot {
+        "menu" => MENU_TOLERANCE,
+        "console" => CONSOLE_TOLERANCE,
+        _ => map,
+    }
+}
+
+/// The frames the console takes to come down to half the 240-line frame: 120 lines at
+/// `scr_conspeed`'s 300 a second is 0.4 s, so half a second (CON-3.1).
+const CONSOLE_FRAMES: u32 = 36;
+/// The menu's shot's tolerances (VIEWDIFF-5.5): the host draws the menu in QuakeSpasm's look,
+/// the view behind it faded by black at 0.5 (REND-13.8), where id's software engine fades it
+/// darker; on LibreQuake's maps the shot measured differences of 20 to 28.5 and brightnesses of
+/// 1.18 to 1.56 on Linux and macOS.
+const MENU_TOLERANCE: Tolerance = Tolerance {
+    frame: 32.0,
+    brightness: 0.6,
+    sound: 0.0,
+};
+/// The console's shot's tolerances (VIEWDIFF-5.5): the host draws the console in QuakeSpasm's
+/// look, its background at `scr_conalpha` 0.5 and its text at the frame's size (CON-5,
+/// REND-13.8), where id's engine draws it opaque; differences of 7.8 to 19.3 and brightnesses of
+/// 0.75 to 1.05 were measured.
+const CONSOLE_TOLERANCE: Tolerance = Tolerance {
+    frame: 22.0,
+    brightness: 0.3,
+    sound: 0.0,
+};
+
+/// The frames after the menu and the console close and before the sound's frames, so that the
+/// menu's sounds are over: a second (VIEWDIFF-5.4).
+const QUIET_FRAMES: u32 = 72;
+
+/// The script of `map`'s route for `side`, `id` or `qs` (VIEWDIFF-5.4): settle, then a shot
+/// at the start's angle and one the other way, the main menu opened over the start's view and
+/// shot, the console brought down over it and shot, both closed, a second of quiet, then the
+/// frames for the sound. Each shot follows a `place`, after which alone the oracle draws
+/// (VIEWDIFF-2.4).
 fn route(map: &str, (origin, yaw): ([f32; 3], f32), side: &str) -> String {
     let [x, y, z] = origin;
     let behind = (yaw + 180.0).rem_euclid(360.0);
+    let ahead = format!("place {x} {y} {z} 0 {yaw}\nframes {PLACE_FRAMES}\n");
     format!(
         "map {map}\nframes {SETTLE_FRAMES}\n\
-         place {x} {y} {z} 0 {yaw}\nframes {PLACE_FRAMES}\nshot {side}-ahead.ppm\n\
+         {ahead}shot {side}-ahead.ppm\n\
          place {x} {y} {z} 0 {behind}\nframes {PLACE_FRAMES}\nshot {side}-behind.ppm\n\
+         {ahead}togglemenu\nframes {PLACE_FRAMES}\nshot {side}-menu.ppm\ntogglemenu\n\
+         {ahead}toggleconsole\nframes {CONSOLE_FRAMES}\nshot {side}-console.ppm\n\
+         toggleconsole\nframes {QUIET_FRAMES}\n\
          frames {SOUND_FRAMES}\n"
     )
 }
 
 /// The origin and yaw of `map`'s first `info_player_start`, read through the game the engine
-/// words name (VIEWDIFF-5.1), and whether a monster stands in earshot of it (VIEWDIFF-5.3).
+/// words name (VIEWDIFF-5.4), and whether a monster stands in earshot of it (VIEWDIFF-5.3).
 fn player_start(engine: &[String], map: &str) -> Result<(([f32; 3], f32), bool), String> {
     let vfs = Vfs::new(StdFs, engine, ".").map_err(|e| format!("{e:?}"))?;
     let name = format!("maps/{map}.bsp");

@@ -10,8 +10,8 @@
 )]
 
 use super::{
-    PPM_HEADER, Sound, Tolerance, compare_frames, compare_sound, monster_near, parse_tolerances,
-    route, start_of, tolerance_of,
+    CONSOLE_TOLERANCE, Frames, MENU_TOLERANCE, PPM_HEADER, Sound, Tolerance, compare_frames,
+    compare_sound, monster_near, parse_tolerances, route, shot_tolerance, start_of, tolerance_of,
 };
 
 /// A 320 by 240 binary PPM of one grey `level`, its pixel `at` set to `other`.
@@ -159,15 +159,22 @@ fn tolerances_are_read_per_map() {
     assert!(parse_tolerances(&doc.replace(" a sky |", "")).is_err());
 }
 
-// spec VIEWDIFF-5.1: a route settles, then shoots the start's view and the one behind it, then
-// holds for the sound
+// spec VIEWDIFF-5.4: a route settles, shoots the start's view and the one behind it, the main
+// menu and the console over the start's view each after a place, closes them, keeps a second
+// quiet, then holds for the sound
 #[test]
 fn a_route_shoots_the_start_both_ways() {
     let text = route("e1m1", ([480.0, -352.0, 88.0], 90.0), "id");
+    let ahead = "place 480 -352 88 0 90\nframes 18\n";
     assert_eq!(
         text,
-        "map e1m1\nframes 216\nplace 480 -352 88 0 90\nframes 18\nshot id-ahead.ppm\n\
-         place 480 -352 88 0 270\nframes 18\nshot id-behind.ppm\nframes 216\n"
+        format!(
+            "map e1m1\nframes 216\n{ahead}shot id-ahead.ppm\n\
+             place 480 -352 88 0 270\nframes 18\nshot id-behind.ppm\n\
+             {ahead}togglemenu\nframes 18\nshot id-menu.ppm\ntogglemenu\n\
+             {ahead}toggleconsole\nframes 36\nshot id-console.ppm\ntoggleconsole\n\
+             frames 72\nframes 216\n"
+        )
     );
     let entities = "{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"info_player_start\"\n\
                     \"origin\" \"480 -352 88\"\n\"angle\" \"90\"\n}\n";
@@ -262,4 +269,28 @@ fn the_oracle_is_not_built_on_windows() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let source = std::fs::read_to_string(root.join("xtask/src/oracles.rs")).unwrap();
     assert!(source.contains("if !cfg!(windows) {\n        let view_objects = compile_view("));
+}
+
+// spec VIEWDIFF-5.5: the menu's and the console's shots are held to their own tolerances, the
+// view's shots to the map's
+#[test]
+fn the_menu_and_console_have_their_own_tolerances() {
+    let map = Tolerance {
+        frame: 6.0,
+        brightness: 0.15,
+        sound: 0.35,
+    };
+    assert_eq!(shot_tolerance("ahead", map), map);
+    assert_eq!(shot_tolerance("behind", map), map);
+    assert_eq!(shot_tolerance("menu", map), MENU_TOLERANCE);
+    assert_eq!(shot_tolerance("console", map), CONSOLE_TOLERANCE);
+    // The widest measured on LibreQuake's maps fits; no menu or console at all does not.
+    let measured = |difference, brightness| Frames {
+        difference,
+        brightness,
+    };
+    assert!(measured(28.54, 1.555).fits(MENU_TOLERANCE));
+    assert!(measured(19.26, 0.747).fits(CONSOLE_TOLERANCE));
+    assert!(!measured(40.0, 1.0).fits(MENU_TOLERANCE));
+    assert!(!measured(10.0, 0.6).fits(CONSOLE_TOLERANCE));
 }
