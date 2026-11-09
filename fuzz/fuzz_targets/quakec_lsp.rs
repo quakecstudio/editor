@@ -13,10 +13,11 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use libfuzzer_sys::fuzz_target;
 use qc_project::MemoryLoader;
-use quakec_lsp::lines::{Encoding, LineIndex, Position};
+use quakec_lsp::lines::{Encoding, Position};
 use serde_json::{Value, json};
 
 /// The project's one file, whose text the session's edits change.
@@ -58,7 +59,7 @@ const URIS: [&str; 4] = [
 fn loader() -> MemoryLoader {
     let mut loader = MemoryLoader::new();
     loader.insert(Path::new("/p/progs.src"), b"../progs.dat\na.qc\n".to_vec());
-    loader.insert(Path::new("/p/a.qc"), SOURCE.as_bytes().to_vec());
+    loader.insert(Path::new(PROJECT_FILE), SOURCE.as_bytes().to_vec());
     loader
 }
 
@@ -170,11 +171,93 @@ fn session(data: &[u8]) -> (Vec<u8>, Vec<Value>) {
     (input, messages)
 }
 
+/// The project's one file, the path `loader` gives [`SOURCE`].
+const PROJECT_FILE: &str = "/p/a.qc";
+
+/// A document's text, with positions read in it by this target's own rules rather than through
+/// the server's `LineIndex`, so a fault there is not repeated here. They are LSP 3.18's,
+/// "Position" (`specs/lsp/3.18/types/position.md`): "Position in a text document expressed as
+/// zero-based line and zero-based character offset", and "If the character value is greater
+/// than the line length it defaults back to the line length"; and "Text Documents"
+/// (`specs/lsp/3.18/types/textDocuments.md`): "the protocol specifies the following end-of-line
+/// sequences: '\n', '\r\n' and '\r'".
+struct Text(String);
+
+impl Text {
+    /// Each line's start and the end of its text before its line break.
+    fn lines(&self) -> Vec<(usize, usize)> {
+        let bytes = self.0.as_bytes();
+        let mut lines = Vec::new();
+        let mut start = 0;
+        let mut at = 0;
+        while at < bytes.len() {
+            let width = match (bytes[at], bytes.get(at + 1)) {
+                (b'\r', Some(b'\n')) => 2,
+                (b'\r' | b'\n', _) => 1,
+                _ => 0,
+            };
+            if width == 0 {
+                at += 1;
+            } else {
+                lines.push((start, at));
+                at += width;
+                start = at;
+            }
+        }
+        lines.push((start, bytes.len()));
+        lines
+    }
+
+    /// The code units of `c` in `encoding`.
+    fn width(c: char, encoding: Encoding) -> usize {
+        match encoding {
+            Encoding::Utf8 => c.len_utf8(),
+            Encoding::Utf16 => c.len_utf16(),
+        }
+    }
+
+    /// The byte offset an edit at `position` starts at, as the server reads it: a line past the
+    /// last is the text's end, a character past the line's end is its end, and one inside a
+    /// character is that character's start.
+    fn offset(&self, position: Position, encoding: Encoding) -> usize {
+        let lines = self.lines();
+        let Some(&(start, end)) = lines.get(position.line as usize) else {
+            return self.0.len();
+        };
+        let mut units = 0;
+        for (at, c) in self.0[start..end].char_indices() {
+            units += Self::width(c, encoding);
+            if units > position.character as usize {
+                return start + at;
+            }
+        }
+        end
+    }
+
+    /// Whether `position` names a place in the text: a line it has, and a character offset at
+    /// the start of one of the line's characters or at its end.
+    fn has(&self, position: Position, encoding: Encoding) -> bool {
+        let lines = self.lines();
+        let Some(&(start, end)) = lines.get(position.line as usize) else {
+            return false;
+        };
+        let wanted = position.character as usize;
+        let mut units = 0;
+        for c in self.0[start..end].chars() {
+            if units == wanted {
+                return true;
+            }
+            units += Self::width(c, encoding);
+        }
+        units == wanted
+    }
+}
+
 /// The text of each document as the server keeps it: a `file` URI's path, normalized, to the
 /// open document's text, else the project's file on disk, else none (`Server::did_change` reads
 /// `host.text(&path).unwrap_or_default()`).
 struct Documents {
-    open: BTreeMap<PathBuf, Vec<u8>>,
+    open: BTreeMap<PathBuf, Rc<Text>>,
 }
 
 impl Documents {
@@ -182,12 +265,25 @@ impl Documents {
         quakec_lsp::uri::to_path(uri).map(|path| qc_project::normalize(&path))
     }
 
-    fn text(&self, path: &Path) -> Vec<u8> {
+    fn text(&self, path: &Path) -> Rc<Text> {
         match self.open.get(path) {
-            Some(text) => text.clone(),
-            None if path == Path::new("/p/a.qc") => SOURCE.as_bytes().to_vec(),
-            None => Vec::new(),
+            Some(text) => Rc::clone(text),
+            None if path == Path::new(PROJECT_FILE) => Rc::new(Text(SOURCE.to_owned())),
+            None => Rc::new(Text(String::new())),
         }
+    }
+
+    /// Every document with a text: the project's file and each open one.
+    fn snapshot(&self) -> BTreeMap<PathBuf, Rc<Text>> {
+        let paths = self.open.keys().cloned();
+        [PathBuf::from(PROJECT_FILE)]
+            .into_iter()
+            .chain(paths)
+            .map(|path| {
+                let text = self.text(&path);
+                (path, text)
+            })
+            .collect()
     }
 
     /// Applies the notification `method` with `params`, as `Server::did_open`, `did_change` and
@@ -200,26 +296,26 @@ impl Documents {
         match method {
             "textDocument/didOpen" => {
                 let text = params["textDocument"]["text"].as_str().unwrap_or_default();
-                self.open.insert(path, text.as_bytes().to_vec());
+                self.open.insert(path, Rc::new(Text(text.to_owned())));
             }
             "textDocument/didChange" => {
-                let mut text = self.text(&path);
+                let mut text = self.text(&path).0.clone();
                 for change in params["contentChanges"].as_array().into_iter().flatten() {
-                    let inserted = change["text"].as_str().unwrap_or_default().as_bytes();
+                    let inserted = change["text"].as_str().unwrap_or_default();
                     text = match position_pair(&change["range"]) {
-                        None => inserted.to_vec(),
+                        None => inserted.to_owned(),
                         Some((start, end)) => {
-                            let lines = LineIndex::new(&text, encoding);
-                            let start = lines.offset(start);
-                            let end = lines.offset(end).max(start);
-                            let mut edited = text[..start].to_vec();
-                            edited.extend_from_slice(inserted);
-                            edited.extend_from_slice(&text[end..]);
+                            let current = Text(text);
+                            let start = current.offset(start, encoding);
+                            let end = current.offset(end, encoding).max(start);
+                            let mut edited = current.0[..start].to_owned();
+                            edited.push_str(inserted);
+                            edited.push_str(&current.0[end..]);
                             edited
                         }
                     };
                 }
-                self.open.insert(path, text);
+                self.open.insert(path, Rc::new(Text(text)));
             }
             "textDocument/didClose" => {
                 self.open.remove(&path);
@@ -242,8 +338,9 @@ fn as_position(value: &Value) -> Option<Position> {
 }
 
 /// Every position in the answer `value`, at any depth, with the path of the document it is in:
-/// the `uri` of the object holding it, the key of a `WorkspaceEdit`'s `changes`, or `document`,
-/// the request's.
+/// the `uri` of the object holding it, the `textDocument`'s of a `TextDocumentEdit`, the key of
+/// a `WorkspaceEdit`'s `changes`, a `LocationLink`'s `targetUri` for its target ranges, or
+/// `document`, the request's.
 fn positions(
     value: &Value,
     document: Option<&PathBuf>,
@@ -251,7 +348,11 @@ fn positions(
 ) {
     match value {
         Value::Object(map) => {
-            let own = map.get("uri").and_then(Value::as_str).map(Documents::key);
+            let uri = map
+                .get("uri")
+                .or_else(|| map.get("textDocument").and_then(|d| d.get("uri")))
+                .and_then(Value::as_str);
+            let own = uri.map(Documents::key);
             let document = match &own {
                 Some(key) => key.as_ref(),
                 None => document,
@@ -259,15 +360,21 @@ fn positions(
             if let Some(position) = as_position(value) {
                 out.push((document.cloned(), position));
             }
+            let target = map
+                .get("targetUri")
+                .and_then(Value::as_str)
+                .map(Documents::key);
             for (key, item) in map {
-                if key == "changes"
-                    && let Value::Object(changes) = item
-                {
-                    for (uri, edits) in changes {
-                        positions(edits, Documents::key(uri).as_ref(), out);
+                match (key.as_str(), item, &target) {
+                    ("changes", Value::Object(changes), _) => {
+                        for (uri, edits) in changes {
+                            positions(edits, Documents::key(uri).as_ref(), out);
+                        }
                     }
-                } else {
-                    positions(item, document, out);
+                    ("targetRange" | "targetSelectionRange", _, Some(target)) => {
+                        positions(item, target.as_ref(), out);
+                    }
+                    _ => positions(item, document, out),
                 }
             }
         }
@@ -295,17 +402,16 @@ fuzz_target!(|data: &[u8]| {
         .find(|answer| answer["id"] == 0)
         .and_then(|answer| answer["result"]["capabilities"]["positionEncoding"].as_str())
         .map_or(Encoding::Utf16, |kind| {
-            if kind == "utf-8" {
-                Encoding::Utf8
-            } else {
-                Encoding::Utf16
-            }
+            [Encoding::Utf8, Encoding::Utf16]
+                .into_iter()
+                .find(|encoding| encoding.kind() == kind)
+                .unwrap_or_else(|| panic!("an encoding the client did not offer: {kind}"))
         });
     // The texts each request saw, by its id.
     let mut documents = Documents {
         open: BTreeMap::new(),
     };
-    let mut seen: BTreeMap<i64, (Option<PathBuf>, BTreeMap<PathBuf, Vec<u8>>)> = BTreeMap::new();
+    let mut seen: BTreeMap<i64, (Option<PathBuf>, BTreeMap<PathBuf, Rc<Text>>)> = BTreeMap::new();
     for message in &messages {
         let method = message["method"].as_str().unwrap_or_default();
         match message.get("id").and_then(Value::as_i64) {
@@ -313,36 +419,25 @@ fuzz_target!(|data: &[u8]| {
                 let uri = message["params"]["textDocument"]["uri"]
                     .as_str()
                     .unwrap_or_default();
-                let mut texts = BTreeMap::new();
-                let paths = documents.open.keys().cloned();
-                for path in [PathBuf::from("/p/a.qc")].into_iter().chain(paths) {
-                    let text = documents.text(&path);
-                    texts.insert(path, text);
-                }
-                seen.insert(id, (Documents::key(uri), texts));
+                seen.insert(id, (Documents::key(uri), documents.snapshot()));
             }
             None => documents.apply(method, &message["params"], encoding),
         }
     }
     let mut answered: BTreeMap<i64, usize> = BTreeMap::new();
+    let none = Rc::new(Text(String::new()));
     for answer in &answers {
-        let Some(id) = answer.get("id").and_then(Value::as_i64) else {
-            continue;
-        };
-        let Some((document, texts)) = seen.get(&id) else {
+        let id = answer.get("id").and_then(Value::as_i64);
+        let Some((document, texts)) = id.and_then(|id| seen.get(&id)) else {
             panic!("an answer to no request: {answer}");
         };
-        *answered.entry(id).or_default() += 1;
+        *answered.entry(id.unwrap_or_default()).or_default() += 1;
         let mut found = Vec::new();
         positions(answer, document.as_ref(), &mut found);
         for (path, position) in found {
-            let text = path
-                .and_then(|path| texts.get(&path).cloned())
-                .unwrap_or_default();
-            let lines = LineIndex::new(&text, encoding);
-            assert_eq!(
-                lines.position(lines.offset(position)),
-                position,
+            let text = path.and_then(|path| texts.get(&path)).unwrap_or(&none);
+            assert!(
+                text.has(position, encoding),
                 "a position outside its document's text: {answer}"
             );
         }
