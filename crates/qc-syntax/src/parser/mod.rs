@@ -2184,7 +2184,7 @@ impl<'a> Parser<'a> {
     }
 
     /// A state header's `]`. A header that went wrong is skipped up to its `]` or the body's
-    /// `{`, so the body's statements do not start inside it and report it again (QCD-1.5).
+    /// `{`, so the body's statements do not start inside it and report it again (QCD-1.6).
     fn close_state(&mut self) {
         if self.expect(K::RBracket, "]") {
             return;
@@ -2717,7 +2717,7 @@ impl<'a> Parser<'a> {
             }
         }
         if !self.expect(K::Colon, ":") {
-            // QCD-1.5: the rest of a label that went wrong, up to its `:`, so the statement
+            // QCD-1.6: the rest of a label that went wrong, up to its `:`, so the statement
             // after it does not start inside it and report it again.
             self.skip_into_error(|parser| match parser.current().map(|t| t.kind) {
                 Some(K::LBrace | K::RBrace) | None => Skip::Stop,

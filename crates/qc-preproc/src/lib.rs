@@ -898,9 +898,12 @@ struct Run {
     /// (FTEF-14.63); `None` under the vanilla dialect.
     warnings: Option<WarningSettings>,
     /// The code and span of every diagnostic [`Run::report`] and [`Run::report_also`] have
-    /// put in `out`, so that a rule broken at one place is reported there once (QCD-1.5,
+    /// put in `out`, so that a rule broken at one place is reported there once (QCD-1.6,
     /// FTEF-14.79). `E0120`, given at most once a file (`Expanded::report`), is not in it.
     reported: HashSet<(Code, FileSpan)>,
+    /// The code, as reported, and span of the diagnostic the last report gave, `None` when the
+    /// last report gave nothing: a directive's further warning there may follow it (QCD-1.6).
+    last_report: Option<(Code, FileSpan)>,
     out: FileOutput,
 }
 
@@ -1024,28 +1027,43 @@ impl Run {
     }
 
     /// Reports a diagnostic, under FTEQCC as its warning settings now say (FTEF-14.63), unless
-    /// one with its code at its span was reported before (QCD-1.5, FTEF-14.79).
+    /// one with its code at its span was reported before (QCD-1.6, FTEF-14.79).
     fn report(&mut self, code: Code, message: impl Into<String>, span: FileSpan) {
         let settings = self.warnings;
         self.report_under(settings.as_ref(), code, message, span);
     }
 
-    /// Reports a directive's further warning at a span it has already warned at in the same
-    /// run, as FTEQCC gives it: the second `W0115` of an `#append` that defines the macro anew
-    /// (FTEF-14.58), and a pragma's warning for each further NAME (FTEF-12.11). Only a repeat
-    /// of the same code, span and message adds nothing (P3-40).
+    /// Reports a directive's further warning at a span it has just warned at, as FTEQCC gives
+    /// it: the second `W0115` of an `#append` that defines the macro anew (FTEF-14.58), and a
+    /// pragma's warning for each further NAME (FTEF-12.11). It is given only right after the
+    /// directive's first warning there was, its code as the warning settings make it, and not
+    /// when it repeats a text of that run; otherwise it is reported as [`Run::report`] reports,
+    /// so a directive in a body used again gives nothing more at the body's span (QCD-1.6,
+    /// ADR-0022, FTEF-14.79).
     fn report_also(&mut self, code: Code, message: impl Into<String>, span: FileSpan) {
+        let settings = self.warnings;
+        let Some(reported) = settings.map_or(Some(code), |s| s.reported_code(code)) else {
+            return;
+        };
+        if self.last_report != Some((reported, span)) {
+            self.report(code, message, span);
+            return;
+        }
         let message = message.into();
         let repeat = self
             .out
             .diagnostics
             .iter()
-            .any(|d| d.code == code && d.span == span && d.message == message);
-        if repeat {
-            return;
+            .rev()
+            .take_while(|d| d.code == reported && d.span == span)
+            .any(|d| d.message == message);
+        if !repeat {
+            self.out.diagnostics.push(Diagnostic {
+                code: reported,
+                message,
+                span,
+            });
         }
-        self.reported.remove(&(code, span));
-        self.report(code, message, span);
     }
 
     /// Reports the warnings `messages` of one directive, all at `span`: the first as
@@ -1070,13 +1088,16 @@ impl Run {
         span: FileSpan,
     ) {
         let Some(code) = settings.map_or(Some(code), |s| s.reported_code(code)) else {
+            self.last_report = None;
             return;
         };
-        // QCD-1.5, FTEF-14.79: a diagnostic already given with this code at this span adds
+        // QCD-1.6, FTEF-14.79: a diagnostic already given with this code at this span adds
         // nothing, as when a stored macro body holding an unknown `$name` is used twice.
         if !self.reported.insert((code, span)) {
+            self.last_report = None;
             return;
         }
+        self.last_report = Some((code, span));
         self.out.diagnostics.push(Diagnostic {
             code,
             message: message.into(),

@@ -425,7 +425,7 @@ fn skipped_bytes_stop_at_comments_and_commands() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
-    // spec QCD-1.5: no two diagnostics the lexer and parser give for one input have the same
+    // spec QCD-1.6: no two diagnostics the lexer and parser give for one input have the same
     // code and span, in either profile, over token soup in the shape of QuakeC.
     #[test]
     fn a_syntax_diagnostic_is_reported_once(parts in proptest::collection::vec(fragment(), 0..60)) {
@@ -434,7 +434,7 @@ proptest! {
             let parsed = crate::parse_with(source.as_bytes(), dialect);
             let mut seen = std::collections::HashSet::new();
             for d in parsed.diagnostics() {
-                // QCD-1.5: `W0227` is one per operator, which two operators can give at one
+                // QCD-1.6: `W0227` is one per operator, which two operators can give at one
                 // token.
                 prop_assert!(
                     d.code == Code::W0227 || seen.insert((d.code, d.span)),
@@ -446,7 +446,7 @@ proptest! {
     }
 }
 
-// spec QCD-1.5: an accessor member its error stops short is not read again as another member, so
+// spec QCD-1.6: an accessor member its error stops short is not read again as another member, so
 // the place is reported once (the parser fuzz target's find)
 #[test]
 fn an_accessor_member_error_is_reported_once() {
@@ -478,7 +478,7 @@ fn an_accessor_member_error_is_reported_once() {
     );
 }
 
-// spec QCD-1.5: a state header its error stops short is skipped to its `]` or the body's `{`, so
+// spec QCD-1.6: a state header its error stops short is skipped to its `]` or the body's `{`, so
 // the body does not start inside it and report the place again (the parser fuzz target's find)
 #[test]
 fn a_state_header_error_is_reported_once() {
@@ -497,7 +497,7 @@ fn a_state_header_error_is_reported_once() {
     }
 }
 
-// spec QCD-1.5: a case label its error stops short is skipped to its `:`, so the statement after
+// spec QCD-1.6: a case label its error stops short is skipped to its `:`, so the statement after
 // it does not start inside it and report the place again (the parser fuzz target's find)
 #[test]
 fn a_case_label_error_is_reported_once() {
@@ -531,7 +531,7 @@ fn a_case_label_error_is_reported_once() {
     );
 }
 
-// spec QCD-1.5: `W0227` is given for each operator in a `~` operand, so two nested ones that end
+// spec QCD-1.6: `W0227` is given for each operator in a `~` operand, so two nested ones that end
 // at one token warn there twice, as the pinned FTEQCC prints it twice
 // spec FTEF-21.6: each binary operator the operand of `~` takes warns at the token after it
 #[test]

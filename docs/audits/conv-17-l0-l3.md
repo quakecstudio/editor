@@ -415,5 +415,5 @@ in #651:
   message, which names its code, with the pinned FTEQCC on 1000 generated programs
   (`cargo xtask oracles grammar`, DIFF-13); its first runs found seven differences, each fixed
   in a commit of its own with its spec statement;
-- a fuzz and property invariant that no code is reported twice at one span (QCD-1.5), which
+- a fuzz and property invariant that no code is reported twice at one span (QCD-1.6), which
   catches P2-144 and found three more duplicates in the parser's recovery.

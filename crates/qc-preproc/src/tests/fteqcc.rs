@@ -17,7 +17,7 @@ fn fte(text: &str) -> (String, Vec<Code>) {
 /// Runs `data` as the qc-preproc fuzz target does: split at its first two NULs into `a.qc`,
 /// `b.qh` and `c.qc`, then `a.qc` and `c.qc` preprocessed under the FTEQCC dialect, a restart
 /// and both again, each diagnostic checked to lie in a file that was read and no two to share
-/// a code and a span (QCD-1.5).
+/// a code and a span but as QCD-1.6 allows.
 fn fuzz_case(data: &[u8]) {
     let mut parts = data.splitn(3, |b| *b == 0);
     let a = parts.next().unwrap_or_default();
@@ -35,21 +35,35 @@ fn fuzz_case(data: &[u8]) {
         for path in ["a.qc", "c.qc"] {
             let out = pp.preprocess_file(Path::new(path)).unwrap();
             let mut seen = std::collections::HashSet::new();
+            let mut run: Vec<&str> = Vec::new();
+            let mut previous = None;
             for d in &out.diagnostics {
                 assert!(
                     pp.sources().text(d.span).is_some(),
                     "diagnostic outside its file: {d:?}"
                 );
-                assert!(
-                    seen.insert((d.code, d.span)),
-                    "diagnostic reported twice: {d:?}"
-                );
+                // QCD-1.6: a directive's further warning at one span, right after it, with a
+                // text new to that run, is not a repeat (ADR-0022).
+                if previous == Some((d.code, d.span)) {
+                    assert!(
+                        !run.contains(&d.message.as_str()),
+                        "diagnostic reported twice: {d:?}"
+                    );
+                } else {
+                    assert!(
+                        seen.insert((d.code, d.span)),
+                        "diagnostic reported twice: {d:?}"
+                    );
+                    run.clear();
+                }
+                run.push(&d.message);
+                previous = Some((d.code, d.span));
             }
         }
     }
 }
 
-// spec QCD-1.5: no two preprocessor diagnostics of one input share a code and a span, on the
+// spec QCD-1.6: no two preprocessor diagnostics of one input share a code and a span, on the
 // `#define` path. The 107-byte crash input from the nightly Fuzz workflow (a macro whose body
 // holds the byte 0x94, used twice) is fed through the same entry points as the qc-preproc fuzz
 // target (preprocess a.qc then c.qc, restart, again).
@@ -67,7 +81,7 @@ fn a_define_body_lexical_error_does_not_collide_across_uses() {
 
 /// The `E0123` reports of `files` preprocessed in order under the FTEQCC dialect, as the span
 /// of each and the source bytes it covers, with every diagnostic checked to lie in a file that
-/// was read and no two to share a code and a span (QCD-1.5).
+/// was read and no two to share a code and a span (QCD-1.6).
 fn utf8_errors(files: &[(&str, &[u8])]) -> Vec<(crate::FileSpan, Vec<u8>)> {
     let mut loader = MemoryLoader::new();
     for (name, text) in files {
@@ -95,7 +109,7 @@ fn utf8_errors(files: &[(&str, &[u8])]) -> Vec<(crate::FileSpan, Vec<u8>)> {
 
 // spec FTEF-14.77: a lexical error in a macro's stored body is reported once, at the body's
 // byte, however many uses read the body, where FTEQCC gives it at every use (FTEF-14.74).
-// spec QCD-1.5: a rule broken at one place is one report there.
+// spec QCD-1.6: a rule broken at one place is one report there.
 #[test]
 fn a_body_lexical_error_is_reported_once_at_its_byte() {
     // The body byte 0xc3 starts no UTF-8 sequence (`x` is no continuation byte): E0123.
@@ -107,7 +121,7 @@ fn a_body_lexical_error_is_reported_once_at_its_byte() {
 
 // spec FTEF-14.77: a body error read through another macro's expansion, however deep, is the
 // one report at the body's byte.
-// spec QCD-1.5: two uses of the outer macro add no second report.
+// spec QCD-1.6: two uses of the outer macro add no second report.
 #[test]
 fn a_nested_body_lexical_error_is_reported_once() {
     let found = utf8_errors(&[("a.qc", b"#define B \xc3x\n#define A B\nA\nA\n")]);
@@ -1261,7 +1275,7 @@ fn a_refused_macro_after_hash_reports_once() {
 // spec FTEF-14.39: `#pack N` above 5 is "No more than 5 packs are allowed" (E0121), kept at
 // the number's own text, and its line is still read with `errorifnonwhite`, so trailing junk
 // is a second "unexpected tokens at end of line" (E0121) at the whole line
-// spec QCD-1.5: the two E0121 errors keep distinct spans, so neither is reported twice
+// spec QCD-1.6: the two E0121 errors keep distinct spans, so neither is reported twice
 #[test]
 fn pack_above_five_with_junk_reports_two_errors_at_distinct_spans() {
     // `#pack 1 ` is in range and its line is clean (the space is the byte read after the
@@ -1279,7 +1293,7 @@ fn pack_above_five_with_junk_reports_two_errors_at_distinct_spans() {
     // The error keeps the place of its own text, the number as `QCC_PR_LexInteger` reads it
     // (the blank before it included).
     assert_eq!(super::span_text(&pp, out.diagnostics[0].span), " 8");
-    // `#pack 8 zz` is above 5 and has junk: two E0121 errors, with different spans (QCD-1.5).
+    // `#pack 8 zz` is above 5 and has junk: two E0121 errors, with different spans (QCD-1.6).
     let (_, out) = one_fte("#pack 8 zz\nx\n");
     let errs: Vec<(Code, &str)> = out
         .diagnostics
@@ -1295,12 +1309,12 @@ fn pack_above_five_with_junk_reports_two_errors_at_distinct_spans() {
     );
     assert_ne!(
         out.diagnostics[0].span, out.diagnostics[1].span,
-        "the two E0121 errors must not share a span (QCD-1.5)"
+        "the two E0121 errors must not share a span (QCD-1.6)"
     );
     assert_eq!(tokens(&out), "x");
 }
 
-// spec QCD-1.5: the preprocessor reports no two diagnostics with one code and span; the nightly
+// spec QCD-1.6: the preprocessor reports no two diagnostics with one code and span; the nightly
 // fuzz crash crash-0e3e4e65 (`#pack8ea`...) was a `#pack` above 5 whose "No more than 5 packs
 // are allowed" and the line's "unexpected tokens at end of line" both landed on the whole
 // directive line
@@ -1322,7 +1336,7 @@ fn an_unknown_frame_macro_in_a_body_is_reported_once() {
     assert_eq!(codes, [Code::E0106]);
 }
 
-// spec QCD-1.5: the 177-byte crash input from the nightly Fuzz workflow (an `#append` body
+// spec QCD-1.6: the 177-byte crash input from the nightly Fuzz workflow (an `#append` body
 // holding `$-`, used twice from `c.qc`) gives no two diagnostics with one code and one span,
 // fed through the qc-preproc fuzz target's entry points.
 #[test]
@@ -1356,4 +1370,45 @@ fn a_directive_in_a_body_warns_once_at_its_name() {
         .map(|d| d.message.as_str())
         .collect();
     assert_eq!(warned, ["Alternate precompiler definition of N (1 -> 2)"]);
+}
+
+// spec QCD-1.6: a directive's further warning of one code at a span it has just warned at,
+// with another text, is given beside the first: an `#append` with other parameters gives both
+// F315 warnings at the macro's name, a pragma's W0113 for each further NAME, and so too when a
+// pragma makes the warning an error; a repeat with the same text is one report (ADR-0022)
+#[test]
+fn a_directives_two_warnings_at_one_place_are_both_given() {
+    let messages = |text: &str| -> Vec<(Code, String)> {
+        let (_, out) = one_fte(text);
+        out.diagnostics
+            .iter()
+            .map(|d| (d.code, d.message.clone()))
+            .collect()
+    };
+    assert_eq!(
+        messages("#define F(a) a\n#append F 2\n"),
+        [
+            (
+                Code::W0115,
+                "different number of macro arguments in macro append".to_owned()
+            ),
+            (
+                Code::W0115,
+                "Alternate precompiler definition of F (a -> 2)".to_owned()
+            ),
+        ]
+    );
+    let promoted = messages("#pragma warning error F315\n#define F(a) a\n#append F 2\n");
+    assert_eq!(
+        promoted.iter().map(|(code, _)| *code).collect::<Vec<_>>(),
+        [Code::E0125, Code::E0125],
+        "{promoted:?}"
+    );
+    let pragma = messages("#pragma flag enable nosuch acc\n");
+    assert_eq!(pragma.len(), 2, "{pragma:?}");
+    assert!(pragma.iter().all(|(code, _)| *code == Code::W0113));
+    let promoted = messages("#pragma warning error Q120\n#pragma flag enable nosuch acc\n");
+    assert_eq!(promoted.len(), 2, "{promoted:?}");
+    assert!(promoted.iter().all(|(code, _)| *code == Code::E0125));
+    assert_eq!(messages("#pragma flag enable acc caseinsens\n").len(), 1);
 }

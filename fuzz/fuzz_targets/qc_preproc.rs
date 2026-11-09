@@ -7,7 +7,7 @@
 //! The input is split at its first two NULs into a compiled file `a.qc`, a file it may
 //! `#include` (`b.qh`) and a second compiled file `c.qc`, so macros and frame macros carry
 //! from one file to the next. The check: no panic, every diagnostic is reported once
-//! (QCD-1.5), and every diagnostic and every token lies in a file that was read, inside its text, in a first pass and in the second pass
+//! (QCD-1.6), and every diagnostic and every token lies in a file that was read, inside its text, in a first pass and in the second pass
 //! `Preprocessor::restart` begins (FTE-22.3), which keeps the first pass's frame macros; and the
 //! `#if` evaluator gives an answer for the first line under both profiles.
 
@@ -16,7 +16,7 @@
 use std::path::Path;
 
 use libfuzzer_sys::fuzz_target;
-use qc_lexer::Dialect;
+use qc_lexer::{Code, Dialect};
 use qc_preproc::{FileOutput, MemoryLoader, Preprocessor, SourceMap, cond};
 
 fuzz_target!(|data: &[u8]| {
@@ -59,12 +59,22 @@ fn check_spans(sources: &SourceMap, out: &FileOutput) {
         );
     }
     let mut seen = std::collections::HashSet::new();
+    let mut run: Vec<&str> = Vec::new();
+    let mut previous: Option<(Code, qc_preproc::FileSpan)> = None;
     for d in &out.diagnostics {
         assert!(
             sources.text(d.span).is_some(),
             "diagnostic outside its file: {d:?}"
         );
-        // QCD-1.5: no two diagnostics with one code and one span.
-        assert!(seen.insert((d.code, d.span)), "diagnostic reported twice: {d:?}");
+        // QCD-1.6: no two diagnostics with one code and one span, but for a directive's
+        // further warning there, right after it, with a text new to that run (ADR-0022).
+        if previous == Some((d.code, d.span)) {
+            assert!(!run.contains(&d.message.as_str()), "diagnostic reported twice: {d:?}");
+        } else {
+            assert!(seen.insert((d.code, d.span)), "diagnostic reported twice: {d:?}");
+            run.clear();
+        }
+        run.push(&d.message);
+        previous = Some((d.code, d.span));
     }
 }

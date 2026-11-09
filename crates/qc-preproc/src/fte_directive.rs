@@ -624,7 +624,7 @@ pub(crate) enum Directive {
     /// `#pack`, with the range of the `N` of `#pack N` when it is above 5, which is "No more
     /// than 5 packs are allowed" at that number, so the error keeps the place of its own text,
     /// apart from any "unexpected tokens at end of line" for the line's junk (FTEF-14.39,
-    /// QCD-1.5); `None` when the count is in range or `#pack id`.
+    /// QCD-1.6); `None` when the count is in range or `#pack id`.
     Pack {
         end: LineEnd,
         too_many: Option<Range<usize>>,
@@ -1652,7 +1652,7 @@ impl<L: Loader> Preprocessor<L> {
             }
             Directive::Pack { end, too_many } => {
                 if let Some(number) = too_many {
-                    // QCD-8.14, QCD-1.5: at the number's own text, not the whole line, so this
+                    // QCD-8.14, QCD-1.6: at the number's own text, not the whole line, so this
                     // error and any "unexpected tokens at end of line" for the line's junk keep
                     // distinct spans.
                     let message = "No more than 5 packs are allowed";

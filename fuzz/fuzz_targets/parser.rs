@@ -5,7 +5,7 @@
 //!
 //! The check, for each profile: parsing any bytes terminates without a panic or a stack
 //! overflow, the tree's tokens tile the input and give it back byte for byte, every node lies
-//! inside its parent, every diagnostic points inside the input and is reported once (QCD-1.5),
+//! inside its parent, every diagnostic points inside the input and is reported once (QCD-1.6),
 //! and parsing the same bytes twice gives the same tree.
 //!
 //! The mutator works on QuakeC tokens rather than bytes, so mutants stay close to programs
@@ -51,7 +51,7 @@ fn check(data: &[u8], dialect: Dialect) {
             diagnostic.span.start <= diagnostic.span.end && diagnostic.span.end <= data.len(),
             "{dialect:?}: diagnostic outside the input: {diagnostic:?}"
         );
-        // QCD-1.5: no two diagnostics with one code and one span, but for `W0227`, one per
+        // QCD-1.6: no two diagnostics with one code and one span, but for `W0227`, one per
         // operator, which two operators can give at one token.
         assert!(
             diagnostic.code == Code::W0227 || seen.insert((diagnostic.code, diagnostic.span)),

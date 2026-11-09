@@ -1607,7 +1607,7 @@ impl<L: Loader> Preprocessor<L> {
     /// FTEQCC reads the stored body anew at every use (`QCC_PR_IncludeChunkEx`), so a lexical
     /// error in it is given at every use, located by `s_filen`, the file and line of the use
     /// and the macro's name (FTEF-14.74). This profile places the error at the byte it came
-    /// from, the stored body's, the same place for every use, and QCD-1.5 makes a rule broken
+    /// from, the stored body's, the same place for every use, and QCD-1.6 makes a rule broken
     /// at one place one report there: a use whose chunk gives an error already reported at its
     /// place adds nothing. The same holds for an argument's bytes written twice into one
     /// expansion.
