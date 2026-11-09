@@ -59,14 +59,22 @@ fn check_spans(sources: &SourceMap, out: &FileOutput) {
         );
     }
     let mut seen = std::collections::HashSet::new();
+    let mut run: Vec<&str> = Vec::new();
+    let mut previous: Option<(Code, qc_preproc::FileSpan)> = None;
     for d in &out.diagnostics {
         assert!(
             sources.text(d.span).is_some(),
             "diagnostic outside its file: {d:?}"
         );
         // QCD-1.6: no two diagnostics with one code and one span, but for a directive's
-        // further `W0113` or `W0115` there with another text (ADR-0022).
-        let text = matches!(d.code, Code::W0113 | Code::W0115).then(|| d.message.clone());
-        assert!(seen.insert((d.code, d.span, text)), "diagnostic reported twice: {d:?}");
+        // further warning there, right after it, with a text new to that run (ADR-0022).
+        if previous == Some((d.code, d.span)) {
+            assert!(!run.contains(&d.message.as_str()), "diagnostic reported twice: {d:?}");
+        } else {
+            assert!(seen.insert((d.code, d.span)), "diagnostic reported twice: {d:?}");
+            run.clear();
+        }
+        run.push(&d.message);
+        previous = Some((d.code, d.span));
     }
 }

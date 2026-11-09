@@ -1101,7 +1101,9 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
     // spec QCD-1.6: no two preprocessor diagnostics of one input have the same code and span,
-    // in either profile, over text dense in directives, macros and conditionals.
+    // in either profile, over text dense in directives, macros and conditionals; the text has no
+    // `#append` and no pragma of two names, the directives whose further warnings QCD-1.6
+    // allows (ADR-0022), so none is allowed here
     #[test]
     fn a_preprocessor_diagnostic_is_reported_once(
         text in "(#(define|undef|if|ifdef|ifndef|elif|else|endif|include|pragma|error|warning) ?[A-Z(),0-9\"]{0,6}\n|[A-Z]{1,2}|[ (),;\"\\\\\n]){0,16}"

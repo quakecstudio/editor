@@ -35,18 +35,29 @@ fn fuzz_case(data: &[u8]) {
         for path in ["a.qc", "c.qc"] {
             let out = pp.preprocess_file(Path::new(path)).unwrap();
             let mut seen = std::collections::HashSet::new();
+            let mut run: Vec<&str> = Vec::new();
+            let mut previous = None;
             for d in &out.diagnostics {
                 assert!(
                     pp.sources().text(d.span).is_some(),
                     "diagnostic outside its file: {d:?}"
                 );
-                // QCD-1.6: a directive's further W0113 or W0115 at one span with another
-                // text is not a repeat (ADR-0022).
-                let text = matches!(d.code, Code::W0113 | Code::W0115).then(|| d.message.clone());
-                assert!(
-                    seen.insert((d.code, d.span, text)),
-                    "diagnostic reported twice: {d:?}"
-                );
+                // QCD-1.6: a directive's further warning at one span, right after it, with a
+                // text new to that run, is not a repeat (ADR-0022).
+                if previous == Some((d.code, d.span)) {
+                    assert!(
+                        !run.contains(&d.message.as_str()),
+                        "diagnostic reported twice: {d:?}"
+                    );
+                } else {
+                    assert!(
+                        seen.insert((d.code, d.span)),
+                        "diagnostic reported twice: {d:?}"
+                    );
+                    run.clear();
+                }
+                run.push(&d.message);
+                previous = Some((d.code, d.span));
             }
         }
     }
@@ -1359,4 +1370,45 @@ fn a_directive_in_a_body_warns_once_at_its_name() {
         .map(|d| d.message.as_str())
         .collect();
     assert_eq!(warned, ["Alternate precompiler definition of N (1 -> 2)"]);
+}
+
+// spec QCD-1.6: a directive's further warning of one code at a span it has just warned at,
+// with another text, is given beside the first: an `#append` with other parameters gives both
+// F315 warnings at the macro's name, a pragma's W0113 for each further NAME, and so too when a
+// pragma makes the warning an error; a repeat with the same text is one report (ADR-0022)
+#[test]
+fn a_directives_two_warnings_at_one_place_are_both_given() {
+    let messages = |text: &str| -> Vec<(Code, String)> {
+        let (_, out) = one_fte(text);
+        out.diagnostics
+            .iter()
+            .map(|d| (d.code, d.message.clone()))
+            .collect()
+    };
+    assert_eq!(
+        messages("#define F(a) a\n#append F 2\n"),
+        [
+            (
+                Code::W0115,
+                "different number of macro arguments in macro append".to_owned()
+            ),
+            (
+                Code::W0115,
+                "Alternate precompiler definition of F (a -> 2)".to_owned()
+            ),
+        ]
+    );
+    let promoted = messages("#pragma warning error F315\n#define F(a) a\n#append F 2\n");
+    assert_eq!(
+        promoted.iter().map(|(code, _)| *code).collect::<Vec<_>>(),
+        [Code::E0125, Code::E0125],
+        "{promoted:?}"
+    );
+    let pragma = messages("#pragma flag enable nosuch acc\n");
+    assert_eq!(pragma.len(), 2, "{pragma:?}");
+    assert!(pragma.iter().all(|(code, _)| *code == Code::W0113));
+    let promoted = messages("#pragma warning error Q120\n#pragma flag enable nosuch acc\n");
+    assert_eq!(promoted.len(), 2, "{promoted:?}");
+    assert!(promoted.iter().all(|(code, _)| *code == Code::E0125));
+    assert_eq!(messages("#pragma flag enable acc caseinsens\n").len(), 1);
 }
