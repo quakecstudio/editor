@@ -3,16 +3,21 @@
 //! Feeds arbitrary input to the language server, `quakec_lsp::run`, on a small in-memory
 //! project (P2-165, TEST-5): the bytes as the client's stream, and a session the bytes draw,
 //! `initialize` then requests and notifications with methods, positions, ranges and URIs taken
-//! from the input. Fails on a panic, on an answer to no request or two answers to one, and on
-//! a position outside the open file's text.
+//! from the input, and edits whose text holds line breaks and characters of two, three and four
+//! UTF-8 bytes (P3-38). Fails on a panic, on a request answered other than once (LSP 3.18,
+//! "Response Message": "A Response Message sent as a result of a request"), and on a position in
+//! an answer that is not a position of its document's text when the request was read, the text
+//! the target tracks from the session's opens, edits and closes as the server keeps it.
 
 #![no_main]
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use libfuzzer_sys::fuzz_target;
 use qc_project::MemoryLoader;
+use quakec_lsp::lines::{Encoding, Position};
 use serde_json::{Value, json};
 
 /// The project's one file, whose text the session's edits change.
@@ -37,6 +42,11 @@ const METHODS: [&str; 14] = [
     "workspace/didChangeConfiguration",
 ];
 
+/// The pieces a drawn edit's text is made of: printable ASCII stands for itself, and these
+/// add the line breaks and the characters whose UTF-8 and UTF-16 widths differ, which move
+/// positions (P2-161).
+const PIECES: [&str; 6] = ["\n", "\r\n", "\r", "\u{e9}", "\u{4e2d}", "\u{1f600}"];
+
 /// The URIs a drawn message names: the project's file, a file of another directory, a drive
 /// letter's and one of another scheme.
 const URIS: [&str; 4] = [
@@ -49,7 +59,7 @@ const URIS: [&str; 4] = [
 fn loader() -> MemoryLoader {
     let mut loader = MemoryLoader::new();
     loader.insert(Path::new("/p/progs.src"), b"../progs.dat\na.qc\n".to_vec());
-    loader.insert(Path::new("/p/a.qc"), SOURCE.as_bytes().to_vec());
+    loader.insert(Path::new(PROJECT_FILE), SOURCE.as_bytes().to_vec());
     loader
 }
 
@@ -95,31 +105,24 @@ impl Draw<'_> {
 }
 
 /// A session drawn from `data`: `initialize`, `initialized`, the drawn messages, `shutdown` and
-/// `exit`; and the ids of the requests in it, each once.
-fn session(data: &[u8]) -> (Vec<u8>, Vec<i64>) {
+/// `exit`, framed; and the messages in order.
+fn session(data: &[u8]) -> (Vec<u8>, Vec<Value>) {
     let mut draw = Draw { bytes: data };
-    let mut input = Vec::new();
+    let mut messages = Vec::new();
     let utf8 = draw.byte() % 2 == 0;
     let encodings = if utf8 {
         json!(["utf-8", "utf-16"])
     } else {
         json!(["utf-16"])
     };
-    frame(
-        &json!({ "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
+    messages.push(json!({ "jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
             "processId": null, "rootUri": "file:///p",
             "capabilities": { "general": { "positionEncodings": encodings } },
             "initializationOptions": if draw.byte() % 2 == 0 { json!({ "dialect": "fteqcc" }) } else { json!(null) },
-        }}),
-        &mut input,
-    );
-    frame(
-        &json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }),
-        &mut input,
-    );
-    let mut ids = vec![0];
+        }}));
+    messages.push(json!({ "jsonrpc": "2.0", "method": "initialized", "params": {} }));
     let mut next = 1_i64;
-    while !draw.bytes.is_empty() && ids.len() < 64 {
+    while !draw.bytes.is_empty() && next < 64 {
         let method = *draw.pick(&METHODS);
         let uri = *draw.pick(&URIS);
         let document = json!({ "uri": uri, "version": draw.byte() });
@@ -129,7 +132,10 @@ fn session(data: &[u8]) -> (Vec<u8>, Vec<i64>) {
                 "uri": uri, "languageId": "quakec", "version": 1, "text": SOURCE } }),
             "textDocument/didChange" => {
                 let text: String = (0..draw.byte() % 12)
-                    .map(|_| char::from(b' ' + draw.byte() % 95))
+                    .map(|_| match draw.byte() {
+                        b @ 0..=94 => char::from(b' ' + b).to_string(),
+                        b => (*draw.pick(&PIECES)).to_owned() + &"x".repeat(usize::from(b % 2)),
+                    })
                     .collect();
                 let change = if draw.byte() % 2 == 0 {
                     json!({ "range": range, "text": text })
@@ -151,36 +157,228 @@ fn session(data: &[u8]) -> (Vec<u8>, Vec<i64>) {
         let message = if notifies {
             json!({ "jsonrpc": "2.0", "method": method, "params": params })
         } else {
-            ids.push(next);
             next += 1;
             json!({ "jsonrpc": "2.0", "id": next - 1, "method": method, "params": params })
         };
-        frame(&message, &mut input);
+        messages.push(message);
     }
-    ids.push(next);
-    frame(
-        &json!({ "jsonrpc": "2.0", "id": next, "method": "shutdown", "params": null }),
-        &mut input,
-    );
-    frame(
-        &json!({ "jsonrpc": "2.0", "method": "exit", "params": null }),
-        &mut input,
-    );
-    (input, ids)
+    messages.push(json!({ "jsonrpc": "2.0", "id": next, "method": "shutdown", "params": null }));
+    messages.push(json!({ "jsonrpc": "2.0", "method": "exit", "params": null }));
+    let mut input = Vec::new();
+    for message in &messages {
+        frame(message, &mut input);
+    }
+    (input, messages)
 }
 
-/// Every `line` of a position in `value`, at any depth.
-fn lines(value: &Value, out: &mut Vec<u64>) {
+/// The project's one file, the path `loader` gives [`SOURCE`].
+const PROJECT_FILE: &str = "/p/a.qc";
+
+/// A document's text, with positions read in it by this target's own rules rather than through
+/// the server's `LineIndex`, so a fault there is not repeated here. They are LSP 3.18's,
+/// "Position" (`specs/lsp/3.18/types/position.md`): "Position in a text document expressed as
+/// zero-based line and zero-based character offset", and "If the character value is greater
+/// than the line length it defaults back to the line length"; and "Text Documents"
+/// (`specs/lsp/3.18/types/textDocuments.md`): "the protocol specifies the following end-of-line
+/// sequences: '\n', '\r\n' and '\r'".
+struct Text(String);
+
+impl Text {
+    /// Each line's start and the end of its text before its line break.
+    fn lines(&self) -> Vec<(usize, usize)> {
+        let bytes = self.0.as_bytes();
+        let mut lines = Vec::new();
+        let mut start = 0;
+        let mut at = 0;
+        while at < bytes.len() {
+            let width = match (bytes[at], bytes.get(at + 1)) {
+                (b'\r', Some(b'\n')) => 2,
+                (b'\r' | b'\n', _) => 1,
+                _ => 0,
+            };
+            if width == 0 {
+                at += 1;
+            } else {
+                lines.push((start, at));
+                at += width;
+                start = at;
+            }
+        }
+        lines.push((start, bytes.len()));
+        lines
+    }
+
+    /// The code units of `c` in `encoding`.
+    fn width(c: char, encoding: Encoding) -> usize {
+        match encoding {
+            Encoding::Utf8 => c.len_utf8(),
+            Encoding::Utf16 => c.len_utf16(),
+        }
+    }
+
+    /// The byte offset an edit at `position` starts at, as the server reads it: a line past the
+    /// last is the text's end, a character past the line's end is its end, and one inside a
+    /// character is that character's start.
+    fn offset(&self, position: Position, encoding: Encoding) -> usize {
+        let lines = self.lines();
+        let Some(&(start, end)) = lines.get(position.line as usize) else {
+            return self.0.len();
+        };
+        let mut units = 0;
+        for (at, c) in self.0[start..end].char_indices() {
+            units += Self::width(c, encoding);
+            if units > position.character as usize {
+                return start + at;
+            }
+        }
+        end
+    }
+
+    /// Whether `position` names a place in the text: a line it has, and a character offset at
+    /// the start of one of the line's characters or at its end.
+    fn has(&self, position: Position, encoding: Encoding) -> bool {
+        let lines = self.lines();
+        let Some(&(start, end)) = lines.get(position.line as usize) else {
+            return false;
+        };
+        let wanted = position.character as usize;
+        let mut units = 0;
+        for c in self.0[start..end].chars() {
+            if units == wanted {
+                return true;
+            }
+            units += Self::width(c, encoding);
+        }
+        units == wanted
+    }
+}
+
+/// The text of each document as the server keeps it: a `file` URI's path, normalized, to the
+/// open document's text, else the project's file on disk, else none (`Server::did_change` reads
+/// `host.text(&path).unwrap_or_default()`).
+struct Documents {
+    open: BTreeMap<PathBuf, Rc<Text>>,
+}
+
+impl Documents {
+    fn key(uri: &str) -> Option<PathBuf> {
+        quakec_lsp::uri::to_path(uri).map(|path| qc_project::normalize(&path))
+    }
+
+    fn text(&self, path: &Path) -> Rc<Text> {
+        match self.open.get(path) {
+            Some(text) => Rc::clone(text),
+            None if path == Path::new(PROJECT_FILE) => Rc::new(Text(SOURCE.to_owned())),
+            None => Rc::new(Text(String::new())),
+        }
+    }
+
+    /// Every document with a text: the project's file and each open one.
+    fn snapshot(&self) -> BTreeMap<PathBuf, Rc<Text>> {
+        let paths = self.open.keys().cloned();
+        [PathBuf::from(PROJECT_FILE)]
+            .into_iter()
+            .chain(paths)
+            .map(|path| {
+                let text = self.text(&path);
+                (path, text)
+            })
+            .collect()
+    }
+
+    /// Applies the notification `method` with `params`, as `Server::did_open`, `did_change` and
+    /// `did_close` do, positions counted in `encoding`.
+    fn apply(&mut self, method: &str, params: &Value, encoding: Encoding) {
+        let uri = params["textDocument"]["uri"].as_str().unwrap_or_default();
+        let Some(path) = Self::key(uri) else {
+            return;
+        };
+        match method {
+            "textDocument/didOpen" => {
+                let text = params["textDocument"]["text"].as_str().unwrap_or_default();
+                self.open.insert(path, Rc::new(Text(text.to_owned())));
+            }
+            "textDocument/didChange" => {
+                let mut text = self.text(&path).0.clone();
+                for change in params["contentChanges"].as_array().into_iter().flatten() {
+                    let inserted = change["text"].as_str().unwrap_or_default();
+                    text = match position_pair(&change["range"]) {
+                        None => inserted.to_owned(),
+                        Some((start, end)) => {
+                            let current = Text(text);
+                            let start = current.offset(start, encoding);
+                            let end = current.offset(end, encoding).max(start);
+                            let mut edited = current.0[..start].to_owned();
+                            edited.push_str(inserted);
+                            edited.push_str(&current.0[end..]);
+                            edited
+                        }
+                    };
+                }
+                self.open.insert(path, Rc::new(Text(text)));
+            }
+            "textDocument/didClose" => {
+                self.open.remove(&path);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The start and end of a range.
+fn position_pair(range: &Value) -> Option<(Position, Position)> {
+    Some((as_position(&range["start"])?, as_position(&range["end"])?))
+}
+
+/// `value` as a position, if it is one.
+fn as_position(value: &Value) -> Option<Position> {
+    let line = u32::try_from(value.get("line")?.as_u64()?).ok()?;
+    let character = u32::try_from(value.get("character")?.as_u64()?).ok()?;
+    Some(Position { line, character })
+}
+
+/// Every position in the answer `value`, at any depth, with the path of the document it is in:
+/// the `uri` of the object holding it, the `textDocument`'s of a `TextDocumentEdit`, the key of
+/// a `WorkspaceEdit`'s `changes`, a `LocationLink`'s `targetUri` for its target ranges, or
+/// `document`, the request's.
+fn positions(
+    value: &Value,
+    document: Option<&PathBuf>,
+    out: &mut Vec<(Option<PathBuf>, Position)>,
+) {
     match value {
         Value::Object(map) => {
-            if let (Some(line), Some(_)) = (map.get("line"), map.get("character"))
-                && let Some(line) = line.as_u64()
-            {
-                out.push(line);
+            let uri = map
+                .get("uri")
+                .or_else(|| map.get("textDocument").and_then(|d| d.get("uri")))
+                .and_then(Value::as_str);
+            let own = uri.map(Documents::key);
+            let document = match &own {
+                Some(key) => key.as_ref(),
+                None => document,
+            };
+            if let Some(position) = as_position(value) {
+                out.push((document.cloned(), position));
             }
-            map.values().for_each(|v| lines(v, out));
+            let target = map
+                .get("targetUri")
+                .and_then(Value::as_str)
+                .map(Documents::key);
+            for (key, item) in map {
+                match (key.as_str(), item, &target) {
+                    ("changes", Value::Object(changes), _) => {
+                        for (uri, edits) in changes {
+                            positions(edits, Documents::key(uri).as_ref(), out);
+                        }
+                    }
+                    ("targetRange" | "targetSelectionRange", _, Some(target)) => {
+                        positions(item, target.as_ref(), out);
+                    }
+                    _ => positions(item, document, out),
+                }
+            }
         }
-        Value::Array(items) => items.iter().for_each(|v| lines(v, out)),
+        Value::Array(items) => items.iter().for_each(|v| positions(v, document, out)),
         _ => {}
     }
 }
@@ -190,27 +388,62 @@ fuzz_target!(|data: &[u8]| {
     let mut output = Vec::new();
     let _ = quakec_lsp::run(loader(), data, &mut output);
 
-    // A drawn session: one answer per request, to a request that was sent.
-    let (input, ids) = session(data);
+    // A drawn session: each request answered once, and every position the server gives inside
+    // its document's text as it stood when the request was read.
+    let (input, messages) = session(data);
     let mut output = Vec::new();
     let _ = quakec_lsp::run(loader(), input.as_slice(), &mut output);
-    let mut answered: BTreeMap<i64, usize> = BTreeMap::new();
-    for message in answers(&output) {
-        if message.get("method").is_some() {
-            continue;
+    let answers: Vec<Value> = answers(&output)
+        .into_iter()
+        .filter(|message| message.get("method").is_none())
+        .collect();
+    let encoding = answers
+        .iter()
+        .find(|answer| answer["id"] == 0)
+        .and_then(|answer| answer["result"]["capabilities"]["positionEncoding"].as_str())
+        .map_or(Encoding::Utf16, |kind| {
+            [Encoding::Utf8, Encoding::Utf16]
+                .into_iter()
+                .find(|encoding| encoding.kind() == kind)
+                .unwrap_or_else(|| panic!("an encoding the client did not offer: {kind}"))
+        });
+    // The texts each request saw, by its id.
+    let mut documents = Documents {
+        open: BTreeMap::new(),
+    };
+    let mut seen: BTreeMap<i64, (Option<PathBuf>, BTreeMap<PathBuf, Rc<Text>>)> = BTreeMap::new();
+    for message in &messages {
+        let method = message["method"].as_str().unwrap_or_default();
+        match message.get("id").and_then(Value::as_i64) {
+            Some(id) => {
+                let uri = message["params"]["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or_default();
+                seen.insert(id, (Documents::key(uri), documents.snapshot()));
+            }
+            None => documents.apply(method, &message["params"], encoding),
         }
-        if let Some(id) = message.get("id").and_then(Value::as_i64) {
-            assert!(ids.contains(&id), "an answer to no request: {message}");
-            *answered.entry(id).or_default() += 1;
-        }
-        // A position the server gives in the project's file is inside some line the edits
-        // could have made: no more lines than the text and the edits' bytes can hold.
-        let mut found = Vec::new();
-        lines(&message, &mut found);
-        let most = u64::try_from(SOURCE.lines().count() + data.len() + 2).unwrap_or(u64::MAX);
-        assert!(found.iter().all(|&line| line <= most), "{message}");
     }
-    for (id, count) in answered {
+    let mut answered: BTreeMap<i64, usize> = BTreeMap::new();
+    let none = Rc::new(Text(String::new()));
+    for answer in &answers {
+        let id = answer.get("id").and_then(Value::as_i64);
+        let Some((document, texts)) = id.and_then(|id| seen.get(&id)) else {
+            panic!("an answer to no request: {answer}");
+        };
+        *answered.entry(id.unwrap_or_default()).or_default() += 1;
+        let mut found = Vec::new();
+        positions(answer, document.as_ref(), &mut found);
+        for (path, position) in found {
+            let text = path.and_then(|path| texts.get(&path)).unwrap_or(&none);
+            assert!(
+                text.has(position, encoding),
+                "a position outside its document's text: {answer}"
+            );
+        }
+    }
+    for id in seen.keys() {
+        let count = answered.get(id).copied().unwrap_or(0);
         assert_eq!(count, 1, "request {id} answered {count} times");
     }
 });
