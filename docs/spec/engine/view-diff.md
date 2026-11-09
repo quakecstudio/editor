@@ -141,6 +141,15 @@ reads the table between the `view-diff` markers.
   the console closed; a second of frames so the menu's sounds are over; and three seconds of
   frames for the sound. Each shot follows a `place`, after which alone the oracle draws
   (VIEWDIFF-2.4), and the place leaves the console up in the oracle.
+- **VIEWDIFF-5.5** The menu's and the console's shots are held to their own tolerances, not the
+  map's: the host draws them in QuakeSpasm's look (REND-13.7), the view behind the menu faded by
+  black at 0.5 and the console's background at `scr_conalpha` 0.5 with its text at the frame's
+  size (CON-5), where id's software engine fades the view darker and draws the console opaque.
+  The menu's shot fits within a difference of 32 and a brightness within 0.6 of 1, the console's
+  within 22 and 0.3. On LibreQuake's maps, Linux and macOS alike, the menu measured differences
+  of 20 to 28.5 at brightnesses of 1.18 to 1.56, and the console 7.8 to 19.3 at 0.75 to 1.05
+  (Differential run 42690189343). They catch a menu or console not drawn, not a small fault in
+  how either is drawn, which the menu's and the console's own tests pin (MENU, CON).
 
 <!-- view-diff -->
 | Map | Frame | Brightness | Sound | Why |

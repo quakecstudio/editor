@@ -142,7 +142,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             let frames = compare_frames(&read("id")?, &read("qs")?);
             let (verdict, text) = match frames {
                 Ok(frame) => {
-                    let fits = frame.fits(tolerance);
+                    let fits = frame.fits(shot_tolerance(shot, tolerance));
                     (
                         fits,
                         format!(
@@ -209,9 +209,38 @@ fn absolute(engine: &[String]) -> Result<Vec<String>, String> {
 /// view and the console down over it (VIEWDIFF-5.4).
 const SHOTS: [&str; 4] = ["ahead", "behind", "menu", "console"];
 
+/// The tolerances a shot is held to: the menu's and the console's own, the map's for the view
+/// (VIEWDIFF-5.2, VIEWDIFF-5.5).
+fn shot_tolerance(shot: &str, map: Tolerance) -> Tolerance {
+    match shot {
+        "menu" => MENU_TOLERANCE,
+        "console" => CONSOLE_TOLERANCE,
+        _ => map,
+    }
+}
+
 /// The frames the console takes to come down to half the 240-line frame: 120 lines at
 /// `scr_conspeed`'s 300 a second is 0.4 s, so half a second (CON-3.1).
 const CONSOLE_FRAMES: u32 = 36;
+/// The menu's shot's tolerances (VIEWDIFF-5.5): the host draws the menu in QuakeSpasm's look,
+/// the view behind it faded by black at 0.5 (REND-13.7), where id's software engine fades it
+/// darker; on LibreQuake's maps the shot measured differences of 20 to 28.5 and brightnesses of
+/// 1.18 to 1.56 on Linux and macOS.
+const MENU_TOLERANCE: Tolerance = Tolerance {
+    frame: 32.0,
+    brightness: 0.6,
+    sound: 0.0,
+};
+/// The console's shot's tolerances (VIEWDIFF-5.5): the host draws the console in QuakeSpasm's
+/// look, its background at `scr_conalpha` 0.5 and its text at the frame's size (CON-5,
+/// REND-13.7), where id's engine draws it opaque; differences of 7.8 to 19.3 and brightnesses of
+/// 0.75 to 1.05 were measured.
+const CONSOLE_TOLERANCE: Tolerance = Tolerance {
+    frame: 22.0,
+    brightness: 0.3,
+    sound: 0.0,
+};
+
 /// The frames after the menu and the console close and before the sound's frames, so that the
 /// menu's sounds are over: a second (VIEWDIFF-5.4).
 const QUIET_FRAMES: u32 = 72;

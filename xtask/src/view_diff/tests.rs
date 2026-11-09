@@ -10,8 +10,8 @@
 )]
 
 use super::{
-    PPM_HEADER, Sound, Tolerance, compare_frames, compare_sound, monster_near, parse_tolerances,
-    route, start_of, tolerance_of,
+    CONSOLE_TOLERANCE, Frames, MENU_TOLERANCE, PPM_HEADER, Sound, Tolerance, compare_frames,
+    compare_sound, monster_near, parse_tolerances, route, shot_tolerance, start_of, tolerance_of,
 };
 
 /// A 320 by 240 binary PPM of one grey `level`, its pixel `at` set to `other`.
@@ -269,4 +269,28 @@ fn the_oracle_is_not_built_on_windows() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let source = std::fs::read_to_string(root.join("xtask/src/oracles.rs")).unwrap();
     assert!(source.contains("if !cfg!(windows) {\n        let view_objects = compile_view("));
+}
+
+// spec VIEWDIFF-5.5: the menu's and the console's shots are held to their own tolerances, the
+// view's shots to the map's
+#[test]
+fn the_menu_and_console_have_their_own_tolerances() {
+    let map = Tolerance {
+        frame: 6.0,
+        brightness: 0.15,
+        sound: 0.35,
+    };
+    assert_eq!(shot_tolerance("ahead", map), map);
+    assert_eq!(shot_tolerance("behind", map), map);
+    assert_eq!(shot_tolerance("menu", map), MENU_TOLERANCE);
+    assert_eq!(shot_tolerance("console", map), CONSOLE_TOLERANCE);
+    // The widest measured on LibreQuake's maps fits; no menu or console at all does not.
+    let measured = |difference, brightness| Frames {
+        difference,
+        brightness,
+    };
+    assert!(measured(28.54, 1.555).fits(MENU_TOLERANCE));
+    assert!(measured(19.26, 0.747).fits(CONSOLE_TOLERANCE));
+    assert!(!measured(40.0, 1.0).fits(MENU_TOLERANCE));
+    assert!(!measured(10.0, 0.6).fits(CONSOLE_TOLERANCE));
 }
