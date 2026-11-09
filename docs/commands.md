@@ -293,7 +293,7 @@ Parameters:
     },
     "screen_width": {
       "default": null,
-      "description": "The width of the screen the window is on, when the windowing system says.",
+      "description": "The width of the screen the window is on, when the windowing system says. Its origin is\nnot reported (egui's `ViewportInfo` gives a monitor's size only), so the screens are\ntaken to be this wide, side by side from the desktop's 0.",
       "format": "float",
       "type": [
         "number",
