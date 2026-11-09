@@ -51,8 +51,9 @@ The frames go nowhere but the null output: the preview host app (P3-02) plays th
 decoded here with `symphonia` (MPL-2.0) with only its Ogg and Vorbis features, because the
 rerelease ships no other codec (RRE-3.2); the other extensions QuakeSpasm tries
 (`RRE_MUSIC_EXTENSIONS`) are not decoded. `lewton`, the smaller Vorbis decoder, was tried
-first and left: the `qs-ogg` fuzz target made it allocate 32 GB from a crafted header. The WAV reader and the mixer stay ports (`qs-wav`, this crate) because the
-engine differential compares the mixed frames with id's engine sample for sample (SND-5.4).
+first and left: the `qs-ogg` fuzz target made it allocate 32 GB from a crafted header.
+The WAV reader and the mixer stay ports (`qs-wav`, this crate) because the engine
+differential compares the mixed frames with id's engine sample for sample (SND-5.4).
 The engine oracle's audio buffers (P3-23, #237) are not compared yet: every statement is
 pinned by its own test against the arithmetic id's source states.
 

@@ -23,6 +23,16 @@ use qs_sound::{
 /// (RRE-3.5).
 const MUSIC_CODECS: [&str; 1] = ["ogg"];
 
+/// What the search path has for a track (RRE-3.5).
+enum TrackFile {
+    /// Its file, opened.
+    Found(Box<dyn MusicStream>),
+    /// No file: "Couldn't find a cdrip for track <n>".
+    Missing,
+    /// A file that does not open: "Couldn't handle music file <name>".
+    Undecodable(String),
+}
+
 /// The most seconds of mixed sound waiting for the device; past it new frames are dropped,
 /// so a stall never builds up delay.
 const MOST_QUEUED: f64 = 0.25;
@@ -329,27 +339,33 @@ impl Audio {
             return;
         }
         match self.track_file(number) {
-            Some(stream) => self.music.play(&mut self.mixer, stream, true),
-            None => tracing::info!(track = number, "Couldn't find a cdrip for track {number}"),
+            TrackFile::Found(stream) => self.music.play(&mut self.mixer, stream, true),
+            TrackFile::Missing => {
+                tracing::info!(track = number, "Couldn't find a cdrip for track {number}");
+            }
+            TrackFile::Undecodable(name) => tracing::info!("Couldn't handle music file {name}"),
         }
     }
 
-    /// The first of `music/track<NN>.<ext>`, for each extension this host decodes, that the
-    /// search path has and that decodes (RRE-3.5).
-    fn track_file(&mut self, number: u8) -> Option<Box<dyn MusicStream>> {
+    /// The file of track `number`: `music/track<NN>.<ext>` for the first extension this host
+    /// decodes that the search path has, opened (RRE-3.5).
+    fn track_file(&mut self, number: u8) -> TrackFile {
         for name in track_files(number, &MUSIC_CODECS) {
             let Some(bytes) = (self.music_files)(&name) else {
                 continue;
             };
-            match OggStream::new(bytes) {
+            return match OggStream::new(bytes) {
                 Ok(stream) => {
                     tracing::info!(track = number, %name, "music: the track's file");
-                    return Some(Box::new(stream));
+                    TrackFile::Found(Box::new(stream))
                 }
-                Err(error) => tracing::warn!(%name, %error, "music"),
-            }
+                Err(error) => {
+                    tracing::debug!(%name, %error, "music");
+                    TrackFile::Undecodable(name)
+                }
+            };
         }
-        None
+        TrackFile::Missing
     }
 
     /// The `bgmvolume` setting (SND-6.2, CON-7.4).

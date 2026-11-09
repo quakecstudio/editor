@@ -6,6 +6,7 @@
 
 use std::fmt;
 use std::io::Cursor;
+use std::sync::Arc;
 
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::errors::Error as SymphoniaError;
@@ -21,8 +22,8 @@ use crate::music::{MusicStream, Read};
 #[derive(Debug)]
 pub enum OggError {
     /// The bytes are not an Ogg Vorbis stream the decoder reads.
-    Decode(String),
-    /// The file has no audio track, or its track names no rate or channels.
+    Decode(SymphoniaError),
+    /// The file has no audio track, or its track names no rate, a rate of 0, or no channels.
     NoAudio,
     /// The stream has other than one or two channels, which the host's music does not play.
     Channels(usize),
@@ -42,8 +43,18 @@ impl std::error::Error for OggError {}
 
 impl From<SymphoniaError> for OggError {
     fn from(error: SymphoniaError) -> Self {
-        Self::Decode(error.to_string())
+        Self::Decode(error)
     }
+}
+
+/// What decoding the next packet came to.
+enum Next {
+    /// A packet's samples are pending.
+    Packet,
+    /// The end of the file.
+    End,
+    /// The file failed, `S_CodecReadStream`'s error.
+    Failed,
 }
 
 /// The file's reader and decoder, from its start.
@@ -55,9 +66,10 @@ struct Opened {
     channels: u16,
 }
 
-/// Opens `bytes` as Ogg with one Vorbis audio track of one or two channels.
-fn open(bytes: &[u8]) -> Result<Opened, OggError> {
-    let source = MediaSourceStream::new(Box::new(Cursor::new(bytes.to_vec())), Default::default());
+/// Opens `bytes` as Ogg with one Vorbis audio track of one or two channels, sharing them.
+fn open(bytes: &Arc<[u8]>) -> Result<Opened, OggError> {
+    let source =
+        MediaSourceStream::new(Box::new(Cursor::new(Arc::clone(bytes))), Default::default());
     let mut hint = Hint::new();
     hint.with_extension("ogg");
     let format = get_probe().probe(
@@ -74,7 +86,10 @@ fn open(bytes: &[u8]) -> Result<Opened, OggError> {
         .as_ref()
         .and_then(|params| params.audio())
         .ok_or(OggError::NoAudio)?;
-    let rate = params.sample_rate.ok_or(OggError::NoAudio)?;
+    let rate = params
+        .sample_rate
+        .filter(|&rate| rate > 0)
+        .ok_or(OggError::NoAudio)?;
     let count = params.channels.as_ref().ok_or(OggError::NoAudio)?.count();
     let channels = match count {
         1 => 1,
@@ -95,7 +110,7 @@ fn open(bytes: &[u8]) -> Result<Opened, OggError> {
 /// An Ogg Vorbis file being played: its bytes, kept for a rewind, its reader and decoder, and
 /// the samples of the packet decoded last that a read has not taken yet.
 pub struct OggStream {
-    bytes: Vec<u8>,
+    bytes: Arc<[u8]>,
     opened: Opened,
     pending: Vec<i16>,
     taken: usize,
@@ -107,8 +122,10 @@ impl OggStream {
     /// # Errors
     ///
     /// [`OggError::Decode`] when the bytes are not Ogg Vorbis, [`OggError::NoAudio`] when it has
-    /// no audio track, [`OggError::Channels`] when it has other than one or two channels.
+    /// no audio track or a rate of 0, [`OggError::Channels`] when it has other than one or two
+    /// channels.
     pub fn new(bytes: Vec<u8>) -> Result<Self, OggError> {
+        let bytes: Arc<[u8]> = bytes.into();
         let opened = open(&bytes)?;
         Ok(Self {
             bytes,
@@ -118,13 +135,13 @@ impl OggStream {
         })
     }
 
-    /// The next packet's samples into `pending`; false at the end or when the file fails.
-    fn decode_next(&mut self) -> Result<bool, ()> {
+    /// The next packet's samples into `pending`.
+    fn decode_next(&mut self) -> Next {
         loop {
             let packet = match self.opened.format.next_packet() {
                 Ok(Some(packet)) => packet,
-                Ok(None) => return Ok(false),
-                Err(_) => return Err(()),
+                Ok(None) => return Next::End,
+                Err(_) => return Next::Failed,
             };
             if packet.track_id != self.opened.track {
                 continue;
@@ -135,11 +152,11 @@ impl OggStream {
                     self.pending.resize(buffer.samples_interleaved(), 0);
                     buffer.copy_to_slice_interleaved(&mut self.pending);
                     self.taken = 0;
-                    return Ok(true);
+                    return Next::Packet;
                 }
                 // A packet that does not decode is skipped, as the example readers do.
                 Err(SymphoniaError::DecodeError(_)) => {}
-                Err(_) => return Err(()),
+                Err(_) => return Next::Failed,
             }
         }
     }
@@ -160,11 +177,11 @@ impl MusicStream for OggStream {
             let left = self.pending.get(self.taken..).unwrap_or_default();
             if left.is_empty() {
                 match self.decode_next() {
-                    Ok(true) => continue,
-                    Ok(false) => break,
+                    Next::Packet => continue,
+                    Next::End => break,
                     // `S_CodecReadStream`'s error, -1.
-                    Err(()) if written == 0 => return Read::Failed(-1),
-                    Err(()) => break,
+                    Next::Failed if written == 0 => return Read::Failed(-1),
+                    Next::Failed => break,
                 }
             }
             let n = left.len().min(slot.len());

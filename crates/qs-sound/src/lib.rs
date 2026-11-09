@@ -7,7 +7,7 @@
 //! for headless runs.
 //!
 //! Implements `docs/spec/engine/sound.md` SND-1 to SND-5 and `docs/spec/engine/rerelease.md`
-//! RRE-3.1.
+//! RRE-3.5.
 
 mod mixer;
 mod music;

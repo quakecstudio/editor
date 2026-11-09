@@ -14,7 +14,7 @@ use crate::mixer::Mixer;
 /// The directory the tracks are in (RRE-3).
 pub const RRE_MUSIC_DIR: &str = "music";
 
-/// The extensions QuakeSpasm's codecs read, in its handler order (RRE-3.1).
+/// The extensions QuakeSpasm's codecs read, in its handler order (RRE-3.5).
 pub const RRE_MUSIC_EXTENSIONS: [&str; 8] =
     ["ogg", "opus", "mp3", "flac", "wav", "it", "s3m", "xm"];
 
@@ -29,7 +29,7 @@ pub struct Track {
 }
 
 /// The files that may hold `track`, `music/track<NN>.<ext>` for each extension the host
-/// decodes, in the order given (RRE-3.1); the host takes the one from the search path entry
+/// decodes, in the order given (RRE-3.5); the host takes the one from the search path entry
 /// of highest priority.
 #[must_use]
 pub fn track_files(track: u8, extensions: &[&str]) -> Vec<String> {

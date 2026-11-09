@@ -3,7 +3,8 @@
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
-    reason = "test code: a failed unwrap or index is a failed test"
+    clippy::panic,
+    reason = "test code: a failed unwrap, index or match is a failed test"
 )]
 
 use std::collections::VecDeque;
@@ -11,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use qs_sound::{MusicStream, Output, Read};
 
-use super::{Audio, CdImage, Device, Queue, fill, seconds_of_samples};
+use super::{Audio, CdImage, Device, Queue, TrackFile, fill, seconds_of_samples};
 
 fn queue(most: usize) -> Queue {
     Queue {
@@ -132,7 +133,8 @@ fn a_cd_image_that_does_not_open() {
 const TONE: &[u8] = include_bytes!("../../../../crates/qs-sound/src/ogg/tone-stereo.ogg");
 
 // spec RRE-3.5: with no CD image the host plays `music/track<NN>.ogg` from the search path,
-// `NN` the track as two digits; no file, or one that does not decode, is no music
+// `NN` the track as two digits, looping; no file is "Couldn't find a cdrip", and a file that
+// does not open "Couldn't handle music file", and either leaves no music
 #[test]
 fn a_track_with_no_cd_plays_its_ogg_file() {
     let files: qs_sound::Reader = Box::new(|name: &str| match name {
@@ -141,9 +143,25 @@ fn a_track_with_no_cd_plays_its_ogg_file() {
         _ => None,
     });
     let mut audio = Audio::open(Box::new(|_: &str| None), Device::None, None, files);
-    let stream = audio.track_file(2).unwrap();
+    let TrackFile::Found(stream) = audio.track_file(2) else {
+        panic!("track 2's file");
+    };
     assert_eq!((stream.rate(), stream.channels()), (44100, 2));
-    assert!(audio.track_file(3).is_none(), "no file");
-    assert!(audio.track_file(5).is_none(), "a file that does not decode");
-    assert!(audio.track_file(12).is_none());
+    assert!(matches!(audio.track_file(3), TrackFile::Missing));
+    assert!(matches!(audio.track_file(12), TrackFile::Missing));
+    assert!(matches!(
+        audio.track_file(5),
+        TrackFile::Undecodable(name) if name == "music/track05.ogg"
+    ));
+    audio.play_track(2);
+    assert!(audio.music.playing());
+    audio.play_track(5);
+    assert!(
+        !audio.music.playing(),
+        "the track before stopped, and this one does not open"
+    );
+    audio.play_track(258);
+    assert!(audio.music.playing(), "(byte)cl.cdtrack: 258 is track 2");
+    audio.play_track(3);
+    assert!(!audio.music.playing());
 }

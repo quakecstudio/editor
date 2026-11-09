@@ -36,8 +36,8 @@ jobs:
   fuzz:
     name: Fuzz
     runs-on: ubuntu-latest
-    # Sixteen targets of ten minutes each, the oracle build and the Rust builds.
-    timeout-minutes: 215
+    # Seventeen targets of ten minutes each, the oracle build and the Rust builds.
+    timeout-minutes: 240
     permissions:
       contents: read
     steps:

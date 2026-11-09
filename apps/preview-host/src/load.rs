@@ -308,13 +308,15 @@ pub(crate) fn load(
             })
             .and_then(|cue| CdImage::open(&cue)),
     };
-    let music = reader()?;
-    let mut audio = Audio::open(
-        Box::new(move |name: &str| sounds(name)),
-        output,
-        cd,
-        Box::new(move |name: &str| music(name)),
-    );
+    // RRE-3.5: the music files, from the same search path, and never in a capture, as the CD.
+    let music: qs_sound::Reader = match output {
+        Device::Capture => Box::new(|_: &str| None),
+        Device::Default | Device::None => {
+            let music = Rc::clone(&sounds);
+            Box::new(move |name: &str| music(name))
+        }
+    };
+    let mut audio = Audio::open(Box::new(move |name: &str| sounds(name)), output, cd, music);
     audio.handle(&events, &mut rand);
     let mut pics = Pics::new();
     pics.add_wad(&read("gfx.wad")?, &palette)
