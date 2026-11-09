@@ -922,7 +922,7 @@ struct Writer<'a> {
     limit: usize,
     /// The use, where text that stands nowhere else stands.
     at: FileSpan,
-    /// Each word after a `#` that names no parameter, and where it is (FTEF-14.61).
+    /// Each word after a `#` that names no parameter, and where it is (FTEF-14.78).
     strays: std::cell::RefCell<Vec<(Vec<u8>, FileSpan)>>,
 }
 
@@ -1169,23 +1169,24 @@ impl<L: Loader> Preprocessor<L> {
         let old = self.macros.get(&name).cloned();
         // FTEF-14.58: `#append` keeps the old body only when the counts and the names of the
         // parameters are the same, else it warns and defines the macro anew.
-        let append = match old.as_deref() {
+        let mismatch = match old.as_deref() {
             Some(old) if definer == Definer::Append => {
                 let count = |params: &Option<Vec<Vec<u8>>>| params.as_ref().map(Vec::len);
                 if count(&old.params) != count(&params) || old.variadic != variadic {
-                    let message = "different number of macro arguments in macro append";
-                    run.report(Code::W0115, message, at_name);
-                    false
+                    Some("different number of macro arguments in macro append")
                 } else if old.params != params {
-                    run.report(Code::W0115, "arguments differ in macro append", at_name);
-                    false
+                    Some("arguments differ in macro append")
                 } else {
-                    true
+                    None
                 }
             }
             // "append with no previous define is treated as just a regular define".
-            Some(_) | None => false,
+            Some(_) | None => None,
         };
+        if let Some(message) = mismatch {
+            run.report(Code::W0115, message, at_name);
+        }
+        let append = definer == Definer::Append && old.is_some() && mismatch.is_none();
         match old.as_deref().and_then(Macro::text) {
             Some(old_value) if append => {
                 let mut joined = Text::clone(old_value);
@@ -1202,7 +1203,12 @@ impl<L: Loader> Preprocessor<L> {
                     String::from_utf8_lossy(old_value.bytes()),
                     String::from_utf8_lossy(value.bytes())
                 );
-                run.report(Code::W0115, message, at_name);
+                // FTEF-14.58: after an append's mismatch, the second F315 at the name.
+                if mismatch.is_some() {
+                    run.report_also(Code::W0115, message, at_name);
+                } else {
+                    run.report(Code::W0115, message, at_name);
+                }
             }
             Some(_) => {
                 let message = format!("Identical precompiler definition of {name}");
@@ -1289,7 +1295,7 @@ impl<L: Loader> Preprocessor<L> {
                     strays: std::cell::RefCell::default(),
                 };
                 let written = writer.write().map(Rc::new);
-                // FTEF-14.61: `if (!c->evil) QCC_PR_ParseWarning(0, "'#%s' is not a macro
+                // FTEF-14.78: `if (!c->evil) QCC_PR_ParseWarning(0, "'#%s' is not a macro
                 // parameter in %s", qcc_token, c->name);`
                 if !mac.evil {
                     for (token, at) in writer.strays.take() {
@@ -1615,15 +1621,9 @@ impl<L: Loader> Preprocessor<L> {
             if consumed {
                 continue;
             }
+            // `Run::report` gives nothing for an error already reported at its place.
             let (span, _) = chunk.place(d.span.range());
-            let reported = run
-                .out
-                .diagnostics
-                .iter()
-                .any(|r| r.code == d.code && r.span == span);
-            if !reported {
-                run.report(d.code, d.message.clone(), span);
-            }
+            run.report(d.code, d.message.clone(), span);
         }
     }
 

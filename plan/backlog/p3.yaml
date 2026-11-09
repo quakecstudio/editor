@@ -495,6 +495,49 @@ issues:
   - 'The target runs in the nightly Fuzz workflow with no crash, linked in the PR, and fails when the server is made to drop one answer by hand, recorded in the PR'
   verify:
   - cargo xtask fuzz quakec-lsp --time 10m
+- key: P3-39
+  title: The qc-preproc fuzz target finds a stored body's diagnostic reported at every use
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - TEST-5
+  summary: |
+    The nightly Fuzz workflow on main has failed since 2026-11-06 (runs 42210171534, 42364796608 and 42613642874; the 2026-11-08 run failed to install cargo-fuzz). The qc-preproc target panics at fuzz_targets/qc_preproc.rs:68, "diagnostic reported twice: E0106 Unknown frame macro $-", on a 177-byte input whose `#append` body holds `$-` and is used twice. The preprocessor places a diagnostic found in a macro's stored body at the body's bytes, the same place for every use, and only a chunk's lexical errors were kept to one report there (FTEF-14.77); `E0106` for a frame macro reference in the body and `W0117` for a `#` before a word that names no parameter (FTEF-14.61, "for each expansion") were given once per use at that one place, against QCD-1.5.
+  environment: |
+    main at a6a5bfd; the nightly Fuzz workflow, run 42613642874
+  depends: []
+  deliverable:
+  - 'crates/qc-preproc/src/lib.rs: `Run::report` gives nothing for a diagnostic whose code and span one already in the file''s output has (QCD-1.5), so every report site, not only a chunk''s lexical errors, gives a rule broken at one place once there; `Run::report_also` keeps a directive''s further warnings of other texts at that span (FTEF-14.58, FTEF-12.11) until P3-40 decides'
+  - 'docs/spec/dialect-fteqcc.md: FTEF-14.61 withdrawn for FTEF-14.78 (W0117 once at the body''s `#`), and FTEF-14.79 (any diagnostic placed in a stored body is given once there)'
+  - 'crates/qc-preproc/src/tests/fteqcc.rs: the crash input as a regression test, and a test of each statement'
+  acceptance:
+  - 'The crash input preprocesses with no diagnostic reported twice, in a test that fails without the fix'
+  - 'cargo xtask fuzz qc-preproc --time 10m runs clean, or a nightly or dispatched Fuzz run on the fix is green, linked in the PR'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask fuzz qc-preproc --time 10m
+- key: P3-40
+  title: Decide how two distinct preprocessor warnings at one span meet QCD-1.5
+  labels:
+  - L2-syntax
+  - area:language
+  - type:decision
+  - needs:human
+  size: S
+  reqs:
+  - TEST-5
+  summary: |
+    Found while fixing P3-39. QCD-1.5 says no two diagnostics of one input have the same code and the same span, with W0227 the one exception, and the qc-preproc fuzz target asserts exactly that. Two FTEQCC statements give two different warnings of one code at one span: FTEF-14.58 puts both W0115 warnings of an `#append` with other parameters ("arguments differ in macro append" or "different number of macro arguments in macro append", then "Alternate precompiler definition of NAME (OLD -> NEW)") at the macro's name, and FTEF-12.11's `#pragma flag` gives a W0113 for each NAME, all at the pragma's span, so `#pragma flag enable foo bar` names two unknown flags at one place. The fuzz target has not found either yet, but nothing stops it. The options: give each warning its own span (the parameter list or the `#append` word for the first W0115, each NAME's word for W0113, which needs the pragma's words kept with their source offsets); add the two to QCD-1.5's exceptions, as W0227 is; or report one of each pair.
+  depends: []
+  deliverable:
+  - 'docs/adr/0022-distinct-warnings-at-one-span.md, the ADR choosing among the options, with the replacing spec statements it needs (QCD-1.5, FTEF-14.58 or FTEF-12.11)'
+  acceptance:
+  - The ADR is Accepted, and the follow-up implementing it is filed in plan/
+  verify:
+  - ADR link
 - key: P3-18
   title: Phase 3 gate review
   labels:
@@ -514,6 +557,8 @@ issues:
   - P3-36
   - P3-37
   - P3-38
+  - P3-39
+  - P3-40
   - P3-22
   - P3-23
   - P3-24

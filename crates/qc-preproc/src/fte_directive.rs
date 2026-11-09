@@ -1984,9 +1984,7 @@ impl<L: Loader> Preprocessor<L> {
             }
             PragmaName::Keyword | PragmaName::Flag => {
                 let (warnings, set) = self.fte.flags.apply_pragma(message);
-                for warning in warnings {
-                    run.report(Code::W0113, warning, at);
-                }
+                run.report_each(Code::W0113, warnings, at);
                 // FTEF-21.1: the flags it names, which an `extern "C"` block may have changed
                 // since.
                 let edit = FlagEdit::of_flags(&set, self.fte.flags.compiler_flags());
@@ -2000,15 +1998,12 @@ impl<L: Loader> Preprocessor<L> {
                 }
             }
             PragmaName::Optimise | PragmaName::Optimize => {
-                for warning in fte_pragma::optimise_warnings(&pragma.name, message) {
-                    run.report(Code::W0113, warning, at);
-                }
+                let warnings = fte_pragma::optimise_warnings(&pragma.name, message);
+                run.report_each(Code::W0113, warnings, at);
             }
             PragmaName::Opcode => {
                 let (edits, warnings) = fte_pragma::opcode_pragma(message);
-                for warning in warnings {
-                    run.report(Code::W0113, warning, at);
-                }
+                run.report_each(Code::W0113, warnings, at);
                 // FTEF-25.3: `pr_opcodes[f].flags |= OPF_VALID` or `&= ~OPF_VALID`, in order.
                 if !edits.is_empty() {
                     for (op, on) in edits {

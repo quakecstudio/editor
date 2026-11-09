@@ -643,7 +643,7 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   `#pragma warning` sets, at the construct, with FTEQCC's text: "Include path too long.", "Too many
   include dirs. Ignoring and hoping the stars align." (FTEF-14.68), "file contains null bytes N/LEN"
   (FTEF-14.64), "Unknown target 'NAME'. Ignored." with its list and "target revision N is unknown,
-  assuming revision M" (FTEF-12.11), and "'#NAME' is not a macro parameter in MACRO" (FTEF-14.61)
+  assuming revision M" (FTEF-12.11), and "'#NAME' is not a macro parameter in MACRO" (FTEF-14.78)
   (`dialect-fteqcc.md`).
 - **QCD-7.61** `W0118` "** is unsafe around pointers, use *^ instead.": under an FTEQCC profile
   with FTEQCC's `ssp` flag on, a `**`, FTEQCC's warning F321 of the same text (`dialect-fteqcc.md`,

@@ -365,7 +365,7 @@ reach from `progs.src` to a token. **Default** is what `fteqcc -Tid` does with i
 | `QCC_PR_PreProcessor_Define` | "Alternate precompiler definition of %s (%s -> %s)" | warning | W0115 | FTEF-14.58, QCD-7.58 | ported |
 | `QCC_PR_PreProcessor_Define` | "Identical precompiler definition of %s" | ignored | W0116 | FTEF-14.58, QCD-7.59 | ported |
 | `QCC_PR_ExpandPreProcessorMacro` | "Too many parameters in macro call", "EOF on macro call", "Not enough macro parameters", "__VA_COUNT__ without any variable args" | error | E0116, E0117 | FTEF-14.9, FTEF-14.22, FTEF-14.26 | ported |
-| `QCC_PR_ExpandPreProcessorMacro` | "'#%s' is not a macro parameter in %s" | warning | W0117 | FTEF-14.61, QCD-7.60 | ported |
+| `QCC_PR_ExpandPreProcessorMacro` | "'#%s' is not a macro parameter in %s" | warning | W0117 | FTEF-14.78, QCD-7.60 | ported |
 | `QCC_PR_Lex` | "Explicit precompiler usage when not defined %s" | error | E0209 | FTEF-14.52, FTE-23.10 | ported |
 | `QCC_LoadFile` | "file contains null bytes" | warning | W0117 | FTEF-14.64, QCD-7.60 | ported |
 | `QCC_main` | "No destination filename.  qcc -help for info." | error | none: FTEQCC never reaches it | PRJ-4.9 | ported |

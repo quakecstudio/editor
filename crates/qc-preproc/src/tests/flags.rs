@@ -342,6 +342,10 @@ fn other_flags_change_no_token() {
     assert!(codes(&out).is_empty());
     let (_, out) = one_fte(&format!("#pragma flag enable acc caseinsens\n{text}"));
     assert_eq!(tokens(&out), r#"x = 1.5 "a|b" 97 ;"#);
+    // QCD-1.5, FTEF-14.79: both names give one text at one place, the pragma's, so it is one
+    // report; two names with different texts are two (FTEF-12.11).
+    assert_eq!(codes(&out), [Code::W0113]);
+    let (_, out) = one_fte(&format!("#pragma flag enable nosuch acc\n{text}"));
     assert_eq!(codes(&out), [Code::W0113, Code::W0113]);
 }
 
