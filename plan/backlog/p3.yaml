@@ -210,9 +210,10 @@ issues:
   deliverable:
   - Window placement beside the IDE that follows focus and resizes with the layout on macOS, Windows, X11 and Wayland (with documented Wayland limits)
   acceptance:
-  - Play opens the game next to the editor on each OS
+  - 'The host is placed beside the IDE as the tests on main from #742 pin: `DockFrame::placement`''s in crates/qs-workbench/src/preview/dock.rs, the host''s `window/place` (BRIDGE-4.10) in apps/preview-host/src/game/tests.rs, and the shell''s docking in apps/desktop; the Wayland limits are in apps/preview-host/README.md'
+  - 'The recorded check that Play opens the game next to the editor on macOS, Windows, X11 and Wayland is part of the MVP demo (P4-24), moved there by Justin on 2026-11-09'
   verify:
-  - Recorded manual test per OS
+  - cargo test -p qs-workbench -p preview-host -p quakec-studio
 - key: P3-12
   title: Play loop toolbar
   labels:
@@ -560,6 +561,26 @@ issues:
   - 'A Differential run on the PR passes the view differential with the menu and console shots, linked in the PR'
   verify:
   - cargo test -p qs-sim -p preview-host
+- key: P3-42
+  title: Dock the game beside the IDE on a monitor whose origin is not the desktop's
+  labels:
+  - L5-commands
+  - area:preview
+  - type:bug
+  size: S
+  reqs:
+  - ENG-9
+  summary: |
+    Found by the self-review of #774. `DockFrame::placement` (crates/qs-workbench/src/preview/dock.rs) reckons the room right of the IDE as `screen_width - (x + width) - GAP`, the monitor's width taken as an absolute right edge, while `x` is in desktop coordinates. On a second monitor 2560 wide at x 2560, the IDE at x 2660 and 1200 wide, the room comes out negative and the game overlaps the IDE's corner with 1300 points free beside it; on a monitor left of the primary, at negative x, it errs the other way. Its tests put the IDE on the primary monitor only.
+  environment: |
+    main after #742; crates/qs-workbench/src/preview/dock.rs, apps/desktop/src/shell.rs (the frame from egui's viewport)
+  depends: []
+  deliverable:
+  - 'crates/qs-workbench/src/preview/dock.rs and apps/desktop: the frame carries the monitor''s origin as well as its size, as far as egui and the window system report it, and the room beside the IDE is reckoned from the monitor''s right edge in desktop coordinates'
+  acceptance:
+  - 'Tests place the IDE on a monitor right of the primary, left of it (negative x) and on the primary, each docking beside the IDE when there is room and overlapping its corner when there is not'
+  verify:
+  - cargo test -p qs-workbench -p quakec-studio
 - key: P3-18
   title: Phase 3 gate review
   labels:
@@ -582,6 +603,7 @@ issues:
   - P3-39
   - P3-40
   - P3-41
+  - P3-42
   - P3-22
   - P3-23
   - P3-24
