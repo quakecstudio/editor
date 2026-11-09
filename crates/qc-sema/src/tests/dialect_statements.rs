@@ -60,7 +60,7 @@ fn analyze(files: &[(&str, &str)], listed: Option<bool>) -> ModuleAnalysis {
         autoproto: listed,
         ..ModuleInput::default()
     };
-    db.analyze_module(&input)
+    ModuleAnalysis::clone(&db.analyze_module(&input))
 }
 
 /// The error codes of an analysis.

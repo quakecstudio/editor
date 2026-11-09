@@ -43,8 +43,9 @@ impl BuiltinRef {
 
 /// The `W0311` warnings for a module of `kind` checked against `engine` (ENGT-4.1, ENGT-4.8).
 ///
-/// `files` are the module's files in compilation order, each with its parse in `dialect`, and
-/// `index` is the module resolved from them ([`qc_sema::resolve_module`]). Returns one
+/// `files` are the module's files in compilation order, each with its parse, `declared` the
+/// builtins they declare ([`declared_builtins`]), and `index` the module resolved from them
+/// ([`qc_sema::resolve_module`]). Returns one
 /// warning per call of a builtin the engine's table for `kind` lacks, in file and then source
 /// order; none when the engine has no table for `kind` ([`Engine::has_table`]).
 #[must_use]
@@ -53,29 +54,35 @@ pub fn missing_builtins(
     kind: ModuleKind,
     files: &[(FileId, &Parse)],
     index: &ModuleIndex,
-    dialect: Dialect,
+    declared: &HashMap<String, BuiltinRef>,
 ) -> Vec<FileDiagnostic> {
     if !engine.has_table(kind) {
         return Vec::new();
     }
-    let keys = declared_builtins(files.iter().map(|&(_, parse)| parse), dialect);
+    // The builtins the module declares that the engine lacks; most modules have none, and then
+    // no call needs finding, the costly part of the check.
+    let missing: HashMap<&str, &BuiltinRef> = declared
+        .iter()
+        .filter(|(_, key)| key.lookup(engine, kind).is_none())
+        .map(|(name, key)| (name.as_str(), key))
+        .collect();
+    if missing.is_empty() {
+        return Vec::new();
+    }
     let callees = callee_names(files);
     let mut out = Vec::new();
     for reference in index.refs() {
         let location = reference.location;
-        if !callees.contains(&(location.file, location.span)) {
-            continue;
-        }
         let Some(def) = index.def(reference.def) else {
             continue;
         };
         if def.kind != DefKind::Function {
             continue;
         }
-        let Some(key) = keys.get(def.name.as_str()) else {
+        let Some(&key) = missing.get(def.name.as_str()) else {
             continue;
         };
-        if key.lookup(engine, kind).is_some() {
+        if !callees.contains(&(location.file, location.span)) {
             continue;
         }
         out.push(FileDiagnostic::new(

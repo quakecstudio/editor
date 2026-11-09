@@ -48,7 +48,8 @@ fn files_of(parses: &[Parse]) -> Vec<(FileId, &Parse)> {
 /// `engine`.
 fn check_kind(engine: Engine, kind: ModuleKind, files: &[&str]) -> Vec<String> {
     let (parses, index) = module(Dialect::Fteqcc, files);
-    missing_builtins(engine, kind, &files_of(&parses), &index, Dialect::Fteqcc)
+    let declared = declared_builtins(&parses, Dialect::Fteqcc);
+    missing_builtins(engine, kind, &files_of(&parses), &index, &declared)
         .into_iter()
         .map(|d| d.diagnostic.message)
         .collect()
@@ -58,12 +59,13 @@ fn check_kind(engine: Engine, kind: ModuleKind, files: &[&str]) -> Vec<String> {
 /// `engine`.
 fn check_in(dialect: Dialect, engine: Engine, files: &[&str]) -> Vec<FileDiagnostic> {
     let (parses, index) = module(dialect, files);
+    let declared = declared_builtins(&parses, dialect);
     missing_builtins(
         engine,
         ModuleKind::Ssqc,
         &files_of(&parses),
         &index,
-        dialect,
+        &declared,
     )
 }
 

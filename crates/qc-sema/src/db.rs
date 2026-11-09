@@ -31,6 +31,7 @@
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use qc_diag::{Code, Diagnostic};
 use qc_syntax::Parse;
@@ -172,7 +173,7 @@ pub struct Db {
     /// Where each span of each compiled file's last expansion came from (QC-9.7).
     origins: HashMap<FileId, OriginMap>,
     /// The memoized analysis of a module read through the preprocessor.
-    analysis: Option<Memo<(ModuleInput, ModuleAnalysis)>>,
+    analysis: Option<Memo<(ModuleInput, Rc<ModuleAnalysis>)>>,
     /// Query-run counters.
     counts: Cell<QueryCounts>,
 }
@@ -389,8 +390,10 @@ impl Db {
     ///
     /// Recomputes when any file with a path changes. Preprocessing then runs again, but a
     /// file whose expansion is the same text as before is not parsed or lowered again: an
-    /// edit re-parses only the files whose expansion it changed.
-    pub fn analyze_module(&mut self, input: &ModuleInput) -> ModuleAnalysis {
+    /// edit re-parses only the files whose expansion it changed. The analysis is shared with
+    /// the memo, not copied: a module's index is large, and an editor asks for it at every
+    /// pause in typing.
+    pub fn analyze_module(&mut self, input: &ModuleInput) -> Rc<ModuleAnalysis> {
         let max_revision = self
             .paths
             .keys()
@@ -401,7 +404,7 @@ impl Db {
             && memo.value.0 == *input
             && memo.computed_at >= max_revision
         {
-            return memo.value.1.clone();
+            return Rc::clone(&memo.value.1);
         }
         // FTEF-19.27: the prelude's files are the source form's `progs.src`, parsed as a
         // module's source; a file that is one no longer, or newly, is parsed again.
@@ -530,14 +533,14 @@ impl Db {
             qcfuncs_off: !command_line_flags.is_on(qc_preproc::FteFlag::Qcfuncs),
             target: Some(preprocessed.target),
         };
-        let analysis = ModuleAnalysis {
+        let analysis = Rc::new(ModuleAnalysis {
             index: resolve_mapped(&decls, &sources, options),
             syntax,
             options,
-        };
+        });
         self.remember_origins(input, preprocessed.files);
         self.analysis = Some(Memo {
-            value: (input.clone(), analysis.clone()),
+            value: (input.clone(), Rc::clone(&analysis)),
             computed_at: max_revision,
         });
         analysis
