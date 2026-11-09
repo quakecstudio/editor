@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use super::{framed, initialize, notification, project, request, unframed, uri};
 use crate::lines::{Encoding, LineIndex, Position};
 use crate::transport::{read_message, write_message};
-use crate::uri::{from_path, to_path};
+use crate::uri::{Host, from_path, from_path_on, to_path, to_path_on};
 use crate::{Exit, run};
 
 /// Bytes that are mostly the ones line breaks and encodings turn on: CR, LF, ASCII, the lead
@@ -57,6 +57,11 @@ fn boundaries(text: &[u8]) -> Vec<usize> {
 
 fn encoding() -> impl Strategy<Value = Encoding> {
     prop_oneof![Just(Encoding::Utf16), Just(Encoding::Utf8)]
+}
+
+/// A [`component`] of a Windows path, whatever the host the test runs on: no `\`.
+fn windows_component() -> impl Strategy<Value = String> {
+    component().prop_filter("a separator on Windows", |c| !c.contains('\\'))
 }
 
 /// A path component with no `/`: on Windows no `\`, its separator, and not a drive letter's
@@ -211,6 +216,25 @@ proptest! {
             "{}", written
         );
         prop_assert_eq!(to_path(&written), Some(path));
+    }
+
+    // P3-37: on a Windows host a UNC path `\\host\share\...` is written with its host as the
+    // URI's, as VS Code's `URI.file` writes it, and reads back as that path.
+    #[test]
+    fn unc_paths_convert_to_uris_and_back(
+        server in windows_component(),
+        parts in prop::collection::vec(windows_component(), 1..5),
+    ) {
+        let path = format!("\\\\{server}\\{}", parts.join("\\"));
+        let written = from_path_on(std::path::Path::new(&path), Host::Windows);
+        let rest = &written["file://".len()..];
+        prop_assert!(!rest.starts_with('/'), "{}", written);
+        prop_assert!(
+            rest.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~/%".contains(&b)),
+            "{}", written
+        );
+        prop_assert_eq!(to_path_on(&written, Host::Windows), Some(PathBuf::from(path)));
+        prop_assert_eq!(to_path_on(&written, Host::Unix), None);
     }
 
     // LSP 3.18, "Response Message": "A Response Message sent as a result of a request"; every

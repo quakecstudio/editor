@@ -63,7 +63,7 @@ fn drive_letters_and_backslashes_are_windows_rules() {
 fn uris_that_name_no_file() {
     assert_eq!(to_path("untitled:Untitled-1"), None);
     assert_eq!(to_path("https://example.com/a.qc"), None);
-    assert_eq!(to_path("file://server/share/a.qc"), None);
+    assert_eq!(to_path_on("file://server/share/a.qc", Host::Unix), None);
     assert_eq!(to_path("file://"), None);
     assert_eq!(to_path("file:///p/%FF"), None);
 }
@@ -90,5 +90,47 @@ fn paths_to_file_uris() {
     assert_eq!(
         to_path_on(&written, Host::Windows),
         Some(PathBuf::from("c:/q/a.qc"))
+    );
+}
+
+// P3-37: on a Windows host a `file` URI's host other than `localhost` is a UNC share, as
+// vscode-uri's `uriToFsPath` reads one ("unc path: file://shares/c$/far/boo") and RFC 8089
+// Appendix E.3.1 maps one; a UNC path is written with its host as the URI's, the one string the
+// client opens the file by.
+#[test]
+fn a_uri_host_is_a_unc_share_on_windows() {
+    let windows = |uri| to_path_on(uri, Host::Windows);
+    assert_eq!(
+        windows("file://server/share/x.qc"),
+        Some(PathBuf::from("\\\\server\\share\\x.qc"))
+    );
+    assert_eq!(
+        windows("file://shares/c%24/far/boo"),
+        Some(PathBuf::from("\\\\shares\\c$\\far\\boo"))
+    );
+    assert_eq!(
+        windows("file://LOCALHOST/c:/q/a.qc"),
+        Some(PathBuf::from("c:/q/a.qc"))
+    );
+    assert_eq!(
+        from_path_on(Path::new("\\\\server\\share\\x.qc"), Host::Windows),
+        "file://server/share/x.qc"
+    );
+    assert_eq!(
+        from_path_on(
+            Path::new("//host.example.com/Share/path/to/file.txt"),
+            Host::Windows
+        ),
+        "file://host.example.com/Share/path/to/file.txt"
+    );
+    assert_eq!(
+        from_path_on(Path::new("\\\\shares\\c$\\far boo"), Host::Windows),
+        "file://shares/c%24/far%20boo"
+    );
+    // A host with one root keeps refusing a share, and writes `//x` as the path it spells.
+    assert_eq!(to_path_on("file://server/share/x.qc", Host::Unix), None);
+    assert_eq!(
+        from_path_on(Path::new("//server/share"), Host::Unix),
+        "file:////server/share"
     );
 }
