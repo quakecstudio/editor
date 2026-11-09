@@ -77,6 +77,7 @@ fn the_repository_budget_table_names_every_budget() {
             ("open_project_and_type", 1e9, Statistic::P95),
             ("keystroke", 8.33e6, Statistic::P99),
             ("check_after_typing", 1e8, Statistic::P95),
+            ("entities_outliner", 8.33e6, Statistic::P99),
             ("id1_recompile", 2e8, Statistic::Median),
             ("save_to_game", 1e9, Statistic::P95),
             ("frame_e1m1", 383e3, Statistic::P99),
