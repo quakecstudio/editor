@@ -2063,7 +2063,7 @@ profile the preprocessor reads them as FTEQCC does.
 - **FTEF-14.59** **Withdrawn** (P2-116, #544): it gave "Include path too long." for a `#pragma
   includedir` of 2048 bytes, which FTEQCC's `char msg[1024]` cannot hold (FTEF-14.66). Replaced
   by FTEF-14.68.
-- **FTEF-14.61** **Withdrawn** (P3-39): it said the warning is given for each expansion at the
+- **FTEF-14.61** **Withdrawn** (P3-39, #762): it said the warning is given for each expansion at the
   body's `#`, which is one place, so two uses gave two reports there against QCD-1.5. Replaced
   by FTEF-14.78.
 - **FTEF-14.62** FTEQCC's `QCC_PR_DefineName` warns "Duplicate definition for Precompiler constant
