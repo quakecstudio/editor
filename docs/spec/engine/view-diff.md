@@ -121,10 +121,8 @@ reads the table between the `view-diff` markers.
 
 ### Behaviour
 
-- **VIEWDIFF-5.1** Each route is a map's start: three seconds of frames, so that the sounds
-  each client hears before the player's view is its listener are over, then the player placed
-  at the map's first `info_player_start` at its `angle`, a quarter of a second, a shot, the
-  player turned the other way, a quarter of a second, a shot, and three seconds of frames for the sound.
+- **VIEWDIFF-5.1** **Withdrawn** 2026-11-09: it gave each route two shots; P3-34 adds the
+  main menu and the console. Replaced by VIEWDIFF-5.4.
 - **VIEWDIFF-5.2** A map's tolerances are its row of the table, else the `*` row's. A row says
   why the map's differs from the `*` row.
 - **VIEWDIFF-5.3** A map with a monster, an entity whose class starts `monster_`, within 1000
@@ -134,6 +132,15 @@ reads the table between the `view-diff` markers.
   and ours with the player in at once, so a monster's random choice to idle falls at another
   time in each (on e1m8, e2m4, e3m3, e3m4, e4m5, e4m7 and `end` the sounds that differed were
   logged from the host: monsters' `idle` sounds), and no shift lines them up.
+- **VIEWDIFF-5.4** Each route is a map's start: three seconds of frames, so that the sounds
+  each client hears before the player's view is its listener are over, then the player placed
+  at the map's first `info_player_start` at its `angle`, a quarter of a second, a shot, the
+  player turned the other way, a quarter of a second, a shot; placed at the start again, the
+  main menu opened (`togglemenu`), a quarter of a second, a shot, the menu closed; placed again,
+  the console opened (`toggleconsole`), half a second for it to come down (CON-3.1), a shot,
+  the console closed; a second of frames so the menu's sounds are over; and three seconds of
+  frames for the sound. Each shot follows a `place`, after which alone the oracle draws
+  (VIEWDIFF-2.4), and the place leaves the console up in the oracle.
 
 <!-- view-diff -->
 | Map | Frame | Brightness | Sound | Why |

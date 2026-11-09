@@ -205,18 +205,33 @@ fn absolute(engine: &[String]) -> Result<Vec<String>, String> {
     Ok(words)
 }
 
-/// Each route's shots: the start's view and the view behind it.
-const SHOTS: [&str; 2] = ["ahead", "behind"];
+/// Each route's shots: the start's view, the view behind it, the main menu over the start's
+/// view and the console down over it (VIEWDIFF-5.4).
+const SHOTS: [&str; 4] = ["ahead", "behind", "menu", "console"];
 
-/// The script of `map`'s route for `side`, `id` or `qs` (VIEWDIFF-5.1): settle, then a shot
-/// at the start's angle and one the other way, then the frames for the sound.
+/// The frames the console takes to come down to half the 240-line frame: 120 lines at
+/// `scr_conspeed`'s 300 a second is 0.4 s, so half a second (CON-3.1).
+const CONSOLE_FRAMES: u32 = 36;
+/// The frames after the menu and the console close and before the sound's frames, so that the
+/// menu's sounds are over: a second (VIEWDIFF-5.4).
+const QUIET_FRAMES: u32 = 72;
+
+/// The script of `map`'s route for `side`, `id` or `qs` (VIEWDIFF-5.4): settle, then a shot
+/// at the start's angle and one the other way, the main menu opened over the start's view and
+/// shot, the console brought down over it and shot, both closed, a second of quiet, then the
+/// frames for the sound. Each shot follows a `place`, after which alone the oracle draws
+/// (VIEWDIFF-2.4).
 fn route(map: &str, (origin, yaw): ([f32; 3], f32), side: &str) -> String {
     let [x, y, z] = origin;
     let behind = (yaw + 180.0).rem_euclid(360.0);
+    let ahead = format!("place {x} {y} {z} 0 {yaw}\nframes {PLACE_FRAMES}\n");
     format!(
         "map {map}\nframes {SETTLE_FRAMES}\n\
-         place {x} {y} {z} 0 {yaw}\nframes {PLACE_FRAMES}\nshot {side}-ahead.ppm\n\
+         {ahead}shot {side}-ahead.ppm\n\
          place {x} {y} {z} 0 {behind}\nframes {PLACE_FRAMES}\nshot {side}-behind.ppm\n\
+         {ahead}togglemenu\nframes {PLACE_FRAMES}\nshot {side}-menu.ppm\ntogglemenu\n\
+         {ahead}toggleconsole\nframes {CONSOLE_FRAMES}\nshot {side}-console.ppm\n\
+         toggleconsole\nframes {QUIET_FRAMES}\n\
          frames {SOUND_FRAMES}\n"
     )
 }
