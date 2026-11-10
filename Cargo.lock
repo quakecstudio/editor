@@ -3456,7 +3456,9 @@ dependencies = [
  "qc-vm",
  "qs-bsp",
  "qs-map",
+ "qs-pak",
  "qs-paths",
+ "qs-vfs",
  "serde_json",
 ]
 
