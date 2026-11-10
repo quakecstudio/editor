@@ -626,6 +626,13 @@ jobs:
           cargo run --locked -p quakec-ide -- build "$RUNNER_TEMP_DIR/rerelease-cli" --dialect fteqcc
           test -s "$RUNNER_TEMP_DIR/rerelease-cli/build/rerelease-cli/progs.dat"
           test -s "$RUNNER_TEMP_DIR/rerelease-cli/build/rerelease-cli/progs.lno"
+          # P4-03: the agent's tools answer for the rerelease, through the same registry.
+          rerelease=(--project "$RUNNER_TEMP_DIR/rerelease-cli" --dialect fteqcc)
+          compiled=$(cargo run --locked -p quakec-ide -- run compile "${rerelease[@]}")
+          grep -q '"clean": true' <<<"$compiled"
+          found=$(cargo run --locked -p quakec-ide -- run project.symbols \
+            '{"query":"PlayerPreThink"}' "${rerelease[@]}")
+          grep -q '"name": "PlayerPreThink"' <<<"$found"
       # P1-21: id 1.01 parses with no errors; every file of each codebase, FTEQCC ones
       # included, round-trips through the tree.
       - name: Parse the corpus

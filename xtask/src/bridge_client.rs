@@ -170,6 +170,59 @@ fn screenshots(client: &mut Client) -> Result<(), String> {
     Ok(())
 }
 
+/// P4-03: the agent's engine tools, the functions `engine.inspect`, `engine.console` and
+/// `engine.screenshot` run, against the real host.
+fn engine_tools(client: &mut Client) -> Result<(), String> {
+    use qs_workbench::engine::{
+        CONSOLE_QUIET, EngineInspectParams, Inspected, ShotSize, console_output, inspect,
+        screenshot_to,
+    };
+    let entities = inspect(
+        client,
+        &EngineInspectParams {
+            what: Inspected::Entities,
+            edict: None,
+        },
+    )
+    .map_err(|e| format!("engine.inspect entities: {e}"))?;
+    let listed = entities
+        .get("entities")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    expect(listed > 0, "engine.inspect lists the map's edicts")?;
+    let world = inspect(
+        client,
+        &EngineInspectParams {
+            what: Inspected::Edict,
+            edict: Some(0),
+        },
+    )
+    .map_err(|e| format!("engine.inspect edict 0: {e}"))?;
+    expect(
+        text(&world, "classname") == "worldspawn",
+        "engine.inspect reads edict 0 as worldspawn",
+    )?;
+    let output = console_output(client, "nosuchtool", WITHIN, CONSOLE_QUIET)
+        .map_err(|e| format!("engine.console: {e}"))?;
+    expect(
+        output.lines.iter().any(|line| line.contains("nosuchtool")),
+        "engine.console answers the line the command printed",
+    )?;
+    let path = std::env::temp_dir().join(format!("qs-bridge-client-{}.png", std::process::id()));
+    let size = ShotSize {
+        width: 320,
+        height: 200,
+    };
+    let shot =
+        screenshot_to(client, &path, Some(size)).map_err(|e| format!("engine.screenshot: {e}"))?;
+    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    std::fs::remove_file(&path).ok();
+    expect(
+        (shot.width, shot.height) == (320, 200) && bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "engine.screenshot writes a PNG of the size asked",
+    )
+}
+
 /// Every step, each named when it passed; the first that fails stops the suite.
 fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<String>, String> {
     let mut steps = Vec::new();
@@ -210,6 +263,9 @@ fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<Str
         "console/line names the command",
     )?;
     steps.push("console".to_owned());
+
+    engine_tools(client)?;
+    steps.push("engine.inspect, engine.console and engine.screenshot".to_owned());
 
     // BRIDGE-4.5: a breakpoint at a line no statement is on is refused.
     let missing = client.request("breakpoint/set", json!({ "file": "nosuch.qc", "line": 1 }));

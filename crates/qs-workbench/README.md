@@ -58,6 +58,12 @@ an edit, so both commands run outside the edit history
   game folder given or the first install found, skipping them with no game; the result lists
   each test's kind, verdict and message, and the counts. The CLI's `quakec-ide test`, the
   palette and the agent run the same command.
+- The agent's tools (`tools` and `engine`, P4-03, AGT-2): `project.symbols`, `engine.builtins`
+  and `compile`, the project built with whether it is clean and its counts; and over the
+  running game, `engine.inspect` (edicts, one edict's fields, the globals or the stack),
+  `engine.console` (a command and the lines it printed) and `engine.screenshot` (the frame
+  as a PNG, in `build/screenshots` by default). The engine tools are functions over the
+  bridge's client, which `cargo xtask bridge-client` runs against the headless host in CI.
 - Checkpoints (`checkpoints`, P4-05, AGT-4): `checkpoint.create` records every file of the
   project as git objects on a private ref (`qs-checkpoint`), `checkpoint.list` lists them, and
   `checkpoint.restore` puts every file back, deletions included, dropping the editor's

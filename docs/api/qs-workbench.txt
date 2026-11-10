@@ -34,6 +34,11 @@ const qs_workbench::preview::STEP_BY
 const qs_workbench::preview::STOP
 const qs_workbench::preview::UNWATCH
 const qs_workbench::preview::WATCH
+const qs_workbench::preview::engine::CONSOLE_QUIET
+const qs_workbench::preview::engine::CONSOLE_WAIT
+const qs_workbench::preview::engine::ENGINE_CONSOLE
+const qs_workbench::preview::engine::ENGINE_INSPECT
+const qs_workbench::preview::engine::ENGINE_SCREENSHOT
 const qs_workbench::recent::RECENT_LIMIT
 const qs_workbench::staged::ACCEPT_HUNKS
 const qs_workbench::staged::APPLY_EDIT
@@ -42,6 +47,7 @@ const qs_workbench::staged::STAGED_EDITS
 const qs_workbench::testing::RUN_TESTS
 const qs_workbench::testing::SCENARIO_DIR
 const qs_workbench::testing::UNIT_PREFIX
+const qs_workbench::tools::COMPILE
 const qs_workbench::tools::ENGINE_BUILTINS
 const qs_workbench::tools::PROJECT_SYMBOLS
 const qs_workbench::vm_run::VM_RUN
@@ -55,6 +61,7 @@ enum qs_workbench::preview::PlayState
 enum qs_workbench::preview::PreviewError
 enum qs_workbench::preview::StepBy
 enum qs_workbench::preview::debug::StopReason
+enum qs_workbench::preview::engine::Inspected
 enum qs_workbench::preview::game_files::GameState
 enum qs_workbench::preview::scenario::ScenarioRunError
 enum qs_workbench::staged::Decision
@@ -156,6 +163,18 @@ field qs_workbench::preview::dock::DockFrame.screen_width
 field qs_workbench::preview::dock::DockFrame.width
 field qs_workbench::preview::dock::DockFrame.x
 field qs_workbench::preview::dock::DockFrame.y
+field qs_workbench::preview::engine::ConsoleOutput.events
+field qs_workbench::preview::engine::ConsoleOutput.lines
+field qs_workbench::preview::engine::EngineConsoleParams.command
+field qs_workbench::preview::engine::EngineInspectParams.edict
+field qs_workbench::preview::engine::EngineInspectParams.what
+field qs_workbench::preview::engine::EngineScreenshotParams.path
+field qs_workbench::preview::engine::EngineScreenshotParams.size
+field qs_workbench::preview::engine::Screenshot.height
+field qs_workbench::preview::engine::Screenshot.path
+field qs_workbench::preview::engine::Screenshot.width
+field qs_workbench::preview::engine::ShotSize.height
+field qs_workbench::preview::engine::ShotSize.width
 field qs_workbench::preview::entities::Field.name
 field qs_workbench::preview::entities::Field.value
 field qs_workbench::preview::entities::Group.classname
@@ -193,6 +212,10 @@ field qs_workbench::tools::BuiltinFound.extensions
 field qs_workbench::tools::BuiltinFound.name
 field qs_workbench::tools::BuiltinFound.number
 field qs_workbench::tools::BuiltinFound.signature
+field qs_workbench::tools::Compiled.clean
+field qs_workbench::tools::Compiled.errors
+field qs_workbench::tools::Compiled.modules
+field qs_workbench::tools::Compiled.warnings
 field qs_workbench::tools::EngineBuiltins.builtins
 field qs_workbench::tools::EngineBuiltins.engine
 field qs_workbench::tools::EngineBuiltinsParams.engine
@@ -313,6 +336,12 @@ fn qs_workbench::preview::debug::Debugger::watches_mut
 fn qs_workbench::preview::debug::Location::from_value
 fn qs_workbench::preview::debug::StopReason::of
 fn qs_workbench::preview::dock::DockFrame::placement
+fn qs_workbench::preview::engine::Preview::console_lines
+fn qs_workbench::preview::engine::console_output
+fn qs_workbench::preview::engine::inspect
+fn qs_workbench::preview::engine::next_screenshot_path
+fn qs_workbench::preview::engine::register_engine
+fn qs_workbench::preview::engine::screenshot_to
 fn qs_workbench::preview::entities::Entities::classname
 fn qs_workbench::preview::entities::Entities::clear
 fn qs_workbench::preview::entities::Entities::groups
@@ -373,6 +402,7 @@ impl qs_workbench::vm_run::VmRunError: std::fmt::Display
 mod qs_workbench::checkpoints
 mod qs_workbench::preview::debug
 mod qs_workbench::preview::dock
+mod qs_workbench::preview::engine
 mod qs_workbench::preview::entities
 mod qs_workbench::preview::game_files
 mod qs_workbench::preview::scenario
@@ -425,6 +455,12 @@ struct qs_workbench::preview::debug::Debugger
 struct qs_workbench::preview::debug::Location
 struct qs_workbench::preview::debug::Watch
 struct qs_workbench::preview::dock::DockFrame
+struct qs_workbench::preview::engine::ConsoleOutput
+struct qs_workbench::preview::engine::EngineConsoleParams
+struct qs_workbench::preview::engine::EngineInspectParams
+struct qs_workbench::preview::engine::EngineScreenshotParams
+struct qs_workbench::preview::engine::Screenshot
+struct qs_workbench::preview::engine::ShotSize
 struct qs_workbench::preview::entities::Entities
 struct qs_workbench::preview::entities::Field
 struct qs_workbench::preview::entities::Group
@@ -441,6 +477,7 @@ struct qs_workbench::testing::RunTestsParams
 struct qs_workbench::testing::TestResult
 struct qs_workbench::testing::TestRun
 struct qs_workbench::tools::BuiltinFound
+struct qs_workbench::tools::Compiled
 struct qs_workbench::tools::EngineBuiltins
 struct qs_workbench::tools::EngineBuiltinsParams
 struct qs_workbench::tools::ProjectSymbolsParams
@@ -541,6 +578,7 @@ use qs_workbench::WATCH = crate::preview::WATCH
 use qs_workbench::WatchParams = crate::preview::WatchParams
 use qs_workbench::debug = crate::preview::debug
 use qs_workbench::dock = crate::preview::dock
+use qs_workbench::engine = crate::preview::engine
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
 use qs_workbench::recent_path = crate::recent::recent_path
@@ -584,6 +622,7 @@ variant qs_workbench::preview::PreviewError::NotRunning
 variant qs_workbench::preview::PreviewError::NothingBuilt
 variant qs_workbench::preview::PreviewError::OutsideBuild
 variant qs_workbench::preview::PreviewError::RunRoot
+variant qs_workbench::preview::PreviewError::Write
 variant qs_workbench::preview::StepBy::In
 variant qs_workbench::preview::StepBy::Out
 variant qs_workbench::preview::StepBy::Over
@@ -591,6 +630,10 @@ variant qs_workbench::preview::StepBy::Statement
 variant qs_workbench::preview::debug::StopReason::Breakpoint
 variant qs_workbench::preview::debug::StopReason::Error
 variant qs_workbench::preview::debug::StopReason::Step
+variant qs_workbench::preview::engine::Inspected::Edict
+variant qs_workbench::preview::engine::Inspected::Entities
+variant qs_workbench::preview::engine::Inspected::Globals
+variant qs_workbench::preview::engine::Inspected::Stack
 variant qs_workbench::preview::game_files::GameState::Found
 variant qs_workbench::preview::game_files::GameState::Missing
 variant qs_workbench::preview::game_files::GameState::RereleaseOnly

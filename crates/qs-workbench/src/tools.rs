@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The semantic tools the agent and MCP call as commands (P4-03): `project.symbols`, every
-//! global definition of the open project, and `engine.builtins`, an engine's builtin table.
+//! global definition of the open project, `engine.builtins`, an engine's builtin table, and
+//! `compile`, the project built with a verdict and counts the agent can act on.
 
 use qc_engines::{BuiltinKey, Engine};
 use qc_project::ModuleKind;
@@ -9,12 +10,64 @@ use qs_commands::{Command, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{HasWorkbench, Location, WorkbenchError};
+use crate::{Gravity, HasWorkbench, Location, ModuleBuilt, WorkbenchError};
 
 /// The id of the command that lists the open project's symbols.
 pub const PROJECT_SYMBOLS: &str = "project.symbols";
 /// The id of the command that lists an engine's builtins.
 pub const ENGINE_BUILTINS: &str = "engine.builtins";
+/// The id of the command that compiles the open project and says whether it is clean.
+pub const COMPILE: &str = "compile";
+
+/// What `compile` answers: whether the compile is clean, its counts, and each module.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Compiled {
+    /// Every module built, with no error (AGT-5's clean compile).
+    pub clean: bool,
+    /// The errors of every module.
+    pub errors: usize,
+    /// The warnings of every module.
+    pub warnings: usize,
+    /// Each module: where its program was written, whether it was, and its problems.
+    #[schemars(skip)]
+    pub modules: Vec<ModuleBuilt>,
+}
+
+impl Compiled {
+    /// The verdict and counts of `modules`.
+    fn of(modules: Vec<ModuleBuilt>) -> Self {
+        let problems = || modules.iter().flat_map(|m| &m.problems);
+        let errors = problems().filter(|p| p.gravity == Gravity::Error).count();
+        let warnings = problems().count().saturating_sub(errors);
+        Self {
+            clean: errors == 0 && modules.iter().all(|m| m.built),
+            errors,
+            warnings,
+            modules,
+        }
+    }
+}
+
+/// `compile`: builds the open project, as `project.build` does, and says whether it is clean.
+struct CompileCommand;
+
+impl<C: HasWorkbench + 'static> Command<C> for CompileCommand {
+    const ID: &'static str = COMPILE;
+    const SUMMARY: &'static str =
+        "Compiles the open project and says whether it is clean, with its error counts.";
+    type Params = qs_commands::NoParams;
+    type Output = Compiled;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        _params: qs_commands::NoParams,
+    ) -> Result<Outcome<Compiled, C>, WorkbenchError> {
+        let modules = context.workbench().build()?;
+        Ok(Outcome::outside_history(Compiled::of(modules)))
+    }
+}
 
 /// The parameters of `project.symbols`.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
@@ -220,7 +273,8 @@ pub fn register_tools<C: HasWorkbench + 'static>(
     registry: &mut Registry<C>,
 ) -> Result<(), RegisterError> {
     registry.register(ProjectSymbols)?;
-    registry.register(EngineBuiltinsCommand)
+    registry.register(EngineBuiltinsCommand)?;
+    registry.register(CompileCommand)
 }
 
 #[cfg(test)]

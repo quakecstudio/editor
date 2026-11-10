@@ -13,7 +13,7 @@ use qc_project::{MemoryLoader, ModuleKind};
 use qs_commands::{Registry, Session};
 use serde_json::{Value, json};
 
-use super::{ENGINE_BUILTINS, PROJECT_SYMBOLS, builtins_of};
+use super::{COMPILE, Compiled, ENGINE_BUILTINS, PROJECT_SYMBOLS, builtins_of};
 use crate::{Config, OPEN_PROJECT, Workbench, register};
 
 const ROOT: &str = "/p";
@@ -117,4 +117,37 @@ fn every_engine_has_a_server_table() {
         assert_eq!(table.engine, engine.id());
         assert!(!table.builtins.is_empty(), "{}", engine.id());
     }
+}
+
+// No spec statement: P4-03, AGT-5, compile builds the project as project.build does and says
+// whether it is clean, with its counts; an error makes it unclean and writes nothing
+#[test]
+fn compile_says_whether_the_build_is_clean() {
+    let root = std::env::temp_dir().join(format!("qs-workbench-compile-{}", std::process::id()));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+    std::fs::create_dir_all(&root).unwrap();
+    let compiled = |world: &str| -> Compiled {
+        let mut loader = MemoryLoader::new();
+        loader.insert(root.join("progs.src"), b"progs.dat\nworld.qc\n".to_vec());
+        loader.insert(root.join("world.qc"), world.as_bytes().to_vec());
+        let mut registry = Registry::new();
+        register(&mut registry).unwrap();
+        let mut session = Session::new(Workbench::new(loader, Config::default()), registry);
+        session
+            .execute(OPEN_PROJECT, json!({ "path": root }))
+            .unwrap();
+        serde_json::from_value(session.execute(COMPILE, json!({})).unwrap()).unwrap()
+    };
+    let clean = compiled("void() worldspawn = {};\n");
+    assert!(clean.clean, "{clean:?}");
+    assert_eq!((clean.errors, clean.warnings), (0, 0));
+    assert!(clean.modules[0].built);
+    let broken = compiled("void() worldspawn = { nowhere = 1; };\n");
+    assert!(!broken.clean);
+    assert!(broken.errors >= 1, "{broken:?}");
+    assert!(!broken.modules[0].built);
+    let mut none = session();
+    assert!(none.execute(COMPILE, json!({})).is_err(), "no project");
 }
