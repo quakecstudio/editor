@@ -10,6 +10,7 @@ use qs_commands::{BoxError, Command, NoParams, Outcome, RegisterError, Registry,
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::checkpoints::register_checkpoints;
 use crate::editing::{Change, Source};
 use crate::staged::register_staged;
 use crate::testing::register_tests;
@@ -100,6 +101,7 @@ pub fn register<C: HasWorkbench + 'static>(
     register_staged(registry)?;
     register_tools(registry)?;
     register_tests(registry)?;
+    register_checkpoints(registry)?;
     register_vm(registry)
 }
 

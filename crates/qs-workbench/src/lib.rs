@@ -15,6 +15,7 @@
 
 mod build;
 mod check;
+pub mod checkpoints;
 mod commands;
 mod editing;
 mod preview;
@@ -611,6 +612,8 @@ pub(crate) fn problems<L: Loader>(host: &mut AnalysisHost<L>) -> Vec<Problem> {
 /// Why the workbench could not open, change or save a project or a file.
 #[derive(Debug)]
 pub enum WorkbenchError {
+    /// A checkpoint could not be made, listed or restored (P4-05).
+    Checkpoint(qs_checkpoint::CheckpointError),
     /// A rename was refused.
     Rename(RenameError),
     /// The file could not be written.
@@ -656,6 +659,7 @@ impl fmt::Display for WorkbenchError {
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
             Self::NoProject => f.write_str("no project is open"),
             Self::NoHunk { id } => write!(f, "{id} is not staged"),
+            Self::Checkpoint(error) => error.fmt(f),
             Self::Offset { path, offset, len } => write!(
                 f,
                 "{}: offset {offset} is past the end of the file, {len} bytes",
@@ -671,6 +675,7 @@ impl Error for WorkbenchError {
             Self::Project(error) => Some(error),
             Self::Rename(error) => Some(error),
             Self::Save { error, .. } => Some(error),
+            Self::Checkpoint(error) => Some(error),
             Self::NoFile { .. } | Self::NoProject | Self::NoHunk { .. } | Self::Offset { .. } => {
                 None
             }

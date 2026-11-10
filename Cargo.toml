@@ -151,6 +151,7 @@ qc-trace = { path = "crates/qc-trace" }
 qc-types = { path = "crates/qc-types" }
 qc-vm = { path = "crates/qc-vm" }
 qs-bsp = { path = "crates/qs-bsp" }
+qs-checkpoint = { path = "crates/qs-checkpoint" }
 qs-commands = { path = "crates/qs-commands" }
 qs-diff = { path = "crates/qs-diff" }
 qs-editor-view = { path = "crates/qs-editor-view" }
@@ -179,6 +180,8 @@ quakec-lsp = { path = "apps/lsp" }
 schemars = { version = "=1.2.2", default-features = false }
 serde = { version = "=1.0.229", default-features = false }
 serde_json = { version = "=1.0.151", default-features = false }
+# qs-checkpoint: git object ids. BSD-3-Clause, no dependencies.
+sha1_smol = { version = "=1.0.1", default-features = false }
 # The rerelease's music, `music/track<NN>.ogg` (RRE-3.5): Ogg and Vorbis only, MPL-2.0.
 # Chosen over `lewton`, whose decoder the qs-ogg fuzz target made allocate 32 GB from a
 # crafted header.
