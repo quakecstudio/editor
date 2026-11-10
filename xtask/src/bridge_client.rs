@@ -439,6 +439,32 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
     expect(frames > 0, "stopped, the stack has PlayerPreThink's frame")?;
+    // P3-16: the Debugger tab's watch and step, against the stopped frame.
+    let watched = client
+        .evaluate("self.health")
+        .map_err(|e| format!("evaluate: {e}"))?;
+    expect(
+        watched.pointer("/value/type") == Some(&json!("float")),
+        "a watch of self.health reads a float",
+    )?;
+    // BRIDGE-3.3: a step ends with state/changed, paused for the step, at the new location;
+    // the step's own answer holds only the time.
+    client.take_events();
+    client
+        .step(StepKind::Statement)
+        .map_err(|e| format!("step: {e}"))?;
+    let stepped = client
+        .wait_event("state/changed", WITHIN)
+        .map_err(|e| format!("state/changed after the step: {e}"))?;
+    expect(
+        text(&stepped.params, "reason") == "step"
+            && !text_of(
+                stepped.params.get("location").unwrap_or(&Value::Null),
+                "function",
+            )
+            .is_empty(),
+        "a step stops at the next statement and says where",
+    )?;
     client
         .clear_breakpoint(id)
         .map_err(|e| format!("breakpoint/clear: {e}"))?;
@@ -451,7 +477,9 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         text(&running.params, "state") == "running",
         "cleared and resumed, the game runs",
     )?;
-    steps.push("breakpoint/set, hit, inspect the stack and clear in client.qc".to_owned());
+    steps.push(
+        "breakpoint/set, hit, inspect the stack, watch, step and clear in client.qc".to_owned(),
+    );
     Ok(())
 }
 
