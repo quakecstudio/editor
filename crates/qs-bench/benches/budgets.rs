@@ -270,7 +270,7 @@ fn save_to_game(group: &mut BenchmarkGroup<'_, WallTime>) {
                 workbench.save(&edited).expect("the file saves");
                 let start = std::time::Instant::now();
                 preview
-                    .reload(&mut workbench)
+                    .reload(&mut workbench, qs_workbench::OnLoss::Reload)
                     .expect("the game reloads")
                     .expect("a game runs");
                 preview
