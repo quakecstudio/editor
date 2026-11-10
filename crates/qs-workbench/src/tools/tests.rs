@@ -6,7 +6,7 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use qc_engines::Engine;
 use qc_project::{MemoryLoader, ModuleKind};
@@ -170,18 +170,22 @@ fn files_and_search_read_the_project() {
     session
         .execute(OPEN_PROJECT, json!({ "path": ROOT }))
         .unwrap();
-    let files: Vec<String> =
+    let files: Vec<PathBuf> =
         serde_json::from_value(session.execute(PROJECT_FILES, json!({})).unwrap()).unwrap();
+    let root = Path::new(ROOT);
     assert_eq!(
         files,
-        ["/p/defs.qc", "/p/world.qc"],
+        [root.join("defs.qc"), root.join("world.qc")],
         "the sources, not progs.src"
     );
     let found = session
         .execute(PROJECT_SEARCH, json!({ "text": "w_fireaxe" }))
         .unwrap();
     assert_eq!(found["matches"].as_array().unwrap().len(), 1);
-    assert_eq!(found["matches"][0]["path"], "/p/world.qc");
+    assert_eq!(
+        Path::new(found["matches"][0]["path"].as_str().unwrap()),
+        root.join("world.qc")
+    );
     assert_eq!(found["matches"][0]["line"], 2);
     assert_eq!(found["truncated"], false);
     let exact = session
