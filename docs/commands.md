@@ -846,6 +846,11 @@ Parameters:
           "const": "log.filter",
           "description": "`log.filter`.",
           "type": "string"
+        },
+        {
+          "const": "game.folder",
+          "description": "`game.folder`.",
+          "type": "string"
         }
       ]
     }
@@ -919,6 +924,11 @@ Parameters:
           "const": "log.filter",
           "description": "`log.filter`.",
           "type": "string"
+        },
+        {
+          "const": "game.folder",
+          "description": "`game.folder`.",
+          "type": "string"
         }
       ]
     }
@@ -980,6 +990,11 @@ Parameters:
         {
           "const": "log.filter",
           "description": "`log.filter`.",
+          "type": "string"
+        },
+        {
+          "const": "game.folder",
+          "description": "`game.folder`.",
           "type": "string"
         }
       ]

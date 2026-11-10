@@ -5,8 +5,10 @@ enum qs_settings::Source
 enum qs_settings::Theme
 enum qs_settings::error::SettingsError
 field qs_settings::Appearance.theme
+field qs_settings::Game.folder
 field qs_settings::Log.filter
 field qs_settings::SettingsFile.appearance
+field qs_settings::SettingsFile.game
 field qs_settings::SettingsFile.log
 field qs_settings::commands::Entry.default
 field qs_settings::commands::Entry.key
@@ -26,9 +28,11 @@ fn qs_settings::SettingsStore::value
 fn qs_settings::commands::HasSettings::settings
 fn qs_settings::commands::register
 fn qs_settings::reference
+fn qs_settings::user_settings_path
 impl qs_settings::error::SettingsError: Error
 impl qs_settings::error::SettingsError: fmt::Display
 struct qs_settings::Appearance
+struct qs_settings::Game
 struct qs_settings::Log
 struct qs_settings::SettingsFile
 struct qs_settings::SettingsStore
@@ -40,6 +44,7 @@ use qs_settings::SettingsError = error::SettingsError
 use qs_settings::register = commands::register
 variant qs_settings::Scope::Project
 variant qs_settings::Scope::User
+variant qs_settings::Setting::GameFolder
 variant qs_settings::Setting::LogFilter
 variant qs_settings::Setting::Theme
 variant qs_settings::Source::Default
