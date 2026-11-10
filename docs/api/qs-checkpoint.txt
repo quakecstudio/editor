@@ -1,0 +1,21 @@
+const qs_checkpoint::SKIPPED
+enum qs_checkpoint::CheckpointError
+field qs_checkpoint::Checkpoint.commit
+field qs_checkpoint::Checkpoint.files
+field qs_checkpoint::Checkpoint.label
+field qs_checkpoint::Checkpoint.number
+field qs_checkpoint::Restored.removed
+field qs_checkpoint::Restored.written
+fn qs_checkpoint::Store::create
+fn qs_checkpoint::Store::git_dir
+fn qs_checkpoint::Store::list
+fn qs_checkpoint::Store::open
+fn qs_checkpoint::Store::restore
+impl qs_checkpoint::CheckpointError: fmt::Display
+impl qs_checkpoint::CheckpointError: std::error::Error
+struct qs_checkpoint::Checkpoint
+struct qs_checkpoint::Restored
+struct qs_checkpoint::Store
+variant qs_checkpoint::CheckpointError::Corrupt
+variant qs_checkpoint::CheckpointError::Io
+variant qs_checkpoint::CheckpointError::NotFound

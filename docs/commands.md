@@ -6,6 +6,9 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 
 | Command | Summary |
 | --- | --- |
+| [`checkpoint.create`](#checkpointcreate) | Records every file of the open project, as it is on disk, as a checkpoint to restore, in a git store of its own. |
+| [`checkpoint.list`](#checkpointlist) | Lists the open project's checkpoints, oldest first. |
+| [`checkpoint.restore`](#checkpointrestore) | Puts every file of the open project back as a checkpoint holds it, removing the files made since and dropping unsaved edits. |
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
 | [`compile`](#compile) | Compiles the open project and says whether it is clean, with its error counts. |
 | [`edit.accept`](#editaccept) | Accepts staged hunks: their lines stay in the editor's text, unsaved, once each hunk of their file is decided. |
@@ -65,6 +68,75 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
 | [`view.toggle_panel`](#viewtoggle_panel) | Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom. |
 | [`vm.run`](#vmrun) | Builds the open project and calls one QuakeC function in the VM over a mock engine, with globals and the fields of a self edict set first, answering each global and field the call changed and any run error. |
+
+## `checkpoint.create`
+
+Records every file of the open project, as it is on disk, as a checkpoint to restore, in a git store of its own.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `checkpoint.create`.",
+  "properties": {
+    "label": {
+      "default": null,
+      "description": "What the checkpoint is for, such as the agent run's task; `checkpoint` when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "CreateCheckpointParams",
+  "type": "object"
+}
+```
+
+## `checkpoint.list`
+
+Lists the open project's checkpoints, oldest first.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `checkpoint.restore`
+
+Puts every file of the open project back as a checkpoint holds it, removing the files made since and dropping unsaved edits.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `checkpoint.restore`.",
+  "properties": {
+    "number": {
+      "description": "The checkpoint's number.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "number"
+  ],
+  "title": "RestoreCheckpointParams",
+  "type": "object"
+}
+```
 
 ## `commands.list`
 

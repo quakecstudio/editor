@@ -1,3 +1,6 @@
+const qs_workbench::checkpoints::CREATE_CHECKPOINT
+const qs_workbench::checkpoints::LIST_CHECKPOINTS
+const qs_workbench::checkpoints::RESTORE_CHECKPOINT
 const qs_workbench::commands::BUILD_PROJECT
 const qs_workbench::commands::CHECK_PROJECT
 const qs_workbench::commands::CLOSE_FILE
@@ -82,6 +85,15 @@ field qs_workbench::build::Reported.code
 field qs_workbench::build::Reported.gravity
 field qs_workbench::build::Reported.message
 field qs_workbench::build::Reported.place
+field qs_workbench::checkpoints::CheckpointMade.commit
+field qs_workbench::checkpoints::CheckpointMade.files
+field qs_workbench::checkpoints::CheckpointMade.label
+field qs_workbench::checkpoints::CheckpointMade.number
+field qs_workbench::checkpoints::CheckpointRestored.discarded
+field qs_workbench::checkpoints::CheckpointRestored.removed
+field qs_workbench::checkpoints::CheckpointRestored.written
+field qs_workbench::checkpoints::CreateCheckpointParams.label
+field qs_workbench::checkpoints::RestoreCheckpointParams.number
 field qs_workbench::commands::AtParams.offset
 field qs_workbench::commands::AtParams.path
 field qs_workbench::commands::Candidate.detail
@@ -261,6 +273,10 @@ fn qs_workbench::Workbench::wait_checked
 fn qs_workbench::Workbench::with_check
 fn qs_workbench::build::Workbench::build
 fn qs_workbench::build::Workbench::check
+fn qs_workbench::checkpoints::Workbench::checkpoints
+fn qs_workbench::checkpoints::Workbench::create_checkpoint
+fn qs_workbench::checkpoints::Workbench::restore_checkpoint
+fn qs_workbench::checkpoints::register_checkpoints
 fn qs_workbench::commands::HasWorkbench::workbench
 fn qs_workbench::commands::register
 fn qs_workbench::editing::Workbench::completions
@@ -369,6 +385,7 @@ fn qs_workbench::vm_run::register_vm
 fn qs_workbench::vm_run::run
 impl qs_workbench::WorkbenchError: Error
 impl qs_workbench::WorkbenchError: fmt::Display
+impl qs_workbench::checkpoints::CheckpointMade: From<Checkpoint>
 impl qs_workbench::commands::CandidateKind: From<DefKind>
 impl qs_workbench::preview::Preview: Drop
 impl qs_workbench::preview::Preview: core::fmt::Debug
@@ -386,6 +403,7 @@ impl qs_workbench::tools::EngineBuiltinsError: std::error::Error
 impl qs_workbench::tools::EngineBuiltinsError: std::fmt::Display
 impl qs_workbench::vm_run::VmRunError: std::error::Error
 impl qs_workbench::vm_run::VmRunError: std::fmt::Display
+mod qs_workbench::checkpoints
 mod qs_workbench::preview::debug
 mod qs_workbench::preview::dock
 mod qs_workbench::preview::engine
@@ -403,6 +421,10 @@ struct qs_workbench::TreeEntry
 struct qs_workbench::Workbench
 struct qs_workbench::build::ModuleBuilt
 struct qs_workbench::build::Reported
+struct qs_workbench::checkpoints::CheckpointMade
+struct qs_workbench::checkpoints::CheckpointRestored
+struct qs_workbench::checkpoints::CreateCheckpointParams
+struct qs_workbench::checkpoints::RestoreCheckpointParams
 struct qs_workbench::commands::AtParams
 struct qs_workbench::commands::Candidate
 struct qs_workbench::commands::CloseFileParams
@@ -574,6 +596,7 @@ variant qs_workbench::CheckAfterTyping::OffTheFrame
 variant qs_workbench::CheckAfterTyping::OnTheFrame
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
+variant qs_workbench::WorkbenchError::Checkpoint
 variant qs_workbench::WorkbenchError::NoFile
 variant qs_workbench::WorkbenchError::NoHunk
 variant qs_workbench::WorkbenchError::NoProject

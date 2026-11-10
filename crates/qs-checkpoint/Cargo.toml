@@ -1,0 +1,21 @@
+[package]
+name = "qs-checkpoint"
+description = "Checkpoints of a project's files as git objects on private refs, in the project's git directory or a hidden store, and their restore, deletions included"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Git's object ids are SHA-1 (no use as a security property here).
+sha1_smol = { workspace = true }
+# Git's loose objects are zlib streams.
+miniz_oxide = { workspace = true, features = ["with-alloc"] }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true
