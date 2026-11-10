@@ -11,6 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::editing::{Change, Source};
+use crate::tools::register_tools;
 use crate::{
     Caution, DefKind, EntryKind, FileRange, Location, ModuleBuilt, Reported, Workbench,
     WorkbenchError,
@@ -92,7 +93,8 @@ pub fn register<C: HasWorkbench + 'static>(
     registry.register(References)?;
     registry.register(HoverCommand)?;
     registry.register(Complete)?;
-    registry.register(RenameCommand)
+    registry.register(RenameCommand)?;
+    register_tools(registry)
 }
 
 /// The parameters of `project.open`.
