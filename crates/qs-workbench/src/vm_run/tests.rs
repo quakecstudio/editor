@@ -75,10 +75,7 @@ fn built(name: &str) -> (PathBuf, Vec<u8>) {
     let mut workbench = Workbench::new(loader, Config::default());
     workbench.open_project(Path::new(&root)).unwrap();
     let modules = workbench.build().unwrap();
-    let output = match modules.iter().find(|m| m.built) {
-        Some(m) => m.output.clone(),
-        None => panic!("{modules:#?}"),
-    };
+    let output = modules.into_iter().find(|m| m.built).unwrap().output;
     let bytes = std::fs::read(&output).unwrap();
     (output, bytes)
 }
