@@ -28,6 +28,7 @@ use qs_layout::{
     TogglePanelParams,
 };
 use qs_render::{Camera, MapMesh};
+use qs_settings::{Scope as SettingsScope, Setting, SettingsFile, SettingsStore};
 use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::game_files::GameFiles;
@@ -106,6 +107,16 @@ pub(crate) enum Area {
     Section(Text),
 }
 
+/// Where the app's menu is (P3-44).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MenuPlace {
+    /// The system's menu bar: macOS's, and the window's tests, which draw no menu.
+    #[default]
+    Native,
+    /// The toolbar, on the systems with no menu bar of their own: Windows and Linux.
+    InWindow,
+}
+
 /// The tab shown in the bottom panel.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BottomTab {
@@ -164,6 +175,10 @@ pub struct Shell {
     preview_error: Option<String>,
     /// Whether the guide to the game's files is shown (P3-21), and what it last found.
     guide: (Guide, Option<GameFiles>),
+    /// The user's settings file, which keeps the game folder chosen (P3-44).
+    settings_file: Option<PathBuf>,
+    /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
+    menu: MenuPlace,
     /// The Entities outliner's filter.
     outliner: Outliner,
     /// The Properties panel's edits.
@@ -229,6 +244,8 @@ impl Shell {
             focus_applied: layout.focus_requests,
             preview_error: None,
             guide: (Guide::Hidden, None),
+            settings_file: None,
+            menu: MenuPlace::default(),
             outliner: Outliner::default(),
             properties: Properties::default(),
             debug_input: DebugInput::default(),
@@ -321,6 +338,49 @@ impl Shell {
     /// Reads the recent projects from `file`, and keeps them there.
     pub fn set_recent_file(&mut self, file: PathBuf) {
         self.recent = (RecentProjects::load(&file), Some(file));
+    }
+
+    /// Reads and keeps the user's settings in `file` (P3-44): the game folder chosen before is
+    /// Play's again when it still holds a game, and is left unused, as missing, when it does
+    /// not.
+    pub fn set_settings_file(&mut self, file: PathBuf) {
+        let saved = SettingsFile::load(&file)
+            .map_err(|error| tracing::warn!(%error, "settings not read"))
+            .ok()
+            .and_then(|settings| settings.game.folder);
+        self.settings_file = Some(file);
+        if let Some(path) = saved {
+            let chosen: Option<GameFiles> = self.run(CHOOSE_GAME, &ChooseGameParams { path });
+            if chosen.is_some_and(|files| !files.state.plays()) {
+                tracing::info!("the saved game folder no longer holds a game");
+            }
+        }
+    }
+
+    /// Puts the app's menu in the window, on the toolbar, for the systems with no menu bar of
+    /// their own: Windows and Linux (P3-44).
+    pub fn set_menu_in_window(&mut self) {
+        self.menu = MenuPlace::InWindow;
+    }
+
+    /// Chooses `path` as the game folder, read in place (`preview.choose_game`), and keeps it
+    /// in the settings file when it plays, so the next start finds it (P3-44).
+    pub fn choose_game_folder(&mut self, path: PathBuf) -> Option<GameFiles> {
+        let chosen: Option<GameFiles> =
+            self.run(CHOOSE_GAME, &ChooseGameParams { path: path.clone() });
+        if chosen.as_ref().is_some_and(|files| files.state.plays()) {
+            self.preview_error = None;
+            if let Some(file) = &self.settings_file {
+                let value = serde_json::to_value(&path).ok();
+                let saved = SettingsStore::open(file.clone(), None).and_then(|mut store| {
+                    store.put(SettingsScope::User, Setting::GameFolder, value)
+                });
+                if let Err(error) = saved {
+                    tracing::warn!(%error, "the game folder was not saved");
+                }
+            }
+        }
+        chosen
     }
 
     /// The projects opened most recently, the latest first.
@@ -630,6 +690,7 @@ impl Shell {
         let fill = theme.color(Token::SurfaceToolbar);
         let mut toggled = None;
         let mut open_palette = false;
+        let mut open_guide = false;
         let mut control = None;
         let preview = &self.session.context().preview;
         let state = preview.state();
@@ -684,6 +745,15 @@ impl Shell {
                                 toggled = Some(panel);
                             }
                         }
+                        if self.menu == MenuPlace::InWindow {
+                            let files = Button::new(
+                                RichText::new(Text::GameFilesMenu.get())
+                                    .color(theme.color(Token::TextMuted)),
+                            );
+                            if ui.add(files).clicked() {
+                                open_guide = true;
+                            }
+                        }
                         let search = Button::new(
                             RichText::new(labelled(Icon::Search, Text::SearchCommands))
                                 .color(theme.color(Token::TextMuted)),
@@ -704,6 +774,9 @@ impl Shell {
         }
         if open_palette {
             self.palette.open();
+        }
+        if open_guide {
+            self.show_game_guide();
         }
         if let Some(id) = control {
             self.control(id);
@@ -753,11 +826,7 @@ impl Shell {
                     .set_title(Text::ChooseGameTitle.get())
                     .pick_folder();
                 if let Some(path) = picked {
-                    let chosen: Option<GameFiles> =
-                        self.run(CHOOSE_GAME, &ChooseGameParams { path });
-                    if chosen.as_ref().is_some_and(|files| files.state.plays()) {
-                        self.preview_error = None;
-                    }
+                    let chosen = self.choose_game_folder(path);
                     if chosen.is_some() {
                         self.guide.1 = chosen;
                     }
