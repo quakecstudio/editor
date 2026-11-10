@@ -14,6 +14,8 @@ qc-engines = { workspace = true }
 qc-ide = { workspace = true }
 qc-progs = { workspace = true }
 qc-sema = { workspace = true }
+# project.info: the dialect a module is read in.
+qc-syntax = { workspace = true }
 qc-project = { workspace = true }
 qs-commands = { workspace = true }
 # checkpoint.*: the project's files as git objects, restored after an agent run (P4-05).

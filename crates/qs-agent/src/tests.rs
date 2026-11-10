@@ -19,7 +19,8 @@ use qs_workbench::{Config, Workbench, register};
 use serde_json::{Value, json};
 
 use super::{
-    AgentError, Message, Model, Outcome, Reply, RunConfig, SYSTEM, ToolCall, ToolSpec, run, tools,
+    AgentError, Message, Model, Outcome, Reply, RunConfig, ToolCall, ToolSpec, run, system_prompt,
+    tools,
 };
 
 /// A model that answers with its script, in order, and then fails.
@@ -44,7 +45,7 @@ impl Model for Scripted {
         tools: &[ToolSpec],
         transcript: &[Message],
     ) -> Result<Reply, String> {
-        assert_eq!(system, SYSTEM);
+        assert_eq!(system, system_prompt());
         assert!(tools.iter().any(|t| t.name == "compile"));
         self.seen.push(transcript.len());
         self.replies
@@ -375,4 +376,66 @@ fn the_guardrails_hold() {
             .any(|r| r.starts_with("error at ") && r.contains("weapons.qc:2")),
         "{reasons:?}"
     );
+}
+
+/// A model that keeps what it was given and finishes at once.
+#[derive(Default)]
+struct Recording {
+    system: String,
+    brief: String,
+}
+
+impl Model for Recording {
+    fn reply(
+        &mut self,
+        system: &str,
+        _tools: &[ToolSpec],
+        transcript: &[Message],
+    ) -> Result<Reply, String> {
+        self.system = system.to_owned();
+        if let Some(Message::User { text }) = transcript.first() {
+            self.brief.clone_from(text);
+        }
+        Ok(finish())
+    }
+}
+
+// No spec statement: P4-08, the acceptance criterion. A run's context holds the project's
+// AGENTS.md, each module's dialect and target engine with that engine's builtins, and the
+// agent reference in the system prompt; the brief is held to its snapshot,
+// `src/snapshots/brief.txt` (a changed brief is written beside it as `brief.new.txt`)
+#[test]
+fn the_context_holds_the_engine_the_dialect_and_agents_md() {
+    let (root, mut session) = project("context", FIXED);
+    std::fs::write(
+        root.join("AGENTS.md"),
+        "Weapons live in weapons.qc. Keep damage numbers whole.\n",
+    )
+    .unwrap();
+    let mut model = Recording::default();
+    run(
+        &mut session,
+        &mut model,
+        "Make the axe stronger.",
+        &RunConfig::new(&root),
+    )
+    .unwrap();
+    assert!(model.system.contains("# QuakeC for the agent"));
+    assert!(model.system.contains("# Working in QuakeC Studio"));
+    let brief = model.brief.replace(&*root.to_string_lossy(), "<project>");
+    assert!(brief.contains("Weapons live in weapons.qc."), "{brief}");
+    assert!(
+        brief.contains("Module progs: ssqc QuakeC in the vanilla dialect"),
+        "{brief}"
+    );
+    assert!(
+        brief.contains("- void(vector ang) makevectors = #1;"),
+        "{brief}"
+    );
+    let snapshot = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/snapshots/brief.txt");
+    let expected = std::fs::read_to_string(&snapshot).unwrap_or_default();
+    if brief != expected {
+        std::fs::write(snapshot.with_file_name("brief.new.txt"), &brief).unwrap();
+        panic!("the brief changed; see src/snapshots/brief.new.txt:\n{brief}");
+    }
 }

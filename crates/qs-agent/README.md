@@ -17,8 +17,15 @@ to the result:
 - **A brief before the first turn:**
   1. the runtime records a checkpoint (AGT-4);
   2. it compiles the project and runs its tests;
-  3. it gives the model the task with the project's source files, its compile errors and its
-     failing tests, and the rules it works under (`SYSTEM`).
+  3. it gives the model the task with the project's `AGENTS.md` when it has one, each
+     module's kind, dialect and target engine (`project.info`) with that engine's builtins as
+     a program declares them (`engine.builtins`), the project's source files, its compile
+     errors and its failing tests (P4-08). The brief of a test project is held to
+     `src/snapshots/brief.txt`.
+- **The system prompt** (`system_prompt`): the rules it works under (`SYSTEM`), then the
+  reference written for it, [`docs/agent-reference/`](../../docs/agent-reference/README.md):
+  the language and the idioms of id's code, and how to work, test and play scenarios here.
+  It is the same on every turn, so a provider's prompt cache keeps it.
 - **Guardrails:**
   - a relative path is taken from the project, and an edit outside it is refused;
   - a tool's output longer than `RunConfig::output_limit` is cut, saying so;

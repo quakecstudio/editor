@@ -14,8 +14,8 @@ use qs_commands::{Registry, Session};
 use serde_json::{Value, json};
 
 use super::{
-    COMPILE, Compiled, ENGINE_BUILTINS, PROJECT_FILES, PROJECT_SEARCH, PROJECT_SYMBOLS,
-    SEARCH_LIMIT, builtins_of,
+    COMPILE, Compiled, ENGINE_BUILTINS, PROJECT_FILES, PROJECT_INFO, PROJECT_SEARCH,
+    PROJECT_SYMBOLS, SEARCH_LIMIT, builtins_of,
 };
 use crate::{Config, OPEN_PROJECT, Workbench, register};
 
@@ -229,4 +229,29 @@ fn search_stops_at_its_limit() {
         workbench.search("", false).matches.is_empty(),
         "nothing to find"
     );
+}
+
+// No spec statement: P4-08, project.info gives each module's kind, dialect and target engine,
+// whose id engine.builtins takes; it needs an open project
+#[test]
+fn project_info_names_each_modules_dialect_and_engine() {
+    let mut session = session();
+    assert!(
+        session.execute(PROJECT_INFO, json!({})).is_err(),
+        "no project"
+    );
+    session
+        .execute(OPEN_PROJECT, json!({ "path": ROOT }))
+        .unwrap();
+    let info = session.execute(PROJECT_INFO, json!({})).unwrap();
+    assert_eq!(Path::new(info["root"].as_str().unwrap()), Path::new(ROOT));
+    let module = &info["modules"][0];
+    assert_eq!(module["kind"], "ssqc", "{info}");
+    assert_eq!(module["dialect"], "vanilla");
+    let engine = module["engine"].as_str().unwrap();
+    assert!(!module["engine_name"].as_str().unwrap().is_empty());
+    let builtins = session
+        .execute(ENGINE_BUILTINS, json!({ "engine": engine }))
+        .unwrap();
+    assert_eq!(builtins["engine"], engine);
 }

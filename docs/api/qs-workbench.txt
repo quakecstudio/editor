@@ -51,6 +51,7 @@ const qs_workbench::testing::UNIT_PREFIX
 const qs_workbench::tools::COMPILE
 const qs_workbench::tools::ENGINE_BUILTINS
 const qs_workbench::tools::PROJECT_FILES
+const qs_workbench::tools::PROJECT_INFO
 const qs_workbench::tools::PROJECT_SEARCH
 const qs_workbench::tools::PROJECT_SYMBOLS
 const qs_workbench::tools::SEARCH_LIMIT
@@ -72,7 +73,9 @@ enum qs_workbench::staged::Decision
 enum qs_workbench::testing::TestKind
 enum qs_workbench::testing::TestRunError
 enum qs_workbench::testing::Verdict
+enum qs_workbench::tools::DialectName
 enum qs_workbench::tools::EngineBuiltinsError
+enum qs_workbench::tools::KindName
 enum qs_workbench::vm_run::VmRunError
 field qs_workbench::Problem.diagnostic
 field qs_workbench::Problem.location
@@ -227,6 +230,14 @@ field qs_workbench::tools::EngineBuiltins.builtins
 field qs_workbench::tools::EngineBuiltins.engine
 field qs_workbench::tools::EngineBuiltinsParams.engine
 field qs_workbench::tools::EngineBuiltinsParams.kind
+field qs_workbench::tools::ModuleInfo.dialect
+field qs_workbench::tools::ModuleInfo.engine
+field qs_workbench::tools::ModuleInfo.engine_name
+field qs_workbench::tools::ModuleInfo.kind
+field qs_workbench::tools::ModuleInfo.name
+field qs_workbench::tools::ModuleInfo.output
+field qs_workbench::tools::ProjectInfo.modules
+field qs_workbench::tools::ProjectInfo.root
 field qs_workbench::tools::ProjectSearchParams.case_sensitive
 field qs_workbench::tools::ProjectSearchParams.text
 field qs_workbench::tools::ProjectSymbolsParams.query
@@ -391,6 +402,7 @@ fn qs_workbench::staged::register_staged
 fn qs_workbench::testing::Workbench::run_tests
 fn qs_workbench::testing::register_tests
 fn qs_workbench::tools::crate::Workbench::project_files
+fn qs_workbench::tools::crate::Workbench::project_info
 fn qs_workbench::tools::crate::Workbench::search
 fn qs_workbench::tools::register_tools
 fn qs_workbench::vm_run::register_vm
@@ -411,8 +423,10 @@ impl qs_workbench::preview::scenario::ScenarioRunError: std::error::Error
 impl qs_workbench::staged::HunkId: fmt::Display
 impl qs_workbench::testing::TestRunError: std::error::Error
 impl qs_workbench::testing::TestRunError: std::fmt::Display
+impl qs_workbench::tools::DialectName: From<qc_syntax::Dialect>
 impl qs_workbench::tools::EngineBuiltinsError: std::error::Error
 impl qs_workbench::tools::EngineBuiltinsError: std::fmt::Display
+impl qs_workbench::tools::KindName: From<ModuleKind>
 impl qs_workbench::vm_run::VmRunError: std::error::Error
 impl qs_workbench::vm_run::VmRunError: std::fmt::Display
 mod qs_workbench::checkpoints
@@ -497,6 +511,8 @@ struct qs_workbench::tools::BuiltinFound
 struct qs_workbench::tools::Compiled
 struct qs_workbench::tools::EngineBuiltins
 struct qs_workbench::tools::EngineBuiltinsParams
+struct qs_workbench::tools::ModuleInfo
+struct qs_workbench::tools::ProjectInfo
 struct qs_workbench::tools::ProjectSearchParams
 struct qs_workbench::tools::ProjectSymbolsParams
 struct qs_workbench::tools::SearchFound
@@ -676,9 +692,15 @@ variant qs_workbench::testing::TestRunError::Progs
 variant qs_workbench::testing::Verdict::Failed
 variant qs_workbench::testing::Verdict::Passed
 variant qs_workbench::testing::Verdict::Skipped
+variant qs_workbench::tools::DialectName::Fteqcc
+variant qs_workbench::tools::DialectName::Gmqcc
+variant qs_workbench::tools::DialectName::Vanilla
 variant qs_workbench::tools::EngineBuiltinsError::NoEngine
 variant qs_workbench::tools::EngineBuiltinsError::UnknownEngine
 variant qs_workbench::tools::EngineBuiltinsError::UnknownKind
+variant qs_workbench::tools::KindName::Csqc
+variant qs_workbench::tools::KindName::Menuqc
+variant qs_workbench::tools::KindName::Ssqc
 variant qs_workbench::vm_run::VmRunError::Bad
 variant qs_workbench::vm_run::VmRunError::Build
 variant qs_workbench::vm_run::VmRunError::Machine
