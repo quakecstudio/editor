@@ -3,7 +3,7 @@
 The agent loop (P4-06, AGT-1, AGT-5, PRIN-4): a model plans, edits, compiles, tests and
 previews through the IDE's commands, and proposes its edits as staged hunks for a person to
 accept. The model is any `Model`: one that answers a transcript with tool calls or "finished".
-This crate is the runtime around it; the model providers come later (P4-07).
+This crate is the runtime around it; `qs-models` has the model providers (P4-07).
 
 A run (`run`) gives the model what it needs to be productive on its first pass, and holds it
 to the result:
