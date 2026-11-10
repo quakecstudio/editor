@@ -25,6 +25,7 @@ absolute-paths-allowed-crates = [
     "interprocess",
     "jsonschema",
     "junction",
+    "keyring",
     "miniz_oxide",
     "muda",
     "pollster",
@@ -44,6 +45,7 @@ absolute-paths-allowed-crates = [
     "toml_edit",
     "tracing",
     "tracing_subscriber",
+    "ureq",
 ]
 
 # Allow breaking the exported API (we're pre-1.0)

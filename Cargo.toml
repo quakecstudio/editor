@@ -128,6 +128,9 @@ image = { version = "=0.25.10", default-features = false }
 interprocess = { version = "=2.4.7", default-features = false }
 jsonschema = { version = "=0.60.2", default-features = false }
 junction = { version = "=2.1.0", default-features = false }
+# qs-models: API keys in the OS keychain (AGT-6): macOS Keychain, Windows Credential Manager
+# and the Secret Service over zbus, pure Rust. MIT OR Apache-2.0.
+keyring = { version = "=4.2.0", default-features = false }
 miniz_oxide = { version = "=0.9.1", default-features = false }
 muda = { version = "=0.21.2", default-features = false }
 pollster = { version = "=0.4.0", default-features = false }
@@ -155,6 +158,7 @@ qs-checkpoint = { path = "crates/qs-checkpoint" }
 qs-agent = { path = "crates/qs-agent" }
 qs-commands = { path = "crates/qs-commands" }
 qs-mcp = { path = "crates/qs-mcp" }
+qs-models = { path = "crates/qs-models" }
 qs-diff = { path = "crates/qs-diff" }
 qs-editor-view = { path = "crates/qs-editor-view" }
 qs-engine = { path = "crates/qs-engine" }
@@ -199,6 +203,9 @@ toml = { version = "=1.1.6", default-features = false }
 toml_edit = { version = "=0.25.17", default-features = false }
 tracing = { version = "=0.1.44", default-features = false }
 tracing-subscriber = { version = "=0.3.23", default-features = false }
+# qs-models: the model providers' HTTP, blocking, over rustls with the webpki roots. MIT OR
+# Apache-2.0.
+ureq = { version = "=3.5.0", default-features = false }
 
 [profile.release]
 strip = true
