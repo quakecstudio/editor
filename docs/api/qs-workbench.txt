@@ -32,6 +32,7 @@ const qs_workbench::preview::STOP
 const qs_workbench::preview::UNWATCH
 const qs_workbench::preview::WATCH
 const qs_workbench::recent::RECENT_LIMIT
+const qs_workbench::vm_run::VM_RUN
 enum qs_workbench::CheckAfterTyping
 enum qs_workbench::EntryKind
 enum qs_workbench::WorkbenchError
@@ -44,6 +45,7 @@ enum qs_workbench::preview::StepBy
 enum qs_workbench::preview::debug::StopReason
 enum qs_workbench::preview::game_files::GameState
 enum qs_workbench::preview::scenario::ScenarioRunError
+enum qs_workbench::vm_run::VmRunError
 field qs_workbench::Problem.diagnostic
 field qs_workbench::Problem.location
 field qs_workbench::Problem.path
@@ -140,6 +142,15 @@ field qs_workbench::preview::game_files::GameFiles.missing
 field qs_workbench::preview::game_files::GameFiles.state
 field qs_workbench::preview::scenario::ScenarioRun.images
 field qs_workbench::preview::scenario::ScenarioRun.report
+field qs_workbench::vm_run::VmChange.after
+field qs_workbench::vm_run::VmChange.before
+field qs_workbench::vm_run::VmChange.place
+field qs_workbench::vm_run::VmRun.changes
+field qs_workbench::vm_run::VmRun.error
+field qs_workbench::vm_run::VmRun.progs
+field qs_workbench::vm_run::VmRunParams.function
+field qs_workbench::vm_run::VmRunParams.globals
+field qs_workbench::vm_run::VmRunParams.self_fields
 fn qs_workbench::Location::column
 fn qs_workbench::Location::line
 fn qs_workbench::Location::of
@@ -263,6 +274,8 @@ fn qs_workbench::recent::RecentProjects::opened
 fn qs_workbench::recent::RecentProjects::projects
 fn qs_workbench::recent::RecentProjects::save
 fn qs_workbench::recent::recent_path
+fn qs_workbench::vm_run::register_vm
+fn qs_workbench::vm_run::run
 impl qs_workbench::WorkbenchError: Error
 impl qs_workbench::WorkbenchError: fmt::Display
 impl qs_workbench::commands::CandidateKind: From<DefKind>
@@ -275,11 +288,14 @@ impl qs_workbench::preview::scenario::ScenarioRunError: From<ClientError>
 impl qs_workbench::preview::scenario::ScenarioRunError: From<PreviewError>
 impl qs_workbench::preview::scenario::ScenarioRunError: fmt::Display
 impl qs_workbench::preview::scenario::ScenarioRunError: std::error::Error
+impl qs_workbench::vm_run::VmRunError: std::error::Error
+impl qs_workbench::vm_run::VmRunError: std::fmt::Display
 mod qs_workbench::preview::debug
 mod qs_workbench::preview::dock
 mod qs_workbench::preview::entities
 mod qs_workbench::preview::game_files
 mod qs_workbench::preview::scenario
+mod qs_workbench::vm_run
 struct qs_workbench::Location
 struct qs_workbench::OpenFile
 struct qs_workbench::Problem
@@ -328,6 +344,9 @@ struct qs_workbench::preview::entities::Selected
 struct qs_workbench::preview::game_files::GameFiles
 struct qs_workbench::preview::scenario::ScenarioRun
 struct qs_workbench::recent::RecentProjects
+struct qs_workbench::vm_run::VmChange
+struct qs_workbench::vm_run::VmRun
+struct qs_workbench::vm_run::VmRunParams
 trait qs_workbench::commands::HasWorkbench
 trait qs_workbench::preview::HasPreview
 type qs_workbench::commands::HasWorkbench::Loader
@@ -402,6 +421,8 @@ use qs_workbench::SyntaxClass = qc_ide::SyntaxClass
 use qs_workbench::Target = qc_project::Target
 use qs_workbench::UNWATCH = crate::preview::UNWATCH
 use qs_workbench::UnwatchParams = crate::preview::UnwatchParams
+use qs_workbench::VM_RUN = crate::vm_run::VM_RUN
+use qs_workbench::VmRunParams = crate::vm_run::VmRunParams
 use qs_workbench::WATCH = crate::preview::WATCH
 use qs_workbench::WatchParams = crate::preview::WatchParams
 use qs_workbench::debug = crate::preview::debug
@@ -410,6 +431,7 @@ use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
+use qs_workbench::register_vm = crate::vm_run::register_vm
 use qs_workbench::scenario = crate::preview::scenario
 variant qs_workbench::CheckAfterTyping::OffTheFrame
 variant qs_workbench::CheckAfterTyping::OnTheFrame
@@ -463,3 +485,9 @@ variant qs_workbench::preview::scenario::ScenarioRunError::Preview
 variant qs_workbench::preview::scenario::ScenarioRunError::Read
 variant qs_workbench::preview::scenario::ScenarioRunError::RunRoot
 variant qs_workbench::preview::scenario::ScenarioRunError::Write
+variant qs_workbench::vm_run::VmRunError::Bad
+variant qs_workbench::vm_run::VmRunError::Build
+variant qs_workbench::vm_run::VmRunError::Machine
+variant qs_workbench::vm_run::VmRunError::NoFunction
+variant qs_workbench::vm_run::VmRunError::NothingBuilt
+variant qs_workbench::vm_run::VmRunError::Progs

@@ -92,7 +92,8 @@ pub fn register<C: HasWorkbench + 'static>(
     registry.register(References)?;
     registry.register(HoverCommand)?;
     registry.register(Complete)?;
-    registry.register(RenameCommand)
+    registry.register(RenameCommand)?;
+    crate::vm_run::register_vm(registry)
 }
 
 /// The parameters of `project.open`.

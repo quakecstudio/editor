@@ -52,6 +52,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.focus_right_panel`](#viewfocus_right_panel) | Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard. |
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
 | [`view.toggle_panel`](#viewtoggle_panel) | Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom. |
+| [`vm.run`](#vmrun) | Builds the open project and calls one QuakeC function in the VM over a mock engine, with globals and the fields of a self edict set first, answering each global and field the call changed and any run error. |
 
 ## `commands.list`
 
@@ -1351,6 +1352,43 @@ Parameters:
     "panel"
   ],
   "title": "TogglePanelParams",
+  "type": "object"
+}
+```
+
+## `vm.run`
+
+Builds the open project and calls one QuakeC function in the VM over a mock engine, with globals and the fields of a self edict set first, answering each global and field the call changed and any run error.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `vm.run`.",
+  "properties": {
+    "function": {
+      "description": "The function to call, by name.",
+      "type": "string"
+    },
+    "globals": {
+      "additionalProperties": true,
+      "default": {},
+      "description": "Named globals set before the call: a number for a float, three for a vector.",
+      "type": "object"
+    },
+    "self_fields": {
+      "additionalProperties": true,
+      "default": {},
+      "description": "Fields of a fresh edict that `self` names during the call, set the same way; with\nnone, `self` is the world.",
+      "type": "object"
+    }
+  },
+  "required": [
+    "function"
+  ],
+  "title": "VmRunParams",
   "type": "object"
 }
 ```

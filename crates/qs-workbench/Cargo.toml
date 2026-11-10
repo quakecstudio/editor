@@ -23,6 +23,11 @@ qs-install = { workspace = true }
 qs-bsp = { workspace = true }
 qs-sim = { workspace = true }
 qs-vfs = { workspace = true }
+# vm.run: a function called in the VM over the mock engine, with no map (P4-02).
+qc-builtins = { workspace = true }
+qc-edict = { workspace = true }
+qc-types = { workspace = true }
+qc-vm = { workspace = true }
 schemars = { workspace = true, features = ["derive", "std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
