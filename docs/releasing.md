@@ -7,8 +7,9 @@ release on GitHub) is P4-18; this page is the signing it reuses (P0-23, [#23](ht
 
 Justin entered these twelve secrets on 2026-10-16, following vouch and quack. They are
 **repository-level**, by his choice, so only a workflow that signs may reference them:
-today `.github/workflows/sign.yml`, started by hand (`workflow_dispatch`) and reused by the
-release pipeline (`workflow_call`). Agents never handle their values; the workflow's first
+today `.github/workflows/sign.yml`, started by hand (`workflow_dispatch`) or by pushing a `v*`
+tag. It is a standalone workflow, never called from another, so that every attestation it
+makes names `sign.yml` as its signer. Agents never handle their values; the workflow's first
 job checks each is set and prints no value.
 
 | Secret | What it is | Used by |
@@ -16,28 +17,43 @@ job checks each is set and prints no value.
 | `APPLE_CERTIFICATE_P12_BASE64` | The Developer ID Application certificate and its key, as a base64 PKCS#12 file | `security import` |
 | `APPLE_CERTIFICATE_PASSWORD` | That file's password | `security import` |
 | `APPLE_CERTIFICATE_NAME` | The certificate's name, such as `Developer ID Application: ... (TEAMID)` | `codesign --sign` |
-| `MACOS_KEYCHAIN_PASSWORD` | A password for the temporary keychain the job makes and deletes | `security create-keychain` |
+| `MACOS_KEYCHAIN_PASSWORD` | A password for the `build.keychain` the job makes and deletes | `security create-keychain` |
 | `APPLE_ID` | The Apple ID that submits for notarization | `notarytool` |
 | `APPLE_ID_PASSWORD` | Its app-specific password | `notarytool` |
 | `APPLE_TEAM_ID` | The developer team's id | `notarytool` |
-| `AZURE_CLIENT_ID` | The Entra app registration that signs, trusted over OIDC | `azure/login` |
-| `AZURE_TENANT_ID` | Its tenant | `azure/login` |
-| `TRUSTED_SIGNING_ENDPOINT` | The Trusted Signing account's regional endpoint | Trusted Signing |
-| `TRUSTED_SIGNING_ACCOUNT` | The Trusted Signing account's name | Trusted Signing |
-| `CERTIFICATE_PROFILE` | The certificate profile that signs | Trusted Signing |
+| `AZURE_CLIENT_ID` | The Entra app registration that signs, trusted over OIDC | `aas-sign` |
+| `AZURE_TENANT_ID` | Its tenant | `aas-sign` |
+| `TRUSTED_SIGNING_ENDPOINT` | The Trusted Signing account's regional endpoint | `aas-sign` |
+| `TRUSTED_SIGNING_ACCOUNT` | The Trusted Signing account's name | `aas-sign` |
+| `CERTIFICATE_PROFILE` | The certificate profile that signs | `aas-sign` |
 
 **Owner and renewal:** every credential is Justin's.
 - **Developer ID certificate:** renews every five years, in Apple's developer account.
 - **App-specific password:** stays valid until revoked.
-- **Entra app registration:** uses a federated credential, not a secret, so nothing expires. The credential must trust `repo:quakecstudio/editor` for the workflow's ref. If `azure/login` fails because none does, the subject to add goes to Justin; it is not worked around.
+- **Entra app registration:** uses a federated credential, not a secret, so nothing expires. The credential must trust `repo:quakecstudio/editor` for the workflow's ref. If `aas-sign` fails to log in because none does, the subject to add goes to Justin; it is not worked around.
 
 ## Signing a build
 
-Run **Sign** from the Actions tab, or `gh workflow run sign.yml --ref <branch>`. It:
+The steps follow vouch-sh/vouch's `reusable-build.yml`. Run **Sign** from the Actions tab,
+`gh workflow run sign.yml --ref <branch>`, or push a `v*` tag. It:
 
 1. checks every secret above is set;
-2. on macOS, builds the app, imports the certificate into a temporary keychain, signs the
-   binary with the hardened runtime and a timestamp, verifies it, submits it to notarytool
-   and waits, then deletes the keychain;
-3. on Windows, builds the app, logs in to Azure over OIDC, signs the `.exe` with Trusted
-   Signing (SHA-256, RFC 3161 timestamp) and checks the Authenticode signature is valid.
+2. on macOS, builds the app, imports the certificate into `build.keychain` (made the default
+   keychain, with `codesign` allowed to use the key), signs the binary with
+   `/usr/bin/codesign --options runtime --timestamp` and verifies it, stores the notarytool
+   credentials as the `notarytool-profile` keychain profile and submits the zipped binary
+   with `--wait`, attests the signed binary, uploads it as `quakec-studio-macos`, and always
+   deletes the keychain;
+3. on Windows, builds the app, signs the `.exe` with `skeeto/aas-sign` (Azure Trusted
+   Signing, logging in over OIDC with the client and tenant ids), checks its Authenticode
+   signature is valid, attests it and uploads it as `quakec-studio-windows`.
+
+## Checking an attestation
+
+Each signed binary has a build provenance attestation from `actions/attest`, signed with the
+workflow's OIDC identity. Download it from the run and check it with:
+
+```bash
+gh attestation verify quakec-studio.exe --repo quakecstudio/editor \
+  --signer-workflow quakecstudio/editor/.github/workflows/sign.yml
+```
