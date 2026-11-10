@@ -6,14 +6,17 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use qc_engines::Engine;
 use qc_project::{MemoryLoader, ModuleKind};
 use qs_commands::{Registry, Session};
 use serde_json::{Value, json};
 
-use super::{COMPILE, Compiled, ENGINE_BUILTINS, PROJECT_SYMBOLS, builtins_of};
+use super::{
+    COMPILE, Compiled, ENGINE_BUILTINS, PROJECT_FILES, PROJECT_SEARCH, PROJECT_SYMBOLS,
+    SEARCH_LIMIT, builtins_of,
+};
 use crate::{Config, OPEN_PROJECT, Workbench, register};
 
 const ROOT: &str = "/p";
@@ -150,4 +153,80 @@ fn compile_says_whether_the_build_is_clean() {
     assert!(!broken.modules[0].built);
     let mut none = session();
     assert!(none.execute(COMPILE, json!({})).is_err(), "no project");
+}
+
+// No spec statement: P4-06, project.files lists every file the project reads and
+// project.search finds the lines holding a text, unsaved edits included, without case unless
+// asked; both need an open project
+#[test]
+fn files_and_search_read_the_project() {
+    let mut session = session();
+    assert!(session.execute(PROJECT_FILES, json!({})).is_err());
+    assert!(
+        session
+            .execute(PROJECT_SEARCH, json!({ "text": "x" }))
+            .is_err()
+    );
+    session
+        .execute(OPEN_PROJECT, json!({ "path": ROOT }))
+        .unwrap();
+    let files: Vec<PathBuf> =
+        serde_json::from_value(session.execute(PROJECT_FILES, json!({})).unwrap()).unwrap();
+    let root = Path::new(ROOT);
+    assert_eq!(
+        files,
+        [root.join("defs.qc"), root.join("world.qc")],
+        "the sources, not progs.src"
+    );
+    let found = session
+        .execute(PROJECT_SEARCH, json!({ "text": "w_fireaxe" }))
+        .unwrap();
+    assert_eq!(found["matches"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        Path::new(found["matches"][0]["path"].as_str().unwrap()),
+        root.join("world.qc")
+    );
+    assert_eq!(found["matches"][0]["line"], 2);
+    assert_eq!(found["truncated"], false);
+    let exact = session
+        .execute(
+            PROJECT_SEARCH,
+            json!({ "text": "w_fireaxe", "case_sensitive": true }),
+        )
+        .unwrap();
+    assert!(exact["matches"].as_array().unwrap().is_empty());
+    session
+        .execute(
+            "file.update",
+            json!({ "path": "/p/defs.qc", "text": "float W_FireAxe_damage;\n" }),
+        )
+        .unwrap();
+    let edited = session
+        .execute(PROJECT_SEARCH, json!({ "text": "FireAxe" }))
+        .unwrap();
+    assert_eq!(edited["matches"].as_array().unwrap().len(), 2, "{edited}");
+}
+
+// No spec statement: P4-06, project.search answers at most SEARCH_LIMIT lines and says when
+// there were more
+#[test]
+fn search_stops_at_its_limit() {
+    let mut loader = MemoryLoader::new();
+    let many: String = (0..=SEARCH_LIMIT)
+        .map(|n| format!("float hit{n};\n"))
+        .collect();
+    loader.insert(
+        Path::new(ROOT).join("progs.src"),
+        b"progs.dat\nmany.qc\n".to_vec(),
+    );
+    loader.insert(Path::new(ROOT).join("many.qc"), many.into_bytes());
+    let mut workbench = Workbench::new(loader, Config::default());
+    workbench.open_project(Path::new(ROOT)).unwrap();
+    let found = workbench.search("hit", false);
+    assert_eq!(found.matches.len(), SEARCH_LIMIT);
+    assert!(found.truncated);
+    assert!(
+        workbench.search("", false).matches.is_empty(),
+        "nothing to find"
+    );
 }
