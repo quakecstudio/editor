@@ -39,6 +39,8 @@ const qs_workbench::staged::STAGED_EDITS
 const qs_workbench::testing::RUN_TESTS
 const qs_workbench::testing::SCENARIO_DIR
 const qs_workbench::testing::UNIT_PREFIX
+const qs_workbench::tools::ENGINE_BUILTINS
+const qs_workbench::tools::PROJECT_SYMBOLS
 const qs_workbench::vm_run::VM_RUN
 enum qs_workbench::CheckAfterTyping
 enum qs_workbench::EntryKind
@@ -56,6 +58,7 @@ enum qs_workbench::staged::Decision
 enum qs_workbench::testing::TestKind
 enum qs_workbench::testing::TestRunError
 enum qs_workbench::testing::Verdict
+enum qs_workbench::tools::EngineBuiltinsError
 enum qs_workbench::vm_run::VmRunError
 field qs_workbench::Problem.diagnostic
 field qs_workbench::Problem.location
@@ -173,6 +176,21 @@ field qs_workbench::testing::TestRun.passed
 field qs_workbench::testing::TestRun.passed_count
 field qs_workbench::testing::TestRun.skipped_count
 field qs_workbench::testing::TestRun.tests
+field qs_workbench::tools::BuiltinFound.engine_name
+field qs_workbench::tools::BuiltinFound.extensions
+field qs_workbench::tools::BuiltinFound.name
+field qs_workbench::tools::BuiltinFound.number
+field qs_workbench::tools::BuiltinFound.signature
+field qs_workbench::tools::EngineBuiltins.builtins
+field qs_workbench::tools::EngineBuiltins.engine
+field qs_workbench::tools::EngineBuiltinsParams.engine
+field qs_workbench::tools::EngineBuiltinsParams.kind
+field qs_workbench::tools::ProjectSymbolsParams.query
+field qs_workbench::tools::SymbolFound.column
+field qs_workbench::tools::SymbolFound.kind
+field qs_workbench::tools::SymbolFound.line
+field qs_workbench::tools::SymbolFound.name
+field qs_workbench::tools::SymbolFound.path
 field qs_workbench::vm_run::VmChange.after
 field qs_workbench::vm_run::VmChange.before
 field qs_workbench::vm_run::VmChange.place
@@ -198,6 +216,7 @@ fn qs_workbench::OpenFile::text
 fn qs_workbench::OpenFile::version
 fn qs_workbench::Workbench::checked_in_background
 fn qs_workbench::Workbench::close_file
+fn qs_workbench::Workbench::engine
 fn qs_workbench::Workbench::history
 fn qs_workbench::Workbench::is_unsaved
 fn qs_workbench::Workbench::new
@@ -312,6 +331,7 @@ fn qs_workbench::staged::Workbench::staged_hunks
 fn qs_workbench::staged::register_staged
 fn qs_workbench::testing::Workbench::run_tests
 fn qs_workbench::testing::register_tests
+fn qs_workbench::tools::register_tools
 fn qs_workbench::vm_run::register_vm
 fn qs_workbench::vm_run::run
 impl qs_workbench::WorkbenchError: Error
@@ -329,6 +349,8 @@ impl qs_workbench::preview::scenario::ScenarioRunError: std::error::Error
 impl qs_workbench::staged::HunkId: fmt::Display
 impl qs_workbench::testing::TestRunError: std::error::Error
 impl qs_workbench::testing::TestRunError: std::fmt::Display
+impl qs_workbench::tools::EngineBuiltinsError: std::error::Error
+impl qs_workbench::tools::EngineBuiltinsError: std::fmt::Display
 impl qs_workbench::vm_run::VmRunError: std::error::Error
 impl qs_workbench::vm_run::VmRunError: std::fmt::Display
 mod qs_workbench::preview::debug
@@ -338,6 +360,7 @@ mod qs_workbench::preview::game_files
 mod qs_workbench::preview::scenario
 mod qs_workbench::staged
 mod qs_workbench::testing
+mod qs_workbench::tools
 mod qs_workbench::vm_run
 struct qs_workbench::Location
 struct qs_workbench::OpenFile
@@ -395,6 +418,11 @@ struct qs_workbench::staged::StagedHunk
 struct qs_workbench::testing::RunTestsParams
 struct qs_workbench::testing::TestResult
 struct qs_workbench::testing::TestRun
+struct qs_workbench::tools::BuiltinFound
+struct qs_workbench::tools::EngineBuiltins
+struct qs_workbench::tools::EngineBuiltinsParams
+struct qs_workbench::tools::ProjectSymbolsParams
+struct qs_workbench::tools::SymbolFound
 struct qs_workbench::vm_run::VmChange
 struct qs_workbench::vm_run::VmRun
 struct qs_workbench::vm_run::VmRunParams
@@ -562,6 +590,9 @@ variant qs_workbench::testing::TestRunError::Progs
 variant qs_workbench::testing::Verdict::Failed
 variant qs_workbench::testing::Verdict::Passed
 variant qs_workbench::testing::Verdict::Skipped
+variant qs_workbench::tools::EngineBuiltinsError::NoEngine
+variant qs_workbench::tools::EngineBuiltinsError::UnknownEngine
+variant qs_workbench::tools::EngineBuiltinsError::UnknownKind
 variant qs_workbench::vm_run::VmRunError::Bad
 variant qs_workbench::vm_run::VmRunError::Build
 variant qs_workbench::vm_run::VmRunError::Machine

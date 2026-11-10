@@ -30,7 +30,7 @@ job checks each is set and prints no value.
 **Owner and renewal:** every credential is Justin's.
 - **Developer ID certificate:** renews every five years, in Apple's developer account.
 - **App-specific password:** stays valid until revoked.
-- **Entra app registration:** uses a federated credential, not a secret, so nothing expires. The credential must trust `repo:quakecstudio/editor` for the workflow's ref. If `aas-sign` fails to log in because none does, the subject to add goes to Justin; it is not worked around.
+- **Entra app registration:** uses federated credentials, not a secret, so nothing expires. The organization customizes its OIDC subject claim, so the subject is not the default `repo:<owner>/<repo>:ref:<ref>`. A run of Sign presents `repo:quakecstudio@343029298/editor@1420764495:workflow:Sign:ref_type:branch` from a branch and the same ending in `ref_type:tag` from a `v*` tag, as Azure's AADSTS700213 error showed on the first run ([#23](https://github.com/quakecstudio/editor/issues/23)). Each needs a federated credential with issuer `https://token.actions.githubusercontent.com` and audience `api://AzureADTokenExchange`. If `aas-sign` fails to log in because none matches, the subject in the error goes to Justin; it is not worked around.
 
 ## Signing a build
 
