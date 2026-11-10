@@ -7,9 +7,13 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | Command | Summary |
 | --- | --- |
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
+| [`compile`](#compile) | Compiles the open project, writing each module's progs.dat as project.build does, and answers whether the compile is clean, with its error and warning counts and each module's problems. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
 | [`engine.builtins`](#enginebuiltins) | Lists an engine's builtins for a module kind, each with its number or engine name, QuakeC name, signature and extensions; the open project's engine and server QuakeC when none is named. |
+| [`engine.console`](#engineconsole) | Runs a command in the running game's console and answers the lines it printed. |
+| [`engine.inspect`](#engineinspect) | Reads the running game: the edicts in use, one edict's fields, every named global, or the call stack while stopped in a frame. |
+| [`engine.screenshot`](#enginescreenshot) | Writes the frame the running game draws as a PNG, in the project's build/screenshots unless a path is given, and answers where and its size. |
 | [`file.close`](#fileclose) | Closes a file's tab, opening the tab beside it when it was         the open file; its unsaved text is kept. |
 | [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
@@ -60,6 +64,22 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 ## `commands.list`
 
 Lists every command with its id, summary and parameter schema.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `compile`
+
+Compiles the open project, writing each module's progs.dat as project.build does, and answers whether the compile is clean, with its error and warning counts and each module's problems.
 
 Parameters:
 
@@ -135,6 +155,156 @@ Parameters:
     }
   },
   "title": "EngineBuiltinsParams",
+  "type": "object"
+}
+```
+
+## `engine.console`
+
+Runs a command in the running game's console and answers the lines it printed.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `engine.console`.",
+  "properties": {
+    "command": {
+      "description": "The console command, such as `give all`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command"
+  ],
+  "title": "EngineConsoleParams",
+  "type": "object"
+}
+```
+
+## `engine.inspect`
+
+Reads the running game: the edicts in use, one edict's fields, every named global, or the call stack while stopped in a frame.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Inspected": {
+      "description": "What `engine.inspect` reads (BRIDGE-4.9).",
+      "oneOf": [
+        {
+          "const": "entities",
+          "description": "The edicts in use, each with its number and classname.",
+          "type": "string"
+        },
+        {
+          "const": "edict",
+          "description": "One edict's classname and fields; `edict` names it.",
+          "type": "string"
+        },
+        {
+          "const": "globals",
+          "description": "Every named global.",
+          "type": "string"
+        },
+        {
+          "const": "stack",
+          "description": "The call stack, while the game is stopped in a frame.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `engine.inspect`.",
+  "properties": {
+    "edict": {
+      "default": null,
+      "description": "The edict, for `edict`.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "what": {
+      "$ref": "#/$defs/Inspected",
+      "description": "What to read."
+    }
+  },
+  "required": [
+    "what"
+  ],
+  "title": "EngineInspectParams",
+  "type": "object"
+}
+```
+
+## `engine.screenshot`
+
+Writes the frame the running game draws as a PNG, in the project's build/screenshots unless a path is given, and answers where and its size.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "ShotSize": {
+      "additionalProperties": false,
+      "description": "A size to draw a screenshot at.",
+      "properties": {
+        "height": {
+          "description": "Its height in pixels.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "width": {
+          "description": "Its width in pixels.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `engine.screenshot`.",
+  "properties": {
+    "path": {
+      "default": null,
+      "description": "Where to write the PNG; `build/screenshots/screenshot-<n>.png` in the project, the\nfirst `n` from 1 not taken, when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "size": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ShotSize"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The size to draw it at; the game's own when absent."
+    }
+  },
+  "title": "EngineScreenshotParams",
   "type": "object"
 }
 ```
