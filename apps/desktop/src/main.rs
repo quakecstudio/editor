@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use eframe::egui;
+use qs_commands::remote::Host;
 use quakec_studio::App;
 use quakec_studio::strings::Text;
 
@@ -43,6 +44,10 @@ fn main() -> ExitCode {
         .as_ref()
         .ok()
         .map(|dirs| qs_settings::user_settings_path(dirs.config()));
+    let app_socket = dirs
+        .as_ref()
+        .ok()
+        .map(|dirs| dirs.app_socket().to_path_buf());
     let layout_file = dirs.ok().map(|dirs| qs_layout::layout_path(dirs.data()));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -70,6 +75,14 @@ fn main() -> ExitCode {
             }
             #[cfg(not(target_os = "macos"))]
             app.shell_mut().set_menu_in_window();
+            // AGT-7: `quakec-ide mcp --connect` runs the agent's tools in this window.
+            if let Some(socket) = &app_socket {
+                let ctx = cc.egui_ctx.clone();
+                match Host::listen(socket, move || ctx.request_repaint()) {
+                    Ok(host) => app.shell_mut().set_host(host),
+                    Err(error) => tracing::warn!(%error, "the app's socket is not served"),
+                }
+            }
             if let Some(project) = &project
                 && let Err(error) = app.shell_mut().open_project(project)
             {

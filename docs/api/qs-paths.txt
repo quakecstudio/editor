@@ -2,6 +2,7 @@ const qs_paths::APP_DIR_NAME
 const qs_paths::APP_DIR_NAME_UNIX
 enum qs_paths::PathsError
 enum qs_paths::Platform
+fn qs_paths::AppDirs::app_socket
 fn qs_paths::AppDirs::cache
 fn qs_paths::AppDirs::config
 fn qs_paths::AppDirs::data

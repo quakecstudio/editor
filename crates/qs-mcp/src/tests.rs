@@ -10,11 +10,12 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use qc_project::FsLoader;
+use qs_commands::remote::Host;
 use qs_commands::{Registry, Session};
 use qs_workbench::{Config, Workbench, register};
 use serde_json::{Value, json};
 
-use super::{AGENT_TOOLS, Server, ServerSettings};
+use super::{AGENT_TOOLS, Connected, Server, ServerSettings};
 
 /// A fresh project on disk for test `name`: a `progs.src` and a `world.qc` of `world`.
 fn project(name: &str, world: &str) -> PathBuf {
@@ -267,7 +268,7 @@ fn a_session_that_fails_is_reported() {
         name: "quakec-ide".to_owned(),
         version: "0".to_owned(),
     };
-    let failed = Server::start::<Workbench<FsLoader>>(
+    let failed = Server::start::<Session<Workbench<FsLoader>>>(
         || Err("no project here".to_owned()),
         settings,
         &AGENT_TOOLS,
@@ -279,4 +280,69 @@ fn a_session_that_fails_is_reported() {
     );
     let root = project("names", WORLD);
     assert!(server(&root, false).tool_names().contains(&"compile"));
+}
+
+// No spec statement: P4-13 and AGT-7, with --connect the tools run in the running app's
+// session: a change the agent stages there is in the app's session, and the app's failures are
+// tool errors
+#[test]
+fn a_connected_server_runs_in_the_apps_session() {
+    let root = project("connected", WORLD);
+    let socket = if cfg!(windows) {
+        PathBuf::from(format!(r"\\.\pipe\qs-mcp-connected-{}", std::process::id()))
+    } else {
+        root.join("app.sock")
+    };
+    let host = Host::listen(&socket, || {}).unwrap();
+    let open = root.clone();
+    // The app's thread: its session, answering the server's list and its three calls.
+    let app = std::thread::spawn(move || {
+        let mut registry = Registry::new();
+        register(&mut registry).unwrap();
+        let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
+        session
+            .execute("project.open", json!({ "path": open }))
+            .unwrap();
+        for _ in 0..4 {
+            assert!(host.answer_next(&mut session));
+        }
+        session.execute("edit.staged", json!({})).unwrap()
+    });
+    let settings = ServerSettings {
+        project: root.clone(),
+        read: vec![root.clone()],
+        write: vec![root.clone()],
+        name: "quakec-ide".to_owned(),
+        version: "0".to_owned(),
+    };
+    let connected = Server::start(
+        move || Connected::connect(&socket).map_err(|e| e.to_string()),
+        settings,
+        &AGENT_TOOLS,
+    )
+    .unwrap();
+    assert!(connected.tool_names().contains(&"compile"));
+    let [init, initialized] = opening("2025-11-25");
+    let answers = exchange(
+        connected,
+        &[
+            init,
+            initialized,
+            call(1, "compile", json!({})),
+            call(
+                2,
+                "edit.apply",
+                json!({ "files": [{ "path": "world.qc", "text": "void() worldspawn = { };\n" }] }),
+            ),
+            call(3, "vm.run", json!({ "function": "nowhere" })),
+        ],
+    );
+    assert_eq!(answers["1"]["result"]["structuredContent"]["clean"], true);
+    assert_eq!(answers["2"]["result"]["isError"], false, "{}", answers["2"]);
+    assert_eq!(answers["3"]["result"]["isError"], true, "{}", answers["3"]);
+    let staged = app.join().unwrap();
+    assert!(
+        staged.to_string().contains("world.qc"),
+        "the edit is staged in the app's session: {staged}"
+    );
 }

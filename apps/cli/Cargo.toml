@@ -21,6 +21,8 @@ clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-
 qs-commands = { workspace = true }
 # mcp: the agent's tools over the Model Context Protocol (P4-13).
 qs-mcp = { workspace = true }
+# mcp --connect: the running app's socket.
+qs-paths = { workspace = true }
 qs-workbench = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
 

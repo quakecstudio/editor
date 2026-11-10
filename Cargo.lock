@@ -3450,6 +3450,7 @@ dependencies = [
 name = "qs-commands"
 version = "2026.10.0"
 dependencies = [
+ "interprocess",
  "proptest",
  "schemars",
  "serde",
@@ -3730,6 +3731,7 @@ dependencies = [
  "qc-types",
  "qs-commands",
  "qs-mcp",
+ "qs-paths",
  "qs-workbench",
  "serde_json",
 ]

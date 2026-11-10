@@ -17,6 +17,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+mod remote;
+
 use crate::{
     BUILTIN_IDS, BoxError, Command, CommandError, CommandId, IdError, MAX_ID_LEN, NoParams,
     Outcome, RegisterError, Registry, Session, UndoStep,
