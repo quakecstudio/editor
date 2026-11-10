@@ -7,6 +7,10 @@
     "progs": {
       "type": "string",
       "description": "The progs.dat to load; the running one's path by default"
+    },
+    "dry_run": {
+      "type": "boolean",
+      "description": "Report what a reload would migrate, lose and add, changing nothing (BRIDGE-4.11)"
     }
   }
 }

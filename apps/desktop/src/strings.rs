@@ -75,6 +75,10 @@ pub enum Text {
     Paused,
     /// The toolbar after a reload failed.
     ReloadFailed,
+    /// The notice before a reload that would reset values (P3-10), before their list.
+    WouldReset,
+    /// The notice's button that reloads all the same.
+    ReloadAnyway,
     /// The Entities filter's hint.
     FilterEntities,
     /// An outliner row whose edict has no classname.
@@ -243,7 +247,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 116] = [
+    pub const ALL: [Self; 118] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -278,6 +282,8 @@ impl Text {
         Self::Resume,
         Self::Paused,
         Self::ReloadFailed,
+        Self::WouldReset,
+        Self::ReloadAnyway,
         Self::FilterEntities,
         Self::NoClassname,
         Self::Live,
@@ -400,6 +406,8 @@ impl Text {
             Self::Resume => "Resume",
             Self::Paused => "Paused",
             Self::ReloadFailed => "The reload failed; see the Console",
+            Self::WouldReset => "Reloading would reset",
+            Self::ReloadAnyway => "Reload anyway",
             Self::FilterEntities => "Filter by classname or number",
             Self::NoClassname => "(no classname)",
             Self::Live => "live",

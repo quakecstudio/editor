@@ -1288,6 +1288,58 @@ fn a_reload_changes_a_monsters_think_while_it_runs() {
     );
 }
 
+// spec BRIDGE-4.11: a dry run answers with the report the reload then gives, a lost think
+// and a renamed field included, and changes nothing: no event, the old code still runs
+#[test]
+fn a_dry_run_predicts_the_reload_and_changes_nothing() {
+    let (mut game, mut session) = game_with(DOG);
+    for _ in 0..3 {
+        game.frame(0.1);
+    }
+    serve(
+        &mut game,
+        &SOURCE
+            .replace("dog_think", "dog_wait")
+            .replace("count", "tally"),
+    );
+    game.take_events();
+    let before = dog_frags(&game);
+    let predicted = call(
+        &mut game,
+        &mut session,
+        "reload",
+        &json!({ "dry_run": true }),
+    )
+    .unwrap();
+    assert!(events(&mut game).is_empty(), "a dry run sends nothing");
+    let lost = predicted["lost"].as_array().unwrap();
+    assert!(
+        lost.iter()
+            .any(|c| c["name"] == "dog_think" && c["kind"] == "function"),
+        "{predicted}"
+    );
+    assert!(
+        lost.iter()
+            .any(|c| c["name"] == "count" && c["kind"] == "field"),
+        "{predicted}"
+    );
+    game.frame(0.1);
+    game.frame(0.1);
+    assert!(dog_frags(&game) > before, "the old think still runs");
+    let time = game.world().time();
+    let mut reloaded = call(&mut game, &mut session, "reload", &json!({})).unwrap();
+    let mut predicted = predicted;
+    // The prediction was read two frames earlier; nothing else differs.
+    predicted["time"] = json!(time);
+    reloaded["time"] = json!(time);
+    assert_eq!(predicted["lost"], reloaded["lost"]);
+    assert_eq!(predicted["added"], reloaded["added"]);
+    assert_eq!(
+        predicted["breakpoints_cleared"],
+        reloaded["breakpoints_cleared"]
+    );
+}
+
 // spec BRIDGE-4.9: a reload while paused keeps the game paused and says so with reason reload
 // spec BRIDGE-4.8: one naming a file that is not there is refused with nothing changed
 #[test]

@@ -426,10 +426,34 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "OnLoss": {
+      "description": "What `preview.reload` does when the reload would lose a value (P3-10, BRIDGE-4.11).",
+      "oneOf": [
+        {
+          "const": "reload",
+          "description": "Reload all the same: what is lost resets.",
+          "type": "string"
+        },
+        {
+          "const": "ask",
+          "description": "Ask first: the reload waits, and the status lists what it would reset.",
+          "type": "string"
+        }
+      ]
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The command takes no parameters: pass the empty object {}.",
-  "title": "No parameters",
+  "description": "`preview.reload`: builds the project and reloads it in the running game.\nThe parameters of `preview.reload`.",
+  "properties": {
+    "on_loss": {
+      "$ref": "#/$defs/OnLoss",
+      "default": "reload",
+      "description": "What to do when the reload would lose a value: `reload` (the default) or `ask`."
+    }
+  },
+  "title": "ReloadParams",
   "type": "object"
 }
 ```

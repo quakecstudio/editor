@@ -43,9 +43,10 @@ pub use crate::preview::{
     dock, scenario,
 };
 pub use crate::preview::{
-    ConsoleLine, HasPreview, PAUSE, PICK, PLAY, POLL, PickParams, PlayParams, PlayState, Preview,
-    PreviewConfig, PreviewError, PreviewStatus, RELOAD, RESTART, RESUME, SELECT, SET_FIELD, STEP,
-    STOP, SelectParams, SelectedEntity, SetFieldParams, entities, register_preview,
+    ConsoleLine, HasPreview, OnLoss, PAUSE, PICK, PLAY, POLL, PickParams, PlayParams, PlayState,
+    Preview, PreviewConfig, PreviewError, PreviewStatus, RELOAD, RESTART, RESUME, ReloadParams,
+    SELECT, SET_FIELD, STEP, STOP, SelectParams, SelectedEntity, SetFieldParams, entities,
+    register_preview,
 };
 pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
 use qc_project::{ProjectError, normalize};

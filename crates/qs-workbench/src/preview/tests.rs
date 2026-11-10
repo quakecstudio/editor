@@ -97,7 +97,11 @@ fn the_controls_need_a_running_game() {
     assert!(matches!(game.step(), Err(PreviewError::NotRunning)));
     assert!(matches!(game.restart(), Err(PreviewError::NotRunning)));
     let mut workbench = Workbench::new(MemoryLoader::new(), Config::default());
-    assert!(game.reload(&mut workbench).unwrap().is_none());
+    assert!(
+        game.reload(&mut workbench, super::OnLoss::Ask)
+            .unwrap()
+            .is_none()
+    );
     game.stop();
     game.poll();
     assert_eq!(game.state(), PlayState::Stopped);
@@ -144,6 +148,7 @@ fn events_set_the_state_and_the_console() {
             state: "playing".to_owned(),
             status: None,
             picked: None,
+            would_reset: Vec::new(),
         }
     );
 }
@@ -170,6 +175,35 @@ fn a_picked_edict_names_its_spawn_function() {
         None,
         "an edict not listed names nothing"
     );
+}
+
+// spec BRIDGE-4.11: a dry run's lost values are what the IDE says the reload would reset, each
+// as its kind, name and reason; a report that loses nothing holds no reload
+#[test]
+fn a_dry_runs_losses_are_what_would_reset() {
+    let report = json!({
+        "migrated": 40,
+        "lost": [
+            { "name": "dog_think", "kind": "function", "reason": "removed, and edict 2 .think named it: now 0" },
+            { "name": "count", "kind": "field", "reason": "removed" },
+        ],
+        "added": [{ "name": "tally", "kind": "field", "reason": "added" }],
+        "breakpoints_cleared": [],
+        "time": 1.0,
+    });
+    assert_eq!(
+        super::would_reset(&report),
+        [
+            "function dog_think: removed, and edict 2 .think named it: now 0",
+            "field count: removed",
+        ]
+    );
+    assert!(super::would_reset(&json!({ "migrated": 3, "lost": [] })).is_empty());
+    assert!(super::would_reset(&json!({})).is_empty());
+    let asked: super::ReloadParams = serde_json::from_value(json!({ "on_loss": "ask" })).unwrap();
+    assert_eq!(asked.on_loss, super::OnLoss::Ask);
+    let plain: super::ReloadParams = serde_json::from_value(json!({})).unwrap();
+    assert_eq!(plain.on_loss, super::OnLoss::Reload);
 }
 
 // No spec statement: the program plays from `<project>/build/<mod>/`, which the run root links

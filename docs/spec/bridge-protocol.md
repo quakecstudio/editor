@@ -201,6 +201,12 @@ A command is a request from the client, answered with a result on success or an 
   system lets a client neither move nor raise its window (Wayland), leaves the capability off
   (BRIDGE-2.6).
 
+- **BRIDGE-4.11** `reload` with `dry_run` true reads its `progs` as BRIDGE-4.8 says and
+  answers with the result a reload would give, from the same migration run over a copy of the
+  running world, with the breakpoints it would clear; the running world, its progs, its
+  breakpoints and its pause are unchanged, and no event is sent. The editor reads it before a
+  reload to say what the reload would reset (P3-10).
+
 ## BRIDGE-5 Values
 
 **Source:** this design; PROGS-16, the eight QC types.

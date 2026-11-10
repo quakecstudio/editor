@@ -34,6 +34,7 @@ fn qs_engine::client::Client::pause
 fn qs_engine::client::Client::pick
 fn qs_engine::client::Client::place_window
 fn qs_engine::client::Client::poll_events
+fn qs_engine::client::Client::predict_reload
 fn qs_engine::client::Client::reload
 fn qs_engine::client::Client::remove
 fn qs_engine::client::Client::request
