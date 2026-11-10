@@ -159,6 +159,13 @@ sections:
       - {id: UI-13, kind: stated, text: "Properties panel: selected entity's fields, editable while paused"}
       - {id: UI-14, kind: stated, text: "Zed's editor feel and Roblox Studio's play loop: calm, dense, keyboard-first, native on each OS"}
       - {id: UI-15, kind: implied, text: "Visual design set before the UI is built: theme tokens (dark and light), UI and code typefaces, spacing and density, icons, OS window chrome, and approved mockups of the main screens"}
+      - {id: UI-16, kind: implied, text: "Editor layout and navigation on a par with Zed's docs (zed-industries/zed@415d310): split panes, code folding, soft wrap, indent guides, go to line, go to symbol, outline panel, tab switcher"}
+      - {id: UI-17, kind: implied, text: "Project search and find references in a multibuffer of editable excerpts, as Zed's Multibuffers page describes"}
+      - {id: UI-18, kind: implied, text: "Quick fixes and code actions on diagnostics, inline diagnostics, inlay hints in the editor and a QuakeC formatter"}
+      - {id: UI-19, kind: implied, text: "Git in the window: gutter and project diff, staging, commit, branches, file history and blame, merge conflicts"}
+      - {id: UI-20, kind: implied, text: "An integrated terminal and project tasks"}
+      - {id: UI-21, kind: implied, text: "Custom keybindings and a vim mode"}
+      - {id: UI-22, kind: implied, text: "Agent panel controls on a par with Zed's agent docs: tool permissions and profiles, following the agent, thread history and search, editing and queueing messages, token usage and compaction, images as context, notifications"}
 
   - id: MAP
     title: Map editor
@@ -187,6 +194,12 @@ sections:
       - {id: MAP-23, kind: stated, text: "Import PNG images as textures into the project's WAD2, quantized to the Quake palette with mipmaps and Quake's texture naming rules"}
       - {id: MAP-24, kind: stated, text: "Read Half-Life's BSP version 30 and WAD3 (textures carrying their own palettes, RGB lightmaps) as QuakeSpasm loads them, for QuakeC mods on Half-Life maps such as FreeHL and FreeCS; Phase 5, after the MVP; writing either format is not planned"}
       - {id: MAP-19, kind: implied, text: "Public map corpus with known-good licenses for compiler differential tests"}
+      - {id: MAP-25, kind: implied, text: "Every brush tool of TrenchBroom's manual (TrenchBroom/TrenchBroom@8f329f1): simple and complex shapes (cylinder, cone, arch, spheroids, rocks, grid-aligned scalable curves), extrusion, sweeping, scale, shear, CSG merge, subtract, hollow and intersect, vertex editing with edge and face splitting"}
+      - {id: MAP-26, kind: implied, text: "Keeping an overview as TrenchBroom does: groups, linked groups, layers, hiding, isolation and locking"}
+      - {id: MAP-27, kind: implied, text: "Entity browser with drag and drop, entity link visualisation, smart property editors and multi-entity editing"}
+      - {id: MAP-28, kind: implied, text: "Issue browser with automatic quick fixes, map search queries, command repetition, automatic backups, portal file display and compile profiles that run tools and launch engines"}
+      - {id: MAP-29, kind: implied, text: "The agent builds and edits level geometry, not only entities: a map authoring reference in its context and brush, shape and CSG tools"}
+      - {id: MAP-30, kind: implied, text: "The map editor matches or exceeds TrenchBroom on every feature its manual lists, shown feature by feature"}
 
   - id: QA
     title: Quality, testing and release
