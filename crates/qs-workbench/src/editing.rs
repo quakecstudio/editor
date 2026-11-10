@@ -58,6 +58,10 @@ impl<L: Loader> Workbench<L> {
         source: Source,
     ) -> Result<(), WorkbenchError> {
         let path = normalize(path);
+        if source == Source::Editor {
+            // The editor's text takes the place of any staged hunks of the file (P4-04).
+            self.staged.forget(&path);
+        }
         self.host
             .set_overlay(&path, text.clone())
             .map_err(WorkbenchError::Project)?;

@@ -16,6 +16,8 @@ qc-progs = { workspace = true }
 qc-sema = { workspace = true }
 qc-project = { workspace = true }
 qs-commands = { workspace = true }
+# edit.apply: the hunks of a staged change, the same line diff the editor shows (P4-04).
+qs-diff = { workspace = true }
 qs-engine = { workspace = true }
 qs-install = { workspace = true }
 # scenario.run: the map, the game's files and the server simulation a scenario plays in
@@ -34,6 +36,7 @@ serde_json = { workspace = true, features = ["std"] }
 tracing = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true

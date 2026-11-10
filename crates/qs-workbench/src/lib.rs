@@ -19,6 +19,7 @@ mod commands;
 mod editing;
 mod preview;
 mod recent;
+pub mod staged;
 #[cfg(test)]
 mod tests;
 pub mod vm_run;
@@ -51,6 +52,10 @@ pub use crate::preview::{
     SetFieldParams, entities, register_preview,
 };
 pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
+pub use crate::staged::{
+    ACCEPT_HUNKS, APPLY_EDIT, Decision, HunkId, REJECT_HUNKS, STAGED_EDITS, StagedHunk,
+    register_staged,
+};
 pub use crate::vm_run::{VM_RUN, VmRunParams, register_vm};
 use qc_project::{ProjectError, normalize};
 use serde::{Deserialize, Serialize};
@@ -301,6 +306,8 @@ pub struct Workbench<L> {
     checker: Option<check::Checker>,
     /// The generation of the last text the checker was sent, whose result is the one to take.
     sent: u64,
+    /// The staged edits waiting for a decision (P4-04).
+    staged: staged::Staged,
 }
 
 impl<L: Loader> Workbench<L> {
@@ -320,6 +327,7 @@ impl<L: Loader> Workbench<L> {
             generation: 0,
             checker: None,
             sent: 0,
+            staged: staged::Staged::default(),
         }
     }
 
@@ -608,6 +616,11 @@ pub enum WorkbenchError {
     },
     /// No project is open.
     NoProject,
+    /// A staged hunk's number is not one waiting for a decision.
+    NoHunk {
+        /// The number.
+        id: staged::HunkId,
+    },
     /// The offset is past the end of the file.
     Offset {
         /// The file.
@@ -629,6 +642,7 @@ impl fmt::Display for WorkbenchError {
             }
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
             Self::NoProject => f.write_str("no project is open"),
+            Self::NoHunk { id } => write!(f, "{id} is not staged"),
             Self::Offset { path, offset, len } => write!(
                 f,
                 "{}: offset {offset} is past the end of the file, {len} bytes",
@@ -644,7 +658,9 @@ impl Error for WorkbenchError {
             Self::Project(error) => Some(error),
             Self::Rename(error) => Some(error),
             Self::Save { error, .. } => Some(error),
-            Self::NoFile { .. } | Self::NoProject | Self::Offset { .. } => None,
+            Self::NoFile { .. } | Self::NoProject | Self::NoHunk { .. } | Self::Offset { .. } => {
+                None
+            }
         }
     }
 }

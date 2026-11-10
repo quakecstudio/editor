@@ -5,8 +5,8 @@ Problems panels list, the commands that open a project or a file, `project.open`
 `file.open`, and those that build and check the project, `project.build` and `project.check`.
 
 - **Layer:** L5 commands. It depends on `qs-commands` (L5), `qc-codegen` (L4), `qc-engines`,
-  `qc-ide` and `qc-sema` (L3), `qc-project` (L2), `qc-progs` (L0), `schemars`, `serde` and
-  `tracing`.
+  `qc-ide` and `qc-sema` (L3), `qc-project` (L2), `qc-progs` and `qs-diff` (L0), `schemars`,
+  `serde` and `tracing`.
 - **Decision:** plan requirement UI-2, P2-19 (#75); not engine behaviour.
 - **Spec sections:** ENGT-3.12, the program a KEX rerelease target's build writes, which it
   refuses when KEX cannot load it; otherwise it implements a plan requirement, not engine
@@ -42,6 +42,15 @@ an edit, so both commands run outside the edit history
 - The play loop and the debugger (`preview`, `debug`, `entities`): the preview host started
   on the project's program, its entities, the debugger's breakpoints, stack and watches, and
   the `preview.*` commands.
+- Staged edits (`staged`, P4-04, AGT-3): `stage` and `edit.apply` take a change to several
+  files and stage it as hunks, the runs of changed lines of `qs-diff`'s Myers diff. While a
+  hunk waits, the semantic model and a build read the file with it, and nothing is written
+  to disk; `decide`, `edit.accept` and `edit.reject` settle hunks one by one, a rejected hunk
+  putting back its lines byte for byte. Once a file's hunks are all decided, the accepted ones
+  are the editor's unsaved text, which `file.save` writes; with none accepted the file is
+  exactly as it was. `edit.staged` lists the hunks waiting. The model is Zed's agent panel
+  and Cursor's review: hunks shown in the buffer, kept or rejected each, the buffer the
+  language server reads all along.
 - `HasWorkbench` and `register`: the commands for any context with a `Workbench`.
 - `OPEN_PROJECT`, `OPEN_FILE` and their parameter types, so the app runs them without
   spelling their ids.
