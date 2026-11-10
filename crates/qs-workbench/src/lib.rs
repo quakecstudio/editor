@@ -22,6 +22,7 @@ mod recent;
 #[cfg(test)]
 mod tests;
 pub mod tools;
+pub mod vm_run;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -51,6 +52,7 @@ pub use crate::preview::{
     SetFieldParams, entities, register_preview,
 };
 pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
+pub use crate::vm_run::{VM_RUN, VmRunParams, register_vm};
 use qc_project::{ProjectError, normalize};
 use serde::{Deserialize, Serialize};
 

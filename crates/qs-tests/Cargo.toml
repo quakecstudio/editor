@@ -25,7 +25,9 @@ qc-types = { workspace = true }
 qc-vm = { workspace = true }
 qs-bsp = { workspace = true }
 qs-map = { workspace = true }
+qs-pak = { workspace = true }
 qs-paths = { workspace = true }
+qs-vfs = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

@@ -236,3 +236,26 @@ you normally do." The rerelease's `pak0.pak` files therefore load under PAK-1 to
   by the reader's acceptance test in
   [#42](https://github.com/quakecstudio/editor/issues/42), because no rerelease data is
   available to CI (LIC-4).
+
+## PAK-6 Writing an archive
+
+**Source:** this project's design (P4-27, [#206](https://github.com/quakecstudio/editor/issues/206)).
+id's engine only reads archives; the layout written here is one PAK-1 to PAK-3 read, chosen
+so that the same files always give the same bytes.
+
+### Behaviour
+
+- **PAK-6.1** The writer takes files as names and contents and writes them in the order of
+  their names' bytes, whatever order they are given in. A name given twice is refused, so
+  every entry is the one PAK-3.1 finds.
+- **PAK-6.2** The archive is the 12-byte header (PAK-1.1), then each file's contents in that
+  order with nothing between them, then the directory (PAK-2.1) in the same order, its
+  entries' `filepos` and `filelen` pointing at those contents. `dirofs` is 12 plus the
+  contents' total length and `dirlen` is 64 times the number of files; with no files the
+  archive is the header alone, `dirofs` 12 and `dirlen` 0. Nothing in it records a time or
+  pads, so writing the same files gives the same bytes.
+- **PAK-6.3** A name is 1 to 55 bytes with no NUL byte, so that its 56-byte field holds it and
+  a NUL after it (PAK-2.8, PAK-2.9); any other name is refused. Names are written as given,
+  as PAK-2.10 reads them.
+- **PAK-6.4** At most 2048 files are written (PAK-2.4), and an archive whose length passes
+  2^31 - 1 bytes, the largest value its signed 32-bit fields hold, is refused.

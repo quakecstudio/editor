@@ -659,6 +659,28 @@ groups:
     - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed
 - milestone: LATER
   issues:
+  - key: P3-43
+    title: Make the nightly Differential finish within the runners' six hours
+    labels:
+    - repo
+    - area:compiler
+    - type:test
+    size: S
+    reqs:
+    - COMP-8
+    - QA-1
+    summary: |
+      Found by the Phase 3 gate review (#106). Moved to the post-MVP backlog by Justin on 2026-11-10. The scheduled Differential workflow on main has not passed since 2026-11-02 (run 41448503652): on 2026-11-07, 11-08 and 11-09 (runs 42367881302, 42476322236, 42625421865) `Per-function differential (crmod7)` and two of the four `Per-function differential (arcane-dimensions, shard k/4)` jobs ran for six hours and were cancelled at the hosted runners' limit, so `Per-function differential (arcane-dimensions, coverage)` was skipped and DIFF-15.6's bar was never judged on either codebase. #743 sharded Arcane Dimensions so that the nightly could pass; it still does not. Every other job of those runs passed, apart from a 504 on a download in 42476322236's swab job.
+    environment: |
+      main at 92c3276; .github/workflows/differential.yml (the `functions` and Arcane Dimensions shard jobs, `timeout-minutes: 360`), xtask/src/compiler_diff.rs (`--functions`, `--shard k/n`, `--merge`)
+    depends: []
+    deliverable:
+    - '.github/workflows/differential.yml and xtask/src/compiler_diff.rs: crmod7''s per-function differential sharded as Arcane Dimensions'' is, with its own coverage job, and the shard counts of both set from measured job times so that each job ends well inside six hours'
+    - 'docs/ci.md: the shard counts and the job times they were set from'
+    acceptance:
+    - 'A scheduled or dispatched Differential run on main passes with every job completed, none cancelled, and both coverage jobs holding DIFF-15.6''s bar (crmod7 at its accepted 87.7%), linked in the PR'
+    verify:
+    - The Differential workflow run on main
   - key: P2-151
     title: Record IME composition in the code editor through each OS's input method
     labels:
