@@ -8,6 +8,7 @@ const qs_pak::PAK_NAME_SIZE
 const qs_pak::PAK_PAK0_COUNT
 const qs_pak::PAK_PAK0_CRC
 enum qs_pak::PakError
+enum qs_pak::write::PakWriteError
 field qs_pak::Entry.filelen
 field qs_pak::Entry.filepos
 field qs_pak::Header.dirlen
@@ -27,12 +28,17 @@ fn qs_pak::Pak::is_modified
 fn qs_pak::Pak::read
 fn qs_pak::Pak::read_entry
 fn qs_pak::Pak::read_from
+fn qs_pak::write::write_pak
 impl qs_pak::PakError: From<io::Error>
 impl qs_pak::PakError: core::error::Error
 impl qs_pak::PakError: fmt::Display
+impl qs_pak::write::PakWriteError: fmt::Display
+impl qs_pak::write::PakWriteError: std::error::Error
 struct qs_pak::Entry
 struct qs_pak::Header
 struct qs_pak::Pak
+use qs_pak::PakWriteError = write::PakWriteError
+use qs_pak::write_pak = write::write_pak
 variant qs_pak::PakError::DirectoryOutOfBounds
 variant qs_pak::PakError::DirectoryTooLarge
 variant qs_pak::PakError::EntryOutOfBounds
@@ -40,3 +46,9 @@ variant qs_pak::PakError::Io
 variant qs_pak::PakError::NotAPackfile
 variant qs_pak::PakError::TooManyFiles
 variant qs_pak::PakError::UnterminatedName
+variant qs_pak::write::PakWriteError::Duplicate
+variant qs_pak::write::PakWriteError::EmptyName
+variant qs_pak::write::PakWriteError::NameHasNul
+variant qs_pak::write::PakWriteError::NameTooLong
+variant qs_pak::write::PakWriteError::TooLarge
+variant qs_pak::write::PakWriteError::TooManyFiles

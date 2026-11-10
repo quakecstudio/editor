@@ -10,9 +10,13 @@
 //! file, reading only its header and directory. Both are id's `COM_LoadPackFile` with the
 //! bounds checks id's engine leaves out; malformed input is a [`PakError`], never a panic.
 //! [`Pak::find`] is the archive half of id's `COM_FindFile`, and [`Pak::entry_data`] and
-//! [`Pak::read_entry`] return an entry's bytes.
+//! [`Pak::read_entry`] return an entry's bytes. [`write_pak`] writes an archive (PAK-6).
 //!
 //! The format is specified in `docs/spec/pak.md` (PAK-1 to PAK-5).
+
+mod write;
+
+pub use write::{PakWriteError, write_pak};
 
 #[cfg(test)]
 mod fixtures;
