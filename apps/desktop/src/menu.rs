@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The macOS menu bar (ADR-0003, ADR-0010): the app menu, a File menu with Open Folder, and a
+//! The macOS menu bar (ADR-0003, ADR-0010): the app menu, a File menu with Open Folder and Quake
+//! Files, and a
 //! View menu whose items run the panel commands, through `muda`. Windows and Linux get theirs
 //! with the client-side title bar.
 
@@ -14,6 +15,8 @@ use crate::strings::Text;
 pub enum MenuChoice {
     /// File, Open Folder.
     OpenFolder,
+    /// File, Quake Files: the guide to the game's files (P3-21).
+    GameFiles,
     /// A View item: show or hide the panel.
     Toggle(Panel),
 }
@@ -22,6 +25,7 @@ pub enum MenuChoice {
 pub struct MenuBar {
     _menu: Menu,
     open_folder: MenuItem,
+    game_files: MenuItem,
     items: [(Panel, CheckMenuItem); 3],
 }
 
@@ -57,7 +61,8 @@ impl MenuBar {
         // Cmd+O is the window's own binding (`keymap::OPEN_FOLDER`), on every platform; an
         // accelerator here would take the key first on macOS and open the dialog twice.
         let open_folder = MenuItem::new(Text::OpenFolderMenu.get(), true, None);
-        let file = Submenu::with_items(Text::File.get(), true, &[&open_folder])?;
+        let game_files = MenuItem::new(Text::GameFilesMenu.get(), true, None);
+        let file = Submenu::with_items(Text::File.get(), true, &[&open_folder, &game_files])?;
         let view = Submenu::with_items(
             Text::ViewMenu.get(),
             true,
@@ -68,6 +73,7 @@ impl MenuBar {
         Ok(Self {
             _menu: menu,
             open_folder,
+            game_files,
             items,
         })
     }
@@ -78,6 +84,8 @@ impl MenuBar {
         while let Ok(event) = MenuEvent::receiver().try_recv() {
             if event.id() == self.open_folder.id() {
                 chosen.push(MenuChoice::OpenFolder);
+            } else if event.id() == self.game_files.id() {
+                chosen.push(MenuChoice::GameFiles);
             } else if let Some((panel, _)) =
                 self.items.iter().find(|(_, item)| item.id() == event.id())
             {

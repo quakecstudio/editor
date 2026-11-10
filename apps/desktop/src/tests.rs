@@ -244,6 +244,7 @@ fn the_ui_code_has_no_string_literals() {
         ("entities.rs", include_str!("entities.rs")),
         ("debugger.rs", include_str!("debugger.rs")),
         ("finder.rs", include_str!("finder.rs")),
+        ("game_guide.rs", include_str!("game_guide.rs")),
         ("palette.rs", include_str!("palette.rs")),
         ("project.rs", include_str!("project.rs")),
         ("editor.rs", include_str!("editor.rs")),
