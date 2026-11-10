@@ -1,0 +1,23 @@
+[package]
+name = "qs-models"
+description = "The agent's model providers: Anthropic, OpenAI-compatible endpoints and Ollama, with API keys kept in the OS keychain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+keyring = { workspace = true, features = ["v1"] }
+qs-agent = { workspace = true }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+tracing = { workspace = true, features = ["std"] }
+ureq = { workspace = true, features = ["rustls"] }
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
+
+[lints]
+workspace = true
