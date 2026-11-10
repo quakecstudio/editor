@@ -469,8 +469,7 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         "cleared and resumed, the game runs",
     )?;
     steps.push(
-        "breakpoint/set, hit, inspect the stack, watch, step and clear in client.qc"
-            .to_owned(),
+        "breakpoint/set, hit, inspect the stack, watch, step and clear in client.qc".to_owned(),
     );
     Ok(())
 }
