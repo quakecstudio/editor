@@ -23,6 +23,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`engine.screenshot`](#enginescreenshot) | Writes the frame the running game draws as a PNG, in the project's build/screenshots unless a path is given, and answers where and its size. |
 | [`file.close`](#fileclose) | Closes a file's tab, opening the tab beside it when it was         the open file; its unsaved text is kept. |
 | [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
+| [`file.read`](#fileread) | Reads a file's current text: the editor's when it has unsaved changes, else what is on disk. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
@@ -584,6 +585,31 @@ Parameters:
 }
 ```
 
+## `file.read`
+
+Reads a file's current text: the editor's when it has unsaved changes, else what is on disk.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `file.save` and `file.read`.",
+  "properties": {
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "SaveFileParams",
+  "type": "object"
+}
+```
+
 ## `file.save`
 
 Writes a file's current text, as the editor has it, to disk.
@@ -594,7 +620,7 @@ Parameters:
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The parameters of `file.save`.",
+  "description": "The parameters of `file.save` and `file.read`.",
   "properties": {
     "path": {
       "description": "The file.",

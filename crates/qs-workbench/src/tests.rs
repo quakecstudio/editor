@@ -433,3 +433,37 @@ fn the_config_applies_from_the_next_open() {
     let fteqcc = workbench.problems().len();
     assert!(vanilla > fteqcc, "{vanilla} > {fteqcc}");
 }
+
+// No spec statement: P4-13, file.read answers a file's current text, the editor's unsaved one
+// when it has one, else what is read; a file that cannot be read is an error
+#[test]
+fn file_read_answers_the_current_text() {
+    let mut registry = Registry::new();
+    register(&mut registry).unwrap();
+    let mut session = Session::new(
+        opened(&[("progs.src", "progs.dat\na.qc\n"), ("a.qc", "float a;\n")]),
+        registry,
+    );
+    let read = |session: &mut Session<Workbench<MemoryLoader>>| {
+        session
+            .execute("file.read", json!({ "path": path("a.qc") }))
+            .unwrap()
+    };
+    let saved = read(&mut session);
+    assert_eq!(saved["text"], "float a;\n");
+    assert_eq!(saved["unsaved"], false);
+    session
+        .execute(
+            "file.update",
+            json!({ "path": path("a.qc"), "text": "float b;\n" }),
+        )
+        .unwrap();
+    let edited = read(&mut session);
+    assert_eq!(edited["text"], "float b;\n");
+    assert_eq!(edited["unsaved"], true);
+    assert!(
+        session
+            .execute("file.read", json!({ "path": path("nope.qc") }))
+            .is_err()
+    );
+}
