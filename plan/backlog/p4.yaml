@@ -537,6 +537,14 @@ issues:
   - P4-23
   - P4-24
   - P4-26
+  - P4-30
+  - P4-31
+  - P4-32
+  - P4-33
+  - P4-34
+  - P4-35
+  - P4-36
+  - P4-37
   deliverable:
   - docs/gates/p4.md, release notes and the published MVP release
   acceptance:
@@ -544,3 +552,166 @@ issues:
   - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
   - Justin's sign-off comment linking the release
+- key: P4-30
+  title: 'Agent tool permissions and profiles'
+  labels:
+  - L6-agent
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - UI-22
+  - PRIN-4
+  depends:
+  - P4-06
+  - P4-09
+  deliverable:
+  - 'crates/qs-agent: per-tool rules (allow, ask, deny) with path patterns, and profiles (Ask, Write, Full) that set them, kept in the project settings'
+  - 'Agent panel: a permission request shown in the thread with Allow once, Always allow and Deny'
+  acceptance:
+  - 'A call a rule denies never runs and the model reads why; a call that asks waits for the answer without blocking the frame'
+  - 'Profiles switch the tools offered to the model, shown in tools/list order'
+  verify:
+  - 'Unit tests of rule precedence; UI snapshot of a permission request'
+- key: P4-31
+  title: 'Agent threads: follow, history, queued messages, token usage and compaction'
+  labels:
+  - L7-ui
+  - area:agent
+  - type:feature
+  size: L
+  reqs:
+  - UI-22
+  - UI-5
+  depends:
+  - P4-09
+  - P4-07
+  deliverable:
+  - 'Follow the agent: the editor opens each file the agent reads or edits'
+  - 'Thread history with titles and search; reopen a past thread with its checkpoint'
+  - 'Edit an earlier message and run again from there; queue messages while a turn runs'
+  - 'Token usage shown per thread; automatic compaction near the models context limit, with the summary viewable'
+  - 'Images (screenshots from engine.screenshot or pasted) as context; a notification when a thread finishes'
+  acceptance:
+  - 'A thread reopened from history shows its messages, staged hunks and checkpoint'
+  - 'A thread compacted near the limit continues and its next turn fits the models context'
+  verify:
+  - 'UI snapshot tests; a scripted-model test of compaction'
+- key: P4-32
+  title: 'Editor layout and navigation: splits, folding, outline and go to'
+  labels:
+  - L7-ui
+  - area:editor
+  - type:feature
+  size: L
+  reqs:
+  - UI-16
+  - UI-14
+  depends:
+  - P2-18
+  - P2-19
+  deliverable:
+  - 'Split panes right and down with an editor in each; code folding from the syntax tree; soft wrap; indent guides'
+  - 'Go to line, go to symbol in the file, an outline panel and a tab switcher, each a command with a keybinding'
+  acceptance:
+  - 'Folding, splitting and soft wrap keep the keystroke budget on the 50,000-line file'
+  - 'Every new action is a registry command and reachable from the palette'
+  verify:
+  - 'UI snapshot tests; the editor keystroke benchmark'
+- key: P4-33
+  title: 'Project search and references in a multibuffer'
+  labels:
+  - L7-ui
+  - area:editor
+  - type:feature
+  size: L
+  reqs:
+  - UI-17
+  depends:
+  - P4-32
+  - P4-03
+  deliverable:
+  - 'Search panel over project.search with case, whole word and regex; results, find references and the Problems list open as a multibuffer of editable excerpts'
+  - 'An edit in an excerpt changes its file; jumping to the source file keeps the caret'
+  acceptance:
+  - 'Replacing across ten files from the multibuffer saves as one undoable change per file'
+  verify:
+  - 'UI snapshot tests; integration test over a fixture project'
+- key: P4-34
+  title: 'Quick fixes, inline diagnostics, inlay hints and a QuakeC formatter'
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: L
+  reqs:
+  - UI-18
+  depends:
+  - P2-02
+  - P2-14
+  - P2-18
+  deliverable:
+  - 'crates/qc-ide: code actions for the common diagnostics (missing builtin declaration, misspelled field, unused local, missing precache) and a formatter that keeps comments and is idempotent'
+  - 'Editor: a lightbulb and a picker for code actions, inline diagnostics at the lines end, inlay hints from qc-ide; the language server offers the same actions and formatting'
+  acceptance:
+  - 'Formatting id 1.01 and the rerelease twice gives the same text as once, and the compiled progs.dat is unchanged'
+  - 'Each quick fix applied to its fixture removes its diagnostic'
+  verify:
+  - 'Golden tests over the corpus; LSP tests for codeAction and formatting'
+- key: P4-35
+  title: 'Git in the window: gutter, project diff, staging, commit and blame'
+  labels:
+  - L7-ui
+  - area:editor
+  - type:feature
+  size: L
+  reqs:
+  - UI-19
+  depends:
+  - P4-05
+  - P2-19
+  deliverable:
+  - 'Gutter marks against HEAD; a project diff with stage and unstage per hunk; commit, branch switch and create; file history and blame; merge conflict markers resolved per side'
+  - 'Each operation is a command, so the agent and MCP see the same ones'
+  acceptance:
+  - 'Staging, committing and switching branches on a fixture repository leave git status as the git command line reports it'
+  verify:
+  - 'Integration tests against a temporary repository; UI snapshot tests'
+- key: P4-36
+  title: 'Integrated terminal and project tasks'
+  labels:
+  - L7-ui
+  - area:editor
+  - type:feature
+  size: M
+  reqs:
+  - UI-20
+  depends:
+  - P2-17
+  deliverable:
+  - 'A terminal panel with several tabs running the users shell in the project directory'
+  - 'Tasks: named commands from quakec.toml (build, test, a custom compiler) run in the terminal, with the task picker in the palette'
+  acceptance:
+  - 'A task defined in quakec.toml runs from the palette and its exit status is shown'
+  verify:
+  - 'Integration test spawning a shell on each OS; UI snapshot'
+- key: P4-37
+  title: 'Custom keybindings and vim mode'
+  labels:
+  - L7-ui
+  - area:editor
+  - type:feature
+  size: M
+  reqs:
+  - UI-21
+  depends:
+  - P2-22
+  - P2-18
+  deliverable:
+  - 'A keymap file in the user settings that rebinds any command, with conflicts reported'
+  - 'Vim mode in the code editor: normal, insert and visual modes, motions, operators, counts, registers and the . repeat'
+  acceptance:
+  - 'A rebinding in the keymap file takes effect without a restart'
+  - 'Vim motions and operators pass a table of cases taken from Vims documentation'
+  verify:
+  - 'Unit tests; UI snapshot'

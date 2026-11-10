@@ -174,6 +174,66 @@ groups:
     - A fuzz target for the WAD3 reader never panics
     verify:
     - cargo test -p qs-wad; cargo test -p qs-bsp; cargo test -p qs-tests; the recorded run in the vectors' README and the PR
+  - key: P5-13
+    title: 'Entity browser, link visualisation and smart property editors'
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-27
+    - MAP-1
+    depends:
+    - P5-06
+    - P5-03
+    deliverable:
+    - 'Entity browser of the QuakeC-derived classes with model previews, dragged into the 3D view to place'
+    - 'Lines between targets and targetnames, drawn for the selection or all; smart editors for spawnflags (named checkboxes from the derived definitions), colours, angles and choices; editing a key on several entities at once'
+    acceptance:
+    - 'Every class of id1 and the rerelease appears in the browser with its model where it has one'
+    - 'Spawnflag names come from the QuakeC, not a hand-written FGD'
+    verify:
+    - 'UI snapshot tests; golden tests of the derived editors'
+  - key: P5-14
+    title: 'Groups, linked groups, layers, hide, isolate and lock'
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - MAP-26
+    depends:
+    - P5-06
+    - P5-02
+    deliverable:
+    - 'Groups and linked groups whose copies follow each others edits, kept in the .map as TrenchBrooms manual describes; layers with visibility, lock and export omission; hide, isolate and lock for any selection'
+    acceptance:
+    - 'A .map with linked groups and layers written by TrenchBroom opens, edits and saves with the groups and layers intact'
+    - 'Editing one copy of a linked group changes every copy, undone in one step'
+    verify:
+    - 'Round-trip tests over TrenchBroom-made maps; unit tests'
+  - key: P5-15
+    title: 'Map authoring reference in the agents context'
+    labels:
+    - L6-agent
+    - area:agent
+    - type:feature
+    size: S
+    reqs:
+    - MAP-29
+    - AGT-9
+    depends:
+    - P4-08
+    - P5-02
+    deliverable:
+    - 'docs/agent-reference/maps.md: the .map format, Quake units, the players size and step and jump limits, required entities (worldspawn with its wad, info_player_start, lights), texture names from the games WADs, and the leak rules'
+    - 'The brief names the open map, its WADs and its entities classes'
+    acceptance:
+    - 'A context snapshot test shows the reference and the open map in the brief'
+    verify:
+    - 'Context snapshot test'
   - key: P5-09
     title: Phase 5 gate review
     labels:
@@ -194,6 +254,9 @@ groups:
     - P5-10
     - P5-11
     - P5-12
+    - P5-13
+    - P5-14
+    - P5-15
     deliverable:
     - docs/gates/p5.md
     acceptance:
@@ -488,6 +551,102 @@ groups:
     - Re-importing a changed PNG updates the texture in place and in open maps
     verify:
     - UI snapshot tests; integration test that imports, compiles and renders
+  - key: P6-17
+    title: 'Shape tools: cylinders, cones, arches, spheroids, rocks and scalable curves'
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-25
+    depends:
+    - P6-08
+    deliverable:
+    - 'Simple and complex shape tools with sides, hollow, thickness and circle modes, including grid-aligned scalable curves of 12, 24, 48 and 96 sides, arches with spandrels, UV and icosahedron spheroids and randomised rocks'
+    acceptance:
+    - 'Shapes made with the same sides and circle mode fit together with no gaps'
+    - 'Every vertex of a scalable shape lies on the grid at every size'
+    verify:
+    - 'Property tests of the generated brushes; UI snapshot tests'
+  - key: P6-18
+    title: 'Brush tools: extrude, sweep, scale, shear, hollow and intersect'
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - MAP-25
+    - MAP-3
+    depends:
+    - P6-08
+    deliverable:
+    - 'Face extrusion, sweeping a brush along a path, scale and shear handles, CSG hollow and intersect beside merge and subtract, vertex editing with edge and face splitting and several vertices moved together, with alignment lock through every operation'
+    acceptance:
+    - 'Every operation leaves convex, valid brushes that qmap-bsp compiles with no errors'
+    - 'Texture alignment lock keeps each faces texture fixed in world space'
+    verify:
+    - 'Property tests over random brushes; differential compile of the results'
+  - key: P6-19
+    title: 'Issue browser with quick fixes and map search'
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-28
+    - MAP-7
+    depends:
+    - P6-11
+    - P5-04
+    deliverable:
+    - 'An issue browser listing every map diagnostic, each with its fix where one exists (remove the empty brush, fix the misspelled key, add the missing info_player_start); a search over entities and brushes by class, key, texture and bounds'
+    acceptance:
+    - 'Each quick fix removes its issue on its fixture map and is undone in one step'
+    verify:
+    - 'Fixture map tests; UI snapshot'
+  - key: P6-20
+    title: 'Compile profiles, portal files, backups and command repetition'
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-28
+    depends:
+    - P6-12
+    deliverable:
+    - 'Compile profiles that run our compilers or external ones with expressions for paths and launch an engine; portal file display; automatic backups at an interval and on each save; repeating the last command'
+    acceptance:
+    - 'A profile running qmap-bsp, qmap-vis and qmap-light then launching the preview host works on each OS'
+    - 'Backups restore a map after a simulated crash'
+    verify:
+    - 'Integration tests; UI snapshot'
+  - key: P6-21
+    title: 'Agent brush authoring: shapes, brushes and CSG as tools'
+    labels:
+    - L6-agent
+    - area:agent
+    - type:feature
+    size: L
+    reqs:
+    - MAP-29
+    - MAP-16
+    depends:
+    - P6-08
+    - P6-17
+    - P6-18
+    - P6-13
+    - P5-15
+    deliverable:
+    - 'Commands map.brush.create, map.brush.edit, map.shape.create and map.csg with schemas, so the agent and MCP build level geometry; each edit staged for review like code hunks'
+    acceptance:
+    - 'Asked for a donut-shaped room with a player start and lights, the agent produces a map that compiles with no leak and plays, in the agent evals'
+    verify:
+    - 'Agent eval tasks; unit tests of the commands'
   - key: P6-14
     title: Phase 6 gate review
     labels:
@@ -514,6 +673,11 @@ groups:
     - P6-10
     - P6-11
     - P6-12
+    - P6-17
+    - P6-18
+    - P6-19
+    - P6-20
+    - P6-21
     - P6-13
     deliverable:
     - docs/gates/p6.md
@@ -632,6 +796,30 @@ groups:
     - Covers entity editing, brushes, compiling, leaks and Play from here
     verify:
     - Usability test with one mapper
+  - key: P7-08
+    title: 'Map editor parity audit against TrenchBroom'
+    labels:
+    - repo
+    - area:map
+    - type:test
+    size: M
+    reqs:
+    - MAP-30
+    depends:
+    - P6-17
+    - P6-18
+    - P6-19
+    - P6-20
+    - P5-13
+    - P5-14
+    deliverable:
+    - 'docs/audits/trenchbroom-parity.md: every feature of TrenchBrooms manual at TrenchBroom/TrenchBroom@8f329f1 mapped to ours with the test that proves it, and what we do beyond it (QuakeC-derived entities, live play, the agent)'
+    - 'A benchmark opening and editing the largest corpus map in both editors on the reference Mac'
+    acceptance:
+    - 'No feature of the manual is missing or worse in ours; each row links a passing test'
+    - 'Our frame time on the largest map is no worse than TrenchBrooms'
+    verify:
+    - 'The audit and benchmark results recorded in the PR'
   - key: P7-06
     title: Phase 7 gate review
     labels:
@@ -650,6 +838,7 @@ groups:
     - P7-04
     - P7-05
     - P7-07
+    - P7-08
     deliverable:
     - docs/gates/p7.md
     acceptance:
