@@ -34,6 +34,7 @@ absolute-paths-allowed-crates = [
     "schemars",
     "serde",
     "serde_json",
+    "sha1_smol",
     "skrifa",
     "symphonia",
     "syn",

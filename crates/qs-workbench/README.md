@@ -5,8 +5,8 @@ Problems panels list, the commands that open a project or a file, `project.open`
 `file.open`, and those that build and check the project, `project.build` and `project.check`.
 
 - **Layer:** L5 commands. It depends on `qs-commands` (L5), `qc-codegen` (L4), `qc-engines`,
-  `qc-ide` and `qc-sema` (L3), `qc-project` (L2), `qc-progs` and `qs-diff` (L0), `schemars`,
-  `serde` and `tracing`.
+  `qc-ide` and `qc-sema` (L3), `qc-project` (L2), `qc-progs`, `qs-diff` and `qs-checkpoint`
+  (L0), `schemars`, `serde` and `tracing`.
 - **Decision:** plan requirement UI-2, P2-19 (#75); not engine behaviour.
 - **Spec sections:** ENGT-3.12, the program a KEX rerelease target's build writes, which it
   refuses when KEX cannot load it; otherwise it implements a plan requirement, not engine
@@ -64,6 +64,10 @@ an edit, so both commands run outside the edit history
   `engine.console` (a command and the lines it printed) and `engine.screenshot` (the frame
   as a PNG, in `build/screenshots` by default). The engine tools are functions over the
   bridge's client, which `cargo xtask bridge-client` runs against the headless host in CI.
+- Checkpoints (`checkpoints`, P4-05, AGT-4): `checkpoint.create` records every file of the
+  project as git objects on a private ref (`qs-checkpoint`), `checkpoint.list` lists them, and
+  `checkpoint.restore` puts every file back, deletions included, dropping the editor's
+  unsaved text and staged hunks so the IDE shows the checkpoint.
 - `HasWorkbench` and `register`: the commands for any context with a `Workbench`.
 - `OPEN_PROJECT`, `OPEN_FILE` and their parameter types, so the app runs them without
   spelling their ids.
