@@ -65,6 +65,30 @@ impl<L: Loader> Workbench<L> {
         if let Some(root) = &self.root {
             self.tree = tree(&self.host.files(), root);
         }
+        // P3-35: the editor's edit is checked on the background thread; the frame keeps the
+        // last results until `take_checked` finds the new ones.
+        if source == Source::Editor
+            && let Some(checker) = &self.checker
+        {
+            self.generation = self.generation.wrapping_add(1);
+            self.sent = self.generation;
+            let open = self.open.as_ref().map(|open| open.path.clone());
+            checker.text(&path, text.clone(), self.sent, open.as_deref());
+            if let Some(open) = self.open.as_mut()
+                && open.path == path
+            {
+                open.offset = open.offset.min(text.len());
+                open.text = text;
+                open.revision = self.generation;
+            }
+            return Ok(());
+        }
+        if let Some(checker) = &self.checker {
+            self.generation = self.generation.wrapping_add(1);
+            self.sent = self.generation;
+            let open = self.open.as_ref().map(|open| open.path.clone());
+            checker.text(&path, text.clone(), self.sent, open.as_deref());
+        }
         self.problems = problems(&mut self.host);
         self.symbols = self.host.workspace_symbols();
         if let Some(open) = self.open.as_mut()

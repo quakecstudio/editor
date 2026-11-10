@@ -136,7 +136,7 @@ fn harness() -> Harness<'static, Option<App>> {
             },
             None,
         );
-    let app = App::new(&harness.ctx, None).unwrap();
+    let app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
     *harness.state_mut() = Some(app);
     harness
 }

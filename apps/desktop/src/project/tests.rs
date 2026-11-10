@@ -39,7 +39,7 @@ fn harness() -> Harness<'static, Option<App>> {
             },
             None,
         );
-    let mut app = App::new(&harness.ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
     app.shell_mut().open_project(&fixture()).unwrap();
     *harness.state_mut() = Some(app);
     harness.run();
@@ -251,7 +251,7 @@ fn long_lists_leave_room_for_the_sections_below() {
             },
             None,
         );
-    let mut app = App::new(&harness.ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
     app.shell_mut().open_project(&dir).unwrap();
     *harness.state_mut() = Some(app);
     harness.run();

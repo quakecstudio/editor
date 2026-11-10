@@ -9,6 +9,7 @@ const qs_workbench::commands::OPEN_PROJECT
 const qs_workbench::commands::REFERENCES
 const qs_workbench::commands::RENAME
 const qs_workbench::commands::SAVE_FILE
+const qs_workbench::commands::TAKE_CHECKED
 const qs_workbench::commands::UPDATE_FILE
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
@@ -31,6 +32,7 @@ const qs_workbench::preview::STOP
 const qs_workbench::preview::UNWATCH
 const qs_workbench::preview::WATCH
 const qs_workbench::recent::RECENT_LIMIT
+enum qs_workbench::CheckAfterTyping
 enum qs_workbench::EntryKind
 enum qs_workbench::WorkbenchError
 enum qs_workbench::build::Gravity
@@ -152,6 +154,7 @@ fn qs_workbench::OpenFile::revision
 fn qs_workbench::OpenFile::symbol_at
 fn qs_workbench::OpenFile::text
 fn qs_workbench::OpenFile::version
+fn qs_workbench::Workbench::checked_in_background
 fn qs_workbench::Workbench::close_file
 fn qs_workbench::Workbench::history
 fn qs_workbench::Workbench::is_unsaved
@@ -164,7 +167,10 @@ fn qs_workbench::Workbench::project_symbols
 fn qs_workbench::Workbench::root
 fn qs_workbench::Workbench::set_config
 fn qs_workbench::Workbench::tabs
+fn qs_workbench::Workbench::take_checked
 fn qs_workbench::Workbench::tree
+fn qs_workbench::Workbench::wait_checked
+fn qs_workbench::Workbench::with_check
 fn qs_workbench::build::Workbench::build
 fn qs_workbench::build::Workbench::check
 fn qs_workbench::commands::HasWorkbench::workbench
@@ -404,6 +410,8 @@ use qs_workbench::game_files = crate::preview::game_files
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
 use qs_workbench::scenario = crate::preview::scenario
+variant qs_workbench::CheckAfterTyping::OffTheFrame
+variant qs_workbench::CheckAfterTyping::OnTheFrame
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
 variant qs_workbench::WorkbenchError::NoFile

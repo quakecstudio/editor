@@ -76,7 +76,7 @@ fn frame(ctx: &egui::Context, app: &mut App) {
 #[test]
 fn the_window_draws_headless() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     for _ in 0..3 {
         frame(&ctx, &mut app);
     }
@@ -90,7 +90,7 @@ fn the_layout_persists_across_restarts() {
     let dir = TempDir::new("restart");
     let file = qs_layout::layout_path(dir.path());
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, Some(file.clone())).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, Some(file.clone())).unwrap();
     frame(&ctx, &mut app);
     app.shell.toggle(Panel::Right).unwrap();
     app.shell.toggle(Panel::Bottom).unwrap();
@@ -100,13 +100,13 @@ fn the_layout_persists_across_restarts() {
     let written = Layout::read(&file).unwrap();
     assert!(!written.right.visible && !written.bottom.visible && written.left.visible);
     let ctx = egui::Context::default();
-    let mut again = App::new(&ctx, Some(file.clone())).unwrap();
+    let mut again = App::checked_on_the_frame(&ctx, Some(file.clone())).unwrap();
     assert_eq!(again.shell().layout(), &written);
     frame(&ctx, &mut again);
     // A file that is not a layout starts the default layout.
     fs::write(&file, "not a layout").unwrap();
     let ctx = egui::Context::default();
-    let app = App::new(&ctx, Some(file)).unwrap();
+    let app = App::checked_on_the_frame(&ctx, Some(file)).unwrap();
     assert_eq!(*app.shell().layout(), Layout::default());
 }
 
@@ -114,7 +114,7 @@ fn the_layout_persists_across_restarts() {
 #[test]
 fn every_panel_toggles() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     for panel in Panel::ALL {
         app.shell.toggle(panel).unwrap();
         frame(&ctx, &mut app);
@@ -303,7 +303,7 @@ fn labelled(icon: Icon, text: Text) -> String {
 #[test]
 fn the_window_paints_every_region() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     frame_with(&ctx, &mut app, Vec::new());
     let texts = frame_with(&ctx, &mut app, Vec::new());
     let mut expected: Vec<String> = [
@@ -372,7 +372,7 @@ fn the_layout_is_written_after_a_drag_not_during_it() {
     let dir = TempDir::new("drag");
     let file = qs_layout::layout_path(dir.path());
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, Some(file.clone())).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, Some(file.clone())).unwrap();
     app.shell.resize(Panel::Left, 300.0).unwrap();
     app.shell.save_if_changed(true);
     assert!(!file.exists(), "written during the drag");
@@ -387,7 +387,7 @@ fn the_layout_is_written_after_a_drag_not_during_it() {
 #[test]
 fn a_resize_under_half_a_point_changes_nothing() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     app.shell.resize(Panel::Right, 320.4).unwrap();
     assert_eq!(app.shell().layout().right.size, 320.0);
     app.shell.resize(Panel::Right, 319.6).unwrap();
@@ -413,7 +413,7 @@ fn errors_say_what_went_wrong() {
         "the Light theme has no accent colour"
     );
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     let error = app.shell.resize(Panel::Left, 1.0).unwrap_err();
     assert!(error.to_string().contains("at least 120 points"), "{error}");
     assert!(std::error::Error::source(&error).is_some());
@@ -423,7 +423,7 @@ fn errors_say_what_went_wrong() {
 #[test]
 fn a_panel_resized_by_command_is_drawn_at_its_size() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     frame(&ctx, &mut app);
     app.shell.resize(Panel::Left, 300.0).unwrap();
     app.shell.resize(Panel::Bottom, 260.0).unwrap();
@@ -455,7 +455,7 @@ fn open_palette(ctx: &egui::Context, app: &mut App) {
 #[test]
 fn every_registered_command_is_reachable_from_the_palette() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     let ids: Vec<String> = app
         .shell()
         .session()
@@ -494,7 +494,7 @@ fn every_registered_command_is_reachable_from_the_palette() {
 #[test]
 fn the_palette_asks_for_parameters_and_runs_the_command() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     open_palette(&ctx, &mut app);
     frame_with(
         &ctx,
@@ -538,7 +538,7 @@ fn the_palette_asks_for_parameters_and_runs_the_command() {
 #[test]
 fn the_palette_keys_move_go_back_and_close() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     frame_with(
         &ctx,
         &mut app,
@@ -584,7 +584,7 @@ fn the_palette_keys_move_go_back_and_close() {
 #[test]
 fn a_row_shows_the_id_and_the_shortcut() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     open_palette(&ctx, &mut app);
     let painted = frame_with(&ctx, &mut app, vec![egui::Event::Text("undo".to_owned())]);
     let painted = [painted, frame_with(&ctx, &mut app, Vec::new())].concat();
@@ -602,7 +602,7 @@ fn a_row_shows_the_id_and_the_shortcut() {
 #[test]
 fn every_binding_names_a_registered_command_without_parameters() {
     let ctx = egui::Context::default();
-    let app = App::new(&ctx, None).unwrap();
+    let app = App::checked_on_the_frame(&ctx, None).unwrap();
     let registry = app.shell().session().registry();
     for binding in keymap::BINDINGS {
         let info = registry
@@ -619,7 +619,7 @@ fn every_binding_names_a_registered_command_without_parameters() {
 #[test]
 fn a_shortcut_runs_its_command() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     let undo = keymap::shortcut("edit.undo").unwrap();
     let pressed = key(undo.logical_key, undo.modifiers);
     frame_with(&ctx, &mut app, vec![pressed.clone()]);
@@ -671,7 +671,7 @@ fn the_count_and_the_highlight() {
 #[test]
 fn the_footer_and_the_first_field() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     open_palette(&ctx, &mut app);
     let painted = frame_with(&ctx, &mut app, Vec::new());
     for hint in [
@@ -766,7 +766,7 @@ fn accessible() -> Harness<'static, Option<App>> {
             },
             None,
         );
-    let app = App::new(&harness.ctx, None).unwrap();
+    let app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
     *harness.state_mut() = Some(app);
     harness.run();
     harness
@@ -983,7 +983,7 @@ fn focus_shortcuts_reach_out_of_the_editor() {
 #[test]
 fn each_shortcut_runs_only_its_own_command() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     let ember = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember");
     app.shell_mut().open_project(&ember).unwrap();
     frame(&ctx, &mut app);
@@ -1043,7 +1043,7 @@ fn bindings_are_matched_most_specific_first() {
 #[test]
 fn an_extra_alt_runs_the_bindings_own_command() {
     let ctx = egui::Context::default();
-    let mut app = App::new(&ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
     let ember = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember");
     app.shell_mut().open_project(&ember).unwrap();
     frame(&ctx, &mut app);
