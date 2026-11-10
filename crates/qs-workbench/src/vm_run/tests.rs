@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
+use qc_edict::system::{SYSTEM_GLOBALS, defs_source};
 use qc_project::MemoryLoader;
 use qc_types::Etype;
 use serde_json::json;
@@ -17,32 +17,15 @@ use serde_json::json;
 use super::{VmRunError, VmRunParams, run};
 use crate::{Config, Workbench};
 
-/// id's system globals and fields (EDICT-2.1, EDICT-3.1), which the VM checks a program has.
-fn system_defs() -> String {
-    use std::fmt::Write as _;
-    let name = |etype: Etype| match etype {
-        Etype::Float => "float",
-        Etype::Vector => "vector",
-        Etype::String => "string",
-        Etype::Entity => "entity",
-        Etype::Function => "void()",
-        Etype::Void | Etype::Field | Etype::Pointer => "void",
-    };
-    let mut text = String::new();
-    for var in SYSTEM_GLOBALS {
-        writeln!(text, "{} {};", name(var.etype), var.name).unwrap();
-    }
-    text.push_str("void end_sys_globals;\n");
-    for var in SYSTEM_FIELDS {
-        writeln!(text, ".{} {};", name(var.etype), var.name).unwrap();
-    }
-    text.push_str("void end_sys_fields;\n");
-    // The functions the engine calls, which a program must define.
+/// id's system globals and fields (EDICT-2.1, EDICT-3.1), which the VM checks a program has,
+/// and an empty body for each function the engine calls.
+pub(crate) fn system_defs() -> String {
+    let mut text = defs_source();
     for var in SYSTEM_GLOBALS
         .iter()
         .filter(|var| var.etype == Etype::Function)
     {
-        writeln!(text, "void() {} = {{}};", var.name).unwrap();
+        text.push_str(&format!("void() {} = {{}};\n", var.name));
     }
     text
 }

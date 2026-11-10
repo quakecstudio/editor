@@ -22,5 +22,10 @@ qs-commands = { workspace = true }
 qs-workbench = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
 
+[dev-dependencies]
+# The test project's system globals and fields, so the VM takes its program.
+qc-edict = { workspace = true }
+qc-types = { workspace = true }
+
 [lints]
 workspace = true

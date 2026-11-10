@@ -18,6 +18,7 @@ any command of the IDE by its id. The binary is `quakec-ide`
 ```text
 quakec-ide build [<project>] [--dialect <vanilla|fteqcc>]
 quakec-ide check [<project>] [--dialect <vanilla|fteqcc>]
+quakec-ide test [<project>] [--dialect <vanilla|fteqcc>] [--filter <text>] [--game <folder>]
 quakec-ide run <command> [<json>] [--project <project> [--dialect <vanilla|fteqcc>]]
 quakec-ide commands
 ```
@@ -26,6 +27,7 @@ quakec-ide commands
 | --- | --- | --- |
 | `build` | `project.open`, `project.build` | each error and warning as `<path>:<line>:<column>: <error\|warning> <code>: <message>`, then where each module was written |
 | `check` | `project.open`, `project.check` | each problem the same way, then the counts |
+| `test` | `project.open`, `project.test` (QCT-4.3) | each test as `passed`, `FAILED` or `skipped` and its name, the message of one that failed or was skipped indented below it, then the counts |
 | `run` | `project.open` when `--project` is given, then `<command>` with `<json>`, `{}` when absent | what the command returned, as JSON |
 | `commands` | `commands.list` | every command's id, summary and parameter schema, as JSON |
 
@@ -34,13 +36,15 @@ The project is the current directory when none is named, and a directory with no
 `quakec.toml` in that dialect (PRJ-2.8); it is vanilla otherwise, so the rerelease builds with
 `quakec-ide build <rerelease> --dialect fteqcc`.
 
-The exit status is 0 when the build wrote every module, the check found no error or the
-command ran; 1 when the build or the check found errors; and 2 for a wrong command line, a
-directory with no project, or a command that failed.
+The exit status is 0 when the build wrote every module, the check found no error, no test
+failed or the command ran; 1 when the build or the check found errors or a test failed; and 2
+for a wrong command line, a directory with no project, a project that did not build for its
+tests, or a command that failed.
 
 ## Tests
 
 `src/tests.rs` reads every command line and refuses the wrong ones, builds and checks a small
 project on disk (a clean one, one with an error printed at its line and column, one that needs
-`--dialect fteqcc`), runs a command by id and lists the commands. The `Test Assets` CI job
+`--dialect fteqcc`), runs a project's tests and checks `run project.test` answers the same,
+runs a command by id and lists the commands. The `Test Assets` CI job
 builds the rerelease with it on Linux, macOS and Windows, with no other tool installed.
