@@ -1,0 +1,20 @@
+[package]
+name = "qs-mcp"
+description = "The MCP server: the agent's tools, the IDE's commands, offered to other agents over the Model Context Protocol on stdio, within read and write roots"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qs-commands = { workspace = true }
+serde_json = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+qc-project = { workspace = true }
+qs-workbench = { workspace = true }
+
+[lints]
+workspace = true

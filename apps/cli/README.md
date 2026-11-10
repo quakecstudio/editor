@@ -19,6 +19,8 @@ any command of the IDE by its id. The binary is `quakec-ide`
 quakec-ide build [<project>] [--dialect <vanilla|fteqcc>]
 quakec-ide check [<project>] [--dialect <vanilla|fteqcc>]
 quakec-ide test [<project>] [--dialect <vanilla|fteqcc>] [--filter <text>] [--game <folder>]
+quakec-ide mcp [<project>] [--dialect <vanilla|fteqcc>] [--read <dir>]... [--write <dir>]...
+               [--read-only] [--game <folder>]
 quakec-ide run <command> [<json>] [--project <project> [--dialect <vanilla|fteqcc>]]
 quakec-ide commands
 ```
@@ -28,6 +30,7 @@ quakec-ide commands
 | `build` | `project.open`, `project.build` | each error and warning as `<path>:<line>:<column>: <error\|warning> <code>: <message>`, then where each module was written |
 | `check` | `project.open`, `project.check` | each problem the same way, then the counts |
 | `test` | `project.open`, `project.test` (QCT-4.3) | each test as `passed`, `FAILED` or `skipped` and its name, the message of one that failed or was skipped indented below it, then the counts |
+| `mcp` | `project.open`, then the agent's tools as MCP clients call them ([`docs/mcp.md`](../../docs/mcp.md)) | nothing but MCP messages, one per line, until stdin ends |
 | `run` | `project.open` when `--project` is given, then `<command>` with `<json>`, `{}` when absent | what the command returned, as JSON |
 | `commands` | `commands.list` | every command's id, summary and parameter schema, as JSON |
 

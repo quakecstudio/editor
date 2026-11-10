@@ -10,6 +10,8 @@
 //! quakec-ide check [<project>] [--dialect <vanilla|fteqcc>]
 //! quakec-ide test [<project>] [--dialect <vanilla|fteqcc>] [--filter <text>] [--game <folder>]
 //! quakec-ide run <command> [<json>] [--project <project> [--dialect <vanilla|fteqcc>]]
+//! quakec-ide mcp [<project>] [--dialect <vanilla|fteqcc>] [--read <dir>]... [--write <dir>]...
+//!                [--read-only] [--game <folder>]
 //! quakec-ide commands
 //! ```
 //!
@@ -24,16 +26,18 @@
 //! clap, which prints `--help` and `--version` and says what is wrong with a command line.
 
 use std::ffi::OsString;
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use clap::error::ErrorKind;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use qs_commands::{CommandError, Registry, Session};
+use qs_mcp::{AGENT_TOOLS, Server, ServerConfig};
 use qs_workbench::{
-    BUILD_PROJECT, CHECK_PROJECT, Config, Dialect, Gravity, HasWorkbench, Loader, ModuleBuilt,
-    OPEN_PROJECT, RUN_TESTS, Reported, TestRun, Verdict, Workbench,
+    BUILD_PROJECT, CHECK_PROJECT, Config, Dialect, Gravity, HasPreview, HasWorkbench, Loader,
+    ModuleBuilt, OPEN_PROJECT, Preview, PreviewConfig, RUN_TESTS, Reported, TestRun, Verdict,
+    Workbench, register_preview,
 };
 use serde_json::{Value, json};
 
@@ -108,6 +112,24 @@ enum Verb {
     },
     /// List every command with its id, summary and parameter schema, as JSON.
     Commands,
+    /// Serve the agent's tools over MCP on stdin and stdout, for Claude Code and other agents.
+    Mcp {
+        /// The project.
+        #[command(flatten)]
+        project: ProjectArgs,
+        /// A directory the tools may read under, besides the project; repeatable.
+        #[arg(long)]
+        read: Vec<PathBuf>,
+        /// A directory the tools may write under, besides the project; repeatable.
+        #[arg(long)]
+        write: Vec<PathBuf>,
+        /// The project is read only: no tool that builds, edits or plays may run.
+        #[arg(long)]
+        read_only: bool,
+        /// The game folder the preview and scenarios play over; the first install otherwise.
+        #[arg(long)]
+        game: Option<PathBuf>,
+    },
 }
 
 /// The project a subcommand opens.
@@ -157,6 +179,18 @@ enum Request {
     },
     /// List every command.
     Commands,
+    /// Serve the agent's tools over MCP.
+    Mcp(McpRequest),
+}
+
+/// What `mcp` serves.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct McpRequest {
+    project: Open,
+    read: Vec<PathBuf>,
+    write: Vec<PathBuf>,
+    read_only: bool,
+    game: Option<PathBuf>,
 }
 
 /// A project to open, and the dialect to read it in when its project file does not say.
@@ -188,6 +222,17 @@ pub fn run<L: Loader + 'static>(
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> Exit {
+    run_with_input(args, loader, std::io::stdin().lock(), out, err)
+}
+
+/// [`run`], reading what `mcp` serves from `input` in place of stdin.
+pub fn run_with_input<L: Loader + 'static>(
+    args: &[OsString],
+    loader: L,
+    input: impl BufRead,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> Exit {
     let request = match parse(args) {
         Ok(request) => request,
         Err(Refused::Shown(text)) => {
@@ -206,11 +251,21 @@ pub fn run<L: Loader + 'static>(
         }
         Request::Run { project, .. } => project.as_ref().and_then(|open| open.dialect),
         Request::Commands => None,
+        Request::Mcp(mcp) => mcp.project.dialect,
     };
     let config = Config {
         dialect,
         ..Config::default()
     };
+    if let Request::Mcp(mcp) = &request {
+        return match serve_mcp(mcp, loader, config, input, out) {
+            Ok(()) => Exit::Success,
+            Err(error) => {
+                writeln!(err, "quakec-ide: {error}").unwrap_or(());
+                Exit::Failure
+            }
+        };
+    }
     let mut registry = Registry::new();
     if let Err(error) = qs_workbench::register(&mut registry) {
         // Nothing more can be told when the error output itself fails.
@@ -246,6 +301,8 @@ enum Stopped {
     NoProject(PathBuf),
     /// A path that is not Unicode, which no command's JSON parameters can name.
     NotUnicode(PathBuf),
+    /// The commands could not be registered.
+    Register(String),
 }
 
 impl core::fmt::Display for Stopped {
@@ -256,6 +313,7 @@ impl core::fmt::Display for Stopped {
                 write!(f, "a command returned what it does not promise: {error}")
             }
             Self::Write(error) => write!(f, "cannot write the output: {error}"),
+            Self::Register(error) => write!(f, "the commands could not be registered: {error}"),
             Self::NotUnicode(path) => write!(
                 f,
                 "{}: the path is not Unicode, and the IDE's commands take paths as text",
@@ -364,6 +422,8 @@ fn execute<L: Loader + 'static>(
             print_json(out, &output)?;
             Ok(Exit::Success)
         }
+        // `mcp` is served before a session of the command line's own is made.
+        Request::Mcp(_) => Ok(Exit::Success),
         Request::Commands => {
             let output = session
                 .execute("commands.list", json!({}))
@@ -394,6 +454,77 @@ fn print_tests(out: &mut impl Write, run: &TestRun) -> Result<(), Stopped> {
         run.passed_count, run.failed_count, run.skipped_count
     )
     .map_err(Stopped::Write)
+}
+
+/// What `mcp` serves: the workbench and the preview, as the window has them.
+struct McpContext<L> {
+    workbench: Workbench<L>,
+    preview: Preview,
+}
+
+impl<L: Loader> HasWorkbench for McpContext<L> {
+    type Loader = L;
+
+    fn workbench(&mut self) -> &mut Workbench<L> {
+        &mut self.workbench
+    }
+}
+
+impl<L: Loader> HasPreview for McpContext<L> {
+    fn workbench_and_preview(&mut self) -> (&mut Workbench<L>, &mut Preview) {
+        (&mut self.workbench, &mut self.preview)
+    }
+}
+
+/// Opens `mcp`'s project and serves the agent's tools on `input` and `out` until `input` ends.
+fn serve_mcp<L: Loader + 'static>(
+    mcp: &McpRequest,
+    loader: L,
+    config: Config,
+    input: impl BufRead,
+    out: &mut impl Write,
+) -> Result<(), Stopped> {
+    let mut registry = Registry::new();
+    qs_workbench::register(&mut registry)
+        .and_then(|()| register_preview(&mut registry))
+        .map_err(|error| Stopped::Register(error.to_string()))?;
+    let mut preview_config = PreviewConfig::from_env(std::env::current_exe().unwrap_or_default());
+    if let Some(game) = &mcp.game {
+        preview_config.game = Some(game.clone());
+    }
+    let mut session = Session::new(
+        McpContext {
+            workbench: Workbench::new(loader, config),
+            preview: Preview::new(preview_config),
+        },
+        registry,
+    );
+    let project = std::path::absolute(&mcp.project.path)
+        .map_err(|_| Stopped::NoProject(mcp.project.path.clone()))?;
+    let path = project
+        .to_str()
+        .ok_or_else(|| Stopped::NotUnicode(project.clone()))?;
+    let opened = session
+        .execute(OPEN_PROJECT, json!({ "path": path }))
+        .map_err(Stopped::Command)?;
+    if opened.get("files").and_then(Value::as_u64) == Some(0) {
+        return Err(Stopped::NoProject(project));
+    }
+    let mut read = vec![project.clone()];
+    read.extend(mcp.read.iter().cloned());
+    let mut write = mcp.write.clone();
+    if !mcp.read_only {
+        write.push(project.clone());
+    }
+    let server_config = ServerConfig {
+        project,
+        read,
+        write,
+        name: "quakec-ide".to_owned(),
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+    };
+    let mut server = Server::new(session, server_config, &AGENT_TOOLS);
+    qs_mcp::serve(&mut server, input, out).map_err(Stopped::Write)
 }
 
 /// Writes `value` to `out` as indented JSON and a line break.
@@ -484,6 +615,19 @@ fn parse(args: &[OsString]) -> Result<Request, Refused> {
             }
         }
         Verb::Commands => Request::Commands,
+        Verb::Mcp {
+            project,
+            read,
+            write,
+            read_only,
+            game,
+        } => Request::Mcp(McpRequest {
+            project: open(project.project, project.dialect),
+            read,
+            write,
+            read_only,
+            game,
+        }),
     })
 }
 

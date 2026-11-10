@@ -3370,6 +3370,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-mcp"
+version = "2026.10.0"
+dependencies = [
+ "qc-project",
+ "qs-commands",
+ "qs-workbench",
+ "serde_json",
+]
+
+[[package]]
 name = "qs-mdl"
 version = "2026.10.0"
 dependencies = [
@@ -3538,6 +3548,7 @@ dependencies = [
  "qc-edict",
  "qc-types",
  "qs-commands",
+ "qs-mcp",
  "qs-workbench",
  "serde_json",
 ]

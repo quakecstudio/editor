@@ -6,6 +6,7 @@ const qs_workbench::commands::DEFINITION
 const qs_workbench::commands::HOVER
 const qs_workbench::commands::OPEN_FILE
 const qs_workbench::commands::OPEN_PROJECT
+const qs_workbench::commands::READ_FILE
 const qs_workbench::commands::REFERENCES
 const qs_workbench::commands::RENAME
 const qs_workbench::commands::SAVE_FILE
@@ -87,6 +88,9 @@ field qs_workbench::commands::Candidate.detail
 field qs_workbench::commands::Candidate.kind
 field qs_workbench::commands::Candidate.label
 field qs_workbench::commands::CloseFileParams.path
+field qs_workbench::commands::FileText.path
+field qs_workbench::commands::FileText.text
+field qs_workbench::commands::FileText.unsaved
 field qs_workbench::commands::HoverInfo.declaration
 field qs_workbench::commands::HoverInfo.docs
 field qs_workbench::commands::HoverInfo.place
@@ -402,6 +406,7 @@ struct qs_workbench::build::Reported
 struct qs_workbench::commands::AtParams
 struct qs_workbench::commands::Candidate
 struct qs_workbench::commands::CloseFileParams
+struct qs_workbench::commands::FileText
 struct qs_workbench::commands::HoverInfo
 struct qs_workbench::commands::OpenFileParams
 struct qs_workbench::commands::OpenProjectParams

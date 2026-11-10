@@ -58,6 +58,9 @@ pub const UPDATE_FILE: &str = "file.update";
 /// The id of the command that writes a file to disk.
 pub const SAVE_FILE: &str = "file.save";
 
+/// The id of the command that reads a file's current text.
+pub const READ_FILE: &str = "file.read";
+
 /// The id of `file.close`.
 pub const CLOSE_FILE: &str = "file.close";
 
@@ -91,6 +94,7 @@ pub fn register<C: HasWorkbench + 'static>(
     registry.register(OpenFileCommand)?;
     registry.register(UpdateFile)?;
     registry.register(SaveFile)?;
+    registry.register(ReadFile)?;
     registry.register(CloseFile)?;
     registry.register(Definition)?;
     registry.register(References)?;
@@ -347,7 +351,49 @@ impl<C: HasWorkbench + 'static> Command<C> for UpdateFile {
     }
 }
 
-/// The parameters of `file.save`.
+/// What `file.read` answers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FileText {
+    /// The file.
+    pub path: PathBuf,
+    /// Its current text: the editor's when it has one, else what is on disk; bytes that are
+    /// not UTF-8 are replaced.
+    pub text: String,
+    /// Whether the text is the editor's, not yet saved.
+    pub unsaved: bool,
+}
+
+/// `file.read`: a file's current text, for the agent and other tools that do not show it.
+struct ReadFile;
+
+impl<C: HasWorkbench + 'static> Command<C> for ReadFile {
+    const ID: &'static str = READ_FILE;
+    const SUMMARY: &'static str = "Reads a file's current text: the editor's when it has \
+        unsaved changes, else what is on disk.";
+    type Params = SaveFileParams;
+    type Output = FileText;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: SaveFileParams,
+    ) -> Result<Outcome<FileText, C>, WorkbenchError> {
+        let workbench = context.workbench();
+        let path = normalize(&params.path);
+        let text = workbench
+            .text(&path)
+            .ok_or_else(|| WorkbenchError::NoFile { path: path.clone() })?;
+        let unsaved = workbench.is_unsaved(&path);
+        Ok(Outcome::unchanged(FileText {
+            path,
+            text: String::from_utf8_lossy(&text).into_owned(),
+            unsaved,
+        }))
+    }
+}
+
+/// The parameters of `file.save` and `file.read`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SaveFileParams {
