@@ -1,0 +1,145 @@
+name: Sign
+
+# P0-23 (#23): signs the desktop app on macOS (codesign with the hardened runtime, then
+# notarytool) and on Windows (Azure Trusted Signing over OIDC), with the repository-level
+# secrets docs/releasing.md lists. Started by hand; P4-18's release pipeline reuses it.
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  secrets:
+    name: Signing secrets are set
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check each secret docs/releasing.md lists is set, printing no value
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_CERTIFICATE_NAME: ${{ secrets.APPLE_CERTIFICATE_NAME }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          CERTIFICATE_PROFILE: ${{ secrets.CERTIFICATE_PROFILE }}
+        run: |
+          missing=0
+          for name in APPLE_CERTIFICATE_P12_BASE64 APPLE_CERTIFICATE_PASSWORD \
+            APPLE_CERTIFICATE_NAME MACOS_KEYCHAIN_PASSWORD APPLE_ID APPLE_ID_PASSWORD \
+            APPLE_TEAM_ID AZURE_CLIENT_ID AZURE_TENANT_ID TRUSTED_SIGNING_ENDPOINT \
+            TRUSTED_SIGNING_ACCOUNT CERTIFICATE_PROFILE; do
+            if [ -z "${!name}" ]; then
+              echo "::error::the secret $name is not set"
+              missing=1
+            else
+              echo "ok    $name is set"
+            fi
+          done
+          exit "$missing"
+
+  macos:
+    name: Sign and notarize on macOS
+    needs: secrets
+    runs-on: macos-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - name: Build the desktop app
+        run: cargo build --release --locked -p quakec-studio
+      - name: Import the certificate into a temporary keychain
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          keychain="$RUNNER_TEMP_DIR/signing.keychain-db"
+          certificate="$RUNNER_TEMP_DIR/certificate.p12"
+          printf '%s' "$APPLE_CERTIFICATE_P12_BASE64" | base64 --decode > "$certificate"
+          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$keychain"
+          security import "$certificate" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$MACOS_KEYCHAIN_PASSWORD" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          rm -f "$certificate"
+      - name: Sign with the hardened runtime
+        env:
+          APPLE_CERTIFICATE_NAME: ${{ secrets.APPLE_CERTIFICATE_NAME }}
+        run: |
+          codesign --force --options runtime --timestamp \
+            --sign "$APPLE_CERTIFICATE_NAME" target/release/quakec-studio
+          codesign --verify --strict --verbose=2 target/release/quakec-studio
+      - name: Notarize
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          archive="$RUNNER_TEMP_DIR/quakec-studio-macos.zip"
+          ditto -c -k --keepParent target/release/quakec-studio "$archive"
+          xcrun notarytool submit "$archive" --apple-id "$APPLE_ID" \
+            --password "$APPLE_ID_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+      - name: Remove the temporary keychain
+        if: ${{ always() }}
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: security delete-keychain "$RUNNER_TEMP_DIR/signing.keychain-db" || true
+
+  windows:
+    name: Sign on Windows
+    needs: secrets
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - name: Build the desktop app
+        run: cargo build --release --locked -p quakec-studio
+      # If the login fails because no federated credential trusts quakecstudio/editor, the
+      # subject to add is escalated to Justin (#23), not worked around.
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.CERTIFICATE_PROFILE }}
+          files-folder: target/release
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Check the signature
+        shell: pwsh
+        run: |
+          $signature = Get-AuthenticodeSignature target/release/quakec-studio.exe
+          if ($signature.Status -ne 'Valid') { throw "the signature is $($signature.Status)" }
+          "ok    signed by $($signature.SignerCertificate.Subject)"
