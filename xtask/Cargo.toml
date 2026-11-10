@@ -27,6 +27,7 @@ qs-engine = { workspace = true }
 qs-install = { workspace = true }
 qs-layout = { workspace = true }
 qs-settings = { workspace = true }
+qs-templates = { workspace = true }
 qs-workbench = { workspace = true }
 qs-map = { workspace = true }
 qs-pak = { workspace = true }

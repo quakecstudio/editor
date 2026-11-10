@@ -1,0 +1,37 @@
+const qs_templates::NEW_PROJECT
+const qs_templates::Template::ALL
+enum qs_templates::Template
+enum qs_templates::TemplateError
+field qs_templates::Created.files
+field qs_templates::Created.name
+field qs_templates::Created.path
+field qs_templates::NewProjectParams.path
+field qs_templates::NewProjectParams.template
+field qs_templates::Upstream.commit
+field qs_templates::Upstream.directory
+field qs_templates::Upstream.repository
+fn qs_templates::Fetch::get
+fn qs_templates::Folder::new
+fn qs_templates::GitHub::new
+fn qs_templates::Template::files
+fn qs_templates::Template::upstream
+fn qs_templates::create
+fn qs_templates::register
+impl qs_templates::Folder: Fetch
+impl qs_templates::GitHub: Default
+impl qs_templates::GitHub: Fetch
+impl qs_templates::TemplateError: std::error::Error
+impl qs_templates::TemplateError: std::fmt::Display
+struct qs_templates::Created
+struct qs_templates::Folder
+struct qs_templates::GitHub
+struct qs_templates::NewProjectParams
+struct qs_templates::Upstream
+trait qs_templates::Fetch
+variant qs_templates::Template::Id1
+variant qs_templates::Template::Rerelease
+variant qs_templates::TemplateError::BadName
+variant qs_templates::TemplateError::Checksum
+variant qs_templates::TemplateError::Fetch
+variant qs_templates::TemplateError::NotEmpty
+variant qs_templates::TemplateError::Write

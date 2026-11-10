@@ -3824,6 +3824,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-templates"
+version = "2026.10.0"
+dependencies = [
+ "qs-commands",
+ "schemars",
+ "serde",
+ "sha2",
+ "ureq",
+]
+
+[[package]]
 name = "qs-tests"
 version = "2026.10.0"
 dependencies = [
@@ -3915,6 +3926,7 @@ dependencies = [
  "qs-commands",
  "qs-mcp",
  "qs-paths",
+ "qs-templates",
  "qs-workbench",
  "serde_json",
 ]
@@ -3948,6 +3960,7 @@ dependencies = [
  "qs-paths",
  "qs-render",
  "qs-settings",
+ "qs-templates",
  "qs-workbench",
  "rfd",
  "serde",
@@ -6074,6 +6087,7 @@ dependencies = [
  "qs-pak",
  "qs-settings",
  "qs-sim",
+ "qs-templates",
  "qs-vfs",
  "qs-workbench",
  "quakec-lsp",

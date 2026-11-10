@@ -652,3 +652,20 @@ fn an_argument_that_is_not_utf8_is_a_wrong_command_line() {
         assert!(!err.is_empty(), "{list:?}");
     }
 }
+
+// No spec statement: P4-17, `new` makes a project from a template's local copy, and one that
+// lacks a file is refused before anything is written
+#[test]
+fn new_refuses_a_copy_without_the_pinned_files() {
+    let dir = project("new", &ProjectSpec::default());
+    let empty = dir.join("empty-copy");
+    std::fs::create_dir_all(&empty).unwrap();
+    let target = dir.join("mymod");
+    let (exit, out, err) = cli(&["new", "id1", text(&target), "--from", text(&empty)]);
+    assert_eq!(exit, Exit::Failure, "{out}");
+    assert!(err.contains("could not be fetched"), "{err}");
+    assert!(!target.exists());
+    let (exit, _, err) = cli(&["new", "quake2", text(&target)]);
+    assert_eq!(exit, Exit::Failure);
+    assert!(err.contains("quake2"), "{err}");
+}

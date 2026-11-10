@@ -31,6 +31,7 @@ qs-paths = { workspace = true }
 qs-render = { workspace = true }
 # The user's settings file, which keeps the chosen game folder (P3-44).
 qs-settings = { workspace = true }
+qs-templates = { workspace = true }
 qs-workbench = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }

@@ -172,6 +172,7 @@ qs-paths = { path = "crates/qs-paths" }
 qs-porting-example = { path = "crates/qs-porting-example" }
 qs-render = { path = "crates/qs-render" }
 qs-settings = { path = "crates/qs-settings" }
+qs-templates = { path = "crates/qs-templates" }
 qs-bridge = { path = "crates/qs-bridge" }
 qs-client = { path = "crates/qs-client" }
 qs-sim = { path = "crates/qs-sim" }
@@ -189,6 +190,9 @@ rmcp = { version = "=3.9.0", default-features = false }
 schemars = { version = "=1.2.2", default-features = false }
 serde = { version = "=1.0.229", default-features = false }
 serde_json = { version = "=1.0.151", default-features = false }
+# qs-templates: the starters' files are checked against their pinned SHA-256. MIT OR
+# Apache-2.0, already in the tree under rustls.
+sha2 = { version = "=0.11.1", default-features = false }
 # qs-checkpoint: git object ids. BSD-3-Clause, no dependencies.
 sha1_smol = { version = "=1.0.1", default-features = false }
 # The rerelease's music, `music/track<NN>.ogg` (RRE-3.5): Ogg and Vorbis only, MPL-2.0.

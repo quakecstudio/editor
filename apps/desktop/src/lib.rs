@@ -144,6 +144,7 @@ impl App {
             for choice in menu.chosen() {
                 match choice {
                     menu::MenuChoice::OpenFolder => self.shell.open_folder(),
+                    menu::MenuChoice::NewProject(template) => self.shell.new_project(template),
                     menu::MenuChoice::GameFiles => self.shell.show_game_guide(),
                     menu::MenuChoice::Toggle(panel) => {
                         if let Err(error) = self.shell.toggle(panel) {

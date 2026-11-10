@@ -23,6 +23,8 @@ qs-commands = { workspace = true }
 qs-mcp = { workspace = true }
 # mcp --connect: the running app's socket.
 qs-paths = { workspace = true }
+# new: the starter templates (P4-17).
+qs-templates = { workspace = true }
 qs-workbench = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
 

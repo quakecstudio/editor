@@ -12,6 +12,7 @@
 //! quakec-ide run <command> [<json>] [--project <project> [--dialect <vanilla|fteqcc>]]
 //! quakec-ide mcp [<project>] [--dialect <vanilla|fteqcc>] [--read <dir>]... [--write <dir>]...
 //!                [--read-only] [--game <folder> | --connect [<socket>]]
+//! quakec-ide new <id1|rerelease> <dir> [--from <folder>]
 //! quakec-ide commands
 //! ```
 //!
@@ -28,12 +29,14 @@
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::error::ErrorKind;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use qs_commands::{CommandError, Registry, Session};
 use qs_mcp::{AGENT_TOOLS, Connected, Server, ServerSettings};
+use qs_templates::{Created, Fetch, Folder, GitHub, NEW_PROJECT, Template};
 use qs_workbench::{
     BUILD_PROJECT, CHECK_PROJECT, Config, Dialect, Gravity, HasPreview, HasWorkbench, Loader,
     ModuleBuilt, OPEN_PROJECT, Preview, PreviewConfig, RUN_TESTS, Reported, TestRun, Verdict,
@@ -110,6 +113,17 @@ enum Verb {
         #[arg(long, value_enum, requires = "project")]
         dialect: Option<DialectArg>,
     },
+    /// Make a new project from a starter template, fetched from GitHub by its pinned commit.
+    New {
+        /// The starter: id's QuakeC 1.01 or the rerelease's.
+        #[arg(value_enum)]
+        template: TemplateArg,
+        /// The new project's directory, new or empty; its name is the mod's.
+        path: PathBuf,
+        /// Read the template's files from this local copy of its upstream directory instead.
+        #[arg(long)]
+        from: Option<PathBuf>,
+    },
     /// List every command with its id, summary and parameter schema, as JSON.
     Commands,
     /// Serve the agent's tools over MCP on stdin and stdout, for Claude Code and other agents.
@@ -144,6 +158,15 @@ struct ProjectArgs {
     /// The dialect a project with no quakec.toml is read in; vanilla otherwise.
     #[arg(long, value_enum)]
     dialect: Option<DialectArg>,
+}
+
+/// The templates `new` names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum TemplateArg {
+    /// id's QuakeC 1.01, for the original game.
+    Id1,
+    /// The rerelease's QuakeC, for Quake's 2021 rerelease.
+    Rerelease,
 }
 
 /// The dialects `--dialect` names.
@@ -182,6 +205,12 @@ enum Request {
     },
     /// List every command.
     Commands,
+    /// Make a project from a template, its files from `from` when given.
+    New {
+        template: Template,
+        path: PathBuf,
+        from: Option<PathBuf>,
+    },
     /// Serve the agent's tools over MCP.
     Mcp(McpRequest),
 }
@@ -285,7 +314,7 @@ fn run_on<L: Loader + Send + 'static>(
             open.dialect
         }
         Request::Run { project, .. } => project.as_ref().and_then(|open| open.dialect),
-        Request::Commands => None,
+        Request::Commands | Request::New { .. } => None,
         Request::Mcp(mcp) => mcp.project.dialect,
     };
     let config = Config {
@@ -302,7 +331,20 @@ fn run_on<L: Loader + Send + 'static>(
         };
     }
     let mut registry = Registry::new();
-    if let Err(error) = qs_workbench::register(&mut registry) {
+    let fetch: Arc<dyn Fetch> = match &request {
+        Request::New {
+            template,
+            from: Some(folder),
+            ..
+        } => Arc::new(match template {
+            Template::Id1 => Folder::new(Some(folder.clone()), None),
+            Template::Rerelease => Folder::new(None, Some(folder.clone())),
+        }),
+        _ => Arc::new(GitHub::new()),
+    };
+    if let Err(error) = qs_workbench::register(&mut registry)
+        .and_then(|()| qs_templates::register(&mut registry, fetch))
+    {
         // Nothing more can be told when the error output itself fails.
         writeln!(err, "quakec-ide: {error}").unwrap_or(());
         return Exit::Failure;
@@ -461,6 +503,24 @@ fn execute<L: Loader + 'static>(
                 .execute(command, params.clone())
                 .map_err(Stopped::Command)?;
             print_json(out, &output)?;
+            Ok(Exit::Success)
+        }
+        Request::New { template, path, .. } => {
+            let path = std::path::absolute(path).map_err(Stopped::Write)?;
+            let created: Created = serde_json::from_value(
+                session
+                    .execute(NEW_PROJECT, json!({ "template": template, "path": path }))
+                    .map_err(Stopped::Command)?,
+            )
+            .map_err(Stopped::Output)?;
+            writeln!(
+                out,
+                "made {} with {} files in {}",
+                created.name,
+                created.files.len(),
+                created.path.display()
+            )
+            .map_err(Stopped::Write)?;
             Ok(Exit::Success)
         }
         // `mcp` is served before a session of the command line's own is made.
@@ -711,6 +771,18 @@ fn parse(args: &[OsString]) -> Result<Request, Refused> {
             }
         }
         Verb::Commands => Request::Commands,
+        Verb::New {
+            template,
+            path,
+            from,
+        } => Request::New {
+            template: match template {
+                TemplateArg::Id1 => Template::Id1,
+                TemplateArg::Rerelease => Template::Rerelease,
+            },
+            path,
+            from,
+        },
         Verb::Mcp {
             project,
             read,

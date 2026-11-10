@@ -633,6 +633,34 @@ jobs:
           found=$(cargo run --locked -p quakec-ide -- run project.symbols \
             '{"query":"PlayerPreThink"}' "${rerelease[@]}")
           grep -q '"name": "PlayerPreThink"' <<<"$found"
+      # P4-17: each starter template, made from the corpus copy of its pinned upstream, builds,
+      # passes its sample unit and scenario tests over LibreQuake, and after the build and the
+      # scenario's run root nothing under build/ is tracked by git.
+      - name: Make, build and test a project from each template
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          for template in id1 rerelease; do
+            case "$template" in
+              id1) from="$QS_TEST_ASSETS/codebase/id-1.01" ;;
+              rerelease) from="$QS_TEST_ASSETS/codebase/rerelease" ;;
+            esac
+            dir="$RUNNER_TEMP_DIR/templates/$template-mod"
+            cargo run --locked -p quakec-ide -- new "$template" "$dir" --from "$from"
+            cargo run --locked -p quakec-ide -- build "$dir"
+            tested=$(cargo run --locked -p quakec-ide -- test "$dir" \
+              --game "$QS_TEST_ASSETS/librequake-lite")
+            echo "$tested"
+            grep -q '^2 passed, 0 failed, 0 skipped$' <<<"$tested"
+            test -d "$dir/build"
+            git -C "$dir" init --quiet
+            git -C "$dir" add --all
+            if git -C "$dir" ls-files | grep '^build/'; then
+              echo "::error::$template: build/ is tracked"
+              exit 1
+            fi
+          done
       # P1-21: id 1.01 parses with no errors; every file of each codebase, FTEQCC ones
       # included, round-trips through the tree.
       - name: Parse the corpus
