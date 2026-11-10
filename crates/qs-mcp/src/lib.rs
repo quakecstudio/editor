@@ -17,12 +17,17 @@
 //! project itself for a tool that writes, must lie under a root, or the call fails as a tool
 //! execution error. The command session is not `Send` (the analysis caches `Rc` trees), so it
 //! runs on a thread of its own, which the async handler sends each call to.
+//!
+//! The tools run on [`Commands`]: a [`Session`] the server makes for itself (headless), or
+//! [`Connected`], the running app's session over its socket (`--connect`), so that a game the
+//! agent plays or an edit it stages is the one the window shows.
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc;
 
 use qs_commands::Session;
+use qs_commands::remote::{Client, Described, RemoteError};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
     ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool as McpTool,
@@ -127,6 +132,63 @@ impl std::fmt::Display for McpError {
 
 impl std::error::Error for McpError {}
 
+/// What the server's tools run on.
+pub trait Commands {
+    /// The summary and parameter schema of the command `id`, if there is one.
+    fn describe(&self, id: &str) -> Option<(String, Value)>;
+
+    /// Runs the command `id` with `arguments`: its output, or why it failed.
+    ///
+    /// # Errors
+    ///
+    /// The command's failure, or the connection's, as a message for the model.
+    fn run(&mut self, id: &str, arguments: Value) -> Result<Value, String>;
+}
+
+impl<C: 'static> Commands for Session<C> {
+    fn describe(&self, id: &str) -> Option<(String, Value)> {
+        let info = self.registry().get(id)?;
+        Some((info.summary().to_owned(), info.params().clone()))
+    }
+
+    fn run(&mut self, id: &str, arguments: Value) -> Result<Value, String> {
+        self.execute(id, arguments)
+            .map_err(|error| error.to_string())
+    }
+}
+
+/// The running app's session, over the socket it answers on (AGT-7, `--connect`).
+pub struct Connected {
+    client: Client,
+    commands: Vec<Described>,
+}
+
+impl Connected {
+    /// Connects to the app answering on `socket` and reads its commands.
+    ///
+    /// # Errors
+    ///
+    /// [`RemoteError`] when no app answers there or its answer is not a list of commands.
+    pub fn connect(socket: &Path) -> Result<Self, RemoteError> {
+        let mut client = Client::connect(socket)?;
+        let commands = client.commands()?;
+        Ok(Self { client, commands })
+    }
+}
+
+impl Commands for Connected {
+    fn describe(&self, id: &str) -> Option<(String, Value)> {
+        let command = self.commands.iter().find(|command| command.id() == id)?;
+        Some((command.summary().to_owned(), command.params().clone()))
+    }
+
+    fn run(&mut self, id: &str, arguments: Value) -> Result<Value, String> {
+        self.client
+            .execute(id, arguments)
+            .map_err(|error| error.to_string())?
+    }
+}
+
 /// One call for the session's thread: a command, its arguments, and where to send the result.
 struct Job {
     name: String,
@@ -143,14 +205,14 @@ pub struct Server {
 }
 
 impl Server {
-    /// Starts the session `make` builds on a thread of its own and serves the tools of
-    /// `tools` its registry has.
+    /// Starts the commands `make` builds (a session, or a connection to the app's) on a
+    /// thread of its own and serves the tools of `tools` they have.
     ///
     /// # Errors
     ///
     /// [`McpError::Session`] with `make`'s error, or [`McpError::Stopped`].
-    pub fn start<C: 'static>(
-        make: impl FnOnce() -> Result<Session<C>, String> + Send + 'static,
+    pub fn start<K: Commands>(
+        make: impl FnOnce() -> Result<K, String> + Send + 'static,
         settings: ServerSettings,
         tools: &'static [Tool],
     ) -> Result<Self, McpError> {
@@ -168,18 +230,18 @@ impl Server {
             let offered = tools
                 .iter()
                 .filter_map(|tool| {
-                    let info = session.registry().get(tool.id)?;
-                    let schema = info.params().as_object().cloned().unwrap_or_default();
-                    Some((*tool, McpTool::new(tool.id, info.summary(), schema)))
+                    let (summary, params) = session.describe(tool.id)?;
+                    let schema = params.as_object().cloned().unwrap_or_default();
+                    Some((*tool, McpTool::new(tool.id, summary, schema)))
                 })
                 .collect();
             if ready.send(Ok(offered)).is_err() {
                 return;
             }
             while let Ok(job) = inbox.recv() {
-                let result = match session.execute(&job.name, job.arguments) {
+                let result = match session.run(&job.name, job.arguments) {
                     Ok(output) => tool_result(output),
-                    Err(error) => tool_error(&error.to_string()),
+                    Err(why) => tool_error(&why),
                 };
                 // A client that went away no longer waits for the result.
                 let _sent = job.reply.send(result);
