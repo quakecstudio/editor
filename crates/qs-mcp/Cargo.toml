@@ -1,0 +1,24 @@
+[package]
+name = "qs-mcp"
+description = "The MCP server: the agent's tools, the IDE's commands, offered to other agents over the Model Context Protocol on stdio, within read and write roots"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qs-commands = { workspace = true }
+# The protocol, both eras, from the protocol's own project; its stdio transport.
+rmcp = { workspace = true, features = ["server", "transport-io"] }
+serde_json = { workspace = true, features = ["std"] }
+# rmcp's server runs on tokio; the session's answers come back on a oneshot.
+tokio = { workspace = true, features = ["rt", "io-util", "io-std", "sync"] }
+
+[dev-dependencies]
+qc-project = { workspace = true }
+qs-workbench = { workspace = true }
+
+[lints]
+workspace = true

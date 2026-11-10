@@ -153,6 +153,7 @@ qc-vm = { path = "crates/qc-vm" }
 qs-bsp = { path = "crates/qs-bsp" }
 qs-checkpoint = { path = "crates/qs-checkpoint" }
 qs-commands = { path = "crates/qs-commands" }
+qs-mcp = { path = "crates/qs-mcp" }
 qs-diff = { path = "crates/qs-diff" }
 qs-editor-view = { path = "crates/qs-editor-view" }
 qs-engine = { path = "crates/qs-engine" }
@@ -177,6 +178,9 @@ qs-wav = { path = "crates/qs-wav" }
 quakec-ide = { path = "apps/cli" }
 quakec-studio = { path = "apps/desktop" }
 quakec-lsp = { path = "apps/lsp" }
+# qs-mcp: the Model Context Protocol, both eras (2026-07-28 and the initialize-based ones),
+# maintained by the protocol's own project. Apache-2.0.
+rmcp = { version = "=3.9.0", default-features = false }
 schemars = { version = "=1.2.2", default-features = false }
 serde = { version = "=1.0.229", default-features = false }
 serde_json = { version = "=1.0.151", default-features = false }
@@ -188,6 +192,8 @@ sha1_smol = { version = "=1.0.1", default-features = false }
 symphonia = { version = "=0.6.1", default-features = false }
 syn = { version = "=3.0.9", default-features = false }
 skrifa = { version = "=0.44.0", default-features = false }
+# qs-mcp: the async runtime rmcp's server runs on. MIT.
+tokio = { version = "=1.54.1", default-features = false }
 toml = { version = "=1.1.6", default-features = false }
 toml_edit = { version = "=0.25.17", default-features = false }
 tracing = { version = "=0.1.44", default-features = false }

@@ -15,7 +15,7 @@ use qc_types::Etype;
 use qs_workbench::FsLoader;
 use serde_json::Value;
 
-use super::{Exit, Open, Refused, Request, parse, run};
+use super::{Exit, Open, Refused, Request, parse, run, run_with_input};
 
 fn args(list: &[&str]) -> Vec<OsString> {
     list.iter().map(OsString::from).collect()
@@ -118,6 +118,25 @@ fn each_command_line_is_read() {
             project: open("p", None),
             params: serde_json::json!({ "filter": "fire", "game": "/q" }),
         }
+    );
+    assert_eq!(
+        parse(&args(&[
+            "mcp",
+            "p",
+            "--read",
+            "/r",
+            "--write",
+            "/w",
+            "--read-only"
+        ]))
+        .unwrap(),
+        Request::Mcp(super::McpRequest {
+            project: open("p", None),
+            read: vec![PathBuf::from("/r")],
+            write: vec![PathBuf::from("/w")],
+            read_only: true,
+            game: None,
+        })
     );
     assert_eq!(
         parse(&args(&["test"])).unwrap(),
@@ -336,6 +355,68 @@ fn test_runs_the_projects_tests() {
     let (exit, _, err) = cli(&["test", text(&broken)]);
     assert_eq!(exit, Exit::Failure);
     assert!(err.contains("nowhere"), "{err}");
+}
+
+// No spec statement: P4-13, AGT-7, `mcp` opens the project and serves the agent's tools on
+// stdin and stdout: a legacy client initializes, lists the tools and compiles, one answer per
+// line; a folder with no project is refused before serving
+#[test]
+fn mcp_serves_the_agents_tools() {
+    let dir = project("mcp", &ProjectSpec::default());
+    let input = format!(
+        "{}\n{}\n{}\n{}\n",
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"#,
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"compile","arguments":{}}}"#,
+    );
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let exit = run_with_input(
+        &args(&["mcp", text(&dir)]),
+        FsLoader,
+        input.as_bytes(),
+        &mut out,
+        &mut err,
+    );
+    let out = String::from_utf8(out).unwrap();
+    assert_eq!(exit, Exit::Success, "{}", String::from_utf8_lossy(&err));
+    let mut answers: Vec<Value> = out
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    // rmcp may answer concurrent requests in any order; each answer carries its id.
+    answers.sort_by_key(|answer| answer["id"].as_u64());
+    assert_eq!(answers.len(), 3, "{out}");
+    assert_eq!(answers[0]["result"]["protocolVersion"], "2025-06-18");
+    let names: Vec<&str> = answers[1]["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    for tool in [
+        "compile",
+        "project.symbols",
+        "engine.inspect",
+        "scenario.run",
+    ] {
+        assert!(names.contains(&tool), "{tool} in {names:?}");
+    }
+    assert_eq!(answers[2]["result"]["structuredContent"]["clean"], true);
+    assert!(dir.join("build").exists(), "compile wrote the program");
+    let empty = dir.join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let exit = run_with_input(
+        &args(&["mcp", text(&empty)]),
+        FsLoader,
+        "".as_bytes(),
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(exit, Exit::Failure);
+    assert!(out.is_empty(), "nothing on stdout but MCP messages");
+    assert!(String::from_utf8_lossy(&err).contains("no QuakeC project here"));
 }
 
 #[test]
