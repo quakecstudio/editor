@@ -7,7 +7,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | Command | Summary |
 | --- | --- |
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
-| [`compile`](#compile) | Compiles the open project, writing each module's progs.dat as project.build does, and answers whether the compile is clean, with its error and warning counts and each module's problems. |
+| [`compile`](#compile) | Compiles the open project and says whether it is clean, with its error counts. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
 | [`engine.builtins`](#enginebuiltins) | Lists an engine's builtins for a module kind, each with its number or engine name, QuakeC name, signature and extensions; the open project's engine and server QuakeC when none is named. |
@@ -79,7 +79,7 @@ Parameters:
 
 ## `compile`
 
-Compiles the open project, writing each module's progs.dat as project.build does, and answers whether the compile is clean, with its error and warning counts and each module's problems.
+Compiles the open project and says whether it is clean, with its error counts.
 
 Parameters:
 
