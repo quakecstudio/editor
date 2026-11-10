@@ -9,6 +9,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
+| [`engine.builtins`](#enginebuiltins) | Lists an engine's builtins for a module kind, each with its number or engine name, QuakeC name, signature and extensions; the open project's engine and server QuakeC when none is named. |
 | [`file.close`](#fileclose) | Closes a file's tab, opening the tab beside it when it was         the open file; its unsaved text is kept. |
 | [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
@@ -35,6 +36,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
+| [`project.symbols`](#projectsymbols) | Lists the open project's global definitions, functions, globals and fields, each with where its name is first written; a query keeps those whose name contains it. |
 | [`project.take_checked`](#projecttake_checked) | Takes the problems, symbols and highlighting the background check worked out for the latest edit, if it has finished; says whether anything changed. |
 | [`project.test`](#projecttest) | Builds the open project and runs its tests: each test_ function called alone in the VM over a mock engine, and each scenario under tests/ played in the server simulation, answering each test's verdict. |
 | [`scenario.run`](#scenariorun) | Builds the open project and plays a scenario file on it in the server simulation, answering whether each assertion held, with the values read, and writing its screenshots beside it. |
@@ -99,6 +101,40 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `engine.builtins`
+
+Lists an engine's builtins for a module kind, each with its number or engine name, QuakeC name, signature and extensions; the open project's engine and server QuakeC when none is named.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `engine.builtins`.",
+  "properties": {
+    "engine": {
+      "default": null,
+      "description": "The engine's id, such as `ironwail` (ENGT-3.4); the open project's when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "kind": {
+      "default": null,
+      "description": "The module kind: `ssqc`, `csqc` or `menuqc`; `ssqc` when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "EngineBuiltinsParams",
   "type": "object"
 }
 ```
@@ -782,6 +818,32 @@ Parameters:
     "path"
   ],
   "title": "OpenProjectParams",
+  "type": "object"
+}
+```
+
+## `project.symbols`
+
+Lists the open project's global definitions, functions, globals and fields, each with where its name is first written; a query keeps those whose name contains it.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `project.symbols`.",
+  "properties": {
+    "query": {
+      "default": null,
+      "description": "Only the symbols whose name contains this, without case; every one when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "ProjectSymbolsParams",
   "type": "object"
 }
 ```

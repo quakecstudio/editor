@@ -17,6 +17,7 @@ field qc_engines::Source.path
 field qc_engines::Source.repo
 field qc_engines::Source.sha256
 fn qc_engines::Engine::builtin
+fn qc_engines::Engine::builtins
 fn qc_engines::Engine::extensions
 fn qc_engines::Engine::from_target
 fn qc_engines::Engine::has_table

@@ -32,7 +32,6 @@ mod tables;
 pub use check::{BuiltinRef, declared_builtins, missing_builtins};
 pub use tables::SOURCES;
 
-#[cfg(test)]
 use qc_builtins::table::BUILTINS;
 use qc_progs::opcode::Opcode;
 use qc_progs::{PROGS_VERSION, ProgsFile};
@@ -175,7 +174,6 @@ impl Layer {
     }
 
     /// The layer's builtins, in source order.
-    #[cfg(test)]
     fn builtins(self) -> Vec<Builtin> {
         match self {
             Self::Vanilla => BUILTINS.iter().map(Builtin::from).collect(),
@@ -399,10 +397,9 @@ impl Engine {
 
     /// The engine's builtin table for modules of `kind`: each key once, the first layer that
     /// has it giving the entry, in layer and then source order (ENGT-3.9, ENGT-3.11). Empty
-    /// when the engine has no table for that kind; the tests read it.
-    #[cfg(test)]
+    /// when the engine has no table for that kind; `engine.builtins` lists it (P4-03).
     #[must_use]
-    pub(crate) fn builtins(self, kind: ModuleKind) -> Vec<Builtin> {
+    pub fn builtins(self, kind: ModuleKind) -> Vec<Builtin> {
         let mut table: Vec<Builtin> = Vec::new();
         for layer in self.layers(kind) {
             for builtin in layer.builtins() {

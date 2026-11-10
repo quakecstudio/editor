@@ -22,6 +22,7 @@ mod recent;
 pub mod testing;
 #[cfg(test)]
 mod tests;
+pub mod tools;
 pub mod vm_run;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -556,6 +557,14 @@ impl<L: Loader> Workbench<L> {
     #[must_use]
     pub fn project_symbols(&self) -> &[Symbol] {
         &self.symbols
+    }
+
+    /// The engine the project's first module targets (ENGT-3.5), `None` with no project.
+    pub fn engine(&mut self) -> Option<qc_engines::Engine> {
+        self.host
+            .project_modules()
+            .first()
+            .map(|module| module.engine)
     }
 }
 
