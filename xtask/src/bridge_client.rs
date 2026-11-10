@@ -447,12 +447,14 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         watched.pointer("/value/type") == Some(&json!("float")),
         "a watch of self.health reads a float",
     )?;
+    // One statement: a step over from PlayerPreThink's first line can finish the frame, as
+    // the engine calls it with no QuakeC caller, and a finished frame names no location.
     let stepped = client
-        .step(StepKind::Over)
-        .map_err(|e| format!("step over: {e}"))?;
+        .step(StepKind::Statement)
+        .map_err(|e| format!("step: {e}"))?;
     expect(
         !text_of(stepped.get("location").unwrap_or(&Value::Null), "function").is_empty(),
-        "a step over stops at a statement",
+        "a step stops at the next statement",
     )?;
     client
         .clear_breakpoint(id)
@@ -467,7 +469,7 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         "cleared and resumed, the game runs",
     )?;
     steps.push(
-        "breakpoint/set, hit, inspect the stack, watch, step over and clear in client.qc"
+        "breakpoint/set, hit, inspect the stack, watch, step and clear in client.qc"
             .to_owned(),
     );
     Ok(())
