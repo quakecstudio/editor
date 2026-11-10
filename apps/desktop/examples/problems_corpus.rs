@@ -22,7 +22,7 @@ use std::process::ExitCode;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use qs_editor_view::Position;
-use qs_workbench::{Config, Dialect, Problem, Target};
+use qs_workbench::{CheckAfterTyping, Config, Dialect, Problem, Target};
 use quakec_studio::App;
 use quakec_studio::project::problem_text;
 use serde_json::json;
@@ -77,7 +77,8 @@ fn check(dir: &Path, target: Target) -> Result<usize, String> {
         },
         None,
     );
-    let mut app = App::with_analysis(&harness.ctx, None, config).map_err(|e| e.to_string())?;
+    let mut app = App::with_analysis(&harness.ctx, None, config, CheckAfterTyping::OnTheFrame)
+        .map_err(|e| e.to_string())?;
     app.shell_mut()
         .open_project(dir)
         .map_err(|e| e.to_string())?;

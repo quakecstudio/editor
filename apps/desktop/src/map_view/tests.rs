@@ -144,7 +144,7 @@ fn the_map_view_draws_in_the_window() {
             },
             None,
         );
-    let mut app = App::new(&harness.ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
     let mesh = checker_floor();
     let mut camera = Camera::new([-300.0, 0.0, 200.0], 0.0);
     camera.turn(0.0, 30.0);

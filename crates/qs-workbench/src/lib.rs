@@ -14,6 +14,7 @@
 //! (L3), `qc-project` (L2), and `qc-progs` (L0).
 
 mod build;
+mod check;
 mod commands;
 mod editing;
 mod preview;
@@ -265,6 +266,17 @@ impl OpenFile {
     }
 }
 
+/// Where the check after an edit from the editor runs (P3-35).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CheckAfterTyping {
+    /// On a thread of its own, its results taken by [`Workbench::take_checked`]: the frame
+    /// only sets the text. The app's choice.
+    #[default]
+    OffTheFrame,
+    /// In the edit, before it returns: for tests and tools that drive frames by hand.
+    OnTheFrame,
+}
+
 /// The open project and file, over the analysis of the project's modules. What the panels
 /// list is worked out when the project or the file is opened, so a frame only reads it.
 #[derive(Debug)]
@@ -283,6 +295,10 @@ pub struct Workbench<L> {
     /// The files whose text an editor or a command changed since they were last saved.
     unsaved: BTreeSet<PathBuf>,
     generation: u64,
+    /// The check after typing, off the frame, when the workbench was made with one (P3-35).
+    checker: Option<check::Checker>,
+    /// The generation of the last text the checker was sent, whose result is the one to take.
+    sent: u64,
 }
 
 impl<L: Loader> Workbench<L> {
@@ -300,13 +316,87 @@ impl<L: Loader> Workbench<L> {
             history: Vec::new(),
             unsaved: BTreeSet::new(),
             generation: 0,
+            checker: None,
+            sent: 0,
         }
+    }
+
+    /// A workbench that checks an edit from the editor as `check` says (P3-35).
+    pub fn with_check(loader: L, config: Config, check: CheckAfterTyping) -> Self
+    where
+        L: Clone + Send + 'static,
+    {
+        match check {
+            CheckAfterTyping::OffTheFrame => Self::checked_in_background(loader, config),
+            CheckAfterTyping::OnTheFrame => Self::new(loader, config),
+        }
+    }
+
+    /// A workbench whose check after typing runs off the frame (P3-35): an edit from the
+    /// editor sets the text at once, and the problems, symbols and the open file's outline and
+    /// highlighting follow when [`Workbench::take_checked`] finds them worked out on another
+    /// thread, which reads files through its own copy of `loader`.
+    pub fn checked_in_background(loader: L, config: Config) -> Self
+    where
+        L: Clone + Send + 'static,
+    {
+        let checker = check::Checker::spawn(loader.clone(), config);
+        let mut workbench = Self::new(loader, config);
+        workbench.checker = Some(checker);
+        workbench
+    }
+
+    /// Takes the background check's newest result, if one has arrived for the latest edit:
+    /// the problems, the symbols and the open file's outline and highlighting it worked out.
+    /// Returns whether anything changed. A result for an older edit is dropped, a newer one
+    /// being on its way.
+    pub fn take_checked(&mut self) -> bool {
+        let Some(checked) = self.checker.as_ref().and_then(check::Checker::take) else {
+            return false;
+        };
+        self.apply(checked)
+    }
+
+    /// Waits for the background check to finish the latest edit and takes its result, as
+    /// [`Workbench::take_checked`] does; for tests and benchmarks, never the frame. `false`
+    /// with no background check.
+    pub fn wait_checked(&mut self) -> bool {
+        let Some(checker) = &self.checker else {
+            return false;
+        };
+        while let Some(checked) = checker.wait() {
+            if checked.generation == self.sent {
+                return self.apply(checked);
+            }
+        }
+        false
+    }
+
+    fn apply(&mut self, checked: check::Checked) -> bool {
+        if checked.generation != self.sent {
+            return false;
+        }
+        self.problems = checked.problems;
+        self.symbols = checked.symbols;
+        if let (Some(open), Some(file)) = (self.open.as_mut(), checked.file)
+            && open.path == file.path
+        {
+            open.outline = file.outline;
+            open.highlights = file.highlights;
+            open.classes = file.classes;
+            self.generation = self.generation.wrapping_add(1);
+            open.revision = self.generation;
+        }
+        true
     }
 
     /// Replaces what the editor says over the project file; it takes effect when a project is
     /// next opened.
     pub fn set_config(&mut self, config: Config) {
         self.host.set_config(config);
+        if let Some(checker) = &self.checker {
+            checker.config(config);
+        }
     }
 
     /// Opens the project in directory `root`, as [`AnalysisHost::open`] does, works out its
@@ -326,6 +416,9 @@ impl<L: Loader> Workbench<L> {
             return Err(WorkbenchError::Project(error));
         }
         let root = normalize(root);
+        if let Some(checker) = &self.checker {
+            checker.open(&root);
+        }
         self.tree = tree(&self.host.files(), &root);
         self.root = Some(root);
         self.problems = problems(&mut self.host);

@@ -50,7 +50,7 @@ fn harness_stepping(project: &Path, file: &str, dt: f32) -> H {
             },
             None,
         );
-    let mut app = App::new(&harness.ctx, None).unwrap();
+    let mut app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
     app.shell_mut().open_project(project).unwrap();
     app.shell_mut()
         .execute("file.open", json!({ "path": project.join(file) }))

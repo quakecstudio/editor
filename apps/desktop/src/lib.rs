@@ -41,7 +41,7 @@ use std::path::PathBuf;
 
 use eframe::egui;
 use qs_layout::Layout;
-use qs_workbench::Config;
+use qs_workbench::{CheckAfterTyping, Config};
 
 use crate::shell::Shell;
 use crate::theme::{Mode, Theme};
@@ -61,10 +61,34 @@ impl App {
     ///
     /// [`AppError`] when the built-in theme or the window's commands are broken.
     pub fn new(ctx: &egui::Context, layout_file: Option<PathBuf>) -> Result<Self, AppError> {
-        Self::with_analysis(ctx, layout_file, Config::default())
+        Self::with_analysis(
+            ctx,
+            layout_file,
+            Config::default(),
+            CheckAfterTyping::OffTheFrame,
+        )
     }
 
-    /// As [`App::new`], analysing projects as `config` says over their project files.
+    /// As [`App::new`], but each edit is checked on the frame that sends it, for tests and
+    /// tools that drive frames by hand and read the check's results on the next one.
+    ///
+    /// # Errors
+    ///
+    /// As [`App::new`].
+    pub fn checked_on_the_frame(
+        ctx: &egui::Context,
+        layout_file: Option<PathBuf>,
+    ) -> Result<Self, AppError> {
+        Self::with_analysis(
+            ctx,
+            layout_file,
+            Config::default(),
+            CheckAfterTyping::OnTheFrame,
+        )
+    }
+
+    /// As [`App::new`], analysing projects as `config` says over their project files and
+    /// checking each edit where `check` says.
     ///
     /// # Errors
     ///
@@ -73,6 +97,7 @@ impl App {
         ctx: &egui::Context,
         layout_file: Option<PathBuf>,
         config: Config,
+        check: CheckAfterTyping,
     ) -> Result<Self, AppError> {
         let layout = match &layout_file {
             Some(path) => Layout::read(path).unwrap_or_else(|error| {
@@ -83,7 +108,8 @@ impl App {
         };
         let theme = Theme::load(Mode::Dark).map_err(AppError::Theme)?;
         theme.apply(ctx);
-        let shell = Shell::new(layout, layout_file, theme, config).map_err(AppError::Commands)?;
+        let shell =
+            Shell::new(layout, layout_file, theme, config, check).map_err(AppError::Commands)?;
         Ok(Self {
             #[cfg(target_os = "macos")]
             menu: None,

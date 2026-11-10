@@ -419,30 +419,31 @@ fn routes(group: &mut BenchmarkGroup<'_, WallTime>) {
     }
 }
 
-/// The frame that checks the project again once typing pauses (P2-166): one character typed,
-/// then the frame after the editor's settle time, which sends the text to the project and
-/// checks it, timed alone. The input time is set, not waited for.
+/// The frame that sends the text to the project once typing pauses (P2-166, P3-35): one
+/// character typed, then the frame after the editor's settle time, timed alone. The check
+/// itself runs on its own thread (`CheckAfterTyping::OffTheFrame`), so the frame is one
+/// frame's work; each sample is one such frame, as `keystroke`'s are. The input time is set,
+/// not waited for.
 fn check_after_typing(group: &mut BenchmarkGroup<'_, WallTime>) {
     let (dir, file) = project();
     let ctx = egui::Context::default();
     let mut app = opened(&ctx, &dir, &file);
     let mut time = 0.0_f64;
     let mut typed = bench::TYPED.chars().cycle();
-    group.bench_function("check_after_typing", |bencher| {
-        bencher.iter_custom(|iterations| {
-            let mut spent = Duration::ZERO;
-            for _ in 0..iterations {
-                let c = typed.next().expect("a cycle never ends");
-                time += 1.0;
-                let text = vec![egui::Event::Text(c.to_string())];
-                frame_at(&ctx, &mut app, text, Some(time));
-                let start = std::time::Instant::now();
-                frame_at(&ctx, &mut app, Vec::new(), Some(time + 0.4));
-                spent = spent.saturating_add(start.elapsed());
-            }
-            spent
-        });
-    });
+    let mut settle = || {
+        let c = typed.next().expect("a cycle never ends");
+        time += 1.0;
+        let text = vec![egui::Event::Text(c.to_string())];
+        frame_at(&ctx, &mut app, text, Some(time));
+        let start = std::time::Instant::now();
+        frame_at(&ctx, &mut app, Vec::new(), Some(time + 0.4));
+        start.elapsed().as_secs_f64()
+    };
+    for _ in 0..WARM_KEYSTROKES {
+        settle();
+    }
+    let times: Vec<f64> = (0..KEYSTROKES).map(|_| settle()).collect();
+    recorded(group, "check_after_typing", &times);
 }
 
 /// One frame of the Entities outliner over 2,000 live edicts with a filter typed (P3-13: "Stays

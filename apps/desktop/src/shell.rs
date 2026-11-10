@@ -32,12 +32,13 @@ use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::game_files::GameFiles;
 use qs_workbench::{
-    AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, ChooseGameParams, CloseFileParams,
-    Config, DEFINITION, DOCK, EntryKind, FsLoader, GAME, HOVER, HasPreview, HasWorkbench,
-    HoverInfo, OPEN_FILE, OPEN_PROJECT, OnLoss, OpenFile, OpenFileParams, OpenProjectParams, PAUSE,
-    PLAY, POLL, Place, PlayParams, PlayState, Preview, PreviewConfig, PreviewStatus, REFERENCES,
-    RELOAD, RENAME, RESTART, RESUME, RecentProjects, ReloadParams, RenameParams, SAVE_FILE, STEP,
-    STOP, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
+    AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, CheckAfterTyping, ChooseGameParams,
+    CloseFileParams, Config, DEFINITION, DOCK, EntryKind, FsLoader, GAME, HOVER, HasPreview,
+    HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT, OnLoss, OpenFile, OpenFileParams,
+    OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState, Preview, PreviewConfig,
+    PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RecentProjects, ReloadParams,
+    RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, TAKE_CHECKED, UPDATE_FILE,
+    UpdateFileParams, Workbench,
 };
 use qs_workbench::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, STEP_BY, StepByParams, UNWATCH,
@@ -197,6 +198,7 @@ impl Shell {
         layout_file: Option<PathBuf>,
         theme: Theme,
         config: Config,
+        check: CheckAfterTyping,
     ) -> Result<Self, RegisterError> {
         let mut registry = Registry::new();
         qs_layout::register(&mut registry)?;
@@ -204,7 +206,8 @@ impl Shell {
         qs_workbench::register_preview(&mut registry)?;
         let workspace = Workspace {
             layout,
-            workbench: Workbench::new(FsLoader, config),
+            // P3-35: the check after typing, off the frame in the app.
+            workbench: Workbench::with_check(FsLoader, config, check),
             preview: Preview::new(preview_config()),
         };
         Ok(Self {
@@ -516,6 +519,10 @@ impl Shell {
             }
         }
         self.follow_stop();
+        // P3-35: the background check's results for the latest edit, once it has finished.
+        if self.run::<_, bool>(TAKE_CHECKED, &serde_json::json!({})) == Some(true) {
+            ui.ctx().request_repaint();
+        }
         self.note_project();
         self.dock(ui);
         if self.session.context().preview.state() != PlayState::Stopped {

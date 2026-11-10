@@ -42,6 +42,9 @@ pub const BUILD_PROJECT: &str = "project.build";
 /// The id of the command that reports the open project's problems.
 pub const CHECK_PROJECT: &str = "project.check";
 
+/// The id of the command that takes the background check's results (P3-35).
+pub const TAKE_CHECKED: &str = "project.take_checked";
+
 /// The id of the command that opens a file.
 pub const OPEN_FILE: &str = "file.open";
 
@@ -80,6 +83,7 @@ pub fn register<C: HasWorkbench + 'static>(
     registry.register(OpenProject)?;
     registry.register(BuildProject)?;
     registry.register(CheckProject)?;
+    registry.register(TakeChecked)?;
     registry.register(OpenFileCommand)?;
     registry.register(UpdateFile)?;
     registry.register(SaveFile)?;
@@ -171,6 +175,27 @@ impl<C: HasWorkbench + 'static> Command<C> for CheckProject {
         NoParams {}: NoParams,
     ) -> Result<Outcome<Vec<Reported>, C>, WorkbenchError> {
         Ok(Outcome::outside_history(context.workbench().check()?))
+    }
+}
+
+/// `project.take_checked`: takes what the background check worked out for the latest edit,
+/// if it has finished (P3-35); the window runs it each frame.
+struct TakeChecked;
+
+impl<C: HasWorkbench + 'static> Command<C> for TakeChecked {
+    const ID: &'static str = TAKE_CHECKED;
+    const SUMMARY: &'static str = "Takes the problems, symbols and highlighting the background \
+        check worked out for the latest edit, if it has finished; says whether anything changed.";
+    type Params = NoParams;
+    type Output = bool;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        NoParams {}: NoParams,
+    ) -> Result<Outcome<bool, C>, WorkbenchError> {
+        Ok(Outcome::outside_history(context.workbench().take_checked()))
     }
 }
 
