@@ -151,7 +151,7 @@ fn every_example_validates() {
 fn the_events_table_matches_the_schemas() {
     let spec = spec_text();
     let events = methods_in_table(&spec, "## BRIDGE-3 Events");
-    assert_eq!(events.len(), 9, "{events:?}");
+    assert_eq!(events.len(), 10, "{events:?}");
     let from_files: BTreeSet<String> = schema_names()
         .into_iter()
         .filter_map(|name| name.strip_prefix("event.").map(|e| e.replace('.', "/")))

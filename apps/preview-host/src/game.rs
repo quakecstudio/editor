@@ -978,6 +978,32 @@ impl Game {
 }
 
 impl Game {
+    /// Whether the game is paused, when a click in its window picks rather than captures
+    /// the mouse (BRIDGE-3.5).
+    pub(crate) fn paused(&self) -> bool {
+        self.state == State::Paused
+    }
+
+    /// A primary click at `x`, `y`, fractions of the window from its top left, while paused:
+    /// `edict/picked` with the edict the ray from the eye hits, if any (BRIDGE-3.5).
+    pub(crate) fn clicked(&mut self, x: f32, y: f32) {
+        if !self.paused() {
+            return;
+        }
+        let params = json!({ "x": x, "y": y });
+        let picked = self.with_progs(|game, progs| game.pick(progs, &params));
+        match picked.and_then(|result| result) {
+            Ok(result) => {
+                if let Some(edict) = result.get("edict") {
+                    let time = self.world.time();
+                    self.events
+                        .push(("edict/picked", json!({ "edict": edict, "time": time })));
+                }
+            }
+            Err(error) => tracing::debug!(message = %error.message, "the click picked nothing"),
+        }
+    }
+
     /// `pick`: the edict under the point `x`, `y` of the window, as fractions of its width
     /// and height from the top left, and where the ray from the eye stops (BRIDGE-4.9).
     fn pick(&mut self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {

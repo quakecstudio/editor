@@ -143,7 +143,32 @@ fn events_set_the_state_and_the_console() {
         PreviewStatus {
             state: "playing".to_owned(),
             status: None,
+            picked: None,
         }
+    );
+}
+
+// spec BRIDGE-3.5: edict/picked names the picked edict's classname to the next status, for the
+// shell to open its spawn function; a later poll names none
+#[test]
+fn a_picked_edict_names_its_spawn_function() {
+    let mut game = preview(None, None);
+    game.take_event(
+        "edict/spawned",
+        &json!({ "edict": 14, "classname": "monster_ogre" }),
+    );
+    game.take_event("edict/picked", &json!({ "edict": 14, "time": 1.0 }));
+    assert_eq!(
+        PreviewStatus::of(&game).picked.as_deref(),
+        Some("monster_ogre")
+    );
+    game.poll();
+    assert_eq!(PreviewStatus::of(&game).picked, None);
+    game.take_event("edict/picked", &json!({ "edict": 99, "time": 1.0 }));
+    assert_eq!(
+        PreviewStatus::of(&game).picked,
+        None,
+        "an edict not listed names nothing"
     );
 }
 

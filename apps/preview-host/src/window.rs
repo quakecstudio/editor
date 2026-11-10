@@ -31,7 +31,7 @@ use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
 use crate::keys::{
-    STARTUP, config_path, configuration, keynum, modifier_keys, mouse_key, mouse_motion,
+    STARTUP, config_path, configuration, focus, keynum, modifier_keys, mouse_key, mouse_motion,
     runs_binding, wheel_key,
 };
 use crate::load::{Acted, Describer, Loaded, Rand, act, saves};
@@ -289,7 +289,20 @@ impl eframe::App for Viewer {
         }
         self.type_keys(ui);
         self.bind_keys(ui);
-        self.hold_pointer(ui, response.clicked() && self.dest == KeyDest::Game);
+        let clicked = response.clicked() && self.dest == KeyDest::Game;
+        // BRIDGE-3.5: a click in the paused game picks the edict under it for the IDE.
+        let picked = clicked && self.game.paused();
+        if picked
+            && let Some(at) = response.interact_pointer_pos()
+            && rect.width() > 0.0
+            && rect.height() > 0.0
+        {
+            self.game.clicked(
+                (at.x - rect.left()) / rect.width(),
+                (at.y - rect.top()) / rect.height(),
+            );
+        }
+        self.hold_pointer(ui, clicked && !picked);
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
         if self.fly {
@@ -541,6 +554,8 @@ impl Viewer {
         }
         let frametime = self.behind.min(LONGEST);
         self.behind = 0.0;
+        // PHYS-11.9: the menu or the console up pauses the game.
+        self.game.world_mut().set_focus(focus(self.dest));
         if self.game.frame(frametime) {
             frametime
         } else {

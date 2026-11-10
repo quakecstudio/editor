@@ -234,6 +234,8 @@ fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<Str
     )?;
     steps.push("reload".to_owned());
 
+    let monster = a_monster(client)?;
+
     client.pause().map_err(|e| format!("pause: {e}"))?;
     let before = time(
         &client
@@ -258,39 +260,8 @@ fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<Str
     )?;
     steps.push("pause, step and inspect".to_owned());
 
-    // BRIDGE-4.4: paused, a field set waits for the resume.
-    let health = json!({ "type": "float", "value": 50.0 });
-    let held = client
-        .set_field(1, "health", health.clone())
-        .map_err(|e| format!("field/set: {e}"))?;
-    expect(
-        held == json!({ "applied": "on_resume" }),
-        "paused, field/set waits",
-    )?;
-    let player = client
-        .inspect(InspectWhat::Edict(1))
-        .map_err(|e| e.to_string())?;
-    expect(
-        field(&player, "health") != Some(health.clone()),
-        "the field waits",
-    )?;
-    client.take_events();
-    client.resume().map_err(|e| format!("resume: {e}"))?;
-    let running = client
-        .wait_event("state/changed", WITHIN)
-        .map_err(|e| format!("state/changed: {e}"))?;
-    expect(
-        text(&running.params, "state") == "running",
-        "resume says the game runs",
-    )?;
-    let player = client
-        .inspect(InspectWhat::Edict(1))
-        .map_err(|e| e.to_string())?;
-    expect(
-        field(&player, "health") == Some(health),
-        "resumed, the field is set",
-    )?;
-    steps.push("field/set while paused, then resume".to_owned());
+    paused_health(client, monster)?;
+    steps.push("a monster's health set while paused, then resume".to_owned());
 
     let spawned = client
         .spawn("info_notnull", &[("origin", "0 0 0")])
@@ -341,6 +312,63 @@ fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<Str
     client.shutdown().map_err(|e| format!("shutdown: {e}"))?;
     steps.push("shutdown".to_owned());
     Ok(steps)
+}
+
+/// The map's lowest-numbered live monster, whose health is edited while paused (P3-14). A
+/// monster is not spawned for it: its spawn function precaches its model and sounds, which
+/// the engine allows only while the map loads (`PF_Precache_*`).
+fn a_monster(client: &mut Client) -> Result<u32, String> {
+    let entities = client
+        .inspect(InspectWhat::Entities)
+        .map_err(|e| e.to_string())?;
+    entities
+        .get("entities")
+        .and_then(Value::as_array)
+        .and_then(|list| {
+            list.iter()
+                .filter(|e| text(e, "classname").starts_with("monster_"))
+                .filter_map(|e| e.get("edict").and_then(Value::as_u64))
+                .min()
+        })
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| "the map has a live monster".to_owned())
+}
+
+/// BRIDGE-4.4, P3-14: paused, a monster's health set waits for the resume, then is the
+/// monster's in game.
+fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
+    let health = json!({ "type": "float", "value": 50.0 });
+    let held = client
+        .set_field(monster, "health", health.clone())
+        .map_err(|e| format!("field/set: {e}"))?;
+    expect(
+        held == json!({ "applied": "on_resume" }),
+        "paused, field/set waits",
+    )?;
+    let waiting = client
+        .inspect(InspectWhat::Edict(monster))
+        .map_err(|e| e.to_string())?;
+    expect(
+        field(&waiting, "health") != Some(health.clone()),
+        "the field waits",
+    )?;
+    client.take_events();
+    client.resume().map_err(|e| format!("resume: {e}"))?;
+    let running = client
+        .wait_event("state/changed", WITHIN)
+        .map_err(|e| format!("state/changed: {e}"))?;
+    expect(
+        text(&running.params, "state") == "running",
+        "resume says the game runs",
+    )?;
+    let edited = client
+        .inspect(InspectWhat::Edict(monster))
+        .map_err(|e| e.to_string())?;
+    expect(
+        field(&edited, "health") == Some(health),
+        "resumed, the monster's health is set",
+    )?;
+    Ok(())
 }
 
 /// The progs at `progs` reloaded over the map and debugged (P3-17, BRIDGE-4.8): its

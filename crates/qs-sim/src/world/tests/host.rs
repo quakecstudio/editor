@@ -203,6 +203,22 @@ fn pause_stops_the_game() {
     assert!(run.world.time() > time);
 }
 
+// spec PHYS-11.9: in single player, with the keys going to the console or a menu, the clock
+// stands and the physics and the client's think do not run; with them back on the game, the
+// game goes on
+#[test]
+fn the_console_or_a_menu_pauses_the_game() {
+    let mut run = player(&ledge(), "setorigin(self, '0 0 200');", "", "");
+    run.frames(1, FRAME).unwrap();
+    let time = run.world.time();
+    run.world.set_focus(crate::KeyFocus::Elsewhere);
+    run.frames(3, FRAME).unwrap();
+    assert_eq!(run.world.time(), time, "the clock stands");
+    run.world.set_focus(crate::KeyFocus::Game);
+    run.frames(1, FRAME).unwrap();
+    assert!(run.world.time() > time);
+}
+
 // spec PHYS-10.7: commands sent before the client spawns are read once it is active, and the
 // signon's own commands spawn it
 #[test]

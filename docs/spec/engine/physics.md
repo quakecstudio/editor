@@ -407,6 +407,14 @@ frametime it is given; the viewer paces its frames that way.
   the game" to the client and puts `svc_setpause` and the new state in the reliable datagram.
   While paused the client's move is read but its think does not run and no physics runs, so
   the server's time stands (`SV_RunClients`, `Host_ServerFrame`: `if (!sv.paused ...)`).
+- **PHYS-11.9** In single player the game pauses too while the client's keys go to the console
+  or a menu rather than the game, for as long as they do: `Host_ServerFrame` runs the physics
+  and `SV_RunClients` the client's think only `if (!sv.paused && (svs.maxclients > 1 ||
+  key_dest == key_game) )`, under id's comment "always pause in single player if in console or
+  menus" (id-Software/Quake@bf4ac424, `WinQuake/host.c`, `WinQuake/sv_user.c`). The client's
+  move is still read and the messages sent, as under `pause` (PHYS-11.8). The preview host,
+  always single player, gives the world its key destination before each frame, in the window
+  and in a view script alike.
 
 ## PHYS-12 The server's settings
 

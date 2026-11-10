@@ -34,7 +34,9 @@ pub struct DockFrame {
     pub width: f32,
     /// Its height.
     pub height: f32,
-    /// The width of the screen the window is on, when the windowing system says.
+    /// The width of the screen the window is on, when the windowing system says. Its origin is
+    /// not reported (egui's `ViewportInfo` gives a monitor's size only), so the screens are
+    /// taken to be this wide, side by side from the desktop's 0.
     #[serde(default)]
     pub screen_width: Option<f32>,
     /// Whether the IDE's window has the keyboard focus.
@@ -42,13 +44,19 @@ pub struct DockFrame {
 }
 
 impl DockFrame {
-    /// Where the game's window goes beside this IDE window.
+    /// Where the game's window goes beside this IDE window. The room right of the IDE is
+    /// reckoned on the IDE's own screen: its left edge's place on that screen, `x` within the
+    /// screen's width from the desktop's 0, so an IDE on a screen right of the primary (`x`
+    /// past its width) or left of it (`x` below 0) has the room its own screen leaves (P3-42).
     #[must_use]
     pub fn placement(&self) -> WindowPlacement {
         let right = self.x + self.width;
         let room = self
             .screen_width
-            .map_or(MAX_WIDTH + GAP, |screen| screen - right - GAP);
+            .filter(|&screen| screen > 0.0)
+            .map_or(MAX_WIDTH + GAP, |screen| {
+                screen - (self.x.rem_euclid(screen) + self.width) - GAP
+            });
         let (x, y, width) = if room >= MIN_WIDTH {
             (right + GAP, self.y, room.min(MAX_WIDTH))
         } else {
@@ -117,6 +125,31 @@ mod tests {
         let placed = big.placement();
         assert_eq!(placed.width, 960.0);
         assert_eq!(placed.x, 100.0 + 3000.0 - 960.0 - 8.0);
+    }
+
+    // No spec statement: the room is the IDE's own screen's, whether that screen is the primary,
+    // one right of it or one left of it at a negative x (P3-42)
+    #[test]
+    fn the_room_is_on_the_ides_own_screen() {
+        let on = |x: f32| {
+            let mut frame = ide(Some(2560.0));
+            frame.x = x;
+            frame.placement()
+        };
+        // A second screen at 2560: the IDE at 2660 has 2560 - 100 - 1200 - 8 = 1252 beside it.
+        let right = on(2660.0);
+        assert_eq!((right.x, right.y, right.width), (3868.0, 50.0, 960.0));
+        // A screen left of the primary: the IDE at -2460 is 100 into it.
+        let left = on(-2460.0);
+        assert_eq!((left.x, left.width), (-1252.0, 960.0));
+        // Near the right edge of a second screen: no room, so over the corner.
+        let full = on(2560.0 + 1300.0);
+        assert_eq!(full.x, 2560.0 + 1300.0 + 1200.0 - 480.0 - 8.0);
+        assert_eq!(full.y, 138.0);
+        // A screen of no width is no screen size.
+        let mut none = ide(Some(0.0));
+        none.x = 5000.0;
+        assert_eq!(none.placement().x, 6208.0);
     }
 
     // No spec statement: the window stays above other windows only while the IDE is focused

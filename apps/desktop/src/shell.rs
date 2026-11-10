@@ -502,7 +502,11 @@ impl Shell {
     /// Draws the window for one frame.
     pub fn ui(&mut self, ui: &mut Ui) {
         if self.session.context().preview.state() != PlayState::Stopped {
-            let _: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
+            let polled: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
+            // BRIDGE-3.5: a click in the paused game picked an edict; open its spawn function.
+            if let Some(classname) = polled.and_then(|status| status.picked) {
+                self.entity_action(EntityAction::Open(classname));
+            }
         }
         self.follow_stop();
         self.note_project();
@@ -869,7 +873,7 @@ impl Shell {
         let scope = &mut self.symbol_scope;
         let workbench = &self.session.context().workbench;
         let preview = &self.session.context().preview;
-        let outliner = &mut self.outliner;
+        let tree = &mut self.outliner;
         let properties = &mut self.properties;
         let debug_input = &mut self.debug_input;
         let recent_projects = self.recent.0.projects();
@@ -933,7 +937,7 @@ impl Shell {
                             section(ui, theme, Text::Entities, Text::NotPlaying);
                         } else {
                             heading(ui, theme, Text::Entities);
-                            entity_action = entities::outliner(ui, theme, preview, outliner);
+                            entity_action = entities::outliner(ui, theme, preview.entities(), tree);
                         }
                     }
                     Panel::Right => {

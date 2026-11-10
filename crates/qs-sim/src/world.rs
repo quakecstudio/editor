@@ -104,6 +104,17 @@ pub struct Entity {
     pub skin: f32,
 }
 
+/// Where the client's keys go, as the server's frame reads it (PHYS-11.9): `key_dest` is
+/// `key_game` or not.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KeyFocus {
+    /// To the game.
+    #[default]
+    Game,
+    /// To the console or a menu.
+    Elsewhere,
+}
+
 /// A map's world: the VM with its entities spawned, linked in the world's collision. A clone
 /// is a snapshot the debugger replays a frame from (WORLD-9).
 #[derive(Clone)]
@@ -117,6 +128,9 @@ pub struct World {
     pub(crate) commands: Vec<Vec<u8>>,
     /// Whether the client connects in the next frame (PHYS-10.7).
     connecting: bool,
+    /// Where the client's keys go, which in single player pauses the game when not to it
+    /// (PHYS-11.9).
+    focus: KeyFocus,
     /// The lines the console printed since they were taken (PHYS-13).
     pub(crate) console_out: Vec<u8>,
     /// A host command the console asked for, waiting for the host (PHYS-13.6).
@@ -348,6 +362,7 @@ impl World {
             player: None,
             commands: Vec::new(),
             connecting: false,
+            focus: KeyFocus::Game,
             console_out: Vec::new(),
             pending_host: None,
             client_commands: Vec::new(),
@@ -423,6 +438,13 @@ impl World {
         }
     }
 
+    /// Sets where the client's keys go (PHYS-11.9): a frame while they go elsewhere than the
+    /// game, to the console or a menu, reads the client's move but runs neither its think nor
+    /// the physics, as id's single player game pauses.
+    pub const fn set_focus(&mut self, focus: KeyFocus) {
+        self.focus = focus;
+    }
+
     /// Runs one server frame of `frametime` seconds through `progs`, the progs the world was
     /// loaded with (PHYS-1).
     ///
@@ -476,8 +498,9 @@ impl World {
         }
         let clients = self.builtins.mock.engine().clients_active.clone();
         let player = self.player;
-        // PHYS-11.8: paused, the client's move is read but not thought, and no physics runs.
-        let paused = self.builtins.paused;
+        // PHYS-11.8: paused, the client's move is read but not thought, and no physics runs;
+        // PHYS-11.9: so too in single player while the keys go to the console or a menu.
+        let paused = self.builtins.paused || self.focus == KeyFocus::Elsewhere;
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         if let Some(cmd) = player {
             let cmd = call.read_move(CLIENT, &cmd);

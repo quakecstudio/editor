@@ -445,6 +445,38 @@ fn check_after_typing(group: &mut BenchmarkGroup<'_, WallTime>) {
     });
 }
 
+/// One frame of the Entities outliner over 2,000 live edicts with a filter typed (P3-13: "Stays
+/// responsive with 2,000 live edicts"): the edicts grouped by classname, filtered, and laid out
+/// and painted, headless. Each sample is one frame, timed alone, as `keystroke`'s are, and the
+/// filter changes each frame so no grouping is reused.
+fn entities_outliner(group: &mut BenchmarkGroup<'_, WallTime>) {
+    let ctx = egui::Context::default();
+    let entities = bench::live_entities(bench::LIVE_EDICTS);
+    let filters = ["", "monster", "item_", "func", "light", "o"];
+    let mut filter = filters.iter().cycle();
+    let mut draw = || {
+        let typed = filter.next().expect("a cycle never ends");
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(280.0, WINDOW[1]),
+            )),
+            ..egui::RawInput::default()
+        };
+        let start = std::time::Instant::now();
+        let mut output = ctx.run_ui(input, |ui| bench::outliner(ui, &entities, typed));
+        let spent = start.elapsed().as_secs_f64();
+        output.textures_delta.clear();
+        black_box(output);
+        spent
+    };
+    for _ in 0..WARM_KEYSTROKES {
+        draw();
+    }
+    let times: Vec<f64> = (0..KEYSTROKES).map(|_| draw()).collect();
+    recorded(group, "entities_outliner", &times);
+}
+
 /// The samples of each benchmark but those that set their own.
 const SAMPLES: usize = 10;
 /// The time criterion measures each benchmark for, but those that set their own.
@@ -459,6 +491,7 @@ fn budgets(criterion: &mut Criterion) {
     open_project_and_type(&mut group);
     keystroke(&mut group);
     check_after_typing(&mut group);
+    entities_outliner(&mut group);
     id1_recompile(&mut group);
     save_to_game(&mut group);
     routes(&mut group);

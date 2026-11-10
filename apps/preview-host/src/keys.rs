@@ -135,6 +135,15 @@ pub(crate) const fn menu_bound(key: u8) -> bool {
     key == K_ESCAPE || (key >= K_F1 && key < K_F1 + 12)
 }
 
+/// Where the server's frame sees the keys going for the key destination `dest` (PHYS-11.9): to
+/// the game, or elsewhere, to the console or a menu, which pauses a single player game.
+pub(crate) const fn focus(dest: KeyDest) -> qs_sim::KeyFocus {
+    match dest {
+        KeyDest::Game => qs_sim::KeyFocus::Game,
+        KeyDest::Console | KeyDest::Menu => qs_sim::KeyFocus::Elsewhere,
+    }
+}
+
 /// `Key_Event`'s test for a key going down (INPUT-3.2): whether `key` runs its binding with
 /// keys going to `dest`, rather than going to the console's line or the menu. Escape never
 /// does; the backquote, which the window toggles the console with, is left to it.

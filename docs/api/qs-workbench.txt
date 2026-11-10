@@ -91,6 +91,7 @@ field qs_workbench::preview::PreviewConfig.app
 field qs_workbench::preview::PreviewConfig.extra
 field qs_workbench::preview::PreviewConfig.game
 field qs_workbench::preview::PreviewConfig.host
+field qs_workbench::preview::PreviewStatus.picked
 field qs_workbench::preview::PreviewStatus.state
 field qs_workbench::preview::PreviewStatus.status
 field qs_workbench::preview::ScenarioRunParams.path

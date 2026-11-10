@@ -745,6 +745,28 @@ fn pick_finds_the_edict_under_a_point() {
     assert_eq!(up, json!({}), "nothing above");
 }
 
+// spec BRIDGE-3.5: a click in the paused game sends edict/picked with the edict under it, a
+// click at nothing sends nothing, and a running game's click picks nothing
+#[test]
+fn a_click_in_the_paused_game_picks_the_edict_under_it() {
+    let (mut game, mut session) = game();
+    game.set_eye(eye([-100.0, 0.0, 40.0], [0.0, 0.0, 0.0]));
+    game.clicked(0.5, 0.5);
+    assert!(
+        events_named(&mut game, "edict/picked").is_empty(),
+        "running"
+    );
+    call(&mut game, &mut session, "pause", &json!({})).unwrap();
+    let _ = events(&mut game);
+    game.clicked(0.5, 0.5);
+    let picked = events(&mut game);
+    assert_eq!(methods(&picked), ["edict/picked"]);
+    assert_eq!(picked[0].1["edict"], 2, "the crate");
+    game.clicked(0.5, 0.0);
+    assert!(events(&mut game).is_empty(), "nothing above");
+    assert!(game.paused(), "a click runs no frame and keeps the pause");
+}
+
 fn frame(width: u32, height: u32) -> Frame {
     Frame {
         width,

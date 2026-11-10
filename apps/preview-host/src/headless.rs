@@ -23,6 +23,7 @@ use crate::audio::Audio;
 use crate::bridge::{Bridge, serve};
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Screen};
+use crate::keys::focus;
 use crate::load::{Acted, Describer, Loaded, Rand, act};
 use crate::screenshot::{Drawer, Frame};
 use crate::view_script::{Step, ViewScript};
@@ -202,6 +203,8 @@ pub(crate) fn view_script(
         match step {
             Step::Frames(count) => {
                 for _ in 0..*count {
+                    // PHYS-11.9: the menu or the console up pauses the game.
+                    world.game.world_mut().set_focus(focus(overlay.dest));
                     let ran = world.game.frame(FRAME);
                     if world.game.host_action().is_some() {
                         return Err("the map changed level, started a game or quit".into());

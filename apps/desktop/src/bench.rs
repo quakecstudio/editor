@@ -7,6 +7,13 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use eframe::egui::Ui;
+use qs_workbench::entities::Entities;
+use serde_json::json;
+
+use crate::entities::{Outliner, outliner as draw_outliner};
+use crate::theme::{Mode, Theme};
+
 /// The project's files of QuakeC, and each one's lines.
 pub const FILES: usize = 25;
 /// The lines of each file.
@@ -59,4 +66,58 @@ pub fn caret_offset(text: &str) -> usize {
     text.match_indices('\n')
         .nth(MIDDLE_LINE)
         .map_or(0, |(at, _)| at.saturating_add(1))
+}
+
+/// The live edicts the Entities outliner is measured with (P3-13: "Stays responsive with
+/// 2,000 live edicts").
+pub const LIVE_EDICTS: u32 = 2_000;
+
+/// The classnames the live edicts cycle through, as a map's monsters, items and brushes mix.
+const CLASSNAMES: [&str; 12] = [
+    "monster_army",
+    "monster_dog",
+    "monster_ogre",
+    "monster_knight",
+    "item_health",
+    "item_shells",
+    "weapon_supershotgun",
+    "func_door",
+    "func_button",
+    "trigger_once",
+    "light",
+    "info_notnull",
+];
+
+/// `count` live edicts from 1, their classnames cycling through a map's mix, as the bridge's
+/// `edict/spawned` events list them, the middle one selected.
+#[must_use]
+pub fn live_entities(count: u32) -> Entities {
+    let mut entities = Entities::new();
+    let middle = count.div_euclid(2);
+    let mut selected = "";
+    for (edict, classname) in (1..=count).zip(CLASSNAMES.iter().cycle()) {
+        if edict == middle {
+            selected = classname;
+        }
+        let _ = entities.take_event(
+            "edict/spawned",
+            &json!({ "edict": edict, "classname": classname, "time": 0.0 }),
+        );
+    }
+    entities.select(&json!({
+        "edict": middle,
+        "classname": selected,
+        "fields": [],
+    }));
+    entities
+}
+
+/// One draw of the Entities outliner over `entities` with `filter` typed in it, in the dark
+/// theme: what the left panel does each frame while the game runs.
+pub fn outliner(ui: &mut Ui, entities: &Entities, filter: &str) {
+    let Ok(theme) = Theme::load(Mode::Dark) else {
+        return;
+    };
+    let mut state = Outliner::with_filter(filter);
+    let _ = draw_outliner(ui, &theme, entities, &mut state);
 }
