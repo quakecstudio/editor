@@ -152,6 +152,7 @@ qc-types = { path = "crates/qc-types" }
 qc-vm = { path = "crates/qc-vm" }
 qs-bsp = { path = "crates/qs-bsp" }
 qs-checkpoint = { path = "crates/qs-checkpoint" }
+qs-agent = { path = "crates/qs-agent" }
 qs-commands = { path = "crates/qs-commands" }
 qs-diff = { path = "crates/qs-diff" }
 qs-editor-view = { path = "crates/qs-editor-view" }

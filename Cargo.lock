@@ -3226,6 +3226,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-agent"
+version = "2026.10.0"
+dependencies = [
+ "qc-edict",
+ "qc-project",
+ "qc-types",
+ "qs-commands",
+ "qs-pak",
+ "qs-vfs",
+ "qs-workbench",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "qs-bench"
 version = "2026.10.0"
 dependencies = [

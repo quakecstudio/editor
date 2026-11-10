@@ -1,0 +1,26 @@
+[package]
+name = "qs-agent"
+description = "The agent loop: plan, edit, compile, test and propose over the command registry, a run done only when the compile is clean and its tests pass"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qs-commands = { workspace = true }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+# A project the VM takes: id's system globals and fields.
+qc-edict = { workspace = true }
+qc-types = { workspace = true }
+qc-project = { workspace = true }
+qs-pak = { workspace = true }
+qs-vfs = { workspace = true }
+qs-workbench = { workspace = true }
+
+[lints]
+workspace = true
