@@ -380,10 +380,12 @@ fn mcp_serves_the_agents_tools() {
     );
     let out = String::from_utf8(out).unwrap();
     assert_eq!(exit, Exit::Success, "{}", String::from_utf8_lossy(&err));
-    let answers: Vec<Value> = out
+    let mut answers: Vec<Value> = out
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
+    // rmcp may answer concurrent requests in any order; each answer carries its id.
+    answers.sort_by_key(|answer| answer["id"].as_u64());
     assert_eq!(answers.len(), 3, "{out}");
     assert_eq!(answers[0]["result"]["protocolVersion"], "2025-06-18");
     let names: Vec<&str> = answers[1]["result"]["tools"]

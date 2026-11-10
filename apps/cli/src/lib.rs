@@ -26,14 +26,14 @@
 //! clap, which prints `--help` and `--version` and says what is wrong with a command line.
 
 use std::ffi::OsString;
-use std::io::{BufRead, Write};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use clap::error::ErrorKind;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use qs_commands::{CommandError, Registry, Session};
-use qs_mcp::{AGENT_TOOLS, Server, ServerConfig};
+use qs_mcp::{AGENT_TOOLS, Server, ServerSettings};
 use qs_workbench::{
     BUILD_PROJECT, CHECK_PROJECT, Config, Dialect, Gravity, HasPreview, HasWorkbench, Loader,
     ModuleBuilt, OPEN_PROJECT, Preview, PreviewConfig, RUN_TESTS, Reported, TestRun, Verdict,
@@ -216,20 +216,37 @@ impl<L: Loader> HasWorkbench for Cli<L> {
 
 /// Runs the command line `args`, reading files through `loader`, writing what it prints to
 /// `out` and its errors to `err`.
-pub fn run<L: Loader + 'static>(
+pub fn run<L: Loader + Send + 'static>(
     args: &[OsString],
     loader: L,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> Exit {
-    run_with_input(args, loader, std::io::stdin().lock(), out, err)
+    run_on(args, loader, McpInput::Stdio, out, err)
 }
 
-/// [`run`], reading what `mcp` serves from `input` in place of stdin.
-pub fn run_with_input<L: Loader + 'static>(
+/// [`run`], `mcp` reading the client's messages from `input` in place of stdin and writing its
+/// answers to `out` once `input` ends.
+pub fn run_with_input<L: Loader + Send + 'static>(
     args: &[OsString],
     loader: L,
-    input: impl BufRead,
+    mut input: impl Read,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> Exit {
+    let mut bytes = Vec::new();
+    if let Err(error) = input.read_to_end(&mut bytes) {
+        writeln!(err, "quakec-ide: {error}").unwrap_or(());
+        return Exit::Failure;
+    }
+    run_on(args, loader, McpInput::Bytes(bytes), out, err)
+}
+
+/// [`run`], with `mcp` reading from `input`.
+fn run_on<L: Loader + Send + 'static>(
+    args: &[OsString],
+    loader: L,
+    input: McpInput,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> Exit {
@@ -303,6 +320,8 @@ enum Stopped {
     NotUnicode(PathBuf),
     /// The commands could not be registered.
     Register(String),
+    /// The MCP server stopped.
+    Mcp(qs_mcp::McpError),
 }
 
 impl core::fmt::Display for Stopped {
@@ -314,6 +333,7 @@ impl core::fmt::Display for Stopped {
             }
             Self::Write(error) => write!(f, "cannot write the output: {error}"),
             Self::Register(error) => write!(f, "the commands could not be registered: {error}"),
+            Self::Mcp(error) => error.fmt(f),
             Self::NotUnicode(path) => write!(
                 f,
                 "{}: the path is not Unicode, and the IDE's commands take paths as text",
@@ -476,55 +496,75 @@ impl<L: Loader> HasPreview for McpContext<L> {
     }
 }
 
-/// Opens `mcp`'s project and serves the agent's tools on `input` and `out` until `input` ends.
-fn serve_mcp<L: Loader + 'static>(
+/// Where `mcp` reads the client's messages from.
+enum McpInput {
+    /// stdin, answering on stdout, until stdin ends.
+    Stdio,
+    /// These bytes, answering into `run`'s output once every call is answered: for tests.
+    Bytes(Vec<u8>),
+}
+
+/// Opens `mcp`'s project on the session's own thread and serves the agent's tools on `input`
+/// until it ends.
+fn serve_mcp<L: Loader + Send + 'static>(
     mcp: &McpRequest,
     loader: L,
     config: Config,
-    input: impl BufRead,
+    input: McpInput,
     out: &mut impl Write,
 ) -> Result<(), Stopped> {
-    let mut registry = Registry::new();
-    qs_workbench::register(&mut registry)
-        .and_then(|()| register_preview(&mut registry))
-        .map_err(|error| Stopped::Register(error.to_string()))?;
-    let mut preview_config = PreviewConfig::from_env(std::env::current_exe().unwrap_or_default());
-    if let Some(game) = &mcp.game {
-        preview_config.game = Some(game.clone());
-    }
-    let mut session = Session::new(
-        McpContext {
-            workbench: Workbench::new(loader, config),
-            preview: Preview::new(preview_config),
-        },
-        registry,
-    );
     let project = std::path::absolute(&mcp.project.path)
         .map_err(|_| Stopped::NoProject(mcp.project.path.clone()))?;
     let path = project
         .to_str()
-        .ok_or_else(|| Stopped::NotUnicode(project.clone()))?;
-    let opened = session
-        .execute(OPEN_PROJECT, json!({ "path": path }))
-        .map_err(Stopped::Command)?;
-    if opened.get("files").and_then(Value::as_u64) == Some(0) {
-        return Err(Stopped::NoProject(project));
+        .ok_or_else(|| Stopped::NotUnicode(project.clone()))?
+        .to_owned();
+    let mut preview_config = PreviewConfig::from_env(std::env::current_exe().unwrap_or_default());
+    if let Some(game) = &mcp.game {
+        preview_config.game = Some(game.clone());
     }
+    let no_project = Stopped::NoProject(project.clone()).to_string();
+    let make = move || {
+        let mut registry = Registry::new();
+        qs_workbench::register(&mut registry)
+            .and_then(|()| register_preview(&mut registry))
+            .map_err(|error| Stopped::Register(error.to_string()).to_string())?;
+        let mut session = Session::new(
+            McpContext {
+                workbench: Workbench::new(loader, config),
+                preview: Preview::new(preview_config),
+            },
+            registry,
+        );
+        let opened = session
+            .execute(OPEN_PROJECT, json!({ "path": path }))
+            .map_err(|error| Stopped::Command(error).to_string())?;
+        if opened.get("files").and_then(Value::as_u64) == Some(0) {
+            return Err(no_project);
+        }
+        Ok(session)
+    };
     let mut read = vec![project.clone()];
     read.extend(mcp.read.iter().cloned());
     let mut write = mcp.write.clone();
     if !mcp.read_only {
         write.push(project.clone());
     }
-    let server_config = ServerConfig {
+    let settings = ServerSettings {
         project,
         read,
         write,
         name: "quakec-ide".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
     };
-    let mut server = Server::new(session, server_config, &AGENT_TOOLS);
-    qs_mcp::serve(&mut server, input, out).map_err(Stopped::Write)
+    let server = Server::start(make, settings, &AGENT_TOOLS).map_err(Stopped::Mcp)?;
+    match input {
+        McpInput::Stdio => server.serve_stdio().map_err(Stopped::Mcp),
+        McpInput::Bytes(bytes) => {
+            let answers = server.serve_bytes(bytes).map_err(Stopped::Mcp)?;
+            out.write_all(&answers).map_err(Stopped::Write)
+        }
+    }
 }
 
 /// Writes `value` to `out` as indented JSON and a line break.

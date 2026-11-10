@@ -45,13 +45,16 @@ client configured by JSON:
 
 ## Protocol
 
-The server answers both eras of MCP:
+The protocol is [`rmcp`](https://crates.io/crates/rmcp)'s, the Rust SDK of the protocol's own
+project (`modelcontextprotocol/rust-sdk`), so the server follows the specification as that SDK
+tracks it. It answers both eras of MCP:
 
 - **Modern clients** (MCP 2026-07-28) name the version and their capabilities in each request's
-  `_meta`. `server/discover` lists `2026-07-28`, and each result carries `"resultType":
-  "complete"`. A request naming another version gets error `-32022` with the versions served.
-- **Legacy clients** open with `initialize` (MCP 2025-11-25, 2025-06-18 or 2025-03-26) and get
-  the version they asked for back; one asking for another version gets `2025-11-25`.
+  `_meta`. `server/discover` lists the versions served, `2026-07-28` among them, and each
+  result carries `"resultType": "complete"`.
+- **Legacy clients** open with `initialize` (MCP 2025-11-25, 2025-06-18, 2025-03-26 or
+  2024-11-05) and get the version they asked for back; rmcp answers one asking for another
+  version with one it serves.
 
 Either way the server keeps no state of the conversation. The project and the roots are set
 when it starts.
@@ -92,12 +95,12 @@ refused as a tool error before the command runs.
 
 ## Tests
 
-`crates/qs-mcp/src/tests.rs` drives the server message by message:
+`crates/qs-mcp/src/tests.rs` drives the server with JSON lines, as a client writes them:
 
 - the legacy handshake and calls;
-- modern requests, `server/discover` and version refusals;
+- modern requests and `server/discover`;
 - protocol and tool errors;
 - the roots, and a read-only project;
-- stdio's one message per line.
+- a session that does not start.
 
 `apps/cli/src/tests.rs` runs `quakec-ide mcp` on a project end to end.
