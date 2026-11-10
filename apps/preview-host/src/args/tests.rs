@@ -67,3 +67,18 @@ fn the_game_filesystem_gets_the_engine_options() {
     assert!(parse(&[]).unwrap().engine().is_empty());
     assert_eq!(parse(&["--hipnotic"]).unwrap().engine(), ["-hipnotic"]);
 }
+
+// spec SND-6.5: GOG's gamea.cue is Scourge of Armagon's CD and gamed.cue Dissolution of
+// Eternity's, by the engine's switch or the game's directory; any other game plays game.cue
+#[test]
+fn each_mission_pack_plays_its_own_cd() {
+    assert_eq!(parse(&["--hipnotic"]).unwrap().cd_sheet(), "gamea.cue");
+    assert_eq!(
+        parse(&["-game", "hipnotic"]).unwrap().cd_sheet(),
+        "gamea.cue"
+    );
+    assert_eq!(parse(&["--rogue"]).unwrap().cd_sheet(), "gamed.cue");
+    assert_eq!(parse(&["-game", "Rogue"]).unwrap().cd_sheet(), "gamed.cue");
+    assert_eq!(parse(&[]).unwrap().cd_sheet(), "game.cue");
+    assert_eq!(parse(&["-game", "mymod"]).unwrap().cd_sheet(), "game.cue");
+}

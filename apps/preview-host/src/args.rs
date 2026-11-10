@@ -53,7 +53,8 @@ pub(crate) struct Args {
     #[arg(long)]
     pub(crate) nosound: bool,
     /// A CD image's cue sheet whose audio tracks are the music (SND-6.4); without it,
-    /// `game.cue` in the game root when there is one, as GOG's release keeps its CD.
+    /// `game.cue` in the game root when there is one, as GOG's release keeps its CD, or a
+    /// mission pack's `gamea.cue` or `gamed.cue` (SND-6.5).
     #[arg(long)]
     pub(crate) cd_image: Option<PathBuf>,
     /// No CD music, QuakeSpasm's `-nocdaudio`.
@@ -153,6 +154,20 @@ impl Args {
         }
         engine.extend(self.engine.iter().cloned());
         engine
+    }
+
+    /// The cue sheet in the game root whose CD the game's music plays from (SND-6.4, SND-6.5):
+    /// GOG's `gamea.cue` for Scourge of Armagon (`-hipnotic`), `gamed.cue` for Dissolution of
+    /// Eternity (`-rogue`), else `game.cue`, Quake's own.
+    pub(crate) fn cd_sheet(&self) -> &'static str {
+        let game = self.game.as_deref().map(str::to_ascii_lowercase);
+        if self.hipnotic || game.as_deref() == Some("hipnotic") {
+            "gamea.cue"
+        } else if self.rogue || game.as_deref() == Some("rogue") {
+            "gamed.cue"
+        } else {
+            "game.cue"
+        }
     }
 }
 

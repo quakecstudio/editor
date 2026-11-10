@@ -288,6 +288,13 @@ QuakeSpasm does.
   used. The cue sheet is `--cd-image`, else `game.cue` in the game root, as GOG's release of
   Quake keeps its CD; `--nocdaudio` plays none. A capture for the view differential plays no
   music, since id's engine there has no CD.
+- **SND-6.5** A mission pack plays its own CD from GOG's release, in place of `game.cue`:
+  `gamea.cue` for Scourge of Armagon, with `-hipnotic` or `-game hipnotic`, and `gamed.cue`
+  for Dissolution of Eternity, with `-rogue` or `-game rogue`, the directory's name matched
+  without case. The names are GOG's, not id's: GOG's forum guide to extracting the music
+  (`gog.com/forum/quake_series/my_oneclick_audioextractor/post1`, fetched 2026-11-10) says
+  "GAMEA is for Mission Pack 1 - Scourge of Armagon ... the HIPNOTIC folder" and "GAMED
+  Mission Pack 2 - Dissolution of Eternity ... the ROGUE folder".
 
 ### Constants
 

@@ -234,9 +234,10 @@ issues:
   deliverable:
   - Toolbar Play, Pause, Step and Restart map, always running our preview host; save triggers compile and reload
   acceptance:
-  - Save-to-game p95 at most 1.0 s, measured with the windowed preview host on macOS (not only headless) by the active `save_to_game` budget of `cargo xtask bench` on ref-mac; the same measurement on Windows and Linux is part of the MVP demo (P4-24), moved there on 2026-11-06 as P3-02's manual checks were
+  - Play, Pause, Step and Restart map run the preview host, and a save while playing builds and reloads in place, each tested in apps/desktop and qs-workbench; `save_to_game` is an active budget of docs/perf-budgets.md, save-to-game p95 at most 1.0 s in the windowed preview host. Its measurement on ref-mac, Windows and Linux is part of the MVP demo (P4-24), the ref-mac run moved there on 2026-11-10 because Justin asked that no P3 issue wait on him
   verify:
-  - Latency benchmark on ref-mac recorded in the bench history
+  - cargo test -p quakec-studio -p qs-workbench
+  - cargo xtask bench's budget table check (the save_to_game row active)
 - key: P3-13
   title: Entities outliner
   labels:
@@ -290,7 +291,7 @@ issues:
   acceptance:
   - Picking works in the game window via a bridge pick command
   verify:
-  - Scenario test; recorded manual test
+  - Tests of the click in the paused game (preview-host) and of the pick's spawn function opened (qs-workbench), and the bridge client's pick against the headless preview host in CI; the recorded manual test is part of the MVP demo (P4-24), moved there on 2026-11-10 because Justin asked that no P3 issue wait on him
 - key: P3-16
   title: Debugger and Console panels
   labels:
@@ -355,7 +356,7 @@ issues:
   - Found, missing and partial (rerelease only, shareware only) states each render correctly
   - Choosing a valid folder makes Play work without restarting the app; the files are read in place, never copied
   verify:
-  - UI snapshot tests; manual first run on macOS with GOG files extracted by innoextract
+  - UI tests of the guide in each state (apps/desktop, egui_kittest) and of the folder check on real folders (qs-workbench); the manual first run on macOS with GOG files extracted by innoextract is part of the MVP demo (P4-24), moved there on 2026-11-10 because Justin asked that no P3 issue wait on him
 - key: P3-29
   title: Measure the preview host's performance against QuakeSpasm
   labels:
@@ -401,7 +402,7 @@ issues:
   - 'apps/preview-host: the backquote key and the console command toggle the console, Escape opens the main menu, keys go where the key destination says, and console lines run through qs-sim''s console path'
   - 'qs-render: the gamma setting applied to the whole frame as QuakeSpasm applies it, so the Brightness slider brightens the screen'
   - 'apps/preview-host: key bindings (bind, unbind, unbindall and the +/- commands) with id1''s default.cfg read, the keys menu that edits them, and +mlook with lookspring and lookstrafe as CL_MouseMove and V_StopPitchDrift read them'
-  - 'qs-sound and apps/preview-host: svc_cdtrack played and looped at bgmvolume, from a cue sheet''s CD audio tracks or from music/track<NN>.<ext> (RRE-3), the music spec statements in docs/spec/. Done in PR #748: the CD image (SND-6, RRE-3.4, game.cue by default). Left: an Ogg Vorbis decoder (a new workspace dependency, its version and licence checked) for the rerelease''s music/track<NN>.ogg, and the mission packs'' CD images (GOG''s gamea.cue and gamed.cue, which is which to be confirmed) chosen with -rogue and -hipnotic'
+  - 'qs-sound and apps/preview-host: svc_cdtrack played and looped at bgmvolume, from a cue sheet''s CD audio tracks or from music/track<NN>.<ext> (RRE-3), the music spec statements in docs/spec/. Done in PR #748: the CD image (SND-6, RRE-3.4, game.cue by default). Left: an Ogg Vorbis decoder (a new workspace dependency, its version and licence checked) for the rerelease''s music/track<NN>.ogg, and the mission packs'' CD images chosen with -hipnotic (GOG''s gamea.cue, Scourge of Armagon) and -rogue (gamed.cue, Dissolution of Eternity), as GOG''s forum guide names them (SND-6.5)'
   acceptance:
   - 'The console and each menu in scope are drawn and driven as the specs say, each statement cited by a test'
   - '`cargo xtask view-diff` shows the main menu and the console drawn within tolerance of the view oracle'
@@ -426,13 +427,14 @@ issues:
     fix/p2ra-apps-findings at 1abc2984; crates/qs-bench/benches/budgets.rs `check_after_typing`, apps/desktop (the frame after the editor's settle time that sends the text to the project and checks it)
   depends: []
   deliverable:
-  - 'apps/desktop (and the qc-ide calls it makes): the check after a pause in typing within 100 ms at the 95th percentile on ref-mac, by making the recheck cheaper (incremental) or moving it off the frame as docs/perf-budgets.md says, where its budget becomes one frame''s'
-  - 'docs/spikes/data/ref-mac/: the `cargo xtask bench` results of all three editor rows on an idle ref-mac, with the commit'
+  - 'apps/desktop (and the qc-ide calls it makes): the check after a pause in typing moved off the frame, as Justin decided on 2026-11-09 for a check over 100 ms: the frame sends the text to a check on another thread and draws its results when they arrive, so the frame''s own budget becomes one frame''s, as docs/perf-budgets.md says'
+  - 'docs/perf-budgets.md: `check_after_typing` the frame that sends the text, at most one frame at 120 Hz, 8.33 ms at the 99th percentile'
   - 'The weekly Bench workflow green on main with every active row checked'
   acceptance:
-  - '`cargo xtask bench` on ref-mac meets `check_after_typing`''s budget, recorded in docs/spikes/data/ref-mac/ and linked in the PR, and a Bench workflow run on the PR branch passes'
+  - '`cargo xtask bench` meets `check_after_typing`''s one-frame budget in a Bench workflow run on the PR branch, and a test shows the check''s results drawn once it finishes without the frame waiting for it. The ref-mac run of the three editor rows is part of the MVP demo (P4-24), moved there on 2026-11-10 because Justin asked that no P3 issue wait on him'
   verify:
   - cargo xtask bench
+  - cargo test -p quakec-studio
 - key: P3-36
   title: Time each keystroke on its own in the keystroke benchmark
   labels:

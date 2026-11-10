@@ -295,7 +295,7 @@ pub(crate) fn load(
             _ => None,
         })
         .collect();
-    // SND-6.4: the CD's music, never in a capture, which id's engine has none of to compare.
+    // SND-6.4, SND-6.5: the CD's music, the mission pack's own CD for its game, never in a capture, which id's engine has none of to compare.
     let cd = match output {
         Device::Capture => None,
         Device::Default | Device::None if args.nocdaudio => None,
@@ -304,7 +304,7 @@ pub(crate) fn load(
             .clone()
             .or_else(|| {
                 let base = args.basedir.clone().unwrap_or_else(|| PathBuf::from("."));
-                Some(base.join("game.cue")).filter(|cue| cue.is_file())
+                Some(base.join(args.cd_sheet())).filter(|cue| cue.is_file())
             })
             .and_then(|cue| CdImage::open(&cue)),
     };
