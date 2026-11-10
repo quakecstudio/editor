@@ -3503,6 +3503,7 @@ dependencies = [
 name = "qs-workbench"
 version = "2026.10.0"
 dependencies = [
+ "interprocess",
  "proptest",
  "qc-builtins",
  "qc-codegen",
@@ -3514,6 +3515,7 @@ dependencies = [
  "qc-sema",
  "qc-types",
  "qc-vm",
+ "qs-bridge",
  "qs-bsp",
  "qs-commands",
  "qs-diff",

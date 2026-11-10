@@ -36,6 +36,9 @@ serde_json = { workspace = true, features = ["std"] }
 tracing = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
+# A fake preview host for the engine tools' tests, as qs-engine's tests serve one.
+interprocess = { workspace = true }
+qs-bridge = { workspace = true }
 proptest = { workspace = true, features = ["std"] }
 # A game folder for the scenario tests: its id1/pak0.pak.
 qs-pak = { workspace = true }

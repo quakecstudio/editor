@@ -26,6 +26,7 @@ use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
 
 pub mod debug;
 pub mod dock;
+pub mod engine;
 pub mod entities;
 pub mod game_files;
 pub mod scenario;
@@ -136,6 +137,8 @@ pub enum PreviewError {
         /// Its type.
         kind: String,
     },
+    /// A file the command writes could not be written.
+    Write(PathBuf, std::io::Error),
 }
 
 impl core::fmt::Display for PreviewError {
@@ -163,6 +166,7 @@ impl core::fmt::Display for PreviewError {
             Self::NotPaused => f.write_str("pause the game to edit its fields"),
             Self::NoField(field) => write!(f, "the selected entity has no field {field}"),
             Self::BadValue { field, kind } => write!(f, "{field} takes a {kind}"),
+            Self::Write(path, error) => write!(f, "{}: {error}", path.display()),
         }
     }
 }
@@ -1531,7 +1535,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(ActCommand::<DockAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<UnwatchAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<StepByAct>(core::marker::PhantomData))?;
-    Ok(())
+    engine::register_engine(registry)
 }
 
 #[cfg(test)]
