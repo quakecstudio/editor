@@ -37,6 +37,8 @@ tracing = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }
+# A game folder for the scenario tests: its id1/pak0.pak.
+qs-pak = { workspace = true }
 
 [lints]
 workspace = true

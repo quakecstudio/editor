@@ -36,6 +36,9 @@ const qs_workbench::staged::ACCEPT_HUNKS
 const qs_workbench::staged::APPLY_EDIT
 const qs_workbench::staged::REJECT_HUNKS
 const qs_workbench::staged::STAGED_EDITS
+const qs_workbench::testing::RUN_TESTS
+const qs_workbench::testing::SCENARIO_DIR
+const qs_workbench::testing::UNIT_PREFIX
 const qs_workbench::vm_run::VM_RUN
 enum qs_workbench::CheckAfterTyping
 enum qs_workbench::EntryKind
@@ -50,6 +53,9 @@ enum qs_workbench::preview::debug::StopReason
 enum qs_workbench::preview::game_files::GameState
 enum qs_workbench::preview::scenario::ScenarioRunError
 enum qs_workbench::staged::Decision
+enum qs_workbench::testing::TestKind
+enum qs_workbench::testing::TestRunError
+enum qs_workbench::testing::Verdict
 enum qs_workbench::vm_run::VmRunError
 field qs_workbench::Problem.diagnostic
 field qs_workbench::Problem.location
@@ -156,6 +162,17 @@ field qs_workbench::staged::StagedHunk.id
 field qs_workbench::staged::StagedHunk.line
 field qs_workbench::staged::StagedHunk.path
 field qs_workbench::staged::StagedHunk.removed
+field qs_workbench::testing::RunTestsParams.filter
+field qs_workbench::testing::RunTestsParams.game
+field qs_workbench::testing::TestResult.kind
+field qs_workbench::testing::TestResult.message
+field qs_workbench::testing::TestResult.name
+field qs_workbench::testing::TestResult.verdict
+field qs_workbench::testing::TestRun.failed_count
+field qs_workbench::testing::TestRun.passed
+field qs_workbench::testing::TestRun.passed_count
+field qs_workbench::testing::TestRun.skipped_count
+field qs_workbench::testing::TestRun.tests
 field qs_workbench::vm_run::VmChange.after
 field qs_workbench::vm_run::VmChange.before
 field qs_workbench::vm_run::VmChange.place
@@ -293,6 +310,8 @@ fn qs_workbench::staged::Workbench::decide
 fn qs_workbench::staged::Workbench::stage
 fn qs_workbench::staged::Workbench::staged_hunks
 fn qs_workbench::staged::register_staged
+fn qs_workbench::testing::Workbench::run_tests
+fn qs_workbench::testing::register_tests
 fn qs_workbench::vm_run::register_vm
 fn qs_workbench::vm_run::run
 impl qs_workbench::WorkbenchError: Error
@@ -308,6 +327,8 @@ impl qs_workbench::preview::scenario::ScenarioRunError: From<PreviewError>
 impl qs_workbench::preview::scenario::ScenarioRunError: fmt::Display
 impl qs_workbench::preview::scenario::ScenarioRunError: std::error::Error
 impl qs_workbench::staged::HunkId: fmt::Display
+impl qs_workbench::testing::TestRunError: std::error::Error
+impl qs_workbench::testing::TestRunError: std::fmt::Display
 impl qs_workbench::vm_run::VmRunError: std::error::Error
 impl qs_workbench::vm_run::VmRunError: std::fmt::Display
 mod qs_workbench::preview::debug
@@ -316,6 +337,7 @@ mod qs_workbench::preview::entities
 mod qs_workbench::preview::game_files
 mod qs_workbench::preview::scenario
 mod qs_workbench::staged
+mod qs_workbench::testing
 mod qs_workbench::vm_run
 struct qs_workbench::Location
 struct qs_workbench::OpenFile
@@ -370,6 +392,9 @@ struct qs_workbench::staged::HunkId
 struct qs_workbench::staged::HunksParams
 struct qs_workbench::staged::ProposedFile
 struct qs_workbench::staged::StagedHunk
+struct qs_workbench::testing::RunTestsParams
+struct qs_workbench::testing::TestResult
+struct qs_workbench::testing::TestRun
 struct qs_workbench::vm_run::VmChange
 struct qs_workbench::vm_run::VmRun
 struct qs_workbench::vm_run::VmRunParams
@@ -427,11 +452,13 @@ use qs_workbench::REJECT_HUNKS = crate::staged::REJECT_HUNKS
 use qs_workbench::RELOAD = crate::preview::RELOAD
 use qs_workbench::RESTART = crate::preview::RESTART
 use qs_workbench::RESUME = crate::preview::RESUME
+use qs_workbench::RUN_TESTS = crate::testing::RUN_TESTS
 use qs_workbench::RecentProjects = crate::recent::RecentProjects
 use qs_workbench::ReloadParams = crate::preview::ReloadParams
 use qs_workbench::RenameError = qc_ide::RenameError
 use qs_workbench::Renamed = crate::editing::Renamed
 use qs_workbench::Reported = crate::build::Reported
+use qs_workbench::RunTestsParams = crate::testing::RunTestsParams
 use qs_workbench::SCENARIO_RUN = crate::preview::SCENARIO_RUN
 use qs_workbench::SELECT = crate::preview::SELECT
 use qs_workbench::SET_FIELD = crate::preview::SET_FIELD
@@ -452,9 +479,13 @@ use qs_workbench::Symbol = qc_ide::Symbol
 use qs_workbench::SymbolKind = qc_ide::SymbolKind
 use qs_workbench::SyntaxClass = qc_ide::SyntaxClass
 use qs_workbench::Target = qc_project::Target
+use qs_workbench::TestKind = crate::testing::TestKind
+use qs_workbench::TestResult = crate::testing::TestResult
+use qs_workbench::TestRun = crate::testing::TestRun
 use qs_workbench::UNWATCH = crate::preview::UNWATCH
 use qs_workbench::UnwatchParams = crate::preview::UnwatchParams
 use qs_workbench::VM_RUN = crate::vm_run::VM_RUN
+use qs_workbench::Verdict = crate::testing::Verdict
 use qs_workbench::VmRunParams = crate::vm_run::VmRunParams
 use qs_workbench::WATCH = crate::preview::WATCH
 use qs_workbench::WatchParams = crate::preview::WatchParams
@@ -465,6 +496,7 @@ use qs_workbench::game_files = crate::preview::game_files
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
 use qs_workbench::register_staged = crate::staged::register_staged
+use qs_workbench::register_tests = crate::testing::register_tests
 use qs_workbench::register_vm = crate::vm_run::register_vm
 use qs_workbench::scenario = crate::preview::scenario
 variant qs_workbench::CheckAfterTyping::OffTheFrame
@@ -522,6 +554,14 @@ variant qs_workbench::preview::scenario::ScenarioRunError::RunRoot
 variant qs_workbench::preview::scenario::ScenarioRunError::Write
 variant qs_workbench::staged::Decision::Accept
 variant qs_workbench::staged::Decision::Reject
+variant qs_workbench::testing::TestKind::Scenario
+variant qs_workbench::testing::TestKind::Unit
+variant qs_workbench::testing::TestRunError::Build
+variant qs_workbench::testing::TestRunError::NothingBuilt
+variant qs_workbench::testing::TestRunError::Progs
+variant qs_workbench::testing::Verdict::Failed
+variant qs_workbench::testing::Verdict::Passed
+variant qs_workbench::testing::Verdict::Skipped
 variant qs_workbench::vm_run::VmRunError::Bad
 variant qs_workbench::vm_run::VmRunError::Build
 variant qs_workbench::vm_run::VmRunError::Machine

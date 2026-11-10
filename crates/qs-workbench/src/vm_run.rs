@@ -353,4 +353,4 @@ impl RawState for Raw<'_> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

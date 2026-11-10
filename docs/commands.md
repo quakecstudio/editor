@@ -40,6 +40,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
 | [`project.take_checked`](#projecttake_checked) | Takes the problems, symbols and highlighting the background check worked out for the latest edit, if it has finished; says whether anything changed. |
+| [`project.test`](#projecttest) | Builds the open project and runs its tests: each test_ function called alone in the VM over a mock engine, and each scenario under tests/ played in the server simulation, answering each test's verdict. |
 | [`scenario.run`](#scenariorun) | Builds the open project and plays a scenario file on it in the server simulation, answering whether each assertion held, with the values read, and writing its screenshots beside it. |
 | [`settings.get`](#settingsget) | Gives one setting's value and where it comes from. |
 | [`settings.list`](#settingslist) | Lists every setting with its default, its value and where the value comes from. |
@@ -938,6 +939,40 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `project.test`
+
+Builds the open project and runs its tests: each test_ function called alone in the VM over a mock engine, and each scenario under tests/ played in the server simulation, answering each test's verdict.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `project.test`.",
+  "properties": {
+    "filter": {
+      "default": null,
+      "description": "Only the tests whose name contains this (QCT-1.3).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "game": {
+      "default": null,
+      "description": "The game folder scenario tests play over; the first install found when absent\n(QCT-3.1).",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "RunTestsParams",
   "type": "object"
 }
 ```

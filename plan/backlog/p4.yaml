@@ -278,12 +278,15 @@ issues:
   - LIC-5
   depends:
   - P2-13
+  - P4-26
   deliverable:
   - 'File > New from template: rerelease-based and id1-based starters with quakec.toml, fetched or generated under their GPLv2 terms with notices'
   - Each template's ignore file excludes build/, which holds the build output and the run roots (ADR-0008)
+  - 'Each template holds a sample test: a `test_` function and a `tests/*.scenario`, which `project.test` runs (P4-26, docs/spec/qc-tests.md)'
   acceptance:
   - A new project builds and plays immediately
   - After a build and a launch, nothing under a new project's build/ is tracked by version control
+  - '`quakec-ide test` on a new project passes its sample unit test, and its scenario test when a game is found'
   verify:
   - Template integration test
 - key: P4-18

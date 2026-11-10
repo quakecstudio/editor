@@ -20,6 +20,7 @@ mod editing;
 mod preview;
 mod recent;
 pub mod staged;
+pub mod testing;
 #[cfg(test)]
 mod tests;
 pub mod vm_run;
@@ -55,6 +56,9 @@ pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
 pub use crate::staged::{
     ACCEPT_HUNKS, APPLY_EDIT, Decision, HunkId, REJECT_HUNKS, STAGED_EDITS, StagedHunk,
     register_staged,
+};
+pub use crate::testing::{
+    RUN_TESTS, RunTestsParams, TestKind, TestResult, TestRun, Verdict, register_tests,
 };
 pub use crate::vm_run::{VM_RUN, VmRunParams, register_vm};
 use qc_project::{ProjectError, normalize};

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::editing::{Change, Source};
 use crate::staged::register_staged;
+use crate::testing::register_tests;
 use crate::vm_run::register_vm;
 use crate::{
     Caution, DefKind, EntryKind, FileRange, Location, ModuleBuilt, Reported, Workbench,
@@ -96,6 +97,7 @@ pub fn register<C: HasWorkbench + 'static>(
     registry.register(Complete)?;
     registry.register(RenameCommand)?;
     register_staged(registry)?;
+    register_tests(registry)?;
     register_vm(registry)
 }
 

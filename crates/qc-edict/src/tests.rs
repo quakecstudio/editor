@@ -20,7 +20,7 @@ use qc_progs::limits::LIMIT_MAX_EDICTS;
 use qc_types::{EntityRef, Etype, PointerRef, Slot};
 
 use crate::system::{
-    SYSTEM_FIELDS, SYSTEM_GLOBALS, SysField, SysGlobal, field_at_slot, field_by_name,
+    SYSTEM_FIELDS, SYSTEM_GLOBALS, SysField, SysGlobal, defs_source, field_at_slot, field_by_name,
     global_at_slot, global_by_name,
 };
 use crate::{
@@ -239,6 +239,37 @@ fn entity_value_names_an_edict_only_on_a_whole_multiple() {
 }
 
 // ---- EDICT-2: system globals ----
+
+// spec EDICT-2.1, EDICT-3.1: the defs source declares each system global, then each field, in
+// slot order, each run closed by its end marker
+#[test]
+fn the_defs_source_declares_the_tables_in_order() {
+    let text = defs_source();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), SYSTEM_GLOBALS.len() + SYSTEM_FIELDS.len() + 2);
+    let names: Vec<String> = SYSTEM_GLOBALS
+        .iter()
+        .map(|var| format!(" {};", var.name))
+        .chain(std::iter::once(" end_sys_globals;".to_owned()))
+        .chain(SYSTEM_FIELDS.iter().map(|var| format!(" {};", var.name)))
+        .chain(std::iter::once(" end_sys_fields;".to_owned()))
+        .collect();
+    for (line, name) in lines.iter().zip(&names) {
+        assert!(line.ends_with(name.as_str()), "{line} is not {name}");
+    }
+    let fields = lines.iter().skip(SYSTEM_GLOBALS.len() + 1);
+    assert!(
+        fields
+            .take(SYSTEM_FIELDS.len())
+            .all(|line| line.starts_with('.'))
+    );
+    assert!(text.contains("\nfloat time;\n"), "a global with its type");
+    assert!(
+        text.contains("\n.vector origin;\n"),
+        "a field with its type"
+    );
+    assert!(text.contains("\n.void() think;\n"), "a function field");
+}
 
 // spec EDICT-2.1: each named system global is the table's row, in slot order
 // spec EDICT-3.1: and each named system field
