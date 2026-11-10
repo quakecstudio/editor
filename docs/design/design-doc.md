@@ -336,6 +336,7 @@ Phases run in order and a gate must pass before the next phase starts. Dates sta
 | Agent invents builtins or semantics | Broken mods, lost trust | Engine-target database in context; nothing is done without a clean compile and passing tests |
 | No redistributable test assets | Weak CI | Open asset set for CI; user's own data for local runs |
 | Our Rust preview host is a whole engine on the MVP path | MVP slips; movement, rendering or mods behave differently than in the engines players use | Port from id's source with specs; server simulation compared frame by frame with id's engine as an oracle, rendering and sound within stated tolerances; renderer shared with the map editor |
+| Performance is measured on the reference Mac alone | Save-to-game, frame time or typing latency is over budget on Windows or Linux, found only at the MVP demo | The same budgets run on ref-windows and ref-linux in the MVP demo and the MVP performance report; the weekly Linux CI benchmark holds the editor rows to the 10% regression rule |
 
 **Open questions**
 
