@@ -3280,6 +3280,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-diff"
+version = "2026.10.0"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
 name = "qs-differential"
 version = "2026.10.0"
 dependencies = [
@@ -3306,6 +3313,7 @@ dependencies = [
  "eframe",
  "egui",
  "proptest",
+ "qs-diff",
 ]
 
 [[package]]
@@ -3496,6 +3504,7 @@ name = "qs-workbench"
 version = "2026.10.0"
 dependencies = [
  "interprocess",
+ "proptest",
  "qc-builtins",
  "qc-codegen",
  "qc-edict",
@@ -3509,6 +3518,7 @@ dependencies = [
  "qs-bridge",
  "qs-bsp",
  "qs-commands",
+ "qs-diff",
  "qs-engine",
  "qs-install",
  "qs-pak",

@@ -8,7 +8,11 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | --- | --- |
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
 | [`compile`](#compile) | Compiles the open project and says whether it is clean, with its error counts. |
+| [`edit.accept`](#editaccept) | Accepts staged hunks: their lines stay in the editor's text, unsaved, once each hunk of their file is decided. |
+| [`edit.apply`](#editapply) | Stages a change to several files as hunks to accept or reject one by one; the project is checked with them, and nothing is written to disk. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
+| [`edit.reject`](#editreject) | Rejects staged hunks: the lines they replaced come back, byte for byte. |
+| [`edit.staged`](#editstaged) | Lists the staged hunks waiting to be accepted or rejected. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
 | [`engine.builtins`](#enginebuiltins) | Lists an engine's builtins for a module kind, each with its number or engine name, QuakeC name, signature and extensions; the open project's engine and server QuakeC when none is named. |
 | [`engine.console`](#engineconsole) | Runs a command in the running game's console and answers the lines it printed. |
@@ -93,9 +97,146 @@ Parameters:
 }
 ```
 
+## `edit.accept`
+
+Accepts staged hunks: their lines stay in the editor's text, unsaved, once each hunk of their file is decided.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "HunkId": {
+      "description": "A staged hunk's number, unique while the workbench is open.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `edit.accept` and `edit.reject`.",
+  "properties": {
+    "hunks": {
+      "description": "The hunks, by number.",
+      "items": {
+        "$ref": "#/$defs/HunkId"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "hunks"
+  ],
+  "title": "HunksParams",
+  "type": "object"
+}
+```
+
+## `edit.apply`
+
+Stages a change to several files as hunks to accept or reject one by one; the project is checked with them, and nothing is written to disk.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "ProposedFile": {
+      "additionalProperties": false,
+      "description": "One file's proposed text, as `edit.apply` takes it.",
+      "properties": {
+        "path": {
+          "description": "The file; one not in the project, or not on disk, is a new file.",
+          "type": "string"
+        },
+        "text": {
+          "description": "Its whole new text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "text"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `edit.apply`.",
+  "properties": {
+    "files": {
+      "description": "Each file's proposed text.",
+      "items": {
+        "$ref": "#/$defs/ProposedFile"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "files"
+  ],
+  "title": "ApplyEditParams",
+  "type": "object"
+}
+```
+
 ## `edit.redo`
 
 Makes the most recently undone change again.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `edit.reject`
+
+Rejects staged hunks: the lines they replaced come back, byte for byte.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "HunkId": {
+      "description": "A staged hunk's number, unique while the workbench is open.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `edit.accept` and `edit.reject`.",
+  "properties": {
+    "hunks": {
+      "description": "The hunks, by number.",
+      "items": {
+        "$ref": "#/$defs/HunkId"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "hunks"
+  ],
+  "title": "HunksParams",
+  "type": "object"
+}
+```
+
+## `edit.staged`
+
+Lists the staged hunks waiting to be accepted or rejected.
 
 Parameters:
 

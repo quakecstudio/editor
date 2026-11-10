@@ -1,0 +1,15 @@
+[package]
+name = "qs-diff"
+description = "Line diffs: the shortest edit script between two lists of lines (Myers), the inline diff an editor shows and the hunks staged edits are reviewed by"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

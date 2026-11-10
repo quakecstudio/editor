@@ -37,6 +37,10 @@ const qs_workbench::preview::engine::ENGINE_CONSOLE
 const qs_workbench::preview::engine::ENGINE_INSPECT
 const qs_workbench::preview::engine::ENGINE_SCREENSHOT
 const qs_workbench::recent::RECENT_LIMIT
+const qs_workbench::staged::ACCEPT_HUNKS
+const qs_workbench::staged::APPLY_EDIT
+const qs_workbench::staged::REJECT_HUNKS
+const qs_workbench::staged::STAGED_EDITS
 const qs_workbench::testing::RUN_TESTS
 const qs_workbench::testing::SCENARIO_DIR
 const qs_workbench::testing::UNIT_PREFIX
@@ -57,6 +61,7 @@ enum qs_workbench::preview::debug::StopReason
 enum qs_workbench::preview::engine::Inspected
 enum qs_workbench::preview::game_files::GameState
 enum qs_workbench::preview::scenario::ScenarioRunError
+enum qs_workbench::staged::Decision
 enum qs_workbench::testing::TestKind
 enum qs_workbench::testing::TestRunError
 enum qs_workbench::testing::Verdict
@@ -170,6 +175,15 @@ field qs_workbench::preview::game_files::GameFiles.missing
 field qs_workbench::preview::game_files::GameFiles.state
 field qs_workbench::preview::scenario::ScenarioRun.images
 field qs_workbench::preview::scenario::ScenarioRun.report
+field qs_workbench::staged::ApplyEditParams.files
+field qs_workbench::staged::HunksParams.hunks
+field qs_workbench::staged::ProposedFile.path
+field qs_workbench::staged::ProposedFile.text
+field qs_workbench::staged::StagedHunk.added
+field qs_workbench::staged::StagedHunk.id
+field qs_workbench::staged::StagedHunk.line
+field qs_workbench::staged::StagedHunk.path
+field qs_workbench::staged::StagedHunk.removed
 field qs_workbench::testing::RunTestsParams.filter
 field qs_workbench::testing::RunTestsParams.game
 field qs_workbench::testing::TestResult.kind
@@ -339,6 +353,11 @@ fn qs_workbench::recent::RecentProjects::opened
 fn qs_workbench::recent::RecentProjects::projects
 fn qs_workbench::recent::RecentProjects::save
 fn qs_workbench::recent::recent_path
+fn qs_workbench::staged::HunkId::get
+fn qs_workbench::staged::Workbench::decide
+fn qs_workbench::staged::Workbench::stage
+fn qs_workbench::staged::Workbench::staged_hunks
+fn qs_workbench::staged::register_staged
 fn qs_workbench::testing::Workbench::run_tests
 fn qs_workbench::testing::register_tests
 fn qs_workbench::tools::register_tools
@@ -356,6 +375,7 @@ impl qs_workbench::preview::scenario::ScenarioRunError: From<ClientError>
 impl qs_workbench::preview::scenario::ScenarioRunError: From<PreviewError>
 impl qs_workbench::preview::scenario::ScenarioRunError: fmt::Display
 impl qs_workbench::preview::scenario::ScenarioRunError: std::error::Error
+impl qs_workbench::staged::HunkId: fmt::Display
 impl qs_workbench::testing::TestRunError: std::error::Error
 impl qs_workbench::testing::TestRunError: std::fmt::Display
 impl qs_workbench::tools::EngineBuiltinsError: std::error::Error
@@ -368,6 +388,7 @@ mod qs_workbench::preview::engine
 mod qs_workbench::preview::entities
 mod qs_workbench::preview::game_files
 mod qs_workbench::preview::scenario
+mod qs_workbench::staged
 mod qs_workbench::testing
 mod qs_workbench::tools
 mod qs_workbench::vm_run
@@ -425,6 +446,11 @@ struct qs_workbench::preview::entities::Selected
 struct qs_workbench::preview::game_files::GameFiles
 struct qs_workbench::preview::scenario::ScenarioRun
 struct qs_workbench::recent::RecentProjects
+struct qs_workbench::staged::ApplyEditParams
+struct qs_workbench::staged::HunkId
+struct qs_workbench::staged::HunksParams
+struct qs_workbench::staged::ProposedFile
+struct qs_workbench::staged::StagedHunk
 struct qs_workbench::testing::RunTestsParams
 struct qs_workbench::testing::TestResult
 struct qs_workbench::testing::TestRun
@@ -441,6 +467,8 @@ trait qs_workbench::commands::HasWorkbench
 trait qs_workbench::preview::HasPreview
 type qs_workbench::commands::HasWorkbench::Loader
 use qs_workbench::* = crate::commands::*
+use qs_workbench::ACCEPT_HUNKS = crate::staged::ACCEPT_HUNKS
+use qs_workbench::APPLY_EDIT = crate::staged::APPLY_EDIT
 use qs_workbench::BREAKPOINT = crate::preview::BREAKPOINT
 use qs_workbench::BreakpointParams = crate::preview::BreakpointParams
 use qs_workbench::CHOOSE_GAME = crate::preview::CHOOSE_GAME
@@ -454,6 +482,7 @@ use qs_workbench::Config = qc_ide::Config
 use qs_workbench::ConsoleLine = crate::preview::ConsoleLine
 use qs_workbench::ConsoleParams = crate::preview::ConsoleParams
 use qs_workbench::DOCK = crate::preview::DOCK
+use qs_workbench::Decision = crate::staged::Decision
 use qs_workbench::DefKind = qc_ide::DefKind
 use qs_workbench::Diagnostic = qc_ide::Diagnostic
 use qs_workbench::Dialect = qc_project::Dialect
@@ -466,6 +495,7 @@ use qs_workbench::HasPreview = crate::preview::HasPreview
 use qs_workbench::Highlight = qc_ide::Highlight
 use qs_workbench::HighlightKind = qc_ide::HighlightKind
 use qs_workbench::Hover = qc_ide::Hover
+use qs_workbench::HunkId = crate::staged::HunkId
 use qs_workbench::Loader = qc_project::Loader
 use qs_workbench::Modifier = qc_ide::Modifier
 use qs_workbench::Modifiers = qc_ide::Modifiers
@@ -483,6 +513,7 @@ use qs_workbench::PreviewConfig = crate::preview::PreviewConfig
 use qs_workbench::PreviewError = crate::preview::PreviewError
 use qs_workbench::PreviewStatus = crate::preview::PreviewStatus
 use qs_workbench::RECENT_LIMIT = crate::recent::RECENT_LIMIT
+use qs_workbench::REJECT_HUNKS = crate::staged::REJECT_HUNKS
 use qs_workbench::RELOAD = crate::preview::RELOAD
 use qs_workbench::RESTART = crate::preview::RESTART
 use qs_workbench::RESUME = crate::preview::RESUME
@@ -496,6 +527,7 @@ use qs_workbench::RunTestsParams = crate::testing::RunTestsParams
 use qs_workbench::SCENARIO_RUN = crate::preview::SCENARIO_RUN
 use qs_workbench::SELECT = crate::preview::SELECT
 use qs_workbench::SET_FIELD = crate::preview::SET_FIELD
+use qs_workbench::STAGED_EDITS = crate::staged::STAGED_EDITS
 use qs_workbench::STEP = crate::preview::STEP
 use qs_workbench::STEP_BY = crate::preview::STEP_BY
 use qs_workbench::STOP = crate::preview::STOP
@@ -505,6 +537,7 @@ use qs_workbench::SelectedEntity = crate::preview::SelectedEntity
 use qs_workbench::SetFieldParams = crate::preview::SetFieldParams
 use qs_workbench::Severity = qc_ide::Severity
 use qs_workbench::Span = qc_ide::Span
+use qs_workbench::StagedHunk = crate::staged::StagedHunk
 use qs_workbench::StepBy = crate::preview::StepBy
 use qs_workbench::StepByParams = crate::preview::StepByParams
 use qs_workbench::Symbol = qc_ide::Symbol
@@ -528,6 +561,7 @@ use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
+use qs_workbench::register_staged = crate::staged::register_staged
 use qs_workbench::register_tests = crate::testing::register_tests
 use qs_workbench::register_vm = crate::vm_run::register_vm
 use qs_workbench::scenario = crate::preview::scenario
@@ -536,6 +570,7 @@ variant qs_workbench::CheckAfterTyping::OnTheFrame
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
 variant qs_workbench::WorkbenchError::NoFile
+variant qs_workbench::WorkbenchError::NoHunk
 variant qs_workbench::WorkbenchError::NoProject
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Project
@@ -588,6 +623,8 @@ variant qs_workbench::preview::scenario::ScenarioRunError::Preview
 variant qs_workbench::preview::scenario::ScenarioRunError::Read
 variant qs_workbench::preview::scenario::ScenarioRunError::RunRoot
 variant qs_workbench::preview::scenario::ScenarioRunError::Write
+variant qs_workbench::staged::Decision::Accept
+variant qs_workbench::staged::Decision::Reject
 variant qs_workbench::testing::TestKind::Scenario
 variant qs_workbench::testing::TestKind::Unit
 variant qs_workbench::testing::TestRunError::Build

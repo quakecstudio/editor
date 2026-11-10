@@ -9,6 +9,8 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The inline diff's edit script, shared with the staged edits of qs-workbench.
+qs-diff = { workspace = true }
 egui = { workspace = true }
 
 [dev-dependencies]
