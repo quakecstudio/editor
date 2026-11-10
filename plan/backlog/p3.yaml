@@ -583,6 +583,52 @@ issues:
   - 'Tests place the IDE on a monitor right of the primary, left of it (negative x) and on the primary, each docking beside the IDE when there is room and overlapping its corner when there is not'
   verify:
   - cargo test -p qs-workbench -p quakec-studio
+- key: P3-43
+  title: Make the nightly Differential finish within the runners' six hours
+  labels:
+  - repo
+  - area:compiler
+  - type:test
+  size: S
+  reqs:
+  - COMP-8
+  - QA-1
+  summary: |
+    Found by the Phase 3 gate review (#106). The scheduled Differential workflow on main has not passed since 2026-11-02 (run 41448503652): on 2026-11-07, 11-08 and 11-09 (runs 42367881302, 42476322236, 42625421865) `Per-function differential (crmod7)` and two of the four `Per-function differential (arcane-dimensions, shard k/4)` jobs ran for six hours and were cancelled at the hosted runners' limit, so `Per-function differential (arcane-dimensions, coverage)` was skipped and DIFF-15.6's bar was never judged on either codebase. #743 sharded Arcane Dimensions so that the nightly could pass; it still does not. Every other job of those runs passed, apart from a 504 on a download in 42476322236's swab job.
+  environment: |
+    main at 92c3276; .github/workflows/differential.yml (the `functions` and Arcane Dimensions shard jobs, `timeout-minutes: 360`), xtask/src/compiler_diff.rs (`--functions`, `--shard k/n`, `--merge`)
+  depends: []
+  deliverable:
+  - '.github/workflows/differential.yml and xtask/src/compiler_diff.rs: crmod7''s per-function differential sharded as Arcane Dimensions'' is, with its own coverage job, and the shard counts of both set from measured job times so that each job ends well inside six hours'
+  - 'docs/ci.md: the shard counts and the job times they were set from'
+  acceptance:
+  - 'A scheduled or dispatched Differential run on main passes with every job completed, none cancelled, and both coverage jobs holding DIFF-15.6''s bar (crmod7 at its accepted 87.7%), linked in the PR'
+  verify:
+  - The Differential workflow run on main
+- key: P3-44
+  title: Keep the chosen Quake folder and open the files guide on every OS
+  labels:
+  - L7-ui
+  - area:preview
+  - type:feature
+  size: S
+  reqs:
+  - PLAT-8
+  - QA-10
+  summary: |
+    Found by the Phase 3 gate review (#106). P3-21's deliverable asks for the guide to the game's files "also reachable from settings". On main (92c3276) it opens when Play finds no game, and from File, Quake Files only on macOS (apps/desktop/src/menu.rs): on Windows and Linux, whose title bar has no menu entry for it, a user whose game plays cannot open it again to choose another folder. PR #779 also recorded a follow-up it did not file: the chosen folder lasts only until the app closes, so the guide asks again at the next Play after every restart when no install is detected.
+  environment: |
+    main at 92c3276; apps/desktop/src/game_guide.rs, apps/desktop/src/menu.rs, apps/desktop/src/shell.rs (`show_game_guide`), crates/qs-workbench (`preview.choose_game`), crates/qs-settings
+  depends:
+  - P3-21
+  deliverable:
+  - 'apps/desktop: the guide opened from the app''s own title bar on Windows and Linux as File, Quake Files opens it on macOS'
+  - 'crates/qs-settings and apps/desktop: the folder `preview.choose_game` accepts kept as a user setting and read at the next start, so Play finds it with no guide'
+  acceptance:
+  - 'A UI test opens the guide from the title bar on the non-macOS shell'
+  - 'A test chooses a playable folder, restarts the workbench from the saved settings and finds the game without the guide; an unplayable or vanished saved folder is reported as missing, not used'
+  verify:
+  - cargo test -p quakec-studio -p qs-workbench -p qs-settings
 - key: P3-18
   title: Phase 3 gate review
   labels:
@@ -606,6 +652,8 @@ issues:
   - P3-40
   - P3-41
   - P3-42
+  - P3-43
+  - P3-44
   - P3-22
   - P3-23
   - P3-24
