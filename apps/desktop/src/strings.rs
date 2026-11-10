@@ -75,6 +75,34 @@ pub enum Text {
     Paused,
     /// The toolbar after a reload failed.
     ReloadFailed,
+    /// The first-run guide's heading (P3-21).
+    GameGuide,
+    /// The guide when the original registered game is found.
+    GameFound,
+    /// The guide when only the shareware episode is found.
+    GameSharewareOnly,
+    /// The guide when only the 2021 rerelease is found.
+    GameRereleaseOnly,
+    /// The guide when no game data is found.
+    GameMissing,
+    /// Before the files the chosen folder lacks.
+    GameLacks,
+    /// How to get the files on a Mac.
+    GameHowMac,
+    /// How to get the files on Windows and Linux.
+    GameHowDesktop,
+    /// Which stores sell only the rerelease.
+    GameStores,
+    /// That the files are not copied.
+    GameInPlace,
+    /// The guide's folder picker button.
+    ChooseGameFolder,
+    /// The guide's folder picker's title.
+    ChooseGameTitle,
+    /// The guide's button that closes it.
+    NotNow,
+    /// File, Quake Files: the menu item that opens the guide.
+    GameFilesMenu,
     /// The notice before a reload that would reset values (P3-10), before their list.
     WouldReset,
     /// The notice's button that reloads all the same.
@@ -247,7 +275,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 118] = [
+    pub const ALL: [Self; 132] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -282,6 +310,20 @@ impl Text {
         Self::Resume,
         Self::Paused,
         Self::ReloadFailed,
+        Self::GameGuide,
+        Self::GameFound,
+        Self::GameSharewareOnly,
+        Self::GameRereleaseOnly,
+        Self::GameMissing,
+        Self::GameLacks,
+        Self::GameHowMac,
+        Self::GameHowDesktop,
+        Self::GameStores,
+        Self::GameInPlace,
+        Self::ChooseGameFolder,
+        Self::ChooseGameTitle,
+        Self::NotNow,
+        Self::GameFilesMenu,
         Self::WouldReset,
         Self::ReloadAnyway,
         Self::FilterEntities,
@@ -406,6 +448,26 @@ impl Text {
             Self::Resume => "Resume",
             Self::Paused => "Paused",
             Self::ReloadFailed => "The reload failed; see the Console",
+            Self::GameGuide => "Your Quake files",
+            Self::GameFound => "Found Quake. Play reads it where it is.",
+            Self::GameSharewareOnly => {
+                "Only the shareware episode is here. Play works on its maps; the rest of the game needs id1/pak1.pak."
+            }
+            Self::GameRereleaseOnly => {
+                "Only the 2021 rerelease is here. Play needs the original game's id1 folder."
+            }
+            Self::GameMissing => "No Quake files were found.",
+            Self::GameLacks => "Missing:",
+            Self::GameHowMac => {
+                "On a Mac: download GOG's Windows installer and extract it with innoextract, or download the game with steamcmd. Then choose the folder."
+            }
+            Self::GameHowDesktop => "Install Quake from Steam or GOG, then choose its folder.",
+            Self::GameStores => "The Epic Games Store and Game Pass sell only the rerelease.",
+            Self::GameInPlace => "The files are read where they are, never copied.",
+            Self::ChooseGameFolder => "Choose folder",
+            Self::ChooseGameTitle => "Choose your Quake folder",
+            Self::NotNow => "Not now",
+            Self::GameFilesMenu => "Quake Files\u{2026}",
             Self::WouldReset => "Reloading would reset",
             Self::ReloadAnyway => "Reload anyway",
             Self::FilterEntities => "Filter by classname or number",

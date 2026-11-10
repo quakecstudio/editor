@@ -40,13 +40,13 @@ pub use crate::editing::{Change, Renamed};
 pub use crate::preview::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
     ScenarioRunParams, StepBy, StepByParams, UNWATCH, UnwatchParams, WATCH, WatchParams, debug,
-    dock, scenario,
+    dock, game_files, scenario,
 };
 pub use crate::preview::{
-    ConsoleLine, HasPreview, OnLoss, PAUSE, PICK, PLAY, POLL, PickParams, PlayParams, PlayState,
-    Preview, PreviewConfig, PreviewError, PreviewStatus, RELOAD, RESTART, RESUME, ReloadParams,
-    SELECT, SET_FIELD, STEP, STOP, SelectParams, SelectedEntity, SetFieldParams, entities,
-    register_preview,
+    CHOOSE_GAME, ChooseGameParams, ConsoleLine, GAME, HasPreview, OnLoss, PAUSE, PICK, PLAY, POLL,
+    PickParams, PlayParams, PlayState, Preview, PreviewConfig, PreviewError, PreviewStatus, RELOAD,
+    RESTART, RESUME, ReloadParams, SELECT, SET_FIELD, STEP, STOP, SelectParams, SelectedEntity,
+    SetFieldParams, entities, register_preview,
 };
 pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
 use qc_project::{ProjectError, normalize};

@@ -20,6 +20,7 @@ mod editor;
 mod entities;
 mod fallback;
 mod finder;
+mod game_guide;
 pub mod icons;
 pub mod keymap;
 pub mod map_view;
@@ -117,6 +118,7 @@ impl App {
             for choice in menu.chosen() {
                 match choice {
                     menu::MenuChoice::OpenFolder => self.shell.open_folder(),
+                    menu::MenuChoice::GameFiles => self.shell.show_game_guide(),
                     menu::MenuChoice::Toggle(panel) => {
                         if let Err(error) = self.shell.toggle(panel) {
                             tracing::warn!(%error, "panel toggle failed");

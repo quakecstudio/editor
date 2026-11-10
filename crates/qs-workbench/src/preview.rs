@@ -27,6 +27,7 @@ use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
 pub mod debug;
 pub mod dock;
 pub mod entities;
+pub mod game_files;
 pub mod scenario;
 
 use debug::{Debugger, Location, StopReason};
@@ -1427,6 +1428,69 @@ impl<C: HasPreview + 'static> Command<C> for ScenarioRunCommand {
     }
 }
 
+/// The id of the command that says what game data the preview can play (P3-21).
+pub const GAME: &str = "preview.game";
+/// The id of the command that chooses the game folder the preview plays from (P3-21).
+pub const CHOOSE_GAME: &str = "preview.choose_game";
+
+/// `preview.game`: what the configured game folder, or the first install found, holds.
+struct GameCommand;
+
+impl<C: HasPreview + 'static> Command<C> for GameCommand {
+    const ID: &'static str = GAME;
+    const SUMMARY: &'static str = "Says what game data the preview plays from: the chosen \
+        folder, or the first install found, as found, shareware only, rerelease only or missing, \
+        with the files it lacks.";
+    type Params = NoParams;
+    type Output = game_files::GameFiles;
+    type Error = PreviewError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        NoParams {}: NoParams,
+    ) -> Result<Outcome<game_files::GameFiles, C>, PreviewError> {
+        let (_, preview) = context.workbench_and_preview();
+        let files = game_files::GameFiles::check(preview.config.game.as_deref());
+        Ok(Outcome::outside_history(files))
+    }
+}
+
+/// The parameters of `preview.choose_game`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ChooseGameParams {
+    /// The folder: a store's install, a steamcmd download, an innoextract output, or one
+    /// holding `id1`.
+    pub path: PathBuf,
+}
+
+/// `preview.choose_game`: the folder Play reads the game from, read in place; kept only when
+/// it can be played.
+struct ChooseGameCommand;
+
+impl<C: HasPreview + 'static> Command<C> for ChooseGameCommand {
+    const ID: &'static str = CHOOSE_GAME;
+    const SUMMARY: &'static str = "Chooses the folder the preview reads the game from, in \
+        place, and says what it holds; a folder that cannot be played is not kept.";
+    type Params = ChooseGameParams;
+    type Output = game_files::GameFiles;
+    type Error = PreviewError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: ChooseGameParams,
+    ) -> Result<Outcome<game_files::GameFiles, C>, PreviewError> {
+        let (_, preview) = context.workbench_and_preview();
+        let files = game_files::GameFiles::check(Some(&params.path));
+        if files.state.plays() {
+            preview.config.game = Some(params.path);
+        }
+        Ok(Outcome::outside_history(files))
+    }
+}
+
 /// Registers the `preview.*` commands and `scenario.run`.
 ///
 /// # Errors
@@ -1444,6 +1508,8 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(ControlCommand::<PollControl>(core::marker::PhantomData))?;
     registry.register(ReloadCommand)?;
     registry.register(ScenarioRunCommand)?;
+    registry.register(GameCommand)?;
+    registry.register(ChooseGameCommand)?;
     registry.register(SelectCommand)?;
     registry.register(PickCommand)?;
     registry.register(SetFieldCommand)?;

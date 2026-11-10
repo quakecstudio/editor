@@ -30,13 +30,14 @@ use qs_layout::{
 use qs_render::{Camera, MapMesh};
 use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
+use qs_workbench::game_files::GameFiles;
 use qs_workbench::{
-    AtParams, CLOSE_FILE, COMPLETE, Candidate, CloseFileParams, Config, DEFINITION, DOCK,
-    EntryKind, FsLoader, HOVER, HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT,
-    OnLoss, OpenFile, OpenFileParams, OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams,
-    PlayState, Preview, PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME,
-    RecentProjects, ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE,
-    UpdateFileParams, Workbench,
+    AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, ChooseGameParams, CloseFileParams,
+    Config, DEFINITION, DOCK, EntryKind, FsLoader, GAME, HOVER, HasPreview, HasWorkbench,
+    HoverInfo, OPEN_FILE, OPEN_PROJECT, OnLoss, OpenFile, OpenFileParams, OpenProjectParams, PAUSE,
+    PLAY, POLL, Place, PlayParams, PlayState, Preview, PreviewConfig, PreviewStatus, REFERENCES,
+    RELOAD, RENAME, RESTART, RESUME, RecentProjects, ReloadParams, RenameParams, SAVE_FILE, STEP,
+    STOP, SaveFileParams, UPDATE_FILE, UpdateFileParams, Workbench,
 };
 use qs_workbench::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, STEP_BY, StepByParams, UNWATCH,
@@ -49,6 +50,7 @@ use crate::editor::{Editor, Popup, Request};
 use crate::entities::{self, EntityAction, Outliner, Properties};
 use crate::fallback::{SystemFonts, families};
 use crate::finder::FileFinder;
+use crate::game_guide::{self, Guide, GuideAction};
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
 use crate::map_view::{self, MapView};
@@ -159,6 +161,8 @@ pub struct Shell {
     focus_applied: u64,
     /// The last play-loop command's error, shown on the toolbar until the next one.
     preview_error: Option<String>,
+    /// Whether the guide to the game's files is shown (P3-21), and what it last found.
+    guide: (Guide, Option<GameFiles>),
     /// The Entities outliner's filter.
     outliner: Outliner,
     /// The Properties panel's edits.
@@ -221,6 +225,7 @@ impl Shell {
             covered: None,
             focus_applied: layout.focus_requests,
             preview_error: None,
+            guide: (Guide::Hidden, None),
             outliner: Outliner::default(),
             properties: Properties::default(),
             debug_input: DebugInput::default(),
@@ -521,6 +526,7 @@ impl Shell {
         let pending = self.pending_focus();
         self.toolbar(ui);
         self.reset_notice(ui);
+        self.game_guide(ui);
         self.status_bar(ui);
         for panel in [Panel::Left, Panel::Right, Panel::Bottom] {
             self.panel(ui, panel, pending == Some(Focus::Panel(panel)));
@@ -709,7 +715,49 @@ impl Shell {
                 .execute(id, serde_json::json!({}))
                 .map_err(ShellError::from)
         };
+        let failed = result.is_err();
         self.preview_error = result.err().map(|error| error.to_string());
+        // P3-21: Play that failed for want of the game opens the guide to its files.
+        if failed && id == PLAY {
+            let files: Option<GameFiles> = self.run(GAME, &serde_json::json!({}));
+            if let Some(files) = files {
+                self.guide = (Guide::for_files(&files), Some(files));
+            }
+        }
+    }
+
+    /// Opens the guide to the game's files (P3-21), from the File menu: what the game folder,
+    /// or the first install found, holds and lacks, and the folder picker.
+    pub fn show_game_guide(&mut self) {
+        let files: Option<GameFiles> = self.run(GAME, &serde_json::json!({}));
+        self.guide = (Guide::Shown, files);
+    }
+
+    /// The guide to the game's files while it is shown: a chosen folder is read in place and
+    /// kept for Play when it plays (`preview.choose_game`), so Play works without a restart.
+    fn game_guide(&mut self, ui: &mut Ui) {
+        let (shown, Some(files)) = &self.guide else {
+            return;
+        };
+        match game_guide::window(ui.ctx(), &self.theme, *shown, files) {
+            Some(GuideAction::Close) => self.guide.0 = Guide::Hidden,
+            Some(GuideAction::ChooseFolder) => {
+                let picked = rfd::FileDialog::new()
+                    .set_title(Text::ChooseGameTitle.get())
+                    .pick_folder();
+                if let Some(path) = picked {
+                    let chosen: Option<GameFiles> =
+                        self.run(CHOOSE_GAME, &ChooseGameParams { path });
+                    if chosen.as_ref().is_some_and(|files| files.state.plays()) {
+                        self.preview_error = None;
+                    }
+                    if chosen.is_some() {
+                        self.guide.1 = chosen;
+                    }
+                }
+            }
+            None => {}
+        }
     }
 
     /// Runs what the outliner or the Properties panel asked for: a selection or a field's new
