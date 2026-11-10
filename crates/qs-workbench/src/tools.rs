@@ -4,6 +4,8 @@
 //! global definition of the open project, `engine.builtins`, an engine's builtin table, and
 //! `compile`, the project built with a verdict and counts the agent can act on.
 
+use std::path::PathBuf;
+
 use qc_engines::{BuiltinKey, Engine};
 use qc_project::ModuleKind;
 use qs_commands::{Command, Outcome, RegisterError, Registry};
@@ -18,6 +20,143 @@ pub const PROJECT_SYMBOLS: &str = "project.symbols";
 pub const ENGINE_BUILTINS: &str = "engine.builtins";
 /// The id of the command that compiles the open project and says whether it is clean.
 pub const COMPILE: &str = "compile";
+/// The id of the command that lists the open project's source files.
+pub const PROJECT_FILES: &str = "project.files";
+/// The id of the command that searches the open project's text.
+pub const PROJECT_SEARCH: &str = "project.search";
+
+/// The most matches `project.search` answers.
+pub const SEARCH_LIMIT: usize = 200;
+
+/// The parameters of `project.search`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectSearchParams {
+    /// The text to find.
+    pub text: String,
+    /// Whether case matters; it does not by default.
+    #[serde(default)]
+    pub case_sensitive: bool,
+}
+
+/// One line that holds the text searched for.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SearchMatch {
+    /// The file.
+    pub path: PathBuf,
+    /// The line, from 1.
+    pub line: usize,
+    /// The line's text, without its line ending.
+    pub text: String,
+}
+
+/// What `project.search` answers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SearchFound {
+    /// The lines found, by file and line, at most [`SEARCH_LIMIT`].
+    pub matches: Vec<SearchMatch>,
+    /// Whether there were more than these.
+    pub truncated: bool,
+}
+
+impl<L: qc_project::Loader> crate::Workbench<L> {
+    /// Every source file the open project compiles, in path order.
+    #[must_use]
+    pub fn project_files(&self) -> Vec<PathBuf> {
+        let mut files = self.host.files();
+        files.sort();
+        files
+    }
+
+    /// Every line of the project's files, their current text, holding `text`: the editor's
+    /// unsaved text where it has one. Lines are counted by line feeds.
+    pub fn search(&mut self, text: &str, case_sensitive: bool) -> SearchFound {
+        let needle = if case_sensitive {
+            text.to_owned()
+        } else {
+            text.to_lowercase()
+        };
+        let mut matches = Vec::new();
+        let mut truncated = false;
+        for path in self.project_files() {
+            let Some(bytes) = self.host.text(&path) else {
+                continue;
+            };
+            let content = String::from_utf8_lossy(&bytes);
+            for (index, line) in content.lines().enumerate() {
+                let haystack = if case_sensitive {
+                    line.to_owned()
+                } else {
+                    line.to_lowercase()
+                };
+                if needle.is_empty() || !haystack.contains(&needle) {
+                    continue;
+                }
+                if matches.len() == SEARCH_LIMIT {
+                    truncated = true;
+                    break;
+                }
+                matches.push(SearchMatch {
+                    path: path.clone(),
+                    line: index.saturating_add(1),
+                    text: line.to_owned(),
+                });
+            }
+            if truncated {
+                break;
+            }
+        }
+        SearchFound { matches, truncated }
+    }
+}
+
+/// `project.files`: the open project's files.
+struct ProjectFiles;
+
+impl<C: HasWorkbench + 'static> Command<C> for ProjectFiles {
+    const ID: &'static str = PROJECT_FILES;
+    const SUMMARY: &'static str = "Lists every source file the open project compiles, by path.";
+    type Params = qs_commands::NoParams;
+    type Output = Vec<PathBuf>;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        _params: qs_commands::NoParams,
+    ) -> Result<Outcome<Vec<PathBuf>, C>, WorkbenchError> {
+        let workbench = context.workbench();
+        if workbench.root().is_none() {
+            return Err(WorkbenchError::NoProject);
+        }
+        Ok(Outcome::unchanged(workbench.project_files()))
+    }
+}
+
+/// `project.search`: the lines of the project that hold a text.
+struct ProjectSearch;
+
+impl<C: HasWorkbench + 'static> Command<C> for ProjectSearch {
+    const ID: &'static str = PROJECT_SEARCH;
+    const SUMMARY: &'static str = "Finds every line of the open project's files that holds a \
+        text, unsaved edits included, by file and line.";
+    type Params = ProjectSearchParams;
+    type Output = SearchFound;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: ProjectSearchParams,
+    ) -> Result<Outcome<SearchFound, C>, WorkbenchError> {
+        let workbench = context.workbench();
+        if workbench.root().is_none() {
+            return Err(WorkbenchError::NoProject);
+        }
+        let found = workbench.search(&params.text, params.case_sensitive);
+        Ok(Outcome::unchanged(found))
+    }
+}
 
 /// What `compile` answers: whether the compile is clean, its counts, and each module.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -274,7 +413,9 @@ pub fn register_tools<C: HasWorkbench + 'static>(
 ) -> Result<(), RegisterError> {
     registry.register(ProjectSymbols)?;
     registry.register(EngineBuiltinsCommand)?;
-    registry.register(CompileCommand)
+    registry.register(CompileCommand)?;
+    registry.register(ProjectFiles)?;
+    registry.register(ProjectSearch)
 }
 
 #[cfg(test)]

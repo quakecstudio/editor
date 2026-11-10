@@ -46,7 +46,9 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.watch`](#previewwatch) | Adds a watch, an expression read each time the game stops in a frame. |
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
+| [`project.files`](#projectfiles) | Lists every source file the open project compiles, by path. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
+| [`project.search`](#projectsearch) | Finds every line of the open project's files that holds a text, unsaved edits included, by file and line. |
 | [`project.symbols`](#projectsymbols) | Lists the open project's global definitions, functions, globals and fields, each with where its name is first written; a query keeps those whose name contains it. |
 | [`project.take_checked`](#projecttake_checked) | Takes the problems, symbols and highlighting the background check worked out for the latest edit, if it has finished; says whether anything changed. |
 | [`project.test`](#projecttest) | Builds the open project and runs its tests: each test_ function called alone in the VM over a mock engine, and each scenario under tests/ played in the server simulation, answering each test's verdict. |
@@ -1180,6 +1182,22 @@ Parameters:
 }
 ```
 
+## `project.files`
+
+Lists every source file the open project compiles, by path.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
 ## `project.open`
 
 Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src.
@@ -1201,6 +1219,36 @@ Parameters:
     "path"
   ],
   "title": "OpenProjectParams",
+  "type": "object"
+}
+```
+
+## `project.search`
+
+Finds every line of the open project's files that holds a text, unsaved edits included, by file and line.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `project.search`.",
+  "properties": {
+    "case_sensitive": {
+      "default": false,
+      "description": "Whether case matters; it does not by default.",
+      "type": "boolean"
+    },
+    "text": {
+      "description": "The text to find.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "title": "ProjectSearchParams",
   "type": "object"
 }
 ```

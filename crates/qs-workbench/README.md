@@ -58,7 +58,8 @@ an edit, so both commands run outside the edit history
   game folder given or the first install found, skipping them with no game; the result lists
   each test's kind, verdict and message, and the counts. The CLI's `quakec-ide test`, the
   palette and the agent run the same command.
-- The agent's tools (`tools` and `engine`, P4-03, AGT-2): `project.symbols`, `engine.builtins`
+- The agent's tools (`tools` and `engine`, P4-03, AGT-2): `project.symbols`, `project.files`,
+  `project.search` (the lines holding a text, unsaved edits included), `engine.builtins`
   and `compile`, the project built with whether it is clean and its counts; and over the
   running game, `engine.inspect` (edicts, one edict's fields, the globals or the stack),
   `engine.console` (a command and the lines it printed) and `engine.screenshot` (the frame

@@ -5,19 +5,31 @@ previews through the IDE's commands, and proposes its edits as staged hunks for 
 accept. The model is any `Model`: one that answers a transcript with tool calls or "finished".
 This crate is the runtime around it; the model providers come later (P4-07).
 
-A run (`run`):
+A run (`run`) gives the model what it needs to be productive on its first pass, and holds it
+to the result:
 
-1. records a checkpoint of the project (`checkpoint.create`), so it can be undone (AGT-4);
-2. gives the model the task and the tools of `AGENT_TOOLS` the registry has, and runs each
-   call through the command session, answering the result or the error;
-3. when the model says it is finished, checks the work itself: `compile` must be clean and
-   `project.test` must pass, unit tests and scenarios alike (AGT-5). If not, the model is told
-   why, one reason a line, and the run goes on;
-4. ends `Done`, or `NotDone` with the reasons, within `Limits::turns`, leaving its edits staged
-   (`edit.staged` in the report).
-
-The model's tools leave out what is the person's to do: accepting or rejecting hunks, saving
-files and restoring a checkpoint (PRIN-4).
+- **Every tool:** every command of the registry but `DENIED`. Denied are the person's decisions
+  (accepting or rejecting hunks, saving, restoring a checkpoint), writes around the staged
+  edits (`file.update`, `symbol.rename`) and the window's own controls (`view.*`, tabs, the
+  palette). The model can read and search the codebase (`project.files`, `project.search`,
+  `file.read`, the symbol tools), compile, test, run QuakeC in the VM, play scenarios and
+  drive the running game.
+- **A brief before the first turn:**
+  1. the runtime records a checkpoint (AGT-4);
+  2. it compiles the project and runs its tests;
+  3. it gives the model the task with the project's source files, its compile errors and its
+     failing tests, and the rules it works under (`SYSTEM`).
+- **Guardrails:**
+  - a relative path is taken from the project, and an edit outside it is refused;
+  - a tool's output longer than `RunConfig::output_limit` is cut, saying so;
+  - the run has at most `RunConfig::turns` turns.
+- **Done means done (AGT-5):** when the model says it is finished, the runtime compiles and runs
+  the tests itself. The run is done only when the compile is clean and every test, unit and
+  scenario, passes; otherwise the model is told why, each error with its place and each
+  failing test with its message, and goes on.
+- **Proposed, not applied (PRIN-4):** the run ends `Done` or `NotDone` with its edits staged
+  for review (`edit.staged` in the report). Nothing is written to disk, and the checkpoint
+  undoes everything.
 
 The model is Claude Code's and Zed's agents, whose loop calls tools until the model stops. The
 difference is the done criteria: here the runtime checks them and refuses a finish that does not
@@ -33,6 +45,10 @@ compile clean and pass its tests.
 project on disk:
 
 - a failing scenario never lets a run be marked done (the acceptance criterion);
+- the brief names the files and the failing tests, and the tools leave out the denied
+  commands;
+- the guardrails: an edit outside the project, a relative path, a cut output, compile errors
+  with their place;
 - a run told it is not done stages a fix, which the compile and tests read, and is then done,
   with its hunk proposed and the disk left alone;
 - calls outside its tools, and failing calls, are error results;

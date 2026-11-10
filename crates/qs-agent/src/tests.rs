@@ -18,7 +18,9 @@ use qs_commands::{Registry, Session};
 use qs_workbench::{Config, Workbench, register};
 use serde_json::{Value, json};
 
-use super::{AgentError, Limits, Message, Model, Outcome, Reply, ToolCall, ToolSpec, run, tools};
+use super::{
+    AgentError, Message, Model, Outcome, Reply, RunConfig, SYSTEM, ToolCall, ToolSpec, run, tools,
+};
 
 /// A model that answers with its script, in order, and then fails.
 struct Scripted {
@@ -36,7 +38,13 @@ impl Scripted {
 }
 
 impl Model for Scripted {
-    fn reply(&mut self, tools: &[ToolSpec], transcript: &[Message]) -> Result<Reply, String> {
+    fn reply(
+        &mut self,
+        system: &str,
+        tools: &[ToolSpec],
+        transcript: &[Message],
+    ) -> Result<Reply, String> {
+        assert_eq!(system, SYSTEM);
         assert!(tools.iter().any(|t| t.name == "compile"));
         self.seen.push(transcript.len());
         self.replies
@@ -126,9 +134,10 @@ fn a_failing_scenario_cannot_be_marked_done() {
     let (root, mut session) = project("scenario", FIXED);
     std::fs::create_dir_all(root.join("tests")).unwrap();
     std::fs::write(root.join("tests/start.scenario"), "map nomap\nframes 1\n").unwrap();
-    let limits = Limits {
+    let limits = RunConfig {
         turns: 3,
         test_params: json!({ "game": game(&root) }),
+        ..RunConfig::new(&root)
     };
     let mut model = Scripted::new(vec![finish(), finish(), finish()]);
     let report = run(
@@ -177,7 +186,7 @@ fn a_run_fixes_its_work_until_it_passes() {
         &mut session,
         &mut model,
         "make test_damage pass",
-        &Limits::default(),
+        &RunConfig::new(&root),
     )
     .unwrap();
     assert_eq!(
@@ -195,6 +204,15 @@ fn a_run_fixes_its_work_until_it_passes() {
         Message::User { text } if text.contains("test test_damage failed: damage is not 5")
     )));
     assert_eq!(model.seen, [1, 3, 5], "the model sees each answer");
+    let Message::User { text: brief } = &report.transcript[0] else {
+        panic!("the brief comes first");
+    };
+    assert!(brief.starts_with("Task: make test_damage pass"), "{brief}");
+    assert!(brief.contains("- weapons.qc"), "{brief}");
+    assert!(
+        brief.contains("the tests do not pass") && brief.contains("test test_damage failed"),
+        "{brief}"
+    );
 }
 
 // No spec statement: P4-06, PRIN-4. A call to a command that is not the agent's, such as
@@ -202,7 +220,7 @@ fn a_run_fixes_its_work_until_it_passes() {
 // result too; the model is still asked on
 #[test]
 fn calls_outside_the_tools_are_refused() {
-    let (_, mut session) = project("refused", FIXED);
+    let (root, mut session) = project("refused", FIXED);
     let mut model = Scripted::new(vec![
         calls(vec![
             ("edit.accept", json!({ "hunks": [0] })),
@@ -214,7 +232,13 @@ fn calls_outside_the_tools_are_refused() {
         ]),
         finish(),
     ]);
-    let report = run(&mut session, &mut model, "look around", &Limits::default()).unwrap();
+    let report = run(
+        &mut session,
+        &mut model,
+        "look around",
+        &RunConfig::new(&root),
+    )
+    .unwrap();
     let results: Vec<(&Value, bool)> = report
         .transcript
         .iter()
@@ -237,19 +261,36 @@ fn calls_outside_the_tools_are_refused() {
     assert!(results[1].1);
     assert!(!results[2].1);
     assert!(matches!(report.outcome, Outcome::Done { .. }));
-    assert!(tools(&session).iter().all(|t| t.name != "edit.accept"
-        && t.name != "file.save"
-        && t.name != "checkpoint.restore"));
+    let names: Vec<String> = tools(&session).into_iter().map(|t| t.name).collect();
+    for denied in [
+        "edit.accept",
+        "edit.reject",
+        "file.save",
+        "checkpoint.restore",
+        "file.update",
+        "symbol.rename",
+        "project.open",
+    ] {
+        assert!(!names.contains(&denied.to_owned()), "{denied} in {names:?}");
+    }
+    for tool in [
+        "project.files",
+        "project.search",
+        "symbol.references",
+        "vm.run",
+    ] {
+        assert!(names.contains(&tool.to_owned()), "{tool} not in {names:?}");
+    }
 }
 
 // No spec statement: P4-06. A model that never finishes ends not done when its turns run out;
 // a model that fails ends the run with its error
 #[test]
 fn turns_run_out_and_models_fail() {
-    let (_, mut session) = project("limits", FIXED);
-    let limits = Limits {
+    let (root, mut session) = project("limits", FIXED);
+    let limits = RunConfig {
         turns: 2,
-        ..Limits::default()
+        ..RunConfig::new(&root)
     };
     let looking = || calls(vec![("edit.staged", json!({}))]);
     let mut model = Scripted::new(vec![looking(), looking()]);
@@ -266,4 +307,72 @@ fn turns_run_out_and_models_fail() {
         run(&mut session, &mut silent, "anything", &limits),
         Err(AgentError::Model(why)) if why == "out of script"
     ));
+}
+
+// No spec statement: P4-06. A relative path is taken from the project; an edit outside the
+// project is refused before it runs; a long output is cut, saying so; a compile error is a
+// reason with its place
+#[test]
+fn the_guardrails_hold() {
+    let (root, mut session) = project("guards", FIXED);
+    let broken = "void(string e) error = #10;\nfloat() damage = { return nowhere; };\n";
+    let mut model = Scripted::new(vec![
+        calls(vec![
+            (
+                "edit.apply",
+                json!({ "files": [{ "path": "../outside.qc", "text": "float x;\n" }] }),
+            ),
+            ("file.read", json!({ "path": "weapons.qc" })),
+            ("project.search", json!({ "text": "damage" })),
+            (
+                "edit.apply",
+                json!({ "files": [{ "path": "weapons.qc", "text": broken }] }),
+            ),
+        ]),
+        finish(),
+    ]);
+    let config = RunConfig {
+        turns: 2,
+        output_limit: 60,
+        ..RunConfig::new(&root)
+    };
+    let report = run(&mut session, &mut model, "break it", &config).unwrap();
+    let results: Vec<(&Value, bool)> = report
+        .transcript
+        .iter()
+        .filter_map(|m| match m {
+            Message::Tool {
+                content, is_error, ..
+            } => Some((content, *is_error)),
+            _ => None,
+        })
+        .collect();
+    assert!(results[0].1, "an edit outside the project is refused");
+    assert!(
+        results[0]
+            .0
+            .as_str()
+            .unwrap()
+            .contains("outside the project")
+    );
+    assert!(!root.parent().unwrap().join("outside.qc").exists());
+    assert!(!results[2].1, "a relative path is the project's");
+    assert!(
+        results[2]
+            .0
+            .as_str()
+            .unwrap()
+            .contains("[cut: the output was"),
+        "{}",
+        results[2].0
+    );
+    let Outcome::NotDone { reasons } = &report.outcome else {
+        panic!("{:?}", report.outcome);
+    };
+    assert!(
+        reasons
+            .iter()
+            .any(|r| r.starts_with("error at ") && r.contains("weapons.qc:2")),
+        "{reasons:?}"
+    );
 }
