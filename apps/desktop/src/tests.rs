@@ -559,9 +559,17 @@ fn the_palette_keys_move_go_back_and_close() {
         .palette
         .prompt_mut()
         .map(|p| p.id.as_str().to_owned());
+    let mut ids: Vec<String> = app
+        .shell()
+        .session()
+        .registry()
+        .commands()
+        .map(|c| c.id().as_str().to_owned())
+        .collect();
+    ids.sort();
     assert_eq!(
         prompt.as_deref(),
-        Some("file.close"),
+        ids.get(3).map(String::as_str),
         "the fourth command in id order"
     );
     frame_with(&ctx, &mut app, vec![key(egui::Key::Escape, none)]);
