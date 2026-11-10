@@ -48,6 +48,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
 | [`project.files`](#projectfiles) | Lists every source file the open project compiles, by path. |
+| [`project.info`](#projectinfo) | Describes the open project: its directory and each module's kind, dialect, target engine and output. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
 | [`project.search`](#projectsearch) | Finds every line of the open project's files that holds a text, unsaved edits included, by file and line. |
 | [`project.symbols`](#projectsymbols) | Lists the open project's global definitions, functions, globals and fields, each with where its name is first written; a query keeps those whose name contains it. |
@@ -1211,6 +1212,22 @@ Parameters:
 ## `project.files`
 
 Lists every source file the open project compiles, by path.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `project.info`
+
+Describes the open project: its directory and each module's kind, dialect, target engine and output.
 
 Parameters:
 

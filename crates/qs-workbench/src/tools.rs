@@ -24,6 +24,8 @@ pub const COMPILE: &str = "compile";
 pub const PROJECT_FILES: &str = "project.files";
 /// The id of the command that searches the open project's text.
 pub const PROJECT_SEARCH: &str = "project.search";
+/// The id of the command that describes the open project's modules.
+pub const PROJECT_INFO: &str = "project.info";
 
 /// The most matches `project.search` answers.
 pub const SEARCH_LIMIT: usize = 200;
@@ -59,7 +61,96 @@ pub struct SearchFound {
     pub truncated: bool,
 }
 
+/// A module's kind, as `project.info` names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum KindName {
+    /// Server QuakeC, `progs.dat`.
+    Ssqc,
+    /// Client QuakeC, `csprogs.dat`.
+    Csqc,
+    /// Menu QuakeC, `menu.dat`.
+    Menuqc,
+}
+
+impl From<ModuleKind> for KindName {
+    fn from(kind: ModuleKind) -> Self {
+        match kind {
+            ModuleKind::Ssqc => Self::Ssqc,
+            ModuleKind::Csqc => Self::Csqc,
+            ModuleKind::Menuqc => Self::Menuqc,
+        }
+    }
+}
+
+/// A module's dialect, as `project.info` names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DialectName {
+    /// id's QuakeC, as id's `qcc` accepts it.
+    Vanilla,
+    /// FTEQCC's QuakeC.
+    Fteqcc,
+    /// GMQCC's QuakeC.
+    Gmqcc,
+}
+
+impl From<qc_syntax::Dialect> for DialectName {
+    fn from(dialect: qc_syntax::Dialect) -> Self {
+        match dialect {
+            qc_syntax::Dialect::Vanilla => Self::Vanilla,
+            qc_syntax::Dialect::Fteqcc => Self::Fteqcc,
+            qc_syntax::Dialect::Gmqcc => Self::Gmqcc,
+        }
+    }
+}
+
+/// One module of the open project, as `project.info` describes it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct ModuleInfo {
+    /// Its name (PRJ-2.4).
+    pub name: String,
+    /// What it is.
+    pub kind: KindName,
+    /// The dialect it is read in.
+    pub dialect: DialectName,
+    /// The id of the engine it targets (ENGT-3.5), which `engine.builtins` takes.
+    pub engine: String,
+    /// That engine's name.
+    pub engine_name: String,
+    /// Where its program is written.
+    pub output: PathBuf,
+}
+
+/// What `project.info` answers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct ProjectInfo {
+    /// The project's directory.
+    pub root: PathBuf,
+    /// Its modules, in the project file's order.
+    pub modules: Vec<ModuleInfo>,
+}
+
 impl<L: qc_project::Loader> crate::Workbench<L> {
+    /// The open project's directory and modules, `None` with no project.
+    pub fn project_info(&mut self) -> Option<ProjectInfo> {
+        let root = self.root()?.to_path_buf();
+        let modules = self
+            .host
+            .project_modules()
+            .into_iter()
+            .map(|module| ModuleInfo {
+                name: module.name.to_owned(),
+                kind: module.kind.into(),
+                dialect: module.dialect.into(),
+                engine: module.engine.id().to_owned(),
+                engine_name: module.engine.name().to_owned(),
+                output: module.output.to_path_buf(),
+            })
+            .collect();
+        Some(ProjectInfo { root, modules })
+    }
+
     /// Every source file the open project compiles, in path order.
     #[must_use]
     pub fn project_files(&self) -> Vec<PathBuf> {
@@ -130,6 +221,30 @@ impl<C: HasWorkbench + 'static> Command<C> for ProjectFiles {
             return Err(WorkbenchError::NoProject);
         }
         Ok(Outcome::unchanged(workbench.project_files()))
+    }
+}
+
+/// `project.info`: the open project's modules, with their dialects and engines.
+struct ProjectInfoCommand;
+
+impl<C: HasWorkbench + 'static> Command<C> for ProjectInfoCommand {
+    const ID: &'static str = PROJECT_INFO;
+    const SUMMARY: &'static str = "Describes the open project: its directory and each module's \
+        kind, dialect, target engine and output.";
+    type Params = qs_commands::NoParams;
+    type Output = ProjectInfo;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        _params: qs_commands::NoParams,
+    ) -> Result<Outcome<ProjectInfo, C>, WorkbenchError> {
+        let info = context
+            .workbench()
+            .project_info()
+            .ok_or(WorkbenchError::NoProject)?;
+        Ok(Outcome::outside_history(info))
     }
 }
 
@@ -415,6 +530,7 @@ pub fn register_tools<C: HasWorkbench + 'static>(
     registry.register(EngineBuiltinsCommand)?;
     registry.register(CompileCommand)?;
     registry.register(ProjectFiles)?;
+    registry.register(ProjectInfoCommand)?;
     registry.register(ProjectSearch)
 }
 

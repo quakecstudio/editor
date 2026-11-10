@@ -90,6 +90,10 @@ pub struct ModuleBuild<'a> {
     pub names: Vec<String>,
     /// The engine its target selects (ENGT-3.5), which its program must load (ENGT-3.12).
     pub engine: Engine,
+    /// Its kind: server, client or menu QuakeC.
+    pub kind: ModuleKind,
+    /// The dialect it is read in.
+    pub dialect: qc_syntax::Dialect,
 }
 
 /// Where a module comes from.
@@ -546,6 +550,8 @@ impl<L: Loader> AnalysisHost<L> {
                 input: &module.input,
                 names,
                 engine: module.engine,
+                kind: module.kind,
+                dialect: module.dialect,
             });
         }
         builds
