@@ -439,6 +439,21 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
     expect(frames > 0, "stopped, the stack has PlayerPreThink's frame")?;
+    // P3-16: the Debugger tab's watch and step, against the stopped frame.
+    let watched = client
+        .evaluate("self.health")
+        .map_err(|e| format!("evaluate: {e}"))?;
+    expect(
+        watched.pointer("/value/type") == Some(&json!("float")),
+        "a watch of self.health reads a float",
+    )?;
+    let stepped = client
+        .step(StepKind::Over)
+        .map_err(|e| format!("step over: {e}"))?;
+    expect(
+        !text_of(stepped.get("location").unwrap_or(&Value::Null), "function").is_empty(),
+        "a step over stops at a statement",
+    )?;
     client
         .clear_breakpoint(id)
         .map_err(|e| format!("breakpoint/clear: {e}"))?;
@@ -451,7 +466,10 @@ fn other_progs(client: &mut Client, progs: &Path, steps: &mut Vec<String>) -> Re
         text(&running.params, "state") == "running",
         "cleared and resumed, the game runs",
     )?;
-    steps.push("breakpoint/set, hit, inspect the stack and clear in client.qc".to_owned());
+    steps.push(
+        "breakpoint/set, hit, inspect the stack, watch, step over and clear in client.qc"
+            .to_owned(),
+    );
     Ok(())
 }
 
