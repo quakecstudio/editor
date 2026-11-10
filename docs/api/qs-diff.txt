@@ -1,0 +1,10 @@
+const qs_diff::MAX_EDITS
+enum qs_diff::Op
+field qs_diff::Hunk.new
+field qs_diff::Hunk.old
+fn qs_diff::hunks
+fn qs_diff::script
+struct qs_diff::Hunk
+variant qs_diff::Op::Delete
+variant qs_diff::Op::Equal
+variant qs_diff::Op::Insert

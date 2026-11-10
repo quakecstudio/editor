@@ -548,9 +548,18 @@ fn the_palette_keys_move_go_back_and_close() {
         )],
     );
     assert!(app.shell.palette.is_open(), "Cmd+Shift+P opens it");
+    // The first command in id order that asks for parameters, and how far down it is.
+    let mut infos: Vec<_> = app.shell().session().registry().commands().collect();
+    infos.sort_by(|a, b| a.id().as_str().cmp(b.id().as_str()));
+    let (downs, asking) = infos
+        .iter()
+        .enumerate()
+        .find(|(_, info)| !params::fields(info.params()).is_empty())
+        .map(|(index, info)| (index, info.id().as_str().to_owned()))
+        .unwrap();
     let none = egui::Modifiers::NONE;
     frame_with(&ctx, &mut app, vec![key(egui::Key::ArrowUp, none)]);
-    for _ in 0..3 {
+    for _ in 0..downs {
         frame_with(&ctx, &mut app, vec![key(egui::Key::ArrowDown, none)]);
     }
     frame_with(&ctx, &mut app, vec![key(egui::Key::Enter, none)]);
@@ -559,18 +568,10 @@ fn the_palette_keys_move_go_back_and_close() {
         .palette
         .prompt_mut()
         .map(|p| p.id.as_str().to_owned());
-    let mut ids: Vec<String> = app
-        .shell()
-        .session()
-        .registry()
-        .commands()
-        .map(|c| c.id().as_str().to_owned())
-        .collect();
-    ids.sort();
     assert_eq!(
         prompt.as_deref(),
-        ids.get(3).map(String::as_str),
-        "the fourth command in id order"
+        Some(asking.as_str()),
+        "the first command in id order that asks for parameters"
     );
     frame_with(&ctx, &mut app, vec![key(egui::Key::Escape, none)]);
     assert!(app.shell.palette.prompt_mut().is_none(), "back to the list");
