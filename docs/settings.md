@@ -12,3 +12,4 @@ and change them.
 | --- | --- | --- |
 | `appearance.theme` | `"dark"` | The colour theme: `dark` or `light`. |
 | `log.filter` | `"info"` | Which events the log records, as `RUST_LOG` directives (`info`, `info,qc_sema=debug`); `RUST_LOG` wins when it is set. |
+| `game.folder` | `null` | The folder Play reads the game from, in place, as the Quake files guide chose it; the first install found when unset. A folder that no longer holds a game is not used (P3-44). |

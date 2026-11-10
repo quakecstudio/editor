@@ -29,10 +29,9 @@ pub use commands::{Entry, HasSettings, register};
 pub use error::SettingsError;
 
 /// The user's settings file in the app's config directory, `qs_paths::AppDirs::config`; the
-/// tests read it.
-#[cfg(test)]
+/// app reads its game folder from it (P3-44).
 #[must_use]
-pub(crate) fn user_settings_path(config_dir: &Path) -> PathBuf {
+pub fn user_settings_path(config_dir: &Path) -> PathBuf {
     config_dir.join("settings.toml")
 }
 
@@ -90,11 +89,14 @@ pub enum Setting {
     /// `log.filter`.
     #[serde(rename = "log.filter")]
     LogFilter,
+    /// `game.folder`.
+    #[serde(rename = "game.folder")]
+    GameFolder,
 }
 
 impl Setting {
     /// Every setting, in the order the reference lists them.
-    pub const ALL: [Self; 2] = [Self::Theme, Self::LogFilter];
+    pub const ALL: [Self; 3] = [Self::Theme, Self::LogFilter, Self::GameFolder];
 
     /// The key the files and the commands name it by.
     #[must_use]
@@ -102,6 +104,7 @@ impl Setting {
         match self {
             Self::Theme => "appearance.theme",
             Self::LogFilter => "log.filter",
+            Self::GameFolder => "game.folder",
         }
     }
 
@@ -110,6 +113,7 @@ impl Setting {
         match self {
             Self::Theme => ("appearance", "theme"),
             Self::LogFilter => ("log", "filter"),
+            Self::GameFolder => ("game", "folder"),
         }
     }
 
@@ -122,6 +126,11 @@ impl Setting {
                 "Which events the log records, as `RUST_LOG` directives (`info`, \
                  `info,qc_sema=debug`); `RUST_LOG` wins when it is set."
             }
+            Self::GameFolder => {
+                "The folder Play reads the game from, in place, as the Quake files guide \
+                 chose it; the first install found when unset. A folder that no longer holds a \
+                 game is not used (P3-44)."
+            }
         }
     }
 
@@ -131,6 +140,7 @@ impl Setting {
         match self {
             Self::Theme => json(Theme::default()),
             Self::LogFilter => Value::from(DEFAULT_LOG_FILTER),
+            Self::GameFolder => Value::Null,
         }
     }
 }
@@ -158,6 +168,15 @@ pub struct Log {
     pub filter: Option<String>,
 }
 
+/// `[game]` of a settings file.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Game {
+    /// The folder Play reads the game from.
+    #[serde(default)]
+    pub folder: Option<PathBuf>,
+}
+
 /// One settings file: the settings it sets. It is read with serde and written by editing its
 /// text in place ([`SettingsStore::put`]), never serialised whole.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
@@ -169,6 +188,9 @@ pub struct SettingsFile {
     /// Logging.
     #[serde(default)]
     pub log: Log,
+    /// The game.
+    #[serde(default)]
+    pub game: Game,
 }
 
 impl SettingsFile {
@@ -193,6 +215,7 @@ impl SettingsFile {
         match setting {
             Setting::Theme => self.appearance.theme.map(json),
             Setting::LogFilter => self.log.filter.clone().map(Value::from),
+            Setting::GameFolder => self.game.folder.as_ref().map(json),
         }
     }
 
@@ -212,6 +235,12 @@ impl SettingsFile {
             }
             Setting::LogFilter => {
                 self.log.filter = value
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(invalid)?;
+            }
+            Setting::GameFolder => {
+                self.game.folder = value
                     .map(serde_json::from_value)
                     .transpose()
                     .map_err(invalid)?;

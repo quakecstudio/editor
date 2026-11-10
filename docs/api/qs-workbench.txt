@@ -193,6 +193,7 @@ fn qs_workbench::preview::Preview::debugger
 fn qs_workbench::preview::Preview::dock
 fn qs_workbench::preview::Preview::docks
 fn qs_workbench::preview::Preview::entities
+fn qs_workbench::preview::Preview::game_folder
 fn qs_workbench::preview::Preview::new
 fn qs_workbench::preview::Preview::pause
 fn qs_workbench::preview::Preview::pending

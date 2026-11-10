@@ -39,6 +39,10 @@ fn main() -> ExitCode {
         .as_ref()
         .ok()
         .map(|dirs| qs_workbench::recent_path(dirs.data()));
+    let settings_file = dirs
+        .as_ref()
+        .ok()
+        .map(|dirs| qs_settings::user_settings_path(dirs.config()));
     let layout_file = dirs.ok().map(|dirs| qs_layout::layout_path(dirs.data()));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -59,6 +63,13 @@ fn main() -> ExitCode {
             if let Some(file) = recent_file {
                 app.shell_mut().set_recent_file(file);
             }
+            // P3-44: the game folder chosen before, and on Windows and Linux the menu's items on
+            // the toolbar, which macOS has in its menu bar.
+            if let Some(file) = settings_file {
+                app.shell_mut().set_settings_file(file);
+            }
+            #[cfg(not(target_os = "macos"))]
+            app.shell_mut().set_menu_in_window();
             if let Some(project) = &project
                 && let Err(error) = app.shell_mut().open_project(project)
             {

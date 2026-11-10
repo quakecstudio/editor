@@ -428,6 +428,13 @@ impl Preview {
         Ok(())
     }
 
+    /// The game folder Play reads from, when one was chosen (`preview.choose_game`) or
+    /// configured; `None` for the first install found.
+    #[must_use]
+    pub fn game_folder(&self) -> Option<&Path> {
+        self.config.game.as_deref()
+    }
+
     /// What the reload held back would reset (P3-10), each as `kind name: reason`; empty when
     /// no reload waits.
     #[must_use]

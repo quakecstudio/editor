@@ -584,7 +584,7 @@ fn settings_commands_change_the_files_and_undo() {
         .iter()
         .map(|e| e["key"].as_str().unwrap())
         .collect();
-    assert_eq!(keys, ["appearance.theme", "log.filter"]);
+    assert_eq!(keys, ["appearance.theme", "log.filter", "game.folder"]);
     assert_eq!(list[1]["default"], "info");
 }
 
@@ -789,17 +789,30 @@ fn theme() -> impl Strategy<Value = Option<Theme>> {
 proptest! {
     // TEST-4, QA-10: a settings file is written and read back unchanged, whatever it sets.
     #[test]
-    fn a_settings_file_round_trips(theme in theme(), filter in proptest::option::of(".*")) {
+    fn a_settings_file_round_trips(
+        theme in theme(),
+        filter in proptest::option::of(".*"),
+        folder in proptest::option::of("[A-Za-z0-9 _./-]{1,40}"),
+    ) {
         let dir = TempDir::new("round-trip");
         let (path, _, mut store) = store(&dir, &StoreSpec::default());
+        let folder = folder.map(std::path::PathBuf::from);
         let file = SettingsFile {
             appearance: crate::Appearance { theme },
             log: crate::Log { filter: filter.clone() },
+            game: crate::Game { folder: folder.clone() },
         };
         store
             .put(Scope::User, Setting::Theme, theme.map(|t| serde_json::to_value(t).unwrap()))
             .unwrap();
         store.put(Scope::User, Setting::LogFilter, filter.map(Value::from)).unwrap();
+        store
+            .put(
+                Scope::User,
+                Setting::GameFolder,
+                folder.map(|f| serde_json::to_value(f).unwrap()),
+            )
+            .unwrap();
         prop_assert_eq!(store.file(Scope::User), Some(&file));
         prop_assert_eq!(SettingsFile::load(&path).unwrap(), file);
     }

@@ -1188,3 +1188,72 @@ fn recent_projects_open_from_the_project_section() {
             .ends_with("fixtures/ember")
     );
 }
+
+/// A folder holding a game the preview can play: `id1/pak0.pak` and `id1/pak1.pak`.
+fn game_folder(dir: &TempDir) -> PathBuf {
+    let game = dir.0.join("quake");
+    fs::create_dir_all(game.join("id1")).unwrap();
+    fs::write(game.join("id1/pak0.pak"), b"PACK").unwrap();
+    fs::write(game.join("id1/pak1.pak"), b"PACK").unwrap();
+    game
+}
+
+// No spec statement: P3-44, a playable folder chosen is kept in the user's settings, so the
+// next start plays from it with no guide; a saved folder that no longer holds a game is not
+// used, and an unplayable folder chosen is not kept
+#[test]
+fn the_chosen_game_folder_is_kept_for_the_next_start() {
+    let dir = TempDir::new("game-folder");
+    let settings = dir.0.join("config/settings.toml");
+    let game = game_folder(&dir);
+    let ctx = egui::Context::default();
+
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
+    app.shell_mut().set_settings_file(settings.clone());
+    let empty = dir.0.join("empty");
+    fs::create_dir_all(&empty).unwrap();
+    let refused = app.shell_mut().choose_game_folder(empty).unwrap();
+    assert!(!refused.state.plays());
+    assert!(!settings.exists(), "an unplayable folder is not kept");
+    let chosen = app.shell_mut().choose_game_folder(game.clone()).unwrap();
+    assert!(chosen.state.plays());
+
+    let mut next = App::checked_on_the_frame(&ctx, None).unwrap();
+    next.shell_mut().set_settings_file(settings.clone());
+    assert_eq!(
+        next.shell().session().context().preview.game_folder(),
+        Some(game.as_path())
+    );
+
+    fs::remove_dir_all(&game).unwrap();
+    let mut after = App::checked_on_the_frame(&ctx, None).unwrap();
+    after.shell_mut().set_settings_file(settings);
+    assert_eq!(
+        after.shell().session().context().preview.game_folder(),
+        None,
+        "a vanished folder is not used"
+    );
+}
+
+// No spec statement: P3-44, with the menu in the window (Windows and Linux) the toolbar's
+// Quake Files button opens the guide; with the system's menu bar it is not on the toolbar
+#[test]
+fn the_toolbar_opens_the_quake_files_guide_where_there_is_no_menu_bar() {
+    let mut harness = accessible();
+    harness.run();
+    assert!(
+        harness.query_by_label(Text::GameFilesMenu.get()).is_none(),
+        "the system's menu bar has it"
+    );
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .set_menu_in_window();
+    harness.run();
+    harness.get_by_label(Text::GameFilesMenu.get()).click();
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label(Text::GameGuide.get()).is_some());
+}
