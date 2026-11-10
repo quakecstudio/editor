@@ -19,6 +19,7 @@ mod commands;
 mod editing;
 mod preview;
 mod recent;
+pub mod testing;
 #[cfg(test)]
 mod tests;
 pub mod vm_run;
@@ -51,6 +52,9 @@ pub use crate::preview::{
     SetFieldParams, entities, register_preview,
 };
 pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
+pub use crate::testing::{
+    RUN_TESTS, RunTestsParams, TestKind, TestResult, TestRun, Verdict, register_tests,
+};
 pub use crate::vm_run::{VM_RUN, VmRunParams, register_vm};
 use qc_project::{ProjectError, normalize};
 use serde::{Deserialize, Serialize};

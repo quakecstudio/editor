@@ -3509,6 +3509,7 @@ dependencies = [
  "qs-commands",
  "qs-engine",
  "qs-install",
+ "qs-pak",
  "qs-sim",
  "qs-vfs",
  "schemars",
@@ -3522,6 +3523,8 @@ name = "quakec-ide"
 version = "2026.10.0"
 dependencies = [
  "clap",
+ "qc-edict",
+ "qc-types",
  "qs-commands",
  "qs-workbench",
  "serde_json",

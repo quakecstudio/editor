@@ -10,7 +10,8 @@ Problems panels list, the commands that open a project or a file, `project.open`
 - **Decision:** plan requirement UI-2, P2-19 (#75); not engine behaviour.
 - **Spec sections:** ENGT-3.12, the program a KEX rerelease target's build writes, which it
   refuses when KEX cannot load it; otherwise it implements a plan requirement, not engine
-  behaviour. A diagnostic's line counts LF bytes only, as the lexer does (QC-1.2).
+  behaviour. A diagnostic's line counts LF bytes only, as the lexer does (QC-1.2). QCT-1 to
+  QCT-4 ([`qc-tests.md`](../../docs/spec/qc-tests.md)), a project's tests and `project.test`.
 - **Shipped:** yes.
 
 ## Prior art
@@ -42,6 +43,12 @@ an edit, so both commands run outside the edit history
 - The play loop and the debugger (`preview`, `debug`, `entities`): the preview host started
   on the project's program, its entities, the debugger's breakpoints, stack and watches, and
   the `preview.*` commands.
+- Tests (`testing`, P4-26, QCT): `run_tests` and `project.test` build the project once, call
+  each `test_` function alone in the VM over the mock engine as `vm.run` does, a run error
+  such as `error("...")` failing it, then play each `tests/*.scenario` in `qs-sim` over the
+  game folder given or the first install found, skipping them with no game; the result lists
+  each test's kind, verdict and message, and the counts. The CLI's `quakec-ide test`, the
+  palette and the agent run the same command.
 - `HasWorkbench` and `register`: the commands for any context with a `Workbench`.
 - `OPEN_PROJECT`, `OPEN_FILE` and their parameter types, so the app runs them without
   spelling their ids.

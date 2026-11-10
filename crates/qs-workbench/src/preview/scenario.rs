@@ -11,7 +11,7 @@ use std::rc::Rc;
 use qc_progs::Progs;
 use qs_bsp::{Bsp, BspLoader};
 use qs_engine::{
-    Client, ClientError, Flavour, LaunchError, LaunchSpec, RunRootError, StepKind, launch,
+    Client, ClientError, Flavour, LaunchError, LaunchSpec, RunRoot, RunRootError, StepKind, launch,
     locate_host, prepare_run_root,
 };
 use qs_sim::scenario::{self as scenarios, Report, Scenario, ScenarioError, Shot};
@@ -115,15 +115,7 @@ impl Preview {
         let base = self.game_base()?;
         let run_root = prepare_run_root(&project, Flavour::Original, &base, &mod_name)
             .map_err(ScenarioRunError::RunRoot)?;
-        let mut words = vec![
-            "-basedir".to_owned(),
-            run_root.path.to_string_lossy().into_owned(),
-        ];
-        if let Some(game) = &run_root.game {
-            words.extend(["-game".to_owned(), game.clone()]);
-        }
-        words.extend(scenario.engine.iter().cloned());
-        let report = play_on_game(&words, &scenario)?;
+        let report = play_on_game(&engine_words(&run_root, &scenario), &scenario)?;
         let mut images = Vec::new();
         if report.screenshots.is_empty() {
             return Ok(ScenarioRun { report, images });
@@ -149,6 +141,20 @@ impl Preview {
         taken?;
         Ok(ScenarioRun { report, images })
     }
+}
+
+/// The engine command line a scenario plays on in `run_root`: its base directory, its game
+/// when it has one, then the scenario's own `engine` words (SCN-1.2).
+pub(crate) fn engine_words(run_root: &RunRoot, scenario: &Scenario) -> Vec<String> {
+    let mut words = vec![
+        "-basedir".to_owned(),
+        run_root.path.to_string_lossy().into_owned(),
+    ];
+    if let Some(game) = &run_root.game {
+        words.extend(["-game".to_owned(), game.clone()]);
+    }
+    words.extend(scenario.engine.iter().cloned());
+    words
 }
 
 /// The scenario played in `qs-sim` on the game the engine command line `words` names, its

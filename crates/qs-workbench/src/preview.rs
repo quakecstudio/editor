@@ -569,15 +569,7 @@ impl Preview {
     /// The original game's base directory: the configured folder's, else the first install
     /// found with one.
     fn game_base(&self) -> Result<qs_install::GameBase, PreviewError> {
-        match &self.config.game {
-            Some(folder) => qs_install::examine_folder(folder)
-                .and_then(|install| install.original)
-                .ok_or_else(|| PreviewError::NoGame(Some(folder.clone()))),
-            None => qs_install::find_installs()
-                .into_iter()
-                .find_map(|install| install.original)
-                .ok_or(PreviewError::NoGame(None)),
-        }
+        game_base(self.config.game.as_deref())
     }
 
     /// The running host's client, or [`PreviewError::NotRunning`].
@@ -852,8 +844,21 @@ fn built_program<L: Loader>(
     Ok((project, progs, mod_name))
 }
 
+/// The original game's base directory: `folder`'s, else the first install found with one.
+pub(crate) fn game_base(folder: Option<&Path>) -> Result<qs_install::GameBase, PreviewError> {
+    match folder {
+        Some(folder) => qs_install::examine_folder(folder)
+            .and_then(|install| install.original)
+            .ok_or_else(|| PreviewError::NoGame(Some(folder.to_path_buf()))),
+        None => qs_install::find_installs()
+            .into_iter()
+            .find_map(|install| install.original)
+            .ok_or(PreviewError::NoGame(None)),
+    }
+}
+
 /// The folder name `<mod>` of a program at `<project>/build/<mod>/<file>`.
-fn mod_folder(project: &Path, progs: &Path) -> Option<String> {
+pub(crate) fn mod_folder(project: &Path, progs: &Path) -> Option<String> {
     let folder = progs.parent()?;
     (folder.parent()? == project.join("build"))
         .then(|| folder.file_name()?.to_str().map(str::to_owned))
