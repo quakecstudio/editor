@@ -92,13 +92,18 @@ impl qs_workbench::HasPreview for Everything {
 }
 
 /// The reference the registry renders: the built-in commands, the settings commands (P2-22),
-/// the layout commands (P2-17), the workbench commands (P2-19) and the play loop's (P3-12).
+/// the layout commands (P2-17), the workbench commands (P2-19), the play loop's (P3-12) and `project.new` (P4-17).
 fn reference() -> Result<String, String> {
     let mut registry = Registry::<Everything>::new();
     qs_settings::register(&mut registry).map_err(|e| e.to_string())?;
     qs_layout::register(&mut registry).map_err(|e| e.to_string())?;
     qs_workbench::register(&mut registry).map_err(|e| e.to_string())?;
     qs_workbench::register_preview(&mut registry).map_err(|e| e.to_string())?;
+    qs_templates::register(
+        &mut registry,
+        std::sync::Arc::new(qs_templates::GitHub::new()),
+    )
+    .map_err(|e| e.to_string())?;
     Ok(registry.markdown())
 }
 

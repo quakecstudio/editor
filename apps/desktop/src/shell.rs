@@ -30,6 +30,7 @@ use qs_layout::{
 };
 use qs_render::{Camera, MapMesh};
 use qs_settings::{Scope as SettingsScope, Setting, SettingsFile, SettingsStore};
+use qs_templates::{GitHub, NEW_PROJECT, NewProjectParams, Template};
 use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::game_files::GameFiles;
@@ -222,6 +223,7 @@ impl Shell {
         qs_layout::register(&mut registry)?;
         qs_workbench::register(&mut registry)?;
         qs_workbench::register_preview(&mut registry)?;
+        qs_templates::register(&mut registry, std::sync::Arc::new(GitHub::new()))?;
         let workspace = Workspace {
             layout,
             // P3-35: the check after typing, off the frame in the app.
@@ -407,6 +409,31 @@ impl Shell {
             .pick_folder();
         if let Some(folder) = picked {
             self.open_asked(&folder);
+        }
+    }
+
+    /// Asks for a new folder with the system's dialog, makes a project of `template` there
+    /// (`project.new`, P4-17) and opens it, saying why when it could not.
+    pub fn new_project(&mut self, template: Template) {
+        let picked = rfd::FileDialog::new()
+            .set_title(Text::NewProjectTitle.get())
+            .save_file();
+        let Some(folder) = picked else {
+            return;
+        };
+        let params = NewProjectParams {
+            template,
+            path: folder.clone(),
+        };
+        let made = serde_json::to_value(params)
+            .map_err(|error| error.to_string())
+            .and_then(|params| {
+                self.execute(NEW_PROJECT, params)
+                    .map_err(|error| error.to_string())
+            });
+        match made {
+            Ok(_) => self.open_asked(&folder),
+            Err(error) => self.project_error = Some(error),
         }
     }
 
@@ -1069,7 +1096,7 @@ impl Shell {
         let debug_input = &mut self.debug_input;
         let recent_projects = self.recent.0.projects();
         let project_error = self.project_error.as_deref();
-        let mut open: Option<Option<PathBuf>> = None;
+        let mut open: Option<LeftAction> = None;
         let mut entity_action = None;
         let mut debug_action = None;
         let mut jump = None;
@@ -1119,9 +1146,7 @@ impl Shell {
                         let recent = (recent_projects, project_error);
                         match left(ui, theme, (workbench, recent), scope, focus) {
                             Some(LeftAction::Jump(to)) => jump = Some(to),
-                            Some(LeftAction::Open(folder)) => open = Some(Some(folder)),
-                            Some(LeftAction::OpenFolder) => open = Some(None),
-                            None => {}
+                            asked => open = asked,
                         }
                         ui.add_space(theme.space(3));
                         if preview.state() == PlayState::Stopped {
@@ -1174,9 +1199,10 @@ impl Shell {
             self.debug_action(action);
         }
         match open {
-            Some(Some(folder)) => self.open_asked(&folder),
-            Some(None) => self.open_folder(),
-            None => {}
+            Some(LeftAction::Open(folder)) => self.open_asked(&folder),
+            Some(LeftAction::OpenFolder) => self.open_folder(),
+            Some(LeftAction::New(template)) => self.new_project(template),
+            Some(LeftAction::Jump(_)) | None => {}
         }
         // A panel dragged shut is hidden through its command too.
         if expanded != state.visible
@@ -1749,6 +1775,8 @@ enum LeftAction {
     Open(PathBuf),
     /// Ask for a project folder with the system's dialog.
     OpenFolder,
+    /// Make a new project from a template.
+    New(Template),
 }
 
 /// The Project section with no project open: an Open Folder button, why the last one did not
@@ -1761,9 +1789,19 @@ fn no_project(
 ) -> Option<LeftAction> {
     let mut action = None;
     note(ui, theme, Text::NoProject);
-    if ui.button(Text::OpenFolderButton.get()).clicked() {
-        action = Some(LeftAction::OpenFolder);
-    }
+    ui.horizontal_wrapped(|ui| {
+        if ui.button(Text::OpenFolderButton.get()).clicked() {
+            action = Some(LeftAction::OpenFolder);
+        }
+        for (template, text) in [
+            (Template::Id1, Text::NewId1Menu),
+            (Template::Rerelease, Text::NewRereleaseMenu),
+        ] {
+            if ui.button(text.get()).clicked() {
+                action = Some(LeftAction::New(template));
+            }
+        }
+    });
     if let Some(error) = error {
         ui.add(
             egui::Label::new(RichText::new(error).color(theme.color(Token::StatusError))).wrap(),

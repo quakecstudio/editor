@@ -7,6 +7,7 @@
 
 use muda::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use qs_layout::{Layout, Panel};
+use qs_templates::Template;
 
 use crate::strings::Text;
 
@@ -15,6 +16,8 @@ use crate::strings::Text;
 pub enum MenuChoice {
     /// File, Open Folder.
     OpenFolder,
+    /// File, New id1 Project or New Rerelease Project (P4-17).
+    NewProject(Template),
     /// File, Quake Files: the guide to the game's files (P3-21).
     GameFiles,
     /// A View item: show or hide the panel.
@@ -25,6 +28,7 @@ pub enum MenuChoice {
 pub struct MenuBar {
     _menu: Menu,
     open_folder: MenuItem,
+    new_projects: [(Template, MenuItem); 2],
     game_files: MenuItem,
     items: [(Panel, CheckMenuItem); 3],
 }
@@ -61,8 +65,27 @@ impl MenuBar {
         // Cmd+O is the window's own binding (`keymap::OPEN_FOLDER`), on every platform; an
         // accelerator here would take the key first on macOS and open the dialog twice.
         let open_folder = MenuItem::new(Text::OpenFolderMenu.get(), true, None);
+        let new_projects = [
+            (
+                Template::Id1,
+                MenuItem::new(Text::NewId1Menu.get(), true, None),
+            ),
+            (
+                Template::Rerelease,
+                MenuItem::new(Text::NewRereleaseMenu.get(), true, None),
+            ),
+        ];
         let game_files = MenuItem::new(Text::GameFilesMenu.get(), true, None);
-        let file = Submenu::with_items(Text::File.get(), true, &[&open_folder, &game_files])?;
+        let file = Submenu::with_items(
+            Text::File.get(),
+            true,
+            &[
+                &new_projects[0].1,
+                &new_projects[1].1,
+                &open_folder,
+                &game_files,
+            ],
+        )?;
         let view = Submenu::with_items(
             Text::ViewMenu.get(),
             true,
@@ -73,6 +96,7 @@ impl MenuBar {
         Ok(Self {
             _menu: menu,
             open_folder,
+            new_projects,
             game_files,
             items,
         })
@@ -84,6 +108,12 @@ impl MenuBar {
         while let Ok(event) = MenuEvent::receiver().try_recv() {
             if event.id() == self.open_folder.id() {
                 chosen.push(MenuChoice::OpenFolder);
+            } else if let Some((template, _)) = self
+                .new_projects
+                .iter()
+                .find(|(_, item)| item.id() == event.id())
+            {
+                chosen.push(MenuChoice::NewProject(*template));
             } else if event.id() == self.game_files.id() {
                 chosen.push(MenuChoice::GameFiles);
             } else if let Some((panel, _)) =

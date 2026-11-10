@@ -4,9 +4,10 @@
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]
 
-# specs/ holds public specifications cached verbatim and checked by SHA-256, so
-# the hygiene hooks must not rewrite them.
-exclude: ^specs/
+# specs/ holds public specifications cached verbatim and checked by SHA-256, and
+# qs-templates holds the GPLv2 text its starters carry, byte for byte (its tests check
+# the SHA-256), so the hygiene hooks must not rewrite them.
+exclude: ^(specs/|crates/qs-templates/src/COPYING-GPL-2\.0\.txt$)
 
 repos:
   # File hygiene and private-key detection, SHA-pinned like the workflow actions.

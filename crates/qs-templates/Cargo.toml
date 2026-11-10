@@ -1,0 +1,19 @@
+[package]
+name = "qs-templates"
+description = "New-project templates: starters from id's QuakeC, fetched by commit under their GPLv2 terms and checked by SHA-256, with quakec.toml and a sample test"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qs-commands = { workspace = true }
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
+sha2 = { workspace = true }
+ureq = { workspace = true, features = ["rustls"] }
+
+[lints]
+workspace = true

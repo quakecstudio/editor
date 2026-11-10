@@ -173,6 +173,12 @@ pub enum Text {
     OpenFolderTitle,
     /// The Project section's button with no project open.
     OpenFolderButton,
+    /// File, New id1 Project: a project from id's QuakeC 1.01 (P4-17).
+    NewId1Menu,
+    /// File, New Rerelease Project: a project from the rerelease's QuakeC (P4-17).
+    NewRereleaseMenu,
+    /// The system dialog's title when naming a new project's folder.
+    NewProjectTitle,
     /// The heading over the recent projects.
     RecentProjects,
     /// Before the path of a folder that is not there.
@@ -275,7 +281,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 132] = [
+    pub const ALL: [Self; 135] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -359,6 +365,9 @@ impl Text {
         Self::OpenFolderMenu,
         Self::OpenFolderTitle,
         Self::OpenFolderButton,
+        Self::NewId1Menu,
+        Self::NewRereleaseMenu,
+        Self::NewProjectTitle,
         Self::RecentProjects,
         Self::FolderGone,
         Self::NotYetAvailable,
@@ -505,6 +514,9 @@ impl Text {
             Self::OpenFolderMenu => "Open Folder\u{2026}",
             Self::OpenFolderTitle => "Open a QuakeC project folder",
             Self::OpenFolderButton => "Open Folder",
+            Self::NewId1Menu => "New id1 Project\u{2026}",
+            Self::NewRereleaseMenu => "New Rerelease Project\u{2026}",
+            Self::NewProjectTitle => "Name the new project's folder",
             Self::RecentProjects => "Recent projects",
             Self::FolderGone => "The folder is no longer there:",
             Self::NotYetAvailable => "Not available yet",
