@@ -21,6 +21,7 @@ use eframe::egui::{
     self, Align, Button, Id, Layout as EguiLayout, Response, RichText, Sense, Ui, accesskit,
 };
 use eframe::egui_wgpu::RenderState;
+use qs_commands::remote::Host;
 use qs_commands::{CommandError, RegisterError, Registry, Session};
 use qs_editor_view::{Position, ViewStyle};
 use qs_layout::{
@@ -199,6 +200,8 @@ pub struct Shell {
     seen_root: Option<PathBuf>,
     /// Why the last project asked for did not open.
     project_error: Option<String>,
+    /// The socket other processes run the window's commands on (AGT-7), once it is served.
+    host: Option<Host>,
 }
 
 impl Shell {
@@ -256,7 +259,14 @@ impl Shell {
             seen_root: None,
             dock_frame: None,
             project_error: None,
+            host: None,
         })
+    }
+
+    /// Answers other processes' commands on `host` from now on, each frame, in the window's
+    /// session (AGT-7): `quakec-ide mcp --connect` runs the agent's tools here.
+    pub fn set_host(&mut self, host: Host) {
+        self.host = Some(host);
     }
 
     /// The layout as it is now.
@@ -571,6 +581,12 @@ impl Shell {
 
     /// Draws the window for one frame.
     pub fn ui(&mut self, ui: &mut Ui) {
+        // AGT-7: commands sent over the socket run first, so the frame draws what they did.
+        if let Some(host) = &self.host
+            && host.answer(&mut self.session) > 0
+        {
+            ui.ctx().request_repaint();
+        }
         if self.session.context().preview.state() != PlayState::Stopped {
             let polled: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
             // BRIDGE-3.5: a click in the paused game picked an edict; open its spawn function.

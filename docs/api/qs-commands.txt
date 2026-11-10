@@ -6,6 +6,7 @@ enum qs_commands::id::IdError
 enum qs_commands::params::FieldKind
 enum qs_commands::params::Input
 enum qs_commands::params::ParamError
+enum qs_commands::remote::RemoteError
 field qs_commands::palette::Found.item
 field qs_commands::palette::Found.name_hits
 field qs_commands::palette::Found.text_hits
@@ -39,6 +40,15 @@ fn qs_commands::registry::Registry::get
 fn qs_commands::registry::Registry::markdown
 fn qs_commands::registry::Registry::new
 fn qs_commands::registry::Registry::register
+fn qs_commands::remote::Client::commands
+fn qs_commands::remote::Client::connect
+fn qs_commands::remote::Client::execute
+fn qs_commands::remote::Described::id
+fn qs_commands::remote::Described::params
+fn qs_commands::remote::Described::summary
+fn qs_commands::remote::Host::answer
+fn qs_commands::remote::Host::answer_next
+fn qs_commands::remote::Host::listen
 fn qs_commands::session::Session::context
 fn qs_commands::session::Session::execute
 fn qs_commands::session::Session::new
@@ -58,8 +68,12 @@ impl qs_commands::id::IdError: std::error::Error
 impl qs_commands::params::ParamError: fmt::Display
 impl qs_commands::params::ParamError: std::error::Error
 impl qs_commands::registry::Registry: Default
+impl qs_commands::remote::RemoteError: From<std::io::Error>
+impl qs_commands::remote::RemoteError: std::error::Error
+impl qs_commands::remote::RemoteError: std::fmt::Display
 mod qs_commands::palette
 mod qs_commands::params
+mod qs_commands::remote
 struct qs_commands::command::NoParams
 struct qs_commands::command::Outcome
 struct qs_commands::id::CommandId
@@ -69,6 +83,9 @@ struct qs_commands::params::Choice
 struct qs_commands::params::Field
 struct qs_commands::registry::CommandInfo
 struct qs_commands::registry::Registry
+struct qs_commands::remote::Client
+struct qs_commands::remote::Described
+struct qs_commands::remote::Host
 struct qs_commands::session::Session
 trait qs_commands::command::Command
 trait qs_commands::command::UndoStep
@@ -120,3 +137,6 @@ variant qs_commands::params::ParamError::Missing
 variant qs_commands::params::ParamError::NotInteger
 variant qs_commands::params::ParamError::NotJson
 variant qs_commands::params::ParamError::NotNumber
+variant qs_commands::remote::RemoteError::InUse
+variant qs_commands::remote::RemoteError::Io
+variant qs_commands::remote::RemoteError::Protocol

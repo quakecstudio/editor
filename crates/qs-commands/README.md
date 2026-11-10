@@ -6,11 +6,18 @@ for what it changes; and a session that runs commands by id behind a guard, so a
 one command and never the session.
 
 - **Layer:** L5 commands. It depends on `schemars` (`derive` and `std`), `serde`,
-  `serde_json` and `tracing`, and on no crate of ours.
+  `serde_json`, `tracing` and `interprocess` (the `remote` socket), and on no crate of ours.
 - **Decision:** plan requirements PRIN-3 and PRIN-7, P2-12; not engine behaviour.
 - **Spec sections:** none; it implements plan requirements, not engine behaviour. The MCP
   rules it follows are quoted below from `specs/mcp/2026-07-28/`.
 - **Shipped:** yes.
+
+## Running commands from another process
+
+`remote` serves a session on a local socket (AGT-7): the app makes a `remote::Host` on
+`qs_paths::AppDirs::app_socket` and calls `Host::answer` each frame, and a `remote::Client` in
+another process, such as `quakec-ide mcp --connect`, lists the commands and runs them there.
+The wire is one JSON object per line each way; [`docs/mcp.md`](../../docs/mcp.md) has it.
 
 ## Prior art
 

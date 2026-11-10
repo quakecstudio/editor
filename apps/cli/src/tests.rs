@@ -135,8 +135,26 @@ fn each_command_line_is_read() {
             read: vec![PathBuf::from("/r")],
             write: vec![PathBuf::from("/w")],
             read_only: true,
-            game: None,
+            session: super::McpSession::Own { game: None },
         })
+    );
+    let connect = |words: &[&str]| match parse(&args(words)).unwrap() {
+        Request::Mcp(mcp) => mcp.session,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        connect(&["mcp", "p", "--connect"]),
+        super::McpSession::App { socket: None }
+    );
+    assert_eq!(
+        connect(&["mcp", "--connect", "/s", "p"]),
+        super::McpSession::App {
+            socket: Some(PathBuf::from("/s"))
+        }
+    );
+    assert!(
+        parse(&args(&["mcp", "--connect", "--game", "/q"])).is_err(),
+        "the app plays its own game"
     );
     assert_eq!(
         parse(&args(&["test"])).unwrap(),
@@ -417,6 +435,26 @@ fn mcp_serves_the_agents_tools() {
     assert_eq!(exit, Exit::Failure);
     assert!(out.is_empty(), "nothing on stdout but MCP messages");
     assert!(String::from_utf8_lossy(&err).contains("no QuakeC project here"));
+}
+
+// No spec statement: P4-13, AGT-7, `mcp --connect` with no app answering on the socket says
+// so before serving, and writes nothing on stdout
+#[test]
+fn mcp_connect_needs_the_app() {
+    let dir = project("mcp-connect", &ProjectSpec::default());
+    let socket = dir.join("nobody.sock");
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let exit = run_with_input(
+        &args(&["mcp", text(&dir), "--connect", text(&socket)]),
+        FsLoader,
+        "".as_bytes(),
+        &mut out,
+        &mut err,
+    );
+    assert_eq!(exit, Exit::Failure);
+    assert!(out.is_empty());
+    let err = String::from_utf8_lossy(&err);
+    assert!(err.contains("no QuakeC Studio answers on"), "{err}");
 }
 
 #[test]

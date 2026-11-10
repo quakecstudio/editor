@@ -24,6 +24,7 @@ mod id;
 pub mod palette;
 pub mod params;
 mod registry;
+pub mod remote;
 mod session;
 
 #[cfg(test)]

@@ -6,13 +6,33 @@ built-in agent run, so an outside agent can do what the built-in one does, and n
 
 ```text
 quakec-ide mcp [<project>] [--dialect <vanilla|fteqcc>] [--read <dir>]... [--write <dir>]...
-               [--read-only] [--game <folder>]
+               [--read-only] [--game <folder> | --connect [<socket>]]
 ```
 
 The server opens the project (the current directory when none is named) and then reads one
 JSON-RPC message per line from stdin, answering each on stdout. It writes nothing else to
 stdout. It runs headless: no window opens, and a game it plays runs in the preview host, as
 Play starts it.
+
+## Connecting to the running app
+
+With `--connect`, the tools run in the open QuakeC Studio window's session instead of one of
+the server's own (AGT-7): an edit the agent stages shows in the window's diff, a build is the
+window's build, and the game it plays is the window's game. The app answers on a local socket
+of the user's own, `app.sock` in its cache directory (on Windows, a named pipe named after
+that directory); `--connect <socket>` names another. The app must be open first, or the server
+stops with `no QuakeC Studio answers on <socket>`. Name the project the window has open: the
+roots are still the server's. `--connect` and `--game` do not go together, since the app plays
+its own game.
+
+```bash
+claude mcp add quakec -- quakec-ide mcp /path/to/your/mod --connect
+```
+
+The socket's wire is one JSON object per line each way (`qs_commands::remote`): a request is
+`"commands"` or `{"execute": {"command": <id>, "params": <object>}}`, and the answer is
+`{"commands": [...]}`, `{"output": <value>}` or `{"error": <message>}`. The window runs each
+request on its next frame.
 
 ## Setup
 
@@ -101,6 +121,17 @@ refused as a tool error before the command runs.
 - modern requests and `server/discover`;
 - protocol and tool errors;
 - the roots, and a read-only project;
-- a session that does not start.
+- a session that does not start;
+- a server connected to an app's session, its staged edit there.
 
-`apps/cli/src/tests.rs` runs `quakec-ide mcp` on a project end to end.
+`crates/qs-commands/src/tests/remote.rs` tests the socket's host and client,
+`apps/desktop/src/tests.rs` a command sent to the window over it, and `apps/cli/src/tests.rs`
+runs `quakec-ide mcp` on a project end to end, and `--connect` with no app.
+
+### A recorded session
+
+Claude Code, given only this server's tools, on id's QuakeC 1.01 over LibreQuake's `start`
+map (`quakec-ide mcp <mod> --game librequake-lite`), was asked to make the player spawn with
+150 health, compile, and prove it with a scenario. In 11 turns it read `client.qc`, staged
+the change and `tests/health.scenario` with `edit.apply`, accepted and saved them, compiled
+(`"clean": true`) and ran the scenario (`expect field player health == 150` passed).

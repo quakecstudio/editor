@@ -20,3 +20,8 @@ there, so it never joins a path onto the home directory itself.
 installed fonts: macOS's system, local and user font folders, Windows' `Fonts` folder and its
 per-user one, and on Linux the `fonts` folder of each XDG data directory and `~/.fonts`. The
 desktop app's font fallback reads them for a character its bundled fonts lack.
+
+`AppDirs::app_socket()` is where the running app answers other processes' commands
+(AGT-7), which `quakec-ide mcp --connect` reaches: `app.sock` in the cache directory on macOS
+and Linux, and on Windows, which has no socket files, a named pipe named after the cache
+directory, so each user has their own.

@@ -11,7 +11,7 @@
 //! quakec-ide test [<project>] [--dialect <vanilla|fteqcc>] [--filter <text>] [--game <folder>]
 //! quakec-ide run <command> [<json>] [--project <project> [--dialect <vanilla|fteqcc>]]
 //! quakec-ide mcp [<project>] [--dialect <vanilla|fteqcc>] [--read <dir>]... [--write <dir>]...
-//!                [--read-only] [--game <folder>]
+//!                [--read-only] [--game <folder> | --connect [<socket>]]
 //! quakec-ide commands
 //! ```
 //!
@@ -33,7 +33,7 @@ use clap::error::ErrorKind;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use qs_commands::{CommandError, Registry, Session};
-use qs_mcp::{AGENT_TOOLS, Server, ServerSettings};
+use qs_mcp::{AGENT_TOOLS, Connected, Server, ServerSettings};
 use qs_workbench::{
     BUILD_PROJECT, CHECK_PROJECT, Config, Dialect, Gravity, HasPreview, HasWorkbench, Loader,
     ModuleBuilt, OPEN_PROJECT, Preview, PreviewConfig, RUN_TESTS, Reported, TestRun, Verdict,
@@ -129,6 +129,9 @@ enum Verb {
         /// The game folder the preview and scenarios play over; the first install otherwise.
         #[arg(long)]
         game: Option<PathBuf>,
+        /// Run the tools in the running app's session, at its socket unless one is named.
+        #[arg(long, num_args = 0..=1, value_name = "SOCKET", conflicts_with = "game")]
+        connect: Option<Option<PathBuf>>,
     },
 }
 
@@ -190,7 +193,22 @@ struct McpRequest {
     read: Vec<PathBuf>,
     write: Vec<PathBuf>,
     read_only: bool,
-    game: Option<PathBuf>,
+    session: McpSession,
+}
+
+/// Where `mcp`'s tools run.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum McpSession {
+    /// A session of the server's own, its game played over `game` or the first install.
+    Own {
+        /// The game folder.
+        game: Option<PathBuf>,
+    },
+    /// The running app's session (AGT-7), on `socket` or the app's own.
+    App {
+        /// The socket, when not the app's own.
+        socket: Option<PathBuf>,
+    },
 }
 
 /// A project to open, and the dialect to read it in when its project file does not say.
@@ -322,6 +340,8 @@ enum Stopped {
     Register(String),
     /// The MCP server stopped.
     Mcp(qs_mcp::McpError),
+    /// The app's directories, where its socket is, are not known.
+    NoAppDirs(qs_paths::PathsError),
 }
 
 impl core::fmt::Display for Stopped {
@@ -334,6 +354,7 @@ impl core::fmt::Display for Stopped {
             Self::Write(error) => write!(f, "cannot write the output: {error}"),
             Self::Register(error) => write!(f, "the commands could not be registered: {error}"),
             Self::Mcp(error) => error.fmt(f),
+            Self::NoAppDirs(error) => write!(f, "the app's socket is not known: {error}"),
             Self::NotUnicode(path) => write!(
                 f,
                 "{}: the path is not Unicode, and the IDE's commands take paths as text",
@@ -504,8 +525,8 @@ enum McpInput {
     Bytes(Vec<u8>),
 }
 
-/// Opens `mcp`'s project on the session's own thread and serves the agent's tools on `input`
-/// until it ends.
+/// Serves the agent's tools on `input` until it ends: in a session of the server's own with
+/// `mcp`'s project open, or with `--connect` in the running app's.
 fn serve_mcp<L: Loader + Send + 'static>(
     mcp: &McpRequest,
     loader: L,
@@ -519,12 +540,68 @@ fn serve_mcp<L: Loader + Send + 'static>(
         .to_str()
         .ok_or_else(|| Stopped::NotUnicode(project.clone()))?
         .to_owned();
-    let mut preview_config = PreviewConfig::from_env(std::env::current_exe().unwrap_or_default());
-    if let Some(game) = &mcp.game {
-        preview_config.game = Some(game.clone());
+    let mut read = vec![project.clone()];
+    read.extend(mcp.read.iter().cloned());
+    let mut write = mcp.write.clone();
+    if !mcp.read_only {
+        write.push(project.clone());
     }
-    let no_project = Stopped::NoProject(project.clone()).to_string();
-    let make = move || {
+    let settings = ServerSettings {
+        project: project.clone(),
+        read,
+        write,
+        name: "quakec-ide".to_owned(),
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+    };
+    let server = match &mcp.session {
+        McpSession::Own { game } => {
+            let make = own_session(loader, config, game.clone(), project, path);
+            Server::start(make, settings, &AGENT_TOOLS)
+        }
+        McpSession::App { socket } => {
+            let socket = match socket {
+                Some(socket) => socket.clone(),
+                None => qs_paths::current()
+                    .map_err(Stopped::NoAppDirs)?
+                    .app_socket()
+                    .to_path_buf(),
+            };
+            let make = move || {
+                Connected::connect(&socket).map_err(|error| {
+                    format!(
+                        "no QuakeC Studio answers on {}; open the app first: {error}",
+                        socket.display()
+                    )
+                })
+            };
+            Server::start(make, settings, &AGENT_TOOLS)
+        }
+    }
+    .map_err(Stopped::Mcp)?;
+    match input {
+        McpInput::Stdio => server.serve_stdio().map_err(Stopped::Mcp),
+        McpInput::Bytes(bytes) => {
+            let answers = server.serve_bytes(bytes).map_err(Stopped::Mcp)?;
+            out.write_all(&answers).map_err(Stopped::Write)
+        }
+    }
+}
+
+/// What makes `mcp`'s own session: the workbench and the preview over `game`, the project at
+/// `path` open.
+fn own_session<L: Loader + Send + 'static>(
+    loader: L,
+    config: Config,
+    game: Option<PathBuf>,
+    project: PathBuf,
+    path: String,
+) -> impl FnOnce() -> Result<Session<McpContext<L>>, String> + Send + 'static {
+    let mut preview_config = PreviewConfig::from_env(std::env::current_exe().unwrap_or_default());
+    if let Some(game) = game {
+        preview_config.game = Some(game);
+    }
+    let no_project = Stopped::NoProject(project).to_string();
+    move || {
         let mut registry = Registry::new();
         qs_workbench::register(&mut registry)
             .and_then(|()| register_preview(&mut registry))
@@ -543,27 +620,6 @@ fn serve_mcp<L: Loader + Send + 'static>(
             return Err(no_project);
         }
         Ok(session)
-    };
-    let mut read = vec![project.clone()];
-    read.extend(mcp.read.iter().cloned());
-    let mut write = mcp.write.clone();
-    if !mcp.read_only {
-        write.push(project.clone());
-    }
-    let settings = ServerSettings {
-        project,
-        read,
-        write,
-        name: "quakec-ide".to_owned(),
-        version: env!("CARGO_PKG_VERSION").to_owned(),
-    };
-    let server = Server::start(make, settings, &AGENT_TOOLS).map_err(Stopped::Mcp)?;
-    match input {
-        McpInput::Stdio => server.serve_stdio().map_err(Stopped::Mcp),
-        McpInput::Bytes(bytes) => {
-            let answers = server.serve_bytes(bytes).map_err(Stopped::Mcp)?;
-            out.write_all(&answers).map_err(Stopped::Write)
-        }
     }
 }
 
@@ -661,12 +717,16 @@ fn parse(args: &[OsString]) -> Result<Request, Refused> {
             write,
             read_only,
             game,
+            connect,
         } => Request::Mcp(McpRequest {
             project: open(project.project, project.dialect),
             read,
             write,
             read_only,
-            game,
+            session: match connect {
+                Some(socket) => McpSession::App { socket },
+                None => McpSession::Own { game },
+            },
         }),
     })
 }

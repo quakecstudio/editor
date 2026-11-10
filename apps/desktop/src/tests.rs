@@ -19,6 +19,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use qs_commands::palette::search;
 use qs_commands::params::{self, Input};
+use qs_commands::remote::{Client, Host};
 use qs_layout::{Focus, Layout, Panel};
 use qs_workbench::debug::Location;
 use serde_json::json;
@@ -124,6 +125,40 @@ fn every_panel_toggles() {
         assert!(app.shell().layout().panel(panel).visible);
     }
     assert!(app.shell.resize(Panel::Bottom, 10.0).is_err());
+}
+
+// No spec statement: AGT-7, a command another process sends over the app's socket runs in the
+// window's session on the next frame, and its answer goes back
+#[test]
+fn a_command_sent_over_the_socket_runs_in_the_window() {
+    let dir = TempDir::new("socket");
+    let socket = if cfg!(windows) {
+        PathBuf::from(format!(
+            r"\\.\pipe\quakec-studio-test-{}",
+            std::process::id()
+        ))
+    } else {
+        dir.path().join("app.sock")
+    };
+    let ctx = egui::Context::default();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
+    let (woken, wake) = std::sync::mpsc::channel();
+    let host = Host::listen(&socket, move || {
+        let _sent = woken.send(());
+    })
+    .unwrap();
+    app.shell_mut().set_host(host);
+    let client = std::thread::spawn(move || {
+        let mut client = Client::connect(&socket).unwrap();
+        client
+            .execute("view.toggle_panel", json!({ "panel": "left" }))
+            .unwrap()
+    });
+    wake.recv().unwrap();
+    frame(&ctx, &mut app);
+    let shown = client.join().unwrap().unwrap();
+    assert_eq!(shown.get("visible"), Some(&json!(false)), "{shown}");
+    assert!(!app.shell().layout().panel(Panel::Left).visible);
 }
 
 // UI-15: both themes have every colour the app draws with, from docs/design/tokens.toml.

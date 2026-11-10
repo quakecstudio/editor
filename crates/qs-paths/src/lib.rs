@@ -100,6 +100,7 @@ pub struct AppDirs {
     data: PathBuf,
     cache: PathBuf,
     logs: PathBuf,
+    app_socket: PathBuf,
 }
 
 impl AppDirs {
@@ -125,6 +126,14 @@ impl AppDirs {
     #[must_use]
     pub fn logs(&self) -> &Path {
         &self.logs
+    }
+
+    /// The local socket where the running app answers commands from other processes, such as
+    /// `quakec-ide mcp --connect` (AGT-7): `app.sock` in the cache directory, or on Windows a
+    /// named pipe named after it, one per user.
+    #[must_use]
+    pub fn app_socket(&self) -> &Path {
+        &self.app_socket
     }
 }
 
@@ -156,10 +165,12 @@ where
         Platform::MacOs => {
             let library = required(platform, &env, "HOME")?.join("Library");
             let support = library.join("Application Support").join(APP_DIR_NAME);
+            let cache = library.join("Caches").join(APP_DIR_NAME);
             Ok(AppDirs {
                 config: support.clone(),
                 data: support,
-                cache: library.join("Caches").join(APP_DIR_NAME),
+                app_socket: cache.join(APP_SOCKET),
+                cache,
                 logs: library.join("Logs").join(APP_DIR_NAME),
             })
         }
@@ -169,6 +180,7 @@ where
             Ok(AppDirs {
                 config: roaming,
                 data: local.join("data"),
+                app_socket: pipe_named_after(&local.join("cache")),
                 cache: local.join("cache"),
                 logs: local.join("logs"),
             })
@@ -180,10 +192,12 @@ where
                     absolute_var(platform, &env, name).unwrap_or_else(|| join_all(&home, default));
                 base.join(APP_DIR_NAME_UNIX)
             };
+            let cache = xdg("XDG_CACHE_HOME", &[".cache"]);
             Ok(AppDirs {
                 config: xdg("XDG_CONFIG_HOME", &[".config"]),
                 data: xdg("XDG_DATA_HOME", &[".local", "share"]),
-                cache: xdg("XDG_CACHE_HOME", &[".cache"]),
+                app_socket: cache.join(APP_SOCKET),
+                cache,
                 logs: xdg("XDG_STATE_HOME", &[".local", "state"]).join("logs"),
             })
         }
@@ -229,6 +243,20 @@ where
 }
 
 /// `base` with each of `parts` joined in turn.
+/// The file name of the app's socket on macOS and Linux.
+const APP_SOCKET: &str = "app.sock";
+
+/// A named pipe for the user whose cache directory is `cache`: Windows has no socket files, so
+/// the pipe's name carries the directory, its letters and digits kept and the rest made `-`.
+fn pipe_named_after(cache: &Path) -> PathBuf {
+    let word: String = cache
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    PathBuf::from(format!(r"\\.\pipe\quakec-studio-{word}"))
+}
+
 fn join_all(base: &Path, parts: &[&str]) -> PathBuf {
     parts
         .iter()
@@ -416,6 +444,29 @@ mod tests {
                 })
             );
         }
+    }
+
+    // No spec statement: AGT-7, the app's socket is a file in the cache directory on macOS and
+    // Linux, and on Windows a pipe whose name is the user's cache directory, made one word
+    #[test]
+    fn the_app_socket_is_one_per_user() {
+        let mac = resolve(Platform::MacOs, env_of(&[("HOME", "/Users/q")])).unwrap();
+        assert_eq!(mac.app_socket(), mac.cache().join("app.sock"));
+        let linux = resolve(Platform::Linux, env_of(&[("HOME", "/home/q")])).unwrap();
+        assert_eq!(linux.app_socket(), linux.cache().join("app.sock"));
+        let env = |user: &str| {
+            env_of(&[
+                ("APPDATA", r"C:\Users\q\AppData\Roaming"),
+                ("LOCALAPPDATA", &format!(r"C:\Users\{user}\AppData\Local")),
+            ])
+        };
+        let windows = resolve(Platform::Windows, env("q")).unwrap();
+        let pipe = windows.app_socket().to_str().unwrap();
+        let word = pipe.strip_prefix(r"\\.\pipe\quakec-studio-").unwrap();
+        assert!(word.contains("Users-q-AppData-Local"), "{pipe}");
+        assert!(word.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+        let other = resolve(Platform::Windows, env("r")).unwrap();
+        assert_ne!(windows.app_socket(), other.app_socket());
     }
 
     #[test]
