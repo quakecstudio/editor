@@ -3,12 +3,15 @@
 #![expect(
     clippy::unwrap_used,
     clippy::panic,
-    reason = "test code: a failed unwrap or match is a failed test"
+    clippy::indexing_slicing,
+    reason = "test code: a failed unwrap, match or index is a failed test"
 )]
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use qc_edict::system::{SYSTEM_GLOBALS, defs_source};
+use qc_types::Etype;
 use qs_workbench::FsLoader;
 use serde_json::Value;
 
@@ -109,6 +112,20 @@ fn each_command_line_is_read() {
         }
     );
     assert_eq!(parse(&args(&["commands"])).unwrap(), Request::Commands);
+    assert_eq!(
+        parse(&args(&["test", "p", "--filter", "fire", "--game", "/q"])).unwrap(),
+        Request::Test {
+            project: open("p", None),
+            params: serde_json::json!({ "filter": "fire", "game": "/q" }),
+        }
+    );
+    assert_eq!(
+        parse(&args(&["test"])).unwrap(),
+        Request::Test {
+            project: open(".", None),
+            params: serde_json::json!({ "filter": null, "game": null }),
+        }
+    );
 }
 
 #[test]
@@ -257,6 +274,68 @@ fn run_runs_any_command_and_prints_its_json() {
         assert_eq!(exit, Exit::Failure);
         assert!(err.contains("no QuakeC project here"), "{err}");
     }
+}
+
+/// Gives the project in `dir` id's system globals and fields, and a body for each function the
+/// engine calls, so the VM takes its program.
+fn engine_defs(dir: &Path) {
+    let mut defs = defs_source();
+    for var in SYSTEM_GLOBALS
+        .iter()
+        .filter(|var| var.etype == Etype::Function)
+    {
+        defs.push_str(&format!("void() {} = {{}};\n", var.name));
+    }
+    defs.push_str("float speed = 300;\n");
+    std::fs::write(dir.join("defs.qc"), defs).unwrap();
+}
+
+// spec QCT-4.2, QCT-4.3: `test` prints each test's verdict and name, the failure's message and
+// the counts, and exits 1 when one failed and 0 when none did; `run project.test` answers the
+// same tests as JSON
+#[test]
+fn test_runs_the_projects_tests() {
+    let spec = ProjectSpec {
+        world: "void(string e) error = #10;\nvoid() test_passes = {};\n\
+            void() test_world = { error(\"the world is flat\"); };\n",
+    };
+    let dir = project("test", &spec);
+    engine_defs(&dir);
+    let (exit, out, err) = cli(&["test", text(&dir)]);
+    assert_eq!(exit, Exit::Problems, "{out}{err}");
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.first(), Some(&"passed  test_passes"), "{out}");
+    assert_eq!(lines.get(1), Some(&"FAILED  test_world"), "{out}");
+    assert!(
+        lines
+            .get(2)
+            .is_some_and(|l| l.starts_with("        ") && l.contains("the world is flat")),
+        "{out}"
+    );
+    assert_eq!(
+        lines.last(),
+        Some(&"1 passed, 1 failed, 0 skipped"),
+        "{out}"
+    );
+    let (exit, json, err) = cli(&["run", "project.test", "--project", text(&dir)]);
+    assert_eq!(exit, Exit::Success, "{err}");
+    let run: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(run["tests"][1]["name"], "test_world");
+    assert_eq!(run["tests"][1]["verdict"], "failed");
+    let message = run["tests"][1]["message"].as_str().unwrap();
+    assert!(out.contains(message.lines().next().unwrap()), "{out}");
+    let (exit, out, _) = cli(&["test", text(&dir), "--filter", "passes"]);
+    assert_eq!(exit, Exit::Success, "no test failed");
+    assert_eq!(out, "passed  test_passes\n1 passed, 0 failed, 0 skipped\n");
+    let broken = project(
+        "test-broken",
+        &ProjectSpec {
+            world: "void() test_world = { nowhere = 1; };\n",
+        },
+    );
+    let (exit, _, err) = cli(&["test", text(&broken)]);
+    assert_eq!(exit, Exit::Failure);
+    assert!(err.contains("nowhere"), "{err}");
 }
 
 #[test]

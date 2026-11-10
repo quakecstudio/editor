@@ -32,6 +32,9 @@ const qs_workbench::preview::STOP
 const qs_workbench::preview::UNWATCH
 const qs_workbench::preview::WATCH
 const qs_workbench::recent::RECENT_LIMIT
+const qs_workbench::testing::RUN_TESTS
+const qs_workbench::testing::SCENARIO_DIR
+const qs_workbench::testing::UNIT_PREFIX
 const qs_workbench::tools::ENGINE_BUILTINS
 const qs_workbench::tools::PROJECT_SYMBOLS
 const qs_workbench::vm_run::VM_RUN
@@ -47,6 +50,9 @@ enum qs_workbench::preview::StepBy
 enum qs_workbench::preview::debug::StopReason
 enum qs_workbench::preview::game_files::GameState
 enum qs_workbench::preview::scenario::ScenarioRunError
+enum qs_workbench::testing::TestKind
+enum qs_workbench::testing::TestRunError
+enum qs_workbench::testing::Verdict
 enum qs_workbench::tools::EngineBuiltinsError
 enum qs_workbench::vm_run::VmRunError
 field qs_workbench::Problem.diagnostic
@@ -145,6 +151,17 @@ field qs_workbench::preview::game_files::GameFiles.missing
 field qs_workbench::preview::game_files::GameFiles.state
 field qs_workbench::preview::scenario::ScenarioRun.images
 field qs_workbench::preview::scenario::ScenarioRun.report
+field qs_workbench::testing::RunTestsParams.filter
+field qs_workbench::testing::RunTestsParams.game
+field qs_workbench::testing::TestResult.kind
+field qs_workbench::testing::TestResult.message
+field qs_workbench::testing::TestResult.name
+field qs_workbench::testing::TestResult.verdict
+field qs_workbench::testing::TestRun.failed_count
+field qs_workbench::testing::TestRun.passed
+field qs_workbench::testing::TestRun.passed_count
+field qs_workbench::testing::TestRun.skipped_count
+field qs_workbench::testing::TestRun.tests
 field qs_workbench::tools::BuiltinFound.engine_name
 field qs_workbench::tools::BuiltinFound.extensions
 field qs_workbench::tools::BuiltinFound.name
@@ -293,6 +310,8 @@ fn qs_workbench::recent::RecentProjects::opened
 fn qs_workbench::recent::RecentProjects::projects
 fn qs_workbench::recent::RecentProjects::save
 fn qs_workbench::recent::recent_path
+fn qs_workbench::testing::Workbench::run_tests
+fn qs_workbench::testing::register_tests
 fn qs_workbench::tools::register_tools
 fn qs_workbench::vm_run::register_vm
 fn qs_workbench::vm_run::run
@@ -308,6 +327,8 @@ impl qs_workbench::preview::scenario::ScenarioRunError: From<ClientError>
 impl qs_workbench::preview::scenario::ScenarioRunError: From<PreviewError>
 impl qs_workbench::preview::scenario::ScenarioRunError: fmt::Display
 impl qs_workbench::preview::scenario::ScenarioRunError: std::error::Error
+impl qs_workbench::testing::TestRunError: std::error::Error
+impl qs_workbench::testing::TestRunError: std::fmt::Display
 impl qs_workbench::tools::EngineBuiltinsError: std::error::Error
 impl qs_workbench::tools::EngineBuiltinsError: std::fmt::Display
 impl qs_workbench::vm_run::VmRunError: std::error::Error
@@ -317,6 +338,7 @@ mod qs_workbench::preview::dock
 mod qs_workbench::preview::entities
 mod qs_workbench::preview::game_files
 mod qs_workbench::preview::scenario
+mod qs_workbench::testing
 mod qs_workbench::tools
 mod qs_workbench::vm_run
 struct qs_workbench::Location
@@ -367,6 +389,9 @@ struct qs_workbench::preview::entities::Selected
 struct qs_workbench::preview::game_files::GameFiles
 struct qs_workbench::preview::scenario::ScenarioRun
 struct qs_workbench::recent::RecentProjects
+struct qs_workbench::testing::RunTestsParams
+struct qs_workbench::testing::TestResult
+struct qs_workbench::testing::TestRun
 struct qs_workbench::tools::BuiltinFound
 struct qs_workbench::tools::EngineBuiltins
 struct qs_workbench::tools::EngineBuiltinsParams
@@ -424,11 +449,13 @@ use qs_workbench::RECENT_LIMIT = crate::recent::RECENT_LIMIT
 use qs_workbench::RELOAD = crate::preview::RELOAD
 use qs_workbench::RESTART = crate::preview::RESTART
 use qs_workbench::RESUME = crate::preview::RESUME
+use qs_workbench::RUN_TESTS = crate::testing::RUN_TESTS
 use qs_workbench::RecentProjects = crate::recent::RecentProjects
 use qs_workbench::ReloadParams = crate::preview::ReloadParams
 use qs_workbench::RenameError = qc_ide::RenameError
 use qs_workbench::Renamed = crate::editing::Renamed
 use qs_workbench::Reported = crate::build::Reported
+use qs_workbench::RunTestsParams = crate::testing::RunTestsParams
 use qs_workbench::SCENARIO_RUN = crate::preview::SCENARIO_RUN
 use qs_workbench::SELECT = crate::preview::SELECT
 use qs_workbench::SET_FIELD = crate::preview::SET_FIELD
@@ -447,9 +474,13 @@ use qs_workbench::Symbol = qc_ide::Symbol
 use qs_workbench::SymbolKind = qc_ide::SymbolKind
 use qs_workbench::SyntaxClass = qc_ide::SyntaxClass
 use qs_workbench::Target = qc_project::Target
+use qs_workbench::TestKind = crate::testing::TestKind
+use qs_workbench::TestResult = crate::testing::TestResult
+use qs_workbench::TestRun = crate::testing::TestRun
 use qs_workbench::UNWATCH = crate::preview::UNWATCH
 use qs_workbench::UnwatchParams = crate::preview::UnwatchParams
 use qs_workbench::VM_RUN = crate::vm_run::VM_RUN
+use qs_workbench::Verdict = crate::testing::Verdict
 use qs_workbench::VmRunParams = crate::vm_run::VmRunParams
 use qs_workbench::WATCH = crate::preview::WATCH
 use qs_workbench::WatchParams = crate::preview::WatchParams
@@ -459,6 +490,7 @@ use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
+use qs_workbench::register_tests = crate::testing::register_tests
 use qs_workbench::register_vm = crate::vm_run::register_vm
 use qs_workbench::scenario = crate::preview::scenario
 variant qs_workbench::CheckAfterTyping::OffTheFrame
@@ -513,6 +545,14 @@ variant qs_workbench::preview::scenario::ScenarioRunError::Preview
 variant qs_workbench::preview::scenario::ScenarioRunError::Read
 variant qs_workbench::preview::scenario::ScenarioRunError::RunRoot
 variant qs_workbench::preview::scenario::ScenarioRunError::Write
+variant qs_workbench::testing::TestKind::Scenario
+variant qs_workbench::testing::TestKind::Unit
+variant qs_workbench::testing::TestRunError::Build
+variant qs_workbench::testing::TestRunError::NothingBuilt
+variant qs_workbench::testing::TestRunError::Progs
+variant qs_workbench::testing::Verdict::Failed
+variant qs_workbench::testing::Verdict::Passed
+variant qs_workbench::testing::Verdict::Skipped
 variant qs_workbench::tools::EngineBuiltinsError::NoEngine
 variant qs_workbench::tools::EngineBuiltinsError::UnknownEngine
 variant qs_workbench::tools::EngineBuiltinsError::UnknownKind

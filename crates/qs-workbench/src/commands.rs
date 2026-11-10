@@ -11,6 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::editing::{Change, Source};
+use crate::testing::register_tests;
 use crate::tools::register_tools;
 use crate::vm_run::register_vm;
 use crate::{
@@ -96,6 +97,7 @@ pub fn register<C: HasWorkbench + 'static>(
     registry.register(Complete)?;
     registry.register(RenameCommand)?;
     register_tools(registry)?;
+    register_tests(registry)?;
     register_vm(registry)
 }
 

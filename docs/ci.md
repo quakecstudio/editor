@@ -199,6 +199,18 @@ check:
 | --- | --- | --- |
 | `Benchmarks` | Linux | `cargo xtask bench` against the history saved from `main`, then uploads the history as the `bench-history` artifact ([perf-budgets.md](perf-budgets.md#in-ci)) |
 
+[`.github/workflows/sign.yml`](../.github/workflows/sign.yml) runs on demand
+(`workflow_dispatch`) and on a pushed `v*` tag, never on pull requests, and is **not** a
+required check. It stands alone, called by no other workflow, so its attestations name it as
+the signer. It is the only workflow that reads the signing secrets
+([releasing.md](releasing.md)):
+
+| Check | Runs on | What it does |
+| --- | --- | --- |
+| `Signing secrets are set` | Linux | fails naming each signing secret that is not set, printing no value |
+| `Sign, notarize and attest on macOS` | macOS | builds the app, signs it with the hardened runtime from `build.keychain`, verifies it, notarizes it with notarytool, attests it and uploads it |
+| `Sign and attest on Windows` | Windows | builds the app, signs the `.exe` with aas-sign (Azure Trusted Signing over OIDC), checks its Authenticode signature, attests it and uploads it |
+
 [`.github/workflows/fuzz.yml`](../.github/workflows/fuzz.yml) runs nightly and on demand
 (`workflow_dispatch`), never on pull requests or in the merge queue, and is **not** a required
 check:

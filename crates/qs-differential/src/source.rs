@@ -12,8 +12,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use qc_edict::system::{SYSTEM_FIELDS, SYSTEM_GLOBALS};
-use qc_types::Etype;
+use qc_edict::system::defs_source;
 
 use crate::calls::Rng;
 
@@ -169,27 +168,9 @@ struct Gen {
 }
 
 /// The system part of a `defs.qc`: the globals of EDICT-2.1 and the fields of EDICT-3.1, in
-/// slot order, each section closed as id's `defs.qc` closes it.
+/// slot order, each section closed as id's `defs.qc` closes it, then the builtins.
 fn system_defs() -> String {
-    let type_name = |etype: Etype| match etype {
-        Etype::Float => "float",
-        Etype::Vector => "vector",
-        Etype::String => "string",
-        Etype::Entity => "entity",
-        Etype::Function => "void()",
-        Etype::Void | Etype::Field | Etype::Pointer => "void",
-    };
-    let mut text = String::new();
-    for var in SYSTEM_GLOBALS {
-        writeln!(text, "{} {};", type_name(var.etype), var.name).unwrap_or(());
-    }
-    text.push_str("void end_sys_globals;\n");
-    for var in SYSTEM_FIELDS {
-        writeln!(text, ".{} {};", type_name(var.etype), var.name).unwrap_or(());
-    }
-    text.push_str("void end_sys_fields;\n");
-    text.push_str(BUILTINS);
-    text
+    defs_source() + BUILTINS
 }
 
 /// The program number `n` of the seed `seed` (DIFF-14.1): the same text for the same pair.

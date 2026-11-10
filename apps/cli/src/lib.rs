@@ -8,13 +8,15 @@
 //! ```text
 //! quakec-ide build [<project>] [--dialect <vanilla|fteqcc>]
 //! quakec-ide check [<project>] [--dialect <vanilla|fteqcc>]
+//! quakec-ide test [<project>] [--dialect <vanilla|fteqcc>] [--filter <text>] [--game <folder>]
 //! quakec-ide run <command> [<json>] [--project <project> [--dialect <vanilla|fteqcc>]]
 //! quakec-ide commands
 //! ```
 //!
 //! `build` opens the project (`project.open`), compiles each module and writes its progs.dat
 //! and .lno (`project.build`), and prints each module's errors and warnings; `check` prints
-//! the project's problems (`project.check`). `run` runs the command `<command>` with the JSON
+//! the project's problems (`project.check`). `test` runs the project's tests (`project.test`,
+//! QCT-4.3) and prints each one's verdict. `run` runs the command `<command>` with the JSON
 //! object `<json>` as its parameters (`{}` when absent), after opening `--project` when given,
 //! and prints what it returned as JSON. `commands` lists every command (`commands.list`). The
 //! project is the current directory when none is named; `--dialect` reads a project with no
@@ -31,7 +33,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use qs_commands::{CommandError, Registry, Session};
 use qs_workbench::{
     BUILD_PROJECT, CHECK_PROJECT, Config, Dialect, Gravity, HasWorkbench, Loader, ModuleBuilt,
-    OPEN_PROJECT, Reported, Workbench,
+    OPEN_PROJECT, RUN_TESTS, Reported, TestRun, Verdict, Workbench,
 };
 use serde_json::{Value, json};
 
@@ -79,6 +81,18 @@ enum Verb {
     Build(ProjectArgs),
     /// List every error and warning of a project.
     Check(ProjectArgs),
+    /// Build a project and run its tests: its test_ functions and its tests/*.scenario files.
+    Test {
+        /// The project.
+        #[command(flatten)]
+        project: ProjectArgs,
+        /// Only the tests whose name contains this text.
+        #[arg(long)]
+        filter: Option<String>,
+        /// The game folder scenario tests play over; the first install found otherwise.
+        #[arg(long)]
+        game: Option<PathBuf>,
+    },
     /// Run any command by its id with JSON parameters, and print what it returns as JSON.
     Run {
         /// The command's id, as `quakec-ide commands` lists it.
@@ -133,6 +147,8 @@ enum Request {
     Build(Open),
     /// Check the project.
     Check(Open),
+    /// Run the project's tests with these `project.test` parameters.
+    Test { project: Open, params: Value },
     /// Run one command, after opening a project when one is named.
     Run {
         command: String,
@@ -185,7 +201,9 @@ pub fn run<L: Loader + 'static>(
         }
     };
     let dialect = match &request {
-        Request::Build(open) | Request::Check(open) => open.dialect,
+        Request::Build(open) | Request::Check(open) | Request::Test { project: open, .. } => {
+            open.dialect
+        }
         Request::Run { project, .. } => project.as_ref().and_then(|open| open.dialect),
         Request::Commands => None,
     };
@@ -317,6 +335,21 @@ fn execute<L: Loader + 'static>(
                 Exit::Problems
             })
         }
+        Request::Test { project, params } => {
+            open(project)?;
+            let run: TestRun = serde_json::from_value(
+                session
+                    .execute(RUN_TESTS, params.clone())
+                    .map_err(Stopped::Command)?,
+            )
+            .map_err(Stopped::Output)?;
+            print_tests(out, &run)?;
+            Ok(if run.passed {
+                Exit::Success
+            } else {
+                Exit::Problems
+            })
+        }
         Request::Run {
             command,
             params,
@@ -339,6 +372,28 @@ fn execute<L: Loader + 'static>(
             Ok(Exit::Success)
         }
     }
+}
+
+/// Writes each test of `run` to `out` as `<verdict> <name>`, the message of one that failed or
+/// was skipped indented below it, then the counts (QCT-4.3).
+fn print_tests(out: &mut impl Write, run: &TestRun) -> Result<(), Stopped> {
+    for test in &run.tests {
+        let verdict = match test.verdict {
+            Verdict::Passed => "passed ",
+            Verdict::Failed => "FAILED ",
+            Verdict::Skipped => "skipped",
+        };
+        writeln!(out, "{verdict} {}", test.name).map_err(Stopped::Write)?;
+        for line in test.message.iter().flat_map(|message| message.lines()) {
+            writeln!(out, "        {line}").map_err(Stopped::Write)?;
+        }
+    }
+    writeln!(
+        out,
+        "{} passed, {} failed, {} skipped",
+        run.passed_count, run.failed_count, run.skipped_count
+    )
+    .map_err(Stopped::Write)
 }
 
 /// Writes `value` to `out` as indented JSON and a line break.
@@ -399,6 +454,14 @@ fn parse(args: &[OsString]) -> Result<Request, Refused> {
     Ok(match parsed.verb {
         Verb::Build(args) => Request::Build(open(args.project, args.dialect)),
         Verb::Check(args) => Request::Check(open(args.project, args.dialect)),
+        Verb::Test {
+            project,
+            filter,
+            game,
+        } => Request::Test {
+            project: open(project.project, project.dialect),
+            params: json!({ "filter": filter, "game": game }),
+        },
         Verb::Run {
             command,
             params,

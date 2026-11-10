@@ -284,3 +284,30 @@ pub fn global_by_name(name: &str) -> Option<&'static SysVar> {
 pub fn field_by_name(name: &str) -> Option<&'static SysVar> {
     SYSTEM_FIELDS.iter().find(|var| var.name == name)
 }
+
+/// The QuakeC that declares the system globals and fields as id's `defs.qc` does: each global
+/// of [`SYSTEM_GLOBALS`], then `void end_sys_globals;`, then each field of [`SYSTEM_FIELDS`],
+/// then `void end_sys_fields;`, in slot order, so a program that starts with it lays them out
+/// at their slots (EDICT-2.1, EDICT-3.1). For tools and tests that build a program the engine
+/// accepts; it declares no function bodies.
+#[must_use]
+pub fn defs_source() -> String {
+    let type_name = |etype: Etype| match etype {
+        Etype::Float => "float",
+        Etype::Vector => "vector",
+        Etype::String => "string",
+        Etype::Entity => "entity",
+        Etype::Function => "void()",
+        Etype::Void | Etype::Field | Etype::Pointer => "void",
+    };
+    let mut text = String::new();
+    for var in SYSTEM_GLOBALS {
+        text.push_str(&format!("{} {};\n", type_name(var.etype), var.name));
+    }
+    text.push_str("void end_sys_globals;\n");
+    for var in SYSTEM_FIELDS {
+        text.push_str(&format!(".{} {};\n", type_name(var.etype), var.name));
+    }
+    text.push_str("void end_sys_fields;\n");
+    text
+}
