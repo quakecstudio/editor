@@ -118,6 +118,7 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
         input,
         names,
         engine,
+        ..
     } = module;
     let compiled = compile_module(db, input, |id| {
         names.get(id.index()).cloned().unwrap_or_default()

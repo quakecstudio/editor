@@ -10,10 +10,13 @@
 //!   checkpoint), what would write around the staged edits (`file.update`, `symbol.rename`),
 //!   and what only drives the window (`view.*`, tabs, the palette).
 //! - **A brief before the first turn.** The runtime records a checkpoint, compiles the project
-//!   and runs its tests, and gives the model the task with the project's files, its problems
-//!   and its tests as they are, so it starts from the facts instead of exploring for them.
-//! - **Rules it works under** ([`SYSTEM`]): propose edits with `edit.apply`, read before
-//!   writing, compile and test before finishing.
+//!   and runs its tests, and gives the model the task with the project's `AGENTS.md`, each
+//!   module's kind, dialect and target engine with that engine's builtins, the project's
+//!   files, and its problems and tests as they are, so it starts from the facts instead of
+//!   exploring for them (P4-08).
+//! - **Rules it works under** ([`system_prompt`]): [`SYSTEM`], propose edits with
+//!   `edit.apply`, read before writing, compile and test before finishing; then the QuakeC
+//!   reference written for it, `docs/agent-reference/`.
 //! - **Guardrails.** A relative path is taken from the project; an edit outside the project is
 //!   refused; a tool's output longer than [`RunConfig::output_limit`] is cut, saying so; the
 //!   run has at most [`RunConfig::turns`] turns.
@@ -67,6 +70,19 @@ pub const SYSTEM: &str = "You are QuakeC Studio's agent. You change a QuakeC pro
     - Paths are the project's, absolute or relative to its directory.\n\
     - When you are finished, say so. The runtime compiles and runs the tests itself, and the \
     run is done only when both pass; if not, you are told why and go on.";
+
+/// The QuakeC reference written for the agent (`docs/agent-reference/quakec.md`).
+pub const QUAKEC_REFERENCE: &str = include_str!("../../../docs/agent-reference/quakec.md");
+
+/// How to work in QuakeC Studio, for the agent (`docs/agent-reference/workflow.md`).
+pub const WORKFLOW_REFERENCE: &str = include_str!("../../../docs/agent-reference/workflow.md");
+
+/// The system prompt of every run: [`SYSTEM`], then the agent reference. It is the same for
+/// every run and every turn, so a provider's prompt cache keeps it.
+#[must_use]
+pub fn system_prompt() -> String {
+    format!("{SYSTEM}\n\n{QUAKEC_REFERENCE}\n{WORKFLOW_REFERENCE}")
+}
 
 /// A tool the model may call: a command, as the registry describes it.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -292,6 +308,7 @@ pub fn run<C: 'static>(
         .and_then(Value::as_u64)
         .and_then(|n| u32::try_from(n).ok());
     let specs = tools(session);
+    let system = system_prompt();
     let mut transcript = vec![Message::User {
         text: brief(session, task, config),
     }];
@@ -299,7 +316,7 @@ pub fn run<C: 'static>(
     let mut outcome = None;
     for _ in 0..config.turns {
         match model
-            .reply(SYSTEM, &specs, &transcript)
+            .reply(&system, &specs, &transcript)
             .map_err(AgentError::Model)?
         {
             Reply::Calls { text, calls } => {
@@ -364,6 +381,26 @@ fn brief<C: 'static>(session: &mut Session<C>, task: &str, config: &RunConfig) -
         "Task: {task}\n\nThe project is at {}.\n",
         config.project.display()
     );
+    if let Ok(read) = session.execute(
+        "file.read",
+        json!({ "path": config.project.join("AGENTS.md") }),
+    ) && let Some(guide) = read.get("text").and_then(Value::as_str)
+    {
+        text.push_str(&format!(
+            "\nThe project's AGENTS.md, its author's notes for you:\n\n{}\n",
+            guide.trim_end()
+        ));
+    }
+    if let Ok(info) = session.execute("project.info", json!({})) {
+        for module in info
+            .get("modules")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            text.push_str(&module_brief(session, module));
+        }
+    }
     if let Ok(files) = session.execute("project.files", json!({}))
         && let Some(files) = files.as_array()
     {
@@ -391,6 +428,49 @@ fn brief<C: 'static>(session: &mut Session<C>, task: &str, config: &RunConfig) -
     ));
     for reason in &checked.reasons {
         text.push_str(&format!("- {reason}\n"));
+    }
+    text
+}
+
+/// What the brief says of one module of `project.info`: its kind, dialect and engine, and the
+/// engine's builtins for its kind, which are the only ones its program may call.
+fn module_brief<C: 'static>(session: &mut Session<C>, module: &Value) -> String {
+    let field = |name: &str| module.get(name).and_then(Value::as_str).unwrap_or_default();
+    let (engine, kind) = (field("engine"), field("kind"));
+    let mut text = format!(
+        "\nModule {}: {} QuakeC in the {} dialect, for {} ({engine}).\n",
+        field("name"),
+        kind,
+        field("dialect"),
+        field("engine_name"),
+    );
+    let Ok(table) = session.execute("engine.builtins", json!({ "engine": engine, "kind": kind }))
+    else {
+        return text;
+    };
+    let builtins = table.get("builtins").and_then(Value::as_array);
+    text.push_str(&format!(
+        "Its engine's builtins ({}), as a program declares them, the only ones it may call:\n",
+        builtins.map_or(0, Vec::len)
+    ));
+    for builtin in builtins.into_iter().flatten() {
+        let name = builtin
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let signature = builtin
+            .get("signature")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let key = match (
+            builtin.get("number").and_then(Value::as_u64),
+            builtin.get("engine_name").and_then(Value::as_str),
+        ) {
+            (Some(number), _) => format!("#{number}"),
+            (None, Some(engine_name)) => format!("#0:{engine_name}"),
+            (None, None) => "#0".to_owned(),
+        };
+        text.push_str(&format!("- {signature} {name} = {key};\n"));
     }
     text
 }

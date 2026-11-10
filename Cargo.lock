@@ -3898,6 +3898,7 @@ dependencies = [
  "qc-progs",
  "qc-project",
  "qc-sema",
+ "qc-syntax",
  "qc-types",
  "qc-vm",
  "qs-bridge",
