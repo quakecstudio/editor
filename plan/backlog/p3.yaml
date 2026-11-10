@@ -681,9 +681,9 @@ issues:
   - P3-19
   - P3-30
   deliverable:
-  - docs/gates/p3.md with latency measurements per OS, integration test results, updated risk register
+  - docs/gates/p3.md with integration test results and an updated risk register; the save-to-game latency on each OS is measured at the MVP demo (P4-24), decided by Justin on 2026-11-10
   acceptance:
-  - 'Gate met: save-to-game in about a second on all three OSes with breakpoints and inspection'
+  - 'Gate met: save reloads the running game in place, and breakpoints and entity inspection work against the preview host on all three OSes; save-to-game latency per OS is P4-24''s (decided by Justin on 2026-11-10)'
   - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
   - The gate report merged with `Closes`, linking the CI runs and recordings; the reviewer's closing comment lists the phase's issues, all closed
@@ -908,9 +908,9 @@ issues:
   deliverable:
   - 'crates/qs-differential and oracles/vm/scenario.c: a scenario directive that sends a client a string command at a frame, run as vkQuake runs it, with its statement in docs/spec/differential.md (DIFF-2) and the scenario vectors updated'
   - 'crates/qs-differential/src/runner/fixtures.rs: crmod7 scenarios that connect a client fully, type the commands its `SV_ParseClientCommand` dispatches and play a match to its end, and an `info_player_deathmatch` in the minimal map'
-  - 'xtask/src/compiler_diff.rs and .github/workflows/differential.yml: crmod7 added to `MODS_AT_BAR` and the nightly compiler differential'
+  - 'xtask/src/compiler_diff.rs and .github/workflows/differential.yml: crmod7 in the nightly compiler differential; its place in `MODS_AT_BAR` is L-15''s (#737), split off by Justin on 2026-11-06 and confirmed on 2026-11-10'
   acceptance:
-  - '`cargo xtask compiler-diff --full crmod7` passes: no divergence and at least 90% of statements executed'
+  - '`cargo xtask compiler-diff --full crmod7` passes with no divergence, 87.9% of statements executed; the rest of the way to 90% is L-15 (#737), split off by Justin on 2026-11-06 and confirmed on 2026-11-10'
   - 'The codebases already at the bar stay there: `cargo xtask compiler-diff --full` passes on each'
   verify:
   - cargo xtask compiler-diff --full crmod7
