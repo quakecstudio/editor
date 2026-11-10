@@ -219,11 +219,21 @@ fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<Str
     )?;
     steps.push("breakpoint/set".to_owned());
 
+    // BRIDGE-4.11, P3-10: a dry run says what the reload then reports.
+    let predicted = client
+        .request("reload", json!({ "dry_run": true }))
+        .map_err(|e| format!("reload dry_run: {e}"))?;
     // BRIDGE-4.9, WORLD-10: the running progs loaded again over the map migrates its values
     // and loses nothing.
     let reloaded = client
         .request("reload", json!({}))
         .map_err(|e| format!("reload: {e}"))?;
+    expect(
+        predicted.get("lost") == reloaded.get("lost")
+            && predicted.get("added") == reloaded.get("added")
+            && predicted.get("migrated") == reloaded.get("migrated"),
+        "the dry run predicts the reload's report",
+    )?;
     expect(
         reloaded
             .get("migrated")
@@ -232,7 +242,7 @@ fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<Str
             && reloaded.get("lost") == Some(&json!([])),
         "reload migrates the running progs and loses nothing",
     )?;
-    steps.push("reload".to_owned());
+    steps.push("reload, predicted by its dry run".to_owned());
 
     let monster = a_monster(client)?;
 

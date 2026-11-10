@@ -33,6 +33,7 @@ enum qs_workbench::EntryKind
 enum qs_workbench::WorkbenchError
 enum qs_workbench::build::Gravity
 enum qs_workbench::commands::CandidateKind
+enum qs_workbench::preview::OnLoss
 enum qs_workbench::preview::PlayState
 enum qs_workbench::preview::PreviewError
 enum qs_workbench::preview::StepBy
@@ -94,6 +95,8 @@ field qs_workbench::preview::PreviewConfig.host
 field qs_workbench::preview::PreviewStatus.picked
 field qs_workbench::preview::PreviewStatus.state
 field qs_workbench::preview::PreviewStatus.status
+field qs_workbench::preview::PreviewStatus.would_reset
+field qs_workbench::preview::ReloadParams.on_loss
 field qs_workbench::preview::ScenarioRunParams.path
 field qs_workbench::preview::SelectParams.edict
 field qs_workbench::preview::SelectedEntity.classname
@@ -197,6 +200,7 @@ fn qs_workbench::preview::Preview::stop
 fn qs_workbench::preview::Preview::toggle_breakpoint
 fn qs_workbench::preview::Preview::unwatch
 fn qs_workbench::preview::Preview::watch
+fn qs_workbench::preview::Preview::would_reset
 fn qs_workbench::preview::PreviewConfig::from_env
 fn qs_workbench::preview::debug::Debugger::breakpoint_mut
 fn qs_workbench::preview::debug::Debugger::breakpoints
@@ -286,6 +290,7 @@ struct qs_workbench::preview::PlayParams
 struct qs_workbench::preview::Preview
 struct qs_workbench::preview::PreviewConfig
 struct qs_workbench::preview::PreviewStatus
+struct qs_workbench::preview::ReloadParams
 struct qs_workbench::preview::ScenarioRunParams
 struct qs_workbench::preview::SelectParams
 struct qs_workbench::preview::SelectedEntity
@@ -334,6 +339,7 @@ use qs_workbench::Loader = qc_project::Loader
 use qs_workbench::Modifier = qc_ide::Modifier
 use qs_workbench::Modifiers = qc_ide::Modifiers
 use qs_workbench::ModuleBuilt = crate::build::ModuleBuilt
+use qs_workbench::OnLoss = crate::preview::OnLoss
 use qs_workbench::PAUSE = crate::preview::PAUSE
 use qs_workbench::PICK = crate::preview::PICK
 use qs_workbench::PLAY = crate::preview::PLAY
@@ -350,6 +356,7 @@ use qs_workbench::RELOAD = crate::preview::RELOAD
 use qs_workbench::RESTART = crate::preview::RESTART
 use qs_workbench::RESUME = crate::preview::RESUME
 use qs_workbench::RecentProjects = crate::recent::RecentProjects
+use qs_workbench::ReloadParams = crate::preview::ReloadParams
 use qs_workbench::RenameError = qc_ide::RenameError
 use qs_workbench::Renamed = crate::editing::Renamed
 use qs_workbench::Reported = crate::build::Reported
@@ -396,6 +403,8 @@ variant qs_workbench::commands::CandidateKind::Function
 variant qs_workbench::commands::CandidateKind::Global
 variant qs_workbench::commands::CandidateKind::Local
 variant qs_workbench::commands::CandidateKind::Parameter
+variant qs_workbench::preview::OnLoss::Ask
+variant qs_workbench::preview::OnLoss::Reload
 variant qs_workbench::preview::PlayState::Paused
 variant qs_workbench::preview::PlayState::Playing
 variant qs_workbench::preview::PlayState::Stopped

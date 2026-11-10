@@ -191,6 +191,9 @@ pub struct Preview {
     status: Option<String>,
     /// The game's edicts and the selected one.
     entities: Entities,
+    /// What the reload held back would reset, from the host's dry run (BRIDGE-4.11, P3-10):
+    /// each value lost, as `kind name: reason`. Empty when no reload waits.
+    would_reset: Vec<String>,
     /// The classname of the edict a click in the game's window picked, for the shell to open
     /// its spawn function (P3-15).
     picked: Option<String>,
@@ -225,6 +228,7 @@ impl Preview {
             status: None,
             entities: Entities::new(),
             picked: None,
+            would_reset: Vec::new(),
             pending: Vec::new(),
             debugger: Debugger::new(),
             dock: (None, None),
@@ -421,6 +425,13 @@ impl Preview {
         let answer = self.live_client()?.inspect(InspectWhat::Edict(edict))?;
         self.entities.select(&answer);
         Ok(())
+    }
+
+    /// What the reload held back would reset (P3-10), each as `kind name: reason`; empty when
+    /// no reload waits.
+    #[must_use]
+    pub fn would_reset(&self) -> &[String] {
+        &self.would_reset
     }
 
     /// Selects the edict under the point `x`, `y` of the game's window, fractions from its top
@@ -627,6 +638,7 @@ impl Preview {
     pub fn reload<L: Loader>(
         &mut self,
         workbench: &mut Workbench<L>,
+        on_loss: OnLoss,
     ) -> Result<Option<Value>, PreviewError> {
         if self.live.is_none() {
             return Ok(None);
@@ -634,6 +646,18 @@ impl Preview {
         let started = Instant::now();
         let (_, progs, _) = built_program(workbench)?;
         let path = progs.to_string_lossy().into_owned();
+        if on_loss == OnLoss::Ask {
+            // P3-10: the host's own migration, run over a copy of the world, says what the
+            // reload would lose; a loss holds the reload for the modder to choose.
+            let predicted = self.live_client()?.predict_reload(&path)?;
+            let lost = would_reset(&predicted);
+            if !lost.is_empty() {
+                self.status = Some(format!("Reloading would reset {}", lost.len()));
+                self.would_reset = lost;
+                return Ok(None);
+            }
+        }
+        self.would_reset.clear();
         let migrated = self.live_client()?.reload(Some(&path))?;
         if let Some(live) = &mut self.live {
             live.progs = progs;
@@ -881,6 +905,44 @@ pub const SCENARIO_RUN: &str = "scenario.run";
 /// The id of the command that steps the stopped game by a statement, into, over or out.
 pub const STEP_BY: &str = "preview.step_by";
 
+/// What `preview.reload` does when the reload would lose a value (P3-10, BRIDGE-4.11).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OnLoss {
+    /// Reload all the same: what is lost resets.
+    #[default]
+    Reload,
+    /// Ask first: the reload waits, and the status lists what it would reset.
+    Ask,
+}
+
+/// The values a `reload` result says are lost, as `kind name: reason` (WORLD-10.5).
+fn would_reset(result: &Value) -> Vec<String> {
+    let text = |change: &Value, key: &str| {
+        change
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    result
+        .get("lost")
+        .and_then(Value::as_array)
+        .map(|lost| {
+            lost.iter()
+                .map(|c| {
+                    format!(
+                        "{} {}: {}",
+                        text(c, "kind"),
+                        text(c, "name"),
+                        text(c, "reason")
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// What a `preview.*` command leaves: the play state and the last thing the loop did.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PreviewStatus {
@@ -892,6 +954,9 @@ pub struct PreviewStatus {
     /// poll, whose spawn function the shell opens (BRIDGE-3.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub picked: Option<String>,
+    /// What the reload held back would reset, each as `kind name: reason` (P3-10).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub would_reset: Vec<String>,
 }
 
 impl PreviewStatus {
@@ -905,6 +970,7 @@ impl PreviewStatus {
             state: state.to_owned(),
             status: preview.status.clone(),
             picked: preview.picked.clone(),
+            would_reset: preview.would_reset.clone(),
         }
     }
 }
@@ -1300,23 +1366,32 @@ impl<C: HasPreview + 'static> Command<C> for PlayCommand {
 }
 
 /// `preview.reload`: builds the project and reloads it in the running game.
+/// The parameters of `preview.reload`.
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReloadParams {
+    /// What to do when the reload would lose a value: `reload` (the default) or `ask`.
+    #[serde(default)]
+    pub on_loss: OnLoss,
+}
+
 struct ReloadCommand;
 
 impl<C: HasPreview + 'static> Command<C> for ReloadCommand {
     const ID: &'static str = RELOAD;
     const SUMMARY: &'static str = "Builds the open project and reloads its program in the \
         running game, the map going on; nothing when no game runs.";
-    type Params = NoParams;
+    type Params = ReloadParams;
     type Output = PreviewStatus;
     type Error = PreviewError;
 
     fn run(
         &self,
         context: &mut C,
-        NoParams {}: NoParams,
+        params: ReloadParams,
     ) -> Result<Outcome<PreviewStatus, C>, PreviewError> {
         let (workbench, preview) = context.workbench_and_preview();
-        preview.reload(workbench)?;
+        preview.reload(workbench, params.on_loss)?;
         Ok(Outcome::outside_history(PreviewStatus::of(preview)))
     }
 }

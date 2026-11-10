@@ -33,9 +33,9 @@ use qs_workbench::dock::DockFrame;
 use qs_workbench::{
     AtParams, CLOSE_FILE, COMPLETE, Candidate, CloseFileParams, Config, DEFINITION, DOCK,
     EntryKind, FsLoader, HOVER, HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT,
-    OpenFile, OpenFileParams, OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState,
-    Preview, PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME,
-    RecentProjects, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE,
+    OnLoss, OpenFile, OpenFileParams, OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams,
+    PlayState, Preview, PreviewConfig, PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME,
+    RecentProjects, ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, UPDATE_FILE,
     UpdateFileParams, Workbench,
 };
 use qs_workbench::{
@@ -93,6 +93,8 @@ impl HasLayout for Workspace {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Area {
     Toolbar,
+    /// The notice below the toolbar while a reload waits (P3-10).
+    ResetNotice,
     StatusBar,
     Panel(Panel),
     Palette,
@@ -518,6 +520,7 @@ impl Shell {
         self.keys(ui);
         let pending = self.pending_focus();
         self.toolbar(ui);
+        self.reset_notice(ui);
         self.status_bar(ui);
         for panel in [Panel::Left, Panel::Right, Panel::Bottom] {
             self.panel(ui, panel, pending == Some(Focus::Panel(panel)));
@@ -809,9 +812,57 @@ impl Shell {
         if self.session.context().preview.state() == PlayState::Stopped {
             return;
         }
-        let reloaded: Option<PreviewStatus> = self.run(RELOAD, &serde_json::json!({}));
+        // P3-10: a reload that would lose a value waits for the modder (`reset_notice`).
+        let params = ReloadParams {
+            on_loss: OnLoss::Ask,
+        };
+        let reloaded: Option<PreviewStatus> = self.run(RELOAD, &params);
         if reloaded.is_none() {
             self.preview_error = Some(Text::ReloadFailed.get().to_owned());
+        }
+    }
+
+    /// Below the toolbar while a reload waits (P3-10, design doc "State honesty"): what it
+    /// would reset, and the choice of reloading all the same or restarting the map on the new
+    /// program.
+    fn reset_notice(&mut self, ui: &mut Ui) {
+        let lost = self.session.context().preview.would_reset();
+        if lost.is_empty() {
+            return;
+        }
+        let theme = &self.theme;
+        let warn = theme.color(Token::StatusWarn);
+        let list = lost.join(", ");
+        let mut chosen = None;
+        egui::Panel::top(Id::new(Area::ResetNotice))
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme.color(Token::SurfaceToolbar))
+                    .inner_margin(theme.space(1)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new(labelled(Icon::Warning, Text::WouldReset)).color(warn));
+                    ui.label(list);
+                    if ui.button(Text::ReloadAnyway.get()).clicked() {
+                        chosen = Some(false);
+                    }
+                    if ui
+                        .button(labelled(Icon::Restart, Text::RestartMap))
+                        .clicked()
+                    {
+                        chosen = Some(true);
+                    }
+                });
+            });
+        let Some(restart) = chosen else {
+            return;
+        };
+        let reloaded: Option<PreviewStatus> = self.run(RELOAD, &ReloadParams::default());
+        if reloaded.is_none() {
+            self.preview_error = Some(Text::ReloadFailed.get().to_owned());
+        } else if restart {
+            let _: Option<PreviewStatus> = self.run(RESTART, &serde_json::json!({}));
         }
     }
 

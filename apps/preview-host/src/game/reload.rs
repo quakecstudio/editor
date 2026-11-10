@@ -9,7 +9,7 @@ use qc_lno::LnoFile;
 use qc_progs::Progs;
 use qs_bridge::{ErrorCode, RpcError};
 use qs_sim::debug::resolve;
-use qs_sim::rerelease::patch_builtins;
+use qs_sim::rerelease::{BuiltinTable, patch_builtins};
 use qs_sim::{Change, Migration};
 use serde_json::{Value, json};
 
@@ -32,6 +32,10 @@ impl Game {
         let table = patch_builtins(&mut bytes);
         let new = Progs::read(&bytes)
             .map_err(|e| RpcError::new(ErrorCode::InvalidParams, format!("{path}: {e}")))?;
+        // BRIDGE-4.11: a dry run migrates a copy of the world and changes nothing.
+        if params.get("dry_run").and_then(Value::as_bool) == Some(true) {
+            return self.predict(&path, &new, table);
+        }
         let old_bytes = core::mem::take(&mut self.progs);
         let migration = match Progs::read(&old_bytes) {
             Ok(old) => {
@@ -65,6 +69,32 @@ impl Game {
         if self.state == State::Paused {
             self.state_changed(Some(Reason::Reload), None);
         }
+        Ok(result_json(&migration, &cleared, self.world.time()))
+    }
+
+    /// `reload` with `dry_run` (BRIDGE-4.11): the report a reload of `new` would give, from
+    /// the same migration run over a copy of the world, and the breakpoints it would clear;
+    /// the running world, its progs, breakpoints and events are left as they were.
+    fn predict(&self, path: &str, new: &Progs<'_>, table: BuiltinTable) -> Result<Value, RpcError> {
+        let old = Progs::read(&self.progs)
+            .map_err(|e| RpcError::new(ErrorCode::InternalError, e.to_string()))?;
+        let mut copy = self.world.clone();
+        let migration = copy
+            .reload(&old, new, table)
+            .map_err(|e| RpcError::new(ErrorCode::InternalError, e.to_string()))?;
+        let lines = self
+            .read_file(&lno_path(path))
+            .ok()
+            .and_then(|lno| LnoFile::read(&lno).ok())
+            .filter(|lno| lno.matches_header(new.header()).is_ok())
+            .map(|lno| lno.lines)
+            .unwrap_or_default();
+        let cleared: Vec<u64> = self
+            .breakpoints
+            .iter()
+            .filter(|b| resolve(new, &lines, &b.file, b.line).is_none())
+            .map(|b| b.id)
+            .collect();
         Ok(result_json(&migration, &cleared, self.world.time()))
     }
 

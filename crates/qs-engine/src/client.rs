@@ -524,8 +524,18 @@ impl Client {
     ///
     /// The request's [`ClientError`].
     pub fn reload(&mut self, path: Option<&str>) -> Result<Value, ClientError> {
-        let params = path.map_or_else(|| json!({}), |path| json!({ "path": path }));
+        let params = path.map_or_else(|| json!({}), |path| json!({ "progs": path }));
         self.request("reload", params)
+    }
+
+    /// `reload` with `dry_run` (BRIDGE-4.11): what a reload of the progs at `path` would
+    /// migrate, lose and add, the running game unchanged.
+    ///
+    /// # Errors
+    ///
+    /// The request's [`ClientError`].
+    pub fn predict_reload(&mut self, path: &str) -> Result<Value, ClientError> {
+        self.request("reload", json!({ "progs": path, "dry_run": true }))
     }
 
     /// `breakpoint/set` (BRIDGE-4.9) at `line` of `file`, relative to the project's root.
