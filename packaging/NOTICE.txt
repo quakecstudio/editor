@@ -1,0 +1,20 @@
+QuakeC Studio
+Copyright (C) 2026 QuakeC Studio contributors
+
+QuakeC Studio is free software: you can redistribute it and/or modify it under the terms of
+the GNU General Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version. The license's text is in LICENSE,
+beside this file.
+
+Corresponding source: the source code of this build is the tagged commit of
+https://github.com/quakecstudio/editor that it was built from, named in the release it came
+with; every release links its tag.
+
+Parts of QuakeC Studio are ported from id Software's GPL source code of Quake
+(Copyright (C) 1996-1997 Id Software, Inc.) and from other GPL projects, each named in the
+header of the file that ports it. ATTRIBUTION.md in the source lists the authors and licenses
+of the fonts and other assets bundled with the app.
+
+QuakeC Studio is an independent project and is not affiliated with or endorsed by id Software,
+ZeniMax Media or Bethesda. Quake game data is not included: the app uses a copy of the game
+the user owns.
