@@ -325,7 +325,7 @@ pub struct ToolCall {
 }
 
 /// One entry of a run's transcript.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "snake_case")]
 pub enum Message {
     /// The task with its brief, or the runtime telling the model why it is not done.
@@ -349,6 +349,69 @@ pub enum Message {
         /// Whether the call failed.
         is_error: bool,
     },
+    /// An image the modder gave as context, such as a screenshot of the running game (P4-31):
+    /// the user's, after the text it goes with.
+    Image {
+        /// Its media type, such as `image/png`.
+        media_type: String,
+        /// Its bytes, in base64 (RFC 4648, section 4).
+        data: String,
+    },
+}
+
+impl Message {
+    /// How many tokens it is estimated to take: four characters a token, an image a fixed
+    /// [`IMAGE_TOKENS`] (P4-31). The providers count their own; this is the window's estimate.
+    #[must_use]
+    pub fn estimated_tokens(&self) -> usize {
+        let chars = match self {
+            Self::User { text } => text.len(),
+            Self::Assistant { text, calls } => calls.iter().fold(text.len(), |n, call| {
+                n.saturating_add(call.name.len())
+                    .saturating_add(call.arguments.to_string().len())
+            }),
+            Self::Tool { content, .. } => content.to_string().len(),
+            Self::Image { .. } => return IMAGE_TOKENS,
+        };
+        chars.div_ceil(CHARS_PER_TOKEN)
+    }
+}
+
+/// How many characters one token is estimated to take.
+pub const CHARS_PER_TOKEN: usize = 4;
+/// How many tokens an image is estimated to take.
+pub const IMAGE_TOKENS: usize = 1600;
+
+/// The estimated tokens of `transcript` ([`Message::estimated_tokens`]).
+#[must_use]
+pub fn estimated_tokens(transcript: &[Message]) -> usize {
+    transcript
+        .iter()
+        .fold(0, |n, m| n.saturating_add(m.estimated_tokens()))
+}
+
+/// `bytes` in base64 with padding (RFC 4648, section 4), as an [`Message::Image`] holds them.
+#[must_use]
+pub fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let symbol = |index: u32| {
+        let index = usize::try_from(index & 63).unwrap_or(0);
+        char::from(ALPHABET.get(index).copied().unwrap_or(b'A'))
+    };
+    let mut out = String::with_capacity(bytes.len().div_ceil(3).saturating_mul(4));
+    for chunk in bytes.chunks(3) {
+        let b = |i: usize| u32::from(chunk.get(i).copied().unwrap_or(0));
+        let group = (b(0) << 16) | (b(1) << 8) | b(2);
+        out.push(symbol(group >> 18));
+        out.push(symbol(group >> 12));
+        out.push(if chunk.len() > 1 {
+            symbol(group >> 6)
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 { symbol(group) } else { '=' });
+    }
+    out
 }
 
 /// What the model answers on its turn.
@@ -419,7 +482,22 @@ pub struct RunConfig {
     /// Which tools the model is offered and whether each call runs, asks or is refused
     /// (P4-30).
     pub permissions: Permissions,
+    /// The model's context window in tokens: the transcript is compacted before it reaches
+    /// [`COMPACT_AT_PERCENT`] of it (P4-31).
+    pub context_limit: usize,
 }
+
+/// How full of the model's context the transcript may get, in percent, before it is compacted.
+pub const COMPACT_AT_PERCENT: usize = 80;
+
+/// What the model is asked to write when the transcript is compacted (P4-31).
+pub const COMPACT_PROMPT: &str = "The conversation is near the model's context limit. Write a \
+    summary of the work so far for yourself to go on from: the task, what you found, what you \
+    changed and in which files, what is left to do and anything you must not forget. Write only \
+    the summary; do not call a tool.";
+
+/// What the compacted transcript says before the summary.
+pub const SUMMARY_HEADING: &str = "Summary of the earlier turns, which were compacted:";
 
 impl RunConfig {
     /// A run over the project at `project`, with 40 turns, the tests run with no parameters,
@@ -432,6 +510,7 @@ impl RunConfig {
             test_params: json!({}),
             output_limit: 20_000,
             permissions: Permissions::default(),
+            context_limit: 200_000,
         }
     }
 }
@@ -555,6 +634,10 @@ pub struct Run {
     /// The reply's calls not yet run, the first waiting on the modder when `asking` is set.
     queued: Vec<ToolCall>,
     asking: Option<Asking>,
+    /// Whether the request out is the compaction's, whose reply is the summary (P4-31).
+    compacting: bool,
+    /// The summaries each compaction left, the earliest first.
+    summaries: Vec<String>,
 }
 
 /// A call waiting for the modder's permission (P4-30): the call, what its patterns match and
@@ -620,15 +703,111 @@ impl Run {
             outcome: None,
             queued: Vec::new(),
             asking: None,
+            compacting: false,
+            summaries: Vec::new(),
         })
+    }
+
+    /// Goes on from `transcript`, a thread's messages up to one the modder edited and ran again
+    /// (P4-31): a new checkpoint is recorded, and the model is asked from there.
+    ///
+    /// # Errors
+    ///
+    /// [`AgentError::Checkpoint`] when the checkpoint cannot be recorded.
+    pub fn resume<C: 'static>(
+        session: &mut Session<C>,
+        transcript: Vec<Message>,
+        config: RunConfig,
+    ) -> Result<Self, AgentError> {
+        let label = transcript
+            .iter()
+            .rev()
+            .find_map(|m| match m {
+                Message::User { text } => Some(text.lines().next().unwrap_or_default().to_owned()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        let mut run = Self::start(session, &label, config)?;
+        run.transcript = transcript;
+        Ok(run)
+    }
+
+    /// Adds a message the modder queued while a turn ran, which the model reads on its next
+    /// turn (P4-31).
+    pub fn push_user(&mut self, text: &str) {
+        self.transcript.push(Message::User {
+            text: text.to_owned(),
+        });
+    }
+
+    /// Adds an image the modder gave as context (P4-31).
+    pub fn push_image(&mut self, media_type: &str, data: String) {
+        self.transcript.push(Message::Image {
+            media_type: media_type.to_owned(),
+            data,
+        });
+    }
+
+    /// The summaries the run's compactions left, the earliest first (P4-31).
+    #[must_use]
+    pub fn summaries(&self) -> &[String] {
+        &self.summaries
+    }
+
+    /// The transcript's estimated tokens ([`estimated_tokens`]).
+    #[must_use]
+    pub fn tokens(&self) -> usize {
+        estimated_tokens(&self.transcript)
+    }
+
+    /// Whether the transcript is to be compacted before the next turn: it holds more than the
+    /// brief and its last reply, and is past [`COMPACT_AT_PERCENT`] of the context.
+    fn needs_compacting(&self) -> bool {
+        let at = self
+            .config
+            .context_limit
+            .saturating_mul(COMPACT_AT_PERCENT)
+            .checked_div(100)
+            .unwrap_or(0);
+        self.transcript.len() > 2 && self.tokens() > at
+    }
+
+    /// The transcript once compacted with `summary`: the brief, the summary, and the last reply
+    /// with the results of its calls, so every call result still follows its call.
+    fn compacted(&self, summary: &str) -> Vec<Message> {
+        let last_reply = self
+            .transcript
+            .iter()
+            .rposition(|m| matches!(m, Message::Assistant { .. }))
+            .unwrap_or(self.transcript.len());
+        let mut out: Vec<Message> = self.transcript.iter().take(1).cloned().collect();
+        out.push(Message::User {
+            text: format!("{SUMMARY_HEADING}\n{summary}"),
+        });
+        out.extend(self.transcript.iter().skip(last_reply.max(1)).cloned());
+        out
     }
 
     /// What to ask the model next, or `None` while a call waits for the modder
     /// ([`Run::asking`]) and once the run is done or out of turns.
-    #[must_use]
-    pub fn request(&self) -> Option<Request> {
+    ///
+    /// Near the model's context limit the request is the compaction's (P4-31): the transcript
+    /// with [`COMPACT_PROMPT`] after it and no tools, whose reply is the summary.
+    pub fn request(&mut self) -> Option<Request> {
         if self.asking.is_some() || self.outcome.is_some() || self.turns_left == 0 {
             return None;
+        }
+        if self.needs_compacting() {
+            self.compacting = true;
+            let mut transcript = self.transcript.clone();
+            transcript.push(Message::User {
+                text: COMPACT_PROMPT.to_owned(),
+            });
+            return Some(Request {
+                system: self.system.clone(),
+                tools: Vec::new(),
+                transcript,
+            });
         }
         Some(Request {
             system: self.system.clone(),
@@ -649,6 +828,14 @@ impl Run {
         session: &mut Session<C>,
         reply: Result<Reply, String>,
     ) -> Result<(), AgentError> {
+        if std::mem::take(&mut self.compacting) {
+            let summary = match reply.map_err(AgentError::Model)? {
+                Reply::Calls { text, .. } | Reply::Finish { summary: text } => text,
+            };
+            self.transcript = self.compacted(&summary);
+            self.summaries.push(summary);
+            return Ok(());
+        }
         self.turns_left = self.turns_left.saturating_sub(1);
         match reply.map_err(AgentError::Model)? {
             Reply::Calls { text, calls } => {
@@ -1105,6 +1292,7 @@ fn lexical(path: &Path) -> PathBuf {
     out
 }
 
+pub mod history;
 mod permissions;
 
 pub use permissions::{EDIT_TOOLS, Permissions, READ_TOOLS, Verdict, glob, subjects};

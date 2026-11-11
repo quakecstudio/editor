@@ -94,6 +94,15 @@ fn messages(transcript: &[Message], sent: &[Value]) -> Vec<Value> {
     for message in transcript {
         let (role, blocks) = match message {
             Message::User { text } => ("user", text_block(text)),
+            // An image block: `{"type": "image", "source": {"type": "base64", "media_type":
+            // "image/png", "data": ...}}`, as the Messages API's vision example sends one.
+            Message::Image { media_type, data } => (
+                "user",
+                vec![json!({
+                    "type": "image",
+                    "source": { "type": "base64", "media_type": media_type, "data": data },
+                })],
+            ),
             Message::Assistant { text, calls } => {
                 let blocks = match replies.next().and_then(Value::as_array) {
                     Some(content) => content.clone(),

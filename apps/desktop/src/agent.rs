@@ -13,18 +13,20 @@ use std::sync::mpsc;
 use eframe::egui::{self, RichText, Ui};
 use qs_agent::{
     AgentProfile, Asking, Message, Model, Outcome, Permissions, Permit, Reply, Request, Run,
-    RunConfig, RunReport,
+    RunConfig, RunReport, history,
 };
 use qs_commands::Session;
 use qs_models::{KeyStore, Keychain, ProviderConfig, ProviderKind, ProviderModel, Secret};
 use qs_workbench::{HunkId, StagedHunk};
 
 use crate::shell::name_field;
-use crate::strings::Text;
+use crate::strings::{Text, queued_count, tokens_used};
 
 #[cfg(test)]
 mod tests;
 
+/// The media type of the screenshots given as context.
+const PNG: &str = "image/png";
 /// Before a thread still running.
 const RUNNING: char = '\u{2026}';
 /// Before a tool call.
@@ -62,6 +64,14 @@ enum Event {
 /// One task the agent works on.
 struct Thread {
     task: String,
+    /// The project it works in, where it is kept when it ends (P4-31).
+    project: PathBuf,
+    /// Messages the modder queued while a turn ran, which the model reads on its next turn.
+    queued: Vec<String>,
+    /// Whether it has been kept in the thread history.
+    kept: bool,
+    /// The summaries its compactions left, kept past the run's end.
+    summaries: Vec<String>,
     run: Option<Run>,
     /// Where requests go to the model's thread; dropped when the run ends, which ends it.
     to_model: Option<mpsc::Sender<Request>>,
@@ -80,7 +90,12 @@ impl Thread {
 
     /// Takes `event`: a piece of text is shown; a reply is answered in `session` and the next
     /// request sent, or the run ended.
-    fn take<C: 'static>(&mut self, session: &mut Session<C>, event: Event) {
+    fn take<C: 'static>(
+        &mut self,
+        session: &mut Session<C>,
+        event: Event,
+        followed: &mut Vec<PathBuf>,
+    ) {
         match event {
             Event::Text(piece) => self.streaming.push_str(&piece),
             Event::Reply(reply) => {
@@ -94,6 +109,8 @@ impl Thread {
                     self.to_model = None;
                     return;
                 }
+                followed.extend(last_paths(run.transcript()));
+                self.summaries = run.summaries().to_vec();
                 self.go_on(session, run);
             }
         }
@@ -101,10 +118,13 @@ impl Thread {
 
     /// After `run` has taken a reply or an answer: it waits while a call asks the modder,
     /// sends its next request, or ends.
-    fn go_on<C: 'static>(&mut self, session: &mut Session<C>, run: Run) {
+    fn go_on<C: 'static>(&mut self, session: &mut Session<C>, mut run: Run) {
         if run.asking().is_some() {
             self.run = Some(run);
             return;
+        }
+        for text in self.queued.drain(..) {
+            run.push_user(&text);
         }
         let sent = run
             .request()
@@ -130,6 +150,112 @@ impl Thread {
         self.go_on(session, run);
         kept
     }
+}
+
+/// Whether the editor follows the agent: opens each file its calls name (P4-31).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Follow {
+    /// It does not.
+    #[default]
+    Off,
+    /// It does.
+    On,
+}
+
+/// Starts `model` on a thread of its own: where requests go to it, and where its events come
+/// back; `wake` asks for a frame when it sends one.
+fn spawn_model(
+    mut model: Box<dyn Model + Send>,
+    wake: impl Fn() + Send + 'static,
+) -> (mpsc::Sender<Request>, mpsc::Receiver<Event>) {
+    let (to_model, requests) = mpsc::channel::<Request>();
+    let (events, from_model) = mpsc::channel::<Event>();
+    std::thread::spawn(move || {
+        while let Ok(request) = requests.recv() {
+            let reply = model.reply_streaming(
+                &request.system,
+                &request.tools,
+                &request.transcript,
+                &mut |piece| {
+                    // A panel that has gone no longer reads; the run ends with it.
+                    let _sent = events.send(Event::Text(piece.to_owned()));
+                    wake();
+                },
+            );
+            if events.send(Event::Reply(reply)).is_err() {
+                return;
+            }
+            wake();
+        }
+    });
+    (to_model, from_model)
+}
+
+/// The files the last reply's calls name in a `path` argument, which the editor follows.
+fn last_paths(transcript: &[Message]) -> Vec<PathBuf> {
+    transcript
+        .iter()
+        .rev()
+        .find_map(|m| match m {
+            Message::Assistant { calls, .. } => Some(calls),
+            _ => None,
+        })
+        .into_iter()
+        .flatten()
+        .filter_map(|call| {
+            call.arguments
+                .get(PATH_ARGUMENT)?
+                .as_str()
+                .map(PathBuf::from)
+        })
+        .collect()
+}
+
+/// The argument a call names a file in.
+const PATH_ARGUMENT: &str = "path";
+
+/// Keeps `thread`, which has ended, in its project's thread history (P4-31): its messages, its
+/// checkpoint and the ids of the hunks staged when it ended.
+fn keep_thread<C: 'static>(_session: &mut Session<C>, thread: &Thread) {
+    let Some(report) = &thread.report else {
+        return;
+    };
+    let staged = report
+        .staged
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|hunk| hunk.get(HUNK_ID)?.as_u64())
+        .collect();
+    let outcome = match &report.outcome {
+        Outcome::Done { summary } => summary.clone(),
+        Outcome::NotDone { reasons } => reasons.join("; "),
+    };
+    let record = history::ThreadRecord {
+        number: 0,
+        title: history::title_of(&thread.task),
+        tokens: qs_agent::estimated_tokens(&report.transcript),
+        transcript: report.transcript.clone(),
+        checkpoint: report.checkpoint,
+        staged,
+        summaries: thread.summaries.clone(),
+        outcome,
+    };
+    if let Err(error) = history::keep(&history::threads_dir(&thread.project), record) {
+        tracing::warn!(%error, "the thread was not kept in the history");
+    }
+}
+
+/// The field of a staged hunk's JSON that holds its id.
+const HUNK_ID: &str = "id";
+
+/// The thread history as the panel shows it: the search and the threads kept (P4-31).
+#[derive(Debug, Default)]
+struct HistoryView {
+    query: String,
+    threads: Vec<history::ThreadRecord>,
+    /// The thread reopened, by its index in `threads`.
+    open: Option<usize>,
 }
 
 /// The provider form's fields.
@@ -183,6 +309,20 @@ pub struct AgentPanel {
     error: Option<String>,
     /// The profile and rules a new thread's calls are decided by (P4-30).
     permissions: Permissions,
+    /// Whether the editor follows the agent (P4-31).
+    follow: Follow,
+    /// The files the threads' calls named since the window last took them, to follow.
+    followed: Vec<PathBuf>,
+    /// How many threads ended since the window last took the count, for the notification.
+    finished: usize,
+    /// Images given as context to the next thread started: media type and base64 data.
+    images: Vec<(String, String)>,
+    /// The thread history, while it is shown.
+    history: Option<HistoryView>,
+    /// A message being edited to run again from: the thread, the message's index and its text.
+    editing: Option<(usize, usize, String)>,
+    /// The message being typed to queue in the selected thread while it runs.
+    queue_text: String,
 }
 
 impl AgentPanel {
@@ -198,7 +338,105 @@ impl AgentPanel {
             config_file: None,
             error: None,
             permissions: Permissions::default(),
+            follow: Follow::Off,
+            followed: Vec::new(),
+            finished: 0,
+            images: Vec::new(),
+            history: None,
+            editing: None,
+            queue_text: String::new(),
         }
+    }
+
+    /// Follows the agent, as the panel's toggle does. For tests.
+    #[cfg(test)]
+    pub(crate) const fn set_follow_for_test(&mut self) {
+        self.follow = Follow::On;
+    }
+
+    /// Queues `text` for thread `index`'s next turn, as its box does. For tests.
+    #[cfg(test)]
+    pub(crate) fn queue_for_test(&mut self, index: usize, text: &str) {
+        if let Some(thread) = self.threads.get_mut(index) {
+            thread.queued.push(text.to_owned());
+        }
+    }
+
+    /// The files the threads' calls named since this was last asked, while the editor follows
+    /// the agent (P4-31).
+    pub fn take_followed(&mut self) -> Vec<PathBuf> {
+        std::mem::take(&mut self.followed)
+    }
+
+    /// How many threads ended since this was last asked, for the notification (P4-31).
+    pub const fn take_finished(&mut self) -> usize {
+        std::mem::replace(&mut self.finished, 0)
+    }
+
+    /// Gives a PNG as context: to the selected thread while it runs, else to the next thread
+    /// started (P4-31).
+    pub fn attach_png(&mut self, bytes: &[u8]) {
+        let data = qs_agent::base64(bytes);
+        let running = self
+            .selected
+            .and_then(|index| self.threads.get_mut(index))
+            .and_then(|thread| thread.run.as_mut());
+        match running {
+            Some(run) => run.push_image(PNG, data),
+            None => self.images.push((PNG.to_owned(), data)),
+        }
+    }
+
+    /// Shows the thread history, `threads` the threads kept, the newest first (P4-31).
+    pub fn show_history(&mut self, threads: Vec<history::ThreadRecord>) {
+        self.history = Some(HistoryView {
+            query: String::new(),
+            threads,
+            open: None,
+        });
+    }
+
+    /// Runs thread `index` again from its message `at`, edited to `text` (P4-31): the messages
+    /// before it and the edited one, a new checkpoint and the model asked from there.
+    ///
+    /// # Errors
+    ///
+    /// No provider, no model, no such thread, or no checkpoint.
+    pub fn run_again<C: 'static>(
+        &mut self,
+        session: &mut Session<C>,
+        (index, at, text): (usize, usize, String),
+        wake: impl Fn() + Send + 'static,
+    ) -> Result<(), String> {
+        let config = self
+            .config
+            .clone()
+            .ok_or_else(|| Text::NoAgent.get().to_owned())?;
+        let thread = self
+            .threads
+            .get_mut(index)
+            .ok_or_else(|| Text::AgentNoThread.get().to_owned())?;
+        let before = thread
+            .report
+            .as_ref()
+            .map(|report| report.transcript.as_slice())
+            .or_else(|| thread.run.as_ref().map(Run::transcript))
+            .unwrap_or_default();
+        let mut transcript: Vec<Message> = before.iter().take(at).cloned().collect();
+        transcript.push(Message::User { text });
+        let model = (self.make)(&config)?;
+        let mut run_config = RunConfig::new(&thread.project);
+        run_config.permissions = self.permissions.clone();
+        let run = Run::resume(session, transcript, run_config).map_err(|e| e.to_string())?;
+        let (to_model, from_model) = spawn_model(model, wake);
+        thread.to_model = Some(to_model);
+        thread.from_model = from_model;
+        thread.report = None;
+        thread.error = None;
+        thread.kept = false;
+        thread.go_on(session, run);
+        self.editing = None;
+        Ok(())
     }
 
     /// Decides the calls of threads started from now on by `permissions`.
@@ -298,32 +536,20 @@ impl AgentPanel {
             .config
             .clone()
             .ok_or_else(|| Text::NoAgent.get().to_owned())?;
-        let mut model = (self.make)(&config)?;
+        let model = (self.make)(&config)?;
         let mut run_config = RunConfig::new(project);
         run_config.permissions = self.permissions.clone();
-        let run = Run::start(session, task, run_config).map_err(|e| e.to_string())?;
-        let (to_model, requests) = mpsc::channel::<Request>();
-        let (events, from_model) = mpsc::channel::<Event>();
-        std::thread::spawn(move || {
-            while let Ok(request) = requests.recv() {
-                let reply = model.reply_streaming(
-                    &request.system,
-                    &request.tools,
-                    &request.transcript,
-                    &mut |piece| {
-                        // A panel that has gone no longer reads; the run ends with it.
-                        let _sent = events.send(Event::Text(piece.to_owned()));
-                        wake();
-                    },
-                );
-                if events.send(Event::Reply(reply)).is_err() {
-                    return;
-                }
-                wake();
-            }
-        });
+        let mut run = Run::start(session, task, run_config).map_err(|e| e.to_string())?;
+        for (media_type, data) in self.images.drain(..) {
+            run.push_image(&media_type, data);
+        }
+        let (to_model, from_model) = spawn_model(model, wake);
         let mut thread = Thread {
             task: task.to_owned(),
+            project: project.to_path_buf(),
+            queued: Vec::new(),
+            kept: false,
+            summaries: Vec::new(),
             run: None,
             to_model: Some(to_model),
             from_model,
@@ -331,17 +557,7 @@ impl AgentPanel {
             report: None,
             error: None,
         };
-        let sent = run.request().is_some_and(|request| {
-            thread
-                .to_model
-                .as_ref()
-                .is_some_and(|to| to.send(request).is_ok())
-        });
-        if sent {
-            thread.run = Some(run);
-        } else {
-            thread.report = Some(run.finish(session));
-        }
+        thread.go_on(session, run);
         self.threads.push(thread);
         self.selected = Some(self.threads.len().saturating_sub(1));
         Ok(())
@@ -389,29 +605,54 @@ impl AgentPanel {
     /// `session`; whether anything arrived. It never waits.
     pub fn pump<C: 'static>(&mut self, session: &mut Session<C>) -> bool {
         let mut any = false;
+        let mut followed = Vec::new();
         for thread in &mut self.threads {
             while let Ok(event) = thread.from_model.try_recv() {
-                thread.take(session, event);
+                thread.take(session, event, &mut followed);
                 any = true;
             }
         }
+        self.after_events(session, followed);
         any
     }
 
-    /// Waits for the next thing thread `index`'s model sends and takes it; `false` when its
-    /// model has ended. For tests, which drive the model by hand.
+    /// After threads took their models' events: the files their calls named, to follow, and
+    /// each thread that ended kept in the history and counted for the notification.
+    fn after_events<C: 'static>(&mut self, session: &mut Session<C>, followed: Vec<PathBuf>) {
+        if self.follow == Follow::On {
+            self.followed.extend(followed);
+        }
+        for thread in &mut self.threads {
+            if thread.report.is_some() && !thread.kept {
+                thread.kept = true;
+                self.finished = self.finished.saturating_add(1);
+                keep_thread(session, thread);
+            }
+        }
+    }
+
+    /// Waits for thread `index`'s model's next reply and takes it, with the text sent before
+    /// it; `false` when its model has ended. For tests, which drive the model by hand: the text
+    /// and the reply come one after the other from the model's thread, so waiting for the text
+    /// alone would leave the reply to a race with the next frame.
     #[cfg(test)]
     pub(crate) fn wait<C: 'static>(&mut self, session: &mut Session<C>, index: usize) -> bool {
         let Some(thread) = self.threads.get_mut(index) else {
             return false;
         };
-        match thread.from_model.recv() {
-            Ok(event) => {
-                thread.take(session, event);
-                true
+        let mut followed = Vec::new();
+        loop {
+            let Ok(event) = thread.from_model.recv() else {
+                return false;
+            };
+            let reply = matches!(event, Event::Reply(_));
+            thread.take(session, event, &mut followed);
+            if reply {
+                break;
             }
-            Err(_) => false,
         }
+        self.after_events(session, followed);
+        true
     }
 
     /// Draws the panel: the provider form until one is set up, then the threads, the task box
@@ -427,14 +668,27 @@ impl AgentPanel {
             }
             return action;
         }
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if let Some(config) = &self.config {
                 muted(ui, theme, &config.model);
             }
             if ui.small_button(Text::AgentSettings.get()).clicked() {
                 self.setup.open = true;
             }
+            let mut follow = self.follow == Follow::On;
+            if ui.checkbox(&mut follow, Text::AgentFollow.get()).changed() {
+                self.follow = if follow { Follow::On } else { Follow::Off };
+            }
+            if ui.small_button(Text::AgentHistory.get()).clicked() {
+                action = Some(AgentAction::OpenHistory);
+            }
+            if ui.small_button(Text::AgentScreenshot.get()).clicked() {
+                action = Some(AgentAction::AttachScreenshot);
+            }
         });
+        if self.history.is_some() {
+            return self.history_ui(ui, theme, staged).or(action);
+        }
         ui.horizontal_wrapped(|ui| {
             for (index, thread) in self.threads.iter().enumerate() {
                 let title: String = thread.task.chars().take(24).collect();
@@ -452,9 +706,19 @@ impl AgentPanel {
             }
         });
         if let Some(index) = self.selected
-            && let Some(thread) = self.threads.get(index)
+            && let Some(thread) = self.threads.get_mut(index)
         {
-            action = thread_view(ui, theme, index, thread).or(action);
+            let mut asked = thread_view(ui, theme, index, thread, &mut self.editing);
+            if thread.running() {
+                queue_box(ui, theme, thread, &mut self.queue_text);
+            }
+            if let Some(AgentAction::RunAgain(..)) = &asked {
+                self.history = None;
+            }
+            action = asked.take().or(action);
+        }
+        if !self.images.is_empty() {
+            muted(ui, theme, Text::AgentImage.get());
         }
         let task = ui.add(
             egui::TextEdit::multiline(&mut self.task)
@@ -484,6 +748,76 @@ impl AgentPanel {
         }
         if !staged.is_empty() {
             action = changes(ui, theme, staged).or(action);
+        }
+        action
+    }
+
+    /// The thread history: a search over the threads kept, and one reopened with its messages,
+    /// its checkpoint and the hunks it staged that still wait for a decision (P4-31).
+    fn history_ui(
+        &mut self,
+        ui: &mut Ui,
+        theme: &Theme,
+        staged: &[StagedHunk],
+    ) -> Option<AgentAction> {
+        let mut action = None;
+        let view = self.history.as_mut()?;
+        if ui.small_button(Text::AgentHistoryBack.get()).clicked() {
+            if view.open.is_some() {
+                view.open = None;
+            } else {
+                self.history = None;
+            }
+            return None;
+        }
+        if let Some(record) = view.open.and_then(|index| view.threads.get(index)) {
+            ui.label(RichText::new(&record.title).strong());
+            muted(ui, theme, &tokens_used(record.tokens));
+            transcript_view(ui, theme, &record.transcript);
+            summaries_view(ui, theme, &record.summaries);
+            muted(ui, theme, &record.outcome);
+            if let Some(number) = record.checkpoint {
+                ui.horizontal(|ui| {
+                    muted(
+                        ui,
+                        theme,
+                        &format!("{} {number}", Text::AgentCheckpoint.get()),
+                    );
+                    if ui.button(Text::AgentRestore.get()).clicked() {
+                        action = Some(AgentAction::Restore(number));
+                    }
+                });
+            }
+            let waiting: Vec<StagedHunk> = staged
+                .iter()
+                .filter(|hunk| record.staged.contains(&u64::from(hunk.id.get())))
+                .cloned()
+                .collect();
+            if !waiting.is_empty() {
+                action = changes(ui, theme, &waiting).or(action);
+            }
+            return action;
+        }
+        let search = ui.add(
+            egui::TextEdit::singleline(&mut view.query)
+                .hint_text(Text::AgentHistorySearch.get())
+                .desired_width(f32::INFINITY),
+        );
+        name_field(ui, &search, Text::AgentHistorySearch);
+        if view.threads.is_empty() {
+            muted(ui, theme, Text::AgentNoHistory.get());
+        }
+        let mut chosen = None;
+        for (index, record) in view.threads.iter().enumerate() {
+            if !record.matches(&view.query) {
+                continue;
+            }
+            if ui.selectable_label(false, &record.title).clicked() {
+                chosen = Some(index);
+            }
+        }
+        if chosen.is_some() {
+            view.open = chosen;
         }
         action
     }
@@ -574,6 +908,12 @@ pub enum AgentAction {
     Permit(usize, Permit),
     /// Use this profile from now on, kept in the project's settings.
     Profile(AgentProfile),
+    /// List the threads kept in the project (P4-31).
+    OpenHistory,
+    /// Give the running game's frame as context.
+    AttachScreenshot,
+    /// Run a thread again from a message, edited: the thread, the message's index, its text.
+    RunAgain(usize, usize, String),
 }
 
 /// What the panel calls `profile`.
@@ -619,8 +959,79 @@ fn permission_request(
     action
 }
 
-/// One thread: what the model said and called, the reply being written, how it ended.
-fn thread_view(ui: &mut Ui, theme: &Theme, index: usize, thread: &Thread) -> Option<AgentAction> {
+/// Each message after the brief: what the model said and called, each call's mark, the
+/// modder's messages, and each image given.
+fn transcript_view(ui: &mut Ui, theme: &Theme, transcript: &[Message]) {
+    let mono = theme.color(Token::TextMuted);
+    for message in transcript.iter().skip(1) {
+        match message {
+            Message::User { text } => muted(ui, theme, text),
+            Message::Assistant { text, calls } => {
+                if !text.is_empty() {
+                    ui.add(egui::Label::new(text.as_str()).wrap());
+                }
+                for call in calls {
+                    ui.label(
+                        RichText::new(format!("{CALL} {}", call.name))
+                            .monospace()
+                            .color(mono),
+                    );
+                }
+            }
+            Message::Tool { is_error, .. } => {
+                let (mark, token) = if *is_error {
+                    (FAILED, Token::StatusError)
+                } else {
+                    (RAN, Token::TextMuted)
+                };
+                ui.label(RichText::new(mark.to_string()).color(theme.color(token)));
+            }
+            Message::Image { .. } => muted(ui, theme, Text::AgentImage.get()),
+        }
+    }
+}
+
+/// A thread's compaction summaries, under their heading, when it has any.
+fn summaries_view(ui: &mut Ui, theme: &Theme, summaries: &[String]) {
+    if summaries.is_empty() {
+        return;
+    }
+    egui::CollapsingHeader::new(Text::AgentSummaries.get())
+        .id_salt(Text::AgentSummaries.get())
+        .show(ui, |ui| {
+            for summary in summaries {
+                muted(ui, theme, summary);
+            }
+        });
+}
+
+/// The box a message is queued from for a running thread's next turn (P4-31).
+fn queue_box(ui: &mut Ui, theme: &Theme, thread: &mut Thread, text: &mut String) {
+    ui.horizontal(|ui| {
+        let typed = ui.add(
+            egui::TextEdit::singleline(text)
+                .hint_text(Text::AgentQueueHint.get())
+                .desired_width(200.0),
+        );
+        name_field(ui, &typed, Text::AgentQueueHint);
+        if ui.button(Text::AgentQueue.get()).clicked() && !text.trim().is_empty() {
+            thread.queued.push(std::mem::take(text));
+        }
+    });
+    if !thread.queued.is_empty() {
+        muted(ui, theme, &queued_count(thread.queued.len()));
+    }
+}
+
+/// One thread: its messages, the reply being written, its token use and compactions, how it
+/// ended, and, once it has, each of the modder's messages to edit and run again from.
+fn thread_view(
+    ui: &mut Ui,
+    theme: &Theme,
+    index: usize,
+    thread: &Thread,
+    editing: &mut Option<(usize, usize, String)>,
+) -> Option<AgentAction> {
     let mut action = None;
     let transcript = thread
         .run
@@ -633,42 +1044,23 @@ fn thread_view(ui: &mut Ui, theme: &Theme, index: usize, thread: &Thread) -> Opt
                 .map(|report| report.transcript.as_slice())
         })
         .unwrap_or_default();
-    let mono = theme.color(Token::TextMuted);
+    muted(
+        ui,
+        theme,
+        &tokens_used(qs_agent::estimated_tokens(transcript)),
+    );
     egui::ScrollArea::vertical()
         .max_height(320.0)
         .stick_to_bottom(true)
         .show(ui, |ui| {
-            for message in transcript.iter().skip(1) {
-                match message {
-                    Message::User { text } => muted(ui, theme, text),
-                    Message::Assistant { text, calls } => {
-                        if !text.is_empty() {
-                            ui.add(egui::Label::new(text.as_str()).wrap());
-                        }
-                        for call in calls {
-                            ui.label(
-                                RichText::new(format!("{CALL} {}", call.name))
-                                    .monospace()
-                                    .color(mono),
-                            );
-                        }
-                    }
-                    Message::Tool { is_error, .. } => {
-                        let (mark, token) = if *is_error {
-                            (FAILED, Token::StatusError)
-                        } else {
-                            (RAN, Token::TextMuted)
-                        };
-                        ui.label(RichText::new(mark.to_string()).color(theme.color(token)));
-                    }
-                }
-            }
+            transcript_view(ui, theme, transcript);
             if !thread.streaming.is_empty() {
                 ui.add(egui::Label::new(thread.streaming.as_str()).wrap());
             } else if thread.running() && thread.run.as_ref().and_then(Run::asking).is_none() {
                 muted(ui, theme, Text::AgentWorking.get());
             }
         });
+    summaries_view(ui, theme, &thread.summaries);
     if let Some(asking) = thread.run.as_ref().and_then(Run::asking) {
         action = permission_request(ui, theme, index, asking);
     }
@@ -694,6 +1086,47 @@ fn thread_view(ui: &mut Ui, theme: &Theme, index: usize, thread: &Thread) -> Opt
             && ui.button(Text::AgentRestore.get()).clicked()
         {
             action = Some(AgentAction::Restore(number));
+        }
+        action = edit_messages(ui, index, &report.transcript, editing).or(action);
+    }
+    action
+}
+
+/// Each of the modder's messages of an ended thread with Edit, and the one being edited with
+/// its text and Run again from here (P4-31).
+fn edit_messages(
+    ui: &mut Ui,
+    index: usize,
+    transcript: &[Message],
+    editing: &mut Option<(usize, usize, String)>,
+) -> Option<AgentAction> {
+    let mut action = None;
+    for (at, message) in transcript.iter().enumerate() {
+        let Message::User { text } = message else {
+            continue;
+        };
+        match editing {
+            Some((thread, message_at, edited)) if *thread == index && *message_at == at => {
+                ui.add(egui::TextEdit::multiline(edited).desired_width(f32::INFINITY));
+                if ui.button(Text::AgentRunAgain.get()).clicked() {
+                    action = Some(AgentAction::RunAgain(index, at, edited.clone()));
+                }
+            }
+            _ => {
+                let first: String = text
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .chars()
+                    .take(48)
+                    .collect();
+                ui.horizontal(|ui| {
+                    ui.label(first);
+                    if ui.small_button(Text::AgentEdit.get()).clicked() {
+                        *editing = Some((index, at, text.clone()));
+                    }
+                });
+            }
         }
     }
     action

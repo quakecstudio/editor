@@ -49,6 +49,16 @@ to the result:
   about this: an `EntityState` with its classname, its think function and when it is due, and
   every field.
 
+- **Threads (P4-31, UI-22):**
+  - **Compaction:** a run past `COMPACT_AT_PERCENT` of `RunConfig::context_limit`, by the
+    estimate `estimated_tokens` (four characters a token, an image a fixed count), first asks
+    the model, with no tools, for a summary (`COMPACT_PROMPT`). It then goes on from the brief,
+    the summary and the last reply with its call results; `summaries` keeps each summary.
+  - **Queue, images and resume:** `push_user` adds a message queued while a turn ran,
+    `push_image` an image (`Message::Image`, base64 by `base64`), and `Run::resume` goes on
+    from an edited transcript.
+  - **History:** `history` keeps a thread's record as JSON in `.quakec-studio/threads/`,
+    numbered in the order kept, and lists and searches them.
 - **Tool permissions and profiles (P4-30, UI-22):** `Permissions` decides each call from the
   profile and the rules in the settings (`agent.profile`, `agent.tool_permissions`, kept in
   `qs-settings`). The Ask profile offers the reading tools (`READ_TOOLS`) only. Write offers

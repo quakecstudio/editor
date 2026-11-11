@@ -599,7 +599,7 @@ fn profiles_switch_the_tools_offered() {
     let offered = |session: &mut Session<Workbench<FsLoader>>, profile| {
         let mut config = RunConfig::new(&root);
         config.permissions = Permissions::of(profile);
-        let run = super::Run::start(session, "x", config).unwrap();
+        let mut run = super::Run::start(session, "x", config).unwrap();
         run.request()
             .unwrap()
             .tools
@@ -721,4 +721,165 @@ fn an_inline_edit_asks_and_answers_plainly() {
         summary: "```quakec\nx = 2;\ny = 3;\n```".to_owned(),
     };
     assert_eq!(super::inline_answer(&fenced), "x = 2;\ny = 3;");
+}
+
+// No spec statement: P4-31, the acceptance criterion: a thread near the model's context limit
+// is compacted, its summary kept, and it continues, its next turn fitting the context and
+// keeping the last call with its result
+#[test]
+fn a_thread_compacted_near_the_limit_continues_within_the_context() {
+    let (root, mut session) = project("compact", FIXED);
+    let mut config = RunConfig::new(&root);
+    config.context_limit = 6000;
+    config.output_limit = 8000;
+    let limit = config.context_limit;
+    let mut run = super::Run::start(&mut session, "Read the defs", config).unwrap();
+    let read = || calls(vec![("file.read", json!({ "path": root.join("defs.qc") }))]);
+    let mut compacted = None;
+    for _ in 0..20 {
+        let request = run.request().unwrap();
+        if request.tools.is_empty() {
+            let last = request.transcript.last().unwrap();
+            assert_eq!(
+                last,
+                &Message::User {
+                    text: super::COMPACT_PROMPT.to_owned()
+                }
+            );
+            assert!(super::estimated_tokens(&request.transcript) * 10 > limit * 8);
+            run.answer(
+                &mut session,
+                Ok(Reply::Finish {
+                    summary: "Read defs.qc twice; nothing changed.".to_owned(),
+                }),
+            )
+            .unwrap();
+            compacted = Some(run.transcript().to_vec());
+            break;
+        }
+        run.answer(&mut session, Ok(read())).unwrap();
+    }
+    let compacted = compacted.unwrap();
+    assert_eq!(run.summaries(), ["Read defs.qc twice; nothing changed."]);
+    let Message::User { text } = &compacted[1] else {
+        panic!("{:?}", compacted[1])
+    };
+    assert!(text.starts_with(super::SUMMARY_HEADING), "{text}");
+    assert!(
+        matches!(compacted[2], Message::Assistant { .. }),
+        "the last call stays"
+    );
+    assert!(
+        matches!(compacted[3], Message::Tool { .. }),
+        "with its result"
+    );
+    let next = run.request().unwrap();
+    assert!(!next.tools.is_empty(), "a turn of the work again");
+    assert!(
+        super::estimated_tokens(&next.transcript) < limit,
+        "the next turn fits"
+    );
+    run.answer(&mut session, Ok(finish())).unwrap();
+    let report = run.finish(&mut session);
+    assert!(
+        matches!(report.outcome, Outcome::Done { .. }),
+        "{:?}",
+        report.outcome
+    );
+}
+
+// No spec statement: P4-31: messages queued while a turn ran and images given as context join
+// the transcript the model reads next; a thread run again from an edited message goes on from
+// that message
+#[test]
+fn queued_messages_images_and_a_resumed_thread() {
+    let (root, mut session) = project("queue", FIXED);
+    let mut run = super::Run::start(&mut session, "Look", RunConfig::new(&root)).unwrap();
+    run.push_user("Also check the axe.");
+    run.push_image("image/png", super::base64(b"png"));
+    let request = run.request().unwrap();
+    assert_eq!(
+        &request.transcript[1..],
+        [
+            Message::User {
+                text: "Also check the axe.".to_owned()
+            },
+            Message::Image {
+                media_type: "image/png".to_owned(),
+                data: "cG5n".to_owned()
+            }
+        ]
+    );
+    let edited = vec![Message::User {
+        text: "Look at the shotgun instead.".to_owned(),
+    }];
+    let resumed = super::Run::resume(&mut session, edited.clone(), RunConfig::new(&root)).unwrap();
+    assert_eq!(resumed.transcript(), edited.as_slice());
+    assert!(resumed.checkpoint().is_some(), "a new checkpoint");
+}
+
+// No spec statement: P4-31: base64 as RFC 4648 section 10's test vectors give it
+#[test]
+fn base64_is_rfc_4648s() {
+    for (bytes, encoded) in [
+        ("", ""),
+        ("f", "Zg=="),
+        ("fo", "Zm8="),
+        ("foo", "Zm9v"),
+        ("foob", "Zm9vYg=="),
+        ("fooba", "Zm9vYmE="),
+        ("foobar", "Zm9vYmFy"),
+    ] {
+        assert_eq!(super::base64(bytes.as_bytes()), encoded);
+    }
+    assert_eq!(
+        Message::Image {
+            media_type: "image/png".to_owned(),
+            data: String::new()
+        }
+        .estimated_tokens(),
+        super::IMAGE_TOKENS
+    );
+}
+
+// No spec statement: P4-31: kept threads are listed the newest first, numbered in the order
+// kept, searched by title and messages, and read back as they were
+#[test]
+fn threads_are_kept_listed_and_searched() {
+    use super::history::{ThreadRecord, keep, load, threads_dir, title_of};
+    let root = std::env::temp_dir().join(format!("qs-agent-history-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&root);
+    let dir = threads_dir(&root);
+    assert!(load(&dir).unwrap().is_empty());
+    let record = |task: &str, said: &str| ThreadRecord {
+        number: 0,
+        title: title_of(task),
+        transcript: vec![
+            Message::User {
+                text: task.to_owned(),
+            },
+            Message::Assistant {
+                text: said.to_owned(),
+                calls: Vec::new(),
+            },
+        ],
+        checkpoint: Some(3),
+        staged: vec![7],
+        summaries: Vec::new(),
+        tokens: 42,
+        outcome: "done".to_owned(),
+    };
+    assert_eq!(
+        keep(&dir, record("Fix the axe\nIt is weak", "Raised it")).unwrap(),
+        1
+    );
+    assert_eq!(keep(&dir, record("Add a rocket", "Added")).unwrap(), 2);
+    let threads = load(&dir).unwrap();
+    let titles: Vec<&str> = threads.iter().map(|t| t.title.as_str()).collect();
+    assert_eq!(titles, ["Add a rocket", "Fix the axe"]);
+    assert_eq!(threads[1].staged, [7]);
+    assert_eq!(threads[1].checkpoint, Some(3));
+    assert!(threads[1].matches("AXE raised"));
+    assert!(!threads[1].matches("rocket"));
+    assert!(threads[0].matches(""));
 }

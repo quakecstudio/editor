@@ -36,6 +36,16 @@ pub(crate) fn request(
     for message in transcript {
         messages.push(match message {
             Message::User { text } => json!({ "role": "user", "content": text }),
+            // `ChatCompletionRequestMessageContentPartImage`: `type` `image_url`, whose `url` is
+            // "Either a URL of the image or the base64 encoded image data", sent as the data
+            // URL its example writes, `"url": "data:image/jpeg;base64,abcdefg..."`.
+            Message::Image { media_type, data } => json!({
+                "role": "user",
+                "content": [{
+                    "type": "image_url",
+                    "image_url": { "url": format!("data:{media_type};base64,{data}") },
+                }],
+            }),
             Message::Assistant { text, calls } => match replies.next() {
                 Some(raw) if raw.is_object() => raw.clone(),
                 _ => assistant(text, calls),
