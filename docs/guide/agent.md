@@ -1,0 +1,57 @@
+# The agent
+
+The agent, in the right panel, changes your project to do a task you give it in words, and
+does not call the task done until the project compiles clean and its tests pass. It uses the
+same commands you do, so you can watch what it does, and nothing it changes is written until
+you accept it.
+
+The agent runs on a model provider you choose. QuakeC Studio has no account and no model of
+its own, and it sends nothing anywhere until you set a provider up ([Privacy](../privacy.md)).
+
+## Set up a provider
+
+Until a provider is set up, the Agent section says **The agent is not set up yet.** and shows
+its form:
+
+- **Anthropic**, with an API key from the Anthropic Console;
+- **OpenAI-compatible**, for OpenAI or any service with the same API, with its **Address
+  (optional)** and an API key;
+- **Ollama (local)**, a model running on your own computer, which needs no key and keeps
+  everything on it.
+
+Fill in the **Model** and the key, and press **Save**. The key is kept in the system keychain,
+never in a file; the rest goes to `agent.json` in the app's data directory. **Settings** opens
+the form again later.
+
+## Give it a task
+
+Type the task in **What should the agent do?** and press **Start**. For example:
+
+> Make the axe do 200 damage, and add a test that proves it.
+
+Each task is a thread, and several can run at once; the row above the task box switches
+between them. Before the agent changes anything, the IDE records a checkpoint of the project.
+
+The agent starts with a brief of your project: its `AGENTS.md` if it has one (write your notes
+for the agent there), each module's dialect and engine, the engine's builtins, the files, and
+whether the project compiles and its tests pass now.
+
+While it works, the thread shows what the model writes as it writes it, and each command it
+calls with whether it ran. When it says it is finished, the IDE compiles and runs the tests
+itself:
+
+- **Done**: the compile is clean and every test passes. Its summary follows.
+- **Not done**: what still fails. The agent is told and goes on, until it runs out of turns.
+
+## Review its changes
+
+The agent's edits are not written to your files. They are staged, and **Proposed changes**
+lists each change, hunk by hunk, with **Accept** and **Reject**, and **Accept all** and
+**Reject all**. Once every hunk of a file is decided, the accepted ones are
+the editor's text of it, unsaved: save as usual.
+
+**Restore checkpoint** puts the project back as it was before the thread started.
+
+## The command line and other agents
+
+The same agent tools are served to Claude Code and other agents over MCP: see [MCP](mcp.md).
