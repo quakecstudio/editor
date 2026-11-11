@@ -147,7 +147,10 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
                 Ok(modules) => Build::Modules(
                     modules
                         .into_iter()
-                        .map(|(name, result)| (name, result.map_err(|why| relative(&why, &dir))))
+                        .map(|(name, result)| {
+                            let why = |w: String| relative(&relative(&w, &dir), &cache);
+                            (name, result.map_err(why))
+                        })
                         .collect(),
                 ),
                 Err(why) => Build::NotAProject(why.rsplit(": ").next().unwrap_or(&why).to_owned()),
@@ -228,7 +231,8 @@ fn render(rows: &[Row]) -> String {
 }
 
 /// `problem` with the paths under `dir` written relative to it, so the list is the same
-/// wherever the corpus cache is.
+/// wherever the corpus cache is: a codebase's own files relative to it, and a file of another
+/// codebase of its tree relative to the cache (`tree/freecs-tree/src/...`).
 fn relative(problem: &str, dir: &Path) -> String {
     let prefix = format!("{}{}", dir.display(), std::path::MAIN_SEPARATOR);
     problem.replace(&prefix, "")
