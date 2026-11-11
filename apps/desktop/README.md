@@ -73,6 +73,30 @@ and the wheel moves forward and back. Opening a map from the UI comes with the m
 `src/map_view/tests.rs` draws a test floor and compares it with `snapshots/map-view.png`,
 through a test renderer that gives egui's render pass the same depth buffer.
 
+## The agent panel
+
+The right panel's Agent section (P4-09, UI-5, PRIN-4), modelled on Zed's agent panel, is
+`src/agent.rs`:
+
+- **Provider:** until one is set up, a form for Anthropic, an OpenAI-compatible endpoint or a
+  local Ollama, with the model, an optional address and the API key. The key goes to the
+  system keychain (`qs_models::Keychain`); the rest goes to `agent.json` in the app's data
+  directory, which never holds a key.
+- **Threads:** each task starts a thread, and any number run at once. A thread is a
+  `qs_agent::Run`, driven a reply at a time. Its model waits on a thread of its own, streaming
+  the reply's text, and the window takes each reply between frames
+  (`AgentPanel::pump`). The run's tool calls go through the window's own session, so the
+  window shows what the agent does.
+- **What it shows:** the model's text as it is written, each call with whether it ran, and how
+  the run ended (done, or the reasons it is not). There is also a button that restores the
+  checkpoint the run recorded first.
+- **Proposed changes:** every staged hunk, with Accept and Reject for each and for all of
+  them (`edit.accept`, `edit.reject`).
+
+`src/agent/tests.rs` covers it. Two threads whose models are held wait while frames go on,
+and each ends when its model answers. A thread's hunk is rejected from the panel and its
+checkpoint restores the project. The provider form keeps the key out of the file.
+
 ## Fonts
 
 `assets/fonts/`: IBM Plex Sans 1.1.0 and JetBrains Mono 2.304 (OFL-1.1), Lucide 1.57.0's icon

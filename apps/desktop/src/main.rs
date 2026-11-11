@@ -7,8 +7,8 @@ use std::process::ExitCode;
 
 use eframe::egui;
 use qs_commands::remote::Host;
-use quakec_studio::App;
 use quakec_studio::strings::Text;
+use quakec_studio::{App, agent};
 
 /// `quakec-studio [<project>]`.
 #[derive(clap::Parser, Debug)]
@@ -48,6 +48,10 @@ fn main() -> ExitCode {
         .as_ref()
         .ok()
         .map(|dirs| dirs.app_socket().to_path_buf());
+    let agent_file = dirs
+        .as_ref()
+        .ok()
+        .map(|dirs| agent::config_path(dirs.data()));
     let layout_file = dirs.ok().map(|dirs| qs_layout::layout_path(dirs.data()));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -72,6 +76,10 @@ fn main() -> ExitCode {
             // the toolbar, which macOS has in its menu bar.
             if let Some(file) = settings_file {
                 app.shell_mut().set_settings_file(file);
+            }
+            // P4-07: the agent's provider; its key is in the keychain.
+            if let Some(file) = agent_file {
+                app.shell_mut().set_agent_file(file);
             }
             #[cfg(not(target_os = "macos"))]
             app.shell_mut().set_menu_in_window();

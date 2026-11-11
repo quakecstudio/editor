@@ -486,11 +486,7 @@ fn the_find_field_finds_on_enter_only() {
     let mut harness = harness("src/weapons.qc");
     harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
     harness.run_steps(3);
-    let field = harness
-        .get_all_by_role(egui::accesskit::Role::TextInput)
-        .next()
-        .unwrap();
-    field.click();
+    harness.get_by_label(Text::Find.get()).click();
     harness.run_steps(2);
     harness.event(Event::Text("bounces".to_owned()));
     harness.run_steps(2);
@@ -499,11 +495,7 @@ fn the_find_field_finds_on_enter_only() {
     harness.get_by_label(Text::MatchCase.get()).click();
     harness.run_steps(2);
     assert_eq!(editor(&harness).view.state().primary(), start);
-    let field = harness
-        .get_all_by_role(egui::accesskit::Role::TextInput)
-        .next()
-        .unwrap();
-    field.click();
+    harness.get_by_label(Text::Find.get()).click();
     harness.run_steps(2);
     harness.key_press(Key::Enter);
     harness.run_steps(3);

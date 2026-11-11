@@ -49,6 +49,46 @@ pub enum Text {
     NotPlaying,
     /// The agent panel before an agent is set up.
     NoAgent,
+    /// The agent panel's button that opens the provider form.
+    AgentSettings,
+    /// The hint in the agent's task box.
+    AgentTaskHint,
+    /// The button that starts a thread on the task.
+    AgentRun,
+    /// The Anthropic provider in the agent's form.
+    ProviderAnthropic,
+    /// An OpenAI-compatible endpoint in the agent's form.
+    ProviderOpenAi,
+    /// A local Ollama in the agent's form.
+    ProviderOllama,
+    /// The model field's label.
+    AgentModel,
+    /// The API address field's label.
+    AgentBaseUrl,
+    /// The API key field's label.
+    AgentKey,
+    /// Under the key field: where the key goes.
+    AgentKeyKept,
+    /// The provider form's button.
+    AgentSave,
+    /// A thread waiting on its model.
+    AgentWorking,
+    /// A run that finished with its work checked.
+    AgentDone,
+    /// A run that ended with its work not passing.
+    AgentNotDone,
+    /// The button that restores a run's checkpoint.
+    AgentRestore,
+    /// The heading over the staged hunks.
+    AgentChanges,
+    /// Accept one hunk.
+    AgentAccept,
+    /// Reject one hunk.
+    AgentReject,
+    /// Accept every hunk.
+    AgentAcceptAll,
+    /// Reject every hunk.
+    AgentRejectAll,
     /// The Problems tab with nothing to report.
     NoProblems,
     /// The Console tab before the preview host has started.
@@ -281,7 +321,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 135] = [
+    pub const ALL: [Self; 155] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -303,6 +343,26 @@ impl Text {
         Self::NoProject,
         Self::NotPlaying,
         Self::NoAgent,
+        Self::AgentSettings,
+        Self::AgentTaskHint,
+        Self::AgentRun,
+        Self::ProviderAnthropic,
+        Self::ProviderOpenAi,
+        Self::ProviderOllama,
+        Self::AgentModel,
+        Self::AgentBaseUrl,
+        Self::AgentKey,
+        Self::AgentKeyKept,
+        Self::AgentSave,
+        Self::AgentWorking,
+        Self::AgentDone,
+        Self::AgentNotDone,
+        Self::AgentRestore,
+        Self::AgentChanges,
+        Self::AgentAccept,
+        Self::AgentReject,
+        Self::AgentAcceptAll,
+        Self::AgentRejectAll,
         Self::NoProblems,
         Self::ConsoleIdle,
         Self::DebuggerIdle,
@@ -421,6 +481,10 @@ impl Text {
 
     /// The string, in English.
     #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the catalog: one arm per string, which the tests hold to Text::ALL"
+    )]
     pub const fn get(self) -> &'static str {
         match self {
             Self::AppName => "QuakeC Studio",
@@ -444,6 +508,26 @@ impl Text {
             Self::NoProject => "No project open.",
             Self::NotPlaying => "Entities appear here while the game runs.",
             Self::NoAgent => "The agent is not set up yet.",
+            Self::AgentSettings => "Settings",
+            Self::AgentTaskHint => "What should the agent do?",
+            Self::AgentRun => "Start",
+            Self::ProviderAnthropic => "Anthropic",
+            Self::ProviderOpenAi => "OpenAI-compatible",
+            Self::ProviderOllama => "Ollama (local)",
+            Self::AgentModel => "Model",
+            Self::AgentBaseUrl => "Address (optional)",
+            Self::AgentKey => "API key",
+            Self::AgentKeyKept => "Kept in the system keychain, never in a file.",
+            Self::AgentSave => "Save",
+            Self::AgentWorking => "Working\u{2026}",
+            Self::AgentDone => "Done",
+            Self::AgentNotDone => "Not done",
+            Self::AgentRestore => "Restore checkpoint",
+            Self::AgentChanges => "Proposed changes",
+            Self::AgentAccept => "Accept",
+            Self::AgentReject => "Reject",
+            Self::AgentAcceptAll => "Accept all",
+            Self::AgentRejectAll => "Reject all",
             Self::NoProblems => "No problems.",
             Self::ConsoleIdle => "The preview host's console appears here once it starts.",
             Self::DebuggerIdle => "Nothing is paused.",
