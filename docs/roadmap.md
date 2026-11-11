@@ -88,7 +88,7 @@ Phase 0 was mostly documents and decisions. Phase 1 is the first phase of ported
 | 1. Foundations | 35 (14 / 15 / 6) | 163 | 51 | 2 | the manual game-data check on macOS, Windows and Linux (P1-19) | 2026-10-19 | 2026-12-28 |
 | 2. Language core and editor | 33 (12 / 11 / 10) | 179 | 75 | 3 | Windows and Linux frame-time runs (P2-17), real IME input (P2-18), screen readers (P2-23) | 2026-10-23 | 2027-04-12 |
 | 3. Live preview | 31 (9 / 16 / 6) | 158 | 73 | 2 | the recorded Steam and GOG launches on three OSes (P3-06) | 2026-10-26 | 2027-07-22 |
-| 4. Agent and MVP release | 30 (16 / 11 / 3) | 117 | 47 | 3 | license review (P4-22), MVP demo (P4-24), release (P4-25) | 2026-10-30 | 2027-09-27 |
+| 4. Agent and MVP release | 30 (16 / 11 / 3) | 117 | 47 | 3 | signing credentials (P0-23), license review (P4-22), MVP demo (P4-24), release (P4-25) | 2026-10-30 | 2027-09-27 |
 | 5. Map entity editing | 11 (6 / 4 / 1) | 42 | 31 | 2 | none planned | 2026-11-02 | 2027-11-09 |
 | 6. Brushes and map compiler | 21 (12 / 5 / 4) | 89 | 38 | 2 | none planned | 2026-11-05 | 2027-12-31 |
 | 7. Lighting and performance | 9 (4 / 4 / 1) | 38 | 19 | 1 | none planned | 2026-11-07 | 2028-01-27 |
