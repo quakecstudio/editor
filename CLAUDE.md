@@ -64,9 +64,9 @@ tests cite. Public protocols we implement are cached verbatim in [`specs/`](spec
 - Every piece of work is a GitHub issue generated from [`plan/`](plan/README.md). Each issue
   states its deliverable, acceptance criteria, verification, requirements and dependencies,
   and carries the shared definition of done from `plan/backlog/_meta.yaml`.
-- Phases run in order (P0 to P7, then LATER). An issue depends on the previous phase's gate,
-  and on the readiness review of any lower layer it builds on (`docs/testing.md`). Do not
-  start an issue whose dependencies are open.
+- Phases run in order (P0 to P7, then LATER). An issue depends on the previous phase's gate
+  (unless a person closes it, as the MVP gate P4-25), and on the readiness review of any lower
+  layer it builds on (`docs/testing.md`). Do not start an issue whose dependencies are open.
 - To change the plan, edit `plan/requirements.yaml` or `plan/backlog/*.yaml`, run the checks
   below, open a PR, and sync GitHub with `plan/apply.py` after it merges. Do not edit issue
   bodies by hand; the sync overwrites them.

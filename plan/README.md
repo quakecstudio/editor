@@ -18,7 +18,7 @@ The backlog for QuakeC Studio, kept as data so nothing in the [design document](
 
 ## Rules the checker enforces
 
-- Phases run in order: every issue depends on the previous phase's gate; post-MVP (`LATER`) issues wait for the MVP gate.
+- Phases run in order: every issue depends on the previous phase's gate, unless that gate is `needs:human` (the MVP gate, P4-25: the next phase's agents need not wait for the release); post-MVP (`LATER`) issues wait for the MVP gate.
 - Layers wait for tested foundations: an issue that builds on a lower layer depends on that layer's readiness review (`docs/testing.md`).
 - Layers: every issue carries exactly one layer label (the board's Layer field).
 - People: every decision is labelled `needs:human`, so agents prepare it but never close it. Gates are closed by the reviewer agent once every issue in the phase is closed and nothing was deferred; the MVP gate, which publishes the release, stays `needs:human`. An agent that stops for a person adds the `escalated` label, which `apply.py` never removes.
