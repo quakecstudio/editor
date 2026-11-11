@@ -40,7 +40,7 @@ qs-sim = { workspace = true }
 quakec-lsp = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
-syn = { workspace = true, features = ["full", "parsing"] }
+syn = { workspace = true, features = ["full", "parsing", "visit"] }
 toml = { workspace = true, features = ["display", "parse", "serde", "std"] }
 
 [lints]
