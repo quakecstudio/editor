@@ -17,6 +17,8 @@ name = "quakec-studio"
 path = "src/main.rs"
 
 [dependencies]
+# The global allocator (P4-18).
+mimalloc = { workspace = true }
 # The command line: the project to open.
 clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 # eframe's defaults without `default_fonts`, whose fonts are not bundled (ADR-0003, ADR-0010),

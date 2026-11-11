@@ -131,6 +131,9 @@ junction = { version = "=2.1.0", default-features = false }
 # qs-models: API keys in the OS keychain (AGT-6): macOS Keychain, Windows Credential Manager
 # and the Secret Service over zbus, pure Rust. MIT OR Apache-2.0.
 keyring = { version = "=4.2.0", default-features = false }
+# The release binaries' global allocator (P4-18): faster than musl's malloc in the static
+# Linux builds of quakec-ide and quakec-lsp, and the same allocator on every platform.
+mimalloc = { version = "=0.1.52", default-features = false }
 miniz_oxide = { version = "=0.9.1", default-features = false }
 muda = { version = "=0.21.2", default-features = false }
 pollster = { version = "=0.4.0", default-features = false }

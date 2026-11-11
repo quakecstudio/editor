@@ -17,6 +17,8 @@ name = "quakec-ide"
 path = "src/main.rs"
 
 [dependencies]
+# The global allocator (P4-18).
+mimalloc = { workspace = true }
 clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 qs-commands = { workspace = true }
 # mcp: the agent's tools over the Model Context Protocol (P4-13).

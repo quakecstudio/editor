@@ -305,7 +305,7 @@ issues:
   - P3-02
   - P0-15
   deliverable:
-  - 'Release workflow: signed and notarized macOS DMG for Apple silicon (arm64); an MSI and portable zip for Windows x64 and arm64, the executables signed with Azure Artifact Signing on a tag; AppImage, Flatpak, deb and rpm for Linux x86_64 and aarch64; SHA256SUMS'
+  - 'Release workflow: signed and notarized macOS DMG for Apple silicon (arm64); an MSI and portable zip for Windows x64 and arm64, the executables signed with Azure Artifact Signing on a tag; AppImage, Flatpak, deb and rpm for Linux x86_64 and aarch64, with quakec-ide and quakec-lsp as static musl binaries also in a tar.gz of their own; SHA256SUMS'
   - The preview host bundled as a separate signed and notarized executable; the GPL-3.0 text, a corresponding-source link and NOTICE in every package
   - docs/releasing.md
   acceptance:

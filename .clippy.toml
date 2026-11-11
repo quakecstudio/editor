@@ -26,6 +26,7 @@ absolute-paths-allowed-crates = [
     "jsonschema",
     "junction",
     "keyring",
+    "mimalloc",
     "miniz_oxide",
     "muda",
     "pollster",

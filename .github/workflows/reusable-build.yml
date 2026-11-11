@@ -253,7 +253,11 @@ jobs:
         run: |
           rustup toolchain install
           rustup target add "$TARGET"
+      # The C runtime linked into each executable, so none needs the Visual C++
+      # Redistributable's vcruntime140.dll on the machine.
       - name: Build
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
         run: |
           cargo build --release --locked --target "$TARGET" \
             -p quakec-studio -p quakec-engine -p quakec-ide -p quakec-lsp
@@ -326,7 +330,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # ALSA's headers for the preview host's sound; rpm, flatpak-builder and the
+      # ALSA's headers for the preview host's sound; musl-gcc for the static command line; rpm, flatpak-builder and the
       # Freedesktop runtime and SDK the Flatpak is built on; desktop-file-utils to check the
       # desktop entry; and librsvg's gdk-pixbuf loader, with which flatpak-builder checks the
       # SVG icon on export.
@@ -334,25 +338,42 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libasound2-dev rpm flatpak flatpak-builder desktop-file-utils librsvg2-common
+            libasound2-dev rpm flatpak flatpak-builder desktop-file-utils librsvg2-common \
+            musl-tools
           flatpak remote-add --user --if-not-exists flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user --noninteractive --arch="$ARCH" flathub \
             org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
       - name: Set up the Rust toolchain
-        run: rustup toolchain install
+        run: |
+          rustup toolchain install
+          rustup target add "$ARCH-unknown-linux-musl"
+      # The app and the engine link glibc, since the display and GPU libraries they open at run
+      # time cannot be opened by a static binary; the command line and the language server are
+      # static musl binaries, which run on any Linux.
       - name: Build
-        run: cargo build --release --locked -p quakec-studio -p quakec-engine -p quakec-ide -p quakec-lsp
+        run: |
+          cargo build --release --locked -p quakec-studio -p quakec-engine
+          cargo build --release --locked --target "$ARCH-unknown-linux-musl" \
+            -p quakec-ide -p quakec-lsp
+          mkdir -p dist/bin
+          cp target/release/quakec-studio target/release/quakec-engine dist/bin/
+          for name in quakec-ide quakec-lsp; do
+            cp "target/$ARCH-unknown-linux-musl/release/$name" dist/bin/
+            file "dist/bin/$name"
+            file "dist/bin/$name" | grep -q "static"
+          done
       - name: Validate the desktop entry and the rpm's spec
         run: |
           desktop-file-validate packaging/linux/com.quakecstudio.QuakeCStudio.desktop
           rpmspec --define "pkg_version $VERSION" --define "tree /nonexistent" \
             -P packaging/linux/quakec-studio.spec > /dev/null
-      - name: Make the deb, the rpm, the AppImage and the Flatpak
+      - name: Make the deb, the rpm, the AppImage, the Flatpak and the command line's archive
         run: |
-          for format in deb rpm appimage flatpak; do
-            packaging/linux/package.sh "$format" "$ARCH" target/release "$VERSION" dist
+          for format in deb rpm appimage flatpak cli; do
+            packaging/linux/package.sh "$format" "$ARCH" dist/bin "$VERSION" dist
           done
+          rm -r dist/bin
           ls -l dist
       - name: Attest the Linux packages
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

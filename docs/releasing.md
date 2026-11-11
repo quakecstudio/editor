@@ -27,7 +27,7 @@ artifact.
 | --- | --- | --- |
 | macOS, Apple silicon (arm64) | `quakec-studio-<version>-macos-arm64.dmg`: `QuakeC Studio.app`, each executable and the app signed with the hardened runtime, the app notarized and stapled, in a signed, notarized and stapled disk image | `packaging/macos/package.sh`, with `packaging/macos/Info.plist` |
 | Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip`; on a tag, the executables in both are signed | `packaging/windows/package.sh`, with WiX 5 and `packaging/windows/quakec-studio.wxs` |
-| Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak` | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it |
+| Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak`; and `quakec-cli-<version>-linux-<arch>.tar.gz`, the command line and the language server alone | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it |
 | All | `SHA256SUMS`, every package's SHA-256 | the workflow's last job |
 
 Each file a package needs is its own file under `packaging/`, never written out by a script,
@@ -35,6 +35,14 @@ so it can be checked and formatted on its own; a script fills in only the versio
 deb's architecture) with `sed`. The build checks the desktop entry with
 `desktop-file-validate`, the rpm's spec with `rpmspec -P`, the Info.plist with `plutil -lint`,
 and the WiX source by building it.
+
+On Linux, `quakec-ide` and `quakec-lsp` are static musl binaries (`<arch>-unknown-linux-musl`),
+which run on any Linux with no library from the system; the app and the engine link glibc, since
+winit and wgpu open the display and GPU libraries (libxkbcommon, X11 or Wayland, Vulkan or GL,
+and the GPU's own driver) at run time, which a static binary cannot do. The deb and rpm require
+those libraries. On Windows every executable has the C runtime linked in (`+crt-static`), so
+none needs the Visual C++ Redistributable. Every binary uses mimalloc as its global allocator,
+faster than musl's own. macOS binaries link only the system's libraries, as every Mac app does.
 
 Every package holds the four binaries, the desktop app `quakec-studio`, the preview host
 `quakec-engine` beside it (where `qs-engine`'s `locate_host` looks), the command line
@@ -64,7 +72,8 @@ deletes a keychain entry:
   check runs too.
 - **Linux x86_64 and aarch64:** the deb installs with `apt` on Ubuntu 24.04 (host check, and the
   window under Xvfb), the rpm with `dnf` in a Fedora 41 container (host check), and the
-  AppImage runs its host check. The Flatpak runs every check from inside its sandbox: a Steam
+  AppImage runs its host check. The command line's archive runs in an Alpine container, whose
+  libc is musl: `quakec-ide --version` and its games check, and `quakec-lsp` starting. The Flatpak runs every check from inside its sandbox: a Steam
   folder holding LibreQuake as Quake (`packaging/linux/steam`) is found, the host starts on it, and the keychain is
   reached through gnome-keyring.
 
