@@ -1,14 +1,15 @@
 # Fails any workflow that uses a third-party action not pinned to a full commit
 # SHA, and audits every workflow with zizmor (docs/conventions.md, CONV-7).
-# Both jobs are required status checks on main (docs/ci.md), so they run on
-# every pull request (and every merge group, if the merge queue is turned back
-# on), not only when a workflow changes: a required check that never reports
-# blocks the merge.
+# They audit .github/ only, so they run only when it changes. Neither is a
+# required status check: a required check that never reports would block the
+# merge.
 name: Secure workflows
 
 on:
   pull_request:
     branches: [main]
+    paths:
+      - .github/**
   merge_group:
     types: [checks_requested]
 

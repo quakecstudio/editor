@@ -77,7 +77,7 @@ other crates' tests open or embed with `include_str!` and `include_bytes!` are u
 | `Unit Tests (linux)`, `(macos)`, `(windows)` | `cargo nextest run --locked -p xtask --all-features` on each OS instead of the whole workspace, and no oracles |
 | `Format`, `Clippy`, `cargo-deny`, `Build (macos-universal)` | the job is skipped by its `if:`, which reports success |
 | `Build (linux-x86_64)` and the other build entries, `Test Assets (linux)`, `(macos)`, `(windows)` | every step is skipped, so the job reports success under its matrix name |
-| `Dependency Review`, `Pinned Actions`, `zizmor` | unchanged; `.github/**` is never light |
+| `Dependency Review` | unchanged; `.github/**` is never light |
 
 GitHub's [troubleshooting page for required status checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks#handling-skipped-but-required-checks)
 decides the shape: "If a workflow is skipped due to path filtering, branch filtering or a
@@ -184,7 +184,8 @@ new `ResolveOptions` field broke `fuzz/fuzz_targets/qc_sema.rs`). `cargo check` 
 class of error, a type error, without the sanitizer instrumentation `cargo xtask fuzz` needs
 nightly for.
 
-[`.github/workflows/secure_workflows.yml`](../.github/workflows/secure_workflows.yml):
+[`.github/workflows/secure_workflows.yml`](../.github/workflows/secure_workflows.yml) runs only
+on a pull request that changes `.github/`, and its checks are not required:
 
 | Check | What it does |
 | --- | --- |
@@ -280,7 +281,7 @@ applies to `main`:
 - **No merge queue** since 2026-10-30. The ruleset lives in `quakecstudio/infra`
   (`environments/github/main.tf`, `merge_queue`); turning the queue back on is that one
   change, and `land.sh` then queues the PR instead of merging it.
-- **Required status checks**: every check in the `ci.yml` and `secure_workflows.yml` tables above (not `Benchmarks`), by the exact name it
+- **Required status checks**: every check in the `ci.yml` table above (not `Benchmarks`), by the exact name it
   reports. A required check whose name never reports blocks every merge,
   so a job is renamed, added or removed in the same change as the ruleset.
 - **No force pushes** and **no deletion**. Organization admins and the repository admin role
