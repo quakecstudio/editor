@@ -66,7 +66,7 @@ fn a_misspelled_key_in_a_map_is_reported_with_a_fix() {
 #[test]
 fn renaming_a_field_rewrites_the_key_in_open_maps_after_confirmation() {
     let (dir, mut session) = project("rename");
-    let map = dir.join("maps/test.map");
+    let map = dir.join("maps").join("test.map");
     session.execute(OPEN_FILE, json!({ "path": map })).unwrap();
     let offset = CODE.find("speed").unwrap();
     let renamed = session
