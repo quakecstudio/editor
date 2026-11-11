@@ -9,6 +9,9 @@
 //! with `qs-bsp` and its entity lump with `qs-map`, and each codebase must define a class for
 //! every classname the maps use: the engine frees an entity whose classname names no function
 //! (EDICT-8.5). The maps CI holds are LibreQuake's; a game folder with id's maps checks those.
+//! Each map is also checked against each codebase as `map.check` does (MAP-8, P5-04), and the
+//! diagnostics counted; and in each, the first key of a field is misspelt, and the check must
+//! report it with that field as the fix (MAP-8.2).
 //!
 //! The codebases come from `cargo xtask corpus fetch id-1.01 rerelease`.
 
@@ -16,6 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use qc_sema::{EntitySchema, MapDiagnosticKind};
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::MapFile;
 use qs_pak::Pak;
@@ -45,16 +49,22 @@ pub(crate) struct Args {
 
 pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     let mut used: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut maps = Vec::new();
     for dir in &args.maps {
-        for (map, classnames) in map_classnames(dir)? {
-            for classname in classnames {
-                used.entry(classname).or_default().insert(map.clone());
+        for (label, map) in read_maps(dir)? {
+            for classname in map.entities.iter().filter_map(|e| e.classname()) {
+                let classname = String::from_utf8_lossy(classname).into_owned();
+                used.entry(classname).or_default().insert(label.clone());
             }
+            maps.push((label, map));
         }
     }
     let mut ok = true;
     for codebase in &args.codebases {
         ok &= check(root, codebase, args.write, &used)?;
+        if !maps.is_empty() {
+            ok &= check_maps(codebase, &maps)?;
+        }
     }
     println!(
         "entity-corpus: {}",
@@ -75,12 +85,7 @@ fn check(
         .and_then(|n| n.to_str())
         .ok_or_else(|| format!("{}: no directory name", dir.display()))?
         .to_owned();
-    let dialect = if name == VANILLA {
-        Dialect::Vanilla
-    } else {
-        Dialect::Fteqcc
-    };
-    let (fgd, classes) = entities(dir, dialect)?;
+    let (fgd, classes) = entities(dir, dialect_of(dir)?)?;
     let mut ok = true;
     let golden = root.join(GOLDEN).join(format!("{name}.fgd"));
     if write {
@@ -166,8 +171,125 @@ fn entities(dir: &Path, dialect: Dialect) -> Result<(String, BTreeSet<String>), 
     Ok((fgd, names))
 }
 
-/// Each map under `dir` and the classnames its entities use.
-fn map_classnames(dir: &Path) -> Result<Vec<(String, BTreeSet<String>)>, String> {
+/// The dialect a codebase is read in: vanilla for [`VANILLA`], else FTEQCC's.
+fn dialect_of(dir: &Path) -> Result<Dialect, String> {
+    let name = dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| format!("{}: no directory name", dir.display()))?;
+    Ok(if name == VANILLA {
+        Dialect::Vanilla
+    } else {
+        Dialect::Fteqcc
+    })
+}
+
+/// Checks every map against one codebase (MAP-8): counts the diagnostics, and in each map
+/// misspells the first key that names a field, which the check must report with that field
+/// as the fix (MAP-8.2).
+fn check_maps(dir: &Path, maps: &[(String, MapFile)]) -> Result<bool, String> {
+    let config = Config {
+        dialect: Some(dialect_of(dir)?),
+        ..Config::default()
+    };
+    let mut workbench = Workbench::new(FsLoader, config);
+    workbench
+        .open_project(dir)
+        .map_err(|e| format!("{}: {e}", dir.display()))?;
+    let schema = workbench
+        .entity_schema()
+        .map_err(|e| format!("{}: {e}", dir.display()))?;
+    let name = dir.display();
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut misses = Vec::new();
+    for (label, map) in maps {
+        for diagnostic in schema.check(map) {
+            let kind = match diagnostic.kind {
+                MapDiagnosticKind::NoClassname => "no classname",
+                MapDiagnosticKind::UnknownClass { .. } => "unknown classname",
+                MapDiagnosticKind::UnknownKey { .. } => "unknown key",
+                MapDiagnosticKind::BadValue { .. } => "bad value",
+                MapDiagnosticKind::NoTarget { .. } => "dangling target",
+                MapDiagnosticKind::Untargeted { .. } => "untargeted targetname",
+            };
+            let count = counts.entry(kind).or_default();
+            *count = count.saturating_add(1);
+        }
+        if let Some(miss) = misspelling_missed(&schema, map) {
+            misses.push(format!("{label}: {miss}"));
+        }
+    }
+    let found: Vec<String> = counts.iter().map(|(k, n)| format!("{n} {k}")).collect();
+    println!(
+        "info  {name}: map.check over {} maps: {}",
+        maps.len(),
+        if found.is_empty() {
+            "nothing".to_owned()
+        } else {
+            found.join(", ")
+        }
+    );
+    if misses.is_empty() {
+        println!(
+            "ok    {name}: a misspelt key in each of the {} maps is reported with its field",
+            maps.len()
+        );
+        Ok(true)
+    } else {
+        println!(
+            "FAIL  {name}: a misspelt key was not reported with its field: {}",
+            misses.join("; ")
+        );
+        Ok(false)
+    }
+}
+
+/// Misspells the first key of `map` that names a field of four bytes or more, as its last
+/// byte doubled; what the check said instead of that field as the fix, or `None` when it did.
+fn misspelling_missed(schema: &EntitySchema, map: &MapFile) -> Option<String> {
+    let clean = schema.check(map);
+    let (index, key) = map.entities.iter().enumerate().find_map(|(index, entity)| {
+        entity
+            .pairs()
+            .map(|pair| String::from_utf8_lossy(pair.key()).into_owned())
+            .find(|key| {
+                key.len() >= 4
+                    && !key.starts_with('_')
+                    && !clean.iter().any(|d| {
+                        d.entity == index
+                            && matches!(&d.kind, MapDiagnosticKind::UnknownKey { key: k, .. } if k == key)
+                    })
+                    && schema.has_field(key)
+            })
+            .map(|key| (index, key))
+    })?;
+    let mut misspelt = key.clone();
+    misspelt.push(misspelt.chars().last().unwrap_or('x'));
+    let mut changed = map.clone();
+    let entity = changed.entities.get_mut(index)?;
+    entity
+        .rename_key(key.as_bytes(), misspelt.as_bytes())
+        .ok()?;
+    let reported = schema
+        .check(&changed)
+        .into_iter()
+        .find_map(|d| match d.kind {
+            MapDiagnosticKind::UnknownKey { key: k, suggestion }
+                if d.entity == index && k == misspelt =>
+            {
+                Some(suggestion)
+            }
+            _ => None,
+        });
+    match reported {
+        Some(Some(fix)) if fix == key => None,
+        Some(fix) => Some(format!("{misspelt} suggested {fix:?}, not {key}")),
+        None => Some(format!("{misspelt} was not reported")),
+    }
+}
+
+/// Each map under `dir`, its BSP's entity lump read as a `.map`.
+fn read_maps(dir: &Path) -> Result<Vec<(String, MapFile)>, String> {
     let mut found = Vec::new();
     let mut pending = vec![dir.to_path_buf()];
     let mut files = Vec::new();
@@ -201,13 +323,13 @@ fn map_classnames(dir: &Path) -> Result<Vec<(String, BTreeSet<String>)>, String>
                         .entry_data(&bytes, entry)
                         .map_err(|e| format!("{}: {name}: {e}", path.display()))?;
                     let label = format!("{}:{name}", path.display());
-                    found.push((label.clone(), classnames(&label, data)?));
+                    found.push((label.clone(), entity_lump(&label, data)?));
                 }
             }
             Some("bsp") => {
                 let data = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
                 let label = path.display().to_string();
-                found.push((label.clone(), classnames(&label, &data)?));
+                found.push((label.clone(), entity_lump(&label, &data)?));
             }
             _ => {}
         }
@@ -218,14 +340,8 @@ fn map_classnames(dir: &Path) -> Result<Vec<(String, BTreeSet<String>)>, String>
     Ok(found)
 }
 
-/// The classnames of a BSP's entities.
-fn classnames(label: &str, bsp: &[u8]) -> Result<BTreeSet<String>, String> {
+/// A BSP's entities, its entity lump read as a `.map`.
+fn entity_lump(label: &str, bsp: &[u8]) -> Result<MapFile, String> {
     let bsp = Bsp::read(bsp, BspLoader::default()).map_err(|e| format!("{label}: {e}"))?;
-    let map = MapFile::parse(bsp.entities()).map_err(|e| format!("{label}: {e}"))?;
-    Ok(map
-        .entities
-        .iter()
-        .filter_map(|entity| entity.classname())
-        .map(|name| String::from_utf8_lossy(name).into_owned())
-        .collect())
+    MapFile::parse(bsp.entities()).map_err(|e| format!("{label}: {e}"))
 }

@@ -446,6 +446,18 @@ impl Pair {
         Ok(())
     }
 
+    /// Replaces the key, keeping the value and the text around it.
+    ///
+    /// # Errors
+    ///
+    /// [`MapError::Unwritable`] when the key holds `"` or NUL.
+    pub fn set_key(&mut self, key: &[u8]) -> Result<(), MapError> {
+        self.key_raw = quoted(key)?;
+        self.key = key.to_vec();
+        self.ericw_escape = key.last() == Some(&b'\\') || self.value_raw.ends_with(b"\\\"");
+        Ok(())
+    }
+
     fn write(&self, out: &mut Vec<u8>) {
         out.extend_from_slice(&self.leading);
         out.extend_from_slice(&self.key_raw);
@@ -564,6 +576,26 @@ impl Entity {
         let at = last_pair.map_or(0, |index| index.saturating_add(1));
         self.items.insert(at, Item::Pair(pair));
         Ok(())
+    }
+
+    /// Renames every pair with key `from` to `to`, keeping its value and formatting; returns
+    /// how many there were (P5-04, MAP-8.7).
+    ///
+    /// # Errors
+    ///
+    /// [`MapError::Unwritable`] when `to` holds `"` or NUL; nothing is renamed then.
+    pub fn rename_key(&mut self, from: &[u8], to: &[u8]) -> Result<usize, MapError> {
+        quoted(to)?;
+        let mut renamed = 0_usize;
+        for item in &mut self.items {
+            if let Item::Pair(pair) = item
+                && pair.key == from
+            {
+                pair.set_key(to)?;
+                renamed = renamed.saturating_add(1);
+            }
+        }
+        Ok(renamed)
     }
 
     /// Removes every pair with `key`, returning how many there were.
@@ -936,6 +968,19 @@ impl MapFile {
             entity.leading.drain(..start);
         }
         self.entities.push(entity);
+    }
+
+    /// Renames key `from` to `to` in every entity (MAP-8.7); returns how many pairs.
+    ///
+    /// # Errors
+    ///
+    /// As [`Entity::rename_key`].
+    pub fn rename_key(&mut self, from: &[u8], to: &[u8]) -> Result<usize, MapError> {
+        let mut renamed = 0_usize;
+        for entity in &mut self.entities {
+            renamed = renamed.saturating_add(entity.rename_key(from, to)?);
+        }
+        Ok(renamed)
     }
 
     /// The world: the first entity (MAP-6.1).
