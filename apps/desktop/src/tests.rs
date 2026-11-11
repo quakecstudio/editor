@@ -1459,7 +1459,8 @@ fn a_task_runs_from_the_palette_and_its_exit_status_is_shown() {
     let row = format!("{} check", Text::RunTask.get());
     harness.get_by_role_and_label(Role::Button, &row);
     harness.key_press(egui::Key::Enter);
-    harness.run();
+    // The task now runs and asks for frames: one step, not a run to rest.
+    harness.step();
     let exited = |harness: &Harness<'static, Option<App>>| {
         let shell = &harness.state().as_ref().unwrap().shell;
         shell
@@ -1472,9 +1473,10 @@ fn a_task_runs_from_the_palette_and_its_exit_status_is_shown() {
             .unwrap()
             .exit()
     };
-    // Each frame polls the tab without waiting; the loop ends when the process has.
+    // Each frame polls the tab without waiting; the loop ends when the process has. A running
+    // tab asks for frames, so each is one step, not a run to rest.
     while exited(&harness).is_none() {
-        harness.run();
+        harness.step();
         std::thread::yield_now();
     }
     harness.run();
