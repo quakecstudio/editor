@@ -321,7 +321,8 @@ mod tests {
     #[test]
     fn problems_name_paths_within_the_codebase() {
         let dir = Path::new("/cache/codebase/alkaline");
-        let problem = format!("{}/weapons.qc:281 E0331 x", dir.display());
+        // The compiler writes the path as the OS joins it, `\` on Windows.
+        let problem = format!("{}:281 E0331 x", dir.join("weapons.qc").display());
         assert_eq!(relative(&problem, dir), "weapons.qc:281 E0331 x");
         assert_eq!(relative("no path", dir), "no path");
     }
