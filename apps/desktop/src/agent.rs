@@ -631,22 +631,28 @@ impl AgentPanel {
         }
     }
 
-    /// Waits for the next thing thread `index`'s model sends and takes it; `false` when its
-    /// model has ended. For tests, which drive the model by hand.
+    /// Waits for thread `index`'s model's next reply and takes it, with the text sent before
+    /// it; `false` when its model has ended. For tests, which drive the model by hand: the text
+    /// and the reply come one after the other from the model's thread, so waiting for the text
+    /// alone would leave the reply to a race with the next frame.
     #[cfg(test)]
     pub(crate) fn wait<C: 'static>(&mut self, session: &mut Session<C>, index: usize) -> bool {
         let Some(thread) = self.threads.get_mut(index) else {
             return false;
         };
-        match thread.from_model.recv() {
-            Ok(event) => {
-                let mut followed = Vec::new();
-                thread.take(session, event, &mut followed);
-                self.after_events(session, followed);
-                true
+        let mut followed = Vec::new();
+        loop {
+            let Ok(event) = thread.from_model.recv() else {
+                return false;
+            };
+            let reply = matches!(event, Event::Reply(_));
+            thread.take(session, event, &mut followed);
+            if reply {
+                break;
             }
-            Err(_) => false,
         }
+        self.after_events(session, followed);
+        true
     }
 
     /// Draws the panel: the provider form until one is set up, then the threads, the task box
