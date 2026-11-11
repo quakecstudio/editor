@@ -166,6 +166,10 @@ computed only for literals.
   reads from `self`, their defaults, its spawnflags, its `/*QUAKED*/` comment, model and size
   (BUILTIN-9.2, BUILTIN-9.4), read from the intermediate layer; and their export as an FGD
   file. `cargo xtask entity-corpus` holds id 1.01's and the rerelease's to golden files.
+- `Db::entity_schema`, `EntitySchema::check` and `MapDiagnostic` (`map_check`, P5-04, MAP-8):
+  a map's entities checked against the progs as the engine reads them (EDICT-8.2, EDICT-8.5):
+  classnames naming no function and keys naming no field, each with the closest name, values
+  their field cannot read, and dangling targets and targetnames.
 
 ## Tests
 

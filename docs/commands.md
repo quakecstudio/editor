@@ -52,6 +52,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.status`](#gitstatus) | Lists the project repository's branch and changed files, staged and not, as git status does; none when the project is not in a git repository. |
 | [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
+| [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
+| [`map.rename_key`](#maprename_key) | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
@@ -1448,6 +1450,61 @@ Parameters:
     "path"
   ],
   "title": "GitStageParams",
+  "type": "object"
+}
+```
+
+## `map.check`
+
+Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.check`.",
+  "properties": {
+    "path": {
+      "description": "The `.map` file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "MapCheckParams",
+  "type": "object"
+}
+```
+
+## `map.rename_key`
+
+Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.rename_key`.",
+  "properties": {
+    "from": {
+      "description": "The key as the maps write it, the field's old name.",
+      "type": "string"
+    },
+    "to": {
+      "description": "The new key.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to"
+  ],
+  "title": "RenameKeyParams",
   "type": "object"
 }
 ```

@@ -4,8 +4,8 @@ Reads and writes `.map` files, the text a level editor saves and a BSP compiler 
 
 - **`MapFile`** is the lossless document. `MapFile::parse` keeps every byte, comments and
   formatting included, so `MapFile::to_bytes` gives back the file it read, and an edit
-  (`Entity::set`, `Entity::remove`, `Face::set`, new entities, brushes and faces) changes only
-  the text it touches; new text is written in the form both compilers read (MAP-7). It reads
+  (`Entity::set`, `Entity::remove`, `Entity::rename_key`, `Face::set`, new entities, brushes
+  and faces) changes only the text it touches; new text is written in the form both compilers read (MAP-7). It reads
   the standard and the Valve 220 forms face by face, numbers as doubles and tokens of any
   length, and gives each face's plane and texture axes. `MapFile::check` reports what id's
   qbsp, ericw-tools or the game would do otherwise: tokens and keys too long for qbsp,

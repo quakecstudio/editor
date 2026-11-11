@@ -351,3 +351,40 @@ describe the text that both read the same way, which is what a writer emits by d
 - **MAP-7.4** A file with a Valve 220 face, a fractional coordinate, shift or rotation, a `;`
   outside quotes or a `\"` inside them is read by ericw-tools but not as intended by id's
   qbsp, and is written only when the map already uses that feature.
+
+## MAP-8 Entities against the progs
+
+**Source:** EDICT-8.2 and EDICT-8.5, which say what id's engine does with each entity and
+key when the map loads (`WinQuake/pr_edict.c`, `ED_ParseEdict`, `ED_ParseEpair`,
+`ED_LoadFromFile`); the progs is the project's server QuakeC as `qc-sema` reads it.
+
+The engine reads a map's entities against the progs, not against a list of classes: a key
+works when it names a field, and an entity spawns when its `classname` names a function. So
+the editor checks a map the same way, and says what the engine will do. These are the
+editor's diagnostics; none of them stops the engine but MAP-8.4's function and field values.
+
+### Behaviour
+
+- **MAP-8.1** An entity with no `classname`, or whose `classname` names no function of the
+  progs, is reported: the engine frees it (EDICT-8.5). The function of the closest name, at
+  most two edits away, is suggested.
+- **MAP-8.2** A key the engine looks up as no field of the progs is reported, with the field
+  of the closest name, at most two edits away, as the fix: the engine ignores it with
+  `'<key>' is not a field` (EDICT-8.2). The key is looked up as the engine does: trailing
+  spaces removed, `angle` as `angles` and `light` as `light_lev`; a key starting with `_` is
+  never reported. Among fields at the same distance, one the entity's class reads comes
+  first. `wad` and `mapversion` are not reported either: qbsp and the map editors write them
+  for the compilers (MAP-6.3).
+- **MAP-8.3** A value its field's type cannot read is reported: a float that is not a number,
+  a vector that is not three numbers separated by spaces (EDICT-8.3), and an entity that is
+  not a whole number. The engine reads them with `atof` and `atoi` all the same, as the
+  number their text starts with, or 0.
+- **MAP-8.4** A function field's value that names no function, and a field field's value that
+  names no field, are reported: the engine stops loading the map with `ED_ParseEdict: parse
+  error` (EDICT-8.2).
+- **MAP-8.5** A `target`, `killtarget` or other key starting `target` (but `targetname`) whose
+  value no entity's `targetname` holds is reported: what it fires does not exist.
+- **MAP-8.6** A `targetname` that no entity's `target`, `killtarget` or other key starting
+  `target` names is reported: nothing in the map fires it.
+- **MAP-8.7** Renaming a field in the code offers to rename the key in the open maps; once
+  confirmed, every pair with the old key takes the new one, its value and formatting kept.
