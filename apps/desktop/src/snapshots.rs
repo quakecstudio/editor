@@ -178,8 +178,9 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
                     terminals.tabs().iter().any(|tab| tab.exit().is_none())
                 };
                 // Each frame polls the tabs without waiting; the loop ends with the processes.
+                // A running tab asks for frames, so each is one step, not a run to rest.
                 while running(&harness) {
-                    harness.run();
+                    harness.step();
                     std::thread::yield_now();
                 }
             }

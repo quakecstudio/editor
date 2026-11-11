@@ -1464,9 +1464,10 @@ fn a_task_runs_from_the_palette_and_its_exit_status_is_shown() {
             .unwrap()
             .exit()
     };
-    // Each frame polls the tab without waiting; the loop ends when the process has.
+    // Each frame polls the tab without waiting; the loop ends when the process has. A running
+    // tab asks for frames, so each is one step, not a run to rest.
     while exited(&harness).is_none() {
-        harness.run();
+        harness.step();
         std::thread::yield_now();
     }
     harness.run();
