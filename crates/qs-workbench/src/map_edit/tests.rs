@@ -13,8 +13,8 @@ use qs_commands::{Registry, Session};
 use serde_json::{Value, json};
 
 use super::{
-    MAP_DELETE, MAP_ENTITY, MAP_MOVE, MAP_OPEN, MAP_PLACE, MAP_REMOVE_KEY, MAP_ROTATE, MAP_SAVE,
-    MAP_SELECT, MAP_SET_KEY,
+    MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_MOVE, MAP_OPEN, MAP_PLACE, MAP_REMOVE_KEY,
+    MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
 };
 use crate::{Config, OPEN_PROJECT, Workbench, register};
 
@@ -340,4 +340,34 @@ fn angles_turn_by_their_yaw() {
         "{}",
         text(&session)
     );
+}
+
+// No spec statement: P5-06: duplicating copies an entity's keys and brushes to the end of the
+// map and selects the copy; the world is not duplicated; each edit changes the revision
+#[test]
+fn duplicating_copies_keys_and_brushes() {
+    let (dir, mut session) = project("duplicate");
+    session
+        .execute(MAP_OPEN, json!({ "path": dir.join("maps/test.map") }))
+        .unwrap();
+    let first = session.context().map().unwrap().revision();
+    let done = session
+        .execute(MAP_DUPLICATE, json!({ "entity": 2 }))
+        .unwrap();
+    assert_eq!(done["entity"], 3);
+    let map = session.context().map().unwrap();
+    assert_ne!(map.revision(), first);
+    assert_eq!(map.selected(), Some(3));
+    assert_eq!(map.file().entities[3].items, map.file().entities[2].items);
+    assert!(text(&session).ends_with(
+        "{\n\"classname\" \"func_door\"\n{\n( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) door 0 0 0 1 1\n\
+         ( 0 0 64 ) ( 1 0 64 ) ( 0 1 64 ) door 0 0 0 1 1\n}\n}\n"
+    ));
+    assert!(
+        session
+            .execute(MAP_DUPLICATE, json!({ "entity": 0 }))
+            .is_err()
+    );
+    session.undo().unwrap();
+    assert_eq!(text(&session), MAP);
 }

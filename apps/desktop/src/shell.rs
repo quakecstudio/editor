@@ -38,6 +38,7 @@ use qs_workbench::checkpoints::{RESTORE_CHECKPOINT, RestoreCheckpointParams};
 use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::engine::{ENGINE_SCREENSHOT, EngineScreenshotParams, Screenshot};
+use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITIES};
 use qs_workbench::export::{ExportParams, Exported, PROJECT_EXPORT};
 use qs_workbench::game_files::GameFiles;
 use qs_workbench::git::{
@@ -45,6 +46,12 @@ use qs_workbench::git::{
     GIT_LOG, GIT_RESOLVE, GIT_STAGE, GIT_STATUS, GIT_SWITCH, GIT_UNSTAGE, GitBranchParams,
     GitChange, GitCommitParams, GitConflict, GitDiffParams, GitHunk, GitLogParams, GitPathParams,
     GitResolveParams, GitSide, GitStageParams, GitStatus,
+};
+use qs_workbench::map_edit::{
+    BSP_EXTENSION, BspSave, EntityKeys, EntityParams, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY,
+    MAP_EXTENSION, MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_ROTATE, MAP_SAVE, MAP_SELECT,
+    MAP_SET_KEY, MapDocument, MapOpenParams, MoveParams, RemoveKeyParams, RotateParams, SaveParams,
+    SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
@@ -82,6 +89,7 @@ use crate::game_guide::{self, Guide, GuideAction};
 use crate::git_panel::{BlameShown, GitAction, GitData, GitView, git_ui};
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
+use crate::map_editor::{MapAction, MapEditor};
 use crate::map_view::{self, MapView};
 use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
@@ -208,6 +216,10 @@ pub struct Shell {
     /// The window's wgpu device and formats, which the map view draws with.
     render_state: Option<RenderState>,
     map: Option<MapView>,
+    /// The map editor's view and key editor (P5-06).
+    map_editor: MapEditor,
+    /// The map the map editor last showed, to notice one newly opened.
+    map_opened: Option<PathBuf>,
     /// The editor's file and text revision whose characters have fonts.
     covered: Option<(PathBuf, u64)>,
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
@@ -310,6 +322,8 @@ impl Shell {
             system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
             render_state: None,
             map: None,
+            map_editor: MapEditor::default(),
+            map_opened: None,
             covered: None,
             focus_applied: layout.focus_requests,
             preview_error: None,
@@ -985,8 +999,17 @@ impl Shell {
         Ok(())
     }
 
-    /// Opens the file a panel's row asks for, through its command, and shows the editor.
+    /// Opens the file a panel's row asks for, through its command, and shows the editor; a
+    /// `.map` or `.bsp` opens in the map editor (P5-06).
     fn jump(&mut self, jump: Jump) {
+        let is_map = jump.path.extension().is_some_and(|extension| {
+            extension.eq_ignore_ascii_case(MAP_EXTENSION)
+                || extension.eq_ignore_ascii_case(BSP_EXTENSION)
+        });
+        if is_map {
+            self.open_map(jump.path);
+            return;
+        }
         let params = OpenFileParams {
             path: jump.path,
             offset: Some(jump.offset),
@@ -1800,6 +1823,117 @@ impl Shell {
 
     /// Runs what the outliner or the Properties panel asked for: a selection or a field's new
     /// value through its command, or the definition of a function opened.
+    /// Opens the map at `path` in the map editor; [`Shell::sync_map`] shows it.
+    fn open_map(&mut self, path: PathBuf) {
+        let opened: Result<serde_json::Value, ShellError> =
+            self.attempt(MAP_OPEN, &MapOpenParams { path });
+        if let Err(error) = opened {
+            tracing::warn!(%error, "map not opened");
+        }
+    }
+
+    /// When a map was opened since the last frame, by `map.open` from anywhere: gives the map
+    /// editor the project's entity classes and their models, starts its camera at the player
+    /// start and shows the Map tab.
+    fn sync_map(&mut self) {
+        let path = self
+            .session
+            .context()
+            .workbench
+            .map()
+            .map(|document| document.path().to_path_buf());
+        if path == self.map_opened {
+            return;
+        }
+        self.map_opened.clone_from(&path);
+        if path.is_none() {
+            return;
+        }
+        let classes: Result<EntitiesFound, ShellError> =
+            self.attempt(PROJECT_ENTITIES, &EntitiesParams::default());
+        let context = self.session.context();
+        let project = context.workbench.root().map(Path::to_path_buf);
+        let game = context.preview.game_base_path();
+        match classes {
+            Ok(found) => {
+                self.map_editor.set_classes(
+                    found.classes.iter(),
+                    project.as_deref(),
+                    game.as_deref(),
+                );
+            }
+            Err(error) => tracing::warn!(%error, "no entity classes for the map"),
+        }
+        self.map_editor.reset_camera();
+        self.map_editor.set_keys(None, None);
+        self.centre_tab = CentreTab::Map;
+    }
+
+    /// Runs what the map editor asked for as `map.*` commands, then reads the selected
+    /// entity's keys again.
+    fn map_actions(&mut self, actions: Vec<MapAction>) {
+        if actions.is_empty() {
+            return;
+        }
+        for action in actions {
+            let result: Result<serde_json::Value, ShellError> = match action {
+                MapAction::Select(entity) => self.attempt(MAP_SELECT, &MapSelectParams { entity }),
+                MapAction::Move(entity, by) => self.attempt(MAP_MOVE, &MoveParams { entity, by }),
+                MapAction::Rotate(entity, degrees) => {
+                    self.attempt(MAP_ROTATE, &RotateParams { entity, degrees })
+                }
+                MapAction::Delete(entity) => self.attempt(MAP_DELETE, &EntityParams { entity }),
+                MapAction::Duplicate(entity) => {
+                    self.attempt(MAP_DUPLICATE, &EntityParams { entity })
+                }
+                MapAction::SetKey(entity, key, value) => {
+                    self.attempt(MAP_SET_KEY, &SetKeyParams { entity, key, value })
+                }
+                MapAction::RemoveKey(entity, key) => {
+                    self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
+                }
+                MapAction::Save => self.attempt(MAP_SAVE, &SaveParams { bsp: BspSave::Ent }),
+            };
+            if let Err(error) = result {
+                tracing::warn!(%error, "map edit refused");
+            }
+        }
+    }
+
+    /// Draws the map editor in the Map tab when a map is open, running what it asks for;
+    /// whether it did.
+    fn map_tab(&mut self, ui: &mut Ui) -> bool {
+        let Some(document) = self.session.context().workbench.map() else {
+            return false;
+        };
+        if self.centre_tab != CentreTab::Map {
+            return false;
+        }
+        let actions = self.map_editor.ui(ui, &self.theme, document);
+        self.map_actions(actions);
+        if let Some(document) = self.session.context().workbench.map()
+            && self.map_editor.keys_stale(document.revision())
+        {
+            self.refresh_map_keys();
+            // The Properties panel, drawn before the map this frame, shows them on the next.
+            ui.ctx().request_repaint();
+        }
+        true
+    }
+
+    /// Reads the keys of the open map's selected entity for the key editor.
+    fn refresh_map_keys(&mut self) {
+        let map = self.session.context().workbench.map();
+        let revision = map.map(MapDocument::revision);
+        let selected = map.and_then(MapDocument::selected);
+        let keys = selected.and_then(|entity| {
+            let keys: Result<EntityKeys, ShellError> =
+                self.attempt(MAP_ENTITY, &EntityParams { entity });
+            keys.ok().map(|keys| (entity, keys))
+        });
+        self.map_editor.set_keys(keys, revision);
+    }
+
     fn entity_action(&mut self, action: EntityAction, ctx: &egui::Context) {
         let result = match action {
             EntityAction::Ask(edict) => {
@@ -2019,6 +2153,10 @@ impl Shell {
 
     /// Draws `panel`, giving it the keyboard when `focus`: its first heading, or the bottom
     /// panel's selected tab, takes it.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one pass lays out each panel's contents and runs what they asked for, in order"
+    )]
     fn panel(&mut self, ui: &mut Ui, panel: Panel, focus: bool) {
         let state = *self.layout().panel(panel);
         let theme = &self.theme;
@@ -2042,6 +2180,9 @@ impl Shell {
         let git_view = &mut self.git_view.0;
         let agent = &mut self.agent;
         let mut agent_action = None;
+        let map_editor = (self.centre_tab == CentreTab::Map && workbench.map().is_some())
+            .then_some(&mut self.map_editor);
+        let mut map_actions = Vec::new();
         let recent_projects = self.recent.0.projects();
         let project_error = self.project_error.as_deref();
         let mut open: Option<LeftAction> = None;
@@ -2105,9 +2246,9 @@ impl Shell {
                         }
                     }
                     Panel::Right => {
-                        let asked =
-                            right(ui, theme, (workbench, preview), (properties, agent), focus);
-                        (entity_action, agent_action) = asked;
+                        let panels = (properties, agent, map_editor);
+                        let asked = right(ui, theme, (workbench, preview), panels, focus);
+                        (entity_action, agent_action, map_actions) = asked;
                     }
                     Panel::Bottom => {
                         match bottom(
@@ -2128,6 +2269,7 @@ impl Shell {
         if let Some(jump) = jump {
             self.jump(jump);
         }
+        self.map_actions(map_actions);
         if let Some(action) = entity_action {
             self.entity_action(action, ui.ctx());
         }
@@ -2567,6 +2709,7 @@ impl Shell {
     /// keyboard, or the shown tab when no file is open or another tab is shown.
     fn centre(&mut self, ui: &mut Ui, focus: bool) {
         self.sync_editor();
+        self.sync_map();
         self.cover_characters(ui.ctx());
         let editor_shown = self.centre_tab == CentreTab::Editor && self.editor.is_some();
         let refocus = std::mem::take(&mut self.multibuffer.refocus);
@@ -2684,6 +2827,9 @@ impl Shell {
             self.handle(requests);
             return;
         }
+        if self.map_tab(ui) {
+            return;
+        }
         if self.centre_tab == CentreTab::Map
             && let Some(map) = &mut self.map
         {
@@ -2700,6 +2846,7 @@ impl Shell {
             CentreTab::Map => (Token::SurfaceViewport, Text::NoMap),
             CentreTab::Search => (Token::SurfaceEditor, Text::NoSearchMatch),
         };
+        let theme = &self.theme;
         egui::Frame::NONE.fill(theme.color(fill)).show(ui, |ui| {
             let size = ui.available_size();
             ui.allocate_ui_with_layout(
@@ -2861,17 +3008,23 @@ pub(crate) fn name_field(ui: &Ui, response: &Response, name: Text) {
     });
 }
 
-/// The right panel: the Properties of the selected entity while the game runs, then the agent
-/// panel (P4-09); what either asked for. Its first heading takes the keyboard when `focus`.
+/// The right panel: the Properties of the selected entity while the game runs, or the key
+/// editor of the open map's while the Map tab shows it (P5-06), then the agent panel (P4-09);
+/// what each asked for. Its first heading takes the keyboard when `focus`.
 fn right(
     ui: &mut Ui,
     theme: &Theme,
     (workbench, preview): (&Workbench<FsLoader>, &Preview),
-    (properties, agent): (&mut Properties, &mut AgentPanel),
+    (properties, agent, map_editor): (&mut Properties, &mut AgentPanel, Option<&mut MapEditor>),
     focus: bool,
-) -> (Option<EntityAction>, Option<AgentAction>) {
+) -> (Option<EntityAction>, Option<AgentAction>, Vec<MapAction>) {
     let mut entity_action = None;
-    let first = if preview.state() == PlayState::Stopped {
+    let mut map_actions = Vec::new();
+    let first = if let Some(map_editor) = map_editor {
+        let first = heading(ui, theme, Text::Properties);
+        map_actions = map_editor.properties(ui, theme);
+        first
+    } else if preview.state() == PlayState::Stopped {
         section(ui, theme, Text::Properties, Text::NotPlaying)
     } else {
         let first = heading(ui, theme, Text::Properties);
@@ -2884,7 +3037,7 @@ fn right(
     ui.add_space(theme.space(3));
     heading(ui, theme, Text::Agent);
     let agent_action = agent.ui(ui, theme, &workbench.staged_hunks());
-    (entity_action, agent_action)
+    (entity_action, agent_action, map_actions)
 }
 
 /// A panel section: its heading and, until it has content, one line of explanation; the

@@ -18,8 +18,13 @@ use qs_map::{Entity, Item, MapFile};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::entity_classes::KeyInfo;
+use crate::entity_classes::{ClassInfo, KeyInfo};
 use crate::{HasWorkbench, Workbench, WorkbenchError};
+
+/// The extension of a map's source file.
+pub const MAP_EXTENSION: &str = "map";
+/// The extension of a compiled map, whose entities `map.open` reads when it has no source.
+pub const BSP_EXTENSION: &str = "bsp";
 
 /// The id of `map.open`.
 pub const MAP_OPEN: &str = "map.open";
@@ -39,6 +44,8 @@ pub const MAP_SET_KEY: &str = "map.set_key";
 pub const MAP_REMOVE_KEY: &str = "map.remove_key";
 /// The id of `map.entity`.
 pub const MAP_ENTITY: &str = "map.entity";
+/// The id of `map.duplicate`.
+pub const MAP_DUPLICATE: &str = "map.duplicate";
 /// The id of `map.save`.
 pub const MAP_SAVE: &str = "map.save";
 
@@ -59,9 +66,22 @@ pub struct MapDocument {
     file: MapFile,
     selected: Option<usize>,
     unsaved: bool,
+    revision: u64,
 }
 
 impl MapDocument {
+    /// A number that changes whenever the map or the selection does, for a view to know when
+    /// to read it again.
+    #[must_use]
+    pub const fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Marks the map changed.
+    const fn touch(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
+    }
+
     /// The file it was read from.
     #[must_use]
     pub fn path(&self) -> &Path {
@@ -258,7 +278,7 @@ impl<L: crate::Loader> Workbench<L> {
         })?;
         let is_bsp = path
             .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("bsp"));
+            .is_some_and(|e| e.eq_ignore_ascii_case(BSP_EXTENSION));
         let (source, text) = if is_bsp {
             let bsp =
                 Bsp::read(&bytes, BspLoader::default()).map_err(|error| WorkbenchError::Bsp {
@@ -280,6 +300,10 @@ impl<L: crate::Loader> Workbench<L> {
             file,
             selected: None,
             unsaved: false,
+            revision: self
+                .map
+                .as_ref()
+                .map_or(0, |old| old.revision.wrapping_add(1)),
         }))
     }
 
@@ -322,7 +346,7 @@ impl<L: crate::Loader> Workbench<L> {
                 .entity_classes()?
                 .iter()
                 .find(|class| &class.name == name)
-                .map(|class| crate::entity_classes::ClassInfo::from(class).keys)
+                .map(|class| ClassInfo::from(class).keys)
                 .unwrap_or_default(),
             _ => Vec::new(),
         };
@@ -387,6 +411,7 @@ impl<L: crate::Loader> Workbench<L> {
         match edit(document) {
             Ok(answer) => {
                 document.unsaved = true;
+                document.touch();
                 let step = MapStep {
                     path: document.path.clone(),
                     other: before,
@@ -413,6 +438,7 @@ impl MapStep {
         core::mem::swap(&mut document.file, &mut self.other.0);
         core::mem::swap(&mut document.selected, &mut self.other.1);
         document.unsaved = true;
+        document.touch();
     }
 
     fn apply<C: HasWorkbench>(&mut self, context: &mut C) -> Result<(), BoxError> {
@@ -564,6 +590,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSelect {
             document.entity_mut(entity)?;
         }
         document.selected = params.entity;
+        document.touch();
         Ok(Outcome::outside_history(MapEdited {
             entity: params.entity,
         }))
@@ -702,6 +729,38 @@ impl<C: HasWorkbench + 'static> Command<C> for MapDelete {
     }
 }
 
+/// `map.duplicate`.
+struct MapDuplicate;
+
+impl<C: HasWorkbench + 'static> Command<C> for MapDuplicate {
+    const ID: &'static str = MAP_DUPLICATE;
+    const SUMMARY: &'static str = "Duplicates an entity of the open map, its keys and brushes, \
+        in place at the end of the map, and selects the copy; the world is not duplicated.";
+    type Params = EntityParams;
+    type Output = MapEdited;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: EntityParams,
+    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+        let entity = params.entity;
+        let (copy, step) = context.workbench().edit_map(|document| {
+            if entity == 0 {
+                return Err(WorkbenchError::NotPointEntity { entity });
+            }
+            let mut copy = Entity::new();
+            copy.items.clone_from(&document.entity_mut(entity)?.items);
+            document.file.push_entity(copy);
+            let index = document.file.entities.len().saturating_sub(1);
+            document.selected = Some(index);
+            Ok(index)
+        })?;
+        Ok(Outcome::undoable(MapEdited { entity: Some(copy) }, step))
+    }
+}
+
 /// `map.set_key`.
 struct MapSetKey;
 
@@ -816,6 +875,7 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(MapMove)?;
     registry.register(MapRotate)?;
     registry.register(MapDelete)?;
+    registry.register(MapDuplicate)?;
     registry.register(MapSetKey)?;
     registry.register(MapRemoveKey)?;
     registry.register(MapEntity)?;

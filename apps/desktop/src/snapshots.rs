@@ -111,6 +111,17 @@ fn scripts() -> Vec<Script> {
             ],
         },
         Script {
+            name: "map-editor",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": keep_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": keep_fixture().join("maps/keep.map") }),
+                ),
+                Step::Run("map.select", json!({ "entity": 2 })),
+            ],
+        },
+        Script {
             name: "shell-resized",
             steps: vec![
                 Step::Run(
@@ -129,6 +140,11 @@ fn scripts() -> Vec<Script> {
 /// The test project, with problems in two files.
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember")
+}
+
+/// The project with a map, its entity classes from its QuakeC (P5-06).
+fn keep_fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep")
 }
 
 /// The project with two tasks, one that succeeds and one that fails (P4-36).

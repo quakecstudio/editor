@@ -290,6 +290,7 @@ fn the_ui_code_has_no_string_literals() {
         ("editor.rs", include_str!("editor.rs")),
         ("code_style.rs", include_str!("code_style.rs")),
         ("menu.rs", include_str!("menu.rs")),
+        ("map_editor.rs", include_str!("map_editor.rs")),
         ("lib.rs", include_str!("lib.rs")),
         ("main.rs", include_str!("main.rs")),
     ] {
@@ -1875,4 +1876,82 @@ fn notes_quick_fixes_inlay_hints_and_format_in_the_editor() {
         "{}",
         shown(&harness)
     );
+}
+
+/// A copy of the map editor's fixture project in a fresh directory named `name`.
+fn keep_copy(name: &str) -> PathBuf {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep");
+    let dir = std::env::temp_dir().join(format!("qs-desktop-keep-{name}-{}", std::process::id()));
+    let _gone = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("maps")).unwrap();
+    for file in ["progs.src", "defs.qc", "world.qc", "maps/keep.map"] {
+        fs::copy(fixture.join(file), dir.join(file)).unwrap();
+    }
+    dir
+}
+
+/// The open map's text in `harness`'s app.
+fn map_text(harness: &Harness<'static, Option<App>>) -> String {
+    let shell = harness.state().as_ref().unwrap().shell();
+    let map = shell.session().context().workbench.map().unwrap();
+    String::from_utf8(map.file().to_bytes()).unwrap()
+}
+
+// MAP-20, P5-06: the map view takes TrenchBroom's keys on the selection while it has the
+// keyboard: the arrows and Page Up move by the 16-unit grid along the camera's nearest axis,
+// Alt+Right turns a quarter, Cmd+D duplicates, Delete deletes and Cmd+S saves; each through a
+// command, so each undoes
+#[test]
+fn the_map_view_takes_trenchbrooms_keys() {
+    let dir = keep_copy("keys");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    let before = map_text(&harness);
+    assert!(before.contains("\"origin\" \"96 64 24\""), "{before}");
+    // The camera starts facing the player start's angle 0, along +x.
+    harness.key_press(egui::Key::ArrowUp);
+    harness.run();
+    assert!(map_text(&harness).contains("\"origin\" \"112 64 24\""));
+    harness.key_press(egui::Key::PageUp);
+    harness.run();
+    assert!(map_text(&harness).contains("\"origin\" \"112 64 40\""));
+    harness.key_press_modifiers(egui::Modifiers::ALT, egui::Key::ArrowRight);
+    harness.run();
+    assert!(map_text(&harness).contains("\"angle\" \"270\""));
+    let entities = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let map = shell.session().context().workbench.map().unwrap();
+        (map.file().entities.len(), map.selected())
+    };
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
+    harness.run();
+    assert_eq!(entities(&harness), (6, Some(5)));
+    harness.key_press(egui::Key::Delete);
+    harness.run();
+    assert_eq!(entities(&harness), (5, None));
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::S);
+    harness.run();
+    let saved = fs::read_to_string(dir.join("maps/keep.map")).unwrap();
+    assert!(
+        saved.contains("\"origin\" \"112 64 40\"\n\"angle\" \"270\""),
+        "{saved}"
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    for _ in 0..5 {
+        shell.execute("edit.undo", json!({})).unwrap();
+    }
+    harness.run();
+    assert_eq!(map_text(&harness), before);
 }

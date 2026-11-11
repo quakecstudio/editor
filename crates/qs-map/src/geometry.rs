@@ -278,3 +278,97 @@ pub fn valve_texvecs(s: [f64; 4], t: [f64; 4], scale: [f64; 2]) -> Option<TexVec
         [t[0] / sy, t[1] / sy, t[2] / sy, t[3]],
     ])
 }
+
+/// How far out the polygon each plane starts from reaches, past any coordinate a map holds.
+const POLYGON_REACH: f64 = 131_072.0;
+
+/// How near a point must be to a plane to count as on it.
+const ON_PLANE: f64 = 0.01;
+
+/// The polygon of each of `planes` on the convex solid behind all of them (MAP-3.4: a brush is
+/// the region on the back of every face's plane): a polygon spanning the plane, clipped by the
+/// back of every other plane. A plane the others leave nothing of has no polygon, so the
+/// result may hold fewer than `planes`; each polygon's corners go around its plane.
+#[must_use]
+pub fn solid_polygons(planes: &[Plane<f64>]) -> Vec<Vec<[f64; 3]>> {
+    let mut out = Vec::new();
+    for (index, plane) in planes.iter().enumerate() {
+        let mut polygon = plane_polygon(plane);
+        for (other, clip) in planes.iter().enumerate() {
+            if other != index && !polygon.is_empty() {
+                polygon = clip_behind(&polygon, clip);
+            }
+        }
+        if polygon.len() >= 3 {
+            out.push(polygon);
+        }
+    }
+    out
+}
+
+/// A square of [`POLYGON_REACH`] around the point of `plane` nearest the origin, in it.
+fn plane_polygon(plane: &Plane<f64>) -> Vec<[f64; 3]> {
+    let n = plane.normal;
+    // The axis least along the normal gives a vector in the plane.
+    let axis = if n[2].abs() < 0.9 {
+        [0.0, 0.0, 1.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
+    let u = normalize(cross(axis, n));
+    let v = cross(n, u);
+    let centre = n.map(|c| c * plane.dist);
+    let at = |a: f64, b: f64| {
+        [
+            centre[0] + u[0] * a + v[0] * b,
+            centre[1] + u[1] * a + v[1] * b,
+            centre[2] + u[2] * a + v[2] * b,
+        ]
+    };
+    let r = POLYGON_REACH;
+    vec![at(-r, -r), at(r, -r), at(r, r), at(-r, r)]
+}
+
+/// The part of `polygon` on the back of `plane` (Sutherland and Hodgman's clip).
+fn clip_behind(polygon: &[[f64; 3]], plane: &Plane<f64>) -> Vec<[f64; 3]> {
+    let side = |p: [f64; 3]| dot(p, plane.normal) - plane.dist;
+    let mut out = Vec::with_capacity(polygon.len().saturating_add(1));
+    let Some(&last) = polygon.last() else {
+        return out;
+    };
+    let mut previous = last;
+    for &point in polygon {
+        let (a, b) = (side(previous), side(point));
+        let (a_in, b_in) = (a <= ON_PLANE, b <= ON_PLANE);
+        if a_in != b_in {
+            let t = a / (a - b);
+            out.push([
+                previous[0] + (point[0] - previous[0]) * t,
+                previous[1] + (point[1] - previous[1]) * t,
+                previous[2] + (point[2] - previous[2]) * t,
+            ]);
+        }
+        if b_in {
+            out.push(point);
+        }
+        previous = point;
+    }
+    out
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn normalize(a: [f64; 3]) -> [f64; 3] {
+    let length = dot(a, a).sqrt();
+    if length > 0.0 {
+        a.map(|c| c / length)
+    } else {
+        a
+    }
+}

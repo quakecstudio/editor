@@ -13,7 +13,7 @@ mod tests;
 use core::fmt;
 
 use crate::cnum::{c_atof, c_atoi, c_strtod, scan_vector};
-use crate::geometry::{Plane, TexVecs, plane, texvecs, valve_texvecs};
+use crate::geometry::{Plane, TexVecs, plane, solid_polygons, texvecs, valve_texvecs};
 use crate::lexer::{Gap, LexError, Lexer, Token, TokenLimit, is_map_space};
 use crate::qbsp::MAP_WAD_KEYS;
 
@@ -333,6 +333,15 @@ impl Brush {
             closing: b"\n}".to_vec(),
             line: 0,
         }
+    }
+
+    /// Each face's polygon, its corners going around it: the convex solid behind every
+    /// face's plane (MAP-3.4). A face whose points are collinear (MAP-3.6), or that the others
+    /// leave nothing of, has none.
+    #[must_use]
+    pub fn polygons(&self) -> Vec<Vec<[f64; 3]>> {
+        let planes: Vec<Plane<f64>> = self.faces.iter().filter_map(Face::plane).collect();
+        solid_polygons(&planes)
     }
 
     /// The 1-based line of its `{`, or 0 for a brush not read from a file.
