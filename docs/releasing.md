@@ -25,7 +25,7 @@ artifact.
 
 | Platform | Package | Made by |
 | --- | --- | --- |
-| macOS, universal | `quakec-studio-<version>-macos-universal.dmg`: `QuakeC Studio.app`, each executable and the app signed with the hardened runtime, the app notarized and stapled, in a signed, notarized and stapled disk image | `packaging/macos/package.sh`, with `packaging/macos/Info.plist` |
+| macOS, Apple silicon (arm64) | `quakec-studio-<version>-macos-arm64.dmg`: `QuakeC Studio.app`, each executable and the app signed with the hardened runtime, the app notarized and stapled, in a signed, notarized and stapled disk image | `packaging/macos/package.sh`, with `packaging/macos/Info.plist` |
 | Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip`; on a tag, the executables in both are signed | `packaging/windows/package.sh`, with WiX 5 and `packaging/windows/quakec-studio.wxs` |
 | Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak` | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it |
 | All | `SHA256SUMS`, every package's SHA-256 | the workflow's last job |
@@ -101,7 +101,7 @@ their values; the reusable workflow's first job checks each is set and prints no
 ## Signing
 
 The steps follow vouch-sh/vouch's `reusable-build.yml`. On macOS the job checks every secret
-above is set, builds both architectures and joins them with `lipo`, lays out the app, imports
+above is set, builds for Apple silicon (`aarch64-apple-darwin`), lays out the app, imports
 the certificate into `build.keychain` (made the default keychain, with `codesign` allowed to
 use the key), signs each executable and then the app with `/usr/bin/codesign --options runtime
 --timestamp` and verifies it, stores the notarytool credentials as the `notarytool-profile`

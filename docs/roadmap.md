@@ -12,7 +12,7 @@ A native Rust IDE for QuakeC on macOS, Windows and Linux. A modder edits code, p
 
 | Decision | Where it lives |
 | --- | --- |
-| Rust, one codebase, signed native builds for macOS (universal), Windows and Linux | Design doc: Summary; GOAL-6 |
+| Rust, one codebase, signed native builds for macOS (Apple silicon), Windows and Linux | Design doc: Summary; GOAL-6 |
 | Feel like Zed's editor with Roblox Studio's play loop, not like Cursor: the running game is the product, code serves it | Design doc: Product principles; UI-14 |
 | Our own QuakeC compiler, no outside toolchain at runtime | Design doc: Compiler; GOAL-2 |
 | The whole project is GPL-3.0-or-later | [ADR-0002](adr/0002-license-model.md); LIC-1 |

@@ -14,7 +14,7 @@ We are building a native, cross-platform QuakeC IDE in pure Rust with Zed's edit
 - Live preview: save, compile, and see the change in a running engine, with breakpoints and entity inspection.
 - A built-in agent harness whose tools are the same commands the UI uses, also exposed over MCP and a CLI.
 - A built-in map editor and map compiler that share the QuakeC project, its entity definitions and the play loop.
-- Crafting Apps quality bar: one Rust codebase, signed native builds for macOS (universal), Windows and Linux, no crashes in shipped code.
+- Crafting Apps quality bar: one Rust codebase, signed native builds for macOS (Apple silicon), Windows and Linux, no crashes in shipped code.
 
 **Non-goals for v1**
 
@@ -71,7 +71,7 @@ Yes, Quake runs natively on Apple silicon Macs, but only through community sourc
 
 Steam and GOG both sell Quake as a Windows-only game, but its `id1` and `rerelease` data folders work with the native Mac ports. On a Mac there is usually no store install to find: players download the Steam files with `steamcmd` (forcing the Windows platform) or extract the GOG installer with `innoextract`, and Epic and Game Pass sell only the rerelease, without the original game's `pak1.pak`. The IDE detects Steam and GOG installs on Windows and Linux, recognises the steamcmd and innoextract layouts on macOS, accepts any folder that contains `id1/pak0.pak`, and walks the player through it on first run. Game data is always read where it is, never copied.
 
-The IDE launches none of these: live preview always runs our own engine, the preview host (see Engine bridge), the same on every OS. The IDE itself targets macOS universal, Windows x64/arm64 and Linux x86\_64/aarch64 from one codebase.
+The IDE launches none of these: live preview always runs our own engine, the preview host (see Engine bridge), the same on every OS. The IDE itself targets macOS on Apple silicon (arm64), Windows x64/arm64 and Linux x86\_64/aarch64 from one codebase.
 
 ## Product principles
 
@@ -285,7 +285,7 @@ One command, `cargo xtask ci`, must pass before any merge: fmt, clippy with pani
 - **Engine integration tests.** Headless preview host runs scripted scenarios in CI on all three OSes, using open test assets (LibreQuake or our own; check the license) since id's data can't be redistributed.
 - **Agent evals.** A fixed set of modding tasks (add a weapon, fix a crash, port a mod to the rerelease) scored on compile success, test pass and reviewer acceptance.
 
-**Release.** Signed and notarized universal macOS DMG; signed MSI and portable zip for Windows x64 and arm64; AppImage, Flatpak, deb and rpm for Linux x86\_64 and aarch64. Checksums on every release. Crash-safe logging to a per-OS log directory, with source text never logged.
+**Release.** Signed and notarized macOS DMG for Apple silicon (arm64); signed MSI and portable zip for Windows x64 and arm64; AppImage, Flatpak, deb and rpm for Linux x86\_64 and aarch64. Checksums on every release. Crash-safe logging to a per-OS log directory, with source text never logged.
 
 ## MVP scope
 

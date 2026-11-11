@@ -23,7 +23,7 @@ From the design document's Summary and goals (`GOAL-1` to `GOAL-6`):
   and a CLI.
 - A built-in map editor and map compiler that share the QuakeC project, its entity definitions
   and the play loop.
-- One Rust codebase, signed native builds for macOS (universal), Windows and Linux, and no crashes
+- One Rust codebase, signed native builds for macOS (Apple silicon), Windows and Linux, and no crashes
   in shipped code.
 
 Some goals are reached only after the MVP: GMQCC, CSQC and MenuQC are in the post-MVP backlog,

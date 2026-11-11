@@ -6,7 +6,7 @@
 #   packaging/macos/package.sh app <bin-dir> <version> <out-dir>   # <out-dir>/QuakeC Studio.app
 #   packaging/macos/package.sh dmg <app> <dmg>                      # the disk image of <app>
 #
-# <bin-dir> holds the four universal release binaries. The app holds them all in
+# <bin-dir> holds the four arm64 release binaries. The app holds them all in
 # Contents/MacOS, the preview host beside the app as qs-engine's `locate_host` looks for it,
 # and LICENSE and NOTICE in Contents/Resources; its Info.plist is the one beside this script
 # with the version filled in. Signing and notarization are the release

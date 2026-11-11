@@ -136,20 +136,16 @@ jobs:
       - name: Set up the Rust toolchain
         run: |
           rustup toolchain install
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - name: Build both architectures
+          rustup target add aarch64-apple-darwin
+      # Apple silicon only: the app ships for arm64 Macs.
+      - name: Build for Apple silicon
         run: |
-          for target in aarch64-apple-darwin x86_64-apple-darwin; do
-            cargo build --release --locked --target "$target" \
-              -p quakec-studio -p preview-host -p quakec-ide -p quakec-lsp
-          done
-      - name: Make universal binaries with lipo
-        run: |
+          cargo build --release --locked --target aarch64-apple-darwin \
+            -p quakec-studio -p preview-host -p quakec-ide -p quakec-lsp
           mkdir -p dist/bin
           for name in quakec-studio preview-host quakec-ide quakec-lsp; do
-            lipo -create -output "dist/bin/$name" \
-              "target/aarch64-apple-darwin/release/$name" "target/x86_64-apple-darwin/release/$name"
-            lipo "dist/bin/$name" -verify_arch arm64 x86_64
+            cp "target/aarch64-apple-darwin/release/$name" dist/bin/
+            lipo "dist/bin/$name" -verify_arch arm64
           done
       - name: Lay out the app
         run: packaging/macos/package.sh app dist/bin "$VERSION" dist
@@ -206,7 +202,7 @@ jobs:
         env:
           APPLE_CERTIFICATE_NAME: ${{ secrets.APPLE_CERTIFICATE_NAME }}
         run: |
-          dmg="dist/quakec-studio-$VERSION-macos-universal.dmg"
+          dmg="dist/quakec-studio-$VERSION-macos-arm64.dmg"
           packaging/macos/package.sh dmg "dist/QuakeC Studio.app" "$dmg"
           /usr/bin/codesign --force --sign "$APPLE_CERTIFICATE_NAME" --timestamp "$dmg"
           xcrun notarytool submit "$dmg" --keychain-profile "notarytool-profile" --wait
