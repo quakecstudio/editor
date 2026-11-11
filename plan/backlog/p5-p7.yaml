@@ -279,6 +279,44 @@ groups:
     - 'Adding a texture to a WAD the map uses shows it in the browser with no restart'
     verify:
     - 'Integration tests with a fake file watcher; no wall-clock waits'
+  - key: P5-18
+    title: 'Enforce CONV-17 with checks and a shrink-only baseline'
+    labels:
+    - repo
+    - area:process
+    - type:chore
+    size: S
+    reqs:
+    - CONV-17
+    depends: []
+    deliverable:
+    - 'xtask/src/conv17.rs, run by cargo xtask conventions over every shipped crate and app (layers.toml; test code left out), parsing the source with syn and failing on: a function taking a bool (bool-argument); a library crate function returning Result<_, String> (string-error); a free function whose first parameter is a type its crate defines (free-fn-on-type); a visible field or parameter named as an ID and typed as a raw integer (bare-id); and a numeric literal other than 0, 1 and 2 in a function body (magic-number)'
+    - 'docs/audits/conv-17-baseline.tsv: each existing violation by rule, file and qualified name, written by cargo xtask conv17-baseline; a violation not listed fails, and a listed one the code no longer has fails until its line is removed'
+    - 'docs/conventions.md, "Type design (CONV-17)", and CLAUDE.md say what the check covers and how the baseline shrinks'
+    acceptance:
+    - 'Fixture workspaces show each rule finding what it should and leaving out what it should (test code, receivers, foreign types, private items, newtypes, constants, types, patterns and macro arguments); the conv17 tests in xtask show it'
+    - 'cargo xtask conventions passes on main with the baseline, and fixing a listed violation without removing its line fails'
+    verify:
+    - 'cargo xtask conventions; cargo nextest run -p xtask conv17'
+  - key: P5-19
+    title: 'Audit the code changed since the L3 refactor against CONV-17'
+    labels:
+    - repo
+    - area:process
+    - type:chore
+    size: M
+    reqs:
+    - CONV-17
+    depends:
+    - P5-18
+    deliverable:
+    - 'docs/audits/conv-17-since-653.md: every shipped crate and app, all layers (layers.toml; test-only and tooling crates excluded), read for the code added or changed since PR #653 (85af721480639ade94177298023021bdc08af770) against docs/conventions.md, "Type design (CONV-17)": every entry of P5-18''s baseline (bool arguments, String errors, free functions on a type, bare IDs and magic numbers), and what no check finds (named types for units and IDs the bare-id names miss, single-use one-line helpers, duplicated code a generic or trait would remove). Each finding names the file and line, the rule and the proposed change'
+    - 'Refactoring issues in plan/backlog/p5-p7.yaml, filed with the plan-change skill and grouped so that one crate''s fixes fit one PR, each listing its findings and the baseline lines it removes'
+    acceptance:
+    - 'Every finding in docs/audits/conv-17-since-653.md is either filed in a refactoring issue or explicitly accepted with a reason; python3 plan/check.py passes with the new issues'
+    - 'Each refactoring issue''s acceptance criteria require that behaviour is unchanged, every ratchet is not lowered, and P5-18''s baseline only shrinks'
+    verify:
+    - 'python3 plan/check.py --write-coverage; review of the audit against the filed issues'
   - key: P5-09
     title: Phase 5 gate review
     labels:
@@ -304,6 +342,8 @@ groups:
     - P5-15
     - P5-16
     - P5-17
+    - P5-18
+    - P5-19
     deliverable:
     - docs/gates/p5.md
     acceptance:
