@@ -1,0 +1,13 @@
+title = "Port a change to the rerelease"
+template = "rerelease"
+prompt = "In the id1 version of this mod the player spawns with 150 health instead of 100. Make the same change in this rerelease codebase, keeping the rerelease's own rules for Nightmare skill."
+turns = 30
+runs = 1
+threshold = 1
+
+[[solution]]
+file = "client.qc"
+find = """	else
+		parm2 = 100;"""
+replace = """	else
+		parm2 = 150;"""

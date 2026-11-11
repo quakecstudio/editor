@@ -211,6 +211,18 @@ the signer. It is the only workflow that reads the signing secrets
 | `Sign, notarize and attest on macOS` | macOS | builds the app, signs it with the hardened runtime from `build.keychain`, verifies it, notarizes it with notarytool, attests it and uploads it |
 | `Sign and attest on Windows` | Windows | builds the app, signs the `.exe` with aas-sign (Azure Trusted Signing over OIDC), checks its Authenticode signature, attests it and uploads it |
 
+[`.github/workflows/evals.yml`](../.github/workflows/evals.yml) runs the agent's evals on a real
+model (`cargo xtask evals --run`, [`evals/README.md`](../evals/README.md)). It runs weekly and on
+demand, never on pull requests, and is **not** a required check. Without the `QS_EVAL_API_KEY`
+secret it does nothing:
+
+| Check | Runs on | What it does |
+| --- | --- | --- |
+| `Agent evals` | Linux | fetches the starters' QuakeC and LibreQuake; runs each task within its cost cap; adds each run to the history kept in the Actions cache; writes the report to the job summary; uploads the report and the history |
+
+On every full CI run, Test Assets (linux) runs `cargo xtask evals --check`. Each task's scenario
+must fail at the task's start and pass with its reference solution.
+
 [`.github/workflows/fuzz.yml`](../.github/workflows/fuzz.yml) runs nightly and on demand
 (`workflow_dispatch`), never on pull requests or in the merge queue, and is **not** a required
 check:
