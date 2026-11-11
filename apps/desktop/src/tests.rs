@@ -1323,7 +1323,7 @@ fn export_mod_writes_the_zip_and_says_where() {
     harness.get_by_label(Text::ExportModMenu.get()).click();
     harness.run();
     harness.run();
-    let zip = project.join("build/exported.zip");
+    let zip = project.join("build").join("exported.zip");
     assert!(zip.is_file());
     let note = harness
         .state()
