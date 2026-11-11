@@ -1,0 +1,15 @@
+title = "Add a nails impulse"
+template = "id1"
+prompt = "Add an impulse command: impulse 50 gives the player 100 nails."
+turns = 30
+runs = 1
+threshold = 1
+
+[[solution]]
+file = "weapons.qc"
+find = """	if (self.impulse == 9)
+		CheatCommand ();"""
+replace = """	if (self.impulse == 9)
+		CheatCommand ();
+	if (self.impulse == 50)
+		self.ammo_nails = 100;"""

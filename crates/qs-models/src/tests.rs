@@ -480,7 +480,7 @@ fn the_keychain_answers_or_says_why_not() {
 #[test]
 fn anthropic_streams_text_thinking_and_calls() {
     let events = json!([
-        { "type": "message_start", "message": { "content": [] } },
+        { "type": "message_start", "message": { "content": [], "usage": { "input_tokens": 50, "output_tokens": 1 } } },
         { "type": "content_block_start", "index": 0,
           "content_block": { "type": "thinking", "thinking": "" } },
         { "type": "content_block_delta", "index": 0,
@@ -502,7 +502,7 @@ fn anthropic_streams_text_thinking_and_calls() {
         { "type": "content_block_delta", "index": 2,
           "delta": { "type": "input_json_delta", "partial_json": " []}" } },
         { "type": "content_block_stop", "index": 2 },
-        { "type": "message_delta", "delta": { "stop_reason": "tool_use" } },
+        { "type": "message_delta", "delta": { "stop_reason": "tool_use" }, "usage": { "output_tokens": 9 } },
         { "type": "message_stop" },
     ]);
     let failed = json!([{ "type": "error", "error": { "type": "overloaded_error", "message": "Overloaded" } }]);
@@ -530,6 +530,8 @@ fn anthropic_streams_text_thinking_and_calls() {
     assert_eq!(text, "Staging it.");
     assert_eq!(calls[0].name, "edit.apply");
     assert_eq!(calls[0].arguments, json!({ "files": [] }));
+    assert_eq!(model.usage().input_tokens, 50);
+    assert_eq!(model.usage().output_tokens, 9, "the last delta's count");
     transcript.push(Message::Assistant { text, calls });
     let error = model
         .reply_streaming("s", &tools(), &transcript, &mut |_| {})
@@ -615,4 +617,46 @@ fn ollama_streams_over_http() {
     );
     let requests = server.join().unwrap();
     assert!(requests[0].contains("\"stream\":true"), "{}", requests[0]);
+}
+
+// No spec statement: P4-15, a model's replies add up the tokens each provider reports, and
+// their cost is the tokens at the prices given per million
+#[test]
+fn usage_adds_up_what_the_providers_report() {
+    let transport = Scripted::new(vec![
+        Ok(
+            json!({ "stop_reason": "end_turn", "content": [{ "type": "text", "text": "a" }],
+                   "usage": { "input_tokens": 1000, "output_tokens": 200 } }),
+        ),
+        Ok(json!({ "stop_reason": "end_turn", "content": [{ "type": "text", "text": "b" }] })),
+    ]);
+    let mut model = ProviderModel::new(
+        ProviderConfig::anthropic(),
+        Some(Secret::new(KEY.to_owned())),
+        &transport,
+    )
+    .unwrap();
+    let transcript = [Message::User {
+        text: "go".to_owned(),
+    }];
+    model.reply("s", &[], &transcript).unwrap();
+    model.reply("s", &[], &transcript).unwrap();
+    let usage = model.usage();
+    assert_eq!((usage.input_tokens, usage.output_tokens), (1000, 200));
+    assert!((usage.cost(4.0, 20.0) - 0.008).abs() < 1e-12);
+    let chunks = json!([{ "choices": [{ "index": 0, "delta": { "content": "x" }, "finish_reason": "stop" }] }]);
+    let open = Scripted::new(vec![
+        Ok(json!({ "choices": [{ "finish_reason": "stop",
+        "message": { "content": "x" } }], "usage": { "prompt_tokens": 7, "completion_tokens": 3 } })),
+        Ok(chunks),
+    ]);
+    let mut other = ProviderModel::new(
+        ProviderConfig::new(ProviderKind::OpenAiCompatible, "m"),
+        Some(Secret::new(KEY.to_owned())),
+        &open,
+    )
+    .unwrap();
+    other.reply("s", &[], &transcript).unwrap();
+    assert_eq!(other.usage().input_tokens, 7);
+    assert_eq!(other.usage().output_tokens, 3);
 }

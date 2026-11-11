@@ -661,6 +661,11 @@ jobs:
               exit 1
             fi
           done
+      # P4-15: each agent eval's scenario defines success: it fails at the task's start and
+      # passes with its reference solution, on id 1.01 or the rerelease over LibreQuake.
+      - name: Check the agent evals' scenarios
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: cargo xtask evals --check
       # P1-21: id 1.01 parses with no errors; every file of each codebase, FTEQCC ones
       # included, round-trips through the tree.
       - name: Parse the corpus

@@ -1,0 +1,7 @@
+# What success means for the add-impulse eval: played after the run, on the agent's work.
+map start
+seed 1
+frames 4
+move 0 0 0 0 0 0 0 50
+frames 4
+expect field player ammo_nails == 100

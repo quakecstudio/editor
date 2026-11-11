@@ -1,0 +1,20 @@
+title = "Fix a compile error"
+template = "id1"
+prompt = "The project no longer compiles. Make it compile again without changing what the game does."
+turns = 30
+runs = 1
+threshold = 1
+
+[[setup]]
+file = "weapons.qc"
+find = """	if (self.impulse == 9)
+		CheatCommand ();"""
+replace = """	if (self.impulse == 9
+		CheatCommand ();"""
+
+[[solution]]
+file = "weapons.qc"
+find = """	if (self.impulse == 9
+		CheatCommand ();"""
+replace = """	if (self.impulse == 9)
+		CheatCommand ();"""
