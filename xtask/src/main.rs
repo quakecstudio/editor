@@ -105,6 +105,7 @@ mod commands;
 mod compatibility;
 mod compiler_diff;
 mod contrast;
+mod conv17;
 mod conventions;
 mod corpus;
 mod differential;
@@ -182,8 +183,10 @@ enum Task {
     CompilerDiff(compiler_diff::Args),
     /// The theme's colours meet their contrast.
     Contrast,
-    /// Config files match docs/conventions.md.
+    /// Config files match docs/conventions.md, and no CONV-17 violation is beyond its baseline.
     Conventions,
+    /// Writes docs/audits/conv-17-baseline.tsv from the code as it is (P5-18).
+    Conv17Baseline,
     /// The corpus manifest and cache.
     Corpus(corpus::Args),
     /// deny.toml rejects bad licenses and wildcards.
@@ -303,6 +306,21 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         }
         Task::Contrast => return print_outcome("contrast", contrast::check(root)),
         Task::Conventions => return print_outcome("conventions", conventions::check(root)),
+        Task::Conv17Baseline => {
+            return match conv17::write_baseline(root) {
+                Ok(count) => {
+                    println!(
+                        "conv17-baseline: wrote {} with {count} entries",
+                        conv17::BASELINE
+                    );
+                    true
+                }
+                Err(error) => {
+                    eprintln!("conv17-baseline: {error}");
+                    false
+                }
+            };
+        }
         Task::DenyFixtures => {
             return print_outcome("deny-fixtures", fixtures::deny(root, &exec::System));
         }
