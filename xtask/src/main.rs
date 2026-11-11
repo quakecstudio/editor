@@ -117,6 +117,7 @@ mod lex_corpus;
 mod licenses;
 mod lsp_corpus;
 mod map_corpus;
+mod offline;
 mod oracles;
 mod parse_corpus;
 mod ported;
@@ -191,6 +192,8 @@ enum Task {
     Evals(evals::Args),
     /// Write docs/compatibility.md from the conformance corpus (P4-21, COMP-9).
     Compatibility(compatibility::Args),
+    /// The app with the network denied and traced: no request with no provider (P4-16).
+    Offline(offline::Args),
     /// The server simulation differential: qs-sim against id's server on a route.
     SimDiff(sim_diff::Args),
     /// The view differential: the preview host's frames and sound against id's engine.
@@ -276,6 +279,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::Scenario(args) => ("scenario", scenario::main(root, args)),
         Task::Evals(args) => ("evals", evals::main(root, args)),
         Task::Compatibility(args) => ("compatibility", compatibility::main(root, args)),
+        Task::Offline(args) => ("offline", offline::main(root, args)),
         Task::SimDiff(args) => ("sim-diff", sim_diff::main(root, args)),
         Task::ViewDiff(args) => ("view-diff", view_diff::main(root, args)),
         Task::Adr => return print_outcome("adr", adr::check(root)),

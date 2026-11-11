@@ -224,6 +224,12 @@ secret it does nothing:
 On every full CI run, Test Assets (linux) runs `cargo xtask evals --check`. Each task's scenario
 must fail at the task's start and pass with its reference solution.
 
+It also runs `cargo xtask offline` over id 1.01 and LibreQuake (P4-16, PRIN-9). With no model
+provider set up, each step runs with the network denied and traced: the CLI's `new` from a local
+copy, `build`, `check` and `test`, an MCP session, and the desktop app's headless session. A
+control step (`new` from GitHub) must fail and show its request in the trace.
+[`docs/privacy.md`](privacy.md) lists every request the app can make.
+
 [`.github/workflows/fuzz.yml`](../.github/workflows/fuzz.yml) runs nightly and on demand
 (`workflow_dispatch`), never on pull requests or in the merge queue, and is **not** a required
 check:

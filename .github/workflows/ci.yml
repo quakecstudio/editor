@@ -858,6 +858,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libasound2-dev mesa-vulkan-drivers
+      # P4-16, PRIN-9: with no model provider set up, the CLI, an MCP session and the desktop
+      # app's session make no network request, each run with the network denied and traced
+      # (docs/privacy.md). The runner image keeps unprivileged user namespaces off with
+      # AppArmor; the check needs one for its network namespace.
+      - name: Run the app with the network denied
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends strace
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          cargo xtask offline "$QS_TEST_ASSETS/codebase/id-1.01" \
+            --game "$QS_TEST_ASSETS/librequake-lite"
       # P3-06: qs-engine's bridge client against the real preview host, headless, launched
       # through a run root over LibreQuake's id1: a symbolic link, or a junction on Windows,
       # and a Unix socket, or a named pipe on Windows. P3-17: then the rerelease's QuakeC,
