@@ -161,6 +161,11 @@ computed only for literals.
 - `ModuleIndex::definition_at`, `references`, `references_at` (`nav`): go-to-definition and
   find-references, a later declaration naming the definition it declares again.
 - `FileDecls`, `lower_file` (`lower`): the per-file raw declarations the resolver joins.
+- `Db::entity_classes`, `EntityClass` and `Fgd` (`entities`, P5-03, MAP-1): the entity
+  classes a module's spawn functions define (EDICT-8.5, EDICT-8.6), each with the keys it
+  reads from `self`, their defaults, its spawnflags, its `/*QUAKED*/` comment, model and size
+  (BUILTIN-9.2, BUILTIN-9.4), read from the intermediate layer; and their export as an FGD
+  file. `cargo xtask entity-corpus` holds id 1.01's and the rerelease's to golden files.
 
 ## Tests
 

@@ -728,6 +728,13 @@ jobs:
           cargo xtask sema-corpus \
             "$QS_TEST_ASSETS/codebase/id-1.01=$QS_TEST_ASSETS/progs/id-1.01/progs.dat" \
             "$QS_TEST_ASSETS/codebase/rerelease=$QS_TEST_ASSETS/progs/rerelease/progs.dat"
+      # P5-03: the entity definitions of id 1.01 and the rerelease match their golden FGD files
+      # (docs/spec/vectors/entities/), and each defines every classname LibreQuake's maps use.
+      - name: Check the entity definitions against their golden files and the maps
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          cargo xtask entity-corpus --maps "$QS_TEST_ASSETS/librequake-lite" \
+            "$QS_TEST_ASSETS/codebase/id-1.01" "$QS_TEST_ASSETS/codebase/rerelease"
       # P2-14: the language server, driven over the protocol against the rerelease, gives the
       # answers its golden file records (docs/spec/vectors/lsp/rerelease.txt).
       - name: Drive the language server against the rerelease
