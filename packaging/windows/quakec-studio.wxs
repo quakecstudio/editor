@@ -16,7 +16,7 @@
     </StandardDirectory>
     <ComponentGroup Id="Files" Directory="INSTALLFOLDER">
       <Component><File Source="quakec-studio.exe" /></Component>
-      <Component><File Source="preview-host.exe" /></Component>
+      <Component><File Source="quakec-engine.exe" /></Component>
       <Component><File Source="quakec-ide.exe" /></Component>
       <Component><File Source="quakec-lsp.exe" /></Component>
       <Component><File Source="LICENSE.txt" /></Component>

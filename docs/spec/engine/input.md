@@ -111,7 +111,7 @@ id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d` does it in `WinQuak
   the game's, as QuakeSpasm's `quakespasm.pak`, ahead of id1 on the search path, covers id1's
   with its own (`Misc/qs_pak/default.cfg`, the source of `Quake/default_cfg.h`): its bindings
   put the movement on W, A, S and D, as QuakeSpasm's do, and it holds `+mlook`. The text is
-  the host's, written for it (`DEFAULT_CFG` in `apps/preview-host/src/keys.rs`). In GLQuake's look the
+  the host's, written for it (`DEFAULT_CFG` in `apps/quakec-engine/src/keys.rs`). In GLQuake's look the
   game's `default.cfg` is read.
 
 ## INPUT-4 The host's configuration

@@ -28,7 +28,7 @@ modules:
   - name: quakec-studio
     buildsystem: simple
     build-commands:
-      - install -Dm755 -t /app/bin quakec-studio preview-host quakec-ide quakec-lsp
+      - install -Dm755 -t /app/bin quakec-studio quakec-engine quakec-ide quakec-lsp
       - install -Dm644 -t /app/share/doc/quakec-studio LICENSE NOTICE
       - install -Dm644 com.quakecstudio.QuakeCStudio.desktop -t /app/share/applications
       - install -Dm644 com.quakecstudio.QuakeCStudio.svg -t /app/share/icons/hicolor/scalable/apps

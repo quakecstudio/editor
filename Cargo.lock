@@ -3319,38 +3319,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
 
 [[package]]
-name = "preview-host"
-version = "2026.10.0"
-dependencies = [
- "clap",
- "cpal",
- "eframe",
- "image",
- "interprocess",
- "qc-builtins",
- "qc-codegen",
- "qc-edict",
- "qc-lno",
- "qc-progs",
- "qc-sema",
- "qc-types",
- "qc-vm",
- "qs-bridge",
- "qs-bsp",
- "qs-client",
- "qs-log",
- "qs-mdl",
- "qs-paths",
- "qs-render",
- "qs-sim",
- "qs-sound",
- "qs-vfs",
- "raw-window-handle",
- "serde_json",
- "tracing",
-]
-
-[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3924,6 +3892,38 @@ dependencies = [
  "regex-lite",
  "schemars",
  "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "quakec-engine"
+version = "2026.10.0"
+dependencies = [
+ "clap",
+ "cpal",
+ "eframe",
+ "image",
+ "interprocess",
+ "qc-builtins",
+ "qc-codegen",
+ "qc-edict",
+ "qc-lno",
+ "qc-progs",
+ "qc-sema",
+ "qc-types",
+ "qc-vm",
+ "qs-bridge",
+ "qs-bsp",
+ "qs-client",
+ "qs-log",
+ "qs-mdl",
+ "qs-paths",
+ "qs-render",
+ "qs-sim",
+ "qs-sound",
+ "qs-vfs",
+ "raw-window-handle",
  "serde_json",
  "tracing",
 ]

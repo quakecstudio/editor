@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use super::{Args, engine_style};
 
 fn parse(words: &[&str]) -> Result<Args, clap::Error> {
-    let line = core::iter::once("preview-host")
+    let line = core::iter::once("quakec-engine")
         .chain(words.iter().copied())
         .map(str::to_owned);
     <Args as clap::Parser>::try_parse_from(engine_style(line))

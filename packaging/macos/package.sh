@@ -15,7 +15,7 @@
 set -euo pipefail
 
 APP_NAME="QuakeC Studio"
-BINARIES=(quakec-studio preview-host quakec-ide quakec-lsp)
+BINARIES=(quakec-studio quakec-engine quakec-ide quakec-lsp)
 
 usage() {
   echo "usage: $0 app <bin-dir> <version> <out-dir> | $0 dmg <app> <dmg>" >&2

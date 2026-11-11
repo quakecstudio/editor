@@ -50,7 +50,7 @@ editor/
 **Separate processes.** The oracles (id's VM and qcc, a pinned FTEQCC, later id's map tools
 and ericw-tools, and id's engine as the engine oracle) are C programs in
 `oracles/`, run only in CI to prove our ports match. The preview host is our own Rust app in
-`apps/preview-host` ([ADR-0004](docs/adr/0004-preview-host-base.md)), built on our QuakeC VM,
+`apps/quakec-engine` ([ADR-0004](docs/adr/0004-preview-host-base.md)), built on our QuakeC VM,
 `qs-sim`, `qs-sound` and the wgpu renderer, and runs as its own process, talking to the IDE over
 a local socket. The game runs in its own docked window in v1; the embedded game view is
 post-MVP.

@@ -42,7 +42,7 @@ Each layer may depend only on layers below it; `cargo xtask layers` enforces thi
 | L7 UI | The app on the chosen framework |
 | apps | Desktop app, CLI, LSP server |
 
-The only C programs are the oracles in `oracles/` (id's VM trace harness, id's qcc, a pinned FTEQCC, id's engine as the engine oracle, later id's map tools and ericw-tools; built by `cargo xtask oracles`, CI only). The preview host is the Rust binary `apps/preview-host`, which runs as its own process beside the IDE ([ADR-0004](adr/0004-preview-host-base.md)).
+The only C programs are the oracles in `oracles/` (id's VM trace harness, id's qcc, a pinned FTEQCC, id's engine as the engine oracle, later id's map tools and ericw-tools; built by `cargo xtask oracles`, CI only). The preview host is the Rust binary `apps/quakec-engine`, which runs as its own process beside the IDE ([ADR-0004](adr/0004-preview-host-base.md)).
 
 ## The phases
 

@@ -15,7 +15,7 @@
 set -euo pipefail
 
 APP_ID=com.quakecstudio.QuakeCStudio
-BINARIES=(quakec-studio preview-host quakec-ide quakec-lsp)
+BINARIES=(quakec-studio quakec-engine quakec-ide quakec-lsp)
 # The commands on the PATH; the preview host is started by the app, not by hand.
 COMMANDS=(quakec-studio quakec-ide quakec-lsp)
 

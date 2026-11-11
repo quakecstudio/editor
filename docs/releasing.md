@@ -37,7 +37,7 @@ deb's architecture) with `sed`. The build checks the desktop entry with
 and the WiX source by building it.
 
 Every package holds the four binaries, the desktop app `quakec-studio`, the preview host
-`preview-host` beside it (where `qs-engine`'s `locate_host` looks), the command line
+`quakec-engine` beside it (where `qs-engine`'s `locate_host` looks), the command line
 `quakec-ide` and the language server `quakec-lsp`, with `LICENSE` (the GPL-3.0 text) and
 `NOTICE` (`packaging/NOTICE.txt`: the copyright, the corresponding-source link, the ported
 code and the non-affiliation notice). On macOS the preview host is signed as its own

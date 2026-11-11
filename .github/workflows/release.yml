@@ -108,7 +108,7 @@ jobs:
           spctl --assess --type execute --verbose=4 "$app"
           xcrun stapler validate "$app"
           # Every executable inside is signed with the hardened runtime, not only the app.
-          for name in quakec-studio preview-host quakec-ide quakec-lsp; do
+          for name in quakec-studio quakec-engine quakec-ide quakec-lsp; do
             codesign --verify --strict --verbose=2 "$app/Contents/MacOS/$name"
             codesign --display --verbose=2 "$app/Contents/MacOS/$name" 2>&1 | grep -q "flags=.*runtime"
           done

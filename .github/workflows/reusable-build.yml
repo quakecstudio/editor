@@ -141,9 +141,9 @@ jobs:
       - name: Build for Apple silicon
         run: |
           cargo build --release --locked --target aarch64-apple-darwin \
-            -p quakec-studio -p preview-host -p quakec-ide -p quakec-lsp
+            -p quakec-studio -p quakec-engine -p quakec-ide -p quakec-lsp
           mkdir -p dist/bin
-          for name in quakec-studio preview-host quakec-ide quakec-lsp; do
+          for name in quakec-studio quakec-engine quakec-ide quakec-lsp; do
             cp "target/aarch64-apple-darwin/release/$name" dist/bin/
             lipo "dist/bin/$name" -verify_arch arm64
           done
@@ -171,7 +171,7 @@ jobs:
           APPLE_CERTIFICATE_NAME: ${{ secrets.APPLE_CERTIFICATE_NAME }}
         run: |
           app="dist/QuakeC Studio.app"
-          for name in preview-host quakec-ide quakec-lsp quakec-studio; do
+          for name in quakec-engine quakec-ide quakec-lsp quakec-studio; do
             /usr/bin/codesign --force --sign "$APPLE_CERTIFICATE_NAME" \
               --options runtime --timestamp "$app/Contents/MacOS/$name"
           done
@@ -256,7 +256,7 @@ jobs:
       - name: Build
         run: |
           cargo build --release --locked --target "$TARGET" \
-            -p quakec-studio -p preview-host -p quakec-ide -p quakec-lsp
+            -p quakec-studio -p quakec-engine -p quakec-ide -p quakec-lsp
       # Azure's federated credential trusts `...:workflow:release:ref_type:tag` alone
       # (docs/releasing.md), so only a tag's run signs. If the OIDC login fails, the subject
       # in Azure's error goes to Justin, not worked around.
@@ -272,7 +272,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           files: |
             target/${{ matrix.target }}/release/quakec-studio.exe
-            target/${{ matrix.target }}/release/preview-host.exe
+            target/${{ matrix.target }}/release/quakec-engine.exe
             target/${{ matrix.target }}/release/quakec-ide.exe
             target/${{ matrix.target }}/release/quakec-lsp.exe
       - name: Check the signatures
@@ -281,7 +281,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          foreach ($name in 'quakec-studio', 'preview-host', 'quakec-ide', 'quakec-lsp') {
+          foreach ($name in 'quakec-studio', 'quakec-engine', 'quakec-ide', 'quakec-lsp') {
             $signature = Get-AuthenticodeSignature "target/$env:TARGET/release/$name.exe"
             if ($signature.Status -ne 'Valid') { throw "$name.exe: the signature is $($signature.Status)" }
             "ok    $name.exe signed by $($signature.SignerCertificate.Subject)"
@@ -342,7 +342,7 @@ jobs:
       - name: Set up the Rust toolchain
         run: rustup toolchain install
       - name: Build
-        run: cargo build --release --locked -p quakec-studio -p preview-host -p quakec-ide -p quakec-lsp
+        run: cargo build --release --locked -p quakec-studio -p quakec-engine -p quakec-ide -p quakec-lsp
       - name: Validate the desktop entry and the rpm's spec
         run: |
           desktop-file-validate packaging/linux/com.quakecstudio.QuakeCStudio.desktop

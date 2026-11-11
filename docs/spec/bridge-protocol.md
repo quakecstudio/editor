@@ -4,7 +4,7 @@ Prefix: `BRIDGE` (registered in [`README.md`](README.md)). IDs follow the rules 
 renumbered, never reused, withdrawn rather than deleted.
 
 The protocol the IDE's bridge client (`qs-engine`, P3-06) speaks to the preview host
-(`apps/preview-host`, P3-02) over a local socket: versioned JSON messages that carry the
+(`apps/quakec-engine`, P3-02) over a local socket: versioned JSON messages that carry the
 host's events (a progs loaded, an edict spawned, a breakpoint hit) and the client's commands
 (reload, step, inspect, set a field). It is this project's own design, after the
 [Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/) (requests,

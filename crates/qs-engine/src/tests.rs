@@ -165,7 +165,7 @@ fn run_root_links_are_repaired() {
 #[test]
 fn the_host_command_line() {
     let spec = LaunchSpec {
-        host: PathBuf::from("/app/preview-host"),
+        host: PathBuf::from("/app/quakec-engine"),
         run_root: RunRoot {
             path: PathBuf::from("/p/build/run/rerelease"),
             game: Some("mymod".to_owned()),
@@ -180,7 +180,7 @@ fn the_host_command_line() {
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
-    assert_eq!(command.get_program(), "/app/preview-host");
+    assert_eq!(command.get_program(), "/app/quakec-engine");
     assert_eq!(
         args,
         [
@@ -241,7 +241,7 @@ fn the_host_is_found_beside_the_app() {
     let app = dir.0.join("QuakeC Studio");
     let host = dir
         .0
-        .join(format!("preview-host{}", std::env::consts::EXE_SUFFIX));
+        .join(format!("quakec-engine{}", std::env::consts::EXE_SUFFIX));
     assert!(matches!(
         locate_host(None, &app),
         Err(LaunchError::NotFound(path)) if path == host

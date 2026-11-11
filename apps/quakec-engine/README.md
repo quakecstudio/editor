@@ -1,6 +1,8 @@
-# preview-host
+# quakec-engine
 
 The game in its own window, served to the IDE over the bridge (ADR-0004, P3-02). Layer: apps.
+The docs call it the preview host; its binary is `quakec-engine` (ADR-0006), shipped beside
+`quakec-studio`, which looks for it there.
 
 It loads a map from the user's install through the game filesystem (`qs-vfs`), runs the
 server in `qs-sim`, reads the server's messages with `qs-client` and draws the scene and HUD
@@ -8,7 +10,7 @@ with `qs-render`. With `-bridge PATH` it waits for the IDE on that Unix socket a
 `docs/spec/bridge-protocol.md` (BRIDGE-1 to BRIDGE-7) between two server frames.
 
 ```bash
-cargo run --release -p preview-host -- -basedir <game root> [-game <dir>] [-kpf <QuakeEX.kpf>] \
+cargo run --release -p quakec-engine -- -basedir <game root> [-game <dir>] [-kpf <QuakeEX.kpf>] \
     [-bridge <socket>] [map]
 ```
 

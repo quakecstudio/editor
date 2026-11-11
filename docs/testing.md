@@ -99,7 +99,7 @@ Running the workflow on the fixture directories shows the same failures with the
   sections [`oracles/README.md`](../oracles/README.md) lists, and `cargo xtask oracles` 20
   times on each OS. No mutation tool of the bar runs on C; that exception, with its reason,
   is in `oracles/README.md` and `ratchets.toml`. The preview host is Rust,
-  `apps/preview-host` in this repository ([ADR-0004](adr/0004-preview-host-base.md)), and is
+  `apps/quakec-engine` in this repository ([ADR-0004](adr/0004-preview-host-base.md)), and is
   covered by the L4 and apps notes above.
 
 ## Readiness report

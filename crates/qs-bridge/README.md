@@ -2,7 +2,7 @@
 
 The IDE bridge protocol, [`bridge-protocol.md`](../../docs/spec/bridge-protocol.md): the
 messages the preview host and the IDE's client send each other over a local socket, framed as
-LSP frames them, as JSON-RPC 2.0, and the session's rules. The preview host (`apps/preview-host`,
+LSP frames them, as JSON-RPC 2.0, and the session's rules. The preview host (`apps/quakec-engine`,
 P3-02) serves it; the IDE's bridge client (`qs-engine`, P3-06) speaks it.
 
 - **Layer:** L4 bridges. It depends on `jsonschema` and `serde_json`.

@@ -15,7 +15,7 @@
 # (`dotnet tool install --global wix --version 5.0.2`).
 set -euo pipefail
 
-BINARIES=(quakec-studio preview-host quakec-ide quakec-lsp)
+BINARIES=(quakec-studio quakec-engine quakec-ide quakec-lsp)
 
 usage() {
   echo "usage: $0 <zip|msi> <x64|arm64> <bin-dir> <version> <out-dir>" >&2

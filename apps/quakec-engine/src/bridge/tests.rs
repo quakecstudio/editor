@@ -46,7 +46,7 @@ static SOCKETS: AtomicUsize = AtomicUsize::new(0);
 /// A socket or named pipe name of this test's own (BRIDGE-1.1).
 fn socket_path() -> PathBuf {
     let name = format!(
-        "preview-host-{}-{}",
+        "quakec-engine-{}-{}",
         std::process::id(),
         SOCKETS.fetch_add(1, Ordering::Relaxed)
     );

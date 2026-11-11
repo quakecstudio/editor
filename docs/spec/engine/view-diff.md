@@ -8,7 +8,7 @@ the view oracle, `oracles/engine/view_host.c`, runs id's whole engine headless, 
 renderer, the client and the mixer of `WinQuake/` at
 id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`, and `preview-host
 --view-script` runs ours on the same script; `cargo xtask view-diff` compares what they write.
-Implemented by `oracles/engine/view_host.c`, `apps/preview-host` and `xtask/src/view_diff.rs`.
+Implemented by `oracles/engine/view_host.c`, `apps/quakec-engine` and `xtask/src/view_diff.rs`.
 
 The two renderers are not the same program: id's draws 8-bit colour through its colour map,
 ours draws QuakeSpasm's look on the GPU (REND-13). The comparison asks whether a frame shows
@@ -17,7 +17,7 @@ within tolerances recorded per map; it is not an exact match.
 
 ## VIEWDIFF-1 The script
 
-**Source:** ours: `oracles/engine/view_host.c`, `main`; `apps/preview-host/src/view_script.rs`.
+**Source:** ours: `oracles/engine/view_host.c`, `main`; `apps/quakec-engine/src/view_script.rs`.
 
 ### Behaviour
 
@@ -39,7 +39,7 @@ within tolerances recorded per map; it is not an exact match.
 
 ## VIEWDIFF-2 Drawing the view
 
-**Source:** ours: `oracles/engine/view_host.c`, `VID_Init`; `apps/preview-host/src/headless.rs`,
+**Source:** ours: `oracles/engine/view_host.c`, `VID_Init`; `apps/quakec-engine/src/headless.rs`,
 `view_script`.
 
 ### Behaviour
