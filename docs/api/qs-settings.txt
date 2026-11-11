@@ -3,13 +3,24 @@ enum qs_settings::Scope
 enum qs_settings::Setting
 enum qs_settings::Source
 enum qs_settings::Theme
+enum qs_settings::agent::AgentProfile
+enum qs_settings::agent::Decision
 enum qs_settings::error::SettingsError
 field qs_settings::Appearance.theme
 field qs_settings::Game.folder
 field qs_settings::Log.filter
+field qs_settings::SettingsFile.agent
 field qs_settings::SettingsFile.appearance
 field qs_settings::SettingsFile.game
 field qs_settings::SettingsFile.log
+field qs_settings::agent::Agent.profile
+field qs_settings::agent::Agent.tool_permissions
+field qs_settings::agent::ToolPermissions.default
+field qs_settings::agent::ToolPermissions.tools
+field qs_settings::agent::ToolRule.allow
+field qs_settings::agent::ToolRule.ask
+field qs_settings::agent::ToolRule.default
+field qs_settings::agent::ToolRule.deny
 field qs_settings::commands::Entry.default
 field qs_settings::commands::Entry.key
 field qs_settings::commands::Entry.source
@@ -27,6 +38,7 @@ fn qs_settings::SettingsStore::put
 fn qs_settings::SettingsStore::value
 fn qs_settings::commands::HasSettings::settings
 fn qs_settings::commands::register
+fn qs_settings::project_settings_path
 fn qs_settings::reference
 fn qs_settings::user_settings_path
 impl qs_settings::error::SettingsError: Error
@@ -36,22 +48,38 @@ struct qs_settings::Game
 struct qs_settings::Log
 struct qs_settings::SettingsFile
 struct qs_settings::SettingsStore
+struct qs_settings::agent::Agent
+struct qs_settings::agent::ToolPermissions
+struct qs_settings::agent::ToolRule
 struct qs_settings::commands::Entry
 trait qs_settings::commands::HasSettings
+use qs_settings::Agent = agent::Agent
+use qs_settings::AgentProfile = agent::AgentProfile
+use qs_settings::Decision = agent::Decision
 use qs_settings::Entry = commands::Entry
 use qs_settings::HasSettings = commands::HasSettings
 use qs_settings::SettingsError = error::SettingsError
+use qs_settings::ToolPermissions = agent::ToolPermissions
+use qs_settings::ToolRule = agent::ToolRule
 use qs_settings::register = commands::register
 variant qs_settings::Scope::Project
 variant qs_settings::Scope::User
+variant qs_settings::Setting::AgentProfile
 variant qs_settings::Setting::GameFolder
 variant qs_settings::Setting::LogFilter
 variant qs_settings::Setting::Theme
+variant qs_settings::Setting::ToolPermissions
 variant qs_settings::Source::Default
 variant qs_settings::Source::Project
 variant qs_settings::Source::User
 variant qs_settings::Theme::Dark
 variant qs_settings::Theme::Light
+variant qs_settings::agent::AgentProfile::Ask
+variant qs_settings::agent::AgentProfile::Full
+variant qs_settings::agent::AgentProfile::Write
+variant qs_settings::agent::Decision::Allow
+variant qs_settings::agent::Decision::Ask
+variant qs_settings::agent::Decision::Deny
 variant qs_settings::error::SettingsError::NoProject
 variant qs_settings::error::SettingsError::Parse
 variant qs_settings::error::SettingsError::Read

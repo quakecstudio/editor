@@ -11,7 +11,10 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
 use eframe::egui::{self, RichText, Ui};
-use qs_agent::{Message, Model, Outcome, Reply, Request, Run, RunConfig, RunReport};
+use qs_agent::{
+    AgentProfile, Asking, Message, Model, Outcome, Permissions, Permit, Reply, Request, Run,
+    RunConfig, RunReport,
+};
 use qs_commands::Session;
 use qs_models::{KeyStore, Keychain, ProviderConfig, ProviderKind, ProviderModel, Secret};
 use qs_workbench::{HunkId, StagedHunk};
@@ -91,23 +94,41 @@ impl Thread {
                     self.to_model = None;
                     return;
                 }
-                match run.request() {
-                    Some(request) => {
-                        let sent = self.to_model.as_ref().map(|to| to.send(request));
-                        if matches!(sent, Some(Ok(()))) {
-                            self.run = Some(run);
-                        } else {
-                            self.report = Some(run.finish(session));
-                            self.to_model = None;
-                        }
-                    }
-                    None => {
-                        self.report = Some(run.finish(session));
-                        self.to_model = None;
-                    }
-                }
+                self.go_on(session, run);
             }
         }
+    }
+
+    /// After `run` has taken a reply or an answer: it waits while a call asks the modder,
+    /// sends its next request, or ends.
+    fn go_on<C: 'static>(&mut self, session: &mut Session<C>, run: Run) {
+        if run.asking().is_some() {
+            self.run = Some(run);
+            return;
+        }
+        let sent = run
+            .request()
+            .and_then(|request| self.to_model.as_ref().map(|to| to.send(request).is_ok()));
+        if sent == Some(true) {
+            self.run = Some(run);
+        } else {
+            self.report = Some(run.finish(session));
+            self.to_model = None;
+        }
+    }
+
+    /// Takes the modder's answer to the call that asks, then goes on; the run's permissions,
+    /// when the answer was Always allow.
+    fn permit<C: 'static>(
+        &mut self,
+        session: &mut Session<C>,
+        permit: Permit,
+    ) -> Option<Permissions> {
+        let mut run = self.run.take()?;
+        run.permit(session, permit);
+        let kept = (permit == Permit::Always).then(|| run.permissions().clone());
+        self.go_on(session, run);
+        kept
     }
 }
 
@@ -160,6 +181,8 @@ pub struct AgentPanel {
     config_file: Option<PathBuf>,
     /// Why the last thread asked for did not start.
     error: Option<String>,
+    /// The profile and rules a new thread's calls are decided by (P4-30).
+    permissions: Permissions,
 }
 
 impl AgentPanel {
@@ -174,7 +197,39 @@ impl AgentPanel {
             make,
             config_file: None,
             error: None,
+            permissions: Permissions::default(),
         }
+    }
+
+    /// Decides the calls of threads started from now on by `permissions`.
+    pub fn set_permissions(&mut self, permissions: Permissions) {
+        self.permissions = permissions;
+    }
+
+    /// The profile and rules new threads are decided by.
+    #[must_use]
+    pub const fn permissions(&self) -> &Permissions {
+        &self.permissions
+    }
+
+    /// Takes the modder's answer to the call thread `index` asks about; the permissions to
+    /// keep in the project's settings, when the answer was Always allow, which new threads use
+    /// too.
+    pub fn permit<C: 'static>(
+        &mut self,
+        session: &mut Session<C>,
+        index: usize,
+        permit: Permit,
+    ) -> Option<Permissions> {
+        let kept = self.threads.get_mut(index)?.permit(session, permit)?;
+        self.permissions.rules = kept.rules.clone();
+        Some(kept)
+    }
+
+    /// The call thread `index` waits for the modder's answer on, if one is.
+    #[must_use]
+    pub fn asking(&self, index: usize) -> Option<&Asking> {
+        self.threads.get(index)?.run.as_ref()?.asking()
     }
 
     /// Keeps the provider configuration in `file`, reading the one there.
@@ -244,7 +299,9 @@ impl AgentPanel {
             .clone()
             .ok_or_else(|| Text::NoAgent.get().to_owned())?;
         let mut model = (self.make)(&config)?;
-        let run = Run::start(session, task, RunConfig::new(project)).map_err(|e| e.to_string())?;
+        let mut run_config = RunConfig::new(project);
+        run_config.permissions = self.permissions.clone();
+        let run = Run::start(session, task, run_config).map_err(|e| e.to_string())?;
         let (to_model, requests) = mpsc::channel::<Request>();
         let (events, from_model) = mpsc::channel::<Event>();
         std::thread::spawn(move || {
@@ -394,8 +451,10 @@ impl AgentPanel {
                 }
             }
         });
-        if let Some(thread) = self.selected.and_then(|index| self.threads.get(index)) {
-            action = thread_view(ui, theme, thread).or(action);
+        if let Some(index) = self.selected
+            && let Some(thread) = self.threads.get(index)
+        {
+            action = thread_view(ui, theme, index, thread).or(action);
         }
         let task = ui.add(
             egui::TextEdit::multiline(&mut self.task)
@@ -404,9 +463,22 @@ impl AgentPanel {
                 .desired_width(f32::INFINITY),
         );
         name_field(ui, &task, Text::AgentTaskHint);
-        if ui.button(Text::AgentRun.get()).clicked() && !self.task.trim().is_empty() {
-            action = Some(AgentAction::Start(std::mem::take(&mut self.task)));
-        }
+        ui.horizontal(|ui| {
+            if ui.button(Text::AgentRun.get()).clicked() && !self.task.trim().is_empty() {
+                action = Some(AgentAction::Start(std::mem::take(&mut self.task)));
+            }
+            let mut profile = self.permissions.profile;
+            egui::ComboBox::from_id_salt(Text::AgentProfile.get())
+                .selected_text(profile_text(profile).get())
+                .show_ui(ui, |ui| {
+                    for choice in [AgentProfile::Ask, AgentProfile::Write, AgentProfile::Full] {
+                        ui.selectable_value(&mut profile, choice, profile_text(choice).get());
+                    }
+                });
+            if profile != self.permissions.profile {
+                action = Some(AgentAction::Profile(profile));
+            }
+        });
         if let Some(error) = &self.error {
             ui.label(RichText::new(error).color(theme.color(Token::StatusError)));
         }
@@ -498,10 +570,57 @@ pub enum AgentAction {
     Reject(Vec<HunkId>),
     /// Restore this checkpoint.
     Restore(u32),
+    /// Answer the call this thread asks about.
+    Permit(usize, Permit),
+    /// Use this profile from now on, kept in the project's settings.
+    Profile(AgentProfile),
+}
+
+/// What the panel calls `profile`.
+const fn profile_text(profile: AgentProfile) -> Text {
+    match profile {
+        AgentProfile::Ask => Text::AgentProfileAsk,
+        AgentProfile::Write => Text::AgentProfileWrite,
+        AgentProfile::Full => Text::AgentProfileFull,
+    }
+}
+
+/// The call `index` waits on: the tool, what it names and why it asks, with Allow once,
+/// Always allow and Deny.
+fn permission_request(
+    ui: &mut Ui,
+    theme: &Theme,
+    index: usize,
+    asking: &Asking,
+) -> Option<AgentAction> {
+    let mut action = None;
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.label(
+            RichText::new(format!("{} {}", Text::AgentAsks.get(), asking.call.name))
+                .strong()
+                .color(theme.color(Token::StatusWarn)),
+        );
+        for subject in asking.subjects.iter().filter(|s| !s.is_empty()) {
+            ui.label(RichText::new(subject).monospace());
+        }
+        muted(ui, theme, &asking.why);
+        ui.horizontal(|ui| {
+            for (text, permit) in [
+                (Text::AgentAllowOnce, Permit::Once),
+                (Text::AgentAlwaysAllow, Permit::Always),
+                (Text::AgentDeny, Permit::Deny),
+            ] {
+                if ui.button(text.get()).clicked() {
+                    action = Some(AgentAction::Permit(index, permit));
+                }
+            }
+        });
+    });
+    action
 }
 
 /// One thread: what the model said and called, the reply being written, how it ended.
-fn thread_view(ui: &mut Ui, theme: &Theme, thread: &Thread) -> Option<AgentAction> {
+fn thread_view(ui: &mut Ui, theme: &Theme, index: usize, thread: &Thread) -> Option<AgentAction> {
     let mut action = None;
     let transcript = thread
         .run
@@ -546,10 +665,13 @@ fn thread_view(ui: &mut Ui, theme: &Theme, thread: &Thread) -> Option<AgentActio
             }
             if !thread.streaming.is_empty() {
                 ui.add(egui::Label::new(thread.streaming.as_str()).wrap());
-            } else if thread.running() {
+            } else if thread.running() && thread.run.as_ref().and_then(Run::asking).is_none() {
                 muted(ui, theme, Text::AgentWorking.get());
             }
         });
+    if let Some(asking) = thread.run.as_ref().and_then(Run::asking) {
+        action = permission_request(ui, theme, index, asking);
+    }
     if let Some(error) = &thread.error {
         ui.label(RichText::new(error).color(theme.color(Token::StatusError)));
     }

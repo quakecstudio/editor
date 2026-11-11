@@ -584,7 +584,16 @@ fn settings_commands_change_the_files_and_undo() {
         .iter()
         .map(|e| e["key"].as_str().unwrap())
         .collect();
-    assert_eq!(keys, ["appearance.theme", "log.filter", "game.folder"]);
+    assert_eq!(
+        keys,
+        [
+            "appearance.theme",
+            "log.filter",
+            "game.folder",
+            "agent.profile",
+            "agent.tool_permissions"
+        ]
+    );
     assert_eq!(list[1]["default"], "info");
 }
 
@@ -801,6 +810,7 @@ proptest! {
             appearance: crate::Appearance { theme },
             log: crate::Log { filter: filter.clone() },
             game: crate::Game { folder: folder.clone() },
+            agent: crate::Agent::default(),
         };
         store
             .put(Scope::User, Setting::Theme, theme.map(|t| serde_json::to_value(t).unwrap()))
@@ -1013,5 +1023,58 @@ fn the_first_project_setting_makes_its_directory() {
     assert_eq!(
         store.value(Setting::Theme),
         (json!("light"), Source::Project)
+    );
+}
+
+// No spec statement: P4-30, UI-22: the agent's profile and tool rules are kept in the
+// project's file, written as TOML and read back as they were set
+#[test]
+fn the_agents_rules_are_kept_in_the_projects_file() {
+    use crate::{AgentProfile, Decision, ToolPermissions, ToolRule};
+    let dir = TempDir::new("agent");
+    let (_, project, mut store) = store(&dir, &StoreSpec::default());
+    let mut rules = ToolPermissions {
+        default: Some(Decision::Ask),
+        ..ToolPermissions::default()
+    };
+    rules.tools.insert(
+        "edit.apply".to_owned(),
+        ToolRule {
+            allow: vec!["src/*.qc".to_owned()],
+            deny: vec!["progs.src".to_owned()],
+            ..ToolRule::default()
+        },
+    );
+    store
+        .put(Scope::Project, Setting::AgentProfile, Some(json!("full")))
+        .unwrap();
+    store
+        .put(
+            Scope::Project,
+            Setting::ToolPermissions,
+            Some(serde_json::to_value(&rules).unwrap()),
+        )
+        .unwrap();
+    let text = std::fs::read_to_string(project).unwrap();
+    assert!(
+        text.contains("[agent]") && text.contains("profile = \"full\""),
+        "{text}"
+    );
+    let file = store.file(Scope::Project).unwrap();
+    assert_eq!(file.agent.profile, Some(AgentProfile::Full));
+    assert_eq!(file.agent.tool_permissions.as_ref(), Some(&rules));
+    assert_eq!(
+        store.value(Setting::ToolPermissions).0,
+        serde_json::to_value(&rules).unwrap()
+    );
+    assert!(
+        store
+            .put(
+                Scope::Project,
+                Setting::AgentProfile,
+                Some(json!("everything"))
+            )
+            .is_err(),
+        "an unknown profile is refused"
     );
 }

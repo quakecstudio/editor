@@ -10,6 +10,7 @@
 //! Every setting is a [`Setting`], documented in `docs/settings.md`, which [`reference`]
 //! writes, and changeable by the commands of [`register`].
 
+mod agent;
 mod commands;
 mod error;
 
@@ -25,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use toml_edit::{Decor, DocumentMut, Item, TableLike};
 
+pub use agent::{Agent, AgentProfile, Decision, ToolPermissions, ToolRule};
 pub use commands::{Entry, HasSettings, register};
 pub use error::SettingsError;
 
@@ -35,10 +37,10 @@ pub fn user_settings_path(config_dir: &Path) -> PathBuf {
     config_dir.join("settings.toml")
 }
 
-/// A project's settings file in the project's directory; the tests read it.
-#[cfg(test)]
+/// A project's settings file in the project's directory; the app reads the agent's profile
+/// and tool rules from it (P4-30).
 #[must_use]
-pub(crate) fn project_settings_path(project_dir: &Path) -> PathBuf {
+pub fn project_settings_path(project_dir: &Path) -> PathBuf {
     project_dir.join(".quakec-studio").join("settings.toml")
 }
 
@@ -92,11 +94,23 @@ pub enum Setting {
     /// `game.folder`.
     #[serde(rename = "game.folder")]
     GameFolder,
+    /// `agent.profile`.
+    #[serde(rename = "agent.profile")]
+    AgentProfile,
+    /// `agent.tool_permissions`.
+    #[serde(rename = "agent.tool_permissions")]
+    ToolPermissions,
 }
 
 impl Setting {
     /// Every setting, in the order the reference lists them.
-    pub const ALL: [Self; 3] = [Self::Theme, Self::LogFilter, Self::GameFolder];
+    pub const ALL: [Self; 5] = [
+        Self::Theme,
+        Self::LogFilter,
+        Self::GameFolder,
+        Self::AgentProfile,
+        Self::ToolPermissions,
+    ];
 
     /// The key the files and the commands name it by.
     #[must_use]
@@ -105,6 +119,8 @@ impl Setting {
             Self::Theme => "appearance.theme",
             Self::LogFilter => "log.filter",
             Self::GameFolder => "game.folder",
+            Self::AgentProfile => "agent.profile",
+            Self::ToolPermissions => "agent.tool_permissions",
         }
     }
 
@@ -114,6 +130,8 @@ impl Setting {
             Self::Theme => ("appearance", "theme"),
             Self::LogFilter => ("log", "filter"),
             Self::GameFolder => ("game", "folder"),
+            Self::AgentProfile => ("agent", "profile"),
+            Self::ToolPermissions => ("agent", "tool_permissions"),
         }
     }
 
@@ -131,6 +149,16 @@ impl Setting {
                  chose it; the first install found when unset. A folder that no longer holds a \
                  game is not used (P3-44)."
             }
+            Self::AgentProfile => {
+                "The tools the agent is offered (P4-30): `ask` (reading only), `write` (reads and \
+                 edits run, anything else asks first) or `full` (every tool, unasked)."
+            }
+            Self::ToolPermissions => {
+                "Rules for the agent's tool calls over the profile's (P4-30): a `default` of \
+                 `allow`, `ask` or `deny`, and `tools.<command id>` with its own `default` and \
+                 `allow`, `ask` and `deny` patterns (`*` and `?`, matched against the call's \
+                 paths in the project). A `deny` pattern wins, then `ask`, then `allow`."
+            }
         }
     }
 
@@ -141,6 +169,8 @@ impl Setting {
             Self::Theme => json(Theme::default()),
             Self::LogFilter => Value::from(DEFAULT_LOG_FILTER),
             Self::GameFolder => Value::Null,
+            Self::AgentProfile => json(AgentProfile::default()),
+            Self::ToolPermissions => json(ToolPermissions::default()),
         }
     }
 }
@@ -191,6 +221,9 @@ pub struct SettingsFile {
     /// The game.
     #[serde(default)]
     pub game: Game,
+    /// The agent.
+    #[serde(default)]
+    pub agent: Agent,
 }
 
 impl SettingsFile {
@@ -216,6 +249,8 @@ impl SettingsFile {
             Setting::Theme => self.appearance.theme.map(json),
             Setting::LogFilter => self.log.filter.clone().map(Value::from),
             Setting::GameFolder => self.game.folder.as_ref().map(json),
+            Setting::AgentProfile => self.agent.profile.map(json),
+            Setting::ToolPermissions => self.agent.tool_permissions.as_ref().map(json),
         }
     }
 
@@ -241,6 +276,18 @@ impl SettingsFile {
             }
             Setting::GameFolder => {
                 self.game.folder = value
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(invalid)?;
+            }
+            Setting::AgentProfile => {
+                self.agent.profile = value
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(invalid)?;
+            }
+            Setting::ToolPermissions => {
+                self.agent.tool_permissions = value
                     .map(serde_json::from_value)
                     .transpose()
                     .map_err(invalid)?;
