@@ -387,14 +387,16 @@ issues:
   - P2-18
   - P2-11
   - P3-12
+  summary: |
+    ref-windows and ref-linux moved to L-16 by Justin on 2026-11-11: he has no Windows or Linux desktop.
   deliverable:
-  - docs/gates/perf-mvp.md with every budget measured on the reference machines
+  - docs/gates/perf-mvp.md with every budget measured on ref-mac and the CI runners
   acceptance:
   - All budgets met or a dated plan for each miss
   verify:
   - cargo xtask bench history
 - key: P4-24
-  title: MVP acceptance demo on three OSes
+  title: MVP acceptance on macOS
   labels:
   - repo
   - area:process
@@ -405,6 +407,8 @@ issues:
   - MVP-1
   - PLAT-2
   - ENG-9
+  summary: |
+    Narrowed by Justin on 2026-11-11 to macOS, the one desktop he has: no recorded demo, and every Windows and Linux desktop check moved to L-16.
   depends:
   - P4-06
   - P4-09
@@ -414,24 +418,17 @@ issues:
   - P4-18
   - P4-07
   deliverable:
-  - 'Recorded demo on macOS, Windows and Linux: open the rerelease, ask the agent for a new weapon, review the diff, play and fire it'
+  - 'On macOS, from a release build: open the rerelease, ask the agent for a new weapon, review the diff, play and fire it; a short note of the result on the issue'
   - The same task automated as an eval and a scenario
   acceptance:
-  - Succeeds on all three OSes from release builds
-  - On Windows and on Linux, `cargo run --release -p qs-install --example find` with no arguments, run from main, detects a real Steam or GOG Quake install, reporting its id1, rerelease and expansion paths (FS-6.1) and the editions and missing files (FS-6.4, FS-6.5); a failure is filed as a type:bug against qs-install and fixed before this issue closes
-  - On the Windows and Linux machines of the demo, spikes/bench.sh shows p99 frame time at most 8.33 ms for the egui shell, its results committed under docs/spikes/data/ beside ref-mac (ADR-0003; decided 2026-11-02, moved here from P2-149)
-  - On Windows and on Linux, Japanese and Chinese text composed through the real input method appears in the editor as committed, with the candidate window at the caret, recorded under docs/spikes/data/ (ADR-0003; decided 2026-11-02, moved here from P2-151)
-  - On Windows and on Linux, the preview host loads id1 and the rerelease from the user's install and plays e1m1 from start to exit with keyboard and mouse (moved here from P3-02 by Justin on 2026-11-06)
-  - 'The preview host launched through the run roots (ADR-0008) plays the original game (id1) and the rerelease from a Steam install and from a GOG install on macOS, Windows and Linux, and the install is unchanged afterwards, for example `find <install> -newer <marker>` printing nothing (moved here from P3-06 by Justin on 2026-11-06)'
-  - On Windows, a program built for the KEX target loads in the KEX rerelease (moved here from P3-09 on 2026-11-06, as P3-02's and P3-06's manual checks were)
-  - On macOS, Windows, Linux under X11 and Linux under Wayland, Play opens the game docked next to the editor, follows a move or resize of the IDE and stays above it while the IDE is focused; under Wayland it opens in its own window and the toolbar says so (moved here from P3-11 by Justin on 2026-11-09)
-  - A recorded click on an entity in the paused game window selects it in the IDE and opens its spawn function (moved here from P3-15 on 2026-11-10)
+  - Succeeds on macOS from a release build
+  - 'The preview host launched through the run roots (ADR-0008) plays the original game (id1) and the rerelease from the user''s install on macOS, and the install is unchanged afterwards, for example `find <install> -newer <marker>` printing nothing (moved here from P3-06 by Justin on 2026-11-06)'
+  - On macOS, Play opens the game docked next to the editor, follows a move or resize of the IDE and stays above it while the IDE is focused (moved here from P3-11 by Justin on 2026-11-09)
+  - A click on an entity in the paused game window selects it in the IDE and opens its spawn function (moved here from P3-15 on 2026-11-10)
   - On macOS, the first-run guide to the game's files (P3-21) opens when Play finds no game, and choosing a folder of GOG files extracted with innoextract makes Play work without restarting the app (moved here from P3-21 on 2026-11-10)
-  - On ref-mac, ref-windows and ref-linux, `QS_BENCH_GAME=<install> QS_BENCH_HOST=ref-mac` (or `ref-windows`, `ref-linux`) `cargo xtask bench` at a commit on main passes the `save_to_game` budget, save-to-game p95 at most 1.0 s in the windowed preview host, and the three editor rows (`open_project_and_type`, `keystroke`, `check_after_typing`), each row and its commit committed under docs/spikes/data/ for P4-23's report (Windows and Linux moved here from P3-12 on 2026-11-06; ref-mac's save_to_game from P3-12 and its editor rows from P3-35 on 2026-11-10; without QS_BENCH_HOST no budget is judged)
-  - On ref-windows and ref-linux, `cargo xtask bench` with `QS_BENCH_HOST` naming the machine, `QS_BENCH_GAME` and `QS_BENCH_RERELEASE` passes the route budgets of docs/perf-budgets.md (frame, server frame, QuakeC, map load on e1m1 and the mg1 hub), its rows and commit committed under docs/spikes/data/ for P4-23's report, with QuakeSpasm at the pinned commit run by hand on each machine and its numbers recorded there; and routes through an mg3 map and an Arcane Dimensions map are added on all three machines the same way (moved here from P3-29 by Justin Plock on 2026-11-06)
-
+  - 'On ref-mac, `QS_BENCH_GAME=<install> QS_BENCH_HOST=ref-mac cargo xtask bench` at a commit on main passes the `save_to_game` budget, save-to-game p95 at most 1.0 s in the windowed preview host, and the three editor rows (`open_project_and_type`, `keystroke`, `check_after_typing`), each row and its commit committed under docs/spikes/data/ for P4-23''s report (from P3-12 and P3-35 on 2026-11-10)'
   verify:
-  - Recordings and eval report attached, with the Windows and Linux `find` output, bench.sh results, IME recordings and the docking recordings on macOS, Windows, X11 and Wayland
+  - The note on the issue and the eval report
 - key: P4-27
   title: Write PAK files
   labels:
@@ -501,7 +498,7 @@ issues:
   - P0-02
   - P0-15
   - P4-18
-- key: P4-38
+- key: P4-39
   title: Replace the macOS disk image with a signed installer package
   labels:
   - repo
@@ -538,7 +535,7 @@ issues:
   - GOAL-6
   - MVP-4
   depends:
-  - P4-38
+  - P4-39
   - P0-23
   - P4-27
   - P4-28

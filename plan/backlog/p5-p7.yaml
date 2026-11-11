@@ -848,6 +848,35 @@ groups:
     - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed
 - milestone: LATER
   issues:
+  - key: L-16
+    title: Windows and Linux desktop checks
+    labels:
+    - repo
+    - area:process
+    - type:test
+    - needs:human
+    size: S
+    reqs:
+    - MVP-1
+    - PLAT-2
+    - ENG-9
+    - PRIN-5
+    summary: |
+      The manual checks that need a Windows or Linux desktop, moved out of P4-24 and P4-23 by Justin on 2026-11-11: he has none, and CI's Windows and Linux runners already cover these paths on LibreQuake (install, play, the run roots and the release packages). They wait for someone with those machines.
+    depends:
+    - P4-24
+    deliverable:
+    - 'Results on a Windows and a Linux desktop, committed under docs/spikes/data/ or noted on the issue: real installs found, the game played, input methods, docking and the reference-machine benches'
+    acceptance:
+    - 'On Windows and on Linux, `cargo run --release -p qs-install --example find` with no arguments detects a real Steam or GOG Quake install, reporting its id1, rerelease and expansion paths (FS-6.1) and the editions and missing files (FS-6.4, FS-6.5); a failure is filed as a type:bug against qs-install'
+    - On Windows and Linux desktops, spikes/bench.sh shows p99 frame time at most 8.33 ms for the egui shell, its results committed under docs/spikes/data/ beside ref-mac (ADR-0003)
+    - On Windows and on Linux, Japanese and Chinese text composed through the real input method appears in the editor as committed, with the candidate window at the caret, recorded under docs/spikes/data/ (ADR-0003)
+    - On Windows and on Linux, the preview host loads id1 and the rerelease from the user's install and plays e1m1 from start to exit with keyboard and mouse, through the run roots (ADR-0008), leaving the install unchanged
+    - On Windows, a program built for the KEX target loads in the KEX rerelease
+    - On Linux under X11 and under Wayland, and on Windows, Play opens the game docked next to the editor and follows the IDE; under Wayland it opens in its own window and the toolbar says so
+    - 'On ref-windows and ref-linux, `cargo xtask bench` with `QS_BENCH_HOST`, `QS_BENCH_GAME` and `QS_BENCH_RERELEASE` passes the `save_to_game`, editor and route budgets of docs/perf-budgets.md, rows and commit committed under docs/spikes/data/, with QuakeSpasm at the pinned commit run by hand for comparison'
+    verify:
+    - The committed results and the notes on the issue
   - key: P3-43
     title: Make the nightly Differential finish within the runners' six hours
     labels:
