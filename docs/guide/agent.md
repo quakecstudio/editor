@@ -52,6 +52,21 @@ the editor's text of it, unsaved: save as usual.
 
 **Restore checkpoint** puts the project back as it was before the thread started.
 
+## What it may do
+
+The picker beside **Start** sets the profile, kept in the project's settings:
+
+- **Ask**: the agent only reads the project, the game and the settings.
+- **Write** (the default): reading and editing run unasked; anything else that changes the
+  project, the game or the settings asks you first.
+- **Full**: every tool runs unasked.
+
+A call that needs your permission waits in its thread, showing the tool, the paths it names and
+why it asks, with **Allow once**, **Always allow** and **Deny**. **Always allow** keeps a rule in
+the project's settings for exactly what the call named. The `agent.tool_permissions` setting
+([Settings](../settings.md)) holds rules per tool: `allow`, `ask` and `deny` patterns over the
+paths a call names, `deny` winning over `ask` and `ask` over `allow`.
+
 ## Point it at something
 
 A task can name what the agent should look at, with an `@` mention. Each one is read when the

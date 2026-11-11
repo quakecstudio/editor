@@ -57,3 +57,20 @@ workflow's OIDC identity. Download it from the run and check it with:
 gh attestation verify quakec-studio.exe --repo quakecstudio/editor \
   --signer-workflow quakecstudio/editor/.github/workflows/sign.yml
 ```
+
+## The compatibility list
+
+Every release tag also runs the Sign workflow's **Regenerate the compatibility list** job
+(P4-21, COMP-9). It fetches the conformance corpus, writes
+[`docs/compatibility.md`](compatibility.md) with `cargo xtask compatibility`, attaches it to the
+run and shows it in the job summary. The job fails when the list on the tagged commit differs
+from the one it wrote. In that case, commit the attached list and tag again.
+
+To write the list before tagging, with the corpus fetched (`cargo xtask corpus fetch`):
+
+```bash
+cargo xtask compatibility
+```
+
+`corpus/compatibility.toml` records what the list cannot measure: why a codebase is not
+compared in the compiler differential, and the issues that track each gap.

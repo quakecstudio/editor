@@ -551,8 +551,12 @@ impl Shell {
             .ok_or_else(|| Text::NoProject.get().to_owned())
     }
 
-    /// Starts a thread on `task` as given, over the project in `root`.
+    /// Starts a thread on `task` as given, over the project in `root`, its calls decided by the
+    /// profile and tool rules the project's settings hold now (P4-30).
     fn start_thread(&mut self, root: &Path, task: &str, ctx: &egui::Context) -> Result<(), String> {
+        if let Some(permissions) = self.agent_permissions(root) {
+            self.agent.set_permissions(permissions);
+        }
         let ctx = ctx.clone();
         self.agent
             .start(&mut self.session, root, task, move || ctx.request_repaint())
@@ -580,6 +584,53 @@ impl Shell {
         qs_agent::Live { entity, error }
     }
 
+    /// The user's and the project at `root`'s settings, when the window keeps a settings file.
+    fn settings_store(&self, root: &Path) -> Option<SettingsStore> {
+        let user = self.settings_file.clone()?;
+        SettingsStore::open(user, Some(qs_settings::project_settings_path(root)))
+            .map_err(|error| tracing::warn!(%error, "settings not read"))
+            .ok()
+    }
+
+    /// The agent's profile and tool rules as the settings set them (P4-30).
+    fn agent_permissions(&self, root: &Path) -> Option<qs_agent::Permissions> {
+        let store = self.settings_store(root)?;
+        let value = |setting| store.value(setting).0;
+        Some(qs_agent::Permissions {
+            profile: serde_json::from_value(value(Setting::AgentProfile)).unwrap_or_default(),
+            rules: serde_json::from_value(value(Setting::ToolPermissions)).unwrap_or_default(),
+        })
+    }
+
+    /// Keeps `permissions` in the open project's settings, the profile and the rules.
+    fn keep_agent_permissions(&self, permissions: &qs_agent::Permissions) {
+        let Some(root) = self.workbench().root().map(Path::to_path_buf) else {
+            return;
+        };
+        let Some(mut store) = self.settings_store(&root) else {
+            return;
+        };
+        for (setting, value) in [
+            (
+                Setting::AgentProfile,
+                serde_json::to_value(permissions.profile),
+            ),
+            (
+                Setting::ToolPermissions,
+                serde_json::to_value(&permissions.rules),
+            ),
+        ] {
+            let kept = value.map_err(|error| error.to_string()).and_then(|value| {
+                store
+                    .put(SettingsScope::Project, setting, Some(value))
+                    .map_err(|error| error.to_string())
+            });
+            if let Err(error) = kept {
+                tracing::warn!(%error, "the agent's permissions were not kept");
+            }
+        }
+    }
+
     /// Waits for the next thing agent thread `index`'s model sends and takes it; `false` when
     /// its model has ended. For tests.
     #[cfg(test)]
@@ -602,6 +653,17 @@ impl Shell {
             AgentAction::Reject(hunks) => {
                 let _rejected: Option<serde_json::Value> =
                     self.run(REJECT_HUNKS, &HunksParams { hunks });
+            }
+            AgentAction::Permit(index, permit) => {
+                if let Some(kept) = self.agent.permit(&mut self.session, index, permit) {
+                    self.keep_agent_permissions(&kept);
+                }
+            }
+            AgentAction::Profile(profile) => {
+                let mut permissions = self.agent.permissions().clone();
+                permissions.profile = profile;
+                self.keep_agent_permissions(&permissions);
+                self.agent.set_permissions(permissions);
             }
             AgentAction::Restore(number) => {
                 let _restored: Option<serde_json::Value> =

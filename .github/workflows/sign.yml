@@ -169,3 +169,40 @@ jobs:
           name: quakec-studio-windows
           path: target/release/quakec-studio.exe
           if-no-files-found: error
+
+  # P4-21 (COMP-9): every release regenerates the compatibility list from the conformance
+  # corpus, attaches it, and fails when the list on the tagged commit is out of date, so the
+  # list published with a release is the one its code earns. It needs no signing secret.
+  compatibility:
+    name: Regenerate the compatibility list
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - name: Point QS_TEST_ASSETS outside the source tree
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
+      - name: Fetch the conformance corpus
+        run: cargo xtask corpus fetch
+      - name: Write the compatibility list
+        run: |
+          cargo xtask compatibility
+          cat docs/compatibility.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: compatibility
+          path: docs/compatibility.md
+          if-no-files-found: error
+      - name: The tagged commit has this list
+        run: |
+          if ! git diff --exit-code -- docs/compatibility.md; then
+            echo "::error::docs/compatibility.md is out of date: commit the list this job attached, then tag again"
+            exit 1
+          fi

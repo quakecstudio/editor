@@ -1511,6 +1511,16 @@ Parameters:
           "const": "game.folder",
           "description": "`game.folder`.",
           "type": "string"
+        },
+        {
+          "const": "agent.profile",
+          "description": "`agent.profile`.",
+          "type": "string"
+        },
+        {
+          "const": "agent.tool_permissions",
+          "description": "`agent.tool_permissions`.",
+          "type": "string"
         }
       ]
     }
@@ -1589,6 +1599,16 @@ Parameters:
           "const": "game.folder",
           "description": "`game.folder`.",
           "type": "string"
+        },
+        {
+          "const": "agent.profile",
+          "description": "`agent.profile`.",
+          "type": "string"
+        },
+        {
+          "const": "agent.tool_permissions",
+          "description": "`agent.tool_permissions`.",
+          "type": "string"
         }
       ]
     }
@@ -1655,6 +1675,16 @@ Parameters:
         {
           "const": "game.folder",
           "description": "`game.folder`.",
+          "type": "string"
+        },
+        {
+          "const": "agent.profile",
+          "description": "`agent.profile`.",
+          "type": "string"
+        },
+        {
+          "const": "agent.tool_permissions",
+          "description": "`agent.tool_permissions`.",
           "type": "string"
         }
       ]

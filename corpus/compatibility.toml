@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# What docs/compatibility.md says of each corpus codebase beyond what
+# `cargo xtask compatibility` measures (P4-21, COMP-9): why one is not compared
+# in the compiler differential, or is compared below the bar, and the issues
+# that track it. A codebase not listed here has no known gap. The build status
+# is measured each time; the behaviour status is the nightly differential's.
+
+[[gap]]
+codebase = "crmod7"
+behaviour = "Compared in the nightly differential, held to its accepted 87.7% of statements reached, below DIFF-12.5's 90%."
+issues = [661]
+
+[[gap]]
+codebase = "alkaline"
+behaviour = "Not compared: the pinned FTEQCC refuses it for both targets (\"Opcode PUSH not valid for target\"), so there is no oracle program."
+issues = []
+
+[[gap]]
+codebase = "quake-reignited"
+behaviour = "Not compared: both compilers refuse it (\"Unknown value \\\"Demon_Melee\\\"\")."
+issues = []
+
+[[gap]]
+codebase = "progs-dump"
+behaviour = "Not compared call by call: the pinned FTEQCC crashes after its definitions, so only what each compiler accepts is compared."
+issues = []
+
+[[gap]]
+codebase = "re-mobilize"
+behaviour = "Not compared call by call: the pinned FTEQCC crashes after its definitions, so only what each compiler accepts is compared."
+issues = []
+
+[[gap]]
+codebase = "nuclide"
+behaviour = "Not compared: mostly CSQC and MenuQC, which are not compiled yet."
+issues = [193]
+
+[[gap]]
+codebase = "freecs"
+behaviour = "Not compared: mostly CSQC and MenuQC, which are not compiled yet."
+issues = [193]
+
+[[gap]]
+codebase = "freehl"
+behaviour = "Not compared: mostly CSQC and MenuQC, which are not compiled yet."
+issues = [193]
+
+[[gap]]
+codebase = "nzp"
+behaviour = "Not compared: written for FTEQCC's CSQC and its own engine."
+issues = [193]
+
+[[gap]]
+codebase = "xonotic"
+behaviour = "Not compared: written for GMQCC and DarkPlaces."
+issues = [186]

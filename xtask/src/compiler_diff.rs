@@ -337,6 +337,12 @@ fn run_binary(root: &Path, args: &[&str]) -> Result<bool, String> {
 const SUMMARY_HEADER: &str = "| Codebase | Oracle | Ours | Divergences | Statements | Result |\n\
                               | --- | --- | --- | ---: | ---: | --- |\n";
 
+/// The codebases the nightly run (`--full`) holds to DIFF-12.5's bar, which the compatibility
+/// list reports as matching (`cargo xtask compatibility`, P4-21).
+pub(crate) fn nightly_codebases() -> Vec<&'static str> {
+    Mode::Full.codebases()
+}
+
 /// How many rounds of calls the binary makes (DIFF-12.29).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
