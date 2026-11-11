@@ -63,6 +63,7 @@ pub mod entities;
 pub mod expand;
 pub mod ir;
 pub mod lower;
+pub mod map_check;
 pub mod nav;
 pub mod resolve;
 pub mod symbol;
@@ -77,6 +78,7 @@ pub use db::{Db, ModuleAnalysis, QueryCounts};
 pub use entities::{EntityClass, Fgd, Found, Key, KeyType, Shape, SpawnFlag};
 pub use expand::{ModuleInput, OriginMap};
 pub use lower::{FileDecls, LiteralValue};
+pub use map_check::{EntitySchema, FieldValue, MapDiagnostic, MapDiagnosticKind};
 pub use resolve::InitialValue;
 pub use resolve::{
     FileDiagnostic, MemberShape, ModuleIndex, ResolveOptions, StructShape, resolve_module,

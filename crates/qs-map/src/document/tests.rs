@@ -693,3 +693,19 @@ proptest! {
         prop_assert_eq!(face.texdef(), &texdef);
     }
 }
+
+// spec MAP-8.7: renaming a key renames every pair with it, keeping each value and the text
+// around it; a key holding a quote is refused and nothing is renamed
+#[test]
+fn a_key_is_renamed_with_its_formatting_kept() {
+    let text = b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"func_door\"\n  \"speed\"\t\"75\" // fast\n\"speed\" \"80\"\n\"wait\" \"1\"\n}\n";
+    let mut map = MapFile::parse(text).unwrap();
+    assert_eq!(map.rename_key(b"speed", b"pace").unwrap(), 2);
+    assert_eq!(
+        map.to_bytes(),
+        b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"func_door\"\n  \"pace\"\t\"75\" // fast\n\"pace\" \"80\"\n\"wait\" \"1\"\n}\n"
+    );
+    assert_eq!(map.rename_key(b"nonesuch", b"x").unwrap(), 0);
+    assert!(map.rename_key(b"wait", b"a\"b").is_err());
+    assert!(map.to_bytes().ends_with(b"\"wait\" \"1\"\n}\n"));
+}

@@ -70,6 +70,7 @@ fn qs_map::document::Entity::new
 fn qs_map::document::Entity::origin
 fn qs_map::document::Entity::pairs
 fn qs_map::document::Entity::remove
+fn qs_map::document::Entity::rename_key
 fn qs_map::document::Entity::set
 fn qs_map::document::Entity::value
 fn qs_map::document::Face::line
@@ -85,6 +86,7 @@ fn qs_map::document::MapFile::brush_models
 fn qs_map::document::MapFile::new
 fn qs_map::document::MapFile::parse
 fn qs_map::document::MapFile::push_entity
+fn qs_map::document::MapFile::rename_key
 fn qs_map::document::MapFile::to_bytes
 fn qs_map::document::MapFile::wad_paths
 fn qs_map::document::MapFile::world
@@ -93,6 +95,7 @@ fn qs_map::document::Pair::key
 fn qs_map::document::Pair::key_raw
 fn qs_map::document::Pair::line
 fn qs_map::document::Pair::new
+fn qs_map::document::Pair::set_key
 fn qs_map::document::Pair::set_value
 fn qs_map::document::Pair::value
 fn qs_map::document::Pair::value_raw

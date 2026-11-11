@@ -21,6 +21,7 @@ mod editing;
 pub mod entity_classes;
 pub mod export;
 pub mod git;
+pub mod map_check;
 mod preview;
 mod recent;
 pub mod search;
@@ -694,6 +695,13 @@ pub enum WorkbenchError {
         /// The file's length in bytes.
         len: usize,
     },
+    /// A `.map` that does not parse, or a key it cannot hold.
+    Map {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: qs_map::MapError,
+    },
 }
 
 impl fmt::Display for WorkbenchError {
@@ -719,6 +727,7 @@ impl fmt::Display for WorkbenchError {
                 "{}: offset {offset} is past the end of the file, {len} bytes",
                 path.display()
             ),
+            Self::Map { path, error } => write!(f, "{}: {error}", path.display()),
         }
     }
 }
@@ -730,6 +739,7 @@ impl Error for WorkbenchError {
             Self::Rename(error) => Some(error),
             Self::Save { error, .. } => Some(error),
             Self::Checkpoint(error) => Some(error),
+            Self::Map { error, .. } => Some(error),
             Self::NoFile { .. }
             | Self::NoProject
             | Self::NoFix { .. }

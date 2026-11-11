@@ -3500,6 +3500,7 @@ dependencies = [
  "qc-preproc",
  "qc-project",
  "qc-syntax",
+ "qs-map",
 ]
 
 [[package]]
@@ -3905,6 +3906,7 @@ dependencies = [
  "qs-engine",
  "qs-git",
  "qs-install",
+ "qs-map",
  "qs-pak",
  "qs-sim",
  "qs-vfs",

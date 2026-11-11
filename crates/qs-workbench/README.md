@@ -71,6 +71,11 @@ an edit, so both commands run outside the edit history
   classes the project's server QuakeC defines, read from its spawn functions by `qc-sema`, and
   with `fgd` writes them as an FGD file for other map editors
   (`quakec-ide run project.entities '{"fgd": "mod.fgd"}' --project <dir>`).
+- Map diagnostics (`map_check`, P5-04, MAP-8): `map.check` gives a `.map`'s diagnostics, its
+  format's (`qs-map`) and its entities' against the project's server QuakeC, each unknown
+  classname or key with the name to write instead; `map.rename_key`, run once the person
+  confirms the caution `symbol.rename` gives for a field, renames the key in every open map,
+  unsaved and undoable.
 - Git (`git`, P4-35, UI-19): `git.status`, `git.diff`, `git.stage` and `git.unstage` (a file
   or one hunk), `git.commit`, `git.branches`, `git.switch`, `git.create_branch`, `git.log`,
   `git.blame`, `git.conflicts`, `git.resolve` and `git.head_text`, over `qs-git` in the open
