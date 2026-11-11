@@ -3558,6 +3558,7 @@ dependencies = [
  "qc-types",
  "qs-commands",
  "qs-pak",
+ "qs-settings",
  "qs-vfs",
  "qs-workbench",
  "serde",

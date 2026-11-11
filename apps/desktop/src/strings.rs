@@ -55,6 +55,22 @@ pub enum Text {
     AgentTaskHint,
     /// The button that starts a thread on the task.
     AgentRun,
+    /// The agent panel's profile picker (P4-30).
+    AgentProfile,
+    /// The Ask profile: reading tools only.
+    AgentProfileAsk,
+    /// The Write profile: reads and edits run, the rest asks.
+    AgentProfileWrite,
+    /// The Full profile: every tool, unasked.
+    AgentProfileFull,
+    /// Before the tool a call waiting for permission names.
+    AgentAsks,
+    /// Runs the call that asks.
+    AgentAllowOnce,
+    /// Runs it and every later call of the tool on what it names.
+    AgentAlwaysAllow,
+    /// Refuses the call that asks.
+    AgentDeny,
     /// The Anthropic provider in the agent's form.
     ProviderAnthropic,
     /// An OpenAI-compatible endpoint in the agent's form.
@@ -321,7 +337,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 155] = [
+    pub const ALL: [Self; 163] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -346,6 +362,14 @@ impl Text {
         Self::AgentSettings,
         Self::AgentTaskHint,
         Self::AgentRun,
+        Self::AgentProfile,
+        Self::AgentProfileAsk,
+        Self::AgentProfileWrite,
+        Self::AgentProfileFull,
+        Self::AgentAsks,
+        Self::AgentAllowOnce,
+        Self::AgentAlwaysAllow,
+        Self::AgentDeny,
         Self::ProviderAnthropic,
         Self::ProviderOpenAi,
         Self::ProviderOllama,
@@ -511,6 +535,14 @@ impl Text {
             Self::AgentSettings => "Settings",
             Self::AgentTaskHint => "What should the agent do?",
             Self::AgentRun => "Start",
+            Self::AgentProfile => "Profile",
+            Self::AgentProfileAsk => "Ask",
+            Self::AgentProfileWrite => "Write",
+            Self::AgentProfileFull => "Full",
+            Self::AgentAsks => "Allow the agent to run",
+            Self::AgentAllowOnce => "Allow once",
+            Self::AgentAlwaysAllow => "Always allow",
+            Self::AgentDeny => "Deny",
             Self::ProviderAnthropic => "Anthropic",
             Self::ProviderOpenAi => "OpenAI-compatible",
             Self::ProviderOllama => "Ollama (local)",

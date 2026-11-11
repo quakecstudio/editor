@@ -31,6 +31,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use qs_commands::Session;
+pub use qs_settings::{AgentProfile, Decision, ToolPermissions, ToolRule};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -198,11 +199,14 @@ pub struct RunConfig {
     pub test_params: Value,
     /// The most characters of a tool's output the model is given; the rest is cut.
     pub output_limit: usize,
+    /// Which tools the model is offered and whether each call runs, asks or is refused
+    /// (P4-30).
+    pub permissions: Permissions,
 }
 
 impl RunConfig {
-    /// A run over the project at `project`, with 40 turns, the tests run with no parameters
-    /// and outputs cut at 20 000 characters.
+    /// A run over the project at `project`, with 40 turns, the tests run with no parameters,
+    /// outputs cut at 20 000 characters and the Write profile with no rules.
     #[must_use]
     pub fn new(project: impl Into<PathBuf>) -> Self {
         Self {
@@ -210,6 +214,7 @@ impl RunConfig {
             turns: 40,
             test_params: json!({}),
             output_limit: 20_000,
+            permissions: Permissions::default(),
         }
     }
 }
@@ -330,6 +335,32 @@ pub struct Run {
     turns_left: usize,
     verification: Option<Verification>,
     outcome: Option<Outcome>,
+    /// The reply's calls not yet run, the first waiting on the modder when `asking` is set.
+    queued: Vec<ToolCall>,
+    asking: Option<Asking>,
+}
+
+/// A call waiting for the modder's permission (P4-30): the call, what its patterns match and
+/// what made it ask.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Asking {
+    /// The call.
+    pub call: ToolCall,
+    /// What it names ([`subjects`]), which Always allow allows.
+    pub subjects: Vec<String>,
+    /// Why it asks.
+    pub why: String,
+}
+
+/// The modder's answer to a call that asks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Permit {
+    /// Run this call.
+    Once,
+    /// Run this call, and every later call of the tool on what it names, unasked.
+    Always,
+    /// Do not run it; the model reads that the modder said no.
+    Deny,
 }
 
 impl Run {
@@ -354,7 +385,10 @@ impl Run {
             .get("number")
             .and_then(Value::as_u64)
             .and_then(|n| u32::try_from(n).ok());
-        let specs = tools(session);
+        let specs = tools(session)
+            .into_iter()
+            .filter(|spec| config.permissions.offers(&spec.name))
+            .collect();
         let transcript = vec![Message::User {
             text: brief(session, task, &config),
         }];
@@ -367,13 +401,16 @@ impl Run {
             checkpoint,
             verification: None,
             outcome: None,
+            queued: Vec::new(),
+            asking: None,
         })
     }
 
-    /// What to ask the model next, or `None` once the run is done or out of turns.
+    /// What to ask the model next, or `None` while a call waits for the modder
+    /// ([`Run::asking`]) and once the run is done or out of turns.
     #[must_use]
     pub fn request(&self) -> Option<Request> {
-        if self.outcome.is_some() || self.turns_left == 0 {
+        if self.asking.is_some() || self.outcome.is_some() || self.turns_left == 0 {
             return None;
         }
         Some(Request {
@@ -402,10 +439,8 @@ impl Run {
                     text,
                     calls: calls.clone(),
                 });
-                for call in calls {
-                    let result = call_tool(session, &self.specs, &call, &self.config);
-                    self.transcript.push(result);
-                }
+                self.queued = calls;
+                self.go_on(session);
             }
             Reply::Finish { summary } => {
                 self.transcript.push(Message::Assistant {
@@ -427,6 +462,76 @@ impl Run {
             }
         }
         Ok(())
+    }
+
+    /// Runs the queued calls in order, each as the permissions decide, until one asks.
+    fn go_on<C: 'static>(&mut self, session: &mut Session<C>) {
+        while let Some(call) = self.queued.first().cloned() {
+            let offered = self.specs.iter().any(|spec| spec.name == call.name);
+            let verdict = self.config.permissions.decide(&call, &self.config.project);
+            match verdict.decision {
+                Decision::Ask if offered => {
+                    self.asking = Some(Asking {
+                        subjects: subjects(&call, &self.config.project),
+                        call,
+                        why: verdict.why,
+                    });
+                    return;
+                }
+                Decision::Deny if offered => {
+                    self.transcript.push(refusal(
+                        &call,
+                        &format!("it is not allowed: {}", verdict.why),
+                    ));
+                }
+                _ => {
+                    let result = call_tool(session, &self.specs, &call, &self.config);
+                    self.transcript.push(result);
+                }
+            }
+            self.queued.remove(0);
+        }
+    }
+
+    /// The call waiting for the modder's permission, if one is.
+    #[must_use]
+    pub const fn asking(&self) -> Option<&Asking> {
+        self.asking.as_ref()
+    }
+
+    /// Takes the modder's answer to the call that asks: runs it, or tells the model it was
+    /// denied, then goes on with the reply's other calls. Nothing waits: no call is asking.
+    pub fn permit<C: 'static>(&mut self, session: &mut Session<C>, permit: Permit) {
+        let Some(asking) = self.asking.take() else {
+            return;
+        };
+        match permit {
+            Permit::Deny => {
+                self.transcript
+                    .push(refusal(&asking.call, "the modder did not allow it"));
+            }
+            Permit::Once | Permit::Always => {
+                if permit == Permit::Always {
+                    for subject in &asking.subjects {
+                        self.config
+                            .permissions
+                            .allow_always(&asking.call.name, subject);
+                    }
+                }
+                let result = call_tool(session, &self.specs, &asking.call, &self.config);
+                self.transcript.push(result);
+            }
+        }
+        if !self.queued.is_empty() {
+            self.queued.remove(0);
+        }
+        self.go_on(session);
+    }
+
+    /// The permissions the run decides calls with, with each Always allow it was given.
+    #[must_use]
+    pub const fn permissions(&self) -> &Permissions {
+        &self.config.permissions
     }
 
     /// Every turn so far, the brief first.
@@ -479,7 +584,15 @@ pub fn run<C: 'static>(
     config: &RunConfig,
 ) -> Result<RunReport, AgentError> {
     let mut run = Run::start(session, task, config.clone())?;
-    while let Some(request) = run.request() {
+    // No one is there to answer a call that asks, so it is not run.
+    while run.asking().is_some() || run.request().is_some() {
+        if run.asking().is_some() {
+            run.permit(session, Permit::Deny);
+            continue;
+        }
+        let Some(request) = run.request() else {
+            break;
+        };
         let reply = model.reply(&request.system, &request.tools, &request.transcript);
         run.answer(session, reply)?;
     }
@@ -585,6 +698,15 @@ fn module_brief<C: 'static>(session: &mut Session<C>, module: &Value) -> String 
         text.push_str(&format!("- {signature} {name} = {key};\n"));
     }
     text
+}
+
+/// The result that tells the model `call` was not run, and why.
+fn refusal(call: &ToolCall, why: &str) -> Message {
+    Message::Tool {
+        call_id: call.id.clone(),
+        content: json!(format!("{} was not run: {why}", call.name)),
+        is_error: true,
+    }
 }
 
 /// The result of `call`: the command's output, or why it did not run.
@@ -765,6 +887,10 @@ fn lexical(path: &Path) -> PathBuf {
     }
     out
 }
+
+mod permissions;
+
+pub use permissions::{EDIT_TOOLS, Permissions, READ_TOOLS, Verdict, glob, subjects};
 
 #[cfg(test)]
 mod tests;

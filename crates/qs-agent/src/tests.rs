@@ -19,8 +19,8 @@ use qs_workbench::{Config, Workbench, register};
 use serde_json::{Value, json};
 
 use super::{
-    AgentError, Message, Model, Outcome, Reply, RunConfig, ToolCall, ToolSpec, run, system_prompt,
-    tools,
+    AgentError, AgentProfile, Decision, Message, Model, Outcome, Permissions, Permit, READ_TOOLS,
+    Reply, RunConfig, ToolCall, ToolRule, ToolSpec, run, system_prompt, tools,
 };
 
 /// A model that answers with its script, in order, and then fails.
@@ -477,4 +477,163 @@ fn a_run_steps_one_reply_at_a_time() {
         .unwrap();
     assert_eq!(reply, finish());
     assert_eq!(pieces, ["done"]);
+}
+
+/// The content of the result of call `id` in `transcript`.
+fn result_of(transcript: &[Message], id: &str) -> Option<(Value, bool)> {
+    transcript.iter().find_map(|message| match message {
+        Message::Tool {
+            call_id,
+            content,
+            is_error,
+        } if call_id == id => Some((content.clone(), *is_error)),
+        _ => None,
+    })
+}
+
+// No spec statement: P4-30, the acceptance criterion: a call a rule denies never runs and the
+// model reads why; a call that asks waits, the run asking the model nothing, until the modder
+// answers, and the reply's later calls wait behind it
+#[test]
+fn denied_calls_never_run_and_asking_calls_wait() {
+    let (root, mut session) = project("permissions", FIXED);
+    let mut config = RunConfig::new(&root);
+    config.permissions.rules.tools.insert(
+        "file.read".to_owned(),
+        ToolRule {
+            default: Some(Decision::Ask),
+            deny: vec!["progs.src".to_owned()],
+            ..ToolRule::default()
+        },
+    );
+    let mut run = super::Run::start(&mut session, "Read.", config).unwrap();
+    run.answer(
+        &mut session,
+        Ok(calls(vec![
+            ("file.read", json!({ "path": "progs.src" })),
+            ("file.read", json!({ "path": "weapons.qc" })),
+            ("project.files", json!({})),
+        ])),
+    )
+    .unwrap();
+    let (denied, is_error) = result_of(run.transcript(), "c0").unwrap();
+    assert!(is_error);
+    assert_eq!(
+        denied,
+        json!(
+            "file.read was not run: it is not allowed: the rule deny `progs.src` of file.read \
+             matches progs.src"
+        )
+    );
+    let asking = run.asking().unwrap();
+    assert_eq!(asking.call.id, "c1");
+    assert_eq!(asking.subjects, ["weapons.qc"]);
+    assert!(
+        run.request().is_none(),
+        "the model is asked nothing meanwhile"
+    );
+    assert!(
+        result_of(run.transcript(), "c2").is_none(),
+        "the next call waits"
+    );
+    run.permit(&mut session, Permit::Once);
+    let (read, is_error) = result_of(run.transcript(), "c1").unwrap();
+    assert!(!is_error && read.to_string().contains("damage"), "{read}");
+    assert!(
+        result_of(run.transcript(), "c2").is_some(),
+        "then the rest run"
+    );
+    assert!(run.request().is_some());
+
+    run.answer(
+        &mut session,
+        Ok(calls(vec![("file.read", json!({ "path": "weapons.qc" }))])),
+    )
+    .unwrap();
+    assert!(run.asking().is_some(), "Allow once allows only that call");
+    run.permit(&mut session, Permit::Deny);
+    let (refused, _) = result_of(&run.transcript()[run.transcript().len() - 1..], "c0").unwrap();
+    assert_eq!(
+        refused,
+        json!("file.read was not run: the modder did not allow it")
+    );
+
+    run.answer(
+        &mut session,
+        Ok(calls(vec![("file.read", json!({ "path": "weapons.qc" }))])),
+    )
+    .unwrap();
+    run.permit(&mut session, Permit::Always);
+    assert_eq!(
+        run.permissions().rules.tools["file.read"].allow,
+        ["weapons.qc"]
+    );
+    let ask_again = calls(vec![("file.read", json!({ "path": "weapons.qc" }))]);
+    run.answer(&mut session, Ok(ask_again)).unwrap();
+    assert!(
+        run.asking().is_none(),
+        "Always allow allows it from then on"
+    );
+    assert_eq!(
+        run.permissions()
+            .decide(
+                &ToolCall {
+                    id: String::new(),
+                    name: "file.read".to_owned(),
+                    arguments: json!({ "path": "progs.src" }),
+                },
+                &root
+            )
+            .decision,
+        Decision::Deny,
+        "and denies what was denied"
+    );
+}
+
+// No spec statement: P4-30, the acceptance criterion: profiles switch the tools offered to the
+// model, in tools/list order; a run with no one to ask refuses the calls that ask
+#[test]
+fn profiles_switch_the_tools_offered() {
+    let (root, mut session) = project("profiles", FIXED);
+    let every: Vec<String> = tools(&session).into_iter().map(|t| t.name).collect();
+    let offered = |session: &mut Session<Workbench<FsLoader>>, profile| {
+        let mut config = RunConfig::new(&root);
+        config.permissions = Permissions::of(profile);
+        let run = super::Run::start(session, "x", config).unwrap();
+        run.request()
+            .unwrap()
+            .tools
+            .into_iter()
+            .map(|t| t.name)
+            .collect::<Vec<_>>()
+    };
+    let ask = offered(&mut session, AgentProfile::Ask);
+    let reading: Vec<String> = every
+        .iter()
+        .filter(|name| READ_TOOLS.contains(&name.as_str()))
+        .cloned()
+        .collect();
+    assert_eq!(ask, reading, "reading only, in tools/list order");
+    assert!(!ask.contains(&"edit.apply".to_owned()));
+    assert_eq!(offered(&mut session, AgentProfile::Write), every);
+    assert_eq!(offered(&mut session, AgentProfile::Full), every);
+
+    let mut model = Scripted::new(vec![
+        calls(vec![("vm.run", json!({ "function": "test_damage" }))]),
+        finish(),
+    ]);
+    let mut asks = RunConfig::new(&root);
+    asks.permissions.rules.tools.insert(
+        "vm.run".to_owned(),
+        ToolRule {
+            default: Some(Decision::Ask),
+            ..ToolRule::default()
+        },
+    );
+    let report = run(&mut session, &mut model, "x", &asks).unwrap();
+    let (refused, _) = result_of(&report.transcript, "c0").unwrap();
+    assert_eq!(
+        refused,
+        json!("vm.run was not run: the modder did not allow it")
+    );
 }

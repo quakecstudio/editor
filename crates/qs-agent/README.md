@@ -44,11 +44,22 @@ to the result:
   for review (`edit.staged` in the report). Nothing is written to disk, and the checkpoint
   undoes everything.
 
+- **Tool permissions and profiles (P4-30, UI-22):** `Permissions` decides each call from the
+  profile and the rules in the settings (`agent.profile`, `agent.tool_permissions`, kept in
+  `qs-settings`). The Ask profile offers the reading tools (`READ_TOOLS`) only. Write offers
+  every tool and runs reads and edits (`EDIT_TOOLS`) unasked, asking before the rest. Full runs
+  everything. A rule's patterns are globs over the call's paths in the project, decided in Zed's
+  order: `deny`, then `ask`, then `allow`, then the tool's default, then the global default,
+  then the profile. A denied call is not run, and the model reads which rule denied it. A call
+  that asks stops the run (`Run::asking`) until `Run::permit` answers it: Allow once, Always
+  allow (an `allow` pattern for exactly what it names) or Deny. `run`, with no one to ask,
+  denies it.
+
 The model is Claude Code's and Zed's agents, whose loop calls tools until the model stops. The
 difference is the done criteria: here the runtime checks them and refuses a finish that does not
 compile clean and pass its tests.
 
-- **Layer:** L6 agent. It depends on `qs-commands` (L5) and `serde`.
+- **Layer:** L6 agent. It depends on `qs-commands` and `qs-settings` (L5) and `serde`.
 - **Spec sections:** none; it implements plan requirements AGT-1, AGT-5 and PRIN-4.
 - **Shipped:** yes.
 

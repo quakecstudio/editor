@@ -90,12 +90,19 @@ The right panel's Agent section (P4-09, UI-5, PRIN-4), modelled on Zed's agent p
 - **What it shows:** the model's text as it is written, each call with whether it ran, and how
   the run ended (done, or the reasons it is not). There is also a button that restores the
   checkpoint the run recorded first.
+- **Permissions (P4-30):** a picker beside Start chooses the profile: Ask, Write or Full. It is
+  kept in the project's settings, which also hold the tool rules (`docs/settings.md`). A call
+  that needs the modder's permission waits in its thread, showing the tool, the paths it names
+  and why it asks, with Allow once, Always allow and Deny. Frames go on meanwhile. Always allow
+  keeps its rule in the project's settings.
 - **Proposed changes:** every staged hunk, with Accept and Reject for each and for all of
   them (`edit.accept`, `edit.reject`).
 
 `src/agent/tests.rs` covers it. Two threads whose models are held wait while frames go on,
 and each ends when its model answers. A thread's hunk is rejected from the panel and its
-checkpoint restores the project. The provider form keeps the key out of the file.
+checkpoint restores the project. The provider form keeps the key out of the file. A call
+that asks waits in its thread for Allow once, Always allow or Deny, and the profile is kept in
+the project's settings.
 
 ## Fonts
 
