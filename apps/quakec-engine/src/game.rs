@@ -1058,7 +1058,9 @@ fn edit_error(error: &EditError) -> RpcError {
     let code = match error {
         EditError::NoSuchEdict(_) => ErrorCode::NoSuchEdict,
         EditError::NoSuchField(_) | EditError::BadValue(_) => ErrorCode::BadValue,
-        EditError::Kept(_) | EditError::Spawn(_) => ErrorCode::InvalidParams,
+        EditError::Kept(_) | EditError::Spawn(_) | EditError::NewPrecache(_) => {
+            ErrorCode::InvalidParams
+        }
     };
     RpcError::new(code, error.to_string())
 }

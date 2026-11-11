@@ -10,7 +10,9 @@ use qc_progs::Progs;
 use super::EditError;
 use crate::LoadOptions;
 use crate::world::QcValue;
-use crate::world::tests::{Running, ledge, player_from, player_progs};
+use crate::world::tests::{
+    Running, entity, ledge, player_from, player_progs, running as map_running,
+};
 
 fn running() -> Running {
     let more = ".void() think;\nvoid() tick = {};\n\
@@ -174,4 +176,87 @@ fn a_line_finds_the_entity_it_hits() {
         .unwrap();
     assert_eq!(down.edict, None, "the floor is the world");
     assert!(down.point.unwrap()[2].abs() < 0.1, "{:?}", down.point);
+}
+
+/// A map whose worldspawn precaches `a.wav`, with a lamp `lamp` and a trigger that fires
+/// `late` half a second in, and the classes a test spawns live: `info_known` precaches `a.wav`
+/// too, `info_new` `b.wav`, `trigger_live` fires its target a tenth of a second in and
+/// `lamp_live` is a lamp.
+fn linked() -> Running {
+    let source = "entity(entity start, .string fld, string match) find = #18;\n\
+        .void() think, use;\n\
+        void() worldspawn = { precache_sound(\"a.wav\"); };\n\
+        void() lamp_use = { self.health = self.health + 1; };\n\
+        void() lamp = { self.use = lamp_use; };\n\
+        void() lamp_live = { self.use = lamp_use; };\n\
+        void() fire = { local entity t, s; t = find(world, targetname, self.target); \
+        if (t) { s = self; self = t; self.use(); self = s; } };\n\
+        void() trigger_late = { self.think = fire; self.nextthink = time + 0.5; };\n\
+        void() trigger_live = { self.think = fire; self.nextthink = time + 0.1; };\n\
+        void() info_known = { precache_sound(\"a.wav\"); self.health = 3; };\n\
+        void() info_new = { precache_sound(\"b.wav\"); self.health = 4; };\n";
+    let entities = [
+        entity("lamp", "0 0 0", "\"targetname\" \"lamp\"\n"),
+        entity("trigger_late", "0 0 0", "\"target\" \"late\"\n"),
+    ]
+    .concat();
+    map_running(&ledge(), source, &entities, Vec::new())
+}
+
+// spec BRIDGE-4.12: a live spawn runs its spawn function as the map's loader does, so
+// precaching a name the map already has does nothing; a name the map did not have undoes the
+// spawn and is refused, the lists as they were
+#[test]
+fn a_live_spawn_precaches_only_what_the_map_has() {
+    let mut run = linked();
+    let progs_bytes = run.progs.clone();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    let sounds = run.world.builtins.mock.engine().sound_precache.clone();
+    let known = [("classname".to_owned(), "info_known".to_owned())];
+    let n = run.world.spawn_entity(&progs, &known).unwrap();
+    assert_eq!(run.world.float(n, "health"), 3.0);
+    let new = [("classname".to_owned(), "info_new".to_owned())];
+    let refused = run.world.spawn_entity(&progs, &new);
+    assert_eq!(
+        refused,
+        Err(EditError::NewPrecache(vec!["b.wav".to_owned()]))
+    );
+    assert_eq!(run.world.builtins.mock.engine().sound_precache, sounds);
+    let next = run.world.spawn_entity(&progs, &known).unwrap();
+    assert!(
+        !run.world.in_use(next.saturating_add(1)),
+        "the refused edict was freed"
+    );
+}
+
+// spec EDICT-8.6: an entity spawned live behaves as one the map loaded: its spawn function
+// runs, it targets a map entity by name, and a map entity targets it by name
+#[test]
+fn a_live_entity_links_to_the_maps_by_name() {
+    let mut run = linked();
+    let progs_bytes = run.progs.clone();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    // The map's entities start at edict 2, after the client's (EDICT-4): the lamp first.
+    let lamp = 2;
+    let pairs = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect()
+    };
+    let trigger = pairs(&[("classname", "trigger_live"), ("target", "lamp")]);
+    run.world.spawn_entity(&progs, &trigger).unwrap();
+    let late = pairs(&[("classname", "lamp_live"), ("targetname", "late")]);
+    let target = run.world.spawn_entity(&progs, &late).unwrap();
+    run.frames(10, 0.1).unwrap();
+    assert_eq!(
+        run.world.float(lamp, "health"),
+        1.0,
+        "the live trigger fired the lamp"
+    );
+    assert_eq!(
+        run.world.float(target, "health"),
+        1.0,
+        "the map's trigger fired the live lamp"
+    );
 }

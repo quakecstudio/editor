@@ -206,6 +206,14 @@ A command is a request from the client, answered with a result on success or an 
   running world, with the breakpoints it would clear; the running world, its progs, its
   breakpoints and its pause are unchanged, and no event is sent. The editor reads it before a
   reload to say what the reload would reset (P3-10).
+- **BRIDGE-4.12** `entity/spawn` spawns as the map's loader does (EDICT-8.2, EDICT-8.6): an
+  edict allocated, the key-values applied, then the function the `classname` names run with
+  `self` the entity, the server loading as it is while the map's entities spawn, so the
+  precache builtins run (BUILTIN-10.1). A name the precache lists already hold does nothing
+  (BUILTIN-10.3). A name they do not hold would reach no client, which received the lists when
+  it connected: the spawn is undone, the entity freed and the lists as they were, and it is
+  answered with `-32602` (invalid params) naming what the map would have to precache. id's
+  engine has no live spawn; this is the preview host's (P5-10).
 
 ## BRIDGE-5 Values
 

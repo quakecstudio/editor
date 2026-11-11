@@ -27,6 +27,9 @@ pub enum EditError {
     Kept(usize),
     /// Spawning failed: no classname, or one naming no function, or its function failed.
     Spawn(String),
+    /// The spawn function precached names the map had not, which the running game's client
+    /// never received (BRIDGE-4.12); the spawn was undone.
+    NewPrecache(Vec<String>),
 }
 
 impl core::fmt::Display for EditError {
@@ -37,6 +40,11 @@ impl core::fmt::Display for EditError {
             Self::BadValue(why) => f.write_str(why),
             Self::Kept(n) => write!(f, "edict {n} is never freed"),
             Self::Spawn(why) => write!(f, "spawning: {why}"),
+            Self::NewPrecache(names) => write!(
+                f,
+                "spawning precaches {} the map does not, which needs the map loaded again",
+                names.join(", ")
+            ),
         }
     }
 }
@@ -162,13 +170,44 @@ impl World {
 
     /// Spawns an entity of the key-values `pairs` as a map entity is spawned (EDICT-8): an
     /// edict allocated, the pairs applied, then the function its `classname` names run with
-    /// `self` the edict; returns its number.
+    /// `self` the edict, the server loading as it is for the map's entities (BRIDGE-4.12);
+    /// returns its number.
     ///
     /// # Errors
     ///
     /// [`EditError::Spawn`] for no free edict, a pair that does not parse, no `classname` or
-    /// one naming no function (the edict is then freed), or a spawn function that fails.
+    /// one naming no function (the edict is then freed), or a spawn function that fails;
+    /// [`EditError::NewPrecache`] for a spawn function that precaches a name the map did not,
+    /// whose spawn is undone.
     pub fn spawn_entity(
+        &mut self,
+        progs: &Progs<'_>,
+        pairs: &[(String, String)],
+    ) -> Result<usize, EditError> {
+        let engine = self.builtins.mock.engine();
+        let lists = (engine.model_precache.len(), engine.sound_precache.len());
+        let n = self.spawn_loading(progs, pairs)?;
+        let engine = self.builtins.mock.engine_mut();
+        let added: Vec<String> = engine
+            .model_precache
+            .split_off(lists.0.min(engine.model_precache.len()))
+            .into_iter()
+            .chain(
+                engine
+                    .sound_precache
+                    .split_off(lists.1.min(engine.sound_precache.len())),
+            )
+            .collect();
+        if !added.is_empty() {
+            self.remove_entity(progs, n)?;
+            return Err(EditError::NewPrecache(added));
+        }
+        Ok(n)
+    }
+
+    /// [`Self::spawn_entity`] without the precache check: the spawn as the map's loader runs
+    /// it.
+    fn spawn_loading(
         &mut self,
         progs: &Progs<'_>,
         pairs: &[(String, String)],
@@ -176,7 +215,7 @@ impl World {
         let mut spawner = Spawner {
             world: self,
             progs,
-            state: ServerState::Active,
+            state: ServerState::Loading,
         };
         let n = spawner
             .allocate(false)

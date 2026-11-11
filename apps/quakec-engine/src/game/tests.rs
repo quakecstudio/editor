@@ -55,6 +55,8 @@ void() SetNewParms = {};
 void() SetChangeParms = { parm1 = self.health; };
 void() worldspawn = { precache_model(\"progs/player.mdl\"); };
 void() item_crate = { self.count = 3; self.solid = 2; setsize(self, '-8 -8 -8', '8 8 8'); setorigin(self, self.origin); };
+void() item_known = { precache_model(\"progs/player.mdl\"); self.count = 5; };
+void() item_new = { precache_model(\"progs/new.mdl\"); self.count = 6; };
 .void() nothing;
 void() broken = { self.nothing(); };
 void() leave = { changelevel(\"e1m2\"); };
@@ -606,6 +608,32 @@ fn entities_are_spawned_edited_and_removed() {
         &json!({ "classname": "nonesuch" }),
     );
     assert_eq!(code(unknown), ErrorCode::InvalidParams);
+}
+
+// spec BRIDGE-4.12: a live spawn precaches as the map's loader does: a model the map has
+// precached spawns, a model it has not is refused with invalid params and nothing is spawned
+#[test]
+fn a_live_spawn_precaches_only_what_the_map_has() {
+    let (mut game, mut session) = game();
+    events(&mut game);
+    let known = call(
+        &mut game,
+        &mut session,
+        "entity/spawn",
+        &json!({ "classname": "item_known" }),
+    )
+    .unwrap();
+    let n = usize::try_from(known["edict"].as_u64().unwrap()).unwrap();
+    assert_eq!(float_field(&mut game, &mut session, n, "count"), 5.0);
+    events(&mut game);
+    let new = call(
+        &mut game,
+        &mut session,
+        "entity/spawn",
+        &json!({ "classname": "item_new" }),
+    );
+    assert_eq!(code(new), ErrorCode::InvalidParams);
+    assert_eq!(methods(&events(&mut game)), Vec::<&str>::new());
 }
 
 // spec BRIDGE-4.9: spawn player at moves the player to the origin and angles

@@ -96,7 +96,7 @@ groups:
     depends:
     - P3-02
     deliverable:
-    - Host-side spawn, remove and edit entity from a map entity description, with a bridge protocol version bump
+    - Host-side spawn, remove and edit entity from a map entity description (`entity/spawn`, `entity/remove`, `entity/edit`, capability-flagged in bridge protocol 1.1, BRIDGE-4.9), a spawn run as the map's loader runs it (BRIDGE-4.12)
     acceptance:
     - Spawned entities behave as if loaded from the map (spawn function run, targets linked)
     verify:
