@@ -52,6 +52,52 @@ the editor's text of it, unsaved: save as usual.
 
 **Restore checkpoint** puts the project back as it was before the thread started.
 
+## What it may do
+
+The picker beside **Start** sets the profile, kept in the project's settings:
+
+- **Ask**: the agent only reads the project, the game and the settings.
+- **Write** (the default): reading and editing run unasked; anything else that changes the
+  project, the game or the settings asks you first.
+- **Full**: every tool runs unasked.
+
+A call that needs your permission waits in its thread, showing the tool, the paths it names and
+why it asks, with **Allow once**, **Always allow** and **Deny**. **Always allow** keeps a rule in
+the project's settings for exactly what the call named. The `agent.tool_permissions` setting
+([Settings](../settings.md)) holds rules per tool: `allow`, `ask` and `deny` patterns over the
+paths a call names, `deny` winning over `ask` and `ask` over `allow`.
+
+## Point it at something
+
+A task can name what the agent should look at, with an `@` mention. Each one is read when the
+thread starts and attached after the task:
+
+| Mention | What is attached |
+| --- | --- |
+| `@file:<path>` | The file's text, its unsaved edits included; the path is relative to the project |
+| `@symbol:<name>` | Where the name is defined, file and line |
+| `@builtin:<name>` | The engine's declaration of the builtin |
+| `@entity` | The edict selected in Entities, or picked in the paused game, with every field |
+| `@error` | The last error the game's console printed |
+
+For example: `Why does @symbol:W_FireAxe miss? See @error.`
+
+## Ask about this
+
+Right-click a row in **Entities** and choose **Ask about this**, or press **Ask about this** in
+**Properties**. The IDE selects that edict and starts a thread that explains what it is doing
+and why: what spawned it, what its think function does next, and anything in its state that
+looks wrong. The thread holds its classname, its current think function and when it is due,
+and every field, as the game has them at that moment. The agent is told not to change code
+unless you ask.
+
+## Inline edit
+
+Select some code in the editor and press Cmd+K. A box asks **Change the selection to…**: say
+what you want and press Enter. The model rewrites only the selection, and the answer is shown
+in place as a diff from the text before. **Accept** keeps it, and one undo still takes it back;
+**Reject** puts the text back. Inline edit uses the provider the agent panel has.
+
 ## The command line and other agents
 
 The same agent tools are served to Claude Code and other agents over MCP: see [MCP](mcp.md).

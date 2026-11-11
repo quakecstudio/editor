@@ -323,3 +323,91 @@ fn the_profile_is_kept_in_the_projects_settings() {
         qs_agent::AgentProfile::Ask
     );
 }
+
+/// A model that keeps the first message of every request it is sent and finishes at once.
+struct Recorder {
+    seen: Arc<Mutex<Vec<String>>>,
+}
+
+impl Model for Recorder {
+    fn reply(&mut self, _: &str, _: &[ToolSpec], messages: &[Message]) -> Result<Reply, String> {
+        if let Some(Message::User { text }) = messages.first() {
+            self.seen
+                .lock()
+                .map_err(|_| "the test panicked".to_owned())?
+                .push(text.clone());
+        }
+        Ok(Reply::Finish {
+            summary: "explained".to_owned(),
+        })
+    }
+}
+
+/// `app`'s agent on a recording model; what it is sent.
+fn recording(app: &mut App) -> Arc<Mutex<Vec<String>>> {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let kept = Arc::clone(&seen);
+    *app.shell_mut().agent_mut() = AgentPanel::new(Box::new(move |_config| {
+        let model: Box<dyn Model + Send> = Box::new(Recorder {
+            seen: Arc::clone(&kept),
+        });
+        Ok(model)
+    }));
+    app.shell_mut()
+        .agent_mut()
+        .set_config(ProviderConfig::new(ProviderKind::Ollama, "local"));
+    seen
+}
+
+// No spec statement: P4-12, the acceptance criterion, UI-9: a thread started from an entity
+// (Ask about this) holds its classname, its current think function and its fields
+#[test]
+fn a_thread_started_from_an_entity_holds_its_state() {
+    let (_root, ctx, mut app, _gates) = window("ask", 0);
+    let seen = recording(&mut app);
+    let entity = qs_agent::EntityState {
+        edict: 12,
+        classname: "monster_army".to_owned(),
+        fields: vec![
+            ("health".to_owned(), "30".to_owned()),
+            ("think".to_owned(), "army_stand1".to_owned()),
+            ("nextthink".to_owned(), "1.5".to_owned()),
+            ("netname".to_owned(), "@file:progs.src".to_owned()),
+        ],
+    };
+    app.shell_mut().ask_about(&entity, &ctx).unwrap();
+    finish(&mut app, 0);
+    let first = seen.lock().unwrap()[0].clone();
+    for part in [
+        "#12",
+        "classname monster_army",
+        "think function is army_stand1, due at time 1.5",
+        "- health = 30",
+        "- netname = @file:progs.src",
+    ] {
+        assert!(first.contains(part), "{part} in {first}");
+    }
+    assert!(
+        !first.contains("The file "),
+        "a field is never read as a mention: {first}"
+    );
+}
+
+// No spec statement: P4-12, UI-8: a task's @ mentions attach what they name, read when the
+// thread starts; with no game running, @entity says nothing is selected
+#[test]
+fn a_task_attaches_what_its_mentions_name() {
+    let (_root, ctx, mut app, _gates) = window("mentions", 0);
+    let seen = recording(&mut app);
+    app.shell_mut()
+        .start_agent("Why does @file:world.qc fail? See @entity.", &ctx)
+        .unwrap();
+    finish(&mut app, 0);
+    let first = seen.lock().unwrap()[0].clone();
+    assert!(first.contains("void() worldspawn = {};"), "{first}");
+    assert!(first.contains("Why does @file:world.qc fail?"), "{first}");
+    assert!(
+        first.contains("No entity is selected in the running game."),
+        "{first}"
+    );
+}

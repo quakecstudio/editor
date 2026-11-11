@@ -638,6 +638,73 @@ fn profiles_switch_the_tools_offered() {
     );
 }
 
+// No spec statement: P4-12, the acceptance criterion: a thread started from an entity carries
+// its classname, its current think function and its fields
+#[test]
+fn asking_about_an_entity_carries_its_state() {
+    let ogre = super::EntityState {
+        edict: 12,
+        classname: "monster_ogre".to_owned(),
+        fields: vec![
+            ("health".to_owned(), "200".to_owned()),
+            ("think".to_owned(), "ogre_stand1".to_owned()),
+            ("nextthink".to_owned(), "3.1".to_owned()),
+        ],
+    };
+    let task = super::ask_about(&ogre);
+    assert!(task.contains("classname monster_ogre"), "{task}");
+    assert!(task.contains("current think function is ogre_stand1, due at time 3.1"));
+    assert!(task.contains("- health = 200"));
+    let still = super::EntityState {
+        edict: 1,
+        classname: "worldspawn".to_owned(),
+        fields: Vec::new(),
+    };
+    assert!(still.brief().contains("no think function"));
+}
+
+// No spec statement: P4-12, @ mentions attach a file's text, a definition's place, a builtin's
+// declaration, the selected entity and the console's last error; what a mention names that is
+// not there is said, and a task with none is unchanged
+#[test]
+fn mentions_attach_what_they_name() {
+    let (root, mut session) = project("mentions", FIXED);
+    let live = super::Live {
+        entity: Some(super::EntityState {
+            edict: 3,
+            classname: "player".to_owned(),
+            fields: vec![("health".to_owned(), "100".to_owned())],
+        }),
+        error: Some("NULL function in W_FireAxe".to_owned()),
+    };
+    let task =
+        "Fix @error in @file:weapons.qc using @symbol:damage and @builtin:error, see @entity.";
+    let expanded = super::expand_mentions(&mut session, &root, task, &live);
+    assert!(expanded.starts_with(task));
+    assert!(
+        expanded.contains("float() damage = { return 5; };"),
+        "{expanded}"
+    );
+    assert!(expanded.contains("damage is defined at"), "{expanded}");
+    assert!(
+        expanded.contains("void(string e) error = #10;"),
+        "{expanded}"
+    );
+    assert!(expanded.contains("classname player"));
+    assert!(expanded.contains("NULL function in W_FireAxe"));
+    let missing = super::expand_mentions(
+        &mut session,
+        &root,
+        "@file:nowhere.qc @entity",
+        &super::Live::default(),
+    );
+    assert!(missing.contains("No file nowhere.qc") && missing.contains("No entity is selected"));
+    assert_eq!(
+        super::expand_mentions(&mut session, &root, "plain", &live),
+        "plain"
+    );
+}
+
 // No spec statement: P4-10, an inline edit's prompt holds the file, the selection and the
 // request, and its answer is the reply's text without code fences
 #[test]

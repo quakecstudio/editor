@@ -72,6 +72,188 @@ pub const SYSTEM: &str = "You are QuakeC Studio's agent. You change a QuakeC pro
     - When you are finished, say so. The runtime compiles and runs the tests itself, and the \
     run is done only when both pass; if not, you are told why and go on.";
 
+/// An entity of the running game as the agent is told about it (P4-12, UI-9, PRIN-2): its
+/// edict, its classname and each field as the Properties panel shows it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EntityState {
+    /// The edict's number.
+    pub edict: u32,
+    /// Its classname.
+    pub classname: String,
+    /// Each field and its value, in the order the game gave them.
+    pub fields: Vec<(String, String)>,
+}
+
+impl EntityState {
+    /// The value of field `name`, if the entity has it.
+    #[must_use]
+    pub fn field(&self, name: &str) -> Option<&str> {
+        self.fields
+            .iter()
+            .find(|(field, _)| field == name)
+            .map(|(_, value)| value.as_str())
+    }
+
+    /// The entity as the agent reads it: its classname, the function it will think next and
+    /// when, then every field.
+    #[must_use]
+    pub fn brief(&self) -> String {
+        let mut text = format!(
+            "Entity #{} of the running game, classname {}.\n",
+            self.edict, self.classname
+        );
+        match (self.field("think"), self.field("nextthink")) {
+            (Some(think), Some(next)) => {
+                text.push_str(&format!(
+                    "Its current think function is {think}, due at time {next}.\n"
+                ));
+            }
+            (Some(think), None) => {
+                text.push_str(&format!("Its current think function is {think}.\n"))
+            }
+            _ => text.push_str("It has no think function.\n"),
+        }
+        text.push_str("Its fields:\n");
+        for (name, value) in &self.fields {
+            text.push_str(&format!("- {name} = {value}\n"));
+        }
+        text
+    }
+}
+
+/// The task of "Ask about this" on `entity` (P4-12, UI-9): what it is doing and why, with its
+/// state attached.
+#[must_use]
+pub fn ask_about(entity: &EntityState) -> String {
+    format!(
+        "Explain what this entity is doing in the running game and why, from the project's \
+         QuakeC: what spawned it, what its think function does next, and anything in its state \
+         that looks wrong. Do not change any code unless asked.\n\n{}",
+        entity.brief()
+    )
+}
+
+/// What the running game offers the agent's `@entity` and `@error` mentions.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Live {
+    /// The entity selected in the outliner or the game.
+    pub entity: Option<EntityState>,
+    /// The last error the game's console printed.
+    pub error: Option<String>,
+}
+
+/// `task` with what its `@` mentions name attached after it (P4-12, UI-8): `@file:<path>` a
+/// file's text (relative to `project`), `@symbol:<name>` where a name is defined,
+/// `@builtin:<name>` an engine builtin's declaration, `@entity` the selected entity and
+/// `@error` the console's last error. A mention that names nothing says so.
+#[must_use]
+pub fn expand_mentions<C: 'static>(
+    session: &mut Session<C>,
+    project: &Path,
+    task: &str,
+    live: &Live,
+) -> String {
+    let mut attached = Vec::new();
+    for word in task.split_whitespace() {
+        let word = word.trim_end_matches([',', '.', ';', ':', ')']);
+        let Some(mention) = word.strip_prefix('@') else {
+            continue;
+        };
+        let (kind, name) = mention.split_once(':').unwrap_or((mention, ""));
+        let text = match kind {
+            "file" => mention_file(session, project, name),
+            "symbol" => mention_symbol(session, name),
+            "builtin" => mention_builtin(session, name),
+            "entity" => live.entity.as_ref().map_or_else(
+                || "No entity is selected in the running game.".to_owned(),
+                EntityState::brief,
+            ),
+            "error" => live.error.clone().map_or_else(
+                || "The console has printed no error.".to_owned(),
+                |error| format!("The console's last error:\n{error}"),
+            ),
+            _ => continue,
+        };
+        attached.push(format!("{word}:\n{text}"));
+    }
+    if attached.is_empty() {
+        return task.to_owned();
+    }
+    format!(
+        "{task}\n\nAttached by the person's mentions:\n\n{}",
+        attached.join("\n\n")
+    )
+}
+
+/// The text of the file `name` names, from `project` when relative.
+fn mention_file<C: 'static>(session: &mut Session<C>, project: &Path, name: &str) -> String {
+    let path = project.join(name);
+    session
+        .execute("file.read", json!({ "path": path }))
+        .ok()
+        .and_then(|read| read.get("text").and_then(Value::as_str).map(str::to_owned))
+        .map_or_else(
+            || format!("No file {name} could be read."),
+            |text| format!("The file {}:\n{text}", path.display()),
+        )
+}
+
+/// Where each definition whose name is `name` is.
+fn mention_symbol<C: 'static>(session: &mut Session<C>, name: &str) -> String {
+    let found = session
+        .execute("project.symbols", json!({ "query": name }))
+        .ok()
+        .and_then(|found| found.as_array().cloned())
+        .unwrap_or_default();
+    let lines: Vec<String> = found
+        .iter()
+        .filter(|symbol| symbol.get("name").and_then(Value::as_str) == Some(name))
+        .map(|symbol| {
+            let path = symbol
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let line = symbol
+                .get("line")
+                .and_then(Value::as_u64)
+                .unwrap_or_default();
+            format!("{name} is defined at {path}:{line}")
+        })
+        .collect();
+    if lines.is_empty() {
+        format!("No definition named {name} was found.")
+    } else {
+        lines.join("\n")
+    }
+}
+
+/// The declaration of the open project's engine's builtin `name`.
+fn mention_builtin<C: 'static>(session: &mut Session<C>, name: &str) -> String {
+    let table = session
+        .execute("engine.builtins", json!({}))
+        .unwrap_or(Value::Null);
+    table
+        .get("builtins")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|builtin| builtin.get("name").and_then(Value::as_str) == Some(name))
+        .map_or_else(
+            || format!("The engine has no builtin named {name}."),
+            |builtin| {
+                let signature = builtin
+                    .get("signature")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let number = builtin
+                    .get("number")
+                    .and_then(Value::as_u64)
+                    .unwrap_or_default();
+                format!("{signature} {name} = #{number};")
+            },
+        )
+}
+
 /// The rules of an inline edit (P4-10, UI-6): one selection rewritten as asked, the answer
 /// nothing but its new text.
 pub const INLINE_SYSTEM: &str = "You rewrite one selection of a QuakeC file as the person asks. \
