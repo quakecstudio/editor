@@ -1,0 +1,6 @@
+# What success means for the fix-crash eval: played after the run, on the agent's work.
+map start
+seed 1
+frames 8
+expect field player classname == "player"
+expect field player health == 100

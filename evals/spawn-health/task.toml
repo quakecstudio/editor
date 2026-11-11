@@ -1,0 +1,11 @@
+title = "Spawn with more health"
+template = "id1"
+prompt = "Make the player spawn with 150 health instead of 100."
+turns = 30
+runs = 1
+threshold = 1
+
+[[solution]]
+file = "client.qc"
+find = "	parm2 = 100;"
+replace = "	parm2 = 150;"

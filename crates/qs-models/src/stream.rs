@@ -15,6 +15,8 @@ pub(crate) struct AnthropicStream {
     json: Vec<String>,
     stop: Value,
     error: Option<String>,
+    /// `message_start`'s `usage`, updated by each `message_delta`'s.
+    usage: serde_json::Map<String, Value>,
 }
 
 impl AnthropicStream {
@@ -54,9 +56,17 @@ impl AnthropicStream {
                     block.insert("input".to_owned(), input);
                 }
             }
+            Some("message_start") => {
+                if let Some(Value::Object(usage)) = event.pointer("/message/usage") {
+                    self.usage.extend(usage.clone());
+                }
+            }
             Some("message_delta") => {
                 if let Some(stop) = event.pointer("/delta/stop_reason") {
                     self.stop = stop.clone();
+                }
+                if let Some(Value::Object(usage)) = event.get("usage") {
+                    self.usage.extend(usage.clone());
                 }
             }
             Some("error") => {
@@ -115,7 +125,7 @@ impl AnthropicStream {
             return Err(error);
         }
         let content: Vec<Value> = self.content.into_iter().filter(|b| !b.is_null()).collect();
-        Ok(json!({ "content": content, "stop_reason": self.stop }))
+        Ok(json!({ "content": content, "stop_reason": self.stop, "usage": self.usage }))
     }
 }
 

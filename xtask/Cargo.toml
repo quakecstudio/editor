@@ -22,10 +22,12 @@ qc-sema = { workspace = true }
 qc-syntax = { workspace = true }
 qc-trace = { workspace = true }
 qc-types = { workspace = true }
+qs-agent = { workspace = true }
 qs-commands = { workspace = true }
 qs-engine = { workspace = true }
 qs-install = { workspace = true }
 qs-layout = { workspace = true }
+qs-models = { workspace = true }
 qs-settings = { workspace = true }
 qs-templates = { workspace = true }
 qs-workbench = { workspace = true }
