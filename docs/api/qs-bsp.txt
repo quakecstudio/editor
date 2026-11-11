@@ -180,6 +180,7 @@ fn qs_bsp::Bsp::hull0
 fn qs_bsp::Bsp::leaf_pvs
 fn qs_bsp::Bsp::point_in_leaf
 fn qs_bsp::Bsp::read
+fn qs_bsp::Bsp::read_with_wads
 fn qs_bsp::Bsp::vis_row_size
 fn qs_bsp::BspError::message
 fn qs_bsp::BspLoader::max_surface_extent
@@ -204,6 +205,8 @@ fn qs_bsp::lit::mod_load_lighting
 fn qs_bsp::model_name
 fn qs_bsp::model_precache_index
 fn qs_bsp::replace_entities
+fn qs_bsp::wads::wad_files
+fn qs_bsp::wads::wad_key
 impl qs_bsp::BspError: core::error::Error
 impl qs_bsp::BspError: fmt::Display
 impl qs_bsp::lit::LitError: core::error::Error
@@ -211,6 +214,7 @@ impl qs_bsp::lit::LitError: fmt::Display
 mod qs_bsp::ent
 mod qs_bsp::limits
 mod qs_bsp::lit
+mod qs_bsp::wads
 struct qs_bsp::Animation
 struct qs_bsp::Bsp
 struct qs_bsp::ClipNode

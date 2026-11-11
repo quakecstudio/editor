@@ -21,6 +21,7 @@
 
 pub mod ent;
 pub mod lit;
+pub mod wads;
 
 #[cfg(test)]
 mod fitz_tests;
@@ -1029,6 +1030,24 @@ impl<'a> Bsp<'a> {
     ///
     /// The first [`BspError`] in load order.
     pub fn read(bytes: &'a [u8], loader: BspLoader) -> Result<Self, BspError> {
+        Self::read_with_wads(bytes, loader, &[])
+    }
+
+    /// [`Bsp::read`], with the external textures of the FitzQuake lineage's loader read from
+    /// `wads`, the WADs the world's `wad` key names in its order ([`wads::wad_key`],
+    /// [`wads::wad_files`]): a texture whose first offset is 0 is looked for in the last of
+    /// them first, and when one has it, its pixels, palette, name and size are that WAD's
+    /// (WAD3-4.3); otherwise the BSP's own (BSP-22.5). `BspLoader::WinQuake` and
+    /// `BspLoader::GlQuake` read no WAD.
+    ///
+    /// # Errors
+    ///
+    /// As [`Bsp::read`].
+    pub fn read_with_wads(
+        bytes: &'a [u8],
+        loader: BspLoader,
+        wads: &[qs_wad::MapWad<'a>],
+    ) -> Result<Self, BspError> {
         let header = bytes.get(..BSP_HEADER_SIZE).ok_or(BspError::TooShort)?;
         let version = match i32_at(header, 0) {
             BSP_VERSION => BspVersion::Bsp29,
@@ -1080,7 +1099,7 @@ impl<'a> Bsp<'a> {
         bsp.mod_load_vertexes(&reader)?;
         bsp.mod_load_edges(&reader)?;
         bsp.mod_load_surfedges(&reader)?;
-        bsp.mod_load_textures(&reader, loader)?;
+        bsp.mod_load_textures(&reader, loader, wads)?;
         bsp.lighting = reader.lump(LumpId::Lighting);
         bsp.mod_load_planes(&reader)?;
         bsp.mod_load_texinfo(&reader, loader)?;
@@ -1134,6 +1153,7 @@ impl<'a> Bsp<'a> {
         &mut self,
         reader: &Reader<'a>,
         loader: BspLoader,
+        wads: &[qs_wad::MapWad<'a>],
     ) -> Result<(), BspError> {
         let lump = reader.lump(LumpId::Textures);
         if lump.is_empty() {
@@ -1157,7 +1177,16 @@ impl<'a> Bsp<'a> {
                 continue;
             }
             let valve = reader.version == BspVersion::Valve;
-            textures.push(load_texture(lump, offset, index, loader, valve)?);
+            let mut texture = load_texture(lump, offset, index, loader, valve)?;
+            if loader.fitz()
+                && let Some(found) = texture.as_ref().and_then(|t| wad_texture(t, wads))
+            {
+                texture = Some(Texture {
+                    sky: !valve && fitz_sky(&found.name),
+                    ..found
+                });
+            }
+            textures.push(texture);
         }
         sequence_animations(&mut textures)?;
         self.textures = textures;
@@ -2025,6 +2054,28 @@ fn fitz_texture(
         palette,
         animation: None,
     }))
+}
+
+/// The texture QuakeSpasm's `Mod_LoadWadTexture` puts in place of `texture` when its first
+/// offset is 0: the first of `wads`, last named first, that has it (WAD3-3, WAD3-4.3).
+fn wad_texture<'a>(texture: &Texture<'a>, wads: &[qs_wad::MapWad<'a>]) -> Option<Texture<'a>> {
+    if texture.offsets.first() != Some(&0) {
+        return None;
+    }
+    let found = wads
+        .iter()
+        .rev()
+        .find_map(|wad| wad.texture(&texture.name))?;
+    Some(Texture {
+        name: found.name,
+        width: found.width,
+        height: found.height,
+        offsets: texture.offsets,
+        pixels: found.pixels,
+        palette: found.palette,
+        sky: false,
+        animation: None,
+    })
 }
 
 /// The palette QuakeSpasm copies after a Half-Life texture's pixels (BSP-22.2): from

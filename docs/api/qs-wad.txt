@@ -16,7 +16,11 @@ const qs_wad::WAD_TYP_PALETTE
 const qs_wad::WAD_TYP_QPIC
 const qs_wad::WAD_TYP_QTEX
 const qs_wad::WAD_TYP_SOUND
+const qs_wad::map_wad::WAD3_MAGIC
+const qs_wad::map_wad::WAD_TYP_MIPTEX_PALETTE
 enum qs_wad::WadError
+enum qs_wad::map_wad::MapWadError
+enum qs_wad::map_wad::WadKind
 field qs_wad::Lump.compression
 field qs_wad::Lump.disksize
 field qs_wad::Lump.filepos
@@ -30,6 +34,16 @@ field qs_wad::MipTexHeader.width
 field qs_wad::QPic.height
 field qs_wad::QPic.pixels
 field qs_wad::QPic.width
+field qs_wad::map_wad::MapWadEntry.compression
+field qs_wad::map_wad::MapWadEntry.filepos
+field qs_wad::map_wad::MapWadEntry.name
+field qs_wad::map_wad::MapWadEntry.size
+field qs_wad::map_wad::MapWadEntry.ty
+field qs_wad::map_wad::WadTexture.height
+field qs_wad::map_wad::WadTexture.name
+field qs_wad::map_wad::WadTexture.palette
+field qs_wad::map_wad::WadTexture.pixels
+field qs_wad::map_wad::WadTexture.width
 fn qs_wad::Conchars::glyph
 fn qs_wad::Conchars::parse
 fn qs_wad::LumpName::as_bytes
@@ -40,15 +54,33 @@ fn qs_wad::Wad::find
 fn qs_wad::Wad::lump
 fn qs_wad::Wad::lumps
 fn qs_wad::Wad::read
+fn qs_wad::map_wad::MapWad::entries
+fn qs_wad::map_wad::MapWad::find
+fn qs_wad::map_wad::MapWad::kind
+fn qs_wad::map_wad::MapWad::read
+fn qs_wad::map_wad::MapWad::texture
 fn qs_wad::w_cleanup_name
 impl qs_wad::WadError: core::error::Error
 impl qs_wad::WadError: fmt::Display
+impl qs_wad::map_wad::MapWadError: core::error::Error
+impl qs_wad::map_wad::MapWadError: fmt::Display
+mod qs_wad::map_wad
 struct qs_wad::Conchars
 struct qs_wad::Lump
 struct qs_wad::LumpName
 struct qs_wad::MipTexHeader
 struct qs_wad::QPic
 struct qs_wad::Wad
+struct qs_wad::map_wad::MapWad
+struct qs_wad::map_wad::MapWadEntry
+struct qs_wad::map_wad::WadTexture
+use qs_wad::MapWad = map_wad::MapWad
+use qs_wad::MapWadEntry = map_wad::MapWadEntry
+use qs_wad::MapWadError = map_wad::MapWadError
+use qs_wad::WAD3_MAGIC = map_wad::WAD3_MAGIC
+use qs_wad::WAD_TYP_MIPTEX_PALETTE = map_wad::WAD_TYP_MIPTEX_PALETTE
+use qs_wad::WadKind = map_wad::WadKind
+use qs_wad::WadTexture = map_wad::WadTexture
 variant qs_wad::WadError::BadPic
 variant qs_wad::WadError::DirectoryOutOfBounds
 variant qs_wad::WadError::IndexOutOfRange
@@ -57,3 +89,8 @@ variant qs_wad::WadError::LumpTooShort
 variant qs_wad::WadError::NegativeLumpCount
 variant qs_wad::WadError::NotFound
 variant qs_wad::WadError::WrongId
+variant qs_wad::map_wad::MapWadError::BadDirectory
+variant qs_wad::map_wad::MapWadError::NoLumps
+variant qs_wad::map_wad::MapWadError::NotValid
+variant qs_wad::map_wad::WadKind::Wad2
+variant qs_wad::map_wad::WadKind::Wad3

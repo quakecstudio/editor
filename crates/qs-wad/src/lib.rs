@@ -16,12 +16,18 @@
 //!
 //! The format is specified in `docs/spec/wad2.md` (WAD-1 to WAD-4).
 
+pub mod map_wad;
+
 #[cfg(test)]
 mod fixtures;
 #[cfg(test)]
 mod tests;
 
 use core::fmt;
+
+pub use map_wad::{
+    MapWad, MapWadEntry, MapWadError, WAD_TYP_MIPTEX_PALETTE, WAD3_MAGIC, WadKind, WadTexture,
+};
 
 /// The four bytes a WAD2 file starts with (WAD-1.1).
 pub const WAD_MAGIC: [u8; 4] = *b"WAD2";
