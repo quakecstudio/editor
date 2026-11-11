@@ -848,6 +848,29 @@ groups:
     - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed
 - milestone: LATER
   issues:
+  - key: P0-23
+    title: Add the code-signing credentials to CI
+    labels:
+    - repo
+    - area:release
+    - type:chore
+    size: S
+    reqs:
+    - QA-14
+    summary: |
+      Moved to the post-MVP backlog by Justin on 2026-11-11, and with it Windows signing: the MVP release ships its Windows packages unsigned (P4-18). The twelve secrets are set (checked 2026-11-03), and the Sign workflow (.github/workflows/sign.yml, #794) signed, notarized and attested on macOS in run 42848352515 on 2026-11-10. Its Windows job failed at the Azure login, AADSTS700213, because no federated credential on the app registration named by AZURE_CLIENT_ID trusts the subject `repo:quakecstudio@343029298/editor@1420764495:workflow:Sign:ref_type:branch` (and `ref_type:tag` for a tagged release); adding those is Justin's.
+    deliverable:
+    - 'docs/releasing.md: the twelve repository-level secrets Justin entered on 2026-10-16, following vouch and quack (APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, APPLE_CERTIFICATE_NAME, MACOS_KEYCHAIN_PASSWORD, APPLE_ID, APPLE_ID_PASSWORD, APPLE_TEAM_ID for codesign and notarytool; AZURE_CLIENT_ID, AZURE_TENANT_ID, TRUSTED_SIGNING_ENDPOINT, TRUSTED_SIGNING_ACCOUNT, CERTIFICATE_PROFILE for Azure Trusted Signing over OIDC), who owns each credential and when it renews; that they are repository-level by Justin''s choice, so only workflows that sign may reference them'
+    - A signing workflow modelled on vouch's reusable-build.yml (temporary keychain, codesign with the hardened runtime, notarytool with the Apple ID; azure/login over OIDC and Trusted Signing), started by hand (workflow_dispatch) and reused by P4-18; agents never handle the secret values
+    acceptance:
+    - '`gh api repos/quakecstudio/editor/actions/secrets` lists every name in docs/releasing.md'
+    - A test binary is signed and notarized on macOS and signed on Windows from CI
+    - 'If the Azure login fails because no federated credential trusts quakecstudio/editor, the issue is escalated to Justin with the subject to add, not worked around'
+    verify:
+    - CI run link
+    depends:
+    - P0-02
+    - P0-15
   - key: P3-43
     title: Make the nightly Differential finish within the runners' six hours
     labels:

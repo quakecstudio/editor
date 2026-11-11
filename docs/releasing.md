@@ -2,6 +2,9 @@
 
 How a build of QuakeC Studio is signed. The release pipeline itself (packaging, the
 release on GitHub) is P4-18; this page is the signing it reuses (P0-23, [#23](https://github.com/quakecstudio/editor/issues/23)).
+Windows signing is deferred past the MVP (#23, moved to the post-MVP backlog on 2026-11-11):
+the Sign workflow's Windows job fails at the Azure login until the app registration has a
+federated credential for this repository, so the MVP's Windows packages are unsigned.
 
 ## The signing secrets
 
