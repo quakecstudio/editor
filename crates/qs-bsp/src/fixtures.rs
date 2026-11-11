@@ -20,6 +20,10 @@ pub(crate) struct TextureSpec {
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) pixel: u8,
+    /// Bytes written after the four mip levels: a Half-Life texture's palette (BSP-22.2).
+    pub(crate) trailer: &'static [u8],
+    /// An external texture: every offset 0 and no pixels after the header (BSP-22.5).
+    pub(crate) external: bool,
 }
 
 pub(crate) fn texture(name: &'static [u8]) -> Option<TextureSpec> {
@@ -28,6 +32,8 @@ pub(crate) fn texture(name: &'static [u8]) -> Option<TextureSpec> {
         width: 16,
         height: 16,
         pixel: 7,
+        trailer: &[],
+        external: false,
     })
 }
 
@@ -236,18 +242,22 @@ impl BspSpec {
             let area = texture.width * texture.height;
             let mut offset = 40;
             for level in 0..4 {
-                put_i32(&mut data, i32::try_from(offset).unwrap());
+                let at = if texture.external { 0 } else { offset };
+                put_i32(&mut data, i32::try_from(at).unwrap());
                 offset += area >> (2 * level);
             }
-            let pixels = usize::try_from(area / 64 * 85).unwrap();
-            data.extend(core::iter::repeat_n(texture.pixel, pixels));
+            if !texture.external {
+                let pixels = usize::try_from(area / 64 * 85).unwrap();
+                data.extend(core::iter::repeat_n(texture.pixel, pixels));
+            }
+            data.extend_from_slice(texture.trailer);
         }
         out.extend_from_slice(&data);
         out
     }
 
     fn lumps(&self) -> [Vec<u8>; BSP_HEADER_LUMPS] {
-        let wide = !matches!(self.version, BspVersion::Bsp29);
+        let wide = !matches!(self.version, BspVersion::Bsp29 | BspVersion::Valve);
         let mut lumps: [Vec<u8>; BSP_HEADER_LUMPS] = Default::default();
         lumps[0].clone_from(&self.entities);
         for (normal, dist, kind) in &self.planes {
@@ -392,6 +402,7 @@ impl BspSpec {
             BspVersion::Bsp29 => 29,
             BspVersion::Bsp2Psb => i32::from_le_bytes(*b"2PSB"),
             BspVersion::Bsp2 => i32::from_le_bytes(*b"BSP2"),
+            BspVersion::Valve => 30,
         });
         let mut out = vec![0; BSP_HEADER_SIZE];
         out[..4].copy_from_slice(&version.to_le_bytes());

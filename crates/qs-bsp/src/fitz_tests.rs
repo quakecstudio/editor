@@ -46,6 +46,8 @@ fn sized_texture(width: u32, height: u32) -> BspSpec {
             width,
             height,
             pixel: 7,
+            trailer: &[],
+            external: false,
         })]),
         ..BspSpec::default()
     }
@@ -177,20 +179,6 @@ fn default_is_fitzquake() {
     assert_eq!(fitz.leaf_pvs(1), gl.leaf_pvs(1));
 }
 
-// spec BSP-20.2: QuakeSpasm's other versions, Half-Life's 30 and Quake 64's, fail as BSP-1.2
-// says with every loader.
-#[test]
-fn other_versions() {
-    let q64 = i32::from_le_bytes(*b" 46Q");
-    for version in [30, q64] {
-        let spec = BspSpec {
-            raw_version: Some(version),
-            ..BspSpec::default()
-        };
-        assert_eq!(fitz(&spec), Err(BspError::WrongVersion { version }));
-    }
-}
-
 // spec BSP-20.3: a texture of width or height 0 leaves its slot empty, so its texinfo's
 // texture is missing (vector `texture-zero`); GLQuake loads it.
 #[test]
@@ -280,6 +268,8 @@ fn sky_any_case() {
                 width: 16,
                 height: 16,
                 pixel: 7,
+                trailer: &[],
+                external: false,
             })]),
             ..BspSpec::default()
         };

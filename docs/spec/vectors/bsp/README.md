@@ -104,7 +104,7 @@ result it records.
 
 | Name | Change | Result | Statements |
 | --- | --- | --- | --- |
-| `version-30` | `version` 30 | Error `Mod_LoadBrushModel: <name> has wrong version number (30 should be 29)` | BSP-1.2 |
+| `version-30` | `version` 30; lighting lump 75 bytes, three a sample (BSP-22.3) | Error `Mod_LoadBrushModel: <name> has wrong version number (30 should be 29)` | BSP-1.2 |
 | `funny-vertexes` | Vertexes lump of 49 bytes (four vertexes and one more byte) | Error `MOD_LoadBmodel: funny lump size in <name>` | BSP-1.4 |
 | `not-aligned` | Texture `wall` 24 by 16 | Error `Texture wall is not 16 aligned` | BSP-4.4 |
 | `missing-texture` | Texture slot offset -1; texinfo flags 1 | Loads; slot 0 empty; texinfo 0 uses the checkerboard with flags 0 | BSP-4.2, BSP-8.4 |
@@ -168,7 +168,8 @@ node, clipnode, hull 0 clipnode, model (bounds, radius, `visleafs`, faces, head 
 visibility row. `qs-bsp` read with `BspLoader::default()` printed the same as the x86-64 build
 for every vector and the 23 BSPs of LibreQuake's `lite` release (267,924 lines), except:
 
-- `version-30`: QuakeSpasm loads it as a Half-Life BSP and `qs-bsp` fails it (BSP-20.2).
+- `version-30`: QuakeSpasm loads it as a Half-Life BSP and `qs-bsp` failed it (BSP-20.2, since
+  withdrawn); since P5-11 both load it, as "Half-Life's version 30" below records.
 - `bad-marksurface`: both fail; QuakeSpasm's message is
   `Mod_LoadMarksurfaces: bad surface number` and `qs-bsp`'s is id's (BSP-20.18).
 
@@ -181,7 +182,7 @@ evaluations give extents 32 16 (single precision gives 16 16).
 | Name | Change | Result with the FitzQuake lineage's loader | GLQuake and WinQuake | Statements |
 | --- | --- | --- | --- | --- |
 | `base` | None | Loads as the base, with level 0's 256 pixels of `wall` kept | Loads | BSP-20.1, BSP-20.5 |
-| `version-30` | As above | Loads in QuakeSpasm as Half-Life's format; `qs-bsp` fails with BSP-1.2's error | Error | BSP-20.2 |
+| `version-30` | As above | Loads as Half-Life's format; `qs-bsp` agrees ("Half-Life's version 30" below) | Error | BSP-20.20 |
 | `texture-zero` | Texture `wall` 0 by 16 | Loads; slot 0 empty; texinfo 0 flags 2 (`TEX_MISSING`), the checkerboard; face flags 0x100 | Load; the texture has no pixels; face flags 0 | BSP-20.3, BSP-20.7, BSP-20.11 |
 | `not-aligned` | As above | Loads; `wall` 24 by 16, its 384 bytes kept | Error `Texture wall is not 16 aligned` | BSP-20.4, BSP-20.5 |
 | `texture-8x8` | Texture `wall` 8 by 8 | Loads; `wall` 8 by 8, its 64 bytes kept | Error `Texture wall is not 16 aligned` | BSP-20.4, BSP-20.5 |
@@ -213,3 +214,42 @@ evaluations give extents 32 16 (single precision gives 16 16).
 | `bsp2-bad-leaf` | The base as `BSP2`; node 0 children -5 and -1 | Loads; node 0's front is leaf 0 | id's read no BSP2; `qs-bsp` fails (BSP-1.8) | BSP-20.16 |
 | `clipnode-past` | Clipnode 0 children 5 and -2 | Loads; clipnode 0 children -65531 and -2 | id's loaders load it; `qs-bsp` fails (BSP-1.8) | BSP-20.17 |
 | `contents-0`, `contents-0-submodel`, `contents-0-unnamed` | As above | QuakeSpasm, both builds: crashes on `contents-0`; loads `contents-0-submodel` with hull 0 node 1's front child -954437178; loads `contents-0-unnamed`. `qs-bsp`: the errors and load of BSP-12.7 | As above | BSP-20.19 |
+
+## Half-Life's version 30 (BSP-22)
+
+The vectors of BSP-22 are the base read as version 30, built by the factory in
+`crates/qs-bsp/src/valve_tests.rs`. Each gives its lighting lump three bytes a sample, so a
+face's samples lie in it (BSP-22.3, BSP-10.2). None holds Valve's game data: the textures are
+the base's 16 by 16 `wall` of index 7, and the palettes are a few bytes written by hand.
+
+| Name | Change from `version-30` | QuakeSpasm and `qs-bsp` | Statements |
+| --- | --- | --- | --- |
+| `version-30` | None (`version` 30, lighting 75 bytes) | Loads as the base; `wall` has 256 pixels and a palette of 0 bytes, its lump ending at its mip levels | BSP-20.20, BSP-22.1, BSP-22.2 |
+| `valve-palette` | After `wall`'s mip levels, `02 00 01 02 03 04 05 06`: two colours | The palette is those 8 bytes | BSP-22.2 |
+| `valve-palette-past` | After the mip levels, `00 01 09 09 09`: 256 colours, 3 bytes of them | The palette is cut at the lump's end: those 5 bytes | BSP-22.2 |
+| `valve-palette-half` | After the mip levels, `03`: half a count | The palette is that 1 byte | BSP-22.2 |
+| `valve-rgb` | Face 0 `lightofs` 3; lighting 78 bytes, 0 to 77 | The lighting is the lump's 78 bytes; the face's samples start at byte 3 | BSP-22.3 |
+| `valve-sky` | Texture `sky1` | Not loaded as a sky; face flags 0x24 (`SURF_DRAWSKY`, `SURF_DRAWTILED`) | BSP-22.4 |
+| `valve-external` | `wall`'s offsets all 0, no pixels after its header | 0 pixels and a palette of 0 bytes | BSP-22.5 |
+
+**Checked:** on 2026-11-11 each vector, written to a file by the factory, was loaded by
+QuakeSpasm's `Mod_Init`, `Mod_ForName` and the functions they call, in `Quake/gl_model.c` copied
+unchanged with every header of `Quake/` from sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`
+(the tarball above, SHA-256 `139d85c096ebec6b62425584be570daa5830323ff6eac6cd7ed94400bec3deba`
+checked again). It was built with
+`clang -O1 -w -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 $(sdl2-config --cflags)` (Apple clang
+21.0.0, arm64, SDL2's headers from Homebrew). The harness stubs the engine as the run above
+does: the hunk as zeroed memory, `Sys_Error` and `Host_Error` printing and stopping, every file
+but the map not found (so no WAD has an external texture), the cvars at 0, `Sky_LoadTexture`
+recording its texture, the texture manager uploading nothing. It also defines `memcpy`, which
+the executable's own definition gives `gl_model.c`, to log each copy's destination and size:
+the bytes copied to `(byte *)(tx + 1)` are a texture's pixels, and those copied right after
+them its palette, the `memcpy ((byte *)(tx + 1) + pixels, palette_p, palette)` of BSP-22.2,
+with no copy when `palette` is 0. It printed each texture's name, size, whether
+`Sky_LoadTexture` took it, its pixels' count and first 8 bytes and its palette's bytes; the
+lighting's bytes; and each face's `texturemins`, extents, flags and `samples` offset into the
+lighting. `qs-bsp` read with `BspLoader::default()` printed the same fields: `Texture::sky`,
+`pixels` and `palette`, `Bsp::lighting`, and each face's `lightofs`. The two were identical
+for every vector, leaving out QuakeSpasm's two placeholder textures, `notexture` and
+`notexture2`, which `qs-bsp` does not make (BSP-20.7). As a check of the harness, `valve-sky`
+with its version set back to 29 was loaded as a sky.

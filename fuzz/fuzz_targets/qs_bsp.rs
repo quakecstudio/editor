@@ -4,7 +4,9 @@
 //! the entity lump writer (BSP-19), each as given and written over the spec's `base` vector, so
 //! the fuzzer reaches every lump. Fails on a panic, on a face whose samples do not lie in the
 //! lighting lump, on a visibility row wider than `BSP_MAX_VIS_ROW` or not the width model 0's
-//! `visleafs` gives (BSP-6.7), and on a BSP whose new entity lump does not read back.
+//! `visleafs` gives (BSP-6.7), on a Half-Life texture's palette past its lump (BSP-22.2), and
+//! on a BSP whose new entity lump does not read back. Each input is also tried as version 30,
+//! Half-Life's (BSP-22).
 
 #![no_main]
 
@@ -41,6 +43,10 @@ fn check_with(bytes: &[u8], loader: BspLoader) {
     let Ok(bsp) = Bsp::read(bytes, loader) else {
         return;
     };
+    let textures_lump = usize::try_from(bsp.lumps[2].filelen).unwrap_or(0);
+    for texture in bsp.textures.iter().flatten() {
+        assert!(texture.palette.is_none_or(|palette| palette.len() <= textures_lump));
+    }
     for face in &bsp.faces {
         let _vertices = bsp.face_vertices(face);
         if face.lightofs >= 0 {
@@ -82,5 +88,8 @@ fuzz_target!(|data: &[u8]| {
             bytes[index] = *byte;
         }
     }
+    check(&bytes);
+    // The same as Half-Life's version 30, read with BSP29's layout (BSP-22.1).
+    bytes[..4].copy_from_slice(&30_i32.to_le_bytes());
     check(&bytes);
 });

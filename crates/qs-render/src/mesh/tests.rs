@@ -69,6 +69,7 @@ pub(crate) fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
         offsets: [u32::try_from(BSP_MIPTEX_HEADER_SIZE).unwrap(), 0, 0, 0],
         pixels: &PIXELS,
         sky: false,
+        palette: None,
         animation: None,
     };
     Bsp {
