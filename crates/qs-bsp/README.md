@@ -33,7 +33,7 @@ coloured light; and writes a BSP's entities back, for shipped maps with no `.map
 
 - **Layer:** L0 formats. It depends on `qc-progs` for id's CRC. `qs-vfs`'s `walk` example loads
   every BSP and `.lit` of an install with it.
-- **Spec sections:** BSP-1 to BSP-20 in [`bsp.md`](../../docs/spec/bsp.md).
+- **Spec sections:** BSP-1 to BSP-22 in [`bsp.md`](../../docs/spec/bsp.md).
 - **Shipped:** yes.
 
 ## Invariants
@@ -79,5 +79,11 @@ The default loader was checked the same way against QuakeSpasm's own `Quake/gl_m
 headers, unchanged from the commit BSP-20 cites and built for x86-64 and arm64 with gcc 14.4
 (BSP-20, the evidence there, and the vectors' README): over every vector and the 23 LibreQuake
 `lite` BSPs, `qs-bsp` with `BspLoader::default()` printed what the x86-64 build printed, but for
-`version-30`, a Half-Life BSP QuakeSpasm reads and `qs-bsp` does not (BSP-20.2), and the
-wording of one error (BSP-20.18). Tests of the default loader are in `src/fitz_tests.rs`.
+`version-30`, a Half-Life BSP QuakeSpasm read and `qs-bsp` then did not, and the wording of
+one error (BSP-20.18). Tests of the default loader are in `src/fitz_tests.rs`.
+
+The default loader also reads Half-Life's version 30 as QuakeSpasm does (BSP-22, P5-11): BSP29's
+layout, each texture's palette beside its pixels as `Texture::palette`, RGB lighting with
+`lightofs` counting bytes, and no `sky` texture taken as a sky. A harness around QuakeSpasm's
+unchanged `gl_model.c` printed the same as `qs-bsp` for every version 30 vector (the vectors'
+README). Tests are in `src/valve_tests.rs`.

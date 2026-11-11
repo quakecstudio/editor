@@ -1264,21 +1264,11 @@ what `qs-bsp` does. QS prints many messages without failing (`Con_Warning`, `Con
 
 ### Behaviour
 
-- **BSP-20.1** `BspLoader::FitzQuake` is the default loader. It loads a BSP by BSP-1 to
-  BSP-17 except where BSP-20.2 to BSP-20.17 say otherwise. Where QS, like id, uses an index or
-  offset from the file without checking it (a plane, texinfo, edge, vertex, face or
-  marksurface range, a visibility or lighting offset, a texture's header), the answer this
-  spec fixes for id's loaders holds (BSP-1.6, BSP-1.8, BSP-4.6, BSP-6.5, BSP-10.2, BSP-14.3).
-  `BspLoader::WinQuake` and `BspLoader::GlQuake` are unchanged.
-- **BSP-20.2** QS's `Mod_LoadBrushModel` also accepts version 30 (`case BSPVERSION_VALVE:`,
-  Half-Life's format, compiled in because `Quake/quakedef.h` has
-  `#define BSP29_VALVE			// enable Half-Life map support`) and `Q64 `
-  (`case BSPVERSION_QUAKE64:`, Quake 64's), and fails any other with
-  `Mod_LoadBrushModel: %s has unsupported version number (%i)`. `qs-bsp` reads neither format
-  with any loader and fails both, and every other version that is not BSP29 or BSP2, with
-  BSP-1.2's error: the plan requirement MAP-6 (`plan/requirements.yaml`) asks for Quake's
-  formats only. The vector `version-30` loads in QS and
-  fails in `qs-bsp`, a difference the differential run expects.
+- **BSP-20.1** **Withdrawn** 2026-11-11: it named BSP-20.2 to BSP-20.17 as the default
+  loader's differences; BSP-20.2 is withdrawn and P5-11 adds version 30 (BSP-20.20, BSP-22);
+  replaced by BSP-20.21.
+- **BSP-20.2** **Withdrawn** 2026-11-11: it said `qs-bsp` reads Half-Life's version 30 with
+  no loader; P5-11 (MAP-24) reads it with the FitzQuake lineage's; replaced by BSP-20.20.
 - **BSP-20.3** A texture whose width or height is 0 leaves its slot empty:
   `if (mt->width == 0 || mt->height == 0)` then
   `Con_Warning ("Zero sized texture %s in %s!\n", mt->name, loadmodel->name);` and
@@ -1412,6 +1402,20 @@ what `qs-bsp` does. QS prints many messages without failing (`Con_Warning`, `Con
   only another model's nodes name it; that includes leaf 0 when BSP-20.15 or BSP-20.16 puts it
   in place of a leaf that does not exist. `qs-bsp` fails such a BSP with the default loader as
   with id's, after reading the children by BSP-20.15 and BSP-20.16.
+- **BSP-20.20** QS's `Mod_LoadBrushModel` also accepts version 30 (`case BSPVERSION_VALVE:`,
+  Half-Life's format, compiled in because `Quake/quakedef.h` has
+  `#define BSP29_VALVE			// enable Half-Life map support`) and `Q64 `
+  (`case BSPVERSION_QUAKE64:`, Quake 64's), and fails any other with
+  `Mod_LoadBrushModel: %s has unsupported version number (%i)`. `BspLoader::FitzQuake`
+  reads version 30 as QS does (BSP-22); `BspLoader::WinQuake` and `BspLoader::GlQuake` fail it
+  with BSP-1.2's error, as id's loaders do. Every loader fails `Q64 ` with BSP-1.2's error: MAP-24
+  asks for Half-Life's format, not Quake 64's.
+- **BSP-20.21** `BspLoader::FitzQuake` is the default loader. It loads a BSP by BSP-1 to
+  BSP-17 except where BSP-20.3 to BSP-20.20 and BSP-22 say otherwise. Where QS, like id, uses
+  an index or offset from the file without checking it (a plane, texinfo, edge, vertex, face or
+  marksurface range, a visibility or lighting offset, a texture's header), the answer this
+  spec fixes for id's loaders holds (BSP-1.6, BSP-1.8, BSP-4.6, BSP-6.5, BSP-10.2, BSP-14.3).
+  `BspLoader::WinQuake` and `BspLoader::GlQuake` are unchanged.
 
 ### Constants
 
@@ -1424,7 +1428,7 @@ what `qs-bsp` does. QS prints many messages without failing (`Con_Warning`, `Con
 
 ### Test vectors
 
-See [`vectors/bsp/`](vectors/bsp/README.md), the FitzQuake column: `version-30` (BSP-20.2),
+See [`vectors/bsp/`](vectors/bsp/README.md), the FitzQuake column: `version-30` (BSP-20.20),
 `texture-zero` (BSP-20.3), `not-aligned` and `texture-8x8` (BSP-20.4), `sky-upper`
 (BSP-20.6), `bad-miptex`, `miptex-past`, `missing-texture` and `no-textures` (BSP-20.7),
 `far-offset`, `no-edges` and `nan-vertex` (BSP-20.8), `double-sum` and `x87-order`
@@ -1443,8 +1447,8 @@ SHA-256 `139d85c096ebec6b62425584be570daa5830323ff6eac6cd7ed94400bec3deba`; not 
 were built with stubs for the rest of the engine, for x86-64 and for arm64 with gcc 14.4, and
 loaded every vector of the vectors' README and the 23 BSPs of LibreQuake's `lite` release; the
 README records the harness and the results. `qs-bsp` with `BspLoader::default()` printed the
-same as the x86-64 build for every input but `version-30` (BSP-20.2) and the message of
-`bad-marksurface` (BSP-20.18); the arm64 build differed from the x86-64 build only on
+same as the x86-64 build for every input but `version-30` (then BSP-20.2; since P5-11 an
+agreement, BSP-22) and the message of `bad-marksurface` (BSP-20.18); the arm64 build differed from the x86-64 build only on
 `no-edges` (BSP-20.8).
 
 The same two builds loaded the vectors of BSP-12.7 (2026-10-16): both stopped on `contents-0`
@@ -1469,3 +1473,68 @@ with a segmentation fault, loaded `contents-0-submodel` with node 1's front chil
   model")` for a model with no nodes. `Bsp::point_in_leaf` returns no leaf for a BSP with no
   nodes, and for a tree that does not reach a leaf within as many steps as it has nodes, a cycle
   id's loader does not reject and its walk would never leave.
+
+## BSP-22 Half-Life's version 30
+
+**Source:** QS `Quake/gl_model.c`, `Mod_LoadBrushModel`, `Mod_LoadTextures`,
+`Mod_LoadLighting`, `Mod_LoadFaces`, under `#ifdef BSP29_VALVE`; `Quake/bspfile.h`,
+`BSPVERSION_VALVE`; `Quake/quakedef.h`, `BSP29_VALVE`
+(sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`). Requirement: MAP-24.
+
+Half-Life's BSP is Quake's BSP29 with three changes: each texture carries its own palette,
+the lighting is RGB, and a `sky` texture is no sky. QuakeSpasm, Ironwail and vkQuake load it
+for QuakeC mods on Half-Life maps such as FreeHL and FreeCS. GoldSrc's own source is not a
+porting upstream (`docs/porting.md`), so this section describes QS's loader, not Valve's:
+`qs-bsp` reads what QS reads, with `BspLoader::FitzQuake` (BSP-20.20), from this description.
+Each statement quotes QS and says what `qs-bsp` does. Writing version 30 is not planned.
+
+### Behaviour
+
+- **BSP-22.1** Version 30 is read with BSP29's layout: `case BSPVERSION_VALVE:` sets
+  `bsp2 = false;` as `case BSPVERSION:` does, so every lump is read as BSP-1 to BSP-16 and
+  BSP-20 read a BSP29 file's, the limit of 32767 leaves included (BSP-20.13).
+  `Bsp::version` is `BspVersion::Valve`.
+- **BSP-22.2** A texture in the BSP has a palette right after its four mip levels:
+  `// valve textures have a color palette immediately following the pixels`,
+  `palette_p = (byte *)(mt + 1) + pixels / 64 * 85;`. When the lump holds its first two bytes
+  (`if ((palette_p + 2) <= (mod_base + l->fileofs + l->filelen))`) they are a little-endian
+  count of colours, `colors = LittleShort (colors);`, and the palette is
+  `palette += colors * 3;` bytes after the count's 2 (`palette = 2;`); otherwise it is the
+  count's 2 bytes alone. A palette that runs past the lump is cut to what is left after the
+  four mip levels: `palette = q_min(palette, q_max(0, lump_bytes - pixels / 64 * 85));`, with
+  `lump_bytes` the bytes from the pixels to the end of the lump. QS copies those bytes beside
+  the pixels (`memcpy ((byte *)(tx + 1) + pixels, palette_p, palette);`). `qs-bsp` gives them
+  as `Texture::palette`: the count, then the RGB triples, cut at the end of the lump, with no
+  conversion to the Quake palette; `Texture::pixels` is as BSP-20.5 says. Every other version's
+  textures have no palette (`None`).
+- **BSP-22.3** The lighting is already RGB: `// lightmap samples are already stored as rgb`,
+  `memcpy (loadmodel->lightdata, mod_base + l->fileofs, l->filelen);`, and a face's
+  `lightofs` is a byte offset into it, `out->samples = loadmodel->lightdata + lofs; // accounts
+  for RGB light data`, where for BSP29 it is `lofs * 3` into the lighting QS expands to RGB.
+  `qs-bsp` keeps `Bsp::lighting` as the lump's raw bytes; `Bsp::face_samples` gives three
+  bytes, red, green and blue, for each sample from `lightofs`, and the bounds check of BSP-10.2
+  counts three bytes a sample.
+- **BSP-22.4** A texture named `sky` is no sky: QS loads it as a sky only
+  `if (loadmodel->bspversion != BSPVERSION_VALVE && !q_strncasecmp(tx->name,"sky",3))`, so
+  `Texture::sky` is false in a version 30 BSP. A face's flags still come from the name, as
+  for every version: `Mod_LoadFaces` tests `!q_strncasecmp(out->texinfo->texture->name,"sky",3)`
+  with no version check, so a face whose texture starts with `sky` gets `SURF_DRAWSKY` and
+  `SURF_DRAWTILED` (BSP-20.11).
+- **BSP-22.5** A texture whose first offset is 0 is external,
+  `// an offset of zero indicates an external texture`. QS looks for it in the WADs the
+  world's `wad` key names (`Mod_LoadWadTexture`) and, when none has it, reads it from the BSP
+  as any other: its pixels from right after the 40-byte header and its palette after them by
+  BSP-22.2, each cut at the end of the lump. `qs-bsp` reads only the BSP (BSP-20.5), so it
+  gives what QS gives when no WAD has the texture; reading WAD3 files is P5-12's.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `BSP_VALVE_VERSION` | 30 | QS `Quake/bspfile.h`, `#define BSPVERSION_VALVE 30` |
+
+### Test vectors
+
+See [`vectors/bsp/`](vectors/bsp/README.md), "Half-Life's version 30": `version-30` (BSP-22.1),
+`valve-palette`, `valve-palette-past` and `valve-palette-half` (BSP-22.2), `valve-rgb` (BSP-22.3), `valve-sky`
+(BSP-22.4), `valve-external` (BSP-22.5).

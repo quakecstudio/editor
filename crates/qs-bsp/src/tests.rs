@@ -312,6 +312,8 @@ fn load_order() {
             width: 24,
             height: 16,
             pixel: 7,
+            trailer: &[],
+            external: false,
         })]),
         ..BspSpec::default()
     };
@@ -541,6 +543,8 @@ fn not_aligned() {
             width: 24,
             height: 16,
             pixel: 7,
+            trailer: &[],
+            external: false,
         })]),
         ..BspSpec::default()
     };
@@ -551,6 +555,8 @@ fn not_aligned() {
             width: 16,
             height: 8,
             pixel: 7,
+            trailer: &[],
+            external: false,
         })]),
         ..BspSpec::default()
     };

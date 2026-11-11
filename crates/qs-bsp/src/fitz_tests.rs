@@ -46,6 +46,8 @@ fn sized_texture(width: u32, height: u32) -> BspSpec {
             width,
             height,
             pixel: 7,
+            trailer: &[],
+            external: false,
         })]),
         ..BspSpec::default()
     }
@@ -157,7 +159,7 @@ fn vector(name: &str) -> BspSpec {
         .1
 }
 
-// spec BSP-20.1: the default loader is the FitzQuake lineage's; the base loads with it to the
+// spec BSP-20.21: the default loader is the FitzQuake lineage's; the base loads with it to the
 // same faces, leaves, nodes, hulls and models as with GLQuake's.
 #[test]
 fn default_is_fitzquake() {
@@ -175,20 +177,6 @@ fn default_is_fitzquake() {
     assert_eq!(fitz.models, gl.models);
     assert_eq!(fitz.entities(), gl.entities());
     assert_eq!(fitz.leaf_pvs(1), gl.leaf_pvs(1));
-}
-
-// spec BSP-20.2: QuakeSpasm's other versions, Half-Life's 30 and Quake 64's, fail as BSP-1.2
-// says with every loader.
-#[test]
-fn other_versions() {
-    let q64 = i32::from_le_bytes(*b" 46Q");
-    for version in [30, q64] {
-        let spec = BspSpec {
-            raw_version: Some(version),
-            ..BspSpec::default()
-        };
-        assert_eq!(fitz(&spec), Err(BspError::WrongVersion { version }));
-    }
 }
 
 // spec BSP-20.3: a texture of width or height 0 leaves its slot empty, so its texinfo's
@@ -280,6 +268,8 @@ fn sky_any_case() {
                 width: 16,
                 height: 16,
                 pixel: 7,
+                trailer: &[],
+                external: false,
             })]),
             ..BspSpec::default()
         };
@@ -694,7 +684,7 @@ fn bsp2_with_default_loader() {
 }
 
 proptest! {
-    // spec BSP-1.6, BSP-20.1: any bytes, and the base with bytes changed, load or fail with
+    // spec BSP-1.6, BSP-20.21: any bytes, and the base with bytes changed, load or fail with
     // an error under the default loader, never a panic.
     #[test]
     fn arbitrary_bytes_default(bytes in proptest::collection::vec(any::<u8>(), 0..2048)) {

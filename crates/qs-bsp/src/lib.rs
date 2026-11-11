@@ -28,6 +28,8 @@ mod fitz_tests;
 mod fixtures;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod valve_tests;
 
 use core::fmt;
 
@@ -43,6 +45,18 @@ pub const BSP_VERSION: i32 = 29;
 pub const BSP_2PSB_VERSION: i32 = i32::from_le_bytes(*b"2PSB");
 /// The version field of a `BSP2` file, QuakeSpasm's `BSP2VERSION_BSP2` (BSP-17.1).
 pub const BSP_BSP2_VERSION: i32 = i32::from_le_bytes(*b"BSP2");
+/// The pixels of mip level 0 that [`BSP_MIP_BYTES`] bytes over all four levels go with: id's
+/// `width * height / 64 * 85` (BSP-4.5).
+pub const BSP_MIP_PIXELS: usize = 64;
+/// The bytes all four mip levels take for every [`BSP_MIP_PIXELS`] pixels of level 0:
+/// 64 + 16 + 4 + 1 (BSP-4.5).
+pub const BSP_MIP_BYTES: usize = 85;
+/// The bytes of one light sample of a Half-Life BSP: red, green and blue (BSP-22.3).
+pub const BSP_VALVE_SAMPLE_BYTES: usize = 3;
+/// The bytes of one colour of a Half-Life texture's palette: red, green and blue (BSP-22.2).
+pub const BSP_VALVE_COLOR_BYTES: usize = 3;
+/// The version of a Half-Life BSP, QuakeSpasm's `BSPVERSION_VALVE` (BSP-22.1).
+pub const BSP_VALVE_VERSION: i32 = 30;
 
 /// The number of lumps, id's `HEADER_LUMPS` (BSP-1.1).
 pub const BSP_HEADER_LUMPS: usize = 15;
@@ -329,6 +343,20 @@ pub enum BspVersion {
     Bsp2Psb,
     /// `BSP2`: 32-bit fields, float bounds.
     Bsp2,
+    /// Version 30, Half-Life's: BSP29's layout, textures with their own palettes and RGB
+    /// lighting (BSP-22); only [`BspLoader::FitzQuake`] reads it.
+    Valve,
+}
+
+impl BspVersion {
+    /// The bytes of one light sample: 1, or 3 for a Half-Life BSP's RGB (BSP-22.3).
+    #[must_use]
+    pub const fn sample_bytes(self) -> usize {
+        match self {
+            Self::Bsp29 | Self::Bsp2Psb | Self::Bsp2 => 1,
+            Self::Valve => BSP_VALVE_SAMPLE_BYTES,
+        }
+    }
 }
 
 /// Whose loader [`Bsp::read`] follows where loaders differ (BSP-9.17, BSP-12.6, BSP-20).
@@ -339,7 +367,7 @@ pub enum BspVersion {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[expect(
     clippy::enum_variant_names,
-    reason = "spec BSP-20.1: each variant is the engine's own name"
+    reason = "spec BSP-20.21: each variant is the engine's own name"
 )]
 pub enum BspLoader {
     /// WinQuake's `WinQuake/model.c`: an extent over 256 fails (BSP-9.4), and no face has
@@ -578,6 +606,10 @@ pub struct Texture<'a> {
     /// Whether the name starts with `sky`: case included for WinQuake and GLQuake (BSP-4.7),
     /// in any case for the FitzQuake lineage (BSP-20.6).
     pub sky: bool,
+    /// For a Half-Life BSP, the bytes after the four mip levels that QuakeSpasm keeps as the
+    /// texture's palette: a 16-bit colour count, then that many RGB triples, cut at the end of
+    /// the lump (BSP-22.2); `None` for every other version.
+    pub palette: Option<&'a [u8]>,
     /// Its animation, for a `+` texture in a cycle (BSP-4.8 to BSP-4.10).
     pub animation: Option<Animation>,
 }
@@ -585,11 +617,15 @@ pub struct Texture<'a> {
 impl Texture<'_> {
     /// Mip level `level`'s pixels, `(width >> level) * (height >> level)` bytes at
     /// `offsets[level]`, when they lie in [`Texture::pixels`]. A texture the FitzQuake lineage
-    /// read has only level 0 (BSP-20.5).
+    /// read has only level 0 (BSP-20.5); an external one's (offset 0) starts its pixels, which
+    /// QuakeSpasm reads from right after the header when no WAD has it (BSP-22.5).
     #[must_use]
     pub fn mip(&self, level: usize) -> Option<&[u8]> {
         let offset = usize::try_from(*self.offsets.get(level)?).ok()?;
-        let start = offset.checked_sub(BSP_MIPTEX_HEADER_SIZE)?;
+        let start = match (level, offset) {
+            (0, 0) => 0,
+            _ => offset.checked_sub(BSP_MIPTEX_HEADER_SIZE)?,
+        };
         let size = mip_size(self.width, self.height, level)?;
         self.pixels.get(start..start.checked_add(size)?)
     }
@@ -859,7 +895,7 @@ fn child_ok(child: i32, nodes: usize, leaves: Option<usize>) -> bool {
 /// (BSP-20.15, BSP-20.16).
 fn fitz_node_child(child: i32, version: BspVersion, nodes: usize, leaves: usize) -> i32 {
     let leaf = match version {
-        BspVersion::Bsp29 => {
+        BspVersion::Bsp29 | BspVersion::Valve => {
             // `p = (unsigned short)LittleShort(in->children[j])`, then `p = 65535 - p`.
             let stored = u16::from_le_bytes(low_16(child).to_le_bytes());
             if usize::from(stored) < nodes {
@@ -988,7 +1024,7 @@ impl<'a> Reader<'a> {
 
     const fn bsp2(&self) -> bool {
         match self.version {
-            BspVersion::Bsp29 => false,
+            BspVersion::Bsp29 | BspVersion::Valve => false,
             BspVersion::Bsp2Psb | BspVersion::Bsp2 => true,
         }
     }
@@ -1012,6 +1048,7 @@ impl<'a> Bsp<'a> {
             BSP_VERSION => BspVersion::Bsp29,
             BSP_2PSB_VERSION => BspVersion::Bsp2Psb,
             BSP_BSP2_VERSION => BspVersion::Bsp2,
+            BSP_VALVE_VERSION if loader.fitz() => BspVersion::Valve,
             version => return Err(BspError::WrongVersion { version }),
         };
         let mut lumps = [Lump::default(); BSP_HEADER_LUMPS];
@@ -1133,7 +1170,7 @@ impl<'a> Bsp<'a> {
                 textures.push(None);
                 continue;
             }
-            textures.push(load_texture(lump, offset, index, loader)?);
+            textures.push(load_texture(lump, offset, index, loader, reader.version)?);
         }
         sequence_animations(&mut textures)?;
         self.textures = textures;
@@ -1426,6 +1463,7 @@ impl<'a> Bsp<'a> {
         let size = width
             .checked_mul(height)
             .and_then(|size| size.checked_mul(face.style_count()))
+            .and_then(|size| size.checked_mul(self.version.sample_bytes()))
             .ok_or(bad.clone())?;
         if start
             .checked_add(size)
@@ -1438,12 +1476,16 @@ impl<'a> Bsp<'a> {
 
     /// The light samples of `face`: `smax * tmax` for each style, or `None` when it has
     /// none (BSP-9.6, BSP-9.7, BSP-10.1); empty for a face with a negative stored extent
-    /// (BSP-9.16).
+    /// (BSP-9.16). In a Half-Life BSP each sample is three bytes, red, green and blue, and
+    /// `lightofs` counts bytes (BSP-22.3).
     #[must_use]
     pub fn face_samples(&self, face: &Face) -> Option<&'a [u8]> {
         let start = usize::try_from(face.lightofs).ok()?;
         let [width, height] = face.lightmap_size;
-        let size = width.checked_mul(height)?.checked_mul(face.style_count())?;
+        let size = width
+            .checked_mul(height)?
+            .checked_mul(face.style_count())?
+            .checked_mul(self.version.sample_bytes())?;
         self.lighting.get(start..start.checked_add(size)?)
     }
 
@@ -1476,19 +1518,19 @@ impl<'a> Bsp<'a> {
     /// not empty (BSP-12.6), and the FitzQuake lineage's limit on leaves (BSP-20.13).
     fn mod_load_leafs(&mut self, reader: &Reader<'a>, loader: BspLoader) -> Result<(), BspError> {
         let size = match reader.version {
-            BspVersion::Bsp29 => BSP_LEAF_SIZE,
+            BspVersion::Bsp29 | BspVersion::Valve => BSP_LEAF_SIZE,
             BspVersion::Bsp2Psb => BSP_2PSB_LEAF_SIZE,
             BspVersion::Bsp2 => BSP_BSP2_LEAF_SIZE,
         };
         let chunks = reader.elements(LumpId::Leafs, size)?;
         let count = chunks.len();
-        if loader.fitz() && reader.version == BspVersion::Bsp29 && count > BSP_FITZ_MAX_LEAFS {
+        if loader.fitz() && !reader.bsp2() && count > BSP_FITZ_MAX_LEAFS {
             return Err(BspError::TooManyLeafs { count });
         }
         let mut leafs = Vec::with_capacity(count);
         for (element, chunk) in chunks.enumerate() {
             let (mins, maxs, marks_at) = match reader.version {
-                BspVersion::Bsp29 | BspVersion::Bsp2Psb => {
+                BspVersion::Bsp29 | BspVersion::Valve | BspVersion::Bsp2Psb => {
                     (short3_at(chunk, 8), short3_at(chunk, 14), 20)
                 }
                 BspVersion::Bsp2 => (vec3_at(chunk, 8), vec3_at(chunk, 20), 32),
@@ -1577,7 +1619,7 @@ impl<'a> Bsp<'a> {
     /// (BSP-12.7, BSP-20.19).
     fn mod_load_nodes(&mut self, reader: &Reader<'a>, loader: BspLoader) -> Result<(), BspError> {
         let size = match reader.version {
-            BspVersion::Bsp29 => BSP_NODE_SIZE,
+            BspVersion::Bsp29 | BspVersion::Valve => BSP_NODE_SIZE,
             BspVersion::Bsp2Psb => BSP_2PSB_NODE_SIZE,
             BspVersion::Bsp2 => BSP_BSP2_NODE_SIZE,
         };
@@ -1586,7 +1628,7 @@ impl<'a> Bsp<'a> {
         let mut nodes = Vec::with_capacity(count);
         for (element, chunk) in chunks.enumerate() {
             let (children, mins, maxs, faces_at) = match reader.version {
-                BspVersion::Bsp29 => (
+                BspVersion::Bsp29 | BspVersion::Valve => (
                     [i32::from(i16_at(chunk, 4)), i32::from(i16_at(chunk, 6))],
                     short3_at(chunk, 8),
                     short3_at(chunk, 14),
@@ -1909,6 +1951,7 @@ fn load_texture(
     offset: i32,
     index: usize,
     loader: BspLoader,
+    version: BspVersion,
 ) -> Result<Option<Texture<'_>>, BspError> {
     let bad = BspError::BadTexture { index };
     let start = usize::try_from(offset).map_err(|_| bad.clone())?;
@@ -1925,16 +1968,16 @@ fn load_texture(
     let name = header.name.get(..name_len).unwrap_or_default().to_vec();
     let (width, height, offsets) = (header.width, header.height, header.offsets);
     if loader.fitz() {
-        return fitz_texture(lump, start, name, width, height, offsets, index);
+        return fitz_texture(lump, start, (name, width, height, offsets), index, version);
     }
     if width & 15 != 0 || height & 15 != 0 {
         return Err(BspError::NotAligned { name });
     }
     let pixels = width
         .checked_mul(height)
-        .and_then(|area| area.checked_div(64))
-        .and_then(|area| area.checked_mul(85))
-        .and_then(|size| usize::try_from(size).ok())
+        .and_then(|area| usize::try_from(area).ok())
+        .and_then(|area| area.checked_div(BSP_MIP_PIXELS))
+        .and_then(|area| area.checked_mul(BSP_MIP_BYTES))
         .ok_or(bad.clone())?;
     let data_start = start.saturating_add(BSP_MIPTEX_HEADER_SIZE);
     let data = data_start
@@ -1948,6 +1991,7 @@ fn load_texture(
         height,
         offsets,
         pixels: data,
+        palette: None,
         animation: None,
     };
     for level in 0..BSP_MIPLEVELS {
@@ -1960,16 +2004,16 @@ fn load_texture(
 
 /// QuakeSpasm's `Mod_LoadTextures` for one texture whose header lies at `start`: a texture
 /// with no pixels leaves its slot empty, any size loads, and only level 0's
-/// `width * height` bytes are kept, cut short at the end of the lump (BSP-20.3 to BSP-20.6).
+/// `width * height` bytes are kept, cut short at the end of the lump (BSP-20.3 to BSP-20.6);
+/// in a Half-Life BSP its palette too, and the `sky` prefix makes no sky (BSP-22.2, BSP-22.4).
 fn fitz_texture(
     lump: &[u8],
     start: usize,
-    name: Vec<u8>,
-    width: u32,
-    height: u32,
-    offsets: [u32; BSP_MIPLEVELS],
+    (name, width, height, offsets): (Vec<u8>, u32, u32, [u32; BSP_MIPLEVELS]),
     index: usize,
+    version: BspVersion,
 ) -> Result<Option<Texture<'_>>, BspError> {
+    let valve = version == BspVersion::Valve;
     if width == 0 || height == 0 {
         return Ok(None);
     }
@@ -1984,15 +2028,40 @@ fn fitz_texture(
     let data = lump
         .get(data_start..data_start.saturating_add(pixels.min(available)))
         .unwrap_or_default();
+    let palette = valve.then(|| valve_palette(lump, data_start, pixels));
     Ok(Some(Texture {
-        sky: fitz_sky(&name),
+        sky: !valve && fitz_sky(&name),
         name,
         width,
         height,
         offsets,
         pixels: data,
+        palette,
         animation: None,
     }))
+}
+
+/// The palette QuakeSpasm copies after a Half-Life texture's pixels (BSP-22.2): from
+/// `pixels / 64 * 85` bytes past the pixels' start, its 16-bit colour count and that many
+/// RGB triples, `2 + colors * 3` bytes, or 2 when the count is past the lump; cut at the end of
+/// the lump.
+fn valve_palette(lump: &[u8], data_start: usize, pixels: usize) -> &[u8] {
+    /// The palette's 16-bit colour count before its triples.
+    const VALVE_COUNT_BYTES: usize = 2;
+    // `pixels / 64 * 85`: the four mip levels' bytes.
+    let mips = pixels
+        .checked_div(BSP_MIP_PIXELS)
+        .unwrap_or(0)
+        .saturating_mul(BSP_MIP_BYTES);
+    let palette_start = data_start.saturating_add(mips);
+    let colors = lump
+        .get(palette_start..palette_start.saturating_add(VALVE_COUNT_BYTES))
+        .map_or(0, |count| usize::from(u16_at(count, 0)));
+    let size = colors
+        .saturating_mul(BSP_VALVE_COLOR_BYTES)
+        .saturating_add(VALVE_COUNT_BYTES);
+    let end = palette_start.saturating_add(size).min(lump.len());
+    lump.get(palette_start..end).unwrap_or_default()
 }
 
 /// Which of a texture's two animations a `+` frame belongs to (BSP-4.8).

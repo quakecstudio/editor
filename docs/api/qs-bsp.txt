@@ -36,6 +36,8 @@ const qs_bsp::BSP_MAX_SURFACE_EXTENT
 const qs_bsp::BSP_MAX_VIS_ROW
 const qs_bsp::BSP_MIPLEVELS
 const qs_bsp::BSP_MIPTEX_HEADER_SIZE
+const qs_bsp::BSP_MIP_BYTES
+const qs_bsp::BSP_MIP_PIXELS
 const qs_bsp::BSP_MODEL_SIZE
 const qs_bsp::BSP_NODE_SIZE
 const qs_bsp::BSP_NUM_AMBIENTS
@@ -50,6 +52,9 @@ const qs_bsp::BSP_SURFEDGE_SIZE
 const qs_bsp::BSP_TEXINFO_SIZE
 const qs_bsp::BSP_TEX_MISSING
 const qs_bsp::BSP_TEX_SPECIAL
+const qs_bsp::BSP_VALVE_COLOR_BYTES
+const qs_bsp::BSP_VALVE_SAMPLE_BYTES
+const qs_bsp::BSP_VALVE_VERSION
 const qs_bsp::BSP_VERSION
 const qs_bsp::BSP_VERTEX_SIZE
 const qs_bsp::LumpId::ALL
@@ -165,6 +170,7 @@ field qs_bsp::Texture.animation
 field qs_bsp::Texture.height
 field qs_bsp::Texture.name
 field qs_bsp::Texture.offsets
+field qs_bsp::Texture.palette
 field qs_bsp::Texture.pixels
 field qs_bsp::Texture.sky
 field qs_bsp::Texture.width
@@ -181,6 +187,7 @@ fn qs_bsp::Bsp::read
 fn qs_bsp::Bsp::vis_row_size
 fn qs_bsp::BspError::message
 fn qs_bsp::BspLoader::max_surface_extent
+fn qs_bsp::BspVersion::sample_bytes
 fn qs_bsp::Face::style_count
 fn qs_bsp::LumpId::index
 fn qs_bsp::LumpId::name
@@ -257,6 +264,7 @@ variant qs_bsp::BspLoader::WinQuake
 variant qs_bsp::BspVersion::Bsp2
 variant qs_bsp::BspVersion::Bsp29
 variant qs_bsp::BspVersion::Bsp2Psb
+variant qs_bsp::BspVersion::Valve
 variant qs_bsp::LumpId::Clipnodes
 variant qs_bsp::LumpId::Edges
 variant qs_bsp::LumpId::Entities

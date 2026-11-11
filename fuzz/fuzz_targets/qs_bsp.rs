@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Feeds arbitrary bytes to the BSP reader (BSP-1 to BSP-17), the `.lit` reader (BSP-18) and
-//! the entity lump writer (BSP-19), each as given and written over the spec's `base` vector, so
-//! the fuzzer reaches every lump. Fails on a panic, on a face whose samples do not lie in the
-//! lighting lump, on a visibility row wider than `BSP_MAX_VIS_ROW` or not the width model 0's
-//! `visleafs` gives (BSP-6.7), and on a BSP whose new entity lump does not read back.
+//! Feeds arbitrary bytes to the BSP reader (BSP-1 to BSP-17), the `.lit` reader (BSP-18) and the
+//! entity lump writer (BSP-19), each as given and written over the spec's `base` vector, so the
+//! fuzzer reaches every lump. Fails on a panic, on a face whose samples do not lie in the lighting
+//! lump, on a visibility row wider than `BSP_MAX_VIS_ROW` or not the width model 0's `visleafs`
+//! gives (BSP-6.7), on a Half-Life texture's palette past its lump or longer than its count
+//! (BSP-22.2), and on a BSP whose new entity lump does not read back. Each input is also tried as
+//! version 30, Half-Life's (BSP-22).
 
 #![no_main]
 
@@ -41,6 +43,18 @@ fn check_with(bytes: &[u8], loader: BspLoader) {
     let Ok(bsp) = Bsp::read(bytes, loader) else {
         return;
     };
+    // BSP-22.2: a palette lies in the textures lump and is no longer than its count says.
+    let lump = &bsp.lumps[2];
+    let start = usize::try_from(lump.fileofs).unwrap_or(0);
+    let end = start.saturating_add(usize::try_from(lump.filelen).unwrap_or(0));
+    let textures = bytes.get(start..end).unwrap_or_default().as_ptr_range();
+    for palette in bsp.textures.iter().flatten().filter_map(|texture| texture.palette) {
+        let at = palette.as_ptr_range();
+        assert!(palette.is_empty() || (textures.start <= at.start && at.end <= textures.end));
+        if let [low, high, colours @ ..] = palette {
+            assert!(colours.len() <= 3 * usize::from(u16::from_le_bytes([*low, *high])));
+        }
+    }
     for face in &bsp.faces {
         let _vertices = bsp.face_vertices(face);
         if face.lightofs >= 0 {
@@ -83,4 +97,8 @@ fuzz_target!(|data: &[u8]| {
         }
     }
     check(&bytes);
+    // The same as Half-Life's version 30, read with BSP29's layout (BSP-22.1); only the
+    // FitzQuake lineage's loader reads it.
+    bytes[..4].copy_from_slice(&30_i32.to_le_bytes());
+    check_with(&bytes, BspLoader::FitzQuake);
 });

@@ -1259,8 +1259,6 @@ magic-number	crates/qs-bsp/src/lib.rs	hull_for_size:32.0
 magic-number	crates/qs-bsp/src/lib.rs	length:3
 magic-number	crates/qs-bsp/src/lib.rs	lightmap_size:4
 magic-number	crates/qs-bsp/src/lib.rs	load_texture:15
-magic-number	crates/qs-bsp/src/lib.rs	load_texture:64
-magic-number	crates/qs-bsp/src/lib.rs	load_texture:85
 magic-number	crates/qs-bsp/src/lib.rs	replace_entities:4
 magic-number	crates/qs-bsp/src/lib.rs	replace_entities:8
 magic-number	crates/qs-bsp/src/lib.rs	sequence_animations:10
