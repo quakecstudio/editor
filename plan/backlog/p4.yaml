@@ -545,7 +545,6 @@ issues:
   - P4-35
   - P4-36
   - P4-37
-  - P4-38
   deliverable:
   - docs/gates/p4.md, release notes and the published MVP release
   acceptance:
@@ -716,29 +715,3 @@ issues:
   - 'Vim motions and operators pass a table of cases taken from Vims documentation'
   verify:
   - 'Unit tests; UI snapshot'
-- key: P4-38
-  title: 'Workload identity federation for the model providers'
-  labels:
-  - L6-agent
-  - area:agent
-  - type:feature
-  size: M
-  reqs:
-  - AGT-11
-  - PRIN-9
-  depends:
-  - P4-07
-  - P4-09
-  - P4-15
-  deliverable:
-  - 'crates/qs-models: an auth choice on ProviderConfig, API key or federated identity (the provider''s IDs and where the identity token comes from: a file, or a command that prints it), and the access token cached and renewed before it expires'
-  - 'Anthropic (platform.claude.com/docs/en/build-with-claude/workload-identity-federation, read 2026-11-11): the identity JWT posted to POST https://api.anthropic.com/v1/oauth/token with the RFC 7523 jwt-bearer grant, federation_rule_id, organization_id, service_account_id and workspace_id, for a short-lived service-account token'
-  - 'OpenAI (developers.openai.com/api/docs/guides/workload-identity-federation, read 2026-11-11): an RFC 8693 token-exchange at https://auth.openai.com/oauth/token with the JWT as subject_token, identity_provider_id and service_account_id, for a short-lived project service-account token'
-  - 'Agent panel: the provider form offers Federated identity beside the API key, with the fields each provider needs; nothing secret is stored'
-  - '.github/workflows/evals.yml: the agent evals authenticate with GitHub Actions OIDC when a federation rule is configured, in place of the QS_EVAL_API_KEY secret'
-  - 'docs/privacy.md lists the token exchange as a network request; docs/guide/agent.md documents the setup'
-  acceptance:
-  - 'A run with a federated provider exchanges the identity token once, reuses the access token for every request, and exchanges again before it expires, against a fake token endpoint for each provider'
-  - 'A failed exchange, or an identity token that cannot be read, is shown under the task box with the provider''s error, and no request is sent with a stale token'
-  verify:
-  - 'Unit tests of both exchanges and the renewal with an injected clock; a recorded eval run over GitHub Actions OIDC'
