@@ -11,8 +11,10 @@
 //! once before any question about the text, so every answer is about the text on screen.
 //!
 //! The keys are VS Code's: F12 goes to the definition, Shift+F12 lists the references, F2
-//! renames, Ctrl+Space completes, Cmd+F finds and Cmd+S saves. Every string comes from
-//! [`crate::strings`].
+//! renames, Ctrl+Space completes, Cmd+F finds and Cmd+S saves. Cmd+K on a selection is an
+//! inline edit (P4-10, UI-6): the agent's model rewrites the selection as asked, off the frame,
+//! and its answer replaces the selection as one undo step, drawn as a diff from the text
+//! before, with Accept and Reject. Every string comes from [`crate::strings`].
 
 use std::path::{Path, PathBuf};
 
@@ -59,6 +61,9 @@ pub(crate) const REFERENCES: KeyboardShortcut = KeyboardShortcut::new(Modifiers:
 /// Rename.
 pub(crate) const RENAME: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F2);
 
+/// Cmd/Ctrl+K: an inline edit of the selection (P4-10, UI-6).
+pub(crate) const INLINE_EDIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::K);
+
 /// What the editor asks the shell to do, by way of the workbench commands.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Request {
@@ -78,6 +83,13 @@ pub(crate) enum Request {
     Rename(usize, String),
     /// `file.open` at a place.
     Open(Jump),
+    /// An inline edit: the model asked to rewrite the selection's text as the instruction says.
+    InlineEdit {
+        /// The selection's text.
+        selection: String,
+        /// What the person asked for.
+        instruction: String,
+    },
 }
 
 /// A popup over the editor.
@@ -108,6 +120,14 @@ pub(crate) enum Popup {
     },
     /// A line of explanation, such as that a name has no definition.
     Note(Text),
+    /// The request of an inline edit, as typed.
+    InlinePrompt(String),
+    /// An inline edit waiting on the model.
+    InlineWaiting,
+    /// An inline edit's answer, in the text as a diff, to accept or reject.
+    InlineProposed,
+    /// Why an inline edit has no answer.
+    InlineFailed(String),
 }
 
 /// The find bar's fields.
@@ -143,6 +163,8 @@ pub(crate) struct Editor {
     styler: CodeStyler,
     pub(crate) find: Option<FindBar>,
     pub(crate) popup: Option<Popup>,
+    /// The selection an inline edit was asked about, until its answer comes.
+    inline_from: Option<Selection>,
     /// The text position the pointer rests on, and since when.
     resting: Option<(Position, f64)>,
 }
@@ -164,6 +186,7 @@ impl Editor {
             find: None,
             popup: None,
             resting: None,
+            inline_from: None,
         };
         editor.place(open);
         editor
@@ -345,6 +368,43 @@ impl Editor {
             let (_, word) = self.word_before_caret();
             self.popup = Some(Popup::Rename { offset, name: word });
         }
+        if pressed(ui, &INLINE_EDIT) && !self.view.state().primary().is_caret() {
+            self.inline_from = Some(self.view.state().primary());
+            self.popup = Some(Popup::InlinePrompt(String::new()));
+        }
+    }
+
+    /// Shows an inline edit's answer: the selection it was asked about becomes `text`, one
+    /// undo step, drawn as a diff from the text before (P4-10).
+    pub(crate) fn propose(&mut self, text: &str) {
+        let Some(selection) = self.inline_from.take() else {
+            return;
+        };
+        let before = self.view.state().buffer().text();
+        let state = self.view.state_mut();
+        state.set_selections(&[selection]);
+        state.insert(text);
+        self.view.set_diff_base(Some(before));
+        self.popup = Some(Popup::InlineProposed);
+    }
+
+    /// Says why an inline edit has no answer.
+    pub(crate) fn inline_failed(&mut self, why: String) {
+        self.inline_from = None;
+        self.popup = Some(Popup::InlineFailed(why));
+    }
+
+    /// Keeps an inline edit's answer; one undo still takes it back.
+    pub(crate) fn accept_inline(&mut self) {
+        self.view.set_diff_base(None);
+        self.popup = None;
+    }
+
+    /// Takes an inline edit's answer back.
+    pub(crate) fn reject_inline(&mut self) {
+        self.view.state_mut().undo();
+        self.view.set_diff_base(None);
+        self.popup = None;
     }
 
     /// After the view took this frame's input: closes a completion the caret left, and sends
@@ -419,7 +479,11 @@ impl Editor {
             Popup::Complete { .. }
             | Popup::References(_)
             | Popup::Rename { .. }
-            | Popup::Note(_) => below_caret,
+            | Popup::Note(_)
+            | Popup::InlinePrompt(_)
+            | Popup::InlineWaiting
+            | Popup::InlineProposed
+            | Popup::InlineFailed(_) => below_caret,
         };
         let mut close = false;
         Area::new(Id::new((self.view.id(), Text::Editor)))
@@ -476,6 +540,42 @@ impl Editor {
                                     close = true;
                                 }
                             }
+                        }
+                        Popup::InlinePrompt(mut instruction) => {
+                            ui.label(Text::InlineEditPrompt.get());
+                            let field = ui.add(TextEdit::singleline(&mut instruction));
+                            name_field(ui, &field, Text::InlineEditPrompt);
+                            field.request_focus();
+                            let enter = ui.input(|i| i.key_pressed(Key::Enter));
+                            if enter && !instruction.trim().is_empty() {
+                                let selection = self.view.state().selected_text();
+                                requests.push(Request::InlineEdit {
+                                    selection,
+                                    instruction: instruction.clone(),
+                                });
+                                self.popup = Some(Popup::InlineWaiting);
+                            } else if let Some(Popup::InlinePrompt(kept)) = &mut self.popup {
+                                *kept = instruction;
+                            }
+                        }
+                        Popup::InlineWaiting => {
+                            ui.label(
+                                RichText::new(Text::AgentWorking.get())
+                                    .color(theme.color(Token::TextMuted)),
+                            );
+                        }
+                        Popup::InlineFailed(why) => {
+                            ui.label(RichText::new(why).color(theme.color(Token::StatusError)));
+                        }
+                        Popup::InlineProposed => {
+                            ui.horizontal(|ui| {
+                                if ui.button(Text::AgentAccept.get()).clicked() {
+                                    self.accept_inline();
+                                }
+                                if ui.button(Text::AgentReject.get()).clicked() {
+                                    self.reject_inline();
+                                }
+                            });
                         }
                         Popup::Rename { offset, mut name } => {
                             ui.label(Text::RenameTo.get());

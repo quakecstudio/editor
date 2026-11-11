@@ -478,3 +478,21 @@ fn a_run_steps_one_reply_at_a_time() {
     assert_eq!(reply, finish());
     assert_eq!(pieces, ["done"]);
 }
+
+// No spec statement: P4-10, an inline edit's prompt holds the file, the selection and the
+// request, and its answer is the reply's text without code fences
+#[test]
+fn an_inline_edit_asks_and_answers_plainly() {
+    let prompt = super::inline_prompt(Path::new("/p/a.qc"), "x = 1;\n", "x = 1;", "make it 2");
+    assert!(
+        prompt.contains("/p/a.qc") && prompt.contains("make it 2") && prompt.contains("x = 1;")
+    );
+    let plain = Reply::Finish {
+        summary: "x = 2;".to_owned(),
+    };
+    assert_eq!(super::inline_answer(&plain), "x = 2;");
+    let fenced = Reply::Finish {
+        summary: "```quakec\nx = 2;\ny = 3;\n```".to_owned(),
+    };
+    assert_eq!(super::inline_answer(&fenced), "x = 2;\ny = 3;");
+}

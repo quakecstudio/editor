@@ -73,6 +73,19 @@ and the wheel moves forward and back. Opening a map from the UI comes with the m
 `src/map_view/tests.rs` draws a test floor and compares it with `snapshots/map-view.png`,
 through a test renderer that gives egui's render pass the same depth buffer.
 
+## Inline edit
+
+Cmd/Ctrl+K on a selection in the code editor (P4-10, UI-6), as Zed's inline assistant:
+
+1. A box asks what to change.
+2. The agent panel's model rewrites the selection off the frame, from
+   `qs_agent::INLINE_SYSTEM` and `inline_prompt`.
+3. The answer replaces the selection as **one** undo step and is drawn as an inline diff from
+   the text before.
+4. Accept keeps it, and one undo still takes it back. Reject undoes it.
+
+With no provider set up, the box says so. `src/editor/tests.rs` drives it with a fake model.
+
 ## The agent panel
 
 The right panel's Agent section (P4-09, UI-5, PRIN-4), modelled on Zed's agent panel, is
