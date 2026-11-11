@@ -304,9 +304,8 @@ issues:
   - P0-03
   - P3-02
   - P0-15
-  - P0-23
   deliverable:
-  - 'Release workflow: signed and notarized universal macOS DMG; signed MSI and portable zip for Windows x64 and arm64; AppImage, Flatpak, deb and rpm for Linux x86_64 and aarch64; SHA256SUMS'
+  - 'Release workflow: signed and notarized universal macOS DMG, through the Sign workflow''s macOS job; an MSI and portable zip for Windows x64 and arm64, unsigned until P0-23 adds Windows signing after the MVP; AppImage, Flatpak, deb and rpm for Linux x86_64 and aarch64; SHA256SUMS'
   - The preview host bundled as a separate signed and notarized executable; the GPL-3.0 text, a corresponding-source link and NOTICE in every package
   - docs/releasing.md
   acceptance:
@@ -478,27 +477,6 @@ issues:
   - Exporting twice from the same sources produces the same zip
   verify:
   - Integration test in CI with open test assets; manual install-and-play check recorded on macOS
-- key: P0-23
-  title: Add the code-signing credentials to CI
-  labels:
-  - repo
-  - area:release
-  - type:chore
-  size: S
-  reqs:
-  - QA-14
-  deliverable:
-  - 'docs/releasing.md: the twelve repository-level secrets Justin entered on 2026-10-16, following vouch and quack (APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, APPLE_CERTIFICATE_NAME, MACOS_KEYCHAIN_PASSWORD, APPLE_ID, APPLE_ID_PASSWORD, APPLE_TEAM_ID for codesign and notarytool; AZURE_CLIENT_ID, AZURE_TENANT_ID, TRUSTED_SIGNING_ENDPOINT, TRUSTED_SIGNING_ACCOUNT, CERTIFICATE_PROFILE for Azure Trusted Signing over OIDC), who owns each credential and when it renews; that they are repository-level by Justin''s choice, so only workflows that sign may reference them'
-  - A signing workflow modelled on vouch's reusable-build.yml (temporary keychain, codesign with the hardened runtime, notarytool with the Apple ID; azure/login over OIDC and Trusted Signing), started by hand (workflow_dispatch) and reused by P4-18; agents never handle the secret values
-  acceptance:
-  - '`gh api repos/quakecstudio/editor/actions/secrets` lists every name in docs/releasing.md'
-  - A test binary is signed and notarized on macOS and signed on Windows from CI
-  - 'If the Azure login fails because no federated credential trusts quakecstudio/editor, the issue is escalated to Justin with the subject to add, not worked around'
-  verify:
-  - CI run link
-  depends:
-  - P0-02
-  - P0-15
 - key: P4-25
   title: Phase 4 gate review and MVP release
   labels:
@@ -513,7 +491,6 @@ issues:
   - GOAL-6
   - MVP-4
   depends:
-  - P0-23
   - P4-27
   - P4-28
   - P4-02
