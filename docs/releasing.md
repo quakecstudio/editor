@@ -25,7 +25,7 @@ artifact.
 
 | Platform | Package | Made by |
 | --- | --- | --- |
-| macOS, universal | `quakec-studio-<version>-macos-universal.dmg`: `QuakeC Studio.app`, signed with the hardened runtime, in a signed, notarized and stapled disk image | `packaging/macos/package.sh`, with `packaging/macos/Info.plist` |
+| macOS, universal | `quakec-studio-<version>-macos-universal.dmg`: `QuakeC Studio.app`, each executable and the app signed with the hardened runtime, the app notarized and stapled, in a signed, notarized and stapled disk image | `packaging/macos/package.sh`, with `packaging/macos/Info.plist` |
 | Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip`; on a tag, the executables in both are signed | `packaging/windows/package.sh`, with WiX 5 and `packaging/windows/quakec-studio.wxs` |
 | Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak` | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it |
 | All | `SHA256SUMS`, every package's SHA-256 | the workflow's last job |
@@ -57,7 +57,8 @@ preview host headless on a game and stops it over its bridge, and writes, reads 
 deletes a keychain entry:
 
 - **macOS:** the disk image's staple is validated, the app is copied to `/Applications`,
-  `spctl` assesses it, the host check runs and the app's window opens.
+  `spctl` assesses it, its staple is validated, each of its four executables is checked as
+  signed with the hardened runtime, the host check runs and the app's window opens.
 - **Windows x64 and arm64:** the MSI installs with `msiexec /qn`, the install folder is on the
   machine `PATH`, the host check runs, the app's window opens, and the portable zip's host
   check runs too.
@@ -103,9 +104,10 @@ The steps follow vouch-sh/vouch's `reusable-build.yml`. On macOS the job checks 
 above is set, builds both architectures and joins them with `lipo`, lays out the app, imports
 the certificate into `build.keychain` (made the default keychain, with `codesign` allowed to
 use the key), signs each executable and then the app with `/usr/bin/codesign --options runtime
---timestamp` and verifies it, signs the disk image, stores the notarytool credentials as the
-`notarytool-profile` keychain profile, submits the disk image with `--wait`, staples it, and
-always deletes the keychain. On Windows, a tag's run signs the four executables with `skeeto/aas-sign`, which exchanges
+--timestamp` and verifies it, stores the notarytool credentials as the `notarytool-profile`
+keychain profile, notarizes and staples the app itself (so it keeps its ticket once dragged out
+of the disk image and opens offline), then makes, signs, notarizes and staples the disk image,
+and always deletes the keychain. On Windows, a tag's run signs the four executables with `skeeto/aas-sign`, which exchanges
 the job's OIDC token for an Azure token itself, then checks each Authenticode signature before
 the zip and the MSI are made. `aas-sign` signs PE files only, so the MSI itself is not signed;
 the executables it installs are.
