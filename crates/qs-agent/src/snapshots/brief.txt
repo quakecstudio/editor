@@ -78,4 +78,11 @@ Its 2 source files:
 - defs.qc
 - weapons.qc
 
+The open map is maps/start.map.
+Its WADs: gfx/base.wad, gfx/extra.wad.
+Its 4 entities, by class:
+- worldspawn: 1
+- info_player_start: 1
+- light: 2
+
 As it is now, the compile is clean and the tests pass.

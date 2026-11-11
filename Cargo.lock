@@ -3545,6 +3545,7 @@ dependencies = [
  "qc-project",
  "qc-types",
  "qs-commands",
+ "qs-map",
  "qs-pak",
  "qs-settings",
  "qs-vfs",

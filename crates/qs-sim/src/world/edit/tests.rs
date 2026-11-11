@@ -175,3 +175,81 @@ fn a_line_finds_the_entity_it_hits() {
     assert_eq!(down.edict, None, "the floor is the world");
     assert!(down.point.unwrap()[2].abs() < 0.1, "{:?}", down.point);
 }
+
+/// A world with spawn functions that precache, and two that link by `target`.
+fn precaching() -> Running {
+    let more = "entity(entity start, .string fld, string match) find = #18;\n\
+        void() monster_known = { precache_model(\"progs/player.mdl\"); \
+            setmodel(self, \"progs/player.mdl\"); };\n\
+        void() monster_new = { precache_model(\"progs/new.mdl\"); };\n\
+        void() ambient_new = { precache_sound(\"new.wav\"); };\n\
+        void() info_target = {};\n\
+        void() link_target = { self.enemy = find(world, targetname, self.target); };\n\
+        void() func_linked = { self.nextthink = time + 0.1; self.think = link_target; };\n";
+    player_from(
+        &ledge(),
+        player_progs("self.health = 100;", "", more),
+        LoadOptions::default(),
+    )
+}
+
+// spec BRIDGE-4.12: a spawn in play runs its function as at the map's load, so a precache of
+// a name the map has works; a name the map has not is refused, the edict freed and the
+// precache lists left as they were
+#[test]
+fn a_spawn_in_play_precaches_as_the_map_did() {
+    let mut run = precaching();
+    let progs_bytes = run.progs.clone();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    let engine = run.world.builtins.mock.engine();
+    assert!(
+        engine
+            .model_precache
+            .iter()
+            .any(|m| m == "progs/player.mdl")
+    );
+    let lists = (engine.model_precache.clone(), engine.sound_precache.clone());
+    let known = [("classname".to_owned(), "monster_known".to_owned())];
+    let n = run.world.spawn_entity(&progs, &known).unwrap();
+    assert!(run.world.in_use(n));
+    assert_ne!(
+        run.world.float(n, "modelindex"),
+        0.0,
+        "setmodel took the model"
+    );
+    let edicts = run.num_edicts();
+    for (classname, name) in [("monster_new", "progs/new.mdl"), ("ambient_new", "new.wav")] {
+        let pairs = [("classname".to_owned(), classname.to_owned())];
+        assert_eq!(
+            run.world.spawn_entity(&progs, &pairs),
+            Err(EditError::NotPrecached(name.to_owned()))
+        );
+        let engine = run.world.builtins.mock.engine();
+        assert_eq!(engine.model_precache, lists.0);
+        assert_eq!(engine.sound_precache, lists.1);
+        let freed = usize::try_from(edicts).unwrap();
+        assert!(!run.world.in_use(freed), "{classname} was freed");
+    }
+}
+
+// spec BRIDGE-4.12: entities spawned in play link by target as the map's do: the think a
+// spawn function sets runs on the next frames and finds an entity spawned after it
+#[test]
+fn entities_spawned_in_play_link_by_target() {
+    let mut run = precaching();
+    let progs_bytes = run.progs.clone();
+    let progs = Progs::read(&progs_bytes).unwrap();
+    let linked = [
+        ("classname".to_owned(), "func_linked".to_owned()),
+        ("target".to_owned(), "t1".to_owned()),
+    ];
+    let a = run.world.spawn_entity(&progs, &linked).unwrap();
+    let target = [
+        ("classname".to_owned(), "info_target".to_owned()),
+        ("targetname".to_owned(), "t1".to_owned()),
+    ];
+    let b = run.world.spawn_entity(&progs, &target).unwrap();
+    run.frames(3, 0.1).unwrap();
+    let value = i32::try_from(b).unwrap() * run.edict_size();
+    assert_eq!(run.world.entity_field(a, "enemy"), value);
+}

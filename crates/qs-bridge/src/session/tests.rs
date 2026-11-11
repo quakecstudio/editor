@@ -101,7 +101,7 @@ fn initialize_answers_with_the_host_and_its_capabilities() {
     let params = json!({ "protocolVersion": "1.3", "client": { "name": "test" } });
     let result = outcome(session.handle(&mut host, request("initialize", params))).unwrap();
     assert!(session.is_initialized());
-    assert_eq!(result["protocolVersion"], "1.1");
+    assert_eq!(result["protocolVersion"], "1.2");
     assert_eq!(result["host"]["engine"], "test");
     assert_eq!(result["capabilities"]["pause"], true);
     assert_eq!(result["capabilities"]["reload"], false);
@@ -117,7 +117,7 @@ fn initialize_answers_with_the_host_and_its_capabilities() {
     );
 }
 
-// spec BRIDGE-2.7: another major is -32001 and the connection closes; a higher minor is
+// spec BRIDGE-2.8: another major is -32001 and the connection closes; a higher minor is
 // accepted; params that fail initialize's schema are -32602
 #[test]
 fn the_major_version_must_match() {

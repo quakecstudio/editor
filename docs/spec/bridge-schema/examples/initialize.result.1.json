@@ -1,5 +1,5 @@
 {
-  "protocolVersion": "1.1",
+  "protocolVersion": "1.2",
   "host": {
     "name": "quakec-engine",
     "version": "2026.11.0",
