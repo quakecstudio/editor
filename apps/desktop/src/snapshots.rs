@@ -168,6 +168,11 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
                 app.shell
                     .execute(id, params.clone())
                     .unwrap_or_else(|e| panic!("{}: {id}: {e}", script.name));
+                // A task started runs and asks for frames until a WaitTerminals step.
+                if id.starts_with("task.") {
+                    harness.step();
+                    continue;
+                }
             }
             Step::Key(modifiers, key) => harness.key_press_modifiers(*modifiers, *key),
             Step::Type(text) => harness.event(Event::Text((*text).to_owned())),
