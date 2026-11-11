@@ -660,3 +660,202 @@ fn usage_adds_up_what_the_providers_report() {
     assert_eq!(other.usage().input_tokens, 7);
     assert_eq!(other.usage().output_tokens, 3);
 }
+
+/// An identity token in a file for test `name`: its path.
+fn identity_file(name: &str, token: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("qs-models-{name}-{}.jwt", std::process::id()));
+    std::fs::write(&path, format!("{token}\n")).unwrap();
+    path
+}
+
+/// A clock the test moves, in Unix seconds.
+fn clock(
+    start: u64,
+) -> (
+    Arc<std::sync::atomic::AtomicU64>,
+    impl Fn() -> u64 + Send + 'static,
+) {
+    let now = Arc::new(std::sync::atomic::AtomicU64::new(start));
+    let read = Arc::clone(&now);
+    (now, move || read.load(std::sync::atomic::Ordering::SeqCst))
+}
+
+fn anthropic_done() -> Value {
+    json!({ "stop_reason": "end_turn", "content": [{ "type": "text", "text": "Done." }] })
+}
+
+// No spec statement: P4-38, the acceptance criterion, Anthropic's workload identity: the
+// identity token is exchanged once at /v1/oauth/token with the jwt-bearer grant and the rule's
+// ids, the access token is sent as a Bearer token (no x-api-key) on every request, and it is
+// exchanged again 120 seconds before it expires
+#[test]
+fn anthropic_exchanges_once_reuses_and_renews() {
+    let path = identity_file("anthropic", "eyJ.identity.jwt");
+    let mut config = ProviderConfig::anthropic();
+    config.federated = Some(crate::Federated {
+        identity: crate::IdentityToken::File { path },
+        exchange: crate::Exchange::Anthropic {
+            federation_rule_id: "fdrl_1".to_owned(),
+            organization_id: "org".to_owned(),
+            service_account_id: "svac_1".to_owned(),
+            workspace_id: Some("wrkspc_1".to_owned()),
+        },
+    });
+    let transport = Scripted::new(vec![
+        Ok(json!({ "access_token": "sk-ant-oat01-first", "expires_in": 600 })),
+        Ok(anthropic_done()),
+        Ok(anthropic_done()),
+        Ok(json!({ "access_token": "sk-ant-oat01-second", "expires_in": 600 })),
+        Ok(anthropic_done()),
+    ]);
+    let (now, read) = clock(1_000);
+    let mut model = ProviderModel::new(config, None, &transport)
+        .unwrap()
+        .with_clock(read);
+    model.reply("s", &[], &[]).unwrap();
+    now.store(1_479, std::sync::atomic::Ordering::SeqCst);
+    model.reply("s", &[], &[]).unwrap();
+    now.store(1_480, std::sync::atomic::Ordering::SeqCst);
+    model.reply("s", &[], &[]).unwrap();
+    let sent = transport.sent.borrow();
+    let urls: Vec<&str> = sent.iter().map(|(url, _, _)| url.as_str()).collect();
+    assert_eq!(
+        urls,
+        [
+            "https://api.anthropic.com/v1/oauth/token",
+            "https://api.anthropic.com/v1/messages",
+            "https://api.anthropic.com/v1/messages",
+            "https://api.anthropic.com/v1/oauth/token",
+            "https://api.anthropic.com/v1/messages",
+        ]
+    );
+    assert_eq!(
+        sent[0].2,
+        json!({
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "assertion": "eyJ.identity.jwt",
+            "federation_rule_id": "fdrl_1",
+            "organization_id": "org",
+            "service_account_id": "svac_1",
+            "workspace_id": "wrkspc_1",
+        })
+    );
+    assert_eq!(
+        header(&sent[1].1, "authorization"),
+        Some("Bearer sk-ant-oat01-first")
+    );
+    assert_eq!(header(&sent[1].1, "x-api-key"), None);
+    assert_eq!(
+        header(&sent[2].1, "authorization"),
+        Some("Bearer sk-ant-oat01-first")
+    );
+    assert_eq!(
+        header(&sent[4].1, "authorization"),
+        Some("Bearer sk-ant-oat01-second")
+    );
+}
+
+// No spec statement: P4-38, OpenAI's workload identity: an RFC 8693 token exchange at
+// auth.openai.com with the JWT as subject_token, its expires_at taken as the expiry, the access
+// token sent as Bearer; the identity token can come from a command
+#[cfg(unix)]
+#[test]
+fn openai_exchanges_by_token_exchange() {
+    let mut config = ProviderConfig::new(ProviderKind::OpenAiCompatible, "gpt");
+    config.federated = Some(crate::Federated {
+        identity: crate::IdentityToken::Command {
+            program: "echo".to_owned(),
+            args: vec!["eyJ.from.command".to_owned()],
+        },
+        exchange: crate::Exchange::OpenAi {
+            identity_provider_id: "idp_1".to_owned(),
+            service_account_id: "sa_1".to_owned(),
+        },
+    });
+    let done = json!({ "choices": [{ "finish_reason": "stop",
+        "message": { "role": "assistant", "content": "Done." } }] });
+    let transport = Scripted::new(vec![
+        Ok(json!({ "access_token": "oa-1", "expires_in": 3600, "expires_at": 2_000 })),
+        Ok(done.clone()),
+        Ok(json!({ "access_token": "oa-2", "expires_at": 9_000 })),
+        Ok(done),
+    ]);
+    let (now, read) = clock(1_000);
+    let mut model = ProviderModel::new(config, None, &transport)
+        .unwrap()
+        .with_clock(read);
+    model.reply("s", &[], &[]).unwrap();
+    // expires_at wins over expires_in: due at 2000 - 120, not at 1000 + 3600 - 120.
+    now.store(1_880, std::sync::atomic::Ordering::SeqCst);
+    model.reply("s", &[], &[]).unwrap();
+    let sent = transport.sent.borrow();
+    assert_eq!(sent[0].0, crate::OPENAI_TOKEN_URL);
+    assert_eq!(
+        sent[0].2,
+        json!({
+            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+            "subject_token": "eyJ.from.command",
+            "identity_provider_id": "idp_1",
+            "service_account_id": "sa_1",
+        })
+    );
+    assert_eq!(header(&sent[1].1, "authorization"), Some("Bearer oa-1"));
+    assert_eq!(sent[2].0, crate::OPENAI_TOKEN_URL);
+    assert_eq!(header(&sent[3].1, "authorization"), Some("Bearer oa-2"));
+}
+
+// No spec statement: P4-38, the acceptance criterion: a failed exchange, or an identity token
+// that cannot be read, is the reply's error with the provider's words, and no model request is
+// sent; a federated provider needs no key, and its configuration round-trips through JSON
+#[test]
+fn a_failed_exchange_sends_nothing() {
+    let mut config = ProviderConfig::anthropic();
+    config.federated = Some(crate::Federated {
+        identity: crate::IdentityToken::File {
+            path: identity_file("failing", "eyJ.jwt"),
+        },
+        exchange: crate::Exchange::Anthropic {
+            federation_rule_id: "fdrl_1".to_owned(),
+            organization_id: "org".to_owned(),
+            service_account_id: "svac_1".to_owned(),
+            workspace_id: None,
+        },
+    });
+    let refused = Scripted::new(vec![Err(TransportError::Status {
+        code: 401,
+        body: "invalid_grant: no rule matches".to_owned(),
+    })]);
+    let mut model = ProviderModel::new(config.clone(), None, &refused).unwrap();
+    let error = model.reply("s", &[], &[]).unwrap_err();
+    assert!(
+        error.contains("token exchange failed") && error.contains("invalid_grant"),
+        "{error}"
+    );
+    assert_eq!(refused.sent.borrow().len(), 1, "only the exchange was sent");
+    assert!(refused.sent.borrow()[0].2.get("workspace_id").is_none());
+
+    let mut missing = config.clone();
+    missing.federated = Some(crate::Federated {
+        identity: crate::IdentityToken::File {
+            path: std::env::temp_dir().join("qs-models-no-such.jwt"),
+        },
+        ..config.federated.clone().unwrap()
+    });
+    let silent = Scripted::new(Vec::new());
+    let mut model = ProviderModel::new(missing, None, &silent).unwrap();
+    let error = model.reply("s", &[], &[]).unwrap_err();
+    assert!(error.contains("cannot be read"), "{error}");
+    assert!(silent.sent.borrow().is_empty(), "nothing was sent");
+
+    assert!(!config.needs_key());
+    let text = serde_json::to_string(&config).unwrap();
+    assert!(
+        text.contains("\"from\":\"file\"") && text.contains("\"provider\":\"anthropic\""),
+        "{text}"
+    );
+    assert_eq!(
+        serde_json::from_str::<ProviderConfig>(&text).unwrap(),
+        config
+    );
+}

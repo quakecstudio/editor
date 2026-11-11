@@ -9,7 +9,9 @@ use serde_json::{Value, json};
 
 use qs_agent::{Message, Reply, ToolCall, ToolSpec};
 
-use crate::{Effort, Header, ProviderConfig, Secret, command_of, result_text, tool_name};
+use crate::{
+    Credential, Effort, Header, ProviderConfig, Secret, command_of, result_text, tool_name,
+};
 
 /// The API version sent with every request.
 const VERSION: &str = "2026-10-21";
@@ -30,15 +32,22 @@ const FALLBACK_MODELS: [&str; 5] = [
 /// The request for the next reply: its URL, headers and body.
 pub(crate) fn request(
     config: &ProviderConfig,
-    key: Option<&Secret>,
+    credential: Option<&Credential>,
     system: &str,
     tools: &[ToolSpec],
     transcript: &[Message],
     sent: &[Value],
 ) -> (String, Vec<Header>, Value) {
     let mut headers = vec![Header::Plain("anthropic-version", VERSION.to_owned())];
-    if let Some(key) = key {
-        headers.push(Header::Secret("x-api-key", key.clone()));
+    match credential {
+        Some(Credential::Key(key)) => headers.push(Header::Secret("x-api-key", key.clone())),
+        // P4-38: workload identity's access token, as Anthropic's example sends it
+        // ("authorization: Bearer $ACCESS_TOKEN").
+        Some(Credential::Bearer(token)) => headers.push(Header::Secret(
+            "authorization",
+            Secret::new(format!("Bearer {}", token.expose())),
+        )),
+        None => {}
     }
     let mut body = json!({
         "model": config.model,

@@ -12,6 +12,7 @@
 //! hold it. Only the request's header ever reads it.
 
 mod anthropic;
+mod federation;
 mod http;
 mod keys;
 mod openai;
@@ -25,6 +26,9 @@ use serde_json::Value;
 
 use qs_agent::{Message, Model, Reply, ToolSpec};
 
+pub use crate::federation::{
+    Exchange, Federated, IdentityToken, OPENAI_TOKEN_URL, RENEW_BEFORE_SECS,
+};
 pub use crate::http::{Header, Http, Transport, TransportError};
 pub use crate::keys::{KeyError, KeyStore, Keychain, MemoryKeys};
 
@@ -120,6 +124,9 @@ pub struct ProviderConfig {
     /// How hard an Anthropic model thinks.
     #[serde(default)]
     pub effort: Effort,
+    /// Workload identity in place of an API key (P4-38), when the provider is reached that way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub federated: Option<Federated>,
 }
 
 /// The reply limit when the configuration names none.
@@ -137,6 +144,7 @@ impl ProviderConfig {
             base_url: None,
             max_tokens: default_max_tokens(),
             effort: Effort::default(),
+            federated: None,
         }
     }
 
@@ -153,6 +161,13 @@ impl ProviderConfig {
             .as_deref()
             .unwrap_or(self.kind.default_base_url())
             .trim_end_matches('/')
+    }
+
+    /// Whether this configuration needs an API key: a provider that takes one, reached without
+    /// workload identity.
+    #[must_use]
+    pub const fn needs_key(&self) -> bool {
+        self.federated.is_none() && self.kind.needs_key()
     }
 
     /// The keychain entry the provider's key is under: one per provider and URL, so two
@@ -197,6 +212,25 @@ pub struct ProviderModel<T> {
     /// Anthropic model's thinking blocks) goes back unchanged.
     sent: Vec<Value>,
     usage: Usage,
+    /// The access token the last exchange gave, with workload identity.
+    access: Option<federation::AccessToken>,
+    /// The time now in Unix seconds; the system's clock unless a test gives another.
+    clock: Box<dyn Fn() -> u64 + Send>,
+}
+
+/// How a request proves who it is.
+pub(crate) enum Credential {
+    /// The provider's API key, sent as that provider sends keys.
+    Key(Secret),
+    /// An access token from workload identity, sent as `authorization: Bearer`.
+    Bearer(Secret),
+}
+
+/// The system clock in Unix seconds.
+fn system_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
 }
 
 /// The tokens a model's replies have used, as the providers report them: Anthropic's
@@ -249,7 +283,7 @@ impl<T: Transport> ProviderModel<T> {
         key: Option<Secret>,
         transport: T,
     ) -> Result<Self, ProviderError> {
-        if config.kind.needs_key() && key.is_none() {
+        if config.needs_key() && key.is_none() {
             return Err(ProviderError::NoKey(config.key_name()));
         }
         Ok(Self {
@@ -258,7 +292,42 @@ impl<T: Transport> ProviderModel<T> {
             transport,
             sent: Vec::new(),
             usage: Usage::default(),
+            access: None,
+            clock: Box::new(system_now),
         })
+    }
+
+    /// The model reading the time from `clock`, in Unix seconds, for tests of renewal.
+    #[must_use]
+    pub fn with_clock(mut self, clock: impl Fn() -> u64 + Send + 'static) -> Self {
+        self.clock = Box::new(clock);
+        self
+    }
+
+    /// What the next request proves itself with: the key, or with workload identity an access
+    /// token, exchanged when there is none yet or the last is due for renewal.
+    ///
+    /// # Errors
+    ///
+    /// Why the identity token could not be read or exchanged; nothing is then sent.
+    fn credential(&mut self) -> Result<Option<Credential>, String> {
+        let Some(federated) = &self.config.federated else {
+            return Ok(self.key.clone().map(Credential::Key));
+        };
+        let now = (self.clock)();
+        let due = self
+            .access
+            .as_ref()
+            .is_none_or(|access| now >= access.renew_at);
+        if due {
+            self.access = None;
+            let access = federation::exchange(&self.transport, &self.config, federated, now)?;
+            self.access = Some(access);
+        }
+        Ok(self
+            .access
+            .as_ref()
+            .map(|access| Credential::Bearer(access.token.clone())))
     }
 
     /// The configuration.
@@ -281,7 +350,7 @@ impl ProviderModel<Http> {
     ///
     /// [`ProviderError`] when the key is needed and missing, or the keychain fails.
     pub fn connect(config: ProviderConfig, keys: &dyn KeyStore) -> Result<Self, ProviderError> {
-        let key = if config.kind.needs_key() {
+        let key = if config.needs_key() {
             keys.get(&config.key_name()).map_err(ProviderError::Keys)?
         } else {
             None
@@ -294,6 +363,7 @@ impl<T: Transport> ProviderModel<T> {
     /// The request for the next reply: its URL, headers and body.
     fn request(
         &self,
+        credential: Option<&Credential>,
         system: &str,
         tools: &[ToolSpec],
         transcript: &[Message],
@@ -301,7 +371,7 @@ impl<T: Transport> ProviderModel<T> {
         match self.config.kind {
             ProviderKind::Anthropic => anthropic::request(
                 &self.config,
-                self.key.as_ref(),
+                credential,
                 system,
                 tools,
                 transcript,
@@ -309,7 +379,7 @@ impl<T: Transport> ProviderModel<T> {
             ),
             ProviderKind::OpenAiCompatible | ProviderKind::Ollama => openai::request(
                 &self.config,
-                self.key.as_ref(),
+                credential,
                 system,
                 tools,
                 transcript,
@@ -340,7 +410,8 @@ impl<T: Transport> Model for ProviderModel<T> {
         transcript: &[Message],
         on_text: &mut dyn FnMut(&str),
     ) -> Result<Reply, String> {
-        let (url, headers, mut body) = self.request(system, tools, transcript);
+        let credential = self.credential()?;
+        let (url, headers, mut body) = self.request(credential.as_ref(), system, tools, transcript);
         if let Some(object) = body.as_object_mut() {
             object.insert("stream".to_owned(), Value::Bool(true));
         }
@@ -374,7 +445,8 @@ impl<T: Transport> Model for ProviderModel<T> {
         tools: &[ToolSpec],
         transcript: &[Message],
     ) -> Result<Reply, String> {
-        let (url, headers, body) = self.request(system, tools, transcript);
+        let credential = self.credential()?;
+        let (url, headers, body) = self.request(credential.as_ref(), system, tools, transcript);
         tracing::debug!(provider = ?self.config.kind, model = %self.config.model, "model request");
         let answer = self
             .transport

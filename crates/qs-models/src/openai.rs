@@ -13,19 +13,19 @@ use serde_json::{Value, json};
 
 use qs_agent::{Message, Reply, ToolCall, ToolSpec};
 
-use crate::{Header, ProviderConfig, Secret, command_of, result_text, tool_name};
+use crate::{Credential, Header, ProviderConfig, command_of, result_text, tool_name};
 
 /// The request for the next reply: its URL, headers and body.
 pub(crate) fn request(
     config: &ProviderConfig,
-    key: Option<&Secret>,
+    credential: Option<&Credential>,
     system: &str,
     tools: &[ToolSpec],
     transcript: &[Message],
     sent: &[Value],
 ) -> (String, Vec<Header>, Value) {
     let mut headers = Vec::new();
-    if let Some(key) = key {
+    if let Some(Credential::Key(key) | Credential::Bearer(key)) = credential {
         headers.push(Header::Secret(
             "authorization",
             crate::Secret::new(format!("Bearer {}", key.expose())),
