@@ -33,7 +33,7 @@ pub(crate) fn main(_root: &Path, args: &Args) -> Result<bool, String> {
             .and_then(|name| name.to_str())
             .is_some_and(autoprototypes);
         for module in &project.modules {
-            match compile(module, autoproto)? {
+            match compile(module, Dialect::Fteqcc, autoproto)? {
                 Ok(statements) => println!(
                     "ok    {} {}: {statements} statements",
                     dir.display(),
@@ -57,11 +57,39 @@ pub(crate) fn main(_root: &Path, args: &Args) -> Result<bool, String> {
     Ok(ok)
 }
 
-/// Compiles `module` under the FTEQCC profile: the progs' statement count, or why it did not
-/// compile. `Err` only when a file cannot be read.
-fn compile(module: &Module, autoproto: bool) -> Result<Result<usize, String>, String> {
+/// A module's name and its statement count or first problem.
+pub(crate) type ModuleBuild = (String, Result<usize, String>);
+
+/// Each module of the codebase in `dir`, compiled as [`main`] compiles it, with its statement
+/// count or its first problem (`cargo xtask compatibility`): in the dialect its `quakec.toml`
+/// declares, or in `bare` when it has none. `Err` when the project cannot be opened or a file
+/// read.
+pub(crate) fn compile_codebase(dir: &Path, bare: Dialect) -> Result<Vec<ModuleBuild>, String> {
+    let declared = dir.join("quakec.toml").is_file();
+    let project = open(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let autoproto = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(autoprototypes);
+    project
+        .modules
+        .iter()
+        .map(|module| {
+            let dialect = if declared { module.dialect } else { bare };
+            Ok((module.name.clone(), compile(module, dialect, autoproto)?))
+        })
+        .collect()
+}
+
+/// Compiles `module` in `dialect`: the progs' statement count, or why it did not compile.
+/// `Err` only when a file cannot be read.
+fn compile(
+    module: &Module,
+    dialect: Dialect,
+    autoproto: bool,
+) -> Result<Result<usize, String>, String> {
     let mut db = Db::new();
-    db.set_dialect(Dialect::Fteqcc.into());
+    db.set_dialect(dialect.into());
     db.set_autoproto(autoproto);
     for (index, file) in module.graph.files.iter().enumerate() {
         let text = fs::read(&file.path).map_err(|e| format!("{}: {e}", file.path.display()))?;
