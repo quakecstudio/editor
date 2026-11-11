@@ -191,11 +191,15 @@ groups:
     deliverable:
     - 'Entity browser of the QuakeC-derived classes with model previews, dragged into the 3D view to place'
     - 'Lines between targets and targetnames, drawn for the selection or all; smart editors for spawnflags (named checkboxes from the derived definitions), colours, angles and choices; editing a key on several entities at once'
+    - 'Linking without typing: an eyedropper and drag from one entity onto another to set target, killtarget or any key the QuakeC reads as a targetname, and duplicates that number their targetnames and targets onward'
+    - 'A view filter by skill and deathmatch that hides the entities the spawnflags the QuakeC tests would remove on easy, normal, hard or deathmatch'
     acceptance:
     - 'Every class of id1 and the rerelease appears in the browser with its model where it has one'
     - 'Spawnflag names come from the QuakeC, not a hand-written FGD'
+    - 'killtarget and every other key the QuakeC compares with targetname draw links and count as targeting, on id1 and the rerelease'
+    - 'Filtering a corpus map by skill hides exactly the entities the progs removes at that skill, checked against qs-sim spawning the map at each skill'
     verify:
-    - 'UI snapshot tests; golden tests of the derived editors'
+    - 'UI snapshot tests; golden tests of the derived editors; scenario tests for the skill filter'
   - key: P5-14
     title: 'Groups, linked groups, layers, hide, isolate and lock'
     labels:
@@ -235,6 +239,46 @@ groups:
     - 'A context snapshot test shows the reference and the open map in the brief'
     verify:
     - 'Context snapshot test'
+  - key: P5-16
+    title: 'Map outline of entities, groups and layers'
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-31
+    - MAP-26
+    depends:
+    - P5-06
+    - P5-14
+    deliverable:
+    - 'A map outline panel: layers, then groups and linked groups, then entities by classname and targetname, with brush counts; selecting a row selects the object and frames it in the 3D view, and selecting in the view reveals its row'
+    - 'Filtering the outline by classname, key, value or text, and the outline as a source for drag and drop between layers and groups'
+    acceptance:
+    - 'Every entity, group and layer of a corpus map appears once in the outline, and the outline follows every edit, undo and redo'
+    - 'Choosing an entity in the outline selects and frames it with no camera movement by hand'
+    verify:
+    - 'UI snapshot tests; unit tests of the outline model over corpus maps'
+  - key: P5-17
+    title: 'Reload maps and assets changed outside the editor'
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: S
+    reqs:
+    - MAP-32
+    depends:
+    - P5-06
+    - P5-03
+    deliverable:
+    - 'The open map, its WADs and the project QuakeC watched for writes by other programs: a map with no unsaved edits reloads keeping the camera and selection; one with unsaved edits asks to reload, keep its own or compare; a changed WAD refreshes the texture browser and the view; changed QuakeC refreshes the derived entity definitions'
+    acceptance:
+    - 'A script rewriting the open map reloads it with no prompt when it has no unsaved edits, and saving never silently overwrites a newer file on disk'
+    - 'Adding a texture to a WAD the map uses shows it in the browser with no restart'
+    verify:
+    - 'Integration tests with a fake file watcher; no wall-clock waits'
   - key: P5-09
     title: Phase 5 gate review
     labels:
@@ -258,6 +302,8 @@ groups:
     - P5-13
     - P5-14
     - P5-15
+    - P5-16
+    - P5-17
     deliverable:
     - docs/gates/p5.md
     acceptance:
@@ -432,8 +478,10 @@ groups:
     - P6-08
     deliverable:
     - Optional top, front and side 2D views; texture alignment tools and texture lock
+    - 'A measuring tool between two points, the size of the selection, and the pointer position and the move so far shown while dragging a brush, vertex or entity'
     acceptance:
     - Moving a brush with texture lock keeps textures fixed in world space
+    - 'The measured distance and the shown move match the edit made, in Quake units'
     verify:
     - Tests
   - key: P6-10
@@ -450,8 +498,11 @@ groups:
     - P1-18
     deliverable:
     - Browser with palette-correct previews, search and usage counts
+    - 'WADs found from the map worldspawn wad key and the detected install with no setup step, and previews decoded only when shown'
     acceptance:
     - Shows every texture in id1 WADs and the map's own textures
+    - 'With a fresh install detected, opening an id1 map shows its textures with no configuration'
+    - 'Opening a map decodes no texture it does not draw: a test counts the decodes'
     verify:
     - UI snapshot tests
   - key: P6-11
@@ -565,9 +616,12 @@ groups:
     - P6-08
     deliverable:
     - 'Simple and complex shape tools with sides, hollow, thickness and circle modes, including grid-aligned scalable curves of 12, 24, 48 and 96 sides, arches with spandrels, UV and icosahedron spheroids and randomised rocks'
+    - 'Straight and spiral stairs whose step height and depth default to what the player can climb as qs-sim moves it'
     acceptance:
     - 'Shapes made with the same sides and circle mode fit together with no gaps'
     - 'Every vertex of a scalable shape lies on the grid at every size'
+    - 'A player walks up generated stairs of the default step in a qs-sim scenario'
+    - 'No shape parameter crashes the tool or makes an invalid brush, zero and the limits included'
     verify:
     - 'Property tests of the generated brushes; UI snapshot tests'
   - key: P6-18
@@ -584,6 +638,7 @@ groups:
     - P6-08
     deliverable:
     - 'Face extrusion, sweeping a brush along a path, scale and shear handles, CSG hollow and intersect beside merge and subtract, vertex editing with edge and face splitting and several vertices moved together, with alignment lock through every operation'
+    - 'Chamfering an edge into one or more bevel faces'
     acceptance:
     - 'Every operation leaves convex, valid brushes that qmap-bsp compiles with no errors'
     - 'Texture alignment lock keeps each faces texture fixed in world space'
@@ -621,6 +676,7 @@ groups:
     - P6-12
     deliverable:
     - 'Compile profiles that run our compilers or external ones with expressions for paths and launch an engine; portal file display; automatic backups at an interval and on each save; repeating the last command'
+    - 'A toolbar button and a key binding that run the chosen profile and launch, and a notification when a compile ends, with its time and result'
     acceptance:
     - 'A profile running qmap-bsp, qmap-vis and qmap-light then launching the preview host works on each OS'
     - 'Backups restore a map after a simulated crash'
@@ -648,6 +704,48 @@ groups:
     - 'Asked for a donut-shaped room with a player start and lights, the agent produces a map that compiles with no leak and plays, in the agent evals'
     verify:
     - 'Agent eval tasks; unit tests of the commands'
+  - key: P6-22
+    title: 'UV editor: fit, justify, quick snap and alignment transfer'
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-3
+    - MAP-30
+    depends:
+    - P6-09
+    deliverable:
+    - 'A UV editor for the selected faces: drag offset, scale and rotation with snapping to the texture grid and to face edges and vertices; fit, which stretches or shrinks the texture to the face; justify to each edge and the centre; flip; reset'
+    - 'Copying alignment from one face to others so the texture continues across them, on standard and Valve 220 maps'
+    acceptance:
+    - 'Fit makes the texture span the face exactly, for textures larger and smaller than the face'
+    - 'Alignment copied across a corner leaves no seam: texel positions on the shared edge agree'
+    - 'Every UV edit round-trips through standard and Valve 220 .map files'
+    verify:
+    - 'Unit tests of the texture projection; UI snapshot tests'
+  - key: P6-23
+    title: 'Prefabs and external map instances'
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-33
+    depends:
+    - P5-14
+    - P6-08
+    - P6-04
+    deliverable:
+    - 'A prefab browser of .map files in the project prefab folder, placed by dragging; saving a selection as a prefab'
+    - 'External map instances: an entity naming another .map drawn in place with its position, rotation and scale, and expanded by qmap-bsp, following the external map entity of ericw-tools qbsp, described from its source at a pinned commit in docs/spec/'
+    acceptance:
+    - 'An instance draws its .map in place and follows edits to that file'
+    - 'A map with external instances compiles with qmap-bsp to the same geometry as ericw-tools qbsp in the differential suite'
+    verify:
+    - 'Differential compile; UI snapshot tests'
   - key: P6-14
     title: Phase 6 gate review
     labels:
@@ -679,6 +777,8 @@ groups:
     - P6-19
     - P6-20
     - P6-21
+    - P6-22
+    - P6-23
     - P6-13
     deliverable:
     - docs/gates/p6.md
@@ -795,6 +895,7 @@ groups:
     - docs/guide/map-editor.md with snapshot-harness screenshots
     acceptance:
     - Covers entity editing, brushes, compiling, leaks and Play from here
+    - 'Covers first-run setup, choosing the game and its textures, with no step that needs an outside chat service; the guide is public with the release'
     verify:
     - Usability test with one mapper
   - key: P7-08
@@ -819,8 +920,29 @@ groups:
     acceptance:
     - 'No feature of the manual is missing or worse in ours; each row links a passing test'
     - 'Our frame time on the largest map is no worse than TrenchBrooms'
+    - 'Our time and memory to open the largest map with every texture of the install available are no worse than TrenchBrooms'
     verify:
     - 'The audit and benchmark results recorded in the PR'
+  - key: P7-09
+    title: 'Light previews in the map view'
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-34
+    depends:
+    - P6-02
+    - P7-01
+    - P5-06
+    deliverable:
+    - 'Light entities drawn with their falloff radius, colour and, for spotlights, their cone, computed from their keys as docs/spec says qmap-light reads them; shown for the selection or all lights'
+    acceptance:
+    - 'For each light vector in docs/spec/vectors/, the drawn radius is where qmap-light gives that light no contribution, and the cone matches the spotlight angle'
+    - 'Editing a light key updates its preview in the same frame'
+    verify:
+    - 'Unit tests against the light vectors; UI snapshot tests'
   - key: P7-06
     title: Phase 7 gate review
     labels:
@@ -840,6 +962,7 @@ groups:
     - P7-05
     - P7-07
     - P7-08
+    - P7-09
     deliverable:
     - docs/gates/p7.md
     acceptance:
@@ -1205,6 +1328,7 @@ groups:
     - Opt-in update check against GitHub releases with signature verification; AppImage zsync
     acceptance:
     - No network call unless the user enabled update checks
+    - 'An update replaces only the files the release installed: settings, projects, portable data and anything else in the install folder are left as they were'
     verify:
     - Update test against a fake release feed
   - key: P2-16
