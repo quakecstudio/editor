@@ -20,6 +20,7 @@
 pub mod buffer;
 pub mod diff;
 pub mod find;
+pub mod fold;
 mod history;
 pub mod layout;
 pub mod selection;
@@ -29,7 +30,7 @@ pub mod vim;
 pub use buffer::{Buffer, LineId, Position};
 pub use layout::{LayoutCache, Plain, StyledSpan, Styler};
 pub use selection::{EditState, Extend, Motion, Selection};
-pub use view::{EditorView, KeyMode, ViewStyle};
+pub use view::{EditorView, KeyMode, ViewStyle, Wrap};
 
 #[cfg(test)]
 mod tests;

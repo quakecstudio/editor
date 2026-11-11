@@ -282,6 +282,7 @@ fn the_ui_code_has_no_string_literals() {
         ("game_guide.rs", include_str!("game_guide.rs")),
         ("palette.rs", include_str!("palette.rs")),
         ("terminal.rs", include_str!("terminal.rs")),
+        ("picker.rs", include_str!("picker.rs")),
         ("project.rs", include_str!("project.rs")),
         ("editor.rs", include_str!("editor.rs")),
         ("code_style.rs", include_str!("code_style.rs")),
@@ -643,7 +644,8 @@ fn a_row_shows_the_id_and_the_shortcut() {
     assert!(painted.contains(&count), "{count:?} in {painted:?}");
 }
 
-// PRIN-3: every key binding runs a registered command that takes no parameters.
+// PRIN-3: every key binding runs a registered command that needs no parameter (P4-32:
+// `editor.go_to_line`'s line is optional, and without it the window asks for one).
 #[test]
 fn every_binding_names_a_registered_command_without_parameters() {
     let ctx = egui::Context::default();
@@ -654,7 +656,13 @@ fn every_binding_names_a_registered_command_without_parameters() {
             .commands()
             .find(|c| c.id().as_str() == binding.command)
             .expect("every binding's command is registered");
-        assert!(params::fields(info.params()).is_empty());
+        let required = info.params().get("required").and_then(|r| r.as_array());
+        assert!(
+            required.is_none_or(Vec::is_empty),
+            "{} needs no parameter",
+            binding.command
+        );
+        assert!(keymap::bindable(registry, binding.command));
         assert_eq!(keymap::shortcut(binding.command), Some(binding.shortcut));
     }
     assert_eq!(keymap::shortcut("view.toggle_panel"), None);
@@ -1484,4 +1492,215 @@ fn a_task_runs_from_the_palette_and_its_exit_status_is_shown() {
         .first()
         .unwrap();
     assert!(tab.text().contains("checking"), "{:?}", tab.text());
+}
+
+/// The app with the ember fixture open at `src/weapons.qc`, the editor holding the keyboard.
+fn ember_open() -> Harness<'static, Option<App>> {
+    let mut harness = accessible();
+    let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember");
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell_mut().open_project(&project).unwrap();
+    app.shell_mut()
+        .execute(
+            "file.open",
+            json!({ "path": project.join("src/weapons.qc") }),
+        )
+        .unwrap();
+    harness.run();
+    run_command(&mut harness, qs_layout::FOCUS_EDITOR);
+    harness.run();
+    harness
+}
+
+/// The primary caret's line, from 0, in the editor.
+fn caret_line(harness: &Harness<'static, Option<App>>) -> usize {
+    let shell = &harness.state().as_ref().unwrap().shell;
+    shell.caret().unwrap().1.line
+}
+
+// No spec statement: P4-32, the acceptance criterion: every new layout and navigation action
+// is a registry command the palette finds, and the keys of those Zed binds run them
+#[test]
+fn every_layout_and_navigation_action_is_a_command_in_the_palette() {
+    let harness = accessible();
+    let shell = &harness.state().as_ref().unwrap().shell;
+    let registry = shell.session().registry();
+    for id in [
+        qs_layout::FOLD,
+        qs_layout::UNFOLD,
+        qs_layout::FOLD_ALL,
+        qs_layout::UNFOLD_ALL,
+        qs_layout::TOGGLE_SOFT_WRAP,
+        qs_layout::GO_TO_LINE,
+        qs_layout::GO_TO_SYMBOL,
+        qs_layout::TOGGLE_OUTLINE,
+        qs_layout::TAB_SWITCHER,
+        qs_layout::SPLIT_RIGHT,
+        qs_layout::SPLIT_DOWN,
+        qs_layout::CLOSE_SPLIT,
+    ] {
+        assert!(registry.get(id).is_some(), "{id} is registered");
+        let found = search(registry.commands(), id);
+        assert!(
+            found.iter().any(|m| m.info.id().as_str() == id),
+            "the palette finds {id} by its id"
+        );
+    }
+    for id in [
+        qs_layout::GO_TO_LINE,
+        qs_layout::GO_TO_SYMBOL,
+        qs_layout::TOGGLE_OUTLINE,
+        qs_layout::TAB_SWITCHER,
+        qs_layout::FOLD,
+        qs_layout::SPLIT_RIGHT,
+    ] {
+        assert!(shell.keymap().shortcut(id).is_some(), "{id} has a key");
+    }
+}
+
+// No spec statement: P4-32: go to line moves the caret, and without a line asks for one in the
+// palette's prompt; folding all folds the file's blocks and the caret stays shown
+#[test]
+fn go_to_line_and_folding_act_on_the_editor() {
+    let mut harness = ember_open();
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .execute(qs_layout::GO_TO_LINE, json!({ "line": 6 }))
+        .unwrap();
+    harness.run();
+    assert_eq!(caret_line(&harness), 5);
+    harness.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::G);
+    harness.run();
+    harness.get_by_role_and_label(Role::Dialog, Text::CommandPalette.get());
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    run_command(&mut harness, qs_layout::FOLD_ALL);
+    harness.run();
+    let shell = &harness.state().as_ref().unwrap().shell;
+    let folds = shell.editor().unwrap().view.folds();
+    assert!(folds.any_folded(), "{:?}", folds.regions());
+    assert!(folds.is_hidden(4), "the first function's body");
+    assert_eq!(
+        caret_line(&harness),
+        3,
+        "the caret moved to its fold's first line"
+    );
+    run_command(&mut harness, qs_layout::UNFOLD_ALL);
+    harness.run();
+    let shell = &harness.state().as_ref().unwrap().shell;
+    assert!(!shell.editor().unwrap().view.folds().any_folded());
+}
+
+// No spec statement: P4-32: go to symbol lists the file's symbols and Enter on one moves the
+// caret there; the outline panel lists them too; soft wrap is the editor's
+#[test]
+fn go_to_symbol_the_outline_and_soft_wrap() {
+    let mut harness = ember_open();
+    run_command(&mut harness, qs_layout::GO_TO_SYMBOL);
+    harness.run();
+    harness.get_by_role_and_label(Role::Dialog, Text::GoToSymbol.get());
+    harness.event(egui::Event::Text("W_Fire".to_owned()));
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    harness.run();
+    assert_eq!(caret_line(&harness), 10, "W_FireEmber's line");
+    run_command(&mut harness, qs_layout::TOGGLE_OUTLINE);
+    harness.run();
+    harness.get_by_role_and_label(Role::Pane, Text::Outline.get());
+    assert_eq!(
+        harness.query_all_by_label("Ember_Touch").count(),
+        2,
+        "in the Symbols section and the outline panel"
+    );
+    run_command(&mut harness, qs_layout::TOGGLE_SOFT_WRAP);
+    harness.run();
+    let shell = &harness.state().as_ref().unwrap().shell;
+    assert_eq!(
+        shell.editor().unwrap().view.wrap(),
+        qs_editor_view::Wrap::Width
+    );
+}
+
+// No spec statement: P4-32: the tab switcher lists the open files, the one before the shown
+// file chosen; a split shows a second pane, which closing the split removes
+#[test]
+fn the_tab_switcher_and_the_split() {
+    let mut harness = ember_open();
+    let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember");
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell_mut()
+        .execute("file.open", json!({ "path": project.join("src/world.qc") }))
+        .unwrap();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::Tab);
+    harness.run();
+    harness.get_by_role_and_label(Role::Dialog, Text::TabSwitcher.get());
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    harness.run();
+    let path = |harness: &Harness<'static, Option<App>>| {
+        let shell = &harness.state().as_ref().unwrap().shell;
+        shell.caret().unwrap().0.to_path_buf()
+    };
+    assert!(
+        path(&harness).ends_with("weapons.qc"),
+        "{:?}",
+        path(&harness)
+    );
+    run_command(&mut harness, qs_layout::SPLIT_RIGHT);
+    harness.run();
+    harness.get_by_role_and_label(Role::Pane, Text::SecondPane.get());
+    let shell = &harness.state().as_ref().unwrap().shell;
+    let second = shell.second_pane_editor().unwrap();
+    assert!(second.path.ends_with("weapons.qc"));
+    // The first pane goes to world.qc; a click in the second makes weapons.qc the one edited.
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell_mut()
+        .execute("file.open", json!({ "path": project.join("src/world.qc") }))
+        .unwrap();
+    harness.run();
+    let second_id = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell
+        .second_pane_editor()
+        .unwrap()
+        .view
+        .id();
+    harness.ctx.memory_mut(|m| m.request_focus(second_id));
+    harness.run();
+    harness.run();
+    assert!(
+        path(&harness).ends_with("weapons.qc"),
+        "{:?}",
+        path(&harness)
+    );
+    let shell = &harness.state().as_ref().unwrap().shell;
+    assert!(
+        shell
+            .second_pane_editor()
+            .unwrap()
+            .path
+            .ends_with("world.qc")
+    );
+    assert!(
+        harness
+            .ctx
+            .memory(|m| m.has_focus(egui::Id::new(EDITOR_AREA)))
+    );
+    run_command(&mut harness, qs_layout::CLOSE_SPLIT);
+    harness.run();
+    let shell = &harness.state().as_ref().unwrap().shell;
+    assert!(shell.second_pane_editor().is_none());
 }

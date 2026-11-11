@@ -103,6 +103,7 @@ impl<L: Loader> Workbench<L> {
             open.outline = self.host.document_symbols(&path);
             open.highlights = self.host.highlights(&path);
             open.classes = self.host.syntax_classes(&path);
+            open.folds = self.host.folding_ranges(&path);
             self.generation = self.generation.wrapping_add(1);
             open.revision = self.generation;
             if source == Source::Elsewhere {

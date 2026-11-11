@@ -25,6 +25,16 @@ pub enum Text {
     PreviewOwnWindow,
     /// The command search box's hint.
     SearchCommands,
+    /// The go to symbol picker's name and its search box's hint.
+    GoToSymbol,
+    /// The tab switcher's name and its search box's hint.
+    TabSwitcher,
+    /// The outline panel's heading.
+    Outline,
+    /// The outline panel when the file has no symbols.
+    NoOutline,
+    /// The editor's second pane's accessible name.
+    SecondPane,
     /// The bottom panel's Terminal tab, and the terminal output's name.
     Terminal,
     /// The Terminal tab's button that opens a shell.
@@ -362,7 +372,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 175] = [
+    pub const ALL: [Self; 180] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -495,6 +505,11 @@ impl Text {
         Self::PaletteClose,
         Self::PaletteCancel,
         Self::PaletteNoMatch,
+        Self::GoToSymbol,
+        Self::TabSwitcher,
+        Self::Outline,
+        Self::NoOutline,
+        Self::SecondPane,
         Self::Terminal,
         Self::NewTerminal,
         Self::CloseTerminal,
@@ -689,6 +704,11 @@ impl Text {
             Self::PaletteClose => "close",
             Self::PaletteCancel => "Cancel",
             Self::PaletteNoMatch => "No command matches.",
+            Self::GoToSymbol => "Go to a symbol in the file",
+            Self::TabSwitcher => "Switch to an open file",
+            Self::Outline => "Outline",
+            Self::NoOutline => "No symbols in this file.",
+            Self::SecondPane => "Second editor pane",
             Self::Terminal => "Terminal",
             Self::NewTerminal => "New terminal",
             Self::CloseTerminal => "Close",

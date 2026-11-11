@@ -6,19 +6,41 @@ const qs_layout::MIN_PANEL_SIZE
 const qs_layout::Panel::ALL
 const qs_layout::RESIZE_PANEL
 const qs_layout::TOGGLE_PANEL
+const qs_layout::editor::CLOSE_SPLIT
+const qs_layout::editor::FOLD
+const qs_layout::editor::FOLD_ALL
+const qs_layout::editor::GO_TO_LINE
+const qs_layout::editor::GO_TO_SYMBOL
+const qs_layout::editor::SPLIT_DOWN
+const qs_layout::editor::SPLIT_RIGHT
+const qs_layout::editor::TAB_SWITCHER
+const qs_layout::editor::TOGGLE_OUTLINE
+const qs_layout::editor::TOGGLE_SOFT_WRAP
+const qs_layout::editor::UNFOLD
+const qs_layout::editor::UNFOLD_ALL
 enum qs_layout::Focus
 enum qs_layout::LayoutError
 enum qs_layout::Panel
+enum qs_layout::editor::EditorRequest
+enum qs_layout::editor::Outline
+enum qs_layout::editor::SoftWrap
+enum qs_layout::editor::Split
 field qs_layout::Layout.bottom
+field qs_layout::Layout.editor_request
+field qs_layout::Layout.editor_requests
 field qs_layout::Layout.focus
 field qs_layout::Layout.focus_requests
 field qs_layout::Layout.left
+field qs_layout::Layout.outline
 field qs_layout::Layout.right
+field qs_layout::Layout.soft_wrap
+field qs_layout::Layout.split
 field qs_layout::PanelState.size
 field qs_layout::PanelState.visible
 field qs_layout::ResizePanelParams.panel
 field qs_layout::ResizePanelParams.size
 field qs_layout::TogglePanelParams.panel
+field qs_layout::editor::GoToLineParams.line
 fn qs_layout::HasLayout::layout_mut
 fn qs_layout::Layout::as_written
 fn qs_layout::Layout::panel
@@ -35,7 +57,25 @@ struct qs_layout::Layout
 struct qs_layout::PanelState
 struct qs_layout::ResizePanelParams
 struct qs_layout::TogglePanelParams
+struct qs_layout::editor::GoToLineParams
 trait qs_layout::HasLayout
+use qs_layout::CLOSE_SPLIT = editor::CLOSE_SPLIT
+use qs_layout::EditorRequest = editor::EditorRequest
+use qs_layout::FOLD = editor::FOLD
+use qs_layout::FOLD_ALL = editor::FOLD_ALL
+use qs_layout::GO_TO_LINE = editor::GO_TO_LINE
+use qs_layout::GO_TO_SYMBOL = editor::GO_TO_SYMBOL
+use qs_layout::GoToLineParams = editor::GoToLineParams
+use qs_layout::Outline = editor::Outline
+use qs_layout::SPLIT_DOWN = editor::SPLIT_DOWN
+use qs_layout::SPLIT_RIGHT = editor::SPLIT_RIGHT
+use qs_layout::SoftWrap = editor::SoftWrap
+use qs_layout::Split = editor::Split
+use qs_layout::TAB_SWITCHER = editor::TAB_SWITCHER
+use qs_layout::TOGGLE_OUTLINE = editor::TOGGLE_OUTLINE
+use qs_layout::TOGGLE_SOFT_WRAP = editor::TOGGLE_SOFT_WRAP
+use qs_layout::UNFOLD = editor::UNFOLD
+use qs_layout::UNFOLD_ALL = editor::UNFOLD_ALL
 variant qs_layout::Focus::Editor
 variant qs_layout::Focus::Panel
 variant qs_layout::LayoutError::Encode
@@ -45,3 +85,18 @@ variant qs_layout::LayoutError::Write
 variant qs_layout::Panel::Bottom
 variant qs_layout::Panel::Left
 variant qs_layout::Panel::Right
+variant qs_layout::editor::EditorRequest::AskLine
+variant qs_layout::editor::EditorRequest::Fold
+variant qs_layout::editor::EditorRequest::FoldAll
+variant qs_layout::editor::EditorRequest::GoToLine
+variant qs_layout::editor::EditorRequest::GoToSymbol
+variant qs_layout::editor::EditorRequest::TabSwitcher
+variant qs_layout::editor::EditorRequest::Unfold
+variant qs_layout::editor::EditorRequest::UnfoldAll
+variant qs_layout::editor::Outline::Hidden
+variant qs_layout::editor::Outline::Shown
+variant qs_layout::editor::SoftWrap::Off
+variant qs_layout::editor::SoftWrap::Width
+variant qs_layout::editor::Split::Down
+variant qs_layout::editor::Split::None
+variant qs_layout::editor::Split::Right

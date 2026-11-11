@@ -142,13 +142,14 @@ pub(crate) fn line_job(
     job
 }
 
-/// What a cached layout was made for: the line's text, the styler's revision, the font and the
-/// screen's scale.
+/// What a cached layout was made for: the line's text, the styler's revision, the font, the
+/// screen's scale and the width lines wrap at.
 #[derive(Clone, Debug, PartialEq)]
 struct Key {
     revision: u64,
     font: FontId,
     pixels_per_point: f32,
+    wrap_width: f32,
 }
 
 /// The laid-out text of each line, by line identity. An edit gives a line a new [`LineId`], so
@@ -163,13 +164,21 @@ pub struct LayoutCache {
 }
 
 impl LayoutCache {
-    /// Starts a frame laid out with `revision`, `font` and `pixels_per_point`, clearing the
-    /// cache when any differs from the last frame's.
-    pub(crate) fn begin(&mut self, revision: u64, font: &FontId, pixels_per_point: f32) {
+    /// Starts a frame laid out with `revision`, `font`, `pixels_per_point` and lines wrapped
+    /// at `wrap_width` (infinite for none), clearing the cache when any differs from the last
+    /// frame's.
+    pub(crate) fn begin(
+        &mut self,
+        revision: u64,
+        font: &FontId,
+        pixels_per_point: f32,
+        wrap_width: f32,
+    ) {
         let key = Key {
             revision,
             font: font.clone(),
             pixels_per_point,
+            wrap_width,
         };
         if self.key.as_ref() != Some(&key) {
             self.lines.clear();

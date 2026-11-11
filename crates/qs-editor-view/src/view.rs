@@ -14,6 +14,7 @@ use egui::{
 
 use crate::buffer::Position;
 use crate::diff::Diff;
+use crate::fold::Folds;
 use crate::layout::{LayoutCache, Preedit, Styler, line_job};
 use crate::selection::{EditState, Extend, Motion, Selection};
 use crate::vim::{Mode, Vim, VimKey};
@@ -48,6 +49,8 @@ pub struct ViewStyle {
     pub paused_mark: Color32,
     /// The gutter's mark on a line with a breakpoint, `status.error`.
     pub breakpoint: Color32,
+    /// The indent guides, `border`.
+    pub indent_guide: Color32,
 }
 
 impl Default for ViewStyle {
@@ -67,6 +70,7 @@ impl Default for ViewStyle {
             paused_line: Color32::from_rgb(0x3a, 0x31, 0x22),
             paused_mark: Color32::from_rgb(0xe2, 0xb0, 0x4a),
             breakpoint: Color32::from_rgb(0xec, 0x7a, 0x6c),
+            indent_guide: Color32::from_rgb(0x2a, 0x28, 0x26),
         }
     }
 }
@@ -77,8 +81,22 @@ const GUTTER_PAD: f32 = 12.0;
 const CARET_WIDTH: f32 = 2.0;
 /// The gutter's mark on a removed line's row.
 const REMOVED_MARK: &str = "-";
+/// What a folded line shows after its text.
+const FOLDED_MARK: &str = "\u{2026}";
+/// How many spaces make one indent level, for the indent guides.
+const INDENT_SPACES: usize = 4;
 /// The accessible name of the editor.
 const LABEL: &str = "Code editor";
+
+/// Whether long lines wrap at the view's width (P4-32).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Wrap {
+    /// Each line is one row, however long.
+    #[default]
+    Off,
+    /// A line longer than the view is wide wraps onto more rows, at word ends where it can.
+    Width,
+}
 
 /// How the editor reads keys (P4-37).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -118,6 +136,12 @@ pub struct EditorView {
     gutter_click: Option<usize>,
     /// Vim's state, in [`KeyMode::Vim`].
     vim: Option<Vim>,
+    /// The foldable regions and the folded ones (P4-32).
+    folds: Folds,
+    /// Whether long lines wrap.
+    wrap: Wrap,
+    /// The width lines wrap at in the last frame, in points.
+    wrap_width: f32,
     cache: LayoutCache,
 }
 
@@ -139,8 +163,34 @@ impl EditorView {
             paused: None,
             gutter_click: None,
             vim: None,
+            folds: Folds::default(),
+            wrap: Wrap::Off,
+            wrap_width: f32::INFINITY,
             cache: LayoutCache::default(),
         }
+    }
+
+    /// Wraps long lines, or not.
+    pub const fn set_wrap(&mut self, wrap: Wrap) {
+        self.wrap = wrap;
+    }
+
+    /// Whether long lines wrap.
+    #[must_use]
+    pub const fn wrap(&self) -> Wrap {
+        self.wrap
+    }
+
+    /// The foldable regions and the folded ones.
+    #[must_use]
+    pub const fn folds(&self) -> &Folds {
+        &self.folds
+    }
+
+    /// The folds, to fold or unfold; a fold that hides the primary caret's line is undone in
+    /// the next frame, so the caret always shows.
+    pub const fn folds_mut(&mut self) -> &mut Folds {
+        &mut self.folds
     }
 
     /// Reads keys as `mode` does; a change to Vim starts in Normal mode.
@@ -198,6 +248,11 @@ impl EditorView {
         self.id
     }
 
+    /// Gives the view the egui id `id`, as when it moves to another pane.
+    pub const fn set_id(&mut self, id: Id) {
+        self.id = id;
+    }
+
     /// The first visible line.
     #[must_use]
     pub fn first_line(&self) -> usize {
@@ -245,7 +300,9 @@ impl EditorView {
         let diff = self.diff.as_ref().map(|state| &state.diff);
         // The line count itself stands for the end, after the last line, where lines removed
         // at the end are drawn.
+        let folds = &self.folds;
         (first..=line_count)
+            .filter(|line| *line == line_count || !folds.is_hidden(*line))
             .flat_map(|line| {
                 let removed = diff
                     .map(|d| d.removed_before(line))
@@ -318,8 +375,23 @@ impl EditorView {
             });
         }
         let pixels_per_point = ui.ctx().pixels_per_point();
-        self.cache
-            .begin(styler.revision(), &style.font, pixels_per_point);
+        self.wrap_width = match self.wrap {
+            Wrap::Off => f32::INFINITY,
+            // Whole points, so a frame a fraction wider lays nothing out again.
+            Wrap::Width => (rect.right() - text_left - CARET_WIDTH)
+                .floor()
+                .max(char_width),
+        };
+        self.cache.begin(
+            styler.revision(),
+            &style.font,
+            pixels_per_point,
+            self.wrap_width,
+        );
+        // A caret moved into a folded region, by a key or from outside, unfolds it.
+        let head = self.state.primary().head.line;
+        self.folds.reveal(head);
+        self.first_line = self.folds.shown_at_or_before(self.first_line);
 
         if response.hovered() {
             let delta = ui.input(|i| i.smooth_scroll_delta.y);
@@ -335,8 +407,12 @@ impl EditorView {
             if let Some(origin) = origin {
                 let at =
                     self.position_at(ui, style, styler, origin, rect.top(), text_left, row_height);
+                let on_fold_mark =
+                    origin.x >= text_left - GUTTER_PAD && self.folds.start_at(at.line).is_some();
                 if origin.x < text_left {
-                    if response.clicked() {
+                    if response.clicked() && on_fold_mark {
+                        self.folds.toggle_start(at.line);
+                    } else if response.clicked() {
                         self.gutter_click = Some(at.line);
                     }
                 } else {
@@ -375,11 +451,17 @@ impl EditorView {
         self.scroll_rest -= lines;
         let count = whole(lines.abs());
         let last = self.state.buffer().line_count().saturating_sub(1);
-        self.first_line = if lines < 0.0 {
-            self.first_line.saturating_sub(count)
-        } else {
-            self.first_line.saturating_add(count).min(last)
-        };
+        // Line by line over the lines shown, a folded region counting as its first line.
+        for _ in 0..count {
+            self.first_line = if lines < 0.0 {
+                self.folds
+                    .shown_at_or_before(self.first_line.saturating_sub(1))
+            } else {
+                self.folds
+                    .shown_at_or_after(self.first_line.saturating_add(1))
+                    .min(last)
+            };
+        }
     }
 
     /// The text position under the pointer at `pos`.
@@ -397,25 +479,41 @@ impl EditorView {
         text_left: f32,
         row_height: f32,
     ) -> Position {
-        let row = whole(((pos.y - top) / row_height).max(0.0));
         let last = self.state.buffer().line_count().saturating_sub(1);
-        // A removed line's row places the caret at the start of the line after it: the line
-        // after every line drawn above it.
-        let rows = self.rows(self.first_line, row.saturating_add(1));
-        let above = rows.get(..row).unwrap_or_default();
-        let lines_above = above
-            .iter()
-            .filter(|r| matches!(r, Row::Line { .. }))
-            .count();
-        let line = self.first_line.saturating_add(lines_above);
-        match rows.get(row) {
-            Some(Row::Removed(_)) if line > last => return self.state.buffer().end(),
-            Some(Row::Removed(_)) => return Position::new(line, 0),
-            Some(Row::Line { .. }) | None => {}
+        let rows = self.rows(self.first_line, self.visible.saturating_add(1));
+        let mut row_top = top;
+        let mut after = self.first_line;
+        for row in rows {
+            match row {
+                // A removed line's row places the caret at the start of the line after it.
+                Row::Removed(_) => {
+                    if pos.y < row_top + row_height {
+                        return if after > last {
+                            self.state.buffer().end()
+                        } else {
+                            Position::new(after, 0)
+                        };
+                    }
+                    row_top += row_height;
+                }
+                Row::Line { line, .. } => {
+                    let galley = self.galley(ui, style, styler, line, None);
+                    let height = line_height(&galley, row_height);
+                    after = line.saturating_add(1);
+                    if pos.y < row_top + height {
+                        let at = Vec2::new(pos.x - text_left, (pos.y - row_top).max(0.0));
+                        let cursor = galley.cursor_from_pos(at);
+                        let col = self.state.buffer().byte_column(line, cursor.index.0);
+                        return Position::new(line, col);
+                    }
+                    row_top += height;
+                }
+            }
         }
-        let line = line.min(last);
+        // Below the last row drawn: its line's end, or the text's.
+        let line = after.saturating_sub(1).min(last);
         let galley = self.galley(ui, style, styler, line, None);
-        let cursor = galley.cursor_from_pos(Vec2::new(pos.x - text_left, 0.0));
+        let cursor = galley.cursor_from_pos(Vec2::new(pos.x - text_left, galley.size().y));
         Position::new(line, self.state.buffer().byte_column(line, cursor.index.0))
     }
 
@@ -605,19 +703,49 @@ impl EditorView {
             _ => return false,
         };
         self.state.motion(motion, extend);
+        // A line motion that lands in a folded region goes past it, as the rows show, rather
+        // than unfolding it.
+        let head = self.state.primary().head;
+        if self.folds.is_hidden(head.line) {
+            let line = match motion {
+                Motion::Up | Motion::PageUp(_) => self.folds.shown_at_or_before(head.line),
+                _ => self.folds.shown_at_or_after(head.line),
+            };
+            let at = self.state.buffer().clamp(Position::new(line, head.col));
+            match extend {
+                Extend::Select => self.extend_to(at),
+                Extend::Move => self.state.set_selections(&[Selection::caret(at)]),
+            }
+        }
         true
     }
 
     /// Scrolls the primary caret into view.
     fn reveal(&mut self) {
         let line = self.state.primary().head.line;
-        let last_visible = self
-            .first_line
-            .saturating_add(self.visible.saturating_sub(1));
         if line < self.first_line {
             self.first_line = line;
-        } else if line > last_visible {
-            self.first_line = line.saturating_sub(self.visible.saturating_sub(1));
+            return;
+        }
+        if !self.folds.any_folded() {
+            let last_visible = self
+                .first_line
+                .saturating_add(self.visible.saturating_sub(1));
+            if line > last_visible {
+                self.first_line = line.saturating_sub(self.visible.saturating_sub(1));
+            }
+            return;
+        }
+        // With folds, the rows above the caret are the lines shown: walk back from the caret
+        // over a screen of them.
+        let mut first = line;
+        let mut shown = 1_usize;
+        while shown < self.visible && first > self.first_line {
+            first = self.folds.shown_at_or_before(first.saturating_sub(1));
+            shown = shown.saturating_add(1);
+        }
+        if first > self.first_line {
+            self.first_line = first;
         }
     }
 
@@ -632,9 +760,11 @@ impl EditorView {
     ) -> Arc<Galley> {
         let buffer = self.state.buffer();
         let text = buffer.line(line);
+        let wrap_width = self.wrap_width;
         let make = || {
             let spans = styler.spans(line, text);
-            let job = line_job(text, &spans, &style.font, style.text, preedit);
+            let mut job = line_job(text, &spans, &style.font, style.text, preedit);
+            job.wrap.max_width = wrap_width;
             ui.fonts_mut(|f| f.layout_job(job))
         };
         match (preedit, buffer.line_id(line)) {
@@ -670,39 +800,23 @@ impl EditorView {
         let text_left = rect.left() + gutter;
         let mut ime_caret = None;
         let mut runs: Vec<(Rect, String, Vec<u8>)> = Vec::new();
-        for (row, kind) in rows.into_iter().enumerate() {
-            let top = rect.top() + points(row) * row_height;
-            let row_rect = Rect::from_min_size(
-                Pos2::new(rect.left(), top),
-                Vec2::new(rect.width(), row_height),
-            );
+        let mut top = rect.top();
+        for kind in rows {
+            if top >= rect.bottom() {
+                break;
+            }
             let (line, added) = match kind {
                 Row::Line { line, added } => (line, added),
                 Row::Removed(text) => {
-                    painter.rect_filled(row_rect, CornerRadius::ZERO, style.removed);
-                    let galley = ui.fonts_mut(|f| {
-                        f.layout_job(line_job(&text, &[], &style.font, style.removed_text, None))
-                    });
-                    let gutter = (REMOVED_MARK.to_owned(), style.removed_text);
-                    text_row(
-                        &painter,
-                        style,
-                        galley,
-                        (top, row_height),
-                        text_left,
-                        gutter,
+                    let row_rect = Rect::from_min_size(
+                        Pos2::new(rect.left(), top),
+                        Vec2::new(rect.width(), row_height),
                     );
+                    removed_row(ui, &painter, style, &text, (row_rect, text_left));
+                    top += row_height;
                     continue;
                 }
             };
-            let paused = self.paused == Some(line);
-            if paused {
-                painter.rect_filled(row_rect, CornerRadius::ZERO, style.paused_line);
-            } else if added {
-                painter.rect_filled(row_rect, CornerRadius::ZERO, style.added);
-            } else if line == primary.head.line {
-                painter.rect_filled(row_rect, CornerRadius::ZERO, style.current_line);
-            }
             let preedit = match &composing {
                 Some(text) if line == primary.head.line => Some(Preedit {
                     col: primary.head.col,
@@ -711,70 +825,85 @@ impl EditorView {
                 Some(_) | None => None,
             };
             let galley = self.galley(ui, style, styler, line, preedit);
+            let height = line_height(&galley, row_height);
+            let row_rect =
+                Rect::from_min_size(Pos2::new(rect.left(), top), Vec2::new(rect.width(), height));
+            let paused = self.paused == Some(line);
+            if paused {
+                painter.rect_filled(row_rect, CornerRadius::ZERO, style.paused_line);
+            } else if added {
+                painter.rect_filled(row_rect, CornerRadius::ZERO, style.added);
+            } else if line == primary.head.line {
+                painter.rect_filled(row_rect, CornerRadius::ZERO, style.current_line);
+            }
             let buffer = self.state.buffer();
-            let x_of = |col: usize| {
+            // A byte column's character index in the galley, past the preedit when after it.
+            let chars_of = |col: usize| {
                 let mut chars = buffer.char_column(line, col);
                 if let Some(p) = preedit
                     && col >= p.col
                 {
                     chars = chars.saturating_add(p.text.chars().count());
                 }
-                text_left + galley.pos_from_cursor(CCursor::new(chars)).min.x
+                chars
             };
+            let text_top = top + (height - galley.size().y).max(0.0) / 2.0;
+            indent_guides(
+                &painter,
+                style,
+                &galley,
+                buffer.line(line),
+                (text_left, text_top),
+            );
             let line_end = buffer.line(line).len();
-            for selection in &selections {
-                let (start, finish) = (selection.start(), selection.end());
-                if selection.is_caret() || line < start.line || line > finish.line {
-                    continue;
-                }
-                let from = if line == start.line { start.col } else { 0 };
-                let to = if line == finish.line {
-                    finish.col
-                } else {
-                    line_end
-                };
-                let mut right = x_of(to);
-                if line != finish.line {
-                    right += char_width_of(&galley).max(CARET_WIDTH);
-                }
-                let band = Rect::from_min_max(
-                    Pos2::new(x_of(from), top),
-                    Pos2::new(right, top + row_height),
-                );
-                painter.rect_filled(band, CornerRadius::ZERO, style.selection);
-            }
+            paint_selections(
+                &painter,
+                style,
+                &galley,
+                (&selections, line, line_end),
+                &chars_of,
+                (text_left, text_top, top, height),
+            );
             let number = (line.saturating_add(1).to_string(), style.line_number);
             text_row(
                 &painter,
                 style,
                 Arc::clone(&galley),
-                (top, row_height),
+                (top, height),
                 text_left,
                 number,
             );
+            if let Some(folded) = self.folds.start_at(line) {
+                fold_mark(
+                    &painter,
+                    style,
+                    &galley,
+                    folded,
+                    (text_left, top),
+                    row_height,
+                );
+            }
             let marks = Marks {
                 breakpoint: self.breakpoints.contains(&line),
                 paused,
             };
             marks.paint(&painter, style, Pos2::new(rect.left(), top), row_height);
             for selection in selections.iter().filter(|s| s.head.line == line) {
-                let mut col = selection.head.col;
-                if *selection == primary
-                    && let Some(p) = preedit
-                {
-                    col = col.saturating_add(p.text.len());
-                }
-                let x = match preedit {
-                    Some(p) if *selection == primary => {
-                        let chars = buffer
-                            .char_column(line, p.col)
-                            .saturating_add(p.text.chars().count());
-                        text_left + galley.pos_from_cursor(CCursor::new(chars)).min.x
-                    }
-                    Some(_) | None => x_of(col),
+                let chars = match preedit {
+                    Some(p) if *selection == primary => buffer
+                        .char_column(line, p.col)
+                        .saturating_add(p.text.chars().count()),
+                    Some(_) | None => chars_of(selection.head.col),
+                };
+                let at = galley.pos_from_cursor(CCursor::new(chars));
+                // On a wrapped line the caret is on its row; an unwrapped line's fills the row.
+                let caret_top = if galley.rows.len() <= 1 {
+                    top
+                } else {
+                    text_top + at.min.y
                 };
                 let caret = Rect::from_min_size(
-                    Pos2::new(x, top + 1.0),
+                    Pos2::new(text_left + at.min.x, caret_top + 1.0),
                     Vec2::new(CARET_WIDTH, row_height - 2.0),
                 );
                 if focused {
@@ -791,6 +920,7 @@ impl EditorView {
                 .map(|c| u8::try_from(c.len_utf8()).unwrap_or(4))
                 .collect();
             runs.push((row_rect, value, lengths));
+            top += height;
         }
         self.caret_rect = ime_caret;
         if focused && let Some(cursor_rect) = ime_caret {
@@ -959,4 +1089,211 @@ fn text_row(
         style.font.clone(),
         color,
     );
+}
+
+/// Paints the bands of `selections` on `line`, whose text ends at byte `line_end`, drawn as
+/// `galley` at `text_left` and `text_top` in its row from `top`, `height` tall; `chars_of` turns
+/// a byte column into the galley's character index.
+fn paint_selections(
+    painter: &egui::Painter,
+    style: &ViewStyle,
+    galley: &Galley,
+    (selections, line, line_end): (&[Selection], usize, usize),
+    chars_of: &dyn Fn(usize) -> usize,
+    (text_left, text_top, top, height): (f32, f32, f32, f32),
+) {
+    for selection in selections {
+        let (start, finish) = (selection.start(), selection.end());
+        if selection.is_caret() || line < start.line || line > finish.line {
+            continue;
+        }
+        let from = if line == start.line { start.col } else { 0 };
+        let to = if line == finish.line {
+            finish.col
+        } else {
+            line_end
+        };
+        let past_end = if line == finish.line {
+            0.0
+        } else {
+            char_width_of(galley).max(CARET_WIDTH)
+        };
+        let one_row = galley.rows.len() <= 1;
+        for band in bands(galley, chars_of(from), chars_of(to), past_end) {
+            let mut band = band.translate(Vec2::new(text_left, text_top));
+            if one_row {
+                // An unwrapped line's band fills its row, as the line's tint does.
+                band = Rect::from_x_y_ranges(band.x_range(), top..=top + height);
+            }
+            painter.rect_filled(band, CornerRadius::ZERO, style.selection);
+        }
+    }
+}
+
+/// Paints a line the diff's base had, `text`, in `row_rect` with its text at `text_left`.
+fn removed_row(
+    ui: &Ui,
+    painter: &egui::Painter,
+    style: &ViewStyle,
+    text: &str,
+    (row_rect, text_left): (Rect, f32),
+) {
+    painter.rect_filled(row_rect, CornerRadius::ZERO, style.removed);
+    let galley =
+        ui.fonts_mut(|f| f.layout_job(line_job(text, &[], &style.font, style.removed_text, None)));
+    let gutter = (REMOVED_MARK.to_owned(), style.removed_text);
+    text_row(
+        painter,
+        style,
+        galley,
+        (row_rect.top(), row_rect.height()),
+        text_left,
+        gutter,
+    );
+}
+
+/// How tall line `galley` is drawn: one row, or each of its wrapped rows.
+fn line_height(galley: &Galley, row_height: f32) -> f32 {
+    galley.size().y.ceil().max(row_height)
+}
+
+/// The rectangles, relative to `galley`, that a selection of its characters `from..to` covers:
+/// one for each wrapped row it touches, the last widened by `past_end` for a selection that
+/// goes on past the line's end.
+fn bands(galley: &Galley, from: usize, to: usize, past_end: f32) -> Vec<Rect> {
+    let mut out = Vec::new();
+    let mut start = 0_usize;
+    let last = galley.rows.len().saturating_sub(1);
+    for (index, placed) in galley.rows.iter().enumerate() {
+        let count = placed.row.char_count_excluding_newline().0;
+        let end = start.saturating_add(count);
+        let (a, b) = (from.max(start), to.min(end));
+        // A selection that only touches a wrapped row's end is drawn on the next row.
+        let touches = a < b || (a == b && index == last && from <= end && to >= start);
+        if touches || (a <= b && index == last) {
+            let row = placed.rect();
+            let left = row.left()
+                + placed
+                    .row
+                    .x_offset(egui::text::CharIndex(a.saturating_sub(start)));
+            let mut right = row.left()
+                + placed
+                    .row
+                    .x_offset(egui::text::CharIndex(b.saturating_sub(start)));
+            if index == last {
+                right += past_end;
+            }
+            if right > left {
+                out.push(Rect::from_min_max(
+                    Pos2::new(left, row.top()),
+                    Pos2::new(right, row.bottom()),
+                ));
+            }
+        }
+        start = end;
+        if start >= to {
+            break;
+        }
+    }
+    out
+}
+
+/// The indent levels of `text`'s leading white space: the character index each level after
+/// the first starts at, a tab one level and [`INDENT_SPACES`] spaces another.
+fn indent_levels(text: &str) -> Vec<usize> {
+    let mut levels = Vec::new();
+    let mut spaces = 0_usize;
+    for (index, c) in text.chars().enumerate() {
+        match c {
+            '\t' => {
+                spaces = 0;
+                levels.push(index.saturating_add(1));
+            }
+            ' ' => {
+                spaces = spaces.saturating_add(1);
+                if spaces == INDENT_SPACES {
+                    spaces = 0;
+                    levels.push(index.saturating_add(1));
+                }
+            }
+            _ => break,
+        }
+    }
+    // A guide at the start of the text, after the last level, is drawn by no level.
+    if text.chars().all(char::is_whitespace) {
+        levels.clear();
+    }
+    levels.pop();
+    levels
+}
+
+/// Paints a thin vertical guide at each indent level of `text`, drawn as `galley` at `origin`,
+/// over the first row (P4-32).
+fn indent_guides(
+    painter: &egui::Painter,
+    style: &ViewStyle,
+    galley: &Galley,
+    text: &str,
+    origin: (f32, f32),
+) {
+    let Some(first) = galley.rows.first() else {
+        return;
+    };
+    let (left, top) = origin;
+    for level in indent_levels(text) {
+        let x = left + galley.pos_from_cursor(CCursor::new(level)).min.x;
+        let height = galley.size().y;
+        painter.line_segment(
+            [
+                Pos2::new(x, top),
+                Pos2::new(x, top + height.max(first.rect().height())),
+            ],
+            egui::Stroke::new(1.0, style.indent_guide),
+        );
+    }
+}
+
+/// Paints a fold region's mark in the gutter before the text at `origin`: a right-pointing
+/// triangle when folded, a down-pointing one when open; a folded line also gets an ellipsis
+/// after its text.
+fn fold_mark(
+    painter: &egui::Painter,
+    style: &ViewStyle,
+    galley: &Galley,
+    folded: bool,
+    origin: (f32, f32),
+    row_height: f32,
+) {
+    let (text_left, top) = origin;
+    let centre = Pos2::new(text_left - GUTTER_PAD / 2.0, top + row_height / 2.0);
+    let r = (GUTTER_PAD / 2.0 - 2.0).min(row_height / 4.0);
+    let points = if folded {
+        vec![
+            Pos2::new(centre.x - r / 2.0, centre.y - r),
+            Pos2::new(centre.x + r / 2.0, centre.y),
+            Pos2::new(centre.x - r / 2.0, centre.y + r),
+        ]
+    } else {
+        vec![
+            Pos2::new(centre.x - r, centre.y - r / 2.0),
+            Pos2::new(centre.x + r, centre.y - r / 2.0),
+            Pos2::new(centre.x, centre.y + r / 2.0),
+        ]
+    };
+    painter.add(egui::Shape::convex_polygon(
+        points,
+        style.line_number,
+        egui::Stroke::NONE,
+    ));
+    if folded {
+        let end = galley.rows.last().map_or(0.0, |row| row.rect().right());
+        let at = Pos2::new(text_left + end + GUTTER_PAD / 2.0, top);
+        painter.text(
+            at,
+            egui::Align2::LEFT_TOP,
+            FOLDED_MARK,
+            style.font.clone(),
+            style.line_number,
+        );
+    }
 }

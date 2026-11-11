@@ -23,6 +23,7 @@ use eframe::egui::{
     TextEdit, Ui,
 };
 use qs_editor_view::find::{Case, Query};
+use qs_editor_view::fold::FoldRegion;
 use qs_editor_view::{EditorView, Position, Selection, ViewStyle};
 use qs_workbench::{Candidate, OpenFile, Place};
 
@@ -189,7 +190,26 @@ impl Editor {
             inline_from: None,
         };
         editor.place(open);
+        editor.set_folds(open);
         editor
+    }
+
+    /// The fold regions of `open`'s blocks and block comments (P4-32), each from the line its
+    /// span starts on to the line it ends on.
+    fn set_folds(&mut self, open: &OpenFile) {
+        let text = open.text();
+        let breaks: Vec<usize> = text
+            .iter()
+            .enumerate()
+            .filter_map(|(at, byte)| (*byte == b'\n').then_some(at))
+            .collect();
+        // The line of a byte offset: how many line breaks come before it.
+        let line_of = |offset: usize| breaks.partition_point(|at| *at < offset);
+        let regions = open.folds().iter().map(|span| FoldRegion {
+            start: line_of(span.start),
+            end: line_of(span.end.saturating_sub(1)),
+        });
+        self.view.folds_mut().set_regions(regions);
     }
 
     /// Brings the editor up to date with `open`, the same file: the text a rename or its undo
@@ -210,6 +230,7 @@ impl Editor {
         }
         if !self.styler.is_current(open) {
             self.styler = CodeStyler::new(open, theme);
+            self.set_folds(open);
         }
     }
 

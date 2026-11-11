@@ -12,7 +12,7 @@ use std::path::Path;
 use qc_diag::Span;
 use qc_project::Loader;
 use qc_sema::{DefKind, Definition};
-use qc_syntax::SyntaxKind;
+use qc_syntax::{SyntaxElement, SyntaxKind};
 
 use crate::host::{AnalysisHost, ModuleData};
 use crate::syntax::name_at;
@@ -224,5 +224,34 @@ impl<L: Loader> AnalysisHost<L> {
             .tokens()
             .filter_map(|token| SyntaxClass::of(token.kind()).map(|class| (token.span(), class)))
             .collect()
+    }
+
+    /// The spans of `path` an editor folds (P4-32, UI-16): each block (`{ ... }`) and block
+    /// comment that spans more than one line, in source order, a block before those inside it.
+    pub fn folding_ranges(&mut self, path: &Path) -> Vec<Span> {
+        let Some(&(module, file)) = self.modules_of(path).first() else {
+            return Vec::new();
+        };
+        let Some((_, data)) = self.module(module) else {
+            return Vec::new();
+        };
+        let Some(parse) = data.parses.get(file.index()) else {
+            return Vec::new();
+        };
+        let mut out: Vec<Span> = parse
+            .syntax()
+            .descendants_with_tokens()
+            .filter_map(|element| match element {
+                SyntaxElement::Node(node) if node.kind() == SyntaxKind::Block => {
+                    node.text().contains(&b'\n').then(|| node.span())
+                }
+                SyntaxElement::Token(token) if token.kind() == SyntaxKind::BlockComment => {
+                    token.text().contains(&b'\n').then(|| token.span())
+                }
+                SyntaxElement::Node(_) | SyntaxElement::Token(_) => None,
+            })
+            .collect();
+        out.sort_by_key(|span| (span.start, std::cmp::Reverse(span.end)));
+        out
     }
 }

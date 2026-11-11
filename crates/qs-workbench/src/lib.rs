@@ -208,6 +208,7 @@ pub struct OpenFile {
     outline: Vec<Symbol>,
     highlights: Vec<Highlight>,
     classes: Vec<(Span, SyntaxClass)>,
+    folds: Vec<Span>,
 }
 
 impl OpenFile {
@@ -276,6 +277,13 @@ impl OpenFile {
     #[must_use]
     pub fn classes(&self) -> &[(Span, SyntaxClass)] {
         &self.classes
+    }
+
+    /// The spans an editor folds: the blocks and block comments over several lines, outer
+    /// before inner (P4-32).
+    #[must_use]
+    pub fn folds(&self) -> &[Span] {
+        &self.folds
     }
 
     /// Changes whenever its text or what was worked out from it does, from any source.
@@ -409,6 +417,7 @@ impl<L: Loader> Workbench<L> {
             open.outline = file.outline;
             open.highlights = file.highlights;
             open.classes = file.classes;
+            open.folds = file.folds;
             self.generation = self.generation.wrapping_add(1);
             open.revision = self.generation;
         }
@@ -478,6 +487,7 @@ impl<L: Loader> Workbench<L> {
         let outline = self.host.document_symbols(&path);
         let highlights = self.host.highlights(&path);
         let classes = self.host.syntax_classes(&path);
+        let folds = self.host.folding_ranges(&path);
         let open = OpenFile {
             path,
             text,
@@ -488,6 +498,7 @@ impl<L: Loader> Workbench<L> {
             outline,
             highlights,
             classes,
+            folds,
         };
         let location = open.location();
         if !self.tabs.contains(&open.path) {

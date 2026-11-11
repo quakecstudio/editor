@@ -49,6 +49,15 @@ the primary one, Alt-click adds one, and Shift extends a selection.
   step, as Vim's undo is; the arrows and the Cmd or Ctrl shortcuts work as before. Not yet:
   text objects, `f t`, searches, marks, Visual line and block modes, macros and Ex commands.
 
+- **Folding, soft wrap and indent guides** (P4-32, UI-16): `fold::Folds` holds the foldable
+  regions (`FoldRegion`, a block's first and last lines, which stay shown) and the folded ones;
+  the rows skip the lines a fold hides, the gutter marks a region's first line with a triangle
+  a click folds or unfolds, a folded line ends in an ellipsis, the arrows step over a folded
+  region and a caret placed in one unfolds it, as VS Code and Zed do. `Wrap::Width` lays each
+  line out at the view's width, so a long line takes more rows, its selections and carets on
+  the row they fall on; the layout cache is keyed by the width too. A thin guide is drawn at
+  each indent level after the first, a tab or four spaces.
+
 ## Measurements
 
 `cargo run --release -p qs-editor-view --example bench -- <out-dir> [host]` replays the

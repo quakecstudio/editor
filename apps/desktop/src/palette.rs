@@ -78,6 +78,13 @@ impl Palette {
         };
     }
 
+    /// Opens it on `info`'s parameter prompt, as when a key runs a command that asks for its
+    /// parameters (P4-32: `editor.go_to_line`).
+    pub fn ask(&mut self, info: &CommandInfo) {
+        self.open(Vec::new());
+        self.choose(info);
+    }
+
     /// Closes it.
     pub fn close(&mut self) {
         *self = Self::default();

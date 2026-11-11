@@ -17,6 +17,7 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 | --- | --- | --- | --- | --- | --- |
 | `open_project_and_type` | PRIN-5 | 1 s | p95 | [#714](https://github.com/quakecstudio/editor/issues/714) P2-166 | active |
 | `keystroke` | PRIN-5 | 8.33 ms | p99 | [#714](https://github.com/quakecstudio/editor/issues/714) P2-166 | active |
+| `keystroke_split_fold_wrap` | PRIN-5 | 8.33 ms | p99 | [#809](https://github.com/quakecstudio/editor/issues/809) P4-32 | active |
 | `check_after_typing` | PRIN-5 | 8.33 ms | p99 | [#758](https://github.com/quakecstudio/editor/issues/758) P3-35 | active |
 | `entities_outliner` | UI-3 | 8.33 ms | p99 | [#101](https://github.com/quakecstudio/editor/issues/101) P3-13 | active |
 | `id1_recompile` | PRIN-5 | 200 ms | median | [#67](https://github.com/quakecstudio/editor/issues/67) P2-11 | active |
@@ -38,6 +39,9 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 - **`keystroke`:** one keystroke in the code editor with semantic highlighting on, from the key
   event to the next presented frame. At most one frame at 120 Hz, 8.33 ms, at the 99th
   percentile, the same threshold as the UI framework spike ([#10](https://github.com/quakecstudio/editor/issues/10)).
+- **`keystroke_split_fold_wrap`:** `keystroke` with the editor split right, every block of the
+  file folded and soft wrap on (UI-16): the same budget, so folding, splitting and wrapping
+  cost the editor no frame.
 - **`check_after_typing`:** the one frame that sends the editor's text to the project once
   typing has paused for the editor's settle time (0.3 s), on the same 50,000-line project. The
   check itself runs on a thread of its own, and the frame takes its problems, symbols and

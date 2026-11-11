@@ -17,6 +17,13 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`edit.reject`](#editreject) | Rejects staged hunks: the lines they replaced come back, byte for byte. |
 | [`edit.staged`](#editstaged) | Lists the staged hunks waiting to be accepted or rejected. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
+| [`editor.fold`](#editorfold) | Folds the innermost block or block comment at the caret. |
+| [`editor.fold_all`](#editorfold_all) | Folds every block and block comment of the open file, each down to its first and last lines. |
+| [`editor.go_to_line`](#editorgo_to_line) | Moves the caret to a line of the open file, from 1; without a line it asks for one. |
+| [`editor.go_to_symbol`](#editorgo_to_symbol) | Opens a picker of the open file's symbols, to move the caret to one. |
+| [`editor.toggle_soft_wrap`](#editortoggle_soft_wrap) | Turns soft wrap on or off: long lines wrap at the editor's width. |
+| [`editor.unfold`](#editorunfold) | Unfolds the innermost folded block or comment at the caret. |
+| [`editor.unfold_all`](#editorunfold_all) | Unfolds every folded block and block comment of the open file, showing all of its lines. |
 | [`engine.builtins`](#enginebuiltins) | Lists an engine's builtins for a module kind, each with its number or engine name, QuakeC name, signature and extensions; the open project's engine and server QuakeC when none is named. |
 | [`engine.console`](#engineconsole) | Runs a command in the running game's console and answers the lines it printed. |
 | [`engine.inspect`](#engineinspect) | Reads the running game: the edicts in use, one edict's fields, every named global, or the call stack while stopped in a frame. |
@@ -72,11 +79,16 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`terminal.new`](#terminalnew) | Opens the user's shell in the project directory in a new terminal tab. |
 | [`terminal.poll`](#terminalpoll) | Takes what the terminal tabs have written and how their processes ended, without waiting; true when any tab changed. |
 | [`terminal.send`](#terminalsend) | Writes a line to a terminal tab's shell. |
+| [`view.close_split`](#viewclose_split) | Closes the editor's second pane. |
 | [`view.focus_bottom_panel`](#viewfocus_bottom_panel) | Shows the bottom panel, Problems, Console and the debugger, if it is hidden and gives it the keyboard. |
 | [`view.focus_editor`](#viewfocus_editor) | Gives the keyboard to the editor in the centre. |
 | [`view.focus_left_panel`](#viewfocus_left_panel) | Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard. |
 | [`view.focus_right_panel`](#viewfocus_right_panel) | Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard. |
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
+| [`view.split_down`](#viewsplit_down) | Splits the editor into two panes, one above the other, the second showing the open file. |
+| [`view.split_right`](#viewsplit_right) | Splits the editor into two panes side by side, the second showing the open file. |
+| [`view.tab_switcher`](#viewtab_switcher) | Opens the tab switcher: the open files, the one used most recently first. |
+| [`view.toggle_outline`](#viewtoggle_outline) | Shows or hides the outline panel beside the editor: the open file's symbols, the one the caret is in marked. |
 | [`view.toggle_panel`](#viewtoggle_panel) | Shows or hides a panel: Project and Entities on the left, Properties and the agent on the right, or Problems, Console and the debugger at the bottom. |
 | [`vm.run`](#vmrun) | Builds the open project and calls one QuakeC function in the VM over a mock engine, with globals and the fields of a self edict set first, answering each global and field the call changed and any run error. |
 
@@ -337,6 +349,130 @@ Parameters:
 ## `edit.undo`
 
 Takes back the most recent change that has not been undone.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `editor.fold`
+
+Folds the innermost block or block comment at the caret.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `editor.fold_all`
+
+Folds every block and block comment of the open file, each down to its first and last lines.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `editor.go_to_line`
+
+Moves the caret to a line of the open file, from 1; without a line it asks for one.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `editor.go_to_line`.",
+  "properties": {
+    "line": {
+      "default": null,
+      "description": "The line, from 1; without it the window asks for one.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "title": "GoToLineParams",
+  "type": "object"
+}
+```
+
+## `editor.go_to_symbol`
+
+Opens a picker of the open file's symbols, to move the caret to one.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `editor.toggle_soft_wrap`
+
+Turns soft wrap on or off: long lines wrap at the editor's width.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `editor.unfold`
+
+Unfolds the innermost folded block or comment at the caret.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `editor.unfold_all`
+
+Unfolds every folded block and block comment of the open file, showing all of its lines.
 
 Parameters:
 
@@ -2034,6 +2170,22 @@ Parameters:
 }
 ```
 
+## `view.close_split`
+
+Closes the editor's second pane.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
 ## `view.focus_bottom_panel`
 
 Shows the bottom panel, Problems, Console and the debugger, if it is hidden and gives it the keyboard.
@@ -2147,6 +2299,70 @@ Parameters:
     "size"
   ],
   "title": "ResizePanelParams",
+  "type": "object"
+}
+```
+
+## `view.split_down`
+
+Splits the editor into two panes, one above the other, the second showing the open file.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.split_right`
+
+Splits the editor into two panes side by side, the second showing the open file.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.tab_switcher`
+
+Opens the tab switcher: the open files, the one used most recently first.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.toggle_outline`
+
+Shows or hides the outline panel beside the editor: the open file's symbols, the one the caret is in marked.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```

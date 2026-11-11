@@ -27,3 +27,10 @@ hidden panel in the edit history, so both commands here run outside it
 - `HasLayout` and `register`: the commands for any context with a `Layout`.
 - `TOGGLE_PANEL`, `RESIZE_PANEL` and their parameter types, so the app runs them without
   spelling their ids.
+- The editor's layout and navigation commands (`editor.rs`, P4-32, UI-16), named as Zed's
+  are: `view.split_right`, `view.split_down` and `view.close_split` (`Split`),
+  `editor.toggle_soft_wrap` (`SoftWrap`) and `view.toggle_outline` (`Outline`), which the
+  layout keeps and its file writes; and `editor.fold`, `editor.unfold`, `editor.fold_all`,
+  `editor.unfold_all`, `editor.go_to_line` (a line from 1, or none to be asked),
+  `editor.go_to_symbol` and `view.tab_switcher`, each an `EditorRequest` the window carries
+  out once (`Layout::editor_request`, counted by `editor_requests` as the focus commands are).

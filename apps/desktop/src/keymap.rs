@@ -41,8 +41,14 @@ pub const OPEN_PALETTE: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P);
 
 /// Every binding. The focus keys put the editor on Cmd+1 as VS Code does, then the left,
-/// right and bottom panels on Cmd+2 to Cmd+4; Cmd+0 stays egui's zoom reset.
-pub const BINDINGS: [Binding; 6] = [
+/// right and bottom panels on Cmd+2 to Cmd+4; Cmd+0 stays egui's zoom reset. The editor's
+/// layout and navigation keys (P4-32) are Zed's default keymap's at zed-industries/zed@415d310
+/// where it has one chord: Cmd+Alt+[ and ] fold and unfold, Ctrl+G goes to a line, Cmd+Shift+O
+/// to a symbol, Ctrl+Tab opens the tab switcher and Cmd+Shift+B the outline panel; soft wrap
+/// has no key, as in Zed (VS Code's Alt+Z types a character on macOS, and Cmd+Alt+Z is Cmd+Z
+/// with an extra Alt, which undoes); Cmd+\ splits right as VS Code does, Zed's being a
+/// sequence.
+pub const BINDINGS: [Binding; 13] = [
     Binding {
         command: "edit.undo",
         shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Z),
@@ -71,6 +77,41 @@ pub const BINDINGS: [Binding; 6] = [
     Binding {
         command: qs_layout::FOCUS_BOTTOM_PANEL,
         shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Num4),
+        scope: Scope::Everywhere,
+    },
+    Binding {
+        command: qs_layout::FOLD,
+        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::OpenBracket),
+        scope: Scope::Everywhere,
+    },
+    Binding {
+        command: qs_layout::UNFOLD,
+        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::CloseBracket),
+        scope: Scope::Everywhere,
+    },
+    Binding {
+        command: qs_layout::GO_TO_LINE,
+        shortcut: KeyboardShortcut::new(Modifiers::CTRL, Key::G),
+        scope: Scope::Everywhere,
+    },
+    Binding {
+        command: qs_layout::GO_TO_SYMBOL,
+        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::O),
+        scope: Scope::Everywhere,
+    },
+    Binding {
+        command: qs_layout::TAB_SWITCHER,
+        shortcut: KeyboardShortcut::new(Modifiers::CTRL, Key::Tab),
+        scope: Scope::Everywhere,
+    },
+    Binding {
+        command: qs_layout::TOGGLE_OUTLINE,
+        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::B),
+        scope: Scope::Everywhere,
+    },
+    Binding {
+        command: qs_layout::SPLIT_RIGHT,
+        shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Backslash),
         scope: Scope::Everywhere,
     },
 ];
@@ -310,15 +351,15 @@ pub fn keymap_path(config: &Path) -> PathBuf {
     config.join("keymap.toml")
 }
 
+/// Whether `id` names a command of `registry` a key may run: one that needs no parameter, as
+/// a shortcut gives it none; `editor.go_to_line` without its line asks for one.
 #[must_use]
-/// Whether `id` names a command of `registry` a key may run: one that takes no parameters, as
-/// a shortcut gives it none.
 pub fn bindable<C: 'static>(registry: &qs_commands::Registry<C>, id: &str) -> bool {
     registry.get(id).is_some_and(|info| {
         info.params()
-            .get("properties")
-            .and_then(serde_json::Value::as_object)
-            .is_none_or(serde_json::Map::is_empty)
+            .get("required")
+            .and_then(serde_json::Value::as_array)
+            .is_none_or(Vec::is_empty)
     })
 }
 

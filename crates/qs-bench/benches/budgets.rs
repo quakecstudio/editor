@@ -110,9 +110,32 @@ fn open_project_and_type(group: &mut BenchmarkGroup<'_, WallTime>) {
 /// and [`recorded`] makes each of those times one sample, so the p99 is over that many single
 /// keystrokes, whatever iteration counts criterion asks for.
 fn keystroke(group: &mut BenchmarkGroup<'_, WallTime>) {
+    keystrokes(group, "keystroke", &[]);
+}
+
+/// [`keystroke`] with the editor split right, every block of the file folded and soft wrap on
+/// (P4-32): the keystroke budget holds with the editor's layout features in use.
+fn keystroke_split_fold_wrap(group: &mut BenchmarkGroup<'_, WallTime>) {
+    let layout = [
+        "view.split_right",
+        "editor.toggle_soft_wrap",
+        "editor.fold_all",
+    ];
+    keystrokes(group, "keystroke_split_fold_wrap", &layout);
+}
+
+/// Times single keystrokes as [`keystroke`] says, in the opened app after each command of
+/// `setup` has run, a frame after each, and records them as benchmark `name`.
+fn keystrokes(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, setup: &[&str]) {
     let (dir, file) = project();
     let ctx = egui::Context::default();
     let mut app = opened(&ctx, &dir, &file);
+    for id in setup {
+        app.shell_mut()
+            .execute(id, json!({}))
+            .expect("the layout command runs");
+        frame(&ctx, &mut app, Vec::new());
+    }
     let mut typed = bench::TYPED.chars().cycle();
     let mut type_next = || {
         let c = typed.next().expect("a cycle never ends");
@@ -124,7 +147,7 @@ fn keystroke(group: &mut BenchmarkGroup<'_, WallTime>) {
         type_next();
     }
     let times: Vec<f64> = (0..KEYSTROKES).map(|_| type_next()).collect();
-    recorded(group, "keystroke", &times);
+    recorded(group, name, &times);
 }
 
 /// The keystrokes `keystroke` types before it times any, as criterion's warm-up would.
@@ -491,6 +514,7 @@ fn budgets(criterion: &mut Criterion) {
         .measurement_time(MEASUREMENT);
     open_project_and_type(&mut group);
     keystroke(&mut group);
+    keystroke_split_fold_wrap(&mut group);
     check_after_typing(&mut group);
     entities_outliner(&mut group);
     id1_recompile(&mut group);

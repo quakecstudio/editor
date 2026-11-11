@@ -21,8 +21,15 @@ use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+mod editor;
 #[cfg(test)]
 mod tests;
+
+pub use editor::{
+    CLOSE_SPLIT, EditorRequest, FOLD, FOLD_ALL, GO_TO_LINE, GO_TO_SYMBOL, GoToLineParams, Outline,
+    SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER, TOGGLE_OUTLINE, TOGGLE_SOFT_WRAP,
+    UNFOLD, UNFOLD_ALL,
+};
 
 /// The layout file's name in the app's data directory (`qs_paths::AppDirs::data`).
 pub(crate) const LAYOUT_FILE: &str = "layout.toml";
@@ -91,6 +98,20 @@ pub struct Layout {
     /// than the area. Not written to the file.
     #[serde(skip)]
     pub focus_requests: u64,
+    /// The editor's panes (P4-32).
+    pub split: Split,
+    /// Whether long lines wrap in the editor.
+    pub soft_wrap: SoftWrap,
+    /// Whether the outline panel is shown beside the editor.
+    pub outline: Outline,
+    /// The last one-off editor action a command asked for, which the window carries out once.
+    /// Not written to the file.
+    #[serde(skip)]
+    pub editor_request: Option<EditorRequest>,
+    /// How many editor actions have been asked for, so a window carries out each once. Not
+    /// written to the file.
+    #[serde(skip)]
+    pub editor_requests: u64,
 }
 
 impl Default for Layout {
@@ -112,6 +133,11 @@ impl Default for Layout {
             },
             focus: Focus::Editor,
             focus_requests: 0,
+            split: Split::None,
+            soft_wrap: SoftWrap::Off,
+            outline: Outline::Hidden,
+            editor_request: None,
+            editor_requests: 0,
         }
     }
 }
@@ -133,6 +159,8 @@ impl Layout {
         Self {
             focus: Focus::Editor,
             focus_requests: 0,
+            editor_request: None,
+            editor_requests: 0,
             ..self
         }
     }
@@ -285,7 +313,8 @@ pub fn register<C: HasLayout + 'static>(registry: &mut Registry<C>) -> Result<()
     registry.register(FocusArea::<Editor>::new())?;
     registry.register(FocusArea::<LeftPanel>::new())?;
     registry.register(FocusArea::<RightPanel>::new())?;
-    registry.register(FocusArea::<BottomPanel>::new())
+    registry.register(FocusArea::<BottomPanel>::new())?;
+    editor::register(registry)
 }
 
 /// What a focus command returns.

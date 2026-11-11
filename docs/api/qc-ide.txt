@@ -47,6 +47,7 @@ field qc_ide::symbols::Symbol.range
 fn qc_ide::completion::AnalysisHost::completions
 fn qc_ide::diagnostics::AnalysisHost::all_diagnostics
 fn qc_ide::diagnostics::AnalysisHost::diagnostics
+fn qc_ide::highlight::AnalysisHost::folding_ranges
 fn qc_ide::highlight::AnalysisHost::highlights
 fn qc_ide::highlight::AnalysisHost::syntax_classes
 fn qc_ide::highlight::HighlightKind::of
