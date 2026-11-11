@@ -19,6 +19,7 @@ const qs_workbench::commands::RENAME
 const qs_workbench::commands::SAVE_FILE
 const qs_workbench::commands::TAKE_CHECKED
 const qs_workbench::commands::UPDATE_FILE
+const qs_workbench::entity_classes::PROJECT_ENTITIES
 const qs_workbench::export::ASSET_DIRS
 const qs_workbench::export::NOTICE_PREFIXES
 const qs_workbench::export::PROJECT_EXPORT
@@ -180,6 +181,23 @@ field qs_workbench::editing::Change.before
 field qs_workbench::editing::Change.path
 field qs_workbench::editing::Renamed.caution
 field qs_workbench::editing::Renamed.changes
+field qs_workbench::entity_classes::ClassInfo.color
+field qs_workbench::entity_classes::ClassInfo.doc
+field qs_workbench::entity_classes::ClassInfo.found
+field qs_workbench::entity_classes::ClassInfo.keys
+field qs_workbench::entity_classes::ClassInfo.model
+field qs_workbench::entity_classes::ClassInfo.name
+field qs_workbench::entity_classes::ClassInfo.shape
+field qs_workbench::entity_classes::ClassInfo.size
+field qs_workbench::entity_classes::ClassInfo.spawnflags
+field qs_workbench::entity_classes::EntitiesFound.classes
+field qs_workbench::entity_classes::EntitiesFound.fgd
+field qs_workbench::entity_classes::EntitiesParams.fgd
+field qs_workbench::entity_classes::FlagInfo.name
+field qs_workbench::entity_classes::FlagInfo.value
+field qs_workbench::entity_classes::KeyInfo.default
+field qs_workbench::entity_classes::KeyInfo.name
+field qs_workbench::entity_classes::KeyInfo.ty
 field qs_workbench::export::ExportParams.game
 field qs_workbench::export::ExportParams.out
 field qs_workbench::export::ExportParams.pak
@@ -436,6 +454,7 @@ fn qs_workbench::editing::Workbench::rename
 fn qs_workbench::editing::Workbench::save
 fn qs_workbench::editing::Workbench::text
 fn qs_workbench::editing::Workbench::update
+fn qs_workbench::entity_classes::Workbench::entity_classes
 fn qs_workbench::export::Workbench::export
 fn qs_workbench::git::register_git
 fn qs_workbench::preview::ConsoleLine::is_error
@@ -563,6 +582,7 @@ impl qs_workbench::WorkbenchError: Error
 impl qs_workbench::WorkbenchError: fmt::Display
 impl qs_workbench::checkpoints::CheckpointMade: From<Checkpoint>
 impl qs_workbench::commands::CandidateKind: From<DefKind>
+impl qs_workbench::entity_classes::ClassInfo: From<EntityClass>
 impl qs_workbench::export::ExportError: fmt::Display
 impl qs_workbench::export::ExportError: std::error::Error
 impl qs_workbench::git::GitChange: From<Change>
@@ -591,6 +611,7 @@ impl qs_workbench::tools::KindName: From<ModuleKind>
 impl qs_workbench::vm_run::VmRunError: std::error::Error
 impl qs_workbench::vm_run::VmRunError: std::fmt::Display
 mod qs_workbench::checkpoints
+mod qs_workbench::entity_classes
 mod qs_workbench::export
 mod qs_workbench::git
 mod qs_workbench::preview::debug
@@ -632,6 +653,11 @@ struct qs_workbench::commands::SaveFileParams
 struct qs_workbench::commands::UpdateFileParams
 struct qs_workbench::editing::Change
 struct qs_workbench::editing::Renamed
+struct qs_workbench::entity_classes::ClassInfo
+struct qs_workbench::entity_classes::EntitiesFound
+struct qs_workbench::entity_classes::EntitiesParams
+struct qs_workbench::entity_classes::FlagInfo
+struct qs_workbench::entity_classes::KeyInfo
 struct qs_workbench::export::ExportParams
 struct qs_workbench::export::Exported
 struct qs_workbench::git::GitBlameLine

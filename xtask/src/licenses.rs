@@ -37,10 +37,11 @@ const SOURCE_NAMES: [&str; 1] = ["Makefile"];
 // is an engine oracle script (oracles/README.md), and `scenario` a scenario, a route with assertions
 // (docs/spec/scenario.md).
 // `desktop`, `plist`, `spec`, `wxs`, `vdf`, `acf` and a deb's `control` are the release
-// packages' own files and Steam's (packaging/).
-const TEXT_EXTENSIONS: [&str; 21] = [
+// packages' own files and Steam's (packaging/); `fgd` is an entity definition file, the golden
+// files of `cargo xtask entity-corpus`.
+const TEXT_EXTENSIONS: [&str; 22] = [
     "md", "toml", "yaml", "yml", "json", "jsonl", "lock", "html", "txt", "tsv", "csv", "hex",
-    "src", "route", "scenario", "desktop", "plist", "spec", "wxs", "vdf", "acf",
+    "src", "route", "scenario", "desktop", "plist", "spec", "wxs", "vdf", "acf", "fgd",
 ];
 const TEXT_NAMES: [&str; 4] = [LICENSE_FILE, ".gitignore", ".gitattributes", "control"];
 const COMMENT_OPENERS: [&str; 6] = ["//", "#", "<!--", "/*", "*", "--"];

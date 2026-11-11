@@ -67,6 +67,10 @@ an edit, so both commands run outside the edit history
   replaces every match in one file and saves it, one undoable step per file, so replacing across
   a project is the command once per file; `file.replace_range` changes one range of a file's
   text, unsaved, as an edit in a multibuffer excerpt does.
+- Entity definitions (`entity_classes`, P5-03, MAP-1): `project.entities` lists the entity
+  classes the project's server QuakeC defines, read from its spawn functions by `qc-sema`, and
+  with `fgd` writes them as an FGD file for other map editors
+  (`quakec-ide run project.entities '{"fgd": "mod.fgd"}' --project <dir>`).
 - Git (`git`, P4-35, UI-19): `git.status`, `git.diff`, `git.stage` and `git.unstage` (a file
   or one hunk), `git.commit`, `git.branches`, `git.switch`, `git.create_branch`, `git.log`,
   `git.blame`, `git.conflicts`, `git.resolve` and `git.head_text`, over `qs-git` in the open
