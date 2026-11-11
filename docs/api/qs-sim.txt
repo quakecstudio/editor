@@ -671,6 +671,7 @@ variant qs_sim::world::changes::EdictChange::Removed
 variant qs_sim::world::changes::EdictChange::Spawned
 variant qs_sim::world::edit::EditError::BadValue
 variant qs_sim::world::edit::EditError::Kept
+variant qs_sim::world::edit::EditError::NewPrecache
 variant qs_sim::world::edit::EditError::NoSuchEdict
 variant qs_sim::world::edit::EditError::NoSuchField
 variant qs_sim::world::edit::EditError::Spawn
