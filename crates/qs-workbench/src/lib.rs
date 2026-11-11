@@ -22,6 +22,7 @@ pub mod export;
 pub mod git;
 mod preview;
 mod recent;
+pub mod search;
 pub mod staged;
 pub mod terminal;
 pub mod testing;
@@ -676,6 +677,13 @@ pub enum WorkbenchError {
         /// The number.
         id: staged::HunkId,
     },
+    /// A search's pattern is not a regular expression (P4-33).
+    Pattern {
+        /// The pattern.
+        pattern: String,
+        /// Why it is not one.
+        reason: String,
+    },
     /// The offset is past the end of the file.
     Offset {
         /// The file.
@@ -702,6 +710,9 @@ impl fmt::Display for WorkbenchError {
             }
             Self::NoHunk { id } => write!(f, "{id} is not staged"),
             Self::Checkpoint(error) => error.fmt(f),
+            Self::Pattern { pattern, reason } => {
+                write!(f, "{pattern}: not a regular expression: {reason}")
+            }
             Self::Offset { path, offset, len } => write!(
                 f,
                 "{}: offset {offset} is past the end of the file, {len} bytes",
@@ -722,6 +733,7 @@ impl Error for WorkbenchError {
             | Self::NoProject
             | Self::NoFix { .. }
             | Self::NoHunk { .. }
+            | Self::Pattern { .. }
             | Self::Offset { .. } => None,
         }
     }

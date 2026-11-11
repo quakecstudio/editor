@@ -228,6 +228,15 @@ palette's when no line is given; and the go to symbol picker and the tab switche
 (`keymap.rs`). `keystroke_split_fold_wrap` (`docs/perf-budgets.md`) holds the keystroke
 budget with all three in use.
 
+**Project search and the multibuffer (P4-33, UI-17).** The centre's Search tab
+(`multibuffer.rs`) shows project search results, a name's references (Shift+F12) or the Problems
+list (its Open as excerpts button) as excerpts of their files, each its place's whole lines with
+a line of context, as Zed's Multibuffers page describes. `view.project_search` (Cmd+Shift+F)
+opens it with the search box focused: match case, whole word and regular expression, and
+Replace all, which runs `file.replace_all` once per file. An edit in an excerpt runs
+`file.replace_range` on its file; Open goes to the file with the caret where it was in the
+excerpt. An excerpt of a file with bytes that are not UTF-8 is shown read-only.
+
 **Vim mode (P4-37).** `editor.key_mode = "vim"` in the user's settings
 ([`docs/settings.md`](../../docs/settings.md)) puts the code editor in `KeyMode::Vim`
 ([`qs-editor-view`](../../crates/qs-editor-view/README.md), `vim`), read when the window
@@ -248,12 +257,4 @@ WCAG AA. The recorded VoiceOver, NVDA and Orca passes are P4-24's.
 
 ## Strings
 
-Every string the window shows is a `strings::Text` (CONV-16). The test
-`the_ui_code_has_no_string_literals` fails on a string literal with words in it in the UI
-modules, comments, attributes and log lines aside.
-
-## Running it
-
-```text
-cargo run -p quakec-studio
-```
+Every string the window shows is a `strings::Text` (CONV-16). The tes

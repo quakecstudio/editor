@@ -285,6 +285,7 @@ fn the_ui_code_has_no_string_literals() {
         ("terminal.rs", include_str!("terminal.rs")),
         ("picker.rs", include_str!("picker.rs")),
         ("git_panel.rs", include_str!("git_panel.rs")),
+        ("multibuffer.rs", include_str!("multibuffer.rs")),
         ("project.rs", include_str!("project.rs")),
         ("editor.rs", include_str!("editor.rs")),
         ("code_style.rs", include_str!("code_style.rs")),

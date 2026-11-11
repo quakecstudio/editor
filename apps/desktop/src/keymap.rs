@@ -48,7 +48,7 @@ pub const OPEN_PALETTE: KeyboardShortcut =
 /// has no key, as in Zed (VS Code's Alt+Z types a character on macOS, and Cmd+Alt+Z is Cmd+Z
 /// with an extra Alt, which undoes); Cmd+\ splits right as VS Code does, Zed's being a
 /// sequence.
-pub const BINDINGS: [Binding; 13] = [
+pub const BINDINGS: [Binding; 14] = [
     Binding {
         command: "edit.undo",
         shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Z),
@@ -97,6 +97,11 @@ pub const BINDINGS: [Binding; 13] = [
     Binding {
         command: qs_layout::GO_TO_SYMBOL,
         shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::O),
+        scope: Scope::Everywhere,
+    },
+    Binding {
+        command: qs_layout::PROJECT_SEARCH_VIEW,
+        shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::F),
         scope: Scope::Everywhere,
     },
     Binding {

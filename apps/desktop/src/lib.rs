@@ -28,6 +28,7 @@ pub mod keymap;
 pub mod map_view;
 #[cfg(target_os = "macos")]
 pub mod menu;
+mod multibuffer;
 pub mod palette;
 mod picker;
 pub mod project;

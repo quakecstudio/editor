@@ -38,6 +38,8 @@ qc-builtins = { workspace = true }
 qc-edict = { workspace = true }
 qc-types = { workspace = true }
 qc-vm = { workspace = true }
+# project.search: whole words and regular expressions (P4-33).
+regex-lite = { workspace = true, features = ["std", "string"] }
 schemars = { workspace = true, features = ["derive", "std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }

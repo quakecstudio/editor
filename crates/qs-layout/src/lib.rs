@@ -27,8 +27,8 @@ mod tests;
 
 pub use editor::{
     CLOSE_SPLIT, EditorRequest, FOLD, FOLD_ALL, GO_TO_LINE, GO_TO_SYMBOL, GoToLineParams, Outline,
-    SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER, TOGGLE_OUTLINE, TOGGLE_SOFT_WRAP,
-    UNFOLD, UNFOLD_ALL,
+    PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER, TOGGLE_OUTLINE,
+    TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL,
 };
 
 /// The layout file's name in the app's data directory (`qs_paths::AppDirs::data`).

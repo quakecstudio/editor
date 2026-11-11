@@ -420,6 +420,20 @@ pub enum Text {
     FindPrevious,
     /// The find bar's case switch.
     MatchCase,
+    /// The centre's Search tab: the multibuffer of the project search (P4-33).
+    ProjectSearch,
+    /// The project search box's hint.
+    SearchProject,
+    /// The project search's Whole word toggle.
+    WholeWord,
+    /// The project search's regular expression toggle.
+    UseRegex,
+    /// The multibuffer with nothing to show.
+    NoSearchMatch,
+    /// An excerpt's button that opens its file at the caret.
+    OpenExcerpt,
+    /// The Problems tab's button that shows every problem as excerpts.
+    OpenAsMultibuffer,
     /// The map view's tab in the centre.
     Map,
     /// The map view with no map shown.
@@ -444,7 +458,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 216] = [
+    pub const ALL: [Self; 223] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -651,6 +665,13 @@ impl Text {
         Self::FindNext,
         Self::FindPrevious,
         Self::MatchCase,
+        Self::ProjectSearch,
+        Self::SearchProject,
+        Self::WholeWord,
+        Self::UseRegex,
+        Self::NoSearchMatch,
+        Self::OpenExcerpt,
+        Self::OpenAsMultibuffer,
         Self::Map,
         Self::NoMap,
         Self::Toolbar,
@@ -888,6 +909,13 @@ impl Text {
             Self::FindNext => "Next",
             Self::FindPrevious => "Previous",
             Self::MatchCase => "Match case",
+            Self::ProjectSearch => "Search",
+            Self::SearchProject => "Search the project",
+            Self::WholeWord => "Whole word",
+            Self::UseRegex => "Regular expression",
+            Self::NoSearchMatch => "Nothing found.",
+            Self::OpenExcerpt => "Open",
+            Self::OpenAsMultibuffer => "Open as excerpts",
             Self::Map => "Map",
             Self::NoMap => "No map open.",
             Self::Toolbar => "Toolbar",
@@ -944,5 +972,24 @@ pub fn match_count(count: usize) -> String {
     match count {
         1 => "1 match".to_owned(),
         n => format!("{n} matches"),
+    }
+}
+
+/// The multibuffer's count of the places it shows and their files; `more` when the search
+/// found more than it shows (P4-33).
+#[must_use]
+pub fn search_count(places: usize, files: usize, more: bool) -> String {
+    let places = match places {
+        1 => "1 result".to_owned(),
+        n => format!("{n} results"),
+    };
+    let files = match files {
+        1 => "1 file".to_owned(),
+        n => format!("{n} files"),
+    };
+    if more {
+        format!("{places} in {files}, the first only")
+    } else {
+        format!("{places} in {files}")
     }
 }

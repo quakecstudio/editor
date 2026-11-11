@@ -12,6 +12,7 @@ use qs_commands::{Command, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::search::{Query, SearchOptions};
 use crate::{Gravity, HasWorkbench, Location, ModuleBuilt, WorkbenchError};
 
 /// The id of the command that lists the open project's symbols.
@@ -39,15 +40,25 @@ pub struct ProjectSearchParams {
     /// Whether case matters; it does not by default.
     #[serde(default)]
     pub case_sensitive: bool,
+    /// Whether only whole words are found (P4-33).
+    #[serde(default)]
+    pub whole_word: bool,
+    /// Whether the text is a regular expression (P4-33).
+    #[serde(default)]
+    pub regex: bool,
 }
 
-/// One line that holds the text searched for.
+/// One match of the text searched for.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SearchMatch {
     /// The file.
     pub path: PathBuf,
     /// The line, from 1.
     pub line: usize,
+    /// The match's first byte in the file.
+    pub start: usize,
+    /// The byte after its last.
+    pub end: usize,
     /// The line's text, without its line ending.
     pub text: String,
 }
@@ -159,45 +170,25 @@ impl<L: qc_project::Loader> crate::Workbench<L> {
         files
     }
 
-    /// Every line of the project's files, their current text, holding `text`: the editor's
-    /// unsaved text where it has one. Lines are counted by line feeds.
+    /// Every match of `text` in the project's files, their current text: the editor's unsaved
+    /// text where it has one. Lines are counted by line feeds; case is ignored unless
+    /// `case_sensitive`.
     pub fn search(&mut self, text: &str, case_sensitive: bool) -> SearchFound {
-        let needle = if case_sensitive {
-            text.to_owned()
-        } else {
-            text.to_lowercase()
+        let options = SearchOptions {
+            text: text.to_owned(),
+            case_sensitive,
+            ..SearchOptions::default()
         };
-        let mut matches = Vec::new();
-        let mut truncated = false;
-        for path in self.project_files() {
-            let Some(bytes) = self.host.text(&path) else {
-                continue;
-            };
-            let content = String::from_utf8_lossy(&bytes);
-            for (index, line) in content.lines().enumerate() {
-                let haystack = if case_sensitive {
-                    line.to_owned()
-                } else {
-                    line.to_lowercase()
-                };
-                if needle.is_empty() || !haystack.contains(&needle) {
-                    continue;
-                }
-                if matches.len() == SEARCH_LIMIT {
-                    truncated = true;
-                    break;
-                }
-                matches.push(SearchMatch {
-                    path: path.clone(),
-                    line: index.saturating_add(1),
-                    text: line.to_owned(),
-                });
-            }
-            if truncated {
-                break;
-            }
-        }
-        SearchFound { matches, truncated }
+        Query::of(&options).map_or_else(
+            |_| SearchFound {
+                matches: Vec::new(),
+                truncated: false,
+            },
+            |query| {
+                let (matches, truncated) = self.search_with(&query, SEARCH_LIMIT);
+                SearchFound { matches, truncated }
+            },
+        )
     }
 }
 
@@ -253,8 +244,9 @@ struct ProjectSearch;
 
 impl<C: HasWorkbench + 'static> Command<C> for ProjectSearch {
     const ID: &'static str = PROJECT_SEARCH;
-    const SUMMARY: &'static str = "Finds every line of the open project's files that holds a \
-        text, unsaved edits included, by file and line.";
+    const SUMMARY: &'static str = "Finds every match of a text in the open project's files, \
+        unsaved edits included, by file, line and byte range; matching case, whole words only \
+        or as a regular expression.";
     type Params = ProjectSearchParams;
     type Output = SearchFound;
     type Error = WorkbenchError;
@@ -268,8 +260,14 @@ impl<C: HasWorkbench + 'static> Command<C> for ProjectSearch {
         if workbench.root().is_none() {
             return Err(WorkbenchError::NoProject);
         }
-        let found = workbench.search(&params.text, params.case_sensitive);
-        Ok(Outcome::unchanged(found))
+        let query = Query::of(&SearchOptions {
+            text: params.text,
+            case_sensitive: params.case_sensitive,
+            whole_word: params.whole_word,
+            regex: params.regex,
+        })?;
+        let (matches, truncated) = workbench.search_with(&query, SEARCH_LIMIT);
+        Ok(Outcome::unchanged(SearchFound { matches, truncated }))
     }
 }
 

@@ -93,6 +93,15 @@ fn scripts() -> Vec<Script> {
             ],
         },
         Script {
+            name: "search",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": fixture() })),
+                Step::Run("view.project_search", json!({})),
+                Step::Type("bounces"),
+                Step::Key(Modifiers::NONE, Key::Enter),
+            ],
+        },
+        Script {
             name: "terminal",
             steps: vec![
                 Step::Run("project.open", json!({ "path": tasks_fixture() })),

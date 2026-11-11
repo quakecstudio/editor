@@ -3921,6 +3921,7 @@ dependencies = [
  "qs-pak",
  "qs-sim",
  "qs-vfs",
+ "regex-lite",
  "schemars",
  "serde",
  "serde_json",

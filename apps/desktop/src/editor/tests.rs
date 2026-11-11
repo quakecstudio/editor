@@ -17,11 +17,13 @@ use qs_editor_view::find::Case;
 use qs_editor_view::{Position, Selection, Styler};
 use serde_json::json;
 
-use super::{Editor, Popup, place_text};
+use super::{Editor, Popup};
 use crate::App;
 use crate::agent::AgentPanel;
 use crate::fallback::SystemFonts;
 use crate::icons::Icon;
+use crate::multibuffer::Source;
+use crate::shell::CentreTab;
 use crate::shell::{EDITOR_AREA, view_style};
 use crate::strings::{Text, file_count, match_count};
 use crate::theme::{Mode, Theme, Token};
@@ -160,43 +162,52 @@ fn f12_goes_to_the_definition_and_says_when_there_is_none() {
     assert_eq!(popup(&harness), None);
 }
 
+// No spec statement: P4-33, UI-17: Shift+F12 shows every declaration and use of the name as
+// excerpts of their files in the multibuffer, and Open goes to one
 #[test]
-fn shift_f12_lists_the_references_and_a_click_opens_one() {
+fn shift_f12_shows_the_references_as_excerpts_and_open_goes_to_one() {
     let mut harness = harness("src/weapons.qc");
     caret_at(&mut harness, "bounces", 0, 0);
     press(&mut harness, Modifiers::SHIFT, Key::F12);
-    let Some(Popup::References(places)) = popup(&harness) else {
-        panic!("{:?}", popup(&harness));
-    };
-    assert_eq!(places.len(), 5, "the declaration and four uses: {places:?}");
-    harness.get_by_label(Text::References.get());
-    let declaration = places
+    harness.run();
+    let shell = app(&harness).shell();
+    assert_eq!(shell.centre_tab(), CentreTab::Search);
+    let buffer = shell.multibuffer();
+    assert_eq!(buffer.source, Source::References);
+    assert_eq!(buffer.found, (5, false), "the declaration and four uses");
+    let defs = fixture().join("defs.qc");
+    let declaration = buffer
+        .excerpts
         .iter()
-        .find(|p| p.path == fixture().join("defs.qc"))
+        .find(|e| e.path == defs)
+        .unwrap()
+        .clone();
+    assert!(
+        declaration.text.contains(".float bounces;"),
+        "{declaration:?}"
+    );
+    harness.get_by_label(Text::References.get());
+    harness
+        .get_all_by_label(Text::OpenExcerpt.get())
+        .next()
         .unwrap();
-    let label = place_text(declaration, &fixture().join("src/weapons.qc"));
-    assert_eq!(label, "defs.qc:7:8");
-    harness.get_by_label(&label).click();
+    let index = buffer.excerpts.iter().position(|e| e.path == defs).unwrap();
+    harness
+        .get_all_by_label(Text::OpenExcerpt.get())
+        .nth(index)
+        .unwrap()
+        .click();
     harness.run();
     let (path, caret) = app(&harness).shell().caret().unwrap();
-    assert_eq!(path, fixture().join("defs.qc"));
-    assert_eq!(caret, Position::new(6, 7));
-    assert_eq!(popup(&harness), None);
+    assert_eq!(path, defs);
+    assert_eq!(
+        caret,
+        Position::new(6, 7),
+        "at `bounces` in `.float bounces;`"
+    );
     caret_at(&mut harness, ";", 0, 1);
     press(&mut harness, Modifiers::SHIFT, Key::F12);
     assert_eq!(popup(&harness), Some(Popup::Note(Text::NoReferences)));
-}
-
-#[test]
-fn a_reference_in_the_same_file_is_its_line_and_column() {
-    let place = qs_workbench::Place {
-        path: PathBuf::from("/p/a.qc"),
-        start: 0,
-        end: 1,
-        location: serde_json::from_value(json!({ "line": 3, "column": 4 })).unwrap(),
-    };
-    assert_eq!(place_text(&place, Path::new("/p/a.qc")), ":3:4");
-    assert_eq!(place_text(&place, Path::new("/p/b.qc")), "a.qc:3:4");
 }
 
 #[test]

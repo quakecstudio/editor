@@ -46,19 +46,23 @@ use qs_workbench::git::{
     GitChange, GitCommitParams, GitConflict, GitDiffParams, GitHunk, GitLogParams, GitPathParams,
     GitResolveParams, GitSide, GitStageParams, GitStatus,
 };
+use qs_workbench::search::{
+    REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
+};
 use qs_workbench::staged::HunksParams;
 use qs_workbench::terminal::{CloseParams, Opened, SendParams, TaskInfo};
+use qs_workbench::tools::{PROJECT_FILES, PROJECT_SEARCH, ProjectSearchParams, SearchFound};
 use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
 use qs_workbench::{
     ActionInfo, CODE_ACTIONS, CODE_FIX, Code, CodeActionParams, FORMAT_FILE, INLAY_HINTS, InlayHint,
 };
 use qs_workbench::{
     AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, CheckAfterTyping, ChooseGameParams,
-    CloseFileParams, Config, DEFINITION, DOCK, EntryKind, FsLoader, GAME, HOVER, HasPreview,
-    HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT, OnLoss, OpenFile, OpenFileParams,
+    CloseFileParams, Config, DEFINITION, DOCK, EntryKind, FileText, FsLoader, GAME, HOVER,
+    HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT, OnLoss, OpenFile, OpenFileParams,
     OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState, Preview, PreviewConfig,
-    PreviewStatus, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RecentProjects, ReloadParams,
-    RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, TAKE_CHECKED, UPDATE_FILE,
+    PreviewStatus, READ_FILE, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RecentProjects,
+    ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, TAKE_CHECKED, UPDATE_FILE,
     UpdateFileParams, Workbench,
 };
 use qs_workbench::{
@@ -79,6 +83,7 @@ use crate::git_panel::{BlameShown, GitAction, GitData, GitView, git_ui};
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
 use crate::map_view::{self, MapView};
+use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
 use crate::picker::{Picker, PickerKind, PickerRow};
 use crate::project::{self, Jump, SymbolScope};
@@ -174,6 +179,8 @@ pub enum CentreTab {
     Game,
     /// The map view.
     Map,
+    /// The multibuffer: the project search, a name's references or the problems (P4-33).
+    Search,
 }
 
 /// The editor's area, whose egui id is the editor view's.
@@ -226,6 +233,8 @@ pub struct Shell {
     terminal_view: TerminalView,
     /// The Git tab's state, and the file it last read the history of (P4-35).
     git_view: (GitView, Option<PathBuf>),
+    /// The multibuffer the Search tab shows (P4-33).
+    multibuffer: Multibuffer,
     /// The go to symbol picker and the tab switcher, and the place each row stands for (P4-32).
     picker: (Picker, Vec<Jump>),
     /// The count of editor actions the layout had asked for when last carried out.
@@ -313,6 +322,7 @@ impl Shell {
             debug_input: DebugInput::default(),
             terminal_view: TerminalView::default(),
             git_view: (GitView::default(), None),
+            multibuffer: Multibuffer::default(),
             picker: (Picker::default(), Vec::new()),
             editor_seen: 0,
             second: None,
@@ -1009,6 +1019,12 @@ impl Shell {
             }
             EditorRequest::GoToSymbol => return self.open_symbol_picker(),
             EditorRequest::TabSwitcher => return self.open_tab_switcher(),
+            EditorRequest::ProjectSearch => {
+                self.multibuffer.source = MultiSource::Search;
+                self.multibuffer.form.focus = true;
+                self.centre_tab = CentreTab::Search;
+                return;
+            }
             EditorRequest::Fold
             | EditorRequest::Unfold
             | EditorRequest::FoldAll
@@ -1030,7 +1046,10 @@ impl Shell {
             EditorRequest::FoldAll => folds.fold_all(),
             EditorRequest::UnfoldAll => folds.unfold_all(),
             EditorRequest::GoToLine(to) => editor.go_to_line(line_index(to)),
-            EditorRequest::AskLine | EditorRequest::GoToSymbol | EditorRequest::TabSwitcher => {}
+            EditorRequest::AskLine
+            | EditorRequest::GoToSymbol
+            | EditorRequest::TabSwitcher
+            | EditorRequest::ProjectSearch => {}
         }
         // A fold over the caret puts it on the fold's first line, as VS Code does, so the
         // fold is not undone by the caret in it.
@@ -2116,6 +2135,7 @@ impl Shell {
             Some(BottomAction::Terminal(action)) => self.terminal_action(action),
             Some(BottomAction::Git(action)) => self.git_action(action),
             Some(BottomAction::Debug(action)) => self.debug_action(action),
+            Some(BottomAction::ProblemsAsExcerpts) => self.problems_as_excerpts(),
             Some(BottomAction::Jump(_)) | None => {}
         }
         if let Some(action) = agent_action {
@@ -2168,17 +2188,140 @@ impl Shell {
         id: &str,
         params: &P,
     ) -> Option<O> {
-        let result = serde_json::to_value(params)
-            .map_err(ShellError::from)
-            .and_then(|params| Ok(self.session.execute(id, params)?))
-            .and_then(|output| Ok(serde_json::from_value(output)?));
-        match result {
+        match self.attempt(id, params) {
             Ok(output) => Some(output),
             Err(error) => {
                 tracing::warn!(%error, command = id, "command failed");
                 None
             }
         }
+    }
+
+    /// Runs the command `id` with `params`: its output, or why it failed.
+    fn attempt<P: serde::Serialize, O: serde::de::DeserializeOwned>(
+        &mut self,
+        id: &str,
+        params: &P,
+    ) -> Result<O, ShellError> {
+        serde_json::to_value(params)
+            .map_err(ShellError::from)
+            .and_then(|params| Ok(self.session.execute(id, params)?))
+            .and_then(|output| Ok(serde_json::from_value(output)?))
+    }
+
+    /// Shows `places`, each a file's byte range, as the multibuffer's excerpts from `source`,
+    /// in the Search tab (P4-33). `more` says the places were cut short.
+    fn show_places(
+        &mut self,
+        source: MultiSource,
+        places: Vec<(PathBuf, usize, usize)>,
+        more: bool,
+    ) {
+        let mut texts: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+        for (path, _, _) in &places {
+            if texts.iter().any(|(p, _)| p == path) {
+                continue;
+            }
+            let read: Option<FileText> =
+                self.run(READ_FILE, &SaveFileParams { path: path.clone() });
+            if let Some(read) = read {
+                texts.push((path.clone(), read.text.into_bytes()));
+            }
+        }
+        self.multibuffer.show(source, &places, more, |path| {
+            texts
+                .iter()
+                .find(|(p, _)| p == path)
+                .map(|(_, text)| text.clone())
+        });
+        self.centre_tab = CentreTab::Search;
+    }
+
+    /// Does what the multibuffer asked for (P4-33).
+    fn multibuffer_action(&mut self, action: MultiAction) {
+        match action {
+            MultiAction::Search => self.search_project(),
+            MultiAction::ReplaceAll => {
+                let form = self.multibuffer.form.clone();
+                let files: Vec<PathBuf> = self
+                    .run(PROJECT_FILES, &serde_json::json!({}))
+                    .unwrap_or_default();
+                // One file at a time, each its own undoable step, saved.
+                for path in files {
+                    let params = ReplaceInFileParams {
+                        path,
+                        text: form.text.clone(),
+                        replacement: form.replacement.clone(),
+                        case_sensitive: form.case_sensitive,
+                        whole_word: form.whole_word,
+                        regex: form.regex,
+                    };
+                    if let Err(error) = self.attempt::<_, ReplacedInFile>(REPLACE_IN_FILE, &params)
+                    {
+                        self.multibuffer.error = Some(error.to_string());
+                        return;
+                    }
+                }
+                self.search_project();
+            }
+            MultiAction::Edit(index, text) => {
+                let Some(excerpt) = self.multibuffer.excerpts.get(index) else {
+                    return;
+                };
+                let params = ReplaceRangeParams {
+                    path: excerpt.path.clone(),
+                    start: excerpt.start,
+                    end: excerpt.end,
+                    text: text.clone(),
+                };
+                match self.attempt::<_, ()>(REPLACE_RANGE, &params) {
+                    Ok(()) => self.multibuffer.edited(index, text),
+                    Err(error) => self.multibuffer.error = Some(error.to_string()),
+                }
+            }
+            MultiAction::Open(path, offset) => {
+                self.jump(Jump { path, offset });
+                // The editor takes the keyboard, at the caret it went to, once it is drawn.
+                self.multibuffer.refocus = true;
+            }
+        }
+    }
+
+    /// Searches the project with the multibuffer's form and shows what it found.
+    fn search_project(&mut self) {
+        let form = self.multibuffer.form.clone();
+        let params = ProjectSearchParams {
+            text: form.text,
+            case_sensitive: form.case_sensitive,
+            whole_word: form.whole_word,
+            regex: form.regex,
+        };
+        match self.attempt::<_, SearchFound>(PROJECT_SEARCH, &params) {
+            Ok(found) => {
+                let places = found.matches.into_iter().map(|m| (m.path, m.start, m.end));
+                self.show_places(MultiSource::Search, places.collect(), found.truncated);
+            }
+            Err(error) => self.multibuffer.error = Some(error.to_string()),
+        }
+    }
+
+    /// Shows every problem as the multibuffer's excerpts (P4-33).
+    fn problems_as_excerpts(&mut self) {
+        let places = self
+            .session
+            .context()
+            .workbench
+            .problems()
+            .iter()
+            .map(|p| {
+                (
+                    p.path.clone(),
+                    p.diagnostic.span.start,
+                    p.diagnostic.span.end,
+                )
+            })
+            .collect();
+        self.show_places(MultiSource::Problems, places, false);
     }
 
     /// Runs what the editor asked for, as a frame would after the editor drew.
@@ -2238,11 +2381,13 @@ impl Shell {
                 }
                 Request::References(offset) => {
                     let places: Vec<Place> = self.run(REFERENCES, &at(offset)).unwrap_or_default();
-                    Some(if places.is_empty() {
-                        Popup::Note(Text::NoReferences)
+                    if places.is_empty() {
+                        Some(Popup::Note(Text::NoReferences))
                     } else {
-                        Popup::References(places)
-                    })
+                        let places = places.into_iter().map(|p| (p.path, p.start, p.end));
+                        self.show_places(MultiSource::References, places.collect(), false);
+                        None
+                    }
                 }
                 Request::Hover(offset, point) => self
                     .run::<_, Option<HoverInfo>>(HOVER, &at(offset))
@@ -2276,10 +2421,6 @@ impl Shell {
                     let params = RenameParams { path, offset, name };
                     let done: Option<serde_json::Value> = self.run(RENAME, &params);
                     done.is_none().then_some(Popup::Note(Text::RenameFailed))
-                }
-                Request::Open(jump) => {
-                    self.jump(jump);
-                    None
                 }
                 Request::Fixes(offset) => {
                     let params = CodeActionParams {
@@ -2394,13 +2535,42 @@ impl Shell {
         self.covered = Some(now);
     }
 
+    /// The multibuffer the Search tab shows (P4-33).
+    #[cfg(test)]
+    pub(crate) const fn multibuffer(&self) -> &Multibuffer {
+        &self.multibuffer
+    }
+
+    /// Draws the Search tab: the multibuffer, and does what it asked for (P4-33).
+    fn search_tab(&mut self, ui: &mut Ui) {
+        let theme = &self.theme;
+        let root = self
+            .session
+            .context()
+            .workbench
+            .root()
+            .map(Path::to_path_buf);
+        let asked = egui::Frame::NONE
+            .fill(theme.color(Token::SurfaceEditor))
+            .inner_margin(theme.space(2))
+            .show(ui, |ui| {
+                multibuffer_ui(ui, theme, &mut self.multibuffer, root.as_deref())
+            })
+            .inner;
+        if let Some(action) = asked {
+            self.multibuffer_action(action);
+            ui.ctx().request_repaint();
+        }
+    }
+
     /// Draws the centre: its tabs and the one shown. When `focus`, the editor takes the
     /// keyboard, or the shown tab when no file is open or another tab is shown.
     fn centre(&mut self, ui: &mut Ui, focus: bool) {
         self.sync_editor();
         self.cover_characters(ui.ctx());
         let editor_shown = self.centre_tab == CentreTab::Editor && self.editor.is_some();
-        if focus && editor_shown {
+        let refocus = std::mem::take(&mut self.multibuffer.refocus);
+        if (focus || refocus) && editor_shown {
             self.focus_editor(ui.ctx());
         }
         let theme = &self.theme;
@@ -2422,16 +2592,7 @@ impl Shell {
                             chosen = Some(action);
                         }
                     }
-                    let centre = if workbench.tabs().is_empty() {
-                        [
-                            (CentreTab::Editor, Text::Editor),
-                            (CentreTab::Game, Text::Game),
-                            (CentreTab::Map, Text::Map),
-                        ]
-                        .as_slice()
-                    } else {
-                        [(CentreTab::Game, Text::Game), (CentreTab::Map, Text::Map)].as_slice()
-                    };
+                    let centre = centre_tabs(workbench.tabs().is_empty());
                     for &(tab, text) in centre {
                         let response = ui.selectable_value(&mut self.centre_tab, tab, text.get());
                         if focus && !editor_shown && self.centre_tab == tab {
@@ -2529,10 +2690,15 @@ impl Shell {
             map.ui(ui);
             return;
         }
+        if self.centre_tab == CentreTab::Search {
+            self.search_tab(ui);
+            return;
+        }
         let (fill, message) = match self.centre_tab {
             CentreTab::Editor => (Token::SurfaceEditor, Text::NoFileOpen),
             CentreTab::Game => (Token::SurfaceViewport, Text::GameStopped),
             CentreTab::Map => (Token::SurfaceViewport, Text::NoMap),
+            CentreTab::Search => (Token::SurfaceEditor, Text::NoSearchMatch),
         };
         egui::Frame::NONE.fill(theme.color(fill)).show(ui, |ui| {
             let size = ui.available_size();
@@ -2545,6 +2711,24 @@ impl Shell {
             );
             ui.allocate_response(egui::Vec2::ZERO, Sense::hover());
         });
+    }
+}
+
+/// The centre's own tabs after the files' tabs: the Editor tab too when no file is open.
+const fn centre_tabs(no_file: bool) -> &'static [(CentreTab, Text)] {
+    if no_file {
+        &[
+            (CentreTab::Editor, Text::Editor),
+            (CentreTab::Search, Text::ProjectSearch),
+            (CentreTab::Game, Text::Game),
+            (CentreTab::Map, Text::Map),
+        ]
+    } else {
+        &[
+            (CentreTab::Search, Text::ProjectSearch),
+            (CentreTab::Game, Text::Game),
+            (CentreTab::Map, Text::Map),
+        ]
     }
 }
 
@@ -2888,6 +3072,8 @@ enum BottomAction {
     Terminal(TerminalAction),
     /// What the Git tab asked for.
     Git(GitAction),
+    /// Show every problem as excerpts in the multibuffer (P4-33).
+    ProblemsAsExcerpts,
 }
 
 /// The bottom panel: its tabs, and the Problems list, the console or the Debugger tab; what a
@@ -2922,6 +3108,9 @@ fn bottom(
     ui.separator();
     match tab {
         BottomTab::Problems => {
+            if !problems.is_empty() && ui.small_button(Text::OpenAsMultibuffer.get()).clicked() {
+                return Some(BottomAction::ProblemsAsExcerpts);
+            }
             project::problems_ui(ui, theme, problems, workbench.root()).map(BottomAction::Jump)
         }
         BottomTab::Console if preview.state() != PlayState::Stopped => {

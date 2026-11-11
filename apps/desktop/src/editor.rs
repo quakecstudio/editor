@@ -16,7 +16,7 @@
 //! and its answer replaces the selection as one undo step, drawn as a diff from the text
 //! before, with Accept and Reject. Every string comes from [`crate::strings`].
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use eframe::egui::{
     Align2, Area, Button, Frame, Id, Key, KeyboardShortcut, Modifiers, Order, Pos2, RichText,
@@ -25,10 +25,9 @@ use eframe::egui::{
 use qs_editor_view::find::{Case, Query};
 use qs_editor_view::fold::FoldRegion;
 use qs_editor_view::{EditorView, Position, Selection, ViewStyle};
-use qs_workbench::{Candidate, OpenFile, Place};
+use qs_workbench::{Candidate, OpenFile};
 
 use crate::code_style::CodeStyler;
-use crate::project::Jump;
 use crate::shell::name_field;
 use crate::strings::{Text, match_count};
 use crate::theme::{Theme, Token};
@@ -89,8 +88,6 @@ pub(crate) enum Request {
     Complete(usize),
     /// `symbol.rename` at a byte offset to a name.
     Rename(usize, String),
-    /// `file.open` at a place.
-    Open(Jump),
     /// `code.actions` at a byte offset, shown as a list to choose from (P4-34).
     Fixes(usize),
     /// `code.fix` at a byte offset: the fix at that index of the list.
@@ -123,8 +120,6 @@ pub(crate) enum Popup {
         /// The candidate picked, among those the typed prefix matches.
         selected: usize,
     },
-    /// Every declaration and use of a name.
-    References(Vec<Place>),
     /// The quick fixes at a byte offset, by title (P4-34).
     Fixes(usize, Vec<String>),
     /// The new name for the name at a byte offset.
@@ -522,7 +517,6 @@ impl Editor {
         let at = match &popup {
             Popup::Hover { at, .. } => Pos2::new(at.x, at.y + theme.space(3)),
             Popup::Complete { .. }
-            | Popup::References(_)
             | Popup::Fixes(..)
             | Popup::Rename { .. }
             | Popup::Note(_)
@@ -572,19 +566,6 @@ impl Editor {
                             if let Some(label) = accepted {
                                 self.accept(&label);
                                 close = true;
-                            }
-                        }
-                        Popup::References(places) => {
-                            ui.label(RichText::new(Text::References.get()).strong());
-                            for place in places {
-                                let label = place_text(&place, &self.path);
-                                if ui.add(Button::new(label).frame(false)).clicked() {
-                                    requests.push(Request::Open(Jump {
-                                        path: place.path.clone(),
-                                        offset: place.start,
-                                    }));
-                                    close = true;
-                                }
                             }
                         }
                         Popup::Fixes(offset, titles) => {
@@ -651,21 +632,6 @@ impl Editor {
             self.popup = None;
             ui.memory_mut(|m| m.request_focus(self.view.id()));
         }
-    }
-}
-
-/// A reference's row: its file's name, unless it is `current`, and its line and column.
-fn place_text(place: &Place, current: &Path) -> String {
-    let line = place.location.line();
-    let column = place.location.column();
-    if place.path == current {
-        format!(":{line}:{column}")
-    } else {
-        let name = place.path.file_name().map_or_else(
-            || place.path.display().to_string(),
-            |n| n.to_string_lossy().into_owned(),
-        );
-        format!("{name}:{line}:{column}")
     }
 }
 
