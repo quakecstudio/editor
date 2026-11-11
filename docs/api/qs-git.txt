@@ -1,0 +1,88 @@
+enum qs_git::Change
+enum qs_git::DiffOf
+enum qs_git::GitError
+enum qs_git::conflict::Side
+field qs_git::BlameLine.author
+field qs_git::BlameLine.commit
+field qs_git::BlameLine.line
+field qs_git::BlameLine.summary
+field qs_git::Branch.current
+field qs_git::Branch.name
+field qs_git::Commit.author
+field qs_git::Commit.date
+field qs_git::Commit.id
+field qs_git::Commit.summary
+field qs_git::FileStatus.index
+field qs_git::FileStatus.path
+field qs_git::FileStatus.worktree
+field qs_git::Status.branch
+field qs_git::Status.files
+field qs_git::conflict::Conflict.base
+field qs_git::conflict::Conflict.end
+field qs_git::conflict::Conflict.middle
+field qs_git::conflict::Conflict.start
+field qs_git::diff::FileDiff.header
+field qs_git::diff::FileDiff.hunks
+field qs_git::diff::Hunk.new_lines
+field qs_git::diff::Hunk.new_start
+field qs_git::diff::Hunk.old_lines
+field qs_git::diff::Hunk.old_start
+field qs_git::diff::Hunk.text
+fn qs_git::Change::code
+fn qs_git::FileStatus::is_conflicted
+fn qs_git::FileStatus::porcelain
+fn qs_git::Repo::blame
+fn qs_git::Repo::branches
+fn qs_git::Repo::commit
+fn qs_git::Repo::create_branch
+fn qs_git::Repo::diff
+fn qs_git::Repo::discover
+fn qs_git::Repo::head_text
+fn qs_git::Repo::log
+fn qs_git::Repo::relative
+fn qs_git::Repo::root
+fn qs_git::Repo::stage
+fn qs_git::Repo::stage_hunk
+fn qs_git::Repo::status
+fn qs_git::Repo::switch
+fn qs_git::Repo::unstage
+fn qs_git::Repo::unstage_hunk
+fn qs_git::conflict::conflicts
+fn qs_git::conflict::resolve
+fn qs_git::diff::FileDiff::parse
+fn qs_git::diff::FileDiff::patch
+impl qs_git::GitError: fmt::Display
+impl qs_git::GitError: std::error::Error
+struct qs_git::BlameLine
+struct qs_git::Branch
+struct qs_git::Commit
+struct qs_git::FileStatus
+struct qs_git::Repo
+struct qs_git::Status
+struct qs_git::conflict::Conflict
+struct qs_git::diff::FileDiff
+struct qs_git::diff::Hunk
+use qs_git::Conflict = conflict::Conflict
+use qs_git::FileDiff = diff::FileDiff
+use qs_git::Hunk = diff::Hunk
+use qs_git::Side = conflict::Side
+use qs_git::conflicts = conflict::conflicts
+use qs_git::resolve = conflict::resolve
+variant qs_git::Change::Added
+variant qs_git::Change::Copied
+variant qs_git::Change::Deleted
+variant qs_git::Change::Modified
+variant qs_git::Change::None
+variant qs_git::Change::Renamed
+variant qs_git::Change::TypeChanged
+variant qs_git::Change::Unmerged
+variant qs_git::Change::Untracked
+variant qs_git::DiffOf::Staged
+variant qs_git::DiffOf::Unstaged
+variant qs_git::GitError::Failed
+variant qs_git::GitError::NoGit
+variant qs_git::GitError::NoHunk
+variant qs_git::GitError::Unexpected
+variant qs_git::conflict::Side::Both
+variant qs_git::conflict::Side::Ours
+variant qs_git::conflict::Side::Theirs

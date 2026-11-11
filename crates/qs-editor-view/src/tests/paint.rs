@@ -623,3 +623,35 @@ fn indent_guides_mark_each_inner_level() {
             .any(|(_, y)| near(*y, m.view.top() + 2.0 * m.row))
     );
 }
+
+// No spec statement: P4-35, UI-19: the gutter marks an added line, a changed one and where
+// lines were removed against the text at HEAD, and follows an edit
+#[test]
+fn the_gutter_marks_changes_against_head() {
+    let mut harness = Harness::new("one\nTWO\nthree\nnew\nfive");
+    harness
+        .view
+        .set_gutter_base(Some("one\ntwo\nthree\nfour\ngone\nfive".to_owned()));
+    let output = harness.frame(Vec::new(), &Plain);
+    let m = measures(&harness, &output);
+    let row_of = |rect: &Rect| ((rect.top() - m.view.top()) / m.row).round();
+    let marks = |output: &FullOutput, color| -> Vec<f32> {
+        filled(output, color)
+            .iter()
+            .filter(|r| r.width() <= 3.5)
+            .map(row_of)
+            .collect()
+    };
+    assert_eq!(marks(&output, harness.style.modified_mark), [1.0, 3.0]);
+    assert!(marks(&output, harness.style.added_mark).is_empty());
+    harness
+        .view
+        .state_mut()
+        .set_selections(&[Selection::caret(pos(4, 4))]);
+    harness.view.state_mut().insert("\nsix");
+    let output = harness.frame(Vec::new(), &Plain);
+    assert_eq!(marks(&output, harness.style.added_mark), [5.0]);
+    harness.view.set_gutter_base(None);
+    let output = harness.frame(Vec::new(), &Plain);
+    assert!(marks(&output, harness.style.modified_mark).is_empty());
+}

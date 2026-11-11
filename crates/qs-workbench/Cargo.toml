@@ -20,6 +20,7 @@ qc-project = { workspace = true }
 qs-commands = { workspace = true }
 # checkpoint.*: the project's files as git objects, restored after an agent run (P4-05).
 qs-checkpoint = { workspace = true }
+qs-git = { workspace = true }
 # edit.apply: the hunks of a staged change, the same line diff the editor shows (P4-04).
 qs-diff = { workspace = true }
 qs-engine = { workspace = true }

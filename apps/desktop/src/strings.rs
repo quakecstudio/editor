@@ -25,6 +25,46 @@ pub enum Text {
     PreviewOwnWindow,
     /// The command search box's hint.
     SearchCommands,
+    /// The bottom panel's Git tab (P4-35).
+    Git,
+    /// The Git tab's label before the branch.
+    Branch,
+    /// The hint in the Git tab's new branch box.
+    NewBranchName,
+    /// The Git tab's button that creates a branch and checks it out.
+    CreateBranch,
+    /// The Git tab's button that reads the repository again.
+    Refresh,
+    /// The Git tab when the project is not in a git repository.
+    NotARepository,
+    /// The Git tab's heading over the changed files.
+    Changes,
+    /// The Git tab with nothing changed.
+    NoChanges,
+    /// The Git tab's commit heading and button.
+    Commit,
+    /// The hint in the Git tab's commit message box.
+    CommitMessage,
+    /// The Git tab's button that stages a whole file.
+    Stage,
+    /// The Git tab's button that unstages a whole file.
+    Unstage,
+    /// The Git tab's button that stages one hunk.
+    StageHunk,
+    /// The Git tab's button that unstages one hunk.
+    UnstageHunk,
+    /// The Git tab's button that resolves a conflict to our side.
+    KeepOurs,
+    /// The Git tab's button that resolves a conflict to their side.
+    KeepTheirs,
+    /// The Git tab's button that keeps both sides of a conflict.
+    KeepBoth,
+    /// The Git tab's heading over the open file's commits.
+    History,
+    /// The Git tab's button that shows the open file's blame.
+    ShowBlame,
+    /// The Git tab's button that hides the open file's blame.
+    HideBlame,
     /// The go to symbol picker's name and its search box's hint.
     GoToSymbol,
     /// The tab switcher's name and its search box's hint.
@@ -372,7 +412,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 180] = [
+    pub const ALL: [Self; 200] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -505,6 +545,26 @@ impl Text {
         Self::PaletteClose,
         Self::PaletteCancel,
         Self::PaletteNoMatch,
+        Self::Git,
+        Self::Branch,
+        Self::NewBranchName,
+        Self::CreateBranch,
+        Self::Refresh,
+        Self::NotARepository,
+        Self::Changes,
+        Self::NoChanges,
+        Self::Commit,
+        Self::CommitMessage,
+        Self::Stage,
+        Self::Unstage,
+        Self::StageHunk,
+        Self::UnstageHunk,
+        Self::KeepOurs,
+        Self::KeepTheirs,
+        Self::KeepBoth,
+        Self::History,
+        Self::ShowBlame,
+        Self::HideBlame,
         Self::GoToSymbol,
         Self::TabSwitcher,
         Self::Outline,
@@ -704,6 +764,26 @@ impl Text {
             Self::PaletteClose => "close",
             Self::PaletteCancel => "Cancel",
             Self::PaletteNoMatch => "No command matches.",
+            Self::Git => "Git",
+            Self::Branch => "Branch",
+            Self::NewBranchName => "New branch name",
+            Self::CreateBranch => "Create branch",
+            Self::Refresh => "Refresh",
+            Self::NotARepository => "The project is not in a git repository.",
+            Self::Changes => "Changes",
+            Self::NoChanges => "No changes since the last commit.",
+            Self::Commit => "Commit",
+            Self::CommitMessage => "Commit message",
+            Self::Stage => "Stage",
+            Self::Unstage => "Unstage",
+            Self::StageHunk => "Stage hunk",
+            Self::UnstageHunk => "Unstage hunk",
+            Self::KeepOurs => "Keep ours",
+            Self::KeepTheirs => "Keep theirs",
+            Self::KeepBoth => "Keep both",
+            Self::History => "History of the open file",
+            Self::ShowBlame => "Show blame",
+            Self::HideBlame => "Hide blame",
             Self::GoToSymbol => "Go to a symbol in the file",
             Self::TabSwitcher => "Switch to an open file",
             Self::Outline => "Outline",
@@ -762,6 +842,12 @@ impl Text {
 #[must_use]
 pub fn command_count(shown: usize, total: usize) -> String {
     format!("{shown} of {total} commands")
+}
+
+/// A merge conflict's link in the Git tab: where its markers start, a line from 1.
+#[must_use]
+pub fn conflict_at(line: usize) -> String {
+    format!("Conflict at line {line}")
 }
 
 /// A terminal tab's status once its process exited with `code`.

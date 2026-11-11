@@ -19,6 +19,7 @@ pub mod checkpoints;
 mod commands;
 mod editing;
 pub mod export;
+pub mod git;
 mod preview;
 mod recent;
 pub mod staged;

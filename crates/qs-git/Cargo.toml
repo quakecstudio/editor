@@ -1,0 +1,17 @@
+[package]
+name = "qs-git"
+description = "Git in the window: status, hunks to stage and unstage, commits, branches, file history, blame and merge conflicts, through the git command line"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

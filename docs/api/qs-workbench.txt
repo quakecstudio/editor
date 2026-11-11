@@ -18,6 +18,20 @@ const qs_workbench::commands::UPDATE_FILE
 const qs_workbench::export::ASSET_DIRS
 const qs_workbench::export::NOTICE_PREFIXES
 const qs_workbench::export::PROJECT_EXPORT
+const qs_workbench::git::GIT_BLAME
+const qs_workbench::git::GIT_BRANCHES
+const qs_workbench::git::GIT_COMMIT
+const qs_workbench::git::GIT_CONFLICTS
+const qs_workbench::git::GIT_CREATE_BRANCH
+const qs_workbench::git::GIT_DIFF
+const qs_workbench::git::GIT_HEAD_TEXT
+const qs_workbench::git::GIT_LOG
+const qs_workbench::git::GIT_RESOLVE
+const qs_workbench::git::GIT_STAGE
+const qs_workbench::git::GIT_STATUS
+const qs_workbench::git::GIT_SWITCH
+const qs_workbench::git::GIT_UNSTAGE
+const qs_workbench::git::LOG_LIMIT
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
 const qs_workbench::preview::CONSOLE
@@ -73,6 +87,10 @@ enum qs_workbench::build::Gravity
 enum qs_workbench::commands::CandidateKind
 enum qs_workbench::export::ExportError
 enum qs_workbench::export::GameNeeded
+enum qs_workbench::git::ConflictSide
+enum qs_workbench::git::GitChange
+enum qs_workbench::git::GitCommandError
+enum qs_workbench::git::GitSide
 enum qs_workbench::preview::OnLoss
 enum qs_workbench::preview::PlayState
 enum qs_workbench::preview::PreviewError
@@ -153,6 +171,41 @@ field qs_workbench::export::Exported.game
 field qs_workbench::export::Exported.mod_name
 field qs_workbench::export::Exported.path
 field qs_workbench::export::Exported.unknown_license
+field qs_workbench::git::GitBlameLine.author
+field qs_workbench::git::GitBlameLine.commit
+field qs_workbench::git::GitBlameLine.line
+field qs_workbench::git::GitBlameLine.summary
+field qs_workbench::git::GitBranch.current
+field qs_workbench::git::GitBranch.name
+field qs_workbench::git::GitBranchParams.branch
+field qs_workbench::git::GitCommit.author
+field qs_workbench::git::GitCommit.date
+field qs_workbench::git::GitCommit.id
+field qs_workbench::git::GitCommit.summary
+field qs_workbench::git::GitCommitParams.message
+field qs_workbench::git::GitConflict.end
+field qs_workbench::git::GitConflict.middle
+field qs_workbench::git::GitConflict.start
+field qs_workbench::git::GitDiffParams.path
+field qs_workbench::git::GitDiffParams.side
+field qs_workbench::git::GitFile.full_path
+field qs_workbench::git::GitFile.path
+field qs_workbench::git::GitFile.porcelain
+field qs_workbench::git::GitFile.staged
+field qs_workbench::git::GitFile.unstaged
+field qs_workbench::git::GitHunk.new_start
+field qs_workbench::git::GitHunk.old_start
+field qs_workbench::git::GitHunk.text
+field qs_workbench::git::GitLogParams.limit
+field qs_workbench::git::GitLogParams.path
+field qs_workbench::git::GitPathParams.path
+field qs_workbench::git::GitResolveParams.conflict
+field qs_workbench::git::GitResolveParams.path
+field qs_workbench::git::GitResolveParams.side
+field qs_workbench::git::GitStageParams.hunk
+field qs_workbench::git::GitStageParams.path
+field qs_workbench::git::GitStatus.branch
+field qs_workbench::git::GitStatus.files
 field qs_workbench::preview::BreakpointParams.file
 field qs_workbench::preview::BreakpointParams.line
 field qs_workbench::preview::ChooseGameParams.path
@@ -343,6 +396,7 @@ fn qs_workbench::editing::Workbench::save
 fn qs_workbench::editing::Workbench::text
 fn qs_workbench::editing::Workbench::update
 fn qs_workbench::export::Workbench::export
+fn qs_workbench::git::register_git
 fn qs_workbench::preview::ConsoleLine::is_error
 fn qs_workbench::preview::ConsoleLine::matches
 fn qs_workbench::preview::HasPreview::workbench_and_preview
@@ -462,6 +516,10 @@ impl qs_workbench::checkpoints::CheckpointMade: From<Checkpoint>
 impl qs_workbench::commands::CandidateKind: From<DefKind>
 impl qs_workbench::export::ExportError: fmt::Display
 impl qs_workbench::export::ExportError: std::error::Error
+impl qs_workbench::git::GitChange: From<Change>
+impl qs_workbench::git::GitCommandError: From<GitError>
+impl qs_workbench::git::GitCommandError: fmt::Display
+impl qs_workbench::git::GitCommandError: std::error::Error
 impl qs_workbench::preview::Preview: Drop
 impl qs_workbench::preview::Preview: core::fmt::Debug
 impl qs_workbench::preview::PreviewError: From<ClientError>
@@ -485,6 +543,7 @@ impl qs_workbench::vm_run::VmRunError: std::error::Error
 impl qs_workbench::vm_run::VmRunError: std::fmt::Display
 mod qs_workbench::checkpoints
 mod qs_workbench::export
+mod qs_workbench::git
 mod qs_workbench::preview::debug
 mod qs_workbench::preview::dock
 mod qs_workbench::preview::engine
@@ -522,6 +581,20 @@ struct qs_workbench::editing::Change
 struct qs_workbench::editing::Renamed
 struct qs_workbench::export::ExportParams
 struct qs_workbench::export::Exported
+struct qs_workbench::git::GitBlameLine
+struct qs_workbench::git::GitBranch
+struct qs_workbench::git::GitBranchParams
+struct qs_workbench::git::GitCommit
+struct qs_workbench::git::GitCommitParams
+struct qs_workbench::git::GitConflict
+struct qs_workbench::git::GitDiffParams
+struct qs_workbench::git::GitFile
+struct qs_workbench::git::GitHunk
+struct qs_workbench::git::GitLogParams
+struct qs_workbench::git::GitPathParams
+struct qs_workbench::git::GitResolveParams
+struct qs_workbench::git::GitStageParams
+struct qs_workbench::git::GitStatus
 struct qs_workbench::preview::BreakpointParams
 struct qs_workbench::preview::ChooseGameParams
 struct qs_workbench::preview::ConsoleLine
@@ -724,6 +797,26 @@ variant qs_workbench::export::ExportError::Workbench
 variant qs_workbench::export::ExportError::Zip
 variant qs_workbench::export::GameNeeded::Original
 variant qs_workbench::export::GameNeeded::Rerelease
+variant qs_workbench::git::ConflictSide::Both
+variant qs_workbench::git::ConflictSide::Ours
+variant qs_workbench::git::ConflictSide::Theirs
+variant qs_workbench::git::GitChange::Added
+variant qs_workbench::git::GitChange::Copied
+variant qs_workbench::git::GitChange::Deleted
+variant qs_workbench::git::GitChange::Modified
+variant qs_workbench::git::GitChange::None
+variant qs_workbench::git::GitChange::Renamed
+variant qs_workbench::git::GitChange::TypeChanged
+variant qs_workbench::git::GitChange::Unmerged
+variant qs_workbench::git::GitChange::Untracked
+variant qs_workbench::git::GitCommandError::Git
+variant qs_workbench::git::GitCommandError::NoConflict
+variant qs_workbench::git::GitCommandError::NoProject
+variant qs_workbench::git::GitCommandError::NoRepository
+variant qs_workbench::git::GitCommandError::Unsaved
+variant qs_workbench::git::GitCommandError::Workbench
+variant qs_workbench::git::GitSide::Staged
+variant qs_workbench::git::GitSide::Unstaged
 variant qs_workbench::preview::OnLoss::Ask
 variant qs_workbench::preview::OnLoss::Reload
 variant qs_workbench::preview::PlayState::Paused

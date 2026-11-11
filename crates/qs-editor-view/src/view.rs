@@ -51,6 +51,12 @@ pub struct ViewStyle {
     pub breakpoint: Color32,
     /// The indent guides, `border`.
     pub indent_guide: Color32,
+    /// The gutter's mark on a line added since `HEAD`, `status.ok`.
+    pub added_mark: Color32,
+    /// The gutter's mark on a line changed since `HEAD`, `status.warn`.
+    pub modified_mark: Color32,
+    /// The gutter's mark where lines were removed since `HEAD`, `status.error`.
+    pub removed_mark: Color32,
 }
 
 impl Default for ViewStyle {
@@ -71,6 +77,9 @@ impl Default for ViewStyle {
             paused_mark: Color32::from_rgb(0xe2, 0xb0, 0x4a),
             breakpoint: Color32::from_rgb(0xec, 0x7a, 0x6c),
             indent_guide: Color32::from_rgb(0x2a, 0x28, 0x26),
+            added_mark: Color32::from_rgb(0x7f, 0xb0, 0x69),
+            modified_mark: Color32::from_rgb(0xe2, 0xb0, 0x4a),
+            removed_mark: Color32::from_rgb(0xec, 0x7a, 0x6c),
         }
     }
 }
@@ -126,6 +135,9 @@ pub struct EditorView {
     hovered: Option<Position>,
     /// The base text the inline diff is from, and the diff with the text at a revision.
     diff: Option<DiffState>,
+    /// The text at `HEAD` the gutter marks changes against, and the diff with the text at a
+    /// revision (P4-35).
+    gutter_base: Option<DiffState>,
     /// Where the primary caret was drawn in the last frame, if it was on screen.
     caret_rect: Option<Rect>,
     /// The lines, from 0, the gutter marks with a breakpoint.
@@ -158,6 +170,7 @@ impl EditorView {
             preedit: None,
             hovered: None,
             diff: None,
+            gutter_base: None,
             caret_rect: None,
             breakpoints: BTreeSet::new(),
             paused: None,
@@ -272,6 +285,30 @@ impl EditorView {
             revision: self.state.revision(),
             base,
         });
+    }
+
+    /// Marks in the gutter the lines changed since `base`, the file's text at `HEAD`: a bar
+    /// on each added or changed line and a mark where lines were removed, as VS Code and Zed
+    /// mark them (P4-35); `None` marks none.
+    pub fn set_gutter_base(&mut self, base: Option<String>) {
+        self.gutter_base = base.map(|base| DiffState {
+            diff: Diff::new(&base, &self.state.buffer().text()),
+            revision: self.state.revision(),
+            base,
+        });
+    }
+
+    /// The gutter's diff as of the text's current revision, if one is marked.
+    #[must_use]
+    pub fn gutter_diff(&mut self) -> Option<&Diff> {
+        let revision = self.state.revision();
+        if let Some(state) = self.gutter_base.as_mut()
+            && state.revision != revision
+        {
+            state.diff = Diff::new(&state.base, &self.state.buffer().text());
+            state.revision = revision;
+        }
+        self.gutter_base.as_ref().map(|state| &state.diff)
     }
 
     /// The inline diff as of the text's current revision, if one is shown.
@@ -794,6 +831,7 @@ impl EditorView {
         let line_count = self.state.buffer().line_count();
         let first = self.first_line.min(line_count.saturating_sub(1));
         let rows = self.rows(first, self.visible);
+        let changes = self.gutter_diff().cloned();
         let primary = self.state.primary();
         let selections = self.state.selections().to_vec();
         let composing = self.preedit.clone();
@@ -888,6 +926,9 @@ impl EditorView {
                 paused,
             };
             marks.paint(&painter, style, Pos2::new(rect.left(), top), row_height);
+            if let Some(diff) = &changes {
+                change_mark(&painter, style, diff, line, (rect.left(), top, height));
+            }
             for selection in selections.iter().filter(|s| s.head.line == line) {
                 let chars = match preedit {
                     Some(p) if *selection == primary => buffer
@@ -1150,6 +1191,33 @@ fn removed_row(
         text_left,
         gutter,
     );
+}
+
+/// The width of a change mark in the gutter, in points.
+const CHANGE_MARK_WIDTH: f32 = 3.0;
+
+/// Paints `line`'s change mark against `HEAD` at the gutter's left edge, `left`, in its row
+/// from `top`, `height` tall: a bar on an added line, or a changed one when lines were removed
+/// before it too, and a short mark at the top where lines were removed.
+fn change_mark(
+    painter: &egui::Painter,
+    style: &ViewStyle,
+    diff: &Diff,
+    line: usize,
+    (left, top, height): (f32, f32, f32),
+) {
+    let removed = !diff.removed_before(line).is_empty();
+    let (color, bar_height) = match (diff.is_added(line), removed) {
+        (true, false) => (style.added_mark, height),
+        (true, true) => (style.modified_mark, height),
+        (false, true) => (style.removed_mark, CHANGE_MARK_WIDTH),
+        (false, false) => return,
+    };
+    let bar = Rect::from_min_size(
+        Pos2::new(left, top),
+        Vec2::new(CHANGE_MARK_WIDTH, bar_height),
+    );
+    painter.rect_filled(bar, CornerRadius::ZERO, color);
 }
 
 /// How tall line `galley` is drawn: one row, or each of its wrapped rows.

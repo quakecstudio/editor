@@ -283,6 +283,7 @@ fn the_ui_code_has_no_string_literals() {
         ("palette.rs", include_str!("palette.rs")),
         ("terminal.rs", include_str!("terminal.rs")),
         ("picker.rs", include_str!("picker.rs")),
+        ("git_panel.rs", include_str!("git_panel.rs")),
         ("project.rs", include_str!("project.rs")),
         ("editor.rs", include_str!("editor.rs")),
         ("code_style.rs", include_str!("code_style.rs")),
@@ -1703,4 +1704,114 @@ fn the_tab_switcher_and_the_split() {
     harness.run();
     let shell = &harness.state().as_ref().unwrap().shell;
     assert!(shell.second_pane_editor().is_none());
+}
+
+/// Runs git in `dir` as a person would; its stdout.
+fn git_cli(dir: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("LC_ALL", "C")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {args:?}: {output:?}");
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+// No spec statement: P4-35, UI-19: the Git tab lists a changed file, stages it and commits
+// with a message, and git status then says what the tab says; the editor marks the file's
+// change against HEAD in its gutter
+#[test]
+fn the_git_tab_stages_and_commits_and_the_gutter_marks_changes() {
+    let dir = TempDir::new("git-tab");
+    let project = dir.path().join("gitmod");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    fs::write(project.join("world.qc"), "void() worldspawn = {};\n").unwrap();
+    fs::write(project.join(".gitignore"), "build/\n").unwrap();
+    git_cli(&project, &["init", "-q", "-b", "main"]);
+    for (key, value) in [
+        ("user.name", "Tester"),
+        ("user.email", "tester@example.invalid"),
+        ("commit.gpgsign", "false"),
+        ("core.autocrlf", "false"),
+    ] {
+        git_cli(&project, &["config", key, value]);
+    }
+    git_cli(&project, &["add", "-A"]);
+    git_cli(&project, &["commit", "-q", "-m", "first"]);
+    fs::write(
+        project.join("world.qc"),
+        "void() worldspawn = { local float a; };\n",
+    )
+    .unwrap();
+
+    let mut harness = accessible();
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell_mut().open_project(&project).unwrap();
+    app.shell_mut()
+        .execute("file.open", json!({ "path": project.join("world.qc") }))
+        .unwrap();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    let marks = shell.editor_mut().unwrap().view.gutter_diff().cloned();
+    assert!(
+        marks.is_some_and(|diff| diff.is_added(0)),
+        "line 1 changed since HEAD"
+    );
+
+    // Room for the whole tab, its commit box included, without scrolling.
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .execute(
+            qs_layout::RESIZE_PANEL,
+            json!({ "panel": "bottom", "size": 560.0 }),
+        )
+        .unwrap();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, Text::Git.get())
+        .click();
+    harness.run();
+    harness.run();
+    assert!(
+        harness.query_all_by_label("world.qc").count() >= 2,
+        "the tab lists the file beside the editor's tab"
+    );
+    harness
+        .get_by_role_and_label(Role::Button, Text::Stage.get())
+        .click();
+    harness.run();
+    assert_eq!(
+        git_cli(&project, &["status", "--porcelain"]).trim(),
+        "M  world.qc"
+    );
+    harness
+        .get_by_role_and_label(Role::MultilineTextInput, Text::CommitMessage.get())
+        .click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::MultilineTextInput, Text::CommitMessage.get())
+        .type_text("Add a local");
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, Text::Commit.get())
+        .click();
+    harness.run();
+    harness.run();
+    assert_eq!(git_cli(&project, &["status", "--porcelain"]), "");
+    assert_eq!(
+        git_cli(&project, &["log", "-1", "--format=%s"]).trim(),
+        "Add a local"
+    );
+    harness.get_by_label(Text::NoChanges.get());
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    let marks = shell.editor_mut().unwrap().view.gutter_diff().cloned();
+    assert!(
+        marks.is_some_and(|diff| diff.is_empty()),
+        "nothing changed since the new HEAD"
+    );
 }

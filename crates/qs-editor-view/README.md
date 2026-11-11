@@ -49,6 +49,10 @@ the primary one, Alt-click adds one, and Shift extends a selection.
   step, as Vim's undo is; the arrows and the Cmd or Ctrl shortcuts work as before. Not yet:
   text objects, `f t`, searches, marks, Visual line and block modes, macros and Ex commands.
 
+- **Change marks** (P4-35, UI-19): `set_gutter_base` takes the file's text at `HEAD`, and the
+  gutter's left edge marks each line added since it, each line changed (added where lines were
+  removed), and where lines were removed, as VS Code and Zed do, the diff worked out again
+  when the text changes.
 - **Folding, soft wrap and indent guides** (P4-32, UI-16): `fold::Folds` holds the foldable
   regions (`FoldRegion`, a block's first and last lines, which stay shown) and the folded ones;
   the rows skip the lines a fold hides, the gutter marks a region's first line with a triangle

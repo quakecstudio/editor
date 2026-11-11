@@ -3680,6 +3680,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-git"
+version = "2026.10.0"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
 name = "qs-install"
 version = "2026.10.0"
 dependencies = [
@@ -3908,6 +3915,7 @@ dependencies = [
  "qs-commands",
  "qs-diff",
  "qs-engine",
+ "qs-git",
  "qs-install",
  "qs-pak",
  "qs-sim",
