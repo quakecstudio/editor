@@ -284,6 +284,35 @@ const POLYGON_REACH: f64 = 131_072.0;
 
 /// How near a point must be to a plane to count as on it.
 const ON_PLANE: f64 = 0.01;
+/// How far along z a normal can be before its plane polygon is built from x, not z.
+const STEEP: f64 = 0.9;
+/// The fewest corners a polygon has.
+const MIN_CORNERS: usize = 3;
+
+impl Plane<f64> {
+    /// A square of [`POLYGON_REACH`] around the point of the plane nearest the origin, in it.
+    fn polygon(&self) -> Vec<[f64; 3]> {
+        let n = self.normal;
+        // The axis least along the normal gives a vector in the plane.
+        let axis = if n[2].abs() < STEEP {
+            [0.0, 0.0, 1.0]
+        } else {
+            [1.0, 0.0, 0.0]
+        };
+        let u = normalize(cross(axis, n));
+        let v = cross(n, u);
+        let centre = n.map(|c| c * self.dist);
+        let at = |a: f64, b: f64| {
+            [
+                centre[0] + u[0] * a + v[0] * b,
+                centre[1] + u[1] * a + v[1] * b,
+                centre[2] + u[2] * a + v[2] * b,
+            ]
+        };
+        let r = POLYGON_REACH;
+        vec![at(-r, -r), at(r, -r), at(r, r), at(-r, r)]
+    }
+}
 
 /// The polygon of each of `planes` on the convex solid behind all of them (MAP-3.4: a brush is
 /// the region on the back of every face's plane): a polygon spanning the plane, clipped by the
@@ -293,40 +322,17 @@ const ON_PLANE: f64 = 0.01;
 pub fn solid_polygons(planes: &[Plane<f64>]) -> Vec<Vec<[f64; 3]>> {
     let mut out = Vec::new();
     for (index, plane) in planes.iter().enumerate() {
-        let mut polygon = plane_polygon(plane);
+        let mut polygon = plane.polygon();
         for (other, clip) in planes.iter().enumerate() {
             if other != index && !polygon.is_empty() {
                 polygon = clip_behind(&polygon, clip);
             }
         }
-        if polygon.len() >= 3 {
+        if polygon.len() >= MIN_CORNERS {
             out.push(polygon);
         }
     }
     out
-}
-
-/// A square of [`POLYGON_REACH`] around the point of `plane` nearest the origin, in it.
-fn plane_polygon(plane: &Plane<f64>) -> Vec<[f64; 3]> {
-    let n = plane.normal;
-    // The axis least along the normal gives a vector in the plane.
-    let axis = if n[2].abs() < 0.9 {
-        [0.0, 0.0, 1.0]
-    } else {
-        [1.0, 0.0, 0.0]
-    };
-    let u = normalize(cross(axis, n));
-    let v = cross(n, u);
-    let centre = n.map(|c| c * plane.dist);
-    let at = |a: f64, b: f64| {
-        [
-            centre[0] + u[0] * a + v[0] * b,
-            centre[1] + u[1] * a + v[1] * b,
-            centre[2] + u[2] * a + v[2] * b,
-        ]
-    };
-    let r = POLYGON_REACH;
-    vec![at(-r, -r), at(r, -r), at(r, r), at(-r, r)]
 }
 
 /// The part of `polygon` on the back of `plane` (Sutherland and Hodgman's clip).

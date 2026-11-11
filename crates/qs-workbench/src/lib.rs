@@ -704,12 +704,12 @@ pub enum WorkbenchError {
     /// The open map has no entity at that place.
     NoEntity {
         /// The entity asked for.
-        entity: usize,
+        entity: map_edit::EntityIndex,
     },
     /// The world, or a brush entity, where only a point entity can be rotated or deleted.
     NotPointEntity {
         /// The entity.
-        entity: usize,
+        entity: map_edit::EntityIndex,
     },
     /// A BSP that does not load or cannot take a new entity lump.
     Bsp {

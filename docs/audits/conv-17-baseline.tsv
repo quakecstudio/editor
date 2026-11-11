@@ -428,14 +428,10 @@ bare-id	crates/qc-codegen/src/compile/allocate.rs	CreationOrder::statement(index
 bare-id	crates/qc-codegen/src/compile/allocate.rs	Slots::block(index)
 bare-id	crates/qc-codegen/src/compile/allocate.rs	Slots::dropped(index)
 bare-id	crates/qc-codegen/src/compile/allocate.rs	Slots::statement(index)
-bare-id	crates/qc-edict/src/number.rs	EdictNumber::new(index)
 bare-id	crates/qc-edict/src/system.rs	SysVar.slot
 bare-id	crates/qc-ide/src/host.rs	AnalysisHost::module(index)
 bare-id	crates/qc-preproc/src/fte_opcodes.rs	OpcodeTarget::new(revision)
-bare-id	crates/qc-preproc/src/lib.rs	ExpansionId::new(index)
-bare-id	crates/qc-preproc/src/source.rs	FileId::new(index)
 bare-id	crates/qc-progs/src/read.rs	Table::get(index)
-bare-id	crates/qc-project/src/graph.rs	GraphIndex::new(index)
 bare-id	crates/qc-sema/src/check/mod.rs	TypedBody::origin(index)
 bare-id	crates/qc-sema/src/check/mod.rs	TypedBody::string(index)
 bare-id	crates/qc-sema/src/db.rs	QueryCounts.module_index
@@ -443,8 +439,6 @@ bare-id	crates/qc-sema/src/ir.rs	BodyStatement::made_words(index)
 bare-id	crates/qc-sema/src/ir.rs	BodyStatement::temp_words(index)
 bare-id	crates/qc-sema/src/map_check.rs	MapDiagnostic.entity
 bare-id	crates/qc-sema/src/resolve/scope.rs	Resolver::in_scope_at(index)
-bare-id	crates/qc-sema/src/symbol.rs	DefId::new(index)
-bare-id	crates/qc-sema/src/symbol.rs	FileId::new(index)
 bare-id	crates/qc-trace/src/lib.rs	FieldChange.edict
 bare-id	crates/qc-trace/src/lib.rs	GlobalChange.slot
 bare-id	crates/qc-types/src/lib.rs	FieldRef::component(index)

@@ -22,6 +22,7 @@ use qs_commands::params::{self, Input};
 use qs_commands::remote::{Client, Host};
 use qs_layout::{Focus, Layout, Panel};
 use qs_workbench::debug::Location;
+use qs_workbench::map_edit::EntityIndex;
 use serde_json::json;
 
 use crate::debugger::place;
@@ -1937,7 +1938,7 @@ fn the_map_view_takes_trenchbrooms_keys() {
     };
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
     harness.run();
-    assert_eq!(entities(&harness), (6, Some(5)));
+    assert_eq!(entities(&harness), (6, Some(EntityIndex::new(5))));
     harness.key_press(egui::Key::Delete);
     harness.run();
     assert_eq!(entities(&harness), (5, None));

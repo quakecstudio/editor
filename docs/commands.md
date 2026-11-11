@@ -1498,15 +1498,21 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `map.delete` and `map.entity`.",
   "properties": {
     "entity": {
-      "description": "The entity.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
     }
   },
   "required": [
@@ -1525,15 +1531,21 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `map.delete` and `map.entity`.",
   "properties": {
     "entity": {
-      "description": "The entity.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
     }
   },
   "required": [
@@ -1552,15 +1564,21 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `map.delete` and `map.entity`.",
   "properties": {
     "entity": {
-      "description": "The entity.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
     }
   },
   "required": [
@@ -1579,6 +1597,14 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `map.move`.",
@@ -1594,10 +1620,8 @@ Parameters:
       "type": "array"
     },
     "entity": {
-      "description": "The entity.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
     }
   },
   "required": [
@@ -1696,15 +1720,21 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `map.remove_key`.",
   "properties": {
     "entity": {
-      "description": "The entity.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
     },
     "key": {
       "description": "The key.",
@@ -1758,6 +1788,14 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `map.rotate`.",
@@ -1768,10 +1806,8 @@ Parameters:
       "type": "number"
     },
     "entity": {
-      "description": "The entity, a point entity.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity, a point entity."
     }
   },
   "required": [
@@ -1831,18 +1867,28 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `map.select`.",
   "properties": {
     "entity": {
-      "description": "The entity to select, or none to clear the selection.",
-      "format": "uint",
-      "minimum": 0,
-      "type": [
-        "integer",
-        "null"
-      ]
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EntityIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The entity to select, or none to clear the selection."
     }
   },
   "title": "SelectParams",
@@ -1858,15 +1904,21 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `map.set_key`.",
   "properties": {
     "entity": {
-      "description": "The entity.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
     },
     "key": {
       "description": "The key.",

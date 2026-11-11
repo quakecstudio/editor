@@ -40,6 +40,7 @@ const qs_workbench::git::LOG_LIMIT
 const qs_workbench::map_check::MAP_CHECK
 const qs_workbench::map_check::MAP_RENAME_KEY
 const qs_workbench::map_edit::BSP_EXTENSION
+const qs_workbench::map_edit::EntityIndex::WORLD
 const qs_workbench::map_edit::MAP_DELETE
 const qs_workbench::map_edit::MAP_DUPLICATE
 const qs_workbench::map_edit::MAP_ENTITY
@@ -512,12 +513,16 @@ fn qs_workbench::git::register_git
 fn qs_workbench::map_check::Workbench::check_map
 fn qs_workbench::map_check::Workbench::entity_schema
 fn qs_workbench::map_check::Workbench::rename_map_key
+fn qs_workbench::map_edit::EntityIndex::get
+fn qs_workbench::map_edit::EntityIndex::is_world
+fn qs_workbench::map_edit::EntityIndex::new
 fn qs_workbench::map_edit::MapDocument::file
 fn qs_workbench::map_edit::MapDocument::is_unsaved
 fn qs_workbench::map_edit::MapDocument::path
 fn qs_workbench::map_edit::MapDocument::revision
 fn qs_workbench::map_edit::MapDocument::selected
 fn qs_workbench::map_edit::MapDocument::source
+fn qs_workbench::map_edit::MapRevision::next
 fn qs_workbench::map_edit::Workbench::map
 fn qs_workbench::map_edit::Workbench::map_entity
 fn qs_workbench::map_edit::Workbench::open_map
@@ -655,6 +660,7 @@ impl qs_workbench::git::GitChange: From<Change>
 impl qs_workbench::git::GitCommandError: From<GitError>
 impl qs_workbench::git::GitCommandError: fmt::Display
 impl qs_workbench::git::GitCommandError: std::error::Error
+impl qs_workbench::map_edit::EntityIndex: fmt::Display
 impl qs_workbench::preview::Preview: Drop
 impl qs_workbench::preview::Preview: core::fmt::Debug
 impl qs_workbench::preview::PreviewError: From<ClientError>
@@ -748,12 +754,14 @@ struct qs_workbench::map_check::MapChecked
 struct qs_workbench::map_check::MapProblem
 struct qs_workbench::map_check::RenameKeyParams
 struct qs_workbench::map_check::RenamedIn
+struct qs_workbench::map_edit::EntityIndex
 struct qs_workbench::map_edit::EntityKeys
 struct qs_workbench::map_edit::EntityParams
 struct qs_workbench::map_edit::MapDocument
 struct qs_workbench::map_edit::MapEdited
 struct qs_workbench::map_edit::MapOpenParams
 struct qs_workbench::map_edit::MapOpened
+struct qs_workbench::map_edit::MapRevision
 struct qs_workbench::map_edit::MapSaved
 struct qs_workbench::map_edit::MoveParams
 struct qs_workbench::map_edit::PlaceParams

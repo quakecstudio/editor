@@ -13,7 +13,7 @@ use eframe::egui::{
 };
 use qs_render::Camera;
 use qs_workbench::entity_classes::ClassInfo;
-use qs_workbench::map_edit::{EntityKeys, MapDocument};
+use qs_workbench::map_edit::{EntityIndex, EntityKeys, MapDocument, MapRevision};
 
 use crate::map_scene::{ClassLook, Line, Scene, is_target_key, load_models, start_camera};
 use crate::strings::Text;
@@ -33,6 +33,10 @@ const GRID: f64 = 16.0;
 const QUARTER_TURN: f64 = 90.0;
 /// The width of a value's field in the key editor, in points.
 const VALUE_WIDTH: f32 = 140.0;
+/// The key editor's columns: the key, its value and its remove button.
+const KEY_COLUMNS: usize = 3;
+/// The width of the new key's and new value's fields, in points.
+const NEW_PAIR_WIDTH: f32 = 90.0;
 /// The nearest a line is drawn, in map units, as the renderer's near plane.
 const NEAR: f32 = 4.0;
 
@@ -40,19 +44,19 @@ const NEAR: f32 = 4.0;
 #[derive(Clone, Debug, PartialEq)]
 pub enum MapAction {
     /// Select an entity, or clear the selection.
-    Select(Option<usize>),
+    Select(Option<EntityIndex>),
     /// Move an entity by map units.
-    Move(usize, [f64; 3]),
+    Move(EntityIndex, [f64; 3]),
     /// Turn an entity by degrees about the vertical.
-    Rotate(usize, f64),
+    Rotate(EntityIndex, f64),
     /// Delete an entity.
-    Delete(usize),
+    Delete(EntityIndex),
     /// Duplicate an entity.
-    Duplicate(usize),
+    Duplicate(EntityIndex),
     /// Set a key of an entity.
-    SetKey(usize, String, String),
+    SetKey(EntityIndex, String, String),
     /// Remove a key of an entity.
-    RemoveKey(usize, String),
+    RemoveKey(EntityIndex, String),
     /// Save the map.
     Save,
 }
@@ -63,13 +67,13 @@ pub struct MapEditor {
     camera: Option<Camera>,
     scene: Scene,
     /// The document's path and revision the scene was built from.
-    built: Option<(std::path::PathBuf, u64)>,
+    built: Option<(std::path::PathBuf, MapRevision)>,
     classes: HashMap<String, ClassLook>,
     models: HashMap<String, Vec<Line>>,
     /// The selected entity's keys, as `map.entity` gave them.
-    keys: Option<(usize, EntityKeys)>,
+    keys: Option<(EntityIndex, EntityKeys)>,
     /// The document revision the keys were read at.
-    keys_read: Option<u64>,
+    keys_read: Option<MapRevision>,
     /// The values being typed, by key.
     typing: HashMap<String, String>,
     /// The new key and value being typed.
@@ -94,12 +98,16 @@ impl MapEditor {
 
     /// Whether the keys were read before the map's revision `revision`.
     #[must_use]
-    pub fn keys_stale(&self, revision: u64) -> bool {
+    pub fn keys_stale(&self, revision: MapRevision) -> bool {
         self.keys_read != Some(revision)
     }
 
     /// Takes the selected entity's keys, or none, read at the map's revision `revision`.
-    pub fn set_keys(&mut self, keys: Option<(usize, EntityKeys)>, revision: Option<u64>) {
+    pub fn set_keys(
+        &mut self,
+        keys: Option<(EntityIndex, EntityKeys)>,
+        revision: Option<MapRevision>,
+    ) {
         self.keys_read = revision;
         if self.keys.as_ref().map(|k| k.0) != keys.as_ref().map(|k| k.0) {
             self.adding = (String::new(), String::new());
@@ -226,7 +234,7 @@ impl MapEditor {
         let entity = *entity;
         ui.label(RichText::new(keys.classname.clone().unwrap_or_default()).strong());
         egui::Grid::new(ui.id().with(entity))
-            .num_columns(3)
+            .num_columns(KEY_COLUMNS)
             .striped(true)
             .show(ui, |ui| {
                 for (key, value) in &keys.pairs {
@@ -277,12 +285,12 @@ impl MapEditor {
             ui.add(
                 egui::TextEdit::singleline(&mut self.adding.0)
                     .hint_text(Text::MapKey.get())
-                    .desired_width(90.0),
+                    .desired_width(NEW_PAIR_WIDTH),
             );
             ui.add(
                 egui::TextEdit::singleline(&mut self.adding.1)
                     .hint_text(Text::MapValue.get())
-                    .desired_width(90.0),
+                    .desired_width(NEW_PAIR_WIDTH),
             );
             let targets = !keys.targetnames.is_empty() && is_target_key(&self.adding.0);
             if targets {
@@ -328,7 +336,7 @@ fn fly(ui: &Ui, camera: &mut Camera) {
 /// TrenchBroom's keys on the selection: the arrows and Page Up and Down move it by the grid,
 /// along the map axis nearest the camera's; Alt with Left or Right turns it; Delete deletes it;
 /// Ctrl+D (Cmd+D) duplicates it.
-fn selection_keys(ui: &Ui, camera: &Camera, entity: usize) -> Vec<MapAction> {
+fn selection_keys(ui: &Ui, camera: &Camera, entity: EntityIndex) -> Vec<MapAction> {
     let [forward, right, _] = camera.axes();
     let snap = |v: [f32; 3]| -> [f64; 3] {
         if v[0].abs() >= v[1].abs() {
@@ -403,7 +411,7 @@ fn box_lines([min, max]: [[f32; 3]; 2]) -> [Line; 12] {
 /// A class's colour as the painter takes it.
 fn rgb(color: [f32; 3]) -> Color32 {
     let channel = |c: f32| {
-        let scaled = (c.clamp(0.0, 1.0) * 255.0).round();
+        let scaled = (c.clamp(0.0, 1.0) * f32::from(u8::MAX)).round();
         u8::try_from(scaled_to_int(scaled)).unwrap_or(u8::MAX)
     };
     Color32::from_rgb(channel(color[0]), channel(color[1]), channel(color[2]))

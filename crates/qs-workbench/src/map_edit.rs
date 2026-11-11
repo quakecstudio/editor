@@ -10,6 +10,7 @@
 //! Edits go through `qs-map`'s lossless document, so a saved `.map` differs from the one read
 //! only where an edit changed it (MAP-7).
 
+use core::fmt;
 use std::path::{Path, PathBuf};
 
 use qs_bsp::{Bsp, BspLoader};
@@ -20,6 +21,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::entity_classes::{ClassInfo, KeyInfo};
 use crate::{HasWorkbench, Workbench, WorkbenchError};
+
+/// Degrees in a whole turn; a rotated yaw is kept below it.
+const FULL_TURN: f64 = 360.0;
+/// The parts of an `angles` value: pitch, yaw and roll.
+const ANGLES: usize = 3;
+/// The place of the yaw in `angles`.
+const YAW: usize = 1;
 
 /// The extension of a map's source file.
 pub const MAP_EXTENSION: &str = "map";
@@ -58,28 +66,76 @@ pub enum MapSource {
     Bsp(Vec<u8>),
 }
 
+/// An entity of a map, by its place in the file from 0, the world first.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(transparent)]
+pub struct EntityIndex(usize);
+
+impl EntityIndex {
+    /// The world, the first entity of every map.
+    pub const WORLD: Self = Self(0);
+
+    /// The entity at `index`.
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Its place in the file.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+
+    /// Whether it is the world.
+    #[must_use]
+    pub const fn is_world(self) -> bool {
+        self.0 == Self::WORLD.0
+    }
+}
+
+impl fmt::Display for EntityIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// A count of the changes to the open map and its selection, for a view to know when to read
+/// it again.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MapRevision(u64);
+
+impl MapRevision {
+    /// The revision after this one.
+    #[must_use]
+    pub const fn next(self) -> Self {
+        Self(self.0.wrapping_add(1))
+    }
+}
+
 /// The map open in the map view.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MapDocument {
     path: PathBuf,
     source: MapSource,
     file: MapFile,
-    selected: Option<usize>,
+    selected: Option<EntityIndex>,
     unsaved: bool,
-    revision: u64,
+    revision: MapRevision,
 }
 
 impl MapDocument {
-    /// A number that changes whenever the map or the selection does, for a view to know when
-    /// to read it again.
+    /// Its revision, which changes whenever the map or the selection does.
     #[must_use]
-    pub const fn revision(&self) -> u64 {
+    pub const fn revision(&self) -> MapRevision {
         self.revision
     }
 
     /// Marks the map changed.
     const fn touch(&mut self) {
-        self.revision = self.revision.wrapping_add(1);
+        self.revision = self.revision.next();
     }
 
     /// The file it was read from.
@@ -100,9 +156,9 @@ impl MapDocument {
         &self.file
     }
 
-    /// The selected entity, by its place in the file from 0, the world first.
+    /// The selected entity.
     #[must_use]
-    pub const fn selected(&self) -> Option<usize> {
+    pub const fn selected(&self) -> Option<EntityIndex> {
         self.selected
     }
 
@@ -112,11 +168,76 @@ impl MapDocument {
         self.unsaved
     }
 
-    fn entity_mut(&mut self, entity: usize) -> Result<&mut Entity, WorkbenchError> {
+    fn entity_mut(&mut self, entity: EntityIndex) -> Result<&mut Entity, WorkbenchError> {
         self.file
             .entities
-            .get_mut(entity)
+            .get_mut(entity.get())
             .ok_or(WorkbenchError::NoEntity { entity })
+    }
+
+    /// A map edit's error from `qs-map`, at the open map.
+    fn map_error(&self, error: qs_map::MapError) -> WorkbenchError {
+        WorkbenchError::Map {
+            path: self.path.clone(),
+            error,
+        }
+    }
+
+    /// Moves `entity` by `by`: a point entity's origin; a brush entity's brushes, and its origin
+    /// when it has one (MAP-2.7, MAP-3.2).
+    fn move_entity(&mut self, entity: EntityIndex, by: [f64; 3]) -> Result<(), WorkbenchError> {
+        let found = self.entity_mut(entity)?;
+        let shift = |p: [f64; 3]| [p[0] + by[0], p[1] + by[1], p[2] + by[2]];
+        let mut moved = Ok(());
+        for item in &mut found.items {
+            if let Item::Brush(brush) = item {
+                for face in &mut brush.faces {
+                    let points = face.points().map(shift);
+                    let texture = face.texture().to_vec();
+                    let texdef = *face.texdef();
+                    if let Err(error) = face.set(points, &texture, texdef) {
+                        moved = Err(error);
+                    }
+                }
+            }
+        }
+        let has_origin = found.value(b"origin").is_some();
+        if !found.has_brushes() || has_origin {
+            let origin = origin_text(shift(found.origin()));
+            if let Err(error) = found.set(b"origin", origin.as_bytes()) {
+                moved = Err(error);
+            }
+        }
+        moved.map_err(|error| self.map_error(error))
+    }
+
+    /// Turns point entity `entity` by `degrees` about the vertical: its `angles` yaw when it has
+    /// `angles`, else its `angle` (EDICT-8.2 reads `angle` as the yaw), kept from 0 to 360.
+    fn rotate_entity(&mut self, entity: EntityIndex, degrees: f64) -> Result<(), WorkbenchError> {
+        let found = self.entity_mut(entity)?;
+        if found.has_brushes() || entity.is_world() {
+            return Err(WorkbenchError::NotPointEntity { entity });
+        }
+        let read =
+            |text: &[u8]| -> f64 { String::from_utf8_lossy(text).trim().parse().unwrap_or(0.0) };
+        let turn = |yaw: f64| (yaw + degrees).rem_euclid(FULL_TURN);
+        let result = if let Some(angles) = found.value(b"angles") {
+            let mut parts: Vec<f64> = String::from_utf8_lossy(angles)
+                .split_whitespace()
+                .map(|part| part.parse().unwrap_or(0.0))
+                .collect();
+            parts.resize(ANGLES, 0.0);
+            let yaw = parts.get(YAW).copied().unwrap_or(0.0);
+            if let Some(slot) = parts.get_mut(YAW) {
+                *slot = turn(yaw);
+            }
+            let text: Vec<String> = parts.into_iter().map(number).collect();
+            found.set(b"angles", text.join(" ").as_bytes())
+        } else {
+            let yaw = found.value(b"angle").map_or(0.0, read);
+            found.set(b"angle", number(turn(yaw)).as_bytes())
+        };
+        result.map_err(|error| self.map_error(error))
     }
 }
 
@@ -154,7 +275,7 @@ pub struct MapOpened {
 #[serde(deny_unknown_fields)]
 pub struct SelectParams {
     /// The entity to select, or none to clear the selection.
-    pub entity: Option<usize>,
+    pub entity: Option<EntityIndex>,
 }
 
 /// The parameters of `map.place`.
@@ -175,7 +296,7 @@ pub struct PlaceParams {
 #[serde(deny_unknown_fields)]
 pub struct MoveParams {
     /// The entity.
-    pub entity: usize,
+    pub entity: EntityIndex,
     /// How far, in map units.
     pub by: [f64; 3],
 }
@@ -185,7 +306,7 @@ pub struct MoveParams {
 #[serde(deny_unknown_fields)]
 pub struct RotateParams {
     /// The entity, a point entity.
-    pub entity: usize,
+    pub entity: EntityIndex,
     /// Degrees to turn it about the vertical axis, counter-clockwise seen from above.
     pub degrees: f64,
 }
@@ -195,7 +316,7 @@ pub struct RotateParams {
 #[serde(deny_unknown_fields)]
 pub struct EntityParams {
     /// The entity.
-    pub entity: usize,
+    pub entity: EntityIndex,
 }
 
 /// The parameters of `map.set_key`.
@@ -203,7 +324,7 @@ pub struct EntityParams {
 #[serde(deny_unknown_fields)]
 pub struct SetKeyParams {
     /// The entity.
-    pub entity: usize,
+    pub entity: EntityIndex,
     /// The key.
     pub key: String,
     /// Its value.
@@ -215,7 +336,7 @@ pub struct SetKeyParams {
 #[serde(deny_unknown_fields)]
 pub struct RemoveKeyParams {
     /// The entity.
-    pub entity: usize,
+    pub entity: EntityIndex,
     /// The key.
     pub key: String,
 }
@@ -240,7 +361,7 @@ pub struct MapSaved {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct MapEdited {
     /// The entity, by its place in the file.
-    pub entity: Option<usize>,
+    pub entity: Option<EntityIndex>,
 }
 
 /// What `map.entity` answers.
@@ -303,7 +424,7 @@ impl<L: crate::Loader> Workbench<L> {
             revision: self
                 .map
                 .as_ref()
-                .map_or(0, |old| old.revision.wrapping_add(1)),
+                .map_or(MapRevision::default(), |old| old.revision.next()),
         }))
     }
 
@@ -317,12 +438,12 @@ impl<L: crate::Loader> Workbench<L> {
     ///
     /// [`WorkbenchError::NoMap`] with no map open and [`WorkbenchError::NoEntity`] for an
     /// entity it does not have.
-    pub fn map_entity(&mut self, entity: usize) -> Result<EntityKeys, WorkbenchError> {
+    pub fn map_entity(&mut self, entity: EntityIndex) -> Result<EntityKeys, WorkbenchError> {
         let document = self.map.as_ref().ok_or(WorkbenchError::NoMap)?;
         let found = document
             .file
             .entities
-            .get(entity)
+            .get(entity.get())
             .ok_or(WorkbenchError::NoEntity { entity })?;
         let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
         let classname = found.classname().map(text);
@@ -429,7 +550,7 @@ impl<L: crate::Loader> Workbench<L> {
 /// The open map's other state: what undo puts back, then what redo does.
 struct MapStep {
     path: PathBuf,
-    other: (MapFile, Option<usize>),
+    other: (MapFile, Option<EntityIndex>),
 }
 
 impl MapStep {
@@ -472,78 +593,6 @@ fn number(value: f64) -> String {
 /// `origin` as a map writes it (MAP-2.7).
 fn origin_text(origin: [f64; 3]) -> String {
     origin.map(number).join(" ")
-}
-
-/// A map edit's error from `qs-map`, at the open map.
-fn map_error(document: &MapDocument, error: qs_map::MapError) -> WorkbenchError {
-    WorkbenchError::Map {
-        path: document.path.clone(),
-        error,
-    }
-}
-
-/// Moves `entity` by `by`: a point entity's origin; a brush entity's brushes, and its origin
-/// when it has one (MAP-2.7, MAP-3.2).
-fn move_entity(
-    document: &mut MapDocument,
-    entity: usize,
-    by: [f64; 3],
-) -> Result<(), WorkbenchError> {
-    let found = document.entity_mut(entity)?;
-    let shift = |p: [f64; 3]| [p[0] + by[0], p[1] + by[1], p[2] + by[2]];
-    let mut moved = Ok(());
-    for item in &mut found.items {
-        if let Item::Brush(brush) = item {
-            for face in &mut brush.faces {
-                let points = face.points().map(shift);
-                let texture = face.texture().to_vec();
-                let texdef = *face.texdef();
-                if let Err(error) = face.set(points, &texture, texdef) {
-                    moved = Err(error);
-                }
-            }
-        }
-    }
-    let has_origin = found.value(b"origin").is_some();
-    if !found.has_brushes() || has_origin {
-        let origin = origin_text(shift(found.origin()));
-        if let Err(error) = found.set(b"origin", origin.as_bytes()) {
-            moved = Err(error);
-        }
-    }
-    moved.map_err(|error| map_error(document, error))
-}
-
-/// Turns point entity `entity` by `degrees` about the vertical: its `angles` yaw when it has
-/// `angles`, else its `angle` (EDICT-8.2 reads `angle` as the yaw), kept from 0 to 360.
-fn rotate_entity(
-    document: &mut MapDocument,
-    entity: usize,
-    degrees: f64,
-) -> Result<(), WorkbenchError> {
-    let found = document.entity_mut(entity)?;
-    if found.has_brushes() || entity == 0 {
-        return Err(WorkbenchError::NotPointEntity { entity });
-    }
-    let read = |text: &[u8]| -> f64 { String::from_utf8_lossy(text).trim().parse().unwrap_or(0.0) };
-    let turn = |yaw: f64| (yaw + degrees).rem_euclid(360.0);
-    let result = if let Some(angles) = found.value(b"angles") {
-        let mut parts: Vec<f64> = String::from_utf8_lossy(angles)
-            .split_whitespace()
-            .map(|part| part.parse().unwrap_or(0.0))
-            .collect();
-        parts.resize(3, 0.0);
-        let yaw = parts.get(1).copied().unwrap_or(0.0);
-        if let Some(slot) = parts.get_mut(1) {
-            *slot = turn(yaw);
-        }
-        let text: Vec<String> = parts.into_iter().map(number).collect();
-        found.set(b"angles", text.join(" ").as_bytes())
-    } else {
-        let yaw = found.value(b"angle").map_or(0.0, read);
-        found.set(b"angle", number(turn(yaw)).as_bytes())
-    };
-    result.map_err(|error| map_error(document, error))
 }
 
 /// `map.open`.
@@ -624,10 +673,10 @@ impl<C: HasWorkbench + 'static> Command<C> for MapPlace {
             for (key, value) in &pairs {
                 entity
                     .set(key.as_bytes(), value.as_bytes())
-                    .map_err(|error| map_error(document, error))?;
+                    .map_err(|error| document.map_error(error))?;
             }
             document.file.push_entity(entity);
-            let index = document.file.entities.len().saturating_sub(1);
+            let index = EntityIndex::new(document.file.entities.len().saturating_sub(1));
             document.selected = Some(index);
             Ok(index)
         })?;
@@ -658,7 +707,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapMove {
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
         let ((), step) = context
             .workbench()
-            .edit_map(|document| move_entity(document, params.entity, params.by))?;
+            .edit_map(|document| document.move_entity(params.entity, params.by))?;
         Ok(Outcome::undoable(
             MapEdited {
                 entity: Some(params.entity),
@@ -686,7 +735,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapRotate {
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
         let ((), step) = context
             .workbench()
-            .edit_map(|document| rotate_entity(document, params.entity, params.degrees))?;
+            .edit_map(|document| document.rotate_entity(params.entity, params.degrees))?;
         Ok(Outcome::undoable(
             MapEdited {
                 entity: Some(params.entity),
@@ -714,13 +763,13 @@ impl<C: HasWorkbench + 'static> Command<C> for MapDelete {
         let entity = params.entity;
         let ((), step) = context.workbench().edit_map(|document| {
             document.entity_mut(entity)?;
-            if entity == 0 {
+            if entity.is_world() {
                 return Err(WorkbenchError::NotPointEntity { entity });
             }
-            document.file.entities.remove(entity);
+            document.file.entities.remove(entity.get());
             document.selected = match document.selected {
                 Some(s) if s == entity => None,
-                Some(s) if s > entity => Some(s.saturating_sub(1)),
+                Some(s) if s > entity => Some(EntityIndex::new(s.get().saturating_sub(1))),
                 other => other,
             };
             Ok(())
@@ -747,13 +796,13 @@ impl<C: HasWorkbench + 'static> Command<C> for MapDuplicate {
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
         let entity = params.entity;
         let (copy, step) = context.workbench().edit_map(|document| {
-            if entity == 0 {
+            if entity.is_world() {
                 return Err(WorkbenchError::NotPointEntity { entity });
             }
             let mut copy = Entity::new();
             copy.items.clone_from(&document.entity_mut(entity)?.items);
             document.file.push_entity(copy);
-            let index = document.file.entities.len().saturating_sub(1);
+            let index = EntityIndex::new(document.file.entities.len().saturating_sub(1));
             document.selected = Some(index);
             Ok(index)
         })?;
@@ -781,7 +830,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSetKey {
             document
                 .entity_mut(params.entity)?
                 .set(params.key.as_bytes(), params.value.as_bytes())
-                .map_err(|error| map_error(document, error))
+                .map_err(|error| document.map_error(error))
         })?;
         Ok(Outcome::undoable(
             MapEdited {

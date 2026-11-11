@@ -14,7 +14,7 @@ use qs_mdl::mdl::MdlFrameEntry;
 use qs_render::Camera;
 use qs_vfs::{StdFs, Vfs};
 use qs_workbench::entity_classes::ClassInfo;
-use qs_workbench::map_edit::{MapDocument, MapSource};
+use qs_workbench::map_edit::{EntityIndex, MapDocument, MapSource};
 
 /// A line in map space.
 pub(crate) type Line = [[f32; 3]; 2];
@@ -57,7 +57,7 @@ impl From<&ClassInfo> for ClassLook {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EntityShape {
     /// Its place in the file.
-    pub(crate) index: usize,
+    pub(crate) index: EntityIndex,
     /// Its box in map space.
     pub(crate) bounds: [[f32; 3]; 2],
     /// Its origin.
@@ -117,7 +117,7 @@ impl Scene {
                 [add(origin, min), add(origin, max)]
             });
             scene.entities.push(EntityShape {
-                index,
+                index: EntityIndex::new(index),
                 bounds,
                 origin,
                 yaw: single(yaw(entity)),
@@ -131,7 +131,7 @@ impl Scene {
 
     /// The entity whose box the ray from `start` along `direction` meets first.
     #[must_use]
-    pub(crate) fn pick(&self, start: [f32; 3], direction: [f32; 3]) -> Option<usize> {
+    pub(crate) fn pick(&self, start: [f32; 3], direction: [f32; 3]) -> Option<EntityIndex> {
         self.entities
             .iter()
             .filter_map(|shape| hit(start, direction, shape.bounds).map(|t| (t, shape.index)))
@@ -163,6 +163,11 @@ fn yaw(entity: &Entity) -> f64 {
         .unwrap_or(0.0)
 }
 
+/// The map's origin, where the camera starts in a map with no player start.
+const MAP_ORIGIN: [f32; 3] = [0.0; 3];
+/// The yaw the camera starts at in a map with no player start, in degrees: along +y.
+const NO_START_YAW: f32 = 90.0;
+
 /// Where the camera starts: behind and above the first player start, facing as it does and
 /// looking down at it, else at the map's origin.
 #[must_use]
@@ -172,7 +177,7 @@ pub(crate) fn start_camera(document: &MapDocument) -> Camera {
         .entities
         .iter()
         .find(|entity| entity.classname() == Some(PLAYER_START));
-    let mut camera = Camera::new([0.0; 3], 90.0);
+    let mut camera = Camera::new(MAP_ORIGIN, NO_START_YAW);
     if let Some(start) = start {
         let origin = start.origin().map(single);
         camera.yaw = single(yaw(start));
@@ -254,7 +259,7 @@ fn outline(lines: &mut Vec<Line>, points: &[[f32; 3]]) {
 fn hit(start: [f32; 3], direction: [f32; 3], [min, max]: [[f32; 3]; 2]) -> Option<f32> {
     let mut near = 0.0_f32;
     let mut far = f32::INFINITY;
-    for axis in 0..3 {
+    for axis in 0..start.len() {
         let (s, d) = (start.get(axis)?, direction.get(axis)?);
         let (lo, hi) = (min.get(axis)?, max.get(axis)?);
         if d.abs() < f32::EPSILON {

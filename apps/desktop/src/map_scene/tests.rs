@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use qs_workbench::map_edit::EntityIndex;
 use qs_workbench::{Config, FsLoader, Workbench};
 
 use super::{ClassLook, Scene, is_target_key, start_camera};
@@ -37,7 +38,13 @@ fn the_scene_holds_the_brushes_and_the_entities_boxes() {
     let scene = Scene::build(document, &classes);
     // The world's six boxes and the door's one, six faces of four edges each.
     assert_eq!(scene.lines.len(), 7 * 6 * 4);
-    let shape = |index: usize| scene.entities.iter().find(|s| s.index == index).unwrap();
+    let shape = |index: usize| {
+        scene
+            .entities
+            .iter()
+            .find(|s| s.index == EntityIndex::new(index))
+            .unwrap()
+    };
     assert_eq!(shape(2).bounds, [[64.0, 32.0, 0.0], [128.0, 96.0, 88.0]]);
     assert!((shape(2).yaw - 180.0).abs() < f32::EPSILON);
     assert_eq!(shape(3).bounds, [[-8.0, -8.0, 184.0], [8.0, 8.0, 200.0]]);
@@ -57,8 +64,14 @@ fn a_ray_picks_the_nearest_box() {
     let scene = Scene::build(workbench.map().unwrap(), &HashMap::new());
     // Along +x at the door's height: the ogre's 8-unit default box is off this line, the door
     // is on it.
-    assert_eq!(scene.pick([0.0, 0.0, 64.0], [1.0, 0.0, 0.0]), Some(4));
-    assert_eq!(scene.pick([0.0, 64.0, 24.0], [1.0, 0.0, 0.0]), Some(2));
+    assert_eq!(
+        scene.pick([0.0, 0.0, 64.0], [1.0, 0.0, 0.0]),
+        Some(EntityIndex::new(4))
+    );
+    assert_eq!(
+        scene.pick([0.0, 64.0, 24.0], [1.0, 0.0, 0.0]),
+        Some(EntityIndex::new(2))
+    );
     assert_eq!(scene.pick([0.0, 200.0, 24.0], [1.0, 0.0, 0.0]), None);
     assert_eq!(
         scene.pick([0.0, 0.0, 64.0], [-1.0, 0.0, 0.0]),

@@ -13,8 +13,8 @@ use qs_commands::{Registry, Session};
 use serde_json::{Value, json};
 
 use super::{
-    MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_MOVE, MAP_OPEN, MAP_PLACE, MAP_REMOVE_KEY,
-    MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
+    EntityIndex, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_MOVE, MAP_OPEN, MAP_PLACE,
+    MAP_REMOVE_KEY, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
 };
 use crate::{Config, OPEN_PROJECT, Workbench, register};
 
@@ -215,17 +215,26 @@ fn the_selection_follows_and_keys_are_typed() {
         .unwrap();
     session.execute(MAP_SELECT, json!({ "entity": 2 })).unwrap();
     session.execute(MAP_DELETE, json!({ "entity": 1 })).unwrap();
-    assert_eq!(session.context().map().unwrap().selected(), Some(1));
+    assert_eq!(
+        session.context().map().unwrap().selected(),
+        Some(EntityIndex::new(1))
+    );
     session
         .execute(
             MAP_PLACE,
             json!({ "classname": "info_null", "origin": [0.0, 0.0, 0.0], "keys": [["targetname", "t2"]] }),
         )
         .unwrap();
-    assert_eq!(session.context().map().unwrap().selected(), Some(2));
+    assert_eq!(
+        session.context().map().unwrap().selected(),
+        Some(EntityIndex::new(2))
+    );
     session.undo().unwrap();
     session.undo().unwrap();
-    assert_eq!(session.context().map().unwrap().selected(), Some(2));
+    assert_eq!(
+        session.context().map().unwrap().selected(),
+        Some(EntityIndex::new(2))
+    );
     session.redo().unwrap();
     session.redo().unwrap();
     session
@@ -357,7 +366,7 @@ fn duplicating_copies_keys_and_brushes() {
     assert_eq!(done["entity"], 3);
     let map = session.context().map().unwrap();
     assert_ne!(map.revision(), first);
-    assert_eq!(map.selected(), Some(3));
+    assert_eq!(map.selected(), Some(EntityIndex::new(3)));
     assert_eq!(map.file().entities[3].items, map.file().entities[2].items);
     assert!(text(&session).ends_with(
         "{\n\"classname\" \"func_door\"\n{\n( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) door 0 0 0 1 1\n\

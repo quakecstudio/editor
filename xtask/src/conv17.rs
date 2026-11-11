@@ -13,7 +13,8 @@
 //! - **bare ID:** a visible struct field, or a parameter of a visible function, named as an ID
 //!   or a counted place (`id`, `index`, `entity`, `edict`, `slot`, `revision`, or ending
 //!   `_id`, `_index`, `_slot`, `_edict`) and typed as a raw integer, where a newtype belongs
-//!   ("Newtypes for IDs and units");
+//!   ("Newtypes for IDs and units"); a function of one parameter returning `Self` is a
+//!   newtype's constructor, which is where it takes its integer;
 //! - **magic number:** a numeric literal in a function's body, other than 0, 1 and 2, where a
 //!   named constant belongs; constants, statics, types (`[u8; 16]`), patterns and macro
 //!   arguments are not read. Listed once per function and value, so a new value in a listed
@@ -380,7 +381,9 @@ impl Scan<'_> {
 
     fn signature(&mut self, sig: &Signature, prefix: &str, shown: bool) {
         let item = format!("{prefix}{}", sig.ident);
-        if shown {
+        let constructs = sig.inputs.len() == 1
+            && matches!(&sig.output, ReturnType::Type(_, ty) if is_named(ty, "Self"));
+        if shown && !constructs {
             for input in &sig.inputs {
                 if let FnArg::Typed(typed) = input
                     && let Pat::Ident(name) = &*typed.pat
