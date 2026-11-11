@@ -140,7 +140,6 @@ sections:
       - {id: AGT-8, kind: stated, text: "Per-project AGENTS.md loaded into every run"}
       - {id: AGT-9, kind: stated, text: "Engine-target database, project dialect and a curated QuakeC reference ship with the app as agent context"}
       - {id: AGT-10, kind: implied, text: "Deterministic scenario format (map, seed, scripted inputs, assertions) for scenario.run"}
-      - {id: AGT-11, kind: implied, text: "Model providers accept workload identity federation: a short-lived token from the user's identity provider exchanged with Anthropic or OpenAI for a short-lived API token, in place of a stored API key"}
 
   - id: UI
     title: Editor and UI
