@@ -129,8 +129,8 @@ fn the_baseline_only_shrinks() {
 }
 
 // CONV-17: a free function whose first parameter is a type its crate defines is found, by value
-// or by reference; one on a foreign or primitive type, a method and an associated function are
-// not
+// or by reference; one on a foreign or primitive type or an alias, a method and an associated
+// function are not
 #[test]
 fn free_functions_on_a_crate_type_are_found() {
     let lib = "pub struct Map; pub enum Kind { A } pub type Alias = Map;\n\
@@ -149,7 +149,8 @@ fn free_functions_on_a_crate_type_are_found() {
         .filter(|(rule, _, _)| *rule == Rule::FreeFnOnType)
         .map(|(_, _, item)| item)
         .collect();
-    assert_eq!(found, ["aliased", "deep", "grow", "kind_name", "size"]);
+    // `aliased` takes an alias, which may name a foreign type that takes no method.
+    assert_eq!(found, ["deep", "grow", "kind_name", "size"]);
 }
 
 // CONV-17: a visible field or a visible function's parameter named as an ID and typed as a raw
@@ -224,9 +225,44 @@ fn the_baseline_command_never_adds_a_violation() {
     let text = fs::read_to_string(root.join(BASELINE)).unwrap();
     assert!(text.starts_with("# a reviewed exception\n"), "{text}");
     assert!(!text.contains("\tflagged"), "{text}");
-    assert!(!text.contains("plain"), "the new violation is not written: {text}");
+    assert!(
+        !text.contains("plain"),
+        "the new violation is not written: {text}"
+    );
     let mut report = Report::default();
     check(&root, &mut report).unwrap();
     assert_eq!(report.problems.len(), 1, "{:?}", report.problems);
     assert!(report.problems[0].contains("plain takes a bool"));
+}
+
+// CONV-17: test code declared out of line (`#[cfg(test)] mod name;`) and under
+// `cfg(any(test, ...))` is left out; a trait impl's signature is the trait's, so only its body
+// is read; a free function on an alias is not on a crate type
+#[test]
+fn test_modules_trait_impls_and_aliases_are_left_out() {
+    let lib = "#[cfg(test)]\nmod helpers;\n\
+        #[cfg(any(test, feature = \"x\"))]\npub fn gated(flag: bool) {}\n\
+        pub struct Table; pub type Reader = Box<u8>;\n\
+        pub trait Pick { fn pick(&self, index: usize, all: bool) -> u32; }\n\
+        impl Pick for Table { fn pick(&self, index: usize, all: bool) -> u32 { 77 } }\n\
+        fn load(r: &Reader) {}\n";
+    let root = workspace("left-out", lib, "pub fn fine() {}\n");
+    fs::write(
+        root.join("crates/lib/src/helpers.rs"),
+        "pub fn helper(flag: bool) -> Result<(), String> { Ok(()) }\n",
+    )
+    .unwrap();
+    let found: Vec<String> = items(&root)
+        .into_iter()
+        .map(|(rule, _, item)| format!("{rule:?} {item}"))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            "BoolArgument Pick::pick",
+            "BareId Pick::pick(index)",
+            "MagicNumber Table::pick:77"
+        ],
+        "the trait declares the signature; the impl's body is its own"
+    );
 }

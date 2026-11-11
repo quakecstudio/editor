@@ -220,26 +220,33 @@ fn reviewed(body: &str) -> bool {
 }
 
 // CONV-17, work-issue "Land it": land.sh merges only a body whose "## Code review" section names
-// the effort level the review ran at; a body with no section, a section that names none, or a
-// level named only in another section is refused (PRs #854, #855 and #857 landed without one)
+// the level the review ran at, as "/code-review high" or "effort: high"; a body with no section,
+// a section that names none, a level word in other text ("low priority"), or a level named only
+// in another section is refused (PRs #854, #855 and #857 landed without one)
 #[test]
 fn a_body_lands_only_with_its_code_review_recorded() {
     for body in [
         "What changed.\n\n## Code review\n\n`/code-review high`: two findings, both fixed in abc123.\n\nCloses #5",
         "## Code review\nEffort: MEDIUM. Found nothing.",
-        "Text.\r\n\r\n## Code Review\r\n\r\nRan at max; nothing found.\r\n",
-        "## Code review\n\n### Findings\n\nRan at xhigh.",
+        "Text.\r\n\r\n## Code Review\r\n\r\nRan /code-review max; nothing found.\r\n",
+        "## Code review (high effort)\n\n### Findings\n\nRan /code-review xhigh.",
+        "## Code review\n\n```sh\n# run it\n```\n\n/code-review high found nothing.",
     ] {
         assert!(reviewed(body), "{body:?}");
     }
     for body in [
         "What changed.\n\n## Self-review\n\nI reviewed the diff myself.\n\nCloses #5",
-        "## Code review\n\nI read the diff myself.\n\n## Verification\n\nRan the high-level tests.",
-        "### Code review\n\nhigh",
+        "## Code review\n\nI read the diff myself.\n\n## Verification\n\n/code-review high",
+        "## Code review\n\nNo maximum-risk changes; low priority notes only.",
+        "### Code review\n\n/code-review high",
         "",
-        "Code review at high effort, in a sentence.",
+        "Code review at effort high, in a sentence.",
     ] {
         assert!(!reviewed(body), "{body:?}");
     }
-    assert!(run("check-code-review.sh", "").1.contains("no \"## Code review\" section"));
+    assert!(
+        run("check-code-review.sh", "")
+            .1
+            .contains("no \"## Code review\" section")
+    );
 }

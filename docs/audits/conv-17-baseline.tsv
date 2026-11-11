@@ -1,6 +1,7 @@
 # CONV-17 violations that existed when cargo xtask conventions began checking them
-# (P5-18): rule, file, item. Only shrinks: remove a line when its item is fixed
-# (P5-19). A line added later is a reviewed exception; say why in a comment above it.
+# (P5-18): rule, file, item. Only shrinks: cargo xtask conv17-baseline removes a
+# line when its item is fixed (P5-19) and never adds one. A line added by hand is a
+# reviewed exception, such as listed code moved or renamed; say why in a comment above it.
 bool-argument	apps/cli/src/doctor.rs	games
 bool-argument	apps/desktop/src/agent.rs	field
 bool-argument	apps/desktop/src/multibuffer.rs	Multibuffer::show
@@ -152,7 +153,6 @@ bool-argument	crates/qs-sim/src/movement.rs	SimCall::movestep
 bool-argument	crates/qs-sim/src/spawn.rs	SpawnHost::allocate
 bool-argument	crates/qs-sim/src/spawn.rs	inhibited
 bool-argument	crates/qs-sim/src/spawn.rs	load_from_file
-bool-argument	crates/qs-sim/src/world.rs	Spawner::allocate
 bool-argument	crates/qs-sim/src/world.rs	World::set_standard_quake
 bool-argument	crates/qs-sim/src/world/changes.rs	World::track_changes
 bool-argument	crates/qs-sound/src/music.rs	Music::play
@@ -166,20 +166,14 @@ string-error	crates/qs-agent/src/lib.rs	Model::reply
 string-error	crates/qs-agent/src/lib.rs	Model::reply_streaming
 string-error	crates/qs-commands/src/session.rs	guard
 string-error	crates/qs-mcp/src/lib.rs	Commands::run
-string-error	crates/qs-mcp/src/lib.rs	Connected::run
 string-error	crates/qs-mcp/src/lib.rs	Server::check_roots
-string-error	crates/qs-mcp/src/lib.rs	Session::run
 string-error	crates/qs-models/src/anthropic.rs	reply
-string-error	crates/qs-models/src/lib.rs	ProviderModel::reply
-string-error	crates/qs-models/src/lib.rs	ProviderModel::reply_streaming
 string-error	crates/qs-models/src/lib.rs	ProviderModel::take
 string-error	crates/qs-models/src/openai.rs	reply
 string-error	crates/qs-models/src/stream.rs	AnthropicStream::answer
 string-error	crates/qs-sim/src/scenario.rs	parse_expect
 string-error	crates/qs-sim/src/scenario.rs	read
 string-error	crates/qs-templates/src/lib.rs	Fetch::get
-string-error	crates/qs-templates/src/lib.rs	Folder::get
-string-error	crates/qs-templates/src/lib.rs	GitHub::get
 free-fn-on-type	apps/cli/src/doctor.rs	name
 free-fn-on-type	apps/cli/src/doctor.rs	run
 free-fn-on-type	apps/cli/src/lib.rs	serve_mcp
@@ -187,7 +181,6 @@ free-fn-on-type	apps/desktop/src/project.rs	problem_label
 free-fn-on-type	apps/desktop/src/shell.rs	count
 free-fn-on-type	apps/desktop/src/shell.rs	labelled
 free-fn-on-type	apps/desktop/src/shell.rs	view_style
-free-fn-on-type	apps/desktop/src/snapshots.rs	run
 free-fn-on-type	apps/desktop/src/theme.rs	parse_color
 free-fn-on-type	apps/lsp/src/render.rs	hover
 free-fn-on-type	apps/quakec-engine/src/audio.rs	fill
@@ -212,7 +205,6 @@ free-fn-on-type	crates/qc-builtins/src/printf.rs	pad
 free-fn-on-type	crates/qc-builtins/src/printf.rs	signed_arg
 free-fn-on-type	crates/qc-builtins/src/printf.rs	string_arg
 free-fn-on-type	crates/qc-builtins/src/printf.rs	unsigned_arg
-free-fn-on-type	crates/qc-builtins/src/properties.rs	check_tokens
 free-fn-on-type	crates/qc-codegen/src/compile.rs	literal_of_token
 free-fn-on-type	crates/qc-codegen/src/ops.rs	row
 free-fn-on-type	crates/qc-codegen/src/ops.rs	select
@@ -231,7 +223,6 @@ free-fn-on-type	crates/qc-preproc/src/fte_macro.rs	read_define
 free-fn-on-type	crates/qc-preproc/src/fte_opcodes.rs	max_revision
 free-fn-on-type	crates/qc-preproc/src/fte_opcodes.rs	place
 free-fn-on-type	crates/qc-preproc/src/fte_opcodes.rs	valid_for_target
-free-fn-on-type	crates/qc-preproc/src/lib.rs	hide_with
 free-fn-on-type	crates/qc-progs/src/write.rs	encode_tables
 free-fn-on-type	crates/qc-progs/src/write.rs	write
 free-fn-on-type	crates/qc-sema/src/cast.rs	pointees_agree
@@ -507,15 +498,7 @@ bare-id	crates/qs-sim/src/spawn.rs	SpawnHost::spawn(edict)
 bare-id	crates/qs-sim/src/spawn.rs	SpawnHost::spawnflags(edict)
 bare-id	crates/qs-sim/src/spawn.rs	apply_key(edict)
 bare-id	crates/qs-sim/src/spawn.rs	parse_saved_edict(edict)
-bare-id	crates/qs-sim/src/world.rs	Spawner::free(edict)
-bare-id	crates/qs-sim/src/world.rs	Spawner::global(slot)
-bare-id	crates/qs-sim/src/world.rs	Spawner::set_field(edict)
-bare-id	crates/qs-sim/src/world.rs	Spawner::spawn(edict)
-bare-id	crates/qs-sim/src/world.rs	Spawner::spawnflags(edict)
 bare-id	crates/qs-sim/src/world/edit.rs	LineHit.edict
-bare-id	crates/qs-sim/src/world/inspect.rs	World::field(edict)
-bare-id	crates/qs-sim/src/world/inspect.rs	World::field(slot)
-bare-id	crates/qs-sim/src/world/inspect.rs	World::global(slot)
 bare-id	crates/qs-sim/src/world/save.rs	World::slot_of(slot)
 bare-id	crates/qs-sim/src/world/state.rs	RawState::field(edict)
 bare-id	crates/qs-sim/src/world/state.rs	RawState::field(slot)
@@ -537,9 +520,6 @@ bare-id	crates/qs-workbench/src/preview/engine.rs	EngineInspectParams.edict
 bare-id	crates/qs-workbench/src/preview/entities.rs	Entities::classname(edict)
 bare-id	crates/qs-workbench/src/preview/entities.rs	Selected.edict
 bare-id	crates/qs-workbench/src/terminal.rs	Terminals::get_mut(index)
-bare-id	crates/qs-workbench/src/vm_run.rs	Raw::field(edict)
-bare-id	crates/qs-workbench/src/vm_run.rs	Raw::field(slot)
-bare-id	crates/qs-workbench/src/vm_run.rs	Raw::global(slot)
 magic-number	apps/desktop/src/agent.rs	AgentPanel::ui:24
 magic-number	apps/desktop/src/agent.rs	changes:8
 magic-number	apps/desktop/src/agent.rs	edit_messages:48
@@ -571,7 +551,6 @@ magic-number	apps/desktop/src/shell.rs	dragged_size:0.5
 magic-number	apps/desktop/src/shell.rs	left:3
 magic-number	apps/desktop/src/shell.rs	right:3
 magic-number	apps/desktop/src/shell.rs	status_dot:4.0
-magic-number	apps/desktop/src/snapshots.rs	max_failed_pixels:400
 magic-number	apps/desktop/src/theme.rs	parse_color:16
 magic-number	apps/desktop/src/theme.rs	parse_color:6
 magic-number	apps/lsp/src/server.rs	ErrorCode::code:32002
@@ -704,20 +683,6 @@ magic-number	crates/qc-builtins/src/printf.rs	general:4
 magic-number	crates/qc-builtins/src/printf.rs	quoted:4
 magic-number	crates/qc-builtins/src/printf.rs	to_u64:63
 magic-number	crates/qc-builtins/src/printf.rs	wide_bits:32
-magic-number	crates/qc-builtins/src/properties.rs	command_text:1100
-magic-number	crates/qc-builtins/src/properties.rs	command_text:300
-magic-number	crates/qc-builtins/src/properties.rs	exact_decimal:10
-magic-number	crates/qc-builtins/src/properties.rs	exact_decimal:16
-magic-number	crates/qc-builtins/src/properties.rs	exact_decimal:4
-magic-number	crates/qc-builtins/src/properties.rs	exact_decimal:5
-magic-number	crates/qc-builtins/src/properties.rs	exact_hex:1022
-magic-number	crates/qc-builtins/src/properties.rs	exact_hex:1023
-magic-number	crates/qc-builtins/src/properties.rs	exact_hex:2047
-magic-number	crates/qc-builtins/src/properties.rs	exact_hex:52
-magic-number	crates/qc-builtins/src/properties.rs	exact_hex:63
-magic-number	crates/qc-builtins/src/properties.rs	near_tie_digits:13
-magic-number	crates/qc-builtins/src/properties.rs	near_tie_digits:16
-magic-number	crates/qc-builtins/src/properties.rs	near_tie_digits:30
 magic-number	crates/qc-builtins/src/strconv.rs	alpha:128
 magic-number	crates/qc-builtins/src/strconv.rs	alpha:5
 magic-number	crates/qc-builtins/src/strconv.rs	number:128
@@ -851,14 +816,6 @@ magic-number	crates/qc-lno/src/read.rs	LnoFile::read:20
 magic-number	crates/qc-lno/src/read.rs	LnoFile::read:4
 magic-number	crates/qc-lno/src/read.rs	LnoFile::read:8
 magic-number	crates/qc-lno/src/read.rs	read_i32_table:4
-magic-number	crates/qc-lno/src/vectors.rs	accepted_vectors:170
-magic-number	crates/qc-lno/src/vectors.rs	accepted_vectors:187
-magic-number	crates/qc-lno/src/vectors.rs	accepted_vectors:204
-magic-number	crates/qc-lno/src/vectors.rs	accepted_vectors:221
-magic-number	crates/qc-lno/src/vectors.rs	accepted_vectors:5
-magic-number	crates/qc-lno/src/vectors.rs	vector_fteqcc_two:5
-magic-number	crates/qc-lno/src/vectors.rs	vector_gmqcc_two:4
-magic-number	crates/qc-lno/src/vectors.rs	vector_gmqcc_two:5
 magic-number	crates/qc-lno/src/write.rs	LnoFile::size_hint:4
 magic-number	crates/qc-lno/src/write.rs	LnoFile::size_hint:8
 magic-number	crates/qc-preproc/src/compiler_flags.rs	PragmaDefault::bit:13

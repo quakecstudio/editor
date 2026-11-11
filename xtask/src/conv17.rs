@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The two CONV-17 rules a parser can check (`docs/conventions.md`, "Type design (CONV-17)",
+//! The CONV-17 rules a parser can check (`docs/conventions.md`, "Type design (CONV-17)",
 //! P5-18), part of `cargo xtask conventions`:
 //!
 //! - **bool argument:** a function or method in a shipped crate or app that takes a `bool`
@@ -98,7 +98,7 @@ impl Violation {
 enum Kind {
     /// A library crate, layers L0 to L7: both rules.
     Library,
-    /// An app: the bool rule only.
+    /// An app: every rule but string-error.
     App,
 }
 
@@ -137,7 +137,7 @@ pub(crate) fn check(root: &Path, report: &mut Report) -> Result<(), String> {
         report.record(
             true,
             format!(
-                "CONV-17: no bool argument or String error beyond the {} in {BASELINE}",
+                "CONV-17: no violation beyond the {} in {BASELINE}",
                 baseline.len()
             ),
         );
@@ -166,6 +166,7 @@ pub(crate) fn violations(root: &Path) -> Result<Vec<Violation>, String> {
             };
             let files = rust_files(&dir.join("src"));
             let mut parsed_files = Vec::new();
+            let mut test_files = BTreeSet::new();
             for file in files {
                 let relative = file
                     .strip_prefix(root)
@@ -174,14 +175,16 @@ pub(crate) fn violations(root: &Path) -> Result<Vec<Violation>, String> {
                     .replace('\\', "/");
                 let source = fs::read_to_string(&file).map_err(|e| format!("{relative}: {e}"))?;
                 let parsed = syn::parse_file(&source).map_err(|e| format!("{relative}: {e}"))?;
-                parsed_files.push((relative, parsed));
+                test_files.extend(test_module_files(&file, &parsed.items));
+                parsed_files.push((file, relative, parsed));
             }
+            parsed_files.retain(|(file, _, _)| !test_files.contains(file));
             // The types the crate defines, for the free-function rule.
             let mut local = BTreeSet::new();
-            for (_, parsed) in &parsed_files {
+            for (_, _, parsed) in &parsed_files {
                 local_types(&parsed.items, &mut local);
             }
-            for (relative, parsed) in &parsed_files {
+            for (_, relative, parsed) in &parsed_files {
                 let mut scan = Scan {
                     file: relative,
                     kind,
@@ -237,11 +240,13 @@ pub(crate) fn write_baseline(root: &Path) -> Result<usize, String> {
     let found: BTreeSet<Violation> = violations(root)?.into_iter().collect();
     let path = root.join(BASELINE);
     let text = if let Ok(old) = fs::read_to_string(&path) {
-        let still = read_baseline(root)?;
+        let found_lines: BTreeSet<String> = found.iter().map(Violation::line).collect();
         let mut kept = String::new();
         for line in old.lines() {
-            let entry = still.iter().find(|v| v.line() == line);
-            if entry.is_none_or(|v| found.contains(v)) {
+            // An entry is its first three fields; comments and blank lines stay.
+            let entry: String = line.splitn(4, '\t').take(3).collect::<Vec<_>>().join("\t");
+            let is_entry = !line.is_empty() && !line.starts_with('#');
+            if !is_entry || found_lines.contains(&entry) {
                 kept.push_str(line);
                 kept.push('\n');
             }
@@ -252,7 +257,7 @@ pub(crate) fn write_baseline(root: &Path) -> Result<usize, String> {
             "# CONV-17 violations that existed when cargo xtask conventions began checking them\n\
              # (P5-18): rule, file, item. Only shrinks: cargo xtask conv17-baseline removes a\n\
              # line when its item is fixed (P5-19) and never adds one. A line added by hand is a\n\
-             # reviewed exception; say why in a comment above it.\n",
+             # reviewed exception, such as listed code moved or renamed; say why in a comment above it.\n",
         );
         for violation in &found {
             text.push_str(&violation.line());
@@ -345,12 +350,14 @@ impl Scan<'_> {
                 Item::Impl(i) if !is_test(&i.attrs) => {
                     let owner = format!("{prefix}{}::", type_name(&i.self_ty));
                     for inner in &i.items {
-                        // A trait impl's methods are as visible as the trait.
+                        // A trait impl's signature is the trait's, checked where the trait is
+                        // declared; only its body is the impl's own.
                         if let ImplItem::Fn(f) = inner
                             && !is_test(&f.attrs)
                         {
-                            let shown = i.trait_.is_some() || visible(&f.vis);
-                            self.signature(&f.sig, &owner, shown);
+                            if i.trait_.is_none() {
+                                self.signature(&f.sig, &owner, visible(&f.vis));
+                            }
                             self.body(&f.block, &format!("{owner}{}", f.sig.ident));
                         }
                     }
@@ -464,7 +471,8 @@ impl<'ast> syn::visit::Visit<'ast> for Literals {
     fn visit_pat(&mut self, _: &'ast Pat) {}
 }
 
-/// The structs, enums, unions and type aliases `items` define, in any module but a test one.
+/// The structs, enums and unions `items` define (an alias may name a foreign type, which takes
+/// no method), in any module but a test one.
 fn local_types(items: &[Item], out: &mut BTreeSet<String>) {
     for item in items {
         match item {
@@ -476,9 +484,6 @@ fn local_types(items: &[Item], out: &mut BTreeSet<String>) {
             }
             Item::Union(u) if !is_test(&u.attrs) => {
                 out.insert(u.ident.to_string());
-            }
-            Item::Type(t) if !is_test(&t.attrs) => {
-                out.insert(t.ident.to_string());
             }
             Item::Mod(m) if !is_test(&m.attrs) => {
                 if let Some((_, inner)) = &m.content {
@@ -531,15 +536,47 @@ fn is_raw_integer(ty: &Type) -> bool {
     false
 }
 
-/// Whether the attributes mark test code: `#[test]` or `#[cfg(test)]`.
+/// Whether the attributes mark test code: `#[test]`, or a `#[cfg(...)]` that names `test`,
+/// such as `cfg(test)` or `cfg(any(test, feature = "x"))`.
 fn is_test(attrs: &[Attribute]) -> bool {
     attrs.iter().any(|attr| {
         attr.path().is_ident("test")
             || (attr.path().is_ident("cfg")
-                && attr
-                    .parse_args::<syn::Ident>()
-                    .is_ok_and(|ident| ident == "test"))
+                && attr.parse_args::<syn::Meta>().is_ok_and(|meta| match meta {
+                    syn::Meta::Path(path) => path.is_ident("test"),
+                    syn::Meta::List(list) => list
+                        .tokens
+                        .to_string()
+                        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                        .any(|word| word == "test"),
+                    syn::Meta::NameValue(_) => false,
+                }))
     })
+}
+
+/// The files of `src` that a `#[cfg(test)] mod name;` declares, `name.rs` or `name/mod.rs`
+/// beside the declaring file (or in its own module directory), so they are left out.
+fn test_module_files(file: &Path, items: &[Item]) -> Vec<PathBuf> {
+    let Some(dir) = file.parent() else {
+        return Vec::new();
+    };
+    let stem = file.file_stem().map(|s| s.to_string_lossy().into_owned());
+    let own = match stem.as_deref() {
+        Some("lib" | "main" | "mod") | None => dir.to_path_buf(),
+        Some(stem) => dir.join(stem),
+    };
+    let mut out = Vec::new();
+    for item in items {
+        if let Item::Mod(m) = item
+            && m.content.is_none()
+            && is_test(&m.attrs)
+        {
+            let name = m.ident.to_string();
+            out.push(own.join(format!("{name}.rs")));
+            out.push(own.join(&name).join("mod.rs"));
+        }
+    }
+    out
 }
 
 /// Whether `ty` is the plain type `name`.

@@ -416,7 +416,8 @@ as an ID (`id`, `index`, `entity`, `edict`, `slot`, `revision`, or ending `_id`,
 function body, where a named constant belongs. The violations that existed when the check
 came are listed in `docs/audits/conv-17-baseline.tsv` (`cargo xtask conv17-baseline` writes
 it); a new one fails, and a fixed one fails until its line is removed, so the list only
-shrinks. The rest (named types the ID names miss, single-use helpers, duplicated code) is the
+shrinks. Listed code moved or renamed unchanged takes its lines with it, by hand, each with a
+comment saying so. The rest (named types the ID names miss, single-use helpers, duplicated code) is the
 implementer's pre-land code review's
 ([`work-issue`](../.claude/skills/work-issue/SKILL.md), "Land it"), with P2-60's audit of the
 L0 to L3 crates and P5-19's of the code since PR #653. Code written before them is changed by that
