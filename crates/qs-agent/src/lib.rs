@@ -164,6 +164,27 @@ pub trait Model {
         tools: &[ToolSpec],
         transcript: &[Message],
     ) -> Result<Reply, String>;
+
+    /// As [`Model::reply`], calling `on_text` with each piece of the reply's text as it
+    /// arrives, for a window that shows the model writing. A model that cannot stream gives
+    /// its text in one piece when the reply is whole.
+    ///
+    /// # Errors
+    ///
+    /// As [`Model::reply`].
+    fn reply_streaming(
+        &mut self,
+        system: &str,
+        tools: &[ToolSpec],
+        transcript: &[Message],
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<Reply, String> {
+        let reply = self.reply(system, tools, transcript)?;
+        match &reply {
+            Reply::Calls { text, .. } | Reply::Finish { summary: text } => on_text(text),
+        }
+        Ok(reply)
+    }
 }
 
 /// What a run works on and how far it may go.
@@ -284,7 +305,167 @@ pub fn tools<C: 'static>(session: &Session<C>) -> Vec<ToolSpec> {
         .collect()
 }
 
-/// Runs `task` with `model` over `session`, whose project is open, as the module says.
+/// What the model is asked on one turn: the rules, the tools and the transcript so far. It
+/// owns its data, so it can go to a thread that waits on the model.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Request {
+    /// The system prompt ([`system_prompt`]).
+    pub system: String,
+    /// The tools the model may call.
+    pub tools: Vec<ToolSpec>,
+    /// Every turn so far, the brief first.
+    pub transcript: Vec<Message>,
+}
+
+/// A run in progress, one turn at a time: [`Run::request`] is what to ask the model,
+/// [`Run::answer`] takes its reply and runs its calls in the session, and [`Run::finish`] ends
+/// it. The window drives it a turn per reply, the model waiting on a thread of its own, so
+/// the frame never waits on the model; [`run`] drives it to the end at once.
+pub struct Run {
+    config: RunConfig,
+    system: String,
+    specs: Vec<ToolSpec>,
+    transcript: Vec<Message>,
+    checkpoint: Option<u32>,
+    turns_left: usize,
+    verification: Option<Verification>,
+    outcome: Option<Outcome>,
+}
+
+impl Run {
+    /// Starts `task` over `session`, whose project is open: records a checkpoint and writes
+    /// the brief.
+    ///
+    /// # Errors
+    ///
+    /// [`AgentError::Checkpoint`] when the checkpoint cannot be recorded.
+    pub fn start<C: 'static>(
+        session: &mut Session<C>,
+        task: &str,
+        config: RunConfig,
+    ) -> Result<Self, AgentError> {
+        let made = session
+            .execute(
+                "checkpoint.create",
+                json!({ "label": format!("agent: {task}") }),
+            )
+            .map_err(|error| AgentError::Checkpoint(error.to_string()))?;
+        let checkpoint = made
+            .get("number")
+            .and_then(Value::as_u64)
+            .and_then(|n| u32::try_from(n).ok());
+        let specs = tools(session);
+        let transcript = vec![Message::User {
+            text: brief(session, task, &config),
+        }];
+        Ok(Self {
+            turns_left: config.turns,
+            config,
+            system: system_prompt(),
+            specs,
+            transcript,
+            checkpoint,
+            verification: None,
+            outcome: None,
+        })
+    }
+
+    /// What to ask the model next, or `None` once the run is done or out of turns.
+    #[must_use]
+    pub fn request(&self) -> Option<Request> {
+        if self.outcome.is_some() || self.turns_left == 0 {
+            return None;
+        }
+        Some(Request {
+            system: self.system.clone(),
+            tools: self.specs.clone(),
+            transcript: self.transcript.clone(),
+        })
+    }
+
+    /// Takes the model's reply to the last request: runs its calls in `session`, or, when it
+    /// says it is finished, compiles and tests and either ends the run done or tells the
+    /// model why not.
+    ///
+    /// # Errors
+    ///
+    /// [`AgentError::Model`] when the reply is the model's failure.
+    pub fn answer<C: 'static>(
+        &mut self,
+        session: &mut Session<C>,
+        reply: Result<Reply, String>,
+    ) -> Result<(), AgentError> {
+        self.turns_left = self.turns_left.saturating_sub(1);
+        match reply.map_err(AgentError::Model)? {
+            Reply::Calls { text, calls } => {
+                self.transcript.push(Message::Assistant {
+                    text,
+                    calls: calls.clone(),
+                });
+                for call in calls {
+                    let result = call_tool(session, &self.specs, &call, &self.config);
+                    self.transcript.push(result);
+                }
+            }
+            Reply::Finish { summary } => {
+                self.transcript.push(Message::Assistant {
+                    text: summary.clone(),
+                    calls: Vec::new(),
+                });
+                let checked = verify(session, &self.config.test_params);
+                if checked.done() {
+                    self.outcome = Some(Outcome::Done { summary });
+                } else {
+                    self.transcript.push(Message::User {
+                        text: format!(
+                            "Not done. Fix these, then finish again:\n{}",
+                            checked.reasons.join("\n")
+                        ),
+                    });
+                }
+                self.verification = Some(checked);
+            }
+        }
+        Ok(())
+    }
+
+    /// Every turn so far, the brief first.
+    #[must_use]
+    pub fn transcript(&self) -> &[Message] {
+        &self.transcript
+    }
+
+    /// The checkpoint recorded before the run changed anything.
+    #[must_use]
+    pub const fn checkpoint(&self) -> Option<u32> {
+        self.checkpoint
+    }
+
+    /// Ends the run: how it ended, with the edits it staged.
+    #[must_use]
+    pub fn finish<C: 'static>(self, session: &mut Session<C>) -> RunReport {
+        let turns = self.config.turns;
+        let outcome = self.outcome.unwrap_or_else(|| Outcome::NotDone {
+            reasons: self.verification.as_ref().map_or_else(
+                || vec![format!("the model did not finish in {turns} turns")],
+                |checked| checked.reasons.clone(),
+            ),
+        });
+        let staged = session
+            .execute("edit.staged", json!({}))
+            .unwrap_or(Value::Null);
+        RunReport {
+            outcome,
+            checkpoint: self.checkpoint,
+            staged,
+            verification: self.verification,
+            transcript: self.transcript,
+        }
+    }
+}
+
+/// Runs `task` with `model` over `session`, whose project is open, as the module says: a
+/// [`Run`] driven to its end.
 ///
 /// # Errors
 ///
@@ -297,81 +478,12 @@ pub fn run<C: 'static>(
     task: &str,
     config: &RunConfig,
 ) -> Result<RunReport, AgentError> {
-    let made = session
-        .execute(
-            "checkpoint.create",
-            json!({ "label": format!("agent: {task}") }),
-        )
-        .map_err(|error| AgentError::Checkpoint(error.to_string()))?;
-    let checkpoint = made
-        .get("number")
-        .and_then(Value::as_u64)
-        .and_then(|n| u32::try_from(n).ok());
-    let specs = tools(session);
-    let system = system_prompt();
-    let mut transcript = vec![Message::User {
-        text: brief(session, task, config),
-    }];
-    let mut verification = None;
-    let mut outcome = None;
-    for _ in 0..config.turns {
-        match model
-            .reply(&system, &specs, &transcript)
-            .map_err(AgentError::Model)?
-        {
-            Reply::Calls { text, calls } => {
-                transcript.push(Message::Assistant {
-                    text,
-                    calls: calls.clone(),
-                });
-                for call in calls {
-                    transcript.push(call_tool(session, &specs, &call, config));
-                }
-            }
-            Reply::Finish { summary } => {
-                transcript.push(Message::Assistant {
-                    text: summary.clone(),
-                    calls: Vec::new(),
-                });
-                let checked = verify(session, &config.test_params);
-                let done = checked.done();
-                if !done {
-                    transcript.push(Message::User {
-                        text: format!(
-                            "Not done. Fix these, then finish again:\n{}",
-                            checked.reasons.join("\n")
-                        ),
-                    });
-                }
-                verification = Some(checked);
-                if done {
-                    outcome = Some(Outcome::Done { summary });
-                    break;
-                }
-            }
-        }
+    let mut run = Run::start(session, task, config.clone())?;
+    while let Some(request) = run.request() {
+        let reply = model.reply(&request.system, &request.tools, &request.transcript);
+        run.answer(session, reply)?;
     }
-    let outcome = outcome.unwrap_or_else(|| Outcome::NotDone {
-        reasons: verification.as_ref().map_or_else(
-            || {
-                vec![format!(
-                    "the model did not finish in {} turns",
-                    config.turns
-                )]
-            },
-            |checked| checked.reasons.clone(),
-        ),
-    });
-    let staged = session
-        .execute("edit.staged", json!({}))
-        .unwrap_or(Value::Null);
-    Ok(RunReport {
-        outcome,
-        checkpoint,
-        staged,
-        verification,
-        transcript,
-    })
+    Ok(run.finish(session))
 }
 
 /// The first message: the task, then the project as it is: its files, the compile's problems

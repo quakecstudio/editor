@@ -26,6 +26,12 @@ to the result:
   reference written for it, [`docs/agent-reference/`](../../docs/agent-reference/README.md):
   the language and the idioms of id's code, and how to work, test and play scenarios here.
   It is the same on every turn, so a provider's prompt cache keeps it.
+- **One turn at a time:** `Run::start` records the checkpoint and writes the brief,
+  `Run::request` is what to ask the model next (owned, so it can go to the thread that waits
+  on the model), `Run::answer` runs the reply's calls in the session or checks the work, and
+  `Run::finish` ends it. The agent panel drives a `Run` a reply at a time so the frame never
+  waits on the model; `run` drives one to the end. `Model::reply_streaming` gives the reply's
+  text as it is written.
 - **Guardrails:**
   - a relative path is taken from the project, and an edit outside it is refused;
   - a tool's output longer than `RunConfig::output_limit` is cut, saying so;

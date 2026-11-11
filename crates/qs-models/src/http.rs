@@ -84,6 +84,20 @@ pub trait Transport {
         headers: &[Header],
         body: &Value,
     ) -> Result<Value, TransportError>;
+
+    /// Posts `body` to `url` with `headers` and reads the answer as server-sent events,
+    /// calling `on_data` with each event's `data` line as it arrives; `[DONE]` ends the stream.
+    ///
+    /// # Errors
+    ///
+    /// [`TransportError`] when there is no answer or an error status.
+    fn post_stream(
+        &self,
+        url: &str,
+        headers: &[Header],
+        body: &Value,
+        on_data: &mut dyn FnMut(&str),
+    ) -> Result<(), TransportError>;
 }
 
 /// HTTP and HTTPS over `ureq`, TLS by rustls with the webpki roots.
@@ -111,13 +125,14 @@ impl Default for Http {
     }
 }
 
-impl Transport for Http {
-    fn post_json(
+impl Http {
+    /// Sends `body` to `url` with `headers`: the response, or the error status with its body.
+    fn send(
         &self,
         url: &str,
         headers: &[Header],
         body: &Value,
-    ) -> Result<Value, TransportError> {
+    ) -> Result<ureq::http::Response<ureq::Body>, TransportError> {
         let mut request = self
             .agent
             .post(url)
@@ -129,13 +144,53 @@ impl Transport for Http {
             .send(body.to_string())
             .map_err(|error| TransportError::Connect(error.to_string()))?;
         let code = response.status().as_u16();
+        if (200..300).contains(&code) {
+            return Ok(response);
+        }
         let text = response
             .body_mut()
             .read_to_string()
             .map_err(|error| TransportError::Connect(error.to_string()))?;
-        if !(200..300).contains(&code) {
-            return Err(TransportError::Status { code, body: text });
+        Err(TransportError::Status { code, body: text })
+    }
+}
+
+impl Transport for Http {
+    fn post_stream(
+        &self,
+        url: &str,
+        headers: &[Header],
+        body: &Value,
+        on_data: &mut dyn FnMut(&str),
+    ) -> Result<(), TransportError> {
+        use std::io::BufRead as _;
+        let mut response = self.send(url, headers, body)?;
+        let reader = std::io::BufReader::new(response.body_mut().as_reader());
+        for line in reader.lines() {
+            let line = line.map_err(|error| TransportError::Connect(error.to_string()))?;
+            let Some(data) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim_start();
+            if data == "[DONE]" {
+                break;
+            }
+            on_data(data);
         }
+        Ok(())
+    }
+
+    fn post_json(
+        &self,
+        url: &str,
+        headers: &[Header],
+        body: &Value,
+    ) -> Result<Value, TransportError> {
+        let mut response = self.send(url, headers, body)?;
+        let text = response
+            .body_mut()
+            .read_to_string()
+            .map_err(|error| TransportError::Connect(error.to_string()))?;
         serde_json::from_str(&text).map_err(|error| TransportError::Body(error.to_string()))
     }
 }

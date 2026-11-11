@@ -439,3 +439,42 @@ fn the_context_holds_the_engine_the_dialect_and_agents_md() {
         panic!("the brief changed; see src/snapshots/brief.new.txt:\n{brief}");
     }
 }
+
+// No spec statement: P4-09, a run steps one reply at a time as the window drives it: a request
+// while turns remain, the calls run on each answer, none once it is done, and a model's
+// failure is the answer's error; a model that cannot stream gives its text in one piece
+#[test]
+fn a_run_steps_one_reply_at_a_time() {
+    let (root, mut session) = project("stepping", FIXED);
+    let mut run = super::Run::start(&mut session, "Check it.", RunConfig::new(&root)).unwrap();
+    assert!(run.checkpoint().is_some());
+    let first = run.request().unwrap();
+    assert_eq!(first.system, system_prompt());
+    assert_eq!(first.transcript.len(), 1, "the brief");
+    run.answer(&mut session, Ok(calls(vec![("compile", json!({}))])))
+        .unwrap();
+    assert_eq!(run.transcript().len(), 3, "the calls and their result");
+    run.answer(&mut session, Ok(finish())).unwrap();
+    assert!(run.request().is_none(), "done: nothing more to ask");
+    let report = run.finish(&mut session);
+    assert!(matches!(report.outcome, Outcome::Done { .. }));
+    let mut failing = super::Run::start(&mut session, "x", RunConfig::new(&root)).unwrap();
+    assert!(matches!(
+        failing.answer(&mut session, Err("overloaded".to_owned())),
+        Err(AgentError::Model(why)) if why == "overloaded"
+    ));
+    let mut pieces = Vec::new();
+    let mut model = Scripted::new(vec![finish()]);
+    let reply = model
+        .reply_streaming(
+            &system_prompt(),
+            &tools(&session),
+            &[Message::User {
+                text: "x".to_owned(),
+            }],
+            &mut |piece| pieces.push(piece.to_owned()),
+        )
+        .unwrap();
+    assert_eq!(reply, finish());
+    assert_eq!(pieces, ["done"]);
+}
