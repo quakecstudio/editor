@@ -54,6 +54,72 @@ pub(crate) struct Preedit<'a> {
     pub(crate) text: &'a str,
 }
 
+/// The layout job of line `text` with `inlays`, each text drawn in `color` before its byte
+/// offset, as inlay hints are (P4-34): the styler's runs and the gaps in `plain` around them.
+pub(crate) fn inlay_job(
+    text: &str,
+    spans: &[StyledSpan],
+    font: &FontId,
+    (plain, color): (Color32, Color32),
+    inlays: &[(usize, String)],
+) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    let format = |color: Color32, italic: bool| TextFormat {
+        font_id: font.clone(),
+        color,
+        italics: italic,
+        ..TextFormat::default()
+    };
+    let mut at = 0;
+    let mut pieces: Vec<(Range<usize>, Color32, bool)> = Vec::new();
+    for span in spans {
+        let start = span.range.start.clamp(at, text.len());
+        let end = span.range.end.clamp(start, text.len());
+        if start > at {
+            pieces.push((at..start, plain, false));
+        }
+        if end > start {
+            pieces.push((start..end, span.color, span.italic));
+        }
+        at = end;
+    }
+    if at < text.len() {
+        pieces.push((at..text.len(), plain, false));
+    }
+    let mut next = inlays.iter().peekable();
+    for (range, piece_color, italic) in pieces {
+        let mut start = range.start;
+        while let Some((col, hint)) = next.peek() {
+            let col = floor_char(text, *col);
+            if col >= range.end {
+                break;
+            }
+            if col > start {
+                job.append(
+                    text.get(start..col).unwrap_or(""),
+                    0.0,
+                    format(piece_color, italic),
+                );
+                start = col;
+            }
+            job.append(hint, 0.0, format(color, true));
+            next.next();
+        }
+        job.append(
+            text.get(start..range.end).unwrap_or(""),
+            0.0,
+            format(piece_color, italic),
+        );
+    }
+    for (_, hint) in next {
+        job.append(hint, 0.0, format(color, true));
+    }
+    if job.sections.is_empty() {
+        job.append("", 0.0, format(plain, false));
+    }
+    job
+}
+
 /// The layout job of line `text`: its styler's runs, the gaps in `plain`, and a preedit spliced
 /// in at its byte offset, underlined.
 pub(crate) fn line_job(
@@ -150,6 +216,7 @@ struct Key {
     font: FontId,
     pixels_per_point: f32,
     wrap_width: f32,
+    inlays: u64,
 }
 
 /// The laid-out text of each line, by line identity. An edit gives a line a new [`LineId`], so
@@ -164,21 +231,22 @@ pub struct LayoutCache {
 }
 
 impl LayoutCache {
-    /// Starts a frame laid out with `revision`, `font`, `pixels_per_point` and lines wrapped
-    /// at `wrap_width` (infinite for none), clearing the cache when any differs from the last
-    /// frame's.
+    /// Starts a frame laid out with `revision`, `font`, `pixels_per_point`, lines wrapped at
+    /// `wrap_width` (infinite for none) and the inlay hints of revision `inlays`, clearing the
+    /// cache when any differs from the last frame's.
     pub(crate) fn begin(
         &mut self,
         revision: u64,
         font: &FontId,
         pixels_per_point: f32,
-        wrap_width: f32,
+        (wrap_width, inlays): (f32, u64),
     ) {
         let key = Key {
             revision,
             font: font.clone(),
             pixels_per_point,
             wrap_width,
+            inlays,
         };
         if self.key.as_ref() != Some(&key) {
             self.lines.clear();

@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use qc_ide::{Caution, Completion, FileRange, Hover, Span};
+use qc_ide::{Caution, CodeAction, Completion, FileRange, Hover, Span};
 use qc_project::{Loader, normalize};
 
 use crate::{Workbench, WorkbenchError, problems, tree};
@@ -118,6 +118,11 @@ impl<L: Loader> Workbench<L> {
         self.host.text(path)
     }
 
+    /// `path`'s current text formatted in its module's dialect (P4-34).
+    pub fn formatted(&mut self, path: &Path) -> Option<Vec<u8>> {
+        self.host.formatted(path)
+    }
+
     /// Writes the current text of `path` to disk.
     ///
     /// # Errors
@@ -196,6 +201,39 @@ impl<L: Loader> Workbench<L> {
             changes,
             caution: rename.caution,
         })
+    }
+}
+
+impl<L: Loader> Workbench<L> {
+    /// The quick fixes for the diagnostics of `path` between bytes `start` and `end` (P4-34).
+    pub fn code_actions(&mut self, path: &Path, start: usize, end: usize) -> Vec<CodeAction> {
+        self.host
+            .code_actions(path, Span::new(start, end.max(start)))
+    }
+
+    /// Applies `action`'s edit to its file, as the editor's text; nothing is saved.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkbenchError::NoFile`] when the file has no text.
+    pub fn apply_action(&mut self, action: &CodeAction) -> Result<Change, WorkbenchError> {
+        let path = action.edit.path.clone();
+        let before = self
+            .host
+            .text(&path)
+            .ok_or_else(|| WorkbenchError::NoFile { path: path.clone() })?;
+        let after = apply(&before, &action.edit.edits);
+        self.set_text(&path, after.clone(), Source::Elsewhere)?;
+        Ok(Change {
+            path,
+            before,
+            after,
+        })
+    }
+
+    /// The parameter names shown before the arguments of the calls of `path` (inlay hints).
+    pub fn inlay_hints(&mut self, path: &Path) -> Vec<qc_ide::ParameterHint> {
+        self.host.parameter_hints(path, Span::new(0, usize::MAX))
     }
 }
 

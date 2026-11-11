@@ -302,6 +302,8 @@ variant qc_diag::code::Code::W0317
 variant qc_diag::code::Code::W0318
 variant qc_diag::code::Code::W0319
 variant qc_diag::code::Code::W0320
+variant qc_diag::code::Code::W0321
+variant qc_diag::code::Code::W0322
 variant qc_diag::code::Code::W0402
 variant qc_diag::code::Severity::Error
 variant qc_diag::code::Severity::Warning

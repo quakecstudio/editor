@@ -798,6 +798,20 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   (FTEF-19.67).
 - **QCD-7.114** `W0240` "type mismatch: A NAME to B TARGET": a value stored that keeps a type the
   target's is not (FTEF-29.7). `WARN_STRICTTYPEMISMATCH`, F307.
+- **QCD-7.115** `W0321` "Local NAME is never used": a local the program declares and no
+  expression names, the editor's diagnostic (`qc-ide`, P4-34), which the compiler does not
+  report. Its quick fix removes the declaration.
+- **QCD-7.116** `W0322` "NAME is never precached": the string literal a call of `setmodel`
+  (its second argument), `sound` (its third) or `ambientsound` (its second) passes, when no call
+  of `precache_model`, `precache_model2`, `precache_sound` or `precache_sound2` in the module
+  passes the same literal; the editor's diagnostic (`qc-ide`, P4-34), which the compiler does
+  not report. id's engine refuses such a name at run time
+  (id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d): `PF_setmodel` in
+  `WinQuake/pr_cmds.c` stops the program with `PR_RunError ("no precache: %s\n", m)`;
+  `PF_ambientsound` prints `Con_Printf ("no precache: %s\n", samp)` and plays nothing;
+  `SV_StartSound` in `WinQuake/sv_main.c` prints `Con_Printf ("SV_StartSound: %s not
+  precacheed\n", sample)` and plays nothing. A name built at run time is not checked. Its quick
+  fix adds the precache call at the start of `worldspawn`'s body.
 
 ## QCD-8 Preprocessor errors
 

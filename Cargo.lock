@@ -3455,6 +3455,7 @@ version = "2026.10.0"
 dependencies = [
  "qc-diag",
  "qc-engines",
+ "qc-lexer",
  "qc-project",
  "qc-sema",
  "qc-syntax",
@@ -6081,6 +6082,7 @@ dependencies = [
  "clap",
  "miniz_oxide 0.9.1",
  "qc-codegen",
+ "qc-ide",
  "qc-lexer",
  "qc-lno",
  "qc-preproc",

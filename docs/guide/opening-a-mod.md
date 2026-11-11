@@ -52,6 +52,8 @@ list follows the text on screen even before you save.
 | Cmd+F | Find and replace in the file |
 | Cmd+S | Save |
 | Cmd+1, Cmd+2, Cmd+3, Cmd+4 | Give the keyboard to the editor, the left, right or bottom panel |
+| Cmd+. | The quick fixes for the problem at the caret |
+| Cmd+Shift+I | Format the file: indent with tabs, trim trailing spaces |
 | Ctrl+G | Go to a line |
 | Cmd+Shift+O | Go to a symbol in the file |
 | Ctrl+Tab | Switch to another open file |

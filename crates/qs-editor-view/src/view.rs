@@ -2,7 +2,7 @@
 
 //! The editor widget: input to edits, and the visible rows drawn from the layout cache.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use egui::output::IMEOutput;
@@ -15,7 +15,7 @@ use egui::{
 use crate::buffer::Position;
 use crate::diff::Diff;
 use crate::fold::Folds;
-use crate::layout::{LayoutCache, Preedit, Styler, line_job};
+use crate::layout::{LayoutCache, Preedit, Styler, inlay_job, line_job};
 use crate::selection::{EditState, Extend, Motion, Selection};
 use crate::vim::{Mode, Vim, VimKey};
 
@@ -57,6 +57,14 @@ pub struct ViewStyle {
     pub modified_mark: Color32,
     /// The gutter's mark where lines were removed since `HEAD`, `status.error`.
     pub removed_mark: Color32,
+    /// Inlay hints, `text.faint`.
+    pub inlay: Color32,
+    /// An error's note at its line's end, `status.error`.
+    pub note_error: Color32,
+    /// A warning's note at its line's end, `status.warn`.
+    pub note_warning: Color32,
+    /// The mark before a note that has a quick fix, `accent`.
+    pub lightbulb: Color32,
 }
 
 impl Default for ViewStyle {
@@ -80,6 +88,10 @@ impl Default for ViewStyle {
             added_mark: Color32::from_rgb(0x7f, 0xb0, 0x69),
             modified_mark: Color32::from_rgb(0xe2, 0xb0, 0x4a),
             removed_mark: Color32::from_rgb(0xec, 0x7a, 0x6c),
+            inlay: Color32::from_rgb(0x8e, 0x87, 0x7d),
+            note_error: Color32::from_rgb(0xec, 0x7a, 0x6c),
+            note_warning: Color32::from_rgb(0xe2, 0xb0, 0x4a),
+            lightbulb: Color32::from_rgb(0xee, 0x8b, 0x45),
         }
     }
 }
@@ -96,6 +108,38 @@ const FOLDED_MARK: &str = "\u{2026}";
 const INDENT_SPACES: usize = 4;
 /// The accessible name of the editor.
 const LABEL: &str = "Code editor";
+
+/// How serious a line's note is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoteSeverity {
+    /// An error.
+    Error,
+    /// A warning.
+    Warning,
+}
+
+/// Whether a note has a quick fix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fixable {
+    /// It has none.
+    No,
+    /// It has one: a lightbulb before it, which a click opens.
+    Yes,
+}
+
+/// A diagnostic's message shown at the end of its line, as Zed's inline diagnostics and VS
+/// Code's Error Lens show them (P4-34).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LineNote {
+    /// The line, from 0.
+    pub line: usize,
+    /// The message.
+    pub text: String,
+    /// How serious it is.
+    pub severity: NoteSeverity,
+    /// Whether it has a quick fix.
+    pub fixable: Fixable,
+}
 
 /// Whether long lines wrap at the view's width (P4-32).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -152,6 +196,16 @@ pub struct EditorView {
     folds: Folds,
     /// Whether long lines wrap.
     wrap: Wrap,
+    /// The inlay hints by line: each byte column and the text shown before it (P4-34).
+    inlays: BTreeMap<usize, Vec<(usize, String)>>,
+    /// Changes whenever the inlay hints do, so their lines are laid out again.
+    inlay_revision: u64,
+    /// The notes at the ends of lines, by line (P4-34).
+    notes: BTreeMap<usize, LineNote>,
+    /// Where each fixable note was drawn in the last frame, and its line.
+    note_rects: Vec<(Rect, usize)>,
+    /// The line of the fixable note a click landed on, not yet taken.
+    note_click: Option<usize>,
     /// The width lines wrap at in the last frame, in points.
     wrap_width: f32,
     cache: LayoutCache,
@@ -178,9 +232,42 @@ impl EditorView {
             vim: None,
             folds: Folds::default(),
             wrap: Wrap::Off,
+            inlays: BTreeMap::new(),
+            inlay_revision: 0,
+            notes: BTreeMap::new(),
+            note_rects: Vec::new(),
+            note_click: None,
             wrap_width: f32::INFINITY,
             cache: LayoutCache::default(),
         }
+    }
+
+    /// Shows `hints`, each text drawn before its position, as inlay hints (P4-34).
+    pub fn set_inlays(&mut self, hints: impl IntoIterator<Item = (Position, String)>) {
+        let mut inlays: BTreeMap<usize, Vec<(usize, String)>> = BTreeMap::new();
+        for (at, text) in hints {
+            inlays.entry(at.line).or_default().push((at.col, text));
+        }
+        for line in inlays.values_mut() {
+            line.sort_by_key(|(col, _)| *col);
+        }
+        if inlays != self.inlays {
+            self.inlays = inlays;
+            self.inlay_revision = self.inlay_revision.wrapping_add(1);
+        }
+    }
+
+    /// Shows `notes` at the ends of their lines, one per line, the first given kept.
+    pub fn set_notes(&mut self, notes: impl IntoIterator<Item = LineNote>) {
+        self.notes.clear();
+        for note in notes {
+            self.notes.entry(note.line).or_insert(note);
+        }
+    }
+
+    /// The line whose fixable note a click landed on since this was last asked.
+    pub const fn take_note_click(&mut self) -> Option<usize> {
+        self.note_click.take()
     }
 
     /// Wraps long lines, or not.
@@ -423,7 +510,7 @@ impl EditorView {
             styler.revision(),
             &style.font,
             pixels_per_point,
-            self.wrap_width,
+            (self.wrap_width, self.inlay_revision),
         );
         // A caret moved into a folded region, by a key or from outside, unfolds it.
         let head = self.state.primary().head.line;
@@ -446,12 +533,19 @@ impl EditorView {
                     self.position_at(ui, style, styler, origin, rect.top(), text_left, row_height);
                 let on_fold_mark =
                     origin.x >= text_left - GUTTER_PAD && self.folds.start_at(at.line).is_some();
+                let on_note = self
+                    .note_rects
+                    .iter()
+                    .find(|(rect, _)| rect.contains(origin))
+                    .map(|(_, line)| *line);
                 if origin.x < text_left {
                     if response.clicked() && on_fold_mark {
                         self.folds.toggle_start(at.line);
                     } else if response.clicked() {
                         self.gutter_click = Some(at.line);
                     }
+                } else if let (true, Some(line)) = (response.clicked(), on_note) {
+                    self.note_click = Some(line);
                 } else {
                     self.press(at, modifiers);
                 }
@@ -540,8 +634,7 @@ impl EditorView {
                     if pos.y < row_top + height {
                         let at = Vec2::new(pos.x - text_left, (pos.y - row_top).max(0.0));
                         let cursor = galley.cursor_from_pos(at);
-                        let col = self.state.buffer().byte_column(line, cursor.index.0);
-                        return Position::new(line, col);
+                        return Position::new(line, self.byte_of(line, cursor.index.0));
                     }
                     row_top += height;
                 }
@@ -551,7 +644,44 @@ impl EditorView {
         let line = after.saturating_sub(1).min(last);
         let galley = self.galley(ui, style, styler, line, None);
         let cursor = galley.cursor_from_pos(Vec2::new(pos.x - text_left, galley.size().y));
-        Position::new(line, self.state.buffer().byte_column(line, cursor.index.0))
+        Position::new(line, self.byte_of(line, cursor.index.0))
+    }
+
+    /// The character index in `line`'s laid-out text of byte column `col`: past the preedit
+    /// when after it, and past the inlay hints at or before it.
+    fn char_index(&self, line: usize, col: usize, preedit: Option<Preedit<'_>>) -> usize {
+        let mut chars = self.state.buffer().char_column(line, col);
+        if let Some(p) = preedit
+            && col >= p.col
+        {
+            chars = chars.saturating_add(p.text.chars().count());
+        }
+        let inlays = self.inlays.get(&line).filter(|_| preedit.is_none());
+        for (at, hint) in inlays.into_iter().flatten() {
+            if *at <= col {
+                chars = chars.saturating_add(hint.chars().count());
+            }
+        }
+        chars
+    }
+
+    /// The byte column of `line` at character `index` of its laid-out text, past the inlay
+    /// hints before it; an index inside a hint is the column the hint stands before.
+    fn byte_of(&self, line: usize, index: usize) -> usize {
+        let buffer = self.state.buffer();
+        let mut shown = 0_usize;
+        for (col, hint) in self.inlays.get(&line).into_iter().flatten() {
+            let start = buffer.char_column(line, *col).saturating_add(shown);
+            if index < start {
+                break;
+            }
+            let len = hint.chars().count();
+            if index < start.saturating_add(len) {
+                return *col;
+            }
+            shown = shown.saturating_add(len);
+        }
+        buffer.byte_column(line, index.saturating_sub(shown))
     }
 
     /// A press at `at`: Shift extends the primary selection to it, Alt adds a caret there, and
@@ -798,9 +928,15 @@ impl EditorView {
         let buffer = self.state.buffer();
         let text = buffer.line(line);
         let wrap_width = self.wrap_width;
+        let inlays = self.inlays.get(&line).filter(|_| preedit.is_none());
         let make = || {
             let spans = styler.spans(line, text);
-            let mut job = line_job(text, &spans, &style.font, style.text, preedit);
+            let mut job = match inlays {
+                Some(inlays) => {
+                    inlay_job(text, &spans, &style.font, (style.text, style.inlay), inlays)
+                }
+                None => line_job(text, &spans, &style.font, style.text, preedit),
+            };
             job.wrap.max_width = wrap_width;
             ui.fonts_mut(|f| f.layout_job(job))
         };
@@ -827,6 +963,7 @@ impl EditorView {
         focused: bool,
     ) {
         let painter = ui.painter_at(rect);
+        let mut note_rects = Vec::new();
         painter.rect_filled(rect, CornerRadius::ZERO, style.background);
         let line_count = self.state.buffer().line_count();
         let first = self.first_line.min(line_count.saturating_sub(1));
@@ -876,15 +1013,7 @@ impl EditorView {
             }
             let buffer = self.state.buffer();
             // A byte column's character index in the galley, past the preedit when after it.
-            let chars_of = |col: usize| {
-                let mut chars = buffer.char_column(line, col);
-                if let Some(p) = preedit
-                    && col >= p.col
-                {
-                    chars = chars.saturating_add(p.text.chars().count());
-                }
-                chars
-            };
+            let chars_of = |col: usize| self.char_index(line, col, preedit);
             let text_top = top + (height - galley.size().y).max(0.0) / 2.0;
             indent_guides(
                 &painter,
@@ -911,6 +1040,13 @@ impl EditorView {
                 text_left,
                 number,
             );
+            if let Some(note) = self.notes.get(&line) {
+                let end = galley.rows.last().map_or(0.0, |row| row.rect().right());
+                let at = Pos2::new(text_left + end + NOTE_GAP, text_top);
+                if let Some(clickable) = paint_note(&painter, style, note, at, row_height) {
+                    note_rects.push((clickable, line));
+                }
+            }
             if let Some(folded) = self.folds.start_at(line) {
                 fold_mark(
                     &painter,
@@ -964,6 +1100,7 @@ impl EditorView {
             top += height;
         }
         self.caret_rect = ime_caret;
+        self.note_rects = note_rects;
         if focused && let Some(cursor_rect) = ime_caret {
             ui.output_mut(|o| {
                 o.ime = Some(IMEOutput {
@@ -1191,6 +1328,42 @@ fn removed_row(
         text_left,
         gutter,
     );
+}
+
+/// The space between a line's text and its note, in points.
+const NOTE_GAP: f32 = 24.0;
+
+/// Paints `note` from `at`, the lightbulb first when it has a quick fix; the rectangle a click
+/// opens the fix from, for a fixable note.
+fn paint_note(
+    painter: &egui::Painter,
+    style: &ViewStyle,
+    note: &LineNote,
+    at: Pos2,
+    row_height: f32,
+) -> Option<Rect> {
+    let color = match note.severity {
+        NoteSeverity::Error => style.note_error,
+        NoteSeverity::Warning => style.note_warning,
+    };
+    let mut x = at.x;
+    if note.fixable == Fixable::Yes {
+        let radius = row_height / 4.0;
+        painter.circle_filled(
+            Pos2::new(x + radius, at.y + row_height / 2.0),
+            radius,
+            style.lightbulb,
+        );
+        x += radius * 2.0 + radius;
+    }
+    let drawn = painter.text(
+        Pos2::new(x, at.y),
+        egui::Align2::LEFT_TOP,
+        &note.text,
+        style.font.clone(),
+        color,
+    );
+    (note.fixable == Fixable::Yes).then(|| Rect::from_min_max(at, drawn.max))
 }
 
 /// The width of a change mark in the gutter, in points.

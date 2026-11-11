@@ -39,7 +39,8 @@ impl<L: Loader> AnalysisHost<L> {
             }
             let semantic = data.analysis.diagnostics().map(|d| (d.file, &d.diagnostic));
             let missing = data.missing.iter().map(|d| (d.file, &d.diagnostic));
-            for (file, diagnostic) in semantic.chain(missing) {
+            let editor = data.editor.iter().map(|d| (d.file, &d.diagnostic));
+            for (file, diagnostic) in semantic.chain(missing).chain(editor) {
                 if let Some(path) = module.path(file) {
                     out.entry(path.to_path_buf())
                         .or_default()

@@ -8,6 +8,9 @@ enum qc_ide::rename::RenameError
 enum qc_ide::symbols::SymbolKind
 field qc_ide::FileRange.path
 field qc_ide::FileRange.span
+field qc_ide::actions::CodeAction.code
+field qc_ide::actions::CodeAction.edit
+field qc_ide::actions::CodeAction.title
 field qc_ide::completion::Completion.detail
 field qc_ide::completion::Completion.kind
 field qc_ide::completion::Completion.label
@@ -44,9 +47,12 @@ field qc_ide::rename::Rename.edits
 field qc_ide::symbols::Symbol.kind
 field qc_ide::symbols::Symbol.name
 field qc_ide::symbols::Symbol.range
+fn qc_ide::actions::AnalysisHost::code_actions
 fn qc_ide::completion::AnalysisHost::completions
 fn qc_ide::diagnostics::AnalysisHost::all_diagnostics
 fn qc_ide::diagnostics::AnalysisHost::diagnostics
+fn qc_ide::format::AnalysisHost::formatted
+fn qc_ide::format::format
 fn qc_ide::highlight::AnalysisHost::folding_ranges
 fn qc_ide::highlight::AnalysisHost::highlights
 fn qc_ide::highlight::AnalysisHost::syntax_classes
@@ -78,6 +84,7 @@ impl qc_ide::rename::Caution: fmt::Display
 impl qc_ide::rename::RenameError: fmt::Display
 impl qc_ide::rename::RenameError: std::error::Error
 struct qc_ide::FileRange
+struct qc_ide::actions::CodeAction
 struct qc_ide::completion::Completion
 struct qc_ide::highlight::Highlight
 struct qc_ide::highlight::Modifiers
@@ -96,6 +103,7 @@ use qc_ide::BuiltinInfo = hover::BuiltinInfo
 use qc_ide::BuiltinRef = qc_engines::BuiltinRef
 use qc_ide::Caution = rename::Caution
 use qc_ide::Code = qc_diag::Code
+use qc_ide::CodeAction = actions::CodeAction
 use qc_ide::Completion = completion::Completion
 use qc_ide::Config = host::Config
 use qc_ide::DefKind = qc_sema::DefKind
@@ -117,6 +125,7 @@ use qc_ide::Span = qc_diag::Span
 use qc_ide::Symbol = symbols::Symbol
 use qc_ide::SymbolKind = symbols::SymbolKind
 use qc_ide::SyntaxClass = highlight::SyntaxClass
+use qc_ide::format = format::format
 variant qc_ide::highlight::HighlightKind::Field
 variant qc_ide::highlight::HighlightKind::Function
 variant qc_ide::highlight::HighlightKind::Global

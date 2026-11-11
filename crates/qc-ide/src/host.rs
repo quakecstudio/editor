@@ -11,6 +11,7 @@
 //! in every module that compiles it; a file no module compiles is analysed as a module of its
 //! own, so a scratch file still gets answers.
 
+use crate::actions::editor_diagnostics;
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -116,6 +117,9 @@ pub(crate) struct ModuleData {
     pub(crate) builtins: HashMap<String, BuiltinRef>,
     /// The `W0311` warnings for the module's target engine (ENGT-4).
     pub(crate) missing: Vec<qc_sema::FileDiagnostic>,
+    /// The editor's own diagnostics: unused locals and missing precaches (QCD-7.115,
+    /// QCD-7.116).
+    pub(crate) editor: Vec<qc_sema::FileDiagnostic>,
 }
 
 impl ModuleState {
@@ -149,11 +153,13 @@ impl ModuleState {
                 &analysis.index,
                 self.dialect,
             );
+            let editor = editor_diagnostics(&analysis.index, &parses);
             ModuleData {
                 analysis,
                 parses,
                 builtins,
                 missing,
+                editor,
             }
         });
         self.data.insert(data)

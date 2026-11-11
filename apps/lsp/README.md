@@ -37,6 +37,8 @@ before the next, so every answer is computed on the state the messages before it
 | `textDocument/completion` | The names in scope; fields after `.` |
 | `textDocument/semanticTokens/full` | Functions, fields, globals, parameters and locals, with declaration, constant and builtin modifiers |
 | `textDocument/inlayHint` | The parameter name before each argument of a call |
+| `textDocument/codeAction` | The quick fixes for the diagnostics in the range, each a `quickfix` with its edit (P4-34) |
+| `textDocument/formatting` | The document formatted, one edit over the whole of it, `[]` when nothing changes (P4-34) |
 
 ## Settings
 

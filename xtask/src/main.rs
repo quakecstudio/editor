@@ -71,6 +71,9 @@
 //!   rerelease codebase under the FTEQCC profile (P2-03) and fails on any error,
 //!   then checks the vanilla profile rejects each extension; `--warnings` prints
 //!   each warning too.
+//! - `format-corpus [--vanilla] <dir>...`: formats every file of each codebase twice, the
+//!   second time changing nothing, and compiles each module before and after to the same
+//!   progs.dat (P4-34).
 //! - `codegen-corpus`: compiles every module of each codebase with `qc-codegen` under the
 //!   FTEQCC profile (P2-07) and fails when any module does not compile.
 //! - `engines`: fetches the fact sources of the engine-target database pinned in
@@ -107,6 +110,7 @@ mod engines;
 mod evals;
 mod exec;
 mod fixtures;
+mod format_corpus;
 mod fteqcc_coverage;
 mod fteqcc_full_coverage;
 mod fteqcc_profile;
@@ -166,6 +170,8 @@ enum Task {
     ClippyFixtures,
     /// Every corpus codebase compiles with our compiler.
     CodegenCorpus(codegen_corpus::Args),
+    /// Formatting each codebase is stable and changes no progs.dat.
+    FormatCorpus(format_corpus::Args),
     /// Write or check docs/commands.md.
     Commands(commands::Args),
     /// The compiler differential.
@@ -255,6 +261,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::Bench(args) => ("bench", bench::main(root, args)),
         Task::BridgeClient(args) => ("bridge-client", bridge_client::main(root, args)),
         Task::CodegenCorpus(args) => ("codegen-corpus", codegen_corpus::main(root, args)),
+        Task::FormatCorpus(args) => ("format-corpus", format_corpus::main(root, args)),
         Task::Commands(args) => ("commands", commands::main(root, args)),
         Task::CompilerDiff(args) => ("compiler-diff", compiler_diff::main(root, args)),
         Task::Corpus(args) => ("corpus", corpus::main(root, args)),
@@ -430,6 +437,7 @@ mod tests {
         for name in [
             "assets",
             "codegen-corpus",
+            "format-corpus",
             "compiler-diff",
             "corpus",
             "fteqcc-coverage",

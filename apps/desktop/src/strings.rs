@@ -75,6 +75,10 @@ pub enum Text {
     NoOutline,
     /// The editor's second pane's accessible name.
     SecondPane,
+    /// The editor's list of quick fixes at the caret (P4-34).
+    QuickFixes,
+    /// The editor's note when the caret has no quick fix.
+    NoQuickFix,
     /// The bottom panel's Terminal tab, and the terminal output's name.
     Terminal,
     /// The Terminal tab's button that opens a shell.
@@ -412,7 +416,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 200] = [
+    pub const ALL: [Self; 202] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -570,6 +574,8 @@ impl Text {
         Self::Outline,
         Self::NoOutline,
         Self::SecondPane,
+        Self::QuickFixes,
+        Self::NoQuickFix,
         Self::Terminal,
         Self::NewTerminal,
         Self::CloseTerminal,
@@ -789,6 +795,8 @@ impl Text {
             Self::Outline => "Outline",
             Self::NoOutline => "No symbols in this file.",
             Self::SecondPane => "Second editor pane",
+            Self::QuickFixes => "Quick fixes",
+            Self::NoQuickFix => "No quick fix here.",
             Self::Terminal => "Terminal",
             Self::NewTerminal => "New terminal",
             Self::CloseTerminal => "Close",

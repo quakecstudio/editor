@@ -30,7 +30,7 @@ pub mod vim;
 pub use buffer::{Buffer, LineId, Position};
 pub use layout::{LayoutCache, Plain, StyledSpan, Styler};
 pub use selection::{EditState, Extend, Motion, Selection};
-pub use view::{EditorView, KeyMode, ViewStyle, Wrap};
+pub use view::{EditorView, Fixable, KeyMode, LineNote, NoteSeverity, ViewStyle, Wrap};
 
 #[cfg(test)]
 mod tests;
