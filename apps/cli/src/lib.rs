@@ -14,6 +14,7 @@
 //!                [--read-only] [--game <folder> | --connect [<socket>]]
 //! quakec-ide new <id1|rerelease> <dir> [--from <folder>]
 //! quakec-ide commands
+//! quakec-ide doctor [--check <games|host|keychain>]... [--game <folder>] [--require-game]
 //! ```
 //!
 //! `build` opens the project (`project.open`), compiles each module and writes its progs.dat
@@ -25,6 +26,8 @@
 //! project is the current directory when none is named; `--dialect` reads a project with no
 //! `quakec.toml` in that dialect (PRJ-2.8), vanilla otherwise. The arguments are read with
 //! clap, which prints `--help` and `--version` and says what is wrong with a command line.
+
+mod doctor;
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -126,6 +129,19 @@ enum Verb {
     },
     /// List every command with its id, summary and parameter schema, as JSON.
     Commands,
+    /// Check what this install can reach: the games found, the preview host started on one,
+    /// and the system keychain.
+    Doctor {
+        /// The checks to run; every one when none is named.
+        #[arg(long = "check", value_enum)]
+        checks: Vec<doctor::Check>,
+        /// The game folder the preview host plays; the first install found otherwise.
+        #[arg(long)]
+        game: Option<PathBuf>,
+        /// Fail the games check when no install is found.
+        #[arg(long)]
+        require_game: bool,
+    },
     /// Serve the agent's tools over MCP on stdin and stdout, for Claude Code and other agents.
     Mcp {
         /// The project.
@@ -213,6 +229,8 @@ enum Request {
     },
     /// Serve the agent's tools over MCP.
     Mcp(McpRequest),
+    /// Check what this install can reach.
+    Doctor(doctor::Doctor),
 }
 
 /// What `mcp` serves.
@@ -314,13 +332,23 @@ fn run_on<L: Loader + Send + 'static>(
             open.dialect
         }
         Request::Run { project, .. } => project.as_ref().and_then(|open| open.dialect),
-        Request::Commands | Request::New { .. } => None,
+        Request::Commands | Request::New { .. } | Request::Doctor(_) => None,
         Request::Mcp(mcp) => mcp.project.dialect,
     };
     let config = Config {
         dialect,
         ..Config::default()
     };
+    if let Request::Doctor(doctor) = &request {
+        return match doctor::run(doctor, out) {
+            Ok(true) => Exit::Success,
+            Ok(false) => Exit::Problems,
+            Err(error) => {
+                writeln!(err, "quakec-ide: {error}").unwrap_or(());
+                Exit::Failure
+            }
+        };
+    }
     if let Request::Mcp(mcp) = &request {
         return match serve_mcp(mcp, loader, config, input, out) {
             Ok(()) => Exit::Success,
@@ -523,8 +551,8 @@ fn execute<L: Loader + 'static>(
             .map_err(Stopped::Write)?;
             Ok(Exit::Success)
         }
-        // `mcp` is served before a session of the command line's own is made.
-        Request::Mcp(_) => Ok(Exit::Success),
+        // `mcp` and `doctor` are served before a session of the command line's own is made.
+        Request::Mcp(_) | Request::Doctor(_) => Ok(Exit::Success),
         Request::Commands => {
             let output = session
                 .execute("commands.list", json!({}))
@@ -771,6 +799,19 @@ fn parse(args: &[OsString]) -> Result<Request, Refused> {
             }
         }
         Verb::Commands => Request::Commands,
+        Verb::Doctor {
+            checks,
+            game,
+            require_game,
+        } => Request::Doctor(doctor::Doctor {
+            checks: if checks.is_empty() {
+                doctor::Check::ALL.to_vec()
+            } else {
+                checks
+            },
+            game,
+            require_game,
+        }),
         Verb::New {
             template,
             path,
