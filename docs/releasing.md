@@ -25,10 +25,16 @@ artifact. Its `windows-signing` input also tries Windows signing (#23).
 
 | Platform | Package | Made by |
 | --- | --- | --- |
-| macOS, universal | `quakec-studio-<version>-macos-universal.dmg`: `QuakeC Studio.app`, signed with the hardened runtime, in a signed, notarized and stapled disk image | `packaging/macos.sh` |
-| Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip` | `packaging/windows.sh`, with WiX 5 |
-| Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak` | `packaging/linux.sh`; the Flatpak's manifest is `packaging/com.quakecstudio.QuakeCStudio.yml` |
+| macOS, universal | `quakec-studio-<version>-macos-universal.dmg`: `QuakeC Studio.app`, signed with the hardened runtime, in a signed, notarized and stapled disk image | `packaging/macos/package.sh`, with `packaging/macos/Info.plist` |
+| Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip` | `packaging/windows/package.sh`, with WiX 5 and `packaging/windows/quakec-studio.wxs` |
+| Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak` | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it |
 | All | `SHA256SUMS`, every package's SHA-256 | the workflow's last job |
+
+Each file a package needs is its own file under `packaging/`, never written out by a script,
+so it can be checked and formatted on its own; a script fills in only the version (and the
+deb's architecture) with `sed`. The build checks the desktop entry with
+`desktop-file-validate`, the rpm's spec with `rpmspec -P`, the Info.plist with `plutil -lint`,
+and the WiX source by building it.
 
 Every package holds the four binaries, the desktop app `quakec-studio`, the preview host
 `preview-host` beside it (where `qs-engine`'s `locate_host` looks), the command line
@@ -58,7 +64,7 @@ deletes a keychain entry:
 - **Linux x86_64 and aarch64:** the deb installs with `apt` on Ubuntu 24.04 (host check, and the
   window under Xvfb), the rpm with `dnf` in a Fedora 41 container (host check), and the
   AppImage runs its host check. The Flatpak runs every check from inside its sandbox: a Steam
-  folder holding LibreQuake as Quake is found, the host starts on it, and the keychain is
+  folder holding LibreQuake as Quake (`packaging/linux/steam`) is found, the host starts on it, and the keychain is
   reached through gnome-keyring.
 
 The game is LibreQuake (`cargo xtask assets fetch`); Quake's data is never used in CI.

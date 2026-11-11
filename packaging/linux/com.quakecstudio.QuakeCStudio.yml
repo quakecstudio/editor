@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # The Flatpak of QuakeC Studio (P4-18), built from the binaries the release workflow built
-# (packaging/linux.sh stages them in `stage/`), not from source, so the Flatpak runs the same
+# (packaging/linux/package.sh stages them in `stage/`), not from source, so the Flatpak runs the same
 # binaries the other Linux packages hold. The sandbox reaches what the IDE needs: projects
 # and the game stores' folders under the home directory, the GPU and display, sound for the
 # preview host, the network for the agent's providers, and the Secret Service for the

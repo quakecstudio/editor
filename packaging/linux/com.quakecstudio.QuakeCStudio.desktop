@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=QuakeC Studio
+Comment=QuakeC IDE with its own compiler, live in-game preview and a built-in agent
+Exec=quakec-studio %f
+Icon=com.quakecstudio.QuakeCStudio
+Terminal=false
+Categories=Development;IDE;
+StartupWMClass=quakec-studio

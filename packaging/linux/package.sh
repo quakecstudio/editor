@@ -5,10 +5,12 @@
 # each holding the desktop app, the preview host beside it (qs-engine's `locate_host` finds it
 # there), the command line and the language server, with LICENSE and NOTICE.
 #
-#   packaging/linux.sh <deb|rpm|appimage|flatpak> <x86_64|aarch64> <bin-dir> <version> <out-dir>
+#   packaging/linux/package.sh <deb|rpm|appimage|flatpak> <x86_64|aarch64> <bin-dir> <version> <out-dir>
 #
 # <bin-dir> holds the four release binaries; <version> is the workspace's, such as 2026.11.0.
-# Run from the repository root. The deb needs dpkg-deb, the rpm rpmbuild, the AppImage curl,
+# The files each format needs are beside this script: the desktop entry and icon, the deb's
+# `deb/control`, the rpm's `quakec-studio.spec`, the AppImage's `AppRun.sh` and the Flatpak's
+# manifest. Run from the repository root. The deb needs dpkg-deb, the rpm rpmbuild, the AppImage curl,
 # and the Flatpak flatpak-builder with the Freedesktop 24.08 runtime and SDK installed.
 set -euo pipefail
 
@@ -16,8 +18,6 @@ APP_ID=com.quakecstudio.QuakeCStudio
 BINARIES=(quakec-studio preview-host quakec-ide quakec-lsp)
 # The commands on the PATH; the preview host is started by the app, not by hand.
 COMMANDS=(quakec-studio quakec-ide quakec-lsp)
-SUMMARY="QuakeC IDE with its own compiler, live in-game preview and a built-in agent"
-HOMEPAGE=https://github.com/quakecstudio/editor
 
 # appimagetool 1.9.1 and the type2 runtime, fetched by release and checked by SHA-256.
 APPIMAGETOOL_VERSION=1.9.1
@@ -41,24 +41,10 @@ usage() {
 format=$1 arch=$2 bins=$(realpath "$3") version=$4 out=$(realpath -m "$5")
 case "$arch" in x86_64 | aarch64) ;; *) usage ;; esac
 root=$(pwd)
+here=$root/packaging/linux
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$out"
-
-# The .desktop entry, shared by every format.
-desktop_entry() {
-  cat <<EOF
-[Desktop Entry]
-Type=Application
-Name=QuakeC Studio
-Comment=$SUMMARY
-Exec=quakec-studio %f
-Icon=$APP_ID
-Terminal=false
-Categories=Development;IDE;
-StartupWMClass=quakec-studio
-EOF
-}
 
 # Lays the files out under the prefix $1: the binaries in lib/quakec-studio, the commands
 # linked into bin, the desktop entry, the icon, LICENSE and NOTICE.
@@ -72,8 +58,8 @@ install_tree() {
     ln -s "../lib/quakec-studio/$command" "$prefix/bin/$command"
   done
   install -d "$prefix/share/applications" "$prefix/share/icons/hicolor/scalable/apps"
-  desktop_entry >"$prefix/share/applications/$APP_ID.desktop"
-  install -m644 "$root/packaging/$APP_ID.svg" "$prefix/share/icons/hicolor/scalable/apps/"
+  install -m644 "$here/$APP_ID.desktop" "$prefix/share/applications/"
+  install -m644 "$here/$APP_ID.svg" "$prefix/share/icons/hicolor/scalable/apps/"
   install -d "$prefix/share/doc/quakec-studio"
   install -m644 "$root/LICENSE" "$prefix/share/doc/quakec-studio/LICENSE"
   install -m644 "$root/packaging/NOTICE.txt" "$prefix/share/doc/quakec-studio/NOTICE"
@@ -87,57 +73,18 @@ deb() {
   # Debian keeps a package's license in its doc folder's `copyright`.
   cp "$tree/usr/share/doc/quakec-studio/LICENSE" "$tree/usr/share/doc/quakec-studio/copyright"
   install -d "$tree/DEBIAN"
-  cat >"$tree/DEBIAN/control" <<EOF
-Package: quakec-studio
-Version: $version
-Architecture: $debarch
-Maintainer: QuakeC Studio contributors <https://github.com/quakecstudio/editor/issues>
-Depends: libc6 (>= 2.35), libasound2t64 | libasound2, libxkbcommon0
-Recommends: libvulkan1, mesa-vulkan-drivers, libgl1, libwayland-client0, libxcursor1, libxrandr2, libxi6, gnome-keyring
-Section: devel
-Priority: optional
-Homepage: $HOMEPAGE
-Description: $SUMMARY
- QuakeC Studio is an IDE for QuakeC with its own compiler, a live in-game preview built on
- its own QuakeC VM, a built-in agent and a map editor. Quake's game data is not included.
-EOF
+  sed -e "s/@VERSION@/$version/" -e "s/@ARCH@/$debarch/" "$here/deb/control" \
+    >"$tree/DEBIAN/control"
   dpkg-deb --root-owner-group --build "$tree" "$out/quakec-studio-$version-linux-$arch.deb"
 }
 
 rpm() {
   local top=$work/rpm
-  mkdir -p "$top"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+  mkdir -p "$top"/{BUILD,RPMS,SOURCES,SRPMS}
   install_tree "$work/rpm-tree/usr"
-  cat >"$top/SPECS/quakec-studio.spec" <<EOF
-Name: quakec-studio
-Version: $version
-Release: 1
-Summary: $SUMMARY
-License: GPL-3.0-or-later
-URL: $HOMEPAGE
-Requires: glibc, alsa-lib, libxkbcommon
-Recommends: vulkan-loader, mesa-vulkan-drivers, mesa-libGL, gnome-keyring
-AutoReqProv: no
-
-%description
-QuakeC Studio is an IDE for QuakeC with its own compiler, a live in-game preview built on its
-own QuakeC VM, a built-in agent and a map editor. Quake's game data is not included.
-
-%install
-cp -a $work/rpm-tree/. %{buildroot}/
-
-%files
-%license /usr/share/doc/quakec-studio/LICENSE
-%doc /usr/share/doc/quakec-studio/NOTICE
-/usr/bin/quakec-studio
-/usr/bin/quakec-ide
-/usr/bin/quakec-lsp
-/usr/lib/quakec-studio
-/usr/share/applications/$APP_ID.desktop
-/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg
-EOF
   rpmbuild --define "_topdir $top" --define "_build_id_links none" --target "$arch" \
-    -bb "$top/SPECS/quakec-studio.spec"
+    --define "pkg_version $version" --define "tree $work/rpm-tree" \
+    -bb "$here/quakec-studio.spec"
   cp "$top/RPMS/$arch/quakec-studio-$version-1.$arch.rpm" \
     "$out/quakec-studio-$version-linux-$arch.rpm"
 }
@@ -151,20 +98,7 @@ fetch() {
 appimage() {
   local dir=$work/QuakeC_Studio.AppDir
   install_tree "$dir/usr"
-  # The AppImage starts the app from its own folder, where the preview host is beside it.
-  cat >"$dir/AppRun" <<'EOF'
-#!/bin/sh
-here=$(dirname "$(readlink -f "$0")")
-case "${1:-}" in
-quakec-ide | quakec-lsp)
-	command=$1
-	shift
-	exec "$here/usr/lib/quakec-studio/$command" "$@"
-	;;
-esac
-exec "$here/usr/lib/quakec-studio/quakec-studio" "$@"
-EOF
-  chmod 755 "$dir/AppRun"
+  install -m755 "$here/AppRun.sh" "$dir/AppRun"
   cp "$dir/usr/share/applications/$APP_ID.desktop" "$dir/"
   cp "$dir/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg" "$dir/"
   local tool=$work/appimagetool runtime=$work/runtime
@@ -186,9 +120,8 @@ flatpak() {
   done
   install -m644 "$root/LICENSE" "$build/stage/LICENSE"
   install -m644 "$root/packaging/NOTICE.txt" "$build/stage/NOTICE"
-  desktop_entry >"$build/stage/$APP_ID.desktop"
-  install -m644 "$root/packaging/$APP_ID.svg" "$build/stage/"
-  cp "$root/packaging/$APP_ID.yml" "$build/"
+  install -m644 "$here/$APP_ID.desktop" "$here/$APP_ID.svg" "$build/stage/"
+  cp "$here/$APP_ID.yml" "$build/"
   flatpak-builder --user --force-clean --disable-rofiles-fuse --arch="$arch" \
     --repo="$build/repo" "$build/app" "$build/$APP_ID.yml"
   command flatpak build-bundle --arch="$arch" "$build/repo" \

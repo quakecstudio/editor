@@ -171,7 +171,8 @@ jobs:
     needs: [build, game]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
-    permissions: {}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -183,6 +184,10 @@ jobs:
     env:
       ARCH: ${{ matrix.arch }}
     steps:
+      # The Steam library fixture the Flatpak's check plays in (packaging/linux/steam).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-linux-${{ matrix.arch }}
@@ -227,10 +232,9 @@ jobs:
           steam="$HOME/.local/share/Steam"
           mkdir -p "$steam/steamapps/common"
           cp -R librequake-lite "$steam/steamapps/common/Quake"
-          printf '"libraryfolders"\n{\n\t"0"\n\t{\n\t\t"path"\t\t"%s"\n\t\t"apps"\n\t\t{\n\t\t\t"2310"\t\t"1"\n\t\t}\n\t}\n}\n' \
-            "$steam" > "$steam/steamapps/libraryfolders.vdf"
-          printf '"AppState"\n{\n\t"appid"\t\t"2310"\n\t"installdir"\t\t"Quake"\n}\n' \
-            > "$steam/steamapps/appmanifest_2310.acf"
+          sed "s#@STEAM@#$steam#" packaging/linux/steam/libraryfolders.vdf \
+            > "$steam/steamapps/libraryfolders.vdf"
+          cp packaging/linux/steam/appmanifest_2310.acf "$steam/steamapps/"
           dbus-run-session -- bash -euc '
             echo -n "" | gnome-keyring-daemon --unlock --components=secrets
             flatpak run --command=quakec-ide com.quakecstudio.QuakeCStudio doctor --require-game
