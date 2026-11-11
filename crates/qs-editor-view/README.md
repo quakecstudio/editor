@@ -49,6 +49,10 @@ the primary one, Alt-click adds one, and Shift extends a selection.
   step, as Vim's undo is; the arrows and the Cmd or Ctrl shortcuts work as before. Not yet:
   text objects, `f t`, searches, marks, Visual line and block modes, macros and Ex commands.
 
+- **Line notes and inlay hints** (P4-34, UI-18): `set_notes` shows a diagnostic's message at
+  the end of its line, as Zed's inline diagnostics do, a lightbulb before one with a quick fix,
+  which a click reports (`take_note_click`); `set_inlays` draws each hint's text before its
+  byte column, in the line's layout, carets, selections and clicks stepping over it.
 - **Change marks** (P4-35, UI-19): `set_gutter_base` takes the file's text at `HEAD`, and the
   gutter's left edge marks each line added since it, each line changed (added where lines were
   removed), and where lines were removed, as VS Code and Zed do, the diff worked out again

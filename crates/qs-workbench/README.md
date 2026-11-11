@@ -59,6 +59,9 @@ an edit, so both commands run outside the edit history
   game folder given or the first install found, skipping them with no game; the result lists
   each test's kind, verdict and message, and the counts. The CLI's `quakec-ide test`, the
   palette and the agent run the same command.
+- Formatting and quick fixes (P4-34, UI-18): `file.format` formats a file's text, which the
+  editor takes, unsaved; `code.actions` lists the quick fixes at a place and `code.fix` applies
+  one; `file.inlay_hints` lists each argument's parameter name.
 - Git (`git`, P4-35, UI-19): `git.status`, `git.diff`, `git.stage` and `git.unstage` (a file
   or one hunk), `git.commit`, `git.branches`, `git.switch`, `git.create_branch`, `git.log`,
   `git.blame`, `git.conflicts`, `git.resolve` and `git.head_text`, over `qs-git` in the open

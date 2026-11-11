@@ -16,6 +16,7 @@ miniz_oxide = { workspace = true, features = ["with-alloc"] }
 qc-lexer = { workspace = true }
 qc-lno = { workspace = true }
 qc-preproc = { workspace = true }
+qc-ide = { workspace = true }
 qc-progs = { workspace = true }
 qc-project = { workspace = true }
 qc-sema = { workspace = true }

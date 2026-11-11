@@ -397,3 +397,81 @@ fn requests_outside_any_file() {
     assert_eq!(s.error_code(7), -32803);
     assert_eq!(s.result(8), &json!(null));
 }
+
+// LSP 3.18, "Code Action Request": "The range for which the command was invoked", answered with
+// `CodeAction`s of kind `quickfix` (`export const QuickFix: CodeActionKind = 'quickfix';`), each
+// with its `WorkspaceEdit`; the server says so in `codeActionProvider`.
+#[test]
+fn code_actions_are_quick_fixes() {
+    let code = "void() f =\n{\n\tlocal float unused;\n};\n";
+    let at = json!({ "start": position(code, "unused", 0), "end": position(code, "unused", 0) });
+    let s = started(
+        project(&[("defs.qc", DEFS), ("code.qc", code)]),
+        &[request(
+            1,
+            "textDocument/codeAction",
+            json!({
+                "textDocument": { "uri": uri("code.qc") },
+                "range": at,
+                "context": { "diagnostics": [] },
+            }),
+        )],
+    );
+    let actions = s.result(1).as_array().unwrap().clone();
+    assert_eq!(actions.len(), 1, "{actions:?}");
+    assert_eq!(actions[0]["title"], "Remove the unused local unused");
+    assert_eq!(actions[0]["kind"], "quickfix");
+    let edits = &actions[0]["edit"]["changes"][uri("code.qc")];
+    assert_eq!(edits[0]["newText"], "");
+    assert_eq!(
+        edits[0]["range"]["start"],
+        json!({ "line": 2, "character": 0 })
+    );
+    assert_eq!(
+        edits[0]["range"]["end"],
+        json!({ "line": 3, "character": 0 })
+    );
+}
+
+// LSP 3.18, "Document Formatting Request": the result is "`TextEdit[]` | `null` describing the
+// modification to the document to be formatted"; a formatted document needs none.
+#[test]
+fn formatting_replaces_the_document_once() {
+    let code = "void() f =\n{\n  local float a;   \na = 1;\n};\n";
+    let s = started(
+        project(&[("defs.qc", DEFS), ("code.qc", code)]),
+        &[
+            request(
+                1,
+                "textDocument/formatting",
+                json!({
+                    "textDocument": { "uri": uri("code.qc") },
+                    "options": { "tabSize": 4, "insertSpaces": false },
+                }),
+            ),
+            request(
+                2,
+                "textDocument/formatting",
+                json!({ "textDocument": { "uri": uri("defs.qc") }, "options": {} }),
+            ),
+            request(
+                3,
+                "textDocument/formatting",
+                json!({ "textDocument": { "uri": "untitled:1" }, "options": {} }),
+            ),
+        ],
+    );
+    let edits = s.result(1).as_array().unwrap().clone();
+    assert_eq!(edits.len(), 1);
+    assert_eq!(
+        edits[0]["newText"],
+        "void() f =\n{\n\tlocal float a;\n\ta = 1;\n};\n"
+    );
+    assert_eq!(
+        edits[0]["range"]["start"],
+        json!({ "line": 0, "character": 0 })
+    );
+    assert_eq!(s.result(3), &json!(null));
+    let defs = s.result(2).as_array().unwrap().clone();
+    assert!(defs.len() <= 1);
+}

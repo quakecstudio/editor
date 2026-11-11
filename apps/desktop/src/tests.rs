@@ -25,6 +25,7 @@ use qs_workbench::debug::Location;
 use serde_json::json;
 
 use crate::debugger::place;
+use crate::editor::Request;
 use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::highlighted;
@@ -1811,5 +1812,64 @@ fn the_git_tab_stages_and_commits_and_the_gutter_marks_changes() {
     assert!(
         marks.is_some_and(|diff| diff.is_empty()),
         "nothing changed since the new HEAD"
+    );
+}
+
+// No spec statement: P4-34, UI-18: the editor shows a warning at its line's end with a lightbulb;
+// a click on it lists the quick fixes and choosing one fixes it; inlay hints name each
+// argument's parameter; Cmd+Shift+I formats the file
+#[test]
+fn notes_quick_fixes_inlay_hints_and_format_in_the_editor() {
+    let dir = TempDir::new("fixes");
+    let project = dir.path().join("fixmod");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    let text =
+        "void(float speed) g = {};\nvoid() worldspawn =\n{\n  local float unused;\n\tg (1);\n};\n";
+    fs::write(project.join("world.qc"), text).unwrap();
+    let mut harness = accessible();
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell_mut().open_project(&project).unwrap();
+    app.shell_mut()
+        .execute("file.open", json!({ "path": project.join("world.qc") }))
+        .unwrap();
+    harness.run();
+    harness.run();
+    let shown = |harness: &Harness<'static, Option<App>>| {
+        let shell = &harness.state().as_ref().unwrap().shell;
+        shell.editor_text().unwrap_or_default()
+    };
+    // The inlay hint and the note are painted in the editor.
+    let ctx = harness.ctx.clone();
+    let app = harness.state_mut().as_mut().unwrap();
+    let painted = frame_with(&ctx, app, Vec::new());
+    assert!(
+        painted.iter().any(|t| t.contains("speed: ")),
+        "the inlay hint: {painted:?}"
+    );
+    assert!(painted.iter().any(|t| t == "Local unused is never used"));
+    // The quick fix, through the editor's request as a click on the note asks it.
+    let offset = text.find("unused").unwrap();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.handle_requests_for_test(vec![Request::Fixes(offset)]);
+    harness.run();
+    harness
+        .get_by_label("Remove the unused local unused")
+        .click();
+    harness.run();
+    harness.run();
+    assert!(!shown(&harness).contains("unused"), "{}", shown(&harness));
+    // Cmd+Shift+I formats: the body's lines are indented with tabs.
+    run_command(&mut harness, qs_layout::FOCUS_EDITOR);
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::I,
+    );
+    harness.run();
+    harness.run();
+    assert!(
+        shown(&harness).contains("{\n\tg (1);\n};"),
+        "{}",
+        shown(&harness)
     );
 }

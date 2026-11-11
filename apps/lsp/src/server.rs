@@ -98,6 +98,10 @@ pub enum Exit {
     Failure,
 }
 
+/// `CodeActionKind.QuickFix`: "export const QuickFix: CodeActionKind = 'quickfix';"
+/// (`specs/lsp/3.18/language/codeAction.md`).
+const QUICK_FIX: &str = "quickfix";
+
 /// The `ChangeAnnotationIdentifier` of a rename's edits of a name a map may use.
 const MAP_NAME: &str = "map-name";
 
@@ -233,6 +237,8 @@ impl<L: Loader, W: Write> Server<L, W> {
             "textDocument/completion" => self.completion(parse(params)?),
             "textDocument/semanticTokens/full" => self.semantic_tokens(parse(params)?),
             "textDocument/inlayHint" => self.inlay_hints(parse(params)?),
+            "textDocument/codeAction" => self.code_actions(parse(params)?),
+            "textDocument/formatting" => self.formatting(parse(params)?),
             // LSP 3.18, "$ Notifications and Requests": "If a server or client receives a
             // request starting with '$/' it must error the request with error code
             // `MethodNotFound`."
@@ -400,6 +406,8 @@ impl<L: Loader, W: Write> Server<L, W> {
                     "full": true,
                 },
                 "inlayHintProvider": true,
+                "codeActionProvider": true,
+                "documentFormattingProvider": true,
             },
             "serverInfo": { "name": "quakec-lsp", "version": env!("CARGO_PKG_VERSION") },
         }))
@@ -796,6 +804,65 @@ impl<L: Loader, W: Write> Server<L, W> {
             })
             .collect();
         to_value(&hints)
+    }
+
+    /// `textDocument/codeAction`: the quick fixes for the diagnostics in the range (P4-34), each
+    /// of `CodeActionKind` `quickfix` ("Base kind for quickfix actions: 'quickfix'.") with its
+    /// edit; none outside any file.
+    fn code_actions(&mut self, params: proto::CodeActionParams) -> Result<Value, ResponseError> {
+        let Some(path) = uri::to_path(&params.text_document.uri) else {
+            return Ok(json!([]));
+        };
+        let path = qc_project::normalize(&path);
+        let text = self.host.text(&path).unwrap_or_default();
+        let lines = LineIndex::new(&text, self.encoding);
+        let span = Span::new(
+            lines.offset(params.range.start),
+            lines.offset(params.range.end),
+        );
+        let mut actions = Vec::new();
+        for action in self.host.code_actions(&path, span) {
+            let edits = self
+                .edit_ranges(&action.edit)
+                .into_iter()
+                .map(|(range, new_text)| proto::TextEdit { range, new_text })
+                .collect();
+            actions.push(proto::CodeAction {
+                title: action.title,
+                kind: QUICK_FIX.to_owned(),
+                edit: proto::WorkspaceEdit {
+                    changes: Some(BTreeMap::from([(uri::from_path(&action.edit.path), edits)])),
+                    ..proto::WorkspaceEdit::default()
+                },
+            });
+        }
+        to_value(&actions)
+    }
+
+    /// `textDocument/formatting`: the document formatted (P4-34), as one `TextEdit` over the
+    /// whole of it, or `[]` when formatting changes nothing; `null` for a document the server
+    /// has no text of. The `TextEdit[] | null` result says "the modification to the document to
+    /// be formatted".
+    fn formatting(
+        &mut self,
+        params: proto::DocumentFormattingParams,
+    ) -> Result<Value, ResponseError> {
+        let Some(path) = uri::to_path(&params.text_document.uri) else {
+            return Ok(Value::Null);
+        };
+        let path = qc_project::normalize(&path);
+        let (Some(text), Some(formatted)) = (self.host.text(&path), self.host.formatted(&path))
+        else {
+            return Ok(Value::Null);
+        };
+        if formatted == text {
+            return Ok(json!([]));
+        }
+        let lines = LineIndex::new(&text, self.encoding);
+        to_value(&[proto::TextEdit {
+            range: lines.range(0, text.len()),
+            new_text: String::from_utf8_lossy(&formatted).into_owned(),
+        }])
     }
 
     /// Writes the answer to request `id`.

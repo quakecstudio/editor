@@ -467,3 +467,104 @@ fn file_read_answers_the_current_text() {
             .is_err()
     );
 }
+
+// No spec statement: P4-34: file.format formats the open file's text, which is then unsaved;
+// formatting it again changes nothing
+#[test]
+fn file_format_formats_the_text_and_leaves_it_unsaved() {
+    let dir = std::env::temp_dir().join(format!("qs-wb-format-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    let world = dir.join("world.qc");
+    std::fs::write(&world, "void() worldspawn =\n{\n  local float a;   \n};\n").unwrap();
+    let mut registry = qs_commands::Registry::new();
+    crate::register(&mut registry).unwrap();
+    let mut s = qs_commands::Session::new(
+        crate::Workbench::new(qc_project::FsLoader, crate::Config::default()),
+        registry,
+    );
+    s.execute("project.open", serde_json::json!({ "path": dir }))
+        .unwrap();
+    s.execute("file.open", serde_json::json!({ "path": world }))
+        .unwrap();
+    let first = s
+        .execute(crate::FORMAT_FILE, serde_json::json!({ "path": world }))
+        .unwrap();
+    assert_eq!(first, serde_json::json!({ "changed": true }));
+    let open = s.context().open().unwrap();
+    assert_eq!(
+        open.text(),
+        b"void() worldspawn =\n{\n\tlocal float a;\n};\n"
+    );
+    assert!(s.context().is_unsaved(&world));
+    let again = s
+        .execute(crate::FORMAT_FILE, serde_json::json!({ "path": world }))
+        .unwrap();
+    assert_eq!(again, serde_json::json!({ "changed": false }));
+}
+
+// No spec statement: P4-34, the acceptance criterion through the commands: code.actions lists
+// the fix for the unused local at the caret, code.fix applies it and the warning goes; the
+// inlay hints name each argument's parameter
+#[test]
+fn quick_fixes_and_inlay_hints_through_the_commands() {
+    let dir = std::env::temp_dir().join(format!("qs-wb-fix-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    let world = dir.join("world.qc");
+    let text = "void(float a, float b) g = {};\nvoid() worldspawn =\n{\n\tlocal float x;\n\tg (1, 2);\n};\n";
+    std::fs::write(&world, text).unwrap();
+    let mut registry = qs_commands::Registry::new();
+    crate::register(&mut registry).unwrap();
+    let mut s = qs_commands::Session::new(
+        crate::Workbench::new(qc_project::FsLoader, crate::Config::default()),
+        registry,
+    );
+    s.execute("project.open", serde_json::json!({ "path": dir }))
+        .unwrap();
+    s.execute("file.open", serde_json::json!({ "path": world }))
+        .unwrap();
+    let at = text.find("x;").unwrap();
+    let listed = s
+        .execute(
+            crate::CODE_ACTIONS,
+            serde_json::json!({ "path": world, "offset": at }),
+        )
+        .unwrap();
+    assert_eq!(listed[0]["title"], "Remove the unused local x");
+    assert_eq!(listed[0]["code"], "W0321");
+    let warned = |s: &qs_commands::Session<crate::Workbench<qc_project::FsLoader>>| {
+        s.context()
+            .problems()
+            .iter()
+            .any(|p| p.diagnostic.code.as_str() == "W0321")
+    };
+    assert!(warned(&s));
+    s.execute(
+        crate::CODE_FIX,
+        serde_json::json!({ "path": world, "offset": at }),
+    )
+    .unwrap();
+    let open = s.context().open().unwrap();
+    assert!(!String::from_utf8_lossy(open.text()).contains("local float x"));
+    assert!(!warned(&s), "the warning went with the local");
+    assert!(
+        s.execute(
+            crate::CODE_FIX,
+            serde_json::json!({ "path": world, "offset": 0 })
+        )
+        .is_err()
+    );
+    let hints = s
+        .execute(crate::INLAY_HINTS, serde_json::json!({ "path": world }))
+        .unwrap();
+    let names: Vec<&str> = hints
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["a", "b"]);
+}

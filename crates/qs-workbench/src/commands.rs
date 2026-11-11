@@ -62,6 +62,18 @@ pub const UPDATE_FILE: &str = "file.update";
 /// The id of the command that writes a file to disk.
 pub const SAVE_FILE: &str = "file.save";
 
+/// The id of the command that formats a file (P4-34).
+pub const FORMAT_FILE: &str = "file.format";
+
+/// The id of the command that lists the quick fixes at a place (P4-34).
+pub const CODE_ACTIONS: &str = "code.actions";
+
+/// The id of the command that applies a quick fix (P4-34).
+pub const CODE_FIX: &str = "code.fix";
+
+/// The id of the command that gives a file's inlay hints (P4-34).
+pub const INLAY_HINTS: &str = "file.inlay_hints";
+
 /// The id of the command that reads a file's current text.
 pub const READ_FILE: &str = "file.read";
 
@@ -98,6 +110,10 @@ pub fn register<C: HasWorkbench + 'static>(
     registry.register(OpenFileCommand)?;
     registry.register(UpdateFile)?;
     registry.register(SaveFile)?;
+    registry.register(FormatFile)?;
+    registry.register(CodeActions)?;
+    registry.register(CodeFix)?;
+    registry.register(InlayHints)?;
     registry.register(ReadFile)?;
     registry.register(CloseFile)?;
     registry.register(Definition)?;
@@ -407,6 +423,174 @@ impl<C: HasWorkbench + 'static> Command<C> for ReadFile {
 pub struct SaveFileParams {
     /// The file.
     pub path: PathBuf,
+}
+
+/// What `file.format` answers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub(crate) struct Formatted {
+    /// Whether formatting changed the text.
+    pub changed: bool,
+}
+
+/// `file.format`: formats a file's current text, which the editor takes; it is not saved.
+struct FormatFile;
+
+impl<C: HasWorkbench + 'static> Command<C> for FormatFile {
+    const ID: &'static str = FORMAT_FILE;
+    const SUMMARY: &'static str = "Formats a QuakeC file: each line indented with tabs to its \
+        depth, trailing white space removed. Only white space at the ends of lines changes, so \
+        it compiles to the same progs.dat; the file is not saved.";
+    type Params = SaveFileParams;
+    type Output = Formatted;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: SaveFileParams,
+    ) -> Result<Outcome<Formatted, C>, WorkbenchError> {
+        let workbench = context.workbench();
+        let before = workbench.text(&params.path);
+        let after = workbench
+            .formatted(&params.path)
+            .ok_or_else(|| WorkbenchError::NoFile {
+                path: params.path.clone(),
+            })?;
+        let changed = before.as_deref() != Some(after.as_slice());
+        if changed {
+            workbench.set_text(&params.path, after, Source::Elsewhere)?;
+        }
+        Ok(Outcome::outside_history(Formatted { changed }))
+    }
+}
+
+/// The parameters of `code.actions` and `code.fix`.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CodeActionParams {
+    /// The file.
+    pub path: PathBuf,
+    /// The byte offset the fixes are for: the diagnostics there.
+    pub offset: usize,
+    /// With `code.fix`, which fix, by its index in `code.actions`' list at the same place.
+    #[serde(default)]
+    pub index: Option<usize>,
+}
+
+/// One quick fix, as `code.actions` lists it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ActionInfo {
+    /// What it does.
+    pub title: String,
+    /// The diagnostic it fixes.
+    pub code: String,
+    /// The file it edits.
+    pub path: PathBuf,
+}
+
+/// `code.actions`: the quick fixes for the diagnostics at a place.
+struct CodeActions;
+
+impl<C: HasWorkbench + 'static> Command<C> for CodeActions {
+    const ID: &'static str = CODE_ACTIONS;
+    const SUMMARY: &'static str = "Lists the quick fixes for the diagnostics at a place in a \
+        file: a missing builtin declared, a misspelled field corrected, an unused local removed, \
+        a missing precache added.";
+    type Params = CodeActionParams;
+    type Output = Vec<ActionInfo>;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: CodeActionParams,
+    ) -> Result<Outcome<Vec<ActionInfo>, C>, WorkbenchError> {
+        let actions = context
+            .workbench()
+            .code_actions(&params.path, params.offset, params.offset);
+        Ok(Outcome::outside_history(
+            actions
+                .into_iter()
+                .map(|action| ActionInfo {
+                    title: action.title,
+                    code: action.code.as_str().to_owned(),
+                    path: action.edit.path,
+                })
+                .collect(),
+        ))
+    }
+}
+
+/// `code.fix`: applies one quick fix at a place.
+struct CodeFix;
+
+impl<C: HasWorkbench + 'static> Command<C> for CodeFix {
+    const ID: &'static str = CODE_FIX;
+    const SUMMARY: &'static str = "Applies a quick fix for the diagnostics at a place in a file, \
+        the first unless one is named by its index in code.actions' list; the file is not saved.";
+    type Params = CodeActionParams;
+    type Output = ActionInfo;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: CodeActionParams,
+    ) -> Result<Outcome<ActionInfo, C>, WorkbenchError> {
+        let workbench = context.workbench();
+        let actions = workbench.code_actions(&params.path, params.offset, params.offset);
+        let action =
+            actions
+                .get(params.index.unwrap_or(0))
+                .ok_or_else(|| WorkbenchError::NoFix {
+                    path: params.path.clone(),
+                    offset: params.offset,
+                })?;
+        workbench.apply_action(action)?;
+        Ok(Outcome::outside_history(ActionInfo {
+            title: action.title.clone(),
+            code: action.code.as_str().to_owned(),
+            path: action.edit.path.clone(),
+        }))
+    }
+}
+
+/// One inlay hint: a parameter's name shown before an argument.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InlayHint {
+    /// The byte offset of the argument.
+    pub offset: usize,
+    /// The parameter's name.
+    pub name: String,
+}
+
+/// `file.inlay_hints`: the parameter names before a file's call arguments.
+struct InlayHints;
+
+impl<C: HasWorkbench + 'static> Command<C> for InlayHints {
+    const ID: &'static str = INLAY_HINTS;
+    const SUMMARY: &'static str = "Lists a file's inlay hints: the name of the parameter each \
+        argument of a call is passed as.";
+    type Params = SaveFileParams;
+    type Output = Vec<InlayHint>;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: SaveFileParams,
+    ) -> Result<Outcome<Vec<InlayHint>, C>, WorkbenchError> {
+        let hints = context.workbench().inlay_hints(&params.path);
+        Ok(Outcome::outside_history(
+            hints
+                .into_iter()
+                .map(|hint| InlayHint {
+                    offset: hint.offset,
+                    name: hint.name,
+                })
+                .collect(),
+        ))
+    }
 }
 
 /// `file.save`: writes a file's current text to disk.

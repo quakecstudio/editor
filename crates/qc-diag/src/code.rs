@@ -635,13 +635,18 @@ pub enum Code {
     /// "Function returning function. Is this what you meant? (suggestion: use typedefs)"
     /// (QCD-7.113).
     W0320,
+    /// "Local NAME is never used": an editor diagnostic, not the compiler's (QCD-7.115).
+    W0321,
+    /// "NAME is never precached": a model or sound a call uses that no precache call of the
+    /// module names; an editor diagnostic, not the compiler's (QCD-7.116).
+    W0322,
     /// "NAME differs in case from the file it opens, STORED" (QCD-7.16).
     W0402,
 }
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 281] = [
+    pub const ALL: [Self; 283] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -922,6 +927,8 @@ impl Code {
         Self::W0318,
         Self::W0319,
         Self::W0320,
+        Self::W0321,
+        Self::W0322,
         Self::W0402,
     ];
 
@@ -1107,6 +1114,8 @@ impl Code {
             Self::W0318 => "W0318",
             Self::W0319 => "W0319",
             Self::W0320 => "W0320",
+            Self::W0321 => "W0321",
+            Self::W0322 => "W0322",
             Self::W0218 => "W0218",
             Self::W0217 => "W0217",
             Self::W0216 => "W0216",
@@ -1281,6 +1290,8 @@ impl Code {
             | Self::W0318
             | Self::W0319
             | Self::W0320
+            | Self::W0321
+            | Self::W0322
             | Self::W0231
             | Self::W0232
             | Self::W0233

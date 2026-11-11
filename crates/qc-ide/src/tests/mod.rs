@@ -15,6 +15,7 @@
     reason = "test code: a failed unwrap, expect, index or overflow is a failed test"
 )]
 
+mod actions;
 mod completion;
 mod diagnostics;
 mod highlight;

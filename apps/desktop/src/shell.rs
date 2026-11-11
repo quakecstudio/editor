@@ -23,7 +23,9 @@ use eframe::egui::{
 use eframe::egui_wgpu::RenderState;
 use qs_commands::remote::Host;
 use qs_commands::{CommandError, RegisterError, Registry, Session};
-use qs_editor_view::{KeyMode, Position, Selection, ViewStyle, Wrap};
+use qs_editor_view::{
+    Fixable, KeyMode, LineNote, NoteSeverity, Position, Selection, ViewStyle, Wrap,
+};
 use qs_layout::{
     EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, Outline, Panel, RESIZE_PANEL,
     ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams,
@@ -45,6 +47,9 @@ use qs_workbench::git::{
 use qs_workbench::staged::HunksParams;
 use qs_workbench::terminal::{CloseParams, Opened, SendParams, TaskInfo};
 use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
+use qs_workbench::{
+    ActionInfo, CODE_ACTIONS, CODE_FIX, Code, CodeActionParams, FORMAT_FILE, INLAY_HINTS, InlayHint,
+};
 use qs_workbench::{
     AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, CheckAfterTyping, ChooseGameParams,
     CloseFileParams, Config, DEFINITION, DOCK, EntryKind, FsLoader, GAME, HOVER, HasPreview,
@@ -1298,6 +1303,40 @@ impl Shell {
         self.mark_changes();
     }
 
+    /// Reads the editor's inlay hints again when its file's analysis changed (P4-34): each
+    /// parameter's name before the argument passed as it.
+    fn refresh_inlays(&mut self) {
+        let Some(revision) = self
+            .session
+            .context()
+            .workbench
+            .open()
+            .map(OpenFile::revision)
+        else {
+            return;
+        };
+        let Some(path) = self
+            .editor
+            .as_ref()
+            .filter(|editor| editor.hints_at != Some(revision))
+            .map(|editor| editor.path.clone())
+        else {
+            return;
+        };
+        let hints: Vec<InlayHint> = self
+            .run(INLAY_HINTS, &SaveFileParams { path })
+            .unwrap_or_default();
+        if let Some(editor) = self.editor.as_mut() {
+            let buffer = editor.view.state().buffer();
+            let placed: Vec<(Position, String)> = hints
+                .into_iter()
+                .map(|hint| (buffer.position(hint.offset), inlay_text(&hint.name)))
+                .collect();
+            editor.view.set_inlays(placed);
+            editor.hints_at = Some(revision);
+        }
+    }
+
     /// Marks in the editor's gutter its file's changes against the text at `HEAD` (P4-35);
     /// none outside a repository or for a file `HEAD` does not have.
     fn mark_changes(&mut self) {
@@ -2082,6 +2121,12 @@ impl Shell {
         }
     }
 
+    /// Runs what the editor asked for, as a frame would after the editor drew.
+    #[cfg(test)]
+    pub(crate) fn handle_requests_for_test(&mut self, requests: Vec<Request>) {
+        self.handle(requests);
+    }
+
     /// Runs what the editor asked for, each through its command, after sending the editor's
     /// unsent text so every answer is about the text on screen.
     fn handle(&mut self, requests: Vec<Request>) {
@@ -2174,6 +2219,36 @@ impl Shell {
                 }
                 Request::Open(jump) => {
                     self.jump(jump);
+                    None
+                }
+                Request::Fixes(offset) => {
+                    let params = CodeActionParams {
+                        path,
+                        offset,
+                        index: None,
+                    };
+                    let fixes: Vec<ActionInfo> =
+                        self.run(CODE_ACTIONS, &params).unwrap_or_default();
+                    Some(if fixes.is_empty() {
+                        Popup::Note(Text::NoQuickFix)
+                    } else {
+                        Popup::Fixes(offset, fixes.into_iter().map(|f| f.title).collect())
+                    })
+                }
+                Request::Fix(offset, index) => {
+                    let params = CodeActionParams {
+                        path,
+                        offset,
+                        index: Some(index),
+                    };
+                    let _: Option<ActionInfo> = self.run(CODE_FIX, &params);
+                    self.sync_editor();
+                    None
+                }
+                Request::Format => {
+                    let _: Option<serde_json::Value> =
+                        self.run(FORMAT_FILE, &SaveFileParams { path });
+                    self.sync_editor();
                     None
                 }
                 Request::InlineEdit {
@@ -2324,6 +2399,7 @@ impl Shell {
             self.sync_editor();
         }
         self.editor_request();
+        self.refresh_inlays();
         self.outline_panel(ui);
         self.second_pane(ui);
         let wrap = match self.layout().soft_wrap {
@@ -2358,7 +2434,22 @@ impl Shell {
                 context.workbench.open(),
             );
             editor.view.set_key_mode(self.key_mode);
+            editor
+                .view
+                .set_notes(line_notes(&context.workbench, editor));
             let requests = editor.show(ui, theme, &view_style(theme));
+            let mut requests = requests;
+            if let Some(line) = editor.view.take_note_click() {
+                let offset = editor.view.state().buffer().offset(Position::new(line, 0));
+                let first = context
+                    .workbench
+                    .problems()
+                    .iter()
+                    .filter(|p| p.path == editor.path)
+                    .map(|p| p.diagnostic.span.start)
+                    .find(|start| editor.view.state().buffer().position(*start).line == line);
+                requests.push(Request::Fixes(first.unwrap_or(offset)));
+            }
             let clicked = editor.view.take_gutter_click();
             if let (Some(file), Some(line)) = (file, clicked) {
                 let line = u32::try_from(line.saturating_add(1)).unwrap_or(u32::MAX);
@@ -2715,6 +2806,10 @@ pub(crate) fn view_style(theme: &Theme) -> ViewStyle {
         added_mark: theme.color(Token::StatusOk),
         modified_mark: theme.color(Token::StatusWarn),
         removed_mark: theme.color(Token::StatusError),
+        inlay: theme.color(Token::TextFaint),
+        note_error: theme.color(Token::StatusError),
+        note_warning: theme.color(Token::StatusWarn),
+        lightbulb: theme.color(Token::Accent),
     }
 }
 
@@ -2865,6 +2960,51 @@ fn read_git(session: &mut Session<Workspace>, open: Option<&Path>, blame: BlameS
     }
     data
 }
+
+/// The diagnostics' notes at the ends of `editor`'s lines (P4-34): each problem of its file at
+/// the line its span starts on, a lightbulb on one of a code a quick fix may fix.
+fn line_notes(workbench: &Workbench<FsLoader>, editor: &Editor) -> Vec<LineNote> {
+    let buffer = editor.view.state().buffer();
+    workbench
+        .problems()
+        .iter()
+        .filter(|problem| problem.path == editor.path)
+        .map(|problem| {
+            let code = problem.diagnostic.code;
+            LineNote {
+                line: buffer.position(problem.diagnostic.span.start).line,
+                text: problem.diagnostic.message.clone(),
+                severity: if code.is_error() {
+                    NoteSeverity::Error
+                } else {
+                    NoteSeverity::Warning
+                },
+                fixable: if FIXABLE.contains(&code) {
+                    Fixable::Yes
+                } else {
+                    Fixable::No
+                },
+            }
+        })
+        .collect()
+}
+
+/// An inlay hint's text: the parameter's name and a colon, as rust-analyzer shows them.
+fn inlay_text(name: &str) -> String {
+    let mut text = name.to_owned();
+    text.push(':');
+    text.push(' ');
+    text
+}
+
+/// The codes a quick fix may fix (`qc_ide`'s code actions).
+const FIXABLE: [Code; 5] = [
+    Code::E0301,
+    Code::E0318,
+    Code::E0319,
+    Code::W0321,
+    Code::W0322,
+];
 
 /// A line counted from 1, as the bridge and the debugger count them, counted from 0 as the
 /// editor does.

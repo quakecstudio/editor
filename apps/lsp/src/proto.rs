@@ -115,6 +115,38 @@ pub struct RenameParams {
     pub new_name: String,
 }
 
+/// `CodeActionParams` (`language/codeAction.md`): its `context` is not read, the diagnostics in
+/// the range being the server's own.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeActionParams {
+    /// "The document in which the command was invoked."
+    pub text_document: TextDocumentIdentifier,
+    /// "The range for which the command was invoked."
+    pub range: Range,
+}
+
+/// `DocumentFormattingParams` (`language/formatting.md`): its `options` are not read, QuakeC
+/// being indented with tabs as id wrote it.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentFormattingParams {
+    /// The document to format.
+    pub text_document: TextDocumentIdentifier,
+}
+
+/// `CodeAction`, as a quick fix: its title, its kind and its edit.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeAction {
+    /// "A short, human-readable title for this code action."
+    pub title: String,
+    /// The `CodeActionKind`: `quickfix`.
+    pub kind: String,
+    /// The edit it makes.
+    pub edit: WorkspaceEdit,
+}
+
 /// `InlayHintParams`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

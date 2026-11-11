@@ -43,7 +43,10 @@ edit.
 | Completion | `completions` | The globals declared before the cursor (QC-12.5; all with autoprototyping, FTE-22.3), and the enclosing function's parameters and earlier locals (QC-12.1); after `.` or `->` the members of what the access is made on: a vector's `x`, `y` and `z` (FTE-9.1), a class's and its parents' members then the fields (FTEF-17.3), the fields otherwise (QC-16.6) |
 | Highlighting | `highlights` | Each resolved name by what it names, with declaration, constant (QC-11.6, vanilla) and builtin modifiers |
 | Inlay hints | `parameter_hints` | The parameter name of each argument (QC-13.5), from the declaration that names them (QC-13.11) |
-| Diagnostics | `diagnostics`, `all_diagnostics` | The project graph's, the preprocessor's and parser's, the semantic model's, and `W0311` for the target engine |
+| Diagnostics | `diagnostics`, `all_diagnostics` | The project graph's, the preprocessor's and parser's, the semantic model's, `W0311` for the target engine, and the editor's own: `W0321` for a local no expression names (QCD-7.115) and `W0322` for a model or sound a call uses that no precache names (QCD-7.116) |
+| Quick fixes | `code_actions` | A missing builtin declared with its number and signature from the engine table (`E0301`), an unknown field changed to the nearest within two edits (`E0301`, `E0318`, `E0319`), an unused local's declaration removed (`W0321`), a missing precache added to `worldspawn` (`W0322`) |
+| Folding | `folding_ranges` | Each block and block comment over several lines (P4-32) |
+| Formatting | `format`, `formatted` | Each line indented with tabs to its depth in the blocks, a statement an `if`, `while`, `for`, `else` or `do` governs without braces one more, trailing white space removed, one line break at the end; never joins or splits a line or touches a token, so the program compiles to the same `progs.dat`, and lines in block comments and directives are kept (P4-34) |
 
 A position just after a name names it, as an editor's cursor at the end of a word does.
 

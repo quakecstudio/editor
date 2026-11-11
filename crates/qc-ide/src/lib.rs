@@ -27,8 +27,10 @@
 //! `docs/spec/engine-targets.md` through `qc-engines`, and names the statements its choices
 //! rest on where it makes them.
 
+mod actions;
 mod completion;
 mod diagnostics;
+mod format;
 mod highlight;
 mod hints;
 mod host;
@@ -43,7 +45,9 @@ mod tests;
 
 use std::path::PathBuf;
 
+pub use actions::CodeAction;
 pub use completion::Completion;
+pub use format::format;
 pub use highlight::{Highlight, HighlightKind, Modifier, Modifiers, SyntaxClass};
 pub use hints::ParameterHint;
 pub use host::{AnalysisHost, Config, ModuleBuild};

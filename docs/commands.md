@@ -9,6 +9,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`checkpoint.create`](#checkpointcreate) | Records every file of the open project, as it is on disk, as a checkpoint to restore, in a git store of its own. |
 | [`checkpoint.list`](#checkpointlist) | Lists the open project's checkpoints, oldest first. |
 | [`checkpoint.restore`](#checkpointrestore) | Puts every file of the open project back as a checkpoint holds it, removing the files made since and dropping unsaved edits. |
+| [`code.actions`](#codeactions) | Lists the quick fixes for the diagnostics at a place in a file: a missing builtin declared, a misspelled field corrected, an unused local removed, a missing precache added. |
+| [`code.fix`](#codefix) | Applies a quick fix for the diagnostics at a place in a file, the first unless one is named by its index in code.actions' list; the file is not saved. |
 | [`commands.list`](#commandslist) | Lists every command with its id, summary and parameter schema. |
 | [`compile`](#compile) | Compiles the open project and says whether it is clean, with its error counts. |
 | [`edit.accept`](#editaccept) | Accepts staged hunks: their lines stay in the editor's text, unsaved, once each hunk of their file is decided. |
@@ -29,6 +31,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`engine.inspect`](#engineinspect) | Reads the running game: the edicts in use, one edict's fields, every named global, or the call stack while stopped in a frame. |
 | [`engine.screenshot`](#enginescreenshot) | Writes the frame the running game draws as a PNG, in the project's build/screenshots unless a path is given, and answers where and its size. |
 | [`file.close`](#fileclose) | Closes a file's tab, opening the tab beside it when it was         the open file; its unsaved text is kept. |
+| [`file.format`](#fileformat) | Formats a QuakeC file: each line indented with tabs to its depth, trailing white space removed. Only white space at the ends of lines changes, so it compiles to the same progs.dat; the file is not saved. |
+| [`file.inlay_hints`](#fileinlay_hints) | Lists a file's inlay hints: the name of the parameter each argument of a call is passed as. |
 | [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
 | [`file.read`](#fileread) | Reads a file's current text: the editor's when it has unsaved changes, else what is on disk. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
@@ -170,6 +174,90 @@ Parameters:
     "number"
   ],
   "title": "RestoreCheckpointParams",
+  "type": "object"
+}
+```
+
+## `code.actions`
+
+Lists the quick fixes for the diagnostics at a place in a file: a missing builtin declared, a misspelled field corrected, an unused local removed, a missing precache added.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `code.actions` and `code.fix`.",
+  "properties": {
+    "index": {
+      "default": null,
+      "description": "With `code.fix`, which fix, by its index in `code.actions`' list at the same place.",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "offset": {
+      "description": "The byte offset the fixes are for: the diagnostics there.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "offset"
+  ],
+  "title": "CodeActionParams",
+  "type": "object"
+}
+```
+
+## `code.fix`
+
+Applies a quick fix for the diagnostics at a place in a file, the first unless one is named by its index in code.actions' list; the file is not saved.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `code.actions` and `code.fix`.",
+  "properties": {
+    "index": {
+      "default": null,
+      "description": "With `code.fix`, which fix, by its index in `code.actions`' list at the same place.",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "offset": {
+      "description": "The byte offset the fixes are for: the diagnostics there.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "offset"
+  ],
+  "title": "CodeActionParams",
   "type": "object"
 }
 ```
@@ -704,6 +792,56 @@ Parameters:
     "path"
   ],
   "title": "CloseFileParams",
+  "type": "object"
+}
+```
+
+## `file.format`
+
+Formats a QuakeC file: each line indented with tabs to its depth, trailing white space removed. Only white space at the ends of lines changes, so it compiles to the same progs.dat; the file is not saved.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `file.save` and `file.read`.",
+  "properties": {
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "SaveFileParams",
+  "type": "object"
+}
+```
+
+## `file.inlay_hints`
+
+Lists a file's inlay hints: the name of the parameter each argument of a call is passed as.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `file.save` and `file.read`.",
+  "properties": {
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "SaveFileParams",
   "type": "object"
 }
 ```

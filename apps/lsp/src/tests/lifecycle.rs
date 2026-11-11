@@ -128,7 +128,7 @@ fn unknown_methods() {
             notification("$/cancelRequest", json!({ "id": 5 })),
             notification("workspace/didChangeConfiguration", json!({})),
             request(1, "$/custom", json!({})),
-            request(2, "textDocument/formatting", json!({})),
+            request(2, "textDocument/codeLens", json!({})),
         ],
     );
     assert_eq!(s.error_code(1), -32601);

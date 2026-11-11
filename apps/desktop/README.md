@@ -187,6 +187,12 @@ at once, the bottom panel opened for it, and its status reads Running, Exited wi
 Ended by a signal. The processes run on pipes, not a pseudo-terminal. `fixtures/tasks/` is a
 project with two tasks, one that fails, which the `terminal` snapshot runs.
 
+**Quick fixes, inline diagnostics, inlay hints and formatting (P4-34, UI-18).** The editor
+shows each problem of its file at its line's end (`line_notes`), a lightbulb before one a
+quick fix may fix; a click on it, or Cmd+., lists the fixes (`code.actions`) in a popup and
+choosing one applies it (`code.fix`). The parameter names before a call's arguments come from
+`file.inlay_hints` when the file's analysis changes. Cmd+Shift+I runs `file.format`.
+
 **Git (P4-35, UI-19).** The bottom panel's Git tab (`git_panel.rs`) shows the branch, to switch
 or create one; each changed file with Stage and Unstage and its hunks, each staged or unstaged
 on its own; a conflicted file's conflicts with Keep ours, Keep theirs and Keep both; the commit

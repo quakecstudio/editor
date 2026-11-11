@@ -664,6 +664,13 @@ pub enum WorkbenchError {
     },
     /// No project is open.
     NoProject,
+    /// There is no quick fix at the place.
+    NoFix {
+        /// The file.
+        path: PathBuf,
+        /// The byte offset.
+        offset: usize,
+    },
     /// A staged hunk's number is not one waiting for a decision.
     NoHunk {
         /// The number.
@@ -690,6 +697,9 @@ impl fmt::Display for WorkbenchError {
             }
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
             Self::NoProject => f.write_str("no project is open"),
+            Self::NoFix { path, offset } => {
+                write!(f, "{}: no quick fix at byte {offset}", path.display())
+            }
             Self::NoHunk { id } => write!(f, "{id} is not staged"),
             Self::Checkpoint(error) => error.fmt(f),
             Self::Offset { path, offset, len } => write!(
@@ -708,9 +718,11 @@ impl Error for WorkbenchError {
             Self::Rename(error) => Some(error),
             Self::Save { error, .. } => Some(error),
             Self::Checkpoint(error) => Some(error),
-            Self::NoFile { .. } | Self::NoProject | Self::NoHunk { .. } | Self::Offset { .. } => {
-                None
-            }
+            Self::NoFile { .. }
+            | Self::NoProject
+            | Self::NoFix { .. }
+            | Self::NoHunk { .. }
+            | Self::Offset { .. } => None,
         }
     }
 }

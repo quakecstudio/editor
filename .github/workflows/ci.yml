@@ -749,6 +749,13 @@ jobs:
       - name: Drive the language server against the rerelease
         if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask lsp-corpus "$QS_TEST_ASSETS/codebase/rerelease"
+      # P4-34 (UI-18): formatting id 1.01 and the rerelease twice gives the same text as once,
+      # and each module compiles to the same progs.dat before and after.
+      - name: Format id 1.01 and the rerelease and compile them again
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          cargo xtask format-corpus --vanilla "$QS_TEST_ASSETS/codebase/id-1.01"
+          cargo xtask format-corpus "$QS_TEST_ASSETS/codebase/rerelease"
       # P2-19: every diagnostic of the rerelease, targeting the rerelease and id's engine, is
       # listed in the desktop app's Problems tab, and clicking it opens its file at its place.
       - name: Click every problem of the rerelease in the desktop app

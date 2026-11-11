@@ -64,6 +64,13 @@ pub(crate) const RENAME: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NON
 
 /// Cmd/Ctrl+K: an inline edit of the selection (P4-10, UI-6).
 pub(crate) const INLINE_EDIT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::K);
+/// Cmd/Ctrl+.: the quick fixes at the caret, as VS Code's (P4-34).
+pub(crate) const QUICK_FIX: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND, Key::Period);
+/// Cmd/Ctrl+Shift+I: format the file (P4-34). VS Code's Shift+Alt+F types a character on
+/// macOS, so the key is one that does not.
+pub(crate) const FORMAT: KeyboardShortcut =
+    KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::I);
 
 /// What the editor asks the shell to do, by way of the workbench commands.
 #[derive(Clone, Debug, PartialEq)]
@@ -84,6 +91,12 @@ pub(crate) enum Request {
     Rename(usize, String),
     /// `file.open` at a place.
     Open(Jump),
+    /// `code.actions` at a byte offset, shown as a list to choose from (P4-34).
+    Fixes(usize),
+    /// `code.fix` at a byte offset: the fix at that index of the list.
+    Fix(usize, usize),
+    /// `file.format`.
+    Format,
     /// An inline edit: the model asked to rewrite the selection's text as the instruction says.
     InlineEdit {
         /// The selection's text.
@@ -112,6 +125,8 @@ pub(crate) enum Popup {
     },
     /// Every declaration and use of a name.
     References(Vec<Place>),
+    /// The quick fixes at a byte offset, by title (P4-34).
+    Fixes(usize, Vec<String>),
     /// The new name for the name at a byte offset.
     Rename {
         /// The name's offset.
@@ -168,6 +183,8 @@ pub(crate) struct Editor {
     inline_from: Option<Selection>,
     /// The text position the pointer rests on, and since when.
     resting: Option<(Position, f64)>,
+    /// The open file's revision the inlay hints were read at (P4-34).
+    pub(crate) hints_at: Option<u64>,
 }
 
 impl Editor {
@@ -188,6 +205,7 @@ impl Editor {
             popup: None,
             resting: None,
             inline_from: None,
+            hints_at: None,
         };
         editor.place(open);
         editor.set_folds(open);
@@ -385,6 +403,12 @@ impl Editor {
         if pressed(ui, &DEFINITION) {
             requests.push(Request::Definition(offset));
         }
+        if pressed(ui, &QUICK_FIX) {
+            requests.push(Request::Fixes(offset));
+        }
+        if pressed(ui, &FORMAT) {
+            requests.push(Request::Format);
+        }
         if pressed(ui, &RENAME) {
             let (_, word) = self.word_before_caret();
             self.popup = Some(Popup::Rename { offset, name: word });
@@ -499,6 +523,7 @@ impl Editor {
             Popup::Hover { at, .. } => Pos2::new(at.x, at.y + theme.space(3)),
             Popup::Complete { .. }
             | Popup::References(_)
+            | Popup::Fixes(..)
             | Popup::Rename { .. }
             | Popup::Note(_)
             | Popup::InlinePrompt(_)
@@ -558,6 +583,15 @@ impl Editor {
                                         path: place.path.clone(),
                                         offset: place.start,
                                     }));
+                                    close = true;
+                                }
+                            }
+                        }
+                        Popup::Fixes(offset, titles) => {
+                            ui.label(RichText::new(Text::QuickFixes.get()).strong());
+                            for (index, title) in titles.iter().enumerate() {
+                                if ui.add(Button::new(title).frame(false)).clicked() {
+                                    requests.push(Request::Fix(offset, index));
                                     close = true;
                                 }
                             }
