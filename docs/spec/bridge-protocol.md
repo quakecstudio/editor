@@ -78,11 +78,14 @@ is required."
   `entity/spawn`, `entity/remove`, `entity/edit`, `player/spawn_at`, `screenshot`,
   `evaluate` and `window/place`. A command whose flag is absent or `false` is answered with `-32005`
   (unsupported); the client shows it disabled.
-- **BRIDGE-2.7** A protocol version is `major.minor` in decimal. The host accepts a client
+- **BRIDGE-2.7** **Withdrawn** 2026-11-11: the version this document describes is `1.2`;
+  replaced by BRIDGE-2.8.
+- **BRIDGE-2.8** A protocol version is `major.minor` in decimal. The host accepts a client
   whose `major` is its own and answers with its own version; a different `major` is answered
   with `-32001` (incompatible version) and the host closes the connection. A client reading a
   higher `minor` than it knows proceeds; it ignores what it does not know (BRIDGE-6). This
-  document describes version `1.1`, which added `window/place` (BRIDGE-6.3).
+  document describes version `1.2`: `1.1` added `window/place` (BRIDGE-6.3) and `1.2` spawns
+  an entity in play as at the map's load (BRIDGE-4.12).
 
 ## BRIDGE-3 Events
 
@@ -186,7 +189,7 @@ A command is a request from the client, answered with a result on success or an 
   | pause, resume | `pause`, `resume` | yes | stop and start the server clock; the state events follow (BRIDGE-3.3) |
   | set field | `field/set` | yes | writes one field of an edict with a typed value; while paused it is applied when the game resumes (`on_resume`), else at once (`now`) |
   | pick | `pick` | yes | the edict under a point of the host's window, `x` and `y` as fractions of its width and height from the top left, and the point hit; no edict when the ray hits the world or nothing |
-  | spawn entity | `entity/spawn` | yes | spawns an edict of a classname with the key-values given, as a map entity is spawned (EDICT-8); the result is its number |
+  | spawn entity | `entity/spawn` | yes | spawns an edict of a classname with the key-values given, as a map entity is spawned (EDICT-8, BRIDGE-4.12); the result is its number |
   | remove entity | `entity/remove` | yes | frees an edict |
   | edit entity | `entity/edit` | yes | sets key-values on an edict as its spawn would parse them (EDICT-8) |
   | spawn player at | `player/spawn_at` | yes | moves the player to an origin and angles, as a teleporter would |
@@ -206,6 +209,15 @@ A command is a request from the client, answered with a result on success or an 
   running world, with the breakpoints it would clear; the running world, its progs, its
   breakpoints and its pause are unchanged, and no event is sent. The editor reads it before a
   reload to say what the reload would reset (P3-10).
+- **BRIDGE-4.12** `entity/spawn` runs the spawn function as the map's load runs it (EDICT-8,
+  `sv.state` `ss_loading`), so a map entity added in the editor reaches the running game with
+  no recompile (MAP-12) and behaves as one loaded with the map: its precaches work and a think
+  it sets runs on the next frames, linking it by `target` to entities spawned before or after
+  it. A precache of a model or sound the map has not precached is answered with `-32602`
+  (invalid params), the edict freed and the precache lists left as they were: the client read
+  the lists when it joined, so a new name waits for the map to load again. A deliberate
+  divergence: id's `PF_precache_model` stops any precache once the server is active ("Precache
+  can only be done in spawn functions"), which would refuse nearly every entity.
 
 ## BRIDGE-5 Values
 

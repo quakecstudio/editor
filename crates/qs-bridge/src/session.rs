@@ -13,8 +13,8 @@ use serde_json::{Value, json};
 use crate::message::{ErrorCode, Id, Message, RpcError};
 use crate::schemas::SCHEMAS;
 
-/// The protocol version this crate speaks, `major.minor` (BRIDGE-2.7).
-pub const BRIDGE_PROTOCOL_VERSION: (u32, u32) = (1, 1);
+/// The protocol version this crate speaks, `major.minor` (BRIDGE-2.8).
+pub const BRIDGE_PROTOCOL_VERSION: (u32, u32) = (1, 2);
 
 /// Every command, and whether a capability flags it (BRIDGE-2.6, BRIDGE-4.9).
 pub const BRIDGE_COMMANDS: [(&str, bool); 19] = [
@@ -126,7 +126,7 @@ pub trait Host {
 pub struct Reply {
     /// The response to send, if any.
     pub response: Option<Message>,
-    /// Whether the connection closes after it (BRIDGE-2.7).
+    /// Whether the connection closes after it (BRIDGE-2.8).
     pub close: bool,
 }
 
@@ -203,7 +203,7 @@ impl Session {
         }
     }
 
-    /// `initialize` (BRIDGE-2.1, BRIDGE-2.2, BRIDGE-2.7).
+    /// `initialize` (BRIDGE-2.1, BRIDGE-2.2, BRIDGE-2.8).
     fn initialize(&mut self, host: &dyn Host, id: Id, params: &Value) -> Reply {
         if let Err(error) = check("initialize.params", params) {
             return Reply::to(id, Err(error));
@@ -248,7 +248,7 @@ pub fn event(method: &str, params: Value) -> Message {
     }
 }
 
-/// `major.minor` in decimal (BRIDGE-2.7).
+/// `major.minor` in decimal (BRIDGE-2.8).
 fn version(text: &str) -> Option<(u32, u32)> {
     let (major, minor) = text.split_once('.')?;
     Some((major.parse().ok()?, minor.parse().ok()?))

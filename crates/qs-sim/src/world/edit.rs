@@ -27,6 +27,9 @@ pub enum EditError {
     Kept(usize),
     /// Spawning failed: no classname, or one naming no function, or its function failed.
     Spawn(String),
+    /// A spawn in play precached a model or sound the map had not (BRIDGE-4.12): the client
+    /// has the map's lists, so a new name waits for the map to load again.
+    NotPrecached(String),
 }
 
 impl core::fmt::Display for EditError {
@@ -37,6 +40,10 @@ impl core::fmt::Display for EditError {
             Self::BadValue(why) => f.write_str(why),
             Self::Kept(n) => write!(f, "edict {n} is never freed"),
             Self::Spawn(why) => write!(f, "spawning: {why}"),
+            Self::NotPrecached(name) => write!(
+                f,
+                "spawning: {name} is not precached by the map; reload the map to load it"
+            ),
         }
     }
 }
@@ -162,46 +169,51 @@ impl World {
 
     /// Spawns an entity of the key-values `pairs` as a map entity is spawned (EDICT-8): an
     /// edict allocated, the pairs applied, then the function its `classname` names run with
-    /// `self` the edict; returns its number.
+    /// `self` the edict, as at the map's load, so its precaches work (BRIDGE-4.12); returns its
+    /// number.
     ///
     /// # Errors
     ///
     /// [`EditError::Spawn`] for no free edict, a pair that does not parse, no `classname` or
-    /// one naming no function (the edict is then freed), or a spawn function that fails.
+    /// one naming no function, or a spawn function that fails; [`EditError::NotPrecached`]
+    /// when the function precached a name the map had not. Each frees the edict and leaves
+    /// the precache lists as they were.
     pub fn spawn_entity(
         &mut self,
         progs: &Progs<'_>,
         pairs: &[(String, String)],
     ) -> Result<usize, EditError> {
+        let engine = self.builtins.mock.engine();
+        let lists = (engine.model_precache.len(), engine.sound_precache.len());
         let mut spawner = Spawner {
             world: self,
             progs,
-            state: ServerState::Active,
+            state: ServerState::Loading,
         };
         let n = spawner
             .allocate(false)
             .map_err(|e| EditError::Spawn(e.to_string()))?;
-        for (key, value) in pairs {
-            if let Err(error) = apply_key(&mut spawner, n, key.as_bytes(), value.as_bytes()) {
-                spawner.free(n);
-                return Err(EditError::Spawn(error.to_string()));
-            }
-        }
-        let classname = pairs
-            .iter()
-            .find(|(key, _)| key == "classname")
-            .map(|(_, value)| value.clone())
-            .unwrap_or_default();
-        let Some(function) = spawner.find_function(classname.as_bytes()) else {
-            spawner.free(n);
-            return Err(EditError::Spawn(format!("no spawn function {classname:?}")));
+        let spawned = spawn_pairs(&mut spawner, n, pairs);
+        let engine = self.builtins.mock.engine_mut();
+        let added = engine
+            .model_precache
+            .get(lists.0)
+            .or_else(|| engine.sound_precache.get(lists.1))
+            .cloned();
+        engine.model_precache.truncate(lists.0);
+        engine.sound_precache.truncate(lists.1);
+        let result = match (spawned, added) {
+            (Err(error), _) => Err(error),
+            (Ok(()), Some(name)) => Err(EditError::NotPrecached(name)),
+            (Ok(()), None) => return Ok(n),
         };
-        // A spawn that fails is undone, as the map's loader would stop on it.
-        if let Err(error) = spawner.spawn(n, function) {
-            spawner.free(n);
-            return Err(EditError::Spawn(error.to_string()));
+        Spawner {
+            world: self,
+            progs,
+            state: ServerState::Active,
         }
-        Ok(n)
+        .free(n);
+        result
     }
 
     /// Applies the key-values `pairs` to edict `n` as its spawn would parse them (EDICT-8).
@@ -275,6 +287,29 @@ impl World {
         call.link(CLIENT, false)
             .map_err(|e| EditError::Spawn(e.to_string()))
     }
+}
+
+/// Applies `pairs` to edict `n` and runs the function its `classname` names (EDICT-8.6).
+fn spawn_pairs(
+    spawner: &mut Spawner<'_, '_>,
+    n: usize,
+    pairs: &[(String, String)],
+) -> Result<(), EditError> {
+    for (key, value) in pairs {
+        apply_key(spawner, n, key.as_bytes(), value.as_bytes())
+            .map_err(|e| EditError::Spawn(e.to_string()))?;
+    }
+    let classname = pairs
+        .iter()
+        .find(|(key, _)| key == "classname")
+        .map(|(_, value)| value.as_str())
+        .unwrap_or_default();
+    let function = spawner
+        .find_function(classname.as_bytes())
+        .ok_or_else(|| EditError::Spawn(format!("no spawn function {classname:?}")))?;
+    spawner
+        .spawn(n, function)
+        .map_err(|e| EditError::Spawn(e.to_string()))
 }
 
 /// What a line traced through the world hits, for the bridge's `pick` (BRIDGE-4.9).
