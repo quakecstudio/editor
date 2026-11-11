@@ -441,21 +441,69 @@ impl Shell {
         self.agent.set_config_file(file);
     }
 
-    /// Starts an agent thread on `task` over the open project (P4-09); why it could not.
+    /// Starts an agent thread on `task` over the open project (P4-09), each `@` mention it
+    /// names attached (UI-8); why it could not.
     ///
     /// # Errors
     ///
     /// No project open, no provider set up, no model or no checkpoint.
     pub fn start_agent(&mut self, task: &str, ctx: &egui::Context) -> Result<(), String> {
-        let root = self
-            .workbench()
+        let root = self.agent_root()?;
+        let live = self.live();
+        let task = qs_agent::expand_mentions(&mut self.session, &root, task, &live);
+        self.start_thread(&root, &task, ctx)
+    }
+
+    /// Starts an agent thread about `entity`, its state attached (Ask about this, UI-9); why
+    /// it could not. Its field values are attached as they are, never read as mentions.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::start_agent`].
+    pub fn ask_about(
+        &mut self,
+        entity: &qs_agent::EntityState,
+        ctx: &egui::Context,
+    ) -> Result<(), String> {
+        let root = self.agent_root()?;
+        self.start_thread(&root, &qs_agent::ask_about(entity), ctx)
+    }
+
+    /// The open project's folder, which an agent thread works in.
+    fn agent_root(&self) -> Result<PathBuf, String> {
+        self.workbench()
             .root()
             .map(Path::to_path_buf)
-            .ok_or_else(|| Text::NoProject.get().to_owned())?;
+            .ok_or_else(|| Text::NoProject.get().to_owned())
+    }
+
+    /// Starts a thread on `task` as given, over the project in `root`.
+    fn start_thread(&mut self, root: &Path, task: &str, ctx: &egui::Context) -> Result<(), String> {
         let ctx = ctx.clone();
-        self.agent.start(&mut self.session, &root, task, move || {
-            ctx.request_repaint()
-        })
+        self.agent
+            .start(&mut self.session, root, task, move || ctx.request_repaint())
+    }
+
+    /// What the running game shows now, for `@entity` and `@error` (PRIN-2): the selected
+    /// edict with its fields as the Properties panel writes them, and the console's last error.
+    fn live(&self) -> qs_agent::Live {
+        let preview = &self.session.context().preview;
+        let entities = preview.entities();
+        let entity = entities.selected().map(|selected| qs_agent::EntityState {
+            edict: selected.edict,
+            classname: selected.classname.clone(),
+            fields: selected
+                .fields
+                .iter()
+                .map(|field| (field.name.clone(), entities.show(&field.value)))
+                .collect(),
+        });
+        let error = preview
+            .console()
+            .filter(|line| line.is_error())
+            .last()
+            .map(|line| line.text.clone());
+        qs_agent::Live { entity, error }
     }
 
     /// Waits for the next thing agent thread `index`'s model sends and takes it; `false` when
@@ -698,7 +746,7 @@ impl Shell {
             let polled: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
             // BRIDGE-3.5: a click in the paused game picked an edict; open its spawn function.
             if let Some(classname) = polled.and_then(|status| status.picked) {
-                self.entity_action(EntityAction::Open(classname));
+                self.entity_action(EntityAction::Open(classname), ui.ctx());
             }
         }
         self.follow_stop();
@@ -961,8 +1009,22 @@ impl Shell {
 
     /// Runs what the outliner or the Properties panel asked for: a selection or a field's new
     /// value through its command, or the definition of a function opened.
-    fn entity_action(&mut self, action: EntityAction) {
+    fn entity_action(&mut self, action: EntityAction, ctx: &egui::Context) {
         let result = match action {
+            EntityAction::Ask(edict) => {
+                // UI-9: the thread starts with the entity's state as the game has it now.
+                if self
+                    .run::<_, SelectedEntity>(SELECT, &SelectParams { edict })
+                    .is_none()
+                {
+                    return;
+                }
+                if let Some(entity) = self.live().entity {
+                    let started = self.ask_about(&entity, ctx);
+                    self.agent.set_error(started.err());
+                }
+                return;
+            }
             EntityAction::Select(edict) => {
                 self.run::<_, SelectedEntity>(SELECT, &SelectParams { edict })
             }
@@ -1262,7 +1324,7 @@ impl Shell {
             self.jump(jump);
         }
         if let Some(action) = entity_action {
-            self.entity_action(action);
+            self.entity_action(action, ui.ctx());
         }
         if let Some(action) = debug_action {
             self.debug_action(action);

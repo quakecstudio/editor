@@ -92,10 +92,18 @@ The right panel's Agent section (P4-09, UI-5, PRIN-4), modelled on Zed's agent p
   checkpoint the run recorded first.
 - **Proposed changes:** every staged hunk, with Accept and Reject for each and for all of
   them (`edit.accept`, `edit.reject`).
+- **@ mentions (P4-12, UI-8):** a task can name `@file:<path>`, `@symbol:<name>`,
+  `@builtin:<name>`, `@entity` (the edict selected in the outliner or picked in the game) and
+  `@error` (the console's last error). Each one is read when the thread starts and attached
+  after the task (`qs_agent::expand_mentions`).
+- **Ask about this (P4-12, UI-9):** right-clicking an outliner row, or the button in the
+  Properties panel, selects the edict and starts a thread that explains it. The thread holds
+  its classname, its current think function and every field (`qs_agent::ask_about`).
 
 `src/agent/tests.rs` covers it. Two threads whose models are held wait while frames go on,
 and each ends when its model answers. A thread's hunk is rejected from the panel and its
-checkpoint restores the project. The provider form keeps the key out of the file.
+checkpoint restores the project. The provider form keeps the key out of the file. A thread
+started from an entity holds its state, and a task's mentions attach what they name.
 
 ## Fonts
 

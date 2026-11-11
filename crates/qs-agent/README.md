@@ -43,13 +43,18 @@ to the result:
 - **Proposed, not applied (PRIN-4):** the run ends `Done` or `NotDone` with its edits staged
   for review (`edit.staged` in the report). Nothing is written to disk, and the checkpoint
   undoes everything.
+- **Context the modder points at (P4-12, UI-8, UI-9, PRIN-2):** `expand_mentions` attaches what a
+  task's `@file:`, `@symbol:`, `@builtin:`, `@entity` and `@error` mentions name, read through
+  the session's commands and the running game's `Live` state. `ask_about` is the task of Ask
+  about this: an `EntityState` with its classname, its think function and when it is due, and
+  every field.
 
 The model is Claude Code's and Zed's agents, whose loop calls tools until the model stops. The
 difference is the done criteria: here the runtime checks them and refuses a finish that does not
 compile clean and pass its tests.
 
 - **Layer:** L6 agent. It depends on `qs-commands` (L5) and `serde`.
-- **Spec sections:** none; it implements plan requirements AGT-1, AGT-5 and PRIN-4.
+- **Spec sections:** none; it implements plan requirements AGT-1, AGT-5, PRIN-2, PRIN-4, UI-8 and UI-9.
 - **Shipped:** yes.
 
 ## Tests
