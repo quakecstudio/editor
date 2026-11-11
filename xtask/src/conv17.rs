@@ -230,23 +230,41 @@ fn read_baseline(root: &Path) -> Result<BTreeSet<Violation>, String> {
     Ok(out)
 }
 
-/// Writes the baseline from the code as it is.
+/// Shrinks the baseline to the violations the code still has, keeping its comments and adding
+/// nothing, so a new violation can never be written into it by the command; with no baseline
+/// yet, writes every violation. Returns the entries the file now holds.
 pub(crate) fn write_baseline(root: &Path) -> Result<usize, String> {
-    let found = violations(root)?;
-    let mut text = String::from(
-        "# CONV-17 violations that existed when cargo xtask conventions began checking them\n\
-         # (P5-18): rule, file, item. Only shrinks: remove a line when its item is fixed\n\
-         # (P5-19). A line added later is a reviewed exception; say why in a comment above it.\n",
-    );
-    for violation in &found {
-        text.push_str(&violation.line());
-        text.push('\n');
-    }
-    if let Some(parent) = root.join(BASELINE).parent() {
+    let found: BTreeSet<Violation> = violations(root)?.into_iter().collect();
+    let path = root.join(BASELINE);
+    let text = if let Ok(old) = fs::read_to_string(&path) {
+        let still = read_baseline(root)?;
+        let mut kept = String::new();
+        for line in old.lines() {
+            let entry = still.iter().find(|v| v.line() == line);
+            if entry.is_none_or(|v| found.contains(v)) {
+                kept.push_str(line);
+                kept.push('\n');
+            }
+        }
+        kept
+    } else {
+        let mut text = String::from(
+            "# CONV-17 violations that existed when cargo xtask conventions began checking them\n\
+             # (P5-18): rule, file, item. Only shrinks: cargo xtask conv17-baseline removes a\n\
+             # line when its item is fixed (P5-19) and never adds one. A line added by hand is a\n\
+             # reviewed exception; say why in a comment above it.\n",
+        );
+        for violation in &found {
+            text.push_str(&violation.line());
+            text.push('\n');
+        }
+        text
+    };
+    if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("{BASELINE}: {e}"))?;
     }
-    fs::write(root.join(BASELINE), text).map_err(|e| format!("{BASELINE}: {e}"))?;
-    Ok(found.len())
+    fs::write(&path, text).map_err(|e| format!("{BASELINE}: {e}"))?;
+    Ok(read_baseline(root)?.len())
 }
 
 /// The package name in `dir/Cargo.toml`.

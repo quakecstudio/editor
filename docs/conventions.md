@@ -674,3 +674,13 @@ pub enum RecoveryFault {
     ErrorOutsideWindow { code: Code, start: usize, window: Range<usize> },
 }
 ```
+
+### Named constants, not magic numbers
+
+A number in code other than 0, 1 and 2 is a named `const` (the project owner's request,
+2026-11-11): the name says what the value is, and every use of it changes with it. A size, a
+limit, an opcode or a scale written as a literal says nothing at the place it is used, and two
+copies of it can drift apart. In a port the constant's doc names id's `#define` and the spec
+statement, as `BSP_MAX_MAP_LEAFS` does. `cargo xtask conventions` reads every function body
+for them (`magic-number`); constants, statics, types such as `[u8; 16]`, patterns and macro
+arguments are not read.

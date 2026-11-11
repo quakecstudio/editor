@@ -203,3 +203,30 @@ fn magic_numbers_are_found_once_per_function_and_value() {
         ["T::d:9", "hex:1000", "hex:16", "scale:0.25", "scale:16"]
     );
 }
+
+// P5-18: the baseline command only removes: a fixed violation's line goes, a new violation is
+// not added, and comments stay
+#[test]
+fn the_baseline_command_never_adds_a_violation() {
+    let root = workspace("remove-only", LIB, "pub fn fine() {}\n");
+    assert_eq!(write_baseline(&root).unwrap(), 5);
+    let with_comment = format!(
+        "# a reviewed exception\n{}",
+        fs::read_to_string(root.join(BASELINE)).unwrap()
+    );
+    fs::write(root.join(BASELINE), with_comment).unwrap();
+    // Fix one, add another.
+    let changed = LIB
+        .replace("loud: bool", "loud: u8")
+        .replace("pub fn plain(x: u32)", "pub fn plain(x: u32, sneaky: bool)");
+    fs::write(root.join("crates/lib/src/lib.rs"), changed).unwrap();
+    assert_eq!(write_baseline(&root).unwrap(), 4);
+    let text = fs::read_to_string(root.join(BASELINE)).unwrap();
+    assert!(text.starts_with("# a reviewed exception\n"), "{text}");
+    assert!(!text.contains("\tflagged"), "{text}");
+    assert!(!text.contains("plain"), "the new violation is not written: {text}");
+    let mut report = Report::default();
+    check(&root, &mut report).unwrap();
+    assert_eq!(report.problems.len(), 1, "{:?}", report.problems);
+    assert!(report.problems[0].contains("plain takes a bool"));
+}

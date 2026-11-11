@@ -14,12 +14,19 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-/// Runs the check on `body`; returns whether it accepted the body, and its standard output.
+/// Runs the closing-keyword check on `body`; returns whether it accepted the body, and its
+/// standard output.
 fn check(body: &str) -> (bool, String) {
+    run("check-pr-body.sh", body)
+}
+
+/// Runs the work-issue script `name` on `body`: whether it accepted it, and its output.
+fn run(name: &str, body: &str) -> (bool, String) {
     let script = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join(".claude/skills/work-issue/scripts/check-pr-body.sh");
+        .join(".claude/skills/work-issue/scripts")
+        .join(name);
     let mut child = Command::new("bash")
         .arg(script)
         .stdin(Stdio::piped())
@@ -205,4 +212,34 @@ fn ordinary_bodies_are_accepted() {
 fn crlf_bodies_split_as_lf_bodies_do() {
     assert!(accepted("Closes #12\r\n\r\nNot related."));
     assert!(!accepted("This PR does not\r\nclose #3."));
+}
+
+/// Whether `check-code-review.sh` lets a body land.
+fn reviewed(body: &str) -> bool {
+    run("check-code-review.sh", body).0
+}
+
+// CONV-17, work-issue "Land it": land.sh merges only a body whose "## Code review" section names
+// the effort level the review ran at; a body with no section, a section that names none, or a
+// level named only in another section is refused (PRs #854, #855 and #857 landed without one)
+#[test]
+fn a_body_lands_only_with_its_code_review_recorded() {
+    for body in [
+        "What changed.\n\n## Code review\n\n`/code-review high`: two findings, both fixed in abc123.\n\nCloses #5",
+        "## Code review\nEffort: MEDIUM. Found nothing.",
+        "Text.\r\n\r\n## Code Review\r\n\r\nRan at max; nothing found.\r\n",
+        "## Code review\n\n### Findings\n\nRan at xhigh.",
+    ] {
+        assert!(reviewed(body), "{body:?}");
+    }
+    for body in [
+        "What changed.\n\n## Self-review\n\nI reviewed the diff myself.\n\nCloses #5",
+        "## Code review\n\nI read the diff myself.\n\n## Verification\n\nRan the high-level tests.",
+        "### Code review\n\nhigh",
+        "",
+        "Code review at high effort, in a sentence.",
+    ] {
+        assert!(!reviewed(body), "{body:?}");
+    }
+    assert!(run("check-code-review.sh", "").1.contains("no \"## Code review\" section"));
 }
