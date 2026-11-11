@@ -591,7 +591,8 @@ fn settings_commands_change_the_files_and_undo() {
             "log.filter",
             "game.folder",
             "agent.profile",
-            "agent.tool_permissions"
+            "agent.tool_permissions",
+            "editor.key_mode"
         ]
     );
     assert_eq!(list[1]["default"], "info");
@@ -629,6 +630,26 @@ fn settings_commands_refuse_bad_changes() {
     );
     assert!(!user.exists());
     assert_eq!(s.undo_depth(), 0);
+}
+
+// No spec statement: P4-37: `editor.key_mode` is `standard` by default and `vim` when set,
+// and nothing else
+#[test]
+fn the_key_mode_is_standard_or_vim() {
+    let mut file = SettingsFile::default();
+    assert_eq!(file.get(Setting::KeyMode), None);
+    assert_eq!(Setting::KeyMode.default_value(), json!("standard"));
+    file.put(Setting::KeyMode, Some(json!("vim"))).unwrap();
+    assert_eq!(file.editor.key_mode, Some(crate::KeyMode::Vim));
+    assert!(file.put(Setting::KeyMode, Some(json!("emacs"))).is_err());
+    assert_eq!(file.editor.key_mode, Some(crate::KeyMode::Vim));
+    let dir = TempDir::new("key-mode");
+    let spec = StoreSpec {
+        user: Some("[editor]\nkey_mode = \"vim\"\n"),
+        ..StoreSpec::default()
+    };
+    let (_, _, store) = store(&dir, &spec);
+    assert_eq!(store.value(Setting::KeyMode), (json!("vim"), Source::User));
 }
 
 // QA-10: every setting is documented: docs/settings.md is the generated reference.
@@ -810,6 +831,7 @@ proptest! {
             appearance: crate::Appearance { theme },
             log: crate::Log { filter: filter.clone() },
             game: crate::Game { folder: folder.clone() },
+            editor: crate::Editor::default(),
             agent: crate::Agent::default(),
         };
         store

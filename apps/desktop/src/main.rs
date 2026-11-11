@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use eframe::egui;
 use qs_commands::remote::Host;
 use quakec_studio::strings::Text;
-use quakec_studio::{App, agent};
+use quakec_studio::{App, agent, keymap};
 
 /// `quakec-studio [<project>]`.
 #[derive(clap::Parser, Debug)]
@@ -52,6 +52,10 @@ fn main() -> ExitCode {
         .as_ref()
         .ok()
         .map(|dirs| agent::config_path(dirs.data()));
+    let keymap_file = dirs
+        .as_ref()
+        .ok()
+        .map(|dirs| keymap::keymap_path(dirs.config()));
     let layout_file = dirs.ok().map(|dirs| qs_layout::layout_path(dirs.data()));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -74,6 +78,9 @@ fn main() -> ExitCode {
             }
             // P3-44: the game folder chosen before, and on Windows and Linux the menu's items on
             // the toolbar, which macOS has in its menu bar.
+            if let Some(file) = keymap_file {
+                app.shell_mut().set_keymap_file(file);
+            }
             if let Some(file) = settings_file {
                 app.shell_mut().set_settings_file(file);
             }

@@ -161,6 +161,28 @@ Cmd+2, Cmd+3 and Cmd+4 run `view.focus_editor`, `view.focus_left_panel`,
 `view.focus_right_panel` and `view.focus_bottom_panel` from anywhere (Cmd+0 stays egui's zoom
 reset). The palette shows each command's shortcut from it.
 
+**Custom keybindings (P4-37, UI-21).** As Zed's `keymap.json` does, `keymap.toml` in the app's
+config directory rebinds any command that takes no parameters, in Zed's key spelling:
+`secondary` is Cmd on macOS and Ctrl elsewhere, then `cmd`, `ctrl`, `alt` and `shift`, then one
+key.
+
+```toml
+[[binding]]
+keys = "secondary-shift-b"
+command = "project.build"
+```
+
+A binding takes its keys from the default that had them, and a command's own shortcut, as the
+palette shows it, is the user's. The file is read again the frame after it changes, with no
+restart. Keys bound twice, an unknown command or one that needs parameters, and keys the
+keymap does not know are each logged as a problem, and the rest of the file still applies
+(`Keymap::problems`). Key sequences, such as `ctrl-k ctrl-c`, are not taken yet.
+
+**Vim mode (P4-37).** `editor.key_mode = "vim"` in the user's settings
+([`docs/settings.md`](../../docs/settings.md)) puts the code editor in `KeyMode::Vim`
+([`qs-editor-view`](../../crates/qs-editor-view/README.md), `vim`), read when the window
+starts.
+
 ## Accessibility
 
 Every area and control has an AccessKit name and role (QA-9, P2-23): the toolbar, the status

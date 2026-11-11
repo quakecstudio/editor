@@ -40,6 +40,14 @@ the primary one, Alt-click adds one, and Shift extends a selection.
     run per visible line, with each character's length, and the primary selection between the
     runs it lies on. eframe's `accesskit` feature, which delivers the tree to a screen reader,
     is P2-23 (#79).
+- **`vim`** (P4-37, UI-21): Vim's Normal, Insert and Visual modes as its help at
+  vim/vim@81ebe329 (`motion.txt`, `change.txt`, `repeat.txt`, `visual.txt`) gives them. The
+  motions `h l j k 0 ^ $ w b e gg G`, the operators `d c y` with `dd cc yy`, `x`, `p P`,
+  `i a A I o O`, counts, the `"a` to `"z` registers and the unnamed one, `.` and `u`. In
+  `KeyMode::Vim` the view gives typed text and Escape, Enter and Backspace to it
+  (`EditState::vim_key`), each change one undo step and a run of typing in Insert mode one
+  step, as Vim's undo is; the arrows and the Cmd or Ctrl shortcuts work as before. Not yet:
+  text objects, `f t`, searches, marks, Visual line and block modes, macros and Ex commands.
 
 ## Measurements
 

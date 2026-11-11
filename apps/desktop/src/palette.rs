@@ -102,6 +102,7 @@ impl Palette {
         id: Id,
         theme: &Theme,
         registry: &Registry<C>,
+        keymap: &keymap::Keymap,
     ) -> Option<(CommandId, Value)> {
         if !self.open {
             return None;
@@ -125,7 +126,7 @@ impl Palette {
                         ui.set_max_width(WIDTH);
                         chosen = match self.prompt.take() {
                             Some(prompt) => self.prompt_ui(ui, theme, prompt),
-                            None => self.list_ui(ui, theme, registry),
+                            None => self.list_ui(ui, theme, registry, keymap),
                         };
                         if let Some(error) = &self.error {
                             ui.label(RichText::new(error).color(theme.color(Token::StatusError)));
@@ -141,6 +142,7 @@ impl Palette {
         ui: &mut Ui,
         theme: &Theme,
         registry: &Registry<C>,
+        keymap: &keymap::Keymap,
     ) -> Option<(CommandId, Value)> {
         let total = registry.commands().count();
         let found = search(registry.commands(), &self.query);
@@ -199,7 +201,7 @@ impl Palette {
                 }
                 for (index, item) in found.iter().enumerate() {
                     let selected = index == self.selected;
-                    let response = row(ui, theme, item, selected);
+                    let response = row(ui, theme, item, selected, keymap);
                     if selected && (up || down) {
                         response.scroll_to_me(None);
                     }
@@ -287,7 +289,13 @@ impl Palette {
 
 /// One command's row: its summary with the matched characters in the accent, then its id and
 /// its shortcut on the right.
-fn row(ui: &mut Ui, theme: &Theme, item: &PaletteMatch<'_>, selected: bool) -> egui::Response {
+fn row(
+    ui: &mut Ui,
+    theme: &Theme,
+    item: &PaletteMatch<'_>,
+    selected: bool,
+    keymap: &keymap::Keymap,
+) -> egui::Response {
     let height = theme.size.row;
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
@@ -314,8 +322,9 @@ fn row(ui: &mut Ui, theme: &Theme, item: &PaletteMatch<'_>, selected: bool) -> e
     // The id and the shortcut take their room on the right first; the summary is cut short
     // in what is left, so a long one never runs under them.
     child.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        let shortcut =
-            keymap::shortcut(item.info.id().as_str()).map(|s| ui.ctx().format_shortcut(&s));
+        let shortcut = keymap
+            .shortcut(item.info.id().as_str())
+            .map(|s| ui.ctx().format_shortcut(&s));
         ui.add_sized(
             Vec2::new(48.0, height),
             egui::Label::new(

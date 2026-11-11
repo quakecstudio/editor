@@ -4,6 +4,7 @@
 
 use crate::buffer::{Buffer, Position};
 use crate::history::{EditKind, History, Replace};
+use crate::vim::{Effect, Mode, Vim, VimKey};
 
 /// One selection: the text between `anchor` and `head`, the caret at `head`. An empty selection
 /// is a caret.
@@ -400,6 +401,52 @@ impl EditState {
         });
     }
 
+    /// Takes `key` in Vim mode (P4-37): `vim` changes the text and moves the primary caret,
+    /// the other carets go, and the change is one undo step, typing in Insert mode grouped as
+    /// typing is. Vim's `u` undoes. True when the caret moved or the text changed.
+    pub fn vim_key(&mut self, vim: &mut Vim, key: VimKey) -> bool {
+        let before_text = self.buffer.text();
+        let before = self.selections.clone();
+        let inserting = vim.mode() == Mode::Insert;
+        let mut caret = self.primary().head;
+        if vim.key(&mut self.buffer, &mut caret, key) == Effect::Undo {
+            return self.undo();
+        }
+        let head = self.buffer.clamp(caret);
+        let anchor = vim.anchor().map_or(head, |at| self.buffer.clamp(at));
+        self.selections = vec![Selection { anchor, head }];
+        self.primary = 0;
+        self.goal = None;
+        let after_text = self.buffer.text();
+        if after_text == before_text {
+            return true;
+        }
+        let (prefix, suffix) = common_ends(&before_text, &after_text);
+        let old = Buffer::new(&before_text);
+        let removed_end = before_text.len().saturating_sub(suffix);
+        let inserted_end = after_text.len().saturating_sub(suffix);
+        let inserted = after_text.get(prefix..inserted_end).unwrap_or_default();
+        let replace = Replace {
+            start: old.position(prefix),
+            end: old.position(removed_end),
+            after: self.buffer.position(inserted_end),
+            removed: before_text
+                .get(prefix..removed_end)
+                .unwrap_or_default()
+                .to_owned(),
+            inserted: inserted.to_owned(),
+        };
+        let kind = if inserting && vim.mode() == Mode::Insert && !inserted.contains('\n') {
+            EditKind::Typing
+        } else {
+            EditKind::Other
+        };
+        self.history
+            .record(vec![replace], before, self.selections.clone(), kind);
+        self.changed();
+        true
+    }
+
     /// Makes the edit `change` gives for each selection, from the last selection up, so each
     /// edit leaves the text before it unchanged; the carets already placed below are moved by
     /// what the edit added or removed. Each selection ends as a caret after its new text.
@@ -462,4 +509,27 @@ fn shifted(at: Position, end: Position, after: Position) -> Position {
         let line = at.line.saturating_sub(end.line).saturating_add(after.line);
         Position::new(line, at.col)
     }
+}
+
+/// The bytes `a` and `b` share at their start and, after that, at their end, each on a
+/// character boundary of both.
+fn common_ends(a: &str, b: &str) -> (usize, usize) {
+    let prefix: usize = a
+        .chars()
+        .zip(b.chars())
+        .take_while(|(x, y)| x == y)
+        .map(|(x, _)| x.len_utf8())
+        .sum();
+    let (a_rest, b_rest) = (
+        a.get(prefix..).unwrap_or_default(),
+        b.get(prefix..).unwrap_or_default(),
+    );
+    let suffix = a_rest
+        .chars()
+        .rev()
+        .zip(b_rest.chars().rev())
+        .take_while(|(x, y)| x == y)
+        .map(|(x, _)| x.len_utf8())
+        .sum();
+    (prefix, suffix)
 }

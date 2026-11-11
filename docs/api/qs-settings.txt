@@ -1,4 +1,5 @@
 const qs_settings::Setting::ALL
+enum qs_settings::KeyMode
 enum qs_settings::Scope
 enum qs_settings::Setting
 enum qs_settings::Source
@@ -7,10 +8,12 @@ enum qs_settings::agent::AgentProfile
 enum qs_settings::agent::Decision
 enum qs_settings::error::SettingsError
 field qs_settings::Appearance.theme
+field qs_settings::Editor.key_mode
 field qs_settings::Game.folder
 field qs_settings::Log.filter
 field qs_settings::SettingsFile.agent
 field qs_settings::SettingsFile.appearance
+field qs_settings::SettingsFile.editor
 field qs_settings::SettingsFile.game
 field qs_settings::SettingsFile.log
 field qs_settings::agent::Agent.profile
@@ -44,6 +47,7 @@ fn qs_settings::user_settings_path
 impl qs_settings::error::SettingsError: Error
 impl qs_settings::error::SettingsError: fmt::Display
 struct qs_settings::Appearance
+struct qs_settings::Editor
 struct qs_settings::Game
 struct qs_settings::Log
 struct qs_settings::SettingsFile
@@ -62,10 +66,13 @@ use qs_settings::SettingsError = error::SettingsError
 use qs_settings::ToolPermissions = agent::ToolPermissions
 use qs_settings::ToolRule = agent::ToolRule
 use qs_settings::register = commands::register
+variant qs_settings::KeyMode::Standard
+variant qs_settings::KeyMode::Vim
 variant qs_settings::Scope::Project
 variant qs_settings::Scope::User
 variant qs_settings::Setting::AgentProfile
 variant qs_settings::Setting::GameFolder
+variant qs_settings::Setting::KeyMode
 variant qs_settings::Setting::LogFilter
 variant qs_settings::Setting::Theme
 variant qs_settings::Setting::ToolPermissions

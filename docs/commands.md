@@ -1521,6 +1521,11 @@ Parameters:
           "const": "agent.tool_permissions",
           "description": "`agent.tool_permissions`.",
           "type": "string"
+        },
+        {
+          "const": "editor.key_mode",
+          "description": "`editor.key_mode`.",
+          "type": "string"
         }
       ]
     }
@@ -1609,6 +1614,11 @@ Parameters:
           "const": "agent.tool_permissions",
           "description": "`agent.tool_permissions`.",
           "type": "string"
+        },
+        {
+          "const": "editor.key_mode",
+          "description": "`editor.key_mode`.",
+          "type": "string"
         }
       ]
     }
@@ -1685,6 +1695,11 @@ Parameters:
         {
           "const": "agent.tool_permissions",
           "description": "`agent.tool_permissions`.",
+          "type": "string"
+        },
+        {
+          "const": "editor.key_mode",
+          "description": "`editor.key_mode`.",
           "type": "string"
         }
       ]
