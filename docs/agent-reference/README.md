@@ -7,9 +7,12 @@ names its source. Keep it short: every word of it is read on every turn.
 
 - [`quakec.md`](quakec.md): the language, how a mod is laid out, and the idioms of id's code.
 - [`workflow.md`](workflow.md): how to work in QuakeC Studio: tools, tests and scenarios.
+- [`maps.md`](maps.md): the `.map` format, units and the player's limits, the entities a map
+  needs, textures and leaks.
 
 Per run, the agent is also given:
 
 - the project's own `AGENTS.md`, when it has one, which the modder writes for their mod;
 - each module's kind, dialect and target engine (`project.info`), and that engine's builtins
   (`engine.builtins`).
+- the open map, when there is one: its path, its WADs and its entities' classes.

@@ -400,9 +400,10 @@ impl Model for Recording {
     }
 }
 
-// No spec statement: P4-08, the acceptance criterion. A run's context holds the project's
-// AGENTS.md, each module's dialect and target engine with that engine's builtins, and the
-// agent reference in the system prompt; the brief is held to its snapshot,
+// No spec statement: P4-08 and P5-15, the acceptance criteria. A run's context holds the
+// project's AGENTS.md, each module's dialect and target engine with that engine's builtins, the
+// open map with its WADs and entity classes, and the agent and map references in the system
+// prompt; the brief is held to its snapshot,
 // `src/snapshots/brief.txt` (a changed brief is written beside it as `brief.new.txt`)
 #[test]
 fn the_context_holds_the_engine_the_dialect_and_agents_md() {
@@ -412,16 +413,24 @@ fn the_context_holds_the_engine_the_dialect_and_agents_md() {
         "Weapons live in weapons.qc. Keep damage numbers whole.\n",
     )
     .unwrap();
-    let mut model = Recording::default();
-    run(
-        &mut session,
-        &mut model,
-        "Make the axe stronger.",
-        &RunConfig::new(&root),
+    std::fs::create_dir_all(root.join("maps")).unwrap();
+    std::fs::write(
+        root.join("maps/start.map"),
+        "{\n\"classname\" \"worldspawn\"\n\"wad\" \"gfx/base.wad;gfx/extra.wad\"\n}\n\
+         {\n\"classname\" \"info_player_start\"\n\"origin\" \"0 0 24\"\n}\n\
+         {\n\"classname\" \"light\"\n\"origin\" \"0 0 96\"\n}\n\
+         {\n\"classname\" \"light\"\n\"origin\" \"64 0 96\"\n}\n",
     )
     .unwrap();
+    let mut model = Recording::default();
+    let config = RunConfig {
+        map: Some(root.join("maps/start.map")),
+        ..RunConfig::new(&root)
+    };
+    run(&mut session, &mut model, "Make the axe stronger.", &config).unwrap();
     assert!(model.system.contains("# QuakeC for the agent"));
     assert!(model.system.contains("# Working in QuakeC Studio"));
+    assert!(model.system.contains("# Maps for the agent"));
     let brief = model.brief.replace(&*root.to_string_lossy(), "<project>");
     assert!(brief.contains("Weapons live in weapons.qc."), "{brief}");
     assert!(
@@ -432,6 +441,12 @@ fn the_context_holds_the_engine_the_dialect_and_agents_md() {
         brief.contains("- void(vector ang) makevectors = #1;"),
         "{brief}"
     );
+    assert!(brief.contains("The open map is maps/start.map."), "{brief}");
+    assert!(
+        brief.contains("Its WADs: gfx/base.wad, gfx/extra.wad."),
+        "{brief}"
+    );
+    assert!(brief.contains("- light: 2\n"), "{brief}");
     let snapshot = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/snapshots/brief.txt");
     let expected = std::fs::read_to_string(&snapshot).unwrap_or_default();
     if brief != expected {
