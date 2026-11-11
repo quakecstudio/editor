@@ -57,6 +57,8 @@ pub enum Text {
     AgentTaskHint,
     /// The button that starts a thread on the task.
     AgentRun,
+    /// Starts an agent thread about an entity, its state attached (UI-9).
+    AskAboutThis,
     /// The Anthropic provider in the agent's form.
     ProviderAnthropic,
     /// An OpenAI-compatible endpoint in the agent's form.
@@ -327,7 +329,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 158] = [
+    pub const ALL: [Self; 159] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -353,6 +355,7 @@ impl Text {
         Self::AgentSettings,
         Self::AgentTaskHint,
         Self::AgentRun,
+        Self::AskAboutThis,
         Self::ProviderAnthropic,
         Self::ProviderOpenAi,
         Self::ProviderOllama,
@@ -521,6 +524,7 @@ impl Text {
             Self::AgentSettings => "Settings",
             Self::AgentTaskHint => "What should the agent do?",
             Self::AgentRun => "Start",
+            Self::AskAboutThis => "Ask about this",
             Self::ProviderAnthropic => "Anthropic",
             Self::ProviderOpenAi => "OpenAI-compatible",
             Self::ProviderOllama => "Ollama (local)",

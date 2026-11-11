@@ -9,8 +9,11 @@ enum qs_vfs::Registration
 enum qs_vfs::VfsError
 enum qs_vfs::host::EntryKind
 enum qs_vfs::zip::ZipError
+enum qs_vfs::zip::write::ZipWriteError
 field qs_vfs::host::DirEntry.kind
 field qs_vfs::host::DirEntry.name
+field qs_vfs::zip::write::NewMember.data
+field qs_vfs::zip::write::NewMember.name
 fn qs_vfs::Archive::file_count
 fn qs_vfs::Archive::name
 fn qs_vfs::Archive::pak
@@ -45,12 +48,15 @@ fn qs_vfs::host::find_entry
 fn qs_vfs::zip::Zip::open
 fn qs_vfs::zip::Zip::read
 fn qs_vfs::zip::crc32
+fn qs_vfs::zip::write::write_zip
 impl qs_vfs::VfsError: core::error::Error
 impl qs_vfs::VfsError: fmt::Display
 impl qs_vfs::host::StdFs: HostFs
 impl qs_vfs::zip::ZipError: From<io::Error>
 impl qs_vfs::zip::ZipError: core::error::Error
 impl qs_vfs::zip::ZipError: fmt::Display
+impl qs_vfs::zip::write::ZipWriteError: core::error::Error
+impl qs_vfs::zip::write::ZipWriteError: fmt::Display
 mod qs_vfs::zip
 struct qs_vfs::Archive
 struct qs_vfs::Directory
@@ -60,6 +66,7 @@ struct qs_vfs::Vfs
 struct qs_vfs::host::DirEntry
 struct qs_vfs::host::StdFs
 struct qs_vfs::zip::Zip
+struct qs_vfs::zip::write::NewMember
 trait qs_vfs::host::HostFs
 type qs_vfs::host::HostFs::File
 use qs_vfs::DirEntry = host::DirEntry
@@ -67,6 +74,9 @@ use qs_vfs::EntryKind = host::EntryKind
 use qs_vfs::HostFs = host::HostFs
 use qs_vfs::StdFs = host::StdFs
 use qs_vfs::find_entry = host::find_entry
+use qs_vfs::zip::NewMember = write::NewMember
+use qs_vfs::zip::ZipWriteError = write::ZipWriteError
+use qs_vfs::zip::write_zip = write::write_zip
 variant qs_vfs::Element::Archive
 variant qs_vfs::Element::Directory
 variant qs_vfs::Location::Entry
@@ -100,3 +110,6 @@ variant qs_vfs::zip::ZipError::Size
 variant qs_vfs::zip::ZipError::TooLarge
 variant qs_vfs::zip::ZipError::Truncated
 variant qs_vfs::zip::ZipError::Zip64
+variant qs_vfs::zip::write::ZipWriteError::BadName
+variant qs_vfs::zip::write::ZipWriteError::Duplicate
+variant qs_vfs::zip::write::ZipWriteError::TooLarge

@@ -27,6 +27,8 @@ pub(crate) enum EntityAction {
     },
     /// Open this function's definition.
     Open(String),
+    /// Select this edict and start an agent thread about it, its state attached (UI-9).
+    Ask(u32),
 }
 
 /// The outliner's own state: its filter text.
@@ -85,9 +87,11 @@ pub(crate) fn outliner(
                 match group.edicts.as_slice() {
                     [edict] => {
                         let row = format!("{name}  #{edict}");
-                        if ui.selectable_label(selected == Some(*edict), row).clicked() {
+                        let response = ui.selectable_label(selected == Some(*edict), row);
+                        if response.clicked() {
                             action = Some(EntityAction::Select(*edict));
                         }
+                        ask_menu(&response, *edict, &mut action);
                     }
                     edicts => {
                         let header = format!("{name}  {}", edicts.len());
@@ -96,10 +100,12 @@ pub(crate) fn outliner(
                             .show(ui, |ui| {
                                 for edict in edicts {
                                     let row = format!("#{edict}");
-                                    if ui.selectable_label(selected == Some(*edict), row).clicked()
-                                    {
+                                    let response =
+                                        ui.selectable_label(selected == Some(*edict), row);
+                                    if response.clicked() {
                                         action = Some(EntityAction::Select(*edict));
                                     }
+                                    ask_menu(&response, *edict, &mut action);
                                 }
                             });
                     }
@@ -107,6 +113,16 @@ pub(crate) fn outliner(
             }
         });
     action
+}
+
+/// A row's right-click menu: Ask about this (UI-9).
+fn ask_menu(response: &egui::Response, edict: u32, action: &mut Option<EntityAction>) {
+    response.context_menu(|ui| {
+        if ui.button(Text::AskAboutThis.get()).clicked() {
+            *action = Some(EntityAction::Ask(edict));
+            ui.close();
+        }
+    });
 }
 
 /// The live count, as the outliner's heading shows it.
@@ -150,6 +166,9 @@ pub(crate) fn properties(
         && ui.link(Text::OpenSpawnFunction.get()).clicked()
     {
         action = Some(EntityAction::Open(spawn));
+    }
+    if ui.button(Text::AskAboutThis.get()).clicked() {
+        action = Some(EntityAction::Ask(selected.edict));
     }
     egui::ScrollArea::vertical()
         .id_salt(Text::Properties.get())
