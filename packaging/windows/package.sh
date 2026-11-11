@@ -6,7 +6,8 @@
 # command line and the language server, with LICENSE and NOTICE. The MSI installs for every
 # user under Program Files, adds a Start menu shortcut and puts the folder on the system PATH
 # for `quakec-ide`; its WiX source is quakec-studio.wxs beside this script, with the version
-# filled in. Both are unsigned until P0-23 adds Windows signing.
+# filled in. On a tag the release signs the executables before they are packaged; the MSI
+# itself is not signed.
 #
 #   packaging/windows/package.sh <zip|msi> <x64|arm64> <bin-dir> <version> <out-dir>
 #

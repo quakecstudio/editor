@@ -1,18 +1,16 @@
-name: Release
+name: release
 
-# The release (P4-18, #129). A `v*` tag, or a run started by hand, builds and signs every
-# package in the reusable workflow .github/workflows/reusable-build.yml, which attests each
-# one; installs each package on a clean runner and checks it there with `quakec-ide doctor`;
+# The release (P4-18, #129). Its name, `release`, is part of the OIDC subject Azure trusts for
+# Windows signing (`...:workflow:release:ref_type:tag`, smoketurner-infra's
+# environments/azure/code_signing.tf): the subject names the calling workflow, not the reusable
+# one, so renaming this workflow breaks Windows signing. A `v*` tag, or a run started by hand,
+# builds and signs every package in the reusable workflow .github/workflows/reusable-build.yml,
+# which attests each one; installs each package on a clean runner and checks it there with `quakec-ide doctor`;
 # and writes SHA256SUMS. A tag also publishes the packages as a GitHub release, a pre-release
 # when the tag has a `-` (v2026.11.0-rc1), and regenerates the compatibility list. A run by
 # hand is the dry run: everything but publishing, the packages kept as its `release` artifact.
 on:
   workflow_dispatch:
-    inputs:
-      windows-signing:
-        description: Also sign the Windows app with Azure Trusted Signing (#23)
-        type: boolean
-        default: false
   push:
     tags:
       - "v*"
@@ -32,8 +30,6 @@ jobs:
       contents: read
       id-token: write
       attestations: write
-    with:
-      windows-signing: ${{ inputs.windows-signing || false }}
     secrets:
       APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -278,7 +274,7 @@ jobs:
           case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
           gh release create "$TAG" --repo "$REPO" --verify-tag "${prerelease[@]}" \
             --title "QuakeC Studio $TAG" \
-            --notes "QuakeC Studio $VERSION, built from $TAG. The source is the tag's commit; every package holds LICENSE and NOTICE. Check a file with \`gh attestation verify <file> --repo $REPO --signer-workflow $REPO/.github/workflows/reusable-build.yml\`. The Windows packages are unsigned." \
+            --notes "QuakeC Studio $VERSION, built from $TAG. The source is the tag's commit; every package holds LICENSE and NOTICE. Check a file with \`gh attestation verify <file> --repo $REPO --signer-workflow $REPO/.github/workflows/reusable-build.yml\`. The Windows executables are signed; the MSI around them is not." \
             dist/*
 
   # P4-21 (COMP-9): every release regenerates the compatibility list from the conformance

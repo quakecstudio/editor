@@ -211,9 +211,8 @@ attestation names the reusable workflow as its signer:
 | `Build / Signing secrets are set` | Linux | fails naming each signing secret that is not set, printing no value |
 | `Build / Version` | Linux | reads the workspace version and fails a tag that does not name it |
 | `Build / Package, sign and notarize on macOS` | macOS | builds both architectures, makes the universal app, signs it with the hardened runtime from `build.keychain`, makes, signs, notarizes and staples the disk image, and attests it |
-| `Build / Package on Windows (x64, arm64)` | Windows | makes the zip and the MSI, unsigned (#23), and attests them |
+| `Build / Package on Windows (x64, arm64)` | Windows | on a tag, signs the four executables with aas-sign (Azure Artifact Signing over OIDC) and checks each signature; makes the zip and the MSI and attests them |
 | `Build / Package on Linux (x86_64, aarch64)` | Linux | makes the deb, rpm, AppImage and Flatpak and attests them |
-| `Build / Sign and attest on Windows` | Windows | with the `windows-signing` input only: signs the `.exe` with aas-sign (Azure Trusted Signing over OIDC) and checks its Authenticode signature |
 | `Install on macOS`, `Install on Windows (x64, arm64)`, `Install on Linux (x86_64, aarch64)` | each | installs each package on a clean runner and checks it with `quakec-ide doctor` |
 | `Checksums and publish` | Linux | writes `SHA256SUMS`; on a tag, publishes the GitHub release |
 | `Regenerate the compatibility list` | Linux | writes `docs/compatibility.md` from the corpus and fails a tag whose list is out of date |

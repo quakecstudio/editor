@@ -8,15 +8,12 @@ name: Reusable build
 # build to this file:
 #   gh attestation verify <file> --repo quakecstudio/editor \
 #     --signer-workflow quakecstudio/editor/.github/workflows/reusable-build.yml
-# The secrets are the repository-level ones docs/releasing.md lists, passed by name. The
-# Windows packages are unsigned until Windows signing works (#23); `windows-signing` tries it.
+# The secrets are the repository-level ones docs/releasing.md lists, passed by name. On a tag,
+# the Windows executables are signed with Azure Artifact Signing (formerly Trusted Signing)
+# through skeeto/aas-sign, which signs PE files only, so the MSI around them is not; Azure
+# trusts only tag runs of the `release` workflow, so a run by hand leaves them unsigned.
 on:
   workflow_call:
-    inputs:
-      windows-signing:
-        description: Also sign the Windows app with Azure Trusted Signing (#23)
-        type: boolean
-        default: false
     outputs:
       version:
         description: The workspace version the packages carry
@@ -255,6 +252,35 @@ jobs:
         run: |
           cargo build --release --locked --target "$TARGET" \
             -p quakec-studio -p preview-host -p quakec-ide -p quakec-lsp
+      # Azure's federated credential trusts `...:workflow:release:ref_type:tag` alone
+      # (docs/releasing.md), so only a tag's run signs. If the OIDC login fails, the subject
+      # in Azure's error goes to Justin, not worked around.
+      - name: Code sign the executables
+        if: ${{ github.ref_type == 'tag' }}
+        uses: skeeto/aas-sign@058700fb89886acfce8d1cc511d69a11eb8f9862 # v1.1.1
+        with:
+          version: v1.1.0
+          endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          account: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          profile: ${{ secrets.CERTIFICATE_PROFILE }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          files: |
+            target/${{ matrix.target }}/release/quakec-studio.exe
+            target/${{ matrix.target }}/release/preview-host.exe
+            target/${{ matrix.target }}/release/quakec-ide.exe
+            target/${{ matrix.target }}/release/quakec-lsp.exe
+      - name: Check the signatures
+        if: ${{ github.ref_type == 'tag' }}
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          foreach ($name in 'quakec-studio', 'preview-host', 'quakec-ide', 'quakec-lsp') {
+            $signature = Get-AuthenticodeSignature "target/$env:TARGET/release/$name.exe"
+            if ($signature.Status -ne 'Valid') { throw "$name.exe: the signature is $($signature.Status)" }
+            "ok    $name.exe signed by $($signature.SignerCertificate.Subject)"
+          }
       - name: Install WiX
         run: dotnet tool install --global wix --version 5.0.2
       - name: Make the zip and the MSI
@@ -330,46 +356,3 @@ jobs:
           name: release-linux-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
-
-  windows-sign:
-    name: Sign and attest on Windows
-    if: ${{ inputs.windows-signing }}
-    needs: secrets
-    runs-on: windows-latest
-    timeout-minutes: 90
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up the Rust toolchain
-        run: rustup toolchain install
-      - name: Build the desktop app
-        run: cargo build --release --locked -p quakec-studio
-      # If the OIDC login fails because no federated credential trusts quakecstudio/editor,
-      # the subject to add is escalated to Justin (#23), not worked around. The token's subject
-      # names the calling workflow, Release.
-      - name: Code sign Windows binaries
-        uses: skeeto/aas-sign@058700fb89886acfce8d1cc511d69a11eb8f9862 # v1.1.1
-        with:
-          version: v1.1.0
-          endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
-          account: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
-          profile: ${{ secrets.CERTIFICATE_PROFILE }}
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          files: |
-            target/release/quakec-studio.exe
-      - name: Check the signature
-        shell: pwsh
-        run: |
-          $signature = Get-AuthenticodeSignature target/release/quakec-studio.exe
-          if ($signature.Status -ne 'Valid') { throw "the signature is $($signature.Status)" }
-          "ok    signed by $($signature.SignerCertificate.Subject)"
-      - name: Attest the signed binary
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: target/release/quakec-studio.exe

@@ -5,9 +5,8 @@ How QuakeC Studio is packaged, signed, checked and released (P4-18,
 [#23](https://github.com/quakecstudio/editor/issues/23)). Two workflows do it: `.github/workflows/release.yml`, started by a tag or by hand, calls the
 reusable `.github/workflows/reusable-build.yml`, which builds, signs and attests every package.
 The attestations are made in the reusable workflow so that each names it as the signer,
-whatever calls it. Windows signing is deferred past the MVP (#23, moved to the
-post-MVP backlog on 2026-11-11): Azure's login fails until the app registration has a federated
-credential for this repository, so the MVP's Windows packages are unsigned.
+whatever calls it. On a tag, the Windows executables are signed with Azure Artifact Signing
+(formerly Trusted Signing); a run by hand leaves them unsigned, since Azure trusts only tag runs.
 
 ## Making a release
 
@@ -19,14 +18,14 @@ credential for this repository, so the MVP's Windows packages are unsigned.
 
 Run **Release** from the Actions tab (or `gh workflow run release.yml --ref <branch>`) for a dry run:
 it does everything but publish, and keeps the packages and `SHA256SUMS` as the run's `release`
-artifact. Its `windows-signing` input also tries Windows signing (#23).
+artifact.
 
 ## The packages
 
 | Platform | Package | Made by |
 | --- | --- | --- |
 | macOS, universal | `quakec-studio-<version>-macos-universal.dmg`: `QuakeC Studio.app`, signed with the hardened runtime, in a signed, notarized and stapled disk image | `packaging/macos/package.sh`, with `packaging/macos/Info.plist` |
-| Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip` | `packaging/windows/package.sh`, with WiX 5 and `packaging/windows/quakec-studio.wxs` |
+| Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip`; on a tag, the executables in both are signed | `packaging/windows/package.sh`, with WiX 5 and `packaging/windows/quakec-studio.wxs` |
 | Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak` | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it |
 | All | `SHA256SUMS`, every package's SHA-256 | the workflow's last job |
 
@@ -95,7 +94,7 @@ their values; the reusable workflow's first job checks each is set and prints no
 **Owner and renewal:** every credential is Justin's.
 - **Developer ID certificate:** renews every five years, in Apple's developer account.
 - **App-specific password:** stays valid until revoked.
-- **Entra app registration:** uses federated credentials, not a secret, so nothing expires. The organization customizes its OIDC subject claim, so the subject is not the default `repo:<owner>/<repo>:ref:<ref>`. The first run, of the workflow then named Sign, presented `repo:quakecstudio@343029298/editor@1420764495:workflow:Sign:ref_type:branch`, as Azure's AADSTS700213 error showed ([#23](https://github.com/quakecstudio/editor/issues/23)). The workflow is now Release, which calls the reusable build, so the subject to trust is the one the next AADSTS700213 error names, expected to be the same with `workflow:Release`, and the same ending in `ref_type:tag` from a `v*` tag. Each needs a federated credential with issuer `https://token.actions.githubusercontent.com` and audience `api://AzureADTokenExchange`. If `aas-sign` fails to log in because none matches, the subject in the error goes to Justin; it is not worked around.
+- **Entra app registration:** `github-actions-release-signing`, which signs every Smoke Turner project as Smoke Turner, LLC through the `vouch-azure-prod` account's `vouch-prod` certificate profile. It uses federated credentials, not a secret, so nothing expires. `smoketurner/smoketurner-infra` manages this repository's credential (`environments/azure/code_signing.tf`) and copies the five Azure values into its secrets (`environments/github/main.tf`). The credential trusts exactly `repo:quakecstudio@343029298/editor@1420764495:workflow:release:ref_type:tag`, the subject GitHub issues under the organization's customized OIDC claims: `workflow` is the calling workflow's name, `release`, not the reusable one's, and `ref_type:tag` confines signing to tag runs. Renaming `release.yml`'s workflow, or signing from a branch, fails Azure's login with AADSTS700213, as the first run of the workflow then named Sign did from a branch ([#23](https://github.com/quakecstudio/editor/issues/23)). Such a failure goes to Justin; it is not worked around.
 
 ## Signing
 
@@ -105,9 +104,10 @@ the certificate into `build.keychain` (made the default keychain, with `codesign
 use the key), signs each executable and then the app with `/usr/bin/codesign --options runtime
 --timestamp` and verifies it, signs the disk image, stores the notarytool credentials as the
 `notarytool-profile` keychain profile, submits the disk image with `--wait`, staples it, and
-always deletes the keychain. Windows signing, with the `windows-signing` input, signs the
-`.exe` with `skeeto/aas-sign` (Azure Trusted Signing over OIDC) and checks its Authenticode
-signature.
+always deletes the keychain. On Windows, a tag's run signs the four executables with `skeeto/aas-sign`, which exchanges
+the job's OIDC token for an Azure token itself, then checks each Authenticode signature before
+the zip and the MSI are made. `aas-sign` signs PE files only, so the MSI itself is not signed;
+the executables it installs are.
 
 ## Checking an attestation
 
