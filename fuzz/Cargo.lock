@@ -304,6 +304,7 @@ version = "2026.10.0"
 dependencies = [
  "qc-diag",
  "qc-engines",
+ "qc-lexer",
  "qc-project",
  "qc-sema",
  "qc-syntax",
