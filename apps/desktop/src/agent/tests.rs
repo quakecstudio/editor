@@ -282,3 +282,49 @@ fn a_task_attaches_what_its_mentions_name() {
         "{first}"
     );
 }
+
+// No spec statement: P4-38, the provider form with workload identity: its fields become the
+// configuration's federation, kept in the file with no key, the keychain untouched, and the
+// form shows them again when it opens over the file
+#[test]
+fn the_provider_form_saves_workload_identity_and_no_key() {
+    let dir = std::env::temp_dir().join(format!("qs-agent-federated-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    let file = super::config_path(&dir);
+    let mut panel = AgentPanel::new(Box::new(|_| Err("no model".to_owned())));
+    panel.set_config_file(file.clone());
+    panel.setup.federated = true;
+    panel.setup.key = "sk-ignored".to_owned();
+    panel.setup.identity_file = "/run/secrets/token.jwt".to_owned();
+    panel.setup.federation_rule = "fdrl_1".to_owned();
+    panel.setup.organization = "org".to_owned();
+    panel.setup.service_account = "svac_1".to_owned();
+    let keys = MemoryKeys::new();
+    panel.save_setup(&keys);
+    use qs_models::KeyStore as _;
+    assert!(keys.get("anthropic").unwrap().is_none(), "no key is kept");
+    let kept = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        kept.contains("fdrl_1") && !kept.contains("sk-ignored"),
+        "{kept}"
+    );
+    let federated = panel.config.clone().unwrap().federated.unwrap();
+    assert_eq!(
+        federated.identity,
+        qs_models::IdentityToken::File {
+            path: PathBuf::from("/run/secrets/token.jwt")
+        }
+    );
+    assert!(matches!(
+        federated.exchange,
+        qs_models::Exchange::Anthropic {
+            workspace_id: None,
+            ..
+        }
+    ));
+    let mut reopened = AgentPanel::new(Box::new(|_| Err("no model".to_owned())));
+    reopened.set_config_file(file);
+    assert!(reopened.setup.federated);
+    assert_eq!(reopened.setup.federation_rule, "fdrl_1");
+    assert_eq!(reopened.setup.identity_file, "/run/secrets/token.jwt");
+}

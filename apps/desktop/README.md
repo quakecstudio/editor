@@ -94,7 +94,10 @@ The right panel's Agent section (P4-09, UI-5, PRIN-4), modelled on Zed's agent p
 - **Provider:** until one is set up, a form for Anthropic, an OpenAI-compatible endpoint or a
   local Ollama, with the model, an optional address and the API key. The key goes to the
   system keychain (`qs_models::Keychain`); the rest goes to `agent.json` in the app's data
-  directory, which never holds a key.
+  directory, which never holds a key. For Anthropic and OpenAI the form offers **Workload
+  identity** in place of the key (P4-38): an identity token file, or a command that prints the
+  token, and the provider's ids. The token is exchanged for a short-lived API token
+  (`qs_models::Federated`), and nothing secret is kept.
 - **Threads:** each task starts a thread, and any number run at once. A thread is a
   `qs_agent::Run`, driven a reply at a time. Its model waits on a thread of its own, streaming
   the reply's text, and the window takes each reply between frames

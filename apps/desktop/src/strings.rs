@@ -73,6 +73,22 @@ pub enum Text {
     AgentKey,
     /// Under the key field: where the key goes.
     AgentKeyKept,
+    /// The provider form's choice of workload identity over an API key (P4-38).
+    AgentFederated,
+    /// The file holding the identity provider's token.
+    AgentIdentityFile,
+    /// A command that prints the identity token, in place of the file.
+    AgentIdentityCommand,
+    /// Anthropic's federation rule id.
+    AgentFederationRule,
+    /// Anthropic's organization id.
+    AgentOrganization,
+    /// The provider's service account id.
+    AgentServiceAccount,
+    /// Anthropic's workspace id, when the rule names one.
+    AgentWorkspace,
+    /// OpenAI's workload identity provider id.
+    AgentIdentityProvider,
     /// The provider form's button.
     AgentSave,
     /// A thread waiting on its model.
@@ -325,7 +341,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 157] = [
+    pub const ALL: [Self; 165] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -359,6 +375,14 @@ impl Text {
         Self::AgentBaseUrl,
         Self::AgentKey,
         Self::AgentKeyKept,
+        Self::AgentFederated,
+        Self::AgentIdentityFile,
+        Self::AgentIdentityCommand,
+        Self::AgentFederationRule,
+        Self::AgentOrganization,
+        Self::AgentServiceAccount,
+        Self::AgentWorkspace,
+        Self::AgentIdentityProvider,
         Self::AgentSave,
         Self::AgentWorking,
         Self::AgentDone,
@@ -526,6 +550,14 @@ impl Text {
             Self::AgentBaseUrl => "Address (optional)",
             Self::AgentKey => "API key",
             Self::AgentKeyKept => "Kept in the system keychain, never in a file.",
+            Self::AgentFederated => "Workload identity",
+            Self::AgentIdentityFile => "Identity token file",
+            Self::AgentIdentityCommand => "Or a command that prints it",
+            Self::AgentFederationRule => "Federation rule",
+            Self::AgentOrganization => "Organization",
+            Self::AgentServiceAccount => "Service account",
+            Self::AgentWorkspace => "Workspace (optional)",
+            Self::AgentIdentityProvider => "Identity provider",
             Self::AgentSave => "Save",
             Self::AgentWorking => "Working\u{2026}",
             Self::AgentDone => "Done",

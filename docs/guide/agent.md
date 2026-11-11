@@ -19,7 +19,18 @@ its form:
 - **Ollama (local)**, a model running on your own computer, which needs no key and keeps
   everything on it.
 
-Fill in the **Model** and the key, and press **Save**. The key is kept in the system keychain,
+Fill in the **Model** and the key, and press **Save**.
+
+At work, your company may give you **workload identity** instead of a key, which both Anthropic
+and OpenAI support. Choose **Workload identity**, then give the **Identity token file** your
+identity provider keeps current, or **Or a command that prints it**. Then give the ids your
+administrator set up:
+- for Anthropic, the **Federation rule**, **Organization**, **Service account** and, if the rule
+  names one, **Workspace**;
+- for OpenAI, the **Identity provider** and **Service account**.
+
+The token is exchanged for a short-lived API token and renewed before it expires. No key is
+kept at all, and usage is counted against that service account. The key is kept in the system keychain,
 never in a file; the rest goes to `agent.json` in the app's data directory. **Settings** opens
 the form again later.
 

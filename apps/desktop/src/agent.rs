@@ -13,7 +13,10 @@ use std::sync::mpsc;
 use eframe::egui::{self, RichText, Ui};
 use qs_agent::{Message, Model, Outcome, Reply, Request, Run, RunConfig, RunReport};
 use qs_commands::Session;
-use qs_models::{KeyStore, Keychain, ProviderConfig, ProviderKind, ProviderModel, Secret};
+use qs_models::{
+    Exchange, Federated, IdentityToken, KeyStore, Keychain, ProviderConfig, ProviderKind,
+    ProviderModel, Secret,
+};
 use qs_workbench::{HunkId, StagedHunk};
 
 use crate::shell::name_field;
@@ -118,6 +121,15 @@ struct Setup {
     base_url: String,
     /// A key typed and not yet saved; never shown again once saved.
     key: String,
+    /// Workload identity in place of the key (P4-38), with its fields.
+    federated: bool,
+    identity_file: String,
+    identity_command: String,
+    federation_rule: String,
+    organization: String,
+    service_account: String,
+    workspace: String,
+    identity_provider: String,
     /// Whether the form is open over a saved configuration.
     open: bool,
     error: Option<String>,
@@ -127,14 +139,85 @@ impl Setup {
     /// The form for `config`, or for Anthropic's default with none.
     fn of(config: Option<&ProviderConfig>) -> Self {
         let config = config.cloned().unwrap_or_else(ProviderConfig::anthropic);
-        Self {
+        let mut setup = Self {
             kind: config.kind,
             model: config.model,
             base_url: config.base_url.unwrap_or_default(),
             key: String::new(),
+            federated: config.federated.is_some(),
+            identity_file: String::new(),
+            identity_command: String::new(),
+            federation_rule: String::new(),
+            organization: String::new(),
+            service_account: String::new(),
+            workspace: String::new(),
+            identity_provider: String::new(),
             open: false,
             error: None,
+        };
+        if let Some(federated) = config.federated {
+            match federated.identity {
+                IdentityToken::File { path } => setup.identity_file = path.display().to_string(),
+                IdentityToken::Command { program, args } => {
+                    setup.identity_command = std::iter::once(program)
+                        .chain(args)
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                }
+            }
+            match federated.exchange {
+                Exchange::Anthropic {
+                    federation_rule_id,
+                    organization_id,
+                    service_account_id,
+                    workspace_id,
+                } => {
+                    setup.federation_rule = federation_rule_id;
+                    setup.organization = organization_id;
+                    setup.service_account = service_account_id;
+                    setup.workspace = workspace_id.unwrap_or_default();
+                }
+                Exchange::OpenAi {
+                    identity_provider_id,
+                    service_account_id,
+                } => {
+                    setup.identity_provider = identity_provider_id;
+                    setup.service_account = service_account_id;
+                }
+            }
         }
+        setup
+    }
+
+    /// The workload identity the form says, when it is on for a provider that takes it.
+    fn federation(&self) -> Option<Federated> {
+        let text = |field: &String| field.trim().to_owned();
+        if !self.federated || !self.kind.needs_key() {
+            return None;
+        }
+        let mut words = self.identity_command.split_whitespace().map(str::to_owned);
+        let identity = match words.next() {
+            Some(program) => IdentityToken::Command {
+                program,
+                args: words.collect(),
+            },
+            None => IdentityToken::File {
+                path: PathBuf::from(text(&self.identity_file)),
+            },
+        };
+        let exchange = match self.kind {
+            ProviderKind::Anthropic => Exchange::Anthropic {
+                federation_rule_id: text(&self.federation_rule),
+                organization_id: text(&self.organization),
+                service_account_id: text(&self.service_account),
+                workspace_id: Some(text(&self.workspace)).filter(|w| !w.is_empty()),
+            },
+            ProviderKind::OpenAiCompatible | ProviderKind::Ollama => Exchange::OpenAi {
+                identity_provider_id: text(&self.identity_provider),
+                service_account_id: text(&self.service_account),
+            },
+        };
+        Some(Federated { identity, exchange })
     }
 
     /// The configuration the form says.
@@ -144,6 +227,7 @@ impl Setup {
         if !url.is_empty() {
             config.base_url = Some(url.to_owned());
         }
+        config.federated = self.federation();
         config
     }
 }
@@ -437,6 +521,50 @@ impl AgentPanel {
         field(ui, Text::AgentModel, &mut setup.model, false);
         field(ui, Text::AgentBaseUrl, &mut setup.base_url, false);
         if setup.kind.needs_key() {
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut setup.federated, false, Text::AgentKey.get());
+                ui.radio_value(&mut setup.federated, true, Text::AgentFederated.get());
+            });
+        }
+        if setup.kind.needs_key() && setup.federated {
+            // P4-38: an identity token exchanged for a short-lived API token; no key is kept.
+            field(ui, Text::AgentIdentityFile, &mut setup.identity_file, false);
+            field(
+                ui,
+                Text::AgentIdentityCommand,
+                &mut setup.identity_command,
+                false,
+            );
+            if setup.kind == ProviderKind::Anthropic {
+                field(
+                    ui,
+                    Text::AgentFederationRule,
+                    &mut setup.federation_rule,
+                    false,
+                );
+                field(ui, Text::AgentOrganization, &mut setup.organization, false);
+                field(
+                    ui,
+                    Text::AgentServiceAccount,
+                    &mut setup.service_account,
+                    false,
+                );
+                field(ui, Text::AgentWorkspace, &mut setup.workspace, false);
+            } else {
+                field(
+                    ui,
+                    Text::AgentIdentityProvider,
+                    &mut setup.identity_provider,
+                    false,
+                );
+                field(
+                    ui,
+                    Text::AgentServiceAccount,
+                    &mut setup.service_account,
+                    false,
+                );
+            }
+        } else if setup.kind.needs_key() {
             field(ui, Text::AgentKey, &mut setup.key, true);
             muted(ui, theme, Text::AgentKeyKept.get());
         }
@@ -453,7 +581,8 @@ impl AgentPanel {
             return;
         }
         let key = std::mem::take(&mut self.setup.key);
-        if !key.trim().is_empty()
+        if config.needs_key()
+            && !key.trim().is_empty()
             && let Err(error) = keys.set(&config.key_name(), &Secret::new(key.trim().to_owned()))
         {
             self.setup.error = Some(error.to_string());
