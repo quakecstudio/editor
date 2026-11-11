@@ -8,12 +8,20 @@ name: release
 # which attests each one; installs each package on a clean runner and checks it there with `quakec-ide doctor`;
 # and writes SHA256SUMS. A tag also publishes the packages as a GitHub release, a pre-release
 # when the tag has a `-` (v2026.11.0-rc1), and regenerates the compatibility list. A run by
-# hand is the dry run: everything but publishing, the packages kept as its `release` artifact.
+# hand, or by a pull request that changes the packaging, is the dry run: everything but
+# publishing, the packages kept as its `release` artifact.
 on:
   workflow_dispatch:
   push:
     tags:
       - "v*"
+  # A pull request that changes the packaging runs the dry run, so a change to it is checked
+  # before it reaches a tag; a fork's has no signing secrets and fails at the secrets check.
+  pull_request:
+    paths:
+      - packaging/**
+      - .github/workflows/release.yml
+      - .github/workflows/reusable-build.yml
 
 permissions: {}
 

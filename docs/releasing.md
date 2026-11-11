@@ -13,10 +13,11 @@ whatever calls it. On a tag, the Windows executables are signed with Azure Artif
 1. Set `version` in the root `Cargo.toml` to the release's, such as `2026.11.0`, and merge it.
 2. Push a tag naming it: `v2026.11.0`, or `v2026.11.0-rc1` for a pre-release. The workflow
    fails a tag that does not name the workspace's version.
-3. The **Release** workflow builds, signs, checks and publishes. A tag with a `-` is published as
+3. The **release** workflow builds, signs, checks and publishes. A tag with a `-` is published as
    a pre-release; any other tag too, as a release.
 
-Run **Release** from the Actions tab (or `gh workflow run release.yml --ref <branch>`) for a dry run:
+A pull request that changes `packaging/` or either release workflow runs a dry run, and so does
+running **release** from the Actions tab (or `gh workflow run release.yml --ref <branch>`):
 it does everything but publish, and keeps the packages and `SHA256SUMS` as the run's `release`
 artifact.
 
@@ -121,7 +122,7 @@ gh attestation verify quakec-studio-2026.11.0-windows-x64.msi --repo quakecstudi
 
 ## The compatibility list
 
-Every release tag also runs the Release workflow's **Regenerate the compatibility list** job
+Every release tag also runs the release workflow's **Regenerate the compatibility list** job
 (P4-21, COMP-9). It fetches the conformance corpus, writes
 [`docs/compatibility.md`](compatibility.md) with `cargo xtask compatibility`, attaches it to the
 run and shows it in the job summary. The job fails when the list on the tagged commit differs

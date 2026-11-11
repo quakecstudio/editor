@@ -200,8 +200,8 @@ check:
 | `Benchmarks` | Linux | `cargo xtask bench` against the history saved from `main`, then uploads the history as the `bench-history` artifact ([perf-budgets.md](perf-budgets.md#in-ci)) |
 
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs on demand
-(`workflow_dispatch`, a dry run) and on a pushed `v*` tag, never on pull requests, and is
-**not** a required check ([releasing.md](releasing.md)). It calls the reusable
+(`workflow_dispatch`, a dry run), on a pushed `v*` tag, and as a dry run on a pull request that
+changes `packaging/` or either release workflow; it is **not** a required check ([releasing.md](releasing.md)). It calls the reusable
 [`.github/workflows/reusable-build.yml`](../.github/workflows/reusable-build.yml), the only
 workflow that reads the signing secrets, which builds, signs and attests every package, so each
 attestation names the reusable workflow as its signer:
