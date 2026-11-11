@@ -66,6 +66,12 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`symbol.hover`](#symbolhover) | Says what the name at a place is: its declaration and its comment. |
 | [`symbol.references`](#symbolreferences) | Finds every declaration and use of the name at a place, in every file. |
 | [`symbol.rename`](#symbolrename) | Renames the name at a place everywhere it is written, in the editor's text of each file; nothing is saved. |
+| [`task.list`](#tasklist) | Lists the open project's tasks: the named command lines of its quakec.toml. |
+| [`task.run`](#taskrun) | Runs one of the open project's tasks in a new terminal tab, by the user's shell in the project directory. |
+| [`terminal.close`](#terminalclose) | Closes a terminal tab, ending its process. |
+| [`terminal.new`](#terminalnew) | Opens the user's shell in the project directory in a new terminal tab. |
+| [`terminal.poll`](#terminalpoll) | Takes what the terminal tabs have written and how their processes ended, without waiting; true when any tab changed. |
+| [`terminal.send`](#terminalsend) | Writes a line to a terminal tab's shell. |
 | [`view.focus_bottom_panel`](#viewfocus_bottom_panel) | Shows the bottom panel, Problems, Console and the debugger, if it is hidden and gives it the keyboard. |
 | [`view.focus_editor`](#viewfocus_editor) | Gives the keyboard to the editor in the centre. |
 | [`view.focus_left_panel`](#viewfocus_left_panel) | Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard. |
@@ -1892,6 +1898,138 @@ Parameters:
     "name"
   ],
   "title": "RenameParams",
+  "type": "object"
+}
+```
+
+## `task.list`
+
+Lists the open project's tasks: the named command lines of its quakec.toml.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "No parameters.",
+  "title": "NoParams",
+  "type": "object"
+}
+```
+
+## `task.run`
+
+Runs one of the open project's tasks in a new terminal tab, by the user's shell in the project directory.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `task.run`.",
+  "properties": {
+    "name": {
+      "description": "The task's name, as `task.list` gives it.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "RunTaskParams",
+  "type": "object"
+}
+```
+
+## `terminal.close`
+
+Closes a terminal tab, ending its process.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `terminal.close`.",
+  "properties": {
+    "tab": {
+      "description": "The tab, from 0 in the order opened.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "tab"
+  ],
+  "title": "CloseParams",
+  "type": "object"
+}
+```
+
+## `terminal.new`
+
+Opens the user's shell in the project directory in a new terminal tab.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "No parameters.",
+  "title": "NoParams",
+  "type": "object"
+}
+```
+
+## `terminal.poll`
+
+Takes what the terminal tabs have written and how their processes ended, without waiting; true when any tab changed.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "No parameters.",
+  "title": "NoParams",
+  "type": "object"
+}
+```
+
+## `terminal.send`
+
+Writes a line to a terminal tab's shell.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `terminal.send`.",
+  "properties": {
+    "line": {
+      "description": "The line to write.",
+      "type": "string"
+    },
+    "tab": {
+      "description": "The tab, from 0 in the order opened.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "tab",
+    "line"
+  ],
+  "title": "SendParams",
   "type": "object"
 }
 ```

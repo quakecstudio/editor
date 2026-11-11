@@ -40,6 +40,8 @@ enum Step {
     Key(Modifiers, Key),
     /// Type text.
     Type(&'static str),
+    /// Run frames until every terminal tab's process has ended.
+    WaitTerminals,
 }
 
 /// A named sequence of steps, whose final frame is the snapshot.
@@ -91,6 +93,15 @@ fn scripts() -> Vec<Script> {
             ],
         },
         Script {
+            name: "terminal",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": tasks_fixture() })),
+                Step::Run("task.run", json!({ "name": "pack" })),
+                Step::Run("task.run", json!({ "name": "check" })),
+                Step::WaitTerminals,
+            ],
+        },
+        Script {
             name: "shell-resized",
             steps: vec![
                 Step::Run(
@@ -109,6 +120,11 @@ fn scripts() -> Vec<Script> {
 /// The test project, with problems in two files.
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/ember")
+}
+
+/// The project with two tasks, one that succeeds and one that fails (P4-36).
+fn tasks_fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/tasks")
 }
 
 /// The most pixels each OS may differ from the macOS golden by.
@@ -152,9 +168,27 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
                 app.shell
                     .execute(id, params.clone())
                     .unwrap_or_else(|e| panic!("{}: {id}: {e}", script.name));
+                // A task started runs and asks for frames until a WaitTerminals step.
+                if id.starts_with("task.") {
+                    harness.step();
+                    continue;
+                }
             }
             Step::Key(modifiers, key) => harness.key_press_modifiers(*modifiers, *key),
             Step::Type(text) => harness.event(Event::Text((*text).to_owned())),
+            Step::WaitTerminals => {
+                let running = |harness: &Harness<'static, Option<App>>| {
+                    let shell = &harness.state().as_ref().unwrap().shell;
+                    let terminals = shell.session().context().workbench.terminals();
+                    terminals.tabs().iter().any(|tab| tab.exit().is_none())
+                };
+                // Each frame polls the tabs without waiting; the loop ends with the processes.
+                // A running tab asks for frames, so each is one step, not a run to rest.
+                while running(&harness) {
+                    harness.step();
+                    std::thread::yield_now();
+                }
+            }
         }
         harness.run();
     }

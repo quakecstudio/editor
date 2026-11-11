@@ -37,6 +37,7 @@ use qs_workbench::dock::DockFrame;
 use qs_workbench::export::{ExportParams, Exported, PROJECT_EXPORT};
 use qs_workbench::game_files::GameFiles;
 use qs_workbench::staged::HunksParams;
+use qs_workbench::terminal::{CloseParams, Opened, SendParams, TaskInfo};
 use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
 use qs_workbench::{
     AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, CheckAfterTyping, ChooseGameParams,
@@ -52,6 +53,7 @@ use qs_workbench::{
     UnwatchParams, WATCH, WatchParams,
 };
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
+use qs_workbench::{TASK_LIST, TERMINAL_CLOSE, TERMINAL_NEW, TERMINAL_POLL, TERMINAL_SEND};
 
 use crate::agent::{self, AgentAction, AgentPanel};
 use crate::debugger::{self, DebugAction, DebugInput};
@@ -66,6 +68,7 @@ use crate::map_view::{self, MapView};
 use crate::palette::Palette;
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::Text;
+use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
 use crate::theme::{Theme, Token, semibold};
 
 /// What the window's commands work on.
@@ -134,6 +137,8 @@ pub enum BottomTab {
     Console,
     /// The debugger.
     Debugger,
+    /// The terminal tabs (P4-36).
+    Terminal,
 }
 
 /// The tab shown in the centre.
@@ -194,6 +199,8 @@ pub struct Shell {
     properties: Properties,
     /// The text typed in the Debugger tab's watch box and the console's command box.
     debug_input: DebugInput,
+    /// The Terminal tab's shown tab and typed line (P4-36).
+    terminal_view: TerminalView,
     /// Where the game last stopped that the editor was taken to.
     shown_stop: Option<Location>,
     /// The line, from 1, of the file to show once it is open in the editor.
@@ -272,6 +279,7 @@ impl Shell {
             outliner: Outliner::default(),
             properties: Properties::default(),
             debug_input: DebugInput::default(),
+            terminal_view: TerminalView::default(),
             shown_stop: None,
             pending_line: None,
             parked: BTreeMap::new(),
@@ -884,6 +892,58 @@ impl Shell {
         }
     }
 
+    /// Opens the command palette with the open project's tasks (P4-36).
+    pub fn open_palette(&mut self) {
+        let tasks = if self.session.context().workbench.root().is_some() {
+            self.run::<_, Vec<TaskInfo>>(TASK_LIST, &serde_json::json!({}))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        self.palette.open(tasks);
+    }
+
+    /// Takes the terminal tabs' output and exits; a tab opened since the last frame, by a
+    /// task from the palette or any other caller of its command, is shown in the Terminal
+    /// tab, the bottom panel opened for it (P4-36).
+    fn poll_terminals(&mut self, ctx: &egui::Context) {
+        let terminals = self.session.context().workbench.terminals();
+        if terminals.tabs().is_empty() {
+            self.terminal_view.opened(0);
+            return;
+        }
+        if self.run::<_, bool>(TERMINAL_POLL, &serde_json::json!({})) == Some(true) {
+            ctx.request_repaint();
+        }
+        let terminals = self.session.context().workbench.terminals();
+        if terminals.tabs().iter().any(|tab| tab.exit().is_none()) {
+            ctx.request_repaint_after(PREVIEW_POLL);
+        }
+        if self.terminal_view.opened(terminals.tabs().len()) {
+            self.bottom_tab = BottomTab::Terminal;
+            if !self.layout().panel(Panel::Bottom).visible
+                && let Err(error) = self.toggle(Panel::Bottom)
+            {
+                tracing::warn!(%error, "panel toggle failed");
+            }
+        }
+    }
+
+    /// Runs what the Terminal tab asked for, through its command.
+    fn terminal_action(&mut self, action: TerminalAction) {
+        match action {
+            TerminalAction::New => {
+                let _: Option<Opened> = self.run(TERMINAL_NEW, &serde_json::json!({}));
+            }
+            TerminalAction::Send(tab, line) => {
+                let _: Option<()> = self.run(TERMINAL_SEND, &SendParams { tab, line });
+            }
+            TerminalAction::Close(tab) => {
+                let _: Option<()> = self.run(TERMINAL_CLOSE, &CloseParams { tab });
+            }
+        }
+    }
+
     /// Shows or hides `panel`, through its command.
     ///
     /// # Errors
@@ -958,6 +1018,7 @@ impl Shell {
             // The host's events are read each frame; a running game asks for frames.
             ui.ctx().request_repaint_after(PREVIEW_POLL);
         }
+        self.poll_terminals(ui.ctx());
         self.keys(ui);
         let pending = self.pending_focus();
         self.toolbar(ui);
@@ -1023,7 +1084,7 @@ impl Shell {
     fn keys(&mut self, ui: &Ui) {
         if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_PALETTE)) {
             self.finder.close();
-            self.palette.open();
+            self.open_palette();
             return;
         }
         if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FOLDER)) {
@@ -1156,7 +1217,7 @@ impl Shell {
             tracing::warn!(%error, "panel toggle failed");
         }
         if open_palette {
-            self.palette.open();
+            self.open_palette();
         }
         if open_guide {
             self.show_game_guide();
@@ -1462,6 +1523,7 @@ impl Shell {
         let tree = &mut self.outliner;
         let properties = &mut self.properties;
         let debug_input = &mut self.debug_input;
+        let terminal_view = &mut self.terminal_view;
         let agent = &mut self.agent;
         let mut agent_action = None;
         let recent_projects = self.recent.0.projects();
@@ -1469,6 +1531,7 @@ impl Shell {
         let mut open: Option<LeftAction> = None;
         let mut entity_action = None;
         let mut debug_action = None;
+        let mut terminal_action = None;
         let mut jump = None;
         let mut expanded = state.visible;
         // A size the layout was given by a command, not by a drag of the panel's edge, is
@@ -1537,10 +1600,14 @@ impl Shell {
                             theme,
                             bottom_tab,
                             (workbench, preview, debug_input),
+                            terminal_view,
                             focus,
                         ) {
                             Some(BottomAction::Jump(to)) => jump = Some(to),
                             Some(BottomAction::Debug(action)) => debug_action = Some(action),
+                            Some(BottomAction::Terminal(action)) => {
+                                terminal_action = Some(action);
+                            }
                             None => {}
                         }
                     }
@@ -1554,6 +1621,9 @@ impl Shell {
         }
         if let Some(action) = debug_action {
             self.debug_action(action);
+        }
+        if let Some(action) = terminal_action {
+            self.terminal_action(action);
         }
         if let Some(action) = agent_action {
             self.agent_action(action, ui.ctx());
@@ -2252,6 +2322,8 @@ enum BottomAction {
     Jump(Jump),
     /// What the Debugger tab or the console's box asked for.
     Debug(DebugAction),
+    /// What the Terminal tab asked for.
+    Terminal(TerminalAction),
 }
 
 /// The bottom panel: its tabs, and the Problems list, the console or the Debugger tab; what a
@@ -2261,6 +2333,7 @@ fn bottom(
     theme: &Theme,
     tab: &mut BottomTab,
     (workbench, preview, input): (&Workbench<FsLoader>, &Preview, &mut DebugInput),
+    terminal_view: &mut TerminalView,
     focus: bool,
 ) -> Option<BottomAction> {
     let problems = workbench.problems();
@@ -2269,6 +2342,7 @@ fn bottom(
             (BottomTab::Problems, Text::Problems),
             (BottomTab::Console, Text::Console),
             (BottomTab::Debugger, Text::Debugger),
+            (BottomTab::Terminal, Text::Terminal),
         ] {
             let label = match (value, problems.len()) {
                 (BottomTab::Problems, shown @ 1..) => format!("{} {shown}", text.get()),
@@ -2294,6 +2368,9 @@ fn bottom(
         }
         BottomTab::Debugger => {
             debugger::debugger_ui(ui, theme, preview, input).map(BottomAction::Debug)
+        }
+        BottomTab::Terminal => {
+            terminal_ui(ui, theme, workbench.terminals(), terminal_view).map(BottomAction::Terminal)
         }
     }
 }

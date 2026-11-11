@@ -12,6 +12,7 @@ Problems panels list, the commands that open a project or a file, `project.open`
   refuses when KEX cannot load it; otherwise it implements a plan requirement, not engine
   behaviour. A diagnostic's line counts LF bytes only, as the lexer does (QC-1.2). QCT-1 to
   QCT-4 ([`qc-tests.md`](../../docs/spec/qc-tests.md)), a project's tests and `project.test`.
+  PRJ-2.11, how a task runs.
 - **Shipped:** yes.
 
 ## Prior art
@@ -58,6 +59,12 @@ an edit, so both commands run outside the edit history
   game folder given or the first install found, skipping them with no game; the result lists
   each test's kind, verdict and message, and the counts. The CLI's `quakec-ide test`, the
   palette and the agent run the same command.
+- Terminal and tasks (`terminal`, P4-36, UI-20): `task.list` and `task.run` list and run the
+  project's `[[task]]` tables (PRJ-2.10), each by the user's shell in the project directory
+  (PRJ-2.11), and `terminal.new`, `terminal.send`, `terminal.poll` and `terminal.close` open a
+  shell, write a line to it, take every tab's output and exit without waiting, and close a tab,
+  ending its process. The tabs (`Terminals`) live in the workbench; each keeps its last MiB
+  of output. The processes run on pipes, not a pseudo-terminal, as a first terminal.
 - Export (`export`, P4-28, QA-15): `project.export` builds the project and writes a zip
   players install, `build/<mod>.zip` by default, holding the mod folder. That folder has the
   programs from `build/<mod>/`, the project's own assets under `ASSET_DIRS` (no `.map`

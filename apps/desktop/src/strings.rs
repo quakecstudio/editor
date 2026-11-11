@@ -25,6 +25,22 @@ pub enum Text {
     PreviewOwnWindow,
     /// The command search box's hint.
     SearchCommands,
+    /// The bottom panel's Terminal tab, and the terminal output's name.
+    Terminal,
+    /// The Terminal tab's button that opens a shell.
+    NewTerminal,
+    /// The Terminal tab's button that closes the shown tab.
+    CloseTerminal,
+    /// The hint in a shell tab's input box.
+    TerminalCommand,
+    /// A terminal tab's status while its process runs.
+    TerminalRunning,
+    /// A terminal tab's status when a signal ended its process.
+    TerminalKilled,
+    /// The Terminal tab with no tab open.
+    NoTerminals,
+    /// A task's row in the command palette, before its name.
+    RunTask,
     /// The Project panel's heading.
     Project,
     /// The Entities panel's heading.
@@ -346,7 +362,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 167] = [
+    pub const ALL: [Self; 175] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -479,6 +495,14 @@ impl Text {
         Self::PaletteClose,
         Self::PaletteCancel,
         Self::PaletteNoMatch,
+        Self::Terminal,
+        Self::NewTerminal,
+        Self::CloseTerminal,
+        Self::TerminalCommand,
+        Self::TerminalRunning,
+        Self::TerminalKilled,
+        Self::NoTerminals,
+        Self::RunTask,
         Self::PaletteRequired,
         Self::PaletteChoose,
         Self::KeyEscape,
@@ -665,6 +689,16 @@ impl Text {
             Self::PaletteClose => "close",
             Self::PaletteCancel => "Cancel",
             Self::PaletteNoMatch => "No command matches.",
+            Self::Terminal => "Terminal",
+            Self::NewTerminal => "New terminal",
+            Self::CloseTerminal => "Close",
+            Self::TerminalCommand => "Type a command for the shell",
+            Self::TerminalRunning => "Running",
+            Self::TerminalKilled => "Ended by a signal",
+            Self::NoTerminals => {
+                "No terminal is open. Run a task from the command palette, or open a new terminal."
+            }
+            Self::RunTask => "Run task",
             Self::PaletteRequired => "required",
             Self::PaletteChoose => "Choose…",
             Self::KeyEscape => "esc",
@@ -708,6 +742,12 @@ impl Text {
 #[must_use]
 pub fn command_count(shown: usize, total: usize) -> String {
     format!("{shown} of {total} commands")
+}
+
+/// A terminal tab's status once its process exited with `code`.
+#[must_use]
+pub fn exit_status(code: i32) -> String {
+    format!("Exited with {code}")
 }
 
 /// The file finder's count of the files it lists, out of all of them.

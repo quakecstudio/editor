@@ -48,6 +48,13 @@ const qs_workbench::staged::ACCEPT_HUNKS
 const qs_workbench::staged::APPLY_EDIT
 const qs_workbench::staged::REJECT_HUNKS
 const qs_workbench::staged::STAGED_EDITS
+const qs_workbench::terminal::KEPT_OUTPUT
+const qs_workbench::terminal::TASK_LIST
+const qs_workbench::terminal::TASK_RUN
+const qs_workbench::terminal::TERMINAL_CLOSE
+const qs_workbench::terminal::TERMINAL_NEW
+const qs_workbench::terminal::TERMINAL_POLL
+const qs_workbench::terminal::TERMINAL_SEND
 const qs_workbench::testing::RUN_TESTS
 const qs_workbench::testing::SCENARIO_DIR
 const qs_workbench::testing::UNIT_PREFIX
@@ -75,6 +82,9 @@ enum qs_workbench::preview::engine::Inspected
 enum qs_workbench::preview::game_files::GameState
 enum qs_workbench::preview::scenario::ScenarioRunError
 enum qs_workbench::staged::Decision
+enum qs_workbench::terminal::Exit
+enum qs_workbench::terminal::Running
+enum qs_workbench::terminal::TerminalError
 enum qs_workbench::testing::TestKind
 enum qs_workbench::testing::TestRunError
 enum qs_workbench::testing::Verdict
@@ -219,6 +229,14 @@ field qs_workbench::staged::StagedHunk.id
 field qs_workbench::staged::StagedHunk.line
 field qs_workbench::staged::StagedHunk.path
 field qs_workbench::staged::StagedHunk.removed
+field qs_workbench::terminal::CloseParams.tab
+field qs_workbench::terminal::Opened.tab
+field qs_workbench::terminal::Opened.title
+field qs_workbench::terminal::RunTaskParams.name
+field qs_workbench::terminal::SendParams.line
+field qs_workbench::terminal::SendParams.tab
+field qs_workbench::terminal::TaskInfo.command
+field qs_workbench::terminal::TaskInfo.name
 field qs_workbench::testing::RunTestsParams.filter
 field qs_workbench::testing::RunTestsParams.game
 field qs_workbench::testing::TestResult.kind
@@ -302,6 +320,8 @@ fn qs_workbench::Workbench::root
 fn qs_workbench::Workbench::set_config
 fn qs_workbench::Workbench::tabs
 fn qs_workbench::Workbench::take_checked
+fn qs_workbench::Workbench::terminals
+fn qs_workbench::Workbench::terminals_mut
 fn qs_workbench::Workbench::tree
 fn qs_workbench::Workbench::wait_checked
 fn qs_workbench::Workbench::with_check
@@ -413,6 +433,20 @@ fn qs_workbench::staged::Workbench::decide
 fn qs_workbench::staged::Workbench::stage
 fn qs_workbench::staged::Workbench::staged_hunks
 fn qs_workbench::staged::register_staged
+fn qs_workbench::terminal::Exit::succeeded
+fn qs_workbench::terminal::Terminal::exit
+fn qs_workbench::terminal::Terminal::poll
+fn qs_workbench::terminal::Terminal::running
+fn qs_workbench::terminal::Terminal::send
+fn qs_workbench::terminal::Terminal::start
+fn qs_workbench::terminal::Terminal::text
+fn qs_workbench::terminal::Terminal::title
+fn qs_workbench::terminal::Terminal::wait
+fn qs_workbench::terminal::Terminals::get_mut
+fn qs_workbench::terminal::Terminals::poll
+fn qs_workbench::terminal::Terminals::tabs
+fn qs_workbench::terminal::register_terminal
+fn qs_workbench::terminal::tasks
 fn qs_workbench::testing::Workbench::run_tests
 fn qs_workbench::testing::register_tests
 fn qs_workbench::tools::crate::Workbench::project_files
@@ -437,6 +471,9 @@ impl qs_workbench::preview::scenario::ScenarioRunError: From<PreviewError>
 impl qs_workbench::preview::scenario::ScenarioRunError: fmt::Display
 impl qs_workbench::preview::scenario::ScenarioRunError: std::error::Error
 impl qs_workbench::staged::HunkId: fmt::Display
+impl qs_workbench::terminal::Terminal: Drop
+impl qs_workbench::terminal::TerminalError: fmt::Display
+impl qs_workbench::terminal::TerminalError: std::error::Error
 impl qs_workbench::testing::TestRunError: std::error::Error
 impl qs_workbench::testing::TestRunError: std::fmt::Display
 impl qs_workbench::tools::DialectName: From<qc_syntax::Dialect>
@@ -454,6 +491,7 @@ mod qs_workbench::preview::entities
 mod qs_workbench::preview::game_files
 mod qs_workbench::preview::scenario
 mod qs_workbench::staged
+mod qs_workbench::terminal
 mod qs_workbench::testing
 mod qs_workbench::tools
 mod qs_workbench::vm_run
@@ -523,6 +561,14 @@ struct qs_workbench::staged::HunkId
 struct qs_workbench::staged::HunksParams
 struct qs_workbench::staged::ProposedFile
 struct qs_workbench::staged::StagedHunk
+struct qs_workbench::terminal::CloseParams
+struct qs_workbench::terminal::NoParams
+struct qs_workbench::terminal::Opened
+struct qs_workbench::terminal::RunTaskParams
+struct qs_workbench::terminal::SendParams
+struct qs_workbench::terminal::TaskInfo
+struct qs_workbench::terminal::Terminal
+struct qs_workbench::terminal::Terminals
 struct qs_workbench::testing::RunTestsParams
 struct qs_workbench::testing::TestResult
 struct qs_workbench::testing::TestRun
@@ -620,6 +666,12 @@ use qs_workbench::StepByParams = crate::preview::StepByParams
 use qs_workbench::Symbol = qc_ide::Symbol
 use qs_workbench::SymbolKind = qc_ide::SymbolKind
 use qs_workbench::SyntaxClass = qc_ide::SyntaxClass
+use qs_workbench::TASK_LIST = crate::terminal::TASK_LIST
+use qs_workbench::TASK_RUN = crate::terminal::TASK_RUN
+use qs_workbench::TERMINAL_CLOSE = crate::terminal::TERMINAL_CLOSE
+use qs_workbench::TERMINAL_NEW = crate::terminal::TERMINAL_NEW
+use qs_workbench::TERMINAL_POLL = crate::terminal::TERMINAL_POLL
+use qs_workbench::TERMINAL_SEND = crate::terminal::TERMINAL_SEND
 use qs_workbench::Target = qc_project::Target
 use qs_workbench::TestKind = crate::testing::TestKind
 use qs_workbench::TestResult = crate::testing::TestResult
@@ -639,6 +691,7 @@ use qs_workbench::game_files = crate::preview::game_files
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
 use qs_workbench::register_staged = crate::staged::register_staged
+use qs_workbench::register_terminal = crate::terminal::register_terminal
 use qs_workbench::register_tests = crate::testing::register_tests
 use qs_workbench::register_vm = crate::vm_run::register_vm
 use qs_workbench::scenario = crate::preview::scenario
@@ -712,6 +765,15 @@ variant qs_workbench::preview::scenario::ScenarioRunError::RunRoot
 variant qs_workbench::preview::scenario::ScenarioRunError::Write
 variant qs_workbench::staged::Decision::Accept
 variant qs_workbench::staged::Decision::Reject
+variant qs_workbench::terminal::Exit::Code
+variant qs_workbench::terminal::Exit::Killed
+variant qs_workbench::terminal::Running::Shell
+variant qs_workbench::terminal::Running::Task
+variant qs_workbench::terminal::TerminalError::Io
+variant qs_workbench::terminal::TerminalError::Manifest
+variant qs_workbench::terminal::TerminalError::NoProject
+variant qs_workbench::terminal::TerminalError::NoTab
+variant qs_workbench::terminal::TerminalError::NoTask
 variant qs_workbench::testing::TestKind::Scenario
 variant qs_workbench::testing::TestKind::Unit
 variant qs_workbench::testing::TestRunError::Build

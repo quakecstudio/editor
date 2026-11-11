@@ -75,6 +75,10 @@ target = "fte"             # optional; default: the project's
 output = "build/copper/progs.dat"  # optional; default: PRJ-3.2
 defines = ["CSQC", "VERSION=2"]    # optional; macros defined before the first file
 include_dirs = ["lib"]             # optional; searched after the including file's directory
+
+[[task]]
+name = "pack"              # required; unique in the project
+command = "make pak"       # required; run by the user's shell in the project directory
 ```
 
 ### Behaviour
@@ -105,6 +109,12 @@ include_dirs = ["lib"]             # optional; searched after the including file
   only, ENG-8), `fte` and `dp`; each selects an engine of the engine-target database
   (`engine-targets.md`, ENGT-3.5 and ENGT-3.6). A module without its own `target` takes the
   project's.
+- **PRJ-2.10** Zero or more `[[task]]` tables each name a command (P4-36, UI-20): `name`
+  and `command` are both required strings. Task names are unique within a project and not
+  empty; a repeated or empty name is an error. A bare project has no tasks.
+- **PRJ-2.11** A task runs its `command` as one command line of the user's shell, in the
+  project directory: on Unix `$SHELL -c` (`/bin/sh` when `SHELL` is unset or empty), on
+  Windows `%COMSPEC% /C` (`cmd.exe` when unset). It ends with the shell's exit status.
 
 ## PRJ-3 Modules and output paths
 

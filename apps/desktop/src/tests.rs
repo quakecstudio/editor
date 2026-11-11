@@ -29,7 +29,7 @@ use crate::icons::Icon;
 use crate::keymap;
 use crate::palette::highlighted;
 use crate::shell::{EDITOR_AREA, commanded_size, dragged_size};
-use crate::strings::{Text, command_count, match_count};
+use crate::strings::{Text, command_count, exit_status, match_count};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
 
@@ -281,6 +281,7 @@ fn the_ui_code_has_no_string_literals() {
         ("finder.rs", include_str!("finder.rs")),
         ("game_guide.rs", include_str!("game_guide.rs")),
         ("palette.rs", include_str!("palette.rs")),
+        ("terminal.rs", include_str!("terminal.rs")),
         ("project.rs", include_str!("project.rs")),
         ("editor.rs", include_str!("editor.rs")),
         ("code_style.rs", include_str!("code_style.rs")),
@@ -481,7 +482,7 @@ fn key(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
 
 /// Opens the palette and gives its search field the focus.
 fn open_palette(ctx: &egui::Context, app: &mut App) {
-    app.shell.palette.open();
+    app.shell.open_palette();
     frame(ctx, app);
 }
 
@@ -828,7 +829,7 @@ fn run_command(harness: &mut Harness<'static, Option<App>>, id: &str) {
 #[test]
 fn every_area_and_control_has_a_name() {
     let mut harness = accessible();
-    harness.state_mut().as_mut().unwrap().shell.palette.open();
+    harness.state_mut().as_mut().unwrap().shell.open_palette();
     harness.run();
     for (role, text) in [
         (Role::Toolbar, Text::Toolbar),
@@ -854,6 +855,7 @@ fn every_area_and_control_has_a_name() {
         (Role::Button, Text::Problems),
         (Role::Button, Text::Console),
         (Role::Button, Text::Debugger),
+        (Role::Button, Text::Terminal),
     ] {
         harness.get_by_role_and_label(role, text.get());
     }
@@ -1422,4 +1424,64 @@ fn the_vim_setting_makes_the_editor_read_vims_keys() {
     let after = text(&harness);
     let rest = before.split_once('\n').map(|(_, rest)| rest.to_owned());
     assert_eq!(Some(after), rest, "dd deletes the first line, not types dd");
+}
+
+// No spec statement: P4-36, the acceptance criterion: a task of quakec.toml is listed in the
+// palette, runs from it in a new terminal tab, and its exit status is shown
+#[test]
+fn a_task_runs_from_the_palette_and_its_exit_status_is_shown() {
+    let dir = TempDir::new("task");
+    let project = dir.path().join("taskmod");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(
+        project.join("quakec.toml"),
+        "[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n\n\
+         [[task]]\nname = \"check\"\ncommand = \"echo checking&& exit 3\"\n",
+    )
+    .unwrap();
+    fs::write(project.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    fs::write(project.join("world.qc"), "void() worldspawn = {};\n").unwrap();
+    let mut harness = accessible();
+    let app = harness.state_mut().as_mut().unwrap();
+    app.shell_mut().open_project(&project).unwrap();
+    app.shell.open_palette();
+    harness.run();
+    harness.event(egui::Event::Text("run task check".to_owned()));
+    harness.run();
+    let row = format!("{} check", Text::RunTask.get());
+    harness.get_by_role_and_label(Role::Button, &row);
+    harness.key_press(egui::Key::Enter);
+    // The task now runs and asks for frames: one step, not a run to rest.
+    harness.step();
+    let exited = |harness: &Harness<'static, Option<App>>| {
+        let shell = &harness.state().as_ref().unwrap().shell;
+        shell
+            .session()
+            .context()
+            .workbench
+            .terminals()
+            .tabs()
+            .first()
+            .unwrap()
+            .exit()
+    };
+    // Each frame polls the tab without waiting; the loop ends when the process has. A running
+    // tab asks for frames, so each is one step, not a run to rest.
+    while exited(&harness).is_none() {
+        harness.step();
+        std::thread::yield_now();
+    }
+    harness.run();
+    harness.get_by_label(&exit_status(3));
+    harness.get_by_role_and_label(Role::Button, Text::Terminal.get());
+    let shell = &harness.state().as_ref().unwrap().shell;
+    let tab = shell
+        .session()
+        .context()
+        .workbench
+        .terminals()
+        .tabs()
+        .first()
+        .unwrap();
+    assert!(tab.text().contains("checking"), "{:?}", tab.text());
 }

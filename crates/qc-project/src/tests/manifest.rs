@@ -446,3 +446,46 @@ fn a_module_takes_no_other_compiler_option() {
     .unwrap();
     assert_eq!(project.modules.len(), 1);
 }
+
+// spec PRJ-2.10: [[task]] tables name commands, in order; a repeated or empty name is an error
+#[test]
+fn tasks_are_named_commands() {
+    let manifest = format!(
+        "{ONE_MODULE}[[task]]\nname = \"pack\"\ncommand = \"make pak\"\n\n\
+         [[task]]\nname = \"lint\"\ncommand = \"true\"\n"
+    );
+    let project = open_manifest(
+        &manifest,
+        &[("proj/progs.src", "x.dat a.qc"), ("proj/a.qc", "")],
+    )
+    .unwrap();
+    let tasks: Vec<(&str, &str)> = project
+        .tasks
+        .iter()
+        .map(|t| (t.name.as_str(), t.command.as_str()))
+        .collect();
+    assert_eq!(tasks, [("pack", "make pak"), ("lint", "true")]);
+    let twice = format!(
+        "{ONE_MODULE}[[task]]\nname = \"a\"\ncommand = \"x\"\n[[task]]\nname = \"a\"\ncommand = \"y\"\n"
+    );
+    assert_eq!(
+        manifest_error(&twice),
+        ManifestError::BadTaskName("a".to_owned())
+    );
+    let empty = format!("{ONE_MODULE}[[task]]\nname = \"\"\ncommand = \"x\"\n");
+    assert_eq!(
+        manifest_error(&empty),
+        ManifestError::BadTaskName(String::new())
+    );
+    let no_command = format!("{ONE_MODULE}[[task]]\nname = \"a\"\n");
+    assert!(matches!(
+        manifest_error(&no_command),
+        ManifestError::Toml { .. }
+    ));
+    let bare = open_dir(
+        &mut loader(&[("proj/progs.src", "x.dat a.qc"), ("proj/a.qc", "")]),
+        Path::new("proj"),
+    )
+    .unwrap();
+    assert!(bare.tasks.is_empty());
+}
