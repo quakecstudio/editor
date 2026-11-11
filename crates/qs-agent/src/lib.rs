@@ -295,11 +295,14 @@ pub const QUAKEC_REFERENCE: &str = include_str!("../../../docs/agent-reference/q
 /// How to work in QuakeC Studio, for the agent (`docs/agent-reference/workflow.md`).
 pub const WORKFLOW_REFERENCE: &str = include_str!("../../../docs/agent-reference/workflow.md");
 
+/// Map authoring for the agent (`docs/agent-reference/maps.md`, P5-15).
+pub const MAPS_REFERENCE: &str = include_str!("../../../docs/agent-reference/maps.md");
+
 /// The system prompt of every run: [`SYSTEM`], then the agent reference. It is the same for
 /// every run and every turn, so a provider's prompt cache keeps it.
 #[must_use]
 pub fn system_prompt() -> String {
-    format!("{SYSTEM}\n\n{QUAKEC_REFERENCE}\n{WORKFLOW_REFERENCE}")
+    format!("{SYSTEM}\n\n{QUAKEC_REFERENCE}\n{WORKFLOW_REFERENCE}\n{MAPS_REFERENCE}")
 }
 
 /// A tool the model may call: a command, as the registry describes it.
@@ -485,6 +488,8 @@ pub struct RunConfig {
     /// The model's context window in tokens: the transcript is compacted before it reaches
     /// [`COMPACT_AT_PERCENT`] of it (P4-31).
     pub context_limit: usize,
+    /// The map open in the editor, which the brief describes (P5-15).
+    pub map: Option<PathBuf>,
 }
 
 /// How full of the model's context the transcript may get, in percent, before it is compacted.
@@ -511,6 +516,7 @@ impl RunConfig {
             output_limit: 20_000,
             permissions: Permissions::default(),
             context_limit: 200_000,
+            map: None,
         }
     }
 }
@@ -1041,6 +1047,9 @@ fn brief<C: 'static>(session: &mut Session<C>, task: &str, config: &RunConfig) -
             text.push_str(&format!("- {shown}\n"));
         }
     }
+    if let Some(map) = &config.map {
+        text.push_str(&map_brief(session, map, &config.project));
+    }
     let checked = verify(session, &config.test_params);
     text.push_str(&format!(
         "\nAs it is now, the compile is {} and the tests {}.\n",
@@ -1057,6 +1066,57 @@ fn brief<C: 'static>(session: &mut Session<C>, task: &str, config: &RunConfig) -
     ));
     for reason in &checked.reasons {
         text.push_str(&format!("- {reason}\n"));
+    }
+    text
+}
+
+/// What the brief says of the open map: its path, the WADs its world names (MAP-6.3) and each
+/// entity class with how many it has, in file order.
+fn map_brief<C: 'static>(session: &mut Session<C>, map: &Path, project: &Path) -> String {
+    let shown = map
+        .strip_prefix(project)
+        .map_or_else(|_| map.display().to_string(), |p| p.display().to_string());
+    let mut text = format!("\nThe open map is {shown}.\n");
+    let read = session.execute("file.read", json!({ "path": map }));
+    let parsed = read
+        .ok()
+        .and_then(|read| read.get("text").and_then(Value::as_str).map(str::to_owned))
+        .map(|source| qs_map::MapFile::parse(source.as_bytes()));
+    let file = match parsed {
+        Some(Ok(file)) => file,
+        Some(Err(error)) => {
+            text.push_str(&format!("It does not parse: {error}.\n"));
+            return text;
+        }
+        None => {
+            text.push_str("It could not be read.\n");
+            return text;
+        }
+    };
+    let wads = file.wad_paths(qs_map::Compiler::EricwTools);
+    if wads.is_empty() {
+        text.push_str("Its world names no WAD.\n");
+    } else {
+        let names: Vec<String> = wads
+            .iter()
+            .map(|wad| String::from_utf8_lossy(wad).into_owned())
+            .collect();
+        text.push_str(&format!("Its WADs: {}.\n", names.join(", ")));
+    }
+    let mut classes: Vec<(String, usize)> = Vec::new();
+    for entity in &file.entities {
+        let class = String::from_utf8_lossy(entity.classname().unwrap_or_default()).into_owned();
+        match classes.iter_mut().find(|(name, _)| *name == class) {
+            Some((_, count)) => *count = count.saturating_add(1),
+            None => classes.push((class, 1)),
+        }
+    }
+    text.push_str(&format!(
+        "Its {} entities, by class:\n",
+        file.entities.len()
+    ));
+    for (class, count) in classes {
+        text.push_str(&format!("- {class}: {count}\n"));
     }
     text
 }

@@ -44,7 +44,7 @@ pub enum ErrorCode {
     InvalidParams,
     /// `-32603`: the host failed in a way the others do not name.
     InternalError,
-    /// `-32001`: `initialize` with another major version (BRIDGE-2.7).
+    /// `-32001`: `initialize` with another major version (BRIDGE-2.8).
     IncompatibleVersion,
     /// `-32002`: a command that needs a paused host (BRIDGE-4.3).
     NotPaused,
