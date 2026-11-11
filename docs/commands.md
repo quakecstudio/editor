@@ -17,13 +17,13 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`edit.reject`](#editreject) | Rejects staged hunks: the lines they replaced come back, byte for byte. |
 | [`edit.staged`](#editstaged) | Lists the staged hunks waiting to be accepted or rejected. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
-| [`editor.fold`](#editorfold) | Folds the innermost block or block comment at the caret, as the syntax tree gives them. |
-| [`editor.fold_all`](#editorfold_all) | Folds every block and block comment of the file. |
+| [`editor.fold`](#editorfold) | Folds the innermost block or block comment at the caret. |
+| [`editor.fold_all`](#editorfold_all) | Folds every block and block comment of the open file, each down to its first and last lines. |
 | [`editor.go_to_line`](#editorgo_to_line) | Moves the caret to a line of the open file, from 1; without a line it asks for one. |
 | [`editor.go_to_symbol`](#editorgo_to_symbol) | Opens a picker of the open file's symbols, to move the caret to one. |
 | [`editor.toggle_soft_wrap`](#editortoggle_soft_wrap) | Turns soft wrap on or off: long lines wrap at the editor's width. |
 | [`editor.unfold`](#editorunfold) | Unfolds the innermost folded block or comment at the caret. |
-| [`editor.unfold_all`](#editorunfold_all) | Unfolds every folded block and comment of the file. |
+| [`editor.unfold_all`](#editorunfold_all) | Unfolds every folded block and block comment of the open file, showing all of its lines. |
 | [`engine.builtins`](#enginebuiltins) | Lists an engine's builtins for a module kind, each with its number or engine name, QuakeC name, signature and extensions; the open project's engine and server QuakeC when none is named. |
 | [`engine.console`](#engineconsole) | Runs a command in the running game's console and answers the lines it printed. |
 | [`engine.inspect`](#engineinspect) | Reads the running game: the edicts in use, one edict's fields, every named global, or the call stack while stopped in a frame. |
@@ -364,7 +364,7 @@ Parameters:
 
 ## `editor.fold`
 
-Folds the innermost block or block comment at the caret, as the syntax tree gives them.
+Folds the innermost block or block comment at the caret.
 
 Parameters:
 
@@ -380,7 +380,7 @@ Parameters:
 
 ## `editor.fold_all`
 
-Folds every block and block comment of the file.
+Folds every block and block comment of the open file, each down to its first and last lines.
 
 Parameters:
 
@@ -472,7 +472,7 @@ Parameters:
 
 ## `editor.unfold_all`
 
-Unfolds every folded block and comment of the file.
+Unfolds every folded block and block comment of the open file, showing all of its lines.
 
 Parameters:
 
