@@ -54,6 +54,7 @@ pub(crate) struct FileFacts {
     pub(crate) outline: Vec<Symbol>,
     pub(crate) highlights: Vec<Highlight>,
     pub(crate) classes: Vec<(Span, SyntaxClass)>,
+    pub(crate) folds: Vec<Span>,
 }
 
 /// The thread and its two channels. Dropping it closes the jobs channel, and the thread ends
@@ -163,6 +164,7 @@ fn run<L: Loader>(mut host: AnalysisHost<L>, inbox: &Receiver<Job>, outbox: &Sen
             outline: host.document_symbols(path),
             highlights: host.highlights(path),
             classes: host.syntax_classes(path),
+            folds: host.folding_ranges(path),
         });
         let checked = Checked {
             generation,

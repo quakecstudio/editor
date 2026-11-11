@@ -52,6 +52,13 @@ list follows the text on screen even before you save.
 | Cmd+F | Find and replace in the file |
 | Cmd+S | Save |
 | Cmd+1, Cmd+2, Cmd+3, Cmd+4 | Give the keyboard to the editor, the left, right or bottom panel |
+| Ctrl+G | Go to a line |
+| Cmd+Shift+O | Go to a symbol in the file |
+| Ctrl+Tab | Switch to another open file |
+| Cmd+Shift+B | Show or hide the outline of the file |
+| Cmd+Alt+[ and Cmd+Alt+] | Fold and unfold the block the caret is in |
+| Cmd+Alt+Z | Turn soft wrap on or off |
+| Cmd+\\ | Split the editor into two panes |
 
 Resting the pointer on a name shows its declaration.
 

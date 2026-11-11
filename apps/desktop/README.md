@@ -187,6 +187,18 @@ at once, the bottom panel opened for it, and its status reads Running, Exited wi
 Ended by a signal. The processes run on pipes, not a pseudo-terminal. `fixtures/tasks/` is a
 project with two tasks, one that fails, which the `terminal` snapshot runs.
 
+**Editor layout and navigation (P4-32, UI-16).** The editor's folds come from the syntax tree
+(`qc_ide::AnalysisHost::folding_ranges`, through `OpenFile::folds`). The layout's commands
+(`qs-layout`, `editor.rs`) are carried out here: soft wrap on the editor; the outline panel at
+the editor's right, the open file's symbols with the caret's marked; a split's second pane
+(`Shell::second_pane`), made from the open file, its text kept as the first pane's while both
+show one file, and a click in it making it the pane being edited (`swap_panes`: its file is
+opened in the workbench after the first pane's edits are sent); go to line, its prompt the
+palette's when no line is given; and the go to symbol picker and the tab switcher
+(`picker.rs`), drawn as the file finder is. Their keys are Zed's where Zed has one chord
+(`keymap.rs`). `keystroke_split_fold_wrap` (`docs/perf-budgets.md`) holds the keystroke
+budget with all three in use.
+
 **Vim mode (P4-37).** `editor.key_mode = "vim"` in the user's settings
 ([`docs/settings.md`](../../docs/settings.md)) puts the code editor in `KeyMode::Vim`
 ([`qs-editor-view`](../../crates/qs-editor-view/README.md), `vim`), read when the window

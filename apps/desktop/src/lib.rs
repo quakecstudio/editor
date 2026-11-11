@@ -28,6 +28,7 @@ pub mod map_view;
 #[cfg(target_os = "macos")]
 pub mod menu;
 pub mod palette;
+mod picker;
 pub mod project;
 pub mod shell;
 pub mod strings;

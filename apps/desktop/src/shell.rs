@@ -23,10 +23,10 @@ use eframe::egui::{
 use eframe::egui_wgpu::RenderState;
 use qs_commands::remote::Host;
 use qs_commands::{CommandError, RegisterError, Registry, Session};
-use qs_editor_view::{KeyMode, Position, ViewStyle};
+use qs_editor_view::{KeyMode, Position, Selection, ViewStyle, Wrap};
 use qs_layout::{
-    Focus, HasLayout, Layout, Panel, RESIZE_PANEL, ResizePanelParams, TOGGLE_PANEL,
-    TogglePanelParams,
+    EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, Outline, Panel, RESIZE_PANEL,
+    ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams,
 };
 use qs_render::{Camera, MapMesh};
 use qs_settings::{Scope as SettingsScope, Setting, SettingsFile, SettingsStore};
@@ -66,6 +66,7 @@ use crate::icons::Icon;
 use crate::keymap::{self, Scope};
 use crate::map_view::{self, MapView};
 use crate::palette::Palette;
+use crate::picker::{Picker, PickerKind, PickerRow};
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::Text;
 use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
@@ -115,6 +116,12 @@ pub(crate) enum Area {
     Finder,
     Editor,
     Section(Text),
+    /// The go to symbol picker and the tab switcher (P4-32).
+    Picker,
+    /// The outline panel beside the editor.
+    Outline,
+    /// The editor's second pane.
+    SecondPane,
 }
 
 /// Where the app's menu is (P3-44).
@@ -201,6 +208,13 @@ pub struct Shell {
     debug_input: DebugInput,
     /// The Terminal tab's shown tab and typed line (P4-36).
     terminal_view: TerminalView,
+    /// The go to symbol picker and the tab switcher, and the place each row stands for (P4-32).
+    picker: (Picker, Vec<Jump>),
+    /// The count of editor actions the layout had asked for when last carried out.
+    editor_seen: u64,
+    /// The editor of the second pane while the editor is split, showing a file not being
+    /// edited, or the same one.
+    second: Option<Editor>,
     /// Where the game last stopped that the editor was taken to.
     shown_stop: Option<Location>,
     /// The line, from 1, of the file to show once it is open in the editor.
@@ -280,6 +294,9 @@ impl Shell {
             properties: Properties::default(),
             debug_input: DebugInput::default(),
             terminal_view: TerminalView::default(),
+            picker: (Picker::default(), Vec::new()),
+            editor_seen: 0,
+            second: None,
             shown_stop: None,
             pending_line: None,
             parked: BTreeMap::new(),
@@ -339,6 +356,12 @@ impl Shell {
         self.editor
             .as_ref()
             .map(|editor| (editor.path.as_path(), editor.view.state().primary().head))
+    }
+
+    /// The editor of the second pane, while the editor is split (P4-32).
+    #[cfg(test)]
+    pub(crate) const fn second_pane_editor(&self) -> Option<&Editor> {
+        self.second.as_ref()
     }
 
     /// The editor, once it has drawn a file.
@@ -892,6 +915,258 @@ impl Shell {
         }
     }
 
+    /// Carries out the editor action the layout last asked for, once (P4-32).
+    fn editor_request(&mut self) {
+        let layout = *self.layout();
+        if layout.editor_requests == self.editor_seen {
+            return;
+        }
+        self.editor_seen = layout.editor_requests;
+        let Some(request) = layout.editor_request else {
+            return;
+        };
+        match request {
+            EditorRequest::AskLine => {
+                if let Some(info) = self.session.registry().get(GO_TO_LINE) {
+                    self.palette.ask(info);
+                }
+                return;
+            }
+            EditorRequest::GoToSymbol => return self.open_symbol_picker(),
+            EditorRequest::TabSwitcher => return self.open_tab_switcher(),
+            EditorRequest::Fold
+            | EditorRequest::Unfold
+            | EditorRequest::FoldAll
+            | EditorRequest::UnfoldAll
+            | EditorRequest::GoToLine(_) => {}
+        }
+        let Some(editor) = self.editor.as_mut() else {
+            return;
+        };
+        let line = editor.view.state().primary().head.line;
+        let folds = editor.view.folds_mut();
+        match request {
+            EditorRequest::Fold => {
+                folds.fold_at(line);
+            }
+            EditorRequest::Unfold => {
+                folds.unfold_at(line);
+            }
+            EditorRequest::FoldAll => folds.fold_all(),
+            EditorRequest::UnfoldAll => folds.unfold_all(),
+            EditorRequest::GoToLine(to) => editor.go_to_line(line_index(to)),
+            EditorRequest::AskLine | EditorRequest::GoToSymbol | EditorRequest::TabSwitcher => {}
+        }
+        // A fold over the caret puts it on the fold's first line, as VS Code does, so the
+        // fold is not undone by the caret in it.
+        let folds = editor.view.folds();
+        if folds.is_hidden(line) {
+            let shown = folds.shown_at_or_before(line);
+            editor
+                .view
+                .state_mut()
+                .set_selections(&[Selection::caret(Position::new(shown, 0))]);
+        }
+    }
+
+    /// Opens the picker of the open file's symbols, the one the caret is in chosen.
+    fn open_symbol_picker(&mut self) {
+        let Some(open) = self.session.context().workbench.open() else {
+            return;
+        };
+        let caret = self.editor.as_ref().map_or(0, Editor::caret_offset);
+        let buffer = self
+            .editor
+            .as_ref()
+            .map(|editor| editor.view.state().buffer());
+        let mut rows = Vec::new();
+        let mut places = Vec::new();
+        let mut selected = 0;
+        for (index, symbol) in open.outline().iter().enumerate() {
+            let start = symbol.range.span.start;
+            let line = buffer
+                .map_or(0, |b| b.position(start).line)
+                .saturating_add(1);
+            rows.push(PickerRow {
+                name: symbol.name.clone(),
+                detail: line.to_string(),
+            });
+            places.push(Jump {
+                path: symbol.range.path.clone(),
+                offset: start,
+            });
+            if start <= caret {
+                selected = index;
+            }
+        }
+        self.palette.close();
+        self.finder.close();
+        self.picker.0.open(PickerKind::Symbols, rows, selected);
+        self.picker.1 = places;
+    }
+
+    /// Opens the tab switcher: the open files, the one used most recently first and the one
+    /// before it chosen, as Ctrl+Tab goes back to it.
+    fn open_tab_switcher(&mut self) {
+        let workbench = &self.session.context().workbench;
+        let root = workbench.root();
+        let mut rows = Vec::new();
+        let mut places = Vec::new();
+        for path in workbench.history() {
+            let offset = self
+                .parked
+                .get(path)
+                .or(self.editor.as_ref().filter(|e| e.path == *path))
+                .map_or(0, Editor::caret_offset);
+            rows.push(PickerRow {
+                name: path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                detail: root
+                    .and_then(|root| path.strip_prefix(root).ok())
+                    .unwrap_or(path)
+                    .to_string_lossy()
+                    .into_owned(),
+            });
+            places.push(Jump {
+                path: path.clone(),
+                offset,
+            });
+        }
+        self.palette.close();
+        self.finder.close();
+        self.picker.0.open(PickerKind::Tabs, rows, 1);
+        self.picker.1 = places;
+    }
+
+    /// The editor's second pane (P4-32), while the layout splits the editor: made from the open
+    /// file when the split starts, its text kept as the first pane's while both show one file;
+    /// a click in it makes it the pane being edited. Draws it and gives what it asked for.
+    fn second_pane(&mut self, ui: &mut Ui) {
+        let split = self.layout().split;
+        if split == Split::None || self.centre_tab != CentreTab::Editor {
+            self.second = None;
+            return;
+        }
+        let Some(editor) = &self.editor else {
+            return;
+        };
+        let theme = &self.theme;
+        let second = match &mut self.second {
+            Some(second) => second,
+            None => match self.session.context().workbench.open() {
+                Some(open) => {
+                    self.second
+                        .insert(Editor::new(Id::new(Area::SecondPane), open, theme))
+                }
+                None => return,
+            },
+        };
+        let focused = ui.memory(|m| m.has_focus(second.view.id()));
+        if second.path == editor.path && !focused {
+            let text = editor.view.state().buffer().text();
+            if second.view.state().buffer().text() != text {
+                second.view.state_mut().replace_text(&text);
+            }
+        }
+        let wrap = editor.view.wrap();
+        second.view.set_wrap(wrap);
+        let style = view_style(theme);
+        let panel = match split {
+            Split::Down => egui::Panel::bottom(Id::new(Area::SecondPane))
+                .exact_size((ui.available_height() / 2.0).floor()),
+            Split::Right | Split::None => egui::Panel::right(Id::new(Area::SecondPane))
+                .exact_size((ui.available_width() / 2.0).floor()),
+        };
+        panel
+            .frame(egui::Frame::NONE.fill(theme.color(Token::SurfaceEditor)))
+            .show(ui, |ui| {
+                name_area(ui, accesskit::Role::Pane, Text::SecondPane);
+                // Its hovers and completions are the pane being edited's to ask for.
+                let _ = second.show(ui, theme, &style);
+            });
+        if ui.memory(|m| m.has_focus(second.view.id())) {
+            self.swap_panes(ui.ctx());
+        }
+    }
+
+    /// Makes the second pane the one being edited and the first the second: its file is opened
+    /// in the workbench, after the first pane's edits are sent.
+    fn swap_panes(&mut self, ctx: &egui::Context) {
+        let (Some(mut first), Some(mut second)) = (self.editor.take(), self.second.take()) else {
+            return;
+        };
+        if let Some(text) = first.unsent() {
+            let path = first.path.clone();
+            let _: Option<()> = self.run(UPDATE_FILE, &UpdateFileParams { path, text });
+        }
+        first.view.set_id(Id::new(Area::SecondPane));
+        second.view.set_id(Id::new(EDITOR_AREA));
+        if first.path == second.path {
+            self.editor = Some(second);
+            self.second = Some(first);
+        } else {
+            let (from, to) = (first.path.clone(), second.path.clone());
+            let offset = second.caret_offset();
+            self.editor = Some(first);
+            self.parked.insert(to.clone(), second);
+            self.jump(Jump { path: to, offset });
+            self.sync_editor();
+            self.second = self.parked.remove(&from);
+        }
+        ctx.memory_mut(|m| m.request_focus(Id::new(EDITOR_AREA)));
+    }
+
+    /// The outline panel beside the editor (P4-32): the open file's symbols, the one the caret
+    /// is in marked; a click goes to one.
+    fn outline_panel(&mut self, ui: &mut Ui) {
+        if self.layout().outline != Outline::Shown || self.centre_tab != CentreTab::Editor {
+            return;
+        }
+        let Some(editor) = &self.editor else {
+            return;
+        };
+        let Some(open) = self.session.context().workbench.open() else {
+            return;
+        };
+        let theme = &self.theme;
+        let caret = editor.caret_offset();
+        let current = open
+            .outline()
+            .iter()
+            .rposition(|symbol| symbol.range.span.start <= caret);
+        let mut chosen = None;
+        egui::Panel::right(Id::new(Area::Outline))
+            .default_size(OUTLINE_WIDTH)
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme.color(Token::SurfacePanel))
+                    .inner_margin(theme.space(1)),
+            )
+            .show(ui, |ui| {
+                name_area(ui, accesskit::Role::Pane, Text::Outline);
+                heading(ui, theme, Text::Outline);
+                if open.outline().is_empty() {
+                    note(ui, theme, Text::NoOutline);
+                }
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for (index, symbol) in open.outline().iter().enumerate() {
+                        let row = ui.selectable_label(current == Some(index), &symbol.name);
+                        if row.clicked() {
+                            chosen = Some(Jump {
+                                path: symbol.range.path.clone(),
+                                offset: symbol.range.span.start,
+                            });
+                        }
+                    }
+                });
+            });
+        if let Some(jump) = chosen {
+            self.jump(jump);
+        }
+    }
+
     /// Opens the command palette with the open project's tasks (P4-36).
     pub fn open_palette(&mut self) {
         let tasks = if self.session.context().workbench.root().is_some() {
@@ -900,6 +1175,7 @@ impl Shell {
         } else {
             Vec::new()
         };
+        self.picker.0.close();
         self.palette.open(tasks);
     }
 
@@ -1075,6 +1351,12 @@ impl Shell {
             }
             None => {}
         }
+        let (picker, places) = &mut self.picker;
+        if let Some(index) = picker.show(ui, Id::new(Area::Picker), &self.theme)
+            && let Some(place) = places.get(index).cloned()
+        {
+            self.jump(place);
+        }
         let dragging = ui.input(|input| input.pointer.any_down());
         self.save_if_changed(dragging);
     }
@@ -1093,6 +1375,7 @@ impl Shell {
         }
         if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FILE_FINDER)) {
             self.palette.close();
+            self.picker.0.close();
             self.finder.open();
             return;
         }
@@ -1928,10 +2211,18 @@ impl Shell {
         if switched {
             self.sync_editor();
         }
+        self.editor_request();
+        self.outline_panel(ui);
+        self.second_pane(ui);
+        let wrap = match self.layout().soft_wrap {
+            SoftWrap::Off => Wrap::Off,
+            SoftWrap::Width => Wrap::Width,
+        };
         let theme = &self.theme;
         if self.centre_tab == CentreTab::Editor
             && let Some(editor) = &mut self.editor
         {
+            editor.view.set_wrap(wrap);
             let context = self.session.context();
             let file = context
                 .workbench
@@ -2308,6 +2599,7 @@ pub(crate) fn view_style(theme: &Theme) -> ViewStyle {
         paused_line: theme.color(Token::DebugPausedLine),
         paused_mark: theme.color(Token::StatusWarn),
         breakpoint: theme.color(Token::StatusError),
+        indent_guide: theme.color(Token::Border),
     }
 }
 
@@ -2438,6 +2730,9 @@ fn status_dot(ui: &mut Ui, colour: egui::Color32) {
     ui.painter()
         .circle_filled(rect.center(), size / 4.0, colour);
 }
+
+/// The outline panel's width, in points, as the left panel's Symbols are wide.
+const OUTLINE_WIDTH: f32 = 220.0;
 
 /// How often a frame reads the running host's events.
 const PREVIEW_POLL: std::time::Duration = std::time::Duration::from_millis(50);

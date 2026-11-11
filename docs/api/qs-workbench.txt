@@ -295,6 +295,7 @@ fn qs_workbench::Location::column
 fn qs_workbench::Location::line
 fn qs_workbench::Location::of
 fn qs_workbench::OpenFile::classes
+fn qs_workbench::OpenFile::folds
 fn qs_workbench::OpenFile::generation
 fn qs_workbench::OpenFile::highlights
 fn qs_workbench::OpenFile::location

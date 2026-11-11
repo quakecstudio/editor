@@ -141,3 +141,28 @@ fn syntax_classes_colour_keywords_literals_and_comments() {
     );
     assert_eq!(SyntaxClass::of(qc_syntax::SyntaxKind::Name), None);
 }
+
+// No spec statement: P4-32, UI-16: the folding ranges are the blocks and block comments that
+// span lines, outer before inner
+#[test]
+fn folding_ranges_are_the_multi_line_blocks_and_comments() {
+    let text = "/* a\n b */\nvoid() f =\n{\n\tif (1)\n\t{\n\t\treturn;\n\t}\n\tlocal float x; { x = 1; }\n};\n";
+    let mut host = host(&ProjectSpec {
+        files: &[("a.qc", text)],
+        ..ProjectSpec::default()
+    });
+    let folds: Vec<&str> = host
+        .folding_ranges(&path("a.qc"))
+        .into_iter()
+        .map(|span| &text[span.start..span.end])
+        .collect();
+    assert_eq!(
+        folds,
+        [
+            "/* a\n b */",
+            "{\n\tif (1)\n\t{\n\t\treturn;\n\t}\n\tlocal float x; { x = 1; }\n}",
+            "{\n\t\treturn;\n\t}",
+        ]
+    );
+    assert!(host.folding_ranges(&path("nowhere.qc")).is_empty());
+}

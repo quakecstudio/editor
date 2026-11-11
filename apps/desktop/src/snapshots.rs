@@ -78,7 +78,7 @@ fn scripts() -> Vec<Script> {
             name: "palette-prompt",
             steps: vec![
                 Step::Key(Modifiers::COMMAND | Modifiers::SHIFT, Key::P),
-                Step::Type("toggle"),
+                Step::Type("view.toggle_panel"),
                 Step::Key(Modifiers::NONE, Key::Enter),
             ],
         },

@@ -8,7 +8,9 @@ use egui::{Color32, Event, FullOutput, Key, Modifiers, Rect};
 
 use super::{Harness, numbered, pos};
 use crate::Selection;
+use crate::fold::FoldRegion;
 use crate::layout::Plain;
+use crate::view::Wrap;
 
 /// Every rectangle and text egui was asked to paint, nested shapes flattened.
 fn shapes(output: &FullOutput) -> (Vec<RectShape>, Vec<TextShape>) {
@@ -459,4 +461,165 @@ fn the_paused_line_is_tinted_and_breakpoints_are_kept() {
     let output = harness.frame(Vec::new(), &Plain);
     assert!(filled(&output, harness.style.paused_line).is_empty());
     assert_eq!(filled(&output, harness.style.current_line).len(), 1);
+}
+
+/// The texts painted, top to bottom.
+fn painted_lines(output: &FullOutput) -> Vec<String> {
+    let mut texts: Vec<TextShape> = shapes(output).1;
+    texts.sort_by(|a, b| {
+        a.pos
+            .y
+            .partial_cmp(&b.pos.y)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    texts
+        .into_iter()
+        .map(|t| t.galley.text().to_owned())
+        .collect()
+}
+
+// No spec statement: P4-32, UI-16: a folded region shows its first and last lines and hides
+// those between; the arrows go past it and a caret moved into it unfolds it
+#[test]
+fn a_folded_region_hides_its_middle_lines_and_a_caret_in_it_unfolds_it() {
+    let text = "void() f =\n{\n\tlocal float a;\n\ta = 1;\n};\nfloat b;";
+    let mut harness = Harness::new(text);
+    harness
+        .view
+        .folds_mut()
+        .set_regions([FoldRegion { start: 1, end: 4 }]);
+    assert!(harness.view.folds_mut().fold_at(1));
+    let output = harness.frame(Vec::new(), &Plain);
+    let lines = painted_lines(&output);
+    assert!(lines.contains(&"{".to_owned()) && lines.contains(&"};".to_owned()));
+    assert!(
+        !lines.iter().any(|l| l.contains("local float a")),
+        "{lines:?}"
+    );
+    assert!(
+        lines.contains(&"\u{2026}".to_owned()),
+        "the folded mark: {lines:?}"
+    );
+    // From the line above, down goes to the fold's first line, then past the hidden ones.
+    harness
+        .view
+        .state_mut()
+        .set_selections(&[Selection::caret(pos(1, 0))]);
+    harness.key(Key::ArrowDown, Modifiers::NONE);
+    assert_eq!(harness.view.state().primary().head.line, 4);
+    harness.key(Key::ArrowUp, Modifiers::NONE);
+    assert_eq!(harness.view.state().primary().head.line, 1);
+    assert!(harness.view.folds().any_folded());
+    // Placed inside from outside the view, as go to line does, the caret unfolds it.
+    harness
+        .view
+        .state_mut()
+        .set_selections(&[Selection::caret(pos(2, 0))]);
+    let output = harness.frame(Vec::new(), &Plain);
+    assert!(!harness.view.folds().any_folded());
+    assert!(
+        painted_lines(&output)
+            .iter()
+            .any(|l| l.contains("local float a"))
+    );
+}
+
+// No spec statement: P4-32: a click on a fold's mark in the gutter folds and unfolds it, and
+// is no breakpoint click
+#[test]
+fn a_click_on_the_fold_mark_toggles_the_fold() {
+    let mut harness = Harness::new("{\n\ta;\n\tb;\n}\nc;");
+    harness
+        .view
+        .folds_mut()
+        .set_regions([FoldRegion { start: 0, end: 3 }]);
+    let output = harness.frame(Vec::new(), &Plain);
+    let m = measures(&harness, &output);
+    let mark = egui::Pos2::new(m.text_left - 6.0, m.view.top() + m.row / 2.0);
+    let click = |harness: &mut Harness| {
+        harness.frame(
+            vec![
+                Event::PointerMoved(mark),
+                Event::PointerButton {
+                    pos: mark,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+                Event::PointerButton {
+                    pos: mark,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Modifiers::NONE,
+                },
+            ],
+            &Plain,
+        );
+    };
+    click(&mut harness);
+    assert!(harness.view.folds().any_folded());
+    assert_eq!(harness.view.take_gutter_click(), None);
+    click(&mut harness);
+    assert!(!harness.view.folds().any_folded());
+}
+
+// No spec statement: P4-32, UI-16: with soft wrap a line longer than the view takes more rows
+// and the line after it moves down; without, it is one row
+#[test]
+fn soft_wrap_puts_a_long_line_on_more_rows() {
+    let long = "word ".repeat(60);
+    let text = format!("{long}\nafter");
+    let mut harness = Harness::new(&text);
+    let top_of_after = |output: &FullOutput| text_shape(output, "after").pos.y;
+    let output = harness.frame(Vec::new(), &Plain);
+    let m = measures(&harness, &output);
+    let unwrapped = top_of_after(&output);
+    assert!(near(unwrapped - m.view.top(), m.row));
+    harness.view.set_wrap(Wrap::Width);
+    let output = harness.frame(Vec::new(), &Plain);
+    let wrapped = top_of_after(&output);
+    assert!(
+        wrapped - m.view.top() >= 2.0 * m.row - 1.0,
+        "{wrapped} {}",
+        m.row
+    );
+    // End clicks to the end of the long line: the caret is on its last row, below the first.
+    harness
+        .view
+        .state_mut()
+        .set_selections(&[Selection::caret(pos(0, 0))]);
+    harness.key(Key::End, Modifiers::NONE);
+    let output = harness.frame(Vec::new(), &Plain);
+    let caret = filled(&output, harness.style.caret)[0];
+    assert!(caret.top() > m.view.top() + m.row, "{caret:?}");
+    harness.view.set_wrap(Wrap::Off);
+    let output = harness.frame(Vec::new(), &Plain);
+    assert!(near(top_of_after(&output), unwrapped));
+}
+
+// No spec statement: P4-32, UI-16: an indent guide at each indent level after the first, a tab
+// or four spaces, and none on a blank line
+#[test]
+fn indent_guides_mark_each_inner_level() {
+    let mut harness = Harness::new("a\n\t\tb\n        c\n\t\t\n");
+    let output = harness.frame(Vec::new(), &Plain);
+    let m = measures(&harness, &output);
+    let guides: Vec<(f32, f32)> = output
+        .shapes
+        .iter()
+        .flat_map(|clipped| match &clipped.shape {
+            Shape::LineSegment { points, stroke } if stroke.color == harness.style.indent_guide => {
+                Some((points[0].x, points[0].y))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(guides.len(), 2, "{guides:?}");
+    assert!(guides.iter().all(|(x, _)| *x > m.text_left));
+    assert!(guides.iter().any(|(_, y)| near(*y, m.view.top() + m.row)));
+    assert!(
+        guides
+            .iter()
+            .any(|(_, y)| near(*y, m.view.top() + 2.0 * m.row))
+    );
 }
