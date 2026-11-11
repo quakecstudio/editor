@@ -178,6 +178,11 @@ restart. Keys bound twice, an unknown command or one that needs parameters, and 
 keymap does not know are each logged as a problem, and the rest of the file still applies
 (`Keymap::problems`). Key sequences, such as `ctrl-k ctrl-c`, are not taken yet.
 
+**Vim mode (P4-37).** `editor.key_mode = "vim"` in the user's settings
+([`docs/settings.md`](../../docs/settings.md)) puts the code editor in `KeyMode::Vim`
+([`qs-editor-view`](../../crates/qs-editor-view/README.md), `vim`), read when the window
+starts.
+
 ## Accessibility
 
 Every area and control has an AccessKit name and role (QA-9, P2-23): the toolbar, the status

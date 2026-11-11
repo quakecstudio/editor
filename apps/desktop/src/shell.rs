@@ -23,7 +23,7 @@ use eframe::egui::{
 use eframe::egui_wgpu::RenderState;
 use qs_commands::remote::Host;
 use qs_commands::{CommandError, RegisterError, Registry, Session};
-use qs_editor_view::{Position, ViewStyle};
+use qs_editor_view::{KeyMode, Position, ViewStyle};
 use qs_layout::{
     Focus, HasLayout, Layout, Panel, RESIZE_PANEL, ResizePanelParams, TOGGLE_PANEL,
     TogglePanelParams,
@@ -204,6 +204,8 @@ pub struct Shell {
     recent: (RecentProjects, Option<PathBuf>),
     /// The key bindings in force, the user's keymap file over the defaults (P4-37).
     keymap: keymap::Keymap,
+    /// How the code editor reads keys, from the user's settings (P4-37).
+    key_mode: KeyMode,
     /// The IDE's window as last given to `preview.dock`.
     dock_frame: Option<DockFrame>,
     /// The project open in the last frame, to see when another opens.
@@ -275,6 +277,7 @@ impl Shell {
             parked: BTreeMap::new(),
             recent: (RecentProjects::default(), None),
             keymap: keymap::Keymap::defaults(),
+            key_mode: KeyMode::Standard,
             seen_root: None,
             dock_frame: None,
             project_error: None,
@@ -392,10 +395,14 @@ impl Shell {
     /// Play's again when it still holds a game, and is left unused, as missing, when it does
     /// not.
     pub fn set_settings_file(&mut self, file: PathBuf) {
-        let saved = SettingsFile::load(&file)
+        let settings = SettingsFile::load(&file)
             .map_err(|error| tracing::warn!(%error, "settings not read"))
-            .ok()
-            .and_then(|settings| settings.game.folder);
+            .ok();
+        self.key_mode = match settings.as_ref().and_then(|s| s.editor.key_mode) {
+            Some(qs_settings::KeyMode::Vim) => KeyMode::Vim,
+            Some(qs_settings::KeyMode::Standard) | None => KeyMode::Standard,
+        };
+        let saved = settings.and_then(|settings| settings.game.folder);
         self.settings_file = Some(file);
         if let Some(path) = saved {
             let chosen: Option<GameFiles> = self.run(CHOOSE_GAME, &ChooseGameParams { path });
@@ -1877,6 +1884,7 @@ impl Shell {
                 editor,
                 context.workbench.open(),
             );
+            editor.view.set_key_mode(self.key_mode);
             let requests = editor.show(ui, theme, &view_style(theme));
             let clicked = editor.view.take_gutter_click();
             if let (Some(file), Some(line)) = (file, clicked) {

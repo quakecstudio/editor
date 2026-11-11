@@ -24,11 +24,12 @@ mod history;
 pub mod layout;
 pub mod selection;
 pub mod view;
+pub mod vim;
 
 pub use buffer::{Buffer, LineId, Position};
 pub use layout::{LayoutCache, Plain, StyledSpan, Styler};
 pub use selection::{EditState, Extend, Motion, Selection};
-pub use view::{EditorView, ViewStyle};
+pub use view::{EditorView, KeyMode, ViewStyle};
 
 #[cfg(test)]
 mod tests;

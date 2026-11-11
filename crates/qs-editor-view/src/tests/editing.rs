@@ -7,7 +7,8 @@ use egui::{Event, Key, Modifiers, Pos2};
 
 use super::{Harness, pos};
 use crate::find::{Case, Query};
-use crate::{Buffer, EditState, Plain, Selection};
+use crate::vim::Mode;
+use crate::{Buffer, EditState, KeyMode, Plain, Selection};
 
 fn query(text: &str, case: Case) -> Query {
     Query {
@@ -256,4 +257,37 @@ fn the_hovered_position_follows_the_pointer_over_the_text() {
     // The panel starts at x = 8; the numbers fill the gutter after it.
     harness.frame(vec![Event::PointerMoved(Pos2::new(12.0, 10.0))], &Plain);
     assert_eq!(harness.view.hovered(), None, "over the line numbers");
+}
+
+// No spec statement: P4-37: in Vim mode typed text is Vim's keys, each change one undo step
+#[test]
+fn vim_mode_reads_typed_text_as_vims_keys_and_undoes_by_step() {
+    let mut harness = Harness::new("one two\nthree");
+    harness.view.set_key_mode(KeyMode::Vim);
+    assert_eq!(harness.view.vim_mode(), Some(Mode::Normal));
+    harness.frame(vec![Event::Text("dw".to_owned())], &Plain);
+    assert_eq!(harness.view.state().buffer().text(), "two\nthree");
+    harness.frame(vec![Event::Text("A!".to_owned())], &Plain);
+    harness.frame(vec![Event::Text("?".to_owned())], &Plain);
+    assert_eq!(harness.view.vim_mode(), Some(Mode::Insert));
+    harness.key(Key::Escape, Modifiers::NONE);
+    assert_eq!(harness.view.vim_mode(), Some(Mode::Normal));
+    assert_eq!(harness.view.state().buffer().text(), "two!?\nthree");
+    assert_eq!(harness.view.state().primary().head, pos(0, 4));
+    harness.frame(vec![Event::Text("u".to_owned())], &Plain);
+    assert_eq!(
+        harness.view.state().buffer().text(),
+        "two\nthree",
+        "the typing is one step"
+    );
+    harness.frame(vec![Event::Text("u".to_owned())], &Plain);
+    assert_eq!(harness.view.state().buffer().text(), "one two\nthree");
+    harness.key(Key::Z, Modifiers::COMMAND | Modifiers::SHIFT);
+    assert_eq!(harness.view.state().buffer().text(), "two\nthree");
+    harness.frame(vec![Event::Text("vjd".to_owned())], &Plain);
+    assert_eq!(harness.view.state().buffer().text(), "hree");
+    harness.view.set_key_mode(KeyMode::Standard);
+    assert_eq!(harness.view.vim_mode(), None);
+    harness.frame(vec![Event::Text("x".to_owned())], &Plain);
+    assert_eq!(harness.view.state().buffer().text(), "xhree");
 }

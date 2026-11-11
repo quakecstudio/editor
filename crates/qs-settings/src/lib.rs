@@ -77,6 +77,17 @@ pub enum Theme {
     Light,
 }
 
+/// How the code editor reads keys (P4-37).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyMode {
+    /// As every code editor does.
+    #[default]
+    Standard,
+    /// Vim's modes, motions and operators.
+    Vim,
+}
+
 /// The log filter's default, `qs_log`'s when `RUST_LOG` is unset.
 pub(crate) const DEFAULT_LOG_FILTER: &str = "info";
 
@@ -100,16 +111,20 @@ pub enum Setting {
     /// `agent.tool_permissions`.
     #[serde(rename = "agent.tool_permissions")]
     ToolPermissions,
+    /// `editor.key_mode`.
+    #[serde(rename = "editor.key_mode")]
+    KeyMode,
 }
 
 impl Setting {
     /// Every setting, in the order the reference lists them.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Theme,
         Self::LogFilter,
         Self::GameFolder,
         Self::AgentProfile,
         Self::ToolPermissions,
+        Self::KeyMode,
     ];
 
     /// The key the files and the commands name it by.
@@ -121,6 +136,7 @@ impl Setting {
             Self::GameFolder => "game.folder",
             Self::AgentProfile => "agent.profile",
             Self::ToolPermissions => "agent.tool_permissions",
+            Self::KeyMode => "editor.key_mode",
         }
     }
 
@@ -132,6 +148,7 @@ impl Setting {
             Self::GameFolder => ("game", "folder"),
             Self::AgentProfile => ("agent", "profile"),
             Self::ToolPermissions => ("agent", "tool_permissions"),
+            Self::KeyMode => ("editor", "key_mode"),
         }
     }
 
@@ -140,6 +157,10 @@ impl Setting {
     pub const fn summary(self) -> &'static str {
         match self {
             Self::Theme => "The colour theme: `dark` or `light`.",
+            Self::KeyMode => {
+                "How the code editor reads keys (P4-37): `standard`, or `vim` for Vim's normal, \
+                 insert and visual modes, motions, operators, counts, registers and `.`."
+            }
             Self::LogFilter => {
                 "Which events the log records, as `RUST_LOG` directives (`info`, \
                  `info,qc_sema=debug`); `RUST_LOG` wins when it is set."
@@ -171,6 +192,7 @@ impl Setting {
             Self::GameFolder => Value::Null,
             Self::AgentProfile => json(AgentProfile::default()),
             Self::ToolPermissions => json(ToolPermissions::default()),
+            Self::KeyMode => json(KeyMode::default()),
         }
     }
 }
@@ -187,6 +209,15 @@ pub struct Appearance {
     /// The colour theme.
     #[serde(default)]
     pub theme: Option<Theme>,
+}
+
+/// `[editor]` of a settings file.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Editor {
+    /// How the code editor reads keys.
+    #[serde(default)]
+    pub key_mode: Option<KeyMode>,
 }
 
 /// `[log]` of a settings file.
@@ -215,6 +246,9 @@ pub struct SettingsFile {
     /// Appearance.
     #[serde(default)]
     pub appearance: Appearance,
+    /// The code editor.
+    #[serde(default)]
+    pub editor: Editor,
     /// Logging.
     #[serde(default)]
     pub log: Log,
@@ -251,6 +285,7 @@ impl SettingsFile {
             Setting::GameFolder => self.game.folder.as_ref().map(json),
             Setting::AgentProfile => self.agent.profile.map(json),
             Setting::ToolPermissions => self.agent.tool_permissions.as_ref().map(json),
+            Setting::KeyMode => self.editor.key_mode.map(json),
         }
     }
 
@@ -282,6 +317,12 @@ impl SettingsFile {
             }
             Setting::AgentProfile => {
                 self.agent.profile = value
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(invalid)?;
+            }
+            Setting::KeyMode => {
+                self.editor.key_mode = value
                     .map(serde_json::from_value)
                     .transpose()
                     .map_err(invalid)?;

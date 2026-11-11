@@ -16,6 +16,7 @@ use crate::buffer::Position;
 use crate::diff::Diff;
 use crate::layout::{LayoutCache, Preedit, Styler, line_job};
 use crate::selection::{EditState, Extend, Motion, Selection};
+use crate::vim::{Mode, Vim, VimKey};
 
 /// The colours and font the view draws with; the app fills it from its theme tokens.
 #[derive(Clone, Debug, PartialEq)]
@@ -79,6 +80,17 @@ const REMOVED_MARK: &str = "-";
 /// The accessible name of the editor.
 const LABEL: &str = "Code editor";
 
+/// How the editor reads keys (P4-37).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KeyMode {
+    /// As every code editor does: typing inserts, the arrows move.
+    #[default]
+    Standard,
+    /// Vim's modes, motions and operators ([`crate::vim`]); the arrows and the command
+    /// shortcuts still work as in [`KeyMode::Standard`].
+    Vim,
+}
+
 /// The editor: its text, selections, scroll position, IME composition and layout cache.
 #[derive(Debug)]
 pub struct EditorView {
@@ -104,6 +116,8 @@ pub struct EditorView {
     paused: Option<usize>,
     /// The line whose gutter was clicked in the last frame, not yet taken.
     gutter_click: Option<usize>,
+    /// Vim's state, in [`KeyMode::Vim`].
+    vim: Option<Vim>,
     cache: LayoutCache,
 }
 
@@ -124,8 +138,24 @@ impl EditorView {
             breakpoints: BTreeSet::new(),
             paused: None,
             gutter_click: None,
+            vim: None,
             cache: LayoutCache::default(),
         }
+    }
+
+    /// Reads keys as `mode` does; a change to Vim starts in Normal mode.
+    pub fn set_key_mode(&mut self, mode: KeyMode) {
+        match (mode, &self.vim) {
+            (KeyMode::Vim, None) => self.vim = Some(Vim::new()),
+            (KeyMode::Standard, Some(_)) => self.vim = None,
+            (KeyMode::Vim, Some(_)) | (KeyMode::Standard, None) => {}
+        }
+    }
+
+    /// Vim's mode, in [`KeyMode::Vim`].
+    #[must_use]
+    pub fn vim_mode(&self) -> Option<Mode> {
+        self.vim.as_ref().map(Vim::mode)
     }
 
     /// Marks the gutter of `lines`, from 0, with a breakpoint, and no other line.
@@ -429,8 +459,16 @@ impl EditorView {
         for event in events {
             moved |= match event {
                 Event::Text(text) if !text.chars().any(char::is_control) => {
-                    self.state.insert(&text);
-                    true
+                    if let Some(vim) = &mut self.vim {
+                        let mut moved = false;
+                        for c in text.chars() {
+                            moved |= self.state.vim_key(vim, VimKey::Char(c));
+                        }
+                        moved
+                    } else {
+                        self.state.insert(&text);
+                        true
+                    }
                 }
                 Event::Paste(text) => {
                     self.state.insert(&text);
@@ -497,6 +535,21 @@ impl EditorView {
 
     /// A key press; true when it moved a caret or changed the text.
     fn key(&mut self, key: Key, modifiers: Modifiers) -> bool {
+        if let Some(vim) = &mut self.vim
+            && !modifiers.command
+            && !modifiers.alt
+        {
+            let vim_key = match key {
+                Key::Escape => Some(VimKey::Escape),
+                Key::Enter => Some(VimKey::Enter),
+                Key::Backspace => Some(VimKey::Backspace),
+                _ => None,
+            };
+            if let Some(vim_key) = vim_key {
+                self.preedit = None;
+                return self.state.vim_key(vim, vim_key);
+            }
+        }
         let extend = if modifiers.shift {
             Extend::Select
         } else {

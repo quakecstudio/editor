@@ -67,6 +67,15 @@ command = "project.build"
 
 `secondary` is Cmd on macOS and Ctrl elsewhere. The change takes effect at once.
 
+To edit with Vim's keys, add this to `settings.toml` in the same folder and start the app again:
+
+```toml
+[editor]
+key_mode = "vim"
+```
+
+The editor starts in Normal mode, with Vim's motions, operators, counts, registers and `.`.
+
 ## Building
 
 Play builds before it starts the game, so most of the time you never build by hand. To build

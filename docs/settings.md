@@ -15,3 +15,4 @@ and change them.
 | `game.folder` | `null` | The folder Play reads the game from, in place, as the Quake files guide chose it; the first install found when unset. A folder that no longer holds a game is not used (P3-44). |
 | `agent.profile` | `"write"` | The tools the agent is offered (P4-30): `ask` (reading only), `write` (reads and edits run, anything else asks first) or `full` (every tool, unasked). |
 | `agent.tool_permissions` | `{}` | Rules for the agent's tool calls over the profile's (P4-30): a `default` of `allow`, `ask` or `deny`, and `tools.<command id>` with its own `default` and `allow`, `ask` and `deny` patterns (`*` and `?`, matched against the call's paths in the project). A `deny` pattern wins, then `ask`, then `allow`. |
+| `editor.key_mode` | `"standard"` | How the code editor reads keys (P4-37): `standard`, or `vim` for Vim's normal, insert and visual modes, motions, operators, counts, registers and `.`. |
