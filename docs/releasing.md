@@ -27,7 +27,7 @@ artifact.
 | --- | --- | --- |
 | macOS, Apple silicon (arm64) | `quakec-studio-<version>-macos-arm64.dmg`: `QuakeC Studio.app`, each executable and the app signed with the hardened runtime, the app notarized and stapled, in a signed, notarized and stapled disk image | `packaging/macos/package.sh`, with `packaging/macos/Info.plist` |
 | Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip`; on a tag, the executables in both are signed | `packaging/windows/package.sh`, with WiX 5 and `packaging/windows/quakec-studio.wxs` |
-| Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak`; and `quakec-cli-<version>-linux-<arch>.tar.gz`, the command line and the language server alone | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it |
+| Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak` | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it |
 | All | `SHA256SUMS`, every package's SHA-256 | the workflow's last job |
 
 Each file a package needs is its own file under `packaging/`, never written out by a script,
@@ -72,8 +72,7 @@ deletes a keychain entry:
   check runs too.
 - **Linux x86_64 and aarch64:** the deb installs with `apt` on Ubuntu 24.04 (host check, and the
   window under Xvfb), the rpm with `dnf` in a Fedora 41 container (host check), and the
-  AppImage runs its host check. The command line's archive runs in an Alpine container, whose
-  libc is musl: `quakec-ide --version` and its games check, and `quakec-lsp` starting. The Flatpak runs every check from inside its sandbox: a Steam
+  AppImage runs its host check. The Flatpak runs every check from inside its sandbox: a Steam
   folder holding LibreQuake as Quake (`packaging/linux/steam`) is found, the host starts on it, and the keychain is
   reached through gnome-keyring.
 

@@ -5,10 +5,9 @@
 # each holding the desktop app, the preview host beside it (qs-engine's `locate_host` finds it
 # there), the command line and the language server, with LICENSE and NOTICE.
 #
-#   packaging/linux/package.sh <deb|rpm|appimage|flatpak|cli> <x86_64|aarch64> <bin-dir> <version> <out-dir>
+#   packaging/linux/package.sh <deb|rpm|appimage|flatpak> <x86_64|aarch64> <bin-dir> <version> <out-dir>
 #
-# `cli` is a tar.gz of the command line and the language server alone, static musl binaries
-# that run on any Linux. <bin-dir> holds the four release binaries; <version> is the workspace's, such as 2026.11.0.
+# <bin-dir> holds the four release binaries, quakec-ide and quakec-lsp static musl ones; <version> is the workspace's, such as 2026.11.0.
 # The files each format needs are beside this script: the desktop entry and icon, the deb's
 # `deb/control`, the rpm's `quakec-studio.spec`, the AppImage's `AppRun.sh` and the Flatpak's
 # manifest. Run from the repository root. The deb needs dpkg-deb, the rpm rpmbuild, the AppImage curl,
@@ -34,7 +33,7 @@ declare -A RUNTIME_SHA256=(
 )
 
 usage() {
-  echo "usage: $0 <deb|rpm|appimage|flatpak|cli> <x86_64|aarch64> <bin-dir> <version> <out-dir>" >&2
+  echo "usage: $0 <deb|rpm|appimage|flatpak> <x86_64|aarch64> <bin-dir> <version> <out-dir>" >&2
   exit 2
 }
 
@@ -129,16 +128,7 @@ flatpak() {
     "$out/quakec-studio-$version-linux-$arch.flatpak" "$APP_ID"
 }
 
-cli() {
-  local name="quakec-cli-$version-linux-$arch"
-  mkdir -p "$work/$name"
-  install -m755 "$bins/quakec-ide" "$bins/quakec-lsp" "$work/$name/"
-  install -m644 "$root/LICENSE" "$work/$name/LICENSE"
-  install -m644 "$root/packaging/NOTICE.txt" "$work/$name/NOTICE"
-  tar -C "$work" -czf "$out/$name.tar.gz" "$name"
-}
-
 case "$format" in
-deb | rpm | appimage | flatpak | cli) "$format" ;;
+deb | rpm | appimage | flatpak) "$format" ;;
 *) usage ;;
 esac

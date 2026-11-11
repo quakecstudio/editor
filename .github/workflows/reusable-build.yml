@@ -368,9 +368,9 @@ jobs:
           desktop-file-validate packaging/linux/com.quakecstudio.QuakeCStudio.desktop
           rpmspec --define "pkg_version $VERSION" --define "tree /nonexistent" \
             -P packaging/linux/quakec-studio.spec > /dev/null
-      - name: Make the deb, the rpm, the AppImage, the Flatpak and the command line's archive
+      - name: Make the deb, the rpm, the AppImage and the Flatpak
         run: |
-          for format in deb rpm appimage flatpak cli; do
+          for format in deb rpm appimage flatpak; do
             packaging/linux/package.sh "$format" "$ARCH" dist/bin "$VERSION" dist
           done
           rm -r dist/bin
