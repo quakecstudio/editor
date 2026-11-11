@@ -213,7 +213,8 @@ the signer. It is the only workflow that reads the signing secrets
 
 [`.github/workflows/evals.yml`](../.github/workflows/evals.yml) runs the agent's evals on a real
 model (`cargo xtask evals --run`, [`evals/README.md`](../evals/README.md)). It runs weekly and on
-demand, never on pull requests, and is **not** a required check. Without the `QS_EVAL_API_KEY`
+demand, never on pull requests, and is **not** a required check. Each run stops at 2 US dollars.
+Without the `QS_EVAL_API_KEY`
 secret it does nothing:
 
 | Check | Runs on | What it does |

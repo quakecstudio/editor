@@ -12,10 +12,6 @@ on:
         description: "Only this task (empty: every task)"
         required: false
         default: ""
-      max_usd:
-        description: "The cost cap of one run, in US dollars"
-        required: false
-        default: "2"
   schedule:
     - cron: "17 5 * * 1"
 
@@ -71,13 +67,14 @@ jobs:
         env:
           QS_EVAL_API_KEY: ${{ secrets.QS_EVAL_API_KEY }}
           TASK: ${{ inputs.task }}
-          MAX_USD: ${{ inputs.max_usd || '2' }}
         run: |
-          only=()
-          if [ -n "$TASK" ]; then only=(--task "$TASK"); fi
+          # Each run stops at 2 US dollars (cargo xtask evals --max-usd).
           status=0
-          cargo xtask evals --run "${only[@]}" --max-usd "$MAX_USD" \
-            --history target/evals/history.jsonl || status=$?
+          if [ -n "$TASK" ]; then
+            cargo xtask evals --run --task "$TASK" --max-usd 2 --history target/evals/history.jsonl || status=$?
+          else
+            cargo xtask evals --run --max-usd 2 --history target/evals/history.jsonl || status=$?
+          fi
           cat target/evals/report.md >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
