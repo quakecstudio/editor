@@ -45,6 +45,20 @@ pub const BSP_VERSION: i32 = 29;
 pub const BSP_2PSB_VERSION: i32 = i32::from_le_bytes(*b"2PSB");
 /// The version field of a `BSP2` file, QuakeSpasm's `BSP2VERSION_BSP2` (BSP-17.1).
 pub const BSP_BSP2_VERSION: i32 = i32::from_le_bytes(*b"BSP2");
+/// The pixels of mip level 0 that [`BSP_MIP_BYTES`] bytes over all four levels go with: id's
+/// `width * height / 64 * 85` (BSP-4.5).
+pub const BSP_MIP_PIXELS: usize = 64;
+/// The bytes all four mip levels take for every [`BSP_MIP_PIXELS`] pixels of level 0:
+/// 64 + 16 + 4 + 1 (BSP-4.5).
+pub const BSP_MIP_BYTES: usize = 85;
+/// [`BSP_MIP_PIXELS`] in the `u32` arithmetic of a texture's size.
+const BSP_MIP_PIXELS_U32: u32 = 64;
+/// [`BSP_MIP_BYTES`] in the `u32` arithmetic of a texture's size.
+const BSP_MIP_BYTES_U32: u32 = 85;
+/// The bytes of one light sample of a Half-Life BSP: red, green and blue (BSP-22.3).
+pub const BSP_VALVE_SAMPLE_BYTES: usize = 3;
+/// The bytes of one colour of a Half-Life texture's palette: red, green and blue (BSP-22.2).
+pub const BSP_VALVE_COLOR_BYTES: usize = 3;
 /// The version of a Half-Life BSP, QuakeSpasm's `BSPVERSION_VALVE` (BSP-22.1).
 pub const BSP_VALVE_VERSION: i32 = 30;
 
@@ -344,7 +358,7 @@ impl BspVersion {
     pub const fn sample_bytes(self) -> usize {
         match self {
             Self::Bsp29 | Self::Bsp2Psb | Self::Bsp2 => 1,
-            Self::Valve => 3,
+            Self::Valve => BSP_VALVE_SAMPLE_BYTES,
         }
     }
 }
@@ -1156,8 +1170,7 @@ impl<'a> Bsp<'a> {
                 textures.push(None);
                 continue;
             }
-            let valve = reader.version == BspVersion::Valve;
-            textures.push(load_texture(lump, offset, index, loader, valve)?);
+            textures.push(load_texture(lump, offset, index, loader, reader.version)?);
         }
         sequence_animations(&mut textures)?;
         self.textures = textures;
@@ -1938,7 +1951,7 @@ fn load_texture(
     offset: i32,
     index: usize,
     loader: BspLoader,
-    valve: bool,
+    version: BspVersion,
 ) -> Result<Option<Texture<'_>>, BspError> {
     let bad = BspError::BadTexture { index };
     let start = usize::try_from(offset).map_err(|_| bad.clone())?;
@@ -1955,15 +1968,15 @@ fn load_texture(
     let name = header.name.get(..name_len).unwrap_or_default().to_vec();
     let (width, height, offsets) = (header.width, header.height, header.offsets);
     if loader.fitz() {
-        return fitz_texture(lump, start, (name, width, height, offsets), index, valve);
+        return fitz_texture(lump, start, (name, width, height, offsets), index, version);
     }
     if width & 15 != 0 || height & 15 != 0 {
         return Err(BspError::NotAligned { name });
     }
     let pixels = width
         .checked_mul(height)
-        .and_then(|area| area.checked_div(64))
-        .and_then(|area| area.checked_mul(85))
+        .and_then(|area| area.checked_div(BSP_MIP_PIXELS_U32))
+        .and_then(|area| area.checked_mul(BSP_MIP_BYTES_U32))
         .and_then(|size| usize::try_from(size).ok())
         .ok_or(bad.clone())?;
     let data_start = start.saturating_add(BSP_MIPTEX_HEADER_SIZE);
@@ -1998,8 +2011,9 @@ fn fitz_texture(
     start: usize,
     (name, width, height, offsets): (Vec<u8>, u32, u32, [u32; BSP_MIPLEVELS]),
     index: usize,
-    valve: bool,
+    version: BspVersion,
 ) -> Result<Option<Texture<'_>>, BspError> {
+    let valve = version == BspVersion::Valve;
     if width == 0 || height == 0 {
         return Ok(None);
     }
@@ -2032,13 +2046,20 @@ fn fitz_texture(
 /// RGB triples, `2 + colors * 3` bytes, or 2 when the count is past the lump; cut at the end of
 /// the lump.
 fn valve_palette(lump: &[u8], data_start: usize, pixels: usize) -> &[u8] {
+    /// The palette's 16-bit colour count before its triples.
+    const VALVE_COUNT_BYTES: usize = 2;
     // `pixels / 64 * 85`: the four mip levels' bytes.
-    let mips = pixels.checked_div(64).unwrap_or(0).saturating_mul(85);
+    let mips = pixels
+        .checked_div(BSP_MIP_PIXELS)
+        .unwrap_or(0)
+        .saturating_mul(BSP_MIP_BYTES);
     let palette_start = data_start.saturating_add(mips);
     let colors = lump
-        .get(palette_start..palette_start.saturating_add(2))
+        .get(palette_start..palette_start.saturating_add(VALVE_COUNT_BYTES))
         .map_or(0, |count| usize::from(u16_at(count, 0)));
-    let size = colors.saturating_mul(3).saturating_add(2);
+    let size = colors
+        .saturating_mul(BSP_VALVE_COLOR_BYTES)
+        .saturating_add(VALVE_COUNT_BYTES);
     let end = palette_start.saturating_add(size).min(lump.len());
     lump.get(palette_start..end).unwrap_or_default()
 }
