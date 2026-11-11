@@ -9,8 +9,8 @@ use std::process::ExitCode;
 use mimalloc::MiMalloc;
 use qs_workbench::FsLoader;
 
-/// mimalloc as the global allocator (P4-18): faster than musl's allocator in the static Linux
-/// builds, and the same allocator on every platform.
+/// mimalloc as the global allocator (P4-18): musl's own is slow under heavy allocation, and
+/// these tools ship as static musl binaries on Linux.
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 

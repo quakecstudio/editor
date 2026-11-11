@@ -6,15 +6,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use eframe::egui;
-use mimalloc::MiMalloc;
 use qs_commands::remote::Host;
 use quakec_studio::strings::Text;
 use quakec_studio::{App, agent, keymap};
-
-/// mimalloc as the global allocator (P4-18): faster than musl's allocator in the static Linux
-/// builds, and the same allocator on every platform.
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
 
 /// `quakec-studio [<project>]`.
 #[derive(clap::Parser, Debug)]

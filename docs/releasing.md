@@ -41,8 +41,8 @@ which run on any Linux with no library from the system; the app and the engine l
 winit and wgpu open the display and GPU libraries (libxkbcommon, X11 or Wayland, Vulkan or GL,
 and the GPU's own driver) at run time, which a static binary cannot do. The deb and rpm require
 those libraries. On Windows every executable has the C runtime linked in (`+crt-static`), so
-none needs the Visual C++ Redistributable. Every binary uses mimalloc as its global allocator,
-faster than musl's own. macOS binaries link only the system's libraries, as every Mac app does.
+none needs the Visual C++ Redistributable. `quakec-ide` and `quakec-lsp` use mimalloc as
+their global allocator, faster than musl's own; the app and the engine keep the system's. macOS binaries link only the system's libraries, as every Mac app does.
 
 Every package holds the four binaries, the desktop app `quakec-studio`, the preview host
 `quakec-engine` beside it (where `qs-engine`'s `locate_host` looks), the command line

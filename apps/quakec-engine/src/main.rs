@@ -19,13 +19,6 @@ mod window;
 
 use std::process::ExitCode;
 
-use mimalloc::MiMalloc;
-
-/// mimalloc as the global allocator (P4-18): faster than musl's allocator in the static Linux
-/// builds, and the same allocator on every platform.
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
-
 /// The log file's stem, beside the IDE's in the app's log directory.
 const LOG_FILE_STEM: &str = "quakec-engine";
 

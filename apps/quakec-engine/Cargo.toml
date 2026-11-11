@@ -13,8 +13,6 @@ name = "quakec-engine"
 path = "src/main.rs"
 
 [dependencies]
-# The global allocator (P4-18).
-mimalloc = { workspace = true }
 # The command line (ADR-0008).
 clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 # The sound device, which plays qs-sound's mixed frames.
