@@ -13,6 +13,7 @@
 //!
 //! Every string comes from [`crate::strings`]; a test fails on a string literal here.
 
+use qs_agent::history;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -36,6 +37,7 @@ use qs_templates::{GitHub, NEW_PROJECT, NewProjectParams, Template};
 use qs_workbench::checkpoints::{RESTORE_CHECKPOINT, RestoreCheckpointParams};
 use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
+use qs_workbench::engine::{ENGINE_SCREENSHOT, EngineScreenshotParams, Screenshot};
 use qs_workbench::export::{ExportParams, Exported, PROJECT_EXPORT};
 use qs_workbench::game_files::GameFiles;
 use qs_workbench::git::{
@@ -743,6 +745,62 @@ impl Shell {
                 let _restored: Option<serde_json::Value> =
                     self.run(RESTORE_CHECKPOINT, &RestoreCheckpointParams { number });
             }
+            AgentAction::OpenHistory => {
+                let threads = self
+                    .agent_root()
+                    .ok()
+                    .and_then(|root| history::load(&history::threads_dir(&root)).ok())
+                    .unwrap_or_default();
+                self.agent.show_history(threads);
+            }
+            AgentAction::AttachScreenshot => {
+                let shot: Option<Screenshot> = self.run(
+                    ENGINE_SCREENSHOT,
+                    &EngineScreenshotParams {
+                        path: None,
+                        size: None,
+                    },
+                );
+                match shot.map(|shot| std::fs::read(&shot.path)) {
+                    Some(Ok(bytes)) => self.agent.attach_png(&bytes),
+                    Some(Err(error)) => self.agent.set_error(Some(error.to_string())),
+                    None => self
+                        .agent
+                        .set_error(Some(Text::GameStopped.get().to_owned())),
+                }
+            }
+            AgentAction::RunAgain(index, at, text) => {
+                let ctx = ctx.clone();
+                let ran = self
+                    .agent
+                    .run_again(&mut self.session, (index, at, text), move || {
+                        ctx.request_repaint()
+                    });
+                self.agent.set_error(ran.err());
+            }
+        }
+    }
+
+    /// After the agent's threads took their models' events (P4-31): the editor opens the last
+    /// file a call named while it follows the agent, and a thread that finished asks for the
+    /// modder's attention, as the system shows it (the dock or the taskbar).
+    fn after_agent(&mut self, ctx: &egui::Context) {
+        if let Some(path) = self.agent.take_followed().pop() {
+            let path = if path.is_absolute() {
+                path
+            } else {
+                self.agent_root()
+                    .map(|root| root.join(&path))
+                    .unwrap_or(path)
+            };
+            if path.is_file() {
+                self.jump(Jump { path, offset: 0 });
+            }
+        }
+        if self.agent.take_finished() > 0 {
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                egui::UserAttentionType::Informational,
+            ));
         }
     }
 
@@ -1418,6 +1476,8 @@ impl Shell {
         if self.agent.pump(&mut self.session) {
             ui.ctx().request_repaint();
         }
+        // A test drives the models by hand, outside a frame: what they named is taken here.
+        self.after_agent(ui.ctx());
         self.ctx = Some(ui.ctx().clone());
         if self.take_inline() {
             ui.ctx().request_repaint();

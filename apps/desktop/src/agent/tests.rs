@@ -11,7 +11,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{self, RawInput, Rect, Vec2};
-use qs_agent::{Message, Model, Outcome, Reply, ToolCall, ToolSpec};
+use qs_agent::{Message, Model, Outcome, Reply, ToolCall, ToolSpec, history};
 use qs_models::{MemoryKeys, ProviderConfig, ProviderKind};
 use serde_json::json;
 
@@ -413,4 +413,89 @@ fn a_task_attaches_what_its_mentions_name() {
         first.contains("No entity is selected in the running game."),
         "{first}"
     );
+}
+
+// No spec statement: P4-31, the acceptance criterion: a thread kept when it ends is reopened from
+// the history with its messages, the hunks it staged that still wait and its checkpoint
+#[test]
+fn a_thread_reopened_from_history_shows_messages_hunks_and_checkpoint() {
+    use egui_kittest::kittest::Queryable as _;
+    let (root, mut harness, gate) = harness("history", "");
+    let world = root.join("world.qc").to_string_lossy().into_owned();
+    let ctx = harness.ctx.clone();
+    shell(&mut harness)
+        .start_agent("Give the world a local.", &ctx)
+        .unwrap();
+    gate.send(Reply::Calls {
+        text: "Adding the local.".to_owned(),
+        calls: vec![ToolCall {
+            id: "c1".to_owned(),
+            name: "edit.apply".to_owned(),
+            arguments: json!({ "files": [{ "path": world,
+                "text": "void() worldspawn = { local float x; x = 1; };\n" }] }),
+        }],
+    })
+    .unwrap();
+    gate.send(Reply::Finish {
+        summary: "Added it.".to_owned(),
+    })
+    .unwrap();
+    while shell(&mut harness).agent_report(0).is_none() {
+        assert!(shell(&mut harness).wait_agent(0), "the model ended early");
+    }
+    let kept = history::load(&history::threads_dir(&root)).unwrap();
+    assert_eq!(kept.len(), 1, "the thread was kept when it ended");
+    assert_eq!(kept[0].title, "Give the world a local.");
+    assert_eq!(kept[0].staged.len(), 1);
+    let checkpoint = kept[0].checkpoint.unwrap();
+    shell(&mut harness).agent_action(AgentAction::OpenHistory, &ctx);
+    harness.run();
+    harness.get_by_label("Give the world a local.").click();
+    harness.run();
+    harness.run();
+    harness.get_by_label("Adding the local.");
+    harness.get_by_label(&format!("{} {checkpoint}", Text::AgentCheckpoint.get()));
+    harness.get_by_label(Text::AgentRestore.get());
+    harness.get_by_label(Text::AgentAccept.get());
+}
+
+// No spec statement: P4-31: while the editor follows the agent, a file a call names is opened;
+// a message queued while a turn runs is read on the next turn; a thread that ends is counted
+// for the notification
+#[test]
+fn following_queueing_and_the_finished_count() {
+    let (root, ctx, mut app, gates) = window("follow", 1);
+    app.shell_mut().agent_mut().set_follow_for_test();
+    app.shell_mut()
+        .start_agent("Read the world.", &ctx)
+        .unwrap();
+    app.shell_mut()
+        .agent_mut()
+        .queue_for_test(0, "Also say hello.");
+    let world = root.join("world.qc");
+    gates[0]
+        .send(Reply::Calls {
+            text: String::new(),
+            calls: vec![ToolCall {
+                id: "c1".to_owned(),
+                name: "file.read".to_owned(),
+                arguments: json!({ "path": world }),
+            }],
+        })
+        .unwrap();
+    assert!(app.shell_mut().wait_agent(0));
+    frame(&ctx, &mut app);
+    let (open, _) = app.shell().caret().unwrap();
+    assert!(open.ends_with("world.qc"), "{open:?}");
+    gates[0]
+        .send(Reply::Finish {
+            summary: "done".to_owned(),
+        })
+        .unwrap();
+    finish(&mut app, 0);
+    let transcript = &app.shell().agent_report(0).unwrap().transcript;
+    assert!(transcript.contains(&Message::User {
+        text: "Also say hello.".to_owned()
+    }));
+    assert_eq!(app.shell_mut().agent_mut().take_finished(), 1);
 }

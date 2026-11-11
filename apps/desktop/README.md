@@ -108,6 +108,22 @@ The right panel's Agent section (P4-09, UI-5, PRIN-4), modelled on Zed's agent p
   that needs the modder's permission waits in its thread, showing the tool, the paths it names
   and why it asks, with Allow once, Always allow and Deny. Frames go on meanwhile. Always allow
   keeps its rule in the project's settings.
+- **Threads, as Zed's agent panel keeps them (P4-31):**
+  - **Follow the agent:** while on, the editor opens the last file a reply's calls name.
+  - **History:** a thread that ends is kept in `.quakec-studio/threads/` (`qs_agent::history`).
+    History lists the kept threads, newest first, with a search; reopening one shows its
+    messages, its checkpoint with Restore, and the hunks it staged that still wait.
+  - **Edit and run again:** an ended thread's messages each have Edit; Run again from here
+    goes on from the edited message, from a new checkpoint (`Run::resume`).
+  - **Queue:** while a thread runs, a message typed in its box is read on its next turn.
+  - **Usage and compaction:** each thread shows its estimated tokens. Near the model's context
+    limit the run compacts the transcript into a summary the model writes, and the summaries
+    are shown under their heading.
+  - **Screenshots:** Attach screenshot gives the running game's frame (`engine.screenshot`)
+    as an image, to the running thread or the next one started. Pasting an image is not
+    supported: egui's paste event carries text only.
+  - **Notification:** a thread that finishes asks for the modder's attention
+    (`RequestUserAttention`).
 - **Proposed changes:** every staged hunk, with Accept and Reject for each and for all of
   them (`edit.accept`, `edit.reject`).
 - **@ mentions (P4-12, UI-8):** a task can name `@file:<path>`, `@symbol:<name>`,

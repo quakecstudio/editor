@@ -25,6 +25,34 @@ pub enum Text {
     PreviewOwnWindow,
     /// The command search box's hint.
     SearchCommands,
+    /// Why a thread could not be run again: it is gone.
+    AgentNoThread,
+    /// The agent panel's toggle that opens each file the agent works on (P4-31).
+    AgentFollow,
+    /// The agent panel's button that lists the threads kept.
+    AgentHistory,
+    /// The hint in the thread history's search box.
+    AgentHistorySearch,
+    /// The thread history's button back to the threads.
+    AgentHistoryBack,
+    /// The thread history with no thread kept.
+    AgentNoHistory,
+    /// Before a reopened thread's checkpoint number.
+    AgentCheckpoint,
+    /// The heading over a thread's compaction summaries.
+    AgentSummaries,
+    /// The button that edits an earlier message of a thread.
+    AgentEdit,
+    /// The button that runs a thread again from an edited message.
+    AgentRunAgain,
+    /// The button that queues a message for a running thread's next turn.
+    AgentQueue,
+    /// The hint in a running thread's message box.
+    AgentQueueHint,
+    /// The button that gives the running game's frame as context.
+    AgentScreenshot,
+    /// A thread's line for an image given as context.
+    AgentImage,
     /// The bottom panel's Git tab (P4-35).
     Git,
     /// The Git tab's label before the branch.
@@ -416,7 +444,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 202] = [
+    pub const ALL: [Self; 216] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -549,6 +577,20 @@ impl Text {
         Self::PaletteClose,
         Self::PaletteCancel,
         Self::PaletteNoMatch,
+        Self::AgentNoThread,
+        Self::AgentFollow,
+        Self::AgentHistory,
+        Self::AgentHistorySearch,
+        Self::AgentHistoryBack,
+        Self::AgentNoHistory,
+        Self::AgentCheckpoint,
+        Self::AgentSummaries,
+        Self::AgentEdit,
+        Self::AgentRunAgain,
+        Self::AgentQueue,
+        Self::AgentQueueHint,
+        Self::AgentScreenshot,
+        Self::AgentImage,
         Self::Git,
         Self::Branch,
         Self::NewBranchName,
@@ -770,6 +812,20 @@ impl Text {
             Self::PaletteClose => "close",
             Self::PaletteCancel => "Cancel",
             Self::PaletteNoMatch => "No command matches.",
+            Self::AgentNoThread => "That thread is gone.",
+            Self::AgentFollow => "Follow the agent",
+            Self::AgentHistory => "History",
+            Self::AgentHistorySearch => "Search threads",
+            Self::AgentHistoryBack => "Back",
+            Self::AgentNoHistory => "No thread has ended in this project yet.",
+            Self::AgentCheckpoint => "Checkpoint",
+            Self::AgentSummaries => "Summaries of compacted turns",
+            Self::AgentEdit => "Edit",
+            Self::AgentRunAgain => "Run again from here",
+            Self::AgentQueue => "Queue",
+            Self::AgentQueueHint => "A message for its next turn",
+            Self::AgentScreenshot => "Attach screenshot",
+            Self::AgentImage => "An image, given as context",
             Self::Git => "Git",
             Self::Branch => "Branch",
             Self::NewBranchName => "New branch name",
@@ -850,6 +906,18 @@ impl Text {
 #[must_use]
 pub fn command_count(shown: usize, total: usize) -> String {
     format!("{shown} of {total} commands")
+}
+
+/// A thread's estimated token use (P4-31).
+#[must_use]
+pub fn tokens_used(tokens: usize) -> String {
+    format!("About {tokens} tokens")
+}
+
+/// How many messages wait for a running thread's next turn (P4-31).
+#[must_use]
+pub fn queued_count(count: usize) -> String {
+    format!("{count} queued for the next turn")
 }
 
 /// A merge conflict's link in the Git tab: where its markers start, a line from 1.
