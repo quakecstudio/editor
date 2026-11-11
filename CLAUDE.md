@@ -103,7 +103,8 @@ cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo deny check advisories bans licenses sources
 
-cargo xtask conventions                   # config files match docs/conventions.md
+cargo xtask conventions                   # config files match docs/conventions.md; no CONV-17 violation beyond docs/audits/conv-17-baseline.tsv
+cargo xtask conv17-baseline               # rewrite that baseline from the code (only to remove fixed entries)
 cargo xtask adr                           # ADRs follow the template and are indexed
 cargo xtask clippy-fixtures               # the lints reject what they target
 cargo xtask deny-fixtures                 # deny.toml rejects bad licenses and wildcards (needs network)

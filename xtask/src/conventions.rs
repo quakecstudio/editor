@@ -17,7 +17,7 @@ use std::path::Path;
 
 use toml::{Table, Value};
 
-use crate::Report;
+use crate::{Report, conv17};
 
 const DOC: &str = "docs/conventions.md";
 const CLIPPY_TABLE_START: &str = "<!-- conventions:clippy-deny -->";
@@ -116,6 +116,7 @@ pub(crate) fn check(root: &Path) -> Result<Report, String> {
             check_member(&manifest, &crate_toml),
         );
     }
+    conv17::check(root, &mut report)?;
     Ok(report)
 }
 

@@ -408,9 +408,18 @@ licenses, recorded in `specs/README.md`, and are not scanned. A file of a type w
 
 **Differs from vouch:** these rules are this project's own (the project owner's request,
 2026-10-19), not taken from vouch. They apply to shipped crates; test code may bend them where a test reads better for
-it. No lint checks them: the implementer's pre-land code review
-([`work-issue`](../.claude/skills/work-issue/SKILL.md), "Land it") checks every PR against
-them, and P2-60 audits the L0 to L3 crates. Code written before them is changed by that
+it. `cargo xtask conventions` checks what a parser can (P5-18, `xtask/src/conv17.rs`): a
+function taking a `bool`; a library crate function returning `Result<_, String>`; a free
+function whose first parameter is a type its crate defines; a visible field or parameter named
+as an ID (`id`, `index`, `entity`, `edict`, `slot`, `revision`, or ending `_id`, `_index`,
+`_slot`, `_edict`) and typed as a raw integer; and a numeric literal other than 0, 1 and 2 in a
+function body, where a named constant belongs. The violations that existed when the check
+came are listed in `docs/audits/conv-17-baseline.tsv` (`cargo xtask conv17-baseline` writes
+it); a new one fails, and a fixed one fails until its line is removed, so the list only
+shrinks. The rest (named types the ID names miss, single-use helpers, duplicated code) is the
+implementer's pre-land code review's
+([`work-issue`](../.claude/skills/work-issue/SKILL.md), "Land it"), with P2-60's audit of the
+L0 to L3 crates and P5-19's of the code since PR #653. Code written before them is changed by that
 audit's refactoring issues, not by unrelated PRs. Each example is real code in the
 repository as of 2026-10-19; the "after" is the shape the rule asks for.
 
