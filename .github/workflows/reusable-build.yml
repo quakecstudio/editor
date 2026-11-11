@@ -322,12 +322,14 @@ jobs:
         with:
           persist-credentials: false
       # ALSA's headers for the preview host's sound; rpm, flatpak-builder and the
-      # Freedesktop runtime and SDK the Flatpak is built on.
+      # Freedesktop runtime and SDK the Flatpak is built on; desktop-file-utils to check the
+      # desktop entry; and librsvg's gdk-pixbuf loader, with which flatpak-builder checks the
+      # SVG icon on export.
       - name: Install the packaging tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libasound2-dev rpm flatpak flatpak-builder desktop-file-utils
+            libasound2-dev rpm flatpak flatpak-builder desktop-file-utils librsvg2-common
           flatpak remote-add --user --if-not-exists flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user --noninteractive --arch="$ARCH" flathub \
