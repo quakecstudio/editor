@@ -103,6 +103,7 @@ mod corpus;
 mod differential;
 mod download;
 mod engines;
+mod evals;
 mod exec;
 mod fixtures;
 mod fteqcc_coverage;
@@ -185,6 +186,8 @@ enum Task {
     FteqccFullCoverage(fteqcc_full_coverage::Args),
     /// A scenario played in qs-sim on a game, repeated, each result the same (SCN-2.5).
     Scenario(scenario::Args),
+    /// The agent's evals: check each task's scenario, or run the tasks on a model (P4-15).
+    Evals(evals::Args),
     /// The server simulation differential: qs-sim against id's server on a route.
     SimDiff(sim_diff::Args),
     /// The view differential: the preview host's frames and sound against id's engine.
@@ -268,6 +271,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::Readiness(args) => ("readiness", readiness::main(root, args)),
         Task::SemaCorpus(args) => ("sema-corpus", sema_corpus::main(root, args)),
         Task::Scenario(args) => ("scenario", scenario::main(root, args)),
+        Task::Evals(args) => ("evals", evals::main(root, args)),
         Task::SimDiff(args) => ("sim-diff", sim_diff::main(root, args)),
         Task::ViewDiff(args) => ("view-diff", view_diff::main(root, args)),
         Task::Adr => return print_outcome("adr", adr::check(root)),
