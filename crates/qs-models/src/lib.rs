@@ -196,6 +196,46 @@ pub struct ProviderModel<T> {
     /// assistant message is sent back as the n-th of these, so what the provider adds (an
     /// Anthropic model's thinking blocks) goes back unchanged.
     sent: Vec<Value>,
+    usage: Usage,
+}
+
+/// The tokens a model's replies have used, as the providers report them: Anthropic's
+/// `usage.input_tokens` and `usage.output_tokens`, OpenAI's `usage.prompt_tokens` and
+/// `usage.completion_tokens`. A reply that reports none adds nothing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Usage {
+    /// Tokens read.
+    pub input_tokens: u64,
+    /// Tokens written.
+    pub output_tokens: u64,
+}
+
+impl Usage {
+    /// What `answer` reports, read by the keys of either provider.
+    fn of(answer: &Value) -> Self {
+        let read = |keys: [&str; 2]| {
+            keys.iter()
+                .find_map(|key| {
+                    answer
+                        .pointer(&format!("/usage/{key}"))
+                        .and_then(Value::as_u64)
+                })
+                .unwrap_or_default()
+        };
+        Self {
+            input_tokens: read(["input_tokens", "prompt_tokens"]),
+            output_tokens: read(["output_tokens", "completion_tokens"]),
+        }
+    }
+
+    /// The cost in US dollars at these prices per million tokens read and written.
+    #[must_use]
+    pub fn cost(self, input_per_million: f64, output_per_million: f64) -> f64 {
+        let tokens = |count: u64| f64::from(u32::try_from(count).unwrap_or(u32::MAX));
+        (tokens(self.input_tokens) * input_per_million
+            + tokens(self.output_tokens) * output_per_million)
+            / 1_000_000.0
+    }
 }
 
 impl<T: Transport> ProviderModel<T> {
@@ -217,6 +257,7 @@ impl<T: Transport> ProviderModel<T> {
             key,
             transport,
             sent: Vec::new(),
+            usage: Usage::default(),
         })
     }
 
@@ -224,6 +265,12 @@ impl<T: Transport> ProviderModel<T> {
     #[must_use]
     pub const fn config(&self) -> &ProviderConfig {
         &self.config
+    }
+
+    /// The tokens every reply so far has used.
+    #[must_use]
+    pub const fn usage(&self) -> Usage {
+        self.usage
     }
 }
 
@@ -273,6 +320,9 @@ impl<T: Transport> ProviderModel<T> {
 
     /// The reply in `answer`, its raw message kept to send back.
     fn take(&mut self, answer: &Value, tools: &[ToolSpec]) -> Result<Reply, String> {
+        let used = Usage::of(answer);
+        self.usage.input_tokens = self.usage.input_tokens.saturating_add(used.input_tokens);
+        self.usage.output_tokens = self.usage.output_tokens.saturating_add(used.output_tokens);
         let (reply, raw) = match self.config.kind {
             ProviderKind::Anthropic => anthropic::reply(answer, tools)?,
             ProviderKind::OpenAiCompatible | ProviderKind::Ollama => openai::reply(answer, tools)?,

@@ -1,0 +1,18 @@
+title = "Fix a crash on spawn"
+template = "id1"
+prompt = "The game stops with a run error as soon as the player spawns. Find the cause and fix it."
+turns = 30
+runs = 1
+threshold = 1
+
+[[setup]]
+file = "client.qc"
+find = "	self.th_pain = player_pain;"
+replace = """	self.th_pain ();
+	self.th_pain = player_pain;"""
+
+[[solution]]
+file = "client.qc"
+find = """	self.th_pain ();
+	self.th_pain = player_pain;"""
+replace = "	self.th_pain = player_pain;"
