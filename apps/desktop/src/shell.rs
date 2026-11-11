@@ -209,6 +209,10 @@ pub struct Shell {
     host: Option<Host>,
     /// The agent panel's threads and provider (P4-09).
     agent: AgentPanel,
+    /// An inline edit's answer, while the model writes it (P4-10).
+    inline: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    /// The window's egui context, to ask for a frame from another thread.
+    ctx: Option<egui::Context>,
 }
 
 impl Shell {
@@ -269,6 +273,8 @@ impl Shell {
             project_error: None,
             host: None,
             agent: AgentPanel::new(Box::new(agent::provider_model)),
+            inline: None,
+            ctx: None,
         })
     }
 
@@ -429,6 +435,70 @@ impl Shell {
     #[must_use]
     pub fn agent_report(&self, index: usize) -> Option<&qs_agent::RunReport> {
         self.agent.report(index)
+    }
+
+    /// Asks the agent's model for an inline edit of `selection` in the editor's file at `path`
+    /// (P4-10); its answer is shown when [`Shell::ui`] takes it.
+    ///
+    /// # Errors
+    ///
+    /// No provider set up, or no model.
+    fn start_inline(
+        &mut self,
+        path: &Path,
+        selection: &str,
+        instruction: &str,
+    ) -> Result<(), String> {
+        let file = self
+            .editor
+            .as_ref()
+            .map(|editor| editor.view.state().buffer().text())
+            .unwrap_or_default();
+        let prompt = qs_agent::inline_prompt(path, &file, selection, instruction);
+        let ctx = self.ctx.clone();
+        let answered = self.agent.ask_once(prompt, move || {
+            if let Some(ctx) = &ctx {
+                ctx.request_repaint();
+            }
+        })?;
+        self.inline = Some(answered);
+        Ok(())
+    }
+
+    /// Shows an inline edit's answer in the editor once it has come; whether it has.
+    fn take_inline(&mut self) -> bool {
+        let Some(answer) = self
+            .inline
+            .as_ref()
+            .and_then(|answered| answered.try_recv().ok())
+        else {
+            return false;
+        };
+        self.show_inline(answer);
+        true
+    }
+
+    /// Shows an inline edit's answer, or why there is none, in the editor.
+    fn show_inline(&mut self, answer: Result<String, String>) {
+        self.inline = None;
+        if let Some(editor) = self.editor.as_mut() {
+            match answer {
+                Ok(text) => editor.propose(&text),
+                Err(why) => editor.inline_failed(why),
+            }
+        }
+    }
+
+    /// Waits for an inline edit's answer and shows it. For tests.
+    #[cfg(test)]
+    pub(crate) fn wait_inline(&mut self) {
+        if let Some(answer) = self
+            .inline
+            .as_ref()
+            .and_then(|answered| answered.recv().ok())
+        {
+            self.show_inline(answer);
+        }
     }
 
     /// The agent panel, to drive its threads.
@@ -686,6 +756,10 @@ impl Shell {
     pub fn ui(&mut self, ui: &mut Ui) {
         // P4-09: what the agent's models sent since the last frame; their calls run here.
         if self.agent.pump(&mut self.session) {
+            ui.ctx().request_repaint();
+        }
+        self.ctx = Some(ui.ctx().clone());
+        if self.take_inline() {
             ui.ctx().request_repaint();
         }
         // AGT-7: commands sent over the socket run first, so the frame draws what they did.
@@ -1424,6 +1498,13 @@ impl Shell {
                     self.jump(jump);
                     None
                 }
+                Request::InlineEdit {
+                    selection,
+                    instruction,
+                } => self
+                    .start_inline(&path, &selection, &instruction)
+                    .err()
+                    .map(Popup::InlineFailed),
             };
             if let Some(popup) = popup
                 && let Some(editor) = self.editor.as_mut()
