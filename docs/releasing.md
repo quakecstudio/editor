@@ -2,8 +2,10 @@
 
 How QuakeC Studio is packaged, signed, checked and released (P4-18,
 [#129](https://github.com/quakecstudio/editor/issues/129)), and the signing it uses (P0-23,
-[#23](https://github.com/quakecstudio/editor/issues/23)). One workflow does all of it,
-`.github/workflows/sign.yml`. Windows signing is deferred past the MVP (#23, moved to the
+[#23](https://github.com/quakecstudio/editor/issues/23)). Two workflows do it: `.github/workflows/release.yml`, started by a tag or by hand, calls the
+reusable `.github/workflows/reusable-build.yml`, which builds, signs and attests every package.
+The attestations are made in the reusable workflow so that each names it as the signer,
+whatever calls it. Windows signing is deferred past the MVP (#23, moved to the
 post-MVP backlog on 2026-11-11): Azure's login fails until the app registration has a federated
 credential for this repository, so the MVP's Windows packages are unsigned.
 
@@ -12,10 +14,10 @@ credential for this repository, so the MVP's Windows packages are unsigned.
 1. Set `version` in the root `Cargo.toml` to the release's, such as `2026.11.0`, and merge it.
 2. Push a tag naming it: `v2026.11.0`, or `v2026.11.0-rc1` for a pre-release. The workflow
    fails a tag that does not name the workspace's version.
-3. The **Sign** workflow builds, signs, checks and publishes. A tag with a `-` is published as
+3. The **Release** workflow builds, signs, checks and publishes. A tag with a `-` is published as
    a pre-release; any other tag too, as a release.
 
-Run **Sign** from the Actions tab (or `gh workflow run sign.yml --ref <branch>`) for a dry run:
+Run **Release** from the Actions tab (or `gh workflow run release.yml --ref <branch>`) for a dry run:
 it does everything but publish, and keeps the packages and `SHA256SUMS` as the run's `release`
 artifact. Its `windows-signing` input also tries Windows signing (#23).
 
@@ -65,10 +67,9 @@ The game is LibreQuake (`cargo xtask assets fetch`); Quake's data is never used 
 
 Justin entered these twelve secrets on 2026-10-16, following vouch and quack. They are
 **repository-level**, by his choice, so only a workflow that signs may reference them:
-today `.github/workflows/sign.yml`, started by hand (`workflow_dispatch`) or by pushing a `v*`
-tag. It is a standalone workflow, never called from another, so that every attestation it
-makes names `sign.yml` as its signer. Agents never handle their values; the workflow's first
-job checks each is set and prints no value.
+`.github/workflows/release.yml` passes each, by name, to the reusable
+`.github/workflows/reusable-build.yml`, the one workflow that reads them. Agents never handle
+their values; the reusable workflow's first job checks each is set and prints no value.
 
 | Secret | What it is | Used by |
 | --- | --- | --- |
@@ -88,7 +89,7 @@ job checks each is set and prints no value.
 **Owner and renewal:** every credential is Justin's.
 - **Developer ID certificate:** renews every five years, in Apple's developer account.
 - **App-specific password:** stays valid until revoked.
-- **Entra app registration:** uses federated credentials, not a secret, so nothing expires. The organization customizes its OIDC subject claim, so the subject is not the default `repo:<owner>/<repo>:ref:<ref>`. A run of Sign presents `repo:quakecstudio@343029298/editor@1420764495:workflow:Sign:ref_type:branch` from a branch and the same ending in `ref_type:tag` from a `v*` tag, as Azure's AADSTS700213 error showed on the first run ([#23](https://github.com/quakecstudio/editor/issues/23)). Each needs a federated credential with issuer `https://token.actions.githubusercontent.com` and audience `api://AzureADTokenExchange`. If `aas-sign` fails to log in because none matches, the subject in the error goes to Justin; it is not worked around.
+- **Entra app registration:** uses federated credentials, not a secret, so nothing expires. The organization customizes its OIDC subject claim, so the subject is not the default `repo:<owner>/<repo>:ref:<ref>`. The first run, of the workflow then named Sign, presented `repo:quakecstudio@343029298/editor@1420764495:workflow:Sign:ref_type:branch`, as Azure's AADSTS700213 error showed ([#23](https://github.com/quakecstudio/editor/issues/23)). The workflow is now Release, which calls the reusable build, so the subject to trust is the one the next AADSTS700213 error names, expected to be the same with `workflow:Release`, and the same ending in `ref_type:tag` from a `v*` tag. Each needs a federated credential with issuer `https://token.actions.githubusercontent.com` and audience `api://AzureADTokenExchange`. If `aas-sign` fails to log in because none matches, the subject in the error goes to Justin; it is not worked around.
 
 ## Signing
 
@@ -104,17 +105,17 @@ signature.
 
 ## Checking an attestation
 
-Every package has a build provenance attestation from `actions/attest`, made from
-`SHA256SUMS` and signed with the workflow's OIDC identity. Check a downloaded package with:
+Every package has a build provenance attestation from `actions/attest`, made in the job of
+`reusable-build.yml` that built it and signed with that workflow's OIDC identity. Check a downloaded package with:
 
 ```bash
 gh attestation verify quakec-studio-2026.11.0-windows-x64.msi --repo quakecstudio/editor \
-  --signer-workflow quakecstudio/editor/.github/workflows/sign.yml
+  --signer-workflow quakecstudio/editor/.github/workflows/reusable-build.yml
 ```
 
 ## The compatibility list
 
-Every release tag also runs the Sign workflow's **Regenerate the compatibility list** job
+Every release tag also runs the Release workflow's **Regenerate the compatibility list** job
 (P4-21, COMP-9). It fetches the conformance corpus, writes
 [`docs/compatibility.md`](compatibility.md) with `cargo xtask compatibility`, attaches it to the
 run and shows it in the job summary. The job fails when the list on the tagged commit differs

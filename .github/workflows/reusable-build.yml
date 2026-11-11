@@ -1,26 +1,51 @@
-name: Sign
+name: Reusable build
 
-# The release (P4-18, #129) and its signing (P0-23, #23). A `v*` tag, or a run started by
-# hand, builds every package, signs and notarizes the macOS app and its disk image the way
-# vouch-sh/vouch's reusable-build.yml does, installs each package on a clean runner and checks
-# it there with `quakec-ide doctor`, and attests each artifact with GitHub's artifact
-# attestations. A tag also publishes the packages and SHA256SUMS as a GitHub release, a
-# pre-release when the tag has a `-` (v2026.11.0-rc1). It is a standalone workflow, not one
-# another workflow calls, so that every attestation names this file as its signer:
+# The release's build (P4-18, #129) and its signing (P0-23, #23), called by
+# .github/workflows/release.yml. It builds every package, signs and notarizes the macOS app
+# and its disk image the way vouch-sh/vouch's reusable-build.yml does, and attests each
+# package in the job that made it. The attestations are made here, in a reusable workflow,
+# so each names this file as its signer whatever workflow calls it, and a check holds the
+# build to this file:
 #   gh attestation verify <file> --repo quakecstudio/editor \
-#     --signer-workflow quakecstudio/editor/.github/workflows/sign.yml
-# The secrets are the repository-level ones docs/releasing.md lists. Windows packages are
-# unsigned until Windows signing works (#23); the `windows-signing` input tries it.
+#     --signer-workflow quakecstudio/editor/.github/workflows/reusable-build.yml
+# The secrets are the repository-level ones docs/releasing.md lists, passed by name. The
+# Windows packages are unsigned until Windows signing works (#23); `windows-signing` tries it.
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       windows-signing:
         description: Also sign the Windows app with Azure Trusted Signing (#23)
         type: boolean
         default: false
-  push:
-    tags:
-      - "v*"
+    outputs:
+      version:
+        description: The workspace version the packages carry
+        value: ${{ jobs.version.outputs.version }}
+    secrets:
+      APPLE_CERTIFICATE_P12_BASE64:
+        required: true
+      APPLE_CERTIFICATE_PASSWORD:
+        required: true
+      APPLE_CERTIFICATE_NAME:
+        required: true
+      MACOS_KEYCHAIN_PASSWORD:
+        required: true
+      APPLE_ID:
+        required: true
+      APPLE_ID_PASSWORD:
+        required: true
+      APPLE_TEAM_ID:
+        required: true
+      AZURE_CLIENT_ID:
+        required: true
+      AZURE_TENANT_ID:
+        required: true
+      TRUSTED_SIGNING_ENDPOINT:
+        required: true
+      TRUSTED_SIGNING_ACCOUNT:
+        required: true
+      CERTIFICATE_PROFILE:
+        required: true
 
 permissions: {}
 
@@ -103,6 +128,8 @@ jobs:
     timeout-minutes: 120
     permissions:
       contents: read
+      id-token: write
+      attestations: write
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -179,6 +206,10 @@ jobs:
           xcrun notarytool submit "$dmg" --keychain-profile "notarytool-profile" --wait
           xcrun stapler staple "$dmg"
           xcrun stapler validate "$dmg"
+      - name: Attest the disk image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*.dmg
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-macos
@@ -195,6 +226,8 @@ jobs:
     timeout-minutes: 120
     permissions:
       contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -228,6 +261,10 @@ jobs:
         run: |
           packaging/windows.sh zip "$ARCH" "target/$TARGET/release" "$VERSION" dist
           packaging/windows.sh msi "$ARCH" "target/$TARGET/release" "$VERSION" dist
+      - name: Attest the zip and the MSI
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-windows-${{ matrix.arch }}
@@ -241,6 +278,8 @@ jobs:
     timeout-minutes: 120
     permissions:
       contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -277,199 +316,15 @@ jobs:
             packaging/linux.sh "$format" "$ARCH" target/release "$VERSION" dist
           done
           ls -l dist
+      - name: Attest the Linux packages
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-linux-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
-
-  # LibreQuake's game data, which the install tests start the preview host on.
-  game:
-    name: Fetch LibreQuake for the install tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up the Rust toolchain
-        run: rustup toolchain install
-      - name: Fetch the test assets
-        env:
-          RUNNER_TEMP_DIR: ${{ runner.temp }}
-        run: |
-          export QS_TEST_ASSETS="$RUNNER_TEMP_DIR/test-assets"
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libasound2-dev
-          cargo xtask assets fetch
-          mv "$QS_TEST_ASSETS/librequake-lite" librequake-lite
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: librequake-lite
-          path: librequake-lite
-          if-no-files-found: error
-
-  # Each package installed on a runner that has never built the app, then checked: the
-  # preview host started headless on LibreQuake and stopped (`quakec-ide doctor --check
-  # host`), and the app's window open after fifteen seconds.
-  install-macos:
-    name: Install on macOS
-    needs: [macos, game]
-    runs-on: macos-latest
-    timeout-minutes: 30
-    permissions: {}
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-macos
-          path: dist
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: librequake-lite
-          path: librequake-lite
-      - name: Install the app from the disk image, as a person does
-        run: |
-          xcrun stapler validate dist/*.dmg
-          hdiutil attach dist/*.dmg -mountpoint /Volumes/QuakeCStudio -nobrowse
-          cp -R "/Volumes/QuakeCStudio/QuakeC Studio.app" /Applications/
-          hdiutil detach /Volumes/QuakeCStudio
-          spctl --assess --type execute --verbose=4 "/Applications/QuakeC Studio.app"
-      - name: Check the install
-        run: |
-          macos="/Applications/QuakeC Studio.app/Contents/MacOS"
-          "$macos/quakec-ide" --version
-          "$macos/quakec-ide" doctor --check host --game librequake-lite
-      - name: Open the app
-        run: |
-          open "/Applications/QuakeC Studio.app"
-          sleep 15
-          pgrep -x quakec-studio
-          pkill -x quakec-studio
-
-  install-windows:
-    name: Install on Windows (${{ matrix.arch }})
-    needs: [windows, game]
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    permissions: {}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            runner: windows-latest
-          - arch: arm64
-            runner: windows-11-arm
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-windows-${{ matrix.arch }}
-          path: dist
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: librequake-lite
-          path: librequake-lite
-      - name: Install the MSI, as a person does
-        run: |
-          $msi = (Get-ChildItem dist/*.msi).FullName
-          $install = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v msi.log" -Wait -PassThru
-          if ($install.ExitCode -ne 0) { Get-Content msi.log -Tail 50; throw "msiexec: $($install.ExitCode)" }
-      - name: Check the install
-        run: |
-          $folder = "$env:ProgramFiles\QuakeC Studio"
-          & "$folder\quakec-ide.exe" --version
-          if ($LASTEXITCODE -ne 0) { throw "quakec-ide --version: $LASTEXITCODE" }
-          & "$folder\quakec-ide.exe" doctor --check host --game librequake-lite
-          if ($LASTEXITCODE -ne 0) { throw "quakec-ide doctor: $LASTEXITCODE" }
-          $path = [Environment]::GetEnvironmentVariable("PATH", "Machine")
-          if (-not $path.Contains($folder)) { throw "the install folder is not on PATH" }
-      - name: Open the app
-        run: |
-          $app = Start-Process "$env:ProgramFiles\QuakeC Studio\quakec-studio.exe" -PassThru
-          Start-Sleep -Seconds 15
-          if ($app.HasExited) { throw "the app exited with $($app.ExitCode)" }
-          Stop-Process -Id $app.Id
-      - name: Check the portable zip
-        run: |
-          Expand-Archive (Get-ChildItem dist/*.zip).FullName -DestinationPath portable
-          $ide = (Get-ChildItem portable -Recurse -Filter quakec-ide.exe).FullName
-          & $ide doctor --check host --game librequake-lite
-          if ($LASTEXITCODE -ne 0) { throw "quakec-ide doctor: $LASTEXITCODE" }
-
-  install-linux:
-    name: Install on Linux (${{ matrix.arch }})
-    needs: [linux, game]
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    permissions: {}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-24.04
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
-    env:
-      ARCH: ${{ matrix.arch }}
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-linux-${{ matrix.arch }}
-          path: dist
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: librequake-lite
-          path: librequake-lite
-      - name: Install the deb and check it
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ./dist/*.deb xvfb mesa-vulkan-drivers
-          quakec-ide --version
-          quakec-ide doctor --check host --game librequake-lite
-      - name: Open the app from the deb
-        run: |
-          xvfb-run -a quakec-studio &
-          sleep 15
-          pgrep -x quakec-studio
-          pkill -x quakec-studio
-      - name: Install the rpm on Fedora and check it
-        run: |
-          docker run --rm -v "$PWD:/work" -w /work fedora:41 bash -euc '
-            dnf install -y ./dist/*.rpm
-            quakec-ide --version
-            quakec-ide doctor --check host --game librequake-lite
-          '
-      - name: Check the AppImage
-        run: |
-          appimage=$(echo dist/*.AppImage)
-          chmod +x "$appimage"
-          APPIMAGE_EXTRACT_AND_RUN=1 "$appimage" quakec-ide doctor --check host --game librequake-lite
-      # From inside the Flatpak's sandbox: Steam's library found (a Steam folder holding
-      # LibreQuake as Quake), the preview host started on it, and the keychain through the
-      # Secret Service, here gnome-keyring in the session the run starts.
-      - name: Install the Flatpak and check it from its sandbox
-        run: |
-          sudo apt-get install -y --no-install-recommends flatpak gnome-keyring dbus-x11
-          flatpak remote-add --user --if-not-exists flathub \
-            https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user --noninteractive ./dist/*.flatpak
-          steam="$HOME/.local/share/Steam"
-          mkdir -p "$steam/steamapps/common"
-          cp -R librequake-lite "$steam/steamapps/common/Quake"
-          printf '"libraryfolders"\n{\n\t"0"\n\t{\n\t\t"path"\t\t"%s"\n\t\t"apps"\n\t\t{\n\t\t\t"2310"\t\t"1"\n\t\t}\n\t}\n}\n' \
-            "$steam" > "$steam/steamapps/libraryfolders.vdf"
-          printf '"AppState"\n{\n\t"appid"\t\t"2310"\n\t"installdir"\t\t"Quake"\n}\n' \
-            > "$steam/steamapps/appmanifest_2310.acf"
-          dbus-run-session -- bash -euc '
-            echo -n "" | gnome-keyring-daemon --unlock --components=secrets
-            flatpak run --command=quakec-ide com.quakecstudio.QuakeCStudio doctor --require-game
-          '
 
   windows-sign:
     name: Sign and attest on Windows
@@ -490,7 +345,8 @@ jobs:
       - name: Build the desktop app
         run: cargo build --release --locked -p quakec-studio
       # If the OIDC login fails because no federated credential trusts quakecstudio/editor,
-      # the subject to add is escalated to Justin (#23), not worked around.
+      # the subject to add is escalated to Justin (#23), not worked around. The token's subject
+      # names the calling workflow, Release.
       - name: Code sign Windows binaries
         uses: skeeto/aas-sign@058700fb89886acfce8d1cc511d69a11eb8f9862 # v1.1.1
         with:
@@ -508,86 +364,7 @@ jobs:
           $signature = Get-AuthenticodeSignature target/release/quakec-studio.exe
           if ($signature.Status -ne 'Valid') { throw "the signature is $($signature.Status)" }
           "ok    signed by $($signature.SignerCertificate.Subject)"
-
-  # Every package and SHA256SUMS, attested; on a tag, published as a release.
-  release:
-    name: Attest and publish
-    needs: [version, install-macos, install-windows, install-linux]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-    env:
-      VERSION: ${{ needs.version.outputs.version }}
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: release-*
-          path: dist
-          merge-multiple: true
-      - name: Write SHA256SUMS
-        run: |
-          cd dist
-          sha256sum -- * > SHA256SUMS
-          cat SHA256SUMS
-      - name: Attest every package
+      - name: Attest the signed binary
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-checksums: dist/SHA256SUMS
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release
-          path: dist
-          if-no-files-found: error
-      - name: Publish the release
-        if: ${{ github.ref_type == 'tag' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-          REPO: ${{ github.repository }}
-        run: |
-          prerelease=()
-          case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
-          gh release create "$TAG" --repo "$REPO" --verify-tag "${prerelease[@]}" \
-            --title "QuakeC Studio $TAG" \
-            --notes "QuakeC Studio $VERSION, built from $TAG. The source is the tag's commit; every package holds LICENSE and NOTICE. Check a file with \`gh attestation verify <file> --repo $REPO\`. The Windows packages are unsigned." \
-            dist/*
-
-  # P4-21 (COMP-9): every release regenerates the compatibility list from the conformance
-  # corpus, attaches it, and fails when the list on the tagged commit is out of date, so the
-  # list published with a release is the one its code earns. It needs no signing secret.
-  compatibility:
-    name: Regenerate the compatibility list
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up the Rust toolchain
-        run: rustup toolchain install
-      - name: Point QS_TEST_ASSETS outside the source tree
-        env:
-          RUNNER_TEMP_DIR: ${{ runner.temp }}
-        run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
-      - name: Fetch the conformance corpus
-        run: cargo xtask corpus fetch
-      - name: Write the compatibility list
-        run: |
-          cargo xtask compatibility
-          cat docs/compatibility.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: compatibility
-          path: docs/compatibility.md
-          if-no-files-found: error
-      - name: The tagged commit has this list
-        run: |
-          if ! git diff --exit-code -- docs/compatibility.md; then
-            echo "::error::docs/compatibility.md is out of date: commit the list this job attached, then tag again"
-            exit 1
-          fi
+          subject-path: target/release/quakec-studio.exe

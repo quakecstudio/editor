@@ -199,17 +199,24 @@ check:
 | --- | --- | --- |
 | `Benchmarks` | Linux | `cargo xtask bench` against the history saved from `main`, then uploads the history as the `bench-history` artifact ([perf-budgets.md](perf-budgets.md#in-ci)) |
 
-[`.github/workflows/sign.yml`](../.github/workflows/sign.yml) runs on demand
-(`workflow_dispatch`) and on a pushed `v*` tag, never on pull requests, and is **not** a
-required check. It stands alone, called by no other workflow, so its attestations name it as
-the signer. It is the only workflow that reads the signing secrets
-([releasing.md](releasing.md)):
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs on demand
+(`workflow_dispatch`, a dry run) and on a pushed `v*` tag, never on pull requests, and is
+**not** a required check ([releasing.md](releasing.md)). It calls the reusable
+[`.github/workflows/reusable-build.yml`](../.github/workflows/reusable-build.yml), the only
+workflow that reads the signing secrets, which builds, signs and attests every package, so each
+attestation names the reusable workflow as its signer:
 
 | Check | Runs on | What it does |
 | --- | --- | --- |
-| `Signing secrets are set` | Linux | fails naming each signing secret that is not set, printing no value |
-| `Sign, notarize and attest on macOS` | macOS | builds the app, signs it with the hardened runtime from `build.keychain`, verifies it, notarizes it with notarytool, attests it and uploads it |
-| `Sign and attest on Windows` | Windows | builds the app, signs the `.exe` with aas-sign (Azure Trusted Signing over OIDC), checks its Authenticode signature, attests it and uploads it |
+| `Build / Signing secrets are set` | Linux | fails naming each signing secret that is not set, printing no value |
+| `Build / Version` | Linux | reads the workspace version and fails a tag that does not name it |
+| `Build / Package, sign and notarize on macOS` | macOS | builds both architectures, makes the universal app, signs it with the hardened runtime from `build.keychain`, makes, signs, notarizes and staples the disk image, and attests it |
+| `Build / Package on Windows (x64, arm64)` | Windows | makes the zip and the MSI, unsigned (#23), and attests them |
+| `Build / Package on Linux (x86_64, aarch64)` | Linux | makes the deb, rpm, AppImage and Flatpak and attests them |
+| `Build / Sign and attest on Windows` | Windows | with the `windows-signing` input only: signs the `.exe` with aas-sign (Azure Trusted Signing over OIDC) and checks its Authenticode signature |
+| `Install on macOS`, `Install on Windows (x64, arm64)`, `Install on Linux (x86_64, aarch64)` | each | installs each package on a clean runner and checks it with `quakec-ide doctor` |
+| `Checksums and publish` | Linux | writes `SHA256SUMS`; on a tag, publishes the GitHub release |
+| `Regenerate the compatibility list` | Linux | writes `docs/compatibility.md` from the corpus and fails a tag whose list is out of date |
 
 [`.github/workflows/evals.yml`](../.github/workflows/evals.yml) runs the agent's evals on a real
 model (`cargo xtask evals --run`, [`evals/README.md`](../evals/README.md)). It runs weekly and on

@@ -15,7 +15,7 @@
 //!   `corpus/compatibility.toml` records.
 //! - **Issues:** the issues `corpus/compatibility.toml` links.
 //!
-//! The release workflow (`sign.yml`) runs it on every release tag and attaches the list.
+//! The release workflow (`release.yml`) runs it on every release tag and attaches the list.
 
 use std::collections::BTreeMap;
 use std::fs;
