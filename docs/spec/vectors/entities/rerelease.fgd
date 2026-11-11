@@ -1,0 +1,1039 @@
+@PointClass color(0 128 204) size(-8 -8 -8, 8 8 8) = air_bubbles : "testing air bubbles"
+[
+	origin(string) : "origin"
+	waterlevel(float) : "waterlevel"
+]
+
+@PointClass color(77 26 153) size(-10 -10 -8, 10 10 8) = ambient_comp_hum : ""
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(77 26 153) size(-10 -10 -8, 10 10 8) = ambient_drip : ""
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(77 26 153) size(-10 -10 -8, 10 10 8) = ambient_drone : ""
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(77 26 153) size(-10 -10 -8, 10 10 8) = ambient_flouro_buzz : ""
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(77 26 153) size(-10 -10 -8, 10 10 8) = ambient_light_buzz : ""
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(77 26 153) size(-10 -10 -8, 10 10 8) = ambient_suck_wind : ""
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(77 26 153) size(-10 -10 -8, 10 10 8) = ambient_swamp1 : ""
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(77 26 153) size(-10 -10 -8, 10 10 8) = ambient_swamp2 : ""
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(77 26 153) size(-10 -10 -8, 10 10 8) = ambient_thunder : ""
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(0 255 255) size(-16 -16 -16, 16 16 16) = event_lightning : "Just for boss level."
+[
+	ltime(float) : "ltime"
+	max_health(float) : "max_health"
+	noise2(string) : "noise2"
+	origin(string) : "origin"
+	pos1(string) : "pos1"
+	speed(float) : "speed"
+]
+
+@SolidClass color(0 128 204) = func_bossgate : "This bmodel appears unless players have all of the episode sigils."
+[
+]
+
+@SolidClass color(0 128 204) = func_button : "When a button is touched, it moves some distance in the direction of it's angle, triggers all of it's targets, waits some time, then returns to it's original position where it can be triggered again. 'angle' determines the opening direction 'target' all entities with a matching targetname will be used 'speed' override the default 40 speed 'wait' override the default 1 second wait (-1 = never return) 'lip' override the default 4 pixel lip remaining at end of move 'health' if set, the button must be killed instead of touched 'sounds' 0) steam metal 1) wooden clunk 2) metallic click 3) in-out"
+[
+	health(float) : "health"
+	lip(float) : "lip" : "4"
+	ltime(float) : "ltime"
+	origin(string) : "origin"
+	sounds(float) : "sounds"
+	speed(float) : "speed" : "40"
+	wait(float) : "wait" : "1"
+]
+
+@SolidClass color(0 128 204) = func_door : "if two doors touch, they are assumed to be connected and operate as a unit. TOGGLE causes the door to wait in both the start and end states for a trigger event. START_OPEN causes the door to move to its destination when spawned, and operate in reverse. It is used to temporarily or permanently close off an area when triggered (not usefull for touch or takedamage doors). Key doors are allways wait -1. 'message' is printed when the door is touched if it is a trigger door and it hasn't been fired yet 'angle' determines the opening direction 'targetname' if set, no touch field will be spawned and a remote button or trigger field activates the door. 'health' if set, door must be shot open 'speed' movement speed (100 default) 'wait' wait before returning (3 default, -1 = never return) 'lip' lip remaining at end of move (8 default) 'dmg' damage to inflict when blocked (2 default) 'sounds' 0) no sound 1) stone 2) base 3) stone chain 4) screechy metal"
+[
+	spawnflags(flags) =
+	[
+		1 : "DOOR_START_OPEN" : 0
+		4 : "DOOR_DONT_LINK" : 0
+		8 : "DOOR_GOLD_KEY" : 0
+		16 : "DOOR_SILVER_KEY" : 0
+		32 : "DOOR_TOGGLE" : 0
+	]
+	delay(float) : "delay"
+	dmg(float) : "dmg" : "2"
+	health(float) : "health"
+	killtarget(target_destination) : "killtarget"
+	lip(float) : "lip" : "8"
+	ltime(float) : "ltime"
+	noise(string) : "noise"
+	origin(string) : "origin"
+	sounds(float) : "sounds"
+	speed(float) : "speed" : "100"
+	target(target_destination) : "target"
+	targetname(target_source) : "targetname"
+	wait(float) : "wait" : "3"
+]
+
+@SolidClass color(0 128 204) = func_door_secret : "Basic secret door. Slides back, then to the side. Angle determines direction. wait = # of seconds before coming back 1st_left = 1st move is left of arrow 1st_down = 1st move is down from arrow always_shoot = even if targeted, keep shootable t_width = override WIDTH to move back (or height if going down) t_length = override LENGTH to move sideways 'dmg' damage to inflict when blocked (2 default) If a secret door has a targetname, it will only be opened by it's botton or trigger, not by damage. 'sounds' 1) medieval 2) metal 3) base"
+[
+	spawnflags(flags) =
+	[
+		1 : "open_once" : 0
+		2 : "SECRET_1ST_LEFT" : 0
+		4 : "SECRET_1ST_DOWN" : 0
+		8 : "SECRET_NO_SHOOT" : 0
+		16 : "SECRET_YES_SHOOT" : 0
+	]
+	angles(string) : "angles" : "0 0 0"
+	delay(float) : "delay"
+	dmg(float) : "dmg" : "2"
+	killtarget(target_destination) : "killtarget"
+	ltime(float) : "ltime"
+	noise(string) : "noise"
+	noise4(string) : "noise4"
+	origin(string) : "origin"
+	sounds(float) : "sounds" : "3"
+	target(target_destination) : "target"
+	targetname(target_source) : "targetname"
+	wait(float) : "wait" : "5"
+]
+
+@SolidClass color(0 128 204) = func_episodegate : "This bmodel will appear if the episode has allready been completed, so players can't reenter it."
+[
+	spawnflags(flags) =
+	[
+		1 : "E1" : 0
+		2 : "E2" : 0
+		4 : "E3" : 0
+		8 : "E4" : 0
+	]
+]
+
+@SolidClass color(0 128 204) = func_illusionary : "A simple entity that looks solid but lets you walk through it."
+[
+]
+
+@SolidClass color(0 128 204) = func_plat : "speed default 150 Plats are always drawn in the extended position, so they will light correctly. If the plat is the target of another trigger or button, it will start out disabled in the extended position until it is trigger, when it will lower and become a normal plat. If the 'height' key is set, that will determine the amount the plat moves, instead of being implicitly determined by the model's height. Set 'sounds' to one of the following: 1) base fast 2) chain slow"
+[
+	spawnflags(flags) =
+	[
+		1 : "PLAT_LOW_TRIGGER" : 0
+	]
+	angles(string) : "angles" : "0 0 0"
+	delay(float) : "delay"
+	height(float) : "height"
+	killtarget(target_destination) : "killtarget"
+	ltime(float) : "ltime"
+	message(string) : "message"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	origin(string) : "origin"
+	sounds(float) : "sounds" : "2"
+	speed(float) : "speed" : "150"
+	t_length(float) : "t_length" : "80"
+	t_width(float) : "t_width" : "10"
+	target(target_destination) : "target"
+	targetname(target_source) : "targetname"
+]
+
+@SolidClass color(0 128 204) = func_train : "Trains are moving platforms that players can ride. The targets origin specifies the min point of the train at each corner. The train spawns at the first target it is pointing at. If the train is the target of a button or trigger, it will not begin moving until activated. speed default 100 dmg default 2 sounds 1) ratchet metal"
+[
+	delay(float) : "delay"
+	dmg(float) : "dmg" : "2"
+	killtarget(target_destination) : "killtarget"
+	ltime(float) : "ltime"
+	message(string) : "message"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	origin(string) : "origin"
+	sounds(float) : "sounds"
+	speed(float) : "speed" : "100"
+	target(target_destination) : "target"
+	targetname(target_source) : "targetname"
+]
+
+@SolidClass color(0 128 204) = func_wall : "This is just a solid wall if not inhibitted"
+[
+]
+
+@PointClass color(255 128 128) size(-16 -16 -16, 16 16 16) = info_intermission : "This is the camera point for the intermission. Use mangle instead of angle, so you can set pitch or roll as well as yaw. 'pitch roll yaw'"
+[
+]
+
+@PointClass color(0 128 0) size(-4 -4 -4, 4 4 4) = info_notnull : "Used as a positional target for lightning."
+[
+]
+
+@PointClass color(0 128 0) size(-4 -4 -4, 4 4 4) = info_null : "Used as a positional target for spotlights, etc."
+[
+]
+
+@PointClass color(255 0 255) size(-16 -16 -24, 16 16 24) = info_player_coop : "potential spawning position for coop games"
+[
+]
+
+@PointClass color(255 0 255) size(-16 -16 -24, 16 16 24) = info_player_deathmatch : "potential spawning position for deathmatch games"
+[
+]
+
+@PointClass color(255 0 0) size(-16 -16 -24, 16 16 24) = info_player_start : "The normal starting point for a level."
+[
+]
+
+@PointClass color(255 0 0) size(-16 -16 -24, 16 16 24) = info_player_start2 : "Only used on start map for the return point from an episode."
+[
+]
+
+@PointClass color(128 128 128) size(-8 -8 -8, 8 8 32) = info_teleport_destination : "This is the destination marker for a teleporter. It should have a 'targetname' field with the same value as a teleporter's 'target' field."
+[
+	angles(string) : "angles" : "0 0 0"
+	targetname(target_source) : "targetname"
+]
+
+@PointClass color(0 128 204) size(-16 -16 0, 16 16 32) model({ "path": "progs/armor.mdl" }) = item_armor1 : ""
+[
+	delay(float) : "delay"
+	items(float) : "items"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	weapon(float) : "weapon"
+]
+
+@PointClass color(0 128 204) size(-16 -16 0, 16 16 32) model({ "path": "progs/armor.mdl" }) = item_armor2 : ""
+[
+	delay(float) : "delay"
+	items(float) : "items"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	weapon(float) : "weapon"
+]
+
+@PointClass color(0 128 204) size(-16 -16 0, 16 16 32) model({ "path": "progs/armor.mdl" }) = item_armorInv : ""
+[
+	delay(float) : "delay"
+	items(float) : "items"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	weapon(float) : "weapon"
+]
+
+@PointClass color(0 128 204) size(-16 -16 -24, 16 16 32) model({ "path": "progs/suit.mdl" }) = item_artifact_envirosuit : "Player takes no damage from water or slime for 30 seconds"
+[
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	target(target_destination) : "target"
+	weapon(float) : "weapon"
+]
+
+@PointClass color(0 128 204) size(-16 -16 -24, 16 16 32) model({ "path": "progs/invisibl.mdl" }) = item_artifact_invisibility : "Player is invisible for 30 seconds"
+[
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	target(target_destination) : "target"
+	weapon(float) : "weapon"
+]
+
+@PointClass color(0 128 204) size(-16 -16 -24, 16 16 32) model({ "path": "progs/invulner.mdl" }) = item_artifact_invulnerability : "Player is invulnerable for 30 seconds"
+[
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	target(target_destination) : "target"
+	weapon(float) : "weapon"
+]
+
+@PointClass color(0 128 204) size(-16 -16 -24, 16 16 32) model({ "path": "progs/quaddama.mdl" }) = item_artifact_super_damage : "The next attack from the player will do 4x damage"
+[
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	target(target_destination) : "target"
+	weapon(float) : "weapon"
+]
+
+@PointClass color(0 128 204) size(0 0 0, 32 32 32) model({ "path": "maps/b_batt1.bsp" }) = item_cells : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "WEAPON_BIG2" : 0
+	]
+	ammo_cells(float) : "ammo_cells"
+	ammo_nails(float) : "ammo_nails"
+	ammo_rockets(float) : "ammo_rockets"
+	ammo_shells(float) : "ammo_shells"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	waterlevel(float) : "waterlevel"
+]
+
+@PointClass color(77 77 255) size(0 0 0, 32 32 32) model({ "path": "maps/b_bh10.bsp" }) = item_health : "Health box. Normally gives 25 points. Rotten box heals 5-10 points, megahealth will add 100 health, then rot you down to your maximum health limit, one point per second."
+[
+	spawnflags(flags) =
+	[
+		1 : "H_ROTTEN" : 0
+		2 : "H_MEGA" : 0
+	]
+	delay(float) : "delay"
+	items(float) : "items"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	target(target_destination) : "target"
+	weapon(float) : "weapon"
+]
+
+@PointClass color(0 128 204) size(-16 -16 -24, 16 16 32) model({ "path": "progs/w_s_key.mdl" }) = item_key1 : "SILVER key In order for keys to work you MUST set your maps worldtype to one of the following: 0: medieval 1: metal 2: base"
+[
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	target(target_destination) : "target"
+	weapon(float) : "weapon"
+]
+
+@PointClass color(0 128 204) size(-16 -16 -24, 16 16 32) model({ "path": "progs/w_g_key.mdl" }) = item_key2 : "GOLD key In order for keys to work you MUST set your maps worldtype to one of the following: 0: medieval 1: metal 2: base"
+[
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	target(target_destination) : "target"
+	weapon(float) : "weapon"
+]
+
+@PointClass color(0 128 204) size(0 0 0, 32 32 32) model({ "path": "maps/b_rock1.bsp" }) = item_rockets : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "WEAPON_BIG2" : 0
+	]
+	ammo_cells(float) : "ammo_cells"
+	ammo_nails(float) : "ammo_nails"
+	ammo_rockets(float) : "ammo_rockets"
+	ammo_shells(float) : "ammo_shells"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	waterlevel(float) : "waterlevel"
+]
+
+@PointClass color(0 128 204) size(0 0 0, 32 32 32) model({ "path": "maps/b_shell1.bsp" }) = item_shells : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "WEAPON_BIG2" : 0
+	]
+	ammo_cells(float) : "ammo_cells"
+	ammo_nails(float) : "ammo_nails"
+	ammo_rockets(float) : "ammo_rockets"
+	ammo_shells(float) : "ammo_shells"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	waterlevel(float) : "waterlevel"
+]
+
+@PointClass color(0 128 204) size(-16 -16 -24, 16 16 32) model({ "path": "progs/end1.mdl" }) = item_sigil : "End of level sigil, pick up to end episode and return to jrstart."
+[
+	spawnflags(flags) =
+	[
+		1 : "E1" : 0
+		2 : "E2" : 0
+		4 : "E3" : 0
+		8 : "E4" : 0
+	]
+	delay(float) : "delay"
+	items(float) : "items"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	target(target_destination) : "target"
+	weapon(float) : "weapon"
+]
+
+@PointClass color(0 128 204) size(0 0 0, 32 32 32) model({ "path": "maps/b_nail1.bsp" }) = item_spikes : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "WEAPON_BIG2" : 0
+	]
+	ammo_cells(float) : "ammo_cells"
+	ammo_nails(float) : "ammo_nails"
+	ammo_rockets(float) : "ammo_rockets"
+	ammo_shells(float) : "ammo_shells"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	waterlevel(float) : "waterlevel"
+]
+
+@PointClass color(0 128 204) size(0 0 0, 32 32 32) model({ "path": "maps/b_shell1.bsp" }) = item_weapon : "DO NOT USE THIS!!!! IT WILL BE REMOVED!"
+[
+	spawnflags(flags) =
+	[
+		1 : "WEAPON_SHOTGUN" : 0
+		2 : "WEAPON_ROCKET" : 0
+		4 : "WEAPON_SPIKES" : 0
+		8 : "WEAPON_BIG" : 0
+	]
+	ammo_cells(float) : "ammo_cells"
+	ammo_nails(float) : "ammo_nails"
+	ammo_rockets(float) : "ammo_rockets"
+	ammo_shells(float) : "ammo_shells"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	waterlevel(float) : "waterlevel"
+]
+
+@PointClass color(0 255 0) size(-8 -8 -8, 8 8 8) = light : "Non-displayed light. Default light value is 300 Default style is 0 If targeted, it will toggle between on or off."
+[
+	spawnflags(flags) =
+	[
+		1 : "START_OFF" : 0
+	]
+	style(float) : "style"
+	targetname(target_source) : "targetname"
+]
+
+@PointClass color(0 255 0) size(-10 -10 -12, 12 12 18) model({ "path": "progs/flame2.mdl" }) = light_flame_large_yellow : "Large yellow flame ball"
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(0 255 0) size(-10 -10 -40, 10 10 40) model({ "path": "progs/flame2.mdl" }) = light_flame_small_white : "Small white flame ball"
+[
+	spawnflags(flags) =
+	[
+		1 : "START_OFF" : 0
+	]
+	origin(string) : "origin"
+]
+
+@PointClass color(0 255 0) size(-8 -8 -8, 8 8 8) model({ "path": "progs/flame2.mdl" }) = light_flame_small_yellow : "Small yellow flame ball"
+[
+	spawnflags(flags) =
+	[
+		1 : "START_OFF" : 0
+	]
+	origin(string) : "origin"
+]
+
+@PointClass color(0 255 0) size(-8 -8 -8, 8 8 8) = light_fluoro : "Non-displayed light. Default light value is 300 Default style is 0 If targeted, it will toggle between on or off. Makes steady fluorescent humming sound"
+[
+	spawnflags(flags) =
+	[
+		1 : "START_OFF" : 0
+	]
+	origin(string) : "origin"
+	style(float) : "style"
+]
+
+@PointClass color(0 255 0) size(-8 -8 -8, 8 8 8) = light_fluorospark : "Non-displayed light. Default light value is 300 Default style is 10 Makes sparking, broken fluorescent sound"
+[
+	origin(string) : "origin"
+	style(float) : "style" : "10"
+]
+
+@PointClass color(0 255 0) size(-8 -8 -8, 8 8 8) model({ "path": "progs/s_light.spr" }) = light_globe : "Sphere globe light. Default light value is 300 Default style is 0"
+[
+]
+
+@PointClass color(0 128 0) size(-10 -10 -20, 10 10 20) model({ "path": "progs/flame.mdl" }) = light_torch_small_walltorch : "Short wall torch Default light value is 200 Default style is 0"
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(0 128 204) size(0 0 0, 32 32 64) = misc_explobox : "TESTING THING"
+[
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	ltime(float) : "ltime"
+	mdl(string) : "mdl" : "maps/b_explob.bsp"
+	message(string) : "message"
+	noise(string) : "noise"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(0 128 204) size(0 0 0, 32 32 64) = misc_explobox2 : "Smaller exploding box, REGISTERED ONLY"
+[
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	ltime(float) : "ltime"
+	message(string) : "message"
+	noise(string) : "noise"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(0 128 204) size(-8 -8 -8, 8 8 8) = misc_fireball : "Lava Balls"
+[
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	movetype(float) : "movetype"
+	noise(string) : "noise"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	origin(string) : "origin"
+	speed(float) : "speed" : "1000"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 128 0) size(-10 -10 -10, 10 10 10) = misc_noisemaker : "For optimzation testing, starts a lot of sounds."
+[
+]
+
+@PointClass color(0 128 204) size(-8 -8 -8, 8 8 8) model({ "path": "progs/teleport.mdl" }) = misc_teleporttrain : "This is used for the final bos"
+[
+	delay(float) : "delay"
+	dmg(float) : "dmg"
+	killtarget(target_destination) : "killtarget"
+	ltime(float) : "ltime"
+	message(string) : "message"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	origin(string) : "origin"
+	speed(float) : "speed" : "100"
+	target(target_destination) : "target"
+	targetname(target_source) : "targetname"
+]
+
+@PointClass color(255 0 0) size(-16 -16 -24, 16 16 40) model({ "path": "progs/soldier.mdl" }) = monster_army : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-128 -128 -24, 128 128 256) = monster_boss : ""
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(255 0 0) size(-32 -32 -24, 32 32 64) model({ "path": "progs/demon.mdl" }) = monster_demon1 : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-32 -32 -24, 32 32 40) model({ "path": "progs/dog.mdl" }) = monster_dog : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-16 -16 -24, 16 16 40) model({ "path": "progs/enforcer.mdl" }) = monster_enforcer : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-16 -16 -24, 16 16 24) model({ "path": "progs/fish.mdl" }) = monster_fish : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	origin(string) : "origin"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-16 -16 -24, 16 16 40) model({ "path": "progs/hknight.mdl" }) = monster_hell_knight : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-16 -16 -24, 16 16 40) model({ "path": "progs/knight.mdl" }) = monster_knight : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-32 -32 -24, 32 32 64) model({ "path": "progs/ogre.mdl" }) = monster_ogre : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-16 -16 -24, 16 16 32) model({ "path": "progs/oldone.mdl" }) = monster_oldone : ""
+[
+	map(string) : "map"
+]
+
+@PointClass color(255 0 0) size(-32 -32 -24, 32 32 48) model({ "path": "progs/shalrath.mdl" }) = monster_shalrath : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-32 -32 -24, 32 32 64) model({ "path": "progs/shambler.mdl" }) = monster_shambler : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-16 -16 -24, 16 16 24) model({ "path": "progs/tarbaby.mdl" }) = monster_tarbaby : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-16 -16 -24, 16 16 40) model({ "path": "progs/wizard.mdl" }) = monster_wizard : ""
+[
+	spawnflags(flags) =
+	[
+		1 : "Ambush" : 0
+	]
+	angles(string) : "angles"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	movedir(string) : "movedir"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(255 0 0) size(-16 -16 -24, 16 16 32) model({ "path": "progs/zombie.mdl" }) = monster_zombie : "If crucified, stick the bounding box 12 pixels back into a wall to look right."
+[
+	spawnflags(flags) =
+	[
+		1 : "SPAWN_CRUCIFIED" : 0
+		2 : "ambush" : 0
+	]
+	angles(string) : "angles"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	target(target_destination) : "target"
+]
+
+@PointClass color(0 0 0) size(-8 -8 -8, 8 8 8) = noclass : "prints a warning message when spawned"
+[
+	origin(string) : "origin"
+]
+
+@PointClass color(128 77 0) size(-8 -8 -8, 8 8 8) = path_corner : "Monsters will continue walking towards the next target corner."
+[
+	origin(string) : "origin"
+	targetname(target_source) : "targetname"
+]
+
+@PointClass = plat_outside_touch : ""
+[
+	ltime(float) : "ltime"
+	noise(string) : "noise"
+	origin(string) : "origin"
+	pos2(string) : "pos2"
+	speed(float) : "speed"
+]
+
+@PointClass color(0 128 204) size(-8 -8 -8, 8 8 8) = trap_shooter : "Continuously fires spikes. 'wait' time between spike (1.0 default) 'nextthink' delay before firing first spike, so multiple shooters can be stagered."
+[
+	spawnflags(flags) =
+	[
+		1 : "SPAWNFLAG_SUPERSPIKE" : 0
+		2 : "SPAWNFLAG_LASER" : 0
+	]
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	ltime(float) : "ltime"
+	message(string) : "message"
+	movetype(float) : "movetype"
+	noise(string) : "noise"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	origin(string) : "origin"
+	target(target_destination) : "target"
+	velocity(string) : "velocity"
+	wait(float) : "wait" : "1"
+]
+
+@PointClass color(0 128 204) size(-8 -8 -8, 8 8 8) = trap_spikeshooter : "When triggered, fires a spike in the direction set in QuakeEd. Laser is only for REGISTERED."
+[
+	spawnflags(flags) =
+	[
+		1 : "SPAWNFLAG_SUPERSPIKE" : 0
+		2 : "SPAWNFLAG_LASER" : 0
+	]
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	movetype(float) : "movetype"
+	noise(string) : "noise"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	origin(string) : "origin"
+	target(target_destination) : "target"
+	velocity(string) : "velocity"
+]
+
+@SolidClass color(128 128 128) = trigger_changelevel : "When the player touches this, he gets sent to the map listed in the 'map' variable. Unless the NO_INTERMISSION flag is set, the view will go to the info_intermission spot and display stats."
+[
+	spawnflags(flags) =
+	[
+		1 : "NO_INTERMISSION" : 0
+	]
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	map(string) : "map"
+	message(string) : "message"
+	noise(string) : "noise"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	origin(string) : "origin"
+	target(target_destination) : "target"
+]
+
+@SolidClass color(128 128 128) = trigger_counter : "Acts as an intermediary for an action that takes multiple inputs. If nomessage is not set, t will print '1 more.. ' etc when triggered and 'sequence complete' when finished. After the counter has been triggered 'count' times (default 2), it will fire all of it's targets and remove itself."
+[
+	spawnflags(flags) =
+	[
+		1 : "SPAWNFLAG_NOMESSAGE" : 0
+	]
+	count(float) : "count" : "2"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	max_health(float) : "max_health"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+]
+
+@SolidClass color(128 128 128) = trigger_hurt : "Any object touching this will be hurt set dmg to damage amount defalt dmg = 5"
+[
+	delay(float) : "delay"
+	dmg(float) : "dmg" : "5"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	origin(string) : "origin"
+	target(target_destination) : "target"
+]
+
+@SolidClass color(128 128 128) = trigger_monsterjump : "Walking monsters that touch this will jump in the direction of the trigger's angle 'speed' default to 200, the speed thrown forward 'height' default to 200, the speed thrown upwards"
+[
+	angles(string) : "angles" : "0 360 0"
+	height(float) : "height" : "200"
+	speed(float) : "speed" : "200"
+]
+
+@SolidClass color(128 128 128) = trigger_multiple : "Variable sized repeatable trigger. Must be targeted at one or more entities. If 'health' is set, the trigger must be killed to activate each time. If 'delay' is set, the trigger waits some time after activating before firing. 'wait' : Seconds between triggerings. (.2 default) If notouch is set, the trigger is only fired by other entities, not by touching. NOTOUCH has been obsoleted by trigger_relay! sounds 1) secret 2) beep beep 3) large switch 4) set 'message' to text string"
+[
+	spawnflags(flags) =
+	[
+		1 : "SPAWNFLAG_NOTOUCH" : 0
+	]
+	delay(float) : "delay"
+	health(float) : "health"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	origin(string) : "origin"
+	sounds(float) : "sounds"
+	target(target_destination) : "target"
+	wait(float) : "wait" : "0.2"
+]
+
+@SolidClass color(128 128 128) = trigger_once : "Variable sized trigger. Triggers once, then removes itself. You must set the key 'target' to the name of another object in the level that has a matching 'targetname'. If 'health' is set, the trigger must be killed to activate. If notouch is set, the trigger is only fired by other entities, not by touching. if 'killtarget' is set, any objects that have a matching 'target' will be removed when the trigger is fired. if 'angle' is set, the trigger will only fire when someone is facing the direction of the angle. Use '360' for an angle of 0. sounds 1) secret 2) beep beep 3) large switch 4) set 'message' to text string"
+[
+	spawnflags(flags) =
+	[
+		1 : "SPAWNFLAG_NOTOUCH" : 0
+	]
+	delay(float) : "delay"
+	health(float) : "health"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	origin(string) : "origin"
+	sounds(float) : "sounds"
+	target(target_destination) : "target"
+]
+
+@SolidClass color(128 128 128) = trigger_onlyregistered : "Only fires if playing the registered version, otherwise prints the message"
+[
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+]
+
+@SolidClass color(128 128 128) = trigger_push : "Pushes the player"
+[
+	spawnflags(flags) =
+	[
+		1 : "PUSH_ONCE" : 0
+	]
+	speed(float) : "speed" : "1000"
+]
+
+@PointClass = trigger_reactivate : ""
+[
+]
+
+@PointClass color(128 128 128) size(-8 -8 -8, 8 8 8) = trigger_relay : "This fixed size trigger cannot be touched, it can only be fired by other events. It can contain killtargets, targets, delays, and messages."
+[
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+]
+
+@SolidClass color(128 128 128) = trigger_secret : "secret counter trigger sounds 1) secret 2) beep beep 3) 4) set 'message' to text string"
+[
+	spawnflags(flags) =
+	[
+		1 : "SPAWNFLAG_NOTOUCH" : 0
+	]
+	delay(float) : "delay"
+	health(float) : "health"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message" : "$qc_found_secret"
+	origin(string) : "origin"
+	sounds(float) : "sounds" : "1"
+	target(target_destination) : "target"
+]
+
+@SolidClass color(128 128 128) = trigger_setskill : "sets skill level to the value of 'message'. Only used on start map."
+[
+	message(string) : "message"
+]
+
+@SolidClass color(128 128 128) = trigger_teleport : "Any object touching this will be transported to the corresponding info_teleport_destination entity. You must set the 'target' field, and create an object with a 'targetname' field that matches. If the trigger_teleport has a targetname, it will only teleport entities when it has been fired."
+[
+	spawnflags(flags) =
+	[
+		1 : "PLAYER_ONLY" : 0
+		2 : "SILENT" : 0
+	]
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	noise1(string) : "noise1"
+	noise2(string) : "noise2"
+	noise4(string) : "noise4"
+	origin(string) : "origin"
+	target(target_destination) : "target"
+	targetname(target_source) : "targetname"
+]
+
+@PointClass color(0 128 204) size(-8 -8 -8, 8 8 8) model({ "path": "progs/player.mdl" }) = viewthing : "Just for the debugging level. Don't use"
+[
+]
+
+@PointClass color(0 128 204) size(-16 -16 0, 16 16 32) model({ "path": "progs/g_rock.mdl" }) = weapon_grenadelauncher : ""
+[
+	ammo_cells(float) : "ammo_cells"
+	ammo_nails(float) : "ammo_nails"
+	ammo_rockets(float) : "ammo_rockets"
+	ammo_shells(float) : "ammo_shells"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	waterlevel(float) : "waterlevel"
+]
+
+@PointClass color(0 128 204) size(-16 -16 0, 16 16 32) model({ "path": "progs/g_light.mdl" }) = weapon_lightning : ""
+[
+	ammo_cells(float) : "ammo_cells"
+	ammo_nails(float) : "ammo_nails"
+	ammo_rockets(float) : "ammo_rockets"
+	ammo_shells(float) : "ammo_shells"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	waterlevel(float) : "waterlevel"
+]
+
+@PointClass color(0 128 204) size(-16 -16 0, 16 16 32) model({ "path": "progs/g_nail.mdl" }) = weapon_nailgun : ""
+[
+	ammo_cells(float) : "ammo_cells"
+	ammo_nails(float) : "ammo_nails"
+	ammo_rockets(float) : "ammo_rockets"
+	ammo_shells(float) : "ammo_shells"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	waterlevel(float) : "waterlevel"
+]
+
+@PointClass color(0 128 204) size(-16 -16 0, 16 16 32) model({ "path": "progs/g_rock2.mdl" }) = weapon_rocketlauncher : ""
+[
+	ammo_cells(float) : "ammo_cells"
+	ammo_nails(float) : "ammo_nails"
+	ammo_rockets(float) : "ammo_rockets"
+	ammo_shells(float) : "ammo_shells"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	waterlevel(float) : "waterlevel"
+]
+
+@PointClass color(0 128 204) size(-16 -16 0, 16 16 32) model({ "path": "progs/g_nail2.mdl" }) = weapon_supernailgun : ""
+[
+	ammo_cells(float) : "ammo_cells"
+	ammo_nails(float) : "ammo_nails"
+	ammo_rockets(float) : "ammo_rockets"
+	ammo_shells(float) : "ammo_shells"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	waterlevel(float) : "waterlevel"
+]
+
+@PointClass color(0 128 204) size(-16 -16 0, 16 16 32) model({ "path": "progs/g_shot.mdl" }) = weapon_supershotgun : ""
+[
+	ammo_cells(float) : "ammo_cells"
+	ammo_nails(float) : "ammo_nails"
+	ammo_rockets(float) : "ammo_rockets"
+	ammo_shells(float) : "ammo_shells"
+	delay(float) : "delay"
+	killtarget(target_destination) : "killtarget"
+	message(string) : "message"
+	noise(string) : "noise"
+	target(target_destination) : "target"
+	waterlevel(float) : "waterlevel"
+]
+
+@SolidClass color(0 0 0) = worldspawn : "Only used for the world entity. Set message to the level name. Set sounds to the cd track to play. World Types: 0: medieval 1: metal 2: base"
+[
+	model(string) : "model"
+]
