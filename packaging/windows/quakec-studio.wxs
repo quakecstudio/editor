@@ -12,21 +12,20 @@
     <MajorUpgrade DowngradeErrorMessage="A newer QuakeC Studio is already installed." />
     <MediaTemplate EmbedCab="yes" />
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="QuakeC Studio">
-        <ComponentGroup Id="Files">
-          <Component><File Source="quakec-studio.exe" /></Component>
-          <Component><File Source="preview-host.exe" /></Component>
-          <Component><File Source="quakec-ide.exe" /></Component>
-          <Component><File Source="quakec-lsp.exe" /></Component>
-          <Component><File Source="LICENSE.txt" /></Component>
-          <Component><File Source="NOTICE.txt" /></Component>
-          <Component Id="PathEntry" Guid="5E7A1C3B-2D4F-4A6B-8C9E-0F1A2B3C4D5E">
-            <Environment Id="Path" Name="PATH" Value="[INSTALLFOLDER]" Part="last"
-                Action="set" System="yes" />
-          </Component>
-        </ComponentGroup>
-      </Directory>
+      <Directory Id="INSTALLFOLDER" Name="QuakeC Studio" />
     </StandardDirectory>
+    <ComponentGroup Id="Files" Directory="INSTALLFOLDER">
+      <Component><File Source="quakec-studio.exe" /></Component>
+      <Component><File Source="preview-host.exe" /></Component>
+      <Component><File Source="quakec-ide.exe" /></Component>
+      <Component><File Source="quakec-lsp.exe" /></Component>
+      <Component><File Source="LICENSE.txt" /></Component>
+      <Component><File Source="NOTICE.txt" /></Component>
+      <Component Id="PathEntry" Guid="5E7A1C3B-2D4F-4A6B-8C9E-0F1A2B3C4D5E">
+        <Environment Id="Path" Name="PATH" Value="[INSTALLFOLDER]" Part="last"
+            Action="set" System="yes" />
+      </Component>
+    </ComponentGroup>
     <StandardDirectory Id="ProgramMenuFolder">
       <Component Id="StartMenu" Guid="3B9D7F1E-5A2C-4E8B-9D6F-1C3A5E7B9D0F">
         <Shortcut Id="AppShortcut" Name="QuakeC Studio"
