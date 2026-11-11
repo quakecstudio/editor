@@ -31,9 +31,12 @@ use qs_layout::{
 use qs_render::{Camera, MapMesh};
 use qs_settings::{Scope as SettingsScope, Setting, SettingsFile, SettingsStore};
 use qs_templates::{GitHub, NEW_PROJECT, NewProjectParams, Template};
+use qs_workbench::checkpoints::{RESTORE_CHECKPOINT, RestoreCheckpointParams};
 use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::game_files::GameFiles;
+use qs_workbench::staged::HunksParams;
+use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
 use qs_workbench::{
     AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, CheckAfterTyping, ChooseGameParams,
     CloseFileParams, Config, DEFINITION, DOCK, EntryKind, FsLoader, GAME, HOVER, HasPreview,
@@ -49,6 +52,7 @@ use qs_workbench::{
 };
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
+use crate::agent::{self, AgentAction, AgentPanel};
 use crate::debugger::{self, DebugAction, DebugInput};
 use crate::editor::{Editor, Popup, Request};
 use crate::entities::{self, EntityAction, Outliner, Properties};
@@ -203,6 +207,8 @@ pub struct Shell {
     project_error: Option<String>,
     /// The socket other processes run the window's commands on (AGT-7), once it is served.
     host: Option<Host>,
+    /// The agent panel's threads and provider (P4-09).
+    agent: AgentPanel,
 }
 
 impl Shell {
@@ -262,6 +268,7 @@ impl Shell {
             dock_frame: None,
             project_error: None,
             host: None,
+            agent: AgentPanel::new(Box::new(agent::provider_model)),
         })
     }
 
@@ -409,6 +416,75 @@ impl Shell {
             .pick_folder();
         if let Some(folder) = picked {
             self.open_asked(&folder);
+        }
+    }
+
+    /// The agent panel.
+    #[must_use]
+    pub const fn agent(&self) -> &AgentPanel {
+        &self.agent
+    }
+
+    /// The report of agent thread `index`, once it has ended.
+    #[must_use]
+    pub fn agent_report(&self, index: usize) -> Option<&qs_agent::RunReport> {
+        self.agent.report(index)
+    }
+
+    /// The agent panel, to drive its threads.
+    pub const fn agent_mut(&mut self) -> &mut AgentPanel {
+        &mut self.agent
+    }
+
+    /// Keeps the agent's provider configuration in `file` (P4-07).
+    pub fn set_agent_file(&mut self, file: PathBuf) {
+        self.agent.set_config_file(file);
+    }
+
+    /// Starts an agent thread on `task` over the open project (P4-09); why it could not.
+    ///
+    /// # Errors
+    ///
+    /// No project open, no provider set up, no model or no checkpoint.
+    pub fn start_agent(&mut self, task: &str, ctx: &egui::Context) -> Result<(), String> {
+        let root = self
+            .workbench()
+            .root()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| Text::NoProject.get().to_owned())?;
+        let ctx = ctx.clone();
+        self.agent.start(&mut self.session, &root, task, move || {
+            ctx.request_repaint()
+        })
+    }
+
+    /// Waits for the next thing agent thread `index`'s model sends and takes it; `false` when
+    /// its model has ended. For tests.
+    #[cfg(test)]
+    pub(crate) fn wait_agent(&mut self, index: usize) -> bool {
+        self.agent.wait(&mut self.session, index)
+    }
+
+    /// Does what the agent panel asked for.
+    pub(crate) fn agent_action(&mut self, action: AgentAction, ctx: &egui::Context) {
+        match action {
+            AgentAction::Start(task) => {
+                let started = self.start_agent(&task, ctx);
+                self.agent.set_error(started.err());
+            }
+            AgentAction::SaveSetup => self.agent.save_setup_to_keychain(),
+            AgentAction::Accept(hunks) => {
+                let _accepted: Option<serde_json::Value> =
+                    self.run(ACCEPT_HUNKS, &HunksParams { hunks });
+            }
+            AgentAction::Reject(hunks) => {
+                let _rejected: Option<serde_json::Value> =
+                    self.run(REJECT_HUNKS, &HunksParams { hunks });
+            }
+            AgentAction::Restore(number) => {
+                let _restored: Option<serde_json::Value> =
+                    self.run(RESTORE_CHECKPOINT, &RestoreCheckpointParams { number });
+            }
         }
     }
 
@@ -608,6 +684,10 @@ impl Shell {
 
     /// Draws the window for one frame.
     pub fn ui(&mut self, ui: &mut Ui) {
+        // P4-09: what the agent's models sent since the last frame; their calls run here.
+        if self.agent.pump(&mut self.session) {
+            ui.ctx().request_repaint();
+        }
         // AGT-7: commands sent over the socket run first, so the frame draws what they did.
         if let Some(host) = &self.host
             && host.answer(&mut self.session) > 0
@@ -1094,6 +1174,8 @@ impl Shell {
         let tree = &mut self.outliner;
         let properties = &mut self.properties;
         let debug_input = &mut self.debug_input;
+        let agent = &mut self.agent;
+        let mut agent_action = None;
         let recent_projects = self.recent.0.projects();
         let project_error = self.project_error.as_deref();
         let mut open: Option<LeftAction> = None;
@@ -1157,22 +1239,9 @@ impl Shell {
                         }
                     }
                     Panel::Right => {
-                        let heading = if preview.state() == PlayState::Stopped {
-                            section(ui, theme, Text::Properties, Text::NotPlaying)
-                        } else {
-                            let heading = heading(ui, theme, Text::Properties);
-                            if let Some(action) =
-                                entities::properties(ui, theme, preview, properties)
-                            {
-                                entity_action = Some(action);
-                            }
-                            heading
-                        };
-                        if focus {
-                            heading.request_focus();
-                        }
-                        ui.add_space(theme.space(3));
-                        section(ui, theme, Text::Agent, Text::NoAgent);
+                        let asked =
+                            right(ui, theme, (workbench, preview), (properties, agent), focus);
+                        (entity_action, agent_action) = asked;
                     }
                     Panel::Bottom => {
                         match bottom(
@@ -1197,6 +1266,9 @@ impl Shell {
         }
         if let Some(action) = debug_action {
             self.debug_action(action);
+        }
+        if let Some(action) = agent_action {
+            self.agent_action(action, ui.ctx());
         }
         match open {
             Some(LeftAction::Open(folder)) => self.open_asked(&folder),
@@ -1683,6 +1755,32 @@ pub(crate) fn name_field(ui: &Ui, response: &Response, name: Text) {
     ui.ctx().accesskit_node_builder(response.id, |node| {
         node.set_label(name.get());
     });
+}
+
+/// The right panel: the Properties of the selected entity while the game runs, then the agent
+/// panel (P4-09); what either asked for. Its first heading takes the keyboard when `focus`.
+fn right(
+    ui: &mut Ui,
+    theme: &Theme,
+    (workbench, preview): (&Workbench<FsLoader>, &Preview),
+    (properties, agent): (&mut Properties, &mut AgentPanel),
+    focus: bool,
+) -> (Option<EntityAction>, Option<AgentAction>) {
+    let mut entity_action = None;
+    let first = if preview.state() == PlayState::Stopped {
+        section(ui, theme, Text::Properties, Text::NotPlaying)
+    } else {
+        let first = heading(ui, theme, Text::Properties);
+        entity_action = entities::properties(ui, theme, preview, properties);
+        first
+    };
+    if focus {
+        first.request_focus();
+    }
+    ui.add_space(theme.space(3));
+    heading(ui, theme, Text::Agent);
+    let agent_action = agent.ui(ui, theme, &workbench.staged_hunks());
+    (entity_action, agent_action)
 }
 
 /// A panel section: its heading and, until it has content, one line of explanation; the
