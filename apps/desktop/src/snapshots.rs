@@ -168,6 +168,11 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
                 app.shell
                     .execute(id, params.clone())
                     .unwrap_or_else(|e| panic!("{}: {id}: {e}", script.name));
+                // A task started runs and asks for frames until a WaitTerminals step.
+                if id.starts_with("task.") {
+                    harness.step();
+                    continue;
+                }
             }
             Step::Key(modifiers, key) => harness.key_press_modifiers(*modifiers, *key),
             Step::Type(text) => harness.event(Event::Text((*text).to_owned())),
@@ -178,8 +183,9 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
                     terminals.tabs().iter().any(|tab| tab.exit().is_none())
                 };
                 // Each frame polls the tabs without waiting; the loop ends with the processes.
+                // A running tab asks for frames, so each is one step, not a run to rest.
                 while running(&harness) {
-                    harness.run();
+                    harness.step();
                     std::thread::yield_now();
                 }
             }
