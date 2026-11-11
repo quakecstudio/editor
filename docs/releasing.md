@@ -10,8 +10,10 @@ whatever calls it. On a tag, the Windows executables are signed with Azure Artif
 
 ## Making a release
 
-1. Set `version` in the root `Cargo.toml` to the release's, such as `2026.11.0`, and merge it.
-2. Push a tag naming it: `v2026.11.0`, or `v2026.11.0-rc1` for a pre-release. The workflow
+1. Set `version` in the root `Cargo.toml` to the release's, `YYYY.MM.N`: the year, the month,
+   and the month's release counted from 1, such as `2026.11.1` (`docs/conventions.md`), and
+   merge it.
+2. Push a tag naming it: `v2026.11.1`, or `v2026.11.1-rc1` for a pre-release. The workflow
    fails a tag that does not name the workspace's version.
 3. The **release** workflow builds, signs, checks and publishes. A tag with a `-` is published as
    a pre-release; any other tag too, as a release.
@@ -50,7 +52,7 @@ Every package holds the four binaries, the desktop app `quakec-studio`, the prev
 `NOTICE` (`packaging/NOTICE.txt`: the copyright, the corresponding-source link, the ported
 code and the non-affiliation notice). On macOS the preview host is signed as its own
 executable before the app is, and the disk image's notarization covers both. An MSI's version
-is three numbers whose first is at most 255, so 2026.11.0 is the MSI's 26.11.0.
+is three numbers whose first is at most 255, so 2026.11.1 is the MSI's 26.11.1.
 
 The Flatpak's sandbox reaches the home directory (projects, and Steam, GOG and Heroic's
 folders, their Flatpak clients' under `~/.var/app` included), `/mnt` and `/media` read only,
@@ -126,7 +128,7 @@ Every package has a build provenance attestation from `actions/attest`, made in 
 `reusable-build.yml` that built it and signed with that workflow's OIDC identity. Check a downloaded package with:
 
 ```bash
-gh attestation verify quakec-studio-2026.11.0-windows-x64.msi --repo quakecstudio/editor \
+gh attestation verify quakec-studio-2026.11.1-windows-x64.msi --repo quakecstudio/editor \
   --signer-workflow quakecstudio/editor/.github/workflows/reusable-build.yml
 ```
 

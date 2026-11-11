@@ -38,7 +38,8 @@ Change this document and the configuration in the same PR.
 - Root `Cargo.toml`: `resolver = "3"`, `members = ["crates/*", "apps/*", "xtask"]`.
 - `[workspace.package]` holds `version`, `edition = "2024"`, `license`, `rust-version`,
   `repository`, `publish = false`; every crate inherits them with `*.workspace = true`.
-- Version is CalVer `YYYY.MM.N`, as in vouch.
+- Version is CalVer `YYYY.MM.N`, as in vouch: the year, the month, and the month's release
+  counted from 1. The first release is `2026.11.1`.
 - Every crate has `[lints] workspace = true`.
 - `fuzz/` is excluded from the workspace.
 

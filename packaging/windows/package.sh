@@ -48,7 +48,7 @@ zip() {
 }
 
 msi() {
-  # An MSI's version is three numbers, the first at most 255: 2026.11.0 is 26.11.0.
+  # An MSI's version is three numbers, the first at most 255: 2026.11.1 is 26.11.1.
   local major=${version%%.*} rest=${version#*.}
   local msi_version="$((major % 100)).${rest%%-*}"
   sed "s/@MSI_VERSION@/$msi_version/" packaging/windows/quakec-studio.wxs \

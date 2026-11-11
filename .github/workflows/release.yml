@@ -7,7 +7,7 @@ name: release
 # builds and signs every package in the reusable workflow .github/workflows/reusable-build.yml,
 # which attests each one; installs each package on a clean runner and checks it there with `quakec-ide doctor`;
 # and writes SHA256SUMS. A tag also publishes the packages as a GitHub release, a pre-release
-# when the tag has a `-` (v2026.11.0-rc1), and regenerates the compatibility list. A run by
+# when the tag has a `-` (v2026.11.1-rc1), and regenerates the compatibility list. A run by
 # hand, or by a pull request that changes the packaging, is the dry run: everything but
 # publishing, the packages kept as its `release` artifact.
 on:

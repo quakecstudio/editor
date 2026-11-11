@@ -7,7 +7,7 @@
 #
 #   packaging/linux/package.sh <deb|rpm|appimage|flatpak> <x86_64|aarch64> <bin-dir> <version> <out-dir>
 #
-# <bin-dir> holds the four release binaries, quakec-ide and quakec-lsp static musl ones; <version> is the workspace's, such as 2026.11.0.
+# <bin-dir> holds the four release binaries, quakec-ide and quakec-lsp static musl ones; <version> is the workspace's, such as 2026.11.1.
 # The files each format needs are beside this script: the desktop entry and icon, the deb's
 # `deb/control`, the rpm's `quakec-studio.spec`, the AppImage's `AppRun.sh` and the Flatpak's
 # manifest. Run from the repository root. The deb needs dpkg-deb, the rpm rpmbuild, the AppImage curl,

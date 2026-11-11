@@ -283,7 +283,7 @@ dependencies = [
 
 [[package]]
 name = "qc-builtins"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-edict",
  "qc-progs",
@@ -293,11 +293,11 @@ dependencies = [
 
 [[package]]
 name = "qc-diag"
-version = "2026.10.0"
+version = "2026.11.1"
 
 [[package]]
 name = "qc-edict"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-progs",
  "qc-types",
@@ -305,7 +305,7 @@ dependencies = [
 
 [[package]]
 name = "qc-engines"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-builtins",
  "qc-diag",
@@ -318,7 +318,7 @@ dependencies = [
 
 [[package]]
 name = "qc-ide"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-diag",
  "qc-engines",
@@ -330,28 +330,28 @@ dependencies = [
 
 [[package]]
 name = "qc-lexer"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-diag",
 ]
 
 [[package]]
 name = "qc-preproc"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-lexer",
 ]
 
 [[package]]
 name = "qc-progs"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-types",
 ]
 
 [[package]]
 name = "qc-project"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-lexer",
  "qc-preproc",
@@ -361,7 +361,7 @@ dependencies = [
 
 [[package]]
 name = "qc-sema"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-diag",
  "qc-lexer",
@@ -372,7 +372,7 @@ dependencies = [
 
 [[package]]
 name = "qc-syntax"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-lexer",
  "qc-preproc",
@@ -380,18 +380,18 @@ dependencies = [
 
 [[package]]
 name = "qc-trace"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "qc-types"
-version = "2026.10.0"
+version = "2026.11.1"
 
 [[package]]
 name = "qc-vm"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-edict",
  "qc-progs",
@@ -401,7 +401,7 @@ dependencies = [
 
 [[package]]
 name = "qs-bsp"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-progs",
  "qs-wad",
@@ -409,7 +409,7 @@ dependencies = [
 
 [[package]]
 name = "qs-commands"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "interprocess",
  "schemars",
@@ -420,7 +420,7 @@ dependencies = [
 
 [[package]]
 name = "qs-differential"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "clap",
  "qc-builtins",
@@ -466,7 +466,7 @@ dependencies = [
 
 [[package]]
 name = "qs-log"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qs-paths",
  "tracing",
@@ -475,30 +475,30 @@ dependencies = [
 
 [[package]]
 name = "qs-map"
-version = "2026.10.0"
+version = "2026.11.1"
 
 [[package]]
 name = "qs-mdl"
-version = "2026.10.0"
+version = "2026.11.1"
 
 [[package]]
 name = "qs-pak"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-progs",
 ]
 
 [[package]]
 name = "qs-paths"
-version = "2026.10.0"
+version = "2026.11.1"
 
 [[package]]
 name = "qs-porting-example"
-version = "2026.10.0"
+version = "2026.11.1"
 
 [[package]]
 name = "qs-settings"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qs-commands",
  "schemars",
@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "qs-sim"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-builtins",
  "qc-edict",
@@ -526,7 +526,7 @@ dependencies = [
 
 [[package]]
 name = "qs-sound"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "qc-builtins",
  "qc-vm",
@@ -536,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "qs-vfs"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "miniz_oxide",
  "qs-pak",
@@ -545,15 +545,15 @@ dependencies = [
 
 [[package]]
 name = "qs-wad"
-version = "2026.10.0"
+version = "2026.11.1"
 
 [[package]]
 name = "qs-wav"
-version = "2026.10.0"
+version = "2026.11.1"
 
 [[package]]
 name = "quakec-lsp"
-version = "2026.10.0"
+version = "2026.11.1"
 dependencies = [
  "mimalloc",
  "qc-ide",
