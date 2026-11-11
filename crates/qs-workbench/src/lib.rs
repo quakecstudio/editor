@@ -22,6 +22,7 @@ pub mod export;
 mod preview;
 mod recent;
 pub mod staged;
+pub mod terminal;
 pub mod testing;
 #[cfg(test)]
 mod tests;
@@ -59,6 +60,10 @@ pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
 pub use crate::staged::{
     ACCEPT_HUNKS, APPLY_EDIT, Decision, HunkId, REJECT_HUNKS, STAGED_EDITS, StagedHunk,
     register_staged,
+};
+pub use crate::terminal::{
+    TASK_LIST, TASK_RUN, TERMINAL_CLOSE, TERMINAL_NEW, TERMINAL_POLL, TERMINAL_SEND,
+    register_terminal,
 };
 pub use crate::testing::{
     RUN_TESTS, RunTestsParams, TestKind, TestResult, TestRun, Verdict, register_tests,
@@ -315,6 +320,8 @@ pub struct Workbench<L> {
     sent: u64,
     /// The staged edits waiting for a decision (P4-04).
     staged: staged::Staged,
+    /// The terminal tabs (P4-36).
+    terminals: terminal::Terminals,
 }
 
 impl<L: Loader> Workbench<L> {
@@ -335,6 +342,7 @@ impl<L: Loader> Workbench<L> {
             checker: None,
             sent: 0,
             staged: staged::Staged::default(),
+            terminals: terminal::Terminals::default(),
         }
     }
 
@@ -534,6 +542,17 @@ impl<L: Loader> Workbench<L> {
     #[must_use]
     pub fn is_unsaved(&self, path: &Path) -> bool {
         self.unsaved.contains(path)
+    }
+
+    /// The terminal tabs (P4-36).
+    #[must_use]
+    pub const fn terminals(&self) -> &terminal::Terminals {
+        &self.terminals
+    }
+
+    /// The terminal tabs, to poll or write to.
+    pub const fn terminals_mut(&mut self) -> &mut terminal::Terminals {
+        &mut self.terminals
     }
 
     /// The project directory, once a project is open.

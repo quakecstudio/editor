@@ -18,6 +18,8 @@ use eframe::egui::{
 use qs_commands::palette::{PaletteMatch, search};
 use qs_commands::params::{self, Field, FieldKind, Input};
 use qs_commands::{CommandId, CommandInfo, Registry};
+use qs_workbench::TASK_RUN;
+use qs_workbench::terminal::{RunTaskParams, TaskInfo};
 use serde_json::Value;
 
 use crate::icons::Icon;
@@ -55,6 +57,8 @@ pub struct Palette {
     error: Option<String>,
     /// Whether the query field takes focus in the next frame.
     focus: bool,
+    /// The open project's tasks, listed before the commands as Run task rows (P4-36).
+    tasks: Vec<TaskInfo>,
 }
 
 impl Palette {
@@ -64,11 +68,12 @@ impl Palette {
         self.open
     }
 
-    /// Opens it, empty, on the first command.
-    pub fn open(&mut self) {
+    /// Opens it, empty, on the first command, with the open project's `tasks` (P4-36).
+    pub fn open(&mut self, tasks: Vec<TaskInfo>) {
         *self = Self {
             open: true,
             focus: true,
+            tasks,
             ..Self::default()
         };
     }
@@ -146,6 +151,12 @@ impl Palette {
     ) -> Option<(CommandId, Value)> {
         let total = registry.commands().count();
         let found = search(registry.commands(), &self.query);
+        let tasks: Vec<&TaskInfo> = self
+            .tasks
+            .iter()
+            .filter(|task| task_matches(task, &self.query))
+            .collect();
+        let rows = tasks.len().saturating_add(found.len());
         let (up, down, enter, escape) = ui.input_mut(|i| {
             (
                 i.consume_key(Modifiers::NONE, Key::ArrowUp),
@@ -158,7 +169,7 @@ impl Palette {
             self.close();
             return None;
         }
-        let last = found.len().saturating_sub(1);
+        let last = rows.saturating_sub(1);
         if down {
             self.selected = self.selected.saturating_add(1).min(last);
         }
@@ -193,13 +204,24 @@ impl Palette {
         egui::ScrollArea::vertical()
             .max_height(theme.size.row * ROWS)
             .show(ui, |ui| {
-                if found.is_empty() {
+                for (index, task) in tasks.iter().enumerate() {
+                    let selected = index == self.selected;
+                    let response = task_row(ui, theme, task, selected);
+                    if selected && (up || down) {
+                        response.scroll_to_me(None);
+                    }
+                    if response.clicked() {
+                        clicked = Some(index);
+                    }
+                }
+                if rows == 0 {
                     ui.label(
                         RichText::new(Text::PaletteNoMatch.get())
                             .color(theme.color(Token::TextMuted)),
                     );
                 }
                 for (index, item) in found.iter().enumerate() {
+                    let index = index.saturating_add(tasks.len());
                     let selected = index == self.selected;
                     let response = row(ui, theme, item, selected, keymap);
                     if selected && (up || down) {
@@ -213,7 +235,16 @@ impl Palette {
         ui.separator();
         hints(ui, theme);
         let pick = clicked.or_else(|| enter.then_some(self.selected))?;
-        let info = found.get(pick)?.info;
+        if let Some(task) = tasks.get(pick) {
+            let params = RunTaskParams {
+                name: task.name.clone(),
+            };
+            return Some((
+                CommandId::new(TASK_RUN).ok()?,
+                serde_json::to_value(params).ok()?,
+            ));
+        }
+        let info = found.get(pick.checked_sub(tasks.len())?)?.info;
         self.choose(info)
     }
 
@@ -347,6 +378,47 @@ fn row(
                 &FontId::proportional(theme.type_scale.body.size),
             );
             ui.add(egui::Label::new(summary).truncate());
+        });
+    });
+    response
+}
+
+/// Whether every word of `query` is in the task's Run task row, ignoring case; an empty query
+/// matches every task.
+fn task_matches(task: &TaskInfo, query: &str) -> bool {
+    let row = format!("{} {}", Text::RunTask.get(), task.name).to_lowercase();
+    query
+        .to_lowercase()
+        .split_whitespace()
+        .all(|word| row.contains(word))
+}
+
+/// One task's row: Run task and its name, then its command line on the right.
+fn task_row(ui: &mut Ui, theme: &Theme, task: &TaskInfo, selected: bool) -> egui::Response {
+    let height = theme.size.row;
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
+    let label = format!("{} {}", Text::RunTask.get(), task.name);
+    response.widget_info(|| WidgetInfo::selected(WidgetType::Button, true, selected, &label));
+    if selected || response.hovered() {
+        let fill = if selected {
+            theme.color(Token::SelectFocus)
+        } else {
+            theme.color(Token::SurfacePanel)
+        };
+        ui.painter().rect_filled(rect, theme.radius.control, fill);
+    }
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect.shrink2(Vec2::new(theme.space(1), 0.0)))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    child.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        ui.label(mono(&task.command, theme.color(Token::TextMuted)));
+        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+            ui.add(
+                egui::Label::new(RichText::new(&label).color(theme.color(Token::Text))).truncate(),
+            );
         });
     });
     response

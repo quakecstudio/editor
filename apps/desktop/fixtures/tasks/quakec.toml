@@ -1,0 +1,14 @@
+[project]
+name = "tasks"
+
+[[module]]
+kind = "ssqc"
+src = "progs.src"
+
+[[task]]
+name = "pack"
+command = "echo packed 3 files&& exit 0"
+
+[[task]]
+name = "check"
+command = "echo 1 problem&& exit 2"

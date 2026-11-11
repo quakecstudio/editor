@@ -178,6 +178,15 @@ restart. Keys bound twice, an unknown command or one that needs parameters, and 
 keymap does not know are each logged as a problem, and the rest of the file still applies
 (`Keymap::problems`). Key sequences, such as `ctrl-k ctrl-c`, are not taken yet.
 
+**Terminal and tasks (P4-36, UI-20).** The bottom panel's Terminal tab (`terminal.rs`) shows
+the workbench's terminal tabs (`qs_workbench::terminal`): each tab's title and status, the
+output of the one shown, and for a shell an input box whose line goes to `terminal.send`. New
+terminal runs `terminal.new`. The palette lists the project's `[[task]]` tables (PRJ-2.10)
+first, as Run task rows, and choosing one runs `task.run`. A tab opened by any caller is shown
+at once, the bottom panel opened for it, and its status reads Running, Exited with its code, or
+Ended by a signal. The processes run on pipes, not a pseudo-terminal. `fixtures/tasks/` is a
+project with two tasks, one that fails, which the `terminal` snapshot runs.
+
 **Vim mode (P4-37).** `editor.key_mode = "vim"` in the user's settings
 ([`docs/settings.md`](../../docs/settings.md)) puts the code editor in `KeyMode::Vim`
 ([`qs-editor-view`](../../crates/qs-editor-view/README.md), `vim`), read when the window

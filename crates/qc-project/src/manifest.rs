@@ -36,11 +36,36 @@ pub(crate) struct ModuleTable {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct TaskTable {
+    pub(crate) name: String,
+    pub(crate) command: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Manifest {
     #[serde(default)]
     pub(crate) project: ProjectTable,
     #[serde(default, rename = "module")]
     pub(crate) modules: Vec<ModuleTable>,
+    #[serde(default, rename = "task")]
+    pub(crate) tasks: Vec<TaskTable>,
+}
+
+/// A named command the project runs in its directory (PRJ-2.10).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Task {
+    /// Its name, unique in the project.
+    pub name: String,
+    /// The command line the user's shell runs.
+    pub command: String,
+}
+
+/// What [`parse`] reads: the `[project]` table, the modules and the tasks.
+pub(crate) struct Parsed {
+    pub(crate) project: ProjectTable,
+    pub(crate) modules: Vec<CheckedModule>,
+    pub(crate) tasks: Vec<Task>,
 }
 
 /// One module of the manifest, checked.
@@ -90,6 +115,8 @@ pub enum ManifestError {
         /// The entry.
         entry: String,
     },
+    /// Two tasks have this name, or a task's name is empty (PRJ-2.10).
+    BadTaskName(String),
 }
 
 impl fmt::Display for ManifestError {
@@ -113,14 +140,25 @@ impl fmt::Display for ManifestError {
             Self::BadDefine { module, entry } => {
                 write!(f, "module {module}: {entry:?} is not NAME or NAME=VALUE")
             }
+            Self::BadTaskName(name) if name.is_empty() => f.write_str("a task has no name"),
+            Self::BadTaskName(name) => write!(f, "task name {name:?} is used twice"),
         }
     }
 }
 
 impl std::error::Error for ManifestError {}
 
+/// The tasks of the project file `text` (PRJ-2.10), the whole file checked.
+///
+/// # Errors
+///
+/// The file is not a valid project file (PRJ-2.1 to PRJ-2.10).
+pub fn tasks(text: &str) -> Result<Vec<Task>, ManifestError> {
+    parse(text).map(|parsed| parsed.tasks)
+}
+
 /// Parses and checks `quakec.toml` (PRJ-2.1 to PRJ-2.6).
-pub(crate) fn parse(text: &str) -> Result<(ProjectTable, Vec<CheckedModule>), ManifestError> {
+pub(crate) fn parse(text: &str) -> Result<Parsed, ManifestError> {
     let manifest: Manifest = toml::from_str(text).map_err(|e| {
         let line = e.span().map_or(1, |span| {
             let before = text.get(..span.start).unwrap_or_default();
@@ -188,7 +226,21 @@ pub(crate) fn parse(text: &str) -> Result<(ProjectTable, Vec<CheckedModule>), Ma
             include_dirs: module.include_dirs,
         });
     }
-    Ok((manifest.project, modules))
+    let mut tasks: Vec<Task> = Vec::new();
+    for task in manifest.tasks {
+        if task.name.is_empty() || tasks.iter().any(|t| t.name == task.name) {
+            return Err(ManifestError::BadTaskName(task.name));
+        }
+        tasks.push(Task {
+            name: task.name,
+            command: task.command,
+        });
+    }
+    Ok(Parsed {
+        project: manifest.project,
+        modules,
+        tasks,
+    })
 }
 
 /// Whether `path` has a root (`/x`) or, on Windows, a drive (`C:`) (PRJ-2.5).

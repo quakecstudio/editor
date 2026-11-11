@@ -22,7 +22,7 @@ pub(crate) use graph::PRJ_MAX_DEPTH;
 pub use graph::{
     Define, Diagnostic, FileGraph, Form, GraphFile, GraphIndex, PRJ_MAX_FILES, Via, build_graph,
 };
-pub use manifest::ManifestError;
+pub use manifest::{ManifestError, Task, tasks};
 pub use qc_lexer::Code;
 pub use qc_preproc::{FsLoader, Loader, MemoryLoader, normalize};
 
@@ -189,6 +189,8 @@ pub struct Project {
     pub target: Target,
     /// Its modules, in the order declared or found.
     pub modules: Vec<Module>,
+    /// Its tasks, in the order declared (PRJ-2.10); none for a bare project.
+    pub tasks: Vec<Task>,
 }
 
 /// Why a project did not open.
@@ -332,7 +334,11 @@ fn from_manifest<L: Loader>(
     bytes: &[u8],
 ) -> Result<Project, ProjectError> {
     let text = String::from_utf8_lossy(bytes);
-    let (project, modules) = manifest::parse(&text).map_err(|error| ProjectError::Manifest {
+    let manifest::Parsed {
+        project,
+        modules,
+        tasks,
+    } = manifest::parse(&text).map_err(|error| ProjectError::Manifest {
         path: path.to_path_buf(),
         error,
     })?;
@@ -382,6 +388,7 @@ fn from_manifest<L: Loader>(
         dialect,
         target,
         modules: out,
+        tasks,
     })
 }
 
@@ -452,5 +459,6 @@ fn bare<L: Loader>(loader: &mut L, root: &Path, sources: Vec<PathBuf>) -> Projec
         dialect: Dialect::Vanilla,
         target: Target::Quake,
         modules,
+        tasks: Vec::new(),
     }
 }

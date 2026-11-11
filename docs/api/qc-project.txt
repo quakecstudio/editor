@@ -24,6 +24,7 @@ field qc_project::Project.modules
 field qc_project::Project.name
 field qc_project::Project.root
 field qc_project::Project.target
+field qc_project::Project.tasks
 field qc_project::graph::Define.name
 field qc_project::graph::Define.value
 field qc_project::graph::Diagnostic.code
@@ -41,11 +42,14 @@ field qc_project::graph::GraphFile.name
 field qc_project::graph::GraphFile.parent
 field qc_project::graph::GraphFile.path
 field qc_project::graph::GraphFile.via
+field qc_project::manifest::Task.command
+field qc_project::manifest::Task.name
 fn qc_project::ModuleKind::as_str
 fn qc_project::ModuleKind::output_file
 fn qc_project::graph::Define::parse
 fn qc_project::graph::GraphIndex::index
 fn qc_project::graph::build_graph
+fn qc_project::manifest::tasks
 fn qc_project::open
 fn qc_project::open_dir
 fn qc_project::open_file
@@ -60,6 +64,7 @@ struct qc_project::graph::Diagnostic
 struct qc_project::graph::FileGraph
 struct qc_project::graph::GraphFile
 struct qc_project::graph::GraphIndex
+struct qc_project::manifest::Task
 use qc_project::Code = qc_lexer::Code
 use qc_project::Define = graph::Define
 use qc_project::Diagnostic = graph::Diagnostic
@@ -72,9 +77,11 @@ use qc_project::Loader = qc_preproc::Loader
 use qc_project::ManifestError = manifest::ManifestError
 use qc_project::MemoryLoader = qc_preproc::MemoryLoader
 use qc_project::PRJ_MAX_FILES = graph::PRJ_MAX_FILES
+use qc_project::Task = manifest::Task
 use qc_project::Via = graph::Via
 use qc_project::build_graph = graph::build_graph
 use qc_project::normalize = qc_preproc::normalize
+use qc_project::tasks = manifest::tasks
 variant qc_project::Dialect::Fteqcc
 variant qc_project::Dialect::Gmqcc
 variant qc_project::Dialect::Vanilla
@@ -99,6 +106,7 @@ variant qc_project::graph::Via::Listed
 variant qc_project::graph::Via::Root
 variant qc_project::manifest::ManifestError::BadDefine
 variant qc_project::manifest::ManifestError::BadModName
+variant qc_project::manifest::ManifestError::BadTaskName
 variant qc_project::manifest::ManifestError::DuplicateModule
 variant qc_project::manifest::ManifestError::NoModule
 variant qc_project::manifest::ManifestError::OutputOutside

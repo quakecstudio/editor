@@ -31,6 +31,7 @@ pub mod palette;
 pub mod project;
 pub mod shell;
 pub mod strings;
+mod terminal;
 pub mod theme;
 
 #[cfg(test)]
