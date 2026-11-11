@@ -15,6 +15,7 @@ mod anthropic;
 mod http;
 mod keys;
 mod openai;
+mod stream;
 
 #[cfg(test)]
 mod tests;
@@ -242,14 +243,15 @@ impl ProviderModel<Http> {
     }
 }
 
-impl<T: Transport> Model for ProviderModel<T> {
-    fn reply(
-        &mut self,
+impl<T: Transport> ProviderModel<T> {
+    /// The request for the next reply: its URL, headers and body.
+    fn request(
+        &self,
         system: &str,
         tools: &[ToolSpec],
         transcript: &[Message],
-    ) -> Result<Reply, String> {
-        let (url, headers, body) = match self.config.kind {
+    ) -> (String, Vec<Header>, Value) {
+        match self.config.kind {
             ProviderKind::Anthropic => anthropic::request(
                 &self.config,
                 self.key.as_ref(),
@@ -266,18 +268,69 @@ impl<T: Transport> Model for ProviderModel<T> {
                 transcript,
                 &self.sent,
             ),
+        }
+    }
+
+    /// The reply in `answer`, its raw message kept to send back.
+    fn take(&mut self, answer: &Value, tools: &[ToolSpec]) -> Result<Reply, String> {
+        let (reply, raw) = match self.config.kind {
+            ProviderKind::Anthropic => anthropic::reply(answer, tools)?,
+            ProviderKind::OpenAiCompatible | ProviderKind::Ollama => openai::reply(answer, tools)?,
         };
+        self.sent.push(raw);
+        Ok(reply)
+    }
+}
+
+impl<T: Transport> Model for ProviderModel<T> {
+    fn reply_streaming(
+        &mut self,
+        system: &str,
+        tools: &[ToolSpec],
+        transcript: &[Message],
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<Reply, String> {
+        let (url, headers, mut body) = self.request(system, tools, transcript);
+        if let Some(object) = body.as_object_mut() {
+            object.insert("stream".to_owned(), Value::Bool(true));
+        }
+        tracing::debug!(provider = ?self.config.kind, model = %self.config.model, "streamed model request");
+        let answer = match self.config.kind {
+            ProviderKind::Anthropic => {
+                let mut stream = stream::AnthropicStream::default();
+                self.transport
+                    .post_stream(&url, &headers, &body, &mut |data| {
+                        stream.event(data, on_text)
+                    })
+                    .map_err(|error| error.to_string())?;
+                stream.answer()?
+            }
+            ProviderKind::OpenAiCompatible | ProviderKind::Ollama => {
+                let mut stream = stream::OpenAiStream::default();
+                self.transport
+                    .post_stream(&url, &headers, &body, &mut |data| {
+                        stream.event(data, on_text)
+                    })
+                    .map_err(|error| error.to_string())?;
+                stream.answer()
+            }
+        };
+        self.take(&answer, tools)
+    }
+
+    fn reply(
+        &mut self,
+        system: &str,
+        tools: &[ToolSpec],
+        transcript: &[Message],
+    ) -> Result<Reply, String> {
+        let (url, headers, body) = self.request(system, tools, transcript);
         tracing::debug!(provider = ?self.config.kind, model = %self.config.model, "model request");
         let answer = self
             .transport
             .post_json(&url, &headers, &body)
             .map_err(|error| error.to_string())?;
-        let (reply, raw) = match self.config.kind {
-            ProviderKind::Anthropic => anthropic::reply(&answer, tools)?,
-            ProviderKind::OpenAiCompatible | ProviderKind::Ollama => openai::reply(&answer, tools)?,
-        };
-        self.sent.push(raw);
-        Ok(reply)
+        self.take(&answer, tools)
     }
 }
 

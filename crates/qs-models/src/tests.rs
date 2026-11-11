@@ -50,6 +50,21 @@ impl Transport for &Scripted {
             .push((url.to_owned(), headers.to_vec(), body.clone()));
         self.answers.borrow_mut().pop().unwrap()
     }
+
+    /// The next scripted answer is the stream: an array of event data, each given in turn.
+    fn post_stream(
+        &self,
+        url: &str,
+        headers: &[Header],
+        body: &Value,
+        on_data: &mut dyn FnMut(&str),
+    ) -> Result<(), TransportError> {
+        let events = self.post_json(url, headers, body)?;
+        for event in events.as_array().unwrap() {
+            on_data(&event.to_string());
+        }
+        Ok(())
+    }
 }
 
 fn tools() -> Vec<ToolSpec> {
@@ -456,4 +471,148 @@ fn the_keychain_answers_or_says_why_not() {
         Err(KeyError::Unavailable(_) | KeyError::Store(_)) => {}
     }
     let _http = Http::default();
+}
+
+// No spec statement: P4-09, an Anthropic reply streams: its text comes piece by piece as it is
+// written, a thinking block's thinking and signature deltas are joined and sent back whole, a
+// tool call's input_json_delta fragments become its input, and the request asks for a stream;
+// an error event ends the reply with its message
+#[test]
+fn anthropic_streams_text_thinking_and_calls() {
+    let events = json!([
+        { "type": "message_start", "message": { "content": [] } },
+        { "type": "content_block_start", "index": 0,
+          "content_block": { "type": "thinking", "thinking": "" } },
+        { "type": "content_block_delta", "index": 0,
+          "delta": { "type": "thinking_delta", "thinking": "plan" } },
+        { "type": "content_block_delta", "index": 0,
+          "delta": { "type": "signature_delta", "signature": "sig" } },
+        { "type": "content_block_stop", "index": 0 },
+        { "type": "content_block_start", "index": 1,
+          "content_block": { "type": "text", "text": "" } },
+        { "type": "content_block_delta", "index": 1,
+          "delta": { "type": "text_delta", "text": "Stag" } },
+        { "type": "content_block_delta", "index": 1,
+          "delta": { "type": "text_delta", "text": "ing it." } },
+        { "type": "content_block_stop", "index": 1 },
+        { "type": "content_block_start", "index": 2,
+          "content_block": { "type": "tool_use", "id": "toolu_1", "name": "edit_apply", "input": {} } },
+        { "type": "content_block_delta", "index": 2,
+          "delta": { "type": "input_json_delta", "partial_json": "{\"files\":" } },
+        { "type": "content_block_delta", "index": 2,
+          "delta": { "type": "input_json_delta", "partial_json": " []}" } },
+        { "type": "content_block_stop", "index": 2 },
+        { "type": "message_delta", "delta": { "stop_reason": "tool_use" } },
+        { "type": "message_stop" },
+    ]);
+    let failed = json!([{ "type": "error", "error": { "type": "overloaded_error", "message": "Overloaded" } }]);
+    let finished = json!([]);
+    let transport = Scripted::new(vec![Ok(events), Ok(failed), Ok(finished)]);
+    let mut model = ProviderModel::new(
+        ProviderConfig::anthropic(),
+        Some(Secret::new(KEY.to_owned())),
+        &transport,
+    )
+    .unwrap();
+    let mut transcript = vec![Message::User {
+        text: "go".to_owned(),
+    }];
+    let mut pieces = Vec::new();
+    let reply = model
+        .reply_streaming("s", &tools(), &transcript, &mut |p| {
+            pieces.push(p.to_owned())
+        })
+        .unwrap();
+    assert_eq!(pieces, ["Stag", "ing it."]);
+    let Reply::Calls { text, calls } = reply else {
+        panic!("{reply:?}")
+    };
+    assert_eq!(text, "Staging it.");
+    assert_eq!(calls[0].name, "edit.apply");
+    assert_eq!(calls[0].arguments, json!({ "files": [] }));
+    transcript.push(Message::Assistant { text, calls });
+    let error = model
+        .reply_streaming("s", &tools(), &transcript, &mut |_| {})
+        .unwrap_err();
+    assert_eq!(error, "Overloaded");
+    let sent = transport.sent.borrow();
+    assert_eq!(sent[0].2["stream"], true);
+    let back = &sent[1].2["messages"][1]["content"][0];
+    assert_eq!(back["thinking"], "plan");
+    assert_eq!(back["signature"], "sig");
+}
+
+// No spec statement: P4-09, an OpenAI-compatible reply streams: its content comes piece by
+// piece, and a tool call's id, name and arguments, spread over chunks by index, come back
+// whole with the finish_reason
+#[test]
+fn openai_streams_text_and_calls() {
+    let chunks = json!([
+        { "choices": [{ "index": 0, "delta": { "role": "assistant", "content": "On " } }] },
+        { "choices": [{ "index": 0, "delta": { "content": "it." } }] },
+        { "choices": [{ "index": 0, "delta": { "tool_calls": [
+            { "index": 0, "id": "c1", "type": "function",
+              "function": { "name": "edit_", "arguments": "{\"fi" } }] } }] },
+        { "choices": [{ "index": 0, "delta": { "tool_calls": [
+            { "index": 0, "function": { "name": "apply", "arguments": "les\":[]}" } }] } }] },
+        { "choices": [{ "index": 0, "delta": {}, "finish_reason": "tool_calls" }] },
+    ]);
+    let transport = Scripted::new(vec![Ok(chunks)]);
+    let config = ProviderConfig::new(ProviderKind::OpenAiCompatible, "m");
+    let mut model =
+        ProviderModel::new(config, Some(Secret::new(KEY.to_owned())), &transport).unwrap();
+    let mut pieces = Vec::new();
+    let reply = model
+        .reply_streaming(
+            "s",
+            &tools(),
+            &[Message::User {
+                text: "go".to_owned(),
+            }],
+            &mut |p| pieces.push(p.to_owned()),
+        )
+        .unwrap();
+    assert_eq!(pieces, ["On ", "it."]);
+    let Reply::Calls { text, calls } = reply else {
+        panic!("{reply:?}")
+    };
+    assert_eq!(text, "On it.");
+    assert_eq!(calls[0].id, "c1");
+    assert_eq!(calls[0].name, "edit.apply");
+    assert_eq!(calls[0].arguments, json!({ "files": [] }));
+}
+
+// No spec statement: P4-09, PRIN-9, a local Ollama streams over the real HTTP client: the
+// server-sent events are read line by line until [DONE]
+#[test]
+fn ollama_streams_over_http() {
+    let first = json!({ "choices": [{ "index": 0, "delta": { "content": "Hel" } }] });
+    let last = json!({ "choices": [{ "index": 0, "delta": { "content": "lo" }, "finish_reason": "stop" }] });
+    let body = format!("data: {first}\n\ndata: {last}\n\ndata: [DONE]\n\n");
+    let (base, server) = serve(vec![(200, body)]);
+    let mut config = ProviderConfig::new(ProviderKind::Ollama, "qwen3-coder");
+    config.base_url = Some(format!("{base}/v1"));
+    let mut model = ProviderModel::connect(config, &MemoryKeys::new()).unwrap();
+    let mut pieces = Vec::new();
+    let reply = model
+        .reply_streaming(
+            "s",
+            &[],
+            &[Message::User {
+                text: "hi".to_owned(),
+            }],
+            &mut |p| {
+                pieces.push(p.to_owned());
+            },
+        )
+        .unwrap();
+    assert_eq!(pieces, ["Hel", "lo"]);
+    assert_eq!(
+        reply,
+        Reply::Finish {
+            summary: "Hello".to_owned()
+        }
+    );
+    let requests = server.join().unwrap();
+    assert!(requests[0].contains("\"stream\":true"), "{}", requests[0]);
 }

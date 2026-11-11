@@ -43,6 +43,22 @@ answer from scripts and a local stub server.
   `http://localhost:11434/v1/`, and "The client requires an API key value, but Ollama
   ignores it", so none is sent. With Ollama nothing leaves the machine.
 
+## Streaming
+
+`Model::reply_streaming` asks for a stream (`"stream": true`) and calls back with each piece of
+the reply's text as it arrives, for the agent panel. `Transport::post_stream` reads the answer
+as server-sent events, each `data:` line in turn until `[DONE]`. The events are put back
+together into the answer a non-streamed request gives, so one reader handles both:
+
+- **Anthropic:** `content_block_start`, `content_block_delta` and `content_block_stop` for each
+  block, then `message_delta` with the `stop_reason`, as the Claude API reference's streaming
+  section shows. `text_delta` text is shown as it comes; `input_json_delta` fragments become
+  the call's input; every other delta (`thinking_delta`, `signature_delta`) is appended field by
+  field to its block, so a thinking block goes back whole. An `error` event fails the reply.
+- **OpenAI-compatible:** `CreateChatCompletionStreamResponse` chunks; `choices[0].delta`'s
+  `content` is the next text and its `tool_calls` are `ChatCompletionMessageToolCallChunk`s,
+  joined by `index`.
+
 ## Keys
 
 `Keychain` keeps each key under the service `quakec-studio` and the provider's
