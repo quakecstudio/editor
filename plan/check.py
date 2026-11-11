@@ -25,8 +25,9 @@ Fails (exit 1) if:
   - docs/design/design-doc.md changed since requirements.yaml was last reviewed against it: its
     SHA-256 (line endings normalised to LF) differs from design_doc_sha256 in requirements.yaml
   - plan/coverage.md is out of date (run with --write-coverage to refresh it)
-Phase order is enforced by adding the previous phase's gate to every issue's dependencies
-(LATER issues wait for the MVP gate, P4-25). Layer order is enforced by adding the lower
+Phase order is enforced by adding the previous phase's gate to every issue's dependencies,
+unless a person closes that gate (needs:human, as the MVP gate P4-25 is); LATER issues wait
+for the MVP gate. Layer order is enforced by adding the lower
 layer's readiness issue to every issue that builds on it (docs/testing.md).
 
 Usage: python3 plan/check.py [--write-coverage]
@@ -147,6 +148,11 @@ def add_readiness_dependencies(issues: list[dict]) -> None:
 def add_gate_dependencies(issues: list[dict]) -> None:
     """Phases run in order: every non-gate issue in phase N depends on the gate of phase N-1."""
     gates = {i["milestone"]: i["key"] for i in issues if "type:gate" in i.get("labels", [])}
+    human_gates = {
+        i["key"]
+        for i in issues
+        if "type:gate" in i.get("labels", []) and "needs:human" in i.get("labels", [])
+    }
     for i in issues:
         m = i["milestone"]
         if m == "LATER":
@@ -159,6 +165,10 @@ def add_gate_dependencies(issues: list[dict]) -> None:
         if n == 0:
             continue
         prev = gates.get(PHASE_ORDER[n - 1])
+        # A gate a person closes (the MVP release, P4-25) holds back only people: the next
+        # phase's agents start once the layer readiness issues they build on are closed.
+        if prev in human_gates:
+            continue
         if prev and prev not in i.setdefault("depends", []):
             i["depends"].append(prev)
 
