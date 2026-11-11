@@ -73,6 +73,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.watch`](#previewwatch) | Adds a watch, an expression read each time the game stops in a frame. |
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
+| [`project.entities`](#projectentities) | Lists the entity classes the open project's server QuakeC defines, read from its spawn functions: each class's keys, defaults, spawnflags, comment, model and size; with fgd, also writes them as an FGD file for other map editors. |
 | [`project.export`](#projectexport) | Builds the open project and exports it as a zip players install: its programs, its own assets (optionally in pak0.pak), a README and its license notices, never id's game data. |
 | [`project.files`](#projectfiles) | Lists every source file the open project compiles, by path. |
 | [`project.info`](#projectinfo) | Describes the open project: its directory and each module's kind, dialect, target engine and output. |
@@ -1990,6 +1991,32 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `project.entities`
+
+Lists the entity classes the open project's server QuakeC defines, read from its spawn functions: each class's keys, defaults, spawnflags, comment, model and size; with fgd, also writes them as an FGD file for other map editors.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `project.entities`.",
+  "properties": {
+    "fgd": {
+      "default": null,
+      "description": "Write the classes to this FGD file too.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "EntitiesParams",
   "type": "object"
 }
 ```

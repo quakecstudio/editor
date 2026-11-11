@@ -16,8 +16,9 @@ groups:
     - 'Query in qc-sema producing entity classes from spawn functions: keys read (fields used in the spawn function and its callees), types, defaults, spawnflags, /*QUAKED*/ comment docs, model and size
       hints'
     - Export to FGD for other editors
+    - '`project.entities` command (crates/qs-workbench/src/entity_classes.rs) answering the classes and writing the FGD; `cargo xtask entity-corpus` comparing id 1.01''s and the rerelease''s with golden files in docs/spec/vectors/entities/'
     acceptance:
-    - Generated definitions for id1 and the rerelease cover every classname in their maps
+    - Generated definitions for id 1.01 and the rerelease cover every classname in LibreQuake's maps, the corpus maps CI holds; `cargo xtask entity-corpus --maps <game dir>` reports any classname a game's maps use that the definitions miss, so id's maps are checked wherever they are installed
     verify:
     - Golden tests; coverage report against corpus maps
   - key: P5-04

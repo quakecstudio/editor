@@ -40,6 +40,9 @@
 //!   and runs id's QuakeC 1.01, and `oracles rerelease <dir>` compiles the
 //!   rerelease with FTEQCC. CI and `make oracles` run it; it is not part of
 //!   `ci`, which runs offline.
+//! - `entity-corpus`: derives the entity definitions of id 1.01 and the rerelease
+//!   with `qc-sema`, compares each FGD with its golden file, and with `--maps`
+//!   checks that every classname a game's maps use has a class (P5-03).
 //! - `map-corpus`: reads every `.map` file under map directories with `qs-map` and
 //!   checks that each writes back byte for byte.
 //! - `parse-corpus`: parses every `.qc` and `.qh` file under codebase
@@ -107,6 +110,7 @@ mod corpus;
 mod differential;
 mod download;
 mod engines;
+mod entity_corpus;
 mod evals;
 mod exec;
 mod fixtures;
@@ -218,6 +222,8 @@ enum Task {
     LspCorpus(lsp_corpus::Args),
     /// Every .map round-trips.
     MapCorpus(map_corpus::Args),
+    /// Each codebase's entity definitions, against their golden FGD and the maps' classnames.
+    EntityCorpus(entity_corpus::Args),
     /// Build and run the oracles.
     Oracles(oracles::Args),
     /// Every corpus file parses.
@@ -277,6 +283,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::LexCorpus(args) => ("lex-corpus", lex_corpus::main(root, args)),
         Task::LspCorpus(args) => ("lsp-corpus", lsp_corpus::main(root, args)),
         Task::MapCorpus(args) => ("map-corpus", map_corpus::main(root, args)),
+        Task::EntityCorpus(args) => ("entity-corpus", entity_corpus::main(root, args)),
         Task::Oracles(args) => ("oracles", oracles::main(root, args)),
         Task::ParseCorpus(args) => ("parse-corpus", parse_corpus::main(root, args)),
         Task::ProjectCorpus(args) => ("project-corpus", project_corpus::main(root, args)),
@@ -446,6 +453,7 @@ mod tests {
             "lex-corpus",
             "lsp-corpus",
             "map-corpus",
+            "entity-corpus",
             "oracles",
             "parse-corpus",
             "project-corpus",

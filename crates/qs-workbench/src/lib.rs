@@ -18,6 +18,7 @@ mod check;
 pub mod checkpoints;
 mod commands;
 mod editing;
+pub mod entity_classes;
 pub mod export;
 pub mod git;
 mod preview;
