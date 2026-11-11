@@ -51,10 +51,6 @@ pub const BSP_MIP_PIXELS: usize = 64;
 /// The bytes all four mip levels take for every [`BSP_MIP_PIXELS`] pixels of level 0:
 /// 64 + 16 + 4 + 1 (BSP-4.5).
 pub const BSP_MIP_BYTES: usize = 85;
-/// [`BSP_MIP_PIXELS`] in the `u32` arithmetic of a texture's size.
-const BSP_MIP_PIXELS_U32: u32 = 64;
-/// [`BSP_MIP_BYTES`] in the `u32` arithmetic of a texture's size.
-const BSP_MIP_BYTES_U32: u32 = 85;
 /// The bytes of one light sample of a Half-Life BSP: red, green and blue (BSP-22.3).
 pub const BSP_VALVE_SAMPLE_BYTES: usize = 3;
 /// The bytes of one colour of a Half-Life texture's palette: red, green and blue (BSP-22.2).
@@ -348,7 +344,7 @@ pub enum BspVersion {
     /// `BSP2`: 32-bit fields, float bounds.
     Bsp2,
     /// Version 30, Half-Life's: BSP29's layout, textures with their own palettes and RGB
-    /// lighting (BSP-21); only [`BspLoader::FitzQuake`] reads it.
+    /// lighting (BSP-22); only [`BspLoader::FitzQuake`] reads it.
     Valve,
 }
 
@@ -371,7 +367,7 @@ impl BspVersion {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[expect(
     clippy::enum_variant_names,
-    reason = "spec BSP-20.1: each variant is the engine's own name"
+    reason = "spec BSP-20.21: each variant is the engine's own name"
 )]
 pub enum BspLoader {
     /// WinQuake's `WinQuake/model.c`: an extent over 256 fails (BSP-9.4), and no face has
@@ -621,11 +617,15 @@ pub struct Texture<'a> {
 impl Texture<'_> {
     /// Mip level `level`'s pixels, `(width >> level) * (height >> level)` bytes at
     /// `offsets[level]`, when they lie in [`Texture::pixels`]. A texture the FitzQuake lineage
-    /// read has only level 0 (BSP-20.5).
+    /// read has only level 0 (BSP-20.5); an external one's (offset 0) starts its pixels, which
+    /// QuakeSpasm reads from right after the header when no WAD has it (BSP-22.5).
     #[must_use]
     pub fn mip(&self, level: usize) -> Option<&[u8]> {
         let offset = usize::try_from(*self.offsets.get(level)?).ok()?;
-        let start = offset.checked_sub(BSP_MIPTEX_HEADER_SIZE)?;
+        let start = match (level, offset) {
+            (0, 0) => 0,
+            _ => offset.checked_sub(BSP_MIPTEX_HEADER_SIZE)?,
+        };
         let size = mip_size(self.width, self.height, level)?;
         self.pixels.get(start..start.checked_add(size)?)
     }
@@ -1812,8 +1812,8 @@ impl<'a> Bsp<'a> {
 
     /// The leaf the point `p` is in, id's `Mod_PointInLeaf` over the world's nodes: the walk
     /// goes to a node's front child when `p` is strictly in front of its plane, else to its
-    /// back child (BSP-22.1). `None` for a BSP with no nodes, where id stops the engine, and
-    /// for a tree that reaches no leaf (BSP-22.2).
+    /// back child (BSP-21.1). `None` for a BSP with no nodes, where id stops the engine, and
+    /// for a tree that reaches no leaf (BSP-21.2).
     ///
     /// Implements BSP-21.
     #[must_use]
@@ -1975,9 +1975,9 @@ fn load_texture(
     }
     let pixels = width
         .checked_mul(height)
-        .and_then(|area| area.checked_div(BSP_MIP_PIXELS_U32))
-        .and_then(|area| area.checked_mul(BSP_MIP_BYTES_U32))
-        .and_then(|size| usize::try_from(size).ok())
+        .and_then(|area| usize::try_from(area).ok())
+        .and_then(|area| area.checked_div(BSP_MIP_PIXELS))
+        .and_then(|area| area.checked_mul(BSP_MIP_BYTES))
         .ok_or(bad.clone())?;
     let data_start = start.saturating_add(BSP_MIPTEX_HEADER_SIZE);
     let data = data_start

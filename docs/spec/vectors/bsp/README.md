@@ -181,7 +181,7 @@ evaluations give extents 32 16 (single precision gives 16 16).
 
 | Name | Change | Result with the FitzQuake lineage's loader | GLQuake and WinQuake | Statements |
 | --- | --- | --- | --- | --- |
-| `base` | None | Loads as the base, with level 0's 256 pixels of `wall` kept | Loads | BSP-20.1, BSP-20.5 |
+| `base` | None | Loads as the base, with level 0's 256 pixels of `wall` kept | Loads | BSP-20.21, BSP-20.5 |
 | `version-30` | As above | Loads as Half-Life's format; `qs-bsp` agrees ("Half-Life's version 30" below) | Error | BSP-20.20 |
 | `texture-zero` | Texture `wall` 0 by 16 | Loads; slot 0 empty; texinfo 0 flags 2 (`TEX_MISSING`), the checkerboard; face flags 0x100 | Load; the texture has no pixels; face flags 0 | BSP-20.3, BSP-20.7, BSP-20.11 |
 | `not-aligned` | As above | Loads; `wall` 24 by 16, its 384 bytes kept | Error `Texture wall is not 16 aligned` | BSP-20.4, BSP-20.5 |

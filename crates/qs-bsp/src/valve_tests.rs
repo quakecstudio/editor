@@ -178,3 +178,17 @@ fn an_external_texture_reads_what_the_bsp_holds() {
     assert!(texture.pixels.is_empty());
     assert_eq!(texture.palette, Some(&[][..]));
 }
+
+// spec BSP-22.5: an external texture's level 0 is the pixels after its header, as QuakeSpasm
+// draws them when no WAD has it
+#[test]
+fn an_external_textures_level_0_is_its_pixels() {
+    let bsp = read(
+        &valve_texture(b"wall", &[9; 300], true),
+        BspLoader::default(),
+    )
+    .unwrap();
+    let texture = bsp.textures[0].as_ref().unwrap();
+    assert_eq!(texture.mip(0), Some(&[9; 256][..]));
+    assert_eq!(texture.mip(1), None);
+}
