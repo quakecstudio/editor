@@ -16,6 +16,14 @@ are spec statements: names in directories match ASCII case-insensitively on ever
 (FS-3.7), loose lookups never leave the install (FS-3.8), and there is no limit on path
 lengths or the number of archives (FS-3.9, FS-3.10). `-cachedir` is not implemented (FS-2.5).
 
+`zip::write_zip` writes a zip, for a mod exported for players (P4-28): each member's local
+header and data, then the central directory and its end record, as PKWARE's APPNOTE 6.3.10
+lays them out (sections 4.3.7, 4.3.12 and 4.3.16). Its terms forbid a copy in `specs/`, so the
+code cites it by URL. The same members give the same bytes: one fixed time, no extra fields,
+and deflate at one level, or stored when that is no smaller. Names must be relative `/` paths
+(4.4.17.1). Zip64 is not written. Its tests read every archive back with the reader, and
+`unzip -t` and Python's `zipfile` accept an exported mod.
+
 - **Layer:** L0 formats. It depends on `qs-pak`, `qs-wad` and `miniz_oxide`, which inflates
   zip members. Finding the user's install is
   [#43](https://github.com/quakecstudio/editor/issues/43).

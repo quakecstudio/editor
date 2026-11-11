@@ -1301,3 +1301,41 @@ fn the_toolbar_opens_the_quake_files_guide_where_there_is_no_menu_bar() {
     harness.run();
     assert!(harness.query_by_label(Text::GameGuide.get()).is_some());
 }
+
+// No spec statement: P4-28, File > Export Mod: with the menu in the window the toolbar's
+// Export Mod button, enabled once a project is open, writes the zip, and the status bar says
+// where it is
+#[test]
+fn export_mod_writes_the_zip_and_says_where() {
+    let dir = TempDir::new("export");
+    let project = dir.path().join("exported");
+    fs::create_dir_all(project.join("maps")).unwrap();
+    fs::write(project.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    fs::write(project.join("world.qc"), "void() worldspawn = {};\n").unwrap();
+    fs::write(project.join("maps/start.bsp"), b"BSP2").unwrap();
+    let mut harness = accessible();
+    {
+        let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+        shell.set_menu_in_window();
+        shell.open_project(&project).unwrap();
+    }
+    harness.run();
+    harness.get_by_label(Text::ExportModMenu.get()).click();
+    harness.run();
+    harness.run();
+    let zip = project.join("build/exported.zip");
+    assert!(zip.is_file());
+    let note = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell
+        .export_note()
+        .cloned();
+    assert_eq!(note, Some(Ok(zip.clone())));
+    let shown = format!("{} {}", Text::ExportedTo.get(), zip.display());
+    assert!(
+        harness.query_by_label(&shown).is_some(),
+        "the status bar says {shown}"
+    );
+}

@@ -869,17 +869,34 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           cargo xtask offline "$QS_TEST_ASSETS/codebase/id-1.01" \
             --game "$QS_TEST_ASSETS/librequake-lite"
+      # P4-28: the rerelease template exported for players (project.export) and unzipped into
+      # a clean copy of LibreQuake, which the bridge client below plays it in.
+      - name: Export a template mod and unzip it into a clean game folder
+        if: env.CI_PATH == 'full'
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          dir="$RUNNER_TEMP_DIR/export/rrmod"
+          cargo run --locked -p quakec-ide -- new rerelease "$dir" \
+            --from "$QS_TEST_ASSETS/codebase/rerelease"
+          cargo run --locked -p quakec-ide -- run project.export '{}' --project "$dir"
+          cp -R "$QS_TEST_ASSETS/librequake-lite" "$RUNNER_TEMP_DIR/clean-quake"
+          python -m zipfile -e "$dir/build/rrmod.zip" "$RUNNER_TEMP_DIR/clean-quake"
+          test -s "$RUNNER_TEMP_DIR/clean-quake/rrmod/progs.dat"
+          test -s "$RUNNER_TEMP_DIR/clean-quake/rrmod/README.txt"
       # P3-06: qs-engine's bridge client against the real preview host, headless, launched
       # through a run root over LibreQuake's id1: a symbolic link, or a junction on Windows,
       # and a Unix socket, or a named pipe on Windows. P3-17: then the rerelease's QuakeC,
       # built above, reloaded over the map, stopped at a breakpoint and inspected.
+      # P4-28: then the exported mod's progs plays, on each OS.
       - name: Run the bridge client against the headless preview host
         if: env.CI_PATH == 'full'
         env:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
-          cargo xtask bridge-client "$QS_TEST_ASSETS/librequake-lite" \
-            --progs "$RUNNER_TEMP_DIR/rerelease-cli/build/rerelease-cli/progs.dat"
+          cargo xtask bridge-client "$RUNNER_TEMP_DIR/clean-quake" \
+            --progs "$RUNNER_TEMP_DIR/rerelease-cli/build/rerelease-cli/progs.dat" \
+            --exported "$RUNNER_TEMP_DIR/clean-quake/rrmod/progs.dat"
       # P3-19, SCN-2.5: a scenario played in qs-sim on LibreQuake's start map ten times gives
       # the same result each time, on each OS.
       - name: Play the start scenario ten times

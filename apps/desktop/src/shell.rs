@@ -34,6 +34,7 @@ use qs_templates::{GitHub, NEW_PROJECT, NewProjectParams, Template};
 use qs_workbench::checkpoints::{RESTORE_CHECKPOINT, RestoreCheckpointParams};
 use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
+use qs_workbench::export::{ExportParams, Exported, PROJECT_EXPORT};
 use qs_workbench::game_files::GameFiles;
 use qs_workbench::staged::HunksParams;
 use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
@@ -179,6 +180,8 @@ pub struct Shell {
     focus_applied: u64,
     /// The last play-loop command's error, shown on the toolbar until the next one.
     preview_error: Option<String>,
+    /// What the last export did: the zip's path, or why it failed (P4-28).
+    export_note: Option<Result<PathBuf, String>>,
     /// Whether the guide to the game's files is shown (P3-21), and what it last found.
     guide: (Guide, Option<GameFiles>),
     /// The user's settings file, which keeps the game folder chosen (P3-44).
@@ -258,6 +261,7 @@ impl Shell {
             covered: None,
             focus_applied: layout.focus_requests,
             preview_error: None,
+            export_note: None,
             guide: (Guide::Hidden, None),
             settings_file: None,
             menu: MenuPlace::default(),
@@ -583,6 +587,38 @@ impl Shell {
         }
     }
 
+    /// Exports the open project for players (`project.export`, P4-28), checked against the game
+    /// folder Play reads (the first install found when none was chosen); the status bar says
+    /// where the zip is or why there is none.
+    pub fn export_mod(&mut self) {
+        let game = self
+            .session
+            .context()
+            .preview
+            .game_folder()
+            .map(Path::to_path_buf);
+        let params = ExportParams {
+            game,
+            ..ExportParams::default()
+        };
+        let exported = serde_json::to_value(params)
+            .map_err(|error| error.to_string())
+            .and_then(|params| {
+                self.execute(PROJECT_EXPORT, params)
+                    .map_err(|error| error.to_string())
+            })
+            .and_then(|answer| {
+                serde_json::from_value::<Exported>(answer).map_err(|error| error.to_string())
+            });
+        self.export_note = Some(exported.map(|exported| exported.path));
+    }
+
+    /// What the last export did, for tests.
+    #[cfg(test)]
+    pub(crate) const fn export_note(&self) -> Option<&Result<PathBuf, String>> {
+        self.export_note.as_ref()
+    }
+
     /// Opens the project in `folder`, saying why when it does not open; a recent project that
     /// no longer opens comes off the list.
     fn open_asked(&mut self, folder: &Path) {
@@ -888,6 +924,7 @@ impl Shell {
         let mut toggled = None;
         let mut open_palette = false;
         let mut open_guide = false;
+        let mut export_asked = false;
         let mut control = None;
         let preview = &self.session.context().preview;
         let state = preview.state();
@@ -950,6 +987,14 @@ impl Shell {
                             if ui.add(files).clicked() {
                                 open_guide = true;
                             }
+                            let export = Button::new(
+                                RichText::new(Text::ExportModMenu.get())
+                                    .color(theme.color(Token::TextMuted)),
+                            );
+                            let has_project = self.session.context().workbench.root().is_some();
+                            if ui.add_enabled(has_project, export).clicked() {
+                                export_asked = true;
+                            }
                         }
                         let search = Button::new(
                             RichText::new(labelled(Icon::Search, Text::SearchCommands))
@@ -974,6 +1019,9 @@ impl Shell {
         }
         if open_guide {
             self.show_game_guide();
+        }
+        if export_asked {
+            self.export_mod();
         }
         if let Some(id) = control {
             self.control(id);
@@ -1223,6 +1271,17 @@ impl Shell {
                         PlayState::Paused => Text::PreviewPaused,
                     };
                     ui.label(RichText::new(running.get()).small().color(muted));
+                    match &self.export_note {
+                        Some(Ok(path)) => {
+                            let text = format!("{} {}", Text::ExportedTo.get(), path.display());
+                            ui.label(RichText::new(text).small().color(muted));
+                        }
+                        Some(Err(why)) => {
+                            let error = theme.color(Token::StatusError);
+                            ui.label(RichText::new(why).small().color(error));
+                        }
+                        None => {}
+                    }
                 });
             });
     }

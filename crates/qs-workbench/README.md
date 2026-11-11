@@ -5,8 +5,8 @@ Problems panels list, the commands that open a project or a file, `project.open`
 `file.open`, and those that build and check the project, `project.build` and `project.check`.
 
 - **Layer:** L5 commands. It depends on `qs-commands` (L5), `qc-codegen` (L4), `qc-engines`,
-  `qc-ide` and `qc-sema` (L3), `qc-project` (L2), `qc-progs`, `qs-diff` and `qs-checkpoint`
-  (L0), `schemars`, `serde` and `tracing`.
+  `qc-ide` and `qc-sema` (L3), `qc-project` (L2), `qc-progs`, `qs-diff`, `qs-checkpoint`,
+  `qs-pak`, `qs-vfs` and `qs-install` (L0), `schemars`, `serde` and `tracing`.
 - **Decision:** plan requirement UI-2, P2-19 (#75); not engine behaviour.
 - **Spec sections:** ENGT-3.12, the program a KEX rerelease target's build writes, which it
   refuses when KEX cannot load it; otherwise it implements a plan requirement, not engine
@@ -58,6 +58,15 @@ an edit, so both commands run outside the edit history
   game folder given or the first install found, skipping them with no game; the result lists
   each test's kind, verdict and message, and the counts. The CLI's `quakec-ide test`, the
   palette and the agent run the same command.
+- Export (`export`, P4-28, QA-15): `project.export` builds the project and writes a zip
+  players install, `build/<mod>.zip` by default, holding the mod folder. That folder has the
+  programs from `build/<mod>/`, the project's own assets under `ASSET_DIRS` (no `.map`
+  sources), loose or packed into `pak0.pak`, a generated `README.txt` (the game the mod needs
+  and how to install it), and the license and notice files at the project's top. It never
+  follows a link, so the run roots under `build/run/` (ADR-0008) are never read. It refuses a
+  file that is id's: one in `FS_KNOWN_FILES` (FS-6.2), or one whose bytes are a member of a
+  PAK in the game folder's `id1` or `rerelease/id1`. It lists every asset the project's
+  attribution file does not name. The same sources export to the same zip.
 - The agent's tools (`tools` and `engine`, P4-03, AGT-2): `project.symbols`, `project.files`,
   `project.search` (the lines holding a text, unsaved edits included), `engine.builtins`
   and `compile`, the project built with whether it is clean and its counts; and over the

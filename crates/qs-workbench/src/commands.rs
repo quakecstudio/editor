@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::checkpoints::register_checkpoints;
 use crate::editing::{Change, Source};
+use crate::export::ExportProject;
 use crate::staged::register_staged;
 use crate::testing::register_tests;
 use crate::tools::register_tools;
@@ -102,6 +103,7 @@ pub fn register<C: HasWorkbench + 'static>(
     registry.register(HoverCommand)?;
     registry.register(Complete)?;
     registry.register(RenameCommand)?;
+    registry.register(ExportProject)?;
     register_staged(registry)?;
     register_tools(registry)?;
     register_tests(registry)?;

@@ -18,6 +18,7 @@ mod check;
 pub mod checkpoints;
 mod commands;
 mod editing;
+pub mod export;
 mod preview;
 mod recent;
 pub mod staged;

@@ -302,5 +302,9 @@ fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
     Some(u32::from_le_bytes(b))
 }
 
+mod write;
+
+pub use write::{NewMember, ZipWriteError, write_zip};
+
 #[cfg(test)]
 mod tests;

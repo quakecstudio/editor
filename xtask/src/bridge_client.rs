@@ -18,7 +18,8 @@ const WITHIN: Duration = Duration::from_secs(20);
 /// The mod the run root links, an empty build output.
 const MOD: &str = "bridgetest";
 
-/// `cargo xtask bridge-client <game root> [--map <name>] [--progs <progs.dat>]`.
+/// `cargo xtask bridge-client <game root> [--map <name>] [--progs <progs.dat>]
+/// [--exported <progs.dat>]`.
 #[derive(clap::Parser, Debug)]
 pub(crate) struct Args {
     /// A game root holding `id1`, such as LibreQuake's.
@@ -31,6 +32,10 @@ pub(crate) struct Args {
     /// is set, hit, inspected and cleared.
     #[arg(long)]
     progs: Option<PathBuf>,
+    /// The `progs.dat` of a mod exported by `project.export` and unzipped into a game folder
+    /// (P4-28): reloaded over the map, it must keep the player in the game while frames run.
+    #[arg(long)]
+    exported: Option<PathBuf>,
 }
 
 /// Builds the host, runs the suite and reports each step.
@@ -65,7 +70,12 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         extra: vec!["--headless".to_owned()],
     };
     let mut running = launch(&spec, "cargo xtask bridge-client").map_err(|e| e.to_string())?;
-    let outcome = suite(&mut running.client, &args.map, args.progs.as_deref());
+    let outcome = suite(
+        &mut running.client,
+        &args.map,
+        args.progs.as_deref(),
+        args.exported.as_deref(),
+    );
     if outcome.is_err() {
         // The host is of no use once a step failed.
         running.child.kill().ok();
@@ -224,7 +234,12 @@ fn engine_tools(client: &mut Client) -> Result<(), String> {
 }
 
 /// Every step, each named when it passed; the first that fails stops the suite.
-fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<String>, String> {
+fn suite(
+    client: &mut Client,
+    map: &str,
+    progs: Option<&Path>,
+    exported: Option<&Path>,
+) -> Result<Vec<String>, String> {
     let mut steps = Vec::new();
     let loaded = client
         .wait_event("map/loaded", WITHIN)
@@ -374,6 +389,10 @@ fn suite(client: &mut Client, map: &str, progs: Option<&Path>) -> Result<Vec<Str
     if let Some(progs) = progs {
         other_progs(client, progs, &mut steps)?;
     }
+    if let Some(progs) = exported {
+        exported_progs(client, progs)?;
+        steps.push(format!("the exported {} plays", progs.display()));
+    }
 
     client.shutdown().map_err(|e| format!("shutdown: {e}"))?;
     steps.push("shutdown".to_owned());
@@ -434,6 +453,47 @@ fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
         field(&edited, "health") == Some(health),
         "resumed, the monster's health is set",
     )?;
+    Ok(())
+}
+
+/// P4-28: the exported mod's progs reloaded over the map plays: the reload loses nothing of
+/// the player, frames advance the game's time, and the player is still in the game after them.
+fn exported_progs(client: &mut Client, progs: &Path) -> Result<(), String> {
+    let path = progs.to_str().ok_or("--exported is not Unicode")?;
+    client
+        .request("reload", json!({ "progs": path }))
+        .map_err(|e| format!("reload {path}: {e}"))?;
+    client.pause().map_err(|e| format!("pause: {e}"))?;
+    let globals = |client: &mut Client| {
+        client
+            .inspect(InspectWhat::Globals)
+            .map_err(|e| e.to_string())
+            .and_then(|answer| time(&answer))
+    };
+    let before = globals(client)?;
+    for _ in 0..10 {
+        client
+            .step(StepKind::Frame)
+            .map_err(|e| format!("step: {e}"))?;
+    }
+    let after = globals(client)?;
+    expect(after > before, "the exported progs runs frames")?;
+    let entities = client
+        .inspect(InspectWhat::Entities)
+        .map_err(|e| e.to_string())?;
+    let players = entities
+        .get("entities")
+        .and_then(Value::as_array)
+        .map_or(0, |list| {
+            list.iter()
+                .filter(|e| text(e, "classname") == "player")
+                .count()
+        });
+    expect(
+        players > 0,
+        "the player is in the game the exported progs runs",
+    )?;
+    client.resume().map_err(|e| format!("resume: {e}"))?;
     Ok(())
 }
 
