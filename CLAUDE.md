@@ -119,6 +119,7 @@ cargo xtask compiler-diff --functions <codebase>...  # each function of an FTEQC
 cargo xtask compiler-diff --functions <codebase> --shard k/n  # every n-th group from the k-th; --merge <executed.tsv>... holds the shards together to the bar (DIFF-15.10)
 cargo xtask bridge-client <game root>      # qs-engine's client against the real preview host, headless (LibreQuake in CI)
 cargo xtask scenario <file> [--repeat n] [-- <engine words>]  # a scenario in qs-sim, n times, each result the same (SCN-2.5)
+cargo xtask offline <id 1.01 codebase> [--game <dir>]  # the app makes no network request with no provider (Linux: unshare, strace; P4-16)
 cargo xtask sim-diff <route> [--map <name>]... [-- <engine words>]  # qs-sim against id's server, frame by frame (DIFF-16)
 cargo xtask view-diff [--map <name>]... [-- <engine words>]  # the preview host's frames and sound against id's whole engine, every id1 map's start (VIEWDIFF)
 cargo xtask commands [--check]            # regenerate (or check) docs/commands.md from the command registry

@@ -347,6 +347,39 @@ impl AgentPanel {
         Ok(())
     }
 
+    /// Asks the model once, off the frame, for an inline edit (P4-10): `prompt` under
+    /// [`qs_agent::INLINE_SYSTEM`], no tools; the receiver gets the new text or why not, and
+    /// `wake` asks for a frame when it does.
+    ///
+    /// # Errors
+    ///
+    /// No provider set up, or no model.
+    pub fn ask_once(
+        &self,
+        prompt: String,
+        wake: impl Fn() + Send + 'static,
+    ) -> Result<mpsc::Receiver<Result<String, String>>, String> {
+        let config = self
+            .config
+            .clone()
+            .ok_or_else(|| Text::NoAgent.get().to_owned())?;
+        let mut model = (self.make)(&config)?;
+        let (answer, answered) = mpsc::channel();
+        std::thread::spawn(move || {
+            let reply = model
+                .reply(
+                    qs_agent::INLINE_SYSTEM,
+                    &[],
+                    &[Message::User { text: prompt }],
+                )
+                .map(|reply| qs_agent::inline_answer(&reply));
+            // The editor that asked may have gone; then nothing waits for the answer.
+            let _sent = answer.send(reply);
+            wake();
+        });
+        Ok(answered)
+    }
+
     /// Says why a thread did not start, under the task box.
     pub fn set_error(&mut self, error: Option<String>) {
         self.error = error;

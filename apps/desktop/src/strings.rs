@@ -49,6 +49,8 @@ pub enum Text {
     NotPlaying,
     /// The agent panel before an agent is set up.
     NoAgent,
+    /// The label over an inline edit's request (P4-10).
+    InlineEditPrompt,
     /// The agent panel's button that opens the provider form.
     AgentSettings,
     /// The hint in the agent's task box.
@@ -337,7 +339,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 163] = [
+    pub const ALL: [Self; 164] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -359,6 +361,7 @@ impl Text {
         Self::NoProject,
         Self::NotPlaying,
         Self::NoAgent,
+        Self::InlineEditPrompt,
         Self::AgentSettings,
         Self::AgentTaskHint,
         Self::AgentRun,
@@ -532,6 +535,7 @@ impl Text {
             Self::NoProject => "No project open.",
             Self::NotPlaying => "Entities appear here while the game runs.",
             Self::NoAgent => "The agent is not set up yet.",
+            Self::InlineEditPrompt => "Change the selection to\u{2026}",
             Self::AgentSettings => "Settings",
             Self::AgentTaskHint => "What should the agent do?",
             Self::AgentRun => "Start",

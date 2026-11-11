@@ -19,6 +19,7 @@ use serde_json::json;
 
 use super::{Editor, Popup, place_text};
 use crate::App;
+use crate::agent::AgentPanel;
 use crate::fallback::SystemFonts;
 use crate::icons::Icon;
 use crate::shell::{EDITOR_AREA, view_style};
@@ -709,4 +710,132 @@ fn a_finder_query_may_end_in_a_line() {
     assert_eq!(split_line("world.qc:0"), ("world.qc:0", None));
     assert_eq!(split_line("a:b"), ("a:b", None));
     assert_eq!(split_line("world"), ("world", None));
+}
+
+/// A model that answers every request with the same text.
+struct Fixed(&'static str);
+
+impl qs_agent::Model for Fixed {
+    fn reply(
+        &mut self,
+        _: &str,
+        _: &[qs_agent::ToolSpec],
+        _: &[qs_agent::Message],
+    ) -> Result<qs_agent::Reply, String> {
+        Ok(qs_agent::Reply::Finish {
+            summary: self.0.to_owned(),
+        })
+    }
+}
+
+/// The harness of `file` whose agent answers every inline edit with `answer`.
+fn inline_harness(file: &str, answer: &'static str) -> H {
+    let mut harness = harness(file);
+    let shell = harness.state_mut().as_mut().unwrap().shell_mut();
+    *shell.agent_mut() = AgentPanel::new(Box::new(move |_| {
+        let model: Box<dyn qs_agent::Model + Send> = Box::new(Fixed(answer));
+        Ok(model)
+    }));
+    shell.agent_mut().set_config(qs_models::ProviderConfig::new(
+        qs_models::ProviderKind::Ollama,
+        "local",
+    ));
+    harness
+}
+
+/// Selects line `line`, from 0, after its leading tab, and asks for an inline edit of it.
+fn ask_inline(harness: &mut H, line: usize, request: &str) {
+    let text = editor(harness).view.state().buffer().text();
+    let length = text.lines().nth(line).unwrap().len();
+    editor_mut(harness)
+        .view
+        .state_mut()
+        .set_selections(&[Selection {
+            anchor: Position::new(line, 1),
+            head: Position::new(line, length),
+        }]);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    harness.run_steps(2);
+    assert!(
+        matches!(popup(harness), Some(Popup::InlinePrompt(_))),
+        "{:?}",
+        popup(harness)
+    );
+    harness.event(Event::Text(request.to_owned()));
+    harness.run_steps(2);
+    harness.key_press(Key::Enter);
+    harness.run_steps(2);
+    // The fake model may have answered already; otherwise the editor waits for it.
+    assert!(matches!(
+        popup(harness),
+        Some(Popup::InlineWaiting | Popup::InlineProposed)
+    ));
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell_mut()
+        .wait_inline();
+    harness.run_steps(2);
+}
+
+// No spec statement: P4-10, the acceptance criterion with a fake model: Cmd+K on a selection
+// asks for an edit, its answer replaces the selection drawn as a diff in place, Accept keeps
+// it, and one undo then restores the original
+#[test]
+fn an_inline_edit_is_a_diff_in_place_undone_in_one_step() {
+    let mut harness = inline_harness("src/weapons.qc", "self.bounces = 0;");
+    let original = editor(&harness).view.state().buffer().text();
+    ask_inline(&mut harness, 4, "reset the bounces");
+    assert_eq!(popup(&harness), Some(Popup::InlineProposed));
+    let proposed = editor(&harness).view.state().buffer().text();
+    assert_eq!(proposed.lines().nth(4), Some("\tself.bounces = 0;"));
+    assert!(
+        editor_mut(&mut harness)
+            .view
+            .diff()
+            .is_some_and(|d| !d.is_empty())
+    );
+    harness.get_by_label(Text::AgentAccept.get()).click();
+    harness.run_steps(2);
+    assert_eq!(popup(&harness), None);
+    assert!(
+        editor_mut(&mut harness).view.diff().is_none(),
+        "the diff is gone"
+    );
+    assert_eq!(editor(&harness).view.state().buffer().text(), proposed);
+    assert!(editor_mut(&mut harness).view.state_mut().undo());
+    assert_eq!(editor(&harness).view.state().buffer().text(), original);
+}
+
+// No spec statement: P4-10, Reject takes an inline edit's answer back, and an edit asked with
+// no provider set up says why
+#[test]
+fn an_inline_edit_is_rejected_or_refused() {
+    let mut harness = inline_harness("src/weapons.qc", "self.bounces = 0;");
+    let original = editor(&harness).view.state().buffer().text();
+    ask_inline(&mut harness, 4, "reset the bounces");
+    harness.get_by_label(Text::AgentReject.get()).click();
+    harness.run_steps(2);
+    assert_eq!(editor(&harness).view.state().buffer().text(), original);
+    assert!(editor_mut(&mut harness).view.diff().is_none());
+    let mut unset = harness_in(&fixture(), "src/weapons.qc");
+    editor_mut(&mut unset)
+        .view
+        .state_mut()
+        .set_selections(&[Selection {
+            anchor: Position::new(4, 1),
+            head: Position::new(4, 5),
+        }]);
+    unset.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    unset.run_steps(2);
+    unset.event(Event::Text("x".to_owned()));
+    unset.run_steps(2);
+    unset.key_press(Key::Enter);
+    unset.run_steps(3);
+    assert!(
+        matches!(popup(&unset), Some(Popup::InlineFailed(_))),
+        "{:?}",
+        popup(&unset)
+    );
 }

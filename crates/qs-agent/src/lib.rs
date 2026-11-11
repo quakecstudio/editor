@@ -72,6 +72,41 @@ pub const SYSTEM: &str = "You are QuakeC Studio's agent. You change a QuakeC pro
     - When you are finished, say so. The runtime compiles and runs the tests itself, and the \
     run is done only when both pass; if not, you are told why and go on.";
 
+/// The rules of an inline edit (P4-10, UI-6): one selection rewritten as asked, the answer
+/// nothing but its new text.
+pub const INLINE_SYSTEM: &str = "You rewrite one selection of a QuakeC file as the person asks. \
+    Answer with the new text of the selection only: no explanation and no code fences. Keep the \
+    selection's indentation and the file's style, and change nothing the request does not need.";
+
+/// The message of an inline edit of `selection` in the file at `path`, whose whole text is
+/// `file`, as `instruction` asks.
+#[must_use]
+pub fn inline_prompt(path: &Path, file: &str, selection: &str, instruction: &str) -> String {
+    format!(
+        "The file {} is:\n\n{file}\n\nThe selection to rewrite is:\n\n{selection}\n\n\
+         Rewrite the selection to do this: {instruction}",
+        path.display()
+    )
+}
+
+/// The new text in an inline edit's answer: its text, without the code fences a model may put
+/// around it.
+#[must_use]
+pub fn inline_answer(reply: &Reply) -> String {
+    let text = match reply {
+        Reply::Calls { text, .. } | Reply::Finish { summary: text } => text.as_str(),
+    };
+    let trimmed = text.trim_matches('\n');
+    let Some(body) = trimmed.strip_prefix("```") else {
+        return text.to_owned();
+    };
+    let body = body.split_once('\n').map_or("", |(_, rest)| rest);
+    body.strip_suffix("```")
+        .unwrap_or(body)
+        .trim_end_matches('\n')
+        .to_owned()
+}
+
 /// The QuakeC reference written for the agent (`docs/agent-reference/quakec.md`).
 pub const QUAKEC_REFERENCE: &str = include_str!("../../../docs/agent-reference/quakec.md");
 
