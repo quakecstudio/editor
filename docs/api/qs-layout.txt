@@ -11,6 +11,7 @@ const qs_layout::editor::FOLD
 const qs_layout::editor::FOLD_ALL
 const qs_layout::editor::GO_TO_LINE
 const qs_layout::editor::GO_TO_SYMBOL
+const qs_layout::editor::PROJECT_SEARCH_VIEW
 const qs_layout::editor::SPLIT_DOWN
 const qs_layout::editor::SPLIT_RIGHT
 const qs_layout::editor::TAB_SWITCHER
@@ -67,6 +68,7 @@ use qs_layout::GO_TO_LINE = editor::GO_TO_LINE
 use qs_layout::GO_TO_SYMBOL = editor::GO_TO_SYMBOL
 use qs_layout::GoToLineParams = editor::GoToLineParams
 use qs_layout::Outline = editor::Outline
+use qs_layout::PROJECT_SEARCH_VIEW = editor::PROJECT_SEARCH_VIEW
 use qs_layout::SPLIT_DOWN = editor::SPLIT_DOWN
 use qs_layout::SPLIT_RIGHT = editor::SPLIT_RIGHT
 use qs_layout::SoftWrap = editor::SoftWrap
@@ -90,6 +92,7 @@ variant qs_layout::editor::EditorRequest::Fold
 variant qs_layout::editor::EditorRequest::FoldAll
 variant qs_layout::editor::EditorRequest::GoToLine
 variant qs_layout::editor::EditorRequest::GoToSymbol
+variant qs_layout::editor::EditorRequest::ProjectSearch
 variant qs_layout::editor::EditorRequest::TabSwitcher
 variant qs_layout::editor::EditorRequest::Unfold
 variant qs_layout::editor::EditorRequest::UnfoldAll

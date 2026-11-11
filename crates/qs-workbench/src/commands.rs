@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::checkpoints::register_checkpoints;
 use crate::editing::{Change, Source};
 use crate::export::ExportProject;
+use crate::search::register_search;
 use crate::staged::register_staged;
 use crate::testing::register_tests;
 use crate::tools::register_tools;
@@ -126,6 +127,7 @@ pub fn register<C: HasWorkbench + 'static>(
     register_git(registry)?;
     register_staged(registry)?;
     register_tools(registry)?;
+    register_search(registry)?;
     register_tests(registry)?;
     register_checkpoints(registry)?;
     register_vm(registry)

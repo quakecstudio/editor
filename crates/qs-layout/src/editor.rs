@@ -2,7 +2,8 @@
 
 //! The editor's layout and navigation commands (P4-32, UI-16): split panes, soft wrap and the
 //! outline panel, which the layout keeps, and folding, go to line, go to symbol and the tab
-//! switcher, which a window carries out once each is asked for.
+//! switcher, which a window carries out once each is asked for; and the project search over
+//! the multibuffer (P4-33, UI-17), `project_search::ToggleFocus` in Zed's keymap.
 //!
 //! The model is Zed's (`docs/configuring-zed.md` and the default keymap at
 //! zed-industries/zed@415d310): `pane::SplitRight` and `pane::SplitDown`, `editor::Fold`,
@@ -36,6 +37,8 @@ pub const GO_TO_SYMBOL: &str = "editor.go_to_symbol";
 pub const TOGGLE_OUTLINE: &str = "view.toggle_outline";
 /// The id of the command that opens the tab switcher.
 pub const TAB_SWITCHER: &str = "view.tab_switcher";
+/// The id of the command that opens the project search over the multibuffer (P4-33).
+pub const PROJECT_SEARCH_VIEW: &str = "view.project_search";
 /// The id of the command that splits the editor into two panes side by side.
 pub const SPLIT_RIGHT: &str = "view.split_right";
 /// The id of the command that splits the editor into two panes, one above the other.
@@ -98,6 +101,8 @@ pub enum EditorRequest {
     GoToSymbol,
     /// Open the tab switcher.
     TabSwitcher,
+    /// Open the project search over the multibuffer (P4-33).
+    ProjectSearch,
 }
 
 /// Asks the window for `request`.
@@ -181,6 +186,14 @@ asking!(
     TAB_SWITCHER,
     EditorRequest::TabSwitcher,
     "Opens the tab switcher: the open files, the one used most recently first."
+);
+
+asking!(
+    ProjectSearchCommand,
+    PROJECT_SEARCH_VIEW,
+    EditorRequest::ProjectSearch,
+    "Opens the project search: every match in the project's files as a multibuffer of \
+     editable excerpts, to edit or replace in place."
 );
 
 /// The parameters of `editor.go_to_line`.
@@ -316,6 +329,7 @@ pub(crate) fn register<C: HasLayout + 'static>(
     registry.register(Asking::<UnfoldAllCommand>(std::marker::PhantomData))?;
     registry.register(Asking::<GoToSymbolCommand>(std::marker::PhantomData))?;
     registry.register(Asking::<TabSwitcherCommand>(std::marker::PhantomData))?;
+    registry.register(Asking::<ProjectSearchCommand>(std::marker::PhantomData))?;
     registry.register(GoToLine)?;
     registry.register(ToggleSoftWrap)?;
     registry.register(ToggleOutline)?;
@@ -355,6 +369,7 @@ mod tests {
             (super::UNFOLD_ALL, EditorRequest::UnfoldAll),
             (super::GO_TO_SYMBOL, EditorRequest::GoToSymbol),
             (super::TAB_SWITCHER, EditorRequest::TabSwitcher),
+            (super::PROJECT_SEARCH_VIEW, EditorRequest::ProjectSearch),
         ] {
             let before = s.context().editor_requests;
             s.execute(id, json!({})).unwrap();

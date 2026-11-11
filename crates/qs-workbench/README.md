@@ -62,6 +62,11 @@ an edit, so both commands run outside the edit history
 - Formatting and quick fixes (P4-34, UI-18): `file.format` formats a file's text, which the
   editor takes, unsaved; `code.actions` lists the quick fixes at a place and `code.fix` applies
   one; `file.inlay_hints` lists each argument's parameter name.
+- Project search and replace (`search`, P4-33, UI-17): `project.search` takes matching case,
+  whole words and regular expressions and answers each match's byte range; `file.replace_all`
+  replaces every match in one file and saves it, one undoable step per file, so replacing across
+  a project is the command once per file; `file.replace_range` changes one range of a file's
+  text, unsaved, as an edit in a multibuffer excerpt does.
 - Git (`git`, P4-35, UI-19): `git.status`, `git.diff`, `git.stage` and `git.unstage` (a file
   or one hunk), `git.commit`, `git.branches`, `git.switch`, `git.create_branch`, `git.log`,
   `git.blame`, `git.conflicts`, `git.resolve` and `git.head_text`, over `qs-git` in the open
@@ -84,7 +89,7 @@ an edit, so both commands run outside the edit history
   PAK in the game folder's `id1` or `rerelease/id1`. It lists every asset the project's
   attribution file does not name. The same sources export to the same zip.
 - The agent's tools (`tools` and `engine`, P4-03, AGT-2): `project.symbols`, `project.files`,
-  `project.search` (the lines holding a text, unsaved edits included), `engine.builtins`
+  `project.search` (every match of a text, unsaved edits included), `engine.builtins`
   and `compile`, the project built with whether it is clean and its counts; and over the
   running game, `engine.inspect` (edicts, one edict's fields, the globals or the stack),
   `engine.console` (a command and the lines it printed) and `engine.screenshot` (the frame

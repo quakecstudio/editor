@@ -35,6 +35,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`file.inlay_hints`](#fileinlay_hints) | Lists a file's inlay hints: the name of the parameter each argument of a call is passed as. |
 | [`file.open`](#fileopen) | Opens a file in the editor, with the caret at a byte offset or at the start. |
 | [`file.read`](#fileread) | Reads a file's current text: the editor's when it has unsaved changes, else what is on disk. |
+| [`file.replace_all`](#filereplace_all) | Replaces every match of a search in a file and saves it, as one undoable change; matching case, whole words and regular expressions as project.search. |
+| [`file.replace_range`](#filereplace_range) | Replaces a byte range of a file's text, in the editor's text; nothing is saved. An edit in an excerpt of the multibuffer. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
 | [`git.blame`](#gitblame) | Says who last changed each line of a file, and in which commit. |
@@ -76,7 +78,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`project.info`](#projectinfo) | Describes the open project: its directory and each module's kind, dialect, target engine and output. |
 | [`project.new`](#projectnew) | Makes a new project from a starter template, id's QuakeC 1.01 or the rerelease's, with quakec.toml, a sample test and the GPLv2 notices; it builds and plays at once. |
 | [`project.open`](#projectopen) | Opens the QuakeC project in a directory: its quakec.toml, or its progs.src and csprogs.src. |
-| [`project.search`](#projectsearch) | Finds every line of the open project's files that holds a text, unsaved edits included, by file and line. |
+| [`project.search`](#projectsearch) | Finds every match of a text in the open project's files, unsaved edits included, by file, line and byte range; matching case, whole words only or as a regular expression. |
 | [`project.symbols`](#projectsymbols) | Lists the open project's global definitions, functions, globals and fields, each with where its name is first written; a query keeps those whose name contains it. |
 | [`project.take_checked`](#projecttake_checked) | Takes the problems, symbols and highlighting the background check worked out for the latest edit, if it has finished; says whether anything changed. |
 | [`project.test`](#projecttest) | Builds the open project and runs its tests: each test_ function called alone in the VM over a mock engine, and each scenario under tests/ played in the server simulation, answering each test's verdict. |
@@ -101,6 +103,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.focus_editor`](#viewfocus_editor) | Gives the keyboard to the editor in the centre. |
 | [`view.focus_left_panel`](#viewfocus_left_panel) | Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard. |
 | [`view.focus_right_panel`](#viewfocus_right_panel) | Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard. |
+| [`view.project_search`](#viewproject_search) | Opens the project search: every match in the project's files as a multibuffer of editable excerpts, to edit or replace in place. |
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
 | [`view.split_down`](#viewsplit_down) | Splits the editor into two panes, one above the other, the second showing the open file. |
 | [`view.split_right`](#viewsplit_right) | Splits the editor into two panes side by side, the second showing the open file. |
@@ -902,6 +905,100 @@ Parameters:
     "path"
   ],
   "title": "SaveFileParams",
+  "type": "object"
+}
+```
+
+## `file.replace_all`
+
+Replaces every match of a search in a file and saves it, as one undoable change; matching case, whole words and regular expressions as project.search.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `file.replace_all`.",
+  "properties": {
+    "case_sensitive": {
+      "default": false,
+      "description": "Whether case matters; it does not by default.",
+      "type": "boolean"
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    },
+    "regex": {
+      "default": false,
+      "description": "Whether the text is a regular expression.",
+      "type": "boolean"
+    },
+    "replacement": {
+      "description": "What each match becomes; a regular expression's may name its groups, `$1` or `${name}`.",
+      "type": "string"
+    },
+    "text": {
+      "description": "The text to find.",
+      "type": "string"
+    },
+    "whole_word": {
+      "default": false,
+      "description": "Whether only whole words are found.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "path",
+    "text",
+    "replacement"
+  ],
+  "title": "ReplaceInFileParams",
+  "type": "object"
+}
+```
+
+## `file.replace_range`
+
+Replaces a byte range of a file's text, in the editor's text; nothing is saved. An edit in an excerpt of the multibuffer.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `file.replace_range`.",
+  "properties": {
+    "end": {
+      "description": "The byte after the last one replaced.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    },
+    "start": {
+      "description": "The first byte replaced.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "text": {
+      "description": "What the range becomes.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "start",
+    "end",
+    "text"
+  ],
+  "title": "ReplaceRangeParams",
   "type": "object"
 }
 ```
@@ -2042,7 +2139,7 @@ Parameters:
 
 ## `project.search`
 
-Finds every line of the open project's files that holds a text, unsaved edits included, by file and line.
+Finds every match of a text in the open project's files, unsaved edits included, by file, line and byte range; matching case, whole words only or as a regular expression.
 
 Parameters:
 
@@ -2057,9 +2154,19 @@ Parameters:
       "description": "Whether case matters; it does not by default.",
       "type": "boolean"
     },
+    "regex": {
+      "default": false,
+      "description": "Whether the text is a regular expression (P4-33).",
+      "type": "boolean"
+    },
     "text": {
       "description": "The text to find.",
       "type": "string"
+    },
+    "whole_word": {
+      "default": false,
+      "description": "Whether only whole words are found (P4-33).",
+      "type": "boolean"
     }
   },
   "required": [
@@ -2781,6 +2888,22 @@ Parameters:
 ## `view.focus_right_panel`
 
 Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.project_search`
+
+Opens the project search: every match in the project's files as a multibuffer of editable excerpts, to edit or replace in place.
 
 Parameters:
 
