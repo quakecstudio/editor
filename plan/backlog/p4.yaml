@@ -501,7 +501,7 @@ issues:
   - P0-02
   - P0-15
   - P4-18
-- key: P4-38
+- key: P4-39
   title: Replace the macOS disk image with a signed installer package
   labels:
   - repo
@@ -538,7 +538,7 @@ issues:
   - GOAL-6
   - MVP-4
   depends:
-  - P4-38
+  - P4-39
   - P0-23
   - P4-27
   - P4-28
