@@ -8,8 +8,9 @@ Release: 1
 Summary: QuakeC IDE with its own compiler, live in-game preview and a built-in agent
 License: GPL-3.0-or-later
 URL: https://github.com/quakecstudio/editor
-Requires: glibc, alsa-lib, libxkbcommon
-Recommends: vulkan-loader, mesa-vulkan-drivers, mesa-libGL, gnome-keyring
+# The window's libraries, which winit and wgpu open at run time rather than link.
+Requires: glibc, alsa-lib, libxkbcommon, libxkbcommon-x11, libX11, libX11-xcb, libXcursor, libXrandr, libXi, vulkan-loader
+Recommends: libwayland-client, libwayland-cursor, libwayland-egl, mesa-vulkan-drivers, mesa-libGL, gnome-keyring
 AutoReqProv: no
 
 %description
