@@ -11,7 +11,7 @@
 # The files each format needs are beside this script: the desktop entry and icon, the deb's
 # `deb/control`, the rpm's `quakec-studio.spec`, the AppImage's `AppRun.sh` and the Flatpak's
 # manifest. Run from the repository root. The deb needs dpkg-deb, the rpm rpmbuild, the AppImage curl,
-# and the Flatpak flatpak-builder with the Freedesktop 24.08 runtime and SDK installed.
+# and the Flatpak flatpak-builder with the Freedesktop 25.08 runtime and SDK installed.
 set -euo pipefail
 
 APP_ID=com.quakecstudio.QuakeCStudio

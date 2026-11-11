@@ -8,7 +8,7 @@
 # keychain (org.freedesktop.secrets).
 app-id: com.quakecstudio.QuakeCStudio
 runtime: org.freedesktop.Platform
-runtime-version: "24.08"
+runtime-version: "25.08"
 sdk: org.freedesktop.Sdk
 command: quakec-studio
 finish-args:
