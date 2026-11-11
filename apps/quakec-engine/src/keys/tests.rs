@@ -80,7 +80,7 @@ fn the_mouse_is_the_games_only() {
 
 // spec INPUT-3.5: default.cfg is the host's own in QuakeSpasm's look, with W, A, S and D and
 // mouse look; the game's in GLQuake's
-// spec INPUT-4.3: config.cfg is the host's own file, empty before it has written one; every
+// spec INPUT-4.4: config.cfg is the host's own file, empty before it has written one; every
 // other file is the game's
 #[test]
 fn the_console_reads_the_hosts_default_and_config() {
@@ -113,7 +113,7 @@ fn the_console_reads_the_hosts_default_and_config() {
 }
 
 // spec INPUT-4.1: unbindall, the bindings, the archived settings, then +mlook when held
-// spec INPUT-4.3: the host's own file, preview-host.cfg
+// spec INPUT-4.4: the host's own file, quakec-engine.cfg
 #[test]
 fn the_configuration_is_written_as_host_writeconfiguration_writes_it() {
     assert_eq!(
@@ -121,7 +121,7 @@ fn the_configuration_is_written_as_host_writeconfiguration_writes_it() {
         "unbindall\nbind \"w\" \"+forward\"\nvolume \"0.7\"\n+mlook\n"
     );
     assert_eq!(super::configuration("", "", false), "unbindall\n");
-    assert_eq!(super::CONFIG_FILE, "preview-host.cfg");
+    assert_eq!(super::CONFIG_FILE, "quakec-engine.cfg");
 }
 
 // spec PHYS-11.9: the host's key destination is the focus the world's frame reads: the game

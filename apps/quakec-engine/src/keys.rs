@@ -162,7 +162,7 @@ pub(crate) const fn runs_binding(key: u8, dest: KeyDest) -> bool {
 /// id1's (INPUT-3.5): the movement on W, A, S and D and the mouse looking.
 pub(crate) const DEFAULT_CFG: &[u8] = br#"// QuakeC Studio's default bindings in QuakeSpasm's look (INPUT-3.5). Like QuakeSpasm's own,
 // they put the movement on W, A, S and D, the mouse on attack and the wheel on the weapons;
-// the host's own config.cfg (INPUT-4.3) and the game's autoexec.cfg run after them.
+// the host's own config.cfg (INPUT-4.4) and the game's autoexec.cfg run after them.
 unbindall
 
 bind w +forward
@@ -214,14 +214,14 @@ bind \ +mlook
 +mlook
 "#;
 
-/// The host's configuration file, `preview-host.cfg` in its config directory (INPUT-4.3).
+/// The host's configuration file, `quakec-engine.cfg` in its config directory (INPUT-4.4).
 pub(crate) fn config_path() -> Option<std::path::PathBuf> {
     qs_paths::current()
         .ok()
         .map(|dirs| dirs.config().join(CONFIG_FILE))
 }
 
-/// `files` as the host's console reads them (INPUT-3.5, INPUT-4.3): `config.cfg` is the
+/// `files` as the host's console reads them (INPUT-3.5, INPUT-4.4): `config.cfg` is the
 /// host's own configuration, the text `config` gives, or nothing before the host has written
 /// one; with `own_default`, `default.cfg` is [`DEFAULT_CFG`]; every other file is the game's.
 pub(crate) fn host_files(
@@ -253,8 +253,8 @@ pub(crate) fn configuration(bindings: &str, settings: &str, mlook: bool) -> Stri
     text
 }
 
-/// The host's configuration's file name in its config directory (INPUT-4.2).
-pub(crate) const CONFIG_FILE: &str = "preview-host.cfg";
+/// The host's configuration's file name in its config directory (INPUT-4.4).
+pub(crate) const CONFIG_FILE: &str = "quakec-engine.cfg";
 
 /// `Host_Init`'s "`Cbuf_InsertText ("exec quake.rc\n");`", the line the host runs once
 /// before its first frame (INPUT-3.3).

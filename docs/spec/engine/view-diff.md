@@ -6,7 +6,7 @@ never renumbered, never reused, withdrawn rather than deleted.
 Describes how the preview host's frames and sound are held to id's engine (ENG-15, P3-28):
 the view oracle, `oracles/engine/view_host.c`, runs id's whole engine headless, the software
 renderer, the client and the mixer of `WinQuake/` at
-id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`, and `preview-host
+id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`, and `quakec-engine
 --view-script` runs ours on the same script; `cargo xtask view-diff` compares what they write.
 Implemented by `oracles/engine/view_host.c`, `apps/quakec-engine` and `xtask/src/view_diff.rs`.
 
