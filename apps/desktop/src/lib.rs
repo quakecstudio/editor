@@ -147,6 +147,7 @@ impl App {
                     menu::MenuChoice::OpenFolder => self.shell.open_folder(),
                     menu::MenuChoice::NewProject(template) => self.shell.new_project(template),
                     menu::MenuChoice::GameFiles => self.shell.show_game_guide(),
+                    menu::MenuChoice::ExportMod => self.shell.export_mod(),
                     menu::MenuChoice::Toggle(panel) => {
                         if let Err(error) = self.shell.toggle(panel) {
                             tracing::warn!(%error, "panel toggle failed");

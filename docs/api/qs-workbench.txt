@@ -15,6 +15,9 @@ const qs_workbench::commands::RENAME
 const qs_workbench::commands::SAVE_FILE
 const qs_workbench::commands::TAKE_CHECKED
 const qs_workbench::commands::UPDATE_FILE
+const qs_workbench::export::ASSET_DIRS
+const qs_workbench::export::NOTICE_PREFIXES
+const qs_workbench::export::PROJECT_EXPORT
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
 const qs_workbench::preview::CONSOLE
@@ -61,6 +64,8 @@ enum qs_workbench::EntryKind
 enum qs_workbench::WorkbenchError
 enum qs_workbench::build::Gravity
 enum qs_workbench::commands::CandidateKind
+enum qs_workbench::export::ExportError
+enum qs_workbench::export::GameNeeded
 enum qs_workbench::preview::OnLoss
 enum qs_workbench::preview::PlayState
 enum qs_workbench::preview::PreviewError
@@ -130,6 +135,14 @@ field qs_workbench::editing::Change.before
 field qs_workbench::editing::Change.path
 field qs_workbench::editing::Renamed.caution
 field qs_workbench::editing::Renamed.changes
+field qs_workbench::export::ExportParams.game
+field qs_workbench::export::ExportParams.out
+field qs_workbench::export::ExportParams.pak
+field qs_workbench::export::Exported.files
+field qs_workbench::export::Exported.game
+field qs_workbench::export::Exported.mod_name
+field qs_workbench::export::Exported.path
+field qs_workbench::export::Exported.unknown_license
 field qs_workbench::preview::BreakpointParams.file
 field qs_workbench::preview::BreakpointParams.line
 field qs_workbench::preview::ChooseGameParams.path
@@ -308,6 +321,7 @@ fn qs_workbench::editing::Workbench::rename
 fn qs_workbench::editing::Workbench::save
 fn qs_workbench::editing::Workbench::text
 fn qs_workbench::editing::Workbench::update
+fn qs_workbench::export::Workbench::export
 fn qs_workbench::preview::ConsoleLine::is_error
 fn qs_workbench::preview::ConsoleLine::matches
 fn qs_workbench::preview::HasPreview::workbench_and_preview
@@ -411,6 +425,8 @@ impl qs_workbench::WorkbenchError: Error
 impl qs_workbench::WorkbenchError: fmt::Display
 impl qs_workbench::checkpoints::CheckpointMade: From<Checkpoint>
 impl qs_workbench::commands::CandidateKind: From<DefKind>
+impl qs_workbench::export::ExportError: fmt::Display
+impl qs_workbench::export::ExportError: std::error::Error
 impl qs_workbench::preview::Preview: Drop
 impl qs_workbench::preview::Preview: core::fmt::Debug
 impl qs_workbench::preview::PreviewError: From<ClientError>
@@ -430,6 +446,7 @@ impl qs_workbench::tools::KindName: From<ModuleKind>
 impl qs_workbench::vm_run::VmRunError: std::error::Error
 impl qs_workbench::vm_run::VmRunError: std::fmt::Display
 mod qs_workbench::checkpoints
+mod qs_workbench::export
 mod qs_workbench::preview::debug
 mod qs_workbench::preview::dock
 mod qs_workbench::preview::engine
@@ -464,6 +481,8 @@ struct qs_workbench::commands::SaveFileParams
 struct qs_workbench::commands::UpdateFileParams
 struct qs_workbench::editing::Change
 struct qs_workbench::editing::Renamed
+struct qs_workbench::export::ExportParams
+struct qs_workbench::export::Exported
 struct qs_workbench::preview::BreakpointParams
 struct qs_workbench::preview::ChooseGameParams
 struct qs_workbench::preview::ConsoleLine
@@ -642,6 +661,15 @@ variant qs_workbench::commands::CandidateKind::Function
 variant qs_workbench::commands::CandidateKind::Global
 variant qs_workbench::commands::CandidateKind::Local
 variant qs_workbench::commands::CandidateKind::Parameter
+variant qs_workbench::export::ExportError::IdData
+variant qs_workbench::export::ExportError::Io
+variant qs_workbench::export::ExportError::NotBuilt
+variant qs_workbench::export::ExportError::OutsideBuild
+variant qs_workbench::export::ExportError::Pak
+variant qs_workbench::export::ExportError::Workbench
+variant qs_workbench::export::ExportError::Zip
+variant qs_workbench::export::GameNeeded::Original
+variant qs_workbench::export::GameNeeded::Rerelease
 variant qs_workbench::preview::OnLoss::Ask
 variant qs_workbench::preview::OnLoss::Reload
 variant qs_workbench::preview::PlayState::Paused

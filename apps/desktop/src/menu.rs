@@ -20,6 +20,8 @@ pub enum MenuChoice {
     NewProject(Template),
     /// File, Quake Files: the guide to the game's files (P3-21).
     GameFiles,
+    /// File, Export Mod: the open project as a zip players install (P4-28).
+    ExportMod,
     /// A View item: show or hide the panel.
     Toggle(Panel),
 }
@@ -30,6 +32,7 @@ pub struct MenuBar {
     open_folder: MenuItem,
     new_projects: [(Template, MenuItem); 2],
     game_files: MenuItem,
+    export_mod: MenuItem,
     items: [(Panel, CheckMenuItem); 3],
 }
 
@@ -76,6 +79,7 @@ impl MenuBar {
             ),
         ];
         let game_files = MenuItem::new(Text::GameFilesMenu.get(), true, None);
+        let export_mod = MenuItem::new(Text::ExportModMenu.get(), true, None);
         let file = Submenu::with_items(
             Text::File.get(),
             true,
@@ -83,6 +87,7 @@ impl MenuBar {
                 &new_projects[0].1,
                 &new_projects[1].1,
                 &open_folder,
+                &export_mod,
                 &game_files,
             ],
         )?;
@@ -98,6 +103,7 @@ impl MenuBar {
             open_folder,
             new_projects,
             game_files,
+            export_mod,
             items,
         })
     }
@@ -116,6 +122,8 @@ impl MenuBar {
                 chosen.push(MenuChoice::NewProject(*template));
             } else if event.id() == self.game_files.id() {
                 chosen.push(MenuChoice::GameFiles);
+            } else if event.id() == self.export_mod.id() {
+                chosen.push(MenuChoice::ExportMod);
             } else if let Some((panel, _)) =
                 self.items.iter().find(|(_, item)| item.id() == event.id())
             {

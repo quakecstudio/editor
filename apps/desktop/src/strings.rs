@@ -164,6 +164,10 @@ pub enum Text {
     NotNow,
     /// File, Quake Files: the menu item that opens the guide.
     GameFilesMenu,
+    /// File, Export Mod: the open project as a zip players install (P4-28).
+    ExportModMenu,
+    /// Before the path of the zip an export wrote.
+    ExportedTo,
     /// The notice before a reload that would reset values (P3-10), before their list.
     WouldReset,
     /// The notice's button that reloads all the same.
@@ -342,7 +346,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 165] = [
+    pub const ALL: [Self; 167] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -421,6 +425,8 @@ impl Text {
         Self::ChooseGameTitle,
         Self::NotNow,
         Self::GameFilesMenu,
+        Self::ExportModMenu,
+        Self::ExportedTo,
         Self::WouldReset,
         Self::ReloadAnyway,
         Self::FilterEntities,
@@ -603,6 +609,8 @@ impl Text {
             Self::ChooseGameTitle => "Choose your Quake folder",
             Self::NotNow => "Not now",
             Self::GameFilesMenu => "Quake Files\u{2026}",
+            Self::ExportModMenu => "Export Mod\u{2026}",
+            Self::ExportedTo => "Exported for players to",
             Self::WouldReset => "Reloading would reset",
             Self::ReloadAnyway => "Reload anyway",
             Self::FilterEntities => "Filter by classname or number",

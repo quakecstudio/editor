@@ -283,6 +283,13 @@ fn a_call_that_asks_waits_in_the_thread_for_the_modder() {
     harness.get_by_label("file.read's default is ask");
     harness.get_by_label("Allow once");
     harness.get_by_label("Deny");
+    // The gated model repeats its last reply until it is sent another, so the finish is queued
+    // before the call is answered: the run's next request takes it, and the run cannot spend
+    // its turns repeating the call meanwhile.
+    gate.send(Reply::Finish {
+        summary: "read".to_owned(),
+    })
+    .unwrap();
     harness.get_by_label("Always allow").click();
     // The model's thread wakes the window as the run goes on, so step rather than settle.
     harness.run_steps(2);
@@ -293,10 +300,6 @@ fn a_call_that_asks_waits_in_the_thread_for_the_modder() {
         shell(&mut harness).agent().permissions().rules.tools["file.read"].allow,
         ["world.qc"]
     );
-    gate.send(Reply::Finish {
-        summary: "read".to_owned(),
-    })
-    .unwrap();
     let app = harness.state_mut().as_mut().unwrap();
     finish(app, 0);
     let report = app.shell().agent_report(0).unwrap();

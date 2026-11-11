@@ -47,6 +47,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`preview.watch`](#previewwatch) | Adds a watch, an expression read each time the game stops in a frame. |
 | [`project.build`](#projectbuild) | Compiles each module of the open project, with the editor's text of each open file, and writes its progs.dat and .lno. |
 | [`project.check`](#projectcheck) | Lists every error and warning in the open project, as the Problems panel does. |
+| [`project.export`](#projectexport) | Builds the open project and exports it as a zip players install: its programs, its own assets (optionally in pak0.pak), a README and its license notices, never id's game data. |
 | [`project.files`](#projectfiles) | Lists every source file the open project compiles, by path. |
 | [`project.info`](#projectinfo) | Describes the open project: its directory and each module's kind, dialect, target engine and output. |
 | [`project.new`](#projectnew) | Makes a new project from a starter template, id's QuakeC 1.01 or the rerelease's, with quakec.toml, a sample test and the GPLv2 notices; it builds and plays at once. |
@@ -1206,6 +1207,45 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `project.export`
+
+Builds the open project and exports it as a zip players install: its programs, its own assets (optionally in pak0.pak), a README and its license notices, never id's game data.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `project.export`.",
+  "properties": {
+    "game": {
+      "default": null,
+      "description": "The Quake folder whose `id1` (and `rerelease/id1`) the export is checked against, so\nthat nothing of id's is shipped; the IDE passes the one Play uses. When absent, the\nfirst install found (FS-6) is used, as Play uses it.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "out": {
+      "default": null,
+      "description": "Where to write the zip; `build/<mod>.zip` in the project when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pak": {
+      "default": false,
+      "description": "Pack the assets into `pak0.pak` in the mod folder instead of leaving them as files.",
+      "type": "boolean"
+    }
+  },
+  "title": "ExportParams",
   "type": "object"
 }
 ```

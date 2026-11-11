@@ -24,6 +24,9 @@ qs-checkpoint = { workspace = true }
 qs-diff = { workspace = true }
 qs-engine = { workspace = true }
 qs-install = { workspace = true }
+# project.export: the assets packed into pak0.pak, and id's PAKs read to refuse their files
+# (P4-28).
+qs-pak = { workspace = true }
 # scenario.run: the map, the game's files and the server simulation a scenario plays in
 # (SCN-2.1).
 qs-bsp = { workspace = true }

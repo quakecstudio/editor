@@ -65,3 +65,23 @@ quakec-ide build /path/to/your/mod
 ```
 
 The output goes to `build/<mod>/progs.dat` inside the project, never into your Quake folder.
+
+## Exporting for players
+
+**File > Export Mod…** (on Windows and Linux, **Export Mod…** on the toolbar) builds the project
+and writes `build/<mod>.zip`, which players unzip into their Quake folder. The status bar says
+where it is. The zip holds the `<mod>` folder:
+
+- `progs.dat`, and `csprogs.dat` or `menu.dat` when the project has them;
+- everything under the project's `maps`, `progs`, `sound`, `gfx`, `music`, `textures` and `env`
+  folders, except `.map` sources;
+- a `README.txt` that says which game the mod needs and how to install and start it;
+- the project's license and notice files, such as `COPYING`, `LICENSE` or `NOTICE.md`.
+
+It never includes id Software's game data. A file that is a copy of one of the game's own
+files is refused with its name, so remove it from the project. To pack the assets into
+`pak0.pak`, run `project.export` from the palette with `pak` checked. From the command line:
+
+```bash
+quakec-ide run project.export '{}' --project /path/to/your/mod
+```

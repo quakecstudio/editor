@@ -256,3 +256,77 @@ mod properties {
         }
     }
 }
+
+/// `members` as [`super::NewMember`]s.
+fn members(members: &[(&str, &[u8])]) -> Vec<super::NewMember> {
+    members
+        .iter()
+        .map(|(name, data)| super::NewMember {
+            name: (*name).to_owned(),
+            data: data.to_vec(),
+        })
+        .collect()
+}
+
+// No spec statement: P4-28, QA-15, a written zip reads back member by member, stored or
+// deflated, a UTF-8 name included, and is the same bytes each time it is written
+#[test]
+fn a_written_zip_reads_back_and_is_the_same_each_time() {
+    let text = b"the same line again\n".repeat(200);
+    let input = members(&[
+        ("mymod/progs.dat", &[0, 1, 2, 3]),
+        ("mymod/maps/start.bsp", &text),
+        ("mymod/README.txt", b""),
+        ("mymod/sound/caf\u{e9}.wav", b"RIFF"),
+    ]);
+    let bytes = super::write_zip(&input).unwrap();
+    assert_eq!(super::write_zip(&input).unwrap(), bytes, "deterministic");
+    let mut zip = open(&bytes).unwrap();
+    for member in &input {
+        assert_eq!(
+            zip.read(&member.name).unwrap(),
+            Some(member.data.clone()),
+            "{}",
+            member.name
+        );
+    }
+    assert!(bytes.len() < text.len(), "the repeated text is deflated");
+    let empty = super::write_zip(&[]).unwrap();
+    assert_eq!(empty.len(), 22, "an empty zip is its end record");
+    assert!(open(&empty).unwrap().read("x").unwrap().is_none());
+}
+
+// No spec statement: P4-28, APPNOTE 4.4.17.1: a member's name is a relative path of `/`
+// parts, never absolute, with no `\`, drive, `.` or `..`, and never repeated
+#[test]
+fn a_bad_or_repeated_name_is_refused() {
+    for name in ["", "/abs", "a\\b", "c:x", "a/../b", "./a", "a//b", "a/"] {
+        assert_eq!(
+            super::write_zip(&members(&[(name, b"x")])),
+            Err(super::ZipWriteError::BadName(name.to_owned())),
+            "{name:?}"
+        );
+    }
+    assert_eq!(
+        super::write_zip(&members(&[("a", b"1"), ("a", b"2")])),
+        Err(super::ZipWriteError::Duplicate("a".to_owned()))
+    );
+}
+
+proptest::proptest! {
+    // No spec statement: P4-28, TEST-4: any members written read back as they were
+    #[test]
+    fn any_members_round_trip(
+        files in proptest::collection::btree_map("[a-z]{1,8}(/[a-z]{1,8}){0,2}", proptest::collection::vec(proptest::num::u8::ANY, 0..2000), 0..8)
+    ) {
+        let input: Vec<super::NewMember> = files
+            .iter()
+            .map(|(name, data)| super::NewMember { name: name.clone(), data: data.clone() })
+            .collect();
+        let bytes = super::write_zip(&input).unwrap();
+        let mut zip = open(&bytes).unwrap();
+        for member in &input {
+            proptest::prop_assert_eq!(zip.read(&member.name).unwrap(), Some(member.data.clone()));
+        }
+    }
+}
