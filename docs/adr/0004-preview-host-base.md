@@ -118,7 +118,7 @@ is accepted. The Rust estimates are judgement, not measurement.
 
 **Option D. The preview host is our own engine, written in Rust from id's GPL source, rendering
 through wgpu and running the project's `qc-vm`, `qc-edict` and `qc-builtins`.** It is a separate
-program in this repository (`apps/preview-host`), launched beside the IDE as the v1 docking design
+program in this repository (`apps/quakec-engine`), launched beside the IDE as the v1 docking design
 requires (ENG-9), and it talks to the IDE over the bridge protocol (P3-01) like any other engine. No
 C engine is forked and there is no `quakecstudio/preview-host` repository.
 
@@ -155,7 +155,7 @@ The plan changes are in this ADR's pull request:
 - **Phase 1:** P5-01 (spec of the BSP, MDL and `.map` formats) and P5-02 (their readers and the
   `.map` writer) move into Phase 1 with the other L0 formats, keeping their keys. New P1-29 specifies
   and reads SPR sprites, WAV sounds and MD5 models.
-- **Phase 3:** P3-02 becomes "Build the preview host app" (`apps/preview-host`), no longer a C fork.
+- **Phase 3:** P3-02 becomes "Build the preview host app" (`apps/quakec-engine`), no longer a C fork.
   P5-05 (the wgpu renderer, `qs-render`, L7) moves from Phase 5 into Phase 3, keeping its key. That
   is earlier in the schedule, not in the layering: the renderer stays L7, and only `apps`
   crates (the preview host and the desktop app) use it. New issues:

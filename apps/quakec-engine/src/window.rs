@@ -120,7 +120,7 @@ pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result
     let triangles = mesh.indices.len().checked_div(3).unwrap_or(0);
     let camera_origin = camera.origin;
     eframe::run_native(
-        "preview-host",
+        "quakec-engine",
         options,
         Box::new(move |cc| {
             let state = cc

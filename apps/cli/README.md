@@ -23,6 +23,7 @@ quakec-ide mcp [<project>] [--dialect <vanilla|fteqcc>] [--read <dir>]... [--wri
                [--read-only] [--game <folder>]
 quakec-ide run <command> [<json>] [--project <project> [--dialect <vanilla|fteqcc>]]
 quakec-ide commands
+quakec-ide doctor [--check <games|host|keychain>]... [--game <folder>] [--require-game]
 ```
 
 | Subcommand | Commands it runs | Prints |
@@ -33,6 +34,7 @@ quakec-ide commands
 | `mcp` | `project.open`, then the agent's tools as MCP clients call them ([`docs/mcp.md`](../../docs/mcp.md)) | nothing but MCP messages, one per line, until stdin ends |
 | `run` | `project.open` when `--project` is given, then `<command>` with `<json>`, `{}` when absent | what the command returned, as JSON |
 | `commands` | `commands.list` | every command's id, summary and parameter schema, as JSON |
+| `doctor` | none: it checks the install itself (P4-18) | a line per check, `ok` or `FAIL`: the games found (failing on none with `--require-game`), the preview host beside it started headless on `--game` or the first install and stopped over its bridge, and a keychain entry written, read back and deleted; exit 1 when a check fails. The release's install tests run it from each package ([`docs/releasing.md`](../../docs/releasing.md)) |
 
 The project is the current directory when none is named, and a directory with no
 `quakec.toml`, `progs.src` or `csprogs.src` is refused. `--dialect` reads a project with no

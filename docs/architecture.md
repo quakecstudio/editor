@@ -266,7 +266,7 @@ highlighting, multi-cursor and IME, scroll at 120 Hz and render an inline diff, 
 budget on all three OSes.
 
 The `apps` binaries assemble the stack: `quakec-studio` is the desktop app, `quakec-ide` is the
-CLI and MCP entry point, `quakec-lsp` is the language server, and `preview-host` is the engine
+CLI and MCP entry point, `quakec-lsp` is the language server, and `quakec-engine` is the engine
 (below). The layout puts the game in the middle: Play, Pause, Step and Restart in the toolbar,
 project files and a live Entities outliner (edicts grouped by classname, updated by the host) on
 the left, the code editor beside the live game view in the centre, entity Properties and the
@@ -380,7 +380,7 @@ One command, `cargo xtask ci`, must pass before any merge (design doc, Quality, 
 release): `fmt`, `clippy` with panics denied, all tests, the `layers` check, license and
 asset-attribution checks, and the differential VM suite. Parser fuzzing must never crash the
 parser and must round-trip losslessly; UI snapshot tests render the app offscreen through its own
-harness; and headless preview-host integration tests run scripted scenarios in CI on all three
+harness; and headless quakec-engine integration tests run scripted scenarios in CI on all three
 OSes using open test assets, since id's data cannot be redistributed. Agent evals score a fixed
 set of modding tasks on compile success, test pass and reviewer acceptance.
 

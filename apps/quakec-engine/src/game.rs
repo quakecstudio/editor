@@ -841,7 +841,7 @@ const STEP_FRAME: f64 = 1.0 / 72.0;
 impl Host for Game {
     fn info(&self) -> HostInfo {
         HostInfo {
-            name: "preview-host".to_owned(),
+            name: "quakec-engine".to_owned(),
             version: env!("CARGO_PKG_VERSION").to_owned(),
             engine: "id".to_owned(),
         }

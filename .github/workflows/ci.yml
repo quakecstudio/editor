@@ -343,8 +343,8 @@ jobs:
           TARGET: ${{ matrix.target }}
           NAME: ${{ matrix.name }}
         run: |
-          exe=preview-host
-          if [ "$RUNNER_OS" = Windows ]; then exe=preview-host.exe; fi
+          exe=quakec-engine
+          if [ "$RUNNER_OS" = Windows ]; then exe=quakec-engine.exe; fi
           mkdir -p "dist/$NAME"
           cp "target/$TARGET/ci/$exe" "dist/$NAME/"
           (cd "dist/$NAME" && sha256sum "$exe" > "$exe.sha256" && cat "$exe.sha256")
@@ -352,11 +352,13 @@ jobs:
         if: env.CI_PATH == 'full'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: preview-host-${{ matrix.name }}
+          name: quakec-engine-${{ matrix.name }}
           path: dist/${{ matrix.name }}
           retention-days: 7
           if-no-files-found: error
 
+  # macOS ships for Apple silicon alone, so this builds aarch64-apple-darwin only. It keeps
+  # the name the default-branch ruleset requires, Build (macos-universal).
   build-macos:
     name: Build (macos-universal)
     needs: changes
@@ -371,42 +373,24 @@ jobs:
       - name: Set up the Rust toolchain
         run: |
           rustup toolchain install
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: build-apple-darwin
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build aarch64-apple-darwin
         run: cargo build --profile ci --locked --workspace --target aarch64-apple-darwin
-      - name: Build x86_64-apple-darwin
-        run: cargo build --profile ci --locked --workspace --target x86_64-apple-darwin
-      - name: Make universal binaries with lipo
-        run: |
-          out=target/universal-apple-darwin/ci
-          mkdir -p "$out"
-          count=0
-          for arm in target/aarch64-apple-darwin/ci/*; do
-            [ -f "$arm" ] && [ -x "$arm" ] || continue
-            name=$(basename "$arm")
-            lipo -create -output "$out/$name" "$arm" "target/x86_64-apple-darwin/ci/$name"
-            lipo "$out/$name" -verify_arch arm64 x86_64
-            lipo -info "$out/$name"
-            count=$((count + 1))
-          done
-          if [ "$count" -eq 0 ]; then
-            echo "no binaries to combine" >&2
-            exit 1
-          fi
       - name: Package the preview host
         run: |
-          mkdir -p dist/macos-universal
-          cp target/universal-apple-darwin/ci/preview-host dist/macos-universal/
-          (cd dist/macos-universal && shasum -a 256 preview-host > preview-host.sha256 && cat preview-host.sha256)
+          mkdir -p dist/macos-arm64
+          cp target/aarch64-apple-darwin/ci/quakec-engine dist/macos-arm64/
+          lipo dist/macos-arm64/quakec-engine -verify_arch arm64
+          (cd dist/macos-arm64 && shasum -a 256 quakec-engine > quakec-engine.sha256 && cat quakec-engine.sha256)
       - name: Keep the preview host
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: preview-host-macos-universal
-          path: dist/macos-universal
+          name: quakec-engine-macos-arm64
+          path: dist/macos-arm64
           retention-days: 7
           if-no-files-found: error
 

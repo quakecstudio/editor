@@ -305,7 +305,7 @@ issues:
   - P3-02
   - P0-15
   deliverable:
-  - 'Release workflow: signed and notarized universal macOS DMG, through the Sign workflow''s macOS job; an MSI and portable zip for Windows x64 and arm64, unsigned until P0-23 adds Windows signing after the MVP; AppImage, Flatpak, deb and rpm for Linux x86_64 and aarch64; SHA256SUMS'
+  - 'Release workflow: signed and notarized macOS DMG for Apple silicon (arm64); an MSI and portable zip for Windows x64 and arm64, the executables signed with Azure Artifact Signing on a tag; AppImage, Flatpak, deb and rpm for Linux x86_64 and aarch64, with quakec-ide and quakec-lsp as static musl binaries in place of glibc ones; SHA256SUMS'
   - The preview host bundled as a separate signed and notarized executable; the GPL-3.0 text, a corresponding-source link and NOTICE in every package
   - docs/releasing.md
   acceptance:
@@ -477,6 +477,53 @@ issues:
   - Exporting twice from the same sources produces the same zip
   verify:
   - Integration test in CI with open test assets; manual install-and-play check recorded on macOS
+- key: P0-23
+  title: Add the code-signing credentials to CI
+  labels:
+  - repo
+  - area:release
+  - type:chore
+  size: S
+  reqs:
+  - QA-14
+  summary: |
+    Deferred to the post-MVP backlog on 2026-11-11 and brought back the same day, once Justin pointed at smoketurner-infra's environments/azure/code_signing.tf: Azure already trusts this repository, with a federated credential for exactly `repo:quakecstudio@343029298/editor@1420764495:workflow:release:ref_type:tag`. The first Sign run (42848352515, 2026-11-10) signed and notarized on macOS; its Windows job failed with AADSTS700213 only because that workflow was named Sign and ran from a branch. P4-18's `release` workflow signs the Windows executables on a tag, so the first tagged pre-release meets the last criterion.
+  deliverable:
+  - 'docs/releasing.md: the twelve repository-level secrets Justin entered on 2026-10-16, following vouch and quack (APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, APPLE_CERTIFICATE_NAME, MACOS_KEYCHAIN_PASSWORD, APPLE_ID, APPLE_ID_PASSWORD, APPLE_TEAM_ID for codesign and notarytool; AZURE_CLIENT_ID, AZURE_TENANT_ID, TRUSTED_SIGNING_ENDPOINT, TRUSTED_SIGNING_ACCOUNT, CERTIFICATE_PROFILE for Azure Trusted Signing over OIDC), who owns each credential and when it renews; that they are repository-level by Justin''s choice, so only workflows that sign may reference them'
+  - A signing workflow modelled on vouch's reusable-build.yml (temporary keychain, codesign with the hardened runtime, notarytool with the Apple ID; azure/login over OIDC and Trusted Signing), started by hand (workflow_dispatch) and reused by P4-18; agents never handle the secret values
+  acceptance:
+  - '`gh api repos/quakecstudio/editor/actions/secrets` lists every name in docs/releasing.md'
+  - A test binary is signed and notarized on macOS and signed on Windows from CI
+  - 'If the Azure login fails because no federated credential trusts quakecstudio/editor, the issue is escalated to Justin with the subject to add, not worked around'
+  verify:
+  - CI run link
+  depends:
+  - P0-02
+  - P0-15
+  - P4-18
+- key: P4-38
+  title: Replace the macOS disk image with a signed installer package
+  labels:
+  - repo
+  - area:release
+  - type:feature
+  size: S
+  reqs:
+  - QA-6
+  - PLAT-1
+  summary: |
+    Decided by Justin on 2026-11-11: macOS ships a .pkg, as 1Password ships `op.pkg` (which installs `op` to /usr/local/bin), in place of P4-18's drag-and-drop disk image, so one install puts the app in /Applications and `quakec-ide` and `quakec-lsp` on the PATH. A .pkg is signed with a Developer ID Installer certificate, which Justin adds as repository secrets; until they are set, the work stops and the issue is escalated.
+  deliverable:
+  - 'packaging/macos/: a flat installer package, quakec-studio-<version>-macos-arm64.pkg, installing QuakeC Studio.app in /Applications and links to its quakec-ide and quakec-lsp in /usr/local/bin, built with pkgbuild and productbuild from standalone files (distribution XML and any scripts) beside package.sh'
+  - '.github/workflows/reusable-build.yml: the package signed with the Developer ID Installer identity, notarized and stapled, in place of the disk image; the app inside still signed, notarized and stapled'
+  - 'docs/releasing.md: the Installer certificate''s secrets, who owns them and when they renew, and how to remove the app and its links'
+  acceptance:
+  - '`gh api repos/quakecstudio/editor/actions/secrets` lists the Installer certificate''s secrets docs/releasing.md names'
+  - 'The macOS install test installs the package with `sudo installer -pkg ... -target /`, `pkgutil --check-signature` and `spctl --assess --type install` accept it, `quakec-ide` runs from the PATH and its `doctor --check host` passes, and the app''s window opens'
+  verify:
+  - The release dry run's macOS install test
+  depends:
+  - P4-18
 - key: P4-25
   title: Phase 4 gate review and MVP release
   labels:
@@ -491,6 +538,8 @@ issues:
   - GOAL-6
   - MVP-4
   depends:
+  - P4-38
+  - P0-23
   - P4-27
   - P4-28
   - P4-02

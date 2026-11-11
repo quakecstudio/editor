@@ -58,7 +58,7 @@ struct Image(std::path::PathBuf);
 impl Image {
     fn new(name: &str, cue: &str, bin: &[u8]) -> Self {
         let dir =
-            std::env::temp_dir().join(format!("preview-host-cd-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("quakec-engine-cd-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("game.cue"), cue).unwrap();
         std::fs::write(dir.join("game.bin"), bin).unwrap();

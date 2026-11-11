@@ -1,0 +1,386 @@
+name: Reusable build
+
+# The release's build (P4-18, #129) and its signing (P0-23, #23), called by
+# .github/workflows/release.yml. It builds every package, signs and notarizes the macOS app
+# and its disk image the way vouch-sh/vouch's reusable-build.yml does, and attests each
+# package in the job that made it. The attestations are made here, in a reusable workflow,
+# so each names this file as its signer whatever workflow calls it, and a check holds the
+# build to this file:
+#   gh attestation verify <file> --repo quakecstudio/editor \
+#     --signer-workflow quakecstudio/editor/.github/workflows/reusable-build.yml
+# The secrets are the repository-level ones docs/releasing.md lists, passed by name. On a tag,
+# the Windows executables are signed with Azure Artifact Signing (formerly Trusted Signing)
+# through skeeto/aas-sign, which signs PE files only, so the MSI around them is not; Azure
+# trusts only tag runs of the `release` workflow, so a run by hand leaves them unsigned.
+on:
+  workflow_call:
+    outputs:
+      version:
+        description: The workspace version the packages carry
+        value: ${{ jobs.version.outputs.version }}
+    secrets:
+      APPLE_CERTIFICATE_P12_BASE64:
+        required: true
+      APPLE_CERTIFICATE_PASSWORD:
+        required: true
+      APPLE_CERTIFICATE_NAME:
+        required: true
+      MACOS_KEYCHAIN_PASSWORD:
+        required: true
+      APPLE_ID:
+        required: true
+      APPLE_ID_PASSWORD:
+        required: true
+      APPLE_TEAM_ID:
+        required: true
+      AZURE_CLIENT_ID:
+        required: true
+      AZURE_TENANT_ID:
+        required: true
+      TRUSTED_SIGNING_ENDPOINT:
+        required: true
+      TRUSTED_SIGNING_ACCOUNT:
+        required: true
+      CERTIFICATE_PROFILE:
+        required: true
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  secrets:
+    name: Signing secrets are set
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check each secret docs/releasing.md lists is set, printing no value
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_CERTIFICATE_NAME: ${{ secrets.APPLE_CERTIFICATE_NAME }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          CERTIFICATE_PROFILE: ${{ secrets.CERTIFICATE_PROFILE }}
+        run: |
+          missing=0
+          for name in APPLE_CERTIFICATE_P12_BASE64 APPLE_CERTIFICATE_PASSWORD \
+            APPLE_CERTIFICATE_NAME MACOS_KEYCHAIN_PASSWORD APPLE_ID APPLE_ID_PASSWORD \
+            APPLE_TEAM_ID AZURE_CLIENT_ID AZURE_TENANT_ID TRUSTED_SIGNING_ENDPOINT \
+            TRUSTED_SIGNING_ACCOUNT CERTIFICATE_PROFILE; do
+            if [ -z "${!name}" ]; then
+              echo "::error::the secret $name is not set"
+              missing=1
+            else
+              echo "ok    $name is set"
+            fi
+          done
+          exit "$missing"
+
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The packages carry the workspace's version; a tag must name it, with a pre-release
+      # suffix or without.
+      - name: Read the workspace version and check the tag names it
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "the packages are version $version"
+          if [ "$REF_TYPE" = tag ]; then
+            case "$REF_NAME" in
+              "v$version" | "v$version"-*) echo "ok    the tag $REF_NAME names $version" ;;
+              *)
+                echo "::error::the tag $REF_NAME does not name the workspace version $version"
+                exit 1
+                ;;
+            esac
+          fi
+
+  macos:
+    name: Package, sign and notarize on macOS
+    needs: [secrets, version]
+    runs-on: macos-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-darwin
+      # Apple silicon only: the app ships for arm64 Macs.
+      - name: Build for Apple silicon
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin \
+            -p quakec-studio -p quakec-engine -p quakec-ide -p quakec-lsp
+          mkdir -p dist/bin
+          for name in quakec-studio quakec-engine quakec-ide quakec-lsp; do
+            cp "target/aarch64-apple-darwin/release/$name" dist/bin/
+            lipo "dist/bin/$name" -verify_arch arm64
+          done
+      - name: Lay out the app
+        run: packaging/macos/package.sh app dist/bin "$VERSION" dist
+      - name: Import Apple Developer Certificate
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE_P12_BASE64" | base64 --decode > certificate.p12
+          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" build.keychain
+          security import certificate.p12 -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$MACOS_KEYCHAIN_PASSWORD" build.keychain
+          rm certificate.p12
+      # Each executable is signed on its own, the preview host among them, then the app.
+      - name: Code sign the app
+        env:
+          APPLE_CERTIFICATE_NAME: ${{ secrets.APPLE_CERTIFICATE_NAME }}
+        run: |
+          app="dist/QuakeC Studio.app"
+          for name in quakec-engine quakec-ide quakec-lsp quakec-studio; do
+            /usr/bin/codesign --force --sign "$APPLE_CERTIFICATE_NAME" \
+              --options runtime --timestamp "$app/Contents/MacOS/$name"
+          done
+          /usr/bin/codesign --force --sign "$APPLE_CERTIFICATE_NAME" \
+            --options runtime --timestamp "$app"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
+      - name: Store the notarization credentials
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcrun notarytool store-credentials "notarytool-profile" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_ID_PASSWORD"
+      # The app is notarized and stapled itself, so it carries its ticket once dragged out of
+      # the disk image and opens on a Mac that is offline the first time.
+      - name: Notarize and staple the app
+        run: |
+          app="dist/QuakeC Studio.app"
+          ditto -c -k --keepParent "$app" dist/app-notarize.zip
+          xcrun notarytool submit dist/app-notarize.zip --keychain-profile "notarytool-profile" --wait
+          rm dist/app-notarize.zip
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+      - name: Make, sign, notarize and staple the disk image
+        env:
+          APPLE_CERTIFICATE_NAME: ${{ secrets.APPLE_CERTIFICATE_NAME }}
+        run: |
+          dmg="dist/quakec-studio-$VERSION-macos-arm64.dmg"
+          packaging/macos/package.sh dmg "dist/QuakeC Studio.app" "$dmg"
+          /usr/bin/codesign --force --sign "$APPLE_CERTIFICATE_NAME" --timestamp "$dmg"
+          xcrun notarytool submit "$dmg" --keychain-profile "notarytool-profile" --wait
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+      - name: Attest the disk image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*.dmg
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-macos
+          path: dist/*.dmg
+          if-no-files-found: error
+      - name: Cleanup macOS keychain
+        if: ${{ always() }}
+        run: security delete-keychain build.keychain 2>/dev/null || true
+
+  windows:
+    name: Package on Windows (${{ matrix.arch }})
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+          - arch: arm64
+            target: aarch64-pc-windows-msvc
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      ARCH: ${{ matrix.arch }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: |
+          rustup toolchain install
+          rustup target add "$TARGET"
+      # The C runtime linked into each executable, so none needs the Visual C++
+      # Redistributable's vcruntime140.dll on the machine.
+      - name: Build
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: |
+          cargo build --release --locked --target "$TARGET" \
+            -p quakec-studio -p quakec-engine -p quakec-ide -p quakec-lsp
+      # Azure's federated credential trusts `...:workflow:release:ref_type:tag` alone
+      # (docs/releasing.md), so only a tag's run signs. If the OIDC login fails, the subject
+      # in Azure's error goes to Justin, not worked around.
+      - name: Code sign the executables
+        if: ${{ github.ref_type == 'tag' }}
+        uses: skeeto/aas-sign@058700fb89886acfce8d1cc511d69a11eb8f9862 # v1.1.1
+        with:
+          version: v1.1.0
+          endpoint: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          account: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          profile: ${{ secrets.CERTIFICATE_PROFILE }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          files: |
+            target/${{ matrix.target }}/release/quakec-studio.exe
+            target/${{ matrix.target }}/release/quakec-engine.exe
+            target/${{ matrix.target }}/release/quakec-ide.exe
+            target/${{ matrix.target }}/release/quakec-lsp.exe
+      - name: Check the signatures
+        if: ${{ github.ref_type == 'tag' }}
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          foreach ($name in 'quakec-studio', 'quakec-engine', 'quakec-ide', 'quakec-lsp') {
+            $signature = Get-AuthenticodeSignature "target/$env:TARGET/release/$name.exe"
+            if ($signature.Status -ne 'Valid') { throw "$name.exe: the signature is $($signature.Status)" }
+            "ok    $name.exe signed by $($signature.SignerCertificate.Subject)"
+          }
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 5.0.2
+      - name: Make the zip and the MSI
+        run: |
+          packaging/windows/package.sh zip "$ARCH" "target/$TARGET/release" "$VERSION" dist
+          packaging/windows/package.sh msi "$ARCH" "target/$TARGET/release" "$VERSION" dist
+      - name: Attest the zip and the MSI
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-windows-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  linux:
+    name: Package on Linux (${{ matrix.arch }})
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # ALSA's headers for the preview host's sound; musl-gcc for the static command line; rpm, flatpak-builder and the
+      # Freedesktop runtime and SDK the Flatpak is built on; desktop-file-utils to check the
+      # desktop entry; and librsvg's gdk-pixbuf loader, with which flatpak-builder checks the
+      # SVG icon on export.
+      - name: Install the packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev rpm flatpak flatpak-builder desktop-file-utils librsvg2-common \
+            musl-tools
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive --arch="$ARCH" flathub \
+            org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
+      - name: Set up the Rust toolchain
+        run: |
+          rustup toolchain install
+          rustup target add "$ARCH-unknown-linux-musl"
+      # The app and the engine link glibc, since the display and GPU libraries they open at run
+      # time cannot be opened by a static binary; the command line and the language server are
+      # static musl binaries, which run on any Linux.
+      - name: Build
+        run: |
+          cargo build --release --locked -p quakec-studio -p quakec-engine
+          cargo build --release --locked --target "$ARCH-unknown-linux-musl" \
+            -p quakec-ide -p quakec-lsp
+          mkdir -p dist/bin
+          cp target/release/quakec-studio target/release/quakec-engine dist/bin/
+          for name in quakec-ide quakec-lsp; do
+            cp "target/$ARCH-unknown-linux-musl/release/$name" dist/bin/
+            file "dist/bin/$name"
+            file "dist/bin/$name" | grep -q "static"
+          done
+      - name: Validate the desktop entry and the rpm's spec
+        run: |
+          desktop-file-validate packaging/linux/com.quakecstudio.QuakeCStudio.desktop
+          rpmspec --define "pkg_version $VERSION" --define "tree /nonexistent" \
+            -P packaging/linux/quakec-studio.spec > /dev/null
+      - name: Make the deb, the rpm, the AppImage and the Flatpak
+        run: |
+          for format in deb rpm appimage flatpak; do
+            packaging/linux/package.sh "$format" "$ARCH" dist/bin "$VERSION" dist
+          done
+          rm -r dist/bin
+          ls -l dist
+      - name: Attest the Linux packages
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error

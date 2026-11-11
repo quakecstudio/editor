@@ -16,7 +16,7 @@ pub(crate) fn build(root: &Path) -> Result<PathBuf, String> {
             "--locked",
             "--release",
             "--package",
-            "preview-host",
+            "quakec-engine",
         ])
         .current_dir(root)
         .status()
@@ -28,5 +28,5 @@ pub(crate) fn build(root: &Path) -> Result<PathBuf, String> {
         .map_or_else(|| root.join("target"), |dir| root.join(PathBuf::from(dir)));
     Ok(target
         .join("release")
-        .join(format!("preview-host{}", std::env::consts::EXE_SUFFIX)))
+        .join(format!("quakec-engine{}", std::env::consts::EXE_SUFFIX)))
 }

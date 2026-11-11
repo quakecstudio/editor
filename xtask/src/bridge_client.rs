@@ -41,16 +41,16 @@ pub(crate) struct Args {
 /// Builds the host, runs the suite and reports each step.
 pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     let status = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
-        .args(["build", "--locked", "-p", "preview-host"])
+        .args(["build", "--locked", "-p", "quakec-engine"])
         .current_dir(root)
         .status()
         .map_err(|e| format!("cargo build: {e}"))?;
     if !status.success() {
-        return Err(format!("cargo build -p preview-host: {status}"));
+        return Err(format!("cargo build -p quakec-engine: {status}"));
     }
     let host = root
         .join("target/debug")
-        .join(format!("preview-host{}", std::env::consts::EXE_SUFFIX));
+        .join(format!("quakec-engine{}", std::env::consts::EXE_SUFFIX));
     let install = qs_install::examine_folder(&args.basedir)
         .ok_or_else(|| format!("{}: no game here", args.basedir.display()))?;
     let base = install

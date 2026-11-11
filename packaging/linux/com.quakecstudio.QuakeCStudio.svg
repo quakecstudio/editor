@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect x="8" y="8" width="240" height="240" rx="48" fill="#1A1918"/>
+  <rect x="8" y="8" width="240" height="240" rx="48" fill="none" stroke="#EE8B45" stroke-width="8"/>
+  <text x="128" y="160" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="104" fill="#EE8B45">QC</text>
+</svg>

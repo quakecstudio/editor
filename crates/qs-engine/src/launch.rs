@@ -13,7 +13,7 @@ use crate::client::{Client, ClientError};
 use crate::run_root::RunRoot;
 
 /// The preview host's executable name.
-const HOST_NAME: &str = "preview-host";
+const HOST_NAME: &str = "quakec-engine";
 
 /// How often, and how far apart, the client tries the host's socket while it starts: for a
 /// minute, since the host loads the whole map before it listens.

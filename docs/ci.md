@@ -139,7 +139,7 @@ A run stops as soon as one test fails, at two levels (P2-146):
 | `Unit Tests (linux)`, `Unit Tests (macos)`, `Unit Tests (windows)` | each OS | `cargo nextest run --locked --workspace --all-features` with cargo-nextest 0.9.148 (on Linux after installing ALSA's headers, `libasound2-dev`, which the preview host's sound output links, and Mesa's software Vulkan driver, `mesa-vulkan-drivers`, for the UI snapshot harness, which renders through wgpu; a failing run keeps the snapshots that did not match as the `snapshots-<os>` artifact), then `cargo xtask oracles`: fetches id's and FTEQCC's sources by checksum, builds the VM oracle, id's qcc and FTEQCC with the system C compiler, and runs every VM vector through the VM oracle ([`oracles/README.md`](../oracles/README.md)); the fetched sources and binaries are cached, keyed on `oracles/` and the xtask code that builds them. The builtin differential, FTEQCC and qcc on 78870 cases and half an hour on a runner, runs live only when the change touches `oracles/`, `xtask/src/oracles.rs`, `xtask/src/oracles/` or `xtask/fixtures/oracles/`, or the base is unknown; otherwise `cargo xtask oracles --recorded` checks the profiles and the project graph against the outcomes `xtask/fixtures/oracles/builtin-outcomes.json` records, and the FTEQCC profile against the 1000 grammar programs and outcomes `xtask/fixtures/oracles/grammar-outcomes.json` records (DIFF-13), in about a minute, and the nightly `Differential` workflow runs the live check on `main` |
 | `Build (linux-x86_64)`, `Build (linux-aarch64)` | x86_64 and arm64 Linux runners | after installing ALSA's headers, `cargo build --profile ci --locked --workspace` for `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` |
 | `Build (windows-x86_64)`, `Build (windows-aarch64)` | Windows | the same for `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` (cross-compiled) |
-| `Build (macos-universal)` | macOS | builds `aarch64-apple-darwin` and `x86_64-apple-darwin`, then joins every binary with `lipo` and checks both architectures are in it; every build job keeps the preview host and its SHA-256 as the `preview-host-<target>` artifact for seven days (P3-02) |
+| `Build (macos-universal)` | macOS | builds `aarch64-apple-darwin`, the one macOS target (Apple silicon), and keeps the preview host with its SHA-256 as the `quakec-engine-macos-arm64` artifact; every build job keeps the preview host and its SHA-256 as the `quakec-engine-<target>` artifact for seven days (P3-02). The job keeps the name the default-branch ruleset requires |
 | `cargo xtask ci` | Linux | the command `make ci` runs, less the steps another job runs with the same command (`cargo xtask ci --skip`, [below](#which-job-runs-each-step-of-cargo-xtask-ci)): the plan checks (`plan/check.py` and its tests, with PyYAML installed), the cached specifications (`scripts/refresh-specs.sh --verify`, offline: fails naming any file under `specs/` whose SHA-256 differs from `specs/manifest.tsv`, that is listed but missing, or that has no row), conventions, ADRs, layers, licenses, attribution, contrast, the `qs-commands` `release_guard` example built and run under `--profile release` (the command guard catches a panic in a release build, P2-12; a test target would not show it, since Cargo builds tests with unwind whatever the profile says), the `commands` check (`docs/commands.md` matches the command registry), clippy fixtures and deny fixtures; on a cache run on `main`, fmt and cargo-deny too |
 | `cargo-deny` | Linux | `cargo deny --locked --all-features check advisories bans licenses sources` with cargo-deny 0.20.2, the version the `cargo xtask ci` job installs |
 | `Dependency Review` | Linux | `dependency-review-action` on pull requests; skipped on merge groups and cache runs, which a required check accepts |
@@ -200,17 +200,23 @@ check:
 | --- | --- | --- |
 | `Benchmarks` | Linux | `cargo xtask bench` against the history saved from `main`, then uploads the history as the `bench-history` artifact ([perf-budgets.md](perf-budgets.md#in-ci)) |
 
-[`.github/workflows/sign.yml`](../.github/workflows/sign.yml) runs on demand
-(`workflow_dispatch`) and on a pushed `v*` tag, never on pull requests, and is **not** a
-required check. It stands alone, called by no other workflow, so its attestations name it as
-the signer. It is the only workflow that reads the signing secrets
-([releasing.md](releasing.md)):
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs on demand
+(`workflow_dispatch`, a dry run), on a pushed `v*` tag, and as a dry run on a pull request that
+changes `packaging/` or either release workflow; it is **not** a required check ([releasing.md](releasing.md)). It calls the reusable
+[`.github/workflows/reusable-build.yml`](../.github/workflows/reusable-build.yml), the only
+workflow that reads the signing secrets, which builds, signs and attests every package, so each
+attestation names the reusable workflow as its signer:
 
 | Check | Runs on | What it does |
 | --- | --- | --- |
-| `Signing secrets are set` | Linux | fails naming each signing secret that is not set, printing no value |
-| `Sign, notarize and attest on macOS` | macOS | builds the app, signs it with the hardened runtime from `build.keychain`, verifies it, notarizes it with notarytool, attests it and uploads it |
-| `Sign and attest on Windows` | Windows | builds the app, signs the `.exe` with aas-sign (Azure Trusted Signing over OIDC), checks its Authenticode signature, attests it and uploads it |
+| `Build / Signing secrets are set` | Linux | fails naming each signing secret that is not set, printing no value |
+| `Build / Version` | Linux | reads the workspace version and fails a tag that does not name it |
+| `Build / Package, sign and notarize on macOS` | macOS | builds for Apple silicon, makes the app, signs it with the hardened runtime from `build.keychain`, makes, signs, notarizes and staples the disk image, and attests it |
+| `Build / Package on Windows (x64, arm64)` | Windows | on a tag, signs the four executables with aas-sign (Azure Artifact Signing over OIDC) and checks each signature; makes the zip and the MSI and attests them |
+| `Build / Package on Linux (x86_64, aarch64)` | Linux | makes the deb, rpm, AppImage and Flatpak and attests them |
+| `Install on macOS`, `Install on Windows (x64, arm64)`, `Install on Linux (x86_64, aarch64)` | each | installs each package on a clean runner and checks it with `quakec-ide doctor` |
+| `Checksums and publish` | Linux | writes `SHA256SUMS`; on a tag, publishes the GitHub release |
+| `Regenerate the compatibility list` | Linux | writes `docs/compatibility.md` from the corpus and fails a tag whose list is out of date |
 
 [`.github/workflows/evals.yml`](../.github/workflows/evals.yml) runs the agent's evals on a real
 model (`cargo xtask evals --run`, [`evals/README.md`](../evals/README.md)). It runs weekly and on

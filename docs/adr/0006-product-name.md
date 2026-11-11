@@ -85,6 +85,7 @@ once (risk R-5). "QuakeC" is used as the name of the language the tool works wit
 | Desktop app binary | `quakec-studio` |
 | CLI and MCP server | `quakec-ide` (subcommands `build`, `check`, `run`, `mcp`), as in the design document |
 | LSP server | `quakec-lsp` |
+| Engine the IDE previews in (the preview host) | `quakec-engine`, named by Justin on 2026-11-11 in place of `preview-host`, with its config file `quakec-engine.cfg` (INPUT-4.4) and the name it gives in the bridge's `initialize` |
 | Crate prefix | `qs-` for project crates and `qc-` for the QuakeC formats, VM and builtins, unchanged |
 | Bundle identifier | `com.quakecstudio.QuakeCStudio` (macOS); Linux app id the same |
 | Application directories | as [ADR-0011](0011-app-directories.md): `QuakeC Studio` on macOS and Windows, `quakec-studio` on Linux |

@@ -44,4 +44,4 @@ project prefix from ADR-0006 (`docs/conventions.md`, Repository layout).
   layer's readiness review ([`testing.md`](testing.md)); `plan/check.py` adds the dependency.
 - **C programs are separate processes.** The oracles (`oracles/`, CI only) talk to the editor
   over files or a socket, never by linking. The preview host is a Rust app
-  (`apps/preview-host`, ADR-0004) that also runs as its own process, over a local socket.
+  (`apps/quakec-engine`, ADR-0004) that also runs as its own process, over a local socket.

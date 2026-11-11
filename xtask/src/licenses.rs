@@ -36,11 +36,13 @@ const SOURCE_NAMES: [&str; 1] = ["Makefile"];
 // `src` is a QuakeC project's file list, `progs.src`, which carries no license line; `route`
 // is an engine oracle script (oracles/README.md), and `scenario` a scenario, a route with assertions
 // (docs/spec/scenario.md).
-const TEXT_EXTENSIONS: [&str; 15] = [
+// `desktop`, `plist`, `spec`, `wxs`, `vdf`, `acf` and a deb's `control` are the release
+// packages' own files and Steam's (packaging/).
+const TEXT_EXTENSIONS: [&str; 21] = [
     "md", "toml", "yaml", "yml", "json", "jsonl", "lock", "html", "txt", "tsv", "csv", "hex",
-    "src", "route", "scenario",
+    "src", "route", "scenario", "desktop", "plist", "spec", "wxs", "vdf", "acf",
 ];
-const TEXT_NAMES: [&str; 3] = [LICENSE_FILE, ".gitignore", ".gitattributes"];
+const TEXT_NAMES: [&str; 4] = [LICENSE_FILE, ".gitignore", ".gitattributes", "control"];
 const COMMENT_OPENERS: [&str; 6] = ["//", "#", "<!--", "/*", "*", "--"];
 const COMMENT_CLOSERS: [&str; 2] = ["*/", "-->"];
 

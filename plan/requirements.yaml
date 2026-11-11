@@ -10,7 +10,7 @@
 # design_doc_sha256 is the SHA-256 of docs/design/design-doc.md (LF line endings) that these
 # requirements were last reviewed against. plan/check.py fails when the design doc changes until
 # the requirements are reviewed and the new hash, which the failure prints, is recorded here.
-design_doc_sha256: aa082b884557dbd633971ac12bdcc704b45d98beb83b39af1566182af7d8c43a
+design_doc_sha256: 21b8aef621071643333c0d4b4eb427044c4a3843acf5c10c97754f62b79a5efc
 
 sections:
   - id: GOAL
@@ -21,7 +21,7 @@ sections:
       - {id: GOAL-3, kind: stated, text: "Live preview: save, compile, see the change in a running engine, with breakpoints and entity inspection"}
       - {id: GOAL-4, kind: stated, text: "Built-in agent harness whose tools are the UI's commands, also exposed over MCP and a CLI"}
       - {id: GOAL-5, kind: stated, text: "Built-in map editor and map compiler sharing the QuakeC project, entity definitions and play loop"}
-      - {id: GOAL-6, kind: stated, text: "One Rust codebase, signed native builds for macOS (universal), Windows and Linux, no crashes in shipped code"}
+      - {id: GOAL-6, kind: stated, text: "One Rust codebase, signed native builds for macOS (Apple silicon), Windows and Linux, no crashes in shipped code"}
       - {id: GOAL-7, kind: stated, text: "Non-goals for v1 recorded (Q2/Q3/Half-Life map formats, GMQCC-only syntax before MVP, web build, Quake 2/3 game code)"}
 
   - id: LIC
@@ -39,7 +39,7 @@ sections:
   - id: PLAT
     title: Platform support
     requirements:
-      - {id: PLAT-1, kind: stated, text: "IDE targets macOS universal, Windows x64/arm64 and Linux x86_64/aarch64 from one codebase"}
+      - {id: PLAT-1, kind: stated, text: "IDE targets macOS arm64 (Apple silicon), Windows x64/arm64 and Linux x86_64/aarch64 from one codebase"}
       - {id: PLAT-2, kind: stated, text: "Detect Steam and GOG Quake installs (id1 and rerelease folders) on all three OSes and point engines at them"}
       - {id: PLAT-3, kind: stated, text: "Preview host provides identical live preview on macOS, Windows and Linux"}
       - {id: PLAT-6, kind: implied, text: "Game directory strategy: build output and engine launch against the user's install without modifying or copying it"}
@@ -209,7 +209,7 @@ sections:
       - {id: QA-3, kind: stated, text: "UI snapshot tests through an offscreen harness; docs screenshots from the same harness"}
       - {id: QA-4, kind: stated, text: "Engine integration tests: headless preview host runs scripted scenarios in CI on all three OSes with open test assets (license checked)"}
       - {id: QA-5, kind: stated, text: "Agent evals: fixed modding tasks scored on compile success, test pass and reviewer acceptance"}
-      - {id: QA-6, kind: stated, text: "Release: signed notarized universal macOS DMG; signed MSI and portable zip for Windows x64/arm64; AppImage, Flatpak, deb, rpm for Linux x86_64/aarch64; checksums"}
+      - {id: QA-6, kind: stated, text: "Release: signed notarized macOS DMG for Apple silicon (arm64); signed MSI and portable zip for Windows x64/arm64; AppImage, Flatpak, deb, rpm for Linux x86_64/aarch64; checksums"}
       - {id: QA-7, kind: stated, text: "Crash-safe logging to a per-OS log directory; source text never logged"}
       - {id: QA-8, kind: implied, text: "User documentation: getting started, play loop, agent, map editor; rustdoc and a README per crate"}
       - {id: QA-9, kind: implied, text: "Accessibility: screen-reader names and roles, full keyboard navigation, WCAG AA contrast (part of the Crafting Apps quality bar)"}

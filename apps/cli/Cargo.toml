@@ -17,10 +17,16 @@ name = "quakec-ide"
 path = "src/main.rs"
 
 [dependencies]
+# The global allocator (P4-18).
+mimalloc = { workspace = true }
 clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 qs-commands = { workspace = true }
 # mcp: the agent's tools over the Model Context Protocol (P4-13).
 qs-mcp = { workspace = true }
+# doctor: the games found, the preview host started on one, and the keychain (P4-18).
+qs-engine = { workspace = true }
+qs-install = { workspace = true }
+qs-models = { workspace = true }
 # mcp --connect: the running app's socket.
 qs-paths = { workspace = true }
 # new: the starter templates (P4-17).

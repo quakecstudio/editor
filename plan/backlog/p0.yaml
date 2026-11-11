@@ -584,7 +584,7 @@ issues:
   - P0-12
   deliverable:
   - 'docs/design/design-doc.md Milestones: the Phase 0 row no longer lists the signing accounts, which PR #249 moved to Phase 4 (P0-23); the recorded design-doc hash updated'
-  - 'docs/testing.md layer notes: the C tools note no longer names a separate preview host repository; the preview host is apps/preview-host in this repository (ADR-0004)'
+  - 'docs/testing.md layer notes: the C tools note no longer names a separate preview host repository; the preview host is apps/quakec-engine in this repository (ADR-0004)'
   - 'docs/spikes/ui-framework.md: refers to ADR-0003 as accepted, not as proposed in a draft PR'
   acceptance:
   - A search of docs/ for the moved signing accounts in Phase 0, a preview host repository and ADR-0003 as proposed finds nothing

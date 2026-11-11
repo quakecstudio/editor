@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `preview-host`: the game in its own window, served to the IDE over the bridge (ADR-0004,
+//! `quakec-engine`: the game in its own window, served to the IDE over the bridge (ADR-0004,
 //! P3-02).
 
 mod args;
@@ -20,7 +20,7 @@ mod window;
 use std::process::ExitCode;
 
 /// The log file's stem, beside the IDE's in the app's log directory.
-const LOG_FILE_STEM: &str = "preview-host";
+const LOG_FILE_STEM: &str = "quakec-engine";
 
 #[expect(
     clippy::print_stderr,
@@ -39,13 +39,13 @@ fn main() -> ExitCode {
             qs_log::init(&config).map_err(|error| error.to_string())
         });
     if let Err(error) = logging {
-        eprintln!("preview-host: logging is off: {error}");
+        eprintln!("quakec-engine: logging is off: {error}");
     }
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(%error, "the preview host stopped");
-            eprintln!("preview-host: {error}");
+            eprintln!("quakec-engine: {error}");
             ExitCode::FAILURE
         }
     }

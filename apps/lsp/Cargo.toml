@@ -17,6 +17,8 @@ name = "quakec-lsp"
 path = "src/main.rs"
 
 [dependencies]
+# The global allocator (P4-18).
+mimalloc = { workspace = true }
 qc-ide = { workspace = true }
 qc-project = { workspace = true }
 qs-log = { workspace = true }

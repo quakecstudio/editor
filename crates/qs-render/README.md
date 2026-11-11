@@ -88,5 +88,5 @@ not drawn.
 
 ## Trying it
 
-The preview host, `apps/preview-host`, plays a map from a Quake install with this renderer
+The preview host, `apps/quakec-engine`, plays a map from a Quake install with this renderer
 drawing the client's scene and HUD; its README has the command line.

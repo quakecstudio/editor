@@ -11,9 +11,12 @@ use qs_render::Look;
 /// them; clap reads them with two.
 const ENGINE_OPTIONS: [&str; 4] = ["-basedir", "-game", "-kpf", "-bridge"];
 
-/// `preview-host [-basedir PATH] [-game NAME] [-kpf PATH] [-bridge PATH] [map]`.
+/// `quakec-engine [-basedir PATH] [-game NAME] [-kpf PATH] [-bridge PATH] [map]`.
 #[derive(clap::Parser, Clone, Debug, PartialEq)]
-#[command(name = "preview-host", about = "The QuakeC Studio preview host")]
+#[command(
+    name = "quakec-engine",
+    about = "The QuakeC Studio engine: the game the IDE previews in"
+)]
 pub(crate) struct Args {
     /// The game root holding `id1`.
     #[arg(long)]

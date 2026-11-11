@@ -12,7 +12,7 @@ A native Rust IDE for QuakeC on macOS, Windows and Linux. A modder edits code, p
 
 | Decision | Where it lives |
 | --- | --- |
-| Rust, one codebase, signed native builds for macOS (universal), Windows and Linux | Design doc: Summary; GOAL-6 |
+| Rust, one codebase, signed native builds for macOS (Apple silicon), Windows and Linux | Design doc: Summary; GOAL-6 |
 | Feel like Zed's editor with Roblox Studio's play loop, not like Cursor: the running game is the product, code serves it | Design doc: Product principles; UI-14 |
 | Our own QuakeC compiler, no outside toolchain at runtime | Design doc: Compiler; GOAL-2 |
 | The whole project is GPL-3.0-or-later | [ADR-0002](adr/0002-license-model.md); LIC-1 |
@@ -42,7 +42,7 @@ Each layer may depend only on layers below it; `cargo xtask layers` enforces thi
 | L7 UI | The app on the chosen framework |
 | apps | Desktop app, CLI, LSP server |
 
-The only C programs are the oracles in `oracles/` (id's VM trace harness, id's qcc, a pinned FTEQCC, id's engine as the engine oracle, later id's map tools and ericw-tools; built by `cargo xtask oracles`, CI only). The preview host is the Rust binary `apps/preview-host`, which runs as its own process beside the IDE ([ADR-0004](adr/0004-preview-host-base.md)).
+The only C programs are the oracles in `oracles/` (id's VM trace harness, id's qcc, a pinned FTEQCC, id's engine as the engine oracle, later id's map tools and ericw-tools; built by `cargo xtask oracles`, CI only). The preview host is the Rust binary `apps/quakec-engine`, which runs as its own process beside the IDE ([ADR-0004](adr/0004-preview-host-base.md)).
 
 ## The phases
 
@@ -88,7 +88,7 @@ Phase 0 was mostly documents and decisions. Phase 1 is the first phase of ported
 | 1. Foundations | 35 (14 / 15 / 6) | 163 | 51 | 2 | the manual game-data check on macOS, Windows and Linux (P1-19) | 2026-10-19 | 2026-12-28 |
 | 2. Language core and editor | 33 (12 / 11 / 10) | 179 | 75 | 3 | Windows and Linux frame-time runs (P2-17), real IME input (P2-18), screen readers (P2-23) | 2026-10-23 | 2027-04-12 |
 | 3. Live preview | 31 (9 / 16 / 6) | 158 | 73 | 2 | the recorded Steam and GOG launches on three OSes (P3-06) | 2026-10-26 | 2027-07-22 |
-| 4. Agent and MVP release | 30 (16 / 11 / 3) | 117 | 47 | 3 | license review (P4-22), MVP demo (P4-24), release (P4-25) | 2026-10-30 | 2027-09-27 |
+| 4. Agent and MVP release | 30 (16 / 11 / 3) | 117 | 47 | 3 | signing credentials (P0-23), license review (P4-22), MVP demo (P4-24), release (P4-25) | 2026-10-30 | 2027-09-27 |
 | 5. Map entity editing | 11 (6 / 4 / 1) | 42 | 31 | 2 | none planned | 2026-11-02 | 2027-11-09 |
 | 6. Brushes and map compiler | 21 (12 / 5 / 4) | 89 | 38 | 2 | none planned | 2026-11-05 | 2027-12-31 |
 | 7. Lighting and performance | 9 (4 / 4 / 1) | 38 | 19 | 1 | none planned | 2026-11-07 | 2028-01-27 |

@@ -103,7 +103,7 @@ id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d` does it in `WinQuak
   by INPUT-3.6.
 - **INPUT-3.6** The host runs `exec quake.rc` once, before its first frame, as `Host_Init`
   does ("`Cbuf_InsertText ("exec quake.rc\n");`"). id1's `quake.rc` runs `default.cfg`,
-  `config.cfg` and `autoexec.cfg`; `config.cfg` is the host's own (INPUT-4.3), not the game
+  `config.cfg` and `autoexec.cfg`; `config.cfg` is the host's own (INPUT-4.4), not the game
   directory's, which another engine wrote for itself.
 - **INPUT-3.4** QuakeSpasm's `IN_MouseMove` drops the motion while the keys are not the
   game's (`key_dest != key_game`); so does the host, which also frees the mouse then.
@@ -111,7 +111,7 @@ id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d` does it in `WinQuak
   the game's, as QuakeSpasm's `quakespasm.pak`, ahead of id1 on the search path, covers id1's
   with its own (`Misc/qs_pak/default.cfg`, the source of `Quake/default_cfg.h`): its bindings
   put the movement on W, A, S and D, as QuakeSpasm's do, and it holds `+mlook`. The text is
-  the host's, written for it (`DEFAULT_CFG` in `apps/preview-host/src/keys.rs`). In GLQuake's look the
+  the host's, written for it (`DEFAULT_CFG` in `apps/quakec-engine/src/keys.rs`). In GLQuake's look the
   game's `default.cfg` is read.
 
 ## INPUT-4 The host's configuration
@@ -132,7 +132,9 @@ id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d` does it in `WinQuak
   is held, as QuakeSpasm adds it ("`if (in_mlook.state & 1) fprintf (f, "+mlook\n");`").
 - **INPUT-4.2** **Withdrawn** 2026-11-06: the host's file is now `config.cfg` itself; replaced
   by INPUT-4.3.
-- **INPUT-4.3** The host keeps its configuration in `preview-host.cfg` in its config
+- **INPUT-4.3** **Withdrawn** 2026-11-11: the host's executable is now `quakec-engine`, and its
+  file is named after it; replaced by INPUT-4.4.
+- **INPUT-4.4** The host keeps its configuration in `quakec-engine.cfg` in its config
   directory (`qs-paths`), written there on exit and never to the game's directory. To the
   host's console that file is `config.cfg`: `exec config.cfg`, as `quake.rc` runs it, reads
   it, or nothing before the host has written one. The game directory's `config.cfg` is the

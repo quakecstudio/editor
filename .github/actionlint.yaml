@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# GitHub-hosted runner labels newer than actionlint's list: windows-11-arm is the Windows on
+# Arm runner the release's install tests use (.github/workflows/release.yml).
+self-hosted-runner:
+  labels:
+    - windows-11-arm

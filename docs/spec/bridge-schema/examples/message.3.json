@@ -4,7 +4,7 @@
   "result": {
     "protocolVersion": "1.0",
     "host": {
-      "name": "preview-host",
+      "name": "quakec-engine",
       "version": "2026.11.0"
     },
     "capabilities": {

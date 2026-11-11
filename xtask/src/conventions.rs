@@ -284,8 +284,9 @@ fn check_calver(cargo: &Table) -> Vec<String> {
     };
     let parts: Vec<Option<u32>> = version.split('.').map(|part| part.parse().ok()).collect();
     let valid = match parts.as_slice() {
-        [Some(year), Some(month), Some(_)] => {
-            (2026..=9999).contains(year) && (1..=12).contains(month)
+        // N counts the month's releases from 1 (Justin, 2026-11-11).
+        [Some(year), Some(month), Some(n)] => {
+            (2026..=9999).contains(year) && (1..=12).contains(month) && *n >= 1
         }
         _ => false,
     };
@@ -592,8 +593,9 @@ mod tests {
     #[test]
     fn calver_accepts_year_month_n_only() {
         let version = |v: &str| toml(&format!("[workspace.package]\nversion = \"{v}\""));
-        assert!(check_calver(&version("2026.10.0")).is_empty());
-        for bad in ["0.1.0", "2026.13.0", "2026.10", "2026.10.x"] {
+        assert!(check_calver(&version("2026.11.1")).is_empty());
+        assert!(check_calver(&version("2026.12.14")).is_empty());
+        for bad in ["0.1.0", "2026.11.0", "2026.13.1", "2026.10", "2026.10.x"] {
             assert_eq!(check_calver(&version(bad)).len(), 1, "{bad}");
         }
         assert_eq!(check_calver(&toml("")).len(), 1);

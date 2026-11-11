@@ -20,7 +20,7 @@ struct Root(PathBuf);
 
 impl Root {
     fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("preview-host-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("quakec-engine-{name}-{}", std::process::id()));
         if dir.exists() {
             std::fs::remove_dir_all(&dir).unwrap();
         }
@@ -82,7 +82,7 @@ fn zip(files: &[(&str, &[u8])]) -> Vec<u8> {
 }
 
 fn args(words: &[&str]) -> Args {
-    let line = core::iter::once("preview-host")
+    let line = core::iter::once("quakec-engine")
         .chain(words.iter().copied())
         .map(str::to_owned);
     <Args as clap::Parser>::try_parse_from(engine_style(line)).unwrap()

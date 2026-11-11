@@ -1,5 +1,5 @@
 [package]
-name = "preview-host"
+name = "quakec-engine"
 description = "The preview host: the game in its own window, our engine on qs-sim, qs-render and qs-sound, with the IDE bridge server"
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [[bin]]
-name = "preview-host"
+name = "quakec-engine"
 path = "src/main.rs"
 
 [dependencies]

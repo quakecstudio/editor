@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The Flatpak of QuakeC Studio (P4-18), built from the binaries the release workflow built
+# (packaging/linux/package.sh stages them in `stage/`), not from source, so the Flatpak runs the same
+# binaries the other Linux packages hold. The sandbox reaches what the IDE needs: projects
+# and the game stores' folders under the home directory, the GPU and display, sound for the
+# preview host, the network for the agent's providers, and the Secret Service for the
+# keychain (org.freedesktop.secrets).
+app-id: com.quakecstudio.QuakeCStudio
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+command: quakec-studio
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  # Projects anywhere in the home directory, and Steam, GOG and Heroic's folders, the
+  # Flatpak clients' under ~/.var/app included.
+  - --filesystem=home
+  - --filesystem=/mnt:ro
+  - --filesystem=/media:ro
+  - --talk-name=org.freedesktop.secrets
+modules:
+  - name: quakec-studio
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 -t /app/bin quakec-studio quakec-engine quakec-ide quakec-lsp
+      - install -Dm644 -t /app/share/doc/quakec-studio LICENSE NOTICE
+      - install -Dm644 com.quakecstudio.QuakeCStudio.desktop -t /app/share/applications
+      - install -Dm644 com.quakecstudio.QuakeCStudio.svg -t /app/share/icons/hicolor/scalable/apps
+    sources:
+      - type: dir
+        path: stage

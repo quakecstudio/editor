@@ -5,8 +5,14 @@
 use std::io;
 use std::process::ExitCode;
 
+use mimalloc::MiMalloc;
 use qc_project::FsLoader;
 use quakec_lsp::{Exit, log_config, run};
+
+/// mimalloc as the global allocator (P4-18): musl's own is slow under heavy allocation, and
+/// these tools ship as static musl binaries on Linux.
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[expect(
     clippy::print_stderr,

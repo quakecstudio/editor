@@ -40,7 +40,7 @@ issues:
   - P3-26
   - P3-27
   deliverable:
-  - 'apps/preview-host (ADR-0004): window and input, the host loop at a fixed server tick, id1 and the rerelease loaded from the user''s install (P1-19), qs-sim, qs-render and qs-sound composed, and a bridge server implementing docs/spec/bridge-protocol.md events'
+  - 'apps/quakec-engine (ADR-0004): window and input, the host loop at a fixed server tick, id1 and the rerelease loaded from the user''s install (P1-19), qs-sim, qs-render and qs-sound composed, and a bridge server implementing docs/spec/bridge-protocol.md events'
   - 'Command line (ADR-0008): -basedir PATH (the game root holding id1), -game NAME (a single directory name under it) and -kpf PATH (the rerelease''s QuakeEX.kpf, read from that path instead of the basedir)'
   - Builds for macOS universal, Windows x64/arm64, Linux x86_64/aarch64 as CI artifacts with checksums
   acceptance:
@@ -210,7 +210,7 @@ issues:
   deliverable:
   - Window placement beside the IDE that follows focus and resizes with the layout on macOS, Windows, X11 and Wayland (with documented Wayland limits)
   acceptance:
-  - 'The host is placed beside the IDE as the tests on main from #742 pin: `DockFrame::placement`''s in crates/qs-workbench/src/preview/dock.rs, the host''s `window/place` (BRIDGE-4.10) in apps/preview-host/src/game/tests.rs, and the shell''s docking in apps/desktop; the Wayland limits are in apps/preview-host/README.md'
+  - 'The host is placed beside the IDE as the tests on main from #742 pin: `DockFrame::placement`''s in crates/qs-workbench/src/preview/dock.rs, the host''s `window/place` (BRIDGE-4.10) in apps/quakec-engine/src/game/tests.rs, and the shell''s docking in apps/desktop; the Wayland limits are in apps/quakec-engine/README.md'
   - 'The recorded check that Play opens the game next to the editor on macOS, Windows, X11 and Wayland is part of the MVP demo (P4-24), moved there by Justin on 2026-11-09'
   verify:
   - cargo test -p qs-workbench -p preview-host -p quakec-studio
@@ -399,10 +399,10 @@ issues:
   deliverable:
   - 'docs/spec/engine/console.md and docs/spec/engine/menu.md: the console and the menus as id-Software/Quake@bf4ac424 WinQuake/console.c, keys.c and menu.c draw and drive them, with numbered statements'
   - 'crates/qs-client: the console buffer, its input line and the menu state, ported from those files, with tests citing the statements'
-  - 'apps/preview-host: the backquote key and the console command toggle the console, Escape opens the main menu, keys go where the key destination says, and console lines run through qs-sim''s console path'
+  - 'apps/quakec-engine: the backquote key and the console command toggle the console, Escape opens the main menu, keys go where the key destination says, and console lines run through qs-sim''s console path'
   - 'qs-render: the gamma setting applied to the whole frame as QuakeSpasm applies it, so the Brightness slider brightens the screen'
-  - 'apps/preview-host: key bindings (bind, unbind, unbindall and the +/- commands) with id1''s default.cfg read, the keys menu that edits them, and +mlook with lookspring and lookstrafe as CL_MouseMove and V_StopPitchDrift read them'
-  - 'qs-sound and apps/preview-host: svc_cdtrack played and looped at bgmvolume, from a cue sheet''s CD audio tracks or from music/track<NN>.<ext> (RRE-3), the music spec statements in docs/spec/. Done in PR #748: the CD image (SND-6, RRE-3.4, game.cue by default). Left: an Ogg Vorbis decoder (a new workspace dependency, its version and licence checked) for the rerelease''s music/track<NN>.ogg, and the mission packs'' CD images chosen with -hipnotic (GOG''s gamea.cue, Scourge of Armagon) and -rogue (gamed.cue, Dissolution of Eternity), as GOG''s forum guide names them (SND-6.5)'
+  - 'apps/quakec-engine: key bindings (bind, unbind, unbindall and the +/- commands) with id1''s default.cfg read, the keys menu that edits them, and +mlook with lookspring and lookstrafe as CL_MouseMove and V_StopPitchDrift read them'
+  - 'qs-sound and apps/quakec-engine: svc_cdtrack played and looped at bgmvolume, from a cue sheet''s CD audio tracks or from music/track<NN>.<ext> (RRE-3), the music spec statements in docs/spec/. Done in PR #748: the CD image (SND-6, RRE-3.4, game.cue by default). Left: an Ogg Vorbis decoder (a new workspace dependency, its version and licence checked) for the rerelease''s music/track<NN>.ogg, and the mission packs'' CD images chosen with -hipnotic (GOG''s gamea.cue, Scourge of Armagon) and -rogue (gamed.cue, Dissolution of Eternity), as GOG''s forum guide names them (SND-6.5)'
   acceptance:
   - 'The console and each menu in scope are drawn and driven as the specs say, each statement cited by a test'
   - '`cargo xtask view-diff` shows the main menu and the console drawn within tolerance of the view oracle'
@@ -553,11 +553,11 @@ issues:
   summary: |
     Found by the self-review of #772. id's engine pauses a single player game while the keys go to the console or a menu: `Host_ServerFrame` runs `SV_Physics` only `if (!sv.paused && (svs.maxclients > 1 || key_dest == key_game) )`, under the comment "always pause in single player if in console or menus", and `SV_RunClients` gates `SV_ClientThink` the same way (id-Software/Quake@bf4ac424, WinQuake/host.c and sv_user.c). The preview host runs the server's frame whatever its key destination, so with the menu or the console up its game goes on while id's stands, and qs-sim's frame-by-frame differential and the view differential's menu and console shots compare two clocks that have parted.
   environment: |
-    main after #771; qs-sim World::frame, apps/preview-host headless.rs and window.rs
+    main after #771; qs-sim World::frame, apps/quakec-engine headless.rs and window.rs
   depends: []
   deliverable:
   - 'crates/qs-sim: a statement PHYS-11.9 in docs/spec/engine/physics.md and the world reading where the client''s keys go, a frame with them elsewhere than the game reading the move but running neither the think nor the physics, as `pause` does (PHYS-11.8)'
-  - 'apps/preview-host: the window and the headless view scripts give the world the key destination before each frame'
+  - 'apps/quakec-engine: the window and the headless view scripts give the world the key destination before each frame'
   acceptance:
   - 'A qs-sim test pins PHYS-11.9: with the keys elsewhere, time and entities stand and the move is still read; a preview-host test that a view script''s menu stops the game''s time'
   - 'A Differential run on the PR passes the view differential with the menu and console shots, linked in the PR'
