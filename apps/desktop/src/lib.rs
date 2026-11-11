@@ -13,6 +13,7 @@
 //! apps. It depends on `qs-layout`, `qs-workbench` and `qs-commands` (L5), `qs-editor-view`
 //! and `qs-render` (L7), `qs-log` and `qs-paths` (L0), and `eframe`.
 
+pub mod agent;
 pub mod bench;
 mod code_style;
 mod debugger;
