@@ -50,7 +50,7 @@ pub(crate) struct Args {
     #[arg(long)]
     game: Option<PathBuf>,
     /// The provider: anthropic, openai-compatible or ollama. The key is read from
-    /// `QS_EVAL_API_KEY`.
+    /// `QS_EVAL_API_KEY`, unless `--federation` names workload identity instead.
     #[arg(long, default_value = "anthropic")]
     provider: String,
     /// The model; the provider's default when absent.
@@ -59,6 +59,10 @@ pub(crate) struct Args {
     /// The provider's address, when not its default.
     #[arg(long)]
     base_url: Option<String>,
+    /// A JSON file of `qs_models::Federated`: workload identity in place of an API key
+    /// (P4-38), as the Evals workflow writes it for GitHub Actions' OIDC token; empty for none.
+    #[arg(long)]
+    federation: Option<PathBuf>,
     /// The most one run may cost, in US dollars, at the prices below.
     #[arg(long, default_value_t = 2.0)]
     max_usd: f64,
@@ -160,7 +164,12 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         .filter_map(Result::ok)
         .filter(|entry| entry.path().join("task.toml").is_file())
         .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| args.task.as_ref().is_none_or(|only| only == name))
+        .filter(|name| {
+            args.task
+                .as_ref()
+                .filter(|only| !only.is_empty())
+                .is_none_or(|only| only == name)
+        })
         .collect();
     names.sort();
     if names.is_empty() {
@@ -402,6 +411,15 @@ fn run(
         (None, _) => return Err("name the model with --model".to_owned()),
     };
     config.base_url.clone_from(&args.base_url);
+    if let Some(path) = args
+        .federation
+        .as_ref()
+        .filter(|p| !p.as_os_str().is_empty())
+    {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        config.federated =
+            Some(serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?);
+    }
     let keys = MemoryKeys::new();
     if let Ok(key) = std::env::var("QS_EVAL_API_KEY") {
         qs_models::KeyStore::set(&keys, &config.key_name(), &Secret::new(key))

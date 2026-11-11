@@ -3,8 +3,13 @@ name: Evals
 # P4-15 (QA-5): the agent's evals on a real model (cargo xtask evals --run, evals/README.md).
 # Each run of a task stops at its cost cap; the results are appended to a history kept in the
 # Actions cache from one run to the next, and the report and history are uploaded. It runs
-# weekly and by hand, only with the QS_EVAL_API_KEY secret set; CI checks the tasks' scenarios
-# on every change without a model (cargo xtask evals --check, in Test Assets (linux)).
+# weekly and by hand, only with the QS_EVAL_API_KEY secret set or, in its place, workload identity
+# (P4-38): the repository variable QS_EVAL_FEDERATION holding the provider's exchange as JSON
+# (qs_models::Exchange, such as {"provider": "anthropic", "federation_rule_id": "fdrl_...",
+# "organization_id": "...", "service_account_id": "svac_..."}) and QS_EVAL_AUDIENCE the audience
+# its rule matches (https://api.anthropic.com when unset). The job's GitHub OIDC token is then
+# fetched afresh at each exchange, and no model key is stored. CI checks the tasks' scenarios on
+# every change without a model (cargo xtask evals --check, in Test Assets (linux)).
 on:
   workflow_dispatch:
     inputs:
@@ -27,17 +32,23 @@ jobs:
     timeout-minutes: 180
     permissions:
       contents: read
+      # The OIDC token workload identity exchanges (P4-38); unused with a key.
+      id-token: write
     steps:
-      - name: Check that the model's key is set, printing no value
+      - name: Check that the model's key or workload identity is set, printing no value
         id: key
         env:
           QS_EVAL_API_KEY: ${{ secrets.QS_EVAL_API_KEY }}
+          QS_EVAL_FEDERATION: ${{ vars.QS_EVAL_FEDERATION }}
         run: |
-          if [ -z "$QS_EVAL_API_KEY" ]; then
-            echo "::notice::the secret QS_EVAL_API_KEY is not set; no eval runs"
-            echo "set=false" >> "$GITHUB_OUTPUT"
-          else
+          if [ -n "$QS_EVAL_FEDERATION" ]; then
+            echo "ok    workload identity is configured"
             echo "set=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$QS_EVAL_API_KEY" ]; then
+            echo "set=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::neither QS_EVAL_API_KEY nor QS_EVAL_FEDERATION is set; no eval runs"
+            echo "set=false" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.key.outputs.set == 'true'
@@ -66,15 +77,27 @@ jobs:
         if: steps.key.outputs.set == 'true'
         env:
           QS_EVAL_API_KEY: ${{ secrets.QS_EVAL_API_KEY }}
+          QS_EVAL_FEDERATION: ${{ vars.QS_EVAL_FEDERATION }}
+          QS_EVAL_AUDIENCE: ${{ vars.QS_EVAL_AUDIENCE }}
           TASK: ${{ inputs.task }}
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
-          # Each run stops at 2 US dollars (cargo xtask evals --max-usd).
-          status=0
-          if [ -n "$TASK" ]; then
-            cargo xtask evals --run --task "$TASK" --max-usd 2 --history target/evals/history.jsonl || status=$?
-          else
-            cargo xtask evals --run --max-usd 2 --history target/evals/history.jsonl || status=$?
+          # Each run stops at 2 US dollars (cargo xtask evals --max-usd). An empty --task runs
+          # every task, and an empty --federation uses the key.
+          federation=""
+          if [ -n "$QS_EVAL_FEDERATION" ]; then
+            # The OIDC token lasts minutes, so each exchange runs this command for a fresh one.
+            export QS_EVAL_AUDIENCE="${QS_EVAL_AUDIENCE:-https://api.anthropic.com}"
+            # shellcheck disable=SC2016 # expanded by the sh that runs it, at each exchange
+            fetch='curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$(jq -rn --arg a "$QS_EVAL_AUDIENCE" "\$a|@uri")" | jq -r .value'
+            jq -n --arg fetch "$fetch" --argjson exchange "$QS_EVAL_FEDERATION" \
+              '{identity: {from: "command", program: "sh", args: ["-c", $fetch]}, exchange: $exchange}' \
+              > "$RUNNER_TEMP_DIR/federation.json"
+            federation="$RUNNER_TEMP_DIR/federation.json"
           fi
+          status=0
+          cargo xtask evals --run --task "$TASK" --max-usd 2 --history target/evals/history.jsonl \
+            --federation "$federation" || status=$?
           cat target/evals/report.md >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

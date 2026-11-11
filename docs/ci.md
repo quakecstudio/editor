@@ -215,7 +215,8 @@ the signer. It is the only workflow that reads the signing secrets
 model (`cargo xtask evals --run`, [`evals/README.md`](../evals/README.md)). It runs weekly and on
 demand, never on pull requests, and is **not** a required check. Each run stops at 2 US dollars.
 Without the `QS_EVAL_API_KEY`
-secret it does nothing:
+secret or the `QS_EVAL_FEDERATION` variable (workload identity over the job's GitHub OIDC token,
+P4-38; `evals/README.md`) it does nothing:
 
 | Check | Runs on | What it does |
 | --- | --- | --- |

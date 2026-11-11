@@ -75,6 +75,27 @@ A key is never written anywhere else:
 - Errors (`TransportError`, `KeyError`, `ProviderError`) hold the provider's or keychain's
   message, never a header.
 
+## Workload identity
+
+`ProviderConfig::federated` (P4-38, AGT-11) reaches a provider with workload identity instead of
+an API key. A token from the user's identity provider, read from a file or printed by a command
+each time it is needed (`IdentityToken`), is exchanged for a short-lived API token
+(`federation.rs`, read from each provider's documentation on 2026-11-11):
+
+- **Anthropic:** `POST /v1/oauth/token` with the `urn:ietf:params:oauth:grant-type:jwt-bearer`
+  grant, the JWT as `assertion`, and the federation rule, organization, service account and
+  workspace ids. The access token is sent as `authorization: Bearer`, never as `x-api-key`.
+- **OpenAI:** `https://auth.openai.com/oauth/token` with the
+  `urn:ietf:params:oauth:grant-type:token-exchange` grant, the JWT as `subject_token`, and the
+  workload identity provider and service account ids. Its `expires_at` is the expiry.
+
+The access token is kept and reused, and exchanged again `RENEW_BEFORE_SECS` (120) seconds
+before it expires, by a clock tests can set (`ProviderModel::with_clock`). An identity token
+that cannot be read, or an exchange the provider refuses, is the reply's error with the
+provider's words, and no model request is sent. Both providers map the token to a service
+account, not to a person. A federated provider needs no key (`ProviderConfig::needs_key`), and
+nothing secret is kept in the configuration.
+
 ## Tests
 
 `src/tests.rs`: each provider's request and reply against scripted answers; Ollama over the

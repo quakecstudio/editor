@@ -859,3 +859,27 @@ fn a_failed_exchange_sends_nothing() {
         config
     );
 }
+
+// No spec statement: P4-38: the federation file the Evals workflow writes for GitHub Actions'
+// OIDC token, a command that fetches it afresh and Anthropic's ids, reads as a Federated
+#[test]
+fn the_evals_workflows_federation_file_parses() {
+    let text = r#"{"identity": {"from": "command", "program": "sh", "args": ["-c", "fetch"]},
+        "exchange": {"provider": "anthropic", "federation_rule_id": "fdrl_1",
+        "organization_id": "o", "service_account_id": "svac_1"}}"#;
+    let federated: crate::Federated = serde_json::from_str(text).unwrap();
+    assert_eq!(
+        federated.identity,
+        crate::IdentityToken::Command {
+            program: "sh".to_owned(),
+            args: vec!["-c".to_owned(), "fetch".to_owned()],
+        }
+    );
+    assert!(matches!(
+        federated.exchange,
+        crate::Exchange::Anthropic {
+            workspace_id: None,
+            ..
+        }
+    ));
+}

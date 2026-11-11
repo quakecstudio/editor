@@ -44,5 +44,11 @@ write `target/evals/report.md`.
   tokens, cost).
 
 CI runs `--check` in Test Assets (linux) on every full run. The `Evals` workflow runs `--run`
-weekly and by hand, only when the `QS_EVAL_API_KEY` secret is set. It keeps the history in the
+weekly and by hand, only when the `QS_EVAL_API_KEY` secret or workload identity is set up. For
+workload identity, the repository variable `QS_EVAL_FEDERATION` holds the provider's exchange as
+JSON, such as `{"provider": "anthropic", "federation_rule_id": "fdrl_...", "organization_id":
+"...", "service_account_id": "svac_..."}`, and `QS_EVAL_AUDIENCE` holds the audience its rule
+matches (`https://api.anthropic.com` when unset). The job then authenticates with its own
+GitHub OIDC token, fetched afresh at each exchange (`--federation`), and no model key is stored
+in the repository. It keeps the history in the
 Actions cache and uploads the report and history.
