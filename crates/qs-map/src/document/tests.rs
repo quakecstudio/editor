@@ -741,3 +741,18 @@ fn a_brush_gives_each_face_its_polygon() {
     }
     assert!(super::Brush::new().polygons().is_empty());
 }
+
+// spec BUILTIN-10.3: a BSP's submodels are named `*1`, `*2` and on, so an entity of a BSP's
+// entity lump whose model is one is a brush entity with no brushes; any other model is not
+#[test]
+fn a_submodel_makes_a_brush_entity() {
+    let map = round_trip(
+        b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"func_door\"\n\"model\" \"*3\"\n}\n\
+        {\n\"classname\" \"misc_thing\"\n\"model\" \"progs/thing.mdl\"\n}\n\
+        {\n\"classname\" \"func_wall\"\n\"model\" \"*x\"\n}\n",
+    );
+    let submodels: Vec<_> = map.entities.iter().map(Entity::submodel).collect();
+    assert_eq!(submodels, [None, Some(3), None, None]);
+    let brush: Vec<_> = map.entities.iter().map(Entity::is_brush_entity).collect();
+    assert_eq!(brush, [false, true, false, false]);
+}

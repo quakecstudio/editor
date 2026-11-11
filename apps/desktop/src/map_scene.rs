@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use qs_bsp::{Bsp, BspLoader};
-use qs_map::Entity;
 use qs_mdl::Mdl;
 use qs_mdl::mdl::MdlFrameEntry;
 use qs_render::Camera;
@@ -86,9 +85,11 @@ impl Scene {
     #[must_use]
     pub(crate) fn build(document: &MapDocument, classes: &HashMap<String, ClassLook>) -> Self {
         let mut scene = Self::default();
-        if let MapSource::Bsp(bytes) = document.source()
-            && let Ok(bsp) = Bsp::read(bytes, BspLoader::default())
-        {
+        let bsp = match document.source() {
+            MapSource::Bsp(bytes) => Bsp::read(bytes, BspLoader::default()).ok(),
+            MapSource::Map => None,
+        };
+        if let Some(bsp) = &bsp {
             for face in &bsp.faces {
                 outline(&mut scene.lines, &bsp.face_vertices(face));
             }
@@ -112,7 +113,12 @@ impl Scene {
                 .map(|name| String::from_utf8_lossy(name).into_owned())
                 .and_then(|name| classes.get(&name));
             let origin = entity.origin().map(single);
-            let bounds = bounds.unwrap_or_else(|| {
+            // A brush entity read from a BSP draws its submodel, whose box the BSP holds.
+            let submodel = entity
+                .submodel()
+                .and_then(|n| bsp.as_ref()?.models.get(n))
+                .map(|model| [add(origin, model.mins), add(origin, model.maxs)]);
+            let bounds = bounds.or(submodel).unwrap_or_else(|| {
                 let [min, max] = class.and_then(|c| c.size).unwrap_or(DEFAULT_BOX);
                 [add(origin, min), add(origin, max)]
             });
@@ -120,23 +126,26 @@ impl Scene {
                 index: EntityIndex::new(index),
                 bounds,
                 origin,
-                yaw: single(yaw(entity)),
+                yaw: single(entity.yaw()),
                 color: class.and_then(|c| c.color),
                 model: class.and_then(|c| c.model.clone()),
-                brush: entity.has_brushes(),
+                brush: entity.is_brush_entity(),
             });
         }
         scene
     }
 
-    /// The entity whose box the ray from `start` along `direction` meets first.
+    /// The entity whose box the ray from `start` along `direction` enters first; one whose
+    /// box holds `start`, such as a trigger the camera is in, only when it enters none.
     #[must_use]
     pub(crate) fn pick(&self, start: [f32; 3], direction: [f32; 3]) -> Option<EntityIndex> {
         self.entities
             .iter()
-            .filter_map(|shape| hit(start, direction, shape.bounds).map(|t| (t, shape.index)))
-            .min_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|(_, index)| index)
+            .filter_map(|shape| {
+                hit(start, direction, shape.bounds).map(|t| (t <= 0.0, t, shape.index))
+            })
+            .min_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)))
+            .map(|(_, _, index)| index)
     }
 }
 
@@ -145,22 +154,6 @@ impl Scene {
 #[must_use]
 pub(crate) fn is_target_key(key: &str) -> bool {
     key == "killtarget" || (key.starts_with("target") && key != "targetname")
-}
-
-/// An entity's yaw: its `angles`' second number, else its `angle` (EDICT-8.2).
-fn yaw(entity: &Entity) -> f64 {
-    let text = |value: &[u8]| String::from_utf8_lossy(value).into_owned();
-    if let Some(angles) = entity.value(b"angles") {
-        return text(angles)
-            .split_whitespace()
-            .nth(1)
-            .and_then(|part| part.parse().ok())
-            .unwrap_or(0.0);
-    }
-    entity
-        .value(b"angle")
-        .and_then(|angle| text(angle).trim().parse().ok())
-        .unwrap_or(0.0)
 }
 
 /// The map's origin, where the camera starts in a map with no player start.
@@ -180,7 +173,7 @@ pub(crate) fn start_camera(document: &MapDocument) -> Camera {
     let mut camera = Camera::new(MAP_ORIGIN, NO_START_YAW);
     if let Some(start) = start {
         let origin = start.origin().map(single);
-        camera.yaw = single(yaw(start));
+        camera.yaw = single(start.yaw());
         let (sin, cos) = camera.yaw.to_radians().sin_cos();
         camera.origin = [
             origin[0] - cos * START_BACK,

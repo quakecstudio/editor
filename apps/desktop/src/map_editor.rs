@@ -66,7 +66,7 @@ pub enum MapAction {
 pub struct MapEditor {
     camera: Option<Camera>,
     scene: Scene,
-    /// The document's path and revision the scene was built from.
+    /// The document's path and edits the scene was built from.
     built: Option<(std::path::PathBuf, MapRevision)>,
     classes: HashMap<String, ClassLook>,
     models: HashMap<String, Vec<Line>>,
@@ -78,6 +78,8 @@ pub struct MapEditor {
     typing: HashMap<String, String>,
     /// The new key and value being typed.
     adding: (String, String),
+    /// Why the last map command asked for was refused, until one runs.
+    refused: Option<String>,
 }
 
 impl MapEditor {
@@ -116,6 +118,11 @@ impl MapEditor {
         self.keys = keys;
     }
 
+    /// Takes why the last map command asked for was refused, or none when it ran.
+    pub fn set_refused(&mut self, refused: Option<String>) {
+        self.refused = refused;
+    }
+
     /// Forgets the camera, so the next map opened starts at its player start.
     pub fn reset_camera(&mut self) {
         self.camera = None;
@@ -124,7 +131,7 @@ impl MapEditor {
     /// Draws `document` in all the space `ui` has left and reads the mouse and keys; what
     /// they asked for.
     pub fn ui(&mut self, ui: &mut Ui, theme: &Theme, document: &MapDocument) -> Vec<MapAction> {
-        let built = (document.path().to_path_buf(), document.revision());
+        let built = (document.path().to_path_buf(), document.edits());
         if self.built.as_ref() != Some(&built) {
             self.scene = Scene::build(document, &self.classes);
             self.built = Some(built);
@@ -225,6 +232,9 @@ impl MapEditor {
     /// The key editor of the selected entity, in the Properties panel; what it asked for.
     pub fn properties(&mut self, ui: &mut Ui, theme: &Theme) -> Vec<MapAction> {
         let mut actions = Vec::new();
+        if let Some(refused) = &self.refused {
+            ui.label(RichText::new(refused).color(theme.color(Token::StatusError)));
+        }
         let Some((entity, keys)) = &self.keys else {
             ui.label(
                 RichText::new(Text::MapNoSelection.get()).color(theme.color(Token::TextMuted)),

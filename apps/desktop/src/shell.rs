@@ -1821,8 +1821,6 @@ impl Shell {
         }
     }
 
-    /// Runs what the outliner or the Properties panel asked for: a selection or a field's new
-    /// value through its command, or the definition of a function opened.
     /// Opens the map at `path` in the map editor; [`Shell::sync_map`] shows it.
     fn open_map(&mut self, path: PathBuf) {
         let opened: Result<serde_json::Value, ShellError> =
@@ -1894,9 +1892,11 @@ impl Shell {
                 }
                 MapAction::Save => self.attempt(MAP_SAVE, &SaveParams { bsp: BspSave::Ent }),
             };
-            if let Err(error) = result {
+            let refused = result.err().map(|error| {
                 tracing::warn!(%error, "map edit refused");
-            }
+                error.to_string()
+            });
+            self.map_editor.set_refused(refused);
         }
     }
 
@@ -1934,6 +1934,8 @@ impl Shell {
         self.map_editor.set_keys(keys, revision);
     }
 
+    /// Runs what the outliner or the Properties panel asked for: a selection or a field's new
+    /// value through its command, or the definition of a function opened.
     fn entity_action(&mut self, action: EntityAction, ctx: &egui::Context) {
         let result = match action {
             EntityAction::Ask(edict) => {

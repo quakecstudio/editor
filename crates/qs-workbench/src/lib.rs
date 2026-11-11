@@ -725,6 +725,12 @@ pub enum WorkbenchError {
         /// Why.
         error: qs_map::MapError,
     },
+    /// A `.ent` beside the BSP, which the engine reads in place of the entity lump
+    /// (BSP-19.1), so a rewritten lump would not be seen.
+    EntOverride {
+        /// The `.ent`.
+        path: PathBuf,
+    },
 }
 
 impl fmt::Display for WorkbenchError {
@@ -736,6 +742,12 @@ impl fmt::Display for WorkbenchError {
                 write!(f, "{}: cannot be written: {error}", path.display())
             }
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
+            Self::EntOverride { path } => write!(
+                f,
+                "{}: the engine reads this in place of the BSP's entities; save to it, or move \
+                 it away before saving into the BSP",
+                path.display()
+            ),
             Self::NoProject => f.write_str("no project is open"),
             Self::NoFix { path, offset } => {
                 write!(f, "{}: no quick fix at byte {offset}", path.display())
@@ -778,7 +790,8 @@ impl Error for WorkbenchError {
             | Self::Offset { .. }
             | Self::NoMap
             | Self::NoEntity { .. }
-            | Self::NotPointEntity { .. } => None,
+            | Self::NotPointEntity { .. }
+            | Self::EntOverride { .. } => None,
         }
     }
 }

@@ -277,7 +277,7 @@ fn the_selection_follows_and_keys_are_typed() {
 }
 
 // No spec statement: P5-06, MAP-22: a shipped BSP's entities are edited and saved to a .ent
-// override beside it, or into the BSP's entity lump
+// override beside it, or into the BSP's entity lump when no .ent hides it
 #[test]
 fn a_shipped_maps_entities_save_to_an_ent_or_its_lump() {
     let (dir, mut session) = project("bsp");
@@ -302,6 +302,17 @@ fn a_shipped_maps_entities_save_to_an_ent_or_its_lump() {
         original,
         "the BSP is untouched"
     );
+    // spec BSP-19.1: the engine reads the .ent in place of the lump, so the map reopens from
+    // it, and a lump it would hide is not written
+    session.execute(MAP_OPEN, json!({ "path": bsp })).unwrap();
+    assert!(text(&session).contains("\"Edited\""));
+    let refused = session
+        .execute(MAP_SAVE, json!({ "bsp": "lump" }))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("base.ent"), "{refused}");
+    assert_eq!(std::fs::read(&bsp).unwrap(), original);
+    std::fs::rename(&ent, dir.join("maps/base.ent.old")).unwrap();
     let saved = session.execute(MAP_SAVE, json!({ "bsp": "lump" })).unwrap();
     assert_eq!(saved["path"], json!(bsp));
     let rewritten = std::fs::read(&bsp).unwrap();
@@ -349,6 +360,55 @@ fn angles_turn_by_their_yaw() {
         "{}",
         text(&session)
     );
+}
+
+// No spec statement: P5-06, EDICT-8.2, MAP-2.7: turning reads angle as C's atof does and
+// leaves the up and down of id's SetMovedir (`'0 -1 0'`, `'0 -2 0'`); an entity naming a BSP
+// submodel is a brush entity and is not turned
+#[test]
+fn turning_reads_angles_as_the_engine_does() {
+    let (dir, mut session) = project("turn");
+    let path = dir.join("maps/turn.map");
+    std::fs::write(
+        &path,
+        "{\n\"classname\" \"worldspawn\"\n}\n\
+         {\n\"classname\" \"trap_spikeshooter\"\n\"angle\" \"-1\"\n}\n\
+         {\n\"classname\" \"trap_spikeshooter\"\n\"angles\" \"0 -2 0\"\n}\n\
+         {\n\"classname\" \"info_null\"\n\"angle\" \"90x\"\n}\n\
+         {\n\"classname\" \"func_door\"\n\"model\" \"*1\"\n}\n",
+    )
+    .unwrap();
+    session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
+    for entity in 1..=3 {
+        session
+            .execute(MAP_ROTATE, json!({ "entity": entity, "degrees": 90.0 }))
+            .unwrap();
+    }
+    let map = text(&session);
+    assert!(map.contains("\"angle\" \"-1\""), "{map}");
+    assert!(map.contains("\"angles\" \"0 -2 0\""), "{map}");
+    assert!(map.contains("\"angle\" \"180\""), "{map}");
+    assert!(
+        session
+            .execute(MAP_ROTATE, json!({ "entity": 4, "degrees": 90.0 }))
+            .is_err(),
+        "a BSP's door is a brush entity"
+    );
+}
+
+// No spec statement: P5-06: an undo step belongs to the map it edited; once the map is opened
+// again it changes nothing, so the map read from disk is kept
+#[test]
+fn undo_leaves_a_map_opened_again() {
+    let (dir, mut session) = project("reopen");
+    let path = dir.join("maps/test.map");
+    session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
+    session
+        .execute(MAP_MOVE, json!({ "entity": 1, "by": [8.0, 0.0, 0.0] }))
+        .unwrap();
+    session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
+    assert!(session.undo().is_err());
+    assert_eq!(text(&session), MAP);
 }
 
 // No spec statement: P5-06: duplicating copies an entity's keys and brushes to the end of the

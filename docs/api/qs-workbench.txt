@@ -516,6 +516,7 @@ fn qs_workbench::map_check::Workbench::rename_map_key
 fn qs_workbench::map_edit::EntityIndex::get
 fn qs_workbench::map_edit::EntityIndex::is_world
 fn qs_workbench::map_edit::EntityIndex::new
+fn qs_workbench::map_edit::MapDocument::edits
 fn qs_workbench::map_edit::MapDocument::file
 fn qs_workbench::map_edit::MapDocument::is_unsaved
 fn qs_workbench::map_edit::MapDocument::path
@@ -955,6 +956,7 @@ variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
 variant qs_workbench::WorkbenchError::Bsp
 variant qs_workbench::WorkbenchError::Checkpoint
+variant qs_workbench::WorkbenchError::EntOverride
 variant qs_workbench::WorkbenchError::Map
 variant qs_workbench::WorkbenchError::NoEntity
 variant qs_workbench::WorkbenchError::NoFile

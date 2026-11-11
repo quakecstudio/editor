@@ -13,7 +13,7 @@
 use core::fmt;
 use std::path::{Path, PathBuf};
 
-use qs_bsp::{Bsp, BspLoader};
+use qs_bsp::{Bsp, BspLoader, ent_file_names};
 use qs_commands::{BoxError, Command, Outcome, RegisterError, Registry, UndoStep};
 use qs_map::{Entity, Item, MapFile};
 use schemars::JsonSchema;
@@ -24,10 +24,11 @@ use crate::{HasWorkbench, Workbench, WorkbenchError};
 
 /// Degrees in a whole turn; a rotated yaw is kept below it.
 const FULL_TURN: f64 = 360.0;
-/// The parts of an `angles` value: pitch, yaw and roll.
-const ANGLES: usize = 3;
-/// The place of the yaw in `angles`.
-const YAW: usize = 1;
+/// The angles id's QuakeC reads as straight up, `if (self.angles == '0 -1 0')
+/// self.movedir = '0 0 1';` (subs.qc, `SetMovedir`), which turning leaves.
+const UP: [f64; 3] = [0.0, -1.0, 0.0];
+/// The angles `SetMovedir` reads as straight down, `'0 -2 0'`, which turning leaves.
+const DOWN: [f64; 3] = [0.0, -2.0, 0.0];
 
 /// The extension of a map's source file.
 pub const MAP_EXTENSION: &str = "map";
@@ -124,6 +125,10 @@ pub struct MapDocument {
     selected: Option<EntityIndex>,
     unsaved: bool,
     revision: MapRevision,
+    edits: MapRevision,
+    /// The last value [`MapDocument::edits`] was given, which only grows, so an undo step
+    /// knows its own map.
+    stamped: MapRevision,
 }
 
 impl MapDocument {
@@ -133,9 +138,23 @@ impl MapDocument {
         self.revision
     }
 
-    /// Marks the map changed.
+    /// Its revision of the map alone, which a selection leaves: a view of the map's contents
+    /// reads it again only when this changes; an undo gives it back its earlier value.
+    #[must_use]
+    pub const fn edits(&self) -> MapRevision {
+        self.edits
+    }
+
+    /// Marks the selection changed.
     const fn touch(&mut self) {
         self.revision = self.revision.next();
+    }
+
+    /// Marks the map changed to a state it has not had.
+    const fn touch_map(&mut self) {
+        self.stamped = self.stamped.next();
+        self.edits = self.stamped;
+        self.touch();
     }
 
     /// The file it was read from.
@@ -166,6 +185,18 @@ impl MapDocument {
     #[must_use]
     pub const fn is_unsaved(&self) -> bool {
         self.unsaved
+    }
+
+    /// The `.ent` the engine reads in place of a BSP's entity lump, the first of its names
+    /// beside the BSP (BSP-19.1); `None` for a `.map`.
+    fn ent_override(&self) -> Option<PathBuf> {
+        let MapSource::Bsp(bytes) = &self.source else {
+            return None;
+        };
+        let bsp = Bsp::read(bytes, BspLoader::default()).ok()?;
+        ent_files(&self.path, bsp.entity_lump)
+            .into_iter()
+            .find(|path| path.is_file())
     }
 
     fn entity_mut(&mut self, entity: EntityIndex) -> Result<&mut Entity, WorkbenchError> {
@@ -215,27 +246,19 @@ impl MapDocument {
     /// `angles`, else its `angle` (EDICT-8.2 reads `angle` as the yaw), kept from 0 to 360.
     fn rotate_entity(&mut self, entity: EntityIndex, degrees: f64) -> Result<(), WorkbenchError> {
         let found = self.entity_mut(entity)?;
-        if found.has_brushes() || entity.is_world() {
+        if found.is_brush_entity() || entity.is_world() {
             return Err(WorkbenchError::NotPointEntity { entity });
         }
-        let read =
-            |text: &[u8]| -> f64 { String::from_utf8_lossy(text).trim().parse().unwrap_or(0.0) };
-        let turn = |yaw: f64| (yaw + degrees).rem_euclid(FULL_TURN);
-        let result = if let Some(angles) = found.value(b"angles") {
-            let mut parts: Vec<f64> = String::from_utf8_lossy(angles)
-                .split_whitespace()
-                .map(|part| part.parse().unwrap_or(0.0))
-                .collect();
-            parts.resize(ANGLES, 0.0);
-            let yaw = parts.get(YAW).copied().unwrap_or(0.0);
-            if let Some(slot) = parts.get_mut(YAW) {
-                *slot = turn(yaw);
-            }
-            let text: Vec<String> = parts.into_iter().map(number).collect();
-            found.set(b"angles", text.join(" ").as_bytes())
+        let [pitch, yaw, roll] = found.angles().unwrap_or_default();
+        if [UP, DOWN].contains(&[pitch, yaw, roll]) {
+            return Ok(());
+        }
+        let yaw = number((yaw + degrees).rem_euclid(FULL_TURN));
+        let result = if found.value(b"angles").is_some() {
+            let text = [number(pitch), yaw, number(roll)].join(" ");
+            found.set(b"angles", text.as_bytes())
         } else {
-            let yaw = found.value(b"angle").map_or(0.0, read);
-            found.set(b"angle", number(turn(yaw)).as_bytes())
+            found.set(b"angle", yaw.as_bytes())
         };
         result.map_err(|error| self.map_error(error))
     }
@@ -406,7 +429,11 @@ impl<L: crate::Loader> Workbench<L> {
                     path: path.to_path_buf(),
                     error,
                 })?;
-            let text = bsp.entities().to_vec();
+            // The engine reads a `.ent` beside the BSP in place of its lump (BSP-19.1).
+            let ent = ent_files(path, bsp.entity_lump)
+                .into_iter()
+                .find_map(|ent| std::fs::read(ent).ok());
+            let text = ent.unwrap_or_else(|| bsp.entities().to_vec());
             (MapSource::Bsp(bytes), text)
         } else {
             (MapSource::Map, bytes)
@@ -415,6 +442,10 @@ impl<L: crate::Loader> Workbench<L> {
             path: path.to_path_buf(),
             error,
         })?;
+        let stamped = self
+            .map
+            .as_ref()
+            .map_or(MapRevision::default(), |old| old.stamped.next());
         Ok(self.map.insert(MapDocument {
             path: path.to_path_buf(),
             source,
@@ -425,6 +456,8 @@ impl<L: crate::Loader> Workbench<L> {
                 .map
                 .as_ref()
                 .map_or(MapRevision::default(), |old| old.revision.next()),
+            edits: stamped,
+            stamped,
         }))
     }
 
@@ -451,7 +484,7 @@ impl<L: crate::Loader> Workbench<L> {
             .pairs()
             .map(|pair| (text(pair.key()), text(pair.value())))
             .collect();
-        let brush = found.has_brushes();
+        let brush = found.is_brush_entity();
         let mut targetnames: Vec<String> = document
             .file
             .entities
@@ -486,10 +519,13 @@ impl<L: crate::Loader> Workbench<L> {
     /// # Errors
     ///
     /// [`WorkbenchError::NoMap`] with no map open, [`WorkbenchError::Bsp`] when the BSP
-    /// cannot take the lump and [`WorkbenchError::Save`] when the file cannot be written.
+    /// cannot take the lump, [`WorkbenchError::EntOverride`] for the lump when a `.ent` the
+    /// engine reads in its place is beside the BSP, and [`WorkbenchError::Save`] when the
+    /// file cannot be written.
     pub fn save_map(&mut self, how: BspSave) -> Result<PathBuf, WorkbenchError> {
         let document = self.map_mut()?;
         let text = document.file.to_bytes();
+        let ent = document.ent_override();
         let (path, bytes) = match &document.source {
             MapSource::Map => (document.path.clone(), text),
             MapSource::Bsp(bsp) => {
@@ -497,8 +533,14 @@ impl<L: crate::Loader> Workbench<L> {
                 // not entities.
                 let entities = text.split(|&b| b == 0).next().unwrap_or_default().to_vec();
                 match how {
-                    BspSave::Ent => (document.path.with_extension("ent"), entities),
+                    BspSave::Ent => (
+                        ent.unwrap_or_else(|| document.path.with_extension("ent")),
+                        entities,
+                    ),
                     BspSave::Lump => {
+                        if let Some(path) = ent {
+                            return Err(WorkbenchError::EntOverride { path });
+                        }
                         let rewritten =
                             qs_bsp::replace_entities(bsp, &entities, BspLoader::default())
                                 .map_err(|error| WorkbenchError::Bsp {
@@ -529,12 +571,14 @@ impl<L: crate::Loader> Workbench<L> {
     ) -> Result<(T, MapStep), WorkbenchError> {
         let document = self.map_mut()?;
         let before = (document.file.clone(), document.selected);
+        let edits = document.edits;
         match edit(document) {
             Ok(answer) => {
                 document.unsaved = true;
-                document.touch();
+                document.touch_map();
                 let step = MapStep {
-                    path: document.path.clone(),
+                    before: edits,
+                    after: document.edits,
                     other: before,
                 };
                 Ok((answer, step))
@@ -547,40 +591,52 @@ impl<L: crate::Loader> Workbench<L> {
     }
 }
 
+/// The `.ent` files the engine looks for, in order, beside the BSP at `path` whose entity
+/// lump is `lump` (BSP-19.1).
+fn ent_files(path: &Path, lump: &[u8]) -> [PathBuf; 2] {
+    ent_file_names(&path.to_string_lossy(), lump).map(PathBuf::from)
+}
+
 /// The open map's other state: what undo puts back, then what redo does.
 struct MapStep {
-    path: PathBuf,
+    /// The map's [`MapDocument::edits`] before the edit, which undo gives back.
+    before: MapRevision,
+    /// Its edits after, which redo gives back. A map opened since has had neither.
+    after: MapRevision,
     other: (MapFile, Option<EntityIndex>),
 }
 
 impl MapStep {
-    /// Swaps the document's map and selection with the other state.
-    fn swap(&mut self, document: &mut MapDocument) {
-        core::mem::swap(&mut document.file, &mut self.other.0);
-        core::mem::swap(&mut document.selected, &mut self.other.1);
-        document.unsaved = true;
-        document.touch();
-    }
-
-    fn apply<C: HasWorkbench>(&mut self, context: &mut C) -> Result<(), BoxError> {
+    /// Swaps the map and selection of the open map at `from` edits with the other state,
+    /// leaving it at `to`.
+    fn apply<C: HasWorkbench>(
+        &mut self,
+        context: &mut C,
+        from: MapRevision,
+        to: MapRevision,
+    ) -> Result<(), BoxError> {
         let document = context
             .workbench()
             .map
             .as_mut()
-            .filter(|document| document.path == self.path)
+            .filter(|document| document.edits == from)
             .ok_or(WorkbenchError::NoMap)?;
-        self.swap(document);
+        core::mem::swap(&mut document.file, &mut self.other.0);
+        core::mem::swap(&mut document.selected, &mut self.other.1);
+        document.unsaved = true;
+        document.edits = to;
+        document.touch();
         Ok(())
     }
 }
 
 impl<C: HasWorkbench + 'static> UndoStep<C> for MapStep {
     fn undo(&mut self, context: &mut C) -> Result<(), BoxError> {
-        self.apply(context)
+        self.apply(context, self.after, self.before)
     }
 
     fn redo(&mut self, context: &mut C) -> Result<(), BoxError> {
-        self.apply(context)
+        self.apply(context, self.before, self.after)
     }
 }
 

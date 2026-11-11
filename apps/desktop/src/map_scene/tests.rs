@@ -78,6 +78,54 @@ fn a_ray_picks_the_nearest_box() {
         None,
         "behind the ray"
     );
+    // From inside the door's box, the ogre ahead is picked, and the door when nothing is.
+    assert_eq!(
+        scene.pick([232.0, 64.0, 24.0], [-1.0, 0.0, 0.0]),
+        Some(EntityIndex::new(2))
+    );
+    assert_eq!(
+        scene.pick([232.0, 0.0, 120.0], [0.0, 0.0, 1.0]),
+        Some(EntityIndex::new(4))
+    );
+}
+
+/// The spec's `base` BSP vector, from its `xxd` dump.
+fn base_bsp() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/spec/vectors/bsp/base.txt");
+    let mut out = Vec::new();
+    for line in std::fs::read_to_string(path).unwrap().lines() {
+        let Some((_, rest)) = line.split_once(": ") else {
+            continue;
+        };
+        for group in rest.get(..39).unwrap_or(rest).split_whitespace() {
+            for pair in group.as_bytes().chunks(2) {
+                out.push(u8::from_str_radix(core::str::from_utf8(pair).unwrap(), 16).unwrap());
+            }
+        }
+    }
+    out
+}
+
+// No spec statement: P5-06, BUILTIN-10.3, BSP-15.4: a brush entity read from a BSP, which names a
+// submodel and has no brushes, is a brush entity boxed by its submodel
+#[test]
+fn a_bsp_brush_entity_is_boxed_by_its_submodel() {
+    let dir = std::env::temp_dir().join(format!("qs-map-scene-bsp-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bsp = dir.join("base.bsp");
+    std::fs::write(&bsp, base_bsp()).unwrap();
+    std::fs::write(
+        dir.join("base.ent"),
+        "{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"func_door\"\n\"model\" \"*1\"\n}\n",
+    )
+    .unwrap();
+    let mut workbench = Workbench::new(FsLoader, Config::default());
+    workbench.open_map(&bsp).unwrap();
+    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new());
+    let door = scene.entities.first().unwrap();
+    assert!(door.brush);
+    // Submodel 1's (0, 0, 0) to (64, 64, 8), widened by 1 as the engine loads it (BSP-15.4).
+    assert_eq!(door.bounds, [[-1.0, -1.0, -1.0], [65.0, 65.0, 9.0]]);
 }
 
 // No spec statement: P5-06: the camera starts behind and above the player start, facing as it

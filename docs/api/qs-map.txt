@@ -63,9 +63,11 @@ fn qs_map::cnum::scan_vector
 fn qs_map::document::Brush::line
 fn qs_map::document::Brush::new
 fn qs_map::document::Brush::polygons
+fn qs_map::document::Entity::angles
 fn qs_map::document::Entity::brushes
 fn qs_map::document::Entity::classname
 fn qs_map::document::Entity::has_brushes
+fn qs_map::document::Entity::is_brush_entity
 fn qs_map::document::Entity::line
 fn qs_map::document::Entity::new
 fn qs_map::document::Entity::origin
@@ -73,7 +75,9 @@ fn qs_map::document::Entity::pairs
 fn qs_map::document::Entity::remove
 fn qs_map::document::Entity::rename_key
 fn qs_map::document::Entity::set
+fn qs_map::document::Entity::submodel
 fn qs_map::document::Entity::value
+fn qs_map::document::Entity::yaw
 fn qs_map::document::Face::line
 fn qs_map::document::Face::new
 fn qs_map::document::Face::plane
