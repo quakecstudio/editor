@@ -464,7 +464,7 @@ fn a_thread_reopened_from_history_shows_messages_hunks_and_checkpoint() {
 // for the notification
 #[test]
 fn following_queueing_and_the_finished_count() {
-    let (root, ctx, mut app, gates) = window("follow", 1);
+    let (_root, ctx, mut app, gates) = window("follow", 1);
     app.shell_mut().agent_mut().set_follow_for_test();
     app.shell_mut()
         .start_agent("Read the world.", &ctx)
@@ -472,14 +472,13 @@ fn following_queueing_and_the_finished_count() {
     app.shell_mut()
         .agent_mut()
         .queue_for_test(0, "Also say hello.");
-    let world = root.join("world.qc");
     gates[0]
         .send(Reply::Calls {
             text: String::new(),
             calls: vec![ToolCall {
                 id: "c1".to_owned(),
                 name: "file.read".to_owned(),
-                arguments: json!({ "path": world }),
+                arguments: json!({ "path": "world.qc" }),
             }],
         })
         .unwrap();
