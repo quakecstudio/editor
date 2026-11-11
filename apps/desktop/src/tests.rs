@@ -1339,3 +1339,49 @@ fn export_mod_writes_the_zip_and_says_where() {
         "the status bar says {shown}"
     );
 }
+
+// No spec statement: P4-37, the acceptance criterion: a rebinding written to the keymap file
+// takes effect on the next frame, with no restart, its keys taken from the default they had;
+// the file's problems are reported
+#[test]
+fn a_rebinding_in_the_keymap_file_takes_effect_without_a_restart() {
+    let dir = TempDir::new("keymap");
+    let file = keymap::keymap_path(dir.path());
+    let mut harness = accessible();
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .set_keymap_file(file.clone());
+    harness.run();
+    let shell = |harness: &Harness<'static, Option<App>>| {
+        harness.state().as_ref().unwrap().shell.keymap().clone()
+    };
+    let undo = keymap::parse_keys("secondary-z").unwrap();
+    assert_eq!(shell(&harness).shortcut("edit.undo"), Some(undo));
+    fs::write(
+        &file,
+        "[[binding]]\nkeys = \"secondary-z\"\ncommand = \"view.focus_left_panel\"\n\n\
+         [[binding]]\nkeys = \"secondary-k\"\ncommand = \"no.such\"\n",
+    )
+    .unwrap();
+    harness.run();
+    let keymap = shell(&harness);
+    assert_eq!(keymap.shortcut("view.focus_left_panel"), Some(undo));
+    assert_eq!(keymap.shortcut("edit.undo"), None);
+    assert_eq!(keymap.problems().len(), 1, "{:?}", keymap.problems());
+    assert!(
+        keymap
+            .problems()
+            .first()
+            .is_some_and(|p| p.contains("no.such"))
+    );
+    fs::remove_file(&file).unwrap();
+    harness.run();
+    assert_eq!(
+        shell(&harness).shortcut("edit.undo"),
+        Some(undo),
+        "back to the defaults"
+    );
+}

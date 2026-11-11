@@ -202,6 +202,8 @@ pub struct Shell {
     parked: BTreeMap<PathBuf, Editor>,
     /// The projects opened most recently, and the file they are kept in.
     recent: (RecentProjects, Option<PathBuf>),
+    /// The key bindings in force, the user's keymap file over the defaults (P4-37).
+    keymap: keymap::Keymap,
     /// The IDE's window as last given to `preview.dock`.
     dock_frame: Option<DockFrame>,
     /// The project open in the last frame, to see when another opens.
@@ -272,6 +274,7 @@ impl Shell {
             pending_line: None,
             parked: BTreeMap::new(),
             recent: (RecentProjects::default(), None),
+            keymap: keymap::Keymap::defaults(),
             seen_root: None,
             dock_frame: None,
             project_error: None,
@@ -362,6 +365,22 @@ impl Shell {
     /// Gives the editor the keyboard, as a click in it does.
     pub fn focus_editor(&self, ctx: &egui::Context) {
         ctx.memory_mut(|m| m.request_focus(Id::new(EDITOR_AREA)));
+    }
+
+    /// Reads the user's keymap file `file` over the default bindings, and reads it again
+    /// whenever it changes (P4-37).
+    pub fn set_keymap_file(&mut self, file: PathBuf) {
+        let registry = self.session.registry();
+        self.keymap = keymap::Keymap::read(file, &|id: &str| keymap::bindable(registry, id));
+        for problem in self.keymap.problems() {
+            tracing::warn!(%problem, "keymap");
+        }
+    }
+
+    /// The key bindings in force.
+    #[must_use]
+    pub const fn keymap(&self) -> &keymap::Keymap {
+        &self.keymap
     }
 
     /// Reads the recent projects from `file`, and keeps them there.
@@ -952,6 +971,7 @@ impl Shell {
             Id::new(Area::Palette),
             &self.theme,
             self.session.registry(),
+            &self.keymap,
         ) {
             match self.session.execute(id.as_str(), params) {
                 Ok(_) => self.palette.close(),
@@ -1013,17 +1033,21 @@ impl Shell {
         }
         // The editor, with its own undo history, takes its keys itself.
         let editing = ui.memory(|m| m.has_focus(Id::new(EDITOR_AREA)));
-        for binding in keymap::in_match_order() {
+        // P4-37: an edit of the keymap file takes effect on the next frame.
+        let registry = self.session.registry();
+        let bindable = |id: &str| keymap::bindable(registry, id);
+        self.keymap.reload_if_changed(&bindable);
+        for binding in self.keymap.in_match_order() {
             if editing && binding.scope == Scope::Shell {
                 continue;
             }
             if ui.input_mut(|i| i.consume_shortcut(&binding.shortcut))
                 && let Err(error) = self.session.execute(
-                    binding.command,
+                    &binding.command,
                     serde_json::Value::Object(serde_json::Map::new()),
                 )
             {
-                tracing::warn!(%error, command = binding.command, "shortcut failed");
+                tracing::warn!(%error, command = %binding.command, "shortcut failed");
             }
         }
     }

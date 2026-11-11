@@ -55,6 +55,18 @@ list follows the text on screen even before you save.
 
 Resting the pointer on a name shows its declaration.
 
+To change a shortcut, write `keymap.toml` in the app's config folder (on macOS
+`~/Library/Application Support/QuakeC Studio`, on Windows `%APPDATA%\QuakeC Studio`, on Linux
+`~/.config/quakec-studio`). Each binding names its keys and a command from the palette:
+
+```toml
+[[binding]]
+keys = "secondary-shift-b"
+command = "project.build"
+```
+
+`secondary` is Cmd on macOS and Ctrl elsewhere. The change takes effect at once.
+
 ## Building
 
 Play builds before it starts the game, so most of the time you never build by hand. To build
