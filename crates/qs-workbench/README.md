@@ -76,6 +76,12 @@ an edit, so both commands run outside the edit history
   classname or key with the name to write instead; `map.rename_key`, run once the person
   confirms the caution `symbol.rename` gives for a field, renames the key in every open map,
   unsaved and undoable.
+- The open map (`map_edit`, P5-06, MAP-4, MAP-22): `map.open` reads a `.map`, or a shipped
+  `.bsp`'s entity lump; `map.select`, `map.place`, `map.move`, `map.rotate`, `map.delete`,
+  `map.duplicate`, `map.set_key` and `map.remove_key` edit it through `qs-map`'s lossless
+  document, each with undo; `map.entity` gives an entity's keys typed by its class with the
+  map's targetnames; `map.save` writes the `.map`, or a `.ent` beside a BSP or its rewritten
+  entity lump ([`docs/map-editor.md`](../../docs/map-editor.md)).
 - Git (`git`, P4-35, UI-19): `git.status`, `git.diff`, `git.stage` and `git.unstage` (a file
   or one hunk), `git.commit`, `git.branches`, `git.switch`, `git.create_branch`, `git.log`,
   `git.blame`, `git.conflicts`, `git.resolve` and `git.head_text`, over `qs-git` in the open

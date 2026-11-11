@@ -13,7 +13,9 @@
 //! - **bare ID:** a visible struct field, or a parameter of a visible function, named as an ID
 //!   or a counted place (`id`, `index`, `entity`, `edict`, `slot`, `revision`, or ending
 //!   `_id`, `_index`, `_slot`, `_edict`) and typed as a raw integer, where a newtype belongs
-//!   ("Newtypes for IDs and units");
+//!   ("Newtypes for IDs and units"); a function of one parameter returning `Self` in the
+//!   `impl` of a one-field tuple struct is the newtype's constructor, where it takes its
+//!   integer;
 //! - **magic number:** a numeric literal in a function's body, other than 0, 1 and 2, where a
 //!   named constant belongs; constants, statics, types (`[u8; 16]`), patterns and macro
 //!   arguments are not read. Listed once per function and value, so a new value in a listed
@@ -179,16 +181,20 @@ pub(crate) fn violations(root: &Path) -> Result<Vec<Violation>, String> {
                 parsed_files.push((file, relative, parsed));
             }
             parsed_files.retain(|(file, _, _)| !test_files.contains(file));
-            // The types the crate defines, for the free-function rule.
+            // The types the crate defines, for the free-function rule, and its newtypes, for
+            // the bare-ID rule.
             let mut local = BTreeSet::new();
+            let mut newtypes = BTreeSet::new();
             for (_, _, parsed) in &parsed_files {
-                local_types(&parsed.items, &mut local);
+                local_types(&parsed.items, &mut local, &mut newtypes);
             }
             for (_, relative, parsed) in &parsed_files {
                 let mut scan = Scan {
                     file: relative,
                     kind,
                     local: &local,
+                    newtypes: &newtypes,
+                    in_newtype: false,
                     out: &mut out,
                 };
                 scan.items(&parsed.items, "");
@@ -317,6 +323,10 @@ struct Scan<'a> {
     kind: Kind,
     /// The names of the types the crate defines.
     local: &'a BTreeSet<String>,
+    /// The names of its one-field tuple structs.
+    newtypes: &'a BTreeSet<String>,
+    /// Whether the items being read are in the `impl` of one of [`Scan::newtypes`].
+    in_newtype: bool,
     out: &'a mut Vec<Violation>,
 }
 
@@ -349,6 +359,7 @@ impl Scan<'_> {
                 }
                 Item::Impl(i) if !is_test(&i.attrs) => {
                     let owner = format!("{prefix}{}::", type_name(&i.self_ty));
+                    self.in_newtype = self.newtypes.contains(&type_name(&i.self_ty));
                     for inner in &i.items {
                         // A trait impl's signature is the trait's, checked where the trait is
                         // declared; only its body is the impl's own.
@@ -361,6 +372,7 @@ impl Scan<'_> {
                             self.body(&f.block, &format!("{owner}{}", f.sig.ident));
                         }
                     }
+                    self.in_newtype = false;
                 }
                 Item::Trait(t) if !is_test(&t.attrs) => {
                     let owner = format!("{prefix}{}::", t.ident);
@@ -380,7 +392,10 @@ impl Scan<'_> {
 
     fn signature(&mut self, sig: &Signature, prefix: &str, shown: bool) {
         let item = format!("{prefix}{}", sig.ident);
-        if shown {
+        let constructs = self.in_newtype
+            && sig.inputs.len() == 1
+            && matches!(&sig.output, ReturnType::Type(_, ty) if is_named(ty, "Self"));
+        if shown && !constructs {
             for input in &sig.inputs {
                 if let FnArg::Typed(typed) = input
                     && let Pat::Ident(name) = &*typed.pat
@@ -472,12 +487,15 @@ impl<'ast> syn::visit::Visit<'ast> for Literals {
 }
 
 /// The structs, enums and unions `items` define (an alias may name a foreign type, which takes
-/// no method), in any module but a test one.
-fn local_types(items: &[Item], out: &mut BTreeSet<String>) {
+/// no method), in any module but a test one, and which of them are one-field tuple structs.
+fn local_types(items: &[Item], out: &mut BTreeSet<String>, newtypes: &mut BTreeSet<String>) {
     for item in items {
         match item {
             Item::Struct(s) if !is_test(&s.attrs) => {
                 out.insert(s.ident.to_string());
+                if matches!(&s.fields, Fields::Unnamed(fields) if fields.unnamed.len() == 1) {
+                    newtypes.insert(s.ident.to_string());
+                }
             }
             Item::Enum(e) if !is_test(&e.attrs) => {
                 out.insert(e.ident.to_string());
@@ -487,7 +505,7 @@ fn local_types(items: &[Item], out: &mut BTreeSet<String>) {
             }
             Item::Mod(m) if !is_test(&m.attrs) => {
                 if let Some((_, inner)) = &m.content {
-                    local_types(inner, out);
+                    local_types(inner, out, newtypes);
                 }
             }
             _ => {}

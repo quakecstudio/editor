@@ -439,6 +439,13 @@ impl Preview {
         self.config.game.as_deref()
     }
 
+    /// The original game's base directory Play would use, for reading the game's files; `None`
+    /// when no install is found.
+    #[must_use]
+    pub fn game_base_path(&self) -> Option<std::path::PathBuf> {
+        self.game_base().ok().map(|base| base.path)
+    }
+
     /// What the reload held back would reset (P3-10), each as `kind name: reason`; empty when
     /// no reload waits.
     #[must_use]

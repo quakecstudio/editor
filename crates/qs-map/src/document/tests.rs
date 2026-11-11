@@ -709,3 +709,50 @@ fn a_key_is_renamed_with_its_formatting_kept() {
     assert!(map.rename_key(b"wait", b"a\"b").is_err());
     assert!(map.to_bytes().ends_with(b"\"wait\" \"1\"\n}\n"));
 }
+
+// spec MAP-3.4: a brush is the solid behind every face's plane: an axis-aligned box's six
+// faces each give a square of its corners; a face the others cut away gives none
+#[test]
+fn a_brush_gives_each_face_its_polygon() {
+    let text = b"{\n\"classname\" \"worldspawn\"\n{\n\
+        ( 0 1 0 ) ( 0 0 0 ) ( 1 0 0 ) t 0 0 0 1 1\n\
+        ( 1 0 64 ) ( 0 0 64 ) ( 0 1 64 ) t 0 0 0 1 1\n\
+        ( 0 0 1 ) ( 0 0 0 ) ( 0 1 0 ) t 0 0 0 1 1\n\
+        ( 32 1 0 ) ( 32 0 0 ) ( 32 0 1 ) t 0 0 0 1 1\n\
+        ( 1 0 0 ) ( 0 0 0 ) ( 0 0 1 ) t 0 0 0 1 1\n\
+        ( 0 16 1 ) ( 0 16 0 ) ( 1 16 0 ) t 0 0 0 1 1\n\
+        ( 1 0 200 ) ( 0 0 200 ) ( 0 1 200 ) t 0 0 0 1 1\n}\n}\n";
+    let map = MapFile::parse(text).unwrap();
+    let brush = map.entities[0].brushes().next().unwrap();
+    let polygons = brush.polygons();
+    assert_eq!(
+        polygons.len(),
+        6,
+        "the face at z 200 is outside the box: {polygons:?}"
+    );
+    for polygon in &polygons {
+        assert_eq!(polygon.len(), 4, "{polygon:?}");
+        for corner in polygon {
+            for (value, size) in corner.iter().zip([32.0, 16.0, 64.0]) {
+                let on_edge = value.abs() < 1e-6 || (value - size).abs() < 1e-6;
+                assert!(on_edge, "{corner:?}");
+            }
+        }
+    }
+    assert!(super::Brush::new().polygons().is_empty());
+}
+
+// spec BUILTIN-10.3: a BSP's submodels are named `*1`, `*2` and on, so an entity of a BSP's
+// entity lump whose model is one is a brush entity with no brushes; any other model is not
+#[test]
+fn a_submodel_makes_a_brush_entity() {
+    let map = round_trip(
+        b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"func_door\"\n\"model\" \"*3\"\n}\n\
+        {\n\"classname\" \"misc_thing\"\n\"model\" \"progs/thing.mdl\"\n}\n\
+        {\n\"classname\" \"func_wall\"\n\"model\" \"*x\"\n}\n",
+    );
+    let submodels: Vec<_> = map.entities.iter().map(Entity::submodel).collect();
+    assert_eq!(submodels, [None, Some(3), None, None]);
+    let brush: Vec<_> = map.entities.iter().map(Entity::is_brush_entity).collect();
+    assert_eq!(brush, [false, true, false, false]);
+}

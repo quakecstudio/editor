@@ -5,7 +5,8 @@ The desktop app (P2-17, ADR-0006): the window, its toolbar and its docked panels
 Sans, JetBrains Mono and Lucide's icons (ADR-0010), and the macOS menu bar through `muda`.
 
 - **Layer:** apps. It depends on `qs-layout`, `qs-workbench` and `qs-commands` (L5),
-  `qs-editor-view` and `qs-render` (L7), `qs-log` and `qs-paths` (L0), `eframe`, `skrifa` for the system font
+  `qs-editor-view` and `qs-render` (L7), `qs-log`, `qs-paths`, and for the map editor
+  `qs-map`, `qs-bsp`, `qs-mdl` and `qs-vfs` (L0), `eframe`, `skrifa` for the system font
   fallback, and on macOS `muda`.
 - **Spec sections:** none; it implements plan requirements, not engine behaviour.
 - **Requirements:** UI-2, UI-14, UI-15 and CONV-16.
@@ -62,6 +63,16 @@ and an inline diff from a base text. Its keys are VS Code's:
 Resting the pointer on a name shows its declaration (`symbol.hover`). An edit reaches the
 project as `file.update` once typing pauses for 0.3 s, and at once before a save or a question,
 so the Problems list and every answer follow the text on screen.
+
+## The map editor
+
+A `.map`, or a shipped `.bsp`'s entities, opened from the Project tree or with `map.open`,
+shows in the Map tab (`src/map_editor.rs`, `src/map_scene.rs`, P5-06): its brushes or faces as
+lines, each entity as its class's box with its model's wireframe, picked with the mouse and
+edited with TrenchBroom's keys, the selected entity's keys in the Properties panel. Each edit
+runs a `map.*` command, so it undoes. [`docs/map-editor.md`](../../docs/map-editor.md) maps
+TrenchBroom's bindings; `snapshots/map-editor.png` is its golden, and
+`the_map_view_takes_trenchbrooms_keys` drives the keys end to end.
 
 ## The map view
 

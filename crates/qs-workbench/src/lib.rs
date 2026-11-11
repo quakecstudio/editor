@@ -22,6 +22,7 @@ pub mod entity_classes;
 pub mod export;
 pub mod git;
 pub mod map_check;
+pub mod map_edit;
 mod preview;
 mod recent;
 pub mod search;
@@ -334,6 +335,8 @@ pub struct Workbench<L> {
     staged: staged::Staged,
     /// The terminal tabs (P4-36).
     terminals: terminal::Terminals,
+    /// The map open in the map view (P5-06).
+    map: Option<map_edit::MapDocument>,
 }
 
 impl<L: Loader> Workbench<L> {
@@ -355,6 +358,7 @@ impl<L: Loader> Workbench<L> {
             sent: 0,
             staged: staged::Staged::default(),
             terminals: terminal::Terminals::default(),
+            map: None,
         }
     }
 
@@ -695,12 +699,37 @@ pub enum WorkbenchError {
         /// The file's length in bytes.
         len: usize,
     },
+    /// No map is open in the map view.
+    NoMap,
+    /// The open map has no entity at that place.
+    NoEntity {
+        /// The entity asked for.
+        entity: map_edit::EntityIndex,
+    },
+    /// The world, or a brush entity, where only a point entity can be rotated or deleted.
+    NotPointEntity {
+        /// The entity.
+        entity: map_edit::EntityIndex,
+    },
+    /// A BSP that does not load or cannot take a new entity lump.
+    Bsp {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: qs_bsp::BspError,
+    },
     /// A `.map` that does not parse, or a key it cannot hold.
     Map {
         /// The file.
         path: PathBuf,
         /// Why.
         error: qs_map::MapError,
+    },
+    /// A `.ent` beside the BSP, which the engine reads in place of the entity lump
+    /// (BSP-19.1), so a rewritten lump would not be seen.
+    EntOverride {
+        /// The `.ent`.
+        path: PathBuf,
     },
 }
 
@@ -713,6 +742,12 @@ impl fmt::Display for WorkbenchError {
                 write!(f, "{}: cannot be written: {error}", path.display())
             }
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
+            Self::EntOverride { path } => write!(
+                f,
+                "{}: the engine reads this in place of the BSP's entities; save to it, or move \
+                 it away before saving into the BSP",
+                path.display()
+            ),
             Self::NoProject => f.write_str("no project is open"),
             Self::NoFix { path, offset } => {
                 write!(f, "{}: no quick fix at byte {offset}", path.display())
@@ -728,6 +763,12 @@ impl fmt::Display for WorkbenchError {
                 path.display()
             ),
             Self::Map { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Bsp { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::NoMap => f.write_str("no map is open"),
+            Self::NoEntity { entity } => write!(f, "the map has no entity {entity}"),
+            Self::NotPointEntity { entity } => {
+                write!(f, "entity {entity} is the world or a brush entity")
+            }
         }
     }
 }
@@ -740,12 +781,17 @@ impl Error for WorkbenchError {
             Self::Save { error, .. } => Some(error),
             Self::Checkpoint(error) => Some(error),
             Self::Map { error, .. } => Some(error),
+            Self::Bsp { error, .. } => Some(error),
             Self::NoFile { .. }
             | Self::NoProject
             | Self::NoFix { .. }
             | Self::NoHunk { .. }
             | Self::Pattern { .. }
-            | Self::Offset { .. } => None,
+            | Self::Offset { .. }
+            | Self::NoMap
+            | Self::NoEntity { .. }
+            | Self::NotPointEntity { .. }
+            | Self::EntOverride { .. } => None,
         }
     }
 }

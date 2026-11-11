@@ -154,10 +154,15 @@ fn free_functions_on_a_crate_type_are_found() {
 }
 
 // CONV-17: a visible field or a visible function's parameter named as an ID and typed as a raw
-// integer, or an Option of one, is found; a private one, another name or a newtype is not
+// integer, or an Option of one, is found; a private one, another name, a newtype or a
+// newtype constructor's (one parameter, returning Self, of a one-field tuple struct) is not
 #[test]
 fn bare_ids_are_found() {
     let lib = "pub struct EntityIndex(usize);\n\
+        impl EntityIndex { pub const fn new(index: usize) -> Self { Self(index) } }\n\
+        pub struct Target { kind: u8, revision: u32 }\n\
+        impl Target { pub fn new(kind: u8, revision: u32) -> Self { Self { kind, revision } }\n\
+          pub fn at(revision: u32) -> Self { Self { kind: 0, revision } } }\n\
         pub struct Place { pub entity: usize, pub edict_index: Option<u32>, pub x: f32,\n\
           hidden_id: u32, pub owner: EntityIndex }\n\
         pub fn select(entity: usize, count: usize) {}\n\
@@ -175,6 +180,8 @@ fn bare_ids_are_found() {
             "Panel::report(index)",
             "Place.edict_index",
             "Place.entity",
+            "Target::at(revision)",
+            "Target::new(revision)",
             "select(entity)"
         ]
     );

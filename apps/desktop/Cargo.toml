@@ -24,9 +24,14 @@ clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-
 # zbus_names, whose RUSTSEC-2026-0370 to -0372 notices deny.toml ignores with their reasons.
 eframe = { workspace = true, features = ["accesskit", "wayland", "wgpu", "x11"] }
 qs-agent = { workspace = true }
+# The map editor (P5-06): a shipped map's faces, the open map's brushes, the classes'
+# models and the game's files they come from.
+qs-bsp = { workspace = true }
 qs-commands = { workspace = true }
 qs-editor-view = { workspace = true }
 qs-layout = { workspace = true }
+qs-map = { workspace = true }
+qs-mdl = { workspace = true }
 qs-models = { workspace = true }
 qs-log = { workspace = true }
 qs-paths = { workspace = true }
@@ -34,6 +39,7 @@ qs-render = { workspace = true }
 # The user's settings file, which keeps the chosen game folder (P3-44).
 qs-settings = { workspace = true }
 qs-templates = { workspace = true }
+qs-vfs = { workspace = true }
 qs-workbench = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }

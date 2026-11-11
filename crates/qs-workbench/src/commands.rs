@@ -17,6 +17,7 @@ use crate::editing::{Change, Source};
 use crate::entity_classes::register_entities;
 use crate::export::ExportProject;
 use crate::map_check::register_map;
+use crate::map_edit::register_map_edit;
 use crate::search::register_search;
 use crate::staged::register_staged;
 use crate::testing::register_tests;
@@ -131,6 +132,7 @@ pub fn register<C: HasWorkbench + 'static>(
     register_tools(registry)?;
     register_entities(registry)?;
     register_map(registry)?;
+    register_map_edit(registry)?;
     register_search(registry)?;
     register_tests(registry)?;
     register_checkpoints(registry)?;
