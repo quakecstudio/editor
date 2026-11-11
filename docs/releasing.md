@@ -1,10 +1,65 @@
 # Releasing
 
-How a build of QuakeC Studio is signed. The release pipeline itself (packaging, the
-release on GitHub) is P4-18; this page is the signing it reuses (P0-23, [#23](https://github.com/quakecstudio/editor/issues/23)).
-Windows signing is deferred past the MVP (#23, moved to the post-MVP backlog on 2026-11-11):
-the Sign workflow's Windows job fails at the Azure login until the app registration has a
-federated credential for this repository, so the MVP's Windows packages are unsigned.
+How QuakeC Studio is packaged, signed, checked and released (P4-18,
+[#129](https://github.com/quakecstudio/editor/issues/129)), and the signing it uses (P0-23,
+[#23](https://github.com/quakecstudio/editor/issues/23)). One workflow does all of it,
+`.github/workflows/sign.yml`. Windows signing is deferred past the MVP (#23, moved to the
+post-MVP backlog on 2026-11-11): Azure's login fails until the app registration has a federated
+credential for this repository, so the MVP's Windows packages are unsigned.
+
+## Making a release
+
+1. Set `version` in the root `Cargo.toml` to the release's, such as `2026.11.0`, and merge it.
+2. Push a tag naming it: `v2026.11.0`, or `v2026.11.0-rc1` for a pre-release. The workflow
+   fails a tag that does not name the workspace's version.
+3. The **Sign** workflow builds, signs, checks and publishes. A tag with a `-` is published as
+   a pre-release; any other tag too, as a release.
+
+Run **Sign** from the Actions tab (or `gh workflow run sign.yml --ref <branch>`) for a dry run:
+it does everything but publish, and keeps the packages and `SHA256SUMS` as the run's `release`
+artifact. Its `windows-signing` input also tries Windows signing (#23).
+
+## The packages
+
+| Platform | Package | Made by |
+| --- | --- | --- |
+| macOS, universal | `quakec-studio-<version>-macos-universal.dmg`: `QuakeC Studio.app`, signed with the hardened runtime, in a signed, notarized and stapled disk image | `packaging/macos.sh` |
+| Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip` | `packaging/windows.sh`, with WiX 5 |
+| Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak` | `packaging/linux.sh`; the Flatpak's manifest is `packaging/com.quakecstudio.QuakeCStudio.yml` |
+| All | `SHA256SUMS`, every package's SHA-256 | the workflow's last job |
+
+Every package holds the four binaries, the desktop app `quakec-studio`, the preview host
+`preview-host` beside it (where `qs-engine`'s `locate_host` looks), the command line
+`quakec-ide` and the language server `quakec-lsp`, with `LICENSE` (the GPL-3.0 text) and
+`NOTICE` (`packaging/NOTICE.txt`: the copyright, the corresponding-source link, the ported
+code and the non-affiliation notice). On macOS the preview host is signed as its own
+executable before the app is, and the disk image's notarization covers both. An MSI's version
+is three numbers whose first is at most 255, so 2026.11.0 is the MSI's 26.11.0.
+
+The Flatpak's sandbox reaches the home directory (projects, and Steam, GOG and Heroic's
+folders, their Flatpak clients' under `~/.var/app` included), `/mnt` and `/media` read only,
+the GPU, the display, sound, the network for the agent's providers, and the Secret Service
+(`org.freedesktop.secrets`) for the keychain.
+
+## The install tests
+
+Before anything is published, each package is installed on a runner that never built the app
+and checked there with `quakec-ide doctor` (P4-18), which reports the games it finds, starts the
+preview host headless on a game and stops it over its bridge, and writes, reads back and
+deletes a keychain entry:
+
+- **macOS:** the disk image's staple is validated, the app is copied to `/Applications`,
+  `spctl` assesses it, the host check runs and the app's window opens.
+- **Windows x64 and arm64:** the MSI installs with `msiexec /qn`, the install folder is on the
+  machine `PATH`, the host check runs, the app's window opens, and the portable zip's host
+  check runs too.
+- **Linux x86_64 and aarch64:** the deb installs with `apt` on Ubuntu 24.04 (host check, and the
+  window under Xvfb), the rpm with `dnf` in a Fedora 41 container (host check), and the
+  AppImage runs its host check. The Flatpak runs every check from inside its sandbox: a Steam
+  folder holding LibreQuake as Quake is found, the host starts on it, and the keychain is
+  reached through gnome-keyring.
+
+The game is LibreQuake (`cargo xtask assets fetch`); Quake's data is never used in CI.
 
 ## The signing secrets
 
@@ -35,29 +90,25 @@ job checks each is set and prints no value.
 - **App-specific password:** stays valid until revoked.
 - **Entra app registration:** uses federated credentials, not a secret, so nothing expires. The organization customizes its OIDC subject claim, so the subject is not the default `repo:<owner>/<repo>:ref:<ref>`. A run of Sign presents `repo:quakecstudio@343029298/editor@1420764495:workflow:Sign:ref_type:branch` from a branch and the same ending in `ref_type:tag` from a `v*` tag, as Azure's AADSTS700213 error showed on the first run ([#23](https://github.com/quakecstudio/editor/issues/23)). Each needs a federated credential with issuer `https://token.actions.githubusercontent.com` and audience `api://AzureADTokenExchange`. If `aas-sign` fails to log in because none matches, the subject in the error goes to Justin; it is not worked around.
 
-## Signing a build
+## Signing
 
-The steps follow vouch-sh/vouch's `reusable-build.yml`. Run **Sign** from the Actions tab,
-`gh workflow run sign.yml --ref <branch>`, or push a `v*` tag. It:
-
-1. checks every secret above is set;
-2. on macOS, builds the app, imports the certificate into `build.keychain` (made the default
-   keychain, with `codesign` allowed to use the key), signs the binary with
-   `/usr/bin/codesign --options runtime --timestamp` and verifies it, stores the notarytool
-   credentials as the `notarytool-profile` keychain profile and submits the zipped binary
-   with `--wait`, attests the signed binary, uploads it as `quakec-studio-macos`, and always
-   deletes the keychain;
-3. on Windows, builds the app, signs the `.exe` with `skeeto/aas-sign` (Azure Trusted
-   Signing, logging in over OIDC with the client and tenant ids), checks its Authenticode
-   signature is valid, attests it and uploads it as `quakec-studio-windows`.
+The steps follow vouch-sh/vouch's `reusable-build.yml`. On macOS the job checks every secret
+above is set, builds both architectures and joins them with `lipo`, lays out the app, imports
+the certificate into `build.keychain` (made the default keychain, with `codesign` allowed to
+use the key), signs each executable and then the app with `/usr/bin/codesign --options runtime
+--timestamp` and verifies it, signs the disk image, stores the notarytool credentials as the
+`notarytool-profile` keychain profile, submits the disk image with `--wait`, staples it, and
+always deletes the keychain. Windows signing, with the `windows-signing` input, signs the
+`.exe` with `skeeto/aas-sign` (Azure Trusted Signing over OIDC) and checks its Authenticode
+signature.
 
 ## Checking an attestation
 
-Each signed binary has a build provenance attestation from `actions/attest`, signed with the
-workflow's OIDC identity. Download it from the run and check it with:
+Every package has a build provenance attestation from `actions/attest`, made from
+`SHA256SUMS` and signed with the workflow's OIDC identity. Check a downloaded package with:
 
 ```bash
-gh attestation verify quakec-studio.exe --repo quakecstudio/editor \
+gh attestation verify quakec-studio-2026.11.0-windows-x64.msi --repo quakecstudio/editor \
   --signer-workflow quakecstudio/editor/.github/workflows/sign.yml
 ```
 
