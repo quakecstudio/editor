@@ -59,6 +59,12 @@ an edit, so both commands run outside the edit history
   game folder given or the first install found, skipping them with no game; the result lists
   each test's kind, verdict and message, and the counts. The CLI's `quakec-ide test`, the
   palette and the agent run the same command.
+- Git (`git`, P4-35, UI-19): `git.status`, `git.diff`, `git.stage` and `git.unstage` (a file
+  or one hunk), `git.commit`, `git.branches`, `git.switch`, `git.create_branch`, `git.log`,
+  `git.blame`, `git.conflicts`, `git.resolve` and `git.head_text`, over `qs-git` in the open
+  project's repository. A switch is refused while the editor has unsaved edits, and reads the
+  open tabs and the project again, as a restored checkpoint does; a resolved conflict is
+  written and saved.
 - Terminal and tasks (`terminal`, P4-36, UI-20): `task.list` and `task.run` list and run the
   project's `[[task]]` tables (PRJ-2.10), each by the user's shell in the project directory
   (PRJ-2.11), and `terminal.new`, `terminal.send`, `terminal.poll` and `terminal.close` open a

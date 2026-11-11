@@ -187,6 +187,13 @@ at once, the bottom panel opened for it, and its status reads Running, Exited wi
 Ended by a signal. The processes run on pipes, not a pseudo-terminal. `fixtures/tasks/` is a
 project with two tasks, one that fails, which the `terminal` snapshot runs.
 
+**Git (P4-35, UI-19).** The bottom panel's Git tab (`git_panel.rs`) shows the branch, to switch
+or create one; each changed file with Stage and Unstage and its hunks, each staged or unstaged
+on its own; a conflicted file's conflicts with Keep ours, Keep theirs and Keep both; the commit
+message and Commit; and the open file's history and blame. It is read through the `git.*`
+commands (`read_git`) when shown and after each action. The editor marks its file's lines
+changed since `HEAD` in the gutter (`EditorView::set_gutter_base`, from `git.head_text`).
+
 **Editor layout and navigation (P4-32, UI-16).** The editor's folds come from the syntax tree
 (`qc_ide::AnalysisHost::folding_ranges`, through `OpenFile::folds`). The layout's commands
 (`qs-layout`, `editor.rs`) are carried out here: soft wrap on the editor; the outline panel at

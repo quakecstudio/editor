@@ -162,6 +162,7 @@ qs-models = { path = "crates/qs-models" }
 qs-diff = { path = "crates/qs-diff" }
 qs-editor-view = { path = "crates/qs-editor-view" }
 qs-engine = { path = "crates/qs-engine" }
+qs-git = { path = "crates/qs-git" }
 qs-install = { path = "crates/qs-install" }
 qs-layout = { path = "crates/qs-layout" }
 qs-log = { path = "crates/qs-log" }

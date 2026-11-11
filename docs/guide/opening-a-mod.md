@@ -83,6 +83,16 @@ key_mode = "vim"
 
 The editor starts in Normal mode, with Vim's motions, operators, counts, registers and `.`.
 
+## Git
+
+When the mod's folder is a git repository, the bottom panel's Git tab lists what changed since
+the last commit. Stage a whole file, or one hunk of it, write a message and press Commit. The
+branch list switches branches and Create branch makes one. For the file in the editor it shows
+the commits that changed it and, with Show blame, who last changed each line. After a merge
+that conflicts, each conflict has Keep ours, Keep theirs and Keep both. The editor marks the
+lines changed since the last commit in its gutter: green for added, amber for changed and red
+where lines were removed.
+
 ## Building
 
 Play builds before it starts the game, so most of the time you never build by hand. To build

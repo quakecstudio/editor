@@ -3,6 +3,7 @@
 //! The workbench commands: opening a project and a file, editing and saving a file, and the
 //! language features over the open project.
 
+use crate::git::register_git;
 use crate::terminal::register_terminal;
 use std::path::PathBuf;
 
@@ -106,6 +107,7 @@ pub fn register<C: HasWorkbench + 'static>(
     registry.register(RenameCommand)?;
     registry.register(ExportProject)?;
     register_terminal(registry)?;
+    register_git(registry)?;
     register_staged(registry)?;
     register_tools(registry)?;
     register_tests(registry)?;

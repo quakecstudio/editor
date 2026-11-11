@@ -22,6 +22,7 @@ mod entities;
 mod fallback;
 mod finder;
 mod game_guide;
+mod git_panel;
 pub mod icons;
 pub mod keymap;
 pub mod map_view;

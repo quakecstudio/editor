@@ -17,13 +17,13 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`edit.reject`](#editreject) | Rejects staged hunks: the lines they replaced come back, byte for byte. |
 | [`edit.staged`](#editstaged) | Lists the staged hunks waiting to be accepted or rejected. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
-| [`editor.fold`](#editorfold) | Folds the innermost block or block comment at the caret, as the syntax tree gives them. |
-| [`editor.fold_all`](#editorfold_all) | Folds every block and block comment of the file. |
+| [`editor.fold`](#editorfold) | Folds the innermost block or block comment at the caret. |
+| [`editor.fold_all`](#editorfold_all) | Folds every block and block comment of the open file, each down to its first and last lines. |
 | [`editor.go_to_line`](#editorgo_to_line) | Moves the caret to a line of the open file, from 1; without a line it asks for one. |
 | [`editor.go_to_symbol`](#editorgo_to_symbol) | Opens a picker of the open file's symbols, to move the caret to one. |
 | [`editor.toggle_soft_wrap`](#editortoggle_soft_wrap) | Turns soft wrap on or off: long lines wrap at the editor's width. |
 | [`editor.unfold`](#editorunfold) | Unfolds the innermost folded block or comment at the caret. |
-| [`editor.unfold_all`](#editorunfold_all) | Unfolds every folded block and comment of the file. |
+| [`editor.unfold_all`](#editorunfold_all) | Unfolds every folded block and block comment of the open file, showing all of its lines. |
 | [`engine.builtins`](#enginebuiltins) | Lists an engine's builtins for a module kind, each with its number or engine name, QuakeC name, signature and extensions; the open project's engine and server QuakeC when none is named. |
 | [`engine.console`](#engineconsole) | Runs a command in the running game's console and answers the lines it printed. |
 | [`engine.inspect`](#engineinspect) | Reads the running game: the edicts in use, one edict's fields, every named global, or the call stack while stopped in a frame. |
@@ -33,6 +33,19 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`file.read`](#fileread) | Reads a file's current text: the editor's when it has unsaved changes, else what is on disk. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
+| [`git.blame`](#gitblame) | Says who last changed each line of a file, and in which commit. |
+| [`git.branches`](#gitbranches) | Lists the repository's local branches, the checked-out one marked. |
+| [`git.commit`](#gitcommit) | Commits what is staged with a message; the new commit's id. |
+| [`git.conflicts`](#gitconflicts) | Lists a file's merge conflicts: where each one's markers are. |
+| [`git.create_branch`](#gitcreate_branch) | Creates a branch at the current commit and checks it out, as git switch -c does. |
+| [`git.diff`](#gitdiff) | Lists the hunks of a file's unstaged or staged changes. |
+| [`git.head_text`](#githead_text) | Gives a file's text at HEAD, which the editor marks its changes against; none for a file HEAD does not have. |
+| [`git.log`](#gitlog) | Lists the commits that changed a file, the newest first, following renames. |
+| [`git.resolve`](#gitresolve) | Resolves one of a file's merge conflicts by keeping our side, theirs or both, and saves the file. |
+| [`git.stage`](#gitstage) | Stages a file, or one hunk of its unstaged changes. |
+| [`git.status`](#gitstatus) | Lists the project repository's branch and changed files, staged and not, as git status does; none when the project is not in a git repository. |
+| [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
+| [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
@@ -364,7 +377,7 @@ Parameters:
 
 ## `editor.fold`
 
-Folds the innermost block or block comment at the caret, as the syntax tree gives them.
+Folds the innermost block or block comment at the caret.
 
 Parameters:
 
@@ -380,7 +393,7 @@ Parameters:
 
 ## `editor.fold_all`
 
-Folds every block and block comment of the file.
+Folds every block and block comment of the open file, each down to its first and last lines.
 
 Parameters:
 
@@ -472,7 +485,7 @@ Parameters:
 
 ## `editor.unfold_all`
 
-Unfolds every folded block and comment of the file.
+Unfolds every folded block and block comment of the open file, showing all of its lines.
 
 Parameters:
 
@@ -806,6 +819,399 @@ Parameters:
     "text"
   ],
   "title": "UpdateFileParams",
+  "type": "object"
+}
+```
+
+## `git.blame`
+
+Says who last changed each line of a file, and in which commit.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A file of the project.",
+  "properties": {
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "GitPathParams",
+  "type": "object"
+}
+```
+
+## `git.branches`
+
+Lists the repository's local branches, the checked-out one marked.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `git.commit`
+
+Commits what is staged with a message; the new commit's id.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `git.commit`.",
+  "properties": {
+    "message": {
+      "description": "The commit message: a summary line, then a blank line and the body.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "title": "GitCommitParams",
+  "type": "object"
+}
+```
+
+## `git.conflicts`
+
+Lists a file's merge conflicts: where each one's markers are.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A file of the project.",
+  "properties": {
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "GitPathParams",
+  "type": "object"
+}
+```
+
+## `git.create_branch`
+
+Creates a branch at the current commit and checks it out, as git switch -c does.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `git.switch` and `git.create_branch`.",
+  "properties": {
+    "branch": {
+      "description": "The branch.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "branch"
+  ],
+  "title": "GitBranchParams",
+  "type": "object"
+}
+```
+
+## `git.diff`
+
+Lists the hunks of a file's unstaged or staged changes.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "GitSide": {
+      "description": "Which changes of a file.",
+      "oneOf": [
+        {
+          "const": "unstaged",
+          "description": "The working tree's changes, not staged.",
+          "type": "string"
+        },
+        {
+          "const": "staged",
+          "description": "The index's changes, staged.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `git.diff`.",
+  "properties": {
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    },
+    "side": {
+      "$ref": "#/$defs/GitSide",
+      "default": "unstaged",
+      "description": "Its unstaged changes, or its staged ones."
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "GitDiffParams",
+  "type": "object"
+}
+```
+
+## `git.head_text`
+
+Gives a file's text at HEAD, which the editor marks its changes against; none for a file HEAD does not have.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A file of the project.",
+  "properties": {
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "GitPathParams",
+  "type": "object"
+}
+```
+
+## `git.log`
+
+Lists the commits that changed a file, the newest first, following renames.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `git.log`.",
+  "properties": {
+    "limit": {
+      "default": null,
+      "description": "The most commits to list; 100 without it.",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "GitLogParams",
+  "type": "object"
+}
+```
+
+## `git.resolve`
+
+Resolves one of a file's merge conflicts by keeping our side, theirs or both, and saves the file.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "ConflictSide": {
+      "description": "Which side of a conflict to keep.",
+      "oneOf": [
+        {
+          "const": "ours",
+          "description": "Ours: the checked-out branch's lines.",
+          "type": "string"
+        },
+        {
+          "const": "theirs",
+          "description": "Theirs: the merged branch's lines.",
+          "type": "string"
+        },
+        {
+          "const": "both",
+          "description": "Ours, then theirs.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `git.resolve`.",
+  "properties": {
+    "conflict": {
+      "description": "The conflict, by its index in `git.conflicts`' list.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    },
+    "side": {
+      "$ref": "#/$defs/ConflictSide",
+      "description": "The side to keep."
+    }
+  },
+  "required": [
+    "path",
+    "conflict",
+    "side"
+  ],
+  "title": "GitResolveParams",
+  "type": "object"
+}
+```
+
+## `git.stage`
+
+Stages a file, or one hunk of its unstaged changes.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `git.stage` and `git.unstage`.",
+  "properties": {
+    "hunk": {
+      "default": null,
+      "description": "One hunk, by its index in `git.diff`'s list of the side it comes from; the whole file\nwithout it.",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "GitStageParams",
+  "type": "object"
+}
+```
+
+## `git.status`
+
+Lists the project repository's branch and changed files, staged and not, as git status does; none when the project is not in a git repository.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `git.switch`
+
+Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `git.switch` and `git.create_branch`.",
+  "properties": {
+    "branch": {
+      "description": "The branch.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "branch"
+  ],
+  "title": "GitBranchParams",
+  "type": "object"
+}
+```
+
+## `git.unstage`
+
+Unstages a file, or one hunk of its staged changes.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `git.stage` and `git.unstage`.",
+  "properties": {
+    "hunk": {
+      "default": null,
+      "description": "One hunk, by its index in `git.diff`'s list of the side it comes from; the whole file\nwithout it.",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "path": {
+      "description": "The file.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "GitStageParams",
   "type": "object"
 }
 ```
