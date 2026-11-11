@@ -673,6 +673,7 @@ variant qs_sim::world::edit::EditError::BadValue
 variant qs_sim::world::edit::EditError::Kept
 variant qs_sim::world::edit::EditError::NoSuchEdict
 variant qs_sim::world::edit::EditError::NoSuchField
+variant qs_sim::world::edit::EditError::NotPrecached
 variant qs_sim::world::edit::EditError::Spawn
 variant qs_sim::world::evaluate::EvalError::NotAnEntity
 variant qs_sim::world::evaluate::EvalError::Syntax
