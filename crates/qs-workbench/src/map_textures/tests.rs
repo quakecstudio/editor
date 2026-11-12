@@ -106,9 +106,6 @@ impl Default for Scene {
 fn opened(test: &str, scene: &Scene) -> (PathBuf, PathBuf, Session<Workbench<FsLoader>>) {
     let dir = std::env::temp_dir().join(format!("qs-wb-tex-{test}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    // The search path does not follow a symbolic link, such as macOS's `/var`.
-    let dir = std::fs::canonicalize(&dir).unwrap();
     let project = dir.join("project");
     let game = dir.join("game");
     std::fs::create_dir_all(project.join("maps")).unwrap();
