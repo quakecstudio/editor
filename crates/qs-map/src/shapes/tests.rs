@@ -984,7 +984,7 @@ fn a_spheroid_s_faces_start_where_its_triangles_do() {
     let low = -3.0 * core::f64::consts::PI / 8.0;
     let toward = [low.cos() * half.cos(), low.cos() * half.sin(), low.sin()];
     assert!(
-        dot(normal(&uv[0], 0), toward) > 0.95,
+        dot(normal(&uv[0], 0), toward) > 0.99,
         "{:?}",
         normal(&uv[0], 0)
     );
