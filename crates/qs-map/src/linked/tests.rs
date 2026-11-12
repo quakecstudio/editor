@@ -485,3 +485,44 @@ fn every_changed_set_is_copied_once() {
     let moves = map.update_changed(&before).unwrap();
     assert_eq!(moves.of(EntityPlace::new(6)), Some(EntityPlace::new(6)));
 }
+
+// spec MAP-9.7: the determinant tells a mirror from a turn: below 0 mirrors, 0 and above do not
+#[test]
+fn the_determinant_tells_a_mirror() {
+    for (text, determinant) in [
+        (b"1 2 3 0 0 1 4 0 5 6 0 0 0 0 0 1".as_slice(), 1.0),
+        (b"1 2 3 0 3 2 1 0 2 1 3 0 0 0 0 1".as_slice(), -12.0),
+        (b"2 0 1 0 1 3 2 0 1 1 1 0 0 0 0 1".as_slice(), 0.0),
+        (b"4 -2 1 9 3 5 -7 9 1 0 2 9 0 0 0 1".as_slice(), 61.0),
+    ] {
+        let m = Transform::parse(text).unwrap();
+        assert_eq!(m.determinant(), determinant);
+        assert_eq!(m.mirrors(), determinant < 0.0);
+    }
+    let quarter = Transform::parse(b"0 -1 0 0 1 0 0 0 0 0 1 0 0 0 0 1").unwrap();
+    assert_eq!(quarter.facing(30.0), 120.0);
+}
+
+// spec MAP-9.6: the copies take the place of the entities they replace, even with another
+// entity between the group and them, and follow the group's own entity when it held none
+#[test]
+fn copies_take_the_replaced_entities_place() {
+    let mut map = map();
+    // Group 1's army moves past the layer's light; group 2's army is the source.
+    let army = map.entities.remove(2);
+    map.entities.push(army);
+    map.update_linked(EntityPlace::new(2)).unwrap();
+    assert_eq!(
+        value(&map, 6, "_tb_group").as_deref(),
+        Some("1"),
+        "{:?}",
+        map.entities.len()
+    );
+    assert_eq!(value(&map, 5, "classname").as_deref(), Some("light"));
+    let mut empty = self::map();
+    // Group 1 holds nothing: the copy follows its own entity.
+    empty.entities.remove(2);
+    empty.update_linked(EntityPlace::new(2)).unwrap();
+    assert_eq!(value(&empty, 2, "_tb_group").as_deref(), Some("1"));
+    assert_eq!(value(&empty, 3, "_tb_id").as_deref(), Some("2"));
+}
