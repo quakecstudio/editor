@@ -6143,6 +6143,7 @@ dependencies = [
  "qs-install",
  "qs-layout",
  "qs-map",
+ "qs-map-bsp",
  "qs-models",
  "qs-pak",
  "qs-settings",

@@ -33,6 +33,7 @@ qs-settings = { workspace = true }
 qs-templates = { workspace = true }
 qs-workbench = { workspace = true }
 qs-map = { workspace = true }
+qs-map-bsp = { workspace = true }
 qs-pak = { workspace = true }
 qs-vfs = { workspace = true }
 qs-bsp = { workspace = true }

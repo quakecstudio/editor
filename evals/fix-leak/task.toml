@@ -1,0 +1,27 @@
+title = "Find and fix a leak"
+template = "id1"
+prompt = "maps/hall.map leaks. Find where and seal it without changing the room's shape, then save the map."
+turns = 30
+runs = 1
+threshold = 1
+files = ["maps/hall.map"]
+
+# P6-13: the saved map must compile with no leak (QBSP-9.8).
+[[sealed]]
+file = "maps/hall.map"
+
+[[solution]]
+file = "maps/hall.map"
+find = "}\n{\n\"classname\" \"info_player_start\""
+replace = """// north wall, the window filled
+{
+( 224 0 0 ) ( 224 1 0 ) ( 224 0 1 ) stone 0 0 0 1 1
+( 288 0 0 ) ( 288 0 1 ) ( 288 1 0 ) stone 0 0 0 1 1
+( 0 512 0 ) ( 0 512 1 ) ( 1 512 0 ) stone 0 0 0 1 1
+( 0 528 0 ) ( 1 528 0 ) ( 0 528 1 ) stone 0 0 0 1 1
+( 0 0 16 ) ( 1 0 16 ) ( 0 1 16 ) stone 0 0 0 1 1
+( 0 0 240 ) ( 0 1 240 ) ( 1 0 240 ) stone 0 0 0 1 1
+}
+}
+{
+"classname" "info_player_start\""""
