@@ -393,8 +393,6 @@ free-fn-on-type	crates/qs-sim/src/scenario.rs	shown
 free-fn-on-type	crates/qs-sim/src/world/edit.rs	spawn_pairs
 free-fn-on-type	crates/qs-sim/src/world/reload.rs	change
 free-fn-on-type	crates/qs-sound/src/mixer.rs	paint_channel
-free-fn-on-type	crates/qs-workbench/src/preview.rs	built_program
-free-fn-on-type	crates/qs-workbench/src/vm_run.rs	changes
 bare-id	apps/desktop/src/agent.rs	AgentPanel::asking(index)
 bare-id	apps/desktop/src/agent.rs	AgentPanel::permit(index)
 bare-id	apps/desktop/src/agent.rs	AgentPanel::report(index)
@@ -2101,5 +2099,3 @@ magic-number	crates/qs-wav/src/lib.rs	get_wavinfo:12
 magic-number	crates/qs-wav/src/lib.rs	get_wavinfo:22
 magic-number	crates/qs-wav/src/lib.rs	get_wavinfo:4
 magic-number	crates/qs-wav/src/lib.rs	get_wavinfo:8
-magic-number	crates/qs-workbench/src/preview.rs	Preview::stop:20
-magic-number	crates/qs-workbench/src/vm_run.rs	slots:3

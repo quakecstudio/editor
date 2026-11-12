@@ -42,6 +42,8 @@ use entities::Entities;
 const CONSOLE_LINES: usize = 1000;
 /// How long the host has to stop after `shutdown` before it is killed.
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
+/// How long `stop` waits between looks at whether the host has stopped.
+const SHUTDOWN_POLL: Duration = Duration::from_millis(20);
 
 /// Whether the game is running.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -564,7 +566,7 @@ impl Preview {
         map: Option<String>,
     ) -> Result<(), PreviewError> {
         self.stop();
-        let (project, progs, mod_name) = built_program(workbench)?;
+        let (project, progs, mod_name) = workbench.built_program()?;
         let base = self.game_base()?;
         let run_root = prepare_run_root(&project, Flavour::Original, &base, &mod_name)
             .map_err(PreviewError::RunRoot)?;
@@ -680,7 +682,7 @@ impl Preview {
             return Ok(None);
         }
         let started = Instant::now();
-        let (_, progs, _) = built_program(workbench)?;
+        let (_, progs, _) = workbench.built_program()?;
         let path = progs.to_string_lossy().into_owned();
         if on_loss == OnLoss::Ask {
             // P3-10: the host's own migration, run over a copy of the world, says what the
@@ -718,7 +720,7 @@ impl Preview {
             match live.running.child.try_wait() {
                 Ok(Some(_)) => break,
                 Ok(None) if started.elapsed() < SHUTDOWN_WAIT => {
-                    std::thread::sleep(Duration::from_millis(20));
+                    std::thread::sleep(SHUTDOWN_POLL);
                 }
                 Ok(None) | Err(_) => {
                     if let Err(error) = live.running.child.kill() {
@@ -971,23 +973,23 @@ impl Drop for Preview {
     }
 }
 
-/// Builds the project; its root, its first program and the mod folder it is in, or why there
-/// is none.
-fn built_program<L: Loader>(
-    workbench: &mut Workbench<L>,
-) -> Result<(PathBuf, PathBuf, String), PreviewError> {
-    let project = workbench
-        .root()
-        .map(Path::to_path_buf)
-        .ok_or(PreviewError::Build(WorkbenchError::NoProject))?;
-    let modules = workbench.build().map_err(PreviewError::Build)?;
-    let Some(built) = modules.iter().find(|m| m.built) else {
-        return Err(PreviewError::NothingBuilt(modules));
-    };
-    let progs = built.output.clone();
-    let mod_name =
-        mod_folder(&project, &progs).ok_or_else(|| PreviewError::OutsideBuild(progs.clone()))?;
-    Ok((project, progs, mod_name))
+impl<L: Loader> Workbench<L> {
+    /// Builds the project; its root, its first program and the mod folder it is in, or why there
+    /// is none.
+    pub(super) fn built_program(&mut self) -> Result<(PathBuf, PathBuf, String), PreviewError> {
+        let project = self
+            .root()
+            .map(Path::to_path_buf)
+            .ok_or(PreviewError::Build(WorkbenchError::NoProject))?;
+        let modules = self.build().map_err(PreviewError::Build)?;
+        let Some(built) = modules.iter().find(|m| m.built) else {
+            return Err(PreviewError::NothingBuilt(modules));
+        };
+        let progs = built.output.clone();
+        let mod_name = mod_folder(&project, &progs)
+            .ok_or_else(|| PreviewError::OutsideBuild(progs.clone()))?;
+        Ok((project, progs, mod_name))
+    }
 }
 
 /// The original game's base directory: `folder`'s, else the first install found with one.

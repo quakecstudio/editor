@@ -97,6 +97,8 @@ impl std::error::Error for VmRunError {}
 
 /// The seed of the mock engine's random source, the same on every run (DIFF-6.2).
 const SEED: u32 = 1;
+/// The components of a vector: its slots (`ev_vector` takes three).
+const VECTOR_SLOTS: usize = 3;
 
 /// Runs `params.function` in the program `bytes`, read from `progs`.
 ///
@@ -168,7 +170,7 @@ pub fn run(progs: PathBuf, bytes: &[u8], params: &VmRunParams) -> Result<VmRun, 
     Ok(VmRun {
         progs,
         error,
-        changes: changes(&before, &after),
+        changes: VmChange::between(&before, &after),
     })
 }
 
@@ -237,7 +239,7 @@ fn slots(etype: Etype, value: &Value, name: &str) -> Result<Vec<Slot>, VmRunErro
         Etype::Vector => {
             let parts: Option<Vec<Slot>> = value
                 .as_array()
-                .filter(|parts| parts.len() == 3)
+                .filter(|parts| parts.len() == VECTOR_SLOTS)
                 .and_then(|parts| parts.iter().map(|p| float(p).map(Slot::from_f32)).collect());
             parts.ok_or_else(wrong)
         }
@@ -253,38 +255,40 @@ const fn f64_to_f32(value: f64) -> f32 {
     value as f32
 }
 
-/// Each global and edict field whose value differs between `before` and `after`.
-fn changes(before: &State, after: &State) -> Vec<VmChange> {
-    let mut out = Vec::new();
-    let named = |values: &[NamedValue]| -> BTreeMap<String, QcValue> {
-        values
-            .iter()
-            .map(|v| (v.name.clone(), v.value.clone()))
-            .collect()
-    };
-    let (old, new) = (named(&before.globals), named(&after.globals));
-    for (name, value) in &new {
-        if old.get(name) != Some(value) {
-            out.push(VmChange {
-                place: format!("global {name}"),
-                before: old.get(name).map_or(Value::Null, bridge_value),
-                after: bridge_value(value),
-            });
-        }
-    }
-    for (n, fields) in after.edicts.iter().enumerate() {
-        let old = before.edicts.get(n).map(|f| named(f)).unwrap_or_default();
-        for (name, value) in named(fields) {
-            if old.get(&name) != Some(&value) {
+impl VmChange {
+    /// Each global and edict field whose value differs between `before` and `after`.
+    fn between(before: &State, after: &State) -> Vec<Self> {
+        let mut out = Vec::new();
+        let named = |values: &[NamedValue]| -> BTreeMap<String, QcValue> {
+            values
+                .iter()
+                .map(|v| (v.name.clone(), v.value.clone()))
+                .collect()
+        };
+        let (old, new) = (named(&before.globals), named(&after.globals));
+        for (name, value) in &new {
+            if old.get(name) != Some(value) {
                 out.push(VmChange {
-                    place: format!("edict {n} .{name}"),
-                    before: old.get(&name).map_or(Value::Null, bridge_value),
-                    after: bridge_value(&value),
+                    place: format!("global {name}"),
+                    before: old.get(name).map_or(Value::Null, bridge_value),
+                    after: bridge_value(value),
                 });
             }
         }
+        for (n, fields) in after.edicts.iter().enumerate() {
+            let old = before.edicts.get(n).map(|f| named(f)).unwrap_or_default();
+            for (name, value) in named(fields) {
+                if old.get(&name) != Some(&value) {
+                    out.push(VmChange {
+                        place: format!("edict {n} .{name}"),
+                        before: old.get(&name).map_or(Value::Null, bridge_value),
+                        after: bridge_value(&value),
+                    });
+                }
+            }
+        }
+        out
     }
-    out
 }
 
 /// A value as the bridge writes it (BRIDGE-5.1): its type and its value.

@@ -19,7 +19,7 @@ use qs_sim::{LoadOptions, World};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 use serde::Serialize;
 
-use super::{Preview, PreviewError, built_program, socket_path};
+use super::{Preview, PreviewError, socket_path};
 use crate::Workbench;
 use qc_project::Loader;
 
@@ -111,7 +111,7 @@ impl Preview {
             .map_err(|error| ScenarioRunError::Read(path.to_path_buf(), error))?;
         let scenario = Scenario::parse(&text)
             .map_err(|error| ScenarioRunError::Parse(path.to_path_buf(), error))?;
-        let (project, _, mod_name) = built_program(workbench)?;
+        let (project, _, mod_name) = workbench.built_program()?;
         let base = self.game_base()?;
         let run_root = prepare_run_root(&project, Flavour::Original, &base, &mod_name)
             .map_err(ScenarioRunError::RunRoot)?;
