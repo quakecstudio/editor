@@ -17,6 +17,7 @@ use super::{
     COMPILE, Compiled, ENGINE_BUILTINS, PROJECT_FILES, PROJECT_INFO, PROJECT_SEARCH,
     PROJECT_SYMBOLS, SEARCH_LIMIT, builtins_of,
 };
+use crate::search::SearchOptions;
 use crate::{Config, OPEN_PROJECT, Workbench, register};
 
 const ROOT: &str = "/p";
@@ -222,11 +223,20 @@ fn search_stops_at_its_limit() {
     loader.insert(Path::new(ROOT).join("many.qc"), many.into_bytes());
     let mut workbench = Workbench::new(loader, Config::default());
     workbench.open_project(Path::new(ROOT)).unwrap();
-    let found = workbench.search("hit", false);
+    let found = workbench.search(&SearchOptions {
+        text: "hit".to_owned(),
+        ..SearchOptions::default()
+    });
     assert_eq!(found.matches.len(), SEARCH_LIMIT);
     assert!(found.truncated);
     assert!(
-        workbench.search("", false).matches.is_empty(),
+        workbench
+            .search(&SearchOptions {
+                text: "".to_owned(),
+                ..SearchOptions::default()
+            })
+            .matches
+            .is_empty(),
         "nothing to find"
     );
 }

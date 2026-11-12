@@ -14,7 +14,7 @@ use qc_sema::FileDiagnostic;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::Place;
-use crate::{Location, Workbench, WorkbenchError};
+use crate::{Diagnostic, Location, Workbench, WorkbenchError};
 
 /// How serious a reported problem is (QCD-1.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,6 +24,17 @@ pub enum Gravity {
     Error,
     /// It does not.
     Warning,
+}
+
+impl Gravity {
+    /// How serious `diagnostic` is: an error stops the build, anything else does not.
+    fn of(diagnostic: &Diagnostic) -> Self {
+        if diagnostic.is_error() {
+            Self::Error
+        } else {
+            Self::Warning
+        }
+    }
 }
 
 /// One problem a build or a check reports: where it is, when it is in a file, how serious it
@@ -92,20 +103,11 @@ impl<L: Loader> Workbench<L> {
                     end: problem.diagnostic.span.end,
                     location: problem.location,
                 }),
-                gravity: gravity(problem.diagnostic.is_error()),
+                gravity: Gravity::of(&problem.diagnostic),
                 code: problem.diagnostic.code.as_str().to_owned(),
                 message: problem.diagnostic.message.clone(),
             })
             .collect())
-    }
-}
-
-/// [`Gravity::Error`] for an error, else [`Gravity::Warning`].
-const fn gravity(is_error: bool) -> Gravity {
-    if is_error {
-        Gravity::Error
-    } else {
-        Gravity::Warning
     }
 }
 
@@ -132,7 +134,7 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
                 end: diagnostic.diagnostic.span.end,
                 location: Location::of(text, diagnostic.diagnostic.span.start),
             }),
-            gravity: gravity(diagnostic.diagnostic.is_error()),
+            gravity: Gravity::of(&diagnostic.diagnostic),
             code: diagnostic.diagnostic.code.as_str().to_owned(),
             message: diagnostic.diagnostic.message.clone(),
         }
@@ -147,7 +149,19 @@ fn build_module(module: ModuleBuild<'_>) -> Result<ModuleBuilt, WorkbenchError> 
                         place: None,
                         gravity: Gravity::Error,
                         code: "target".to_owned(),
-                        message: unloadable_message(&compiled, why),
+                        // The function and line of an opcode the engine cannot run.
+                        message: match why {
+                            Unloadable::Opcode { statement, .. } => {
+                                match compiled.function_and_line(statement) {
+                                    (Some(name), Some(line)) => {
+                                        format!("{why}: in {name}, at line {line}")
+                                    }
+                                    (Some(name), None) => format!("{why}: in {name}"),
+                                    (None, _) => why.to_string(),
+                                }
+                            }
+                            other => other.to_string(),
+                        },
                     });
                     (false, problems)
                 }
@@ -183,32 +197,6 @@ fn program_bytes(output: &Path, compiled: &Compiled) -> Result<Vec<u8>, Workbenc
         path: output.to_path_buf(),
         error: std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{e:?}")),
     })
-}
-
-/// Why the engine cannot load `compiled`'s program, a statement's function and line named.
-fn unloadable_message(compiled: &Compiled, why: Unloadable) -> String {
-    let Unloadable::Opcode { statement, .. } = why else {
-        return why.to_string();
-    };
-    let progs = &compiled.progs;
-    let function = i32::try_from(statement).ok().and_then(|at| {
-        progs
-            .functions
-            .iter()
-            .filter(|f| f.first_statement > 0 && f.first_statement <= at)
-            .max_by_key(|f| f.first_statement)
-    });
-    let name = function
-        .and_then(|f| usize::try_from(f.s_name).ok())
-        .and_then(|at| progs.strings.get(at..))
-        .and_then(|rest| rest.split(|&b| b == 0).next())
-        .map(|name| String::from_utf8_lossy(name).into_owned());
-    let line = compiled.lno.lines.get(statement).copied();
-    match (name, line) {
-        (Some(name), Some(line)) => format!("{why}: in {name}, at line {line}"),
-        (Some(name), None) => format!("{why}: in {name}"),
-        (None, _) => why.to_string(),
-    }
 }
 
 /// Writes `progs`, `compiled`'s program, to `output` and its line map beside it, making the

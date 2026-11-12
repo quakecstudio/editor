@@ -8,12 +8,13 @@ use crate::terminal::register_terminal;
 use std::path::PathBuf;
 
 use qc_project::{Loader, normalize};
-use qs_commands::{BoxError, Command, NoParams, Outcome, RegisterError, Registry, UndoStep};
+use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::checkpoints::register_checkpoints;
-use crate::editing::{Change, Source};
+use crate::editing::Source;
+use crate::editing::{Saved, TextStep};
 use crate::entity_classes::register_entities;
 use crate::export::ExportProject;
 use crate::map_check::register_map;
@@ -806,37 +807,6 @@ pub(crate) struct RenameDone {
     pub caution: Option<String>,
 }
 
-/// The files a rename changed, to put back and to change again.
-struct RenameStep {
-    changes: Vec<Change>,
-}
-
-impl RenameStep {
-    /// Gives each changed file its text before, or after.
-    fn set<C: HasWorkbench>(&self, context: &mut C, before: bool) -> Result<(), BoxError> {
-        let workbench = context.workbench();
-        for change in &self.changes {
-            let text = if before {
-                &change.before
-            } else {
-                &change.after
-            };
-            workbench.set_text(&change.path, text.clone(), Source::Elsewhere)?;
-        }
-        Ok(())
-    }
-}
-
-impl<C: HasWorkbench + 'static> UndoStep<C> for RenameStep {
-    fn undo(&mut self, context: &mut C) -> Result<(), BoxError> {
-        self.set(context, true)
-    }
-
-    fn redo(&mut self, context: &mut C) -> Result<(), BoxError> {
-        self.set(context, false)
-    }
-}
-
 /// `symbol.rename`: renames a name everywhere it is written.
 struct RenameCommand;
 
@@ -864,9 +834,7 @@ impl<C: HasWorkbench + 'static> Command<C> for RenameCommand {
         };
         Ok(Outcome::undoable(
             done,
-            RenameStep {
-                changes: renamed.changes,
-            },
+            TextStep::new(renamed.changes, Saved::Unsaved),
         ))
     }
 }

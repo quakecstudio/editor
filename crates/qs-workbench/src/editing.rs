@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 use qc_ide::{Caution, CodeAction, Completion, FileRange, Hover, Span};
 use qc_project::{Loader, normalize};
 
-use crate::{Workbench, WorkbenchError, problems, tree};
+use qs_commands::{BoxError, UndoStep};
+
+use crate::{HasWorkbench, Workbench, WorkbenchError, problems, tree};
 
 /// Where a new text of a file comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +30,70 @@ pub struct Change {
     pub before: Vec<u8>,
     /// Its text after.
     pub after: Vec<u8>,
+}
+
+/// Which side of a change a file is given: its text before, or after.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Side {
+    /// The text before: undo.
+    Before,
+    /// The text after: redo.
+    After,
+}
+
+impl Change {
+    /// The file's text on `side` of the change.
+    const fn text(&self, side: Side) -> &Vec<u8> {
+        match side {
+            Side::Before => &self.before,
+            Side::After => &self.after,
+        }
+    }
+}
+
+/// Whether a step's change was saved, so its undo and redo save too.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Saved {
+    /// Kept in the editor's text only.
+    Unsaved,
+    /// Written to the file.
+    Written,
+}
+
+/// The undo step of a change to files' texts: a rename, a key rename in maps, a replace.
+pub(crate) struct TextStep {
+    changes: Vec<Change>,
+    saved: Saved,
+}
+
+impl TextStep {
+    /// The step that puts `changes` back and makes them again, saving each file when
+    /// `saved` says so.
+    pub(crate) const fn new(changes: Vec<Change>, saved: Saved) -> Self {
+        Self { changes, saved }
+    }
+
+    /// Gives each changed file its text on `side`, saving it when the change was saved.
+    fn apply<C: HasWorkbench>(&self, context: &mut C, side: Side) -> Result<(), BoxError> {
+        let workbench = context.workbench();
+        for change in &self.changes {
+            workbench.set_text(&change.path, change.text(side).clone(), Source::Elsewhere)?;
+            if self.saved == Saved::Written {
+                workbench.save(&change.path)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<C: HasWorkbench + 'static> UndoStep<C> for TextStep {
+    fn undo(&mut self, context: &mut C) -> Result<(), BoxError> {
+        self.apply(context, Side::Before)
+    }
+
+    fn redo(&mut self, context: &mut C) -> Result<(), BoxError> {
+        self.apply(context, Side::After)
+    }
 }
 
 /// What a rename did: each file it changed, and what it could not check.

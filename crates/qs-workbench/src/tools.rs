@@ -170,16 +170,10 @@ impl<L: qc_project::Loader> crate::Workbench<L> {
         files
     }
 
-    /// Every match of `text` in the project's files, their current text: the editor's unsaved
-    /// text where it has one. Lines are counted by line feeds; case is ignored unless
-    /// `case_sensitive`.
-    pub fn search(&mut self, text: &str, case_sensitive: bool) -> SearchFound {
-        let options = SearchOptions {
-            text: text.to_owned(),
-            case_sensitive,
-            ..SearchOptions::default()
-        };
-        Query::of(&options).map_or_else(
+    /// Every match of `options` in the project's files, their current text: the editor's
+    /// unsaved text where it has one. Lines are counted by line feeds.
+    pub fn search(&mut self, options: &SearchOptions) -> SearchFound {
+        Query::of(options).map_or_else(
             |_| SearchFound {
                 matches: Vec::new(),
                 truncated: false,

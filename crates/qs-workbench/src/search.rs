@@ -17,12 +17,13 @@
 use std::path::{Path, PathBuf};
 
 use qc_project::{Loader, normalize};
-use qs_commands::{BoxError, Command, Outcome, RegisterError, Registry, UndoStep};
+use qs_commands::{Command, Outcome, RegisterError, Registry};
 use regex_lite::{Regex, RegexBuilder};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::editing::Source;
+use crate::editing::{Change, Saved, TextStep};
 use crate::tools::SearchMatch;
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 
@@ -361,45 +362,6 @@ impl<L: Loader> Workbench<L> {
     }
 }
 
-/// A file's text before and after a change, and whether undoing it saves the file.
-struct FileStep {
-    path: PathBuf,
-    before: Vec<u8>,
-    after: Vec<u8>,
-    saved: Saved,
-}
-
-/// Whether a step's change was saved, so its undo and redo save too.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Saved {
-    /// Kept in the editor's text only.
-    Unsaved,
-    /// Written to the file.
-    Written,
-}
-
-impl FileStep {
-    fn set<C: HasWorkbench>(&self, context: &mut C, before: bool) -> Result<(), BoxError> {
-        let workbench = context.workbench();
-        let text = if before { &self.before } else { &self.after };
-        workbench.set_text(&self.path, text.clone(), Source::Elsewhere)?;
-        if self.saved == Saved::Written {
-            workbench.save(&self.path)?;
-        }
-        Ok(())
-    }
-}
-
-impl<C: HasWorkbench + 'static> UndoStep<C> for FileStep {
-    fn undo(&mut self, context: &mut C) -> Result<(), BoxError> {
-        self.set(context, true)
-    }
-
-    fn redo(&mut self, context: &mut C) -> Result<(), BoxError> {
-        self.set(context, false)
-    }
-}
-
 /// `file.replace_all`: every match in a file replaced, and the file saved.
 struct ReplaceInFile;
 
@@ -438,12 +400,14 @@ impl<C: HasWorkbench + 'static> Command<C> for ReplaceInFile {
         }
         Ok(Outcome::undoable(
             done,
-            FileStep {
-                path,
-                before,
-                after,
-                saved: Saved::Written,
-            },
+            TextStep::new(
+                vec![Change {
+                    path,
+                    before,
+                    after,
+                }],
+                Saved::Written,
+            ),
         ))
     }
 }
@@ -470,12 +434,14 @@ impl<C: HasWorkbench + 'static> Command<C> for ReplaceRange {
             workbench.replace_range(&path, (params.start, params.end), &params.text)?;
         Ok(Outcome::undoable(
             (),
-            FileStep {
-                path,
-                before,
-                after,
-                saved: Saved::Unsaved,
-            },
+            TextStep::new(
+                vec![Change {
+                    path,
+                    before,
+                    after,
+                }],
+                Saved::Unsaved,
+            ),
         ))
     }
 }

@@ -157,11 +157,6 @@ bool-argument	crates/qs-sim/src/world.rs	World::set_standard_quake
 bool-argument	crates/qs-sim/src/world/changes.rs	World::track_changes
 bool-argument	crates/qs-sound/src/music.rs	Music::play
 bool-argument	crates/qs-sound/src/music.rs	Music::set_paused
-bool-argument	crates/qs-workbench/src/build.rs	gravity
-bool-argument	crates/qs-workbench/src/commands.rs	RenameStep::set
-bool-argument	crates/qs-workbench/src/map_check.rs	RenameKeyStep::set
-bool-argument	crates/qs-workbench/src/search.rs	FileStep::set
-bool-argument	crates/qs-workbench/src/tools.rs	Workbench::search
 string-error	crates/qs-agent/src/lib.rs	Model::reply
 string-error	crates/qs-agent/src/lib.rs	Model::reply_streaming
 string-error	crates/qs-commands/src/session.rs	guard
@@ -404,7 +399,6 @@ free-fn-on-type	crates/qs-sound/src/mixer.rs	paint_channel
 free-fn-on-type	crates/qs-templates/src/lib.rs	create
 free-fn-on-type	crates/qs-templates/src/lib.rs	make
 free-fn-on-type	crates/qs-templates/src/lib.rs	notice
-free-fn-on-type	crates/qs-workbench/src/build.rs	unloadable_message
 free-fn-on-type	crates/qs-workbench/src/preview.rs	built_program
 free-fn-on-type	crates/qs-workbench/src/vm_run.rs	changes
 bare-id	apps/desktop/src/agent.rs	AgentPanel::asking(index)
