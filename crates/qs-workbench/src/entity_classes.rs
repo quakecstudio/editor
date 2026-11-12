@@ -33,6 +33,8 @@ pub struct EntitiesFound {
     pub classes: Vec<ClassInfo>,
     /// The FGD file written, when one was asked for.
     pub fgd: Option<PathBuf>,
+    /// The keys the code fires entities by, sorted (MAP-8.8).
+    pub targeting: Vec<String>,
 }
 
 /// One entity class.
@@ -147,6 +149,17 @@ impl<L: crate::Loader> Workbench<L> {
         classes.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(classes)
     }
+
+    /// The keys the project's server QuakeC fires entities by, sorted (MAP-8.8).
+    pub fn targeting_keys(&mut self) -> Vec<String> {
+        let mut keys = std::collections::BTreeSet::new();
+        for module in self.host.project_modules() {
+            if module.kind == ModuleKind::Ssqc {
+                keys.extend(module.db.targeting_keys(module.input));
+            }
+        }
+        keys.into_iter().collect()
+    }
 }
 
 /// `project.entities`.
@@ -176,9 +189,11 @@ impl<C: HasWorkbench + 'static> Command<C> for ProjectEntities {
                 }
             })?;
         }
+        let targeting = context.workbench().targeting_keys();
         Ok(Outcome::outside_history(EntitiesFound {
             classes: classes.iter().map(ClassInfo::from).collect(),
             fgd: params.fgd,
+            targeting,
         }))
     }
 }

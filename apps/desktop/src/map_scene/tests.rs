@@ -11,7 +11,7 @@ use std::path::Path;
 use qs_workbench::map_edit::EntityIndex;
 use qs_workbench::{Config, FsLoader, Workbench};
 
-use super::{ClassLook, Scene, is_target_key, start_camera};
+use super::{ClassLook, Scene, start_camera};
 
 /// The keep fixture's map, open in a workbench.
 fn keep() -> Workbench<FsLoader> {
@@ -137,15 +137,4 @@ fn the_camera_starts_behind_the_player_start() {
     assert_eq!(camera.origin, [-320.0, 0.0, 88.0]);
     assert!(camera.yaw.abs() < f32::EPSILON);
     assert!(camera.pitch > 0.0, "looking down at it");
-}
-
-// No spec statement: MAP-8.5: the keys whose values are targetnames
-#[test]
-fn target_keys_name_targetnames() {
-    for key in ["target", "killtarget", "target2"] {
-        assert!(is_target_key(key), "{key}");
-    }
-    for key in ["targetname", "speed", ""] {
-        assert!(!is_target_key(key), "{key}");
-    }
 }

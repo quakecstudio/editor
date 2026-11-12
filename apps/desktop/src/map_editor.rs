@@ -15,7 +15,7 @@ use qs_render::Camera;
 use qs_workbench::entity_classes::ClassInfo;
 use qs_workbench::map_edit::{EntityIndex, EntityKeys, Keep, MapDocument, MapRevision};
 
-use crate::map_scene::{ClassLook, Line, Scene, is_target_key, load_models, start_camera};
+use crate::map_scene::{ClassLook, Line, Scene, load_models, start_camera};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -98,6 +98,8 @@ pub struct MapEditor {
     refused: Option<String>,
     /// The notice about the map's file on disk.
     disk: DiskNotice,
+    /// The keys the code fires entities by (MAP-8.8).
+    targeting: Vec<String>,
 }
 
 impl MapEditor {
@@ -139,6 +141,11 @@ impl MapEditor {
     /// Takes why the last map command asked for was refused, or none when it ran.
     pub fn set_refused(&mut self, refused: Option<String>) {
         self.refused = refused;
+    }
+
+    /// Takes the keys the code fires entities by (MAP-8.8).
+    pub fn set_targeting(&mut self, targeting: Vec<String>) {
+        self.targeting = targeting;
     }
 
     /// Takes what to say about the map's file on disk.
@@ -347,7 +354,7 @@ impl MapEditor {
                     .hint_text(Text::MapValue.get())
                     .desired_width(NEW_PAIR_WIDTH),
             );
-            let targets = !keys.targetnames.is_empty() && is_target_key(&self.adding.0);
+            let targets = !keys.targetnames.is_empty() && self.targeting.contains(&self.adding.0);
             if targets {
                 egui::ComboBox::from_id_salt(ui.id().with((entity, 1)))
                     .selected_text(Text::MapTargets.get())

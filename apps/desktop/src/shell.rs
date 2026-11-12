@@ -1878,6 +1878,7 @@ impl Shell {
                     project.as_deref(),
                     game.as_deref(),
                 );
+                self.map_editor.set_targeting(found.targeting);
             }
             Err(error) => tracing::warn!(%error, "no entity classes for the map"),
         }

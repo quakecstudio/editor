@@ -149,13 +149,6 @@ impl Scene {
     }
 }
 
-/// Whether `key` names entities to fire, so its value may be one of the map's targetnames:
-/// `target`, `killtarget` and the other keys starting `target` but `targetname` (MAP-8.5).
-#[must_use]
-pub(crate) fn is_target_key(key: &str) -> bool {
-    key == "killtarget" || (key.starts_with("target") && key != "targetname")
-}
-
 /// The map's origin, where the camera starts in a map with no player start.
 const MAP_ORIGIN: [f32; 3] = [0.0; 3];
 /// The yaw the camera starts at in a map with no player start, in degrees: along +y.

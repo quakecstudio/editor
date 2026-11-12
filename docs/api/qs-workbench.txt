@@ -218,6 +218,7 @@ field qs_workbench::entity_classes::ClassInfo.size
 field qs_workbench::entity_classes::ClassInfo.spawnflags
 field qs_workbench::entity_classes::EntitiesFound.classes
 field qs_workbench::entity_classes::EntitiesFound.fgd
+field qs_workbench::entity_classes::EntitiesFound.targeting
 field qs_workbench::entity_classes::EntitiesParams.fgd
 field qs_workbench::entity_classes::FlagInfo.name
 field qs_workbench::entity_classes::FlagInfo.value
@@ -536,6 +537,7 @@ fn qs_workbench::editing::Workbench::save
 fn qs_workbench::editing::Workbench::text
 fn qs_workbench::editing::Workbench::update
 fn qs_workbench::entity_classes::Workbench::entity_classes
+fn qs_workbench::entity_classes::Workbench::targeting_keys
 fn qs_workbench::export::Workbench::export
 fn qs_workbench::git::register_git
 fn qs_workbench::map_check::Workbench::check_map
