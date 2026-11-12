@@ -201,6 +201,7 @@ field qs_sim::world::LoadOptions.localization
 field qs_sim::world::LoadOptions.registration
 field qs_sim::world::LoadOptions.search_path
 field qs_sim::world::LoadOptions.seed
+field qs_sim::world::LoadOptions.settings
 field qs_sim::world::edit::LineHit.edict
 field qs_sim::world::edit::LineHit.point
 field qs_sim::world::inspect::NamedValue.name
@@ -332,6 +333,8 @@ fn qs_sim::spawn::SpawnHost::spawn
 fn qs_sim::spawn::SpawnHost::spawnflags
 fn qs_sim::spawn::c_atof
 fn qs_sim::spawn::c_atoi
+fn qs_sim::spawn::clamp_skill
+fn qs_sim::spawn::ftoi
 fn qs_sim::spawn::inhibited
 fn qs_sim::spawn::load_from_file
 fn qs_sim::world::SpawnParms::parms

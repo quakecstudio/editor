@@ -33,10 +33,15 @@ const MAP: &str = "// a test map\n{\n\"classname\" \"worldspawn\"\n\"wad\" \"bas
 /// A fresh directory named `name` with a project of [`CODE`], `maps/test.map` holding
 /// [`MAP`] and `maps/base.bsp` the spec's base vector; the project open.
 fn project(name: &str) -> (PathBuf, Session<Workbench<FsLoader>>) {
+    project_with(name, CODE)
+}
+
+/// [`project`] with `code` for its QuakeC.
+pub(super) fn project_with(name: &str, code: &str) -> (PathBuf, Session<Workbench<FsLoader>>) {
     let dir = std::env::temp_dir().join(format!("qs-wb-mapedit-{name}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("maps")).unwrap();
-    std::fs::write(dir.join("a.qc"), CODE).unwrap();
+    std::fs::write(dir.join("a.qc"), code).unwrap();
     std::fs::write(dir.join("progs.src"), "progs.dat\na.qc\n").unwrap();
     std::fs::write(dir.join("maps/test.map"), MAP).unwrap();
     std::fs::write(dir.join("maps/base.bsp"), base_bsp()).unwrap();
@@ -67,7 +72,7 @@ fn base_bsp() -> Vec<u8> {
 }
 
 /// The open map's text as it would be saved.
-fn text(session: &Session<Workbench<FsLoader>>) -> String {
+pub(super) fn text(session: &Session<Workbench<FsLoader>>) -> String {
     let map = session.context().map().unwrap();
     String::from_utf8(map.file().to_bytes()).unwrap()
 }

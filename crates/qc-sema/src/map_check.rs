@@ -63,6 +63,8 @@ pub struct EntitySchema {
     fields: BTreeMap<String, FieldValue>,
     functions: BTreeSet<String>,
     class_keys: BTreeMap<String, Vec<String>>,
+    /// The keys whose value names entities to fire, read from the code (MAP-8.8).
+    targeting: BTreeSet<String>,
 }
 
 /// One problem MAP-8 finds in a map.
@@ -104,14 +106,14 @@ pub enum MapDiagnosticKind {
         /// How the field reads it.
         expected: FieldValue,
     },
-    /// A target key naming no entity's `targetname` (MAP-8.5).
+    /// A targeting key naming no entity's `targetname` (MAP-8.9).
     NoTarget {
         /// The key.
         key: String,
         /// The name it targets.
         name: String,
     },
-    /// A `targetname` nothing targets (MAP-8.6).
+    /// A `targetname` no targeting key names (MAP-8.9).
     Untargeted {
         /// The name.
         name: String,
@@ -172,6 +174,7 @@ impl Db {
             let keys = class.keys.iter().map(|key| key.name.clone()).collect();
             schema.class_keys.insert(class.name, keys);
         }
+        schema.targeting = self.targeting_keys(input).into_iter().collect();
         let analysis = self.analyze_module(input);
         for def in analysis.index.defs() {
             match def.kind {
@@ -201,6 +204,19 @@ impl EntitySchema {
         for (name, keys) in other.class_keys {
             self.class_keys.entry(name).or_insert(keys);
         }
+        self.targeting.extend(other.targeting);
+    }
+
+    /// Whether the code fires the entities whose `targetname` the key `key` names (MAP-8.8).
+    #[must_use]
+    pub fn is_targeting(&self, key: &str) -> bool {
+        self.targeting.contains(key)
+    }
+
+    /// The keys the code fires entities by, sorted (MAP-8.8).
+    #[must_use]
+    pub fn targeting_keys(&self) -> Vec<String> {
+        self.targeting.iter().cloned().collect()
     }
 
     /// Whether the progs has a field named `name`, which a map's key sets (EDICT-8.2).
@@ -224,7 +240,7 @@ impl EntitySchema {
                 let value = String::from_utf8_lossy(pair.value()).into_owned();
                 if key == "targetname" {
                     targetnames.push((index, pair.line(), value.clone()));
-                } else if is_target_key(&key) {
+                } else if self.is_targeting(&key) {
                     targeted.insert(value.clone());
                     targets.push((index, pair.line(), key.clone(), value.clone()));
                 }
@@ -339,11 +355,6 @@ impl EntitySchema {
             expected: field,
         })
     }
-}
-
-/// Whether `key` names an entity to fire, as `target` and `killtarget` do (MAP-8.5).
-fn is_target_key(key: &str) -> bool {
-    key == "killtarget" || (key.starts_with("target") && key != "targetname")
 }
 
 /// Whether `text` is a whole decimal number as a mapper writes one: digits with an optional

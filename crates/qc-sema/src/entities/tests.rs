@@ -296,3 +296,38 @@ fn fteqcc_modules_give_the_same_classes() {
 fn no_spawn_functions_no_classes() {
     assert!(classes(&ModuleSpec::default()).is_empty());
 }
+
+/// The targeting keys of a module of [`DEFS`] and `files`.
+fn targeting(files: &[&str]) -> Vec<String> {
+    let mut db = Db::new();
+    let mut input = ModuleInput::default();
+    for (index, text) in std::iter::once(&DEFS).chain(files).enumerate() {
+        let id = FileId::new(index);
+        db.set_file(id, format!("f{index}.qc").into(), text.as_bytes().to_vec());
+        input.compiled.push(id);
+    }
+    db.targeting_keys(&input)
+}
+
+// spec MAP-8.8: a key fires entities when the code passes its field to find as the value to
+// match against targetname, from self or another entity, or compares it with targetname by ==
+// or !=; a comparison with a global, or find over another field, makes no key
+#[test]
+fn targeting_keys_are_read_from_the_code() {
+    let code = ".string killtarget, target2, pathtarget, netname; string string_null;\n\
+        entity other;\n\
+        entity(entity start, .string fld, string match) find = #18;\n\
+        void() use_targets = { local entity t;\n\
+            t = find (world, targetname, self.killtarget);\n\
+            t = find (t, targetname, other.target);\n\
+            if (t.targetname == self.target2) t = world;\n\
+            if (self.pathtarget != t.targetname) t = world;\n\
+            if (self.targetname != string_null) t = world;\n\
+            t = find (world, netname, self.noise);\n\
+        };\n";
+    assert_eq!(
+        targeting(&[code]),
+        ["killtarget", "pathtarget", "target", "target2"]
+    );
+    assert!(targeting(&[""]).is_empty());
+}

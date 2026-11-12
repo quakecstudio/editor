@@ -56,13 +56,15 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
 | [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
-| [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. |
+| [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
 | [`map.export`](#mapexport) | Writes the open map to another .map without the layers marked to be left out of exports and the entities in them (TrenchBroom's Export). |
+| [`map.filter`](#mapfilter) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
 | [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
 | [`map.isolate`](#mapisolate) | Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed. |
 | [`map.layers`](#maplayers) | The open map's TrenchBroom layers: each one's name, whether it is hidden, locked or left out of exports, and how many entities are in it. |
+| [`map.link`](#maplink) | Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none. |
 | [`map.lock`](#maplock) | Locks entities of the open map against edits until map.unlock_all; the map is not changed. |
 | [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
@@ -73,7 +75,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.rotate`](#maprotate) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
-| [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map: its last occurrence keeps its place and formatting, a new key goes after the others. |
+| [`map.set_flag`](#mapset_flag) | Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags. |
+| [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | [`map.set_layer`](#mapset_layer) | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
 | [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
@@ -1581,7 +1584,7 @@ Parameters:
 
 ## `map.duplicate`
 
-Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated.
+Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many.
 
 Parameters:
 
@@ -1666,6 +1669,81 @@ Parameters:
     "path"
   ],
   "title": "ExportParams",
+  "type": "object"
+}
+```
+
+## `map.filter`
+
+The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "GameMode": {
+      "description": "The kind of game a map is spawned for: the `coop` and `deathmatch` settings.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "Single player.",
+          "type": "string"
+        },
+        {
+          "const": "coop",
+          "description": "Cooperative: `coop 1`.",
+          "type": "string"
+        },
+        {
+          "const": "deathmatch",
+          "description": "Deathmatch: `deathmatch 1`.",
+          "type": "string"
+        }
+      ]
+    },
+    "Skill": {
+      "description": "The skill a map is spawned at, the `skill` setting (DIFF-3.2).",
+      "oneOf": [
+        {
+          "const": "easy",
+          "description": "0.",
+          "type": "string"
+        },
+        {
+          "const": "normal",
+          "description": "1, the game's own default.",
+          "type": "string"
+        },
+        {
+          "const": "hard",
+          "description": "2.",
+          "type": "string"
+        },
+        {
+          "const": "nightmare",
+          "description": "3.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.filter`.",
+  "properties": {
+    "mode": {
+      "$ref": "#/$defs/GameMode",
+      "default": "single",
+      "description": "The kind of game."
+    },
+    "skill": {
+      "$ref": "#/$defs/Skill",
+      "default": "normal",
+      "description": "The skill."
+    }
+  },
+  "title": "FilterParams",
   "type": "object"
 }
 ```
@@ -1788,6 +1866,49 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.link`
+
+Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.link`.",
+  "properties": {
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity whose key to set."
+    },
+    "key": {
+      "description": "The key, one the code fires entities by: `target`, `killtarget` and the like.",
+      "type": "string"
+    },
+    "target": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity it names; given a `targetname` when it has none."
+    }
+  },
+  "required": [
+    "entity",
+    "key",
+    "target"
+  ],
+  "title": "LinkParams",
   "type": "object"
 }
 ```
@@ -2177,9 +2298,77 @@ Parameters:
 }
 ```
 
+## `map.set_flag`
+
+Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FlagChange": {
+      "description": "What `map.set_flag` does to the flag.",
+      "oneOf": [
+        {
+          "const": "set",
+          "description": "Sets it.",
+          "type": "string"
+        },
+        {
+          "const": "clear",
+          "description": "Clears it.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.set_flag`.",
+  "properties": {
+    "also": {
+      "default": [],
+      "description": "Other entities to change too, in the same step.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "change": {
+      "$ref": "#/$defs/FlagChange",
+      "description": "Whether to set or clear it."
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
+    },
+    "flag": {
+      "description": "The flag, its value.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "entity",
+    "flag",
+    "change"
+  ],
+  "title": "SetFlagParams",
+  "type": "object"
+}
+```
+
 ## `map.set_key`
 
-Sets a key of an entity of the open map: its last occurrence keeps its place and formatting, a new key goes after the others.
+Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others.
 
 Parameters:
 
@@ -2197,6 +2386,14 @@ Parameters:
   "additionalProperties": false,
   "description": "The parameters of `map.set_key`.",
   "properties": {
+    "also": {
+      "default": [],
+      "description": "Other entities to set it on too, in the same step.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
     "entity": {
       "$ref": "#/$defs/EntityIndex",
       "description": "The entity."
