@@ -12,6 +12,17 @@ const qs_map::qbsp::MAP_MAX_TEXINFO
 const qs_map::qbsp::MAP_MAX_TEXTURE_NAME
 const qs_map::qbsp::MAP_MAX_VALUE
 const qs_map::qbsp::MAP_TEX_SPECIAL
+const qs_map::shapes::SHAPE_MAX_RINGS
+const qs_map::shapes::SHAPE_MAX_ROCK_POINTS
+const qs_map::shapes::SHAPE_MAX_SIDES
+const qs_map::shapes::SHAPE_MAX_SPHEROID_FACES
+const qs_map::shapes::SHAPE_MAX_STEPS
+const qs_map::shapes::SHAPE_MAX_SUBDIVISIONS
+const qs_map::shapes::SHAPE_MIN_RINGS
+const qs_map::shapes::SHAPE_MIN_ROCK_POINTS
+const qs_map::shapes::SHAPE_MIN_SIDES
+const qs_map::shapes::SHAPE_STEP_DEPTH
+const qs_map::shapes::SHAPE_STEP_HEIGHT
 enum qs_map::brush_edit::BrushError
 enum qs_map::check::DiagnosticKind
 enum qs_map::document::Compiler
@@ -28,6 +39,13 @@ enum qs_map::linked::LinkError
 enum qs_map::qbsp::QbspError
 enum qs_map::qbsp::QbspWarning
 enum qs_map::rooms::RoomKind
+enum qs_map::shapes::CircleMode
+enum qs_map::shapes::CurveSides
+enum qs_map::shapes::Facing
+enum qs_map::shapes::Shape
+enum qs_map::shapes::ShapeError
+enum qs_map::shapes::Spandrels
+enum qs_map::shapes::Wall
 field qs_map::brush_edit::Surface.texdef
 field qs_map::brush_edit::Surface.texture
 field qs_map::check::Diagnostic.kind
@@ -199,6 +217,8 @@ fn qs_map::rooms::Rooms::holds
 fn qs_map::rooms::Rooms::list
 fn qs_map::rooms::Rooms::named_any
 fn qs_map::rooms::Rooms::of
+fn qs_map::shapes::CurveSides::count
+fn qs_map::shapes::Shape::brushes
 impl qs_map::brush_edit::BrushError: From<MapError>
 impl qs_map::brush_edit::BrushError: core::fmt::Display
 impl qs_map::brush_edit::BrushError: std::error::Error
@@ -219,10 +239,14 @@ impl qs_map::qbsp::QbspError: From<LexError>
 impl qs_map::qbsp::QbspError: core::error::Error
 impl qs_map::qbsp::QbspError: fmt::Display
 impl qs_map::qbsp::QbspWarning: fmt::Display
+impl qs_map::shapes::ShapeError: From<BrushError>
+impl qs_map::shapes::ShapeError: core::fmt::Display
+impl qs_map::shapes::ShapeError: std::error::Error
 mod qs_map::cnum
 mod qs_map::geometry
 mod qs_map::lexer
 mod qs_map::qbsp
+mod qs_map::shapes
 struct qs_map::brush_edit::Surface
 struct qs_map::check::Diagnostic
 struct qs_map::document::Brush
@@ -357,3 +381,38 @@ variant qs_map::qbsp::QbspWarning::NoWadFile
 variant qs_map::qbsp::QbspWarning::TextureNotFound
 variant qs_map::rooms::RoomKind::Group
 variant qs_map::rooms::RoomKind::Layer
+variant qs_map::shapes::CircleMode::Edges
+variant qs_map::shapes::CircleMode::Vertices
+variant qs_map::shapes::CurveSides::FortyEight
+variant qs_map::shapes::CurveSides::NinetySix
+variant qs_map::shapes::CurveSides::Twelve
+variant qs_map::shapes::CurveSides::TwentyFour
+variant qs_map::shapes::Facing::East
+variant qs_map::shapes::Facing::North
+variant qs_map::shapes::Facing::South
+variant qs_map::shapes::Facing::West
+variant qs_map::shapes::Shape::Arch
+variant qs_map::shapes::Shape::Cone
+variant qs_map::shapes::Shape::Curve
+variant qs_map::shapes::Shape::Cylinder
+variant qs_map::shapes::Shape::Icospheroid
+variant qs_map::shapes::Shape::Rock
+variant qs_map::shapes::Shape::SpiralStairs
+variant qs_map::shapes::Shape::Stairs
+variant qs_map::shapes::Shape::UvSpheroid
+variant qs_map::shapes::ShapeError::Arc
+variant qs_map::shapes::ShapeError::Brush
+variant qs_map::shapes::ShapeError::CurveSides
+variant qs_map::shapes::ShapeError::Faces
+variant qs_map::shapes::ShapeError::Grid
+variant qs_map::shapes::ShapeError::Points
+variant qs_map::shapes::ShapeError::Rings
+variant qs_map::shapes::ShapeError::Sides
+variant qs_map::shapes::ShapeError::Size
+variant qs_map::shapes::ShapeError::Step
+variant qs_map::shapes::ShapeError::Subdivisions
+variant qs_map::shapes::ShapeError::Thickness
+variant qs_map::shapes::Spandrels::Filled
+variant qs_map::shapes::Spandrels::Open
+variant qs_map::shapes::Wall::Hollow
+variant qs_map::shapes::Wall::Solid

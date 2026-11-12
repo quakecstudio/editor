@@ -3847,6 +3847,7 @@ version = "2026.11.1"
 dependencies = [
  "jsonschema",
  "qc-builtins",
+ "qc-codegen",
  "qc-diag",
  "qc-edict",
  "qc-progs",
@@ -3856,8 +3857,10 @@ dependencies = [
  "qc-vm",
  "qs-bsp",
  "qs-map",
+ "qs-map-bsp",
  "qs-pak",
  "qs-paths",
+ "qs-sim",
  "qs-vfs",
  "serde_json",
 ]

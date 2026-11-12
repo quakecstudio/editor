@@ -11,5 +11,6 @@ mod map_entities;
 mod pak_written;
 mod paths;
 mod scenario_numbers;
+mod shape_stairs;
 mod spec_coverage;
 mod spec_vectors;

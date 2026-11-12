@@ -3,7 +3,8 @@
 //! The map editor's brush tools (P6-08, MAP-2): TrenchBroom's Brush, Clip and Vertex tools
 //! beside Select. Brush draws a box on the ground with a drag; Clip cuts the selected brush by
 //! the vertical plane through a line dragged on the ground, keeping either side or both; Vertex
-//! drags a corner of the selected brush across the plane it lies in. Clicking with any of them
+//! drags a corner of the selected brush across the plane it lies in; Shape fills a box dragged
+//! on the ground with the shape chosen (P6-18, MAP-10). Clicking with any of them
 //! selects a brush, Shift+click adds one, and the Properties panel subtracts, merges and
 //! deletes the brushes selected. Each edit is a [`BrushAction`] the shell runs as a
 //! `map.brush_*` command, so each has undo.
@@ -11,7 +12,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use eframe::egui::{self, Painter, Pos2, Response, Stroke, Ui};
-use qs_workbench::map_edit::{BrushIndex, EntityIndex, KeepPart};
+use qs_map::shapes::{
+    SHAPE_MAX_RINGS, SHAPE_MAX_ROCK_POINTS, SHAPE_MAX_SIDES, SHAPE_MAX_SPHEROID_FACES,
+    SHAPE_MIN_RINGS, SHAPE_MIN_ROCK_POINTS, SHAPE_MIN_SIDES, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT,
+};
+use qs_workbench::map_edit::{
+    ArchWall, BrushIndex, Circle, Climb, EntityIndex, KeepPart, ShapeSpec,
+};
 
 use crate::map_editor::{GRID, Projection, box_lines};
 use crate::map_scene::{Scene, single};
@@ -20,6 +27,24 @@ use crate::theme::{Theme, Token};
 
 /// The height of a box the Brush tool draws, in map units: four grid steps.
 const BRUSH_HEIGHT: f32 = 64.0;
+/// The height of a box the Shape tool fills, in map units: eight grid steps.
+const SHAPE_HEIGHT: f32 = 128.0;
+/// The sides a round shape may have (MAP-10.3).
+const SIDES: core::ops::RangeInclusive<u32> = SHAPE_MIN_SIDES..=SHAPE_MAX_SIDES;
+/// The sides of a scalable curve the Shape tool offers (MAP-10.9).
+const CURVE_SIDES: [u32; 4] = [12, 24, 48, 96];
+/// The sides a shape starts with.
+const DEFAULT_SIDES: u32 = 16;
+/// A scalable curve's sides before others are chosen.
+const DEFAULT_CURVE_SIDES: u32 = 24;
+/// The wall a hollow shape starts with, in map units.
+const DEFAULT_WALL: f64 = 16.0;
+/// How far one drag step moves the wall, in map units.
+const WALL_STEP: f64 = 1.0;
+/// An arch's curve: half a turn from +x.
+const ARCH_ARC: f64 = 180.0;
+/// The times each triangle of an icospheroid is cut.
+const ICOSPHERE_SUBDIVISIONS: u32 = 2;
 /// The height of the clip plane drawn while a cut line is dragged, in map units.
 const CLIP_HEIGHT: f32 = 256.0;
 /// How near the pointer must be to a corner, in points, for the Vertex tool to take it.
@@ -44,11 +69,19 @@ pub(crate) enum MapTool {
     Clip,
     /// Move a brush's corners.
     Vertex,
+    /// Fill a box with a shape of brushes.
+    Shape,
 }
 
 impl MapTool {
     /// Every tool, in the toolbar's order.
-    const ALL: [Self; 4] = [Self::Select, Self::Brush, Self::Clip, Self::Vertex];
+    const ALL: [Self; 5] = [
+        Self::Select,
+        Self::Brush,
+        Self::Clip,
+        Self::Vertex,
+        Self::Shape,
+    ];
 
     const fn text(self) -> Text {
         match self {
@@ -56,6 +89,7 @@ impl MapTool {
             Self::Brush => Text::MapToolBrush,
             Self::Clip => Text::MapToolClip,
             Self::Vertex => Text::MapToolVertex,
+            Self::Shape => Text::MapToolShape,
         }
     }
 
@@ -66,6 +100,7 @@ impl MapTool {
             Self::Brush => Some(Text::MapBrushHint),
             Self::Clip => Some(Text::MapClipHint),
             Self::Vertex => Some(Text::MapVertexHint),
+            Self::Shape => Some(Text::MapShapeHint),
         }
     }
 }
@@ -85,6 +120,225 @@ pub enum BrushAction {
     Merge(EntityIndex, Vec<BrushIndex>),
     /// Delete a brush.
     Delete(EntityIndex, BrushIndex),
+    /// Fill the box from one corner to the other with a shape, in the world.
+    Shape([f64; 3], [f64; 3], ShapeSpec),
+}
+
+/// The shapes the Shape tool makes, in its menu's order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ShapeKind {
+    /// A cylinder, solid or hollow.
+    #[default]
+    Cylinder,
+    /// A cone.
+    Cone,
+    /// An arch.
+    Arch,
+    /// A UV spheroid.
+    UvSpheroid,
+    /// An icospheroid.
+    Icospheroid,
+    /// A rock.
+    Rock,
+    /// A scalable curve.
+    Curve,
+    /// Straight stairs.
+    Stairs,
+    /// Spiral stairs.
+    SpiralStairs,
+}
+
+impl ShapeKind {
+    /// Every shape, in the menu's order.
+    const ALL: [Self; 9] = [
+        Self::Cylinder,
+        Self::Cone,
+        Self::Arch,
+        Self::UvSpheroid,
+        Self::Icospheroid,
+        Self::Rock,
+        Self::Curve,
+        Self::Stairs,
+        Self::SpiralStairs,
+    ];
+
+    const fn text(self) -> Text {
+        match self {
+            Self::Cylinder => Text::ShapeCylinder,
+            Self::Cone => Text::ShapeCone,
+            Self::Arch => Text::ShapeArch,
+            Self::UvSpheroid => Text::ShapeUvSpheroid,
+            Self::Icospheroid => Text::ShapeIcospheroid,
+            Self::Rock => Text::ShapeRock,
+            Self::Curve => Text::ShapeCurve,
+            Self::Stairs => Text::ShapeStairs,
+            Self::SpiralStairs => Text::ShapeSpiralStairs,
+        }
+    }
+
+    /// Whether the shape is round, so its corners lie on or around the box's ellipse.
+    const fn takes_circle(self) -> bool {
+        match self {
+            Self::Cylinder | Self::Cone => true,
+            Self::Arch
+            | Self::UvSpheroid
+            | Self::Icospheroid
+            | Self::Rock
+            | Self::Curve
+            | Self::Stairs
+            | Self::SpiralStairs => false,
+        }
+    }
+}
+
+/// Whether a cylinder is solid or a wall around a hole.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Fill {
+    /// Solid.
+    #[default]
+    Solid,
+    /// A wall around a hole.
+    Hollow,
+}
+
+/// What the Shape tool makes: the shape and the settings its toolbar shows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ShapeOptions {
+    kind: ShapeKind,
+    sides: u32,
+    curve_sides: u32,
+    circle: Circle,
+    fill: Fill,
+    wall: f64,
+    climb: Climb,
+}
+
+impl Default for ShapeOptions {
+    fn default() -> Self {
+        Self {
+            kind: ShapeKind::default(),
+            sides: DEFAULT_SIDES,
+            curve_sides: DEFAULT_CURVE_SIDES,
+            circle: Circle::default(),
+            fill: Fill::default(),
+            wall: DEFAULT_WALL,
+            climb: Climb::default(),
+        }
+    }
+}
+
+impl ShapeOptions {
+    /// The shape with these settings, the rest their defaults (MAP-10).
+    fn spec(&self) -> ShapeSpec {
+        let (sides, circle) = (self.sides, self.circle);
+        match self.kind {
+            ShapeKind::Cylinder => ShapeSpec::Cylinder {
+                sides,
+                circle,
+                hollow: match self.fill {
+                    Fill::Solid => None,
+                    Fill::Hollow => Some(self.wall),
+                },
+            },
+            ShapeKind::Cone => ShapeSpec::Cone { sides, circle },
+            ShapeKind::Arch => ShapeSpec::Arch {
+                sides,
+                arc: ARCH_ARC,
+                start: 0.0,
+                thickness: self.wall,
+                wall: ArchWall::Open,
+            },
+            ShapeKind::UvSpheroid => ShapeSpec::UvSpheroid {
+                sides,
+                rings: sides
+                    .div_ceil(2)
+                    .min(
+                        SHAPE_MAX_SPHEROID_FACES
+                            .checked_div(sides)
+                            .unwrap_or(SHAPE_MAX_RINGS),
+                    )
+                    .clamp(SHAPE_MIN_RINGS, SHAPE_MAX_RINGS),
+            },
+            ShapeKind::Icospheroid => ShapeSpec::Icospheroid {
+                subdivisions: ICOSPHERE_SUBDIVISIONS,
+            },
+            ShapeKind::Rock => ShapeSpec::Rock {
+                points: sides.clamp(SHAPE_MIN_ROCK_POINTS, SHAPE_MAX_ROCK_POINTS),
+                seed: 0,
+            },
+            ShapeKind::Curve => ShapeSpec::Curve {
+                sides: self.curve_sides,
+                hollow: None,
+            },
+            ShapeKind::Stairs => ShapeSpec::Stairs {
+                height: SHAPE_STEP_HEIGHT,
+                depth: SHAPE_STEP_DEPTH,
+                climb: self.climb,
+            },
+            ShapeKind::SpiralStairs => ShapeSpec::SpiralStairs {
+                sides,
+                height: SHAPE_STEP_HEIGHT,
+                core: 0.0,
+            },
+        }
+    }
+
+    /// The shape's settings in the toolbar.
+    fn toolbar(&mut self, ui: &mut Ui) {
+        egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<ShapeKind>()))
+            .selected_text(self.kind.text().get())
+            .show_ui(ui, |ui| {
+                for kind in ShapeKind::ALL {
+                    ui.selectable_value(&mut self.kind, kind, kind.text().get());
+                }
+            });
+        match self.kind {
+            ShapeKind::Curve => {
+                ui.label(Text::MapShapeSides.get());
+                for sides in CURVE_SIDES {
+                    ui.selectable_value(&mut self.curve_sides, sides, sides.to_string());
+                }
+            }
+            ShapeKind::Icospheroid | ShapeKind::Stairs => {}
+            ShapeKind::Cylinder
+            | ShapeKind::Cone
+            | ShapeKind::Arch
+            | ShapeKind::UvSpheroid
+            | ShapeKind::Rock
+            | ShapeKind::SpiralStairs => {
+                ui.label(Text::MapShapeSides.get());
+                ui.add(egui::DragValue::new(&mut self.sides).range(SIDES));
+            }
+        }
+        if self.kind.takes_circle() {
+            ui.selectable_value(
+                &mut self.circle,
+                Circle::Vertices,
+                Text::MapShapeCorners.get(),
+            );
+            ui.selectable_value(&mut self.circle, Circle::Edges, Text::MapShapeEdges.get());
+        }
+        if self.kind == ShapeKind::Cylinder {
+            ui.selectable_value(&mut self.fill, Fill::Solid, Text::MapShapeSolid.get());
+            ui.selectable_value(&mut self.fill, Fill::Hollow, Text::MapShapeHollow.get());
+        }
+        if (self.kind == ShapeKind::Cylinder && self.fill == Fill::Hollow)
+            || self.kind == ShapeKind::Arch
+        {
+            ui.label(Text::MapShapeWall.get());
+            ui.add(egui::DragValue::new(&mut self.wall).speed(WALL_STEP));
+        }
+        if self.kind == ShapeKind::Stairs {
+            for (climb, text) in [
+                (Climb::East, Text::MapClimbEast),
+                (Climb::West, Text::MapClimbWest),
+                (Climb::North, Text::MapClimbNorth),
+                (Climb::South, Text::MapClimbSouth),
+            ] {
+                ui.selectable_value(&mut self.climb, climb, text.get());
+            }
+        }
+    }
 }
 
 /// What the left button is dragging.
@@ -110,6 +364,8 @@ pub(crate) struct BrushTools {
     /// The brush the last clip or vertex move asked for reshapes, which stays selected.
     reshaped: Option<BrushRef>,
     drag: Option<Drag>,
+    /// What the Shape tool makes.
+    shape: ShapeOptions,
 }
 
 /// A ray in map space: where it starts and its direction.
@@ -138,11 +394,11 @@ fn snapped_f32(point: [f32; 3]) -> [f32; 3] {
     snapped(point).map(|c| c as f32)
 }
 
-/// The box from `a` to `b` on the ground, `BRUSH_HEIGHT` tall.
-fn ground_box(a: [f32; 3], b: [f32; 3]) -> [[f32; 3]; 2] {
+/// The box from `a` to `b` on the ground, `height` tall.
+fn ground_box(a: [f32; 3], b: [f32; 3], height: f32) -> [[f32; 3]; 2] {
     [
         [a[0].min(b[0]), a[1].min(b[1]), a[2]],
-        [a[0].max(b[0]), a[1].max(b[1]), a[2] + BRUSH_HEIGHT],
+        [a[0].max(b[0]), a[1].max(b[1]), a[2] + height],
     ]
 }
 
@@ -175,6 +431,10 @@ impl BrushTools {
     pub(crate) fn toolbar(&mut self, ui: &mut Ui) {
         for tool in MapTool::ALL {
             ui.selectable_value(&mut self.tool, tool, tool.text().get());
+        }
+        if self.tool == MapTool::Shape {
+            ui.separator();
+            self.shape.toolbar(ui);
         }
         if self.tool == MapTool::Clip {
             ui.separator();
@@ -229,7 +489,9 @@ impl BrushTools {
         {
             self.drag = match self.tool {
                 MapTool::Select => None,
-                MapTool::Brush | MapTool::Clip => at_height(ray(at), 0.0).map(Drag::Ground),
+                MapTool::Brush | MapTool::Clip | MapTool::Shape => {
+                    at_height(ray(at), 0.0).map(Drag::Ground)
+                }
                 MapTool::Vertex => self
                     .corner_near(scene, projection, at)
                     .map(|(b, v)| Drag::Corner(b, v)),
@@ -285,8 +547,17 @@ impl BrushTools {
         match (self.tool, drag) {
             (MapTool::Brush, Drag::Ground(from)) => {
                 let to = at_height(ray, from[2])?;
-                let [min, max] = ground_box(from, to);
+                let [min, max] = ground_box(from, to, BRUSH_HEIGHT);
                 Some(BrushAction::Create(snapped(min), snapped(max)))
+            }
+            (MapTool::Shape, Drag::Ground(from)) => {
+                let to = at_height(ray, from[2])?;
+                let [min, max] = ground_box(from, to, SHAPE_HEIGHT);
+                Some(BrushAction::Shape(
+                    snapped(min),
+                    snapped(max),
+                    self.shape.spec(),
+                ))
             }
             (MapTool::Clip, Drag::Ground(from)) => {
                 let &(entity, brush) = self.chosen.first()?;
@@ -301,7 +572,10 @@ impl BrushTools {
                 let [x, y, _] = snapped(to);
                 Some(BrushAction::Vertex(entity, brush, from, [x, y, from[2]]))
             }
-            (MapTool::Select | MapTool::Brush | MapTool::Clip | MapTool::Vertex, _) => None,
+            (
+                MapTool::Select | MapTool::Brush | MapTool::Clip | MapTool::Vertex | MapTool::Shape,
+                _,
+            ) => None,
         }
     }
 
@@ -350,7 +624,12 @@ impl BrushTools {
         };
         match self.tool {
             MapTool::Brush => {
-                for line in box_lines(ground_box(from, to)) {
+                for line in box_lines(ground_box(from, to, BRUSH_HEIGHT)) {
+                    projection.line(painter, line, focus);
+                }
+            }
+            MapTool::Shape => {
+                for line in box_lines(ground_box(from, to, SHAPE_HEIGHT)) {
                     projection.line(painter, line, focus);
                 }
             }
