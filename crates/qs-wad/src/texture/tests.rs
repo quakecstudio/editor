@@ -537,3 +537,71 @@ fn texture_lumps_go_under_their_own_names() {
     let read = MapWad::read(&bytes).unwrap();
     assert_eq!(read.find(b"{grate").unwrap().ty, WAD_TYP_MIPTEX);
 }
+
+/// A 16 by 16 texture lump named `name` whose pixels are the indices 0 to 255 in order.
+fn every_index(name: &[u8]) -> Vec<u8> {
+    let mut lump = name.to_vec();
+    lump.resize(16, 0);
+    for value in [16_u32, 16, 40, 40 + 256, 40 + 256 + 64, 40 + 256 + 64 + 16] {
+        lump.extend_from_slice(&value.to_le_bytes());
+    }
+    lump.extend((0..=255_u8).collect::<Vec<_>>());
+    lump
+}
+
+// spec WAD-8.1: the first level's indices, row by row, from the first offset
+// spec WAD-8.2: each index is its palette colour, opaque
+#[test]
+fn a_texture_decodes_to_its_palette_colours() {
+    let palette = palette();
+    let decoded = palette.decode_miptex(&every_index(b"plain")).unwrap();
+    assert_eq!((decoded.width, decoded.height), (16, 16));
+    assert_eq!(decoded.rgba.len(), 256 * 4);
+    for index in 0..=255_u8 {
+        let at = usize::from(index) * 4;
+        let [r, g, b] = palette.colour(PaletteIndex(index));
+        assert_eq!(decoded.rgba[at..at + 4], [r, g, b, 255], "index {index}");
+    }
+}
+
+// spec WAD-8.2: a fence texture's index 255 is transparent, and only that index
+#[test]
+fn a_fence_texture_hides_index_255() {
+    let decoded = palette().decode_miptex(&every_index(b"{grate")).unwrap();
+    assert_eq!(decoded.rgba[255 * 4 + 3], 0);
+    assert!(decoded.rgba[..255 * 4].chunks(4).all(|p| p[3] == 255));
+}
+
+// spec WAD-8.1: a lump shorter than its header or its first level is refused with what it needs
+#[test]
+fn a_short_lump_is_refused() {
+    let lump = every_index(b"plain");
+    assert_eq!(
+        palette().decode_miptex(&lump[..39]),
+        Err(TextureError::Truncated {
+            needed: 40,
+            len: 39
+        })
+    );
+    assert_eq!(
+        palette().decode_miptex(&lump[..40 + 255]),
+        Err(TextureError::Truncated {
+            needed: 40 + 256,
+            len: 40 + 255
+        })
+    );
+    let mut far = lump.clone();
+    far[24..28].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(matches!(
+        palette().decode_miptex(&far),
+        Err(TextureError::Truncated { .. })
+    ));
+    assert!(
+        TextureError::Truncated {
+            needed: 40,
+            len: 39
+        }
+        .to_string()
+        .contains("needs 40")
+    );
+}

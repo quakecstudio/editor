@@ -3910,6 +3910,7 @@ dependencies = [
  "qs-pak",
  "qs-sim",
  "qs-vfs",
+ "qs-wad",
  "regex-lite",
  "schemars",
  "serde",

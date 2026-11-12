@@ -314,3 +314,17 @@ does.
 | `WAD_FULLBRIGHT_FIRST` | 224 | REND-13.4, `Mod_CheckFullbrights` "`> 223`" |
 | `WAD_TRANSPARENT` | 255 | QS `Quake/gl_texmgr.c`, `TexMgr_LoadPalette` |
 | `WAD_OPAQUE_ALPHA` | 128 | our decision: the middle of the alpha range |
+
+## WAD-8 Decoding a texture for display
+
+**Source:** our decision, for the editor's texture browser (MAP-5). The layout read is WAD-4.3's;
+the fence rule is WAD-6.4's, QuakeSpasm's `TexMgr_LoadPalette` giving entry 255 alpha 0.
+
+### Behaviour
+
+- **WAD-8.1** A texture is shown from its first mip level: `width * height` palette indices from
+  the offset its first `miptex_t` offset names, row by row from the top left. A lump shorter than
+  the 40-byte header, or than that offset plus `width * height`, is refused with the length it
+  needs.
+- **WAD-8.2** Each index is its palette colour, opaque, except index 255 in a fence texture
+  (WAD-6.4), which is transparent: alpha 0.
