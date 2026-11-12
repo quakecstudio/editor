@@ -23,8 +23,10 @@ mod document;
 pub mod geometry;
 pub mod lexer;
 pub mod qbsp;
+mod rooms;
 
 pub use check::{Diagnostic, DiagnosticKind, MAP_MAX_SOUNDS};
 pub use document::{
     Brush, BrushModel, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key,
 };
+pub use rooms::{Room, RoomKind};

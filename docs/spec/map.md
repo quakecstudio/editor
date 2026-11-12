@@ -407,13 +407,15 @@ one ("the armory") and the map tools can find it (MAP-16).
   (`LayerClassname = "func_group"`) and whose `_tb_type` is `_tb_layer`; a group is one whose
   `_tb_type` is `_tb_group` (`isLayer`, `isGroup`). Its name is its `_tb_name` and its id its
   `_tb_id`; TrenchBroom skips one whose name or id is blank (`Skipping layer entity: missing
-  name`, `missing id`), and it is no room here either. The world entity is no room.
+  name`, `missing id`) or whose id is not a whole number above 0 (`!rawId || *rawId <= 0u`),
+  and it is no room here either. The world entity is no room.
 - **MAP-9.2** An entity is in the layer its `_tb_layer` names by id, else in the group its
   `_tb_group` names (`extractContainerInfo` reads `_tb_layer` first); a value that is blank or
   not a whole number from 0 (`rawParentLayerId && *rawParentLayerId >= 0`) names none.
 - **MAP-9.3** A room's bounds are the box around every brush polygon (MAP-3.4) of the room's own
   entity and of the brush entities in it; a room with no brush has none. Not TrenchBroom's: it
   keeps no bounds.
-- **MAP-9.4** An entity is in a room when it names the room (MAP-9.2), and otherwise when its
-  `origin` (MAP-2.7) lies in the room's bounds, edges included, the first such room in the
-  map's order: an entity placed where a room is, with no TrenchBroom key, is in it.
+- **MAP-9.4** A room's own entity is in the room. Another entity is in a room when it names
+  the room (MAP-9.2), and otherwise when its `origin` (MAP-2.7) lies in the room's bounds,
+  edges included, the first such room in the map's order: an entity placed where a room is,
+  with no TrenchBroom key, is in it.

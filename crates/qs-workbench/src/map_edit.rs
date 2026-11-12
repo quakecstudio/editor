@@ -17,8 +17,10 @@ use qs_bsp::{Bsp, BspLoader, ent_file_names};
 use qs_commands::{BoxError, Command, Outcome, RegisterError, Registry, UndoStep};
 use qs_map::{Entity, Item, MapFile};
 
+pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
 pub use live::LiveChange;
 
+mod inspect;
 mod live;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -59,6 +61,8 @@ pub const MAP_REMOVE_KEY: &str = "map.remove_key";
 pub const MAP_ENTITY: &str = "map.entity";
 /// The id of `map.duplicate`.
 pub const MAP_DUPLICATE: &str = "map.duplicate";
+/// The id of `map.inspect`.
+pub const MAP_INSPECT: &str = "map.inspect";
 /// The id of `map.save`.
 pub const MAP_SAVE: &str = "map.save";
 
@@ -1014,6 +1018,7 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(MapSetKey)?;
     registry.register(MapRemoveKey)?;
     registry.register(MapEntity)?;
+    registry.register(inspect::MapInspect)?;
     registry.register(MapSave)
 }
 

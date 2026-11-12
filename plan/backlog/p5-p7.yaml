@@ -113,7 +113,7 @@ groups:
     depends:
     - P5-06
     deliverable:
-    - map.inspect, map.entity.place, map.entity.set commands with schemas
+    - map.inspect with its schema, beside P5-06's map.place and map.set_key, and the evals/place-shamblers eval
     acceptance:
     - The agent places three Shamblers in a named room from a prompt in an eval
     verify:

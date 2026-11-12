@@ -1,0 +1,32 @@
+title = "Place three Shamblers in a named room"
+template = "id1"
+prompt = "Place three Shamblers in the Armory of maps/castle.map, standing on its floor, and save the map."
+turns = 30
+runs = 1
+threshold = 1
+files = ["maps/castle.map"]
+
+# P5-08: the map must hold three monster_shambler entities in the room TrenchBroom names Armory.
+[[map]]
+file = "maps/castle.map"
+classname = "monster_shambler"
+room = "Armory"
+count = 3
+
+[[solution]]
+file = "maps/castle.map"
+find = "// End of the castle.\n"
+replace = """{
+"classname" "monster_shambler"
+"origin" "896 128 48"
+}
+{
+"classname" "monster_shambler"
+"origin" "1024 256 48"
+}
+{
+"classname" "monster_shambler"
+"origin" "1152 384 48"
+}
+// End of the castle.
+"""

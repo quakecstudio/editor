@@ -26,7 +26,8 @@ running qbsp's parser.
 
 - **Layer:** L0 formats, with no dependencies. `qs-vfs`'s `walk` example reads every BSP's
   entity text with it, and `cargo xtask map-corpus` reads the corpus's maps.
-- **Spec sections:** MAP-1 to MAP-7 in [`map.md`](../../docs/spec/map.md).
+- **Spec sections:** MAP-1 to MAP-7, and MAP-9 (rooms, TrenchBroom's layers and groups, in
+  `rooms`), in [`map.md`](../../docs/spec/map.md).
 - **Shipped:** yes.
 
 ## Invariants

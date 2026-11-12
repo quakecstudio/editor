@@ -2,7 +2,8 @@
 
 //! `cargo xtask evals`: the agent's evals (P4-15, QA-5). Each task in `evals/<name>/` is a
 //! modding job on a starter template (`task.toml`), a scenario that says what success is
-//! (`success.scenario`), a rubric for the reviewer (`rubric.md`) and a pass threshold.
+//! (`success.scenario`), or for a map task what the map must hold (`[[map]]` in `task.toml`,
+//! P5-08), a rubric for the reviewer (`rubric.md`) and a pass threshold.
 //!
 //! - `--check` proves each scenario defines success: on the task's starting point (the
 //!   template with the task's `setup` edits) it fails, and with the reference `solution` edits
@@ -20,6 +21,7 @@ use std::path::{Path, PathBuf};
 use qc_project::FsLoader;
 use qs_agent::{Message, Model, Reply, RunConfig, ToolSpec};
 use qs_commands::{Registry, Session};
+use qs_map::MapFile;
 use qs_models::{MemoryKeys, ProviderConfig, ProviderKind, ProviderModel, Secret, Usage};
 use qs_templates::{Folder, Template};
 use qs_workbench::{
@@ -85,6 +87,63 @@ struct Edit {
     replace: String,
 }
 
+/// What a map task's map must hold for it to succeed (P5-08): `count` entities of `classname`
+/// in the room `room` (MAP-9) of the map `file`.
+#[derive(Debug, Deserialize)]
+struct MapExpect {
+    file: String,
+    classname: String,
+    room: String,
+    count: usize,
+}
+
+impl MapExpect {
+    /// Whether the map holds it: the map open in `session` when it is this one, the agent's
+    /// unsaved edits included, else the file in `dir`.
+    fn holds(&self, session: &mut Session<Context>, dir: &Path) -> Result<bool, String> {
+        let path = dir.join(&self.file);
+        let same = |open: &Path| {
+            fs::canonicalize(open)
+                .ok()
+                .zip(fs::canonicalize(&path).ok())
+                .is_some_and(|(a, b)| a == b)
+        };
+        let open = session
+            .context()
+            .workbench
+            .map()
+            .filter(|document| same(document.path()))
+            .map(|document| document.file().clone());
+        let file = match open {
+            Some(file) => file,
+            None => {
+                let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                MapFile::parse(&bytes).map_err(|e| format!("{}: {e}", path.display()))?
+            }
+        };
+        let rooms = file.rooms();
+        let count = file
+            .entities
+            .iter()
+            .filter(|entity| entity.classname() == Some(self.classname.as_bytes()))
+            .filter(|entity| {
+                entity
+                    .room(&rooms)
+                    .is_some_and(|room| room.name.eq_ignore_ascii_case(&self.room))
+            })
+            .count();
+        Ok(count == self.count)
+    }
+}
+
+/// What a task's success is.
+enum Success<'t> {
+    /// Its scenario passes on the agent's work (`success.scenario`).
+    Scenario(String),
+    /// Its map holds every one of these (P5-08).
+    Map(&'t [MapExpect]),
+}
+
 /// A task, as `task.toml` gives it.
 #[derive(Debug, Deserialize)]
 struct Task {
@@ -98,6 +157,13 @@ struct Task {
     setup: Vec<Edit>,
     #[serde(default)]
     solution: Vec<Edit>,
+    /// Files of the task's directory copied into the project, such as a map, by their path
+    /// from the directory.
+    #[serde(default)]
+    files: Vec<String>,
+    /// For a map task, what the map must hold; with none, `success.scenario` says.
+    #[serde(default)]
+    map: Vec<MapExpect>,
 }
 
 /// The name a task's scenario takes in the project, and the test filter that finds it.
@@ -189,13 +255,18 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             &fs::read_to_string(dir.join("task.toml")).map_err(|e| format!("{name}: {e}"))?,
         )
         .map_err(|e| format!("{name}/task.toml: {e}"))?;
-        let scenario = fs::read_to_string(dir.join("success.scenario"))
-            .map_err(|e| format!("{name}/success.scenario: {e}"))?;
+        let success = if task.map.is_empty() {
+            let scenario = fs::read_to_string(dir.join("success.scenario"))
+                .map_err(|e| format!("{name}/success.scenario: {e}"))?;
+            Success::Scenario(scenario)
+        } else {
+            Success::Map(&task.map)
+        };
         if !dir.join("rubric.md").is_file() {
             return Err(format!("{name}: no rubric.md"));
         }
         if args.check {
-            let (fails, passes) = check(&work, name, &task, &scenario, &inputs)?;
+            let (fails, passes) = check(&work, name, &dir, &task, &success, &inputs)?;
             all &= fails && passes;
             let mark = |ok: bool| if ok { "yes" } else { "**no**" };
             report.push_str(&format!(
@@ -208,7 +279,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
                 if fails && passes { "ok  " } else { "FAIL" }
             );
         } else {
-            let row = run(&work, name, &task, &scenario, &inputs, args)?;
+            let row = run(&work, (name, &dir), &task, &success, &inputs, args)?;
             all &= row.met;
             report.push_str(&format!(
                 "| {name} | {}/{} | {} | {} | {} | {} | {} | {:.2} |\n",
@@ -238,11 +309,11 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
     Ok(all)
 }
 
-/// Makes task `name`'s project for run `n` from its template with its setup edits; its
-/// directory.
+/// Makes task `name`'s project for run `n` from its template, with the task's files from
+/// `from` and its setup edits; its directory.
 fn project(
     work: &Path,
-    name: &str,
+    (name, from): (&str, &Path),
     n: u32,
     task: &Task,
     inputs: &Inputs,
@@ -254,6 +325,13 @@ fn project(
         fs::remove_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
     qs_templates::create(task.template, &dir, &inputs.templates).map_err(|e| e.to_string())?;
+    for file in &task.files {
+        let to = dir.join(file);
+        if let Some(parent) = to.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
+        fs::copy(from.join(file), &to).map_err(|e| format!("{name}/{file}: {e}"))?;
+    }
     apply(&dir, &task.setup).map_err(|e| format!("{name} setup: {e}"))?;
     Ok(dir)
 }
@@ -297,9 +375,20 @@ fn session(dir: &Path, game: &Path) -> Result<Session<Context>, String> {
 fn succeeds(
     session: &mut Session<Context>,
     dir: &Path,
-    scenario: &str,
+    success: &Success<'_>,
     game: &Path,
 ) -> Result<bool, String> {
+    let scenario = match success {
+        Success::Scenario(scenario) => scenario,
+        Success::Map(expects) => {
+            for expect in *expects {
+                if !expect.holds(session, dir)? {
+                    return Ok(false);
+                }
+            }
+            return Ok(true);
+        }
+    };
     let tests = dir.join("tests");
     fs::create_dir_all(&tests).map_err(|e| e.to_string())?;
     fs::write(tests.join(format!("{SCENARIO}.scenario")), scenario).map_err(|e| e.to_string())?;
@@ -330,19 +419,20 @@ fn succeeds(
 fn check(
     work: &Path,
     name: &str,
+    from: &Path,
     task: &Task,
-    scenario: &str,
+    success: &Success<'_>,
     inputs: &Inputs,
 ) -> Result<(bool, bool), String> {
     if task.solution.is_empty() {
         return Err(format!("{name}: no reference solution"));
     }
-    let dir = project(work, name, 0, task, inputs)?;
+    let dir = project(work, (name, from), 0, task, inputs)?;
     let mut start = session(&dir, &inputs.game)?;
-    let fails = !succeeds(&mut start, &dir, scenario, &inputs.game)?;
+    let fails = !succeeds(&mut start, &dir, success, &inputs.game)?;
     apply(&dir, &task.solution).map_err(|e| format!("{name} solution: {e}"))?;
     let mut solved = session(&dir, &inputs.game)?;
-    let passes = succeeds(&mut solved, &dir, scenario, &inputs.game)?;
+    let passes = succeeds(&mut solved, &dir, success, &inputs.game)?;
     Ok((fails, passes))
 }
 
@@ -388,9 +478,9 @@ impl Model for Capped {
 /// `--run` for one task: each run on a fresh project, the scenario played on the agent's work.
 fn run(
     work: &Path,
-    name: &str,
+    (name, from): (&str, &Path),
     task: &Task,
-    scenario: &str,
+    success: &Success<'_>,
     inputs: &Inputs,
     args: &Args,
 ) -> Result<Row, String> {
@@ -419,7 +509,7 @@ fn run(
         cost: 0.0,
     };
     for n in 1..=task.runs {
-        let dir = project(work, name, n, task, inputs)?;
+        let dir = project(work, (name, from), n, task, inputs)?;
         let mut session = session(&dir, &inputs.game)?;
         let mut model = Capped {
             model: ProviderModel::connect(config.clone(), &keys).map_err(|e| e.to_string())?,
@@ -432,7 +522,7 @@ fn run(
             ..RunConfig::new(&dir)
         };
         let report = qs_agent::run(&mut session, &mut model, &task.prompt, &run_config);
-        let success = succeeds(&mut session, &dir, scenario, &inputs.game)?;
+        let passed = succeeds(&mut session, &dir, success, &inputs.game)?;
         let usage = model.model.usage();
         let cost = model.cost();
         let turns = report
@@ -444,7 +534,7 @@ fn run(
                     .count()
             })
             .unwrap_or_default();
-        if success {
+        if passed {
             row.passed = row.passed.saturating_add(1);
         }
         row.turns = row.turns.saturating_add(turns);
@@ -457,7 +547,7 @@ fn run(
                 "title": task.title,
                 "run": n,
                 "model": config.model,
-                "passed": success,
+                "passed": passed,
                 "turns": turns,
                 "usage": usage,
                 "cost_usd": cost,
@@ -497,8 +587,9 @@ mod tests {
 
     use super::{Edit, Task, apply};
 
-    // No spec statement: P4-15, every task in evals/ reads: a template, a prompt, a threshold
-    // no greater than its runs, a reference solution, a scenario that reads and a rubric
+    // No spec statement: P4-15, P5-08, every task in evals/ reads: a template, a prompt, a
+    // threshold no greater than its runs, a reference solution, a scenario that reads or a map
+    // to check, the files it names and a rubric
     #[test]
     fn every_task_is_whole() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../evals");
@@ -518,8 +609,13 @@ mod tests {
             );
             assert!(task.threshold >= 1 && task.threshold <= task.runs && task.turns > 0);
             assert!(!task.solution.is_empty(), "{}: no solution", dir.display());
-            let scenario = std::fs::read_to_string(dir.join("success.scenario")).unwrap();
-            Scenario::parse(&scenario).unwrap();
+            if task.map.is_empty() {
+                let scenario = std::fs::read_to_string(dir.join("success.scenario")).unwrap();
+                Scenario::parse(&scenario).unwrap();
+            }
+            for file in &task.files {
+                assert!(dir.join(file).is_file(), "{}: no {file}", dir.display());
+            }
             assert!(dir.join("rubric.md").is_file());
         }
         assert!(count >= 5, "the tasks the issue names and more");

@@ -10,6 +10,7 @@ scenario that defines success, then read by a reviewer against a rubric.
 | `fix-compile` | id1 | Fix a compile error (a missing parenthesis in `ImpulseCommands`) |
 | `add-impulse` | id1 | Add impulse 50, which gives 100 nails |
 | `port-to-rerelease` | rerelease | Port the 150-health change to the rerelease, keeping its Nightmare rule |
+| `place-shamblers` | id1 | Place three Shamblers in the Armory of a map, a TrenchBroom group (P5-08) |
 
 ## A task
 
@@ -23,6 +24,11 @@ scenario that defines success, then read by a reviewer against a rubric.
   - `solution`: a reference solution, which proves the scenario can pass.
 - `success.scenario`: what success is (`docs/spec/scenario.md`). It is put into the project's
   `tests/` only after the agent's run, and played on the agent's work, unsaved edits included.
+- For a map task, in `task.toml` in place of the scenario: `files`, the task directory's files
+  copied into the project (such as `maps/castle.map`), and one or more `[[map]]`, each a map
+  `file`, a `classname`, a `room` (a TrenchBroom layer or group, MAP-9) and the `count` of
+  entities of that class the room must hold. The map is read as the agent left it: the map
+  open in the editor, unsaved edits included, else the file.
 - `rubric.md`: what a reviewer reads a passing run against.
 
 ## Running them

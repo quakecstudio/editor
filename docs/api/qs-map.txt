@@ -22,6 +22,7 @@ enum qs_map::lexer::Lexed
 enum qs_map::lexer::TokenLimit
 enum qs_map::qbsp::QbspError
 enum qs_map::qbsp::QbspWarning
+enum qs_map::rooms::RoomKind
 field qs_map::check::Diagnostic.kind
 field qs_map::check::Diagnostic.line
 field qs_map::document::Brush.faces
@@ -55,6 +56,9 @@ field qs_map::qbsp::QbspTexinfo.miptex
 field qs_map::qbsp::QbspTexinfo.vecs
 field qs_map::qbsp::TextureSlot.found
 field qs_map::qbsp::TextureSlot.name
+field qs_map::rooms::Room.bounds
+field qs_map::rooms::Room.kind
+field qs_map::rooms::Room.name
 fn qs_map::check::MapFile::check
 fn qs_map::cnum::c_atof
 fn qs_map::cnum::c_atoi
@@ -131,6 +135,9 @@ fn qs_map::qbsp::QbspMap::texture_slots
 fn qs_map::qbsp::QbspMap::wad_path
 fn qs_map::qbsp::is_special
 fn qs_map::qbsp::load_map_file
+fn qs_map::rooms::Entity::room
+fn qs_map::rooms::MapFile::rooms
+fn qs_map::rooms::Room::holds
 impl qs_map::check::DiagnosticKind: fmt::Display
 impl qs_map::document::Entity: Default
 impl qs_map::document::MapError: From<LexError>
@@ -163,6 +170,7 @@ struct qs_map::qbsp::QbspFace
 struct qs_map::qbsp::QbspMap
 struct qs_map::qbsp::QbspTexinfo
 struct qs_map::qbsp::TextureSlot
+struct qs_map::rooms::Room
 trait qs_map::geometry::MapFloat
 trait qs_map::geometry::sealed::Sealed
 type qs_map::geometry::TexVecs
@@ -178,6 +186,8 @@ use qs_map::MAP_MAX_SOUNDS = check::MAP_MAX_SOUNDS
 use qs_map::MapError = document::MapError
 use qs_map::MapFile = document::MapFile
 use qs_map::Pair = document::Pair
+use qs_map::Room = rooms::Room
+use qs_map::RoomKind = rooms::RoomKind
 use qs_map::TexDef = document::TexDef
 use qs_map::is_tool_key = document::is_tool_key
 variant qs_map::check::DiagnosticKind::DuplicateKey
@@ -239,3 +249,5 @@ variant qs_map::qbsp::QbspWarning::DuplicatePlane
 variant qs_map::qbsp::QbspWarning::NoNormal
 variant qs_map::qbsp::QbspWarning::NoWadFile
 variant qs_map::qbsp::QbspWarning::TextureNotFound
+variant qs_map::rooms::RoomKind::Group
+variant qs_map::rooms::RoomKind::Layer
