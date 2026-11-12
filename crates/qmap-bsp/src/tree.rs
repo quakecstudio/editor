@@ -9,6 +9,7 @@ use crate::math::{
     Axis, CLEAR_MAXS, CLEAR_MINS, ORIGIN, Vec3, dot, length, max, min, normalize, same,
 };
 use crate::planes::{Plane, PlaneId, Planes, Side};
+use crate::portals::PortalId;
 use crate::winding::{ON_EPSILON, divide};
 use crate::{CompileError, Contents, Face, Faults, Surface, Warning};
 
@@ -63,7 +64,7 @@ pub(crate) struct Node {
     pub(crate) mins: Vec3,
     pub(crate) maxs: Vec3,
     /// The portals touching it (QBSP-8).
-    pub(crate) portals: Vec<usize>,
+    pub(crate) portals: Vec<PortalId>,
     /// The entity standing in it (QBSP-9.1).
     pub(crate) occupied: bool,
 }
@@ -95,56 +96,60 @@ pub(crate) struct Builder<'a> {
     pub(crate) warnings: core::cell::RefCell<Vec<Warning>>,
 }
 
-/// `FaceSide`: which side of `plane` a face is on, `None` when it has points on both
-/// (QBSP-7.3).
-fn face_side(face: &Face, plane: Plane, axial: Option<Axis>) -> Option<Side> {
-    let (mut front, mut back) = (false, false);
-    for point in &face.points {
-        // An axial plane compares the coordinate with its distance moved by the epsilon, in
-        // double precision; any other, the float distance with the epsilon.
-        let (ahead, behind) = match axial {
-            Some(axis) => {
-                let (p, dist) = (f64::from(axis.of(*point)), f64::from(plane.dist));
-                (p > dist + ON_EPSILON, p < dist - ON_EPSILON)
+impl Face {
+    /// `FaceSide`: which side of `plane` a face is on, `None` when it has points on both
+    /// (QBSP-7.3).
+    pub(crate) fn side_of(&self, plane: Plane, axial: Option<Axis>) -> Option<Side> {
+        let (mut front, mut back) = (false, false);
+        for point in &self.points {
+            // An axial plane compares the coordinate with its distance moved by the epsilon, in
+            // double precision; any other, the float distance with the epsilon.
+            let (ahead, behind) = match axial {
+                Some(axis) => {
+                    let (p, dist) = (f64::from(axis.of(*point)), f64::from(plane.dist));
+                    (p > dist + ON_EPSILON, p < dist - ON_EPSILON)
+                }
+                None => {
+                    let d = f64::from(dot(*point, plane.normal) - plane.dist);
+                    (d > ON_EPSILON, d < -ON_EPSILON)
+                }
+            };
+            if ahead {
+                if back {
+                    return None;
+                }
+                front = true;
+            } else if behind {
+                if front {
+                    return None;
+                }
+                back = true;
             }
-            None => {
-                let d = f64::from(dot(*point, plane.normal) - plane.dist);
-                (d > ON_EPSILON, d < -ON_EPSILON)
-            }
-        };
-        if ahead {
-            if back {
-                return None;
-            }
-            front = true;
-        } else if behind {
-            if front {
-                return None;
-            }
-            back = true;
         }
-    }
-    match (front, back) {
-        (false, _) => Some(Side::Back),
-        (true, false) => Some(Side::Front),
-        (true, true) => None,
+        match (front, back) {
+            (false, _) => Some(Side::Back),
+            (true, false) => Some(Side::Front),
+            (true, true) => None,
+        }
     }
 }
 
-/// An axial plane's value over `mins` to `maxs` (QBSP-7.3).
-fn axial_value(plane: Plane, axis: Axis, mins: Vec3, maxs: Vec3) -> f32 {
-    let dist = plane.dist * axis.of(plane.normal);
-    let mut value = 0.0;
-    for j in Axis::ALL {
-        let (low, high) = (j.of(mins), j.of(maxs));
-        if j == axis {
-            value += (high - dist) * (high - dist);
-            value += (dist - low) * (dist - low);
-        } else {
-            value += 2.0 * (high - low) * (high - low);
+impl Plane {
+    /// An axial plane's value over `mins` to `maxs` (QBSP-7.3).
+    pub(crate) fn axial_value(self, axis: Axis, mins: Vec3, maxs: Vec3) -> f32 {
+        let dist = self.dist * axis.of(self.normal);
+        let mut value = 0.0;
+        for j in Axis::ALL {
+            let (low, high) = (j.of(mins), j.of(maxs));
+            if j == axis {
+                value += (high - dist) * (high - dist);
+                value += (dist - low) * (dist - low);
+            } else {
+                value += 2.0 * (high - low) * (high - low);
+            }
         }
+        value
     }
-    value
 }
 
 impl Builder<'_> {
@@ -160,7 +165,7 @@ impl Builder<'_> {
             if !kind.is_axial() {
                 continue;
             }
-            let value = axial_value(self.planes.get(surface.plane), kind.axis(), mins, maxs);
+            let value = (self.planes.get(surface.plane)).axial_value(kind.axis(), mins, maxs);
             if value > best_value {
                 continue;
             }
@@ -188,7 +193,7 @@ impl Builder<'_> {
                     continue;
                 }
                 for face in &other.faces {
-                    if face_side(face, plane, axial).is_none() {
+                    if face.side_of(plane, axial).is_none() {
                         splits = splits.saturating_add(1);
                         if splits >= best_splits {
                             break;
@@ -204,7 +209,7 @@ impl Builder<'_> {
             }
             if splits < best_splits || (splits == best_splits && kind.is_axial()) {
                 if let Some(axis) = axial {
-                    let value = axial_value(plane, axis, mins, maxs);
+                    let value = plane.axial_value(axis, mins, maxs);
                     if value > best_value && splits == best_splits {
                         continue;
                     }

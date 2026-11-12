@@ -9,18 +9,15 @@ use qs_map::qbsp::{QbspMap, load_map_file};
 use qs_wad::Wad;
 
 use crate::brush::BrushSet;
-use crate::csg::csg_faces;
+
 use crate::math::{ORIGIN, Vec3, each};
 use crate::merge::merge_all;
 use crate::output::{ClipHull, Output};
-use crate::outside::{Fill, fill_outside, gather};
+use crate::outside::Fill;
 use crate::planes::Planes;
-use crate::portals::portalize;
-use crate::prt::portal_file;
+
 use crate::tree::{Builder, Choice, SIDESPACE, Tree};
-use crate::{
-    CompileError, Dialect, Faults, Hull, Limits, ModelKind, Surface, Tables, Warning, tjunc,
-};
+use crate::{CompileError, Dialect, Faults, Hull, Limits, ModelKind, Surface, Tables, Warning};
 
 /// The default largest texture extent of a face before it is cut (QBSP-1).
 const SUBDIVIDE_SIZE: f32 = 240.0;
@@ -144,7 +141,7 @@ impl Run<'_> {
                 }
             };
         }
-        let surfaces = csg_faces(&set, self.planes)?;
+        let surfaces = set.csg_faces(self.planes)?;
         let mins = set.mins.map(|c| c - SIDESPACE);
         let maxs = set.maxs.map(|c| c + SIDESPACE);
         let reach = each(set.maxs, set.mins, |high, low| high.abs().max(low.abs()));
@@ -170,16 +167,13 @@ impl Run<'_> {
                 continue;
             };
             if entity == 0 {
-                let portals = portalize(
-                    &mut built.tree,
-                    self.planes,
-                    built.mins,
-                    built.maxs,
-                    self.warnings,
-                )?;
+                let portals =
+                    built
+                        .tree
+                        .portalize(self.planes, built.mins, built.maxs, self.warnings)?;
                 let origins = self.origins();
-                if fill_outside(&mut built.tree, self.planes, &portals, &origins) == Fill::Filled {
-                    let surfaces = gather(&built.tree);
+                if built.tree.fill_outside(self.planes, &portals, &origins) == Fill::Filled {
+                    let surfaces = built.tree.gather();
                     built.tree = self.build(Choice::Full, surfaces, built.mins, built.maxs)?;
                 }
             }
@@ -209,15 +203,12 @@ impl Run<'_> {
                 continue;
             };
             if entity == 0 {
-                let portals = portalize(
-                    &mut built.tree,
-                    self.planes,
-                    built.mins,
-                    built.maxs,
-                    self.warnings,
-                )?;
+                let portals =
+                    built
+                        .tree
+                        .portalize(self.planes, built.mins, built.maxs, self.warnings)?;
                 let origins = self.origins();
-                match fill_outside(&mut built.tree, self.planes, &portals, &origins) {
+                match built.tree.fill_outside(self.planes, &portals, &origins) {
                     Fill::NoOccupant => self.warnings.push(Warning::NoOccupant),
                     Fill::Leak => {
                         self.warnings.push(Warning::Leak);
@@ -225,7 +216,9 @@ impl Run<'_> {
                     }
                     Fill::Filled => {
                         pts = Some(Vec::new());
-                        let surfaces: Vec<Surface> = gather(&built.tree)
+                        let surfaces: Vec<Surface> = built
+                            .tree
+                            .gather()
                             .into_iter()
                             .map(|surface| Surface {
                                 faces: merge_all(surface.faces, self.planes),
@@ -233,15 +226,14 @@ impl Run<'_> {
                             })
                             .collect();
                         built.tree = self.build(Choice::Full, surfaces, built.mins, built.maxs)?;
-                        let portals = portalize(
-                            &mut built.tree,
+                        let portals = built.tree.portalize(
                             self.planes,
                             built.mins,
                             built.maxs,
                             self.warnings,
                         )?;
-                        prt = Some(portal_file(&built.tree, &portals, self.planes));
-                        tjunc::fix(&mut built.tree, built.reach)?;
+                        prt = Some(built.tree.portal_file(&portals, self.planes));
+                        built.tree.fix_tjunctions(built.reach)?;
                     }
                 }
             }

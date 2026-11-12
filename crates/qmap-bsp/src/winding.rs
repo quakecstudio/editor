@@ -44,33 +44,35 @@ pub(crate) fn classify(points: &[Vec3], plane: Plane) -> Vec<(f32, PointSide)> {
         .collect()
 }
 
-/// A plane's base winding, `BaseWindingForPlane` (QBSP-3.1, QBSP-3.6).
-pub(crate) fn base_for_plane(plane: Plane) -> Vec<Vec3> {
-    let mut axis = 0;
-    let mut largest = -BOGUS_RANGE;
-    for (index, component) in plane.normal.iter().enumerate() {
-        if component.abs() > largest {
-            largest = component.abs();
-            axis = index;
+impl Plane {
+    /// A plane's base winding, `BaseWindingForPlane` (QBSP-3.1, QBSP-3.6).
+    pub(crate) fn base_winding(self) -> Vec<Vec3> {
+        let mut axis = 0;
+        let mut largest = -BOGUS_RANGE;
+        for (index, component) in self.normal.iter().enumerate() {
+            if component.abs() > largest {
+                largest = component.abs();
+                axis = index;
+            }
         }
+        let mut up: Vec3 = ORIGIN;
+        if axis == 2 {
+            up[0] = 1.0;
+        } else {
+            up[2] = 1.0;
+        }
+        let along = dot(up, self.normal);
+        up = normalize(ma(up, -f64::from(along), self.normal));
+        let origin = scale(self.normal, self.dist);
+        let right = scale(cross(up, self.normal), BASE_HALF);
+        let up = scale(up, BASE_HALF);
+        vec![
+            add(sub(origin, right), up),
+            add(add(origin, right), up),
+            sub(add(origin, right), up),
+            sub(sub(origin, right), up),
+        ]
     }
-    let mut up: Vec3 = ORIGIN;
-    if axis == 2 {
-        up[0] = 1.0;
-    } else {
-        up[2] = 1.0;
-    }
-    let along = dot(up, plane.normal);
-    up = normalize(ma(up, -f64::from(along), plane.normal));
-    let origin = scale(plane.normal, plane.dist);
-    let right = scale(cross(up, plane.normal), BASE_HALF);
-    let up = scale(up, BASE_HALF);
-    vec![
-        add(sub(origin, right), up),
-        add(add(origin, right), up),
-        sub(add(origin, right), up),
-        sub(sub(origin, right), up),
-    ]
 }
 
 /// The point where the edge from `p1` to `p2` crosses `plane`, at the fraction `t` of the way,

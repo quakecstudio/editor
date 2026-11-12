@@ -9,7 +9,6 @@
 
 use qs_map::qbsp::{QbspMap, load_map_file};
 
-use super::csg_faces;
 use crate::brush::BrushSet;
 use crate::fixtures::{BrushSpec, MapSpec, map_text};
 use crate::planes::Planes;
@@ -34,7 +33,7 @@ fn compile_csg(brushes: Vec<BrushSpec>) -> (QbspMap, Planes, Vec<Surface>) {
         limits,
     )
     .unwrap();
-    let surfaces = csg_faces(&set, &planes).unwrap();
+    let surfaces = set.csg_faces(&planes).unwrap();
     (map, planes, surfaces)
 }
 

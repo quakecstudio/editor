@@ -6,7 +6,7 @@
     reason = "test code: a failed unwrap or index is a failed test; the values are exact"
 )]
 
-use super::{KeepOn, PointSide, base_for_plane, classify, clip, divide};
+use super::{KeepOn, PointSide, classify, clip, divide};
 use crate::math::{Vec3, dot};
 use crate::planes::Plane;
 
@@ -29,7 +29,7 @@ fn square() -> Vec<Vec3> {
 #[test]
 fn a_base_winding_is_a_large_square_on_its_plane() {
     let p = plane([0.0, 0.0, 1.0], 32.0);
-    let w = base_for_plane(p);
+    let w = p.base_winding();
     assert_eq!(w.len(), 4);
     assert!(w.iter().all(|point| point[2] == 32.0));
     let xs: Vec<f32> = w.iter().map(|point| point[0]).collect();
@@ -52,7 +52,7 @@ fn a_base_winding_is_a_large_square_on_its_plane() {
 #[test]
 fn equal_components_take_the_earlier_axis() {
     let h = std::f32::consts::FRAC_1_SQRT_2;
-    let w = base_for_plane(plane([h, 0.0, h], 0.0));
+    let w = (plane([h, 0.0, h], 0.0)).base_winding();
     // With +z as up the winding spans y fully: up x normal lies along y.
     let ys: Vec<f32> = w.iter().map(|point| point[1]).collect();
     assert!(ys.iter().any(|&y| y > 8000.0) && ys.iter().any(|&y| y < -8000.0));

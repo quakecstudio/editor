@@ -10,7 +10,7 @@ use crate::math::{
     same, sub, within,
 };
 use crate::planes::{ANGLE_EPSILON, Plane, Planes};
-use crate::winding::{KeepOn, ON_EPSILON, base_for_plane, clip};
+use crate::winding::{KeepOn, ON_EPSILON, clip};
 use crate::{CompileError, Contents, Face, Faults, Hull, Limits, ModelKind};
 
 /// How near a whole number a coordinate is set to it (QBSP-4.4).
@@ -164,7 +164,7 @@ fn create_faces(
     let mut maxs = CLEAR_MAXS;
     let mut faces = Vec::new();
     for (i, face) in stored.iter().enumerate() {
-        let mut winding = Some(base_for_plane(face.plane));
+        let mut winding = Some(face.plane.base_winding());
         for (j, other) in stored.iter().enumerate() {
             let Some(points) = winding.take() else {
                 break;
@@ -204,7 +204,7 @@ fn create_faces(
             points,
             original: None,
         };
-        match (check_face(&made, planes), limits.faults) {
+        match (made.check(planes), limits.faults) {
             (Ok(()), _) => {}
             (Err(error), Faults::Stop) => return Err(error),
             (Err(error), Faults::Warn) => warnings.push(crate::Warning::BadFace(error.to_string())),
@@ -218,41 +218,43 @@ fn create_faces(
     Ok(Some((faces, mins, maxs)))
 }
 
-/// `CheckFace`: the faults that stop qbsp, point by point in its order (QBSP-4.5).
-fn check_face(face: &Face, planes: &Planes) -> Result<(), CompileError> {
-    let count = face.points.len();
-    if count < MIN_FACE_POINTS {
-        return Err(CompileError::FacePoints(count));
-    }
-    let plane = planes.get(face.plane);
-    let normal = planes.facing(face.plane, face.side).normal;
-    for (i, &p1) in face.points.iter().enumerate() {
-        if let Some(&c) = p1.iter().find(|c| c.abs() > BOGUS_RANGE) {
-            return Err(CompileError::BogusRange(c));
+impl Face {
+    /// `CheckFace`: the faults that stop qbsp, point by point in its order (QBSP-4.5).
+    pub(crate) fn check(&self, planes: &Planes) -> Result<(), CompileError> {
+        let count = self.points.len();
+        if count < MIN_FACE_POINTS {
+            return Err(CompileError::FacePoints(count));
         }
-        let d = plane.distance(p1);
-        if !(-ON_EPSILON..=ON_EPSILON).contains(&f64::from(d)) {
-            return Err(CompileError::PointOffPlane);
-        }
-        let p2 = face.points.get(cyclic(i, 1, count)).copied().unwrap_or(p1);
-        let dir = sub(p2, p1);
-        if length(dir) < ON_EPSILON {
-            return Err(CompileError::DegenerateEdge);
-        }
-        let edge_normal = normalize(cross(normal, dir));
-        // `edgedist += ON_EPSILON` adds in double and stores the float.
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "spec QBSP-4.5: qbsp stores the double sum in a vec_t"
-        )]
-        let edge_dist = (f64::from(dot(p1, edge_normal)) + ON_EPSILON) as f32;
-        for (j, &other) in face.points.iter().enumerate() {
-            if j != i && dot(other, edge_normal) > edge_dist {
-                return Err(CompileError::NonConvex);
+        let plane = planes.get(self.plane);
+        let normal = planes.facing(self.plane, self.side).normal;
+        for (i, &p1) in self.points.iter().enumerate() {
+            if let Some(&c) = p1.iter().find(|c| c.abs() > BOGUS_RANGE) {
+                return Err(CompileError::BogusRange(c));
+            }
+            let d = plane.distance(p1);
+            if !(-ON_EPSILON..=ON_EPSILON).contains(&f64::from(d)) {
+                return Err(CompileError::PointOffPlane);
+            }
+            let p2 = self.points.get(cyclic(i, 1, count)).copied().unwrap_or(p1);
+            let dir = sub(p2, p1);
+            if length(dir) < ON_EPSILON {
+                return Err(CompileError::DegenerateEdge);
+            }
+            let edge_normal = normalize(cross(normal, dir));
+            // `edgedist += ON_EPSILON` adds in double and stores the float.
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "spec QBSP-4.5: qbsp stores the double sum in a vec_t"
+            )]
+            let edge_dist = (f64::from(dot(p1, edge_normal)) + ON_EPSILON) as f32;
+            for (j, &other) in self.points.iter().enumerate() {
+                if j != i && dot(other, edge_normal) > edge_dist {
+                    return Err(CompileError::NonConvex);
+                }
             }
         }
+        Ok(())
     }
-    Ok(())
 }
 
 /// `VectorLength` stored in a `vec_t`.

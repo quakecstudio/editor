@@ -154,19 +154,22 @@ impl Lines {
     }
 }
 
-/// The node faces in qbsp's traversal order: each node's list, then its front child's, then
-/// its back child's.
-fn node_order(tree: &Tree) -> Vec<usize> {
-    let mut order = Vec::new();
-    let mut work = vec![tree.head()];
-    while let Some(node) = work.pop() {
-        if let Some(NodeKind::Decision { children, .. }) = tree.nodes.get(node).map(|n| &n.kind) {
-            order.push(node);
-            work.push(children[1]);
-            work.push(children[0]);
+impl Tree {
+    /// The node faces in qbsp's traversal order: each node's list, then its front child's, then
+    /// its back child's.
+    pub(crate) fn node_order(&self) -> Vec<usize> {
+        let mut order = Vec::new();
+        let mut work = vec![self.head()];
+        while let Some(node) = work.pop() {
+            if let Some(NodeKind::Decision { children, .. }) = self.nodes.get(node).map(|n| &n.kind)
+            {
+                order.push(node);
+                work.push(children[1]);
+                work.push(children[0]);
+            }
         }
+        order
     }
-    order
 }
 
 /// `FixFaceEdges`'s first part: the face's points with every point of its edges' lines added
@@ -272,82 +275,85 @@ fn split_for_tjunc(points: Vec<Vec3>) -> Result<(Vec<Vec<Vec3>>, Vec<Vec3>), Com
     }
 }
 
-/// `tjunc` over the world's final tree, whose brushes reach `maxs` from the origin
-/// (QBSP-11).
-pub(crate) fn fix(tree: &mut Tree, maxs: Vec3) -> Result<(), CompileError> {
-    let mut lines = Lines::new(maxs);
-    let order = node_order(tree);
-    for &node in &order {
-        if let Some(NodeKind::Decision { faces, .. }) = tree.nodes.get(node).map(|n| &n.kind) {
-            for &id in faces {
-                let Some(face) = tree.faces.get(id) else {
-                    continue;
-                };
-                let count = face.face.points.len();
-                for i in 0..count {
-                    let (Some(&a), Some(&b)) = (
-                        face.face.points.get(i),
-                        face.face.points.get(cyclic(i, 1, count)),
-                    ) else {
+impl Tree {
+    /// `tjunc` over the world's final tree, whose brushes reach `maxs` from the origin
+    /// (QBSP-11).
+    pub(crate) fn fix_tjunctions(&mut self, maxs: Vec3) -> Result<(), CompileError> {
+        let mut lines = Lines::new(maxs);
+        let order = self.node_order();
+        for &node in &order {
+            if let Some(NodeKind::Decision { faces, .. }) = self.nodes.get(node).map(|n| &n.kind) {
+                for &id in faces {
+                    let Some(face) = self.faces.get(id) else {
                         continue;
                     };
-                    let (line, t1, t2) = lines.find(a, b)?;
-                    lines.add(line, t1)?;
-                    lines.add(line, t2)?;
+                    let count = face.face.points.len();
+                    for i in 0..count {
+                        let (Some(&a), Some(&b)) = (
+                            face.face.points.get(i),
+                            face.face.points.get(cyclic(i, 1, count)),
+                        ) else {
+                            continue;
+                        };
+                        let (line, t1, t2) = lines.find(a, b)?;
+                        lines.add(line, t1)?;
+                        lines.add(line, t2)?;
+                    }
                 }
             }
         }
-    }
-    for node in order {
-        let Some(NodeKind::Decision { faces, .. }) = tree.nodes.get(node).map(|n| n.kind.clone())
-        else {
-            continue;
-        };
-        let mut newlist = Vec::new();
-        for id in faces {
-            let Some(points) = tree.faces.get(id).map(|f| f.face.points.clone()) else {
+        for node in order {
+            let Some(NodeKind::Decision { faces, .. }) =
+                self.nodes.get(node).map(|n| n.kind.clone())
+            else {
                 continue;
             };
-            let fixed = fix_points(&points, &mut lines)?;
-            if fixed.len() <= MAXPOINTS {
-                if let Some(face) = tree.faces.get_mut(id) {
-                    face.face.points = fixed;
+            let mut newlist = Vec::new();
+            for id in faces {
+                let Some(points) = self.faces.get(id).map(|f| f.face.points.clone()) else {
+                    continue;
+                };
+                let fixed = fix_points(&points, &mut lines)?;
+                if fixed.len() <= MAXPOINTS {
+                    if let Some(face) = self.faces.get_mut(id) {
+                        face.face.points = fixed;
+                    }
+                    newlist.insert(0, id);
+                    continue;
+                }
+                let (pieces, rest) = split_for_tjunc(fixed)?;
+                let template = self.faces.get(id).map(|f| f.face.clone());
+                let Some(template) = template else {
+                    continue;
+                };
+                let mut chain = Vec::new();
+                for piece in pieces {
+                    let piece_id = self.faces.len();
+                    self.faces.push(NodeFace {
+                        face: Face {
+                            points: piece,
+                            ..template.clone()
+                        },
+                        removed: false,
+                        pieces: Vec::new(),
+                        output: None,
+                        edges: Vec::new(),
+                    });
+                    chain.insert(0, piece_id);
+                    newlist.insert(0, piece_id);
+                }
+                if let Some(face) = self.faces.get_mut(id) {
+                    face.face.points = rest;
+                    face.pieces = chain;
                 }
                 newlist.insert(0, id);
-                continue;
             }
-            let (pieces, rest) = split_for_tjunc(fixed)?;
-            let template = tree.faces.get(id).map(|f| f.face.clone());
-            let Some(template) = template else {
-                continue;
-            };
-            let mut chain = Vec::new();
-            for piece in pieces {
-                let piece_id = tree.faces.len();
-                tree.faces.push(NodeFace {
-                    face: Face {
-                        points: piece,
-                        ..template.clone()
-                    },
-                    removed: false,
-                    pieces: Vec::new(),
-                    output: None,
-                    edges: Vec::new(),
-                });
-                chain.insert(0, piece_id);
-                newlist.insert(0, piece_id);
+            if let Some(NodeKind::Decision { faces, .. }) =
+                self.nodes.get_mut(node).map(|n| &mut n.kind)
+            {
+                *faces = newlist;
             }
-            if let Some(face) = tree.faces.get_mut(id) {
-                face.face.points = rest;
-                face.pieces = chain;
-            }
-            newlist.insert(0, id);
         }
-        if let Some(NodeKind::Decision { faces, .. }) =
-            tree.nodes.get_mut(node).map(|n| &mut n.kind)
-        {
-            *faces = newlist;
-        }
+        Ok(())
     }
-    Ok(())
 }
