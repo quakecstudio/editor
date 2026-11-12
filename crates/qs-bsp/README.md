@@ -32,7 +32,7 @@ coloured light; and writes a BSP's entities back, for shipped maps with no `.map
   they are the two ways to edit a shipped map's entities (MAP-22).
 - **`write`**: `BspFile::to_bytes` writes a BSP from its records, as BSP29 in id's
   `WriteBSPFile` lump order, or as `BSP2` when a value outgrows BSP29's 16-bit fields
-  (BSP-23); the map compiler `qmap-bsp` writes through it.
+  (BSP-23); the map compiler `qs-map-bsp` writes through it.
 
 - **Layer:** L0 formats. It depends on `qc-progs` for id's CRC. `qs-vfs`'s `walk` example loads
   every BSP and `.lit` of an install with it.

@@ -548,7 +548,7 @@ to the neighbour's edge.
 ## QBSP-14 The extended dialect
 
 **Source:** ours. id's qbsp is `Dialect::Id`, which follows QBSP-1 to QBSP-13 exactly;
-`Dialect::Extended`, the default of `crates/qmap-bsp`, is what a map made for a later engine
+`Dialect::Extended`, the default of `crates/qs-map-bsp`, is what a map made for a later engine
 needs, and each difference is stated here. Later compilers (ericw-tools' qbsp) lift the same
 limits; we follow none of them, only BSP-17's file format.
 

@@ -1,4 +1,4 @@
-# qmap-bsp
+# qs-map-bsp
 
 Compiles a `.map` to a BSP, the portal file `vis` reads and the leak file, as id's `qbsp`
 does: brushes loaded and grown for the clipping hulls, CSG, the BSP tree, portals, the outside

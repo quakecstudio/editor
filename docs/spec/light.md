@@ -6,7 +6,7 @@ never renumbered, never reused, withdrawn rather than deleted.
 Describes what id's `light` does: reading the light entities from a BSP's entity lump, finding
 each face's sample points, lighting them, and writing the lightmaps into the BSP's lighting lump
 (BSP-10) with each face's styles and offset (BSP-9.6); and, from ericw-tools, coloured light and
-the `.lit` file (BSP-18). It is the contract for our `qmap-light` (P6-06) and the light half of
+the `.lit` file (BSP-18). It is the contract for our `qs-map-light` (P6-06) and the light half of
 the map compiler differential (P6-07).
 
 `light` is in `qutils/` of id-Software/Quake-Tools, which is not a portable upstream until the
@@ -35,7 +35,7 @@ GPL-2.0-or-later and cited for description only. Both may be run as oracles
   0.5); `scalecos` is 0.5 and has no option.
 - **LIGHT-1.3** The fast mode, the default, takes one sample per 16 texels of each face (LIGHT-3.3).
   The full mode, `-extra`, takes four, every 8 texels, and averages each two by two (LIGHT-5.2).
-- **LIGHT-1.4** Our `qmap-light` offers the same two modes: fast is LIGHT-1.3's default, full
+- **LIGHT-1.4** Our `qs-map-light` offers the same two modes: fast is LIGHT-1.3's default, full
   its `-extra`.
 - **LIGHT-1.5** Faces are lit in face order and their lightmaps written one after another, each
   starting at a multiple of 4 bytes from the start of the lump. A lump past
@@ -165,5 +165,5 @@ file beside the BSP (BSP-18) as well as the grey lump.
 - **LIGHT-6.4** The `.lit` file holds the three channels of each sample, as bytes, in the order of
   the lighting lump (BSP-18.1), and the grey lump's byte is the largest of the three ("This must be
   max(), see LightNormalize in MarkV 1036").
-- **LIGHT-6.5** Our `qmap-light` writes a `.lit` when any light has a colour other than white, and
+- **LIGHT-6.5** Our `qs-map-light` writes a `.lit` when any light has a colour other than white, and
   the grey lump by LIGHT-6.4, so a map with white light only lights as id's `light` does.

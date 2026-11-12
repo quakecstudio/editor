@@ -1,5 +1,5 @@
 [package]
-name = "qmap-bsp"
+name = "qs-map-bsp"
 description = "The map compiler: a .map to a BSP29 file, its portal file and its leak file, as id's qbsp builds them"
 version.workspace = true
 edition.workspace = true

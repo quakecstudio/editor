@@ -1,48 +1,48 @@
-enum qmap_bsp::CompileError
-enum qmap_bsp::Dialect
-enum qmap_bsp::Warning
-field qmap_bsp::compile::Compiled.bsp
-field qmap_bsp::compile::Compiled.leak_file
-field qmap_bsp::compile::Compiled.portal_file
-field qmap_bsp::compile::Compiled.warnings
-fn qmap_bsp::compile::Compiler::compile
-fn qmap_bsp::compile::Compiler::wad_path
-fn qmap_bsp::compile::Compiler::with_dialect
-fn qmap_bsp::compile::Compiler::with_subdivide
-impl qmap_bsp::CompileError: From<QbspError>
-impl qmap_bsp::CompileError: core::error::Error
-impl qmap_bsp::CompileError: fmt::Display
-impl qmap_bsp::compile::Compiler: Default
-struct qmap_bsp::compile::Compiled
-struct qmap_bsp::compile::Compiler
-use qmap_bsp::Compiled = compile::Compiled
-use qmap_bsp::Compiler = compile::Compiler
-variant qmap_bsp::CompileError::BadNormal
-variant qmap_bsp::CompileError::BogusRange
-variant qmap_bsp::CompileError::DegenerateEdge
-variant qmap_bsp::CompileError::Document
-variant qmap_bsp::CompileError::FacePoints
-variant qmap_bsp::CompileError::Limit
-variant qmap_bsp::CompileError::Map
-variant qmap_bsp::CompileError::MixedContents
-variant qmap_bsp::CompileError::NoValidBrushes
-variant qmap_bsp::CompileError::NonConvex
-variant qmap_bsp::CompileError::Normalization
-variant qmap_bsp::CompileError::PointOffPlane
-variant qmap_bsp::CompileError::SubdivideFailed
-variant qmap_bsp::CompileError::TooManyBrushFaces
-variant qmap_bsp::CompileError::TooManyHullEdges
-variant qmap_bsp::CompileError::TooManyHullPoints
-variant qmap_bsp::CompileError::TooManyPlanes
-variant qmap_bsp::CompileError::TooManyPoints
-variant qmap_bsp::CompileError::Write
-variant qmap_bsp::Dialect::Extended
-variant qmap_bsp::Dialect::Id
-variant qmap_bsp::Warning::BadFace
-variant qmap_bsp::Warning::Bsp2
-variant qmap_bsp::Warning::Leak
-variant qmap_bsp::Warning::MixedContents
-variant qmap_bsp::Warning::NoBrushFaces
-variant qmap_bsp::Warning::NoOccupant
-variant qmap_bsp::Warning::NoValidBrushes
-variant qmap_bsp::Warning::PortalClippedAway
+enum qs_map_bsp::CompileError
+enum qs_map_bsp::Dialect
+enum qs_map_bsp::Warning
+field qs_map_bsp::compile::Compiled.bsp
+field qs_map_bsp::compile::Compiled.leak_file
+field qs_map_bsp::compile::Compiled.portal_file
+field qs_map_bsp::compile::Compiled.warnings
+fn qs_map_bsp::compile::Compiler::compile
+fn qs_map_bsp::compile::Compiler::wad_path
+fn qs_map_bsp::compile::Compiler::with_dialect
+fn qs_map_bsp::compile::Compiler::with_subdivide
+impl qs_map_bsp::CompileError: From<QbspError>
+impl qs_map_bsp::CompileError: core::error::Error
+impl qs_map_bsp::CompileError: fmt::Display
+impl qs_map_bsp::compile::Compiler: Default
+struct qs_map_bsp::compile::Compiled
+struct qs_map_bsp::compile::Compiler
+use qs_map_bsp::Compiled = compile::Compiled
+use qs_map_bsp::Compiler = compile::Compiler
+variant qs_map_bsp::CompileError::BadNormal
+variant qs_map_bsp::CompileError::BogusRange
+variant qs_map_bsp::CompileError::DegenerateEdge
+variant qs_map_bsp::CompileError::Document
+variant qs_map_bsp::CompileError::FacePoints
+variant qs_map_bsp::CompileError::Limit
+variant qs_map_bsp::CompileError::Map
+variant qs_map_bsp::CompileError::MixedContents
+variant qs_map_bsp::CompileError::NoValidBrushes
+variant qs_map_bsp::CompileError::NonConvex
+variant qs_map_bsp::CompileError::Normalization
+variant qs_map_bsp::CompileError::PointOffPlane
+variant qs_map_bsp::CompileError::SubdivideFailed
+variant qs_map_bsp::CompileError::TooManyBrushFaces
+variant qs_map_bsp::CompileError::TooManyHullEdges
+variant qs_map_bsp::CompileError::TooManyHullPoints
+variant qs_map_bsp::CompileError::TooManyPlanes
+variant qs_map_bsp::CompileError::TooManyPoints
+variant qs_map_bsp::CompileError::Write
+variant qs_map_bsp::Dialect::Extended
+variant qs_map_bsp::Dialect::Id
+variant qs_map_bsp::Warning::BadFace
+variant qs_map_bsp::Warning::Bsp2
+variant qs_map_bsp::Warning::Leak
+variant qs_map_bsp::Warning::MixedContents
+variant qs_map_bsp::Warning::NoBrushFaces
+variant qs_map_bsp::Warning::NoOccupant
+variant qs_map_bsp::Warning::NoValidBrushes
+variant qs_map_bsp::Warning::PortalClippedAway

@@ -3538,7 +3538,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "qmap-bsp"
+name = "qs-map-bsp"
 version = "2026.11.1"
 dependencies = [
  "proptest",
