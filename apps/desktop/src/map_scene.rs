@@ -112,6 +112,8 @@ pub(crate) struct Scene {
     pub(crate) entities: Vec<EntityShape>,
     /// The values each key holds across the map, the choices its editor offers.
     pub(crate) values: BTreeMap<String, BTreeSet<String>>,
+    /// Each link: an entity, one its keys fire, and the line between their centres.
+    pub(crate) fired: Vec<(EntityIndex, EntityIndex, Line)>,
 }
 
 impl Scene {
@@ -189,7 +191,34 @@ impl Scene {
                     .collect(),
             });
         }
+        scene.fired = scene.find_links();
         scene
+    }
+
+    /// Every link between the entities, found through an index of their targetnames.
+    fn find_links(&self) -> Vec<(EntityIndex, EntityIndex, Line)> {
+        let mut named: HashMap<&str, Vec<&EntityShape>> = HashMap::new();
+        for shape in &self.entities {
+            if let Some(name) = &shape.targetname {
+                named.entry(name).or_default().push(shape);
+            }
+        }
+        let mut fired = Vec::new();
+        for from in &self.entities {
+            let mut targets: Vec<&str> = from.targets.iter().map(String::as_str).collect();
+            targets.sort_unstable();
+            targets.dedup();
+            for to in targets
+                .into_iter()
+                .filter_map(|name| named.get(name))
+                .flatten()
+            {
+                if to.index != from.index {
+                    fired.push((from.index, to.index, [from.centre(), to.centre()]));
+                }
+            }
+        }
+        fired
     }
 
     /// The entity not in `hidden` whose box the ray from `start` along `direction` enters
@@ -221,26 +250,15 @@ impl Scene {
         selection: &BTreeSet<EntityIndex>,
         hidden: &BTreeSet<EntityIndex>,
     ) -> Vec<Line> {
-        let shown = |shape: &&EntityShape| !hidden.contains(&shape.index);
-        let mut lines = Vec::new();
-        for from in self.entities.iter().filter(shown) {
-            for to in self.entities.iter().filter(shown) {
-                let fires = to
-                    .targetname
-                    .as_ref()
-                    .is_some_and(|name| from.targets.contains(name));
-                let chosen = match view {
-                    LinkView::All => true,
-                    LinkView::Selection => {
-                        selection.contains(&from.index) || selection.contains(&to.index)
-                    }
-                };
-                if fires && chosen && from.index != to.index {
-                    lines.push([from.centre(), to.centre()]);
-                }
-            }
-        }
-        lines
+        self.fired
+            .iter()
+            .filter(|(from, to, _)| !hidden.contains(from) && !hidden.contains(to))
+            .filter(|(from, to, _)| match view {
+                LinkView::All => true,
+                LinkView::Selection => selection.contains(from) || selection.contains(to),
+            })
+            .map(|(_, _, line)| *line)
+            .collect()
     }
 }
 

@@ -113,9 +113,9 @@ fn a_freed_entity_is_in_no_edict() {
     assert_eq!(run.world.take_map_entity(&progs, MapPlace::new(99)), None);
 }
 
-/// The edicts of a map with a thing not on easy (`spawnflags` 256) and an item its own code
-/// removes in deathmatch, loaded with `settings`.
-fn settled(settings: &[(&str, &str)]) -> Vec<Option<usize>> {
+/// A map with a thing not on easy (`spawnflags` 256) and an item its own code removes in
+/// deathmatch, loaded with `settings`.
+fn loaded(settings: &[(&str, &str)]) -> Running {
     let source = "void() info_thing = { self.health = 5; };\n\
         void() item_dm = { if (deathmatch) remove(self); };\n";
     let entities = [
@@ -130,7 +130,12 @@ fn settled(settings: &[(&str, &str)]) -> Vec<Option<usize>> {
             .collect(),
         ..LoadOptions::default()
     };
-    let run = running_with(&ledge(), source, &entities, Vec::new(), options);
+    running_with(&ledge(), source, &entities, Vec::new(), options)
+}
+
+/// The edicts of [`loaded`]'s map's two entities.
+fn settled(settings: &[(&str, &str)]) -> Vec<Option<usize>> {
+    let run = loaded(settings);
     let progs = Progs::read(&run.progs).unwrap();
     (1..3)
         .map(|place| run.world.map_entity(&progs, MapPlace::new(place)))
@@ -169,4 +174,16 @@ fn the_settings_choose_the_entities_the_load_keeps() {
         Some(3),
         "coop clears it"
     );
+}
+
+// spec DIFF-3.2: the rounded, clamped skill becomes the skill setting, and deathmatch becomes 0
+// under coop, so the QuakeC reading them sees what the spawn test saw
+#[test]
+fn the_load_writes_the_settings_it_used_back() {
+    let run = loaded(&[("skill", "2.6"), ("deathmatch", "1"), ("coop", "1")]);
+    assert_eq!(run.world.setting("skill"), Some(3.0));
+    assert_eq!(run.world.setting("deathmatch"), Some(0.0));
+    let run = loaded(&[("skill", "-4"), ("deathmatch", "1")]);
+    assert_eq!(run.world.setting("skill"), Some(0.0));
+    assert_eq!(run.world.setting("deathmatch"), Some(1.0));
 }

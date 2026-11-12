@@ -115,16 +115,14 @@ fn cell(
         painter.rect_filled(rect, CORNER, theme.color(Token::SurfaceViewport));
         let color = look.color.map_or(theme.color(Token::TextMuted), rgb);
         let model = look.model.as_ref().and_then(|model| models.get(model));
-        let lines = match model {
-            Some(lines) => lines.clone(),
-            None => box_lines(look.size.unwrap_or(NO_SIZE)).to_vec(),
-        };
-        preview(
-            &painter,
-            rect.shrink(MARGIN),
-            &lines,
-            Stroke::new(1.0, color),
-        );
+        let stroke = Stroke::new(1.0, color);
+        match model {
+            Some(lines) => preview(&painter, rect.shrink(MARGIN), lines, stroke),
+            None => {
+                let lines = box_lines(look.size.unwrap_or(NO_SIZE));
+                preview(&painter, rect.shrink(MARGIN), &lines, stroke);
+            }
+        }
         if response.hovered() {
             painter.rect_stroke(
                 rect,

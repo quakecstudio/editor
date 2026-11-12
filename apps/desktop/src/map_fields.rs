@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 use eframe::egui::{self, Ui};
 use qs_workbench::entity_classes::FlagInfo;
+use qs_workbench::map_edit::FlagChange;
 
 use crate::map_scene::{ANGLE, COLOR_SUFFIX, FLOAT_TYPE, SPAWNFLAGS};
 use crate::strings::Text;
@@ -167,23 +168,32 @@ fn color_text(rgb: [f32; COMPONENTS], scale: Scale) -> String {
     .join(" ")
 }
 
-/// The spawnflags `flags` as checkboxes over `value`, named as the code names them; the value
-/// to set when one is ticked or cleared.
-pub(crate) fn spawnflags(ui: &mut Ui, flags: &[FlagInfo], value: &str) -> Option<String> {
+/// The spawnflags `flags` as checkboxes over `value`, named as the code names them; the flag
+/// ticked or cleared.
+pub(crate) fn spawnflags(
+    ui: &mut Ui,
+    flags: &[FlagInfo],
+    value: &str,
+) -> Option<(u32, FlagChange)> {
     let whole = value.trim().split('.').next().unwrap_or_default();
     let bits: u32 = whole.parse().unwrap_or(0);
-    let mut set = None;
+    let mut changed = None;
     ui.label(Text::MapSpawnflags.get());
     ui.horizontal_wrapped(|ui| {
         for flag in flags {
             let mut on = bits & flag.value != 0;
             let name = flag.name.clone().unwrap_or_else(|| flag.value.to_string());
             if ui.checkbox(&mut on, name).changed() {
-                set = Some((bits ^ flag.value).to_string());
+                let change = if on {
+                    FlagChange::Set
+                } else {
+                    FlagChange::Clear
+                };
+                changed = Some((flag.value, change));
             }
         }
     });
-    set
+    changed
 }
 
 #[cfg(test)]

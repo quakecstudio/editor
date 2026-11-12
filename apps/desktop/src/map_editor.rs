@@ -17,7 +17,7 @@ use eframe::egui::{
 use qs_render::Camera;
 use qs_workbench::entity_classes::ClassInfo;
 use qs_workbench::map_edit::{
-    EntityIndex, EntityKeys, GameMode, Keep, MapDocument, MapRevision, Skill,
+    EntityIndex, EntityKeys, FlagChange, GameMode, Keep, MapDocument, MapRevision, Skill,
 };
 
 use crate::map_browser::{ClassDrag, EntityBrowser};
@@ -67,6 +67,9 @@ pub enum MapAction {
     Duplicate(EntityIndex),
     /// Set a key of an entity and of the others listed.
     SetKey(EntityIndex, Vec<EntityIndex>, String, String),
+    /// Set or clear a spawnflag of an entity and of the others listed, each keeping its other
+    /// flags.
+    SetFlag(EntityIndex, Vec<EntityIndex>, u32, FlagChange),
     /// Place a point entity of a class at an origin.
     Place(String, [f64; 3]),
     /// Point a key of an entity, one the code fires entities by, at another entity.
@@ -647,13 +650,8 @@ impl MapEditor {
                 .find(|(k, _)| k == SPAWNFLAGS)
                 .map(|(_, v)| v.as_str())
                 .unwrap_or_default();
-            if let Some(set) = spawnflags(ui, &keys.spawnflags, value) {
-                actions.push(MapAction::SetKey(
-                    entity,
-                    also.clone(),
-                    SPAWNFLAGS.to_owned(),
-                    set,
-                ));
+            if let Some((flag, change)) = spawnflags(ui, &keys.spawnflags, value) {
+                actions.push(MapAction::SetFlag(entity, also.clone(), flag, change));
             }
         }
         let unset: Vec<_> = keys

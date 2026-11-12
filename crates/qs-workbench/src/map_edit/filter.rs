@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `map.filter` (P5-13, MAP-27): the entities a skill and a game mode remove, found by spawning
-//! the open map in `qs-sim` against the project's program, so the answer is the game's, the
-//! spawnflags test (EDICT-8.4) and the entities the QuakeC removes itself included
-//! (BRIDGE-4.13). A map read from a BSP spawns in that BSP; a `.map` in the BSP beside it when
-//! there is one, else in an empty world.
+//! the open map in `qs-sim` against the project's server program, compiled in memory, so the
+//! answer is the game's, the spawnflags test (EDICT-8.4) and the entities the QuakeC removes
+//! itself included (BRIDGE-4.13). A map read from a BSP spawns its entity lump in that BSP; a
+//! `.map` spawns the entity lump qbsp would write for it (MAP-2.6, MAP-6.2) in the BSP beside it
+//! when there is one, else in an empty world.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::rc::Rc;
 
+use qc_codegen::compile_module;
 use qc_progs::Progs;
+use qc_project::ModuleKind;
 use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Command, Outcome};
+use qs_map::qbsp::load_map_file;
 use qs_sim::{LoadOptions, MapPlace, World};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -102,26 +107,58 @@ impl<L: crate::Loader> Workbench<L> {
         skill: Skill,
         mode: GameMode,
     ) -> Result<Vec<EntityIndex>, WorkbenchError> {
-        let built = self.build()?;
-        let output = built
-            .iter()
-            .find(|module| module.built)
-            .map(|module| module.output.clone())
-            .ok_or(WorkbenchError::NotBuilt)?;
-        let progs_bytes = std::fs::read(&output).map_err(|_| WorkbenchError::NoFile {
-            path: output.clone(),
-        })?;
-        let progs = Progs::read(&progs_bytes).map_err(|error| WorkbenchError::Progs {
-            path: output.clone(),
-            error,
-        })?;
+        if self.root().is_none() {
+            return Err(WorkbenchError::NoProject);
+        }
+        let mut program = None;
+        for module in self.host.project_modules() {
+            if module.kind != ModuleKind::Ssqc {
+                continue;
+            }
+            let names = module.names;
+            let compiled = compile_module(module.db, module.input, |id| {
+                names.get(id.index()).cloned().unwrap_or_default()
+            });
+            program = compiled
+                .ok()
+                .and_then(|compiled| qc_progs::write(&compiled.progs).ok());
+            break;
+        }
+        let program = program.ok_or(WorkbenchError::NotBuilt)?;
+        let progs = Progs::read(&program).map_err(|_| WorkbenchError::NotBuilt)?;
         let root = self.root().map(Path::to_path_buf);
         let document = self.map().ok_or(WorkbenchError::NoMap)?;
         let path = document.path().to_path_buf();
-        let entities = document.file().to_bytes();
-        let compiled = match document.source() {
-            MapSource::Bsp(bytes) => Some(bytes.clone()),
-            MapSource::Map => std::fs::read(path.with_extension(BSP_EXTENSION)).ok(),
+        // The places in the document of the entities the lump holds, in its order.
+        let (entities, places, compiled) = match document.source() {
+            MapSource::Bsp(bytes) => {
+                let count = document.file().entities.len();
+                let places: Vec<usize> = (0..count).collect();
+                (document.file().to_bytes(), places, Some(bytes.clone()))
+            }
+            MapSource::Map => {
+                let text = document.file().to_bytes();
+                let mut map = load_map_file(&text).map_err(|error| WorkbenchError::MapLump {
+                    path: path.clone(),
+                    error,
+                })?;
+                map.number_models();
+                let lump = map.entity_lump().map_err(|error| WorkbenchError::MapLump {
+                    path: path.clone(),
+                    error,
+                })?;
+                // qbsp writes only the entities with pairs (MAP-2.6).
+                let places = document
+                    .file()
+                    .entities
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, entity)| entity.pairs().next().is_some())
+                    .map(|(place, _)| place)
+                    .collect();
+                let bsp = std::fs::read(path.with_extension(BSP_EXTENSION)).ok();
+                (lump, places, bsp)
+            }
         };
         let mut bsp = match &compiled {
             Some(bytes) => {
@@ -149,9 +186,18 @@ impl<L: crate::Loader> Workbench<L> {
             .unwrap_or_default();
         let world = World::load(&progs, &name, &bsp, files, options)
             .map_err(|error| WorkbenchError::Spawn { path, error })?;
-        let count = document.file().entities.len();
+        let kept: BTreeSet<usize> = places
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter(|&(place, _)| world.map_entity(&progs, MapPlace::new(place)).is_some())
+            .map(|(_, &entity)| entity)
+            .collect();
+        let count = self
+            .map()
+            .map_or(0, |document| document.file().entities.len());
         Ok((1..count)
-            .filter(|&place| world.map_entity(&progs, MapPlace::new(place)).is_none())
+            .filter(|entity| !kept.contains(entity))
             .map(EntityIndex::new)
             .collect())
     }

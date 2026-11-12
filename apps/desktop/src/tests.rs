@@ -2094,8 +2094,15 @@ fn entities_are_placed_and_linked_without_typing() {
     let (ogre, door) = (drawn_at(&harness, 2), drawn_at(&harness, 4));
     drag(&mut harness, ogre, door, egui::Modifiers::ALT);
     assert_eq!(map_value(&harness, 2, "target").as_deref(), Some("gate"));
-    // Shift adds the ogre to the door's selection; the door's spawnflag sets both.
+    // Shift adds the ogre to the door's selection; the door's spawnflag is set on both, the
+    // ogre keeping its own flags.
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute(
+            "map.set_key",
+            json!({ "entity": 2, "key": "spawnflags", "value": "256" }),
+        )
+        .unwrap();
     shell.execute("map.select", json!({ "entity": 4 })).unwrap();
     harness.run();
     harness.run();
@@ -2125,9 +2132,9 @@ fn entities_are_placed_and_linked_without_typing() {
     harness.run();
     harness.run();
     assert_eq!(map_value(&harness, 4, "spawnflags").as_deref(), Some("1"));
-    assert_eq!(map_value(&harness, 2, "spawnflags").as_deref(), Some("1"));
+    assert_eq!(map_value(&harness, 2, "spawnflags").as_deref(), Some("257"));
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
-    for _ in 0..3 {
+    for _ in 0..4 {
         shell.execute("edit.undo", json!({})).unwrap();
     }
     harness.run();

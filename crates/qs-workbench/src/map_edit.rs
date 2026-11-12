@@ -22,12 +22,14 @@ pub use disk::{
     MapOnDisk, ResolveParams,
 };
 pub use filter::{FilterParams, GameMode, MAP_FILTER, MapFiltered, Skill};
+pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
 pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
 pub use links::{LinkParams, MAP_LINK};
 pub use live::LiveChange;
 
 mod disk;
 mod filter;
+mod flags;
 mod inspect;
 mod links;
 mod live;
@@ -1145,6 +1147,7 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(disk::MapCompare)?;
     registry.register(filter::MapFilter)?;
     registry.register(links::MapLink)?;
+    registry.register(flags::MapSetFlag)?;
     registry.register(MapSave)
 }
 

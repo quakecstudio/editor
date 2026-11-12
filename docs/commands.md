@@ -70,6 +70,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.rotate`](#maprotate) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
+| [`map.set_flag`](#mapset_flag) | Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags. |
 | [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
@@ -2136,6 +2137,74 @@ Parameters:
     }
   },
   "title": "SelectParams",
+  "type": "object"
+}
+```
+
+## `map.set_flag`
+
+Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FlagChange": {
+      "description": "What `map.set_flag` does to the flag.",
+      "oneOf": [
+        {
+          "const": "set",
+          "description": "Sets it.",
+          "type": "string"
+        },
+        {
+          "const": "clear",
+          "description": "Clears it.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.set_flag`.",
+  "properties": {
+    "also": {
+      "default": [],
+      "description": "Other entities to change too, in the same step.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "change": {
+      "$ref": "#/$defs/FlagChange",
+      "description": "Whether to set or clear it."
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
+    },
+    "flag": {
+      "description": "The flag, its value.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "entity",
+    "flag",
+    "change"
+  ],
+  "title": "SetFlagParams",
   "type": "object"
 }
 ```

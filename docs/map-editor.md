@@ -29,19 +29,21 @@ it too.
   - Pick, beside such a key, sets it to the next entity clicked (`map.link`). An Alt-drag from
     the selection onto another entity sets the key last picked, else the shortest such key
     (`target` in id's QuakeC). An entity with no `targetname` is given its classname and the
-    next free number.
+    first number no entity has as its `targetname`.
   - Duplicating an entity whose `targetname` ends in a number gives the copy the next free
     number, and moves the numbers of its target keys on by as many, so a copied link in a
-    chain names the next one.
+    chain names the next one. Zero padding is kept: `t09` becomes `t10`, `t010` becomes `t011`.
 - **The fields (P5-13):** spawnflags are checkboxes named as the QuakeC names them, `angle`
   has Up and Down, a key ending in `color` has a colour picker that keeps the key's scale
   (0 to 1 or 0 to 255), and a float the map gives several values offers those values. Shift+click
-  adds an entity to the selection; a key edit or a spawnflag then sets every selected entity in
-  one undo step (`map.set_key` with `also`).
+  adds an entity to the selection; a key edit then sets every selected entity in one undo step
+  (`map.set_key` with `also`), and a spawnflag ticked or cleared changes that bit alone in each
+  entity's own flags (`map.set_flag`).
 - **Show (P5-13):** the view can show only the entities the game spawns on easy, normal, hard or
-  nightmare, or in coop or deathmatch. `map.filter` builds the project and spawns the map in
-  `qs-sim` with those settings, so what the spawnflags rule out and what the QuakeC removes
-  itself are both hidden. It is found again after each edit.
+  nightmare, or in coop or deathmatch. `map.filter` compiles the project's server QuakeC in
+  memory, writing nothing, and spawns the entity lump qbsp would write for the map in `qs-sim`
+  with those settings, so what the spawnflags rule out and what the QuakeC removes itself are
+  both hidden. It is found again after each edit.
 - **Saving:** `map.save` (Cmd+S in the view) writes a `.map` over itself, and changes only the
   text an edit touched. A BSP's entities go to a `.ent` file beside the BSP, which QuakeSpasm
   and its descendants read in place of the lump (MAP-22). `{"bsp": "lump"}` rewrites the BSP's

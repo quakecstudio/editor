@@ -55,7 +55,8 @@ use qs_workbench::map_edit::{
     ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_workbench::map_edit::{
-    FilterParams, LinkParams, MAP_FILTER, MAP_LINK, MAP_PLACE, MapFiltered, PlaceParams,
+    FilterParams, LinkParams, MAP_FILTER, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, MapFiltered,
+    PlaceParams, SetFlagParams,
 };
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
@@ -1976,6 +1977,15 @@ impl Shell {
                         classname,
                         origin,
                         keys: Vec::new(),
+                    },
+                ),
+                MapAction::SetFlag(entity, also, flag, change) => self.attempt(
+                    MAP_SET_FLAG,
+                    &SetFlagParams {
+                        entity,
+                        also,
+                        flag,
+                        change,
                     },
                 ),
                 MapAction::Link(entity, key, target) => self.attempt(

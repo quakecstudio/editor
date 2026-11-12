@@ -5,6 +5,8 @@
 //! numbering a duplicate takes, so a copy of `door1` is the next door and its targets the next
 //! targets, without typing either.
 
+use std::collections::BTreeSet;
+
 use qs_commands::{Command, Outcome};
 use qs_map::{Entity, MapFile};
 use schemars::JsonSchema;
@@ -31,11 +33,13 @@ pub struct LinkParams {
     pub target: EntityIndex,
 }
 
-/// A value whose end is a number: the text before it and the number.
+/// A value whose end is a number: the text before it, the number and how many digits it was
+/// written with, so `t01` moves on to `t02`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Numbered<'a> {
     stem: &'a [u8],
     number: u64,
+    digits: usize,
 }
 
 impl<'a> Numbered<'a> {
@@ -48,13 +52,18 @@ impl<'a> Numbered<'a> {
             .count();
         let (stem, number) = value.split_at(value.len().checked_sub(digits)?);
         let number = core::str::from_utf8(number).ok()?.parse().ok()?;
-        Some(Self { stem, number })
+        Some(Self {
+            stem,
+            number,
+            digits,
+        })
     }
 
-    /// The value with `number` in place of its own.
+    /// The value with `number` in place of its own, padded with zeros to as many digits.
     fn with(self, number: u64) -> Vec<u8> {
         let mut value = self.stem.to_vec();
-        value.extend_from_slice(number.to_string().as_bytes());
+        let width = self.digits;
+        value.extend_from_slice(format!("{number:0width$}").as_bytes());
         value
     }
 }
@@ -104,8 +113,27 @@ impl MapDocument {
         Ok(())
     }
 
+    /// `stem` with the smallest number from 1 that no entity of `file` has as its
+    /// `targetname`.
+    fn free_name(file: &MapFile, stem: &[u8]) -> Vec<u8> {
+        let taken: BTreeSet<&[u8]> = file
+            .entities
+            .iter()
+            .filter_map(|entity| entity.value(TARGETNAME))
+            .collect();
+        let mut number = 1_u64;
+        loop {
+            let mut name = stem.to_vec();
+            name.extend_from_slice(number.to_string().as_bytes());
+            if !taken.contains(name.as_slice()) || number == u64::MAX {
+                return name;
+            }
+            number = number.saturating_add(1);
+        }
+    }
+
     /// Sets `key` of `entity` to the `targetname` of `target`, giving `target` its classname
-    /// and the next free number first when it has none.
+    /// and the first free number first when it has none.
     fn link(
         &mut self,
         entity: EntityIndex,
@@ -118,9 +146,7 @@ impl MapDocument {
             Some(name) => name.to_vec(),
             None => {
                 let stem = found.classname().unwrap_or_default().to_vec();
-                let mut name = stem.clone();
-                let next = Self::next_number(&self.file, &stem);
-                name.extend_from_slice(next.to_string().as_bytes());
+                let name = Self::free_name(&self.file, &stem);
                 let set = self.entity_mut(target)?.set(TARGETNAME, &name);
                 set.map_err(|error| self.map_error(error))?;
                 name

@@ -20,9 +20,13 @@ const CODE: &str = "void(entity e) remove = #15;\n\
     void() info_thing = { self.health = 5; };\n\
     void() item_dm = { if (deathmatch) remove(self); };\n";
 
-/// The world, a thing not on easy (spawnflags 256), the item, and an entity with no class.
-const MAP: &str = "{\n\"classname\" \"worldspawn\"\n}\n\
+/// The world with a brush, a thing not on easy (spawnflags 256), an entity with no pairs, which
+/// qbsp leaves out of the lump, the item, and an entity with no class.
+const MAP: &str = "{\n\"classname\" \"worldspawn\"\n\
+    {\n( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) floor 0 0 0 1 1\n\
+    ( 0 0 64 ) ( 1 0 64 ) ( 0 1 64 ) floor 0 0 0 1 1\n}\n}\n\
     {\n\"classname\" \"info_thing\"\n\"origin\" \"0 0 0\"\n\"spawnflags\" \"256\"\n}\n\
+    {\n}\n\
     {\n\"classname\" \"item_dm\"\n\"origin\" \"8 0 0\"\n}\n\
     {\n\"origin\" \"16 0 0\"\n}\n";
 
@@ -34,7 +38,8 @@ fn removed(session: &mut Session<Workbench<FsLoader>>, params: serde_json::Value
 
 // spec DIFF-3.5: the filter is the game's: the entities a skill's spawnflags rule out, those
 // the QuakeC removes in a kind of game, and those with no class (EDICT-8.4, EDICT-8.5), found by
-// spawning a .map with no compiled BSP in an empty world
+// spawning the lump qbsp writes for a .map with brushes (MAP-2.6), which leaves out an entity
+// with no pairs, in an empty world
 #[test]
 fn the_filter_is_what_the_game_removes() {
     let dir = std::env::temp_dir().join(format!("qs-wb-filter-{}", std::process::id()));
@@ -57,14 +62,18 @@ fn the_filter_is_what_the_game_removes() {
     session
         .execute(MAP_OPEN, json!({ "path": dir.join("maps/test.map") }))
         .unwrap();
-    assert_eq!(removed(&mut session, json!({})), [3]);
-    assert_eq!(removed(&mut session, json!({ "skill": "easy" })), [1, 3]);
+    assert_eq!(removed(&mut session, json!({})), [2, 4]);
+    assert_eq!(removed(&mut session, json!({ "skill": "easy" })), [1, 2, 4]);
     assert_eq!(
         removed(
             &mut session,
             json!({ "skill": "hard", "mode": "deathmatch" })
         ),
-        [2, 3]
+        [2, 3, 4]
     );
-    assert_eq!(removed(&mut session, json!({ "mode": "coop" })), [3]);
+    assert_eq!(removed(&mut session, json!({ "mode": "coop" })), [2, 4]);
+    assert!(
+        !dir.join("progs.dat").exists(),
+        "the filter compiles in memory and writes nothing"
+    );
 }

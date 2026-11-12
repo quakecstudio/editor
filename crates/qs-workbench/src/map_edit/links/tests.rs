@@ -12,7 +12,9 @@ use serde_json::json;
 
 use crate::Workbench;
 use crate::map_edit::tests::{project_with, text};
-use crate::map_edit::{MAP_DUPLICATE, MAP_ENTITY, MAP_LINK, MAP_OPEN, MAP_SET_KEY};
+use crate::map_edit::{
+    MAP_DUPLICATE, MAP_ENTITY, MAP_LINK, MAP_OPEN, MAP_REMOVE_KEY, MAP_SET_FLAG, MAP_SET_KEY,
+};
 
 /// QuakeC that fires entities by `target` and `killtarget`, and has a class with named
 /// spawnflags.
@@ -167,4 +169,134 @@ fn the_spawnflags_named_by_the_code_come_with_the_keys() {
         keys["spawnflags"],
         json!([{ "value": 1, "name": "START_ON" }, { "value": 2, "name": "SILENT" }])
     );
+}
+
+// No spec statement: P5-13: a name given by linking is the classname with the first number no
+// entity has, even when the classname ends in a digit
+#[test]
+fn a_link_name_is_free_when_the_classname_ends_in_a_digit() {
+    let mut session = open("link-digit");
+    for entity in [1, 2] {
+        session
+            .execute(
+                MAP_SET_KEY,
+                json!({ "entity": entity, "key": "classname", "value": "item_armor2" }),
+            )
+            .unwrap();
+        session
+            .execute(
+                MAP_REMOVE_KEY,
+                json!({ "entity": entity, "key": "targetname" }),
+            )
+            .unwrap();
+    }
+    session
+        .execute(
+            MAP_LINK,
+            json!({ "entity": 3, "key": "target", "target": 1 }),
+        )
+        .unwrap();
+    session
+        .execute(
+            MAP_LINK,
+            json!({ "entity": 3, "key": "killtarget", "target": 2 }),
+        )
+        .unwrap();
+    let map = session.context().map().unwrap();
+    assert_eq!(
+        map.file().entities[1].value(b"targetname"),
+        Some(b"item_armor21".as_slice())
+    );
+    assert_eq!(
+        map.file().entities[2].value(b"targetname"),
+        Some(b"item_armor22".as_slice())
+    );
+}
+
+// No spec statement: P5-13: numbering onward keeps a number's zero padding
+#[test]
+fn numbering_onward_keeps_zero_padding() {
+    let mut session = open("padding");
+    session
+        .execute(
+            MAP_SET_KEY,
+            json!({ "entity": 3, "key": "targetname", "value": "t09" }),
+        )
+        .unwrap();
+    session
+        .execute(
+            MAP_SET_KEY,
+            json!({ "entity": 3, "key": "target", "value": "t010" }),
+        )
+        .unwrap();
+    session
+        .execute(MAP_DUPLICATE, json!({ "entity": 3 }))
+        .unwrap();
+    let map = session.context().map().unwrap();
+    assert_eq!(
+        map.file().entities[4].value(b"targetname"),
+        Some(b"t10".as_slice())
+    );
+    assert_eq!(
+        map.file().entities[4].value(b"target"),
+        Some(b"t011".as_slice())
+    );
+}
+
+// No spec statement: P5-13, MAP-27: a spawnflag set or cleared on several entities changes only
+// that bit of each entity's own flags, in one undo step; an entity it does not have refuses all
+#[test]
+fn a_flag_changes_only_its_bit_on_each_entity() {
+    let mut session = open("flags-several");
+    session
+        .execute(
+            MAP_SET_KEY,
+            json!({ "entity": 2, "key": "spawnflags", "value": "256" }),
+        )
+        .unwrap();
+    session
+        .execute(
+            MAP_SET_KEY,
+            json!({ "entity": 3, "key": "spawnflags", "value": "3.0" }),
+        )
+        .unwrap();
+    let before = text(&session);
+    session
+        .execute(
+            MAP_SET_FLAG,
+            json!({ "entity": 1, "also": [2, 3], "flag": 2, "change": "set" }),
+        )
+        .unwrap();
+    let value = |session: &Session<Workbench<FsLoader>>, entity: usize| {
+        let map = session.context().map().unwrap();
+        String::from_utf8(
+            map.file().entities[entity]
+                .value(b"spawnflags")
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap()
+    };
+    assert_eq!(value(&session, 1), "2");
+    assert_eq!(value(&session, 2), "258");
+    assert_eq!(value(&session, 3), "3");
+    session
+        .execute(
+            MAP_SET_FLAG,
+            json!({ "entity": 2, "flag": 256, "change": "clear" }),
+        )
+        .unwrap();
+    assert_eq!(value(&session, 2), "2");
+    session.undo().unwrap();
+    session.undo().unwrap();
+    assert_eq!(text(&session), before);
+    assert!(
+        session
+            .execute(
+                MAP_SET_FLAG,
+                json!({ "entity": 1, "also": [9], "flag": 2, "change": "set" })
+            )
+            .is_err()
+    );
+    assert_eq!(text(&session), before);
 }

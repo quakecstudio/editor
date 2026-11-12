@@ -367,6 +367,10 @@ impl World {
             0.0
         };
         let skill = spawn::clamp_skill(setting("skill"));
+        engine.cvars.set("skill", &skill.to_string());
+        if coop != 0.0 {
+            engine.cvars.set("deathmatch", "0");
+        }
         let mut world = Self {
             machine,
             builtins: SimBuiltins::new(
