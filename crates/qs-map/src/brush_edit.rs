@@ -7,7 +7,7 @@
 //! compiler never meets a brush with a stray or duplicate face.
 
 use crate::geometry::{
-    MIN_CORNERS, ON_PLANE, POLYGON_REACH, Plane, clip_behind, plane as plane_of,
+    MIN_CORNERS, ON_PLANE, POLYGON_REACH, Plane, dot, paraxial_axes, plane as plane_of, polygons_on,
 };
 use crate::{Brush, Entity, Face, Item, MapError, TexDef};
 
@@ -28,6 +28,37 @@ impl Surface {
             texdef: *face.texdef(),
         }
     }
+
+    /// A face through `points`, facing along `normal`, painted with the surface. A standard
+    /// texture definition fits any plane; Valve 220 axes that do not lie in this one are
+    /// replaced by its paraxial axes (MAP-4.2), keeping their shifts, rotation and scale.
+    fn face(&self, points: [[f64; 3]; 3], normal: [f64; 3]) -> Result<Face, BrushError> {
+        let texdef = match self.texdef {
+            TexDef::Valve {
+                s,
+                t,
+                rotate,
+                scale,
+            } => {
+                let [sx, sy, sz, s_shift] = s;
+                let [tx, ty, tz, t_shift] = t;
+                let lies_in = |axis: [f64; 3]| dot(axis, normal).abs() < IN_PLANE;
+                if lies_in([sx, sy, sz]) && lies_in([tx, ty, tz]) {
+                    self.texdef
+                } else {
+                    let [[psx, psy, psz], [ptx, pty, ptz]] = paraxial_axes(normal);
+                    TexDef::Valve {
+                        s: [psx, psy, psz, s_shift],
+                        t: [ptx, pty, ptz, t_shift],
+                        rotate,
+                        scale,
+                    }
+                }
+            }
+            TexDef::Standard { .. } => self.texdef,
+        };
+        Ok(Face::new(points, &self.texture, texdef)?)
+    }
 }
 
 /// Why a brush could not be made.
@@ -39,6 +70,10 @@ pub enum BrushError {
     NoVertex([f64; 3]),
     /// The moved vertex would lie inside the brush, so it would vanish.
     VertexInside([f64; 3]),
+    /// Moving a vertex would leave this other vertex inside the brush or on a face.
+    CornerLost([f64; 3]),
+    /// The plane misses the brush, so the clip would change nothing.
+    Missed,
     /// A face could not be written.
     Map(MapError),
 }
@@ -51,6 +86,8 @@ impl core::fmt::Display for BrushError {
             }
             Self::NoVertex(p) => write!(f, "the brush has no vertex at {p:?}"),
             Self::VertexInside(p) => write!(f, "a vertex moved to {p:?} would be inside the brush"),
+            Self::CornerLost(p) => write!(f, "the move would take away the vertex at {p:?}"),
+            Self::Missed => f.write_str("the plane misses the brush"),
             Self::Map(error) => write!(f, "{error}"),
         }
     }
@@ -60,7 +97,11 @@ impl std::error::Error for BrushError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Map(error) => Some(error),
-            Self::Degenerate | Self::NoVertex(_) | Self::VertexInside(_) => None,
+            Self::Degenerate
+            | Self::NoVertex(_)
+            | Self::VertexInside(_)
+            | Self::CornerLost(_)
+            | Self::Missed => None,
         }
     }
 }
@@ -77,19 +118,23 @@ const PRECISION: f64 = 1e6;
 const SAME_POINT: f64 = 1e-3;
 /// How near 1 the dot product of two normals is when they point the same way.
 const SAME_NORMAL: f64 = 1.0 - 1e-9;
+/// The largest dot product of a Valve 220 axis with a face's normal for the axis to lie in
+/// the face's plane.
+const IN_PLANE: f64 = 1e-6;
 
 /// `value` rounded to [`PRECISION`], -0 written as 0.
 fn round(value: f64) -> f64 {
     (value * PRECISION).round() / PRECISION + 0.0
 }
 
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
 fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
     let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
     dot(d, d).sqrt()
+}
+
+/// Whether `a` and `b` are one vertex: nearer than [`SAME_POINT`].
+fn same_point(a: [f64; 3], b: [f64; 3]) -> bool {
+    distance(a, b) < SAME_POINT
 }
 
 impl Plane<f64> {
@@ -112,29 +157,12 @@ impl Plane<f64> {
     }
 }
 
-/// The polygon of the plane at `index` on the solid behind every one of `planes`.
-fn polygon_on(planes: &[Plane<f64>], index: usize) -> Vec<[f64; 3]> {
-    let Some(plane) = planes.get(index) else {
-        return Vec::new();
-    };
-    let mut polygon = plane.polygon();
-    for (other, clip) in planes.iter().enumerate() {
-        if other != index && !polygon.is_empty() {
-            polygon = clip_behind(&polygon, clip);
-        }
-    }
-    polygon
-}
-
 /// Three corners of `polygon`, spread around it, ordered so the plane they give faces along
 /// `normal`; `None` for a polygon of fewer than three corners.
 fn face_points(polygon: &[[f64; 3]], normal: [f64; 3]) -> Option<[[f64; 3]; 3]> {
     let mut corners: Vec<[f64; 3]> = Vec::new();
     for corner in polygon.iter().map(|p| p.map(round)) {
-        if !corners
-            .iter()
-            .any(|&known| distance(known, corner) < SAME_POINT)
-        {
+        if !corners.iter().any(|&known| same_point(known, corner)) {
             corners.push(corner);
         }
     }
@@ -197,7 +225,8 @@ impl Brush {
         if planes.len() < MIN_CORNERS.saturating_add(1) {
             return false;
         }
-        for (index, plane) in planes.iter().enumerate() {
+        let polygons = polygons_on(&planes);
+        for ((index, plane), polygon) in planes.iter().enumerate().zip(polygons) {
             if planes
                 .iter()
                 .skip(index.saturating_add(1))
@@ -205,7 +234,6 @@ impl Brush {
             {
                 return false;
             }
-            let polygon = polygon_on(&planes, index);
             let bounded = polygon
                 .iter()
                 .flatten()
@@ -220,13 +248,17 @@ impl Brush {
     /// The brush's corners, each once.
     #[must_use]
     pub fn vertices(&self) -> Vec<[f64; 3]> {
+        Self::corners(&self.polygons())
+    }
+
+    /// The corners of a brush whose face polygons are `polygons`, as [`Brush::polygons`] gives
+    /// them, each once and rounded as [`Brush::vertices`] gives them.
+    #[must_use]
+    pub fn corners(polygons: &[Vec<[f64; 3]>]) -> Vec<[f64; 3]> {
         let mut out: Vec<[f64; 3]> = Vec::new();
-        for corner in self.polygons().into_iter().flatten() {
+        for &corner in polygons.iter().flatten() {
             let corner = corner.map(round);
-            if !out
-                .iter()
-                .any(|&known| distance(known, corner) < SAME_POINT)
-            {
+            if !out.iter().any(|&known| same_point(known, corner)) {
                 out.push(corner);
             }
         }
@@ -261,8 +293,9 @@ impl Brush {
     /// The brush with only the faces that have a polygon on its solid.
     fn pruned(mut self) -> Self {
         if let Some(planes) = self.planes() {
-            let keep: Vec<bool> = (0..planes.len())
-                .map(|index| polygon_on(&planes, index).len() >= MIN_CORNERS)
+            let keep: Vec<bool> = polygons_on(&planes)
+                .iter()
+                .map(|polygon| polygon.len() >= MIN_CORNERS)
                 .collect();
             let mut flags = keep.into_iter();
             self.faces.retain(|_| flags.next().unwrap_or(false));
@@ -275,25 +308,24 @@ impl Brush {
     fn cut(&self, plane: Plane<f64>, surface: &Surface) -> Result<Option<Self>, BrushError> {
         let mut planes = self.planes().ok_or(BrushError::Degenerate)?;
         planes.push(plane);
-        let polygon = polygon_on(&planes, planes.len().saturating_sub(1));
+        let polygon = polygons_on(&planes).pop().unwrap_or_default();
         let Some(points) = face_points(&polygon, plane.normal) else {
             return Ok(None);
         };
         let mut brush = self.clone();
-        brush
-            .faces
-            .push(Face::new(points, &surface.texture, surface.texdef)?);
+        brush.faces.push(surface.face(points, plane.normal)?);
         let brush = brush.pruned();
         Ok(brush.is_valid().then_some(brush))
     }
 
     /// The parts of the brush behind `plane` and in front of it, the new face of each painted
-    /// with `surface`; a part with nothing in it is `None`, and a brush wholly on one side is
-    /// that side's part unchanged.
+    /// with `surface`. A brush wholly on one side is that side's part unchanged, the other
+    /// `None`; a brush the plane crosses gives two parts.
     ///
     /// # Errors
     ///
-    /// [`BrushError::Map`] when the new face cannot be written.
+    /// [`BrushError::Degenerate`] when the plane crosses the brush but a part would be too thin
+    /// to be a brush, and [`BrushError::Map`] when the new face cannot be written.
     pub fn split(
         &self,
         plane: Plane<f64>,
@@ -306,10 +338,13 @@ impl Brush {
         if vertices.iter().all(|&v| plane.side(v) >= -ON_PLANE) {
             return Ok((None, Some(self.clone())));
         }
-        Ok((
+        match (
             self.cut(plane, surface)?,
             self.cut(plane.flipped(), surface)?,
-        ))
+        ) {
+            (Some(back), Some(front)) => Ok((Some(back), Some(front))),
+            (None, _) | (_, None) => Err(BrushError::Degenerate),
+        }
     }
 
     /// The brush with `cutter` taken out of it: the pieces of it in front of each of the
@@ -337,7 +372,7 @@ impl Brush {
             }
             rest = inside;
             if rest.is_none() {
-                // The cutter lies wholly behind this face's far side: no overlap.
+                // The brush lies wholly in front of this face of the cutter: no overlap.
                 return Ok(vec![self.clone()]);
             }
         }
@@ -347,6 +382,13 @@ impl Brush {
     /// The convex hull of `points`, each face painted as the face of `from` whose normal is
     /// nearest its own, or with `surface` when `from` has none.
     fn hull(points: &[[f64; 3]], from: &[&Self], surface: &Surface) -> Result<Self, BrushError> {
+        let mut unique: Vec<[f64; 3]> = Vec::new();
+        for &point in points {
+            if !unique.iter().any(|&known| same_point(known, point)) {
+                unique.push(point);
+            }
+        }
+        let points = unique.as_slice();
         let mut planes: Vec<Plane<f64>> = Vec::new();
         for (i, &a) in points.iter().enumerate() {
             for (j, &b) in points.iter().enumerate().skip(i.saturating_add(1)) {
@@ -369,8 +411,7 @@ impl Brush {
         }
         let faces: Vec<&Face> = from.iter().flat_map(|brush| &brush.faces).collect();
         let mut brush = Self::new();
-        for (index, plane) in planes.iter().enumerate() {
-            let polygon = polygon_on(&planes, index);
+        for (plane, polygon) in planes.iter().zip(polygons_on(&planes)) {
             let Some(points) = face_points(&polygon, plane.normal) else {
                 continue;
             };
@@ -379,9 +420,7 @@ impl Brush {
                 .filter_map(|face| face.plane().map(|p| (dot(p.normal, plane.normal), face)))
                 .max_by(|a, b| a.0.total_cmp(&b.0))
                 .map_or_else(|| surface.clone(), |(_, face)| Surface::of(face));
-            brush
-                .faces
-                .push(Face::new(points, &paint.texture, paint.texdef)?);
+            brush.faces.push(paint.face(points, plane.normal)?);
         }
         if brush.is_valid() {
             Ok(brush)
@@ -417,13 +456,13 @@ impl Brush {
     /// # Errors
     ///
     /// [`BrushError::NoVertex`] when no vertex is at `from`, [`BrushError::VertexInside`] when
-    /// `to` would lie inside the brush, and [`BrushError::Degenerate`] when the result has no
-    /// volume.
+    /// `to` would lie inside the brush, [`BrushError::CornerLost`] when another vertex would,
+    /// and [`BrushError::Degenerate`] when the result has no volume.
     pub fn move_vertex(&self, from: [f64; 3], to: [f64; 3]) -> Result<Self, BrushError> {
         let mut points = self.vertices();
         let moved = points
             .iter_mut()
-            .find(|p| distance(**p, from) < SAME_POINT)
+            .find(|p| same_point(**p, from))
             .ok_or(BrushError::NoVertex(from))?;
         *moved = to.map(round);
         let surface = self
@@ -432,12 +471,13 @@ impl Brush {
             .map(Surface::of)
             .ok_or(BrushError::Degenerate)?;
         let brush = Self::hull(&points, &[self], &surface)?;
-        if !brush
-            .vertices()
-            .iter()
-            .any(|&v| distance(v, to) < SAME_POINT)
-        {
+        let corners = brush.vertices();
+        let kept = |point: [f64; 3]| corners.iter().any(|&v| same_point(v, point));
+        if !kept(to) {
             return Err(BrushError::VertexInside(to));
+        }
+        if let Some(&lost) = points.iter().find(|&&p| !kept(p)) {
+            return Err(BrushError::CornerLost(lost));
         }
         Ok(brush)
     }

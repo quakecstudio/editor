@@ -296,6 +296,9 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushClip {
             if kept.is_empty() {
                 return Err(BrushError::Degenerate.into());
             }
+            if kept == [brush] {
+                return Err(BrushError::Missed.into());
+            }
             document.replace_brush(params.entity, params.brush, kept)
         })?;
         Ok(Outcome::undoable(
@@ -356,17 +359,28 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSubtract {
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
         let ((), step) = edit_map(context, |document| {
             let cutter = document.brush(params.entity, params.brush)?;
-            let count = document.entity_mut(params.entity)?.brush_places().len();
-            let mut kept = Vec::new();
-            for index in (0..count).filter(|&i| i != params.brush.get()) {
-                let brush = document.brush(params.entity, BrushIndex::new(index))?;
-                kept.push(brush.subtract(&cutter)?);
-            }
             let found = document.entity_mut(params.entity)?;
-            found.items.retain(|item| matches!(item, Item::Pair(_)));
-            found
-                .items
-                .extend(kept.into_iter().flatten().map(Item::Brush));
+            let place = found
+                .brush_places()
+                .get(params.brush.get())
+                .copied()
+                .ok_or(WorkbenchError::NoBrush {
+                    entity: params.entity,
+                    brush: params.brush,
+                })?;
+            // Each brush is replaced where it stands by its pieces, so the map's text changes
+            // only around the brushes the cutter overlaps.
+            let mut items = Vec::with_capacity(found.items.len());
+            for (index, item) in core::mem::take(&mut found.items).into_iter().enumerate() {
+                match item {
+                    Item::Brush(_) if index == place => {}
+                    Item::Brush(brush) => {
+                        items.extend(brush.subtract(&cutter)?.into_iter().map(Item::Brush));
+                    }
+                    Item::Pair(pair) => items.push(Item::Pair(pair)),
+                }
+            }
+            document.entity_mut(params.entity)?.items = items;
             Ok(())
         })?;
         Ok(Outcome::undoable(

@@ -2107,7 +2107,8 @@ impl Shell {
                     brush,
                     from,
                     to,
-                    grid: None,
+                    // The view has snapped the corner across its plane and keeps its height.
+                    grid: Some(0.0),
                 },
             ),
             BrushAction::Subtract(entity, brush) => {

@@ -128,10 +128,10 @@ pub(crate) struct BrushShape {
     pub(crate) brush: BrushIndex,
     /// Its edges.
     pub(crate) lines: Vec<Line>,
-    /// Its corners.
-    pub(crate) vertices: Vec<[f32; 3]>,
+    /// Its corners, as exact as the commands that edit it match them.
+    pub(crate) vertices: Vec<[f64; 3]>,
     /// Its faces' planes, each a normal pointing out and a distance: the solid behind them all.
-    planes: Vec<([f32; 3], f32)>,
+    pub(crate) planes: Vec<([f32; 3], f32)>,
 }
 
 impl BrushShape {
@@ -192,11 +192,12 @@ impl Scene {
             let mut bounds: Option<[[f32; 3]; 2]> = None;
             let mut lines = Vec::new();
             for (number, brush) in entity.brushes().enumerate() {
+                let polygons = brush.polygons();
                 let mut shape = BrushShape {
                     entity: EntityIndex::new(index),
                     brush: BrushIndex::new(number),
                     lines: Vec::new(),
-                    vertices: brush.vertices().iter().map(|v| v.map(single)).collect(),
+                    vertices: qs_map::Brush::corners(&polygons),
                     planes: brush
                         .faces
                         .iter()
@@ -204,7 +205,7 @@ impl Scene {
                         .map(|p| (p.normal.map(single), single(p.dist)))
                         .collect(),
                 };
-                for polygon in brush.polygons() {
+                for polygon in &polygons {
                     let points: Vec<[f32; 3]> = polygon.iter().map(|p| p.map(single)).collect();
                     for &point in &points {
                         bounds = Some(grow(bounds, point));
@@ -513,7 +514,7 @@ fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
     clippy::cast_possible_truncation,
     reason = "map coordinates lie far inside f32's range"
 )]
-const fn single(value: f64) -> f32 {
+pub(crate) const fn single(value: f64) -> f32 {
     value as f32
 }
 

@@ -101,7 +101,8 @@ fn a_box_is_created_on_the_grid() {
 }
 
 // No spec statement: P6-08: a clip keeps the part behind the plane, in front of it, or both;
-// a plane that leaves nothing is refused, and so is a brush that is not there
+// a plane that leaves nothing, or misses the brush and so changes nothing, is refused, and so
+// is a brush that is not there
 #[test]
 fn a_brush_is_clipped() {
     let mut session = open("clip");
@@ -134,6 +135,19 @@ fn a_brush_is_clipped() {
             )
             .is_err()
     );
+    for keep in ["back", "both"] {
+        assert!(
+            session
+                .execute(
+                    MAP_BRUSH_CLIP,
+                    json!({ "entity": 0, "brush": 0, "points": outside, "keep": keep })
+                )
+                .unwrap_err()
+                .to_string()
+                .contains("misses the brush"),
+            "a clip that changes nothing is refused, keeping {keep}"
+        );
+    }
     assert!(
         session
             .execute(

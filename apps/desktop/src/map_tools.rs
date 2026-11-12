@@ -8,13 +8,13 @@
 //! deletes the brushes selected. Each edit is a [`BrushAction`] the shell runs as a
 //! `map.brush_*` command, so each has undo.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use eframe::egui::{self, Painter, Pos2, Response, Stroke, Ui};
 use qs_workbench::map_edit::{BrushIndex, EntityIndex, KeepPart};
 
 use crate::map_editor::{GRID, Projection, box_lines};
-use crate::map_scene::Scene;
+use crate::map_scene::{Scene, single};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
 
@@ -93,7 +93,7 @@ enum Drag {
     /// A box or a cut line, from this point on the ground.
     Ground([f32; 3]),
     /// A corner of a brush, from where it is.
-    Corner(BrushRef, [f32; 3]),
+    Corner(BrushRef, [f64; 3]),
 }
 
 /// The brush tools' state.
@@ -104,6 +104,11 @@ pub(crate) struct BrushTools {
     keep: KeepPart,
     /// The brushes selected, the first chosen first.
     chosen: Vec<BrushRef>,
+    /// The corners each selected brush had when it was last seen: an edit or undo that moves
+    /// brushes along leaves a place naming another brush, whose corners differ.
+    seen: BTreeMap<BrushRef, Vec<[f64; 3]>>,
+    /// The brush the last clip or vertex move asked for reshapes, which stays selected.
+    reshaped: Option<BrushRef>,
     drag: Option<Drag>,
 }
 
@@ -147,10 +152,23 @@ impl BrushTools {
         self.tool
     }
 
-    /// Forgets the brushes `scene` no longer has.
+    /// Forgets the selected brushes `scene` no longer has where they were: none is at the
+    /// place, or another brush is, other than the one the last clip or vertex move reshaped.
     pub(crate) fn keep_found(&mut self, scene: &Scene) {
-        self.chosen
-            .retain(|&(entity, brush)| scene.brush(entity, brush).is_some());
+        let reshaped = self.reshaped.take();
+        let seen = &mut self.seen;
+        self.chosen.retain(|&chosen| {
+            let Some(shape) = scene.brush(chosen.0, chosen.1) else {
+                return false;
+            };
+            let same = seen.get(&chosen) == Some(&shape.vertices);
+            if same || reshaped == Some(chosen) {
+                seen.insert(chosen, shape.vertices.clone());
+            }
+            same || reshaped == Some(chosen)
+        });
+        let chosen = &self.chosen;
+        self.seen.retain(|brush, _| chosen.contains(brush));
     }
 
     /// The tool selector, and the clip's side when clipping.
@@ -188,6 +206,11 @@ impl BrushTools {
             let (start, direction) = ray(at);
             let picked = scene.pick_brush(start, direction, hidden);
             let shift = ui.input(|i| i.modifiers.shift);
+            if let Some(brush) = picked
+                && let Some(shape) = scene.brush(brush.0, brush.1)
+            {
+                self.seen.insert(brush, shape.vertices.clone());
+            }
             match picked {
                 Some(brush) if shift => {
                     if let Some(place) = self.chosen.iter().position(|&b| b == brush) {
@@ -216,7 +239,14 @@ impl BrushTools {
             && let Some(drag) = self.drag.take()
             && let Some(at) = ui.ctx().pointer_latest_pos()
         {
-            actions.extend(self.finish(drag, ray(at)));
+            let finished = self.finish(drag, ray(at));
+            if let Some(
+                BrushAction::Clip(entity, brush, ..) | BrushAction::Vertex(entity, brush, ..),
+            ) = finished
+            {
+                self.reshaped = Some((entity, brush));
+            }
+            actions.extend(finished);
         }
         actions
     }
@@ -227,14 +257,14 @@ impl BrushTools {
         scene: &Scene,
         projection: &Projection,
         at: Pos2,
-    ) -> Option<(BrushRef, [f32; 3])> {
-        let mut best: Option<(f32, BrushRef, [f32; 3])> = None;
+    ) -> Option<(BrushRef, [f64; 3])> {
+        let mut best: Option<(f32, BrushRef, [f64; 3])> = None;
         for &(entity, brush) in &self.chosen {
             let Some(shape) = scene.brush(entity, brush) else {
                 continue;
             };
             for &corner in &shape.vertices {
-                let Some(drawn) = projection.point(corner) else {
+                let Some(drawn) = projection.point(corner.map(single)) else {
                     continue;
                 };
                 let distance = drawn.distance(at);
@@ -267,13 +297,9 @@ impl BrushTools {
                 })
             }
             (MapTool::Vertex, Drag::Corner((entity, brush), from)) => {
-                let to = at_height(ray, from[2])?;
-                Some(BrushAction::Vertex(
-                    entity,
-                    brush,
-                    from.map(f64::from),
-                    snapped(to),
-                ))
+                let to = at_height(ray, single(from[2]))?;
+                let [x, y, _] = snapped(to);
+                Some(BrushAction::Vertex(entity, brush, from, [x, y, from[2]]))
             }
             (MapTool::Select | MapTool::Brush | MapTool::Clip | MapTool::Vertex, _) => None,
         }
@@ -298,7 +324,7 @@ impl BrushTools {
             }
             if self.tool == MapTool::Vertex {
                 for &corner in &shape.vertices {
-                    if let Some(at) = projection.point(corner) {
+                    if let Some(at) = projection.point(corner.map(single)) {
                         painter.circle_filled(at, VERTEX_DOT, accent.color);
                     }
                 }
@@ -308,13 +334,20 @@ impl BrushTools {
         let Some(drag) = self.drag else {
             return;
         };
-        let (from, z) = match drag {
-            Drag::Ground(from) | Drag::Corner(_, from) => (from, from[2]),
+        let from = match drag {
+            Drag::Ground(from) => snapped_f32(from),
+            Drag::Corner(_, from) => from.map(single),
         };
-        let Some(to) = pointer.and_then(|ray| at_height(ray, z)) else {
+        let Some(to) = pointer.and_then(|ray| at_height(ray, from[2])) else {
             return;
         };
-        let (from, to) = (snapped_f32(from), snapped_f32(to));
+        let to = match drag {
+            Drag::Ground(_) => snapped_f32(to),
+            Drag::Corner(..) => {
+                let [x, y, _] = snapped_f32(to);
+                [x, y, from[2]]
+            }
+        };
         match self.tool {
             MapTool::Brush => {
                 for line in box_lines(ground_box(from, to)) {
@@ -392,6 +425,7 @@ mod tests {
     )]
 
     use super::{BrushAction, BrushTools, Drag, MapTool, at_height};
+    use crate::map_scene::{BrushShape, Scene};
     use qs_workbench::map_edit::{BrushIndex, EntityIndex, KeepPart};
 
     fn down_from(x: f32, y: f32) -> super::Ray {
@@ -463,5 +497,59 @@ mod tests {
             moved,
             BrushAction::Vertex(brush.0, brush.1, [64.0; 3], [96.0, 64.0, 64.0])
         );
+        let off_grid = tools
+            .finish(
+                Drag::Corner(brush, [64.0, 64.0, 10.0]),
+                down_from(90.0, 70.0),
+            )
+            .unwrap();
+        assert_eq!(
+            off_grid,
+            BrushAction::Vertex(brush.0, brush.1, [64.0, 64.0, 10.0], [96.0, 64.0, 10.0]),
+            "a corner off the grid keeps its height"
+        );
+    }
+
+    /// A scene holding one brush of the world at each place, with these corners.
+    fn scene(corners: &[[f64; 3]]) -> Scene {
+        let mut scene = Scene::default();
+        for (place, &corner) in corners.iter().enumerate() {
+            scene.brushes.push(BrushShape {
+                entity: EntityIndex::new(0),
+                brush: BrushIndex::new(place),
+                lines: Vec::new(),
+                vertices: vec![corner],
+                planes: Vec::new(),
+            });
+        }
+        scene
+    }
+
+    // No spec statement: P6-08: a selected brush stays selected while its place holds it; an
+    // edit or undo that puts another brush there, or none, drops it, but the brush a clip or
+    // vertex move reshaped stays
+    #[test]
+    fn the_selection_follows_the_brushes() {
+        let (a, b) = ([0.0; 3], [64.0; 3]);
+        let second = (EntityIndex::new(0), BrushIndex::new(1));
+        let mut tools = BrushTools {
+            chosen: vec![second],
+            ..BrushTools::default()
+        };
+        tools.seen.insert(second, vec![b]);
+        tools.keep_found(&scene(&[a, b]));
+        assert_eq!(tools.chosen, vec![second], "unchanged");
+        tools.keep_found(&scene(&[b, a]));
+        assert!(tools.chosen.is_empty(), "another brush is there");
+        assert!(tools.seen.is_empty());
+        tools.chosen = vec![second];
+        tools.seen.insert(second, vec![b]);
+        tools.reshaped = Some(second);
+        tools.keep_found(&scene(&[a, [32.0; 3]]));
+        assert_eq!(tools.chosen, vec![second], "reshaped by the last edit");
+        assert_eq!(tools.seen.get(&second), Some(&vec![[32.0; 3]]));
+        assert_eq!(tools.reshaped, None);
+        tools.keep_found(&scene(&[a]));
+        assert!(tools.chosen.is_empty(), "gone");
     }
 }

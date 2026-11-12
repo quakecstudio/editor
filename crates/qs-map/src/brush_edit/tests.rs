@@ -3,14 +3,15 @@
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
-    reason = "test code: a failed unwrap or index is a failed test"
+    clippy::panic,
+    reason = "test code: a failed unwrap or index, or a wrong variant, is a failed test"
 )]
 
 use proptest::prelude::*;
 
-use super::{BrushError, Surface};
-use crate::geometry::{Plane, plane};
-use crate::{Brush, TexDef};
+use super::{BrushError, SAME_NORMAL, SAME_POINT, Surface, face_points, same_point};
+use crate::geometry::{ON_PLANE, Plane, plane};
+use crate::{Brush, Item, MapFile, TexDef};
 
 fn surface() -> Surface {
     Surface {
@@ -198,6 +199,180 @@ fn new_faces_lie_on_their_planes() {
             assert!(side <= p.dist + 0.01, "every corner is behind every face");
         }
     }
+}
+
+// No spec statement: P6-08: a tetrahedron, four triangular faces, is the least valid brush
+#[test]
+fn a_tetrahedron_is_valid() {
+    let corners = [
+        [0.0; 3],
+        [64.0, 0.0, 0.0],
+        [0.0, 64.0, 0.0],
+        [0.0, 0.0, 64.0],
+    ];
+    let brush = Brush::hull(&corners, &[], &surface()).unwrap();
+    assert!(brush.is_valid());
+    assert_eq!(brush.faces.len(), 4);
+    assert_eq!(brush.vertices().len(), 4);
+    assert_eq!(round(volume(&brush)), round(64.0 * 64.0 * 64.0 / 6.0));
+}
+
+// No spec statement: P6-08: a box whose corners are given the wrong way round on any axis is
+// refused, not turned the right way out
+#[test]
+fn an_inside_out_box_is_refused() {
+    for axis in 0..3 {
+        let mut min = [0.0; 3];
+        let mut max = [64.0; 3];
+        min[axis] = 64.0;
+        max[axis] = 0.0;
+        assert!(
+            matches!(
+                Brush::cuboid(min, max, &surface()),
+                Err(BrushError::Degenerate)
+            ),
+            "axis {axis}"
+        );
+    }
+}
+
+// No spec statement: P6-08: a plane touching a face of the brush leaves it whole on one side
+#[test]
+fn a_touching_plane_leaves_the_brush_whole() {
+    let brush = cuboid([0.0; 3], [64.0; 3]);
+    let (none, whole) = brush.split(x_plane(0.0), &surface()).unwrap();
+    assert_eq!((none, whole), (None, Some(brush.clone())));
+    let (whole, none) = brush.split(x_plane(64.0), &surface()).unwrap();
+    assert_eq!((whole, none), (Some(brush), None));
+}
+
+// No spec statement: P6-08: a vertex move that would leave another vertex inside the brush or
+// on a face is refused
+#[test]
+fn a_vertex_move_that_loses_a_corner_is_refused() {
+    let brush = cuboid([0.0; 3], [64.0; 3]);
+    assert!(matches!(
+        brush.move_vertex([64.0, 64.0, 64.0], [0.0, 0.0, 128.0]),
+        Err(BrushError::CornerLost(_))
+    ));
+}
+
+/// A Valve 220 surface whose axes fit the floor.
+fn floor_valve() -> Surface {
+    Surface {
+        texture: b"rock".to_vec(),
+        texdef: TexDef::Valve {
+            s: [1.0, 0.0, 0.0, 8.0],
+            t: [0.0, -1.0, 0.0, 4.0],
+            rotate: 0.0,
+            scale: [1.0, 1.0],
+        },
+    }
+}
+
+// spec MAP-4.2: a new face painted with Valve 220 axes that do not lie in its plane takes its
+// plane's paraxial axes, keeping the shifts; axes that lie in it are kept
+#[test]
+fn valve_axes_fit_each_new_face() {
+    let brush = Brush::cuboid([0.0; 3], [64.0; 3], &floor_valve()).unwrap();
+    for face in &brush.faces {
+        let normal = face.plane().unwrap().normal;
+        let TexDef::Valve { s, t, .. } = *face.texdef() else {
+            panic!("a Valve face");
+        };
+        let along =
+            |axis: [f64; 4]| axis[0] * normal[0] + axis[1] * normal[1] + axis[2] * normal[2];
+        assert_eq!((along(s), along(t)), (0.0, 0.0), "{normal:?}");
+        assert_eq!((s[3], t[3]), (8.0, 4.0));
+        if normal[2] != 0.0 {
+            assert_eq!(
+                *face.texdef(),
+                floor_valve().texdef,
+                "the floor and ceiling keep theirs"
+            );
+        }
+    }
+}
+
+// No spec statement: P6-08: a face a brush edit cannot write is a map error, its cause kept
+#[test]
+fn an_unwritable_face_is_a_map_error() {
+    let mut zero = floor_valve();
+    zero.texdef = TexDef::Valve {
+        s: [1.0, 0.0, 0.0, 0.0],
+        t: [0.0, -1.0, 0.0, 0.0],
+        rotate: 0.0,
+        scale: [0.0, 1.0],
+    };
+    let error = Brush::cuboid([0.0; 3], [8.0; 3], &zero).unwrap_err();
+    assert!(matches!(error, BrushError::Map(_)));
+    assert!(std::error::Error::source(&error).is_some());
+    assert!(std::error::Error::source(&BrushError::Missed).is_none());
+}
+
+// No spec statement: P6-08: each brush error says what went wrong
+#[test]
+fn brush_errors_are_described() {
+    let cases = [
+        (BrushError::Degenerate, "no volume"),
+        (
+            BrushError::NoVertex([1.0, 2.0, 3.0]),
+            "no vertex at [1.0, 2.0, 3.0]",
+        ),
+        (BrushError::VertexInside([4.0; 3]), "inside the brush"),
+        (
+            BrushError::CornerLost([5.0; 3]),
+            "take away the vertex at [5.0, 5.0, 5.0]",
+        ),
+        (BrushError::Missed, "misses the brush"),
+    ];
+    for (error, text) in cases {
+        assert!(error.to_string().contains(text), "{error}");
+    }
+}
+
+// No spec statement: P6-08: two points nearer than SAME_POINT are one vertex, and points that
+// far apart are two; a polygon left with two corners has no face points
+#[test]
+fn near_points_are_one_vertex() {
+    let origin = [0.0; 3];
+    assert!(same_point(origin, origin));
+    assert!(same_point(origin, [SAME_POINT / 2.0, 0.0, 0.0]));
+    assert!(!same_point(origin, [SAME_POINT, 0.0, 0.0]));
+    let sliver = [origin, [SAME_POINT / 10.0, 0.0, 0.0], [0.0, 64.0, 0.0]];
+    assert_eq!(face_points(&sliver, [0.0, 0.0, 1.0]), None);
+}
+
+// No spec statement: P6-08: a rounded coordinate is never written as -0
+#[test]
+fn rounding_drops_negative_zero() {
+    assert!(super::round(-1e-9).is_sign_positive());
+    assert_eq!(super::round(1.234_567_89), 1.234_568);
+}
+
+// No spec statement: P6-08: two planes are one only when they face the same way and lie less
+// than ON_PLANE apart
+#[test]
+fn planes_are_the_same_within_the_tolerances() {
+    let x = x_plane(0.0);
+    assert!(x.same(&x_plane(ON_PLANE / 2.0)));
+    assert!(!x.same(&x_plane(ON_PLANE)));
+    let tilted = Plane {
+        normal: [SAME_NORMAL, 0.0, 0.0],
+        dist: 0.0,
+    };
+    assert!(!x.same(&tilted));
+}
+
+// No spec statement: P6-08: an entity's brushes are numbered by their places among its items
+#[test]
+fn brushes_are_found_among_an_entitys_items() {
+    let mut file = MapFile::parse(b"{\n\"classname\" \"func_wall\"\n}\n").unwrap();
+    let entity = &mut file.entities[0];
+    assert!(entity.brush_places().is_empty());
+    entity.items.push(Item::Brush(cuboid([0.0; 3], [8.0; 3])));
+    entity.items.push(Item::Brush(cuboid([16.0; 3], [24.0; 3])));
+    assert_eq!(entity.brush_places(), vec![1, 2]);
 }
 
 proptest! {

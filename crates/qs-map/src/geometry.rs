@@ -69,7 +69,7 @@ impl MapFloat for f64 {
     clippy::arithmetic_side_effects,
     reason = "MapFloat is sealed to f32 and f64, whose arithmetic never overflows or panics"
 )]
-fn dot<T: MapFloat>(a: [T; 3], b: [T; 3]) -> T {
+pub(crate) fn dot<T: MapFloat>(a: [T; 3], b: [T; 3]) -> T {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
@@ -320,19 +320,36 @@ impl Plane<f64> {
 /// result may hold fewer than `planes`; each polygon's corners go around its plane.
 #[must_use]
 pub fn solid_polygons(planes: &[Plane<f64>]) -> Vec<Vec<[f64; 3]>> {
-    let mut out = Vec::new();
+    polygons_on(planes)
+        .into_iter()
+        .filter(|polygon| polygon.len() >= MIN_CORNERS)
+        .collect()
+}
+
+/// The polygon of each of `planes`, in order, on the solid behind them all, with however few
+/// corners are left.
+pub(crate) fn polygons_on(planes: &[Plane<f64>]) -> Vec<Vec<[f64; 3]>> {
+    let mut out = Vec::with_capacity(planes.len());
     for (index, plane) in planes.iter().enumerate() {
         let mut polygon = plane.polygon();
         for (other, clip) in planes.iter().enumerate() {
-            if other != index && !polygon.is_empty() {
+            if polygon.is_empty() {
+                break;
+            }
+            if other != index {
                 polygon = clip_behind(&polygon, clip);
             }
         }
-        if polygon.len() >= MIN_CORNERS {
-            out.push(polygon);
-        }
+        out.push(polygon);
     }
     out
+}
+
+/// The s and t axes of the base axes row `normal` picks, as a standard face's texture is
+/// projected before its rotation (MAP-4.2).
+pub(crate) fn paraxial_axes(normal: [f64; 3]) -> [[f64; 3]; 2] {
+    let row = best_row((0..MAP_BASE_AXES.len()).map(|row| dot(normal, base_axis(row, 0))));
+    [base_axis(row, 1), base_axis(row, 2)]
 }
 
 /// The part of `polygon` on the back of `plane` (Sutherland and Hodgman's clip).
