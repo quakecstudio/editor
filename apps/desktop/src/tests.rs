@@ -2302,3 +2302,90 @@ fn the_outline_selects_frames_and_moves() {
         map_text(&harness)
     );
 }
+
+/// The number of brushes of the open map's entity `entity` in `harness`'s app.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a missing entity is a failed test"
+)]
+fn brush_count(harness: &Harness<'static, Option<App>>, entity: usize) -> usize {
+    let shell = harness.state().as_ref().unwrap().shell();
+    let map = shell.session().context().workbench.map().unwrap();
+    map.file().entities[entity].brushes().count()
+}
+
+/// Clicks with the primary button at `at` in `harness`'s app.
+fn click_at(harness: &mut Harness<'static, Option<App>>, at: Pos2) {
+    harness.hover_at(at);
+    harness.run();
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    harness.run();
+    harness.run();
+}
+
+// No spec statement: P6-08, MAP-2: a click with a brush tool selects the first brush the ray
+// enters, by its faces, and Delete brush in Properties deletes it; the Brush tool draws a box on
+// the floor with a drag; each through a command, so each undoes
+#[test]
+fn brushes_are_selected_deleted_and_drawn_in_the_view() {
+    let dir = keep_copy("brushes");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.run();
+    let before = map_text(&harness);
+    let (world, door) = (brush_count(&harness, 0), brush_count(&harness, 4));
+    harness.get_by_label(Text::MapToolVertex.get()).click();
+    harness.run();
+    // The camera starts behind the player start, outside the west wall: a click on the door
+    // takes the wall, the first brush in the way, and once it is gone, the door.
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    harness.get_by_label(Text::MapDeleteBrush.get()).click();
+    harness.run();
+    harness.run();
+    let after = map_text(&harness);
+    assert_eq!(
+        (brush_count(&harness, 0), brush_count(&harness, 4)),
+        (world - 1, door)
+    );
+    assert!(!after.contains("( -272 -256 1 )"), "the west wall went");
+    click_at(&mut harness, at);
+    harness.get_by_label(Text::MapDeleteBrush.get()).click();
+    harness.run();
+    harness.run();
+    assert_eq!(
+        (brush_count(&harness, 0), brush_count(&harness, 4)),
+        (world - 1, door - 1)
+    );
+    harness.get_by_label(Text::MapToolBrush.get()).click();
+    harness.run();
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let below = view.center() + egui::vec2(0.0, view.height() / 3.0);
+    drag(
+        &mut harness,
+        below - egui::vec2(60.0, 0.0),
+        below + egui::vec2(60.0, 20.0),
+        egui::Modifiers::NONE,
+    );
+    assert_eq!(brush_count(&harness, 0), world, "{}", map_text(&harness));
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    for _ in 0..3 {
+        shell.execute("edit.undo", json!({})).unwrap();
+    }
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}

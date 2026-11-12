@@ -26,6 +26,7 @@ use crate::map_fields::{Field, spawnflags};
 use crate::map_groups::{GroupAction, layers_ui, overview_keys, selection_ui};
 use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
+use crate::map_tools::{BrushAction, BrushTools, MapTool};
 use crate::strings::{Text, also_selected};
 use crate::theme::{Theme, Token};
 
@@ -38,7 +39,7 @@ const PAN: f32 = 1.0;
 /// Map units a second the fly keys move the camera (TrenchBroom: W, S, A, D, Q, X).
 const FLY_SPEED: f32 = 512.0;
 /// TrenchBroom's grid, `Grid(4)`: 2^4 units, the step the arrow keys move a selection.
-const GRID: f64 = 16.0;
+pub(crate) const GRID: f64 = 16.0;
 /// TrenchBroom turns a selection by a right angle (`half_pi`).
 const QUARTER_TURN: f64 = 90.0;
 /// The key editor's columns: the key, its value and its buttons.
@@ -94,6 +95,8 @@ pub enum MapAction {
     Resolve(Keep),
     /// List how the changed file differs.
     Compare,
+    /// Create, cut, reshape, subtract, merge or delete brushes (P6-08).
+    Brush(BrushAction),
 }
 
 /// The entities the map view shows: every one, or those the game spawns at a skill or in a
@@ -222,6 +225,8 @@ pub struct MapEditor {
     /// Where each entity's centre was drawn in the last frame, where a link dragged from it
     /// starts.
     centres: Vec<(EntityIndex, Pos2)>,
+    /// The brush tools and the brushes selected (P6-08).
+    tools: BrushTools,
 }
 
 impl MapEditor {
@@ -396,6 +401,8 @@ impl MapEditor {
     fn toolbar(&mut self, ui: &mut Ui) -> Vec<MapAction> {
         let mut actions = Vec::new();
         ui.horizontal(|ui| {
+            self.tools.toolbar(ui);
+            ui.separator();
             ui.label(Text::MapLinks.get());
             ui.selectable_value(
                 &mut self.links,
@@ -434,6 +441,7 @@ impl MapEditor {
             self.built = Some(built);
             let count = document.file().entities.len();
             self.also.retain(|entity| entity.get() < count);
+            self.tools.keep_found(&self.scene);
         }
         if self.kept_out.1 != Some(document.revision()) {
             let kept_out = document.hidden_entities();
@@ -516,7 +524,16 @@ impl MapEditor {
             let (start, direction) = ray(at);
             self.scene.pick(start, direction, &hidden)
         };
-        if response.clicked()
+        let selecting = self.tools.tool() == MapTool::Select;
+        let projection = Projection::new(camera, rect);
+        if !selecting {
+            let found = self
+                .tools
+                .input(ui, &response, &self.scene, &hidden, ray, &projection);
+            actions.extend(found.into_iter().map(MapAction::Brush));
+        }
+        if selecting
+            && response.clicked()
             && let Some(at) = response.interact_pointer_pos()
         {
             let picked = pick(at);
@@ -540,7 +557,8 @@ impl MapEditor {
             }
         }
         let alt = ui.input(|i| i.modifiers.alt);
-        if response.drag_started_by(egui::PointerButton::Primary)
+        if selecting
+            && response.drag_started_by(egui::PointerButton::Primary)
             && alt
             && let Some(at) = response.interact_pointer_pos()
         {
@@ -569,7 +587,6 @@ impl MapEditor {
         }
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, theme.color(Token::SurfaceViewport));
-        let projection = Projection::new(camera, rect);
         let world = Stroke::new(1.0, theme.color(Token::TextFaint));
         for (owner, line) in &self.scene.lines {
             if !hidden.contains(owner) {
@@ -622,6 +639,8 @@ impl MapEditor {
         {
             painter.line_segment([*start, at], Stroke::new(2.0, theme.color(Token::Focus)));
         }
+        self.tools
+            .draw(&painter, &projection, theme, &self.scene, pointer.map(ray));
         self.centres = centres;
         actions
     }
@@ -658,6 +677,7 @@ impl MapEditor {
             }
             ui.separator();
         }
+        actions.extend(self.tools.properties(ui).into_iter().map(MapAction::Brush));
         let mut chosen: Vec<EntityIndex> =
             self.keys.as_ref().map(|(e, _)| *e).into_iter().collect();
         chosen.extend(self.also.iter().copied());
@@ -909,7 +929,7 @@ const fn scaled_to_int(value: f32) -> i32 {
 }
 
 /// Map space to the view's points, from the camera's axes and field of view.
-struct Projection {
+pub(crate) struct Projection {
     origin: [f32; 3],
     axes: [[f32; 3]; 3],
     half: [f32; 2],
@@ -941,7 +961,7 @@ impl Projection {
     }
 
     /// Where `p` is in the view, when it is in front of the near plane.
-    fn point(&self, p: [f32; 3]) -> Option<Pos2> {
+    pub(crate) fn point(&self, p: [f32; 3]) -> Option<Pos2> {
         let v = self.view(p);
         (v[2] >= NEAR).then(|| self.screen(v))
     }
@@ -956,7 +976,7 @@ impl Projection {
     }
 
     /// Draws `line`, cut at the near plane.
-    fn line(&self, painter: &Painter, [a, b]: Line, stroke: Stroke) {
+    pub(crate) fn line(&self, painter: &Painter, [a, b]: Line, stroke: Stroke) {
         let (mut a, mut b) = (self.view(a), self.view(b));
         if a[2] < NEAR && b[2] < NEAR {
             return;
