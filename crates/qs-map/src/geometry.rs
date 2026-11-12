@@ -280,18 +280,18 @@ pub fn valve_texvecs(s: [f64; 4], t: [f64; 4], scale: [f64; 2]) -> Option<TexVec
 }
 
 /// How far out the polygon each plane starts from reaches, past any coordinate a map holds.
-const POLYGON_REACH: f64 = 131_072.0;
+pub(crate) const POLYGON_REACH: f64 = 131_072.0;
 
 /// How near a point must be to a plane to count as on it.
-const ON_PLANE: f64 = 0.01;
+pub(crate) const ON_PLANE: f64 = 0.01;
 /// How far along z a normal can be before its plane polygon is built from x, not z.
 const STEEP: f64 = 0.9;
 /// The fewest corners a polygon has.
-const MIN_CORNERS: usize = 3;
+pub(crate) const MIN_CORNERS: usize = 3;
 
 impl Plane<f64> {
     /// A square of [`POLYGON_REACH`] around the point of the plane nearest the origin, in it.
-    fn polygon(&self) -> Vec<[f64; 3]> {
+    pub(crate) fn polygon(&self) -> Vec<[f64; 3]> {
         let n = self.normal;
         // The axis least along the normal gives a vector in the plane.
         let axis = if n[2].abs() < STEEP {
@@ -336,7 +336,7 @@ pub fn solid_polygons(planes: &[Plane<f64>]) -> Vec<Vec<[f64; 3]>> {
 }
 
 /// The part of `polygon` on the back of `plane` (Sutherland and Hodgman's clip).
-fn clip_behind(polygon: &[[f64; 3]], plane: &Plane<f64>) -> Vec<[f64; 3]> {
+pub(crate) fn clip_behind(polygon: &[[f64; 3]], plane: &Plane<f64>) -> Vec<[f64; 3]> {
     let side = |p: [f64; 3]| dot(p, plane.normal) - plane.dist;
     let mut out = Vec::with_capacity(polygon.len().saturating_add(1));
     let Some(&last) = polygon.last() else {
