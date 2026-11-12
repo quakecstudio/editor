@@ -505,7 +505,7 @@ impl Brush {
                 (TextureLock::Locked, None) | (TextureLock::Free, _) => *face.texdef(),
             };
             let texture = face.texture().to_vec();
-            *face = Face::new(points, &texture, texdef)?;
+            face.set(points, &texture, texdef)?;
         }
         Ok(moved)
     }

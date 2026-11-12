@@ -484,7 +484,10 @@ Implemented by `qs_map::Brush::translated`.
   `d` with that face's texture axis as MAP-4.2 to MAP-4.4 and MAP-5.3 scale it, so every point of
   the moved face has the texture coordinate its point had before the move: the texture stays
   fixed in the world. With texture lock off the texture definitions are unchanged and the texture
-  moves with the brush. A face with no texture axes, a Valve 220 face of scale 0, is unchanged.
+  moves with the brush. Each face is rewritten in place, keeping the text before it. A brush
+  with a Valve 220 face of scale 0, an error (MAP-5.4), cannot be written and is refused. id's
+  qbsp reads a standard face's shifts as whole numbers (MAP-4.1), so there a locked shift that
+  is not whole is cut to one; ericw-tools, which reads them as doubles, keeps it.
 
 ## MAP-12 Texture alignment
 

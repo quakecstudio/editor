@@ -59,8 +59,6 @@ const NEW_PAIR_WIDTH: f32 = 90.0;
 /// The map units the camera stands back from a framed box beyond that, so a small entity is not
 /// right against the eye.
 const FRAME_MARGIN: f32 = 64.0;
-/// The map's origin, where the camera stands before a map gives it a place.
-const MAP_ORIGIN: [f32; 3] = [0.0; 3];
 /// How far a 2D view's name is from its corner, in points.
 const PANE_LABEL_INSET: f32 = 6.0;
 /// The size of a 2D view's name, in points.
@@ -427,6 +425,7 @@ impl MapEditor {
     /// Forgets the camera, so the next map opened starts at its player start.
     pub fn reset_camera(&mut self) {
         self.camera = None;
+        self.plans.clear();
     }
 
     /// Draws the view's toolbar, `document` in the view and the entity browser below it, in
@@ -588,7 +587,9 @@ impl MapEditor {
         } else {
             0.0
         };
-        let start = self.camera.unwrap_or_else(|| Camera::new(MAP_ORIGIN, 0.0));
+        let Some(start) = self.camera else {
+            return Vec::new();
+        };
         let projection = match pane {
             Pane::Perspective => {
                 let camera = self.camera.get_or_insert(start);
@@ -660,7 +661,7 @@ impl MapEditor {
         if !selecting {
             let found = self
                 .tools
-                .input(ui, &response, &self.scene, hidden, ray, &projection);
+                .input(ui, &response, &self.scene, hidden, &projection, pane);
             actions.extend(found.into_iter().map(MapAction::Brush));
         }
         if selecting

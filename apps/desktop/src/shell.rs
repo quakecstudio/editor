@@ -2176,24 +2176,17 @@ impl Shell {
                     grid: Some(0.0),
                 },
             ),
-            BrushAction::Texture(entity, brushes, change) => {
-                let (shift, rotate, scale) = change
-                    .alignment
-                    .map_or((None, None, None), |(shift, rotate, scale)| {
-                        (Some(shift), Some(rotate), Some(scale))
-                    });
-                self.attempt(
-                    MAP_BRUSH_TEXTURE,
-                    &BrushTextureParams {
-                        entity,
-                        brushes,
-                        texture: change.texture,
-                        shift,
-                        rotate,
-                        scale,
-                    },
-                )
-            }
+            BrushAction::Texture(entity, brushes, change) => self.attempt(
+                MAP_BRUSH_TEXTURE,
+                &BrushTextureParams {
+                    entity,
+                    brushes,
+                    texture: change.texture,
+                    shift: change.shift,
+                    rotate: change.rotate,
+                    scale: change.scale,
+                },
+            ),
         }
     }
 

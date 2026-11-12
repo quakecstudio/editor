@@ -8,7 +8,7 @@
 
 use qs_commands::{Command, Outcome};
 use qs_map::geometry::plane as plane_of;
-use qs_map::{Alignment, Brush, BrushError, Entity, Face, Item, Surface, TexDef, TextureLock};
+use qs_map::{Alignment, Brush, BrushError, Entity, Item, Surface, TexDef, TextureLock};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -389,7 +389,9 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushTexture {
                         .as_ref()
                         .map_or_else(|| face.texture().to_vec(), |t| t.as_bytes().to_vec());
                     let texdef = face.texdef().aligned(alignment);
-                    *face = Face::new(*face.points(), &texture, texdef).map_err(BrushError::Map)?;
+                    let points = *face.points();
+                    face.set(points, &texture, texdef)
+                        .map_err(BrushError::Map)?;
                 }
                 document.replace_brush(params.entity, brush, vec![found])?;
             }

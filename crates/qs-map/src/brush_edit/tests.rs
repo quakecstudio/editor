@@ -534,3 +534,45 @@ proptest! {
         }
     }
 }
+
+/// The first brush of the world of the map `text`.
+fn first_brush(text: &[u8]) -> Brush {
+    let file = crate::MapFile::parse(text).unwrap();
+    file.entities[0].brushes().next().unwrap().clone()
+}
+
+// spec MAP-11.2: each face is rewritten in place, the text before it kept; a brush with a Valve
+// 220 face of scale 0 is refused
+#[test]
+fn a_moved_face_keeps_its_comment_and_a_scale_zero_face_is_refused() {
+    let standard = b"{\n\"classname\" \"worldspawn\"\n{\n// the floor\n\
+        ( 0 0 0 ) ( 0 1 0 ) ( 0 0 1 ) rock 0 0 0 1 1\n\
+        ( 64 0 0 ) ( 64 0 1 ) ( 64 1 0 ) rock 0 0 0 1 1\n\
+        ( 0 0 0 ) ( 0 0 1 ) ( 1 0 0 ) rock 0 0 0 1 1\n\
+        ( 0 64 0 ) ( 1 64 0 ) ( 0 64 1 ) rock 0 0 0 1 1\n\
+        ( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) rock 0 0 0 1 1\n\
+        ( 0 0 64 ) ( 0 1 64 ) ( 1 0 64 ) rock 0 0 0 1 1\n}\n}\n";
+    let moved = first_brush(standard)
+        .translated([16.0, 0.0, 0.0], TextureLock::Locked)
+        .unwrap();
+    let mut file = crate::MapFile::parse(standard).unwrap();
+    let place = file.entities[0].brush_places()[0];
+    file.entities[0].items[place] = crate::Item::Brush(moved);
+    let text = String::from_utf8(file.to_bytes()).unwrap();
+    assert!(text.contains("// the floor\n( 16 0 0 )"), "{text}");
+    let valve = b"{\n\"classname\" \"worldspawn\"\n\"mapversion\" \"220\"\n{\n\
+        ( 0 0 0 ) ( 0 1 0 ) ( 0 0 1 ) rock [ 0 1 0 0 ] [ 0 0 -1 0 ] 0 0 0\n\
+        ( 64 0 0 ) ( 64 0 1 ) ( 64 1 0 ) rock [ 0 1 0 0 ] [ 0 0 -1 0 ] 0 1 1\n\
+        ( 0 0 0 ) ( 0 0 1 ) ( 1 0 0 ) rock [ 1 0 0 0 ] [ 0 0 -1 0 ] 0 1 1\n\
+        ( 0 64 0 ) ( 1 64 0 ) ( 0 64 1 ) rock [ 1 0 0 0 ] [ 0 0 -1 0 ] 0 1 1\n\
+        ( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) rock [ 1 0 0 0 ] [ 0 -1 0 0 ] 0 1 1\n\
+        ( 0 0 64 ) ( 0 1 64 ) ( 1 0 64 ) rock [ 1 0 0 0 ] [ 0 -1 0 0 ] 0 1 1\n}\n}\n";
+    for lock in [TextureLock::Locked, TextureLock::Free] {
+        assert!(
+            first_brush(valve)
+                .translated([16.0, 0.0, 0.0], lock)
+                .is_err(),
+            "{lock:?}"
+        );
+    }
+}
