@@ -811,6 +811,44 @@ pub struct Bsp<'a> {
     pub models: Vec<Model>,
 }
 
+impl<'a> Bsp<'a> {
+    /// A BSP with no geometry and the entity text `entities`: one world model whose hulls
+    /// hold nothing but empty space (`BSP_CONTENTS_EMPTY`), for spawning a map's entities that
+    /// has not been compiled. Not one id's loader reads: nothing in it is drawn or collided
+    /// with.
+    #[must_use]
+    pub fn empty(entities: &'a [u8]) -> Self {
+        Self {
+            version: BspVersion::Bsp29,
+            lumps: [Lump::default(); BSP_HEADER_LUMPS],
+            entity_lump: entities,
+            planes: Vec::new(),
+            textures: Vec::new(),
+            vertexes: Vec::new(),
+            visibility: &[],
+            nodes: Vec::new(),
+            texinfo: Vec::new(),
+            faces: Vec::new(),
+            lighting: &[],
+            clipnodes: Vec::new(),
+            leafs: Vec::new(),
+            marksurfaces: Vec::new(),
+            edges: Vec::new(),
+            surfedges: Vec::new(),
+            models: vec![Model {
+                mins: [0.0; 3],
+                maxs: [0.0; 3],
+                origin: [0.0; 3],
+                headnode: [BSP_CONTENTS_EMPTY; BSP_MAX_MAP_HULLS],
+                visleafs: 0,
+                firstface: 0,
+                numfaces: 0,
+                radius: 0.0,
+            }],
+        }
+    }
+}
+
 /// The `N` bytes at `offset`, or `None` past the end of `bytes`.
 pub(crate) fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
     bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()

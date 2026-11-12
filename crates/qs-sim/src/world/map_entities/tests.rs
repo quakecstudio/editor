@@ -2,14 +2,16 @@
 
 #![expect(
     clippy::unwrap_used,
-    reason = "test code: a failed unwrap is a failed test"
+    clippy::indexing_slicing,
+    reason = "test code: a failed unwrap or index is a failed test"
 )]
 
 use qc_edict::EdictNumber;
 use qc_progs::Progs;
 
 use super::MapPlace;
-use crate::world::tests::{Running, entity, ledge, running};
+use crate::LoadOptions;
+use crate::world::tests::{Running, entity, ledge, running, running_with};
 
 /// A thing that stays, one that removes itself in its spawn, and one that removes itself and
 /// spawns a helper in its edict.
@@ -109,4 +111,62 @@ fn a_freed_entity_is_in_no_edict() {
     let last = MapPlace::new(run.world.map_classnames().len() - 1);
     assert_eq!(run.world.take_map_entity(&progs, last), None);
     assert_eq!(run.world.take_map_entity(&progs, MapPlace::new(99)), None);
+}
+
+/// The edicts of a map with a thing not on easy (`spawnflags` 256) and an item its own code
+/// removes in deathmatch, loaded with `settings`.
+fn settled(settings: &[(&str, &str)]) -> Vec<Option<usize>> {
+    let source = "void() info_thing = { self.health = 5; };\n\
+        void() item_dm = { if (deathmatch) remove(self); };\n";
+    let entities = [
+        entity("info_thing", "0 0 0", "\"spawnflags\" \"256\"\n"),
+        entity("item_dm", "8 0 0", ""),
+    ]
+    .concat();
+    let options = LoadOptions {
+        settings: settings
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect(),
+        ..LoadOptions::default()
+    };
+    let run = running_with(&ledge(), source, &entities, Vec::new(), options);
+    let progs = Progs::read(&run.progs).unwrap();
+    (1..3)
+        .map(|place| run.world.map_entity(&progs, MapPlace::new(place)))
+        .collect()
+}
+
+// spec DIFF-3.2: the skill setting is rounded and clamped, and deathmatch set for the QuakeC
+// spec DIFF-3.5: the load keeps the entities the skill and deathmatch settings leave (EDICT-8.4),
+// and those the QuakeC does not remove itself
+#[test]
+fn the_settings_choose_the_entities_the_load_keeps() {
+    assert_eq!(
+        settled(&[]),
+        [Some(2), Some(3)],
+        "normal skill, single player"
+    );
+    // The thing's edict, freed in the map's first second, is the item's at once (EDICT-6.4).
+    assert_eq!(settled(&[("skill", "0")]), [None, Some(2)], "not on easy");
+    assert_eq!(
+        settled(&[("skill", "-4")]),
+        [None, Some(2)],
+        "clamped to easy"
+    );
+    assert_eq!(
+        settled(&[("skill", "2.6")]),
+        [Some(2), Some(3)],
+        "rounded to nightmare"
+    );
+    let deathmatch = settled(&[("deathmatch", "1")]);
+    assert_eq!(
+        deathmatch[1], None,
+        "the QuakeC removes the item in deathmatch"
+    );
+    assert_eq!(
+        settled(&[("deathmatch", "1"), ("coop", "1")])[1],
+        Some(3),
+        "coop clears it"
+    );
 }

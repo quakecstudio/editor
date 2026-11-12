@@ -177,6 +177,7 @@ field qs_bsp::Texture.width
 field qs_bsp::lit::FoundLit.bytes
 field qs_bsp::lit::FoundLit.path_id
 field qs_bsp::lit::Lit.rgb
+fn qs_bsp::Bsp::empty
 fn qs_bsp::Bsp::entities
 fn qs_bsp::Bsp::face_samples
 fn qs_bsp::Bsp::face_vertices

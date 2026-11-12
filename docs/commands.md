@@ -58,6 +58,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
 | [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. |
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
+| [`map.filter`](#mapfilter) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
 | [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
 | [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
@@ -1633,6 +1634,81 @@ Parameters:
     "entity"
   ],
   "title": "EntityParams",
+  "type": "object"
+}
+```
+
+## `map.filter`
+
+The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "GameMode": {
+      "description": "The kind of game a map is spawned for: the `coop` and `deathmatch` settings.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "Single player.",
+          "type": "string"
+        },
+        {
+          "const": "coop",
+          "description": "Cooperative: `coop 1`.",
+          "type": "string"
+        },
+        {
+          "const": "deathmatch",
+          "description": "Deathmatch: `deathmatch 1`.",
+          "type": "string"
+        }
+      ]
+    },
+    "Skill": {
+      "description": "The skill a map is spawned at, the `skill` setting (DIFF-3.2).",
+      "oneOf": [
+        {
+          "const": "easy",
+          "description": "0.",
+          "type": "string"
+        },
+        {
+          "const": "normal",
+          "description": "1, the game's own default.",
+          "type": "string"
+        },
+        {
+          "const": "hard",
+          "description": "2.",
+          "type": "string"
+        },
+        {
+          "const": "nightmare",
+          "description": "3.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.filter`.",
+  "properties": {
+    "mode": {
+      "$ref": "#/$defs/GameMode",
+      "default": "single",
+      "description": "The kind of game."
+    },
+    "skill": {
+      "$ref": "#/$defs/Skill",
+      "default": "normal",
+      "description": "The skill."
+    }
+  },
+  "title": "FilterParams",
   "type": "object"
 }
 ```

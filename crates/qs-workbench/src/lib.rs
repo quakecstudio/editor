@@ -731,6 +731,22 @@ pub enum WorkbenchError {
         /// The file.
         path: PathBuf,
     },
+    /// The project built no program to spawn a map with.
+    NotBuilt,
+    /// The built program does not read.
+    Progs {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: qc_progs::ReadError,
+    },
+    /// The open map's entities do not spawn with the project's program.
+    Spawn {
+        /// The map.
+        path: PathBuf,
+        /// Why.
+        error: qs_sim::WorldError,
+    },
     /// The open map has no room of this name (MAP-9).
     NoRoom {
         /// The name asked for.
@@ -754,6 +770,9 @@ impl fmt::Display for WorkbenchError {
             }
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
             Self::NoRoom { name } => write!(f, "the map has no room named {name}"),
+            Self::NotBuilt => f.write_str("the project built no program"),
+            Self::Progs { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Spawn { path, error } => write!(f, "{}: {error}", path.display()),
             Self::ChangedOnDisk { path } => write!(
                 f,
                 "{}: another program changed it since it was opened; reload it or keep yours \
@@ -811,7 +830,10 @@ impl Error for WorkbenchError {
             | Self::NotPointEntity { .. }
             | Self::EntOverride { .. }
             | Self::NoRoom { .. }
-            | Self::ChangedOnDisk { .. } => None,
+            | Self::ChangedOnDisk { .. }
+            | Self::NotBuilt => None,
+            Self::Progs { error, .. } => Some(error),
+            Self::Spawn { error, .. } => Some(error),
         }
     }
 }

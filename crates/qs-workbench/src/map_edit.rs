@@ -21,10 +21,12 @@ pub use disk::{
     FILES_CHANGED, FilesChanged, FilesChangedParams, Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference,
     MapOnDisk, ResolveParams,
 };
+pub use filter::{FilterParams, GameMode, MAP_FILTER, MapFiltered, Skill};
 pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
 pub use live::LiveChange;
 
 mod disk;
+mod filter;
 mod inspect;
 mod live;
 use schemars::JsonSchema;
@@ -1122,6 +1124,7 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(disk::FilesChangedCommand)?;
     registry.register(disk::MapResolve)?;
     registry.register(disk::MapCompare)?;
+    registry.register(filter::MapFilter)?;
     registry.register(MapSave)
 }
 

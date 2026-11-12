@@ -57,6 +57,7 @@ const qs_workbench::map_edit::MAP_SET_KEY
 const qs_workbench::map_edit::disk::FILES_CHANGED
 const qs_workbench::map_edit::disk::MAP_COMPARE
 const qs_workbench::map_edit::disk::MAP_RESOLVE
+const qs_workbench::map_edit::filter::MAP_FILTER
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
 const qs_workbench::preview::CONSOLE
@@ -122,6 +123,8 @@ enum qs_workbench::map_edit::BspSave
 enum qs_workbench::map_edit::MapSource
 enum qs_workbench::map_edit::disk::Keep
 enum qs_workbench::map_edit::disk::MapOnDisk
+enum qs_workbench::map_edit::filter::GameMode
+enum qs_workbench::map_edit::filter::Skill
 enum qs_workbench::map_edit::inspect::RoomShape
 enum qs_workbench::map_edit::live::LiveChange
 enum qs_workbench::preview::OnLoss
@@ -309,6 +312,9 @@ field qs_workbench::map_edit::disk::FilesChangedParams.paths
 field qs_workbench::map_edit::disk::MapDifference.entity
 field qs_workbench::map_edit::disk::MapDifference.text
 field qs_workbench::map_edit::disk::ResolveParams.keep
+field qs_workbench::map_edit::filter::FilterParams.mode
+field qs_workbench::map_edit::filter::FilterParams.skill
+field qs_workbench::map_edit::filter::MapFiltered.removed
 field qs_workbench::map_edit::inspect::EntityInfo.classname
 field qs_workbench::map_edit::inspect::EntityInfo.entity
 field qs_workbench::map_edit::inspect::EntityInfo.origin
@@ -812,6 +818,8 @@ struct qs_workbench::map_edit::disk::FilesChanged
 struct qs_workbench::map_edit::disk::FilesChangedParams
 struct qs_workbench::map_edit::disk::MapDifference
 struct qs_workbench::map_edit::disk::ResolveParams
+struct qs_workbench::map_edit::filter::FilterParams
+struct qs_workbench::map_edit::filter::MapFiltered
 struct qs_workbench::map_edit::inspect::EntityInfo
 struct qs_workbench::map_edit::inspect::InspectParams
 struct qs_workbench::map_edit::inspect::MapInspected
@@ -992,17 +1000,22 @@ use qs_workbench::map_edit::EntityInfo = inspect::EntityInfo
 use qs_workbench::map_edit::FILES_CHANGED = disk::FILES_CHANGED
 use qs_workbench::map_edit::FilesChanged = disk::FilesChanged
 use qs_workbench::map_edit::FilesChangedParams = disk::FilesChangedParams
+use qs_workbench::map_edit::FilterParams = filter::FilterParams
+use qs_workbench::map_edit::GameMode = filter::GameMode
 use qs_workbench::map_edit::InspectParams = inspect::InspectParams
 use qs_workbench::map_edit::Keep = disk::Keep
 use qs_workbench::map_edit::LiveChange = live::LiveChange
 use qs_workbench::map_edit::MAP_COMPARE = disk::MAP_COMPARE
+use qs_workbench::map_edit::MAP_FILTER = filter::MAP_FILTER
 use qs_workbench::map_edit::MAP_RESOLVE = disk::MAP_RESOLVE
 use qs_workbench::map_edit::MapDifference = disk::MapDifference
+use qs_workbench::map_edit::MapFiltered = filter::MapFiltered
 use qs_workbench::map_edit::MapInspected = inspect::MapInspected
 use qs_workbench::map_edit::MapOnDisk = disk::MapOnDisk
 use qs_workbench::map_edit::ResolveParams = disk::ResolveParams
 use qs_workbench::map_edit::RoomInfo = inspect::RoomInfo
 use qs_workbench::map_edit::RoomShape = inspect::RoomShape
+use qs_workbench::map_edit::Skill = filter::Skill
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
 use qs_workbench::register_staged = crate::staged::register_staged
@@ -1026,12 +1039,15 @@ variant qs_workbench::WorkbenchError::NoHunk
 variant qs_workbench::WorkbenchError::NoMap
 variant qs_workbench::WorkbenchError::NoProject
 variant qs_workbench::WorkbenchError::NoRoom
+variant qs_workbench::WorkbenchError::NotBuilt
 variant qs_workbench::WorkbenchError::NotPointEntity
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Pattern
+variant qs_workbench::WorkbenchError::Progs
 variant qs_workbench::WorkbenchError::Project
 variant qs_workbench::WorkbenchError::Rename
 variant qs_workbench::WorkbenchError::Save
+variant qs_workbench::WorkbenchError::Spawn
 variant qs_workbench::build::Gravity::Error
 variant qs_workbench::build::Gravity::Warning
 variant qs_workbench::commands::CandidateKind::Field
@@ -1077,6 +1093,13 @@ variant qs_workbench::map_edit::disk::Keep::Mine
 variant qs_workbench::map_edit::disk::MapOnDisk::Conflict
 variant qs_workbench::map_edit::disk::MapOnDisk::Reloaded
 variant qs_workbench::map_edit::disk::MapOnDisk::Same
+variant qs_workbench::map_edit::filter::GameMode::Coop
+variant qs_workbench::map_edit::filter::GameMode::Deathmatch
+variant qs_workbench::map_edit::filter::GameMode::Single
+variant qs_workbench::map_edit::filter::Skill::Easy
+variant qs_workbench::map_edit::filter::Skill::Hard
+variant qs_workbench::map_edit::filter::Skill::Nightmare
+variant qs_workbench::map_edit::filter::Skill::Normal
 variant qs_workbench::map_edit::inspect::RoomShape::Group
 variant qs_workbench::map_edit::inspect::RoomShape::Layer
 variant qs_workbench::map_edit::live::LiveChange::Edit
