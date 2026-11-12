@@ -21,7 +21,7 @@ name: Differential
 
 on:
   schedule:
-    - cron: "37 19 * * *"
+    - cron: "47 16 * * *"
       timezone: "America/New_York"
   workflow_dispatch:
 
@@ -40,30 +40,43 @@ jobs:
     name: Night window
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions: {}
-    outputs:
-      run: ${{ steps.window.outputs.run }}
+    permissions:
+      contents: read
+      actions: write
     steps:
-      # GitHub starts scheduled runs hours late under load, so a scheduled run that starts
-      # outside 19:00 to 01:00 Eastern is skipped rather than run in the day; with the longest
-      # job's timeout it then ends by morning. A manual run always goes.
-      - name: Check the night window
-        id: window
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          hour=$(TZ=America/New_York date +%-H)
-          if [ "$EVENT" != schedule ] || [ "$hour" -ge 19 ] || [ "$hour" -lt 1 ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Started at ${hour}:00 Eastern, outside 19:00 to 01:00; skipped"
-          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # actionlint 1.7.12 does not read the `$/` self-repository form yet.
+      - uses: ./.github/actions/night-window # zizmor: ignore[self-repository]
+        with:
+          check: start
+          token: ${{ github.token }}
+
+  deadline:
+    name: Morning deadline
+    needs: night
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    # 19:00 to 07:00 at most.
+    timeout-minutes: 720
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # actionlint 1.7.12 does not read the `$/` self-repository form yet.
+      - uses: ./.github/actions/night-window # zizmor: ignore[self-repository]
+        with:
+          check: deadline
+          token: ${{ github.token }}
+          self: Morning deadline
 
   differential:
     name: Differential
     needs: night
-    if: needs.night.outputs.run == 'true'
     runs-on: ubuntu-latest
     # Building the oracles and FTEQCC, compiling the corpus and running every
     # codebase twice.
@@ -124,7 +137,6 @@ jobs:
   sim-diff:
     name: Simulation differential (${{ matrix.os }})
     needs: night
-    if: needs.night.outputs.run == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -165,7 +177,6 @@ jobs:
   view-diff:
     name: View differential (${{ matrix.os }})
     needs: night
-    if: needs.night.outputs.run == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -221,7 +232,6 @@ jobs:
   generated:
     name: Compiler differential (generated programs)
     needs: night
-    if: needs.night.outputs.run == 'true'
     runs-on: ubuntu-latest
     # 10,000 programs, each compiled by both FTEQCCs and qc-codegen and called, ran past two
     # hours on a hosted runner (run 41877684070).
@@ -255,7 +265,6 @@ jobs:
   compiler-diff:
     name: Compiler differential (${{ matrix.codebase }})
     needs: night
-    if: needs.night.outputs.run == 'true'
     runs-on: ubuntu-latest
     # Arcane Dimensions' 128 rounds, with the accessor and extra rounds (DIFF-12.16,
     # DIFF-12.24), ran past five hours on a hosted runner (run 41830900852); six is the
@@ -334,7 +343,6 @@ jobs:
   functions:
     name: Per-function differential (${{ matrix.codebase }})
     needs: night
-    if: needs.night.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -405,7 +413,6 @@ jobs:
   functions-shards:
     name: Per-function differential (arcane-dimensions, shard ${{ matrix.shard }}/4)
     needs: night
-    if: needs.night.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -468,7 +475,6 @@ jobs:
   functions-merge:
     name: Per-function differential (arcane-dimensions, coverage)
     needs: [night, functions-shards]
-    if: needs.night.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

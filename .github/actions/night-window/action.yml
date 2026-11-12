@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Keeps a scheduled run to the night (docs/ci.md, "Nightly runs"), Eastern time. GitHub starts
+# scheduled runs hours late under load, so `start` cancels a scheduled run that starts outside
+# 19:00 to 03:00, and `deadline` waits until the run's other jobs are done and cancels the run
+# if any is still queued or running at 07:00. A run started by hand is never cancelled.
+name: Night window
+description: Cancel a scheduled run outside the night window, or still running at 07:00 Eastern
+inputs:
+  check:
+    description: "`start` or `deadline`"
+    required: true
+  token:
+    description: A token that can cancel this run (actions write)
+    required: true
+  self:
+    description: The name of the job running the deadline check, which it does not wait for
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Check the night window
+      shell: bash
+      env:
+        CHECK: ${{ inputs.check }}
+        SELF: ${{ inputs.self }}
+        EVENT: ${{ github.event_name }}
+        RUN_ID: ${{ github.run_id }}
+        REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ inputs.token }}
+        TZ: America/New_York
+      run: |
+        set -euo pipefail
+        [ "$EVENT" = schedule ] || exit 0
+        now=$(date +%H:%M)
+        hour=$((10#${now%%:*}))
+        case "$CHECK" in
+          start)
+            if [ "$hour" -ge 3 ] && [ "$hour" -lt 19 ]; then
+              echo "::warning::Started at $now Eastern, outside 19:00 to 03:00: cancelled"
+              gh run cancel "$RUN_ID" --repo "$REPO"
+              exit 1
+            fi
+            echo "Started at $now Eastern, inside 19:00 to 03:00"
+            ;;
+          deadline)
+            if [ "$hour" -ge 19 ]; then
+              deadline=$(date -d 'tomorrow 07:00' +%s)
+            else
+              deadline=$(date -d 'today 07:00' +%s)
+            fi
+            while [ "$(date +%s)" -lt "$deadline" ]; do
+              busy=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" \
+                --jq "[.jobs[] | select(.name != env.SELF and .status != \"completed\")] | length")
+              if [ "$busy" -eq 0 ]; then
+                echo "Every job finished by $(date +%H:%M) Eastern"
+                exit 0
+              fi
+              sleep 300
+            done
+            echo "::warning::Still running at 07:00 Eastern: cancelled"
+            gh run cancel "$RUN_ID" --repo "$REPO"
+            ;;
+          *)
+            echo "::error::check must be start or deadline, not $CHECK"
+            exit 1
+            ;;
+        esac

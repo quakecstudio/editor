@@ -20,7 +20,7 @@ name: Fuzz
 
 on:
   schedule:
-    - cron: "13 19 * * *"
+    - cron: "43 15 * * *"
       timezone: "America/New_York"
   workflow_dispatch:
 
@@ -38,30 +38,43 @@ jobs:
     name: Night window
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions: {}
-    outputs:
-      run: ${{ steps.window.outputs.run }}
+    permissions:
+      contents: read
+      actions: write
     steps:
-      # GitHub starts scheduled runs hours late under load, so a scheduled run that starts
-      # outside 19:00 to 01:00 Eastern is skipped rather than run in the day; with the longest
-      # job's timeout it then ends by morning. A manual run always goes.
-      - name: Check the night window
-        id: window
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          hour=$(TZ=America/New_York date +%-H)
-          if [ "$EVENT" != schedule ] || [ "$hour" -ge 19 ] || [ "$hour" -lt 1 ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Started at ${hour}:00 Eastern, outside 19:00 to 01:00; skipped"
-          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # actionlint 1.7.12 does not read the `$/` self-repository form yet.
+      - uses: ./.github/actions/night-window # zizmor: ignore[self-repository]
+        with:
+          check: start
+          token: ${{ github.token }}
+
+  deadline:
+    name: Morning deadline
+    needs: night
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    # 19:00 to 07:00 at most.
+    timeout-minutes: 720
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # actionlint 1.7.12 does not read the `$/` self-repository form yet.
+      - uses: ./.github/actions/night-window # zizmor: ignore[self-repository]
+        with:
+          check: deadline
+          token: ${{ github.token }}
+          self: Morning deadline
 
   fuzz:
     name: Fuzz
     needs: night
-    if: needs.night.outputs.run == 'true'
     runs-on: ubuntu-latest
     # Seventeen targets of ten minutes each, the oracle build and the Rust builds.
     timeout-minutes: 240
@@ -126,7 +139,6 @@ jobs:
   oracles:
     name: Fuzz the oracles
     needs: night
-    if: needs.night.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
