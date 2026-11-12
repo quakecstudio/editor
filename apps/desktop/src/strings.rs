@@ -488,6 +488,32 @@ pub enum Text {
     MapLinksSelected,
     /// Draw every link.
     MapLinksAll,
+    /// The Select tool: pick, move and link entities.
+    MapToolSelect,
+    /// The Brush tool: draw a box brush.
+    MapToolBrush,
+    /// The Clip tool: cut a brush by a plane.
+    MapToolClip,
+    /// The Vertex tool: move a brush's corners.
+    MapToolVertex,
+    /// How to draw a brush with the Brush tool.
+    MapBrushHint,
+    /// How to cut a brush with the Clip tool.
+    MapClipHint,
+    /// How to move a corner with the Vertex tool.
+    MapVertexHint,
+    /// Keep the part of a clipped brush right of the cut line.
+    MapKeepRight,
+    /// Keep the part of a clipped brush left of the cut line.
+    MapKeepLeft,
+    /// The heading over the selected brushes' buttons.
+    MapBrushes,
+    /// Subtract the selected brush from the others of its entity.
+    MapSubtract,
+    /// Merge the selected brushes into one.
+    MapMerge,
+    /// Delete the selected brushes.
+    MapDeleteBrush,
     /// The map view's filter by skill and game.
     MapShow,
     /// Show every entity.
@@ -544,7 +570,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 266] = [
+    pub const ALL: [Self; 279] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -785,6 +811,19 @@ impl Text {
         Self::MapLinks,
         Self::MapLinksSelected,
         Self::MapLinksAll,
+        Self::MapToolSelect,
+        Self::MapToolBrush,
+        Self::MapToolClip,
+        Self::MapToolVertex,
+        Self::MapBrushHint,
+        Self::MapClipHint,
+        Self::MapVertexHint,
+        Self::MapKeepRight,
+        Self::MapKeepLeft,
+        Self::MapBrushes,
+        Self::MapSubtract,
+        Self::MapMerge,
+        Self::MapDeleteBrush,
         Self::MapShow,
         Self::MapShowEvery,
         Self::MapSkillEasy,
@@ -1076,6 +1115,19 @@ impl Text {
             Self::MapLinks => "Links",
             Self::MapLinksSelected => "Selected",
             Self::MapLinksAll => "Every link",
+            Self::MapToolSelect => "Select",
+            Self::MapToolBrush => "Brush",
+            Self::MapToolClip => "Clip",
+            Self::MapToolVertex => "Vertex",
+            Self::MapBrushHint => "Drag on the ground to draw a box",
+            Self::MapClipHint => "Select a brush, then drag the cut line",
+            Self::MapVertexHint => "Select a brush, then drag a corner",
+            Self::MapKeepRight => "Keep right",
+            Self::MapKeepLeft => "Keep left",
+            Self::MapBrushes => "Brushes",
+            Self::MapSubtract => "Subtract",
+            Self::MapMerge => "Merge",
+            Self::MapDeleteBrush => "Delete brush",
             Self::MapShow => "Show",
             Self::MapShowEvery => "Every entity",
             Self::MapSkillEasy => "Easy",

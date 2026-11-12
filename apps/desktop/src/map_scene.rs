@@ -13,7 +13,7 @@ use qs_mdl::mdl::MdlFrameEntry;
 use qs_render::Camera;
 use qs_vfs::{StdFs, Vfs};
 use qs_workbench::entity_classes::ClassInfo;
-use qs_workbench::map_edit::{EntityIndex, MapDocument, MapSource};
+use qs_workbench::map_edit::{BrushIndex, EntityIndex, MapDocument, MapSource};
 
 /// A line in map space.
 pub(crate) type Line = [[f32; 3]; 2];
@@ -115,6 +115,53 @@ pub(crate) struct Scene {
     pub(crate) values: BTreeMap<String, BTreeSet<String>>,
     /// Each link: an entity, one its keys fire, and the line between their centres.
     pub(crate) fired: Vec<(EntityIndex, EntityIndex, Line)>,
+    /// Every brush of a `.map`, for picking and editing (P6-08).
+    pub(crate) brushes: Vec<BrushShape>,
+}
+
+/// One brush as drawn, picked and edited (P6-08).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct BrushShape {
+    /// The entity holding it.
+    pub(crate) entity: EntityIndex,
+    /// Its place among the entity's brushes.
+    pub(crate) brush: BrushIndex,
+    /// Its edges.
+    pub(crate) lines: Vec<Line>,
+    /// Its corners, as exact as the commands that edit it match them.
+    pub(crate) vertices: Vec<[f64; 3]>,
+    /// Its faces' planes, each a normal pointing out and a distance: the solid behind them all.
+    pub(crate) planes: Vec<([f32; 3], f32)>,
+}
+
+impl BrushShape {
+    /// How far along the ray from `start` along `direction` it enters the brush's solid, 0
+    /// when it starts inside; none when it misses.
+    fn entered(&self, start: [f32; 3], direction: [f32; 3]) -> Option<f32> {
+        let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let mut near = 0.0_f32;
+        let mut far = f32::INFINITY;
+        for &(normal, dist) in &self.planes {
+            let towards = dot(normal, direction);
+            let ahead = dist - dot(normal, start);
+            if towards.abs() < f32::EPSILON {
+                if ahead < 0.0 {
+                    return None;
+                }
+                continue;
+            }
+            let t = ahead / towards;
+            if towards < 0.0 {
+                near = near.max(t);
+            } else {
+                far = far.min(t);
+            }
+            if near > far {
+                return None;
+            }
+        }
+        Some(near)
+    }
 }
 
 impl Scene {
@@ -144,13 +191,30 @@ impl Scene {
         for (index, entity) in document.file().entities.iter().enumerate() {
             let mut bounds: Option<[[f32; 3]; 2]> = None;
             let mut lines = Vec::new();
-            for brush in entity.brushes() {
-                for polygon in brush.polygons() {
+            for (number, brush) in entity.brushes().enumerate() {
+                let polygons = brush.polygons();
+                let mut shape = BrushShape {
+                    entity: EntityIndex::new(index),
+                    brush: BrushIndex::new(number),
+                    lines: Vec::new(),
+                    vertices: qs_map::Brush::corners(&polygons),
+                    planes: brush
+                        .faces
+                        .iter()
+                        .filter_map(qs_map::Face::plane)
+                        .map(|p| (p.normal.map(single), single(p.dist)))
+                        .collect(),
+                };
+                for polygon in &polygons {
                     let points: Vec<[f32; 3]> = polygon.iter().map(|p| p.map(single)).collect();
                     for &point in &points {
                         bounds = Some(grow(bounds, point));
                     }
-                    outline(&mut lines, &points);
+                    outline(&mut shape.lines, &points);
+                }
+                lines.extend(shape.lines.iter().copied());
+                if !shape.lines.is_empty() {
+                    scene.brushes.push(shape);
                 }
             }
             let owner = EntityIndex::new(index);
@@ -250,6 +314,31 @@ impl Scene {
             })
             .min_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)))
             .map(|(_, _, index)| index)
+    }
+
+    /// The brush the ray from `start` along `direction` enters first, by its faces, none in
+    /// `hidden`.
+    #[must_use]
+    pub(crate) fn pick_brush(
+        &self,
+        start: [f32; 3],
+        direction: [f32; 3],
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> Option<(EntityIndex, BrushIndex)> {
+        self.brushes
+            .iter()
+            .filter(|shape| !hidden.contains(&shape.entity))
+            .filter_map(|shape| shape.entered(start, direction).map(|t| (t, shape)))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, shape)| (shape.entity, shape.brush))
+    }
+
+    /// The shape of `brush` of `entity`.
+    #[must_use]
+    pub(crate) fn brush(&self, entity: EntityIndex, brush: BrushIndex) -> Option<&BrushShape> {
+        self.brushes
+            .iter()
+            .find(|shape| shape.entity == entity && shape.brush == brush)
     }
 
     /// The links to draw, each from an entity to one its keys fire: every link, or only those
@@ -425,7 +514,7 @@ fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
     clippy::cast_possible_truncation,
     reason = "map coordinates lie far inside f32's range"
 )]
-const fn single(value: f64) -> f32 {
+pub(crate) const fn single(value: f64) -> f32 {
     value as f32
 }
 

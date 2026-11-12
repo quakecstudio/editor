@@ -32,6 +32,7 @@ mod map_fields;
 mod map_groups;
 mod map_outline;
 mod map_scene;
+mod map_tools;
 pub mod map_view;
 #[cfg(target_os = "macos")]
 pub mod menu;

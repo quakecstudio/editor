@@ -72,6 +72,21 @@ it too.
   copied into the groups linked to it; the world and a layer stay where they are. An entity
   naming both a layer and a group is shown in the layer, as hiding and locking treat it (MAP-9.2);
   groups that name each other are shown under the default layer.
+- **Brushes (P6-08, MAP-2):** the toolbar holds Select, Brush, Clip and Vertex. With a brush
+  tool, a click selects the first brush the pointer's ray enters, by its faces, and Shift+click
+  adds or removes one. Each edit is a `map.brush_*` command on the 16-unit grid, undone in one
+  step, and kept convex: one that would leave a brush with no volume is refused.
+  - Brush: a drag on the ground (height 0) draws a box 64 units tall in the world
+    (`map.brush_create`), with the texture of the map's last face.
+  - Clip: a drag on the ground draws the cut line, and the selected brush is cut by the vertical
+    plane through it (`map.brush_clip`), keeping the part right of the line, left of it, or both
+    as two brushes.
+  - Vertex: the selected brushes' corners are drawn as dots; dragging one moves it across the
+    horizontal plane it lies in, and the brush becomes the hull of its corners
+    (`map.brush_vertex`). A corner moved inside the brush is refused.
+  - The Properties panel subtracts the selected brush from the other brushes of its entity
+    (`map.brush_subtract`), merges the selected brushes of one entity into their hull
+    (`map.brush_merge`), and deletes the selected brushes (`map.brush_delete`).
 - **Saving:** `map.save` (Cmd+S in the view) writes a `.map` over itself, and changes only the
   text an edit touched. A BSP's entities go to a `.ent` file beside the BSP, which QuakeSpasm
   and its descendants read in place of the lump (MAP-22). `{"bsp": "lump"}` rewrites the BSP's
@@ -139,6 +154,7 @@ Not yet here:
 - the 2D views;
 - a grid size other than 16;
 - turning brush entities;
-- brush editing itself.
+- moving a brush's corner up or down, an edge or a face, and brush tools in another entity than the
+  world for new brushes.
 
 The model previews need the model in the project's folder or in the game the Play loop uses.
