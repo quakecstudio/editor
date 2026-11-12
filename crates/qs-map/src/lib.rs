@@ -22,11 +22,16 @@ pub mod cnum;
 mod document;
 pub mod geometry;
 pub mod lexer;
+mod linked;
 pub mod qbsp;
 mod rooms;
 
 pub use check::{Diagnostic, DiagnosticKind, MAP_MAX_SOUNDS};
 pub use document::{
     Brush, BrushModel, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key,
+};
+pub use linked::{
+    ContainerId, EntityPlace, LayerSetting, LayerSettings, LayerSwitch, LinkError, LinkedGroup,
+    Transform,
 };
 pub use rooms::{Room, RoomKind, Rooms};

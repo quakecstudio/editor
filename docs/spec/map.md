@@ -423,3 +423,34 @@ one ("the armory") and the map tools can find it (MAP-16).
   TrenchBroom key, is in it. An entity in a room is
   in every room around that one too, so a filter or a count by a room's name takes the rooms
   inside it.
+- **MAP-9.5** A group whose `_tb_linked_group_id` is not blank is linked to every other group
+  with the same value (manual, Linked Groups: "All groups with this linked group ID will be
+  mutually linked"). Its `_tb_transformation` is sixteen numbers, the matrix row by row
+  (`NodeSerializer::groupProperties` writes `transformation[0][0], transformation[1][0],
+  transformation[2][0], transformation[3][0], // row 0` and so on), so a translation is the
+  fourth, eighth and twelfth numbers; it is written only when it is not the identity, and a
+  group without it has the identity. TrenchBroom reads it only for a linked group
+  (`if (!linkId.empty())` in `MapReader`), and one that is not sixteen numbers is a
+  `MalformedTransformationIssue`; here such a group is read as the identity and is never
+  updated (MAP-9.7).
+- **MAP-9.6** A group's contents are its own entity's brushes, in file order, then the entities
+  that name it in `_tb_group`, in file order (MAP-9.2). The contents of two linked groups
+  correspond by position: TrenchBroom saves link ids only on groups and pairs the other objects
+  of linked groups by their place among the group's children (`visitNodesPerPosition`).
+- **MAP-9.7** When the contents of a linked group change, every other group linked to it gets a
+  copy of its contents transformed by that group's transformation times the inverse of the
+  changed group's (`updateLinkedGroups`: `targetGroupNode->group().transformation() *
+  *invertedSourceTransformation`); a changed group whose transformation has no inverse updates
+  none ("Group transformation is not invertible"). Copying moves an entity's `origin` and each
+  brush's points, and turns its `angle`, or the yaw of its `angles`, by the transformation's
+  turn about the vertical. Here a linked group with a group inside it is not updated.
+- **MAP-9.8** `_tb_protected_properties` lists keys separated by `;` (`kdl::str_split(...,
+  ";")`). A copied entity keeps, for every key protected in it or in the entity it replaces,
+  the value the replaced entity had, and none when it had none, and takes the replaced
+  entity's list (`preserveEntityProperties`).
+- **MAP-9.9** A layer's `_tb_layer_hidden`, `_tb_layer_locked` and
+  `_tb_layer_omit_from_export` are set when their value is `1` (`LayerHiddenValue = "1"`,
+  `LayerLockedValue = "1"`, `LayerOmitFromExportValue = "1"`) and are absent otherwise
+  (`NodeSerializer` removes them). An exported map leaves out a layer marked so (manual:
+  "Layers marked "Omit From Export" will not be present in the exported map"), with every
+  entity in it.
