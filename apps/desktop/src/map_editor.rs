@@ -20,6 +20,7 @@ use qs_workbench::map_edit::{
     EntityIndex, EntityKeys, FlagChange, GameMode, Keep, LayerInfo, MapDocument, MapRevision,
     OutlineRow, Skill,
 };
+use qs_workbench::map_textures::TextureSources;
 
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
@@ -28,6 +29,7 @@ use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
 use crate::map_tools::{BrushAction, BrushTools, MapTool};
 use crate::strings::{Text, also_selected};
+use crate::texture_browser::TextureBrowser;
 use crate::theme::{Theme, Token};
 
 /// Degrees turned per point the pointer drags with the right button (TrenchBroom: look).
@@ -227,6 +229,20 @@ pub struct MapEditor {
     centres: Vec<(EntityIndex, Pos2)>,
     /// The brush tools and the brushes selected (P6-08).
     tools: BrushTools,
+    /// Which browser the tab below the view shows.
+    bottom: BottomTab,
+    /// The texture browser (P6-10).
+    textures: TextureBrowser,
+}
+
+/// The browsers of the tab below the map view, as the mockup has them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum BottomTab {
+    /// The texture browser (P6-10).
+    #[default]
+    Textures,
+    /// The entity browser (P5-13).
+    Entities,
 }
 
 impl MapEditor {
@@ -357,6 +373,22 @@ impl MapEditor {
         })
     }
 
+    /// Takes the open map's texture sources, read again when the map opens or a WAD changes.
+    pub fn set_texture_sources(&mut self, sources: TextureSources) {
+        self.textures.set_sources(sources);
+    }
+
+    /// The WAD files the texture browser reads, to watch for another program's writes.
+    pub fn texture_watched(&self) -> Vec<std::path::PathBuf> {
+        self.textures.watched()
+    }
+
+    /// The texture browser, for tests.
+    #[cfg(test)]
+    pub(crate) const fn texture_browser(&self) -> &TextureBrowser {
+        &self.textures
+    }
+
     /// Takes what to say about the map's file on disk.
     pub fn set_disk(&mut self, disk: DiskNotice) {
         self.disk = disk;
@@ -386,13 +418,30 @@ impl MapEditor {
         let mut view_ui = ui.new_child(egui::UiBuilder::new().max_rect(view));
         actions.extend(self.view(&mut view_ui, theme, document));
         let mut browser_ui = ui.new_child(egui::UiBuilder::new().max_rect(below));
-        self.browser.ui(
-            &mut browser_ui,
-            theme,
-            &self.names,
-            &self.classes,
-            &self.models,
-        );
+        browser_ui.horizontal(|ui| {
+            ui.selectable_value(
+                &mut self.bottom,
+                BottomTab::Textures,
+                Text::MapTextures.get(),
+            );
+            ui.selectable_value(&mut self.bottom, BottomTab::Entities, Text::Entities.get());
+            ui.separator();
+            match self.bottom {
+                BottomTab::Textures => self.textures.header(ui, theme, document),
+                BottomTab::Entities => self.browser.header(ui, theme, &self.names),
+            }
+        });
+        browser_ui.separator();
+        match self.bottom {
+            BottomTab::Textures => self.textures.body(&mut browser_ui, theme),
+            BottomTab::Entities => self.browser.body(
+                &mut browser_ui,
+                theme,
+                &self.names,
+                &self.classes,
+                &self.models,
+            ),
+        }
         ui.advance_cursor_after_rect(full);
         actions
     }

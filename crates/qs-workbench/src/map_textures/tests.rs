@@ -294,3 +294,21 @@ fn map_textures_needs_an_open_map() {
         "{error}"
     );
 }
+
+#[test]
+fn the_project_s_palette_comes_before_the_game_s() {
+    let scene = Scene {
+        palette: false,
+        ..Scene::default()
+    };
+    let (project, game, session) = opened("projectpalette", &scene);
+    let own: Vec<u8> = (0..=255_u8).flat_map(|i| [255 - i, i, 1]).collect();
+    std::fs::create_dir_all(project.join("gfx")).unwrap();
+    std::fs::write(project.join("gfx/palette.lmp"), own).unwrap();
+    std::fs::write(game.join("id1/gfx/palette.lmp"), palette_bytes()).unwrap();
+    let sources = sources(&project, &game, &session);
+    assert_eq!(
+        &sources.decode("brick").unwrap().rgba[..4],
+        [252, 3, 1, 255]
+    );
+}

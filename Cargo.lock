@@ -4006,6 +4006,7 @@ dependencies = [
  "qs-settings",
  "qs-templates",
  "qs-vfs",
+ "qs-wad",
  "qs-workbench",
  "rfd",
  "serde",

@@ -60,6 +60,9 @@ field qs_wad::map_wad::WadTexture.name
 field qs_wad::map_wad::WadTexture.palette
 field qs_wad::map_wad::WadTexture.pixels
 field qs_wad::map_wad::WadTexture.width
+field qs_wad::texture::DecodedTexture.height
+field qs_wad::texture::DecodedTexture.rgba
+field qs_wad::texture::DecodedTexture.width
 fn qs_wad::Conchars::glyph
 fn qs_wad::Conchars::parse
 fn qs_wad::LumpName::as_bytes
@@ -76,6 +79,8 @@ fn qs_wad::map_wad::MapWad::kind
 fn qs_wad::map_wad::MapWad::read
 fn qs_wad::map_wad::MapWad::texture
 fn qs_wad::texture::Palette::colour
+fn qs_wad::texture::Palette::decode_miptex
+fn qs_wad::texture::Palette::decode_pixels
 fn qs_wad::texture::Palette::from_lmp
 fn qs_wad::texture::Palette::nearest
 fn qs_wad::texture::PaletteIndex::get
@@ -110,6 +115,7 @@ struct qs_wad::Wad
 struct qs_wad::map_wad::MapWad
 struct qs_wad::map_wad::MapWadEntry
 struct qs_wad::map_wad::WadTexture
+struct qs_wad::texture::DecodedTexture
 struct qs_wad::texture::Palette
 struct qs_wad::texture::PaletteIndex
 struct qs_wad::texture::RgbaImage
@@ -151,6 +157,7 @@ variant qs_wad::texture::TextureError::Palette
 variant qs_wad::texture::TextureError::PixelCount
 variant qs_wad::texture::TextureError::Size
 variant qs_wad::texture::TextureError::Transparent
+variant qs_wad::texture::TextureError::Truncated
 variant qs_wad::texture::TextureKind::Fence
 variant qs_wad::texture::TextureKind::Frame
 variant qs_wad::texture::TextureKind::Liquid

@@ -165,8 +165,9 @@ fn find_wad(
 
 impl TextureSources {
     /// The sources of `document`'s textures: the WADs its world names (MAP-6.3, split at `;` as
-    /// ericw-tools splits them), its BSP when it was opened from one, and the palette of the
-    /// game at `game`, the base directory holding `id1`.
+    /// ericw-tools splits them), its BSP when it was opened from one, and the palette: the
+    /// project's `gfx/palette.lmp`, else that of the game at `game`, the base directory holding
+    /// `id1`.
     #[must_use]
     pub fn load(document: &MapDocument, project: Option<&Path>, game: Option<&Path>) -> Self {
         let game = game.map(Game::at);
@@ -195,10 +196,16 @@ impl TextureSources {
             MapSource::Bsp(bytes) => Some(bytes.clone()),
             MapSource::Map => None,
         };
-        let palette = game
-            .as_ref()
-            .and_then(|game| game.file(PALETTE_LMP))
-            .and_then(|(_, bytes)| Palette::from_lmp(&bytes).ok());
+        // A mod's own palette comes first on the engine's search path, as the project's does
+        // here.
+        let palette = project
+            .and_then(|root| std::fs::read(root.join(PALETTE_LMP)).ok())
+            .or_else(|| {
+                game.as_ref()
+                    .and_then(|game| game.file(PALETTE_LMP))
+                    .map(|(_, bytes)| bytes)
+            })
+            .and_then(|bytes| Palette::from_lmp(&bytes).ok());
         Self { wads, bsp, palette }
     }
 
@@ -246,7 +253,7 @@ impl TextureSources {
     /// first WAD holding a name winning, then the BSP's, then the names no WAD or BSP holds.
     #[must_use]
     pub fn listing(&self, document: &MapDocument) -> MapTextures {
-        let uses = texture_uses(document);
+        let uses = document.texture_uses();
         let mut textures: Vec<BrowserTexture> = Vec::new();
         let mut add = |name: String, origin: TextureOrigin, width: u32, height: u32| {
             if textures.iter().any(|t| t.name.eq_ignore_ascii_case(&name)) {
@@ -362,19 +369,22 @@ fn wad_textures(bytes: &[u8]) -> Vec<(String, u32, u32)> {
     out
 }
 
-/// How many faces of `document` use each texture name, by name.
-fn texture_uses(document: &MapDocument) -> BTreeMap<String, usize> {
-    let mut uses = BTreeMap::new();
-    for entity in &document.file().entities {
-        for brush in entity.brushes() {
-            for face in &brush.faces {
-                let name = String::from_utf8_lossy(face.texture()).into_owned();
-                let count: &mut usize = uses.entry(name).or_default();
-                *count = count.saturating_add(1);
+impl MapDocument {
+    /// How many faces use each texture name, by name.
+    #[must_use]
+    pub fn texture_uses(&self) -> BTreeMap<String, usize> {
+        let mut uses = BTreeMap::new();
+        for entity in &self.file().entities {
+            for brush in entity.brushes() {
+                for face in &brush.faces {
+                    let name = String::from_utf8_lossy(face.texture()).into_owned();
+                    let count: &mut usize = uses.entry(name).or_default();
+                    *count = count.saturating_add(1);
+                }
             }
         }
+        uses
     }
-    uses
 }
 
 /// `map.textures`.

@@ -76,6 +76,7 @@ const qs_workbench::map_edit::groups::MAP_UNLOCK_ALL
 const qs_workbench::map_edit::links::MAP_LINK
 const qs_workbench::map_edit::outline::MAP_MOVE_TO
 const qs_workbench::map_edit::outline::MAP_OUTLINE
+const qs_workbench::map_textures::MAP_TEXTURES
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
 const qs_workbench::preview::CONSOLE
@@ -150,6 +151,7 @@ enum qs_workbench::map_edit::groups::Switch
 enum qs_workbench::map_edit::inspect::RoomShape
 enum qs_workbench::map_edit::live::LiveChange
 enum qs_workbench::map_edit::outline::RowKind
+enum qs_workbench::map_textures::TextureOrigin
 enum qs_workbench::preview::OnLoss
 enum qs_workbench::preview::PlayState
 enum qs_workbench::preview::PreviewError
@@ -398,6 +400,17 @@ field qs_workbench::map_edit::outline::OutlineRow.kind
 field qs_workbench::map_edit::outline::OutlineRow.label
 field qs_workbench::map_edit::outline::OutlineRow.rows
 field qs_workbench::map_edit::outline::OutlineRow.targetname
+field qs_workbench::map_textures::BrowserTexture.height
+field qs_workbench::map_textures::BrowserTexture.name
+field qs_workbench::map_textures::BrowserTexture.origin
+field qs_workbench::map_textures::BrowserTexture.uses
+field qs_workbench::map_textures::BrowserTexture.width
+field qs_workbench::map_textures::MapTextures.textures
+field qs_workbench::map_textures::MapTextures.wads
+field qs_workbench::map_textures::WadFound.found
+field qs_workbench::map_textures::WadFound.name
+field qs_workbench::map_textures::WadFound.path
+field qs_workbench::map_textures::WadFound.textures
 field qs_workbench::preview::BreakpointParams.file
 field qs_workbench::preview::BreakpointParams.line
 field qs_workbench::preview::ChooseGameParams.path
@@ -645,6 +658,13 @@ fn qs_workbench::map_edit::live::LiveChange::send
 fn qs_workbench::map_edit::outline::MapDocument::outline
 fn qs_workbench::map_edit::outline::OutlineRow::count
 fn qs_workbench::map_edit::outline::OutlineRow::holds
+fn qs_workbench::map_textures::MapDocument::texture_uses
+fn qs_workbench::map_textures::TextureSources::decode
+fn qs_workbench::map_textures::TextureSources::from_files
+fn qs_workbench::map_textures::TextureSources::has_palette
+fn qs_workbench::map_textures::TextureSources::listing
+fn qs_workbench::map_textures::TextureSources::load
+fn qs_workbench::map_textures::TextureSources::watched
 fn qs_workbench::preview::ConsoleLine::is_error
 fn qs_workbench::preview::ConsoleLine::matches
 fn qs_workbench::preview::HasPreview::workbench_and_preview
@@ -811,6 +831,7 @@ mod qs_workbench::git
 mod qs_workbench::ids
 mod qs_workbench::map_check
 mod qs_workbench::map_edit
+mod qs_workbench::map_textures
 mod qs_workbench::preview::debug
 mod qs_workbench::preview::dock
 mod qs_workbench::preview::engine
@@ -918,6 +939,10 @@ struct qs_workbench::map_edit::links::LinkParams
 struct qs_workbench::map_edit::outline::MoveToParams
 struct qs_workbench::map_edit::outline::OutlineParams
 struct qs_workbench::map_edit::outline::OutlineRow
+struct qs_workbench::map_textures::BrowserTexture
+struct qs_workbench::map_textures::MapTextures
+struct qs_workbench::map_textures::TextureSources
+struct qs_workbench::map_textures::WadFound
 struct qs_workbench::preview::BreakpointParams
 struct qs_workbench::preview::ChooseGameParams
 struct qs_workbench::preview::ConsoleLine
@@ -1259,6 +1284,9 @@ variant qs_workbench::map_edit::outline::RowKind::Entity
 variant qs_workbench::map_edit::outline::RowKind::Group
 variant qs_workbench::map_edit::outline::RowKind::Layer
 variant qs_workbench::map_edit::outline::RowKind::LinkedGroup
+variant qs_workbench::map_textures::TextureOrigin::Bsp
+variant qs_workbench::map_textures::TextureOrigin::Missing
+variant qs_workbench::map_textures::TextureOrigin::Wad
 variant qs_workbench::preview::OnLoss::Ask
 variant qs_workbench::preview::OnLoss::Reload
 variant qs_workbench::preview::PlayState::Paused

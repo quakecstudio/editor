@@ -40,8 +40,30 @@ pub(crate) struct EntityBrowser {
 }
 
 impl EntityBrowser {
+    /// The classes of `names` the filter shows.
+    fn shown<'a>(&self, names: &'a [String]) -> Vec<&'a String> {
+        let filter = self.filter.trim().to_lowercase();
+        names
+            .iter()
+            .filter(|name| name.to_lowercase().contains(&filter))
+            .collect()
+    }
+
+    /// The header's part: the filter and how many classes it shows of `names`.
+    pub(crate) fn header(&mut self, ui: &mut Ui, theme: &Theme, names: &[String]) {
+        ui.add(
+            egui::TextEdit::singleline(&mut self.filter)
+                .hint_text(Text::MapFilterEntities.get())
+                .desired_width(FILTER_WIDTH),
+        );
+        let shown = self.shown(names).len();
+        ui.label(
+            RichText::new(class_count(shown, names.len())).color(theme.color(Token::TextMuted)),
+        );
+    }
+
     /// Draws the classes `names`, looked up in `classes` and their models in `models`.
-    pub(crate) fn ui(
+    pub(crate) fn body(
         &mut self,
         ui: &mut Ui,
         theme: &Theme,
@@ -49,24 +71,7 @@ impl EntityBrowser {
         classes: &HashMap<String, ClassLook>,
         models: &HashMap<String, Vec<Line>>,
     ) {
-        let filter = self.filter.trim().to_lowercase();
-        let shown: Vec<&String> = names
-            .iter()
-            .filter(|name| name.to_lowercase().contains(&filter))
-            .collect();
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(Text::Entities.get()).strong());
-            ui.add(
-                egui::TextEdit::singleline(&mut self.filter)
-                    .hint_text(Text::MapFilterEntities.get())
-                    .desired_width(FILTER_WIDTH),
-            );
-            ui.label(
-                RichText::new(class_count(shown.len(), names.len()))
-                    .color(theme.color(Token::TextMuted)),
-            );
-        });
-        ui.separator();
+        let shown = self.shown(names);
         egui::ScrollArea::horizontal().show(ui, |ui| {
             ui.horizontal(|ui| {
                 for name in shown {
