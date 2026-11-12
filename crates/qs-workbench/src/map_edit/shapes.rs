@@ -86,34 +86,52 @@ impl From<ArchWall> for Spandrels {
     }
 }
 
+/// The sides a round shape has when none are given.
+const DEFAULT_SIDES: u32 = 16;
+
 /// The default sides of a round shape.
 const fn default_sides() -> u32 {
-    16
+    DEFAULT_SIDES
 }
+
+/// The bands a UV spheroid has when none are given.
+const DEFAULT_RINGS: u32 = 8;
 
 /// The default bands of a UV spheroid.
 const fn default_rings() -> u32 {
-    8
+    DEFAULT_RINGS
 }
+
+/// The degrees of an arch when none are given: half a turn.
+const DEFAULT_ARC: f64 = 180.0;
 
 /// The default arc of an arch, half a turn.
 const fn default_arc() -> f64 {
-    180.0
+    DEFAULT_ARC
 }
+
+/// An arch's thickness when none is given.
+const DEFAULT_ARCH_THICKNESS: f64 = 16.0;
 
 /// The default thickness of an arch.
 const fn default_arch_thickness() -> f64 {
-    16.0
+    DEFAULT_ARCH_THICKNESS
 }
+
+/// A rock's points when none are given.
+const DEFAULT_POINTS: u32 = 16;
 
 /// The default points of a rock.
 const fn default_points() -> u32 {
-    16
+    DEFAULT_POINTS
 }
+
+/// A scalable curve's sides when none are given.
+const DEFAULT_CURVE_SIDES: u32 = 24;
 
 /// The default sides of a scalable curve.
 const fn default_curve_sides() -> u32 {
-    24
+    DEFAULT_CURVE_SIDES
 }
 
 /// The default step height, under `STEPSIZE` (MAP-10.10).

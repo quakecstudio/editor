@@ -47,6 +47,67 @@ const LCG_INCREMENT: u64 = 1_442_695_040_888_963_407;
 const FRACTION_SHIFT: u32 = 11;
 /// One more than the largest fraction's numerator, `2^53`.
 const FRACTION_SCALE: f64 = 9_007_199_254_740_992.0;
+/// A point with every coordinate 0.
+const ORIGIN: [f64; 3] = [0.0; 3];
+/// Where in its band of the spiral each rock point lies: its middle.
+const BAND_MIDDLE: f64 = 0.5;
+/// How far up the box a cone's inside point is taken, as a part of its height: below the
+/// middle, so it is inside the cone.
+const CONE_INSIDE: f64 = 0.25;
+/// The fewest corners of a polygon.
+const MIN_CORNERS: usize = 3;
+/// The parts a quarter turn is of a turn, for a curve's template.
+const QUARTERS: u32 = 4;
+/// The triangles each triangle is cut into.
+const SUBDIVISION_PARTS: usize = 4;
+/// The golden ratio, which places an icosahedron's corners.
+const PHI: f64 = core::f64::consts::GOLDEN_RATIO;
+/// A unit icosahedron's corners before they are made unit length.
+const ICOSAHEDRON_CORNERS: [[f64; 3]; 12] = [
+    [-1.0, PHI, 0.0],
+    [1.0, PHI, 0.0],
+    [-1.0, -PHI, 0.0],
+    [1.0, -PHI, 0.0],
+    [0.0, -1.0, PHI],
+    [0.0, 1.0, PHI],
+    [0.0, -1.0, -PHI],
+    [0.0, 1.0, -PHI],
+    [PHI, 0.0, -1.0],
+    [PHI, 0.0, 1.0],
+    [-PHI, 0.0, -1.0],
+    [-PHI, 0.0, 1.0],
+];
+/// An icosahedron's triangles, by its corners.
+const ICOSAHEDRON_FACES: [[usize; 3]; 20] = [
+    [0, 11, 5],
+    [0, 5, 1],
+    [0, 1, 7],
+    [0, 7, 10],
+    [0, 10, 11],
+    [1, 5, 9],
+    [5, 11, 4],
+    [11, 10, 2],
+    [10, 7, 6],
+    [7, 1, 8],
+    [3, 9, 4],
+    [3, 4, 2],
+    [3, 2, 6],
+    [3, 6, 8],
+    [3, 8, 9],
+    [4, 9, 5],
+    [2, 4, 11],
+    [6, 2, 10],
+    [8, 6, 7],
+    [9, 8, 1],
+];
+/// The sides of a 12-sided scalable curve.
+const TWELVE_SIDES: u32 = 12;
+/// The sides of a 24-sided scalable curve.
+const TWENTY_FOUR_SIDES: u32 = 24;
+/// The sides of a 48-sided scalable curve.
+const FORTY_EIGHT_SIDES: u32 = 48;
+/// The sides of a 96-sided scalable curve.
+const NINETY_SIX_SIDES: u32 = 96;
 /// How far a spandrel's corner may be below the box's top and still be on it.
 const ON_TOP: f64 = 1e-6;
 /// The degrees in a turn.
@@ -102,11 +163,40 @@ impl CurveSides {
     #[must_use]
     pub const fn count(self) -> u32 {
         match self {
-            Self::Twelve => 12,
-            Self::TwentyFour => 24,
-            Self::FortyEight => 48,
-            Self::NinetySix => 96,
+            Self::Twelve => TWELVE_SIDES,
+            Self::TwentyFour => TWENTY_FOUR_SIDES,
+            Self::FortyEight => FORTY_EIGHT_SIDES,
+            Self::NinetySix => NINETY_SIX_SIDES,
         }
+    }
+
+    /// A scalable curve's template: its corners on the integer grid, counter-clockwise, around a
+    /// circle of the radius returned, the least for which every corner is distinct and the polygon
+    /// strictly convex (MAP-10.9).
+    fn template(self) -> (Vec<[i64; 2]>, i64) {
+        let quarter = self.count().checked_div(QUARTERS).unwrap_or(1);
+        let mut radius = i64::from(quarter);
+        while radius < TEMPLATE_LIMIT {
+            let r = f64::from(i32::try_from(radius).unwrap_or(i32::MAX));
+            let mut corners = Vec::new();
+            for i in 0..self.count() {
+                let angle = TAU * f64::from(i) / f64::from(self.count());
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "the rounded coordinate is at most the template's radius"
+                )]
+                let corner = [
+                    (r * angle.cos()).round() as i64,
+                    (r * angle.sin()).round() as i64,
+                ];
+                corners.push(corner);
+            }
+            if strictly_convex(&corners) {
+                return (corners, radius);
+            }
+            radius = radius.saturating_add(1);
+        }
+        (Vec::new(), radius)
     }
 }
 
@@ -305,8 +395,8 @@ struct Bounds {
 
 impl Bounds {
     fn new(a: [f64; 3], b: [f64; 3]) -> Result<Self, ShapeError> {
-        let mut min = [0.0; 3];
-        let mut max = [0.0; 3];
+        let mut min = ORIGIN;
+        let mut max = ORIGIN;
         for (i, (lo, hi)) in min.iter_mut().zip(max.iter_mut()).enumerate() {
             let (p, q) = (
                 a.get(i).copied().unwrap_or(0.0),
@@ -401,7 +491,7 @@ fn outward(points: [[f64; 3]; 3], inside: [f64; 3]) -> Option<Plane<f64>> {
 
 /// The middle of `points`.
 fn centroid(points: &[[f64; 3]]) -> [f64; 3] {
-    let mut sum = [0.0; 3];
+    let mut sum = ORIGIN;
     for p in points {
         for (s, c) in sum.iter_mut().zip(p) {
             *s += c;
@@ -470,14 +560,22 @@ fn polyhedron(
     Ok(Brush::from_planes(&planes, surface)?)
 }
 
+/// Whether a ring goes all the way round, its last corner joined to its first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ends {
+    /// All the way round.
+    Closed,
+    /// An arc, its ends apart.
+    Open,
+}
+
 /// The segments of a ring between `outer` and `inner`, each the quadrilateral from one corner
 /// to the next of both, so neighbours share their sides (MAP-10.4).
-fn segments(outer: &[[f64; 2]], inner: &[[f64; 2]], closed: bool) -> Vec<Vec<[f64; 2]>> {
+fn segments(outer: &[[f64; 2]], inner: &[[f64; 2]], ends: Ends) -> Vec<Vec<[f64; 2]>> {
     let count = outer.len().min(inner.len());
-    let last = if closed {
-        count
-    } else {
-        count.saturating_sub(1)
+    let last = match ends {
+        Ends::Closed => count,
+        Ends::Open => count.saturating_sub(1),
     };
     (0..last)
         .filter_map(|i| {
@@ -517,35 +615,6 @@ fn next_fraction(state: u64) -> (f64, u64) {
     )]
     let fraction = (next >> FRACTION_SHIFT) as f64 / FRACTION_SCALE;
     (fraction, next)
-}
-
-/// A scalable curve's template: its corners on the integer grid, counter-clockwise, around a
-/// circle of the radius returned, the least for which every corner is distinct and the polygon
-/// strictly convex (MAP-10.9).
-fn template(sides: CurveSides) -> (Vec<[i64; 2]>, i64) {
-    let quarter = sides.count().checked_div(4).unwrap_or(1);
-    let mut radius = i64::from(quarter);
-    while radius < TEMPLATE_LIMIT {
-        let r = f64::from(i32::try_from(radius).unwrap_or(i32::MAX));
-        let mut corners = Vec::new();
-        for i in 0..sides.count() {
-            let angle = TAU * f64::from(i) / f64::from(sides.count());
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "the rounded coordinate is at most the template's radius"
-            )]
-            let corner = [
-                (r * angle.cos()).round() as i64,
-                (r * angle.sin()).round() as i64,
-            ];
-            corners.push(corner);
-        }
-        if strictly_convex(&corners) {
-            return (corners, radius);
-        }
-        radius = radius.saturating_add(1);
-    }
-    (Vec::new(), radius)
 }
 
 /// Whether the counter-clockwise `corners` make a strictly convex polygon, no two equal.
@@ -597,7 +666,7 @@ impl Shape {
                     Wall::Hollow { thickness } => {
                         let t = checked_thickness(thickness, radii)?;
                         let inner = ring(sides, mode, centre, radii.map(|r| r - t));
-                        segments(&outer, &inner, true)
+                        segments(&outer, &inner, Ends::Closed)
                             .iter()
                             .map(|quad| prism(quad, Along::Z, [z0, z1], surface))
                             .collect()
@@ -608,7 +677,7 @@ impl Shape {
                 let base = ring(checked_sides(sides)?, mode, centre, radii);
                 let [cx, cy] = centre;
                 let apex = [cx, cy, z1];
-                let inside = [cx, cy, z0 + (z1 - z0) / 4.0];
+                let inside = [cx, cy, z0 + (z1 - z0) * CONE_INSIDE];
                 let mut triangles = vec![];
                 let corners: Vec<[f64; 3]> = base.iter().map(|&p| Along::Z.point(p, z0)).collect();
                 for (i, &p) in corners.iter().enumerate() {
@@ -660,7 +729,7 @@ impl Shape {
                 let inner = curve(radii.map(|r| r - t));
                 let closed = (arc - FULL_TURN).abs() < f64::EPSILON;
                 let mut brushes = Vec::new();
-                for quad in segments(&outer, &inner, false) {
+                for quad in segments(&outer, &inner, Ends::Open) {
                     brushes.push(prism(&quad, Along::Y, [y0, y1], surface)?);
                 }
                 if !closed && spandrels == Spandrels::Filled {
@@ -679,7 +748,7 @@ impl Shape {
                         if z1 - pz >= ON_TOP {
                             profile.push([px, z1]);
                         }
-                        if profile.len() >= 3 {
+                        if profile.len() >= MIN_CORNERS {
                             brushes.push(prism(&profile, Along::Y, [y0, y1], surface)?);
                         }
                     }
@@ -765,7 +834,7 @@ impl Shape {
                 for i in 0..points {
                     // A spiral over the sphere spreads the points; the sequence varies how far
                     // out each is.
-                    let z = 1.0 - 2.0 * (f64::from(i) + 0.5) / n;
+                    let z = 1.0 - 2.0 * (f64::from(i) + BAND_MIDDLE) / n;
                     let across = (1.0 - z * z).max(0.0).sqrt();
                     let angle = GOLDEN_ANGLE * f64::from(i);
                     let (fraction, next) = next_fraction(state);
@@ -783,7 +852,7 @@ impl Shape {
                 if !(grid > 0.0 && grid.is_finite()) {
                     return Err(ShapeError::Grid(grid));
                 }
-                let (corners, radius) = template(sides);
+                let (corners, radius) = sides.template();
                 let snap = |v: f64| (v / grid).round() * grid;
                 let span =
                     f64::from(i32::try_from(radius.saturating_mul(2)).unwrap_or(i32::MAX)) * grid;
@@ -816,7 +885,7 @@ impl Shape {
                             return Err(ShapeError::Grid(grid));
                         }
                         let inner = place([kx - steps, ky - steps]);
-                        segments(&outer, &inner, true)
+                        segments(&outer, &inner, Ends::Closed)
                             .iter()
                             .map(|quad| prism(quad, Along::Z, heights, surface))
                             .collect()
@@ -915,54 +984,17 @@ impl Shape {
 
 /// A unit icosahedron's twenty triangles.
 fn icosahedron() -> Vec<[[f64; 3]; 3]> {
-    let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
-    let raw = [
-        [-1.0, phi, 0.0],
-        [1.0, phi, 0.0],
-        [-1.0, -phi, 0.0],
-        [1.0, -phi, 0.0],
-        [0.0, -1.0, phi],
-        [0.0, 1.0, phi],
-        [0.0, -1.0, -phi],
-        [0.0, 1.0, -phi],
-        [phi, 0.0, -1.0],
-        [phi, 0.0, 1.0],
-        [-phi, 0.0, -1.0],
-        [-phi, 0.0, 1.0],
-    ];
-    let v = raw.map(unit);
-    let faces: [[usize; 3]; 20] = [
-        [0, 11, 5],
-        [0, 5, 1],
-        [0, 1, 7],
-        [0, 7, 10],
-        [0, 10, 11],
-        [1, 5, 9],
-        [5, 11, 4],
-        [11, 10, 2],
-        [10, 7, 6],
-        [7, 1, 8],
-        [3, 9, 4],
-        [3, 4, 2],
-        [3, 2, 6],
-        [3, 6, 8],
-        [3, 8, 9],
-        [4, 9, 5],
-        [2, 4, 11],
-        [6, 2, 10],
-        [8, 6, 7],
-        [9, 8, 1],
-    ];
-    faces
+    let corners = ICOSAHEDRON_CORNERS.map(unit);
+    ICOSAHEDRON_FACES
         .iter()
-        .map(|f| f.map(|i| v.get(i).copied().unwrap_or_default()))
+        .map(|face| face.map(|i| corners.get(i).copied().unwrap_or_default()))
         .collect()
 }
 
 /// Each triangle cut in four at its edges' middles, pushed out onto the unit sphere.
 fn subdivide(triangles: &[[[f64; 3]; 3]]) -> Vec<[[f64; 3]; 3]> {
     let mid = |a: [f64; 3], b: [f64; 3]| unit([a[0] + b[0], a[1] + b[1], a[2] + b[2]]);
-    let mut out = Vec::with_capacity(triangles.len().saturating_mul(4));
+    let mut out = Vec::with_capacity(triangles.len().saturating_mul(SUBDIVISION_PARTS));
     for &[a, b, c] in triangles {
         let (ab, bc, ca) = (mid(a, b), mid(b, c), mid(c, a));
         out.extend([[a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]]);
