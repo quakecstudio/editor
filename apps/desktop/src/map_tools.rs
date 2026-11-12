@@ -12,7 +12,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use eframe::egui::{self, Painter, Pos2, Response, Stroke, Ui};
-use qs_map::shapes::{SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT};
+use qs_map::shapes::{
+    SHAPE_MAX_RINGS, SHAPE_MAX_ROCK_POINTS, SHAPE_MAX_SIDES, SHAPE_MAX_SPHEROID_FACES,
+    SHAPE_MIN_RINGS, SHAPE_MIN_ROCK_POINTS, SHAPE_MIN_SIDES, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT,
+};
 use qs_workbench::map_edit::{
     ArchWall, BrushIndex, Circle, Climb, EntityIndex, KeepPart, ShapeSpec,
 };
@@ -26,12 +29,14 @@ use crate::theme::{Theme, Token};
 const BRUSH_HEIGHT: f32 = 64.0;
 /// The height of a box the Shape tool fills, in map units: eight grid steps.
 const SHAPE_HEIGHT: f32 = 128.0;
-/// The fewest and most sides the Shape tool offers (MAP-10.3).
-const SIDES: core::ops::RangeInclusive<u32> = 3..=128;
+/// The sides a round shape may have (MAP-10.3).
+const SIDES: core::ops::RangeInclusive<u32> = SHAPE_MIN_SIDES..=SHAPE_MAX_SIDES;
 /// The sides of a scalable curve the Shape tool offers (MAP-10.9).
 const CURVE_SIDES: [u32; 4] = [12, 24, 48, 96];
 /// The sides a shape starts with.
 const DEFAULT_SIDES: u32 = 16;
+/// A scalable curve's sides before others are chosen.
+const DEFAULT_CURVE_SIDES: u32 = 24;
 /// The wall a hollow shape starts with, in map units.
 const DEFAULT_WALL: f64 = 16.0;
 /// How far one drag step moves the wall, in map units.
@@ -40,8 +45,6 @@ const WALL_STEP: f64 = 1.0;
 const ARCH_ARC: f64 = 180.0;
 /// The times each triangle of an icospheroid is cut.
 const ICOSPHERE_SUBDIVISIONS: u32 = 2;
-/// The fewest bands of a UV spheroid.
-const MIN_RINGS: u32 = 2;
 /// The height of the clip plane drawn while a cut line is dragged, in map units.
 const CLIP_HEIGHT: f32 = 256.0;
 /// How near the pointer must be to a corner, in points, for the Vertex tool to take it.
@@ -176,8 +179,9 @@ impl ShapeKind {
     /// Whether the shape is round, so its corners lie on or around the box's ellipse.
     const fn takes_circle(self) -> bool {
         match self {
-            Self::Cylinder | Self::Cone | Self::Arch => true,
-            Self::UvSpheroid
+            Self::Cylinder | Self::Cone => true,
+            Self::Arch
+            | Self::UvSpheroid
             | Self::Icospheroid
             | Self::Rock
             | Self::Curve
@@ -202,6 +206,7 @@ enum Fill {
 pub(crate) struct ShapeOptions {
     kind: ShapeKind,
     sides: u32,
+    curve_sides: u32,
     circle: Circle,
     fill: Fill,
     wall: f64,
@@ -213,6 +218,7 @@ impl Default for ShapeOptions {
         Self {
             kind: ShapeKind::default(),
             sides: DEFAULT_SIDES,
+            curve_sides: DEFAULT_CURVE_SIDES,
             circle: Circle::default(),
             fill: Fill::default(),
             wall: DEFAULT_WALL,
@@ -237,7 +243,6 @@ impl ShapeOptions {
             ShapeKind::Cone => ShapeSpec::Cone { sides, circle },
             ShapeKind::Arch => ShapeSpec::Arch {
                 sides,
-                circle,
                 arc: ARCH_ARC,
                 start: 0.0,
                 thickness: self.wall,
@@ -245,21 +250,24 @@ impl ShapeOptions {
             },
             ShapeKind::UvSpheroid => ShapeSpec::UvSpheroid {
                 sides,
-                rings: sides.div_ceil(2).max(MIN_RINGS),
+                rings: sides
+                    .div_ceil(2)
+                    .min(
+                        SHAPE_MAX_SPHEROID_FACES
+                            .checked_div(sides)
+                            .unwrap_or(SHAPE_MAX_RINGS),
+                    )
+                    .clamp(SHAPE_MIN_RINGS, SHAPE_MAX_RINGS),
             },
             ShapeKind::Icospheroid => ShapeSpec::Icospheroid {
                 subdivisions: ICOSPHERE_SUBDIVISIONS,
             },
             ShapeKind::Rock => ShapeSpec::Rock {
-                points: sides,
+                points: sides.clamp(SHAPE_MIN_ROCK_POINTS, SHAPE_MAX_ROCK_POINTS),
                 seed: 0,
             },
             ShapeKind::Curve => ShapeSpec::Curve {
-                sides: if CURVE_SIDES.contains(&sides) {
-                    sides
-                } else {
-                    CURVE_SIDES.first().copied().unwrap_or(DEFAULT_SIDES)
-                },
+                sides: self.curve_sides,
                 hollow: None,
             },
             ShapeKind::Stairs => ShapeSpec::Stairs {
@@ -288,7 +296,7 @@ impl ShapeOptions {
             ShapeKind::Curve => {
                 ui.label(Text::MapShapeSides.get());
                 for sides in CURVE_SIDES {
-                    ui.selectable_value(&mut self.sides, sides, sides.to_string());
+                    ui.selectable_value(&mut self.curve_sides, sides, sides.to_string());
                 }
             }
             ShapeKind::Icospheroid | ShapeKind::Stairs => {}

@@ -7,13 +7,13 @@
 use qs_commands::{Command, Outcome};
 use qs_map::Item;
 use qs_map::shapes::{
-    CircleMode, CurveSides, CurveWall, Facing, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT, Shape,
-    ShapeError, Spandrels, Wall,
+    CircleMode, CurveSides, Facing, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT, Shape, ShapeError,
+    Spandrels, Wall,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::brushes::snap;
+use super::brushes::{DEFAULT_GRID, snap};
 use super::{EntityIndex, MapEdited, edit_map};
 use crate::{HasWorkbench, WorkbenchError};
 
@@ -169,14 +169,11 @@ pub enum ShapeSpec {
         #[serde(default)]
         circle: Circle,
     },
-    /// An arch in the box's x-z face.
+    /// An arch in the box's x-z face, within half a turn.
     Arch {
         /// Its segments, 3 to 128; 16 when not given.
         #[serde(default = "default_sides")]
         sides: u32,
-        /// Where the corners lie.
-        #[serde(default)]
-        circle: Circle,
         /// The degrees of its curve; 180 when not given.
         #[serde(default = "default_arc")]
         arc: f64,
@@ -219,9 +216,9 @@ pub enum ShapeSpec {
         /// Its sides; 24 when not given.
         #[serde(default = "default_curve_sides")]
         sides: u32,
-        /// Its wall in template steps, for a hollow curve.
+        /// The wall's thickness, for a hollow curve.
         #[serde(default)]
-        hollow: Option<u32>,
+        hollow: Option<f64>,
     },
     /// Straight stairs.
     Stairs {
@@ -268,14 +265,12 @@ impl ShapeSpec {
             },
             Self::Arch {
                 sides,
-                circle,
                 arc,
                 start,
                 thickness,
                 wall,
             } => Shape::Arch {
                 sides,
-                mode: circle.into(),
                 arc,
                 start,
                 thickness,
@@ -292,12 +287,12 @@ impl ShapeSpec {
                     96 => CurveSides::NinetySix,
                     other => {
                         return Err(WorkbenchError::Shape {
-                            error: ShapeError::Sides(other),
+                            error: ShapeError::CurveSides(other),
                         });
                     }
                 },
                 grid,
-                wall: hollow.map_or(CurveWall::Solid, |steps| CurveWall::Hollow { steps }),
+                wall: hollow.map_or(Wall::Solid, |thickness| Wall::Hollow { thickness }),
             },
             Self::Stairs {
                 height,
@@ -341,9 +336,6 @@ pub struct BrushShapeParams {
     #[serde(default)]
     pub grid: Option<f64>,
 }
-
-/// The grid when none is given (P6-08).
-const DEFAULT_GRID: f64 = 16.0;
 
 impl From<ShapeError> for WorkbenchError {
     fn from(error: ShapeError) -> Self {

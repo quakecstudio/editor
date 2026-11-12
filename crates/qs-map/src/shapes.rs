@@ -29,6 +29,10 @@ pub const SHAPE_MAX_SUBDIVISIONS: u32 = 3;
 pub const SHAPE_MIN_ROCK_POINTS: u32 = 4;
 /// The most points a rock is the hull of (MAP-10.8).
 pub const SHAPE_MAX_ROCK_POINTS: u32 = 64;
+/// The most steps stairs may have (MAP-10.10).
+pub const SHAPE_MAX_STEPS: u32 = 256;
+/// The degrees in half a turn, which an arch stays within (MAP-10.6).
+const HALF_TURN: f64 = 180.0;
 /// The default height of a step: below the 18 units `SV_WalkMove` climbs (`STEPSIZE`,
 /// PHYS-8.3), so a player walks up it (MAP-10.10).
 pub const SHAPE_STEP_HEIGHT: f64 = 16.0;
@@ -56,8 +60,6 @@ const BAND_MIDDLE: f64 = 0.5;
 const CONE_INSIDE: f64 = 0.25;
 /// The fewest corners of a polygon.
 const MIN_CORNERS: usize = 3;
-/// The parts a quarter turn is of a turn, for a curve's template.
-const QUARTERS: u32 = 4;
 /// The triangles each triangle is cut into.
 const SUBDIVISION_PARTS: usize = 4;
 /// The golden ratio, which places an icosahedron's corners.
@@ -110,10 +112,6 @@ const FORTY_EIGHT_SIDES: u32 = 48;
 const NINETY_SIX_SIDES: u32 = 96;
 /// How far a spandrel's corner may be below the box's top and still be on it.
 const ON_TOP: f64 = 1e-6;
-/// The degrees in a turn.
-const FULL_TURN: f64 = 360.0;
-/// The most cells of a scalable curve's template on a side, which no curve reaches.
-const TEMPLATE_LIMIT: i64 = 4096;
 
 /// Where a round shape's corners lie (MAP-10.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,47 +167,6 @@ impl CurveSides {
             Self::NinetySix => NINETY_SIX_SIDES,
         }
     }
-
-    /// A scalable curve's template: its corners on the integer grid, counter-clockwise, around a
-    /// circle of the radius returned, the least for which every corner is distinct and the polygon
-    /// strictly convex (MAP-10.9).
-    fn template(self) -> (Vec<[i64; 2]>, i64) {
-        let quarter = self.count().checked_div(QUARTERS).unwrap_or(1);
-        let mut radius = i64::from(quarter);
-        while radius < TEMPLATE_LIMIT {
-            let r = f64::from(i32::try_from(radius).unwrap_or(i32::MAX));
-            let mut corners = Vec::new();
-            for i in 0..self.count() {
-                let angle = TAU * f64::from(i) / f64::from(self.count());
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    reason = "the rounded coordinate is at most the template's radius"
-                )]
-                let corner = [
-                    (r * angle.cos()).round() as i64,
-                    (r * angle.sin()).round() as i64,
-                ];
-                corners.push(corner);
-            }
-            if strictly_convex(&corners) {
-                return (corners, radius);
-            }
-            radius = radius.saturating_add(1);
-        }
-        (Vec::new(), radius)
-    }
-}
-
-/// How thick a hollow scalable curve's wall is: in steps of its template (MAP-10.9).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CurveWall {
-    /// Solid.
-    Solid,
-    /// A wall of this many template steps.
-    Hollow {
-        /// The steps.
-        steps: u32,
-    },
 }
 
 /// The way stairs climb (MAP-10.10).
@@ -244,15 +201,14 @@ pub enum Shape {
         /// Where the corners lie.
         mode: CircleMode,
     },
-    /// An arch in the box's x-z face, through the box along y (MAP-10.6).
+    /// An arch in the box's x-z face, through the box along y, its corners on its ellipse
+    /// (MAP-10.6).
     Arch {
         /// The segments of its curve.
         sides: u32,
-        /// Where the corners lie.
-        mode: CircleMode,
-        /// The degrees of the curve, above 0 and at most 360.
+        /// The degrees of the curve, above 0, the curve within half a turn.
         arc: f64,
-        /// The degrees the curve starts at, from +x toward +z.
+        /// The degrees the curve starts at, from +x toward +z, 0 or more.
         start: f64,
         /// The thickness of the curve.
         thickness: f64,
@@ -286,7 +242,7 @@ pub enum Shape {
         /// The grid, in map units.
         grid: f64,
         /// Solid or hollow.
-        wall: CurveWall,
+        wall: Wall,
     },
     /// Straight stairs (MAP-10.10).
     Stairs {
@@ -317,8 +273,15 @@ pub enum ShapeError {
     Sides(u32),
     /// The wall is not thinner than the box's smaller radius, or not above 0.
     Thickness(f64),
-    /// The arc is not above 0 and at most 360 degrees, or the start is not a number.
-    Arc(f64),
+    /// The arc is not above 0, or the start below 0, or the arch past half a turn.
+    Arc {
+        /// The arc's degrees.
+        arc: f64,
+        /// The start's degrees.
+        start: f64,
+    },
+    /// A scalable curve's sides are not 12, 24, 48 or 96.
+    CurveSides(u32),
     /// The bands of latitude are outside the range.
     Rings(u32),
     /// The subdivisions are past the most.
@@ -327,7 +290,8 @@ pub enum ShapeError {
     Faces(u32),
     /// The rock's points are outside the range.
     Points(u32),
-    /// A step's height or depth is not above 0, or no step fits in the box.
+    /// A step's height or depth is not above 0, or no step fits in the box, or more than
+    /// [`SHAPE_MAX_STEPS`] would.
     Step,
     /// The grid is not above 0, or a curve's wall leaves no hole.
     Grid(f64),
@@ -348,10 +312,14 @@ impl core::fmt::Display for ShapeError {
                 "a wall {t} thick does not fit: it must be above 0 and thinner than the box's \
                  smaller radius"
             ),
-            Self::Arc(arc) => write!(
+            Self::Arc { arc, start } => write!(
                 f,
-                "an arc of {arc} degrees; it must be above 0 and at most 360"
+                "an arc of {arc} degrees from {start}; the arc must be above 0 and the arch \
+                 within half a turn, from 0 to 180 degrees"
             ),
+            Self::CurveSides(sides) => {
+                write!(f, "{sides} sides; a scalable curve has 12, 24, 48 or 96")
+            }
             Self::Rings(rings) => write!(
                 f,
                 "{rings} bands; a spheroid has {SHAPE_MIN_RINGS} to {SHAPE_MAX_RINGS}"
@@ -368,7 +336,10 @@ impl core::fmt::Display for ShapeError {
                 f,
                 "{points} points; a rock has {SHAPE_MIN_ROCK_POINTS} to {SHAPE_MAX_ROCK_POINTS}"
             ),
-            Self::Step => f.write_str("a step must be above 0 high and deep, and one must fit"),
+            Self::Step => write!(
+                f,
+                "a step must be above 0 high and deep, and 1 to {SHAPE_MAX_STEPS} must fit"
+            ),
             Self::Grid(grid) => write!(
                 f,
                 "a grid of {grid} with that wall leaves no curve; the grid must be above 0"
@@ -617,23 +588,37 @@ fn next_fraction(state: u64) -> (f64, u64) {
     (fraction, next)
 }
 
-/// Whether the counter-clockwise `corners` make a strictly convex polygon, no two equal.
-fn strictly_convex(corners: &[[i64; 2]]) -> bool {
-    let count = corners.len();
-    (0..count).all(|i| {
-        let at = |k: usize| {
-            corners
-                .get(k.checked_rem(count).unwrap_or(0))
-                .copied()
-                .unwrap_or_default()
-        };
-        let ([ax, ay], [bx, by], [cx, cy]) =
-            (at(i), at(i.saturating_add(1)), at(i.saturating_add(2)));
-        let cross = (bx.saturating_sub(ax))
-            .saturating_mul(cy.saturating_sub(by))
-            .saturating_sub((by.saturating_sub(ay)).saturating_mul(cx.saturating_sub(bx)));
-        cross > 0
-    })
+/// The convex hull of `points`, counter-clockwise, each corner once and none on an edge:
+/// Andrew's monotone chain.
+fn hull_2d(points: &[[f64; 2]]) -> Vec<[f64; 2]> {
+    let mut sorted = points.to_vec();
+    sorted.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+    sorted.dedup();
+    if sorted.len() < MIN_CORNERS {
+        return sorted;
+    }
+    let turn = |o: [f64; 2], a: [f64; 2], b: [f64; 2]| {
+        (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    };
+    let mut hull: Vec<[f64; 2]> = Vec::new();
+    for pass in [sorted.clone(), sorted.into_iter().rev().collect()] {
+        let start = hull.len();
+        for p in pass {
+            while hull.len() >= start.saturating_add(2) {
+                let (Some(&b), Some(&a)) = (hull.last(), hull.get(hull.len().saturating_sub(2)))
+                else {
+                    break;
+                };
+                if turn(a, b, p) > 0.0 {
+                    break;
+                }
+                hull.pop();
+            }
+            hull.push(p);
+        }
+        hull.pop();
+    }
+    hull
 }
 
 impl Shape {
@@ -695,15 +680,14 @@ impl Shape {
             }
             Self::Arch {
                 sides,
-                mode,
                 arc,
                 start,
                 thickness,
                 spandrels,
             } => {
                 let sides = checked_sides(sides)?;
-                if !(arc > 0.0 && arc <= FULL_TURN) || !start.is_finite() {
-                    return Err(ShapeError::Arc(arc));
+                if !(arc > 0.0 && start >= 0.0 && start + arc <= HALF_TURN) {
+                    return Err(ShapeError::Arc { arc, start });
                 }
                 let centre = [(x0 + x1) / 2.0, z0];
                 let radii = [(x1 - x0) / 2.0, z1 - z0];
@@ -711,28 +695,22 @@ impl Shape {
                 let (from, sweep) = (start.to_radians(), arc.to_radians());
                 let curve = |radii: [f64; 2]| -> Vec<[f64; 2]> {
                     let n = f64::from(sides);
-                    let grow = match mode {
-                        CircleMode::Vertices => 1.0,
-                        CircleMode::Edges => 1.0 / (sweep / n / 2.0).cos(),
-                    };
                     let [cx, cz] = centre;
                     let [rx, rz] = radii;
                     (0..=sides)
                         .map(|i| {
                             let angle = from + sweep * f64::from(i) / n;
-                            let g = if i == 0 || i == sides { 1.0 } else { grow };
-                            [cx + rx * g * angle.cos(), cz + rz * g * angle.sin()]
+                            [cx + rx * angle.cos(), cz + rz * angle.sin()]
                         })
                         .collect()
                 };
                 let outer = curve(radii);
                 let inner = curve(radii.map(|r| r - t));
-                let closed = (arc - FULL_TURN).abs() < f64::EPSILON;
                 let mut brushes = Vec::new();
                 for quad in segments(&outer, &inner, Ends::Open) {
                     brushes.push(prism(&quad, Along::Y, [y0, y1], surface)?);
                 }
-                if !closed && spandrels == Spandrels::Filled {
+                if spandrels == Spandrels::Filled {
                     for pair in outer.windows(2) {
                         let [p, q] =
                             [pair.first(), pair.get(1)].map(|c| c.copied().unwrap_or_default());
@@ -852,43 +830,38 @@ impl Shape {
                 if !(grid > 0.0 && grid.is_finite()) {
                     return Err(ShapeError::Grid(grid));
                 }
-                let (corners, radius) = sides.template();
                 let snap = |v: f64| (v / grid).round() * grid;
-                let span =
-                    f64::from(i32::try_from(radius.saturating_mul(2)).unwrap_or(i32::MAX)) * grid;
-                let cells = |len: f64| ((len / span).round()).max(1.0);
-                let (kx, ky) = (cells(x1 - x0), cells(y1 - y0));
-                let origin = [snap(x0), snap(y0)];
-                let r = f64::from(i32::try_from(radius).unwrap_or(i32::MAX));
-                let place = |k: [f64; 2]| -> Vec<[f64; 2]> {
-                    corners
-                        .iter()
-                        .map(|&[u, v]| {
-                            let (u, v) = (
-                                f64::from(i32::try_from(u).unwrap_or_default()),
-                                f64::from(i32::try_from(v).unwrap_or_default()),
-                            );
-                            [
-                                origin[0] + (r * kx + u * k[0]) * grid,
-                                origin[1] + (r * ky + v * k[1]) * grid,
-                            ]
-                        })
+                let low = [snap(x0), snap(y0)];
+                let high = [snap(x1).max(low[0] + grid), snap(y1).max(low[1] + grid)];
+                let centre = [(low[0] + high[0]) / 2.0, (low[1] + high[1]) / 2.0];
+                let radii = [(high[0] - low[0]) / 2.0, (high[1] - low[1]) / 2.0];
+                let on_grid = |radii: [f64; 2]| -> Vec<[f64; 2]> {
+                    ring(sides.count(), CircleMode::Vertices, centre, radii)
+                        .into_iter()
+                        .map(|corner| corner.map(snap))
                         .collect()
                 };
-                let outer = place([kx, ky]);
+                let outer = on_grid(radii);
                 let heights = [snap(z0), snap(z1).max(snap(z0) + grid)];
                 match wall {
-                    CurveWall::Solid => Ok(vec![prism(&outer, Along::Z, heights, surface)?]),
-                    CurveWall::Hollow { steps } => {
-                        let steps = f64::from(steps);
-                        if steps < 1.0 || steps >= kx.min(ky) {
-                            return Err(ShapeError::Grid(grid));
+                    Wall::Solid => {
+                        let hull = hull_2d(&outer);
+                        if hull.len() < MIN_CORNERS {
+                            return Err(ShapeError::Size);
                         }
-                        let inner = place([kx - steps, ky - steps]);
-                        segments(&outer, &inner, Ends::Closed)
-                            .iter()
-                            .map(|quad| prism(quad, Along::Z, heights, surface))
-                            .collect()
+                        Ok(vec![prism(&hull, Along::Z, heights, surface)?])
+                    }
+                    Wall::Hollow { thickness } => {
+                        let t = checked_thickness(thickness, radii)?;
+                        let inner = on_grid(radii.map(|r| r - t));
+                        let mut brushes = Vec::new();
+                        for quad in segments(&outer, &inner, Ends::Closed) {
+                            let hull = hull_2d(&quad);
+                            if hull.len() >= MIN_CORNERS {
+                                brushes.push(prism(&hull, Along::Z, heights, surface)?);
+                            }
+                        }
+                        Ok(brushes)
                     }
                 }
             }
@@ -907,7 +880,7 @@ impl Shape {
                 let by_length = (length / depth).floor();
                 let by_height = ((z1 - z0) / height).floor();
                 let count = by_length.min(by_height);
-                if count < 1.0 {
+                if !(1.0..=f64::from(SHAPE_MAX_STEPS)).contains(&count) {
                     return Err(ShapeError::Step);
                 }
                 #[expect(
@@ -945,7 +918,7 @@ impl Shape {
                     return Err(ShapeError::Thickness(core));
                 }
                 let count = ((z1 - z0) / height).floor();
-                if count < 1.0 {
+                if !(1.0..=f64::from(SHAPE_MAX_STEPS)).contains(&count) {
                     return Err(ShapeError::Step);
                 }
                 #[expect(

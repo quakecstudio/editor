@@ -29,7 +29,7 @@ pub const MAP_BRUSH_MERGE: &str = "map.brush_merge";
 pub const MAP_BRUSH_DELETE: &str = "map.brush_delete";
 
 /// TrenchBroom's grid, `Grid(4)`: 2^4 units, the step points snap to by default.
-const DEFAULT_GRID: f64 = 16.0;
+pub(super) const DEFAULT_GRID: f64 = 16.0;
 /// The texture a new brush takes in a map whose brushes name none.
 const DEFAULT_TEXTURE: &[u8] = b"__TB_empty";
 

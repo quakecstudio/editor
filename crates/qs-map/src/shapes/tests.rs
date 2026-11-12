@@ -9,7 +9,7 @@
 use proptest::prelude::*;
 
 use super::{
-    CircleMode, CurveSides, CurveWall, Facing, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT, Shape,
+    CircleMode, CurveSides, Facing, SHAPE_MAX_STEPS, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT, Shape,
     ShapeError, Spandrels, Wall,
 };
 use crate::{Brush, Surface, TexDef};
@@ -188,7 +188,6 @@ fn an_arch_with_spandrels_fills_the_wall() {
     let arch = |spandrels| {
         make(Shape::Arch {
             sides: 8,
-            mode: CircleMode::Vertices,
             arc: 180.0,
             start: 0.0,
             thickness: 16.0,
@@ -205,18 +204,30 @@ fn an_arch_with_spandrels_fills_the_wall() {
         .filter(|v| (v[2] - 128.0).abs() < 1e-3)
         .count();
     assert!(top > 2);
-    for arc in [0.0, -10.0, 361.0, f64::NAN] {
-        assert!(matches!(
-            make(Shape::Arch {
-                sides: 8,
-                mode: CircleMode::Vertices,
-                arc,
-                start: 0.0,
-                thickness: 8.0,
-                spandrels: Spandrels::Open
-            }),
-            Err(ShapeError::Arc(_))
-        ));
+    let quarter = |arc, start| {
+        make(Shape::Arch {
+            sides: 8,
+            arc,
+            start,
+            thickness: 8.0,
+            spandrels: Spandrels::Open,
+        })
+    };
+    assert!(quarter(90.0, 90.0).is_ok());
+    assert!(quarter(180.0, 0.0).is_ok());
+    for (arc, start) in [
+        (0.0, 0.0),
+        (-10.0, 0.0),
+        (181.0, 0.0),
+        (90.0, 91.0),
+        (90.0, -1.0),
+        (f64::NAN, 0.0),
+        (90.0, f64::NAN),
+    ] {
+        assert!(
+            matches!(quarter(arc, start), Err(ShapeError::Arc { .. })),
+            "{arc} from {start}"
+        );
     }
 }
 
@@ -289,17 +300,14 @@ fn every_corner_of_a_scalable_curve_is_on_the_grid() {
     ] {
         for grid in [1.0, 8.0, 16.0] {
             for size in [64.0, 200.0, 640.0, 1500.0] {
-                for wall in [CurveWall::Solid, CurveWall::Hollow { steps: 1 }] {
+                for wall in [Wall::Solid, Wall::Hollow { thickness: grid }] {
                     let made = Shape::Curve { sides, grid, wall }.brushes(
                         [grid * 3.0 + 1.0, -grid, 0.0],
                         [grid * 3.0 + size, -grid + size, grid * 4.0],
                         &surface(),
                     );
-                    let Ok(brushes) = made else {
-                        // A curve one template wide has no room for a hole.
-                        assert!(wall != CurveWall::Solid, "{sides:?} {grid} {size}");
-                        continue;
-                    };
+                    let brushes = made.unwrap();
+                    assert!(!brushes.is_empty());
                     for v in vertices(&brushes) {
                         for c in v {
                             assert!(
@@ -316,10 +324,23 @@ fn every_corner_of_a_scalable_curve_is_on_the_grid() {
         make(Shape::Curve {
             sides: CurveSides::Twelve,
             grid: 0.0,
-            wall: CurveWall::Solid
+            wall: Wall::Solid
         }),
         Err(ShapeError::Grid(_))
     ));
+    let hollow = make(Shape::Curve {
+        sides: CurveSides::TwentyFour,
+        grid: 8.0,
+        wall: Wall::Hollow { thickness: 16.0 },
+    })
+    .unwrap();
+    assert_eq!(hollow.len(), 24);
+    for brush in &hollow {
+        for v in brush.vertices() {
+            let r = (v[0].powi(2) + v[1].powi(2)).sqrt();
+            assert!(r > 30.0, "a hollow curve's wall is outside its hole: {v:?}");
+        }
+    }
 }
 
 // spec MAP-10.10: stairs of the default step, under STEPSIZE, as many as fit
@@ -360,6 +381,26 @@ fn stairs_fill_the_box_with_climbable_steps() {
             facing: Facing::East
         }
         .brushes([0.0, 0.0, 0.0], [256.0, 64.0, 96.0], &surface()),
+        Err(ShapeError::Step)
+    ));
+    let steps = |length: f64| {
+        Shape::Stairs {
+            height: 1.0,
+            depth: 1.0,
+            facing: Facing::East,
+        }
+        .brushes([0.0, 0.0, 0.0], [length, 4.0, length], &surface())
+    };
+    let most = f64::from(SHAPE_MAX_STEPS);
+    assert_eq!(steps(most).unwrap().len(), 256);
+    assert!(matches!(steps(most + 1.0), Err(ShapeError::Step)));
+    assert!(matches!(
+        Shape::SpiralStairs {
+            sides: 8,
+            height: 1.0,
+            core: 0.0
+        }
+        .brushes([0.0, 0.0, 0.0], [64.0, 64.0, most + 1.0], &surface()),
         Err(ShapeError::Step)
     ));
 }
@@ -413,15 +454,13 @@ fn any_shape() -> impl Strategy<Value = Shape> {
         (sides.clone(), mode.clone()).prop_map(|(sides, mode)| Shape::Cone { sides, mode }),
         (
             sides.clone(),
-            mode,
             length.clone(),
-            -720.0..720.0_f64,
+            -360.0..360.0_f64,
             length.clone(),
             any::<bool>()
         )
-            .prop_map(|(sides, mode, arc, start, thickness, filled)| Shape::Arch {
+            .prop_map(|(sides, arc, start, thickness, filled)| Shape::Arch {
                 sides,
-                mode,
                 arc,
                 start,
                 thickness,
@@ -434,20 +473,22 @@ fn any_shape() -> impl Strategy<Value = Shape> {
         (sides.clone(), 0_u32..70).prop_map(|(sides, rings)| Shape::UvSpheroid { sides, rings }),
         (0_u32..5).prop_map(|subdivisions| Shape::Icospheroid { subdivisions }),
         (0_u32..70, any::<u64>()).prop_map(|(points, seed)| Shape::Rock { points, seed }),
-        (0_usize..4, length.clone(), 0_u32..4).prop_map(|(sides, grid, steps)| Shape::Curve {
-            sides: [
-                CurveSides::Twelve,
-                CurveSides::TwentyFour,
-                CurveSides::FortyEight,
-                CurveSides::NinetySix
-            ][sides],
-            grid,
-            wall: if steps == 0 {
-                CurveWall::Solid
-            } else {
-                CurveWall::Hollow { steps }
-            },
-        }),
+        (0_usize..4, length.clone(), length.clone(), any::<bool>()).prop_map(
+            |(sides, grid, thickness, hollow)| Shape::Curve {
+                sides: [
+                    CurveSides::Twelve,
+                    CurveSides::TwentyFour,
+                    CurveSides::FortyEight,
+                    CurveSides::NinetySix
+                ][sides],
+                grid,
+                wall: if hollow {
+                    Wall::Hollow { thickness }
+                } else {
+                    Wall::Solid
+                },
+            }
+        ),
         (length.clone(), length.clone(), 0_usize..4).prop_map(|(height, depth, facing)| {
             Shape::Stairs {
                 height,
