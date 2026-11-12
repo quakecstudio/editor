@@ -16,8 +16,8 @@ use qs_wad::texture::Palette;
 use qs_wad::write::WadBuilder;
 use serde_json::json;
 
-use super::{MAP_TEXTURES, MapTextures, TextureOrigin, TextureSources};
-use crate::map_edit::MAP_OPEN;
+use super::{MAP_TEXTURES, MapTextures, TextureOrigin, TextureSources, WadState};
+use crate::map_edit::{MAP_OPEN, MAP_SET_KEY};
 use crate::{Config, OPEN_PROJECT, Workbench, WorkbenchError, register};
 
 /// A texture lump `name`, `width` by `height`, every pixel `index`.
@@ -148,7 +148,7 @@ fn opened(test: &str, scene: &Scene) -> (PathBuf, PathBuf, Session<Workbench<FsL
 
 fn sources(project: &Path, game: &Path, session: &Session<Workbench<FsLoader>>) -> TextureSources {
     let workbench = session.context();
-    TextureSources::load(workbench.map().unwrap(), Some(project), Some(game))
+    TextureSources::load(workbench.map().unwrap(), Some(project), Some(game), None)
 }
 
 fn listing(scene: &Scene, test: &str) -> (TextureSources, MapTextures) {
@@ -178,8 +178,7 @@ fn every_texture_of_the_wad_and_the_map_is_listed_with_its_uses() {
         ]
     );
     assert_eq!(listing.wads.len(), 1);
-    assert!(listing.wads[0].found);
-    assert_eq!(listing.wads[0].textures, 2);
+    assert_eq!(listing.wads[0].state, WadState::Read { textures: 2 });
 }
 
 #[test]
@@ -190,7 +189,11 @@ fn a_wad_is_found_in_the_project_beside_the_map_or_in_the_game() {
             ..Scene::default()
         };
         let (sources, listing) = listing(&scene, &format!("{place:?}"));
-        assert!(listing.wads[0].found, "{place:?}");
+        assert_eq!(
+            listing.wads[0].state,
+            WadState::Read { textures: 2 },
+            "{place:?}"
+        );
         let watched = sources.watched();
         assert_eq!(watched.len(), 1, "{place:?}");
         assert!(watched[0].ends_with("gfx/a.wad"), "{place:?}: {watched:?}");
@@ -204,8 +207,7 @@ fn a_wad_that_is_nowhere_leaves_the_map_s_names_missing() {
         ..Scene::default()
     };
     let (sources, listing) = listing(&scene, "nowhere");
-    assert!(!listing.wads[0].found);
-    assert_eq!(listing.wads[0].textures, 0);
+    assert_eq!(listing.wads[0].state, WadState::Missing);
     assert!(sources.watched().is_empty());
     assert!(
         listing
@@ -238,7 +240,7 @@ fn the_first_wad_holding_a_name_wins() {
         .map(|t| (t.name.as_str(), t.width))
         .collect();
     assert_eq!(names, [("brick", 16), ("sky1", 16), ("nope", 0)]);
-    assert!(!listing.wads[2].found);
+    assert_eq!(listing.wads[2].state, WadState::Unreadable);
 }
 
 #[test]
@@ -311,4 +313,107 @@ fn the_project_s_palette_comes_before_the_game_s() {
         &sources.decode("brick").unwrap().rgba[..4],
         [252, 3, 1, 255]
     );
+}
+
+/// A WAD3 file of one palette texture `name`, 16 by 16, every pixel index 1, whose own palette
+/// makes index 1 `colour`.
+fn wad3(name: &str, colour: [u8; 3]) -> Vec<u8> {
+    let mut lump = miptex(name, 16, 16, 1);
+    lump.extend_from_slice(&2_u16.to_le_bytes());
+    lump.extend_from_slice(&[0, 0, 0]);
+    lump.extend_from_slice(&colour);
+    let mut out = b"WAD3".to_vec();
+    out.extend_from_slice(&1_i32.to_le_bytes());
+    out.extend_from_slice(&i32::try_from(12 + lump.len()).unwrap().to_le_bytes());
+    out.extend_from_slice(&lump);
+    out.extend_from_slice(&12_i32.to_le_bytes());
+    out.extend_from_slice(&i32::try_from(lump.len()).unwrap().to_le_bytes());
+    out.extend_from_slice(&i32::try_from(lump.len()).unwrap().to_le_bytes());
+    out.push(qs_wad::WAD_TYP_MIPTEX_PALETTE);
+    out.extend_from_slice(&[0, 0, 0]);
+    let mut field = name.as_bytes().to_vec();
+    field.resize(16, 0);
+    out.extend_from_slice(&field);
+    out
+}
+
+// spec WAD-8.4: a WAD3 texture is shown in its own palette
+#[test]
+fn a_wad3_texture_is_read_and_shown_in_its_own_palette() {
+    let sources = TextureSources::from_files(
+        vec![("hl.wad".to_owned(), wad3("crate", [10, 20, 30]))],
+        None,
+        Some(Palette::from_lmp(&palette_bytes()).unwrap()),
+    );
+    let (_, _, session) = opened("wad3", &Scene::default());
+    let listing = sources.listing(session.context().map().unwrap());
+    assert_eq!(listing.wads[0].state, WadState::Read { textures: 1 });
+    assert_eq!(
+        &sources.decode("crate").unwrap().rgba[..4],
+        [10, 20, 30, 255]
+    );
+}
+
+#[test]
+fn an_absolute_wad_path_from_another_machine_is_found_by_its_name() {
+    let scene = Scene {
+        wad_key: "C:/quake/id1/gfx/a.wad",
+        place: WadPlace::Nowhere,
+        ..Scene::default()
+    };
+    let (project, game, session) = opened("absolute", &scene);
+    std::fs::write(project.join("a.wad"), wad(&[("brick", 16, 16, 3)])).unwrap();
+    let listing = sources(&project, &game, &session).listing(session.context().map().unwrap());
+    assert_eq!(listing.wads[0].state, WadState::Read { textures: 1 });
+}
+
+#[test]
+fn a_file_that_is_no_wad_is_unreadable_not_missing() {
+    let scene = Scene {
+        place: WadPlace::Nowhere,
+        ..Scene::default()
+    };
+    let (project, game, session) = opened("unreadable", &scene);
+    std::fs::create_dir_all(project.join("gfx")).unwrap();
+    std::fs::write(project.join("gfx/a.wad"), b"not a wad").unwrap();
+    let sources = sources(&project, &game, &session);
+    let listing = sources.listing(session.context().map().unwrap());
+    assert_eq!(listing.wads[0].state, WadState::Unreadable);
+    assert_eq!(sources.watched().len(), 1);
+}
+
+#[test]
+fn the_sources_are_stale_when_the_wad_key_or_the_game_changes() {
+    let (project, game, mut session) = opened("stale", &Scene::default());
+    let loaded = TextureSources::load(
+        session.context().map().unwrap(),
+        Some(&project),
+        Some(&game),
+        None,
+    );
+    let document = session.context().map().unwrap();
+    assert!(!loaded.is_stale(document, None));
+    assert!(loaded.is_stale(document, Some(&game)));
+    session
+        .execute(
+            MAP_SET_KEY,
+            json!({ "entity": 0, "key": "wad", "value": "other.wad" }),
+        )
+        .unwrap();
+    assert!(loaded.is_stale(session.context().map().unwrap(), None));
+}
+
+// spec WAD-8.3: a texture past the size a GPU takes, or with fewer pixels than its size, is not
+// decoded
+#[test]
+fn a_texture_that_cannot_be_shown_is_not_decoded() {
+    let palette = Palette::from_lmp(&palette_bytes()).unwrap();
+    assert!(palette.decode_pixels(b"a", 0, 16, &[]).is_err());
+    assert!(
+        palette
+            .decode_pixels(b"a", 8192, 16, &vec![0; 8192 * 16])
+            .is_err()
+    );
+    assert!(palette.decode_pixels(b"a", 16, 16, &[0; 255]).is_err());
+    assert!(palette.decode_pixels(b"a", 16, 16, &[0; 256]).is_ok());
 }

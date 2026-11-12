@@ -152,6 +152,7 @@ enum qs_workbench::map_edit::inspect::RoomShape
 enum qs_workbench::map_edit::live::LiveChange
 enum qs_workbench::map_edit::outline::RowKind
 enum qs_workbench::map_textures::TextureOrigin
+enum qs_workbench::map_textures::WadState
 enum qs_workbench::preview::OnLoss
 enum qs_workbench::preview::PlayState
 enum qs_workbench::preview::PreviewError
@@ -407,10 +408,9 @@ field qs_workbench::map_textures::BrowserTexture.uses
 field qs_workbench::map_textures::BrowserTexture.width
 field qs_workbench::map_textures::MapTextures.textures
 field qs_workbench::map_textures::MapTextures.wads
-field qs_workbench::map_textures::WadFound.found
 field qs_workbench::map_textures::WadFound.name
 field qs_workbench::map_textures::WadFound.path
-field qs_workbench::map_textures::WadFound.textures
+field qs_workbench::map_textures::WadFound.state
 field qs_workbench::preview::BreakpointParams.file
 field qs_workbench::preview::BreakpointParams.line
 field qs_workbench::preview::ChooseGameParams.path
@@ -662,6 +662,7 @@ fn qs_workbench::map_textures::MapDocument::texture_uses
 fn qs_workbench::map_textures::TextureSources::decode
 fn qs_workbench::map_textures::TextureSources::from_files
 fn qs_workbench::map_textures::TextureSources::has_palette
+fn qs_workbench::map_textures::TextureSources::is_stale
 fn qs_workbench::map_textures::TextureSources::listing
 fn qs_workbench::map_textures::TextureSources::load
 fn qs_workbench::map_textures::TextureSources::watched
@@ -1287,6 +1288,9 @@ variant qs_workbench::map_edit::outline::RowKind::LinkedGroup
 variant qs_workbench::map_textures::TextureOrigin::Bsp
 variant qs_workbench::map_textures::TextureOrigin::Missing
 variant qs_workbench::map_textures::TextureOrigin::Wad
+variant qs_workbench::map_textures::WadState::Missing
+variant qs_workbench::map_textures::WadState::Read
+variant qs_workbench::map_textures::WadState::Unreadable
 variant qs_workbench::preview::OnLoss::Ask
 variant qs_workbench::preview::OnLoss::Reload
 variant qs_workbench::preview::PlayState::Paused

@@ -20,8 +20,14 @@ const CELL: f32 = 84.0;
 const CORNER: f32 = 4.0;
 /// The space kept around a preview's lines, in points.
 const MARGIN: f32 = 6.0;
-/// The width of the filter field, in points.
-const FILTER_WIDTH: f32 = 220.0;
+/// The width of a browser's filter field, in points.
+pub(crate) const FILTER_WIDTH: f32 = 220.0;
+
+/// Whether a browser's filter, as typed, shows `name`: its trimmed text found in the name, in
+/// any case.
+pub(crate) fn filter_shows(filter: &str, name: &str) -> bool {
+    name.to_lowercase().contains(&filter.trim().to_lowercase())
+}
 /// The box drawn for a class whose comment and code give none, id's `info_null`'s.
 const NO_SIZE: [[f32; 3]; 2] = [[-8.0; 3], [8.0; 3]];
 /// The previews' view: turned 45 degrees about the vertical and looked down on at 30, so the
@@ -42,10 +48,9 @@ pub(crate) struct EntityBrowser {
 impl EntityBrowser {
     /// The classes of `names` the filter shows.
     fn shown<'a>(&self, names: &'a [String]) -> Vec<&'a String> {
-        let filter = self.filter.trim().to_lowercase();
         names
             .iter()
-            .filter(|name| name.to_lowercase().contains(&filter))
+            .filter(|name| filter_shows(&self.filter, name))
             .collect()
     }
 

@@ -20,6 +20,7 @@ const qs_wad::WAD_TYP_QTEX
 const qs_wad::WAD_TYP_SOUND
 const qs_wad::map_wad::WAD3_MAGIC
 const qs_wad::map_wad::WAD_TYP_MIPTEX_PALETTE
+const qs_wad::texture::WAD_DECODE_MAX_SIDE
 const qs_wad::texture::WAD_FULLBRIGHT_FIRST
 const qs_wad::texture::WAD_OPAQUE_ALPHA
 const qs_wad::texture::WAD_PALETTE_SIZE
@@ -82,6 +83,7 @@ fn qs_wad::texture::Palette::colour
 fn qs_wad::texture::Palette::decode_miptex
 fn qs_wad::texture::Palette::decode_pixels
 fn qs_wad::texture::Palette::from_lmp
+fn qs_wad::texture::Palette::from_wad3
 fn qs_wad::texture::Palette::nearest
 fn qs_wad::texture::PaletteIndex::get
 fn qs_wad::texture::PaletteIndex::new

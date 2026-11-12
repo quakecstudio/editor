@@ -1884,6 +1884,16 @@ impl Shell {
             .map()
             .map(|document| document.path().to_path_buf());
         if path == self.map_opened {
+            // The world named other WADs, or another game was chosen (P6-10).
+            let context = self.session.context();
+            let chosen = context.preview.game_folder();
+            if context
+                .workbench
+                .map()
+                .is_some_and(|document| self.map_editor.textures_stale(document, chosen))
+            {
+                self.load_map_textures();
+            }
             return;
         }
         self.map_opened.clone_from(&path);
@@ -1906,7 +1916,12 @@ impl Shell {
             return;
         };
         let game = context.preview.game_base_path();
-        let sources = TextureSources::load(document, context.workbench.root(), game.as_deref());
+        let sources = TextureSources::load(
+            document,
+            context.workbench.root(),
+            game.as_deref(),
+            context.preview.game_folder(),
+        );
         self.map_editor.set_texture_sources(sources);
     }
 

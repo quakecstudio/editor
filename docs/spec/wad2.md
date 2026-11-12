@@ -328,3 +328,7 @@ the fence rule is WAD-6.4's, QuakeSpasm's `TexMgr_LoadPalette` giving entry 255 
   needs.
 - **WAD-8.2** Each index is its palette colour, opaque, except index 255 in a fence texture
   (WAD-6.4), which is transparent: alpha 0.
+- **WAD-8.3** A width or height of 0, or past 4096 (`WAD_DECODE_MAX_SIDE`, the side a GPU may
+  refuse), is refused, and so are fewer pixels than `width * height`.
+- **WAD-8.4** A WAD3 texture is shown in its own palette (WAD3-3.3): the colours after its
+  16-bit count, each red, green and blue, the indices past the count or past the bytes black.

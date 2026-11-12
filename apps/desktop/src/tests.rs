@@ -2570,3 +2570,35 @@ fn a_texture_added_to_the_wad_shows_without_a_restart() {
     assert_eq!(count(&harness), 4);
     assert!(harness.query_all_by_label("tex03").next().is_some());
 }
+
+// No spec statement: P6-10: naming another WAD in the world's wad key gives the browser that
+// WAD's textures, with no reopening
+#[test]
+fn a_new_wad_key_gives_the_browser_its_textures() {
+    let dir = textured_copy("texture-key", 3);
+    let other = dir.join("other.wad");
+    let mut builder = WadBuilder::new();
+    builder
+        .add(b"stone", qs_wad::WAD_TYP_MIPTEX, miptex("stone", 7))
+        .unwrap();
+    fs::write(&other, builder.to_bytes().unwrap()).unwrap();
+    let mut harness = accessible();
+    open_textured(&mut harness, &dir);
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .execute(
+            "map.set_key",
+            json!({ "entity": 0, "key": "wad", "value": "other.wad" }),
+        )
+        .unwrap();
+    harness.run();
+    harness.run();
+    let shell = harness.state().as_ref().unwrap().shell();
+    let listing = shell.map_editor().texture_browser().listing();
+    assert!(listing.textures.iter().any(|t| t.name == "stone"));
+    assert!(!listing.textures.iter().any(|t| t.name == "tex00"));
+    assert_eq!(shell.map_editor().texture_watched(), [other]);
+}

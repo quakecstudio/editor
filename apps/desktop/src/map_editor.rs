@@ -378,6 +378,12 @@ impl MapEditor {
         self.textures.set_sources(sources);
     }
 
+    /// Whether the texture sources were made for other WADs or another chosen game than
+    /// `document` and `chosen` now give.
+    pub fn textures_stale(&self, document: &MapDocument, chosen: Option<&std::path::Path>) -> bool {
+        self.textures.is_stale(document, chosen)
+    }
+
     /// The WAD files the texture browser reads, to watch for another program's writes.
     pub fn texture_watched(&self) -> Vec<std::path::PathBuf> {
         self.textures.watched()

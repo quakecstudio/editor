@@ -4,7 +4,7 @@
 //! wording is reviewed in one place and can be translated later. A test fails on a string
 //! literal in the UI modules.
 
-use qs_workbench::map_textures::WadFound;
+use qs_workbench::map_textures::{WadFound, WadState};
 
 /// One string the app shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1249,13 +1249,13 @@ pub fn class_count(shown: usize, total: usize) -> String {
 }
 
 /// A WAD the map names, as the texture browser's summary gives it: its name, and that it was
-/// not found when it was not.
+/// not found, or is no WAD, when so.
 #[must_use]
 pub fn wad_label(wad: &WadFound) -> String {
-    if wad.found {
-        wad.name.clone()
-    } else {
-        format!("{} not found", wad.name)
+    match wad.state {
+        WadState::Read { .. } => wad.name.clone(),
+        WadState::Missing => format!("{} not found", wad.name),
+        WadState::Unreadable => format!("{} is no WAD", wad.name),
     }
 }
 
