@@ -1,0 +1,86 @@
+# The map tool oracles (P6-03): id's qbsp, vis and light from qutils/ of Quake-Tools, and a
+# pinned ericw-tools. cargo xtask oracles maps downloads each file or archive at its pinned
+# commit and refuses it unless its SHA-256 matches; none of them is committed (LIC-7), and none
+# is shipped. qutils/ is read and run here, never ported, until the license review rules on it
+# (docs/porting.md, P4-22); ericw-tools is GPL-2.0-or-later and is only ever run. README.md,
+# "The map tool oracles", describes the build.
+
+[qutils]
+id = "qutils"
+repo = "id-Software/Quake-Tools"
+commit = "c0d1b91c74eb654365ac7755bc837e497caaca73"
+
+[qutils.files]
+"qutils/COMMON/BSPFILE.C" = "fa927fbd64a3cb6277f691a0581ef09258cab1505ace95a22aff32c5717f609c"
+"qutils/COMMON/BSPFILE.H" = "518abf79f17f0424dcd0a77b4b7588b2df1cee7f2f1d27c8d62370a6b10a575a"
+"qutils/COMMON/CMDLIB.C" = "55b4eaf516018fc3335d9d08040b62f888753949cdae7259a5128c8200dc4ec7"
+"qutils/COMMON/CMDLIB.H" = "1d76fa7c1ecedd6077173a76035a4feb901dba67a330a3fec7226475a676ffc2"
+"qutils/COMMON/MATHLIB.C" = "d6f7922962a723f0523a3ead0ee2f00a6b9da645aa1171f044c3a0dfa9ec40c8"
+"qutils/COMMON/MATHLIB.H" = "fbb87ba8337cdd68cdcf13c66bb82f44c5aed2eae0fae1250901ade7b47a7fe9"
+"qutils/QBSP/BRUSH.C" = "ffaebf968da609fb463ddd260808ad8b833b57c9045a33cb1ba064fbce89764d"
+"qutils/QBSP/BSP5.H" = "c31e3392e47f694e8090505280eec53c8f28f1f0850b5f524750a16ca07b74e8"
+"qutils/QBSP/CSG4.C" = "ea9e34f811935a47b4df1e0943d4ffc9f9286452e78bd3184e132f92675e8878"
+"qutils/QBSP/MAP.C" = "af0473aed42ce376f462caf8a09c672d9790ef007c8fc6f9f7537734858b46dd"
+"qutils/QBSP/MAP.H" = "299e9f6216fba147970b5ec614ea4fb6cab9ff4c27da453d60ce359e960caa6b"
+"qutils/QBSP/MERGE.C" = "710100d1b2348641a40ba5771d98ab450e36c1ebb460e0d0369fa87ead47cee6"
+"qutils/QBSP/NODRAW.C" = "8d6636e205aeeac1fb25c816cb48e6105854994c2b4c8214588e502bef354460"
+"qutils/QBSP/OUTSIDE.C" = "ba189cdf12f5b42227090e85d0028afd3b35d917e78a3dc9ea7deb6719739753"
+"qutils/QBSP/PORTALS.C" = "36a021c4f4eb66b4ed35b66cd6db08ce3a7e292dc611cb10610604a95eeb1b13"
+"qutils/QBSP/QBSP.C" = "1617ff6a73e4278ca954f5ef06c78f52185dedefeab892a2c0dc9f01ddedee4c"
+"qutils/QBSP/REGION.C" = "c9c98cf65ae47fa3088f5303984a33498dd080eb02067edcd9fcb643fc6588a7"
+"qutils/QBSP/SOLIDBSP.C" = "9595c2c9d8650316e0144005987cb39ad041a75830776f8213798d33944a6cf2"
+"qutils/QBSP/SURFACES.C" = "60ecf918e027c2cd0e1bb5a35081474f289bf971746507a367fe8d1005ab5a7e"
+"qutils/QBSP/TJUNC.C" = "a9c932d9f0aeccefa8bf9bb711b86a40cc9287dcb99064f47fab5c8ca3e9ef48"
+"qutils/QBSP/WRITEBSP.C" = "ad42bced68531ba9c39769b79285db715ee899bcf3393d5f4db86f6eec2cc32d"
+"qutils/VIS/FLOW.C" = "67a7d48a213fc5464d8171d110dfee6f3f7baab75ae447f6bb283537f4fb34ab"
+"qutils/VIS/SOUNDPVS.C" = "5a1283254da649cf3ccfe591abd1a01e540e1fc3beeb31eb92a8d80e24b12f41"
+"qutils/VIS/VIS.C" = "692c5e10ad82fefaf2130bb2c5e24d05bb6bd24f75a8143a5f19b45350e72bf2"
+"qutils/VIS/VIS.H" = "5d9aafb8385e80c23c4d6117704df4af90738584ceecba5e7c31762c31631864"
+"qutils/LIGHT/ENTITIES.C" = "2d44d699152a047599d94b40cfd4237603ac0f9d41bca3d17750e0d411dc8532"
+"qutils/LIGHT/ENTITIES.H" = "7bf1c8b96cdd6e7bad58b54a329fa3f32ef8e136a3e6496038e7918a1ab684ab"
+"qutils/LIGHT/LIGHT.C" = "af10606c6e46f40013a124bdacc674f3cd1da1044f8811d6978f68b4dde71907"
+"qutils/LIGHT/LIGHT.H" = "21de46e2c6bad362eae5664600e38b3c947d31e7d9607f124f1ee65cf24c0530"
+"qutils/LIGHT/LTFACE.C" = "d7bf02e50b17e3bfbf20e42638fa9d159104677585ed4d0dacff65939bff6d47"
+"qutils/LIGHT/THREADS.C" = "19b8a97cde9dc2b2138984e87181ca261607011e700feb2025125668c951afe3"
+"qutils/LIGHT/THREADS.H" = "d04ebd78ad116a3eb4018d4727ba0b184c55bf94ca9ffc895514260246fbe26d"
+"qutils/LIGHT/TRACE.C" = "9bfb16eaf27e31705bbeb3204b91bb84e9c09bfcd002dac996a43f80a0ed1b24"
+
+# ericw-tools at the commit docs/spec/map.md cites, and its four git submodules at the commits
+# that commit records, each a GitHub archive unpacked into the tree at `into`. `tree` pins the
+# files inside, not the archive's bytes, which GitHub does not promise to keep: the SHA-256 of
+# one line `<path> <SHA-256>` per regular file, its path without the archive's top directory,
+# sorted, joined by newlines.
+[[archive]]
+id = "ericw-tools"
+repo = "ericwa/ericw-tools"
+commit = "36eec1da2a194467e6baac2f444c2dd04b57d266"
+tree = "fdc275f499781bd5fe45c37a7afdd17e1911f6b392bf056eab7900fea036fed1"
+into = ""
+
+[[archive]]
+id = "fmt"
+repo = "fmtlib/fmt"
+commit = "407c905e45ad75fc29bf0f9bb7c5c2fd3475976f"
+tree = "91d2712de509a7c0d34f9a226f46cb021422fa6b8f2b6e342e444fb12246b8fd"
+into = "3rdparty/fmt"
+
+[[archive]]
+id = "jsoncpp"
+repo = "open-source-parsers/jsoncpp"
+commit = "89e2973c754a9c02a49974d839779b151e95afd6"
+tree = "b018408d066042212d0f90da27d56ffaa226e626e330c3c2e439ee711108232e"
+into = "3rdparty/jsoncpp"
+
+[[archive]]
+id = "nanobench"
+repo = "martinus/nanobench"
+commit = "26a9c089ca54927c1658c046749ca1b8fd60422c"
+tree = "931b39be7de9a3cc30b84b5a8103a33b77c9eb7791e7abfd2ad338657ddcfd37"
+into = "3rdparty/nanobench"
+
+[[archive]]
+id = "pareto"
+repo = "alandefreitas/pareto"
+commit = "47f491eeaead1b5a95e27ee3d6bc4c591b0e4462"
+tree = "e19b98432a1e536aebb68d30be817f937bedd30eb7a9e54fd1a0598639d9eb5d"
+into = "3rdparty/pareto"
