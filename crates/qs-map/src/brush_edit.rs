@@ -477,7 +477,8 @@ impl Brush {
                 .map(|p| [p[0] + by[0], p[1] + by[1], p[2] + by[2]]);
             let texdef = match (lock, face.texvecs()) {
                 (TextureLock::Locked, Some([s, t])) => {
-                    let along = |row: [f64; 4]| row[0] * by[0] + row[1] * by[1] + row[2] * by[2];
+                    let [bx, bdy, bz] = by;
+                    let along = |[x, y, z, _]: [f64; 4]| x * bx + y * bdy + z * bz;
                     match *face.texdef() {
                         TexDef::Standard {
                             shift,
@@ -489,13 +490,13 @@ impl Brush {
                             scale,
                         },
                         TexDef::Valve {
-                            s: s_axis,
-                            t: t_axis,
+                            s: [sx, sy, sz, s_shift],
+                            t: [tx, ty, tz, t_shift],
                             rotate,
                             scale,
                         } => TexDef::Valve {
-                            s: [s_axis[0], s_axis[1], s_axis[2], s_axis[3] - along(s)],
-                            t: [t_axis[0], t_axis[1], t_axis[2], t_axis[3] - along(t)],
+                            s: [sx, sy, sz, s_shift - along(s)],
+                            t: [tx, ty, tz, t_shift - along(t)],
                             rotate,
                             scale,
                         },
