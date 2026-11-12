@@ -63,6 +63,12 @@ pub const BSP_VALVE_VERSION: i32 = 30;
 pub const BSP_HEADER_LUMPS: usize = 15;
 /// Bytes in the header, id's `sizeof(dheader_t)` (BSP-1.1).
 pub const BSP_HEADER_SIZE: usize = 124;
+/// Where the header's lump directory starts, after its 32-bit `version` (BSP-1.1).
+const LUMP_DIRECTORY: usize = 4;
+/// Bytes in a directory entry, id's `sizeof(lump_t)`: `fileofs` then `filelen` (BSP-1.1).
+const LUMP_ENTRY: usize = 8;
+/// Where an entry's `filelen` lies, after its 32-bit `fileofs` (BSP-1.1).
+const LUMP_FILELEN: usize = 4;
 
 /// One of the lumps of the header, in the order of the lump table (BSP-1.1): id's
 /// `LUMP_ENTITIES` to `LUMP_MODELS`.
@@ -615,7 +621,26 @@ pub struct Texture<'a> {
     pub animation: Option<Animation>,
 }
 
-impl Texture<'_> {
+impl<'a> Texture<'a> {
+    /// The texture QuakeSpasm's `Mod_LoadWadTexture` puts in place of the texture when its first
+    /// offset is 0: the first of `wads`, last named first, that has it (WAD3-3, WAD3-4.3).
+    fn in_wads(&self, wads: &[qs_wad::MapWad<'a>]) -> Option<Self> {
+        if self.offsets.first() != Some(&0) {
+            return None;
+        }
+        let found = wads.iter().rev().find_map(|wad| wad.texture(&self.name))?;
+        Some(Self {
+            name: found.name,
+            width: found.width,
+            height: found.height,
+            offsets: self.offsets,
+            pixels: found.pixels,
+            palette: found.palette,
+            sky: false,
+            animation: None,
+        })
+    }
+
     /// Mip level `level`'s pixels, `(width >> level) * (height >> level)` bytes at
     /// `offsets[level]`, when they lie in [`Texture::pixels`]. A texture the FitzQuake lineage
     /// read has only level 0 (BSP-20.5); an external one's (offset 0) starts its pixels, which
@@ -1072,10 +1097,13 @@ impl<'a> Bsp<'a> {
         };
         let mut lumps = [Lump::default(); BSP_HEADER_LUMPS];
         for (id, lump) in LumpId::ALL.into_iter().zip(lumps.iter_mut()) {
-            let at = id.index().saturating_mul(8).saturating_add(4);
+            let at = id
+                .index()
+                .saturating_mul(LUMP_ENTRY)
+                .saturating_add(LUMP_DIRECTORY);
             *lump = Lump {
                 fileofs: i32_at(header, at),
-                filelen: i32_at(header, at.saturating_add(4)),
+                filelen: i32_at(header, at.saturating_add(LUMP_FILELEN)),
             };
             let fits = usize::try_from(lump.fileofs)
                 .ok()
@@ -1193,7 +1221,7 @@ impl<'a> Bsp<'a> {
             let version = reader.version;
             let mut texture = load_texture(lump, offset, index, loader, version)?;
             if loader.fitz()
-                && let Some(found) = texture.as_ref().and_then(|t| wad_texture(t, wads))
+                && let Some(found) = texture.as_ref().and_then(|t| t.in_wads(wads))
             {
                 texture = Some(Texture {
                     sky: version != BspVersion::Valve && fitz_sky(&found.name),
@@ -2071,28 +2099,6 @@ fn fitz_texture(
     }))
 }
 
-/// The texture QuakeSpasm's `Mod_LoadWadTexture` puts in place of `texture` when its first
-/// offset is 0: the first of `wads`, last named first, that has it (WAD3-3, WAD3-4.3).
-fn wad_texture<'a>(texture: &Texture<'a>, wads: &[qs_wad::MapWad<'a>]) -> Option<Texture<'a>> {
-    if texture.offsets.first() != Some(&0) {
-        return None;
-    }
-    let found = wads
-        .iter()
-        .rev()
-        .find_map(|wad| wad.texture(&texture.name))?;
-    Some(Texture {
-        name: found.name,
-        width: found.width,
-        height: found.height,
-        offsets: texture.offsets,
-        pixels: found.pixels,
-        palette: found.palette,
-        sky: false,
-        animation: None,
-    })
-}
-
 /// The palette QuakeSpasm copies after a Half-Life texture's pixels (BSP-22.2): from
 /// `pixels / 64 * 85` bytes past the pixels' start, its 16-bit colour count and that many
 /// RGB triples, `2 + colors * 3` bytes, or 2 when the count is past the lump; cut at the end of
@@ -2345,10 +2351,13 @@ pub fn replace_entities(bytes: &[u8], text: &[u8], loader: BspLoader) -> Result<
         i32::try_from(out.len()).map_err(|_| too_big)?;
     }
     for (index, lump) in directory.iter().enumerate() {
-        let at = index.saturating_mul(8).saturating_add(4);
-        for (offset, value) in [(at, lump.fileofs), (at.saturating_add(4), lump.filelen)] {
+        let at = index
+            .saturating_mul(LUMP_ENTRY)
+            .saturating_add(LUMP_DIRECTORY);
+        let filelen = at.saturating_add(LUMP_FILELEN);
+        for (offset, value) in [(at, lump.fileofs), (filelen, lump.filelen)] {
             if let Some(slot) = offset
-                .checked_add(4)
+                .checked_add(size_of::<i32>())
                 .and_then(|end| out.get_mut(offset..end))
             {
                 slot.copy_from_slice(&value.to_le_bytes());

@@ -11,10 +11,24 @@
 
 use core::fmt;
 
-use crate::{LumpName, WAD_ENTRY_SIZE, WAD_HEADER_SIZE, WAD_MIPTEX_HEADER_SIZE, w_cleanup_name};
+use crate::{
+    ENTRY_COMPRESSION, ENTRY_DISKSIZE, ENTRY_NAME, ENTRY_SIZE, ENTRY_TYPE, HEADER_INFOTABLEOFS,
+    HEADER_NUMLUMPS, LumpName, WAD_ENTRY_SIZE, WAD_HEADER_SIZE, WAD_MAGIC, WAD_MIPTEX_HEADER_SIZE,
+    WAD_NAME_SIZE, w_cleanup_name,
+};
 
 /// The four bytes a WAD3 file starts with, QuakeSpasm's `WADID_VALVE` (WAD3-1.1).
 pub const WAD3_MAGIC: [u8; 4] = *b"WAD3";
+
+/// A texture's width and height must be multiples of 16: `Texture %s (%d x %d) is not 16
+/// aligned` (WAD3-3).
+const ALIGN_MASK: u32 = 15;
+/// `pixels / 64 * 85`: the bytes of all four mip levels for every 64 pixels of level 0
+/// (WAD3-3.3).
+const MIP_PIXELS: i64 = 64;
+const MIP_BYTES: i64 = 85;
+/// The bytes of one colour of a WAD3 palette, `colors * 3` (WAD3-3.3).
+const COLOR_BYTES: i64 = 3;
 
 /// A Half-Life texture with its own palette, QuakeSpasm's `TYP_MIPTEX_PALETTE` (WAD3-3.2).
 pub const WAD_TYP_MIPTEX_PALETTE: u8 = 67;
@@ -117,13 +131,13 @@ impl<'a> MapWad<'a> {
     )]
     pub fn read(bytes: &'a [u8]) -> Result<Self, MapWadError> {
         let header = bytes.get(..WAD_HEADER_SIZE).ok_or(MapWadError::NotValid)?;
-        let kind = match header.get(..4) {
-            Some(b"WAD2") => WadKind::Wad2,
+        let kind = match header.get(..WAD_MAGIC.len()) {
+            Some(id) if id == WAD_MAGIC => WadKind::Wad2,
             Some(id) if id == WAD3_MAGIC => WadKind::Wad3,
             _ => return Err(MapWadError::NotValid),
         };
-        let numlumps = le_i32(header, 4);
-        let infotableofs = le_i32(header, 8);
+        let numlumps = le_i32(header, HEADER_NUMLUMPS);
+        let infotableofs = le_i32(header, HEADER_INFOTABLEOFS);
         if numlumps < 0 || infotableofs < 0 {
             return Err(MapWadError::BadDirectory {
                 numlumps,
@@ -145,8 +159,8 @@ impl<'a> MapWad<'a> {
             .take(usize::try_from(numlumps).unwrap_or(0))
         {
             let mut filepos = i64::from(le_i32(raw, 0));
-            let disksize = i64::from(le_i32(raw, 4));
-            let mut size = i64::from(le_i32(raw, 8));
+            let disksize = i64::from(le_i32(raw, ENTRY_DISKSIZE));
+            let mut size = i64::from(le_i32(raw, ENTRY_SIZE));
             // WAD3-2.3: `W_AddWadFile`'s fixes, in its order.
             if filepos + size > length && filepos + disksize <= length {
                 size = disksize;
@@ -160,11 +174,14 @@ impl<'a> MapWad<'a> {
                 }
             }
             entries.push(MapWadEntry {
-                name: w_cleanup_name(raw.get(16..32).unwrap_or_default()),
+                name: w_cleanup_name(
+                    raw.get(ENTRY_NAME..ENTRY_NAME.saturating_add(WAD_NAME_SIZE))
+                        .unwrap_or_default(),
+                ),
                 filepos,
                 size,
-                ty: raw.get(12).copied().unwrap_or(0),
-                compression: raw.get(13).copied().unwrap_or(0),
+                ty: raw.get(ENTRY_TYPE).copied().unwrap_or(0),
+                compression: raw.get(ENTRY_COMPRESSION).copied().unwrap_or(0),
             });
         }
         Ok(Self {
@@ -218,7 +235,7 @@ impl<'a> MapWad<'a> {
         if header.width == 0 || header.height == 0 {
             return None;
         }
-        if header.width & 15 != 0 || header.height & 15 != 0 {
+        if header.width & ALIGN_MASK != 0 || header.height & ALIGN_MASK != 0 {
             return None;
         }
         // `pixels = mt.width * mt.height` in an int: a product that does not fit is none.
@@ -226,13 +243,13 @@ impl<'a> MapWad<'a> {
         if i32::try_from(pixels).is_err() {
             return None;
         }
-        let mips = pixels / 64 * 85;
+        let mips = pixels / MIP_PIXELS * MIP_BYTES;
         let pixels_pos = entry.filepos + i64::from(WAD_MIPTEX_HEADER_SIZE_I32);
         let (mut palette, lump_bytes) = if pal {
             // WAD3-3.3: the count when `pixels / 64 * 85 + 2 <= info->size`.
             let mut palette = 2_i64;
             if mips + 2 <= entry.size {
-                palette += i64::from(self.u16_at(pixels_pos + mips)) * 3;
+                palette += i64::from(self.u16_at(pixels_pos + mips)) * COLOR_BYTES;
             }
             (palette, mips + palette)
         } else {
@@ -293,7 +310,7 @@ fn len_i64(bytes: &[u8]) -> i64 {
 /// The signed little-endian 32-bit integer at `offset`, or 0 past the end of `bytes`.
 fn le_i32(bytes: &[u8], offset: usize) -> i32 {
     bytes
-        .get(offset..offset.saturating_add(4))
+        .get(offset..offset.saturating_add(size_of::<i32>()))
         .and_then(|b| <[u8; 4]>::try_from(b).ok())
         .map_or(0, i32::from_le_bytes)
 }

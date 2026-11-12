@@ -10,21 +10,32 @@ const MAX_QPATH: usize = 64;
 const TOKEN_SIZE: usize = 1024;
 /// The size of `Mod_LoadWadFiles`' `key` buffer, its NUL included.
 const KEY_SIZE: usize = 128;
+/// The first byte a signed `char` holds as negative, which `COM_ParseEx` skips as whitespace.
+const SIGNED_CHAR_NEGATIVE: u8 = 0x80;
 /// What `COM_FileBase` gives for a name with too short a base.
 const NO_BASE: &[u8] = b"?model?";
 
 /// The `wad` key of the first entity of `entities`, as `Mod_LoadWadFiles` reads it (WAD3-4.1):
 /// the first key that is `wad` once a leading `_` and any trailing spaces are removed; `None`
 /// when the text does not parse that far or has no such key.
+/// What `COM_ParseEx` does with a token longer than `com_token`, its `cpe_mode_t`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Overflow {
+    /// `CPE_NOTRUNC`: `// return parse error in case of overflow`.
+    NoTrunc,
+    /// `CPE_ALLOWTRUNC`: `// truncate com_token in case of overflow`.
+    AllowTrunc,
+}
+
 #[must_use]
 pub fn wad_key(entities: &[u8]) -> Option<Vec<u8>> {
     let mut at = 0;
-    let open = parse(entities, &mut at, true)?;
+    let open = parse(entities, &mut at, Overflow::NoTrunc)?;
     if open.first() != Some(&b'{') {
         return None;
     }
     loop {
-        let token = parse(entities, &mut at, true)?;
+        let token = parse(entities, &mut at, Overflow::NoTrunc)?;
         if token.first() == Some(&b'}') {
             return None;
         }
@@ -36,7 +47,7 @@ pub fn wad_key(entities: &[u8]) -> Option<Vec<u8>> {
         while key.last() == Some(&b' ') {
             key.pop();
         }
-        let value = parse(entities, &mut at, false)?;
+        let value = parse(entities, &mut at, Overflow::AllowTrunc)?;
         if key == b"wad" {
             return Some(value);
         }
@@ -85,11 +96,12 @@ fn file_base(name: &[u8]) -> Vec<u8> {
 }
 
 /// One token as QuakeSpasm's `COM_ParseEx` reads it from `text` at `*at`, moving `*at` past
-/// it; `None` at the end of the text, or for a key (`no_trunc`) longer than `com_token`.
-fn parse(text: &[u8], at: &mut usize, no_trunc: bool) -> Option<Vec<u8>> {
+/// it; `None` at the end of the text, or with [`Overflow::NoTrunc`] for a token longer than
+/// `com_token`.
+fn parse(text: &[u8], at: &mut usize, overflow: Overflow) -> Option<Vec<u8>> {
     let byte = |i: usize| text.get(i).copied().unwrap_or(0);
     // `char` is signed: a byte of 0x80 or more is below ' ' and skipped as whitespace.
-    let white = |c: u8| c <= b' ' || c >= 0x80;
+    let white = |c: u8| c <= b' ' || c >= SIGNED_CHAR_NEGATIVE;
     loop {
         while white(byte(*at)) {
             if byte(*at) == 0 {
@@ -120,11 +132,11 @@ fn parse(text: &[u8], at: &mut usize, no_trunc: bool) -> Option<Vec<u8>> {
     let push = |token: &mut Vec<u8>, c: u8| -> Option<()> {
         if token.len() < TOKEN_SIZE - 1 {
             token.push(c);
-            Some(())
-        } else if no_trunc {
-            None
-        } else {
-            Some(())
+            return Some(());
+        }
+        match overflow {
+            Overflow::NoTrunc => None,
+            Overflow::AllowTrunc => Some(()),
         }
     };
     let c = byte(*at);
