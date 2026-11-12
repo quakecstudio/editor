@@ -419,3 +419,33 @@ fn a_written_texture_reads_back_byte_for_byte() {
     let start = usize::try_from(entry.filepos).unwrap();
     assert_eq!(&bytes[start..start + encoded.len()], encoded.as_slice());
 }
+
+// spec WAD-7.7: in 4 by 4 blocks, 8 transparent pixels of 16 make the block transparent and 7
+// do not; 9 fullbright of 16 opaque take the fullbright mean and 8 do not
+#[test]
+fn mip_blocks_split_at_half() {
+    let palette = palette();
+    let bright = of(&palette, 240);
+    // Block columns of level 2: 0 has 8 transparent, 1 has 7, 2 has 9 fullbright, 3 has 8.
+    let counted = |x: u32, y: u32| (y % 4) * 4 + x % 4;
+    let pixels = image(16, |x, y| match x / 4 {
+        0 if y < 4 && counted(x, y) < 8 => [0, 0, 0, 0],
+        1 if y < 4 && counted(x, y) < 7 => [0, 0, 0, 0],
+        2 if y < 4 && counted(x, y) < 9 => bright,
+        3 if y < 4 && counted(x, y) < 8 => bright,
+        _ => [102, 102, 102, 255],
+    });
+    let mask: Vec<bool> = (0..256_u32)
+        .map(|at| {
+            let (x, y) = (at % 16, at / 16);
+            y < 4 && matches!(x / 4, 2 | 3) && counted(x, y) < 8 + (x / 4 == 2) as u32
+        })
+        .collect();
+    let fence = encode("{a", &pixels, Dither::None, Some(&mask)).unwrap();
+    let level2 = &fence[40 + 256 + 64..40 + 256 + 64 + 16];
+    let grey = palette.nearest([102, 102, 102], 0..=223).get();
+    assert_eq!(level2[0], 255, "8 of 16 transparent");
+    assert_eq!(level2[1], grey, "7 of 16 transparent");
+    assert_eq!(level2[2], 240, "9 of 16 fullbright");
+    assert_eq!(level2[3], grey, "8 of 16 fullbright");
+}
