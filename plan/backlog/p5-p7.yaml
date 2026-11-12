@@ -789,6 +789,226 @@ groups:
     - 'A map with external instances compiles with qmap-bsp to the same geometry as ericw-tools qbsp in the differential suite'
     verify:
     - 'Differential compile; UI snapshot tests'
+  - key: P6-24
+    title: 'Bring qs-client to CONV-17'
+    labels:
+    - L4-bridges
+    - area:process
+    - type:chore
+    size: L
+    reqs:
+    - CONV-17
+    depends:
+    - P5-19
+    deliverable:
+    - 'The 391 findings of P6-24 in docs/audits/conv-17-since-653.md (13 bool-argument, 7 free-fn-on-type, 4 bare-id, 367 magic-number), and its 1 findings no check finds, in qs-client, each changed as the audit proposes'
+    - 'docs/audits/conv-17-baseline.tsv without the 391 lines those findings are'
+    acceptance:
+    - 'Behaviour is unchanged: every test passes as before, with no test changed but where a signature it calls changed'
+    - 'No ratchet is lowered (coverage, mutation, the spec-citation baseline)'
+    - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 391 lines and adds none, and cargo xtask conventions passes'
+    verify:
+    - 'cargo xtask ci; the audit''s P6-24 section checked off against the diff'
+  - key: P6-25
+    title: 'Bring qs-sim to CONV-17'
+    labels:
+    - L4-bridges
+    - area:process
+    - type:chore
+    size: M
+    reqs:
+    - CONV-17
+    depends:
+    - P5-19
+    deliverable:
+    - 'The 126 findings of P6-25 in docs/audits/conv-17-since-653.md (10 bool-argument, 2 string-error, 11 free-fn-on-type, 12 bare-id, 91 magic-number), and its 4 findings no check finds, in qs-sim, each changed as the audit proposes'
+    - 'docs/audits/conv-17-baseline.tsv without the 126 lines those findings are'
+    acceptance:
+    - 'Behaviour is unchanged: every test passes as before, with no test changed but where a signature it calls changed'
+    - 'No ratchet is lowered (coverage, mutation, the spec-citation baseline)'
+    - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 126 lines and adds none, and cargo xtask conventions passes'
+    verify:
+    - 'cargo xtask ci; the audit''s P6-25 section checked off against the diff'
+  - key: P6-26
+    title: 'Bring the VM, edicts, builtins and traces to CONV-17'
+    labels:
+    - L1-vm
+    - area:process
+    - type:chore
+    size: M
+    reqs:
+    - CONV-17
+    depends:
+    - P5-19
+    deliverable:
+    - 'The 102 findings of P6-26 in docs/audits/conv-17-since-653.md (7 bool-argument, 12 free-fn-on-type, 10 bare-id, 73 magic-number), and its 4 findings no check finds, in qc-vm, qc-edict, qc-builtins, qc-trace, each changed as the audit proposes'
+    - 'docs/audits/conv-17-baseline.tsv without the 102 lines those findings are'
+    acceptance:
+    - 'Behaviour is unchanged: every test passes as before, with no test changed but where a signature it calls changed'
+    - 'No ratchet is lowered (coverage, mutation, the spec-citation baseline)'
+    - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 102 lines and adds none, and cargo xtask conventions passes'
+    verify:
+    - 'cargo xtask ci; the audit''s P6-26 section checked off against the diff'
+  - key: P6-27
+    title: 'Bring the lexer, preprocessor, syntax tree and project graph to CONV-17'
+    labels:
+    - L2-syntax
+    - area:process
+    - type:chore
+    size: S
+    reqs:
+    - CONV-17
+    depends:
+    - P5-19
+    deliverable:
+    - 'The 3 findings of P6-27 in docs/audits/conv-17-since-653.md (1 bool-argument, 1 free-fn-on-type, 1 magic-number), in qc-lexer, qc-preproc, qc-syntax, qc-project, each changed as the audit proposes'
+    - 'docs/audits/conv-17-baseline.tsv without the 3 lines those findings are'
+    acceptance:
+    - 'Behaviour is unchanged: every test passes as before, with no test changed but where a signature it calls changed'
+    - 'No ratchet is lowered (coverage, mutation, the spec-citation baseline)'
+    - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 3 lines and adds none, and cargo xtask conventions passes'
+    verify:
+    - 'cargo xtask ci; the audit''s P6-27 section checked off against the diff'
+  - key: P6-28
+    title: 'Bring the semantic model and the IDE layer to CONV-17'
+    labels:
+    - L3-semantics
+    - area:process
+    - type:chore
+    size: S
+    reqs:
+    - CONV-17
+    depends:
+    - P5-19
+    deliverable:
+    - 'The 44 findings of P6-28 in docs/audits/conv-17-since-653.md (10 bool-argument, 7 free-fn-on-type, 5 bare-id, 22 magic-number), and its 2 findings no check finds, in qc-sema, qc-ide, qc-engines, each changed as the audit proposes'
+    - 'docs/audits/conv-17-baseline.tsv without the 44 lines those findings are'
+    acceptance:
+    - 'Behaviour is unchanged: every test passes as before, with no test changed but where a signature it calls changed'
+    - 'No ratchet is lowered (coverage, mutation, the spec-citation baseline)'
+    - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 44 lines and adds none, and cargo xtask conventions passes'
+    verify:
+    - 'cargo xtask ci; the audit''s P6-28 section checked off against the diff'
+  - key: P6-29
+    title: 'Bring the renderer and the editor view to CONV-17'
+    labels:
+    - L7-ui
+    - area:process
+    - type:chore
+    size: M
+    reqs:
+    - CONV-17
+    depends:
+    - P5-19
+    deliverable:
+    - 'The 114 findings of P6-29 in docs/audits/conv-17-since-653.md (9 bool-argument, 23 free-fn-on-type, 3 bare-id, 79 magic-number), and its 8 findings no check finds, in qs-render, qs-editor-view, each changed as the audit proposes'
+    - 'docs/audits/conv-17-baseline.tsv without the 114 lines those findings are'
+    acceptance:
+    - 'Behaviour is unchanged: every test passes as before, with no test changed but where a signature it calls changed'
+    - 'No ratchet is lowered (coverage, mutation, the spec-citation baseline)'
+    - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 114 lines and adds none, and cargo xtask conventions passes'
+    verify:
+    - 'cargo xtask ci; the audit''s P6-29 section checked off against the diff'
+  - key: P6-30
+    title: 'Bring the file formats, the file system and git to CONV-17'
+    labels:
+    - L0-formats
+    - area:process
+    - type:chore
+    size: S
+    reqs:
+    - CONV-17
+    depends:
+    - P5-19
+    deliverable:
+    - 'The 37 findings of P6-30 in docs/audits/conv-17-since-653.md (2 free-fn-on-type, 4 bare-id, 31 magic-number), and its 2 findings no check finds, in qs-bsp, qs-mdl, qs-wad, qs-pak, qs-map, qs-vfs, qs-paths, qs-checkpoint, qs-git, qc-types, qc-progs, each changed as the audit proposes'
+    - 'docs/audits/conv-17-baseline.tsv without the 37 lines those findings are'
+    acceptance:
+    - 'Behaviour is unchanged: every test passes as before, with no test changed but where a signature it calls changed'
+    - 'No ratchet is lowered (coverage, mutation, the spec-citation baseline)'
+    - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 37 lines and adds none, and cargo xtask conventions passes'
+    verify:
+    - 'cargo xtask ci; the audit''s P6-30 section checked off against the diff'
+  - key: P6-31
+    title: 'Bring the apps to CONV-17'
+    labels:
+    - apps
+    - area:process
+    - type:chore
+    size: M
+    reqs:
+    - CONV-17
+    depends:
+    - P5-19
+    deliverable:
+    - 'The 94 findings of P6-31 in docs/audits/conv-17-since-653.md (19 bool-argument, 18 free-fn-on-type, 6 bare-id, 51 magic-number), and its 1 findings no check finds, in desktop, quakec-engine, cli, lsp, each changed as the audit proposes'
+    - 'docs/audits/conv-17-baseline.tsv without the 94 lines those findings are'
+    acceptance:
+    - 'Behaviour is unchanged: every test passes as before, with no test changed but where a signature it calls changed'
+    - 'No ratchet is lowered (coverage, mutation, the spec-citation baseline)'
+    - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 94 lines and adds none, and cargo xtask conventions passes'
+    verify:
+    - 'cargo xtask ci; the audit''s P6-31 section checked off against the diff'
+  - key: P6-32
+    title: 'Bring the compiler, the engine bridge, its protocol and sound to CONV-17'
+    labels:
+    - L4-bridges
+    - area:process
+    - type:chore
+    size: M
+    reqs:
+    - CONV-17
+    depends:
+    - P5-19
+    deliverable:
+    - 'The 61 findings of P6-32 in docs/audits/conv-17-since-653.md (5 bool-argument, 3 free-fn-on-type, 9 bare-id, 44 magic-number), and its 2 findings no check finds, in qc-codegen, qs-engine, qs-bridge, qs-sound, each changed as the audit proposes'
+    - 'docs/audits/conv-17-baseline.tsv without the 61 lines those findings are'
+    acceptance:
+    - 'Behaviour is unchanged: every test passes as before, with no test changed but where a signature it calls changed'
+    - 'No ratchet is lowered (coverage, mutation, the spec-citation baseline)'
+    - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 61 lines and adds none, and cargo xtask conventions passes'
+    verify:
+    - 'cargo xtask ci; the audit''s P6-32 section checked off against the diff'
+  - key: P6-33
+    title: 'Bring the workbench, commands, templates and layout to CONV-17'
+    labels:
+    - L5-commands
+    - area:process
+    - type:chore
+    size: S
+    reqs:
+    - CONV-17
+    depends:
+    - P5-19
+    deliverable:
+    - 'The 28 findings of P6-33 in docs/audits/conv-17-since-653.md (4 bool-argument, 1 string-error, 8 free-fn-on-type, 13 bare-id, 2 magic-number), and its 3 findings no check finds, in qs-workbench, qs-commands, qs-templates, qs-layout, each changed as the audit proposes'
+    - 'docs/audits/conv-17-baseline.tsv without the 28 lines those findings are'
+    acceptance:
+    - 'Behaviour is unchanged: every test passes as before, with no test changed but where a signature it calls changed'
+    - 'No ratchet is lowered (coverage, mutation, the spec-citation baseline)'
+    - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 28 lines and adds none, and cargo xtask conventions passes'
+    verify:
+    - 'cargo xtask ci; the audit''s P6-33 section checked off against the diff'
+  - key: P6-34
+    title: 'Bring the agent, MCP and the model providers to CONV-17'
+    labels:
+    - L6-agent
+    - area:process
+    - type:chore
+    size: S
+    reqs:
+    - CONV-17
+    depends:
+    - P5-19
+    deliverable:
+    - 'The 33 findings of P6-34 in docs/audits/conv-17-since-653.md (8 string-error, 7 free-fn-on-type, 1 bare-id, 17 magic-number), and its 4 findings no check finds, in qs-agent, qs-mcp, qs-models, each changed as the audit proposes'
+    - 'docs/audits/conv-17-baseline.tsv without the 33 lines those findings are'
+    acceptance:
+    - 'Behaviour is unchanged: every test passes as before, with no test changed but where a signature it calls changed'
+    - 'No ratchet is lowered (coverage, mutation, the spec-citation baseline)'
+    - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 33 lines and adds none, and cargo xtask conventions passes'
+    verify:
+    - 'cargo xtask ci; the audit''s P6-34 section checked off against the diff'
   - key: P6-14
     title: Phase 6 gate review
     labels:
@@ -823,6 +1043,17 @@ groups:
     - P6-22
     - P6-23
     - P6-13
+    - P6-24
+    - P6-25
+    - P6-26
+    - P6-27
+    - P6-28
+    - P6-29
+    - P6-30
+    - P6-31
+    - P6-32
+    - P6-33
+    - P6-34
     deliverable:
     - docs/gates/p6.md
     acceptance:
