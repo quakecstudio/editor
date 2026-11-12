@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Command, NoParams, Outcome, Registry};
 use qs_map::Compiler;
-use qs_vfs::{Location, StdFs, Vfs};
+use qs_vfs::{FS_GAMENAME, Location, StdFs, Vfs};
 use qs_wad::texture::{DecodedTexture, Palette};
 use qs_wad::{MipTexHeader, WAD_TYP_MIPTEX, Wad};
 use schemars::JsonSchema;
@@ -24,7 +24,50 @@ use crate::{HasWorkbench, WorkbenchError};
 pub const MAP_TEXTURES: &str = "map.textures";
 
 /// The game's palette, `gfx/palette.lmp` (REND-1.8).
-const PALETTE_LMP: &[u8] = b"gfx/palette.lmp";
+const PALETTE_LMP: &str = "gfx/palette.lmp";
+
+/// The game at a base directory: its search path, when it can be built, and the directory a
+/// loose file is looked for in.
+struct Game<'a> {
+    base: &'a Path,
+    vfs: Option<Vfs<StdFs>>,
+}
+
+impl<'a> Game<'a> {
+    fn at(base: &'a Path) -> Self {
+        let args = base.to_string_lossy().into_owned();
+        let vfs = Vfs::new(StdFs, &["-basedir", args.as_str()], ".").ok();
+        Self { base, vfs }
+    }
+
+    /// The game directory a loose file is read from: the search path's, else `id1` when the
+    /// search path cannot be built.
+    fn dir(&self) -> PathBuf {
+        self.vfs.as_ref().map_or_else(
+            || self.base.join(FS_GAMENAME),
+            |vfs| PathBuf::from(vfs.game_dir()),
+        )
+    }
+
+    /// The file `name`: on the search path, else loose in the game directory; with its host
+    /// path when it is a file of its own. A shareware search path finds no loose file in a
+    /// directory (FS-3.4), which a map's WAD or the palette may be, so the game directory is
+    /// tried too.
+    fn file(&self, name: &str) -> Option<(Option<PathBuf>, Vec<u8>)> {
+        if let Some(vfs) = &self.vfs
+            && let Some(file) = vfs.find(name.as_bytes())
+            && let Ok(bytes) = vfs.read(&file)
+        {
+            let host = match file.location() {
+                Location::Loose(path) => Some(path.clone()),
+                Location::Entry(_) => None,
+            };
+            return Some((host, bytes));
+        }
+        let path = self.dir().join(name);
+        std::fs::read(&path).ok().map(|bytes| (Some(path), bytes))
+    }
+}
 
 /// Where a texture of the browser comes from.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -101,7 +144,7 @@ fn find_wad(
     name: &str,
     project: Option<&Path>,
     map_dir: Option<&Path>,
-    game: Option<(&Path, &Vfs<StdFs>)>,
+    game: Option<&Game<'_>>,
 ) -> Option<(Option<PathBuf>, Vec<u8>)> {
     let path = Path::new(name);
     let mut candidates = Vec::new();
@@ -110,21 +153,14 @@ fn find_wad(
     } else {
         candidates.extend(project.map(|root| root.join(path)));
         candidates.extend(map_dir.map(|dir| dir.join(path)));
-        candidates.extend(game.map(|(base, _)| base.join(path)));
+        candidates.extend(game.map(|game| game.base.join(path)));
     }
     for candidate in candidates {
         if let Ok(bytes) = std::fs::read(&candidate) {
             return Some((Some(candidate), bytes));
         }
     }
-    let (_, vfs) = game?;
-    let file = vfs.find(name.as_bytes())?;
-    let bytes = vfs.read(&file).ok()?;
-    let host = match file.location() {
-        Location::Loose(path) => Some(path.clone()),
-        Location::Entry(_) => None,
-    };
-    Some((host, bytes))
+    game?.file(name)
 }
 
 impl TextureSources {
@@ -133,16 +169,12 @@ impl TextureSources {
     /// game at `game`, the base directory holding `id1`.
     #[must_use]
     pub fn load(document: &MapDocument, project: Option<&Path>, game: Option<&Path>) -> Self {
-        let vfs = game.and_then(|base| {
-            let base = base.to_string_lossy().into_owned();
-            Vfs::new(StdFs, &["-basedir", base.as_str()], ".").ok()
-        });
-        let game_files = game.zip(vfs.as_ref());
+        let game = game.map(Game::at);
         let map_dir = document.path().parent();
         let mut wads = Vec::new();
         for raw in document.file().wad_paths(Compiler::EricwTools) {
             let name = String::from_utf8_lossy(&raw).into_owned();
-            let read = find_wad(&name, project, map_dir, game_files);
+            let read = find_wad(&name, project, map_dir, game.as_ref());
             let (path, bytes) = match read {
                 Some((path, bytes)) if Wad::read(&bytes).is_ok() => (path, Some(bytes)),
                 Some((path, _)) => (path, None),
@@ -163,10 +195,10 @@ impl TextureSources {
             MapSource::Bsp(bytes) => Some(bytes.clone()),
             MapSource::Map => None,
         };
-        let palette = vfs
+        let palette = game
             .as_ref()
-            .and_then(|vfs| vfs.load(PALETTE_LMP).ok().flatten())
-            .and_then(|file| Palette::from_lmp(file.bytes()).ok());
+            .and_then(|game| game.file(PALETTE_LMP))
+            .and_then(|(_, bytes)| Palette::from_lmp(&bytes).ok());
         Self { wads, bsp, palette }
     }
 
