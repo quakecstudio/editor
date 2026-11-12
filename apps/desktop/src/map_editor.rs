@@ -17,12 +17,14 @@ use eframe::egui::{
 use qs_render::Camera;
 use qs_workbench::entity_classes::ClassInfo;
 use qs_workbench::map_edit::{
-    EntityIndex, EntityKeys, FlagChange, GameMode, Keep, LayerInfo, MapDocument, MapRevision, Skill,
+    EntityIndex, EntityKeys, FlagChange, GameMode, Keep, LayerInfo, MapDocument, MapRevision,
+    OutlineRow, Skill,
 };
 
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
 use crate::map_groups::{GroupAction, layers_ui, overview_keys, selection_ui};
+use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
 use crate::strings::{Text, also_selected};
 use crate::theme::{Theme, Token};
@@ -50,6 +52,9 @@ const PLACE_DISTANCE: f32 = 256.0;
 const LINK_END: f32 = 3.0;
 /// The width of the new key's and new value's fields, in points.
 const NEW_PAIR_WIDTH: f32 = 90.0;
+/// The map units the camera stands back from a framed box beyond that, so a small entity is not
+/// right against the eye.
+const FRAME_MARGIN: f32 = 64.0;
 /// The nearest a line is drawn, in map units, as the renderer's near plane.
 const NEAR: f32 = 4.0;
 
@@ -79,6 +84,8 @@ pub enum MapAction {
     Filter(ShowFilter),
     /// Hide, isolate or lock entities, or change a layer (P5-14).
     Group(GroupAction),
+    /// Move an entity or group into a layer or group, the world for the default layer (P5-16).
+    MoveTo(EntityIndex, EntityIndex),
     /// Remove a key of an entity.
     RemoveKey(EntityIndex, String),
     /// Save the map.
@@ -208,6 +215,10 @@ pub struct MapEditor {
     kept_out: (BTreeSet<EntityIndex>, Option<MapRevision>),
     /// The map's layers, for the Properties panel.
     layers: Vec<LayerInfo>,
+    /// The map outline in the left panel (P5-16).
+    outline: OutlineView,
+    /// The entity to frame in the view on its next frame, chosen in the outline.
+    frame: Option<EntityIndex>,
     /// Where each entity's centre was drawn in the last frame, where a link dragged from it
     /// starts.
     centres: Vec<(EntityIndex, Pos2)>,
@@ -254,6 +265,41 @@ impl MapEditor {
     /// Takes why the last map command asked for was refused, or none when it ran.
     pub fn set_refused(&mut self, refused: Option<String>) {
         self.refused = refused;
+    }
+
+    /// The filter to read the outline with, when it was read for another revision or filter.
+    #[must_use]
+    pub fn outline_stale(&self, revision: MapRevision) -> Option<String> {
+        self.outline.stale(revision)
+    }
+
+    /// Takes the outline's rows, read at `revision` with `filter`.
+    pub fn set_outline(&mut self, rows: Vec<OutlineRow>, revision: MapRevision, filter: String) {
+        self.outline.set_rows(rows, revision, filter);
+    }
+
+    /// Draws the map outline, `selected` marked; what it asked for. A row chosen is selected
+    /// and framed in the view on its next frame.
+    pub fn outline_ui(
+        &mut self,
+        ui: &mut Ui,
+        theme: &Theme,
+        selected: Option<EntityIndex>,
+    ) -> Vec<MapAction> {
+        let mut actions = Vec::new();
+        for action in self.outline.ui(ui, theme, selected) {
+            match action {
+                OutlineAction::Choose(entity) => {
+                    self.frame = Some(entity);
+                    self.also.clear();
+                    actions.push(MapAction::Select(Some(entity)));
+                }
+                OutlineAction::MoveTo(entity, into) => {
+                    actions.push(MapAction::MoveTo(entity, into))
+                }
+            }
+        }
+        actions
     }
 
     /// Takes the map's layers (P5-14).
@@ -397,6 +443,12 @@ impl MapEditor {
         let link_key = self.link_key();
         let camera = self.camera.get_or_insert_with(|| start_camera(document));
         let rect = ui.available_rect_before_wrap();
+        if let Some(entity) = self.frame.take()
+            && let Some(shape) = self.scene.entities.iter().find(|s| s.index == entity)
+        {
+            let aspect = rect.width() / rect.height().max(1.0);
+            camera.frame(shape.bounds, aspect, FRAME_MARGIN);
+        }
         let response = ui.interact(
             rect,
             egui::Id::new(core::any::TypeId::of::<Self>()),

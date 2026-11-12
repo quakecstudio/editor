@@ -3,7 +3,8 @@
 //! `cargo xtask map-corpus <dir>...`: reads every `.map` file under each directory with
 //! `qs-map` and checks that it writes back byte for byte (P5-02, MAP-1 to MAP-7). It also
 //! reports what id's qbsp would make of each file (MAP-5.5: a Valve 220 map stops it) and how
-//! many diagnostics the reader gives, which do not fail the run.
+//! many diagnostics the reader gives, which do not fail the run. Each map's outline (P5-16,
+//! MAP-31) must hold every entity, group and layer once.
 //!
 //! The maps come from `cargo xtask corpus fetch <id>...`, which writes them to
 //! `<cache>/map/<id>.map`.
@@ -12,6 +13,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use qs_map::{MapFile, TexDef, qbsp};
+use qs_workbench::map_edit::OutlineRow;
+use qs_workbench::{Config, FsLoader, Workbench};
 
 /// Every `.map` file under `dir`, sorted.
 fn maps(dir: &Path) -> Result<Vec<PathBuf>, String> {
@@ -58,6 +61,7 @@ fn check(path: &Path) -> Result<String, String> {
             );
         }
     }
+    outline_once(path, map.entities.len())?;
     let qbsp = match qbsp::load_map_file(&text) {
         Ok(read) => format!("qbsp reads it ({} warnings)", read.warnings.len()),
         Err(error) => format!("qbsp stops: {error}"),
@@ -67,6 +71,30 @@ fn check(path: &Path) -> Result<String, String> {
         map.entities.len(),
         map.check().len()
     ))
+}
+
+/// Checks that the outline of the map at `path`, opened in the workbench, holds each of its
+/// `count` entities once (P5-16).
+fn outline_once(path: &Path, count: usize) -> Result<(), String> {
+    fn walk(rows: &[OutlineRow], seen: &mut Vec<usize>) {
+        for row in rows {
+            seen.push(row.entity.get());
+            walk(&row.rows, seen);
+        }
+    }
+    let mut workbench = Workbench::new(FsLoader, Config::default());
+    let document = workbench.open_map(path).map_err(|e| e.to_string())?;
+    let mut seen = Vec::new();
+    walk(&document.outline(None), &mut seen);
+    seen.sort_unstable();
+    let expected: Vec<usize> = (0..count).collect();
+    if seen != expected {
+        return Err(format!(
+            "the outline holds {} rows for {count} entities, each not once",
+            seen.len()
+        ));
+    }
+    Ok(())
 }
 
 /// `cargo xtask map-corpus <dir>...`.

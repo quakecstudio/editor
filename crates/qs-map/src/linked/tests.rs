@@ -528,3 +528,60 @@ fn copies_take_the_replaced_entities_place() {
     assert_eq!(value(&empty, 2, "_tb_group").as_deref(), Some("1"));
     assert_eq!(value(&empty, 3, "_tb_id").as_deref(), Some("2"));
 }
+
+// spec MAP-9.2: an entity is in the layer its `_tb_layer` names before the group its
+// `_tb_group` names, each only when the map has it; groups that name each other are in no
+// container, so TrenchBroom's default layer holds them
+#[test]
+fn each_entity_has_one_parent_layer_first() {
+    let mut map = map();
+    map.entities[2].set(b"_tb_layer", b"3").unwrap();
+    map.entities[4].set(b"_tb_layer", b"99").unwrap();
+    let parents = map.parents();
+    let at = |place: usize| parents[place].map(EntityPlace::get);
+    assert_eq!(at(0), None);
+    assert_eq!(at(1), None);
+    assert_eq!(at(2), Some(5), "the layer before the group");
+    assert_eq!(at(4), Some(3), "a layer the map has not is passed over");
+    assert_eq!(at(5), None, "a layer's own entity");
+    assert_eq!(at(6), Some(5));
+    // Group 1 in group 2 and group 2 in group 1: a loop, and a member of group 1 under it.
+    map.entities[1].set(b"_tb_group", b"2").unwrap();
+    map.entities[3].set(b"_tb_group", b"1").unwrap();
+    map.entities[2].remove(b"_tb_layer");
+    let parents = map.parents();
+    assert_eq!([parents[1], parents[3]], [None, None]);
+    assert_eq!(parents[2], Some(EntityPlace::new(1)));
+    // A group naming itself.
+    map.entities[1].set(b"_tb_group", b"1").unwrap();
+    assert_eq!(map.parents()[1], None);
+}
+
+// spec MAP-9.2: putting an entity in a layer or group writes the one key TrenchBroom reads
+// spec MAP-9.5: a group is linked only when its link id is not blank
+#[test]
+fn an_entity_is_put_in_a_container() {
+    let mut map = map();
+    let entity = &mut map.entities[2];
+    entity
+        .put_in(Some((crate::RoomKind::Layer, ContainerId::new(3))))
+        .unwrap();
+    assert_eq!(entity.value(b"_tb_layer"), Some(b"3".as_slice()));
+    assert_eq!(entity.value(b"_tb_group"), None);
+    entity
+        .put_in(Some((crate::RoomKind::Group, ContainerId::new(2))))
+        .unwrap();
+    assert_eq!(entity.value(b"_tb_layer"), None);
+    assert_eq!(entity.value(b"_tb_group"), Some(b"2".as_slice()));
+    entity.put_in(None).unwrap();
+    assert_eq!(
+        (entity.value(b"_tb_layer"), entity.value(b"_tb_group")),
+        (None, None)
+    );
+    assert!(entity.mentions("monster") && entity.mentions("army") && !entity.mentions("ogre"));
+    assert_eq!(entity.text(b"classname").as_deref(), Some("monster_army"));
+    assert!(map.entities[1].is_linked_group());
+    map.entities[1].set(b"_tb_linked_group_id", b"").unwrap();
+    assert!(!map.entities[1].is_linked_group());
+    assert!(!map.entities[5].is_linked_group(), "a layer");
+}

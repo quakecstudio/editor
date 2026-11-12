@@ -49,6 +49,26 @@ impl Camera {
         [forward, right, up]
     }
 
+    /// Moves it back from the middle of the box `[min, max]` along the way it faces, far
+    /// enough that the box's bounding sphere fits inside the narrower of its half fields of view
+    /// in an image `aspect` times as wide as it is high, plus `margin` map units, keeping where
+    /// it looks.
+    pub fn frame(&mut self, [min, max]: [[f32; 3]; 2], aspect: f32, margin: f32) {
+        let [x0, y0, z0] = min;
+        let [x1, y1, z1] = max;
+        let middle = [(x0 + x1) / 2.0, (y0 + y1) / 2.0, (z0 + z1) / 2.0];
+        let half = [(x1 - x0) / 2.0, (y1 - y0) / 2.0, (z1 - z0) / 2.0];
+        let radius = half.iter().map(|h| h * h).sum::<f32>().sqrt();
+        let across = (self.fov_x.to_radians() / 2.0).tan();
+        let down = across / aspect.max(f32::EPSILON);
+        let narrower = across.min(down).max(f32::EPSILON);
+        // A sphere fits a cone of half-angle `a` at `r / sin(a)`, at least `r / tan(a)`.
+        let distance = radius * (1.0 + 1.0 / (narrower * narrower)).sqrt() + margin;
+        let [[fx, fy, fz], _, _] = self.axes();
+        let [mx, my, mz] = middle;
+        self.origin = [mx - fx * distance, my - fy * distance, mz - fz * distance];
+    }
+
     /// Moves it by `forward`, `right` and `up` map units along its axes.
     pub fn travel(&mut self, forward: f32, right: f32, up: f32) {
         let [f, r, _] = self.axes();
@@ -158,6 +178,11 @@ fn multiply(a: &[[f32; 4]; 4], b: &[[f32; 4]; 4]) -> [[f32; 4]; 4] {
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::indexing_slicing,
+        reason = "test code: a failed index is a failed test"
+    )]
+
     use super::Camera;
 
     /// `m * v` of a column-major matrix and a point, divided by w.
@@ -216,5 +241,49 @@ mod tests {
         assert!((camera.pitch - 89.0).abs() < f32::EPSILON);
         camera.turn(-450.0, 0.0);
         assert!(camera.yaw.abs() < f32::EPSILON);
+    }
+
+    // No spec statement: P5-16: framing a box keeps the camera's direction and puts the whole
+    // box in view, its corners inside both half fields of view, in a wide image too
+    #[test]
+    fn a_framed_box_is_wholly_in_view() {
+        let mut camera = Camera::new([0.0, 0.0, 0.0], 30.0);
+        camera.pitch = 20.0;
+        let bounds = [[1000.0, 2000.0, -50.0], [1100.0, 2032.0, 400.0]];
+        let aspect = 16.0 / 9.0;
+        camera.frame(bounds, aspect, 8.0);
+        assert!(
+            (camera.yaw - 30.0).abs() < f32::EPSILON && (camera.pitch - 20.0).abs() < f32::EPSILON
+        );
+        let [forward, right, up] = camera.axes();
+        let across = (camera.fov_x.to_radians() / 2.0).tan();
+        let down = across / aspect;
+        for corner in 0..8_u8 {
+            let p = [0, 1, 2].map(|axis| {
+                if corner & (1 << axis) == 0 {
+                    bounds[0][axis]
+                } else {
+                    bounds[1][axis]
+                }
+            });
+            let v = [0, 1, 2].map(|axis| p[axis] - camera.origin[axis]);
+            let dot = |a: [f32; 3]| a[0] * v[0] + a[1] * v[1] + a[2] * v[2];
+            let depth = dot(forward);
+            assert!(depth > 0.0);
+            assert!(
+                dot(right).abs() / depth <= across,
+                "corner {corner} off the side"
+            );
+            assert!(
+                dot(up).abs() / depth <= down,
+                "corner {corner} off the top or bottom"
+            );
+        }
+        // The middle of the box is straight ahead.
+        let middle = [1050.0, 2016.0, 175.0];
+        let v = [0, 1, 2].map(|axis| middle[axis] - camera.origin[axis]);
+        let ahead = v[0] * forward[0] + v[1] * forward[1] + v[2] * forward[2];
+        let length = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        assert!((ahead - length).abs() < 0.01);
     }
 }

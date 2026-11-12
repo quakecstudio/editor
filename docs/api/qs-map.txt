@@ -141,10 +141,15 @@ fn qs_map::lexer::map_text
 fn qs_map::linked::ContainerId::get
 fn qs_map::linked::ContainerId::new
 fn qs_map::linked::Entity::container
+fn qs_map::linked::Entity::group
+fn qs_map::linked::Entity::is_linked_group
 fn qs_map::linked::Entity::layer
 fn qs_map::linked::Entity::layer_settings
+fn qs_map::linked::Entity::mentions
+fn qs_map::linked::Entity::put_in
 fn qs_map::linked::Entity::set_layer_setting
 fn qs_map::linked::Entity::set_transform
+fn qs_map::linked::Entity::text
 fn qs_map::linked::Entity::transform
 fn qs_map::linked::EntityPlace::get
 fn qs_map::linked::EntityPlace::new
@@ -153,6 +158,7 @@ fn qs_map::linked::MapFile::group_members
 fn qs_map::linked::MapFile::layer_of_each
 fn qs_map::linked::MapFile::linked_group_of
 fn qs_map::linked::MapFile::linked_groups
+fn qs_map::linked::MapFile::parents
 fn qs_map::linked::MapFile::update_changed
 fn qs_map::linked::MapFile::update_linked
 fn qs_map::linked::MapFile::without_omitted_layers

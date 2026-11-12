@@ -62,6 +62,16 @@ it too.
     entity, or a copy of one in a linked group, is refused. A layer's settings hold for
     everything in it, groups and their members included. What is hidden and locked is not undone
     with the map's edits; an undo or redo that changes how many entities there are forgets it.
+- **The outline (P5-16, MAP-31):** the Map section of the left panel lists the default layer
+  (the world and what no layer names), then each layer; in each, its groups and linked groups
+  (in italics), then its entities by classname and targetname, with brush counts
+  (`map.outline`). The filter keeps what holds its text in a classname, key or value, with the
+  layers and groups around it. Choosing a row selects the entity and frames it in the view,
+  keeping where the camera looks; a selection made in the view opens and scrolls to its row.
+  Dragging a row onto a layer or group moves it there (`map.move_to`), into a linked group
+  copied into the groups linked to it; the world and a layer stay where they are. An entity
+  naming both a layer and a group is shown in the layer, as hiding and locking treat it (MAP-9.2);
+  groups that name each other are shown under the default layer.
 - **Saving:** `map.save` (Cmd+S in the view) writes a `.map` over itself, and changes only the
   text an edit touched. A BSP's entities go to a `.ent` file beside the BSP, which QuakeSpasm
   and its descendants read in place of the lump (MAP-22). `{"bsp": "lump"}` rewrites the BSP's

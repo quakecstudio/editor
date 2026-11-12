@@ -295,6 +295,7 @@ fn the_ui_code_has_no_string_literals() {
         ("map_browser.rs", include_str!("map_browser.rs")),
         ("map_fields.rs", include_str!("map_fields.rs")),
         ("map_groups.rs", include_str!("map_groups.rs")),
+        ("map_outline.rs", include_str!("map_outline.rs")),
         ("lib.rs", include_str!("lib.rs")),
         ("main.rs", include_str!("main.rs")),
     ] {
@@ -2013,6 +2014,17 @@ fn map_value(harness: &Harness<'static, Option<App>>, entity: usize, key: &str) 
         .map(|value| String::from_utf8_lossy(value).into_owned())
 }
 
+/// The middle of the entity browser's cell for `class`: of the buttons named so, the lowest,
+/// below the view, since the map outline names its rows by classname too.
+fn browser_cell(harness: &Harness<'static, Option<App>>, class: &str) -> Pos2 {
+    harness
+        .query_all_by_role_and_label(Role::Button, class)
+        .map(|node| node.rect())
+        .max_by(|a, b| a.center().y.total_cmp(&b.center().y))
+        .unwrap()
+        .center()
+}
+
 // No spec statement: P5-13, MAP-27: the entity browser lists every class the QuakeC defines and
 // a point class dragged from it into the view is placed; the eyedropper beside a key the code
 // fires by points it at the entity clicked, naming it; an Alt-drag from the selection links the
@@ -2033,7 +2045,7 @@ fn entities_are_placed_and_linked_without_typing() {
     harness.run();
     let before = map_text(&harness);
     for class in ["info_player_start", "monster_ogre", "light", "func_door"] {
-        harness.get_by_role_and_label(Role::Button, class);
+        browser_cell(&harness, class);
     }
     assert!(
         harness
@@ -2042,10 +2054,7 @@ fn entities_are_placed_and_linked_without_typing() {
             .is_some()
     );
     let view = harness.get_by_label(Text::MapEditorView.get()).rect();
-    let light = harness
-        .get_by_role_and_label(Role::Button, "light")
-        .rect()
-        .center();
+    let light = browser_cell(&harness, "light");
     drag(&mut harness, light, view.center(), egui::Modifiers::NONE);
     assert_eq!(
         map_value(&harness, 5, "classname").as_deref(),
@@ -2237,4 +2246,59 @@ fn the_overview_keys_and_layer_settings_work() {
     shell.execute("edit.undo", json!({})).unwrap();
     harness.run();
     assert_eq!(map_text(&harness), LINKED_MAP);
+}
+
+// No spec statement: P5-16, MAP-31: the map outline lists the map; choosing a row selects the
+// entity and frames it in the view with no camera movement by hand; dragging a row onto a
+// layer moves the entity into it
+#[test]
+fn the_outline_selects_frames_and_moves() {
+    let dir = std::env::temp_dir().join(format!("qs-desktop-outline-{}", std::process::id()));
+    let _gone = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("outline.map");
+    let map =
+        format!("{LINKED_MAP}{{\n\"classname\" \"monster_ogre\"\n\"origin\" \"2000 2000 0\"\n}}\n");
+    fs::write(&path, &map).unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.open", json!({ "path": path })).unwrap();
+    harness.run();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "monster_ogre")
+        .click();
+    harness.run();
+    harness.run();
+    harness.run();
+    let shell = harness.state().as_ref().unwrap().shell();
+    let selected = shell
+        .session()
+        .context()
+        .workbench
+        .map()
+        .unwrap()
+        .selected();
+    assert_eq!(selected, Some(EntityIndex::new(7)));
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let at = drawn_at(&harness, 7);
+    assert!(
+        (at - view.center()).length() < 4.0,
+        "framed in the middle of the view: {at:?} in {view:?}"
+    );
+    let ogre = harness
+        .get_by_role_and_label(Role::Button, "monster_ogre")
+        .rect()
+        .center();
+    let lights = harness
+        .get_by_role_and_label(Role::Button, "Lights")
+        .rect()
+        .center();
+    drag(&mut harness, ogre, lights, egui::Modifiers::NONE);
+    harness.run();
+    assert!(
+        map_text(&harness).ends_with("\"origin\" \"2000 2000 0\"\n\"_tb_layer\" \"3\"\n}\n"),
+        "{}",
+        map_text(&harness)
+    );
 }

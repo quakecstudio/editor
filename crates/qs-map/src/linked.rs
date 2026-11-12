@@ -408,6 +408,50 @@ impl Entity {
             .map(|(kind, id)| (kind, ContainerId::new(id)))
     }
 
+    /// The text of `key`, its bytes read as UTF-8 with any that are not replaced.
+    #[must_use]
+    pub fn text(&self, key: &[u8]) -> Option<String> {
+        self.value(key)
+            .map(|value| String::from_utf8_lossy(value).into_owned())
+    }
+
+    /// Whether a key or value of this entity holds `filter`, which is lower case, ignoring
+    /// case.
+    #[must_use]
+    pub fn mentions(&self, filter: &str) -> bool {
+        self.pairs().any(|pair| {
+            [pair.key(), pair.value()].into_iter().any(|bytes| {
+                String::from_utf8_lossy(bytes)
+                    .to_lowercase()
+                    .contains(filter)
+            })
+        })
+    }
+
+    /// Whether this entity is a group linked to others: its `_tb_linked_group_id` is not blank
+    /// (MAP-9.5).
+    #[must_use]
+    pub fn is_linked_group(&self) -> bool {
+        self.linked_group(EntityPlace::new(0)).is_some()
+    }
+
+    /// Puts this entity in `container`, or in no layer or group, written as TrenchBroom writes
+    /// it: `_tb_layer` for a layer, `_tb_group` for a group, and the other key removed
+    /// (MAP-9.2).
+    ///
+    /// # Errors
+    ///
+    /// As [`Entity::set`].
+    pub fn put_in(&mut self, container: Option<(RoomKind, ContainerId)>) -> Result<(), MapError> {
+        self.remove(GROUP_KEY);
+        self.remove(LAYER_KEY);
+        match container {
+            Some((RoomKind::Layer, id)) => self.set(LAYER_KEY, id.get().to_string().as_bytes()),
+            Some((RoomKind::Group, id)) => self.set(GROUP_KEY, id.get().to_string().as_bytes()),
+            None => Ok(()),
+        }
+    }
+
     /// The layer this entity names in `_tb_layer` (MAP-9.2).
     #[must_use]
     pub fn layer(&self) -> Option<ContainerId> {
@@ -441,7 +485,8 @@ impl Entity {
     }
 
     /// The group this entity names in `_tb_group` (MAP-9.2).
-    fn group(&self) -> Option<ContainerId> {
+    #[must_use]
+    pub fn group(&self) -> Option<ContainerId> {
         self.value(GROUP_KEY)
             .and_then(container_id)
             .map(ContainerId::new)
@@ -589,6 +634,55 @@ impl MapFile {
             .into_iter()
             .filter(|group| self.group_contents(group.id) != before.group_contents(group.id))
             .map(|group| group.entity)
+            .collect()
+    }
+
+    /// The layer or group each entity is directly in, by place: the layer its `_tb_layer` names
+    /// when the map has it, else the group its `_tb_group` names when the map has it (MAP-9.2);
+    /// `None` for the world, a layer's own entity, an entity in neither, and every entity of a
+    /// loop of groups naming each other, which TrenchBroom's default layer takes.
+    #[must_use]
+    pub fn parents(&self) -> Vec<Option<EntityPlace>> {
+        let mut layers = std::collections::HashMap::new();
+        let mut groups = std::collections::HashMap::new();
+        for (place, entity) in self.entities.iter().enumerate() {
+            match entity.container() {
+                Some((RoomKind::Layer, id)) => {
+                    layers.insert(id, place);
+                }
+                Some((RoomKind::Group, id)) => {
+                    groups.insert(id, place);
+                }
+                None => {}
+            }
+        }
+        let direct: Vec<Option<usize>> = self
+            .entities
+            .iter()
+            .map(|entity| match entity.container() {
+                Some((RoomKind::Layer, _)) => None,
+                Some((RoomKind::Group, _)) | None => entity
+                    .layer()
+                    .and_then(|id| layers.get(&id))
+                    .or_else(|| entity.group().and_then(|id| groups.get(&id)))
+                    .copied(),
+            })
+            .collect();
+        direct
+            .iter()
+            .enumerate()
+            .map(|(place, &parent)| {
+                // An entity its own chain of containers comes back to is in a loop.
+                let mut at = parent;
+                for _ in 0..direct.len() {
+                    match at {
+                        Some(next) if next == place => return None,
+                        Some(next) => at = direct.get(next).copied().flatten(),
+                        None => break,
+                    }
+                }
+                parent.map(EntityPlace::new)
+            })
             .collect()
     }
 

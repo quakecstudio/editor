@@ -764,6 +764,17 @@ pub enum WorkbenchError {
         /// The entity.
         entity: map_edit::EntityIndex,
     },
+    /// The entity cannot be moved into a layer or group: it is the world or a layer (P5-16).
+    CannotMove {
+        /// The entity.
+        entity: map_edit::EntityIndex,
+    },
+    /// The entity is no layer or group to move into, or is the one being moved or one inside
+    /// it (P5-16).
+    NotContainer {
+        /// The entity.
+        entity: map_edit::EntityIndex,
+    },
     /// The entity is no TrenchBroom layer (MAP-9.1).
     NotLayer {
         /// The entity.
@@ -787,6 +798,15 @@ impl fmt::Display for WorkbenchError {
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
             Self::Locked { entity } => write!(f, "entity {entity} is locked"),
             Self::NotLayer { entity } => write!(f, "entity {entity} is no layer"),
+            Self::CannotMove { entity } => {
+                write!(
+                    f,
+                    "entity {entity} is the world or a layer, which go in nothing"
+                )
+            }
+            Self::NotContainer { entity } => {
+                write!(f, "entity {entity} is no layer or group it can go into")
+            }
             Self::Link { error } => write!(f, "{error}"),
             Self::NoRoom { name } => write!(f, "the map has no room named {name}"),
             Self::NotBuilt => f.write_str("the project's server QuakeC does not compile"),
@@ -851,6 +871,8 @@ impl Error for WorkbenchError {
             | Self::EntOverride { .. }
             | Self::Locked { .. }
             | Self::NotLayer { .. }
+            | Self::NotContainer { .. }
+            | Self::CannotMove { .. }
             | Self::NoRoom { .. }
             | Self::ChangedOnDisk { .. }
             | Self::NotBuilt => None,

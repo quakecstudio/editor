@@ -67,7 +67,9 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.link`](#maplink) | Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none. |
 | [`map.lock`](#maplock) | Locks entities of the open map against edits until map.unlock_all; the map is not changed. |
 | [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
+| [`map.move_to`](#mapmove_to) | Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
+| [`map.outline`](#mapoutline) | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.remove_key`](#mapremove_key) | Removes every pair with a key from an entity of the open map. |
 | [`map.rename_key`](#maprename_key) | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
@@ -1993,6 +1995,44 @@ Parameters:
 }
 ```
 
+## `map.move_to`
+
+Moves an entity or a group of the open map into a layer or a group, or into the default layer given the world, as TrenchBroom writes it.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.move_to`.",
+  "properties": {
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity or group to move."
+    },
+    "into": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The layer or group to move it into; the world for the default layer."
+    }
+  },
+  "required": [
+    "entity",
+    "into"
+  ],
+  "title": "MoveToParams",
+  "type": "object"
+}
+```
+
 ## `map.open`
 
 Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected.
@@ -2014,6 +2054,32 @@ Parameters:
     "path"
   ],
   "title": "MapOpenParams",
+  "type": "object"
+}
+```
+
+## `map.outline`
+
+The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.outline`.",
+  "properties": {
+    "filter": {
+      "default": null,
+      "description": "Keep only what holds this text, ignoring case: a classname, a key, a value or a name;\nthe layers and groups around a match stay.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "OutlineParams",
   "type": "object"
 }
 ```

@@ -62,6 +62,7 @@ use qs_workbench::map_edit::{
     FilterParams, LinkParams, MAP_FILTER, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, MapFiltered,
     PlaceParams, SetFlagParams,
 };
+use qs_workbench::map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
@@ -2003,6 +2004,9 @@ impl Shell {
                 ),
                 MapAction::Filter(show) => self.filter_map(show).map(|()| serde_json::Value::Null),
                 MapAction::Group(action) => self.group_action(action),
+                MapAction::MoveTo(entity, into) => {
+                    self.attempt(MAP_MOVE_TO, &MoveToParams { entity, into })
+                }
                 MapAction::RemoveKey(entity, key) => {
                     self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
                 }
@@ -2099,6 +2103,7 @@ impl Shell {
         }
         let actions = self.map_editor.ui(ui, &self.theme, document);
         self.map_actions(actions);
+        self.refresh_map_outline();
         if let Some(document) = self.session.context().workbench.map()
             && let Some(show) = self.map_editor.filter_stale(document.edits())
             && let Err(error) = self.filter_map(show)
@@ -2114,6 +2119,30 @@ impl Shell {
             ui.ctx().request_repaint();
         }
         true
+    }
+
+    /// Reads the open map's outline again when the map or the outline's filter changed since it
+    /// was read (P5-16).
+    fn refresh_map_outline(&mut self) {
+        // The rows change with the map's edits, not with the selection.
+        let Some(revision) = self
+            .session
+            .context()
+            .workbench
+            .map()
+            .map(MapDocument::edits)
+        else {
+            return;
+        };
+        let Some(filter) = self.map_editor.outline_stale(revision) else {
+            return;
+        };
+        let params = OutlineParams {
+            filter: Some(filter.clone()),
+        };
+        let rows: Result<Vec<OutlineRow>, ShellError> = self.attempt(MAP_OUTLINE, &params);
+        self.map_editor
+            .set_outline(rows.unwrap_or_default(), revision, filter);
     }
 
     /// Reads the keys of the open map's selected entity for the key editor.
@@ -2465,6 +2494,12 @@ impl Shell {
                         } else {
                             heading(ui, theme, Text::Entities);
                             entity_action = entities::outliner(ui, theme, preview.entities(), tree);
+                        }
+                        if let Some(editor) = map_editor {
+                            ui.add_space(theme.space(3));
+                            heading(ui, theme, Text::Map);
+                            let selected = workbench.map().and_then(MapDocument::selected);
+                            map_actions = editor.outline_ui(ui, theme, selected);
                         }
                     }
                     Panel::Right => {

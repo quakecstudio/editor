@@ -516,6 +516,10 @@ pub enum Text {
     MapAngleDown,
     /// The key editor's list of the values the map uses for a key.
     MapChoices,
+    /// The map outline's filter hint (P5-16).
+    MapFilterOutline,
+    /// The map outline's row for what no layer names: TrenchBroom's default layer.
+    MapDefaultLayer,
     /// The map editor's list of the map's layers (P5-14).
     MapLayers,
     /// A layer's checkbox that hides it in the editor.
@@ -540,7 +544,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 264] = [
+    pub const ALL: [Self; 266] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -795,6 +799,8 @@ impl Text {
         Self::MapAngleUp,
         Self::MapAngleDown,
         Self::MapChoices,
+        Self::MapFilterOutline,
+        Self::MapDefaultLayer,
         Self::MapLayers,
         Self::MapLayerHidden,
         Self::MapLayerLocked,
@@ -1086,6 +1092,8 @@ impl Text {
             Self::MapAngleUp => "Up",
             Self::MapAngleDown => "Down",
             Self::MapChoices => "Values in the map",
+            Self::MapFilterOutline => "Filter the map",
+            Self::MapDefaultLayer => "Default layer",
             Self::MapLayers => "Layers",
             Self::MapLayerHidden => "Hidden",
             Self::MapLayerLocked => "Locked",
@@ -1185,5 +1193,14 @@ pub fn layer_count(count: usize) -> String {
     match count {
         1 => "1 entity".to_owned(),
         n => format!("{n} entities"),
+    }
+}
+
+/// How many brushes an entity has, in the map outline (P5-16).
+#[must_use]
+pub fn brush_count(count: usize) -> String {
+    match count {
+        1 => "1 brush".to_owned(),
+        n => format!("{n} brushes"),
     }
 }
