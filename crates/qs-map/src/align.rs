@@ -34,17 +34,17 @@ impl TexDef {
                 scale: alignment.scale.unwrap_or(scale),
             },
             Self::Valve {
-                s,
-                t,
+                s: [sx, sy, sz, s_kept],
+                t: [tx, ty, tz, t_kept],
                 rotate,
                 scale,
             } => {
-                let [s_shift, t_shift] = alignment.shift.unwrap_or([s[3], t[3]]);
+                let [s_shift, t_shift] = alignment.shift.unwrap_or([s_kept, t_kept]);
                 let turn = alignment.rotate.map_or(0.0, |to| to - rotate);
-                let [s_axis, t_axis] = turned([[s[0], s[1], s[2]], [t[0], t[1], t[2]]], turn);
+                let [[sx, sy, sz], [tx, ty, tz]] = turned([[sx, sy, sz], [tx, ty, tz]], turn);
                 Self::Valve {
-                    s: [s_axis[0], s_axis[1], s_axis[2], s_shift],
-                    t: [t_axis[0], t_axis[1], t_axis[2], t_shift],
+                    s: [sx, sy, sz, s_shift],
+                    t: [tx, ty, tz, t_shift],
                     rotate: alignment.rotate.unwrap_or(rotate),
                     scale: alignment.scale.unwrap_or(scale),
                 }
