@@ -87,7 +87,9 @@ an edit, so both commands run outside the edit history
   place in the map (P5-07, MAP-12, BRIDGE-4.13). `files.changed` takes the files another
   program wrote: the open map is read again, or with unsaved edits kept for `map.resolve` and
   `map.compare`, and changed QuakeC is read again (P5-17, MAP-32); `map.save` refuses to
-  overwrite a newer file.
+  overwrite a newer file. `map.brush_create`, `map.brush_clip`, `map.brush_vertex`,
+  `map.brush_subtract`, `map.brush_merge` and `map.brush_delete` edit brushes through
+  `qs-map`'s brush editing on the 16-unit grid, each one undo step (P6-08).
 - Git (`git`, P4-35, UI-19): `git.status`, `git.diff`, `git.stage` and `git.unstage` (a file
   or one hunk), `git.commit`, `git.branches`, `git.switch`, `git.create_branch`, `git.log`,
   `git.blame`, `git.conflicts`, `git.resolve` and `git.head_text`, over `qs-git` in the open

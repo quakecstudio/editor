@@ -17,6 +17,11 @@ use qs_bsp::{Bsp, BspLoader, ent_file_names};
 use qs_commands::{BoxError, Command, Outcome, RegisterError, Registry, UndoStep};
 use qs_map::{Entity, Item, MapFile};
 
+pub use brushes::{
+    BrushClipParams, BrushCreateParams, BrushIndex, BrushMergeParams, BrushParams,
+    BrushVertexParams, Keep as KeepPart, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE,
+    MAP_BRUSH_MERGE, MAP_BRUSH_SUBTRACT, MAP_BRUSH_VERTEX,
+};
 pub use disk::{
     FILES_CHANGED, FilesChanged, FilesChangedParams, Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference,
     MapOnDisk, ResolveParams,
@@ -32,6 +37,7 @@ pub use links::{LinkParams, MAP_LINK};
 pub use live::LiveChange;
 pub use outline::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow, RowKind};
 
+mod brushes;
 mod disk;
 mod filter;
 mod flags;
@@ -1177,6 +1183,12 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(groups::MapExport)?;
     registry.register(outline::MapOutline)?;
     registry.register(outline::MapMoveTo)?;
+    registry.register(brushes::BrushCreate)?;
+    registry.register(brushes::BrushClip)?;
+    registry.register(brushes::BrushVertex)?;
+    registry.register(brushes::BrushSubtract)?;
+    registry.register(brushes::BrushMerge)?;
+    registry.register(brushes::BrushDelete)?;
     registry.register(MapSave)
 }
 

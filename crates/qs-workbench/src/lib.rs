@@ -776,6 +776,18 @@ pub enum WorkbenchError {
         /// The entity.
         entity: map_edit::EntityIndex,
     },
+    /// The entity has no brush at this place (P6-08).
+    NoBrush {
+        /// The entity.
+        entity: map_edit::EntityIndex,
+        /// The brush.
+        brush: map_edit::BrushIndex,
+    },
+    /// A brush edit would leave no valid brush (P6-08, MAP-3.4).
+    Brush {
+        /// Why.
+        error: qs_map::BrushError,
+    },
     /// The entity is no TrenchBroom layer (MAP-9.1).
     NotLayer {
         /// The entity.
@@ -799,6 +811,10 @@ impl fmt::Display for WorkbenchError {
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
             Self::Locked { entity } => write!(f, "entity {entity} is locked"),
             Self::NotLayer { entity } => write!(f, "entity {entity} is no layer"),
+            Self::NoBrush { entity, brush } => {
+                write!(f, "entity {entity} has no brush {}", brush.get())
+            }
+            Self::Brush { error } => write!(f, "{error}"),
             Self::CannotMove { entity } => {
                 write!(
                     f,
@@ -860,6 +876,7 @@ impl Error for WorkbenchError {
             Self::Map { error, .. } => Some(error),
             Self::Bsp { error, .. } => Some(error),
             Self::Link { error } => Some(error),
+            Self::Brush { error } => Some(error),
             Self::NoFile { .. }
             | Self::NoProject
             | Self::NoFix { .. }
@@ -872,6 +889,7 @@ impl Error for WorkbenchError {
             | Self::EntOverride { .. }
             | Self::Locked { .. }
             | Self::NotLayer { .. }
+            | Self::NoBrush { .. }
             | Self::NotContainer { .. }
             | Self::CannotMove { .. }
             | Self::NoRoom { .. }

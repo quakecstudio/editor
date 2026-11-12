@@ -54,6 +54,12 @@ const qs_workbench::map_edit::MAP_ROTATE
 const qs_workbench::map_edit::MAP_SAVE
 const qs_workbench::map_edit::MAP_SELECT
 const qs_workbench::map_edit::MAP_SET_KEY
+const qs_workbench::map_edit::brushes::MAP_BRUSH_CLIP
+const qs_workbench::map_edit::brushes::MAP_BRUSH_CREATE
+const qs_workbench::map_edit::brushes::MAP_BRUSH_DELETE
+const qs_workbench::map_edit::brushes::MAP_BRUSH_MERGE
+const qs_workbench::map_edit::brushes::MAP_BRUSH_SUBTRACT
+const qs_workbench::map_edit::brushes::MAP_BRUSH_VERTEX
 const qs_workbench::map_edit::disk::FILES_CHANGED
 const qs_workbench::map_edit::disk::MAP_COMPARE
 const qs_workbench::map_edit::disk::MAP_RESOLVE
@@ -133,6 +139,7 @@ enum qs_workbench::git::GitCommandError
 enum qs_workbench::git::GitSide
 enum qs_workbench::map_edit::BspSave
 enum qs_workbench::map_edit::MapSource
+enum qs_workbench::map_edit::brushes::Keep
 enum qs_workbench::map_edit::disk::Keep
 enum qs_workbench::map_edit::disk::MapOnDisk
 enum qs_workbench::map_edit::filter::GameMode
@@ -324,6 +331,24 @@ field qs_workbench::map_edit::SetKeyParams.also
 field qs_workbench::map_edit::SetKeyParams.entity
 field qs_workbench::map_edit::SetKeyParams.key
 field qs_workbench::map_edit::SetKeyParams.value
+field qs_workbench::map_edit::brushes::BrushClipParams.brush
+field qs_workbench::map_edit::brushes::BrushClipParams.entity
+field qs_workbench::map_edit::brushes::BrushClipParams.keep
+field qs_workbench::map_edit::brushes::BrushClipParams.points
+field qs_workbench::map_edit::brushes::BrushCreateParams.entity
+field qs_workbench::map_edit::brushes::BrushCreateParams.grid
+field qs_workbench::map_edit::brushes::BrushCreateParams.max
+field qs_workbench::map_edit::brushes::BrushCreateParams.min
+field qs_workbench::map_edit::brushes::BrushCreateParams.texture
+field qs_workbench::map_edit::brushes::BrushMergeParams.brushes
+field qs_workbench::map_edit::brushes::BrushMergeParams.entity
+field qs_workbench::map_edit::brushes::BrushParams.brush
+field qs_workbench::map_edit::brushes::BrushParams.entity
+field qs_workbench::map_edit::brushes::BrushVertexParams.brush
+field qs_workbench::map_edit::brushes::BrushVertexParams.entity
+field qs_workbench::map_edit::brushes::BrushVertexParams.from
+field qs_workbench::map_edit::brushes::BrushVertexParams.grid
+field qs_workbench::map_edit::brushes::BrushVertexParams.to
 field qs_workbench::map_edit::disk::FilesChanged.map
 field qs_workbench::map_edit::disk::FilesChanged.quakec
 field qs_workbench::map_edit::disk::FilesChangedParams.paths
@@ -610,6 +635,8 @@ fn qs_workbench::map_edit::Workbench::map
 fn qs_workbench::map_edit::Workbench::map_entity
 fn qs_workbench::map_edit::Workbench::open_map
 fn qs_workbench::map_edit::Workbench::save_map
+fn qs_workbench::map_edit::brushes::BrushIndex::get
+fn qs_workbench::map_edit::brushes::BrushIndex::new
 fn qs_workbench::map_edit::disk::MapDocument::conflict
 fn qs_workbench::map_edit::groups::MapDocument::hidden_entities
 fn qs_workbench::map_edit::groups::MapDocument::is_hidden
@@ -866,6 +893,12 @@ struct qs_workbench::map_edit::RotateParams
 struct qs_workbench::map_edit::SaveParams
 struct qs_workbench::map_edit::SelectParams
 struct qs_workbench::map_edit::SetKeyParams
+struct qs_workbench::map_edit::brushes::BrushClipParams
+struct qs_workbench::map_edit::brushes::BrushCreateParams
+struct qs_workbench::map_edit::brushes::BrushIndex
+struct qs_workbench::map_edit::brushes::BrushMergeParams
+struct qs_workbench::map_edit::brushes::BrushParams
+struct qs_workbench::map_edit::brushes::BrushVertexParams
 struct qs_workbench::map_edit::disk::FilesChanged
 struct qs_workbench::map_edit::disk::FilesChangedParams
 struct qs_workbench::map_edit::disk::MapDifference
@@ -1057,6 +1090,12 @@ use qs_workbench::dock = crate::preview::dock
 use qs_workbench::engine = crate::preview::engine
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
+use qs_workbench::map_edit::BrushClipParams = brushes::BrushClipParams
+use qs_workbench::map_edit::BrushCreateParams = brushes::BrushCreateParams
+use qs_workbench::map_edit::BrushIndex = brushes::BrushIndex
+use qs_workbench::map_edit::BrushMergeParams = brushes::BrushMergeParams
+use qs_workbench::map_edit::BrushParams = brushes::BrushParams
+use qs_workbench::map_edit::BrushVertexParams = brushes::BrushVertexParams
 use qs_workbench::map_edit::EntityInfo = inspect::EntityInfo
 use qs_workbench::map_edit::EntityListParams = groups::EntityListParams
 use qs_workbench::map_edit::ExportParams = groups::ExportParams
@@ -1068,10 +1107,17 @@ use qs_workbench::map_edit::FlagChange = flags::FlagChange
 use qs_workbench::map_edit::GameMode = filter::GameMode
 use qs_workbench::map_edit::InspectParams = inspect::InspectParams
 use qs_workbench::map_edit::Keep = disk::Keep
+use qs_workbench::map_edit::KeepPart = brushes::Keep
 use qs_workbench::map_edit::LayerInfo = groups::LayerInfo
 use qs_workbench::map_edit::LayerOption = groups::LayerOption
 use qs_workbench::map_edit::LinkParams = links::LinkParams
 use qs_workbench::map_edit::LiveChange = live::LiveChange
+use qs_workbench::map_edit::MAP_BRUSH_CLIP = brushes::MAP_BRUSH_CLIP
+use qs_workbench::map_edit::MAP_BRUSH_CREATE = brushes::MAP_BRUSH_CREATE
+use qs_workbench::map_edit::MAP_BRUSH_DELETE = brushes::MAP_BRUSH_DELETE
+use qs_workbench::map_edit::MAP_BRUSH_MERGE = brushes::MAP_BRUSH_MERGE
+use qs_workbench::map_edit::MAP_BRUSH_SUBTRACT = brushes::MAP_BRUSH_SUBTRACT
+use qs_workbench::map_edit::MAP_BRUSH_VERTEX = brushes::MAP_BRUSH_VERTEX
 use qs_workbench::map_edit::MAP_COMPARE = disk::MAP_COMPARE
 use qs_workbench::map_edit::MAP_EXPORT = groups::MAP_EXPORT
 use qs_workbench::map_edit::MAP_FILTER = filter::MAP_FILTER
@@ -1113,6 +1159,7 @@ variant qs_workbench::CheckAfterTyping::OffTheFrame
 variant qs_workbench::CheckAfterTyping::OnTheFrame
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
+variant qs_workbench::WorkbenchError::Brush
 variant qs_workbench::WorkbenchError::Bsp
 variant qs_workbench::WorkbenchError::CannotMove
 variant qs_workbench::WorkbenchError::ChangedOnDisk
@@ -1122,6 +1169,7 @@ variant qs_workbench::WorkbenchError::Link
 variant qs_workbench::WorkbenchError::Locked
 variant qs_workbench::WorkbenchError::Map
 variant qs_workbench::WorkbenchError::MapLump
+variant qs_workbench::WorkbenchError::NoBrush
 variant qs_workbench::WorkbenchError::NoEntity
 variant qs_workbench::WorkbenchError::NoFile
 variant qs_workbench::WorkbenchError::NoFix
@@ -1179,6 +1227,9 @@ variant qs_workbench::map_edit::BspSave::Ent
 variant qs_workbench::map_edit::BspSave::Lump
 variant qs_workbench::map_edit::MapSource::Bsp
 variant qs_workbench::map_edit::MapSource::Map
+variant qs_workbench::map_edit::brushes::Keep::Back
+variant qs_workbench::map_edit::brushes::Keep::Both
+variant qs_workbench::map_edit::brushes::Keep::Front
 variant qs_workbench::map_edit::disk::Keep::Disk
 variant qs_workbench::map_edit::disk::Keep::Mine
 variant qs_workbench::map_edit::disk::MapOnDisk::Conflict

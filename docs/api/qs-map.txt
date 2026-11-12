@@ -12,6 +12,7 @@ const qs_map::qbsp::MAP_MAX_TEXINFO
 const qs_map::qbsp::MAP_MAX_TEXTURE_NAME
 const qs_map::qbsp::MAP_MAX_VALUE
 const qs_map::qbsp::MAP_TEX_SPECIAL
+enum qs_map::brush_edit::BrushError
 enum qs_map::check::DiagnosticKind
 enum qs_map::document::Compiler
 enum qs_map::document::Item
@@ -27,6 +28,8 @@ enum qs_map::linked::LinkError
 enum qs_map::qbsp::QbspError
 enum qs_map::qbsp::QbspWarning
 enum qs_map::rooms::RoomKind
+field qs_map::brush_edit::Surface.texdef
+field qs_map::brush_edit::Surface.texture
 field qs_map::check::Diagnostic.kind
 field qs_map::check::Diagnostic.line
 field qs_map::document::Brush.faces
@@ -70,6 +73,15 @@ field qs_map::qbsp::TextureSlot.name
 field qs_map::rooms::Room.bounds
 field qs_map::rooms::Room.kind
 field qs_map::rooms::Room.name
+fn qs_map::brush_edit::Brush::corners
+fn qs_map::brush_edit::Brush::cuboid
+fn qs_map::brush_edit::Brush::is_valid
+fn qs_map::brush_edit::Brush::merge
+fn qs_map::brush_edit::Brush::move_vertex
+fn qs_map::brush_edit::Brush::split
+fn qs_map::brush_edit::Brush::subtract
+fn qs_map::brush_edit::Brush::vertices
+fn qs_map::brush_edit::Entity::brush_places
 fn qs_map::check::MapFile::check
 fn qs_map::cnum::c_atof
 fn qs_map::cnum::c_atoi
@@ -186,6 +198,9 @@ fn qs_map::rooms::Rooms::holds
 fn qs_map::rooms::Rooms::list
 fn qs_map::rooms::Rooms::named_any
 fn qs_map::rooms::Rooms::of
+impl qs_map::brush_edit::BrushError: From<MapError>
+impl qs_map::brush_edit::BrushError: core::fmt::Display
+impl qs_map::brush_edit::BrushError: std::error::Error
 impl qs_map::check::DiagnosticKind: fmt::Display
 impl qs_map::document::Entity: Default
 impl qs_map::document::MapError: From<LexError>
@@ -207,6 +222,7 @@ mod qs_map::cnum
 mod qs_map::geometry
 mod qs_map::lexer
 mod qs_map::qbsp
+struct qs_map::brush_edit::Surface
 struct qs_map::check::Diagnostic
 struct qs_map::document::Brush
 struct qs_map::document::BrushModel
@@ -235,6 +251,7 @@ trait qs_map::geometry::MapFloat
 trait qs_map::geometry::sealed::Sealed
 type qs_map::geometry::TexVecs
 use qs_map::Brush = document::Brush
+use qs_map::BrushError = brush_edit::BrushError
 use qs_map::BrushModel = document::BrushModel
 use qs_map::Compiler = document::Compiler
 use qs_map::ContainerId = linked::ContainerId
@@ -257,9 +274,16 @@ use qs_map::Pair = document::Pair
 use qs_map::Room = rooms::Room
 use qs_map::RoomKind = rooms::RoomKind
 use qs_map::Rooms = rooms::Rooms
+use qs_map::Surface = brush_edit::Surface
 use qs_map::TexDef = document::TexDef
 use qs_map::Transform = linked::Transform
 use qs_map::is_tool_key = document::is_tool_key
+variant qs_map::brush_edit::BrushError::CornerLost
+variant qs_map::brush_edit::BrushError::Degenerate
+variant qs_map::brush_edit::BrushError::Map
+variant qs_map::brush_edit::BrushError::Missed
+variant qs_map::brush_edit::BrushError::NoVertex
+variant qs_map::brush_edit::BrushError::VertexInside
 variant qs_map::check::DiagnosticKind::DuplicateKey
 variant qs_map::check::DiagnosticKind::DuplicatePlane
 variant qs_map::check::DiagnosticKind::EricwComment
