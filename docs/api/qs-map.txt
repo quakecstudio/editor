@@ -73,6 +73,7 @@ field qs_map::qbsp::TextureSlot.name
 field qs_map::rooms::Room.bounds
 field qs_map::rooms::Room.kind
 field qs_map::rooms::Room.name
+fn qs_map::brush_edit::Brush::corners
 fn qs_map::brush_edit::Brush::cuboid
 fn qs_map::brush_edit::Brush::is_valid
 fn qs_map::brush_edit::Brush::merge
@@ -277,8 +278,10 @@ use qs_map::Surface = brush_edit::Surface
 use qs_map::TexDef = document::TexDef
 use qs_map::Transform = linked::Transform
 use qs_map::is_tool_key = document::is_tool_key
+variant qs_map::brush_edit::BrushError::CornerLost
 variant qs_map::brush_edit::BrushError::Degenerate
 variant qs_map::brush_edit::BrushError::Map
+variant qs_map::brush_edit::BrushError::Missed
 variant qs_map::brush_edit::BrushError::NoVertex
 variant qs_map::brush_edit::BrushError::VertexInside
 variant qs_map::check::DiagnosticKind::DuplicateKey
