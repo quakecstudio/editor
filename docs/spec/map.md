@@ -20,6 +20,7 @@ code is ported from either:
 | --- | --- | --- |
 | qbsp | [id-Software/Quake-Tools](https://github.com/id-Software/Quake-Tools)@`c0d1b91c74eb654365ac7755bc837e497caaca73` | `qutils/QBSP/MAP.C`, `GetToken`, `ParseEpair`, `ParseBrush`, `TextureAxisFromPlane`, `FindMiptex`, `FindTexinfo`, `ParseEntity`, `LoadMapFile`, `GetVectorForKey`, `WriteEntitiesToString`; `qutils/QBSP/QBSP.C`, `ProcessEntity`, `UpdateEntLump`; `qutils/QBSP/WRITEBSP.C`, `WriteMiptex`, `AddAnimatingTextures`, `LoadLump`, `TEX_InitFromWad`, `CleanupName`; `qutils/QBSP/BSP5.H`, `ON_EPSILON` |
 | ericw-tools | [ericwa/ericw-tools](https://github.com/ericwa/ericw-tools)@`36eec1da2a194467e6baac2f444c2dd04b57d266` (GPL-2.0-or-later) | `common/parser.cc`, `parser_t::parse_token`; `common/mapfile.cc`, `brush_side_t::parse_plane_def`, `parse_texture_def`, `parse_valve_220`, `parse_quake_ed`, `set_texinfo`, `brush_t::parse_brush_face`, `map_entity_t::parse`, `parse_brush`, `parse_entity_dict`; `common/entdata.cc`, `entdict_t::set`; `qbsp/map.cc`, the texture loading that reads `_wad` and `wad` |
+| TrenchBroom | [TrenchBroom/TrenchBroom](https://github.com/TrenchBroom/TrenchBroom)@`8f329f11e65e3d21b355a42bcae199cb3e4e0812` (GPL-3.0-or-later) | `lib/TbMdlLib/include/mdl/EntityProperties.h`, the `_tb_` keys and `func_group`; `lib/TbMdlLib/src/EntityProperties.cpp`, `isLayer`, `isGroup`; `lib/TbMdlLib/src/MapReader.cpp`, `extractContainerInfo` and the layer and group readers |
 
 The engine's side of the same entities, once `qbsp` has written them to the BSP's entity
 lump, is EDICT-8 and BSP-2.
@@ -388,3 +389,31 @@ editor's diagnostics; none of them stops the engine but MAP-8.4's function and f
   `target` names is reported: nothing in the map fires it.
 - **MAP-8.7** Renaming a field in the code offers to rename the key in the open maps; once
   confirmed, every pair with the old key takes the new one, its value and formatting kept.
+
+## MAP-9 Rooms: TrenchBroom's layers and groups
+
+**Source:** TrenchBroom `lib/TbMdlLib/include/mdl/EntityProperties.h`,
+`lib/TbMdlLib/src/EntityProperties.cpp` (`isLayer`, `isGroup`) and
+`lib/TbMdlLib/src/MapReader.cpp` (`extractContainerInfo`, the layer and group readers), for
+description only; nothing is ported.
+
+A mapper names parts of a map with TrenchBroom's layers and groups, which TrenchBroom saves as
+`func_group` entities. The editor and the agent call each one a room, so a prompt can name
+one ("the armory") and the map tools can find it (MAP-16).
+
+### Behaviour
+
+- **MAP-9.1** A layer is an entity whose `classname` is `func_group`
+  (`LayerClassname = "func_group"`) and whose `_tb_type` is `_tb_layer`; a group is one whose
+  `_tb_type` is `_tb_group` (`isLayer`, `isGroup`). Its name is its `_tb_name` and its id its
+  `_tb_id`; TrenchBroom skips one whose name or id is blank (`Skipping layer entity: missing
+  name`, `missing id`), and it is no room here either. The world entity is no room.
+- **MAP-9.2** An entity is in the layer its `_tb_layer` names by id, else in the group its
+  `_tb_group` names (`extractContainerInfo` reads `_tb_layer` first); a value that is blank or
+  not a whole number from 0 (`rawParentLayerId && *rawParentLayerId >= 0`) names none.
+- **MAP-9.3** A room's bounds are the box around every brush polygon (MAP-3.4) of the room's own
+  entity and of the brush entities in it; a room with no brush has none. Not TrenchBroom's: it
+  keeps no bounds.
+- **MAP-9.4** An entity is in a room when it names the room (MAP-9.2), and otherwise when its
+  `origin` (MAP-2.7) lies in the room's bounds, edges included, the first such room in the
+  map's order: an entity placed where a room is, with no TrenchBroom key, is in it.
