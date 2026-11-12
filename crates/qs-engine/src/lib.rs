@@ -9,7 +9,8 @@ mod launch;
 mod run_root;
 
 pub use client::{
-    BridgeEvent, Client, ClientError, InspectWhat, StepKind, WindowPlacement, base64_decode,
+    BridgeEvent, Client, ClientError, EntityTarget, InspectWhat, StepKind, WindowPlacement,
+    base64_decode,
 };
 pub use launch::{LaunchError, LaunchSpec, Running, host_command, launch, locate_host};
 pub use run_root::{Flavour, RunRoot, RunRootError, prepare_run_root};

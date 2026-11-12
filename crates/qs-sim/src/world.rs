@@ -149,6 +149,8 @@ pub struct World {
     loaded: bool,
     /// The map's name, `sv.name`.
     map: String,
+    /// The edict each of the map's entities became, for the editor's live edits (MAP-12).
+    map_entities: map_entities::MapEntities,
 }
 
 /// What the host gives a world besides its map and progs.
@@ -372,6 +374,7 @@ impl World {
             spawn_parms: [Slot::ZERO; 16],
             loaded: false,
             map: map.to_owned(),
+            map_entities: map_entities::MapEntities::default(),
         };
         let entities = bsp.entities();
         // EDICT-4.1: the world's fields.
@@ -395,7 +398,9 @@ impl World {
             progs,
             state: ServerState::Loading,
         };
-        spawn::load_from_file(&mut spawner, entities, false, 1).map_err(WorldError::Spawn)?;
+        let spawned =
+            spawn::load_from_file(&mut spawner, entities, false, 1).map_err(WorldError::Spawn)?;
+        world.map_entities = map_entities::MapEntities::loaded(&world, &spawned);
         world.builtins.mock.engine_mut().server_active = true;
         Ok(world)
     }
@@ -1043,6 +1048,7 @@ mod changes;
 mod edit;
 mod evaluate;
 mod inspect;
+mod map_entities;
 mod reload;
 mod save;
 mod state;
@@ -1053,6 +1059,7 @@ pub use changes::EdictChange;
 pub use edit::{EditError, LineHit};
 pub use evaluate::EvalError;
 pub use inspect::{NamedValue, QcValue};
+pub use map_entities::MapPlace;
 pub use reload::{Change, ChangeKind, Migration, Reason};
 pub use save::{SAVEGAME_VERSION, SaveError, SaveGame};
 pub use state::{RawState, State, read_state};

@@ -52,6 +52,19 @@ The view takes the keys while it has the keyboard; click it to give it the keybo
 | Delete | the platform's Delete | Delete or Backspace |
 | Save (`Menu/File/Save`) | the platform's Save, Ctrl+S (Cmd+S on macOS) | the same |
 
+While the game plays the open map (the map named by the file's stem), every edit, undo and
+redo of an entity reaches it with no recompile (P5-07, MAP-12): a placed or duplicated entity
+is spawned at its place as the map's load spawns one, a deleted one is removed, and a moved,
+turned or keyed one has the keys that changed set; a key taken out is set empty. The host keeps
+which edict each of the map's entities became (BRIDGE-4.13), so an entity the game has freed
+since, a picked-up item or a killed monster, is left alone, with a warning in the console, as
+is a spawn that needs a model the map has not precached (BRIDGE-4.12). A brush's faces reach
+the game at the next compile. The editor sends its edits only while its entities are the ones
+the game loaded, by classname in order: a map edited since its last compile, one whose
+compiler merged `func_group` or `func_detail` into the world, a placed brush entity, or an edit
+the game refuses puts the two out of step, said once in the console, and the edits reach the
+game at the next compile and map load.
+
 Not yet here:
 - orbiting (`shouldOrbit`, Alt with a right drag);
 - rolling and pitching objects;

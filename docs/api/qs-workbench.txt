@@ -116,6 +116,7 @@ enum qs_workbench::git::GitCommandError
 enum qs_workbench::git::GitSide
 enum qs_workbench::map_edit::BspSave
 enum qs_workbench::map_edit::MapSource
+enum qs_workbench::map_edit::live::LiveChange
 enum qs_workbench::preview::OnLoss
 enum qs_workbench::preview::PlayState
 enum qs_workbench::preview::PreviewError
@@ -493,6 +494,7 @@ fn qs_workbench::checkpoints::Workbench::checkpoints
 fn qs_workbench::checkpoints::Workbench::create_checkpoint
 fn qs_workbench::checkpoints::Workbench::restore_checkpoint
 fn qs_workbench::checkpoints::register_checkpoints
+fn qs_workbench::commands::HasWorkbench::preview
 fn qs_workbench::commands::HasWorkbench::workbench
 fn qs_workbench::commands::register
 fn qs_workbench::editing::Workbench::apply_action
@@ -528,6 +530,7 @@ fn qs_workbench::map_edit::Workbench::map
 fn qs_workbench::map_edit::Workbench::map_entity
 fn qs_workbench::map_edit::Workbench::open_map
 fn qs_workbench::map_edit::Workbench::save_map
+fn qs_workbench::map_edit::live::LiveChange::send
 fn qs_workbench::preview::ConsoleLine::is_error
 fn qs_workbench::preview::ConsoleLine::matches
 fn qs_workbench::preview::HasPreview::workbench_and_preview
@@ -545,12 +548,14 @@ fn qs_workbench::preview::Preview::pause
 fn qs_workbench::preview::Preview::pending
 fn qs_workbench::preview::Preview::pick
 fn qs_workbench::preview::Preview::play
+fn qs_workbench::preview::Preview::plays_in_step
 fn qs_workbench::preview::Preview::poll
 fn qs_workbench::preview::Preview::refresh
 fn qs_workbench::preview::Preview::reload
 fn qs_workbench::preview::Preview::restart
 fn qs_workbench::preview::Preview::resume
 fn qs_workbench::preview::Preview::select
+fn qs_workbench::preview::Preview::send_map_changes
 fn qs_workbench::preview::Preview::set_field
 fn qs_workbench::preview::Preview::state
 fn qs_workbench::preview::Preview::status
@@ -943,6 +948,7 @@ use qs_workbench::dock = crate::preview::dock
 use qs_workbench::engine = crate::preview::engine
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
+use qs_workbench::map_edit::LiveChange = live::LiveChange
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
 use qs_workbench::register_staged = crate::staged::register_staged
@@ -1010,6 +1016,10 @@ variant qs_workbench::map_edit::BspSave::Ent
 variant qs_workbench::map_edit::BspSave::Lump
 variant qs_workbench::map_edit::MapSource::Bsp
 variant qs_workbench::map_edit::MapSource::Map
+variant qs_workbench::map_edit::live::LiveChange::Edit
+variant qs_workbench::map_edit::live::LiveChange::NeedsCompile
+variant qs_workbench::map_edit::live::LiveChange::Remove
+variant qs_workbench::map_edit::live::LiveChange::Spawn
 variant qs_workbench::preview::OnLoss::Ask
 variant qs_workbench::preview::OnLoss::Reload
 variant qs_workbench::preview::PlayState::Paused

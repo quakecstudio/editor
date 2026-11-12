@@ -1,4 +1,5 @@
 enum qs_engine::client::ClientError
+enum qs_engine::client::EntityTarget
 enum qs_engine::client::InspectWhat
 enum qs_engine::client::StepKind
 enum qs_engine::launch::LaunchError
@@ -71,6 +72,7 @@ struct qs_engine::run_root::RunRoot
 use qs_engine::BridgeEvent = client::BridgeEvent
 use qs_engine::Client = client::Client
 use qs_engine::ClientError = client::ClientError
+use qs_engine::EntityTarget = client::EntityTarget
 use qs_engine::Flavour = run_root::Flavour
 use qs_engine::InspectWhat = client::InspectWhat
 use qs_engine::LaunchError = launch::LaunchError
@@ -90,6 +92,8 @@ variant qs_engine::client::ClientError::Io
 variant qs_engine::client::ClientError::Rpc
 variant qs_engine::client::ClientError::Timeout
 variant qs_engine::client::ClientError::Unsupported
+variant qs_engine::client::EntityTarget::Edict
+variant qs_engine::client::EntityTarget::MapEntity
 variant qs_engine::client::InspectWhat::Edict
 variant qs_engine::client::InspectWhat::Entities
 variant qs_engine::client::InspectWhat::Globals

@@ -12,7 +12,8 @@ server runs them. Collision, monster movement, physics and the player all follow
   [`physics.md`](../../docs/spec/engine/physics.md), WORLD-9 (the debugger), NET-1 to NET-5 of
   [`net.md`](../../docs/spec/engine/net.md), and the spawning of EDICT-8; the rerelease's
   localization (RRE-1) is `qc-builtins`', and its local sounds (RRE-2.1, RRE-2.4) and named builtins
-  (RRE-4) are here.
+  (RRE-4) are here, with the map editor's list of which edict each map entity became
+  (BRIDGE-4.13).
 - **Ported from:** id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`:
   `WinQuake/world.c`, `sv_move.c`, `sv_phys.c`, `sv_user.c`, `sv_main.c` (`SV_SpawnServer`
   and the message writers) and `host_cmd.c` (the signon commands, `Host_Changelevel_f`, `Host_Savegame_f`, `Host_Loadgame_f`), `cmd.c` (the command buffer, aliases and `Cmd_ForwardToServer`), `cvar.c` (`Cvar_Command`), with parts of
