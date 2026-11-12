@@ -310,8 +310,9 @@ fn up_and_down_stay_and_turned_angles_wrap() {
         let copy = map.entities[1].transformed(&quarter).unwrap();
         assert_eq!(copy.value(b"angle"), Some(turned.as_bytes()), "{angle}");
     }
-    let mirror = Transform::parse(b"-1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1").unwrap();
-    assert!(mirror.apply([0.0, 0.0, 0.0])[0].is_sign_positive());
+    // Every term of x is -0 here, so only the rounding's + 0.0 writes it as 0.
+    let mirror = Transform::parse(b"-1 0 0 -0 0 1 0 0 0 0 1 0 0 0 0 1").unwrap();
+    assert!(mirror.apply([0.0, -0.0, -0.0])[0].is_sign_positive());
 }
 
 // spec MAP-9.7: a scaled and sheared transformation that needs its rows swapped inverts
