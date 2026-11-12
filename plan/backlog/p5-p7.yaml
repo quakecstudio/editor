@@ -411,7 +411,7 @@ groups:
     verify:
     - cargo xtask oracles in CI
   - key: P6-04
-    title: Implement qmap-bsp
+    title: Implement qs-map-bsp
     labels:
     - L4-bridges
     - area:map
@@ -424,13 +424,13 @@ groups:
     - P6-01
     - P5-02
     deliverable:
-    - 'crates/qmap-bsp: .map to BSP29 and BSP2, .prt, pointfile on leaks'
+    - 'crates/qs-map-bsp: .map to BSP29 and BSP2, .prt, pointfile on leaks'
     acceptance:
     - Every corpus map compiles, loads in the preview host, spawns the player and reports no host errors
     verify:
     - Map differential suite (P6-07)
   - key: P6-05
-    title: Implement qmap-vis
+    title: Implement qs-map-vis
     labels:
     - L4-bridges
     - area:map
@@ -442,13 +442,13 @@ groups:
     - P6-02
     - P6-04
     deliverable:
-    - 'crates/qmap-vis: fast and full PVS, multithreaded'
+    - 'crates/qs-map-vis: fast and full PVS, multithreaded'
     acceptance:
     - PVS is conservative (never hides a visible leaf) on the corpus
     verify:
     - Visibility tests rendering from sample points; differential suite
   - key: P6-06
-    title: Implement qmap-light fast mode
+    title: Implement qs-map-light fast mode
     labels:
     - L4-bridges
     - area:map
@@ -460,7 +460,7 @@ groups:
     - P6-02
     - P6-04
     deliverable:
-    - 'crates/qmap-light: fast lightmaps for Play from here, multithreaded'
+    - 'crates/qs-map-light: fast lightmaps for Play from here, multithreaded'
     acceptance:
     - Lights an id1-sized map in under 5 s on the reference Mac
     verify:
@@ -642,7 +642,7 @@ groups:
     - Import from the texture browser and by dragging PNG files onto it, with a preview of the quantized result before it is saved
     - The project's own WAD in its texture folder, referenced from worldspawn so our map compiler and the engines find it
     acceptance:
-    - An imported texture can be applied to a brush, compiles with qmap-bsp and shows correctly in the preview host
+    - An imported texture can be applied to a brush, compiles with qs-map-bsp and shows correctly in the preview host
     - Re-importing a changed PNG updates the texture in place and in open maps
     verify:
     - UI snapshot tests; integration test that imports, compiles and renders
@@ -683,7 +683,7 @@ groups:
     - 'Face extrusion, sweeping a brush along a path, scale and shear handles, CSG hollow and intersect beside merge and subtract, vertex editing with edge and face splitting and several vertices moved together, with alignment lock through every operation'
     - 'Chamfering an edge into one or more bevel faces'
     acceptance:
-    - 'Every operation leaves convex, valid brushes that qmap-bsp compiles with no errors'
+    - 'Every operation leaves convex, valid brushes that qs-map-bsp compiles with no errors'
     - 'Texture alignment lock keeps each faces texture fixed in world space'
     verify:
     - 'Property tests over random brushes; differential compile of the results'
@@ -721,7 +721,7 @@ groups:
     - 'Compile profiles that run our compilers or external ones with expressions for paths and launch an engine; portal file display; automatic backups at an interval and on each save; repeating the last command'
     - 'A toolbar button and a key binding that run the chosen profile and launch, and a notification when a compile ends, with its time and result'
     acceptance:
-    - 'A profile running qmap-bsp, qmap-vis and qmap-light then launching the preview host works on each OS'
+    - 'A profile running qs-map-bsp, qs-map-vis and qs-map-light then launching the preview host works on each OS'
     - 'Backups restore a map after a simulated crash'
     verify:
     - 'Integration tests; UI snapshot'
@@ -783,10 +783,10 @@ groups:
     - P6-04
     deliverable:
     - 'A prefab browser of .map files in the project prefab folder, placed by dragging; saving a selection as a prefab'
-    - 'External map instances: an entity naming another .map drawn in place with its position, rotation and scale, and expanded by qmap-bsp, following the external map entity of ericw-tools qbsp, described from its source at a pinned commit in docs/spec/'
+    - 'External map instances: an entity naming another .map drawn in place with its position, rotation and scale, and expanded by qs-map-bsp, following the external map entity of ericw-tools qbsp, described from its source at a pinned commit in docs/spec/'
     acceptance:
     - 'An instance draws its .map in place and follows edits to that file'
-    - 'A map with external instances compiles with qmap-bsp to the same geometry as ericw-tools qbsp in the differential suite'
+    - 'A map with external instances compiles with qs-map-bsp to the same geometry as ericw-tools qbsp in the differential suite'
     verify:
     - 'Differential compile; UI snapshot tests'
   - key: P6-24
@@ -1076,7 +1076,7 @@ groups:
     depends:
     - P6-06
     deliverable:
-    - Full-quality mode in qmap-light with coloured light and .lit output
+    - Full-quality mode in qs-map-light with coloured light and .lit output
     acceptance:
     - Image comparison against id light within tolerance; .lit loads in the preview host
     verify:
@@ -1211,9 +1211,9 @@ groups:
     - P7-01
     - P5-06
     deliverable:
-    - 'Light entities drawn with their falloff radius, colour and, for spotlights, their cone, computed from their keys as docs/spec says qmap-light reads them; shown for the selection or all lights'
+    - 'Light entities drawn with their falloff radius, colour and, for spotlights, their cone, computed from their keys as docs/spec says qs-map-light reads them; shown for the selection or all lights'
     acceptance:
-    - 'For each light vector in docs/spec/vectors/, the drawn radius is where qmap-light gives that light no contribution, and the cone matches the spotlight angle'
+    - 'For each light vector in docs/spec/vectors/, the drawn radius is where qs-map-light gives that light no contribution, and the cone matches the spotlight angle'
     - 'Editing a light key updates its preview in the same frame'
     verify:
     - 'Unit tests against the light vectors; UI snapshot tests'

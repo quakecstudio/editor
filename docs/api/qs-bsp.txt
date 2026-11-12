@@ -99,6 +99,8 @@ enum qs_bsp::BspVersion
 enum qs_bsp::LumpId
 enum qs_bsp::lit::LitChoice
 enum qs_bsp::lit::LitError
+enum qs_bsp::write::BspFormat
+enum qs_bsp::write::BspWriteError
 field qs_bsp::Animation.alternate
 field qs_bsp::Animation.max
 field qs_bsp::Animation.min
@@ -177,6 +179,56 @@ field qs_bsp::Texture.width
 field qs_bsp::lit::FoundLit.bytes
 field qs_bsp::lit::FoundLit.path_id
 field qs_bsp::lit::Lit.rgb
+field qs_bsp::write::BspFile.clipnodes
+field qs_bsp::write::BspFile.edges
+field qs_bsp::write::BspFile.entities
+field qs_bsp::write::BspFile.faces
+field qs_bsp::write::BspFile.leafs
+field qs_bsp::write::BspFile.lighting
+field qs_bsp::write::BspFile.marksurfaces
+field qs_bsp::write::BspFile.models
+field qs_bsp::write::BspFile.nodes
+field qs_bsp::write::BspFile.planes
+field qs_bsp::write::BspFile.surfedges
+field qs_bsp::write::BspFile.texinfo
+field qs_bsp::write::BspFile.textures
+field qs_bsp::write::BspFile.vertexes
+field qs_bsp::write::BspFile.visibility
+field qs_bsp::write::DiskClipNode.children
+field qs_bsp::write::DiskClipNode.planenum
+field qs_bsp::write::DiskFace.firstedge
+field qs_bsp::write::DiskFace.lightofs
+field qs_bsp::write::DiskFace.numedges
+field qs_bsp::write::DiskFace.planenum
+field qs_bsp::write::DiskFace.side
+field qs_bsp::write::DiskFace.styles
+field qs_bsp::write::DiskFace.texinfo
+field qs_bsp::write::DiskLeaf.ambient_level
+field qs_bsp::write::DiskLeaf.contents
+field qs_bsp::write::DiskLeaf.firstmarksurface
+field qs_bsp::write::DiskLeaf.maxs
+field qs_bsp::write::DiskLeaf.mins
+field qs_bsp::write::DiskLeaf.nummarksurfaces
+field qs_bsp::write::DiskLeaf.visofs
+field qs_bsp::write::DiskModel.firstface
+field qs_bsp::write::DiskModel.headnode
+field qs_bsp::write::DiskModel.maxs
+field qs_bsp::write::DiskModel.mins
+field qs_bsp::write::DiskModel.numfaces
+field qs_bsp::write::DiskModel.origin
+field qs_bsp::write::DiskModel.visleafs
+field qs_bsp::write::DiskNode.children
+field qs_bsp::write::DiskNode.firstface
+field qs_bsp::write::DiskNode.maxs
+field qs_bsp::write::DiskNode.mins
+field qs_bsp::write::DiskNode.numfaces
+field qs_bsp::write::DiskNode.planenum
+field qs_bsp::write::DiskPlane.dist
+field qs_bsp::write::DiskPlane.normal
+field qs_bsp::write::DiskPlane.plane_type
+field qs_bsp::write::DiskTexinfo.flags
+field qs_bsp::write::DiskTexinfo.miptex
+field qs_bsp::write::DiskTexinfo.vecs
 fn qs_bsp::Bsp::empty
 fn qs_bsp::Bsp::entities
 fn qs_bsp::Bsp::face_samples
@@ -212,14 +264,25 @@ fn qs_bsp::model_precache_index
 fn qs_bsp::replace_entities
 fn qs_bsp::wads::wad_files
 fn qs_bsp::wads::wad_key
+fn qs_bsp::write::BspFile::to_bytes
 impl qs_bsp::BspError: core::error::Error
 impl qs_bsp::BspError: fmt::Display
 impl qs_bsp::lit::LitError: core::error::Error
 impl qs_bsp::lit::LitError: fmt::Display
+impl qs_bsp::write::BspWriteError: core::error::Error
+impl qs_bsp::write::BspWriteError: fmt::Display
+impl qs_bsp::write::DiskClipNode: Record
+impl qs_bsp::write::DiskFace: Record
+impl qs_bsp::write::DiskLeaf: Record
+impl qs_bsp::write::DiskModel: Record
+impl qs_bsp::write::DiskNode: Record
+impl qs_bsp::write::DiskPlane: Record
+impl qs_bsp::write::DiskTexinfo: Record
 mod qs_bsp::ent
 mod qs_bsp::limits
 mod qs_bsp::lit
 mod qs_bsp::wads
+mod qs_bsp::write
 struct qs_bsp::Animation
 struct qs_bsp::Bsp
 struct qs_bsp::ClipNode
@@ -234,6 +297,14 @@ struct qs_bsp::Texture
 struct qs_bsp::lit::FoundLit
 struct qs_bsp::lit::Lit
 struct qs_bsp::lit::PathId
+struct qs_bsp::write::BspFile
+struct qs_bsp::write::DiskClipNode
+struct qs_bsp::write::DiskFace
+struct qs_bsp::write::DiskLeaf
+struct qs_bsp::write::DiskModel
+struct qs_bsp::write::DiskNode
+struct qs_bsp::write::DiskPlane
+struct qs_bsp::write::DiskTexinfo
 use qs_bsp::BSP_ENT_EXTENSION = ent::BSP_ENT_EXTENSION
 use qs_bsp::BSP_LIT_HEADER_SIZE = lit::BSP_LIT_HEADER_SIZE
 use qs_bsp::BSP_LIT_MAGIC = lit::BSP_LIT_MAGIC
@@ -293,3 +364,7 @@ variant qs_bsp::lit::LitChoice::Used
 variant qs_bsp::lit::LitError::Corrupt
 variant qs_bsp::lit::LitError::Outdated
 variant qs_bsp::lit::LitError::UnknownVersion
+variant qs_bsp::write::BspFormat::Bsp2
+variant qs_bsp::write::BspFormat::Bsp29
+variant qs_bsp::write::BspWriteError::TooLarge
+variant qs_bsp::write::BspWriteError::TooWide

@@ -22,6 +22,7 @@
 pub mod ent;
 pub mod lit;
 pub mod wads;
+pub mod write;
 
 #[cfg(test)]
 mod fitz_tests;

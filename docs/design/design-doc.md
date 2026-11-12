@@ -255,7 +255,7 @@ The IDE includes its own map editor and map compiler, so building a level, like 
 | Half-Life maps | Read BSP version 30 and WAD3 textures with their own palettes, as QuakeSpasm loads them, for QuakeC mods that run on Half-Life maps such as FreeHL and FreeCS (Phase 5); never Valve's game data in the repository |
 | Diagnostics | Leaks drawn as a path in the 3D view; missing textures; unknown classnames, keys and targets |
 
-**Our own map compiler.** `qmap-bsp`, `qmap-vis` and `qmap-light` in Rust turn a .map into a playable BSP, replacing the qbsp, vis and light stages. They are ported from id's GPL [quake-tools](https://github.com/id-Software/quake-tools) and checked in CI against id's originals and [ericw-tools](https://github.com/ericwa/ericw-tools) (GPLv2+), neither of which is shipped. BSP2 and coloured light are in scope because modern maps need them; ericw-tools' advanced lighting comes later.
+**Our own map compiler.** `qs-map-bsp`, `qs-map-vis` and `qs-map-light` in Rust turn a .map into a playable BSP, replacing the qbsp, vis and light stages. They are ported from id's GPL [quake-tools](https://github.com/id-Software/quake-tools) and checked in CI against id's originals and [ericw-tools](https://github.com/ericwa/ericw-tools) (GPLv2+), neither of which is shipped. BSP2 and coloured light are in scope because modern maps need them; ericw-tools' advanced lighting comes later.
 
 **Fast iteration inside the play loop**
 

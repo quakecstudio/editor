@@ -5,7 +5,7 @@ never renumbered, never reused, withdrawn rather than deleted.
 
 Describes what id's `vis` does: reading the portal file `qbsp` writes (QBSP-12), finding which
 leaves each leaf may see, compressing each leaf's row into the BSP's visibility lump (BSP-6),
-and setting each leaf's ambient sound levels. It is the contract for our `qmap-vis` (P6-05) and
+and setting each leaf's ambient sound levels. It is the contract for our `qs-map-vis` (P6-05) and
 the vis half of the map compiler differential (P6-07). The engine's side, decompressing a row,
 is BSP-6.
 
@@ -35,7 +35,7 @@ code is ported:
 - **VIS-1.3** The fast mode, `-fast`, takes each portal's visible leaves to be the leaves it
   might see (VIS-3), with no portal flow. The full mode, the default, runs the portal flow
   (VIS-4) at test level `-level`, 2 when not given.
-- **VIS-1.4** Our `qmap-vis` offers the same two modes: fast is VIS-1.3's fast mode, full its
+- **VIS-1.4** Our `qs-map-vis` offers the same two modes: fast is VIS-1.3's fast mode, full its
   full mode at level 2. Levels 0, 1, 3 and 4 are options of the full mode.
 
 ## VIS-2 Reading the portal file

@@ -148,6 +148,7 @@ qc-engines = { path = "crates/qc-engines" }
 qc-ide = { path = "crates/qc-ide" }
 qc-builtins = { path = "crates/qc-builtins" }
 qc-codegen = { path = "crates/qc-codegen" }
+qs-map-bsp = { path = "crates/qs-map-bsp" }
 qc-diag = { path = "crates/qc-diag" }
 qc-lexer = { path = "crates/qc-lexer" }
 qc-lno = { path = "crates/qc-lno" }
