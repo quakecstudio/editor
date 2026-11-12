@@ -9,7 +9,7 @@
 use crate::geometry::{
     MIN_CORNERS, ON_PLANE, POLYGON_REACH, Plane, clip_behind, plane as plane_of,
 };
-use crate::{Brush, Face, MapError, TexDef};
+use crate::{Brush, Entity, Face, Item, MapError, TexDef};
 
 /// What a new face is painted with: its texture and its texture definition.
 #[derive(Clone, Debug, PartialEq)]
@@ -166,6 +166,19 @@ fn face_points(polygon: &[[f64; 3]], normal: [f64; 3]) -> Option<[[f64; 3]; 3]> 
     } else {
         [c, b, a]
     })
+}
+
+impl Entity {
+    /// The places in [`Entity::items`] of the entity's brushes, in order.
+    #[must_use]
+    pub fn brush_places(&self) -> Vec<usize> {
+        self.items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| matches!(item, Item::Brush(_)))
+            .map(|(place, _)| place)
+            .collect()
+    }
 }
 
 impl Brush {
