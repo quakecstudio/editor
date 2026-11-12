@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use qs_bsp::write::{BspFile, DiskClipNode, DiskFace, DiskLeaf, DiskModel, DiskNode, DiskPlane};
 
-use crate::math::{Vec3, rint, within};
+use crate::math::{Vec3, all, cyclic, rint, within};
 use crate::planes::{PlaneId, PlaneType, Planes};
 use crate::tree::{NodeKind, SIDESPACE, Tree};
 use crate::{CompileError, Contents, Hull};
@@ -162,7 +162,7 @@ impl Output {
                 let mut edges = Vec::with_capacity(count);
                 for i in 0..count {
                     let (Some(&a), Some(&b)) =
-                        (face.points.get(i), face.points.get((i + 1) % count))
+                        (face.points.get(i), face.points.get(cyclic(i, 1, count)))
                     else {
                         continue;
                     };
@@ -241,7 +241,7 @@ impl Output {
                     && slot.0 == contents
                 {
                     slot.1 = true;
-                    return Ok(-index::<i32>(i, "numedges == MAX_MAP_EDGES")?);
+                    return Ok(index::<i32>(i, "numedges == MAX_MAP_EDGES")?.wrapping_neg());
                 }
             }
         }
@@ -337,7 +337,7 @@ impl Output {
                 Some(_) => {
                     let leaf = self.file.leafs.len();
                     self.leaf(tree, child)?;
-                    -index::<i16>(leaf.saturating_add(1), "MAX_MAP_LEAFS")?
+                    index::<i16>(leaf.saturating_add(1), "MAX_MAP_LEAFS")?.wrapping_neg()
                 }
                 None => {
                     let next = index::<i16>(self.file.nodes.len(), "MAX_MAP_NODES")?;
@@ -441,7 +441,7 @@ impl VertexHash {
         if let Some(found) = self.buckets.get(bucket).and_then(|list| {
             list.iter()
                 .rev()
-                .find(|(known, _)| (0..3).all(|i| within(known[i], vert[i], POINT_EPSILON)))
+                .find(|(known, _)| all(*known, vert, |a, b| within(a, b, POINT_EPSILON)))
         }) {
             return Ok(found.1);
         }
@@ -580,6 +580,6 @@ impl Output {
             dist,
             plane_type,
         });
-        Ok(self.file.planes.len() - 1)
+        Ok(self.file.planes.len().saturating_sub(1))
     }
 }

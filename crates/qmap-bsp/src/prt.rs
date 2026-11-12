@@ -2,8 +2,6 @@
 
 //! The portal file `vis` reads (QBSP-12).
 
-use std::fmt::Write as _;
-
 use crate::Contents;
 use crate::math::{Vec3, cross, dot, normalize, rint, sub, within};
 use crate::planes::Planes;
@@ -33,9 +31,9 @@ fn winding_normal(w: &[Vec3]) -> Vec3 {
 fn write_float(out: &mut String, v: f32) {
     let whole = rint(v);
     if within(v, whole, WHOLE_EPSILON) {
-        let _ = write!(out, "{} ", whole as i32);
+        out.push_str(&format!("{} ", whole as i32));
     } else {
-        let _ = write!(out, "{:.6} ", f64::from(v));
+        out.push_str(&format!("{:.6} ", f64::from(v)));
     }
 }
 
@@ -75,15 +73,16 @@ pub(crate) fn portal_file(tree: &Tree, portals: &Portals, planes: &Planes) -> Ve
         if let Some(slot) = numbers.get_mut(leaf) {
             *slot = Some(count);
         }
-        count += 1;
+        count = count.saturating_add(1);
         if let Some(node) = tree.nodes.get(leaf) {
-            portal_count += node
-                .portals
-                .iter()
-                .filter(|&&id| {
-                    portals.get(id).is_some_and(|p| p.nodes[0] == leaf) && same_contents(id)
-                })
-                .count();
+            portal_count = portal_count.saturating_add(
+                node.portals
+                    .iter()
+                    .filter(|&&id| {
+                        portals.get(id).is_some_and(|p| p.nodes[0] == leaf) && same_contents(id)
+                    })
+                    .count(),
+            );
         }
     }
     let number = |node: usize| {
@@ -115,13 +114,12 @@ pub(crate) fn portal_file(tree: &Tree, portals: &Portals, planes: &Planes) -> Ve
                 } else {
                     portal.nodes
                 };
-            let _ = write!(
-                out,
+            out.push_str(&format!(
                 "{} {} {} ",
                 portal.winding.len(),
                 number(first),
                 number(second)
-            );
+            ));
             for point in &portal.winding {
                 out.push('(');
                 for &c in point {

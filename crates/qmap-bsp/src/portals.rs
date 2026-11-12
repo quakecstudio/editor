@@ -3,7 +3,7 @@
 //! Portals: the polygons joining the tree's leaves to each other and to the outside
 //! (QBSP-8).
 
-use crate::math::Vec3;
+use crate::math::{Axis, Vec3};
 use crate::planes::{Plane, PlaneId, Planes, Side};
 use crate::tree::{Node, NodeKind, Tree};
 use crate::winding::{KeepOn, base_for_plane, clip, divide};
@@ -80,23 +80,29 @@ pub(crate) fn portalize(
     let head = tree.head();
     // `MakeHeadnodePortals` (QBSP-8.1).
     // qbsp makes them axis by axis, minimum then maximum, and numbers them `j * 3 + i`.
-    let mut bounding: [Option<(Plane, usize)>; 6] = [None; 6];
-    for i in 0..3 {
-        for j in 0..2 {
-            let mut normal = [0.0; 3];
-            let plane = if j == 1 {
-                normal[i] = -1.0;
+    let mut low: [Option<(Plane, usize)>; 3] = [None; 3];
+    let mut high: [Option<(Plane, usize)>; 3] = [None; 3];
+    for (axis, (low, high)) in Axis::ALL
+        .into_iter()
+        .zip(low.iter_mut().zip(high.iter_mut()))
+    {
+        let sides = [
+            (
+                low,
                 Plane {
-                    normal,
-                    dist: -maxs[i],
-                }
-            } else {
-                normal[i] = 1.0;
+                    normal: axis.along(1.0),
+                    dist: axis.of(mins),
+                },
+            ),
+            (
+                high,
                 Plane {
-                    normal,
-                    dist: mins[i],
-                }
-            };
+                    normal: axis.along(-1.0),
+                    dist: -axis.of(maxs),
+                },
+            ),
+        ];
+        for (slot, plane) in sides {
             let (id, side) = planes.find(plane)?;
             let nodes = match side {
                 Side::Back => [portals.outside, head],
@@ -110,13 +116,11 @@ pub(crate) fn portalize(
                     winding: base_for_plane(plane),
                 },
             );
-            if let Some(slot) = bounding.get_mut(j * 3 + i) {
-                *slot = Some((plane, portal));
-            }
+            *slot = Some((plane, portal));
         }
     }
-    let made: Vec<usize> = bounding.iter().flatten().map(|&(_, id)| id).collect();
-    let bounding: Vec<Plane> = bounding.iter().flatten().map(|&(plane, _)| plane).collect();
+    let bounding = low.into_iter().chain(high).flatten();
+    let (bounding, made): (Vec<Plane>, Vec<usize>) = bounding.unzip();
     for (i, &id) in made.iter().enumerate() {
         let mut winding = portals.get(id).map(|p| p.winding.clone());
         for (j, &plane) in bounding.iter().enumerate() {
@@ -203,7 +207,11 @@ fn cut_node(
         } else {
             Side::Back
         };
-        let other = portal.nodes[side.other().index()];
+        let [ahead, behind] = portal.nodes;
+        let other = match side {
+            Side::Front => behind,
+            Side::Back => ahead,
+        };
         Portals::detach(tree, id, portal.nodes);
         let (front_part, back_part) = divide(&portal.winding, plane)?;
         let joined = |child: usize| match side {

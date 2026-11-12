@@ -5,7 +5,9 @@
 
 use qs_map::qbsp::{QbspEntity, QbspFace, QbspMap};
 
-use crate::math::{Vec3, add, cross, dot, length, normalize, rint, same, sub, within};
+use crate::math::{
+    Axis, Vec3, add, cross, cyclic, dot, length, max, min, normalize, rint, same, sub, within,
+};
 use crate::planes::{ANGLE_EPSILON, Plane, Planes};
 use crate::winding::{KeepOn, ON_EPSILON, base_for_plane, clip};
 use crate::{CompileError, Contents, Face, Faults, Hull, Limits, ModelKind};
@@ -149,10 +151,6 @@ impl Brush {
 
 /// The faces of the solid behind every stored plane, `CreateBrushFaces`, in qbsp's list
 /// order, and their bounds; `None` when no face is left (QBSP-4.3 to QBSP-4.5).
-#[expect(
-    clippy::type_complexity,
-    reason = "the faces and the two corners of their bounds, which only the loader reads"
-)]
 fn create_faces(
     stored: &[BrushPlane],
     planes: &mut Planes,
@@ -190,11 +188,9 @@ fn create_faces(
                 })
             })
             .collect();
-        for point in &points {
-            for axis in 0..3 {
-                mins[axis] = mins[axis].min(point[axis]);
-                maxs[axis] = maxs[axis].max(point[axis]);
-            }
+        for &point in &points {
+            mins = min(mins, point);
+            maxs = max(maxs, point);
         }
         let (plane, side) = planes.find(face.plane)?;
         let made = Face {
@@ -235,11 +231,7 @@ fn check_face(face: &Face, planes: &Planes) -> Result<(), CompileError> {
         if !(-ON_EPSILON..=ON_EPSILON).contains(&f64::from(d)) {
             return Err(CompileError::PointOffPlane);
         }
-        let p2 = face
-            .points
-            .get((i.saturating_add(1)) % count)
-            .copied()
-            .unwrap_or(p1);
+        let p2 = face.points.get(cyclic(i, 1, count)).copied().unwrap_or(p1);
         let dir = sub(p2, p1);
         if length(dir) < ON_EPSILON {
             return Err(CompileError::DegenerateEdge);
@@ -369,16 +361,14 @@ impl Growth<'_> {
         }
         self.edges.push([a, b]);
         let edge = normalize(sub(p1, p2));
-        for axis in 0..3 {
-            let (b, c) = ((axis + 1) % 3, (axis + 2) % 3);
-            for d in 0..2 {
-                for e in 0..2 {
+        for axis in Axis::ALL {
+            let (b, c) = (axis.next(), axis.next().next());
+            for d in self.size {
+                for e in self.size {
                     let mut origin = p1;
-                    origin[b] += self.size.get(d).map_or(0.0, |corner| corner[b]);
-                    origin[c] += self.size.get(e).map_or(0.0, |corner| corner[c]);
-                    let mut unit = [0.0; 3];
-                    unit[axis] = 1.0;
-                    let normal = cross(unit, edge);
+                    *b.of_mut(&mut origin) += b.of(d);
+                    *c.of_mut(&mut origin) += c.of(e);
+                    let normal = cross(axis.along(1.0), edge);
                     let len = f64::from(float_length(normal));
                     if len < 1.0 - ANGLE_EPSILON || len > 1.0 + ANGLE_EPSILON {
                         continue;
@@ -419,25 +409,26 @@ fn expand(
     }
     let [low, high] = size;
     for brush_plane in growth.stored.iter_mut() {
-        let mut corner = [0.0; 3];
-        for axis in 0..3 {
-            let n = brush_plane.plane.normal[axis];
+        let normal = brush_plane.plane.normal;
+        let corner = Axis::ALL.map(|axis| {
+            let n = axis.of(normal);
             if n > 0.0 {
-                corner[axis] = high[axis];
+                axis.of(high)
             } else if n < 0.0 {
-                corner[axis] = low[axis];
+                axis.of(low)
+            } else {
+                0.0
             }
-        }
+        });
         brush_plane.plane.dist += dot(corner, brush_plane.plane.normal);
     }
-    for axis in 0..3 {
+    for axis in Axis::ALL {
         for sign in [-1.0_f32, 1.0] {
-            let mut normal = [0.0; 3];
-            normal[axis] = sign;
+            let normal = axis.along(sign);
             let dist = if sign < 0.0 {
-                -mins[axis] - low[axis]
+                -axis.of(*mins) - axis.of(low)
             } else {
-                maxs[axis] + high[axis]
+                axis.of(*maxs) + axis.of(high)
             };
             growth.add_plane(Plane { normal, dist })?;
         }
@@ -445,7 +436,7 @@ fn expand(
     for face in faces {
         let count = face.points.len();
         for (i, &p1) in face.points.iter().enumerate() {
-            let p2 = face.points.get((i + 1) % count).copied().unwrap_or(p1);
+            let p2 = face.points.get(cyclic(i, 1, count)).copied().unwrap_or(p1);
             growth.add_edge(p1, p2)?;
         }
     }
@@ -472,10 +463,8 @@ impl BrushSet {
         for faces in entity.brushes.iter().rev() {
             match Brush::load(faces, map, hull, model, planes, limits, warnings)? {
                 Loaded::Brush(brush) => {
-                    for axis in 0..3 {
-                        mins[axis] = mins[axis].min(brush.mins[axis]);
-                        maxs[axis] = maxs[axis].max(brush.maxs[axis]);
-                    }
+                    mins = min(mins, brush.mins);
+                    maxs = max(maxs, brush.maxs);
                     if brush.contents == Contents::Solid {
                         solid.insert(0, brush);
                     } else {

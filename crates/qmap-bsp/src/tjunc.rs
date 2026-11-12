@@ -3,7 +3,7 @@
 //! T-junctions: every vertex of a face that lies on another face's edge is added to that edge,
 //! and a face left with too many points is cut (QBSP-11).
 
-use crate::math::{EQUAL_EPSILON, Vec3, dot, ma, normalize, sub};
+use crate::math::{Axis, EQUAL_EPSILON, Vec3, cyclic, dot, ma, negate, normalize, same, sub};
 use crate::tree::{NodeFace, NodeKind, Tree};
 use crate::{CompileError, Face};
 
@@ -43,14 +43,15 @@ struct Lines {
 /// positive, smaller components zeroed.
 fn canonical(v: Vec3) -> Vec3 {
     let mut v = normalize(v);
-    for axis in 0..3 {
-        if f64::from(v[axis]) > EQUAL_EPSILON {
+    for axis in Axis::ALL {
+        let c = f64::from(axis.of(v));
+        if c > EQUAL_EPSILON {
             return v;
         }
-        if f64::from(v[axis]) < -EQUAL_EPSILON {
-            return crate::math::negate(v);
+        if c < -EQUAL_EPSILON {
+            return negate(v);
         }
-        v[axis] = 0.0;
+        *axis.of_mut(&mut v) = 0.0;
     }
     v
 }
@@ -60,7 +61,6 @@ impl Lines {
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_precision_loss,
-        clippy::cast_sign_loss,
         reason = "spec QBSP-11.1: qbsp's hash sizes, floats truncated to ints and back"
     )]
     fn new(maxs: Vec3) -> Self {
@@ -106,13 +106,11 @@ impl Lines {
             core::mem::swap(&mut t1, &mut t2);
         }
         let bucket = self.bucket(origin);
-        let close =
-            |a: Vec3, b: Vec3| (0..3).all(|i| f64::from((a[i] - b[i]).abs()) <= EQUAL_EPSILON);
         if let Some(&found) = self.buckets.get(bucket).and_then(|ids| {
             ids.iter().rev().find(|&&id| {
                 self.lines
                     .get(id)
-                    .is_some_and(|line| close(line.origin, origin) && close(line.dir, dir))
+                    .is_some_and(|line| same(line.origin, origin) && same(line.dir, dir))
             })
         }) {
             return Ok((found, t1, t2));
@@ -125,7 +123,7 @@ impl Lines {
             origin,
             points: vec![SENTINEL],
         });
-        let id = self.lines.len() - 1;
+        let id = self.lines.len().saturating_sub(1);
         if let Some(ids) = self.buckets.get_mut(bucket) {
             ids.push(id);
         }
@@ -145,12 +143,12 @@ impl Lines {
             if known > t {
                 break;
             }
-            at += 1;
+            at = at.saturating_add(1);
         }
         if self.verts >= MAXWVERTS {
             return Err(CompileError::Limit("AddVert: numwverts == MAXWVERTS"));
         }
-        self.verts += 1;
+        self.verts = self.verts.saturating_add(1);
         line.points.insert(at, t);
         Ok(())
     }
@@ -178,7 +176,7 @@ fn fix_points(points: &[Vec3], lines: &mut Lines) -> Result<Vec<Vec3>, CompileEr
     'restart: loop {
         let count = points.len();
         for i in 0..count {
-            let j = (i + 1) % count;
+            let j = cyclic(i, 1, count);
             let (Some(&a), Some(&b)) = (points.get(i), points.get(j)) else {
                 continue;
             };
@@ -213,7 +211,7 @@ fn split_for_tjunc(points: Vec<Vec3>) -> Result<(Vec<Vec<Vec3>>, Vec<Vec3>), Com
         if f.len() <= MAXPOINTS {
             return Ok((cut, f));
         }
-        let mut rotations = 0;
+        let mut rotations = 0_usize;
         loop {
             let n = f.len();
             let straight = |a: Vec3, b: Vec3, dir: Vec3| {
@@ -223,46 +221,51 @@ fn split_for_tjunc(points: Vec<Vec3>) -> Result<(Vec<Vec<Vec3>>, Vec<Vec3>), Com
             let first = *f.first().ok_or(CompileError::TooManyPoints)?;
             let last = *f.last().ok_or(CompileError::TooManyPoints)?;
             let dir = normalize(sub(last, first));
-            let mut lastcorner = n - 1;
+            let mut lastcorner = n.saturating_sub(1);
             while lastcorner > 0 {
-                let (Some(&a), Some(&b)) = (f.get(lastcorner - 1), f.get(lastcorner)) else {
+                let (Some(&a), Some(&b)) = (f.get(lastcorner.saturating_sub(1)), f.get(lastcorner))
+                else {
                     break;
                 };
                 if !straight(a, b, dir) {
                     break;
                 }
-                lastcorner -= 1;
+                lastcorner = lastcorner.saturating_sub(1);
             }
             let second = *f.get(1).ok_or(CompileError::TooManyPoints)?;
             let dir = normalize(sub(second, first));
             let mut firstcorner = 1;
-            while firstcorner < n - 1 {
-                let (Some(&a), Some(&b)) = (f.get(firstcorner + 1), f.get(firstcorner)) else {
+            while firstcorner < n.saturating_sub(1) {
+                let (Some(&a), Some(&b)) =
+                    (f.get(firstcorner.saturating_add(1)), f.get(firstcorner))
+                else {
                     break;
                 };
                 if !straight(a, b, dir) {
                     break;
                 }
-                firstcorner += 1;
+                firstcorner = firstcorner.saturating_add(1);
             }
-            if firstcorner + 2 >= MAXPOINTS {
-                rotations += 1;
+            if firstcorner.saturating_add(2) >= MAXPOINTS {
+                rotations = rotations.saturating_add(1);
                 if rotations > n {
                     return Err(CompileError::TooManyPoints);
                 }
                 f.rotate_left(1);
                 continue;
             }
-            let take = if n - firstcorner <= MAXPOINTS {
-                firstcorner + 2
-            } else if lastcorner + 2 < MAXPOINTS && n - lastcorner <= MAXPOINTS {
-                lastcorner + 2
+            let take = if n.saturating_sub(firstcorner) <= MAXPOINTS {
+                firstcorner.saturating_add(2)
+            } else if lastcorner.saturating_add(2) < MAXPOINTS
+                && n.saturating_sub(lastcorner) <= MAXPOINTS
+            {
+                lastcorner.saturating_add(2)
             } else {
                 MAXPOINTS
             };
             cut.push(f.get(..take).unwrap_or_default().to_vec());
             let mut rest = vec![first];
-            rest.extend_from_slice(f.get(take - 1..).unwrap_or_default());
+            rest.extend_from_slice(f.get(take.saturating_sub(1)..).unwrap_or_default());
             f = rest;
             break;
         }
@@ -284,7 +287,7 @@ pub(crate) fn fix(tree: &mut Tree, maxs: Vec3) -> Result<(), CompileError> {
                 for i in 0..count {
                     let (Some(&a), Some(&b)) = (
                         face.face.points.get(i),
-                        face.face.points.get((i + 1) % count),
+                        face.face.points.get(cyclic(i, 1, count)),
                     ) else {
                         continue;
                     };

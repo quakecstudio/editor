@@ -3,7 +3,7 @@
 //! Windings: convex polygons on a plane, cut by other planes (QBSP-3).
 
 use crate::CompileError;
-use crate::math::{Vec3, add, cross, dot, ma, normalize, scale, sub};
+use crate::math::{Axis, Vec3, add, cross, cyclic, dot, ma, normalize, scale, sub};
 use crate::planes::Plane;
 
 /// How far a point may lie from a plane and still be on it (QBSP-3.2).
@@ -79,17 +79,16 @@ pub(crate) fn base_for_plane(plane: Plane) -> Vec<Vec3> {
     reason = "spec QBSP-3.3: qbsp compares a normal component with exactly 1 and -1"
 )]
 pub(crate) fn split_point(p1: Vec3, p2: Vec3, t: f32, plane: Plane) -> Vec3 {
-    let mut mid = [0.0; 3];
-    for j in 0..3 {
-        mid[j] = if plane.normal[j] == 1.0 {
+    Axis::ALL.map(|j| {
+        let n = j.of(plane.normal);
+        if n == 1.0 {
             plane.dist
-        } else if plane.normal[j] == -1.0 {
+        } else if n == -1.0 {
             -plane.dist
         } else {
-            p1[j] + t * (p2[j] - p1[j])
-        };
-    }
-    mid
+            j.of(p1) + t * (j.of(p2) - j.of(p1))
+        }
+    })
 }
 
 /// What keeping the front of a winding gives (QBSP-3.3).
@@ -120,12 +119,12 @@ pub(crate) fn clip(
     Ok(divide(points, plane)?.0)
 }
 
+/// A winding's parts in front of and behind a plane, either missing.
+pub(crate) type Parts = (Option<Vec<Vec3>>, Option<Vec<Vec3>>);
+
 /// The winding's parts in front of and behind `plane`, `DivideWinding` and `SplitFace`; a
 /// winding with no point in front is all back, one wholly on the plane included (QBSP-3.4).
-pub(crate) fn divide(
-    points: &[Vec3],
-    plane: Plane,
-) -> Result<(Option<Vec<Vec3>>, Option<Vec<Vec3>>), CompileError> {
+pub(crate) fn divide(points: &[Vec3], plane: Plane) -> Result<Parts, CompileError> {
     let sides = classify(points, plane);
     let fronts = sides.iter().filter(|(_, s)| *s == PointSide::Front).count();
     let backs = sides.iter().filter(|(_, s)| *s == PointSide::Back).count();
@@ -138,7 +137,7 @@ pub(crate) fn divide(
     let mut front = Vec::with_capacity(points.len().saturating_add(4));
     let mut back = Vec::with_capacity(points.len().saturating_add(4));
     for (i, (&p1, &(d1, s1))) in points.iter().zip(&sides).enumerate() {
-        let next = (i.saturating_add(1)) % points.len().max(1);
+        let next = cyclic(i, 1, points.len());
         match s1 {
             PointSide::On => {
                 front.push(p1);

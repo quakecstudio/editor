@@ -21,6 +21,9 @@ mod winding;
 
 use std::fmt;
 
+use qs_bsp::write::BspWriteError;
+use qs_map::qbsp::QbspError;
+
 pub use compile::{Compiled, Compiler};
 
 use crate::math::Vec3;
@@ -140,11 +143,9 @@ impl Surface {
     pub(crate) fn recalculate(&mut self) {
         self.mins = [99999.0; 3];
         self.maxs = [-99999.0; 3];
-        for point in self.faces.iter().flat_map(|face| &face.points) {
-            for axis in 0..3 {
-                self.mins[axis] = self.mins[axis].min(point[axis]);
-                self.maxs[axis] = self.maxs[axis].max(point[axis]);
-            }
+        for &point in self.faces.iter().flat_map(|face| &face.points) {
+            self.mins = math::min(self.mins, point);
+            self.maxs = math::max(self.maxs, point);
         }
     }
 }
@@ -231,7 +232,7 @@ pub enum Warning {
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompileError {
     /// The map could not be read (MAP-1 to MAP-7).
-    Map(qs_map::qbsp::QbspError),
+    Map(QbspError),
     /// The map could not be read by the lossless parser (QBSP-14.1).
     Document(qs_map::MapError),
     /// `FindPlane: normalization error` (QBSP-2.3).
@@ -267,7 +268,7 @@ pub enum CompileError {
     /// A `MAX_MAP_` limit passed while writing, named (QBSP-13.10).
     Limit(&'static str),
     /// The BSP could not be written (BSP-23.3).
-    Write(qs_bsp::write::BspWriteError),
+    Write(BspWriteError),
 }
 
 impl fmt::Display for CompileError {
@@ -298,8 +299,8 @@ impl fmt::Display for CompileError {
 
 impl core::error::Error for CompileError {}
 
-impl From<qs_map::qbsp::QbspError> for CompileError {
-    fn from(error: qs_map::qbsp::QbspError) -> Self {
+impl From<QbspError> for CompileError {
+    fn from(error: QbspError) -> Self {
         Self::Map(error)
     }
 }

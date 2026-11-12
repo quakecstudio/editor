@@ -5,7 +5,7 @@
 
 use qs_map::qbsp::QbspTexinfo;
 
-use crate::math::{Vec3, dot, length, normalize, same};
+use crate::math::{Axis, Vec3, dot, length, max, min, normalize, same};
 use crate::planes::{Plane, PlaneId, Planes, Side};
 use crate::winding::{ON_EPSILON, divide};
 use crate::{CompileError, Contents, Face, Faults, Surface, Warning};
@@ -93,14 +93,14 @@ pub(crate) struct Builder<'a> {
 
 /// `FaceSide`: which side of `plane` a face is on, `None` when it has points on both
 /// (QBSP-7.3).
-fn face_side(face: &Face, plane: Plane, axial: Option<usize>) -> Option<Side> {
+fn face_side(face: &Face, plane: Plane, axial: Option<Axis>) -> Option<Side> {
     let (mut front, mut back) = (false, false);
     for point in &face.points {
         // An axial plane compares the coordinate with its distance moved by the epsilon, in
         // double precision; any other, the float distance with the epsilon.
         let (ahead, behind) = match axial {
             Some(axis) => {
-                let (p, dist) = (f64::from(point[axis]), f64::from(plane.dist));
+                let (p, dist) = (f64::from(axis.of(*point)), f64::from(plane.dist));
                 (p > dist + ON_EPSILON, p < dist - ON_EPSILON)
             }
             None => {
@@ -128,15 +128,16 @@ fn face_side(face: &Face, plane: Plane, axial: Option<usize>) -> Option<Side> {
 }
 
 /// An axial plane's value over `mins` to `maxs` (QBSP-7.3).
-fn axial_value(plane: Plane, axis: usize, mins: Vec3, maxs: Vec3) -> f32 {
-    let dist = plane.dist * plane.normal[axis];
+fn axial_value(plane: Plane, axis: Axis, mins: Vec3, maxs: Vec3) -> f32 {
+    let dist = plane.dist * axis.of(plane.normal);
     let mut value = 0.0;
-    for j in 0..3 {
+    for j in Axis::ALL {
+        let (low, high) = (j.of(mins), j.of(maxs));
         if j == axis {
-            value += (maxs[axis] - dist) * (maxs[axis] - dist);
-            value += (dist - mins[axis]) * (dist - mins[axis]);
+            value += (high - dist) * (high - dist);
+            value += (dist - low) * (dist - low);
         } else {
-            value += 2.0 * (maxs[j] - mins[j]) * (maxs[j] - mins[j]);
+            value += 2.0 * (high - low) * (high - low);
         }
     }
     value
@@ -225,10 +226,8 @@ impl Builder<'_> {
         let mut mins = [99999.0_f32; 3];
         let mut maxs = [-99999.0_f32; 3];
         for surface in surfaces {
-            for axis in 0..3 {
-                mins[axis] = mins[axis].min(surface.mins[axis]);
-                maxs[axis] = maxs[axis].max(surface.maxs[axis]);
-            }
+            mins = min(mins, surface.mins);
+            maxs = max(maxs, surface.maxs);
         }
         match self.choice {
             Choice::MidSplit => self.mid_plane(surfaces, mins, maxs),
@@ -371,8 +370,8 @@ impl Builder<'_> {
         // `DivideNodeBounds` (QBSP-7.5).
         let (mut front_mins, mut back_maxs) = (mins, maxs);
         if kind.is_axial() {
-            front_mins[kind.axis()] = plane.dist;
-            back_maxs[kind.axis()] = plane.dist;
+            *kind.axis().of_mut(&mut front_mins) = plane.dist;
+            *kind.axis().of_mut(&mut back_maxs) = plane.dist;
         }
         let front = tree.leaf_node(front_mins, maxs);
         let back = tree.leaf_node(mins, back_maxs);

@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 
 use crate::brush::BrushSet;
+use crate::math::all;
 use crate::merge::merge_into;
 use crate::planes::{PlaneId, Planes, Side};
 use crate::winding::divide;
@@ -82,7 +83,9 @@ pub(crate) fn csg_faces(set: &BrushSet, planes: &Planes) -> Result<Vec<Surface>,
                 precedence = Precedence::Later;
                 continue;
             }
-            if (0..3).any(|i| b1.mins[i] > b2.maxs[i] || b1.maxs[i] < b2.mins[i]) {
+            if !all(b1.mins, b2.maxs, |low, high| low <= high)
+                || !all(b1.maxs, b2.mins, |high, low| high >= low)
+            {
                 continue;
             }
             let mut inside = core::mem::take(&mut outside);

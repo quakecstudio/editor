@@ -4,7 +4,7 @@
 //! face's side of it.
 
 use crate::CompileError;
-use crate::math::{Vec3, dot, length, negate};
+use crate::math::{Axis, Vec3, dot, length, negate};
 
 /// How near 1 two canonical normals' dot product must be for one plane (QBSP-2.3).
 pub(crate) const ANGLE_EPSILON: f64 = 0.000_01;
@@ -36,11 +36,11 @@ impl PlaneType {
     }
 
     /// The axis the type is along, or nearest.
-    pub(crate) const fn axis(self) -> usize {
+    pub(crate) const fn axis(self) -> Axis {
         match self {
-            Self::X | Self::AnyX => 0,
-            Self::Y | Self::AnyY => 1,
-            Self::Z | Self::AnyZ => 2,
+            Self::X | Self::AnyX => Axis::X,
+            Self::Y | Self::AnyY => Axis::Y,
+            Self::Z | Self::AnyZ => Axis::Z,
         }
     }
 
@@ -105,14 +105,15 @@ impl Plane {
     )]
     fn canonical(self) -> (Self, PlaneType) {
         let mut plane = self;
-        for axis in 0..3 {
-            if plane.normal[axis] == -1.0 {
-                plane.normal[axis] = 1.0;
+        for axis in Axis::ALL {
+            let n = axis.of_mut(&mut plane.normal);
+            if *n == -1.0 {
+                *n = 1.0;
                 plane.dist = -plane.dist;
             }
         }
         let kind = PlaneType::of(plane.normal);
-        if !kind.is_axial() && plane.normal[kind.axis()] < 0.0 {
+        if !kind.is_axial() && kind.axis().of(plane.normal) < 0.0 {
             plane = plane.flipped();
         }
         (plane, kind)
@@ -144,25 +145,11 @@ impl Side {
             Self::Back => Self::Front,
         }
     }
-
-    /// The side's index into a pair.
-    pub(crate) const fn index(self) -> usize {
-        match self {
-            Self::Front => 0,
-            Self::Back => 1,
-        }
-    }
 }
 
 /// A plane of the table.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct PlaneId(usize);
-
-impl PlaneId {
-    pub(crate) const fn get(self) -> usize {
-        self.0
-    }
-}
 
 /// The table of planes (QBSP-2).
 #[derive(Clone, Debug)]
@@ -238,11 +225,6 @@ impl Planes {
         }
         self.list.push((canonical, kind));
         Ok((PlaneId(self.list.len().saturating_sub(1)), side))
-    }
-
-    /// How many planes are stored.
-    pub(crate) fn len(&self) -> usize {
-        self.list.len()
     }
 }
 

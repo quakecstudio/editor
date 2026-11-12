@@ -10,7 +10,7 @@ use qs_wad::Wad;
 
 use crate::brush::BrushSet;
 use crate::csg::csg_faces;
-use crate::math::Vec3;
+use crate::math::{Vec3, each};
 use crate::merge::merge_all;
 use crate::output::{ClipHull, Output};
 use crate::outside::{Fill, fill_outside, gather};
@@ -145,7 +145,7 @@ impl Run<'_> {
         let surfaces = csg_faces(&set, self.planes)?;
         let mins = set.mins.map(|c| c - SIDESPACE);
         let maxs = set.maxs.map(|c| c + SIDESPACE);
-        let reach = [0, 1, 2].map(|i| set.maxs[i].abs().max(set.mins[i].abs()));
+        let reach = each(set.maxs, set.mins, |high, low| high.abs().max(low.abs()));
         let tree = self.build(choice, surfaces, mins, maxs)?;
         Ok(Some(Built {
             tree,
