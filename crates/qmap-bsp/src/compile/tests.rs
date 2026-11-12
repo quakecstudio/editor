@@ -6,6 +6,7 @@
 )]
 
 use super::Compiler;
+use crate::Dialect;
 
 #[test]
 fn scratch_maps() {
@@ -19,7 +20,21 @@ fn scratch_maps() {
         }
         let map = std::fs::read(&path).unwrap();
         let stem = path.with_extension("");
-        match Compiler::default().compile(&map, None) {
+        match Compiler::default()
+            .with_dialect(Dialect::Extended)
+            .compile(&map, None)
+        {
+            Ok(compiled) => {
+                std::fs::write(format!("{}.ext.bsp", stem.display()), &compiled.bsp).unwrap();
+            }
+            Err(error) => {
+                std::fs::write(format!("{}.ext.err", stem.display()), error.to_string()).unwrap();
+            }
+        }
+        match Compiler::default()
+            .with_dialect(Dialect::Id)
+            .compile(&map, None)
+        {
             Ok(compiled) => {
                 std::fs::write(format!("{}.ours.bsp", stem.display()), &compiled.bsp).unwrap();
                 if let Some(prt) = compiled.portal_file {

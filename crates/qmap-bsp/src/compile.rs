@@ -4,6 +4,7 @@
 //! hull, and the BSP, portal file and leak file written (QBSP-1).
 
 use qs_bsp::write::DiskTexinfo;
+use qs_map::MapFile;
 use qs_map::qbsp::{QbspMap, load_map_file};
 use qs_wad::Wad;
 
@@ -17,7 +18,7 @@ use crate::planes::Planes;
 use crate::portals::portalize;
 use crate::prt::portal_file;
 use crate::tree::{Builder, Choice, SIDESPACE, Tree};
-use crate::{CompileError, Hull, ModelKind, Surface, Warning, tjunc};
+use crate::{CompileError, Dialect, Faults, Hull, Limits, ModelKind, Surface, Warning, tjunc};
 
 /// The default largest texture extent of a face before it is cut (QBSP-1).
 const SUBDIVIDE_SIZE: f32 = 240.0;
@@ -42,12 +43,14 @@ pub struct Compiled {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Compiler {
     subdivide: f32,
+    dialect: Dialect,
 }
 
 impl Default for Compiler {
     fn default() -> Self {
         Self {
             subdivide: SUBDIVIDE_SIZE,
+            dialect: Dialect::default(),
         }
     }
 }
@@ -58,6 +61,7 @@ struct Run<'a> {
     planes: &'a mut Planes,
     warnings: &'a mut Vec<Warning>,
     subdivide: f32,
+    limits: Limits,
 }
 
 /// An entity's tree for a hull, and its head bounds.
@@ -76,7 +80,24 @@ impl Run<'_> {
             texinfo: &self.map.texinfo,
             choice,
             subdivide: self.subdivide,
+            faults: self.limits.faults,
+            warnings: core::cell::RefCell::new(Vec::new()),
         }
+    }
+
+    /// The tree of `surfaces`, the builder's warnings kept.
+    fn build(
+        &mut self,
+        choice: Choice,
+        surfaces: Vec<Surface>,
+        mins: Vec3,
+        maxs: Vec3,
+    ) -> Result<Tree, CompileError> {
+        let builder = self.builder(choice);
+        let tree = builder.build(surfaces, mins, maxs)?;
+        let warnings = builder.warnings.into_inner();
+        self.warnings.extend(warnings);
+        Ok(tree)
     }
 
     /// An entity's brushes for `hull`, CSG and a first tree (QBSP-1.7).
@@ -97,15 +118,35 @@ impl Run<'_> {
         } else {
             ModelKind::Entity
         };
-        let set = BrushSet::load(source, self.map, hull, model, self.planes, self.warnings)?;
+        let set = BrushSet::load(
+            source,
+            self.map,
+            hull,
+            model,
+            self.planes,
+            self.warnings,
+            self.limits,
+        )?;
         if set.brushes.is_empty() {
-            return Err(CompileError::NoValidBrushes);
+            return match self.limits.faults {
+                Faults::Stop => Err(CompileError::NoValidBrushes),
+                Faults::Warn => {
+                    self.warnings.push(Warning::NoValidBrushes);
+                    let origin = source.origin;
+                    Ok(Some(Built {
+                        tree: Tree::empty(origin, origin),
+                        mins: origin,
+                        maxs: origin,
+                        reach: [0.0; 3],
+                    }))
+                }
+            };
         }
         let surfaces = csg_faces(&set, self.planes)?;
         let mins = set.mins.map(|c| c - SIDESPACE);
         let maxs = set.maxs.map(|c| c + SIDESPACE);
         let reach = [0, 1, 2].map(|i| set.maxs[i].abs().max(set.mins[i].abs()));
-        let tree = self.builder(choice).build(surfaces, mins, maxs)?;
+        let tree = self.build(choice, surfaces, mins, maxs)?;
         Ok(Some(Built {
             tree,
             mins,
@@ -137,9 +178,7 @@ impl Run<'_> {
                 let origins = self.origins();
                 if fill_outside(&mut built.tree, self.planes, &portals, &origins) == Fill::Filled {
                     let surfaces = gather(&built.tree);
-                    built.tree = self
-                        .builder(Choice::Full)
-                        .build(surfaces, built.mins, built.maxs)?;
+                    built.tree = self.build(Choice::Full, surfaces, built.mins, built.maxs)?;
                 }
             }
             clip.add_model(&built.tree, self.planes)?;
@@ -191,9 +230,7 @@ impl Run<'_> {
                                 ..surface
                             })
                             .collect();
-                        built.tree = self
-                            .builder(Choice::Full)
-                            .build(surfaces, built.mins, built.maxs)?;
+                        built.tree = self.build(Choice::Full, surfaces, built.mins, built.maxs)?;
                         let portals = portalize(
                             &mut built.tree,
                             self.planes,
@@ -215,8 +252,14 @@ impl Run<'_> {
 impl Compiler {
     /// A compiler cutting faces past `subdivide` texels (`-subdivide`, QBSP-1.1).
     #[must_use]
-    pub fn with_subdivide(subdivide: f32) -> Self {
-        Self { subdivide }
+    pub fn with_subdivide(self, subdivide: f32) -> Self {
+        Self { subdivide, ..self }
+    }
+
+    /// A compiler of `dialect` (QBSP-14).
+    #[must_use]
+    pub fn with_dialect(self, dialect: Dialect) -> Self {
+        Self { dialect, ..self }
     }
 
     /// The WAD path the map's world names (MAP-6.3), relative to the game directory, which the
@@ -235,19 +278,27 @@ impl Compiler {
     ///
     /// The [`CompileError`] qbsp stops with.
     pub fn compile(&self, map: &[u8], wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
-        let mut qmap = load_map_file(map)?;
+        let mut qmap = match self.dialect {
+            Dialect::Id => load_map_file(map)?,
+            Dialect::Extended => {
+                let file = MapFile::parse(map).map_err(CompileError::Document)?;
+                QbspMap::from_map_file(&file)?
+            }
+        };
         qmap.number_models();
-        let mut planes = Planes::default();
+        let limits = self.dialect.limits();
+        let mut planes = Planes::new(limits.planes);
         let mut warnings = Vec::new();
         let mut run = Run {
             map: &qmap,
             planes: &mut planes,
             warnings: &mut warnings,
             subdivide: self.subdivide,
+            limits,
         };
         let player = run.clip_hull(Hull::Player)?;
         let large = run.clip_hull(Hull::Large)?;
-        let mut out = Output::new();
+        let mut out = Output::new(limits.planes);
         let (portal_file, leak_file) = run.draw_hull(&mut out)?;
         out.read_clip_hull(Hull::Player, &player)?;
         out.read_clip_hull(Hull::Large, &large)?;
@@ -263,7 +314,10 @@ impl Compiler {
                 })
             })
             .collect::<Result<_, _>>()?;
-        out.file.entities = qmap.entity_lump()?;
+        out.file.entities = match self.dialect {
+            Dialect::Id => qmap.entity_lump()?,
+            Dialect::Extended => qmap.entity_lump_unbounded(),
+        };
         out.file.textures = textures(&qmap, wad)?;
         let bsp = out.file.to_bytes().map_err(CompileError::Write)?;
         Ok(Compiled {

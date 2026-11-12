@@ -10,8 +10,6 @@ use crate::math::{Vec3, dot, length, negate};
 pub(crate) const ANGLE_EPSILON: f64 = 0.000_01;
 /// How near two distances must be for one plane (QBSP-2.3).
 const DIST_EPSILON: f64 = 0.01;
-/// The most planes the table holds (QBSP-2.5).
-pub(crate) const MAX_MAP_PLANES: usize = 8192;
 
 /// A plane's type (QBSP-2.2, BSP-3.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -167,12 +165,21 @@ impl PlaneId {
 }
 
 /// The table of planes (QBSP-2).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct Planes {
     list: Vec<(Plane, PlaneType)>,
+    limit: usize,
 }
 
 impl Planes {
+    /// An empty table holding at most `limit` planes (QBSP-2.5, QBSP-14.2).
+    pub(crate) const fn new(limit: usize) -> Self {
+        Self {
+            list: Vec::new(),
+            limit,
+        }
+    }
+
     /// The stored plane.
     pub(crate) fn get(&self, id: PlaneId) -> Plane {
         self.list.get(id.0).map_or(
@@ -226,7 +233,7 @@ impl Planes {
                 return Ok((PlaneId(index), side));
             }
         }
-        if self.list.len() >= MAX_MAP_PLANES {
+        if self.list.len() >= self.limit {
             return Err(CompileError::TooManyPlanes);
         }
         self.list.push((canonical, kind));

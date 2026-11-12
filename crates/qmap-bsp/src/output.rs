@@ -33,7 +33,6 @@ const MAX_MAP_MARKSURFACES: usize = 65535;
 const MAX_MAP_EDGES: usize = 256_000;
 const MAX_MAP_SURFEDGES: usize = 512_000;
 const MAX_MAP_MODELS: usize = 256;
-const MAX_MAP_PLANES: usize = 8192;
 
 /// A float bound as the file's 16-bit integer, C's conversion toward zero (QBSP-13.5).
 #[expect(
@@ -61,6 +60,8 @@ pub(crate) struct Output {
     edge_index: HashMap<(usize, usize), Vec<usize>>,
     first_model_edge: usize,
     first_face: usize,
+    /// The most output planes (QBSP-2.5, QBSP-14.2).
+    plane_limit: usize,
 }
 
 /// What a node writes its faces as.
@@ -73,7 +74,7 @@ struct FaceRange {
 impl Output {
     /// The lumps as `BeginBSPFile` starts them: edge 0 unused, leaf 0 the shared solid leaf
     /// (QBSP-13.1).
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(plane_limit: usize) -> Self {
         let mut file = BspFile::default();
         file.edges.push([0, 0]);
         file.leafs.push(DiskLeaf {
@@ -91,6 +92,7 @@ impl Output {
             edge_index: HashMap::new(),
             first_model_edge: 1,
             first_face: 0,
+            plane_limit,
         }
     }
 
@@ -111,7 +113,7 @@ impl Output {
                 continue;
             };
             if !mapping.contains_key(plane) {
-                if self.file.planes.len() >= MAX_MAP_PLANES {
+                if self.file.planes.len() >= self.plane_limit {
                     return Err(CompileError::Limit("numplanes == MAX_MAP_PLANES"));
                 }
                 let stored = planes.get(*plane);
@@ -570,7 +572,7 @@ impl Output {
         {
             return Ok(found);
         }
-        if self.file.planes.len() >= MAX_MAP_PLANES {
+        if self.file.planes.len() >= self.plane_limit {
             return Err(CompileError::Limit("numplanes == MAX_MAP_PLANES"));
         }
         self.file.planes.push(DiskPlane {

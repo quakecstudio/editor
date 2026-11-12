@@ -337,6 +337,80 @@ pub fn load_map_file(bytes: &[u8]) -> Result<QbspMap, QbspError> {
     Ok(map)
 }
 
+/// What bounds a map's tables: qbsp's fixed-size arrays, or only the BSP29 fields that hold
+/// their indices (QBSP-14.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Tables {
+    Qbsp,
+    Bsp29,
+}
+
+/// The most texinfo a BSP29 face can name, its `short texinfo` (BSP-9.1).
+const BSP29_MAX_TEXINFO: usize = 32767;
+
+impl QbspMap {
+    /// The map as qbsp would hold it, read from the lossless document instead of qbsp's own
+    /// parser: what the map compiler's extended dialect starts from (QBSP-14.1). Each face's
+    /// points are its numbers as written, in single precision, not truncated by `atoi`; its
+    /// texture axes are the standard form's (MAP-4) or the Valve 220 form's (MAP-5); the
+    /// duplicate planes, faces with no normal, texture slots and texinfo are found as
+    /// `ParseBrush`, `FindMiptex` and `FindTexinfo` find them.
+    ///
+    /// # Errors
+    ///
+    /// The [`QbspError`] those functions stop with.
+    pub fn from_map_file(file: &crate::MapFile) -> Result<Self, QbspError> {
+        let mut map = Self::default();
+        for source in &file.entities {
+            let mut entity = QbspEntity {
+                line: source.line(),
+                ..QbspEntity::default()
+            };
+            for item in &source.items {
+                match item {
+                    crate::Item::Pair(pair) => {
+                        entity
+                            .pairs
+                            .push((pair.key().to_vec(), pair.value().to_vec()));
+                    }
+                    crate::Item::Brush(brush) => {
+                        let mut faces: Vec<QbspFace> = Vec::new();
+                        for face in &brush.faces {
+                            let points = face.points().map(|point| point.map(to_f32));
+                            if faces.iter().any(|known| on_plane(&points, &known.plane)) {
+                                map.warnings
+                                    .push(QbspWarning::DuplicatePlane { line: face.line() });
+                                continue;
+                            }
+                            let Some(plane) = qbsp_plane(points) else {
+                                map.warnings
+                                    .push(QbspWarning::NoNormal { line: face.line() });
+                                break;
+                            };
+                            let name = face.texture();
+                            let name = name.get(..MAP_MAX_TEXTURE_NAME).unwrap_or(name);
+                            let miptex = map.find_miptex(name, Tables::Bsp29)?;
+                            let vecs = face
+                                .texvecs()
+                                .map_or([[0.0; 4]; 2], |vecs| vecs.map(|axis| axis.map(to_f32)));
+                            let texinfo = map.find_texinfo(vecs, miptex, Tables::Bsp29)?;
+                            faces.push(QbspFace {
+                                points,
+                                plane,
+                                texinfo,
+                            });
+                        }
+                        entity.brushes.push(faces);
+                    }
+                }
+            }
+            entity.origin = source.origin().map(to_f32);
+            map.entities.push(entity);
+        }
+        Ok(map)
+    }
+}
+
 /// An `int` stored in a `float`.
 #[expect(
     clippy::cast_precision_loss,
@@ -373,7 +447,7 @@ impl QbspMap {
                     return Err(QbspError::ParsingBrush);
                 }
             }
-            let miptex = self.find_miptex(reader.same_line()?.text)?;
+            let miptex = self.find_miptex(reader.same_line()?.text, Tables::Qbsp)?;
             let shift_s = int_to_f32(c_atoi(reader.same_line()?.text));
             let shift_t = int_to_f32(c_atoi(reader.same_line()?.text));
             let rotate = int_to_f32(c_atoi(reader.same_line()?.text));
@@ -388,7 +462,7 @@ impl QbspMap {
                 break;
             };
             let vecs = texvecs(plane.normal, [shift_s, shift_t], rotate, [scale_s, scale_t]);
-            let texinfo = self.find_texinfo(vecs, miptex)?;
+            let texinfo = self.find_texinfo(vecs, miptex, Tables::Qbsp)?;
             faces.push(QbspFace {
                 points,
                 plane,
@@ -399,11 +473,11 @@ impl QbspMap {
     }
 
     /// qbsp's `FindMiptex`: the slot of `name`, added in first-use order (MAP-4.6, MAP-4.7).
-    fn find_miptex(&mut self, name: &[u8]) -> Result<usize, QbspError> {
+    fn find_miptex(&mut self, name: &[u8], tables: Tables) -> Result<usize, QbspError> {
         if let Some(index) = self.miptex.iter().position(|known| known == name) {
             return Ok(index);
         }
-        if self.miptex.len() == MAP_MAX_TEXINFO {
+        if tables == Tables::Qbsp && self.miptex.len() == MAP_MAX_TEXINFO {
             return Err(QbspError::TooManyMiptex);
         }
         if texture_name_too_long(name.len()) {
@@ -417,7 +491,12 @@ impl QbspMap {
 
     /// qbsp's `FindTexinfo`: sets `TEX_SPECIAL` and finds or adds the texinfo, comparing
     /// every axis value exactly (MAP-4.5, MAP-4.7).
-    fn find_texinfo(&mut self, vecs: TexVecs<f32>, miptex: usize) -> Result<usize, QbspError> {
+    fn find_texinfo(
+        &mut self,
+        vecs: TexVecs<f32>,
+        miptex: usize,
+        tables: Tables,
+    ) -> Result<usize, QbspError> {
         let name = self
             .miptex
             .get(miptex)
@@ -437,7 +516,11 @@ impl QbspMap {
         if let Some(index) = self.texinfo.iter().position(same) {
             return Ok(index);
         }
-        if self.texinfo.len() == MAP_MAX_TEXINFO {
+        let limit = match tables {
+            Tables::Qbsp => MAP_MAX_TEXINFO,
+            Tables::Bsp29 => BSP29_MAX_TEXINFO,
+        };
+        if self.texinfo.len() == limit {
             return Err(QbspError::TooManyTexinfo);
         }
         self.texinfo.push(QbspTexinfo {
@@ -481,6 +564,17 @@ impl QbspMap {
     /// [`QbspError::PairTooLong`] for a pair that overflows qbsp's line (MAP-2.10), and
     /// [`QbspError::EntityTextTooLong`] past [`MAP_MAX_ENTSTRING`].
     pub fn entity_lump(&self) -> Result<Vec<u8>, QbspError> {
+        self.entity_text(Tables::Qbsp)
+    }
+
+    /// The entity lump as [`QbspMap::entity_lump`] writes it, with no bound on a pair's line or
+    /// the text's length (QBSP-14.2).
+    #[must_use]
+    pub fn entity_lump_unbounded(&self) -> Vec<u8> {
+        self.entity_text(Tables::Bsp29).unwrap_or_default()
+    }
+
+    fn entity_text(&self, tables: Tables) -> Result<Vec<u8>, QbspError> {
         let mut out = Vec::new();
         for entity in &self.entities {
             if entity.pairs.is_empty() {
@@ -488,7 +582,7 @@ impl QbspMap {
             }
             out.extend_from_slice(b"{\n");
             for (key, value) in entity.pairs.iter().rev() {
-                if pair_too_long(key.len(), value.len()) {
+                if tables == Tables::Qbsp && pair_too_long(key.len(), value.len()) {
                     return Err(QbspError::PairTooLong {
                         key: key.clone(),
                         value: value.clone(),
@@ -501,7 +595,7 @@ impl QbspMap {
                 out.extend_from_slice(b"\"\n");
             }
             out.extend_from_slice(b"}\n");
-            if out.len() > MAP_MAX_ENTSTRING {
+            if tables == Tables::Qbsp && out.len() > MAP_MAX_ENTSTRING {
                 return Err(QbspError::EntityTextTooLong);
             }
         }
