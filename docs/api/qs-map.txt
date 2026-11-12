@@ -2,6 +2,7 @@ const qs_map::check::MAP_MAX_SOUNDS
 const qs_map::geometry::MAP_BASE_AXES
 const qs_map::geometry::MAP_ON_EPSILON
 const qs_map::lexer::MAP_MAX_TOKEN
+const qs_map::linked::Transform::IDENTITY
 const qs_map::qbsp::MAP_LUMP_LINE
 const qs_map::qbsp::MAP_MAX_BRUSHES
 const qs_map::qbsp::MAP_MAX_ENTITIES
@@ -20,6 +21,9 @@ enum qs_map::lexer::Gap
 enum qs_map::lexer::LexError
 enum qs_map::lexer::Lexed
 enum qs_map::lexer::TokenLimit
+enum qs_map::linked::LayerSetting
+enum qs_map::linked::LayerSwitch
+enum qs_map::linked::LinkError
 enum qs_map::qbsp::QbspError
 enum qs_map::qbsp::QbspWarning
 enum qs_map::rooms::RoomKind
@@ -40,6 +44,13 @@ field qs_map::lexer::Token.line
 field qs_map::lexer::Token.quoted
 field qs_map::lexer::Token.start
 field qs_map::lexer::Token.text
+field qs_map::linked::LayerSettings.hidden
+field qs_map::linked::LayerSettings.locked
+field qs_map::linked::LayerSettings.omit_from_export
+field qs_map::linked::LinkedGroup.entity
+field qs_map::linked::LinkedGroup.id
+field qs_map::linked::LinkedGroup.link
+field qs_map::linked::LinkedGroup.transform
 field qs_map::qbsp::QbspEntity.brushes
 field qs_map::qbsp::QbspEntity.line
 field qs_map::qbsp::QbspEntity.origin
@@ -127,6 +138,30 @@ fn qs_map::lexer::Lexer::token
 fn qs_map::lexer::Token::is
 fn qs_map::lexer::is_map_space
 fn qs_map::lexer::map_text
+fn qs_map::linked::ContainerId::get
+fn qs_map::linked::ContainerId::new
+fn qs_map::linked::Entity::container
+fn qs_map::linked::Entity::layer
+fn qs_map::linked::Entity::layer_settings
+fn qs_map::linked::Entity::set_layer_setting
+fn qs_map::linked::Entity::set_transform
+fn qs_map::linked::Entity::transform
+fn qs_map::linked::EntityPlace::get
+fn qs_map::linked::EntityPlace::new
+fn qs_map::linked::MapFile::changed_linked_group
+fn qs_map::linked::MapFile::group_members
+fn qs_map::linked::MapFile::linked_group_of
+fn qs_map::linked::MapFile::linked_groups
+fn qs_map::linked::MapFile::update_linked
+fn qs_map::linked::MapFile::without_omitted_layers
+fn qs_map::linked::Moves::of
+fn qs_map::linked::Transform::after
+fn qs_map::linked::Transform::apply
+fn qs_map::linked::Transform::inverse
+fn qs_map::linked::Transform::parse
+fn qs_map::linked::Transform::text
+fn qs_map::linked::Transform::translation
+fn qs_map::linked::Transform::yaw
 fn qs_map::qbsp::QbspEntity::set_key_value
 fn qs_map::qbsp::QbspEntity::value_for_key
 fn qs_map::qbsp::QbspMap::entity_lump
@@ -149,6 +184,11 @@ impl qs_map::document::MapError: fmt::Display
 impl qs_map::document::MapFile: Default
 impl qs_map::lexer::LexError: core::error::Error
 impl qs_map::lexer::LexError: fmt::Display
+impl qs_map::linked::EntityPlace: core::fmt::Display
+impl qs_map::linked::LinkError: From<MapError>
+impl qs_map::linked::LinkError: core::fmt::Display
+impl qs_map::linked::LinkError: std::error::Error
+impl qs_map::linked::Transform: Default
 impl qs_map::qbsp::QbspError: From<LexError>
 impl qs_map::qbsp::QbspError: core::error::Error
 impl qs_map::qbsp::QbspError: fmt::Display
@@ -168,6 +208,12 @@ struct qs_map::geometry::Plane
 struct qs_map::lexer::Lexer
 struct qs_map::lexer::LineBreak
 struct qs_map::lexer::Token
+struct qs_map::linked::ContainerId
+struct qs_map::linked::EntityPlace
+struct qs_map::linked::LayerSettings
+struct qs_map::linked::LinkedGroup
+struct qs_map::linked::Moves
+struct qs_map::linked::Transform
 struct qs_map::qbsp::QbspEntity
 struct qs_map::qbsp::QbspFace
 struct qs_map::qbsp::QbspMap
@@ -181,19 +227,28 @@ type qs_map::geometry::TexVecs
 use qs_map::Brush = document::Brush
 use qs_map::BrushModel = document::BrushModel
 use qs_map::Compiler = document::Compiler
+use qs_map::ContainerId = linked::ContainerId
 use qs_map::Diagnostic = check::Diagnostic
 use qs_map::DiagnosticKind = check::DiagnosticKind
 use qs_map::Entity = document::Entity
+use qs_map::EntityPlace = linked::EntityPlace
 use qs_map::Face = document::Face
 use qs_map::Item = document::Item
+use qs_map::LayerSetting = linked::LayerSetting
+use qs_map::LayerSettings = linked::LayerSettings
+use qs_map::LayerSwitch = linked::LayerSwitch
+use qs_map::LinkError = linked::LinkError
+use qs_map::LinkedGroup = linked::LinkedGroup
 use qs_map::MAP_MAX_SOUNDS = check::MAP_MAX_SOUNDS
 use qs_map::MapError = document::MapError
 use qs_map::MapFile = document::MapFile
+use qs_map::Moves = linked::Moves
 use qs_map::Pair = document::Pair
 use qs_map::Room = rooms::Room
 use qs_map::RoomKind = rooms::RoomKind
 use qs_map::Rooms = rooms::Rooms
 use qs_map::TexDef = document::TexDef
+use qs_map::Transform = linked::Transform
 use qs_map::is_tool_key = document::is_tool_key
 variant qs_map::check::DiagnosticKind::DuplicateKey
 variant qs_map::check::DiagnosticKind::DuplicatePlane
@@ -238,6 +293,15 @@ variant qs_map::lexer::Lexed::End
 variant qs_map::lexer::Lexed::Token
 variant qs_map::lexer::TokenLimit::Qbsp
 variant qs_map::lexer::TokenLimit::Unlimited
+variant qs_map::linked::LayerSetting::Hidden
+variant qs_map::linked::LayerSetting::Locked
+variant qs_map::linked::LayerSetting::OmitFromExport
+variant qs_map::linked::LayerSwitch::Off
+variant qs_map::linked::LayerSwitch::On
+variant qs_map::linked::LinkError::Map
+variant qs_map::linked::LinkError::Nested
+variant qs_map::linked::LinkError::NotInvertible
+variant qs_map::linked::LinkError::NotLinked
 variant qs_map::qbsp::QbspError::EntityTextTooLong
 variant qs_map::qbsp::QbspError::EofWithoutBrace
 variant qs_map::qbsp::QbspError::Lex

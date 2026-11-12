@@ -58,7 +58,12 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
 | [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. |
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
+| [`map.export`](#mapexport) | Writes the open map to another .map without the layers marked to be left out of exports and the entities in them (TrenchBroom's Export). |
+| [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
 | [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
+| [`map.isolate`](#mapisolate) | Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed. |
+| [`map.layers`](#maplayers) | The open map's TrenchBroom layers: each one's name, whether it is hidden, locked or left out of exports, and how many entities are in it. |
+| [`map.lock`](#maplock) | Locks entities of the open map against edits until map.unlock_all; the map is not changed. |
 | [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
@@ -69,6 +74,9 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
 | [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map: its last occurrence keeps its place and formatting, a new key goes after the others. |
+| [`map.set_layer`](#mapset_layer) | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
+| [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
+| [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
@@ -1637,6 +1645,67 @@ Parameters:
 }
 ```
 
+## `map.export`
+
+Writes the open map to another .map without the layers marked to be left out of exports and the entities in them (TrenchBroom's Export).
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.export`.",
+  "properties": {
+    "path": {
+      "description": "The `.map` to write.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "ExportParams",
+  "type": "object"
+}
+```
+
+## `map.hide`
+
+Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.hide`, `map.isolate` and `map.lock`.",
+  "properties": {
+    "entities": {
+      "description": "The entities.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "entities"
+  ],
+  "title": "EntitiesParams",
+  "type": "object"
+}
+```
+
 ## `map.inspect`
 
 The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname.
@@ -1667,6 +1736,94 @@ Parameters:
     }
   },
   "title": "InspectParams",
+  "type": "object"
+}
+```
+
+## `map.isolate`
+
+Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.hide`, `map.isolate` and `map.lock`.",
+  "properties": {
+    "entities": {
+      "description": "The entities.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "entities"
+  ],
+  "title": "EntitiesParams",
+  "type": "object"
+}
+```
+
+## `map.layers`
+
+The open map's TrenchBroom layers: each one's name, whether it is hidden, locked or left out of exports, and how many entities are in it.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.lock`
+
+Locks entities of the open map against edits until map.unlock_all; the map is not changed.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.hide`, `map.isolate` and `map.lock`.",
+  "properties": {
+    "entities": {
+      "description": "The entities.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "entities"
+  ],
+  "title": "EntitiesParams",
   "type": "object"
 }
 ```
@@ -2059,6 +2216,116 @@ Parameters:
     "value"
   ],
   "title": "SetKeyParams",
+  "type": "object"
+}
+```
+
+## `map.set_layer`
+
+Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "LayerOption": {
+      "description": "Which layer setting `map.set_layer` changes (MAP-9.9).",
+      "oneOf": [
+        {
+          "const": "hidden",
+          "description": "Hidden in the editor.",
+          "type": "string"
+        },
+        {
+          "const": "locked",
+          "description": "Locked against edits.",
+          "type": "string"
+        },
+        {
+          "const": "omit_from_export",
+          "description": "Left out of an exported map.",
+          "type": "string"
+        }
+      ]
+    },
+    "Switch": {
+      "description": "Whether `map.set_layer` turns a setting on or off.",
+      "oneOf": [
+        {
+          "const": "on",
+          "description": "On.",
+          "type": "string"
+        },
+        {
+          "const": "off",
+          "description": "Off.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.set_layer`.",
+  "properties": {
+    "layer": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The layer's own entity."
+    },
+    "setting": {
+      "$ref": "#/$defs/LayerOption",
+      "description": "The setting."
+    },
+    "switch": {
+      "$ref": "#/$defs/Switch",
+      "description": "On or off."
+    }
+  },
+  "required": [
+    "layer",
+    "setting",
+    "switch"
+  ],
+  "title": "SetLayerParams",
+  "type": "object"
+}
+```
+
+## `map.show_all`
+
+Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.unlock_all`
+
+Unlocks every entity of the open map locked in the editor; a locked layer stays locked.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```

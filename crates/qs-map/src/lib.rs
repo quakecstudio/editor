@@ -32,6 +32,6 @@ pub use document::{
 };
 pub use linked::{
     ContainerId, EntityPlace, LayerSetting, LayerSettings, LayerSwitch, LinkError, LinkedGroup,
-    Transform,
+    Moves, Transform,
 };
 pub use rooms::{Room, RoomKind, Rooms};

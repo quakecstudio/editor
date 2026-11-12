@@ -236,6 +236,20 @@ pub struct LinkedGroup {
     pub transform: Transform,
 }
 
+/// Where each entity of a map went after [`MapFile::update_linked`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Moves {
+    to: Vec<Option<EntityPlace>>,
+}
+
+impl Moves {
+    /// Where the entity that was at `place` is now; `None` when it is gone.
+    #[must_use]
+    pub fn of(&self, place: EntityPlace) -> Option<EntityPlace> {
+        self.to.get(place.get()).copied().flatten()
+    }
+}
+
 /// A layer's settings (MAP-9.9).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LayerSettings {
@@ -322,11 +336,46 @@ impl Entity {
             entity: place,
             id: ContainerId::new(id),
             link: link.to_vec(),
-            transform: self
-                .value(TRANSFORMATION_KEY)
-                .and_then(Transform::parse)
-                .unwrap_or_default(),
+            transform: self.transform(),
         })
+    }
+
+    /// The layer or group this entity is, its kind and id (MAP-9.1).
+    #[must_use]
+    pub fn container(&self) -> Option<(RoomKind, ContainerId)> {
+        self.own_container()
+            .map(|(kind, id)| (kind, ContainerId::new(id)))
+    }
+
+    /// The layer this entity names in `_tb_layer` (MAP-9.2).
+    #[must_use]
+    pub fn layer(&self) -> Option<ContainerId> {
+        self.value(LAYER_KEY)
+            .and_then(container_id)
+            .map(ContainerId::new)
+    }
+
+    /// Its `_tb_transformation`, the identity when it has none or one that does not read
+    /// (MAP-9.5).
+    #[must_use]
+    pub fn transform(&self) -> Transform {
+        self.value(TRANSFORMATION_KEY)
+            .and_then(Transform::parse)
+            .unwrap_or_default()
+    }
+
+    /// Writes `transform` as its `_tb_transformation`, or removes it for the identity, as
+    /// TrenchBroom writes it (MAP-9.5).
+    ///
+    /// # Errors
+    ///
+    /// As [`Entity::set`].
+    pub fn set_transform(&mut self, transform: &Transform) -> Result<(), MapError> {
+        if *transform == Transform::IDENTITY {
+            self.remove(TRANSFORMATION_KEY);
+            return Ok(());
+        }
+        self.set(TRANSFORMATION_KEY, transform.text().as_bytes())
     }
 
     /// The group this entity names in `_tb_group` (MAP-9.2).
@@ -473,6 +522,38 @@ impl MapFile {
             .collect()
     }
 
+    /// The first linked group whose contents differ from what they were in `before`, the
+    /// one a change was made in (MAP-9.6, MAP-9.7).
+    #[must_use]
+    pub fn changed_linked_group(&self, before: &Self) -> Option<EntityPlace> {
+        self.linked_groups()
+            .into_iter()
+            .find(|group| self.group_contents(group.id) != before.group_contents(group.id))
+            .map(|group| group.entity)
+    }
+
+    /// A group's contents: its own entity's brushes, then the entities in it (MAP-9.6).
+    fn group_contents(&self, id: ContainerId) -> (Vec<&Item>, Vec<&Entity>) {
+        let brushes = self
+            .entities
+            .iter()
+            .find(|entity| entity.container() == Some((RoomKind::Group, id)))
+            .map(|entity| {
+                entity
+                    .items
+                    .iter()
+                    .filter(|item| matches!(item, Item::Brush(_)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let members = self
+            .group_members(id)
+            .into_iter()
+            .filter_map(|place| self.entities.get(place.get()))
+            .collect();
+        (brushes, members)
+    }
+
     /// The linked group the entity at `place` is in or is, for an edit there to update
     /// (MAP-9.7).
     #[must_use]
@@ -497,8 +578,9 @@ impl MapFile {
     /// [`LinkError::NotLinked`] when `source` is no linked group, [`LinkError::NotInvertible`]
     /// when its transformation has no inverse, [`LinkError::Nested`] when a group of the set
     /// holds a group, and [`LinkError::Map`] when a copy cannot be written; the map is then
-    /// left as it was.
-    pub fn update_linked(&mut self, source: EntityPlace) -> Result<(), LinkError> {
+    /// left as it was. On success, where each entity went: a replaced entity goes to the copy
+    /// at its position (MAP-9.6), and one with no copy is gone.
+    pub fn update_linked(&mut self, source: EntityPlace) -> Result<Moves, LinkError> {
         let group = self
             .entities
             .get(source.get())
@@ -541,12 +623,19 @@ impl MapFile {
             .filter_map(|place| self.entities.get(place.get()).cloned())
             .collect();
         let mut updated = self.clone();
+        let mut origin: Vec<Option<usize>> = (0..self.entities.len()).map(Some).collect();
         for sibling in siblings {
             let transform = sibling.transform.after(&inverse);
-            updated.replace_contents(&sibling, &brushes, &members, &transform)?;
+            updated.replace_contents(&sibling, &brushes, &members, &transform, &mut origin)?;
         }
         *self = updated;
-        Ok(())
+        let mut to = vec![None; origin.len().max(self.entities.len())];
+        for (now, was) in origin.into_iter().enumerate() {
+            if let Some(slot) = was.and_then(|was| to.get_mut(was)) {
+                *slot = Some(EntityPlace::new(now));
+            }
+        }
+        Ok(Moves { to })
     }
 
     /// Replaces the contents of `target` with `brushes` and `members` moved by `transform`,
@@ -557,6 +646,7 @@ impl MapFile {
         brushes: &[Item],
         members: &[Entity],
         transform: &Transform,
+        origin: &mut Vec<Option<usize>>,
     ) -> Result<(), LinkError> {
         let place = self
             .linked_groups()
@@ -588,14 +678,26 @@ impl MapFile {
         let at = old_places
             .first()
             .map_or(place.get().saturating_add(1), |first| first.get());
+        let mut replaced = Vec::new();
         for gone in old_places.iter().rev().map(|gone| gone.get()) {
-            if gone < self.entities.len() {
+            if self.entities.get(gone).is_some() {
                 self.entities.remove(gone);
+                replaced.push(if gone < origin.len() {
+                    origin.remove(gone)
+                } else {
+                    None
+                });
             }
         }
+        replaced.reverse();
         let at = at.min(self.entities.len());
         for (offset, copy) in copies.into_iter().enumerate() {
-            self.entities.insert(at.saturating_add(offset), copy);
+            let place = at.saturating_add(offset);
+            self.entities.insert(place, copy);
+            origin.insert(
+                place.min(origin.len()),
+                replaced.get(offset).copied().flatten(),
+            );
         }
         Ok(())
     }

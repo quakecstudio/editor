@@ -742,6 +742,21 @@ pub enum WorkbenchError {
         /// The `.ent`.
         path: PathBuf,
     },
+    /// The entity is locked, by `map.lock` or in a locked layer (P5-14).
+    Locked {
+        /// The entity.
+        entity: map_edit::EntityIndex,
+    },
+    /// The entity is no TrenchBroom layer (MAP-9.1).
+    NotLayer {
+        /// The entity.
+        entity: map_edit::EntityIndex,
+    },
+    /// A linked group's copies could not be updated (MAP-9.7).
+    Link {
+        /// Why.
+        error: qs_map::LinkError,
+    },
 }
 
 impl fmt::Display for WorkbenchError {
@@ -753,6 +768,9 @@ impl fmt::Display for WorkbenchError {
                 write!(f, "{}: cannot be written: {error}", path.display())
             }
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
+            Self::Locked { entity } => write!(f, "entity {entity} is locked"),
+            Self::NotLayer { entity } => write!(f, "entity {entity} is no layer"),
+            Self::Link { error } => write!(f, "{error}"),
             Self::NoRoom { name } => write!(f, "the map has no room named {name}"),
             Self::ChangedOnDisk { path } => write!(
                 f,
@@ -800,6 +818,7 @@ impl Error for WorkbenchError {
             Self::Checkpoint(error) => Some(error),
             Self::Map { error, .. } => Some(error),
             Self::Bsp { error, .. } => Some(error),
+            Self::Link { error } => Some(error),
             Self::NoFile { .. }
             | Self::NoProject
             | Self::NoFix { .. }
@@ -810,6 +829,8 @@ impl Error for WorkbenchError {
             | Self::NoEntity { .. }
             | Self::NotPointEntity { .. }
             | Self::EntOverride { .. }
+            | Self::Locked { .. }
+            | Self::NotLayer { .. }
             | Self::NoRoom { .. }
             | Self::ChangedOnDisk { .. } => None,
         }
