@@ -1229,8 +1229,6 @@ magic-number	crates/qs-bsp/src/lib.rs	Bsp::mod_load_texinfo:32
 magic-number	crates/qs-bsp/src/lib.rs	Bsp::mod_load_texinfo:36
 magic-number	crates/qs-bsp/src/lib.rs	Bsp::mod_load_texinfo:4
 magic-number	crates/qs-bsp/src/lib.rs	Bsp::mod_load_textures:4
-magic-number	crates/qs-bsp/src/lib.rs	Bsp::read:4
-magic-number	crates/qs-bsp/src/lib.rs	Bsp::read:8
 magic-number	crates/qs-bsp/src/lib.rs	Bsp::vis_row_size:3
 magic-number	crates/qs-bsp/src/lib.rs	Bsp::vis_row_size:7
 magic-number	crates/qs-bsp/src/lib.rs	Face::style_count:255
@@ -1254,7 +1252,6 @@ magic-number	crates/qs-bsp/src/lib.rs	length:3
 magic-number	crates/qs-bsp/src/lib.rs	lightmap_size:4
 magic-number	crates/qs-bsp/src/lib.rs	load_texture:15
 magic-number	crates/qs-bsp/src/lib.rs	replace_entities:4
-magic-number	crates/qs-bsp/src/lib.rs	replace_entities:8
 magic-number	crates/qs-bsp/src/lib.rs	sequence_animations:10
 magic-number	crates/qs-bsp/src/lib.rs	short3_at:4
 magic-number	crates/qs-bsp/src/lib.rs	vec3_at:4
@@ -2110,11 +2107,6 @@ magic-number	crates/qs-wad/src/lib.rs	MipTexHeader::parse:4
 magic-number	crates/qs-wad/src/lib.rs	MipTexHeader::parse:5
 magic-number	crates/qs-wad/src/lib.rs	QPic::parse:4
 magic-number	crates/qs-wad/src/lib.rs	QPic::parse:8
-magic-number	crates/qs-wad/src/lib.rs	Wad::read:12
-magic-number	crates/qs-wad/src/lib.rs	Wad::read:13
-magic-number	crates/qs-wad/src/lib.rs	Wad::read:16
-magic-number	crates/qs-wad/src/lib.rs	Wad::read:4
-magic-number	crates/qs-wad/src/lib.rs	Wad::read:8
 magic-number	crates/qs-wav/src/lib.rs	Sound::sample:128
 magic-number	crates/qs-wav/src/lib.rs	find_next_chunk:4
 magic-number	crates/qs-wav/src/lib.rs	find_next_chunk:8

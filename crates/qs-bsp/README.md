@@ -33,7 +33,8 @@ coloured light; and writes a BSP's entities back, for shipped maps with no `.map
 
 - **Layer:** L0 formats. It depends on `qc-progs` for id's CRC. `qs-vfs`'s `walk` example loads
   every BSP and `.lit` of an install with it.
-- **Spec sections:** BSP-1 to BSP-22 in [`bsp.md`](../../docs/spec/bsp.md).
+- **Spec sections:** BSP-1 to BSP-22 in [`bsp.md`](../../docs/spec/bsp.md); WAD3-4 in
+  [`wad3.md`](../../docs/spec/wad3.md).
 - **Shipped:** yes.
 
 ## Invariants
@@ -87,3 +88,9 @@ layout, each texture's palette beside its pixels as `Texture::palette`, RGB ligh
 `lightofs` counting bytes, and no `sky` texture taken as a sky. A harness around QuakeSpasm's
 unchanged `gl_model.c` printed the same as `qs-bsp` for every version 30 vector (the vectors'
 README). Tests are in `src/valve_tests.rs`.
+
+`Bsp::read_with_wads` reads a BSP's external textures (first offset 0) from the WADs its
+world's `wad` key names, as QuakeSpasm does (WAD3-4): `wads::wad_key` reads the key,
+`wads::wad_files` names the files to open, and the opened WADs (`qs_wad::MapWad`) are searched
+last named first. The same harness printed the same as `qs-bsp` for every WAD3 vector
+(`docs/spec/vectors/wad3/README.md`).

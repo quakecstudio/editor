@@ -16,12 +16,18 @@
 //!
 //! The format is specified in `docs/spec/wad2.md` (WAD-1 to WAD-4).
 
+pub mod map_wad;
+
 #[cfg(test)]
 mod fixtures;
 #[cfg(test)]
 mod tests;
 
 use core::fmt;
+
+pub use map_wad::{
+    MapWad, MapWadEntry, MapWadError, WAD_TYP_MIPTEX_PALETTE, WAD3_MAGIC, WadKind, WadTexture,
+};
 
 /// The four bytes a WAD2 file starts with (WAD-1.1).
 pub const WAD_MAGIC: [u8; 4] = *b"WAD2";
@@ -67,6 +73,24 @@ pub const WAD_MIPLEVELS: usize = 4;
 
 /// Bytes in a [`MipTexHeader`]: a 16-byte name, two sizes and four offsets.
 pub const WAD_MIPTEX_HEADER_SIZE: usize = 40;
+
+/// The pixels of mip level 0 that [`WAD_MIP_BYTES`] bytes over all four levels go with: id's
+/// `width * height / 64 * 85` (BSP-4.5, WAD3-3.3).
+pub const WAD_MIP_PIXELS: usize = 64;
+/// The bytes all four mip levels take for every [`WAD_MIP_PIXELS`] pixels of level 0:
+/// 64 + 16 + 4 + 1 (BSP-4.5, WAD3-3.3).
+pub const WAD_MIP_BYTES: usize = 85;
+
+/// Where the header's `numlumps` and `infotableofs` lie, after the four-byte magic (WAD-1.1).
+const HEADER_NUMLUMPS: usize = 4;
+const HEADER_INFOTABLEOFS: usize = 8;
+/// Where a directory entry's fields lie: `filepos`, `disksize` and `size`, then the `type` and
+/// `compression` bytes, two unused bytes and the name (WAD-2.1).
+const ENTRY_DISKSIZE: usize = 4;
+const ENTRY_SIZE: usize = 8;
+const ENTRY_TYPE: usize = 12;
+const ENTRY_COMPRESSION: usize = 13;
+const ENTRY_NAME: usize = 16;
 
 /// [`WAD_ENTRY_SIZE`] as the type directory sizes are computed in.
 const ENTRY_SIZE_U64: u64 = 32;
@@ -238,8 +262,8 @@ impl<'a> Wad<'a> {
         if le_i32(header, 0) != i32::from_le_bytes(WAD_MAGIC) {
             return Err(WadError::WrongId);
         }
-        let numlumps = le_i32(header, 4);
-        let infotableofs = le_i32(header, 8);
+        let numlumps = le_i32(header, HEADER_NUMLUMPS);
+        let infotableofs = le_i32(header, HEADER_INFOTABLEOFS);
         let Ok(count) = u64::try_from(numlumps) else {
             return Err(WadError::NegativeLumpCount { numlumps });
         };
@@ -262,11 +286,11 @@ impl<'a> Wad<'a> {
         for raw in directory.as_chunks::<WAD_ENTRY_SIZE>().0 {
             lumps.push(Lump {
                 filepos: le_i32(raw, 0),
-                disksize: le_i32(raw, 4),
-                size: le_i32(raw, 8),
-                lump_type: raw[12],
-                compression: raw[13],
-                name: w_cleanup_name(raw.get(16..).unwrap_or_default()),
+                disksize: le_i32(raw, ENTRY_DISKSIZE),
+                size: le_i32(raw, ENTRY_SIZE),
+                lump_type: raw[ENTRY_TYPE],
+                compression: raw[ENTRY_COMPRESSION],
+                name: w_cleanup_name(raw.get(ENTRY_NAME..).unwrap_or_default()),
             });
         }
         Ok(Self { bytes, lumps })

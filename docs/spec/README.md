@@ -151,6 +151,7 @@ Each section holds, in this order:
 | `VIEWDIFF` | [`engine/view-diff.md`](engine/view-diff.md) | The view differential: the script both engines play, how the view is drawn, how frames and sound are compared, and the tolerances per map | [#242](https://github.com/quakecstudio/editor/issues/242) |
 | `VM` | [`vm.md`](vm.md) | QC virtual machine execution: opcodes, calls, the local stack, errors | [#26](https://github.com/quakecstudio/editor/issues/26) |
 | `WAD` | [`wad2.md`](wad2.md) | WAD2 archives: header, directory, lump lookup, the lumps the engine reads | [#29](https://github.com/quakecstudio/editor/issues/29) |
+| `WAD3` | [`wad3.md`](wad3.md) | The texture WADs a map names, WAD2 and Half-Life's WAD3, as QuakeSpasm reads them for a BSP's external textures | [#331](https://github.com/quakecstudio/editor/issues/331) |
 | `WAV` | [`wav.md`](wav.md) | WAV sounds: chunks, the header and loop points `GetWavinfo` reads, what `S_LoadSound` plays | [#235](https://github.com/quakecstudio/editor/issues/235) |
 | `WORLD` | [`engine/world.md`](engine/world.md) | World collision: the hulls of brush models and boxes, point contents, a line through a hull, clipping a move to an entity, area nodes, linking entities and touching triggers, and moving a box through the world, as `world.c` does | [#236](https://github.com/quakecstudio/editor/issues/236) |
 
