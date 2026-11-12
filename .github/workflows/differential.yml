@@ -21,7 +21,8 @@ name: Differential
 
 on:
   schedule:
-    - cron: "53 4 * * *"
+    - cron: "47 16 * * *"
+      timezone: "America/New_York"
   workflow_dispatch:
 
 concurrency:
@@ -35,8 +36,47 @@ env:
   CARGO_BUILD_WARNINGS: deny
 
 jobs:
+  night:
+    name: Night window
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # actionlint 1.7.12 does not read the `$/` self-repository form yet.
+      - uses: ./.github/actions/night-window # zizmor: ignore[self-repository]
+        with:
+          check: start
+          token: ${{ github.token }}
+
+  deadline:
+    name: Morning deadline
+    needs: night
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    # 19:00 to 07:00 at most.
+    timeout-minutes: 720
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # actionlint 1.7.12 does not read the `$/` self-repository form yet.
+      - uses: ./.github/actions/night-window # zizmor: ignore[self-repository]
+        with:
+          check: deadline
+          token: ${{ github.token }}
+          self: Morning deadline
+
   differential:
     name: Differential
+    needs: night
     runs-on: ubuntu-latest
     # Building the oracles and FTEQCC, compiling the corpus and running every
     # codebase twice.
@@ -96,6 +136,7 @@ jobs:
   # asset, on each OS.
   sim-diff:
     name: Simulation differential (${{ matrix.os }})
+    needs: night
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -135,6 +176,7 @@ jobs:
   # needs its DirectX and MGL drivers (VIEWDIFF-2.6).
   view-diff:
     name: View differential (${{ matrix.os }})
+    needs: night
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -189,6 +231,7 @@ jobs:
   # and by qc-codegen and compared as a codebase is.
   generated:
     name: Compiler differential (generated programs)
+    needs: night
     runs-on: ubuntu-latest
     # 10,000 programs, each compiled by both FTEQCCs and qc-codegen and called, ran past two
     # hours on a hosted runner (run 41877684070).
@@ -221,6 +264,7 @@ jobs:
 
   compiler-diff:
     name: Compiler differential (${{ matrix.codebase }})
+    needs: night
     runs-on: ubuntu-latest
     # Arcane Dimensions' 128 rounds, with the accessor and extra rounds (DIFF-12.16,
     # DIFF-12.24), ran past five hours on a hosted runner (run 41830900852); six is the
@@ -298,6 +342,7 @@ jobs:
   # its accepted 87.7%.
   functions:
     name: Per-function differential (${{ matrix.codebase }})
+    needs: night
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -367,6 +412,7 @@ jobs:
   # the statements they reached together to DIFF-15.6's bar.
   functions-shards:
     name: Per-function differential (arcane-dimensions, shard ${{ matrix.shard }}/4)
+    needs: night
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -428,7 +474,7 @@ jobs:
 
   functions-merge:
     name: Per-function differential (arcane-dimensions, coverage)
-    needs: functions-shards
+    needs: [night, functions-shards]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
