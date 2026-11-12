@@ -548,6 +548,7 @@ fn qs_workbench::preview::Preview::pause
 fn qs_workbench::preview::Preview::pending
 fn qs_workbench::preview::Preview::pick
 fn qs_workbench::preview::Preview::play
+fn qs_workbench::preview::Preview::plays_in_step
 fn qs_workbench::preview::Preview::poll
 fn qs_workbench::preview::Preview::refresh
 fn qs_workbench::preview::Preview::reload
@@ -1016,6 +1017,7 @@ variant qs_workbench::map_edit::BspSave::Lump
 variant qs_workbench::map_edit::MapSource::Bsp
 variant qs_workbench::map_edit::MapSource::Map
 variant qs_workbench::map_edit::live::LiveChange::Edit
+variant qs_workbench::map_edit::live::LiveChange::NeedsCompile
 variant qs_workbench::map_edit::live::LiveChange::Remove
 variant qs_workbench::map_edit::live::LiveChange::Spawn
 variant qs_workbench::preview::OnLoss::Ask

@@ -24,6 +24,7 @@
 //! conversions are PROGS-17; the string escapes are `qs_porting_example::ed_new_string`
 //! (EXAMPLE-1), as EDICT-8.2 requires.
 
+use qc_edict::EdictNumber;
 use qc_types::{Etype, Slot};
 
 /// `SPAWNFLAG_NOT_EASY` (EDICT-8.4), id's `WinQuake/server.h`.
@@ -430,16 +431,26 @@ fn parse_edict<H: SpawnHost>(
     host: &mut H,
     parser: &mut Parser<'_>,
     edict: usize,
-) -> Result<Parsed, SpawnError> {
+) -> Result<(Parsed, Vec<u8>), SpawnError> {
     let (classname, _init) = parse_pairs(host, parser, edict)?;
     // EDICT-8.5: no classname, or a classname that names no function, frees the entity.
     let Some(classname) = classname else {
-        return Ok(Parsed::NoSpawn);
+        return Ok((Parsed::NoSpawn, Vec::new()));
     };
-    match host.find_function(&classname) {
-        Some(function) => Ok(Parsed::Spawn(function)),
-        None => Ok(Parsed::NoSpawn),
-    }
+    let parsed = match host.find_function(&classname) {
+        Some(function) => Parsed::Spawn(function),
+        None => Parsed::NoSpawn,
+    };
+    Ok((parsed, classname))
+}
+
+/// One entity of the lump as [`load_from_file`] left it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LoadedEntity {
+    /// Its `classname`, empty for none.
+    pub classname: Vec<u8>,
+    /// The edict its spawn function ran on, `None` for one inhibited or classless.
+    pub edict: Option<EdictNumber>,
 }
 
 /// `ED_ParseEdict` for a saved game's edict (PHYS-10.5): its keys applied to `edict`, after
@@ -534,15 +545,15 @@ pub fn inhibited(spawnflags: f32, deathmatch: bool, skill: i32) -> bool {
 /// [`LoadError::Run`] when a spawn function raises a runtime error (DIFF-8.1). Nothing after
 /// the error runs.
 ///
-/// Returns, for each entity of the lump in order, the edict its spawn function ran on, `None`
-/// for one inhibited or classless; the spawn function may have freed it since, and a later
-/// entity reused it, which the host tells by the edicts in use.
+/// Returns each entity of the lump in order, its classname and the edict its spawn function
+/// ran on; the spawn function may have freed it since, and a later entity reused it, which the
+/// host tells by the edicts in use.
 pub fn load_from_file<H: SpawnHost>(
     host: &mut H,
     data: &[u8],
     deathmatch: bool,
     skill: i32,
-) -> Result<Vec<Option<usize>>, LoadError> {
+) -> Result<Vec<LoadedEntity>, LoadError> {
     let mut parser = Parser::new(data);
     let mut first = true;
     let mut spawned = Vec::new();
@@ -560,23 +571,28 @@ pub fn load_from_file<H: SpawnHost>(
         let edict = host.allocate(first).map_err(LoadError::Spawn)?;
         first = false;
 
-        let parsed = parse_edict(host, &mut parser, edict).map_err(LoadError::Spawn)?;
+        let (parsed, classname) =
+            parse_edict(host, &mut parser, edict).map_err(LoadError::Spawn)?;
 
         // EDICT-8.4: remove the things a setting excludes, after the keys are applied.
         match parsed {
             Parsed::Spawn(function) => {
                 let flags = host.spawnflags(edict);
-                if inhibited(flags, deathmatch, skill) {
+                let edict = if inhibited(flags, deathmatch, skill) {
                     host.free(edict);
-                    spawned.push(None);
+                    None
                 } else {
                     host.spawn(edict, function).map_err(LoadError::Run)?;
-                    spawned.push(Some(edict));
-                }
+                    Some(EdictNumber::new(edict))
+                };
+                spawned.push(LoadedEntity { classname, edict });
             }
             Parsed::NoSpawn => {
                 host.free(edict);
-                spawned.push(None);
+                spawned.push(LoadedEntity {
+                    classname,
+                    edict: None,
+                });
             }
         }
     }

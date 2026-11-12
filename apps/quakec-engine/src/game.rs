@@ -498,7 +498,12 @@ impl Game {
         self.progs_loaded(path);
         self.events.push((
             "map/loaded",
-            json!({ "map": map, "entities": entities, "time": time }),
+            json!({
+                "map": map,
+                "entities": entities,
+                "time": time,
+                "classnames": self.world.map_classnames(),
+            }),
         ));
     }
 
@@ -646,11 +651,11 @@ impl Game {
 
     /// The edict a request names: its `edict`, or the edict its `map_entity` is in the game
     /// (BRIDGE-4.13), which is answered with `-32004` when the entity is in none.
-    fn target_edict(&self, params: &Value) -> Result<usize, RpcError> {
-        let Some(place) = map_entity_param(params) else {
+    fn target_edict(&self, progs: &Progs<'_>, params: &Value) -> Result<usize, RpcError> {
+        let Some(place) = map_entity_param(params)? else {
             return edict_param(params);
         };
-        self.world.map_entity(place).ok_or_else(|| {
+        self.world.map_entity(progs, place).ok_or_else(|| {
             RpcError::new(ErrorCode::NoSuchEdict, "the map entity is not in the game")
         })
     }
@@ -659,23 +664,22 @@ impl Game {
     /// of the map's entities at that place, or none when the spawn is refused or fails, so the
     /// list keeps the editor's order (BRIDGE-4.13).
     fn entity_spawn(&mut self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {
+        let place = map_entity_param(params)?;
+        let classname = params
+            .get("classname")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
         let spawned = self.require_between_frames().and_then(|()| {
-            let mut pairs = vec![(
-                "classname".to_owned(),
-                params
-                    .get("classname")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned(),
-            )];
+            let mut pairs = vec![("classname".to_owned(), classname.clone())];
             pairs.extend(keyvalues(params));
             self.world
                 .spawn_entity(progs, &pairs)
                 .map_err(|e| edit_error(&e))
         });
-        if let Some(place) = map_entity_param(params) {
+        if let Some(place) = place {
             let edict = spawned.as_ref().ok().copied().map(EdictNumber::new);
-            self.world.insert_map_entity(place, edict);
+            self.world.insert_map_entity(place, &classname, edict);
         }
         let edict = spawned?;
         self.report_changes(progs);
@@ -686,8 +690,8 @@ impl Game {
     /// map's entities whether or not it is in the game, and its edict, when it is, is freed
     /// (BRIDGE-4.13).
     fn entity_remove(&mut self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {
-        let edict = match map_entity_param(params) {
-            Some(place) => match self.world.take_map_entity(place) {
+        let edict = match map_entity_param(params)? {
+            Some(place) => match self.world.take_map_entity(progs, place) {
                 Some(edict) => edict,
                 None => return Ok(json!({})),
             },
@@ -799,7 +803,7 @@ impl Game {
     }
 
     fn entity_edit(&mut self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {
-        let edict = self.target_edict(params)?;
+        let edict = self.target_edict(progs, params)?;
         self.require_in_use(edict)?;
         let pairs = keyvalues(params);
         if self.state == State::Paused {
@@ -1109,13 +1113,17 @@ fn edict_param(params: &Value) -> Result<usize, RpcError> {
         .ok_or_else(|| RpcError::new(ErrorCode::InvalidParams, "no edict"))
 }
 
-/// The `map_entity` parameter, the place of an entity in the map editor's list (BRIDGE-4.13).
-fn map_entity_param(params: &Value) -> Option<MapPlace> {
-    params
-        .get("map_entity")
-        .and_then(Value::as_u64)
+/// The `map_entity` parameter, the place of an entity in the map editor's list (BRIDGE-4.13):
+/// `None` when there is none, `-32602` (invalid params) when it is not a place.
+fn map_entity_param(params: &Value) -> Result<Option<MapPlace>, RpcError> {
+    let Some(value) = params.get("map_entity") else {
+        return Ok(None);
+    };
+    value
+        .as_u64()
         .and_then(|n| usize::try_from(n).ok())
-        .map(MapPlace::new)
+        .map(|n| Some(MapPlace::new(n)))
+        .ok_or_else(|| RpcError::new(ErrorCode::InvalidParams, "map_entity is not a place"))
 }
 
 /// The vector parameter `name`, zero when it is absent (BRIDGE-5.2).

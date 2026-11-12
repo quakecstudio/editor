@@ -38,9 +38,7 @@ pub trait HasWorkbench {
 
     /// The play loop, for a context that has one: the map editor's edits reach its game
     /// (P5-07). `None` for one with no preview, such as the command line's.
-    fn preview(&mut self) -> Option<&mut crate::Preview> {
-        None
-    }
+    fn preview(&mut self) -> Option<&mut crate::Preview>;
 }
 
 impl<L: Loader> HasWorkbench for Workbench<L> {
@@ -48,6 +46,10 @@ impl<L: Loader> HasWorkbench for Workbench<L> {
 
     fn workbench(&mut self) -> &mut Self {
         self
+    }
+
+    fn preview(&mut self) -> Option<&mut crate::Preview> {
+        None
     }
 }
 

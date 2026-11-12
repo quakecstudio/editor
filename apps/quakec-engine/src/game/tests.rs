@@ -670,6 +670,14 @@ fn map_entities_are_named_by_their_place() {
     );
     let neither = call(&mut game, &mut session, "entity/remove", &json!({}));
     assert_eq!(code(neither), ErrorCode::InvalidParams);
+    // A place written as a float is not a place, and nothing is spawned or listed.
+    let float = call(
+        &mut game,
+        &mut session,
+        "entity/spawn",
+        &json!({ "classname": "item_crate", "map_entity": 2.0 }),
+    );
+    assert_eq!(code(float), ErrorCode::InvalidParams);
 }
 
 // spec BRIDGE-4.9: spawn player at moves the player to the origin and angles

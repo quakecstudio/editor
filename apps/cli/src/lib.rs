@@ -277,6 +277,10 @@ impl<L: Loader> HasWorkbench for Cli<L> {
     fn workbench(&mut self) -> &mut Workbench<L> {
         &mut self.workbench
     }
+
+    fn preview(&mut self) -> Option<&mut Preview> {
+        None
+    }
 }
 
 /// Runs the command line `args`, reading files through `loader`, writing what it prints to

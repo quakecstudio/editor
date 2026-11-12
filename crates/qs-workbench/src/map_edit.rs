@@ -606,15 +606,23 @@ fn edit_map<C: HasWorkbench, T>(
 /// Sends what changed from the entities of `before` to the open map's to the game of
 /// `context`, when it runs on that map (P5-07, MAP-12).
 fn send_changes<C: HasWorkbench>(context: &mut C, before: &MapFile) {
+    let Some(path) = context.workbench().map.as_ref().map(|d| d.path.clone()) else {
+        return;
+    };
+    if !context
+        .preview()
+        .is_some_and(|preview| preview.plays_in_step(&path))
+    {
+        return;
+    }
     let Some(document) = context.workbench().map.as_ref() else {
         return;
     };
     let changes = LiveChange::between(&before.entities, &document.file.entities);
-    let path = document.path.clone();
     if let Some(preview) = context.preview()
         && !changes.is_empty()
     {
-        preview.send_map_changes(&path, &changes);
+        preview.send_map_changes(&path, &before.entities, &changes);
     }
 }
 

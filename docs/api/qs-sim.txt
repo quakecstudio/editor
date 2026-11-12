@@ -186,6 +186,8 @@ field qs_sim::scenario::Start.origin
 field qs_sim::scenario::Start.yaw
 field qs_sim::spawn::FieldDef.etype
 field qs_sim::spawn::FieldDef.slot
+field qs_sim::spawn::LoadedEntity.classname
+field qs_sim::spawn::LoadedEntity.edict
 field qs_sim::world::Entity.angles
 field qs_sim::world::Entity.frame
 field qs_sim::world::Entity.model
@@ -385,6 +387,7 @@ fn qs_sim::world::inspect::World::num_edicts
 fn qs_sim::world::inspect::World::state
 fn qs_sim::world::map_entities::MapPlace::new
 fn qs_sim::world::map_entities::World::insert_map_entity
+fn qs_sim::world::map_entities::World::map_classnames
 fn qs_sim::world::map_entities::World::map_entity
 fn qs_sim::world::map_entities::World::take_map_entity
 fn qs_sim::world::reload::ChangeKind::name
@@ -455,6 +458,7 @@ struct qs_sim::scenario::ScenarioError
 struct qs_sim::scenario::Shot
 struct qs_sim::scenario::Start
 struct qs_sim::spawn::FieldDef
+struct qs_sim::spawn::LoadedEntity
 struct qs_sim::spawn::Parser
 struct qs_sim::world::Entity
 struct qs_sim::world::HostState

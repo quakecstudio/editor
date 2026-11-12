@@ -29,6 +29,11 @@ pub enum LiveChange {
         /// Its place in the map before.
         place: EntityIndex,
     },
+    /// A brush entity put at `place`, whose brushes reach the game only at the next compile.
+    NeedsCompile {
+        /// Its place in the map.
+        place: EntityIndex,
+    },
     /// Key-values of the entity at `place` set; a key taken out is set to an empty value, which
     /// the spawn parse reads as 0, the empty string or the world (EDICT-8.2).
     Edit {
@@ -70,6 +75,9 @@ impl LiveChange {
             after_rest.unwrap_or_default(),
         );
         for (index, (a, b)) in before_rest.iter().zip(after_rest).enumerate() {
+            if a == b {
+                continue;
+            }
             let pairs = changed_pairs(a, b);
             if !pairs.is_empty() {
                 out.push(Self::Edit {
@@ -96,7 +104,8 @@ impl LiveChange {
     }
 
     /// Sends the change over the bridge (BRIDGE-4.13): `entity/spawn` at its place,
-    /// `entity/remove` or `entity/edit` of the entity there.
+    /// `entity/remove` or `entity/edit` of the entity there; nothing for
+    /// [`LiveChange::NeedsCompile`], answered with `null`.
     ///
     /// # Errors
     ///
@@ -110,14 +119,19 @@ impl LiveChange {
                 pairs,
             } => client.spawn(classname, &as_strs(pairs), Some(place.get())),
             Self::Remove { place } => client.remove(EntityTarget::MapEntity(place.get())),
+            Self::NeedsCompile { .. } => Ok(Value::Null),
             Self::Edit { place, pairs } => {
                 client.edit_entity(EntityTarget::MapEntity(place.get()), &as_strs(pairs))
             }
         }
     }
 
-    /// The entity `entity` spawned at `place`.
+    /// The entity `entity` spawned at `place`, or put there for the next compile when it has
+    /// brushes: a brush entity's model is the compiler's to make.
     fn spawn(place: EntityIndex, entity: &Entity) -> Self {
+        if entity.has_brushes() {
+            return Self::NeedsCompile { place };
+        }
         let classname = entity.classname().map(text).unwrap_or_default();
         let pairs = pairs(entity)
             .into_iter()

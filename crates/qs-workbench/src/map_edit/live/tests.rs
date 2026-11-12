@@ -23,7 +23,9 @@ use qs_map::MapFile;
 use serde_json::{Value, json};
 
 use super::LiveChange;
-use crate::map_edit::{EntityIndex, MAP_MOVE, MAP_OPEN, MAP_PLACE, register_map_edit};
+use crate::map_edit::{
+    EntityIndex, MAP_DUPLICATE, MAP_MOVE, MAP_OPEN, MAP_PLACE, register_map_edit,
+};
 use crate::{Config, HasWorkbench, Preview, Workbench};
 
 /// The world, a monster and a light.
@@ -172,7 +174,12 @@ type Seen = std::sync::Arc<std::sync::Mutex<Vec<(String, Value)>>>;
 
 /// A client of a [`Recording`] host, and what it records.
 fn recording_client() -> (Client, Seen) {
-    let name = format!("qs-workbench-live-{}", std::process::id());
+    static SOCKETS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let name = format!(
+        "qs-workbench-live-{}-{}",
+        std::process::id(),
+        SOCKETS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
     let path = if cfg!(windows) {
         PathBuf::from(format!(r"\\.\pipe\{name}"))
     } else {
@@ -226,14 +233,13 @@ impl HasWorkbench for Context {
 // No spec statement: P5-07, MAP-12: placing a monster in the map editor spawns it in the game
 // playing the map, at its place; an undo removes it, a move edits it, and a map the game is not
 // on sends nothing
-#[test]
-fn placing_a_monster_spawns_it_in_the_running_game() {
-    let dir = std::env::temp_dir().join(format!("qs-wb-live-{}", std::process::id()));
+/// A session whose game plays the map `test`, having loaded entities of `classnames`; the
+/// directory holding `test.map` and `other.map`, both [`MAP`], and what the game was sent.
+fn playing(name: &str, classnames: &[&str]) -> (PathBuf, Session<Context>, Seen) {
+    let dir = std::env::temp_dir().join(format!("qs-wb-live-{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let map = dir.join("test.map");
-    std::fs::write(&map, MAP).unwrap();
-    let other = dir.join("other.map");
-    std::fs::write(&other, MAP).unwrap();
+    std::fs::write(dir.join("test.map"), MAP).unwrap();
+    std::fs::write(dir.join("other.map"), MAP).unwrap();
     let (client, seen) = recording_client();
     // The host's process stands in for the game's; the test binary listing its tests exits.
     let child = std::process::Command::new(std::env::current_exe().unwrap())
@@ -241,15 +247,26 @@ fn placing_a_monster_spawns_it_in_the_running_game() {
         .stdout(std::process::Stdio::null())
         .spawn()
         .unwrap();
-    let preview = Preview::playing(Running { child, client }, "TEST");
+    let preview = Preview::playing(Running { child, client }, "TEST", classnames);
     let mut registry = Registry::new();
     register_map_edit(&mut registry).unwrap();
     let context = Context {
         workbench: Workbench::new(FsLoader, Config::default()),
         preview,
     };
-    let mut session = Session::new(context, registry);
-    session.execute(MAP_OPEN, json!({ "path": map })).unwrap();
+    (dir, Session::new(context, registry), seen)
+}
+
+/// The classnames of [`MAP`]'s entities.
+const LOADED: [&str; 3] = ["worldspawn", "monster_army", "light"];
+
+#[test]
+fn placing_a_monster_spawns_it_in_the_running_game() {
+    let (dir, mut session, seen) = playing("place", &LOADED);
+    let other = dir.join("other.map");
+    session
+        .execute(MAP_OPEN, json!({ "path": dir.join("test.map") }))
+        .unwrap();
     session
         .execute(
             MAP_PLACE,
@@ -291,4 +308,55 @@ fn placing_a_monster_spawns_it_in_the_running_game() {
         .execute(MAP_MOVE, json!({ "entity": 1, "by": [1.0, 0.0, 0.0] }))
         .unwrap();
     assert!(seen.lock().unwrap().is_empty(), "the game is not on other");
+}
+
+// No spec statement: P5-07, BRIDGE-4.13: a map whose entities are not the ones the game loaded
+// sends nothing, said once; a brush entity placed needs a compile and stops the changes after
+// it
+#[test]
+fn a_map_out_of_step_sends_nothing() {
+    let (dir, mut session, seen) = playing("apart", &["worldspawn"]);
+    session
+        .execute(MAP_OPEN, json!({ "path": dir.join("test.map") }))
+        .unwrap();
+    for _ in 0..2 {
+        session
+            .execute(MAP_MOVE, json!({ "entity": 1, "by": [8.0, 0.0, 0.0] }))
+            .unwrap();
+    }
+    assert!(seen.lock().unwrap().is_empty());
+    let notes: Vec<String> = session
+        .context()
+        .preview
+        .console()
+        .map(|line| line.text.clone())
+        .collect();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(notes[0].contains("next compile"), "{notes:?}");
+
+    let mut loaded = LOADED.to_vec();
+    loaded.push("func_door");
+    let (dir, mut session, seen) = playing("brush", &loaded);
+    let map = dir.join("test.map");
+    let door =
+        "{\n\"classname\" \"func_door\"\n{\n( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) door 0 0 0 1 1\n}\n}\n";
+    std::fs::write(&map, format!("{MAP}{door}")).unwrap();
+    session.execute(MAP_OPEN, json!({ "path": map })).unwrap();
+    session
+        .execute(MAP_DUPLICATE, json!({ "entity": 3 }))
+        .unwrap();
+    session
+        .execute(MAP_MOVE, json!({ "entity": 1, "by": [8.0, 0.0, 0.0] }))
+        .unwrap();
+    assert!(seen.lock().unwrap().is_empty(), "the copy needs a compile");
+    let notes: Vec<String> = session
+        .context()
+        .preview
+        .console()
+        .map(|line| line.text.clone())
+        .collect();
+    assert!(
+        notes.iter().any(|n| n.contains("brush entity")),
+        "{notes:?}"
+    );
 }
