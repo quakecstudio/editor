@@ -9,6 +9,7 @@
 use serde_json::json;
 
 use super::{Entities, Group, parse_value};
+use crate::ids::Edict;
 
 fn listed() -> Entities {
     let mut entities = Entities::default();
@@ -53,10 +54,10 @@ fn events_keep_the_list() {
         "edict/spawned",
         &json!({ "edict": 9, "classname": "ember" })
     ));
-    assert_eq!(entities.classname(9), Some("ember"));
+    assert_eq!(entities.classname(Edict::new(9)), Some("ember"));
     entities.select(&json!({ "edict": 9, "classname": "ember", "fields": [] }));
     entities.take_event("edict/removed", &json!({ "edict": 9 }));
-    assert_eq!(entities.classname(9), None);
+    assert_eq!(entities.classname(Edict::new(9)), None);
     assert!(entities.selected().is_none());
     assert!(entities.take_event("map/loaded", &json!({ "map": "e1m1" })));
     assert!(!entities.take_event("console/line", &json!({})));
@@ -84,7 +85,7 @@ fn changes_reach_the_selection() {
     assert_eq!(selected.shown("health", &entities).unwrap(), "4.5");
     assert_eq!(selected.shown("classname", &entities).unwrap(), "\"torch\"");
     assert_eq!(selected.fields[0].kind(), "float");
-    assert_eq!(entities.classname(7), Some("torch"));
+    assert_eq!(entities.classname(Edict::new(7)), Some("torch"));
     entities.take_event(
         "edict/changed",
         &json!({ "edict": 1, "fields": [

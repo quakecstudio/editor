@@ -9,12 +9,13 @@ use std::path::{Path, PathBuf};
 
 use qc_project::ModuleKind;
 use qc_sema::{EntitySchema, MapDiagnosticKind};
-use qs_commands::{BoxError, Command, Outcome, RegisterError, Registry, UndoStep};
+use qs_commands::{Command, Outcome, RegisterError, Registry};
 use qs_map::MapFile;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::editing::{Change, Source};
+use crate::editing::{Saved, TextStep};
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 
 /// The id of `map.check`.
@@ -214,36 +215,6 @@ impl<C: HasWorkbench + 'static> Command<C> for MapCheck {
     }
 }
 
-/// The maps a key rename changed, to put back and to change again.
-struct RenameKeyStep {
-    changes: Vec<Change>,
-}
-
-impl RenameKeyStep {
-    fn set<C: HasWorkbench>(&self, context: &mut C, before: bool) -> Result<(), BoxError> {
-        let workbench = context.workbench();
-        for change in &self.changes {
-            let text = if before {
-                &change.before
-            } else {
-                &change.after
-            };
-            workbench.set_text(&change.path, text.clone(), Source::Elsewhere)?;
-        }
-        Ok(())
-    }
-}
-
-impl<C: HasWorkbench + 'static> UndoStep<C> for RenameKeyStep {
-    fn undo(&mut self, context: &mut C) -> Result<(), BoxError> {
-        self.set(context, true)
-    }
-
-    fn redo(&mut self, context: &mut C) -> Result<(), BoxError> {
-        self.set(context, false)
-    }
-}
-
 /// `map.rename_key`.
 struct RenameKey;
 
@@ -273,9 +244,10 @@ impl<C: HasWorkbench + 'static> Command<C> for RenameKey {
             .collect();
         Ok(Outcome::undoable(
             KeysRenamed { maps },
-            RenameKeyStep {
-                changes: changed.into_iter().map(|(change, _)| change).collect(),
-            },
+            TextStep::new(
+                changed.into_iter().map(|(change, _)| change).collect(),
+                Saved::Unsaved,
+            ),
         ))
     }
 }

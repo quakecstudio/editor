@@ -307,7 +307,9 @@ fn project(
     {
         fs::remove_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
-    qs_templates::create(task.template, &dir, &inputs.templates).map_err(|e| e.to_string())?;
+    task.template
+        .create(&dir, &inputs.templates)
+        .map_err(|e| e.to_string())?;
     for file in &task.files {
         let to = dir.join(file);
         if let Some(parent) = to.parent() {

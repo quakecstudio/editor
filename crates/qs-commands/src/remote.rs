@@ -166,7 +166,7 @@ impl Host {
     pub fn answer<C: 'static>(&self, session: &mut Session<C>) -> usize {
         let mut answered: usize = 0;
         while let Ok(call) = self.calls.try_recv() {
-            run(session, call);
+            call.run(session);
             answered = answered.saturating_add(1);
         }
         answered
@@ -177,7 +177,7 @@ impl Host {
     pub fn answer_next<C: 'static>(&self, session: &mut Session<C>) -> bool {
         match self.calls.recv() {
             Ok(call) => {
-                run(session, call);
+                call.run(session);
                 true
             }
             Err(_) => false,
@@ -185,27 +185,29 @@ impl Host {
     }
 }
 
-/// Runs `call` in `session` and sends its answer back to the connection's thread.
-fn run<C: 'static>(session: &mut Session<C>, call: Call) {
-    let answer = match call.request {
-        Request::Commands => Answer::Commands(
-            session
-                .registry()
-                .commands()
-                .map(|info| Described {
-                    id: info.id().to_string(),
-                    summary: info.summary().to_owned(),
-                    params: info.params().clone(),
-                })
-                .collect(),
-        ),
-        Request::Execute { command, params } => match session.execute(&command, params) {
-            Ok(output) => Answer::Output(output),
-            Err(error) => Answer::Error(error.to_string()),
-        },
-    };
-    // A connection that closed no longer waits for its answer.
-    let _sent = call.reply.send(answer);
+impl Call {
+    /// Runs `call` in `session` and sends its answer back to the connection's thread.
+    fn run<C: 'static>(self, session: &mut Session<C>) {
+        let answer = match self.request {
+            Request::Commands => Answer::Commands(
+                session
+                    .registry()
+                    .commands()
+                    .map(|info| Described {
+                        id: info.id().to_string(),
+                        summary: info.summary().to_owned(),
+                        params: info.params().clone(),
+                    })
+                    .collect(),
+            ),
+            Request::Execute { command, params } => match session.execute(&command, params) {
+                Ok(output) => Answer::Output(output),
+                Err(error) => Answer::Error(error.to_string()),
+            },
+        };
+        // A connection that closed no longer waits for its answer.
+        let _sent = self.reply.send(answer);
+    }
 }
 
 /// Serves one client: each line a request, passed to the host's thread, its answer a line back.
@@ -281,7 +283,7 @@ impl Client {
     pub fn commands(&mut self) -> Result<Vec<Described>, RemoteError> {
         match self.ask(&Request::Commands)? {
             Answer::Commands(commands) => Ok(commands),
-            other => Err(unexpected(&other)),
+            other => Err(other.unexpected()),
         }
     }
 
@@ -303,7 +305,7 @@ impl Client {
         match self.ask(&request)? {
             Answer::Output(output) => Ok(Ok(output)),
             Answer::Error(why) => Ok(Err(why)),
-            other @ Answer::Commands(_) => Err(unexpected(&other)),
+            other @ Answer::Commands(_) => Err(other.unexpected()),
         }
     }
 
@@ -320,7 +322,9 @@ impl Client {
     }
 }
 
-/// An answer that does not fit the request.
-fn unexpected(answer: &Answer) -> RemoteError {
-    RemoteError::Protocol(format!("unexpected answer {answer:?}"))
+impl Answer {
+    /// An answer that does not fit the request.
+    fn unexpected(&self) -> RemoteError {
+        RemoteError::Protocol(format!("unexpected answer {self:?}"))
+    }
 }

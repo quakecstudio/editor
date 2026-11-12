@@ -12,6 +12,7 @@ use qc_project::MemoryLoader;
 use serde_json::json;
 
 use super::{PlayState, Preview, PreviewConfig, PreviewError, PreviewStatus, mod_folder};
+use crate::ids::{Edict, WatchIndex};
 use crate::{Config, Workbench, WorkbenchError};
 
 /// A fresh directory for the test `name`.
@@ -247,7 +248,10 @@ fn field_edits_need_a_paused_game_and_a_field() {
         game.set_field("health", "5"),
         Err(PreviewError::NotRunning)
     ));
-    assert!(matches!(game.select(3), Err(PreviewError::NotRunning)));
+    assert!(matches!(
+        game.select(Edict::new(3)),
+        Err(PreviewError::NotRunning)
+    ));
     assert!(matches!(game.pick(0.5, 0.5), Err(PreviewError::NotRunning)));
     assert!(matches!(game.refresh(), Err(PreviewError::NotRunning)));
     assert_eq!(
@@ -264,9 +268,9 @@ fn edits_held_until_resume_are_shown() {
     game.pending.push((3, "health".to_owned(), "5".to_owned()));
     game.pending.push((3, "health".to_owned(), "6".to_owned()));
     game.pending.push((4, "armor".to_owned(), "1".to_owned()));
-    assert_eq!(game.pending(3, "health"), Some("6"));
-    assert_eq!(game.pending(4, "health"), None);
-    assert_eq!(game.pending(3, "armor"), None);
+    assert_eq!(game.pending(Edict::new(3), "health"), Some("6"));
+    assert_eq!(game.pending(Edict::new(4), "health"), None);
+    assert_eq!(game.pending(Edict::new(3), "armor"), None);
 }
 
 // spec BRIDGE-3.3: state/changed to paused at a breakpoint stops the debugger there, to running
@@ -299,7 +303,7 @@ fn stops_reach_the_debugger_and_the_console() {
     ));
     game.watch("time").unwrap();
     assert_eq!(game.debugger().watches().len(), 1);
-    game.unwatch(0);
+    game.unwatch(WatchIndex::new(0));
     assert!(game.step_by(qs_engine::StepKind::Over).is_err());
 }
 

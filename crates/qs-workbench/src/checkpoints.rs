@@ -16,6 +16,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::editing::Source;
+use crate::ids::CheckpointNumber;
 use crate::{HasWorkbench, Workbench, WorkbenchError, problems, tree};
 
 /// The id of the command that records a checkpoint of the open project.
@@ -31,7 +32,7 @@ pub const RESTORE_CHECKPOINT: &str = "checkpoint.restore";
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CheckpointMade {
     /// Its number, which `checkpoint.restore` takes.
-    pub number: u32,
+    pub number: CheckpointNumber,
     /// Its git commit's id, in the store.
     pub commit: String,
     /// What it was made for.
@@ -43,7 +44,7 @@ pub struct CheckpointMade {
 impl From<Checkpoint> for CheckpointMade {
     fn from(checkpoint: Checkpoint) -> Self {
         Self {
-            number: checkpoint.number,
+            number: CheckpointNumber::new(checkpoint.number),
             commit: checkpoint.commit,
             label: checkpoint.label,
             files: checkpoint.files,
@@ -76,7 +77,7 @@ pub struct CreateCheckpointParams {
 #[serde(deny_unknown_fields)]
 pub struct RestoreCheckpointParams {
     /// The checkpoint's number.
-    pub number: u32,
+    pub number: CheckpointNumber,
 }
 
 impl<L: Loader> Workbench<L> {
@@ -236,7 +237,9 @@ impl<C: HasWorkbench + 'static> Command<C> for RestoreCheckpoint {
         context: &mut C,
         params: RestoreCheckpointParams,
     ) -> Result<Outcome<CheckpointRestored, C>, WorkbenchError> {
-        let restored = context.workbench().restore_checkpoint(params.number)?;
+        let restored = context
+            .workbench()
+            .restore_checkpoint(params.number.get())?;
         Ok(Outcome::outside_history(restored))
     }
 }

@@ -157,11 +157,6 @@ bool-argument	crates/qs-sim/src/world.rs	World::set_standard_quake
 bool-argument	crates/qs-sim/src/world/changes.rs	World::track_changes
 bool-argument	crates/qs-sound/src/music.rs	Music::play
 bool-argument	crates/qs-sound/src/music.rs	Music::set_paused
-bool-argument	crates/qs-workbench/src/build.rs	gravity
-bool-argument	crates/qs-workbench/src/commands.rs	RenameStep::set
-bool-argument	crates/qs-workbench/src/map_check.rs	RenameKeyStep::set
-bool-argument	crates/qs-workbench/src/search.rs	FileStep::set
-bool-argument	crates/qs-workbench/src/tools.rs	Workbench::search
 string-error	crates/qs-agent/src/lib.rs	Model::reply
 string-error	crates/qs-agent/src/lib.rs	Model::reply_streaming
 string-error	crates/qs-commands/src/session.rs	guard
@@ -173,7 +168,6 @@ string-error	crates/qs-models/src/openai.rs	reply
 string-error	crates/qs-models/src/stream.rs	AnthropicStream::answer
 string-error	crates/qs-sim/src/scenario.rs	parse_expect
 string-error	crates/qs-sim/src/scenario.rs	read
-string-error	crates/qs-templates/src/lib.rs	Fetch::get
 free-fn-on-type	apps/cli/src/doctor.rs	name
 free-fn-on-type	apps/cli/src/doctor.rs	run
 free-fn-on-type	apps/cli/src/lib.rs	serve_mcp
@@ -333,8 +327,6 @@ free-fn-on-type	crates/qs-client/src/client.rs	setup_entity_transform
 free-fn-on-type	crates/qs-client/src/hud.rs	intermission_overlay
 free-fn-on-type	crates/qs-client/src/hud.rs	status_bar
 free-fn-on-type	crates/qs-client/src/menu.rs	new_game
-free-fn-on-type	crates/qs-commands/src/remote.rs	run
-free-fn-on-type	crates/qs-commands/src/remote.rs	unexpected
 free-fn-on-type	crates/qs-commands/src/session.rs	panicked
 free-fn-on-type	crates/qs-editor-view/src/selection.rs	shifted
 free-fn-on-type	crates/qs-editor-view/src/vim.rs	after_char
@@ -401,12 +393,6 @@ free-fn-on-type	crates/qs-sim/src/scenario.rs	shown
 free-fn-on-type	crates/qs-sim/src/world/edit.rs	spawn_pairs
 free-fn-on-type	crates/qs-sim/src/world/reload.rs	change
 free-fn-on-type	crates/qs-sound/src/mixer.rs	paint_channel
-free-fn-on-type	crates/qs-templates/src/lib.rs	create
-free-fn-on-type	crates/qs-templates/src/lib.rs	make
-free-fn-on-type	crates/qs-templates/src/lib.rs	notice
-free-fn-on-type	crates/qs-workbench/src/build.rs	unloadable_message
-free-fn-on-type	crates/qs-workbench/src/preview.rs	built_program
-free-fn-on-type	crates/qs-workbench/src/vm_run.rs	changes
 bare-id	apps/desktop/src/agent.rs	AgentPanel::asking(index)
 bare-id	apps/desktop/src/agent.rs	AgentPanel::permit(index)
 bare-id	apps/desktop/src/agent.rs	AgentPanel::report(index)
@@ -499,19 +485,6 @@ bare-id	crates/qs-sound/src/sfx.rs	SoundData::sample_16(index)
 bare-id	crates/qs-sound/src/sfx.rs	SoundData::sample_8(index)
 bare-id	crates/qs-wad/src/lib.rs	Wad::lump(index)
 bare-id	crates/qs-wav/src/lib.rs	Sound::sample(index)
-bare-id	crates/qs-workbench/src/commands.rs	CodeActionParams.index
-bare-id	crates/qs-workbench/src/preview.rs	Preview::pending(edict)
-bare-id	crates/qs-workbench/src/preview.rs	Preview::select(edict)
-bare-id	crates/qs-workbench/src/preview.rs	Preview::unwatch(index)
-bare-id	crates/qs-workbench/src/preview.rs	SelectParams.edict
-bare-id	crates/qs-workbench/src/preview.rs	SelectedEntity.edict
-bare-id	crates/qs-workbench/src/preview.rs	UnwatchParams.index
-bare-id	crates/qs-workbench/src/preview/debug.rs	Breakpoint.id
-bare-id	crates/qs-workbench/src/preview/debug.rs	Debugger::unwatch(index)
-bare-id	crates/qs-workbench/src/preview/engine.rs	EngineInspectParams.edict
-bare-id	crates/qs-workbench/src/preview/entities.rs	Entities::classname(edict)
-bare-id	crates/qs-workbench/src/preview/entities.rs	Selected.edict
-bare-id	crates/qs-workbench/src/terminal.rs	Terminals::get_mut(index)
 magic-number	apps/desktop/src/agent.rs	AgentPanel::ui:24
 magic-number	apps/desktop/src/agent.rs	changes:8
 magic-number	apps/desktop/src/agent.rs	edit_messages:48
@@ -2113,5 +2086,3 @@ magic-number	crates/qs-wav/src/lib.rs	get_wavinfo:12
 magic-number	crates/qs-wav/src/lib.rs	get_wavinfo:22
 magic-number	crates/qs-wav/src/lib.rs	get_wavinfo:4
 magic-number	crates/qs-wav/src/lib.rs	get_wavinfo:8
-magic-number	crates/qs-workbench/src/preview.rs	Preview::stop:20
-magic-number	crates/qs-workbench/src/vm_run.rs	slots:3

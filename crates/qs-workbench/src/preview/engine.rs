@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{HasPreview, Preview, PreviewError};
+use crate::ids::Edict;
 
 /// The id of the command that reads the running game's edicts, globals or call stack.
 pub const ENGINE_INSPECT: &str = "engine.inspect";
@@ -55,7 +56,7 @@ pub struct EngineInspectParams {
     pub what: Inspected,
     /// The edict, for `edict`.
     #[serde(default)]
-    pub edict: Option<u32>,
+    pub edict: Option<Edict>,
 }
 
 /// The parameters of `engine.console`.
@@ -120,7 +121,7 @@ pub fn inspect(client: &mut Client, params: &EngineInspectParams) -> Result<Valu
         (Inspected::Entities, _) => InspectWhat::Entities,
         (Inspected::Globals, _) => InspectWhat::Globals,
         (Inspected::Stack, _) => InspectWhat::Stack,
-        (Inspected::Edict, Some(edict)) => InspectWhat::Edict(edict),
+        (Inspected::Edict, Some(edict)) => InspectWhat::Edict(edict.get()),
         (Inspected::Edict, None) => {
             return Err(PreviewError::BadValue {
                 field: "edict".to_owned(),

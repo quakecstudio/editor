@@ -22,6 +22,7 @@ use serde_json::Value;
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 
+use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_edit::LiveChange;
 use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
 use qs_map::Entity;
@@ -42,6 +43,8 @@ use entities::Entities;
 const CONSOLE_LINES: usize = 1000;
 /// How long the host has to stop after `shutdown` before it is killed.
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
+/// How long `stop` waits between looks at whether the host has stopped.
+const SHUTDOWN_POLL: Duration = Duration::from_millis(20);
 
 /// Whether the game is running.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -309,7 +312,7 @@ impl Preview {
         match self.debugger.toggle(file, line) {
             Some(removed) => {
                 if let (Some(id), Some(client)) = (removed.id, self.client()) {
-                    client.clear_breakpoint(id)?;
+                    client.clear_breakpoint(id.get())?;
                 }
                 Ok(())
             }
@@ -323,7 +326,10 @@ impl Preview {
         let name = file.to_string_lossy().replace('\\', "/");
         let answer = self.live_client()?.set_breakpoint(&name, line)?;
         if let Some(breakpoint) = self.debugger.breakpoint_mut(file, line) {
-            breakpoint.id = answer.get("id").and_then(Value::as_u64);
+            breakpoint.id = answer
+                .get("id")
+                .and_then(Value::as_u64)
+                .map(BreakpointId::new);
             breakpoint.function = answer
                 .get("location")
                 .and_then(Location::from_value)
@@ -358,7 +364,7 @@ impl Preview {
     }
 
     /// Takes away watch `index`.
-    pub fn unwatch(&mut self, index: usize) {
+    pub fn unwatch(&mut self, index: WatchIndex) {
         self.debugger.unwatch(index);
     }
 
@@ -415,11 +421,11 @@ impl Preview {
     /// The value typed for field `field` of edict `edict` while paused, which the game takes on
     /// resume.
     #[must_use]
-    pub fn pending(&self, edict: u32, field: &str) -> Option<&str> {
+    pub fn pending(&self, edict: Edict, field: &str) -> Option<&str> {
         self.pending
             .iter()
             .rev()
-            .find(|(e, f, _)| *e == edict && f == field)
+            .find(|(e, f, _)| *e == edict.get() && f == field)
             .map(|(_, _, value)| value.as_str())
     }
 
@@ -445,8 +451,10 @@ impl Preview {
     /// # Errors
     ///
     /// [`PreviewError::NotRunning`] with no host, or the bridge's error.
-    pub fn select(&mut self, edict: u32) -> Result<(), PreviewError> {
-        let answer = self.live_client()?.inspect(InspectWhat::Edict(edict))?;
+    pub fn select(&mut self, edict: Edict) -> Result<(), PreviewError> {
+        let answer = self
+            .live_client()?
+            .inspect(InspectWhat::Edict(edict.get()))?;
         self.entities.select(&answer);
         Ok(())
     }
@@ -488,7 +496,7 @@ impl Preview {
         else {
             return Ok(None);
         };
-        self.select(edict)?;
+        self.select(Edict::new(edict))?;
         Ok(Some(edict))
     }
 
@@ -519,11 +527,11 @@ impl Preview {
             field: field.to_owned(),
             kind,
         })?;
-        let answer = self.live_client()?.set_field(edict, field, value)?;
+        let answer = self.live_client()?.set_field(edict.get(), field, value)?;
         // BRIDGE-4.4: while paused between frames the host holds the edit until it resumes.
         if answer.get("applied").and_then(Value::as_str) == Some("on_resume") {
             self.pending
-                .push((edict, field.to_owned(), text.trim().to_owned()));
+                .push((edict.get(), field.to_owned(), text.trim().to_owned()));
             return Ok(());
         }
         self.select(edict)
@@ -564,7 +572,7 @@ impl Preview {
         map: Option<String>,
     ) -> Result<(), PreviewError> {
         self.stop();
-        let (project, progs, mod_name) = built_program(workbench)?;
+        let (project, progs, mod_name) = workbench.built_program()?;
         let base = self.game_base()?;
         let run_root = prepare_run_root(&project, Flavour::Original, &base, &mod_name)
             .map_err(PreviewError::RunRoot)?;
@@ -680,7 +688,7 @@ impl Preview {
             return Ok(None);
         }
         let started = Instant::now();
-        let (_, progs, _) = built_program(workbench)?;
+        let (_, progs, _) = workbench.built_program()?;
         let path = progs.to_string_lossy().into_owned();
         if on_loss == OnLoss::Ask {
             // P3-10: the host's own migration, run over a copy of the world, says what the
@@ -718,7 +726,7 @@ impl Preview {
             match live.running.child.try_wait() {
                 Ok(Some(_)) => break,
                 Ok(None) if started.elapsed() < SHUTDOWN_WAIT => {
-                    std::thread::sleep(Duration::from_millis(20));
+                    std::thread::sleep(SHUTDOWN_POLL);
                 }
                 Ok(None) | Err(_) => {
                     if let Err(error) = live.running.child.kill() {
@@ -806,7 +814,8 @@ impl Preview {
                 let edict = params
                     .get("edict")
                     .and_then(Value::as_u64)
-                    .and_then(|n| u32::try_from(n).ok());
+                    .and_then(|n| u32::try_from(n).ok())
+                    .map(Edict::new);
                 if let Some(edict) = edict {
                     self.picked = self
                         .entities
@@ -971,23 +980,23 @@ impl Drop for Preview {
     }
 }
 
-/// Builds the project; its root, its first program and the mod folder it is in, or why there
-/// is none.
-fn built_program<L: Loader>(
-    workbench: &mut Workbench<L>,
-) -> Result<(PathBuf, PathBuf, String), PreviewError> {
-    let project = workbench
-        .root()
-        .map(Path::to_path_buf)
-        .ok_or(PreviewError::Build(WorkbenchError::NoProject))?;
-    let modules = workbench.build().map_err(PreviewError::Build)?;
-    let Some(built) = modules.iter().find(|m| m.built) else {
-        return Err(PreviewError::NothingBuilt(modules));
-    };
-    let progs = built.output.clone();
-    let mod_name =
-        mod_folder(&project, &progs).ok_or_else(|| PreviewError::OutsideBuild(progs.clone()))?;
-    Ok((project, progs, mod_name))
+impl<L: Loader> Workbench<L> {
+    /// Builds the project; its root, its first program and the mod folder it is in, or why there
+    /// is none.
+    pub(super) fn built_program(&mut self) -> Result<(PathBuf, PathBuf, String), PreviewError> {
+        let project = self
+            .root()
+            .map(Path::to_path_buf)
+            .ok_or(PreviewError::Build(WorkbenchError::NoProject))?;
+        let modules = self.build().map_err(PreviewError::Build)?;
+        let Some(built) = modules.iter().find(|m| m.built) else {
+            return Err(PreviewError::NothingBuilt(modules));
+        };
+        let progs = built.output.clone();
+        let mod_name = mod_folder(&project, &progs)
+            .ok_or_else(|| PreviewError::OutsideBuild(progs.clone()))?;
+        Ok((project, progs, mod_name))
+    }
 }
 
 /// The original game's base directory: `folder`'s, else the first install found with one.
@@ -1148,7 +1157,7 @@ pub struct PlayParams {
 #[serde(deny_unknown_fields)]
 pub struct SelectParams {
     /// The edict's number.
-    pub edict: u32,
+    pub edict: Edict,
 }
 
 /// The parameters of `preview.pick`.
@@ -1175,7 +1184,7 @@ pub struct SetFieldParams {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SelectedEntity {
     /// The edict's number, or none when nothing is selected.
-    pub edict: Option<u32>,
+    pub edict: Option<Edict>,
     /// Its classname.
     pub classname: Option<String>,
 }
@@ -1286,7 +1295,7 @@ pub struct WatchParams {
 #[serde(deny_unknown_fields)]
 pub struct UnwatchParams {
     /// The watch's place in the list, from 0.
-    pub index: usize,
+    pub index: WatchIndex,
 }
 
 /// How `preview.step_by` steps.

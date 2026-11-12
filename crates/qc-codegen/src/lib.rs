@@ -90,6 +90,28 @@ pub struct Compiled {
     pub warnings: Vec<FileDiagnostic>,
 }
 
+impl Compiled {
+    /// The name of the function holding `statement`, the last whose first statement is at or
+    /// before it, and the source line the line map gives the statement (LNO-1).
+    #[must_use]
+    pub fn function_and_line(&self, statement: usize) -> (Option<String>, Option<i32>) {
+        let progs = &self.progs;
+        let function = i32::try_from(statement).ok().and_then(|at| {
+            progs
+                .functions
+                .iter()
+                .filter(|f| f.first_statement > 0 && f.first_statement <= at)
+                .max_by_key(|f| f.first_statement)
+        });
+        let name = function
+            .and_then(|f| usize::try_from(f.s_name).ok())
+            .and_then(|at| progs.strings.get(at..))
+            .and_then(|rest| rest.split(|&b| b == 0).next())
+            .map(|name| String::from_utf8_lossy(name).into_owned());
+        (name, self.lno.lines.get(statement).copied())
+    }
+}
+
 /// Why a module was not compiled.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CompileError {

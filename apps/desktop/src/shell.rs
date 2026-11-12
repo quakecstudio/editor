@@ -47,6 +47,7 @@ use qs_workbench::git::{
     GitChange, GitCommitParams, GitConflict, GitDiffParams, GitHunk, GitLogParams, GitPathParams,
     GitResolveParams, GitSide, GitStageParams, GitStatus,
 };
+use qs_workbench::ids::{ActionIndex, CheckpointNumber, TerminalIndex, WatchIndex};
 use qs_workbench::map_edit::{
     BSP_EXTENSION, BspSave, EntityKeys, EntityParams, FILES_CHANGED, FilesChanged,
     FilesChangedParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_EXTENSION,
@@ -688,7 +689,7 @@ impl Shell {
         let preview = &self.session.context().preview;
         let entities = preview.entities();
         let entity = entities.selected().map(|selected| qs_agent::EntityState {
-            edict: selected.edict,
+            edict: selected.edict.get(),
             classname: selected.classname.clone(),
             fields: selected
                 .fields
@@ -786,8 +787,12 @@ impl Shell {
                 self.agent.set_permissions(permissions);
             }
             AgentAction::Restore(number) => {
-                let _restored: Option<serde_json::Value> =
-                    self.run(RESTORE_CHECKPOINT, &RestoreCheckpointParams { number });
+                let _restored: Option<serde_json::Value> = self.run(
+                    RESTORE_CHECKPOINT,
+                    &RestoreCheckpointParams {
+                        number: CheckpointNumber::new(number),
+                    },
+                );
             }
             AgentAction::OpenHistory => {
                 let threads = self
@@ -1484,10 +1489,21 @@ impl Shell {
                 let _: Option<Opened> = self.run(TERMINAL_NEW, &serde_json::json!({}));
             }
             TerminalAction::Send(tab, line) => {
-                let _: Option<()> = self.run(TERMINAL_SEND, &SendParams { tab, line });
+                let _: Option<()> = self.run(
+                    TERMINAL_SEND,
+                    &SendParams {
+                        tab: TerminalIndex::new(tab),
+                        line,
+                    },
+                );
             }
             TerminalAction::Close(tab) => {
-                let _: Option<()> = self.run(TERMINAL_CLOSE, &CloseParams { tab });
+                let _: Option<()> = self.run(
+                    TERMINAL_CLOSE,
+                    &CloseParams {
+                        tab: TerminalIndex::new(tab),
+                    },
+                );
             }
         }
     }
@@ -2241,7 +2257,12 @@ impl Shell {
                 .run::<_, ()>(WATCH, &WatchParams { expression })
                 .is_some(),
             DebugAction::Unwatch(index) => self
-                .run::<_, PreviewStatus>(UNWATCH, &UnwatchParams { index })
+                .run::<_, PreviewStatus>(
+                    UNWATCH,
+                    &UnwatchParams {
+                        index: WatchIndex::new(index),
+                    },
+                )
                 .is_some(),
             DebugAction::Breakpoint { file, line } => self
                 .run::<_, ()>(BREAKPOINT, &BreakpointParams { file, line })
@@ -2842,7 +2863,7 @@ impl Shell {
                     let params = CodeActionParams {
                         path,
                         offset,
-                        index: Some(index),
+                        index: Some(ActionIndex::new(index)),
                     };
                     let _: Option<ActionInfo> = self.run(CODE_FIX, &params);
                     self.sync_editor();

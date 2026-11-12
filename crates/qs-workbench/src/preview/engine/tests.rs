@@ -24,6 +24,7 @@ use super::{
     ENGINE_CONSOLE, ENGINE_INSPECT, ENGINE_SCREENSHOT, EngineInspectParams, Inspected, ShotSize,
     console_output, inspect, next_screenshot_path, register_engine, screenshot_to,
 };
+use crate::ids::Edict;
 use crate::preview::{HasPreview, Preview, PreviewConfig, PreviewError};
 use crate::{Config, HasWorkbench, Workbench};
 
@@ -128,12 +129,12 @@ fn inspect_asks_the_bridge() {
         json!({ "what": "entities" })
     );
     assert_eq!(
-        answer(Inspected::Globals, Some(4)),
+        answer(Inspected::Globals, Some(Edict::new(4))),
         json!({ "what": "globals" })
     );
     assert_eq!(answer(Inspected::Stack, None), json!({ "what": "stack" }));
     assert_eq!(
-        answer(Inspected::Edict, Some(7)),
+        answer(Inspected::Edict, Some(Edict::new(7))),
         json!({ "what": "edict", "edict": 7 })
     );
     assert!(matches!(

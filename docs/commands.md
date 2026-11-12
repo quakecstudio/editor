@@ -193,15 +193,21 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "CheckpointNumber": {
+      "description": "A checkpoint's number, which `checkpoint.restore` takes.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `checkpoint.restore`.",
   "properties": {
     "number": {
-      "description": "The checkpoint's number.",
-      "format": "uint32",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/CheckpointNumber",
+      "description": "The checkpoint's number."
     }
   },
   "required": [
@@ -220,19 +226,29 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "ActionIndex": {
+      "description": "A code action, by its place in `code.actions`' list at the same place.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `code.actions` and `code.fix`.",
   "properties": {
     "index": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ActionIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "default": null,
-      "description": "With `code.fix`, which fix, by its index in `code.actions`' list at the same place.",
-      "format": "uint",
-      "minimum": 0,
-      "type": [
-        "integer",
-        "null"
-      ]
+      "description": "With `code.fix`, which fix, by its index in `code.actions`' list at the same place."
     },
     "offset": {
       "description": "The byte offset the fixes are for: the diagnostics there.",
@@ -262,19 +278,29 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "ActionIndex": {
+      "description": "A code action, by its place in `code.actions`' list at the same place.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `code.actions` and `code.fix`.",
   "properties": {
     "index": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ActionIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "default": null,
-      "description": "With `code.fix`, which fix, by its index in `code.actions`' list at the same place.",
-      "format": "uint",
-      "minimum": 0,
-      "type": [
-        "integer",
-        "null"
-      ]
+      "description": "With `code.fix`, which fix, by its index in `code.actions`' list at the same place."
     },
     "offset": {
       "description": "The byte offset the fixes are for: the diagnostics there.",
@@ -689,6 +715,12 @@ Parameters:
 ```json
 {
   "$defs": {
+    "Edict": {
+      "description": "An edict of the game the preview host runs, by its number (EDICT-1.4).",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
     "Inspected": {
       "description": "What `engine.inspect` reads (BRIDGE-4.9).",
       "oneOf": [
@@ -720,14 +752,16 @@ Parameters:
   "description": "The parameters of `engine.inspect`.",
   "properties": {
     "edict": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Edict"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "default": null,
-      "description": "The edict, for `edict`.",
-      "format": "uint32",
-      "minimum": 0,
-      "type": [
-        "integer",
-        "null"
-      ]
+      "description": "The edict, for `edict`."
     },
     "what": {
       "$ref": "#/$defs/Inspected",
@@ -2919,15 +2953,21 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "Edict": {
+      "description": "An edict of the game the preview host runs, by its number (EDICT-1.4).",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `preview.select`.",
   "properties": {
     "edict": {
-      "description": "The edict's number.",
-      "format": "uint32",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/Edict",
+      "description": "The edict's number."
     }
   },
   "required": [
@@ -3060,15 +3100,21 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "WatchIndex": {
+      "description": "A watch expression, by its place in the watch list.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `preview.unwatch`.",
   "properties": {
     "index": {
-      "description": "The watch's place in the list, from 0.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/WatchIndex",
+      "description": "The watch's place in the list, from 0."
     }
   },
   "required": [
@@ -3906,15 +3952,21 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "TerminalIndex": {
+      "description": "A terminal tab, by its place among the tabs.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `terminal.close`.",
   "properties": {
     "tab": {
-      "description": "The tab, from 0 in the order opened.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/TerminalIndex",
+      "description": "The tab, from 0 in the order opened."
     }
   },
   "required": [
@@ -3965,6 +4017,14 @@ Parameters:
 
 ```json
 {
+  "$defs": {
+    "TerminalIndex": {
+      "description": "A terminal tab, by its place among the tabs.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "description": "The parameters of `terminal.send`.",
@@ -3974,10 +4034,8 @@ Parameters:
       "type": "string"
     },
     "tab": {
-      "description": "The tab, from 0 in the order opened.",
-      "format": "uint",
-      "minimum": 0,
-      "type": "integer"
+      "$ref": "#/$defs/TerminalIndex",
+      "description": "The tab, from 0 in the order opened."
     }
   },
   "required": [
