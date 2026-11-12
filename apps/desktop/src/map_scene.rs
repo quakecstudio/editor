@@ -106,8 +106,9 @@ impl EntityShape {
 /// The open map as drawn: its world and brush lines and its entities.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Scene {
-    /// The world's and the brush entities' lines.
-    pub(crate) lines: Vec<Line>,
+    /// The world's and the brush entities' lines, each with the entity it is drawn for: a BSP's
+    /// faces are the world's.
+    pub(crate) lines: Vec<(EntityIndex, Line)>,
     /// Every entity but the world.
     pub(crate) entities: Vec<EntityShape>,
     /// The values each key holds across the map, the choices its editor offers.
@@ -131,21 +132,31 @@ impl Scene {
             MapSource::Map => None,
         };
         if let Some(bsp) = &bsp {
+            let mut lines = Vec::new();
             for face in &bsp.faces {
-                outline(&mut scene.lines, &bsp.face_vertices(face));
+                outline(&mut lines, &bsp.face_vertices(face));
             }
+            let world = EntityIndex::new(0);
+            scene
+                .lines
+                .extend(lines.into_iter().map(|line| (world, line)));
         }
         for (index, entity) in document.file().entities.iter().enumerate() {
             let mut bounds: Option<[[f32; 3]; 2]> = None;
+            let mut lines = Vec::new();
             for brush in entity.brushes() {
                 for polygon in brush.polygons() {
                     let points: Vec<[f32; 3]> = polygon.iter().map(|p| p.map(single)).collect();
                     for &point in &points {
                         bounds = Some(grow(bounds, point));
                     }
-                    outline(&mut scene.lines, &points);
+                    outline(&mut lines, &points);
                 }
             }
+            let owner = EntityIndex::new(index);
+            scene
+                .lines
+                .extend(lines.into_iter().map(|line| (owner, line)));
             let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
             for pair in entity.pairs() {
                 scene

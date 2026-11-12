@@ -390,11 +390,7 @@ impl MapEditor {
             self.also.retain(|entity| entity.get() < count);
         }
         if self.kept_out.1 != Some(document.revision()) {
-            let count = document.file().entities.len();
-            let kept_out = (1..count)
-                .map(EntityIndex::new)
-                .filter(|&entity| document.is_hidden(entity))
-                .collect();
+            let kept_out = document.hidden_entities();
             self.kept_out = (kept_out, Some(document.revision()));
         }
         let hidden: BTreeSet<EntityIndex> = self.hidden.union(&self.kept_out.0).copied().collect();
@@ -523,8 +519,10 @@ impl MapEditor {
         painter.rect_filled(rect, 0.0, theme.color(Token::SurfaceViewport));
         let projection = Projection::new(camera, rect);
         let world = Stroke::new(1.0, theme.color(Token::TextFaint));
-        for line in &self.scene.lines {
-            projection.line(&painter, *line, world);
+        for (owner, line) in &self.scene.lines {
+            if !hidden.contains(owner) {
+                projection.line(&painter, *line, world);
+            }
         }
         let link = Stroke::new(1.0, theme.color(Token::Focus));
         let mut centres = Vec::new();

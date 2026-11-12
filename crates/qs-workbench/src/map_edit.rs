@@ -709,11 +709,8 @@ fn edit_map<C: HasWorkbench, T>(
     edit: impl FnOnce(&mut MapDocument) -> Result<T, WorkbenchError>,
 ) -> Result<(T, MapStep), WorkbenchError> {
     let document = context.workbench().map_mut()?;
-    let before = (
-        document.file.clone(),
-        document.selected,
-        document.view.clone(),
-    );
+    let before = (document.file.clone(), document.selected);
+    let view = document.view.clone();
     let edits = document.edits;
     match edit(document).and_then(|answer| document.after_edit(&before.0).map(|()| answer)) {
         Ok(answer) => {
@@ -728,7 +725,8 @@ fn edit_map<C: HasWorkbench, T>(
             Ok((answer, step))
         }
         Err(error) => {
-            (document.file, document.selected, document.view) = before;
+            (document.file, document.selected) = before;
+            document.view = view;
             Err(error)
         }
     }
@@ -763,7 +761,7 @@ struct MapStep {
     before: MapRevision,
     /// Its edits after, which redo gives back. A map opened since has had neither.
     after: MapRevision,
-    other: (MapFile, Option<EntityIndex>, groups::ViewState),
+    other: (MapFile, Option<EntityIndex>),
 }
 
 impl MapStep {
@@ -783,7 +781,11 @@ impl MapStep {
             .ok_or(WorkbenchError::NoMap)?;
         core::mem::swap(&mut document.file, &mut self.other.0);
         core::mem::swap(&mut document.selected, &mut self.other.1);
-        core::mem::swap(&mut document.view, &mut self.other.2);
+        // What is hidden and locked is outside history; when undo or redo changes how many
+        // entities there are, its places no longer name the same entities, so it is forgotten.
+        if document.file.entities.len() != self.other.0.entities.len() {
+            document.view.forget();
+        }
         document.unsaved = true;
         document.edits = to;
         document.touch();

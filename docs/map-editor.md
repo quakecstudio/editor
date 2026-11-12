@@ -48,8 +48,9 @@ it too.
   groups and layers as written ([MAP-9](spec/map.md)).
   - An edit inside a linked group is copied into every group linked to it, moved by each
     group's transformation, in the same undo step; a key a copy protects
-    (`_tb_protected_properties`) keeps its own value. A linked group holding another group is
-    not copied, and the edit is refused.
+    (`_tb_protected_properties`) keeps its own value. A mirrored copy is mirrored, its brushes
+    kept outside in. A linked group holding another group is not copied, nor is an edit that
+    changed two linked copies differently; either edit is refused.
   - Moving a group moves everything in it and its `_tb_transformation`, so the groups linked to
     it stay where they are.
   - The Properties panel lists the layers, each with Hidden, Locked and Not exported
@@ -58,7 +59,9 @@ it too.
   - Hide, Isolate and Show all (and TrenchBroom's keys for them) hide entities in the editor
     without changing the map. Lock and Unlock all lock any selection, which TrenchBroom does not
     (its manual: "You cannot lock objects individually"); an edit that would change a locked
-    entity, or a copy of one in a linked group, is refused.
+    entity, or a copy of one in a linked group, is refused. A layer's settings hold for
+    everything in it, groups and their members included. What is hidden and locked is not undone
+    with the map's edits; an undo or redo that changes how many entities there are forgets it.
 - **Saving:** `map.save` (Cmd+S in the view) writes a `.map` over itself, and changes only the
   text an edit touched. A BSP's entities go to a `.ent` file beside the BSP, which QuakeSpasm
   and its descendants read in place of the lump (MAP-22). `{"bsp": "lump"}` rewrites the BSP's

@@ -11,8 +11,7 @@ use std::path::PathBuf;
 
 use qs_commands::{Command, NoParams, Outcome};
 use qs_map::{
-    ContainerId, EntityPlace, LayerSetting, LayerSettings, LayerSwitch, MapFile, Moves, RoomKind,
-    Transform,
+    ContainerId, EntityPlace, LayerSetting, LayerSwitch, MapFile, Moves, RoomKind, Transform,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -58,6 +57,12 @@ impl ViewState {
         };
         self.hidden = follow(&self.hidden);
         self.locked = follow(&self.locked);
+    }
+
+    /// Forgets every hidden and locked entity, whose places no longer name the same entities.
+    pub(super) fn forget(&mut self) {
+        self.hidden.clear();
+        self.locked.clear();
     }
 
     /// Forgets `entity`, deleted, and moves the entities after it back by one.
@@ -168,37 +173,61 @@ pub struct LayerInfo {
 }
 
 impl MapDocument {
-    /// The settings of the layer the entity at `entity` of `file` is in (MAP-9.9).
-    fn layer_of(file: &MapFile, entity: EntityIndex) -> LayerSettings {
-        let Some(id) = file
+    /// The entities of `file` in a layer with `setting` set (MAP-9.9), the layer's own entity
+    /// with them.
+    fn in_layers(file: &MapFile, setting: LayerOption) -> BTreeSet<EntityIndex> {
+        let set: BTreeSet<ContainerId> = file
             .entities
-            .get(entity.get())
-            .and_then(qs_map::Entity::layer)
-        else {
-            return LayerSettings::default();
-        };
-        file.entities
             .iter()
-            .find(|e| e.container() == Some((RoomKind::Layer, id)))
-            .map(qs_map::Entity::layer_settings)
-            .unwrap_or_default()
+            .filter_map(|entity| match entity.container() {
+                Some((RoomKind::Layer, id)) => {
+                    let settings = entity.layer_settings();
+                    let on = match setting {
+                        LayerOption::Hidden => settings.hidden,
+                        LayerOption::Locked => settings.locked,
+                        LayerOption::OmitFromExport => settings.omit_from_export,
+                    };
+                    on.then_some(id)
+                }
+                Some((RoomKind::Group, _)) | None => None,
+            })
+            .collect();
+        if set.is_empty() {
+            return BTreeSet::new();
+        }
+        file.layer_of_each()
+            .into_iter()
+            .enumerate()
+            .filter(|(_, layer)| layer.is_some_and(|layer| set.contains(&layer)))
+            .map(|(place, _)| EntityIndex::new(place))
+            .collect()
+    }
+
+    /// The entities hidden in the editor: by `map.hide` or `map.isolate`, or in a hidden layer.
+    #[must_use]
+    pub fn hidden_entities(&self) -> BTreeSet<EntityIndex> {
+        let mut hidden = Self::in_layers(&self.file, LayerOption::Hidden);
+        hidden.extend(self.view.hidden.iter().copied());
+        hidden
     }
 
     /// Whether `entity` is hidden: by `map.hide` or `map.isolate`, or in a hidden layer.
     #[must_use]
     pub fn is_hidden(&self, entity: EntityIndex) -> bool {
-        self.view.hidden.contains(&entity) || Self::layer_of(&self.file, entity).hidden
+        self.hidden_entities().contains(&entity)
+    }
+
+    /// The entities of `file` that are locked: by `map.lock`, or in a locked layer.
+    fn locked_in(&self, file: &MapFile) -> BTreeSet<EntityIndex> {
+        let mut locked = Self::in_layers(file, LayerOption::Locked);
+        locked.extend(self.view.locked.iter().copied());
+        locked
     }
 
     /// Whether `entity` is locked: by `map.lock`, or in a locked layer.
     #[must_use]
     pub fn is_locked(&self, entity: EntityIndex) -> bool {
-        self.locked_in(&self.file, entity)
-    }
-
-    /// Whether `entity` of `file` is locked.
-    fn locked_in(&self, file: &MapFile, entity: EntityIndex) -> bool {
-        self.view.locked.contains(&entity) || Self::layer_of(file, entity).locked
+        self.locked_in(&self.file).contains(&entity)
     }
 
     /// Refuses an edit of `entity` when it is locked.
@@ -209,61 +238,74 @@ impl MapDocument {
         Ok(())
     }
 
+    /// The first entity of `locked` that differs between `was` and `now`, an entity at a place
+    /// in `was` found at the place `moved` gives in `now`; a layer's own entity compared
+    /// without its settings, so a locked layer can be unlocked.
+    fn changed_locked(
+        locked: &BTreeSet<EntityIndex>,
+        was: &MapFile,
+        now: &MapFile,
+        moved: impl Fn(EntityIndex) -> Option<EntityIndex>,
+    ) -> Option<EntityIndex> {
+        let bare = |entity: Option<&qs_map::Entity>| {
+            entity.map(|entity| {
+                let mut entity = entity.clone();
+                for setting in [
+                    LayerSetting::Hidden,
+                    LayerSetting::Locked,
+                    LayerSetting::OmitFromExport,
+                ] {
+                    // Clearing a key cannot fail; a failure leaves it, and the entity differs.
+                    let _cleared = entity.set_layer_setting(setting, LayerSwitch::Off);
+                }
+                entity
+            })
+        };
+        locked.iter().copied().find(|&entity| {
+            let then = bare(was.entities.get(entity.get()));
+            let after = bare(moved(entity).and_then(|place| now.entities.get(place.get())));
+            then != after
+        })
+    }
+
     /// After an edit of the map from `before`: refuses it when it changed a locked entity, and
-    /// copies a change inside a linked group into the groups linked to it (MAP-9.7), the
+    /// copies each change inside a linked group into the groups linked to it (MAP-9.7), the
     /// selection and the hidden and locked entities following the entities they were; refused
     /// too when a copy would change a locked entity.
     pub(super) fn after_edit(&mut self, before: &MapFile) -> Result<(), WorkbenchError> {
+        // An edit that removes entities is checked by the command that removes them.
         if self.file.entities.len() >= before.entities.len() {
-            let changed = before
-                .entities
-                .iter()
-                .zip(&self.file.entities)
-                .enumerate()
-                .find(|(place, (was, now))| {
-                    was != now && self.locked_in(before, EntityIndex::new(*place))
-                });
-            if let Some((place, _)) = changed {
-                return Err(WorkbenchError::Locked {
-                    entity: EntityIndex::new(place),
-                });
+            let locked = self.locked_in(before);
+            if let Some(entity) = Self::changed_locked(&locked, before, &self.file, Some) {
+                return Err(WorkbenchError::Locked { entity });
             }
         }
-        let Some(source) = self.file.changed_linked_group(before) else {
-            return Ok(());
-        };
+        let edited = self.file.clone();
         let moves = self
             .file
-            .update_linked(source)
+            .update_changed(before)
             .map_err(|error| WorkbenchError::Link { error })?;
-        let copied_over = (0..before.entities.len())
-            .map(EntityIndex::new)
-            .filter(|&entity| self.locked_in(before, entity))
-            .find(|&entity| {
-                let now = moves
-                    .of(EntityPlace::new(entity.get()))
-                    .and_then(|place| self.file.entities.get(place.get()));
-                now != before.entities.get(entity.get())
-            });
-        if let Some(entity) = copied_over {
+        let follow = |entity: EntityIndex| {
+            moves
+                .of(EntityPlace::new(entity.get()))
+                .map(|place| EntityIndex::new(place.get()))
+        };
+        let locked = self.locked_in(&edited);
+        if let Some(entity) = Self::changed_locked(&locked, &edited, &self.file, follow) {
             return Err(WorkbenchError::Locked { entity });
         }
-        self.selected = self
-            .selected
-            .and_then(|entity| moves.of(EntityPlace::new(entity.get())))
-            .map(|place| EntityIndex::new(place.get()));
+        self.selected = self.selected.and_then(follow);
         self.view.follow(&moves);
         Ok(())
     }
 
-    /// Moves `entity` by `by`; a group with everything in it, however deep, its
-    /// transformation moved too (MAP-9.5), so the groups linked to it stay as they are.
+    /// Moves `entity` by `by`; a group with everything in it, however deep, each group's
+    /// transformation moved too (MAP-9.5), so the groups linked to them stay as they are.
     pub(super) fn move_with_group(
         &mut self,
         entity: EntityIndex,
         by: [f64; 3],
     ) -> Result<(), WorkbenchError> {
-        self.move_entity(entity, by)?;
         let group = self
             .file
             .entities
@@ -273,34 +315,27 @@ impl MapDocument {
                 Some((RoomKind::Layer, _)) | None => None,
             });
         let Some(id) = group else {
-            return Ok(());
+            return self.move_entity(entity, by);
         };
         let found = self.entity_mut(entity)?;
-        let transform = Transform::translation(by).after(&found.transform());
-        let set = found.set_transform(&transform);
-        set.map_err(|error| self.map_error(error))?;
-        self.move_members(id, by)
-    }
-
-    /// Moves everything in the group `id` by `by`, groups in it with what they hold.
-    fn move_members(&mut self, id: ContainerId, by: [f64; 3]) -> Result<(), WorkbenchError> {
+        // A group's own entity has no origin: only its brushes move.
+        if found.has_brushes() {
+            self.move_entity(entity, by)?;
+        }
+        let found = self.entity_mut(entity)?;
+        if let Some(transform) = found.transform() {
+            let set = found.set_transform(&Transform::translation(by).after(&transform));
+            set.map_err(|error| self.map_error(error))?;
+        }
         for member in self.file.group_members(id) {
-            let member = EntityIndex::new(member.get());
-            let nested = self
-                .file
-                .entities
-                .get(member.get())
-                .and_then(|e| e.container());
-            self.move_entity(member, by)?;
-            if let Some((RoomKind::Group, inner)) = nested {
-                self.move_members(inner, by)?;
-            }
+            self.move_with_group(EntityIndex::new(member.get()), by)?;
         }
         Ok(())
     }
 
     /// The map's layers (MAP-9.1, MAP-9.9).
     fn layers(&self) -> Vec<LayerInfo> {
+        let layers = self.file.layer_of_each();
         self.file
             .entities
             .iter()
@@ -308,6 +343,7 @@ impl MapDocument {
             .filter_map(|(place, entity)| match entity.container() {
                 Some((RoomKind::Layer, id)) => {
                     let settings = entity.layer_settings();
+                    let own = place;
                     Some(LayerInfo {
                         entity: EntityIndex::new(place),
                         name: entity
@@ -317,11 +353,10 @@ impl MapDocument {
                         hidden: settings.hidden,
                         locked: settings.locked,
                         omit_from_export: settings.omit_from_export,
-                        entities: self
-                            .file
-                            .entities
+                        entities: layers
                             .iter()
-                            .filter(|e| e.layer() == Some(id))
+                            .zip(0..)
+                            .filter(|&(layer, place)| *layer == Some(id) && place != own)
                             .count(),
                     })
                 }

@@ -193,7 +193,7 @@ fn a_selection_is_hidden_isolated_and_locked() {
             json!({ "layer": 5, "setting": "hidden", "switch": "on" }),
         )
         .unwrap();
-    assert_eq!(hidden(&session), [6]);
+    assert_eq!(hidden(&session), [5, 6], "the layer's own entity with it");
     session
         .execute(MAP_LOCK, json!({ "entities": [1] }))
         .unwrap();
@@ -249,4 +249,101 @@ fn a_trenchbroom_map_saves_with_its_groups_and_layers() {
         session.context().map().unwrap().selected(),
         Some(EntityIndex::new(6))
     );
+}
+
+// No spec statement: P5-14: deleting a member of a linked group leaves a locked entity after it
+// locked and unchanged; a lock made after an edit stays when the edit is undone; a locked
+// layer's own entity is locked
+#[test]
+fn locks_follow_the_entities_they_are_on() {
+    let (_, mut session) = open("locks-follow");
+    session
+        .execute(
+            MAP_SET_LAYER,
+            json!({ "layer": 5, "setting": "locked", "switch": "off" }),
+        )
+        .unwrap();
+    session
+        .execute(MAP_LOCK, json!({ "entities": [6] }))
+        .unwrap();
+    session.execute(MAP_DELETE, json!({ "entity": 4 })).unwrap();
+    // The copy's army went with the source's, so the light moved back by two.
+    let map = session.context().map().unwrap();
+    assert_eq!(map.file().entities.len(), 5);
+    assert!(map.is_locked(EntityIndex::new(4)), "the light, locked");
+    assert!(!map.is_locked(EntityIndex::new(3)));
+    // Undoing the delete changes how many entities there are: the lock is forgotten.
+    session.undo().unwrap();
+    assert!(
+        !session
+            .context()
+            .map()
+            .unwrap()
+            .is_locked(EntityIndex::new(6))
+    );
+    session
+        .execute(MAP_MOVE, json!({ "entity": 6, "by": [8.0, 0.0, 0.0] }))
+        .unwrap();
+    session
+        .execute(MAP_LOCK, json!({ "entities": [6] }))
+        .unwrap();
+    session.undo().unwrap();
+    assert!(
+        session
+            .context()
+            .map()
+            .unwrap()
+            .is_locked(EntityIndex::new(6)),
+        "undoing the move keeps the lock made after it"
+    );
+    let (_, mut session) = open("layer-own");
+    assert!(
+        session
+            .context()
+            .map()
+            .unwrap()
+            .is_locked(EntityIndex::new(5))
+    );
+    assert!(
+        session
+            .execute(
+                MAP_SET_KEY,
+                json!({ "entity": 5, "key": "_tb_name", "value": "x" })
+            )
+            .is_err()
+    );
+}
+
+// spec MAP-9.5: moving a group that holds a linked group moves the linked group's
+// transformation too, so the group linked to it stays; a group with no brushes gets no origin
+#[test]
+fn moving_an_outer_group_leaves_the_linked_copy() {
+    let nested = MAP.replace(
+        "\"_tb_id\" \"2\"\n",
+        "\"_tb_id\" \"2\"\n\"_tb_group\" \"7\"\n",
+    ) + "{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"outer\"\n\
+         \"_tb_id\" \"7\"\n}\n";
+    let dir = std::env::temp_dir().join(format!("qs-wb-groups-outer-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("outer.map");
+    std::fs::write(&path, &nested).unwrap();
+    let mut registry = Registry::new();
+    register(&mut registry).unwrap();
+    let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
+    session.execute(MAP_OPEN, json!({ "path": path })).unwrap();
+    session
+        .execute(MAP_MOVE, json!({ "entity": 7, "by": [0.0, 64.0, 0.0] }))
+        .unwrap();
+    assert_eq!(value(&session, 4, "origin").as_deref(), Some("0 64 0"));
+    assert_eq!(
+        value(&session, 3, "_tb_transformation").as_deref(),
+        Some("1 0 0 0 0 1 0 64 0 0 1 0 0 0 0 1")
+    );
+    assert_eq!(
+        value(&session, 2, "origin").as_deref(),
+        Some("128 0 0"),
+        "the copy stays"
+    );
+    assert_eq!(value(&session, 7, "origin"), None);
 }

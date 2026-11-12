@@ -72,7 +72,8 @@ impl Transform {
         Self { rows }
     }
 
-    /// The sixteen numbers of `text`, row by row (MAP-9.5); `None` for any other text.
+    /// The sixteen numbers of `text`, row by row (MAP-9.5); `None` for any other text, and for
+    /// one that is not finite.
     #[must_use]
     pub fn parse(text: &[u8]) -> Option<Self> {
         let numbers: Vec<f64> = core::str::from_utf8(text)
@@ -81,6 +82,9 @@ impl Transform {
             .map(str::parse)
             .collect::<Result<_, _>>()
             .ok()?;
+        if numbers.iter().any(|n| !n.is_finite()) {
+            return None;
+        }
         let flat: [f64; NUMBERS] = numbers.try_into().ok()?;
         let mut rows = [[0.0; SIZE]; SIZE];
         let (chunks, _) = flat.as_chunks::<SIZE>();
@@ -133,7 +137,8 @@ impl Transform {
             left.swap(column, pivot);
             right.swap(column, pivot);
             let lead = *left.get(column)?.get(column)?;
-            if lead.abs() < f64::EPSILON {
+            // A zero or subnormal pivot: the matrix has no inverse worth using.
+            if !lead.is_normal() {
                 return None;
             }
             for value in left.get_mut(column)?.iter_mut() {
@@ -164,10 +169,35 @@ impl Transform {
         [row(&self.rows[0]), row(&self.rows[1]), row(&self.rows[2])]
     }
 
-    /// Its turn about the vertical, in degrees.
+    /// Its linear part: the turn, mirror and scale, without the move.
+    fn linear(&self) -> [[f64; 3]; 3] {
+        let [a, b, c, _] = self.rows;
+        [[a[0], a[1], a[2]], [b[0], b[1], b[2]], [c[0], c[1], c[2]]]
+    }
+
+    /// Whether it turns, mirrors or scales, rather than only moving.
     #[must_use]
-    pub fn yaw(&self) -> f64 {
-        self.rows[1][0].atan2(self.rows[0][0]).to_degrees()
+    pub fn turns(&self) -> bool {
+        self.linear() != Self::IDENTITY.linear()
+    }
+
+    /// Whether it mirrors: its linear part's determinant is below 0, which turns a brush's
+    /// faces inside out unless their points are reversed.
+    #[must_use]
+    pub fn mirrors(&self) -> bool {
+        let [a, b, c] = self.linear();
+        let determinant = a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+            + a[2] * (b[0] * c[1] - b[1] * c[0]);
+        determinant < 0.0
+    }
+
+    /// A facing of `degrees` about the vertical, turned or mirrored as the transformation turns
+    /// or mirrors the direction it points in; from 0 to below 360.
+    #[must_use]
+    pub fn facing(&self, degrees: f64) -> f64 {
+        let (sin, cos) = degrees.to_radians().sin_cos();
+        let [x, y, _] = self.linear().map(|row| row[0] * cos + row[1] * sin);
+        round(y.atan2(x).to_degrees().rem_euclid(HALF_TURN * 2.0))
     }
 }
 
@@ -232,8 +262,9 @@ pub struct LinkedGroup {
     pub id: ContainerId,
     /// Its `_tb_linked_group_id`.
     pub link: Vec<u8>,
-    /// Its `_tb_transformation`, the identity when it has none or one that does not read.
-    pub transform: Transform,
+    /// Its `_tb_transformation`: the identity when it has none, `None` for one that does not
+    /// read, which is never updated (MAP-9.5).
+    pub transform: Option<Transform>,
 }
 
 /// Where each entity of a map went after [`MapFile::update_linked`].
@@ -243,6 +274,17 @@ pub struct Moves {
 }
 
 impl Moves {
+    /// These moves followed by `next`.
+    fn then(&self, next: &Self) -> Self {
+        Self {
+            to: self
+                .to
+                .iter()
+                .map(|place| place.and_then(|place| next.of(place)))
+                .collect(),
+        }
+    }
+
     /// Where the entity that was at `place` is now; `None` when it is gone.
     #[must_use]
     pub fn of(&self, place: EntityPlace) -> Option<EntityPlace> {
@@ -292,6 +334,10 @@ pub enum LinkError {
     NotInvertible(EntityPlace),
     /// A linked group holds a group, which is not copied here.
     Nested(EntityPlace),
+    /// The changed group's transformation does not read, so it is never updated (MAP-9.5).
+    Malformed(EntityPlace),
+    /// Two groups of one linked set changed in one edit, so copying one would undo the other.
+    BothChanged(EntityPlace),
     /// A copy could not be written.
     Map(MapError),
 }
@@ -307,6 +353,13 @@ impl core::fmt::Display for LinkError {
                 f,
                 "linked group {entity} holds a group; its copies are not updated"
             ),
+            Self::Malformed(entity) => {
+                write!(f, "group {entity}'s transformation does not read")
+            }
+            Self::BothChanged(entity) => write!(
+                f,
+                "group {entity} and another group linked to it both changed; change one"
+            ),
             Self::Map(error) => write!(f, "{error}"),
         }
     }
@@ -316,7 +369,11 @@ impl std::error::Error for LinkError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Map(error) => Some(error),
-            Self::NotLinked(_) | Self::NotInvertible(_) | Self::Nested(_) => None,
+            Self::NotLinked(_)
+            | Self::NotInvertible(_)
+            | Self::Nested(_)
+            | Self::Malformed(_)
+            | Self::BothChanged(_) => None,
         }
     }
 }
@@ -355,13 +412,14 @@ impl Entity {
             .map(ContainerId::new)
     }
 
-    /// Its `_tb_transformation`, the identity when it has none or one that does not read
-    /// (MAP-9.5).
+    /// Its `_tb_transformation`: the identity when it has none, `None` for one that does not
+    /// read (MAP-9.5).
     #[must_use]
-    pub fn transform(&self) -> Transform {
-        self.value(TRANSFORMATION_KEY)
-            .and_then(Transform::parse)
-            .unwrap_or_default()
+    pub fn transform(&self) -> Option<Transform> {
+        match self.value(TRANSFORMATION_KEY) {
+            Some(text) => Transform::parse(text),
+            None => Some(Transform::IDENTITY),
+        }
     }
 
     /// Writes `transform` as its `_tb_transformation`, or removes it for the identity, as
@@ -455,10 +513,13 @@ impl Entity {
     /// every brush's points, and its `angle` or the yaw of its `angles`.
     fn transformed(&self, transform: &Transform) -> Result<Self, MapError> {
         let mut copy = self.clone();
+        let mirrors = transform.mirrors();
         for item in &mut copy.items {
             if let Item::Brush(brush) = item {
                 for face in &mut brush.faces {
-                    let points = face.points().map(|p| transform.apply(p));
+                    let [a, b, c] = face.points().map(|p| transform.apply(p));
+                    // A mirror reverses the points' winding, which sets the plane's side.
+                    let points = if mirrors { [a, c, b] } else { [a, b, c] };
                     let texture = face.texture().to_vec();
                     let texdef = *face.texdef();
                     face.set(points, &texture, texdef)?;
@@ -469,16 +530,15 @@ impl Entity {
             let origin = transform.apply(self.origin()).map(number).join(" ");
             copy.set(b"origin", origin.as_bytes())?;
         }
-        let turn = transform.yaw();
-        if turn.abs() > f64::EPSILON {
+        if transform.turns() {
             if let Some(angles) = self.value(b"angles") {
                 let [pitch, yaw, roll] = scan_vector(angles);
-                let text = [pitch, turned(yaw, turn), roll].map(number).join(" ");
+                let text = [pitch, transform.facing(yaw), roll].map(number).join(" ");
                 copy.set(b"angles", text.as_bytes())?;
             } else if let Some(angle) = self.value(b"angle") {
                 let angle = c_atof(angle);
                 if ![UP, DOWN].contains(&angle) {
-                    copy.set(b"angle", number(turned(angle, turn)).as_bytes())?;
+                    copy.set(b"angle", number(transform.facing(angle)).as_bytes())?;
                 }
             }
         }
@@ -493,11 +553,6 @@ pub enum LayerSwitch {
     On,
     /// Clear it.
     Off,
-}
-
-/// `yaw` turned by `turn` degrees, kept from 0 to below 360, rounded.
-fn turned(yaw: f64, turn: f64) -> f64 {
-    round((yaw + turn).rem_euclid(HALF_TURN * 2.0))
 }
 
 impl MapFile {
@@ -522,14 +577,57 @@ impl MapFile {
             .collect()
     }
 
-    /// The first linked group whose contents differ from what they were in `before`, the
-    /// one a change was made in (MAP-9.6, MAP-9.7).
+    /// The linked groups whose contents differ from what they were in `before`, those a change
+    /// was made in (MAP-9.6, MAP-9.7).
     #[must_use]
-    pub fn changed_linked_group(&self, before: &Self) -> Option<EntityPlace> {
+    pub fn changed_linked_groups(&self, before: &Self) -> Vec<EntityPlace> {
         self.linked_groups()
             .into_iter()
-            .find(|group| self.group_contents(group.id) != before.group_contents(group.id))
+            .filter(|group| self.group_contents(group.id) != before.group_contents(group.id))
             .map(|group| group.entity)
+            .collect()
+    }
+
+    /// The layer each entity is in, by place (MAP-9.2, MAP-9.9): a layer's own entity is in
+    /// itself; another entity is in the layer its `_tb_layer` names, else in its group's layer,
+    /// however deep the groups.
+    #[must_use]
+    pub fn layer_of_each(&self) -> Vec<Option<ContainerId>> {
+        let groups: std::collections::HashMap<ContainerId, usize> = self
+            .entities
+            .iter()
+            .enumerate()
+            .filter_map(|(place, entity)| match entity.container() {
+                Some((RoomKind::Group, id)) => Some((id, place)),
+                Some((RoomKind::Layer, _)) | None => None,
+            })
+            .collect();
+        let mut layers = Vec::with_capacity(self.entities.len());
+        for entity in &self.entities {
+            let mut at = entity;
+            let mut layer = None;
+            // A chain no longer than the map: a group naming itself, or a loop, ends it.
+            for _ in 0..=self.entities.len() {
+                if let Some((RoomKind::Layer, id)) = at.container() {
+                    layer = Some(id);
+                    break;
+                }
+                if let Some(id) = at.layer() {
+                    layer = Some(id);
+                    break;
+                }
+                let Some(next) = at
+                    .group()
+                    .and_then(|id| groups.get(&id))
+                    .and_then(|&place| self.entities.get(place))
+                else {
+                    break;
+                };
+                at = next;
+            }
+            layers.push(layer);
+        }
+        layers
     }
 
     /// A group's contents: its own entity's brushes, then the entities in it (MAP-9.6).
@@ -588,12 +686,15 @@ impl MapFile {
             .ok_or(LinkError::NotLinked(source))?;
         let inverse = group
             .transform
+            .ok_or(LinkError::Malformed(source))?
             .inverse()
             .ok_or(LinkError::NotInvertible(source))?;
+        // A group whose transformation does not read is never updated (MAP-9.5).
         let siblings: Vec<LinkedGroup> = self
             .linked_groups()
             .into_iter()
             .filter(|other| other.link == group.link && other.id != group.id)
+            .filter(|other| other.transform.is_some())
             .collect();
         for checked in core::iter::once(&group).chain(&siblings) {
             let holds_group = self
@@ -623,19 +724,71 @@ impl MapFile {
             .filter_map(|place| self.entities.get(place.get()).cloned())
             .collect();
         let mut updated = self.clone();
-        let mut origin: Vec<Option<usize>> = (0..self.entities.len()).map(Some).collect();
+        let count = self.entities.len();
+        let mut origin: Vec<Option<usize>> = (0..count).map(Some).collect();
         for sibling in siblings {
-            let transform = sibling.transform.after(&inverse);
+            let transform = sibling.transform.unwrap_or_default().after(&inverse);
             updated.replace_contents(&sibling, &brushes, &members, &transform, &mut origin)?;
         }
         *self = updated;
-        let mut to = vec![None; origin.len().max(self.entities.len())];
+        let mut to = vec![None; count];
         for (now, was) in origin.into_iter().enumerate() {
             if let Some(slot) = was.and_then(|was| to.get_mut(was)) {
                 *slot = Some(EntityPlace::new(now));
             }
         }
         Ok(Moves { to })
+    }
+
+    /// Copies every change made since `before` inside a linked group into the groups linked
+    /// to it (MAP-9.7): each changed set from its first changed group, and where every entity
+    /// went across all the updates.
+    ///
+    /// # Errors
+    ///
+    /// As [`MapFile::update_linked`], and [`LinkError::BothChanged`] when two groups of one set
+    /// changed in different ways, which copying one would undo; the map is then left as it
+    /// was.
+    pub fn update_changed(&mut self, before: &Self) -> Result<Moves, LinkError> {
+        let edited = self.clone();
+        let changed: Vec<LinkedGroup> = edited
+            .changed_linked_groups(before)
+            .into_iter()
+            .filter_map(|place| {
+                edited
+                    .entities
+                    .get(place.get())
+                    .and_then(|entity| entity.linked_group(place))
+            })
+            .collect();
+        let mut moves = Moves {
+            to: (0..edited.entities.len())
+                .map(|place| Some(EntityPlace::new(place)))
+                .collect(),
+        };
+        let mut done: Vec<&[u8]> = Vec::new();
+        let mut updated = self.clone();
+        for group in &changed {
+            let place = updated
+                .linked_groups()
+                .into_iter()
+                .find(|now| now.id == group.id)
+                .map(|now| now.entity)
+                .ok_or(LinkError::NotLinked(group.entity))?;
+            if done.contains(&group.link.as_slice()) {
+                // Already copied over from another group of its set: what it holds now must be
+                // what the edit gave it, or the edit made to it is lost.
+                if updated.group_contents(group.id) != edited.group_contents(group.id) {
+                    return Err(LinkError::BothChanged(place));
+                }
+                continue;
+            }
+            let step = updated.update_linked(place)?;
+            moves = moves.then(&step);
+            done.push(&group.link);
+        }
+        *self = updated;
+        Ok(moves)
     }
 
     /// Replaces the contents of `target` with `brushes` and `members` moved by `transform`,
@@ -675,30 +828,37 @@ impl MapFile {
             }
             copies.push(copy);
         }
-        let at = old_places
-            .first()
-            .map_or(place.get().saturating_add(1), |first| first.get());
+        // The old members go, the copies take the first one's place (or follow the group's own
+        // entity), and `origin` follows the entities: a copy stands for the member it replaces.
+        let gone: std::collections::BTreeSet<usize> = old_places.iter().map(|p| p.get()).collect();
+        let first = old_places.first().map(|p| p.get());
+        let mut entities = Vec::with_capacity(self.entities.len());
+        let mut origins = Vec::with_capacity(origin.len());
         let mut replaced = Vec::new();
-        for gone in old_places.iter().rev().map(|gone| gone.get()) {
-            if self.entities.get(gone).is_some() {
-                self.entities.remove(gone);
-                replaced.push(if gone < origin.len() {
-                    origin.remove(gone)
-                } else {
-                    None
-                });
+        let mut copies = copies.into_iter();
+        let mut copied_from = Vec::new();
+        for (index, (entity, was)) in self.entities.drain(..).zip(origin.drain(..)).enumerate() {
+            if first == Some(index) || (first.is_none() && index == place.get().saturating_add(1)) {
+                copied_from.push(origins.len());
+            }
+            if gone.contains(&index) {
+                replaced.push(was);
+            } else {
+                entities.push(entity);
+                origins.push(was);
             }
         }
-        replaced.reverse();
-        let at = at.min(self.entities.len());
-        for (offset, copy) in copies.into_iter().enumerate() {
-            let place = at.saturating_add(offset);
-            self.entities.insert(place, copy);
-            origin.insert(
-                place.min(origin.len()),
-                replaced.get(offset).copied().flatten(),
-            );
+        let at = copied_from.first().copied().unwrap_or(entities.len());
+        let tail_entities = entities.split_off(at);
+        let tail_origins = origins.split_off(at);
+        for (offset, copy) in copies.by_ref().enumerate() {
+            entities.push(copy);
+            origins.push(replaced.get(offset).copied().flatten());
         }
+        entities.extend(tail_entities);
+        origins.extend(tail_origins);
+        self.entities = entities;
+        *origin = origins;
         Ok(())
     }
 
@@ -706,24 +866,24 @@ impl MapFile {
     /// them (MAP-9.9).
     #[must_use]
     pub fn without_omitted_layers(&self) -> Self {
-        let omitted: Vec<u64> = self
+        let omitted: Vec<ContainerId> = self
             .entities
             .iter()
             .filter(|entity| entity.layer_settings().omit_from_export)
-            .filter_map(|entity| match entity.own_container() {
+            .filter_map(|entity| match entity.container() {
                 Some((RoomKind::Layer, id)) => Some(id),
                 Some((RoomKind::Group, _)) | None => None,
             })
             .collect();
+        let layers = self.layer_of_each();
         let mut out = self.clone();
-        out.entities.retain(|entity| {
-            let own = matches!(entity.own_container(), Some((RoomKind::Layer, id)) if omitted.contains(&id));
-            let member = entity
-                .value(LAYER_KEY)
-                .and_then(container_id)
-                .is_some_and(|id| omitted.contains(&id));
-            !own && !member
-        });
+        out.entities = self
+            .entities
+            .iter()
+            .zip(layers)
+            .filter(|(_, layer)| !layer.is_some_and(|layer| omitted.contains(&layer)))
+            .map(|(entity, _)| entity.clone())
+            .collect();
         out
     }
 }

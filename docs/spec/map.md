@@ -452,8 +452,12 @@ one ("the armory") and the map tools can find it (MAP-16).
   changed group's (`updateLinkedGroups`: `targetGroupNode->group().transformation() *
   *invertedSourceTransformation`); a changed group whose transformation has no inverse updates
   none ("Group transformation is not invertible"). Copying moves an entity's `origin` and each
-  brush's points, and turns its `angle`, or the yaw of its `angles`, by the transformation's
-  turn about the vertical. Here a linked group with a group inside it is not updated.
+  brush's points, and points its `angle`, or the yaw of its `angles`, the way the
+  transformation turns or mirrors that direction; a mirror also swaps the order of two of each
+  face's points, so the plane keeps facing out. Each linked set an edit changed is copied from
+  its changed group; an edit that changed two groups of one set differently is not copied, as
+  copying either would undo the other. Here a linked group with a group inside it is not
+  updated.
 - **MAP-9.8** `_tb_protected_properties` lists keys separated by `;` (`kdl::str_split(...,
   ";")`). A copied entity keeps, for every key protected in it or in the entity it replaces,
   the value the replaced entity had, and none when it had none, and takes the replaced
@@ -463,4 +467,5 @@ one ("the armory") and the map tools can find it (MAP-16).
   `LayerLockedValue = "1"`, `LayerOmitFromExportValue = "1"`) and are absent otherwise
   (`NodeSerializer` removes them). An exported map leaves out a layer marked so (manual:
   "Layers marked "Omit From Export" will not be present in the exported map"), with every
-  entity in it.
+  entity in it: a layer's own entity, the entities naming it, and the entities of a group in
+  it, however deep (MAP-9.2).

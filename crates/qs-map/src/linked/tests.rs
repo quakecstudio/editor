@@ -49,19 +49,11 @@ fn linked_groups_and_their_transformations_are_read() {
     assert_eq!(groups[0].entity, EntityPlace::new(1));
     assert_eq!(groups[0].id, ContainerId::new(1));
     assert_eq!(groups[0].link, groups[1].link);
-    assert_eq!(
-        groups[0].transform,
-        Transform::translation([128.0, 0.0, 0.0])
-    );
-    assert_eq!(groups[1].transform, Transform::IDENTITY);
-    assert_eq!(
-        groups[0].transform.apply([1.0, 2.0, 3.0]),
-        [129.0, 2.0, 3.0]
-    );
-    assert_eq!(
-        groups[0].transform.text(),
-        "1 0 0 128 0 1 0 0 0 0 1 0 0 0 0 1"
-    );
+    let moved = groups[0].transform.unwrap();
+    assert_eq!(moved, Transform::translation([128.0, 0.0, 0.0]));
+    assert_eq!(groups[1].transform, Some(Transform::IDENTITY));
+    assert_eq!(moved.apply([1.0, 2.0, 3.0]), [129.0, 2.0, 3.0]);
+    assert_eq!(moved.text(), "1 0 0 128 0 1 0 0 0 0 1 0 0 0 0 1");
     assert_eq!(Transform::parse(b"1 0 0"), None);
     assert_eq!(Transform::parse(b"1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 x"), None);
     // A group with no link id is no linked group, whatever its transformation.
@@ -78,7 +70,9 @@ fn linked_groups_and_their_transformations_are_read() {
     // One that does not read is the identity.
     let malformed = MAP.replace("1 0 0 128 0 1 0 0 0 0 1 0 0 0 0 1", "1 0 0 128");
     let malformed = MapFile::parse(malformed.as_bytes()).unwrap();
-    assert_eq!(malformed.linked_groups()[0].transform, Transform::IDENTITY);
+    assert_eq!(malformed.linked_groups()[0].transform, None);
+    assert_eq!(Transform::parse(b"1 0 0 inf 0 1 0 0 0 0 1 0 0 0 0 1"), None);
+    assert_eq!(Transform::parse(b"1 0 0 NaN 0 1 0 0 0 0 1 0 0 0 0 1"), None);
 }
 
 // spec MAP-9.7: the inverse undoes a transformation; a singular one has none
@@ -91,7 +85,9 @@ fn a_transformation_is_inverted_and_composed() {
         inverse.apply(quarter.apply([3.0, 5.0, 7.0])),
         [3.0, 5.0, 7.0]
     );
-    assert!((quarter.yaw() - 90.0).abs() < 1e-9);
+    assert_eq!(quarter.facing(0.0), 90.0);
+    assert!(quarter.turns() && !quarter.mirrors());
+    assert!(!Transform::translation([8.0, 0.0, 0.0]).turns());
     let flat = Transform::parse(b"1 0 0 0 0 1 0 0 0 0 0 0 0 0 0 1").unwrap();
     assert_eq!(flat.inverse(), None);
 }
@@ -263,21 +259,15 @@ fn a_trenchbroom_map_with_linked_groups_and_layers_round_trips() {
 fn the_changed_group_is_found() {
     let before = map();
     let mut after = map();
-    assert_eq!(after.changed_linked_group(&before), None);
+    assert_eq!(after.changed_linked_groups(&before), []);
     after.entities[6].set(b"light", b"300").unwrap();
     after.entities[3].set(b"_tb_name", b"renamed").unwrap();
-    assert_eq!(after.changed_linked_group(&before), None);
+    assert_eq!(after.changed_linked_groups(&before), []);
     after.entities[4].set(b"wait", b"1").unwrap();
-    assert_eq!(
-        after.changed_linked_group(&before),
-        Some(EntityPlace::new(3))
-    );
+    assert_eq!(after.changed_linked_groups(&before), [EntityPlace::new(3)]);
     let mut after = map();
     after.entities[1].items.pop();
-    assert_eq!(
-        after.changed_linked_group(&before),
-        Some(EntityPlace::new(1))
-    );
+    assert_eq!(after.changed_linked_groups(&before), [EntityPlace::new(1)]);
 }
 
 // spec MAP-9.5: a transformation is written only when it is not the identity
@@ -286,7 +276,7 @@ fn a_transformation_is_written_unless_it_is_the_identity() {
     let mut map = map();
     let moved = Transform::translation([0.0, 16.0, 0.0]);
     map.entities[3].set_transform(&moved).unwrap();
-    assert_eq!(map.entities[3].transform(), moved);
+    assert_eq!(map.entities[3].transform(), Some(moved));
     assert_eq!(
         value(&map, 3, "_tb_transformation").as_deref(),
         Some("1 0 0 0 0 1 0 16 0 0 1 0 0 0 0 1")
@@ -382,4 +372,116 @@ fn link_errors_say_what_failed() {
     let error = LinkError::from(map_error);
     assert!(error.source().is_some());
     assert!(!error.to_string().is_empty());
+}
+
+// spec MAP-9.7: when the copies hold fewer entities than before, the entities after them move
+// back, and a replaced member with no copy is gone
+#[test]
+fn the_moves_follow_a_shrinking_map() {
+    let mut map = map();
+    // The source loses its army: the copy loses its own, and everything after moves back one.
+    map.entities.remove(4);
+    let moves = map.update_linked(EntityPlace::new(3)).unwrap();
+    assert_eq!(map.entities.len(), 5);
+    let to = |place: usize| moves.of(EntityPlace::new(place)).map(EntityPlace::get);
+    assert_eq!(to(2), None, "the copy's army is gone");
+    assert_eq!(
+        [to(1), to(3), to(4), to(5)],
+        [Some(1), Some(2), Some(3), Some(4)]
+    );
+    assert_eq!(value(&map, 4, "classname").as_deref(), Some("light"));
+}
+
+// spec MAP-9.5: a group whose transformation does not read is never updated, and a change in it
+// is not copied
+#[test]
+fn a_group_that_does_not_read_is_never_updated() {
+    let malformed = MAP.replace("1 0 0 128 0 1 0 0 0 0 1 0 0 0 0 1", "1 0 0 128");
+    let mut map = MapFile::parse(malformed.as_bytes()).unwrap();
+    map.entities[4].set(b"wait", b"2").unwrap();
+    let before = map.entities[2].clone();
+    map.update_linked(EntityPlace::new(3)).unwrap();
+    assert_eq!(map.entities[2], before);
+    assert!(matches!(
+        map.update_linked(EntityPlace::new(1)),
+        Err(LinkError::Malformed(place)) if place == EntityPlace::new(1)
+    ));
+}
+
+// spec MAP-9.7: a mirrored copy reverses each face's points, so the brush stays outside in, and
+// mirrors its angle
+#[test]
+fn a_mirrored_copy_keeps_its_brushes_outside_in() {
+    let mirrored = MAP.replace(
+        "1 0 0 128 0 1 0 0 0 0 1 0 0 0 0 1",
+        "-1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1",
+    );
+    let mut map = MapFile::parse(mirrored.as_bytes()).unwrap();
+    map.entities[4].remove(b"_tb_protected_properties");
+    map.entities[4].set(b"angle", b"30").unwrap();
+    map.update_linked(EntityPlace::new(3)).unwrap();
+    assert_eq!(value(&map, 2, "angle").as_deref(), Some("150"));
+    let face = &map.entities[1].brushes().next().unwrap().faces[0];
+    // ( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) mirrored in x, its last two points swapped.
+    assert_eq!(
+        *face.points(),
+        [[0.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+    );
+}
+
+// spec MAP-9.9: an entity in a group in a layer is in the layer, and an export leaves it out
+// with the layer; a layer's own entity is in itself
+#[test]
+fn a_group_in_a_layer_takes_its_members_with_it() {
+    let mut map = map();
+    map.entities[3].set(b"_tb_layer", b"3").unwrap();
+    let layers = map.layer_of_each();
+    let three = Some(ContainerId::new(3));
+    assert_eq!(layers, [None, None, None, three, three, three, three]);
+    let exported = map.without_omitted_layers();
+    assert_eq!(exported.entities.len(), 3);
+    assert!(
+        exported
+            .linked_groups()
+            .iter()
+            .all(|g| g.id != ContainerId::new(2))
+    );
+}
+
+// spec MAP-9.7: every changed set is copied, each from its group that changed, and where every
+// entity went is followed across the updates; two groups of one set changed differently are
+// refused, the map left as it was
+#[test]
+fn every_changed_set_is_copied_once() {
+    let two_sets = format!(
+        "{MAP}{{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"b\"\n\
+         \"_tb_id\" \"4\"\n\"_tb_linked_group_id\" \"b\"\n}}\n\
+         {{\n\"classname\" \"info_null\"\n\"origin\" \"0 0 0\"\n\"_tb_group\" \"4\"\n}}\n\
+         {{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"b\"\n\
+         \"_tb_id\" \"5\"\n\"_tb_linked_group_id\" \"b\"\n}}\n\
+         {{\n\"classname\" \"info_null\"\n\"origin\" \"0 0 0\"\n\"_tb_group\" \"5\"\n}}\n"
+    );
+    let before = MapFile::parse(two_sets.as_bytes()).unwrap();
+    let mut map = before.clone();
+    map.entities[4].set(b"wait", b"2").unwrap();
+    map.entities[8].set(b"wait", b"3").unwrap();
+    let moves = map.update_changed(&before).unwrap();
+    assert_eq!(value(&map, 2, "wait").as_deref(), Some("2"));
+    assert_eq!(value(&map, 10, "wait").as_deref(), Some("3"));
+    assert_eq!(moves.of(EntityPlace::new(10)), Some(EntityPlace::new(10)));
+    // Both groups of the first set changed, differently.
+    let mut map = before.clone();
+    map.entities[4].set(b"wait", b"2").unwrap();
+    map.entities[2].set(b"wait", b"5").unwrap();
+    let edited = map.to_bytes();
+    assert!(matches!(
+        map.update_changed(&before),
+        Err(LinkError::BothChanged(_))
+    ));
+    assert_eq!(map.to_bytes(), edited);
+    // Nothing changed in a linked group: nothing moves.
+    let mut map = before.clone();
+    map.entities[6].set(b"light", b"1").unwrap();
+    let moves = map.update_changed(&before).unwrap();
+    assert_eq!(moves.of(EntityPlace::new(6)), Some(EntityPlace::new(6)));
 }
