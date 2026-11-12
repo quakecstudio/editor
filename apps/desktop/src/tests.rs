@@ -294,6 +294,7 @@ fn the_ui_code_has_no_string_literals() {
         ("map_editor.rs", include_str!("map_editor.rs")),
         ("map_browser.rs", include_str!("map_browser.rs")),
         ("map_fields.rs", include_str!("map_fields.rs")),
+        ("map_groups.rs", include_str!("map_groups.rs")),
         ("lib.rs", include_str!("lib.rs")),
         ("main.rs", include_str!("main.rs")),
     ] {
@@ -2174,4 +2175,66 @@ fn the_map_filter_is_found_again_after_an_edit() {
         ShowFilter::Nightmare.game(),
         Some((Skill::Nightmare, GameMode::Single))
     );
+}
+
+/// A TrenchBroom map with two linked groups and a locked layer holding a light (P5-14).
+const LINKED_MAP: &str = "{\n\"classname\" \"worldspawn\"\n}\n\
+{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"group\"\n\"_tb_id\" \"1\"\n\
+\"_tb_linked_group_id\" \"{38b3b39d-a165-4999-985d-d40563ce51c1}\"\n\
+\"_tb_transformation\" \"1 0 0 128 0 1 0 0 0 0 1 0 0 0 0 1\"\n}\n\
+{\n\"classname\" \"monster_army\"\n\"origin\" \"128 0 0\"\n\"_tb_group\" \"1\"\n}\n\
+{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"group\"\n\"_tb_id\" \"2\"\n\
+\"_tb_linked_group_id\" \"{38b3b39d-a165-4999-985d-d40563ce51c1}\"\n}\n\
+{\n\"classname\" \"monster_army\"\n\"origin\" \"0 0 0\"\n\"_tb_group\" \"2\"\n}\n\
+{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_layer\"\n\"_tb_name\" \"Lights\"\n\"_tb_id\" \"3\"\n\
+\"_tb_layer_locked\" \"1\"\n}\n\
+{\n\"classname\" \"light\"\n\"origin\" \"0 0 64\"\n\"_tb_layer\" \"3\"\n}\n";
+
+// No spec statement: P5-14, MAP-26: TrenchBroom's Isolate (Ctrl+I, Cmd on macOS) hides all but
+// the selection and Show All (Ctrl+Shift+I) shows it again; the Hide button hides the
+// selection; a layer's Locked checkbox writes the layer's setting, through commands with undo
+#[test]
+fn the_overview_keys_and_layer_settings_work() {
+    let dir = std::env::temp_dir().join(format!("qs-desktop-linked-{}", std::process::id()));
+    let _gone = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("linked.map");
+    fs::write(&path, LINKED_MAP).unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.open", json!({ "path": path })).unwrap();
+    harness.run();
+    let hidden = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        let map = shell.session().context().workbench.map().unwrap();
+        (1..7)
+            .filter(|&e| map.is_hidden(EntityIndex::new(e)))
+            .collect::<Vec<_>>()
+    };
+    harness.get_by_label(Text::MapEditorView.get()).click();
+    harness.run();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.select", json!({ "entity": 4 })).unwrap();
+    harness.run();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::I);
+    harness.run();
+    assert_eq!(hidden(&harness), [1, 2, 3, 5, 6]);
+    harness.key_press_modifiers(
+        egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+        egui::Key::I,
+    );
+    harness.run();
+    assert!(hidden(&harness).is_empty());
+    harness.get_by_label(Text::MapHide.get()).click();
+    harness.run();
+    assert_eq!(hidden(&harness), [4]);
+    harness.get_by_label(Text::MapLayerLocked.get()).click();
+    harness.run();
+    harness.run();
+    assert!(!map_text(&harness).contains("_tb_layer_locked"));
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), LINKED_MAP);
 }

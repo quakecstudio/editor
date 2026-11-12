@@ -23,6 +23,10 @@ pub use disk::{
 };
 pub use filter::{FilterParams, GameMode, MAP_FILTER, MapFiltered, Skill};
 pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
+pub use groups::{
+    EntityListParams, ExportParams, LayerInfo, LayerOption, MAP_EXPORT, MAP_HIDE, MAP_ISOLATE,
+    MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER, MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams, Switch,
+};
 pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
 pub use links::{LinkParams, MAP_LINK};
 pub use live::LiveChange;
@@ -30,6 +34,7 @@ pub use live::LiveChange;
 mod disk;
 mod filter;
 mod flags;
+mod groups;
 mod inspect;
 mod links;
 mod live;
@@ -155,6 +160,8 @@ pub struct MapDocument {
     disk: DiskStamp,
     /// The map on disk, when another program changed it while this one had unsaved edits.
     conflict: Option<MapFile>,
+    /// The entities hidden and locked in the editor (P5-14).
+    view: groups::ViewState,
 }
 
 /// What a file held, as a hash of its bytes, to tell when another program changed it.
@@ -547,6 +554,7 @@ impl<L: crate::Loader> Workbench<L> {
             source,
             file,
             selected: None,
+            view: groups::ViewState::default(),
             unsaved: false,
             revision: self
                 .map
@@ -702,8 +710,9 @@ fn edit_map<C: HasWorkbench, T>(
 ) -> Result<(T, MapStep), WorkbenchError> {
     let document = context.workbench().map_mut()?;
     let before = (document.file.clone(), document.selected);
+    let view = document.view.clone();
     let edits = document.edits;
-    match edit(document) {
+    match edit(document).and_then(|answer| document.after_edit(&before.0).map(|()| answer)) {
         Ok(answer) => {
             document.unsaved = true;
             document.touch_map();
@@ -717,6 +726,7 @@ fn edit_map<C: HasWorkbench, T>(
         }
         Err(error) => {
             (document.file, document.selected) = before;
+            document.view = view;
             Err(error)
         }
     }
@@ -771,6 +781,11 @@ impl MapStep {
             .ok_or(WorkbenchError::NoMap)?;
         core::mem::swap(&mut document.file, &mut self.other.0);
         core::mem::swap(&mut document.selected, &mut self.other.1);
+        // What is hidden and locked is outside history; when undo or redo changes how many
+        // entities there are, its places no longer name the same entities, so it is forgotten.
+        if document.file.entities.len() != self.other.0.entities.len() {
+            document.view.forget();
+        }
         document.unsaved = true;
         document.edits = to;
         document.touch();
@@ -911,7 +926,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapMove {
         params: MoveParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
         let ((), step) = edit_map(context, |document| {
-            document.move_entity(params.entity, params.by)
+            document.move_with_group(params.entity, params.by)
         })?;
         Ok(Outcome::undoable(
             MapEdited {
@@ -971,7 +986,9 @@ impl<C: HasWorkbench + 'static> Command<C> for MapDelete {
             if entity.is_world() {
                 return Err(WorkbenchError::NotPointEntity { entity });
             }
+            document.editable(entity)?;
             document.file.entities.remove(entity.get());
+            document.view.deleted(entity);
             document.selected = match document.selected {
                 Some(s) if s == entity => None,
                 Some(s) if s > entity => Some(EntityIndex::new(s.get().saturating_sub(1))),
@@ -1148,6 +1165,14 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(filter::MapFilter)?;
     registry.register(links::MapLink)?;
     registry.register(flags::MapSetFlag)?;
+    registry.register(groups::MapView::<groups::Hide>::new())?;
+    registry.register(groups::MapView::<groups::Isolate>::new())?;
+    registry.register(groups::MapView::<groups::Lock>::new())?;
+    registry.register(groups::ShowAll)?;
+    registry.register(groups::UnlockAll)?;
+    registry.register(groups::MapSetLayer)?;
+    registry.register(groups::MapLayers)?;
+    registry.register(groups::MapExport)?;
     registry.register(MapSave)
 }
 

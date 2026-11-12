@@ -44,6 +44,24 @@ it too.
   memory, writing nothing, and spawns the entity lump qbsp would write for the map in `qs-sim`
   with those settings, so what the spawnflags rule out and what the QuakeC removes itself are
   both hidden. It is found again after each edit.
+- **Groups and layers (P5-14, MAP-26):** a map made in TrenchBroom keeps its groups, linked
+  groups and layers as written ([MAP-9](spec/map.md)).
+  - An edit inside a linked group is copied into every group linked to it, moved by each
+    group's transformation, in the same undo step; a key a copy protects
+    (`_tb_protected_properties`) keeps its own value. A mirrored copy is mirrored, its brushes
+    kept outside in. A linked group holding another group is not copied, nor is an edit that
+    changed two linked copies differently; either edit is refused.
+  - Moving a group moves everything in it and its `_tb_transformation`, so the groups linked to
+    it stay where they are.
+  - The Properties panel lists the layers, each with Hidden, Locked and Not exported
+    (`map.set_layer`, written as TrenchBroom writes them); `map.export` writes the map without
+    the layers marked not to be exported.
+  - Hide, Isolate and Show all (and TrenchBroom's keys for them) hide entities in the editor
+    without changing the map. Lock and Unlock all lock any selection, which TrenchBroom does not
+    (its manual: "You cannot lock objects individually"); an edit that would change a locked
+    entity, or a copy of one in a linked group, is refused. A layer's settings hold for
+    everything in it, groups and their members included. What is hidden and locked is not undone
+    with the map's edits; an undo or redo that changes how many entities there are forgets it.
 - **Saving:** `map.save` (Cmd+S in the view) writes a `.map` over itself, and changes only the
   text an edit touched. A BSP's entities go to a `.ent` file beside the BSP, which QuakeSpasm
   and its descendants read in place of the lump (MAP-22). `{"bsp": "lump"}` rewrites the BSP's
@@ -59,6 +77,8 @@ The editor follows TrenchBroom's defaults (MAP-20), read from
 - `lib/TbPreferencesLib/include/prefs/Preferences.h`: `CameraFly*`;
 - `lib/TbUiLib/src/ActionManager.cpp`: the "Move objects", "Yaw objects", "Duplicate",
   "Delete" and "Save" actions;
+- `lib/TbUiLib/src/ActionManager.cpp`: the "Isolate", "Hide" and "Show All" actions of the View
+  menu;
 - `lib/TbUiLib/src/MapViewBase.cpp`: `move` and `rotate`;
 - `lib/TbMdlLib/src/Map.cpp` and `Grid.cpp`: the default grid, `Grid(4)`, which is
   `exp2(4)` = 16 units.
@@ -78,6 +98,9 @@ The view takes the keys while it has the keyboard; click it to give it the keybo
 | Duplicate | Ctrl+D (Cmd+D on macOS) | the same, in place, with the copy selected |
 | Delete | the platform's Delete | Delete or Backspace |
 | Save (`Menu/File/Save`) | the platform's Save, Ctrl+S (Cmd+S on macOS) | the same |
+| Isolate Selection (`Menu/View/Isolate`) | Ctrl+I | the same, Cmd+I on macOS |
+| Hide Selection (`Menu/View/Hide`) | Ctrl+Alt+I | the same, Cmd+Alt+I on macOS |
+| Show All (`Menu/View/Show All`) | Ctrl+Shift+I | the same, Cmd+Shift+I on macOS |
 
 While the game plays the open map (the map named by the file's stem), every edit, undo and
 redo of an entity reaches it with no recompile (P5-07, MAP-12): a placed or duplicated entity

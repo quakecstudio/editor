@@ -93,7 +93,7 @@ pub struct Rooms {
 
 /// A whole number from 0, as TrenchBroom reads the id a member names (MAP-9.2): `None` for
 /// anything else.
-fn id(value: &[u8]) -> Option<u64> {
+pub(crate) fn container_id(value: &[u8]) -> Option<u64> {
     core::str::from_utf8(value).ok()?.parse().ok()
 }
 
@@ -113,12 +113,12 @@ impl Entity {
     fn named_container(&self) -> Option<(RoomKind, u64)> {
         [RoomKind::Layer, RoomKind::Group]
             .into_iter()
-            .find_map(|kind| Some((kind, id(self.value(kind.member_key())?)?)))
+            .find_map(|kind| Some((kind, container_id(self.value(kind.member_key())?)?)))
     }
 
     /// The container that is this entity, for a layer's or group's own entity.
-    fn own_container(&self) -> Option<(RoomKind, u64)> {
-        RoomKind::of(self).zip(self.value(b"_tb_id").and_then(id))
+    pub(crate) fn own_container(&self) -> Option<(RoomKind, u64)> {
+        RoomKind::of(self).zip(self.value(b"_tb_id").and_then(container_id))
     }
 }
 
@@ -230,7 +230,11 @@ impl MapFile {
             let Some(kind) = RoomKind::of(entity) else {
                 continue;
             };
-            let Some(id) = entity.value(b"_tb_id").and_then(id).filter(|&id| id > 0) else {
+            let Some(id) = entity
+                .value(b"_tb_id")
+                .and_then(container_id)
+                .filter(|&id| id > 0)
+            else {
                 continue;
             };
             let name = entity

@@ -516,13 +516,31 @@ pub enum Text {
     MapAngleDown,
     /// The key editor's list of the values the map uses for a key.
     MapChoices,
+    /// The map editor's list of the map's layers (P5-14).
+    MapLayers,
+    /// A layer's checkbox that hides it in the editor.
+    MapLayerHidden,
+    /// A layer's checkbox that locks it against edits.
+    MapLayerLocked,
+    /// A layer's checkbox that leaves it out of exports.
+    MapLayerOmit,
+    /// Hide the selection in the editor (TrenchBroom's Hide Selection).
+    MapHide,
+    /// Hide everything but the selection (TrenchBroom's Isolate Selection).
+    MapIsolate,
+    /// Lock the selection against edits.
+    MapLock,
+    /// Show every entity hidden in the editor (TrenchBroom's Show All).
+    MapShowAll,
+    /// Unlock every entity locked in the editor.
+    MapUnlockAll,
     /// The command palette's name to a screen reader.
     CommandPalette,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 255] = [
+    pub const ALL: [Self; 264] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -777,6 +795,15 @@ impl Text {
         Self::MapAngleUp,
         Self::MapAngleDown,
         Self::MapChoices,
+        Self::MapLayers,
+        Self::MapLayerHidden,
+        Self::MapLayerLocked,
+        Self::MapLayerOmit,
+        Self::MapHide,
+        Self::MapIsolate,
+        Self::MapLock,
+        Self::MapShowAll,
+        Self::MapUnlockAll,
         Self::CommandPalette,
     ];
 
@@ -1059,6 +1086,15 @@ impl Text {
             Self::MapAngleUp => "Up",
             Self::MapAngleDown => "Down",
             Self::MapChoices => "Values in the map",
+            Self::MapLayers => "Layers",
+            Self::MapLayerHidden => "Hidden",
+            Self::MapLayerLocked => "Locked",
+            Self::MapLayerOmit => "Not exported",
+            Self::MapHide => "Hide",
+            Self::MapIsolate => "Isolate",
+            Self::MapLock => "Lock",
+            Self::MapShowAll => "Show all",
+            Self::MapUnlockAll => "Unlock all",
             Self::CommandPalette => "Command palette",
         }
     }
@@ -1140,5 +1176,14 @@ pub fn also_selected(count: usize) -> String {
     match count {
         1 => "1 more selected: key edits set it too".to_owned(),
         n => format!("{n} more selected: key edits set them too"),
+    }
+}
+
+/// How many entities a layer holds (P5-14).
+#[must_use]
+pub fn layer_count(count: usize) -> String {
+    match count {
+        1 => "1 entity".to_owned(),
+        n => format!("{n} entities"),
     }
 }

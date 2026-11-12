@@ -38,6 +38,13 @@ fn the_scene_holds_the_brushes_and_the_entities_boxes() {
     let scene = Scene::build(document, &classes, &[]);
     // The world's six boxes and the door's one, six faces of four edges each.
     assert_eq!(scene.lines.len(), 7 * 6 * 4);
+    // The door's brush, six faces of four edges, is drawn for the door, so hiding it hides them.
+    let door = scene
+        .lines
+        .iter()
+        .filter(|(owner, _)| *owner == EntityIndex::new(4))
+        .count();
+    assert_eq!(door, 6 * 4);
     let shape = |index: usize| {
         scene
             .entities

@@ -59,6 +59,14 @@ const qs_workbench::map_edit::disk::MAP_COMPARE
 const qs_workbench::map_edit::disk::MAP_RESOLVE
 const qs_workbench::map_edit::filter::MAP_FILTER
 const qs_workbench::map_edit::flags::MAP_SET_FLAG
+const qs_workbench::map_edit::groups::MAP_EXPORT
+const qs_workbench::map_edit::groups::MAP_HIDE
+const qs_workbench::map_edit::groups::MAP_ISOLATE
+const qs_workbench::map_edit::groups::MAP_LAYERS
+const qs_workbench::map_edit::groups::MAP_LOCK
+const qs_workbench::map_edit::groups::MAP_SET_LAYER
+const qs_workbench::map_edit::groups::MAP_SHOW_ALL
+const qs_workbench::map_edit::groups::MAP_UNLOCK_ALL
 const qs_workbench::map_edit::links::MAP_LINK
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
@@ -128,6 +136,8 @@ enum qs_workbench::map_edit::disk::MapOnDisk
 enum qs_workbench::map_edit::filter::GameMode
 enum qs_workbench::map_edit::filter::Skill
 enum qs_workbench::map_edit::flags::FlagChange
+enum qs_workbench::map_edit::groups::LayerOption
+enum qs_workbench::map_edit::groups::Switch
 enum qs_workbench::map_edit::inspect::RoomShape
 enum qs_workbench::map_edit::live::LiveChange
 enum qs_workbench::preview::OnLoss
@@ -324,6 +334,17 @@ field qs_workbench::map_edit::flags::SetFlagParams.also
 field qs_workbench::map_edit::flags::SetFlagParams.change
 field qs_workbench::map_edit::flags::SetFlagParams.entity
 field qs_workbench::map_edit::flags::SetFlagParams.flag
+field qs_workbench::map_edit::groups::EntityListParams.entities
+field qs_workbench::map_edit::groups::ExportParams.path
+field qs_workbench::map_edit::groups::LayerInfo.entities
+field qs_workbench::map_edit::groups::LayerInfo.entity
+field qs_workbench::map_edit::groups::LayerInfo.hidden
+field qs_workbench::map_edit::groups::LayerInfo.locked
+field qs_workbench::map_edit::groups::LayerInfo.name
+field qs_workbench::map_edit::groups::LayerInfo.omit_from_export
+field qs_workbench::map_edit::groups::SetLayerParams.layer
+field qs_workbench::map_edit::groups::SetLayerParams.setting
+field qs_workbench::map_edit::groups::SetLayerParams.switch
 field qs_workbench::map_edit::inspect::EntityInfo.classname
 field qs_workbench::map_edit::inspect::EntityInfo.entity
 field qs_workbench::map_edit::inspect::EntityInfo.origin
@@ -578,6 +599,9 @@ fn qs_workbench::map_edit::Workbench::map_entity
 fn qs_workbench::map_edit::Workbench::open_map
 fn qs_workbench::map_edit::Workbench::save_map
 fn qs_workbench::map_edit::disk::MapDocument::conflict
+fn qs_workbench::map_edit::groups::MapDocument::hidden_entities
+fn qs_workbench::map_edit::groups::MapDocument::is_hidden
+fn qs_workbench::map_edit::groups::MapDocument::is_locked
 fn qs_workbench::map_edit::live::LiveChange::send
 fn qs_workbench::preview::ConsoleLine::is_error
 fn qs_workbench::preview::ConsoleLine::matches
@@ -833,6 +857,10 @@ struct qs_workbench::map_edit::disk::ResolveParams
 struct qs_workbench::map_edit::filter::FilterParams
 struct qs_workbench::map_edit::filter::MapFiltered
 struct qs_workbench::map_edit::flags::SetFlagParams
+struct qs_workbench::map_edit::groups::EntityListParams
+struct qs_workbench::map_edit::groups::ExportParams
+struct qs_workbench::map_edit::groups::LayerInfo
+struct qs_workbench::map_edit::groups::SetLayerParams
 struct qs_workbench::map_edit::inspect::EntityInfo
 struct qs_workbench::map_edit::inspect::InspectParams
 struct qs_workbench::map_edit::inspect::MapInspected
@@ -1011,6 +1039,8 @@ use qs_workbench::engine = crate::preview::engine
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
 use qs_workbench::map_edit::EntityInfo = inspect::EntityInfo
+use qs_workbench::map_edit::EntityListParams = groups::EntityListParams
+use qs_workbench::map_edit::ExportParams = groups::ExportParams
 use qs_workbench::map_edit::FILES_CHANGED = disk::FILES_CHANGED
 use qs_workbench::map_edit::FilesChanged = disk::FilesChanged
 use qs_workbench::map_edit::FilesChangedParams = disk::FilesChangedParams
@@ -1019,13 +1049,23 @@ use qs_workbench::map_edit::FlagChange = flags::FlagChange
 use qs_workbench::map_edit::GameMode = filter::GameMode
 use qs_workbench::map_edit::InspectParams = inspect::InspectParams
 use qs_workbench::map_edit::Keep = disk::Keep
+use qs_workbench::map_edit::LayerInfo = groups::LayerInfo
+use qs_workbench::map_edit::LayerOption = groups::LayerOption
 use qs_workbench::map_edit::LinkParams = links::LinkParams
 use qs_workbench::map_edit::LiveChange = live::LiveChange
 use qs_workbench::map_edit::MAP_COMPARE = disk::MAP_COMPARE
+use qs_workbench::map_edit::MAP_EXPORT = groups::MAP_EXPORT
 use qs_workbench::map_edit::MAP_FILTER = filter::MAP_FILTER
+use qs_workbench::map_edit::MAP_HIDE = groups::MAP_HIDE
+use qs_workbench::map_edit::MAP_ISOLATE = groups::MAP_ISOLATE
+use qs_workbench::map_edit::MAP_LAYERS = groups::MAP_LAYERS
 use qs_workbench::map_edit::MAP_LINK = links::MAP_LINK
+use qs_workbench::map_edit::MAP_LOCK = groups::MAP_LOCK
 use qs_workbench::map_edit::MAP_RESOLVE = disk::MAP_RESOLVE
 use qs_workbench::map_edit::MAP_SET_FLAG = flags::MAP_SET_FLAG
+use qs_workbench::map_edit::MAP_SET_LAYER = groups::MAP_SET_LAYER
+use qs_workbench::map_edit::MAP_SHOW_ALL = groups::MAP_SHOW_ALL
+use qs_workbench::map_edit::MAP_UNLOCK_ALL = groups::MAP_UNLOCK_ALL
 use qs_workbench::map_edit::MapDifference = disk::MapDifference
 use qs_workbench::map_edit::MapFiltered = filter::MapFiltered
 use qs_workbench::map_edit::MapInspected = inspect::MapInspected
@@ -1034,7 +1074,9 @@ use qs_workbench::map_edit::ResolveParams = disk::ResolveParams
 use qs_workbench::map_edit::RoomInfo = inspect::RoomInfo
 use qs_workbench::map_edit::RoomShape = inspect::RoomShape
 use qs_workbench::map_edit::SetFlagParams = flags::SetFlagParams
+use qs_workbench::map_edit::SetLayerParams = groups::SetLayerParams
 use qs_workbench::map_edit::Skill = filter::Skill
+use qs_workbench::map_edit::Switch = groups::Switch
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
 use qs_workbench::register_staged = crate::staged::register_staged
@@ -1050,6 +1092,8 @@ variant qs_workbench::WorkbenchError::Bsp
 variant qs_workbench::WorkbenchError::ChangedOnDisk
 variant qs_workbench::WorkbenchError::Checkpoint
 variant qs_workbench::WorkbenchError::EntOverride
+variant qs_workbench::WorkbenchError::Link
+variant qs_workbench::WorkbenchError::Locked
 variant qs_workbench::WorkbenchError::Map
 variant qs_workbench::WorkbenchError::MapLump
 variant qs_workbench::WorkbenchError::NoEntity
@@ -1060,6 +1104,7 @@ variant qs_workbench::WorkbenchError::NoMap
 variant qs_workbench::WorkbenchError::NoProject
 variant qs_workbench::WorkbenchError::NoRoom
 variant qs_workbench::WorkbenchError::NotBuilt
+variant qs_workbench::WorkbenchError::NotLayer
 variant qs_workbench::WorkbenchError::NotPointEntity
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Pattern
@@ -1121,6 +1166,11 @@ variant qs_workbench::map_edit::filter::Skill::Nightmare
 variant qs_workbench::map_edit::filter::Skill::Normal
 variant qs_workbench::map_edit::flags::FlagChange::Clear
 variant qs_workbench::map_edit::flags::FlagChange::Set
+variant qs_workbench::map_edit::groups::LayerOption::Hidden
+variant qs_workbench::map_edit::groups::LayerOption::Locked
+variant qs_workbench::map_edit::groups::LayerOption::OmitFromExport
+variant qs_workbench::map_edit::groups::Switch::Off
+variant qs_workbench::map_edit::groups::Switch::On
 variant qs_workbench::map_edit::inspect::RoomShape::Group
 variant qs_workbench::map_edit::inspect::RoomShape::Layer
 variant qs_workbench::map_edit::live::LiveChange::Edit
