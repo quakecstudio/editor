@@ -14,7 +14,7 @@ use serde_json::json;
 
 use super::{FILES_CHANGED, FilesChanged, MAP_COMPARE, MAP_RESOLVE, MapDifference, MapOnDisk};
 use crate::entity_classes::PROJECT_ENTITIES;
-use crate::map_edit::{EntityIndex, MAP_MOVE, MAP_OPEN, MAP_SAVE, MAP_SELECT};
+use crate::map_edit::{EntityIndex, MAP_MOVE, MAP_OPEN, MAP_SAVE, MAP_SELECT, MAP_SET_KEY};
 use crate::{Config, OPEN_PROJECT, Workbench, register};
 
 const CODE: &str = "entity self; .string classname; .vector origin;\nvoid() worldspawn = {};\n\
@@ -163,4 +163,93 @@ fn changed_quakec_refreshes_the_entity_definitions() {
     assert_eq!(result.map, MapOnDisk::Same);
     let after = classes(&mut session);
     assert!(after.contains(&"monster_new".to_owned()), "{after:?}");
+}
+
+/// The spec's `base` BSP vector, from its `xxd` dump.
+fn base_bsp() -> Vec<u8> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/spec/vectors/bsp/base.txt");
+    let mut out = Vec::new();
+    for line in std::fs::read_to_string(path).unwrap().lines() {
+        let Some((_, rest)) = line.split_once(": ") else {
+            continue;
+        };
+        for group in rest.get(..39).unwrap_or(rest).split_whitespace() {
+            for pair in group.as_bytes().chunks(2) {
+                out.push(u8::from_str_radix(core::str::from_utf8(pair).unwrap(), 16).unwrap());
+            }
+        }
+    }
+    out
+}
+
+// No spec statement: P5-17, BSP-19.1: a BSP rebuilt under unsaved edits is a conflict read from
+// its entity lump, not a parse of its bytes; a .ent another program writes beside it is no file
+// map.save overwrites, and asking again finds the conflict
+#[test]
+fn a_bsp_and_its_ent_are_watched() {
+    let (dir, mut session) = opened("bsp");
+    let bsp = dir.join("maps/base.bsp");
+    std::fs::write(&bsp, base_bsp()).unwrap();
+    session.execute(MAP_OPEN, json!({ "path": bsp })).unwrap();
+    let edit = json!({ "entity": 0, "key": "message", "value": "Mine" });
+    session.execute(MAP_SET_KEY, edit.clone()).unwrap();
+    let rebuilt = qs_bsp::replace_entities(
+        &base_bsp(),
+        b"{\n\"classname\" \"worldspawn\"\n\"message\" \"Rebuilt\"\n}\n",
+        qs_bsp::BspLoader::default(),
+    )
+    .unwrap();
+    std::fs::write(&bsp, &rebuilt).unwrap();
+    assert_eq!(
+        changed(&mut session, std::slice::from_ref(&bsp)).map,
+        MapOnDisk::Conflict
+    );
+    session
+        .execute(MAP_RESOLVE, json!({ "keep": "disk" }))
+        .unwrap();
+    assert!(text(&session).contains("Rebuilt"));
+
+    session.execute(MAP_SET_KEY, edit).unwrap();
+    let ent = dir.join("maps/base.ent");
+    std::fs::write(
+        &ent,
+        "{\n\"classname\" \"worldspawn\"\n\"message\" \"Theirs\"\n}\n",
+    )
+    .unwrap();
+    let refused = session
+        .execute(MAP_SAVE, json!({}))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("base.ent"), "{refused}");
+    assert!(std::fs::read_to_string(&ent).unwrap().contains("Theirs"));
+    assert_eq!(changed(&mut session, &[bsp]).map, MapOnDisk::Conflict);
+    session
+        .execute(MAP_RESOLVE, json!({ "keep": "mine" }))
+        .unwrap();
+    session.execute(MAP_SAVE, json!({})).unwrap();
+    assert!(std::fs::read_to_string(&ent).unwrap().contains("Mine"));
+}
+
+// No spec statement: P5-17: QuakeC changed with a map that no longer reads is still read again
+#[test]
+fn quakec_is_read_again_when_the_map_is_not() {
+    let (dir, mut session) = opened("broken");
+    std::fs::write(dir.join("maps/test.map"), "{\n\"classname\"\n").unwrap();
+    std::fs::write(
+        dir.join("a.qc"),
+        format!(
+            "{CODE}/*QUAKED monster_new (1 0 0) (-16 -16 -24) (16 16 40)\n*/\n\
+             void() monster_new = {{}};\n"
+        ),
+    )
+    .unwrap();
+    let paths = [dir.join("a.qc"), dir.join("maps/test.map")];
+    assert!(
+        session
+            .execute(FILES_CHANGED, json!({ "paths": paths }))
+            .is_err()
+    );
+    let found = session.execute(PROJECT_ENTITIES, json!({})).unwrap();
+    assert!(found.to_string().contains("monster_new"));
 }

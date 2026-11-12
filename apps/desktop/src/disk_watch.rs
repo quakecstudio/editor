@@ -19,13 +19,21 @@ pub(crate) struct DiskWatch {
 }
 
 impl DiskWatch {
+    /// Whether the files are to be looked at again at `now`: once every [`EVERY`].
+    pub(crate) fn due(&self, now: Instant) -> bool {
+        self.last
+            .is_none_or(|last| now.saturating_duration_since(last) >= EVERY)
+    }
+
+    /// How long until the files are looked at again, for the window to wake then.
+    pub(crate) const fn every() -> Duration {
+        EVERY
+    }
+
     /// The files among `paths` whose modified time moved since they were last looked at, at
     /// most once every [`EVERY`] from `now`; empty in between.
     pub(crate) fn changed(&mut self, now: Instant, paths: Vec<PathBuf>) -> Vec<PathBuf> {
-        if self
-            .last
-            .is_some_and(|last| now.saturating_duration_since(last) < EVERY)
-        {
+        if !self.due(now) {
             return Vec::new();
         }
         self.last = Some(now);

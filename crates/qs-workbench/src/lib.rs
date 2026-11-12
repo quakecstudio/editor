@@ -756,7 +756,7 @@ impl fmt::Display for WorkbenchError {
             Self::NoRoom { name } => write!(f, "the map has no room named {name}"),
             Self::ChangedOnDisk { path } => write!(
                 f,
-                "{}: another program changed it since it was opened; reload it or keep yours \\
+                "{}: another program changed it since it was opened; reload it or keep yours \
                  first",
                 path.display()
             ),

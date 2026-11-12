@@ -541,7 +541,6 @@ fn qs_workbench::git::register_git
 fn qs_workbench::map_check::Workbench::check_map
 fn qs_workbench::map_check::Workbench::entity_schema
 fn qs_workbench::map_check::Workbench::rename_map_key
-fn qs_workbench::map_edit::DiskStamp::of
 fn qs_workbench::map_edit::EntityIndex::get
 fn qs_workbench::map_edit::EntityIndex::is_world
 fn qs_workbench::map_edit::EntityIndex::new
@@ -552,6 +551,7 @@ fn qs_workbench::map_edit::MapDocument::path
 fn qs_workbench::map_edit::MapDocument::revision
 fn qs_workbench::map_edit::MapDocument::selected
 fn qs_workbench::map_edit::MapDocument::source
+fn qs_workbench::map_edit::MapDocument::watched
 fn qs_workbench::map_edit::MapRevision::next
 fn qs_workbench::map_edit::Workbench::map
 fn qs_workbench::map_edit::Workbench::map_entity
@@ -571,6 +571,7 @@ fn qs_workbench::preview::Preview::docks
 fn qs_workbench::preview::Preview::entities
 fn qs_workbench::preview::Preview::game_base_path
 fn qs_workbench::preview::Preview::game_folder
+fn qs_workbench::preview::Preview::map_read_again
 fn qs_workbench::preview::Preview::new
 fn qs_workbench::preview::Preview::pause
 fn qs_workbench::preview::Preview::pending
@@ -789,7 +790,6 @@ struct qs_workbench::map_check::MapChecked
 struct qs_workbench::map_check::MapProblem
 struct qs_workbench::map_check::RenameKeyParams
 struct qs_workbench::map_check::RenamedIn
-struct qs_workbench::map_edit::DiskStamp
 struct qs_workbench::map_edit::EntityIndex
 struct qs_workbench::map_edit::EntityKeys
 struct qs_workbench::map_edit::EntityParams

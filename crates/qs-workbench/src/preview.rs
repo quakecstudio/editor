@@ -847,6 +847,21 @@ impl Preview {
         on_map && live.step != Step::Apart
     }
 
+    /// Puts the game playing the map at `path` out of step with the editor, which read the map
+    /// again from disk: its edits reach the game at the next compile (P5-17), said once.
+    pub fn map_read_again(&mut self, path: &Path) {
+        if !self.plays_in_step(path) {
+            return;
+        }
+        if let Some(live) = self.live.as_mut() {
+            live.step = Step::Apart;
+        }
+        self.push_line(
+            "The map was read again from disk: its edits reach the game at the next compile",
+            "warning",
+        );
+    }
+
     /// Sends the map editor's `changes` to the game when [`Preview::plays_in_step`] the map at
     /// `path` (P5-07, MAP-12). The first time after the map loads, the editor's entities
     /// before the change, `before`, are checked against those the game loaded, by classname in

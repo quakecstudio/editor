@@ -1886,22 +1886,48 @@ impl Shell {
     /// Looks at the open map's file and the project's QuakeC for another program's writes
     /// (P5-17): a map with no unsaved edits is read again, one with unsaved edits says so, and
     /// changed QuakeC gives the map editor its classes again.
-    fn watch_disk(&mut self) {
-        let workbench = &self.session.context().workbench;
-        let mut paths = workbench.project_files();
-        let map = workbench
-            .map()
-            .map(|document| document.path().to_path_buf());
-        paths.extend(map.clone());
-        let changed = self.disk_watch.changed(std::time::Instant::now(), paths);
-        if changed.is_empty() {
+    fn watch_disk(&mut self, ctx: &egui::Context) {
+        ctx.request_repaint_after(DiskWatch::every());
+        let now = std::time::Instant::now();
+        if !self.disk_watch.due(now) {
             return;
         }
+        let workbench = &self.session.context().workbench;
+        let mut paths = workbench.project_files();
+        paths.extend(
+            workbench
+                .map()
+                .map(MapDocument::watched)
+                .unwrap_or_default(),
+        );
+        let changed = self.disk_watch.changed(now, paths);
+        if !changed.is_empty() {
+            self.files_changed(changed);
+        }
+    }
+
+    /// Asks whether the open map's files changed, whatever their modified times say.
+    fn check_map_on_disk(&mut self) {
+        let watched = self
+            .session
+            .context()
+            .workbench
+            .map()
+            .map(MapDocument::watched)
+            .unwrap_or_default();
+        if !watched.is_empty() {
+            self.files_changed(watched);
+        }
+    }
+
+    /// Gives `changed` to `files.changed` and shows what it did.
+    fn files_changed(&mut self, changed: Vec<PathBuf>) {
+        let map = self.session.context().workbench.map().is_some();
         let found: Result<FilesChanged, ShellError> =
             self.attempt(FILES_CHANGED, &FilesChangedParams { paths: changed });
         match found {
             Ok(found) => {
-                if found.quakec && map.is_some() {
+                if found.quakec && map {
                     self.load_map_classes();
                 }
                 match found.map {
@@ -1940,14 +1966,26 @@ impl Shell {
                 MapAction::Save => {
                     let saved: Result<MapSaved, ShellError> =
                         self.attempt(MAP_SAVE, &SaveParams { bsp: BspSave::Ent });
-                    saved.map(|saved| {
-                        self.disk_watch.wrote(saved.path);
-                        serde_json::Value::Null
-                    })
+                    match saved {
+                        Ok(saved) => {
+                            self.disk_watch.wrote(saved.path);
+                            Ok(serde_json::Value::Null)
+                        }
+                        Err(error) => {
+                            // A refusal may be a change the watcher missed: look now, so the
+                            // notice offers a way out.
+                            self.check_map_on_disk();
+                            Err(error)
+                        }
+                    }
                 }
                 MapAction::Resolve(keep) => {
-                    self.map_editor.set_disk(DiskNotice::None);
-                    self.attempt(MAP_RESOLVE, &ResolveParams { keep })
+                    let resolved: Result<serde_json::Value, ShellError> =
+                        self.attempt(MAP_RESOLVE, &ResolveParams { keep });
+                    if resolved.is_ok() {
+                        self.map_editor.set_disk(DiskNotice::None);
+                    }
+                    resolved
                 }
                 MapAction::Compare => {
                     let compared: Result<Vec<MapDifference>, ShellError> =
@@ -2572,8 +2610,11 @@ impl Shell {
                     None
                 }
                 Request::Save => {
-                    let saved: Option<()> = self.run(SAVE_FILE, &SaveFileParams { path });
+                    let saved: Option<()> =
+                        self.run(SAVE_FILE, &SaveFileParams { path: path.clone() });
                     if saved.is_some() {
+                        // The editor's own write is no other program's (P5-17).
+                        self.disk_watch.wrote(path);
                         self.reload_after_save();
                     }
                     None
@@ -2782,7 +2823,7 @@ impl Shell {
     fn centre(&mut self, ui: &mut Ui, focus: bool) {
         self.sync_editor();
         self.sync_map();
-        self.watch_disk();
+        self.watch_disk(ui.ctx());
         self.cover_characters(ui.ctx());
         let editor_shown = self.centre_tab == CentreTab::Editor && self.editor.is_some();
         let refocus = std::mem::take(&mut self.multibuffer.refocus);

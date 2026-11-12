@@ -13,7 +13,7 @@ use qs_map::MapFile;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{DiskStamp, EntityIndex, LiveChange, MapDocument};
+use super::{EntityIndex, LiveChange, MapDocument, MapRead};
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 
 /// The id of `files.changed`.
@@ -100,26 +100,31 @@ impl<L: crate::Loader> Workbench<L> {
             return Ok(MapOnDisk::Same);
         };
         let path = document.path.clone();
-        let bytes =
-            std::fs::read(&path).map_err(|_| WorkbenchError::NoFile { path: path.clone() })?;
-        if DiskStamp::of(&bytes) == document.disk {
+        let read = MapRead::of(&path)?;
+        let Some(document) = self.map.as_mut() else {
+            return Ok(MapOnDisk::Same);
+        };
+        if read.origin == document.origin && read.disk == document.disk {
+            document.conflict = None;
             return Ok(MapOnDisk::Same);
         }
         if document.unsaved {
-            let file = disk_file(&path, &bytes)?;
-            if let Some(document) = self.map.as_mut() {
-                document.conflict = Some(file);
-                document.touch();
-            }
+            document.conflict = Some(read.file);
+            document.touch();
             return Ok(MapOnDisk::Conflict);
         }
-        let selected = document.selected;
-        let document = self.open_map(&path)?;
-        let count = document.file.entities.len();
+        self.reopen_map(&path)?;
+        Ok(MapOnDisk::Reloaded)
+    }
+
+    /// Reads the open map at `path` again, keeping its selection where the map still has it.
+    fn reopen_map(&mut self, path: &Path) -> Result<(), WorkbenchError> {
+        let selected = self.map.as_ref().and_then(|document| document.selected);
+        let count = self.open_map(path)?.file.entities.len();
         if let Some(document) = self.map.as_mut() {
             document.selected = selected.filter(|entity| entity.get() < count);
         }
-        Ok(MapOnDisk::Reloaded)
+        Ok(())
     }
 
     /// Takes the map on disk or keeps the one being edited, after another program changed it.
@@ -127,31 +132,18 @@ impl<L: crate::Loader> Workbench<L> {
         let document = self.map_mut()?;
         let path = document.path.clone();
         match keep {
-            Keep::Disk => {
-                let selected = document.selected;
-                let count = self.open_map(&path)?.file.entities.len();
-                if let Some(document) = self.map.as_mut() {
-                    document.selected = selected.filter(|entity| entity.get() < count);
-                }
-            }
+            Keep::Disk => self.reopen_map(&path)?,
             Keep::Mine => {
-                let bytes = std::fs::read(&path)
-                    .map_err(|_| WorkbenchError::NoFile { path: path.clone() })?;
-                document.disk = DiskStamp::of(&bytes);
+                let read = MapRead::of(&path)?;
+                let document = self.map_mut()?;
+                document.origin = read.origin;
+                document.disk = read.disk;
                 document.conflict = None;
                 document.touch();
             }
         }
         Ok(())
     }
-}
-
-/// The entities of the map `bytes` read from `path`, as `map.open` reads them.
-fn disk_file(path: &Path, bytes: &[u8]) -> Result<MapFile, WorkbenchError> {
-    MapFile::parse(bytes).map_err(|error| WorkbenchError::Map {
-        path: path.to_path_buf(),
-        error,
-    })
 }
 
 /// Whether `path` is part of a project's QuakeC.
@@ -163,6 +155,17 @@ fn is_quakec(path: &Path) -> bool {
                 .iter()
                 .any(|known| extension.eq_ignore_ascii_case(known))
         })
+}
+
+/// Tells the game playing the open map that the map was read again from disk, so its edits
+/// wait for the next compile (P5-07, P5-17).
+fn out_of_step<C: HasWorkbench>(context: &mut C) {
+    let Some(path) = context.workbench().map().map(|d| d.path().to_path_buf()) else {
+        return;
+    };
+    if let Some(preview) = context.preview() {
+        preview.map_read_again(&path);
+    }
 }
 
 /// `files.changed`.
@@ -183,9 +186,10 @@ impl<C: HasWorkbench + 'static> Command<C> for FilesChangedCommand {
         params: FilesChangedParams,
     ) -> Result<Outcome<FilesChanged, C>, WorkbenchError> {
         let workbench = context.workbench();
-        let map_path = workbench
+        let watched = workbench
             .map()
-            .map(|document| document.path().to_path_buf());
+            .map(MapDocument::watched)
+            .unwrap_or_default();
         let same = |a: &Path, b: &Path| {
             a == b
                 || std::fs::canonicalize(a)
@@ -193,18 +197,22 @@ impl<C: HasWorkbench + 'static> Command<C> for FilesChangedCommand {
                     .zip(std::fs::canonicalize(b).ok())
                     .is_some_and(|(a, b)| a == b)
         };
+        // The QuakeC first, so a map that no longer reads still leaves it read again.
+        let quakec = workbench.root().is_some() && params.paths.iter().any(|path| is_quakec(path));
+        if quakec {
+            workbench.disk_changed()?;
+        }
         let map = if params
             .paths
             .iter()
-            .any(|path| map_path.as_deref().is_some_and(|open| same(path, open)))
+            .any(|path| watched.iter().any(|open| same(path, open)))
         {
             workbench.map_on_disk()?
         } else {
             MapOnDisk::Same
         };
-        let quakec = workbench.root().is_some() && params.paths.iter().any(|path| is_quakec(path));
-        if quakec {
-            workbench.disk_changed()?;
+        if map == MapOnDisk::Reloaded {
+            out_of_step(context);
         }
         Ok(Outcome::outside_history(FilesChanged { map, quakec }))
     }
@@ -228,6 +236,9 @@ impl<C: HasWorkbench + 'static> Command<C> for MapResolve {
         params: ResolveParams,
     ) -> Result<Outcome<(), C>, WorkbenchError> {
         context.workbench().resolve_map(params.keep)?;
+        if params.keep == Keep::Disk {
+            out_of_step(context);
+        }
         Ok(Outcome::outside_history(()))
     }
 }
