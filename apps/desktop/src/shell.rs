@@ -56,9 +56,9 @@ use qs_workbench::map_edit::{
     ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_workbench::map_edit::{
-    BrushClipParams, BrushCreateParams, BrushMergeParams, BrushParams, BrushVertexParams,
-    MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_SUBTRACT,
-    MAP_BRUSH_VERTEX,
+    BrushClipParams, BrushCreateParams, BrushMergeParams, BrushParams, BrushShapeParams,
+    BrushVertexParams, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE,
+    MAP_BRUSH_SHAPE, MAP_BRUSH_SUBTRACT, MAP_BRUSH_VERTEX,
 };
 use qs_workbench::map_edit::{
     EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
@@ -2120,6 +2120,17 @@ impl Shell {
             BrushAction::Delete(entity, brush) => {
                 self.attempt(MAP_BRUSH_DELETE, &BrushParams { entity, brush })
             }
+            BrushAction::Shape(min, max, shape) => self.attempt(
+                MAP_BRUSH_SHAPE,
+                &BrushShapeParams {
+                    entity: None,
+                    min,
+                    max,
+                    shape,
+                    texture: None,
+                    grid: None,
+                },
+            ),
         }
     }
 

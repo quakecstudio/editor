@@ -122,6 +122,44 @@ fn scripts() -> Vec<Script> {
             ],
         },
         Script {
+            name: "map-shapes",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": keep_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": keep_fixture().join("maps/keep.map") }),
+                ),
+                Step::Run(
+                    "map.brush_shape",
+                    json!({
+                        "min": [-160, -96, 0], "max": [-32, 32, 128],
+                        "shape": { "kind": "cylinder", "sides": 12, "hollow": 16 }
+                    }),
+                ),
+                Step::Run(
+                    "map.brush_shape",
+                    json!({
+                        "min": [32, -96, 0], "max": [160, -64, 128],
+                        "shape": { "kind": "arch", "sides": 8, "wall": "filled" }
+                    }),
+                ),
+                Step::Run(
+                    "map.brush_shape",
+                    json!({
+                        "min": [32, 0, 0], "max": [160, 64, 96],
+                        "shape": { "kind": "stairs", "climb": "east" }
+                    }),
+                ),
+                Step::Run(
+                    "map.brush_shape",
+                    json!({
+                        "min": [-96, 64, 0], "max": [0, 160, 96],
+                        "shape": { "kind": "icospheroid", "subdivisions": 1 }
+                    }),
+                ),
+            ],
+        },
+        Script {
             name: "shell-resized",
             steps: vec![
                 Step::Run(

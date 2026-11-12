@@ -2389,3 +2389,53 @@ fn brushes_are_selected_deleted_and_drawn_in_the_view() {
     harness.run();
     assert_eq!(map_text(&harness), before);
 }
+
+// No spec statement: P6-18: the Shape tool fills a box dragged on the ground with the shape
+// chosen in its toolbar, hollow with sides as set, in one step that undoes
+#[test]
+fn the_shape_tool_fills_a_dragged_box() {
+    let dir = keep_copy("shapes");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.run();
+    let before = map_text(&harness);
+    let world = brush_count(&harness, 0);
+    harness.get_by_label(Text::MapToolShape.get()).click();
+    harness.run();
+    harness.get_by_label(Text::MapShapeHollow.get()).click();
+    harness.run();
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let below = view.center() + egui::vec2(0.0, view.height() / 3.0);
+    drag(
+        &mut harness,
+        below - egui::vec2(160.0, 60.0),
+        below + egui::vec2(160.0, 60.0),
+        egui::Modifiers::NONE,
+    );
+    let refused = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .map_editor()
+        .refused_text();
+    assert_eq!(refused, None);
+    // A hollow cylinder of the default 16 sides: a brush a side.
+    assert_eq!(
+        brush_count(&harness, 0),
+        world + 16,
+        "{}",
+        map_text(&harness)
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
