@@ -456,6 +456,14 @@ pub enum Text {
     MapEditorView,
     /// The key editor's line when no entity of the open map is selected.
     MapNoSelection,
+    /// The notice when another program changed the open map while it had unsaved edits.
+    MapChangedOnDisk,
+    /// The notice's button that reads the map from disk, dropping the edits.
+    MapReloadFromDisk,
+    /// The notice's button that keeps the edits, to save over the file.
+    MapKeepMine,
+    /// The notice's button that lists how the file differs.
+    MapCompare,
     /// The key editor's button that removes a key.
     MapRemoveKey,
     /// The key editor's heading over the keys the entity's class reads that it does not set.
@@ -474,7 +482,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 231] = [
+    pub const ALL: [Self; 235] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -699,6 +707,10 @@ impl Text {
         Self::MapView,
         Self::MapEditorView,
         Self::MapNoSelection,
+        Self::MapChangedOnDisk,
+        Self::MapReloadFromDisk,
+        Self::MapKeepMine,
+        Self::MapCompare,
         Self::MapRemoveKey,
         Self::MapClassKeys,
         Self::MapKey,
@@ -953,6 +965,12 @@ impl Text {
                 "Map editor: right-drag to look, middle-drag to pan, W A S D Q X to fly, click to select"
             }
             Self::MapNoSelection => "Select an entity in the map to edit its keys.",
+            Self::MapChangedOnDisk => {
+                "Another program changed this map. Your unsaved edits are kept until you choose."
+            }
+            Self::MapReloadFromDisk => "Reload from disk",
+            Self::MapKeepMine => "Keep mine",
+            Self::MapCompare => "Compare",
             Self::MapRemoveKey => "Remove",
             Self::MapClassKeys => "Keys its class reads:",
             Self::MapKey => "key",

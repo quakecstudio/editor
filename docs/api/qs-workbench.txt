@@ -54,6 +54,9 @@ const qs_workbench::map_edit::MAP_ROTATE
 const qs_workbench::map_edit::MAP_SAVE
 const qs_workbench::map_edit::MAP_SELECT
 const qs_workbench::map_edit::MAP_SET_KEY
+const qs_workbench::map_edit::disk::FILES_CHANGED
+const qs_workbench::map_edit::disk::MAP_COMPARE
+const qs_workbench::map_edit::disk::MAP_RESOLVE
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
 const qs_workbench::preview::CONSOLE
@@ -117,6 +120,8 @@ enum qs_workbench::git::GitCommandError
 enum qs_workbench::git::GitSide
 enum qs_workbench::map_edit::BspSave
 enum qs_workbench::map_edit::MapSource
+enum qs_workbench::map_edit::disk::Keep
+enum qs_workbench::map_edit::disk::MapOnDisk
 enum qs_workbench::map_edit::inspect::RoomShape
 enum qs_workbench::map_edit::live::LiveChange
 enum qs_workbench::preview::OnLoss
@@ -297,6 +302,12 @@ field qs_workbench::map_edit::SelectParams.entity
 field qs_workbench::map_edit::SetKeyParams.entity
 field qs_workbench::map_edit::SetKeyParams.key
 field qs_workbench::map_edit::SetKeyParams.value
+field qs_workbench::map_edit::disk::FilesChanged.map
+field qs_workbench::map_edit::disk::FilesChanged.quakec
+field qs_workbench::map_edit::disk::FilesChangedParams.paths
+field qs_workbench::map_edit::disk::MapDifference.entity
+field qs_workbench::map_edit::disk::MapDifference.text
+field qs_workbench::map_edit::disk::ResolveParams.keep
 field qs_workbench::map_edit::inspect::EntityInfo.classname
 field qs_workbench::map_edit::inspect::EntityInfo.entity
 field qs_workbench::map_edit::inspect::EntityInfo.origin
@@ -530,6 +541,7 @@ fn qs_workbench::git::register_git
 fn qs_workbench::map_check::Workbench::check_map
 fn qs_workbench::map_check::Workbench::entity_schema
 fn qs_workbench::map_check::Workbench::rename_map_key
+fn qs_workbench::map_edit::DiskStamp::of
 fn qs_workbench::map_edit::EntityIndex::get
 fn qs_workbench::map_edit::EntityIndex::is_world
 fn qs_workbench::map_edit::EntityIndex::new
@@ -545,6 +557,7 @@ fn qs_workbench::map_edit::Workbench::map
 fn qs_workbench::map_edit::Workbench::map_entity
 fn qs_workbench::map_edit::Workbench::open_map
 fn qs_workbench::map_edit::Workbench::save_map
+fn qs_workbench::map_edit::disk::MapDocument::conflict
 fn qs_workbench::map_edit::live::LiveChange::send
 fn qs_workbench::preview::ConsoleLine::is_error
 fn qs_workbench::preview::ConsoleLine::matches
@@ -776,6 +789,7 @@ struct qs_workbench::map_check::MapChecked
 struct qs_workbench::map_check::MapProblem
 struct qs_workbench::map_check::RenameKeyParams
 struct qs_workbench::map_check::RenamedIn
+struct qs_workbench::map_edit::DiskStamp
 struct qs_workbench::map_edit::EntityIndex
 struct qs_workbench::map_edit::EntityKeys
 struct qs_workbench::map_edit::EntityParams
@@ -792,6 +806,10 @@ struct qs_workbench::map_edit::RotateParams
 struct qs_workbench::map_edit::SaveParams
 struct qs_workbench::map_edit::SelectParams
 struct qs_workbench::map_edit::SetKeyParams
+struct qs_workbench::map_edit::disk::FilesChanged
+struct qs_workbench::map_edit::disk::FilesChangedParams
+struct qs_workbench::map_edit::disk::MapDifference
+struct qs_workbench::map_edit::disk::ResolveParams
 struct qs_workbench::map_edit::inspect::EntityInfo
 struct qs_workbench::map_edit::inspect::InspectParams
 struct qs_workbench::map_edit::inspect::MapInspected
@@ -969,9 +987,18 @@ use qs_workbench::engine = crate::preview::engine
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
 use qs_workbench::map_edit::EntityInfo = inspect::EntityInfo
+use qs_workbench::map_edit::FILES_CHANGED = disk::FILES_CHANGED
+use qs_workbench::map_edit::FilesChanged = disk::FilesChanged
+use qs_workbench::map_edit::FilesChangedParams = disk::FilesChangedParams
 use qs_workbench::map_edit::InspectParams = inspect::InspectParams
+use qs_workbench::map_edit::Keep = disk::Keep
 use qs_workbench::map_edit::LiveChange = live::LiveChange
+use qs_workbench::map_edit::MAP_COMPARE = disk::MAP_COMPARE
+use qs_workbench::map_edit::MAP_RESOLVE = disk::MAP_RESOLVE
+use qs_workbench::map_edit::MapDifference = disk::MapDifference
 use qs_workbench::map_edit::MapInspected = inspect::MapInspected
+use qs_workbench::map_edit::MapOnDisk = disk::MapOnDisk
+use qs_workbench::map_edit::ResolveParams = disk::ResolveParams
 use qs_workbench::map_edit::RoomInfo = inspect::RoomInfo
 use qs_workbench::map_edit::RoomShape = inspect::RoomShape
 use qs_workbench::recent_path = crate::recent::recent_path
@@ -986,6 +1013,7 @@ variant qs_workbench::CheckAfterTyping::OnTheFrame
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
 variant qs_workbench::WorkbenchError::Bsp
+variant qs_workbench::WorkbenchError::ChangedOnDisk
 variant qs_workbench::WorkbenchError::Checkpoint
 variant qs_workbench::WorkbenchError::EntOverride
 variant qs_workbench::WorkbenchError::Map
@@ -1042,6 +1070,11 @@ variant qs_workbench::map_edit::BspSave::Ent
 variant qs_workbench::map_edit::BspSave::Lump
 variant qs_workbench::map_edit::MapSource::Bsp
 variant qs_workbench::map_edit::MapSource::Map
+variant qs_workbench::map_edit::disk::Keep::Disk
+variant qs_workbench::map_edit::disk::Keep::Mine
+variant qs_workbench::map_edit::disk::MapOnDisk::Conflict
+variant qs_workbench::map_edit::disk::MapOnDisk::Reloaded
+variant qs_workbench::map_edit::disk::MapOnDisk::Same
 variant qs_workbench::map_edit::inspect::RoomShape::Group
 variant qs_workbench::map_edit::inspect::RoomShape::Layer
 variant qs_workbench::map_edit::live::LiveChange::Edit

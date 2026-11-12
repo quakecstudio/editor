@@ -126,6 +126,36 @@ impl LiveChange {
         }
     }
 
+    /// The change as the map editor says it, `after` the entities it leaves (P5-17).
+    pub(crate) fn describe(&self, after: &[Entity]) -> super::disk::MapDifference {
+        let class = |place: EntityIndex| {
+            after
+                .get(place.get())
+                .and_then(Entity::classname)
+                .map(text)
+                .unwrap_or_default()
+        };
+        let pairs = |pairs: &[(String, String)]| {
+            pairs
+                .iter()
+                .map(|(key, value)| format!("{key} \"{value}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let (entity, text) = match self {
+            Self::Spawn {
+                place, classname, ..
+            } => (*place, format!("added: {classname}")),
+            Self::NeedsCompile { place } => (*place, format!("added: {}", class(*place))),
+            Self::Remove { place } => (*place, "removed".to_owned()),
+            Self::Edit {
+                place,
+                pairs: changed,
+            } => (*place, format!("{}: {}", class(*place), pairs(changed))),
+        };
+        super::disk::MapDifference { entity, text }
+    }
+
     /// The entity `entity` spawned at `place`, or put there for the next compile when it has
     /// brushes: a brush entity's model is the compiler's to make.
     fn spawn(place: EntityIndex, entity: &Entity) -> Self {

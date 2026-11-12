@@ -17,9 +17,14 @@ use qs_bsp::{Bsp, BspLoader, ent_file_names};
 use qs_commands::{BoxError, Command, Outcome, RegisterError, Registry, UndoStep};
 use qs_map::{Entity, Item, MapFile};
 
+pub use disk::{
+    FILES_CHANGED, FilesChanged, FilesChangedParams, Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference,
+    MapOnDisk, ResolveParams,
+};
 pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
 pub use live::LiveChange;
 
+mod disk;
 mod inspect;
 mod live;
 use schemars::JsonSchema;
@@ -137,6 +142,25 @@ pub struct MapDocument {
     /// The last value [`MapDocument::edits`] was given, which only grows, so an undo step
     /// knows its own map.
     stamped: MapRevision,
+    /// The bytes at [`MapDocument::path`] as last read or written (P5-17).
+    disk: DiskStamp,
+    /// The map on disk, when another program changed it while this one had unsaved edits.
+    conflict: Option<MapFile>,
+}
+
+/// What a file held, as a hash of its bytes, to tell when another program changed it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DiskStamp(u64);
+
+impl DiskStamp {
+    /// The stamp of `bytes`.
+    #[must_use]
+    pub fn of(bytes: &[u8]) -> Self {
+        use core::hash::{Hash as _, Hasher as _};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        bytes.hash(&mut hasher);
+        Self(hasher.finish())
+    }
 }
 
 impl MapDocument {
@@ -431,6 +455,7 @@ impl<L: crate::Loader> Workbench<L> {
         let is_bsp = path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case(BSP_EXTENSION));
+        let disk = DiskStamp::of(&bytes);
         let (source, text) = if is_bsp {
             let bsp =
                 Bsp::read(&bytes, BspLoader::default()).map_err(|error| WorkbenchError::Bsp {
@@ -466,6 +491,8 @@ impl<L: crate::Loader> Workbench<L> {
                 .map_or(MapRevision::default(), |old| old.revision.next()),
             edits: stamped,
             stamped,
+            disk,
+            conflict: None,
         }))
     }
 
@@ -528,8 +555,9 @@ impl<L: crate::Loader> Workbench<L> {
     ///
     /// [`WorkbenchError::NoMap`] with no map open, [`WorkbenchError::Bsp`] when the BSP
     /// cannot take the lump, [`WorkbenchError::EntOverride`] for the lump when a `.ent` the
-    /// engine reads in its place is beside the BSP, and [`WorkbenchError::Save`] when the
-    /// file cannot be written.
+    /// engine reads in its place is beside the BSP, [`WorkbenchError::ChangedOnDisk`] when
+    /// another program changed the map's file since it was read or saved (P5-17), and
+    /// [`WorkbenchError::Save`] when the file cannot be written.
     pub fn save_map(&mut self, how: BspSave) -> Result<PathBuf, WorkbenchError> {
         let document = self.map_mut()?;
         let text = document.file.to_bytes();
@@ -560,10 +588,21 @@ impl<L: crate::Loader> Workbench<L> {
                 }
             }
         };
+        // Saving never overwrites what another program wrote since (P5-17).
+        let own_file = path == document.path;
+        if own_file
+            && let Ok(now) = std::fs::read(&path)
+            && DiskStamp::of(&now) != document.disk
+        {
+            return Err(WorkbenchError::ChangedOnDisk { path });
+        }
         std::fs::write(&path, &bytes).map_err(|error| WorkbenchError::Save {
             path: path.clone(),
             error,
         })?;
+        if own_file {
+            document.disk = DiskStamp::of(&bytes);
+        }
         if let (MapSource::Bsp(bsp), BspSave::Lump) = (&mut document.source, how) {
             *bsp = bytes;
         }
@@ -1019,6 +1058,9 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(MapRemoveKey)?;
     registry.register(MapEntity)?;
     registry.register(inspect::MapInspect)?;
+    registry.register(disk::FilesChangedCommand)?;
+    registry.register(disk::MapResolve)?;
+    registry.register(disk::MapCompare)?;
     registry.register(MapSave)
 }
 

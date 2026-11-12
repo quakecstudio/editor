@@ -65,6 +65,14 @@ compiler merged `func_group` or `func_detail` into the world, a placed brush ent
 the game refuses puts the two out of step, said once in the console, and the edits reach the
 game at the next compile and map load.
 
+Another program's writes are noticed (P5-17, MAP-32): about once a second the open map's
+file and the project's QuakeC are looked at. A map with no unsaved edits is read again, its
+camera and selection kept; one with unsaved edits keeps them, and the Properties panel offers
+Reload from disk, Keep mine and Compare, which lists how the file differs entity by entity.
+Saving never overwrites a file another program wrote since it was read. Changed QuakeC is read
+again, and the entity classes with it. The map's WADs are watched by the texture browser
+(P6-10).
+
 Not yet here:
 - orbiting (`shouldOrbit`, Alt with a right drag);
 - rolling and pitching objects;

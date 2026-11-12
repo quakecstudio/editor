@@ -725,6 +725,12 @@ pub enum WorkbenchError {
         /// Why.
         error: qs_map::MapError,
     },
+    /// Another program changed the map's file since the editor read or saved it (P5-17):
+    /// saving would overwrite that, so the map is reloaded or kept first (`map.resolve`).
+    ChangedOnDisk {
+        /// The file.
+        path: PathBuf,
+    },
     /// The open map has no room of this name (MAP-9).
     NoRoom {
         /// The name asked for.
@@ -748,6 +754,12 @@ impl fmt::Display for WorkbenchError {
             }
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
             Self::NoRoom { name } => write!(f, "the map has no room named {name}"),
+            Self::ChangedOnDisk { path } => write!(
+                f,
+                "{}: another program changed it since it was opened; reload it or keep yours \\
+                 first",
+                path.display()
+            ),
             Self::EntOverride { path } => write!(
                 f,
                 "{}: the engine reads this in place of the BSP's entities; save to it, or move \
@@ -798,7 +810,8 @@ impl Error for WorkbenchError {
             | Self::NoEntity { .. }
             | Self::NotPointEntity { .. }
             | Self::EntOverride { .. }
-            | Self::NoRoom { .. } => None,
+            | Self::NoRoom { .. }
+            | Self::ChangedOnDisk { .. } => None,
         }
     }
 }

@@ -84,7 +84,10 @@ an edit, so both commands run outside the edit history
   and room, for the agent (P5-08); `map.save` writes the `.map`, or a `.ent` beside a BSP or its rewritten
   entity lump ([`docs/map-editor.md`](../../docs/map-editor.md)). While the preview's game
   plays the open map, each edit, undo and redo goes to it as a `LiveChange` by the entity's
-  place in the map (P5-07, MAP-12, BRIDGE-4.13).
+  place in the map (P5-07, MAP-12, BRIDGE-4.13). `files.changed` takes the files another
+  program wrote: the open map is read again, or with unsaved edits kept for `map.resolve` and
+  `map.compare`, and changed QuakeC is read again (P5-17, MAP-32); `map.save` refuses to
+  overwrite a newer file.
 - Git (`git`, P4-35, UI-19): `git.status`, `git.diff`, `git.stage` and `git.unstage` (a file
   or one hunk), `git.commit`, `git.branches`, `git.switch`, `git.create_branch`, `git.log`,
   `git.blame`, `git.conflicts`, `git.resolve` and `git.head_text`, over `qs-git` in the open
