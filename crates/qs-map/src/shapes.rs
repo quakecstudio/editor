@@ -841,13 +841,7 @@ impl Shape {
                 let outer = on_grid(radii);
                 let heights = [snap(z0), snap(z1).max(snap(z0) + grid)];
                 match wall {
-                    Wall::Solid => {
-                        let hull = hull_2d(&outer);
-                        if hull.len() < MIN_CORNERS {
-                            return Err(ShapeError::Size);
-                        }
-                        Ok(vec![prism(&hull, Along::Z, heights, surface)?])
-                    }
+                    Wall::Solid => Ok(vec![prism(&hull_2d(&outer), Along::Z, heights, surface)?]),
                     Wall::Hollow { thickness } => {
                         let t = checked_thickness(thickness, radii)?;
                         let inner = on_grid(radii.map(|r| r - t));

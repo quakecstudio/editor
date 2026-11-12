@@ -933,3 +933,114 @@ fn each_refusal_names_its_number() {
     }
     assert!(!ShapeError::Size.to_string().is_empty());
 }
+
+/// The unit normal of `brush`'s face `index`, as its three points give it.
+fn normal(brush: &Brush, index: usize) -> [f64; 3] {
+    plane(*brush.faces[index].points()).unwrap().normal
+}
+
+// spec MAP-10.2: a ring's corners run counter-clockwise from angle 0, so a prism's sides follow
+// one another that way; a three-sided one has its first corner on +x
+#[test]
+fn a_ring_runs_counter_clockwise_from_plus_x() {
+    let prism = off(Shape::Cylinder {
+        sides: 3,
+        mode: CircleMode::Vertices,
+        wall: Wall::Solid,
+    });
+    let corners = vertices(&prism);
+    assert!(corners.iter().any(|&v| near(v, [208.0, 80.0, 512.0])));
+    assert!(!corners.iter().any(|&v| close(v[0], 16.0)), "{corners:?}");
+    let sides = make(Shape::Cylinder {
+        sides: 8,
+        mode: CircleMode::Vertices,
+        wall: Wall::Solid,
+    })
+    .unwrap();
+    let angles: Vec<f64> = (0..sides[0].faces.len())
+        .map(|i| normal(&sides[0], i))
+        .filter(|n| n[2].abs() < 1e-6)
+        .map(|n| n[1].atan2(n[0]))
+        .collect();
+    assert_eq!(angles.len(), 8);
+    let step = core::f64::consts::TAU / 8.0;
+    for pair in angles.windows(2) {
+        let turn = (pair[1] - pair[0]).rem_euclid(core::f64::consts::TAU);
+        assert!(close(turn, step), "{angles:?}");
+    }
+}
+
+// spec MAP-10.7: a spheroid's first face is its first triangle: a UV spheroid's at the bottom
+// pole between longitudes 0 and one slice, an icospheroid's the icosahedron's first
+#[test]
+fn a_spheroid_s_faces_start_where_its_triangles_do() {
+    let unit = |v: [f64; 3]| {
+        let length = v.iter().map(|c| c * c).sum::<f64>().sqrt();
+        v.map(|c| c / length)
+    };
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let uv = make(Shape::UvSpheroid { sides: 8, rings: 4 }).unwrap();
+    let half = core::f64::consts::PI / 8.0;
+    let low = -3.0 * core::f64::consts::PI / 8.0;
+    let toward = [low.cos() * half.cos(), low.cos() * half.sin(), low.sin()];
+    assert!(
+        dot(normal(&uv[0], 0), toward) > 0.95,
+        "{:?}",
+        normal(&uv[0], 0)
+    );
+    let ico = make(Shape::Icospheroid { subdivisions: 0 }).unwrap();
+    let phi = core::f64::consts::GOLDEN_RATIO;
+    let first = [[-1.0, phi, 0.0], [-phi, 0.0, 1.0], [0.0, 1.0, phi]];
+    let middle = unit([0, 1, 2].map(|i| first.iter().map(|p| p[i]).sum::<f64>()));
+    assert!(
+        dot(normal(&ico[0], 0), middle) > 0.99,
+        "{:?}",
+        normal(&ico[0], 0)
+    );
+}
+
+// spec MAP-10.8: a rock's points spiral down from its top, each the golden angle round from
+// the one before; four points are all corners of its hull
+#[test]
+fn a_rock_s_points_spiral_down_by_the_golden_angle() {
+    let mut rock = vertices(&off(Shape::Rock { points: 4, seed: 3 }));
+    assert_eq!(rock.len(), 4);
+    rock.sort_by(|a, b| b[2].total_cmp(&a[2]));
+    for (i, v) in rock.iter().enumerate() {
+        let angle = ((v[1] - FOOT[1]) / FOOT_RADII[1]).atan2((v[0] - FOOT[0]) / FOOT_RADII[0]);
+        let want = (super::GOLDEN_ANGLE * f64::from(u32::try_from(i).unwrap()))
+            .rem_euclid(core::f64::consts::TAU);
+        let got = angle.rem_euclid(core::f64::consts::TAU);
+        assert!(close(got, want), "point {i}: {got} for {want}");
+        assert_eq!(v[2] > OFF_CENTRE[2], i < 2, "point {i}");
+    }
+}
+
+// spec MAP-10.9: a box narrower than the grid makes a curve one grid step each way
+#[test]
+fn a_curve_is_at_least_a_grid_step() {
+    let tiny = Shape::Curve {
+        sides: CurveSides::Twelve,
+        grid: 16.0,
+        wall: Wall::Solid,
+    }
+    .brushes([0.0, 0.0, 0.0], [4.0, 4.0, 4.0], &surface())
+    .unwrap();
+    let corners = vertices(&tiny);
+    for axis in 0..3 {
+        let high = corners.iter().map(|v| v[axis]).fold(f64::MIN, f64::max);
+        let low = corners.iter().map(|v| v[axis]).fold(f64::MAX, f64::min);
+        assert_eq!((low, high), (0.0, 16.0), "axis {axis}");
+    }
+}
+
+// spec MAP-10.10: the box's height can limit the steps, from its floor up
+#[test]
+fn a_low_box_limits_the_steps() {
+    let steps = off(Shape::Stairs {
+        height: 64.0,
+        depth: 32.0,
+        facing: Facing::East,
+    });
+    assert_eq!(steps.len(), 3);
+}
