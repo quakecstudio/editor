@@ -605,3 +605,44 @@ fn a_short_lump_is_refused() {
         .contains("needs 40")
     );
 }
+
+// spec WAD-8.3: a side of 0 or past 4096 is refused on either axis, 4096 itself taken; fewer
+// pixels than the size are refused
+#[test]
+fn decoding_refuses_sides_outside_the_range() {
+    let palette = palette();
+    let pixels = vec![0_u8; 4096 * 16];
+    for (width, height, ok) in [
+        (0, 16, false),
+        (16, 0, false),
+        (4097, 16, false),
+        (16, 4097, false),
+        (4096, 16, true),
+        (16, 4096, true),
+    ] {
+        let decoded = palette.decode_pixels(b"plain", width, height, &pixels);
+        assert_eq!(decoded.is_ok(), ok, "{width}x{height}");
+        if !ok {
+            assert_eq!(decoded, Err(TextureError::Size { width, height }));
+        }
+    }
+    assert_eq!(
+        palette.decode_pixels(b"plain", 16, 16, &pixels[..255]),
+        Err(TextureError::Truncated {
+            needed: 256,
+            len: 255
+        })
+    );
+}
+
+// spec WAD-8.4: a WAD3 palette's colours are its triples up to its count, the rest black
+#[test]
+fn a_wad3_palette_is_its_counted_triples() {
+    let mut bytes = 2_u16.to_le_bytes().to_vec();
+    bytes.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    let palette = Palette::from_wad3(&bytes);
+    assert_eq!(palette.colour(PaletteIndex(0)), [1, 2, 3]);
+    assert_eq!(palette.colour(PaletteIndex(1)), [4, 5, 6]);
+    assert_eq!(palette.colour(PaletteIndex(2)), [0, 0, 0]);
+    assert_eq!(Palette::from_wad3(&[]).colour(PaletteIndex(0)), [0, 0, 0]);
+}
