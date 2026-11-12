@@ -1779,7 +1779,7 @@ Parameters:
   "required": [
     "entities"
   ],
-  "title": "EntitiesParams",
+  "title": "EntityListParams",
   "type": "object"
 }
 ```
@@ -1849,7 +1849,7 @@ Parameters:
   "required": [
     "entities"
   ],
-  "title": "EntitiesParams",
+  "title": "EntityListParams",
   "type": "object"
 }
 ```
@@ -1944,7 +1944,7 @@ Parameters:
   "required": [
     "entities"
   ],
-  "title": "EntitiesParams",
+  "title": "EntityListParams",
   "type": "object"
 }
 ```

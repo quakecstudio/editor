@@ -24,7 +24,7 @@ pub use disk::{
 pub use filter::{FilterParams, GameMode, MAP_FILTER, MapFiltered, Skill};
 pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
 pub use groups::{
-    EntitiesParams, ExportParams, LayerInfo, LayerOption, MAP_EXPORT, MAP_HIDE, MAP_ISOLATE,
+    EntityListParams, ExportParams, LayerInfo, LayerOption, MAP_EXPORT, MAP_HIDE, MAP_ISOLATE,
     MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER, MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams, Switch,
 };
 pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};

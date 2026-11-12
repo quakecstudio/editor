@@ -17,11 +17,12 @@ use eframe::egui::{
 use qs_render::Camera;
 use qs_workbench::entity_classes::ClassInfo;
 use qs_workbench::map_edit::{
-    EntityIndex, EntityKeys, FlagChange, GameMode, Keep, MapDocument, MapRevision, Skill,
+    EntityIndex, EntityKeys, FlagChange, GameMode, Keep, LayerInfo, MapDocument, MapRevision, Skill,
 };
 
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
+use crate::map_groups::{GroupAction, layers_ui, overview_keys, selection_ui};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
 use crate::strings::{Text, also_selected};
 use crate::theme::{Theme, Token};
@@ -76,6 +77,8 @@ pub enum MapAction {
     Link(EntityIndex, String, EntityIndex),
     /// Show only the entities the game spawns at a skill and in a kind of game.
     Filter(ShowFilter),
+    /// Hide, isolate or lock entities, or change a layer (P5-14).
+    Group(GroupAction),
     /// Remove a key of an entity.
     RemoveKey(EntityIndex, String),
     /// Save the map.
@@ -200,6 +203,11 @@ pub struct MapEditor {
     link_key: Option<String>,
     /// The entity an Alt-drag links from.
     link_from: Option<EntityIndex>,
+    /// The entities the document hides, by `map.hide`, `map.isolate` or a hidden layer
+    /// (P5-14), and the revision they were read at.
+    kept_out: (BTreeSet<EntityIndex>, Option<MapRevision>),
+    /// The map's layers, for the Properties panel.
+    layers: Vec<LayerInfo>,
     /// Where each entity's centre was drawn in the last frame, where a link dragged from it
     /// starts.
     centres: Vec<(EntityIndex, Pos2)>,
@@ -246,6 +254,11 @@ impl MapEditor {
     /// Takes why the last map command asked for was refused, or none when it ran.
     pub fn set_refused(&mut self, refused: Option<String>) {
         self.refused = refused;
+    }
+
+    /// Takes the map's layers (P5-14).
+    pub fn set_layers(&mut self, layers: Vec<LayerInfo>) {
+        self.layers = layers;
     }
 
     /// Takes the keys the code fires entities by (MAP-8.8).
@@ -376,6 +389,15 @@ impl MapEditor {
             let count = document.file().entities.len();
             self.also.retain(|entity| entity.get() < count);
         }
+        if self.kept_out.1 != Some(document.revision()) {
+            let count = document.file().entities.len();
+            let kept_out = (1..count)
+                .map(EntityIndex::new)
+                .filter(|&entity| document.is_hidden(entity))
+                .collect();
+            self.kept_out = (kept_out, Some(document.revision()));
+        }
+        let hidden: BTreeSet<EntityIndex> = self.hidden.union(&self.kept_out.0).copied().collect();
         let link_key = self.link_key();
         let camera = self.camera.get_or_insert_with(|| start_camera(document));
         let rect = ui.available_rect_before_wrap();
@@ -430,6 +452,8 @@ impl MapEditor {
             if let Some(entity) = selected {
                 actions.extend(selection_keys(ui, camera, entity));
             }
+            let chosen: Vec<EntityIndex> = selection.iter().copied().collect();
+            actions.extend(overview_keys(ui, &chosen).into_iter().map(MapAction::Group));
             if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) {
                 actions.push(MapAction::Save);
             }
@@ -442,7 +466,7 @@ impl MapEditor {
         };
         let pick = |at: Pos2| {
             let (start, direction) = ray(at);
-            self.scene.pick(start, direction, &self.hidden)
+            self.scene.pick(start, direction, &hidden)
         };
         if response.clicked()
             && let Some(at) = response.interact_pointer_pos()
@@ -504,14 +528,14 @@ impl MapEditor {
         }
         let link = Stroke::new(1.0, theme.color(Token::Focus));
         let mut centres = Vec::new();
-        for line in self.scene.links(self.links, &selection, &self.hidden) {
+        for line in self.scene.links(self.links, &selection, &hidden) {
             projection.line(&painter, line, link);
             if let Some(end) = projection.point(line[1]) {
                 painter.circle_filled(end, LINK_END, link.color);
             }
         }
         for shape in &self.scene.entities {
-            if self.hidden.contains(&shape.index) {
+            if hidden.contains(&shape.index) {
                 continue;
             }
             if let Some(centre) = projection.point(shape.centre()) {
@@ -584,6 +608,15 @@ impl MapEditor {
             }
             ui.separator();
         }
+        let mut chosen: Vec<EntityIndex> =
+            self.keys.as_ref().map(|(e, _)| *e).into_iter().collect();
+        chosen.extend(self.also.iter().copied());
+        actions.extend(selection_ui(ui, &chosen).into_iter().map(MapAction::Group));
+        actions.extend(
+            layers_ui(ui, theme, &self.layers)
+                .into_iter()
+                .map(MapAction::Group),
+        );
         let Some((entity, keys)) = &self.keys else {
             ui.label(
                 RichText::new(Text::MapNoSelection.get()).color(theme.color(Token::TextMuted)),

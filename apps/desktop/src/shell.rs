@@ -55,6 +55,10 @@ use qs_workbench::map_edit::{
     ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_workbench::map_edit::{
+    EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
+    MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams,
+};
+use qs_workbench::map_edit::{
     FilterParams, LinkParams, MAP_FILTER, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, MapFiltered,
     PlaceParams, SetFlagParams,
 };
@@ -96,6 +100,7 @@ use crate::git_panel::{BlameShown, GitAction, GitData, GitView, git_ui};
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
 use crate::map_editor::{DiskNotice, MapAction, MapEditor, ShowFilter};
+use crate::map_groups::GroupAction;
 use crate::map_view::{self, MapView};
 use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
@@ -1997,6 +2002,7 @@ impl Shell {
                     },
                 ),
                 MapAction::Filter(show) => self.filter_map(show).map(|()| serde_json::Value::Null),
+                MapAction::Group(action) => self.group_action(action),
                 MapAction::RemoveKey(entity, key) => {
                     self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
                 }
@@ -2121,6 +2127,31 @@ impl Shell {
             keys.ok().map(|keys| (entity, keys))
         });
         self.map_editor.set_keys(keys, revision);
+        let layers: Result<Vec<LayerInfo>, ShellError> =
+            self.attempt(MAP_LAYERS, &serde_json::json!({}));
+        self.map_editor.set_layers(layers.unwrap_or_default());
+    }
+
+    /// Runs a hide, isolate, lock or layer change from the map editor as its `map.*` command
+    /// (P5-14).
+    fn group_action(&mut self, action: GroupAction) -> Result<serde_json::Value, ShellError> {
+        match action {
+            GroupAction::Hide(entities) => self.attempt(MAP_HIDE, &EntityListParams { entities }),
+            GroupAction::Isolate(entities) => {
+                self.attempt(MAP_ISOLATE, &EntityListParams { entities })
+            }
+            GroupAction::Lock(entities) => self.attempt(MAP_LOCK, &EntityListParams { entities }),
+            GroupAction::ShowAll => self.attempt(MAP_SHOW_ALL, &serde_json::json!({})),
+            GroupAction::UnlockAll => self.attempt(MAP_UNLOCK_ALL, &serde_json::json!({})),
+            GroupAction::SetLayer(layer, setting, switch) => self.attempt(
+                MAP_SET_LAYER,
+                &SetLayerParams {
+                    layer,
+                    setting,
+                    switch,
+                },
+            ),
+        }
     }
 
     /// Runs what the outliner or the Properties panel asked for: a selection or a field's new

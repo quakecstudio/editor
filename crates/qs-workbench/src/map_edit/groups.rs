@@ -125,7 +125,7 @@ impl Switch {
 /// The parameters of `map.hide`, `map.isolate` and `map.lock`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct EntitiesParams {
+pub struct EntityListParams {
     /// The entities.
     pub entities: Vec<EntityIndex>,
 }
@@ -421,14 +421,14 @@ impl<V> MapView<V> {
 impl<C: HasWorkbench + 'static, V: ViewKind + 'static> Command<C> for MapView<V> {
     const ID: &'static str = V::ID;
     const SUMMARY: &'static str = V::SUMMARY;
-    type Params = EntitiesParams;
+    type Params = EntityListParams;
     type Output = ();
     type Error = WorkbenchError;
 
     fn run(
         &self,
         context: &mut C,
-        params: EntitiesParams,
+        params: EntityListParams,
     ) -> Result<Outcome<(), C>, WorkbenchError> {
         let document = context.workbench().map_mut()?;
         V::CHANGE.apply(document, params.entities)?;
