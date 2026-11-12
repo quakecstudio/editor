@@ -10,10 +10,9 @@ use std::fs;
 use std::path::Path;
 
 use super::super::testing::{fresh_dir, root};
-use super::{Archive, MAPS, fetch_archive, read_pins, unpack};
+use super::{Archive, MAPS, fetch_archive, members, read_pins, tree_digest, unpack};
 use crate::corpus::archive::tests::tar_gz;
 use crate::download::Net;
-use crate::oracles::sha256;
 
 /// A [`Net`] that serves one body for every URL and counts the requests.
 struct Serve {
@@ -36,12 +35,12 @@ impl Net for Serve {
 
 const COMMIT: &str = "36eec1da2a194467e6baac2f444c2dd04b57d266";
 
-fn archive(sha256: &str) -> Archive {
+fn archive(tree: &str) -> Archive {
     Archive {
         id: "tool".to_owned(),
         repo: "someone/tool".to_owned(),
         commit: COMMIT.to_owned(),
-        sha256: sha256.to_owned(),
+        tree: tree.to_owned(),
         into: String::new(),
     }
 }
@@ -73,10 +72,10 @@ fn pins_that_are_not_whole_are_refused() {
         ),
         (
             text.replace(
-                "62a27c5e1832e26c09bea2369c00a7449e6a0b58bd15606c595680c331814a77",
-                "62a27c5e",
+                "fdc275f499781bd5fe45c37a7afdd17e1911f6b392bf056eab7900fea036fed1",
+                "FDC275F499781BD5FE45C37A7AFDD17E1911F6B392BF056EAB7900FEA036FED1",
             ),
-            "no whole SHA-256",
+            "no whole tree SHA-256",
         ),
         (
             text.replacen("into = \"\"", "into = \"x\"", 1),
@@ -92,8 +91,8 @@ fn pins_that_are_not_whole_are_refused() {
     }
 }
 
-// No spec statement: P6-03: an archive whose checksum differs is refused and not kept; one
-// cached with its checksum is not fetched again
+// No spec statement: P6-03: an archive whose files differ from the pinned tree is refused and
+// not kept, not even in part; one cached with its tree is not fetched again
 #[test]
 fn archives_are_checked_and_cached() {
     let body = tar_gz(&[("tool-abc/README", b"hello")]);
@@ -105,11 +104,13 @@ fn archives_are_checked_and_cached() {
     fs::create_dir_all(cache.join("archives")).unwrap();
     let wrong = archive(&"0".repeat(64));
     let error = fetch_archive(&wrong, &cache, &net).unwrap_err();
-    assert!(error.contains("sha256"), "{error}");
+    assert!(error.contains("tree"), "{error}");
     assert!(!cache.join("archives/tool.tar.gz").exists());
-    let right = archive(&sha256::hex_digest(&body));
-    assert_eq!(fetch_archive(&right, &cache, &net).unwrap(), body);
-    assert_eq!(fetch_archive(&right, &cache, &net).unwrap(), body);
+    assert!(!cache.join("archives/tool.tar.partial").exists());
+    let inside = members(&body).unwrap();
+    let right = archive(&tree_digest(&inside));
+    assert_eq!(fetch_archive(&right, &cache, &net).unwrap(), inside);
+    assert_eq!(fetch_archive(&right, &cache, &net).unwrap(), inside);
     assert_eq!(
         *net.asked.borrow(),
         2,
@@ -117,7 +118,8 @@ fn archives_are_checked_and_cached() {
     );
 }
 
-// No spec statement: P6-03: an archive is unpacked without its top directory
+// No spec statement: P6-03: an archive is unpacked without its top directory, and one naming
+// a member outside it is refused; the tree digest is of paths and contents, in any order
 #[test]
 fn archives_unpack_without_their_top_directory() {
     let body = tar_gz(&[
@@ -125,8 +127,17 @@ fn archives_unpack_without_their_top_directory() {
         ("tool-abc/CMakeLists.txt", b"x"),
     ]);
     let into = fresh_dir("maps-unpack").join("3rdparty/tool");
-    unpack(&body, &into).unwrap();
+    let inside = members(&body).unwrap();
+    let reversed: Vec<_> = inside.iter().rev().cloned().collect();
+    assert_eq!(tree_digest(&inside), tree_digest(&reversed));
+    unpack(inside, &into).unwrap();
     assert_eq!(fs::read(into.join("src/a.c")).unwrap(), b"int a;");
     assert_eq!(fs::read(into.join("CMakeLists.txt")).unwrap(), b"x");
-    assert!(unpack(b"not a gzip", &into).is_err());
+    assert!(members(b"not a gzip").is_err());
+    let escaping = tar_gz(&[("tool-abc/../../x", b"y")]);
+    let error = members(&escaping).unwrap_err();
+    assert!(error.contains("not a path inside"), "{error}");
+    let changed = members(&tar_gz(&[("tool-abc/src/a.c", b"int b;")])).unwrap();
+    let original = members(&tar_gz(&[("tool-abc/src/a.c", b"int a;")])).unwrap();
+    assert_ne!(tree_digest(&changed), tree_digest(&original));
 }

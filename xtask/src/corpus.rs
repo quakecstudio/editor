@@ -23,9 +23,9 @@
 pub(crate) mod archive;
 mod assets;
 mod build;
-mod fetch;
+pub(crate) mod fetch;
 pub(crate) mod manifest;
-mod verify;
+pub(crate) mod verify;
 
 use std::env;
 use std::path::{Component, Path, PathBuf};

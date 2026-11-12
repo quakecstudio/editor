@@ -555,7 +555,7 @@ fn is_license(license: &str) -> bool {
 }
 
 /// Exactly `len` lowercase hexadecimal digits.
-fn is_hex(text: &str, len: usize) -> bool {
+pub(crate) fn is_hex(text: &str, len: usize) -> bool {
     text.len() == len
         && text
             .bytes()

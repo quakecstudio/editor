@@ -16,6 +16,9 @@ use serde::Deserialize;
 use super::compile::{Code, Compiler, Instrument, Unit};
 use super::{OUT, Sources, Upstream, fetch, sha256, stem};
 use crate::corpus::archive::read_tar_gz;
+use crate::corpus::fetch::remove_partial;
+use crate::corpus::safe_member;
+use crate::corpus::verify::is_hex;
 use crate::download::Net;
 use crate::exec::Exec;
 
@@ -45,16 +48,21 @@ struct Pins {
 }
 
 /// A repository at a commit, fetched as GitHub's gzipped tar and unpacked at `into` in
-/// ericw-tools' tree.
+/// ericw-tools' tree. `tree` pins what is inside rather than the archive's bytes, which GitHub
+/// does not promise to keep: the SHA-256 of one line `<path> <SHA-256>` per regular file, its
+/// path without the archive's top directory, sorted, joined by newlines.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Archive {
     id: String,
     repo: String,
     commit: String,
-    sha256: String,
+    tree: String,
     into: String,
 }
+
+/// An archive's regular files, by their paths without its top directory.
+type Members = Vec<(String, Vec<u8>)>;
 
 /// Where the map tool oracles are built.
 pub(crate) struct MapTools {
@@ -62,10 +70,6 @@ pub(crate) struct MapTools {
     pub(crate) id: [PathBuf; 3],
     /// ericw-tools' qbsp, vis and light, in [`TOOLS`] order.
     pub(crate) ericw: [PathBuf; 3],
-}
-
-fn is_hex(text: &str, len: usize) -> bool {
-    text.len() == len && text.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// Reads and checks the pins: every commit a full hash, every archive's SHA-256 whole, and the
@@ -83,8 +87,8 @@ fn read_pins(root: &Path) -> Result<Pins, String> {
                 archive.id
             ));
         }
-        if !is_hex(&archive.sha256, SHA256_LEN) {
-            return Err(format!("{MAPS}: {} has no whole SHA-256", archive.id));
+        if !is_hex(&archive.tree, SHA256_LEN) {
+            return Err(format!("{MAPS}: {} has no whole tree SHA-256", archive.id));
         }
     }
     match pins.archive.first() {
@@ -132,7 +136,7 @@ fn build(root: &Path, exec: &dyn Exec, net: &dyn Net) -> Result<MapTools, String
         ericw: tool_paths(&bin, "ericw-"),
     };
     let compiler = Compiler::find(&objects, Instrument::None, exec)?;
-    let stamp_now = stamp(root, &compiler)?;
+    let stamp_now = stamp(root, &compiler, exec)?;
     let stamp_file = bin.join("maps-stamp");
     if tools
         .id
@@ -157,11 +161,18 @@ fn build(root: &Path, exec: &dyn Exec, net: &dyn Net) -> Result<MapTools, String
     Ok(tools)
 }
 
-/// A digest of every input of the map tools' build: the pins, `oracles/maps/` and the
-/// compiler.
-fn stamp(root: &Path, compiler: &Compiler<'_>) -> Result<String, String> {
-    let mut inputs = vec![compiler.describe()];
-    for file in [MAPS, ROOM, COMPAT] {
+/// A digest of the inputs of the map tools' build: the pins, the compat header, the C
+/// compiler and CMake. The libraries ericw-tools links (TBB, Embree) are not in it: after
+/// upgrading them, delete `target/oracles/bin/maps-stamp` to rebuild.
+fn stamp(root: &Path, compiler: &Compiler<'_>, exec: &dyn Exec) -> Result<String, String> {
+    let cmake = exec
+        .output(Command::new("cmake").arg("--version"))
+        .map_err(|e| format!("cannot run cmake: {e}"))?;
+    let mut inputs = vec![
+        compiler.describe(),
+        String::from_utf8_lossy(&cmake.stdout).into_owned(),
+    ];
+    for file in [MAPS, COMPAT] {
         let bytes = fs::read(root.join(file)).map_err(|e| format!("{file}: {e}"))?;
         inputs.push(format!("{file} {}", sha256::hex_digest(&bytes)));
     }
@@ -237,42 +248,82 @@ fn build_id(
     Ok(())
 }
 
-/// Downloads `archive` unless the cache holds it with its SHA-256, and returns its bytes.
-fn fetch_archive(archive: &Archive, cache: &Path, net: &dyn Net) -> Result<Vec<u8>, String> {
+/// The regular files of a gzipped tar, each without the archive's top directory.
+///
+/// # Errors
+///
+/// When the archive cannot be read, or names a member outside its directory.
+fn members(bytes: &[u8]) -> Result<Members, String> {
+    let files = read_tar_gz(bytes, &|_| true).map_err(|e| e.to_string())?;
+    let mut out = Vec::with_capacity(files.len());
+    for (name, data) in files {
+        let Some((_, inside)) = name.split_once('/') else {
+            continue;
+        };
+        if !safe_member(inside) {
+            return Err(format!("{name}: not a path inside the archive"));
+        }
+        out.push((inside.to_owned(), data));
+    }
+    Ok(out)
+}
+
+/// The digest [`Archive::tree`] pins.
+fn tree_digest(members: &Members) -> String {
+    let mut lines: Vec<String> = members
+        .iter()
+        .map(|(path, data)| format!("{path} {}", sha256::hex_digest(data)))
+        .collect();
+    lines.sort();
+    sha256::hex_digest(lines.join("\n").as_bytes())
+}
+
+/// The members of `archive`, from the cache when it holds them with the pinned tree, else
+/// downloaded and checked.
+fn fetch_archive(archive: &Archive, cache: &Path, net: &dyn Net) -> Result<Members, String> {
     let path = cache
         .join("archives")
         .join(format!("{}.tar.gz", archive.id));
     if let Ok(bytes) = fs::read(&path)
-        && sha256::hex_digest(&bytes) == archive.sha256
+        && let Ok(members) = members(&bytes)
+        && tree_digest(&members) == archive.tree
     {
-        return Ok(bytes);
+        return Ok(members);
     }
     let url = format!(
         "https://codeload.github.com/{}/tar.gz/{}",
         archive.repo, archive.commit
     );
     let partial = path.with_extension("partial");
-    net.download(&url, &partial)?;
-    let bytes = fs::read(&partial).map_err(|e| format!("{}: {e}", partial.display()))?;
-    let got = sha256::hex_digest(&bytes);
-    if got != archive.sha256 {
-        return Err(format!(
-            "{}@{}: sha256 {got}, {MAPS} says {}",
-            archive.repo, archive.commit, archive.sha256
-        ));
+    let checked = net.download(&url, &partial).and_then(|()| {
+        let bytes = fs::read(&partial).map_err(|e| format!("{}: {e}", partial.display()))?;
+        let members = members(&bytes).map_err(|e| format!("{url}: {e}"))?;
+        let got = tree_digest(&members);
+        if got == archive.tree {
+            Ok(members)
+        } else {
+            Err(format!(
+                "{}@{}: tree {got}, {MAPS} says {}",
+                archive.repo, archive.commit, archive.tree
+            ))
+        }
+    });
+    match checked {
+        Ok(members) => {
+            fs::rename(&partial, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!("oracles: fetched {}@{}", archive.repo, archive.commit);
+            Ok(members)
+        }
+        Err(error) => {
+            remove_partial(&partial);
+            Err(error)
+        }
     }
-    fs::rename(&partial, &path).map_err(|e| format!("{}: {e}", path.display()))?;
-    println!("oracles: fetched {}@{}", archive.repo, archive.commit);
-    Ok(bytes)
 }
 
-/// Writes the files of a gzipped tar under `into`, each without the archive's top directory.
-fn unpack(bytes: &[u8], into: &Path) -> Result<(), String> {
-    let files = read_tar_gz(bytes, &|_| true).map_err(|e| format!("{}: {e}", into.display()))?;
-    for (name, data) in files {
-        let Some((_, inside)) = name.split_once('/') else {
-            continue;
-        };
+/// Writes `members` under `into`.
+fn unpack(members: Members, into: &Path) -> Result<(), String> {
+    for (inside, data) in members {
         let to = into.join(inside);
         if let Some(parent) = to.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
@@ -298,8 +349,8 @@ fn build_ericw(
         fs::remove_dir_all(&tree).map_err(|e| format!("{}: {e}", tree.display()))?;
     }
     for archive in &pins.archive {
-        let bytes = fetch_archive(archive, cache, net)?;
-        unpack(&bytes, &tree.join(&archive.into))?;
+        let members = fetch_archive(archive, cache, net)?;
+        unpack(members, &tree.join(&archive.into))?;
     }
     let mut configure = Command::new("cmake");
     configure.arg("-S").arg(&tree).arg("-B").arg(&build).args([
@@ -334,14 +385,17 @@ fn run(exec: &dyn Exec, command: &mut Command, what: &str) -> Result<(), String>
     }
 }
 
-/// Compiles the room in `dir` with qbsp, then vis, then light of `set`, and checks that each
-/// succeeds and leaves a BSP29 file.
+/// Compiles the room in `dir`, emptied first, with qbsp, then vis, then light of `set`, and
+/// checks that each succeeds and leaves a BSP29 file.
 fn compile_room(
     root: &Path,
     exec: &dyn Exec,
     set: &[PathBuf; 3],
     dir: &Path,
 ) -> Result<bool, String> {
+    if dir.exists() {
+        fs::remove_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
     fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let map = dir.join("room.map");
     fs::copy(root.join(ROOM), &map).map_err(|e| format!("{ROOM}: {e}"))?;
@@ -355,11 +409,12 @@ fn compile_room(
             .map_err(|e| format!("cannot run {}: {e}", tool.display()))?;
         if !output.status.success() {
             println!(
-                "FAIL  {} {}: {}\n{}",
+                "FAIL  {} {}: {}\n{}{}",
                 tool.display(),
                 input.display(),
                 output.status,
-                String::from_utf8_lossy(&output.stdout)
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
             );
             return Ok(false);
         }

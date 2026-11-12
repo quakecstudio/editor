@@ -133,8 +133,6 @@ jobs:
       - name: Run the full differential VM suite
         run: cargo xtask differential --full
 
-  # P3-25 (DIFF-16.5): the server simulation differential on every map of LibreQuake's lite
-  # asset, on each OS.
   # P6-03: the map tool oracles, id's qbsp, vis and light from qutils and a pinned ericw-tools,
   # fetched by checksum and built here only, each compiling a sealed room (oracles/README.md,
   # "The map tool oracles"). ericw-tools needs CMake, TBB and Embree 4.
@@ -162,6 +160,8 @@ jobs:
       - name: Build the map tool oracles and compile the room
         run: cargo xtask oracles maps
 
+  # P3-25 (DIFF-16.5): the server simulation differential on every map of LibreQuake's lite
+  # asset, on each OS.
   sim-diff:
     name: Simulation differential (${{ matrix.os }})
     needs: night
