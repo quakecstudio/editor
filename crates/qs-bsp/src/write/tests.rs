@@ -165,6 +165,17 @@ fn bsp29_bounds_truncate_toward_zero() {
         [short(nodes + 8), short(nodes + 10), short(nodes + 12)],
         [-8, 7, 0]
     );
+    file.nodes[0].mins = [-32_768.9, 32_767.9, f32::NAN];
+    assert_eq!(
+        file.to_bytes(BspFormat::Bsp29),
+        Err(BspWriteError::TooWide(LumpId::Nodes)),
+        "NaN fits no short"
+    );
+    file.nodes[0].mins[2] = 0.0;
+    let bytes = file.to_bytes(BspFormat::Bsp29).unwrap();
+    let (nodes, _) = lump(&bytes, 5);
+    let short = |at: usize| i16::from_le_bytes(bytes[at..at + 2].try_into().unwrap());
+    assert_eq!([short(nodes + 8), short(nodes + 10)], [-32_768, 32_767]);
 }
 
 // spec BSP-23.5: a value BSP29's 16-bit field cannot hold is refused, naming the lump; BSP2
@@ -172,13 +183,15 @@ fn bsp29_bounds_truncate_toward_zero() {
 #[test]
 fn bsp29_refuses_values_past_16_bits() {
     type Change = fn(&mut BspFile);
-    let cases: [(LumpId, Change); 6] = [
+    let cases: [(LumpId, Change); 8] = [
         (LumpId::Nodes, |f| f.nodes[0].children[0] = 32_768),
         (LumpId::Nodes, |f| f.nodes[0].numfaces = 65_536),
         (LumpId::Clipnodes, |f| f.clipnodes[0].children[1] = -32_769),
         (LumpId::Leafs, |f| f.leafs[0].nummarksurfaces = 65_536),
         (LumpId::Marksurfaces, |f| f.marksurfaces = vec![65_536]),
         (LumpId::Edges, |f| f.edges = vec![[0, 65_536]]),
+        (LumpId::Nodes, |f| f.nodes[0].maxs[0] = 32_768.0),
+        (LumpId::Leafs, |f| f.leafs[0].mins[2] = -32_769.0),
     ];
     for (lump, change) in cases {
         let mut file = minimal();

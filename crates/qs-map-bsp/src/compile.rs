@@ -80,6 +80,7 @@ impl Run<'_> {
             choice,
             subdivide: self.subdivide,
             faults: self.limits.faults,
+            face_points: self.limits.face_points,
             warnings: core::cell::RefCell::new(Vec::new()),
         }
     }
@@ -133,7 +134,12 @@ impl Run<'_> {
                     self.warnings.push(Warning::NoValidBrushes);
                     let origin = source.origin;
                     Ok(Some(Built {
-                        tree: Tree::empty(origin, origin),
+                        // The head is padded as a built tree's is, so the model's bounds,
+                        // which draw_model unpads, are the origin.
+                        tree: Tree::empty(
+                            origin.map(|c| c - SIDESPACE - 1.0),
+                            origin.map(|c| c + SIDESPACE + 1.0),
+                        ),
                         mins: origin,
                         maxs: origin,
                         reach: ORIGIN,
@@ -141,7 +147,7 @@ impl Run<'_> {
                 }
             };
         }
-        let surfaces = set.csg_faces(self.planes)?;
+        let surfaces = set.csg_faces(self.planes, self.limits.face_points)?;
         let mins = set.mins.map(|c| c - SIDESPACE);
         let maxs = set.maxs.map(|c| c + SIDESPACE);
         let reach = each(set.maxs, set.mins, |high, low| high.abs().max(low.abs()));
@@ -257,13 +263,24 @@ impl Compiler {
     }
 
     /// The WAD path the map's world names (MAP-6.3), relative to the game directory, which the
-    /// caller reads and passes to [`Compiler::compile`].
+    /// caller reads and passes to [`Compiler::compile`]; the map read as the dialect reads it.
     ///
     /// # Errors
     ///
-    /// [`CompileError::Map`] when the map cannot be read.
-    pub fn wad_path(map: &[u8]) -> Result<Option<Vec<u8>>, CompileError> {
-        Ok(load_map_file(map)?.wad_path().map(<[u8]>::to_vec))
+    /// [`CompileError::Map`] or [`CompileError::Document`] when the map cannot be read.
+    pub fn wad_path(&self, map: &[u8]) -> Result<Option<Vec<u8>>, CompileError> {
+        Ok(self.read(map)?.wad_path().map(<[u8]>::to_vec))
+    }
+
+    /// The map as the dialect reads it (QBSP-14.1).
+    fn read(&self, map: &[u8]) -> Result<QbspMap, CompileError> {
+        Ok(match self.dialect {
+            Dialect::Id => load_map_file(map)?,
+            Dialect::Extended => {
+                let file = MapFile::parse(map).map_err(CompileError::Document)?;
+                QbspMap::from_map_file(&file)?
+            }
+        })
     }
 
     /// Compiles `map` with the textures of `wad`, as id's qbsp does (QBSP-1).
@@ -272,17 +289,11 @@ impl Compiler {
     ///
     /// The [`CompileError`] qbsp stops with.
     pub fn compile(&self, map: &[u8], wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
-        let mut qmap = match self.dialect {
-            Dialect::Id => load_map_file(map)?,
-            Dialect::Extended => {
-                let file = MapFile::parse(map).map_err(CompileError::Document)?;
-                QbspMap::from_map_file(&file)?
-            }
-        };
+        let mut qmap = self.read(map)?;
         qmap.number_models();
         let limits = self.dialect.limits();
         let mut planes = Planes::new(limits.planes);
-        let mut warnings = Vec::new();
+        let mut warnings: Vec<Warning> = qmap.warnings.iter().cloned().map(Warning::Map).collect();
         let mut run = Run {
             map: &qmap,
             planes: &mut planes,
@@ -308,11 +319,8 @@ impl Compiler {
                 })
             })
             .collect::<Result<_, _>>()?;
-        out.file.entities = match self.dialect {
-            Dialect::Id => qmap.entity_lump()?,
-            Dialect::Extended => qmap.entity_lump_unbounded(),
-        };
-        out.file.textures = textures(&qmap, wad)?;
+        out.file.entities = qmap.entity_lump()?;
+        out.file.textures = textures(&qmap, wad, limits.tables, &mut warnings)?;
         let bsp = match out.file.to_bytes(BspFormat::Bsp29) {
             Err(BspWriteError::TooWide(lump)) if limits.tables == Tables::Format => {
                 warnings.push(Warning::Bsp2(lump));
@@ -333,19 +341,23 @@ impl Compiler {
 /// The textures lump, `WriteMiptex`: a slot per texture the map uses and each animation frame
 /// the WAD holds, each lump copied from the WAD, -1 for one it lacks; empty with no WAD
 /// (MAP-6.3, MAP-6.8).
-fn textures(map: &QbspMap, wad: Option<&[u8]>) -> Result<Vec<u8>, CompileError> {
+fn textures(
+    map: &QbspMap,
+    wad: Option<&[u8]>,
+    tables: Tables,
+    warnings: &mut Vec<Warning>,
+) -> Result<Vec<u8>, CompileError> {
     let Some(bytes) = wad else {
         return Ok(Vec::new());
     };
-    let Ok(wad) = Wad::read(bytes) else {
-        return Ok(Vec::new());
-    };
+    let wad = Wad::read(bytes).map_err(CompileError::Wad)?;
     let names: Vec<&[u8]> = wad
         .lumps()
         .iter()
         .map(|lump| lump.name.as_bytes())
         .collect();
-    let (slots, _) = map.texture_slots(&names)?;
+    let (slots, missing) = map.texture_slots(&names)?;
+    warnings.extend(missing.into_iter().map(Warning::Map));
     let count = slots.len();
     let mut out = Vec::new();
     let as_i32 = |v: usize| {
@@ -367,7 +379,7 @@ fn textures(map: &QbspMap, wad: Option<&[u8]>) -> Result<Vec<u8>, CompileError> 
             }
             _ => offsets.push(-1),
         }
-        if header.saturating_add(data.len()) >= MAX_MAP_MIPTEX {
+        if tables.full(header.saturating_add(data.len()), MAX_MAP_MIPTEX) {
             return Err(CompileError::Limit("Textures exceeded MAX_MAP_MIPTEX"));
         }
     }

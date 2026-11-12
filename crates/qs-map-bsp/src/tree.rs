@@ -10,7 +10,7 @@ use crate::math::{
 };
 use crate::planes::{Plane, PlaneId, Planes, Side};
 use crate::portals::PortalId;
-use crate::winding::{ON_EPSILON, divide};
+use crate::winding::{ON_EPSILON, split_face};
 use crate::{CompileError, Contents, Face, Faults, Surface, Warning};
 
 /// What the head node's bounds add to the entity's on each side (QBSP-7.1).
@@ -92,6 +92,8 @@ pub(crate) struct Builder<'a> {
     pub(crate) choice: Choice,
     pub(crate) subdivide: f32,
     pub(crate) faults: Faults,
+    /// The most points a split face may have on a side (QBSP-3.5).
+    pub(crate) face_points: Option<usize>,
     /// The warnings building gives (QBSP-14.3).
     pub(crate) warnings: core::cell::RefCell<Vec<Warning>>,
 }
@@ -296,7 +298,7 @@ impl Builder<'_> {
                     normal: normalize(along),
                     dist,
                 };
-                let (front, back) = divide(&current.points, plane)?;
+                let (front, back) = split_face(&current.points, plane, self.face_points)?;
                 let (Some(front), Some(back)) = (front, back) else {
                     return Err(CompileError::SubdivideFailed);
                 };
@@ -448,7 +450,7 @@ impl Builder<'_> {
         let mut front_list = Vec::new();
         let mut back_list = Vec::new();
         for face in surface.faces.drain(..) {
-            let (front, back) = divide(&face.points, split)?;
+            let (front, back) = split_face(&face.points, split, self.face_points)?;
             if let Some(points) = front {
                 front_list.insert(
                     0,

@@ -1562,7 +1562,8 @@ layouts are BSP-1 to BSP-15's.
   the lump order is BSP-23.1's. id wrote no BSP2, so the order is ours; BSP-1.1's directory
   makes it immaterial to a reader.
 - **BSP-23.5** In a written BSP29, a node or leaf bound is the float converted to a 16-bit
-  integer toward zero, as qbsp assigns a float to a `short` (QBSP-13.5), and a value a 16-bit
-  field cannot hold (a signed node or clipnode child, plane number, side, edge count or texinfo;
-  an unsigned face range, marksurface range, marksurface or edge vertex) refuses the file,
-  naming its lump, where `BSP2` holds it in 32 bits.
+  integer toward zero, as qbsp assigns a float to a `short` (QBSP-13.5); a bound whose truncated
+  value no 16-bit integer holds, NaN included, and a value a 16-bit field cannot hold (a signed
+  node or clipnode child, plane number, side, edge count or texinfo; an unsigned face range,
+  marksurface range, marksurface or edge vertex) refuses the file, naming its lump, where `BSP2`
+  holds it in 32 bits.

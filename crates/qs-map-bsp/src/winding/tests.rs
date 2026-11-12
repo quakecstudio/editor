@@ -6,7 +6,8 @@
     reason = "test code: a failed unwrap or index is a failed test; the values are exact"
 )]
 
-use super::{KeepOn, PointSide, classify, clip, divide};
+use super::{KeepOn, PointSide, classify, clip, divide, split_face};
+use crate::CompileError;
 use crate::math::{Vec3, dot};
 use crate::planes::Plane;
 
@@ -130,4 +131,31 @@ fn dividing_gives_both_sides() {
         divide(&w, plane([0.0, 0.0, 1.0], -1.0)).unwrap(),
         (Some(w.clone()), None)
     );
+}
+
+// spec QBSP-3.5: a split face with more than MAXEDGES points on a side stops the run; with no
+// limit it is kept
+#[test]
+fn a_split_face_past_its_limit_stops() {
+    // An octagon cut across two edges: four corners and two new points on each side.
+    let octagon: Vec<Vec3> = vec![
+        [2.0, 0.0, 0.0],
+        [4.0, 0.0, 0.0],
+        [6.0, 2.0, 0.0],
+        [6.0, 4.0, 0.0],
+        [4.0, 6.0, 0.0],
+        [2.0, 6.0, 0.0],
+        [0.0, 4.0, 0.0],
+        [0.0, 2.0, 0.0],
+    ];
+    let cut = plane([1.0, 0.0, 0.0], 3.0);
+    assert_eq!(
+        split_face(&octagon, cut, Some(6)).unwrap(),
+        divide(&octagon, cut).unwrap()
+    );
+    assert_eq!(
+        split_face(&octagon, cut, Some(5)),
+        Err(CompileError::SplitFacePoints)
+    );
+    assert!(split_face(&octagon, cut, None).is_ok());
 }

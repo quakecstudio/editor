@@ -560,7 +560,7 @@ limits; we follow none of them, only BSP-17's file format.
   and up to 32767 texinfo, BSP29's signed 16-bit field.
 - **QBSP-14.2** A brush may have any number of faces and planes, and a grown brush any number
   of vertices and edges: QBSP-5.6's `MAX_FACES`, `MAX_HULL_POINTS` and `MAX_HULL_EDGES` do not
-  apply, nor does QBSP-2.5's `MAX_MAP_PLANES`.
+  apply, nor does QBSP-2.5's `MAX_MAP_PLANES`, nor QBSP-3.5's `MAXEDGES` on a split face.
 - **QBSP-14.3** A fault qbsp stops on is a warning, and the compile goes on: a face
   `CheckFace` refuses (QBSP-4.5) is kept as it is; a leaf whose faces disagree on their front
   contents (QBSP-7.6) takes the first face's; an entity with brushes none of which is loaded in

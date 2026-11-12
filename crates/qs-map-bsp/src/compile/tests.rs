@@ -10,6 +10,8 @@
 )]
 
 use qs_bsp::{Bsp, BspLoader, BspVersion};
+use qs_map::qbsp::QbspWarning;
+use qs_wad::write::WadBuilder;
 
 use super::{Compiled, Compiler};
 use crate::fixtures::{
@@ -196,7 +198,12 @@ fn extended_gives_an_empty_model_where_qbsp_stops() {
     );
     let compiled = compile(&spec, Dialect::Extended).unwrap();
     assert!(compiled.warnings.contains(&Warning::NoValidBrushes));
-    assert_eq!(read(&compiled).models.len(), 2);
+    let bsp = read(&compiled);
+    assert_eq!(bsp.models.len(), 2);
+    // The empty model's bounds are its origin, which the loader widens by a unit: never
+    // backwards.
+    let model = &bsp.models[1];
+    assert_eq!((model.mins, model.maxs), ([-1.0; 3], [1.0; 3]));
 }
 
 // spec QBSP-14.4: no MAX_MAP_ limit applies in the extended dialect, and a file whose values fit
@@ -253,4 +260,71 @@ fn the_player_is_in_an_empty_leaf() {
     let outside = ROOM_MAXS.map(|c| f32::from(i16::try_from(c + 64).unwrap()));
     let leaf = bsp.point_in_leaf(outside).unwrap();
     assert_eq!(bsp.leafs[leaf].contents, -2, "the outside is filled solid");
+}
+
+// spec QBSP-14.4: geometry past a 16-bit bound is written as BSP2 with a warning naming the lump
+#[test]
+fn far_geometry_is_written_as_bsp2() {
+    let mut spec = MapSpec::default();
+    spec.world
+        .push(BrushSpec::cube([40_000, 0, 0], [40_064, 64, 64], "far"));
+    let compiled = compile(&spec, Dialect::Extended).unwrap();
+    assert_eq!(read(&compiled).version, BspVersion::Bsp2);
+    assert!(
+        compiled
+            .warnings
+            .iter()
+            .any(|w| matches!(w, Warning::Bsp2(_)))
+    );
+}
+
+// spec MAP-6.8: a WAD that is not a WAD2 stops the compile, as TEX_InitFromWad does
+#[test]
+fn a_bad_wad_stops_the_compile() {
+    let map = map_text(&MapSpec::default());
+    let result = Compiler::default().compile(map.as_bytes(), Some(b"not a wad"));
+    assert!(matches!(result, Err(CompileError::Wad(_))), "{result:?}");
+    assert!(result.unwrap_err().to_string().contains("isn't a wadfile"));
+}
+
+// spec QBSP-14.1: what the map reader prints reaches the compile's warnings
+#[test]
+fn the_readers_warnings_are_kept() {
+    let mut spec = MapSpec::default();
+    spec.world_pairs
+        .push(("wad".to_owned(), "gfx/base.wad".to_owned()));
+    let map = map_text(&spec);
+    let wad = WadBuilder::new().to_bytes().unwrap();
+    let compiled = Compiler::default()
+        .compile(map.as_bytes(), Some(&wad))
+        .unwrap();
+    assert!(
+        compiled
+            .warnings
+            .iter()
+            .any(|w| matches!(w, Warning::Map(QbspWarning::TextureNotFound { .. }))),
+        "{:?}",
+        compiled.warnings
+    );
+}
+
+// spec QBSP-14.1: the WAD path is read in the compiler's dialect, so a Valve 220 map names one
+#[test]
+fn wad_path_reads_the_dialects_map() {
+    let spec = MapSpec {
+        form: Form::Valve,
+        world_pairs: vec![("wad".to_owned(), "gfx/base.wad".to_owned())],
+        ..MapSpec::default()
+    };
+    let map = map_text(&spec);
+    assert_eq!(
+        Compiler::default().wad_path(map.as_bytes()).unwrap(),
+        Some(b"gfx/base.wad".to_vec())
+    );
+    assert!(
+        Compiler::default()
+            .with_dialect(Dialect::Id)
+            .wad_path(map.as_bytes())
+            .is_err()
+    );
 }

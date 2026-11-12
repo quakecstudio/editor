@@ -33,7 +33,7 @@ fn compile_csg(brushes: Vec<BrushSpec>) -> (QbspMap, Planes, Vec<Surface>) {
         limits,
     )
     .unwrap();
-    let surfaces = set.csg_faces(&planes).unwrap();
+    let surfaces = set.csg_faces(&planes, limits.face_points).unwrap();
     (map, planes, surfaces)
 }
 

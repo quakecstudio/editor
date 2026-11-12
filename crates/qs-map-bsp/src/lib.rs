@@ -28,7 +28,7 @@ use qs_bsp::{
     BSP_CONTENTS_EMPTY, BSP_CONTENTS_LAVA, BSP_CONTENTS_SKY, BSP_CONTENTS_SLIME,
     BSP_CONTENTS_SOLID, BSP_CONTENTS_WATER, LumpId,
 };
-use qs_map::qbsp::QbspError;
+use qs_map::qbsp::{QbspError, QbspWarning};
 
 pub use compile::{Compiled, Compiler};
 
@@ -196,6 +196,8 @@ pub(crate) struct Limits {
     pub(crate) faults: Faults,
     /// Which limits bound the output's lumps (QBSP-14.4).
     pub(crate) tables: Tables,
+    /// The most points a split face may have on a side, `MAXEDGES` (QBSP-3.5, QBSP-14.2).
+    pub(crate) face_points: Option<usize>,
 }
 
 /// Which limits bound the output's lumps (QBSP-14.4).
@@ -238,6 +240,7 @@ impl Dialect {
                 planes: MAX_MAP_PLANES,
                 faults: Faults::Stop,
                 tables: Tables::Qbsp,
+                face_points: Some(MAXEDGES),
             },
             Self::Extended => Limits {
                 brush_faces: None,
@@ -247,6 +250,7 @@ impl Dialect {
                 planes: usize::MAX,
                 faults: Faults::Warn,
                 tables: Tables::Format,
+                face_points: None,
             },
         }
     }
@@ -271,6 +275,8 @@ pub enum Warning {
     NoValidBrushes,
     /// A value too wide for BSP29, so the file is written as `BSP2` (QBSP-14.4).
     Bsp2(LumpId),
+    /// What qbsp prints while reading the map or its textures (MAP-3.5, MAP-6.8).
+    Map(QbspWarning),
 }
 
 /// What stops qbsp, as its errors read.
@@ -310,6 +316,10 @@ pub enum CompileError {
     MixedContents,
     /// `SubdivideFace: didn't split the polygon` (QBSP-7.8).
     SubdivideFailed,
+    /// `SplitFace: numpoints > MAXEDGES` (QBSP-3.5).
+    SplitFacePoints,
+    /// `TEX_InitFromWad: <path> isn't a wadfile` (MAP-6.8).
+    Wad(qs_wad::WadError),
     /// A `MAX_MAP_` limit passed while writing, named (QBSP-13.10).
     Limit(&'static str),
     /// The BSP could not be written (BSP-23.3).
@@ -336,6 +346,8 @@ impl fmt::Display for CompileError {
             Self::NoValidBrushes => f.write_str("Entity with no valid brushes"),
             Self::MixedContents => f.write_str("Mixed face contents in leafnode"),
             Self::SubdivideFailed => f.write_str("SubdivideFace: didn't split the polygon"),
+            Self::SplitFacePoints => f.write_str("SplitFace: numpoints > MAXEDGES"),
+            Self::Wad(error) => write!(f, "TEX_InitFromWad: isn't a wadfile: {error}"),
             Self::Limit(name) => write!(f, "{name}"),
             Self::Write(error) => write!(f, "{error}"),
         }

@@ -9,7 +9,7 @@ use crate::brush::BrushSet;
 use crate::math::all;
 use crate::merge::merge_into;
 use crate::planes::{PlaneId, Planes, Side};
-use crate::winding::divide;
+use crate::winding::split_face;
 use crate::{CompileError, Contents, Face, Surface};
 
 /// Each face of `inside` cut by the stored plane `split`: the part on the side `outside_side`
@@ -21,6 +21,7 @@ fn clip_inside(
     outside_side: Side,
     precedence: Precedence,
     planes: &Planes,
+    face_points: Option<usize>,
 ) -> Result<Vec<Face>, CompileError> {
     let mut kept = Vec::new();
     let plane = planes.get(split);
@@ -33,7 +34,7 @@ fn clip_inside(
                 (Some(face), None)
             }
         } else {
-            let (front, back) = divide(&face.points, plane)?;
+            let (front, back) = split_face(&face.points, plane, face_points)?;
             let front = front.map(|points| Face {
                 points,
                 ..face.clone()
@@ -64,7 +65,11 @@ enum Precedence {
 impl BrushSet {
     /// The surfaces of a brush set: every face not inside another brush, merged on its plane,
     /// `CSGFaces` and `BuildSurfaces` (QBSP-6).
-    pub(crate) fn csg_faces(&self, planes: &Planes) -> Result<Vec<Surface>, CompileError> {
+    pub(crate) fn csg_faces(
+        &self,
+        planes: &Planes,
+        face_points: Option<usize>,
+    ) -> Result<Vec<Surface>, CompileError> {
         let mut valid: BTreeMap<PlaneId, Vec<Face>> = BTreeMap::new();
         for (index, b1) in self.brushes.iter().enumerate() {
             // `CopyFacesToOutside` adds each face to the front of the list.
@@ -98,6 +103,7 @@ impl BrushSet {
                         face.side,
                         precedence,
                         planes,
+                        face_points,
                     )?;
                 }
                 // `FreeInside`: a solid brush keeps its faces inside a liquid or sky, facing it.

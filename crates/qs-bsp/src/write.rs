@@ -267,19 +267,24 @@ impl Put<'_> {
         Ok(())
     }
 
-    /// Node or leaf bounds: 16-bit integers truncated toward zero in BSP29, floats in `BSP2`
-    /// (BSP-17.4, BSP-23.5).
+    /// Node or leaf bounds: 16-bit integers truncated toward zero in BSP29, refused when the
+    /// truncated value does not fit, floats in `BSP2` (BSP-17.4, BSP-23.5).
     #[expect(
         clippy::cast_possible_truncation,
         reason = "spec BSP-23.5: BSP29 bounds are the floats assigned to shorts, toward zero"
     )]
-    fn bounds(&mut self, values: &[f32]) {
+    fn bounds(&mut self, values: &[f32]) -> Result<(), BspWriteError> {
+        let range = f32::from(i16::MIN)..=f32::from(i16::MAX);
         for &value in values {
             match self.format {
-                BspFormat::Bsp29 => self.bytes(&(value as i16).to_le_bytes()),
+                BspFormat::Bsp29 if range.contains(&value.trunc()) => {
+                    self.bytes(&(value as i16).to_le_bytes());
+                }
+                BspFormat::Bsp29 => return Err(BspWriteError::TooWide(self.lump)),
                 BspFormat::Bsp2 => self.bytes(&value.to_le_bytes()),
             }
         }
+        Ok(())
     }
 }
 
@@ -318,8 +323,8 @@ impl Record for DiskNode {
         };
         put.ints(&[self.planenum]);
         put.signed(&self.children)?;
-        put.bounds(&self.mins);
-        put.bounds(&self.maxs);
+        put.bounds(&self.mins)?;
+        put.bounds(&self.maxs)?;
         put.unsigned(&[self.firstface, self.numfaces])
     }
 }
@@ -375,8 +380,8 @@ impl Record for DiskLeaf {
             lump: LumpId::Leafs,
         };
         put.ints(&[self.contents, self.visofs]);
-        put.bounds(&self.mins);
-        put.bounds(&self.maxs);
+        put.bounds(&self.mins)?;
+        put.bounds(&self.maxs)?;
         put.unsigned(&[self.firstmarksurface, self.nummarksurfaces])?;
         put.bytes(&self.ambient_level);
         Ok(())

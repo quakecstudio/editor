@@ -233,6 +233,9 @@ pub struct QbspMap {
     pub texinfo: Vec<QbspTexinfo>,
     /// What qbsp printed while reading.
     pub warnings: Vec<QbspWarning>,
+    /// What bounds its tables: qbsp's arrays when [`load_map_file`] read it, BSP29's fields when
+    /// [`QbspMap::from_map_file`] did (QBSP-14).
+    tables: Tables,
 }
 
 /// The world's keys a WAD path is read from, in order: `_wad`, then `wad` (MAP-6.3).
@@ -339,8 +342,9 @@ pub fn load_map_file(bytes: &[u8]) -> Result<QbspMap, QbspError> {
 
 /// What bounds a map's tables: qbsp's fixed-size arrays, or only the BSP29 fields that hold
 /// their indices (QBSP-14.2).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Tables {
+    #[default]
     Qbsp,
     Bsp29,
 }
@@ -360,7 +364,10 @@ impl QbspMap {
     ///
     /// The [`QbspError`] those functions stop with.
     pub fn from_map_file(file: &crate::MapFile) -> Result<Self, QbspError> {
-        let mut map = Self::default();
+        let mut map = Self {
+            tables: Tables::Bsp29,
+            ..Self::default()
+        };
         for source in &file.entities {
             let mut entity = QbspEntity {
                 line: source.line(),
@@ -377,6 +384,10 @@ impl QbspMap {
                         let mut faces: Vec<QbspFace> = Vec::new();
                         for face in &brush.faces {
                             let points = face.points().map(|point| point.map(to_f32));
+                            // `ParseBrush` finds the texture before it checks the plane.
+                            let name = face.texture();
+                            let name = name.get(..MAP_MAX_TEXTURE_NAME).unwrap_or(name);
+                            let miptex = map.find_miptex(name, Tables::Bsp29)?;
                             if faces.iter().any(|known| on_plane(&points, &known.plane)) {
                                 map.warnings
                                     .push(QbspWarning::DuplicatePlane { line: face.line() });
@@ -387,9 +398,6 @@ impl QbspMap {
                                     .push(QbspWarning::NoNormal { line: face.line() });
                                 break;
                             };
-                            let name = face.texture();
-                            let name = name.get(..MAP_MAX_TEXTURE_NAME).unwrap_or(name);
-                            let miptex = map.find_miptex(name, Tables::Bsp29)?;
                             let vecs = face.texvecs().map_or_else(TexVecs::default, |vecs| {
                                 vecs.map(|axis| axis.map(to_f32))
                             });
@@ -562,16 +570,10 @@ impl QbspMap {
     /// # Errors
     ///
     /// [`QbspError::PairTooLong`] for a pair that overflows qbsp's line (MAP-2.10), and
-    /// [`QbspError::EntityTextTooLong`] past [`MAP_MAX_ENTSTRING`].
+    /// [`QbspError::EntityTextTooLong`] past [`MAP_MAX_ENTSTRING`]; neither for a map
+    /// [`QbspMap::from_map_file`] read, whose lump is unbounded (QBSP-14.5).
     pub fn entity_lump(&self) -> Result<Vec<u8>, QbspError> {
-        self.entity_text(Tables::Qbsp)
-    }
-
-    /// The entity lump as [`QbspMap::entity_lump`] writes it, with no bound on a pair's line or
-    /// the text's length (QBSP-14.5).
-    #[must_use]
-    pub fn entity_lump_unbounded(&self) -> Vec<u8> {
-        self.entity_text(Tables::Bsp29).unwrap_or_default()
+        self.entity_text(self.tables)
     }
 
     fn entity_text(&self, tables: Tables) -> Result<Vec<u8>, QbspError> {
@@ -632,7 +634,11 @@ impl QbspMap {
                 }
                 // AddAnimatingTextures compares the name as the map spells it.
                 if lumps.contains(&name) && !names.contains(&name) {
-                    if names.len() == MAP_MAX_TEXINFO {
+                    let limit = match self.tables {
+                        Tables::Qbsp => MAP_MAX_TEXINFO,
+                        Tables::Bsp29 => BSP29_MAX_TEXINFO,
+                    };
+                    if names.len() == limit {
                         return Err(QbspError::TooManyMiptex);
                     }
                     names.push(name);

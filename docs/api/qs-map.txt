@@ -187,7 +187,6 @@ fn qs_map::linked::Transform::turns
 fn qs_map::qbsp::QbspEntity::set_key_value
 fn qs_map::qbsp::QbspEntity::value_for_key
 fn qs_map::qbsp::QbspMap::entity_lump
-fn qs_map::qbsp::QbspMap::entity_lump_unbounded
 fn qs_map::qbsp::QbspMap::from_map_file
 fn qs_map::qbsp::QbspMap::number_models
 fn qs_map::qbsp::QbspMap::texture_slots

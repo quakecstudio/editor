@@ -123,6 +123,25 @@ pub(crate) fn clip(
     Ok(divide(points, plane)?.0)
 }
 
+/// A face's parts in front of and behind `plane`, `SplitFace`: [`divide`], and a part of more
+/// than `limit` points stops the run (QBSP-3.5, QBSP-14.2).
+pub(crate) fn split_face(
+    points: &[Vec3],
+    plane: Plane,
+    limit: Option<usize>,
+) -> Result<Parts, CompileError> {
+    let parts = divide(points, plane)?;
+    if let Some(limit) = limit
+        && [&parts.0, &parts.1]
+            .into_iter()
+            .flatten()
+            .any(|part| part.len() > limit)
+    {
+        return Err(CompileError::SplitFacePoints);
+    }
+    Ok(parts)
+}
+
 /// A winding's parts in front of and behind a plane, either missing.
 pub(crate) type Parts = (Option<Vec<Vec3>>, Option<Vec<Vec3>>);
 
