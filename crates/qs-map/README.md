@@ -15,6 +15,11 @@ Reads and writes `.map` files, the text a level editor saves and a BSP compiler 
   number and keeps its warnings, planes and texinfo in single precision from `atoi` points,
   and `entity_lump`, `number_models` and `texture_slots` give the entity lump, the brush
   models' names and the textures lump's slots qbsp writes.
+- **Brush editing** (`brush_edit`, P6-08): `Brush::cuboid`, `split` by a plane, `subtract`,
+  `merge` into the convex hull and `move_vertex`, each giving brushes that are the solid behind
+  their faces (MAP-3.4), with every new face written through three of its corners, or a
+  `BrushError` when the result would have no volume. `Brush::is_valid` and `Brush::vertices`
+  check and list a brush's shape.
 
 The entity lump of a BSP is the same syntax without brushes, so `MapFile` also reads and edits
 a shipped map's entities, which `qs-bsp` writes back into the BSP or a `.ent` file (MAP-22).
