@@ -404,21 +404,42 @@ fn dithering_mixes_the_neighbouring_colours() {
     assert!(distinct(&dithered) >= 2);
 }
 
-/// The gradient's encoding, dithered, as committed.
-const GOLDEN: &[u8] = include_bytes!("gradient.golden");
+/// The gradient's encoding, dithered, as committed: bytes in hex, `#` starting a comment.
+const GOLDEN: &str = include_str!("gradient.hex");
+
+/// The bytes a `.hex` golden file holds.
+fn golden_bytes(text: &str) -> Vec<u8> {
+    text.lines()
+        .map(|line| line.split('#').next().unwrap_or_default())
+        .flat_map(str::split_whitespace)
+        .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+        .collect()
+}
 
 // spec WAD-7.1, WAD-7.3, WAD-7.6, WAD-7.7: the gradient's encoding is the one committed
 #[test]
 fn the_gradient_matches_its_golden_encoding() {
     let encoded = encode("gradient", &gradient(32), Dither::FloydSteinberg, None).unwrap();
     if std::env::var_os("QS_WRITE_GOLDEN").is_some() {
+        let header: String = GOLDEN
+            .lines()
+            .take_while(|line| line.starts_with('#'))
+            .map(|line| format!("{line}\n"))
+            .collect();
+        let rows: String = encoded
+            .chunks(40)
+            .map(|row| {
+                let bytes: Vec<String> = row.iter().map(|byte| format!("{byte:02x}")).collect();
+                format!("{}\n", bytes.join(" "))
+            })
+            .collect();
         std::fs::write(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/src/texture/gradient.golden"),
-            &encoded,
+            concat!(env!("CARGO_MANIFEST_DIR"), "/src/texture/gradient.hex"),
+            header + &rows,
         )
         .unwrap();
     }
-    assert_eq!(encoded, GOLDEN);
+    assert_eq!(encoded, golden_bytes(GOLDEN));
 }
 
 // spec WAD-5.1, WAD-7.1: a texture written to a WAD reads back byte for byte, its level 0 as
