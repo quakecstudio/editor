@@ -56,6 +56,11 @@ use qs_workbench::map_edit::{
     ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_workbench::map_edit::{
+    BrushClipParams, BrushCreateParams, BrushMergeParams, BrushParams, BrushVertexParams,
+    MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_SUBTRACT,
+    MAP_BRUSH_VERTEX,
+};
+use qs_workbench::map_edit::{
     EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
     MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams,
 };
@@ -103,6 +108,7 @@ use crate::icons::Icon;
 use crate::keymap::{self, Scope};
 use crate::map_editor::{DiskNotice, MapAction, MapEditor, ShowFilter};
 use crate::map_groups::GroupAction;
+use crate::map_tools::BrushAction;
 use crate::map_view::{self, MapView};
 use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
@@ -2050,6 +2056,7 @@ impl Shell {
                     }
                     resolved
                 }
+                MapAction::Brush(action) => self.brush_action(action),
                 MapAction::Compare => {
                     let compared: Result<Vec<MapDifference>, ShellError> =
                         self.attempt(MAP_COMPARE, &serde_json::json!({}));
@@ -2068,6 +2075,50 @@ impl Shell {
                 error.to_string()
             });
             self.map_editor.set_refused(refused);
+        }
+    }
+
+    /// Runs a brush edit as its `map.brush_*` command, on the commands' grid.
+    fn brush_action(&mut self, action: BrushAction) -> Result<serde_json::Value, ShellError> {
+        match action {
+            BrushAction::Create(min, max) => self.attempt(
+                MAP_BRUSH_CREATE,
+                &BrushCreateParams {
+                    entity: None,
+                    min,
+                    max,
+                    texture: None,
+                    grid: None,
+                },
+            ),
+            BrushAction::Clip(entity, brush, points, keep) => self.attempt(
+                MAP_BRUSH_CLIP,
+                &BrushClipParams {
+                    entity,
+                    brush,
+                    points,
+                    keep,
+                },
+            ),
+            BrushAction::Vertex(entity, brush, from, to) => self.attempt(
+                MAP_BRUSH_VERTEX,
+                &BrushVertexParams {
+                    entity,
+                    brush,
+                    from,
+                    to,
+                    grid: None,
+                },
+            ),
+            BrushAction::Subtract(entity, brush) => {
+                self.attempt(MAP_BRUSH_SUBTRACT, &BrushParams { entity, brush })
+            }
+            BrushAction::Merge(entity, brushes) => {
+                self.attempt(MAP_BRUSH_MERGE, &BrushMergeParams { entity, brushes })
+            }
+            BrushAction::Delete(entity, brush) => {
+                self.attempt(MAP_BRUSH_DELETE, &BrushParams { entity, brush })
+            }
         }
     }
 
