@@ -4,7 +4,9 @@
     clippy::unwrap_used,
     clippy::indexing_slicing,
     clippy::panic,
-    reason = "test code: a failed unwrap or index, or a wrong variant, is a failed test"
+    clippy::float_cmp,
+    reason = "test code: a failed unwrap or index, or a wrong variant, is a failed test; the \
+              normals and axes compared are exact"
 )]
 
 use proptest::prelude::*;
@@ -257,17 +259,23 @@ fn a_vertex_move_that_loses_a_corner_is_refused() {
     ));
 }
 
-/// A Valve 220 surface whose axes fit the floor.
-fn floor_valve() -> Surface {
+/// A Valve 220 surface with axes `s` and `t`, shifted by 8 and 4.
+fn valve(s: [f64; 3], t: [f64; 3]) -> Surface {
     Surface {
         texture: b"rock".to_vec(),
         texdef: TexDef::Valve {
-            s: [1.0, 0.0, 0.0, 8.0],
-            t: [0.0, -1.0, 0.0, 4.0],
-            rotate: 0.0,
+            s: [s[0], s[1], s[2], 8.0],
+            t: [t[0], t[1], t[2], 4.0],
+            rotate: 45.0,
             scale: [1.0, 1.0],
         },
     }
+}
+
+/// A Valve 220 surface whose axes lie in the floor, turned 45 degrees from its paraxial ones.
+fn floor_valve() -> Surface {
+    let half = core::f64::consts::FRAC_1_SQRT_2;
+    valve([half, half, 0.0], [half, -half, 0.0])
 }
 
 // spec MAP-4.2: a new face painted with Valve 220 axes that do not lie in its plane takes its
@@ -291,7 +299,38 @@ fn valve_axes_fit_each_new_face() {
                 "the floor and ceiling keep theirs"
             );
         }
+        if normal == [1.0, 0.0, 0.0] {
+            assert_eq!(
+                *face.texdef(),
+                valve([0.0, 1.0, 0.0], [0.0, 0.0, -1.0]).texdef,
+                "the west wall row of the base axes, rotation and scale kept"
+            );
+        }
     }
+    // An axis leaning out of the plane by exactly IN_PLANE does not lie in it.
+    let leaning = valve([1.0, 0.0, super::IN_PLANE], [0.0, -1.0, 0.0]);
+    let brush = Brush::cuboid([0.0; 3], [64.0; 3], &leaning).unwrap();
+    let top = brush
+        .faces
+        .iter()
+        .find(|face| face.plane().unwrap().normal == [0.0, 0.0, 1.0])
+        .unwrap();
+    assert_eq!(
+        *top.texdef(),
+        valve([1.0, 0.0, 0.0], [0.0, -1.0, 0.0]).texdef
+    );
+}
+
+// No spec statement: P6-08: a brush reaching half the reach of a base polygon is not taken as
+// bounded, one just inside it is
+#[test]
+fn a_brush_at_the_reach_is_not_bounded() {
+    let half = super::POLYGON_REACH / 2.0;
+    assert!(Brush::cuboid([0.0; 3], [half - 8.0, 8.0, 8.0], &surface()).is_ok());
+    assert!(matches!(
+        Brush::cuboid([0.0; 3], [half, 8.0, 8.0], &surface()),
+        Err(BrushError::Degenerate)
+    ));
 }
 
 // No spec statement: P6-08: a face a brush edit cannot write is a map error, its cause kept
