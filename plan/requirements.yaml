@@ -10,7 +10,7 @@
 # design_doc_sha256 is the SHA-256 of docs/design/design-doc.md (LF line endings) that these
 # requirements were last reviewed against. plan/check.py fails when the design doc changes until
 # the requirements are reviewed and the new hash, which the failure prints, is recorded here.
-design_doc_sha256: 29da66243bc81ab9e21fb2e7ced2c4b4d7da152f6439425574ac8ee65093be78
+design_doc_sha256: d660c795397a448bcbd9c979beafb89a5a2d5feb80a9d66ffe8e269dd5f0d6ec
 
 sections:
   - id: GOAL
@@ -177,9 +177,9 @@ sections:
       - {id: MAP-5, kind: stated, text: "WAD2 texture browser with palette-correct preview and usage counts"}
       - {id: MAP-6, kind: stated, text: "Read and write .map (standard and Valve 220); write BSP29, BSP2 and .lit"}
       - {id: MAP-7, kind: stated, text: "Diagnostics: leak path drawn in 3D, missing textures, unknown classnames, keys and targets"}
-      - {id: MAP-8, kind: stated, text: "qmap-bsp: .map to BSP (replacing qbsp)"}
-      - {id: MAP-9, kind: stated, text: "qmap-vis: potentially visible set"}
-      - {id: MAP-10, kind: stated, text: "qmap-light: lightmaps including coloured light (.lit)"}
+      - {id: MAP-8, kind: stated, text: "qs-map-bsp: .map to BSP (replacing qbsp)"}
+      - {id: MAP-9, kind: stated, text: "qs-map-vis: potentially visible set"}
+      - {id: MAP-10, kind: stated, text: "qs-map-light: lightmaps including coloured light (.lit)"}
       - {id: MAP-11, kind: stated, text: "Map compilers ported from id's quake-tools and checked in CI against id's tools and ericw-tools, neither shipped"}
       - {id: MAP-12, kind: stated, text: "Entity-only changes reach the running game with no recompile"}
       - {id: MAP-13, kind: stated, text: "Play from here: fast compile (no vis, quick light), player spawned at the camera"}
@@ -202,8 +202,8 @@ sections:
       - {id: MAP-30, kind: implied, text: "The map editor matches or exceeds TrenchBroom on every feature its manual lists, shown feature by feature"}
       - {id: MAP-31, kind: implied, text: "A map outline: every entity, group and layer in a tree, selected and framed without flying to it"}
       - {id: MAP-32, kind: implied, text: "Maps, WADs and QuakeC changed by another program are noticed and reloaded, and unsaved edits are never overwritten without asking"}
-      - {id: MAP-33, kind: implied, text: "Prefabs: reusable pieces kept as .map files, placed from a browser, and external map instances drawn in place and compiled by qmap-bsp"}
-      - {id: MAP-34, kind: implied, text: "Lights previewed in the map view from their keys: falloff radius, colour and spotlight cones, as qmap-light reads them"}
+      - {id: MAP-33, kind: implied, text: "Prefabs: reusable pieces kept as .map files, placed from a browser, and external map instances drawn in place and compiled by qs-map-bsp"}
+      - {id: MAP-34, kind: implied, text: "Lights previewed in the map view from their keys: falloff radius, colour and spotlight cones, as qs-map-light reads them"}
 
   - id: QA
     title: Quality, testing and release

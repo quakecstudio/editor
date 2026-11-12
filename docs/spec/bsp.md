@@ -1538,3 +1538,32 @@ Each statement quotes QS and says what `qs-bsp` does. Writing version 30 is not 
 See [`vectors/bsp/`](vectors/bsp/README.md), "Half-Life's version 30": `version-30` (BSP-22.1),
 `valve-palette`, `valve-palette-past` and `valve-palette-half` (BSP-22.2), `valve-rgb` (BSP-22.3), `valve-sky`
 (BSP-22.4), `valve-external` (BSP-22.5).
+
+## BSP-23 Writing BSP29 and BSP2
+
+**Source:** `qutils/COMMON/BSPFILE.C`, `WriteBSPFile`, `AddLump` (id-Software/Quake-Tools@
+`c0d1b91c74eb654365ac7755bc837e497caaca73`, read for description only, P4-22); the records'
+layouts are BSP-1 to BSP-15's.
+
+### Behaviour
+
+- **BSP-23.1** A written BSP29 is the 124-byte header, version 29 and fifteen lump entries
+  (BSP-1.1), then the lumps in the order `WriteBSPFile` adds them: planes, leafs, vertexes,
+  nodes, texinfo, faces, clipnodes, marksurfaces, surfedges, edges, models, lighting,
+  visibility, entities and textures. Each record is little-endian, as BSP-1 to BSP-15 read it.
+- **BSP-23.2** Each lump's entry gives its offset and its length, and its bytes are followed by
+  NUL bytes to a multiple of four, as `AddLump` writes `(len+3)&~3` bytes; the next lump starts
+  after them.
+- **BSP-23.3** A file whose size, an offset or a length would not fit a signed 32-bit integer is
+  refused.
+- **BSP-23.4** A written `BSP2` is BSP-23.1 to BSP-23.3 with the version field `BSP2`
+  (BSP-17.1) and the nodes, clipnodes, edges, faces, leaves and marksurfaces in BSP-17's
+  `dl2node_t`, `dlclipnode_t`, `dledge_t`, `dlface_t`, `dl2leaf_t` and `unsigned int` layouts;
+  the lump order is BSP-23.1's. id wrote no BSP2, so the order is ours; BSP-1.1's directory
+  makes it immaterial to a reader.
+- **BSP-23.5** In a written BSP29, a node or leaf bound is the float converted to a 16-bit
+  integer toward zero, as qbsp assigns a float to a `short` (QBSP-13.5); a bound whose truncated
+  value no 16-bit integer holds, NaN included, and a value a 16-bit field cannot hold (a signed
+  node or clipnode child, plane number, side, edge count or texinfo; an unsigned face range,
+  marksurface range, marksurface or edge vertex) refuses the file, naming its lump, where `BSP2`
+  holds it in 32 bits.
