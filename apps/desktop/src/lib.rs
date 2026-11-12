@@ -30,6 +30,7 @@ mod map_browser;
 pub mod map_editor;
 mod map_fields;
 mod map_groups;
+mod map_outline;
 mod map_scene;
 pub mod map_view;
 #[cfg(target_os = "macos")]

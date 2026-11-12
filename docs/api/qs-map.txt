@@ -141,6 +141,7 @@ fn qs_map::lexer::map_text
 fn qs_map::linked::ContainerId::get
 fn qs_map::linked::ContainerId::new
 fn qs_map::linked::Entity::container
+fn qs_map::linked::Entity::group
 fn qs_map::linked::Entity::layer
 fn qs_map::linked::Entity::layer_settings
 fn qs_map::linked::Entity::set_layer_setting
