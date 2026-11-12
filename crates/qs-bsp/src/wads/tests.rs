@@ -39,7 +39,8 @@ fn the_wad_key_is_read_as_mod_load_wad_files_reads_it() {
     assert_eq!(world(""), None);
 }
 
-// spec WAD3-4.2: each name between `;`s is its base with `.wad` added, then under `gfx/`; a
+// spec WAD3-4.2: each name between `;`s is its base with `.wad` added unless it ends in it,
+// then under `gfx/`; a
 // base of fewer than 2 bytes is `?model?`; an empty name ends the list
 #[test]
 fn each_name_gives_its_two_files() {
@@ -57,6 +58,10 @@ fn each_name_gives_its_two_files() {
         ]
     );
     assert_eq!(files("x.wad")[0][0], "?model?.wad");
+    // A base already ending in `.wad` (`COM_AddExtension`, case kept), and one ending in a dot.
+    assert_eq!(files("textures/foo.wad.bak")[0][0], "foo.wad");
+    assert_eq!(files("foo.WAD.bak")[0][0], "foo.WAD.wad");
+    assert_eq!(files("foo.wad..x")[0][0], "foo.wad..wad");
     assert_eq!(
         files("dir.v2/name")[0][0],
         "?model?.wad",

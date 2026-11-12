@@ -74,6 +74,13 @@ pub const WAD_MIPLEVELS: usize = 4;
 /// Bytes in a [`MipTexHeader`]: a 16-byte name, two sizes and four offsets.
 pub const WAD_MIPTEX_HEADER_SIZE: usize = 40;
 
+/// The pixels of mip level 0 that [`WAD_MIP_BYTES`] bytes over all four levels go with: id's
+/// `width * height / 64 * 85` (BSP-4.5, WAD3-3.3).
+pub const WAD_MIP_PIXELS: usize = 64;
+/// The bytes all four mip levels take for every [`WAD_MIP_PIXELS`] pixels of level 0:
+/// 64 + 16 + 4 + 1 (BSP-4.5, WAD3-3.3).
+pub const WAD_MIP_BYTES: usize = 85;
+
 /// Where the header's `numlumps` and `infotableofs` lie, after the four-byte magic (WAD-1.1).
 const HEADER_NUMLUMPS: usize = 4;
 const HEADER_INFOTABLEOFS: usize = 8;

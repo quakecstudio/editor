@@ -131,7 +131,9 @@ WAD2 or WAD3, as this section says. Integers are little-endian, read through `Li
 - **WAD3-4.2** `W_LoadWadList` splits the value at `;` and, for each name, stopping at an
   empty one (`for (name = newnames; name && *name;)`), takes its base, `COM_FileBase`: the
   bytes between the last `/` or `\` and the last `.`, or `?model?` when that is shorter than
-  2 bytes; adds `.wad`; and opens that file through the search path, else the same name under
+  2 bytes; adds `.wad` unless that base already ends in it,
+  `if (strcmp(COM_FileGetExtension(path), extension + 1) != 0)` in `COM_AddExtension`, where
+  `COM_FileGetExtension` is the text after the last `.` that is not the last byte; and opens that file through the search path, else the same name under
   `gfx/` (`memcpy (filename, "gfx/", 4);`), each within `MAX_QPATH`. A file that does not open
   or is not used (WAD3-1) is skipped. Each WAD it uses goes to the front of the list
   (`wad->next = wads; wads = wad;`), so `W_GetLumpinfoList` searches the last one named first.

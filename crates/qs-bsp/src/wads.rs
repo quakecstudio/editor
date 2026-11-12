@@ -15,9 +15,6 @@ const SIGNED_CHAR_NEGATIVE: u8 = 0x80;
 /// What `COM_FileBase` gives for a name with too short a base.
 const NO_BASE: &[u8] = b"?model?";
 
-/// The `wad` key of the first entity of `entities`, as `Mod_LoadWadFiles` reads it (WAD3-4.1):
-/// the first key that is `wad` once a leading `_` and any trailing spaces are removed; `None`
-/// when the text does not parse that far or has no such key.
 /// What `COM_ParseEx` does with a token longer than `com_token`, its `cpe_mode_t`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Overflow {
@@ -27,6 +24,9 @@ enum Overflow {
     AllowTrunc,
 }
 
+/// The `wad` key of the first entity of `entities`, as `Mod_LoadWadFiles` reads it (WAD3-4.1):
+/// the first key that is `wad` once a leading `_` and any trailing spaces are removed; `None`
+/// when the text does not parse that far or has no such key.
 #[must_use]
 pub fn wad_key(entities: &[u8]) -> Option<Vec<u8>> {
     let mut at = 0;
@@ -55,8 +55,8 @@ pub fn wad_key(entities: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// The files `W_LoadWadList` tries for the `wad` key's `value`, in the key's order (WAD3-4.2):
-/// for each name between `;`s, its base with `.wad` added, then the same under `gfx/`. An
-/// empty name ends the list.
+/// for each name between `;`s, its base with `.wad` added unless it ends in `.wad` already,
+/// then the same under `gfx/`. An empty name ends the list.
 #[must_use]
 pub fn wad_files(value: &[u8]) -> Vec<[Vec<u8>; 2]> {
     let mut out = Vec::new();
@@ -65,7 +65,17 @@ pub fn wad_files(value: &[u8]) -> Vec<[Vec<u8>; 2]> {
             break;
         }
         let mut file = file_base(name);
-        file.extend_from_slice(b".wad");
+        // `COM_AddExtension`: only when `COM_FileGetExtension`, the text after the last `.`
+        // that is not the last byte, is not `wad`.
+        let extension = file
+            .len()
+            .checked_sub(1)
+            .and_then(|last| file.get(..last)?.iter().rposition(|&byte| byte == b'.'))
+            .and_then(|dot| file.get(dot.saturating_add(1)..))
+            .unwrap_or_default();
+        if extension != b"wad" {
+            file.extend_from_slice(b".wad");
+        }
         file.truncate(MAX_QPATH - 1);
         let mut gfx = b"gfx/".to_vec();
         gfx.extend_from_slice(&file);

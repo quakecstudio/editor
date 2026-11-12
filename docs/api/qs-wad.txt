@@ -8,6 +8,8 @@ const qs_wad::WAD_HEADER_SIZE
 const qs_wad::WAD_MAGIC
 const qs_wad::WAD_MIPLEVELS
 const qs_wad::WAD_MIPTEX_HEADER_SIZE
+const qs_wad::WAD_MIP_BYTES
+const qs_wad::WAD_MIP_PIXELS
 const qs_wad::WAD_NAME_SIZE
 const qs_wad::WAD_TYP_LABEL
 const qs_wad::WAD_TYP_MIPTEX

@@ -14,7 +14,7 @@ use core::fmt;
 use crate::{
     ENTRY_COMPRESSION, ENTRY_DISKSIZE, ENTRY_NAME, ENTRY_SIZE, ENTRY_TYPE, HEADER_INFOTABLEOFS,
     HEADER_NUMLUMPS, LumpName, WAD_ENTRY_SIZE, WAD_HEADER_SIZE, WAD_MAGIC, WAD_MIPTEX_HEADER_SIZE,
-    WAD_NAME_SIZE, w_cleanup_name,
+    WAD_NAME_SIZE, le_i32, w_cleanup_name,
 };
 
 /// The four bytes a WAD3 file starts with, QuakeSpasm's `WADID_VALVE` (WAD3-1.1).
@@ -23,10 +23,6 @@ pub const WAD3_MAGIC: [u8; 4] = *b"WAD3";
 /// A texture's width and height must be multiples of 16: `Texture %s (%d x %d) is not 16
 /// aligned` (WAD3-3).
 const ALIGN_MASK: u32 = 15;
-/// `pixels / 64 * 85`: the bytes of all four mip levels for every 64 pixels of level 0
-/// (WAD3-3.3).
-const MIP_PIXELS: i64 = 64;
-const MIP_BYTES: i64 = 85;
 /// The bytes of one colour of a WAD3 palette, `colors * 3` (WAD3-3.3).
 const COLOR_BYTES: i64 = 3;
 
@@ -243,8 +239,11 @@ impl<'a> MapWad<'a> {
         if i32::try_from(pixels).is_err() {
             return None;
         }
-        let mips = pixels / MIP_PIXELS * MIP_BYTES;
-        let pixels_pos = entry.filepos + i64::from(WAD_MIPTEX_HEADER_SIZE_I32);
+        let mips = i64::try_from(crate::WAD_MIP_PIXELS)
+            .ok()
+            .zip(i64::try_from(crate::WAD_MIP_BYTES).ok())
+            .map(|(per, bytes)| pixels / per * bytes)?;
+        let pixels_pos = entry.filepos + i64::try_from(WAD_MIPTEX_HEADER_SIZE).ok()?;
         let (mut palette, lump_bytes) = if pal {
             // WAD3-3.3: the count when `pixels / 64 * 85 + 2 <= info->size`.
             let mut palette = 2_i64;
@@ -299,20 +298,9 @@ impl<'a> MapWad<'a> {
     }
 }
 
-/// [`WAD_MIPTEX_HEADER_SIZE`] as the 32-bit offsets add it.
-const WAD_MIPTEX_HEADER_SIZE_I32: i32 = 40;
-
 /// A file's length as QuakeSpasm's `long` arithmetic takes it.
 fn len_i64(bytes: &[u8]) -> i64 {
     i64::try_from(bytes.len()).unwrap_or(i64::MAX)
-}
-
-/// The signed little-endian 32-bit integer at `offset`, or 0 past the end of `bytes`.
-fn le_i32(bytes: &[u8], offset: usize) -> i32 {
-    bytes
-        .get(offset..offset.saturating_add(size_of::<i32>()))
-        .and_then(|b| <[u8; 4]>::try_from(b).ok())
-        .map_or(0, i32::from_le_bytes)
 }
 
 #[cfg(test)]

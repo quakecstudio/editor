@@ -278,6 +278,44 @@ fn an_external_texture_comes_from_its_wad() {
     );
 }
 
+// spec WAD3-4.3: the WAD searched first that names the texture decides: an entry there that is
+// no texture leaves the BSP's own, with no later WAD tried (`Missing texture %s in WAD, using
+// BSP.`)
+#[test]
+fn the_first_wad_naming_a_texture_decides() {
+    let good = Vec::leak(wad3_wall(&[1, 0, 1, 1, 1]));
+    let mut qpic = wad3_wall(&[1, 0, 1, 1, 1]);
+    let ty = qpic.len() - 16 - 4;
+    qpic[ty] = qs_wad::WAD_TYP_QPIC;
+    let qpic = Vec::leak(qpic);
+    let wads = [
+        qs_wad::MapWad::read(good).unwrap(),
+        qs_wad::MapWad::read(qpic).unwrap(),
+    ];
+    let bytes = Vec::leak(valve_texture(b"wall", &[7; 300], true).build());
+    let bsp = Bsp::read_with_wads(bytes, BspLoader::default(), &wads).unwrap();
+    let texture = bsp.textures[0].as_ref().unwrap();
+    assert_eq!(texture.name, b"wall", "the BSP's own");
+    assert_eq!(texture.pixels, &[7; 256][..]);
+}
+
+// spec WAD3-4.3, BSP-20.5: the WAD's texture replaces an external one before the BSP's copy is
+// measured, so a BSP header whose size does not fit an int loads when a WAD has the texture
+#[test]
+fn a_wad_texture_needs_no_good_bsp_copy() {
+    let wads = [qs_wad::MapWad::read(Vec::leak(wad3_wall(&[1, 0, 1, 1, 1]))).unwrap()];
+    let mut spec = valve_texture(b"wall", &[], true);
+    if let Some(Some(texture)) = spec.textures.as_mut().and_then(|t| t.first_mut()) {
+        texture.width = 65_536;
+        texture.height = 32_768;
+    }
+    let bytes = Vec::leak(spec.build());
+    assert!(Bsp::read_with_wads(bytes, BspLoader::default(), &[]).is_err());
+    let bsp = Bsp::read_with_wads(bytes, BspLoader::default(), &wads).unwrap();
+    let texture = bsp.textures[0].as_ref().unwrap();
+    assert_eq!((texture.width, texture.height), (16, 16));
+}
+
 /// A WAD file: `magic`, then each texture `(name, type, pixel, trailer)` 16 by 16, cut by
 /// `cut` bytes at the end.
 fn wad_file(magic: &[u8; 4], textures: &[(&[u8], u8, u8, &[u8])], cut: usize) -> Vec<u8> {

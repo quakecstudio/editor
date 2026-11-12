@@ -48,10 +48,10 @@ pub const BSP_2PSB_VERSION: i32 = i32::from_le_bytes(*b"2PSB");
 pub const BSP_BSP2_VERSION: i32 = i32::from_le_bytes(*b"BSP2");
 /// The pixels of mip level 0 that [`BSP_MIP_BYTES`] bytes over all four levels go with: id's
 /// `width * height / 64 * 85` (BSP-4.5).
-pub const BSP_MIP_PIXELS: usize = 64;
+pub const BSP_MIP_PIXELS: usize = qs_wad::WAD_MIP_PIXELS;
 /// The bytes all four mip levels take for every [`BSP_MIP_PIXELS`] pixels of level 0:
 /// 64 + 16 + 4 + 1 (BSP-4.5).
-pub const BSP_MIP_BYTES: usize = 85;
+pub const BSP_MIP_BYTES: usize = qs_wad::WAD_MIP_BYTES;
 /// The bytes of one light sample of a Half-Life BSP: red, green and blue (BSP-22.3).
 pub const BSP_VALVE_SAMPLE_BYTES: usize = 3;
 /// The bytes of one colour of a Half-Life texture's palette: red, green and blue (BSP-22.2).
@@ -613,34 +613,16 @@ pub struct Texture<'a> {
     /// Whether the name starts with `sky`: case included for WinQuake and GLQuake (BSP-4.7),
     /// in any case for the FitzQuake lineage (BSP-20.6).
     pub sky: bool,
-    /// For a Half-Life BSP, the bytes after the four mip levels that QuakeSpasm keeps as the
-    /// texture's palette: a 16-bit colour count, then that many RGB triples, cut at the end of
-    /// the lump (BSP-22.2); `None` for every other version.
+    /// The texture's own palette, a 16-bit colour count, then that many RGB triples: in a
+    /// Half-Life BSP the bytes after its four mip levels, cut at the end of the lump
+    /// (BSP-22.2), and for an external texture taken from a WAD3 palette lump that lump's
+    /// (WAD3-3.3), in a BSP of any version; `None` otherwise, a WAD2's texture included.
     pub palette: Option<&'a [u8]>,
     /// Its animation, for a `+` texture in a cycle (BSP-4.8 to BSP-4.10).
     pub animation: Option<Animation>,
 }
 
-impl<'a> Texture<'a> {
-    /// The texture QuakeSpasm's `Mod_LoadWadTexture` puts in place of the texture when its first
-    /// offset is 0: the first of `wads`, last named first, that has it (WAD3-3, WAD3-4.3).
-    fn in_wads(&self, wads: &[qs_wad::MapWad<'a>]) -> Option<Self> {
-        if self.offsets.first() != Some(&0) {
-            return None;
-        }
-        let found = wads.iter().rev().find_map(|wad| wad.texture(&self.name))?;
-        Some(Self {
-            name: found.name,
-            width: found.width,
-            height: found.height,
-            offsets: self.offsets,
-            pixels: found.pixels,
-            palette: found.palette,
-            sky: false,
-            animation: None,
-        })
-    }
-
+impl Texture<'_> {
     /// Mip level `level`'s pixels, `(width >> level) * (height >> level)` bytes at
     /// `offsets[level]`, when they lie in [`Texture::pixels`]. A texture the FitzQuake lineage
     /// read has only level 0 (BSP-20.5); an external one's (offset 0) starts its pixels, which
@@ -1218,17 +1200,12 @@ impl<'a> Bsp<'a> {
                 textures.push(None);
                 continue;
             }
-            let version = reader.version;
-            let mut texture = load_texture(lump, offset, index, loader, version)?;
-            if loader.fitz()
-                && let Some(found) = texture.as_ref().and_then(|t| t.in_wads(wads))
-            {
-                texture = Some(Texture {
-                    sky: version != BspVersion::Valve && fitz_sky(&found.name),
-                    ..found
-                });
-            }
-            textures.push(texture);
+            let source = TextureSource {
+                loader,
+                version: reader.version,
+                wads,
+            };
+            textures.push(load_texture(lump, offset, index, source)?);
         }
         sequence_animations(&mut textures)?;
         self.textures = textures;
@@ -2002,15 +1979,28 @@ fn length<const N: usize>(vector: [f32; N]) -> f32 {
     f64::from(sum).sqrt() as f32
 }
 
-/// Loads the texture at `offset` in the textures lump (BSP-4.3 to BSP-4.5), or leaves its slot
-/// empty where the FitzQuake lineage does (BSP-20.3).
-fn load_texture(
-    lump: &[u8],
-    offset: i32,
-    index: usize,
+/// Where [`load_texture`] reads a texture from: the loader, the BSP's version and the WADs
+/// its external textures come from.
+#[derive(Clone, Copy)]
+struct TextureSource<'w, 'a> {
     loader: BspLoader,
     version: BspVersion,
-) -> Result<Option<Texture<'_>>, BspError> {
+    wads: &'w [qs_wad::MapWad<'a>],
+}
+
+/// Loads the texture at `offset` in the textures lump (BSP-4.3 to BSP-4.5), or leaves its slot
+/// empty where the FitzQuake lineage does (BSP-20.3).
+fn load_texture<'a>(
+    lump: &'a [u8],
+    offset: i32,
+    index: usize,
+    source: TextureSource<'_, 'a>,
+) -> Result<Option<Texture<'a>>, BspError> {
+    let TextureSource {
+        loader,
+        version,
+        wads,
+    } = source;
     let bad = BspError::BadTexture { index };
     let start = usize::try_from(offset).map_err(|_| bad.clone())?;
     let header = lump
@@ -2026,7 +2016,8 @@ fn load_texture(
     let name = header.name.get(..name_len).unwrap_or_default().to_vec();
     let (width, height, offsets) = (header.width, header.height, header.offsets);
     if loader.fitz() {
-        return fitz_texture(lump, start, (name, width, height, offsets), index, version);
+        let header = (name, width, height, offsets);
+        return fitz_texture(lump, start, header, index, (version, wads));
     }
     if width & 15 != 0 || height & 15 != 0 {
         return Err(BspError::NotAligned { name });
@@ -2064,16 +2055,40 @@ fn load_texture(
 /// with no pixels leaves its slot empty, any size loads, and only level 0's
 /// `width * height` bytes are kept, cut short at the end of the lump (BSP-20.3 to BSP-20.6);
 /// in a Half-Life BSP its palette too, and the `sky` prefix makes no sky (BSP-22.2, BSP-22.4).
-fn fitz_texture(
-    lump: &[u8],
+fn fitz_texture<'a>(
+    lump: &'a [u8],
     start: usize,
     (name, width, height, offsets): (Vec<u8>, u32, u32, [u32; BSP_MIPLEVELS]),
     index: usize,
-    version: BspVersion,
-) -> Result<Option<Texture<'_>>, BspError> {
+    (version, wads): (BspVersion, &[qs_wad::MapWad<'a>]),
+) -> Result<Option<Texture<'a>>, BspError> {
     let valve = version == BspVersion::Valve;
+    // BSP-20.6, BSP-22.4: the sky prefix in any case, and never in a Half-Life BSP.
+    let sky = |name: &[u8]| !valve && fitz_sky(name);
     if width == 0 || height == 0 {
         return Ok(None);
+    }
+    // WAD3-4.3: an external texture comes from the first WAD, last named first, whose
+    // directory has its name (`W_GetLumpinfoList`), before the BSP's copy is measured; when
+    // that entry is no texture QuakeSpasm uses the BSP's (`Missing texture %s in WAD, using
+    // BSP.`), with no other WAD tried.
+    if offsets.first() == Some(&0)
+        && let Some(found) = wads
+            .iter()
+            .rev()
+            .find(|wad| wad.find(&name).is_some())
+            .and_then(|wad| wad.texture(&name))
+    {
+        return Ok(Some(Texture {
+            sky: sky(&found.name),
+            name: found.name,
+            width: found.width,
+            height: found.height,
+            offsets,
+            pixels: found.pixels,
+            palette: found.palette,
+            animation: None,
+        }));
     }
     // BSP-20.5: `int pixels = mt->width*mt->height` multiplies as unsigned; a product that
     // does not fit an int would make QuakeSpasm copy a negative count.
@@ -2088,7 +2103,7 @@ fn fitz_texture(
         .unwrap_or_default();
     let palette = valve.then(|| valve_palette(lump, data_start, pixels));
     Ok(Some(Texture {
-        sky: !valve && fitz_sky(&name),
+        sky: sky(&name),
         name,
         width,
         height,
