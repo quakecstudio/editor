@@ -23,6 +23,7 @@ never = ["quakec-1.06", "quoth", "id1-paks"]
 fixture_dirs = [
   "apps/desktop/fixtures/",
   "crates/qc-syntax/src/tests/",
+  "evals/",
 ]
 
 # Never fetch from these hosts or repositories: they carry QuakeC 1.06.
