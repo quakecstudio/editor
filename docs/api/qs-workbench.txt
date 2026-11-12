@@ -45,6 +45,7 @@ const qs_workbench::map_edit::MAP_DELETE
 const qs_workbench::map_edit::MAP_DUPLICATE
 const qs_workbench::map_edit::MAP_ENTITY
 const qs_workbench::map_edit::MAP_EXTENSION
+const qs_workbench::map_edit::MAP_INSPECT
 const qs_workbench::map_edit::MAP_MOVE
 const qs_workbench::map_edit::MAP_OPEN
 const qs_workbench::map_edit::MAP_PLACE
@@ -116,6 +117,7 @@ enum qs_workbench::git::GitCommandError
 enum qs_workbench::git::GitSide
 enum qs_workbench::map_edit::BspSave
 enum qs_workbench::map_edit::MapSource
+enum qs_workbench::map_edit::inspect::RoomShape
 enum qs_workbench::map_edit::live::LiveChange
 enum qs_workbench::preview::OnLoss
 enum qs_workbench::preview::PlayState
@@ -295,6 +297,19 @@ field qs_workbench::map_edit::SelectParams.entity
 field qs_workbench::map_edit::SetKeyParams.entity
 field qs_workbench::map_edit::SetKeyParams.key
 field qs_workbench::map_edit::SetKeyParams.value
+field qs_workbench::map_edit::inspect::EntityInfo.classname
+field qs_workbench::map_edit::inspect::EntityInfo.entity
+field qs_workbench::map_edit::inspect::EntityInfo.origin
+field qs_workbench::map_edit::inspect::EntityInfo.room
+field qs_workbench::map_edit::inspect::EntityInfo.targetname
+field qs_workbench::map_edit::inspect::InspectParams.classname
+field qs_workbench::map_edit::inspect::InspectParams.room
+field qs_workbench::map_edit::inspect::MapInspected.entities
+field qs_workbench::map_edit::inspect::MapInspected.path
+field qs_workbench::map_edit::inspect::MapInspected.rooms
+field qs_workbench::map_edit::inspect::RoomInfo.bounds
+field qs_workbench::map_edit::inspect::RoomInfo.kind
+field qs_workbench::map_edit::inspect::RoomInfo.name
 field qs_workbench::preview::BreakpointParams.file
 field qs_workbench::preview::BreakpointParams.line
 field qs_workbench::preview::ChooseGameParams.path
@@ -667,6 +682,7 @@ impl qs_workbench::git::GitCommandError: From<GitError>
 impl qs_workbench::git::GitCommandError: fmt::Display
 impl qs_workbench::git::GitCommandError: std::error::Error
 impl qs_workbench::map_edit::EntityIndex: fmt::Display
+impl qs_workbench::map_edit::inspect::RoomShape: From<RoomKind>
 impl qs_workbench::preview::Preview: Drop
 impl qs_workbench::preview::Preview: core::fmt::Debug
 impl qs_workbench::preview::PreviewError: From<ClientError>
@@ -776,6 +792,10 @@ struct qs_workbench::map_edit::RotateParams
 struct qs_workbench::map_edit::SaveParams
 struct qs_workbench::map_edit::SelectParams
 struct qs_workbench::map_edit::SetKeyParams
+struct qs_workbench::map_edit::inspect::EntityInfo
+struct qs_workbench::map_edit::inspect::InspectParams
+struct qs_workbench::map_edit::inspect::MapInspected
+struct qs_workbench::map_edit::inspect::RoomInfo
 struct qs_workbench::preview::BreakpointParams
 struct qs_workbench::preview::ChooseGameParams
 struct qs_workbench::preview::ConsoleLine
@@ -948,7 +968,12 @@ use qs_workbench::dock = crate::preview::dock
 use qs_workbench::engine = crate::preview::engine
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
+use qs_workbench::map_edit::EntityInfo = inspect::EntityInfo
+use qs_workbench::map_edit::InspectParams = inspect::InspectParams
 use qs_workbench::map_edit::LiveChange = live::LiveChange
+use qs_workbench::map_edit::MapInspected = inspect::MapInspected
+use qs_workbench::map_edit::RoomInfo = inspect::RoomInfo
+use qs_workbench::map_edit::RoomShape = inspect::RoomShape
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
 use qs_workbench::register_staged = crate::staged::register_staged
@@ -970,6 +995,7 @@ variant qs_workbench::WorkbenchError::NoFix
 variant qs_workbench::WorkbenchError::NoHunk
 variant qs_workbench::WorkbenchError::NoMap
 variant qs_workbench::WorkbenchError::NoProject
+variant qs_workbench::WorkbenchError::NoRoom
 variant qs_workbench::WorkbenchError::NotPointEntity
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Pattern
@@ -1016,6 +1042,8 @@ variant qs_workbench::map_edit::BspSave::Ent
 variant qs_workbench::map_edit::BspSave::Lump
 variant qs_workbench::map_edit::MapSource::Bsp
 variant qs_workbench::map_edit::MapSource::Map
+variant qs_workbench::map_edit::inspect::RoomShape::Group
+variant qs_workbench::map_edit::inspect::RoomShape::Layer
 variant qs_workbench::map_edit::live::LiveChange::Edit
 variant qs_workbench::map_edit::live::LiveChange::NeedsCompile
 variant qs_workbench::map_edit::live::LiveChange::Remove

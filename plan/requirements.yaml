@@ -10,7 +10,7 @@
 # design_doc_sha256 is the SHA-256 of docs/design/design-doc.md (LF line endings) that these
 # requirements were last reviewed against. plan/check.py fails when the design doc changes until
 # the requirements are reviewed and the new hash, which the failure prints, is recorded here.
-design_doc_sha256: 21b8aef621071643333c0d4b4eb427044c4a3843acf5c10c97754f62b79a5efc
+design_doc_sha256: 29da66243bc81ab9e21fb2e7ced2c4b4d7da152f6439425574ac8ee65093be78
 
 sections:
   - id: GOAL
@@ -185,7 +185,7 @@ sections:
       - {id: MAP-13, kind: stated, text: "Play from here: fast compile (no vis, quick light), player spawned at the camera"}
       - {id: MAP-14, kind: stated, text: "Background full compile with vis and final light swaps in when done"}
       - {id: MAP-15, kind: stated, text: "Region compile of the rooms being worked on"}
-      - {id: MAP-16, kind: stated, text: "Agent tools: map.inspect, map.entity.place, map.entity.set, map.compile, map.leaks"}
+      - {id: MAP-16, kind: stated, text: "Agent tools: map.inspect, map.place, map.set_key, map.compile, map.leaks"}
       - {id: MAP-17, kind: stated, text: "One wgpu renderer for live brushes, compiled BSPs with lightmaps and model previews"}
       - {id: MAP-18, kind: stated, text: "Phasing: entity editing (Phase 5), brushes and compiler (Phase 6), full lighting, region compile and performance (Phase 7)"}
       - {id: MAP-20, kind: stated, text: "Editing follows TrenchBroom's conventions (camera, selection, keybindings)"}

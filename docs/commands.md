@@ -56,6 +56,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
 | [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. |
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
+| [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
 | [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
@@ -1585,6 +1586,40 @@ Parameters:
     "entity"
   ],
   "title": "EntityParams",
+  "type": "object"
+}
+```
+
+## `map.inspect`
+
+The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.inspect`.",
+  "properties": {
+    "classname": {
+      "default": null,
+      "description": "Only the entities whose classname starts with this, as written; every entity with none.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "room": {
+      "default": null,
+      "description": "Only the entities in the room of this name, in any case, or a room inside it; every\nentity with none. A name no room has is refused.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "InspectParams",
   "type": "object"
 }
 ```

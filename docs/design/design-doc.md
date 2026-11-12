@@ -264,7 +264,7 @@ The IDE includes its own map editor and map compiler, so building a level, like 
 - A full compile with vis and final lighting runs in the background and swaps in when done.
 - Region compile builds only the rooms being worked on, a trick id's own 1996 tools used ([qbsp README](<https://discmaster.textfiles.com/file/4393/Cream%20of%20the%20Crop%2021%20(Terry%20Blount)%20(October%201996).iso/doom/qbsp_nt.zip/README.TXT>)).
 
-**Agent tools.** `map.inspect`, `map.entity.place`, `map.entity.set`, `map.compile` and `map.leaks`, so the agent can add three Shamblers to this room, or find why a door won't open by reading both the map and the QuakeC behind it.
+**Agent tools.** `map.inspect`, `map.place`, `map.set_key`, `map.compile` and `map.leaks`, so the agent can add three Shamblers to this room, or find why a door won't open by reading both the map and the QuakeC behind it.
 
 **Renderer.** One wgpu renderer draws live brushes in the editor and compiled BSPs with lightmaps, shared with model previews and the preview host. It is built in Phase 3 for the preview host and reused here.
 

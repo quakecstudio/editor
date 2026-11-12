@@ -80,7 +80,8 @@ an edit, so both commands run outside the edit history
   `.bsp`'s entity lump; `map.select`, `map.place`, `map.move`, `map.rotate`, `map.delete`,
   `map.duplicate`, `map.set_key` and `map.remove_key` edit it through `qs-map`'s lossless
   document, each with undo; `map.entity` gives an entity's keys typed by its class with the
-  map's targetnames; `map.save` writes the `.map`, or a `.ent` beside a BSP or its rewritten
+  map's targetnames; `map.inspect` gives its rooms (MAP-9) and each entity's place, origin
+  and room, for the agent (P5-08); `map.save` writes the `.map`, or a `.ent` beside a BSP or its rewritten
   entity lump ([`docs/map-editor.md`](../../docs/map-editor.md)). While the preview's game
   plays the open map, each edit, undo and redo goes to it as a `LiveChange` by the entity's
   place in the map (P5-07, MAP-12, BRIDGE-4.13).

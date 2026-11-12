@@ -725,6 +725,11 @@ pub enum WorkbenchError {
         /// Why.
         error: qs_map::MapError,
     },
+    /// The open map has no room of this name (MAP-9).
+    NoRoom {
+        /// The name asked for.
+        name: String,
+    },
     /// A `.ent` beside the BSP, which the engine reads in place of the entity lump
     /// (BSP-19.1), so a rewritten lump would not be seen.
     EntOverride {
@@ -742,6 +747,7 @@ impl fmt::Display for WorkbenchError {
                 write!(f, "{}: cannot be written: {error}", path.display())
             }
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
+            Self::NoRoom { name } => write!(f, "the map has no room named {name}"),
             Self::EntOverride { path } => write!(
                 f,
                 "{}: the engine reads this in place of the BSP's entities; save to it, or move \
@@ -791,7 +797,8 @@ impl Error for WorkbenchError {
             | Self::NoMap
             | Self::NoEntity { .. }
             | Self::NotPointEntity { .. }
-            | Self::EntOverride { .. } => None,
+            | Self::EntOverride { .. }
+            | Self::NoRoom { .. } => None,
         }
     }
 }
