@@ -14,9 +14,12 @@
 //! `W_GetLumpNum`, and [`QPic`], [`Conchars`] and [`MipTexHeader`] decode the lumps the
 //! engine and the map tools read.
 //!
-//! The format is specified in `docs/spec/wad2.md` (WAD-1 to WAD-4).
+//! The format is specified in `docs/spec/wad2.md` (WAD-1 to WAD-4); writing a WAD2 and
+//! encoding textures for it are WAD-5 to WAD-7 (`write`, `texture`).
 
 pub mod map_wad;
+pub mod texture;
+pub mod write;
 
 #[cfg(test)]
 mod fixtures;
@@ -200,6 +203,15 @@ impl LumpName {
             .unwrap_or(WAD_NAME_SIZE);
         self.0.get(..len).unwrap_or_default()
     }
+}
+
+/// `name` in a 16-byte name field: its bytes, at most 16, then NUL bytes (WAD-5.2, WAD-7.1).
+pub(crate) fn name_field(name: &[u8]) -> [u8; WAD_NAME_SIZE] {
+    let mut field = [0_u8; WAD_NAME_SIZE];
+    for (slot, &byte) in field.iter_mut().zip(name) {
+        *slot = byte;
+    }
+    field
 }
 
 /// Cleans a name as id's `W_CleanupName` does.

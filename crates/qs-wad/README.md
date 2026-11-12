@@ -14,8 +14,15 @@ described from QuakeSpasm, not ported: `MapWad::read` is its `W_AddWadFile`, the
 with its fixes, and `MapWad::texture` its `Mod_LoadWadTexture`, a WAD3 texture's own palette
 included. `qs-bsp` reads a BSP's external textures from them (`Bsp::read_with_wads`).
 
+`write` and `texture` make texture WADs (P6-15): `WadBuilder` writes a WAD2, every name checked
+and written as given; `TextureName` checks a name against what the engine reads and says what it
+makes of it (liquid, sky, animation frame, fence); `Palette` is `gfx/palette.lmp`; and
+`RgbaImage::encode` quantizes an image to the palette, by a perceptual distance, optionally
+dithered, fullbright colours only where a mask asks and transparency only in a `{` texture,
+and builds its four mip levels. Faults are reported, never repaired.
+
 - **Layer:** L0 formats, with no dependencies. `qs-vfs` finds `gfx.wad` with it.
-- **Spec sections:** WAD-1 to WAD-4 in [`wad2.md`](../../docs/spec/wad2.md); WAD3-1 to WAD3-3
+- **Spec sections:** WAD-1 to WAD-7 in [`wad2.md`](../../docs/spec/wad2.md); WAD3-1 to WAD3-3
   in [`wad3.md`](../../docs/spec/wad3.md).
 - **Not this crate's:** WAD-1.4 (finding `gfx.wad` on the search path), the filesystem's, in
   `qs-vfs`.

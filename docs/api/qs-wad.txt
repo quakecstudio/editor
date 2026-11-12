@@ -20,9 +20,23 @@ const qs_wad::WAD_TYP_QTEX
 const qs_wad::WAD_TYP_SOUND
 const qs_wad::map_wad::WAD3_MAGIC
 const qs_wad::map_wad::WAD_TYP_MIPTEX_PALETTE
+const qs_wad::texture::WAD_FULLBRIGHT_FIRST
+const qs_wad::texture::WAD_OPAQUE_ALPHA
+const qs_wad::texture::WAD_PALETTE_SIZE
+const qs_wad::texture::WAD_TEXTURE_ALIGN
+const qs_wad::texture::WAD_TEXTURE_NAME_MAX
+const qs_wad::texture::WAD_TRANSPARENT
+const qs_wad::write::WAD_LUMP_NAME_MAX
 enum qs_wad::WadError
 enum qs_wad::map_wad::MapWadError
 enum qs_wad::map_wad::WadKind
+enum qs_wad::texture::Cycle
+enum qs_wad::texture::Dither
+enum qs_wad::texture::Glow
+enum qs_wad::texture::NameFault
+enum qs_wad::texture::TextureError
+enum qs_wad::texture::TextureKind
+enum qs_wad::write::WadWriteError
 field qs_wad::Lump.compression
 field qs_wad::Lump.disksize
 field qs_wad::Lump.filepos
@@ -61,12 +75,32 @@ fn qs_wad::map_wad::MapWad::find
 fn qs_wad::map_wad::MapWad::kind
 fn qs_wad::map_wad::MapWad::read
 fn qs_wad::map_wad::MapWad::texture
+fn qs_wad::texture::Palette::colour
+fn qs_wad::texture::Palette::from_lmp
+fn qs_wad::texture::Palette::nearest
+fn qs_wad::texture::PaletteIndex::get
+fn qs_wad::texture::PaletteIndex::new
+fn qs_wad::texture::RgbaImage::encode
+fn qs_wad::texture::RgbaImage::new
+fn qs_wad::texture::TextureName::as_bytes
+fn qs_wad::texture::TextureName::parse
+fn qs_wad::texture::TextureName::texture_kind
 fn qs_wad::w_cleanup_name
+fn qs_wad::write::WadBuilder::add
+fn qs_wad::write::WadBuilder::add_texture
+fn qs_wad::write::WadBuilder::new
+fn qs_wad::write::WadBuilder::to_bytes
 impl qs_wad::WadError: core::error::Error
 impl qs_wad::WadError: fmt::Display
 impl qs_wad::map_wad::MapWadError: core::error::Error
 impl qs_wad::map_wad::MapWadError: fmt::Display
+impl qs_wad::texture::TextureError: core::error::Error
+impl qs_wad::texture::TextureError: fmt::Display
+impl qs_wad::write::WadWriteError: core::error::Error
+impl qs_wad::write::WadWriteError: fmt::Display
 mod qs_wad::map_wad
+mod qs_wad::texture
+mod qs_wad::write
 struct qs_wad::Conchars
 struct qs_wad::Lump
 struct qs_wad::LumpName
@@ -76,6 +110,11 @@ struct qs_wad::Wad
 struct qs_wad::map_wad::MapWad
 struct qs_wad::map_wad::MapWadEntry
 struct qs_wad::map_wad::WadTexture
+struct qs_wad::texture::Palette
+struct qs_wad::texture::PaletteIndex
+struct qs_wad::texture::RgbaImage
+struct qs_wad::texture::TextureName
+struct qs_wad::write::WadBuilder
 use qs_wad::MapWad = map_wad::MapWad
 use qs_wad::MapWadEntry = map_wad::MapWadEntry
 use qs_wad::MapWadError = map_wad::MapWadError
@@ -96,3 +135,28 @@ variant qs_wad::map_wad::MapWadError::NoLumps
 variant qs_wad::map_wad::MapWadError::NotValid
 variant qs_wad::map_wad::WadKind::Wad2
 variant qs_wad::map_wad::WadKind::Wad3
+variant qs_wad::texture::Cycle::Alternate
+variant qs_wad::texture::Cycle::Primary
+variant qs_wad::texture::Dither::FloydSteinberg
+variant qs_wad::texture::Dither::None
+variant qs_wad::texture::Glow::Fullbright
+variant qs_wad::texture::Glow::Lit
+variant qs_wad::texture::NameFault::Byte
+variant qs_wad::texture::NameFault::Comment
+variant qs_wad::texture::NameFault::Frame
+variant qs_wad::texture::NameFault::Length
+variant qs_wad::texture::NameFault::NoBase
+variant qs_wad::texture::TextureError::Name
+variant qs_wad::texture::TextureError::Palette
+variant qs_wad::texture::TextureError::PixelCount
+variant qs_wad::texture::TextureError::Size
+variant qs_wad::texture::TextureError::Transparent
+variant qs_wad::texture::TextureKind::Fence
+variant qs_wad::texture::TextureKind::Frame
+variant qs_wad::texture::TextureKind::Liquid
+variant qs_wad::texture::TextureKind::Plain
+variant qs_wad::texture::TextureKind::Sky
+variant qs_wad::write::WadWriteError::BadName
+variant qs_wad::write::WadWriteError::DuplicateName
+variant qs_wad::write::WadWriteError::HeaderName
+variant qs_wad::write::WadWriteError::TooLarge

@@ -1,6 +1,6 @@
 [package]
 name = "qs-wad"
-description = "Zero-copy WAD2 reader: id's W_LoadWadFile and W_GetLumpinfo with bounds checks, and the lump layouts"
+description = "WAD2 reader and writer: id's W_LoadWadFile and W_GetLumpinfo with bounds checks, the lump layouts, and textures quantized to the palette"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

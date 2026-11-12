@@ -214,3 +214,103 @@ bytes, 16 characters of 8 by 8 pixels per row.
 | --- | --- | --- |
 | `WAD_CONCHARS_SIZE` | 128 | `WinQuake/draw.c`, the row stride in `Draw_Character` |
 | `WAD_MIPLEVELS` | 4 | `WinQuake/bspfile.h`, `MIPLEVELS` |
+
+## WAD-5 Writing a WAD2 file
+
+**Source:** our decision, for importing textures (P6-15, MAP-23), written to the layout of
+WAD-1 and WAD-2. id's `qlumpy` (`qutils/QLUMPY/QLUMPY.C` of id-Software/Quake-Tools at
+`c0d1b91c74eb654365ac7755bc837e497caaca73`, read for description only, P4-22) writes the same
+layout: the lumps after the header, the directory last.
+
+### Behaviour
+
+- **WAD-5.1** A written file is the 12-byte header (WAD-1.1), then every lump's bytes in the
+  order given, from offset 12, then the directory of one 32-byte entry per lump in the same
+  order; `infotableofs` is the directory's offset.
+- **WAD-5.2** Each entry's `filepos` is its lump's offset, `disksize` and `size` are both the
+  lump's length, `type` is the lump's type, `compression` is `WAD_CMP_NONE`, the two unused
+  bytes are 0, and the name is the given name's bytes followed by NUL bytes to 16. The name is
+  written as given, never lower-cased or upper-cased.
+- **WAD-5.3** A name that is empty, longer than 15 bytes (so it would have no NUL), or equal
+  to an earlier lump's name with ASCII case ignored, is refused: the engine lower-cases names
+  (WAD-2.5) and qbsp upper-cases them, so either would find only the first of two such lumps
+  (WAD-2.9).
+- **WAD-5.4** A file whose size, an offset or a lump length would not fit a signed 32-bit
+  integer is refused.
+- **WAD-5.5** A texture lump is added under the name its `miptex_t` header holds (WAD-7.1); one
+  whose header holds another name is refused, so qbsp, which finds a texture by its directory
+  name, and the engine, which reads the header's, see one name.
+
+## WAD-6 Texture names and sizes
+
+**Source:** BSP-4.4, BSP-4.8 and BSP-20.6, which say how the engine reads a texture's name and
+size; QS `Quake/gl_model.c`, `Mod_LoadTextures` ("`// ericw -- fence textures`", `if
+(tx->name[0] == '{') extraflags |= TEXPREF_ALPHA;`) and `Quake/gl_texmgr.c`,
+`TexMgr_LoadPalette` (`((byte *) &d_8to24table[255]) [3] = 0;`) at
+sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`.
+
+A texture written to a WAD for a map is checked before it is written, so a map never meets a
+texture the engine refuses; a fault is reported, never repaired.
+
+### Behaviour
+
+- **WAD-6.1** A texture name is 1 to 15 bytes, each a printable ASCII byte other than a space
+  and `"`, which end or quote a token in a `.map` (MAP-1), with no `//` (MAP-1.3) and no `;`
+  (MAP-1.8), which start a comment.
+- **WAD-6.2** A name that starts with `+` names a frame of an animation: it needs at least
+  three bytes, and its second byte must be `0` to `9`, or `a` to `j` or `A` to `J`; any other
+  is refused, which the engine would refuse when it loads the map (BSP-4.8).
+- **WAD-6.3** A name that starts with `*` is a liquid, and one that starts with `sky` in any case
+  is a sky, as QuakeSpasm and qbsp read it (BSP-20.6); each needs a byte after its prefix.
+- **WAD-6.4** A name that starts with `{` is a fence texture: QuakeSpasm draws its index 255
+  transparent, its palette entry 255 having alpha 0.
+- **WAD-6.5** A width or height of 0, or one that is not a multiple of 16, is refused, which
+  the engine would refuse when it loads the map (BSP-4.4).
+
+## WAD-7 Encoding a texture
+
+**Source:** our decision. The layout is BSP-4.5's, which qbsp copies from a WAD; the fullbright
+range is REND-13.4's (texels above 223); the palette is REND-1.8's. id's `qlumpy`
+(`qutils/QLUMPY/QUAKEGRB.C`, `GrabMip`, `AveragePixels`, `BestColor`, read for description
+only) builds each smaller mip level from the mean colour of each block of the level above,
+matched by squared RGB distance; we keep its blocks and means and choose colours as WAD-7.3
+does.
+
+### Behaviour
+
+- **WAD-7.1** A texture lump is a 40-byte `miptex_t` (WAD-4.3): the name followed by NUL bytes
+  to 16, the width and height, and the offsets 40, `40 + w*h`, `40 + w*h + w*h/4` and
+  `40 + w*h + w*h/4 + w*h/16`; then the four levels, each row by row from the top left. Its
+  directory type is `WAD_TYP_MIPTEX`.
+- **WAD-7.2** A palette is 768 bytes, 256 colours of red, green and blue; any other length is
+  refused.
+- **WAD-7.3** A colour's nearest palette index is the one with the least distance
+  `(2 + m/256) dR^2 + 4 dG^2 + (2 + (255 - m)/256) dB^2`, where `dR`, `dG` and `dB` are the
+  differences and `m` the mean of the two reds; of equal distances the lower index wins.
+- **WAD-7.4** An ordinary pixel is matched among indices 0 to 223. A pixel the caller marks
+  fullbright is matched among 224 to 254, and 255 as well unless the texture is a fence
+  texture (WAD-6.4).
+- **WAD-7.5** In a fence texture a pixel whose alpha is below 128 is index 255. In any other
+  texture such a pixel is refused, with the number of such pixels; alpha of 128 or more is
+  opaque, and the pixel's colour is used as it is.
+- **WAD-7.6** With dithering, each ordinary pixel's error (its colour less its index's colour,
+  per channel) is spread, row by row from the top left, as Floyd and Steinberg's 7/16 to the
+  right, 3/16 below left, 5/16 below and 1/16 below right, only to ordinary pixels, each
+  channel clamped to 0 to 255 before matching. Without it each pixel is matched alone.
+- **WAD-7.7** Level `k` of 1 to 3 has a pixel for each block of `2^k` by `2^k` pixels of level 0.
+  A block of which at least half the pixels are index 255 in a fence texture is 255. Otherwise,
+  of its other pixels, when more than half are fullbright (above 223) the pixel is the mean
+  colour of those fullbright pixels matched among the fullbright indices of WAD-7.4; else it is
+  the mean colour of the ordinary ones matched among 0 to 223. A mean is each channel's sum
+  divided by the count, rounded down. Mip levels are not dithered.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `WAD_TEXTURE_NAME_MAX` | 15 | `WinQuake/bspfile.h`, `char name[16]` in `miptex_t`, less its NUL |
+| `WAD_TEXTURE_ALIGN` | 16 | BSP-4.4 |
+| `WAD_PALETTE_SIZE` | 768 | REND-1.8 |
+| `WAD_FULLBRIGHT_FIRST` | 224 | REND-13.4, `Mod_CheckFullbrights` "`> 223`" |
+| `WAD_TRANSPARENT` | 255 | QS `Quake/gl_texmgr.c`, `TexMgr_LoadPalette` |
+| `WAD_OPAQUE_ALPHA` | 128 | our decision: the middle of the alpha range |
