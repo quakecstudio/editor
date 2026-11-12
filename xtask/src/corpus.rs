@@ -20,7 +20,7 @@
 //! Everything downloaded is kept in `<cache>/downloads/` and checked again before use, so a
 //! second run works offline. Every command first runs the offline manifest checks.
 
-mod archive;
+pub(crate) mod archive;
 mod assets;
 mod build;
 mod fetch;

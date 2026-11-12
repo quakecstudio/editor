@@ -15,8 +15,7 @@ exist (ARCH-2: the Rust side talks to them through files and their exit status).
 | View oracle | id's whole engine, `WinQuake/` with the software renderer, the client and the mixer, headless with our system, video and sound drivers (`engine/view_host.c`), playing a view script and writing its shots and sound (VIEWDIFF) | `target/oracles/bin/view-oracle` |
 | FTEQCC | The command-line compiler in `engine/qclib/` of fte-team/fteqw, built unchanged without zlib | `target/oracles/bin/fteqcc` |
 
-Later oracles (id's renderer and mixer for screenshots and audio, P3-28; the map tools) join
-this directory.
+The map tool oracles (below) are built apart from these, by `cargo xtask oracles maps`.
 
 ## Sources
 
@@ -337,6 +336,31 @@ FTE-23.12). The oracles' outcomes are recorded in
 `cargo xtask oracles` fails when an oracle gives another outcome than the recording, and
 `cargo test -p xtask` checks the profiles against the recording on every host without the
 oracles. After changing the cross product, run `cargo xtask oracles builtins --record`.
+
+## The map tool oracles
+
+id's map tools and ericw-tools, for the map compiler differential (P6-03, P6-07, MAP-11).
+`cargo xtask oracles maps` builds them and compiles [`maps/room.map`](maps/room.map), a sealed
+room with a player start, a light and a door and no WAD, with each set in turn (qbsp, then vis,
+then light), checking that every tool succeeds and leaves a BSP29 file. They are built only
+there, never by `cargo xtask oracles` or `cargo build`, and run in CI only in the nightly
+Differential workflow's "Map tool oracles" job; Linux and macOS only.
+
+| Oracle | What it is | Binaries |
+| --- | --- | --- |
+| id's map tools | `qutils/QBSP`, `qutils/VIS` and `qutils/LIGHT` of Quake-Tools with `qutils/COMMON`'s `cmdlib.c`, `mathlib.c` and `bspfile.c`, built unchanged with the system C compiler and the flags above; `vec_t` is `float`, as id built them | `target/oracles/bin/qbsp`, `vis`, `light` |
+| ericw-tools | ericwa/ericw-tools at the commit [`map.md`](../docs/spec/map.md) cites, with the `fmt`, `jsoncpp`, `nanobench` and `pareto` submodules at the commits it records, built with CMake (tests, documentation and the light preview off) | `target/oracles/bin/ericw-qbsp`, `ericw-vis`, `ericw-light` |
+
+[`maps.toml`](maps.toml) pins every input: qutils' files by commit and SHA-256 as `sources.toml`
+pins id's, and ericw-tools and each submodule as a GitHub archive of the commit by its
+SHA-256. `qutils/` is read and run, never ported, until the license review rules on it
+([`docs/porting.md`](../docs/porting.md#upstreams), P4-22). Its files are named in upper case and
+include each other in lower case, so the build copies them to lower-case names under
+`target/oracles/build/maps/` first; [`maps/compat.h`](maps/compat.h) is included before each, as
+`qcc/compat.h` is for qcc. ericw-tools needs CMake, a C++20 compiler, TBB and Embree 4: Homebrew's
+`cmake`, `tbb` and `embree` on macOS, and `cmake`, `libtbb-dev` and `libembree-dev` on Ubuntu,
+which the CI job installs. A stamp of `maps.toml`, `maps/` and the compiler skips an unchanged
+build.
 
 ## Readiness
 

@@ -11,7 +11,8 @@
 # parallel over id 1.01, the rerelease and the corpus mods at the bar, each
 # publishing its results table in the run's summary (DIFF-12.14), and the
 # per-function differential (DIFF-15, `cargo xtask compiler-diff --functions
-# <codebase>`), one job per codebase the pinned FTEQCC compiles.
+# <codebase>`), one job per codebase the pinned FTEQCC compiles. It also builds
+# the map tool oracles (P6-03, `cargo xtask oracles maps`).
 #
 # It does not run on pull requests or in the merge queue, and is not a required
 # check (docs/ci.md): the full corpus takes minutes and the fast subset already
@@ -134,6 +135,33 @@ jobs:
 
   # P3-25 (DIFF-16.5): the server simulation differential on every map of LibreQuake's lite
   # asset, on each OS.
+  # P6-03: the map tool oracles, id's qbsp, vis and light from qutils and a pinned ericw-tools,
+  # fetched by checksum and built here only, each compiling a sealed room (oracles/README.md,
+  # "The map tool oracles"). ericw-tools needs CMake, TBB and Embree 4.
+  map-tools:
+    name: Map tool oracles
+    needs: night
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: differential-${{ runner.os }}
+          save-if: false
+      - name: Install CMake, TBB and Embree
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake libtbb-dev libembree-dev
+      - name: Build the map tool oracles and compile the room
+        run: cargo xtask oracles maps
+
   sim-diff:
     name: Simulation differential (${{ matrix.os }})
     needs: night
