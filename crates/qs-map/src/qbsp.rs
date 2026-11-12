@@ -568,7 +568,7 @@ impl QbspMap {
     }
 
     /// The entity lump as [`QbspMap::entity_lump`] writes it, with no bound on a pair's line or
-    /// the text's length (QBSP-14.2).
+    /// the text's length (QBSP-14.5).
     #[must_use]
     pub fn entity_lump_unbounded(&self) -> Vec<u8> {
         self.entity_text(Tables::Bsp29).unwrap_or_default()

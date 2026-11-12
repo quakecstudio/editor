@@ -570,3 +570,43 @@ fn texture_slots() {
     assert_eq!(names, [&b"+0LAVA"[..], b"+1LAVA", b"+ALAVA"]);
     assert!(warnings.is_empty());
 }
+
+// spec QBSP-14.1: a `MapFile` read into qbsp's model gives the entities, pairs, brushes, lines
+// and textures qbsp's own parser gives for id's form
+#[test]
+fn from_map_file_reads_as_qbsp_reads() {
+    let file = crate::MapFile::parse(STANDARD).unwrap();
+    let ours = QbspMap::from_map_file(&file).unwrap();
+    let id = load_map_file(STANDARD).unwrap();
+    assert_eq!(ours.entities.len(), id.entities.len());
+    assert_eq!(ours.miptex, id.miptex);
+    for (a, b) in ours.entities.iter().zip(&id.entities) {
+        assert_eq!(a.line, b.line);
+        assert_eq!(a.pairs, b.pairs);
+        assert_eq!(a.brushes.len(), b.brushes.len());
+    }
+    assert!(ours.entities.iter().any(|e| !e.brushes.is_empty()));
+}
+
+// spec QBSP-14.1: Valve 220 faces are read with their own texture axes
+#[test]
+fn from_map_file_reads_valve_220() {
+    let file = crate::MapFile::parse(VALVE220).unwrap();
+    let map = QbspMap::from_map_file(&file).unwrap();
+    assert!(!map.texinfo.is_empty());
+    assert!(map.texinfo.iter().any(|t| t.vecs != [[0.0; 4]; 2]));
+}
+
+// spec QBSP-14.5: the unbounded entity lump is qbsp's for a map within its limits, and keeps a
+// pair longer than qbsp's line
+#[test]
+fn the_unbounded_lump_keeps_long_pairs() {
+    let id = load_map_file(STANDARD).unwrap();
+    assert_eq!(id.entity_lump_unbounded(), id.entity_lump().unwrap());
+    let long = "x".repeat(MAP_LUMP_LINE);
+    let text = format!("{{\n\"classname\" \"worldspawn\"\n\"message\" \"{long}\"\n}}\n");
+    let map = QbspMap::from_map_file(&crate::MapFile::parse(text.as_bytes()).unwrap()).unwrap();
+    assert!(map.entity_lump().is_err());
+    let lump = map.entity_lump_unbounded();
+    assert!(String::from_utf8_lossy(&lump).contains(&long));
+}

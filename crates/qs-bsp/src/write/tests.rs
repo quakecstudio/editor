@@ -217,3 +217,33 @@ fn bsp29_refuses_values_past_16_bits() {
             .contains("Faces")
     );
 }
+
+// spec BSP-23.1: the vertexes, texinfo and surfedges are written as BSP-5, BSP-8 and BSP-14 lay
+// them out, in either format
+#[test]
+fn vertexes_texinfo_and_surfedges_are_written() {
+    let mut file = minimal();
+    file.vertexes = vec![[1.0, 2.0, 3.0]];
+    file.texinfo = vec![super::DiskTexinfo {
+        vecs: [[1.0, 0.0, 0.0, 4.0], [0.0, 1.0, 0.0, 8.0]],
+        miptex: 7,
+        flags: 1,
+    }];
+    file.surfedges = vec![-5];
+    for format in [BspFormat::Bsp29, BspFormat::Bsp2] {
+        let bytes = file.to_bytes(format).unwrap();
+        let float = |at: usize| f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+        let int = |at: usize| i32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+        let (v, len) = lump(&bytes, 3);
+        assert_eq!(len, 12);
+        assert_eq!([float(v), float(v + 4), float(v + 8)], [1.0, 2.0, 3.0]);
+        let (t, len) = lump(&bytes, 6);
+        assert_eq!(len, 40);
+        assert_eq!(float(t + 12), 4.0);
+        assert_eq!(float(t + 28), 8.0);
+        assert_eq!([int(t + 32), int(t + 36)], [7, 1]);
+        let (e, len) = lump(&bytes, 13);
+        assert_eq!(len, 4);
+        assert_eq!(int(e), -5);
+    }
+}
