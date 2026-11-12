@@ -189,12 +189,18 @@ and is cut by other planes.
   (`CheckFace: degenerate edge`); another point more than `ON_EPSILON` beyond the line of
   an edge, on the side `cross(facenormal, edge)` points to (`CheckFace: non-convex`). The checks
   run point by point in that order. A polygon of zero area with no such fault passes.
-- **QBSP-4.6** An entity's brushes are ordered for CSG with the water, slime, lava and sky
-  brushes first, in file order, then the solid brushes in reverse file order. The entity's
-  bounds are the union of its brushes' bounds.
+- **QBSP-4.6** **Withdrawn** 2026-11-12: it gave the liquids in file order and the solids in
+  reverse file order, which is backwards; replaced by QBSP-4.9.
 - **QBSP-4.7** In hulls 1 and 2 every face takes texinfo 0.
 - **QBSP-4.8** Two faces of a brush on the same plane facing the same way clip each other away
   (QBSP-4.3), so neither is kept.
+- **QBSP-4.9** An entity's brushes are ordered for CSG with the water, slime, lava and sky
+  brushes first, in reverse file order, then the solid brushes in file order. `ParseBrush`
+  puts each brush at the head of the entity's list (`MAP.C`, `b->next = mapent->brushes;`), so
+  `Brush_LoadEntity` reads them last first and, putting each at the head of `water` or
+  `other`, leaves both lists in file order; it then moves the water list onto the head of
+  `other` one brush at a time (`// add all of the water textures at the start`), which reverses
+  it. The entity's bounds are the union of its brushes' bounds.
 
 ### Constants
 
@@ -218,7 +224,7 @@ and is cut by other planes.
 | `*lava1`, `func_door`, hull 0 | solid | QBSP-4.1 |
 | `*water0`, world, hull 2 | left out | QBSP-4.2 |
 | `sky4`, world, hull 1 | solid | QBSP-4.1 |
-| file order S1, W1, S2, W2 | CSG order W1, W2, S2, S1 | QBSP-4.6 |
+| file order S1, W1, S2, W2 | CSG order W2, W1, S1, S2 | QBSP-4.9 |
 
 ## QBSP-5 Clipping hull expansion
 
@@ -277,15 +283,14 @@ another brush.
 
 ### Behaviour
 
-- **QBSP-6.1** Each brush `b1`, in the order of QBSP-4.6, starts with copies of its faces, each
+- **QBSP-6.1** Each brush `b1`, in the order of QBSP-4.9, starts with copies of its faces, each
   with contents `CONTENTS_EMPTY` on its front and the brush's contents behind. Each other brush
   `b2` whose bounds overlap `b1`'s (a gap on an axis, `b1.mins > b2.maxs` or
   `b1.maxs < b2.mins`, means no overlap; touching bounds overlap) cuts them by each of its
   faces' planes in turn: the parts behind all of `b2`'s planes are inside `b2`, the rest outside.
-- **QBSP-6.2** A part of `b1` lying on one of `b2`'s planes is inside when it faces the other
-  way, or when `b2` comes after `b1` in the order; otherwise it stays outside. So of two
-  coincident faces facing the same way, the one of the brush later in the order is kept: among
-  solid brushes, the one earlier in the file (QBSP-4.6).
+- **QBSP-6.2** **Withdrawn** 2026-11-12: its rule is right, but it concluded that among solid
+  brushes the one earlier in the file keeps a shared face, from QBSP-4.6's wrong order;
+  replaced by QBSP-6.7.
 - **QBSP-6.3** When `b1` is solid and `b2` is water, slime, lava or sky, the parts inside
   `b2` are kept, their front contents set to `b2`'s; otherwise they are dropped.
 - **QBSP-6.4** The parts of `b1` left outside are its faces. For a brush that is not solid
@@ -296,6 +301,11 @@ another brush.
 - **QBSP-6.6** The result is one surface per stored plane with faces left, holding the faces of
   both sides, its bounds those of its faces. A face whose front or back contents is not negative
   stops the run with `Bad contents`.
+- **QBSP-6.7** A part of `b1` lying on one of `b2`'s planes is inside when it faces the other
+  way, or when `b2` comes after `b1` in the order of QBSP-4.9 (`ClipInside`'s `precedence`,
+  which `CSGFaces` sets once its loop has passed `b1`: `overwrite = true; // later brushes now
+  overwrite`); otherwise it stays outside. So of two coincident faces facing the same way, the
+  one of the brush later in the order is kept: among solid brushes, the one later in the file.
 
 ## QBSP-7 The BSP tree
 
@@ -534,3 +544,36 @@ to the neighbour's edge.
 | --- | --- | --- |
 | `QBSP_POINT_EPSILON` | 0.01 | `SURFACES.C`, `POINT_EPSILON` |
 | `QBSP_BSPVERSION` | 29 | `COMMON/BSPFILE.H`, `BSPVERSION` |
+
+## QBSP-14 The extended dialect
+
+**Source:** ours. id's qbsp is `Dialect::Id`, which follows QBSP-1 to QBSP-13 exactly;
+`Dialect::Extended`, the default of `crates/qmap-bsp`, is what a map made for a later engine
+needs, and each difference is stated here. Later compilers (ericw-tools' qbsp) lift the same
+limits; we follow none of them, only BSP-17's file format.
+
+- **QBSP-14.1** The extended dialect reads the map as `qs-map`'s `MapFile` reads it (MAP-1 to
+  MAP-7): a face's points are its numbers as written, in single precision, and its texture axes
+  the standard form's (MAP-4) or the Valve 220 form's (MAP-5). Duplicate planes, faces with no
+  normal, texture slots and texinfo are then found as `ParseBrush`, `FindMiptex` and
+  `FindTexinfo` find them, a texture name kept to its first 15 bytes, with no limit on entities
+  and up to 32767 texinfo, BSP29's signed 16-bit field.
+- **QBSP-14.2** A brush may have any number of faces and planes, and a grown brush any number
+  of vertices and edges: QBSP-5.6's `MAX_FACES`, `MAX_HULL_POINTS` and `MAX_HULL_EDGES` do not
+  apply, nor does QBSP-2.5's `MAX_MAP_PLANES`.
+- **QBSP-14.3** A fault qbsp stops on is a warning, and the compile goes on: a face
+  `CheckFace` refuses (QBSP-4.5) is kept as it is; a leaf whose faces disagree on their front
+  contents (QBSP-7.6) takes the first face's; an entity with brushes none of which is loaded in
+  a hull (QBSP-1.6) gets an empty model: in hull 0 one leaf at its origin under one node on the
+  plane z = 0, both of whose children are that leaf, and in hulls 1 and 2 the leaf's contents as
+  the head. Where any tree's head is a leaf, the extended dialect writes the same node over it
+  and names its contents as each clipping hull's head; qbsp names the next node and clip node
+  (QBSP-13.5, QBSP-13.6), which may not exist.
+- **QBSP-14.4** No `MAX_MAP_` limit (QBSP-13.10) applies. The file is written as BSP29 when
+  every value fits BSP29's fields (BSP-23.5), else as `BSP2` (BSP-23.4), with a warning naming
+  the first lump that did not fit.
+- **QBSP-14.5** The entity lump is written as QBSP-1.8 writes it, but with no limit on the
+  length of a key and value's line.
+- **QBSP-14.6** Everything QBSP-1 to QBSP-13 state that QBSP-14.1 to QBSP-14.5 do not change
+  holds in the extended dialect: the same map compiled by both dialects, when the id dialect
+  compiles it, gives the same BSP, portal file and leak file.

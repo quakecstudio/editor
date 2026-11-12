@@ -6,7 +6,8 @@
 use qs_map::qbsp::{QbspEntity, QbspFace, QbspMap};
 
 use crate::math::{
-    Axis, Vec3, add, cross, cyclic, dot, length, max, min, normalize, rint, same, sub, within,
+    Axis, CLEAR_MAXS, CLEAR_MINS, Vec3, add, cross, cyclic, dot, length, max, min, normalize, rint,
+    same, sub, within,
 };
 use crate::planes::{ANGLE_EPSILON, Plane, Planes};
 use crate::winding::{KeepOn, ON_EPSILON, base_for_plane, clip};
@@ -14,6 +15,8 @@ use crate::{CompileError, Contents, Face, Faults, Hull, Limits, ModelKind};
 
 /// How near a whole number a coordinate is set to it (QBSP-4.4).
 const ZERO_EPSILON: f64 = 0.001;
+/// The fewest points a face may have (QBSP-4.5).
+const MIN_FACE_POINTS: usize = 3;
 /// The largest coordinate a face may have (QBSP-4.5).
 const BOGUS_RANGE: f32 = 18000.0;
 /// How far from 1 a plane's normal length may be when it is added (QBSP-5.3).
@@ -42,7 +45,7 @@ pub(crate) struct Brush {
     pub(crate) contents: Contents,
 }
 
-/// An entity's brushes for one hull, in CSG order, and their bounds (QBSP-4.6).
+/// An entity's brushes for one hull, in CSG order, and their bounds (QBSP-4.9).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct BrushSet {
     pub(crate) brushes: Vec<Brush>,
@@ -157,8 +160,8 @@ fn create_faces(
     limits: Limits,
     warnings: &mut Vec<crate::Warning>,
 ) -> Result<Option<(Vec<Face>, Vec3, Vec3)>, CompileError> {
-    let mut mins = [99999.0_f32; 3];
-    let mut maxs = [-99999.0_f32; 3];
+    let mut mins = CLEAR_MINS;
+    let mut maxs = CLEAR_MAXS;
     let mut faces = Vec::new();
     for (i, face) in stored.iter().enumerate() {
         let mut winding = Some(base_for_plane(face.plane));
@@ -218,7 +221,7 @@ fn create_faces(
 /// `CheckFace`: the faults that stop qbsp, point by point in its order (QBSP-4.5).
 fn check_face(face: &Face, planes: &Planes) -> Result<(), CompileError> {
     let count = face.points.len();
-    if count < 3 {
+    if count < MIN_FACE_POINTS {
         return Err(CompileError::FacePoints(count));
     }
     let plane = planes.get(face.plane);
@@ -445,7 +448,7 @@ fn expand(
 
 impl BrushSet {
     /// An entity's brushes for `hull`, `Brush_LoadEntity`: the liquids and sky first, then the
-    /// solids, each as qbsp's lists leave them (QBSP-4.6).
+    /// solids, each as qbsp's lists leave them (QBSP-4.9).
     pub(crate) fn load(
         entity: &QbspEntity,
         map: &QbspMap,
@@ -455,8 +458,8 @@ impl BrushSet {
         warnings: &mut Vec<crate::Warning>,
         limits: Limits,
     ) -> Result<Self, CompileError> {
-        let mut mins = [99999.0_f32; 3];
-        let mut maxs = [-99999.0_f32; 3];
+        let mut mins = CLEAR_MINS;
+        let mut maxs = CLEAR_MAXS;
         let mut liquid = Vec::new();
         let mut solid = Vec::new();
         // qbsp keeps an entity's brushes with the last in the file first.

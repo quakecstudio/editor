@@ -3,13 +3,15 @@
 //! Windings: convex polygons on a plane, cut by other planes (QBSP-3).
 
 use crate::CompileError;
-use crate::math::{Axis, Vec3, add, cross, cyclic, dot, ma, normalize, scale, sub};
+use crate::math::{Axis, ORIGIN, Vec3, add, cross, cyclic, dot, ma, normalize, scale, sub};
 use crate::planes::Plane;
 
 /// How far a point may lie from a plane and still be on it (QBSP-3.2).
 pub(crate) const ON_EPSILON: f64 = 0.05;
 /// Half the side of a plane's base winding (QBSP-3.1).
 const BASE_HALF: f32 = 8192.0;
+/// How many points beyond a winding's own `DivideWinding` allocates for each side.
+const SPLIT_SLACK: usize = 4;
 /// The most points a winding may have (QBSP-3.5).
 const MAX_POINTS_ON_WINDING: usize = 64;
 /// Where qbsp starts its search for a base winding's largest normal component, below any
@@ -52,7 +54,7 @@ pub(crate) fn base_for_plane(plane: Plane) -> Vec<Vec3> {
             axis = index;
         }
     }
-    let mut up: Vec3 = [0.0; 3];
+    let mut up: Vec3 = ORIGIN;
     if axis == 2 {
         up[0] = 1.0;
     } else {
@@ -134,8 +136,8 @@ pub(crate) fn divide(points: &[Vec3], plane: Plane) -> Result<Parts, CompileErro
     if backs == 0 {
         return Ok((Some(points.to_vec()), None));
     }
-    let mut front = Vec::with_capacity(points.len().saturating_add(4));
-    let mut back = Vec::with_capacity(points.len().saturating_add(4));
+    let mut front = Vec::with_capacity(points.len().saturating_add(SPLIT_SLACK));
+    let mut back = Vec::with_capacity(points.len().saturating_add(SPLIT_SLACK));
     for (i, (&p1, &(d1, s1))) in points.iter().zip(&sides).enumerate() {
         let next = cyclic(i, 1, points.len());
         match s1 {

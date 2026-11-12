@@ -10,7 +10,7 @@ use qs_wad::Wad;
 
 use crate::brush::BrushSet;
 use crate::csg::csg_faces;
-use crate::math::{Vec3, each};
+use crate::math::{ORIGIN, Vec3, each};
 use crate::merge::merge_all;
 use crate::output::{ClipHull, Output};
 use crate::outside::{Fill, fill_outside, gather};
@@ -30,7 +30,7 @@ const MAX_MAP_MIPTEX: usize = 0x20_0000;
 /// What a compile wrote.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Compiled {
-    /// The BSP29 file.
+    /// The BSP file: BSP29, or `BSP2` when the extended dialect needs it (QBSP-14.4).
     pub bsp: Vec<u8>,
     /// The portal file, written when the outside was filled (QBSP-12).
     pub portal_file: Option<Vec<u8>>,
@@ -139,7 +139,7 @@ impl Run<'_> {
                         tree: Tree::empty(origin, origin),
                         mins: origin,
                         maxs: origin,
-                        reach: [0.0; 3],
+                        reach: ORIGIN,
                     }))
                 }
             };
@@ -360,7 +360,7 @@ fn textures(map: &QbspMap, wad: Option<&[u8]>) -> Result<Vec<u8>, CompileError> 
         i32::try_from(v).map_err(|_| CompileError::Limit("Textures exceeded MAX_MAP_MIPTEX"))
     };
     out.extend_from_slice(&as_i32(count)?.to_le_bytes());
-    let header = count.saturating_add(1).saturating_mul(4);
+    let header = count.saturating_add(1).saturating_mul(size_of::<i32>());
     let mut data = Vec::new();
     let mut offsets = Vec::new();
     for slot in slots {

@@ -8,6 +8,8 @@
 mod brush;
 mod compile;
 mod csg;
+#[cfg(test)]
+mod fixtures;
 mod math;
 mod merge;
 mod output;
@@ -21,8 +23,11 @@ mod winding;
 
 use std::fmt;
 
-use qs_bsp::LumpId;
 use qs_bsp::write::BspWriteError;
+use qs_bsp::{
+    BSP_CONTENTS_EMPTY, BSP_CONTENTS_LAVA, BSP_CONTENTS_SKY, BSP_CONTENTS_SLIME,
+    BSP_CONTENTS_SOLID, BSP_CONTENTS_WATER, LumpId,
+};
 use qs_map::qbsp::QbspError;
 
 pub use compile::{Compiled, Compiler};
@@ -32,6 +37,20 @@ use crate::planes::{PlaneId, Side};
 
 /// The most points a face may have (QBSP-3.5).
 pub(crate) const MAXEDGES: usize = 32;
+/// The planes one brush may have, `MAP.H`'s `MAX_FACES` (QBSP-5.6).
+const MAX_FACES: usize = 16;
+/// The slots of `BRUSH.C`'s `faces[128]`, which a grown brush's planes fill (QBSP-5.6).
+const MAX_BRUSH_PLANES: usize = 128;
+/// A grown brush's distinct vertices, `BRUSH.C`'s `MAX_HULL_POINTS` (QBSP-5.6).
+const MAX_HULL_POINTS: usize = 32;
+/// A grown brush's distinct edges, `BRUSH.C`'s `MAX_HULL_EDGES` (QBSP-5.6).
+const MAX_HULL_EDGES: usize = 64;
+/// The plane table's size, `BSPFILE.H`'s `MAX_MAP_PLANES` (QBSP-2.5).
+const MAX_MAP_PLANES: usize = 8192;
+/// Hull 1's box (QBSP-5.1).
+const PLAYER_HULL: [Vec3; 2] = [[-16.0, -16.0, -32.0], [16.0, 16.0, 24.0]];
+/// Hull 2's box (QBSP-5.1).
+const LARGE_HULL: [Vec3; 2] = [[-32.0, -32.0, -64.0], [32.0, 32.0, 24.0]];
 
 /// What a leaf, or a side of a face, is (QBSP-4.1, BSP-12).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -48,12 +67,12 @@ impl Contents {
     /// The `CONTENTS_` value.
     pub(crate) const fn value(self) -> i32 {
         match self {
-            Self::Empty => -1,
-            Self::Solid => -2,
-            Self::Water => -3,
-            Self::Slime => -4,
-            Self::Lava => -5,
-            Self::Sky => -6,
+            Self::Empty => BSP_CONTENTS_EMPTY,
+            Self::Solid => BSP_CONTENTS_SOLID,
+            Self::Water => BSP_CONTENTS_WATER,
+            Self::Slime => BSP_CONTENTS_SLIME,
+            Self::Lava => BSP_CONTENTS_LAVA,
+            Self::Sky => BSP_CONTENTS_SKY,
         }
     }
 
@@ -79,8 +98,8 @@ impl Hull {
     pub(crate) const fn size(self) -> Option<[Vec3; 2]> {
         match self {
             Self::Draw => None,
-            Self::Player => Some([[-16.0, -16.0, -32.0], [16.0, 16.0, 24.0]]),
-            Self::Large => Some([[-32.0, -32.0, -64.0], [32.0, 32.0, 24.0]]),
+            Self::Player => Some(PLAYER_HULL),
+            Self::Large => Some(LARGE_HULL),
         }
     }
 
@@ -132,8 +151,8 @@ impl Surface {
         let mut surface = Self {
             plane,
             faces,
-            mins: [99999.0; 3],
-            maxs: [-99999.0; 3],
+            mins: math::CLEAR_MINS,
+            maxs: math::CLEAR_MAXS,
             on_node: false,
         };
         surface.recalculate();
@@ -142,8 +161,8 @@ impl Surface {
 
     /// Its bounds again.
     pub(crate) fn recalculate(&mut self) {
-        self.mins = [99999.0; 3];
-        self.maxs = [-99999.0; 3];
+        self.mins = math::CLEAR_MINS;
+        self.maxs = math::CLEAR_MAXS;
         for &point in self.faces.iter().flat_map(|face| &face.points) {
             self.mins = math::min(self.mins, point);
             self.maxs = math::max(self.maxs, point);
@@ -212,11 +231,11 @@ impl Dialect {
     pub(crate) const fn limits(self) -> Limits {
         match self {
             Self::Id => Limits {
-                brush_faces: Some(16),
-                brush_planes: 128,
-                hull_points: 32,
-                hull_edges: 64,
-                planes: 8192,
+                brush_faces: Some(MAX_FACES),
+                brush_planes: MAX_BRUSH_PLANES,
+                hull_points: MAX_HULL_POINTS,
+                hull_edges: MAX_HULL_EDGES,
+                planes: MAX_MAP_PLANES,
                 faults: Faults::Stop,
                 tables: Tables::Qbsp,
             },

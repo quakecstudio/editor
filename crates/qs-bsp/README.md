@@ -30,10 +30,13 @@ coloured light; and writes a BSP's entities back, for shipped maps with no `.map
   tries for a map, and `replace_entities` writes a BSP with new entity text and every other
   lump unchanged. With `qs-map`, which reads and edits the entity text without losing a byte,
   they are the two ways to edit a shipped map's entities (MAP-22).
+- **`write`**: `BspFile::to_bytes` writes a BSP from its records, as BSP29 in id's
+  `WriteBSPFile` lump order, or as `BSP2` when a value outgrows BSP29's 16-bit fields
+  (BSP-23); the map compiler `qmap-bsp` writes through it.
 
 - **Layer:** L0 formats. It depends on `qc-progs` for id's CRC. `qs-vfs`'s `walk` example loads
   every BSP and `.lit` of an install with it.
-- **Spec sections:** BSP-1 to BSP-22 in [`bsp.md`](../../docs/spec/bsp.md); WAD3-4 in
+- **Spec sections:** BSP-1 to BSP-23 in [`bsp.md`](../../docs/spec/bsp.md); WAD3-4 in
   [`wad3.md`](../../docs/spec/wad3.md).
 - **Shipped:** yes.
 

@@ -5,7 +5,9 @@
 
 use qs_map::qbsp::QbspTexinfo;
 
-use crate::math::{Axis, Vec3, dot, length, max, min, normalize, same};
+use crate::math::{
+    Axis, CLEAR_MAXS, CLEAR_MINS, ORIGIN, Vec3, dot, length, max, min, normalize, same,
+};
 use crate::planes::{Plane, PlaneId, Planes, Side};
 use crate::winding::{ON_EPSILON, divide};
 use crate::{CompileError, Contents, Face, Faults, Surface, Warning};
@@ -18,6 +20,8 @@ const SUBDIVIDE_MARGIN: f32 = 16.0;
 const MID_START: f32 = 6.0 * 8192.0 * 8192.0;
 /// The full heuristic's starting split count and value (QBSP-7.9).
 const SPLITS_START: usize = 99999;
+/// Where `SubdivideFace` starts a face's texture extent, so any point widens it (QBSP-7.8).
+const SUBDIVIDE_CLEAR: f32 = 9999.0;
 const VALUE_START: f32 = 9e30;
 /// `TEX_SPECIAL` (BSP-8.5).
 const TEX_SPECIAL: i32 = 1;
@@ -223,8 +227,8 @@ impl Builder<'_> {
             [only] => return Some(*only),
             _ => {}
         }
-        let mut mins = [99999.0_f32; 3];
-        let mut maxs = [-99999.0_f32; 3];
+        let mut mins = CLEAR_MINS;
+        let mut maxs = CLEAR_MAXS;
         for surface in surfaces {
             mins = min(mins, surface.mins);
             maxs = max(maxs, surface.maxs);
@@ -266,8 +270,9 @@ impl Builder<'_> {
         for axis in 0..2 {
             loop {
                 let vecs = texinfo.vecs.get(axis).copied().unwrap_or_default();
-                let along = [vecs[0], vecs[1], vecs[2]];
-                let (mut min, mut max) = (9999.0_f32, -9999.0_f32);
+                let [s0, s1, s2, _] = vecs;
+                let along = [s0, s1, s2];
+                let (mut min, mut max) = (SUBDIVIDE_CLEAR, -SUBDIVIDE_CLEAR);
                 for point in &current.points {
                     let v = dot(*point, along);
                     min = min.min(v);
@@ -366,7 +371,7 @@ impl Builder<'_> {
         let (mins, maxs) = tree
             .nodes
             .get(node)
-            .map_or(([0.0; 3], [0.0; 3]), |n| (n.mins, n.maxs));
+            .map_or((ORIGIN, ORIGIN), |n| (n.mins, n.maxs));
         // `DivideNodeBounds` (QBSP-7.5).
         let (mut front_mins, mut back_maxs) = (mins, maxs);
         if kind.is_axial() {

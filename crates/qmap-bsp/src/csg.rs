@@ -13,7 +13,7 @@ use crate::winding::divide;
 use crate::{CompileError, Contents, Face, Surface};
 
 /// Each face of `inside` cut by the stored plane `split`: the part on the side `outside_side`
-/// faces goes to `outside`, the rest stays inside, `ClipInside` (QBSP-6.1, QBSP-6.2).
+/// faces goes to `outside`, the rest stays inside, `ClipInside` (QBSP-6.1, QBSP-6.7).
 fn clip_inside(
     inside: Vec<Face>,
     outside: &mut Vec<Face>,
@@ -54,7 +54,7 @@ fn clip_inside(
     Ok(kept)
 }
 
-/// Whether the brush cutting another comes after it in CSG order (QBSP-6.2).
+/// Whether the brush cutting another comes after it in CSG order (QBSP-6.7).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Precedence {
     Earlier,

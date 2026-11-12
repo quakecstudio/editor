@@ -3,8 +3,12 @@
 //! The table of planes every face names (QBSP-2): each plane stored once, canonical, and a
 //! face's side of it.
 
+use qs_bsp::{
+    BSP_PLANE_ANYX, BSP_PLANE_ANYY, BSP_PLANE_ANYZ, BSP_PLANE_X, BSP_PLANE_Y, BSP_PLANE_Z,
+};
+
 use crate::CompileError;
-use crate::math::{Axis, Vec3, dot, length, negate};
+use crate::math::{Axis, ORIGIN, Vec3, dot, length, negate};
 
 /// How near 1 two canonical normals' dot product must be for one plane (QBSP-2.3).
 pub(crate) const ANGLE_EPSILON: f64 = 0.000_01;
@@ -26,12 +30,12 @@ impl PlaneType {
     /// The type's number in a BSP.
     pub(crate) const fn number(self) -> i32 {
         match self {
-            Self::X => 0,
-            Self::Y => 1,
-            Self::Z => 2,
-            Self::AnyX => 3,
-            Self::AnyY => 4,
-            Self::AnyZ => 5,
+            Self::X => BSP_PLANE_X,
+            Self::Y => BSP_PLANE_Y,
+            Self::Z => BSP_PLANE_Z,
+            Self::AnyX => BSP_PLANE_ANYX,
+            Self::AnyY => BSP_PLANE_ANYY,
+            Self::AnyZ => BSP_PLANE_ANYZ,
         }
     }
 
@@ -171,7 +175,7 @@ impl Planes {
     pub(crate) fn get(&self, id: PlaneId) -> Plane {
         self.list.get(id.0).map_or(
             Plane {
-                normal: [0.0; 3],
+                normal: ORIGIN,
                 dist: 0.0,
             },
             |(plane, _)| *plane,

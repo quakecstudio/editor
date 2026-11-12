@@ -6,8 +6,9 @@
 use std::collections::{BTreeMap, HashMap};
 
 use qs_bsp::write::{BspFile, DiskClipNode, DiskFace, DiskLeaf, DiskModel, DiskNode, DiskPlane};
+use qs_bsp::{BSP_MAXLIGHTMAPS, BSP_NUM_AMBIENTS};
 
-use crate::math::{Vec3, all, cyclic, rint, within};
+use crate::math::{Axis, ORIGIN, Vec3, all, cyclic, rint, within};
 use crate::planes::{PlaneId, PlaneType, Planes};
 use crate::tree::{NodeKind, SIDESPACE, Tree};
 use crate::{CompileError, Contents, Hull, Limits, Tables};
@@ -22,7 +23,7 @@ const VERTEX_HASH_MIN: f32 = -8000.0;
 const VERTEX_HASH_SCALE: f32 = 0.004;
 const VERTEX_HASH_ROW: f32 = 64.0;
 /// A face's styles before light (QBSP-13.4).
-const NO_STYLES: [u8; 4] = [255; 4];
+const NO_STYLES: [u8; BSP_MAXLIGHTMAPS] = [255; BSP_MAXLIGHTMAPS];
 /// BSP29's limits (QBSP-13.10, BSP-16).
 const MAX_MAP_NODES: usize = 32767;
 const MAX_MAP_CLIPNODES: usize = 32767;
@@ -69,11 +70,11 @@ impl Output {
         file.leafs.push(DiskLeaf {
             contents: Contents::Solid.value(),
             visofs: 0,
-            mins: [0.0; 3],
-            maxs: [0.0; 3],
+            mins: ORIGIN,
+            maxs: ORIGIN,
             firstmarksurface: 0,
             nummarksurfaces: 0,
-            ambient_level: [0; 4],
+            ambient_level: [0; BSP_NUM_AMBIENTS],
         });
         Self {
             file,
@@ -263,18 +264,22 @@ impl Output {
         let start = self.file.leafs.len();
         let head = tree.head();
         if tree.contents(head).is_some() {
-            self.leaf(tree, head)?;
+            match self.tables {
+                // qbsp writes the leaf alone, and the head names the next node (QBSP-13.5).
+                Tables::Qbsp => self.leaf(tree, head)?,
+                Tables::Format => self.leaf_node(tree, head)?,
+            }
         } else {
             self.draw_node(tree, head, &mapping, &ranges)?;
         }
         let (mins, maxs) = tree
             .nodes
             .get(head)
-            .map_or(([0.0; 3], [0.0; 3]), |n| (n.mins, n.maxs));
+            .map_or((ORIGIN, ORIGIN), |n| (n.mins, n.maxs));
         self.file.models.push(DiskModel {
             mins: mins.map(|c| c + SIDESPACE + 1.0),
             maxs: maxs.map(|c| c - SIDESPACE - 1.0),
-            origin: [0.0; 3],
+            origin: ORIGIN,
             headnode: [headnode, 0, 0, 0],
             visleafs: index(self.file.leafs.len().saturating_sub(start), "MAX_MAP_LEAFS")?,
             firstface: index(firstface, "MAX_MAP_FACES")?,
@@ -342,6 +347,31 @@ impl Output {
         Ok(())
     }
 
+    /// A node over a head that is a leaf, so the model's head names a node: on the plane
+    /// z = 0, both children the leaf (QBSP-14.3).
+    fn leaf_node(&mut self, tree: &Tree, head: usize) -> Result<(), CompileError> {
+        let (mins, maxs) = tree
+            .nodes
+            .get(head)
+            .map_or((ORIGIN, ORIGIN), |n| (n.mins, n.maxs));
+        let planenum = self.final_plane(Axis::Z.along(1.0), 0.0, PlaneType::Z.number())?;
+        let at = self.file.nodes.len();
+        self.file.nodes.push(DiskNode {
+            planenum: index(planenum, "MAX_MAP_PLANES")?,
+            children: [0, 0],
+            mins,
+            maxs,
+            firstface: 0,
+            numfaces: 0,
+        });
+        let leaf = index::<i32>(self.file.leafs.len().saturating_add(1), "MAX_MAP_LEAFS")?;
+        self.leaf(tree, head)?;
+        if let Some(node) = self.file.nodes.get_mut(at) {
+            node.children = [leaf.wrapping_neg(); 2];
+        }
+        Ok(())
+    }
+
     /// `WriteLeaf`: its contents, bounds and marked faces with the pieces cut from them
     /// (QBSP-13.5).
     fn leaf(&mut self, tree: &Tree, node: usize) -> Result<(), CompileError> {
@@ -386,7 +416,7 @@ impl Output {
                 self.file.marksurfaces.len().saturating_sub(first),
                 "MAX_MAP_MARKSURFACES",
             )?,
-            ambient_level: [0; 4],
+            ambient_level: [0; BSP_NUM_AMBIENTS],
         });
         Ok(())
     }
@@ -475,9 +505,14 @@ impl ClipHull {
 
     /// `WriteClipNodes` for one model's tree: its head clip node (QBSP-13.6).
     pub(crate) fn add_model(&mut self, tree: &Tree, planes: &Planes) -> Result<(), CompileError> {
-        self.heads
-            .push(index(self.nodes.len(), "MAX_MAP_CLIPNODES")?);
-        self.clip_node(tree, tree.head(), planes)?;
+        let next = index(self.nodes.len(), "MAX_MAP_CLIPNODES")?;
+        let head = self.clip_node(tree, tree.head(), planes)?;
+        // qbsp names the next clip node even when the head is a leaf (QBSP-13.6); the
+        // extended dialect names the leaf's contents (QBSP-14.3).
+        self.heads.push(match self.tables {
+            Tables::Format if head < 0 => head,
+            _ => next,
+        });
         Ok(())
     }
 
@@ -535,7 +570,11 @@ impl Output {
         let first = index::<i32>(self.file.clipnodes.len(), "MAX_MAP_CLIPNODES")?;
         for (model, &head) in self.file.models.iter_mut().zip(&clip.heads) {
             if let Some(slot) = model.headnode.get_mut(hull.number()) {
-                *slot = first.saturating_add(head);
+                *slot = if head < 0 {
+                    head
+                } else {
+                    first.saturating_add(head)
+                };
             }
         }
         for &(normal, dist, children) in &clip.nodes {

@@ -3,7 +3,7 @@
 //! The portal file `vis` reads (QBSP-12).
 
 use crate::Contents;
-use crate::math::{Vec3, cross, dot, normalize, rint, sub, within};
+use crate::math::{ORIGIN, Vec3, cross, dot, normalize, rint, sub, within};
 use crate::planes::Planes;
 use crate::portals::Portals;
 use crate::tree::{NodeKind, Tree};
@@ -19,7 +19,7 @@ const SAME_WAY: f64 = 0.99;
 fn winding_normal(w: &[Vec3]) -> Vec3 {
     match w {
         [p0, p1, p2, ..] => normalize(cross(sub(*p0, *p1), sub(*p2, *p1))),
-        _ => [0.0; 3],
+        _ => ORIGIN,
     }
 }
 

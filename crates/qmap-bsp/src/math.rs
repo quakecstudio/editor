@@ -9,6 +9,15 @@ pub(crate) type Vec3 = [f32; 3];
 /// The zero vector.
 pub(crate) const ORIGIN: Vec3 = [0.0; 3];
 
+/// Where qbsp's `ClearBounds` starts a box's minimum and maximum, so any point widens it.
+const CLEAR_BOUND: f32 = 99999.0;
+/// A cleared box's minimum, `ClearBounds`.
+pub(crate) const CLEAR_MINS: Vec3 = [CLEAR_BOUND; 3];
+/// A cleared box's maximum, `ClearBounds`.
+pub(crate) const CLEAR_MAXS: Vec3 = [-CLEAR_BOUND; 3];
+/// What `Q_rint` adds before its floor (QBSP-4.4).
+const RINT_HALF: f64 = 0.5;
+
 /// How far apart two components may be and still be equal, `VectorCompare`'s `EQUAL_EPSILON`
 /// (QBSP-5.3).
 pub(crate) const EQUAL_EPSILON: f64 = 0.001;
@@ -165,7 +174,7 @@ pub(crate) fn same(a: Vec3, b: Vec3) -> bool {
     reason = "spec QBSP-4.4: qbsp's Q_rint returns the double floor as a vec_t"
 )]
 pub(crate) fn rint(value: f32) -> f32 {
-    (f64::from(value) + 0.5).floor() as f32
+    (f64::from(value) + RINT_HALF).floor() as f32
 }
 
 /// `a` and `b` within `epsilon`, compared as qbsp compares a float difference with a `double`

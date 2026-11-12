@@ -1,0 +1,48 @@
+enum qmap_bsp::CompileError
+enum qmap_bsp::Dialect
+enum qmap_bsp::Warning
+field qmap_bsp::compile::Compiled.bsp
+field qmap_bsp::compile::Compiled.leak_file
+field qmap_bsp::compile::Compiled.portal_file
+field qmap_bsp::compile::Compiled.warnings
+fn qmap_bsp::compile::Compiler::compile
+fn qmap_bsp::compile::Compiler::wad_path
+fn qmap_bsp::compile::Compiler::with_dialect
+fn qmap_bsp::compile::Compiler::with_subdivide
+impl qmap_bsp::CompileError: From<QbspError>
+impl qmap_bsp::CompileError: core::error::Error
+impl qmap_bsp::CompileError: fmt::Display
+impl qmap_bsp::compile::Compiler: Default
+struct qmap_bsp::compile::Compiled
+struct qmap_bsp::compile::Compiler
+use qmap_bsp::Compiled = compile::Compiled
+use qmap_bsp::Compiler = compile::Compiler
+variant qmap_bsp::CompileError::BadNormal
+variant qmap_bsp::CompileError::BogusRange
+variant qmap_bsp::CompileError::DegenerateEdge
+variant qmap_bsp::CompileError::Document
+variant qmap_bsp::CompileError::FacePoints
+variant qmap_bsp::CompileError::Limit
+variant qmap_bsp::CompileError::Map
+variant qmap_bsp::CompileError::MixedContents
+variant qmap_bsp::CompileError::NoValidBrushes
+variant qmap_bsp::CompileError::NonConvex
+variant qmap_bsp::CompileError::Normalization
+variant qmap_bsp::CompileError::PointOffPlane
+variant qmap_bsp::CompileError::SubdivideFailed
+variant qmap_bsp::CompileError::TooManyBrushFaces
+variant qmap_bsp::CompileError::TooManyHullEdges
+variant qmap_bsp::CompileError::TooManyHullPoints
+variant qmap_bsp::CompileError::TooManyPlanes
+variant qmap_bsp::CompileError::TooManyPoints
+variant qmap_bsp::CompileError::Write
+variant qmap_bsp::Dialect::Extended
+variant qmap_bsp::Dialect::Id
+variant qmap_bsp::Warning::BadFace
+variant qmap_bsp::Warning::Bsp2
+variant qmap_bsp::Warning::Leak
+variant qmap_bsp::Warning::MixedContents
+variant qmap_bsp::Warning::NoBrushFaces
+variant qmap_bsp::Warning::NoOccupant
+variant qmap_bsp::Warning::NoValidBrushes
+variant qmap_bsp::Warning::PortalClippedAway

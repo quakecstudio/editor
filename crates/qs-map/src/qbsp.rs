@@ -390,9 +390,9 @@ impl QbspMap {
                             let name = face.texture();
                             let name = name.get(..MAP_MAX_TEXTURE_NAME).unwrap_or(name);
                             let miptex = map.find_miptex(name, Tables::Bsp29)?;
-                            let vecs = face
-                                .texvecs()
-                                .map_or([[0.0; 4]; 2], |vecs| vecs.map(|axis| axis.map(to_f32)));
+                            let vecs = face.texvecs().map_or_else(TexVecs::default, |vecs| {
+                                vecs.map(|axis| axis.map(to_f32))
+                            });
                             let texinfo = map.find_texinfo(vecs, miptex, Tables::Bsp29)?;
                             faces.push(QbspFace {
                                 points,

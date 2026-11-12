@@ -80,8 +80,8 @@ pub(crate) fn portalize(
     let head = tree.head();
     // `MakeHeadnodePortals` (QBSP-8.1).
     // qbsp makes them axis by axis, minimum then maximum, and numbers them `j * 3 + i`.
-    let mut low: [Option<(Plane, usize)>; 3] = [None; 3];
-    let mut high: [Option<(Plane, usize)>; 3] = [None; 3];
+    let mut low: [Option<(Plane, usize)>; Axis::ALL.len()] = [None; Axis::ALL.len()];
+    let mut high: [Option<(Plane, usize)>; Axis::ALL.len()] = [None; Axis::ALL.len()];
     for (axis, (low, high)) in Axis::ALL
         .into_iter()
         .zip(low.iter_mut().zip(high.iter_mut()))
