@@ -9,10 +9,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qs_commands::{Command, Outcome};
-use qs_map::{ContainerId, Entity, MapFile, RoomKind};
+use qs_map::{EntityPlace, RoomKind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::groups::NAME_KEY;
+use super::links::TARGETNAME;
 use super::{EntityIndex, MapDocument, MapEdited, edit_map};
 use crate::{HasWorkbench, WorkbenchError};
 
@@ -20,19 +22,6 @@ use crate::{HasWorkbench, WorkbenchError};
 pub const MAP_OUTLINE: &str = "map.outline";
 /// The id of `map.move_to`.
 pub const MAP_MOVE_TO: &str = "map.move_to";
-
-/// The key holding a layer's or group's name (MAP-9.1).
-const NAME_KEY: &[u8] = b"_tb_name";
-/// The key naming the group an entity is in (MAP-9.2).
-const GROUP_KEY: &[u8] = b"_tb_group";
-/// The key naming the layer an entity is in (MAP-9.2).
-const LAYER_KEY: &[u8] = b"_tb_layer";
-/// The key holding a group's link id (MAP-9.5).
-const LINK_KEY: &[u8] = b"_tb_linked_group_id";
-/// The key an entity is fired by.
-const TARGETNAME_KEY: &[u8] = b"targetname";
-/// The key holding an entity's class.
-const CLASSNAME_KEY: &[u8] = b"classname";
 
 /// The parameters of `map.outline`.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
@@ -76,6 +65,12 @@ pub struct OutlineRow {
 }
 
 impl OutlineRow {
+    /// Whether this row or a row under it is `entity`'s.
+    #[must_use]
+    pub fn holds(&self, entity: EntityIndex) -> bool {
+        self.entity == entity || self.rows.iter().any(|row| row.holds(entity))
+    }
+
     /// How many rows this row and those under it hold.
     #[must_use]
     pub fn count(&self) -> usize {
@@ -96,78 +91,24 @@ pub struct MoveToParams {
     pub into: EntityIndex,
 }
 
-/// The text of `key` on `entity`.
-fn text(entity: &Entity, key: &[u8]) -> Option<String> {
-    entity
-        .value(key)
-        .map(|value| String::from_utf8_lossy(value).into_owned())
-}
-
-/// The map's containers by kind and id, and the place of each.
-struct Containers {
-    places: BTreeMap<(RoomKindKey, ContainerId), usize>,
-}
-
-/// [`RoomKind`] as a key that orders.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum RoomKindKey {
-    Layer,
-    Group,
-}
-
-impl From<RoomKind> for RoomKindKey {
-    fn from(kind: RoomKind) -> Self {
-        match kind {
-            RoomKind::Layer => Self::Layer,
-            RoomKind::Group => Self::Group,
-        }
-    }
-}
-
-impl Containers {
-    fn of(file: &MapFile) -> Self {
-        let places = file
-            .entities
-            .iter()
-            .enumerate()
-            .filter_map(|(place, entity)| {
-                entity
-                    .container()
-                    .map(|(kind, id)| ((kind.into(), id), place))
-            })
-            .collect();
-        Self { places }
-    }
-
-    /// The container `entity` is directly in: its group when that group exists, else its layer
-    /// when that layer exists (MAP-9.2), else the default layer, the world, at 0.
-    fn parent(&self, entity: &Entity) -> usize {
-        let group = entity
-            .group()
-            .and_then(|id| self.places.get(&(RoomKindKey::Group, id)));
-        let layer = entity
-            .layer()
-            .and_then(|id| self.places.get(&(RoomKindKey::Layer, id)));
-        group.or(layer).copied().unwrap_or(0)
-    }
-}
-
 impl MapDocument {
     /// The outline of the open map, filtered by `filter` (MAP-31).
     #[must_use]
     pub fn outline(&self, filter: Option<&str>) -> Vec<OutlineRow> {
         let file = &self.file;
-        let containers = Containers::of(file);
+        let parents = file.parents();
         let mut children: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         for (place, entity) in file.entities.iter().enumerate().skip(1) {
             // A layer is a top row; it stands in no container.
             if matches!(entity.container(), Some((RoomKind::Layer, _))) {
                 continue;
             }
-            children
-                .entry(containers.parent(entity))
-                .or_default()
-                .push(place);
+            let parent = parents
+                .get(place)
+                .copied()
+                .flatten()
+                .map_or(0, EntityPlace::get);
+            children.entry(parent).or_default().push(place);
         }
         let filter = filter
             .map(str::to_lowercase)
@@ -201,13 +142,18 @@ impl MapDocument {
         }
         let entity = self.file.entities.get(place)?;
         let (kind, label) = match entity.container() {
-            Some((RoomKind::Layer, _)) => (RowKind::Layer, text(entity, NAME_KEY)),
-            Some((RoomKind::Group, _)) if entity.value(LINK_KEY).is_some() => {
-                (RowKind::LinkedGroup, text(entity, NAME_KEY))
+            Some((RoomKind::Layer, _)) => (RowKind::Layer, entity.text(NAME_KEY)),
+            Some((RoomKind::Group, _)) if entity.is_linked_group() => {
+                (RowKind::LinkedGroup, entity.text(NAME_KEY))
             }
-            Some((RoomKind::Group, _)) => (RowKind::Group, text(entity, NAME_KEY)),
+            Some((RoomKind::Group, _)) => (RowKind::Group, entity.text(NAME_KEY)),
             None if place == 0 => (RowKind::Layer, None),
-            None => (RowKind::Entity, text(entity, CLASSNAME_KEY)),
+            None => (
+                RowKind::Entity,
+                entity
+                    .classname()
+                    .map(|name| String::from_utf8_lossy(name).into_owned()),
+            ),
         };
         let mut under: Vec<OutlineRow> = children
             .get(&place)
@@ -227,71 +173,67 @@ impl MapDocument {
             entity: EntityIndex::new(place),
             kind,
             label: label.unwrap_or_default(),
-            targetname: text(entity, TARGETNAME_KEY),
+            targetname: entity.text(TARGETNAME),
             brushes: entity.brushes().count(),
             rows: under,
         };
         let keep = match filter {
             None => true,
-            Some(filter) => !row.rows.is_empty() || matches(entity, filter),
+            Some(filter) => !row.rows.is_empty() || entity.mentions(filter),
         };
         keep.then_some(row)
+    }
+
+    /// The layer or group the entity or group at `entity` would go into at `into`, the world
+    /// for the default layer, and whether it is already there.
+    fn move_target(
+        &self,
+        entity: EntityIndex,
+        into: EntityIndex,
+    ) -> Result<(Option<(RoomKind, qs_map::ContainerId)>, bool), WorkbenchError> {
+        let moved = self
+            .file
+            .entities
+            .get(entity.get())
+            .ok_or(WorkbenchError::NoEntity { entity })?;
+        // The world and a layer's own entity stand in no container.
+        if entity.is_world() || matches!(moved.container(), Some((RoomKind::Layer, _))) {
+            return Err(WorkbenchError::CannotMove { entity });
+        }
+        let target = self
+            .file
+            .entities
+            .get(into.get())
+            .ok_or(WorkbenchError::NoEntity { entity: into })?
+            .container();
+        if target.is_none() && !into.is_world() {
+            return Err(WorkbenchError::NotContainer { entity: into });
+        }
+        // A group cannot go into itself or a group inside it.
+        let parents = self.file.parents();
+        let mut at = Some(EntityPlace::new(into.get()));
+        for _ in 0..parents.len() {
+            match at {
+                Some(place) if place.get() == entity.get() => {
+                    return Err(WorkbenchError::NotContainer { entity: into });
+                }
+                Some(place) => at = parents.get(place.get()).copied().flatten(),
+                None => break,
+            }
+        }
+        let now = parents.get(entity.get()).copied().flatten();
+        let there = now.map_or(into.is_world(), |now| now.get() == into.get());
+        Ok((target, there))
     }
 
     /// Moves the entity or group at `entity` into the layer or group at `into`, the world for
     /// the default layer.
     fn move_to(&mut self, entity: EntityIndex, into: EntityIndex) -> Result<(), WorkbenchError> {
-        if entity.is_world() || entity == into {
-            return Err(WorkbenchError::NotContainer { entity: into });
-        }
-        self.entity_mut(entity)?;
-        let target = self.entity_mut(into)?.container();
-        let containers = Containers::of(&self.file);
-        // A group cannot go into itself or a group inside it.
-        let mut at = into.get();
-        for _ in 0..self.file.entities.len() {
-            if at == entity.get() {
-                return Err(WorkbenchError::NotContainer { entity: into });
-            }
-            let Some(next) = self.file.entities.get(at) else {
-                break;
-            };
-            let parent = containers.parent(next);
-            if parent == at || parent == 0 {
-                break;
-            }
-            at = parent;
-        }
+        let (target, _) = self.move_target(entity, into)?;
         let moved = self.entity_mut(entity)?;
-        let set = match (target, into.is_world()) {
-            (Some((RoomKind::Group, id)), _) => {
-                moved.remove(LAYER_KEY);
-                moved.set(GROUP_KEY, id.get().to_string().as_bytes())
-            }
-            (Some((RoomKind::Layer, id)), _) => {
-                moved.remove(GROUP_KEY);
-                moved.set(LAYER_KEY, id.get().to_string().as_bytes())
-            }
-            (None, true) => {
-                moved.remove(GROUP_KEY);
-                moved.remove(LAYER_KEY);
-                Ok(())
-            }
-            (None, false) => return Err(WorkbenchError::NotContainer { entity: into }),
-        };
+        let set = moved.put_in(target);
         set.map_err(|error| self.map_error(error))
     }
-}
-
-/// Whether `entity`'s keys or values hold `filter`, already lower case.
-fn matches(entity: &Entity, filter: &str) -> bool {
-    entity.pairs().any(|pair| {
-        [pair.key(), pair.value()].into_iter().any(|bytes| {
-            String::from_utf8_lossy(bytes)
-                .to_lowercase()
-                .contains(filter)
-        })
-    })
 }
 
 /// `map.outline`.
@@ -334,6 +276,14 @@ impl<C: HasWorkbench + 'static> Command<C> for MapMoveTo {
         context: &mut C,
         params: MoveToParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+        let document = context.workbench().map().ok_or(WorkbenchError::NoMap)?;
+        let (_, there) = document.move_target(params.entity, params.into)?;
+        if there {
+            // Already there: nothing changes, and no undo step is made.
+            return Ok(Outcome::unchanged(MapEdited {
+                entity: Some(params.entity),
+            }));
+        }
         let ((), step) = edit_map(context, |document| {
             document.move_to(params.entity, params.into)
         })?;

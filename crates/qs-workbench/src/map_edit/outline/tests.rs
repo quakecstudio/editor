@@ -32,11 +32,16 @@ const MAP: &str = "{\n\"classname\" \"worldspawn\"\n{\n( 0 0 0 ) ( 0 1 0 ) ( 1 0
 {\n\"classname\" \"monster_ogre\"\n\"origin\" \"64 0 0\"\n}\n";
 
 fn open(name: &str) -> Session<Workbench<FsLoader>> {
+    open_text(name, MAP)
+}
+
+/// `text` open as a map, in a fresh directory named `name`.
+fn open_text(name: &str, text: &str) -> Session<Workbench<FsLoader>> {
     let dir = std::env::temp_dir().join(format!("qs-wb-outline-{name}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("outline.map");
-    std::fs::write(&path, MAP).unwrap();
+    std::fs::write(&path, text).unwrap();
     let mut registry = Registry::new();
     register(&mut registry).unwrap();
     let mut session = Session::new(Workbench::new(FsLoader, Config::default()), registry);
@@ -168,4 +173,76 @@ fn rows_move_between_layers_and_groups() {
     }
     let map = session.context().map().unwrap();
     assert_eq!(map.selected(), None, "moving a row selects nothing");
+}
+
+// No spec statement: P5-16, MAP-9.2: an entity naming a layer and a group is in the layer;
+// groups that name each other, and one naming itself, are under the default layer, so every
+// entity still appears once; a blank link id is a plain group
+#[test]
+fn odd_containers_still_appear_once() {
+    // The trigger names Lights; group 1 is in group 2 and group 2 in group 1; the doors group
+    // names itself.
+    let odd = MAP
+        .replace(
+            "\"target\" \"gate\"\n",
+            "\"target\" \"gate\"\n\"_tb_layer\" \"3\"\n",
+        )
+        .replace(
+            "\"_tb_id\" \"1\"\n",
+            "\"_tb_id\" \"1\"\n\"_tb_group\" \"2\"\n",
+        )
+        .replace(
+            "\"_tb_id\" \"2\"\n",
+            "\"_tb_id\" \"2\"\n\"_tb_group\" \"1\"\n",
+        )
+        .replace(
+            "\"_tb_id\" \"4\"\n\"_tb_layer\" \"3\"\n",
+            "\"_tb_id\" \"4\"\n\"_tb_group\" \"4\"\n",
+        );
+    let mut session = open_text("odd", &odd);
+    let rows = outline(&mut session, "");
+    let mut seen: Vec<usize> = flat(&rows).into_iter().map(|(entity, _)| entity).collect();
+    seen.sort_unstable();
+    assert_eq!(seen, (0..11).collect::<Vec<_>>());
+    assert!(
+        flat(&rows[1].rows).iter().any(|&(entity, _)| entity == 9),
+        "the trigger, in Lights"
+    );
+    assert!(
+        flat(&rows[0].rows)
+            .iter()
+            .any(|&(entity, depth)| entity == 1 && depth == 0)
+    );
+    // A blank link id, on the plain map: a plain group.
+    let blank = MAP.replace(
+        "\"_tb_id\" \"2\"\n\"_tb_linked_group_id\" \"{a}\"",
+        "\"_tb_id\" \"2\"\n\"_tb_linked_group_id\" \"\"",
+    );
+    let mut session = open_text("blank", &blank);
+    let rows = outline(&mut session, "");
+    let group = rows[0].rows.iter().find(|row| row.entity.get() == 3);
+    assert_eq!(group.map(|row| row.kind), Some(RowKind::Group));
+}
+
+// No spec statement: P5-16: the world and a layer cannot be moved, and say so of themselves; a
+// move into the container something is already in changes nothing and makes no undo step
+#[test]
+fn a_move_that_changes_nothing_is_not_an_edit() {
+    let mut session = open("noop");
+    for (entity, into) in [(0, 5), (5, 7)] {
+        let error = session
+            .execute(MAP_MOVE_TO, json!({ "entity": entity, "into": into }))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(&format!("entity {entity} ")), "{error}");
+    }
+    let depth = session.undo_depth();
+    session
+        .execute(MAP_MOVE_TO, json!({ "entity": 6, "into": 5 }))
+        .unwrap();
+    session
+        .execute(MAP_MOVE_TO, json!({ "entity": 10, "into": 0 }))
+        .unwrap();
+    assert_eq!(session.undo_depth(), depth);
+    assert!(!session.context().map().unwrap().is_unsaved());
 }

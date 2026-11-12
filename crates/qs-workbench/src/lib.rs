@@ -764,6 +764,11 @@ pub enum WorkbenchError {
         /// The entity.
         entity: map_edit::EntityIndex,
     },
+    /// The entity cannot be moved into a layer or group: it is the world or a layer (P5-16).
+    CannotMove {
+        /// The entity.
+        entity: map_edit::EntityIndex,
+    },
     /// The entity is no layer or group to move into, or is the one being moved or one inside
     /// it (P5-16).
     NotContainer {
@@ -793,6 +798,12 @@ impl fmt::Display for WorkbenchError {
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
             Self::Locked { entity } => write!(f, "entity {entity} is locked"),
             Self::NotLayer { entity } => write!(f, "entity {entity} is no layer"),
+            Self::CannotMove { entity } => {
+                write!(
+                    f,
+                    "entity {entity} is the world or a layer, which go in nothing"
+                )
+            }
             Self::NotContainer { entity } => {
                 write!(f, "entity {entity} is no layer or group it can go into")
             }
@@ -861,6 +872,7 @@ impl Error for WorkbenchError {
             | Self::Locked { .. }
             | Self::NotLayer { .. }
             | Self::NotContainer { .. }
+            | Self::CannotMove { .. }
             | Self::NoRoom { .. }
             | Self::ChangedOnDisk { .. }
             | Self::NotBuilt => None,

@@ -52,9 +52,6 @@ const PLACE_DISTANCE: f32 = 256.0;
 const LINK_END: f32 = 3.0;
 /// The width of the new key's and new value's fields, in points.
 const NEW_PAIR_WIDTH: f32 = 90.0;
-/// How many of a framed box's largest half-sizes the camera stands back from its middle; with
-/// the 90 degree view, two keep the whole box in sight.
-const FRAME_DISTANCE: f32 = 2.0;
 /// The map units the camera stands back from a framed box beyond that, so a small entity is not
 /// right against the eye.
 const FRAME_MARGIN: f32 = 64.0;
@@ -445,12 +442,13 @@ impl MapEditor {
         let hidden: BTreeSet<EntityIndex> = self.hidden.union(&self.kept_out.0).copied().collect();
         let link_key = self.link_key();
         let camera = self.camera.get_or_insert_with(|| start_camera(document));
+        let rect = ui.available_rect_before_wrap();
         if let Some(entity) = self.frame.take()
             && let Some(shape) = self.scene.entities.iter().find(|s| s.index == entity)
         {
-            frame(camera, shape.bounds);
+            let aspect = rect.width() / rect.height().max(1.0);
+            camera.frame(shape.bounds, aspect, FRAME_MARGIN);
         }
-        let rect = ui.available_rect_before_wrap();
         let response = ui.interact(
             rect,
             egui::Id::new(core::any::TypeId::of::<Self>()),
@@ -799,31 +797,6 @@ impl MapEditor {
         });
         actions
     }
-}
-
-/// Moves `camera` back from the middle of `bounds` along the way it faces, far enough that the
-/// whole box is in view, keeping where it looks (P5-16).
-fn frame(camera: &mut Camera, [min, max]: [[f32; 3]; 2]) {
-    let middle = [0, 1, 2].map(|axis| {
-        let lo = min.get(axis).copied().unwrap_or_default();
-        let hi = max.get(axis).copied().unwrap_or_default();
-        (lo + hi) / 2.0
-    });
-    let half = [0, 1, 2]
-        .map(|axis| {
-            let lo = min.get(axis).copied().unwrap_or_default();
-            let hi = max.get(axis).copied().unwrap_or_default();
-            (hi - lo) / 2.0
-        })
-        .into_iter()
-        .fold(0.0_f32, f32::max);
-    let distance = half * FRAME_DISTANCE + FRAME_MARGIN;
-    let [forward, _, _] = camera.axes();
-    camera.origin = [0, 1, 2].map(|axis| {
-        let m = middle.get(axis).copied().unwrap_or_default();
-        let f = forward.get(axis).copied().unwrap_or_default();
-        m - f * distance
-    });
 }
 
 /// Moves the camera while a fly key is held (TrenchBroom's `CameraFly*`).

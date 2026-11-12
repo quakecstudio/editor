@@ -2124,12 +2124,13 @@ impl Shell {
     /// Reads the open map's outline again when the map or the outline's filter changed since it
     /// was read (P5-16).
     fn refresh_map_outline(&mut self) {
+        // The rows change with the map's edits, not with the selection.
         let Some(revision) = self
             .session
             .context()
             .workbench
             .map()
-            .map(MapDocument::revision)
+            .map(MapDocument::edits)
         else {
             return;
         };

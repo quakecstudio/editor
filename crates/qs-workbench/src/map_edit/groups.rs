@@ -37,7 +37,7 @@ pub const MAP_LAYERS: &str = "map.layers";
 pub const MAP_EXPORT: &str = "map.export";
 
 /// The key holding a layer's or group's name (MAP-9.1).
-const NAME_KEY: &[u8] = b"_tb_name";
+pub(super) const NAME_KEY: &[u8] = b"_tb_name";
 
 /// The entities hidden and locked in the editor, by their place in the map.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

@@ -13,6 +13,9 @@ use crate::theme::{Theme, Token};
 
 /// The width of the filter field, in points.
 const FILTER_WIDTH: f32 = 180.0;
+/// How many frames the outline scrolls to a new selection's row, so the rows around it have
+/// opened and been laid out by the last.
+const REVEAL_FRAMES: u8 = 8;
 
 /// What the outline asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,12 +37,14 @@ pub(crate) struct OutlineView {
     filter: String,
     /// The map's revision and the filter the rows were read for.
     read: Option<(MapRevision, String)>,
-    /// The selection the outline last scrolled to.
+    /// The selection the outline last scrolled to, and the frames it still scrolls to it.
     revealed: Option<EntityIndex>,
+    revealing: u8,
 }
 
 impl OutlineView {
-    /// The filter to read the rows with, when they were read for another revision or filter.
+    /// The filter to read the rows with, when they were read for other edits or another
+    /// filter.
     pub(crate) fn stale(&self, revision: MapRevision) -> Option<String> {
         let wanted = (revision, self.filter.trim().to_owned());
         (self.read.as_ref() != Some(&wanted)).then_some(wanted.1)
@@ -69,8 +74,13 @@ impl OutlineView {
                 .hint_text(Text::MapFilterOutline.get())
                 .desired_width(FILTER_WIDTH),
         );
-        let reveal = (selected != self.revealed).then_some(selected).flatten();
-        self.revealed = selected;
+        if selected != self.revealed {
+            self.revealed = selected;
+            self.revealing = REVEAL_FRAMES;
+        }
+        let reveal = (self.revealing > 0).then_some(selected).flatten();
+        // The opening rows' animation repaints the frames this counts down through.
+        self.revealing = self.revealing.saturating_sub(1);
         for row in &self.rows {
             Self::row_ui(ui, theme, row, selected, reveal, &mut actions);
         }
@@ -111,8 +121,7 @@ impl OutlineView {
             });
             line.inner
         } else {
-            let holds = |rows: &[OutlineRow]| contains(rows, reveal);
-            let open = reveal.is_some() && holds(&row.rows);
+            let open = reveal.is_some_and(|entity| row.rows.iter().any(|r| r.holds(entity)));
             let header = egui::CollapsingHeader::new(text)
                 .id_salt(row.entity)
                 .default_open(row.kind == RowKind::Layer)
@@ -141,10 +150,4 @@ impl OutlineView {
             actions.push(OutlineAction::MoveTo(dragged.0, row.entity));
         }
     }
-}
-
-/// Whether `rows` or the rows under them hold `entity`.
-fn contains(rows: &[OutlineRow], entity: Option<EntityIndex>) -> bool {
-    rows.iter()
-        .any(|row| Some(row.entity) == entity || contains(&row.rows, entity))
 }
