@@ -469,3 +469,50 @@ one ("the armory") and the map tools can find it (MAP-16).
   "Layers marked "Omit From Export" will not be present in the exported map"), with every
   entity in it: a layer's own entity, the entities naming it, and the entities of a group in
   it, however deep (MAP-9.2).
+
+## MAP-10 Shapes
+
+**Source:** our design, after the block tool of Valve's Hammer and J.A.C.K., whose shapes take
+sides, a wall width, an arc and a start angle; the step a player climbs is `SV_WalkMove`'s
+`STEPSIZE` (PHYS-8.3). Implemented by `qs_map::shapes`.
+
+### Behaviour
+
+- **MAP-10.1** A shape fills a box given by two corners, in any order. A box with no volume, or
+  a corner that is not a number, is refused. Every brush of a shape is made from its faces'
+  planes and is valid (MAP-3.4); a shape whose brush would not be is refused, never written.
+- **MAP-10.2** A round shape of `n` sides lies around the ellipse the box's footprint holds. With
+  corners on the ellipse, corner `i` is at angle `2πi/n` from +x; with edges on it, the radii are
+  divided by `cos(π/n)` and corner `i` is at `π/n + 2πi/n`, so each edge touches the ellipse at
+  its middle and a 4-sided shape is the box's footprint.
+- **MAP-10.3** A round shape has 3 to 128 sides; others are refused.
+- **MAP-10.4** A cylinder is one upright prism from the box's bottom to its top. A hollow one of
+  wall `t` is one prism per side, each from the outer polygon's edge to the edge of the polygon
+  of the same sides and mode on the ellipse whose radii are `t` less; neighbours share their
+  sides, and a solid cylinder on the box shrunk by `t` on each side fits its hole exactly. A wall
+  is above 0 and thinner than the smaller radius; others are refused.
+- **MAP-10.5** A cone is the cylinder's base and a point at the middle of the box's top.
+- **MAP-10.6** An arch lies in the box's x-z face and runs through it along y: its curve is the
+  half ellipse of radii half the box's width and its height, centred at the middle of its bottom,
+  from the start angle over the arc (above 0 and at most 360 degrees), cut in `n` segments, each a
+  prism of wall `t`. With spandrels filled, each segment of an arc short of a full turn also has
+  the prism between its outer edge and the box's top.
+- **MAP-10.7** A UV spheroid is one brush whose faces are its bands of latitude, 2 to 64 of them,
+  cut in `n` slices, with at most 1280 faces, slices times bands; an icospheroid is one brush of
+  an icosahedron's twenty triangles, each cut in four up to 3 times (1280 faces), pushed out onto
+  the box's ellipsoid.
+- **MAP-10.8** A rock is the convex hull of 4 to 64 points spread over the box's ellipsoid by a
+  spiral, each from 0.7 to 1 of the way out, as a 64-bit seed decides: one seed, one rock.
+- **MAP-10.9** A scalable curve has 12, 24, 48 or 96 sides from a template of whole-number corners
+  around a circle, the smallest whose corners are distinct and strictly convex. The box's corner
+  is put on the grid and its width and depth made whole multiples `k` of the template's width in
+  grid units; each corner is then the box's corner plus the template's, scaled by `k`, so every
+  corner lies on the grid at every size. A hollow curve's hole is the template scaled by `k`
+  less the wall's steps, at least 1 and less than `k`.
+- **MAP-10.10** Stairs climb the box one way, each step a box from the floor to its top: as many
+  steps as fit both the box's length at the step's depth and its height at the step's height,
+  at least one. The default step is 16 high, under `STEPSIZE` (18), and 32 deep, the player box's
+  width, so a player walks up them.
+- **MAP-10.11** Spiral stairs are steps of the step's height, `n` to a turn around the box's
+  middle, each the slice between the core's circle and the ellipse; with no core each slice
+  reaches the middle.

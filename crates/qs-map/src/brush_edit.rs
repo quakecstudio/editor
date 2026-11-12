@@ -139,7 +139,7 @@ fn same_point(a: [f64; 3], b: [f64; 3]) -> bool {
 
 impl Plane<f64> {
     /// The same plane facing the other way.
-    fn flipped(self) -> Self {
+    pub(crate) fn flipped(self) -> Self {
         Self {
             normal: self.normal.map(|c| -c),
             dist: -self.dist,
@@ -147,7 +147,7 @@ impl Plane<f64> {
     }
 
     /// How far `point` is in front of it.
-    fn side(&self, point: [f64; 3]) -> f64 {
+    pub(crate) fn side(&self, point: [f64; 3]) -> f64 {
         dot(point, self.normal) - self.dist
     }
 
@@ -381,7 +381,11 @@ impl Brush {
 
     /// The convex hull of `points`, each face painted as the face of `from` whose normal is
     /// nearest its own, or with `surface` when `from` has none.
-    fn hull(points: &[[f64; 3]], from: &[&Self], surface: &Surface) -> Result<Self, BrushError> {
+    pub(crate) fn hull(
+        points: &[[f64; 3]],
+        from: &[&Self],
+        surface: &Surface,
+    ) -> Result<Self, BrushError> {
         let mut unique: Vec<[f64; 3]> = Vec::new();
         for &point in points {
             if !unique.iter().any(|&known| same_point(known, point)) {
@@ -421,6 +425,31 @@ impl Brush {
                 .max_by(|a, b| a.0.total_cmp(&b.0))
                 .map_or_else(|| surface.clone(), |(_, face)| Surface::of(face));
             brush.faces.push(paint.face(points, plane.normal)?);
+        }
+        if brush.is_valid() {
+            Ok(brush)
+        } else {
+            Err(BrushError::Degenerate)
+        }
+    }
+
+    /// The brush behind every one of `planes`, each face painted with `surface`; a plane with
+    /// no polygon on the solid makes no face.
+    ///
+    /// # Errors
+    ///
+    /// [`BrushError::Degenerate`] when the planes bound no valid brush, and [`BrushError::Map`]
+    /// when a face cannot be written.
+    pub(crate) fn from_planes(
+        planes: &[Plane<f64>],
+        surface: &Surface,
+    ) -> Result<Self, BrushError> {
+        let mut brush = Self::new();
+        for (plane, polygon) in planes.iter().zip(polygons_on(planes)) {
+            let Some(points) = face_points(&polygon, plane.normal) else {
+                continue;
+            };
+            brush.faces.push(surface.face(points, plane.normal)?);
         }
         if brush.is_valid() {
             Ok(brush)

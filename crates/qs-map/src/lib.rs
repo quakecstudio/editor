@@ -26,6 +26,7 @@ pub mod lexer;
 mod linked;
 pub mod qbsp;
 mod rooms;
+pub mod shapes;
 
 pub use brush_edit::{BrushError, Surface};
 pub use check::{Diagnostic, DiagnosticKind, MAP_MAX_SOUNDS};
