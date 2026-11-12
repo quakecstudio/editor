@@ -20,8 +20,14 @@ const CELL: f32 = 84.0;
 const CORNER: f32 = 4.0;
 /// The space kept around a preview's lines, in points.
 const MARGIN: f32 = 6.0;
-/// The width of the filter field, in points.
-const FILTER_WIDTH: f32 = 220.0;
+/// The width of a browser's filter field, in points.
+pub(crate) const FILTER_WIDTH: f32 = 220.0;
+
+/// Whether a browser's filter, as typed, shows `name`: its trimmed text found in the name, in
+/// any case.
+pub(crate) fn filter_shows(filter: &str, name: &str) -> bool {
+    name.to_lowercase().contains(&filter.trim().to_lowercase())
+}
 /// The box drawn for a class whose comment and code give none, id's `info_null`'s.
 const NO_SIZE: [[f32; 3]; 2] = [[-8.0; 3], [8.0; 3]];
 /// The previews' view: turned 45 degrees about the vertical and looked down on at 30, so the
@@ -40,8 +46,29 @@ pub(crate) struct EntityBrowser {
 }
 
 impl EntityBrowser {
+    /// The classes of `names` the filter shows.
+    fn shown<'a>(&self, names: &'a [String]) -> Vec<&'a String> {
+        names
+            .iter()
+            .filter(|name| filter_shows(&self.filter, name))
+            .collect()
+    }
+
+    /// The header's part: the filter and how many classes it shows of `names`.
+    pub(crate) fn header(&mut self, ui: &mut Ui, theme: &Theme, names: &[String]) {
+        ui.add(
+            egui::TextEdit::singleline(&mut self.filter)
+                .hint_text(Text::MapFilterEntities.get())
+                .desired_width(FILTER_WIDTH),
+        );
+        let shown = self.shown(names).len();
+        ui.label(
+            RichText::new(class_count(shown, names.len())).color(theme.color(Token::TextMuted)),
+        );
+    }
+
     /// Draws the classes `names`, looked up in `classes` and their models in `models`.
-    pub(crate) fn ui(
+    pub(crate) fn body(
         &mut self,
         ui: &mut Ui,
         theme: &Theme,
@@ -49,24 +76,7 @@ impl EntityBrowser {
         classes: &HashMap<String, ClassLook>,
         models: &HashMap<String, Vec<Line>>,
     ) {
-        let filter = self.filter.trim().to_lowercase();
-        let shown: Vec<&String> = names
-            .iter()
-            .filter(|name| name.to_lowercase().contains(&filter))
-            .collect();
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(Text::Entities.get()).strong());
-            ui.add(
-                egui::TextEdit::singleline(&mut self.filter)
-                    .hint_text(Text::MapFilterEntities.get())
-                    .desired_width(FILTER_WIDTH),
-            );
-            ui.label(
-                RichText::new(class_count(shown.len(), names.len()))
-                    .color(theme.color(Token::TextMuted)),
-            );
-        });
-        ui.separator();
+        let shown = self.shown(names);
         egui::ScrollArea::horizontal().show(ui, |ui| {
             ui.horizontal(|ui| {
                 for name in shown {

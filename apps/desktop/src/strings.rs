@@ -4,6 +4,8 @@
 //! wording is reviewed in one place and can be translated later. A test fails on a string
 //! literal in the UI modules.
 
+use qs_workbench::map_textures::{WadFound, WadState};
+
 /// One string the app shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Text {
@@ -478,6 +480,14 @@ pub enum Text {
     MapAddKey,
     /// The entity browser's filter hint.
     MapFilterEntities,
+    /// The texture browser's tab (P6-10).
+    MapTextures,
+    /// The texture browser's filter field.
+    MapFilterTextures,
+    /// A texture the map's faces name that no WAD or BSP holds.
+    MapTextureMissing,
+    /// Why no texture is shown in its colours: no palette in the project or the game.
+    MapNoPalette,
     /// What dragging a class from the entity browser does.
     MapPlaceHint,
     /// Why a brush class in the entity browser cannot be dragged.
@@ -570,7 +580,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 279] = [
+    pub const ALL: [Self; 283] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -806,6 +816,10 @@ impl Text {
         Self::MapTargets,
         Self::MapAddKey,
         Self::MapFilterEntities,
+        Self::MapTextures,
+        Self::MapFilterTextures,
+        Self::MapTextureMissing,
+        Self::MapNoPalette,
         Self::MapPlaceHint,
         Self::MapBrushClass,
         Self::MapLinks,
@@ -1110,6 +1124,10 @@ impl Text {
             Self::MapTargets => "Targetnames",
             Self::MapAddKey => "Add key",
             Self::MapFilterEntities => "Filter entities",
+            Self::MapTextures => "Textures",
+            Self::MapFilterTextures => "Filter textures",
+            Self::MapTextureMissing => "No WAD the map names holds this texture",
+            Self::MapNoPalette => "No game palette",
             Self::MapPlaceHint => "Drag into the map to place",
             Self::MapBrushClass => "A brush entity: made from brushes",
             Self::MapLinks => "Links",
@@ -1228,6 +1246,33 @@ pub fn search_count(places: usize, files: usize, more: bool) -> String {
 #[must_use]
 pub fn class_count(shown: usize, total: usize) -> String {
     format!("{shown} of {total} entities")
+}
+
+/// A WAD the map names, as the texture browser's summary gives it: its name, and that it was
+/// not found, or is no WAD, when so.
+#[must_use]
+pub fn wad_label(wad: &WadFound) -> String {
+    match wad.state {
+        WadState::Read { .. } => wad.name.clone(),
+        WadState::Missing => format!("{} not found", wad.name),
+        WadState::Unreadable => format!("{} is no WAD", wad.name),
+    }
+}
+
+/// The texture browser's summary: the WADs the map names, and how many textures are shown of
+/// how many, as the mockup's "ember.wad, 46 textures".
+#[must_use]
+pub fn texture_count(wads: &[String], shown: usize, total: usize) -> String {
+    let count = if shown == total {
+        format!("{total} textures")
+    } else {
+        format!("{shown} of {total} textures")
+    };
+    if wads.is_empty() {
+        format!("no WAD, {count}")
+    } else {
+        format!("{}, {count}", wads.join(", "))
+    }
 }
 
 /// How many entities besides the one shown a key edit also sets (P5-13).

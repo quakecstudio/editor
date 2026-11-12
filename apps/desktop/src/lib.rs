@@ -43,6 +43,7 @@ pub mod project;
 pub mod shell;
 pub mod strings;
 mod terminal;
+mod texture_browser;
 pub mod theme;
 
 #[cfg(test)]
