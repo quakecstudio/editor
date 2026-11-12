@@ -168,7 +168,6 @@ string-error	crates/qs-models/src/openai.rs	reply
 string-error	crates/qs-models/src/stream.rs	AnthropicStream::answer
 string-error	crates/qs-sim/src/scenario.rs	parse_expect
 string-error	crates/qs-sim/src/scenario.rs	read
-string-error	crates/qs-templates/src/lib.rs	Fetch::get
 free-fn-on-type	apps/cli/src/doctor.rs	name
 free-fn-on-type	apps/cli/src/doctor.rs	run
 free-fn-on-type	apps/cli/src/lib.rs	serve_mcp
@@ -328,8 +327,6 @@ free-fn-on-type	crates/qs-client/src/client.rs	setup_entity_transform
 free-fn-on-type	crates/qs-client/src/hud.rs	intermission_overlay
 free-fn-on-type	crates/qs-client/src/hud.rs	status_bar
 free-fn-on-type	crates/qs-client/src/menu.rs	new_game
-free-fn-on-type	crates/qs-commands/src/remote.rs	run
-free-fn-on-type	crates/qs-commands/src/remote.rs	unexpected
 free-fn-on-type	crates/qs-commands/src/session.rs	panicked
 free-fn-on-type	crates/qs-editor-view/src/selection.rs	shifted
 free-fn-on-type	crates/qs-editor-view/src/vim.rs	after_char
@@ -396,9 +393,6 @@ free-fn-on-type	crates/qs-sim/src/scenario.rs	shown
 free-fn-on-type	crates/qs-sim/src/world/edit.rs	spawn_pairs
 free-fn-on-type	crates/qs-sim/src/world/reload.rs	change
 free-fn-on-type	crates/qs-sound/src/mixer.rs	paint_channel
-free-fn-on-type	crates/qs-templates/src/lib.rs	create
-free-fn-on-type	crates/qs-templates/src/lib.rs	make
-free-fn-on-type	crates/qs-templates/src/lib.rs	notice
 free-fn-on-type	crates/qs-workbench/src/preview.rs	built_program
 free-fn-on-type	crates/qs-workbench/src/vm_run.rs	changes
 bare-id	apps/desktop/src/agent.rs	AgentPanel::asking(index)

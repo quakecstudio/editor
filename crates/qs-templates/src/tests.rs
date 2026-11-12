@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use sha2::{Digest as _, Sha256};
 
-use super::{COPYING, Fetch, Folder, Template, TemplateError, create, hex, make};
+use super::{COPYING, Fetch, FetchError, Folder, Template, TemplateError, hex};
 
 /// A fresh directory for test `name`.
 fn dir(name: &str) -> PathBuf {
@@ -25,7 +25,7 @@ fn dir(name: &str) -> PathBuf {
 struct Fake;
 
 impl Fetch for Fake {
-    fn get(&self, _template: Template, path: &str) -> Result<Vec<u8>, String> {
+    fn get(&self, _template: Template, path: &str) -> Result<Vec<u8>, FetchError> {
         Ok(match path {
             "progs.src" => b"../progs.dat\n\ndefs.qc\n".to_vec(),
             other => format!("// {other}\n").into_bytes(),
@@ -54,7 +54,7 @@ fn a_new_project_holds_the_starter_and_ours() {
     let root = dir("new").join("axes");
     let table = table();
     let pairs: Vec<(&str, &str)> = table.iter().map(|(p, h)| (*p, h.as_str())).collect();
-    let created = make(Template::Rerelease, &pairs, &root, &Fake).unwrap();
+    let created = Template::Rerelease.make(&pairs, &root, &Fake).unwrap();
     assert_eq!(created.name, "axes");
     let read = |path: &str| std::fs::read_to_string(root.join(path)).unwrap();
     assert_eq!(read("monsters/ogre.qc"), "// monsters/ogre.qc\n");
@@ -83,23 +83,23 @@ fn a_new_project_holds_the_starter_and_ours() {
 fn a_project_is_made_only_from_the_pinned_files() {
     let root = dir("pinned").join("m");
     let wrong = [("progs.src", "00")];
-    let error = make(Template::Id1, &wrong, &root, &Fake).unwrap_err();
+    let error = Template::Id1.make(&wrong, &root, &Fake).unwrap_err();
     assert!(matches!(&error, TemplateError::Checksum { path, .. } if path == "progs.src"));
     assert!(error.to_string().contains("is not the pinned file"));
     assert!(!root.exists(), "nothing was written");
     let missing = Folder::new(None, None);
     assert!(matches!(
-        create(Template::Id1, &root, &missing),
+        Template::Id1.create(&root, &missing),
         Err(TemplateError::Fetch(_))
     ));
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("x"), "").unwrap();
     assert!(matches!(
-        create(Template::Id1, &root, &Fake),
+        Template::Id1.create(&root, &Fake),
         Err(TemplateError::NotEmpty(_))
     ));
     assert!(matches!(
-        create(Template::Id1, std::path::Path::new("/"), &Fake),
+        Template::Id1.create(std::path::Path::new("/"), &Fake),
         Err(TemplateError::BadName(_))
     ));
 }

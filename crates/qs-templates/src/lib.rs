@@ -137,8 +137,51 @@ pub trait Fetch: Send + Sync {
     ///
     /// # Errors
     ///
-    /// Why the file could not be read.
-    fn get(&self, template: Template, path: &str) -> Result<Vec<u8>, String>;
+    /// [`FetchError`] when the file could not be read.
+    fn get(&self, template: Template, path: &str) -> Result<Vec<u8>, FetchError>;
+}
+
+/// Why a template's file could not be fetched.
+#[derive(Debug)]
+pub enum FetchError {
+    /// The request for the file's address failed, or its answer could not be read.
+    Request {
+        /// The address.
+        url: String,
+        /// Why.
+        error: ureq::Error,
+    },
+    /// No local copy of the template's code was given.
+    NoCopy(Template),
+    /// A file of the local copy could not be read.
+    Read {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: std::io::Error,
+    },
+}
+
+impl std::fmt::Display for FetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Request { url, error } => write!(f, "{url}: {error}"),
+            Self::NoCopy(template) => {
+                write!(f, "no local copy of the {template:?} QuakeC was given")
+            }
+            Self::Read { path, error } => write!(f, "{}: {error}", path.display()),
+        }
+    }
+}
+
+impl std::error::Error for FetchError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Request { error, .. } => Some(error),
+            Self::Read { error, .. } => Some(error),
+            Self::NoCopy(_) => None,
+        }
+    }
 }
 
 /// The files at their pinned commits on GitHub, over HTTPS.
@@ -166,7 +209,7 @@ impl Default for GitHub {
 }
 
 impl Fetch for GitHub {
-    fn get(&self, template: Template, path: &str) -> Result<Vec<u8>, String> {
+    fn get(&self, template: Template, path: &str) -> Result<Vec<u8>, FetchError> {
         let upstream = template.upstream();
         let url = format!(
             "https://raw.githubusercontent.com/{}/{}/{}/{path}",
@@ -176,11 +219,14 @@ impl Fetch for GitHub {
             .agent
             .get(&url)
             .call()
-            .map_err(|error| format!("{url}: {error}"))?;
+            .map_err(|error| FetchError::Request {
+                url: url.clone(),
+                error,
+            })?;
         response
             .body_mut()
             .read_to_vec()
-            .map_err(|error| format!("{url}: {error}"))
+            .map_err(|error| FetchError::Request { url, error })
     }
 }
 
@@ -200,14 +246,14 @@ impl Folder {
 }
 
 impl Fetch for Folder {
-    fn get(&self, template: Template, path: &str) -> Result<Vec<u8>, String> {
+    fn get(&self, template: Template, path: &str) -> Result<Vec<u8>, FetchError> {
         let folder = match template {
             Template::Id1 => self.id1.as_ref(),
             Template::Rerelease => self.rerelease.as_ref(),
         }
-        .ok_or_else(|| format!("no local copy of the {template:?} QuakeC was given"))?;
-        let file = folder.join(path);
-        std::fs::read(&file).map_err(|error| format!("{}: {error}", file.display()))
+        .ok_or(FetchError::NoCopy(template))?;
+        let path = folder.join(path);
+        std::fs::read(&path).map_err(|error| FetchError::Read { path, error })
     }
 }
 
@@ -219,7 +265,7 @@ pub enum TemplateError {
     /// The directory's name cannot be a mod name (PRJ-2.3).
     BadName(PathBuf),
     /// A file could not be fetched.
-    Fetch(String),
+    Fetch(FetchError),
     /// A fetched file is not the one pinned.
     Checksum {
         /// The file.
@@ -258,105 +304,107 @@ pub struct Created {
     pub files: Vec<String>,
 }
 
-/// Makes a project of `template` in `dir`, which must be new or empty, with files from
-/// `fetch`.
-///
-/// # Errors
-///
-/// [`TemplateError`] when the directory is not empty or cannot name a mod, a file cannot be
-/// fetched or is not the pinned one, or a file cannot be written.
-pub fn create(template: Template, dir: &Path, fetch: &dyn Fetch) -> Result<Created, TemplateError> {
-    make(template, template.files(), dir, fetch)
-}
+impl Template {
+    /// Makes a project of this template in `dir`, which must be new or empty, with files from
+    /// `fetch`.
+    ///
+    /// # Errors
+    ///
+    /// [`TemplateError`] when the directory is not empty or cannot name a mod, a file cannot be
+    /// fetched or is not the pinned one, or a file cannot be written.
+    pub fn create(self, dir: &Path, fetch: &dyn Fetch) -> Result<Created, TemplateError> {
+        self.make(self.files(), dir, fetch)
+    }
 
-/// [`create`] with the files of `table` in place of the template's own.
-fn make(
-    template: Template,
-    table: &[(&str, &str)],
-    dir: &Path,
-    fetch: &dyn Fetch,
-) -> Result<Created, TemplateError> {
-    let name = dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty() && !name.contains([':', '\\', '/']))
-        .ok_or_else(|| TemplateError::BadName(dir.to_path_buf()))?
-        .to_owned();
-    if dir.exists() {
-        let mut entries = std::fs::read_dir(dir)
-            .map_err(|error| TemplateError::Write(dir.to_path_buf(), error))?;
-        if entries.next().is_some() {
-            return Err(TemplateError::NotEmpty(dir.to_path_buf()));
-        }
-    }
-    // Everything is fetched and checked before anything is written.
-    let mut fetched = Vec::new();
-    for (path, sha256) in table {
-        let bytes = fetch.get(template, path).map_err(TemplateError::Fetch)?;
-        let found = hex(&Sha256::digest(&bytes));
-        if found != *sha256 {
-            return Err(TemplateError::Checksum {
-                path: (*path).to_owned(),
-                found,
-            });
-        }
-        fetched.push(((*path).to_owned(), bytes));
-    }
-    let mut files = Vec::new();
-    for (path, mut bytes) in fetched {
-        if path == "progs.src" {
-            if !bytes.ends_with(b"\n") {
-                bytes.push(b'\n');
+    /// [`Template::create`] with the files of `table` in place of the template's own.
+    fn make(
+        self,
+        table: &[(&str, &str)],
+        dir: &Path,
+        fetch: &dyn Fetch,
+    ) -> Result<Created, TemplateError> {
+        let name = dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty() && !name.contains([':', '\\', '/']))
+            .ok_or_else(|| TemplateError::BadName(dir.to_path_buf()))?
+            .to_owned();
+        if dir.exists() {
+            let mut entries = std::fs::read_dir(dir)
+                .map_err(|error| TemplateError::Write(dir.to_path_buf(), error))?;
+            if entries.next().is_some() {
+                return Err(TemplateError::NotEmpty(dir.to_path_buf()));
             }
-            bytes.extend_from_slice(b"\ntests.qc\n");
         }
-        write(dir, &path, &bytes, &mut files)?;
+        // Everything is fetched and checked before anything is written.
+        let mut fetched = Vec::new();
+        for (path, sha256) in table {
+            let bytes = fetch.get(self, path).map_err(TemplateError::Fetch)?;
+            let found = hex(&Sha256::digest(&bytes));
+            if found != *sha256 {
+                return Err(TemplateError::Checksum {
+                    path: (*path).to_owned(),
+                    found,
+                });
+            }
+            fetched.push(((*path).to_owned(), bytes));
+        }
+        let mut files = Vec::new();
+        for (path, mut bytes) in fetched {
+            if path == "progs.src" {
+                if !bytes.ends_with(b"\n") {
+                    bytes.push(b'\n');
+                }
+                bytes.extend_from_slice(b"\ntests.qc\n");
+            }
+            write(dir, &path, &bytes, &mut files)?;
+        }
+        let (dialect, target) = self.dialect_and_target();
+        let toml = format!(
+            "[project]\nname = \"{name}\"\ndialect = \"{dialect}\"\ntarget = \"{target}\"\n\n\
+             [[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n"
+        );
+        write(dir, "quakec.toml", toml.as_bytes(), &mut files)?;
+        write(
+            dir,
+            ".gitignore",
+            b"# The build output and the run roots (ADR-0008).\nbuild/\n",
+            &mut files,
+        )?;
+        write(dir, "tests.qc", TESTS_QC.as_bytes(), &mut files)?;
+        write(
+            dir,
+            "tests/start.scenario",
+            START_SCENARIO.as_bytes(),
+            &mut files,
+        )?;
+        write(dir, "COPYING", COPYING.as_bytes(), &mut files)?;
+        write(dir, "NOTICE.md", self.notice().as_bytes(), &mut files)?;
+        Ok(Created {
+            path: dir.to_path_buf(),
+            name,
+            files,
+        })
     }
-    let (dialect, target) = template.dialect_and_target();
-    let toml = format!(
-        "[project]\nname = \"{name}\"\ndialect = \"{dialect}\"\ntarget = \"{target}\"\n\n\
-         [[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n"
-    );
-    write(dir, "quakec.toml", toml.as_bytes(), &mut files)?;
-    write(
-        dir,
-        ".gitignore",
-        b"# The build output and the run roots (ADR-0008).\nbuild/\n",
-        &mut files,
-    )?;
-    write(dir, "tests.qc", TESTS_QC.as_bytes(), &mut files)?;
-    write(
-        dir,
-        "tests/start.scenario",
-        START_SCENARIO.as_bytes(),
-        &mut files,
-    )?;
-    write(dir, "COPYING", COPYING.as_bytes(), &mut files)?;
-    write(dir, "NOTICE.md", notice(template).as_bytes(), &mut files)?;
-    Ok(Created {
-        path: dir.to_path_buf(),
-        name,
-        files,
-    })
-}
 
-/// The notice: where the code came from, its terms, and what the template added.
-fn notice(template: Template) -> String {
-    let upstream = template.upstream();
-    format!(
-        "# Notice\n\n\
-         This mod starts from {title}, copyright (C) 1996-1997 Id Software, Inc., from\n\
-         `{directory}` of https://github.com/{repository} at commit `{commit}`.\n\n\
-         id Software released that code under the GNU General Public License version 2, whose\n\
-         text is in `COPYING`; each file's header grants version 2 or any later version. This\n\
-         mod is distributed under the same terms.\n\n\
-         QuakeC Studio added `quakec.toml`, `.gitignore`, `tests.qc` (listed last in\n\
-         `progs.src`) and `tests/start.scenario`, and this notice.\n",
-        title = template.title(),
-        directory = upstream.directory,
-        repository = upstream.repository,
-        commit = upstream.commit,
-    )
+    /// The notice: where the code came from, its terms, and what the template added.
+    fn notice(self) -> String {
+        let upstream = self.upstream();
+        format!(
+            "# Notice\n\n\
+             This mod starts from {title}, copyright (C) 1996-1997 Id Software, Inc., from\n\
+             `{directory}` of https://github.com/{repository} at commit `{commit}`.\n\n\
+             id Software released that code under the GNU General Public License version 2, whose\n\
+             text is in `COPYING`; each file's header grants version 2 or any later version. This\n\
+             mod is distributed under the same terms.\n\n\
+             QuakeC Studio added `quakec.toml`, `.gitignore`, `tests.qc` (listed last in\n\
+             `progs.src`) and `tests/start.scenario`, and this notice.\n",
+            title = self.title(),
+            directory = upstream.directory,
+            repository = upstream.repository,
+            commit = upstream.commit,
+        )
+    }
 }
 
 /// Writes `bytes` to `path` below `dir`, making its folders, and records it.
@@ -410,7 +458,7 @@ impl<C: 'static> Command<C> for NewProject {
         _context: &mut C,
         params: NewProjectParams,
     ) -> Result<Outcome<Created, C>, TemplateError> {
-        let created = create(params.template, &params.path, self.fetch.as_ref())?;
+        let created = params.template.create(&params.path, self.fetch.as_ref())?;
         Ok(Outcome::outside_history(created))
     }
 }
