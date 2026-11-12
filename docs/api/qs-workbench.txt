@@ -334,7 +334,7 @@ field qs_workbench::map_edit::flags::SetFlagParams.also
 field qs_workbench::map_edit::flags::SetFlagParams.change
 field qs_workbench::map_edit::flags::SetFlagParams.entity
 field qs_workbench::map_edit::flags::SetFlagParams.flag
-field qs_workbench::map_edit::groups::EntitiesParams.entities
+field qs_workbench::map_edit::groups::EntityListParams.entities
 field qs_workbench::map_edit::groups::ExportParams.path
 field qs_workbench::map_edit::groups::LayerInfo.entities
 field qs_workbench::map_edit::groups::LayerInfo.entity
@@ -599,6 +599,7 @@ fn qs_workbench::map_edit::Workbench::map_entity
 fn qs_workbench::map_edit::Workbench::open_map
 fn qs_workbench::map_edit::Workbench::save_map
 fn qs_workbench::map_edit::disk::MapDocument::conflict
+fn qs_workbench::map_edit::groups::MapDocument::hidden_entities
 fn qs_workbench::map_edit::groups::MapDocument::is_hidden
 fn qs_workbench::map_edit::groups::MapDocument::is_locked
 fn qs_workbench::map_edit::live::LiveChange::send
@@ -856,7 +857,7 @@ struct qs_workbench::map_edit::disk::ResolveParams
 struct qs_workbench::map_edit::filter::FilterParams
 struct qs_workbench::map_edit::filter::MapFiltered
 struct qs_workbench::map_edit::flags::SetFlagParams
-struct qs_workbench::map_edit::groups::EntitiesParams
+struct qs_workbench::map_edit::groups::EntityListParams
 struct qs_workbench::map_edit::groups::ExportParams
 struct qs_workbench::map_edit::groups::LayerInfo
 struct qs_workbench::map_edit::groups::SetLayerParams
@@ -1037,8 +1038,8 @@ use qs_workbench::dock = crate::preview::dock
 use qs_workbench::engine = crate::preview::engine
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
-use qs_workbench::map_edit::EntitiesParams = groups::EntitiesParams
 use qs_workbench::map_edit::EntityInfo = inspect::EntityInfo
+use qs_workbench::map_edit::EntityListParams = groups::EntityListParams
 use qs_workbench::map_edit::ExportParams = groups::ExportParams
 use qs_workbench::map_edit::FILES_CHANGED = disk::FILES_CHANGED
 use qs_workbench::map_edit::FilesChanged = disk::FilesChanged
