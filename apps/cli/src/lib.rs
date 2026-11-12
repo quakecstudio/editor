@@ -597,6 +597,10 @@ impl<L: Loader> HasWorkbench for McpContext<L> {
     fn workbench(&mut self) -> &mut Workbench<L> {
         &mut self.workbench
     }
+
+    fn preview(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
 }
 
 impl<L: Loader> HasPreview for McpContext<L> {

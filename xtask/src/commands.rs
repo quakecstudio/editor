@@ -78,6 +78,10 @@ impl HasWorkbench for Everything {
     fn workbench(&mut self) -> &mut Workbench<qc_project::MemoryLoader> {
         &mut self.workbench
     }
+
+    fn preview(&mut self) -> Option<&mut qs_workbench::Preview> {
+        Some(&mut self.preview)
+    }
 }
 
 impl qs_workbench::HasPreview for Everything {

@@ -12,6 +12,11 @@
       "items": {
         "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/keyvalue"
       }
+    },
+    "map_entity": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The place of an entity in the map editor's list of the map's entities, the world 0 (BRIDGE-4.13)."
     }
   },
   "required": [

@@ -6,9 +6,23 @@
   "properties": {
     "edict": {
       "$ref": "https://quakecstudio.com/spec/bridge-schema/value.json#/$defs/edict"
+    },
+    "map_entity": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The place of an entity in the map editor's list of the map's entities, the world 0 (BRIDGE-4.13)."
     }
   },
-  "required": [
-    "edict"
+  "oneOf": [
+    {
+      "required": [
+        "edict"
+      ]
+    },
+    {
+      "required": [
+        "map_entity"
+      ]
+    }
   ]
 }

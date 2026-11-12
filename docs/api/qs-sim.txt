@@ -383,6 +383,10 @@ fn qs_sim::world::inspect::World::in_use
 fn qs_sim::world::inspect::World::named_globals
 fn qs_sim::world::inspect::World::num_edicts
 fn qs_sim::world::inspect::World::state
+fn qs_sim::world::map_entities::MapPlace::new
+fn qs_sim::world::map_entities::World::insert_map_entity
+fn qs_sim::world::map_entities::World::map_entity
+fn qs_sim::world::map_entities::World::take_map_entity
 fn qs_sim::world::reload::ChangeKind::name
 fn qs_sim::world::reload::World::reload
 fn qs_sim::world::save::SaveGame::read
@@ -459,6 +463,7 @@ struct qs_sim::world::SpawnParms
 struct qs_sim::world::World
 struct qs_sim::world::edit::LineHit
 struct qs_sim::world::inspect::NamedValue
+struct qs_sim::world::map_entities::MapPlace
 struct qs_sim::world::reload::Change
 struct qs_sim::world::reload::Migration
 struct qs_sim::world::save::SaveGame
@@ -481,6 +486,7 @@ use qs_sim::HostState = world::HostState
 use qs_sim::KeyFocus = world::KeyFocus
 use qs_sim::LineHit = world::LineHit
 use qs_sim::LoadOptions = world::LoadOptions
+use qs_sim::MapPlace = world::MapPlace
 use qs_sim::Message = messages::Message
 use qs_sim::Migration = world::Migration
 use qs_sim::ModelFiles = builtins::ModelFiles
@@ -549,6 +555,7 @@ use qs_sim::world::EdictChange = changes::EdictChange
 use qs_sim::world::EditError = edit::EditError
 use qs_sim::world::EvalError = evaluate::EvalError
 use qs_sim::world::LineHit = edit::LineHit
+use qs_sim::world::MapPlace = map_entities::MapPlace
 use qs_sim::world::Migration = reload::Migration
 use qs_sim::world::NamedValue = inspect::NamedValue
 use qs_sim::world::QcValue = inspect::QcValue

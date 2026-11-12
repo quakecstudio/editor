@@ -218,6 +218,21 @@ A command is a request from the client, answered with a result on success or an 
   the lists when it joined, so a new name waits for the map to load again. A deliberate
   divergence: id's `PF_precache_model` stops any precache once the server is active ("Precache
   can only be done in spawn functions"), which would refuse nearly every entity.
+- **BRIDGE-4.13** `entity/spawn`, `entity/edit` and `entity/remove` take `map_entity`, an
+  entity's place in the map editor's list of the map's entities from 0, the world, so the
+  editor's edits reach the running game (MAP-12); `entity/edit` and `entity/remove` take it in
+  place of `edict`. The host keeps, for each entity of the lump it loaded, the edict its spawn
+  left in use and that edict's `freetime`: none for an entity inhibited (EDICT-8.4), classless
+  (EDICT-8.5) or freed by its own spawn function, and an edict a later entity of the lump took
+  is that one's. An entity is in its edict while the edict is in use with the `freetime` it had
+  then; one freed since (EDICT-7.1), even with its edict reused, which keeps its `freetime`
+  (EDICT-6.5), is in none. `entity/spawn` with `map_entity` puts the new edict at that place,
+  or none when the spawn is refused or fails, the entities from it on moving one later;
+  `entity/remove` with `map_entity` takes the entity out of the list, the later ones moving one
+  earlier, and frees its edict when it is in one, answering `{}` when it is in none. `entity/edit`
+  of an entity in no edict is answered with `-32004` (no such edict). A saved game loaded, or a
+  map loaded again, starts the list from that load: a saved game's entities are in none. Not
+  id's: the engine keeps no entity's place in the lump.
 
 ## BRIDGE-5 Values
 

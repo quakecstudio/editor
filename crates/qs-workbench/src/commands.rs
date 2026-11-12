@@ -35,6 +35,12 @@ pub trait HasWorkbench {
 
     /// The workbench.
     fn workbench(&mut self) -> &mut Workbench<Self::Loader>;
+
+    /// The play loop, for a context that has one: the map editor's edits reach its game
+    /// (P5-07). `None` for one with no preview, such as the command line's.
+    fn preview(&mut self) -> Option<&mut crate::Preview> {
+        None
+    }
 }
 
 impl<L: Loader> HasWorkbench for Workbench<L> {

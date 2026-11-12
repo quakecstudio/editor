@@ -35,7 +35,7 @@ pub use physics::Sound;
 pub use qc_builtins::localization;
 pub use world::{
     CLIENT_EDICT, Change, ChangeKind, ClientCommand, EdictChange, EditError, Entity, EvalError,
-    HostCommand, HostState, KeyFocus, LineHit, LoadOptions, Migration, NamedValue, QcValue,
-    RawState, Reason, SAVEGAME_VERSION, SaveError, SaveGame, Signon, SpawnParms, State, World,
-    WorldError, command_words, read_state,
+    HostCommand, HostState, KeyFocus, LineHit, LoadOptions, MapPlace, Migration, NamedValue,
+    QcValue, RawState, Reason, SAVEGAME_VERSION, SaveError, SaveGame, Signon, SpawnParms, State,
+    World, WorldError, command_words, read_state,
 };

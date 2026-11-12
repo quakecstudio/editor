@@ -25,6 +25,7 @@ image = { workspace = true, features = ["png"] }
 qc-builtins = { workspace = true }
 # The bridge's socket or named pipe (BRIDGE-1.1).
 interprocess = { workspace = true }
+qc-edict = { workspace = true }
 qc-lno = { workspace = true }
 qc-progs = { workspace = true }
 qc-vm = { workspace = true }
@@ -47,7 +48,6 @@ raw-window-handle = { workspace = true }
 [dev-dependencies]
 # A world for the bridge's conformance tests: a progs compiled from QuakeC and a floor.
 qc-codegen = { workspace = true }
-qc-edict = { workspace = true }
 qc-sema = { workspace = true }
 qc-types = { workspace = true }
 

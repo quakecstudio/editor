@@ -533,14 +533,19 @@ pub fn inhibited(spawnflags: f32, deathmatch: bool, skill: i32) -> bool {
 /// array (EDICT-6.2) or an entity number out of range (EDICT-1.7);
 /// [`LoadError::Run`] when a spawn function raises a runtime error (DIFF-8.1). Nothing after
 /// the error runs.
+///
+/// Returns, for each entity of the lump in order, the edict its spawn function ran on, `None`
+/// for one inhibited or classless; the spawn function may have freed it since, and a later
+/// entity reused it, which the host tells by the edicts in use.
 pub fn load_from_file<H: SpawnHost>(
     host: &mut H,
     data: &[u8],
     deathmatch: bool,
     skill: i32,
-) -> Result<(), LoadError> {
+) -> Result<Vec<Option<usize>>, LoadError> {
     let mut parser = Parser::new(data);
     let mut first = true;
+    let mut spawned = Vec::new();
     loop {
         // parse the opening brace
         match parser.next_token() {
@@ -563,14 +568,19 @@ pub fn load_from_file<H: SpawnHost>(
                 let flags = host.spawnflags(edict);
                 if inhibited(flags, deathmatch, skill) {
                     host.free(edict);
+                    spawned.push(None);
                 } else {
                     host.spawn(edict, function).map_err(LoadError::Run)?;
+                    spawned.push(Some(edict));
                 }
             }
-            Parsed::NoSpawn => host.free(edict),
+            Parsed::NoSpawn => {
+                host.free(edict);
+                spawned.push(None);
+            }
         }
     }
-    Ok(())
+    Ok(spawned)
 }
 
 /// Either a spawn-time parse error (EDICT-8) or an error a spawn function raised (a

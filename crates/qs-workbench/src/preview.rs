@@ -22,6 +22,7 @@ use serde_json::Value;
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 
+use crate::map_edit::LiveChange;
 use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
 
 pub mod debug;
@@ -184,6 +185,8 @@ struct Live {
     running: Running,
     /// The program it loaded, which a reload reads again.
     progs: PathBuf,
+    /// The map the game is on, from its last `map/loaded` (BRIDGE-3.1).
+    map: Option<String>,
 }
 
 /// The play loop's state: the host, when one runs, its state and its console.
@@ -569,7 +572,11 @@ impl Preview {
             extra,
         };
         let running = launch(&spec, "QuakeC Studio").map_err(PreviewError::Launch)?;
-        self.live = Some(Live { running, progs });
+        self.live = Some(Live {
+            running,
+            progs,
+            map: None,
+        });
         self.state = PlayState::Playing;
         self.status = Some(format!("Playing {mod_name}"));
         self.console.clear();
@@ -741,6 +748,16 @@ impl Preview {
     fn take_event(&mut self, method: &str, params: &Value) {
         match method {
             "state/changed" => self.state_changed(params),
+            "map/loaded" => {
+                if let Some(live) = self.live.as_mut() {
+                    live.map = params.get("map").and_then(Value::as_str).map(str::to_owned);
+                }
+                if self.entities.take_event(method, params)
+                    && let Err(error) = self.refresh()
+                {
+                    tracing::debug!(%error, "the entities were not read again");
+                }
+            }
             "console/line" => {
                 let text = params.get("text").and_then(Value::as_str).unwrap_or("");
                 let level = params
@@ -784,6 +801,34 @@ impl Preview {
 }
 
 impl Preview {
+    /// Sends the map editor's `changes` to the running game when it is on the map at `path`,
+    /// the map named by its file's stem in any case (P5-07, MAP-12); a change the game refuses
+    /// is a warning in the console, and the editor keeps it.
+    pub fn send_map_changes(&mut self, path: &Path, changes: &[LiveChange]) {
+        let Some(live) = self.live.as_mut() else {
+            return;
+        };
+        let stem = path.file_stem().and_then(|stem| stem.to_str());
+        let on_map = live
+            .map
+            .as_deref()
+            .zip(stem)
+            .is_some_and(|(map, stem)| map.eq_ignore_ascii_case(stem));
+        if !on_map {
+            return;
+        }
+        let client = &mut live.running.client;
+        let mut refused = Vec::new();
+        for change in changes {
+            if let Err(error) = change.send(client) {
+                refused.push(format!("The map edit did not reach the game: {error}"));
+            }
+        }
+        for line in refused {
+            self.push_line(&line, "warning");
+        }
+    }
+
     /// A line for the console, the oldest dropped past [`CONSOLE_LINES`].
     fn push_line(&mut self, text: &str, level: &str) {
         if self.console.len() == CONSOLE_LINES {
@@ -1543,6 +1588,21 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(ActCommand::<UnwatchAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<StepByAct>(core::marker::PhantomData))?;
     engine::register_engine(registry)
+}
+
+#[cfg(test)]
+impl Preview {
+    /// A preview playing `running` on the map `map`, for tests of what is sent to its game.
+    pub(crate) fn playing(running: Running, map: &str) -> Self {
+        let mut preview = Self::new(PreviewConfig::default());
+        preview.live = Some(Live {
+            running,
+            progs: PathBuf::new(),
+            map: Some(map.to_owned()),
+        });
+        preview.state = PlayState::Playing;
+        preview
+    }
 }
 
 #[cfg(test)]

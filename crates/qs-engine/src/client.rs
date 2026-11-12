@@ -134,6 +134,25 @@ pub enum InspectWhat {
 /// How long [`Client::request`] waits for its response.
 const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
+/// The entity an edit or a removal names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntityTarget {
+    /// An edict by its number (BRIDGE-5.2).
+    Edict(u32),
+    /// An entity by its place in the map editor's list of the map's entities (BRIDGE-4.13).
+    MapEntity(usize),
+}
+
+impl EntityTarget {
+    /// The parameter that names it.
+    fn to_json(self) -> Value {
+        match self {
+            Self::Edict(edict) => json!({ "edict": edict }),
+            Self::MapEntity(place) => json!({ "map_entity": place }),
+        }
+    }
+}
+
 /// A connection to the preview host's bridge.
 pub struct Client {
     write: Box<dyn Write + Send>,
@@ -461,7 +480,8 @@ impl Client {
         )
     }
 
-    /// `entity/spawn` (BRIDGE-4.9).
+    /// `entity/spawn` (BRIDGE-4.9), the entity put at `place` in the list of the map's
+    /// entities when one is given (BRIDGE-4.13).
     ///
     /// # Errors
     ///
@@ -470,36 +490,39 @@ impl Client {
         &mut self,
         classname: &str,
         keyvalues: &[(&str, &str)],
+        place: Option<usize>,
     ) -> Result<Value, ClientError> {
-        self.request(
-            "entity/spawn",
-            json!({ "classname": classname, "keyvalues": pairs(keyvalues) }),
-        )
+        let mut params = json!({ "classname": classname, "keyvalues": pairs(keyvalues) });
+        if let (Some(place), Some(object)) = (place, params.as_object_mut()) {
+            object.insert("map_entity".to_owned(), json!(place));
+        }
+        self.request("entity/spawn", params)
     }
 
-    /// `entity/remove` (BRIDGE-4.9).
+    /// `entity/remove` (BRIDGE-4.9, BRIDGE-4.13).
     ///
     /// # Errors
     ///
     /// The request's [`ClientError`].
-    pub fn remove(&mut self, edict: u32) -> Result<Value, ClientError> {
-        self.request("entity/remove", json!({ "edict": edict }))
+    pub fn remove(&mut self, target: EntityTarget) -> Result<Value, ClientError> {
+        self.request("entity/remove", target.to_json())
     }
 
-    /// `entity/edit` (BRIDGE-4.4).
+    /// `entity/edit` (BRIDGE-4.4, BRIDGE-4.13).
     ///
     /// # Errors
     ///
     /// The request's [`ClientError`].
     pub fn edit_entity(
         &mut self,
-        edict: u32,
+        target: EntityTarget,
         keyvalues: &[(&str, &str)],
     ) -> Result<Value, ClientError> {
-        self.request(
-            "entity/edit",
-            json!({ "edict": edict, "keyvalues": pairs(keyvalues) }),
-        )
+        let mut params = target.to_json();
+        if let Some(object) = params.as_object_mut() {
+            object.insert("keyvalues".to_owned(), pairs(keyvalues));
+        }
+        self.request("entity/edit", params)
     }
 
     /// `player/spawn_at` (BRIDGE-4.9).

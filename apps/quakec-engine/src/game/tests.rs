@@ -608,6 +608,70 @@ fn entities_are_spawned_edited_and_removed() {
     assert_eq!(code(unknown), ErrorCode::InvalidParams);
 }
 
+// spec BRIDGE-4.13: the map editor names an entity by its place in the map's list: one spawned
+// at a place moves the later ones on, one removed moves them back, and one in no edict is
+// refused for an edit and removed from the list alone
+#[test]
+fn map_entities_are_named_by_their_place() {
+    let (mut game, mut session) = game();
+    let edit = |game: &mut Game, session: &mut Session, place: usize, count: &str| {
+        call(
+            game,
+            session,
+            "entity/edit",
+            &json!({ "map_entity": place, "keyvalues": [{ "key": "count", "value": count }] }),
+        )
+    };
+    edit(&mut game, &mut session, 1, "7").unwrap();
+    assert_eq!(float_field(&mut game, &mut session, 2, "count"), 7.0);
+
+    let spawned = call(
+        &mut game,
+        &mut session,
+        "entity/spawn",
+        &json!({ "classname": "item_crate", "map_entity": 1 }),
+    )
+    .unwrap();
+    let n = usize::try_from(spawned["edict"].as_u64().unwrap()).unwrap();
+    edit(&mut game, &mut session, 1, "5").unwrap();
+    assert_eq!(float_field(&mut game, &mut session, n, "count"), 5.0);
+    edit(&mut game, &mut session, 2, "8").unwrap();
+    assert_eq!(float_field(&mut game, &mut session, 2, "count"), 8.0);
+
+    let remove = |game: &mut Game, session: &mut Session, place: usize| {
+        call(
+            game,
+            session,
+            "entity/remove",
+            &json!({ "map_entity": place }),
+        )
+    };
+    remove(&mut game, &mut session, 1).unwrap();
+    edit(&mut game, &mut session, 1, "6").unwrap();
+    assert_eq!(float_field(&mut game, &mut session, 2, "count"), 6.0);
+    remove(&mut game, &mut session, 1).unwrap();
+    assert_eq!(
+        code(edit(&mut game, &mut session, 1, "1")),
+        ErrorCode::NoSuchEdict
+    );
+    assert_eq!(remove(&mut game, &mut session, 9).unwrap(), json!({}));
+
+    // A failed spawn still takes its place, in no edict.
+    let failed = call(
+        &mut game,
+        &mut session,
+        "entity/spawn",
+        &json!({ "classname": "nonesuch", "map_entity": 1 }),
+    );
+    assert_eq!(code(failed), ErrorCode::InvalidParams);
+    assert_eq!(
+        code(edit(&mut game, &mut session, 1, "1")),
+        ErrorCode::NoSuchEdict
+    );
+    let neither = call(&mut game, &mut session, "entity/remove", &json!({}));
+    assert_eq!(code(neither), ErrorCode::InvalidParams);
+}
+
 // spec BRIDGE-4.9: spawn player at moves the player to the origin and angles
 #[test]
 fn the_player_is_moved() {

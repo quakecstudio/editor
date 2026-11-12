@@ -4,10 +4,13 @@
 //! paused or running, the edits held while paused, and the events each command and frame
 //! raises.
 
+use qc_edict::EdictNumber;
 use qc_progs::Progs;
 use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::Camera;
-use qs_sim::{EdictChange, EditError, HostCommand, HostState, SpawnParms, World, WorldError};
+use qs_sim::{
+    EdictChange, EditError, HostCommand, HostState, MapPlace, SpawnParms, World, WorldError,
+};
 use serde_json::{Map, Value, json};
 
 use crate::screenshot::{Frame, encode};
@@ -641,6 +644,63 @@ impl Game {
         }
     }
 
+    /// The edict a request names: its `edict`, or the edict its `map_entity` is in the game
+    /// (BRIDGE-4.13), which is answered with `-32004` when the entity is in none.
+    fn target_edict(&self, params: &Value) -> Result<usize, RpcError> {
+        let Some(place) = map_entity_param(params) else {
+            return edict_param(params);
+        };
+        self.world.map_entity(place).ok_or_else(|| {
+            RpcError::new(ErrorCode::NoSuchEdict, "the map entity is not in the game")
+        })
+    }
+
+    /// `entity/spawn` (BRIDGE-4.9, BRIDGE-4.12); with `map_entity`, the edict goes in the list
+    /// of the map's entities at that place, or none when the spawn is refused or fails, so the
+    /// list keeps the editor's order (BRIDGE-4.13).
+    fn entity_spawn(&mut self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {
+        let spawned = self.require_between_frames().and_then(|()| {
+            let mut pairs = vec![(
+                "classname".to_owned(),
+                params
+                    .get("classname")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+            )];
+            pairs.extend(keyvalues(params));
+            self.world
+                .spawn_entity(progs, &pairs)
+                .map_err(|e| edit_error(&e))
+        });
+        if let Some(place) = map_entity_param(params) {
+            let edict = spawned.as_ref().ok().copied().map(EdictNumber::new);
+            self.world.insert_map_entity(place, edict);
+        }
+        let edict = spawned?;
+        self.report_changes(progs);
+        Ok(json!({ "edict": edict }))
+    }
+
+    /// `entity/remove` (BRIDGE-4.9); with `map_entity`, the entity leaves the list of the
+    /// map's entities whether or not it is in the game, and its edict, when it is, is freed
+    /// (BRIDGE-4.13).
+    fn entity_remove(&mut self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {
+        let edict = match map_entity_param(params) {
+            Some(place) => match self.world.take_map_entity(place) {
+                Some(edict) => edict,
+                None => return Ok(json!({})),
+            },
+            None => edict_param(params)?,
+        };
+        self.require_between_frames()?;
+        self.world
+            .remove_entity(progs, edict)
+            .map_err(|e| edit_error(&e))?;
+        self.report_changes(progs);
+        Ok(json!({}))
+    }
+
     fn require_in_use(&self, edict: usize) -> Result<(), RpcError> {
         if self.world.in_use(edict) {
             Ok(())
@@ -739,7 +799,7 @@ impl Game {
     }
 
     fn entity_edit(&mut self, progs: &Progs<'_>, params: &Value) -> Result<Value, RpcError> {
-        let edict = edict_param(params)?;
+        let edict = self.target_edict(params)?;
         self.require_in_use(edict)?;
         let pairs = keyvalues(params);
         if self.state == State::Paused {
@@ -926,33 +986,8 @@ impl Game {
             "evaluate" => self.evaluate(progs, params),
             "step" => self.step(progs, params),
             "field/set" => self.field_set(progs, params),
-            "entity/spawn" => {
-                self.require_between_frames()?;
-                let mut pairs = vec![(
-                    "classname".to_owned(),
-                    params
-                        .get("classname")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned(),
-                )];
-                pairs.extend(keyvalues(params));
-                let edict = self
-                    .world
-                    .spawn_entity(progs, &pairs)
-                    .map_err(|e| edit_error(&e))?;
-                self.report_changes(progs);
-                Ok(json!({ "edict": edict }))
-            }
-            "entity/remove" => {
-                self.require_between_frames()?;
-                let edict = edict_param(params)?;
-                self.world
-                    .remove_entity(progs, edict)
-                    .map_err(|e| edit_error(&e))?;
-                self.report_changes(progs);
-                Ok(json!({}))
-            }
+            "entity/spawn" => self.entity_spawn(progs, params),
+            "entity/remove" => self.entity_remove(progs, params),
             "entity/edit" => self.entity_edit(progs, params),
             "player/spawn_at" => {
                 self.require_between_frames()?;
@@ -1072,6 +1107,15 @@ fn edict_param(params: &Value) -> Result<usize, RpcError> {
         .and_then(Value::as_u64)
         .and_then(|n| usize::try_from(n).ok())
         .ok_or_else(|| RpcError::new(ErrorCode::InvalidParams, "no edict"))
+}
+
+/// The `map_entity` parameter, the place of an entity in the map editor's list (BRIDGE-4.13).
+fn map_entity_param(params: &Value) -> Option<MapPlace> {
+    params
+        .get("map_entity")
+        .and_then(Value::as_u64)
+        .and_then(|n| usize::try_from(n).ok())
+        .map(MapPlace::new)
 }
 
 /// The vector parameter `name`, zero when it is absent (BRIDGE-5.2).
