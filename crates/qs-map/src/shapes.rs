@@ -716,9 +716,6 @@ impl Shape {
                             [pair.first(), pair.get(1)].map(|c| c.copied().unwrap_or_default());
                         let [px, pz] = p;
                         let [qx, qz] = q;
-                        if z1 - pz < ON_TOP && z1 - qz < ON_TOP {
-                            continue;
-                        }
                         let mut profile = vec![p, q];
                         if z1 - qz >= ON_TOP {
                             profile.push([qx, z1]);
@@ -910,9 +907,6 @@ impl Shape {
                 core,
             } => {
                 let sides = checked_sides(sides)?;
-                if !(height > 0.0 && height.is_finite()) {
-                    return Err(ShapeError::Step);
-                }
                 let [rx, ry] = radii;
                 if !(core >= 0.0 && core < rx.min(ry)) {
                     return Err(ShapeError::Thickness(core));
