@@ -78,6 +78,7 @@ const qs_workbench::map_edit::groups::MAP_UNLOCK_ALL
 const qs_workbench::map_edit::links::MAP_LINK
 const qs_workbench::map_edit::outline::MAP_MOVE_TO
 const qs_workbench::map_edit::outline::MAP_OUTLINE
+const qs_workbench::map_edit::shapes::MAP_BRUSH_SHAPE
 const qs_workbench::map_textures::MAP_TEXTURES
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
@@ -154,6 +155,10 @@ enum qs_workbench::map_edit::groups::Switch
 enum qs_workbench::map_edit::inspect::RoomShape
 enum qs_workbench::map_edit::live::LiveChange
 enum qs_workbench::map_edit::outline::RowKind
+enum qs_workbench::map_edit::shapes::ArchWall
+enum qs_workbench::map_edit::shapes::Circle
+enum qs_workbench::map_edit::shapes::Climb
+enum qs_workbench::map_edit::shapes::ShapeSpec
 enum qs_workbench::map_textures::TextureOrigin
 enum qs_workbench::map_textures::WadState
 enum qs_workbench::preview::OnLoss
@@ -415,6 +420,12 @@ field qs_workbench::map_edit::outline::OutlineRow.kind
 field qs_workbench::map_edit::outline::OutlineRow.label
 field qs_workbench::map_edit::outline::OutlineRow.rows
 field qs_workbench::map_edit::outline::OutlineRow.targetname
+field qs_workbench::map_edit::shapes::BrushShapeParams.entity
+field qs_workbench::map_edit::shapes::BrushShapeParams.grid
+field qs_workbench::map_edit::shapes::BrushShapeParams.max
+field qs_workbench::map_edit::shapes::BrushShapeParams.min
+field qs_workbench::map_edit::shapes::BrushShapeParams.shape
+field qs_workbench::map_edit::shapes::BrushShapeParams.texture
 field qs_workbench::map_textures::BrowserTexture.height
 field qs_workbench::map_textures::BrowserTexture.name
 field qs_workbench::map_textures::BrowserTexture.origin
@@ -956,6 +967,7 @@ struct qs_workbench::map_edit::links::LinkParams
 struct qs_workbench::map_edit::outline::MoveToParams
 struct qs_workbench::map_edit::outline::OutlineParams
 struct qs_workbench::map_edit::outline::OutlineRow
+struct qs_workbench::map_edit::shapes::BrushShapeParams
 struct qs_workbench::map_textures::BrowserTexture
 struct qs_workbench::map_textures::MapTextures
 struct qs_workbench::map_textures::TextureSources
@@ -1132,14 +1144,18 @@ use qs_workbench::dock = crate::preview::dock
 use qs_workbench::engine = crate::preview::engine
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files
+use qs_workbench::map_edit::ArchWall = shapes::ArchWall
 use qs_workbench::map_edit::BrushClipParams = brushes::BrushClipParams
 use qs_workbench::map_edit::BrushCreateParams = brushes::BrushCreateParams
 use qs_workbench::map_edit::BrushIndex = brushes::BrushIndex
 use qs_workbench::map_edit::BrushMergeParams = brushes::BrushMergeParams
 use qs_workbench::map_edit::BrushMoveParams = brushes::BrushMoveParams
 use qs_workbench::map_edit::BrushParams = brushes::BrushParams
+use qs_workbench::map_edit::BrushShapeParams = shapes::BrushShapeParams
 use qs_workbench::map_edit::BrushTextureParams = brushes::BrushTextureParams
 use qs_workbench::map_edit::BrushVertexParams = brushes::BrushVertexParams
+use qs_workbench::map_edit::Circle = shapes::Circle
+use qs_workbench::map_edit::Climb = shapes::Climb
 use qs_workbench::map_edit::EntityInfo = inspect::EntityInfo
 use qs_workbench::map_edit::EntityListParams = groups::EntityListParams
 use qs_workbench::map_edit::ExportParams = groups::ExportParams
@@ -1162,6 +1178,7 @@ use qs_workbench::map_edit::MAP_BRUSH_CREATE = brushes::MAP_BRUSH_CREATE
 use qs_workbench::map_edit::MAP_BRUSH_DELETE = brushes::MAP_BRUSH_DELETE
 use qs_workbench::map_edit::MAP_BRUSH_MERGE = brushes::MAP_BRUSH_MERGE
 use qs_workbench::map_edit::MAP_BRUSH_MOVE = brushes::MAP_BRUSH_MOVE
+use qs_workbench::map_edit::MAP_BRUSH_SHAPE = shapes::MAP_BRUSH_SHAPE
 use qs_workbench::map_edit::MAP_BRUSH_SUBTRACT = brushes::MAP_BRUSH_SUBTRACT
 use qs_workbench::map_edit::MAP_BRUSH_TEXTURE = brushes::MAP_BRUSH_TEXTURE
 use qs_workbench::map_edit::MAP_BRUSH_VERTEX = brushes::MAP_BRUSH_VERTEX
@@ -1193,6 +1210,7 @@ use qs_workbench::map_edit::RoomShape = inspect::RoomShape
 use qs_workbench::map_edit::RowKind = outline::RowKind
 use qs_workbench::map_edit::SetFlagParams = flags::SetFlagParams
 use qs_workbench::map_edit::SetLayerParams = groups::SetLayerParams
+use qs_workbench::map_edit::ShapeSpec = shapes::ShapeSpec
 use qs_workbench::map_edit::Skill = filter::Skill
 use qs_workbench::map_edit::Switch = groups::Switch
 use qs_workbench::recent_path = crate::recent::recent_path
@@ -1233,6 +1251,7 @@ variant qs_workbench::WorkbenchError::Pattern
 variant qs_workbench::WorkbenchError::Project
 variant qs_workbench::WorkbenchError::Rename
 variant qs_workbench::WorkbenchError::Save
+variant qs_workbench::WorkbenchError::Shape
 variant qs_workbench::WorkbenchError::Spawn
 variant qs_workbench::build::Gravity::Error
 variant qs_workbench::build::Gravity::Warning
@@ -1308,6 +1327,23 @@ variant qs_workbench::map_edit::outline::RowKind::Entity
 variant qs_workbench::map_edit::outline::RowKind::Group
 variant qs_workbench::map_edit::outline::RowKind::Layer
 variant qs_workbench::map_edit::outline::RowKind::LinkedGroup
+variant qs_workbench::map_edit::shapes::ArchWall::Filled
+variant qs_workbench::map_edit::shapes::ArchWall::Open
+variant qs_workbench::map_edit::shapes::Circle::Edges
+variant qs_workbench::map_edit::shapes::Circle::Vertices
+variant qs_workbench::map_edit::shapes::Climb::East
+variant qs_workbench::map_edit::shapes::Climb::North
+variant qs_workbench::map_edit::shapes::Climb::South
+variant qs_workbench::map_edit::shapes::Climb::West
+variant qs_workbench::map_edit::shapes::ShapeSpec::Arch
+variant qs_workbench::map_edit::shapes::ShapeSpec::Cone
+variant qs_workbench::map_edit::shapes::ShapeSpec::Curve
+variant qs_workbench::map_edit::shapes::ShapeSpec::Cylinder
+variant qs_workbench::map_edit::shapes::ShapeSpec::Icospheroid
+variant qs_workbench::map_edit::shapes::ShapeSpec::Rock
+variant qs_workbench::map_edit::shapes::ShapeSpec::SpiralStairs
+variant qs_workbench::map_edit::shapes::ShapeSpec::Stairs
+variant qs_workbench::map_edit::shapes::ShapeSpec::UvSpheroid
 variant qs_workbench::map_textures::TextureOrigin::Bsp
 variant qs_workbench::map_textures::TextureOrigin::Missing
 variant qs_workbench::map_textures::TextureOrigin::Wad

@@ -58,6 +58,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_delete`](#mapbrush_delete) | Deletes a brush of an entity of the open map. |
 | [`map.brush_merge`](#mapbrush_merge) | Merges two or more brushes of an entity of the open map into their convex hull, which takes the first's place. |
 | [`map.brush_move`](#mapbrush_move) | Moves brushes of an entity by an offset snapped to the grid (16 units unless given), their textures fixed in the world unless lock is free. |
+| [`map.brush_shape`](#mapbrush_shape) | Adds a shape of brushes filling a box, its corners snapped to the grid: a cylinder (solid or hollow), cone, arch, UV or icosahedron spheroid, rock, scalable curve of 12, 24, 48 or 96 sides, or straight or spiral stairs whose default step a player climbs; to the world or an entity of the open map, with a texture. |
 | [`map.brush_subtract`](#mapbrush_subtract) | Subtracts a brush of the open map from every other brush of its entity, then deletes it: the brushes it overlapped become the parts outside it. |
 | [`map.brush_texture`](#mapbrush_texture) | Sets the texture, shift, rotation or scale of every face of brushes of an entity, keeping what is not given (MAP-12). |
 | [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
@@ -1892,6 +1893,426 @@ Parameters:
     "by"
   ],
   "title": "BrushMoveParams",
+  "type": "object"
+}
+```
+
+## `map.brush_shape`
+
+Adds a shape of brushes filling a box, its corners snapped to the grid: a cylinder (solid or hollow), cone, arch, UV or icosahedron spheroid, rock, scalable curve of 12, 24, 48 or 96 sides, or straight or spiral stairs whose default step a player climbs; to the world or an entity of the open map, with a texture.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "ArchWall": {
+      "description": "Whether an arch fills its wall up to the box's top (MAP-10.6).",
+      "oneOf": [
+        {
+          "const": "open",
+          "description": "The arch alone.",
+          "type": "string"
+        },
+        {
+          "const": "filled",
+          "description": "The arch in a wall up to the box's top.",
+          "type": "string"
+        }
+      ]
+    },
+    "Circle": {
+      "description": "Where a round shape's corners lie (MAP-10.2).",
+      "oneOf": [
+        {
+          "const": "vertices",
+          "description": "On the box's ellipse.",
+          "type": "string"
+        },
+        {
+          "const": "edges",
+          "description": "Outside it, each edge touching it.",
+          "type": "string"
+        }
+      ]
+    },
+    "Climb": {
+      "description": "The way stairs climb (MAP-10.10).",
+      "oneOf": [
+        {
+          "const": "east",
+          "description": "Toward +x.",
+          "type": "string"
+        },
+        {
+          "const": "west",
+          "description": "Toward -x.",
+          "type": "string"
+        },
+        {
+          "const": "north",
+          "description": "Toward +y.",
+          "type": "string"
+        },
+        {
+          "const": "south",
+          "description": "Toward -y.",
+          "type": "string"
+        }
+      ]
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "ShapeSpec": {
+      "description": "A shape and its settings, as `map.brush_shape` takes them (MAP-10).",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "An upright prism around the box's ellipse; hollow with a wall thickness.",
+          "properties": {
+            "circle": {
+              "$ref": "#/$defs/Circle",
+              "default": "vertices",
+              "description": "Where the corners lie."
+            },
+            "hollow": {
+              "default": null,
+              "description": "The wall's thickness, for a hollow cylinder.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "cylinder",
+              "type": "string"
+            },
+            "sides": {
+              "default": 16,
+              "description": "Its sides, 3 to 128; 16 when not given.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A cone to the middle of the box's top.",
+          "properties": {
+            "circle": {
+              "$ref": "#/$defs/Circle",
+              "default": "vertices",
+              "description": "Where the corners lie."
+            },
+            "kind": {
+              "const": "cone",
+              "type": "string"
+            },
+            "sides": {
+              "default": 16,
+              "description": "Its sides, 3 to 128; 16 when not given.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "An arch in the box's x-z face, within half a turn.",
+          "properties": {
+            "arc": {
+              "default": 180.0,
+              "description": "The degrees of its curve; 180 when not given.",
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "arch",
+              "type": "string"
+            },
+            "sides": {
+              "default": 16,
+              "description": "Its segments, 3 to 128; 16 when not given.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "start": {
+              "default": 0.0,
+              "description": "The degrees it starts at; 0 when not given.",
+              "format": "double",
+              "type": "number"
+            },
+            "thickness": {
+              "default": 16.0,
+              "description": "Its thickness; 16 when not given.",
+              "format": "double",
+              "type": "number"
+            },
+            "wall": {
+              "$ref": "#/$defs/ArchWall",
+              "default": "open",
+              "description": "Whether its wall is filled to the box's top."
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A spheroid of bands and slices.",
+          "properties": {
+            "kind": {
+              "const": "uv_spheroid",
+              "type": "string"
+            },
+            "rings": {
+              "default": 8,
+              "description": "Its bands, 2 to 64; 8 when not given.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "sides": {
+              "default": 16,
+              "description": "Its slices, 3 to 128; 16 when not given.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A spheroid of an icosahedron's triangles.",
+          "properties": {
+            "kind": {
+              "const": "icospheroid",
+              "type": "string"
+            },
+            "subdivisions": {
+              "default": 0,
+              "description": "The times each triangle is cut in four, 0 to 3.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A rock, one per seed.",
+          "properties": {
+            "kind": {
+              "const": "rock",
+              "type": "string"
+            },
+            "points": {
+              "default": 16,
+              "description": "Its points, 4 to 64; 16 when not given.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "seed": {
+              "default": 0,
+              "description": "Its seed.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A curve on the grid at every size, of 12, 24, 48 or 96 sides.",
+          "properties": {
+            "hollow": {
+              "default": null,
+              "description": "The wall's thickness, for a hollow curve.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "curve",
+              "type": "string"
+            },
+            "sides": {
+              "default": 24,
+              "description": "Its sides; 24 when not given.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Straight stairs.",
+          "properties": {
+            "climb": {
+              "$ref": "#/$defs/Climb",
+              "default": "east",
+              "description": "The way they climb."
+            },
+            "depth": {
+              "default": 32.0,
+              "description": "A step's depth; 32 when not given.",
+              "format": "double",
+              "type": "number"
+            },
+            "height": {
+              "default": 16.0,
+              "description": "A step's height; 16 when not given.",
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "stairs",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Spiral stairs.",
+          "properties": {
+            "core": {
+              "default": 0.0,
+              "description": "The radius of the empty middle; 0 when not given.",
+              "format": "double",
+              "type": "number"
+            },
+            "height": {
+              "default": 16.0,
+              "description": "A step's height; 16 when not given.",
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "spiral_stairs",
+              "type": "string"
+            },
+            "sides": {
+              "default": 16,
+              "description": "Steps a turn, 3 to 128; 16 when not given.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_shape`.",
+  "properties": {
+    "entity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EntityIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The entity to add it to; the world when not given."
+    },
+    "grid": {
+      "default": null,
+      "description": "The grid the corners snap to, in map units; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "max": {
+      "description": "The opposite corner.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "min": {
+      "description": "One corner of the box it fills.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "shape": {
+      "$ref": "#/$defs/ShapeSpec",
+      "description": "The shape."
+    },
+    "texture": {
+      "default": null,
+      "description": "Its texture; the texture of the map's last brush face when not given.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "min",
+    "max",
+    "shape"
+  ],
+  "title": "BrushShapeParams",
   "type": "object"
 }
 ```

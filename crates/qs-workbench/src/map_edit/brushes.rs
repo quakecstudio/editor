@@ -33,7 +33,7 @@ pub const MAP_BRUSH_MOVE: &str = "map.brush_move";
 pub const MAP_BRUSH_TEXTURE: &str = "map.brush_texture";
 
 /// TrenchBroom's grid, `Grid(4)`: 2^4 units, the step points snap to by default.
-const DEFAULT_GRID: f64 = 16.0;
+pub(super) const DEFAULT_GRID: f64 = 16.0;
 /// The texture a new brush takes in a map whose brushes name none.
 const DEFAULT_TEXTURE: &[u8] = b"__TB_empty";
 
@@ -204,7 +204,7 @@ pub struct BrushTextureParams {
 }
 
 /// `value` on the grid `grid`, or as it is with no grid.
-fn snap(value: f64, grid: Option<f64>) -> f64 {
+pub(super) fn snap(value: f64, grid: Option<f64>) -> f64 {
     let grid = grid.unwrap_or(DEFAULT_GRID);
     if grid > 0.0 {
         (value / grid).round() * grid + 0.0
@@ -248,7 +248,7 @@ impl MapDocument {
     }
 
     /// The surface a new brush takes: `texture`, else the map's last brush face's.
-    fn new_surface(&self, texture: Option<&str>) -> Surface {
+    pub(super) fn new_surface(&self, texture: Option<&str>) -> Surface {
         let last = self
             .file
             .entities

@@ -27,6 +27,7 @@ pub mod lexer;
 mod linked;
 pub mod qbsp;
 mod rooms;
+pub mod shapes;
 
 pub use align::Alignment;
 pub use brush_edit::{BrushError, Surface, TextureLock};

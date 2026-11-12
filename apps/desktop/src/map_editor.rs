@@ -290,6 +290,12 @@ impl MapEditor {
         self.keys = keys;
     }
 
+    /// Why the last map command was refused, for tests.
+    #[cfg(test)]
+    pub(crate) fn refused_text(&self) -> Option<String> {
+        self.refused.clone()
+    }
+
     /// Takes why the last map command asked for was refused, or none when it ran.
     pub fn set_refused(&mut self, refused: Option<String>) {
         self.refused = refused;
@@ -475,7 +481,8 @@ impl MapEditor {
     /// The links shown and the filter by skill and game; the filter chosen.
     fn toolbar(&mut self, ui: &mut Ui, layout: MapPanes) -> Vec<MapAction> {
         let mut actions = Vec::new();
-        ui.horizontal(|ui| {
+        // Wrapping, so the tools and their settings never widen the view past the centre.
+        ui.horizontal_wrapped(|ui| {
             self.tools.toolbar(ui);
             ui.separator();
             egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<MapPanes>()))

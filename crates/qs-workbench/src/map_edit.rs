@@ -37,6 +37,7 @@ pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
 pub use links::{LinkParams, MAP_LINK};
 pub use live::LiveChange;
 pub use outline::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow, RowKind};
+pub use shapes::{ArchWall, BrushShapeParams, Circle, Climb, MAP_BRUSH_SHAPE, ShapeSpec};
 
 mod brushes;
 mod disk;
@@ -47,6 +48,7 @@ mod inspect;
 mod links;
 mod live;
 mod outline;
+mod shapes;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -1192,6 +1194,7 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(brushes::BrushDelete)?;
     registry.register(brushes::BrushMove)?;
     registry.register(brushes::BrushTexture)?;
+    registry.register(shapes::BrushShape)?;
     registry.register(MapSave)
 }
 

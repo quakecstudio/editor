@@ -518,6 +518,48 @@ pub enum Text {
     MapToolClip,
     /// The Vertex tool: move a brush's corners.
     MapToolVertex,
+    /// The Shape tool (P6-18).
+    MapToolShape,
+    /// What to do with the Shape tool.
+    MapShapeHint,
+    /// A shape: a cylinder.
+    ShapeCylinder,
+    /// A shape: a cone.
+    ShapeCone,
+    /// A shape: an arch.
+    ShapeArch,
+    /// A shape: a spheroid of bands and slices.
+    ShapeUvSpheroid,
+    /// A shape: a spheroid of an icosahedron's triangles.
+    ShapeIcospheroid,
+    /// A shape: a rock.
+    ShapeRock,
+    /// A shape: a curve on the grid at every size.
+    ShapeCurve,
+    /// A shape: straight stairs.
+    ShapeStairs,
+    /// A shape: spiral stairs.
+    ShapeSpiralStairs,
+    /// The sides of a shape.
+    MapShapeSides,
+    /// A round shape's corners on its circle.
+    MapShapeCorners,
+    /// A round shape's edges touching its circle.
+    MapShapeEdges,
+    /// A solid cylinder.
+    MapShapeSolid,
+    /// A hollow cylinder.
+    MapShapeHollow,
+    /// A hollow shape's wall thickness.
+    MapShapeWall,
+    /// Stairs climbing toward +x.
+    MapClimbEast,
+    /// Stairs climbing toward -x.
+    MapClimbWest,
+    /// Stairs climbing toward +y.
+    MapClimbNorth,
+    /// Stairs climbing toward -y.
+    MapClimbSouth,
     /// How to draw a brush with the Brush tool.
     MapBrushHint,
     /// How to cut a brush with the Clip tool.
@@ -610,7 +652,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 298] = [
+    pub const ALL: [Self; 319] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -865,6 +907,27 @@ impl Text {
         Self::MapToolBrush,
         Self::MapToolClip,
         Self::MapToolVertex,
+        Self::MapToolShape,
+        Self::MapShapeHint,
+        Self::ShapeCylinder,
+        Self::ShapeCone,
+        Self::ShapeArch,
+        Self::ShapeUvSpheroid,
+        Self::ShapeIcospheroid,
+        Self::ShapeRock,
+        Self::ShapeCurve,
+        Self::ShapeStairs,
+        Self::ShapeSpiralStairs,
+        Self::MapShapeSides,
+        Self::MapShapeCorners,
+        Self::MapShapeEdges,
+        Self::MapShapeSolid,
+        Self::MapShapeHollow,
+        Self::MapShapeWall,
+        Self::MapClimbEast,
+        Self::MapClimbWest,
+        Self::MapClimbNorth,
+        Self::MapClimbSouth,
         Self::MapBrushHint,
         Self::MapClipHint,
         Self::MapVertexHint,
@@ -1188,6 +1251,27 @@ impl Text {
             Self::MapToolBrush => "Brush",
             Self::MapToolClip => "Clip",
             Self::MapToolVertex => "Vertex",
+            Self::MapToolShape => "Shape",
+            Self::MapShapeHint => "Drag a box to fill it with the shape",
+            Self::ShapeCylinder => "Cylinder",
+            Self::ShapeCone => "Cone",
+            Self::ShapeArch => "Arch",
+            Self::ShapeUvSpheroid => "UV sphere",
+            Self::ShapeIcospheroid => "Icosphere",
+            Self::ShapeRock => "Rock",
+            Self::ShapeCurve => "Scalable curve",
+            Self::ShapeStairs => "Stairs",
+            Self::ShapeSpiralStairs => "Spiral stairs",
+            Self::MapShapeSides => "Sides",
+            Self::MapShapeCorners => "Corners on circle",
+            Self::MapShapeEdges => "Edges on circle",
+            Self::MapShapeSolid => "Solid",
+            Self::MapShapeHollow => "Hollow",
+            Self::MapShapeWall => "Wall",
+            Self::MapClimbEast => "East",
+            Self::MapClimbWest => "West",
+            Self::MapClimbNorth => "North",
+            Self::MapClimbSouth => "South",
             Self::MapBrushHint => "Drag on the ground to draw a box",
             Self::MapClipHint => "Select a brush, then drag the cut line",
             Self::MapVertexHint => "Select a brush, then drag a corner",
