@@ -48,10 +48,11 @@ use qs_workbench::git::{
     GitResolveParams, GitSide, GitStageParams, GitStatus,
 };
 use qs_workbench::map_edit::{
-    BSP_EXTENSION, BspSave, EntityKeys, EntityParams, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY,
-    MAP_EXTENSION, MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_ROTATE, MAP_SAVE, MAP_SELECT,
-    MAP_SET_KEY, MapDocument, MapOpenParams, MoveParams, RemoveKeyParams, RotateParams, SaveParams,
-    SelectParams as MapSelectParams, SetKeyParams,
+    BSP_EXTENSION, BspSave, EntityKeys, EntityParams, FILES_CHANGED, FilesChanged,
+    FilesChangedParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_EXTENSION,
+    MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
+    MapDifference, MapDocument, MapOnDisk, MapOpenParams, MapSaved, MoveParams, RemoveKeyParams,
+    ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
@@ -81,6 +82,7 @@ use qs_workbench::{TASK_LIST, TERMINAL_CLOSE, TERMINAL_NEW, TERMINAL_POLL, TERMI
 
 use crate::agent::{self, AgentAction, AgentPanel};
 use crate::debugger::{self, DebugAction, DebugInput};
+use crate::disk_watch::DiskWatch;
 use crate::editor::{Editor, Popup, Request};
 use crate::entities::{self, EntityAction, Outliner, Properties};
 use crate::fallback::{SystemFonts, families};
@@ -89,7 +91,7 @@ use crate::game_guide::{self, Guide, GuideAction};
 use crate::git_panel::{BlameShown, GitAction, GitData, GitView, git_ui};
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
-use crate::map_editor::{MapAction, MapEditor};
+use crate::map_editor::{DiskNotice, MapAction, MapEditor};
 use crate::map_view::{self, MapView};
 use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
@@ -224,6 +226,9 @@ pub struct Shell {
     map_editor: MapEditor,
     /// The map the map editor last showed, to notice one newly opened.
     map_opened: Option<PathBuf>,
+    /// The modified times of the open map and the project's QuakeC, to notice another
+    /// program's writes (P5-17).
+    disk_watch: DiskWatch,
     /// The editor's file and text revision whose characters have fonts.
     covered: Option<(PathBuf, u64)>,
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
@@ -328,6 +333,7 @@ impl Shell {
             map: None,
             map_editor: MapEditor::default(),
             map_opened: None,
+            disk_watch: DiskWatch::default(),
             covered: None,
             focus_applied: layout.focus_requests,
             preview_error: None,
@@ -1851,6 +1857,15 @@ impl Shell {
         if path.is_none() {
             return;
         }
+        self.load_map_classes();
+        self.map_editor.set_disk(DiskNotice::None);
+        self.map_editor.reset_camera();
+        self.map_editor.set_keys(None, None);
+        self.centre_tab = CentreTab::Map;
+    }
+
+    /// Gives the map editor the project's entity classes and their models.
+    fn load_map_classes(&mut self) {
         let classes: Result<EntitiesFound, ShellError> =
             self.attempt(PROJECT_ENTITIES, &EntitiesParams::default());
         let context = self.session.context();
@@ -1866,9 +1881,63 @@ impl Shell {
             }
             Err(error) => tracing::warn!(%error, "no entity classes for the map"),
         }
-        self.map_editor.reset_camera();
-        self.map_editor.set_keys(None, None);
-        self.centre_tab = CentreTab::Map;
+    }
+
+    /// Looks at the open map's file and the project's QuakeC for another program's writes
+    /// (P5-17): a map with no unsaved edits is read again, one with unsaved edits says so, and
+    /// changed QuakeC gives the map editor its classes again.
+    fn watch_disk(&mut self, ctx: &egui::Context) {
+        ctx.request_repaint_after(DiskWatch::every());
+        let now = std::time::Instant::now();
+        if !self.disk_watch.due(now) {
+            return;
+        }
+        let workbench = &self.session.context().workbench;
+        let mut paths = workbench.project_files();
+        paths.extend(
+            workbench
+                .map()
+                .map(MapDocument::watched)
+                .unwrap_or_default(),
+        );
+        let changed = self.disk_watch.changed(now, paths);
+        if !changed.is_empty() {
+            self.files_changed(changed);
+        }
+    }
+
+    /// Asks whether the open map's files changed, whatever their modified times say.
+    fn check_map_on_disk(&mut self) {
+        let watched = self
+            .session
+            .context()
+            .workbench
+            .map()
+            .map(MapDocument::watched)
+            .unwrap_or_default();
+        if !watched.is_empty() {
+            self.files_changed(watched);
+        }
+    }
+
+    /// Gives `changed` to `files.changed` and shows what it did.
+    fn files_changed(&mut self, changed: Vec<PathBuf>) {
+        let map = self.session.context().workbench.map().is_some();
+        let found: Result<FilesChanged, ShellError> =
+            self.attempt(FILES_CHANGED, &FilesChangedParams { paths: changed });
+        match found {
+            Ok(found) => {
+                if found.quakec && map {
+                    self.load_map_classes();
+                }
+                match found.map {
+                    MapOnDisk::Same => {}
+                    MapOnDisk::Reloaded => self.map_editor.set_disk(DiskNotice::None),
+                    MapOnDisk::Conflict => self.map_editor.set_disk(DiskNotice::Changed),
+                }
+            }
+            Err(error) => tracing::warn!(%error, "the changed files were not read"),
+        }
     }
 
     /// Runs what the map editor asked for as `map.*` commands, then reads the selected
@@ -1894,7 +1963,42 @@ impl Shell {
                 MapAction::RemoveKey(entity, key) => {
                     self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
                 }
-                MapAction::Save => self.attempt(MAP_SAVE, &SaveParams { bsp: BspSave::Ent }),
+                MapAction::Save => {
+                    let saved: Result<MapSaved, ShellError> =
+                        self.attempt(MAP_SAVE, &SaveParams { bsp: BspSave::Ent });
+                    match saved {
+                        Ok(saved) => {
+                            self.disk_watch.wrote(saved.path);
+                            Ok(serde_json::Value::Null)
+                        }
+                        Err(error) => {
+                            // A refusal may be a change the watcher missed: look now, so the
+                            // notice offers a way out.
+                            self.check_map_on_disk();
+                            Err(error)
+                        }
+                    }
+                }
+                MapAction::Resolve(keep) => {
+                    let resolved: Result<serde_json::Value, ShellError> =
+                        self.attempt(MAP_RESOLVE, &ResolveParams { keep });
+                    if resolved.is_ok() {
+                        self.map_editor.set_disk(DiskNotice::None);
+                    }
+                    resolved
+                }
+                MapAction::Compare => {
+                    let compared: Result<Vec<MapDifference>, ShellError> =
+                        self.attempt(MAP_COMPARE, &serde_json::json!({}));
+                    compared.map(|differences| {
+                        let lines = differences
+                            .into_iter()
+                            .map(|d| format!("{}: {}", d.entity, d.text))
+                            .collect();
+                        self.map_editor.set_disk(DiskNotice::Compared(lines));
+                        serde_json::Value::Null
+                    })
+                }
             };
             let refused = result.err().map(|error| {
                 tracing::warn!(%error, "map edit refused");
@@ -2506,8 +2610,11 @@ impl Shell {
                     None
                 }
                 Request::Save => {
-                    let saved: Option<()> = self.run(SAVE_FILE, &SaveFileParams { path });
+                    let saved: Option<()> =
+                        self.run(SAVE_FILE, &SaveFileParams { path: path.clone() });
                     if saved.is_some() {
+                        // The editor's own write is no other program's (P5-17).
+                        self.disk_watch.wrote(path);
                         self.reload_after_save();
                     }
                     None
@@ -2716,6 +2823,7 @@ impl Shell {
     fn centre(&mut self, ui: &mut Ui, focus: bool) {
         self.sync_editor();
         self.sync_map();
+        self.watch_disk(ui.ctx());
         self.cover_characters(ui.ctx());
         let editor_shown = self.centre_tab == CentreTab::Editor && self.editor.is_some();
         let refocus = std::mem::take(&mut self.multibuffer.refocus);

@@ -39,6 +39,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`file.replace_range`](#filereplace_range) | Replaces a byte range of a file's text, in the editor's text; nothing is saved. An edit in an excerpt of the multibuffer. |
 | [`file.save`](#filesave) | Writes a file's current text, as the editor has it, to disk. |
 | [`file.update`](#fileupdate) | Takes the whole text of a file as an editor has it, unsaved, and checks the project again. |
+| [`files.changed`](#fileschanged) | Takes files another program changed: the open map is read again when it has no unsaved edits, else kept for map.resolve; changed QuakeC is read again with the entity definitions derived from it. |
 | [`git.blame`](#gitblame) | Says who last changed each line of a file, and in which commit. |
 | [`git.branches`](#gitbranches) | Lists the repository's local branches, the checked-out one marked. |
 | [`git.commit`](#gitcommit) | Commits what is staged with a message; the new commit's id. |
@@ -53,6 +54,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
+| [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
 | [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. |
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
@@ -62,6 +64,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.remove_key`](#mapremove_key) | Removes every pair with a key from an entity of the open map. |
 | [`map.rename_key`](#maprename_key) | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
+| [`map.resolve`](#mapresolve) | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
 | [`map.rotate`](#maprotate) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
@@ -1073,6 +1076,34 @@ Parameters:
 }
 ```
 
+## `files.changed`
+
+Takes files another program changed: the open map is read again when it has no unsaved edits, else kept for map.resolve; changed QuakeC is read again with the entity definitions derived from it.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `files.changed`.",
+  "properties": {
+    "paths": {
+      "description": "The files another program wrote.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "paths"
+  ],
+  "title": "FilesChangedParams",
+  "type": "object"
+}
+```
+
 ## `git.blame`
 
 Says who last changed each line of a file, and in which commit.
@@ -1491,6 +1522,22 @@ Parameters:
 }
 ```
 
+## `map.compare`
+
+How the open map's file, changed by another program, differs from the map being edited, entity by entity.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
 ## `map.delete`
 
 Deletes an entity of the open map; the world stays.
@@ -1811,6 +1858,48 @@ Parameters:
     "to"
   ],
   "title": "RenameKeyParams",
+  "type": "object"
+}
+```
+
+## `map.resolve`
+
+After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Keep": {
+      "description": "Which map `map.resolve` keeps.",
+      "oneOf": [
+        {
+          "const": "disk",
+          "description": "The map on disk, the unsaved edits dropped.",
+          "type": "string"
+        },
+        {
+          "const": "mine",
+          "description": "The map being edited, to be saved over the one on disk.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.resolve`.",
+  "properties": {
+    "keep": {
+      "$ref": "#/$defs/Keep",
+      "description": "Which map to keep."
+    }
+  },
+  "required": [
+    "keep"
+  ],
+  "title": "ResolveParams",
   "type": "object"
 }
 ```

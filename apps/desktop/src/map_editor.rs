@@ -13,7 +13,7 @@ use eframe::egui::{
 };
 use qs_render::Camera;
 use qs_workbench::entity_classes::ClassInfo;
-use qs_workbench::map_edit::{EntityIndex, EntityKeys, MapDocument, MapRevision};
+use qs_workbench::map_edit::{EntityIndex, EntityKeys, Keep, MapDocument, MapRevision};
 
 use crate::map_scene::{ClassLook, Line, Scene, is_target_key, load_models, start_camera};
 use crate::strings::Text;
@@ -59,6 +59,22 @@ pub enum MapAction {
     RemoveKey(EntityIndex, String),
     /// Save the map.
     Save,
+    /// After another program changed the map, keep the file or the edits.
+    Resolve(Keep),
+    /// List how the changed file differs.
+    Compare,
+}
+
+/// What the map editor says about the map's file on disk (P5-17).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum DiskNotice {
+    /// Nothing: the file is the one read or saved.
+    #[default]
+    None,
+    /// Another program changed it while the map had unsaved edits.
+    Changed,
+    /// The same, with how the file differs, one line each.
+    Compared(Vec<String>),
 }
 
 /// The map editor's view state.
@@ -80,6 +96,8 @@ pub struct MapEditor {
     adding: (String, String),
     /// Why the last map command asked for was refused, until one runs.
     refused: Option<String>,
+    /// The notice about the map's file on disk.
+    disk: DiskNotice,
 }
 
 impl MapEditor {
@@ -121,6 +139,11 @@ impl MapEditor {
     /// Takes why the last map command asked for was refused, or none when it ran.
     pub fn set_refused(&mut self, refused: Option<String>) {
         self.refused = refused;
+    }
+
+    /// Takes what to say about the map's file on disk.
+    pub fn set_disk(&mut self, disk: DiskNotice) {
+        self.disk = disk;
     }
 
     /// Forgets the camera, so the next map opened starts at its player start.
@@ -234,6 +257,28 @@ impl MapEditor {
         let mut actions = Vec::new();
         if let Some(refused) = &self.refused {
             ui.label(RichText::new(refused).color(theme.color(Token::StatusError)));
+        }
+        if self.disk != DiskNotice::None {
+            ui.label(
+                RichText::new(Text::MapChangedOnDisk.get()).color(theme.color(Token::StatusWarn)),
+            );
+            ui.horizontal_wrapped(|ui| {
+                if ui.button(Text::MapReloadFromDisk.get()).clicked() {
+                    actions.push(MapAction::Resolve(Keep::Disk));
+                }
+                if ui.button(Text::MapKeepMine.get()).clicked() {
+                    actions.push(MapAction::Resolve(Keep::Mine));
+                }
+                if ui.button(Text::MapCompare.get()).clicked() {
+                    actions.push(MapAction::Compare);
+                }
+            });
+            if let DiskNotice::Compared(lines) = &self.disk {
+                for line in lines {
+                    ui.label(RichText::new(line).color(theme.color(Token::TextMuted)));
+                }
+            }
+            ui.separator();
         }
         let Some((entity, keys)) = &self.keys else {
             ui.label(

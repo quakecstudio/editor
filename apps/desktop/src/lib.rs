@@ -17,6 +17,7 @@ pub mod agent;
 pub mod bench;
 mod code_style;
 mod debugger;
+mod disk_watch;
 mod editor;
 mod entities;
 mod fallback;

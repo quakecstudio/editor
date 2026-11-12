@@ -313,8 +313,8 @@ impl<L: qc_project::Loader> Workbench<L> {
     }
 
     /// Reads the open tabs that have no unsaved edits again from disk, and the project's files,
-    /// after git changed them.
-    fn disk_changed(&mut self) -> Result<(), WorkbenchError> {
+    /// after git or another program changed them.
+    pub(crate) fn disk_changed(&mut self) -> Result<(), WorkbenchError> {
         let root = self.root.clone().ok_or(WorkbenchError::NoProject)?;
         for path in self.tabs.clone() {
             if self.unsaved.contains(&path) {

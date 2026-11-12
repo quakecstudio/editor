@@ -273,10 +273,9 @@ groups:
     - P5-06
     - P5-03
     deliverable:
-    - 'The open map, its WADs and the project QuakeC watched for writes by other programs: a map with no unsaved edits reloads keeping the camera and selection; one with unsaved edits asks to reload, keep its own or compare; a changed WAD refreshes the texture browser and the view; changed QuakeC refreshes the derived entity definitions'
+    - 'The open map and the project QuakeC watched for writes by other programs: a map with no unsaved edits reloads keeping the camera and selection; one with unsaved edits asks to reload, keep its own or compare; changed QuakeC refreshes the derived entity definitions. WADs are watched by the texture browser, P6-10, which does not exist before it'
     acceptance:
     - 'A script rewriting the open map reloads it with no prompt when it has no unsaved edits, and saving never silently overwrites a newer file on disk'
-    - 'Adding a texture to a WAD the map uses shows it in the browser with no restart'
     verify:
     - 'Integration tests with a fake file watcher; no wall-clock waits'
   - key: P5-18
@@ -533,16 +532,20 @@ groups:
     size: S
     reqs:
     - MAP-5
+    - MAP-32
     depends:
     - P5-05
     - P1-18
+    - P5-17
     deliverable:
     - Browser with palette-correct previews, search and usage counts
+    - 'The map''s WADs watched for writes by other programs, as P5-17 watches the map: a changed WAD refreshes the browser and the view'
     - 'WADs found from the map worldspawn wad key and the detected install with no setup step, and previews decoded only when shown'
     acceptance:
     - Shows every texture in id1 WADs and the map's own textures
     - 'With a fresh install detected, opening an id1 map shows its textures with no configuration'
     - 'Opening a map decodes no texture it does not draw: a test counts the decodes'
+    - 'Adding a texture to a WAD the map uses shows it in the browser with no restart'
     verify:
     - UI snapshot tests
   - key: P6-11
