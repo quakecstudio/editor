@@ -112,6 +112,7 @@ cargo xtask layers                        # no crate depends on a higher layer (
 cargo xtask licenses                      # SPDX lines and ported-file headers; skips cached specs
 cargo xtask attribution                   # every asset is listed in ATTRIBUTION.md
 cargo xtask oracles                       # build the oracles from id's sources, run the VM vectors and the builtin and grammar differentials (network, C compiler)
+cargo xtask oracles maps                  # build id's qbsp, vis and light and ericw-tools (CMake, TBB, Embree 4) and compile a room with each (network)
 cargo xtask fuzz qc-progs --time 10m      # one fuzz target (nightly, cargo-fuzz); no target runs all
 cargo xtask engines [--check]             # regenerate (or check) the engine-target tables from their pinned sources (network)
 cargo xtask compiler-diff [--fast]       # the compiler differential's CI subset: qcc against qc-codegen on id 1.01, 32 rounds

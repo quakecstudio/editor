@@ -45,6 +45,7 @@ mod extract;
 mod fuzz;
 mod grammar;
 pub(crate) mod id101;
+mod maps;
 mod numbers;
 mod probes;
 pub(crate) mod rerelease;
@@ -342,6 +343,9 @@ enum OracleCommand {
         #[arg(last = true)]
         engine: Vec<String>,
     },
+    /// Build the map tool oracles, id's and ericw-tools' qbsp, vis and light, and compile a
+    /// sealed room with each (P6-03).
+    Maps,
     /// A trace file as JSON.
     Json {
         /// The trace.
@@ -452,6 +456,7 @@ fn run(
             }
             Ok(passed)
         }
+        OracleCommand::Maps => maps::check(root, exec, net),
         OracleCommand::Json { trace } => {
             let name = trace.display();
             let bytes = fs::read(trace).map_err(|e| format!("{name}: {e}"))?;
