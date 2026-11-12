@@ -33,8 +33,8 @@ const NUMBERS: usize = 16;
 /// Copied coordinates are rounded to this many parts of a unit, so a quarter turn's `cos`
 /// writes 0 rather than `6.1e-17`.
 const PRECISION: f64 = 1e6;
-/// Degrees in half a turn.
-const HALF_TURN: f64 = 180.0;
+/// Degrees in a whole turn.
+const FULL_TURN: f64 = 360.0;
 /// `angle`'s values for straight up and down, which turning leaves (`SetMovedir`).
 const UP: f64 = -1.0;
 const DOWN: f64 = -2.0;
@@ -201,7 +201,7 @@ impl Transform {
     pub fn facing(&self, degrees: f64) -> f64 {
         let (sin, cos) = degrees.to_radians().sin_cos();
         let [x, y, _] = self.linear().map(|row| row[0] * cos + row[1] * sin);
-        round(y.atan2(x).to_degrees().rem_euclid(HALF_TURN * 2.0))
+        round(y.atan2(x).to_degrees().rem_euclid(FULL_TURN))
     }
 }
 

@@ -501,6 +501,8 @@ fn the_determinant_tells_a_mirror() {
     }
     let quarter = Transform::parse(b"0 -1 0 0 1 0 0 0 0 0 1 0 0 0 0 1").unwrap();
     assert_eq!(quarter.facing(30.0), 120.0);
+    // Pointing back along x, turned a quarter: -90 degrees, written 270.
+    assert_eq!(quarter.facing(180.0), 270.0);
 }
 
 // spec MAP-9.6: the copies take the place of the entities they replace, even with another
