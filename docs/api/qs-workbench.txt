@@ -995,6 +995,7 @@ variant qs_workbench::WorkbenchError::NoFix
 variant qs_workbench::WorkbenchError::NoHunk
 variant qs_workbench::WorkbenchError::NoMap
 variant qs_workbench::WorkbenchError::NoProject
+variant qs_workbench::WorkbenchError::NoRoom
 variant qs_workbench::WorkbenchError::NotPointEntity
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Pattern

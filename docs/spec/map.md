@@ -413,9 +413,13 @@ one ("the armory") and the map tools can find it (MAP-16).
   `_tb_group` names (`extractContainerInfo` reads `_tb_layer` first); a value that is blank or
   not a whole number from 0 (`rawParentLayerId && *rawParentLayerId >= 0`) names none.
 - **MAP-9.3** A room's bounds are the box around every brush polygon (MAP-3.4) of the room's own
-  entity and of the brush entities in it; a room with no brush has none. Not TrenchBroom's: it
-  keeps no bounds.
-- **MAP-9.4** A room's own entity is in the room. Another entity is in a room when it names
-  the room (MAP-9.2), and otherwise when its `origin` (MAP-2.7) lies in the room's bounds,
-  edges included, the first such room in the map's order: an entity placed where a room is,
-  with no TrenchBroom key, is in it.
+  entity, of the brush entities in it and of the rooms in it, however deep; a room with no
+  brush has none. A container with no name passes its members and brushes to the nearest named
+  room around it. Not TrenchBroom's: it keeps no bounds.
+- **MAP-9.4** A room's own entity is in the room; another entity is in the nearest named room
+  at or around the container it names (MAP-9.2). An entity that names none, or one that leads
+  to no room, is in the smallest room whose bounds hold its `origin` (MAP-2.7), edges included,
+  the one inside the other of two with the same box: an entity placed where a room is, with no
+  TrenchBroom key, is in it. An entity in a room is
+  in every room around that one too, so a filter or a count by a room's name takes the rooms
+  inside it.

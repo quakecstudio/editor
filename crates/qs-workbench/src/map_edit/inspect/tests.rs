@@ -16,7 +16,8 @@ use crate::{Config, Workbench};
 
 /// The world, a group `Armory` with a brush from 0 to 128 by 128 by 64, and a monster outside it.
 const MAP: &str = "{\n\"classname\" \"worldspawn\"\n}\n\
-    {\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"Armory\"\n\"_tb_id\" \"2\"\n\
+    {\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\
+    \"_tb_name\" \"Armory\"\n\"_tb_id\" \"2\"\n\
     {\n( 0 0 0 ) ( 0 1 0 ) ( 0 0 1 ) t 0 0 0 1 1\n( 128 0 0 ) ( 128 0 1 ) ( 128 1 0 ) t 0 0 0 1 1\n\
     ( 0 0 0 ) ( 0 0 1 ) ( 1 0 0 ) t 0 0 0 1 1\n( 0 128 0 ) ( 1 128 0 ) ( 0 128 1 ) t 0 0 0 1 1\n\
     ( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) t 0 0 0 1 1\n( 0 0 64 ) ( 0 1 64 ) ( 1 0 64 ) t 0 0 0 1 1\n}\n}\n\
@@ -57,7 +58,11 @@ fn the_map_is_inspected_by_room() {
         session
             .execute(
                 MAP_PLACE,
-                json!({ "classname": "monster_shambler", "origin": [64.0, 64.0, 24.0], "keys": [] }),
+                json!({
+                    "classname": "monster_shambler",
+                    "origin": [64.0, 64.0, 24.0],
+                    "keys": [],
+                }),
             )
             .unwrap();
     }
@@ -81,4 +86,9 @@ fn the_map_is_inspected_by_room() {
             .execute(MAP_INSPECT, json!({ "nothing": 1 }))
             .is_err()
     );
+    let unknown = session
+        .execute(MAP_INSPECT, json!({ "room": "Amory" }))
+        .unwrap_err()
+        .to_string();
+    assert!(unknown.contains("no room named Amory"), "{unknown}");
 }

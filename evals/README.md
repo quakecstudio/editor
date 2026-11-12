@@ -27,8 +27,8 @@ scenario that defines success, then read by a reviewer against a rubric.
 - For a map task, in `task.toml` in place of the scenario: `files`, the task directory's files
   copied into the project (such as `maps/castle.map`), and one or more `[[map]]`, each a map
   `file`, a `classname`, a `room` (a TrenchBroom layer or group, MAP-9) and the `count` of
-  entities of that class the room must hold. The map is read as the agent left it: the map
-  open in the editor, unsaved edits included, else the file.
+  entities of that class the room, or a room inside it, must hold (MAP-9.4). The map is read
+  from its file, as the agent saved it.
 - `rubric.md`: what a reviewer reads a passing run against.
 
 ## Running them

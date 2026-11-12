@@ -29,4 +29,4 @@ pub use check::{Diagnostic, DiagnosticKind, MAP_MAX_SOUNDS};
 pub use document::{
     Brush, BrushModel, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key,
 };
-pub use rooms::{Room, RoomKind};
+pub use rooms::{Room, RoomKind, Rooms};

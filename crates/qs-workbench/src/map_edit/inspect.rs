@@ -6,7 +6,7 @@
 //! can be carried out with `map.place` and `map.set_key`.
 
 use qs_commands::{Command, Outcome};
-use qs_map::{Entity, RoomKind};
+use qs_map::RoomKind;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -17,10 +17,11 @@ use crate::{HasWorkbench, WorkbenchError};
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct InspectParams {
-    /// Only the entities in the room of this name, in any case; every entity with none.
+    /// Only the entities in the room of this name, in any case, or a room inside it; every
+    /// entity with none. A name no room has is refused.
     #[serde(default)]
     pub room: Option<String>,
-    /// Only the entities whose classname starts with this; every entity with none.
+    /// Only the entities whose classname starts with this, as written; every entity with none.
     #[serde(default)]
     pub classname: Option<String>,
 }
@@ -66,7 +67,7 @@ pub struct EntityInfo {
     pub origin: Option<[f64; 3]>,
     /// Its targetname, when it has one.
     pub targetname: Option<String>,
-    /// The room it is in, when it is in one.
+    /// The innermost room it is in, when it is in one (MAP-9.4).
     pub room: Option<String>,
 }
 
@@ -101,35 +102,39 @@ impl<C: HasWorkbench + 'static> Command<C> for MapInspect {
         let document = context.workbench().map().ok_or(WorkbenchError::NoMap)?;
         let file = document.file();
         let rooms = file.rooms();
+        if let Some(room) = &params.room
+            && !rooms.named_any(room)
+        {
+            return Err(WorkbenchError::NoRoom { name: room.clone() });
+        }
         let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
-        let info = |(index, entity): (usize, &Entity)| EntityInfo {
-            entity: EntityIndex::new(index),
-            classname: entity.classname().map(text).unwrap_or_default(),
-            origin: entity.value(b"origin").map(|_| entity.origin()),
-            targetname: entity.value(b"targetname").map(text),
-            room: entity.room(&rooms).map(|room| room.name.clone()),
-        };
         let entities = file
             .entities
             .iter()
             .enumerate()
-            .map(info)
-            .filter(|entity| {
-                params.room.as_ref().is_none_or(|room| {
+            .filter(|(_, entity)| {
+                params.classname.as_ref().is_none_or(|prefix| {
                     entity
-                        .room
-                        .as_ref()
-                        .is_some_and(|name| name.eq_ignore_ascii_case(room))
+                        .classname()
+                        .is_some_and(|name| name.starts_with(prefix.as_bytes()))
                 })
             })
-            .filter(|entity| {
+            .filter(|(_, entity)| {
                 params
-                    .classname
+                    .room
                     .as_ref()
-                    .is_none_or(|prefix| entity.classname.starts_with(prefix.as_str()))
+                    .is_none_or(|room| rooms.holds(entity, room))
+            })
+            .map(|(index, entity)| EntityInfo {
+                entity: EntityIndex::new(index),
+                classname: entity.classname().map(text).unwrap_or_default(),
+                origin: entity.value(b"origin").map(|_| entity.origin()),
+                targetname: entity.value(b"targetname").map(text),
+                room: rooms.of(entity).first().map(|room| room.name.clone()),
             })
             .collect();
         let rooms = rooms
+            .list()
             .iter()
             .map(|room| RoomInfo {
                 name: room.name.clone(),

@@ -98,41 +98,24 @@ struct MapExpect {
 }
 
 impl MapExpect {
-    /// Whether the map holds it: the map open in `session` when it is this one, the agent's
-    /// unsaved edits included, else the file in `dir`.
-    fn holds(&self, session: &mut Session<Context>, dir: &Path) -> Result<bool, String> {
+    /// The map file in the project `dir`, as saved: a map task asks for the map to be saved.
+    fn read(&self, dir: &Path) -> Result<MapFile, String> {
         let path = dir.join(&self.file);
-        let same = |open: &Path| {
-            fs::canonicalize(open)
-                .ok()
-                .zip(fs::canonicalize(&path).ok())
-                .is_some_and(|(a, b)| a == b)
-        };
-        let open = session
-            .context()
-            .workbench
-            .map()
-            .filter(|document| same(document.path()))
-            .map(|document| document.file().clone());
-        let file = match open {
-            Some(file) => file,
-            None => {
-                let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-                MapFile::parse(&bytes).map_err(|e| format!("{}: {e}", path.display()))?
-            }
-        };
-        let rooms = file.rooms();
-        let count = file
+        let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        MapFile::parse(&bytes).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    /// Whether `map` holds it: `count` entities of its classname in its room or a room inside
+    /// it, as `map.inspect` finds them (MAP-9.4).
+    fn holds(&self, map: &MapFile) -> bool {
+        let rooms = map.rooms();
+        let count = map
             .entities
             .iter()
             .filter(|entity| entity.classname() == Some(self.classname.as_bytes()))
-            .filter(|entity| {
-                entity
-                    .room(&rooms)
-                    .is_some_and(|room| room.name.eq_ignore_ascii_case(&self.room))
-            })
+            .filter(|entity| rooms.holds(entity, &self.room))
             .count();
-        Ok(count == self.count)
+        count == self.count
     }
 }
 
@@ -382,7 +365,7 @@ fn succeeds(
         Success::Scenario(scenario) => scenario,
         Success::Map(expects) => {
             for expect in *expects {
-                if !expect.holds(session, dir)? {
+                if !expect.holds(&expect.read(dir)?) {
                     return Ok(false);
                 }
             }
@@ -612,6 +595,22 @@ mod tests {
             if task.map.is_empty() {
                 let scenario = std::fs::read_to_string(dir.join("success.scenario")).unwrap();
                 Scenario::parse(&scenario).unwrap();
+            } else {
+                assert!(
+                    !dir.join("success.scenario").exists(),
+                    "{}: a map task has no scenario",
+                    dir.display()
+                );
+            }
+            for expect in &task.map {
+                assert!(task.files.contains(&expect.file), "{}", dir.display());
+                let map = expect.read(&dir).unwrap();
+                assert!(
+                    map.rooms().named_any(&expect.room),
+                    "{}: no room {}",
+                    dir.display(),
+                    expect.room
+                );
             }
             for file in &task.files {
                 assert!(dir.join(file).is_file(), "{}: no {file}", dir.display());

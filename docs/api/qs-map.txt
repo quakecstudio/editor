@@ -135,9 +135,12 @@ fn qs_map::qbsp::QbspMap::texture_slots
 fn qs_map::qbsp::QbspMap::wad_path
 fn qs_map::qbsp::is_special
 fn qs_map::qbsp::load_map_file
-fn qs_map::rooms::Entity::room
 fn qs_map::rooms::MapFile::rooms
 fn qs_map::rooms::Room::holds
+fn qs_map::rooms::Rooms::holds
+fn qs_map::rooms::Rooms::list
+fn qs_map::rooms::Rooms::named_any
+fn qs_map::rooms::Rooms::of
 impl qs_map::check::DiagnosticKind: fmt::Display
 impl qs_map::document::Entity: Default
 impl qs_map::document::MapError: From<LexError>
@@ -171,6 +174,7 @@ struct qs_map::qbsp::QbspMap
 struct qs_map::qbsp::QbspTexinfo
 struct qs_map::qbsp::TextureSlot
 struct qs_map::rooms::Room
+struct qs_map::rooms::Rooms
 trait qs_map::geometry::MapFloat
 trait qs_map::geometry::sealed::Sealed
 type qs_map::geometry::TexVecs
@@ -188,6 +192,7 @@ use qs_map::MapFile = document::MapFile
 use qs_map::Pair = document::Pair
 use qs_map::Room = rooms::Room
 use qs_map::RoomKind = rooms::RoomKind
+use qs_map::Rooms = rooms::Rooms
 use qs_map::TexDef = document::TexDef
 use qs_map::is_tool_key = document::is_tool_key
 variant qs_map::check::DiagnosticKind::DuplicateKey

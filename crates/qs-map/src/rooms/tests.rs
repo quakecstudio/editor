@@ -22,69 +22,148 @@ fn cube(min: [i32; 3], max: [i32; 3]) -> String {
     )
 }
 
-/// A map with a layer `Upstairs` (id 1), a group `Armory` (id 2) holding a brush, and a group
-/// with no name; a monster in the armory by its key, one in it by place, one outside.
+/// An entity of `classname` with `keys`, each a key and a value, and `body` inside it.
+fn entity(classname: &str, keys: &[(&str, &str)], body: &str) -> String {
+    let mut out = format!("{{\n\"classname\" \"{classname}\"\n");
+    for (key, value) in keys {
+        out.push_str(&format!("\"{key}\" \"{value}\"\n"));
+    }
+    out.push_str(body);
+    out.push_str("}\n");
+    out
+}
+
+/// A layer, `_tb_type` `_tb_layer`, of `name` and `id`, in nothing.
+fn layer(name: &str, id: &str) -> String {
+    let keys = [
+        ("_tb_type", "_tb_layer"),
+        ("_tb_name", name),
+        ("_tb_id", id),
+    ];
+    entity("func_group", &keys, "")
+}
+
+/// A group of `name` (none when empty) and `id`, in `parent`'s group or layer, holding `body`.
+fn group(name: &str, id: &str, parent: (&str, &str), body: &str) -> String {
+    let mut keys = vec![("_tb_type", "_tb_group"), ("_tb_id", id)];
+    if !name.is_empty() {
+        keys.push(("_tb_name", name));
+    }
+    if !parent.0.is_empty() {
+        keys.push(parent);
+    }
+    entity("func_group", &keys, body)
+}
+
+/// A layer `Castle` (id 1) holding a group `Armory` (id 2) with a 128 by 128 by 64 brush, a
+/// group with no name (id 3) inside the armory with an 8-unit brush, and a group `Hall` (id 4)
+/// in nothing with a brush from 512 to 640; then monsters and others to place.
 fn map() -> MapFile {
-    let text = format!(
-        "{{\n\"classname\" \"worldspawn\"\n}}\n\
-         {{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_layer\"\n\"_tb_name\" \"Upstairs\"\n\"_tb_id\" \"1\"\n}}\n\
-         {{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_name\" \"Armory\"\n\"_tb_id\" \"2\"\n{}}}\n\
-         {{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_group\"\n\"_tb_id\" \"3\"\n{}}}\n\
-         {{\n\"classname\" \"monster_ogre\"\n\"origin\" \"900 0 0\"\n\"_tb_group\" \"2\"\n}}\n\
-         {{\n\"classname\" \"monster_army\"\n\"origin\" \"64 64 32\"\n}}\n\
-         {{\n\"classname\" \"monster_dog\"\n\"origin\" \"500 0 0\"\n}}\n\
-         {{\n\"classname\" \"light\"\n\"_tb_layer\" \"1\"\n\"_tb_group\" \"2\"\n}}\n\
-         {{\n\"classname\" \"info_null\"\n\"_tb_group\" \"-2\"\n}}\n",
-        cube([0, 0, 0], [128, 128, 64]),
-        cube([0, 0, 0], [8, 8, 8]),
-    );
+    let text = [
+        entity("worldspawn", &[], ""),
+        layer("Castle", "1"),
+        group(
+            "Armory",
+            "2",
+            ("_tb_layer", "1"),
+            &cube([0, 0, 0], [128, 128, 64]),
+        ),
+        group("", "3", ("_tb_group", "2"), &cube([0, 0, 0], [8, 8, 8])),
+        group("Hall", "4", ("", ""), &cube([512, 0, 0], [640, 128, 64])),
+        entity(
+            "monster_ogre",
+            &[("origin", "900 0 0"), ("_tb_group", "2")],
+            "",
+        ),
+        entity("monster_army", &[("origin", "64 64 32")], ""),
+        entity("monster_dog", &[("origin", "300 0 0")], ""),
+        entity("light", &[("_tb_layer", "1"), ("_tb_group", "4")], ""),
+        entity("info_null", &[("_tb_group", "-2")], ""),
+        entity(
+            "monster_wizard",
+            &[("origin", "4 4 4"), ("_tb_group", "3")],
+            "",
+        ),
+        entity(
+            "monster_knight",
+            &[("origin", "576 64 32"), ("_tb_group", "9")],
+            "",
+        ),
+    ]
+    .concat();
     MapFile::parse(text.as_bytes()).unwrap()
 }
 
 // spec MAP-9.1: a layer and a group are func_group entities with _tb_type _tb_layer or
 // _tb_group, named by _tb_name, with an id; one with no name is no room
-// spec MAP-9.3: a room's bounds are the box around its brushes; one with none has none
+// spec MAP-9.3: a room's bounds take its brushes and those of the rooms in it, a container
+// with no name passing its own on; one with no brush has none
 #[test]
 fn layers_and_groups_are_rooms() {
     let rooms = map().rooms();
     let names: Vec<_> = rooms
+        .list()
         .iter()
-        .map(|r| (r.name.as_str(), r.kind, r.id))
+        .map(|r| (r.name.as_str(), r.kind))
         .collect();
     assert_eq!(
         names,
         [
-            ("Upstairs", RoomKind::Layer, 1),
-            ("Armory", RoomKind::Group, 2)
+            ("Castle", RoomKind::Layer),
+            ("Armory", RoomKind::Group),
+            ("Hall", RoomKind::Group)
         ]
     );
-    assert_eq!(rooms[0].bounds, None);
-    let [min, max] = rooms[1].bounds.unwrap();
-    assert!(min.iter().all(|c| c.abs() < 1e-9), "{min:?}");
-    assert!(
-        (max[0] - 128.0).abs() < 1e-9 && (max[2] - 64.0).abs() < 1e-9,
-        "{max:?}"
-    );
+    let castle = rooms.list()[0].bounds.unwrap();
+    let armory = rooms.list()[1].bounds.unwrap();
+    assert_eq!(castle, armory, "the castle's only brushes are the armory's");
+    assert!((armory[1][0] - 128.0).abs() < 1e-9, "{armory:?}");
+    assert!(!rooms.list()[1].holds([600.0, 64.0, 32.0]));
+    assert!(rooms.list()[2].holds([600.0, 64.0, 32.0]));
 }
 
 // spec MAP-9.2: an entity is in the room its _tb_layer names, else its _tb_group; a value
 // that is not a whole number names none
-// spec MAP-9.4: a room's own entity is in it; an entity naming no room is in the first room
-// whose bounds hold its origin
+// spec MAP-9.4: a room's own entity is in it; an entity is in the nearest named room around
+// what it names, else the smallest room whose bounds hold its origin, and in every room
+// around that one
 #[test]
 fn an_entity_is_in_the_room_it_names_or_stands_in() {
     let map = map();
     let rooms = map.rooms();
-    let room = |n: usize| map.entities[n].room(&rooms).map(|r| r.name.as_str());
-    assert_eq!(room(4), Some("Armory"), "by its key, wherever it stands");
-    assert_eq!(room(5), Some("Armory"), "by its origin");
-    assert_eq!(room(6), None, "outside every room");
-    assert_eq!(room(7), Some("Upstairs"), "_tb_layer comes first");
+    let of = |n: usize| -> Vec<String> {
+        rooms
+            .of(&map.entities[n])
+            .iter()
+            .map(|room| room.name.clone())
+            .collect()
+    };
     assert_eq!(
-        room(8),
-        None,
+        of(2),
+        ["Armory", "Castle"],
+        "a room's own entity, then the layer around it"
+    );
+    assert_eq!(of(3), ["Armory", "Castle"], "a nameless group's own entity");
+    assert_eq!(
+        of(5),
+        ["Armory", "Castle"],
+        "by its key, wherever it stands"
+    );
+    assert_eq!(
+        of(6),
+        ["Armory", "Castle"],
+        "by its origin, the armory before the castle"
+    );
+    assert!(of(7).is_empty(), "outside every room");
+    assert_eq!(of(8), ["Castle"], "_tb_layer comes first");
+    assert!(
+        of(9).is_empty(),
         "a negative id names none, and it has no origin"
     );
-    assert_eq!(room(2), Some("Armory"), "a room's own entity");
-    assert_eq!(room(3), None, "a group with no name is no room");
+    assert_eq!(of(10), ["Armory", "Castle"], "through the nameless group");
+    assert_eq!(of(11), ["Hall"], "a stale key falls back to its origin");
+    assert!(rooms.holds(&map.entities[10], "castle"));
+    assert!(!rooms.holds(&map.entities[11], "Armory"));
+    assert!(rooms.named_any("ARMORY"));
+    assert!(!rooms.named_any("Amory"));
 }

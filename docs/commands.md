@@ -1604,7 +1604,7 @@ Parameters:
   "properties": {
     "classname": {
       "default": null,
-      "description": "Only the entities whose classname starts with this; every entity with none.",
+      "description": "Only the entities whose classname starts with this, as written; every entity with none.",
       "type": [
         "string",
         "null"
@@ -1612,7 +1612,7 @@ Parameters:
     },
     "room": {
       "default": null,
-      "description": "Only the entities in the room of this name, in any case; every entity with none.",
+      "description": "Only the entities in the room of this name, in any case, or a room inside it; every\nentity with none. A name no room has is refused.",
       "type": [
         "string",
         "null"
