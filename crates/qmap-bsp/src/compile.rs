@@ -3,7 +3,7 @@
 //! The run: each hull's entities processed in order, the clipping hulls passed to the drawing
 //! hull, and the BSP, portal file and leak file written (QBSP-1).
 
-use qs_bsp::write::DiskTexinfo;
+use qs_bsp::write::{BspFormat, BspWriteError, DiskTexinfo};
 use qs_map::MapFile;
 use qs_map::qbsp::{QbspMap, load_map_file};
 use qs_wad::Wad;
@@ -18,7 +18,9 @@ use crate::planes::Planes;
 use crate::portals::portalize;
 use crate::prt::portal_file;
 use crate::tree::{Builder, Choice, SIDESPACE, Tree};
-use crate::{CompileError, Dialect, Faults, Hull, Limits, ModelKind, Surface, Warning, tjunc};
+use crate::{
+    CompileError, Dialect, Faults, Hull, Limits, ModelKind, Surface, Tables, Warning, tjunc,
+};
 
 /// The default largest texture extent of a face before it is cut (QBSP-1).
 const SUBDIVIDE_SIZE: f32 = 240.0;
@@ -162,7 +164,7 @@ impl Run<'_> {
 
     /// A clipping hull: each entity's tree, the world's outside filled (QBSP-1.7).
     fn clip_hull(&mut self, hull: Hull) -> Result<ClipHull, CompileError> {
-        let mut clip = ClipHull::default();
+        let mut clip = ClipHull::new(self.limits.tables);
         for entity in 0..self.map.entities.len() {
             let Some(mut built) = self.first_tree(entity, hull, Choice::MidSplit)? else {
                 continue;
@@ -298,7 +300,7 @@ impl Compiler {
         };
         let player = run.clip_hull(Hull::Player)?;
         let large = run.clip_hull(Hull::Large)?;
-        let mut out = Output::new(limits.planes);
+        let mut out = Output::new(limits);
         let (portal_file, leak_file) = run.draw_hull(&mut out)?;
         out.read_clip_hull(Hull::Player, &player)?;
         out.read_clip_hull(Hull::Large, &large)?;
@@ -319,7 +321,14 @@ impl Compiler {
             Dialect::Extended => qmap.entity_lump_unbounded(),
         };
         out.file.textures = textures(&qmap, wad)?;
-        let bsp = out.file.to_bytes().map_err(CompileError::Write)?;
+        let bsp = match out.file.to_bytes(BspFormat::Bsp29) {
+            Err(BspWriteError::TooWide(lump)) if limits.tables == Tables::Format => {
+                warnings.push(Warning::Bsp2(lump));
+                out.file.to_bytes(BspFormat::Bsp2)
+            }
+            written => written,
+        }
+        .map_err(CompileError::Write)?;
         Ok(Compiled {
             bsp,
             portal_file,

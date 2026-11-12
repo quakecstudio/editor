@@ -8,17 +8,18 @@
 )]
 
 use super::{
-    BspFile, BspWriteError, DiskClipNode, DiskLeaf, DiskModel, DiskNode, DiskPlane, offset_field,
+    BspFile, BspFormat, BspWriteError, DiskClipNode, DiskFace, DiskLeaf, DiskModel, DiskNode,
+    DiskPlane, offset_field,
 };
-use crate::{Bsp, BspLoader};
+use crate::{Bsp, BspLoader, BspVersion, LumpId};
 
 /// A world of one plane splitting space into the shared solid leaf and one empty leaf.
 fn minimal() -> BspFile {
     let leaf = |contents| DiskLeaf {
         contents,
         visofs: -1,
-        mins: [-8, -8, -8],
-        maxs: [8, 8, 8],
+        mins: [-8.0; 3],
+        maxs: [8.0; 3],
         firstmarksurface: 0,
         nummarksurfaces: 0,
         ambient_level: [0; 4],
@@ -33,8 +34,8 @@ fn minimal() -> BspFile {
         nodes: vec![DiskNode {
             planenum: 0,
             children: [-2, -1],
-            mins: [-8, -8, -8],
-            maxs: [8, 8, 8],
+            mins: [-8.0; 3],
+            maxs: [8.0; 3],
             firstface: 0,
             numfaces: 0,
         }],
@@ -66,7 +67,7 @@ fn lump(bytes: &[u8], number: usize) -> (usize, usize) {
 // padded to four bytes, its length unpadded
 #[test]
 fn lumps_follow_the_header_in_id_order() {
-    let bytes = minimal().to_bytes().unwrap();
+    let bytes = minimal().to_bytes(BspFormat::Bsp29).unwrap();
     assert_eq!(i32::from_le_bytes(bytes[..4].try_into().unwrap()), 29);
     // planes 1, leafs 10, vertexes 3, nodes 5, texinfo 6, faces 7, clipnodes 9,
     // marksurfaces 11, surfedges 13, edges 12, models 14, lighting 8, visibility 4,
@@ -96,7 +97,7 @@ fn lumps_follow_the_header_in_id_order() {
 // spec BSP-23.1: what is written loads as a BSP29
 #[test]
 fn a_written_bsp_loads() {
-    let bytes = minimal().to_bytes().unwrap();
+    let bytes = minimal().to_bytes(BspFormat::Bsp29).unwrap();
     let bsp = Bsp::read(&bytes, BspLoader::WinQuake).unwrap();
     assert_eq!(bsp.planes.len(), 1);
     assert_eq!(bsp.nodes.len(), 1);
@@ -114,4 +115,105 @@ fn offsets_past_32_bits_are_refused() {
     assert_eq!(offset_field(0x7fff_ffff), Ok(i32::MAX));
     assert_eq!(offset_field(0x8000_0000), Err(BspWriteError::TooLarge));
     assert!(BspWriteError::TooLarge.to_string().contains("2 GiB"));
+}
+
+// spec BSP-23.4, BSP-17.1: a BSP2 file carries the version `BSP2` and BSP-17's record sizes
+#[test]
+fn bsp2_widens_the_six_lumps() {
+    let mut file = minimal();
+    file.marksurfaces = vec![0];
+    file.edges = vec![[0, 1]];
+    let bytes = file.to_bytes(BspFormat::Bsp2).unwrap();
+    assert_eq!(&bytes[..4], b"BSP2");
+    assert_eq!(lump(&bytes, 5).1, 44, "dl2node_t");
+    assert_eq!(lump(&bytes, 10).1, 2 * 44, "dl2leaf_t");
+    assert_eq!(lump(&bytes, 9).1, 12, "dlclipnode_t");
+    assert_eq!(lump(&bytes, 11).1, 4, "unsigned int marksurfaces");
+    assert_eq!(lump(&bytes, 12).1, 8, "dledge_t");
+    assert_eq!(lump(&bytes, 1).1, 20, "planes as BSP29");
+    assert_eq!(lump(&bytes, 14).1, 64, "models as BSP29");
+    let bytes29 = file.to_bytes(BspFormat::Bsp29).unwrap();
+    assert_eq!(lump(&bytes29, 11).1, 2);
+    assert_eq!(lump(&bytes29, 12).1, 4);
+}
+
+// spec BSP-23.4: what is written as BSP2 loads as BSP2, with values past BSP29's fields
+#[test]
+fn a_written_bsp2_loads_with_wide_values() {
+    let mut file = minimal();
+    file.nodes[0].mins = [-8.5, -8.0, -8.0];
+    file.leafs[1].mins = [-70_000.25, -8.0, -8.0];
+    file.clipnodes[0].children = [-1, -2];
+    let bytes = file.to_bytes(BspFormat::Bsp2).unwrap();
+    let bsp = Bsp::read(&bytes, BspLoader::FitzQuake).unwrap();
+    assert_eq!(bsp.version, BspVersion::Bsp2);
+    assert_eq!(bsp.nodes[0].children, [-2, -1]);
+    assert_eq!(bsp.leafs.len(), 2);
+    assert_eq!(bsp.models[0].visleafs, 1);
+}
+
+// spec BSP-23.5: a BSP29 bound is the float truncated toward zero
+#[test]
+fn bsp29_bounds_truncate_toward_zero() {
+    let mut file = minimal();
+    file.nodes[0].mins = [-8.9, 7.9, -0.5];
+    let bytes = file.to_bytes(BspFormat::Bsp29).unwrap();
+    let (nodes, _) = lump(&bytes, 5);
+    let short = |at: usize| i16::from_le_bytes(bytes[at..at + 2].try_into().unwrap());
+    // planenum 4 bytes, children 4 bytes, then mins.
+    assert_eq!(
+        [short(nodes + 8), short(nodes + 10), short(nodes + 12)],
+        [-8, 7, 0]
+    );
+}
+
+// spec BSP-23.5: a value BSP29's 16-bit field cannot hold is refused, naming the lump; BSP2
+// takes it
+#[test]
+fn bsp29_refuses_values_past_16_bits() {
+    type Change = fn(&mut BspFile);
+    let cases: [(LumpId, Change); 6] = [
+        (LumpId::Nodes, |f| f.nodes[0].children[0] = 32_768),
+        (LumpId::Nodes, |f| f.nodes[0].numfaces = 65_536),
+        (LumpId::Clipnodes, |f| f.clipnodes[0].children[1] = -32_769),
+        (LumpId::Leafs, |f| f.leafs[0].nummarksurfaces = 65_536),
+        (LumpId::Marksurfaces, |f| f.marksurfaces = vec![65_536]),
+        (LumpId::Edges, |f| f.edges = vec![[0, 65_536]]),
+    ];
+    for (lump, change) in cases {
+        let mut file = minimal();
+        change(&mut file);
+        assert_eq!(
+            file.to_bytes(BspFormat::Bsp29),
+            Err(BspWriteError::TooWide(lump)),
+            "{lump:?}"
+        );
+        assert!(file.to_bytes(BspFormat::Bsp2).is_ok(), "{lump:?}");
+    }
+    let mut file = minimal();
+    file.faces = vec![DiskFace {
+        planenum: 40_000,
+        side: 0,
+        firstedge: 0,
+        numedges: 0,
+        texinfo: 0,
+        styles: [255; 4],
+        lightofs: -1,
+    }];
+    assert_eq!(
+        file.to_bytes(BspFormat::Bsp29),
+        Err(BspWriteError::TooWide(LumpId::Faces))
+    );
+    let mut wide = file.clone();
+    wide.faces[0].planenum = 0;
+    wide.faces[0].texinfo = 32_768;
+    assert_eq!(
+        wide.to_bytes(BspFormat::Bsp29),
+        Err(BspWriteError::TooWide(LumpId::Faces))
+    );
+    assert!(
+        BspWriteError::TooWide(LumpId::Faces)
+            .to_string()
+            .contains("Faces")
+    );
 }

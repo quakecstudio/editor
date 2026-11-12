@@ -21,6 +21,7 @@ mod winding;
 
 use std::fmt;
 
+use qs_bsp::LumpId;
 use qs_bsp::write::BspWriteError;
 use qs_map::qbsp::QbspError;
 
@@ -174,6 +175,27 @@ pub(crate) struct Limits {
     pub(crate) planes: usize,
     /// What a fault qbsp stops on does (QBSP-14.3).
     pub(crate) faults: Faults,
+    /// Which limits bound the output's lumps (QBSP-14.4).
+    pub(crate) tables: Tables,
+}
+
+/// Which limits bound the output's lumps (QBSP-14.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Tables {
+    /// qbsp's `MAX_MAP_` arrays, each refusing the compile when full.
+    Qbsp,
+    /// Only the file's fields: BSP29 when every value fits it, else `BSP2`.
+    Format,
+}
+
+impl Tables {
+    /// Whether a lump of `len` entries is full under qbsp's `max`.
+    pub(crate) const fn full(self, len: usize, max: usize) -> bool {
+        match self {
+            Self::Qbsp => len >= max,
+            Self::Format => false,
+        }
+    }
 }
 
 /// What a fault qbsp stops on does: a bad face, a leaf of mixed contents, an entity with no
@@ -196,14 +218,16 @@ impl Dialect {
                 hull_edges: 64,
                 planes: 8192,
                 faults: Faults::Stop,
+                tables: Tables::Qbsp,
             },
             Self::Extended => Limits {
                 brush_faces: None,
                 brush_planes: usize::MAX,
                 hull_points: usize::MAX,
                 hull_edges: usize::MAX,
-                planes: 32767,
+                planes: usize::MAX,
                 faults: Faults::Warn,
+                tables: Tables::Format,
             },
         }
     }
@@ -226,6 +250,8 @@ pub enum Warning {
     MixedContents,
     /// An entity with brushes none of which is valid, given an empty model (QBSP-14.3).
     NoValidBrushes,
+    /// A value too wide for BSP29, so the file is written as `BSP2` (QBSP-14.4).
+    Bsp2(LumpId),
 }
 
 /// What stops qbsp, as its errors read.

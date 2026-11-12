@@ -131,7 +131,7 @@ pub(crate) enum Side {
 
 impl Side {
     /// The side's number in a BSP face.
-    pub(crate) const fn number(self) -> i16 {
+    pub(crate) const fn number(self) -> i32 {
         match self {
             Self::Front => 0,
             Self::Back => 1,

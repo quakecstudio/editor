@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Writing a BSP29 file (BSP-23): the header, then the lumps in the order id's `WriteBSPFile`
-//! writes them, each padded to four bytes, from records laid out as BSP-1 to BSP-15 read them.
+//! Writing a BSP29 or `BSP2` file (BSP-23): the header, then the lumps in the order id's
+//! `WriteBSPFile` writes them, each padded to four bytes, from records laid out as BSP-1 to
+//! BSP-15 read them, or BSP-17's for `BSP2`.
 
 use std::fmt;
 
-use crate::{BSP_HEADER_LUMPS, BSP_HEADER_SIZE, BSP_MAXLIGHTMAPS, BSP_NUM_AMBIENTS, BSP_VERSION};
+use crate::{
+    BSP_BSP2_VERSION, BSP_HEADER_LUMPS, BSP_HEADER_SIZE, BSP_MAXLIGHTMAPS, BSP_NUM_AMBIENTS,
+    BSP_VERSION, LumpId,
+};
 
 /// The lumps' numbers in the header (BSP-1.1).
 const LUMP_ENTITIES: usize = 0;
@@ -39,30 +43,40 @@ pub struct DiskPlane {
     pub plane_type: i32,
 }
 
-/// A node as the file stores it (BSP-7.1).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The layout a file is written in (BSP-23.4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BspFormat {
+    /// Version 29, id's (BSP-1 to BSP-15).
+    #[default]
+    Bsp29,
+    /// `BSP2`: 32-bit fields and float bounds (BSP-17).
+    Bsp2,
+}
+
+/// A node (BSP-7.1, BSP-17), its fields as wide as `BSP2`'s.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DiskNode {
     /// Its plane.
     pub planenum: i32,
     /// Its children: a node, or `-(leaf + 1)` (BSP-7.2).
-    pub children: [i16; 2],
-    /// Its bounds, in whole units.
-    pub mins: [i16; 3],
-    /// Its bounds, in whole units.
-    pub maxs: [i16; 3],
+    pub children: [i32; 2],
+    /// Its bounds; BSP29 stores each as a 16-bit integer, truncated toward zero.
+    pub mins: [f32; 3],
+    /// Its bounds; BSP29 stores each as a 16-bit integer, truncated toward zero.
+    pub maxs: [f32; 3],
     /// Its first face.
-    pub firstface: u16,
+    pub firstface: u32,
     /// Its faces.
-    pub numfaces: u16,
+    pub numfaces: u32,
 }
 
-/// A clip node as the file stores it (BSP-11.1).
+/// A clip node (BSP-11.1, BSP-17).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DiskClipNode {
     /// Its plane.
     pub planenum: i32,
     /// Its children: a clip node, or a contents value.
-    pub children: [i16; 2],
+    pub children: [i32; 2],
 }
 
 /// A texinfo as the file stores it (BSP-8.1).
@@ -76,40 +90,40 @@ pub struct DiskTexinfo {
     pub flags: i32,
 }
 
-/// A face as the file stores it (BSP-9.1).
+/// A face (BSP-9.1, BSP-17).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DiskFace {
     /// Its plane.
-    pub planenum: i16,
+    pub planenum: i32,
     /// 1 when it faces away from its plane.
-    pub side: i16,
+    pub side: i32,
     /// Its first surfedge.
     pub firstedge: i32,
     /// Its surfedges.
-    pub numedges: i16,
+    pub numedges: i32,
     /// Its texinfo.
-    pub texinfo: i16,
+    pub texinfo: i32,
     /// Its light styles, 255 for unused slots.
     pub styles: [u8; BSP_MAXLIGHTMAPS],
     /// Its lightmaps' offset, -1 for none.
     pub lightofs: i32,
 }
 
-/// A leaf as the file stores it (BSP-12).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A leaf (BSP-12, BSP-17).
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DiskLeaf {
     /// `CONTENTS_` value.
     pub contents: i32,
     /// Its visibility row's offset, -1 for none.
     pub visofs: i32,
-    /// Its bounds, in whole units.
-    pub mins: [i16; 3],
-    /// Its bounds, in whole units.
-    pub maxs: [i16; 3],
+    /// Its bounds; BSP29 stores each as a 16-bit integer, truncated toward zero.
+    pub mins: [f32; 3],
+    /// Its bounds; BSP29 stores each as a 16-bit integer, truncated toward zero.
+    pub maxs: [f32; 3],
     /// Its first marksurface.
-    pub firstmarksurface: u16,
+    pub firstmarksurface: u32,
     /// Its marksurfaces.
-    pub nummarksurfaces: u16,
+    pub nummarksurfaces: u32,
     /// The ambient sound levels.
     pub ambient_level: [u8; BSP_NUM_AMBIENTS],
 }
@@ -138,19 +152,27 @@ pub struct DiskModel {
 pub enum BspWriteError {
     /// The file would be larger than a signed 32-bit offset reaches (BSP-23.3).
     TooLarge,
+    /// A value of the lump does not fit BSP29's 16-bit field (BSP-23.5).
+    TooWide(LumpId),
 }
 
 impl fmt::Display for BspWriteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::TooLarge => f.write_str("the BSP would be larger than 2 GiB"),
+            Self::TooWide(lump) => {
+                write!(
+                    f,
+                    "a value of the {lump:?} lump does not fit BSP29's 16 bits"
+                )
+            }
         }
     }
 }
 
 impl core::error::Error for BspWriteError {}
 
-/// Every lump of a BSP29 file, as records.
+/// Every lump of a BSP file, as records.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BspFile {
     /// The entity text, its NUL included (BSP-2).
@@ -176,161 +198,278 @@ pub struct BspFile {
     /// The leaves.
     pub leafs: Vec<DiskLeaf>,
     /// The marksurfaces.
-    pub marksurfaces: Vec<u16>,
+    pub marksurfaces: Vec<u32>,
     /// The edges, each two vertexes.
-    pub edges: Vec<[u16; 2]>,
+    pub edges: Vec<[u32; 2]>,
     /// The surfedges.
     pub surfedges: Vec<i32>,
     /// The models.
     pub models: Vec<DiskModel>,
 }
 
-/// Little-endian records.
+/// Little-endian records in one of the formats.
 trait Record {
-    fn put(&self, out: &mut Vec<u8>);
+    /// Appends the record; BSP29's narrower fields refuse a value they cannot hold.
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError>;
 }
 
-fn floats(values: &[f32], out: &mut Vec<u8>) {
-    for value in values {
-        out.extend_from_slice(&value.to_le_bytes());
+/// The bytes a record is written into, in a format, with the lump to blame.
+struct Put<'a> {
+    out: &'a mut Vec<u8>,
+    format: BspFormat,
+    lump: LumpId,
+}
+
+impl Put<'_> {
+    fn bytes(&mut self, bytes: &[u8]) {
+        self.out.extend_from_slice(bytes);
     }
-}
 
-fn shorts(values: &[i16], out: &mut Vec<u8>) {
-    for value in values {
-        out.extend_from_slice(&value.to_le_bytes());
+    fn floats(&mut self, values: &[f32]) {
+        for value in values {
+            self.bytes(&value.to_le_bytes());
+        }
+    }
+
+    fn ints(&mut self, values: &[i32]) {
+        for value in values {
+            self.bytes(&value.to_le_bytes());
+        }
+    }
+
+    /// A signed field: 16 bits in BSP29, 32 in `BSP2` (BSP-17.2).
+    fn signed(&mut self, values: &[i32]) -> Result<(), BspWriteError> {
+        for &value in values {
+            match self.format {
+                BspFormat::Bsp29 => {
+                    let narrow =
+                        i16::try_from(value).map_err(|_| BspWriteError::TooWide(self.lump))?;
+                    self.bytes(&narrow.to_le_bytes());
+                }
+                BspFormat::Bsp2 => self.bytes(&value.to_le_bytes()),
+            }
+        }
+        Ok(())
+    }
+
+    /// An unsigned field: 16 bits in BSP29, 32 in `BSP2` (BSP-17.3).
+    fn unsigned(&mut self, values: &[u32]) -> Result<(), BspWriteError> {
+        for &value in values {
+            match self.format {
+                BspFormat::Bsp29 => {
+                    let narrow =
+                        u16::try_from(value).map_err(|_| BspWriteError::TooWide(self.lump))?;
+                    self.bytes(&narrow.to_le_bytes());
+                }
+                BspFormat::Bsp2 => self.bytes(&value.to_le_bytes()),
+            }
+        }
+        Ok(())
+    }
+
+    /// Node or leaf bounds: 16-bit integers truncated toward zero in BSP29, floats in `BSP2`
+    /// (BSP-17.4, BSP-23.5).
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "spec BSP-23.5: BSP29 bounds are the floats assigned to shorts, toward zero"
+    )]
+    fn bounds(&mut self, values: &[f32]) {
+        for &value in values {
+            match self.format {
+                BspFormat::Bsp29 => self.bytes(&(value as i16).to_le_bytes()),
+                BspFormat::Bsp2 => self.bytes(&value.to_le_bytes()),
+            }
+        }
     }
 }
 
 impl Record for DiskPlane {
-    fn put(&self, out: &mut Vec<u8>) {
-        floats(&self.normal, out);
-        floats(&[self.dist], out);
-        out.extend_from_slice(&self.plane_type.to_le_bytes());
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError> {
+        let mut put = Put {
+            out,
+            format,
+            lump: LumpId::Planes,
+        };
+        put.floats(&self.normal);
+        put.floats(&[self.dist]);
+        put.ints(&[self.plane_type]);
+        Ok(())
     }
 }
 
 impl Record for [f32; 3] {
-    fn put(&self, out: &mut Vec<u8>) {
-        floats(self, out);
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError> {
+        Put {
+            out,
+            format,
+            lump: LumpId::Vertexes,
+        }
+        .floats(self);
+        Ok(())
     }
 }
 
 impl Record for DiskNode {
-    fn put(&self, out: &mut Vec<u8>) {
-        out.extend_from_slice(&self.planenum.to_le_bytes());
-        shorts(&self.children, out);
-        shorts(&self.mins, out);
-        shorts(&self.maxs, out);
-        out.extend_from_slice(&self.firstface.to_le_bytes());
-        out.extend_from_slice(&self.numfaces.to_le_bytes());
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError> {
+        let mut put = Put {
+            out,
+            format,
+            lump: LumpId::Nodes,
+        };
+        put.ints(&[self.planenum]);
+        put.signed(&self.children)?;
+        put.bounds(&self.mins);
+        put.bounds(&self.maxs);
+        put.unsigned(&[self.firstface, self.numfaces])
     }
 }
 
 impl Record for DiskTexinfo {
-    fn put(&self, out: &mut Vec<u8>) {
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError> {
+        let mut put = Put {
+            out,
+            format,
+            lump: LumpId::Texinfo,
+        };
         for axis in &self.vecs {
-            floats(axis, out);
+            put.floats(axis);
         }
-        out.extend_from_slice(&self.miptex.to_le_bytes());
-        out.extend_from_slice(&self.flags.to_le_bytes());
+        put.ints(&[self.miptex, self.flags]);
+        Ok(())
     }
 }
 
 impl Record for DiskFace {
-    fn put(&self, out: &mut Vec<u8>) {
-        shorts(&[self.planenum, self.side], out);
-        out.extend_from_slice(&self.firstedge.to_le_bytes());
-        shorts(&[self.numedges, self.texinfo], out);
-        out.extend_from_slice(&self.styles);
-        out.extend_from_slice(&self.lightofs.to_le_bytes());
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError> {
+        let mut put = Put {
+            out,
+            format,
+            lump: LumpId::Faces,
+        };
+        put.signed(&[self.planenum, self.side])?;
+        put.ints(&[self.firstedge]);
+        put.signed(&[self.numedges, self.texinfo])?;
+        put.bytes(&self.styles);
+        put.ints(&[self.lightofs]);
+        Ok(())
     }
 }
 
 impl Record for DiskClipNode {
-    fn put(&self, out: &mut Vec<u8>) {
-        out.extend_from_slice(&self.planenum.to_le_bytes());
-        shorts(&self.children, out);
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError> {
+        let mut put = Put {
+            out,
+            format,
+            lump: LumpId::Clipnodes,
+        };
+        put.ints(&[self.planenum]);
+        put.signed(&self.children)
     }
 }
 
 impl Record for DiskLeaf {
-    fn put(&self, out: &mut Vec<u8>) {
-        out.extend_from_slice(&self.contents.to_le_bytes());
-        out.extend_from_slice(&self.visofs.to_le_bytes());
-        shorts(&self.mins, out);
-        shorts(&self.maxs, out);
-        out.extend_from_slice(&self.firstmarksurface.to_le_bytes());
-        out.extend_from_slice(&self.nummarksurfaces.to_le_bytes());
-        out.extend_from_slice(&self.ambient_level);
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError> {
+        let mut put = Put {
+            out,
+            format,
+            lump: LumpId::Leafs,
+        };
+        put.ints(&[self.contents, self.visofs]);
+        put.bounds(&self.mins);
+        put.bounds(&self.maxs);
+        put.unsigned(&[self.firstmarksurface, self.nummarksurfaces])?;
+        put.bytes(&self.ambient_level);
+        Ok(())
     }
 }
 
-impl Record for u16 {
-    fn put(&self, out: &mut Vec<u8>) {
-        out.extend_from_slice(&self.to_le_bytes());
-    }
-}
+/// A marksurface entry.
+struct Marksurface(u32);
 
-impl Record for [u16; 2] {
-    fn put(&self, out: &mut Vec<u8>) {
-        for value in self {
-            out.extend_from_slice(&value.to_le_bytes());
+impl Record for Marksurface {
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError> {
+        Put {
+            out,
+            format,
+            lump: LumpId::Marksurfaces,
         }
+        .unsigned(&[self.0])
+    }
+}
+
+impl Record for [u32; 2] {
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError> {
+        Put {
+            out,
+            format,
+            lump: LumpId::Edges,
+        }
+        .unsigned(self)
     }
 }
 
 impl Record for i32 {
-    fn put(&self, out: &mut Vec<u8>) {
-        out.extend_from_slice(&self.to_le_bytes());
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError> {
+        Put {
+            out,
+            format,
+            lump: LumpId::Surfedges,
+        }
+        .ints(&[*self]);
+        Ok(())
     }
 }
 
 impl Record for DiskModel {
-    fn put(&self, out: &mut Vec<u8>) {
-        floats(&self.mins, out);
-        floats(&self.maxs, out);
-        floats(&self.origin, out);
-        for head in &self.headnode {
-            out.extend_from_slice(&head.to_le_bytes());
-        }
-        for value in [self.visleafs, self.firstface, self.numfaces] {
-            out.extend_from_slice(&value.to_le_bytes());
-        }
+    fn put(&self, format: BspFormat, out: &mut Vec<u8>) -> Result<(), BspWriteError> {
+        let mut put = Put {
+            out,
+            format,
+            lump: LumpId::Models,
+        };
+        put.floats(&self.mins);
+        put.floats(&self.maxs);
+        put.floats(&self.origin);
+        put.ints(&self.headnode);
+        put.ints(&[self.visleafs, self.firstface, self.numfaces]);
+        Ok(())
     }
 }
 
-fn records<T: Record>(items: &[T]) -> Vec<u8> {
+fn records<T: Record>(items: &[T], format: BspFormat) -> Result<Vec<u8>, BspWriteError> {
     let mut out = Vec::new();
     for item in items {
-        item.put(&mut out);
+        item.put(format, &mut out)?;
     }
-    out
+    Ok(out)
 }
 
 impl BspFile {
-    /// The file's bytes.
+    /// The file's bytes in `format`.
     ///
-    /// Implements BSP-23: version 29, then planes, leafs, vertexes, nodes, texinfo, faces,
+    /// Implements BSP-23: the version, then planes, leafs, vertexes, nodes, texinfo, faces,
     /// clipnodes, marksurfaces, surfedges, edges, models, lighting, visibility, entities and
     /// textures, each lump's bytes followed by NUL bytes to a multiple of four.
     ///
     /// # Errors
     ///
-    /// [`BspWriteError::TooLarge`] when an offset or length would not fit 32 signed bits.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, BspWriteError> {
+    /// [`BspWriteError::TooLarge`] when an offset or length would not fit 32 signed bits, and
+    /// [`BspWriteError::TooWide`] when a BSP29 field cannot hold its value.
+    pub fn to_bytes(&self, format: BspFormat) -> Result<Vec<u8>, BspWriteError> {
+        let marksurfaces: Vec<Marksurface> =
+            self.marksurfaces.iter().map(|&m| Marksurface(m)).collect();
         let lumps: [(usize, Vec<u8>); BSP_HEADER_LUMPS] = [
-            (LUMP_PLANES, records(&self.planes)),
-            (LUMP_LEAFS, records(&self.leafs)),
-            (LUMP_VERTEXES, records(&self.vertexes)),
-            (LUMP_NODES, records(&self.nodes)),
-            (LUMP_TEXINFO, records(&self.texinfo)),
-            (LUMP_FACES, records(&self.faces)),
-            (LUMP_CLIPNODES, records(&self.clipnodes)),
-            (LUMP_MARKSURFACES, records(&self.marksurfaces)),
-            (LUMP_SURFEDGES, records(&self.surfedges)),
-            (LUMP_EDGES, records(&self.edges)),
-            (LUMP_MODELS, records(&self.models)),
+            (LUMP_PLANES, records(&self.planes, format)?),
+            (LUMP_LEAFS, records(&self.leafs, format)?),
+            (LUMP_VERTEXES, records(&self.vertexes, format)?),
+            (LUMP_NODES, records(&self.nodes, format)?),
+            (LUMP_TEXINFO, records(&self.texinfo, format)?),
+            (LUMP_FACES, records(&self.faces, format)?),
+            (LUMP_CLIPNODES, records(&self.clipnodes, format)?),
+            (LUMP_MARKSURFACES, records(&marksurfaces, format)?),
+            (LUMP_SURFEDGES, records(&self.surfedges, format)?),
+            (LUMP_EDGES, records(&self.edges, format)?),
+            (LUMP_MODELS, records(&self.models, format)?),
             (LUMP_LIGHTING, self.lighting.clone()),
             (LUMP_VISIBILITY, self.visibility.clone()),
             (LUMP_ENTITIES, self.entities.clone()),
@@ -338,7 +477,11 @@ impl BspFile {
         ];
         let mut out = vec![0_u8; BSP_HEADER_SIZE];
         if let Some(version) = out.get_mut(..LUMP_ALIGN) {
-            version.copy_from_slice(&BSP_VERSION.to_le_bytes());
+            let number = match format {
+                BspFormat::Bsp29 => BSP_VERSION,
+                BspFormat::Bsp2 => BSP_BSP2_VERSION,
+            };
+            version.copy_from_slice(&number.to_le_bytes());
         }
         for (number, data) in lumps {
             let offset = offset_field(out.len())?;
