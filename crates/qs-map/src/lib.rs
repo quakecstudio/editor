@@ -27,7 +27,7 @@ mod linked;
 pub mod qbsp;
 mod rooms;
 
-pub use brush_edit::{BrushError, Surface};
+pub use brush_edit::{BrushError, Surface, TextureLock};
 pub use check::{Diagnostic, DiagnosticKind, MAP_MAX_SOUNDS};
 pub use document::{
     Brush, BrushModel, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key,

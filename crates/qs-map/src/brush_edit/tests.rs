@@ -11,7 +11,7 @@
 
 use proptest::prelude::*;
 
-use super::{BrushError, SAME_NORMAL, SAME_POINT, Surface, face_points, same_point};
+use super::{BrushError, SAME_NORMAL, SAME_POINT, Surface, TextureLock, face_points, same_point};
 use crate::geometry::{ON_PLANE, Plane, plane};
 use crate::{Brush, Item, MapFile, TexDef};
 
@@ -460,5 +460,76 @@ proptest! {
         let parts: f64 = back.iter().chain(front.iter()).map(volume).sum();
         prop_assert!(back.iter().chain(front.iter()).all(Brush::is_valid));
         prop_assert!((parts - volume(&brush)).abs() < 1.0, "{parts}");
+    }
+}
+
+/// Each face's texture coordinates of its three points.
+fn coordinates(brush: &Brush) -> Vec<[f64; 6]> {
+    brush
+        .faces
+        .iter()
+        .map(|face| {
+            let [s, t] = face.texvecs().unwrap();
+            let at =
+                |row: [f64; 4], p: [f64; 3]| row[0] * p[0] + row[1] * p[1] + row[2] * p[2] + row[3];
+            let [a, b, c] = *face.points();
+            [at(s, a), at(t, a), at(s, b), at(t, b), at(s, c), at(t, c)]
+        })
+        .collect()
+}
+
+/// A standard surface turned and scaled.
+fn turned() -> Surface {
+    Surface {
+        texture: b"rock".to_vec(),
+        texdef: TexDef::Standard {
+            shift: [3.0, -5.0],
+            rotate: 30.0,
+            scale: [0.5, 2.0],
+        },
+    }
+}
+
+// spec MAP-11.1: a moved brush's points move by the offset, its textures kept
+// spec MAP-11.2: with texture lock off the definitions are unchanged
+#[test]
+fn a_brush_moves_by_its_offset() {
+    let brush = Brush::cuboid([0.0; 3], [64.0, 32.0, 16.0], &turned()).unwrap();
+    let moved = brush
+        .translated([16.0, -32.0, 8.0], TextureLock::Free)
+        .unwrap();
+    for (before, after) in brush.faces.iter().zip(&moved.faces) {
+        for (p, q) in before.points().iter().zip(after.points()) {
+            assert_eq!([q[0] - p[0], q[1] - p[1], q[2] - p[2]], [16.0, -32.0, 8.0]);
+        }
+        assert_eq!(before.texdef(), after.texdef());
+        assert_eq!(before.texture(), after.texture());
+    }
+}
+
+proptest! {
+    // spec MAP-11.2: with texture lock on every point of a moved face keeps its texture
+    // coordinates, for standard and Valve 220 faces
+    #[test]
+    fn texture_lock_keeps_textures_fixed_in_the_world(
+        by in prop::array::uniform3(-512.0..512.0_f64),
+        rotate in -360.0..360.0_f64,
+        valve_face in any::<bool>(),
+    ) {
+        let surface = if valve_face {
+            valve([1.0, 0.0, 0.0], [0.0, -1.0, 0.0])
+        } else {
+            Surface {
+                texture: b"rock".to_vec(),
+                texdef: TexDef::Standard { shift: [7.0, 1.0], rotate, scale: [0.25, 3.0] },
+            }
+        };
+        let brush = Brush::cuboid([0.0; 3], [64.0, 32.0, 16.0], &surface).unwrap();
+        let moved = brush.translated(by, TextureLock::Locked).unwrap();
+        for (before, after) in coordinates(&brush).iter().zip(coordinates(&moved)) {
+            for (b, a) in before.iter().zip(after) {
+                prop_assert!((b - a).abs() < 1e-6, "{before:?} {after:?}");
+            }
+        }
     }
 }

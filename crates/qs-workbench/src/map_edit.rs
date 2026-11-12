@@ -18,9 +18,9 @@ use qs_commands::{BoxError, Command, Outcome, RegisterError, Registry, UndoStep}
 use qs_map::{Entity, Item, MapFile};
 
 pub use brushes::{
-    BrushClipParams, BrushCreateParams, BrushIndex, BrushMergeParams, BrushParams,
-    BrushVertexParams, Keep as KeepPart, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE,
-    MAP_BRUSH_MERGE, MAP_BRUSH_SUBTRACT, MAP_BRUSH_VERTEX,
+    BrushClipParams, BrushCreateParams, BrushIndex, BrushMergeParams, BrushMoveParams, BrushParams,
+    BrushVertexParams, Keep as KeepPart, Lock, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE,
+    MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT, MAP_BRUSH_VERTEX,
 };
 pub use disk::{
     FILES_CHANGED, FilesChanged, FilesChangedParams, Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference,
@@ -1189,6 +1189,7 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(brushes::BrushSubtract)?;
     registry.register(brushes::BrushMerge)?;
     registry.register(brushes::BrushDelete)?;
+    registry.register(brushes::BrushMove)?;
     registry.register(MapSave)
 }
 

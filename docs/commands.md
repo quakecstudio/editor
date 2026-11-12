@@ -57,6 +57,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_create`](#mapbrush_create) | Adds a box brush from two corners, snapped to the grid (16 units unless given), to the world or an entity of the open map, with a texture. |
 | [`map.brush_delete`](#mapbrush_delete) | Deletes a brush of an entity of the open map. |
 | [`map.brush_merge`](#mapbrush_merge) | Merges two or more brushes of an entity of the open map into their convex hull, which takes the first's place. |
+| [`map.brush_move`](#mapbrush_move) | Moves brushes of an entity by an offset snapped to the grid         (16 units unless given), their textures fixed in the world unless lock is free. |
 | [`map.brush_subtract`](#mapbrush_subtract) | Subtracts a brush of the open map from every other brush of its entity, then deletes it: the brushes it overlapped become the parts outside it. |
 | [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
@@ -1801,6 +1802,93 @@ Parameters:
     "brushes"
   ],
   "title": "BrushMergeParams",
+  "type": "object"
+}
+```
+
+## `map.brush_move`
+
+Moves brushes of an entity by an offset snapped to the grid         (16 units unless given), their textures fixed in the world unless lock is free.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Lock": {
+      "description": "Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).",
+      "oneOf": [
+        {
+          "const": "locked",
+          "description": "Texture lock on: the textures stay where they are in the world.",
+          "type": "string"
+        },
+        {
+          "const": "free",
+          "description": "Texture lock off: the textures move with the brush.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_move`.",
+  "properties": {
+    "brushes": {
+      "description": "The brushes.",
+      "items": {
+        "$ref": "#/$defs/BrushIndex"
+      },
+      "type": "array"
+    },
+    "by": {
+      "description": "How far to move them, snapped to the grid.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brushes."
+    },
+    "grid": {
+      "default": null,
+      "description": "The grid the move snaps to, in map units; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "lock": {
+      "$ref": "#/$defs/Lock",
+      "default": "locked",
+      "description": "Whether their textures stay fixed in the world; locked when not given."
+    }
+  },
+  "required": [
+    "entity",
+    "brushes",
+    "by"
+  ],
+  "title": "BrushMoveParams",
   "type": "object"
 }
 ```

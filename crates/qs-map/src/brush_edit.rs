@@ -61,6 +61,16 @@ impl Surface {
     }
 }
 
+/// Whether a brush's textures stay where they are in the world when it moves (MAP-11.2).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextureLock {
+    /// Each face's shift follows the move, so the texture stays fixed in the world.
+    #[default]
+    Locked,
+    /// The texture definitions stay as they are, so the texture moves with the brush.
+    Free,
+}
+
 /// Why a brush could not be made.
 #[derive(Debug)]
 pub enum BrushError {
@@ -448,6 +458,55 @@ impl Brush {
             .map(Surface::of)
             .ok_or(BrushError::Degenerate)?;
         Self::hull(&points, &from, &surface)
+    }
+
+    /// The brush moved by `by`, every face's points with it; with `lock` [`TextureLock::Locked`]
+    /// each face's shift is less the move along its texture axes, so every point of the face
+    /// keeps its texture coordinate.
+    ///
+    /// Implements MAP-11.1 and MAP-11.2.
+    ///
+    /// # Errors
+    ///
+    /// [`BrushError::Map`] when a face cannot be written, its coordinates not finite.
+    pub fn translated(&self, by: [f64; 3], lock: TextureLock) -> Result<Self, BrushError> {
+        let mut moved = self.clone();
+        for face in &mut moved.faces {
+            let points = face
+                .points()
+                .map(|p| [p[0] + by[0], p[1] + by[1], p[2] + by[2]]);
+            let texdef = match (lock, face.texvecs()) {
+                (TextureLock::Locked, Some([s, t])) => {
+                    let along = |row: [f64; 4]| row[0] * by[0] + row[1] * by[1] + row[2] * by[2];
+                    match *face.texdef() {
+                        TexDef::Standard {
+                            shift,
+                            rotate,
+                            scale,
+                        } => TexDef::Standard {
+                            shift: [shift[0] - along(s), shift[1] - along(t)],
+                            rotate,
+                            scale,
+                        },
+                        TexDef::Valve {
+                            s: s_axis,
+                            t: t_axis,
+                            rotate,
+                            scale,
+                        } => TexDef::Valve {
+                            s: [s_axis[0], s_axis[1], s_axis[2], s_axis[3] - along(s)],
+                            t: [t_axis[0], t_axis[1], t_axis[2], t_axis[3] - along(t)],
+                            rotate,
+                            scale,
+                        },
+                    }
+                }
+                (TextureLock::Locked, None) | (TextureLock::Free, _) => *face.texdef(),
+            };
+            let texture = face.texture().to_vec();
+            *face = Face::new(points, &texture, texdef)?;
+        }
+        Ok(moved)
     }
 
     /// The brush with its vertex at `from` moved to `to`: the convex hull of its vertices so

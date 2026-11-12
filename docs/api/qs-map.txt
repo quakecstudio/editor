@@ -13,6 +13,7 @@ const qs_map::qbsp::MAP_MAX_TEXTURE_NAME
 const qs_map::qbsp::MAP_MAX_VALUE
 const qs_map::qbsp::MAP_TEX_SPECIAL
 enum qs_map::brush_edit::BrushError
+enum qs_map::brush_edit::TextureLock
 enum qs_map::check::DiagnosticKind
 enum qs_map::document::Compiler
 enum qs_map::document::Item
@@ -80,6 +81,7 @@ fn qs_map::brush_edit::Brush::merge
 fn qs_map::brush_edit::Brush::move_vertex
 fn qs_map::brush_edit::Brush::split
 fn qs_map::brush_edit::Brush::subtract
+fn qs_map::brush_edit::Brush::translated
 fn qs_map::brush_edit::Brush::vertices
 fn qs_map::brush_edit::Entity::brush_places
 fn qs_map::check::MapFile::check
@@ -277,6 +279,7 @@ use qs_map::RoomKind = rooms::RoomKind
 use qs_map::Rooms = rooms::Rooms
 use qs_map::Surface = brush_edit::Surface
 use qs_map::TexDef = document::TexDef
+use qs_map::TextureLock = brush_edit::TextureLock
 use qs_map::Transform = linked::Transform
 use qs_map::is_tool_key = document::is_tool_key
 variant qs_map::brush_edit::BrushError::CornerLost
@@ -285,6 +288,8 @@ variant qs_map::brush_edit::BrushError::Map
 variant qs_map::brush_edit::BrushError::Missed
 variant qs_map::brush_edit::BrushError::NoVertex
 variant qs_map::brush_edit::BrushError::VertexInside
+variant qs_map::brush_edit::TextureLock::Free
+variant qs_map::brush_edit::TextureLock::Locked
 variant qs_map::check::DiagnosticKind::DuplicateKey
 variant qs_map::check::DiagnosticKind::DuplicatePlane
 variant qs_map::check::DiagnosticKind::EricwComment

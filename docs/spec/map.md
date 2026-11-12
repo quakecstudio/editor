@@ -469,3 +469,19 @@ one ("the armory") and the map tools can find it (MAP-16).
   "Layers marked "Omit From Export" will not be present in the exported map"), with every
   entity in it: a layer's own entity, the entities naming it, and the entities of a group in
   it, however deep (MAP-9.2).
+
+## MAP-11 Moving brushes
+
+**Source:** our design, after TrenchBroom's texture lock (its manual: "When texture lock is on,
+the textures stay fixed in the world as you move or rotate the brushes"), for moves only.
+Implemented by `qs_map::Brush::translated`.
+
+### Behaviour
+
+- **MAP-11.1** A brush moved by `d` has each face's three points moved by `d`; its texture and
+  texture definition are kept but for MAP-11.2.
+- **MAP-11.2** With texture lock on, each face's s and t shifts are each less the dot product of
+  `d` with that face's texture axis as MAP-4.2 to MAP-4.4 and MAP-5.3 scale it, so every point of
+  the moved face has the texture coordinate its point had before the move: the texture stays
+  fixed in the world. With texture lock off the texture definitions are unchanged and the texture
+  moves with the brush. A face with no texture axes, a Valve 220 face of scale 0, is unchanged.

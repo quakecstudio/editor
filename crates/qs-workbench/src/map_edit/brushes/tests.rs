@@ -11,8 +11,8 @@ use qs_commands::{Registry, Session};
 use serde_json::json;
 
 use crate::map_edit::{
-    MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_SUBTRACT,
-    MAP_BRUSH_VERTEX, MAP_OPEN,
+    MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE,
+    MAP_BRUSH_SUBTRACT, MAP_BRUSH_VERTEX, MAP_OPEN,
 };
 use crate::{Config, Workbench, register};
 
@@ -242,4 +242,46 @@ fn brushes_are_merged_and_deleted() {
         session.undo().unwrap();
     }
     assert_eq!(text(&session), map_text());
+}
+
+// spec MAP-11.2: map.brush_move keeps the textures fixed in the world unless lock is free
+// spec MAP-11.1: the brush moves by the offset snapped to the grid, in one step that undoes
+#[test]
+fn a_brush_moves_with_its_textures_locked() {
+    let mut session = open("move");
+    let before = text(&session);
+    let start = world(&session)[0].clone();
+    session
+        .execute(
+            MAP_BRUSH_MOVE,
+            json!({ "entity": 0, "brushes": [0], "by": [30, 0, 0] }),
+        )
+        .unwrap();
+    let moved = world(&session)[0].clone();
+    let shifts = |brush: &qs_map::Brush| -> Vec<qs_map::TexDef> {
+        brush.faces.iter().map(|f| *f.texdef()).collect()
+    };
+    // 30 snaps to 32; the faces facing +y take the move along their s axis.
+    assert_eq!(
+        moved.faces[0].points()[0][0] - start.faces[0].points()[0][0],
+        32.0
+    );
+    assert_ne!(shifts(&moved), shifts(&start));
+    session.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(text(&session), before);
+    session
+        .execute(
+            MAP_BRUSH_MOVE,
+            json!({ "entity": 0, "brushes": [0], "by": [32, 0, 0], "lock": "free" }),
+        )
+        .unwrap();
+    assert_eq!(shifts(&world(&session)[0]), shifts(&start));
+    assert!(
+        session
+            .execute(
+                MAP_BRUSH_MOVE,
+                json!({ "entity": 0, "brushes": [5], "by": [16, 0, 0] }),
+            )
+            .is_err()
+    );
 }
