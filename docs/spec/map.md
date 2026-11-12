@@ -485,3 +485,18 @@ Implemented by `qs_map::Brush::translated`.
   the moved face has the texture coordinate its point had before the move: the texture stays
   fixed in the world. With texture lock off the texture definitions are unchanged and the texture
   moves with the brush. A face with no texture axes, a Valve 220 face of scale 0, is unchanged.
+
+## MAP-12 Texture alignment
+
+**Source:** our design, after the face inspector of TrenchBroom and the texture application
+tool of Hammer and J.A.C.K., whose shift, rotation and scale fields set those of the selected
+faces. Implemented by `qs_map::TexDef::aligned`.
+
+### Behaviour
+
+- **MAP-12.1** Aligning a face sets the parts of its texture definition given, of shift, rotation
+  and scale, and keeps the others. In the standard form (MAP-4.1) each part replaces its field.
+- **MAP-12.2** In the Valve 220 form (MAP-5.1) the shift is each axis's fourth value and the scale
+  replaces the scale. A new rotation `r`, the kept rotation being `r0`, turns both axes by
+  `r - r0` degrees about their normal, the unit `s x t`, from `s` toward `t`, keeping their
+  lengths and the angle between them; axes with no normal, parallel or zero, are kept.

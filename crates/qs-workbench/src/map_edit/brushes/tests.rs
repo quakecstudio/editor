@@ -12,7 +12,7 @@ use serde_json::json;
 
 use crate::map_edit::{
     MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE,
-    MAP_BRUSH_SUBTRACT, MAP_BRUSH_VERTEX, MAP_OPEN,
+    MAP_BRUSH_SUBTRACT, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX, MAP_OPEN,
 };
 use crate::{Config, Workbench, register};
 
@@ -284,4 +284,52 @@ fn a_brush_moves_with_its_textures_locked() {
             )
             .is_err()
     );
+}
+
+// spec MAP-12.1: map.brush_texture sets the parts given on every face of the brushes, keeps
+// the rest, and undoes in one step; a texture name a face cannot hold is refused
+#[test]
+fn a_brush_s_faces_are_aligned() {
+    let mut session = open("texture");
+    let before = text(&session);
+    session
+        .execute(
+            MAP_BRUSH_TEXTURE,
+            json!({ "entity": 0, "brushes": [0], "texture": "metal1", "shift": [8, 4], "rotate": 90 }),
+        )
+        .unwrap();
+    let brush = &world(&session)[0];
+    for face in &brush.faces {
+        assert_eq!(face.texture(), b"metal1");
+        assert_eq!(
+            *face.texdef(),
+            qs_map::TexDef::Standard {
+                shift: [8.0, 4.0],
+                rotate: 90.0,
+                scale: [1.0, 1.0],
+            }
+        );
+    }
+    assert_eq!(
+        brush.vertices().len(),
+        8,
+        "the faces' points are kept: {}",
+        text(&session)
+    );
+    session.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(text(&session), before);
+    assert!(
+        session
+            .execute(
+                MAP_BRUSH_TEXTURE,
+                json!({ "entity": 0, "brushes": [0], "texture": "two words" }),
+            )
+            .is_err()
+    );
+    assert!(
+        session
+            .execute(MAP_BRUSH_TEXTURE, json!({ "entity": 0, "brushes": [5] }))
+            .is_err()
+    );
+    assert_eq!(text(&session), before);
 }

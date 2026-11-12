@@ -8,7 +8,7 @@
 
 use qs_commands::{Command, Outcome};
 use qs_map::geometry::plane as plane_of;
-use qs_map::{Brush, BrushError, Entity, Item, Surface, TexDef, TextureLock};
+use qs_map::{Alignment, Brush, BrushError, Entity, Face, Item, Surface, TexDef, TextureLock};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +29,8 @@ pub const MAP_BRUSH_MERGE: &str = "map.brush_merge";
 pub const MAP_BRUSH_DELETE: &str = "map.brush_delete";
 /// The id of `map.brush_move`.
 pub const MAP_BRUSH_MOVE: &str = "map.brush_move";
+/// The id of `map.brush_texture`.
+pub const MAP_BRUSH_TEXTURE: &str = "map.brush_texture";
 
 /// TrenchBroom's grid, `Grid(4)`: 2^4 units, the step points snap to by default.
 const DEFAULT_GRID: f64 = 16.0;
@@ -179,6 +181,28 @@ pub struct BrushMoveParams {
     pub grid: Option<f64>,
 }
 
+/// The parameters of `map.brush_texture`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BrushTextureParams {
+    /// The entity holding the brushes.
+    pub entity: EntityIndex,
+    /// The brushes, every face of each.
+    pub brushes: Vec<BrushIndex>,
+    /// The texture to put on them; kept when not given.
+    #[serde(default)]
+    pub texture: Option<String>,
+    /// The s and t shift; kept when not given.
+    #[serde(default)]
+    pub shift: Option<[f64; 2]>,
+    /// The rotation in degrees; kept when not given.
+    #[serde(default)]
+    pub rotate: Option<f64>,
+    /// The s and t scale; kept when not given.
+    #[serde(default)]
+    pub scale: Option<[f64; 2]>,
+}
+
 /// `value` on the grid `grid`, or as it is with no grid.
 fn snap(value: f64, grid: Option<f64>) -> f64 {
     let grid = grid.unwrap_or(DEFAULT_GRID);
@@ -305,7 +329,8 @@ pub(super) struct BrushMove;
 
 impl<C: HasWorkbench + 'static> Command<C> for BrushMove {
     const ID: &'static str = MAP_BRUSH_MOVE;
-    const SUMMARY: &'static str = "Moves brushes of an entity by an offset snapped to the grid         (16 units unless given), their textures fixed in the world unless lock is free.";
+    const SUMMARY: &'static str = "Moves brushes of an entity by an offset snapped to the grid \
+        (16 units unless given), their textures fixed in the world unless lock is free.";
     type Params = BrushMoveParams;
     type Output = MapEdited;
     type Error = WorkbenchError;
@@ -322,6 +347,51 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushMove {
                     .brush(params.entity, brush)?
                     .translated(by, params.lock.into())?;
                 document.replace_brush(params.entity, brush, vec![moved])?;
+            }
+            Ok(())
+        })?;
+        Ok(Outcome::undoable(
+            MapEdited {
+                entity: Some(params.entity),
+            },
+            step,
+        ))
+    }
+}
+
+/// `map.brush_texture`.
+pub(super) struct BrushTexture;
+
+impl<C: HasWorkbench + 'static> Command<C> for BrushTexture {
+    const ID: &'static str = MAP_BRUSH_TEXTURE;
+    const SUMMARY: &'static str = "Sets the texture, shift, rotation or scale of every face of \
+        brushes of an entity, keeping what is not given (MAP-12).";
+    type Params = BrushTextureParams;
+    type Output = MapEdited;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: BrushTextureParams,
+    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+        let alignment = Alignment {
+            shift: params.shift,
+            rotate: params.rotate,
+            scale: params.scale,
+        };
+        let ((), step) = edit_map(context, |document| {
+            for &brush in &params.brushes {
+                let mut found = document.brush(params.entity, brush)?;
+                for face in &mut found.faces {
+                    let texture = params
+                        .texture
+                        .as_ref()
+                        .map_or_else(|| face.texture().to_vec(), |t| t.as_bytes().to_vec());
+                    let texdef = face.texdef().aligned(alignment);
+                    *face = Face::new(*face.points(), &texture, texdef).map_err(BrushError::Map)?;
+                }
+                document.replace_brush(params.entity, brush, vec![found])?;
             }
             Ok(())
         })?;
