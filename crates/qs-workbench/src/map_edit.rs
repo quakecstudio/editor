@@ -30,6 +30,7 @@ pub use groups::{
 pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
 pub use links::{LinkParams, MAP_LINK};
 pub use live::LiveChange;
+pub use outline::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow, RowKind};
 
 mod disk;
 mod filter;
@@ -38,6 +39,7 @@ mod groups;
 mod inspect;
 mod links;
 mod live;
+mod outline;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -1173,6 +1175,8 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(groups::MapSetLayer)?;
     registry.register(groups::MapLayers)?;
     registry.register(groups::MapExport)?;
+    registry.register(outline::MapOutline)?;
+    registry.register(outline::MapMoveTo)?;
     registry.register(MapSave)
 }
 

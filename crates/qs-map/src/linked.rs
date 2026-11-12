@@ -441,7 +441,8 @@ impl Entity {
     }
 
     /// The group this entity names in `_tb_group` (MAP-9.2).
-    fn group(&self) -> Option<ContainerId> {
+    #[must_use]
+    pub fn group(&self) -> Option<ContainerId> {
         self.value(GROUP_KEY)
             .and_then(container_id)
             .map(ContainerId::new)
