@@ -14,9 +14,12 @@
 //! `W_GetLumpNum`, and [`QPic`], [`Conchars`] and [`MipTexHeader`] decode the lumps the
 //! engine and the map tools read.
 //!
-//! The format is specified in `docs/spec/wad2.md` (WAD-1 to WAD-4).
+//! The format is specified in `docs/spec/wad2.md` (WAD-1 to WAD-4); writing a WAD2 and
+//! encoding textures for it are WAD-5 to WAD-7 (`write`, `texture`).
 
 pub mod map_wad;
+pub mod texture;
+pub mod write;
 
 #[cfg(test)]
 mod fixtures;
