@@ -32,6 +32,7 @@ enum qs_wad::map_wad::MapWadError
 enum qs_wad::map_wad::WadKind
 enum qs_wad::texture::Cycle
 enum qs_wad::texture::Dither
+enum qs_wad::texture::Glow
 enum qs_wad::texture::NameFault
 enum qs_wad::texture::TextureError
 enum qs_wad::texture::TextureKind
@@ -86,6 +87,7 @@ fn qs_wad::texture::TextureName::parse
 fn qs_wad::texture::TextureName::texture_kind
 fn qs_wad::w_cleanup_name
 fn qs_wad::write::WadBuilder::add
+fn qs_wad::write::WadBuilder::add_texture
 fn qs_wad::write::WadBuilder::new
 fn qs_wad::write::WadBuilder::to_bytes
 impl qs_wad::WadError: core::error::Error
@@ -137,7 +139,10 @@ variant qs_wad::texture::Cycle::Alternate
 variant qs_wad::texture::Cycle::Primary
 variant qs_wad::texture::Dither::FloydSteinberg
 variant qs_wad::texture::Dither::None
+variant qs_wad::texture::Glow::Fullbright
+variant qs_wad::texture::Glow::Lit
 variant qs_wad::texture::NameFault::Byte
+variant qs_wad::texture::NameFault::Comment
 variant qs_wad::texture::NameFault::Frame
 variant qs_wad::texture::NameFault::Length
 variant qs_wad::texture::NameFault::NoBase
@@ -153,4 +158,5 @@ variant qs_wad::texture::TextureKind::Plain
 variant qs_wad::texture::TextureKind::Sky
 variant qs_wad::write::WadWriteError::BadName
 variant qs_wad::write::WadWriteError::DuplicateName
+variant qs_wad::write::WadWriteError::HeaderName
 variant qs_wad::write::WadWriteError::TooLarge

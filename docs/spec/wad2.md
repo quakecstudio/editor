@@ -237,10 +237,13 @@ layout: the lumps after the header, the directory last.
   (WAD-2.9).
 - **WAD-5.4** A file whose size, an offset or a lump length would not fit a signed 32-bit
   integer is refused.
+- **WAD-5.5** A texture lump is added under the name its `miptex_t` header holds (WAD-7.1); one
+  whose header holds another name is refused, so qbsp, which finds a texture by its directory
+  name, and the engine, which reads the header's, see one name.
 
 ## WAD-6 Texture names and sizes
 
-**Source:** BSP-4.4, BSP-4.7 and BSP-4.8, which say how the engine reads a texture's name and
+**Source:** BSP-4.4, BSP-4.8 and BSP-20.6, which say how the engine reads a texture's name and
 size; QS `Quake/gl_model.c`, `Mod_LoadTextures` ("`// ericw -- fence textures`", `if
 (tx->name[0] == '{') extraflags |= TEXPREF_ALPHA;`) and `Quake/gl_texmgr.c`,
 `TexMgr_LoadPalette` (`((byte *) &d_8to24table[255]) [3] = 0;`) at
@@ -252,12 +255,13 @@ texture the engine refuses; a fault is reported, never repaired.
 ### Behaviour
 
 - **WAD-6.1** A texture name is 1 to 15 bytes, each a printable ASCII byte other than a space
-  and `"`, which end or quote a token in a `.map` (MAP-1).
+  and `"`, which end or quote a token in a `.map` (MAP-1), with no `//` (MAP-1.3) and no `;`
+  (MAP-1.8), which start a comment.
 - **WAD-6.2** A name that starts with `+` names a frame of an animation: it needs at least
   three bytes, and its second byte must be `0` to `9`, or `a` to `j` or `A` to `J`; any other
   is refused, which the engine would refuse when it loads the map (BSP-4.8).
-- **WAD-6.3** A name that starts with `*` is a liquid, and one that starts with `sky` (case
-  included, BSP-4.7) is a sky; each needs a byte after its prefix.
+- **WAD-6.3** A name that starts with `*` is a liquid, and one that starts with `sky` in any case
+  is a sky, as QuakeSpasm and qbsp read it (BSP-20.6); each needs a byte after its prefix.
 - **WAD-6.4** A name that starts with `{` is a fence texture: QuakeSpasm draws its index 255
   transparent, its palette entry 255 having alpha 0.
 - **WAD-6.5** A width or height of 0, or one that is not a multiple of 16, is refused, which

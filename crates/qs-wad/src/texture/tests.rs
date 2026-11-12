@@ -12,10 +12,10 @@
 )]
 
 use super::{
-    Cycle, Dither, NameFault, Palette, PaletteIndex, RgbaImage, TextureError, TextureKind,
+    Cycle, Dither, Glow, NameFault, Palette, PaletteIndex, RgbaImage, TextureError, TextureKind,
     TextureName, distance,
 };
-use crate::write::WadBuilder;
+use crate::write::{WadBuilder, WadWriteError};
 use crate::{MapWad, WAD_TYP_MIPTEX};
 
 /// A palette of our own, never id's: a 6 by 6 by 6 colour cube at 0 to 215, greys at 216 to
@@ -64,20 +64,22 @@ fn encode(
     text: &str,
     pixels: &[u8],
     dither: Dither,
-    mask: Option<&[bool]>,
+    mask: Option<&[Glow]>,
 ) -> Result<Vec<u8>, TextureError> {
     let size = (pixels.len() / 4).isqrt() as u32;
     RgbaImage::new(size, size, pixels)?.encode(&name(text), &palette(), dither, mask)
 }
 
-// spec WAD-6.1, WAD-6.2, WAD-6.3, WAD-6.4: names the engine reads, and what it makes of each
+// spec WAD-6.1, WAD-6.2, WAD-6.3, WAD-6.4: names the engine reads, and what it makes of each;
+// a sky in any case
 #[test]
 fn names_are_read_as_the_engine_reads_them() {
     let cases = [
         ("brick", TextureKind::Plain),
         ("*water1", TextureKind::Liquid),
         ("sky4", TextureKind::Sky),
-        ("SKY4", TextureKind::Plain),
+        ("SKY4", TextureKind::Sky),
+        ("Sky_x", TextureKind::Sky),
         ("{grate", TextureKind::Fence),
         (
             "+0lava",
@@ -115,11 +117,11 @@ fn names_are_read_as_the_engine_reads_them() {
     }
 }
 
-// spec WAD-6.1, WAD-6.2, WAD-6.3: an empty or long name, a space, a quote or a control byte, a
-// bad frame, or a prefix alone is refused
+// spec WAD-6.1, WAD-6.2, WAD-6.3: an empty or long name, a space, a quote or a control byte,
+// `//` or `;`, a bad frame, or a prefix alone in any case is refused
 #[test]
 fn names_the_engine_refuses_are_refused() {
-    let cases: [(&[u8], NameFault); 12] = [
+    let cases: [(&[u8], NameFault); 16] = [
         (b"", NameFault::Length),
         (b"a234567890123456", NameFault::Length),
         (b"a b", NameFault::Byte(b' ')),
@@ -132,6 +134,10 @@ fn names_the_engine_refuses_are_refused() {
         (b"+", NameFault::NoBase),
         (b"*", NameFault::NoBase),
         (b"sky", NameFault::NoBase),
+        (b"SKY", NameFault::NoBase),
+        (b"//metal", NameFault::Comment),
+        (b"a//b", NameFault::Comment),
+        (b"a;b", NameFault::Comment),
     ];
     for (text, fault) in cases {
         let error = TextureName::parse(text).unwrap_err();
@@ -173,7 +179,7 @@ fn pixel_counts_must_match_the_size() {
     );
     let pixels = image(16, |_, _| [0, 0, 0, 255]);
     assert_eq!(
-        encode("a", &pixels, Dither::None, Some(&[false; 3])),
+        encode("a", &pixels, Dither::None, Some(&[Glow::Lit; 3])),
         Err(TextureError::PixelCount {
             expected: 256,
             got: 3
@@ -215,9 +221,15 @@ fn the_nearest_colour_is_perceptual_and_the_lower_of_equals() {
     bytes[5 * 3..5 * 3 + 3].copy_from_slice(&[100, 100, 100]);
     bytes[9 * 3..9 * 3 + 3].copy_from_slice(&[100, 100, 100]);
     let palette = Palette::from_lmp(&bytes).unwrap();
-    assert_eq!(palette.nearest([101, 100, 100], 0..=223).get(), 5);
-    assert_eq!(palette.nearest([101, 100, 100], 6..=223).get(), 9);
-    assert_eq!(palette.nearest([0, 0, 0], 3..=4).get(), 3);
+    assert_eq!(palette.nearest([101, 100, 100], 0..=223).unwrap().get(), 5);
+    assert_eq!(palette.nearest([101, 100, 100], 6..=223).unwrap().get(), 9);
+    assert_eq!(palette.nearest([0, 0, 0], 3..=4).unwrap().get(), 3);
+    let (high, low) = (4, 3);
+    assert_eq!(
+        palette.nearest([0, 0, 0], high..=low),
+        None,
+        "an empty range"
+    );
 }
 
 /// The level 0 indices of an encoded texture of `size` pixels square.
@@ -234,7 +246,7 @@ fn fullbright_colours_go_only_where_the_mask_asks() {
     let pixels = image(16, |x, _| if x < 8 { bright } else { of(&palette, 230) });
     let plain = encode("a", &pixels, Dither::None, None).unwrap();
     assert!(level0(&plain, 16).iter().all(|&i| i < 224));
-    let mask: Vec<bool> = (0..256).map(|_| true).collect();
+    let mask = vec![Glow::Fullbright; 256];
     let marked = encode("a", &pixels, Dither::None, Some(&mask)).unwrap();
     assert_eq!(level0(&marked, 16)[0], 255);
     assert_eq!(level0(&marked, 16)[8], 230);
@@ -284,7 +296,15 @@ fn the_header_places_the_four_levels() {
 #[test]
 fn mip_levels_take_each_blocks_mean() {
     let palette = palette();
-    let mask: Vec<bool> = (0..256_usize).map(|at| at % 16 >= 12).collect();
+    let mask: Vec<Glow> = (0..256_usize)
+        .map(|at| {
+            if at % 16 >= 12 {
+                Glow::Fullbright
+            } else {
+                Glow::Lit
+            }
+        })
+        .collect();
     let pixels = image(16, |x, y| match (x, y) {
         (0..=1, 0) => [0, 0, 0, 0],
         (12.., _) => of(&palette, 240),
@@ -296,7 +316,7 @@ fn mip_levels_take_each_blocks_mean() {
     assert_eq!(level1[0], 255, "half the block transparent");
     assert_eq!(
         level1[1],
-        palette.nearest([51, 51, 51], 0..=223).get(),
+        palette.nearest([51, 51, 51], 0..=223).unwrap().get(),
         "black and grey"
     );
     assert_eq!(level1[7], 240, "fullbright");
@@ -435,17 +455,64 @@ fn mip_blocks_split_at_half() {
         3 if y < 4 && counted(x, y) < 8 => bright,
         _ => [102, 102, 102, 255],
     });
-    let mask: Vec<bool> = (0..256_u32)
+    let mask: Vec<Glow> = (0..256_u32)
         .map(|at| {
             let (x, y) = (at % 16, at / 16);
-            y < 4 && matches!(x / 4, 2 | 3) && counted(x, y) < 8 + (x / 4 == 2) as u32
+            let limit = if x / 4 == 2 { 9 } else { 8 };
+            if y < 4 && matches!(x / 4, 2 | 3) && counted(x, y) < limit {
+                Glow::Fullbright
+            } else {
+                Glow::Lit
+            }
         })
         .collect();
     let fence = encode("{a", &pixels, Dither::None, Some(&mask)).unwrap();
     let level2 = &fence[40 + 256 + 64..40 + 256 + 64 + 16];
-    let grey = palette.nearest([102, 102, 102], 0..=223).get();
+    let grey = palette.nearest([102, 102, 102], 0..=223).unwrap().get();
     assert_eq!(level2[0], 255, "8 of 16 transparent");
     assert_eq!(level2[1], grey, "7 of 16 transparent");
     assert_eq!(level2[2], 240, "9 of 16 fullbright");
     assert_eq!(level2[3], grey, "8 of 16 fullbright");
+}
+
+// spec WAD-5.4, WAD-6.5: a texture whose lump would pass 32-bit sizes is refused, its size given
+#[test]
+fn a_texture_too_large_for_a_wad_is_refused() {
+    let error = RgbaImage {
+        width: 65536,
+        height: 65536,
+        pixels: &[],
+    }
+    .encode(&name("a"), &palette(), Dither::None, None)
+    .unwrap_err();
+    assert_eq!(
+        error,
+        TextureError::Size {
+            width: 65536,
+            height: 65536
+        }
+    );
+}
+
+// spec WAD-5.5: a texture lump is added under the name in its header, and one whose header names
+// another texture is refused
+#[test]
+fn texture_lumps_go_under_their_own_names() {
+    let palette = palette();
+    let pixels = image(16, |_, _| of(&palette, 3));
+    let lump = encode("{grate", &pixels, Dither::None, None).unwrap();
+    let mut wad = WadBuilder::new();
+    let error = wad.add_texture(&name("grate"), lump.clone()).unwrap_err();
+    assert_eq!(
+        error,
+        WadWriteError::HeaderName {
+            name: b"grate".to_vec()
+        }
+    );
+    assert!(error.to_string().contains("grate"));
+    assert!(wad.add_texture(&name("grate"), Vec::new()).is_err());
+    wad.add_texture(&name("{grate"), lump).unwrap();
+    let bytes = wad.to_bytes().unwrap();
+    let read = MapWad::read(&bytes).unwrap();
+    assert_eq!(read.find(b"{grate").unwrap().ty, WAD_TYP_MIPTEX);
 }

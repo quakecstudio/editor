@@ -5,9 +5,10 @@
 //! mip levels.
 
 use core::ops::RangeInclusive;
+use std::collections::HashMap;
 use std::fmt;
 
-use crate::{WAD_MIPLEVELS, WAD_MIPTEX_HEADER_SIZE, WAD_NAME_SIZE};
+use crate::{WAD_MIP_BYTES, WAD_MIP_PIXELS, WAD_MIPLEVELS, WAD_MIPTEX_HEADER_SIZE, name_field};
 
 /// The longest texture name, leaving room for its NUL (WAD-6.1).
 pub const WAD_TEXTURE_NAME_MAX: usize = 15;
@@ -64,6 +65,8 @@ pub enum NameFault {
     Frame,
     /// A prefix with nothing after it (WAD-6.2, WAD-6.3).
     NoBase,
+    /// `//` or `;`, which start a comment in a `.map` (WAD-6.1).
+    Comment,
 }
 
 /// Why a texture could not be encoded.
@@ -83,7 +86,7 @@ pub enum TextureError {
         /// The height.
         height: u32,
     },
-    /// The image has not `width * height` RGBA pixels, or the fullbright mask not one entry
+    /// The image has not `width * height` RGBA pixels, or the glow mask not one entry
     /// per pixel.
     PixelCount {
         /// The count the size needs.
@@ -126,6 +129,10 @@ impl fmt::Display for TextureError {
                     NameFault::NoBase => {
                         write!(f, "texture name \"{name}\" has nothing after its prefix")
                     }
+                    NameFault::Comment => write!(
+                        f,
+                        "texture name \"{name}\" holds // or ;, which start a comment in a map"
+                    ),
                 }
             }
             Self::Size { width, height } => write!(
@@ -149,7 +156,7 @@ impl fmt::Display for TextureError {
 impl core::error::Error for TextureError {}
 
 /// Which cycle of an animation a frame belongs to (BSP-4.8).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Cycle {
     /// Frames `+0` to `+9`.
     Primary,
@@ -158,7 +165,7 @@ pub enum Cycle {
 }
 
 /// What the engine makes of a texture by its name (WAD-6).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextureKind {
     /// An ordinary texture.
     Plain,
@@ -177,9 +184,46 @@ pub enum TextureKind {
     Fence,
 }
 
+impl TextureKind {
+    /// What the engine makes of a texture named `name`; `None` for a prefix with nothing after
+    /// it, or a bad frame.
+    fn of(name: &[u8]) -> Option<Self> {
+        match name {
+            [b'+', frame, _, ..] => {
+                let frame = frame.to_ascii_lowercase();
+                match frame {
+                    b'0'..=b'9' => Some(Self::Frame {
+                        frame: frame.wrapping_sub(b'0'),
+                        cycle: Cycle::Primary,
+                    }),
+                    b'a'..=b'j' => Some(Self::Frame {
+                        frame: frame.wrapping_sub(b'a'),
+                        cycle: Cycle::Alternate,
+                    }),
+                    _ => None,
+                }
+            }
+            [b'+', ..] | [b'*'] => None,
+            [b'*', _, ..] => Some(Self::Liquid),
+            [b'{', ..] => Some(Self::Fence),
+            _ if name.eq_ignore_ascii_case(SKY) => None,
+            _ if name
+                .get(..SKY.len())
+                .is_some_and(|start| start.eq_ignore_ascii_case(SKY)) =>
+            {
+                Some(Self::Sky)
+            }
+            _ => Some(Self::Plain),
+        }
+    }
+}
+
 /// A texture name the engine reads (WAD-6.1 to WAD-6.4).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TextureName(Vec<u8>);
+pub struct TextureName {
+    bytes: Vec<u8>,
+    kind: TextureKind,
+}
 
 impl TextureName {
     /// Checks `name`.
@@ -203,9 +247,14 @@ impl TextureName {
         {
             return Err(fault(NameFault::Byte(byte)));
         }
-        let parsed = Self(name.to_vec());
-        match parsed.kind() {
-            Some(_) => Ok(parsed),
+        if name.windows(2).any(|pair| pair == b"//") || name.contains(&b';') {
+            return Err(fault(NameFault::Comment));
+        }
+        match TextureKind::of(name) {
+            Some(kind) => Ok(Self {
+                bytes: name.to_vec(),
+                kind,
+            }),
             None if name.first() == Some(&b'+') && name.len() >= FRAME_NAME_MIN => {
                 Err(fault(NameFault::Frame))
             }
@@ -216,50 +265,19 @@ impl TextureName {
     /// The name's bytes.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-
-    /// What the engine makes of it; `None` for a prefix with nothing after it, or a bad frame.
-    fn kind(&self) -> Option<TextureKind> {
-        let name = self.0.as_slice();
-        match name {
-            [b'+', frame, _, ..] => {
-                let frame = frame.to_ascii_lowercase();
-                match frame {
-                    b'0'..=b'9' => Some(TextureKind::Frame {
-                        frame: frame.wrapping_sub(b'0'),
-                        cycle: Cycle::Primary,
-                    }),
-                    b'a'..=b'j' => Some(TextureKind::Frame {
-                        frame: frame.wrapping_sub(b'a'),
-                        cycle: Cycle::Alternate,
-                    }),
-                    _ => None,
-                }
-            }
-            [b'+', ..] | [b'*'] => None,
-            [b'*', _, ..] => Some(TextureKind::Liquid),
-            [b'{', ..] => Some(TextureKind::Fence),
-            _ if name == SKY => None,
-            _ if name.starts_with(SKY) => Some(TextureKind::Sky),
-            _ => Some(TextureKind::Plain),
-        }
+        &self.bytes
     }
 
     /// What the engine makes of the texture (WAD-6).
     #[must_use]
-    pub fn texture_kind(&self) -> TextureKind {
-        self.kind().unwrap_or(TextureKind::Plain)
+    pub const fn texture_kind(&self) -> TextureKind {
+        self.kind
     }
 
     /// The `miptex_t` header of a texture of this name (WAD-7.1).
     fn miptex_header(&self, width: u32, height: u32) -> Vec<u8> {
         let mut out = Vec::new();
-        let mut field = [0_u8; WAD_NAME_SIZE];
-        for (slot, &byte) in field.iter_mut().zip(self.as_bytes()) {
-            *slot = byte;
-        }
-        out.extend_from_slice(&field);
+        out.extend_from_slice(&name_field(self.as_bytes()));
         out.extend_from_slice(&width.to_le_bytes());
         out.extend_from_slice(&height.to_le_bytes());
         let area = width.saturating_mul(height);
@@ -324,21 +342,33 @@ impl Palette {
             .unwrap_or_default()
     }
 
-    /// The index in `range` nearest `colour`, the lower of equals.
+    /// The index in `range` nearest `colour`, the lower of equals; `None` for an empty range.
     ///
     /// Implements WAD-7.3.
     #[must_use]
-    pub fn nearest(&self, colour: [u8; RGB], range: RangeInclusive<u8>) -> PaletteIndex {
-        let mut best = (u64::MAX, PaletteIndex(*range.start()));
+    pub fn nearest(&self, colour: [u8; RGB], range: RangeInclusive<u8>) -> Option<PaletteIndex> {
+        let mut best: Option<(u64, PaletteIndex)> = None;
         for entry in range.map(PaletteIndex) {
             let distance = distance(colour, self.colour(entry));
-            if distance < best.0 {
-                best = (distance, entry);
+            if best.is_none_or(|(least, _)| distance < least) {
+                best = Some((distance, entry));
             }
         }
-        best.1
+        best.map(|(_, entry)| entry)
+    }
+
+    /// [`Palette::nearest`] remembered in `cache`, for a range that is never empty; its index
+    /// as a pixel stores it.
+    fn nearest_in(&self, colour: [u8; RGB], range: RangeInclusive<u8>, cache: &mut Matches) -> u8 {
+        let start = *range.start();
+        *cache
+            .entry((colour, start))
+            .or_insert_with(|| self.nearest(colour, range).map_or(start, PaletteIndex::get))
     }
 }
+
+/// Colours already matched, by colour and the first index of the range searched.
+type Matches = HashMap<([u8; RGB], u8), u8>;
 
 /// 512 times WAD-7.3's distance, exact in integers.
 #[expect(
@@ -352,6 +382,16 @@ fn distance(a: [u8; RGB], b: [u8; RGB]) -> u64 {
     let reds = ar + br;
     let scaled = (RED_BASE + reds) * dr * dr + GREEN * dg * dg + (BLUE_BASE - reds) * db * db;
     u64::try_from(scaled).unwrap_or(u64::MAX)
+}
+
+/// How a pixel of an image is to be lit in the game (WAD-7.4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Glow {
+    /// Lit by the map's light: matched among the ordinary colours.
+    #[default]
+    Lit,
+    /// Fullbright: matched among the fullbright colours.
+    Fullbright,
 }
 
 /// Whether to spread each pixel's error to its neighbours (WAD-7.6).
@@ -411,7 +451,7 @@ impl<'a> RgbaImage<'a> {
     }
 
     /// The image as a texture lump named `name`: quantized to `palette` and with its four mip
-    /// levels, the pixels `fullbright` marks matched among the fullbright colours.
+    /// levels, the pixels `glow` marks fullbright matched among the fullbright colours.
     ///
     /// Implements WAD-6.5 and WAD-7.
     ///
@@ -424,7 +464,7 @@ impl<'a> RgbaImage<'a> {
         name: &TextureName,
         palette: &Palette,
         dither: Dither,
-        fullbright: Option<&[bool]>,
+        glow: Option<&[Glow]>,
     ) -> Result<Vec<u8>, TextureError> {
         let (width, height) = (self.width, self.height);
         if width == 0
@@ -435,7 +475,16 @@ impl<'a> RgbaImage<'a> {
             return Err(TextureError::Size { width, height });
         }
         let count = pixel_count(width, height);
-        if let Some(mask) = fullbright
+        // The lump, header and four levels (BSP-4.5), must fit the WAD's 32-bit fields (WAD-5.4).
+        let lump = count
+            .saturating_mul(WAD_MIP_BYTES)
+            .checked_div(WAD_MIP_PIXELS)
+            .unwrap_or_default()
+            .saturating_add(WAD_MIPTEX_HEADER_SIZE);
+        if i32::try_from(lump).is_err() {
+            return Err(TextureError::Size { width, height });
+        }
+        if let Some(mask) = glow
             && mask.len() != count
         {
             return Err(TextureError::PixelCount {
@@ -453,7 +502,7 @@ impl<'a> RgbaImage<'a> {
             .iter()
             .enumerate()
             .map(|(at, pixel)| {
-                let marked = fullbright.and_then(|mask| mask.get(at)).copied() == Some(true);
+                let marked = glow.and_then(|mask| mask.get(at)).copied() == Some(Glow::Fullbright);
                 if pixel.get(ALPHA).copied().unwrap_or(u8::MAX) < WAD_OPAQUE_ALPHA {
                     Class::Transparent
                 } else if marked {
@@ -467,11 +516,20 @@ impl<'a> RgbaImage<'a> {
         if transparent > 0 && top == Top::Fullbright {
             return Err(TextureError::Transparent { count: transparent });
         }
-        let base = self.quantize(&classes, palette, dither, top);
+        let mut matches = Matches::new();
+        let base = self.quantize(&classes, palette, dither, top, &mut matches);
         let mut out = name.miptex_header(width, height);
         out.extend_from_slice(&base);
         for level in 1..WAD_MIPLEVELS {
-            out.extend(mip_level(&base, width, height, level, palette, top));
+            out.extend(mip_level(
+                &base,
+                width,
+                height,
+                level,
+                palette,
+                top,
+                &mut matches,
+            ));
         }
         Ok(out)
     }
@@ -483,7 +541,14 @@ impl<'a> RgbaImage<'a> {
         reason = "spec WAD-7.6: errors in sixteenths of channels below 256, bounded far inside \
                   i32; the division is the diffusion's"
     )]
-    fn quantize(&self, classes: &[Class], palette: &Palette, dither: Dither, top: Top) -> Vec<u8> {
+    fn quantize(
+        &self,
+        classes: &[Class],
+        palette: &Palette,
+        dither: Dither,
+        top: Top,
+        matches: &mut Matches,
+    ) -> Vec<u8> {
         let width = usize::try_from(self.width).unwrap_or_default();
         let mut errors = vec![[0_i32; RGB]; classes.len()];
         let mut out = Vec::with_capacity(classes.len());
@@ -502,8 +567,8 @@ impl<'a> RgbaImage<'a> {
             }
             let index = match class {
                 Class::Transparent => WAD_TRANSPARENT,
-                Class::Fullbright => palette.nearest(colour, top.fullbright_range()).get(),
-                Class::Ordinary => palette.nearest(colour, 0..=ORDINARY_LAST).get(),
+                Class::Fullbright => palette.nearest_in(colour, top.fullbright_range(), matches),
+                Class::Ordinary => palette.nearest_in(colour, 0..=ORDINARY_LAST, matches),
             };
             out.push(index);
             if class != Class::Ordinary || dither == Dither::None {
@@ -568,6 +633,7 @@ fn mip_level(
     level: usize,
     palette: &Palette,
     top: Top,
+    matches: &mut Matches,
 ) -> Vec<u8> {
     let (width, height) = (
         usize::try_from(width).unwrap_or_default(),
@@ -608,7 +674,7 @@ fn mip_level(
                 (ordinary, ordinary_count, 0..=ORDINARY_LAST)
             };
             let mean = sum.map(|total| u8::try_from(total / count.max(1)).unwrap_or(u8::MAX));
-            out.push(palette.nearest(mean, range).get());
+            out.push(palette.nearest_in(mean, range, matches));
         }
     }
     out

@@ -205,6 +205,15 @@ impl LumpName {
     }
 }
 
+/// `name` in a 16-byte name field: its bytes, at most 16, then NUL bytes (WAD-5.2, WAD-7.1).
+pub(crate) fn name_field(name: &[u8]) -> [u8; WAD_NAME_SIZE] {
+    let mut field = [0_u8; WAD_NAME_SIZE];
+    for (slot, &byte) in field.iter_mut().zip(name) {
+        *slot = byte;
+    }
+    field
+}
+
 /// Cleans a name as id's `W_CleanupName` does.
 ///
 /// Implements WAD-2.5 and WAD-3.2: the bytes of `name` up to the first NUL, and at most 16 of

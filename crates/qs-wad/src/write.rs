@@ -5,7 +5,10 @@
 
 use std::fmt;
 
-use crate::{HEADER_INFOTABLEOFS, WAD_CMP_NONE, WAD_HEADER_SIZE, WAD_MAGIC, WAD_NAME_SIZE};
+use crate::texture::TextureName;
+use crate::{
+    HEADER_INFOTABLEOFS, WAD_CMP_NONE, WAD_HEADER_SIZE, WAD_MAGIC, WAD_TYP_MIPTEX, name_field,
+};
 
 /// The longest name written, leaving room for its NUL (WAD-5.3).
 pub const WAD_LUMP_NAME_MAX: usize = 15;
@@ -25,6 +28,11 @@ pub enum WadWriteError {
     },
     /// The file would be larger than a signed 32-bit offset reaches (WAD-5.4).
     TooLarge,
+    /// A texture lump whose header names another texture (WAD-5.5).
+    HeaderName {
+        /// The name the lump was to be added under.
+        name: Vec<u8>,
+    },
 }
 
 impl fmt::Display for WadWriteError {
@@ -41,6 +49,11 @@ impl fmt::Display for WadWriteError {
                 String::from_utf8_lossy(name)
             ),
             Self::TooLarge => f.write_str("the WAD would be larger than 2 GiB"),
+            Self::HeaderName { name } => write!(
+                f,
+                "the texture lump to be named \"{}\" names another texture in its header",
+                String::from_utf8_lossy(name)
+            ),
         }
     }
 }
@@ -99,6 +112,23 @@ impl WadBuilder {
         Ok(())
     }
 
+    /// Adds a texture lump, as `RgbaImage::encode` gives it, under the name in its header.
+    ///
+    /// Implements WAD-5.5 and WAD-5.3.
+    ///
+    /// # Errors
+    ///
+    /// [`WadWriteError::HeaderName`] when the lump's header names another texture, and
+    /// [`WadWriteError::DuplicateName`] for a name already added.
+    pub fn add_texture(&mut self, name: &TextureName, lump: Vec<u8>) -> Result<(), WadWriteError> {
+        if lump.get(..name_field(&[]).len()) != Some(name_field(name.as_bytes()).as_slice()) {
+            return Err(WadWriteError::HeaderName {
+                name: name.as_bytes().to_vec(),
+            });
+        }
+        self.add(name.as_bytes(), WAD_TYP_MIPTEX, lump)
+    }
+
     /// The file's bytes.
     ///
     /// Implements WAD-5.1, WAD-5.2 and WAD-5.4.
@@ -124,11 +154,7 @@ impl WadBuilder {
             out.extend_from_slice(&size.to_le_bytes());
             out.extend_from_slice(&size.to_le_bytes());
             out.extend_from_slice(&[lump.lump_type, WAD_CMP_NONE, 0, 0]);
-            let mut name = [0_u8; WAD_NAME_SIZE];
-            for (slot, &byte) in name.iter_mut().zip(&lump.name) {
-                *slot = byte;
-            }
-            out.extend_from_slice(&name);
+            out.extend_from_slice(&name_field(&lump.name));
         }
         field(out.len())?;
         if let Some(slot) = out.get_mut(HEADER_INFOTABLEOFS..WAD_HEADER_SIZE) {
