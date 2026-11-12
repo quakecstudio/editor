@@ -182,6 +182,91 @@ impl Db {
     }
 }
 
+impl Db {
+    /// The keys whose value names entities to fire, read from the module's code (MAP-8.8): a
+    /// field passed to `find` as the value to match against `targetname`, as
+    /// `find (world, targetname, self.target)` is, or compared with `targetname` by `==` or
+    /// `!=`. Sorted, each once.
+    pub fn targeting_keys(&mut self, input: &ModuleInput) -> Vec<String> {
+        let analysis = self.analyze_module(input);
+        let index = &analysis.index;
+        let mut keys = std::collections::BTreeSet::new();
+        for (id, def) in index.definitions() {
+            if def.kind != DefKind::Function {
+                continue;
+            }
+            let Some(body) = index.body(id) else {
+                continue;
+            };
+            let code = body.generated();
+            let field = |name: Option<Name>| -> Option<&str> {
+                let Name::Made(made) = name? else {
+                    return None;
+                };
+                let statement = code.get(usize::try_from(made).ok()?)?;
+                if !is_load(statement.op) {
+                    return None;
+                }
+                let Some(Name::Def(field, 0)) = statement.b else {
+                    return None;
+                };
+                index
+                    .def(field)
+                    .filter(|def| def.kind == DefKind::Field)
+                    .map(|def| def.name.as_str())
+            };
+            let mut params: [Option<Name>; FIND_ARGS] = [None; FIND_ARGS];
+            for statement in code {
+                if let Some(Name::Parameter(slot)) = statement.b
+                    && is_store(statement.op)
+                {
+                    if let Some(param) = params.get_mut(usize::from(slot)) {
+                        *param = statement.a;
+                    }
+                    continue;
+                }
+                if is_call(statement.op) {
+                    let callee = match statement.a {
+                        Some(Name::Def(id, 0)) => index.def(id).map(|d| d.name.as_str()),
+                        _ => None,
+                    };
+                    let [_, against, value] = params;
+                    let against = match against {
+                        Some(Name::Def(id, 0)) => index.def(id).map(|d| d.name.as_str()),
+                        _ => None,
+                    };
+                    if callee == Some(FIND)
+                        && against == Some(TARGETNAME)
+                        && let Some(key) = field(value)
+                    {
+                        keys.insert(key.to_owned());
+                    }
+                    params = [None; FIND_ARGS];
+                    continue;
+                }
+                if matches!(statement.op, Op::EqS | Op::NeS) {
+                    match (field(statement.a), field(statement.b)) {
+                        (Some(TARGETNAME), Some(other)) | (Some(other), Some(TARGETNAME))
+                            if other != TARGETNAME =>
+                        {
+                            keys.insert(other.to_owned());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        keys.into_iter().collect()
+    }
+}
+
+/// The builtin that finds an entity by a field's value, `find (start, field, match)`.
+const FIND: &str = "find";
+/// The field a targeting key's value is matched against.
+const TARGETNAME: &str = "targetname";
+/// The parameters `find` takes.
+const FIND_ARGS: usize = 3;
+
 /// What reading the classes needs.
 struct Classes<'a> {
     index: &'a ModuleIndex,

@@ -19,7 +19,10 @@ const SOURCE: &str = "entity self; entity world; float time;\n\
     /*QUAKED light (0 1 0) (-8 -8 -8) (8 8 8)\n*/\n\
     void() light = { self.style = self.light_lev; };\n\
     /*QUAKED trigger_once (.5 .5 .5) ?\n*/\n\
-    void() trigger_once = { self.think = self.use; };\n";
+    void() trigger_once = { self.think = self.use; };\n\
+    entity(entity start, .string fld, string match) find = #18;\n\
+    void() SUB_UseTargets = { local entity t;\n\
+        t = find (world, targetname, self.target); t = find (t, targetname, self.killtarget); };\n";
 
 fn schema() -> EntitySchema {
     let mut db = Db::new();
@@ -157,8 +160,8 @@ fn a_value_of_the_wrong_type_is_reported() {
     )));
 }
 
-// spec MAP-8.5: a target naming no targetname is reported
-// spec MAP-8.6: a targetname nothing targets is reported
+// spec MAP-8.9: a key the code fires entities by that names no targetname is reported, and a
+// targetname no such key names
 #[test]
 fn dangling_targets_and_targetnames_are_reported() {
     let map = format!(

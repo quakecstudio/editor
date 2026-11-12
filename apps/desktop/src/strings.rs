@@ -476,13 +476,53 @@ pub enum Text {
     MapTargets,
     /// The key editor's button that adds the key typed.
     MapAddKey,
+    /// The entity browser's filter hint.
+    MapFilterEntities,
+    /// What dragging a class from the entity browser does.
+    MapPlaceHint,
+    /// Why a brush class in the entity browser cannot be dragged.
+    MapBrushClass,
+    /// The map view's choice of the links it draws.
+    MapLinks,
+    /// Draw the links of the selection.
+    MapLinksSelected,
+    /// Draw every link.
+    MapLinksAll,
+    /// The map view's filter by skill and game.
+    MapShow,
+    /// Show every entity.
+    MapShowEvery,
+    /// Show what the game spawns on easy.
+    MapSkillEasy,
+    /// Show what the game spawns on normal.
+    MapSkillNormal,
+    /// Show what the game spawns on hard.
+    MapSkillHard,
+    /// Show what the game spawns on nightmare.
+    MapSkillNightmare,
+    /// Show what the game spawns in coop.
+    MapCoop,
+    /// Show what the game spawns in deathmatch.
+    MapDeathmatch,
+    /// The key editor's spawnflag checkboxes.
+    MapSpawnflags,
+    /// The key editor's eyedropper beside a targeting key.
+    MapPick,
+    /// What the eyedropper does.
+    MapPickHint,
+    /// The angle editor's up button, angle -1.
+    MapAngleUp,
+    /// The angle editor's down button, angle -2.
+    MapAngleDown,
+    /// The key editor's list of the values the map uses for a key.
+    MapChoices,
     /// The command palette's name to a screen reader.
     CommandPalette,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 235] = [
+    pub const ALL: [Self; 255] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -717,6 +757,26 @@ impl Text {
         Self::MapValue,
         Self::MapTargets,
         Self::MapAddKey,
+        Self::MapFilterEntities,
+        Self::MapPlaceHint,
+        Self::MapBrushClass,
+        Self::MapLinks,
+        Self::MapLinksSelected,
+        Self::MapLinksAll,
+        Self::MapShow,
+        Self::MapShowEvery,
+        Self::MapSkillEasy,
+        Self::MapSkillNormal,
+        Self::MapSkillHard,
+        Self::MapSkillNightmare,
+        Self::MapCoop,
+        Self::MapDeathmatch,
+        Self::MapSpawnflags,
+        Self::MapPick,
+        Self::MapPickHint,
+        Self::MapAngleUp,
+        Self::MapAngleDown,
+        Self::MapChoices,
         Self::CommandPalette,
     ];
 
@@ -977,6 +1037,28 @@ impl Text {
             Self::MapValue => "value",
             Self::MapTargets => "Targetnames",
             Self::MapAddKey => "Add key",
+            Self::MapFilterEntities => "Filter entities",
+            Self::MapPlaceHint => "Drag into the map to place",
+            Self::MapBrushClass => "A brush entity: made from brushes",
+            Self::MapLinks => "Links",
+            Self::MapLinksSelected => "Selected",
+            Self::MapLinksAll => "Every link",
+            Self::MapShow => "Show",
+            Self::MapShowEvery => "Every entity",
+            Self::MapSkillEasy => "Easy",
+            Self::MapSkillNormal => "Normal",
+            Self::MapSkillHard => "Hard",
+            Self::MapSkillNightmare => "Nightmare",
+            Self::MapCoop => "Coop",
+            Self::MapDeathmatch => "Deathmatch",
+            Self::MapSpawnflags => "Spawn flags",
+            Self::MapPick => "Pick",
+            Self::MapPickHint => {
+                "Click the entity in the map to fire; or Alt-drag from the selection onto it"
+            }
+            Self::MapAngleUp => "Up",
+            Self::MapAngleDown => "Down",
+            Self::MapChoices => "Values in the map",
             Self::CommandPalette => "Command palette",
         }
     }
@@ -1043,5 +1125,20 @@ pub fn search_count(places: usize, files: usize, more: bool) -> String {
         format!("{places} in {files}, the first only")
     } else {
         format!("{places} in {files}")
+    }
+}
+
+/// The entity browser's count of the classes it lists, out of all of them (P5-13).
+#[must_use]
+pub fn class_count(shown: usize, total: usize) -> String {
+    format!("{shown} of {total} entities")
+}
+
+/// How many entities besides the one shown a key edit also sets (P5-13).
+#[must_use]
+pub fn also_selected(count: usize) -> String {
+    match count {
+        1 => "1 more selected: key edits set it too".to_owned(),
+        n => format!("{n} more selected: key edits set them too"),
     }
 }

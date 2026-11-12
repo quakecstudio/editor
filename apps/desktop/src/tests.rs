@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use eframe::egui::accesskit::{Role, Toggled};
-use eframe::egui::{self, FontId, RawInput, Rect, Vec2};
+use eframe::egui::{self, FontId, Pos2, RawInput, Rect, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use qs_commands::palette::search;
@@ -292,6 +292,8 @@ fn the_ui_code_has_no_string_literals() {
         ("code_style.rs", include_str!("code_style.rs")),
         ("menu.rs", include_str!("menu.rs")),
         ("map_editor.rs", include_str!("map_editor.rs")),
+        ("map_browser.rs", include_str!("map_browser.rs")),
+        ("map_fields.rs", include_str!("map_fields.rs")),
         ("lib.rs", include_str!("lib.rs")),
         ("main.rs", include_str!("main.rs")),
     ] {
@@ -1955,4 +1957,221 @@ fn the_map_view_takes_trenchbrooms_keys() {
     }
     harness.run();
     assert_eq!(map_text(&harness), before);
+}
+
+/// Drags with the primary button from `from` to `to` in steps, holding `modifiers`.
+fn drag(
+    harness: &mut Harness<'static, Option<App>>,
+    from: Pos2,
+    to: Pos2,
+    modifiers: egui::Modifiers,
+) {
+    harness.event(egui::Event::ModifiersChanged(modifiers));
+    harness.hover_at(from);
+    harness.run();
+    harness.event(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers,
+    });
+    harness.run();
+    for step in 1..=4_u8 {
+        let t = f32::from(step) / 4.0;
+        harness.hover_at(from + (to - from) * t);
+        harness.run();
+    }
+    harness.event(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers,
+    });
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.run();
+    harness.run();
+}
+
+/// Where the map editor drew `entity`'s centre in `harness`'s last frame.
+fn drawn_at(harness: &Harness<'static, Option<App>>, entity: usize) -> Pos2 {
+    let shell = harness.state().as_ref().unwrap().shell();
+    shell
+        .map_editor()
+        .drawn_at(EntityIndex::new(entity))
+        .unwrap()
+}
+
+/// The keys and values of the open map's entity `entity` in `harness`'s app.
+fn map_value(harness: &Harness<'static, Option<App>>, entity: usize, key: &str) -> Option<String> {
+    let shell = harness.state().as_ref()?.shell();
+    let map = shell.session().context().workbench.map()?;
+    map.file()
+        .entities
+        .get(entity)?
+        .value(key.as_bytes())
+        .map(|value| String::from_utf8_lossy(value).into_owned())
+}
+
+// No spec statement: P5-13, MAP-27: the entity browser lists every class the QuakeC defines and
+// a point class dragged from it into the view is placed; the eyedropper beside a key the code
+// fires by points it at the entity clicked, naming it; an Alt-drag from the selection links the
+// entity dropped on; Shift adds an entity to the selection, and a spawnflag ticked, named by the
+// code, sets every selected entity; each through a command, so each undoes
+#[test]
+fn entities_are_placed_and_linked_without_typing() {
+    let dir = keep_copy("browser");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.run();
+    let before = map_text(&harness);
+    for class in ["info_player_start", "monster_ogre", "light", "func_door"] {
+        harness.get_by_role_and_label(Role::Button, class);
+    }
+    assert!(
+        harness
+            .query_all_by_value("4 of 4 entities")
+            .next()
+            .is_some()
+    );
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let light = harness
+        .get_by_role_and_label(Role::Button, "light")
+        .rect()
+        .center();
+    drag(&mut harness, light, view.center(), egui::Modifiers::NONE);
+    assert_eq!(
+        map_value(&harness, 5, "classname").as_deref(),
+        Some("light")
+    );
+    let origin = map_value(&harness, 5, "origin").unwrap();
+    assert!(
+        origin
+            .split(' ')
+            .all(|c| c.parse::<i64>().unwrap().rem_euclid(16) == 0),
+        "on the grid: {origin}"
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    // The eyedropper: the ogre's target pointed at the player start, which takes a name.
+    shell.execute("map.select", json!({ "entity": 2 })).unwrap();
+    harness.run();
+    harness.run();
+    harness.get_by_label(Text::MapPick.get()).click();
+    harness.run();
+    let start = drawn_at(&harness, 1);
+    harness.hover_at(start);
+    harness.run();
+    harness.event(egui::Event::PointerButton {
+        pos: start,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.event(egui::Event::PointerButton {
+        pos: start,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run();
+    harness.run();
+    assert_eq!(
+        map_value(&harness, 2, "target").as_deref(),
+        Some("info_player_start1")
+    );
+    assert_eq!(
+        map_value(&harness, 1, "targetname").as_deref(),
+        Some("info_player_start1")
+    );
+    // An Alt-drag from the ogre onto the door sets the same key again.
+    let (ogre, door) = (drawn_at(&harness, 2), drawn_at(&harness, 4));
+    drag(&mut harness, ogre, door, egui::Modifiers::ALT);
+    assert_eq!(map_value(&harness, 2, "target").as_deref(), Some("gate"));
+    // Shift adds the ogre to the door's selection; the door's spawnflag is set on both, the
+    // ogre keeping its own flags.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute(
+            "map.set_key",
+            json!({ "entity": 2, "key": "spawnflags", "value": "256" }),
+        )
+        .unwrap();
+    shell.execute("map.select", json!({ "entity": 4 })).unwrap();
+    harness.run();
+    harness.run();
+    let ogre = drawn_at(&harness, 2);
+    harness.hover_at(ogre);
+    harness.run();
+    for pressed in [true, false] {
+        harness.event_modifiers(
+            egui::Event::PointerButton {
+                pos: ogre,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::SHIFT,
+            },
+            egui::Modifiers::SHIFT,
+        );
+    }
+    harness.run();
+    harness.run();
+    assert!(
+        harness
+            .query_all_by_value("1 more selected: key edits set it too")
+            .next()
+            .is_some()
+    );
+    harness.get_by_label("DOOR_START_OPEN").click();
+    harness.run();
+    harness.run();
+    assert_eq!(map_value(&harness, 4, "spawnflags").as_deref(), Some("1"));
+    assert_eq!(map_value(&harness, 2, "spawnflags").as_deref(), Some("257"));
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    for _ in 0..4 {
+        shell.execute("edit.undo", json!({})).unwrap();
+    }
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+}
+
+// No spec statement: P5-13, MAP-27: the filter by skill and game is found again once the map is
+// edited, and one that could not be found shows every entity
+#[test]
+fn the_map_filter_is_found_again_after_an_edit() {
+    use crate::map_editor::{MapEditor, ShowFilter};
+    use qs_workbench::map_edit::{GameMode, MapRevision, Skill};
+
+    let mut editor = MapEditor::default();
+    let read = MapRevision::default();
+    let edited = read.next();
+    assert_eq!(
+        editor.filter_stale(read),
+        None,
+        "every entity needs no filter"
+    );
+    editor.set_hidden(ShowFilter::Hard, Some(vec![EntityIndex::new(2)]), read);
+    assert_eq!(editor.filter_stale(read), None);
+    assert_eq!(editor.filter_stale(edited), Some(ShowFilter::Hard));
+    editor.set_hidden(ShowFilter::Deathmatch, None, edited);
+    assert_eq!(
+        editor.filter_stale(edited.next()),
+        None,
+        "a failed filter shows every entity"
+    );
+    assert_eq!(ShowFilter::Every.game(), None);
+    assert_eq!(
+        ShowFilter::Coop.game(),
+        Some((Skill::Normal, GameMode::Coop))
+    );
+    assert_eq!(
+        ShowFilter::Nightmare.game(),
+        Some((Skill::Nightmare, GameMode::Single))
+    );
 }

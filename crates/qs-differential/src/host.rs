@@ -32,7 +32,7 @@ use qc_types::Slot;
 use qc_vm::{Machine, RunError, ServerState};
 
 use crate::scenario::Scenario;
-use qs_sim::spawn::{self, LoadError};
+use qs_sim::spawn::{self, LoadError, ftoi};
 
 mod frames;
 mod spawner;
@@ -246,7 +246,7 @@ impl Host<'_> {
     ) -> Result<(), LoadError> {
         // DIFF-3.2: deathmatch becomes 0 when coop is non-zero; the skill is clamped to 0..3.
         let coop = self.setting("coop");
-        let skill = clamp_skill(self.setting("skill"));
+        let skill = spawn::clamp_skill(self.setting("skill"));
 
         // DIFF-3.2: the engine state. Machine::new gave 600 zero edicts with
         // num_edicts = maxclients + 1 (EDICT-1.8); the clock is 1.0 and the server is loading.
@@ -500,25 +500,6 @@ impl Host<'_> {
             .and_then(|n| n.checked_mul(size))
             .unwrap_or(0)
     }
-}
-
-/// Clamps the skill as DIFF-3.2 does: `(int)(skill + 0.5)` clamped to 0 to 3.
-fn clamp_skill(skill: f32) -> i32 {
-    ftoi(skill + 0.5).clamp(0, 3)
-}
-
-/// `(int)` as BUILTIN-2.2 fixes it: truncation toward zero, `i32::MIN` outside the range.
-fn ftoi(value: f32) -> i32 {
-    let d = f64::from(value);
-    if d.is_nan() || d >= 2_147_483_648.0 || d <= -2_147_483_649.0 {
-        return i32::MIN;
-    }
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "spec BUILTIN-2.2: truncation toward zero, range checked above"
-    )]
-    let truncated = d as i32;
-    truncated
 }
 
 /// A `movetype` field value as its `f32` bits (the field is a float, EDICT-3.1).

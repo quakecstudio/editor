@@ -57,6 +57,9 @@ const qs_workbench::map_edit::MAP_SET_KEY
 const qs_workbench::map_edit::disk::FILES_CHANGED
 const qs_workbench::map_edit::disk::MAP_COMPARE
 const qs_workbench::map_edit::disk::MAP_RESOLVE
+const qs_workbench::map_edit::filter::MAP_FILTER
+const qs_workbench::map_edit::flags::MAP_SET_FLAG
+const qs_workbench::map_edit::links::MAP_LINK
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
 const qs_workbench::preview::CONSOLE
@@ -122,6 +125,9 @@ enum qs_workbench::map_edit::BspSave
 enum qs_workbench::map_edit::MapSource
 enum qs_workbench::map_edit::disk::Keep
 enum qs_workbench::map_edit::disk::MapOnDisk
+enum qs_workbench::map_edit::filter::GameMode
+enum qs_workbench::map_edit::filter::Skill
+enum qs_workbench::map_edit::flags::FlagChange
 enum qs_workbench::map_edit::inspect::RoomShape
 enum qs_workbench::map_edit::live::LiveChange
 enum qs_workbench::preview::OnLoss
@@ -218,6 +224,7 @@ field qs_workbench::entity_classes::ClassInfo.size
 field qs_workbench::entity_classes::ClassInfo.spawnflags
 field qs_workbench::entity_classes::EntitiesFound.classes
 field qs_workbench::entity_classes::EntitiesFound.fgd
+field qs_workbench::entity_classes::EntitiesFound.targeting
 field qs_workbench::entity_classes::EntitiesParams.fgd
 field qs_workbench::entity_classes::FlagInfo.name
 field qs_workbench::entity_classes::FlagInfo.value
@@ -281,6 +288,7 @@ field qs_workbench::map_edit::EntityKeys.brush
 field qs_workbench::map_edit::EntityKeys.classname
 field qs_workbench::map_edit::EntityKeys.keys
 field qs_workbench::map_edit::EntityKeys.pairs
+field qs_workbench::map_edit::EntityKeys.spawnflags
 field qs_workbench::map_edit::EntityKeys.targetnames
 field qs_workbench::map_edit::EntityParams.entity
 field qs_workbench::map_edit::MapEdited.entity
@@ -299,6 +307,7 @@ field qs_workbench::map_edit::RotateParams.degrees
 field qs_workbench::map_edit::RotateParams.entity
 field qs_workbench::map_edit::SaveParams.bsp
 field qs_workbench::map_edit::SelectParams.entity
+field qs_workbench::map_edit::SetKeyParams.also
 field qs_workbench::map_edit::SetKeyParams.entity
 field qs_workbench::map_edit::SetKeyParams.key
 field qs_workbench::map_edit::SetKeyParams.value
@@ -308,6 +317,13 @@ field qs_workbench::map_edit::disk::FilesChangedParams.paths
 field qs_workbench::map_edit::disk::MapDifference.entity
 field qs_workbench::map_edit::disk::MapDifference.text
 field qs_workbench::map_edit::disk::ResolveParams.keep
+field qs_workbench::map_edit::filter::FilterParams.mode
+field qs_workbench::map_edit::filter::FilterParams.skill
+field qs_workbench::map_edit::filter::MapFiltered.removed
+field qs_workbench::map_edit::flags::SetFlagParams.also
+field qs_workbench::map_edit::flags::SetFlagParams.change
+field qs_workbench::map_edit::flags::SetFlagParams.entity
+field qs_workbench::map_edit::flags::SetFlagParams.flag
 field qs_workbench::map_edit::inspect::EntityInfo.classname
 field qs_workbench::map_edit::inspect::EntityInfo.entity
 field qs_workbench::map_edit::inspect::EntityInfo.origin
@@ -321,6 +337,9 @@ field qs_workbench::map_edit::inspect::MapInspected.rooms
 field qs_workbench::map_edit::inspect::RoomInfo.bounds
 field qs_workbench::map_edit::inspect::RoomInfo.kind
 field qs_workbench::map_edit::inspect::RoomInfo.name
+field qs_workbench::map_edit::links::LinkParams.entity
+field qs_workbench::map_edit::links::LinkParams.key
+field qs_workbench::map_edit::links::LinkParams.target
 field qs_workbench::preview::BreakpointParams.file
 field qs_workbench::preview::BreakpointParams.line
 field qs_workbench::preview::ChooseGameParams.path
@@ -536,6 +555,7 @@ fn qs_workbench::editing::Workbench::save
 fn qs_workbench::editing::Workbench::text
 fn qs_workbench::editing::Workbench::update
 fn qs_workbench::entity_classes::Workbench::entity_classes
+fn qs_workbench::entity_classes::Workbench::targeting_keys
 fn qs_workbench::export::Workbench::export
 fn qs_workbench::git::register_git
 fn qs_workbench::map_check::Workbench::check_map
@@ -810,10 +830,14 @@ struct qs_workbench::map_edit::disk::FilesChanged
 struct qs_workbench::map_edit::disk::FilesChangedParams
 struct qs_workbench::map_edit::disk::MapDifference
 struct qs_workbench::map_edit::disk::ResolveParams
+struct qs_workbench::map_edit::filter::FilterParams
+struct qs_workbench::map_edit::filter::MapFiltered
+struct qs_workbench::map_edit::flags::SetFlagParams
 struct qs_workbench::map_edit::inspect::EntityInfo
 struct qs_workbench::map_edit::inspect::InspectParams
 struct qs_workbench::map_edit::inspect::MapInspected
 struct qs_workbench::map_edit::inspect::RoomInfo
+struct qs_workbench::map_edit::links::LinkParams
 struct qs_workbench::preview::BreakpointParams
 struct qs_workbench::preview::ChooseGameParams
 struct qs_workbench::preview::ConsoleLine
@@ -990,17 +1014,27 @@ use qs_workbench::map_edit::EntityInfo = inspect::EntityInfo
 use qs_workbench::map_edit::FILES_CHANGED = disk::FILES_CHANGED
 use qs_workbench::map_edit::FilesChanged = disk::FilesChanged
 use qs_workbench::map_edit::FilesChangedParams = disk::FilesChangedParams
+use qs_workbench::map_edit::FilterParams = filter::FilterParams
+use qs_workbench::map_edit::FlagChange = flags::FlagChange
+use qs_workbench::map_edit::GameMode = filter::GameMode
 use qs_workbench::map_edit::InspectParams = inspect::InspectParams
 use qs_workbench::map_edit::Keep = disk::Keep
+use qs_workbench::map_edit::LinkParams = links::LinkParams
 use qs_workbench::map_edit::LiveChange = live::LiveChange
 use qs_workbench::map_edit::MAP_COMPARE = disk::MAP_COMPARE
+use qs_workbench::map_edit::MAP_FILTER = filter::MAP_FILTER
+use qs_workbench::map_edit::MAP_LINK = links::MAP_LINK
 use qs_workbench::map_edit::MAP_RESOLVE = disk::MAP_RESOLVE
+use qs_workbench::map_edit::MAP_SET_FLAG = flags::MAP_SET_FLAG
 use qs_workbench::map_edit::MapDifference = disk::MapDifference
+use qs_workbench::map_edit::MapFiltered = filter::MapFiltered
 use qs_workbench::map_edit::MapInspected = inspect::MapInspected
 use qs_workbench::map_edit::MapOnDisk = disk::MapOnDisk
 use qs_workbench::map_edit::ResolveParams = disk::ResolveParams
 use qs_workbench::map_edit::RoomInfo = inspect::RoomInfo
 use qs_workbench::map_edit::RoomShape = inspect::RoomShape
+use qs_workbench::map_edit::SetFlagParams = flags::SetFlagParams
+use qs_workbench::map_edit::Skill = filter::Skill
 use qs_workbench::recent_path = crate::recent::recent_path
 use qs_workbench::register_preview = crate::preview::register_preview
 use qs_workbench::register_staged = crate::staged::register_staged
@@ -1017,6 +1051,7 @@ variant qs_workbench::WorkbenchError::ChangedOnDisk
 variant qs_workbench::WorkbenchError::Checkpoint
 variant qs_workbench::WorkbenchError::EntOverride
 variant qs_workbench::WorkbenchError::Map
+variant qs_workbench::WorkbenchError::MapLump
 variant qs_workbench::WorkbenchError::NoEntity
 variant qs_workbench::WorkbenchError::NoFile
 variant qs_workbench::WorkbenchError::NoFix
@@ -1024,12 +1059,14 @@ variant qs_workbench::WorkbenchError::NoHunk
 variant qs_workbench::WorkbenchError::NoMap
 variant qs_workbench::WorkbenchError::NoProject
 variant qs_workbench::WorkbenchError::NoRoom
+variant qs_workbench::WorkbenchError::NotBuilt
 variant qs_workbench::WorkbenchError::NotPointEntity
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Pattern
 variant qs_workbench::WorkbenchError::Project
 variant qs_workbench::WorkbenchError::Rename
 variant qs_workbench::WorkbenchError::Save
+variant qs_workbench::WorkbenchError::Spawn
 variant qs_workbench::build::Gravity::Error
 variant qs_workbench::build::Gravity::Warning
 variant qs_workbench::commands::CandidateKind::Field
@@ -1075,6 +1112,15 @@ variant qs_workbench::map_edit::disk::Keep::Mine
 variant qs_workbench::map_edit::disk::MapOnDisk::Conflict
 variant qs_workbench::map_edit::disk::MapOnDisk::Reloaded
 variant qs_workbench::map_edit::disk::MapOnDisk::Same
+variant qs_workbench::map_edit::filter::GameMode::Coop
+variant qs_workbench::map_edit::filter::GameMode::Deathmatch
+variant qs_workbench::map_edit::filter::GameMode::Single
+variant qs_workbench::map_edit::filter::Skill::Easy
+variant qs_workbench::map_edit::filter::Skill::Hard
+variant qs_workbench::map_edit::filter::Skill::Nightmare
+variant qs_workbench::map_edit::filter::Skill::Normal
+variant qs_workbench::map_edit::flags::FlagChange::Clear
+variant qs_workbench::map_edit::flags::FlagChange::Set
 variant qs_workbench::map_edit::inspect::RoomShape::Group
 variant qs_workbench::map_edit::inspect::RoomShape::Layer
 variant qs_workbench::map_edit::live::LiveChange::Edit

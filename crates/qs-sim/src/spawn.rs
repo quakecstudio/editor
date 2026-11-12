@@ -750,9 +750,24 @@ fn c_string(text: &[u8]) -> &[u8] {
     text.split(|&b| b == 0).next().unwrap_or_default()
 }
 
+/// The skill DIFF-3.2 gives a `skill` setting of `value`: `(int)(skill + 0.5)` clamped to 0 to
+/// 3, the value EDICT-8.4's test reads.
+#[must_use]
+pub fn clamp_skill(value: f32) -> i32 {
+    ftoi(value + SKILL_ROUNDING).clamp(SKILL_EASY, SKILL_NIGHTMARE)
+}
+
+/// What the skill setting is rounded by before it is truncated, `skill + 0.5` (DIFF-3.2).
+const SKILL_ROUNDING: f32 = 0.5;
+
+/// The lowest skill, easy.
+const SKILL_EASY: i32 = 0;
+/// The highest skill, nightmare.
+const SKILL_NIGHTMARE: i32 = 3;
+
 /// C's float-to-integer conversion id's `(int)` gives on x86, as BUILTIN-2.2 fixes it:
 /// truncation toward zero, and `i32::MIN` for a NaN or a value outside the `i32` range.
-fn ftoi(value: f32) -> i32 {
+pub fn ftoi(value: f32) -> i32 {
     let d = f64::from(value);
     if d.is_nan() || d >= 2_147_483_648.0 || d <= -2_147_483_649.0 {
         return i32::MIN;

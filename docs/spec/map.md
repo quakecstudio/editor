@@ -383,12 +383,22 @@ editor's diagnostics; none of them stops the engine but MAP-8.4's function and f
 - **MAP-8.4** A function field's value that names no function, and a field field's value that
   names no field, are reported: the engine stops loading the map with `ED_ParseEdict: parse
   error` (EDICT-8.2).
-- **MAP-8.5** A `target`, `killtarget` or other key starting `target` (but `targetname`) whose
-  value no entity's `targetname` holds is reported: what it fires does not exist.
-- **MAP-8.6** A `targetname` that no entity's `target`, `killtarget` or other key starting
-  `target` names is reported: nothing in the map fires it.
+- **MAP-8.5** **Withdrawn** 2026-11-12: it took a key starting `target` (but `targetname`), or
+  `killtarget`, as one naming entities to fire; P5-13 reads those keys from the code; replaced
+  by MAP-8.8 and MAP-8.9.
+- **MAP-8.6** **Withdrawn** 2026-11-12: it counted a `targetname` as fired by the keys MAP-8.5
+  named; replaced by MAP-8.9.
 - **MAP-8.7** Renaming a field in the code offers to rename the key in the open maps; once
   confirmed, every pair with the old key takes the new one, its value and formatting kept.
+- **MAP-8.8** A key names entities to fire when the code compares its field with `targetname`:
+  passes it to `find` as the value to match, with `targetname` the field to match it against,
+  as id's `SUB_UseTargets` does (`t = find (t, targetname, self.target);`), whatever entity it
+  is loaded from; or compares it with a `targetname` by `==` or `!=`. In id 1.01's and the
+  rerelease's code these keys are `target` and `killtarget`; a mod's own keys count once its
+  code compares them. A comparison of `targetname` with anything but a field names no key.
+- **MAP-8.9** A key of MAP-8.8 whose value no entity's `targetname` holds is reported: what it
+  fires does not exist. A `targetname` that no such key names is reported: nothing in the map
+  fires it.
 
 ## MAP-9 Rooms: TrenchBroom's layers and groups
 
