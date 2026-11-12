@@ -237,6 +237,13 @@ copy, `build`, `check` and `test`, an MCP session, and the desktop app's headles
 control step (`new` from GitHub) must fail and show its request in the trace.
 [`docs/privacy.md`](privacy.md) lists every request the app can make.
 
+Both nightly workflows are scheduled in the evening, Eastern time (`timezone:
+"America/New_York"`): `Fuzz` at 19:13 and `Differential` at 19:37. GitHub starts scheduled runs
+late under load, often by six hours or more, and they take most of the runners, so each starts
+with a `Night window` job: a scheduled run that starts outside 19:00 to 01:00 Eastern skips its
+other jobs rather than run during the day, and with the longest job's timeout a run that starts
+in the window ends by morning. A `workflow_dispatch` run always goes.
+
 [`.github/workflows/fuzz.yml`](../.github/workflows/fuzz.yml) runs nightly and on demand
 (`workflow_dispatch`), never on pull requests or in the merge queue, and is **not** a required
 check:

@@ -20,7 +20,8 @@ name: Fuzz
 
 on:
   schedule:
-    - cron: "41 3 * * *"
+    - cron: "13 19 * * *"
+      timezone: "America/New_York"
   workflow_dispatch:
 
 concurrency:
@@ -33,8 +34,34 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  night:
+    name: Night window
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      run: ${{ steps.window.outputs.run }}
+    steps:
+      # GitHub starts scheduled runs hours late under load, so a scheduled run that starts
+      # outside 19:00 to 01:00 Eastern is skipped rather than run in the day; with the longest
+      # job's timeout it then ends by morning. A manual run always goes.
+      - name: Check the night window
+        id: window
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          hour=$(TZ=America/New_York date +%-H)
+          if [ "$EVENT" != schedule ] || [ "$hour" -ge 19 ] || [ "$hour" -lt 1 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Started at ${hour}:00 Eastern, outside 19:00 to 01:00; skipped"
+          fi
+
   fuzz:
     name: Fuzz
+    needs: night
+    if: needs.night.outputs.run == 'true'
     runs-on: ubuntu-latest
     # Seventeen targets of ten minutes each, the oracle build and the Rust builds.
     timeout-minutes: 240
@@ -98,6 +125,8 @@ jobs:
   # fails the run and uploads the crashing input as `fuzz-artifacts-oracles`.
   oracles:
     name: Fuzz the oracles
+    needs: night
+    if: needs.night.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
