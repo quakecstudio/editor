@@ -398,6 +398,12 @@ impl MapEditor {
         self.textures.watched()
     }
 
+    /// The brush tools, for tests.
+    #[cfg(test)]
+    pub(crate) const fn tools(&self) -> &BrushTools {
+        &self.tools
+    }
+
     /// The texture browser, for tests.
     #[cfg(test)]
     pub(crate) const fn texture_browser(&self) -> &TextureBrowser {
@@ -831,7 +837,13 @@ impl MapEditor {
             }
             ui.separator();
         }
-        actions.extend(self.tools.properties(ui).into_iter().map(MapAction::Brush));
+        let texture = self.textures.selected();
+        actions.extend(
+            self.tools
+                .properties(ui, &self.scene, texture)
+                .into_iter()
+                .map(MapAction::Brush),
+        );
         let mut chosen: Vec<EntityIndex> =
             self.keys.as_ref().map(|(e, _)| *e).into_iter().collect();
         chosen.extend(self.also.iter().copied());

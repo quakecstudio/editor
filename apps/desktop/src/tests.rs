@@ -30,6 +30,7 @@ use crate::debugger::place;
 use crate::editor::Request;
 use crate::icons::Icon;
 use crate::keymap;
+use crate::map_tools::Readout;
 use crate::palette::highlighted;
 use crate::shell::{EDITOR_AREA, commanded_size, dragged_size};
 use crate::strings::{Text, command_count, exit_status, match_count};
@@ -2391,6 +2392,86 @@ fn brushes_are_selected_deleted_and_drawn_in_the_view() {
     }
     harness.run();
     assert_eq!(map_text(&harness), before);
+}
+
+/// What the Move or Measure tool of `harness`'s app last showed.
+fn shown(harness: &Harness<'static, Option<App>>) -> Option<Readout> {
+    harness
+        .state()
+        .as_ref()?
+        .shell()
+        .map_editor()
+        .tools()
+        .shown()
+}
+
+// No spec statement: P6-09, MAP-11: in the top view the Move tool drags the selected brush by
+// the move it shows, in Quake units, its textures locked, and the move undoes; the Measure tool
+// shows the distance between the points dragged between
+#[test]
+#[expect(clippy::panic, reason = "test code: another readout is a failed test")]
+fn the_move_and_measure_tools_show_the_edit_they_make() {
+    let dir = keep_copy("move-measure");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell
+        .execute("view.map_panes", json!({ "panes": "quad" }))
+        .unwrap();
+    harness.run();
+    harness.run();
+    let before = map_text(&harness);
+    harness.get_by_label(Text::MapToolMove.get()).click();
+    harness.run();
+    // The first brush in the way of a click on the door is the west wall.
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    let top = harness.get_by_label(Text::MapViewTop.get()).rect();
+    // Two map units a point: 64 points right and 32 up is 128 east and 64 north.
+    drag(
+        &mut harness,
+        top.center(),
+        top.center() + egui::vec2(64.0, -32.0),
+        egui::Modifiers::NONE,
+    );
+    harness.run();
+    let Some(Readout::Move { by, .. }) = shown(&harness) else {
+        panic!("a move readout: {:?}", shown(&harness));
+    };
+    assert_eq!(by, [128.0, 64.0, 0.0]);
+    let after = map_text(&harness);
+    assert!(!after.contains("( -272 -256 1 )"), "{after}");
+    assert!(
+        after.contains("( -144 -192 1 )"),
+        "the wall moved by the move shown: {after}"
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
+    harness.get_by_label(Text::MapToolMeasure.get()).click();
+    harness.run();
+    drag(
+        &mut harness,
+        top.center(),
+        top.center() + egui::vec2(64.0, -48.0),
+        egui::Modifiers::NONE,
+    );
+    harness.run();
+    let Some(measured @ Readout::Measure { from, to }) = shown(&harness) else {
+        panic!("a measure readout: {:?}", shown(&harness));
+    };
+    assert_eq!(
+        [to[0] - from[0], to[1] - from[1], to[2] - from[2]],
+        [128.0, 96.0, 0.0]
+    );
+    assert_eq!(measured.text(), "Distance 160.00 (128 96 0)");
+    assert_eq!(map_text(&harness), before, "measuring changes nothing");
 }
 
 /// Of the nodes labelled `label`, the lowest on screen: below the view, where the browsers are.

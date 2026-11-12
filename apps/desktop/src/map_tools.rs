@@ -3,20 +3,22 @@
 //! The map editor's brush tools (P6-08, MAP-2): TrenchBroom's Brush, Clip and Vertex tools
 //! beside Select. Brush draws a box on the ground with a drag; Clip cuts the selected brush by
 //! the vertical plane through a line dragged on the ground, keeping either side or both; Vertex
-//! drags a corner of the selected brush across the plane it lies in. Clicking with any of them
-//! selects a brush, Shift+click adds one, and the Properties panel subtracts, merges and
-//! deletes the brushes selected. Each edit is a [`BrushAction`] the shell runs as a
+//! drags a corner of the selected brush across the plane it lies in. Move drags the selected
+//! brushes, with texture lock or without, and Measure the distance between two points, each
+//! showing its numbers in the view (P6-09). Clicking with any of them selects a brush,
+//! Shift+click adds one, and the Properties panel shows the selection's size, aligns its
+//! textures, and subtracts, merges and deletes the brushes selected. Each edit is a [`BrushAction`] the shell runs as a
 //! `map.brush_*` command, so each has undo.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use eframe::egui::{self, Painter, Pos2, Response, Stroke, Ui};
-use qs_workbench::map_edit::{BrushIndex, EntityIndex, KeepPart};
+use qs_workbench::map_edit::{BrushIndex, EntityIndex, KeepPart, Lock};
 
 use crate::map_editor::{GRID, box_lines};
 use crate::map_panes::Projection;
 use crate::map_scene::{Scene, single};
-use crate::strings::Text;
+use crate::strings::{Text, apply_texture, measure_readout, move_readout, selection_size};
 use crate::theme::{Theme, Token};
 
 /// The height of a box the Brush tool draws, in map units: four grid steps.
@@ -29,6 +31,16 @@ const VERTEX_REACH: f32 = 8.0;
 const VERTEX_DOT: f32 = 3.0;
 /// The smallest ray component counted as crossing a plane rather than running along it.
 const ALONG_PLANE: f32 = 1e-6;
+/// How far a readout is from the view's lower left corner, in points.
+const READOUT_INSET: f32 = 8.0;
+/// The size of a readout's text, in points.
+const READOUT_SIZE: f32 = 13.0;
+/// The step a texture field moves by per point dragged.
+const ALIGN_STEP: f64 = 1.0;
+/// The step a texture scale field moves by per point dragged.
+const SCALE_STEP: f64 = 0.05;
+/// The map's origin, which a measure's first point is found on the plane through.
+const ORIGIN: [f32; 3] = [0.0; 3];
 
 /// A brush: the entity holding it and its place among the entity's brushes.
 pub(crate) type BrushRef = (EntityIndex, BrushIndex);
@@ -45,11 +57,22 @@ pub(crate) enum MapTool {
     Clip,
     /// Move a brush's corners.
     Vertex,
+    /// Move the selected brushes (P6-09).
+    Move,
+    /// Measure between two points (P6-09).
+    Measure,
 }
 
 impl MapTool {
     /// Every tool, in the toolbar's order.
-    const ALL: [Self; 4] = [Self::Select, Self::Brush, Self::Clip, Self::Vertex];
+    const ALL: [Self; 6] = [
+        Self::Select,
+        Self::Brush,
+        Self::Clip,
+        Self::Vertex,
+        Self::Move,
+        Self::Measure,
+    ];
 
     const fn text(self) -> Text {
         match self {
@@ -57,6 +80,8 @@ impl MapTool {
             Self::Brush => Text::MapToolBrush,
             Self::Clip => Text::MapToolClip,
             Self::Vertex => Text::MapToolVertex,
+            Self::Move => Text::MapToolMove,
+            Self::Measure => Text::MapToolMeasure,
         }
     }
 
@@ -67,6 +92,8 @@ impl MapTool {
             Self::Brush => Some(Text::MapBrushHint),
             Self::Clip => Some(Text::MapClipHint),
             Self::Vertex => Some(Text::MapVertexHint),
+            Self::Move => Some(Text::MapMoveHint),
+            Self::Measure => Some(Text::MapMeasureHint),
         }
     }
 }
@@ -86,6 +113,70 @@ pub enum BrushAction {
     Merge(EntityIndex, Vec<BrushIndex>),
     /// Delete a brush.
     Delete(EntityIndex, BrushIndex),
+    /// Move brushes of an entity by an offset, their textures fixed in the world or not.
+    Move(EntityIndex, Vec<BrushIndex>, [f64; 3], Lock),
+    /// Set the texture or alignment of every face of brushes of an entity.
+    Texture(EntityIndex, Vec<BrushIndex>, TextureChange),
+}
+
+/// What `map.brush_texture` sets; the parts not given are kept (MAP-12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TextureChange {
+    /// The texture's name.
+    pub texture: Option<String>,
+    /// The s and t shift, rotation in degrees, and s and t scale.
+    pub alignment: Option<([f64; 2], f64, [f64; 2])>,
+}
+
+/// What the Move or Measure tool shows, while it drags and after.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Readout {
+    /// The selection moved by `by`, the pointer at `at`.
+    Move {
+        /// The move so far, on the grid.
+        by: [f64; 3],
+        /// Where the pointer is, on the grid.
+        at: [f64; 3],
+    },
+    /// From one point to another, both on the grid.
+    Measure {
+        /// Where it starts.
+        from: [f64; 3],
+        /// Where it ends.
+        to: [f64; 3],
+    },
+}
+
+impl Readout {
+    /// Its text, in Quake units.
+    pub(crate) fn text(self) -> String {
+        match self {
+            Self::Move { by, at } => move_readout(by, at),
+            Self::Measure { from, to } => {
+                let along = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+                let distance = along.iter().map(|c| c * c).sum::<f64>().sqrt();
+                measure_readout(distance, along)
+            }
+        }
+    }
+}
+
+/// The texture alignment fields of the Properties panel.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct AlignFields {
+    shift: [f64; 2],
+    rotate: f64,
+    scale: [f64; 2],
+}
+
+impl Default for AlignFields {
+    fn default() -> Self {
+        Self {
+            shift: [0.0; 2],
+            rotate: 0.0,
+            scale: [1.0; 2],
+        }
+    }
 }
 
 /// What the left button is dragging.
@@ -95,6 +186,10 @@ enum Drag {
     Ground([f32; 3]),
     /// A corner of a brush, from where it is.
     Corner(BrushRef, [f64; 3]),
+    /// The selected brushes, from this point on the plane facing the view.
+    Selection([f32; 3]),
+    /// A measure, from this point on the plane facing the view.
+    Measure([f32; 3]),
 }
 
 /// The brush tools' state.
@@ -111,6 +206,12 @@ pub(crate) struct BrushTools {
     /// The brush the last clip or vertex move asked for reshapes, which stays selected.
     reshaped: Option<BrushRef>,
     drag: Option<Drag>,
+    /// Whether moved brushes keep their textures fixed in the world (MAP-11.2).
+    lock: Lock,
+    /// What the Move or Measure tool last showed.
+    shown: Option<Readout>,
+    /// The texture alignment fields.
+    align: AlignFields,
 }
 
 /// A ray in map space: where it starts and its direction.
@@ -123,6 +224,25 @@ fn at_height((start, direction): Ray, z: f32) -> Option<[f32; 3]> {
     }
     let t = (z - start[2]) / direction[2];
     (t > 0.0).then(|| [start[0] + direction[0] * t, start[1] + direction[1] * t, z])
+}
+
+/// Where `ray` meets the plane through `through` facing it most squarely: of the three planes
+/// along the map's axes, the one across the axis the ray runs most along, ahead of its start.
+/// From above that is the ground; in a 2D view it is the view's own plane.
+fn facing((start, direction): Ray, through: [f32; 3]) -> Option<[f32; 3]> {
+    let size = |i: usize| direction.get(i).map_or(0.0, |c: &f32| c.abs());
+    let axis = (0..direction.len()).max_by(|&a, &b| size(a).total_cmp(&size(b)))?;
+    let d = direction.get(axis).copied()?;
+    if d.abs() < ALONG_PLANE {
+        return None;
+    }
+    let t = (through.get(axis).copied()? - start.get(axis).copied()?) / d;
+    (t > 0.0).then(|| {
+        [0, 1, 2].map(|i| {
+            let (s, d) = (start.get(i), direction.get(i));
+            s.copied().unwrap_or_default() + d.copied().unwrap_or_default() * t
+        })
+    })
 }
 
 /// `point` on the grid, as the commands snap it.
@@ -183,10 +303,77 @@ impl BrushTools {
             ui.selectable_value(&mut self.keep, KeepPart::Front, Text::MapKeepLeft.get());
             ui.selectable_value(&mut self.keep, KeepPart::Both, Text::KeepBoth.get());
         }
+        if self.tool == MapTool::Move {
+            ui.separator();
+            let mut locked = self.lock == Lock::Locked;
+            if ui
+                .toggle_value(&mut locked, Text::MapTextureLock.get())
+                .changed()
+            {
+                self.lock = if locked { Lock::Locked } else { Lock::Free };
+            }
+        }
         if let Some(hint) = self.tool.hint() {
             ui.separator();
             ui.weak(hint.get());
         }
+    }
+
+    /// What the Move or Measure tool last showed.
+    #[cfg(test)]
+    pub(crate) const fn shown(&self) -> Option<Readout> {
+        self.shown
+    }
+
+    /// The box around the selected brushes' corners, when any is selected.
+    fn bounds(&self, scene: &Scene) -> Option<[[f64; 3]; 2]> {
+        let corners = self
+            .chosen
+            .iter()
+            .filter_map(|&(entity, brush)| scene.brush(entity, brush))
+            .flat_map(|shape| shape.vertices.iter().copied());
+        corners.fold(None, |bounds, v| {
+            let [min, max] = bounds.unwrap_or([v, v]);
+            Some([
+                [min[0].min(v[0]), min[1].min(v[1]), min[2].min(v[2])],
+                [max[0].max(v[0]), max[1].max(v[1]), max[2].max(v[2])],
+            ])
+        })
+    }
+
+    /// What a Move or Measure drag shows with the pointer on `ray`.
+    fn readout(drag: Drag, ray: Ray) -> Option<Readout> {
+        match drag {
+            Drag::Selection(from) => {
+                let to = snapped(facing(ray, from)?);
+                let from = snapped(from);
+                let by = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+                Some(Readout::Move { by, at: to })
+            }
+            Drag::Measure(from) => Some(Readout::Measure {
+                from: snapped(from),
+                to: snapped(facing(ray, from)?),
+            }),
+            Drag::Ground(_) | Drag::Corner(..) => None,
+        }
+    }
+
+    /// The moves of the selected brushes by `by`, one per entity holding them; the brushes
+    /// stay selected where they go.
+    fn moved(&mut self, by: [f64; 3]) -> Vec<BrushAction> {
+        let mut by_entity: BTreeMap<EntityIndex, Vec<BrushIndex>> = BTreeMap::new();
+        for &(entity, brush) in &self.chosen {
+            by_entity.entry(entity).or_default().push(brush);
+            if let Some(corners) = self.seen.get_mut(&(entity, brush)) {
+                for corner in corners {
+                    *corner = [corner[0] + by[0], corner[1] + by[1], corner[2] + by[2]];
+                }
+            }
+        }
+        by_entity
+            .into_iter()
+            .map(|(entity, brushes)| BrushAction::Move(entity, brushes, by, self.lock))
+            .collect()
     }
 
     /// Reads the left button in the view for the tool chosen, other than Select; `ray` turns
@@ -234,7 +421,34 @@ impl BrushTools {
                 MapTool::Vertex => self
                     .corner_near(scene, projection, at)
                     .map(|(b, v)| Drag::Corner(b, v)),
+                MapTool::Move => self.bounds(scene).and_then(|[min, max]| {
+                    let mut middle = ORIGIN;
+                    for ((m, low), high) in middle.iter_mut().zip(min).zip(max) {
+                        *m = single((low + high) / 2.0);
+                    }
+                    facing(ray(at), middle).map(Drag::Selection)
+                }),
+                MapTool::Measure => facing(ray(at), ORIGIN).map(Drag::Measure),
             };
+        }
+        if let Some(drag) = self.drag
+            && let Some(at) = ui.ctx().pointer_latest_pos()
+            && let Some(readout) = Self::readout(drag, ray(at))
+        {
+            self.shown = Some(readout);
+        }
+        if response.drag_stopped()
+            && let Some(drag @ (Drag::Selection(_) | Drag::Measure(_))) = self.drag
+        {
+            self.drag = None;
+            if let Some(at) = ui.ctx().pointer_latest_pos() {
+                self.shown = Self::readout(drag, ray(at)).or(self.shown);
+            }
+            if let (Drag::Selection(_), Some(Readout::Move { by, .. })) = (drag, self.shown)
+                && by.iter().any(|c| c.abs() > 0.0)
+            {
+                actions.extend(self.moved(by));
+            }
         }
         if response.drag_stopped()
             && let Some(drag) = self.drag.take()
@@ -302,7 +516,15 @@ impl BrushTools {
                 let [x, y, _] = snapped(to);
                 Some(BrushAction::Vertex(entity, brush, from, [x, y, from[2]]))
             }
-            (MapTool::Select | MapTool::Brush | MapTool::Clip | MapTool::Vertex, _) => None,
+            (
+                MapTool::Select
+                | MapTool::Brush
+                | MapTool::Clip
+                | MapTool::Vertex
+                | MapTool::Move
+                | MapTool::Measure,
+                _,
+            ) => None,
         }
     }
 
@@ -332,22 +554,28 @@ impl BrushTools {
             }
         }
         let focus = Stroke::new(2.0, theme.color(Token::Focus));
+        if matches!(self.tool, MapTool::Move | MapTool::Measure)
+            && let Some(readout) = self.shown
+        {
+            self.draw_readout(painter, projection, theme, scene, readout);
+        }
         let Some(drag) = self.drag else {
             return;
         };
         let from = match drag {
             Drag::Ground(from) => snapped_f32(from),
             Drag::Corner(_, from) => from.map(single),
+            Drag::Selection(_) | Drag::Measure(_) => return,
         };
         let Some(to) = pointer.and_then(|ray| at_height(ray, from[2])) else {
             return;
         };
         let to = match drag {
-            Drag::Ground(_) => snapped_f32(to),
             Drag::Corner(..) => {
                 let [x, y, _] = snapped_f32(to);
                 [x, y, from[2]]
             }
+            Drag::Ground(_) | Drag::Selection(_) | Drag::Measure(_) => snapped_f32(to),
         };
         match self.tool {
             MapTool::Brush => {
@@ -372,17 +600,120 @@ impl BrushTools {
                     painter.circle_filled(at, VERTEX_DOT, focus.color);
                 }
             }
-            MapTool::Select => {}
+            MapTool::Select | MapTool::Move | MapTool::Measure => {}
         }
     }
 
-    /// The selected brushes' buttons in the Properties panel; what they asked for.
-    pub(crate) fn properties(&mut self, ui: &mut Ui) -> Vec<BrushAction> {
+    /// Draws what the Move or Measure tool shows: the selection where it is going or the line
+    /// measured, and the numbers in the view's lower left corner.
+    fn draw_readout(
+        &self,
+        painter: &Painter,
+        projection: &Projection,
+        theme: &Theme,
+        scene: &Scene,
+        readout: Readout,
+    ) {
+        let focus = Stroke::new(2.0, theme.color(Token::Focus));
+        match readout {
+            Readout::Move { by, .. } if self.drag.is_some() => {
+                let by = by.map(single);
+                for &(entity, brush) in &self.chosen {
+                    let Some(shape) = scene.brush(entity, brush) else {
+                        continue;
+                    };
+                    for [a, b] in &shape.lines {
+                        let shift = |p: [f32; 3]| [p[0] + by[0], p[1] + by[1], p[2] + by[2]];
+                        projection.line(painter, [shift(*a), shift(*b)], focus);
+                    }
+                }
+            }
+            Readout::Move { .. } => {}
+            Readout::Measure { from, to } => {
+                let (from, to) = (from.map(single), to.map(single));
+                projection.line(painter, [from, to], focus);
+                for end in [from, to] {
+                    if let Some(at) = projection.point(end) {
+                        painter.circle_filled(at, VERTEX_DOT, focus.color);
+                    }
+                }
+            }
+        }
+        let corner = painter.clip_rect().left_bottom();
+        painter.text(
+            egui::pos2(corner.x + READOUT_INSET, corner.y - READOUT_INSET),
+            egui::Align2::LEFT_BOTTOM,
+            readout.text(),
+            egui::FontId::monospace(READOUT_SIZE),
+            theme.color(Token::Text),
+        );
+    }
+
+    /// The selected brushes' size, texture alignment and buttons in the Properties panel, the
+    /// texture chosen in the browser `texture`; what they asked for.
+    pub(crate) fn properties(
+        &mut self,
+        ui: &mut Ui,
+        scene: &Scene,
+        texture: Option<&str>,
+    ) -> Vec<BrushAction> {
         let mut actions = Vec::new();
         let Some(&(entity, first)) = self.chosen.first() else {
             return actions;
         };
         ui.label(egui::RichText::new(Text::MapBrushes.get()).strong());
+        if let Some([min, max]) = self.bounds(scene) {
+            ui.label(selection_size([
+                max[0] - min[0],
+                max[1] - min[1],
+                max[2] - min[2],
+            ]));
+        }
+        let mut by_entity: BTreeMap<EntityIndex, Vec<BrushIndex>> = BTreeMap::new();
+        for &(e, b) in &self.chosen {
+            by_entity.entry(e).or_default().push(b);
+        }
+        let change = |change: TextureChange| {
+            by_entity
+                .iter()
+                .map(|(&e, brushes)| BrushAction::Texture(e, brushes.clone(), change.clone()))
+                .collect::<Vec<_>>()
+        };
+        let align = &mut self.align;
+        egui::Grid::new(ui.id().with(core::any::TypeId::of::<AlignFields>())).show(ui, |ui| {
+            ui.label(Text::MapTextureShift.get());
+            for shift in &mut align.shift {
+                ui.add(egui::DragValue::new(shift).speed(ALIGN_STEP));
+            }
+            ui.end_row();
+            ui.label(Text::MapTextureRotate.get());
+            ui.add(egui::DragValue::new(&mut align.rotate).speed(ALIGN_STEP));
+            ui.end_row();
+            ui.label(Text::MapTextureScale.get());
+            for scale in &mut align.scale {
+                ui.add(egui::DragValue::new(scale).speed(SCALE_STEP));
+            }
+            ui.end_row();
+        });
+        ui.horizontal_wrapped(|ui| {
+            if ui.button(Text::MapAlignTexture.get()).clicked() {
+                actions.extend(change(TextureChange {
+                    texture: None,
+                    alignment: Some((align.shift, align.rotate, align.scale)),
+                }));
+            }
+            if let Some(name) = texture
+                && ui.button(apply_texture(name)).clicked()
+            {
+                actions.extend(change(TextureChange {
+                    texture: Some(name.to_owned()),
+                    alignment: None,
+                }));
+            }
+        });
+        if !actions.is_empty() {
+            return actions;
+        }
         let one_entity = self.chosen.iter().all(|&(e, _)| e == entity);
         ui.horizontal_wrapped(|ui| {
             if ui

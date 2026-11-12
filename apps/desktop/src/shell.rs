@@ -56,9 +56,9 @@ use qs_workbench::map_edit::{
     ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_workbench::map_edit::{
-    BrushClipParams, BrushCreateParams, BrushMergeParams, BrushParams, BrushVertexParams,
-    MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_SUBTRACT,
-    MAP_BRUSH_VERTEX,
+    BrushClipParams, BrushCreateParams, BrushMergeParams, BrushMoveParams, BrushParams,
+    BrushTextureParams, BrushVertexParams, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE,
+    MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
 };
 use qs_workbench::map_edit::{
     EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
@@ -2164,6 +2164,35 @@ impl Shell {
             }
             BrushAction::Delete(entity, brush) => {
                 self.attempt(MAP_BRUSH_DELETE, &BrushParams { entity, brush })
+            }
+            BrushAction::Move(entity, brushes, by, lock) => self.attempt(
+                MAP_BRUSH_MOVE,
+                &BrushMoveParams {
+                    entity,
+                    brushes,
+                    by,
+                    lock,
+                    // The view has snapped the move to the grid.
+                    grid: Some(0.0),
+                },
+            ),
+            BrushAction::Texture(entity, brushes, change) => {
+                let (shift, rotate, scale) = change
+                    .alignment
+                    .map_or((None, None, None), |(shift, rotate, scale)| {
+                        (Some(shift), Some(rotate), Some(scale))
+                    });
+                self.attempt(
+                    MAP_BRUSH_TEXTURE,
+                    &BrushTextureParams {
+                        entity,
+                        brushes,
+                        texture: change.texture,
+                        shift,
+                        rotate,
+                        scale,
+                    },
+                )
             }
         }
     }
