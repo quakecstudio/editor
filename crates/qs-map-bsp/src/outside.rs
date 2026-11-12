@@ -3,7 +3,7 @@
 //! The outside fill: every leaf the outside reaches without passing an entity is made solid,
 //! and the faces only those leaves saw are dropped (QBSP-9).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use crate::math::{ORIGIN, Vec3, dot, same};
 use crate::planes::{PlaneId, Planes};
@@ -12,14 +12,22 @@ use crate::tree::{NodeKind, Tree};
 use crate::{Contents, Face, Surface};
 
 /// How a fill ended (QBSP-9.2, QBSP-9.3).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Fill {
     /// The outside was filled.
     Filled,
     /// No entity stands in empty space.
     NoOccupant,
-    /// The outside reaches an entity.
-    Leak,
+    /// The outside reaches an entity, along this trail from the entity's origin out (QBSP-9.8).
+    Leak(Vec<Vec3>),
+}
+
+/// Where the search from the outside ended.
+enum Reach {
+    /// It visited these leaves and no occupant.
+    Leaves(Vec<usize>),
+    /// It reached this occupied leaf.
+    Occupant(usize),
 }
 
 impl Tree {
@@ -42,12 +50,18 @@ impl Tree {
 }
 
 impl Tree {
-    /// The leaves the outside reaches through portals, not passing solid or sky; `None` when it
-    /// reaches an occupied leaf (QBSP-9.3).
-    pub(crate) fn reached(&self, portals: &Portals) -> Option<Vec<usize>> {
+    /// The leaves the outside reaches through portals, not passing solid or sky, or the
+    /// occupied leaf it reaches (QBSP-9.3).
+    fn reached(&self, portals: &Portals) -> Reach {
         let outside = portals.outside;
-        let first = self.nodes.get(outside)?.portals.first()?;
-        let portal = portals.get(*first)?;
+        let Some(portal) = self
+            .nodes
+            .get(outside)
+            .and_then(|node| node.portals.first())
+            .and_then(|&first| portals.get(first))
+        else {
+            return Reach::Leaves(Vec::new());
+        };
         let start = if portal.nodes[1] == outside {
             portal.nodes[0]
         } else {
@@ -70,7 +84,7 @@ impl Tree {
                 continue;
             }
             if node.occupied {
-                return None;
+                return Reach::Occupant(leaf);
             }
             if let Some(slot) = seen.get_mut(leaf) {
                 *slot = true;
@@ -87,7 +101,59 @@ impl Tree {
                 }
             }
         }
-        Some(order)
+        Reach::Leaves(order)
+    }
+
+    /// The fewest portals from the leaf `from` to the outside node, not passing solid or sky:
+    /// the middle of each, nearest `from` first (QBSP-9.8).
+    fn way_out(&self, portals: &Portals, from: usize) -> Vec<Vec3> {
+        // Each leaf's way in: the leaf it was reached from and the portal's middle.
+        let mut came: Vec<Option<(usize, Vec3)>> = vec![None; self.nodes.len()];
+        let mut seen = vec![false; self.nodes.len()];
+        if let Some(slot) = seen.get_mut(from) {
+            *slot = true;
+        }
+        let mut work = VecDeque::from([from]);
+        while let Some(leaf) = work.pop_front() {
+            let Some(node) = self.nodes.get(leaf) else {
+                continue;
+            };
+            for &id in &node.portals {
+                let Some(portal) = portals.get(id) else {
+                    continue;
+                };
+                let other = if portal.nodes[0] == leaf {
+                    portal.nodes[1]
+                } else {
+                    portal.nodes[0]
+                };
+                let centre = centroid(&portal.winding);
+                if other == portals.outside {
+                    let mut centres = vec![centre];
+                    let mut at = leaf;
+                    while let Some(&Some((back, centre))) = came.get(at) {
+                        centres.push(centre);
+                        at = back;
+                    }
+                    centres.reverse();
+                    return centres;
+                }
+                let open = !matches!(
+                    self.contents(other),
+                    Some(Contents::Solid | Contents::Sky) | None
+                );
+                if open && !seen.get(other).copied().unwrap_or(true) {
+                    if let Some(slot) = seen.get_mut(other) {
+                        *slot = true;
+                    }
+                    if let Some(slot) = came.get_mut(other) {
+                        *slot = Some((leaf, centre));
+                    }
+                    work.push_back(other);
+                }
+            }
+        }
+        Vec::new()
     }
 }
 
@@ -117,8 +183,16 @@ impl Tree {
         if !inside {
             return Fill::NoOccupant;
         }
-        let Some(outside) = self.reached(portals) else {
-            return Fill::Leak;
+        let outside = match self.reached(portals) {
+            Reach::Leaves(leaves) => leaves,
+            Reach::Occupant(leaf) => {
+                let occupant = origins
+                    .iter()
+                    .copied()
+                    .find(|&origin| self.point_in_leaf(planes, origin) == leaf);
+                let centres = self.way_out(portals, leaf);
+                return Fill::Leak(occupant.into_iter().chain(centres).collect());
+            }
         };
         for leaf in outside {
             if let Some(NodeKind::Leaf { contents, .. }) =
@@ -178,4 +252,16 @@ impl Tree {
         }
         surfaces
     }
+}
+
+/// The mean of `points`, the middle of a portal's winding.
+fn centroid(points: &[Vec3]) -> Vec3 {
+    let mut sum = ORIGIN;
+    for point in points {
+        for (total, c) in sum.iter_mut().zip(point) {
+            *total += c;
+        }
+    }
+    let count = u16::try_from(points.len()).map_or(f32::from(u16::MAX), f32::from);
+    sum.map(|total| total / count.max(1.0))
 }

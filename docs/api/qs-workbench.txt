@@ -39,6 +39,8 @@ const qs_workbench::git::GIT_UNSTAGE
 const qs_workbench::git::LOG_LIMIT
 const qs_workbench::map_check::MAP_CHECK
 const qs_workbench::map_check::MAP_RENAME_KEY
+const qs_workbench::map_compile::MAP_COMPILE
+const qs_workbench::map_compile::MAP_LEAKS
 const qs_workbench::map_edit::BSP_EXTENSION
 const qs_workbench::map_edit::EntityIndex::WORLD
 const qs_workbench::map_edit::MAP_DELETE
@@ -307,6 +309,10 @@ field qs_workbench::map_check::RenameKeyParams.from
 field qs_workbench::map_check::RenameKeyParams.to
 field qs_workbench::map_check::RenamedIn.pairs
 field qs_workbench::map_check::RenamedIn.path
+field qs_workbench::map_compile::MapReport.leak
+field qs_workbench::map_compile::MapReport.missing_textures
+field qs_workbench::map_compile::MapReport.warnings
+field qs_workbench::map_compile::MapReport.written
 field qs_workbench::map_edit::EntityKeys.brush
 field qs_workbench::map_edit::EntityKeys.classname
 field qs_workbench::map_edit::EntityKeys.keys
@@ -831,6 +837,7 @@ mod qs_workbench::export
 mod qs_workbench::git
 mod qs_workbench::ids
 mod qs_workbench::map_check
+mod qs_workbench::map_compile
 mod qs_workbench::map_edit
 mod qs_workbench::map_textures
 mod qs_workbench::preview::debug
@@ -899,6 +906,7 @@ struct qs_workbench::map_check::MapChecked
 struct qs_workbench::map_check::MapProblem
 struct qs_workbench::map_check::RenameKeyParams
 struct qs_workbench::map_check::RenamedIn
+struct qs_workbench::map_compile::MapReport
 struct qs_workbench::map_edit::EntityIndex
 struct qs_workbench::map_edit::EntityKeys
 struct qs_workbench::map_edit::EntityParams
@@ -1194,6 +1202,7 @@ variant qs_workbench::WorkbenchError::EntOverride
 variant qs_workbench::WorkbenchError::Link
 variant qs_workbench::WorkbenchError::Locked
 variant qs_workbench::WorkbenchError::Map
+variant qs_workbench::WorkbenchError::MapCompile
 variant qs_workbench::WorkbenchError::MapLump
 variant qs_workbench::WorkbenchError::NoBrush
 variant qs_workbench::WorkbenchError::NoEntity
@@ -1201,6 +1210,7 @@ variant qs_workbench::WorkbenchError::NoFile
 variant qs_workbench::WorkbenchError::NoFix
 variant qs_workbench::WorkbenchError::NoHunk
 variant qs_workbench::WorkbenchError::NoMap
+variant qs_workbench::WorkbenchError::NoMapSource
 variant qs_workbench::WorkbenchError::NoProject
 variant qs_workbench::WorkbenchError::NoRoom
 variant qs_workbench::WorkbenchError::NotBuilt

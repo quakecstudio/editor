@@ -3,6 +3,7 @@ enum qs_map_bsp::Dialect
 enum qs_map_bsp::Warning
 field qs_map_bsp::compile::Compiled.bsp
 field qs_map_bsp::compile::Compiled.leak_file
+field qs_map_bsp::compile::Compiled.leak_trail
 field qs_map_bsp::compile::Compiled.portal_file
 field qs_map_bsp::compile::Compiled.warnings
 fn qs_map_bsp::compile::Compiler::compile

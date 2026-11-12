@@ -3917,6 +3917,7 @@ dependencies = [
  "qs-git",
  "qs-install",
  "qs-map",
+ "qs-map-bsp",
  "qs-pak",
  "qs-sim",
  "qs-vfs",

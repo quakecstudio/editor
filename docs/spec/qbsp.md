@@ -409,6 +409,13 @@ another brush.
 - **QBSP-9.7** With `-verbose`, a leak prints `reached occupant at: (x, y, z)` with the origin of
   entity 0, the world, not of the occupant reached: `hit_occupied` is a zeroed global that
   nothing sets.
+- **QBSP-9.8** QuakeC Studio's compiler also gives a leak's trail, which id's does not
+  (QBSP-9.5 leaves its leak file empty, and that file stays as id writes it): the origin of the
+  entity the search reached, then the middle of each portal on the way from its leaf to the
+  outside node that crosses the fewest portals, not passing solid or sky leaves, the last the
+  portal onto the outside node; of ways equally short, the one whose portals come first in each
+  leaf's list. A map that does not leak has none. Its points are the mean of each portal winding's
+  points, so the line through them crosses each portal.
 
 ## QBSP-10 Merging faces
 
