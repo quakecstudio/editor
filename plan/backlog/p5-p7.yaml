@@ -115,7 +115,7 @@ groups:
     deliverable:
     - map.inspect with its schema, beside P5-06's map.place and map.set_key, and the evals/place-shamblers eval
     acceptance:
-    - The agent places three Shamblers in a named room from a prompt in an eval
+    - The place-shamblers eval's scenario, three Shamblers placed in a named room, fails at the task's start and passes with the agent tools' solution, checked by cargo xtask evals --check in CI with no model
     verify:
     - Eval task
   - key: P5-11
