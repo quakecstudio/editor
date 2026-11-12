@@ -177,6 +177,9 @@ pub struct LoadOptions {
     /// The state the random source starts at in a new game, a scenario's `seed` (SCN-1.3);
     /// `None` for MOVE-6.1's 1. A level carrying the last one's host state keeps its source.
     pub seed: Option<u32>,
+    /// Settings given before the map loads, each a name and a value, such as `skill` and
+    /// `deathmatch`, which choose the entities the load keeps (DIFF-3.2, EDICT-8.4).
+    pub settings: Vec<(String, String)>,
 }
 
 /// What lives in id's engine for the whole process, not one level: the C library's random
@@ -351,6 +354,23 @@ impl World {
         engine
             .cvars
             .create("registered", options.registration.cvar());
+        for (name, value) in &options.settings {
+            engine.cvars.create(name, value);
+            engine.cvars.set(name, value);
+        }
+        // DIFF-3.2: deathmatch is 0 under coop; the skill is `(int)(skill + 0.5)` clamped.
+        let setting = |name: &str| engine.cvars.value(name).unwrap_or(0.0);
+        let coop = setting("coop");
+        let deathmatch = if coop == 0.0 {
+            setting("deathmatch")
+        } else {
+            0.0
+        };
+        let skill = spawn::clamp_skill(setting("skill"));
+        engine.cvars.set("skill", &skill.to_string());
+        if coop != 0.0 {
+            engine.cvars.set("deathmatch", "0");
+        }
         let mut world = Self {
             machine,
             builtins: SimBuiltins::new(
@@ -392,14 +412,17 @@ impl World {
             .map_or(Slot::from_f32(0.0), |c| c.serverflags);
         world.set_global("serverflags", serverflags);
         world.set_global("time", Slot::from_f32(1.0));
-        // EDICT-8: the entities, for single player at the normal skill.
+        // EDICT-11.4: `deathmatch` and `coop` from the settings (DIFF-3.4).
+        world.set_global("deathmatch", Slot::from_f32(deathmatch));
+        world.set_global("coop", Slot::from_f32(coop));
+        // EDICT-8: the entities, at the settings' skill and deathmatch (DIFF-3.5).
         let mut spawner = Spawner {
             world: &mut world,
             progs,
             state: ServerState::Loading,
         };
-        let spawned =
-            spawn::load_from_file(&mut spawner, entities, false, 1).map_err(WorldError::Spawn)?;
+        let spawned = spawn::load_from_file(&mut spawner, entities, deathmatch != 0.0, skill)
+            .map_err(WorldError::Spawn)?;
         world.map_entities = map_entities::MapEntities::loaded(&world, &spawned);
         world.builtins.mock.engine_mut().server_active = true;
         Ok(world)

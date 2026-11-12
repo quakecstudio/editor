@@ -246,6 +246,7 @@ pub(crate) fn load(
             })
             .collect(),
         seed: None,
+        settings: Vec::new(),
     };
     let mut world =
         World::load(&progs, &map, &bsp, files()?, options).map_err(|e| e.to_string())?;

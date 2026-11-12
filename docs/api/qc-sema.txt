@@ -148,6 +148,7 @@ fn qc_sema::db::Db::set_file
 fn qc_sema::db::Db::set_file_text
 fn qc_sema::db::ModuleAnalysis::diagnostics
 fn qc_sema::entities::Db::entity_classes
+fn qc_sema::entities::Db::targeting_keys
 fn qc_sema::expand::ModuleInput::from_graph
 fn qc_sema::expand::ModuleInput::from_module
 fn qc_sema::expand::OriginMap::locate
@@ -165,6 +166,8 @@ fn qc_sema::map_check::Db::entity_schema
 fn qc_sema::map_check::EntitySchema::check
 fn qc_sema::map_check::EntitySchema::extend
 fn qc_sema::map_check::EntitySchema::has_field
+fn qc_sema::map_check::EntitySchema::is_targeting
+fn qc_sema::map_check::EntitySchema::targeting_keys
 fn qc_sema::nav::ModuleIndex::definition_at
 fn qc_sema::nav::ModuleIndex::references
 fn qc_sema::resolve::FileDiagnostic::new

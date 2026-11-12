@@ -26,7 +26,9 @@ mod game_guide;
 mod git_panel;
 pub mod icons;
 pub mod keymap;
+mod map_browser;
 pub mod map_editor;
+mod map_fields;
 mod map_scene;
 pub mod map_view;
 #[cfg(target_os = "macos")]

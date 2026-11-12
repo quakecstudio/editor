@@ -21,16 +21,22 @@ pub use disk::{
     FILES_CHANGED, FilesChanged, FilesChangedParams, Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference,
     MapOnDisk, ResolveParams,
 };
+pub use filter::{FilterParams, GameMode, MAP_FILTER, MapFiltered, Skill};
+pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
 pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
+pub use links::{LinkParams, MAP_LINK};
 pub use live::LiveChange;
 
 mod disk;
+mod filter;
+mod flags;
 mod inspect;
+mod links;
 mod live;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::entity_classes::{ClassInfo, KeyInfo};
+use crate::entity_classes::{ClassInfo, FlagInfo, KeyInfo};
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 
 /// Degrees in a whole turn; a rotated yaw is kept below it.
@@ -455,6 +461,9 @@ pub struct SetKeyParams {
     pub key: String,
     /// Its value.
     pub value: String,
+    /// Other entities to set it on too, in the same step.
+    #[serde(default)]
+    pub also: Vec<EntityIndex>,
 }
 
 /// The parameters of `map.remove_key`.
@@ -500,6 +509,9 @@ pub struct EntityKeys {
     /// The keys its class reads, typed, each with its default; empty for a classname that
     /// is no class.
     pub keys: Vec<KeyInfo>,
+    /// The spawnflags its class tests or its comment names, by value, each named where the
+    /// code or the comment names it.
+    pub spawnflags: Vec<FlagInfo>,
     /// The targetnames of the map, the values a `target` or `killtarget` may take.
     pub targetnames: Vec<String>,
     /// Whether it has brushes.
@@ -582,19 +594,22 @@ impl<L: crate::Loader> Workbench<L> {
             .collect();
         targetnames.sort();
         targetnames.dedup();
-        let keys = match (&classname, self.root().is_some()) {
+        let class = match (&classname, self.root().is_some()) {
             (Some(name), true) => self
                 .entity_classes()?
                 .iter()
                 .find(|class| &class.name == name)
-                .map(|class| ClassInfo::from(class).keys)
-                .unwrap_or_default(),
-            _ => Vec::new(),
+                .map(ClassInfo::from),
+            _ => None,
         };
+        let (keys, spawnflags) = class
+            .map(|class| (class.keys, class.spawnflags))
+            .unwrap_or_default();
         Ok(EntityKeys {
             classname,
             pairs,
             keys,
+            spawnflags,
             targetnames,
             brush,
         })
@@ -974,7 +989,9 @@ struct MapDuplicate;
 impl<C: HasWorkbench + 'static> Command<C> for MapDuplicate {
     const ID: &'static str = MAP_DUPLICATE;
     const SUMMARY: &'static str = "Duplicates an entity of the open map, its keys and brushes, \
-        in place at the end of the map, and selects the copy; the world is not duplicated.";
+        in place at the end of the map, and selects the copy; the world is not duplicated. A \
+        targetname ending in a number takes the next free number, and the keys the code fires \
+        entities by move on by as many.";
     type Params = EntityParams;
     type Output = MapEdited;
     type Error = WorkbenchError;
@@ -985,12 +1002,14 @@ impl<C: HasWorkbench + 'static> Command<C> for MapDuplicate {
         params: EntityParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
         let entity = params.entity;
+        let targeting = context.workbench().targeting_keys();
         let (copy, step) = edit_map(context, |document| {
             if entity.is_world() {
                 return Err(WorkbenchError::NotPointEntity { entity });
             }
             let mut copy = Entity::new();
             copy.items.clone_from(&document.entity_mut(entity)?.items);
+            document.number_onward(&mut copy, &targeting)?;
             document.file.push_entity(copy);
             let index = EntityIndex::new(document.file.entities.len().saturating_sub(1));
             document.selected = Some(index);
@@ -1005,8 +1024,9 @@ struct MapSetKey;
 
 impl<C: HasWorkbench + 'static> Command<C> for MapSetKey {
     const ID: &'static str = MAP_SET_KEY;
-    const SUMMARY: &'static str = "Sets a key of an entity of the open map: its last \
-        occurrence keeps its place and formatting, a new key goes after the others.";
+    const SUMMARY: &'static str = "Sets a key of an entity of the open map, and of the \
+        entities in also with it in one step: its last occurrence keeps its place and \
+        formatting, a new key goes after the others.";
     type Params = SetKeyParams;
     type Output = MapEdited;
     type Error = WorkbenchError;
@@ -1017,10 +1037,13 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSetKey {
         params: SetKeyParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
         let ((), step) = edit_map(context, |document| {
-            document
-                .entity_mut(params.entity)?
-                .set(params.key.as_bytes(), params.value.as_bytes())
-                .map_err(|error| document.map_error(error))
+            for entity in core::iter::once(params.entity).chain(params.also.iter().copied()) {
+                let set = document
+                    .entity_mut(entity)?
+                    .set(params.key.as_bytes(), params.value.as_bytes());
+                set.map_err(|error| document.map_error(error))?;
+            }
+            Ok(())
         })?;
         Ok(Outcome::undoable(
             MapEdited {
@@ -1122,6 +1145,9 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(disk::FilesChangedCommand)?;
     registry.register(disk::MapResolve)?;
     registry.register(disk::MapCompare)?;
+    registry.register(filter::MapFilter)?;
+    registry.register(links::MapLink)?;
+    registry.register(flags::MapSetFlag)?;
     registry.register(MapSave)
 }
 
