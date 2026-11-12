@@ -13,7 +13,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use eframe::egui::{self, Painter, Pos2, Response, Stroke, Ui};
 use qs_workbench::map_edit::{BrushIndex, EntityIndex, KeepPart};
 
-use crate::map_editor::{GRID, Projection, box_lines};
+use crate::map_editor::{GRID, box_lines};
+use crate::map_panes::Projection;
 use crate::map_scene::{Scene, single};
 use crate::strings::Text;
 use crate::theme::{Theme, Token};

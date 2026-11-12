@@ -11,9 +11,9 @@
 use std::collections::{BTreeSet, HashMap};
 
 use eframe::egui::{
-    self, Color32, Key, Modifiers, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo,
-    WidgetType,
+    self, Color32, Key, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo, WidgetType,
 };
+use qs_layout::MapPanes;
 use qs_render::Camera;
 use qs_workbench::entity_classes::ClassInfo;
 use qs_workbench::map_edit::{
@@ -26,9 +26,10 @@ use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
 use crate::map_groups::{GroupAction, layers_ui, overview_keys, selection_ui};
 use crate::map_outline::{OutlineAction, OutlineView};
+use crate::map_panes::{Pane, Plan, PlanCamera, Projection, panes};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
 use crate::map_tools::{BrushAction, BrushTools, MapTool};
-use crate::strings::{Text, also_selected};
+use crate::strings::{Text, also_selected, panes_text};
 use crate::texture_browser::TextureBrowser;
 use crate::theme::{Theme, Token};
 
@@ -58,8 +59,12 @@ const NEW_PAIR_WIDTH: f32 = 90.0;
 /// The map units the camera stands back from a framed box beyond that, so a small entity is not
 /// right against the eye.
 const FRAME_MARGIN: f32 = 64.0;
-/// The nearest a line is drawn, in map units, as the renderer's near plane.
-const NEAR: f32 = 4.0;
+/// The map's origin, where the camera stands before a map gives it a place.
+const MAP_ORIGIN: [f32; 3] = [0.0; 3];
+/// How far a 2D view's name is from its corner, in points.
+const PANE_LABEL_INSET: f32 = 6.0;
+/// The size of a 2D view's name, in points.
+const PANE_LABEL_SIZE: f32 = 12.0;
 
 /// An edit or a selection the map editor asks for.
 #[derive(Clone, Debug, PartialEq)]
@@ -99,6 +104,8 @@ pub enum MapAction {
     Compare,
     /// Create, cut, reshape, subtract, merge or delete brushes (P6-08).
     Brush(BrushAction),
+    /// Split the map view into other panes (P6-09).
+    Panes(MapPanes),
 }
 
 /// The entities the map view shows: every one, or those the game spawns at a skill or in a
@@ -233,6 +240,8 @@ pub struct MapEditor {
     bottom: BottomTab,
     /// The texture browser (P6-10).
     textures: TextureBrowser,
+    /// Where each 2D view looks, from when it first opens.
+    plans: HashMap<Plan, PlanCamera>,
 }
 
 /// The browsers of the tab below the map view, as the mockup has them.
@@ -416,13 +425,19 @@ impl MapEditor {
 
     /// Draws the view's toolbar, `document` in the view and the entity browser below it, in
     /// all the space `ui` has left; what they asked for.
-    pub fn ui(&mut self, ui: &mut Ui, theme: &Theme, document: &MapDocument) -> Vec<MapAction> {
-        let mut actions = self.toolbar(ui);
+    pub fn ui(
+        &mut self,
+        ui: &mut Ui,
+        theme: &Theme,
+        document: &MapDocument,
+        layout: MapPanes,
+    ) -> Vec<MapAction> {
+        let mut actions = self.toolbar(ui, layout);
         let full = ui.available_rect_before_wrap();
         let height = BROWSER_HEIGHT.min(full.height() / 2.0);
         let (view, below) = full.split_top_bottom_at_y(full.bottom() - height);
         let mut view_ui = ui.new_child(egui::UiBuilder::new().max_rect(view));
-        actions.extend(self.view(&mut view_ui, theme, document));
+        actions.extend(self.view(&mut view_ui, theme, document, layout));
         let mut browser_ui = ui.new_child(egui::UiBuilder::new().max_rect(below));
         browser_ui.horizontal(|ui| {
             ui.selectable_value(
@@ -453,10 +468,23 @@ impl MapEditor {
     }
 
     /// The links shown and the filter by skill and game; the filter chosen.
-    fn toolbar(&mut self, ui: &mut Ui) -> Vec<MapAction> {
+    fn toolbar(&mut self, ui: &mut Ui, layout: MapPanes) -> Vec<MapAction> {
         let mut actions = Vec::new();
         ui.horizontal(|ui| {
             self.tools.toolbar(ui);
+            ui.separator();
+            egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<MapPanes>()))
+                .selected_text(panes_text(layout).get())
+                .show_ui(ui, |ui| {
+                    for choice in MapPanes::ALL {
+                        if ui
+                            .selectable_label(layout == choice, panes_text(choice).get())
+                            .clicked()
+                        {
+                            actions.push(MapAction::Panes(choice));
+                        }
+                    }
+                });
             ui.separator();
             ui.label(Text::MapLinks.get());
             ui.selectable_value(
@@ -483,13 +511,15 @@ impl MapEditor {
         actions
     }
 
-    /// Draws `document` in all the space `ui` has left and reads the mouse and keys; what
-    /// they asked for.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one frame of the view: camera, picking, dropping, linking and drawing, in order"
-    )]
-    fn view(&mut self, ui: &mut Ui, theme: &Theme, document: &MapDocument) -> Vec<MapAction> {
+    /// Draws `document` in all the space `ui` has left, in the panes of the layout chosen,
+    /// and reads the mouse and keys; what they asked for.
+    fn view(
+        &mut self,
+        ui: &mut Ui,
+        theme: &Theme,
+        document: &MapDocument,
+        layout: MapPanes,
+    ) -> Vec<MapAction> {
         let built = (document.path().to_path_buf(), document.edits());
         if self.built.as_ref() != Some(&built) {
             self.scene = Scene::build(document, &self.classes, &self.targeting);
@@ -503,7 +533,6 @@ impl MapEditor {
             self.kept_out = (kept_out, Some(document.revision()));
         }
         let hidden: BTreeSet<EntityIndex> = self.hidden.union(&self.kept_out.0).copied().collect();
-        let link_key = self.link_key();
         let camera = self.camera.get_or_insert_with(|| start_camera(document));
         let rect = ui.available_rect_before_wrap();
         if let Some(entity) = self.frame.take()
@@ -512,34 +541,77 @@ impl MapEditor {
             let aspect = rect.width() / rect.height().max(1.0);
             camera.frame(shape.bounds, aspect, FRAME_MARGIN);
         }
-        let response = ui.interact(
-            rect,
-            egui::Id::new(core::any::TypeId::of::<Self>()),
-            Sense::click_and_drag(),
-        );
-        response.widget_info(|| {
-            WidgetInfo::labeled(WidgetType::Other, true, Text::MapEditorView.get())
-        });
-        if response.clicked() || response.secondary_clicked() {
-            response.request_focus();
-        }
-        if response.dragged_by(egui::PointerButton::Secondary) {
-            let drag = response.drag_delta();
-            camera.turn(-drag.x * TURN, -drag.y * TURN);
-        }
-        if response.dragged_by(egui::PointerButton::Middle) {
-            let drag = response.drag_delta();
-            camera.travel(0.0, -drag.x * PAN, drag.y * PAN);
-        }
-        if response.hovered() {
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            camera.travel(scroll * TRAVEL, 0.0, 0.0);
-        }
-        let mut actions = Vec::new();
         let selected = document.selected();
         if selected.is_none() {
             self.also.clear();
         }
+        let mut actions = Vec::new();
+        for (pane, area) in panes(layout, rect) {
+            actions.extend(self.pane(ui, theme, pane, area, &hidden, selected));
+        }
+        actions
+    }
+
+    /// One pane of the view in `area`: its camera, picking, dropping, linking and drawing, in
+    /// order; what it asked for.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one frame of a pane: camera, picking, dropping, linking and drawing, in order"
+    )]
+    fn pane(
+        &mut self,
+        ui: &mut Ui,
+        theme: &Theme,
+        pane: Pane,
+        area: Rect,
+        hidden: &BTreeSet<EntityIndex>,
+        selected: Option<EntityIndex>,
+    ) -> Vec<MapAction> {
+        let link_key = self.link_key();
+        let response = ui.interact(
+            area,
+            egui::Id::new(core::any::TypeId::of::<Self>()).with(pane),
+            Sense::click_and_drag(),
+        );
+        response.widget_info(|| WidgetInfo::labeled(WidgetType::Other, true, pane.text().get()));
+        if response.clicked() || response.secondary_clicked() {
+            response.request_focus();
+        }
+        let scroll = if response.hovered() {
+            ui.input(|i| i.smooth_scroll_delta.y)
+        } else {
+            0.0
+        };
+        let start = self.camera.unwrap_or_else(|| Camera::new(MAP_ORIGIN, 0.0));
+        let projection = match pane {
+            Pane::Perspective => {
+                let camera = self.camera.get_or_insert(start);
+                if response.dragged_by(egui::PointerButton::Secondary) {
+                    let drag = response.drag_delta();
+                    camera.turn(-drag.x * TURN, -drag.y * TURN);
+                }
+                if response.dragged_by(egui::PointerButton::Middle) {
+                    let drag = response.drag_delta();
+                    camera.travel(0.0, -drag.x * PAN, drag.y * PAN);
+                }
+                camera.travel(scroll * TRAVEL, 0.0, 0.0);
+                Projection::perspective(*camera, area)
+            }
+            Pane::Plan(plan) => {
+                let view = self
+                    .plans
+                    .entry(plan)
+                    .or_insert_with(|| PlanCamera::new(plan, start.origin));
+                if response.dragged_by(egui::PointerButton::Secondary)
+                    || response.dragged_by(egui::PointerButton::Middle)
+                {
+                    view.pan(response.drag_delta());
+                }
+                view.zoom(scroll);
+                Projection::plan(plan, *view, area)
+            }
+        };
+        let mut actions = Vec::new();
         let selection: BTreeSet<EntityIndex> = selected
             .into_iter()
             .chain(self.also.iter().copied())
@@ -559,9 +631,13 @@ impl MapEditor {
                     },
                 );
             });
-            fly(ui, camera);
-            if let Some(entity) = selected {
-                actions.extend(selection_keys(ui, camera, entity));
+            if pane == Pane::Perspective
+                && let Some(camera) = self.camera.as_mut()
+            {
+                fly(ui, camera);
+                if let Some(entity) = selected {
+                    actions.extend(selection_keys(ui, camera, entity));
+                }
             }
             let chosen: Vec<EntityIndex> = selection.iter().copied().collect();
             actions.extend(overview_keys(ui, &chosen).into_iter().map(MapAction::Group));
@@ -569,22 +645,16 @@ impl MapEditor {
                 actions.push(MapAction::Save);
             }
         }
-        let aspect = rect.width() / rect.height().max(1.0);
-        let ray = |at: Pos2| {
-            let x = (at.x - rect.left()) / rect.width().max(1.0) * 2.0 - 1.0;
-            let y = 1.0 - (at.y - rect.top()) / rect.height().max(1.0) * 2.0;
-            camera.ray(aspect, [x, y])
-        };
+        let ray = |at: Pos2| projection.ray(at);
         let pick = |at: Pos2| {
             let (start, direction) = ray(at);
-            self.scene.pick(start, direction, &hidden)
+            self.scene.pick(start, direction, hidden)
         };
         let selecting = self.tools.tool() == MapTool::Select;
-        let projection = Projection::new(camera, rect);
         if !selecting {
             let found = self
                 .tools
-                .input(ui, &response, &self.scene, &hidden, ray, &projection);
+                .input(ui, &response, &self.scene, hidden, ray, &projection);
             actions.extend(found.into_iter().map(MapAction::Brush));
         }
         if selecting
@@ -619,7 +689,10 @@ impl MapEditor {
         {
             self.link_from = pick(at).filter(|entity| selection.contains(entity));
         }
-        let pointer = ui.ctx().pointer_latest_pos();
+        let pointer = ui
+            .ctx()
+            .pointer_latest_pos()
+            .filter(|at| area.contains(*at));
         if response.drag_stopped()
             && let Some(from) = self.link_from.take()
             && let Some(to) = pointer.and_then(pick)
@@ -633,15 +706,21 @@ impl MapEditor {
         {
             let (start, direction) = ray(at);
             let snap = |c: f32| (f64::from(c) / GRID).round() * GRID;
+            let distance = match pane {
+                Pane::Perspective => PLACE_DISTANCE,
+                // On the ground in the top view; on the line through the map's middle in the
+                // others.
+                Pane::Plan(_) => start.iter().map(|c| c.abs()).fold(0.0, f32::max),
+            };
             let origin = [0, 1, 2].map(|axis| {
                 let s = start.get(axis).copied().unwrap_or_default();
                 let d = direction.get(axis).copied().unwrap_or_default();
-                snap(s + d * PLACE_DISTANCE)
+                snap(s + d * distance)
             });
             actions.push(MapAction::Place(classname.clone(), origin));
         }
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, theme.color(Token::SurfaceViewport));
+        let painter = ui.painter_at(area);
+        painter.rect_filled(area, 0.0, theme.color(Token::SurfaceViewport));
         let world = Stroke::new(1.0, theme.color(Token::TextFaint));
         for (owner, line) in &self.scene.lines {
             if !hidden.contains(owner) {
@@ -650,7 +729,7 @@ impl MapEditor {
         }
         let link = Stroke::new(1.0, theme.color(Token::Focus));
         let mut centres = Vec::new();
-        for line in self.scene.links(self.links, &selection, &hidden) {
+        for line in self.scene.links(self.links, &selection, hidden) {
             projection.line(&painter, line, link);
             if let Some(end) = projection.point(line[1]) {
                 painter.circle_filled(end, LINK_END, link.color);
@@ -696,7 +775,27 @@ impl MapEditor {
         }
         self.tools
             .draw(&painter, &projection, theme, &self.scene, pointer.map(ray));
-        self.centres = centres;
+        if let Pane::Plan(_) = pane {
+            painter.text(
+                egui::pos2(
+                    area.left() + PANE_LABEL_INSET,
+                    area.top() + PANE_LABEL_INSET,
+                ),
+                egui::Align2::LEFT_TOP,
+                pane.text().get(),
+                egui::FontId::proportional(PANE_LABEL_SIZE),
+                theme.color(Token::TextMuted),
+            );
+            painter.rect_stroke(
+                area,
+                0.0,
+                Stroke::new(1.0, theme.color(Token::Border)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        if pane == Pane::Perspective {
+            self.centres = centres;
+        }
         actions
     }
 
@@ -981,74 +1080,4 @@ pub(crate) fn rgb(color: [f32; 3]) -> Color32 {
 )]
 const fn scaled_to_int(value: f32) -> i32 {
     value as i32
-}
-
-/// Map space to the view's points, from the camera's axes and field of view.
-pub(crate) struct Projection {
-    origin: [f32; 3],
-    axes: [[f32; 3]; 3],
-    half: [f32; 2],
-    rect: Rect,
-}
-
-impl Projection {
-    fn new(camera: &Camera, rect: Rect) -> Self {
-        let aspect = rect.width() / rect.height().max(1.0);
-        let half_x = (camera.fov_x.to_radians() / 2.0).tan();
-        Self {
-            origin: camera.origin,
-            axes: camera.axes(),
-            half: [half_x, half_x / aspect.max(f32::EPSILON)],
-            rect,
-        }
-    }
-
-    /// `p` in view space: right, up and forward.
-    fn view(&self, p: [f32; 3]) -> [f32; 3] {
-        let v = [
-            p[0] - self.origin[0],
-            p[1] - self.origin[1],
-            p[2] - self.origin[2],
-        ];
-        let dot = |a: [f32; 3]| a[0] * v[0] + a[1] * v[1] + a[2] * v[2];
-        let [forward, right, up] = self.axes;
-        [dot(right), dot(up), dot(forward)]
-    }
-
-    /// Where `p` is in the view, when it is in front of the near plane.
-    pub(crate) fn point(&self, p: [f32; 3]) -> Option<Pos2> {
-        let v = self.view(p);
-        (v[2] >= NEAR).then(|| self.screen(v))
-    }
-
-    fn screen(&self, v: [f32; 3]) -> Pos2 {
-        let x = v[0] / (v[2] * self.half[0]);
-        let y = v[1] / (v[2] * self.half[1]);
-        Pos2::new(
-            self.rect.center().x + x * self.rect.width() / 2.0,
-            self.rect.center().y - y * self.rect.height() / 2.0,
-        )
-    }
-
-    /// Draws `line`, cut at the near plane.
-    pub(crate) fn line(&self, painter: &Painter, [a, b]: Line, stroke: Stroke) {
-        let (mut a, mut b) = (self.view(a), self.view(b));
-        if a[2] < NEAR && b[2] < NEAR {
-            return;
-        }
-        let cut = |front: [f32; 3], back: [f32; 3]| {
-            let t = (NEAR - back[2]) / (front[2] - back[2]);
-            [
-                back[0] + (front[0] - back[0]) * t,
-                back[1] + (front[1] - back[1]) * t,
-                NEAR,
-            ]
-        };
-        if a[2] < NEAR {
-            a = cut(b, a);
-        } else if b[2] < NEAR {
-            b = cut(a, b);
-        }
-        painter.line_segment([self.screen(a), self.screen(b)], stroke);
-    }
 }

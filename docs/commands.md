@@ -57,8 +57,9 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_create`](#mapbrush_create) | Adds a box brush from two corners, snapped to the grid (16 units unless given), to the world or an entity of the open map, with a texture. |
 | [`map.brush_delete`](#mapbrush_delete) | Deletes a brush of an entity of the open map. |
 | [`map.brush_merge`](#mapbrush_merge) | Merges two or more brushes of an entity of the open map into their convex hull, which takes the first's place. |
-| [`map.brush_move`](#mapbrush_move) | Moves brushes of an entity by an offset snapped to the grid         (16 units unless given), their textures fixed in the world unless lock is free. |
+| [`map.brush_move`](#mapbrush_move) | Moves brushes of an entity by an offset snapped to the grid (16 units unless given), their textures fixed in the world unless lock is free. |
 | [`map.brush_subtract`](#mapbrush_subtract) | Subtracts a brush of the open map from every other brush of its entity, then deletes it: the brushes it overlapped become the parts outside it. |
+| [`map.brush_texture`](#mapbrush_texture) | Sets the texture, shift, rotation or scale of every face of brushes of an entity, keeping what is not given (MAP-12). |
 | [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
 | [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
@@ -142,6 +143,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`view.focus_editor`](#viewfocus_editor) | Gives the keyboard to the editor in the centre. |
 | [`view.focus_left_panel`](#viewfocus_left_panel) | Shows the left panel, Project and Entities, if it is hidden and gives it the keyboard. |
 | [`view.focus_right_panel`](#viewfocus_right_panel) | Shows the right panel, Properties and the agent, if it is hidden and gives it the keyboard. |
+| [`view.map_panes`](#viewmap_panes) | Splits the map view: the 3D view alone, with a top view in its corner, or beside top, front and side views. |
 | [`view.project_search`](#viewproject_search) | Opens the project search: every match in the project's files as a multibuffer of editable excerpts, to edit or replace in place. |
 | [`view.resize_panel`](#viewresize_panel) | Sets the width of the left or right panel, or the height of the bottom panel, in points. |
 | [`view.split_down`](#viewsplit_down) | Splits the editor into two panes, one above the other, the second showing the open file. |
@@ -1809,7 +1811,7 @@ Parameters:
 
 ## `map.brush_move`
 
-Moves brushes of an entity by an offset snapped to the grid         (16 units unless given), their textures fixed in the world unless lock is free.
+Moves brushes of an entity by an offset snapped to the grid (16 units unless given), their textures fixed in the world unless lock is free.
 
 Parameters:
 
@@ -1934,6 +1936,98 @@ Parameters:
     "brush"
   ],
   "title": "BrushParams",
+  "type": "object"
+}
+```
+
+## `map.brush_texture`
+
+Sets the texture, shift, rotation or scale of every face of brushes of an entity, keeping what is not given (MAP-12).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_texture`.",
+  "properties": {
+    "brushes": {
+      "description": "The brushes, every face of each.",
+      "items": {
+        "$ref": "#/$defs/BrushIndex"
+      },
+      "type": "array"
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brushes."
+    },
+    "rotate": {
+      "default": null,
+      "description": "The rotation in degrees; kept when not given.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "scale": {
+      "default": null,
+      "description": "The s and t scale; kept when not given.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "shift": {
+      "default": null,
+      "description": "The s and t shift; kept when not given.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "texture": {
+      "default": null,
+      "description": "The texture to put on them; kept when not given.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "entity",
+    "brushes"
+  ],
+  "title": "BrushTextureParams",
   "type": "object"
 }
 ```
@@ -4608,6 +4702,53 @@ Parameters:
   "additionalProperties": false,
   "description": "The command takes no parameters: pass the empty object {}.",
   "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `view.map_panes`
+
+Splits the map view: the 3D view alone, with a top view in its corner, or beside top, front and side views.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "MapPanes": {
+      "description": "How the map view is split into panes.",
+      "oneOf": [
+        {
+          "const": "single",
+          "description": "The 3D view alone.",
+          "type": "string"
+        },
+        {
+          "const": "inset",
+          "description": "The 3D view with a top view in its lower right corner.",
+          "type": "string"
+        },
+        {
+          "const": "quad",
+          "description": "The 3D view and the top, front and side views, two by two.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `view.map_panes`.",
+  "properties": {
+    "panes": {
+      "$ref": "#/$defs/MapPanes",
+      "description": "The layout."
+    }
+  },
+  "required": [
+    "panes"
+  ],
+  "title": "MapPanesParams",
   "type": "object"
 }
 ```

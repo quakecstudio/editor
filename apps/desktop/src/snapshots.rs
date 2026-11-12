@@ -122,6 +122,18 @@ fn scripts() -> Vec<Script> {
             ],
         },
         Script {
+            name: "map-panes",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": keep_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": keep_fixture().join("maps/keep.map") }),
+                ),
+                Step::Run("view.map_panes", json!({ "panes": "quad" })),
+                Step::Run("map.select", json!({ "entity": 2 })),
+            ],
+        },
+        Script {
             name: "shell-resized",
             steps: vec![
                 Step::Run(

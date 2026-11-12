@@ -456,6 +456,18 @@ pub enum Text {
     MapView,
     /// The map editor's view, as a screen reader names it.
     MapEditorView,
+    /// The map view's layout of the 3D view alone.
+    MapLayoutSingle,
+    /// The map view's layout of the 3D view with a top view in its corner.
+    MapLayoutInset,
+    /// The map view's layout of the 3D view and three 2D views.
+    MapLayoutQuad,
+    /// The top view, as a screen reader names it.
+    MapViewTop,
+    /// The front view, as a screen reader names it.
+    MapViewFront,
+    /// The side view, as a screen reader names it.
+    MapViewSide,
     /// The key editor's line when no entity of the open map is selected.
     MapNoSelection,
     /// The notice when another program changed the open map while it had unsaved edits.
@@ -580,7 +592,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 283] = [
+    pub const ALL: [Self; 289] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -804,6 +816,12 @@ impl Text {
         Self::Centre,
         Self::MapView,
         Self::MapEditorView,
+        Self::MapLayoutSingle,
+        Self::MapLayoutInset,
+        Self::MapLayoutQuad,
+        Self::MapViewTop,
+        Self::MapViewFront,
+        Self::MapViewSide,
         Self::MapNoSelection,
         Self::MapChangedOnDisk,
         Self::MapReloadFromDisk,
@@ -1110,6 +1128,12 @@ impl Text {
             Self::MapEditorView => {
                 "Map editor: right-drag to look, middle-drag to pan, W A S D Q X to fly, click to select"
             }
+            Self::MapLayoutSingle => "3D",
+            Self::MapLayoutInset => "3D + top",
+            Self::MapLayoutQuad => "4 views",
+            Self::MapViewTop => "Top",
+            Self::MapViewFront => "Front",
+            Self::MapViewSide => "Side",
             Self::MapNoSelection => "Select an entity in the map to edit its keys.",
             Self::MapChangedOnDisk => {
                 "Another program changed this map. Your unsaved edits are kept until you choose."
@@ -1299,5 +1323,14 @@ pub fn brush_count(count: usize) -> String {
     match count {
         1 => "1 brush".to_owned(),
         n => format!("{n} brushes"),
+    }
+}
+
+/// The name of the map view's layout `panes` in its menu.
+pub(crate) const fn panes_text(panes: qs_layout::MapPanes) -> Text {
+    match panes {
+        qs_layout::MapPanes::Single => Text::MapLayoutSingle,
+        qs_layout::MapPanes::Inset => Text::MapLayoutInset,
+        qs_layout::MapPanes::Quad => Text::MapLayoutQuad,
     }
 }

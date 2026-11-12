@@ -28,8 +28,8 @@ use qs_editor_view::{
     Fixable, KeyMode, LineNote, NoteSeverity, Position, Selection, ViewStyle, Wrap,
 };
 use qs_layout::{
-    EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, Outline, Panel, RESIZE_PANEL,
-    ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams,
+    EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, MAP_PANES, MapPanesParams, Outline, Panel,
+    RESIZE_PANEL, ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams,
 };
 use qs_render::{Camera, MapMesh};
 use qs_settings::{Scope as SettingsScope, Setting, SettingsFile, SettingsStore};
@@ -2073,6 +2073,7 @@ impl Shell {
                 MapAction::MoveTo(entity, into) => {
                     self.attempt(MAP_MOVE_TO, &MoveToParams { entity, into })
                 }
+                MapAction::Panes(panes) => self.attempt(MAP_PANES, &MapPanesParams { panes }),
                 MapAction::RemoveKey(entity, key) => {
                     self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
                 }
@@ -2207,13 +2208,14 @@ impl Shell {
     /// Draws the map editor in the Map tab when a map is open, running what it asks for;
     /// whether it did.
     fn map_tab(&mut self, ui: &mut Ui) -> bool {
+        let panes = self.layout().map_panes;
         let Some(document) = self.session.context().workbench.map() else {
             return false;
         };
         if self.centre_tab != CentreTab::Map {
             return false;
         }
-        let actions = self.map_editor.ui(ui, &self.theme, document);
+        let actions = self.map_editor.ui(ui, &self.theme, document, panes);
         self.map_actions(actions);
         self.refresh_map_outline();
         if let Some(document) = self.session.context().workbench.map()

@@ -29,6 +29,9 @@ enum qs_map::linked::LinkError
 enum qs_map::qbsp::QbspError
 enum qs_map::qbsp::QbspWarning
 enum qs_map::rooms::RoomKind
+field qs_map::align::Alignment.rotate
+field qs_map::align::Alignment.scale
+field qs_map::align::Alignment.shift
 field qs_map::brush_edit::Surface.texdef
 field qs_map::brush_edit::Surface.texture
 field qs_map::check::Diagnostic.kind
@@ -74,6 +77,7 @@ field qs_map::qbsp::TextureSlot.name
 field qs_map::rooms::Room.bounds
 field qs_map::rooms::Room.kind
 field qs_map::rooms::Room.name
+fn qs_map::align::TexDef::aligned
 fn qs_map::brush_edit::Brush::corners
 fn qs_map::brush_edit::Brush::cuboid
 fn qs_map::brush_edit::Brush::is_valid
@@ -225,6 +229,7 @@ mod qs_map::cnum
 mod qs_map::geometry
 mod qs_map::lexer
 mod qs_map::qbsp
+struct qs_map::align::Alignment
 struct qs_map::brush_edit::Surface
 struct qs_map::check::Diagnostic
 struct qs_map::document::Brush
@@ -253,6 +258,7 @@ struct qs_map::rooms::Rooms
 trait qs_map::geometry::MapFloat
 trait qs_map::geometry::sealed::Sealed
 type qs_map::geometry::TexVecs
+use qs_map::Alignment = align::Alignment
 use qs_map::Brush = document::Brush
 use qs_map::BrushError = brush_edit::BrushError
 use qs_map::BrushModel = document::BrushModel

@@ -22,6 +22,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 mod editor;
+mod map_view;
 #[cfg(test)]
 mod tests;
 
@@ -30,6 +31,7 @@ pub use editor::{
     PROJECT_SEARCH_VIEW, SPLIT_DOWN, SPLIT_RIGHT, SoftWrap, Split, TAB_SWITCHER, TOGGLE_OUTLINE,
     TOGGLE_SOFT_WRAP, UNFOLD, UNFOLD_ALL,
 };
+pub use map_view::{MAP_PANES, MapPanes, MapPanesParams};
 
 /// The layout file's name in the app's data directory (`qs_paths::AppDirs::data`).
 pub(crate) const LAYOUT_FILE: &str = "layout.toml";
@@ -104,6 +106,8 @@ pub struct Layout {
     pub soft_wrap: SoftWrap,
     /// Whether the outline panel is shown beside the editor.
     pub outline: Outline,
+    /// How the map view is split into panes (P6-09).
+    pub map_panes: MapPanes,
     /// The last one-off editor action a command asked for, which the window carries out once.
     /// Not written to the file.
     #[serde(skip)]
@@ -136,6 +140,7 @@ impl Default for Layout {
             split: Split::None,
             soft_wrap: SoftWrap::Off,
             outline: Outline::Hidden,
+            map_panes: MapPanes::Single,
             editor_request: None,
             editor_requests: 0,
         }
@@ -314,6 +319,7 @@ pub fn register<C: HasLayout + 'static>(registry: &mut Registry<C>) -> Result<()
     registry.register(FocusArea::<LeftPanel>::new())?;
     registry.register(FocusArea::<RightPanel>::new())?;
     registry.register(FocusArea::<BottomPanel>::new())?;
+    map_view::register(registry)?;
     editor::register(registry)
 }
 
