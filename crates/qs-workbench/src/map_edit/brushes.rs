@@ -140,7 +140,7 @@ pub struct BrushMergeParams {
 }
 
 /// `value` on the grid `grid`, or as it is with no grid.
-fn snap(value: f64, grid: Option<f64>) -> f64 {
+pub(super) fn snap(value: f64, grid: Option<f64>) -> f64 {
     let grid = grid.unwrap_or(DEFAULT_GRID);
     if grid > 0.0 {
         (value / grid).round() * grid + 0.0
@@ -184,7 +184,7 @@ impl MapDocument {
     }
 
     /// The surface a new brush takes: `texture`, else the map's last brush face's.
-    fn new_surface(&self, texture: Option<&str>) -> Surface {
+    pub(super) fn new_surface(&self, texture: Option<&str>) -> Surface {
         let last = self
             .file
             .entities
