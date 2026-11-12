@@ -39,6 +39,20 @@ const qs_workbench::git::GIT_UNSTAGE
 const qs_workbench::git::LOG_LIMIT
 const qs_workbench::map_check::MAP_CHECK
 const qs_workbench::map_check::MAP_RENAME_KEY
+const qs_workbench::map_edit::BSP_EXTENSION
+const qs_workbench::map_edit::EntityIndex::WORLD
+const qs_workbench::map_edit::MAP_DELETE
+const qs_workbench::map_edit::MAP_DUPLICATE
+const qs_workbench::map_edit::MAP_ENTITY
+const qs_workbench::map_edit::MAP_EXTENSION
+const qs_workbench::map_edit::MAP_MOVE
+const qs_workbench::map_edit::MAP_OPEN
+const qs_workbench::map_edit::MAP_PLACE
+const qs_workbench::map_edit::MAP_REMOVE_KEY
+const qs_workbench::map_edit::MAP_ROTATE
+const qs_workbench::map_edit::MAP_SAVE
+const qs_workbench::map_edit::MAP_SELECT
+const qs_workbench::map_edit::MAP_SET_KEY
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
 const qs_workbench::preview::CONSOLE
@@ -100,6 +114,8 @@ enum qs_workbench::git::ConflictSide
 enum qs_workbench::git::GitChange
 enum qs_workbench::git::GitCommandError
 enum qs_workbench::git::GitSide
+enum qs_workbench::map_edit::BspSave
+enum qs_workbench::map_edit::MapSource
 enum qs_workbench::preview::OnLoss
 enum qs_workbench::preview::PlayState
 enum qs_workbench::preview::PreviewError
@@ -253,6 +269,31 @@ field qs_workbench::map_check::RenameKeyParams.from
 field qs_workbench::map_check::RenameKeyParams.to
 field qs_workbench::map_check::RenamedIn.pairs
 field qs_workbench::map_check::RenamedIn.path
+field qs_workbench::map_edit::EntityKeys.brush
+field qs_workbench::map_edit::EntityKeys.classname
+field qs_workbench::map_edit::EntityKeys.keys
+field qs_workbench::map_edit::EntityKeys.pairs
+field qs_workbench::map_edit::EntityKeys.targetnames
+field qs_workbench::map_edit::EntityParams.entity
+field qs_workbench::map_edit::MapEdited.entity
+field qs_workbench::map_edit::MapOpenParams.path
+field qs_workbench::map_edit::MapOpened.entities
+field qs_workbench::map_edit::MapOpened.path
+field qs_workbench::map_edit::MapSaved.path
+field qs_workbench::map_edit::MoveParams.by
+field qs_workbench::map_edit::MoveParams.entity
+field qs_workbench::map_edit::PlaceParams.classname
+field qs_workbench::map_edit::PlaceParams.keys
+field qs_workbench::map_edit::PlaceParams.origin
+field qs_workbench::map_edit::RemoveKeyParams.entity
+field qs_workbench::map_edit::RemoveKeyParams.key
+field qs_workbench::map_edit::RotateParams.degrees
+field qs_workbench::map_edit::RotateParams.entity
+field qs_workbench::map_edit::SaveParams.bsp
+field qs_workbench::map_edit::SelectParams.entity
+field qs_workbench::map_edit::SetKeyParams.entity
+field qs_workbench::map_edit::SetKeyParams.key
+field qs_workbench::map_edit::SetKeyParams.value
 field qs_workbench::preview::BreakpointParams.file
 field qs_workbench::preview::BreakpointParams.line
 field qs_workbench::preview::ChooseGameParams.path
@@ -472,6 +513,21 @@ fn qs_workbench::git::register_git
 fn qs_workbench::map_check::Workbench::check_map
 fn qs_workbench::map_check::Workbench::entity_schema
 fn qs_workbench::map_check::Workbench::rename_map_key
+fn qs_workbench::map_edit::EntityIndex::get
+fn qs_workbench::map_edit::EntityIndex::is_world
+fn qs_workbench::map_edit::EntityIndex::new
+fn qs_workbench::map_edit::MapDocument::edits
+fn qs_workbench::map_edit::MapDocument::file
+fn qs_workbench::map_edit::MapDocument::is_unsaved
+fn qs_workbench::map_edit::MapDocument::path
+fn qs_workbench::map_edit::MapDocument::revision
+fn qs_workbench::map_edit::MapDocument::selected
+fn qs_workbench::map_edit::MapDocument::source
+fn qs_workbench::map_edit::MapRevision::next
+fn qs_workbench::map_edit::Workbench::map
+fn qs_workbench::map_edit::Workbench::map_entity
+fn qs_workbench::map_edit::Workbench::open_map
+fn qs_workbench::map_edit::Workbench::save_map
 fn qs_workbench::preview::ConsoleLine::is_error
 fn qs_workbench::preview::ConsoleLine::matches
 fn qs_workbench::preview::HasPreview::workbench_and_preview
@@ -482,6 +538,7 @@ fn qs_workbench::preview::Preview::debugger
 fn qs_workbench::preview::Preview::dock
 fn qs_workbench::preview::Preview::docks
 fn qs_workbench::preview::Preview::entities
+fn qs_workbench::preview::Preview::game_base_path
 fn qs_workbench::preview::Preview::game_folder
 fn qs_workbench::preview::Preview::new
 fn qs_workbench::preview::Preview::pause
@@ -604,6 +661,7 @@ impl qs_workbench::git::GitChange: From<Change>
 impl qs_workbench::git::GitCommandError: From<GitError>
 impl qs_workbench::git::GitCommandError: fmt::Display
 impl qs_workbench::git::GitCommandError: std::error::Error
+impl qs_workbench::map_edit::EntityIndex: fmt::Display
 impl qs_workbench::preview::Preview: Drop
 impl qs_workbench::preview::Preview: core::fmt::Debug
 impl qs_workbench::preview::PreviewError: From<ClientError>
@@ -630,6 +688,7 @@ mod qs_workbench::entity_classes
 mod qs_workbench::export
 mod qs_workbench::git
 mod qs_workbench::map_check
+mod qs_workbench::map_edit
 mod qs_workbench::preview::debug
 mod qs_workbench::preview::dock
 mod qs_workbench::preview::engine
@@ -696,6 +755,22 @@ struct qs_workbench::map_check::MapChecked
 struct qs_workbench::map_check::MapProblem
 struct qs_workbench::map_check::RenameKeyParams
 struct qs_workbench::map_check::RenamedIn
+struct qs_workbench::map_edit::EntityIndex
+struct qs_workbench::map_edit::EntityKeys
+struct qs_workbench::map_edit::EntityParams
+struct qs_workbench::map_edit::MapDocument
+struct qs_workbench::map_edit::MapEdited
+struct qs_workbench::map_edit::MapOpenParams
+struct qs_workbench::map_edit::MapOpened
+struct qs_workbench::map_edit::MapRevision
+struct qs_workbench::map_edit::MapSaved
+struct qs_workbench::map_edit::MoveParams
+struct qs_workbench::map_edit::PlaceParams
+struct qs_workbench::map_edit::RemoveKeyParams
+struct qs_workbench::map_edit::RotateParams
+struct qs_workbench::map_edit::SaveParams
+struct qs_workbench::map_edit::SelectParams
+struct qs_workbench::map_edit::SetKeyParams
 struct qs_workbench::preview::BreakpointParams
 struct qs_workbench::preview::ChooseGameParams
 struct qs_workbench::preview::ConsoleLine
@@ -879,12 +954,17 @@ variant qs_workbench::CheckAfterTyping::OffTheFrame
 variant qs_workbench::CheckAfterTyping::OnTheFrame
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
+variant qs_workbench::WorkbenchError::Bsp
 variant qs_workbench::WorkbenchError::Checkpoint
+variant qs_workbench::WorkbenchError::EntOverride
 variant qs_workbench::WorkbenchError::Map
+variant qs_workbench::WorkbenchError::NoEntity
 variant qs_workbench::WorkbenchError::NoFile
 variant qs_workbench::WorkbenchError::NoFix
 variant qs_workbench::WorkbenchError::NoHunk
+variant qs_workbench::WorkbenchError::NoMap
 variant qs_workbench::WorkbenchError::NoProject
+variant qs_workbench::WorkbenchError::NotPointEntity
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Pattern
 variant qs_workbench::WorkbenchError::Project
@@ -926,6 +1006,10 @@ variant qs_workbench::git::GitCommandError::Unsaved
 variant qs_workbench::git::GitCommandError::Workbench
 variant qs_workbench::git::GitSide::Staged
 variant qs_workbench::git::GitSide::Unstaged
+variant qs_workbench::map_edit::BspSave::Ent
+variant qs_workbench::map_edit::BspSave::Lump
+variant qs_workbench::map_edit::MapSource::Bsp
+variant qs_workbench::map_edit::MapSource::Map
 variant qs_workbench::preview::OnLoss::Ask
 variant qs_workbench::preview::OnLoss::Reload
 variant qs_workbench::preview::PlayState::Paused

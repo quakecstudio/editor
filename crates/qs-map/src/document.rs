@@ -13,7 +13,7 @@ mod tests;
 use core::fmt;
 
 use crate::cnum::{c_atof, c_atoi, c_strtod, scan_vector};
-use crate::geometry::{Plane, TexVecs, plane, texvecs, valve_texvecs};
+use crate::geometry::{Plane, TexVecs, plane, solid_polygons, texvecs, valve_texvecs};
 use crate::lexer::{Gap, LexError, Lexer, Token, TokenLimit, is_map_space};
 use crate::qbsp::MAP_WAD_KEYS;
 
@@ -335,6 +335,15 @@ impl Brush {
         }
     }
 
+    /// Each face's polygon, its corners going around it: the convex solid behind every
+    /// face's plane (MAP-3.4). A face whose points are collinear (MAP-3.6), or that the others
+    /// leave nothing of, has none.
+    #[must_use]
+    pub fn polygons(&self) -> Vec<Vec<[f64; 3]>> {
+        let planes: Vec<Plane<f64>> = self.faces.iter().filter_map(Face::plane).collect();
+        solid_polygons(&planes)
+    }
+
     /// The 1-based line of its `{`, or 0 for a brush not read from a file.
     #[must_use]
     pub const fn line(&self) -> u32 {
@@ -550,6 +559,40 @@ impl Entity {
     #[must_use]
     pub fn has_brushes(&self) -> bool {
         self.brushes().next().is_some()
+    }
+
+    /// The BSP submodel its `model` names, `N` of `*N`: the engine names a map's submodels `*1`,
+    /// `*2` and on (BUILTIN-10.3), so an entity read from a BSP's entity lump draws one this
+    /// way where its `.map` had brushes.
+    #[must_use]
+    pub fn submodel(&self) -> Option<usize> {
+        let digits = self.value(b"model")?.strip_prefix(b"*")?;
+        core::str::from_utf8(digits).ok()?.parse().ok()
+    }
+
+    /// Its `angles`, or `angle` as the engine applies it, `0 v 0` (EDICT-8.2), read as C's
+    /// `sscanf` and `atof` read them (MAP-2.7); `None` with neither.
+    #[must_use]
+    pub fn angles(&self) -> Option<[f64; 3]> {
+        if let Some(angles) = self.value(b"angles") {
+            return Some(scan_vector(angles));
+        }
+        let yaw = c_atof(self.value(b"angle")?);
+        Some([0.0, yaw, 0.0])
+    }
+
+    /// Its facing about the vertical in degrees, the yaw of [`Entity::angles`]; 0 with no
+    /// angles.
+    #[must_use]
+    pub fn yaw(&self) -> f64 {
+        self.angles().map_or(0.0, |[_, yaw, _]| yaw)
+    }
+
+    /// Whether it is a brush entity: it has a brush (MAP-6.2) or names a BSP submodel
+    /// ([`Entity::submodel`]).
+    #[must_use]
+    pub fn is_brush_entity(&self) -> bool {
+        self.has_brushes() || self.submodel().is_some()
     }
 
     /// Sets `key`: its last occurrence takes the new value with its formatting kept, or a

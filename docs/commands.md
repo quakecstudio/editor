@@ -53,7 +53,18 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
+| [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
+| [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. |
+| [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
+| [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
+| [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
+| [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
+| [`map.remove_key`](#mapremove_key) | Removes every pair with a key from an entity of the open map. |
 | [`map.rename_key`](#maprename_key) | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
+| [`map.rotate`](#maprotate) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
+| [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
+| [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
+| [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
@@ -1479,6 +1490,266 @@ Parameters:
 }
 ```
 
+## `map.delete`
+
+Deletes an entity of the open map; the world stays.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.delete` and `map.entity`.",
+  "properties": {
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
+    }
+  },
+  "required": [
+    "entity"
+  ],
+  "title": "EntityParams",
+  "type": "object"
+}
+```
+
+## `map.duplicate`
+
+Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.delete` and `map.entity`.",
+  "properties": {
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
+    }
+  },
+  "required": [
+    "entity"
+  ],
+  "title": "EntityParams",
+  "type": "object"
+}
+```
+
+## `map.entity`
+
+An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.delete` and `map.entity`.",
+  "properties": {
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
+    }
+  },
+  "required": [
+    "entity"
+  ],
+  "title": "EntityParams",
+  "type": "object"
+}
+```
+
+## `map.move`
+
+Moves an entity of the open map: a point entity's origin, a brush entity's brushes.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.move`.",
+  "properties": {
+    "by": {
+      "description": "How far, in map units.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
+    }
+  },
+  "required": [
+    "entity",
+    "by"
+  ],
+  "title": "MoveParams",
+  "type": "object"
+}
+```
+
+## `map.open`
+
+Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.open`.",
+  "properties": {
+    "path": {
+      "description": "A `.map` file, or a `.bsp` whose entities to edit.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "MapOpenParams",
+  "type": "object"
+}
+```
+
+## `map.place`
+
+Places a point entity of a classname at an origin in the open map, with the keys given, and selects it.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.place`.",
+  "properties": {
+    "classname": {
+      "description": "The new entity's classname.",
+      "type": "string"
+    },
+    "keys": {
+      "default": [],
+      "description": "Its other keys and values, in order.",
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "origin": {
+      "description": "Where it stands.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    }
+  },
+  "required": [
+    "classname",
+    "origin"
+  ],
+  "title": "PlaceParams",
+  "type": "object"
+}
+```
+
+## `map.remove_key`
+
+Removes every pair with a key from an entity of the open map.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.remove_key`.",
+  "properties": {
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
+    },
+    "key": {
+      "description": "The key.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entity",
+    "key"
+  ],
+  "title": "RemoveKeyParams",
+  "type": "object"
+}
+```
+
 ## `map.rename_key`
 
 Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved.
@@ -1505,6 +1776,165 @@ Parameters:
     "to"
   ],
   "title": "RenameKeyParams",
+  "type": "object"
+}
+```
+
+## `map.rotate`
+
+Turns a point entity of the open map about the vertical: its angle, or its angles' yaw.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.rotate`.",
+  "properties": {
+    "degrees": {
+      "description": "Degrees to turn it about the vertical axis, counter-clockwise seen from above.",
+      "format": "double",
+      "type": "number"
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity, a point entity."
+    }
+  },
+  "required": [
+    "entity",
+    "degrees"
+  ],
+  "title": "RotateParams",
+  "type": "object"
+}
+```
+
+## `map.save`
+
+Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BspSave": {
+      "description": "How `map.save` writes a map read from a BSP (MAP-22).",
+      "oneOf": [
+        {
+          "const": "ent",
+          "description": "A `.ent` file beside the BSP, which QuakeSpasm and its descendants read in place of\nthe lump.",
+          "type": "string"
+        },
+        {
+          "const": "lump",
+          "description": "The BSP itself, its entity lump replaced.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.save`.",
+  "properties": {
+    "bsp": {
+      "$ref": "#/$defs/BspSave",
+      "default": "ent",
+      "description": "For a map read from a BSP, a `.ent` override (the default) or the BSP rewritten."
+    }
+  },
+  "title": "SaveParams",
+  "type": "object"
+}
+```
+
+## `map.select`
+
+Selects an entity of the open map, or clears the selection.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.select`.",
+  "properties": {
+    "entity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EntityIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The entity to select, or none to clear the selection."
+    }
+  },
+  "title": "SelectParams",
+  "type": "object"
+}
+```
+
+## `map.set_key`
+
+Sets a key of an entity of the open map: its last occurrence keeps its place and formatting, a new key goes after the others.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.set_key`.",
+  "properties": {
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity."
+    },
+    "key": {
+      "description": "The key.",
+      "type": "string"
+    },
+    "value": {
+      "description": "Its value.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entity",
+    "key",
+    "value"
+  ],
+  "title": "SetKeyParams",
   "type": "object"
 }
 ```

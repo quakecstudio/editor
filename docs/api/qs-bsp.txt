@@ -36,6 +36,8 @@ const qs_bsp::BSP_MAX_SURFACE_EXTENT
 const qs_bsp::BSP_MAX_VIS_ROW
 const qs_bsp::BSP_MIPLEVELS
 const qs_bsp::BSP_MIPTEX_HEADER_SIZE
+const qs_bsp::BSP_MIP_BYTES
+const qs_bsp::BSP_MIP_PIXELS
 const qs_bsp::BSP_MODEL_SIZE
 const qs_bsp::BSP_NODE_SIZE
 const qs_bsp::BSP_NUM_AMBIENTS
@@ -50,6 +52,8 @@ const qs_bsp::BSP_SURFEDGE_SIZE
 const qs_bsp::BSP_TEXINFO_SIZE
 const qs_bsp::BSP_TEX_MISSING
 const qs_bsp::BSP_TEX_SPECIAL
+const qs_bsp::BSP_VALVE_COLOR_BYTES
+const qs_bsp::BSP_VALVE_SAMPLE_BYTES
 const qs_bsp::BSP_VALVE_VERSION
 const qs_bsp::BSP_VERSION
 const qs_bsp::BSP_VERTEX_SIZE

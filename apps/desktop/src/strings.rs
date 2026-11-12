@@ -452,13 +452,29 @@ pub enum Text {
     Centre,
     /// The map view's name to a screen reader.
     MapView,
+    /// The map editor's view, as a screen reader names it.
+    MapEditorView,
+    /// The key editor's line when no entity of the open map is selected.
+    MapNoSelection,
+    /// The key editor's button that removes a key.
+    MapRemoveKey,
+    /// The key editor's heading over the keys the entity's class reads that it does not set.
+    MapClassKeys,
+    /// The key editor's hint in the new key's field.
+    MapKey,
+    /// The key editor's hint in the new value's field.
+    MapValue,
+    /// The key editor's list of the map's targetnames for a target key.
+    MapTargets,
+    /// The key editor's button that adds the key typed.
+    MapAddKey,
     /// The command palette's name to a screen reader.
     CommandPalette,
 }
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 223] = [
+    pub const ALL: [Self; 231] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -681,6 +697,14 @@ impl Text {
         Self::BottomPanel,
         Self::Centre,
         Self::MapView,
+        Self::MapEditorView,
+        Self::MapNoSelection,
+        Self::MapRemoveKey,
+        Self::MapClassKeys,
+        Self::MapKey,
+        Self::MapValue,
+        Self::MapTargets,
+        Self::MapAddKey,
         Self::CommandPalette,
     ];
 
@@ -925,6 +949,16 @@ impl Text {
             Self::BottomPanel => "Bottom panel: Problems, Console and Debugger",
             Self::Centre => "Centre: Editor, Game and Map",
             Self::MapView => "Map view: drag to turn, scroll to move",
+            Self::MapEditorView => {
+                "Map editor: right-drag to look, middle-drag to pan, W A S D Q X to fly, click to select"
+            }
+            Self::MapNoSelection => "Select an entity in the map to edit its keys.",
+            Self::MapRemoveKey => "Remove",
+            Self::MapClassKeys => "Keys its class reads:",
+            Self::MapKey => "key",
+            Self::MapValue => "value",
+            Self::MapTargets => "Targetnames",
+            Self::MapAddKey => "Add key",
             Self::CommandPalette => "Command palette",
         }
     }

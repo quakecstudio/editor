@@ -159,7 +159,7 @@ fn vector(name: &str) -> BspSpec {
         .1
 }
 
-// spec BSP-20.1: the default loader is the FitzQuake lineage's; the base loads with it to the
+// spec BSP-20.21: the default loader is the FitzQuake lineage's; the base loads with it to the
 // same faces, leaves, nodes, hulls and models as with GLQuake's.
 #[test]
 fn default_is_fitzquake() {
@@ -684,7 +684,7 @@ fn bsp2_with_default_loader() {
 }
 
 proptest! {
-    // spec BSP-1.6, BSP-20.1: any bytes, and the base with bytes changed, load or fail with
+    // spec BSP-1.6, BSP-20.21: any bytes, and the base with bytes changed, load or fail with
     // an error under the default loader, never a panic.
     #[test]
     fn arbitrary_bytes_default(bytes in proptest::collection::vec(any::<u8>(), 0..2048)) {

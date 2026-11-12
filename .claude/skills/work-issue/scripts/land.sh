@@ -3,8 +3,9 @@
 # Wait for CI on a pull request, then squash-merge it.
 # Usage: land.sh <pr-number> [timeout-minutes]
 # Exit 0 when merged; 1 on a CI failure, a conflict, a removal from the merge queue, a close,
-# the timeout, or a body that puts a closing keyword in a negated sentence (check-pr-body.sh);
-# the reason is printed.
+# the timeout, a body that puts a closing keyword in a negated sentence (check-pr-body.sh), or
+# a body with no "## Code review" section naming its effort level (check-code-review.sh); the
+# reason is printed.
 #
 # The merge queue on main is off (docs/ci.md, "Protection of main"), so the PR merges as soon as
 # its required checks pass on the PR itself. The script also works with the queue on: there the
@@ -53,12 +54,16 @@ pr_status() {
 }
 
 # A closing keyword in a negated sentence ("does not close #84") still closes the issue on merge
-# (check-pr-body.sh). Checked before waiting for CI, to fail fast, and again just before merging,
-# in case the body was edited while CI ran.
+# (check-pr-body.sh), and a PR lands only with its code review recorded (check-code-review.sh).
+# Checked before waiting for CI, to fail fast, and again just before merging, in case the body
+# was edited while CI ran.
 fail_if_body_closes_wrongly() {
   local body status=0
   body=$(gh pr view "$pr" --json body --jq .body)
   "$here/check-pr-body.sh" <<<"$body" || status=$?
+  if [ "$status" = 0 ]; then
+    "$here/check-code-review.sh" <<<"$body" || status=$?
+  fi
   case "$status" in
   0) ;;
   1)
@@ -66,7 +71,7 @@ fail_if_body_closes_wrongly() {
     exit 1
     ;;
   *)
-    echo "check-pr-body.sh failed (exit $status), so #$pr was not merged; its body may be fine."
+    echo "A body check failed (exit $status), so #$pr was not merged; its body may be fine."
     exit 1
     ;;
   esac

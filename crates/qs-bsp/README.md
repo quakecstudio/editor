@@ -33,7 +33,7 @@ coloured light; and writes a BSP's entities back, for shipped maps with no `.map
 
 - **Layer:** L0 formats. It depends on `qc-progs` for id's CRC. `qs-vfs`'s `walk` example loads
   every BSP and `.lit` of an install with it.
-- **Spec sections:** BSP-1 to BSP-20 and BSP-22 in [`bsp.md`](../../docs/spec/bsp.md); WAD3-4 in
+- **Spec sections:** BSP-1 to BSP-22 in [`bsp.md`](../../docs/spec/bsp.md); WAD3-4 in
   [`wad3.md`](../../docs/spec/wad3.md).
 - **Shipped:** yes.
 

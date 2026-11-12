@@ -200,6 +200,10 @@ sections:
       - {id: MAP-28, kind: implied, text: "Issue browser with automatic quick fixes, map search queries, command repetition, automatic backups, portal file display and compile profiles that run tools and launch engines"}
       - {id: MAP-29, kind: implied, text: "The agent builds and edits level geometry, not only entities: a map authoring reference in its context and brush, shape and CSG tools"}
       - {id: MAP-30, kind: implied, text: "The map editor matches or exceeds TrenchBroom on every feature its manual lists, shown feature by feature"}
+      - {id: MAP-31, kind: implied, text: "A map outline: every entity, group and layer in a tree, selected and framed without flying to it"}
+      - {id: MAP-32, kind: implied, text: "Maps, WADs and QuakeC changed by another program are noticed and reloaded, and unsaved edits are never overwritten without asking"}
+      - {id: MAP-33, kind: implied, text: "Prefabs: reusable pieces kept as .map files, placed from a browser, and external map instances drawn in place and compiled by qmap-bsp"}
+      - {id: MAP-34, kind: implied, text: "Lights previewed in the map view from their keys: falloff radius, colour and spotlight cones, as qmap-light reads them"}
 
   - id: QA
     title: Quality, testing and release
@@ -267,7 +271,7 @@ sections:
       - {id: CONV-14, kind: stated, text: "Repository layout: crates/ with a project prefix, apps/, xtask/, fuzz/ outside the workspace, docs/ mdBook, specs/, plan/, packaging/"}
       - {id: CONV-15, kind: stated, text: "Repository files: dual license files (per ADR), README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT"}
       - {id: CONV-16, kind: stated, text: "tracing for diagnostics, one paths module (XDG vs native dirs decided in an ADR), user-facing strings in one catalog"}
-      - {id: CONV-17, kind: stated, text: "Type design in shipped crates: enums for closed sets of choices, newtypes with private fields for IDs and units, methods on the type they read, no single-use one-line helpers, generics and traits over duplicated code, no stringly-typed errors in library crates (user requirement, 2026-10-19)"}
+      - {id: CONV-17, kind: stated, text: "Type design in shipped crates: enums for closed sets of choices, newtypes with private fields for IDs and units, methods on the type they read, no single-use one-line helpers, generics and traits over duplicated code, no stringly-typed errors in library crates (user requirement, 2026-10-19), named constants rather than magic numbers (user requirement, 2026-11-11)"}
 
   - id: TEST
     title: Test-suite readiness (see docs/testing.md)

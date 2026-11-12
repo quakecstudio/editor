@@ -103,7 +103,8 @@ cargo fmt --all --check
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo deny check advisories bans licenses sources
 
-cargo xtask conventions                   # config files match docs/conventions.md
+cargo xtask conventions                   # config files match docs/conventions.md; no CONV-17 violation beyond docs/audits/conv-17-baseline.tsv
+cargo xtask conv17-baseline               # remove fixed entries from that baseline; it never adds one
 cargo xtask adr                           # ADRs follow the template and are indexed
 cargo xtask clippy-fixtures               # the lints reject what they target
 cargo xtask deny-fixtures                 # deny.toml rejects bad licenses and wildcards (needs network)
@@ -189,7 +190,10 @@ checklist.
 - **Type design (CONV-17):** enums, not booleans or strings, for a closed set of choices;
   newtypes with private fields and constructors for IDs and units; behaviour that reads one
   type is a method on it; no single-use one-line helper unless its name adds meaning;
-  generics and traits over duplicated code; error enums, not strings, in library crates.
+  generics and traits over duplicated code; error enums, not strings, in library crates;
+  named constants, not magic numbers. `cargo xtask conventions` fails on a new `bool`
+  argument, library `String` error, free function on a crate type, raw-integer ID or magic
+  number; the rest is the pre-land code review's, which `land.sh` requires in the PR body.
 - **Diagnostics:** `tracing`, never `println!`. Paths come only from `qs-paths`.
 - **Docs:** public items have rustdoc; every crate README states its purpose, layer and the
   spec sections it implements.

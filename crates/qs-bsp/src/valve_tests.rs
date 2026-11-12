@@ -181,6 +181,20 @@ fn an_external_texture_reads_what_the_bsp_holds() {
     assert_eq!(texture.palette, Some(&[][..]));
 }
 
+// spec BSP-22.5: an external texture's level 0 is the pixels after its header, as QuakeSpasm
+// draws them when no WAD has it
+#[test]
+fn an_external_textures_level_0_is_its_pixels() {
+    let bsp = read(
+        &valve_texture(b"wall", &[9; 300], true),
+        BspLoader::default(),
+    )
+    .unwrap();
+    let texture = bsp.textures[0].as_ref().unwrap();
+    assert_eq!(texture.mip(0), Some(&[9; 256][..]));
+    assert_eq!(texture.mip(1), None);
+}
+
 /// A WAD3 holding `wall`: 16 by 16 of index 3, its palette `palette` (the vector `wad3-wall`).
 fn wad3_wall(palette: &[u8]) -> Vec<u8> {
     let mut lump = b"WALL".to_vec();

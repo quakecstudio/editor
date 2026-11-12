@@ -1264,12 +1264,9 @@ what `qs-bsp` does. QS prints many messages without failing (`Con_Warning`, `Con
 
 ### Behaviour
 
-- **BSP-20.1** `BspLoader::FitzQuake` is the default loader. It loads a BSP by BSP-1 to
-  BSP-17 except where BSP-20.2 to BSP-20.17 say otherwise. Where QS, like id, uses an index or
-  offset from the file without checking it (a plane, texinfo, edge, vertex, face or
-  marksurface range, a visibility or lighting offset, a texture's header), the answer this
-  spec fixes for id's loaders holds (BSP-1.6, BSP-1.8, BSP-4.6, BSP-6.5, BSP-10.2, BSP-14.3).
-  `BspLoader::WinQuake` and `BspLoader::GlQuake` are unchanged.
+- **BSP-20.1** **Withdrawn** 2026-11-11: it named BSP-20.2 to BSP-20.17 as the default
+  loader's differences; BSP-20.2 is withdrawn and P5-11 adds version 30 (BSP-20.20, BSP-22);
+  replaced by BSP-20.21.
 - **BSP-20.2** **Withdrawn** 2026-11-11: it said `qs-bsp` reads Half-Life's version 30 with
   no loader; P5-11 (MAP-24) reads it with the FitzQuake lineage's; replaced by BSP-20.20.
 - **BSP-20.3** A texture whose width or height is 0 leaves its slot empty:
@@ -1413,6 +1410,12 @@ what `qs-bsp` does. QS prints many messages without failing (`Con_Warning`, `Con
   reads version 30 as QS does (BSP-22); `BspLoader::WinQuake` and `BspLoader::GlQuake` fail it
   with BSP-1.2's error, as id's loaders do. Every loader fails `Q64 ` with BSP-1.2's error: MAP-24
   asks for Half-Life's format, not Quake 64's.
+- **BSP-20.21** `BspLoader::FitzQuake` is the default loader. It loads a BSP by BSP-1 to
+  BSP-17 except where BSP-20.3 to BSP-20.20 and BSP-22 say otherwise. Where QS, like id, uses
+  an index or offset from the file without checking it (a plane, texinfo, edge, vertex, face or
+  marksurface range, a visibility or lighting offset, a texture's header), the answer this
+  spec fixes for id's loaders holds (BSP-1.6, BSP-1.8, BSP-4.6, BSP-6.5, BSP-10.2, BSP-14.3).
+  `BspLoader::WinQuake` and `BspLoader::GlQuake` are unchanged.
 
 ### Constants
 
@@ -1533,5 +1536,5 @@ Each statement quotes QS and says what `qs-bsp` does. Writing version 30 is not 
 ### Test vectors
 
 See [`vectors/bsp/`](vectors/bsp/README.md), "Half-Life's version 30": `version-30` (BSP-22.1),
-`valve-palette` and `valve-palette-past` (BSP-22.2), `valve-rgb` (BSP-22.3), `valve-sky`
+`valve-palette`, `valve-palette-past` and `valve-palette-half` (BSP-22.2), `valve-rgb` (BSP-22.3), `valve-sky`
 (BSP-22.4), `valve-external` (BSP-22.5).
