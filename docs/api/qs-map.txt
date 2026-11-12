@@ -16,6 +16,7 @@ const qs_map::shapes::SHAPE_MAX_RINGS
 const qs_map::shapes::SHAPE_MAX_ROCK_POINTS
 const qs_map::shapes::SHAPE_MAX_SIDES
 const qs_map::shapes::SHAPE_MAX_SPHEROID_FACES
+const qs_map::shapes::SHAPE_MAX_STEPS
 const qs_map::shapes::SHAPE_MAX_SUBDIVISIONS
 const qs_map::shapes::SHAPE_MIN_RINGS
 const qs_map::shapes::SHAPE_MIN_ROCK_POINTS
@@ -40,7 +41,6 @@ enum qs_map::qbsp::QbspWarning
 enum qs_map::rooms::RoomKind
 enum qs_map::shapes::CircleMode
 enum qs_map::shapes::CurveSides
-enum qs_map::shapes::CurveWall
 enum qs_map::shapes::Facing
 enum qs_map::shapes::Shape
 enum qs_map::shapes::ShapeError
@@ -387,8 +387,6 @@ variant qs_map::shapes::CurveSides::FortyEight
 variant qs_map::shapes::CurveSides::NinetySix
 variant qs_map::shapes::CurveSides::Twelve
 variant qs_map::shapes::CurveSides::TwentyFour
-variant qs_map::shapes::CurveWall::Hollow
-variant qs_map::shapes::CurveWall::Solid
 variant qs_map::shapes::Facing::East
 variant qs_map::shapes::Facing::North
 variant qs_map::shapes::Facing::South
@@ -404,6 +402,7 @@ variant qs_map::shapes::Shape::Stairs
 variant qs_map::shapes::Shape::UvSpheroid
 variant qs_map::shapes::ShapeError::Arc
 variant qs_map::shapes::ShapeError::Brush
+variant qs_map::shapes::ShapeError::CurveSides
 variant qs_map::shapes::ShapeError::Faces
 variant qs_map::shapes::ShapeError::Grid
 variant qs_map::shapes::ShapeError::Points

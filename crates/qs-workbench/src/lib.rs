@@ -24,6 +24,7 @@ pub mod git;
 pub mod ids;
 pub mod map_check;
 pub mod map_edit;
+pub mod map_textures;
 mod preview;
 mod recent;
 pub mod search;

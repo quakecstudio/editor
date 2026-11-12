@@ -8,7 +8,9 @@ use core::ops::RangeInclusive;
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::{WAD_MIP_BYTES, WAD_MIP_PIXELS, WAD_MIPLEVELS, WAD_MIPTEX_HEADER_SIZE, name_field};
+use crate::{
+    MipTexHeader, WAD_MIP_BYTES, WAD_MIP_PIXELS, WAD_MIPLEVELS, WAD_MIPTEX_HEADER_SIZE, name_field,
+};
 
 /// The longest texture name, leaving room for its NUL (WAD-6.1).
 pub const WAD_TEXTURE_NAME_MAX: usize = 15;
@@ -104,6 +106,13 @@ pub enum TextureError {
         /// How many.
         count: usize,
     },
+    /// The lump ends before its header or its first mip level does (WAD-8.1).
+    Truncated {
+        /// The bytes the header and first level need.
+        needed: usize,
+        /// The lump's length.
+        len: usize,
+    },
 }
 
 impl fmt::Display for TextureError {
@@ -148,6 +157,10 @@ impl fmt::Display for TextureError {
             Self::Transparent { count } => write!(
                 f,
                 "{count} pixels are transparent, but only a texture named {{... can be"
+            ),
+            Self::Truncated { needed, len } => write!(
+                f,
+                "the texture lump is {len} bytes, but its first level needs {needed}"
             ),
         }
     }
@@ -678,6 +691,125 @@ fn mip_level(
         }
     }
     out
+}
+
+/// The longest side a texture is decoded at for display, past which a GPU may refuse it
+/// (WAD-8.3).
+pub const WAD_DECODE_MAX_SIDE: u32 = 4096;
+
+/// A texture's first mip level as colours, for display (WAD-8).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DecodedTexture {
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+    /// Four bytes, red, green, blue and alpha, per pixel, row by row from the top left.
+    pub rgba: Vec<u8>,
+}
+
+impl Palette {
+    /// The first mip level of the texture lump `lump` through this palette.
+    ///
+    /// Implements WAD-8.1 and WAD-8.2.
+    ///
+    /// # Errors
+    ///
+    /// [`TextureError::Truncated`] when the lump ends before its header or its first level.
+    pub fn decode_miptex(&self, lump: &[u8]) -> Result<DecodedTexture, TextureError> {
+        let header = MipTexHeader::parse(lump).map_err(|_| TextureError::Truncated {
+            needed: WAD_MIPTEX_HEADER_SIZE,
+            len: lump.len(),
+        })?;
+        let area = usize::try_from(header.width)
+            .ok()
+            .zip(usize::try_from(header.height).ok())
+            .and_then(|(w, h)| w.checked_mul(h));
+        let start = usize::try_from(header.offsets[0]).ok();
+        let end = start.zip(area).and_then(|(s, a)| s.checked_add(a));
+        let (Some(start), Some(end)) = (start, end) else {
+            return Err(TextureError::Truncated {
+                needed: usize::MAX,
+                len: lump.len(),
+            });
+        };
+        let Some(pixels) = lump.get(start..end) else {
+            return Err(TextureError::Truncated {
+                needed: end,
+                len: lump.len(),
+            });
+        };
+        let name = header.name.split(|&b| b == 0).next().unwrap_or_default();
+        self.decode_pixels(name, header.width, header.height, pixels)
+    }
+
+    /// The pixels `pixels` of a texture named `name`, `width` by `height`, through this
+    /// palette: what [`Palette::decode_miptex`] does once it has the first level, for a
+    /// texture a BSP holds.
+    ///
+    /// Implements WAD-8.1 to WAD-8.3.
+    ///
+    /// # Errors
+    ///
+    /// [`TextureError::Size`] for a width or height of 0 or past [`WAD_DECODE_MAX_SIDE`], and
+    /// [`TextureError::Truncated`] for fewer than `width * height` pixels.
+    pub fn decode_pixels(
+        &self,
+        name: &[u8],
+        width: u32,
+        height: u32,
+        pixels: &[u8],
+    ) -> Result<DecodedTexture, TextureError> {
+        if width == 0 || height == 0 || width > WAD_DECODE_MAX_SIDE || height > WAD_DECODE_MAX_SIDE
+        {
+            return Err(TextureError::Size { width, height });
+        }
+        let area = usize::try_from(width)
+            .ok()
+            .zip(usize::try_from(height).ok())
+            .and_then(|(w, h)| w.checked_mul(h))
+            .unwrap_or(usize::MAX);
+        let Some(pixels) = pixels.get(..area) else {
+            return Err(TextureError::Truncated {
+                needed: area,
+                len: pixels.len(),
+            });
+        };
+        let fence = TextureKind::of(name) == Some(TextureKind::Fence);
+        let mut rgba = Vec::with_capacity(pixels.len().saturating_mul(RGBA));
+        for &index in pixels {
+            let [r, g, b] = self.colour(PaletteIndex(index));
+            let alpha = if fence && index == WAD_TRANSPARENT {
+                0
+            } else {
+                u8::MAX
+            };
+            rgba.extend_from_slice(&[r, g, b, alpha]);
+        }
+        Ok(DecodedTexture {
+            width,
+            height,
+            rgba,
+        })
+    }
+
+    /// The palette a WAD3 texture carries after its mip levels: a 16-bit colour count, then
+    /// that many red, green and blue triples, the colours past the count or past the bytes
+    /// black (WAD3-3.3, WAD-8.4).
+    #[must_use]
+    pub fn from_wad3(bytes: &[u8]) -> Self {
+        let count = bytes
+            .get(..2)
+            .and_then(|b| b.try_into().ok())
+            .map_or(0, |b: [u8; 2]| usize::from(u16::from_le_bytes(b)));
+        let triples = bytes.get(2..).unwrap_or_default();
+        let (chunks, _) = triples.as_chunks::<RGB>();
+        let mut colours = [[0_u8; RGB]; COLOURS];
+        for (colour, chunk) in colours.iter_mut().zip(chunks.iter().take(count)) {
+            *colour = *chunk;
+        }
+        Self(colours)
+    }
 }
 
 #[cfg(test)]

@@ -69,6 +69,7 @@ use qs_workbench::map_edit::{
     PlaceParams, SetFlagParams,
 };
 use qs_workbench::map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
+use qs_workbench::map_textures::TextureSources;
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
@@ -1883,6 +1884,16 @@ impl Shell {
             .map()
             .map(|document| document.path().to_path_buf());
         if path == self.map_opened {
+            // The world named other WADs, or another game was chosen (P6-10).
+            let context = self.session.context();
+            let chosen = context.preview.game_folder();
+            if context
+                .workbench
+                .map()
+                .is_some_and(|document| self.map_editor.textures_stale(document, chosen))
+            {
+                self.load_map_textures();
+            }
             return;
         }
         self.map_opened.clone_from(&path);
@@ -1890,10 +1901,28 @@ impl Shell {
             return;
         }
         self.load_map_classes();
+        self.load_map_textures();
         self.map_editor.set_disk(DiskNotice::None);
         self.map_editor.reset_camera();
         self.map_editor.set_keys(None, None);
         self.centre_tab = CentreTab::Map;
+    }
+
+    /// Gives the map editor the open map's textures: the WADs its world names, found in the
+    /// project, beside the map or in the detected game, and the game's palette (P6-10).
+    fn load_map_textures(&mut self) {
+        let context = self.session.context();
+        let Some(document) = context.workbench.map() else {
+            return;
+        };
+        let game = context.preview.game_base_path();
+        let sources = TextureSources::load(
+            document,
+            context.workbench.root(),
+            game.as_deref(),
+            context.preview.game_folder(),
+        );
+        self.map_editor.set_texture_sources(sources);
     }
 
     /// Gives the map editor the project's entity classes and their models.
@@ -1933,10 +1962,18 @@ impl Shell {
                 .map(MapDocument::watched)
                 .unwrap_or_default(),
         );
+        paths.extend(self.map_editor.texture_watched());
         let changed = self.disk_watch.changed(now, paths);
         if !changed.is_empty() {
             self.files_changed(changed);
         }
+    }
+
+    /// Takes `paths` as the watcher does when another program wrote them, for tests, which
+    /// do not wait on the clock.
+    #[cfg(test)]
+    pub(crate) fn files_written(&mut self, paths: Vec<PathBuf>) {
+        self.files_changed(paths);
     }
 
     /// Asks whether the open map's files changed, whatever their modified times say.
@@ -1956,6 +1993,8 @@ impl Shell {
     /// Gives `changed` to `files.changed` and shows what it did.
     fn files_changed(&mut self, changed: Vec<PathBuf>) {
         let map = self.session.context().workbench.map().is_some();
+        let wads = self.map_editor.texture_watched();
+        let wad_changed = changed.iter().any(|path| wads.contains(path));
         let found: Result<FilesChanged, ShellError> =
             self.attempt(FILES_CHANGED, &FilesChangedParams { paths: changed });
         match found {
@@ -1967,6 +2006,11 @@ impl Shell {
                     MapOnDisk::Same => {}
                     MapOnDisk::Reloaded => self.map_editor.set_disk(DiskNotice::None),
                     MapOnDisk::Conflict => self.map_editor.set_disk(DiskNotice::Changed),
+                }
+                // A WAD written by another program, or a map read again whose world may name
+                // other WADs, gives the browser its textures again (MAP-32).
+                if map && (wad_changed || found.map == MapOnDisk::Reloaded) {
+                    self.load_map_textures();
                 }
             }
             Err(error) => tracing::warn!(%error, "the changed files were not read"),

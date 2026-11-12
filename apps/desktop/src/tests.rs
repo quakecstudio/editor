@@ -21,6 +21,7 @@ use qs_commands::palette::search;
 use qs_commands::params::{self, Input};
 use qs_commands::remote::{Client, Host};
 use qs_layout::{Focus, Layout, Panel};
+use qs_wad::write::WadBuilder;
 use qs_workbench::debug::Location;
 use qs_workbench::map_edit::EntityIndex;
 use serde_json::json;
@@ -2043,6 +2044,8 @@ fn entities_are_placed_and_linked_without_typing() {
         .unwrap();
     harness.run();
     harness.run();
+    lowest(&harness, Text::Entities.get()).click();
+    harness.run();
     let before = map_text(&harness);
     for class in ["info_player_start", "monster_ogre", "light", "func_door"] {
         browser_cell(&harness, class);
@@ -2388,6 +2391,216 @@ fn brushes_are_selected_deleted_and_drawn_in_the_view() {
     }
     harness.run();
     assert_eq!(map_text(&harness), before);
+}
+
+/// Of the nodes labelled `label`, the lowest on screen: below the view, where the browsers are.
+fn lowest<'h>(
+    harness: &'h Harness<'static, Option<App>>,
+    label: &'h str,
+) -> egui_kittest::Node<'h> {
+    harness
+        .query_all_by_label(label)
+        .max_by(|a, b| a.rect().center().y.total_cmp(&b.rect().center().y))
+        .unwrap()
+}
+
+/// A texture lump `name`, 16 by 16, every pixel `index`.
+fn miptex(name: &str, index: u8) -> Vec<u8> {
+    let mut lump = name.as_bytes().to_vec();
+    lump.resize(16, 0);
+    for value in [16_u32, 16, 40, 40 + 256, 40 + 256 + 64, 40 + 256 + 64 + 16] {
+        lump.extend_from_slice(&value.to_le_bytes());
+    }
+    lump.resize(40 + 256 + 64 + 16 + 4, index);
+    lump
+}
+
+/// Writes a WAD2 file of `count` textures, `tex00` onwards, at `path`.
+fn write_wad(path: &Path, count: u8) {
+    let mut builder = WadBuilder::new();
+    for n in 0..count {
+        let name = format!("tex{n:02}");
+        builder
+            .add(name.as_bytes(), qs_wad::WAD_TYP_MIPTEX, miptex(&name, n))
+            .unwrap();
+    }
+    fs::write(path, builder.to_bytes().unwrap()).unwrap();
+}
+
+/// A copy of the map editor's fixture project whose map names `textures.wad`, of `count`
+/// textures, with a palette of the project's own, never id's.
+fn textured_copy(name: &str, count: u8) -> PathBuf {
+    let dir = keep_copy(name);
+    fs::create_dir_all(dir.join("gfx")).unwrap();
+    let palette: Vec<u8> = (0..=255_u8).flat_map(|i| [i, 255 - i, 64]).collect();
+    fs::write(dir.join("gfx/palette.lmp"), palette).unwrap();
+    write_wad(&dir.join("textures.wad"), count);
+    let map = dir.join("maps/keep.map");
+    let text = fs::read_to_string(&map).unwrap();
+    assert!(text.contains("\"wad\" \"gfx/keep.wad\""));
+    let text = text.replacen("\"wad\" \"gfx/keep.wad\"", "\"wad\" \"textures.wad\"", 1);
+    fs::write(&map, text).unwrap();
+    dir
+}
+
+/// `harness` with `dir`'s project and its map open, drawn.
+fn open_textured(harness: &mut Harness<'static, Option<App>>, dir: &Path) {
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.run();
+}
+
+// No spec statement: P6-10, MAP-5: the texture browser lists every texture of the WAD the
+// world names and every name the map's faces use, each with its count of faces, in the tab
+// below the view; it decodes exactly the textures whose cells are on screen
+#[test]
+fn the_texture_browser_shows_the_map_s_textures_decoding_only_those_drawn() {
+    let dir = textured_copy("textures", 60);
+    let mut harness = accessible();
+    open_textured(&mut harness, &dir);
+    let shell = harness.state().as_ref().unwrap().shell();
+    let browser = shell.map_editor().texture_browser();
+    let listing = browser.listing();
+    let total = listing.textures.len();
+    let names: BTreeSet<&str> = listing.textures.iter().map(|t| t.name.as_str()).collect();
+    for n in 0..60 {
+        assert!(names.contains(format!("tex{n:02}").as_str()), "tex{n:02}");
+    }
+    let map = shell.session().context().workbench.map().unwrap();
+    for entity in &map.file().entities {
+        for brush in entity.brushes() {
+            for face in &brush.faces {
+                let name = String::from_utf8_lossy(face.texture()).into_owned();
+                assert!(names.contains(name.as_str()), "{name}");
+            }
+        }
+    }
+    let uses: usize = listing.textures.iter().map(|t| t.uses).sum();
+    let faces: usize = map
+        .file()
+        .entities
+        .iter()
+        .flat_map(|e| e.brushes())
+        .map(|b| b.faces.len())
+        .sum();
+    assert_eq!(uses, faces);
+    // The cells drawn are those within the browser, as wide as the view above it; each
+    // decoded once, the rest never.
+    let view = harness.get_by_label(Text::MapEditorView.get()).rect();
+    let on_screen = (0..60)
+        .filter(|n| {
+            harness
+                .query_all_by_label(&format!("tex{n:02}"))
+                .any(|node| node.rect().left() < view.right() && node.rect().right() > view.left())
+        })
+        .count();
+    let decodes = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .map_editor()
+        .texture_browser()
+        .decodes();
+    assert!(on_screen > 0 && on_screen < 60, "{on_screen} on screen");
+    assert_eq!(decodes, on_screen);
+    harness.run();
+    let again = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .map_editor()
+        .texture_browser()
+        .decodes();
+    assert_eq!(again, decodes, "a picture is decoded once");
+    let summary = format!("textures.wad, {total} textures");
+    assert!(
+        harness.query_all_by_label(&summary).next().is_some(),
+        "{summary}"
+    );
+}
+
+// No spec statement: P6-10, MAP-32: a texture another program adds to a WAD the map uses shows
+// in the browser with no restart
+#[test]
+fn a_texture_added_to_the_wad_shows_without_a_restart() {
+    let dir = textured_copy("texture-added", 3);
+    let mut harness = accessible();
+    open_textured(&mut harness, &dir);
+    let count = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .texture_browser()
+            .listing()
+            .textures
+            .iter()
+            .filter(|t| t.name.starts_with("tex"))
+            .count()
+    };
+    assert_eq!(count(&harness), 3);
+    let wad = dir.join("textures.wad");
+    let watched = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .map_editor()
+        .texture_watched();
+    assert_eq!(watched, std::slice::from_ref(&wad));
+    write_wad(&wad, 4);
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .files_written(vec![wad]);
+    harness.run();
+    harness.run();
+    assert_eq!(count(&harness), 4);
+    assert!(harness.query_all_by_label("tex03").next().is_some());
+}
+
+// No spec statement: P6-10: naming another WAD in the world's wad key gives the browser that
+// WAD's textures, with no reopening
+#[test]
+fn a_new_wad_key_gives_the_browser_its_textures() {
+    let dir = textured_copy("texture-key", 3);
+    let other = dir.join("other.wad");
+    let mut builder = WadBuilder::new();
+    builder
+        .add(b"stone", qs_wad::WAD_TYP_MIPTEX, miptex("stone", 7))
+        .unwrap();
+    fs::write(&other, builder.to_bytes().unwrap()).unwrap();
+    let mut harness = accessible();
+    open_textured(&mut harness, &dir);
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .execute(
+            "map.set_key",
+            json!({ "entity": 0, "key": "wad", "value": "other.wad" }),
+        )
+        .unwrap();
+    harness.run();
+    harness.run();
+    let shell = harness.state().as_ref().unwrap().shell();
+    let listing = shell.map_editor().texture_browser().listing();
+    assert!(listing.textures.iter().any(|t| t.name == "stone"));
+    assert!(!listing.textures.iter().any(|t| t.name == "tex00"));
+    assert_eq!(shell.map_editor().texture_watched(), [other]);
 }
 
 // No spec statement: P6-18: the Shape tool fills a box dragged on the ground with the shape

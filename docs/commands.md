@@ -88,6 +88,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | [`map.set_layer`](#mapset_layer) | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
 | [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
+| [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds. |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
@@ -1942,18 +1943,13 @@ Parameters:
         },
         {
           "additionalProperties": false,
-          "description": "An arch in the box's x-z face.",
+          "description": "An arch in the box's x-z face, within half a turn.",
           "properties": {
             "arc": {
               "default": 180.0,
               "description": "The degrees of its curve; 180 when not given.",
               "format": "double",
               "type": "number"
-            },
-            "circle": {
-              "$ref": "#/$defs/Circle",
-              "default": "vertices",
-              "description": "Where the corners lie."
             },
             "kind": {
               "const": "arch",
@@ -2072,11 +2068,10 @@ Parameters:
           "properties": {
             "hollow": {
               "default": null,
-              "description": "Its wall in template steps, for a hollow curve.",
-              "format": "uint32",
-              "minimum": 0,
+              "description": "The wall's thickness, for a hollow curve.",
+              "format": "double",
               "type": [
-                "integer",
+                "number",
                 "null"
               ]
             },
@@ -3405,6 +3400,22 @@ Parameters:
 ## `map.show_all`
 
 Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.textures`
+
+Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds.
 
 Parameters:
 
