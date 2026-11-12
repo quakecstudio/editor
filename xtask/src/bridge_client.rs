@@ -10,7 +10,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use qs_engine::{Client, Flavour, InspectWhat, LaunchSpec, StepKind, launch, prepare_run_root};
+use qs_engine::{
+    Client, EntityTarget, Flavour, InspectWhat, LaunchSpec, StepKind, launch, prepare_run_root,
+};
+use qs_workbench::map_edit::{EntityIndex, LiveChange};
 use serde_json::{Value, json};
 
 /// How long an event may take to come.
@@ -345,7 +348,7 @@ fn suite(
     steps.push("a monster's health set while paused, then resume".to_owned());
 
     let spawned = client
-        .spawn("info_notnull", &[("origin", "0 0 0")])
+        .spawn("info_notnull", &[("origin", "0 0 0")], None)
         .map_err(|e| format!("entity/spawn: {e}"))?;
     let edict = spawned
         .get("edict")
@@ -353,7 +356,7 @@ fn suite(
         .and_then(|n| u32::try_from(n).ok())
         .ok_or("entity/spawn gives an edict")?;
     let edit = client
-        .edit_entity(edict, &[("origin", "8 16 24")])
+        .edit_entity(EntityTarget::Edict(edict), &[("origin", "8 16 24")])
         .map_err(|e| format!("entity/edit: {e}"))?;
     expect(
         edit == json!({ "applied": "now" }),
@@ -367,7 +370,7 @@ fn suite(
         "entity/edit moves the entity",
     )?;
     client
-        .remove(edict)
+        .remove(EntityTarget::Edict(edict))
         .map_err(|e| format!("entity/remove: {e}"))?;
     let entities = client
         .inspect(InspectWhat::Entities)
@@ -378,6 +381,9 @@ fn suite(
         .is_some_and(|list| list.iter().any(|e| e.get("edict") == Some(&json!(edict))));
     expect(!listed, "entity/remove frees the edict")?;
     steps.push("entity/spawn, entity/edit and entity/remove".to_owned());
+
+    map_entities(client, monster)?;
+    steps.push("a monster placed, moved and removed as the map editor does".to_owned());
 
     client
         .spawn_player_at([0.0, 0.0, 64.0], [0.0, 90.0, 0.0])
@@ -417,6 +423,65 @@ fn a_monster(client: &mut Client) -> Result<u32, String> {
         })
         .and_then(|n| u32::try_from(n).ok())
         .ok_or_else(|| "the map has a live monster".to_owned())
+}
+
+/// BRIDGE-4.13, MAP-12, P5-07: a monster of the map's own class, placed after the world as the
+/// map editor places one, spawns in the running game, its move reaches it, and its removal
+/// frees it; the world is map entity 0. The changes go through the map editor's own
+/// [`LiveChange::send`].
+fn map_entities(client: &mut Client, monster: u32) -> Result<(), String> {
+    let classname = client
+        .inspect(InspectWhat::Edict(monster))
+        .map_err(|e| e.to_string())?
+        .get("classname")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let place = EntityIndex::new(1);
+    let spawned = LiveChange::Spawn {
+        place,
+        classname: classname.clone(),
+        pairs: vec![("origin".to_owned(), "0 0 64".to_owned())],
+    }
+    .send(client)
+    .map_err(|e| format!("placing a {classname}: {e}"))?;
+    let edict = spawned
+        .get("edict")
+        .and_then(Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or("entity/spawn gives an edict")?;
+    let placed = client
+        .inspect(InspectWhat::Edict(edict))
+        .map_err(|e| e.to_string())?;
+    expect(
+        text(&placed, "classname") == classname,
+        "the placed monster is in the game",
+    )?;
+    LiveChange::Edit {
+        place,
+        pairs: vec![("origin".to_owned(), "4 8 64".to_owned())],
+    }
+    .send(client)
+    .map_err(|e| format!("moving the placed {classname}: {e}"))?;
+    let moved = client
+        .inspect(InspectWhat::Edict(edict))
+        .map_err(|e| e.to_string())?;
+    expect(
+        field(&moved, "origin") == Some(json!({ "type": "vector", "value": [4.0, 8.0, 64.0] })),
+        "the move reaches the placed monster",
+    )?;
+    LiveChange::Edit {
+        place: EntityIndex::new(0),
+        pairs: Vec::new(),
+    }
+    .send(client)
+    .map_err(|e| format!("editing the world: {e}"))?;
+    LiveChange::Remove { place }
+        .send(client)
+        .map_err(|e| format!("removing the placed {classname}: {e}"))?;
+    let gone = client.inspect(InspectWhat::Edict(edict));
+    expect(gone.is_err(), "the removed monster is freed")?;
+    Ok(())
 }
 
 /// BRIDGE-4.4, P3-14: paused, a monster's health set waits for the resume, then is the

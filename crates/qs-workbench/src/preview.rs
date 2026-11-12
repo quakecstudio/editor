@@ -22,7 +22,9 @@ use serde_json::Value;
 use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 
+use crate::map_edit::LiveChange;
 use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
+use qs_map::Entity;
 
 pub mod debug;
 pub mod dock;
@@ -184,6 +186,23 @@ struct Live {
     running: Running,
     /// The program it loaded, which a reload reads again.
     progs: PathBuf,
+    /// The map the game is on, from its last `map/loaded` (BRIDGE-3.1).
+    map: Option<String>,
+    /// The classnames of the map's entities the game loaded, in order (BRIDGE-4.13).
+    classnames: Vec<String>,
+    /// Whether the map editor's list of entities is the game's (P5-07).
+    step: Step,
+}
+
+/// Whether the map editor's entities and the game's are in step (P5-07).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Step {
+    /// Not yet compared since the map loaded.
+    Unchecked,
+    /// The same entities, in the same order.
+    Same,
+    /// Not the same: the editor's changes wait for the next compile.
+    Apart,
 }
 
 /// The play loop's state: the host, when one runs, its state and its console.
@@ -569,7 +588,13 @@ impl Preview {
             extra,
         };
         let running = launch(&spec, "QuakeC Studio").map_err(PreviewError::Launch)?;
-        self.live = Some(Live { running, progs });
+        self.live = Some(Live {
+            running,
+            progs,
+            map: None,
+            classnames: Vec::new(),
+            step: Step::Unchecked,
+        });
         self.state = PlayState::Playing;
         self.status = Some(format!("Playing {mod_name}"));
         self.console.clear();
@@ -741,6 +766,27 @@ impl Preview {
     fn take_event(&mut self, method: &str, params: &Value) {
         match method {
             "state/changed" => self.state_changed(params),
+            "map/loaded" => {
+                if let Some(live) = self.live.as_mut() {
+                    live.map = params.get("map").and_then(Value::as_str).map(str::to_owned);
+                    live.classnames = params
+                        .get("classnames")
+                        .and_then(Value::as_array)
+                        .map(|names| {
+                            names
+                                .iter()
+                                .map(|name| name.as_str().unwrap_or_default().to_owned())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    live.step = Step::Unchecked;
+                }
+                if self.entities.take_event(method, params)
+                    && let Err(error) = self.refresh()
+                {
+                    tracing::debug!(%error, "the entities were not read again");
+                }
+            }
             "console/line" => {
                 let text = params.get("text").and_then(Value::as_str).unwrap_or("");
                 let level = params
@@ -784,6 +830,80 @@ impl Preview {
 }
 
 impl Preview {
+    /// Whether the map editor's changes to the map at `path` go to the game: it plays that
+    /// map, the map named by the file's stem in any case, and has not been found out of step
+    /// with the editor since the map loaded (P5-07).
+    #[must_use]
+    pub fn plays_in_step(&self, path: &Path) -> bool {
+        let Some(live) = self.live.as_ref() else {
+            return false;
+        };
+        let stem = path.file_stem().and_then(|stem| stem.to_str());
+        let on_map = live
+            .map
+            .as_deref()
+            .zip(stem)
+            .is_some_and(|(map, stem)| map.eq_ignore_ascii_case(stem));
+        on_map && live.step != Step::Apart
+    }
+
+    /// Sends the map editor's `changes` to the game when [`Preview::plays_in_step`] the map at
+    /// `path` (P5-07, MAP-12). The first time after the map loads, the editor's entities
+    /// before the change, `before`, are checked against those the game loaded, by classname in
+    /// order (BRIDGE-4.13): a map edited since it was compiled, or one whose compiler merged
+    /// entities into the world, is out of step, and its changes reach the game at the next
+    /// compile. A change the game refuses, or a brush entity placed, which needs a compile,
+    /// puts the two out of step too; each case is said once in the console.
+    pub fn send_map_changes(&mut self, path: &Path, before: &[Entity], changes: &[LiveChange]) {
+        if !self.plays_in_step(path) {
+            return;
+        }
+        let Some(live) = self.live.as_mut() else {
+            return;
+        };
+        let mut note = None;
+        if live.step == Step::Unchecked {
+            let editor: Vec<String> = before
+                .iter()
+                .map(|entity| {
+                    String::from_utf8_lossy(entity.classname().unwrap_or_default()).into_owned()
+                })
+                .collect();
+            if live.classnames == editor {
+                live.step = Step::Same;
+            } else {
+                live.step = Step::Apart;
+                note = Some(
+                    "The map in the editor is not the one the game loaded: its edits reach the \
+                     game at the next compile"
+                        .to_owned(),
+                );
+            }
+        }
+        for change in changes {
+            if live.step == Step::Apart {
+                break;
+            }
+            let sent = match change {
+                LiveChange::NeedsCompile { .. } => Err(
+                    "a brush entity reaches the game at the next compile; later edits wait for it"
+                        .to_owned(),
+                ),
+                _ => change
+                    .send(&mut live.running.client)
+                    .map(drop)
+                    .map_err(|error| error.to_string()),
+            };
+            if let Err(why) = sent {
+                live.step = Step::Apart;
+                note = Some(format!("The map edit did not reach the game: {why}"));
+            }
+        }
+        if let Some(line) = note {
+            self.push_line(&line, "warning");
+        }
+    }
+
     /// A line for the console, the oldest dropped past [`CONSOLE_LINES`].
     fn push_line(&mut self, text: &str, level: &str) {
         if self.console.len() == CONSOLE_LINES {
@@ -1543,6 +1663,23 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(ActCommand::<UnwatchAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<StepByAct>(core::marker::PhantomData))?;
     engine::register_engine(registry)
+}
+
+#[cfg(test)]
+impl Preview {
+    /// A preview playing `running` on the map `map`, for tests of what is sent to its game.
+    pub(crate) fn playing(running: Running, map: &str, classnames: &[&str]) -> Self {
+        let mut preview = Self::new(PreviewConfig::default());
+        preview.live = Some(Live {
+            running,
+            progs: PathBuf::new(),
+            map: Some(map.to_owned()),
+            classnames: classnames.iter().map(|&name| name.to_owned()).collect(),
+            step: Step::Unchecked,
+        });
+        preview.state = PlayState::Playing;
+        preview
+    }
 }
 
 #[cfg(test)]

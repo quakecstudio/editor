@@ -81,7 +81,9 @@ an edit, so both commands run outside the edit history
   `map.duplicate`, `map.set_key` and `map.remove_key` edit it through `qs-map`'s lossless
   document, each with undo; `map.entity` gives an entity's keys typed by its class with the
   map's targetnames; `map.save` writes the `.map`, or a `.ent` beside a BSP or its rewritten
-  entity lump ([`docs/map-editor.md`](../../docs/map-editor.md)).
+  entity lump ([`docs/map-editor.md`](../../docs/map-editor.md)). While the preview's game
+  plays the open map, each edit, undo and redo goes to it as a `LiveChange` by the entity's
+  place in the map (P5-07, MAP-12, BRIDGE-4.13).
 - Git (`git`, P4-35, UI-19): `git.status`, `git.diff`, `git.stage` and `git.unstage` (a file
   or one hunk), `git.commit`, `git.branches`, `git.switch`, `git.create_branch`, `git.log`,
   `git.blame`, `git.conflicts`, `git.resolve` and `git.head_text`, over `qs-git` in the open

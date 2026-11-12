@@ -13,6 +13,13 @@
     },
     "time": {
       "type": "number"
+    },
+    "classnames": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The classname of each of the map's entities in the order the map editor names them, empty for one with none (BRIDGE-4.13)."
     }
   },
   "required": [

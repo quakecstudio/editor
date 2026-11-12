@@ -115,6 +115,10 @@ impl HasWorkbench for Context {
     fn workbench(&mut self) -> &mut Workbench<FsLoader> {
         &mut self.workbench
     }
+
+    fn preview(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
 }
 
 impl HasPreview for Context {

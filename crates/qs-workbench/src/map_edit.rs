@@ -16,6 +16,10 @@ use std::path::{Path, PathBuf};
 use qs_bsp::{Bsp, BspLoader, ent_file_names};
 use qs_commands::{BoxError, Command, Outcome, RegisterError, Registry, UndoStep};
 use qs_map::{Entity, Item, MapFile};
+
+pub use live::LiveChange;
+
+mod live;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -562,39 +566,64 @@ impl<L: crate::Loader> Workbench<L> {
         document.unsaved = false;
         Ok(path)
     }
-
-    /// Runs `edit` on the open map and returns its answer and the step that undoes it; an
-    /// edit that fails leaves the map as it was.
-    fn edit_map<T>(
-        &mut self,
-        edit: impl FnOnce(&mut MapDocument) -> Result<T, WorkbenchError>,
-    ) -> Result<(T, MapStep), WorkbenchError> {
-        let document = self.map_mut()?;
-        let before = (document.file.clone(), document.selected);
-        let edits = document.edits;
-        match edit(document) {
-            Ok(answer) => {
-                document.unsaved = true;
-                document.touch_map();
-                let step = MapStep {
-                    before: edits,
-                    after: document.edits,
-                    other: before,
-                };
-                Ok((answer, step))
-            }
-            Err(error) => {
-                (document.file, document.selected) = before;
-                Err(error)
-            }
-        }
-    }
 }
 
 /// The `.ent` files the engine looks for, in order, beside the BSP at `path` whose entity
 /// lump is `lump` (BSP-19.1).
 fn ent_files(path: &Path, lump: &[u8]) -> [PathBuf; 2] {
     ent_file_names(&path.to_string_lossy(), lump).map(PathBuf::from)
+}
+
+/// Runs `edit` on the open map of `context` and returns its answer and the step that undoes
+/// it, sending the change to the game when one runs on the map (P5-07); an edit that fails
+/// leaves the map as it was.
+fn edit_map<C: HasWorkbench, T>(
+    context: &mut C,
+    edit: impl FnOnce(&mut MapDocument) -> Result<T, WorkbenchError>,
+) -> Result<(T, MapStep), WorkbenchError> {
+    let document = context.workbench().map_mut()?;
+    let before = (document.file.clone(), document.selected);
+    let edits = document.edits;
+    match edit(document) {
+        Ok(answer) => {
+            document.unsaved = true;
+            document.touch_map();
+            let step = MapStep {
+                before: edits,
+                after: document.edits,
+                other: before,
+            };
+            send_changes(context, &step.other.0);
+            Ok((answer, step))
+        }
+        Err(error) => {
+            (document.file, document.selected) = before;
+            Err(error)
+        }
+    }
+}
+
+/// Sends what changed from the entities of `before` to the open map's to the game of
+/// `context`, when it runs on that map (P5-07, MAP-12).
+fn send_changes<C: HasWorkbench>(context: &mut C, before: &MapFile) {
+    let Some(path) = context.workbench().map.as_ref().map(|d| d.path.clone()) else {
+        return;
+    };
+    if !context
+        .preview()
+        .is_some_and(|preview| preview.plays_in_step(&path))
+    {
+        return;
+    }
+    let Some(document) = context.workbench().map.as_ref() else {
+        return;
+    };
+    let changes = LiveChange::between(&before.entities, &document.file.entities);
+    if let Some(preview) = context.preview()
+        && !changes.is_empty()
+    {
+        preview.send_map_changes(&path, &before.entities, &changes);
+    }
 }
 
 /// The open map's other state: what undo puts back, then what redo does.
@@ -626,6 +655,7 @@ impl MapStep {
         document.unsaved = true;
         document.edits = to;
         document.touch();
+        send_changes(context, &self.other.0);
         Ok(())
     }
 }
@@ -718,7 +748,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapPlace {
         context: &mut C,
         params: PlaceParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
-        let (entity, step) = context.workbench().edit_map(|document| {
+        let (entity, step) = edit_map(context, |document| {
             let mut entity = Entity::new();
             let origin = origin_text(params.origin);
             let mut pairs = vec![
@@ -761,9 +791,9 @@ impl<C: HasWorkbench + 'static> Command<C> for MapMove {
         context: &mut C,
         params: MoveParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
-        let ((), step) = context
-            .workbench()
-            .edit_map(|document| document.move_entity(params.entity, params.by))?;
+        let ((), step) = edit_map(context, |document| {
+            document.move_entity(params.entity, params.by)
+        })?;
         Ok(Outcome::undoable(
             MapEdited {
                 entity: Some(params.entity),
@@ -789,9 +819,9 @@ impl<C: HasWorkbench + 'static> Command<C> for MapRotate {
         context: &mut C,
         params: RotateParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
-        let ((), step) = context
-            .workbench()
-            .edit_map(|document| document.rotate_entity(params.entity, params.degrees))?;
+        let ((), step) = edit_map(context, |document| {
+            document.rotate_entity(params.entity, params.degrees)
+        })?;
         Ok(Outcome::undoable(
             MapEdited {
                 entity: Some(params.entity),
@@ -817,7 +847,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapDelete {
         params: EntityParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
         let entity = params.entity;
-        let ((), step) = context.workbench().edit_map(|document| {
+        let ((), step) = edit_map(context, |document| {
             document.entity_mut(entity)?;
             if entity.is_world() {
                 return Err(WorkbenchError::NotPointEntity { entity });
@@ -851,7 +881,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapDuplicate {
         params: EntityParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
         let entity = params.entity;
-        let (copy, step) = context.workbench().edit_map(|document| {
+        let (copy, step) = edit_map(context, |document| {
             if entity.is_world() {
                 return Err(WorkbenchError::NotPointEntity { entity });
             }
@@ -882,7 +912,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSetKey {
         context: &mut C,
         params: SetKeyParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
-        let ((), step) = context.workbench().edit_map(|document| {
+        let ((), step) = edit_map(context, |document| {
             document
                 .entity_mut(params.entity)?
                 .set(params.key.as_bytes(), params.value.as_bytes())
@@ -912,7 +942,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapRemoveKey {
         context: &mut C,
         params: RemoveKeyParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
-        let ((), step) = context.workbench().edit_map(|document| {
+        let ((), step) = edit_map(context, |document| {
             document
                 .entity_mut(params.entity)?
                 .remove(params.key.as_bytes());

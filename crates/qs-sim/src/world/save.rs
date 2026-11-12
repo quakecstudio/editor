@@ -199,6 +199,8 @@ impl World {
     ///
     /// [`SaveError`] for a block that does not read or an edict that does not link.
     pub fn restore(&mut self, progs: &Progs<'_>, save: &SaveGame) -> Result<(), SaveError> {
+        // A saved game's edicts are not the map's: no map entity is in the game.
+        self.map_entities = super::map_entities::MapEntities::default();
         let engine = self.builtins.mock.engine_mut();
         for (slot, style) in engine.lightstyles.iter_mut().zip(&save.lightstyles) {
             *slot = Some(String::from_utf8_lossy(style).into_owned());
