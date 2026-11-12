@@ -54,7 +54,7 @@ impl TexDef {
 }
 
 /// The axes `s` and `t` turned by `degrees` about their normal, `s` toward `t` (MAP-12.2):
-/// Rodrigues' rotation about the unit normal `s x t`; axes with no normal are kept.
+/// a rotation about the unit normal `s x t`; axes with no normal are kept.
 fn turned([s, t]: [[f64; 3]; 2], degrees: f64) -> [[f64; 3]; 2] {
     let cross = |a: [f64; 3], b: [f64; 3]| {
         [
@@ -70,16 +70,16 @@ fn turned([s, t]: [[f64; 3]; 2], degrees: f64) -> [[f64; 3]; 2] {
     }
     let k = normal.map(|c| c / length);
     let (sin, cos) = degrees.to_radians().sin_cos();
+    // Rodrigues' rotation; both axes lie across their own normal, so its term along the
+    // normal is zero and left out.
     let turn = |v: [f64; 3]| {
-        let along = k[0] * v[0] + k[1] * v[1] + k[2] * v[2];
         let across = cross(k, v);
         [0, 1, 2].map(|i| {
-            let (vi, ci, ki) = (
+            let (vi, ci) = (
                 v.get(i).copied().unwrap_or_default(),
                 across.get(i).copied().unwrap_or_default(),
-                k.get(i).copied().unwrap_or_default(),
             );
-            vi * cos + ci * sin + ki * along * (1.0 - cos)
+            vi * cos + ci * sin
         })
     };
     [turn(s), turn(t)]

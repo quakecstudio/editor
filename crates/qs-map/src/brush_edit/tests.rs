@@ -498,6 +498,7 @@ fn a_brush_moves_by_its_offset() {
     let moved = brush
         .translated([16.0, -32.0, 8.0], TextureLock::Free)
         .unwrap();
+    assert_eq!(moved.faces.len(), brush.faces.len());
     for (before, after) in brush.faces.iter().zip(&moved.faces) {
         for (p, q) in before.points().iter().zip(after.points()) {
             assert_eq!([q[0] - p[0], q[1] - p[1], q[2] - p[2]], [16.0, -32.0, 8.0]);
