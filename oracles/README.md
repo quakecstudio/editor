@@ -352,15 +352,18 @@ Differential workflow's "Map tool oracles" job; Linux and macOS only.
 | ericw-tools | ericwa/ericw-tools at the commit [`map.md`](../docs/spec/map.md) cites, with the `fmt`, `jsoncpp`, `nanobench` and `pareto` submodules at the commits it records, built with CMake (tests, documentation and the light preview off) | `target/oracles/bin/ericw-qbsp`, `ericw-vis`, `ericw-light` |
 
 [`maps.toml`](maps.toml) pins every input: qutils' files by commit and SHA-256 as `sources.toml`
-pins id's, and ericw-tools and each submodule as a GitHub archive of the commit by its
-SHA-256. `qutils/` is read and run, never ported, until the license review rules on it
+pins id's, and ericw-tools and each submodule as a GitHub archive of the commit by the SHA-256
+of the files inside it (`tree`), which holds if GitHub regenerates the archive's bytes; a member
+outside the archive's directory is refused. `qutils/` is read and run, never ported, until the license review rules on it
 ([`docs/porting.md`](../docs/porting.md#upstreams), P4-22). Its files are named in upper case and
 include each other in lower case, so the build copies them to lower-case names under
 `target/oracles/build/maps/` first; [`maps/compat.h`](maps/compat.h) is included before each, as
 `qcc/compat.h` is for qcc. ericw-tools needs CMake, a C++20 compiler, TBB and Embree 4: Homebrew's
 `cmake`, `tbb` and `embree` on macOS, and `cmake`, `libtbb-dev` and `libembree-dev` on Ubuntu,
-which the CI job installs. A stamp of `maps.toml`, `maps/` and the compiler skips an unchanged
-build.
+which the CI job installs. A stamp of `maps.toml`, `maps/compat.h`, the C compiler and CMake's
+version skips an unchanged build; after upgrading TBB or Embree, delete
+`target/oracles/bin/maps-stamp`. Each run compiles the room in an emptied directory, so a tool
+that writes nothing fails.
 
 ## Readiness
 
