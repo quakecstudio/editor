@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The map editor (P5-06, MAP-4, MAP-20): the open map in 3D as lines, its entities as boxes
-//! and model wireframes, picked with the mouse and edited with TrenchBroom's keys; and the key
-//! editor in the Properties panel. Every edit is a [`MapAction`] the shell runs as a `map.*`
-//! command, so each has undo. `docs/map-editor.md` maps TrenchBroom's bindings to these.
+//! The map editor (P5-06, MAP-4, MAP-20, P5-13, MAP-27): the open map in 3D as lines, its
+//! entities as boxes and model wireframes, picked with the mouse and edited with TrenchBroom's
+//! keys, with the links between them and a filter by skill and game; the entity browser below
+//! it, dragged from to place; and the key editor in the Properties panel, with fields chosen
+//! from the QuakeC, an eyedropper to link without typing, and editing of several entities at
+//! once. Every edit is a [`MapAction`] the shell runs as a `map.*` command, so each has undo.
+//! `docs/map-editor.md` maps TrenchBroom's bindings to these.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use eframe::egui::{
     self, Color32, Key, Modifiers, Painter, Pos2, Rect, RichText, Sense, Stroke, Ui, WidgetInfo,
@@ -13,10 +16,14 @@ use eframe::egui::{
 };
 use qs_render::Camera;
 use qs_workbench::entity_classes::ClassInfo;
-use qs_workbench::map_edit::{EntityIndex, EntityKeys, Keep, MapDocument, MapRevision};
+use qs_workbench::map_edit::{
+    EntityIndex, EntityKeys, GameMode, Keep, MapDocument, MapRevision, Skill,
+};
 
-use crate::map_scene::{ClassLook, Line, Scene, load_models, start_camera};
-use crate::strings::Text;
+use crate::map_browser::{ClassDrag, EntityBrowser};
+use crate::map_fields::{Field, spawnflags};
+use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
+use crate::strings::{Text, also_selected};
 use crate::theme::{Theme, Token};
 
 /// Degrees turned per point the pointer drags with the right button (TrenchBroom: look).
@@ -31,10 +38,15 @@ const FLY_SPEED: f32 = 512.0;
 const GRID: f64 = 16.0;
 /// TrenchBroom turns a selection by a right angle (`half_pi`).
 const QUARTER_TURN: f64 = 90.0;
-/// The width of a value's field in the key editor, in points.
-const VALUE_WIDTH: f32 = 140.0;
-/// The key editor's columns: the key, its value and its remove button.
+/// The key editor's columns: the key, its value and its buttons.
 const KEY_COLUMNS: usize = 3;
+/// The height of the entity browser below the view, in points (the mockup's texture
+/// browser), at most half the space.
+const BROWSER_HEIGHT: f32 = 188.0;
+/// How far in front of the camera a class dropped into the view is placed, in map units.
+const PLACE_DISTANCE: f32 = 256.0;
+/// The radius of the dot at the end of a link that is fired, in points.
+const LINK_END: f32 = 3.0;
 /// The width of the new key's and new value's fields, in points.
 const NEW_PAIR_WIDTH: f32 = 90.0;
 /// The nearest a line is drawn, in map units, as the renderer's near plane.
@@ -53,8 +65,14 @@ pub enum MapAction {
     Delete(EntityIndex),
     /// Duplicate an entity.
     Duplicate(EntityIndex),
-    /// Set a key of an entity.
-    SetKey(EntityIndex, String, String),
+    /// Set a key of an entity and of the others listed.
+    SetKey(EntityIndex, Vec<EntityIndex>, String, String),
+    /// Place a point entity of a class at an origin.
+    Place(String, [f64; 3]),
+    /// Point a key of an entity, one the code fires entities by, at another entity.
+    Link(EntityIndex, String, EntityIndex),
+    /// Show only the entities the game spawns at a skill and in a kind of game.
+    Filter(ShowFilter),
     /// Remove a key of an entity.
     RemoveKey(EntityIndex, String),
     /// Save the map.
@@ -63,6 +81,67 @@ pub enum MapAction {
     Resolve(Keep),
     /// List how the changed file differs.
     Compare,
+}
+
+/// The entities the map view shows: every one, or those the game spawns at a skill or in a
+/// kind of game (P5-13, `map.filter`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ShowFilter {
+    /// Every entity.
+    #[default]
+    Every,
+    /// Single player on easy.
+    Easy,
+    /// Single player on normal.
+    Normal,
+    /// Single player on hard.
+    Hard,
+    /// Single player on nightmare.
+    Nightmare,
+    /// Coop on normal.
+    Coop,
+    /// Deathmatch.
+    Deathmatch,
+}
+
+impl ShowFilter {
+    /// Every choice, in the order offered.
+    const ALL: [Self; 7] = [
+        Self::Every,
+        Self::Easy,
+        Self::Normal,
+        Self::Hard,
+        Self::Nightmare,
+        Self::Coop,
+        Self::Deathmatch,
+    ];
+
+    /// The skill and kind of game it spawns the map at, none for every entity.
+    #[must_use]
+    pub const fn game(self) -> Option<(Skill, GameMode)> {
+        match self {
+            Self::Every => None,
+            Self::Easy => Some((Skill::Easy, GameMode::Single)),
+            Self::Normal => Some((Skill::Normal, GameMode::Single)),
+            Self::Hard => Some((Skill::Hard, GameMode::Single)),
+            Self::Nightmare => Some((Skill::Nightmare, GameMode::Single)),
+            Self::Coop => Some((Skill::Normal, GameMode::Coop)),
+            Self::Deathmatch => Some((Skill::Normal, GameMode::Deathmatch)),
+        }
+    }
+
+    /// Its name in the menu.
+    const fn text(self) -> Text {
+        match self {
+            Self::Every => Text::MapShowEvery,
+            Self::Easy => Text::MapSkillEasy,
+            Self::Normal => Text::MapSkillNormal,
+            Self::Hard => Text::MapSkillHard,
+            Self::Nightmare => Text::MapSkillNightmare,
+            Self::Coop => Text::MapCoop,
+            Self::Deathmatch => Text::MapDeathmatch,
+        }
+    }
 }
 
 /// What the map editor says about the map's file on disk (P5-17).
@@ -85,7 +164,10 @@ pub struct MapEditor {
     /// The document's path and edits the scene was built from.
     built: Option<(std::path::PathBuf, MapRevision)>,
     classes: HashMap<String, ClassLook>,
+    /// The classnames, sorted, as the browser lists them.
+    names: Vec<String>,
     models: HashMap<String, Vec<Line>>,
+    browser: EntityBrowser,
     /// The selected entity's keys, as `map.entity` gave them.
     keys: Option<(EntityIndex, EntityKeys)>,
     /// The document revision the keys were read at.
@@ -100,6 +182,24 @@ pub struct MapEditor {
     disk: DiskNotice,
     /// The keys the code fires entities by (MAP-8.8).
     targeting: Vec<String>,
+    /// The entities selected with Shift besides the selected one, which key edits also set.
+    also: BTreeSet<EntityIndex>,
+    /// Which links the view draws.
+    links: LinkView,
+    /// Which entities the view shows.
+    show: ShowFilter,
+    /// The entities the filter hides, and the map's edits it was found at.
+    hidden: BTreeSet<EntityIndex>,
+    hidden_read: Option<MapRevision>,
+    /// The key the eyedropper sets on the next entity clicked.
+    picking: Option<String>,
+    /// The key the eyedropper last set, which an Alt-drag sets too.
+    link_key: Option<String>,
+    /// The entity an Alt-drag links from.
+    link_from: Option<EntityIndex>,
+    /// Where each entity's centre was drawn in the last frame, where a link dragged from it
+    /// starts.
+    centres: Vec<(EntityIndex, Pos2)>,
 }
 
 impl MapEditor {
@@ -114,6 +214,8 @@ impl MapEditor {
         self.classes = classes
             .map(|class| (class.name.clone(), ClassLook::from(class)))
             .collect();
+        self.names = self.classes.keys().cloned().collect();
+        self.names.sort();
         self.models = load_models(&self.classes, project, game);
         self.built = None;
     }
@@ -146,6 +248,46 @@ impl MapEditor {
     /// Takes the keys the code fires entities by (MAP-8.8).
     pub fn set_targeting(&mut self, targeting: Vec<String>) {
         self.targeting = targeting;
+        self.built = None;
+    }
+
+    /// The filter to find the hidden entities with again, when the map was edited since they
+    /// were found at `edits`.
+    #[must_use]
+    pub fn filter_stale(&self, edits: MapRevision) -> Option<ShowFilter> {
+        (self.show != ShowFilter::Every && self.hidden_read != Some(edits)).then_some(self.show)
+    }
+
+    /// Takes the filter chosen and the entities it hides, found at the map's edits `edits`;
+    /// every entity shown when it could not be found.
+    pub fn set_hidden(
+        &mut self,
+        show: ShowFilter,
+        hidden: Option<Vec<EntityIndex>>,
+        edits: MapRevision,
+    ) {
+        match hidden {
+            Some(hidden) => {
+                self.show = show;
+                self.hidden = hidden.into_iter().collect();
+            }
+            None => {
+                self.show = ShowFilter::Every;
+                self.hidden.clear();
+            }
+        }
+        self.hidden_read = Some(edits);
+    }
+
+    /// The key an Alt-drag sets: the eyedropper's last, else the shortest the code fires by,
+    /// the plain one (`target` in id's QuakeC).
+    fn link_key(&self) -> Option<String> {
+        self.link_key.clone().or_else(|| {
+            self.targeting
+                .iter()
+                .min_by_key(|key| (key.len(), (*key).clone()))
+                .cloned()
+        })
     }
 
     /// Takes what to say about the map's file on disk.
@@ -153,19 +295,85 @@ impl MapEditor {
         self.disk = disk;
     }
 
+    /// Where `entity`'s centre was drawn in the last frame, when it was in view.
+    #[must_use]
+    pub fn drawn_at(&self, entity: EntityIndex) -> Option<Pos2> {
+        self.centres
+            .iter()
+            .find(|(drawn, _)| *drawn == entity)
+            .map(|(_, at)| *at)
+    }
+
     /// Forgets the camera, so the next map opened starts at its player start.
     pub fn reset_camera(&mut self) {
         self.camera = None;
     }
 
+    /// Draws the view's toolbar, `document` in the view and the entity browser below it, in
+    /// all the space `ui` has left; what they asked for.
+    pub fn ui(&mut self, ui: &mut Ui, theme: &Theme, document: &MapDocument) -> Vec<MapAction> {
+        let mut actions = self.toolbar(ui);
+        let full = ui.available_rect_before_wrap();
+        let height = BROWSER_HEIGHT.min(full.height() / 2.0);
+        let (view, below) = full.split_top_bottom_at_y(full.bottom() - height);
+        let mut view_ui = ui.new_child(egui::UiBuilder::new().max_rect(view));
+        actions.extend(self.view(&mut view_ui, theme, document));
+        let mut browser_ui = ui.new_child(egui::UiBuilder::new().max_rect(below));
+        self.browser.ui(
+            &mut browser_ui,
+            theme,
+            &self.names,
+            &self.classes,
+            &self.models,
+        );
+        ui.advance_cursor_after_rect(full);
+        actions
+    }
+
+    /// The links shown and the filter by skill and game; the filter chosen.
+    fn toolbar(&mut self, ui: &mut Ui) -> Vec<MapAction> {
+        let mut actions = Vec::new();
+        ui.horizontal(|ui| {
+            ui.label(Text::MapLinks.get());
+            ui.selectable_value(
+                &mut self.links,
+                LinkView::Selection,
+                Text::MapLinksSelected.get(),
+            );
+            ui.selectable_value(&mut self.links, LinkView::All, Text::MapLinksAll.get());
+            ui.separator();
+            ui.label(Text::MapShow.get());
+            egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<ShowFilter>()))
+                .selected_text(self.show.text().get())
+                .show_ui(ui, |ui| {
+                    for show in ShowFilter::ALL {
+                        if ui
+                            .selectable_label(self.show == show, show.text().get())
+                            .clicked()
+                        {
+                            actions.push(MapAction::Filter(show));
+                        }
+                    }
+                });
+        });
+        actions
+    }
+
     /// Draws `document` in all the space `ui` has left and reads the mouse and keys; what
     /// they asked for.
-    pub fn ui(&mut self, ui: &mut Ui, theme: &Theme, document: &MapDocument) -> Vec<MapAction> {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one frame of the view: camera, picking, dropping, linking and drawing, in order"
+    )]
+    fn view(&mut self, ui: &mut Ui, theme: &Theme, document: &MapDocument) -> Vec<MapAction> {
         let built = (document.path().to_path_buf(), document.edits());
         if self.built.as_ref() != Some(&built) {
-            self.scene = Scene::build(document, &self.classes);
+            self.scene = Scene::build(document, &self.classes, &self.targeting);
             self.built = Some(built);
+            let count = document.file().entities.len();
+            self.also.retain(|entity| entity.get() < count);
         }
+        let link_key = self.link_key();
         let camera = self.camera.get_or_insert_with(|| start_camera(document));
         let rect = ui.available_rect_before_wrap();
         let response = ui.interact(
@@ -193,7 +401,17 @@ impl MapEditor {
         }
         let mut actions = Vec::new();
         let selected = document.selected();
+        if selected.is_none() {
+            self.also.clear();
+        }
+        let selection: BTreeSet<EntityIndex> = selected
+            .into_iter()
+            .chain(self.also.iter().copied())
+            .collect();
         if response.has_focus() {
+            if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+                self.picking = None;
+            }
             // The arrows move the selection, as TrenchBroom's do, not the keyboard focus.
             ui.memory_mut(|memory| {
                 memory.set_focus_lock_filter(
@@ -214,13 +432,65 @@ impl MapEditor {
             }
         }
         let aspect = rect.width() / rect.height().max(1.0);
+        let ray = |at: Pos2| {
+            let x = (at.x - rect.left()) / rect.width().max(1.0) * 2.0 - 1.0;
+            let y = 1.0 - (at.y - rect.top()) / rect.height().max(1.0) * 2.0;
+            camera.ray(aspect, [x, y])
+        };
+        let pick = |at: Pos2| {
+            let (start, direction) = ray(at);
+            self.scene.pick(start, direction, &self.hidden)
+        };
         if response.clicked()
             && let Some(at) = response.interact_pointer_pos()
         {
-            let x = (at.x - rect.left()) / rect.width().max(1.0) * 2.0 - 1.0;
-            let y = 1.0 - (at.y - rect.top()) / rect.height().max(1.0) * 2.0;
-            let (start, direction) = camera.ray(aspect, [x, y]);
-            actions.push(MapAction::Select(self.scene.pick(start, direction)));
+            let picked = pick(at);
+            let shift = ui.input(|i| i.modifiers.shift);
+            if let Some(key) = self.picking.take() {
+                if let (Some(from), Some(to)) = (selected, picked)
+                    && from != to
+                {
+                    self.link_key = Some(key.clone());
+                    actions.push(MapAction::Link(from, key, to));
+                }
+            } else if shift && selected.is_some() && picked != selected {
+                if let Some(entity) = picked
+                    && !self.also.remove(&entity)
+                {
+                    self.also.insert(entity);
+                }
+            } else {
+                self.also.clear();
+                actions.push(MapAction::Select(picked));
+            }
+        }
+        let alt = ui.input(|i| i.modifiers.alt);
+        if response.drag_started_by(egui::PointerButton::Primary)
+            && alt
+            && let Some(at) = response.interact_pointer_pos()
+        {
+            self.link_from = pick(at).filter(|entity| selection.contains(entity));
+        }
+        let pointer = ui.ctx().pointer_latest_pos();
+        if response.drag_stopped()
+            && let Some(from) = self.link_from.take()
+            && let Some(to) = pointer.and_then(pick)
+            && to != from
+            && let Some(key) = link_key
+        {
+            actions.push(MapAction::Link(from, key, to));
+        }
+        if let Some(ClassDrag(classname)) = response.dnd_release_payload::<ClassDrag>().as_deref()
+            && let Some(at) = pointer
+        {
+            let (start, direction) = ray(at);
+            let snap = |c: f32| (f64::from(c) / GRID).round() * GRID;
+            let origin = [0, 1, 2].map(|axis| {
+                let s = start.get(axis).copied().unwrap_or_default();
+                let d = direction.get(axis).copied().unwrap_or_default();
+                snap(s + d * PLACE_DISTANCE)
+            });
+            actions.push(MapAction::Place(classname.clone(), origin));
         }
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, theme.color(Token::SurfaceViewport));
@@ -229,8 +499,22 @@ impl MapEditor {
         for line in &self.scene.lines {
             projection.line(&painter, *line, world);
         }
+        let link = Stroke::new(1.0, theme.color(Token::Focus));
+        let mut centres = Vec::new();
+        for line in self.scene.links(self.links, &selection, &self.hidden) {
+            projection.line(&painter, line, link);
+            if let Some(end) = projection.point(line[1]) {
+                painter.circle_filled(end, LINK_END, link.color);
+            }
+        }
         for shape in &self.scene.entities {
-            let chosen = selected == Some(shape.index);
+            if self.hidden.contains(&shape.index) {
+                continue;
+            }
+            if let Some(centre) = projection.point(shape.centre()) {
+                centres.push((shape.index, centre));
+            }
+            let chosen = selection.contains(&shape.index);
             let color = if chosen {
                 theme.color(Token::Accent)
             } else {
@@ -256,10 +540,20 @@ impl MapEditor {
                 }
             }
         }
+        if let (Some(from), Some(at)) = (self.link_from, pointer)
+            && let Some((_, start)) = centres.iter().find(|(entity, _)| *entity == from)
+        {
+            painter.line_segment([*start, at], Stroke::new(2.0, theme.color(Token::Focus)));
+        }
+        self.centres = centres;
         actions
     }
 
     /// The key editor of the selected entity, in the Properties panel; what it asked for.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one panel, top to bottom: the notices, the keys, the spawnflags and a new key"
+    )]
     pub fn properties(&mut self, ui: &mut Ui, theme: &Theme) -> Vec<MapAction> {
         let mut actions = Vec::new();
         if let Some(refused) = &self.refused {
@@ -294,7 +588,11 @@ impl MapEditor {
             return actions;
         };
         let entity = *entity;
+        let also: Vec<EntityIndex> = self.also.iter().copied().collect();
         ui.label(RichText::new(keys.classname.clone().unwrap_or_default()).strong());
+        if !also.is_empty() {
+            ui.label(RichText::new(also_selected(also.len())).color(theme.color(Token::TextMuted)));
+        }
         egui::Grid::new(ui.id().with(entity))
             .num_columns(KEY_COLUMNS)
             .striped(true)
@@ -305,13 +603,32 @@ impl MapEditor {
                         .typing
                         .entry(key.clone())
                         .or_insert_with(|| value.clone());
-                    let edit = ui.add_sized(
-                        [VALUE_WIDTH, ui.spacing().interact_size.y],
-                        egui::TextEdit::singleline(typed),
-                    );
-                    if edit.lost_focus() && typed != value {
-                        actions.push(MapAction::SetKey(entity, key.clone(), typed.clone()));
-                    }
+                    let ty = keys
+                        .keys
+                        .iter()
+                        .find(|k| k.name == *key)
+                        .map(|k| k.ty.as_str());
+                    let field = if self.targeting.contains(key) {
+                        Field::Target
+                    } else {
+                        Field::of(key, ty, self.scene.values.get(key))
+                    };
+                    ui.horizontal(|ui| {
+                        if let Some(set) = field.ui(ui, typed, value) {
+                            let set = MapAction::SetKey(entity, also.clone(), key.clone(), set);
+                            actions.push(set);
+                        }
+                        if field == Field::Target {
+                            let picking = self.picking.as_ref() == Some(key);
+                            if ui
+                                .selectable_label(picking, Text::MapPick.get())
+                                .on_hover_text(Text::MapPickHint.get())
+                                .clicked()
+                            {
+                                self.picking = (!picking).then(|| key.clone());
+                            }
+                        }
+                    });
                     if ui
                         .small_button(Text::MapRemoveKey.get())
                         .on_hover_text(Text::MapRemoveKey.get())
@@ -322,6 +639,23 @@ impl MapEditor {
                     ui.end_row();
                 }
             });
+        if !keys.spawnflags.is_empty() {
+            let value = keys
+                .pairs
+                .iter()
+                .rev()
+                .find(|(k, _)| k == SPAWNFLAGS)
+                .map(|(_, v)| v.as_str())
+                .unwrap_or_default();
+            if let Some(set) = spawnflags(ui, &keys.spawnflags, value) {
+                actions.push(MapAction::SetKey(
+                    entity,
+                    also.clone(),
+                    SPAWNFLAGS.to_owned(),
+                    set,
+                ));
+            }
+        }
         let unset: Vec<_> = keys
             .keys
             .iter()
@@ -372,7 +706,12 @@ impl MapEditor {
                 .clicked()
             {
                 let (key, value) = core::mem::take(&mut self.adding);
-                actions.push(MapAction::SetKey(entity, key.trim().to_owned(), value));
+                actions.push(MapAction::SetKey(
+                    entity,
+                    also,
+                    key.trim().to_owned(),
+                    value,
+                ));
             }
         });
         actions
@@ -442,7 +781,7 @@ fn selection_keys(ui: &Ui, camera: &Camera, entity: EntityIndex) -> Vec<MapActio
 }
 
 /// The twelve edges of a box.
-fn box_lines([min, max]: [[f32; 3]; 2]) -> [Line; 12] {
+pub(crate) fn box_lines([min, max]: [[f32; 3]; 2]) -> [Line; 12] {
     let corner = |x: bool, y: bool, z: bool| {
         [
             if x { max[0] } else { min[0] },
@@ -471,7 +810,7 @@ fn box_lines([min, max]: [[f32; 3]; 2]) -> [Line; 12] {
 }
 
 /// A class's colour as the painter takes it.
-fn rgb(color: [f32; 3]) -> Color32 {
+pub(crate) fn rgb(color: [f32; 3]) -> Color32 {
     let channel = |c: f32| {
         let scaled = (c.clamp(0.0, 1.0) * f32::from(u8::MAX)).round();
         u8::try_from(scaled_to_int(scaled)).unwrap_or(u8::MAX)
@@ -518,6 +857,12 @@ impl Projection {
         let dot = |a: [f32; 3]| a[0] * v[0] + a[1] * v[1] + a[2] * v[2];
         let [forward, right, up] = self.axes;
         [dot(right), dot(up), dot(forward)]
+    }
+
+    /// Where `p` is in the view, when it is in front of the near plane.
+    fn point(&self, p: [f32; 3]) -> Option<Pos2> {
+        let v = self.view(p);
+        (v[2] >= NEAR).then(|| self.screen(v))
     }
 
     fn screen(&self, v: [f32; 3]) -> Pos2 {

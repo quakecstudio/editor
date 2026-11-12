@@ -54,6 +54,9 @@ use qs_workbench::map_edit::{
     MapDifference, MapDocument, MapOnDisk, MapOpenParams, MapSaved, MoveParams, RemoveKeyParams,
     ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
 };
+use qs_workbench::map_edit::{
+    FilterParams, LinkParams, MAP_FILTER, MAP_LINK, MAP_PLACE, MapFiltered, PlaceParams,
+};
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
@@ -91,7 +94,7 @@ use crate::game_guide::{self, Guide, GuideAction};
 use crate::git_panel::{BlameShown, GitAction, GitData, GitView, git_ui};
 use crate::icons::Icon;
 use crate::keymap::{self, Scope};
-use crate::map_editor::{DiskNotice, MapAction, MapEditor};
+use crate::map_editor::{DiskNotice, MapAction, MapEditor, ShowFilter};
 use crate::map_view::{self, MapView};
 use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
@@ -1958,9 +1961,32 @@ impl Shell {
                 MapAction::Duplicate(entity) => {
                     self.attempt(MAP_DUPLICATE, &EntityParams { entity })
                 }
-                MapAction::SetKey(entity, key, value) => {
-                    self.attempt(MAP_SET_KEY, &SetKeyParams { entity, key, value })
-                }
+                MapAction::SetKey(entity, also, key, value) => self.attempt(
+                    MAP_SET_KEY,
+                    &SetKeyParams {
+                        entity,
+                        key,
+                        value,
+                        also,
+                    },
+                ),
+                MapAction::Place(classname, origin) => self.attempt(
+                    MAP_PLACE,
+                    &PlaceParams {
+                        classname,
+                        origin,
+                        keys: Vec::new(),
+                    },
+                ),
+                MapAction::Link(entity, key, target) => self.attempt(
+                    MAP_LINK,
+                    &LinkParams {
+                        entity,
+                        key,
+                        target,
+                    },
+                ),
+                MapAction::Filter(show) => self.filter_map(show).map(|()| serde_json::Value::Null),
                 MapAction::RemoveKey(entity, key) => {
                     self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
                 }
@@ -2009,6 +2035,43 @@ impl Shell {
         }
     }
 
+    /// The map editor, for tests to find where it drew the map's entities.
+    #[cfg(test)]
+    pub(crate) const fn map_editor(&self) -> &MapEditor {
+        &self.map_editor
+    }
+
+    /// Finds the entities the game does not spawn under `show` with `map.filter`, for the map
+    /// editor to hide; every entity shown when it fails.
+    fn filter_map(&mut self, show: ShowFilter) -> Result<(), ShellError> {
+        let Some(edits) = self
+            .session
+            .context()
+            .workbench
+            .map()
+            .map(MapDocument::edits)
+        else {
+            return Ok(());
+        };
+        let Some((skill, mode)) = show.game() else {
+            self.map_editor.set_hidden(show, Some(Vec::new()), edits);
+            return Ok(());
+        };
+        let filtered: Result<MapFiltered, ShellError> =
+            self.attempt(MAP_FILTER, &FilterParams { skill, mode });
+        match filtered {
+            Ok(filtered) => {
+                self.map_editor
+                    .set_hidden(show, Some(filtered.removed), edits);
+                Ok(())
+            }
+            Err(error) => {
+                self.map_editor.set_hidden(show, None, edits);
+                Err(error)
+            }
+        }
+    }
+
     /// Draws the map editor in the Map tab when a map is open, running what it asks for;
     /// whether it did.
     fn map_tab(&mut self, ui: &mut Ui) -> bool {
@@ -2020,6 +2083,13 @@ impl Shell {
         }
         let actions = self.map_editor.ui(ui, &self.theme, document);
         self.map_actions(actions);
+        if let Some(document) = self.session.context().workbench.map()
+            && let Some(show) = self.map_editor.filter_stale(document.edits())
+            && let Err(error) = self.filter_map(show)
+        {
+            tracing::warn!(%error, "the map filter was not found again");
+            self.map_editor.set_refused(Some(error.to_string()));
+        }
         if let Some(document) = self.session.context().workbench.map()
             && self.map_editor.keys_stale(document.revision())
         {

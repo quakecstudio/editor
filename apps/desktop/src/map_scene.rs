@@ -4,7 +4,7 @@
 //! brushes, a BSP's faces), each entity's box from its class or its brushes, the wireframes of
 //! the classes' models, and where the camera starts.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 use qs_bsp::{Bsp, BspLoader};
@@ -30,6 +30,16 @@ const START_PITCH: f32 = 15.0;
 
 /// The classname of the player's start, where the camera starts.
 const PLAYER_START: &[u8] = b"info_player_start";
+/// The key an entity is fired by, which the keys the code fires entities by name (MAP-8.8).
+pub(crate) const TARGETNAME: &str = "targetname";
+/// The key holding an entity's spawnflags (EDICT-8.4).
+pub(crate) const SPAWNFLAGS: &str = "spawnflags";
+/// The key holding a point entity's yaw, or -1 for up and -2 for down (`SetMovedir`).
+pub(crate) const ANGLE: &str = "angle";
+/// The end of a key holding a colour as three numbers: `_color`, `color`.
+pub(crate) const COLOR_SUFFIX: &str = "color";
+/// How `project.entities` names a float key's type.
+pub(crate) const FLOAT_TYPE: &str = "float";
 
 /// How an entity class is drawn: its box, colour and model.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -40,7 +50,12 @@ pub(crate) struct ClassLook {
     pub(crate) color: Option<[f32; 3]>,
     /// Its model.
     pub(crate) model: Option<String>,
+    /// Whether the class is made of brushes rather than placed at a point.
+    pub(crate) brush: bool,
 }
+
+/// How `project.entities` names a brush class's shape.
+const BRUSH_SHAPE: &str = "brush";
 
 impl From<&ClassInfo> for ClassLook {
     fn from(class: &ClassInfo) -> Self {
@@ -48,6 +63,7 @@ impl From<&ClassInfo> for ClassLook {
             size: class.size,
             color: class.color,
             model: class.model.clone(),
+            brush: class.shape == BRUSH_SHAPE,
         }
     }
 }
@@ -69,6 +85,22 @@ pub(crate) struct EntityShape {
     pub(crate) model: Option<String>,
     /// Whether it has brushes.
     pub(crate) brush: bool,
+    /// Its `targetname`, when it has one.
+    pub(crate) targetname: Option<String>,
+    /// The values of the keys it fires entities by (MAP-8.8).
+    pub(crate) targets: Vec<String>,
+}
+
+impl EntityShape {
+    /// The middle of its box, where its links start and end.
+    pub(crate) fn centre(&self) -> [f32; 3] {
+        let [min, max] = self.bounds;
+        [
+            (min[0] + max[0]) / 2.0,
+            (min[1] + max[1]) / 2.0,
+            (min[2] + max[2]) / 2.0,
+        ]
+    }
 }
 
 /// The open map as drawn: its world and brush lines and its entities.
@@ -78,12 +110,19 @@ pub(crate) struct Scene {
     pub(crate) lines: Vec<Line>,
     /// Every entity but the world.
     pub(crate) entities: Vec<EntityShape>,
+    /// The values each key holds across the map, the choices its editor offers.
+    pub(crate) values: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Scene {
-    /// The scene of `document`, its point entities sized by `classes`.
+    /// The scene of `document`, its point entities sized by `classes`, linked by the keys in
+    /// `targeting`.
     #[must_use]
-    pub(crate) fn build(document: &MapDocument, classes: &HashMap<String, ClassLook>) -> Self {
+    pub(crate) fn build(
+        document: &MapDocument,
+        classes: &HashMap<String, ClassLook>,
+        targeting: &[String],
+    ) -> Self {
         let mut scene = Self::default();
         let bsp = match document.source() {
             MapSource::Bsp(bytes) => Bsp::read(bytes, BspLoader::default()).ok(),
@@ -104,6 +143,14 @@ impl Scene {
                     }
                     outline(&mut scene.lines, &points);
                 }
+            }
+            let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
+            for pair in entity.pairs() {
+                scene
+                    .values
+                    .entry(text(pair.key()))
+                    .or_default()
+                    .insert(text(pair.value()));
             }
             if index == 0 {
                 continue;
@@ -130,23 +177,81 @@ impl Scene {
                 color: class.and_then(|c| c.color),
                 model: class.and_then(|c| c.model.clone()),
                 brush: entity.is_brush_entity(),
+                targetname: entity
+                    .value(TARGETNAME.as_bytes())
+                    .filter(|name| !name.is_empty())
+                    .map(text),
+                targets: targeting
+                    .iter()
+                    .filter_map(|key| entity.value(key.as_bytes()))
+                    .filter(|name| !name.is_empty())
+                    .map(text)
+                    .collect(),
             });
         }
         scene
     }
 
-    /// The entity whose box the ray from `start` along `direction` enters first; one whose
-    /// box holds `start`, such as a trigger the camera is in, only when it enters none.
+    /// The entity not in `hidden` whose box the ray from `start` along `direction` enters
+    /// first; one whose box holds `start`, such as a trigger the camera is in, only when it
+    /// enters none.
     #[must_use]
-    pub(crate) fn pick(&self, start: [f32; 3], direction: [f32; 3]) -> Option<EntityIndex> {
+    pub(crate) fn pick(
+        &self,
+        start: [f32; 3],
+        direction: [f32; 3],
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> Option<EntityIndex> {
         self.entities
             .iter()
+            .filter(|shape| !hidden.contains(&shape.index))
             .filter_map(|shape| {
                 hit(start, direction, shape.bounds).map(|t| (t <= 0.0, t, shape.index))
             })
             .min_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)))
             .map(|(_, _, index)| index)
     }
+
+    /// The links to draw, each from an entity to one its keys fire: every link, or only those
+    /// with an end in `selection`; none to or from an entity in `hidden`.
+    #[must_use]
+    pub(crate) fn links(
+        &self,
+        view: LinkView,
+        selection: &BTreeSet<EntityIndex>,
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> Vec<Line> {
+        let shown = |shape: &&EntityShape| !hidden.contains(&shape.index);
+        let mut lines = Vec::new();
+        for from in self.entities.iter().filter(shown) {
+            for to in self.entities.iter().filter(shown) {
+                let fires = to
+                    .targetname
+                    .as_ref()
+                    .is_some_and(|name| from.targets.contains(name));
+                let chosen = match view {
+                    LinkView::All => true,
+                    LinkView::Selection => {
+                        selection.contains(&from.index) || selection.contains(&to.index)
+                    }
+                };
+                if fires && chosen && from.index != to.index {
+                    lines.push([from.centre(), to.centre()]);
+                }
+            }
+        }
+        lines
+    }
+}
+
+/// Which links between entities the map view draws.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum LinkView {
+    /// Those to and from the selection.
+    #[default]
+    Selection,
+    /// Every one.
+    All,
 }
 
 /// The map's origin, where the camera starts in a map with no player start.

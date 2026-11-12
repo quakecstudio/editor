@@ -17,6 +17,31 @@ it too.
     default. Clicking one starts a new pair with that key.
   - A target key's value can be picked from the map's targetnames.
   - `map.check` (P5-04) reports the keys and classnames the project does not define.
+- **Placing and linking (P5-13, MAP-27):**
+  - The Entities browser below the view lists the classes the project's QuakeC defines, each
+    with its model's wireframe, or its box where it has no model, in its class's colour. A
+    point class dragged into the view is placed (`map.place`) 256 units ahead of the camera
+    along the pointer's ray, on the 16-unit grid. A brush class is listed, but is made from
+    brushes.
+  - Lines join each entity to the entities its keys fire, for the selection or for every
+    entity (Links). The keys are those the QuakeC compares with `targetname` (MAP-8.8), so
+    `killtarget` and a mod's own keys link as `target` does.
+  - Pick, beside such a key, sets it to the next entity clicked (`map.link`). An Alt-drag from
+    the selection onto another entity sets the key last picked, else the shortest such key
+    (`target` in id's QuakeC). An entity with no `targetname` is given its classname and the
+    next free number.
+  - Duplicating an entity whose `targetname` ends in a number gives the copy the next free
+    number, and moves the numbers of its target keys on by as many, so a copied link in a
+    chain names the next one.
+- **The fields (P5-13):** spawnflags are checkboxes named as the QuakeC names them, `angle`
+  has Up and Down, a key ending in `color` has a colour picker that keeps the key's scale
+  (0 to 1 or 0 to 255), and a float the map gives several values offers those values. Shift+click
+  adds an entity to the selection; a key edit or a spawnflag then sets every selected entity in
+  one undo step (`map.set_key` with `also`).
+- **Show (P5-13):** the view can show only the entities the game spawns on easy, normal, hard or
+  nightmare, or in coop or deathmatch. `map.filter` builds the project and spawns the map in
+  `qs-sim` with those settings, so what the spawnflags rule out and what the QuakeC removes
+  itself are both hidden. It is found again after each edit.
 - **Saving:** `map.save` (Cmd+S in the view) writes a `.map` over itself, and changes only the
   text an edit touched. A BSP's entities go to a `.ent` file beside the BSP, which QuakeSpasm
   and its descendants read in place of the lump (MAP-22). `{"bsp": "lump"}` rewrites the BSP's

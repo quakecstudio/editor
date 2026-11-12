@@ -5,13 +5,13 @@
     reason = "test code: a failed unwrap is a failed test"
 )]
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use qs_workbench::map_edit::EntityIndex;
 use qs_workbench::{Config, FsLoader, Workbench};
 
-use super::{ClassLook, Scene, start_camera};
+use super::{ClassLook, LinkView, Scene, start_camera};
 
 /// The keep fixture's map, open in a workbench.
 fn keep() -> Workbench<FsLoader> {
@@ -35,7 +35,7 @@ fn the_scene_holds_the_brushes_and_the_entities_boxes() {
             ..ClassLook::default()
         },
     )]);
-    let scene = Scene::build(document, &classes);
+    let scene = Scene::build(document, &classes, &[]);
     // The world's six boxes and the door's one, six faces of four edges each.
     assert_eq!(scene.lines.len(), 7 * 6 * 4);
     let shape = |index: usize| {
@@ -61,31 +61,64 @@ fn the_scene_holds_the_brushes_and_the_entities_boxes() {
 #[test]
 fn a_ray_picks_the_nearest_box() {
     let workbench = keep();
-    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new());
+    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[]);
     // Along +x at the door's height: the ogre's 8-unit default box is off this line, the door
     // is on it.
     assert_eq!(
-        scene.pick([0.0, 0.0, 64.0], [1.0, 0.0, 0.0]),
+        scene.pick([0.0, 0.0, 64.0], [1.0, 0.0, 0.0], &BTreeSet::new()),
         Some(EntityIndex::new(4))
     );
     assert_eq!(
-        scene.pick([0.0, 64.0, 24.0], [1.0, 0.0, 0.0]),
+        scene.pick([0.0, 64.0, 24.0], [1.0, 0.0, 0.0], &BTreeSet::new()),
         Some(EntityIndex::new(2))
     );
-    assert_eq!(scene.pick([0.0, 200.0, 24.0], [1.0, 0.0, 0.0]), None);
     assert_eq!(
-        scene.pick([0.0, 0.0, 64.0], [-1.0, 0.0, 0.0]),
+        scene.pick([0.0, 200.0, 24.0], [1.0, 0.0, 0.0], &BTreeSet::new()),
+        None
+    );
+    assert_eq!(
+        scene.pick([0.0, 0.0, 64.0], [-1.0, 0.0, 0.0], &BTreeSet::new()),
         None,
         "behind the ray"
     );
     // From inside the door's box, the ogre ahead is picked, and the door when nothing is.
     assert_eq!(
-        scene.pick([232.0, 64.0, 24.0], [-1.0, 0.0, 0.0]),
+        scene.pick([232.0, 64.0, 24.0], [-1.0, 0.0, 0.0], &BTreeSet::new()),
         Some(EntityIndex::new(2))
     );
     assert_eq!(
-        scene.pick([232.0, 0.0, 120.0], [0.0, 0.0, 1.0]),
+        scene.pick([232.0, 0.0, 120.0], [0.0, 0.0, 1.0], &BTreeSet::new()),
         Some(EntityIndex::new(4))
+    );
+}
+
+// No spec statement: P5-13, MAP-27, MAP-8.8: a key the code fires entities by links its entity
+// to the entity whose targetname it holds; the view draws every link or those of the selection,
+// and none to a hidden entity, which a ray does not pick either
+#[test]
+fn links_follow_the_keys_the_code_fires_by() {
+    let workbench = keep();
+    let targeting = ["target".to_owned()];
+    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &targeting);
+    let none = BTreeSet::new();
+    let ogre_to_door = [[96.0, 64.0, 24.0], [232.0, 0.0, 64.0]];
+    assert_eq!(scene.links(LinkView::All, &none, &none), [ogre_to_door]);
+    assert!(scene.links(LinkView::Selection, &none, &none).is_empty());
+    let door = BTreeSet::from([EntityIndex::new(4)]);
+    assert_eq!(
+        scene.links(LinkView::Selection, &door, &none),
+        [ogre_to_door]
+    );
+    let light = BTreeSet::from([EntityIndex::new(3)]);
+    assert!(scene.links(LinkView::Selection, &light, &none).is_empty());
+    assert!(scene.links(LinkView::All, &none, &door).is_empty());
+    assert_eq!(scene.pick([0.0, 0.0, 64.0], [1.0, 0.0, 0.0], &door), None);
+    // A key the code does not fire by links nothing.
+    let other = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[]);
+    assert!(other.links(LinkView::All, &none, &none).is_empty());
+    assert_eq!(
+        scene.values.get("angle"),
+        Some(&BTreeSet::from(["0".to_owned(), "180".to_owned()]))
     );
 }
 
@@ -121,7 +154,7 @@ fn a_bsp_brush_entity_is_boxed_by_its_submodel() {
     .unwrap();
     let mut workbench = Workbench::new(FsLoader, Config::default());
     workbench.open_map(&bsp).unwrap();
-    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new());
+    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[]);
     let door = scene.entities.first().unwrap();
     assert!(door.brush);
     // Submodel 1's (0, 0, 0) to (64, 64, 8), widened by 1 as the engine loads it (BSP-15.4).
