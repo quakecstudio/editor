@@ -53,6 +53,12 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.status`](#gitstatus) | Lists the project repository's branch and changed files, staged and not, as git status does; none when the project is not in a git repository. |
 | [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
+| [`map.brush_clip`](#mapbrush_clip) | Clips a brush of the open map by the plane through three points, keeping the part behind it, in front of it, or both as two brushes. |
+| [`map.brush_create`](#mapbrush_create) | Adds a box brush from two corners, snapped to the grid (16 units unless given), to the world or an entity of the open map, with a texture. |
+| [`map.brush_delete`](#mapbrush_delete) | Deletes a brush of an entity of the open map. |
+| [`map.brush_merge`](#mapbrush_merge) | Merges two or more brushes of an entity of the open map into their convex hull, which takes the first's place. |
+| [`map.brush_subtract`](#mapbrush_subtract) | Subtracts a brush of the open map from every other brush of its entity, then deletes it: the brushes it overlapped become the parts outside it. |
+| [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
 | [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
@@ -1540,6 +1546,380 @@ Parameters:
     "path"
   ],
   "title": "GitStageParams",
+  "type": "object"
+}
+```
+
+## `map.brush_clip`
+
+Clips a brush of the open map by the plane through three points, keeping the part behind it, in front of it, or both as two brushes.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Keep": {
+      "description": "Which parts of a clipped brush stay.",
+      "oneOf": [
+        {
+          "const": "back",
+          "description": "The part behind the plane, the side its normal points away from.",
+          "type": "string"
+        },
+        {
+          "const": "front",
+          "description": "The part in front of it.",
+          "type": "string"
+        },
+        {
+          "const": "both",
+          "description": "Both, as two brushes.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_clip`.",
+  "properties": {
+    "brush": {
+      "$ref": "#/$defs/BrushIndex",
+      "description": "The brush."
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brush."
+    },
+    "keep": {
+      "$ref": "#/$defs/Keep",
+      "default": "back",
+      "description": "Which parts stay."
+    },
+    "points": {
+      "description": "Three points on the clipping plane; its normal is `(p0 - p1) x (p2 - p1)`, as a\nface's (MAP-3.4).",
+      "items": {
+        "items": {
+          "format": "double",
+          "type": "number"
+        },
+        "maxItems": 3,
+        "minItems": 3,
+        "type": "array"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    }
+  },
+  "required": [
+    "entity",
+    "brush",
+    "points"
+  ],
+  "title": "BrushClipParams",
+  "type": "object"
+}
+```
+
+## `map.brush_create`
+
+Adds a box brush from two corners, snapped to the grid (16 units unless given), to the world or an entity of the open map, with a texture.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_create`.",
+  "properties": {
+    "entity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EntityIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The entity to add it to; the world when not given."
+    },
+    "grid": {
+      "default": null,
+      "description": "The grid the corners snap to, in map units; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "max": {
+      "description": "The opposite corner.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "min": {
+      "description": "One corner of the box.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "texture": {
+      "default": null,
+      "description": "Its texture; the texture of the map's last brush face when not given.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "min",
+    "max"
+  ],
+  "title": "BrushCreateParams",
+  "type": "object"
+}
+```
+
+## `map.brush_delete`
+
+Deletes a brush of an entity of the open map.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_subtract` and `map.brush_delete`.",
+  "properties": {
+    "brush": {
+      "$ref": "#/$defs/BrushIndex",
+      "description": "The brush."
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brush."
+    }
+  },
+  "required": [
+    "entity",
+    "brush"
+  ],
+  "title": "BrushParams",
+  "type": "object"
+}
+```
+
+## `map.brush_merge`
+
+Merges two or more brushes of an entity of the open map into their convex hull, which takes the first's place.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_merge`.",
+  "properties": {
+    "brushes": {
+      "description": "The brushes, two or more.",
+      "items": {
+        "$ref": "#/$defs/BrushIndex"
+      },
+      "type": "array"
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brushes."
+    }
+  },
+  "required": [
+    "entity",
+    "brushes"
+  ],
+  "title": "BrushMergeParams",
+  "type": "object"
+}
+```
+
+## `map.brush_subtract`
+
+Subtracts a brush of the open map from every other brush of its entity, then deletes it: the brushes it overlapped become the parts outside it.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_subtract` and `map.brush_delete`.",
+  "properties": {
+    "brush": {
+      "$ref": "#/$defs/BrushIndex",
+      "description": "The brush."
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brush."
+    }
+  },
+  "required": [
+    "entity",
+    "brush"
+  ],
+  "title": "BrushParams",
+  "type": "object"
+}
+```
+
+## `map.brush_vertex`
+
+Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_vertex`.",
+  "properties": {
+    "brush": {
+      "$ref": "#/$defs/BrushIndex",
+      "description": "The brush."
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brush."
+    },
+    "from": {
+      "description": "The vertex.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "grid": {
+      "default": null,
+      "description": "The grid `to` snaps to; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "to": {
+      "description": "Where it goes.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    }
+  },
+  "required": [
+    "entity",
+    "brush",
+    "from",
+    "to"
+  ],
+  "title": "BrushVertexParams",
   "type": "object"
 }
 ```
