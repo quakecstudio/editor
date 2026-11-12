@@ -1,0 +1,20 @@
+[package]
+name = "qmap-bsp"
+description = "The map compiler: a .map to a BSP29 file, its portal file and its leak file, as id's qbsp builds them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qs-bsp = { workspace = true }
+qs-map = { workspace = true }
+qs-wad = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

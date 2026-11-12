@@ -3538,6 +3538,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qmap-bsp"
+version = "2026.11.1"
+dependencies = [
+ "proptest",
+ "qs-bsp",
+ "qs-map",
+ "qs-wad",
+]
+
+[[package]]
 name = "qs-agent"
 version = "2026.11.1"
 dependencies = [
