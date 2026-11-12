@@ -13,6 +13,7 @@ use std::time::Duration;
 use qs_engine::{
     Client, EntityTarget, Flavour, InspectWhat, LaunchSpec, StepKind, launch, prepare_run_root,
 };
+use qs_workbench::ids::Edict;
 use qs_workbench::map_edit::{EntityIndex, LiveChange};
 use serde_json::{Value, json};
 
@@ -207,7 +208,7 @@ fn engine_tools(client: &mut Client) -> Result<(), String> {
         client,
         &EngineInspectParams {
             what: Inspected::Edict,
-            edict: Some(0),
+            edict: Some(Edict::new(0)),
         },
     )
     .map_err(|e| format!("engine.inspect edict 0: {e}"))?;

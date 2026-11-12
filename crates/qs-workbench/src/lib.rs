@@ -21,6 +21,7 @@ mod editing;
 pub mod entity_classes;
 pub mod export;
 pub mod git;
+pub mod ids;
 pub mod map_check;
 pub mod map_edit;
 mod preview;

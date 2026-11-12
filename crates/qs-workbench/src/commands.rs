@@ -4,6 +4,7 @@
 //! language features over the open project.
 
 use crate::git::register_git;
+use crate::ids::ActionIndex;
 use crate::terminal::register_terminal;
 use std::path::PathBuf;
 
@@ -491,7 +492,7 @@ pub struct CodeActionParams {
     pub offset: usize,
     /// With `code.fix`, which fix, by its index in `code.actions`' list at the same place.
     #[serde(default)]
-    pub index: Option<usize>,
+    pub index: Option<ActionIndex>,
 }
 
 /// One quick fix, as `code.actions` lists it.
@@ -556,13 +557,12 @@ impl<C: HasWorkbench + 'static> Command<C> for CodeFix {
     ) -> Result<Outcome<ActionInfo, C>, WorkbenchError> {
         let workbench = context.workbench();
         let actions = workbench.code_actions(&params.path, params.offset, params.offset);
-        let action =
-            actions
-                .get(params.index.unwrap_or(0))
-                .ok_or_else(|| WorkbenchError::NoFix {
-                    path: params.path.clone(),
-                    offset: params.offset,
-                })?;
+        let action = actions
+            .get(params.index.map_or(0, ActionIndex::get))
+            .ok_or_else(|| WorkbenchError::NoFix {
+                path: params.path.clone(),
+                offset: params.offset,
+            })?;
         workbench.apply_action(action)?;
         Ok(Outcome::outside_history(ActionInfo {
             title: action.title.clone(),

@@ -12,12 +12,13 @@ use qs_workbench::{PlayState, Preview};
 
 use crate::strings::Text;
 use crate::theme::{Theme, Token};
+use qs_workbench::ids::Edict;
 
 /// What a click in the outliner or the Properties panel asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum EntityAction {
     /// Select this edict.
-    Select(u32),
+    Select(Edict),
     /// Set this field of the selected edict to this text.
     SetField {
         /// The field.
@@ -28,7 +29,7 @@ pub(crate) enum EntityAction {
     /// Open this function's definition.
     Open(String),
     /// Select this edict and start an agent thread about it, its state attached (UI-9).
-    Ask(u32),
+    Ask(Edict),
 }
 
 /// The outliner's own state: its filter text.
@@ -51,7 +52,7 @@ impl Outliner {
 pub(crate) struct Properties {
     edits: BTreeMap<String, String>,
     /// The edict the edits are for; another selection drops them.
-    edict: Option<u32>,
+    edict: Option<Edict>,
 }
 
 /// The live count and the edicts by classname, filtered; a click selects an edict.
@@ -87,9 +88,10 @@ pub(crate) fn outliner(
                 match group.edicts.as_slice() {
                     [edict] => {
                         let row = format!("{name}  #{edict}");
-                        let response = ui.selectable_label(selected == Some(*edict), row);
+                        let response =
+                            ui.selectable_label(selected == Some(Edict::new(*edict)), row);
                         if response.clicked() {
-                            action = Some(EntityAction::Select(*edict));
+                            action = Some(EntityAction::Select(Edict::new(*edict)));
                         }
                         ask_menu(&response, *edict, &mut action);
                     }
@@ -100,10 +102,12 @@ pub(crate) fn outliner(
                             .show(ui, |ui| {
                                 for edict in edicts {
                                     let row = format!("#{edict}");
-                                    let response =
-                                        ui.selectable_label(selected == Some(*edict), row);
+                                    let response = ui.selectable_label(
+                                        selected == Some(Edict::new(*edict)),
+                                        row,
+                                    );
                                     if response.clicked() {
-                                        action = Some(EntityAction::Select(*edict));
+                                        action = Some(EntityAction::Select(Edict::new(*edict)));
                                     }
                                     ask_menu(&response, *edict, &mut action);
                                 }
@@ -119,7 +123,7 @@ pub(crate) fn outliner(
 fn ask_menu(response: &egui::Response, edict: u32, action: &mut Option<EntityAction>) {
     response.context_menu(|ui| {
         if ui.button(Text::AskAboutThis.get()).clicked() {
-            *action = Some(EntityAction::Ask(edict));
+            *action = Some(EntityAction::Ask(Edict::new(edict)));
             ui.close();
         }
     });

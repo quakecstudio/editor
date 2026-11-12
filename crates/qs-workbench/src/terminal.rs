@@ -25,6 +25,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::HasWorkbench;
+use crate::ids::TerminalIndex;
 
 /// The id of the command that lists the project's tasks.
 pub const TASK_LIST: &str = "task.list";
@@ -298,8 +299,8 @@ impl Terminals {
     }
 
     /// The tab at `index`.
-    pub fn get_mut(&mut self, index: usize) -> Option<&mut Terminal> {
-        self.tabs.get_mut(index)
+    pub fn get_mut(&mut self, index: TerminalIndex) -> Option<&mut Terminal> {
+        self.tabs.get_mut(index.get())
     }
 
     /// Polls every tab ([`Terminal::poll`]); true when any changed.
@@ -310,9 +311,9 @@ impl Terminals {
     }
 
     /// Adds `tab` and gives its index.
-    fn push(&mut self, tab: Terminal) -> usize {
+    fn push(&mut self, tab: Terminal) -> TerminalIndex {
         self.tabs.push(tab);
-        self.tabs.len().saturating_sub(1)
+        TerminalIndex::new(self.tabs.len().saturating_sub(1))
     }
 }
 
@@ -340,7 +341,7 @@ pub enum TerminalError {
     /// The project has no task of this name.
     NoTask(String),
     /// There is no tab at this index.
-    NoTab(usize),
+    NoTab(TerminalIndex),
     /// Starting the shell, or writing to it, failed.
     Io(String),
 }
@@ -386,7 +387,7 @@ pub struct RunTaskParams {
 #[serde(deny_unknown_fields)]
 pub struct SendParams {
     /// The tab, from 0 in the order opened.
-    pub tab: usize,
+    pub tab: TerminalIndex,
     /// The line to write.
     pub line: String,
 }
@@ -396,14 +397,14 @@ pub struct SendParams {
 #[serde(deny_unknown_fields)]
 pub struct CloseParams {
     /// The tab, from 0 in the order opened.
-    pub tab: usize,
+    pub tab: TerminalIndex,
 }
 
 /// What `task.run` and `terminal.new` answer: the new tab.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Opened {
     /// Its index, from 0 in the order opened.
-    pub tab: usize,
+    pub tab: TerminalIndex,
     /// Its title.
     pub title: String,
 }
@@ -545,10 +546,10 @@ impl<C: HasWorkbench + 'static> Command<C> for CloseTerminal {
 
     fn run(&self, context: &mut C, params: CloseParams) -> Result<Outcome<(), C>, Self::Error> {
         let terminals = context.workbench().terminals_mut();
-        if params.tab >= terminals.tabs.len() {
+        if params.tab.get() >= terminals.tabs.len() {
             return Err(TerminalError::NoTab(params.tab));
         }
-        drop(terminals.tabs.remove(params.tab));
+        drop(terminals.tabs.remove(params.tab.get()));
         Ok(Outcome::outside_history(()))
     }
 }

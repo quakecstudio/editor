@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::ids::Edict;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -37,7 +38,7 @@ impl Field {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Selected {
     /// The edict's number.
-    pub edict: u32,
+    pub edict: Edict,
     /// Its classname.
     pub classname: String,
     /// Its fields, in the order the host gave them.
@@ -110,8 +111,8 @@ impl Entities {
 
     /// The classname of edict `edict`, when it is in use.
     #[must_use]
-    pub fn classname(&self, edict: u32) -> Option<&str> {
-        self.rows.get(&edict).map(String::as_str)
+    pub fn classname(&self, edict: Edict) -> Option<&str> {
+        self.rows.get(&edict.get()).map(String::as_str)
     }
 
     /// The selected edict, when there is one.
@@ -143,7 +144,7 @@ impl Entities {
         if self
             .selected
             .as_ref()
-            .is_some_and(|s| !self.rows.contains_key(&s.edict))
+            .is_some_and(|s| !self.rows.contains_key(&s.edict.get()))
         {
             self.selected = None;
         }
@@ -169,7 +170,7 @@ impl Entities {
         let classname = text(answer, "classname");
         self.rows.insert(edict, classname.clone());
         self.selected = Some(Selected {
-            edict,
+            edict: Edict::new(edict),
             classname,
             fields,
         });
@@ -187,7 +188,11 @@ impl Entities {
             "edict/removed" => {
                 if let Some(edict) = edict_of(params) {
                     self.rows.remove(&edict);
-                    if self.selected.as_ref().is_some_and(|s| s.edict == edict) {
+                    if self
+                        .selected
+                        .as_ref()
+                        .is_some_and(|s| s.edict == Edict::new(edict))
+                    {
                         self.selected = None;
                     }
                 }
@@ -222,7 +227,11 @@ impl Entities {
             {
                 self.rows.insert(edict, text.to_owned());
             }
-            if let Some(selected) = self.selected.as_mut().filter(|s| s.edict == edict) {
+            if let Some(selected) = self
+                .selected
+                .as_mut()
+                .filter(|s| s.edict == Edict::new(edict))
+            {
                 match selected.fields.iter_mut().find(|f| f.name == name) {
                     Some(field) => field.value = value.clone(),
                     None => selected.fields.push(Field {
@@ -279,7 +288,7 @@ impl Entities {
                     .and_then(Value::as_u64)
                     .and_then(|n| u32::try_from(n).ok())
                     .unwrap_or(0);
-                let name = self.classname(edict).unwrap_or("entity");
+                let name = self.classname(Edict::new(edict)).unwrap_or("entity");
                 format!("{name} #{edict}")
             }
             Some("float") => inner.map(number).unwrap_or_default(),

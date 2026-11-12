@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::ids::{BreakpointId, WatchIndex};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -19,7 +20,7 @@ pub struct Breakpoint {
     /// The line, from 1.
     pub line: u32,
     /// The host's id for it, while a game runs and took it.
-    pub id: Option<u64>,
+    pub id: Option<BreakpointId>,
     /// The function the host found at the line.
     pub function: Option<String>,
 }
@@ -200,9 +201,9 @@ impl Debugger {
     }
 
     /// Takes away watch `index`.
-    pub fn unwatch(&mut self, index: usize) {
-        if index < self.watches.len() {
-            self.watches.remove(index);
+    pub fn unwatch(&mut self, index: WatchIndex) {
+        if index.get() < self.watches.len() {
+            self.watches.remove(index.get());
         }
     }
 

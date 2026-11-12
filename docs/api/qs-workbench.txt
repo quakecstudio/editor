@@ -766,6 +766,7 @@ mod qs_workbench::checkpoints
 mod qs_workbench::entity_classes
 mod qs_workbench::export
 mod qs_workbench::git
+mod qs_workbench::ids
 mod qs_workbench::map_check
 mod qs_workbench::map_edit
 mod qs_workbench::preview::debug

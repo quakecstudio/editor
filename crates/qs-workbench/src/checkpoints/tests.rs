@@ -53,7 +53,7 @@ fn restoring_undoes_an_agent_run() {
     let root = project("restore");
     let mut workbench = opened(&root);
     let made = workbench.create_checkpoint("before the run", 0).unwrap();
-    assert_eq!((made.number, made.files), (1, 3));
+    assert_eq!((made.number.get(), made.files), (1, 3));
     std::fs::write(root.join("world.qc"), "void() worldspawn = { saved; };\n").unwrap();
     std::fs::remove_file(root.join("extra.qc")).unwrap();
     std::fs::write(root.join("added.qc"), "float added;\n").unwrap();
@@ -113,10 +113,13 @@ fn the_checkpoint_commands() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!((made.number, made.label.as_str()), (1, "agent run 1"));
+    assert_eq!((made.number.get(), made.label.as_str()), (1, "agent run 1"));
     let plain: CheckpointMade =
         serde_json::from_value(session.execute(CREATE_CHECKPOINT, json!({})).unwrap()).unwrap();
-    assert_eq!((plain.number, plain.label.as_str()), (2, "checkpoint"));
+    assert_eq!(
+        (plain.number.get(), plain.label.as_str()),
+        (2, "checkpoint")
+    );
     let listed: Vec<CheckpointMade> =
         serde_json::from_value(session.execute(LIST_CHECKPOINTS, json!({})).unwrap()).unwrap();
     assert_eq!(listed, [made, plain]);

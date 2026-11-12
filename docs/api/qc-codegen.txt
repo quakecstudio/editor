@@ -13,6 +13,7 @@ field qc_codegen::precache::Precache.name
 field qc_codegen::precache::Precaches.files
 field qc_codegen::precache::Precaches.models
 field qc_codegen::precache::Precaches.sounds
+fn qc_codegen::Compiled::function_and_line
 fn qc_codegen::compile
 fn qc_codegen::compile_module
 struct qc_codegen::Compiled

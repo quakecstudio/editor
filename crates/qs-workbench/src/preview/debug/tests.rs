@@ -11,6 +11,7 @@ use std::path::Path;
 use serde_json::json;
 
 use super::{Debugger, Location, StopReason};
+use crate::ids::{BreakpointId, WatchIndex};
 
 // No spec statement: a breakpoint toggles on and off at its file and line, and the host's id is
 // forgotten when the game stops
@@ -21,7 +22,7 @@ fn breakpoints_toggle_and_are_kept() {
     assert!(debugger.toggle(file, 33).is_none(), "added");
     assert!(debugger.toggle(Path::new("src/items.qc"), 33).is_none());
     assert_eq!(debugger.lines_of(file).collect::<Vec<_>>(), [33]);
-    debugger.breakpoint_mut(file, 33).unwrap().id = Some(3);
+    debugger.breakpoint_mut(file, 33).unwrap().id = Some(BreakpointId::new(3));
     debugger.unset_all();
     assert_eq!(debugger.breakpoints()[0].id, None);
     let removed = debugger.toggle(file, 33).unwrap();
@@ -76,8 +77,8 @@ fn watches_are_added_and_taken_away() {
         .collect();
     assert_eq!(names, ["self.health", "time"]);
     debugger.watches_mut()[0].value = Some("100".to_owned());
-    debugger.unwatch(5);
-    debugger.unwatch(0);
+    debugger.unwatch(WatchIndex::new(5));
+    debugger.unwatch(WatchIndex::new(0));
     assert_eq!(debugger.watches().len(), 1);
     assert_eq!(debugger.watches()[0].expression, "time");
 }
