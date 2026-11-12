@@ -283,6 +283,12 @@ impl MapEditor {
         self.keys = keys;
     }
 
+    /// Why the last map command was refused, for tests.
+    #[cfg(test)]
+    pub(crate) fn refused_text(&self) -> Option<String> {
+        self.refused.clone()
+    }
+
     /// Takes why the last map command asked for was refused, or none when it ran.
     pub fn set_refused(&mut self, refused: Option<String>) {
         self.refused = refused;

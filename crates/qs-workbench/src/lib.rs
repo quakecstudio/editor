@@ -37,6 +37,7 @@ pub mod tools;
 pub mod vm_run;
 
 use qs_map::qbsp::QbspError;
+use qs_map::shapes::ShapeError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
@@ -789,6 +790,12 @@ pub enum WorkbenchError {
         /// Why.
         error: qs_map::BrushError,
     },
+    /// A shape's settings are out of range, or a brush of it would not be valid (P6-18,
+    /// MAP-10).
+    Shape {
+        /// Why.
+        error: ShapeError,
+    },
     /// The entity is no TrenchBroom layer (MAP-9.1).
     NotLayer {
         /// The entity.
@@ -816,6 +823,7 @@ impl fmt::Display for WorkbenchError {
                 write!(f, "entity {entity} has no brush {}", brush.get())
             }
             Self::Brush { error } => write!(f, "{error}"),
+            Self::Shape { error } => write!(f, "{error}"),
             Self::CannotMove { entity } => {
                 write!(
                     f,
@@ -878,6 +886,7 @@ impl Error for WorkbenchError {
             Self::Bsp { error, .. } => Some(error),
             Self::Link { error } => Some(error),
             Self::Brush { error } => Some(error),
+            Self::Shape { error } => Some(error),
             Self::NoFile { .. }
             | Self::NoProject
             | Self::NoFix { .. }
