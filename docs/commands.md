@@ -56,10 +56,11 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
 | [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
-| [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. |
+| [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
 | [`map.filter`](#mapfilter) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
 | [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
+| [`map.link`](#maplink) | Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none. |
 | [`map.move`](#mapmove) | Moves an entity of the open map: a point entity's origin, a brush entity's brushes. |
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
@@ -69,7 +70,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.rotate`](#maprotate) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
-| [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map: its last occurrence keeps its place and formatting, a new key goes after the others. |
+| [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
@@ -1574,7 +1575,7 @@ Parameters:
 
 ## `map.duplicate`
 
-Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated.
+Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many.
 
 Parameters:
 
@@ -1743,6 +1744,49 @@ Parameters:
     }
   },
   "title": "InspectParams",
+  "type": "object"
+}
+```
+
+## `map.link`
+
+Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.link`.",
+  "properties": {
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity whose key to set."
+    },
+    "key": {
+      "description": "The key, one the code fires entities by: `target`, `killtarget` and the like.",
+      "type": "string"
+    },
+    "target": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity it names; given a `targetname` when it has none."
+    }
+  },
+  "required": [
+    "entity",
+    "key",
+    "target"
+  ],
+  "title": "LinkParams",
   "type": "object"
 }
 ```
@@ -2098,7 +2142,7 @@ Parameters:
 
 ## `map.set_key`
 
-Sets a key of an entity of the open map: its last occurrence keeps its place and formatting, a new key goes after the others.
+Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others.
 
 Parameters:
 
@@ -2116,6 +2160,14 @@ Parameters:
   "additionalProperties": false,
   "description": "The parameters of `map.set_key`.",
   "properties": {
+    "also": {
+      "default": [],
+      "description": "Other entities to set it on too, in the same step.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
     "entity": {
       "$ref": "#/$defs/EntityIndex",
       "description": "The entity."

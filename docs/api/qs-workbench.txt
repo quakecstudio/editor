@@ -58,6 +58,7 @@ const qs_workbench::map_edit::disk::FILES_CHANGED
 const qs_workbench::map_edit::disk::MAP_COMPARE
 const qs_workbench::map_edit::disk::MAP_RESOLVE
 const qs_workbench::map_edit::filter::MAP_FILTER
+const qs_workbench::map_edit::links::MAP_LINK
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
 const qs_workbench::preview::CONSOLE
@@ -285,6 +286,7 @@ field qs_workbench::map_edit::EntityKeys.brush
 field qs_workbench::map_edit::EntityKeys.classname
 field qs_workbench::map_edit::EntityKeys.keys
 field qs_workbench::map_edit::EntityKeys.pairs
+field qs_workbench::map_edit::EntityKeys.spawnflags
 field qs_workbench::map_edit::EntityKeys.targetnames
 field qs_workbench::map_edit::EntityParams.entity
 field qs_workbench::map_edit::MapEdited.entity
@@ -303,6 +305,7 @@ field qs_workbench::map_edit::RotateParams.degrees
 field qs_workbench::map_edit::RotateParams.entity
 field qs_workbench::map_edit::SaveParams.bsp
 field qs_workbench::map_edit::SelectParams.entity
+field qs_workbench::map_edit::SetKeyParams.also
 field qs_workbench::map_edit::SetKeyParams.entity
 field qs_workbench::map_edit::SetKeyParams.key
 field qs_workbench::map_edit::SetKeyParams.value
@@ -328,6 +331,9 @@ field qs_workbench::map_edit::inspect::MapInspected.rooms
 field qs_workbench::map_edit::inspect::RoomInfo.bounds
 field qs_workbench::map_edit::inspect::RoomInfo.kind
 field qs_workbench::map_edit::inspect::RoomInfo.name
+field qs_workbench::map_edit::links::LinkParams.entity
+field qs_workbench::map_edit::links::LinkParams.key
+field qs_workbench::map_edit::links::LinkParams.target
 field qs_workbench::preview::BreakpointParams.file
 field qs_workbench::preview::BreakpointParams.line
 field qs_workbench::preview::ChooseGameParams.path
@@ -824,6 +830,7 @@ struct qs_workbench::map_edit::inspect::EntityInfo
 struct qs_workbench::map_edit::inspect::InspectParams
 struct qs_workbench::map_edit::inspect::MapInspected
 struct qs_workbench::map_edit::inspect::RoomInfo
+struct qs_workbench::map_edit::links::LinkParams
 struct qs_workbench::preview::BreakpointParams
 struct qs_workbench::preview::ChooseGameParams
 struct qs_workbench::preview::ConsoleLine
@@ -1004,9 +1011,11 @@ use qs_workbench::map_edit::FilterParams = filter::FilterParams
 use qs_workbench::map_edit::GameMode = filter::GameMode
 use qs_workbench::map_edit::InspectParams = inspect::InspectParams
 use qs_workbench::map_edit::Keep = disk::Keep
+use qs_workbench::map_edit::LinkParams = links::LinkParams
 use qs_workbench::map_edit::LiveChange = live::LiveChange
 use qs_workbench::map_edit::MAP_COMPARE = disk::MAP_COMPARE
 use qs_workbench::map_edit::MAP_FILTER = filter::MAP_FILTER
+use qs_workbench::map_edit::MAP_LINK = links::MAP_LINK
 use qs_workbench::map_edit::MAP_RESOLVE = disk::MAP_RESOLVE
 use qs_workbench::map_edit::MapDifference = disk::MapDifference
 use qs_workbench::map_edit::MapFiltered = filter::MapFiltered
