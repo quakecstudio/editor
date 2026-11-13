@@ -3726,6 +3726,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-map-vis"
+version = "2026.11.1"
+dependencies = [
+ "proptest",
+ "qs-bsp",
+ "qs-map-bsp",
+ "qs-wad",
+ "sha2",
+]
+
+[[package]]
 name = "qs-mcp"
 version = "2026.11.1"
 dependencies = [
