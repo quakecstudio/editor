@@ -34,6 +34,11 @@ pub use groups::{
     MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER, MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams, Switch,
 };
 pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
+pub(crate) use issues::MapIssuesCommand;
+pub use issues::{
+    MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssue, MapIssues, MapSearchParams,
+    QuickFix,
+};
 pub use links::{LinkParams, MAP_LINK};
 pub use live::LiveChange;
 pub use outline::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow, RowKind};
@@ -49,6 +54,7 @@ mod filter;
 mod flags;
 mod groups;
 mod inspect;
+mod issues;
 mod links;
 mod live;
 mod outline;
@@ -1224,6 +1230,8 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(prefabs::ListPrefabs)?;
     registry.register(prefabs::PlacePrefab)?;
     registry.register(prefabs::SavePrefab)?;
+    registry.register(issues::MapFix)?;
+    registry.register(issues::MapSearch)?;
     registry.register(MapSave)
 }
 

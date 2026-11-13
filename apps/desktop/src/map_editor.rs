@@ -18,8 +18,8 @@ use qs_render::Camera;
 use qs_workbench::entity_classes::ClassInfo;
 use qs_workbench::map_compile::MapReport;
 use qs_workbench::map_edit::{
-    EntityIndex, EntityKeys, FlagChange, GameMode, Keep, LayerInfo, MapDocument, MapRevision,
-    OutlineRow, Prefab, Skill,
+    EntityIndex, EntityKeys, FlagChange, GameMode, Keep, LayerInfo, MapDocument, MapFound,
+    MapIssue, MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix, Skill,
 };
 use qs_workbench::map_textures::TextureSources;
 #[cfg(test)]
@@ -29,6 +29,7 @@ use qs_workbench::texture_import::DitherChoice;
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
 use crate::map_groups::{GroupAction, layers_ui, overview_keys, selection_ui};
+use crate::map_issues::IssueBrowser;
 use crate::map_leaks::LeakView;
 use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_panes::{Pane, Plan, PlanCamera, Projection, panes};
@@ -129,6 +130,12 @@ pub enum MapAction {
     ListPrefabs,
     /// Copy the prefab at the path into the map at an origin (P6-23).
     PlacePrefab(std::path::PathBuf, [f64; 3]),
+    /// List the map's issues (P6-19).
+    CheckIssues,
+    /// Apply an issue's quick fix (P6-19).
+    Fix(QuickFix),
+    /// Search the map's entities and brushes (P6-19).
+    Find(MapSearchParams),
 }
 
 /// The external maps the view draws (MAP-14): the project's folder they are read in after the
@@ -317,6 +324,8 @@ pub struct MapEditor {
     leaks: LeakView,
     /// The prefab browser (P6-23).
     prefabs: PrefabBrowser,
+    /// The issue browser and search (P6-19).
+    issues: IssueBrowser,
 }
 
 /// The browsers of the tab below the map view, as the mockup has them.
@@ -329,6 +338,8 @@ pub(crate) enum BottomTab {
     Entities,
     /// The prefab browser (P6-23).
     Prefabs,
+    /// The issue browser and search (P6-19).
+    Issues,
 }
 
 impl MapEditor {
@@ -549,10 +560,22 @@ impl MapEditor {
             .map(|(_, at)| *at)
     }
 
-    /// Forgets the camera, so the next map opened starts at its player start.
+    /// Forgets the camera, so the next map opened starts at its player start, and the last
+    /// map's issues and search.
     pub fn reset_camera(&mut self) {
         self.camera = None;
         self.plans.clear();
+        self.issues.clear();
+    }
+
+    /// Takes the issues `map.issues` found in the map at `at` (P6-19).
+    pub fn set_issues(&mut self, issues: Vec<MapIssue>, at: MapRevision) {
+        self.issues.set_issues(issues, at);
+    }
+
+    /// Takes what `map.search` found in the map at `at` (P6-19).
+    pub fn set_found(&mut self, found: MapFound, at: MapRevision) {
+        self.issues.set_found(found, at);
     }
 
     /// Draws the view's toolbar, `document` in the view and the entity browser below it, in
@@ -575,6 +598,7 @@ impl MapEditor {
         let mut view_ui = ui.new_child(egui::UiBuilder::new().max_rect(view));
         actions.extend(self.view(&mut view_ui, theme, document, layout));
         let mut browser_ui = ui.new_child(egui::UiBuilder::new().max_rect(below));
+        self.issues.follow(document.edits());
         browser_ui.horizontal(|ui| {
             ui.selectable_value(
                 &mut self.bottom,
@@ -583,11 +607,13 @@ impl MapEditor {
             );
             ui.selectable_value(&mut self.bottom, BottomTab::Entities, Text::Entities.get());
             ui.selectable_value(&mut self.bottom, BottomTab::Prefabs, Text::MapPrefabs.get());
+            ui.selectable_value(&mut self.bottom, BottomTab::Issues, Text::MapIssues.get());
             ui.separator();
             match self.bottom {
                 BottomTab::Textures => self.textures.header(ui, theme, document),
                 BottomTab::Entities => self.browser.header(ui, theme, &self.names),
                 BottomTab::Prefabs => actions.extend(self.prefabs.header(ui, theme)),
+                BottomTab::Issues => actions.extend(self.issues.header(ui, theme)),
             }
         });
         browser_ui.separator();
@@ -601,6 +627,7 @@ impl MapEditor {
                 &self.models,
             ),
             BottomTab::Prefabs => self.prefabs.body(&mut browser_ui, theme),
+            BottomTab::Issues => actions.extend(self.issues.body(&mut browser_ui, theme)),
         }
         if let Some((path, name, dither)) = self.textures.import_window(ui.ctx(), theme) {
             actions.push(MapAction::ImportTexture(path, name, dither));

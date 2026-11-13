@@ -30,6 +30,7 @@ mod map_browser;
 pub mod map_editor;
 mod map_fields;
 mod map_groups;
+mod map_issues;
 mod map_leaks;
 mod map_outline;
 mod map_panes;

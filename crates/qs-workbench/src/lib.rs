@@ -777,6 +777,21 @@ pub enum WorkbenchError {
     },
     /// No palette was found in the project or the game to make a texture in (P6-16).
     NoPalette,
+    /// A quick fix would remove a brush that has volume: the map changed since its issue was
+    /// found (P6-19).
+    NotEmpty {
+        /// The entity.
+        entity: map_edit::EntityIndex,
+        /// The brush.
+        brush: map_edit::BrushIndex,
+    },
+    /// The entity has no such key (P6-19).
+    NoKey {
+        /// The entity.
+        entity: map_edit::EntityIndex,
+        /// The key.
+        key: String,
+    },
     /// The brush has no face at this place (P6-22).
     NoFace {
         /// The entity.
@@ -914,6 +929,12 @@ impl fmt::Display for WorkbenchError {
             Self::NoPalette => {
                 f.write_str("no gfx/palette.lmp in the project or the game to make a texture in")
             }
+            Self::NoKey { entity, key } => write!(f, "entity {entity} has no key {key}"),
+            Self::NotEmpty { entity, brush } => write!(
+                f,
+                "brush {} of entity {entity} has volume, so it is not removed",
+                brush.get()
+            ),
             Self::NoFace {
                 entity,
                 brush,
@@ -1020,6 +1041,8 @@ impl Error for WorkbenchError {
             | Self::NoRoom { .. }
             | Self::ChangedOnDisk { .. }
             | Self::NoPalette
+            | Self::NoKey { .. }
+            | Self::NotEmpty { .. }
             | Self::NoFace { .. }
             | Self::NoTextureSize { .. }
             | Self::BadScale { .. }

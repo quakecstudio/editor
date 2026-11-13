@@ -4,6 +4,7 @@
 //! wording is reviewed in one place and can be translated later. A test fails on a string
 //! literal in the UI modules.
 
+use qs_workbench::map_edit::{BrushIndex, EntityIndex, QuickFix};
 use qs_workbench::map_textures::{WadFound, WadState};
 
 /// One string the app shows.
@@ -612,6 +613,24 @@ pub enum Text {
     MapPrefabName,
     /// The button that saves the selected brushes as a prefab.
     MapSavePrefab,
+    /// The map browser's tab listing the map's issues.
+    MapIssues,
+    /// The button that lists the map's issues.
+    MapCheckIssues,
+    /// What the issue list says before the map is checked.
+    MapIssuesHint,
+    /// What the issue list says of a map with none.
+    MapNoIssues,
+    /// The search's classname field.
+    MapSearchClass,
+    /// The search's key field.
+    MapSearchKey,
+    /// The search's value field.
+    MapSearchValue,
+    /// The search's texture field.
+    MapSearchTexture,
+    /// The search's box field.
+    MapSearchWithin,
     /// The heading of the selected faces' texture editing.
     MapFaces,
     /// How to select and edit faces' textures.
@@ -708,7 +727,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 347] = [
+    pub const ALL: [Self; 356] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1010,6 +1029,15 @@ impl Text {
         Self::MapPrefabHint,
         Self::MapPrefabName,
         Self::MapSavePrefab,
+        Self::MapIssues,
+        Self::MapCheckIssues,
+        Self::MapIssuesHint,
+        Self::MapNoIssues,
+        Self::MapSearchClass,
+        Self::MapSearchKey,
+        Self::MapSearchValue,
+        Self::MapSearchTexture,
+        Self::MapSearchWithin,
         Self::MapFaces,
         Self::MapFacesHint,
         Self::MapUvFit,
@@ -1384,6 +1412,15 @@ impl Text {
             Self::MapPrefabHint => "Drag a prefab into the view to copy it in",
             Self::MapPrefabName => "Prefab name",
             Self::MapSavePrefab => "Save as prefab",
+            Self::MapIssues => "Issues",
+            Self::MapCheckIssues => "Check map",
+            Self::MapIssuesHint => "Check the map to list its issues",
+            Self::MapNoIssues => "The map has no issues",
+            Self::MapSearchClass => "Class",
+            Self::MapSearchKey => "Has key",
+            Self::MapSearchValue => "Has value",
+            Self::MapSearchTexture => "Has texture",
+            Self::MapSearchWithin => "Within: x y z x y z",
             Self::MapFaces => "Faces",
             Self::MapFacesHint => {
                 "Alt-click faces to edit their textures. Drag the view to shift, Shift-drag to rotate, Cmd-drag (Ctrl-drag off macOS) to scale"
@@ -1563,6 +1600,53 @@ pub fn selection_size([x, y, z]: [f64; 3]) -> String {
 pub fn prefab_count(prefabs: usize) -> String {
     let noun = if prefabs == 1 { "prefab" } else { "prefabs" };
     format!("{prefabs} {noun}")
+}
+
+/// How many issues the map has and how many of them have a quick fix (P6-19).
+#[must_use]
+pub fn issue_count(issues: usize, fixable: usize) -> String {
+    let noun = if issues == 1 { "issue" } else { "issues" };
+    format!("{issues} {noun}, {fixable} with a fix")
+}
+
+/// One issue as the issue browser lists it: its line, when it has one, and what is wrong
+/// (P6-19).
+#[must_use]
+pub fn issue_line(line: u32, message: &str) -> String {
+    if line == 0 {
+        message.to_owned()
+    } else {
+        format!("line {line}: {message}")
+    }
+}
+
+/// How many entities and brushes a map search matched (P6-19).
+#[must_use]
+pub fn map_found_count(entities: usize, brushes: usize) -> String {
+    format!("{entities} entities, {brushes} brushes")
+}
+
+/// An entity named by its place in the map, the world first (P6-19).
+#[must_use]
+pub fn entity_place(place: usize) -> String {
+    format!("entity {place}")
+}
+
+/// A brush named by its entity's place and its own among the entity's brushes (P6-19).
+#[must_use]
+pub fn brush_place(entity: EntityIndex, brush: BrushIndex) -> String {
+    format!("entity {}, brush {}", entity.get(), brush.get())
+}
+
+/// What a quick fix's button says (P6-19).
+#[must_use]
+pub fn fix_label(fix: &QuickFix) -> String {
+    match fix {
+        QuickFix::RemoveBrush { .. } => "Remove brush".to_owned(),
+        QuickFix::RenameKey { to, .. } => format!("Rename to {to}"),
+        QuickFix::SetClassname { classname, .. } => format!("Make {classname}"),
+        QuickFix::AddPlayerStart { .. } => "Add player start".to_owned(),
+    }
 }
 
 /// The button that puts the texture chosen in the browser on the selected brushes (P6-09).
