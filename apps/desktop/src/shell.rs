@@ -76,6 +76,7 @@ use qs_workbench::search::{
 };
 use qs_workbench::staged::HunksParams;
 use qs_workbench::terminal::{CloseParams, Opened, SendParams, TaskInfo};
+use qs_workbench::texture_import::{TEXTURE_IMPORT, TextureImportParams};
 use qs_workbench::tools::{PROJECT_FILES, PROJECT_SEARCH, ProjectSearchParams, SearchFound};
 use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
 use qs_workbench::{
@@ -2075,6 +2076,19 @@ impl Shell {
                     self.attempt(MAP_MOVE_TO, &MoveToParams { entity, into })
                 }
                 MapAction::Panes(panes) => self.attempt(MAP_PANES, &MapPanesParams { panes }),
+                MapAction::ImportTexture(path, name, dither) => {
+                    let imported = self.attempt(
+                        TEXTURE_IMPORT,
+                        &TextureImportParams {
+                            path,
+                            name: Some(name),
+                            dither,
+                        },
+                    );
+                    // The browser and the open map read the WAD again, the new texture in it.
+                    self.load_map_textures();
+                    imported
+                }
                 MapAction::RemoveKey(entity, key) => {
                     self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
                 }

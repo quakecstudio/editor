@@ -122,6 +122,8 @@ const qs_workbench::terminal::TERMINAL_SEND
 const qs_workbench::testing::RUN_TESTS
 const qs_workbench::testing::SCENARIO_DIR
 const qs_workbench::testing::UNIT_PREFIX
+const qs_workbench::texture_import::TEXTURE_FOLDER
+const qs_workbench::texture_import::TEXTURE_IMPORT
 const qs_workbench::tools::COMPILE
 const qs_workbench::tools::ENGINE_BUILTINS
 const qs_workbench::tools::PROJECT_FILES
@@ -179,6 +181,7 @@ enum qs_workbench::terminal::TerminalError
 enum qs_workbench::testing::TestKind
 enum qs_workbench::testing::TestRunError
 enum qs_workbench::testing::Verdict
+enum qs_workbench::texture_import::DitherChoice
 enum qs_workbench::tools::DialectName
 enum qs_workbench::tools::EngineBuiltinsError
 enum qs_workbench::tools::KindName
@@ -547,6 +550,13 @@ field qs_workbench::testing::TestRun.passed
 field qs_workbench::testing::TestRun.passed_count
 field qs_workbench::testing::TestRun.skipped_count
 field qs_workbench::testing::TestRun.tests
+field qs_workbench::texture_import::TextureImportParams.dither
+field qs_workbench::texture_import::TextureImportParams.name
+field qs_workbench::texture_import::TextureImportParams.path
+field qs_workbench::texture_import::TextureImported.map_names_wad
+field qs_workbench::texture_import::TextureImported.name
+field qs_workbench::texture_import::TextureImported.replaced
+field qs_workbench::texture_import::TextureImported.wad
 field qs_workbench::tools::BuiltinFound.engine_name
 field qs_workbench::tools::BuiltinFound.extensions
 field qs_workbench::tools::BuiltinFound.name
@@ -690,6 +700,7 @@ fn qs_workbench::map_textures::TextureSources::has_palette
 fn qs_workbench::map_textures::TextureSources::is_stale
 fn qs_workbench::map_textures::TextureSources::listing
 fn qs_workbench::map_textures::TextureSources::load
+fn qs_workbench::map_textures::TextureSources::palette
 fn qs_workbench::map_textures::TextureSources::watched
 fn qs_workbench::preview::ConsoleLine::is_error
 fn qs_workbench::preview::ConsoleLine::matches
@@ -810,6 +821,8 @@ fn qs_workbench::terminal::register_terminal
 fn qs_workbench::terminal::tasks
 fn qs_workbench::testing::Workbench::run_tests
 fn qs_workbench::testing::register_tests
+fn qs_workbench::texture_import::project_wad
+fn qs_workbench::texture_import::quantized
 fn qs_workbench::tools::crate::Workbench::project_files
 fn qs_workbench::tools::crate::Workbench::project_info
 fn qs_workbench::tools::crate::Workbench::search
@@ -868,6 +881,7 @@ mod qs_workbench::search
 mod qs_workbench::staged
 mod qs_workbench::terminal
 mod qs_workbench::testing
+mod qs_workbench::texture_import
 mod qs_workbench::tools
 mod qs_workbench::vm_run
 struct qs_workbench::Location
@@ -1028,6 +1042,8 @@ struct qs_workbench::terminal::Terminals
 struct qs_workbench::testing::RunTestsParams
 struct qs_workbench::testing::TestResult
 struct qs_workbench::testing::TestRun
+struct qs_workbench::texture_import::TextureImportParams
+struct qs_workbench::texture_import::TextureImported
 struct qs_workbench::tools::BuiltinFound
 struct qs_workbench::tools::Compiled
 struct qs_workbench::tools::EngineBuiltins
@@ -1230,6 +1246,7 @@ variant qs_workbench::WorkbenchError::CannotMove
 variant qs_workbench::WorkbenchError::ChangedOnDisk
 variant qs_workbench::WorkbenchError::Checkpoint
 variant qs_workbench::WorkbenchError::EntOverride
+variant qs_workbench::WorkbenchError::Image
 variant qs_workbench::WorkbenchError::Link
 variant qs_workbench::WorkbenchError::Locked
 variant qs_workbench::WorkbenchError::Map
@@ -1240,6 +1257,7 @@ variant qs_workbench::WorkbenchError::NoFile
 variant qs_workbench::WorkbenchError::NoFix
 variant qs_workbench::WorkbenchError::NoHunk
 variant qs_workbench::WorkbenchError::NoMap
+variant qs_workbench::WorkbenchError::NoPalette
 variant qs_workbench::WorkbenchError::NoProject
 variant qs_workbench::WorkbenchError::NoRoom
 variant qs_workbench::WorkbenchError::NotBuilt
@@ -1253,6 +1271,9 @@ variant qs_workbench::WorkbenchError::Rename
 variant qs_workbench::WorkbenchError::Save
 variant qs_workbench::WorkbenchError::Shape
 variant qs_workbench::WorkbenchError::Spawn
+variant qs_workbench::WorkbenchError::Texture
+variant qs_workbench::WorkbenchError::Wad
+variant qs_workbench::WorkbenchError::WadWrite
 variant qs_workbench::build::Gravity::Error
 variant qs_workbench::build::Gravity::Warning
 variant qs_workbench::commands::CandidateKind::Field
@@ -1415,6 +1436,8 @@ variant qs_workbench::testing::TestRunError::Progs
 variant qs_workbench::testing::Verdict::Failed
 variant qs_workbench::testing::Verdict::Passed
 variant qs_workbench::testing::Verdict::Skipped
+variant qs_workbench::texture_import::DitherChoice::FloydSteinberg
+variant qs_workbench::texture_import::DitherChoice::None
 variant qs_workbench::tools::DialectName::Fteqcc
 variant qs_workbench::tools::DialectName::Gmqcc
 variant qs_workbench::tools::DialectName::Vanilla

@@ -21,6 +21,7 @@ use qs_workbench::map_edit::{
     OutlineRow, Skill,
 };
 use qs_workbench::map_textures::TextureSources;
+use qs_workbench::texture_import::DitherChoice;
 
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
@@ -104,6 +105,8 @@ pub enum MapAction {
     Brush(BrushAction),
     /// Split the map view into other panes (P6-09).
     Panes(MapPanes),
+    /// Import the PNG at the path as a texture of the name (P6-16).
+    ImportTexture(std::path::PathBuf, String, DitherChoice),
 }
 
 /// The entities the map view shows: every one, or those the game spawns at a skill or in a
@@ -473,6 +476,9 @@ impl MapEditor {
                 &self.classes,
                 &self.models,
             ),
+        }
+        if let Some((path, name, dither)) = self.textures.import_window(ui.ctx(), theme) {
+            actions.push(MapAction::ImportTexture(path, name, dither));
         }
         ui.advance_cursor_after_rect(full);
         actions

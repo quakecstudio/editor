@@ -139,6 +139,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`terminal.new`](#terminalnew) | Opens the user's shell in the project directory in a new terminal tab. |
 | [`terminal.poll`](#terminalpoll) | Takes what the terminal tabs have written and how their processes ended, without waiting; true when any tab changed. |
 | [`terminal.send`](#terminalsend) | Writes a line to a terminal tab's shell. |
+| [`texture.import`](#textureimport) | Imports a PNG image as a texture: quantized to the game's palette with its mip levels, written into the project's own WAD in textures/, in place of a texture of the same name, and that WAD named in the open map's world. |
 | [`view.close_split`](#viewclose_split) | Closes the editor's second pane. |
 | [`view.focus_bottom_panel`](#viewfocus_bottom_panel) | Shows the bottom panel, Problems, Console and the debugger, if it is hidden and gives it the keyboard. |
 | [`view.focus_editor`](#viewfocus_editor) | Gives the keyboard to the editor in the centre. |
@@ -5043,6 +5044,61 @@ Parameters:
     "line"
   ],
   "title": "SendParams",
+  "type": "object"
+}
+```
+
+## `texture.import`
+
+Imports a PNG image as a texture: quantized to the game's palette with its mip levels, written into the project's own WAD in textures/, in place of a texture of the same name, and that WAD named in the open map's world.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "DitherChoice": {
+      "description": "How an imported image is matched to the palette (WAD-7).",
+      "oneOf": [
+        {
+          "const": "none",
+          "description": "Each pixel to its nearest colour.",
+          "type": "string"
+        },
+        {
+          "const": "floyd_steinberg",
+          "description": "Floyd and Steinberg's error diffusion.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `texture.import`.",
+  "properties": {
+    "dither": {
+      "$ref": "#/$defs/DitherChoice",
+      "default": "none",
+      "description": "How the image is matched to the palette."
+    },
+    "name": {
+      "default": null,
+      "description": "The texture's name; the image's file name, without its extension, when not given.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "path": {
+      "description": "The PNG image.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "TextureImportParams",
   "type": "object"
 }
 ```

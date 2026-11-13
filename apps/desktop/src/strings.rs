@@ -456,6 +456,16 @@ pub enum Text {
     MapView,
     /// The map editor's view, as a screen reader names it.
     MapEditorView,
+    /// The texture browser's button and window that import a PNG as a texture (P6-16).
+    MapImportTexture,
+    /// The label of an imported texture's name.
+    MapTextureName,
+    /// Matching each pixel of an imported image to its nearest colour.
+    MapDitherNone,
+    /// Dithering an imported image into the palette.
+    MapDitherDiffuse,
+    /// The button that imports the texture previewed.
+    MapImportSave,
     /// The map view's layout of the 3D view alone.
     MapLayoutSingle,
     /// The map view's layout of the 3D view with a top view in its corner.
@@ -652,7 +662,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 319] = [
+    pub const ALL: [Self; 324] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -876,6 +886,11 @@ impl Text {
         Self::Centre,
         Self::MapView,
         Self::MapEditorView,
+        Self::MapImportTexture,
+        Self::MapTextureName,
+        Self::MapDitherNone,
+        Self::MapDitherDiffuse,
+        Self::MapImportSave,
         Self::MapLayoutSingle,
         Self::MapLayoutInset,
         Self::MapLayoutQuad,
@@ -1215,6 +1230,11 @@ impl Text {
             Self::BottomPanel => "Bottom panel: Problems, Console and Debugger",
             Self::Centre => "Centre: Editor, Game and Map",
             Self::MapView => "Map view: drag to turn, scroll to move",
+            Self::MapImportTexture => "Import texture",
+            Self::MapTextureName => "Name",
+            Self::MapDitherNone => "Nearest colour",
+            Self::MapDitherDiffuse => "Dither",
+            Self::MapImportSave => "Import",
             Self::MapEditorView => {
                 "Map editor: right-drag to look, middle-drag to pan, W A S D Q X to fly, click to select"
             }

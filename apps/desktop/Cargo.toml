@@ -17,6 +17,9 @@ name = "quakec-studio"
 path = "src/main.rs"
 
 [dependencies]
+# The game palette the texture import's preview quantizes in (P6-16); the texture browser's
+# tests write the WADs they browse (P6-10).
+qs-wad = { workspace = true }
 # The command line: the project to open.
 clap = { workspace = true, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 # eframe's defaults without `default_fonts`, whose fonts are not bundled (ADR-0003, ADR-0010),
@@ -61,8 +64,6 @@ egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
 # The image a test renderer returns to egui_kittest, which the map view's needs to draw with a
 # depth buffer.
 image = { workspace = true }
-# The texture browser's tests write the WADs they browse (P6-10).
-qs-wad = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { workspace = true }
