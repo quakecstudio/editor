@@ -568,8 +568,9 @@ shift.
 ### Behaviour
 
 - **MAP-13.1** Each face of a brush has the polygon MAP-3.4 gives it on the brush's solid, in
-  the order of the faces; a face with no plane (MAP-3.6), or nothing on the solid, has none,
-  and neither an edit nor a transfer applies to it.
+  the order of the faces; a face with no plane (MAP-3.6), or nothing on the solid, has none. A
+  face with no plane takes no edit and no transfer; a face with no polygon has no extent, so
+  fitting, justifying and snapping leave it as it is.
 - **MAP-13.2** Fitting a texture of width `w` and height `h` sets each axis's scale so that the
   face's extent is `w` along s and `h` along t, keeping the scale's sign, and its shift so that
   the extent starts on a texture edge. An axis along which the face has no extent, or for a
@@ -604,4 +605,5 @@ shift.
   (MAP-4.1), so there a fraction is cut off; ericw-tools keeps it.
 - **MAP-13.11** Adjusting adds a given amount to each shift and to the rotation and multiplies
   each scale by a given factor, as a drag in the UV view does; a standard scale of 0 counts as
-  1 (MAP-4.4), and a Valve 220 face's new rotation turns its axes (MAP-12.2).
+  1 (MAP-4.4), and a Valve 220 face's new rotation turns its axes (MAP-12.2). A factor of 0,
+  or one that is not finite, would leave no texture and is refused.

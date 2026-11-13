@@ -5,6 +5,7 @@
 //! carries one face's alignment onto others so the texture continues across them. Each is one
 //! step with undo.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use qs_commands::{Command, Outcome};
@@ -196,40 +197,55 @@ impl MapDocument {
             })
     }
 
-    /// Gives each of `faces` the texture definition `edit` makes of it and its polygon, in
-    /// one brush replacement per face.
+    /// Gives each of `faces` the texture definition `edit` makes of it and its polygon, one
+    /// brush replacement per brush.
     fn edit_faces(
         &mut self,
         faces: &[FaceRef],
         mut edit: impl FnMut(&Face, &[[f64; 3]]) -> Result<Option<qs_map::TexDef>, WorkbenchError>,
     ) -> Result<(), WorkbenchError> {
-        for &at in faces {
-            let mut brush = self.brush(at.entity, at.brush)?;
-            let polygon = brush
-                .face_polygons()
-                .into_iter()
-                .nth(at.face.get())
-                .flatten()
-                .unwrap_or_default();
-            let face = brush
-                .faces
-                .get_mut(at.face.get())
-                .ok_or(WorkbenchError::NoFace {
-                    entity: at.entity,
-                    brush: at.brush,
-                    face: at.face,
-                })?;
-            if let Some(texdef) = edit(face, &polygon)? {
-                let (points, texture) = (*face.points(), face.texture().to_vec());
-                face.set(points, &texture, texdef)
-                    .map_err(|error| WorkbenchError::Brush {
-                        error: BrushError::Map(error),
+        let mut by_brush: BTreeMap<(EntityIndex, BrushIndex), Vec<FaceIndex>> = BTreeMap::new();
+        for at in faces {
+            by_brush
+                .entry((at.entity, at.brush))
+                .or_default()
+                .push(at.face);
+        }
+        for ((entity, brush_index), places) in by_brush {
+            let mut brush = self.brush(entity, brush_index)?;
+            let polygons = brush.face_polygons();
+            for place in places {
+                let polygon = polygons
+                    .get(place.get())
+                    .cloned()
+                    .flatten()
+                    .unwrap_or_default();
+                let face = brush
+                    .faces
+                    .get_mut(place.get())
+                    .ok_or(WorkbenchError::NoFace {
+                        entity,
+                        brush: brush_index,
+                        face: place,
                     })?;
+                if let Some(texdef) = edit(face, &polygon)? {
+                    let (points, texture) = (*face.points(), face.texture().to_vec());
+                    face.set(points, &texture, texdef)
+                        .map_err(|error| WorkbenchError::Brush {
+                            error: BrushError::Map(error),
+                        })?;
+                }
             }
-            self.replace_brush(at.entity, at.brush, vec![brush])?;
+            self.replace_brush(entity, brush_index, vec![brush])?;
         }
         Ok(())
     }
+}
+
+/// The entity every one of `faces` is in, when they are all in one.
+fn one_entity(faces: &[FaceRef]) -> Option<EntityIndex> {
+    let first = faces.first()?.entity;
+    faces.iter().all(|at| at.entity == first).then_some(first)
 }
 
 /// `map.face_uv`.
@@ -253,8 +269,15 @@ impl<C: HasPreview + 'static> Command<C> for FaceUv {
             .sized()
             .then(|| texture_sources(context))
             .transpose()?;
+        if let UvChoice::Adjust { scale, .. } = params.edit
+            && scale
+                .iter()
+                .any(|&factor| factor == 0.0 || !factor.is_finite())
+        {
+            return Err(WorkbenchError::BadScale { scale });
+        }
         let edit = params.edit.edit();
-        let entity = params.faces.first().map(|at| at.entity);
+        let entity = one_entity(&params.faces);
         let ((), step) = edit_map(context, |document| {
             document.edit_faces(&params.faces, |face, polygon| {
                 let name = String::from_utf8_lossy(face.texture()).into_owned();
@@ -303,7 +326,7 @@ impl<C: HasWorkbench + 'static> Command<C> for FaceAlign {
         context: &mut C,
         params: FaceAlignParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
-        let entity = params.to.first().map(|at| at.entity);
+        let entity = one_entity(&params.to);
         let ((), step) = edit_map(context, |document| {
             let source = document.face(params.from)?;
             document.edit_faces(&params.to, |face, _| Ok(face.aligned_from(&source)))

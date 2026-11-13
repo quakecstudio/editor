@@ -785,6 +785,12 @@ pub enum WorkbenchError {
         /// The texture's name.
         texture: String,
     },
+    /// A scale factor of 0, infinite or not a number, which would leave no texture (P6-22,
+    /// MAP-13.11).
+    BadScale {
+        /// The factors given.
+        scale: [f64; 2],
+    },
     /// The open map is a BSP with no `.map` source, so there is nothing to compile (P6-13).
     NoMapSource {
         /// The BSP.
@@ -911,6 +917,12 @@ impl fmt::Display for WorkbenchError {
                 brush.get(),
                 face.get()
             ),
+            Self::BadScale { scale } => {
+                write!(
+                    f,
+                    "a scale factor must be a number other than 0, not {scale:?}"
+                )
+            }
             Self::NoTextureSize { texture } => {
                 write!(
                     f,
@@ -996,6 +1008,7 @@ impl Error for WorkbenchError {
             | Self::NoPalette
             | Self::NoFace { .. }
             | Self::NoTextureSize { .. }
+            | Self::BadScale { .. }
             | Self::NotBuilt => None,
             Self::Image { error, .. } => Some(error),
             Self::Texture { error } => Some(error),

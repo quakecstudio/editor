@@ -4,6 +4,7 @@
 //! panel sets them, in either form of texture definition.
 
 use crate::TexDef;
+use crate::geometry::{Turn, cross, dot};
 
 /// The parts of a texture definition to set; a part not given is kept (MAP-12.1).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -56,33 +57,13 @@ impl TexDef {
 /// The axes `s` and `t` turned by `degrees` about their normal, `s` toward `t` (MAP-12.2):
 /// a rotation about the unit normal `s x t`; axes with no normal are kept.
 fn turned([s, t]: [[f64; 3]; 2], degrees: f64) -> [[f64; 3]; 2] {
-    let cross = |a: [f64; 3], b: [f64; 3]| {
-        [
-            a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0],
-        ]
-    };
     let normal = cross(s, t);
-    let length = normal.iter().map(|c| c * c).sum::<f64>().sqrt();
+    let length = dot(normal, normal).sqrt();
     if length <= 0.0 || !length.is_finite() {
         return [s, t];
     }
-    let k = normal.map(|c| c / length);
-    let (sin, cos) = degrees.to_radians().sin_cos();
-    // Rodrigues' rotation; both axes lie across their own normal, so its term along the
-    // normal is zero and left out.
-    let turn = |v: [f64; 3]| {
-        let across = cross(k, v);
-        [0, 1, 2].map(|i| {
-            let (vi, ci) = (
-                v.get(i).copied().unwrap_or_default(),
-                across.get(i).copied().unwrap_or_default(),
-            );
-            vi * cos + ci * sin
-        })
-    };
-    [turn(s), turn(t)]
+    let turn = Turn::about(normal.map(|c| c / length), degrees.to_radians());
+    [turn.of(s), turn.of(t)]
 }
 
 #[cfg(test)]

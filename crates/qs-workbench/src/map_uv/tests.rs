@@ -14,12 +14,15 @@ use qs_map::{Brush, Face};
 use serde_json::{Value, json};
 
 use super::{FaceIndex, MAP_FACE_ALIGN, MAP_FACE_UV};
+use crate::map_edit::MapEdited;
 use crate::map_edit::{BrushIndex, EntityIndex, MAP_BRUSH_TEXTURE, MAP_OPEN};
 use crate::map_textures::TextureSources;
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, WorkbenchError, register, register_preview};
 
 const NEAR: f64 = 1e-6;
+/// The keep map's door, the fifth entity.
+const DOOR: usize = 4;
 
 struct Context {
     workbench: Workbench<FsLoader>,
@@ -268,4 +271,41 @@ fn adjust_needs_no_size() {
             scale: [1.0, 1.0],
         }
     );
+}
+
+// spec MAP-13.11: a scale factor of 0 or one not finite is refused and changes nothing; faces
+// of several entities answer no one entity
+#[test]
+fn bad_factors_are_refused() {
+    let mut session = session();
+    let before = first_brush(&session);
+    for factor in [0.0, f64::INFINITY] {
+        let error = session.execute(
+            MAP_FACE_UV,
+            json!({ "faces": [face_ref(1)], "edit": { "kind": "adjust", "scale": [1.0, factor] } }),
+        );
+        assert!(error.is_err(), "{factor}");
+    }
+    assert_eq!(first_brush(&session), before);
+    let one: MapEdited = serde_json::from_value(
+        session
+            .execute(
+                MAP_FACE_UV,
+                json!({ "faces": [face_ref(1), face_ref(2)], "edit": { "kind": "reset" } }),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(one.entity, Some(EntityIndex::new(0)));
+    let door = json!({ "entity": DOOR, "brush": 0, "face": 0 });
+    let two: MapEdited = serde_json::from_value(
+        session
+            .execute(
+                MAP_FACE_ALIGN,
+                json!({ "from": face_ref(1), "to": [face_ref(2), door] }),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(two.entity, None);
 }

@@ -4,7 +4,7 @@
 //! and carrying one face's alignment onto another so the texture continues across them.
 
 use crate::geometry::{
-    MIN_CORNERS, Plane, cross, dot, normalize, paraxial_axes, polygons_on, texvecs,
+    MIN_CORNERS, Plane, Turn, cross, dot, normalize, paraxial_axes, polygons_on, texvecs,
 };
 use crate::{Alignment, Brush, Face, TexDef};
 
@@ -405,39 +405,12 @@ impl Line {
     }
 }
 
-/// A rotation about a unit axis through the origin.
-#[derive(Clone, Copy)]
-struct Turn {
-    axis: [f64; 3],
-    sin: f64,
-    cos: f64,
-}
-
 impl Turn {
-    const NONE: Self = Self {
-        axis: [0.0, 0.0, 1.0],
-        sin: 0.0,
-        cos: 1.0,
-    };
-
     /// The rotation about `axis`, the direction of the line `from` and `to` share, taking
     /// `from`'s normal onto `to`'s.
     fn between(from: &Plane<f64>, to: &Plane<f64>, axis: [f64; 3]) -> Self {
         let across = cross(from.normal, to.normal);
-        let angle = dot(across, axis).atan2(dot(from.normal, to.normal));
-        let (sin, cos) = angle.sin_cos();
-        Self { axis, sin, cos }
-    }
-
-    /// `v` turned (Rodrigues' rotation).
-    fn of(self, v: [f64; 3]) -> [f64; 3] {
-        let k = self.axis;
-        let across = cross(k, v);
-        let along = dot(k, v) * (1.0 - self.cos);
-        [0, 1, 2].map(|i| {
-            let get = |a: [f64; 3]| a.get(i).copied().unwrap_or_default();
-            get(v) * self.cos + get(across) * self.sin + get(k) * along
-        })
+        Self::about(axis, dot(across, axis).atan2(dot(from.normal, to.normal)))
     }
 }
 

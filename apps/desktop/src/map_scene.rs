@@ -247,7 +247,9 @@ impl Scene {
             let mut bounds: Option<[[f32; 3]; 2]> = None;
             let mut lines = Vec::new();
             for (number, brush) in entity.brushes().enumerate() {
-                let polygons = brush.polygons();
+                let face_polygons = brush.face_polygons();
+                let polygons: Vec<Vec<[f64; 3]>> =
+                    face_polygons.iter().flatten().cloned().collect();
                 let mut shape = BrushShape {
                     entity: EntityIndex::new(index),
                     brush: BrushIndex::new(number),
@@ -262,9 +264,7 @@ impl Scene {
                     textures: Vec::new(),
                     faces: Vec::new(),
                 };
-                for (place, (face, polygon)) in
-                    brush.faces.iter().zip(brush.face_polygons()).enumerate()
-                {
+                for (place, (face, polygon)) in brush.faces.iter().zip(face_polygons).enumerate() {
                     let (Some(plane), Some(polygon)) = (face.plane(), polygon) else {
                         continue;
                     };

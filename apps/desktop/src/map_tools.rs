@@ -26,7 +26,8 @@ use qs_workbench::map_uv::{FaceRef, UvChoice};
 use crate::map_editor::{GRID, box_lines};
 use crate::map_panes::{Pane, Projection};
 use crate::map_scene::{Scene, single};
-use crate::map_uv::{PickMode, UvEditor};
+pub(crate) use crate::map_uv::PickMode;
+use crate::map_uv::UvEditor;
 use crate::strings::{Text, apply_texture, measure_readout, move_readout, selection_size};
 use crate::theme::{Theme, Token};
 
@@ -594,6 +595,25 @@ impl BrushTools {
         self.tool
     }
 
+    /// Picks the face `ray` meets first into the face selection as `mode` says, as an
+    /// Alt-click or Alt-Shift-click does; the brushes chosen are let go.
+    pub(crate) fn pick_face(
+        &mut self,
+        (start, direction): Ray,
+        scene: &Scene,
+        hidden: &BTreeSet<EntityIndex>,
+        mode: PickMode,
+    ) {
+        self.uv
+            .pick(scene.pick_face(start, direction, hidden), scene, mode);
+        self.chosen.clear();
+    }
+
+    /// Lets go of the faces selected.
+    pub(crate) fn clear_faces(&mut self) {
+        self.uv.clear();
+    }
+
     /// Adds `face` to the faces selected, as an Alt-Shift-click would.
     #[cfg(test)]
     pub(crate) fn select_face(&mut self, face: FaceRef, scene: &Scene) {
@@ -738,9 +758,7 @@ impl BrushTools {
                 } else {
                     PickMode::Replace
                 };
-                self.uv
-                    .pick(scene.pick_face(start, direction, hidden), scene, mode);
-                self.chosen.clear();
+                self.pick_face((start, direction), scene, hidden, mode);
                 return actions;
             }
             self.uv.clear();

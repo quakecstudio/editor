@@ -86,7 +86,7 @@ fn moved_faces_are_forgotten() {
     let mut uv = UvEditor::default();
     uv.pick(Some(face(0)), &scene, PickMode::Replace);
     uv.pick(Some(face(1)), &scene, PickMode::Toggle);
-    uv.copied = Some(face(1));
+    uv.copied = Some((face(1), floor(1).plane));
     uv.keep_found(&scene);
     assert_eq!(uv.faces(), vec![face(0), face(1)], "unchanged faces stay");
     scene.brushes[0].faces[0].plane = ([0.0, 0.0, 1.0], 8.0);
@@ -162,7 +162,7 @@ fn clicked(label: &str, copied: Option<FaceRef>) -> Vec<BrushAction> {
     let mut uv = UvEditor::default();
     uv.pick(Some(face(0)), &scene, PickMode::Replace);
     uv.pick(Some(face(1)), &scene, PickMode::Toggle);
-    uv.copied = copied;
+    uv.copied = copied.and_then(|at| scene.face(at).map(|face| (at, face.plane)));
     let mut harness = Harness::new_ui_state(
         |ui, (uv, actions): &mut (UvEditor, Vec<BrushAction>)| {
             let size_of = |_: &str| Some([64, 64]);

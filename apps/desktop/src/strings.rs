@@ -1366,7 +1366,7 @@ impl Text {
             Self::MapTextureScale => "Scale",
             Self::MapFaces => "Faces",
             Self::MapFacesHint => {
-                "Alt-click faces to edit their textures. Drag the view to shift, Shift-drag to rotate, Ctrl-drag to scale"
+                "Alt-click faces to edit their textures. Drag the view to shift, Shift-drag to rotate, Cmd-drag (Ctrl-drag off macOS) to scale"
             }
             Self::MapUvFit => "Fit",
             Self::MapUvLeft => "Justify left",

@@ -352,6 +352,40 @@ pub(crate) fn paraxial_axes(normal: [f64; 3]) -> [[f64; 3]; 2] {
     [base_axis(row, 1), base_axis(row, 2)]
 }
 
+/// A rotation about a unit axis through the origin.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Turn {
+    axis: [f64; 3],
+    sin: f64,
+    cos: f64,
+}
+
+impl Turn {
+    /// No rotation.
+    pub(crate) const NONE: Self = Self {
+        axis: [0.0, 0.0, 1.0],
+        sin: 0.0,
+        cos: 1.0,
+    };
+
+    /// The rotation by `radians` about the unit `axis`, right-handed.
+    pub(crate) fn about(axis: [f64; 3], radians: f64) -> Self {
+        let (sin, cos) = radians.sin_cos();
+        Self { axis, sin, cos }
+    }
+
+    /// `v` turned (Rodrigues' rotation).
+    pub(crate) fn of(self, v: [f64; 3]) -> [f64; 3] {
+        let k = self.axis;
+        let across = cross(k, v);
+        let along = dot(k, v) * (1.0 - self.cos);
+        [0, 1, 2].map(|i| {
+            let get = |a: [f64; 3]| a.get(i).copied().unwrap_or_default();
+            get(v) * self.cos + get(across) * self.sin + get(k) * along
+        })
+    }
+}
+
 /// The part of `polygon` on the back of `plane` (Sutherland and Hodgman's clip).
 pub(crate) fn clip_behind(polygon: &[[f64; 3]], plane: &Plane<f64>) -> Vec<[f64; 3]> {
     let side = |p: [f64; 3]| dot(p, plane.normal) - plane.dist;

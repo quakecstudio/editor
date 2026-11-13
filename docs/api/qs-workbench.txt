@@ -1272,6 +1272,7 @@ variant qs_workbench::CheckAfterTyping::OffTheFrame
 variant qs_workbench::CheckAfterTyping::OnTheFrame
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
+variant qs_workbench::WorkbenchError::BadScale
 variant qs_workbench::WorkbenchError::Brush
 variant qs_workbench::WorkbenchError::Bsp
 variant qs_workbench::WorkbenchError::CannotMove

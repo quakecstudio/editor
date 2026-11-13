@@ -69,8 +69,8 @@ pub(crate) enum PickMode {
 pub(crate) struct UvEditor {
     /// The faces, the first picked first, each with the plane it had when picked.
     faces: Vec<(FaceRef, ([f32; 3], f32))>,
-    /// The face whose alignment Paste carries.
-    copied: Option<FaceRef>,
+    /// The face whose alignment Paste carries, with the plane it had when copied.
+    copied: Option<(FaceRef, ([f32; 3], f32))>,
     drag: Option<UvDrag>,
 }
 
@@ -112,7 +112,10 @@ impl UvEditor {
     pub(crate) fn keep_found(&mut self, scene: &Scene) {
         self.faces
             .retain(|&(at, plane)| scene.face(at).is_some_and(|face| face.plane == plane));
-        if self.copied.is_some_and(|at| scene.face(at).is_none()) {
+        if self
+            .copied
+            .is_some_and(|(at, plane)| scene.face(at).is_none_or(|face| face.plane != plane))
+        {
             self.copied = None;
         }
     }
@@ -180,9 +183,9 @@ impl UvEditor {
         });
         ui.horizontal_wrapped(|ui| {
             if ui.button(Text::MapCopyAlignment.get()).clicked() {
-                self.copied = Some(first);
+                self.copied = self.faces.first().copied();
             }
-            if let Some(from) = self.copied
+            if let Some((from, _)) = self.copied
                 && ui
                     .add_enabled(
                         faces.iter().any(|&at| at != from),
