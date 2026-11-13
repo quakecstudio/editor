@@ -26,6 +26,8 @@ use crate::{Workbench, WorkbenchError};
 pub const MAP_PROFILES: &str = "map.profiles";
 /// The id of `map.run_profile`.
 pub const MAP_RUN_PROFILE: &str = "map.run_profile";
+/// The id of `map.choose_profile`.
+pub const MAP_CHOOSE_PROFILE: &str = "map.choose_profile";
 /// The file at a project's root that holds its compile profiles.
 pub const PROFILES_FILE: &str = "compile-profiles.toml";
 /// The built-in profile that compiles with vis and full light, then plays.
@@ -93,6 +95,21 @@ pub enum Task {
     /// `${BSP}`, and the `.lit` beside it when there is one, copied into the project's build,
     /// and the game started on the map.
     Launch,
+}
+
+impl Task {
+    /// Its name, as a profiles file writes it.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Bsp => "bsp",
+            Self::Vis { .. } => "vis",
+            Self::Light { .. } => "light",
+            Self::Tool { .. } => "tool",
+            Self::Copy { .. } => "copy",
+            Self::Launch => "launch",
+        }
+    }
 }
 
 /// A compile profile: its name and its tasks, run in order.
@@ -451,6 +468,13 @@ impl<L: crate::Loader> Workbench<L> {
         }
         Ok(profiles)
     }
+
+    /// The profile `map.run_profile` runs when given none: the one chosen, else
+    /// [`FULL_PROFILE`].
+    #[must_use]
+    pub fn chosen_profile(&self) -> &str {
+        self.profile.as_deref().unwrap_or(FULL_PROFILE)
+    }
 }
 
 /// Runs `task` for the map `expansions` describes; what compiling found, for a `bsp` task.
@@ -594,12 +618,45 @@ impl<C: HasPreview + 'static> Command<C> for MapProfiles {
     }
 }
 
-/// The parameters of `map.run_profile`.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+/// The parameters of `map.run_profile` and `map.choose_profile`.
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RunProfileParams {
-    /// The profile's name, as `map.profiles` lists it.
-    pub profile: String,
+    /// The profile's name, as `map.profiles` lists it; for `map.run_profile`, the one chosen
+    /// when not given.
+    #[serde(default)]
+    pub profile: Option<String>,
+}
+
+/// `map.choose_profile`.
+pub(crate) struct MapChooseProfile;
+
+impl<C: HasPreview + 'static> Command<C> for MapChooseProfile {
+    const ID: &'static str = MAP_CHOOSE_PROFILE;
+    const SUMMARY: &'static str = "Chooses the compile profile map.run_profile runs when given         none; none given chooses Full again.";
+    type Params = RunProfileParams;
+    type Output = String;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: RunProfileParams,
+    ) -> Result<Outcome<String, C>, WorkbenchError> {
+        let workbench = context.workbench();
+        if let Some(name) = &params.profile
+            && !workbench
+                .profiles()?
+                .iter()
+                .any(|profile| &profile.name == name)
+        {
+            return Err(WorkbenchError::UnknownProfile { name: name.clone() });
+        }
+        workbench.profile = params.profile;
+        Ok(Outcome::outside_history(
+            workbench.chosen_profile().to_owned(),
+        ))
+    }
 }
 
 /// `map.run_profile`.
@@ -607,8 +664,9 @@ pub(crate) struct MapRunProfile;
 
 impl<C: HasPreview + 'static> Command<C> for MapRunProfile {
     const ID: &'static str = MAP_RUN_PROFILE;
-    const SUMMARY: &'static str = "Runs a compile profile on the open map: its tasks in order, \
-        each timed, stopping at the first that fails; reports each task's time and result.";
+    const SUMMARY: &'static str = "Runs a compile profile on the open map, the one chosen when \
+        none is named: its tasks in order, each timed, stopping at the first that fails; \
+        reports each task's time and result.";
     type Params = RunProfileParams;
     type Output = ProfileRun;
     type Error = WorkbenchError;
@@ -619,13 +677,14 @@ impl<C: HasPreview + 'static> Command<C> for MapRunProfile {
         params: RunProfileParams,
     ) -> Result<Outcome<ProfileRun, C>, WorkbenchError> {
         let (workbench, preview) = context.workbench_and_preview();
+        let name = params
+            .profile
+            .unwrap_or_else(|| workbench.chosen_profile().to_owned());
         let profile = workbench
             .profiles()?
             .into_iter()
-            .find(|profile| profile.name == params.profile)
-            .ok_or(WorkbenchError::UnknownProfile {
-                name: params.profile,
-            })?;
+            .find(|profile| profile.name == name)
+            .ok_or(WorkbenchError::UnknownProfile { name })?;
         let map = workbench
             .map()
             .ok_or(WorkbenchError::NoMap)?

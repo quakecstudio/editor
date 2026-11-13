@@ -473,6 +473,14 @@ pub enum Text {
     MapPlayFromHere,
     /// The button that flies the camera along a leak's trail (P6-11).
     MapFlyLeak,
+    /// The button that runs the chosen compile profile on the map (P6-20).
+    MapCompileProfile,
+    /// The name of the list of compile profiles (P6-20).
+    MapProfilePicker,
+    /// The toggle that draws the last compile's portals in the map view (P6-20).
+    MapShowPortals,
+    /// The button that puts the map's newest backup in the editor (P6-20).
+    MapRestoreBackup,
     /// What the leak check says of a map with no leak (P6-11).
     MapSealed,
     /// What the leak check says of a map with no entity in empty space (P6-11, QBSP-9.2).
@@ -767,7 +775,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 376] = [
+    pub const ALL: [Self; 380] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -999,6 +1007,10 @@ impl Text {
         Self::MapCheckLeaks,
         Self::MapPlayFromHere,
         Self::MapFlyLeak,
+        Self::MapCompileProfile,
+        Self::MapProfilePicker,
+        Self::MapShowPortals,
+        Self::MapRestoreBackup,
         Self::MapSealed,
         Self::MapNoOccupant,
         Self::MapLayoutSingle,
@@ -1395,6 +1407,10 @@ impl Text {
             Self::MapCheckLeaks => "Check for leaks",
             Self::MapPlayFromHere => "Play from here",
             Self::MapFlyLeak => "Fly along the leak",
+            Self::MapCompileProfile => "Compile",
+            Self::MapProfilePicker => "Compile profile",
+            Self::MapShowPortals => "Show portals",
+            Self::MapRestoreBackup => "Restore the newest backup",
             Self::MapSealed => "The map is sealed: no entity is in reach of the void.",
             Self::MapNoOccupant => {
                 "No entity stands in empty space, so the map cannot be checked for leaks."
@@ -1735,6 +1751,18 @@ pub fn fix_label(fix: &QuickFix) -> String {
 #[must_use]
 pub fn apply_texture(name: &str) -> String {
     format!("Apply {name}")
+}
+
+/// What the map view says when compile profile `profile` has done every task, in `seconds`
+/// (P6-20).
+pub fn profile_done(profile: &str, seconds: f64) -> String {
+    format!("{profile}: done in {seconds:.1} s")
+}
+
+/// What the map view says when compile profile `profile` stopped at `task` after `seconds`,
+/// and why (P6-20).
+pub fn profile_failed(profile: &str, task: &str, seconds: f64, why: &str) -> String {
+    format!("{profile}: stopped at {task} after {seconds:.1} s: {why}")
 }
 
 /// What the leak check says of a map that leaks: where the entity the outside reached stands

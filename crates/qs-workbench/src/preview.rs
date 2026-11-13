@@ -25,7 +25,7 @@ use schemars::JsonSchema;
 use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere, MapPortalsCommand};
 use crate::map_edit::{LiveChange, MapIssuesCommand};
-use crate::map_profile::{MapProfiles, MapRunProfile};
+use crate::map_profile::{MapChooseProfile, MapProfiles, MapRunProfile};
 use crate::map_uv::{FaceAlign, FaceUv};
 use crate::texture_import::TextureImport;
 use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
@@ -1701,6 +1701,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(MapCompile)?;
     registry.register(MapPlayFromHere)?;
     registry.register(MapPortalsCommand)?;
+    registry.register(MapChooseProfile)?;
     registry.register(MapProfiles)?;
     registry.register(MapRunProfile)?;
     registry.register(SetFieldCommand)?;

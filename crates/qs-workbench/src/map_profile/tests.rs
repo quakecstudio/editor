@@ -13,8 +13,9 @@ use qs_bsp::{Bsp, BspLoader};
 use serde_json::json;
 
 use super::{
-    ExpandError, Expansions, FAST_PROFILE, FULL_PROFILE, LightSpeed, MAP_PROFILES, MAP_RUN_PROFILE,
-    PROFILES_FILE, Profile, ProfileRun, Task, TaskResult, Variable, VisSpeed,
+    ExpandError, Expansions, FAST_PROFILE, FULL_PROFILE, LightSpeed, MAP_CHOOSE_PROFILE,
+    MAP_PROFILES, MAP_RUN_PROFILE, PROFILES_FILE, Profile, ProfileRun, Task, TaskResult, Variable,
+    VisSpeed,
 };
 use crate::OPEN_PROJECT;
 use crate::map_compile::Seal;
@@ -131,6 +132,14 @@ fn a_project_adds_and_replaces_profiles() {
             },
         ]
     );
+    let error = session
+        .execute(MAP_CHOOSE_PROFILE, json!({ "profile": "Nope" }))
+        .unwrap_err();
+    assert!(error.to_string().contains("\"Nope\""), "{error}");
+    assert_eq!(
+        session.execute(MAP_CHOOSE_PROFILE, json!({})).unwrap(),
+        json!(FULL_PROFILE)
+    );
     let (mut session, _) = project("profiles-bad", Some("[[profile]]\nname = 3\n"));
     let error = session.execute(MAP_PROFILES, json!({})).unwrap_err();
     assert!(error.to_string().contains(PROFILES_FILE), "{error}");
@@ -149,7 +158,13 @@ fn a_profile_compiles_vis_and_lights_the_map() {
                 { task = \"vis\" }, { task = \"light\", speed = \"fast\" }, \
                 { task = \"copy\", from = \"${BSP}\", to = \"${PROJECT}/out/${MAP_NAME}.bsp\" }]\n";
     let (mut session, map) = project("profile-run", Some(file));
-    let done = run(&mut session, "Ship");
+    let chosen = session
+        .execute(MAP_CHOOSE_PROFILE, json!({ "profile": "Ship" }))
+        .unwrap();
+    assert_eq!(chosen, json!("Ship"));
+    // With no profile named, the one chosen runs.
+    let done: ProfileRun =
+        serde_json::from_value(session.execute(MAP_RUN_PROFILE, json!({})).unwrap()).unwrap();
     assert!(done.succeeded(), "{done:?}");
     assert_eq!(done.profile, "Ship");
     assert_eq!(done.tasks.len(), 4);
@@ -228,5 +243,24 @@ fn the_built_in_profiles_compile_then_play() {
     };
     assert_eq!(built[0].tasks, tasks(VisSpeed::Full, LightSpeed::Full));
     assert_eq!(built[1].tasks, tasks(VisSpeed::Fast, LightSpeed::Fast));
+    // A task's name is its tag in a profiles file.
+    for task in &built[0].tasks {
+        let written = serde_json::to_value(task).unwrap();
+        assert_eq!(written["task"], json!(task.name()));
+    }
+    let tool = Task::Tool {
+        program: String::new(),
+        args: Vec::new(),
+    };
+    let copy = Task::Copy {
+        from: String::new(),
+        to: String::new(),
+    };
+    for task in [tool, copy] {
+        assert_eq!(
+            serde_json::to_value(&task).unwrap()["task"],
+            json!(task.name())
+        );
+    }
     assert!(Path::new(PROFILES_FILE).extension().is_some());
 }

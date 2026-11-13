@@ -348,6 +348,8 @@ pub struct Workbench<L> {
     terminals: terminal::Terminals,
     /// The map open in the map view (P5-06).
     map: Option<map_edit::MapDocument>,
+    /// The compile profile chosen, which `map.run_profile` runs when given none (P6-20).
+    profile: Option<String>,
 }
 
 impl<L: Loader> Workbench<L> {
@@ -370,6 +372,7 @@ impl<L: Loader> Workbench<L> {
             staged: staged::Staged::default(),
             terminals: terminal::Terminals::default(),
             map: None,
+            profile: None,
         }
     }
 
