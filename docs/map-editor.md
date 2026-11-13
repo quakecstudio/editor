@@ -87,6 +87,14 @@ it too.
   - The Properties panel subtracts the selected brush from the other brushes of its entity
     (`map.brush_subtract`), merges the selected brushes of one entity into their hull
     (`map.brush_merge`), and deletes the selected brushes (`map.brush_delete`).
+- **Reviewing the agent's map edits (P6-21, MAP-29):** the agent builds geometry with the same
+  brush, shape and CSG commands as the editor (`map.brush_create`, `map.brush_shape`,
+  `map.brush_subtract` and the rest). Its first map command begins a review (`map.stage`): the
+  map is edited at once, so a compile and the game see the change, and each run of changed parts
+  since, an entity's keys or one of its brushes, waits as a hunk (`map.staged`). The Properties
+  panel lists them with Accept and Reject, and both for every hunk; a rejected hunk's parts are
+  put back as an edit undo takes back (`map.accept`, `map.reject`). Review ends when no hunk is
+  left.
 - **Compile profiles (P6-20, MAP-28):** a profile is a list of tasks run in order on the open
   map (`map.run_profile`), as TrenchBroom's compile profiles are: `bsp` (qs-map-bsp, the map as it
   is in the editor, to a BSP beside it with its portal and leak files), `vis` and `light` (on that

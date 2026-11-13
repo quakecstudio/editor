@@ -2647,6 +2647,59 @@ fn a_profile_compiles_from_the_map_view() {
     assert!(said.starts_with("Full: stopped at launch after "), "{said}");
 }
 
+// No spec statement: P6-21, MAP-29: map edits made while review is open are listed in the
+// Properties panel; Accept keeps one and Reject all puts back what is left
+#[test]
+fn map_edits_are_reviewed_in_the_map_view() {
+    let dir = keep_copy("review");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell.execute("map.stage", json!({})).unwrap();
+    shell
+        .execute(
+            "map.brush_create",
+            json!({ "min": [0.0, 0.0, 0.0], "max": [64.0, 64.0, 64.0] }),
+        )
+        .unwrap();
+    harness.run();
+    let waiting = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .review()
+            .waiting()
+    };
+    assert_eq!(waiting(&harness), 1);
+    let before = map_text(&harness);
+    harness.get_by_label(Text::AgentAccept.get()).click();
+    harness.run();
+    assert_eq!(waiting(&harness), 0);
+    assert_eq!(map_text(&harness), before, "accepting keeps the brush");
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.stage", json!({})).unwrap();
+    shell
+        .execute(
+            "map.brush_create",
+            json!({ "min": [0.0, 0.0, 64.0], "max": [64.0, 64.0, 128.0] }),
+        )
+        .unwrap();
+    harness.run();
+    assert_eq!(waiting(&harness), 1);
+    harness.get_by_label(Text::AgentRejectAll.get()).click();
+    harness.run();
+    assert_eq!(waiting(&harness), 0);
+    assert_eq!(map_text(&harness), before, "rejecting puts the map back");
+}
+
 // No spec statement: P6-11, QBSP-9.8, MAP-6.8: with a wall gone, Check for leaks reports the leak and
 // draws its trail; Fly along the leak takes the camera from the entity the void reaches along
 // the trail to its end; an edit leaves the report out of date

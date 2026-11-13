@@ -743,7 +743,8 @@ groups:
     - P6-13
     - P5-15
     deliverable:
-    - 'Commands map.brush.create, map.brush.edit, map.shape.create and map.csg with schemas, so the agent and MCP build level geometry; each edit staged for review like code hunks'
+    - 'The map''s brush, shape and CSG commands (map.brush_create, the map.brush_* edits, map.brush_shape, map.brush_subtract, map.brush_merge, map.brush_intersect, map.brush_hollow), with their schemas, offered to the agent and MCP so they build level geometry; each map edit the agent makes staged for review like code hunks (map.stage, map.staged, map.accept, map.reject)'
+    - 'An agent eval task, evals/donut-room'
     acceptance:
     - 'Asked for a donut-shaped room with a player start and lights, the agent produces a map that compiles with no leak and plays, in the agent evals'
     verify:

@@ -104,6 +104,11 @@ const qs_workbench::map_edit::prefabs::MAP_PLACE_PREFAB
 const qs_workbench::map_edit::prefabs::MAP_PREFABS
 const qs_workbench::map_edit::prefabs::MAP_SAVE_PREFAB
 const qs_workbench::map_edit::prefabs::PREFAB_FOLDER
+const qs_workbench::map_edit::review::MAP_ACCEPT
+const qs_workbench::map_edit::review::MAP_REJECT
+const qs_workbench::map_edit::review::MAP_STAGE
+const qs_workbench::map_edit::review::MAP_STAGED
+const qs_workbench::map_edit::review::MAP_UNSTAGE
 const qs_workbench::map_edit::shapes::MAP_BRUSH_SHAPE
 const qs_workbench::map_profile::FAST_PROFILE
 const qs_workbench::map_profile::FULL_PROFILE
@@ -196,6 +201,7 @@ enum qs_workbench::map_edit::inspect::RoomShape
 enum qs_workbench::map_edit::issues::QuickFix
 enum qs_workbench::map_edit::live::LiveChange
 enum qs_workbench::map_edit::outline::RowKind
+enum qs_workbench::map_edit::review::HunkSide
 enum qs_workbench::map_edit::shapes::ArchWall
 enum qs_workbench::map_edit::shapes::Circle
 enum qs_workbench::map_edit::shapes::Climb
@@ -556,6 +562,15 @@ field qs_workbench::map_edit::prefabs::SavePrefabParams.brushes
 field qs_workbench::map_edit::prefabs::SavePrefabParams.entities
 field qs_workbench::map_edit::prefabs::SavePrefabParams.grid
 field qs_workbench::map_edit::prefabs::SavePrefabParams.name
+field qs_workbench::map_edit::review::HunkEntity.classname
+field qs_workbench::map_edit::review::HunkEntity.entity
+field qs_workbench::map_edit::review::HunkEntity.side
+field qs_workbench::map_edit::review::MapHunk.brushes_added
+field qs_workbench::map_edit::review::MapHunk.brushes_removed
+field qs_workbench::map_edit::review::MapHunk.entities
+field qs_workbench::map_edit::review::MapHunk.index
+field qs_workbench::map_edit::review::MapHunk.keys
+field qs_workbench::map_edit::review::MapHunksParams.hunks
 field qs_workbench::map_edit::shapes::BrushShapeParams.entity
 field qs_workbench::map_edit::shapes::BrushShapeParams.grid
 field qs_workbench::map_edit::shapes::BrushShapeParams.max
@@ -847,6 +862,9 @@ fn qs_workbench::map_edit::outline::MapDocument::outline
 fn qs_workbench::map_edit::outline::OutlineRow::count
 fn qs_workbench::map_edit::outline::OutlineRow::holds
 fn qs_workbench::map_edit::prefabs::MapDocument::external_folders
+fn qs_workbench::map_edit::review::MapHunkNumber::get
+fn qs_workbench::map_edit::review::MapHunkNumber::new
+fn qs_workbench::map_edit::review::Workbench::map_hunks
 fn qs_workbench::map_profile::Expansions::bsp
 fn qs_workbench::map_profile::Expansions::expand
 fn qs_workbench::map_profile::Expansions::new
@@ -1009,6 +1027,7 @@ impl qs_workbench::git::GitCommandError: fmt::Display
 impl qs_workbench::git::GitCommandError: std::error::Error
 impl qs_workbench::map_edit::EntityIndex: fmt::Display
 impl qs_workbench::map_edit::inspect::RoomShape: From<RoomKind>
+impl qs_workbench::map_edit::review::MapHunkNumber: std::fmt::Display
 impl qs_workbench::map_profile::ExpandError: std::error::Error
 impl qs_workbench::map_profile::ExpandError: std::fmt::Display
 impl qs_workbench::map_profile::TaskError: std::error::Error
@@ -1183,6 +1202,10 @@ struct qs_workbench::map_edit::prefabs::Prefab
 struct qs_workbench::map_edit::prefabs::PrefabSaved
 struct qs_workbench::map_edit::prefabs::Prefabs
 struct qs_workbench::map_edit::prefabs::SavePrefabParams
+struct qs_workbench::map_edit::review::HunkEntity
+struct qs_workbench::map_edit::review::MapHunk
+struct qs_workbench::map_edit::review::MapHunkNumber
+struct qs_workbench::map_edit::review::MapHunksParams
 struct qs_workbench::map_edit::shapes::BrushShapeParams
 struct qs_workbench::map_profile::Expansions
 struct qs_workbench::map_profile::Profile
@@ -1403,6 +1426,8 @@ use qs_workbench::map_edit::FilesChangedParams = disk::FilesChangedParams
 use qs_workbench::map_edit::FilterParams = filter::FilterParams
 use qs_workbench::map_edit::FlagChange = flags::FlagChange
 use qs_workbench::map_edit::GameMode = filter::GameMode
+use qs_workbench::map_edit::HunkEntity = review::HunkEntity
+use qs_workbench::map_edit::HunkSide = review::HunkSide
 use qs_workbench::map_edit::InspectParams = inspect::InspectParams
 use qs_workbench::map_edit::Keep = disk::Keep
 use qs_workbench::map_edit::KeepPart = brushes::Keep
@@ -1411,6 +1436,7 @@ use qs_workbench::map_edit::LayerOption = groups::LayerOption
 use qs_workbench::map_edit::LinkParams = links::LinkParams
 use qs_workbench::map_edit::LiveChange = live::LiveChange
 use qs_workbench::map_edit::Lock = brushes::Lock
+use qs_workbench::map_edit::MAP_ACCEPT = review::MAP_ACCEPT
 use qs_workbench::map_edit::MAP_BRUSH_CHAMFER = brush_tools::MAP_BRUSH_CHAMFER
 use qs_workbench::map_edit::MAP_BRUSH_CLIP = brushes::MAP_BRUSH_CLIP
 use qs_workbench::map_edit::MAP_BRUSH_CREATE = brushes::MAP_BRUSH_CREATE
@@ -1444,17 +1470,24 @@ use qs_workbench::map_edit::MAP_MOVE_TO = outline::MAP_MOVE_TO
 use qs_workbench::map_edit::MAP_OUTLINE = outline::MAP_OUTLINE
 use qs_workbench::map_edit::MAP_PLACE_PREFAB = prefabs::MAP_PLACE_PREFAB
 use qs_workbench::map_edit::MAP_PREFABS = prefabs::MAP_PREFABS
+use qs_workbench::map_edit::MAP_REJECT = review::MAP_REJECT
 use qs_workbench::map_edit::MAP_RESOLVE = disk::MAP_RESOLVE
 use qs_workbench::map_edit::MAP_SAVE_PREFAB = prefabs::MAP_SAVE_PREFAB
 use qs_workbench::map_edit::MAP_SEARCH = issues::MAP_SEARCH
 use qs_workbench::map_edit::MAP_SET_FLAG = flags::MAP_SET_FLAG
 use qs_workbench::map_edit::MAP_SET_LAYER = groups::MAP_SET_LAYER
 use qs_workbench::map_edit::MAP_SHOW_ALL = groups::MAP_SHOW_ALL
+use qs_workbench::map_edit::MAP_STAGE = review::MAP_STAGE
+use qs_workbench::map_edit::MAP_STAGED = review::MAP_STAGED
 use qs_workbench::map_edit::MAP_UNLOCK_ALL = groups::MAP_UNLOCK_ALL
+use qs_workbench::map_edit::MAP_UNSTAGE = review::MAP_UNSTAGE
 use qs_workbench::map_edit::MapDifference = disk::MapDifference
 use qs_workbench::map_edit::MapFiltered = filter::MapFiltered
 use qs_workbench::map_edit::MapFixParams = issues::MapFixParams
 use qs_workbench::map_edit::MapFound = issues::MapFound
+use qs_workbench::map_edit::MapHunk = review::MapHunk
+use qs_workbench::map_edit::MapHunkNumber = review::MapHunkNumber
+use qs_workbench::map_edit::MapHunksParams = review::MapHunksParams
 use qs_workbench::map_edit::MapInspected = inspect::MapInspected
 use qs_workbench::map_edit::MapIssue = issues::MapIssue
 use qs_workbench::map_edit::MapIssues = issues::MapIssues
@@ -1514,6 +1547,7 @@ variant qs_workbench::WorkbenchError::NoFix
 variant qs_workbench::WorkbenchError::NoHunk
 variant qs_workbench::WorkbenchError::NoKey
 variant qs_workbench::WorkbenchError::NoMap
+variant qs_workbench::WorkbenchError::NoMapHunk
 variant qs_workbench::WorkbenchError::NoMapSource
 variant qs_workbench::WorkbenchError::NoPalette
 variant qs_workbench::WorkbenchError::NoProject
@@ -1626,6 +1660,8 @@ variant qs_workbench::map_edit::outline::RowKind::Entity
 variant qs_workbench::map_edit::outline::RowKind::Group
 variant qs_workbench::map_edit::outline::RowKind::Layer
 variant qs_workbench::map_edit::outline::RowKind::LinkedGroup
+variant qs_workbench::map_edit::review::HunkSide::Before
+variant qs_workbench::map_edit::review::HunkSide::Now
 variant qs_workbench::map_edit::shapes::ArchWall::Filled
 variant qs_workbench::map_edit::shapes::ArchWall::Open
 variant qs_workbench::map_edit::shapes::Circle::Edges

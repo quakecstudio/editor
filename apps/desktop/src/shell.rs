@@ -80,6 +80,7 @@ use qs_workbench::map_edit::{
     FilterParams, LinkParams, MAP_FILTER, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, MapFiltered,
     PlaceParams, SetFlagParams,
 };
+use qs_workbench::map_edit::{MAP_ACCEPT, MAP_REJECT, MAP_STAGED, MapHunk, MapHunksParams};
 use qs_workbench::map_edit::{
     MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssues, MapRevision,
 };
@@ -132,6 +133,7 @@ use crate::keymap::{self, Scope};
 use crate::map_editor::{DiskNotice, MapAction, MapEditor, ShowFilter};
 use crate::map_groups::GroupAction;
 use crate::map_profiles::ProfileAction;
+use crate::map_review::ReviewAction;
 use crate::map_tools::BrushAction;
 use crate::map_view::{self, MapView};
 use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multibuffer_ui};
@@ -2172,6 +2174,7 @@ impl Shell {
                     fixed.and_then(|_| self.check_map_issues())
                 }
                 MapAction::Profile(action) => self.profile_action(action),
+                MapAction::Review(action) => self.review_action(action),
                 MapAction::Find(search) => {
                     let found: Result<MapFound, ShellError> = self.attempt(MAP_SEARCH, &search);
                     found.map(|found| {
@@ -2235,6 +2238,46 @@ impl Shell {
         let at = self.map_edits();
         self.map_editor.set_issues(found.issues, at);
         Ok(serde_json::Value::Null)
+    }
+
+    /// Accepts or rejects map edits waiting for review, and shows the hunks left (P6-21).
+    fn review_action(&mut self, action: ReviewAction) -> Result<serde_json::Value, ShellError> {
+        let (id, hunks) = match action {
+            ReviewAction::Accept(hunks) => (MAP_ACCEPT, hunks),
+            ReviewAction::Reject(hunks) => (MAP_REJECT, hunks),
+        };
+        let left: Vec<MapHunk> = self.attempt(id, &MapHunksParams { hunks })?;
+        let revision = self
+            .session
+            .context()
+            .workbench
+            .map()
+            .map(MapDocument::revision);
+        self.map_editor.review_mut().set_hunks(left, revision);
+        Ok(serde_json::Value::Null)
+    }
+
+    /// Reads the map edits waiting for review again when the map changed, its review included,
+    /// from anywhere: the agent, MCP and the palette too (P6-21); whether it did.
+    fn refresh_map_review(&mut self) -> bool {
+        let Some(revision) = self
+            .session
+            .context()
+            .workbench
+            .map()
+            .map(MapDocument::revision)
+        else {
+            return false;
+        };
+        if !self.map_editor.review().stale(revision) {
+            return false;
+        }
+        let read: Result<Vec<MapHunk>, ShellError> =
+            self.attempt(MAP_STAGED, &serde_json::json!({}));
+        self.map_editor
+            .review_mut()
+            .set_hunks(read.unwrap_or_default(), Some(revision));
+        true
     }
 
     /// Runs a compile control's action (P6-20).
@@ -2619,6 +2662,10 @@ impl Shell {
         let actions = self.map_editor.ui(ui, &self.theme, document, panes);
         self.map_actions(actions);
         self.refresh_map_outline();
+        if self.refresh_map_review() {
+            // The Properties panel, drawn before the map this frame, shows them on the next.
+            ui.ctx().request_repaint();
+        }
         if let Some(document) = self.session.context().workbench.map()
             && let Some(show) = self.map_editor.filter_stale(document.edits())
             && let Err(error) = self.filter_map(show)
