@@ -101,7 +101,7 @@ impl MapReport {
 impl<L: crate::Loader> Workbench<L> {
     /// The open map compiled in memory, its WADs found in the project, beside the map or in
     /// the game at `game`; its report, kept with the map; and the map's path.
-    fn compile_map(
+    pub(crate) fn compile_map(
         &mut self,
         game: Option<&Path>,
     ) -> Result<(Compiled, MapReport, PathBuf), WorkbenchError> {
@@ -329,4 +329,4 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

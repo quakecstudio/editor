@@ -20,7 +20,7 @@ use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
 
 /// A workbench and a preview with no game.
-struct Context {
+pub(crate) struct Context {
     workbench: Workbench<FsLoader>,
     preview: Preview,
 }
@@ -57,7 +57,7 @@ fn miptex(name: &str) -> Vec<u8> {
 /// A room of six walls of `wall` around -128 to 128, its +y wall left out when `open`, the
 /// first wall's texture `first`, with a player start inside, naming `test.wad`; written with
 /// that WAD (holding only `wall`) into a folder of its own; the map's path.
-fn room(name: &str, first: &str, open: Opening) -> PathBuf {
+pub(crate) fn room(name: &str, first: &str, open: Opening) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("qs-wb-compile-{name}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -103,13 +103,13 @@ fn room(name: &str, first: &str, open: Opening) -> PathBuf {
 
 /// Whether the room has its +y wall.
 #[derive(Clone, Copy)]
-enum Opening {
+pub(crate) enum Opening {
     Sealed,
     Open,
 }
 
 /// A session with the map at `path` open.
-fn open(path: &Path) -> Commands<Context> {
+pub(crate) fn open(path: &Path) -> Commands<Context> {
     let mut registry = Registry::new();
     register(&mut registry).unwrap();
     register_preview(&mut registry).unwrap();

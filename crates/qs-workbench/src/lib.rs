@@ -25,6 +25,7 @@ pub mod ids;
 pub mod map_check;
 pub mod map_compile;
 pub mod map_edit;
+pub mod map_profile;
 pub mod map_textures;
 pub mod map_uv;
 mod preview;
@@ -818,6 +819,25 @@ pub enum WorkbenchError {
         /// The BSP.
         path: PathBuf,
     },
+    /// The project's compile profiles file could not be read (P6-20).
+    ProfilesRead {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: std::io::Error,
+    },
+    /// The project's compile profiles file is not a list of profiles (P6-20).
+    ProfilesParse {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: toml::de::Error,
+    },
+    /// No compile profile has this name (P6-20).
+    UnknownProfile {
+        /// The name.
+        name: String,
+    },
     /// The map compiler stopped (P6-13, QBSP-1).
     MapCompile {
         /// Why.
@@ -969,6 +989,17 @@ impl fmt::Display for WorkbenchError {
                     path.display()
                 )
             }
+            Self::ProfilesRead { path, error } => {
+                write!(f, "cannot read {}: {error}", path.display())
+            }
+            Self::ProfilesParse { path, error } => {
+                write!(
+                    f,
+                    "{} is not a list of compile profiles: {error}",
+                    path.display()
+                )
+            }
+            Self::UnknownProfile { name } => write!(f, "no compile profile is called {name:?}"),
             Self::MapCompile { error } => write!(f, "the map does not compile: {error}"),
             Self::MapLight { error } => write!(f, "the map does not light: {error}"),
             Self::MapLump { path, error } => write!(f, "{}: {error}", path.display()),
@@ -1058,6 +1089,9 @@ impl Error for WorkbenchError {
             Self::Wad { error, .. } => Some(error),
             Self::WadWrite { error, .. } => Some(error),
             Self::NoMapSource { .. } => None,
+            Self::ProfilesRead { error, .. } => Some(error),
+            Self::ProfilesParse { error, .. } => Some(error),
+            Self::UnknownProfile { .. } => None,
             Self::MapCompile { error } => Some(error),
             Self::MapLight { error } => Some(error),
             Self::MapLump { error, .. } => Some(error),

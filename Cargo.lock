@@ -3946,6 +3946,7 @@ dependencies = [
  "qs-map",
  "qs-map-bsp",
  "qs-map-light",
+ "qs-map-vis",
  "qs-pak",
  "qs-sim",
  "qs-vfs",
@@ -3954,6 +3955,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "toml",
  "tracing",
 ]
 
