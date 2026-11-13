@@ -1,4 +1,7 @@
 const qs_map::check::MAP_MAX_SOUNDS
+const qs_map::external::EXTERNAL_CLASSNAME_KEY
+const qs_map::external::EXTERNAL_MAP_CLASS
+const qs_map::external::EXTERNAL_MAP_KEY
 const qs_map::geometry::MAP_BASE_AXES
 const qs_map::geometry::MAP_ON_EPSILON
 const qs_map::lexer::MAP_MAX_TOKEN
@@ -30,6 +33,7 @@ enum qs_map::document::Compiler
 enum qs_map::document::Item
 enum qs_map::document::MapError
 enum qs_map::document::TexDef
+enum qs_map::external::ExternalMapError
 enum qs_map::lexer::Gap
 enum qs_map::lexer::LexError
 enum qs_map::lexer::Lexed
@@ -156,6 +160,7 @@ fn qs_map::document::Pair::set_value
 fn qs_map::document::Pair::value
 fn qs_map::document::Pair::value_raw
 fn qs_map::document::is_tool_key
+fn qs_map::external::MapFile::with_external_maps
 fn qs_map::geometry::MapFloat::rotation
 fn qs_map::geometry::MapFloat::to_f64
 fn qs_map::geometry::on_plane
@@ -234,6 +239,8 @@ impl qs_map::document::MapError: From<LexError>
 impl qs_map::document::MapError: core::error::Error
 impl qs_map::document::MapError: fmt::Display
 impl qs_map::document::MapFile: Default
+impl qs_map::external::ExternalMapError: fmt::Display
+impl qs_map::external::ExternalMapError: std::error::Error
 impl qs_map::lexer::LexError: core::error::Error
 impl qs_map::lexer::LexError: fmt::Display
 impl qs_map::linked::EntityPlace: core::fmt::Display
@@ -290,8 +297,12 @@ use qs_map::Compiler = document::Compiler
 use qs_map::ContainerId = linked::ContainerId
 use qs_map::Diagnostic = check::Diagnostic
 use qs_map::DiagnosticKind = check::DiagnosticKind
+use qs_map::EXTERNAL_CLASSNAME_KEY = external::EXTERNAL_CLASSNAME_KEY
+use qs_map::EXTERNAL_MAP_CLASS = external::EXTERNAL_MAP_CLASS
+use qs_map::EXTERNAL_MAP_KEY = external::EXTERNAL_MAP_KEY
 use qs_map::Entity = document::Entity
 use qs_map::EntityPlace = linked::EntityPlace
+use qs_map::ExternalMapError = external::ExternalMapError
 use qs_map::Face = document::Face
 use qs_map::Item = document::Item
 use qs_map::LayerSetting = linked::LayerSetting
@@ -355,6 +366,13 @@ variant qs_map::document::MapError::Valve220
 variant qs_map::document::MapError::ValveScaleZero
 variant qs_map::document::TexDef::Standard
 variant qs_map::document::TexDef::Valve
+variant qs_map::external::ExternalMapError::HasBrushes
+variant qs_map::external::ExternalMapError::Map
+variant qs_map::external::ExternalMapError::MissingKey
+variant qs_map::external::ExternalMapError::NoBrushes
+variant qs_map::external::ExternalMapError::NotWorld
+variant qs_map::external::ExternalMapError::Unreadable
+variant qs_map::external::ExternalMapError::ZeroScale
 variant qs_map::lexer::Gap::End
 variant qs_map::lexer::Gap::Token
 variant qs_map::lexer::LexError::EofInQuote
