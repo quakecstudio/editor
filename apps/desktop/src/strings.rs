@@ -4,8 +4,8 @@
 //! wording is reviewed in one place and can be translated later. A test fails on a string
 //! literal in the UI modules.
 
-use qs_workbench::map_edit::MapHunk;
 use qs_workbench::map_edit::{BrushIndex, EntityIndex, QuickFix};
+use qs_workbench::map_edit::{HunkSide, MapHunk};
 use qs_workbench::map_textures::{WadFound, WadState};
 
 /// One string the app shows.
@@ -1759,8 +1759,19 @@ pub fn apply_texture(name: &str) -> String {
 }
 
 /// One map edit waiting for review, as the map view lists it (P6-21): the entities it is in,
-/// then what it adds, changes or removes.
+/// "was" before one it only removed from, then what it adds, changes or removes.
 pub fn map_hunk(hunk: &MapHunk) -> String {
+    let entities: Vec<String> = hunk
+        .entities
+        .iter()
+        .map(|entity| {
+            let was = match entity.side {
+                HunkSide::Now => "",
+                HunkSide::Before => "was ",
+            };
+            format!("{was}{} {}", entity.entity.get(), entity.classname)
+        })
+        .collect();
     let mut said = Vec::new();
     if hunk.keys > 0 {
         said.push(format!("{} with keys changed", hunk.keys));
@@ -1771,7 +1782,7 @@ pub fn map_hunk(hunk: &MapHunk) -> String {
     if hunk.brushes_removed > 0 {
         said.push(format!("{} brushes removed", hunk.brushes_removed));
     }
-    format!("{}: {}", hunk.entities.join(", "), said.join(", "))
+    format!("{}: {}", entities.join(", "), said.join(", "))
 }
 
 /// What the map view says when compile profile `profile` has done every task, in `seconds`

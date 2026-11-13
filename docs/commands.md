@@ -125,6 +125,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.staged`](#mapstaged) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
 | [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds. |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
+| [`map.unstage`](#mapunstage) | Ends the open map's review when nothing waits in it, as after an agent's map command that changed nothing; a review with hunks is left open. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
@@ -5615,6 +5616,22 @@ Parameters:
 ## `map.unlock_all`
 
 Unlocks every entity of the open map locked in the editor; a locked layer stays locked.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.unstage`
+
+Ends the open map's review when nothing waits in it, as after an agent's map command that changed nothing; a review with hunks is left open.
 
 Parameters:
 

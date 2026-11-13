@@ -38,9 +38,13 @@ use serde_json::{Value, json};
 /// The commands the agent may not call: the person's decisions, writes around the staged
 /// edits, and the window's own controls. Any command whose id starts with `view.` is denied
 /// too.
-pub const DENIED: [&str; 17] = [
+pub const DENIED: [&str; 21] = [
     "edit.accept",
     "edit.reject",
+    "map.accept",
+    "map.reject",
+    "map.stage",
+    "map.unstage",
     "file.save",
     "checkpoint.restore",
     "checkpoint.create",
@@ -1177,6 +1181,8 @@ fn refusal(call: &ToolCall, why: &str) -> Message {
 const MAP_COMMANDS: &str = "map.";
 /// The command that begins review of the open map's edits (P6-21).
 const STAGE_MAP: &str = "map.stage";
+/// The command that ends the open map's review when nothing waits in it (P6-21).
+const UNSTAGE_MAP: &str = "map.unstage";
 
 /// The result of `call`: the command's output, or why it did not run; a map command begins
 /// the map's review first, so its edits wait as hunks.
@@ -1216,6 +1222,10 @@ fn call_tool<C: 'static>(
         Ok(output) => (cut(output, config.output_limit), false),
         Err(error) => (json!(error.to_string()), true),
     };
+    if call.name.starts_with(MAP_COMMANDS) && session.registry().get(UNSTAGE_MAP).is_some() {
+        // A map command that read the map, failed or changed nothing leaves no review open.
+        session.execute(UNSTAGE_MAP, json!({})).ok();
+    }
     Message::Tool {
         call_id: call.id.clone(),
         content,

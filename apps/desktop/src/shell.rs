@@ -2247,22 +2247,37 @@ impl Shell {
             ReviewAction::Reject(hunks) => (MAP_REJECT, hunks),
         };
         let left: Vec<MapHunk> = self.attempt(id, &MapHunksParams { hunks })?;
-        let edits = self.map_edits();
-        self.map_editor.review_mut().set_hunks(left, Some(edits));
+        let revision = self
+            .session
+            .context()
+            .workbench
+            .map()
+            .map(MapDocument::revision);
+        self.map_editor.review_mut().set_hunks(left, revision);
         Ok(serde_json::Value::Null)
     }
 
-    /// Reads the map edits waiting for review again when the map's edits changed (P6-21).
-    fn refresh_map_review(&mut self) {
-        let edits = self.map_edits();
-        if !self.map_editor.review().stale(edits) {
-            return;
+    /// Reads the map edits waiting for review again when the map changed, its review included,
+    /// from anywhere: the agent, MCP and the palette too (P6-21); whether it did.
+    fn refresh_map_review(&mut self) -> bool {
+        let Some(revision) = self
+            .session
+            .context()
+            .workbench
+            .map()
+            .map(MapDocument::revision)
+        else {
+            return false;
+        };
+        if !self.map_editor.review().stale(revision) {
+            return false;
         }
         let read: Result<Vec<MapHunk>, ShellError> =
             self.attempt(MAP_STAGED, &serde_json::json!({}));
         self.map_editor
             .review_mut()
-            .set_hunks(read.unwrap_or_default(), Some(edits));
+            .set_hunks(read.unwrap_or_default(), Some(revision));
+        true
     }
 
     /// Runs a compile control's action (P6-20).
@@ -2647,7 +2662,10 @@ impl Shell {
         let actions = self.map_editor.ui(ui, &self.theme, document, panes);
         self.map_actions(actions);
         self.refresh_map_outline();
-        self.refresh_map_review();
+        if self.refresh_map_review() {
+            // The Properties panel, drawn before the map this frame, shows them on the next.
+            ui.ctx().request_repaint();
+        }
         if let Some(document) = self.session.context().workbench.map()
             && let Some(show) = self.map_editor.filter_stale(document.edits())
             && let Err(error) = self.filter_map(show)

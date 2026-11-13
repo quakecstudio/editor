@@ -21,7 +21,7 @@ use crate::{Config, HasWorkbench, Workbench, register, register_preview};
 
 /// A workbench and a preview with no game.
 pub(crate) struct Context {
-    workbench: Workbench<FsLoader>,
+    pub(crate) workbench: Workbench<FsLoader>,
     preview: Preview,
 }
 

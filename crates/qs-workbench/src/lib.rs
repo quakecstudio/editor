@@ -847,7 +847,7 @@ pub enum WorkbenchError {
     /// The open map's review has no hunk of this number (P6-21).
     NoMapHunk {
         /// The number asked for.
-        index: usize,
+        hunk: map_edit::MapHunkNumber,
     },
     /// No compile profile has this name (P6-20).
     UnknownProfile {
@@ -1016,7 +1016,7 @@ impl fmt::Display for WorkbenchError {
                 )
             }
             Self::PortalFile { path, error } => write!(f, "{}: {error}", path.display()),
-            Self::NoMapHunk { index } => write!(f, "the map's review has no hunk {index}"),
+            Self::NoMapHunk { hunk } => write!(f, "the map's review has no hunk {hunk}"),
             Self::UnknownProfile { name } => write!(f, "no compile profile is called {name:?}"),
             Self::MapCompile { error } => write!(f, "the map does not compile: {error}"),
             Self::MapLight { error } => write!(f, "the map does not light: {error}"),

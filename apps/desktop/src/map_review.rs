@@ -20,7 +20,7 @@ pub enum ReviewAction {
     Reject(Vec<MapHunkNumber>),
 }
 
-/// The hunks waiting, read at a revision of the map's edits.
+/// The hunks waiting, read at a revision of the map, its review included.
 #[derive(Debug, Default)]
 pub(crate) struct ReviewView {
     hunks: Vec<MapHunk>,
@@ -28,15 +28,15 @@ pub(crate) struct ReviewView {
 }
 
 impl ReviewView {
-    /// Whether the hunks were read before the map's edits `edits`.
-    pub(crate) fn stale(&self, edits: MapRevision) -> bool {
-        self.read_at != Some(edits)
+    /// Whether the hunks were read before the map's revision `revision`.
+    pub(crate) fn stale(&self, revision: MapRevision) -> bool {
+        self.read_at != Some(revision)
     }
 
-    /// Takes the hunks waiting, read at `edits`.
-    pub(crate) fn set_hunks(&mut self, hunks: Vec<MapHunk>, edits: Option<MapRevision>) {
+    /// Takes the hunks waiting, read at `revision`.
+    pub(crate) fn set_hunks(&mut self, hunks: Vec<MapHunk>, revision: Option<MapRevision>) {
         self.hunks = hunks;
-        self.read_at = edits;
+        self.read_at = revision;
     }
 
     /// How many hunks wait, for tests.

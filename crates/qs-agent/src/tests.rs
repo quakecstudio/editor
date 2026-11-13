@@ -925,8 +925,65 @@ fn the_agents_map_edits_wait_for_review() {
     run(&mut session, &mut model, "Light the room.", &config).unwrap();
     let hunks = session.execute("map.staged", json!({})).unwrap();
     assert_eq!(hunks.as_array().map(Vec::len), Some(1), "{hunks}");
-    assert_eq!(hunks[0]["entities"], json!(["1 light"]));
+    assert_eq!(hunks[0]["entities"][0]["classname"], json!("light"));
     session.execute("map.reject", json!({})).unwrap();
     let left = session.execute("map.staged", json!({})).unwrap();
     assert_eq!(left, json!([]));
+}
+
+// No spec statement: P6-21: only a map command begins review: a run that calls none leaves the
+// map's later edits unreviewed
+#[test]
+fn other_tools_begin_no_map_review() {
+    let (root, mut session) = project("map-no-review", FIXED);
+    std::fs::create_dir_all(root.join("maps")).unwrap();
+    let map = root.join("maps/room.map");
+    std::fs::write(&map, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    session.execute("map.open", json!({ "path": map })).unwrap();
+    let mut model = Scripted::new(vec![calls(vec![("edit.staged", json!({}))]), finish()]);
+    let config = RunConfig {
+        permissions: Permissions {
+            profile: AgentProfile::Full,
+            ..Permissions::default()
+        },
+        ..RunConfig::new(&root)
+    };
+    run(&mut session, &mut model, "Look around.", &config).unwrap();
+    session
+        .execute(
+            "map.place",
+            json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
+        )
+        .unwrap();
+    assert_eq!(session.execute("map.staged", json!({})).unwrap(), json!([]));
+}
+
+// No spec statement: P6-21: the agent cannot decide its own map review; a map command that
+// changes nothing leaves no review open
+#[test]
+fn the_agent_cannot_decide_its_map_review() {
+    for id in ["map.accept", "map.reject", "map.stage", "map.unstage"] {
+        assert!(super::DENIED.contains(&id), "{id}");
+    }
+    let (root, mut session) = project("map-read-only", FIXED);
+    std::fs::create_dir_all(root.join("maps")).unwrap();
+    let map = root.join("maps/room.map");
+    std::fs::write(&map, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    session.execute("map.open", json!({ "path": map })).unwrap();
+    let mut model = Scripted::new(vec![calls(vec![("map.staged", json!({}))]), finish()]);
+    let config = RunConfig {
+        permissions: Permissions {
+            profile: AgentProfile::Full,
+            ..Permissions::default()
+        },
+        ..RunConfig::new(&root)
+    };
+    run(&mut session, &mut model, "Look at the map.", &config).unwrap();
+    session
+        .execute(
+            "map.place",
+            json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
+        )
+        .unwrap();
+    assert_eq!(session.execute("map.staged", json!({})).unwrap(), json!([]));
 }
