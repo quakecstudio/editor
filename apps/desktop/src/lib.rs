@@ -34,6 +34,7 @@ mod map_issues;
 mod map_leaks;
 mod map_outline;
 mod map_panes;
+mod map_prefabs;
 mod map_scene;
 mod map_tools;
 mod map_uv;

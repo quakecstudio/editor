@@ -50,3 +50,26 @@ fn a_moved_time_is_a_change() {
         "the editor's own write"
     );
 }
+
+// No spec statement: P6-23: a file looked for and missing, then made by another program, is a
+// change, once
+#[test]
+fn a_made_file_is_a_change() {
+    let dir = std::env::temp_dir().join(format!("qs-disk-watch-made-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("hall.map");
+    let start = Instant::now();
+    let at = |seconds: u64| start + Duration::from_secs(seconds);
+    let mut watch = DiskWatch::default();
+    assert!(
+        watch.changed(at(0), vec![file.clone()]).is_empty(),
+        "missing"
+    );
+    std::fs::write(&file, "{}").unwrap();
+    assert_eq!(
+        watch.changed(at(1), vec![file.clone()]),
+        std::slice::from_ref(&file)
+    );
+    assert!(watch.changed(at(2), vec![file.clone()]).is_empty(), "once");
+}

@@ -2982,3 +2982,153 @@ fn a_dropped_png_is_imported_into_the_browser() {
         .count();
     assert_eq!(count, 1, "replaced, not added");
 }
+
+/// A pillar map, a box from the origin to `top` high.
+fn pillar(top: u32) -> String {
+    format!(
+        "{{\n\"classname\" \"worldspawn\"\n{{\n\
+         ( 0 0 0 ) ( 0 1 0 ) ( 0 0 1 ) rock 0 0 0 1 1\n\
+         ( 16 0 0 ) ( 16 0 1 ) ( 16 1 0 ) rock 0 0 0 1 1\n\
+         ( 0 0 0 ) ( 0 0 1 ) ( 1 0 0 ) rock 0 0 0 1 1\n\
+         ( 0 16 0 ) ( 1 16 0 ) ( 0 16 1 ) rock 0 0 0 1 1\n\
+         ( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) rock 0 0 0 1 1\n\
+         ( 0 0 {top} ) ( 0 1 {top} ) ( 1 0 {top} ) rock 0 0 0 1 1\n}}\n}}\n"
+    )
+}
+
+// spec MAP-14.6: an external map instance is drawn from the file it names, which is watched, and
+// drawn again when another program writes it
+#[test]
+fn an_instance_follows_its_file() {
+    let dir = std::env::temp_dir().join(format!("qs-desktop-follow-{}", std::process::id()));
+    let _gone = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let prefab = dir.join("pillar.map");
+    fs::write(&prefab, pillar(64)).unwrap();
+    let map = dir.join("follow.map");
+    fs::write(
+        &map,
+        "{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"misc_external_map\"\n\
+         \"_external_map\" \"pillar.map\"\n\"_external_map_classname\" \"func_wall\"\n}\n",
+    )
+    .unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.open", json!({ "path": map })).unwrap();
+    harness.run();
+    harness.run();
+    let top = |harness: &Harness<'static, Option<App>>| {
+        let editor = harness.state().as_ref().unwrap().shell().map_editor();
+        let instance = editor
+            .scene()
+            .entities
+            .iter()
+            .find(|shape| shape.index == EntityIndex::new(1))
+            .unwrap();
+        instance.bounds[1][2]
+    };
+    assert!((top(&harness) - 64.0).abs() < 1e-3);
+    let watched = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .map_editor()
+        .external_watched();
+    assert_eq!(watched, std::slice::from_ref(&prefab));
+    fs::write(&prefab, pillar(128)).unwrap();
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .files_written(vec![prefab]);
+    harness.run();
+    harness.run();
+    assert!((top(&harness) - 128.0).abs() < 1e-3, "{}", top(&harness));
+    // A file named but not there is watched, beside the map and in the project, and drawn
+    // once it is made.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute(
+            "map.set_key",
+            json!({ "entity": 1, "key": "_external_map", "value": "later.map" }),
+        )
+        .unwrap();
+    harness.run();
+    harness.run();
+    let later = dir.join("later.map");
+    let watched = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .map_editor()
+        .external_watched();
+    assert!(watched.contains(&later), "{watched:?}");
+    fs::write(&later, pillar(32)).unwrap();
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .files_written(vec![later]);
+    harness.run();
+    harness.run();
+    assert!((top(&harness) - 32.0).abs() < 1e-3, "{}", top(&harness));
+}
+
+// No spec statement: P6-23, MAP-33: a brush selected is saved as a prefab under the name typed,
+// which the Prefabs tab lists; dragged into the view it is copied in, in one step that undoes
+#[test]
+fn a_prefab_is_saved_and_dragged_in() {
+    let dir = keep_copy("prefabs");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.run();
+    let before = brush_count(&harness, 0);
+    harness.get_by_label(Text::MapToolVertex.get()).click();
+    harness.run();
+    // The first brush in the way of a click on the door is the west wall.
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::TextInput, Text::MapPrefabName.get())
+        .click();
+    harness.run();
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::TextInput, Text::MapPrefabName.get())
+        .type_text("wall");
+    harness.run();
+    harness.get_by_label(Text::MapSavePrefab.get()).click();
+    harness.run();
+    harness.run();
+    assert!(dir.join("prefabs/wall.map").is_file());
+    harness.get_by_label(Text::MapPrefabs.get()).click();
+    harness.get_by_label(Text::MapToolSelect.get()).click();
+    harness.run();
+    harness.run();
+    let source = harness.get_by_label("wall").rect().center();
+    let view = harness
+        .get_by_label(Text::MapEditorView.get())
+        .rect()
+        .center();
+    drag(&mut harness, source, view, egui::Modifiers::NONE);
+    assert_eq!(
+        brush_count(&harness, 0),
+        before + 1,
+        "{}",
+        map_text(&harness)
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(brush_count(&harness, 0), before);
+}

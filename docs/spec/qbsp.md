@@ -584,3 +584,8 @@ limits; we follow none of them, only BSP-17's file format.
 - **QBSP-14.6** Everything QBSP-1 to QBSP-13 state that QBSP-14.1 to QBSP-14.5 do not change
   holds in the extended dialect: the same map compiled by both dialects, when the id dialect
   compiles it, gives the same BSP, portal file and leak file.
+
+- **QBSP-14.7** The extended dialect expands each external map instance (MAP-14) before it reads
+  the map, with the files its caller reads by the names the instances give, as ericw-tools'
+  qbsp does; an instance that cannot be expanded stops the compile. id's dialect reads no
+  instance: to id's qbsp a `misc_external_map` is a point entity like any other.

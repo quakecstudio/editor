@@ -219,14 +219,38 @@ impl BrushShape {
     }
 }
 
+/// The brushes an external map instance stands for, placed (MAP-14); none for another
+/// entity, or an instance whose file `load` cannot read or that cannot be expanded.
+fn instance_brushes(
+    entity: &qs_map::Entity,
+    load: &mut dyn FnMut(&str) -> Option<Vec<u8>>,
+) -> Vec<qs_map::Brush> {
+    let is_instance = entity
+        .classname()
+        .is_some_and(|c| c.eq_ignore_ascii_case(qs_map::EXTERNAL_MAP_CLASS.as_bytes()));
+    if !is_instance {
+        return Vec::new();
+    }
+    let mut alone = qs_map::MapFile::new();
+    alone.push_entity(entity.clone());
+    alone
+        .with_external_maps(load)
+        .ok()
+        .and_then(|file| file.entities.into_iter().next())
+        .map(|placed| placed.brushes().cloned().collect())
+        .unwrap_or_default()
+}
+
 impl Scene {
     /// The scene of `document`, its point entities sized by `classes`, linked by the keys in
-    /// `targeting`.
+    /// `targeting`, each external map instance drawn in place with the file `load` reads by
+    /// the name it gives (MAP-14).
     #[must_use]
     pub(crate) fn build(
         document: &MapDocument,
         classes: &HashMap<String, ClassLook>,
         targeting: &[String],
+        load: &mut dyn FnMut(&str) -> Option<Vec<u8>>,
     ) -> Self {
         let mut scene = Self::default();
         let bsp = match document.source() {
@@ -292,6 +316,15 @@ impl Scene {
                 lines.extend(shape.lines.iter().copied());
                 if !shape.lines.is_empty() {
                     scene.brushes.push(shape);
+                }
+            }
+            for brush in instance_brushes(entity, load) {
+                for polygon in brush.polygons() {
+                    let points: Vec<[f32; 3]> = polygon.iter().map(|p| p.map(single)).collect();
+                    for &point in &points {
+                        bounds = Some(grow(bounds, point));
+                    }
+                    outline(&mut lines, &points);
                 }
             }
             let owner = EntityIndex::new(index);

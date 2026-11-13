@@ -2,9 +2,10 @@
 
 //! The file watcher of P5-17 (MAP-32): about once a second, the open map's file and the
 //! project's QuakeC are looked at, and the ones whose modified time moved are given to
-//! `files.changed`. A time read for the first time is only remembered.
+//! `files.changed`, and so are ones made since they were looked for and missing. A time read for
+//! the first time is only remembered.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -15,6 +16,8 @@ const EVERY: Duration = Duration::from_secs(1);
 #[derive(Debug, Default)]
 pub(crate) struct DiskWatch {
     seen: HashMap<PathBuf, SystemTime>,
+    /// The files looked for and not there.
+    missing: HashSet<PathBuf>,
     last: Option<Instant>,
 }
 
@@ -40,11 +43,15 @@ impl DiskWatch {
         let mut changed = Vec::new();
         for path in paths {
             let Ok(modified) = std::fs::metadata(&path).and_then(|meta| meta.modified()) else {
+                self.missing.insert(path);
                 continue;
             };
+            let made = self.missing.remove(&path);
             match self.seen.insert(path.clone(), modified) {
                 Some(before) if before != modified => changed.push(path),
-                _ => {}
+                // A file that was not there before is one another program made.
+                None if made => changed.push(path),
+                Some(_) | None => {}
             }
         }
         changed

@@ -19,7 +19,7 @@ use qs_workbench::entity_classes::ClassInfo;
 use qs_workbench::map_compile::MapReport;
 use qs_workbench::map_edit::{
     EntityIndex, EntityKeys, FlagChange, GameMode, Keep, LayerInfo, MapDocument, MapFound,
-    MapIssue, MapRevision, MapSearchParams, OutlineRow, QuickFix, Skill,
+    MapIssue, MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix, Skill,
 };
 use qs_workbench::map_textures::TextureSources;
 #[cfg(test)]
@@ -33,6 +33,7 @@ use crate::map_issues::IssueBrowser;
 use crate::map_leaks::LeakView;
 use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_panes::{Pane, Plan, PlanCamera, Projection, panes};
+use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::strings::{Text, also_selected, panes_text};
@@ -125,12 +126,55 @@ pub enum MapAction {
     ImportTexture(std::path::PathBuf, String, DitherChoice),
     /// Check the map for leaks and missing textures (P6-11).
     CheckLeaks,
+    /// List the project's prefabs (P6-23).
+    ListPrefabs,
+    /// Copy the prefab at the path into the map at an origin (P6-23).
+    PlacePrefab(std::path::PathBuf, [f64; 3]),
     /// List the map's issues (P6-19).
     CheckIssues,
     /// Apply an issue's quick fix (P6-19).
     Fix(QuickFix),
     /// Search the map's entities and brushes (P6-19).
     Find(MapSearchParams),
+}
+
+/// The external maps the view draws (MAP-14): the project's folder they are looked for in after
+/// the map's own, every file an instance may name, watched so one written or made is drawn, the
+/// files read, kept until one changes, and how many times one changed on disk.
+#[derive(Debug, Default)]
+struct Externals {
+    root: Option<std::path::PathBuf>,
+    files: Vec<std::path::PathBuf>,
+    read: std::collections::HashMap<std::path::PathBuf, Option<Vec<u8>>>,
+    changes: u64,
+}
+
+impl Externals {
+    /// The bytes of the external map `name` of the map `document`, from the first of its
+    /// folders that has it, read once until one changes; every place it may be is watched.
+    fn read(&mut self, document: &MapDocument, name: &str) -> Option<Vec<u8>> {
+        let mut found = None;
+        for dir in document.external_folders(self.root.as_deref()) {
+            let path = dir.join(name);
+            if !self.files.contains(&path) {
+                self.files.push(path.clone());
+            }
+            if found.is_none() {
+                found = self
+                    .read
+                    .entry(path)
+                    .or_insert_with_key(|path| std::fs::read(path).ok())
+                    .clone();
+            }
+        }
+        found
+    }
+
+    /// Forgets what was read and watched, one of the files having changed or the scene being
+    /// built again.
+    fn forget(&mut self) {
+        self.files.clear();
+    }
 }
 
 /// The entities the map view shows: every one, or those the game spawns at a skill or in a
@@ -211,8 +255,12 @@ pub enum DiskNotice {
 pub struct MapEditor {
     camera: Option<Camera>,
     scene: Scene,
-    /// The document's path and edits the scene was built from.
-    built: Option<(std::path::PathBuf, MapRevision)>,
+    /// The document's path and edits, and the external maps' changes, the scene was built
+    /// from.
+    built: Option<(std::path::PathBuf, MapRevision, u64)>,
+    /// The external maps the scene drew (MAP-14), each as read, and how many times one of them
+    /// changed on disk.
+    externals: Externals,
     classes: HashMap<String, ClassLook>,
     /// The classnames, sorted, as the browser lists them.
     names: Vec<String>,
@@ -269,6 +317,8 @@ pub struct MapEditor {
     plans: HashMap<Plan, PlanCamera>,
     /// The map's last leak check (P6-11).
     leaks: LeakView,
+    /// The prefab browser (P6-23).
+    prefabs: PrefabBrowser,
     /// The issue browser and search (P6-19).
     issues: IssueBrowser,
 }
@@ -281,6 +331,8 @@ pub(crate) enum BottomTab {
     Textures,
     /// The entity browser (P5-13).
     Entities,
+    /// The prefab browser (P6-23).
+    Prefabs,
     /// The issue browser and search (P6-19).
     Issues,
 }
@@ -431,9 +483,34 @@ impl MapEditor {
         })
     }
 
+    /// Takes the prefabs `map.prefabs` listed (P6-23).
+    pub fn set_prefabs(&mut self, prefabs: Vec<Prefab>) {
+        self.prefabs.set_prefabs(prefabs);
+    }
+
     /// Takes the open map's texture sources, read again when the map opens or a WAD changes.
     pub fn set_texture_sources(&mut self, sources: TextureSources) {
         self.textures.set_sources(sources);
+    }
+
+    /// Takes the project's folder, where external maps are read when they are not beside the
+    /// map (MAP-14).
+    pub fn set_project_root(&mut self, root: Option<std::path::PathBuf>) {
+        if self.externals.root != root {
+            self.externals.root = root;
+            self.externals_changed();
+        }
+    }
+
+    /// The external map files the view draws, to watch for another program's writes.
+    pub fn external_watched(&self) -> Vec<std::path::PathBuf> {
+        self.externals.files.clone()
+    }
+
+    /// Draws the external maps again, one of them changed on disk.
+    pub fn externals_changed(&mut self) {
+        self.externals.changes = self.externals.changes.wrapping_add(1);
+        self.externals.read.clear();
     }
 
     /// Whether the texture sources were made for other WADs or another chosen game than
@@ -445,6 +522,12 @@ impl MapEditor {
     /// The WAD files the texture browser reads, to watch for another program's writes.
     pub fn texture_watched(&self) -> Vec<std::path::PathBuf> {
         self.textures.watched()
+    }
+
+    /// The scene the view draws, for tests.
+    #[cfg(test)]
+    pub(crate) const fn scene(&self) -> &Scene {
+        &self.scene
     }
 
     /// The brush tools, for tests.
@@ -519,11 +602,13 @@ impl MapEditor {
                 Text::MapTextures.get(),
             );
             ui.selectable_value(&mut self.bottom, BottomTab::Entities, Text::Entities.get());
+            ui.selectable_value(&mut self.bottom, BottomTab::Prefabs, Text::MapPrefabs.get());
             ui.selectable_value(&mut self.bottom, BottomTab::Issues, Text::MapIssues.get());
             ui.separator();
             match self.bottom {
                 BottomTab::Textures => self.textures.header(ui, theme, document),
                 BottomTab::Entities => self.browser.header(ui, theme, &self.names),
+                BottomTab::Prefabs => actions.extend(self.prefabs.header(ui, theme)),
                 BottomTab::Issues => actions.extend(self.issues.header(ui, theme)),
             }
         });
@@ -537,6 +622,7 @@ impl MapEditor {
                 &self.classes,
                 &self.models,
             ),
+            BottomTab::Prefabs => self.prefabs.body(&mut browser_ui, theme),
             BottomTab::Issues => actions.extend(self.issues.body(&mut browser_ui, theme)),
         }
         if let Some((path, name, dither)) = self.textures.import_window(ui.ctx(), theme) {
@@ -601,9 +687,16 @@ impl MapEditor {
         document: &MapDocument,
         layout: MapPanes,
     ) -> Vec<MapAction> {
-        let built = (document.path().to_path_buf(), document.edits());
+        let built = (
+            document.path().to_path_buf(),
+            document.edits(),
+            self.externals.changes,
+        );
         if self.built.as_ref() != Some(&built) {
-            self.scene = Scene::build(document, &self.classes, &self.targeting);
+            self.externals.forget();
+            let externals = &mut self.externals;
+            let mut load = |name: &str| externals.read(document, name);
+            self.scene = Scene::build(document, &self.classes, &self.targeting, &mut load);
             self.built = Some(built);
             let count = document.file().entities.len();
             self.also.retain(|entity| entity.get() < count);
@@ -811,9 +904,7 @@ impl MapEditor {
         {
             actions.push(MapAction::Link(from, key, to));
         }
-        if let Some(ClassDrag(classname)) = response.dnd_release_payload::<ClassDrag>().as_deref()
-            && let Some(at) = pointer
-        {
+        let dropped_at = |at: Pos2| {
             let (start, direction) = ray(at);
             let snap = |c: f32| (f64::from(c) / GRID).round() * GRID;
             let distance = match pane {
@@ -822,12 +913,26 @@ impl MapEditor {
                 // others.
                 Pane::Plan(_) => start.iter().map(|c| c.abs()).fold(0.0, f32::max),
             };
-            let origin = [0, 1, 2].map(|axis| {
+            [0, 1, 2].map(|axis| {
                 let s = start.get(axis).copied().unwrap_or_default();
                 let d = direction.get(axis).copied().unwrap_or_default();
                 snap(s + d * distance)
-            });
-            actions.push(MapAction::Place(classname.clone(), origin));
+            })
+        };
+        // egui's release takes whatever is dragged before it checks its kind, so each kind is
+        // looked for first.
+        if response.dnd_hover_payload::<ClassDrag>().is_some()
+            && let Some(ClassDrag(classname)) =
+                response.dnd_release_payload::<ClassDrag>().as_deref()
+            && let Some(at) = pointer
+        {
+            actions.push(MapAction::Place(classname.clone(), dropped_at(at)));
+        }
+        if response.dnd_hover_payload::<PrefabDrag>().is_some()
+            && let Some(PrefabDrag(path)) = response.dnd_release_payload::<PrefabDrag>().as_deref()
+            && let Some(at) = pointer
+        {
+            actions.push(MapAction::PlacePrefab(path.clone(), dropped_at(at)));
         }
         let painter = ui.painter_at(area);
         painter.rect_filled(area, 0.0, theme.color(Token::SurfaceViewport));
@@ -963,15 +1068,15 @@ impl MapEditor {
         let texture = self.textures.selected();
         let textures = &self.textures;
         let size_of = |name: &str| textures.size(name);
-        actions.extend(
-            self.tools
-                .properties(ui, &self.scene, texture, &size_of)
-                .into_iter()
-                .map(MapAction::Brush),
-        );
         let mut chosen: Vec<EntityIndex> =
             self.keys.as_ref().map(|(e, _)| *e).into_iter().collect();
         chosen.extend(self.also.iter().copied());
+        actions.extend(
+            self.tools
+                .properties(ui, &self.scene, texture, &size_of, &chosen)
+                .into_iter()
+                .map(MapAction::Brush),
+        );
         actions.extend(selection_ui(ui, &chosen).into_iter().map(MapAction::Group));
         actions.extend(
             layers_ui(ui, theme, &self.layers)

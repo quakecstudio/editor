@@ -372,3 +372,51 @@ fn wad_path_reads_the_dialects_map() {
             .is_err()
     );
 }
+
+// spec QBSP-14.7: the extended dialect compiles an external map instance as the map with the
+// instance expanded (MAP-14), with the files its caller reads; the id dialect leaves it a point
+// entity; a file that cannot be read stops the compile
+#[test]
+fn external_maps_are_expanded_in_the_extended_dialect() {
+    let prefab = MapSpec {
+        world: vec![BrushSpec::cube([-8, -8, 0], [8, 8, 32], "pillar")],
+        entities: Vec::new(),
+        ..MapSpec::default()
+    };
+    let prefab = map_text(&prefab);
+    let mut instance = EntitySpec::point("misc_external_map", [0, 0, ROOM_MINS[2]]);
+    instance.pairs = vec![
+        ("_external_map".to_owned(), "pillar.map".to_owned()),
+        ("_external_map_classname".to_owned(), "func_wall".to_owned()),
+    ];
+    let mut spec = MapSpec::default();
+    spec.entities.push(instance);
+    let text = map_text(&spec);
+    let mut load = |name: &str| (name == "pillar.map").then(|| prefab.as_bytes().to_vec());
+    let compiler = Compiler::default().with_dialect(Dialect::Extended);
+    let compiled = compiler
+        .compile_with_externals(text.as_bytes(), None, &mut load)
+        .unwrap();
+    assert_eq!(
+        read(&compiled).models.len(),
+        2,
+        "the instance is a brush model"
+    );
+    let expanded = qs_map::MapFile::parse(text.as_bytes())
+        .unwrap()
+        .with_external_maps(&mut load)
+        .unwrap()
+        .to_bytes();
+    assert_eq!(compiled, compiler.compile(&expanded, None).unwrap());
+    let id = Compiler::default()
+        .with_dialect(Dialect::Id)
+        .compile_with_externals(text.as_bytes(), None, &mut load)
+        .unwrap();
+    assert_eq!(read(&id).models.len(), 1, "id's qbsp reads no instance");
+    assert!(matches!(
+        compiler.compile_with_externals(text.as_bytes(), None, &mut |_| None),
+        Err(CompileError::ExternalMap(
+            qs_map::ExternalMapError::Unreadable { .. }
+        ))
+    ));
+}

@@ -22,6 +22,7 @@ mod brush_edit;
 mod check;
 pub mod cnum;
 mod document;
+mod external;
 pub mod geometry;
 pub mod lexer;
 mod linked;
@@ -35,6 +36,9 @@ pub use brush_edit::{BrushError, Surface, TextureLock};
 pub use check::{Diagnostic, DiagnosticKind, MAP_MAX_SOUNDS};
 pub use document::{
     Brush, BrushModel, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key,
+};
+pub use external::{
+    EXTERNAL_CLASSNAME_KEY, EXTERNAL_MAP_CLASS, EXTERNAL_MAP_KEY, ExternalMapError,
 };
 pub use linked::{
     ContainerId, EntityPlace, LayerSetting, LayerSettings, LayerSwitch, LinkError, LinkedGroup,

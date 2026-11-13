@@ -264,3 +264,44 @@ fn only_an_open_map_source_compiles() {
         assert!(error.to_string().contains("no map"), "{id}: {error}");
     }
 }
+
+// spec MAP-14.1, MAP-14.7: an external map instance is compiled as the brush entity it becomes,
+// its brushes read from the file it names beside the map; a file that is not there stops the
+// compile
+#[test]
+fn external_maps_are_compiled_in_place() {
+    let path = room("external", "wall", Opening::Sealed);
+    let dir = path.parent().unwrap();
+    std::fs::create_dir_all(dir.join("prefabs")).unwrap();
+    let mut prefab = MapFile::parse(b"{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    let surface = Surface {
+        texture: b"wall".to_vec(),
+        texdef: TexDef::Standard {
+            shift: [0.0; 2],
+            rotate: 0.0,
+            scale: [1.0; 2],
+        },
+    };
+    let pillar = Brush::cuboid([-8.0, -8.0, 0.0], [8.0, 8.0, 64.0], &surface).unwrap();
+    prefab.entities[0].items.push(Item::Brush(pillar));
+    std::fs::write(dir.join("prefabs/pillar.map"), prefab.to_bytes()).unwrap();
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.push_str(
+        "{\n\"classname\" \"misc_external_map\"\n\"_external_map\" \"prefabs/pillar.map\"\n\
+         \"_external_map_classname\" \"func_wall\"\n\"origin\" \"32 32 -128\"\n}\n",
+    );
+    std::fs::write(&path, &text).unwrap();
+    let mut session = open(&path);
+    let made = report(&mut session, MAP_COMPILE);
+    let bsp = std::fs::read(&made.written[0]).unwrap();
+    let lump = String::from_utf8_lossy(&bsp);
+    assert!(
+        lump.contains("\"classname\" \"func_wall\""),
+        "the instance became a func_wall"
+    );
+    assert!(lump.contains("\"model\" \"*1\""), "with a model of its own");
+    std::fs::remove_file(dir.join("prefabs/pillar.map")).unwrap();
+    let mut session = open(&path);
+    let error = session.execute(MAP_COMPILE, json!({})).unwrap_err();
+    assert!(error.to_string().contains("prefabs/pillar.map"), "{error}");
+}

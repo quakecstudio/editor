@@ -25,8 +25,8 @@ pub struct PaletteMatch<'a> {
 /// A command matches when the query's characters, ignoring case and spaces, appear in order in
 /// its summary or in its id, as Zed's and VS Code's palettes match. A match scores more for
 /// characters that follow one another, that start a word, that come early, and for being in
-/// the summary rather than the id; of two that score the same, the shorter summary comes first,
-/// then the order given.
+/// the summary rather than the id; a command whose id is the query, in any case, comes first; of
+/// two that score the same, the shorter summary comes first, then the order given.
 #[must_use]
 pub fn search<'a>(
     commands: impl IntoIterator<Item = &'a CommandInfo>,
@@ -58,7 +58,11 @@ pub fn search<'a>(
         });
     }
     if !empty {
-        found.sort_by_key(|m| (std::cmp::Reverse(m.score), m.info.summary().len()));
+        let query: String = needle.iter().collect();
+        found.sort_by_key(|m| {
+            let named = m.info.id().as_str().to_lowercase() == query;
+            (!named, std::cmp::Reverse(m.score), m.info.summary().len())
+        });
     }
     found
 }
@@ -270,6 +274,29 @@ mod tests {
             .iter()
             .map(|m| m.info.id().as_str().to_owned())
             .collect()
+    }
+
+    command!(
+        Save,
+        "map.save",
+        "Writes the open map's edits to its file, and its entities beside a BSP"
+    );
+    command!(SavePrefab, "map.save_prefab", "Writes a prefab");
+
+    // UI-10: a command whose id is the query comes before one that only starts with it, in any
+    // case, though the other scores as well and has the shorter summary.
+    #[test]
+    fn the_command_named_comes_first() {
+        let mut registry = Registry::new();
+        registry.register(SavePrefab).unwrap();
+        registry.register(Save).unwrap();
+        assert_eq!(ids(&registry, "map.save"), ["map.save", "map.save_prefab"]);
+        assert_eq!(ids(&registry, "MAP.SAVE"), ["map.save", "map.save_prefab"]);
+        assert_eq!(
+            ids(&registry, "map.save_prefab"),
+            ["map.save_prefab"],
+            "the other does not match"
+        );
     }
 
     // UI-10: an empty query lists every command, in the registry's order.
