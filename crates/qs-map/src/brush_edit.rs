@@ -572,5 +572,9 @@ impl Brush {
     }
 }
 
+mod tools;
+
+pub use tools::{Affine, BrushFace, MAP_MAX_CHAMFER_FACES, WorldAxis};
+
 #[cfg(test)]
 mod tests;
