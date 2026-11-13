@@ -124,6 +124,8 @@ pub enum MapAction {
     Panes(MapPanes),
     /// Import the PNG at the path as a texture of the name (P6-16).
     ImportTexture(std::path::PathBuf, String, DitherChoice),
+    /// Compile the map fast and play it with the player at the 3D view's camera (P6-12).
+    PlayFromHere,
     /// Check the map for leaks and missing textures (P6-11).
     CheckLeaks,
     /// List the project's prefabs (P6-23).
@@ -387,8 +389,7 @@ impl MapEditor {
         &self.leaks
     }
 
-    /// The 3D view's camera, for tests.
-    #[cfg(test)]
+    /// The 3D view's camera: where Play from here puts the player (P6-12).
     pub(crate) const fn camera(&self) -> Option<&Camera> {
         self.camera.as_ref()
     }
@@ -1039,9 +1040,20 @@ impl MapEditor {
         if let Some(refused) = &self.refused {
             ui.label(RichText::new(refused).color(theme.color(Token::StatusError)));
         }
-        if ui.button(Text::MapCheckLeaks.get()).clicked() {
-            actions.push(MapAction::CheckLeaks);
-        }
+        ui.horizontal_wrapped(|ui| {
+            if ui.button(Text::MapCheckLeaks.get()).clicked() {
+                actions.push(MapAction::CheckLeaks);
+            }
+            if ui
+                .add_enabled(
+                    self.camera.is_some(),
+                    egui::Button::new(Text::MapPlayFromHere.get()),
+                )
+                .clicked()
+            {
+                actions.push(MapAction::PlayFromHere);
+            }
+        });
         self.leaks.properties(ui, theme, report);
         if self.disk != DiskNotice::None {
             ui.label(

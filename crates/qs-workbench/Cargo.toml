@@ -27,6 +27,7 @@ qs-engine = { workspace = true }
 qs-install = { workspace = true }
 qs-map = { workspace = true }
 qs-map-bsp = { workspace = true }
+qs-map-light = { workspace = true }
 # project.export: the assets packed into pak0.pak, and id's PAKs read to refuse their files
 # (P4-28).
 qs-pak = { workspace = true }

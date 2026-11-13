@@ -179,6 +179,11 @@ pub enum LightWarning {
     },
     /// `WARNING: Too many light styles on a face` (LIGHT-4.5).
     TooManyStyles,
+    /// In the extended dialect, a face `light` would stop on, left unlit (LIGHT-1.7).
+    Unlit {
+        /// What `light` would have stopped with.
+        error: LightError,
+    },
 }
 
 impl fmt::Display for LightWarning {
@@ -192,6 +197,7 @@ impl fmt::Display for LightWarning {
                 "WARNING: entity at ({x},{y},{z}) ({classname}) has unmatched target"
             ),
             Self::TooManyStyles => f.write_str("WARNING: Too many light styles on a face"),
+            Self::Unlit { error } => write!(f, "WARNING: {error}; the face is left unlit"),
         }
     }
 }
@@ -268,6 +274,7 @@ impl Light {
             sampling: self.sampling,
             scale: self.scale,
             colour,
+            dialect: self.dialect,
         };
         let faces = scene.lit_faces()?;
         let mut lit = Vec::with_capacity(faces.len());

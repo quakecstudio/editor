@@ -10,6 +10,7 @@ mod inventory;
 mod map_entities;
 mod pak_written;
 mod paths;
+mod play_from_here;
 mod scenario_numbers;
 mod shape_stairs;
 mod spec_coverage;

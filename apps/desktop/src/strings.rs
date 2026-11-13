@@ -469,6 +469,8 @@ pub enum Text {
     MapImportSave,
     /// The button that checks the map for leaks and missing textures (P6-11).
     MapCheckLeaks,
+    /// Compile the map fast and play it from the camera.
+    MapPlayFromHere,
     /// The button that flies the camera along a leak's trail (P6-11).
     MapFlyLeak,
     /// What the leak check says of a map with no leak (P6-11).
@@ -727,7 +729,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 356] = [
+    pub const ALL: [Self; 357] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -957,6 +959,7 @@ impl Text {
         Self::MapDitherDiffuse,
         Self::MapImportSave,
         Self::MapCheckLeaks,
+        Self::MapPlayFromHere,
         Self::MapFlyLeak,
         Self::MapSealed,
         Self::MapNoOccupant,
@@ -1333,6 +1336,7 @@ impl Text {
             Self::MapDitherDiffuse => "Dither",
             Self::MapImportSave => "Import",
             Self::MapCheckLeaks => "Check for leaks",
+            Self::MapPlayFromHere => "Play from here",
             Self::MapFlyLeak => "Fly along the leak",
             Self::MapSealed => "The map is sealed: no entity is in reach of the void.",
             Self::MapNoOccupant => {

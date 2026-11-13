@@ -2518,6 +2518,39 @@ fn the_move_and_measure_tools_show_the_edit_they_make() {
     assert_eq!(map_text(&harness), before, "measuring changes nothing");
 }
 
+// No spec statement: P6-12, MAP-13: Play from here compiles the open map fast, lit with no
+// vis, into the project's build as the game loads it, before it starts the game
+#[test]
+fn play_from_here_writes_the_map_into_the_build() {
+    let dir = keep_copy("play-here");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep/gfx/keep.wad");
+    fs::create_dir_all(dir.join("gfx")).unwrap();
+    fs::copy(fixture, dir.join("gfx/keep.wad")).unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapPlayFromHere.get()).click();
+    harness.run();
+    let built: Vec<PathBuf> = fs::read_dir(dir.join("build"))
+        .unwrap()
+        .filter_map(|entry| {
+            let maps = entry.ok()?.path().join("maps/keep.bsp");
+            maps.exists().then_some(maps)
+        })
+        .collect();
+    assert_eq!(built.len(), 1, "the map is in the mod's maps folder");
+    let bytes = fs::read(built.first().unwrap()).unwrap();
+    let bsp = qs_bsp::Bsp::read(&bytes, qs_bsp::BspLoader::default()).unwrap();
+    assert!(!bsp.lighting.is_empty(), "lit");
+    assert!(bsp.visibility.is_empty(), "no vis");
+}
+
 // No spec statement: P6-11, QBSP-9.8, MAP-6.8: with a wall gone, Check for leaks reports the leak and
 // draws its trail; Fly along the leak takes the camera from the entity the void reaches along
 // the trail to its end; an edit leaves the report out of date

@@ -25,11 +25,11 @@ use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_sim::{LoadOptions, UserCmd, World};
 
 /// The server's frame, 1/72 of a second.
-const FRAME: f64 = 1.0 / 72.0;
+pub(crate) const FRAME: f64 = 1.0 / 72.0;
 /// The stairs' box: six steps of the default size.
 const STAIRS: [[f64; 3]; 2] = [[0.0, 0.0, 0.0], [192.0, 64.0, 96.0]];
 /// How high the player's eye is above its origin, and its origin above the floor.
-const EYE: f32 = 22.0;
+pub(crate) const EYE: f32 = 22.0;
 const STANDING: f32 = 24.0;
 
 /// A player that walks, put at the player start.
@@ -74,7 +74,7 @@ fn type_name(etype: Etype) -> &'static str {
 }
 
 /// The progs of [`PLAYER`] after id's system definitions.
-fn progs() -> Vec<u8> {
+pub(crate) fn progs() -> Vec<u8> {
     let mut defs = String::new();
     for var in SYSTEM_GLOBALS {
         writeln!(defs, "{} {};", type_name(var.etype), var.name).unwrap();

@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use qs_commands::{Command, NoParams, Outcome};
 use qs_map::qbsp::QbspWarning;
 use qs_map_bsp::{Compiled, Compiler, Warning};
+use qs_map_light::{Light, Sampling};
 use qs_wad::Wad;
 use qs_wad::write::WadBuilder;
 use schemars::JsonSchema;
@@ -21,13 +22,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::map_edit::MapSource;
 use crate::map_textures::{Game, find_wad};
-use crate::preview::HasPreview;
+use crate::preview::{HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 
 /// The id of `map.leaks`.
 pub const MAP_LEAKS: &str = "map.leaks";
 /// The id of `map.compile`.
 pub const MAP_COMPILE: &str = "map.compile";
+/// The id of `map.play_from_here`.
+pub const MAP_PLAY_FROM_HERE: &str = "map.play_from_here";
 
 /// Whether the outside of a map was filled (QBSP-9.2, QBSP-9.3).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -236,6 +239,92 @@ impl<C: HasPreview + 'static> Command<C> for MapCompile {
             report.written.push(file);
         }
         Ok(Outcome::outside_history(report))
+    }
+}
+
+/// The parameters of `map.play_from_here`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PlayFromHereParams {
+    /// Where the player starts: the map view's camera.
+    pub at: [f64; 3],
+    /// Which way the player faces, pitch, yaw and roll in degrees; ahead along x when not
+    /// given.
+    #[serde(default)]
+    pub angles: Option<[f64; 3]>,
+}
+
+/// What `map.play_from_here` played.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PlayedHere {
+    /// The map's name, as the game's `map` command takes it.
+    pub map: String,
+    /// What compiling it found.
+    pub report: MapReport,
+}
+
+/// A float of a map, as the game's single precision holds it.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the game holds positions and angles in single precision"
+)]
+const fn single(value: f64) -> f32 {
+    value as f32
+}
+
+/// `map.play_from_here`.
+pub(crate) struct MapPlayFromHere;
+
+impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
+    const ID: &'static str = MAP_PLAY_FROM_HERE;
+    const SUMMARY: &'static str = "Compiles the open map fast, with no vis and fast light, into \
+        the project's build, starts the game on it and puts the player at a point, facing a \
+        way: the map view's camera (MAP-13).";
+    type Params = PlayFromHereParams;
+    type Output = PlayedHere;
+    type Error = PreviewError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: PlayFromHereParams,
+    ) -> Result<Outcome<PlayedHere, C>, PreviewError> {
+        let (workbench, preview) = context.workbench_and_preview();
+        let game = preview.game_base_path();
+        let (compiled, report, path) = workbench
+            .compile_map(game.as_deref())
+            .map_err(PreviewError::Build)?;
+        let lit = Light::new(Sampling::Fast)
+            .run(&compiled.bsp)
+            .map_err(|error| PreviewError::Build(WorkbenchError::MapLight { error }))?;
+        let built = workbench.built_program()?;
+        let (project, _, mod_name) = &built;
+        let name = path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let maps = project.join("build").join(mod_name).join("maps");
+        std::fs::create_dir_all(&maps).map_err(|error| PreviewError::Write(maps.clone(), error))?;
+        let files = [("bsp", Some(&lit.bsp)), ("lit", lit.lit.as_ref())];
+        for (extension, bytes) in files {
+            let file = maps.join(&name).with_extension(extension);
+            match bytes {
+                Some(bytes) => std::fs::write(&file, bytes)
+                    .map_err(|error| PreviewError::Write(file.clone(), error))?,
+                // A `.lit` from an earlier play would colour this one wrongly (BSP-18.2).
+                None => {
+                    if file.exists() {
+                        std::fs::remove_file(&file)
+                            .map_err(|error| PreviewError::Write(file.clone(), error))?;
+                    }
+                }
+            }
+        }
+        preview.play_built(built, Some(name.clone()))?;
+        let client = preview.client().ok_or(PreviewError::NotRunning)?;
+        let angles = params.angles.unwrap_or_default().map(single);
+        client.spawn_player_at(params.at.map(single), angles)?;
+        Ok(Outcome::outside_history(PlayedHere { map: name, report }))
     }
 }
 

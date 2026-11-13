@@ -48,7 +48,7 @@ use qs_workbench::git::{
     GitResolveParams, GitSide, GitStageParams, GitStatus,
 };
 use qs_workbench::ids::{ActionIndex, CheckpointNumber, TerminalIndex, WatchIndex};
-use qs_workbench::map_compile::MAP_LEAKS;
+use qs_workbench::map_compile::{MAP_LEAKS, MAP_PLAY_FROM_HERE, PlayFromHereParams};
 use qs_workbench::map_edit::{
     BSP_EXTENSION, BspSave, EntityKeys, EntityParams, FILES_CHANGED, FilesChanged,
     FilesChangedParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_EXTENSION,
@@ -229,6 +229,9 @@ pub enum CentreTab {
 
 /// The editor's area, whose egui id is the editor view's.
 pub(crate) const EDITOR_AREA: Area = Area::Editor;
+/// How far the player's eye is above its origin: id's `self.view_ofs = '0 0 22'` in
+/// `PutClientInServer`, so the eye is where the camera was (MAP-13).
+const PLAYER_EYE: f64 = 22.0;
 
 /// The window's state.
 pub struct Shell {
@@ -2115,6 +2118,7 @@ impl Shell {
                 MapAction::CheckLeaks => self
                     .execute(MAP_LEAKS, serde_json::json!({}))
                     .map_err(ShellError::from),
+                MapAction::PlayFromHere => self.play_from_here(),
                 MapAction::ListPrefabs => self.list_prefabs(),
                 MapAction::PlacePrefab(path, origin) => self.attempt(
                     MAP_PLACE_PREFAB,
@@ -2222,6 +2226,22 @@ impl Shell {
             .unwrap_or_default();
         self.map_editor.set_prefabs(prefabs);
         found.map(|_| serde_json::Value::Null)
+    }
+
+    /// Compiles the open map fast and plays it with the player's eye at the 3D view's camera,
+    /// facing its way (P6-12, MAP-13).
+    fn play_from_here(&mut self) -> Result<serde_json::Value, ShellError> {
+        let Some(camera) = self.map_editor.camera().copied() else {
+            return Ok(serde_json::Value::Null);
+        };
+        let [x, y, z] = camera.origin.map(f64::from);
+        self.attempt(
+            MAP_PLAY_FROM_HERE,
+            &PlayFromHereParams {
+                at: [x, y, z - PLAYER_EYE],
+                angles: Some([f64::from(camera.pitch), f64::from(camera.yaw), 0.0]),
+            },
+        )
     }
 
     /// Runs a brush edit as its `map.brush_*` command, on the commands' grid.
