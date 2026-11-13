@@ -17,6 +17,13 @@ use qs_bsp::{Bsp, BspLoader, ent_file_names};
 use qs_commands::{BoxError, Command, Outcome, RegisterError, Registry, UndoStep};
 use qs_map::{Entity, Item, MapFile};
 
+pub use brush_tools::{
+    Axis, BrushChamferParams, BrushExtrudeParams, BrushHollowParams, BrushIntersectParams,
+    BrushScaleParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
+    BrushSweepParams, BrushVerticesParams, MAP_BRUSH_CHAMFER, MAP_BRUSH_EXTRUDE, MAP_BRUSH_HOLLOW,
+    MAP_BRUSH_INTERSECT, MAP_BRUSH_SCALE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE,
+    MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP, MAP_BRUSH_VERTICES, VertexMove,
+};
 pub use brushes::{
     BrushClipParams, BrushCreateParams, BrushIndex, BrushMergeParams, BrushMoveParams, BrushParams,
     BrushTextureParams, BrushVertexParams, Keep as KeepPart, Lock, MAP_BRUSH_CLIP,
@@ -48,6 +55,7 @@ pub use prefabs::{
 };
 pub use shapes::{ArchWall, BrushShapeParams, Circle, Climb, MAP_BRUSH_SHAPE, ShapeSpec};
 
+mod brush_tools;
 mod brushes;
 mod disk;
 mod filter;
@@ -1227,6 +1235,16 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(brushes::BrushMove)?;
     registry.register(brushes::BrushTexture)?;
     registry.register(shapes::BrushShape)?;
+    registry.register(brush_tools::BrushScale)?;
+    registry.register(brush_tools::BrushShear)?;
+    registry.register(brush_tools::BrushExtrude)?;
+    registry.register(brush_tools::BrushSweep)?;
+    registry.register(brush_tools::BrushHollow)?;
+    registry.register(brush_tools::BrushIntersect)?;
+    registry.register(brush_tools::BrushVertices)?;
+    registry.register(brush_tools::BrushSplitEdge)?;
+    registry.register(brush_tools::BrushSplitFace)?;
+    registry.register(brush_tools::BrushChamfer)?;
     registry.register(prefabs::ListPrefabs)?;
     registry.register(prefabs::PlacePrefab)?;
     registry.register(prefabs::SavePrefab)?;
