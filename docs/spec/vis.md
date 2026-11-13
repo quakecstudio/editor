@@ -63,6 +63,11 @@ code is ported:
   past the end of vis's array, which is undefined in C; this spec fixes the answer: it stops the
   run as a greater one does. Both one-way portals share the file portal's winding, its points in
   the file's order.
+- **VIS-2.7** `ON_EPSILON` (`VIS.H`) and `EQUAL_EPSILON` (`COMMON/MATHLIB.H`) are `double`
+  constants, so every `float` distance or difference compared with them is widened first: a
+  distance of exactly `0.1f`, which is a little over 0.1, is beyond `ON_EPSILON`. The sums of
+  squares in `VectorNormalize` and the `1/sqrt(length)` of `ClipToSeperators` are worked in
+  `double` too, and stored as `float`.
 
 ### Constants
 
@@ -147,9 +152,11 @@ A first-order bound: the leaves a flood through portals that face each other can
   `n`'s `visofs` is its row's offset; the BSP's leaf is `n + 1`, leaf 0 being the shared solid
   leaf (QBSP-13.1). A lump past `MAX_MAP_VISIBILITY` stops the run with
   `Vismap expansion overflow`.
-- **VIS-5.4** Our `qs-map-vis` writes the visibility lump after the BSP's other lumps, on a
-  four-byte boundary, and points the directory at it, setting each vis leaf's `visofs` and
-  `ambient_level` in place; every other byte of the file is kept.
+- **VIS-5.4** vis writes the file as `COMMON/BSPFILE.C`, `WriteBSPFile`, does: the header, then
+  the lumps in the order planes, leafs, vertexes, nodes, texinfo, faces, clipnodes,
+  marksurfaces, surfedges, edges, models, lighting, visibility, entities and textures, each
+  padded with zeros to a multiple of four bytes (`(len+3)&~3`), its directory entry giving its
+  unpadded length. Every lump but the leaves and the visibility is the one read.
 - **VIS-5.3** The average printed, `average leafs visible`, counts a leaf's visible leaves with
   bit `i & 3` of byte `i >> 3` instead of bit `i & 7`, so it is not the true average; nothing
   else reads the count.

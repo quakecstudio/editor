@@ -4,14 +4,15 @@
 //! plane from its points (VIS-2.3), a winding clipped to a plane's front, and the separating
 //! planes that clip one portal by two others (VIS-4.3, VIS-4.4).
 
-/// `ON_EPSILON` (VIS-2).
-pub(crate) const VIS_ON_EPSILON: f32 = 0.1;
+/// `ON_EPSILON`, a `double`: each `float` distance is widened to be compared with it (VIS-2.7).
+pub(crate) const VIS_ON_EPSILON: f64 = 0.1;
 /// The origin, a normal of no length.
 const ORIGIN: Vec3 = [0.0, 0.0, 0.0];
 /// Room for the points a clip adds, as vis allows (`maxpts = numpoints + 4`).
 const SPLIT_SPARE: usize = 4;
-/// `EQUAL_EPSILON`, by which `VectorCompare` takes two normals as one (VIS-4.3).
-const EQUAL_EPSILON: f32 = 0.001;
+/// `EQUAL_EPSILON`, by which `VectorCompare` takes two normals as one, a `double` (VIS-4.3,
+/// VIS-2.7).
+const EQUAL_EPSILON: f64 = 0.001;
 
 /// A point or direction.
 pub(crate) type Vec3 = [f32; 3];
@@ -48,9 +49,10 @@ impl Plane {
         }
     }
 
-    /// How far `point` is in front of the plane.
-    fn side(self, point: Vec3) -> f32 {
-        dot(point, self.normal) - self.dist
+    /// How far `point` is in front of the plane, as a `float`, widened to be compared with
+    /// `ON_EPSILON` (VIS-2.7).
+    fn side(self, point: Vec3) -> f64 {
+        f64::from(dot(point, self.normal) - self.dist)
     }
 
     /// Whether the two normals are one, each component within `EQUAL_EPSILON` (VIS-4.3).
@@ -58,7 +60,7 @@ impl Plane {
         self.normal
             .iter()
             .zip(other.normal)
-            .all(|(a, b)| (a - b).abs() <= EQUAL_EPSILON)
+            .all(|(a, b)| f64::from(a - b).abs() <= EQUAL_EPSILON)
     }
 }
 
@@ -108,7 +110,7 @@ impl Winding {
         reason = "spec VIS-4.3: vis puts a split point exactly on an axial plane"
     )]
     pub(crate) fn clipped(&self, split: Plane) -> Option<Self> {
-        let dists: Vec<f32> = self.0.iter().map(|&p| split.side(p)).collect();
+        let dists: Vec<f64> = self.0.iter().map(|&p| split.side(p)).collect();
         let sides: Vec<Side> = dists
             .iter()
             .map(|&d| {
@@ -149,7 +151,8 @@ impl Winding {
             if next_side == Side::On || next_side == side {
                 continue;
             }
-            let t = d1 / (d1 - d2);
+            // The distances are floats; widening them kept their values.
+            let t = crate::to_f32(d1) / (crate::to_f32(d1) - crate::to_f32(d2));
             let mid = [0, 1, 2].map(|j| {
                 let n = split.normal.get(j).copied().unwrap_or_default();
                 if n == 1.0 {
@@ -186,10 +189,12 @@ impl Winding {
                 let v2 = sub(pj, si);
                 let normal = cross(v1, v2);
                 let length = dot(normal, normal);
-                if length < VIS_ON_EPSILON {
+                if f64::from(length) < VIS_ON_EPSILON {
                     continue;
                 }
-                let scale = 1.0 / length.sqrt();
+                // `length = 1/sqrt(length)`: the root and the quotient in `double`, stored as a
+                // `float` (VIS-4.4).
+                let scale = crate::to_f32(1.0 / f64::from(length).sqrt());
                 let normal = normal.map(|c| c * scale);
                 let mut plane = Plane {
                     normal,
@@ -246,8 +251,12 @@ pub(crate) enum Flip {
 }
 
 /// `normal` scaled to length 1; as it is when it has none.
+/// `VectorNormalize` sums the squares in `double`.
 fn normalized(normal: Vec3) -> Vec3 {
-    let length = f64::from(dot(normal, normal)).sqrt();
+    let length = normal
+        .iter()
+        .fold(0.0_f64, |sum, &c| sum + f64::from(c * c))
+        .sqrt();
     if length == 0.0 {
         return normal;
     }

@@ -3,7 +3,7 @@
 //! The visibility lump (VIS-5) and the ambient levels (VIS-6), written into a BSP: the rows
 //! compressed one after another, each vis leaf's `visofs` and `ambient_level` set in place.
 
-use qs_bsp::{Bsp, BspVersion, LumpId};
+use qs_bsp::{BSP_HEADER_LUMPS, BSP_HEADER_SIZE, Bsp, BspVersion, LumpId};
 
 use crate::VisError;
 use crate::flow::Leaves;
@@ -152,15 +152,34 @@ const LEAF_BSP2: usize = 44;
 const VISOFS_AT: usize = 4;
 /// The bytes of `visofs`.
 const VISOFS_SIZE: usize = 4;
-/// Where the lump directory starts, past the version.
-const DIRECTORY_AT: usize = 4;
+/// The bytes before the lump directory: the version.
+const VERSION_SIZE: usize = 4;
 /// The bytes of one directory entry: offset and length.
 const ENTRY_SIZE: usize = 8;
 /// Lumps start on four-byte boundaries.
 const ALIGN: usize = 4;
+/// The lumps in the order `WriteBSPFile` writes them (VIS-5.4).
+const ORDER: [LumpId; BSP_HEADER_LUMPS] = [
+    LumpId::Planes,
+    LumpId::Leafs,
+    LumpId::Vertexes,
+    LumpId::Nodes,
+    LumpId::Texinfo,
+    LumpId::Faces,
+    LumpId::Clipnodes,
+    LumpId::Marksurfaces,
+    LumpId::Surfedges,
+    LumpId::Edges,
+    LumpId::Models,
+    LumpId::Lighting,
+    LumpId::Visibility,
+    LumpId::Entities,
+    LumpId::Textures,
+];
 
-/// `bytes` with the rows' visibility lump, each vis leaf's `visofs` and ambient levels; the new
-/// lump is put at the end of the file and the directory pointed at it (VIS-5.2, VIS-6).
+/// `bytes` with the rows' visibility lump, each vis leaf's `visofs` and ambient levels, laid
+/// out as `WriteBSPFile` writes a file: the header, then each lump in its order, padded to
+/// four bytes (VIS-5.2, VIS-5.4, VIS-6).
 pub(crate) fn written(bytes: &[u8], bsp: &Bsp<'_>, rows: &[Leaves]) -> Result<Vec<u8>, VisError> {
     let leafs = rows.len();
     let mut lump = Vec::new();
@@ -175,27 +194,29 @@ pub(crate) fn written(bytes: &[u8], bsp: &Bsp<'_>, rows: &[Leaves]) -> Result<Ve
     let levels = ambients(bsp, rows);
     let record = leaf_size(bsp.version).ok_or(VisError::Format)?;
     let ambient_at = record.checked_sub(AMBIENTS).ok_or(VisError::Format)?;
-    let leaf_lump = bsp
-        .lumps
-        .get(LumpId::Leafs as usize)
-        .ok_or(VisError::Format)?;
-    let leaf_start = usize::try_from(leaf_lump.fileofs).map_err(|_| VisError::Format)?;
-    let mut out = bytes.to_vec();
+    let stored = |id: LumpId| -> Result<&[u8], VisError> {
+        let entry = bsp.lumps.get(id.index()).ok_or(VisError::Format)?;
+        let start = usize::try_from(entry.fileofs).map_err(|_| VisError::Format)?;
+        let len = usize::try_from(entry.filelen).map_err(|_| VisError::Format)?;
+        bytes
+            .get(start..start.saturating_add(len))
+            .ok_or(VisError::Format)
+    };
+    let mut leaf_lump = stored(LumpId::Leafs)?.to_vec();
     for (leaf, (offset, ambient)) in offsets.iter().zip(&levels).enumerate() {
         let at = leaf
             .checked_add(1)
             .and_then(|n| n.checked_mul(record))
-            .and_then(|n| n.checked_add(leaf_start))
             .ok_or(VisError::Format)?;
         let visofs = i32::try_from(*offset).map_err(|_| VisError::VismapOverflow)?;
-        let field = out
+        let field = leaf_lump
             .get_mut(
                 at.saturating_add(VISOFS_AT)
                     ..at.saturating_add(VISOFS_AT).saturating_add(VISOFS_SIZE),
             )
             .ok_or(VisError::Format)?;
         field.copy_from_slice(&visofs.to_le_bytes());
-        let field = out
+        let field = leaf_lump
             .get_mut(
                 at.saturating_add(ambient_at)
                     ..at.saturating_add(ambient_at).saturating_add(AMBIENTS),
@@ -203,19 +224,29 @@ pub(crate) fn written(bytes: &[u8], bsp: &Bsp<'_>, rows: &[Leaves]) -> Result<Ve
             .ok_or(VisError::Format)?;
         field.copy_from_slice(ambient);
     }
-    while !out.len().is_multiple_of(ALIGN) {
-        out.push(0);
+    let mut out = vec![0; BSP_HEADER_SIZE];
+    if let (Some(version), Some(head)) = (bytes.get(..VERSION_SIZE), out.get_mut(..VERSION_SIZE)) {
+        head.copy_from_slice(version);
     }
-    let start = i32::try_from(out.len()).map_err(|_| VisError::Format)?;
-    let length = i32::try_from(lump.len()).map_err(|_| VisError::Format)?;
-    out.extend(lump);
-    let entry =
-        DIRECTORY_AT.saturating_add((LumpId::Visibility as usize).saturating_mul(ENTRY_SIZE));
-    let field = out
-        .get_mut(entry..entry.saturating_add(ENTRY_SIZE))
-        .ok_or(VisError::Format)?;
-    let [a, b, c, d] = start.to_le_bytes();
-    let [e, f, g, h] = length.to_le_bytes();
-    field.copy_from_slice(&[a, b, c, d, e, f, g, h]);
+    for id in ORDER {
+        let data: &[u8] = match id {
+            LumpId::Leafs => &leaf_lump,
+            LumpId::Visibility => &lump,
+            _ => stored(id)?,
+        };
+        let start = i32::try_from(out.len()).map_err(|_| VisError::Format)?;
+        let len = i32::try_from(data.len()).map_err(|_| VisError::Format)?;
+        out.extend_from_slice(data);
+        while !out.len().is_multiple_of(ALIGN) {
+            out.push(0);
+        }
+        let entry = VERSION_SIZE.saturating_add(id.index().saturating_mul(ENTRY_SIZE));
+        let field = out
+            .get_mut(entry..entry.saturating_add(ENTRY_SIZE))
+            .ok_or(VisError::Format)?;
+        let [a, b, c, d] = start.to_le_bytes();
+        let [e, f, g, h] = len.to_le_bytes();
+        field.copy_from_slice(&[a, b, c, d, e, f, g, h]);
+    }
     Ok(out)
 }

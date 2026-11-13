@@ -104,7 +104,10 @@ impl Leaves {
     }
 
     pub(crate) fn count(&self) -> usize {
-        self.0.iter().map(|w| w.count_ones() as usize).sum()
+        self.0
+            .iter()
+            .map(|w| usize::try_from(w.count_ones()).unwrap_or(usize::MAX))
+            .fold(0, usize::saturating_add)
     }
 
     /// The row as vis writes it: `(leafs + 7) >> 3` bytes, leaf `i` bit `i & 7` of byte
@@ -160,11 +163,11 @@ impl<'a> Flow<'a> {
                         && t.winding
                             .points()
                             .iter()
-                            .any(|&q| dot(q, p.plane) > VIS_ON_EPSILON)
+                            .any(|&q| f64::from(dot(q, p.plane)) > VIS_ON_EPSILON)
                         && p.winding
                             .points()
                             .iter()
-                            .any(|&q| dot(q, t.plane) < -VIS_ON_EPSILON)
+                            .any(|&q| f64::from(dot(q, t.plane)) < -VIS_ON_EPSILON)
                 })
                 .collect();
             let mut seen = Leaves::none(file.leafs);
@@ -206,14 +209,14 @@ impl<'a> Flow<'a> {
         let mut done: Vec<Option<Leaves>> = vec![None; self.might.len()];
         let mut counts = VisCounts::default();
         for batch in order.chunks(VIS_FLOW_BATCH) {
-            let results = self.batch(batch, &done, threads)?;
+            let results = self.batch(batch, &done, threads);
             // A flow that read the might-see set of a portal of its batch that one thread would
-            // have flowed first is flowed again, in order, with that portal's exact set.
+            // have flowed first is flowed again, in order, with that portal's exact set; so is
+            // one that failed, which may have failed only on such a set.
             for (&portal, flowed) in batch.iter().zip(results) {
-                let flowed = if flowed.read_earlier {
-                    self.portal_flow(portal, &done, &[])?
-                } else {
-                    flowed
+                let flowed = match flowed {
+                    Ok(flowed) if !flowed.read_earlier => flowed,
+                    _ => self.alone(portal, &done)?,
                 };
                 counts.add(flowed.counts);
                 if let Some(slot) = done.get_mut(portal) {
@@ -229,6 +232,19 @@ impl<'a> Flow<'a> {
         Ok((seen, counts))
     }
 
+    /// Portal `p` flowed as one thread flows it, seeing `done` as the portals flowed so far, on
+    /// a thread with a flow's stack.
+    fn alone(&self, p: usize, done: &[Option<Leaves>]) -> Result<Flowed, VisError> {
+        std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .stack_size(FLOW_STACK)
+                .spawn_scoped(scope, || self.portal_flow(p, done, &[]))
+                .map_err(|_| VisError::Thread)?
+                .join()
+                .unwrap_or(Err(VisError::Thread))
+        })
+    }
+
     /// Flows the portals of `batch` on up to `threads` threads, each seeing `done` as the
     /// portals flowed so far; each result with whether it read the might-see set of a portal
     /// earlier in the batch.
@@ -237,7 +253,7 @@ impl<'a> Flow<'a> {
         batch: &[usize],
         done: &[Option<Leaves>],
         threads: usize,
-    ) -> Result<Vec<Flowed>, VisError> {
+    ) -> Vec<Result<Flowed, VisError>> {
         let next = AtomicUsize::new(0);
         let mut results: Vec<Option<Result<Flowed, VisError>>> =
             std::iter::repeat_with(|| None).take(batch.len()).collect();
@@ -341,13 +357,19 @@ impl<'a> Flow<'a> {
                 };
                 might
             };
+            let more = previous
+                .might
+                .0
+                .iter()
+                .zip(&test.0)
+                .zip(&walk.seen.0)
+                .any(|((m, t), s)| m & t & !s != 0);
+            if !more {
+                continue;
+            }
             let mut might = previous.might.clone();
             for (m, t) in might.0.iter_mut().zip(&test.0) {
                 *m &= *t;
-            }
-            let more = might.0.iter().zip(&walk.seen.0).any(|(m, s)| m & !s != 0);
-            if !more {
-                continue;
             }
             let back = portal.plane.flipped();
             if previous.plane.same_normal(back) {

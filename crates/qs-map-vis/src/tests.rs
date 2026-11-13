@@ -13,6 +13,7 @@
 use qs_bsp::{Bsp, BspLoader};
 use qs_map_bsp::Compiler;
 use qs_wad::write::WadBuilder;
+use sha2::{Digest, Sha256};
 
 use crate::flow::{Flow, Leaves};
 use crate::lump::{compress, written};
@@ -449,15 +450,15 @@ fn vector(name: &str) -> String {
     std::fs::read_to_string(path).unwrap()
 }
 
-// spec VIS-4.2, VIS-4.4, VIS-4.7, VIS-4.8, VIS-5.2, VIS-6.2: every map of the vectors gives id's
-// vis's visibility lump, visofs, ambient levels and flow counts, in the fast mode and at every
-// level, on every thread
+// spec VIS-4.2, VIS-4.4, VIS-4.7, VIS-4.8, VIS-5.2, VIS-5.4, VIS-6.2: every map of the vectors
+// gives id's vis's visibility lump, visofs, ambient levels, flow counts and whole file, in the
+// fast mode and at every level, on every thread
 #[test]
 fn every_vector_matches_id_vis() {
     let results = vector("results.tsv");
     let mut checked = 0;
     for line in results.lines().skip(1) {
-        let [map, mode, visibility, visofs, ambients, counts] =
+        let [map, mode, visibility, visofs, ambients, counts, file] =
             line.split('\t').collect::<Vec<_>>()[..]
         else {
             panic!("a bad row: {line}");
@@ -493,6 +494,11 @@ fn every_vector_matches_id_vis() {
         ];
         let ours: Vec<String> = ours.iter().map(ToString::to_string).collect();
         assert_eq!(ours.join(","), counts, "{map} {mode:?}");
+        assert_eq!(
+            hex(&Sha256::digest(&written)),
+            file,
+            "{map} {mode:?}: the whole file"
+        );
         checked += 1;
     }
     assert_eq!(checked, 18, "three maps, six modes each");
@@ -538,21 +544,27 @@ const X0: Plane = Plane {
     dist: 0.0,
 };
 
-// spec VIS-4.3: a point exactly ON_EPSILON in front or behind is on the plane, as is one
-// nearer; a split point on a plane facing -x is at minus its distance
+// spec VIS-2.7, VIS-4.3: ON_EPSILON is a double, so a point exactly 0.1f in front or behind,
+// a little over 0.1, is off the plane, and the float below it is on it; a split point on a
+// plane facing -x is at minus its distance
 #[test]
-fn clip_epsilon_is_on_the_plane() {
-    let only_on = flat(&[[0.1, 0.0], [-10.0, 0.0], [-10.0, 64.0]]);
-    assert_eq!(
-        only_on.clipped(X0),
-        None,
-        "0.1 in front is on, not in front"
-    );
-    let back_on = flat(&[[-0.1, 0.0], [10.0, 0.0], [10.0, 64.0]]);
+fn clip_epsilon_is_a_double() {
+    let under = 0.1_f32.next_down();
+    let only_on = flat(&[[under, 0.0], [-10.0, 0.0], [-10.0, 64.0]]);
+    assert_eq!(only_on.clipped(X0), None, "just under 0.1 in front is on");
+    let front = flat(&[[0.1, 0.0], [-10.0, 0.0], [-10.0, 64.0]]);
+    assert!(front.clipped(X0).is_some(), "0.1f in front is in front");
+    let back_on = flat(&[[-under, 0.0], [10.0, 0.0], [10.0, 64.0]]);
     assert_eq!(
         back_on.clipped(X0),
         Some(back_on.clone()),
-        "0.1 behind is on"
+        "just under 0.1 behind is on"
+    );
+    let back = flat(&[[-0.1, 0.0], [10.0, 0.0], [10.0, 64.0]]);
+    assert_ne!(
+        back.clipped(X0),
+        Some(back.clone()),
+        "0.1f behind is behind"
     );
     let near = flat(&[[0.05, 0.0], [10.0, 0.0], [10.0, 64.0]]);
     assert_eq!(near.clipped(X0), Some(near.clone()));
@@ -647,20 +659,60 @@ fn the_lump_may_fill_max_map_visibility() {
     assert_eq!(over, Err(VisError::VismapOverflow));
 }
 
-// spec VIS-5.4: the lump is appended at the first four-byte boundary past the file
+// spec VIS-5.4: the file is laid out as WriteBSPFile writes it: each lump in its order, from
+// a four-byte boundary, the padding zeros, and every lump but the leaves and visibility kept
 #[test]
-fn the_lump_starts_on_four_bytes() {
+fn the_file_is_laid_out_as_write_bsp_file() {
+    use qs_bsp::LumpId;
     let (bsp, prt) = snake("*water");
-    assert!(bsp.len().is_multiple_of(4));
-    let lump_at = |bytes: &[u8]| {
-        let written = Vis::default().run(bytes, &prt).unwrap();
-        let read = Bsp::read(&written, BspLoader::FitzQuake).unwrap();
-        usize::try_from(read.lumps[qs_bsp::LumpId::Visibility as usize].fileofs).unwrap()
-    };
-    assert_eq!(lump_at(&bsp), bsp.len());
     let mut longer = bsp.clone();
-    longer.push(0);
-    assert_eq!(lump_at(&longer), bsp.len() + 4);
+    longer.push(7);
+    for input in [&bsp, &longer] {
+        let written = Vis::default().run(input, &prt).unwrap();
+        let read = Bsp::read(&written, BspLoader::FitzQuake).unwrap();
+        let before = Bsp::read(input, BspLoader::FitzQuake).unwrap();
+        let order = [
+            LumpId::Planes,
+            LumpId::Leafs,
+            LumpId::Vertexes,
+            LumpId::Nodes,
+            LumpId::Texinfo,
+            LumpId::Faces,
+            LumpId::Clipnodes,
+            LumpId::Marksurfaces,
+            LumpId::Surfedges,
+            LumpId::Edges,
+            LumpId::Models,
+            LumpId::Lighting,
+            LumpId::Visibility,
+            LumpId::Entities,
+            LumpId::Textures,
+        ];
+        let mut at = 124;
+        for id in order {
+            let lump = read.lumps[id.index()];
+            let (start, len) = (
+                usize::try_from(lump.fileofs).unwrap(),
+                usize::try_from(lump.filelen).unwrap(),
+            );
+            assert_eq!(start, at, "{id:?}");
+            let padded = len.div_ceil(4) * 4;
+            assert!(written[start + len..start + padded].iter().all(|&b| b == 0));
+            at = start + padded;
+            if !matches!(id, LumpId::Leafs | LumpId::Visibility) {
+                let old = before.lumps[id.index()];
+                let old_start = usize::try_from(old.fileofs).unwrap();
+                let old_len = usize::try_from(old.filelen).unwrap();
+                assert_eq!(
+                    &written[start..start + len],
+                    &input[old_start..old_start + old_len],
+                    "{id:?}"
+                );
+            }
+        }
+        assert_eq!(written.len(), at);
+        assert_eq!(&written[..4], &input[..4]);
+    }
 }
 
 // spec VIS-4.3: two normals are one when each component is within EQUAL_EPSILON, and not when

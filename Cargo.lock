@@ -3733,6 +3733,7 @@ dependencies = [
  "qs-bsp",
  "qs-map-bsp",
  "qs-wad",
+ "sha2",
 ]
 
 [[package]]
