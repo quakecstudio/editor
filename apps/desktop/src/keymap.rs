@@ -42,10 +42,11 @@ pub const OPEN_PALETTE: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P);
 
 /// Runs the map's chosen compile profile (P6-20): Cmd+B, the build key of Xcode and Sublime
-/// Text.
+/// Text; TrenchBroom's "Compile Map..." has no key.
 pub const RUN_PROFILE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::B);
 
-/// Makes the last change once more (P6-20, MAP-28).
+/// Makes the last change once more (P6-20, MAP-28): TrenchBroom's "Repeat Last Commands",
+/// `KeySequence{"Ctrl+R"}` (`ActionManager.cpp` at TrenchBroom@8f329f11), Cmd on macOS.
 pub const REPEAT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::R);
 
 /// Every binding. The focus keys put the editor on Cmd+1 as VS Code does, then the left,

@@ -15,6 +15,7 @@ fn qs_map_vis::Vis::visible
 fn qs_map_vis::Visible::counts
 fn qs_map_vis::Visible::leafs
 fn qs_map_vis::Visible::sees
+fn qs_map_vis::portal_windings
 impl qs_map_vis::Mode: Default
 impl qs_map_vis::VisError: fmt::Display
 impl qs_map_vis::VisError: std::error::Error

@@ -87,6 +87,35 @@ it too.
   - The Properties panel subtracts the selected brush from the other brushes of its entity
     (`map.brush_subtract`), merges the selected brushes of one entity into their hull
     (`map.brush_merge`), and deletes the selected brushes (`map.brush_delete`).
+- **Compile profiles (P6-20, MAP-28):** a profile is a list of tasks run in order on the open
+  map (`map.run_profile`), as TrenchBroom's compile profiles are: `bsp` (qs-map-bsp, the map as it
+  is in the editor, to a BSP beside it with its portal and leak files), `vis` and `light` (on that
+  BSP, each `full` or `fast`), `tool` (a program and its arguments, run in the map's folder),
+  `copy`, and `launch` (the BSP and its `.lit` copied into the project's build and the game
+  started on it). Paths take `${MAP}`, `${MAP_DIR}`, `${MAP_NAME}`, `${BSP}`, `${PROJECT}` and
+  `${GAME}`. Full and Fast are built in; a project adds its own in `compile-profiles.toml`:
+
+  ```toml
+  [[profile]]
+  name = "Ship"
+  tasks = [
+    { task = "tool", program = "qbsp", args = ["${MAP}"] },
+    { task = "light", speed = "full" },
+    { task = "copy", from = "${BSP}", to = "${PROJECT}/release/maps/${MAP_NAME}.bsp" },
+  ]
+  ```
+
+  The Properties panel chooses the profile (`map.choose_profile`) and runs it with Compile or
+  Cmd+B, then says how long it took, or which task stopped it and why. A task that fails stops
+  the profile.
+- **Portals (P6-20):** Show portals draws the portal file of the last compile (`map.portals`)
+  in every pane, where the map's leaves meet.
+- **Backups (P6-20):** `map.backup` writes the map as it is in the editor to
+  `autosave/<name>.<n>.map` beside it, keeping the last 20; the window takes one each minute
+  the map has unsaved edits, and `map.save` one of what it saved. Restore the newest backup
+  puts it in the editor as an edit undo takes back (`map.backups`, `map.restore_backup`).
+- **Repeat (P6-20):** `edit.repeat` (Cmd+R, TrenchBroom's Repeat) makes the last change once
+  more: the same command with the same arguments.
 - **Saving:** `map.save` (Cmd+S in the view) writes a `.map` over itself, and changes only the
   text an edit touched. A BSP's entities go to a `.ent` file beside the BSP, which QuakeSpasm
   and its descendants read in place of the lump (MAP-22). `{"bsp": "lump"}` rewrites the BSP's

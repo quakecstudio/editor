@@ -22,7 +22,7 @@ use crate::shape_stairs::{EYE, FRAME, progs};
 
 /// Two rooms of 256 units, west and east of x = 0, joined by a doorway in the wall between
 /// them; the player start and a light in the west one.
-fn map() -> Vec<u8> {
+pub(crate) fn map() -> Vec<u8> {
     let mut file = MapFile::parse(
         b"{\n\"classname\" \"worldspawn\"\n}\n\
           {\n\"classname\" \"info_player_start\"\n\"origin\" \"-200 0 24\"\n}\n\
