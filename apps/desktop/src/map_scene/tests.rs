@@ -35,7 +35,7 @@ fn the_scene_holds_the_brushes_and_the_entities_boxes() {
             ..ClassLook::default()
         },
     )]);
-    let scene = Scene::build(document, &classes, &[]);
+    let scene = Scene::build(document, &classes, &[], &mut |_| None);
     // The world's six boxes and the door's one, six faces of four edges each.
     assert_eq!(scene.lines.len(), 7 * 6 * 4);
     // The door's brush, six faces of four edges, is drawn for the door, so hiding it hides them.
@@ -68,7 +68,9 @@ fn the_scene_holds_the_brushes_and_the_entities_boxes() {
 #[test]
 fn a_ray_picks_the_nearest_box() {
     let workbench = keep();
-    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[]);
+    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[], &mut |_| {
+        None
+    });
     // Along +x at the door's height: the ogre's 8-unit default box is off this line, the door
     // is on it.
     assert_eq!(
@@ -106,7 +108,12 @@ fn a_ray_picks_the_nearest_box() {
 fn links_follow_the_keys_the_code_fires_by() {
     let workbench = keep();
     let targeting = ["target".to_owned()];
-    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &targeting);
+    let scene = Scene::build(
+        workbench.map().unwrap(),
+        &HashMap::new(),
+        &targeting,
+        &mut |_| None,
+    );
     let none = BTreeSet::new();
     let ogre_to_door = [[96.0, 64.0, 24.0], [232.0, 0.0, 64.0]];
     assert_eq!(scene.links(LinkView::All, &none, &none), [ogre_to_door]);
@@ -121,7 +128,9 @@ fn links_follow_the_keys_the_code_fires_by() {
     assert!(scene.links(LinkView::All, &none, &door).is_empty());
     assert_eq!(scene.pick([0.0, 0.0, 64.0], [1.0, 0.0, 0.0], &door), None);
     // A key the code does not fire by links nothing.
-    let other = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[]);
+    let other = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[], &mut |_| {
+        None
+    });
     assert!(other.links(LinkView::All, &none, &none).is_empty());
     assert_eq!(
         scene.values.get("angle"),
@@ -161,7 +170,9 @@ fn a_bsp_brush_entity_is_boxed_by_its_submodel() {
     .unwrap();
     let mut workbench = Workbench::new(FsLoader, Config::default());
     workbench.open_map(&bsp).unwrap();
-    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[]);
+    let scene = Scene::build(workbench.map().unwrap(), &HashMap::new(), &[], &mut |_| {
+        None
+    });
     let door = scene.entities.first().unwrap();
     assert!(door.brush);
     // Submodel 1's (0, 0, 0) to (64, 64, 8), widened by 1 as the engine loads it (BSP-15.4).
@@ -177,4 +188,62 @@ fn the_camera_starts_behind_the_player_start() {
     assert_eq!(camera.origin, [-320.0, 0.0, 88.0]);
     assert!(camera.yaw.abs() < f32::EPSILON);
     assert!(camera.pitch > 0.0, "looking down at it");
+}
+
+// spec MAP-14.6: an external map instance draws the map it names in place, as its own lines,
+// its box the placed brushes'; one whose file cannot be read draws its default box
+#[test]
+fn an_instance_draws_its_map_in_place() {
+    let dir = std::env::temp_dir().join(format!("qs-desktop-instance-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let map = dir.join("instance.map");
+    std::fs::write(
+        &map,
+        "{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"misc_external_map\"\n\
+         \"_external_map\" \"pillar.map\"\n\"_external_map_classname\" \"func_wall\"\n\
+         \"origin\" \"100 0 0\"\n\"_external_map_angle\" \"90\"\n}\n",
+    )
+    .unwrap();
+    let pillar = "{\n\"classname\" \"worldspawn\"\n{\n\
+        ( 0 0 0 ) ( 0 1 0 ) ( 0 0 1 ) rock 0 0 0 1 1\n\
+        ( 32 0 0 ) ( 32 0 1 ) ( 32 1 0 ) rock 0 0 0 1 1\n\
+        ( 0 0 0 ) ( 0 0 1 ) ( 1 0 0 ) rock 0 0 0 1 1\n\
+        ( 0 8 0 ) ( 1 8 0 ) ( 0 8 1 ) rock 0 0 0 1 1\n\
+        ( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) rock 0 0 0 1 1\n\
+        ( 0 0 64 ) ( 0 1 64 ) ( 1 0 64 ) rock 0 0 0 1 1\n}\n}\n";
+    let mut workbench = Workbench::new(FsLoader, Config::default());
+    workbench.open_map(&map).unwrap();
+    let document = workbench.map().unwrap();
+    let mut asked = Vec::new();
+    let scene = Scene::build(document, &HashMap::new(), &[], &mut |name| {
+        asked.push(name.to_owned());
+        Some(pillar.as_bytes().to_vec())
+    });
+    assert_eq!(asked, ["pillar.map"]);
+    let instance = EntityIndex::new(1);
+    let lines = scene
+        .lines
+        .iter()
+        .filter(|(owner, _)| *owner == instance)
+        .count();
+    assert_eq!(lines, 6 * 4);
+    let shape = scene.entities.iter().find(|s| s.index == instance).unwrap();
+    // Turned a quarter about z, 32 along x becomes 32 along y; then moved 100 along x.
+    let [min, max] = shape.bounds;
+    let near = |a: [f32; 3], b: [f32; 3]| (0..3).all(|i| (a[i] - b[i]).abs() < 1e-3);
+    assert!(near(min, [92.0, 0.0, 0.0]), "{min:?}");
+    assert!(near(max, [100.0, 32.0, 64.0]), "{max:?}");
+    assert!(
+        scene.brushes.is_empty(),
+        "an instance's brushes are not the map's to edit"
+    );
+    let unread = Scene::build(document, &HashMap::new(), &[], &mut |_| None);
+    assert_eq!(
+        unread
+            .lines
+            .iter()
+            .filter(|(owner, _)| *owner == instance)
+            .count(),
+        0
+    );
 }

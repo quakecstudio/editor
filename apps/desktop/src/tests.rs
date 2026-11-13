@@ -2939,3 +2939,68 @@ fn a_dropped_png_is_imported_into_the_browser() {
         .count();
     assert_eq!(count, 1, "replaced, not added");
 }
+
+/// A pillar map, a box from the origin to `top` high.
+fn pillar(top: u32) -> String {
+    format!(
+        "{{\n\"classname\" \"worldspawn\"\n{{\n\
+         ( 0 0 0 ) ( 0 1 0 ) ( 0 0 1 ) rock 0 0 0 1 1\n\
+         ( 16 0 0 ) ( 16 0 1 ) ( 16 1 0 ) rock 0 0 0 1 1\n\
+         ( 0 0 0 ) ( 0 0 1 ) ( 1 0 0 ) rock 0 0 0 1 1\n\
+         ( 0 16 0 ) ( 1 16 0 ) ( 0 16 1 ) rock 0 0 0 1 1\n\
+         ( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) rock 0 0 0 1 1\n\
+         ( 0 0 {top} ) ( 0 1 {top} ) ( 1 0 {top} ) rock 0 0 0 1 1\n}}\n}}\n"
+    )
+}
+
+// spec MAP-14.6: an external map instance is drawn from the file it names, which is watched, and
+// drawn again when another program writes it
+#[test]
+fn an_instance_follows_its_file() {
+    let dir = std::env::temp_dir().join(format!("qs-desktop-follow-{}", std::process::id()));
+    let _gone = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let prefab = dir.join("pillar.map");
+    fs::write(&prefab, pillar(64)).unwrap();
+    let map = dir.join("follow.map");
+    fs::write(
+        &map,
+        "{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"misc_external_map\"\n\
+         \"_external_map\" \"pillar.map\"\n\"_external_map_classname\" \"func_wall\"\n}\n",
+    )
+    .unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("map.open", json!({ "path": map })).unwrap();
+    harness.run();
+    harness.run();
+    let top = |harness: &Harness<'static, Option<App>>| {
+        let editor = harness.state().as_ref().unwrap().shell().map_editor();
+        let instance = editor
+            .scene()
+            .entities
+            .iter()
+            .find(|shape| shape.index == EntityIndex::new(1))
+            .unwrap();
+        instance.bounds[1][2]
+    };
+    assert!((top(&harness) - 64.0).abs() < 1e-3);
+    let watched = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .map_editor()
+        .external_watched();
+    assert_eq!(watched, std::slice::from_ref(&prefab));
+    fs::write(&prefab, pillar(128)).unwrap();
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .files_written(vec![prefab]);
+    harness.run();
+    harness.run();
+    assert!((top(&harness) - 128.0).abs() < 1e-3, "{}", top(&harness));
+}

@@ -124,6 +124,50 @@ pub enum MapAction {
     CheckLeaks,
 }
 
+/// The external maps the view draws (MAP-14): the project's folder they are read in after the
+/// map's own, the files read for the last scene and how many times one changed on disk.
+#[derive(Debug, Default)]
+struct Externals {
+    root: Option<std::path::PathBuf>,
+    files: Vec<std::path::PathBuf>,
+    changes: u64,
+}
+
+/// Reads external maps by name beside the map, then in the project, noting each file read.
+struct ExternalLoader {
+    dirs: Vec<std::path::PathBuf>,
+    files: Vec<std::path::PathBuf>,
+}
+
+impl ExternalLoader {
+    /// The bytes of the external map `name`, from the first folder that has it.
+    fn read(&mut self, name: &str) -> Option<Vec<u8>> {
+        for dir in &self.dirs {
+            let path = dir.join(name);
+            if let Ok(bytes) = std::fs::read(&path) {
+                self.files.push(path);
+                return Some(bytes);
+            }
+        }
+        None
+    }
+}
+
+impl Externals {
+    /// A reader of the external maps of the map at `map`.
+    fn loader(&self, map: &std::path::Path) -> ExternalLoader {
+        ExternalLoader {
+            dirs: map
+                .parent()
+                .into_iter()
+                .map(std::path::Path::to_path_buf)
+                .chain(self.root.clone())
+                .collect(),
+            files: Vec::new(),
+        }
+    }
+}
+
 /// The entities the map view shows: every one, or those the game spawns at a skill or in a
 /// kind of game (P5-13, `map.filter`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -202,8 +246,12 @@ pub enum DiskNotice {
 pub struct MapEditor {
     camera: Option<Camera>,
     scene: Scene,
-    /// The document's path and edits the scene was built from.
-    built: Option<(std::path::PathBuf, MapRevision)>,
+    /// The document's path and edits, and the external maps' changes, the scene was built
+    /// from.
+    built: Option<(std::path::PathBuf, MapRevision, u64)>,
+    /// The external maps the scene drew (MAP-14), each as read, and how many times one of them
+    /// changed on disk.
+    externals: Externals,
     classes: HashMap<String, ClassLook>,
     /// The classnames, sorted, as the browser lists them.
     names: Vec<String>,
@@ -423,6 +471,25 @@ impl MapEditor {
         self.textures.set_sources(sources);
     }
 
+    /// Takes the project's folder, where external maps are read when they are not beside the
+    /// map (MAP-14).
+    pub fn set_project_root(&mut self, root: Option<std::path::PathBuf>) {
+        if self.externals.root != root {
+            self.externals.root = root;
+            self.externals_changed();
+        }
+    }
+
+    /// The external map files the view draws, to watch for another program's writes.
+    pub fn external_watched(&self) -> Vec<std::path::PathBuf> {
+        self.externals.files.clone()
+    }
+
+    /// Draws the external maps again, one of them changed on disk.
+    pub fn externals_changed(&mut self) {
+        self.externals.changes = self.externals.changes.wrapping_add(1);
+    }
+
     /// Whether the texture sources were made for other WADs or another chosen game than
     /// `document` and `chosen` now give.
     pub fn textures_stale(&self, document: &MapDocument, chosen: Option<&std::path::Path>) -> bool {
@@ -432,6 +499,12 @@ impl MapEditor {
     /// The WAD files the texture browser reads, to watch for another program's writes.
     pub fn texture_watched(&self) -> Vec<std::path::PathBuf> {
         self.textures.watched()
+    }
+
+    /// The scene the view draws, for tests.
+    #[cfg(test)]
+    pub(crate) const fn scene(&self) -> &Scene {
+        &self.scene
     }
 
     /// The brush tools, for tests.
@@ -572,9 +645,16 @@ impl MapEditor {
         document: &MapDocument,
         layout: MapPanes,
     ) -> Vec<MapAction> {
-        let built = (document.path().to_path_buf(), document.edits());
+        let built = (
+            document.path().to_path_buf(),
+            document.edits(),
+            self.externals.changes,
+        );
         if self.built.as_ref() != Some(&built) {
-            self.scene = Scene::build(document, &self.classes, &self.targeting);
+            let mut loader = self.externals.loader(document.path());
+            let mut load = |name: &str| loader.read(name);
+            self.scene = Scene::build(document, &self.classes, &self.targeting, &mut load);
+            self.externals.files = loader.files;
             self.built = Some(built);
             let count = document.file().entities.len();
             self.also.retain(|entity| entity.get() < count);

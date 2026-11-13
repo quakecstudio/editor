@@ -1926,6 +1926,13 @@ impl Shell {
             context.preview.game_folder(),
         );
         self.map_editor.set_texture_sources(sources);
+        let root = self
+            .session
+            .context()
+            .workbench
+            .root()
+            .map(Path::to_path_buf);
+        self.map_editor.set_project_root(root);
     }
 
     /// Gives the map editor the project's entity classes and their models.
@@ -1966,6 +1973,7 @@ impl Shell {
                 .unwrap_or_default(),
         );
         paths.extend(self.map_editor.texture_watched());
+        paths.extend(self.map_editor.external_watched());
         let changed = self.disk_watch.changed(now, paths);
         if !changed.is_empty() {
             self.files_changed(changed);
@@ -1998,6 +2006,11 @@ impl Shell {
         let map = self.session.context().workbench.map().is_some();
         let wads = self.map_editor.texture_watched();
         let wad_changed = changed.iter().any(|path| wads.contains(path));
+        let externals = self.map_editor.external_watched();
+        // An external map written by another program is drawn again (MAP-14).
+        if changed.iter().any(|path| externals.contains(path)) {
+            self.map_editor.externals_changed();
+        }
         let found: Result<FilesChanged, ShellError> =
             self.attempt(FILES_CHANGED, &FilesChangedParams { paths: changed });
         match found {
