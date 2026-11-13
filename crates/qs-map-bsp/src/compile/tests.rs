@@ -82,7 +82,10 @@ fn a_leak_s_trail_runs_from_the_entity_out() {
     spec.world.pop();
     let compiled = compile(&spec, Dialect::Id).unwrap();
     let trail = &compiled.leak_trail;
-    assert!((2..=3).contains(&trail.len()), "the shortest way out: {trail:?}");
+    assert!(
+        (2..=3).contains(&trail.len()),
+        "the shortest way out: {trail:?}"
+    );
     assert_eq!(
         trail.first(),
         Some(&PLAYER.map(|c| f32::from(i16::try_from(c).unwrap())))
