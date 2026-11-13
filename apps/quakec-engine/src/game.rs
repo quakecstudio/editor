@@ -527,7 +527,7 @@ impl Game {
     }
 
     /// Moves the player to `origin`, facing `angles`, at rest, as `player/spawn_at` does
-    /// (BRIDGE-4.9): for `--view-script`'s `place` (VIEWDIFF-1.2).
+    /// (BRIDGE-4.9): for `--view-script`'s `place` (VIEWDIFF-1.4).
     ///
     /// # Errors
     ///

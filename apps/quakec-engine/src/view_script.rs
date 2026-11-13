@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-/// One step of a view script after its map (VIEWDIFF-1.2).
+/// One step of a view script after its map (VIEWDIFF-1.4).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Step {
     /// `frames <n>`: n frames of 1/72 of a second.
@@ -24,6 +24,8 @@ pub(crate) enum Step {
     ToggleConsole,
     /// `togglemenu`: the main menu opened or closed (MENU-1.1).
     ToggleMenu,
+    /// `fog <density>`: QuakeSpasm's `fog` command with one argument (REND-10.5).
+    Fog(f32),
 }
 
 /// A view script: its map and its steps (VIEWDIFF-1).
@@ -37,11 +39,11 @@ pub(crate) struct ViewScript {
 
 impl ViewScript {
     /// The script `text` says, its blank lines and `#` comments skipped (VIEWDIFF-1.1,
-    /// VIEWDIFF-1.2).
+    /// VIEWDIFF-1.4).
     ///
     /// # Errors
     ///
-    /// The line that is not one of VIEWDIFF-1.2's, or a first line that is not `map`.
+    /// The line that is not one of VIEWDIFF-1.4's, or a first line that is not `map`.
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
         let mut lines = text
             .lines()
@@ -87,6 +89,12 @@ fn step(line: &str) -> Option<Step> {
                     angles: [pitch, yaw],
                 })
         }
+        "fog" => rest
+            .trim()
+            .parse::<f32>()
+            .ok()
+            .filter(|density| density.is_finite())
+            .map(Step::Fog),
         "shot" => {
             let file = rest.trim();
             (!file.is_empty()).then(|| Step::Shot(PathBuf::from(file)))

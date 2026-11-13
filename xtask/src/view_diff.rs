@@ -31,9 +31,9 @@ const ID1_MAPS: [&str; 38] = [
 
 /// The frames before the first shot: three seconds for the map to load and the client to
 /// settle, so its first sounds, heard before the player's view is the listener's, are over
-/// (VIEWDIFF-5.4).
+/// (VIEWDIFF-5.6).
 const SETTLE_FRAMES: u32 = 216;
-/// The frames after the shots, for the sound: three seconds (VIEWDIFF-5.4).
+/// The frames after the shots, for the sound: three seconds (VIEWDIFF-5.6).
 const SOUND_FRAMES: u32 = 216;
 /// The frames after each place: a quarter of a second, so the eye's step smoothing, 12 units
 /// behind at most and catching up at 80 a second, has settled (VIEWDIFF-2.4).
@@ -96,12 +96,12 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         let (start, monsters) = player_start(&engine, map)?;
         let dir = out.join(map);
         fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        let run = |side: &str| -> Result<(), String> {
+        let run = |side: Side| -> Result<(), String> {
             let script = dir.join(format!("{side}.view"));
             fs::write(&script, route(map, start, side))
                 .map_err(|e| format!("{}: {e}", script.display()))?;
             let audio = dir.join(format!("{side}.raw"));
-            let mut command = if side == "id" {
+            let mut command = if side == Side::Id {
                 let mut command = Command::new(&built.view);
                 command.arg(&script).arg(&audio).args(&engine);
                 command
@@ -130,16 +130,16 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
                 ))
             }
         };
-        run("id")?;
-        run("qs")?;
+        run(Side::Id)?;
+        run(Side::Host)?;
         let mut lines = Vec::new();
         let mut ok = true;
         for shot in SHOTS {
-            let read = |side: &str| {
+            let read = |side: Side| {
                 let path = dir.join(format!("{side}-{shot}.ppm"));
                 fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))
             };
-            let frames = compare_frames(&read("id")?, &read("qs")?);
+            let frames = compare_frames(&read(Side::Id)?, &read(Side::Host)?);
             let (verdict, text) = match frames {
                 Ok(frame) => {
                     let fits = frame.fits(shot_tolerance(shot, tolerance));
@@ -156,11 +156,11 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             ok &= verdict;
             lines.push(text);
         }
-        let sound = |side: &str| {
+        let sound = |side: Side| {
             let path = dir.join(format!("{side}.raw"));
             fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))
         };
-        let heard = compare_sound(&sound("id")?, &sound("qs")?);
+        let heard = compare_sound(&sound(Side::Id)?, &sound(Side::Host)?);
         let (verdict, text) = match heard {
             // VIEWDIFF-5.3: a monster in earshot idles at random, at other times in each.
             _ if monsters => (true, "sound not compared: a monster in earshot".to_owned()),
@@ -206,7 +206,7 @@ fn absolute(engine: &[String]) -> Result<Vec<String>, String> {
 }
 
 /// Each route's shots: the start's view, the view behind it, the main menu over the start's
-/// view and the console down over it (VIEWDIFF-5.4).
+/// view and the console down over it (VIEWDIFF-5.6).
 const SHOTS: [&str; 4] = ["ahead", "behind", "menu", "console"];
 
 /// The tolerances a shot is held to: the menu's and the console's own, the map's for the view
@@ -242,20 +242,60 @@ const CONSOLE_TOLERANCE: Tolerance = Tolerance {
 };
 
 /// The frames after the menu and the console close and before the sound's frames, so that the
-/// menu's sounds are over: a second (VIEWDIFF-5.4).
+/// menu's sounds are over: a second (VIEWDIFF-5.6).
 const QUIET_FRAMES: u32 = 72;
 
-/// The script of `map`'s route for `side`, `id` or `qs` (VIEWDIFF-5.4): settle, then a shot
-/// at the start's angle and one the other way, the main menu opened over the start's view and
-/// shot, the console brought down over it and shot, both closed, a second of quiet, then the
-/// frames for the sound. Each shot follows a `place`, after which alone the oracle draws
-/// (VIEWDIFF-2.4).
-fn route(map: &str, (origin, yaw): ([f32; 3], f32), side: &str) -> String {
+/// The engine a script is for: id's, through the view oracle, or the preview host. Its name
+/// starts each of its files' names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Side {
+    /// id's engine, the view oracle.
+    Id,
+    /// The preview host.
+    Host,
+}
+
+impl Side {
+    /// The name its files start with.
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Id => "id",
+            Self::Host => "qs",
+        }
+    }
+
+    /// The line its script starts with after the map, to draw without the map's fog: the
+    /// host's `fog 0`, and nothing for id's engine, which has no fog (VIEWDIFF-5.6).
+    const fn fog_off(self) -> &'static str {
+        match self {
+            Self::Id => "",
+            Self::Host => NO_FOG,
+        }
+    }
+}
+
+impl std::fmt::Display for Side {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// The host's line that turns off the fog a map's worldspawn sets, which id's engine does not
+/// draw (VIEWDIFF-5.6, REND-10.5).
+const NO_FOG: &str = "fog 0\n";
+
+/// The script of `map`'s route for `side` (VIEWDIFF-5.6): the host's fog off,
+/// settle, then a shot at the start's angle and one the other way, the main menu opened over
+/// the start's view and shot, the console brought down over it and shot, both closed, a second
+/// of quiet, then the frames for the sound. Each shot follows a `place`, after which alone the
+/// oracle draws (VIEWDIFF-2.4).
+fn route(map: &str, (origin, yaw): ([f32; 3], f32), side: Side) -> String {
+    let fog = side.fog_off();
     let [x, y, z] = origin;
     let behind = (yaw + 180.0).rem_euclid(360.0);
     let ahead = format!("place {x} {y} {z} 0 {yaw}\nframes {PLACE_FRAMES}\n");
     format!(
-        "map {map}\nframes {SETTLE_FRAMES}\n\
+        "map {map}\n{fog}frames {SETTLE_FRAMES}\n\
          {ahead}shot {side}-ahead.ppm\n\
          place {x} {y} {z} 0 {behind}\nframes {PLACE_FRAMES}\nshot {side}-behind.ppm\n\
          {ahead}togglemenu\nframes {PLACE_FRAMES}\nshot {side}-menu.ppm\ntogglemenu\n\
@@ -266,7 +306,7 @@ fn route(map: &str, (origin, yaw): ([f32; 3], f32), side: &str) -> String {
 }
 
 /// The origin and yaw of `map`'s first `info_player_start`, read through the game the engine
-/// words name (VIEWDIFF-5.4), and whether a monster stands in earshot of it (VIEWDIFF-5.3).
+/// words name (VIEWDIFF-5.6), and whether a monster stands in earshot of it (VIEWDIFF-5.3).
 fn player_start(engine: &[String], map: &str) -> Result<(([f32; 3], f32), bool), String> {
     let vfs = Vfs::new(StdFs, engine, ".").map_err(|e| format!("{e:?}"))?;
     let name = format!("maps/{map}.bsp");
@@ -418,7 +458,7 @@ fn compare_frames(id: &[u8], qs: &[u8]) -> Result<Frames, String> {
     })
 }
 
-/// The header both engines write before a frame's pixels (VIEWDIFF-1.2, VIEWDIFF-2.1).
+/// The header both engines write before a frame's pixels (VIEWDIFF-1.4, VIEWDIFF-2.1).
 const PPM_HEADER: &[u8] = b"P6\n320 240\n255\n";
 /// The blocks across and down a frame: 320 and 240 over [`BLOCK`] (VIEWDIFF-3.1).
 const COLUMNS: usize = 80;
