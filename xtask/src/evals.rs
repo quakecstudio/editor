@@ -22,6 +22,7 @@ use qc_project::FsLoader;
 use qs_agent::{Message, Model, Reply, RunConfig, ToolSpec};
 use qs_commands::{Registry, Session};
 use qs_map::MapFile;
+use qs_map_bsp::{Compiler, Dialect as BspDialect, Warning};
 use qs_models::{MemoryKeys, ProviderConfig, ProviderKind, ProviderModel, Secret, Usage};
 use qs_templates::{Folder, Template};
 use qs_workbench::{
@@ -119,12 +120,37 @@ impl MapExpect {
     }
 }
 
+/// A map that must compile sealed for a map task to succeed (P6-13): the map `file`, as saved,
+/// compiled by `qs-map-bsp`, has an entity in empty space and the outside reaches none.
+#[derive(Debug, Deserialize)]
+struct SealedExpect {
+    file: String,
+}
+
+impl SealedExpect {
+    /// Whether the map in the project `dir` compiles sealed.
+    fn holds(&self, dir: &Path) -> Result<bool, String> {
+        let path = dir.join(&self.file);
+        let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let compiled = Compiler::default()
+            .with_dialect(BspDialect::Extended)
+            .compile(&bytes, None)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        // Sealed: an occupant was placed and the outside reached none (QBSP-9.2, QBSP-9.3).
+        let failed = compiled
+            .warnings
+            .iter()
+            .any(|warning| matches!(warning, Warning::Leak | Warning::NoOccupant));
+        Ok(!failed)
+    }
+}
+
 /// What a task's success is.
 enum Success<'t> {
     /// Its scenario passes on the agent's work (`success.scenario`).
     Scenario(String),
-    /// Its map holds every one of these (P5-08).
-    Map(&'t [MapExpect]),
+    /// Its maps hold every one of these (P5-08) and compile sealed (P6-13).
+    Map(&'t [MapExpect], &'t [SealedExpect]),
 }
 
 /// A task, as `task.toml` gives it.
@@ -147,6 +173,9 @@ struct Task {
     /// For a map task, what the map must hold; with none, `success.scenario` says.
     #[serde(default)]
     map: Vec<MapExpect>,
+    /// For a map task, the maps that must compile without a leak.
+    #[serde(default)]
+    sealed: Vec<SealedExpect>,
 }
 
 /// The name a task's scenario takes in the project, and the test filter that finds it.
@@ -238,12 +267,12 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             &fs::read_to_string(dir.join("task.toml")).map_err(|e| format!("{name}: {e}"))?,
         )
         .map_err(|e| format!("{name}/task.toml: {e}"))?;
-        let success = if task.map.is_empty() {
+        let success = if task.map.is_empty() && task.sealed.is_empty() {
             let scenario = fs::read_to_string(dir.join("success.scenario"))
                 .map_err(|e| format!("{name}/success.scenario: {e}"))?;
             Success::Scenario(scenario)
         } else {
-            Success::Map(&task.map)
+            Success::Map(&task.map, &task.sealed)
         };
         if !dir.join("rubric.md").is_file() {
             return Err(format!("{name}: no rubric.md"));
@@ -365,9 +394,14 @@ fn succeeds(
 ) -> Result<bool, String> {
     let scenario = match success {
         Success::Scenario(scenario) => scenario,
-        Success::Map(expects) => {
+        Success::Map(expects, sealed) => {
             for expect in *expects {
                 if !expect.holds(&expect.read(dir)?) {
+                    return Ok(false);
+                }
+            }
+            for expect in *sealed {
+                if !expect.holds(dir)? {
                     return Ok(false);
                 }
             }
@@ -594,7 +628,7 @@ mod tests {
             );
             assert!(task.threshold >= 1 && task.threshold <= task.runs && task.turns > 0);
             assert!(!task.solution.is_empty(), "{}: no solution", dir.display());
-            if task.map.is_empty() {
+            if task.map.is_empty() && task.sealed.is_empty() {
                 let scenario = std::fs::read_to_string(dir.join("success.scenario")).unwrap();
                 Scenario::parse(&scenario).unwrap();
             } else {
@@ -603,6 +637,9 @@ mod tests {
                     "{}: a map task has no scenario",
                     dir.display()
                 );
+            }
+            for expect in &task.sealed {
+                assert!(task.files.contains(&expect.file), "{}", dir.display());
             }
             for expect in &task.map {
                 assert!(task.files.contains(&expect.file), "{}", dir.display());

@@ -74,6 +74,50 @@ fn a_room_with_a_hole_leaks() {
     assert_eq!(compiled.leak_file, Some(Vec::new()));
 }
 
+// spec QBSP-9.8: a leak's trail runs from the entity reached out through the hole, its
+// first point the entity's origin; a sealed map has none
+#[test]
+fn a_leak_s_trail_runs_from_the_entity_out() {
+    let mut spec = MapSpec::default();
+    spec.world.pop();
+    let compiled = compile(&spec, Dialect::Id).unwrap();
+    let trail = &compiled.leak_trail;
+    assert!(
+        (2..=3).contains(&trail.len()),
+        "the shortest way out: {trail:?}"
+    );
+    assert_eq!(
+        trail.first(),
+        Some(&PLAYER.map(|c| f32::from(i16::try_from(c).unwrap())))
+    );
+    let last = trail.last().unwrap();
+    assert!(
+        last[1] > f32::from(i16::try_from(ROOM_MAXS[1]).unwrap()),
+        "out through the +y hole: {trail:?}"
+    );
+    let sealed = compile(&MapSpec::default(), Dialect::Id).unwrap();
+    assert!(sealed.leak_trail.is_empty());
+}
+
+// spec QBSP-9.8: an entity at exactly the origin, never placed (QBSP-9.1), is not the one the
+// trail starts from
+#[test]
+fn a_leak_s_trail_skips_an_entity_at_the_origin() {
+    let mut spec = MapSpec {
+        entities: vec![
+            EntitySpec::point("info_null", [0, 0, 0]),
+            EntitySpec::point("info_player_start", PLAYER),
+        ],
+        ..MapSpec::default()
+    };
+    spec.world.pop();
+    let compiled = compile(&spec, Dialect::Id).unwrap();
+    assert_eq!(
+        compiled.leak_trail.first(),
+        Some(&PLAYER.map(|c| f32::from(i16::try_from(c).unwrap())))
+    );
+}
+
 // spec QBSP-9.2: with no entity in empty space nothing is filled
 // spec QBSP-9.1: an entity whose origin is exactly the origin is not placed
 #[test]

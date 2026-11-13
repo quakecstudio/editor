@@ -132,6 +132,8 @@ pub(crate) struct BrushShape {
     pub(crate) vertices: Vec<[f64; 3]>,
     /// Its faces' planes, each a normal pointing out and a distance: the solid behind them all.
     pub(crate) planes: Vec<([f32; 3], f32)>,
+    /// The names of its faces' textures, each once.
+    pub(crate) textures: Vec<String>,
 }
 
 impl BrushShape {
@@ -204,7 +206,14 @@ impl Scene {
                         .filter_map(qs_map::Face::plane)
                         .map(|p| (p.normal.map(single), single(p.dist)))
                         .collect(),
+                    textures: Vec::new(),
                 };
+                for face in &brush.faces {
+                    let name = String::from_utf8_lossy(face.texture()).into_owned();
+                    if !shape.textures.contains(&name) {
+                        shape.textures.push(name);
+                    }
+                }
                 for polygon in &polygons {
                     let points: Vec<[f32; 3]> = polygon.iter().map(|p| p.map(single)).collect();
                     for &point in &points {

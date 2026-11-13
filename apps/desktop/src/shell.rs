@@ -48,6 +48,7 @@ use qs_workbench::git::{
     GitResolveParams, GitSide, GitStageParams, GitStatus,
 };
 use qs_workbench::ids::{ActionIndex, CheckpointNumber, TerminalIndex, WatchIndex};
+use qs_workbench::map_compile::MAP_LEAKS;
 use qs_workbench::map_edit::{
     BSP_EXTENSION, BspSave, EntityKeys, EntityParams, FILES_CHANGED, FilesChanged,
     FilesChangedParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_EXTENSION,
@@ -2089,6 +2090,9 @@ impl Shell {
                     self.load_map_textures();
                     imported
                 }
+                MapAction::CheckLeaks => self
+                    .execute(MAP_LEAKS, serde_json::json!({}))
+                    .map_err(ShellError::from),
                 MapAction::RemoveKey(entity, key) => {
                     self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
                 }
@@ -3450,7 +3454,8 @@ fn right(
     let mut map_actions = Vec::new();
     let first = if let Some(map_editor) = map_editor {
         let first = heading(ui, theme, Text::Properties);
-        map_actions = map_editor.properties(ui, theme);
+        let report = workbench.map().and_then(MapDocument::report);
+        map_actions = map_editor.properties(ui, theme, report);
         first
     } else if preview.state() == PlayState::Stopped {
         section(ui, theme, Text::Properties, Text::NotPlaying)

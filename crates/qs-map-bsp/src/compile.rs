@@ -34,8 +34,18 @@ pub struct Compiled {
     /// The leak file, empty as qbsp leaves it, written once an entity stands in empty space
     /// (QBSP-9.5).
     pub leak_file: Option<Vec<u8>>,
+    /// When the map leaks, the way from the entity the outside reached out to the void: its
+    /// origin, then the middle of each portal crossed (QBSP-9.8). Not in id's leak file.
+    pub leak_trail: Vec<[f32; 3]>,
     /// What qbsp would have printed and gone on after.
     pub warnings: Vec<Warning>,
+}
+
+/// What the world's fill wrote: the portal and leak files, and the leak's trail.
+struct FillFiles {
+    portal_file: Option<Vec<u8>>,
+    leak_file: Option<Vec<u8>>,
+    leak_trail: Vec<[f32; 3]>,
 }
 
 /// The map compiler and its options.
@@ -188,17 +198,10 @@ impl Run<'_> {
         Ok(clip)
     }
 
-    /// The drawing hull into `out`; the portal and leak files the world's fill writes
-    /// (QBSP-1.7).
-    #[expect(
-        clippy::type_complexity,
-        reason = "the two optional files the world's fill writes"
-    )]
-    fn draw_hull(
-        &mut self,
-        out: &mut Output,
-    ) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), CompileError> {
-        let (mut prt, mut pts) = (None, None);
+    /// The drawing hull into `out`; the portal and leak files the world's fill writes, and
+    /// the leak's trail (QBSP-1.7, QBSP-9.8).
+    fn draw_hull(&mut self, out: &mut Output) -> Result<FillFiles, CompileError> {
+        let (mut prt, mut pts, mut trail_out) = (None, None, Vec::new());
         for entity in 0..self.map.entities.len() {
             let choice = if entity == 0 {
                 Choice::MidSplit
@@ -216,9 +219,10 @@ impl Run<'_> {
                 let origins = self.origins();
                 match built.tree.fill_outside(self.planes, &portals, &origins) {
                     Fill::NoOccupant => self.warnings.push(Warning::NoOccupant),
-                    Fill::Leak => {
+                    Fill::Leak(leaf) => {
                         self.warnings.push(Warning::Leak);
                         pts = Some(Vec::new());
+                        trail_out = built.tree.leak_trail(self.planes, &portals, &origins, leaf);
                     }
                     Fill::Filled => {
                         pts = Some(Vec::new());
@@ -245,7 +249,11 @@ impl Run<'_> {
             }
             out.draw_model(&mut built.tree, self.planes)?;
         }
-        Ok((prt, pts))
+        Ok(FillFiles {
+            portal_file: prt,
+            leak_file: pts,
+            leak_trail: trail_out,
+        })
     }
 }
 
@@ -304,7 +312,11 @@ impl Compiler {
         let player = run.clip_hull(Hull::Player)?;
         let large = run.clip_hull(Hull::Large)?;
         let mut out = Output::new(limits);
-        let (portal_file, leak_file) = run.draw_hull(&mut out)?;
+        let FillFiles {
+            portal_file,
+            leak_file,
+            leak_trail,
+        } = run.draw_hull(&mut out)?;
         out.read_clip_hull(Hull::Player, &player)?;
         out.read_clip_hull(Hull::Large, &large)?;
         out.file.texinfo = qmap
@@ -333,6 +345,7 @@ impl Compiler {
             bsp,
             portal_file,
             leak_file,
+            leak_trail,
             warnings,
         })
     }

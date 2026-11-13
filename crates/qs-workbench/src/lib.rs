@@ -23,6 +23,7 @@ pub mod export;
 pub mod git;
 pub mod ids;
 pub mod map_check;
+pub mod map_compile;
 pub mod map_edit;
 pub mod map_textures;
 mod preview;
@@ -768,6 +769,16 @@ pub enum WorkbenchError {
     },
     /// No palette was found in the project or the game to make a texture in (P6-16).
     NoPalette,
+    /// The open map is a BSP with no `.map` source, so there is nothing to compile (P6-13).
+    NoMapSource {
+        /// The BSP.
+        path: PathBuf,
+    },
+    /// The map compiler stopped (P6-13, QBSP-1).
+    MapCompile {
+        /// Why.
+        error: qs_map_bsp::CompileError,
+    },
     /// The open map's entity lump cannot be written as qbsp writes it.
     MapLump {
         /// The map.
@@ -874,6 +885,14 @@ impl fmt::Display for WorkbenchError {
             Self::NoPalette => {
                 f.write_str("no gfx/palette.lmp in the project or the game to make a texture in")
             }
+            Self::NoMapSource { path } => {
+                write!(
+                    f,
+                    "{}: a BSP with no .map source to compile",
+                    path.display()
+                )
+            }
+            Self::MapCompile { error } => write!(f, "the map does not compile: {error}"),
             Self::MapLump { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Spawn { path, error } => write!(f, "{}: {error}", path.display()),
             Self::ChangedOnDisk { path } => write!(
@@ -948,6 +967,8 @@ impl Error for WorkbenchError {
             Self::Texture { error } => Some(error),
             Self::Wad { error, .. } => Some(error),
             Self::WadWrite { error, .. } => Some(error),
+            Self::NoMapSource { .. } => None,
+            Self::MapCompile { error } => Some(error),
             Self::MapLump { error, .. } => Some(error),
             Self::Spawn { error, .. } => Some(error),
         }

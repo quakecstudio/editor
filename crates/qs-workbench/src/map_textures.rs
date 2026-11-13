@@ -182,7 +182,7 @@ impl<'a> Game<'a> {
 /// an absolute path written on another machine by its file name alone, under the project,
 /// beside the map, under the game's base directory, then on the game's search path or loose in
 /// its game directory.
-fn find_wad(
+pub(crate) fn find_wad(
     name: &str,
     project: Option<&Path>,
     map_dir: Option<&Path>,

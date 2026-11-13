@@ -15,6 +15,7 @@ use qs_wad::texture::Palette;
 use serde_json::json;
 
 use super::{DitherChoice, TEXTURE_IMPORT, TextureImported, project_wad, quantized};
+use crate::map_compile::MapReport;
 use crate::map_edit::MAP_OPEN;
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
@@ -233,4 +234,47 @@ fn what_cannot_be_a_texture_is_refused() {
 /// A session with no project open.
 fn session_alone() -> Session<Context> {
     session(None)
+}
+
+// No spec statement: P6-16: an imported texture put on a brush compiles into the BSP with the
+// picture the preview showed, from the WAD the import named in the map's world
+#[test]
+fn an_imported_texture_compiles_into_the_bsp() {
+    let dir = keep("compiled");
+    let image = dir.join("brick16.png");
+    png(&image, 16, 16, [200, 40, 30, 255]);
+    let mut session = session(Some(&dir));
+    session
+        .execute(MAP_OPEN, json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    import(&mut session, json!({ "path": image }));
+    session
+        .execute(
+            "map.brush_texture",
+            json!({ "entity": 4, "brushes": [0], "texture": "brick16" }),
+        )
+        .unwrap();
+    let report: MapReport =
+        serde_json::from_value(session.execute("map.compile", json!({})).unwrap()).unwrap();
+    assert!(report.missing_textures.is_empty(), "{report:?}");
+    let bsp_bytes = std::fs::read(dir.join("maps/keep.bsp")).unwrap();
+    let bsp = qs_bsp::Bsp::read(&bsp_bytes, qs_bsp::BspLoader::default()).unwrap();
+    let texture = bsp
+        .textures
+        .iter()
+        .flatten()
+        .find(|texture| texture.name == b"brick16")
+        .unwrap();
+    let palette = Palette::from_lmp(&std::fs::read(dir.join("gfx/palette.lmp")).unwrap()).unwrap();
+    let compiled = palette
+        .decode_pixels(b"brick16", texture.width, texture.height, texture.pixels)
+        .unwrap();
+    let shown = quantized(
+        &std::fs::read(&image).unwrap(),
+        "brick16",
+        &palette,
+        DitherChoice::None,
+    )
+    .unwrap();
+    assert_eq!(compiled, shown);
 }

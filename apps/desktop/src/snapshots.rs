@@ -56,6 +56,10 @@ struct Script {
 }
 
 /// Every script, each a golden image.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one list of every script, read from top to bottom as the goldens are"
+)]
 fn scripts() -> Vec<Script> {
     let toggle = |panel: &str| Step::Run("view.toggle_panel", json!({ "panel": panel }));
     vec![
@@ -173,6 +177,22 @@ fn scripts() -> Vec<Script> {
                 ),
                 Step::Run("view.map_panes", json!({ "panes": "quad" })),
                 Step::Run("map.select", json!({ "entity": 2 })),
+            ],
+        },
+        Script {
+            name: "map-leak",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": keep_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": keep_fixture().join("maps/keep.map") }),
+                ),
+                Step::Run("map.brush_delete", json!({ "entity": 0, "brush": 2 })),
+                Step::Run(
+                    "map.brush_texture",
+                    json!({ "entity": 4, "brushes": [0], "texture": "nowhere" }),
+                ),
+                Step::Run("map.leaks", json!({})),
             ],
         },
         Script {

@@ -53,6 +53,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::entity_classes::{ClassInfo, FlagInfo, KeyInfo};
+use crate::map_compile::MapReport;
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 
 /// Degrees in a whole turn; a rotated yaw is kept below it.
@@ -173,6 +174,8 @@ pub struct MapDocument {
     conflict: Option<MapFile>,
     /// The entities hidden and locked in the editor (P5-14).
     view: groups::ViewState,
+    /// The last compile's report and the edits it was made at (P6-11).
+    report: Option<(MapReport, MapRevision)>,
 }
 
 /// What a file held, as a hash of its bytes, to tell when another program changed it.
@@ -257,6 +260,20 @@ impl MapDocument {
             out.push(self.origin.clone());
         }
         out
+    }
+
+    /// The last compile's report, when the map has not been edited since (P6-11).
+    #[must_use]
+    pub fn report(&self) -> Option<&MapReport> {
+        self.report
+            .as_ref()
+            .filter(|(_, made)| *made == self.edits)
+            .map(|(report, _)| report)
+    }
+
+    /// Keeps `report`, made of the map at `edits`.
+    pub(crate) fn set_report(&mut self, report: MapReport, edits: MapRevision) {
+        self.report = Some((report, edits));
     }
 
     /// Its revision, which changes whenever the map or the selection does.
@@ -579,10 +596,11 @@ impl<L: crate::Loader> Workbench<L> {
             origin,
             disk,
             conflict: None,
+            report: None,
         }))
     }
 
-    fn map_mut(&mut self) -> Result<&mut MapDocument, WorkbenchError> {
+    pub(crate) fn map_mut(&mut self) -> Result<&mut MapDocument, WorkbenchError> {
         self.map.as_mut().ok_or(WorkbenchError::NoMap)
     }
 
