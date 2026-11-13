@@ -379,7 +379,7 @@ pub(crate) fn clip_behind(polygon: &[[f64; 3]], plane: &Plane<f64>) -> Vec<[f64;
     out
 }
 
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+pub(crate) fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
@@ -387,7 +387,7 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     ]
 }
 
-fn normalize(a: [f64; 3]) -> [f64; 3] {
+pub(crate) fn normalize(a: [f64; 3]) -> [f64; 3] {
     let length = dot(a, a).sqrt();
     if length > 0.0 {
         a.map(|c| c / length)

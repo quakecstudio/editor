@@ -551,3 +551,52 @@ faces. Implemented by `qs_map::TexDef::aligned`.
   replaces the scale. A new rotation `r`, the kept rotation being `r0`, turns both axes by
   `r - r0` degrees about their normal, the unit `s x t`, from `s` toward `t`, keeping their
   lengths and the angle between them; axes with no normal, parallel or zero, are kept.
+
+## MAP-13 UV editing
+
+**Source:** our design, after TrenchBroom's UV editor (its manual: the face's texture can be
+fitted, justified, flipped and reset, and "alignment transfer" copies one face's texture onto
+another so it wraps around the corner between them) and Hammer's justify buttons. Implemented
+by `qs_map::Face::uv_edited`, `qs_map::Face::aligned_from` and `qs_map::Brush::face_polygons`.
+
+A face's texel along axis `i` at a point `p` is `dot(p, axis_i) / scale_i + shift_i`, where
+`axis_i` is the rotated base axis of MAP-4.2 and MAP-4.3 in the standard form and the given
+axis in the Valve 220 form, and a standard scale of 0 is 1 (MAP-4.4, MAP-5.3). The face's
+extent along an axis is the least and greatest texel of its polygon's corners before the
+shift.
+
+### Behaviour
+
+- **MAP-13.1** Each face of a brush has the polygon MAP-3.4 gives it on the brush's solid, in
+  the order of the faces; a face with no plane (MAP-3.6), or nothing on the solid, has none,
+  and neither an edit nor a transfer applies to it.
+- **MAP-13.2** Fitting a texture of width `w` and height `h` sets each axis's scale so that the
+  face's extent is `w` along s and `h` along t, keeping the scale's sign, and its shift so that
+  the extent starts on a texture edge. An axis along which the face has no extent, or for a
+  texture of no size, is kept.
+- **MAP-13.3** Justifying changes only the shift: left puts the least s on a texture edge,
+  right the greatest s, top the least t and bottom the greatest t; centre puts the centre of
+  the extent on the texture's centre along both axes.
+- **MAP-13.4** Flipping an axis negates its scale and changes its shift so that the centre of
+  the face's extent keeps its texel: the texture is mirrored about it.
+- **MAP-13.5** Resetting gives a standard face no shift, no rotation and a scale of 1, and a
+  Valve 220 face the paraxial axes of its plane (MAP-4.2) with no shift, rotation or scaling.
+- **MAP-13.6** Snapping moves each axis's shift by the least amount that puts one of the face's
+  corners on a texture edge.
+- **MAP-13.7** Fitting, justifying and snapping leave each shift they set in `[0, size)` for
+  the texture's size along that axis, as whole copies of the texture are the same alignment.
+- **MAP-13.8** Carrying a source face's alignment onto a target face keeps the target's form
+  and gives every point of the line the two planes share the texel it has on the source. A
+  Valve 220 target takes the source's axes turned about that line by the angle between the
+  normals, with the source's rotation and scale. A standard target keeps the axes of its own
+  plane (MAP-4.2) and takes the rotation and the scales, in the source's proportion, that
+  make the texels change along the line as the source's do; a rotation within 0.000001 of a
+  whole number of degrees is that number, so the exact sines of MAP-4.3 apply.
+- **MAP-13.9** Between parallel planes there is no shared line: a standard source's definition
+  is copied onto a standard target, which projects it the same way (MAP-4.2 gives a plane and
+  its opposite the same axes); a Valve 220 target takes the source's axes, shifts, rotation
+  and scale; and a standard target of a Valve 220 source agrees with it along the line through
+  the target plane's point nearest the origin along its paraxial s axis.
+- **MAP-13.10** Every edit is written as MAP-7.3 writes numbers, so it is read back unchanged
+  in either form. id's qbsp reads a standard face's shifts and rotation as whole numbers
+  (MAP-4.1), so there a fraction is cut off; ericw-tools keeps it.
