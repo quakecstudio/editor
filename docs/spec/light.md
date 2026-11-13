@@ -40,6 +40,25 @@ GPL-2.0-or-later and cited for description only. Both may be run as oracles
 - **LIGHT-1.5** Faces are lit in face order and their lightmaps written one after another, each
   starting at a multiple of 4 bytes from the start of the lump. A lump past
   `MAX_MAP_LIGHTING` stops the run with `GetFileSpace: overrun`.
+- **LIGHT-1.6** `light` writes the entity lump back as `WriteEntitiesToString` does: each
+  entity with keys between `{` and `}` lines, one `"key" "value"` line each, its keys in the
+  reverse of the order they were read (`LoadEntities` puts each new pair first, and writes from
+  the first), then a NUL that the lump's length counts. A key `SetKeyValue` sets replaces the
+  value of the key of that name read last, or is added before every other. The entity with no
+  keys is not written. Text past `MAX_MAP_ENTSTRING` (65536) once an entity is written stops the
+  run with `Entity text too long`; more than `MAX_MAP_ENTITIES` (1024) entities stop it with
+  `LoadEntities: MAX_MAP_ENTITIES`.
+- **LIGHT-1.7** Our `qs-map-light` has `qs-map-bsp`'s two dialects (QBSP-14). The id dialect has
+  `light`'s fixed tables: LIGHT-1.5's `MAX_MAP_LIGHTING`, LIGHT-1.6's `MAX_MAP_ENTITIES` and
+  `MAX_MAP_ENTSTRING`, and LIGHT-2.8's line. The extended dialect, the default, has none of
+  them: a map is limited only by the file's fields, a lightmap whose offset does not fit
+  `lightofs` stopping the run. Everything else is the same in both.
+- **LIGHT-1.8** `light` lays its lightmaps into `dlightdata`, which still holds the input's
+  lighting lump, and writes each lump with `AddLump`, which writes `(len+3)&~3` bytes from the
+  lump's array. So the bytes skipped to bring a face's lightmaps to a multiple of 4, and the
+  padding after the lighting and entity lumps, are the bytes the input's lump held at those
+  offsets, and zero past its end; every other lump's padding is zero. The file is laid out as
+  VIS-5.6 states for vis.
 
 ### Constants
 
@@ -75,6 +94,23 @@ GPL-2.0-or-later and cited for description only. Both may be run as oracles
   target has a non-zero style, the entity gets that style and the key `style` is written to it.
 - **LIGHT-2.6** A light that targets an entity is a spotlight, aimed from its origin at the
   target's origin.
+- **LIGHT-2.7** The entity lump is read up to its first NUL as `COMMON/CMDLIB.C`,
+  `COM_Parse`, reads tokens: bytes up to a space, and bytes over 127 (negative in a signed
+  `char`), are white space; `//` starts a comment to the end of the line; a `"` starts a string
+  that runs to the next `"`; each of `{`, `}`, `(`, `)`, `'` and `:` is a token alone; any other
+  run of bytes ends before white space or one of those six. A string with no closing `"` reads
+  past the text's end, which is undefined in C; this spec fixes the answer: it runs to the end.
+  An entity must start with `{` (`LoadEntities: found <token> when expecting {`); a key or value
+  missing at the end stops the run with `LoadEntities: EOF without closing brace`, and a value
+  that starts with `}` with `LoadEntities: closing brace without data`. Keys and values longer
+  than `light`'s buffers (`char key[64]`, `MAX_KEY` 32 and `MAX_VALUE` 1024 in an `epair_t`, and
+  the `classname`, `target` and `targetname` fields) overrun them, which is undefined; this
+  spec fixes the answer: they are kept whole.
+- **LIGHT-2.8** `WriteEntitiesToString` formats each pair into `char line[128]`, so a key and
+  value of more than 121 bytes together overflow it, which is undefined (a build with stack
+  checks stops there, as on LibreQuake's maps, whose `wad` and `_credits` values are longer).
+  This spec fixes the answer as MAP-2.10 does for qbsp: the id dialect refuses such a pair, and
+  the extended dialect writes it whole.
 
 ### Constants
 
@@ -104,6 +140,12 @@ GPL-2.0-or-later and cited for description only. Both may be run as oracles
   point used is the last one moved 8 units toward the middle in space.
 - **LIGHT-3.5** Sample points lie one unit in front of the face's plane: the texture origin is
   moved along the texture normal until it is.
+- **LIGHT-3.6** `CalcFaceVectors` takes the texture normal, the cross product of the texinfo's
+  t and s axes, normalized; a texture normal at right angles to the face, its dot product with
+  the face's normal exactly 0, stops the run with `Texture axis perpendicular to face`. It is
+  flipped to point the face's way, and each texture axis is projected back into the face along
+  it. `VectorNormalize` and `VectorLength` sum the squares in `double`, and `VectorMA` works in
+  `double` (its scale is a `double`), each result stored as `float`.
 
 ## LIGHT-4 Lighting a sample
 
@@ -129,6 +171,18 @@ GPL-2.0-or-later and cited for description only. Both may be run as oracles
   `WARNING: Too many light styles on a face` and adds nothing.
 - **LIGHT-4.6** `light` has a minimum light per face (`minlights`, `FixMinlight`) that nothing
   sets, so it never applies.
+- **LIGHT-4.7** A light of a style the face has no lightmap for yet starts one in the next slot
+  by clearing its first `(texsize[0]+1) * (texsize[1]+1)` samples, one per luxel. That is every
+  sample in the fast mode, but only the first quarter in the full mode, which has four per
+  luxel; and a light that gives no sample more than 1 leaves what it added in the slot. So in
+  the full mode the next light to start a lightmap in that slot adds to what the earlier one left
+  in its last three quarters.
+- **LIGHT-4.8** `TestLine` keeps the far parts of a split line on a stack of 64
+  (`tracestack_t tracestack[64]`); a line split more than 64 times overruns it, which is
+  undefined; this spec fixes the answer: the stack has no limit.
+- **LIGHT-4.9** `ON_EPSILON` (`LIGHT.H`) is a `double`, so each `float` distance of LIGHT-4.1 is
+  widened to be compared with it: a distance of exactly `0.1f`, a little over 0.1, is beyond
+  it.
 
 ## LIGHT-5 Writing a lightmap
 
