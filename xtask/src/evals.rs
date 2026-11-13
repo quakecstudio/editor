@@ -22,7 +22,7 @@ use qc_project::FsLoader;
 use qs_agent::{Message, Model, Reply, RunConfig, ToolSpec};
 use qs_commands::{Registry, Session};
 use qs_map::MapFile;
-use qs_map_bsp::{Compiler, Dialect as BspDialect};
+use qs_map_bsp::{Compiler, Dialect as BspDialect, Warning};
 use qs_models::{MemoryKeys, ProviderConfig, ProviderKind, ProviderModel, Secret, Usage};
 use qs_templates::{Folder, Template};
 use qs_workbench::{
@@ -120,8 +120,8 @@ impl MapExpect {
     }
 }
 
-/// A map that must compile without a leak for a map task to succeed (P6-13): the map `file`,
-/// as saved, compiled by `qs-map-bsp`, gives no leak trail (QBSP-9.8).
+/// A map that must compile sealed for a map task to succeed (P6-13): the map `file`, as saved,
+/// compiled by `qs-map-bsp`, has an entity in empty space and the outside reaches none.
 #[derive(Debug, Deserialize)]
 struct SealedExpect {
     file: String,
@@ -136,7 +136,12 @@ impl SealedExpect {
             .with_dialect(BspDialect::Extended)
             .compile(&bytes, None)
             .map_err(|e| format!("{}: {e}", path.display()))?;
-        Ok(compiled.leak_trail.is_empty())
+        // Sealed: an occupant was placed and the outside reached none (QBSP-9.2, QBSP-9.3).
+        let failed = compiled
+            .warnings
+            .iter()
+            .any(|warning| matches!(warning, Warning::Leak | Warning::NoOccupant));
+        Ok(!failed)
     }
 }
 
@@ -623,7 +628,7 @@ mod tests {
             );
             assert!(task.threshold >= 1 && task.threshold <= task.runs && task.turns > 0);
             assert!(!task.solution.is_empty(), "{}: no solution", dir.display());
-            if task.map.is_empty() {
+            if task.map.is_empty() && task.sealed.is_empty() {
                 let scenario = std::fs::read_to_string(dir.join("success.scenario")).unwrap();
                 Scenario::parse(&scenario).unwrap();
             } else {
@@ -632,6 +637,9 @@ mod tests {
                     "{}: a map task has no scenario",
                     dir.display()
                 );
+            }
+            for expect in &task.sealed {
+                assert!(task.files.contains(&expect.file), "{}", dir.display());
             }
             for expect in &task.map {
                 assert!(task.files.contains(&expect.file), "{}", dir.display());

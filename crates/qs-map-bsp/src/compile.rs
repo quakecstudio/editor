@@ -219,10 +219,10 @@ impl Run<'_> {
                 let origins = self.origins();
                 match built.tree.fill_outside(self.planes, &portals, &origins) {
                     Fill::NoOccupant => self.warnings.push(Warning::NoOccupant),
-                    Fill::Leak(trail) => {
+                    Fill::Leak(leaf) => {
                         self.warnings.push(Warning::Leak);
                         pts = Some(Vec::new());
-                        trail_out = trail;
+                        trail_out = built.tree.leak_trail(self.planes, &portals, &origins, leaf);
                     }
                     Fill::Filled => {
                         pts = Some(Vec::new());

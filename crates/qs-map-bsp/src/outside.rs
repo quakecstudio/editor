@@ -18,8 +18,8 @@ pub(crate) enum Fill {
     Filled,
     /// No entity stands in empty space.
     NoOccupant,
-    /// The outside reaches an entity, along this trail from the entity's origin out (QBSP-9.8).
-    Leak(Vec<Vec3>),
+    /// The outside reaches an entity, in this leaf.
+    Leak(usize),
 }
 
 /// Where the search from the outside ended.
@@ -104,6 +104,26 @@ impl Tree {
         Reach::Leaves(order)
     }
 
+    /// The trail of a leak that reached the occupied leaf `leaf`: the origin of the first entity
+    /// placed there, then the middle of each portal on its way out (QBSP-9.8).
+    pub(crate) fn leak_trail(
+        &self,
+        planes: &Planes,
+        portals: &Portals,
+        origins: &[Vec3],
+        leaf: usize,
+    ) -> Vec<Vec3> {
+        let occupant = origins
+            .iter()
+            .copied()
+            .filter(|&origin| !same(origin, ORIGIN))
+            .find(|&origin| self.point_in_leaf(planes, origin) == leaf);
+        occupant
+            .into_iter()
+            .chain(self.way_out(portals, leaf))
+            .collect()
+    }
+
     /// The fewest portals from the leaf `from` to the outside node, not passing solid or sky:
     /// the middle of each, nearest `from` first (QBSP-9.8).
     fn way_out(&self, portals: &Portals, from: usize) -> Vec<Vec3> {
@@ -185,14 +205,7 @@ impl Tree {
         }
         let outside = match self.reached(portals) {
             Reach::Leaves(leaves) => leaves,
-            Reach::Occupant(leaf) => {
-                let occupant = origins
-                    .iter()
-                    .copied()
-                    .find(|&origin| self.point_in_leaf(planes, origin) == leaf);
-                let centres = self.way_out(portals, leaf);
-                return Fill::Leak(occupant.into_iter().chain(centres).collect());
-            }
+            Reach::Occupant(leaf) => return Fill::Leak(leaf),
         };
         for leaf in outside {
             if let Some(NodeKind::Leaf { contents, .. }) =

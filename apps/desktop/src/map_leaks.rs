@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The map's leak and texture diagnostics in the map view (P6-11, MAP-7): what `map.leaks`
-//! last found, shown in the Properties panel; the leak's trail drawn in every pane from the
+//! The map's leak and texture diagnostics in the map view (P6-11, MAP-7): what `map.leaks` or
+//! `map.compile` last found, kept with the map until it is edited and run from anywhere, the
+//! agent included, shown in the Properties panel; the leak's trail drawn in every pane from the
 //! entity the outside reaches out to the void (QBSP-9.8); the brushes whose textures the
 //! map's WADs lack drawn in the error colour; and the camera flown along the trail when the
 //! leak is chosen.
@@ -10,14 +11,17 @@ use std::collections::BTreeSet;
 
 use eframe::egui::{Painter, RichText, Stroke, Ui};
 use qs_render::Camera;
-use qs_workbench::map_compile::MapReport;
-use qs_workbench::map_edit::MapRevision;
+use qs_workbench::map_compile::{MapReport, Seal};
 
 use crate::map_panes::Projection;
 use crate::map_scene::{BrushShape, Scene};
-use crate::strings::{Text, leak_found, missing_textures};
+use crate::strings::{Text, leak_found, missing_textures, missing_wad};
 use crate::theme::{Theme, Token};
 
+/// The steepest the camera looks up or down, in degrees, as `Camera` keeps it.
+const MAX_PITCH: f32 = 89.0;
+/// The degrees in a turn, which the camera's yaw is kept within.
+const FULL_TURN: f32 = 360.0;
 /// How fast the camera flies along a leak's trail, in map units a second.
 const FLY_SPEED: f32 = 320.0;
 /// The width of the trail's line, in points.
@@ -56,8 +60,14 @@ impl Flight {
                 from[1] + along[1] * t,
                 from[2] + along[2] * t,
             ];
-            camera.yaw = along[1].atan2(along[0]).to_degrees();
-            camera.pitch = (-along[2] / length).asin().to_degrees();
+            // Straight up or down has no heading: the camera keeps the one it had.
+            if along[0].abs() > 0.0 || along[1].abs() > 0.0 {
+                camera.yaw = along[1].atan2(along[0]).to_degrees().rem_euclid(FULL_TURN);
+            }
+            camera.pitch = (-along[2] / length)
+                .asin()
+                .to_degrees()
+                .clamp(-MAX_PITCH, MAX_PITCH);
             if ahead {
                 return true;
             }
@@ -67,71 +77,67 @@ impl Flight {
     }
 }
 
-/// What the map view shows of the map's last check.
+/// The camera's flight along the last leak shown, the report itself kept with the map.
 #[derive(Debug, Default)]
 pub(crate) struct LeakView {
-    /// The report and the map's edits it was made at.
-    report: Option<(MapReport, MapRevision)>,
     flight: Option<Flight>,
 }
 
 impl LeakView {
-    /// Takes the report `map.leaks` made of the map at `edits`.
-    pub(crate) fn set_report(&mut self, report: MapReport, edits: MapRevision) {
-        self.report = Some((report, edits));
-        self.flight = None;
-    }
-
-    /// The report, when it was made of the map at `edits`: an edit since leaves it out of
-    /// date until the next check.
-    fn current(&self, edits: MapRevision) -> Option<&MapReport> {
-        self.report
-            .as_ref()
-            .filter(|(_, made)| *made == edits)
-            .map(|(report, _)| report)
-    }
-
-    /// The report shown, for tests.
-    #[cfg(test)]
-    pub(crate) fn report(&self) -> Option<&MapReport> {
-        self.report.as_ref().map(|(report, _)| report)
-    }
-
     /// Whether the camera is flying along the trail, for tests.
     #[cfg(test)]
     pub(crate) const fn flying(&self) -> bool {
         self.flight.is_some()
     }
 
-    /// The report in the Properties panel, with the leak to fly along.
-    pub(crate) fn properties(&mut self, ui: &mut Ui, theme: &Theme, edits: MapRevision) {
-        let Some(report) = self.current(edits) else {
+    /// `report`, the map's last check, in the Properties panel, with the leak to fly along.
+    pub(crate) fn properties(&mut self, ui: &mut Ui, theme: &Theme, report: Option<&MapReport>) {
+        let Some(report) = report else {
             ui.separator();
             return;
         };
         let error = theme.color(Token::StatusError);
-        let trail = report.leak.clone();
-        if let Some(origin) = trail.first() {
-            ui.label(RichText::new(leak_found(*origin)).color(error));
-            if ui.button(Text::MapFlyLeak.get()).clicked() {
-                self.flight = Some(Flight {
-                    trail,
-                    travelled: 0.0,
-                });
+        match report.seal {
+            Seal::Leaks => {
+                if let Some(origin) = report.leak.first() {
+                    ui.label(RichText::new(leak_found(*origin)).color(error));
+                }
+                if ui.button(Text::MapFlyLeak.get()).clicked() {
+                    self.flight = Some(Flight {
+                        trail: report.leak.clone(),
+                        travelled: 0.0,
+                    });
+                }
             }
-        } else {
-            ui.label(RichText::new(Text::MapSealed.get()).color(theme.color(Token::StatusOk)));
+            Seal::Sealed => {
+                ui.label(RichText::new(Text::MapSealed.get()).color(theme.color(Token::StatusOk)));
+            }
+            Seal::NoOccupant => {
+                ui.label(
+                    RichText::new(Text::MapNoOccupant.get()).color(theme.color(Token::StatusWarn)),
+                );
+            }
         }
-        if let Some(report) = self.current(edits)
-            && !report.missing_textures.is_empty()
-        {
+        if let Some(wad) = &report.missing_wad {
+            ui.label(RichText::new(missing_wad(wad)).color(error));
+        }
+        if !report.missing_textures.is_empty() {
             ui.label(RichText::new(missing_textures(&report.missing_textures)).color(error));
         }
         ui.separator();
     }
 
-    /// Flies `camera` along the trail by `seconds` of flight; whether it is still flying.
-    pub(crate) fn fly(&mut self, camera: &mut Camera, seconds: f32) -> bool {
+    /// Flies `camera` along the trail by `seconds` of flight; whether it is still flying. The
+    /// flight stops when the map's report is gone, as an edit leaves it.
+    pub(crate) fn fly(
+        &mut self,
+        camera: &mut Camera,
+        seconds: f32,
+        report: Option<&MapReport>,
+    ) -> bool {
+        if report.is_none() {
+            self.flight = None;
+        }
         let Some(flight) = self.flight.as_mut() else {
             return false;
         };
@@ -148,9 +154,9 @@ impl LeakView {
         projection: &Projection,
         theme: &Theme,
         scene: &Scene,
-        edits: MapRevision,
+        report: Option<&MapReport>,
     ) {
-        let Some(report) = self.current(edits) else {
+        let Some(report) = report else {
             return;
         };
         let stroke = Stroke::new(TRAIL_WIDTH, theme.color(Token::StatusError));
@@ -202,7 +208,14 @@ mod tests {
         assert_eq!((camera.yaw, camera.pitch), (0.0, 0.0));
         assert!(flight.advance(&mut camera, 85.0));
         assert_eq!(camera.origin, [100.0, 0.0, -25.0]);
-        assert_eq!(camera.pitch, 90.0, "looking straight down");
+        assert_eq!(camera.pitch, 89.0, "looking as far down as the camera goes");
+        assert_eq!(camera.yaw, 0.0, "straight down keeps the heading");
+        let mut back = Flight {
+            trail: vec![[0.0; 3], [-10.0, -10.0, 0.0]],
+            travelled: 0.0,
+        };
+        assert!(back.advance(&mut camera, 1.0));
+        assert_eq!(camera.yaw, 225.0, "kept within a turn");
         assert!(!flight.advance(&mut camera, 100.0));
         assert_eq!(camera.origin, [100.0, 0.0, -50.0]);
         let mut still = Flight {

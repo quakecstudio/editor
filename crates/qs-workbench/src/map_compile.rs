@@ -4,8 +4,9 @@
 //! with `qs-map-bsp` and reports whether it leaks, the leak's trail from the entity the outside
 //! reached out to the void (QBSP-9.8), and the textures its WADs lack; `map.compile` does the
 //! same and writes the BSP, portal and leak files beside the map, as id's qbsp names them.
-//! Both read the map as it is in the editor, saved or not, and its WADs from the project, the
-//! map's folder or the game, as the texture browser finds them.
+//! Both read the map as it is in the editor, saved or not, without the layers left out of
+//! exports (MAP-9), and its WADs from the project, the map's folder or the game, as the
+//! texture browser finds them. The last report is kept with the map, for the map view.
 
 use std::path::{Path, PathBuf};
 
@@ -25,14 +26,31 @@ pub const MAP_LEAKS: &str = "map.leaks";
 /// The id of `map.compile`.
 pub const MAP_COMPILE: &str = "map.compile";
 
+/// Whether the outside of a map was filled (QBSP-9.2, QBSP-9.3).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Seal {
+    /// The outside was filled: no entity is in reach of the void.
+    #[default]
+    Sealed,
+    /// The outside reaches an entity.
+    Leaks,
+    /// No entity stands in empty space, so nothing could be filled and a leak cannot be found.
+    NoOccupant,
+}
+
 /// What compiling the open map found.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct MapReport {
+    /// Whether the outside was filled.
+    pub seal: Seal,
     /// When the map leaks, the way from the entity the outside reached out to the void: its
     /// origin, then the middle of each portal crossed; empty when it does not (QBSP-9.8).
     pub leak: Vec<[f32; 3]>,
     /// The textures the map's faces name that its WADs lack, each once (MAP-6.8).
     pub missing_textures: Vec<String>,
+    /// The WAD the world names, when it was not found, so no texture could be read.
+    pub missing_wad: Option<String>,
     /// What qbsp would print and go on after, one line each.
     pub warnings: Vec<String>,
     /// The files written, for `map.compile`.
@@ -41,27 +59,34 @@ pub struct MapReport {
 
 impl MapReport {
     /// The report of `compiled`.
-    fn of(compiled: &Compiled) -> Self {
+    fn of(compiled: &Compiled, missing_wad: Option<String>) -> Self {
         let mut missing_textures = Vec::new();
+        let mut seal = Seal::Sealed;
         for warning in &compiled.warnings {
-            if let Warning::Map(QbspWarning::TextureNotFound { name }) = warning {
-                let name = String::from_utf8_lossy(name).into_owned();
-                if !missing_textures.contains(&name) {
-                    missing_textures.push(name);
+            match warning {
+                Warning::Map(QbspWarning::TextureNotFound { name }) => {
+                    let name = String::from_utf8_lossy(name).into_owned();
+                    if !missing_textures.contains(&name) {
+                        missing_textures.push(name);
+                    }
                 }
+                Warning::Leak => seal = Seal::Leaks,
+                Warning::NoOccupant => seal = Seal::NoOccupant,
+                Warning::NoBrushFaces
+                | Warning::PortalClippedAway
+                | Warning::BadFace(_)
+                | Warning::MixedContents
+                | Warning::NoValidBrushes
+                | Warning::Bsp2(_)
+                | Warning::Map(_) => {}
             }
         }
         Self {
+            seal,
             leak: compiled.leak_trail.clone(),
             missing_textures,
-            warnings: compiled
-                .warnings
-                .iter()
-                .map(|warning| match warning {
-                    Warning::Map(printed) => printed.to_string(),
-                    other => format!("{other:?}"),
-                })
-                .collect(),
+            missing_wad,
+            warnings: compiled.warnings.iter().map(ToString::to_string).collect(),
             written: Vec::new(),
         }
     }
@@ -69,28 +94,37 @@ impl MapReport {
 
 impl<L: crate::Loader> Workbench<L> {
     /// The open map compiled in memory, its WADs found in the project, beside the map or in
-    /// the game at `game`.
-    fn compile_map(&self, game: Option<&Path>) -> Result<(Compiled, PathBuf), WorkbenchError> {
+    /// the game at `game`; its report, kept with the map; and the map's path.
+    fn compile_map(
+        &mut self,
+        game: Option<&Path>,
+    ) -> Result<(Compiled, MapReport, PathBuf), WorkbenchError> {
         let document = self.map().ok_or(WorkbenchError::NoMap)?;
         if let MapSource::Bsp(_) = document.source() {
             return Err(WorkbenchError::NoMapSource {
                 path: document.path().to_path_buf(),
             });
         }
-        let text = document.file().to_bytes();
+        let text = document.file().without_omitted_layers().to_bytes();
         let compiler = Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
         let failed = |error| WorkbenchError::MapCompile { error };
-        let wad = compiler
+        let named = compiler
             .wad_path(&text)
             .map_err(failed)?
-            .and_then(|name| {
-                let game = game.map(Game::at);
-                let name = String::from_utf8_lossy(&name).into_owned();
-                find_wad(&name, self.root(), document.path().parent(), game.as_ref())
-            })
-            .map(|(_, bytes)| bytes);
-        let compiled = compiler.compile(&text, wad.as_deref()).map_err(failed)?;
-        Ok((compiled, document.path().to_path_buf()))
+            .map(|name| String::from_utf8_lossy(&name).into_owned());
+        let wad = named.as_ref().and_then(|name| {
+            let game = game.map(Game::at);
+            find_wad(name, self.root(), document.path().parent(), game.as_ref())
+        });
+        let missing_wad = named.filter(|_| wad.is_none());
+        let compiled = compiler
+            .compile(&text, wad.map(|(_, bytes)| bytes).as_deref())
+            .map_err(failed)?;
+        let report = MapReport::of(&compiled, missing_wad);
+        let path = document.path().to_path_buf();
+        let edits = document.edits();
+        self.map_mut()?.set_report(report.clone(), edits);
+        Ok((compiled, report, path))
     }
 }
 
@@ -109,8 +143,8 @@ impl<C: HasPreview + 'static> Command<C> for MapLeaks {
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapReport, C>, WorkbenchError> {
         let (workbench, preview) = context.workbench_and_preview();
         let game = preview.game_base_path();
-        let (compiled, _) = workbench.compile_map(game.as_deref())?;
-        Ok(Outcome::outside_history(MapReport::of(&compiled)))
+        let (_, report, _) = workbench.compile_map(game.as_deref())?;
+        Ok(Outcome::outside_history(report))
     }
 }
 
@@ -129,8 +163,7 @@ impl<C: HasPreview + 'static> Command<C> for MapCompile {
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapReport, C>, WorkbenchError> {
         let (workbench, preview) = context.workbench_and_preview();
         let game = preview.game_base_path();
-        let (compiled, path) = workbench.compile_map(game.as_deref())?;
-        let mut report = MapReport::of(&compiled);
+        let (compiled, mut report, path) = workbench.compile_map(game.as_deref())?;
         let files = [
             ("bsp", Some(&compiled.bsp)),
             ("prt", compiled.portal_file.as_ref()),

@@ -14,7 +14,7 @@ use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_wad::write::WadBuilder;
 use serde_json::json;
 
-use super::{MAP_COMPILE, MAP_LEAKS, MapReport};
+use super::{MAP_COMPILE, MAP_LEAKS, MapReport, Seal};
 use crate::map_edit::MAP_OPEN;
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
@@ -138,6 +138,7 @@ fn map_leaks_reports_the_trail_out() {
     let open_room = room("leaky", "wall", Opening::Open);
     let mut session = open(&open_room);
     let leaky = report(&mut session, MAP_LEAKS);
+    assert_eq!(leaky.seal, Seal::Leaks);
     assert_eq!(leaky.leak.first(), Some(&[0.0, 0.0, 24.0]));
     assert!(leaky.leak.last().unwrap()[1] > 128.0, "{:?}", leaky.leak);
     assert!(
@@ -149,7 +150,70 @@ fn map_leaks_reports_the_trail_out() {
     assert!(!open_room.with_extension("bsp").exists());
     let sealed = room("sealed", "wall", Opening::Sealed);
     let mut session = open(&sealed);
-    assert!(report(&mut session, MAP_LEAKS).leak.is_empty());
+    let closed = report(&mut session, MAP_LEAKS);
+    assert_eq!(closed.seal, Seal::Sealed);
+    assert!(closed.leak.is_empty());
+    assert_eq!(closed.missing_wad, None);
+}
+
+// spec QBSP-9.2: with no entity in empty space nothing is filled: neither sealed nor leaking
+#[test]
+fn a_map_with_no_occupant_is_not_called_sealed() {
+    let path = room("empty", "wall", Opening::Open);
+    let text = std::fs::read_to_string(&path).unwrap();
+    let start = text.find("{\n\"classname\" \"info_player_start\"").unwrap();
+    std::fs::write(&path, text.get(..start).unwrap()).unwrap();
+    let mut session = open(&path);
+    let found = report(&mut session, MAP_LEAKS);
+    assert_eq!(found.seal, Seal::NoOccupant);
+    assert!(found.leak.is_empty());
+}
+
+// No spec statement: P6-11: a WAD the world names that is nowhere to be found is reported
+#[test]
+fn a_missing_wad_is_reported() {
+    let path = room("nowad", "wall", Opening::Sealed);
+    std::fs::remove_file(path.with_file_name("test.wad")).unwrap();
+    let mut session = open(&path);
+    assert_eq!(
+        report(&mut session, MAP_LEAKS).missing_wad.as_deref(),
+        Some("test.wad")
+    );
+}
+
+// No spec statement: P6-11: the last report is kept with the map until it is edited
+#[test]
+fn the_report_is_kept_until_an_edit() {
+    let path = room("kept", "wall", Opening::Open);
+    let mut session = open(&path);
+    let made = report(&mut session, MAP_LEAKS);
+    let kept = session.context().workbench.map().unwrap().report().cloned();
+    assert_eq!(kept, Some(made));
+    session
+        .execute(
+            "map.set_key",
+            json!({ "entity": 1, "key": "angle", "value": "90" }),
+        )
+        .unwrap();
+    assert_eq!(session.context().workbench.map().unwrap().report(), None);
+}
+
+// spec MAP-9.9: a layer left out of exports is left out of the compile: a player start in it
+// is not there, so the open room has no occupant rather than a leak
+#[test]
+fn an_omitted_layer_is_not_compiled() {
+    let path = room("omitted", "wall", Opening::Open);
+    let text = std::fs::read_to_string(&path).unwrap();
+    let start = text.find("{\n\"classname\" \"info_player_start\"").unwrap();
+    let mut text = text.get(..start).unwrap().to_owned();
+    text.push_str(
+        "{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_layer\"\n\"_tb_name\" \"WIP\"\n\
+         \"_tb_id\" \"1\"\n\"_tb_layer_omit_from_export\" \"1\"\n}\n\
+         {\n\"classname\" \"info_player_start\"\n\"origin\" \"0 0 24\"\n\"_tb_layer\" \"1\"\n}\n",
+    );
+    std::fs::write(&path, text).unwrap();
+    let mut session = open(&path);
+    assert_eq!(report(&mut session, MAP_LEAKS).seal, Seal::NoOccupant);
 }
 
 // spec MAP-6.8: a texture the map's WAD lacks is listed once, by name

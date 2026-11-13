@@ -2474,7 +2474,7 @@ fn the_move_and_measure_tools_show_the_edit_they_make() {
     assert_eq!(map_text(&harness), before, "measuring changes nothing");
 }
 
-// No spec statement: P6-11, QBSP-9.8: with a wall gone, Check for leaks reports the leak and
+// No spec statement: P6-11, QBSP-9.8, MAP-6.8: with a wall gone, Check for leaks reports the leak and
 // draws its trail; Fly along the leak takes the camera from the entity the void reaches along
 // the trail to its end; an edit leaves the report out of date
 #[test]
@@ -2496,15 +2496,8 @@ fn a_leak_is_found_and_flown_along() {
     harness.run();
     harness.run();
     let editor = |harness: &Harness<'static, Option<App>>| {
-        harness
-            .state()
-            .as_ref()
-            .unwrap()
-            .shell()
-            .map_editor()
-            .leaks()
-            .report()
-            .cloned()
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell.workbench().map().unwrap().report().cloned()
     };
     let sealed = editor(&harness).unwrap();
     assert!(sealed.leak.is_empty(), "{:?}", sealed.leak);
@@ -2559,7 +2552,8 @@ fn a_leak_is_found_and_flown_along() {
     assert!(
         harness.query_by_label(Text::MapFlyLeak.get()).is_none(),
         "an edit leaves the report out of date"
-    ); // spec MAP-6.8: a texture the WADs lack is listed
+    );
+    // A texture the WADs lack is listed.
     let shell = &mut harness.state_mut().as_mut().unwrap().shell;
     shell
         .execute(

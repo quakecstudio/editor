@@ -66,6 +66,17 @@ const PANE_LABEL_INSET: f32 = 6.0;
 /// The size of a 2D view's name, in points.
 const PANE_LABEL_SIZE: f32 = 12.0;
 
+/// What every pane of one frame of the view reads.
+#[derive(Clone, Copy)]
+struct Frame<'a> {
+    /// The entities not drawn.
+    hidden: &'a BTreeSet<EntityIndex>,
+    /// The entity selected.
+    selected: Option<EntityIndex>,
+    /// The map's last check, while it is current (P6-11).
+    report: Option<&'a MapReport>,
+}
+
 /// An edit or a selection the map editor asks for.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MapAction {
@@ -300,11 +311,6 @@ impl MapEditor {
     #[cfg(test)]
     pub(crate) fn refused_text(&self) -> Option<String> {
         self.refused.clone()
-    }
-
-    /// Takes what `map.leaks` found in the map at `edits` (P6-11).
-    pub fn set_leak_report(&mut self, report: MapReport, edits: MapRevision) {
-        self.leaks.set_report(report, edits);
     }
 
     /// The leak check shown, for tests.
@@ -574,7 +580,10 @@ impl MapEditor {
         }
         let hidden: BTreeSet<EntityIndex> = self.hidden.union(&self.kept_out.0).copied().collect();
         let camera = self.camera.get_or_insert_with(|| start_camera(document));
-        if self.leaks.fly(camera, ui.input(|i| i.stable_dt)) {
+        if self
+            .leaks
+            .fly(camera, ui.input(|i| i.stable_dt), document.report())
+        {
             ui.ctx().request_repaint();
         }
         let rect = ui.available_rect_before_wrap();
@@ -590,7 +599,12 @@ impl MapEditor {
         }
         let mut actions = Vec::new();
         for (pane, area) in panes(layout, rect) {
-            actions.extend(self.pane(ui, theme, pane, area, &hidden, selected));
+            let frame = Frame {
+                hidden: &hidden,
+                selected,
+                report: document.report(),
+            };
+            actions.extend(self.pane(ui, theme, pane, area, &frame));
         }
         actions
     }
@@ -607,9 +621,13 @@ impl MapEditor {
         theme: &Theme,
         pane: Pane,
         area: Rect,
-        hidden: &BTreeSet<EntityIndex>,
-        selected: Option<EntityIndex>,
+        frame: &Frame<'_>,
     ) -> Vec<MapAction> {
+        let Frame {
+            hidden,
+            selected,
+            report,
+        } = *frame;
         let link_key = self.link_key();
         let response = ui.interact(
             area,
@@ -818,10 +836,8 @@ impl MapEditor {
         {
             painter.line_segment([*start, at], Stroke::new(2.0, theme.color(Token::Focus)));
         }
-        if let Some((_, edits)) = &self.built {
-            self.leaks
-                .draw(&painter, &projection, theme, &self.scene, *edits);
-        }
+        self.leaks
+            .draw(&painter, &projection, theme, &self.scene, report);
         self.tools
             .draw(&painter, &projection, theme, &self.scene, pointer.map(ray));
         if let Pane::Plan(_) = pane {
@@ -853,7 +869,12 @@ impl MapEditor {
         clippy::too_many_lines,
         reason = "one panel, top to bottom: the notices, the keys, the spawnflags and a new key"
     )]
-    pub fn properties(&mut self, ui: &mut Ui, theme: &Theme) -> Vec<MapAction> {
+    pub fn properties(
+        &mut self,
+        ui: &mut Ui,
+        theme: &Theme,
+        report: Option<&MapReport>,
+    ) -> Vec<MapAction> {
         let mut actions = Vec::new();
         if let Some(refused) = &self.refused {
             ui.label(RichText::new(refused).color(theme.color(Token::StatusError)));
@@ -861,9 +882,7 @@ impl MapEditor {
         if ui.button(Text::MapCheckLeaks.get()).clicked() {
             actions.push(MapAction::CheckLeaks);
         }
-        if let Some((_, edits)) = &self.built {
-            self.leaks.properties(ui, theme, *edits);
-        }
+        self.leaks.properties(ui, theme, report);
         if self.disk != DiskNotice::None {
             ui.label(
                 RichText::new(Text::MapChangedOnDisk.get()).color(theme.color(Token::StatusWarn)),

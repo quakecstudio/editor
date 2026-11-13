@@ -48,7 +48,7 @@ use qs_workbench::git::{
     GitResolveParams, GitSide, GitStageParams, GitStatus,
 };
 use qs_workbench::ids::{ActionIndex, CheckpointNumber, TerminalIndex, WatchIndex};
-use qs_workbench::map_compile::{MAP_COMPILE, MAP_LEAKS, MapReport};
+use qs_workbench::map_compile::MAP_LEAKS;
 use qs_workbench::map_edit::{
     BSP_EXTENSION, BspSave, EntityKeys, EntityParams, FILES_CHANGED, FilesChanged,
     FilesChangedParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_EXTENSION,
@@ -414,20 +414,7 @@ impl Shell {
         id: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, CommandError> {
-        let output = self.session.execute(id, params)?;
-        // A check of the map, asked for anywhere, is shown in the map view (P6-11).
-        if (id == MAP_LEAKS || id == MAP_COMPILE)
-            && let Ok(report) = serde_json::from_value::<MapReport>(output.clone())
-            && let Some(edits) = self
-                .session
-                .context()
-                .workbench
-                .map()
-                .map(MapDocument::edits)
-        {
-            self.map_editor.set_leak_report(report, edits);
-        }
-        Ok(output)
+        self.session.execute(id, params)
     }
 
     /// The open project and file.
@@ -3453,7 +3440,8 @@ fn right(
     let mut map_actions = Vec::new();
     let first = if let Some(map_editor) = map_editor {
         let first = heading(ui, theme, Text::Properties);
-        map_actions = map_editor.properties(ui, theme);
+        let report = workbench.map().and_then(MapDocument::report);
+        map_actions = map_editor.properties(ui, theme, report);
         first
     } else if preview.state() == PlayState::Stopped {
         section(ui, theme, Text::Properties, Text::NotPlaying)

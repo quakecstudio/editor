@@ -99,6 +99,25 @@ fn a_leak_s_trail_runs_from_the_entity_out() {
     assert!(sealed.leak_trail.is_empty());
 }
 
+// spec QBSP-9.8: an entity at exactly the origin, never placed (QBSP-9.1), is not the one the
+// trail starts from
+#[test]
+fn a_leak_s_trail_skips_an_entity_at_the_origin() {
+    let mut spec = MapSpec {
+        entities: vec![
+            EntitySpec::point("info_null", [0, 0, 0]),
+            EntitySpec::point("info_player_start", PLAYER),
+        ],
+        ..MapSpec::default()
+    };
+    spec.world.pop();
+    let compiled = compile(&spec, Dialect::Id).unwrap();
+    assert_eq!(
+        compiled.leak_trail.first(),
+        Some(&PLAYER.map(|c| f32::from(i16::try_from(c).unwrap())))
+    );
+}
+
 // spec QBSP-9.2: with no entity in empty space nothing is filled
 // spec QBSP-9.1: an entity whose origin is exactly the origin is not placed
 #[test]

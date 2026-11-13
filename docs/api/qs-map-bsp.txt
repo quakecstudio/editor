@@ -13,6 +13,7 @@ fn qs_map_bsp::compile::Compiler::with_subdivide
 impl qs_map_bsp::CompileError: From<QbspError>
 impl qs_map_bsp::CompileError: core::error::Error
 impl qs_map_bsp::CompileError: fmt::Display
+impl qs_map_bsp::Warning: fmt::Display
 impl qs_map_bsp::compile::Compiler: Default
 struct qs_map_bsp::compile::Compiled
 struct qs_map_bsp::compile::Compiler
