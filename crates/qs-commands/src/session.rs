@@ -7,7 +7,7 @@ use std::panic::{self, AssertUnwindSafe};
 
 use serde_json::Value;
 
-use crate::builtin::{Builtin, HistoryOutput};
+use crate::builtin::{Builtin, HistoryOutput, RepeatOutput};
 use crate::command::{Effect, NoParams, UndoStep};
 use crate::error::CommandError;
 use crate::id::CommandId;
@@ -43,6 +43,9 @@ pub struct Session<C> {
     registry: Registry<C>,
     undo: Vec<Change<C>>,
     redo: Vec<Change<C>>,
+    /// The command of the last change made and its parameters, for `edit.repeat`; undo and
+    /// redo leave it.
+    last: Option<(CommandId, Value)>,
 }
 
 impl<C: 'static> Session<C> {
@@ -54,6 +57,7 @@ impl<C: 'static> Session<C> {
             registry,
             undo: Vec::new(),
             redo: Vec::new(),
+            last: None,
         }
     }
 
@@ -91,7 +95,8 @@ impl<C: 'static> Session<C> {
     ///
     /// [`CommandError`] for an unknown id, arguments that do not match the schema, the
     /// command's own failure, output that is not JSON, a panic, and for the built-ins
-    /// `edit.undo` and `edit.redo` the errors of [`Session::undo`] and [`Session::redo`].
+    /// `edit.undo` and `edit.redo` the errors of [`Session::undo`] and [`Session::redo`], and
+    /// for `edit.repeat` [`CommandError::NothingToRepeat`] or the repeated command's error.
     pub fn execute(&mut self, id: &str, params: Value) -> Result<Value, CommandError> {
         let Some(entry) = self.registry.entry(id) else {
             return Err(CommandError::Unknown { id: id.to_owned() });
@@ -106,8 +111,9 @@ impl<C: 'static> Session<C> {
             Handler::Builtin(builtin) => *builtin,
             Handler::Command(handler) => {
                 let context = &mut self.context;
+                let kept = params.clone();
                 let invoked = guard(|| handler.invoke(&command, context, params));
-                return self.record(command, invoked);
+                return self.record(command, kept, invoked);
             }
         };
         let NoParams {} =
@@ -123,6 +129,14 @@ impl<C: 'static> Session<C> {
             Builtin::Redo => serde_json::to_value(HistoryOutput {
                 command: &self.redo()?,
             }),
+            Builtin::Repeat => {
+                let (id, params) = self.last.clone().ok_or(CommandError::NothingToRepeat)?;
+                let output = self.execute(id.as_str(), params)?;
+                serde_json::to_value(RepeatOutput {
+                    command: &id,
+                    output,
+                })
+            }
         };
         output.map_err(|error| CommandError::Output { command, error })
     }
@@ -193,6 +207,7 @@ impl<C: 'static> Session<C> {
     fn record(
         &mut self,
         command: CommandId,
+        params: Value,
         invoked: Result<Result<Invoked<C>, CommandError>, String>,
     ) -> Result<Value, CommandError> {
         match invoked {
@@ -200,6 +215,7 @@ impl<C: 'static> Session<C> {
                 match effect {
                     Effect::Unchanged => {}
                     Effect::Undoable(step) => {
+                        self.last = Some((command.clone(), params));
                         discard(mem::take(&mut self.redo));
                         self.undo.push(Change {
                             command: command.clone(),

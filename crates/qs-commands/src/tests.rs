@@ -704,6 +704,7 @@ fn every_command_is_listed_with_its_schema() {
             "doc.flaky",
             "doc.len",
             "edit.redo",
+            "edit.repeat",
             "edit.undo",
         ]
     );
@@ -755,6 +756,7 @@ fn a_new_registry_holds_the_builtins_in_id_order() {
         [
             "Lists every command with its id, summary and parameter schema.",
             "Makes the most recently undone change again.",
+            "Makes the last change once more: same command, same arguments.",
             "Takes back the most recent change that has not been undone.",
         ]
     );
@@ -1234,6 +1236,28 @@ fn undo_and_redo_by_id_name_the_command_and_refuse_an_empty_history() {
         s.execute("edit.redo", json!({})),
         Err(CommandError::NothingToRedo)
     ));
+}
+
+// MAP-28: `edit.repeat` runs the command of the last change again with its parameters, as a
+// change of its own; a read does not replace it, undo and redo keep it, and with no change made
+// it is an error.
+#[test]
+fn repeat_runs_the_last_change_again() {
+    let mut s = review_session();
+    assert!(matches!(
+        s.execute("edit.repeat", json!({})),
+        Err(CommandError::NothingToRepeat)
+    ));
+    append(&mut s, "ab");
+    s.execute("doc.len", json!({})).unwrap();
+    let repeated = s.execute("edit.repeat", json!({})).unwrap();
+    assert_eq!(repeated["command"], json!("doc.append"));
+    assert_eq!(text(&s), "abab");
+    assert_eq!(s.undo_depth(), 2);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(text(&s), "ab");
+    s.execute("edit.repeat", json!({})).unwrap();
+    assert_eq!(text(&s), "abab");
 }
 
 // Lookup by id is exact: case, a trailing dot, whitespace or a prefix name no command.
