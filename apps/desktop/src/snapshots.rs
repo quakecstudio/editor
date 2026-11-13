@@ -21,8 +21,10 @@
 )]
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use eframe::egui::{Event, Key, Modifiers};
+use eframe::egui::{self, Event, Key, Modifiers};
+use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, OsThreshold, SnapshotOptions};
 use serde_json::{Value, json};
 
@@ -42,6 +44,8 @@ enum Step {
     Type(&'static str),
     /// Run frames until every terminal tab's process has ended.
     WaitTerminals,
+    /// Drop the file the function makes onto the lowest node with the label.
+    Drop(fn() -> PathBuf, &'static str),
 }
 
 /// A named sequence of steps, whose final frame is the snapshot.
@@ -52,6 +56,10 @@ struct Script {
 }
 
 /// Every script, each a golden image.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one list of every script, read from top to bottom as the goldens are"
+)]
 fn scripts() -> Vec<Script> {
     let toggle = |panel: &str| Step::Run("view.toggle_panel", json!({ "panel": panel }));
     vec![
@@ -188,6 +196,17 @@ fn scripts() -> Vec<Script> {
             ],
         },
         Script {
+            name: "texture-import",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": keep_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": keep_fixture().join("maps/keep.map") }),
+                ),
+                Step::Drop(brick_png, "wall"),
+            ],
+        },
+        Script {
             name: "shell-resized",
             steps: vec![
                 Step::Run(
@@ -201,6 +220,41 @@ fn scripts() -> Vec<Script> {
             ],
         },
     ]
+}
+
+/// A file dropped on the window, by its path.
+#[derive(Debug)]
+struct Dropped(PathBuf);
+
+impl egui::DroppedFile for Dropped {
+    fn path(&self) -> &Path {
+        &self.0
+    }
+
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|error| error.to_string())
+    }
+}
+
+/// A 32 by 32 PNG of red and yellow bricks, written to a temporary folder; its path.
+fn brick_png() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("qs-snapshot-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap_or_else(|error| panic!("{}: {error}", dir.display()));
+    let path = dir.join("brick.png");
+    let image = image::RgbaImage::from_fn(32, 32, |x, y| {
+        // Rows of bricks 8 high and 16 long, every other row shifted by half a brick.
+        let shift = if (y >> 3) & 1 == 0 { 0 } else { 8 };
+        let mortar = y & 7 == 0 || x.wrapping_add(shift) & 15 == 0;
+        if mortar {
+            image::Rgba([200, 190, 120, 255])
+        } else {
+            image::Rgba([150, 40, 30, 255])
+        }
+    });
+    image
+        .save_with_format(&path, image::ImageFormat::Png)
+        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    path
 }
 
 /// The test project, with problems in two files.
@@ -267,6 +321,19 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
             }
             Step::Key(modifiers, key) => harness.key_press_modifiers(*modifiers, *key),
             Step::Type(text) => harness.event(Event::Text((*text).to_owned())),
+            Step::Drop(make, onto) => {
+                let over = harness
+                    .query_all_by_label(onto)
+                    .max_by(|a, b| a.rect().center().y.total_cmp(&b.rect().center().y))
+                    .unwrap_or_else(|| panic!("{}: nothing labelled {onto}", script.name))
+                    .rect()
+                    .center();
+                harness.hover_at(over);
+                harness
+                    .input_mut()
+                    .dropped_files
+                    .push(Arc::new(Dropped(make())));
+            }
             Step::WaitTerminals => {
                 let running = |harness: &Harness<'static, Option<App>>| {
                     let shell = &harness.state().as_ref().unwrap().shell;

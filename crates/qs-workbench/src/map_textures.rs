@@ -123,6 +123,18 @@ pub struct TextureSources {
     made_for: (Vec<Vec<u8>>, Option<PathBuf>),
 }
 
+/// The palette textures are shown and made in: the project's own `gfx/palette.lmp`, first on
+/// the engine's search path as a mod's is, else the game's; none when neither reads.
+pub(crate) fn game_palette(project: Option<&Path>, game: Option<&Game<'_>>) -> Option<Palette> {
+    project
+        .and_then(|root| std::fs::read(root.join(PALETTE_LMP)).ok())
+        .or_else(|| {
+            game.and_then(|game| game.file(PALETTE_LMP))
+                .map(|(_, bytes)| bytes)
+        })
+        .and_then(|bytes| Palette::from_lmp(&bytes).ok())
+}
+
 /// The game at a base directory: its search path, when it can be built, and the directory a
 /// loose file is looked for in.
 pub(crate) struct Game<'a> {
@@ -271,17 +283,7 @@ impl TextureSources {
             MapSource::Bsp(bytes) => Some(bytes.clone()),
             MapSource::Map => None,
         };
-        // A mod's own palette comes first on the engine's search path, as the project's does
-        // here.
-        let palette = project
-            .and_then(|root| std::fs::read(root.join(PALETTE_LMP)).ok())
-            .or_else(|| {
-                game_at
-                    .as_ref()
-                    .and_then(|game| game.file(PALETTE_LMP))
-                    .map(|(_, bytes)| bytes)
-            })
-            .and_then(|bytes| Palette::from_lmp(&bytes).ok());
+        let palette = game_palette(project, game_at.as_ref());
         let mut sources = Self::from_read(files, bsp.as_deref(), palette);
         sources.made_for = (paths, chosen.map(Path::to_path_buf));
         sources
@@ -408,6 +410,12 @@ impl TextureSources {
             wads: self.wads.clone(),
             textures,
         }
+    }
+
+    /// The game palette textures are shown in, when one was found.
+    #[must_use]
+    pub const fn palette(&self) -> Option<&Palette> {
+        self.palette.as_ref()
     }
 
     /// The texture `name` in its colours: a WAD3 texture's own palette, else the game's

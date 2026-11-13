@@ -118,7 +118,7 @@ impl LeakView {
                 );
             }
         }
-        if let Some(wad) = &report.missing_wad {
+        for wad in &report.missing_wads {
             ui.label(RichText::new(missing_wad(wad)).color(error));
         }
         if !report.missing_textures.is_empty() {

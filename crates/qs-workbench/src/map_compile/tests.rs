@@ -153,7 +153,7 @@ fn map_leaks_reports_the_trail_out() {
     let closed = report(&mut session, MAP_LEAKS);
     assert_eq!(closed.seal, Seal::Sealed);
     assert!(closed.leak.is_empty());
-    assert_eq!(closed.missing_wad, None);
+    assert!(closed.missing_wads.is_empty());
 }
 
 // spec QBSP-9.2: with no entity in empty space nothing is filled: neither sealed nor leaking
@@ -175,10 +175,7 @@ fn a_missing_wad_is_reported() {
     let path = room("nowad", "wall", Opening::Sealed);
     std::fs::remove_file(path.with_file_name("test.wad")).unwrap();
     let mut session = open(&path);
-    assert_eq!(
-        report(&mut session, MAP_LEAKS).missing_wad.as_deref(),
-        Some("test.wad")
-    );
+    assert_eq!(report(&mut session, MAP_LEAKS).missing_wads, ["test.wad"]);
 }
 
 // No spec statement: P6-11: the last report is kept with the map until it is edited

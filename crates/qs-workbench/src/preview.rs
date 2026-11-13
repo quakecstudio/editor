@@ -25,6 +25,7 @@ use schemars::JsonSchema;
 use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_compile::{MapCompile, MapLeaks};
 use crate::map_edit::LiveChange;
+use crate::texture_import::TextureImport;
 use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
 use qs_map::Entity;
 
@@ -1680,6 +1681,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(ChooseGameCommand)?;
     registry.register(SelectCommand)?;
     registry.register(PickCommand)?;
+    registry.register(TextureImport)?;
     registry.register(MapLeaks)?;
     registry.register(MapCompile)?;
     registry.register(SetFieldCommand)?;

@@ -24,6 +24,7 @@ use qs_layout::{Focus, Layout, Panel};
 use qs_wad::write::WadBuilder;
 use qs_workbench::debug::Location;
 use qs_workbench::map_edit::EntityIndex;
+use qs_workbench::texture_import::project_wad;
 use serde_json::json;
 
 use crate::debugger::place;
@@ -2829,4 +2830,112 @@ fn the_shape_tool_fills_a_dragged_box() {
     shell.execute("edit.undo", json!({})).unwrap();
     harness.run();
     assert_eq!(map_text(&harness), before);
+}
+
+/// A file dropped on the window, by its path.
+#[derive(Debug)]
+struct Dropped(PathBuf);
+
+impl egui::DroppedFile for Dropped {
+    fn path(&self) -> &Path {
+        &self.0
+    }
+
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        fs::read(&self.0).map_err(|error| error.to_string())
+    }
+}
+
+// No spec statement: P6-16, MAP-23: a PNG dropped on the texture browser opens its import
+// preview, named after the file; Import writes it into the project's WAD, the map's world
+// names the WAD, and the browser lists the texture
+#[test]
+fn a_dropped_png_is_imported_into_the_browser() {
+    let dir = keep_copy("import");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep/gfx");
+    fs::create_dir_all(dir.join("gfx")).unwrap();
+    for file in ["keep.wad", "palette.lmp"] {
+        fs::copy(fixture.join(file), dir.join("gfx").join(file)).unwrap();
+    }
+    let image = dir.join("Brick16.png");
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image::RgbaImage::from_pixel(16, 16, image::Rgba([200, 40, 30, 255]))
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .unwrap();
+    fs::write(&image, bytes.into_inner()).unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.run();
+    let over = lowest(&harness, "wall").rect().center();
+    harness.hover_at(over);
+    harness
+        .input_mut()
+        .dropped_files
+        .push(std::sync::Arc::new(Dropped(image.clone())));
+    harness.run();
+    let browser = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell
+            .map_editor()
+            .texture_browser()
+            .importing()
+            .map(|i| i.name().to_owned())
+    };
+    assert_eq!(browser(&harness).as_deref(), Some("brick16"));
+    harness.get_by_label(Text::MapImportSave.get()).click();
+    harness.run();
+    harness.run();
+    assert_eq!(browser(&harness), None, "the preview closed");
+    let shell = harness.state().as_ref().unwrap().shell();
+    let names: Vec<&str> = shell
+        .map_editor()
+        .texture_browser()
+        .listing()
+        .textures
+        .iter()
+        .map(|t| t.name.as_str())
+        .collect();
+    assert!(names.contains(&"brick16"), "{names:?}");
+    let wad = project_wad(&dir);
+    assert!(wad.is_file());
+    assert!(map_text(&harness).contains("\"wad\" \"gfx/keep.wad;textures/"));
+    // A changed image imported again replaces the texture, and the open map shows the new one.
+    let decoded = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell.map_editor().texture_browser().decoded("brick16")
+    };
+    let first = decoded(&harness).unwrap();
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image::RgbaImage::from_pixel(16, 16, image::Rgba([30, 40, 200, 255]))
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .unwrap();
+    fs::write(&image, bytes.into_inner()).unwrap();
+    harness.hover_at(over);
+    harness
+        .input_mut()
+        .dropped_files
+        .push(std::sync::Arc::new(Dropped(image.clone())));
+    harness.run();
+    harness.get_by_label(Text::MapImportSave.get()).click();
+    harness.run();
+    harness.run();
+    let second = decoded(&harness).unwrap();
+    assert_ne!(second.rgba, first.rgba, "the browser shows the new picture");
+    let shell = harness.state().as_ref().unwrap().shell();
+    let count = shell
+        .map_editor()
+        .texture_browser()
+        .listing()
+        .textures
+        .iter()
+        .filter(|t| t.name == "brick16")
+        .count();
+    assert_eq!(count, 1, "replaced, not added");
 }

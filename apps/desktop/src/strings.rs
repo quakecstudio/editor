@@ -456,6 +456,16 @@ pub enum Text {
     MapView,
     /// The map editor's view, as a screen reader names it.
     MapEditorView,
+    /// The texture browser's button and window that import a PNG as a texture (P6-16).
+    MapImportTexture,
+    /// The label of an imported texture's name.
+    MapTextureName,
+    /// Matching each pixel of an imported image to its nearest colour.
+    MapDitherNone,
+    /// Dithering an imported image into the palette.
+    MapDitherDiffuse,
+    /// The button that imports the texture previewed.
+    MapImportSave,
     /// The button that checks the map for leaks and missing textures (P6-11).
     MapCheckLeaks,
     /// The button that flies the camera along a leak's trail (P6-11).
@@ -660,7 +670,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 323] = [
+    pub const ALL: [Self; 328] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -884,6 +894,11 @@ impl Text {
         Self::Centre,
         Self::MapView,
         Self::MapEditorView,
+        Self::MapImportTexture,
+        Self::MapTextureName,
+        Self::MapDitherNone,
+        Self::MapDitherDiffuse,
+        Self::MapImportSave,
         Self::MapCheckLeaks,
         Self::MapFlyLeak,
         Self::MapSealed,
@@ -1227,6 +1242,11 @@ impl Text {
             Self::BottomPanel => "Bottom panel: Problems, Console and Debugger",
             Self::Centre => "Centre: Editor, Game and Map",
             Self::MapView => "Map view: drag to turn, scroll to move",
+            Self::MapImportTexture => "Import texture",
+            Self::MapTextureName => "Name",
+            Self::MapDitherNone => "Nearest colour",
+            Self::MapDitherDiffuse => "Dither",
+            Self::MapImportSave => "Import",
             Self::MapCheckLeaks => "Check for leaks",
             Self::MapFlyLeak => "Fly along the leak",
             Self::MapSealed => "The map is sealed: no entity is in reach of the void.",

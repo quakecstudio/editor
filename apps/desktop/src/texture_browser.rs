@@ -9,11 +9,15 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, ColorImage, RichText, Sense, Stroke, TextureHandle, Ui, Vec2};
+#[cfg(test)]
+use qs_wad::texture::DecodedTexture;
 use qs_workbench::map_edit::{MapDocument, MapRevision};
 use qs_workbench::map_textures::{BrowserTexture, MapTextures, TextureOrigin, TextureSources};
+use qs_workbench::texture_import::DitherChoice;
 
 use crate::map_browser::{FILTER_WIDTH, filter_shows};
 use crate::strings::{Text, texture_count, wad_label};
+use crate::texture_import::{ImportChoice, ImportPreview};
 use crate::theme::{Theme, Token};
 
 /// The side of a texture's cell, in points (the mockup's texture cells).
@@ -42,6 +46,8 @@ pub(crate) struct TextureBrowser {
     selected: Option<String>,
     /// How many textures were decoded since the sources were set.
     decodes: usize,
+    /// The image being imported, shown quantized before it is saved (P6-16).
+    import: Option<ImportPreview>,
 }
 
 impl core::fmt::Debug for TextureBrowser {
@@ -119,6 +125,14 @@ impl TextureBrowser {
             RichText::new(texture_count(&wads, shown, self.listing.textures.len()))
                 .color(theme.color(Token::TextMuted)),
         );
+        if ui.button(Text::MapImportTexture.get()).clicked()
+            && let Some(path) = rfd::FileDialog::new()
+                .set_title(Text::MapImportTexture.get())
+                .add_filter("PNG", &["png"])
+                .pick_file()
+        {
+            self.import = ImportPreview::open(path);
+        }
         if self.sources.as_ref().is_some_and(|s| !s.has_palette()) {
             ui.label(RichText::new(Text::MapNoPalette.get()).color(theme.color(Token::StatusWarn)));
         }
@@ -135,8 +149,59 @@ impl TextureBrowser {
             .collect()
     }
 
-    /// The textures, laying out and decoding only the cells in view.
+    /// The import preview's window, when an image is being imported; the import asked for.
+    pub(crate) fn import_window(
+        &mut self,
+        ctx: &egui::Context,
+        theme: &Theme,
+    ) -> Option<(PathBuf, String, DitherChoice)> {
+        let palette = self.sources.as_ref().and_then(TextureSources::palette);
+        let choice = self.import.as_mut()?.ui(ctx, theme, palette);
+        match choice {
+            ImportChoice::Waiting => None,
+            ImportChoice::Cancel => {
+                self.import = None;
+                None
+            }
+            ImportChoice::Save(path, name, dither) => {
+                self.import = None;
+                Some((path, name, dither))
+            }
+        }
+    }
+
+    /// The texture `name` as the browser decodes it, for tests.
+    #[cfg(test)]
+    pub(crate) fn decoded(&self, name: &str) -> Option<DecodedTexture> {
+        self.sources
+            .as_ref()
+            .and_then(|sources| sources.decode(name))
+    }
+
+    /// The image being imported, for tests.
+    #[cfg(test)]
+    pub(crate) const fn importing(&self) -> Option<&ImportPreview> {
+        self.import.as_ref()
+    }
+
+    /// The textures, laying out and decoding only the cells in view; a PNG dropped on the window
+    /// while they show is opened for import.
     pub(crate) fn body(&mut self, ui: &mut Ui, theme: &Theme) {
+        // The pointer is not followed while a file is dragged in from another program, so a
+        // PNG dropped on the window while the browser shows is taken as dropped on it.
+        let dropped = ui.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|file| file.path().to_path_buf())
+                .find(|path| {
+                    path.extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("png"))
+                })
+        });
+        if let Some(path) = dropped {
+            self.import = ImportPreview::open(path);
+        }
         let shown = self.shown();
         let count = u16::try_from(shown.len()).map_or(f32::from(u16::MAX), f32::from);
         let width = count * (CELL + GAP);

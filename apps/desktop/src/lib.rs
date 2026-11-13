@@ -46,6 +46,7 @@ pub mod shell;
 pub mod strings;
 mod terminal;
 mod texture_browser;
+mod texture_import;
 pub mod theme;
 
 #[cfg(test)]
