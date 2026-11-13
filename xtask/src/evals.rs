@@ -91,12 +91,13 @@ struct Edit {
 }
 
 /// What a map task's map must hold for it to succeed (P5-08): `count` entities of `classname`
-/// in the room `room` (MAP-9) of the map `file`.
+/// in the room `room` (MAP-9) of the map `file`, or anywhere in it with no room (P6-21).
 #[derive(Debug, Deserialize)]
 struct MapExpect {
     file: String,
     classname: String,
-    room: String,
+    #[serde(default)]
+    room: Option<String>,
     count: usize,
 }
 
@@ -116,7 +117,11 @@ impl MapExpect {
             .entities
             .iter()
             .filter(|entity| entity.classname() == Some(self.classname.as_bytes()))
-            .filter(|entity| rooms.holds(entity, &self.room))
+            .filter(|entity| {
+                self.room
+                    .as_deref()
+                    .is_none_or(|room| rooms.holds(entity, room))
+            })
             .count();
         count == self.count
     }
@@ -725,12 +730,13 @@ mod tests {
             for expect in &task.map {
                 assert!(task.files.contains(&expect.file), "{}", dir.display());
                 let map = expect.read(&dir).unwrap();
-                assert!(
-                    map.rooms().named_any(&expect.room),
-                    "{}: no room {}",
-                    dir.display(),
-                    expect.room
-                );
+                if let Some(room) = &expect.room {
+                    assert!(
+                        map.rooms().named_any(room),
+                        "{}: no room {room}",
+                        dir.display()
+                    );
+                }
             }
             for file in &task.files {
                 assert!(dir.join(file).is_file(), "{}: no {file}", dir.display());

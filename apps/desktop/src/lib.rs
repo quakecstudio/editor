@@ -36,6 +36,7 @@ mod map_outline;
 mod map_panes;
 mod map_prefabs;
 mod map_profiles;
+mod map_review;
 mod map_scene;
 mod map_tools;
 mod map_uv;

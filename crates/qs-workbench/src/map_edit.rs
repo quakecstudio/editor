@@ -53,6 +53,9 @@ pub use prefabs::{
     MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PREFAB_FOLDER, PlacePrefabParams, Prefab,
     PrefabSaved, Prefabs, SavePrefabParams,
 };
+pub use review::{
+    MAP_ACCEPT, MAP_REJECT, MAP_STAGE, MAP_STAGED, MapHunk, MapHunkNumber, MapHunksParams,
+};
 pub use shapes::{ArchWall, BrushShapeParams, Circle, Climb, MAP_BRUSH_SHAPE, ShapeSpec};
 
 mod brush_tools;
@@ -67,6 +70,7 @@ mod links;
 mod live;
 mod outline;
 mod prefabs;
+mod review;
 mod shapes;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -196,6 +200,9 @@ pub struct MapDocument {
     view: groups::ViewState,
     /// The last compile's report and the edits it was made at (P6-11).
     report: Option<(MapReport, MapRevision)>,
+    /// The map as its review began, while the edits since wait to be accepted or rejected
+    /// (P6-21).
+    staged: Option<MapFile>,
 }
 
 /// What a file held, as a hash of its bytes, to tell when another program changed it.
@@ -331,6 +338,22 @@ impl MapDocument {
     #[must_use]
     pub const fn source(&self) -> &MapSource {
         &self.source
+    }
+
+    /// Puts `entities` in place of the map's, as a review's rejected hunks do (P6-21): the
+    /// selection kept while its entity is still there, what is hidden and locked forgotten when
+    /// the entities' count changes.
+    pub(crate) fn replace_entities(&mut self, entities: Vec<Entity>) {
+        if entities.len() != self.file.entities.len() {
+            self.view = groups::ViewState::default();
+        }
+        if self
+            .selected
+            .is_some_and(|selected| selected.get() >= entities.len())
+        {
+            self.selected = None;
+        }
+        self.file.entities = entities;
     }
 
     /// Puts `file` in place of the map's entities, nothing selected and nothing hidden or
@@ -627,6 +650,7 @@ impl<L: crate::Loader> Workbench<L> {
             disk,
             conflict: None,
             report: None,
+            staged: None,
         }))
     }
 
@@ -1223,6 +1247,10 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry: &mut Registry<C>,
 ) -> Result<(), RegisterError> {
     registry.register(MapOpen)?;
+    registry.register(review::MapStage)?;
+    registry.register(review::MapStaged)?;
+    registry.register(review::MapAccept)?;
+    registry.register(review::MapReject)?;
     registry.register(MapBackup)?;
     registry.register(MapBackups)?;
     registry.register(MapRestoreBackup)?;

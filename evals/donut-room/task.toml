@@ -1,0 +1,118 @@
+title = "Build a donut-shaped room"
+template = "id1"
+prompt = "maps/donut.map holds only its world. Build a donut-shaped room in it: a closed ring of floor, walls and ceiling around a solid square pillar, with a player start in the ring and four lights, then save the map. It must compile with no leak."
+turns = 40
+runs = 1
+threshold = 1
+files = ["maps/donut.map"]
+
+# P6-21, MAP-29: the agent builds level geometry, not only entities. The saved map holds a player
+# start and four lights and compiles with no leak (P6-13), which with the start in the ring means
+# the ring is sealed and the game has somewhere to put the player.
+[[map]]
+file = "maps/donut.map"
+classname = "info_player_start"
+count = 1
+
+[[map]]
+file = "maps/donut.map"
+classname = "light"
+count = 4
+
+[[sealed]]
+file = "maps/donut.map"
+
+[[solution]]
+file = "maps/donut.map"
+find = "\"classname\" \"worldspawn\"\n}\n"
+replace = """"classname" "worldspawn"
+// floor
+{
+( -400 0 0 ) ( -400 1 0 ) ( -400 0 1 ) stone 0 0 0 1 1
+( 400 0 0 ) ( 400 0 1 ) ( 400 1 0 ) stone 0 0 0 1 1
+( 0 -400 0 ) ( 0 -400 1 ) ( 1 -400 0 ) stone 0 0 0 1 1
+( 0 400 0 ) ( 1 400 0 ) ( 0 400 1 ) stone 0 0 0 1 1
+( 0 0 -16 ) ( 1 0 -16 ) ( 0 1 -16 ) stone 0 0 0 1 1
+( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) stone 0 0 0 1 1
+}
+// ceiling
+{
+( -400 0 0 ) ( -400 1 0 ) ( -400 0 1 ) stone 0 0 0 1 1
+( 400 0 0 ) ( 400 0 1 ) ( 400 1 0 ) stone 0 0 0 1 1
+( 0 -400 0 ) ( 0 -400 1 ) ( 1 -400 0 ) stone 0 0 0 1 1
+( 0 400 0 ) ( 1 400 0 ) ( 0 400 1 ) stone 0 0 0 1 1
+( 0 0 192 ) ( 1 0 192 ) ( 0 1 192 ) stone 0 0 0 1 1
+( 0 0 208 ) ( 0 1 208 ) ( 1 0 208 ) stone 0 0 0 1 1
+}
+// west wall
+{
+( -400 0 0 ) ( -400 1 0 ) ( -400 0 1 ) stone 0 0 0 1 1
+( -384 0 0 ) ( -384 0 1 ) ( -384 1 0 ) stone 0 0 0 1 1
+( 0 -400 0 ) ( 0 -400 1 ) ( 1 -400 0 ) stone 0 0 0 1 1
+( 0 400 0 ) ( 1 400 0 ) ( 0 400 1 ) stone 0 0 0 1 1
+( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) stone 0 0 0 1 1
+( 0 0 192 ) ( 0 1 192 ) ( 1 0 192 ) stone 0 0 0 1 1
+}
+// east wall
+{
+( 384 0 0 ) ( 384 1 0 ) ( 384 0 1 ) stone 0 0 0 1 1
+( 400 0 0 ) ( 400 0 1 ) ( 400 1 0 ) stone 0 0 0 1 1
+( 0 -400 0 ) ( 0 -400 1 ) ( 1 -400 0 ) stone 0 0 0 1 1
+( 0 400 0 ) ( 1 400 0 ) ( 0 400 1 ) stone 0 0 0 1 1
+( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) stone 0 0 0 1 1
+( 0 0 192 ) ( 0 1 192 ) ( 1 0 192 ) stone 0 0 0 1 1
+}
+// south wall
+{
+( -384 0 0 ) ( -384 1 0 ) ( -384 0 1 ) stone 0 0 0 1 1
+( 384 0 0 ) ( 384 0 1 ) ( 384 1 0 ) stone 0 0 0 1 1
+( 0 -400 0 ) ( 0 -400 1 ) ( 1 -400 0 ) stone 0 0 0 1 1
+( 0 -384 0 ) ( 1 -384 0 ) ( 0 -384 1 ) stone 0 0 0 1 1
+( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) stone 0 0 0 1 1
+( 0 0 192 ) ( 0 1 192 ) ( 1 0 192 ) stone 0 0 0 1 1
+}
+// north wall
+{
+( -384 0 0 ) ( -384 1 0 ) ( -384 0 1 ) stone 0 0 0 1 1
+( 384 0 0 ) ( 384 0 1 ) ( 384 1 0 ) stone 0 0 0 1 1
+( 0 384 0 ) ( 0 384 1 ) ( 1 384 0 ) stone 0 0 0 1 1
+( 0 400 0 ) ( 1 400 0 ) ( 0 400 1 ) stone 0 0 0 1 1
+( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) stone 0 0 0 1 1
+( 0 0 192 ) ( 0 1 192 ) ( 1 0 192 ) stone 0 0 0 1 1
+}
+// the pillar, the donut's hole
+{
+( -128 0 0 ) ( -128 1 0 ) ( -128 0 1 ) stone 0 0 0 1 1
+( 128 0 0 ) ( 128 0 1 ) ( 128 1 0 ) stone 0 0 0 1 1
+( 0 -128 0 ) ( 0 -128 1 ) ( 1 -128 0 ) stone 0 0 0 1 1
+( 0 128 0 ) ( 1 128 0 ) ( 0 128 1 ) stone 0 0 0 1 1
+( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) stone 0 0 0 1 1
+( 0 0 192 ) ( 0 1 192 ) ( 1 0 192 ) stone 0 0 0 1 1
+}
+}
+{
+"classname" "info_player_start"
+"origin" "-256 0 24"
+"angle" "90"
+}
+{
+"classname" "light"
+"origin" "-256 -256 128"
+"light" "300"
+}
+{
+"classname" "light"
+"origin" "256 -256 128"
+"light" "300"
+}
+{
+"classname" "light"
+"origin" "256 256 128"
+"light" "300"
+}
+{
+"classname" "light"
+"origin" "-256 256 128"
+"light" "300"
+}
+"""

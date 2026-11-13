@@ -1173,7 +1173,13 @@ fn refusal(call: &ToolCall, why: &str) -> Message {
     }
 }
 
-/// The result of `call`: the command's output, or why it did not run.
+/// The prefix of the map's commands, whose edits the agent makes for review (P6-21).
+const MAP_COMMANDS: &str = "map.";
+/// The command that begins review of the open map's edits (P6-21).
+const STAGE_MAP: &str = "map.stage";
+
+/// The result of `call`: the command's output, or why it did not run; a map command begins
+/// the map's review first, so its edits wait as hunks.
 fn call_tool<C: 'static>(
     session: &mut Session<C>,
     specs: &[ToolSpec],
@@ -1200,6 +1206,11 @@ fn call_tool<C: 'static>(
                 project.display()
             ));
         }
+    }
+    if call.name.starts_with(MAP_COMMANDS) && session.registry().get(STAGE_MAP).is_some() {
+        // The agent's map edits wait as hunks for review (P6-21); with no map open there is
+        // nothing to review yet, and the map command says why it cannot run.
+        session.execute(STAGE_MAP, json!({})).ok();
     }
     let (content, is_error) = match session.execute(&call.name, arguments) {
         Ok(output) => (cut(output, config.output_limit), false),

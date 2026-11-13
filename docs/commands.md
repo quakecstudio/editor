@@ -54,6 +54,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.status`](#gitstatus) | Lists the project repository's branch and changed files, staged and not, as git status does; none when the project is not in a git repository. |
 | [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
+| [`map.accept`](#mapaccept) | Accepts hunks of the open map's review, every one when none are named: their change is kept and no longer waits. |
 | [`map.backup`](#mapbackup) | Writes the open map, as it is in the editor, saved or not, as its next backup in the autosave folder beside it, keeping the last 20. |
 | [`map.backups`](#mapbackups) | Lists the open map's backups in the autosave folder beside it, the newest first. |
 | [`map.brush_chamfer`](#mapbrush_chamfer) | Chamfers an edge of a brush into one or more bevel faces, from a distance along each of its two faces (MAP-15.9). |
@@ -105,6 +106,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.portals`](#mapportals) | Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet. |
 | [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
 | [`map.profiles`](#mapprofiles) | Lists the compile profiles: the built-in Full and Fast, then the project's own from compile-profiles.toml, each its name and its tasks. |
+| [`map.reject`](#mapreject) | Rejects hunks of the open map's review, every one when none are named: the parts they replaced are put back, as an edit undo takes back. |
 | [`map.remove_key`](#mapremove_key) | Removes every pair with a key from an entity of the open map. |
 | [`map.rename_key`](#maprename_key) | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
 | [`map.resolve`](#mapresolve) | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
@@ -119,6 +121,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
 | [`map.set_layer`](#mapset_layer) | Turns a layer of the open map hidden, locked or left out of exports on or off, written as TrenchBroom writes it. |
 | [`map.show_all`](#mapshow_all) | Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden. |
+| [`map.stage`](#mapstage) | Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is. |
+| [`map.staged`](#mapstaged) | Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes. |
 | [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds. |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
@@ -1597,6 +1601,40 @@ Parameters:
     "path"
   ],
   "title": "GitStageParams",
+  "type": "object"
+}
+```
+
+## `map.accept`
+
+Accepts hunks of the open map's review, every one when none are named: their change is kept and no longer waits.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "MapHunkNumber": {
+      "description": "A hunk's number in the list `map.staged` gives, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.accept` and `map.reject`.",
+  "properties": {
+    "hunks": {
+      "default": [],
+      "description": "The hunks' numbers, as `map.staged` lists them now; every hunk when empty.",
+      "items": {
+        "$ref": "#/$defs/MapHunkNumber"
+      },
+      "type": "array"
+    }
+  },
+  "title": "MapHunksParams",
   "type": "object"
 }
 ```
@@ -4859,6 +4897,40 @@ Parameters:
 }
 ```
 
+## `map.reject`
+
+Rejects hunks of the open map's review, every one when none are named: the parts they replaced are put back, as an edit undo takes back.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "MapHunkNumber": {
+      "description": "A hunk's number in the list `map.staged` gives, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.accept` and `map.reject`.",
+  "properties": {
+    "hunks": {
+      "default": [],
+      "description": "The hunks' numbers, as `map.staged` lists them now; every hunk when empty.",
+      "items": {
+        "$ref": "#/$defs/MapHunkNumber"
+      },
+      "type": "array"
+    }
+  },
+  "title": "MapHunksParams",
+  "type": "object"
+}
+```
+
 ## `map.remove_key`
 
 Removes every pair with a key from an entity of the open map.
@@ -5479,6 +5551,38 @@ Parameters:
 ## `map.show_all`
 
 Shows every entity of the open map hidden in the editor (TrenchBroom's Show All); a hidden layer stays hidden.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.stage`
+
+Begins review of the open map's edits: the map as it is now is kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits begin it themselves; while it is open it is left as it is.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.staged`
+
+Lists the open map's hunks waiting for review: for each, the entities it is in, and the keys and brushes it adds, changes or removes.
 
 Parameters:
 

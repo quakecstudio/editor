@@ -4,6 +4,7 @@
 //! wording is reviewed in one place and can be translated later. A test fails on a string
 //! literal in the UI modules.
 
+use qs_workbench::map_edit::MapHunk;
 use qs_workbench::map_edit::{BrushIndex, EntityIndex, QuickFix};
 use qs_workbench::map_textures::{WadFound, WadState};
 
@@ -473,6 +474,8 @@ pub enum Text {
     MapPlayFromHere,
     /// The button that flies the camera along a leak's trail (P6-11).
     MapFlyLeak,
+    /// The heading over the agent's map edits waiting for review (P6-21).
+    MapReviewHeading,
     /// The button that runs the chosen compile profile on the map (P6-20).
     MapCompileProfile,
     /// The name of the list of compile profiles (P6-20).
@@ -775,7 +778,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 380] = [
+    pub const ALL: [Self; 381] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1007,6 +1010,7 @@ impl Text {
         Self::MapCheckLeaks,
         Self::MapPlayFromHere,
         Self::MapFlyLeak,
+        Self::MapReviewHeading,
         Self::MapCompileProfile,
         Self::MapProfilePicker,
         Self::MapShowPortals,
@@ -1407,6 +1411,7 @@ impl Text {
             Self::MapCheckLeaks => "Check for leaks",
             Self::MapPlayFromHere => "Play from here",
             Self::MapFlyLeak => "Fly along the leak",
+            Self::MapReviewHeading => "Map changes to review",
             Self::MapCompileProfile => "Compile",
             Self::MapProfilePicker => "Compile profile",
             Self::MapShowPortals => "Show portals",
@@ -1751,6 +1756,22 @@ pub fn fix_label(fix: &QuickFix) -> String {
 #[must_use]
 pub fn apply_texture(name: &str) -> String {
     format!("Apply {name}")
+}
+
+/// One map edit waiting for review, as the map view lists it (P6-21): the entities it is in,
+/// then what it adds, changes or removes.
+pub fn map_hunk(hunk: &MapHunk) -> String {
+    let mut said = Vec::new();
+    if hunk.keys > 0 {
+        said.push(format!("{} with keys changed", hunk.keys));
+    }
+    if hunk.brushes_added > 0 {
+        said.push(format!("{} brushes added", hunk.brushes_added));
+    }
+    if hunk.brushes_removed > 0 {
+        said.push(format!("{} brushes removed", hunk.brushes_removed));
+    }
+    format!("{}: {}", hunk.entities.join(", "), said.join(", "))
 }
 
 /// What the map view says when compile profile `profile` has done every task, in `seconds`

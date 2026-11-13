@@ -898,3 +898,35 @@ fn threads_are_kept_listed_and_searched() {
     assert!(!threads[1].matches("rocket"));
     assert!(threads[0].matches(""));
 }
+
+// No spec statement: P6-21, MAP-29: the agent's map edits wait as hunks for review, as its
+// code edits do
+#[test]
+fn the_agents_map_edits_wait_for_review() {
+    let (root, mut session) = project("map-review", FIXED);
+    std::fs::create_dir_all(root.join("maps")).unwrap();
+    let map = root.join("maps/room.map");
+    std::fs::write(&map, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    let mut model = Scripted::new(vec![
+        calls(vec![("map.open", json!({ "path": map }))]),
+        calls(vec![(
+            "map.place",
+            json!({ "classname": "light", "origin": [0.0, 0.0, 64.0] }),
+        )]),
+        finish(),
+    ]);
+    let config = RunConfig {
+        permissions: Permissions {
+            profile: AgentProfile::Full,
+            ..Permissions::default()
+        },
+        ..RunConfig::new(&root)
+    };
+    run(&mut session, &mut model, "Light the room.", &config).unwrap();
+    let hunks = session.execute("map.staged", json!({})).unwrap();
+    assert_eq!(hunks.as_array().map(Vec::len), Some(1), "{hunks}");
+    assert_eq!(hunks[0]["entities"], json!(["1 light"]));
+    session.execute("map.reject", json!({})).unwrap();
+    let left = session.execute("map.staged", json!({})).unwrap();
+    assert_eq!(left, json!([]));
+}

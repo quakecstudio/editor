@@ -844,6 +844,11 @@ pub enum WorkbenchError {
         /// Why.
         error: qs_map_vis::VisError,
     },
+    /// The open map's review has no hunk of this number (P6-21).
+    NoMapHunk {
+        /// The number asked for.
+        index: usize,
+    },
     /// No compile profile has this name (P6-20).
     UnknownProfile {
         /// The name.
@@ -1011,6 +1016,7 @@ impl fmt::Display for WorkbenchError {
                 )
             }
             Self::PortalFile { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::NoMapHunk { index } => write!(f, "the map's review has no hunk {index}"),
             Self::UnknownProfile { name } => write!(f, "no compile profile is called {name:?}"),
             Self::MapCompile { error } => write!(f, "the map does not compile: {error}"),
             Self::MapLight { error } => write!(f, "the map does not light: {error}"),
@@ -1104,7 +1110,7 @@ impl Error for WorkbenchError {
             Self::ProfilesRead { error, .. } => Some(error),
             Self::ProfilesParse { error, .. } => Some(error),
             Self::PortalFile { error, .. } => Some(error),
-            Self::UnknownProfile { .. } => None,
+            Self::NoMapHunk { .. } | Self::UnknownProfile { .. } => None,
             Self::MapCompile { error } => Some(error),
             Self::MapLight { error } => Some(error),
             Self::MapLump { error, .. } => Some(error),
