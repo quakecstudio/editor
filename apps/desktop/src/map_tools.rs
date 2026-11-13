@@ -21,10 +21,13 @@ use qs_map::shapes::{
 use qs_workbench::map_edit::{
     ArchWall, BrushIndex, Circle, Climb, EntityIndex, KeepPart, Lock, ShapeSpec,
 };
+use qs_workbench::map_uv::{FaceRef, UvChoice};
 
 use crate::map_editor::{GRID, box_lines};
 use crate::map_panes::{Pane, Projection};
 use crate::map_scene::{Scene, single};
+pub(crate) use crate::map_uv::PickMode;
+use crate::map_uv::UvEditor;
 use crate::strings::{Text, apply_texture, measure_readout, move_readout, selection_size};
 use crate::theme::{Theme, Token};
 
@@ -152,6 +155,10 @@ pub enum BrushAction {
     Texture(EntityIndex, Vec<BrushIndex>, TextureChange),
     /// Fill the box from one corner to the other with a shape, in the world.
     Shape([f64; 3], [f64; 3], ShapeSpec),
+    /// Fit, justify, flip, reset, snap or adjust the texture of faces (MAP-13).
+    Uv(Vec<FaceRef>, UvChoice),
+    /// Carry one face's texture alignment onto others (MAP-13.8).
+    AlignFaces(FaceRef, Vec<FaceRef>),
 }
 
 /// What `map.brush_texture` sets; the parts not given are kept (MAP-12).
@@ -496,6 +503,8 @@ pub(crate) struct BrushTools {
     align: AlignFields,
     /// What the Shape tool makes.
     shape: ShapeOptions,
+    /// The faces selected and the UV editor.
+    uv: UvEditor,
 }
 
 /// A ray in map space: where it starts and its direction.
@@ -586,6 +595,31 @@ impl BrushTools {
         self.tool
     }
 
+    /// Picks the face `ray` meets first into the face selection as `mode` says, as an
+    /// Alt-click or Alt-Shift-click does; the brushes chosen are let go.
+    pub(crate) fn pick_face(
+        &mut self,
+        (start, direction): Ray,
+        scene: &Scene,
+        hidden: &BTreeSet<EntityIndex>,
+        mode: PickMode,
+    ) {
+        self.uv
+            .pick(scene.pick_face(start, direction, hidden), scene, mode);
+        self.chosen.clear();
+    }
+
+    /// Lets go of the faces selected.
+    pub(crate) fn clear_faces(&mut self) {
+        self.uv.clear();
+    }
+
+    /// Adds `face` to the faces selected, as an Alt-Shift-click would.
+    #[cfg(test)]
+    pub(crate) fn select_face(&mut self, face: FaceRef, scene: &Scene) {
+        self.uv.pick(Some(face), scene, PickMode::Toggle);
+    }
+
     /// Forgets the selected brushes `scene` no longer has where they were: none is at the
     /// place, or another brush is, other than the one the last clip or vertex move reshaped.
     pub(crate) fn keep_found(&mut self, scene: &Scene) {
@@ -603,6 +637,7 @@ impl BrushTools {
         });
         let chosen = &self.chosen;
         self.seen.retain(|brush, _| chosen.contains(brush));
+        self.uv.keep_found(scene);
     }
 
     /// The tool selector, and the clip's side when clipping.
@@ -716,8 +751,18 @@ impl BrushTools {
             && let Some(at) = response.interact_pointer_pos()
         {
             let (start, direction) = ray(at);
+            let (shift, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.alt));
+            if alt {
+                let mode = if shift {
+                    PickMode::Toggle
+                } else {
+                    PickMode::Replace
+                };
+                self.pick_face((start, direction), scene, hidden, mode);
+                return actions;
+            }
+            self.uv.clear();
             let picked = scene.pick_brush(start, direction, hidden);
-            let shift = ui.input(|i| i.modifiers.shift);
             if let Some(brush) = picked
                 && let Some(shape) = scene.brush(brush.0, brush.1)
             {
@@ -889,6 +934,7 @@ impl BrushTools {
         pointer: Option<Ray>,
     ) {
         let accent = Stroke::new(2.0, theme.color(Token::Accent));
+        self.uv.draw(painter, projection, theme, scene);
         for &(entity, brush) in &self.chosen {
             let Some(shape) = scene.brush(entity, brush) else {
                 continue;
@@ -1015,7 +1061,11 @@ impl BrushTools {
         ui: &mut Ui,
         scene: &Scene,
         texture: Option<&str>,
+        size_of: &dyn Fn(&str) -> Option<[u32; 2]>,
     ) -> Vec<BrushAction> {
+        if !self.uv.is_empty() {
+            return self.uv.properties(ui, scene, size_of);
+        }
         let mut actions = Vec::new();
         let Some(&(entity, first)) = self.chosen.first() else {
             return actions;
@@ -1232,6 +1282,7 @@ mod tests {
                 vertices: vec![corner],
                 planes: Vec::new(),
                 textures: Vec::new(),
+                faces: Vec::new(),
             });
         }
         scene

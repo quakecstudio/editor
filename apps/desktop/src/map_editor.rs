@@ -22,6 +22,8 @@ use qs_workbench::map_edit::{
     OutlineRow, Skill,
 };
 use qs_workbench::map_textures::TextureSources;
+#[cfg(test)]
+use qs_workbench::map_uv::FaceRef;
 use qs_workbench::texture_import::DitherChoice;
 
 use crate::map_browser::{ClassDrag, EntityBrowser};
@@ -31,7 +33,7 @@ use crate::map_leaks::LeakView;
 use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_panes::{Pane, Plan, PlanCamera, Projection, panes};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
-use crate::map_tools::{BrushAction, BrushTools, MapTool};
+use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::strings::{Text, also_selected, panes_text};
 use crate::texture_browser::TextureBrowser;
 use crate::theme::{Theme, Token};
@@ -726,10 +728,23 @@ impl MapEditor {
                 .input(ui, &response, &self.scene, hidden, &projection, pane);
             actions.extend(found.into_iter().map(MapAction::Brush));
         }
+        let alt = ui.input(|i| i.modifiers.alt);
         if selecting
+            && response.clicked()
+            && alt
+            && let Some(at) = response.interact_pointer_pos()
+        {
+            let mode = if ui.input(|i| i.modifiers.shift) {
+                PickMode::Toggle
+            } else {
+                PickMode::Replace
+            };
+            self.tools.pick_face(ray(at), &self.scene, hidden, mode);
+        } else if selecting
             && response.clicked()
             && let Some(at) = response.interact_pointer_pos()
         {
+            self.tools.clear_faces();
             let picked = pick(at);
             let shift = ui.input(|i| i.modifiers.shift);
             if let Some(key) = self.picking.take() {
@@ -750,7 +765,6 @@ impl MapEditor {
                 actions.push(MapAction::Select(picked));
             }
         }
-        let alt = ui.input(|i| i.modifiers.alt);
         if selecting
             && response.drag_started_by(egui::PointerButton::Primary)
             && alt
@@ -870,6 +884,14 @@ impl MapEditor {
         actions
     }
 
+    /// Selects these faces for the UV editor, as Alt-clicks would.
+    #[cfg(test)]
+    pub(crate) fn select_faces(&mut self, faces: &[FaceRef]) {
+        for &face in faces {
+            self.tools.select_face(face, &self.scene);
+        }
+    }
+
     /// The key editor of the selected entity, in the Properties panel; what it asked for.
     #[expect(
         clippy::too_many_lines,
@@ -912,9 +934,11 @@ impl MapEditor {
             ui.separator();
         }
         let texture = self.textures.selected();
+        let textures = &self.textures;
+        let size_of = |name: &str| textures.size(name);
         actions.extend(
             self.tools
-                .properties(ui, &self.scene, texture)
+                .properties(ui, &self.scene, texture, &size_of)
                 .into_iter()
                 .map(MapAction::Brush),
         );
