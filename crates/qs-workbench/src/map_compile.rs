@@ -31,6 +31,8 @@ pub const MAP_LEAKS: &str = "map.leaks";
 pub const MAP_COMPILE: &str = "map.compile";
 /// The id of `map.play_from_here`.
 pub const MAP_PLAY_FROM_HERE: &str = "map.play_from_here";
+/// The id of `map.portals`.
+pub const MAP_PORTALS: &str = "map.portals";
 
 /// Whether the outside of a map was filled (QBSP-9.2, QBSP-9.3).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -239,6 +241,39 @@ impl<C: HasPreview + 'static> Command<C> for MapCompile {
             report.written.push(file);
         }
         Ok(Outcome::outside_history(report))
+    }
+}
+
+/// The portals of the open map's last compile (P6-20, MAP-28).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct MapPortals {
+    /// The portal file read.
+    pub path: PathBuf,
+    /// Each portal's points, in order.
+    pub portals: Vec<Vec<[f32; 3]>>,
+}
+
+/// `map.portals`.
+pub(crate) struct MapPortalsCommand;
+
+impl<C: HasPreview + 'static> Command<C> for MapPortalsCommand {
+    const ID: &'static str = MAP_PORTALS;
+    const SUMMARY: &'static str = "Reads the portal file the open map's last compile wrote         beside it, each portal's points, to show where the map's leaves meet.";
+    type Params = NoParams;
+    type Output = MapPortals;
+    type Error = WorkbenchError;
+
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapPortals, C>, WorkbenchError> {
+        let document = context.workbench().map().ok_or(WorkbenchError::NoMap)?;
+        let path = document.path().with_extension("prt");
+        let text = std::fs::read_to_string(&path)
+            .map_err(|_| WorkbenchError::NoFile { path: path.clone() })?;
+        let portals =
+            qs_map_vis::portal_windings(&text).map_err(|error| WorkbenchError::PortalFile {
+                path: path.clone(),
+                error,
+            })?;
+        Ok(Outcome::unchanged(MapPortals { path, portals }))
     }
 }
 

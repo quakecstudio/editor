@@ -14,7 +14,7 @@ use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_wad::write::WadBuilder;
 use serde_json::json;
 
-use super::{MAP_COMPILE, MAP_LEAKS, MapReport, Seal};
+use super::{MAP_COMPILE, MAP_LEAKS, MAP_PORTALS, MapPortals, MapReport, Seal};
 use crate::map_edit::MAP_OPEN;
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
@@ -304,4 +304,25 @@ fn external_maps_are_compiled_in_place() {
     let mut session = open(&path);
     let error = session.execute(MAP_COMPILE, json!({})).unwrap_err();
     assert!(error.to_string().contains("prefabs/pillar.map"), "{error}");
+}
+
+// No spec statement: P6-20: map.portals reads the portal file the last compile wrote beside the
+// map, each portal's points; before any compile there is none to read
+#[test]
+fn map_portals_reads_the_last_compiles_portals() {
+    let path = room("portals", "wall", Opening::Sealed);
+    let mut session = open(&path);
+    let error = session.execute(MAP_PORTALS, json!({})).unwrap_err();
+    assert!(error.to_string().contains("portals.prt"), "{error}");
+    report(&mut session, MAP_COMPILE);
+    let read: MapPortals =
+        serde_json::from_value(session.execute(MAP_PORTALS, json!({})).unwrap()).unwrap();
+    assert_eq!(read.path, path.with_extension("prt"));
+    let text = std::fs::read_to_string(&read.path).unwrap();
+    let count: usize = text.lines().nth(2).unwrap().trim().parse().unwrap();
+    assert_eq!(read.portals.len(), count);
+    assert!(read.portals.iter().all(|portal| portal.len() >= 3));
+    std::fs::write(&read.path, "PRT2\n1\n0\n").unwrap();
+    let error = session.execute(MAP_PORTALS, json!({})).unwrap_err();
+    assert!(error.to_string().contains("not a portal file"), "{error}");
 }

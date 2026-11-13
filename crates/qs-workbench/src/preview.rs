@@ -23,7 +23,7 @@ use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 
 use crate::ids::{BreakpointId, Edict, WatchIndex};
-use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere};
+use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere, MapPortalsCommand};
 use crate::map_edit::{LiveChange, MapIssuesCommand};
 use crate::map_profile::{MapProfiles, MapRunProfile};
 use crate::map_uv::{FaceAlign, FaceUv};
@@ -1700,6 +1700,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(MapLeaks)?;
     registry.register(MapCompile)?;
     registry.register(MapPlayFromHere)?;
+    registry.register(MapPortalsCommand)?;
     registry.register(MapProfiles)?;
     registry.register(MapRunProfile)?;
     registry.register(SetFieldCommand)?;

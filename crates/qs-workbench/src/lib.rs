@@ -22,6 +22,7 @@ pub mod entity_classes;
 pub mod export;
 pub mod git;
 pub mod ids;
+pub mod map_backup;
 pub mod map_check;
 pub mod map_compile;
 pub mod map_edit;
@@ -833,6 +834,13 @@ pub enum WorkbenchError {
         /// Why.
         error: toml::de::Error,
     },
+    /// The open map's portal file is not one vis reads (P6-20).
+    PortalFile {
+        /// The file.
+        path: PathBuf,
+        /// Why.
+        error: qs_map_vis::VisError,
+    },
     /// No compile profile has this name (P6-20).
     UnknownProfile {
         /// The name.
@@ -999,6 +1007,7 @@ impl fmt::Display for WorkbenchError {
                     path.display()
                 )
             }
+            Self::PortalFile { path, error } => write!(f, "{}: {error}", path.display()),
             Self::UnknownProfile { name } => write!(f, "no compile profile is called {name:?}"),
             Self::MapCompile { error } => write!(f, "the map does not compile: {error}"),
             Self::MapLight { error } => write!(f, "the map does not light: {error}"),
@@ -1091,6 +1100,7 @@ impl Error for WorkbenchError {
             Self::NoMapSource { .. } => None,
             Self::ProfilesRead { error, .. } => Some(error),
             Self::ProfilesParse { error, .. } => Some(error),
+            Self::PortalFile { error, .. } => Some(error),
             Self::UnknownProfile { .. } => None,
             Self::MapCompile { error } => Some(error),
             Self::MapLight { error } => Some(error),
