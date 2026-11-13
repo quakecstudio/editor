@@ -405,21 +405,53 @@ fn with_axes(bytes: &[u8], axes: impl Fn([[f32; 4]; 2]) -> [[f32; 4]; 2]) -> Vec
     out
 }
 
-// spec LIGHT-3.2, LIGHT-3.6:
-// a face over 17 luxels, and a texture axis at right angles to a face, stop the run
+// spec LIGHT-1.7, LIGHT-3.2, LIGHT-3.6:
+// a face over 17 luxels, and a texture axis at right angles to a face, stop the run in the id
+// dialect; the extended one leaves such a face unlit with a warning and lights the rest
 #[test]
 fn bad_texture_axes_stop_the_run() {
     let bsp = room(&light_at("128 128 64", ""));
+    let id = Light::default().with_dialect(Dialect::Id);
     let wide = with_axes(&bsp, |v| v.map(|axis| axis.map(|c| c * 4.0)));
-    assert!(matches!(
-        Light::default().run(&wide),
-        Err(LightError::Extents { .. })
-    ));
+    assert!(matches!(id.run(&wide), Err(LightError::Extents { .. })));
     let flat = with_axes(&bsp, |_| [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]);
-    assert!(matches!(
-        Light::default().run(&flat),
-        Err(LightError::TextureAxis { .. })
-    ));
+    assert!(matches!(id.run(&flat), Err(LightError::TextureAxis { .. })));
+    let lit = Light::default().run(&flat).unwrap();
+    let unlit: Vec<&LightWarning> = lit
+        .warnings
+        .iter()
+        .filter(|w| {
+            matches!(
+                w,
+                LightWarning::Unlit {
+                    error: LightError::TextureAxis { .. }
+                }
+            )
+        })
+        .collect();
+    let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
+    let dark = read.faces.iter().filter(|f| f.lightofs == -1).count();
+    assert!(
+        !unlit.is_empty() && unlit.len() == dark,
+        "{} warned, {dark} dark",
+        unlit.len()
+    );
+    assert!(
+        read.faces.iter().any(|f| f.lightofs >= 0),
+        "the floor and ceiling are lit"
+    );
+    assert!(
+        unlit[0]
+            .to_string()
+            .starts_with("WARNING: Texture axis perpendicular to face")
+    );
+    let wide_lit = Light::default().run(&wide).unwrap();
+    assert!(wide_lit.warnings.iter().any(|w| matches!(
+        w,
+        LightWarning::Unlit {
+            error: LightError::Extents { .. }
+        }
+    )));
 }
 
 // spec LIGHT-5.1: a face no light reaches has lightofs -1 and styles 255, and a map with no

@@ -97,6 +97,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.outline`](#mapoutline) | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
+| [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player at a point, facing a way: the map view's camera (MAP-13). |
 | [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
 | [`map.remove_key`](#mapremove_key) | Removes every pair with a key from an entity of the open map. |
 | [`map.rename_key`](#maprename_key) | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
@@ -4679,6 +4680,51 @@ Parameters:
     "origin"
   ],
   "title": "PlacePrefabParams",
+  "type": "object"
+}
+```
+
+## `map.play_from_here`
+
+Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player at a point, facing a way: the map view's camera (MAP-13).
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.play_from_here`.",
+  "properties": {
+    "angles": {
+      "default": null,
+      "description": "Which way the player faces, pitch, yaw and roll in degrees; ahead along x when not\ngiven.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "at": {
+      "description": "Where the player starts: the map view's camera.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    }
+  },
+  "required": [
+    "at"
+  ],
+  "title": "PlayFromHereParams",
   "type": "object"
 }
 ```

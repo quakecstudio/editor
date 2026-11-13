@@ -23,7 +23,7 @@ use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 
 use crate::ids::{BreakpointId, Edict, WatchIndex};
-use crate::map_compile::{MapCompile, MapLeaks};
+use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere};
 use crate::map_edit::{LiveChange, MapIssuesCommand};
 use crate::map_uv::{FaceAlign, FaceUv};
 use crate::texture_import::TextureImport;
@@ -574,8 +574,18 @@ impl Preview {
         workbench: &mut Workbench<L>,
         map: Option<String>,
     ) -> Result<(), PreviewError> {
+        let built = workbench.built_program()?;
+        self.play_built(built, map)
+    }
+
+    /// Starts the host on the program `built` gives, the project, its program and its mod
+    /// folder, on `map` or the host's own first map; a host already running is stopped first.
+    pub(crate) fn play_built(
+        &mut self,
+        (project, progs, mod_name): (PathBuf, PathBuf, String),
+        map: Option<String>,
+    ) -> Result<(), PreviewError> {
         self.stop();
-        let (project, progs, mod_name) = workbench.built_program()?;
         let base = self.game_base()?;
         let run_root = prepare_run_root(&project, Flavour::Original, &base, &mod_name)
             .map_err(PreviewError::RunRoot)?;
@@ -1688,6 +1698,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(FaceAlign)?;
     registry.register(MapLeaks)?;
     registry.register(MapCompile)?;
+    registry.register(MapPlayFromHere)?;
     registry.register(SetFieldCommand)?;
     registry.register(ActCommand::<BreakpointAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<ConsoleAct>(core::marker::PhantomData))?;

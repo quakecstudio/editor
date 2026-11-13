@@ -823,6 +823,11 @@ pub enum WorkbenchError {
         /// Why.
         error: qs_map_bsp::CompileError,
     },
+    /// The light compiler stopped (P6-12, LIGHT-1).
+    MapLight {
+        /// Why.
+        error: qs_map_light::LightError,
+    },
     /// The open map's entity lump cannot be written as qbsp writes it.
     MapLump {
         /// The map.
@@ -965,6 +970,7 @@ impl fmt::Display for WorkbenchError {
                 )
             }
             Self::MapCompile { error } => write!(f, "the map does not compile: {error}"),
+            Self::MapLight { error } => write!(f, "the map does not light: {error}"),
             Self::MapLump { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Spawn { path, error } => write!(f, "{}: {error}", path.display()),
             Self::ChangedOnDisk { path } => write!(
@@ -1053,6 +1059,7 @@ impl Error for WorkbenchError {
             Self::WadWrite { error, .. } => Some(error),
             Self::NoMapSource { .. } => None,
             Self::MapCompile { error } => Some(error),
+            Self::MapLight { error } => Some(error),
             Self::MapLump { error, .. } => Some(error),
             Self::Spawn { error, .. } => Some(error),
         }

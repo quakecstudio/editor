@@ -41,6 +41,7 @@ const qs_workbench::map_check::MAP_CHECK
 const qs_workbench::map_check::MAP_RENAME_KEY
 const qs_workbench::map_compile::MAP_COMPILE
 const qs_workbench::map_compile::MAP_LEAKS
+const qs_workbench::map_compile::MAP_PLAY_FROM_HERE
 const qs_workbench::map_edit::BSP_EXTENSION
 const qs_workbench::map_edit::EntityIndex::WORLD
 const qs_workbench::map_edit::MAP_DELETE
@@ -352,6 +353,10 @@ field qs_workbench::map_compile::MapReport.missing_wads
 field qs_workbench::map_compile::MapReport.seal
 field qs_workbench::map_compile::MapReport.warnings
 field qs_workbench::map_compile::MapReport.written
+field qs_workbench::map_compile::PlayFromHereParams.angles
+field qs_workbench::map_compile::PlayFromHereParams.at
+field qs_workbench::map_compile::PlayedHere.map
+field qs_workbench::map_compile::PlayedHere.report
 field qs_workbench::map_edit::EntityKeys.brush
 field qs_workbench::map_edit::EntityKeys.classname
 field qs_workbench::map_edit::EntityKeys.keys
@@ -1055,6 +1060,8 @@ struct qs_workbench::map_check::MapProblem
 struct qs_workbench::map_check::RenameKeyParams
 struct qs_workbench::map_check::RenamedIn
 struct qs_workbench::map_compile::MapReport
+struct qs_workbench::map_compile::PlayFromHereParams
+struct qs_workbench::map_compile::PlayedHere
 struct qs_workbench::map_edit::EntityIndex
 struct qs_workbench::map_edit::EntityKeys
 struct qs_workbench::map_edit::EntityParams
@@ -1435,6 +1442,7 @@ variant qs_workbench::WorkbenchError::Link
 variant qs_workbench::WorkbenchError::Locked
 variant qs_workbench::WorkbenchError::Map
 variant qs_workbench::WorkbenchError::MapCompile
+variant qs_workbench::WorkbenchError::MapLight
 variant qs_workbench::WorkbenchError::MapLump
 variant qs_workbench::WorkbenchError::NoBrush
 variant qs_workbench::WorkbenchError::NoEntity

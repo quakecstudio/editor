@@ -53,6 +53,7 @@ variant qs_map_light::LightError::TooManyEntities
 variant qs_map_light::LightError::TooManySwitched
 variant qs_map_light::LightError::Unclosed
 variant qs_map_light::LightWarning::TooManyStyles
+variant qs_map_light::LightWarning::Unlit
 variant qs_map_light::LightWarning::UnmatchedTarget
 variant qs_map_light::Sampling::Extra
 variant qs_map_light::Sampling::Fast

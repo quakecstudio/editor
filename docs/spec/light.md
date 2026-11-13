@@ -52,7 +52,11 @@ GPL-2.0-or-later and cited for description only. Both may be run as oracles
   `light`'s fixed tables: LIGHT-1.5's `MAX_MAP_LIGHTING`, LIGHT-1.6's `MAX_MAP_ENTITIES` and
   `MAX_MAP_ENTSTRING`, and LIGHT-2.8's line. The extended dialect, the default, has none of
   them: a map is limited only by the file's fields, a lightmap whose offset does not fit
-  `lightofs` stopping the run. Everything else is the same in both.
+  `lightofs` stopping the run. A face the id dialect stops on, its texture axis at right angles
+  to it (LIGHT-3.6) or its extents over 17 luxels (LIGHT-3.2), is left unlit in the extended
+  dialect with a warning, as `qs-map-bsp`'s extended dialect warns of a fault qbsp stops on
+  (QBSP-14.3): a Valve 220 face of scale 0, which that dialect compiles with no texture axes
+  (MAP-5.4), does not keep the map from being lit. Everything else is the same in both.
 - **LIGHT-1.8** `light` lays its lightmaps into `dlightdata`, which still holds the input's
   lighting lump, and writes each lump with `AddLump`, which writes `(len+3)&~3` bytes from the
   lump's array. So the bytes skipped to bring a face's lightmaps to a multiple of 4, and the
