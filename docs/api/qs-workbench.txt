@@ -80,6 +80,10 @@ const qs_workbench::map_edit::groups::MAP_UNLOCK_ALL
 const qs_workbench::map_edit::links::MAP_LINK
 const qs_workbench::map_edit::outline::MAP_MOVE_TO
 const qs_workbench::map_edit::outline::MAP_OUTLINE
+const qs_workbench::map_edit::prefabs::MAP_PLACE_PREFAB
+const qs_workbench::map_edit::prefabs::MAP_PREFABS
+const qs_workbench::map_edit::prefabs::MAP_SAVE_PREFAB
+const qs_workbench::map_edit::prefabs::PREFAB_FOLDER
 const qs_workbench::map_edit::shapes::MAP_BRUSH_SHAPE
 const qs_workbench::map_textures::MAP_TEXTURES
 const qs_workbench::preview::BREAKPOINT
@@ -432,6 +436,15 @@ field qs_workbench::map_edit::outline::OutlineRow.kind
 field qs_workbench::map_edit::outline::OutlineRow.label
 field qs_workbench::map_edit::outline::OutlineRow.rows
 field qs_workbench::map_edit::outline::OutlineRow.targetname
+field qs_workbench::map_edit::prefabs::PlacePrefabParams.origin
+field qs_workbench::map_edit::prefabs::PlacePrefabParams.path
+field qs_workbench::map_edit::prefabs::Prefab.name
+field qs_workbench::map_edit::prefabs::Prefab.path
+field qs_workbench::map_edit::prefabs::PrefabSaved.prefab
+field qs_workbench::map_edit::prefabs::Prefabs.prefabs
+field qs_workbench::map_edit::prefabs::SavePrefabParams.brushes
+field qs_workbench::map_edit::prefabs::SavePrefabParams.entities
+field qs_workbench::map_edit::prefabs::SavePrefabParams.name
 field qs_workbench::map_edit::shapes::BrushShapeParams.entity
 field qs_workbench::map_edit::shapes::BrushShapeParams.grid
 field qs_workbench::map_edit::shapes::BrushShapeParams.max
@@ -993,6 +1006,11 @@ struct qs_workbench::map_edit::links::LinkParams
 struct qs_workbench::map_edit::outline::MoveToParams
 struct qs_workbench::map_edit::outline::OutlineParams
 struct qs_workbench::map_edit::outline::OutlineRow
+struct qs_workbench::map_edit::prefabs::PlacePrefabParams
+struct qs_workbench::map_edit::prefabs::Prefab
+struct qs_workbench::map_edit::prefabs::PrefabSaved
+struct qs_workbench::map_edit::prefabs::Prefabs
+struct qs_workbench::map_edit::prefabs::SavePrefabParams
 struct qs_workbench::map_edit::shapes::BrushShapeParams
 struct qs_workbench::map_textures::BrowserTexture
 struct qs_workbench::map_textures::MapTextures
@@ -1220,7 +1238,10 @@ use qs_workbench::map_edit::MAP_LINK = links::MAP_LINK
 use qs_workbench::map_edit::MAP_LOCK = groups::MAP_LOCK
 use qs_workbench::map_edit::MAP_MOVE_TO = outline::MAP_MOVE_TO
 use qs_workbench::map_edit::MAP_OUTLINE = outline::MAP_OUTLINE
+use qs_workbench::map_edit::MAP_PLACE_PREFAB = prefabs::MAP_PLACE_PREFAB
+use qs_workbench::map_edit::MAP_PREFABS = prefabs::MAP_PREFABS
 use qs_workbench::map_edit::MAP_RESOLVE = disk::MAP_RESOLVE
+use qs_workbench::map_edit::MAP_SAVE_PREFAB = prefabs::MAP_SAVE_PREFAB
 use qs_workbench::map_edit::MAP_SET_FLAG = flags::MAP_SET_FLAG
 use qs_workbench::map_edit::MAP_SET_LAYER = groups::MAP_SET_LAYER
 use qs_workbench::map_edit::MAP_SHOW_ALL = groups::MAP_SHOW_ALL
@@ -1232,10 +1253,16 @@ use qs_workbench::map_edit::MapOnDisk = disk::MapOnDisk
 use qs_workbench::map_edit::MoveToParams = outline::MoveToParams
 use qs_workbench::map_edit::OutlineParams = outline::OutlineParams
 use qs_workbench::map_edit::OutlineRow = outline::OutlineRow
+use qs_workbench::map_edit::PREFAB_FOLDER = prefabs::PREFAB_FOLDER
+use qs_workbench::map_edit::PlacePrefabParams = prefabs::PlacePrefabParams
+use qs_workbench::map_edit::Prefab = prefabs::Prefab
+use qs_workbench::map_edit::PrefabSaved = prefabs::PrefabSaved
+use qs_workbench::map_edit::Prefabs = prefabs::Prefabs
 use qs_workbench::map_edit::ResolveParams = disk::ResolveParams
 use qs_workbench::map_edit::RoomInfo = inspect::RoomInfo
 use qs_workbench::map_edit::RoomShape = inspect::RoomShape
 use qs_workbench::map_edit::RowKind = outline::RowKind
+use qs_workbench::map_edit::SavePrefabParams = prefabs::SavePrefabParams
 use qs_workbench::map_edit::SetFlagParams = flags::SetFlagParams
 use qs_workbench::map_edit::SetLayerParams = groups::SetLayerParams
 use qs_workbench::map_edit::ShapeSpec = shapes::ShapeSpec
@@ -1274,12 +1301,14 @@ variant qs_workbench::WorkbenchError::NoMapSource
 variant qs_workbench::WorkbenchError::NoPalette
 variant qs_workbench::WorkbenchError::NoProject
 variant qs_workbench::WorkbenchError::NoRoom
+variant qs_workbench::WorkbenchError::NoSelection
 variant qs_workbench::WorkbenchError::NotBuilt
 variant qs_workbench::WorkbenchError::NotContainer
 variant qs_workbench::WorkbenchError::NotLayer
 variant qs_workbench::WorkbenchError::NotPointEntity
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Pattern
+variant qs_workbench::WorkbenchError::PrefabName
 variant qs_workbench::WorkbenchError::Project
 variant qs_workbench::WorkbenchError::Rename
 variant qs_workbench::WorkbenchError::Save

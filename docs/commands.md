@@ -82,11 +82,14 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.open`](#mapopen) | Opens a .map in the map view, or a shipped .bsp's entities when the map has no .map source; nothing is selected. |
 | [`map.outline`](#mapoutline) | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
+| [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
+| [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
 | [`map.remove_key`](#mapremove_key) | Removes every pair with a key from an entity of the open map. |
 | [`map.rename_key`](#maprename_key) | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
 | [`map.resolve`](#mapresolve) | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
 | [`map.rotate`](#maprotate) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
+| [`map.save_prefab`](#mapsave_prefab) | Writes brushes of the world and whole entities of the open map as a prefab in the project's prefabs folder, around the middle of their floor. |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
 | [`map.set_flag`](#mapset_flag) | Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags. |
 | [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
@@ -3191,6 +3194,58 @@ Parameters:
 }
 ```
 
+## `map.place_prefab`
+
+Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.place_prefab`.",
+  "properties": {
+    "origin": {
+      "description": "Where its origin goes, snapped to the grid.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "path": {
+      "description": "The prefab's file, or its path in the project.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "origin"
+  ],
+  "title": "PlacePrefabParams",
+  "type": "object"
+}
+```
+
+## `map.prefabs`
+
+Lists the .map files in the project's prefabs folder.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
 ## `map.remove_key`
 
 Removes every pair with a key from an entity of the open map.
@@ -3376,6 +3431,61 @@ Parameters:
     }
   },
   "title": "SaveParams",
+  "type": "object"
+}
+```
+
+## `map.save_prefab`
+
+Writes brushes of the world and whole entities of the open map as a prefab in the project's prefabs folder, around the middle of their floor.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.save_prefab`.",
+  "properties": {
+    "brushes": {
+      "default": [],
+      "description": "The brushes of the world to keep in the prefab's world.",
+      "items": {
+        "$ref": "#/$defs/BrushIndex"
+      },
+      "type": "array"
+    },
+    "entities": {
+      "default": [],
+      "description": "The entities to keep whole, a brush entity with all its brushes.",
+      "items": {
+        "$ref": "#/$defs/EntityIndex"
+      },
+      "type": "array"
+    },
+    "name": {
+      "description": "The prefab's name: letters, digits, `-` and `_`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "SavePrefabParams",
   "type": "object"
 }
 ```
