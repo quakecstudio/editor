@@ -215,7 +215,11 @@ pub(super) fn snap(value: f64, grid: Option<f64>) -> f64 {
 
 impl MapDocument {
     /// The brush `brush` of `entity`.
-    fn brush(&mut self, entity: EntityIndex, brush: BrushIndex) -> Result<Brush, WorkbenchError> {
+    pub(crate) fn brush(
+        &mut self,
+        entity: EntityIndex,
+        brush: BrushIndex,
+    ) -> Result<Brush, WorkbenchError> {
         let found = self.entity_mut(entity)?;
         let place = found
             .brush_places()
@@ -229,7 +233,7 @@ impl MapDocument {
     }
 
     /// Replaces the brush `brush` of `entity` with `with`, none to remove it.
-    fn replace_brush(
+    pub(crate) fn replace_brush(
         &mut self,
         entity: EntityIndex,
         brush: BrushIndex,

@@ -70,9 +70,11 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
 | [`map.export`](#mapexport) | Writes the open map to another .map without the layers marked to be left out of exports and the entities in them (TrenchBroom's Export). |
 | [`map.filter`](#mapfilter) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
+| [`map.fix`](#mapfix) | Applies a quick fix `map.issues` gave, as one step with undo. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
 | [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
 | [`map.isolate`](#mapisolate) | Hides every entity of the open map but these in the editor until map.show_all (TrenchBroom's Isolate Selection); the map is not changed. |
+| [`map.issues`](#mapissues) | Lists every issue of the open map, each with the entity or brush it is about and a quick fix where one exists: its format's, brushes with no volume, a missing player start, missing textures and, with a project open, its entities' against the server QuakeC. |
 | [`map.layers`](#maplayers) | The open map's TrenchBroom layers: each one's name, whether it is hidden, locked or left out of exports, and how many entities are in it. |
 | [`map.leaks`](#mapleaks) | Compiles the open map in memory and reports whether it leaks, with the trail from the entity the outside reaches out to the void, and the textures its WADs lack. |
 | [`map.link`](#maplink) | Points a key of an entity of the open map, one the code fires entities by such as target or killtarget, at another entity: the key takes the other's targetname, and the other its classname and the next free number as one when it has none. |
@@ -87,6 +89,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.resolve`](#mapresolve) | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
 | [`map.rotate`](#maprotate) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
+| [`map.search`](#mapsearch) | Finds the open map's entities and brushes by classname, key, value, texture and a box, every part given; text matches in any case. |
 | [`map.select`](#mapselect) | Selects an entity of the open map, or clears the selection. |
 | [`map.set_flag`](#mapset_flag) | Sets or clears one spawnflag of an entity of the open map, and of the entities in also, in one step, keeping each entity's other flags. |
 | [`map.set_key`](#mapset_key) | Sets a key of an entity of the open map, and of the entities in also with it in one step: its last occurrence keeps its place and formatting, a new key goes after the others. |
@@ -2787,6 +2790,152 @@ Parameters:
 }
 ```
 
+## `map.fix`
+
+Applies a quick fix `map.issues` gave, as one step with undo.
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "QuickFix": {
+      "description": "A quick fix of an issue.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Delete a brush with no volume, which the compilers drop.",
+          "properties": {
+            "brush": {
+              "$ref": "#/$defs/BrushIndex",
+              "description": "The brush."
+            },
+            "entity": {
+              "$ref": "#/$defs/EntityIndex",
+              "description": "The entity holding it."
+            },
+            "kind": {
+              "const": "remove_brush",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "entity",
+            "brush"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Rename a misspelled key to the field it is closest to.",
+          "properties": {
+            "entity": {
+              "$ref": "#/$defs/EntityIndex",
+              "description": "The entity."
+            },
+            "from": {
+              "description": "The key as written.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "rename_key",
+              "type": "string"
+            },
+            "to": {
+              "description": "The key to write instead.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "entity",
+            "from",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Set a classname to the class it is closest to.",
+          "properties": {
+            "classname": {
+              "description": "The classname to write.",
+              "type": "string"
+            },
+            "entity": {
+              "$ref": "#/$defs/EntityIndex",
+              "description": "The entity."
+            },
+            "kind": {
+              "const": "set_classname",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "entity",
+            "classname"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Place an `info_player_start` at a point inside the map.",
+          "properties": {
+            "kind": {
+              "const": "add_player_start",
+              "type": "string"
+            },
+            "origin": {
+              "description": "Where.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 3,
+              "minItems": 3,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "origin"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.fix`.",
+  "properties": {
+    "fix": {
+      "$ref": "#/$defs/QuickFix",
+      "description": "The fix, as `map.issues` gave it."
+    }
+  },
+  "required": [
+    "fix"
+  ],
+  "title": "MapFixParams",
+  "type": "object"
+}
+```
+
 ## `map.hide`
 
 Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed.
@@ -2889,6 +3038,22 @@ Parameters:
     "entities"
   ],
   "title": "EntityListParams",
+  "type": "object"
+}
+```
+
+## `map.issues`
+
+Lists every issue of the open map, each with the entity or brush it is about and a quick fix where one exists: its format's, brushes with no volume, a missing player start, missing textures and, with a project open, its entities' against the server QuakeC.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```
@@ -3376,6 +3541,75 @@ Parameters:
     }
   },
   "title": "SaveParams",
+  "type": "object"
+}
+```
+
+## `map.search`
+
+Finds the open map's entities and brushes by classname, key, value, texture and a box, every part given; text matches in any case.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.search`: what an entity or brush must match, every part given.",
+  "properties": {
+    "classname": {
+      "default": null,
+      "description": "Text the classname holds, in any case.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "key": {
+      "default": null,
+      "description": "Text a key holds, in any case.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "texture": {
+      "default": null,
+      "description": "Text a brush's face's texture name holds, in any case.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "value": {
+      "default": null,
+      "description": "Text a value holds, in any case: of a key matching `key` when that is given.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "within": {
+      "default": null,
+      "description": "A box, least corner then greatest: a point entity's origin lies in it, a brush's box\nmeets it.",
+      "items": {
+        "items": {
+          "format": "double",
+          "type": "number"
+        },
+        "maxItems": 3,
+        "minItems": 3,
+        "type": "array"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": [
+        "array",
+        "null"
+      ]
+    }
+  },
+  "title": "MapSearchParams",
   "type": "object"
 }
 ```

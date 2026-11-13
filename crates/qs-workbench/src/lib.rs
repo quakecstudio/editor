@@ -769,6 +769,13 @@ pub enum WorkbenchError {
     },
     /// No palette was found in the project or the game to make a texture in (P6-16).
     NoPalette,
+    /// The entity has no such key (P6-19).
+    NoKey {
+        /// The entity.
+        entity: map_edit::EntityIndex,
+        /// The key.
+        key: String,
+    },
     /// The open map is a BSP with no `.map` source, so there is nothing to compile (P6-13).
     NoMapSource {
         /// The BSP.
@@ -885,6 +892,7 @@ impl fmt::Display for WorkbenchError {
             Self::NoPalette => {
                 f.write_str("no gfx/palette.lmp in the project or the game to make a texture in")
             }
+            Self::NoKey { entity, key } => write!(f, "entity {entity} has no key {key}"),
             Self::NoMapSource { path } => {
                 write!(
                     f,
@@ -962,6 +970,7 @@ impl Error for WorkbenchError {
             | Self::NoRoom { .. }
             | Self::ChangedOnDisk { .. }
             | Self::NoPalette
+            | Self::NoKey { .. }
             | Self::NotBuilt => None,
             Self::Image { error, .. } => Some(error),
             Self::Texture { error } => Some(error),
