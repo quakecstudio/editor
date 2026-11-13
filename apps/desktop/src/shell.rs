@@ -2116,9 +2116,14 @@ impl Shell {
                     .execute(MAP_LEAKS, serde_json::json!({}))
                     .map_err(ShellError::from),
                 MapAction::ListPrefabs => self.list_prefabs(),
-                MapAction::PlacePrefab(path, origin) => {
-                    self.attempt(MAP_PLACE_PREFAB, &PlacePrefabParams { path, origin })
-                }
+                MapAction::PlacePrefab(path, origin) => self.attempt(
+                    MAP_PLACE_PREFAB,
+                    &PlacePrefabParams {
+                        path,
+                        origin,
+                        grid: None,
+                    },
+                ),
                 MapAction::CheckIssues => self.check_map_issues(),
                 MapAction::Fix(fix) => {
                     let fixed =
@@ -2296,6 +2301,7 @@ impl Shell {
                         name,
                         brushes,
                         entities,
+                        grid: None,
                     },
                 );
                 // The browser lists the new prefab.

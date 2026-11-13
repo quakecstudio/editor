@@ -161,8 +161,8 @@ pub enum BrushAction {
     Uv(Vec<FaceRef>, UvChoice),
     /// Carry one face's texture alignment onto others (MAP-13.8).
     AlignFaces(FaceRef, Vec<FaceRef>),
-    /// Save brushes of the world and whole entities as the prefab of the name (P6-23).
-    SavePrefab(String, Vec<BrushIndex>, Vec<EntityIndex>),
+    /// Save brushes, each by its entity, and whole entities as the prefab of the name (P6-23).
+    SavePrefab(String, Vec<BrushRef>, Vec<EntityIndex>),
 }
 
 /// What `map.brush_texture` sets; the parts not given are kept (MAP-12).
@@ -1068,6 +1068,7 @@ impl BrushTools {
         scene: &Scene,
         texture: Option<&str>,
         size_of: &dyn Fn(&str) -> Option<[u32; 2]>,
+        entities: &[EntityIndex],
     ) -> Vec<BrushAction> {
         if !self.uv.is_empty() {
             return self.uv.properties(ui, scene, size_of);
@@ -1186,24 +1187,10 @@ impl BrushTools {
                 .add_enabled(named, egui::Button::new(Text::MapSavePrefab.get()))
                 .clicked()
             {
-                let world = EntityIndex::new(0);
-                let brushes = self
-                    .chosen
-                    .iter()
-                    .filter(|&&(e, _)| e == world)
-                    .map(|&(_, b)| b)
-                    .collect();
-                let mut entities: Vec<EntityIndex> = self
-                    .chosen
-                    .iter()
-                    .map(|&(e, _)| e)
-                    .filter(|&e| e != world)
-                    .collect();
-                entities.dedup();
                 actions.push(BrushAction::SavePrefab(
                     self.prefab_name.trim().to_owned(),
-                    brushes,
-                    entities,
+                    self.chosen.clone(),
+                    entities.to_vec(),
                 ));
             }
         });

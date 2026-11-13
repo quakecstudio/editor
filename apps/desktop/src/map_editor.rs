@@ -138,47 +138,42 @@ pub enum MapAction {
     Find(MapSearchParams),
 }
 
-/// The external maps the view draws (MAP-14): the project's folder they are read in after the
-/// map's own, the files read for the last scene and how many times one changed on disk.
+/// The external maps the view draws (MAP-14): the project's folder they are looked for in after
+/// the map's own, every file an instance may name, watched so one written or made is drawn, the
+/// files read, kept until one changes, and how many times one changed on disk.
 #[derive(Debug, Default)]
 struct Externals {
     root: Option<std::path::PathBuf>,
     files: Vec<std::path::PathBuf>,
+    read: std::collections::HashMap<std::path::PathBuf, Option<Vec<u8>>>,
     changes: u64,
 }
 
-/// Reads external maps by name beside the map, then in the project, noting each file read.
-struct ExternalLoader {
-    dirs: Vec<std::path::PathBuf>,
-    files: Vec<std::path::PathBuf>,
-}
-
-impl ExternalLoader {
-    /// The bytes of the external map `name`, from the first folder that has it.
-    fn read(&mut self, name: &str) -> Option<Vec<u8>> {
-        for dir in &self.dirs {
+impl Externals {
+    /// The bytes of the external map `name` of the map `document`, from the first of its
+    /// folders that has it, read once until one changes; every place it may be is watched.
+    fn read(&mut self, document: &MapDocument, name: &str) -> Option<Vec<u8>> {
+        let mut found = None;
+        for dir in document.external_folders(self.root.as_deref()) {
             let path = dir.join(name);
-            if let Ok(bytes) = std::fs::read(&path) {
-                self.files.push(path);
-                return Some(bytes);
+            if !self.files.contains(&path) {
+                self.files.push(path.clone());
+            }
+            if found.is_none() {
+                found = self
+                    .read
+                    .entry(path)
+                    .or_insert_with_key(|path| std::fs::read(path).ok())
+                    .clone();
             }
         }
-        None
+        found
     }
-}
 
-impl Externals {
-    /// A reader of the external maps of the map at `map`.
-    fn loader(&self, map: &std::path::Path) -> ExternalLoader {
-        ExternalLoader {
-            dirs: map
-                .parent()
-                .into_iter()
-                .map(std::path::Path::to_path_buf)
-                .chain(self.root.clone())
-                .collect(),
-            files: Vec::new(),
-        }
+    /// Forgets what was read and watched, one of the files having changed or the scene being
+    /// built again.
+    fn forget(&mut self) {
+        self.files.clear();
     }
 }
 
@@ -515,6 +510,7 @@ impl MapEditor {
     /// Draws the external maps again, one of them changed on disk.
     pub fn externals_changed(&mut self) {
         self.externals.changes = self.externals.changes.wrapping_add(1);
+        self.externals.read.clear();
     }
 
     /// Whether the texture sources were made for other WADs or another chosen game than
@@ -697,10 +693,10 @@ impl MapEditor {
             self.externals.changes,
         );
         if self.built.as_ref() != Some(&built) {
-            let mut loader = self.externals.loader(document.path());
-            let mut load = |name: &str| loader.read(name);
+            self.externals.forget();
+            let externals = &mut self.externals;
+            let mut load = |name: &str| externals.read(document, name);
             self.scene = Scene::build(document, &self.classes, &self.targeting, &mut load);
-            self.externals.files = loader.files;
             self.built = Some(built);
             let count = document.file().entities.len();
             self.also.retain(|entity| entity.get() < count);
@@ -1072,15 +1068,15 @@ impl MapEditor {
         let texture = self.textures.selected();
         let textures = &self.textures;
         let size_of = |name: &str| textures.size(name);
-        actions.extend(
-            self.tools
-                .properties(ui, &self.scene, texture, &size_of)
-                .into_iter()
-                .map(MapAction::Brush),
-        );
         let mut chosen: Vec<EntityIndex> =
             self.keys.as_ref().map(|(e, _)| *e).into_iter().collect();
         chosen.extend(self.also.iter().copied());
+        actions.extend(
+            self.tools
+                .properties(ui, &self.scene, texture, &size_of, &chosen)
+                .into_iter()
+                .map(MapAction::Brush),
+        );
         actions.extend(selection_ui(ui, &chosen).into_iter().map(MapAction::Group));
         actions.extend(
             layers_ui(ui, theme, &self.layers)

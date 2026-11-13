@@ -3705,6 +3705,15 @@ Parameters:
   "additionalProperties": false,
   "description": "The parameters of `map.place_prefab`.",
   "properties": {
+    "grid": {
+      "default": null,
+      "description": "The grid, in map units; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
     "origin": {
       "description": "Where its origin goes, snapped to the grid.",
       "items": {
@@ -3962,19 +3971,38 @@ Parameters:
   "properties": {
     "brushes": {
       "default": [],
-      "description": "The brushes of the world to keep in the prefab's world.",
+      "description": "The brushes, each by its entity: one of the world or of a layer or group is kept in the\nprefab's world; one of another entity brings that entity whole.",
       "items": {
-        "$ref": "#/$defs/BrushIndex"
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "$ref": "#/$defs/EntityIndex"
+          },
+          {
+            "$ref": "#/$defs/BrushIndex"
+          }
+        ],
+        "type": "array"
       },
       "type": "array"
     },
     "entities": {
       "default": [],
-      "description": "The entities to keep whole, a brush entity with all its brushes.",
+      "description": "The entities to keep whole, a brush entity with all its brushes; a layer or group gives\nits brushes to the prefab's world.",
       "items": {
         "$ref": "#/$defs/EntityIndex"
       },
       "type": "array"
+    },
+    "grid": {
+      "default": null,
+      "description": "The grid the prefab's origin is put on across, in map units; 16 when not given, 0 for\nnone.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
     },
     "name": {
       "description": "The prefab's name: letters, digits, `-` and `_`.",

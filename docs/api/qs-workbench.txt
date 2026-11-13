@@ -459,6 +459,7 @@ field qs_workbench::map_edit::outline::OutlineRow.kind
 field qs_workbench::map_edit::outline::OutlineRow.label
 field qs_workbench::map_edit::outline::OutlineRow.rows
 field qs_workbench::map_edit::outline::OutlineRow.targetname
+field qs_workbench::map_edit::prefabs::PlacePrefabParams.grid
 field qs_workbench::map_edit::prefabs::PlacePrefabParams.origin
 field qs_workbench::map_edit::prefabs::PlacePrefabParams.path
 field qs_workbench::map_edit::prefabs::Prefab.name
@@ -467,6 +468,7 @@ field qs_workbench::map_edit::prefabs::PrefabSaved.prefab
 field qs_workbench::map_edit::prefabs::Prefabs.prefabs
 field qs_workbench::map_edit::prefabs::SavePrefabParams.brushes
 field qs_workbench::map_edit::prefabs::SavePrefabParams.entities
+field qs_workbench::map_edit::prefabs::SavePrefabParams.grid
 field qs_workbench::map_edit::prefabs::SavePrefabParams.name
 field qs_workbench::map_edit::shapes::BrushShapeParams.entity
 field qs_workbench::map_edit::shapes::BrushShapeParams.grid
@@ -746,6 +748,7 @@ fn qs_workbench::map_edit::live::LiveChange::send
 fn qs_workbench::map_edit::outline::MapDocument::outline
 fn qs_workbench::map_edit::outline::OutlineRow::count
 fn qs_workbench::map_edit::outline::OutlineRow::holds
+fn qs_workbench::map_edit::prefabs::MapDocument::external_folders
 fn qs_workbench::map_textures::MapDocument::texture_uses
 fn qs_workbench::map_textures::TextureSources::decode
 fn qs_workbench::map_textures::TextureSources::from_files

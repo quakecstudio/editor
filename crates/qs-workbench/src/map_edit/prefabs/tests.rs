@@ -101,7 +101,7 @@ fn a_selection_saved_as_a_prefab_is_placed_again() {
         session
             .execute(
                 MAP_SAVE_PREFAB,
-                json!({ "name": "floor-door", "brushes": [0], "entities": [4] }),
+                json!({ "name": "floor-door", "brushes": [[0, 0], [4, 0]], "entities": [4] }),
             )
             .unwrap(),
     )
@@ -157,7 +157,10 @@ fn bad_prefabs_are_refused() {
     let mut session = session(&dir);
     for name in ["", "../out", "a b"] {
         let error = session
-            .execute(MAP_SAVE_PREFAB, json!({ "name": name, "brushes": [0] }))
+            .execute(
+                MAP_SAVE_PREFAB,
+                json!({ "name": name, "brushes": [[0, 0]] }),
+            )
             .unwrap_err();
         assert!(error.to_string().contains("prefab name"), "{error}");
     }
@@ -184,4 +187,60 @@ fn bad_prefabs_are_refused() {
         registry,
     );
     assert!(bare.execute(MAP_PREFABS, json!({})).is_err());
+}
+
+// No spec statement: P6-23, MAP-9: a brush of a layer is kept in the prefab's world, the layer
+// left out; an entity in a layer is kept without its layer key; the floor is the origin's
+// height exactly, and the place's grid is the one asked for
+#[test]
+fn layers_stay_behind_and_grids_are_asked_for() {
+    let dir = keep("layers");
+    let text = std::fs::read_to_string(dir.join("maps/keep.map")).unwrap();
+    let start = text.find("{\n\"classname\" \"info_player_start\"").unwrap();
+    let mut text = text.get(..start).unwrap().to_owned();
+    text.push_str(
+        "{\n\"classname\" \"func_group\"\n\"_tb_type\" \"_tb_layer\"\n\"_tb_name\" \"Bits\"\n\
+         \"_tb_id\" \"7\"\n{\n\
+         ( 0 0 8 ) ( 0 1 8 ) ( 0 0 9 ) wall 0 0 0 1 1\n\
+         ( 8 0 8 ) ( 8 0 9 ) ( 8 1 8 ) wall 0 0 0 1 1\n\
+         ( 0 0 8 ) ( 0 0 9 ) ( 1 0 8 ) wall 0 0 0 1 1\n\
+         ( 0 8 8 ) ( 1 8 8 ) ( 0 8 9 ) wall 0 0 0 1 1\n\
+         ( 0 0 8 ) ( 1 0 8 ) ( 0 1 8 ) wall 0 0 0 1 1\n\
+         ( 0 0 24 ) ( 0 1 24 ) ( 1 0 24 ) wall 0 0 0 1 1\n}\n}\n\
+         {\n\"classname\" \"light\"\n\"origin\" \"4 4 40\"\n\"_tb_layer\" \"7\"\n}\n",
+    );
+    std::fs::write(dir.join("maps/keep.map"), text).unwrap();
+    let mut session = session(&dir);
+    let saved: PrefabSaved = serde_json::from_value(
+        session
+            .execute(
+                MAP_SAVE_PREFAB,
+                json!({ "name": "bits", "brushes": [[1, 0]], "entities": [2, 2], "grid": 0 }),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    let prefab = MapFile::parse(&std::fs::read(&saved.prefab.path).unwrap()).unwrap();
+    assert_eq!(
+        prefab.entities.len(),
+        2,
+        "the layer is not kept, the light once"
+    );
+    assert_eq!(prefab.entities[0].brushes().count(), 1);
+    let light = &prefab.entities[1];
+    assert_eq!(light.classname(), Some(&b"light"[..]));
+    assert_eq!(light.value(b"_tb_layer"), None);
+    // The box is 8 to 24 high and 0 to 8 across: the middle of its floor, with no grid, is
+    // (4, 4, 8).
+    assert_eq!(light.origin(), [0.0, 0.0, 32.0]);
+    let before = map(&session);
+    session
+        .execute(
+            MAP_PLACE_PREFAB,
+            json!({ "path": "prefabs/bits.map", "origin": [5.0, 3.0, 1.0], "grid": 4 }),
+        )
+        .unwrap();
+    let after = map(&session);
+    assert_eq!(after.entities.last().unwrap().origin(), [4.0, 4.0, 32.0]);
+    assert_eq!(after.entities.len(), before.entities.len() + 1);
 }

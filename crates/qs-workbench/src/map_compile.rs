@@ -108,15 +108,7 @@ impl<L: crate::Loader> Workbench<L> {
                 path: document.path().to_path_buf(),
             });
         }
-        // External maps are read beside the map, then in the project, as qbsp's working
-        // directory and the project's folder hold them (MAP-14).
-        let places: Vec<PathBuf> = document
-            .path()
-            .parent()
-            .into_iter()
-            .chain(self.root())
-            .map(Path::to_path_buf)
-            .collect();
+        let places = document.external_folders(self.root());
         let mut load = |name: &str| {
             places
                 .iter()

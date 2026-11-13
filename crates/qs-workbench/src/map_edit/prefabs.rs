@@ -12,7 +12,7 @@ use qs_map::{Brush, Entity, Item, MapFile, TextureLock};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::brushes::{DEFAULT_GRID, snap};
+use super::brushes::snap;
 use super::{BrushIndex, EntityIndex, MapDocument, MapEdited, edit_map, origin_text};
 use crate::{HasWorkbench, WorkbenchError};
 
@@ -27,6 +27,11 @@ pub const MAP_SAVE_PREFAB: &str = "map.save_prefab";
 pub const PREFAB_FOLDER: &str = "prefabs";
 /// A prefab's file extension.
 const PREFAB_EXTENSION: &str = "map";
+/// The key marking a layer or group, whose brushes are the world's (MAP-9).
+const CONTAINER_TYPE: &[u8] = b"_tb_type";
+/// The keys placing an entity in a layer or group of its map, by ids another map does not
+/// share (MAP-9).
+const CONTAINER_KEYS: [&[u8]; 2] = [b"_tb_layer", b"_tb_group"];
 
 /// One prefab of the project.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -52,6 +57,9 @@ pub struct PlacePrefabParams {
     pub path: PathBuf,
     /// Where its origin goes, snapped to the grid.
     pub origin: [f64; 3],
+    /// The grid, in map units; 16 when not given, 0 for none.
+    #[serde(default)]
+    pub grid: Option<f64>,
 }
 
 /// The parameters of `map.save_prefab`.
@@ -60,12 +68,18 @@ pub struct PlacePrefabParams {
 pub struct SavePrefabParams {
     /// The prefab's name: letters, digits, `-` and `_`.
     pub name: String,
-    /// The brushes of the world to keep in the prefab's world.
+    /// The brushes, each by its entity: one of the world or of a layer or group is kept in the
+    /// prefab's world; one of another entity brings that entity whole.
     #[serde(default)]
-    pub brushes: Vec<BrushIndex>,
-    /// The entities to keep whole, a brush entity with all its brushes.
+    pub brushes: Vec<(EntityIndex, BrushIndex)>,
+    /// The entities to keep whole, a brush entity with all its brushes; a layer or group gives
+    /// its brushes to the prefab's world.
     #[serde(default)]
     pub entities: Vec<EntityIndex>,
+    /// The grid the prefab's origin is put on across, in map units; 16 when not given, 0 for
+    /// none.
+    #[serde(default)]
+    pub grid: Option<f64>,
 }
 
 /// What `map.save_prefab` answers.
@@ -115,7 +129,7 @@ fn moved(entity: &Entity, by: [f64; 3]) -> Result<Entity, WorkbenchError> {
 }
 
 /// The least and greatest of every corner of `brushes` and every point entity's origin of
-/// `entities`.
+/// `entities`, for one that has the key.
 fn bounds<'a>(
     brushes: impl Iterator<Item = &'a Brush>,
     entities: &[&Entity],
@@ -123,7 +137,7 @@ fn bounds<'a>(
     let mut points: Vec<[f64; 3]> = brushes.flat_map(Brush::vertices).collect();
     for entity in entities {
         points.extend(entity.brushes().flat_map(Brush::vertices));
-        if !entity.has_brushes() {
+        if !entity.has_brushes() && entity.value(b"origin").is_some() {
             points.push(entity.origin());
         }
     }
@@ -175,32 +189,48 @@ impl MapDocument {
         Ok(first)
     }
 
-    /// The prefab of the world's `brushes` and the whole `entities`, moved so the middle of
-    /// their floor, on the grid, is the origin.
+    /// The prefab of `brushes` and `entities`, moved so the middle of their floor is the
+    /// origin, across on `grid` and up exactly. A brush of the world, or of a layer or group,
+    /// goes into the prefab's world; one of another entity brings that entity whole, as an
+    /// entity named does. A layer or group named gives its brushes to the world, and an entity's
+    /// keys placing it in this map's layers and groups are left out.
     fn prefab_of(
         &mut self,
-        brushes: &[BrushIndex],
+        brushes: &[(EntityIndex, BrushIndex)],
         entities: &[EntityIndex],
+        grid: Option<f64>,
     ) -> Result<MapFile, WorkbenchError> {
-        let world = EntityIndex::new(0);
-        let mut kept_brushes = Vec::new();
-        for &brush in brushes {
-            kept_brushes.push(self.brush(world, brush)?);
+        let mut world_brushes = Vec::new();
+        let mut whole = std::collections::BTreeSet::new();
+        for &(entity, brush) in brushes {
+            if self.is_world_part(entity)? {
+                world_brushes.push(self.brush(entity, brush)?);
+            } else {
+                whole.insert(entity);
+            }
+        }
+        for &entity in entities {
+            if self.is_world_part(entity)? {
+                let found = self.entity_mut(entity)?;
+                world_brushes.extend(found.brushes().cloned());
+            } else {
+                whole.insert(entity);
+            }
         }
         let mut kept_entities = Vec::new();
-        for &entity in entities {
-            if entity == world {
-                continue;
+        for entity in whole {
+            let mut kept = self.entity_mut(entity)?.clone();
+            for key in CONTAINER_KEYS {
+                kept.remove(key);
             }
-            kept_entities.push(self.entity_mut(entity)?.clone());
+            kept_entities.push(kept);
         }
         let all: Vec<&Entity> = kept_entities.iter().collect();
-        let [lo, hi] = bounds(kept_brushes.iter(), &all).ok_or(WorkbenchError::NoSelection)?;
-        let grid = Some(DEFAULT_GRID);
+        let [lo, hi] = bounds(world_brushes.iter(), &all).ok_or(WorkbenchError::NoSelection)?;
         let anchor = [
             snap((lo[0] + hi[0]) / 2.0, grid),
             snap((lo[1] + hi[1]) / 2.0, grid),
-            snap(lo[2], grid),
+            lo[2],
         ];
         let by = anchor.map(|c| -c);
         let mut prefab =
@@ -210,7 +240,7 @@ impl MapDocument {
                 }
             })?;
         let mut world_entity = Entity::new();
-        world_entity.items = kept_brushes.into_iter().map(Item::Brush).collect();
+        world_entity.items = world_brushes.into_iter().map(Item::Brush).collect();
         let world_moved = moved(&world_entity, by)?;
         if let Some(prefab_world) = prefab.entities.first_mut() {
             prefab_world.items.extend(world_moved.items);
@@ -219,6 +249,26 @@ impl MapDocument {
             prefab.push_entity(moved(entity, by)?);
         }
         Ok(prefab)
+    }
+
+    /// Whether `entity` is the world or one of its layers or groups, whose brushes are the
+    /// world's (MAP-9).
+    fn is_world_part(&mut self, entity: EntityIndex) -> Result<bool, WorkbenchError> {
+        Ok(entity.get() == 0 || self.entity_mut(entity)?.value(CONTAINER_TYPE).is_some())
+    }
+}
+
+impl MapDocument {
+    /// The folders an external map instance's file is looked for in, in order: beside the map,
+    /// as qbsp's working folder holds it, then the project's `root` (MAP-14).
+    #[must_use]
+    pub fn external_folders(&self, root: Option<&Path>) -> Vec<PathBuf> {
+        self.path()
+            .parent()
+            .into_iter()
+            .chain(root)
+            .map(Path::to_path_buf)
+            .collect()
     }
 }
 
@@ -288,8 +338,7 @@ impl<C: HasWorkbench + 'static> Command<C> for PlacePrefab {
             path: path.clone(),
             error,
         })?;
-        let grid = Some(DEFAULT_GRID);
-        let origin = params.origin.map(|c| snap(c, grid));
+        let origin = params.origin.map(|c| snap(c, params.grid));
         let (entity, step) = edit_map(context, |document| document.place_prefab(&prefab, origin))?;
         Ok(Outcome::undoable(
             MapEdited {
@@ -319,9 +368,10 @@ impl<C: HasWorkbench + 'static> Command<C> for SavePrefab {
         let workbench = context.workbench();
         let root = workbench.project_root()?;
         let path = prefab_file(&root, &params.name)?;
-        let prefab = workbench
-            .map_mut()?
-            .prefab_of(&params.brushes, &params.entities)?;
+        let prefab =
+            workbench
+                .map_mut()?
+                .prefab_of(&params.brushes, &params.entities, params.grid)?;
         let save = |error| WorkbenchError::Save {
             path: path.clone(),
             error,

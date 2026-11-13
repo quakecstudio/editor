@@ -3046,6 +3046,36 @@ fn an_instance_follows_its_file() {
     harness.run();
     harness.run();
     assert!((top(&harness) - 128.0).abs() < 1e-3, "{}", top(&harness));
+    // A file named but not there is watched, beside the map and in the project, and drawn
+    // once it is made.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute(
+            "map.set_key",
+            json!({ "entity": 1, "key": "_external_map", "value": "later.map" }),
+        )
+        .unwrap();
+    harness.run();
+    harness.run();
+    let later = dir.join("later.map");
+    let watched = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .map_editor()
+        .external_watched();
+    assert!(watched.contains(&later), "{watched:?}");
+    fs::write(&later, pillar(32)).unwrap();
+    harness
+        .state_mut()
+        .as_mut()
+        .unwrap()
+        .shell
+        .files_written(vec![later]);
+    harness.run();
+    harness.run();
+    assert!((top(&harness) - 32.0).abs() < 1e-3, "{}", top(&harness));
 }
 
 // No spec statement: P6-23, MAP-33: a brush selected is saved as a prefab under the name typed,
