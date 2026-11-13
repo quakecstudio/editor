@@ -25,6 +25,8 @@ use qs_map::MapFile;
 use qs_map_bsp::{Compiler, Dialect as BspDialect, Warning};
 use qs_models::{MemoryKeys, ProviderConfig, ProviderKind, ProviderModel, Secret, Usage};
 use qs_templates::{Folder, Template};
+use qs_workbench::map_compile::{MAP_COMPILE, MapReport};
+use qs_workbench::map_edit::MAP_OPEN;
 use qs_workbench::{
     Config, HasPreview, HasWorkbench, OPEN_PROJECT, Preview, PreviewConfig, Workbench,
 };
@@ -389,12 +391,17 @@ fn session(dir: &Path, game: &Path) -> Result<Session<Context>, String> {
     Ok(session)
 }
 
-/// Compiles each map of `maps`, as saved in the project `dir`, into `maps/` of the build output
-/// of the project `session` has open, where the run root's mod finds it (ADR-0008); a build
-/// that writes no program leaves them out, and the scenario fails on its own.
-fn compile_maps(session: &mut Session<Context>, dir: &Path, maps: &[String]) -> Result<(), String> {
+/// Compiles each map of `maps`, as saved in the project `dir`, with `map.open` and
+/// `map.compile`, as the agent's tools compile it, and puts its BSP in `maps/` of the build
+/// output of the project `session` has open, where the run root's mod finds it (ADR-0008).
+/// Whether every map compiled: one that does not, as the agent left it, has not succeeded.
+fn compile_maps(
+    session: &mut Session<Context>,
+    dir: &Path,
+    maps: &[String],
+) -> Result<bool, String> {
     if maps.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
     let built = session
         .execute(qs_workbench::BUILD_PROJECT, json!({}))
@@ -406,28 +413,36 @@ fn compile_maps(session: &mut Session<Context>, dir: &Path, maps: &[String]) -> 
         .find(|module| module.built)
         .and_then(|module| module.output.parent())
     else {
-        return Ok(());
+        // A project that does not build has not succeeded.
+        return Ok(false);
     };
     let folder = output.join("maps");
     fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
     for map in maps {
         let path = dir.join(map);
-        let text = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let compiled = Compiler::default()
-            .with_dialect(BspDialect::Extended)
-            .compile(&text, None)
-            .map_err(|e| format!("{}: {e}", path.display()))?;
-        let name = Path::new(map)
-            .file_stem()
+        let compiled = session
+            .execute(MAP_OPEN, json!({ "path": path }))
+            .and_then(|_| session.execute(MAP_COMPILE, json!({})));
+        let Ok(compiled) = compiled else {
+            return Ok(false);
+        };
+        let report: MapReport = serde_json::from_value(compiled).map_err(|e| e.to_string())?;
+        let bsp = path.with_extension("bsp");
+        if !report.written.contains(&bsp) {
+            return Ok(false);
+        }
+        let name = bsp
+            .file_name()
             .ok_or_else(|| format!("{map}: no file name"))?;
-        let bsp = folder.join(name).with_extension("bsp");
-        fs::write(&bsp, compiled.bsp).map_err(|e| format!("{}: {e}", bsp.display()))?;
+        let to = folder.join(name);
+        fs::copy(&bsp, &to).map_err(|e| format!("{}: {e}", to.display()))?;
     }
-    Ok(())
+    Ok(true)
 }
 
-/// Whether the task's scenario passes on the project `session` has open, the agent's
-/// unsaved edits included: it is written into the project's tests and run alone.
+/// Whether the task's scenario passes on the project `session` has open, the agent's unsaved
+/// QuakeC edits included and its maps as saved: it is written into the project's tests and run
+/// alone.
 fn succeeds(
     session: &mut Session<Context>,
     dir: &Path,
@@ -436,7 +451,9 @@ fn succeeds(
 ) -> Result<bool, String> {
     let scenario = match success {
         Success::Scenario(scenario, maps) => {
-            compile_maps(session, dir, maps)?;
+            if !compile_maps(session, dir, maps)? {
+                return Ok(false);
+            }
             scenario
         }
         Success::Map(expects, sealed) => {
@@ -688,6 +705,22 @@ mod tests {
             }
             for map in &task.compile {
                 assert!(task.files.contains(map), "{}: {map}", dir.display());
+            }
+            if !task.compile.is_empty() {
+                assert!(
+                    task.map.is_empty() && task.sealed.is_empty(),
+                    "{}: compile is for a scenario task",
+                    dir.display()
+                );
+                let scenario = std::fs::read_to_string(dir.join("success.scenario")).unwrap();
+                let played = Scenario::parse(&scenario).unwrap().map;
+                assert!(
+                    task.compile.iter().any(|map| Path::new(map)
+                        .file_stem()
+                        .is_some_and(|stem| *stem == *played)),
+                    "{}: the scenario plays {played}, which compile does not name",
+                    dir.display()
+                );
             }
             for expect in &task.map {
                 assert!(task.files.contains(&expect.file), "{}", dir.display());

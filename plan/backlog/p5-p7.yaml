@@ -601,7 +601,7 @@ groups:
     - map.compile and map.leaks commands
     acceptance:
     - The fix-leak eval's map, a hall that leaks, fails at the task's start and compiles sealed with the agent tools' solution, checked by cargo xtask evals --check in CI with no model
-    - The open-door eval's scenario, the player walking into a door that has a targetname and nothing to fire it, fails at the task's start and passes with the solution found by reading the map and the QuakeC behind it, checked by cargo xtask evals --check in CI with no model
+    - The open-door eval's scenario, the player walking into a door that has a targetname and nothing to fire it, fails at the task's start and passes with its solution, checked by cargo xtask evals --check in CI with no model; its rubric has a reviewer confirm a run read both the map and the QuakeC behind it
     verify:
     - cargo xtask evals --check (Test Assets, linux)
   - key: P6-15
