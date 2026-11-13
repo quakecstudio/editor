@@ -57,10 +57,15 @@ use qs_workbench::map_edit::{
     ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_workbench::map_edit::{
-    BrushClipParams, BrushCreateParams, BrushMergeParams, BrushMoveParams, BrushParams,
-    BrushShapeParams, BrushTextureParams, BrushVertexParams, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE,
-    MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SHAPE, MAP_BRUSH_SUBTRACT,
-    MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
+    BrushChamferParams, BrushClipParams, BrushCreateParams, BrushExtrudeParams, BrushHollowParams,
+    BrushIntersectParams, BrushMergeParams, BrushMoveParams, BrushParams, BrushScaleParams,
+    BrushShapeParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
+    BrushSweepParams, BrushTextureParams, BrushVertexParams, BrushVerticesParams,
+    MAP_BRUSH_CHAMFER, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_EXTRUDE,
+    MAP_BRUSH_HOLLOW, MAP_BRUSH_INTERSECT, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SCALE,
+    MAP_BRUSH_SHAPE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE, MAP_BRUSH_SPLIT_FACE,
+    MAP_BRUSH_SUBTRACT, MAP_BRUSH_SWEEP, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX, MAP_BRUSH_VERTICES,
+    NewVertex, VertexMove,
 };
 use qs_workbench::map_edit::{
     EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
@@ -2225,6 +2230,11 @@ impl Shell {
     }
 
     /// Runs a brush edit as its `map.brush_*` command, on the commands' grid.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one arm per brush action, each its command's parameters: one match reads \
+                  better whole than split"
+    )]
     fn brush_action(&mut self, action: BrushAction) -> Result<serde_json::Value, ShellError> {
         match action {
             BrushAction::Create(min, max) => self.attempt(
@@ -2316,6 +2326,99 @@ impl Shell {
                     shape,
                     texture: None,
                     grid: None,
+                },
+            ),
+            BrushAction::Hollow(entity, brush, wall) => self.attempt(
+                MAP_BRUSH_HOLLOW,
+                &BrushHollowParams {
+                    entity,
+                    brush,
+                    wall,
+                },
+            ),
+            BrushAction::Intersect(entity, brushes) => self.attempt(
+                MAP_BRUSH_INTERSECT,
+                &BrushIntersectParams { entity, brushes },
+            ),
+            BrushAction::Scale(entity, brushes, factors, lock) => self.attempt(
+                MAP_BRUSH_SCALE,
+                &BrushScaleParams {
+                    entity,
+                    brushes,
+                    factors,
+                    about: None,
+                    lock,
+                },
+            ),
+            BrushAction::Shear(entity, brushes, along, by, factor, lock) => self.attempt(
+                MAP_BRUSH_SHEAR,
+                &BrushShearParams {
+                    entity,
+                    brushes,
+                    along,
+                    by,
+                    factor,
+                    about: None,
+                    lock,
+                },
+            ),
+            BrushAction::Sweep(entity, brush, path, lock) => self.attempt(
+                MAP_BRUSH_SWEEP,
+                &BrushSweepParams {
+                    entity,
+                    brush,
+                    path,
+                    lock,
+                    grid: None,
+                },
+            ),
+            BrushAction::Extrude(face, by, lock) => self.attempt(
+                MAP_BRUSH_EXTRUDE,
+                &BrushExtrudeParams {
+                    face,
+                    by,
+                    lock,
+                    // The distance is the one typed in the panel.
+                    grid: Some(0.0),
+                },
+            ),
+            BrushAction::SplitFace(face, by) => self.attempt(
+                MAP_BRUSH_SPLIT_FACE,
+                &BrushSplitFaceParams {
+                    face,
+                    at: NewVertex::Out { by },
+                },
+            ),
+            BrushAction::Vertices(entity, brush, moves) => self.attempt(
+                MAP_BRUSH_VERTICES,
+                &BrushVerticesParams {
+                    entity,
+                    brush,
+                    moves: moves
+                        .into_iter()
+                        .map(|(from, to)| VertexMove { from, to })
+                        .collect(),
+                    // The view has snapped the move to the grid.
+                    grid: Some(0.0),
+                },
+            ),
+            BrushAction::SplitEdge(entity, brush, edge, by) => self.attempt(
+                MAP_BRUSH_SPLIT_EDGE,
+                &BrushSplitEdgeParams {
+                    entity,
+                    brush,
+                    edge,
+                    at: NewVertex::Out { by },
+                },
+            ),
+            BrushAction::Chamfer(entity, brush, edge, distance, faces) => self.attempt(
+                MAP_BRUSH_CHAMFER,
+                &BrushChamferParams {
+                    entity,
+                    brush,
+                    edge,
+                    distance,
+                    faces,
                 },
             ),
         }

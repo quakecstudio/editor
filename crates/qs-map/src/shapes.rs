@@ -9,7 +9,7 @@
 use core::f64::consts::{FRAC_PI_2, PI, TAU};
 
 use crate::brush_edit::BrushError;
-use crate::geometry::{Plane, dot, plane as plane_of};
+use crate::geometry::{Plane, centroid, dot, plane as plane_of};
 use crate::{Brush, Surface};
 
 /// The fewest sides a round shape may have (MAP-10.3).
@@ -458,18 +458,6 @@ fn outward(points: [[f64; 3]; 3], inside: [f64; 3]) -> Option<Plane<f64>> {
     } else {
         plane
     })
-}
-
-/// The middle of `points`.
-fn centroid(points: &[[f64; 3]]) -> [f64; 3] {
-    let mut sum = ORIGIN;
-    for p in points {
-        for (s, c) in sum.iter_mut().zip(p) {
-            *s += c;
-        }
-    }
-    let count = f64::from(u32::try_from(points.len()).unwrap_or(u32::MAX).max(1));
-    sum.map(|s| s / count)
 }
 
 /// The brush of the prism of the convex `profile` pushed along `along` from `low` to `high`.

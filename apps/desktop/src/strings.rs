@@ -671,6 +671,44 @@ pub enum Text {
     MapMerge,
     /// Delete the selected brushes.
     MapDeleteBrush,
+    /// Replace the selected brushes with the solid all of them hold.
+    MapIntersect,
+    /// The factors the selected brushes scale by along x, y and z.
+    MapScaleBy,
+    /// Scale the selected brushes about their middle.
+    MapScaleBrushes,
+    /// The axis a shear moves points along.
+    MapShearAlong,
+    /// The axis a shear measures distance along.
+    MapShearBy,
+    /// Shear the selected brushes about their middle.
+    MapShearBrushes,
+    /// The offset of the next step of a sweep's path.
+    MapSweepStep,
+    /// Add the step to the sweep's path.
+    MapAddStep,
+    /// Sweep the selected brush along the path.
+    MapSweep,
+    /// Clear the sweep's path.
+    MapClearPath,
+    /// Move the picked face along its normal.
+    MapExtrude,
+    /// Split the picked face by a new vertex out from its middle.
+    MapSplitFace,
+    /// Split the edge between the picked corners by a new vertex out from it.
+    MapSplitEdge,
+    /// How far out a split puts its new vertex.
+    MapOut,
+    /// Chamfer the edge between the picked corners.
+    MapChamfer,
+    /// How far along each face a chamfer starts.
+    MapChamferDistance,
+    /// The x axis.
+    MapAxisX,
+    /// The y axis.
+    MapAxisY,
+    /// The z axis.
+    MapAxisZ,
     /// The map view's filter by skill and game.
     MapShow,
     /// Show every entity.
@@ -727,7 +765,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 356] = [
+    pub const ALL: [Self; 375] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1058,6 +1096,25 @@ impl Text {
         Self::MapSubtract,
         Self::MapMerge,
         Self::MapDeleteBrush,
+        Self::MapIntersect,
+        Self::MapScaleBy,
+        Self::MapScaleBrushes,
+        Self::MapShearAlong,
+        Self::MapShearBy,
+        Self::MapShearBrushes,
+        Self::MapSweepStep,
+        Self::MapAddStep,
+        Self::MapSweep,
+        Self::MapClearPath,
+        Self::MapExtrude,
+        Self::MapSplitFace,
+        Self::MapSplitEdge,
+        Self::MapOut,
+        Self::MapChamfer,
+        Self::MapChamferDistance,
+        Self::MapAxisX,
+        Self::MapAxisY,
+        Self::MapAxisZ,
         Self::MapShow,
         Self::MapShowEvery,
         Self::MapSkillEasy,
@@ -1397,7 +1454,9 @@ impl Text {
             Self::MapClimbSouth => "South",
             Self::MapBrushHint => "Drag on the ground to draw a box",
             Self::MapClipHint => "Select a brush, then drag the cut line",
-            Self::MapVertexHint => "Select a brush, then drag a corner",
+            Self::MapVertexHint => {
+                "Select a brush, then drag a corner; Ctrl+click (Cmd on macOS) corners to move several, or pick two for an edge"
+            }
             Self::MapToolMove => "Move",
             Self::MapToolMeasure => "Measure",
             Self::MapMoveHint => "Select brushes, then drag to move them",
@@ -1443,6 +1502,25 @@ impl Text {
             Self::MapSubtract => "Subtract",
             Self::MapMerge => "Merge",
             Self::MapDeleteBrush => "Delete brush",
+            Self::MapIntersect => "Intersect",
+            Self::MapScaleBy => "Scale by",
+            Self::MapScaleBrushes => "Scale brushes",
+            Self::MapShearAlong => "Shear along",
+            Self::MapShearBy => "by",
+            Self::MapShearBrushes => "Shear brushes",
+            Self::MapSweepStep => "Sweep step",
+            Self::MapAddStep => "Add step",
+            Self::MapSweep => "Sweep",
+            Self::MapClearPath => "Clear path",
+            Self::MapExtrude => "Extrude",
+            Self::MapSplitFace => "Split face",
+            Self::MapSplitEdge => "Split edge",
+            Self::MapOut => "Out",
+            Self::MapChamfer => "Chamfer",
+            Self::MapChamferDistance => "Distance",
+            Self::MapAxisX => "x",
+            Self::MapAxisY => "y",
+            Self::MapAxisZ => "z",
             Self::MapShow => "Show",
             Self::MapShowEvery => "Every entity",
             Self::MapSkillEasy => "Easy",

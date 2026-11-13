@@ -429,3 +429,15 @@ pub(crate) fn normalize(a: [f64; 3]) -> [f64; 3] {
         a
     }
 }
+
+/// The mean of `points`; the origin for none.
+pub(crate) fn centroid(points: &[[f64; 3]]) -> [f64; 3] {
+    let mut sum = [0.0, 0.0, 0.0];
+    for p in points {
+        for (s, c) in sum.iter_mut().zip(p) {
+            *s += c;
+        }
+    }
+    let count = f64::from(u32::try_from(points.len()).unwrap_or(u32::MAX).max(1));
+    sum.map(|s| s / count)
+}
