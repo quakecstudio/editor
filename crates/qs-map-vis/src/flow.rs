@@ -69,6 +69,18 @@ impl Leaves {
     }
 }
 
+/// One portal's flow under way: the base portal's plane, the portals flowed so far, those of
+/// its batch one thread would have flowed first, whether it read one of their might-see sets,
+/// the leaves seen and the path of leaves walked.
+struct Walk<'a> {
+    base: Plane,
+    done: &'a [Option<Leaves>],
+    earlier: &'a [usize],
+    read_earlier: bool,
+    seen: Leaves,
+    path: Vec<usize>,
+}
+
 /// The portals and what each might see.
 pub(crate) struct Flow<'a> {
     file: &'a PortalFile,
@@ -139,13 +151,21 @@ impl<'a> Flow<'a> {
         self.might
     }
 
-    /// The full mode: each portal flowed in order, in batches on `threads` threads (VIS-4).
+    /// The full mode: each portal flowed in order, as vis flows them on one thread, the
+    /// portals of a batch at once on `threads` threads (VIS-4, VIS-4.7).
     pub(crate) fn full(self, threads: usize) -> Result<Vec<Leaves>, VisError> {
         let order = self.order();
         let mut done: Vec<Option<Leaves>> = vec![None; self.might.len()];
         for batch in order.chunks(VIS_FLOW_BATCH) {
             let results = self.batch(batch, &done, threads)?;
-            for (&portal, seen) in batch.iter().zip(results) {
+            // A flow that read the might-see set of a portal of its batch that one thread would
+            // have flowed first is flowed again, in order, with that portal's exact set.
+            for (&portal, (seen, read_earlier)) in batch.iter().zip(results) {
+                let seen = if read_earlier {
+                    self.portal_flow(portal, &done, &[])?.0
+                } else {
+                    seen
+                };
                 if let Some(slot) = done.get_mut(portal) {
                     *slot = Some(seen);
                 }
@@ -159,15 +179,16 @@ impl<'a> Flow<'a> {
     }
 
     /// Flows the portals of `batch` on up to `threads` threads, each seeing `done` as the
-    /// portals flowed so far.
+    /// portals flowed so far; each result with whether it read the might-see set of a portal
+    /// earlier in the batch.
     fn batch(
         &self,
         batch: &[usize],
         done: &[Option<Leaves>],
         threads: usize,
-    ) -> Result<Vec<Leaves>, VisError> {
+    ) -> Result<Vec<(Leaves, bool)>, VisError> {
         let next = AtomicUsize::new(0);
-        let mut results: Vec<Option<Result<Leaves, VisError>>> = vec![None; batch.len()];
+        let mut results: Vec<Option<Result<(Leaves, bool), VisError>>> = vec![None; batch.len()];
         let workers = threads.clamp(1, batch.len().max(1));
         std::thread::scope(|scope| {
             let handles: Vec<_> = (0..workers)
@@ -181,7 +202,8 @@ impl<'a> Flow<'a> {
                                 let Some(&portal) = batch.get(at) else {
                                     break;
                                 };
-                                mine.push((at, self.portal_flow(portal, done)));
+                                let earlier = batch.get(..at).unwrap_or_default();
+                                mine.push((at, self.portal_flow(portal, done, earlier)));
                             }
                             mine
                         })
@@ -205,38 +227,42 @@ impl<'a> Flow<'a> {
     }
 
     /// `PortalFlow`: the leaves portal `p` sees, walking leaves from the one it looks into
-    /// (VIS-4.2 to VIS-4.5).
-    fn portal_flow(&self, p: usize, done: &[Option<Leaves>]) -> Result<Leaves, VisError> {
+    /// (VIS-4.2 to VIS-4.5), with whether it read the might-see set of one of `earlier`, which
+    /// one thread would have flowed first.
+    fn portal_flow(
+        &self,
+        p: usize,
+        done: &[Option<Leaves>],
+        earlier: &[usize],
+    ) -> Result<(Leaves, bool), VisError> {
         let portal = self.file.portals.get(p).ok_or(VisError::Thread)?;
         let might = self.might.get(p).cloned().ok_or(VisError::Thread)?;
-        let mut seen = Leaves::none(self.file.leafs);
         let head = Step {
             plane: portal.plane,
             source: portal.winding.clone(),
             pass: None,
             might,
         };
-        let mut path = Vec::new();
-        self.leaf_flow(portal.leaf, &head, portal.plane, done, &mut seen, &mut path)?;
-        Ok(seen)
+        let mut walk = Walk {
+            base: portal.plane,
+            done,
+            earlier,
+            read_earlier: false,
+            seen: Leaves::none(self.file.leafs),
+            path: Vec::new(),
+        };
+        self.leaf_flow(portal.leaf, &head, &mut walk)?;
+        Ok((walk.seen, walk.read_earlier))
     }
 
     /// `RecursiveLeafFlow`: marks `leaf` seen and follows each of its portals that can still
     /// show a leaf not yet seen (VIS-4.2 to VIS-4.5).
-    fn leaf_flow(
-        &self,
-        leaf: usize,
-        previous: &Step,
-        base: Plane,
-        done: &[Option<Leaves>],
-        seen: &mut Leaves,
-        path: &mut Vec<usize>,
-    ) -> Result<(), VisError> {
-        if path.contains(&leaf) {
+    fn leaf_flow(&self, leaf: usize, previous: &Step, walk: &mut Walk<'_>) -> Result<(), VisError> {
+        if walk.path.contains(&leaf) {
             return Err(VisError::LeafRecursion);
         }
-        seen.add(leaf);
-        path.push(leaf);
+        walk.seen.add(leaf);
+        walk.path.push(leaf);
         for &p in self.file.leaf_portals.get(leaf).into_iter().flatten() {
             let Some(portal) = self.file.portals.get(p) else {
                 continue;
@@ -244,10 +270,11 @@ impl<'a> Flow<'a> {
             if !previous.might.has(portal.leaf) {
                 continue;
             }
-            let test = done
-                .get(p)
-                .and_then(Option::as_ref)
-                .or_else(|| self.might.get(p));
+            let exact = walk.done.get(p).and_then(Option::as_ref);
+            if exact.is_none() && walk.earlier.contains(&p) {
+                walk.read_earlier = true;
+            }
+            let test = exact.or_else(|| self.might.get(p));
             let Some(test) = test else {
                 continue;
             };
@@ -255,7 +282,7 @@ impl<'a> Flow<'a> {
             for (m, t) in might.0.iter_mut().zip(&test.0) {
                 *m &= *t;
             }
-            let more = might.0.iter().zip(&seen.0).any(|(m, s)| m & !s != 0);
+            let more = might.0.iter().zip(&walk.seen.0).any(|(m, s)| m & !s != 0);
             if !more {
                 continue;
             }
@@ -263,7 +290,7 @@ impl<'a> Flow<'a> {
             if previous.plane.same_normal(back) {
                 continue;
             }
-            let Some(target) = portal.winding.clipped(base) else {
+            let Some(target) = portal.winding.clipped(walk.base) else {
                 continue;
             };
             let Some(pass) = &previous.pass else {
@@ -273,7 +300,7 @@ impl<'a> Flow<'a> {
                     pass: Some(target),
                     might,
                 };
-                self.leaf_flow(portal.leaf, &step, base, done, seen, path)?;
+                self.leaf_flow(portal.leaf, &step, walk)?;
                 continue;
             };
             let Some(target) = target.clipped(previous.plane) else {
@@ -313,9 +340,9 @@ impl<'a> Flow<'a> {
                 pass: Some(target),
                 might,
             };
-            self.leaf_flow(portal.leaf, &step, base, done, seen, path)?;
+            self.leaf_flow(portal.leaf, &step, walk)?;
         }
-        path.pop();
+        walk.path.pop();
         Ok(())
     }
 

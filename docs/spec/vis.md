@@ -119,11 +119,12 @@ A first-order bound: the leaves a flood through portals that face each other can
 - **VIS-4.6** A leaf sees every leaf one of its portals sees, and itself. A leaf whose portals
   see it already stops the run with `Leaf portals saw into leaf`.
 - **VIS-4.7** vis flows portals on one thread unless built for the Alpha's threads, so each
-  portal sees every earlier one as flowed. Our `qs-map-vis` flows them in VIS-4.1's order in
-  batches of 32, on as many threads as the machine has; a portal of a batch sees the others of
-  its batch as not yet flowed (their might-see sets, VIS-4.2), so the result is the same on any
-  machine, and with a batch of one it is vis's single-thread run. A portal's exact set is a part
-  of its might-see set, so a batch only narrows less, never hiding a leaf vis shows.
+  portal sees every earlier one as flowed. Our `qs-map-vis` gives that single-thread result on
+  as many threads as the machine has: it flows the portals of a batch of 32, in VIS-4.1's order,
+  at once, each seeing the others of its batch as not yet flowed; then, in order, any portal
+  whose flow read the might-see set of a batch portal one thread would have flowed first is
+  flowed again with that portal's exact set. A flow that read none of them is the one a single
+  thread makes.
 
 ## VIS-5 The visibility lump
 

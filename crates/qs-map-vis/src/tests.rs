@@ -5,6 +5,7 @@
     clippy::indexing_slicing,
     clippy::arithmetic_side_effects,
     clippy::cast_precision_loss,
+    clippy::panic,
     reason = "test code: a failed unwrap or index is a failed test, and the numbers are small \
               and exact"
 )]
@@ -416,4 +417,69 @@ fn threads_do_not_change_the_result() {
     let one = Flow::new(&file, Level::Two).full(1).unwrap();
     let many = Flow::new(&file, Level::Two).full(8).unwrap();
     assert_eq!(one, many);
+}
+
+/// The bytes of an `xxd` hex dump.
+fn unxxd(text: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let Some((_, rest)) = line.split_once(": ") else {
+            continue;
+        };
+        let hex: String = rest
+            .get(..40)
+            .unwrap_or(rest)
+            .chars()
+            .filter(char::is_ascii_hexdigit)
+            .collect();
+        for pair in hex.as_bytes().chunks(2) {
+            out.push(u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap());
+        }
+    }
+    out
+}
+
+/// A vector file of `docs/spec/vectors/vis/`.
+fn vector(name: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/spec/vectors/vis")
+        .join(name);
+    std::fs::read_to_string(path).unwrap()
+}
+
+// spec VIS-4.2, VIS-4.4, VIS-4.7, VIS-5.2, VIS-6.2: every map of the vectors gives id's vis's
+// visibility lump, visofs and ambient levels, in the fast mode and at every level, on every
+// thread
+#[test]
+fn every_vector_matches_id_vis() {
+    let results = vector("results.tsv");
+    let mut checked = 0;
+    for line in results.lines().skip(1) {
+        let [map, mode, visibility, visofs, ambients] = line.split('\t').collect::<Vec<_>>()[..]
+        else {
+            panic!("a bad row: {line}");
+        };
+        let bsp = unxxd(&vector(&format!("{map}.bsp.txt")));
+        let prt = vector(&format!("{map}.prt.txt"));
+        let mode = match mode {
+            "fast" => Mode::Fast,
+            "0" => Mode::Full(Level::Zero),
+            "1" => Mode::Full(Level::One),
+            "2" => Mode::Full(Level::Two),
+            "3" => Mode::Full(Level::Three),
+            _ => Mode::Full(Level::Four),
+        };
+        let written = Vis::new(mode).run(&bsp, &prt).unwrap();
+        let read = Bsp::read(&written, BspLoader::FitzQuake).unwrap();
+        let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        assert_eq!(hex(read.visibility), visibility, "{map} {mode:?}");
+        let leafs = read.models[0].visleafs;
+        let leaves = &read.leafs[1..=usize::try_from(leafs).unwrap()];
+        let ours: Vec<String> = leaves.iter().map(|l| l.visofs.to_string()).collect();
+        assert_eq!(ours.join(","), visofs, "{map} {mode:?}");
+        let levels: Vec<u8> = leaves.iter().flat_map(|l| l.ambient_level).collect();
+        assert_eq!(hex(&levels), ambients, "{map} {mode:?}");
+        checked += 1;
+    }
+    assert_eq!(checked, 18, "three maps, six modes each");
 }
