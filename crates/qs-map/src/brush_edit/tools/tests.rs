@@ -778,3 +778,74 @@ fn vertices_move_through_each_others_places() {
     assert!(moved.vertices().contains(&[64.0, 64.0, 64.0]));
     assert!(!moved.vertices().contains(&[0.0, 64.0, 64.0]));
 }
+
+/// The part of a box above a plane slanting down along x, the slant its underside.
+fn wedge() -> Brush {
+    let block = cuboid([0.0, 0.0, 0.0], [64.0, 64.0, 64.0], &standard());
+    let slant = plane([[0.0, 0.0, 48.0], [64.0, 0.0, 16.0], [0.0, 64.0, 48.0]]).unwrap();
+    block.split(slant, &standard()).unwrap().0.unwrap()
+}
+
+// spec MAP-15.1: a slanted standard face keeps its texture fixed exactly through a move, a
+// scale and the shears that do not shear its texture, its offsets taken at a point off the axes
+#[test]
+fn a_slanted_standard_face_keeps_its_texture() {
+    let wedge = wedge();
+    let polygons = wedge.face_polygons();
+    for map in [
+        Affine::translation([5.0, 7.0, 11.0]),
+        Affine::scale([3.0, 4.0, 5.0], [2.0, 2.0, 2.0]),
+        Affine::shear([0.0; 3], WorldAxis::Z, WorldAxis::X, 0.5).unwrap(),
+        Affine::shear([0.0; 3], WorldAxis::X, WorldAxis::Z, 0.5).unwrap(),
+    ] {
+        let out = wedge.transformed(&map, TextureLock::Locked).unwrap();
+        let slanted = wedge
+            .faces
+            .iter()
+            .position(|f| {
+                let n = f.plane().unwrap().normal;
+                n[0] != 0.0 && n[2] != 0.0
+            })
+            .unwrap();
+        for &p in polygons[slanted].as_ref().unwrap() {
+            for k in 0..2 {
+                assert!(near(
+                    texel(&wedge.faces[slanted], k, p),
+                    texel(&out.faces[slanted], k, map.apply(p))
+                ));
+            }
+        }
+    }
+}
+
+// spec MAP-15.9: on an edge whose faces meet at other than a right angle, a round chamfer's
+// middle lies on the arc of radius distance * tan(half the angle between the faces), and a
+// distance just short of a face's width is refused
+#[test]
+fn a_round_chamfer_follows_its_radius() {
+    let wedge = wedge();
+    let (a, b) = ([0.0, 0.0, 48.0], [0.0, 64.0, 48.0]);
+    let distance = 8.0;
+    let round = wedge.chamfered(a, b, distance, 2).unwrap();
+    // Into the edge's two faces: up the face at x = 0, and down the slant.
+    let w1 = [0.0, 0.0, 1.0];
+    let w2 = normalize([64.0, 0.0, -32.0]);
+    let half = (w1[0] * w2[0] + w1[1] * w2[1] + w1[2] * w2[2]).acos() / 2.0;
+    let towards = normalize([w1[0] + w2[0], 0.0, w1[2] + w2[2]]);
+    let out = distance / half.cos() - distance * half.tan();
+    let middle = [towards[0] * out, 0.0, 48.0 + towards[2] * out];
+    assert!(
+        round
+            .vertices()
+            .iter()
+            .any(|v| (0..3).all(|k| (v[k] - middle[k]).abs() < 1e-3)),
+        "{middle:?} in {:?}",
+        round.vertices()
+    );
+    let low = cuboid([0.0, 0.0, 0.0], [64.0, 64.0, 32.0], &standard());
+    let edge = ([0.0, 0.0, 32.0], [64.0, 0.0, 32.0]);
+    assert!(matches!(
+        low.chamfered(edge.0, edge.1, 31.995, 1),
+        Err(BrushError::Degenerate)
+    ));
+}

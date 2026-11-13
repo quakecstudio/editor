@@ -668,7 +668,7 @@ impl Brush {
         let into = |normal: [f64; 3], polygon: &[[f64; 3]]| {
             let w = normalize(cross(normal, edge));
             let middle = centroid(polygon);
-            if dot(w, [middle[0] - a[0], middle[1] - a[1], middle[2] - a[2]]) < 0.0 {
+            if dot(w, [middle[0] - a[0], middle[1] - a[1], middle[2] - a[2]]).is_sign_negative() {
                 w.map(|c| -c)
             } else {
                 w
@@ -740,17 +740,12 @@ impl Brush {
             };
             let along = [p[0] + edge[0], p[1] + edge[1], p[2] + edge[2]];
             let mut plane = plane_of([p, q, along]).ok_or(BrushError::Degenerate)?;
-            if plane.side(centre) > 0.0 {
+            if plane.side(centre).is_sign_positive() {
                 plane = plane.flipped();
             }
             brush = brush.cut(plane, &surface)?.ok_or(BrushError::Degenerate)?;
         }
-        let corners = brush.vertices();
-        if !brush.is_solid()
-            || corners
-                .iter()
-                .any(|&v| same_point(v, a) || same_point(v, b))
-        {
+        if !brush.is_solid() {
             return Err(BrushError::Degenerate);
         }
         if brush.reaches_out(&self.planes().ok_or(BrushError::Degenerate)?) {
