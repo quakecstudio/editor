@@ -456,6 +456,12 @@ pub enum Text {
     MapView,
     /// The map editor's view, as a screen reader names it.
     MapEditorView,
+    /// The button that checks the map for leaks and missing textures (P6-11).
+    MapCheckLeaks,
+    /// The button that flies the camera along a leak's trail (P6-11).
+    MapFlyLeak,
+    /// What the leak check says of a map with no leak (P6-11).
+    MapSealed,
     /// The map view's layout of the 3D view alone.
     MapLayoutSingle,
     /// The map view's layout of the 3D view with a top view in its corner.
@@ -652,7 +658,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 319] = [
+    pub const ALL: [Self; 322] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -876,6 +882,9 @@ impl Text {
         Self::Centre,
         Self::MapView,
         Self::MapEditorView,
+        Self::MapCheckLeaks,
+        Self::MapFlyLeak,
+        Self::MapSealed,
         Self::MapLayoutSingle,
         Self::MapLayoutInset,
         Self::MapLayoutQuad,
@@ -1215,6 +1224,9 @@ impl Text {
             Self::BottomPanel => "Bottom panel: Problems, Console and Debugger",
             Self::Centre => "Centre: Editor, Game and Map",
             Self::MapView => "Map view: drag to turn, scroll to move",
+            Self::MapCheckLeaks => "Check for leaks",
+            Self::MapFlyLeak => "Fly along the leak",
+            Self::MapSealed => "The map is sealed: no entity is in reach of the void.",
             Self::MapEditorView => {
                 "Map editor: right-drag to look, middle-drag to pan, W A S D Q X to fly, click to select"
             }
@@ -1446,6 +1458,19 @@ pub fn selection_size([x, y, z]: [f64; 3]) -> String {
 #[must_use]
 pub fn apply_texture(name: &str) -> String {
     format!("Apply {name}")
+}
+
+/// What the leak check says of a map that leaks: where the entity the outside reached stands
+/// (P6-11, QBSP-9.8).
+#[must_use]
+pub fn leak_found([x, y, z]: [f32; 3]) -> String {
+    format!("The map leaks: the void reaches the entity at {x} {y} {z}.")
+}
+
+/// The textures the map's WADs lack (P6-11, MAP-6.8).
+#[must_use]
+pub fn missing_textures(names: &[String]) -> String {
+    format!("Textures its WADs lack: {}", names.join(", "))
 }
 
 /// How many entities besides the one shown a key edit also sets (P5-13).

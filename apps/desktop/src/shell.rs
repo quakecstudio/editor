@@ -48,6 +48,7 @@ use qs_workbench::git::{
     GitResolveParams, GitSide, GitStageParams, GitStatus,
 };
 use qs_workbench::ids::{ActionIndex, CheckpointNumber, TerminalIndex, WatchIndex};
+use qs_workbench::map_compile::{MAP_COMPILE, MAP_LEAKS, MapReport};
 use qs_workbench::map_edit::{
     BSP_EXTENSION, BspSave, EntityKeys, EntityParams, FILES_CHANGED, FilesChanged,
     FilesChangedParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_EXTENSION,
@@ -413,7 +414,20 @@ impl Shell {
         id: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, CommandError> {
-        self.session.execute(id, params)
+        let output = self.session.execute(id, params)?;
+        // A check of the map, asked for anywhere, is shown in the map view (P6-11).
+        if (id == MAP_LEAKS || id == MAP_COMPILE)
+            && let Ok(report) = serde_json::from_value::<MapReport>(output.clone())
+            && let Some(edits) = self
+                .session
+                .context()
+                .workbench
+                .map()
+                .map(MapDocument::edits)
+        {
+            self.map_editor.set_leak_report(report, edits);
+        }
+        Ok(output)
     }
 
     /// The open project and file.
@@ -2075,6 +2089,9 @@ impl Shell {
                     self.attempt(MAP_MOVE_TO, &MoveToParams { entity, into })
                 }
                 MapAction::Panes(panes) => self.attempt(MAP_PANES, &MapPanesParams { panes }),
+                MapAction::CheckLeaks => self
+                    .execute(MAP_LEAKS, serde_json::json!({}))
+                    .map_err(ShellError::from),
                 MapAction::RemoveKey(entity, key) => {
                     self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
                 }

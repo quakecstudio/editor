@@ -172,6 +172,22 @@ fn scripts() -> Vec<Script> {
             ],
         },
         Script {
+            name: "map-leak",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": keep_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": keep_fixture().join("maps/keep.map") }),
+                ),
+                Step::Run("map.brush_delete", json!({ "entity": 0, "brush": 2 })),
+                Step::Run(
+                    "map.brush_texture",
+                    json!({ "entity": 4, "brushes": [0], "texture": "nowhere" }),
+                ),
+                Step::Run("map.leaks", json!({})),
+            ],
+        },
+        Script {
             name: "shell-resized",
             steps: vec![
                 Step::Run(
