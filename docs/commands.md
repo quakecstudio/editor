@@ -69,6 +69,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.duplicate`](#mapduplicate) | Duplicates an entity of the open map, its keys and brushes, in place at the end of the map, and selects the copy; the world is not duplicated. A targetname ending in a number takes the next free number, and the keys the code fires entities by move on by as many. |
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
 | [`map.export`](#mapexport) | Writes the open map to another .map without the layers marked to be left out of exports and the entities in them (TrenchBroom's Export). |
+| [`map.face_align`](#mapface_align) | Carries one face's texture alignment onto other faces of the open map, so the texture continues across the line their planes share (MAP-13.8). |
+| [`map.face_uv`](#mapface_uv) | Fits, justifies, flips, resets or snaps the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
 | [`map.filter`](#mapfilter) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
 | [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
@@ -2708,6 +2710,290 @@ Parameters:
     "path"
   ],
   "title": "ExportParams",
+  "type": "object"
+}
+```
+
+## `map.face_align`
+
+Carries one face's texture alignment onto other faces of the open map, so the texture continues across the line their planes share (MAP-13.8).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FaceIndex": {
+      "description": "A face's place among its brush's faces, from 0, in file order.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FaceRef": {
+      "additionalProperties": false,
+      "description": "A face of the open map: the entity, the brush and the face.",
+      "properties": {
+        "brush": {
+          "$ref": "#/$defs/BrushIndex",
+          "description": "The brush."
+        },
+        "entity": {
+          "$ref": "#/$defs/EntityIndex",
+          "description": "The entity holding the brush."
+        },
+        "face": {
+          "$ref": "#/$defs/FaceIndex",
+          "description": "The face."
+        }
+      },
+      "required": [
+        "entity",
+        "brush",
+        "face"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.face_align`.",
+  "properties": {
+    "from": {
+      "$ref": "#/$defs/FaceRef",
+      "description": "The face whose alignment is carried."
+    },
+    "to": {
+      "description": "The faces it is carried onto.",
+      "items": {
+        "$ref": "#/$defs/FaceRef"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "from",
+    "to"
+  ],
+  "title": "FaceAlignParams",
+  "type": "object"
+}
+```
+
+## `map.face_uv`
+
+Fits, justifies, flips, resets or snaps the texture of faces of the open map, at the size its WAD gives it (MAP-13).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Axis": {
+      "description": "A texture axis.",
+      "oneOf": [
+        {
+          "const": "s",
+          "description": "Across the texture.",
+          "type": "string"
+        },
+        {
+          "const": "t",
+          "description": "Down the texture.",
+          "type": "string"
+        }
+      ]
+    },
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FaceIndex": {
+      "description": "A face's place among its brush's faces, from 0, in file order.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FaceRef": {
+      "additionalProperties": false,
+      "description": "A face of the open map: the entity, the brush and the face.",
+      "properties": {
+        "brush": {
+          "$ref": "#/$defs/BrushIndex",
+          "description": "The brush."
+        },
+        "entity": {
+          "$ref": "#/$defs/EntityIndex",
+          "description": "The entity holding the brush."
+        },
+        "face": {
+          "$ref": "#/$defs/FaceIndex",
+          "description": "The face."
+        }
+      },
+      "required": [
+        "entity",
+        "brush",
+        "face"
+      ],
+      "type": "object"
+    },
+    "JustifyTo": {
+      "description": "Where `justify` puts the texture.",
+      "oneOf": [
+        {
+          "const": "left",
+          "description": "Its left edge on the face's.",
+          "type": "string"
+        },
+        {
+          "const": "right",
+          "description": "Its right edge on the face's.",
+          "type": "string"
+        },
+        {
+          "const": "top",
+          "description": "Its top edge on the face's.",
+          "type": "string"
+        },
+        {
+          "const": "bottom",
+          "description": "Its bottom edge on the face's.",
+          "type": "string"
+        },
+        {
+          "const": "centre",
+          "description": "Its centre on the face's.",
+          "type": "string"
+        }
+      ]
+    },
+    "UvChoice": {
+      "description": "What `map.face_uv` does to each face.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Stretch or shrink the texture so one copy spans the face (MAP-13.2).",
+          "properties": {
+            "kind": {
+              "const": "fit",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Shift it to an edge or the centre of the face (MAP-13.3).",
+          "properties": {
+            "kind": {
+              "const": "justify",
+              "type": "string"
+            },
+            "to": {
+              "$ref": "#/$defs/JustifyTo",
+              "description": "Where."
+            }
+          },
+          "required": [
+            "kind",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Mirror it along an axis about the face's centre (MAP-13.4).",
+          "properties": {
+            "axis": {
+              "$ref": "#/$defs/Axis",
+              "description": "The axis."
+            },
+            "kind": {
+              "const": "flip",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "axis"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "No shift, rotation or scaling (MAP-13.5).",
+          "properties": {
+            "kind": {
+              "const": "reset",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Shift it so its nearest edge lands on the nearest corner (MAP-13.6).",
+          "properties": {
+            "kind": {
+              "const": "snap",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.face_uv`.",
+  "properties": {
+    "edit": {
+      "$ref": "#/$defs/UvChoice",
+      "description": "What to do to each."
+    },
+    "faces": {
+      "description": "The faces.",
+      "items": {
+        "$ref": "#/$defs/FaceRef"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "faces",
+    "edit"
+  ],
+  "title": "FaceUvParams",
   "type": "object"
 }
 ```
