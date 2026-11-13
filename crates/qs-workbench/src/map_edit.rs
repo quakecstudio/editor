@@ -53,6 +53,10 @@ pub use prefabs::{
     MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PREFAB_FOLDER, PlacePrefabParams, Prefab,
     PrefabSaved, Prefabs, SavePrefabParams,
 };
+pub use review::{
+    HunkEntity, HunkSide, MAP_ACCEPT, MAP_REJECT, MAP_STAGE, MAP_STAGED, MAP_UNSTAGE, MapHunk,
+    MapHunkNumber, MapHunksParams,
+};
 pub use shapes::{ArchWall, BrushShapeParams, Circle, Climb, MAP_BRUSH_SHAPE, ShapeSpec};
 
 mod brush_tools;
@@ -67,6 +71,7 @@ mod links;
 mod live;
 mod outline;
 mod prefabs;
+mod review;
 mod shapes;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -196,6 +201,9 @@ pub struct MapDocument {
     view: groups::ViewState,
     /// The last compile's report and the edits it was made at (P6-11).
     report: Option<(MapReport, MapRevision)>,
+    /// The map as its review began, while the edits since wait to be accepted or rejected
+    /// (P6-21).
+    staged: Option<MapFile>,
 }
 
 /// What a file held, as a hash of its bytes, to tell when another program changed it.
@@ -331,6 +339,23 @@ impl MapDocument {
     #[must_use]
     pub const fn source(&self) -> &MapSource {
         &self.source
+    }
+
+    /// Puts `entities` in place of the map's, as a review's rejected hunks do (P6-21): the
+    /// selection and what is hidden and locked are kept while each place names the same entity.
+    pub(crate) fn replace_entities(&mut self, entities: Vec<Entity>) {
+        // Places still name the same entities when every place holds an entity with the same
+        // keys as before; otherwise the selection and what is hidden and locked are forgotten.
+        let same_places = entities.len() == self.file.entities.len()
+            && entities
+                .iter()
+                .zip(&self.file.entities)
+                .all(|(new, old)| new.pairs().eq(old.pairs()));
+        if !same_places {
+            self.view = groups::ViewState::default();
+            self.selected = None;
+        }
+        self.file.entities = entities;
     }
 
     /// Puts `file` in place of the map's entities, nothing selected and nothing hidden or
@@ -627,6 +652,7 @@ impl<L: crate::Loader> Workbench<L> {
             disk,
             conflict: None,
             report: None,
+            staged: None,
         }))
     }
 
@@ -771,12 +797,18 @@ pub(crate) fn edit_map<C: HasWorkbench, T>(
     edit: impl FnOnce(&mut MapDocument) -> Result<T, WorkbenchError>,
 ) -> Result<(T, MapStep), WorkbenchError> {
     let document = context.workbench().map_mut()?;
-    let before = (document.file.clone(), document.selected);
+    let before = (
+        document.file.clone(),
+        document.selected,
+        document.staged.clone(),
+    );
     let view = document.view.clone();
     let edits = document.edits;
     match edit(document).and_then(|answer| document.after_edit(&before.0).map(|()| answer)) {
         Ok(answer) => {
             document.unsaved = true;
+            // An edit that takes the map back to where its review began ends the review.
+            document.settle_review();
             document.touch_map();
             let step = MapStep {
                 before: edits,
@@ -787,7 +819,7 @@ pub(crate) fn edit_map<C: HasWorkbench, T>(
             Ok((answer, step))
         }
         Err(error) => {
-            (document.file, document.selected) = before;
+            (document.file, document.selected, document.staged) = before;
             document.view = view;
             Err(error)
         }
@@ -823,7 +855,8 @@ pub(crate) struct MapStep {
     before: MapRevision,
     /// Its edits after, which redo gives back. A map opened since has had neither.
     after: MapRevision,
-    other: (MapFile, Option<EntityIndex>),
+    /// The map, the selection and the review snapshot (P6-21) the step swaps in.
+    other: (MapFile, Option<EntityIndex>, Option<MapFile>),
 }
 
 impl MapStep {
@@ -843,6 +876,9 @@ impl MapStep {
             .ok_or(WorkbenchError::NoMap)?;
         core::mem::swap(&mut document.file, &mut self.other.0);
         core::mem::swap(&mut document.selected, &mut self.other.1);
+        // A rejection undone opens its review again; one that leaves nothing to decide ends it.
+        core::mem::swap(&mut document.staged, &mut self.other.2);
+        document.settle_review();
         // What is hidden and locked is outside history; when undo or redo changes how many
         // entities there are, its places no longer name the same entities, so it is forgotten.
         if document.file.entities.len() != self.other.0.entities.len() {
@@ -1223,6 +1259,11 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry: &mut Registry<C>,
 ) -> Result<(), RegisterError> {
     registry.register(MapOpen)?;
+    registry.register(review::MapStage)?;
+    registry.register(review::MapUnstage)?;
+    registry.register(review::MapStaged)?;
+    registry.register(review::MapAccept)?;
+    registry.register(review::MapReject)?;
     registry.register(MapBackup)?;
     registry.register(MapBackups)?;
     registry.register(MapRestoreBackup)?;

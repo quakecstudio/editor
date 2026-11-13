@@ -35,6 +35,7 @@ use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_panes::{Pane, Plan, PlanCamera, Projection, panes};
 use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
 use crate::map_profiles::{ProfileAction, ProfileView};
+use crate::map_review::{ReviewAction, ReviewView};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::strings::{Text, also_selected, panes_text};
@@ -141,6 +142,8 @@ pub enum MapAction {
     Find(MapSearchParams),
     /// Choose or run a compile profile, show the portals or restore a backup (P6-20).
     Profile(ProfileAction),
+    /// Accept or reject map edits waiting for review (P6-21).
+    Review(ReviewAction),
 }
 
 /// The external maps the view draws (MAP-14): the project's folder they are looked for in after
@@ -328,6 +331,8 @@ pub struct MapEditor {
     issues: IssueBrowser,
     /// The compile profiles, the last run and the portals (P6-20).
     profiles: ProfileView,
+    /// The map edits waiting for review (P6-21).
+    review: ReviewView,
 }
 
 /// The browsers of the tab below the map view, as the mockup has them.
@@ -497,6 +502,16 @@ impl MapEditor {
     /// The compile profiles, the last run and the portals (P6-20).
     pub(crate) const fn profiles(&self) -> &ProfileView {
         &self.profiles
+    }
+
+    /// The map edits waiting for review (P6-21).
+    pub(crate) const fn review(&self) -> &ReviewView {
+        &self.review
+    }
+
+    /// The map edits waiting for review, to change.
+    pub(crate) const fn review_mut(&mut self) -> &mut ReviewView {
+        &mut self.review
     }
 
     /// The compile profiles, to change.
@@ -1070,6 +1085,7 @@ impl MapEditor {
                 actions.push(MapAction::PlayFromHere);
             }
         });
+        actions.extend(self.review.properties(ui, theme));
         actions.extend(self.profiles.controls(ui, theme));
         self.leaks.properties(ui, theme, report);
         if self.disk != DiskNotice::None {
