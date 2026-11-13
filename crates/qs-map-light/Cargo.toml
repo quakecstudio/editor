@@ -1,0 +1,22 @@
+[package]
+name = "qs-map-light"
+description = "The light compiler: each face's lightmaps from the map's lights, as id's light finds them, with coloured light in a .lit file"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qs-bsp = { workspace = true }
+qs-map = { workspace = true }
+# Its Dialect: the same choice of id's fixed tables or the format's (LIGHT-1.7, QBSP-14).
+qs-map-bsp = { workspace = true }
+
+[dev-dependencies]
+qs-wad = { workspace = true }
+sha2 = { workspace = true }
+
+[lints]
+workspace = true

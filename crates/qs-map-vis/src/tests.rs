@@ -214,7 +214,7 @@ fn the_flow_narrows_what_might_be_seen() {
     assert!(full.sees(start, start));
 }
 
-// spec VIS-5.1, VIS-5.2, VIS-5.4, VIS-6.1, VIS-6.3: run writes each leaf's compressed row at its
+// spec VIS-5.1, VIS-5.2, VIS-5.6, VIS-6.1, VIS-6.3: run writes each leaf's compressed row at its
 // visofs and full water for a leaf that sees the water, none for one that does not, and keeps
 // the rest of the file
 #[test]
@@ -450,7 +450,7 @@ fn vector(name: &str) -> String {
     std::fs::read_to_string(path).unwrap()
 }
 
-// spec VIS-4.2, VIS-4.4, VIS-4.7, VIS-4.8, VIS-5.2, VIS-5.4, VIS-6.2: every map of the vectors
+// spec VIS-4.2, VIS-4.4, VIS-4.7, VIS-4.8, VIS-5.2, VIS-5.6, VIS-6.2: every map of the vectors
 // gives id's vis's visibility lump, visofs, ambient levels, flow counts and whole file, in the
 // fast mode and at every level, on every thread
 #[test]
@@ -659,7 +659,7 @@ fn the_lump_may_fill_max_map_visibility() {
     assert_eq!(over, Err(VisError::VismapOverflow));
 }
 
-// spec VIS-5.4: the file is laid out as WriteBSPFile writes it: each lump in its order, from
+// spec VIS-5.5, VIS-5.6: the file is laid out as WriteBSPFile writes it: each lump in its order, from
 // a four-byte boundary, the padding zeros, and every lump but the leaves and visibility kept
 #[test]
 fn the_file_is_laid_out_as_write_bsp_file() {
@@ -739,4 +739,29 @@ fn a_split_on_a_negative_axial_plane_is_exact() {
     let kept = edge.clipped(below).unwrap();
     let xs: Vec<f32> = kept.points().iter().map(|p| p[0]).collect();
     assert_eq!(xs, [0.1, 3.3, 3.3, 0.1]);
+}
+
+// spec VIS-5.5: the padding after the new visibility lump is the input's visibility bytes there
+#[test]
+fn padding_keeps_the_input_visibility() {
+    use qs_bsp::LumpId;
+    let (bsp, prt) = snake("*water");
+    let mut old = bsp.clone();
+    let at = i32::try_from(old.len()).unwrap();
+    old.extend_from_slice(&[0xab; 12]);
+    let entry = 4 + LumpId::Visibility.index() * 8;
+    old[entry..entry + 4].copy_from_slice(&at.to_le_bytes());
+    old[entry + 4..entry + 8].copy_from_slice(&12_i32.to_le_bytes());
+    let written = Vis::default().run(&old, &prt).unwrap();
+    let read = Bsp::read(&written, BspLoader::FitzQuake).unwrap();
+    let lump = read.lumps[LumpId::Visibility.index()];
+    let end = usize::try_from(lump.fileofs).unwrap() + usize::try_from(lump.filelen).unwrap();
+    assert!(end % 4 != 0, "the lump needs padding");
+    assert!(
+        written[end..end.next_multiple_of(4)]
+            .iter()
+            .all(|&b| b == 0xab)
+    );
+    let fresh = Vis::default().run(&bsp, &prt).unwrap();
+    assert!(fresh[end..end.next_multiple_of(4)].iter().all(|&b| b == 0));
 }

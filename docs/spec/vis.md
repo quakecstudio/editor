@@ -152,11 +152,17 @@ A first-order bound: the leaves a flood through portals that face each other can
   `n`'s `visofs` is its row's offset; the BSP's leaf is `n + 1`, leaf 0 being the shared solid
   leaf (QBSP-13.1). A lump past `MAX_MAP_VISIBILITY` stops the run with
   `Vismap expansion overflow`.
-- **VIS-5.4** vis writes the file as `COMMON/BSPFILE.C`, `WriteBSPFile`, does: the header, then
+- **VIS-5.4** **Withdrawn** 2026-11-13: the padding after the visibility lump is the input's
+  bytes, not zeros; replaced by VIS-5.5 and VIS-5.6.
+- **VIS-5.5** vis writes its rows into `dvisdata` from its start, where `LoadBSPFile` put the
+  input's visibility lump, and `AddLump` writes `(len+3)&~3` bytes of it. So the padding after
+  the new lump is the bytes the input's lump held at those offsets, and zero past its end;
+  every other lump's padding is zero.
+- **VIS-5.6** vis writes the file as `COMMON/BSPFILE.C`, `WriteBSPFile`, does: the header, then
   the lumps in the order planes, leafs, vertexes, nodes, texinfo, faces, clipnodes,
   marksurfaces, surfedges, edges, models, lighting, visibility, entities and textures, each
-  padded with zeros to a multiple of four bytes (`(len+3)&~3`), its directory entry giving its
-  unpadded length. Every lump but the leaves and the visibility is the one read.
+  padded to a multiple of four bytes (`(len+3)&~3`) as VIS-5.5 states, its directory entry
+  giving its unpadded length. Every lump but the leaves and the visibility is the one read.
 - **VIS-5.3** The average printed, `average leafs visible`, counts a leaf's visible leaves with
   bit `i & 3` of byte `i >> 3` instead of bit `i & 7`, so it is not the true average; nothing
   else reads the count.

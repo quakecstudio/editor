@@ -1,0 +1,58 @@
+const qs_map_light::LIGHT_RANGESCALE
+const qs_map_light::LIGHT_SCALECOS
+const qs_map_light::LIGHT_SCALEDIST
+const qs_map_light::entities::LIGHT_DEFAULT_LEVEL
+const qs_map_light::entities::LIGHT_FIRST_SWITCHED_STYLE
+const qs_map_light::entities::LIGHT_MAX_MAP_ENTITIES
+const qs_map_light::entities::LIGHT_MAX_MAP_ENTSTRING
+const qs_map_light::entities::LIGHT_MAX_SWITCHED
+const qs_map_light::lump::LIGHT_MAX_MAP_LIGHTING
+enum qs_map_light::LightError
+enum qs_map_light::LightWarning
+enum qs_map_light::Sampling
+field qs_map_light::Lighted.bsp
+field qs_map_light::Lighted.lit
+field qs_map_light::Lighted.switchable
+field qs_map_light::Lighted.warnings
+field qs_map_light::Scale.cos
+field qs_map_light::Scale.dist
+field qs_map_light::Scale.range
+fn qs_map_light::Light::new
+fn qs_map_light::Light::run
+fn qs_map_light::Light::with_dialect
+fn qs_map_light::Light::with_scale
+fn qs_map_light::face::FaceId::index
+impl qs_map_light::LightError: fmt::Display
+impl qs_map_light::LightError: std::error::Error
+impl qs_map_light::LightWarning: fmt::Display
+impl qs_map_light::Scale: Default
+struct qs_map_light::Light
+struct qs_map_light::Lighted
+struct qs_map_light::Scale
+struct qs_map_light::face::FaceId
+use qs_map_light::Dialect = qs_map_bsp::Dialect
+use qs_map_light::FaceId = crate::face::FaceId
+use qs_map_light::LIGHT_DEFAULT_LEVEL = crate::entities::LIGHT_DEFAULT_LEVEL
+use qs_map_light::LIGHT_FIRST_SWITCHED_STYLE = crate::entities::LIGHT_FIRST_SWITCHED_STYLE
+use qs_map_light::LIGHT_MAX_MAP_ENTITIES = crate::entities::LIGHT_MAX_MAP_ENTITIES
+use qs_map_light::LIGHT_MAX_MAP_ENTSTRING = crate::entities::LIGHT_MAX_MAP_ENTSTRING
+use qs_map_light::LIGHT_MAX_MAP_LIGHTING = crate::lump::LIGHT_MAX_MAP_LIGHTING
+use qs_map_light::LIGHT_MAX_SWITCHED = crate::entities::LIGHT_MAX_SWITCHED
+variant qs_map_light::LightError::BadStyle
+variant qs_map_light::LightError::EntityTextTooLong
+variant qs_map_light::LightError::ExpectedBrace
+variant qs_map_light::LightError::Extents
+variant qs_map_light::LightError::Format
+variant qs_map_light::LightError::NoValue
+variant qs_map_light::LightError::Origin
+variant qs_map_light::LightError::Overrun
+variant qs_map_light::LightError::PairTooLong
+variant qs_map_light::LightError::TextureAxis
+variant qs_map_light::LightError::Thread
+variant qs_map_light::LightError::TooManyEntities
+variant qs_map_light::LightError::TooManySwitched
+variant qs_map_light::LightError::Unclosed
+variant qs_map_light::LightWarning::TooManyStyles
+variant qs_map_light::LightWarning::UnmatchedTarget
+variant qs_map_light::Sampling::Extra
+variant qs_map_light::Sampling::Fast

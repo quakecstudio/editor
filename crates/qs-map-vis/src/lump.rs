@@ -158,7 +158,7 @@ const VERSION_SIZE: usize = 4;
 const ENTRY_SIZE: usize = 8;
 /// Lumps start on four-byte boundaries.
 const ALIGN: usize = 4;
-/// The lumps in the order `WriteBSPFile` writes them (VIS-5.4).
+/// The lumps in the order `WriteBSPFile` writes them (VIS-5.6).
 const ORDER: [LumpId; BSP_HEADER_LUMPS] = [
     LumpId::Planes,
     LumpId::Leafs,
@@ -179,7 +179,7 @@ const ORDER: [LumpId; BSP_HEADER_LUMPS] = [
 
 /// `bytes` with the rows' visibility lump, each vis leaf's `visofs` and ambient levels, laid
 /// out as `WriteBSPFile` writes a file: the header, then each lump in its order, padded to
-/// four bytes (VIS-5.2, VIS-5.4, VIS-6).
+/// four bytes (VIS-5.2, VIS-5.6, VIS-6).
 pub(crate) fn written(bytes: &[u8], bsp: &Bsp<'_>, rows: &[Leaves]) -> Result<Vec<u8>, VisError> {
     let leafs = rows.len();
     let mut lump = Vec::new();
@@ -237,8 +237,17 @@ pub(crate) fn written(bytes: &[u8], bsp: &Bsp<'_>, rows: &[Leaves]) -> Result<Ve
         let start = i32::try_from(out.len()).map_err(|_| VisError::Format)?;
         let len = i32::try_from(data.len()).map_err(|_| VisError::Format)?;
         out.extend_from_slice(data);
+        // `AddLump` pads from the lump's array: past the new rows, `dvisdata` still holds the
+        // input's visibility there; past any other lump, zeros (VIS-5.5).
+        let old: &[u8] = if id == LumpId::Visibility {
+            stored(id)?
+        } else {
+            &[]
+        };
+        let mut at = data.len();
         while !out.len().is_multiple_of(ALIGN) {
-            out.push(0);
+            out.push(old.get(at).copied().unwrap_or(0));
+            at = at.saturating_add(1);
         }
         let entry = VERSION_SIZE.saturating_add(id.index().saturating_mul(ENTRY_SIZE));
         let field = out
