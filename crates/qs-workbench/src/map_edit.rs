@@ -22,7 +22,7 @@ pub use brush_tools::{
     BrushScaleParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
     BrushSweepParams, BrushVerticesParams, MAP_BRUSH_CHAMFER, MAP_BRUSH_EXTRUDE, MAP_BRUSH_HOLLOW,
     MAP_BRUSH_INTERSECT, MAP_BRUSH_SCALE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE,
-    MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP, MAP_BRUSH_VERTICES, VertexMove,
+    MAP_BRUSH_SPLIT_FACE, MAP_BRUSH_SWEEP, MAP_BRUSH_VERTICES, NewVertex, VertexMove,
 };
 pub use brushes::{
     BrushClipParams, BrushCreateParams, BrushIndex, BrushMergeParams, BrushMoveParams, BrushParams,

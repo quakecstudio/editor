@@ -182,6 +182,25 @@ pub struct BrushVerticesParams {
     pub grid: Option<f64>,
 }
 
+/// Where a split puts its new vertex.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum NewVertex {
+    /// At a point, snapped to the grid, 16 units unless given, 0 for none.
+    Point {
+        /// The point.
+        to: [f64; 3],
+        /// The grid.
+        #[serde(default)]
+        grid: Option<f64>,
+    },
+    /// A distance out from the middle of the edge or face, along its normal (MAP-15.8).
+    Out {
+        /// The distance, in map units.
+        by: f64,
+    },
+}
+
 /// The parameters of `map.brush_split_edge`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -192,11 +211,8 @@ pub struct BrushSplitEdgeParams {
     pub brush: BrushIndex,
     /// The edge's two vertices.
     pub edge: [[f64; 3]; 2],
-    /// The new vertex, snapped to the grid.
-    pub to: [f64; 3],
-    /// The grid `to` snaps to; 16 when not given, 0 for none.
-    #[serde(default)]
-    pub grid: Option<f64>,
+    /// The new vertex.
+    pub at: NewVertex,
 }
 
 /// The parameters of `map.brush_split_face`.
@@ -205,11 +221,8 @@ pub struct BrushSplitEdgeParams {
 pub struct BrushSplitFaceParams {
     /// The face.
     pub face: FaceRef,
-    /// The new vertex, in front of the face, snapped to the grid.
-    pub to: [f64; 3],
-    /// The grid `to` snaps to; 16 when not given, 0 for none.
-    #[serde(default)]
-    pub grid: Option<f64>,
+    /// The new vertex, in front of the face.
+    pub at: NewVertex,
 }
 
 /// The parameters of `map.brush_chamfer`.
@@ -527,7 +540,7 @@ pub(super) struct BrushSplitEdge;
 impl<C: HasWorkbench + 'static> Command<C> for BrushSplitEdge {
     const ID: &'static str = MAP_BRUSH_SPLIT_EDGE;
     const SUMMARY: &'static str = "Splits an edge of a brush by a new vertex at a point snapped \
-        to the grid (MAP-15.8).";
+        to the grid, or a distance out from the edge's middle (MAP-15.8).";
     type Params = BrushSplitEdgeParams;
     type Output = MapEdited;
     type Error = WorkbenchError;
@@ -538,9 +551,14 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSplitEdge {
         params: BrushSplitEdgeParams,
     ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
         let [a, b] = params.edge;
-        let to = params.to.map(|c| snap(c, params.grid));
         let ((), step) = edit_map(context, |document| {
             document.rework(params.entity, params.brush, |found| {
+                let to = match params.at {
+                    NewVertex::Point { to, grid } => to.map(|c| snap(c, grid)),
+                    NewVertex::Out { by } => {
+                        found.edge_out(a, b, by).ok_or(BrushError::NoVertex(b))?
+                    }
+                };
                 Ok(vec![found.split_edge(a, b, to)?])
             })
         })?;
@@ -554,7 +572,7 @@ pub(super) struct BrushSplitFace;
 impl<C: HasWorkbench + 'static> Command<C> for BrushSplitFace {
     const ID: &'static str = MAP_BRUSH_SPLIT_FACE;
     const SUMMARY: &'static str = "Splits a face of a brush by a new vertex in front of it, at a \
-        point snapped to the grid (MAP-15.8).";
+        point snapped to the grid, or a distance out from the face's middle (MAP-15.8).";
     type Params = BrushSplitFaceParams;
     type Output = MapEdited;
     type Error = WorkbenchError;
@@ -569,10 +587,16 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSplitFace {
             brush,
             face,
         } = params.face;
-        let to = params.to.map(|c| snap(c, params.grid));
+        let face = BrushFace::new(face.get());
         let ((), step) = edit_map(context, |document| {
             document.rework(entity, brush, |found| {
-                Ok(vec![found.split_face(BrushFace::new(face.get()), to)?])
+                let to = match params.at {
+                    NewVertex::Point { to, grid } => to.map(|c| snap(c, grid)),
+                    NewVertex::Out { by } => {
+                        found.face_out(face, by).ok_or(BrushError::Degenerate)?
+                    }
+                };
+                Ok(vec![found.split_face(face, to)?])
             })
         })?;
         Ok(MapEdited::undoable(entity, step))

@@ -297,6 +297,23 @@ fn edges_and_faces_split() {
         .iter()
         .position(|f| f.plane().unwrap().normal == [0.0, 0.0, 1.0])
         .unwrap();
+    assert_eq!(
+        brush.face_out(BrushFace::new(top), 32.0),
+        Some([32.0, 32.0, 96.0])
+    );
+    assert_eq!(brush.face_out(BrushFace::new(42), 32.0), None);
+    let out = brush
+        .edge_out([0.0, 0.0, 64.0], [64.0, 0.0, 64.0], 2.0_f64.sqrt())
+        .unwrap();
+    assert!(
+        out.iter()
+            .zip([32.0, -1.0, 65.0])
+            .all(|(a, b)| (a - b).abs() < 1e-9)
+    );
+    assert_eq!(
+        brush.edge_out([0.0, 0.0, 64.0], [64.0, 64.0, 64.0], 1.0),
+        None
+    );
     let pyramid = brush
         .split_face(BrushFace::new(top), [32.0, 32.0, 96.0])
         .unwrap();

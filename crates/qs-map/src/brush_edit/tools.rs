@@ -539,6 +539,43 @@ impl Brush {
             .collect()
     }
 
+    /// The point `by` out from the middle of face `face`'s polygon along its normal: where
+    /// [`Brush::split_face`] raises a face to (MAP-15.8); none for no such face.
+    #[must_use]
+    pub fn face_out(&self, face: BrushFace, by: f64) -> Option<[f64; 3]> {
+        let normal = self.faces.get(face.get())?.plane()?.normal;
+        let polygon = self.face_polygons().into_iter().nth(face.get())??;
+        let middle = centroid(&polygon);
+        Some([0, 1, 2].map(|i| {
+            middle.get(i).copied().unwrap_or_default()
+                + normal.get(i).copied().unwrap_or_default() * by
+        }))
+    }
+
+    /// The point `by` out from the middle of the edge from `a` to `b`, along the mean of its
+    /// two faces' normals: where [`Brush::split_edge`] raises an edge to (MAP-15.8); none when
+    /// the pair is no edge.
+    #[must_use]
+    pub fn edge_out(&self, a: [f64; 3], b: [f64; 3], by: f64) -> Option<[f64; 3]> {
+        let sides = self.faces_of_edge(a, b);
+        if sides.len() != 2 {
+            return None;
+        }
+        let mut out = ORIGIN;
+        for (i, _) in &sides {
+            let normal = self.faces.get(*i)?.plane()?.normal;
+            for (o, n) in out.iter_mut().zip(normal) {
+                *o += n;
+            }
+        }
+        let out = normalize(out);
+        let middle = centroid(&[a, b]);
+        Some([0, 1, 2].map(|i| {
+            middle.get(i).copied().unwrap_or_default()
+                + out.get(i).copied().unwrap_or_default() * by
+        }))
+    }
+
     /// The brush with its edge from `a` to `b` split by a new vertex at `to` (MAP-15.8).
     ///
     /// # Errors

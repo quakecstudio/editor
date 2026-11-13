@@ -227,16 +227,30 @@ fn vertices_move_and_split() {
         "split-edge",
         MAP_BRUSH_SPLIT_EDGE,
         &json!({ "entity": 0, "brush": 0, "edge": [[0, 0, 64], [64, 0, 64]],
-                 "to": [32, -16, 80] }),
+                 "at": { "point": { "to": [32, -16, 80] } } }),
+    );
+    assert_eq!(after[0].vertices().len(), 9);
+    let after = edits(
+        "split-edge-out",
+        MAP_BRUSH_SPLIT_EDGE,
+        &json!({ "entity": 0, "brush": 0, "edge": [[0, 0, 64], [64, 0, 64]],
+                 "at": { "out": { "by": 16 } } }),
     );
     assert_eq!(after[0].vertices().len(), 9);
     let face = top("split-face-top");
     let after = edits(
         "split-face",
         MAP_BRUSH_SPLIT_FACE,
-        &json!({ "face": { "entity": 0, "brush": 0, "face": face }, "to": [32, 32, 96] }),
+        &json!({ "face": { "entity": 0, "brush": 0, "face": face },
+                 "at": { "point": { "to": [32, 32, 96] } } }),
     );
     assert_eq!(after[0].vertices().len(), 9);
+    let after = edits(
+        "split-face-out",
+        MAP_BRUSH_SPLIT_FACE,
+        &json!({ "face": { "entity": 0, "brush": 0, "face": face }, "at": { "out": { "by": 32 } } }),
+    );
+    assert!(after[0].vertices().contains(&[32.0, 32.0, 96.0]));
 }
 
 // spec MAP-15.9: an edge chamfers into bevel faces; a pair that is no edge is refused
