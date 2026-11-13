@@ -8,8 +8,8 @@
 
 use super::{BrushError, Surface, TextureLock, round, same_point};
 use crate::geometry::{
-    MAP_ON_EPSILON, MIN_CORNERS, ON_PLANE, Plane, Turn, cross, dot, normalize, plane as plane_of, polygons_on,
-    texvecs,
+    MAP_ON_EPSILON, MIN_CORNERS, ON_PLANE, Plane, Turn, cross, dot, normalize, plane as plane_of,
+    polygons_on, texvecs,
 };
 use crate::{Brush, Face, TexDef};
 
@@ -23,6 +23,8 @@ const QUARTER: f64 = 90.0;
 const FLAT: f64 = 1e-12;
 /// The smallest length a texture axis keeps before it has none.
 const NO_LENGTH: f64 = 1e-12;
+/// The origin.
+const ORIGIN: [f64; 3] = [0.0, 0.0, 0.0];
 /// The most bevel faces a chamfer makes (MAP-15.9).
 pub const MAP_MAX_CHAMFER_FACES: u32 = 16;
 
@@ -102,13 +104,14 @@ impl Affine {
     fn about(about: [f64; 3], linear: [[f64; 3]; 3]) -> Self {
         let moved = Self {
             linear,
-            offset: [0.0; 3],
+            offset: ORIGIN,
         }
         .apply(about);
         Self {
             linear,
             offset: [0, 1, 2].map(|i| {
-                about.get(i).copied().unwrap_or_default() - moved.get(i).copied().unwrap_or_default()
+                about.get(i).copied().unwrap_or_default()
+                    - moved.get(i).copied().unwrap_or_default()
             }),
         }
     }
@@ -230,7 +233,11 @@ impl WorldTexture {
         let [_, t_turned] = base(rotate);
         let t_length = dot(t_axis, t_turned);
         let scale = [
-            if length <= NO_LENGTH { 1.0 } else { 1.0 / length },
+            if length <= NO_LENGTH {
+                1.0
+            } else {
+                1.0 / length
+            },
             if t_length.abs() <= NO_LENGTH {
                 1.0
             } else {
@@ -287,9 +294,10 @@ impl Brush {
     /// Whether the brush has volume: some vertex is well behind every face's plane.
     fn has_volume(&self) -> bool {
         let corners = self.vertices();
-        self.faces.iter().filter_map(Face::plane).all(|plane| {
-            corners.iter().any(|&corner| plane.side(corner) < -ON_PLANE)
-        })
+        self.faces
+            .iter()
+            .filter_map(Face::plane)
+            .all(|plane| corners.iter().any(|&corner| plane.side(corner) < -ON_PLANE))
     }
 
     /// Whether a vertex of the brush lies in front of one of `planes` by qbsp's `ON_EPSILON`
@@ -537,12 +545,7 @@ impl Brush {
     ///
     /// [`BrushError::NoVertex`] when `a` and `b` are no edge, [`BrushError::VertexInside`] when
     /// `to` would not be a vertex, [`BrushError::CornerLost`] when another vertex would not.
-    pub fn split_edge(
-        &self,
-        a: [f64; 3],
-        b: [f64; 3],
-        to: [f64; 3],
-    ) -> Result<Self, BrushError> {
+    pub fn split_edge(&self, a: [f64; 3], b: [f64; 3], to: [f64; 3]) -> Result<Self, BrushError> {
         if same_point(a, b) || self.faces_of_edge(a, b).len() < 2 {
             return Err(BrushError::NoVertex(b));
         }
@@ -591,8 +594,7 @@ impl Brush {
         distance: f64,
         faces: u32,
     ) -> Result<Self, BrushError> {
-        if distance.is_nan() || distance <= 0.0 || !(1..=MAP_MAX_CHAMFER_FACES).contains(&faces)
-        {
+        if distance.is_nan() || distance <= 0.0 || !(1..=MAP_MAX_CHAMFER_FACES).contains(&faces) {
             return Err(BrushError::Degenerate);
         }
         let sides = self.faces_of_edge(a, b);
@@ -642,13 +644,16 @@ impl Brush {
                 + towards.get(i).copied().unwrap_or_default() * distance / half.cos()
         });
         let start = [0, 1, 2].map(|i| {
-            a.get(i).copied().unwrap_or_default() + w1.get(i).copied().unwrap_or_default() * distance
+            a.get(i).copied().unwrap_or_default()
+                + w1.get(i).copied().unwrap_or_default() * distance
         });
         let end = [0, 1, 2].map(|i| {
-            a.get(i).copied().unwrap_or_default() + w2.get(i).copied().unwrap_or_default() * distance
+            a.get(i).copied().unwrap_or_default()
+                + w2.get(i).copied().unwrap_or_default() * distance
         });
         let sweep = core::f64::consts::PI - 2.0 * half;
-        let out_of = |p: [f64; 3]| normalize([p[0] - centre[0], p[1] - centre[1], p[2] - centre[2]]);
+        let out_of =
+            |p: [f64; 3]| normalize([p[0] - centre[0], p[1] - centre[1], p[2] - centre[2]]);
         // The turn about the edge that takes the start toward the end.
         let axis = if dot(cross(out_of(start), out_of(end)), edge) >= 0.0 {
             edge
@@ -689,7 +694,11 @@ impl Brush {
             brush = brush.cut(plane, &surface)?.ok_or(BrushError::Degenerate)?;
         }
         let corners = brush.vertices();
-        if !brush.is_solid() || corners.iter().any(|&v| same_point(v, a) || same_point(v, b)) {
+        if !brush.is_solid()
+            || corners
+                .iter()
+                .any(|&v| same_point(v, a) || same_point(v, b))
+        {
             return Err(BrushError::Degenerate);
         }
         if brush.reaches_out(&self.planes().ok_or(BrushError::Degenerate)?) {
@@ -701,7 +710,7 @@ impl Brush {
 
 /// The mean of `points`.
 fn centroid(points: &[[f64; 3]]) -> [f64; 3] {
-    let mut sum = [0.0; 3];
+    let mut sum = ORIGIN;
     for p in points {
         for (s, c) in sum.iter_mut().zip(p) {
             *s += c;

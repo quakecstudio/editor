@@ -648,3 +648,69 @@ entity.
   `0 0 0`; its other keys are kept, and the placed brushes are added after its pairs. Each
   placed face is written in the Valve 220 form (MAP-5.1) with the placed axes, no rotation and a
   scale of 1; a face with no plane keeps its definition, as both compilers drop it (MAP-3.6).
+
+## MAP-15 Brush tools
+
+**Source:** our design, after TrenchBroom's manual at TrenchBroom/TrenchBroom@`8f329f1` (MAP-25:
+its scale and shear tools, extrusion, CSG hollow and intersect, and vertex editing with edge and
+face splitting), with sweeping and chamfering beside them. Implemented by `qs_map::Brush`'s
+`transformed`, `extruded`, `swept`, `hollowed`, `intersected`, `moved_vertices`, `split_edge`,
+`split_face` and `chamfered`. Each tool gives brushes that MAP-3.4 holds valid with volume, or
+refuses and changes nothing.
+
+### Behaviour
+
+- **MAP-15.1** Under texture lock a tool that moves a face's points by an affine map `p' = A p +
+  b` keeps every point's texel: each of the face's texture axes as MAP-4.2 to MAP-4.4 and
+  MAP-5.3 scale it, `v`, becomes `A^-T v`, and each offset is less the dot product of the new
+  axis with `b`. A Valve 220 face holds that exactly: each axis is the new one made unit, its
+  scale the inverse of the new one's length, its rotation kept. A standard face can only hold
+  a rotation and two scales of its base axes (MAP-4.2), so it takes the rotation that turns its
+  base s axis onto the new s axis as projected onto the base axes' plane, the scales that give
+  the new axes' lengths along the turned base axes, and the offsets that put the texel of the
+  plane's point nearest the origin where the new axes put it; that is exact unless the map
+  shears the texture on the face. A rotation within 0.000001 degrees of a whole one is written
+  whole. Without texture lock every face keeps its definition.
+- **MAP-15.2** A scale by factors along x, y and z about a point, and a shear that moves points
+  along one axis by a factor times their distance from a point along another, move every face's
+  points; a map that mirrors writes each face's points in the other order, so the face still
+  faces out, and one whose determinant is within 10^-12 of 0 is refused. A shear along an axis
+  by the same axis is not one.
+- **MAP-15.3** An extruded face moves along its outward normal, out for a positive distance and
+  in for a negative one, its texture moved with it under texture lock. Every other face keeps its
+  plane and its text; a face the move leaves with no polygon goes, and a move that leaves no
+  volume is refused.
+- **MAP-15.4** A brush swept along a path of two or more points gives one brush for each step:
+  the convex hull of the brush moved to the step's two ends, each relative to the path's first
+  point, each face painted as the moved brush's nearest face under texture lock. A step of no
+  length is refused.
+- **MAP-15.5** A brush hollowed by a wall of positive thickness is itself with the brush whose
+  every face is moved in by the wall taken out (the subtraction of P6-08), each inner face
+  painted as the face it lies under. A wall that takes a face away, or leaves no room inside,
+  is refused.
+- **MAP-15.6** The intersection of brushes is the solid all of them hold: every face of every one
+  that has a polygon on it, as its brush has it, the first of two faces on one plane. Brushes
+  that share no volume are refused.
+- **MAP-15.7** Several vertices move at once: the brush becomes the convex hull of its vertices
+  so moved. A point that is no vertex is refused, as is a move after which a moved vertex, or
+  another, is no vertex of the hull.
+- **MAP-15.8** An edge, two vertices that two faces' polygons both hold, splits by a new vertex:
+  the hull of the brush's vertices and the new one, refused when the pair is no edge or the
+  hull loses the new vertex or another. A face splits the same way by a new vertex in front of
+  it.
+- **MAP-15.9** An edge chamfers into 1 to 16 bevel faces from a distance along each of its two
+  faces, short of each face's far side: one face is the plane through the two points at that
+  distance, along the edge; more lie on the arc tangent to both faces at those points, each
+  through consecutive points of the arc divided evenly. Each cuts the brush, painted as the
+  first of the two faces. A distance that is not positive, or reaches a face's far side, a
+  count out of range, or a result that keeps either end of the edge, is refused.
+- **MAP-15.10** A tool whose result must lie within its brushes (an intersection, a hollow's
+  walls, a chamfer) refuses one with a vertex in front of one of their faces by qbsp's
+  `ON_EPSILON` (0.05, MAP-3) or more: a sliver the clips' 0.01 tolerance cannot place reaches
+  out that far along a shallow face.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `MAP_MAX_CHAMFER_FACES` | 16 | our design |

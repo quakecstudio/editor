@@ -3,15 +3,17 @@
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
-    clippy::panic,
-    reason = "test code: a failed unwrap or index, or a wrong variant, is a failed test"
+    clippy::float_cmp,
+    clippy::arithmetic_side_effects,
+    reason = "test code: a failed unwrap or index, is a failed test; the \
+              normals compared are exact and the counts small"
 )]
 
 use proptest::prelude::*;
 
 use super::{Affine, BrushFace, MAP_MAX_CHAMFER_FACES, WorldAxis, WorldTexture};
 use crate::brush_edit::{BrushError, Surface, TextureLock};
-use crate::geometry::MAP_ON_EPSILON;
+use crate::geometry::{MAP_ON_EPSILON, plane};
 use crate::{Brush, TexDef};
 
 fn standard() -> Surface {
@@ -120,7 +122,10 @@ fn shears_mirrors_and_flattening() {
     assert!(sheared.is_valid());
     assert!(near(volume(&sheared), volume(&brush)));
     assert!(texture_fixed(&brush, &sheared, &map));
-    assert_eq!(Affine::shear([0.0; 3], WorldAxis::Y, WorldAxis::Y, 1.0), None);
+    assert_eq!(
+        Affine::shear([0.0; 3], WorldAxis::Y, WorldAxis::Y, 1.0),
+        None
+    );
     let standard = cuboid([0.0, 0.0, 0.0], [64.0, 32.0, 16.0], &standard());
     assert!(
         standard
@@ -134,7 +139,10 @@ fn shears_mirrors_and_flattening() {
     assert!(near(volume(&mirrored), volume(&brush)));
     assert!(texture_fixed(&brush, &mirrored, &mirror));
     assert!(matches!(
-        brush.transformed(&Affine::scale([0.0; 3], [1.0, 0.0, 1.0]), TextureLock::Locked),
+        brush.transformed(
+            &Affine::scale([0.0; 3], [1.0, 0.0, 1.0]),
+            TextureLock::Locked
+        ),
         Err(BrushError::Degenerate)
     ));
 }
@@ -213,7 +221,10 @@ fn a_brush_hollows_into_walls() {
     assert!(near(total, 64.0 * 64.0 * 32.0 - 48.0 * 48.0 * 16.0));
     assert!(matches!(brush.hollowed(16.0), Err(BrushError::Degenerate)));
     assert!(matches!(brush.hollowed(0.0), Err(BrushError::Degenerate)));
-    assert!(matches!(brush.hollowed(f64::NAN), Err(BrushError::Degenerate)));
+    assert!(matches!(
+        brush.hollowed(f64::NAN),
+        Err(BrushError::Degenerate)
+    ));
 }
 
 // spec MAP-15.6: the intersection of brushes is the solid all hold, with their faces as they
@@ -225,9 +236,16 @@ fn brushes_intersect() {
     let both = a.intersected(&[&b]).unwrap();
     assert!(both.is_valid());
     assert!(near(volume(&both), 32.0 * 32.0 * 40.0));
-    assert!(both.faces.iter().all(|f| a.faces.contains(f) || b.faces.contains(f)));
+    assert!(
+        both.faces
+            .iter()
+            .all(|f| a.faces.contains(f) || b.faces.contains(f))
+    );
     let apart = cuboid([100.0, 0.0, 0.0], [120.0, 20.0, 20.0], &standard());
-    assert!(matches!(a.intersected(&[&apart]), Err(BrushError::Degenerate)));
+    assert!(matches!(
+        a.intersected(&[&apart]),
+        Err(BrushError::Degenerate)
+    ));
 }
 
 // spec MAP-15.7: several vertices move at once; each from must be a vertex, each to must stay
@@ -242,7 +260,10 @@ fn several_vertices_move_together() {
         ])
         .unwrap();
     assert!(moved.is_valid());
-    assert!(near(volume(&moved), 64.0 * 64.0 * 64.0 + 64.0 * 64.0 * 32.0 / 2.0));
+    assert!(near(
+        volume(&moved),
+        64.0 * 64.0 * 64.0 + 64.0 * 64.0 * 32.0 / 2.0
+    ));
     assert!(matches!(
         brush.moved_vertices(&[([1.0, 2.0, 3.0], [0.0; 3])]),
         Err(BrushError::NoVertex(_))
@@ -281,7 +302,10 @@ fn edges_and_faces_split() {
         .unwrap();
     assert!(pyramid.is_valid());
     assert_eq!(pyramid.vertices().len(), 9);
-    assert!(near(volume(&pyramid), 64.0 * 64.0 * 64.0 + 64.0 * 64.0 * 32.0 / 3.0));
+    assert!(near(
+        volume(&pyramid),
+        64.0 * 64.0 * 64.0 + 64.0 * 64.0 * 32.0 / 3.0
+    ));
     assert!(matches!(
         brush.split_face(BrushFace::new(top), [32.0, 32.0, 32.0]),
         Err(BrushError::VertexInside(_))
@@ -301,7 +325,10 @@ fn edges_chamfer_into_bevels() {
     let flat = brush.chamfered(a, b, 16.0, 1).unwrap();
     assert!(flat.is_valid());
     assert_eq!(flat.faces.len(), 7);
-    assert!(near(volume(&flat), 64.0f64.powi(3) - 16.0 * 16.0 / 2.0 * 64.0));
+    assert!(near(
+        volume(&flat),
+        64.0f64.powi(3) - 16.0 * 16.0 / 2.0 * 64.0
+    ));
     let round = brush.chamfered(a, b, 16.0, 4).unwrap();
     assert!(round.is_valid());
     assert_eq!(round.faces.len(), 10);
@@ -358,7 +385,10 @@ fn arbitrary_brush() -> impl Strategy<Value = Brush> {
     (
         prop::array::uniform3(-8_i32..8),
         prop::array::uniform3(4_i32..=32),
-        prop::collection::vec(prop::array::uniform3(prop::array::uniform3(-32_i32..=32)), 0..=2),
+        prop::collection::vec(
+            prop::array::uniform3(prop::array::uniform3(-32_i32..=32)),
+            0..=2,
+        ),
     )
         .prop_filter_map("a sound brush", |(corner, size, cuts)| {
             let min = corner.map(|c| f64::from(c) * 8.0);
@@ -366,7 +396,7 @@ fn arbitrary_brush() -> impl Strategy<Value = Brush> {
             let mut brush = Brush::cuboid(min, max, &valve()).ok()?;
             for points in cuts {
                 let points = points.map(|p| p.map(|c| f64::from(c) * 8.0));
-                let Some(plane) = crate::geometry::plane(points) else {
+                let Some(plane) = plane(points) else {
                     continue;
                 };
                 if let Ok((Some(back), _)) = brush.split(plane, &valve()) {
@@ -398,7 +428,7 @@ proptest! {
         prop_assert!(texture_fixed(&brush, &sheared, &sheared_map));
     }
 
-    // spec MAP-15.3, MAP-15.5, MAP-15.6, MAP-15.9: every tool on any brush gives valid brushes
+    // spec MAP-15.3, MAP-15.5, MAP-15.6, MAP-15.9, MAP-15.10: every tool on any brush gives valid brushes
     // or refuses
     #[test]
     fn tools_give_valid_brushes_or_refuse(
@@ -434,4 +464,3 @@ proptest! {
         }
     }
 }
-
