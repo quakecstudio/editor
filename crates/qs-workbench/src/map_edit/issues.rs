@@ -101,7 +101,7 @@ pub struct MapFixParams {
 }
 
 /// The parameters of `map.search`: what an entity or brush must match, every part given.
-#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MapSearchParams {
     /// Text the classname holds, in any case.
@@ -401,10 +401,9 @@ impl MapDocument {
 
 /// Whether two boxes, each least corner then greatest, meet.
 fn meets([a_lo, a_hi]: [[f64; 3]; 2], [b_lo, b_hi]: [[f64; 3]; 2]) -> bool {
-    (0..3).all(|i| {
-        let at = |v: [f64; 3]| v.get(i).copied().unwrap_or_default();
-        at(a_lo) <= at(b_hi) && at(b_lo) <= at(a_hi)
-    })
+    let below = a_lo.iter().zip(b_hi).all(|(a, b)| *a <= b);
+    let above = b_lo.iter().zip(a_hi).all(|(b, a)| *b <= a);
+    below && above
 }
 
 /// The message of a brush with no volume.
@@ -464,21 +463,23 @@ fn entity_issues(file: &MapFile, schema: &qc_sema::EntitySchema) -> Vec<MapIssue
         .collect()
 }
 
-/// The issues of textures the map's faces use that no WAD of `sources` holds.
-fn texture_issues(document: &MapDocument, sources: &TextureSources) -> Vec<MapIssue> {
-    sources
-        .listing(document)
-        .textures
-        .into_iter()
-        .filter(|texture| texture.origin == TextureOrigin::Missing)
-        .map(|texture| MapIssue {
-            line: 0,
-            message: format!("no WAD of the map holds the texture {}", texture.name),
-            entity: None,
-            brush: None,
-            fix: None,
-        })
-        .collect()
+impl MapDocument {
+    /// The issues of textures the map's faces use that no WAD of `sources` holds.
+    fn texture_issues(&self, sources: &TextureSources) -> Vec<MapIssue> {
+        sources
+            .listing(self)
+            .textures
+            .into_iter()
+            .filter(|texture| texture.origin == TextureOrigin::Missing)
+            .map(|texture| MapIssue {
+                line: 0,
+                message: format!("no WAD of the map holds the texture {}", texture.name),
+                entity: None,
+                brush: None,
+                fix: None,
+            })
+            .collect()
+    }
 }
 
 /// `map.issues`.
@@ -511,7 +512,7 @@ impl<C: HasPreview + 'static> Command<C> for MapIssuesCommand {
             game.as_deref(),
             chosen.as_deref(),
         );
-        issues.extend(texture_issues(document, &sources));
+        issues.extend(document.texture_issues(&sources));
         Ok(Outcome::outside_history(MapIssues { issues }))
     }
 }

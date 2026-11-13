@@ -46,6 +46,8 @@ enum Step {
     WaitTerminals,
     /// Drop the file the function makes onto the lowest node with the label.
     Drop(fn() -> PathBuf, &'static str),
+    /// Click the node with the label.
+    Click(&'static str),
 }
 
 /// A named sequence of steps, whose final frame is the snapshot.
@@ -207,6 +209,26 @@ fn scripts() -> Vec<Script> {
             ],
         },
         Script {
+            name: "map-issues",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": keep_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": keep_fixture().join("maps/keep.map") }),
+                ),
+                Step::Run(
+                    "map.set_key",
+                    json!({ "entity": 2, "key": "sped", "value": "200" }),
+                ),
+                Step::Run(
+                    "map.brush_texture",
+                    json!({ "entity": 4, "brushes": [0], "texture": "nowhere" }),
+                ),
+                Step::Click("Issues"),
+                Step::Click("Check map"),
+            ],
+        },
+        Script {
             name: "shell-resized",
             steps: vec![
                 Step::Run(
@@ -334,6 +356,7 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
                     .dropped_files
                     .push(Arc::new(Dropped(make())));
             }
+            Step::Click(label) => harness.get_by_label(label).click(),
             Step::WaitTerminals => {
                 let running = |harness: &Harness<'static, Option<App>>| {
                     let shell = &harness.state().as_ref().unwrap().shell;
