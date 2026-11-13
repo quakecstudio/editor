@@ -8,8 +8,11 @@
 //! texture lock or without, and Measure the distance between two points, each showing its
 //! numbers in the view (P6-09). Clicking with any of them selects a brush, Shift+click adds
 //! one, and the Properties panel shows the selection's size, aligns its textures, and
-//! subtracts, merges and deletes the brushes selected. Each edit is a [`BrushAction`] the shell runs as a
-//! `map.brush_*` command, so each has undo.
+//! subtracts, merges and deletes the brushes selected; it also hollows, intersects, scales,
+//! shears and sweeps them, extrudes or splits a face picked with Alt+click, and splits or
+//! chamfers the edge between two corners the Vertex tool picked with Ctrl+click, several of
+//! which a drag moves together (P6-18, MAP-15). Each edit is a [`BrushAction`] the shell runs
+//! as a `map.brush_*` command, so each has undo.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -19,7 +22,7 @@ use qs_map::shapes::{
     SHAPE_MIN_RINGS, SHAPE_MIN_ROCK_POINTS, SHAPE_MIN_SIDES, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT,
 };
 use qs_workbench::map_edit::{
-    ArchWall, BrushIndex, Circle, Climb, EntityIndex, KeepPart, Lock, ShapeSpec,
+    ArchWall, Axis, BrushIndex, Circle, Climb, EntityIndex, KeepPart, Lock, ShapeSpec,
 };
 use qs_workbench::map_uv::{FaceRef, UvChoice};
 
@@ -30,6 +33,9 @@ pub(crate) use crate::map_uv::PickMode;
 use crate::map_uv::UvEditor;
 use crate::strings::{Text, apply_texture, measure_readout, move_readout, selection_size};
 use crate::theme::{Theme, Token};
+use tool_fields::ToolFields;
+
+mod tool_fields;
 
 /// The width of the field the prefab's name is typed in, in points.
 const PREFAB_NAME_WIDTH: f32 = 140.0;
@@ -163,6 +169,26 @@ pub enum BrushAction {
     AlignFaces(FaceRef, Vec<FaceRef>),
     /// Save brushes, each by its entity, and whole entities as the prefab of the name (P6-23).
     SavePrefab(String, Vec<BrushRef>, Vec<EntityIndex>),
+    /// Hollow a brush into walls of the thickness (MAP-15.5).
+    Hollow(EntityIndex, BrushIndex, f64),
+    /// Replace brushes of an entity with the solid all hold (MAP-15.6).
+    Intersect(EntityIndex, Vec<BrushIndex>),
+    /// Scale brushes of an entity about their middle by factors along x, y and z (MAP-15.2).
+    Scale(EntityIndex, Vec<BrushIndex>, [f64; 3], Lock),
+    /// Shear brushes of an entity about their middle along an axis by another (MAP-15.2).
+    Shear(EntityIndex, Vec<BrushIndex>, Axis, Axis, f64, Lock),
+    /// Sweep a brush along a path from the origin (MAP-15.4).
+    Sweep(EntityIndex, BrushIndex, Vec<[f64; 3]>, Lock),
+    /// Move a face along its normal (MAP-15.3).
+    Extrude(FaceRef, f64, Lock),
+    /// Split a face by a new vertex the distance out from its middle (MAP-15.8).
+    SplitFace(FaceRef, f64),
+    /// Move several corners of a brush at once (MAP-15.7).
+    Vertices(EntityIndex, BrushIndex, Vec<([f64; 3], [f64; 3])>),
+    /// Split an edge by a new vertex the distance out from its middle (MAP-15.8).
+    SplitEdge(EntityIndex, BrushIndex, [[f64; 3]; 2], f64),
+    /// Chamfer an edge into bevel faces from the distance along its faces (MAP-15.9).
+    Chamfer(EntityIndex, BrushIndex, [[f64; 3]; 2], f64, u32),
 }
 
 /// What `map.brush_texture` sets; the parts not given are kept (MAP-12).
@@ -511,6 +537,10 @@ pub(crate) struct BrushTools {
     uv: UvEditor,
     /// The name typed for a prefab of the selection.
     prefab_name: String,
+    /// The brush tools' fields in the Properties panel (P6-18).
+    fields: ToolFields,
+    /// The corners of the first selected brush the Vertex tool picked with Ctrl+click.
+    corners: Vec<[f64; 3]>,
 }
 
 /// A ray in map space: where it starts and its direction.
@@ -757,7 +787,26 @@ impl BrushTools {
             && let Some(at) = response.interact_pointer_pos()
         {
             let (start, direction) = ray(at);
-            let (shift, alt) = ui.input(|i| (i.modifiers.shift, i.modifiers.alt));
+            // Ctrl, or Cmd on macOS, as egui's `command` reads it, picks corners.
+            let (shift, alt, command) = ui.input(|i| {
+                (
+                    i.modifiers.shift,
+                    i.modifiers.alt,
+                    i.modifiers.command || i.modifiers.ctrl,
+                )
+            });
+            if self.tool == MapTool::Vertex
+                && command
+                && let Some((brush, corner)) = self.corner_near(scene, projection, at)
+                && self.chosen.first() == Some(&brush)
+            {
+                if let Some(place) = self.corner_place(corner) {
+                    self.corners.remove(place);
+                } else {
+                    self.corners.push(corner);
+                }
+                return actions;
+            }
             if alt {
                 let mode = if shift {
                     PickMode::Toggle
@@ -768,6 +817,7 @@ impl BrushTools {
                 return actions;
             }
             self.uv.clear();
+            self.corners.clear();
             let picked = scene.pick_brush(start, direction, hidden);
             if let Some(brush) = picked
                 && let Some(shape) = scene.brush(brush.0, brush.1)
@@ -848,7 +898,9 @@ impl BrushTools {
         {
             let finished = self.finish(drag, ray(at));
             if let Some(
-                BrushAction::Clip(entity, brush, ..) | BrushAction::Vertex(entity, brush, ..),
+                BrushAction::Clip(entity, brush, ..)
+                | BrushAction::Vertex(entity, brush, ..)
+                | BrushAction::Vertices(entity, brush, ..),
             ) = finished
             {
                 self.reshaped = Some((entity, brush));
@@ -856,6 +908,15 @@ impl BrushTools {
             actions.extend(finished);
         }
         actions
+    }
+
+    /// Where `corner` is among the corners picked.
+    #[expect(
+        clippy::float_cmp,
+        reason = "corners are copies of the scene's vertices: equal is the same corner"
+    )]
+    fn corner_place(&self, corner: [f64; 3]) -> Option<usize> {
+        self.corners.iter().position(|&c| c == corner)
     }
 
     /// The corner of a selected brush nearest `at` in the view, within reach.
@@ -915,6 +976,15 @@ impl BrushTools {
             (MapTool::Vertex, Drag::Corner((entity, brush), from)) => {
                 let to = at_height(ray, single(from[2]))?;
                 let [x, y, _] = snapped(to);
+                if self.corners.len() > 1 && self.corners.contains(&from) {
+                    let by = [x - from[0], y - from[1]];
+                    let moves = self
+                        .corners
+                        .iter()
+                        .map(|&c| (c, [c[0] + by[0], c[1] + by[1], c[2]]))
+                        .collect();
+                    return Some(BrushAction::Vertices(entity, brush, moves));
+                }
                 Some(BrushAction::Vertex(entity, brush, from, [x, y, from[2]]))
             }
             (
@@ -949,9 +1019,14 @@ impl BrushTools {
                 projection.line(painter, *line, accent);
             }
             if self.tool == MapTool::Vertex {
+                let picked = theme.color(Token::Focus);
                 for &corner in &shape.vertices {
                     if let Some(at) = projection.point(corner.map(single)) {
-                        painter.circle_filled(at, VERTEX_DOT, accent.color);
+                        if self.corners.contains(&corner) {
+                            painter.circle_filled(at, VERTEX_DOT * 2.0, picked);
+                        } else {
+                            painter.circle_filled(at, VERTEX_DOT, accent.color);
+                        }
                     }
                 }
             }
@@ -1071,7 +1146,9 @@ impl BrushTools {
         entities: &[EntityIndex],
     ) -> Vec<BrushAction> {
         if !self.uv.is_empty() {
-            return self.uv.properties(ui, scene, size_of);
+            let mut actions = self.uv.properties(ui, scene, size_of);
+            actions.extend(self.face_properties(ui));
+            return actions;
         }
         let mut actions = Vec::new();
         let Some(&(entity, first)) = self.chosen.first() else {
@@ -1173,6 +1250,18 @@ impl BrushTools {
                 actions.extend(doomed.into_iter().map(|(e, b)| BrushAction::Delete(e, b)));
             }
         });
+        if actions.is_empty() {
+            let brushes: Vec<BrushIndex> = self
+                .chosen
+                .iter()
+                .filter(|&&(e, _)| e == entity)
+                .map(|&(_, b)| b)
+                .collect();
+            actions.extend(self.tool_properties(ui, entity, first, &brushes));
+        }
+        if actions.is_empty() && self.tool == MapTool::Vertex {
+            actions.extend(self.corner_properties(ui));
+        }
         if !actions.is_empty() {
             self.chosen.clear();
         }
@@ -1263,6 +1352,35 @@ mod tests {
         };
         assert_eq!(keep, KeepPart::Both);
         assert_eq!(points, [[0.0; 3], [64.0, 0.0, 0.0], [64.0, 0.0, 1.0]]);
+    }
+
+    // No spec statement: P6-18: dragging one of several picked corners moves them all by its
+    // move, each at its height
+    #[test]
+    fn picked_corners_move_together() {
+        let brush = (EntityIndex::new(0), BrushIndex::new(0));
+        let tools = BrushTools {
+            tool: MapTool::Vertex,
+            corners: vec![[64.0, 64.0, 64.0], [0.0, 64.0, 32.0]],
+            ..BrushTools::default()
+        };
+        assert_eq!(
+            tools.finish(Drag::Corner(brush, [64.0; 3]), down_from(90.0, 70.0)),
+            Some(BrushAction::Vertices(
+                brush.0,
+                brush.1,
+                vec![
+                    ([64.0, 64.0, 64.0], [96.0, 64.0, 64.0]),
+                    ([0.0, 64.0, 32.0], [32.0, 64.0, 32.0])
+                ]
+            ))
+        );
+        assert!(matches!(
+            tools.finish(Drag::Corner(brush, [0.0; 3]), down_from(90.0, 70.0)),
+            Some(BrushAction::Vertex(..))
+        ));
+        assert_eq!(tools.corner_place([0.0, 64.0, 32.0]), Some(1));
+        assert_eq!(tools.corner_place([1.0, 2.0, 3.0]), None);
     }
 
     // No spec statement: P6-08: a corner is dragged across the plane it lies in, to the grid

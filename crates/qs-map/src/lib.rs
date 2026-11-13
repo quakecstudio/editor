@@ -32,7 +32,9 @@ pub mod shapes;
 mod uv;
 
 pub use align::Alignment;
-pub use brush_edit::{BrushError, Surface, TextureLock};
+pub use brush_edit::{
+    Affine, BrushError, BrushFace, MAP_MAX_CHAMFER_FACES, Surface, TextureLock, WorldAxis,
+};
 pub use check::{Diagnostic, DiagnosticKind, MAP_MAX_SOUNDS};
 pub use document::{
     Brush, BrushModel, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key,

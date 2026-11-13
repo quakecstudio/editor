@@ -8,6 +8,7 @@ mod deep_nesting;
 mod diagnostics_unified;
 mod inventory;
 mod map_entities;
+mod map_tools;
 mod pak_written;
 mod paths;
 mod play_from_here;
