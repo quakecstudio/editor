@@ -71,6 +71,9 @@ use qs_workbench::map_edit::{
     PlaceParams, SetFlagParams,
 };
 use qs_workbench::map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
+use qs_workbench::map_edit::{
+    MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PlacePrefabParams, Prefabs, SavePrefabParams,
+};
 use qs_workbench::map_textures::TextureSources;
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
@@ -2109,6 +2112,10 @@ impl Shell {
                 MapAction::CheckLeaks => self
                     .execute(MAP_LEAKS, serde_json::json!({}))
                     .map_err(ShellError::from),
+                MapAction::ListPrefabs => self.list_prefabs(),
+                MapAction::PlacePrefab(path, origin) => {
+                    self.attempt(MAP_PLACE_PREFAB, &PlacePrefabParams { path, origin })
+                }
                 MapAction::RemoveKey(entity, key) => {
                     self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
                 }
@@ -2162,6 +2169,18 @@ impl Shell {
     #[cfg(test)]
     pub(crate) fn select_map_faces(&mut self, faces: &[FaceRef]) {
         self.map_editor.select_faces(faces);
+    }
+
+    /// Lists the project's prefabs in the map editor's prefab browser; none when no project
+    /// is open, so the browser does not ask again (P6-23).
+    fn list_prefabs(&mut self) -> Result<serde_json::Value, ShellError> {
+        let found: Result<Prefabs, ShellError> = self.attempt(MAP_PREFABS, &serde_json::json!({}));
+        let prefabs = found
+            .as_ref()
+            .map(|found| found.prefabs.clone())
+            .unwrap_or_default();
+        self.map_editor.set_prefabs(prefabs);
+        found.map(|_| serde_json::Value::Null)
     }
 
     /// Runs a brush edit as its `map.brush_*` command, on the commands' grid.
@@ -2233,6 +2252,18 @@ impl Shell {
             }
             BrushAction::AlignFaces(from, to) => {
                 self.attempt(MAP_FACE_ALIGN, &FaceAlignParams { from, to })
+            }
+            BrushAction::SavePrefab(name, brushes, entities) => {
+                let saved = self.attempt::<_, serde_json::Value>(
+                    MAP_SAVE_PREFAB,
+                    &SavePrefabParams {
+                        name,
+                        brushes,
+                        entities,
+                    },
+                );
+                // The browser lists the new prefab.
+                saved.and_then(|_| self.list_prefabs())
             }
             BrushAction::Shape(min, max, shape) => self.attempt(
                 MAP_BRUSH_SHAPE,

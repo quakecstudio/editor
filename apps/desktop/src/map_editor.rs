@@ -19,7 +19,7 @@ use qs_workbench::entity_classes::ClassInfo;
 use qs_workbench::map_compile::MapReport;
 use qs_workbench::map_edit::{
     EntityIndex, EntityKeys, FlagChange, GameMode, Keep, LayerInfo, MapDocument, MapRevision,
-    OutlineRow, Skill,
+    OutlineRow, Prefab, Skill,
 };
 use qs_workbench::map_textures::TextureSources;
 #[cfg(test)]
@@ -32,6 +32,7 @@ use crate::map_groups::{GroupAction, layers_ui, overview_keys, selection_ui};
 use crate::map_leaks::LeakView;
 use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_panes::{Pane, Plan, PlanCamera, Projection, panes};
+use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::strings::{Text, also_selected, panes_text};
@@ -124,6 +125,10 @@ pub enum MapAction {
     ImportTexture(std::path::PathBuf, String, DitherChoice),
     /// Check the map for leaks and missing textures (P6-11).
     CheckLeaks,
+    /// List the project's prefabs (P6-23).
+    ListPrefabs,
+    /// Copy the prefab at the path into the map at an origin (P6-23).
+    PlacePrefab(std::path::PathBuf, [f64; 3]),
 }
 
 /// The external maps the view draws (MAP-14): the project's folder they are read in after the
@@ -310,6 +315,8 @@ pub struct MapEditor {
     plans: HashMap<Plan, PlanCamera>,
     /// The map's last leak check (P6-11).
     leaks: LeakView,
+    /// The prefab browser (P6-23).
+    prefabs: PrefabBrowser,
 }
 
 /// The browsers of the tab below the map view, as the mockup has them.
@@ -320,6 +327,8 @@ pub(crate) enum BottomTab {
     Textures,
     /// The entity browser (P5-13).
     Entities,
+    /// The prefab browser (P6-23).
+    Prefabs,
 }
 
 impl MapEditor {
@@ -468,6 +477,11 @@ impl MapEditor {
         })
     }
 
+    /// Takes the prefabs `map.prefabs` listed (P6-23).
+    pub fn set_prefabs(&mut self, prefabs: Vec<Prefab>) {
+        self.prefabs.set_prefabs(prefabs);
+    }
+
     /// Takes the open map's texture sources, read again when the map opens or a WAD changes.
     pub fn set_texture_sources(&mut self, sources: TextureSources) {
         self.textures.set_sources(sources);
@@ -568,10 +582,12 @@ impl MapEditor {
                 Text::MapTextures.get(),
             );
             ui.selectable_value(&mut self.bottom, BottomTab::Entities, Text::Entities.get());
+            ui.selectable_value(&mut self.bottom, BottomTab::Prefabs, Text::MapPrefabs.get());
             ui.separator();
             match self.bottom {
                 BottomTab::Textures => self.textures.header(ui, theme, document),
                 BottomTab::Entities => self.browser.header(ui, theme, &self.names),
+                BottomTab::Prefabs => actions.extend(self.prefabs.header(ui, theme)),
             }
         });
         browser_ui.separator();
@@ -584,6 +600,7 @@ impl MapEditor {
                 &self.classes,
                 &self.models,
             ),
+            BottomTab::Prefabs => self.prefabs.body(&mut browser_ui, theme),
         }
         if let Some((path, name, dither)) = self.textures.import_window(ui.ctx(), theme) {
             actions.push(MapAction::ImportTexture(path, name, dither));
@@ -864,9 +881,7 @@ impl MapEditor {
         {
             actions.push(MapAction::Link(from, key, to));
         }
-        if let Some(ClassDrag(classname)) = response.dnd_release_payload::<ClassDrag>().as_deref()
-            && let Some(at) = pointer
-        {
+        let dropped_at = |at: Pos2| {
             let (start, direction) = ray(at);
             let snap = |c: f32| (f64::from(c) / GRID).round() * GRID;
             let distance = match pane {
@@ -875,12 +890,26 @@ impl MapEditor {
                 // others.
                 Pane::Plan(_) => start.iter().map(|c| c.abs()).fold(0.0, f32::max),
             };
-            let origin = [0, 1, 2].map(|axis| {
+            [0, 1, 2].map(|axis| {
                 let s = start.get(axis).copied().unwrap_or_default();
                 let d = direction.get(axis).copied().unwrap_or_default();
                 snap(s + d * distance)
-            });
-            actions.push(MapAction::Place(classname.clone(), origin));
+            })
+        };
+        // egui's release takes whatever is dragged before it checks its kind, so each kind is
+        // looked for first.
+        if response.dnd_hover_payload::<ClassDrag>().is_some()
+            && let Some(ClassDrag(classname)) =
+                response.dnd_release_payload::<ClassDrag>().as_deref()
+            && let Some(at) = pointer
+        {
+            actions.push(MapAction::Place(classname.clone(), dropped_at(at)));
+        }
+        if response.dnd_hover_payload::<PrefabDrag>().is_some()
+            && let Some(PrefabDrag(path)) = response.dnd_release_payload::<PrefabDrag>().as_deref()
+            && let Some(at) = pointer
+        {
+            actions.push(MapAction::PlacePrefab(path.clone(), dropped_at(at)));
         }
         let painter = ui.painter_at(area);
         painter.rect_filled(area, 0.0, theme.color(Token::SurfaceViewport));

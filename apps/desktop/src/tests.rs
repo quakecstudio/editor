@@ -3047,3 +3047,58 @@ fn an_instance_follows_its_file() {
     harness.run();
     assert!((top(&harness) - 128.0).abs() < 1e-3, "{}", top(&harness));
 }
+
+// No spec statement: P6-23, MAP-33: a brush selected is saved as a prefab under the name typed,
+// which the Prefabs tab lists; dragged into the view it is copied in, in one step that undoes
+#[test]
+fn a_prefab_is_saved_and_dragged_in() {
+    let dir = keep_copy("prefabs");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.run();
+    let before = brush_count(&harness, 0);
+    harness.get_by_label(Text::MapToolVertex.get()).click();
+    harness.run();
+    // The first brush in the way of a click on the door is the west wall.
+    let at = drawn_at(&harness, 4);
+    click_at(&mut harness, at);
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::TextInput, Text::MapPrefabName.get())
+        .click();
+    harness.run();
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::TextInput, Text::MapPrefabName.get())
+        .type_text("wall");
+    harness.run();
+    harness.get_by_label(Text::MapSavePrefab.get()).click();
+    harness.run();
+    harness.run();
+    assert!(dir.join("prefabs/wall.map").is_file());
+    harness.get_by_label(Text::MapPrefabs.get()).click();
+    harness.get_by_label(Text::MapToolSelect.get()).click();
+    harness.run();
+    harness.run();
+    let source = harness.get_by_label("wall").rect().center();
+    let view = harness
+        .get_by_label(Text::MapEditorView.get())
+        .rect()
+        .center();
+    drag(&mut harness, source, view, egui::Modifiers::NONE);
+    assert_eq!(
+        brush_count(&harness, 0),
+        before + 1,
+        "{}",
+        map_text(&harness)
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(brush_count(&harness, 0), before);
+}

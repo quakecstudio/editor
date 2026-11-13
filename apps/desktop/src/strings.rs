@@ -602,6 +602,16 @@ pub enum Text {
     MapTextureRotate,
     /// The label of a texture's scale.
     MapTextureScale,
+    /// The map browser's tab listing the project's prefabs.
+    MapPrefabs,
+    /// What the prefab list says when the project has none.
+    MapNoPrefabs,
+    /// How a prefab is placed.
+    MapPrefabHint,
+    /// The field the name of a prefab of the selection is typed in.
+    MapPrefabName,
+    /// The button that saves the selected brushes as a prefab.
+    MapSavePrefab,
     /// The heading of the selected faces' texture editing.
     MapFaces,
     /// How to select and edit faces' textures.
@@ -698,7 +708,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 342] = [
+    pub const ALL: [Self; 347] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -995,6 +1005,11 @@ impl Text {
         Self::MapTextureShift,
         Self::MapTextureRotate,
         Self::MapTextureScale,
+        Self::MapPrefabs,
+        Self::MapNoPrefabs,
+        Self::MapPrefabHint,
+        Self::MapPrefabName,
+        Self::MapSavePrefab,
         Self::MapFaces,
         Self::MapFacesHint,
         Self::MapUvFit,
@@ -1364,6 +1379,11 @@ impl Text {
             Self::MapTextureShift => "Shift",
             Self::MapTextureRotate => "Rotate",
             Self::MapTextureScale => "Scale",
+            Self::MapPrefabs => "Prefabs",
+            Self::MapNoPrefabs => "No prefabs in the project's prefabs folder",
+            Self::MapPrefabHint => "Drag a prefab into the view to copy it in",
+            Self::MapPrefabName => "Prefab name",
+            Self::MapSavePrefab => "Save as prefab",
             Self::MapFaces => "Faces",
             Self::MapFacesHint => {
                 "Alt-click faces to edit their textures. Drag the view to shift, Shift-drag to rotate, Cmd-drag (Ctrl-drag off macOS) to scale"
@@ -1536,6 +1556,13 @@ pub fn measure_readout(distance: f64, along: [f64; 3]) -> String {
 #[must_use]
 pub fn selection_size([x, y, z]: [f64; 3]) -> String {
     format!("Size {x} x {y} x {z}")
+}
+
+/// How many prefabs the project has (P6-23).
+#[must_use]
+pub fn prefab_count(prefabs: usize) -> String {
+    let noun = if prefabs == 1 { "prefab" } else { "prefabs" };
+    format!("{prefabs} {noun}")
 }
 
 /// The button that puts the texture chosen in the browser on the selected brushes (P6-09).
