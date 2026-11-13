@@ -13,7 +13,7 @@ use qs_commands::{Registry, Session};
 use serde_json::json;
 
 use super::{
-    MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFound, MapIssue, MapIssues, QuickFix, no_start, no_volume,
+    MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFound, MapIssue, MapIssues, NO_START, NO_VOLUME, QuickFix,
 };
 use crate::map_edit::{BrushIndex, EntityIndex, MAP_OPEN};
 use crate::preview::{HasPreview, Preview, PreviewConfig};
@@ -137,7 +137,7 @@ fn an_empty_brush_is_removed() {
                   ( 0 0 0 ) ( 0 0 1 ) ( 0 1 0 ) wall 0 0 0 1 1\n\
                   ( 0 0 0 ) ( 1 0 0 ) ( 0 1 0 ) wall 0 0 0 1 1\n}\n";
     let mut session = session("empty", &map(&(room() + sliver), START));
-    let fix = fixes_and_undoes(&mut session, no_volume());
+    let fix = fixes_and_undoes(&mut session, NO_VOLUME);
     assert_eq!(
         fix,
         QuickFix::RemoveBrush {
@@ -147,7 +147,7 @@ fn an_empty_brush_is_removed() {
     );
     let issue = issues(&mut session)
         .into_iter()
-        .find(|issue| issue.message == no_volume())
+        .find(|issue| issue.message == NO_VOLUME)
         .unwrap();
     assert_eq!(
         (issue.entity, issue.brush),
@@ -193,7 +193,7 @@ fn a_misspelled_class_is_set() {
 #[test]
 fn a_missing_start_is_placed() {
     let mut open = session("start", &map(&room(), ""));
-    let fix = fixes_and_undoes(&mut open, no_start());
+    let fix = fixes_and_undoes(&mut open, NO_START);
     assert_eq!(
         fix,
         QuickFix::AddPlayerStart {
@@ -203,14 +203,14 @@ fn a_missing_start_is_placed() {
     let mut solid = session("solid", &map(&cuboid([-64, -64, -64], [64, 64, 64]), ""));
     let issue = issues(&mut solid)
         .into_iter()
-        .find(|issue| issue.message == no_start())
+        .find(|issue| issue.message == NO_START)
         .unwrap();
     assert_eq!(issue.fix, None);
     let mut bare = session("bare", &map("", ""));
     assert!(
         !issues(&mut bare)
             .iter()
-            .any(|issue| issue.message == no_start()),
+            .any(|issue| issue.message == NO_START),
         "a world with no brushes is no map to play"
     );
 }
@@ -290,4 +290,69 @@ fn search_by_class_key_texture_and_box() {
     let everything = search(&mut session, json!({}));
     assert_eq!(everything.entities.len(), 4);
     assert!(everything.brushes.is_empty());
+}
+
+/// Runs `fix` and gives its error's text, checking the map is unchanged.
+fn refused(session: &mut Session<Context>, fix: &QuickFix) -> String {
+    let before = issues(session);
+    let error = session
+        .execute(MAP_FIX, json!({ "fix": fix }))
+        .unwrap_err()
+        .to_string();
+    assert_eq!(issues(session), before, "a refused fix changes nothing");
+    error
+}
+
+// No spec statement: P6-19: a fix that no longer fits the map is refused and changes nothing:
+// a brush with volume is not removed, a key that is not there is not renamed, and a brush or
+// entity that is not there is named
+#[test]
+fn stale_fixes_are_refused() {
+    let mut session = session("stale", &map(&room(), START));
+    let (world, start) = (EntityIndex::new(0), EntityIndex::new(1));
+    let solid = QuickFix::RemoveBrush {
+        entity: world,
+        brush: BrushIndex::new(0),
+    };
+    assert!(refused(&mut session, &solid).contains("has volume"));
+    let gone = QuickFix::RemoveBrush {
+        entity: world,
+        brush: BrushIndex::new(9),
+    };
+    assert!(refused(&mut session, &gone).contains("no brush 9"));
+    let rename = QuickFix::RenameKey {
+        entity: start,
+        from: "sped".to_owned(),
+        to: "speed".to_owned(),
+    };
+    assert!(refused(&mut session, &rename).contains("no key sped"));
+    let nowhere = QuickFix::SetClassname {
+        entity: EntityIndex::new(9),
+        classname: "light".to_owned(),
+    };
+    assert!(refused(&mut session, &nowhere).contains('9'));
+}
+
+// No spec statement: P6-19: a key written after a brush is placed with its entity, not the
+// brush; and a brush with no volume does not keep the player start's fix from being offered
+#[test]
+fn pairs_after_brushes_and_empty_brushes() {
+    let door = format!(
+        "{{\n\"classname\" \"func_door\"\n{}\"sped\" \"100\"\n}}\n",
+        cuboid([96, -16, 0], [112, 16, 96])
+    );
+    let mut doors = session("pairs", &map(&room(), &(START.to_owned() + &door)));
+    let found = issues(&mut doors);
+    let sped = found
+        .iter()
+        .find(|issue| issue.message.contains("sped"))
+        .unwrap_or_else(|| panic!("{found:?}"));
+    assert_eq!((sped.entity, sped.brush), (Some(EntityIndex::new(2)), None));
+    let sliver = "{\n( 0 0 0 ) ( 0 1 0 ) ( 0 0 1 ) wall 0 0 0 1 1\n}\n";
+    let mut open = session("sliver", &map(&(room() + sliver), ""));
+    let start = issues(&mut open)
+        .into_iter()
+        .find(|issue| issue.message == NO_START)
+        .unwrap();
+    assert!(start.fix.is_some(), "the empty brush holds no point");
 }

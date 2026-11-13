@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use qc_sema::MapDiagnosticKind;
 use qs_commands::{Command, NoParams, Outcome};
-use qs_map::{Brush, Entity, Face, MapFile};
+use qs_map::{Brush, Entity, Face, Item, MapFile};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -140,24 +140,32 @@ struct LinePlace {
     brush: Option<BrushIndex>,
 }
 
-/// Every entity's, brush's and face's first line in `file`, in file order.
+/// Every entity's, pair's, brush's and face's first line in `file`, in file order, which is
+/// the order of their lines.
 fn line_places(file: &MapFile) -> Vec<LinePlace> {
     let mut places = Vec::new();
     for (e, entity) in file.entities.iter().enumerate() {
         let entity_index = EntityIndex::new(e);
-        places.push(LinePlace {
-            line: entity.line(),
-            entity: entity_index,
-            brush: None,
-        });
-        for (b, brush) in entity.brushes().enumerate() {
-            let brush_index = Some(BrushIndex::new(b));
-            for line in core::iter::once(brush.line()).chain(brush.faces.iter().map(|f| f.line())) {
-                places.push(LinePlace {
-                    line,
-                    entity: entity_index,
-                    brush: brush_index,
-                });
+        let mut place = |line: u32, brush: Option<BrushIndex>| {
+            places.push(LinePlace {
+                line,
+                entity: entity_index,
+                brush,
+            });
+        };
+        place(entity.line(), None);
+        let mut brushes = 0;
+        for item in &entity.items {
+            match item {
+                Item::Pair(pair) => place(pair.line(), None),
+                Item::Brush(brush) => {
+                    let index = Some(BrushIndex::new(brushes));
+                    place(brush.line(), index);
+                    for face in &brush.faces {
+                        place(face.line(), index);
+                    }
+                    brushes = brushes.saturating_add(1);
+                }
             }
         }
     }
@@ -170,10 +178,10 @@ fn place_of(places: &[LinePlace], line: u32) -> (Option<EntityIndex>, Option<Bru
     if line == 0 {
         return (None, None);
     }
-    places
-        .iter()
-        .take_while(|place| place.line <= line)
-        .last()
+    let after = places.partition_point(|place| place.line <= line);
+    after
+        .checked_sub(1)
+        .and_then(|last| places.get(last))
         .map_or((None, None), |place| (Some(place.entity), place.brush))
 }
 
@@ -182,54 +190,54 @@ fn is_empty(brush: &Brush) -> bool {
     brush.polygons().len() < SOLID_FACES
 }
 
-/// The least and greatest corner of `brush`, if it has corners.
-fn bounds_of(brush: &Brush) -> Option<[[f64; 3]; 2]> {
+/// The least and greatest of `corners`, if there are any.
+fn bounds(corners: impl IntoIterator<Item = [f64; 3]>) -> Option<[[f64; 3]; 2]> {
     let mut found: Option<[[f64; 3]; 2]> = None;
-    for corner in brush.vertices() {
+    for corner in corners {
         let [lo, hi] = found.unwrap_or([corner, corner]);
         found = Some([
-            [
-                lo[0].min(corner[0]),
-                lo[1].min(corner[1]),
-                lo[2].min(corner[2]),
-            ],
-            [
-                hi[0].max(corner[0]),
-                hi[1].max(corner[1]),
-                hi[2].max(corner[2]),
-            ],
+            [0, 1, 2].map(|i| {
+                lo.get(i)
+                    .copied()
+                    .unwrap_or_default()
+                    .min(corner.get(i).copied().unwrap_or_default())
+            }),
+            [0, 1, 2].map(|i| {
+                hi.get(i)
+                    .copied()
+                    .unwrap_or_default()
+                    .max(corner.get(i).copied().unwrap_or_default())
+            }),
         ]);
     }
     found
 }
 
-/// Whether `point` is inside or on `brush`'s solid.
+/// The least and greatest corner of `brush`, if it has corners.
+fn bounds_of(brush: &Brush) -> Option<[[f64; 3]; 2]> {
+    bounds(brush.vertices())
+}
+
+/// Whether `point` is inside or on `brush`'s solid; a brush with no volume holds nothing.
 fn holds(brush: &Brush, point: [f64; 3]) -> bool {
-    brush.faces.iter().filter_map(Face::plane).all(|plane| {
-        let [x, y, z] = plane.normal;
-        point[0] * x + point[1] * y + point[2] * z <= plane.dist
-    })
+    !is_empty(brush)
+        && brush.faces.iter().filter_map(Face::plane).all(|plane| {
+            let [x, y, z] = plane.normal;
+            point[0] * x + point[1] * y + point[2] * z <= plane.dist
+        })
 }
 
 /// Where a player start can go in `file`: above the floor at the middle of the world's
 /// brushes, when that point is in no brush; none otherwise.
 fn start_point(file: &MapFile) -> Option<[f64; 3]> {
     let world = file.world()?;
-    let mut all: Option<[[f64; 3]; 2]> = None;
-    for [lo, hi] in world.brushes().filter_map(bounds_of) {
-        let [a, b] = all.unwrap_or([lo, hi]);
-        all = Some([
-            [a[0].min(lo[0]), a[1].min(lo[1]), a[2].min(lo[2])],
-            [b[0].max(hi[0]), b[1].max(hi[1]), b[2].max(hi[2])],
-        ]);
-    }
-    let [lo, hi] = all?;
+    let boxes: Vec<[[f64; 3]; 2]> = world.brushes().filter_map(bounds_of).collect();
+    let [lo, hi] = bounds(boxes.iter().flatten().copied())?;
     let (x, y) = ((lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0);
     // The highest top of a brush under the middle that is below the middle's height.
     let middle = (lo[2] + hi[2]) / 2.0;
-    let floor = world
-        .brushes()
-        .filter_map(bounds_of)
+    let floor = boxes
+        .iter()
         .filter(|[b, t]| b[0] <= x && x <= t[0] && b[1] <= y && y <= t[1] && t[2] <= middle)
         .map(|[_, top]| top[2])
         .fold(None, |best: Option<f64>, z| {
@@ -242,14 +250,13 @@ fn start_point(file: &MapFile) -> Option<[f64; 3]> {
 impl MapDocument {
     /// The issues of the map found without the project: its format's, empty brushes and a
     /// missing player start.
-    fn own_issues(&self) -> Vec<MapIssue> {
+    fn own_issues(&self, places: &[LinePlace]) -> Vec<MapIssue> {
         let file = self.file();
-        let places = line_places(file);
         let mut issues: Vec<MapIssue> = file
             .check()
             .into_iter()
             .map(|d| {
-                let (entity, brush) = place_of(&places, d.line);
+                let (entity, brush) = place_of(places, d.line);
                 MapIssue {
                     line: d.line,
                     message: d.kind.to_string(),
@@ -265,7 +272,7 @@ impl MapDocument {
                     let (entity, brush_index) = (EntityIndex::new(e), BrushIndex::new(b));
                     issues.push(MapIssue {
                         line: brush.line(),
-                        message: no_volume().to_owned(),
+                        message: NO_VOLUME.to_owned(),
                         entity: Some(entity),
                         brush: Some(brush_index),
                         fix: Some(QuickFix::RemoveBrush {
@@ -283,7 +290,7 @@ impl MapDocument {
         if !has_start && file.world().is_some_and(Entity::has_brushes) {
             issues.push(MapIssue {
                 line: 0,
-                message: no_start().to_owned(),
+                message: NO_START.to_owned(),
                 entity: None,
                 brush: None,
                 fix: start_point(file).map(|origin| QuickFix::AddPlayerStart { origin }),
@@ -296,7 +303,12 @@ impl MapDocument {
     fn apply(&mut self, fix: &QuickFix) -> Result<Option<EntityIndex>, WorkbenchError> {
         match fix {
             QuickFix::RemoveBrush { entity, brush } => {
-                self.brush(*entity, *brush)?;
+                if !is_empty(&self.brush(*entity, *brush)?) {
+                    return Err(WorkbenchError::NotEmpty {
+                        entity: *entity,
+                        brush: *brush,
+                    });
+                }
                 self.replace_brush(*entity, *brush, Vec::new())?;
                 Ok(Some(*entity))
             }
@@ -407,24 +419,23 @@ fn meets([a_lo, a_hi]: [[f64; 3]; 2], [b_lo, b_hi]: [[f64; 3]; 2]) -> bool {
 }
 
 /// The message of a brush with no volume.
-const fn no_volume() -> &'static str {
-    "a brush with no volume, which both compilers drop"
-}
+const NO_VOLUME: &str = "a brush with no volume, which both compilers drop";
 
 /// The message of a map with no player start.
-const fn no_start() -> &'static str {
-    "no info_player_start: the game cannot put a player in the map"
-}
+const NO_START: &str = "no info_player_start: the game cannot put a player in the map";
 
 /// The issues of the project's entity check of `file` (MAP-8), each with its fix.
-fn entity_issues(file: &MapFile, schema: &qc_sema::EntitySchema) -> Vec<MapIssue> {
-    let places = line_places(file);
+fn entity_issues(
+    file: &MapFile,
+    places: &[LinePlace],
+    schema: &qc_sema::EntitySchema,
+) -> Vec<MapIssue> {
     schema
         .check(file)
         .into_iter()
         .map(|d| {
             let entity = EntityIndex::new(d.entity);
-            let (_, brush) = place_of(&places, d.line);
+            let (_, brush) = place_of(places, d.line);
             let fix = match &d.kind {
                 MapDiagnosticKind::UnknownKey {
                     key,
@@ -502,9 +513,10 @@ impl<C: HasPreview + 'static> Command<C> for MapIssuesCommand {
         let chosen = preview.game_folder().map(Path::to_path_buf);
         let root: Option<PathBuf> = workbench.root().map(Path::to_path_buf);
         let document = workbench.map().ok_or(WorkbenchError::NoMap)?;
-        let mut issues = document.own_issues();
+        let places = line_places(document.file());
+        let mut issues = document.own_issues(&places);
         if let Some(schema) = &schema {
-            issues.extend(entity_issues(document.file(), schema));
+            issues.extend(entity_issues(document.file(), &places, schema));
         }
         let sources = TextureSources::load(
             document,

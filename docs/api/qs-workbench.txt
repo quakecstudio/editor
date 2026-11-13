@@ -1309,6 +1309,7 @@ variant qs_workbench::WorkbenchError::NoProject
 variant qs_workbench::WorkbenchError::NoRoom
 variant qs_workbench::WorkbenchError::NotBuilt
 variant qs_workbench::WorkbenchError::NotContainer
+variant qs_workbench::WorkbenchError::NotEmpty
 variant qs_workbench::WorkbenchError::NotLayer
 variant qs_workbench::WorkbenchError::NotPointEntity
 variant qs_workbench::WorkbenchError::Offset

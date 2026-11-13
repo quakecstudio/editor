@@ -4,7 +4,7 @@
 //! wording is reviewed in one place and can be translated later. A test fails on a string
 //! literal in the UI modules.
 
-use qs_workbench::map_edit::QuickFix;
+use qs_workbench::map_edit::{BrushIndex, EntityIndex, QuickFix};
 use qs_workbench::map_textures::{WadFound, WadState};
 
 /// One string the app shows.
@@ -619,6 +619,8 @@ pub enum Text {
     MapSearchValue,
     /// The search's texture field.
     MapSearchTexture,
+    /// The search's box field.
+    MapSearchWithin,
     /// Keep the part of a clipped brush right of the cut line.
     MapKeepRight,
     /// Keep the part of a clipped brush left of the cut line.
@@ -687,7 +689,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 336] = [
+    pub const ALL: [Self; 337] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -992,6 +994,7 @@ impl Text {
         Self::MapSearchKey,
         Self::MapSearchValue,
         Self::MapSearchTexture,
+        Self::MapSearchWithin,
         Self::MapKeepRight,
         Self::MapKeepLeft,
         Self::MapBrushes,
@@ -1355,6 +1358,7 @@ impl Text {
             Self::MapSearchKey => "Has key",
             Self::MapSearchValue => "Has value",
             Self::MapSearchTexture => "Has texture",
+            Self::MapSearchWithin => "Within: x y z x y z",
             Self::MapKeepRight => "Keep right",
             Self::MapKeepLeft => "Keep left",
             Self::MapBrushes => "Brushes",
@@ -1541,6 +1545,12 @@ pub fn map_found_count(entities: usize, brushes: usize) -> String {
 #[must_use]
 pub fn entity_place(place: usize) -> String {
     format!("entity {place}")
+}
+
+/// A brush named by its entity's place and its own among the entity's brushes (P6-19).
+#[must_use]
+pub fn brush_place(entity: EntityIndex, brush: BrushIndex) -> String {
+    format!("entity {}, brush {}", entity.get(), brush.get())
 }
 
 /// What a quick fix's button says (P6-19).

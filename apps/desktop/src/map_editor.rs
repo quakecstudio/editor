@@ -479,14 +479,14 @@ impl MapEditor {
         self.issues.clear();
     }
 
-    /// Takes the issues `map.issues` found (P6-19).
-    pub fn set_issues(&mut self, issues: Vec<MapIssue>) {
-        self.issues.set_issues(issues);
+    /// Takes the issues `map.issues` found in the map at `at` (P6-19).
+    pub fn set_issues(&mut self, issues: Vec<MapIssue>, at: MapRevision) {
+        self.issues.set_issues(issues, at);
     }
 
-    /// Takes what `map.search` found (P6-19).
-    pub fn set_found(&mut self, found: MapFound) {
-        self.issues.set_found(found);
+    /// Takes what `map.search` found in the map at `at` (P6-19).
+    pub fn set_found(&mut self, found: MapFound, at: MapRevision) {
+        self.issues.set_found(found, at);
     }
 
     /// Draws the view's toolbar, `document` in the view and the entity browser below it, in
@@ -509,6 +509,7 @@ impl MapEditor {
         let mut view_ui = ui.new_child(egui::UiBuilder::new().max_rect(view));
         actions.extend(self.view(&mut view_ui, theme, document, layout));
         let mut browser_ui = ui.new_child(egui::UiBuilder::new().max_rect(below));
+        self.issues.follow(document.edits());
         browser_ui.horizontal(|ui| {
             ui.selectable_value(
                 &mut self.bottom,

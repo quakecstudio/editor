@@ -70,7 +70,9 @@ use qs_workbench::map_edit::{
     FilterParams, LinkParams, MAP_FILTER, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, MapFiltered,
     PlaceParams, SetFlagParams,
 };
-use qs_workbench::map_edit::{MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssues};
+use qs_workbench::map_edit::{
+    MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssues, MapRevision,
+};
 use qs_workbench::map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
 use qs_workbench::map_textures::TextureSources;
 use qs_workbench::search::{
@@ -2104,7 +2106,8 @@ impl Shell {
                 MapAction::Find(search) => {
                     let found: Result<MapFound, ShellError> = self.attempt(MAP_SEARCH, &search);
                     found.map(|found| {
-                        self.map_editor.set_found(found);
+                        let at = self.map_edits();
+                        self.map_editor.set_found(found, at);
                         serde_json::Value::Null
                     })
                 }
@@ -2160,8 +2163,19 @@ impl Shell {
     /// Lists the open map's issues in the map editor's issue browser (P6-19).
     fn check_map_issues(&mut self) -> Result<serde_json::Value, ShellError> {
         let found: MapIssues = self.attempt(MAP_ISSUES, &serde_json::json!({}))?;
-        self.map_editor.set_issues(found.issues);
+        let at = self.map_edits();
+        self.map_editor.set_issues(found.issues, at);
         Ok(serde_json::Value::Null)
+    }
+
+    /// The open map's edits, which a list of its issues or matches is good for.
+    fn map_edits(&self) -> MapRevision {
+        self.session
+            .context()
+            .workbench
+            .map()
+            .map(MapDocument::edits)
+            .unwrap_or_default()
     }
 
     /// Runs a brush edit as its `map.brush_*` command, on the commands' grid.

@@ -6,11 +6,13 @@
 //! select the same way. Each is a [`MapAction`] the shell runs as a command.
 
 use eframe::egui::{self, RichText, Ui};
-use qs_workbench::map_edit::{MapFound, MapIssue, MapSearchParams};
+use qs_workbench::map_edit::{EntityIndex, MapFound, MapIssue, MapRevision, MapSearchParams};
 
 use crate::map_browser::FILTER_WIDTH;
 use crate::map_editor::MapAction;
-use crate::strings::{Text, entity_place, fix_label, issue_count, issue_line, map_found_count};
+use crate::strings::{
+    Text, brush_place, entity_place, fix_label, issue_count, issue_line, map_found_count,
+};
 use crate::theme::{Theme, Token};
 
 /// The search's fields, as typed.
@@ -20,21 +22,33 @@ struct SearchFields {
     key: String,
     value: String,
     texture: String,
+    /// A box as six numbers: the least corner, then the greatest.
+    within: String,
 }
 
 impl SearchFields {
-    /// The search the fields ask for: each part typed, trimmed.
+    /// The search the fields ask for: each part typed, trimmed; the box when it is six
+    /// numbers.
     fn params(&self) -> MapSearchParams {
         let part = |text: &str| {
             let text = text.trim();
             (!text.is_empty()).then(|| text.to_owned())
+        };
+        let numbers: Vec<f64> = self
+            .within
+            .split_whitespace()
+            .map_while(|word| word.parse().ok())
+            .collect();
+        let within = match numbers.as_slice() {
+            &[x0, y0, z0, x1, y1, z1] => Some([[x0, y0, z0], [x1, y1, z1]]),
+            _ => None,
         };
         MapSearchParams {
             classname: part(&self.classname),
             key: part(&self.key),
             value: part(&self.value),
             texture: part(&self.texture),
-            within: None,
+            within,
         }
     }
 }
@@ -47,23 +61,38 @@ pub(crate) struct IssueBrowser {
     fields: SearchFields,
     /// What the last search found.
     found: Option<MapFound>,
+    /// The map's edits the issues and matches were found at.
+    seen: Option<MapRevision>,
 }
 
 impl IssueBrowser {
-    /// Takes the issues `map.issues` found.
-    pub(crate) fn set_issues(&mut self, issues: Vec<MapIssue>) {
+    /// Takes the issues `map.issues` found in the map at `at`.
+    pub(crate) fn set_issues(&mut self, issues: Vec<MapIssue>, at: MapRevision) {
+        self.follow(at);
         self.issues = Some(issues);
+        self.seen = Some(at);
     }
 
-    /// Takes what `map.search` found.
-    pub(crate) fn set_found(&mut self, found: MapFound) {
+    /// Takes what `map.search` found in the map at `at`.
+    pub(crate) fn set_found(&mut self, found: MapFound, at: MapRevision) {
+        self.follow(at);
         self.found = Some(found);
+        self.seen = Some(at);
     }
 
-    /// Forgets the issues and the search's matches, for another map.
+    /// Forgets the issues and matches when the map is no longer at the edits they were found
+    /// at: their places may name other entities and brushes now.
+    pub(crate) fn follow(&mut self, edits: MapRevision) {
+        if self.seen.is_some_and(|seen| seen != edits) {
+            self.clear();
+        }
+    }
+
+    /// Forgets the issues and the search's matches.
     pub(crate) fn clear(&mut self) {
         self.issues = None;
         self.found = None;
+        self.seen = None;
     }
 
     /// The header's part: the Check button and how many issues were found.
@@ -94,7 +123,7 @@ impl IssueBrowser {
         actions
     }
 
-    /// The issues found, or a prompt to check the map.
+    /// The issues found, or a prompt to check the map; only the rows in view are laid out.
     fn issue_list(&self, ui: &mut Ui, theme: &Theme) -> Vec<MapAction> {
         let mut actions = Vec::new();
         let Some(issues) = &self.issues else {
@@ -105,10 +134,11 @@ impl IssueBrowser {
             ui.label(RichText::new(Text::MapNoIssues.get()).color(theme.color(Token::TextMuted)));
             return actions;
         }
+        let row = ui.spacing().interact_size.y;
         egui::ScrollArea::vertical()
             .id_salt(ui.id().with(core::any::TypeId::of::<MapIssue>()))
-            .show(ui, |ui| {
-                for issue in issues {
+            .show_rows(ui, row, issues.len(), |ui, shown| {
+                for issue in issues.get(shown).unwrap_or_default() {
                     ui.horizontal(|ui| {
                         if let Some(fix) = &issue.fix
                             && ui.button(fix_label(fix)).clicked()
@@ -118,12 +148,13 @@ impl IssueBrowser {
                         let text = issue_line(issue.line, &issue.message);
                         match issue.entity {
                             Some(entity) => {
-                                if ui.add(egui::Button::new(text).frame(false).wrap()).clicked() {
+                                let button = egui::Button::new(text).frame(false).truncate();
+                                if ui.add(button).clicked() {
                                     actions.push(MapAction::Select(Some(entity)));
                                 }
                             }
                             None => {
-                                ui.add(egui::Label::new(text).wrap());
+                                ui.add(egui::Label::new(text).truncate());
                             }
                         }
                     });
@@ -132,7 +163,7 @@ impl IssueBrowser {
         actions
     }
 
-    /// The search's fields, its Find button and what it found.
+    /// The search's fields, its Find button and what it found, each selecting its entity.
     fn search(&mut self, ui: &mut Ui, theme: &Theme) -> Vec<MapAction> {
         let mut actions = Vec::new();
         let mut entered = false;
@@ -142,37 +173,48 @@ impl IssueBrowser {
             (Text::MapSearchKey, &mut fields.key),
             (Text::MapSearchValue, &mut fields.value),
             (Text::MapSearchTexture, &mut fields.texture),
+            (Text::MapSearchWithin, &mut fields.within),
         ] {
-            ui.horizontal(|ui| {
-                let field = ui.add(
-                    egui::TextEdit::singleline(text)
-                        .hint_text(label.get())
-                        .desired_width(FILTER_WIDTH),
-                );
-                entered |= field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            });
+            let field = ui.add(
+                egui::TextEdit::singleline(text)
+                    .hint_text(label.get())
+                    .desired_width(FILTER_WIDTH),
+            );
+            entered |= field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         }
         ui.horizontal(|ui| {
             if ui.button(Text::Find.get()).clicked() || entered {
                 actions.push(MapAction::Find(self.fields.params()));
             }
         });
-        if let Some(found) = &self.found {
-            ui.label(
-                RichText::new(map_found_count(found.entities.len(), found.brushes.len()))
-                    .color(theme.color(Token::TextMuted)),
-            );
-            egui::ScrollArea::vertical()
-                .id_salt(ui.id().with(core::any::TypeId::of::<MapFound>()))
-                .show(ui, |ui| {
-                    for &entity in &found.entities {
-                        let place = egui::Button::new(entity_place(entity.get())).frame(false);
-                        if ui.add(place).clicked() {
-                            actions.push(MapAction::Select(Some(entity)));
-                        }
+        let Some(found) = &self.found else {
+            return actions;
+        };
+        ui.label(
+            RichText::new(map_found_count(found.entities.len(), found.brushes.len()))
+                .color(theme.color(Token::TextMuted)),
+        );
+        let rows: Vec<(EntityIndex, String)> = found
+            .entities
+            .iter()
+            .map(|&entity| (entity, entity_place(entity.get())))
+            .chain(
+                found
+                    .brushes
+                    .iter()
+                    .map(|&(entity, brush)| (entity, brush_place(entity, brush))),
+            )
+            .collect();
+        let row = ui.spacing().interact_size.y;
+        egui::ScrollArea::vertical()
+            .id_salt(ui.id().with(core::any::TypeId::of::<MapFound>()))
+            .show_rows(ui, row, rows.len(), |ui, shown| {
+                for (entity, text) in rows.get(shown).unwrap_or_default() {
+                    if ui.add(egui::Button::new(text).frame(false)).clicked() {
+                        actions.push(MapAction::Select(Some(*entity)));
                     }
-                });
-        }
+                }
+            });
         actions
     }
 }
