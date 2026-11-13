@@ -582,7 +582,7 @@ shift.
 - **MAP-13.5** Resetting gives a standard face no shift, no rotation and a scale of 1, and a
   Valve 220 face the paraxial axes of its plane (MAP-4.2) with no shift, rotation or scaling.
 - **MAP-13.6** Snapping moves each axis's shift by the least amount that puts one of the face's
-  corners on a texture edge.
+  corners on a texture edge; of two corners as near, the first in the polygon's order.
 - **MAP-13.7** Fitting, justifying and snapping leave each shift they set in `[0, size)` for
   the texture's size along that axis, as whole copies of the texture are the same alignment.
 - **MAP-13.8** Carrying a source face's alignment onto a target face keeps the target's form
@@ -591,7 +591,9 @@ shift.
   normals, with the source's rotation and scale. A standard target keeps the axes of its own
   plane (MAP-4.2) and takes the rotation and the scales, in the source's proportion, that
   make the texels change along the line as the source's do; a rotation within 0.000001 of a
-  whole number of degrees is that number, so the exact sines of MAP-4.3 apply.
+  whole number of degrees is that number, so the exact sines of MAP-4.3 apply. A source whose
+  axes both lie across the line, as a Valve 220 source's may, gives no rotation and its own
+  scales.
 - **MAP-13.9** Between parallel planes there is no shared line: a standard source's definition
   is copied onto a standard target, which projects it the same way (MAP-4.2 gives a plane and
   its opposite the same axes); a Valve 220 target takes the source's axes, shifts, rotation

@@ -4,7 +4,9 @@
     clippy::unwrap_used,
     clippy::indexing_slicing,
     clippy::unreachable,
-    reason = "test code: a failed unwrap or index is a failed test"
+    clippy::float_cmp,
+    reason = "test code: a failed unwrap or index is a failed test; the normals, shifts and \
+              rotations compared are exact"
 )]
 
 use proptest::prelude::*;
@@ -163,6 +165,41 @@ fn fit_keeps_what_it_cannot_fit() {
         ),
         Some(STANDARD)
     );
+    let left = face
+        .uv_edited(
+            polygon,
+            UvEdit::Justify(Justify::Left),
+            TextureSize::new(0, 0),
+        )
+        .unwrap();
+    let [[lo, _], _] = extent(face, left, polygon);
+    assert!(lo.abs() < NEAR, "a texture of no size is not wrapped: {lo}");
+}
+
+// spec MAP-13.6: snapping takes the corner nearest a texture edge, the first in the polygon's
+// order when two are as near
+#[test]
+fn snap_takes_the_first_nearest_corner() {
+    let floor = Face::new(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, -1.0, 0.0]],
+        b"rock",
+        TexDef::Standard {
+            shift: [0.0; 2],
+            rotate: 0.0,
+            scale: [1.0, 1.0],
+        },
+    )
+    .unwrap();
+    assert_eq!(floor.plane().unwrap().normal, [0.0, 0.0, 1.0]);
+    let size = TextureSize::new(64, 16);
+    let shift = |polygon: &[[f64; 3]]| match floor.uv_edited(polygon, UvEdit::Snap, size) {
+        Some(TexDef::Standard { shift, .. }) => shift,
+        other => unreachable!("{other:?}"),
+    };
+    let first = [[131.0, -5.0, 0.0], [189.0, -5.0, 0.0], [189.0, -1.0, 0.0]];
+    assert_eq!(shift(&first), [61.0, 15.0]);
+    let [a, b, c] = first;
+    assert_eq!(shift(&[b, a, c]), [3.0, 15.0]);
 }
 
 // spec MAP-13.3, MAP-13.7: justify puts the texture's edge on the face's edge, or its centre
@@ -234,7 +271,10 @@ fn flip_mirrors_about_the_centre() {
                 let after = texels(face, flipped, centre);
                 assert!((before[0] - after[0]).abs() < NEAR && (before[1] - after[1]).abs() < NEAR);
                 let [fs, ft] = extent(face, flipped, &polygon);
-                let i = axis.index();
+                let i = match axis {
+                    TexAxis::S => 0,
+                    TexAxis::T => 1,
+                };
                 assert!(((fs[1] - fs[0]) - (s[1] - s[0])).abs() < NEAR);
                 assert!(((ft[1] - ft[0]) - (t[1] - t[0])).abs() < NEAR);
                 let corner = polygon[0];
@@ -410,6 +450,13 @@ proptest! {
                     "the target keeps its form"
                 );
                 no_seam(&from, to, carried, edge);
+                if let (false, TexDef::Valve { s, t, .. }) = (slanted, carried) {
+                    let n = to.plane().unwrap().normal;
+                    for axis in [s, t] {
+                        let into = axis[0] * n[0] + axis[1] * n[1] + axis[2] * n[2];
+                        prop_assert!(into.abs() < NEAR, "{axis:?} leaves the plane {n:?}");
+                    }
+                }
                 met = true;
             }
         }
@@ -443,21 +490,89 @@ fn parallel_faces_take_the_source_definition() {
     let p = [200.0, 17.0, points[0][2]];
     let (want, got) = (texels(floor, STANDARD, p), texels(&valve, carried, p));
     assert!((want[0] - got[0]).abs() < NEAR && (want[1] - got[1]).abs() < NEAR);
-    let mut standard = other;
-    standard.set(points, b"rock", STANDARD).unwrap();
-    let source = {
-        let mut source = floor.clone();
-        let points = *source.points();
-        source.set(points, b"rock", VALVE).unwrap();
-        source
+    let slope = [[0.0, 0.0, 0.0], [0.0, 64.0, 0.0], [64.0, 0.0, 32.0]];
+    let valve = TexDef::Valve {
+        s: [0.8, 0.0, 0.6, 3.0],
+        t: [0.0, -1.0, 0.0, 9.0],
+        rotate: 0.0,
+        scale: [0.5, 2.0],
     };
+    let source = Face::new(slope, b"rock", valve).unwrap();
+    let raised = slope.map(|p| [p[0], p[1], p[2] + 48.0]);
+    let standard = Face::new(raised, b"rock", STANDARD).unwrap();
     let carried = standard.aligned_from(&source).unwrap();
-    let line = super::Line::within(&standard.plane().unwrap());
-    let along = |k: f64| [0, 1, 2].map(|i| line.point[i] + line.along[i] * k);
+    let plane = standard.plane().unwrap();
+    let n = plane.normal;
+    let [base, _] = paraxial_axes(n);
+    let into = base[0] * n[0] + base[1] * n[1] + base[2] * n[2];
+    assert!(into.abs() > NEAR, "the base axis is not in the slope");
+    let across = [0, 1, 2].map(|i| base[i] - into * n[i]);
+    let length = (across[0] * across[0] + across[1] * across[1] + across[2] * across[2]).sqrt();
     for k in [0.0, 10.0, -33.0] {
-        let p = along(k);
-        let (want, got) = (texels(&source, VALVE, p), texels(&standard, carried, p));
+        let p = [0, 1, 2].map(|i| n[i] * plane.dist + across[i] / length * k);
+        let (want, got) = (texels(&source, valve, p), texels(&standard, carried, p));
         assert!((want[0] - got[0]).abs() < NEAR && (want[1] - got[1]).abs() < NEAR);
+    }
+}
+
+// spec MAP-13.8: a source whose axes both lie across the shared line gives a standard target
+// no rotation and the source's own scales
+#[test]
+fn axes_across_the_line_keep_their_scale() {
+    let brush = cuboid(STANDARD);
+    let top = brush
+        .faces
+        .iter()
+        .position(|face| face.plane().unwrap().normal == [0.0, 0.0, 1.0])
+        .unwrap();
+    let west = brush
+        .faces
+        .iter()
+        .position(|face| face.plane().unwrap().normal == [-1.0, 0.0, 0.0])
+        .unwrap();
+    let mut source = brush.faces[top].clone();
+    let points = *source.points();
+    let across = TexDef::Valve {
+        s: [1.0, 0.0, 0.0, 0.0],
+        t: [0.0, 0.0, 1.0, 0.0],
+        rotate: 0.0,
+        scale: [2.0, 3.0],
+    };
+    source.set(points, b"rock", across).unwrap();
+    let Some(TexDef::Standard { rotate, scale, .. }) = brush.faces[west].aligned_from(&source)
+    else {
+        unreachable!("the target is standard")
+    };
+    assert_eq!((rotate, scale), (0.0, [2.0, 3.0]));
+}
+
+// spec MAP-13.8: a standard target's rotation is a whole number of degrees whenever it is
+// within 0.000001 of one, so the exact sines apply
+#[test]
+fn carried_rotations_are_whole() {
+    let brush = cuboid(STANDARD);
+    for rotate in (0..360).step_by(5) {
+        let texdef = TexDef::Standard {
+            shift: [0.0; 2],
+            rotate: f64::from(rotate),
+            scale: [1.0, 1.0],
+        };
+        for a in 0..brush.faces.len() {
+            let mut from = brush.faces[a].clone();
+            let points = *from.points();
+            from.set(points, b"rock", texdef).unwrap();
+            for b in 0..brush.faces.len() {
+                if shared_edge(&brush, a, b).is_none() {
+                    continue;
+                }
+                let Some(TexDef::Standard { rotate, .. }) = brush.faces[b].aligned_from(&from)
+                else {
+                    unreachable!("the target is standard")
+                };
+                assert_eq!(rotate.fract(), 0.0, "{rotate} from {a} to {b}");
+                assert!((0.0..360.0).contains(&rotate), "{rotate}");
+            }
+        }
     }
 }
 

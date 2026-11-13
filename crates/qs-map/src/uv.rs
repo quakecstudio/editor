@@ -136,18 +136,16 @@ impl Projection {
         }
     }
 
-    /// The texel of `point` along axis `i`, before the shift.
-    fn unshifted(&self, i: usize, point: [f64; 3]) -> f64 {
-        let (axis, scale) = (self.axes.get(i), self.scale.get(i));
-        axis.zip(scale)
-            .map_or(0.0, |(&axis, &scale)| dot(point, axis) / scale)
+    /// `point` along axis `i`, before the scale and the shift.
+    fn along(&self, i: usize, point: [f64; 3]) -> f64 {
+        self.axes.get(i).map_or(0.0, |&axis| dot(point, axis))
     }
 
-    /// The least and greatest texel of `polygon` along axis `i`, before the shift.
+    /// The least and greatest of `polygon` along axis `i`, before the scale and the shift.
     fn extent(&self, i: usize, polygon: &[[f64; 3]]) -> Option<[f64; 2]> {
         let mut found: Option<[f64; 2]> = None;
         for &point in polygon {
-            let at = self.unshifted(i, point);
+            let at = self.along(i, point);
             found = Some(found.map_or([at, at], |[lo, hi]| [lo.min(at), hi.max(at)]));
         }
         found
@@ -158,7 +156,7 @@ impl Projection {
 /// size of 0.
 fn wrapped(shift: f64, size: f64) -> f64 {
     if size > 0.0 {
-        shift.rem_euclid(size) + 0.0
+        shift.rem_euclid(size)
     } else {
         shift
     }
@@ -168,7 +166,7 @@ fn wrapped(shift: f64, size: f64) -> f64 {
 fn tidied(value: f64) -> f64 {
     let whole = value.round();
     if (value - whole).abs() < WHOLE_DEGREES {
-        whole + 0.0
+        whole
     } else {
         value
     }
@@ -206,18 +204,22 @@ impl Face {
             let (Some(extent), Some(&length)) = (projection.extent(i, polygon), size.get(i)) else {
                 continue;
             };
-            let [lo, hi] = extent;
+            let [raw_lo, raw_hi] = extent;
             let (Some(shift), Some(scale)) = (shift.get_mut(i), scale.get_mut(i)) else {
                 continue;
             };
+            let (lo, hi) = {
+                let (a, b) = (raw_lo / *scale, raw_hi / *scale);
+                (a.min(b), a.max(b))
+            };
             match edit {
                 UvEdit::Fit => {
-                    let span = (hi - lo) * *scale;
-                    if span.abs() <= NONE || length <= 0.0 {
+                    let span = raw_hi - raw_lo;
+                    if span <= NONE || length <= 0.0 {
                         continue;
                     }
-                    let fitted = span.abs() / length * scale.signum();
-                    let least = (lo * *scale / fitted).min(hi * *scale / fitted);
+                    let fitted = (span / length).copysign(*scale);
+                    let least = (raw_lo / fitted).min(raw_hi / fitted);
                     *scale = fitted;
                     *shift = wrapped(-least, length);
                 }
@@ -246,7 +248,7 @@ impl Face {
                     }
                     let mut nearest: Option<f64> = None;
                     for &point in polygon {
-                        let at = projection.unshifted(i, point) + *shift;
+                        let at = projection.along(i, point) / *scale + *shift;
                         let to_line = (at / length).round() * length - at;
                         if nearest.is_none_or(|best| to_line.abs() < best.abs()) {
                             nearest = Some(to_line);
@@ -372,14 +374,16 @@ impl Line {
             scale[1] * dot(e, scaled_t) * sign_t,
         ];
         let wanted_length = wanted[0].hypot(wanted[1]);
+        // The line lies in the plane, which its projection axis does not, so the line always
+        // has a part along the plane's two base axes.
         let edge_length = edge[0].hypot(edge[1]);
-        let (rotate, scale) = if wanted_length <= NONE || edge_length <= NONE {
+        let (rotate, scale) = if wanted_length <= NONE {
             (0.0, scale)
         } else {
             let degrees = (edge[1].atan2(edge[0]) - wanted[1].atan2(wanted[0])).to_degrees();
             let k = edge_length / wanted_length;
             (
-                tidied(degrees).rem_euclid(TURN) + 0.0,
+                tidied(degrees).rem_euclid(TURN),
                 scale.map(|value| value * k),
             )
         };
