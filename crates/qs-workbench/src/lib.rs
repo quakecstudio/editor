@@ -23,6 +23,7 @@ pub mod export;
 pub mod git;
 pub mod ids;
 pub mod map_check;
+pub mod map_compile;
 pub mod map_edit;
 pub mod map_textures;
 mod preview;
@@ -737,6 +738,16 @@ pub enum WorkbenchError {
     },
     /// The project's server QuakeC does not compile to a program to spawn a map with.
     NotBuilt,
+    /// The open map is a BSP with no `.map` source, so there is nothing to compile (P6-13).
+    NoMapSource {
+        /// The BSP.
+        path: PathBuf,
+    },
+    /// The map compiler stopped (P6-13, QBSP-1).
+    MapCompile {
+        /// Why.
+        error: qs_map_bsp::CompileError,
+    },
     /// The open map's entity lump cannot be written as qbsp writes it.
     MapLump {
         /// The map.
@@ -836,6 +847,14 @@ impl fmt::Display for WorkbenchError {
             Self::Link { error } => write!(f, "{error}"),
             Self::NoRoom { name } => write!(f, "the map has no room named {name}"),
             Self::NotBuilt => f.write_str("the project's server QuakeC does not compile"),
+            Self::NoMapSource { path } => {
+                write!(
+                    f,
+                    "{}: a BSP with no .map source to compile",
+                    path.display()
+                )
+            }
+            Self::MapCompile { error } => write!(f, "the map does not compile: {error}"),
             Self::MapLump { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Spawn { path, error } => write!(f, "{}: {error}", path.display()),
             Self::ChangedOnDisk { path } => write!(
@@ -904,7 +923,9 @@ impl Error for WorkbenchError {
             | Self::CannotMove { .. }
             | Self::NoRoom { .. }
             | Self::ChangedOnDisk { .. }
+            | Self::NoMapSource { .. }
             | Self::NotBuilt => None,
+            Self::MapCompile { error } => Some(error),
             Self::MapLump { error, .. } => Some(error),
             Self::Spawn { error, .. } => Some(error),
         }

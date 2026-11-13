@@ -3,6 +3,7 @@ enum qs_map_bsp::Dialect
 enum qs_map_bsp::Warning
 field qs_map_bsp::compile::Compiled.bsp
 field qs_map_bsp::compile::Compiled.leak_file
+field qs_map_bsp::compile::Compiled.leak_trail
 field qs_map_bsp::compile::Compiled.portal_file
 field qs_map_bsp::compile::Compiled.warnings
 fn qs_map_bsp::compile::Compiler::compile
@@ -12,6 +13,7 @@ fn qs_map_bsp::compile::Compiler::with_subdivide
 impl qs_map_bsp::CompileError: From<QbspError>
 impl qs_map_bsp::CompileError: core::error::Error
 impl qs_map_bsp::CompileError: fmt::Display
+impl qs_map_bsp::Warning: fmt::Display
 impl qs_map_bsp::compile::Compiler: Default
 struct qs_map_bsp::compile::Compiled
 struct qs_map_bsp::compile::Compiler

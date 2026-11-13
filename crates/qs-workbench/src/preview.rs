@@ -23,6 +23,7 @@ use qs_commands::{Command, NoParams, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 
 use crate::ids::{BreakpointId, Edict, WatchIndex};
+use crate::map_compile::{MapCompile, MapLeaks};
 use crate::map_edit::LiveChange;
 use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
 use qs_map::Entity;
@@ -1679,6 +1680,8 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(ChooseGameCommand)?;
     registry.register(SelectCommand)?;
     registry.register(PickCommand)?;
+    registry.register(MapLeaks)?;
+    registry.register(MapCompile)?;
     registry.register(SetFieldCommand)?;
     registry.register(ActCommand::<BreakpointAct>(core::marker::PhantomData))?;
     registry.register(ActCommand::<ConsoleAct>(core::marker::PhantomData))?;

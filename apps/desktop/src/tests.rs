@@ -33,7 +33,7 @@ use crate::keymap;
 use crate::map_tools::Readout;
 use crate::palette::highlighted;
 use crate::shell::{EDITOR_AREA, commanded_size, dragged_size};
-use crate::strings::{Text, command_count, exit_status, match_count};
+use crate::strings::{Text, command_count, exit_status, match_count, missing_textures};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
 
@@ -2472,6 +2472,103 @@ fn the_move_and_measure_tools_show_the_edit_they_make() {
     );
     assert_eq!(measured.text(), "Distance 160.00 (128 96 0)");
     assert_eq!(map_text(&harness), before, "measuring changes nothing");
+}
+
+// No spec statement: P6-11, QBSP-9.8, MAP-6.8: with a wall gone, Check for leaks reports the leak and
+// draws its trail; Fly along the leak takes the camera from the entity the void reaches along
+// the trail to its end; an edit leaves the report out of date
+#[test]
+fn a_leak_is_found_and_flown_along() {
+    let dir = keep_copy("leak");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep/gfx/keep.wad");
+    fs::create_dir_all(dir.join("gfx")).unwrap();
+    fs::copy(fixture, dir.join("gfx/keep.wad")).unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.get_by_label(Text::MapCheckLeaks.get()).click();
+    harness.run();
+    harness.run();
+    let editor = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell.workbench().map().unwrap().report().cloned()
+    };
+    let sealed = editor(&harness).unwrap();
+    assert!(sealed.leak.is_empty(), "{:?}", sealed.leak);
+    assert!(harness.query_by_label(Text::MapSealed.get()).is_some());
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("map.brush_delete", json!({ "entity": 0, "brush": 2 }))
+        .unwrap();
+    shell.execute("map.leaks", json!({})).unwrap();
+    harness.run();
+    let trail = editor(&harness).unwrap().leak;
+    assert!(trail.len() >= 2, "{trail:?}");
+    harness.get_by_label(Text::MapFlyLeak.get()).click();
+    // A frame at a time: run() would go on while the flight asks for the next frame.
+    harness.step();
+    harness.step();
+    let shell = harness.state().as_ref().unwrap().shell();
+    assert!(shell.map_editor().leaks().flying());
+    let first = shell.map_editor().camera().unwrap().origin;
+    assert!(
+        first
+            .iter()
+            .zip(trail.first().copied().unwrap_or_default())
+            .any(|(a, b)| (a - b).abs() > 1e-3),
+        "it moved"
+    );
+    for _ in 0..600 {
+        harness.step();
+        if !harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .leaks()
+            .flying()
+        {
+            break;
+        }
+    }
+    let shell = harness.state().as_ref().unwrap().shell();
+    assert!(!shell.map_editor().leaks().flying(), "the flight ends");
+    let end = *trail.last().unwrap();
+    let at = shell.map_editor().camera().unwrap().origin;
+    assert!(
+        at.iter().zip(end).all(|(a, b)| (a - b).abs() < 1e-3),
+        "{at:?} at the trail's end {end:?}"
+    );
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert!(
+        harness.query_by_label(Text::MapFlyLeak.get()).is_none(),
+        "an edit leaves the report out of date"
+    );
+    // A texture the WADs lack is listed.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute(
+            "map.brush_texture",
+            json!({ "entity": 4, "brushes": [0], "texture": "nowhere" }),
+        )
+        .unwrap();
+    shell.execute("map.leaks", json!({})).unwrap();
+    harness.run();
+    assert_eq!(editor(&harness).unwrap().missing_textures, ["nowhere"]);
+    assert!(
+        harness
+            .query_by_label(&missing_textures(&["nowhere".to_owned()]))
+            .is_some()
+    );
 }
 
 /// Of the nodes labelled `label`, the lowest on screen: below the view, where the browsers are.

@@ -326,6 +326,26 @@ pub enum CompileError {
     Write(BspWriteError),
 }
 
+impl fmt::Display for Warning {
+    /// What the warning means, in words: qbsp's own text for what it reads from the map
+    /// (MAP-3.5, MAP-6.8), a description for the rest.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoBrushFaces => f.write_str("a brush has no face left"),
+            Self::PortalClippedAway => f.write_str("a node portal was clipped away"),
+            Self::NoOccupant => {
+                f.write_str("no entity is in empty space, so the outside was not filled")
+            }
+            Self::Leak => f.write_str("the map leaks: the outside reaches an entity"),
+            Self::BadFace(why) => write!(f, "a face qbsp would refuse was kept: {why}"),
+            Self::MixedContents => f.write_str("a leaf's faces disagree on its contents"),
+            Self::NoValidBrushes => f.write_str("an entity has no valid brush"),
+            Self::Bsp2(lump) => write!(f, "{lump:?} is too wide for BSP29; written as BSP2"),
+            Self::Map(printed) => write!(f, "{printed}"),
+        }
+    }
+}
+
 impl fmt::Display for CompileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

@@ -1231,6 +1231,7 @@ mod tests {
                 lines: Vec::new(),
                 vertices: vec![corner],
                 planes: Vec::new(),
+                textures: Vec::new(),
             });
         }
         scene

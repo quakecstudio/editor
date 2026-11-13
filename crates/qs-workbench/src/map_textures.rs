@@ -125,13 +125,13 @@ pub struct TextureSources {
 
 /// The game at a base directory: its search path, when it can be built, and the directory a
 /// loose file is looked for in.
-struct Game<'a> {
+pub(crate) struct Game<'a> {
     base: &'a Path,
     vfs: Option<Vfs<StdFs>>,
 }
 
 impl<'a> Game<'a> {
-    fn at(base: &'a Path) -> Self {
+    pub(crate) fn at(base: &'a Path) -> Self {
         let args = base.to_string_lossy().into_owned();
         let vfs = Vfs::new(StdFs, &["-basedir", args.as_str()], ".").ok();
         Self { base, vfs }
@@ -170,7 +170,7 @@ impl<'a> Game<'a> {
 /// an absolute path written on another machine by its file name alone, under the project,
 /// beside the map, under the game's base directory, then on the game's search path or loose in
 /// its game directory.
-fn find_wad(
+pub(crate) fn find_wad(
     name: &str,
     project: Option<&Path>,
     map_dir: Option<&Path>,

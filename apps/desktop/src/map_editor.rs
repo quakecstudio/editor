@@ -16,6 +16,7 @@ use eframe::egui::{
 use qs_layout::MapPanes;
 use qs_render::Camera;
 use qs_workbench::entity_classes::ClassInfo;
+use qs_workbench::map_compile::MapReport;
 use qs_workbench::map_edit::{
     EntityIndex, EntityKeys, FlagChange, GameMode, Keep, LayerInfo, MapDocument, MapRevision,
     OutlineRow, Skill,
@@ -25,6 +26,7 @@ use qs_workbench::map_textures::TextureSources;
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};
 use crate::map_groups::{GroupAction, layers_ui, overview_keys, selection_ui};
+use crate::map_leaks::LeakView;
 use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_panes::{Pane, Plan, PlanCamera, Projection, panes};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
@@ -63,6 +65,17 @@ const FRAME_MARGIN: f32 = 64.0;
 const PANE_LABEL_INSET: f32 = 6.0;
 /// The size of a 2D view's name, in points.
 const PANE_LABEL_SIZE: f32 = 12.0;
+
+/// What every pane of one frame of the view reads.
+#[derive(Clone, Copy)]
+struct Frame<'a> {
+    /// The entities not drawn.
+    hidden: &'a BTreeSet<EntityIndex>,
+    /// The entity selected.
+    selected: Option<EntityIndex>,
+    /// The map's last check, while it is current (P6-11).
+    report: Option<&'a MapReport>,
+}
 
 /// An edit or a selection the map editor asks for.
 #[derive(Clone, Debug, PartialEq)]
@@ -104,6 +117,8 @@ pub enum MapAction {
     Brush(BrushAction),
     /// Split the map view into other panes (P6-09).
     Panes(MapPanes),
+    /// Check the map for leaks and missing textures (P6-11).
+    CheckLeaks,
 }
 
 /// The entities the map view shows: every one, or those the game spawns at a skill or in a
@@ -240,6 +255,8 @@ pub struct MapEditor {
     textures: TextureBrowser,
     /// Where each 2D view looks, from when it first opens.
     plans: HashMap<Plan, PlanCamera>,
+    /// The map's last leak check (P6-11).
+    leaks: LeakView,
 }
 
 /// The browsers of the tab below the map view, as the mockup has them.
@@ -294,6 +311,18 @@ impl MapEditor {
     #[cfg(test)]
     pub(crate) fn refused_text(&self) -> Option<String> {
         self.refused.clone()
+    }
+
+    /// The leak check shown, for tests.
+    #[cfg(test)]
+    pub(crate) const fn leaks(&self) -> &LeakView {
+        &self.leaks
+    }
+
+    /// The 3D view's camera, for tests.
+    #[cfg(test)]
+    pub(crate) const fn camera(&self) -> Option<&Camera> {
+        self.camera.as_ref()
     }
 
     /// Takes why the last map command asked for was refused, or none when it ran.
@@ -443,8 +472,12 @@ impl MapEditor {
         document: &MapDocument,
         layout: MapPanes,
     ) -> Vec<MapAction> {
-        let mut actions = self.toolbar(ui, layout);
-        let full = ui.available_rect_before_wrap();
+        // The tab's own width, which the toolbar wraps within and the view keeps to, so a long
+        // toolbar never widens the view under the Properties panel.
+        let bounds = ui.available_rect_before_wrap();
+        let mut actions = self.toolbar(ui, layout, bounds.width());
+        let mut full = ui.available_rect_before_wrap();
+        full.max.x = full.max.x.min(bounds.max.x);
         let height = BROWSER_HEIGHT.min(full.height() / 2.0);
         let (view, below) = full.split_top_bottom_at_y(full.bottom() - height);
         let mut view_ui = ui.new_child(egui::UiBuilder::new().max_rect(view));
@@ -479,10 +512,11 @@ impl MapEditor {
     }
 
     /// The links shown and the filter by skill and game; the filter chosen.
-    fn toolbar(&mut self, ui: &mut Ui, layout: MapPanes) -> Vec<MapAction> {
+    fn toolbar(&mut self, ui: &mut Ui, layout: MapPanes, width: f32) -> Vec<MapAction> {
         let mut actions = Vec::new();
         // Wrapping, so the tools and their settings never widen the view past the centre.
         ui.horizontal_wrapped(|ui| {
+            ui.set_max_width(width);
             self.tools.toolbar(ui);
             ui.separator();
             egui::ComboBox::from_id_salt(ui.id().with(core::any::TypeId::of::<MapPanes>()))
@@ -546,6 +580,12 @@ impl MapEditor {
         }
         let hidden: BTreeSet<EntityIndex> = self.hidden.union(&self.kept_out.0).copied().collect();
         let camera = self.camera.get_or_insert_with(|| start_camera(document));
+        if self
+            .leaks
+            .fly(camera, ui.input(|i| i.stable_dt), document.report())
+        {
+            ui.ctx().request_repaint();
+        }
         let rect = ui.available_rect_before_wrap();
         if let Some(entity) = self.frame.take()
             && let Some(shape) = self.scene.entities.iter().find(|s| s.index == entity)
@@ -559,7 +599,12 @@ impl MapEditor {
         }
         let mut actions = Vec::new();
         for (pane, area) in panes(layout, rect) {
-            actions.extend(self.pane(ui, theme, pane, area, &hidden, selected));
+            let frame = Frame {
+                hidden: &hidden,
+                selected,
+                report: document.report(),
+            };
+            actions.extend(self.pane(ui, theme, pane, area, &frame));
         }
         actions
     }
@@ -576,9 +621,13 @@ impl MapEditor {
         theme: &Theme,
         pane: Pane,
         area: Rect,
-        hidden: &BTreeSet<EntityIndex>,
-        selected: Option<EntityIndex>,
+        frame: &Frame<'_>,
     ) -> Vec<MapAction> {
+        let Frame {
+            hidden,
+            selected,
+            report,
+        } = *frame;
         let link_key = self.link_key();
         let response = ui.interact(
             area,
@@ -787,6 +836,8 @@ impl MapEditor {
         {
             painter.line_segment([*start, at], Stroke::new(2.0, theme.color(Token::Focus)));
         }
+        self.leaks
+            .draw(&painter, &projection, theme, &self.scene, report);
         self.tools
             .draw(&painter, &projection, theme, &self.scene, pointer.map(ray));
         if let Pane::Plan(_) = pane {
@@ -818,11 +869,20 @@ impl MapEditor {
         clippy::too_many_lines,
         reason = "one panel, top to bottom: the notices, the keys, the spawnflags and a new key"
     )]
-    pub fn properties(&mut self, ui: &mut Ui, theme: &Theme) -> Vec<MapAction> {
+    pub fn properties(
+        &mut self,
+        ui: &mut Ui,
+        theme: &Theme,
+        report: Option<&MapReport>,
+    ) -> Vec<MapAction> {
         let mut actions = Vec::new();
         if let Some(refused) = &self.refused {
             ui.label(RichText::new(refused).color(theme.color(Token::StatusError)));
         }
+        if ui.button(Text::MapCheckLeaks.get()).clicked() {
+            actions.push(MapAction::CheckLeaks);
+        }
+        self.leaks.properties(ui, theme, report);
         if self.disk != DiskNotice::None {
             ui.label(
                 RichText::new(Text::MapChangedOnDisk.get()).color(theme.color(Token::StatusWarn)),
