@@ -87,6 +87,11 @@ impl TextureBrowser {
             .unwrap_or_default()
     }
 
+    /// The width and height of the texture `name`, in texels, when a source holds it.
+    pub(crate) fn size(&self, name: &str) -> Option<[u32; 2]> {
+        self.sources.as_ref()?.size(name)
+    }
+
     /// The texture chosen, which the Properties panel can put on the selected brushes.
     pub(crate) fn selected(&self) -> Option<&str> {
         self.selected.as_deref()

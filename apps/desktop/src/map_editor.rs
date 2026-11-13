@@ -22,6 +22,8 @@ use qs_workbench::map_edit::{
     OutlineRow, Skill,
 };
 use qs_workbench::map_textures::TextureSources;
+#[cfg(test)]
+use qs_workbench::map_uv::FaceRef;
 use qs_workbench::texture_import::DitherChoice;
 
 use crate::map_browser::{ClassDrag, EntityBrowser};
@@ -870,6 +872,14 @@ impl MapEditor {
         actions
     }
 
+    /// Selects these faces for the UV editor, as Alt-clicks would.
+    #[cfg(test)]
+    pub(crate) fn select_faces(&mut self, faces: &[FaceRef]) {
+        for &face in faces {
+            self.tools.select_face(face, &self.scene);
+        }
+    }
+
     /// The key editor of the selected entity, in the Properties panel; what it asked for.
     #[expect(
         clippy::too_many_lines,
@@ -912,9 +922,11 @@ impl MapEditor {
             ui.separator();
         }
         let texture = self.textures.selected();
+        let textures = &self.textures;
+        let size_of = |name: &str| textures.size(name);
         actions.extend(
             self.tools
-                .properties(ui, &self.scene, texture)
+                .properties(ui, &self.scene, texture, &size_of)
                 .into_iter()
                 .map(MapAction::Brush),
         );
