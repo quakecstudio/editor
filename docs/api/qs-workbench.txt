@@ -58,7 +58,9 @@ const qs_workbench::map_edit::brushes::MAP_BRUSH_CLIP
 const qs_workbench::map_edit::brushes::MAP_BRUSH_CREATE
 const qs_workbench::map_edit::brushes::MAP_BRUSH_DELETE
 const qs_workbench::map_edit::brushes::MAP_BRUSH_MERGE
+const qs_workbench::map_edit::brushes::MAP_BRUSH_MOVE
 const qs_workbench::map_edit::brushes::MAP_BRUSH_SUBTRACT
+const qs_workbench::map_edit::brushes::MAP_BRUSH_TEXTURE
 const qs_workbench::map_edit::brushes::MAP_BRUSH_VERTEX
 const qs_workbench::map_edit::disk::FILES_CHANGED
 const qs_workbench::map_edit::disk::MAP_COMPARE
@@ -142,6 +144,7 @@ enum qs_workbench::git::GitSide
 enum qs_workbench::map_edit::BspSave
 enum qs_workbench::map_edit::MapSource
 enum qs_workbench::map_edit::brushes::Keep
+enum qs_workbench::map_edit::brushes::Lock
 enum qs_workbench::map_edit::disk::Keep
 enum qs_workbench::map_edit::disk::MapOnDisk
 enum qs_workbench::map_edit::filter::GameMode
@@ -350,8 +353,19 @@ field qs_workbench::map_edit::brushes::BrushCreateParams.min
 field qs_workbench::map_edit::brushes::BrushCreateParams.texture
 field qs_workbench::map_edit::brushes::BrushMergeParams.brushes
 field qs_workbench::map_edit::brushes::BrushMergeParams.entity
+field qs_workbench::map_edit::brushes::BrushMoveParams.brushes
+field qs_workbench::map_edit::brushes::BrushMoveParams.by
+field qs_workbench::map_edit::brushes::BrushMoveParams.entity
+field qs_workbench::map_edit::brushes::BrushMoveParams.grid
+field qs_workbench::map_edit::brushes::BrushMoveParams.lock
 field qs_workbench::map_edit::brushes::BrushParams.brush
 field qs_workbench::map_edit::brushes::BrushParams.entity
+field qs_workbench::map_edit::brushes::BrushTextureParams.brushes
+field qs_workbench::map_edit::brushes::BrushTextureParams.entity
+field qs_workbench::map_edit::brushes::BrushTextureParams.rotate
+field qs_workbench::map_edit::brushes::BrushTextureParams.scale
+field qs_workbench::map_edit::brushes::BrushTextureParams.shift
+field qs_workbench::map_edit::brushes::BrushTextureParams.texture
 field qs_workbench::map_edit::brushes::BrushVertexParams.brush
 field qs_workbench::map_edit::brushes::BrushVertexParams.entity
 field qs_workbench::map_edit::brushes::BrushVertexParams.from
@@ -930,7 +944,9 @@ struct qs_workbench::map_edit::brushes::BrushClipParams
 struct qs_workbench::map_edit::brushes::BrushCreateParams
 struct qs_workbench::map_edit::brushes::BrushIndex
 struct qs_workbench::map_edit::brushes::BrushMergeParams
+struct qs_workbench::map_edit::brushes::BrushMoveParams
 struct qs_workbench::map_edit::brushes::BrushParams
+struct qs_workbench::map_edit::brushes::BrushTextureParams
 struct qs_workbench::map_edit::brushes::BrushVertexParams
 struct qs_workbench::map_edit::disk::FilesChanged
 struct qs_workbench::map_edit::disk::FilesChangedParams
@@ -1133,8 +1149,10 @@ use qs_workbench::map_edit::BrushClipParams = brushes::BrushClipParams
 use qs_workbench::map_edit::BrushCreateParams = brushes::BrushCreateParams
 use qs_workbench::map_edit::BrushIndex = brushes::BrushIndex
 use qs_workbench::map_edit::BrushMergeParams = brushes::BrushMergeParams
+use qs_workbench::map_edit::BrushMoveParams = brushes::BrushMoveParams
 use qs_workbench::map_edit::BrushParams = brushes::BrushParams
 use qs_workbench::map_edit::BrushShapeParams = shapes::BrushShapeParams
+use qs_workbench::map_edit::BrushTextureParams = brushes::BrushTextureParams
 use qs_workbench::map_edit::BrushVertexParams = brushes::BrushVertexParams
 use qs_workbench::map_edit::Circle = shapes::Circle
 use qs_workbench::map_edit::Climb = shapes::Climb
@@ -1154,12 +1172,15 @@ use qs_workbench::map_edit::LayerInfo = groups::LayerInfo
 use qs_workbench::map_edit::LayerOption = groups::LayerOption
 use qs_workbench::map_edit::LinkParams = links::LinkParams
 use qs_workbench::map_edit::LiveChange = live::LiveChange
+use qs_workbench::map_edit::Lock = brushes::Lock
 use qs_workbench::map_edit::MAP_BRUSH_CLIP = brushes::MAP_BRUSH_CLIP
 use qs_workbench::map_edit::MAP_BRUSH_CREATE = brushes::MAP_BRUSH_CREATE
 use qs_workbench::map_edit::MAP_BRUSH_DELETE = brushes::MAP_BRUSH_DELETE
 use qs_workbench::map_edit::MAP_BRUSH_MERGE = brushes::MAP_BRUSH_MERGE
+use qs_workbench::map_edit::MAP_BRUSH_MOVE = brushes::MAP_BRUSH_MOVE
 use qs_workbench::map_edit::MAP_BRUSH_SHAPE = shapes::MAP_BRUSH_SHAPE
 use qs_workbench::map_edit::MAP_BRUSH_SUBTRACT = brushes::MAP_BRUSH_SUBTRACT
+use qs_workbench::map_edit::MAP_BRUSH_TEXTURE = brushes::MAP_BRUSH_TEXTURE
 use qs_workbench::map_edit::MAP_BRUSH_VERTEX = brushes::MAP_BRUSH_VERTEX
 use qs_workbench::map_edit::MAP_COMPARE = disk::MAP_COMPARE
 use qs_workbench::map_edit::MAP_EXPORT = groups::MAP_EXPORT
@@ -1275,6 +1296,8 @@ variant qs_workbench::map_edit::MapSource::Map
 variant qs_workbench::map_edit::brushes::Keep::Back
 variant qs_workbench::map_edit::brushes::Keep::Both
 variant qs_workbench::map_edit::brushes::Keep::Front
+variant qs_workbench::map_edit::brushes::Lock::Free
+variant qs_workbench::map_edit::brushes::Lock::Locked
 variant qs_workbench::map_edit::disk::Keep::Disk
 variant qs_workbench::map_edit::disk::Keep::Mine
 variant qs_workbench::map_edit::disk::MapOnDisk::Conflict

@@ -456,6 +456,18 @@ pub enum Text {
     MapView,
     /// The map editor's view, as a screen reader names it.
     MapEditorView,
+    /// The map view's layout of the 3D view alone.
+    MapLayoutSingle,
+    /// The map view's layout of the 3D view with a top view in its corner.
+    MapLayoutInset,
+    /// The map view's layout of the 3D view and three 2D views.
+    MapLayoutQuad,
+    /// The top view, as a screen reader names it.
+    MapViewTop,
+    /// The front view, as a screen reader names it.
+    MapViewFront,
+    /// The side view, as a screen reader names it.
+    MapViewSide,
     /// The key editor's line when no entity of the open map is selected.
     MapNoSelection,
     /// The notice when another program changed the open map while it had unsaved edits.
@@ -554,6 +566,24 @@ pub enum Text {
     MapClipHint,
     /// How to move a corner with the Vertex tool.
     MapVertexHint,
+    /// The Move tool, which drags the selected brushes (P6-09).
+    MapToolMove,
+    /// The Measure tool, which measures between two points (P6-09).
+    MapToolMeasure,
+    /// What to do with the Move tool.
+    MapMoveHint,
+    /// What to do with the Measure tool.
+    MapMeasureHint,
+    /// The texture lock toggle: on, a moved brush's textures stay fixed in the world.
+    MapTextureLock,
+    /// The button that sets the selected brushes' shift, rotation and scale.
+    MapAlignTexture,
+    /// The label of a texture's shift.
+    MapTextureShift,
+    /// The label of a texture's rotation.
+    MapTextureRotate,
+    /// The label of a texture's scale.
+    MapTextureScale,
     /// Keep the part of a clipped brush right of the cut line.
     MapKeepRight,
     /// Keep the part of a clipped brush left of the cut line.
@@ -622,7 +652,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 304] = [
+    pub const ALL: [Self; 319] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -846,6 +876,12 @@ impl Text {
         Self::Centre,
         Self::MapView,
         Self::MapEditorView,
+        Self::MapLayoutSingle,
+        Self::MapLayoutInset,
+        Self::MapLayoutQuad,
+        Self::MapViewTop,
+        Self::MapViewFront,
+        Self::MapViewSide,
         Self::MapNoSelection,
         Self::MapChangedOnDisk,
         Self::MapReloadFromDisk,
@@ -895,6 +931,15 @@ impl Text {
         Self::MapBrushHint,
         Self::MapClipHint,
         Self::MapVertexHint,
+        Self::MapToolMove,
+        Self::MapToolMeasure,
+        Self::MapMoveHint,
+        Self::MapMeasureHint,
+        Self::MapTextureLock,
+        Self::MapAlignTexture,
+        Self::MapTextureShift,
+        Self::MapTextureRotate,
+        Self::MapTextureScale,
         Self::MapKeepRight,
         Self::MapKeepLeft,
         Self::MapBrushes,
@@ -1173,6 +1218,12 @@ impl Text {
             Self::MapEditorView => {
                 "Map editor: right-drag to look, middle-drag to pan, W A S D Q X to fly, click to select"
             }
+            Self::MapLayoutSingle => "3D",
+            Self::MapLayoutInset => "3D + top",
+            Self::MapLayoutQuad => "4 views",
+            Self::MapViewTop => "Top",
+            Self::MapViewFront => "Front",
+            Self::MapViewSide => "Side",
             Self::MapNoSelection => "Select an entity in the map to edit its keys.",
             Self::MapChangedOnDisk => {
                 "Another program changed this map. Your unsaved edits are kept until you choose."
@@ -1224,6 +1275,15 @@ impl Text {
             Self::MapBrushHint => "Drag on the ground to draw a box",
             Self::MapClipHint => "Select a brush, then drag the cut line",
             Self::MapVertexHint => "Select a brush, then drag a corner",
+            Self::MapToolMove => "Move",
+            Self::MapToolMeasure => "Measure",
+            Self::MapMoveHint => "Select brushes, then drag to move them",
+            Self::MapMeasureHint => "Drag from one point to another",
+            Self::MapTextureLock => "Texture lock",
+            Self::MapAlignTexture => "Align",
+            Self::MapTextureShift => "Shift",
+            Self::MapTextureRotate => "Rotate",
+            Self::MapTextureScale => "Scale",
             Self::MapKeepRight => "Keep right",
             Self::MapKeepLeft => "Keep left",
             Self::MapBrushes => "Brushes",
@@ -1359,6 +1419,35 @@ pub fn texture_count(wads: &[String], shown: usize, total: usize) -> String {
     }
 }
 
+/// A point or offset in map units, its coordinates as the `.map` file writes them.
+fn units([x, y, z]: [f64; 3]) -> String {
+    format!("{x} {y} {z}")
+}
+
+/// What the Move tool shows: the move so far and where the pointer is (P6-09).
+#[must_use]
+pub fn move_readout(by: [f64; 3], at: [f64; 3]) -> String {
+    format!("Move {}, pointer at {}", units(by), units(at))
+}
+
+/// What the Measure tool shows: the distance between two points and along each axis (P6-09).
+#[must_use]
+pub fn measure_readout(distance: f64, along: [f64; 3]) -> String {
+    format!("Distance {distance:.2} ({})", units(along))
+}
+
+/// The size of the selected brushes' bounds (P6-09).
+#[must_use]
+pub fn selection_size([x, y, z]: [f64; 3]) -> String {
+    format!("Size {x} x {y} x {z}")
+}
+
+/// The button that puts the texture chosen in the browser on the selected brushes (P6-09).
+#[must_use]
+pub fn apply_texture(name: &str) -> String {
+    format!("Apply {name}")
+}
+
 /// How many entities besides the one shown a key edit also sets (P5-13).
 #[must_use]
 pub fn also_selected(count: usize) -> String {
@@ -1383,5 +1472,14 @@ pub fn brush_count(count: usize) -> String {
     match count {
         1 => "1 brush".to_owned(),
         n => format!("{n} brushes"),
+    }
+}
+
+/// The name of the map view's layout `panes` in its menu.
+pub(crate) const fn panes_text(panes: qs_layout::MapPanes) -> Text {
+    match panes {
+        qs_layout::MapPanes::Single => Text::MapLayoutSingle,
+        qs_layout::MapPanes::Inset => Text::MapLayoutInset,
+        qs_layout::MapPanes::Quad => Text::MapLayoutQuad,
     }
 }

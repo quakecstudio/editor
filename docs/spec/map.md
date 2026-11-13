@@ -517,3 +517,37 @@ sides, a wall width, an arc and a start angle; the step a player climbs is `SV_W
 - **MAP-10.11** Spiral stairs are steps of the step's height, `n` to a turn around the box's
   middle, each the slice between the core's circle and the ellipse; with no core each slice
   reaches the middle.
+
+## MAP-11 Moving brushes
+
+**Source:** our design, after TrenchBroom's texture lock (its manual: "When texture lock is on,
+the textures stay fixed in the world as you move or rotate the brushes"), for moves only.
+Implemented by `qs_map::Brush::translated`.
+
+### Behaviour
+
+- **MAP-11.1** A brush moved by `d` has each face's three points moved by `d`; its texture and
+  texture definition are kept but for MAP-11.2.
+- **MAP-11.2** With texture lock on, each face's s and t shifts are each less the dot product of
+  `d` with that face's texture axis as MAP-4.2 to MAP-4.4 and MAP-5.3 scale it, so every point of
+  the moved face has the texture coordinate its point had before the move: the texture stays
+  fixed in the world. With texture lock off the texture definitions are unchanged and the texture
+  moves with the brush. Each face is rewritten in place, keeping the text before it. A brush
+  with a Valve 220 face of scale 0, an error (MAP-5.4), cannot be written and is refused. id's
+  qbsp reads a standard face's shifts as whole numbers (MAP-4.1), so there a locked shift that
+  is not whole is cut to one; ericw-tools, which reads them as doubles, keeps it.
+
+## MAP-12 Texture alignment
+
+**Source:** our design, after the face inspector of TrenchBroom and the texture application
+tool of Hammer and J.A.C.K., whose shift, rotation and scale fields set those of the selected
+faces. Implemented by `qs_map::TexDef::aligned`.
+
+### Behaviour
+
+- **MAP-12.1** Aligning a face sets the parts of its texture definition given, of shift, rotation
+  and scale, and keeps the others. In the standard form (MAP-4.1) each part replaces its field.
+- **MAP-12.2** In the Valve 220 form (MAP-5.1) the shift is each axis's fourth value and the scale
+  replaces the scale. A new rotation `r`, the kept rotation being `r0`, turns both axes by
+  `r - r0` degrees about their normal, the unit `s x t`, from `s` toward `t`, keeping their
+  lengths and the angle between them; axes with no normal, parallel or zero, are kept.

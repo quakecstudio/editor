@@ -31,6 +31,7 @@ pub mod map_editor;
 mod map_fields;
 mod map_groups;
 mod map_outline;
+mod map_panes;
 mod map_scene;
 mod map_tools;
 pub mod map_view;

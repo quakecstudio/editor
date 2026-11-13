@@ -8,7 +8,7 @@
 
 use qs_commands::{Command, Outcome};
 use qs_map::geometry::plane as plane_of;
-use qs_map::{Brush, BrushError, Entity, Item, Surface, TexDef};
+use qs_map::{Alignment, Brush, BrushError, Entity, Item, Surface, TexDef, TextureLock};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +27,10 @@ pub const MAP_BRUSH_SUBTRACT: &str = "map.brush_subtract";
 pub const MAP_BRUSH_MERGE: &str = "map.brush_merge";
 /// The id of `map.brush_delete`.
 pub const MAP_BRUSH_DELETE: &str = "map.brush_delete";
+/// The id of `map.brush_move`.
+pub const MAP_BRUSH_MOVE: &str = "map.brush_move";
+/// The id of `map.brush_texture`.
+pub const MAP_BRUSH_TEXTURE: &str = "map.brush_texture";
 
 /// TrenchBroom's grid, `Grid(4)`: 2^4 units, the step points snap to by default.
 pub(super) const DEFAULT_GRID: f64 = 16.0;
@@ -137,6 +141,66 @@ pub struct BrushMergeParams {
     pub entity: EntityIndex,
     /// The brushes, two or more.
     pub brushes: Vec<BrushIndex>,
+}
+
+/// Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Lock {
+    /// Texture lock on: the textures stay where they are in the world.
+    #[default]
+    Locked,
+    /// Texture lock off: the textures move with the brush.
+    Free,
+}
+
+impl From<Lock> for TextureLock {
+    fn from(lock: Lock) -> Self {
+        match lock {
+            Lock::Locked => Self::Locked,
+            Lock::Free => Self::Free,
+        }
+    }
+}
+
+/// The parameters of `map.brush_move`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BrushMoveParams {
+    /// The entity holding the brushes.
+    pub entity: EntityIndex,
+    /// The brushes.
+    pub brushes: Vec<BrushIndex>,
+    /// How far to move them, snapped to the grid.
+    pub by: [f64; 3],
+    /// Whether their textures stay fixed in the world; locked when not given.
+    #[serde(default)]
+    pub lock: Lock,
+    /// The grid the move snaps to, in map units; 16 when not given, 0 for none.
+    #[serde(default)]
+    pub grid: Option<f64>,
+}
+
+/// The parameters of `map.brush_texture`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BrushTextureParams {
+    /// The entity holding the brushes.
+    pub entity: EntityIndex,
+    /// The brushes, every face of each.
+    pub brushes: Vec<BrushIndex>,
+    /// The texture to put on them; kept when not given.
+    #[serde(default)]
+    pub texture: Option<String>,
+    /// The s and t shift; kept when not given.
+    #[serde(default)]
+    pub shift: Option<[f64; 2]>,
+    /// The rotation in degrees; kept when not given.
+    #[serde(default)]
+    pub rotate: Option<f64>,
+    /// The s and t scale; kept when not given.
+    #[serde(default)]
+    pub scale: Option<[f64; 2]>,
 }
 
 /// `value` on the grid `grid`, or as it is with no grid.
@@ -254,6 +318,88 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushCreate {
         Ok(Outcome::undoable(
             MapEdited {
                 entity: Some(entity),
+            },
+            step,
+        ))
+    }
+}
+
+/// `map.brush_move`.
+pub(super) struct BrushMove;
+
+impl<C: HasWorkbench + 'static> Command<C> for BrushMove {
+    const ID: &'static str = MAP_BRUSH_MOVE;
+    const SUMMARY: &'static str = "Moves brushes of an entity by an offset snapped to the grid \
+        (16 units unless given), their textures fixed in the world unless lock is free.";
+    type Params = BrushMoveParams;
+    type Output = MapEdited;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: BrushMoveParams,
+    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+        let by = params.by.map(|c| snap(c, params.grid));
+        let ((), step) = edit_map(context, |document| {
+            for &brush in &params.brushes {
+                let moved = document
+                    .brush(params.entity, brush)?
+                    .translated(by, params.lock.into())?;
+                document.replace_brush(params.entity, brush, vec![moved])?;
+            }
+            Ok(())
+        })?;
+        Ok(Outcome::undoable(
+            MapEdited {
+                entity: Some(params.entity),
+            },
+            step,
+        ))
+    }
+}
+
+/// `map.brush_texture`.
+pub(super) struct BrushTexture;
+
+impl<C: HasWorkbench + 'static> Command<C> for BrushTexture {
+    const ID: &'static str = MAP_BRUSH_TEXTURE;
+    const SUMMARY: &'static str = "Sets the texture, shift, rotation or scale of every face of \
+        brushes of an entity, keeping what is not given (MAP-12).";
+    type Params = BrushTextureParams;
+    type Output = MapEdited;
+    type Error = WorkbenchError;
+
+    fn run(
+        &self,
+        context: &mut C,
+        params: BrushTextureParams,
+    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+        let alignment = Alignment {
+            shift: params.shift,
+            rotate: params.rotate,
+            scale: params.scale,
+        };
+        let ((), step) = edit_map(context, |document| {
+            for &brush in &params.brushes {
+                let mut found = document.brush(params.entity, brush)?;
+                for face in &mut found.faces {
+                    let texture = params
+                        .texture
+                        .as_ref()
+                        .map_or_else(|| face.texture().to_vec(), |t| t.as_bytes().to_vec());
+                    let texdef = face.texdef().aligned(alignment);
+                    let points = *face.points();
+                    face.set(points, &texture, texdef)
+                        .map_err(BrushError::Map)?;
+                }
+                document.replace_brush(params.entity, brush, vec![found])?;
+            }
+            Ok(())
+        })?;
+        Ok(Outcome::undoable(
+            MapEdited {
+                entity: Some(params.entity),
             },
             step,
         ))
