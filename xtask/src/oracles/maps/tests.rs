@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 
 use super::super::testing::{fresh_dir, root};
-use super::{Archive, MAPS, WORK, fetch_archive, members, read_pins, tree_digest, unpack};
+use super::{Archive, MAPS, fetch_archive, members, read_pins, tree_digest, unpack, work_dir};
 use crate::corpus::archive::tests::tar_gz;
 use crate::download::Net;
 
@@ -142,13 +142,17 @@ fn archives_unpack_without_their_top_directory() {
     assert_ne!(tree_digest(&changed), tree_digest(&original));
 }
 
-/// id's qbsp finds its directories in the map's path, so the room is compiled under a `quake`
-/// directory and a game directory below it, whatever the checkout's own path is called.
+/// On CI's checkout path, which holds no `quake`, qbsp's search for the first `quake` in the
+/// map's path (`SetQdirFromPath`) lands on the work directory, with `id1` as its game directory.
 #[test]
-fn the_room_is_compiled_under_quake_and_a_game_directory() {
-    let quake = WORK.iter().position(|part| *part == "quake").unwrap();
-    assert!(
-        WORK.get(quake.saturating_add(1))
-            .is_some_and(|game| !game.is_empty())
-    );
+fn qbsp_finds_quake_and_a_game_directory_in_the_work_path() {
+    let work = work_dir(Path::new("/home/runner/work/editor/editor"));
+    let path = work
+        .join("id")
+        .join("room.map")
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    let quake = path.find("quake").unwrap();
+    assert_eq!(path.get(quake..), Some("quake/id1/id/room.map"));
+    assert!(work.starts_with("/home/runner/work/editor/editor/target/oracles"));
 }

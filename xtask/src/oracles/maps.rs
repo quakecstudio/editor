@@ -35,8 +35,11 @@ const TOOLS: [&str; 3] = ["qbsp", "vis", "light"];
 /// The version a BSP29 file starts with (BSP-1.2).
 const BSP29: i32 = 29;
 /// Where the room is compiled, under `target/oracles`. id's qbsp sets its directories from the
-/// map's absolute path, `SetQdirFromPath` in qutils' `COMMON/CMDLIB.C`, and stops with "no
-/// 'quake' in" a path without a `quake` directory followed by a game directory.
+/// map's absolute path (`SetQdirFromPath` in qutils' `COMMON/CMDLIB.C`): the first `quake`
+/// anywhere in it, in any case, ends the Quake directory, and the next path component is the
+/// game directory. A path with no `quake` stops qbsp, so the room goes under `quake/id1`. A
+/// checkout whose own path holds `quake` (`quakecstudio-editor`) still wins the search; that
+/// changes only where qbsp looks for a worldspawn's `wad`, which the room has none of.
 const WORK: [&str; 3] = ["maps-work", "quake", "id1"];
 /// The length of a full commit hash in hexadecimal.
 const COMMIT_LEN: usize = 40;
@@ -110,15 +113,21 @@ pub(crate) fn check(root: &Path, exec: &dyn Exec, net: &dyn Net) -> Result<bool,
         return Err("the map tool oracles build on Linux and macOS only".to_owned());
     }
     let tools = build(root, exec, net)?;
-    let work = WORK
-        .iter()
-        .fold(root.join(OUT), |path, part| path.join(part));
+    let work = work_dir(root);
     let mut passed = true;
     for (name, set) in [("id", &tools.id), ("ericw-tools", &tools.ericw)] {
         let dir = work.join(name);
         passed &= compile_room(root, exec, set, &dir)?;
     }
     Ok(passed)
+}
+
+/// The directory the room is compiled in, one subdirectory per set of tools: [`WORK`] under
+/// `target/oracles`.
+fn work_dir(root: &Path) -> PathBuf {
+    let mut work = root.join(OUT);
+    work.extend(WORK);
+    work
 }
 
 /// The bin directory's executables for one set of tools.
