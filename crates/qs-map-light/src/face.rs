@@ -4,11 +4,14 @@
 //! (LIGHT-3), each light's contribution (LIGHT-4) and the lightmaps written from them (LIGHT-5,
 //! LIGHT-6).
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use qs_bsp::{BSP_MAXLIGHTMAPS, BSP_TEX_SPECIAL, Bsp};
 
 use crate::entities::{Entities, Entity, FULL};
+use crate::lump::Colour;
 use crate::trace::Tree;
-use crate::{AXES, LightError, LightWarning, Rgb, Sampling, Scale, Vec3, to_f32};
+use crate::{AXES, LightError, LightWarning, NO_STYLE, Rgb, Sampling, Scale, Vec3, to_f32};
 
 /// Texels to a luxel (LIGHT-3.2).
 const LUXEL: f32 = 16.0;
@@ -37,8 +40,6 @@ const BRIGHTEST: f32 = 255.0;
 const EXTRA: usize = 2;
 /// A mean of four samples (LIGHT-5.2).
 const QUARTER: f64 = 0.25;
-/// The style of an unused lightmap slot (LIGHT-5.1).
-const NO_STYLE: u8 = 255;
 /// How far the extents start, before any vertex widens them (`CalcFaceExtents`).
 const FAR_MIN: f32 = 999_999.0;
 const FAR_MAX: f32 = -99_999.0;
@@ -147,11 +148,25 @@ pub(crate) struct Scene<'a> {
     pub(crate) entities: &'a Entities,
     pub(crate) sampling: Sampling,
     pub(crate) scale: Scale,
+    pub(crate) colour: Colour,
 }
 
 /// A face's place in the faces lump.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct FaceId(usize);
+pub struct FaceId(usize);
+
+impl FaceId {
+    /// The face at `index`.
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Its place in the faces lump.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
 
 /// How many faces a thread lights before taking more.
 const FACE_BATCH: usize = 16;
@@ -165,7 +180,9 @@ impl Scene<'_> {
         let count = self.bsp.faces.len();
         let threads = std::thread::available_parallelism().map_or(1, usize::from);
         let batches = count.div_ceil(FACE_BATCH);
-        let next = std::sync::atomic::AtomicUsize::new(0);
+        let next = AtomicUsize::new(0);
+        // The first face that failed: no face after it is lit, as `light` stops there.
+        let failed = AtomicUsize::new(usize::MAX);
         let mut results: Vec<Option<Result<FaceResult, LightError>>> =
             std::iter::repeat_with(|| None).take(count).collect();
         std::thread::scope(|s| {
@@ -174,14 +191,17 @@ impl Scene<'_> {
                     s.spawn(|| {
                         let mut mine = Vec::new();
                         loop {
-                            let batch = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let batch = next.fetch_add(1, Ordering::Relaxed);
                             let start = batch.saturating_mul(FACE_BATCH);
-                            if start >= count {
+                            if start >= count || start > failed.load(Ordering::Relaxed) {
                                 break;
                             }
                             for face in start..start.saturating_add(FACE_BATCH).min(count) {
                                 let mut warnings = Vec::new();
-                                let lit = self.light_face(FaceId(face), &mut warnings);
+                                let lit = self.light_face(FaceId::new(face), &mut warnings);
+                                if lit.is_err() {
+                                    failed.fetch_min(face, Ordering::Relaxed);
+                                }
                                 mine.push((face, lit.map(|lit| (lit, warnings))));
                             }
                         }
@@ -233,7 +253,7 @@ impl Scene<'_> {
         };
         let mut info = Info::new(normal, dist, texinfo.vecs, index)?;
         info.extents(self.bsp, index, texinfo.vecs)?;
-        info.points(self.tree, self.sampling);
+        info.points(self.tree, self.sampling, self.colour);
         for light in self.entities.all.iter().filter(|e| e.is_light()) {
             if let Some(warning) = info.single_light(self, light) {
                 warnings.push(warning);
@@ -242,7 +262,7 @@ impl Scene<'_> {
         if info.styles.is_empty() {
             return Ok(None);
         }
-        Ok(Some(info.written(self.sampling, self.scale)))
+        Ok(Some(info.written(self.sampling, self.scale, self.colour)))
     }
 }
 
@@ -259,7 +279,7 @@ impl Info {
         ]);
         let mut distscale = dot(texnormal, normal);
         if distscale == 0.0 {
-            return Err(LightError::TextureAxis { face });
+            return Err(LightError::TextureAxis { face: FaceId(face) });
         }
         let mut texnormal = texnormal;
         if distscale < 0.0 {
@@ -351,7 +371,7 @@ impl Info {
             let high = int_of(to_f32(f64::from(max / LUXEL).ceil()));
             let size = high.saturating_sub(low);
             if size > MAX_EXTENT {
-                return Err(LightError::Extents { face });
+                return Err(LightError::Extents { face: FaceId(face) });
             }
             if let (Some(m), Some(s)) = (self.texmins.get_mut(i), self.texsize.get_mut(i)) {
                 *m = low;
@@ -382,7 +402,7 @@ impl Info {
 
     /// `CalcPoints`: each sample's point, moved toward the face's middle until a line reaches
     /// it from there (LIGHT-3.3, LIGHT-3.4).
-    fn points(&mut self, tree: &Tree, sampling: Sampling) {
+    fn points(&mut self, tree: &Tree, sampling: Sampling, colour: Colour) {
         let mids = (self.exact_maxs[0] + self.exact_mins[0]) / 2.0;
         let midt = (self.exact_maxs[1] + self.exact_mins[1]) / 2.0;
         let middle = self.at(mids, midt);
@@ -430,9 +450,12 @@ impl Info {
         self.points = points;
         self.grey = Default::default();
         self.colour = Default::default();
+        let colour_kept = colour;
         for (grey, colour) in self.grey.iter_mut().zip(&mut self.colour) {
             *grey = vec![0.0; count];
-            *colour = vec![[0.0; AXES]; count];
+            if colour_kept == Colour::Coloured {
+                *colour = vec![[0.0; AXES]; count];
+            }
         }
     }
 
@@ -446,7 +469,7 @@ impl Info {
         }
         let spot = light
             .target_entity
-            .and_then(|t| scene.entities.all.get(t))
+            .and_then(|t| scene.entities.all.get(t.index()))
             .map(|target| {
                 let aim = normalized(sub(target.origin, light.origin));
                 let cone = if light.angle == 0.0 {
@@ -482,7 +505,8 @@ impl Info {
         else {
             return None;
         };
-        for ((point, sample), rgb) in self.points.iter().zip(grey).zip(colour) {
+        // An all-white map keeps no colour: the slot's colour samples are empty then.
+        for (i, (point, sample)) in self.points.iter().zip(grey).enumerate() {
             let Some(reach) = scene.tree.cast_ray(light.origin, *point) else {
                 continue;
             };
@@ -503,8 +527,10 @@ impl Info {
                 continue;
             }
             *sample += add;
-            for (channel, &c) in rgb.iter_mut().zip(&tint) {
-                *channel += c * (add / FULL);
+            if let Some(rgb) = colour.get_mut(i) {
+                for (channel, &c) in rgb.iter_mut().zip(&tint) {
+                    *channel += c * (add / FULL);
+                }
             }
             if *sample > REAL_LIGHT {
                 hit = true;
@@ -518,7 +544,7 @@ impl Info {
 
     /// The lightmaps as bytes, each luxel the mean of its four samples in the full mode
     /// (LIGHT-5, LIGHT-6.3, LIGHT-6.4).
-    fn written(&self, sampling: Sampling, scale: Scale) -> Lit {
+    fn written(&self, sampling: Sampling, scale: Scale, colour_kept: Colour) -> Lit {
         let [w, h] = self.luxels();
         let mut lit = Lit::default();
         for (slot, &style) in self.styles.iter().enumerate() {
@@ -563,7 +589,9 @@ impl Info {
                     };
                     let total = (total * scale.range).min(BRIGHTEST);
                     lit.grey.push(byte_of(total.max(0.0)));
-                    lit.rgb.push(clamped_colour(rgb, scale.range));
+                    if colour_kept == Colour::Coloured {
+                        lit.rgb.push(clamped_colour(rgb, scale.range));
+                    }
                 }
             }
         }

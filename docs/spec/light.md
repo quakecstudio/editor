@@ -58,7 +58,7 @@ GPL-2.0-or-later and cited for description only. Both may be run as oracles
   lump's array. So the bytes skipped to bring a face's lightmaps to a multiple of 4, and the
   padding after the lighting and entity lumps, are the bytes the input's lump held at those
   offsets, and zero past its end; every other lump's padding is zero. The file is laid out as
-  VIS-5.4 states for vis.
+  VIS-5.6 states for vis.
 
 ### Constants
 

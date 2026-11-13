@@ -19,10 +19,11 @@ mod trace;
 
 use core::fmt;
 
-use qs_bsp::{Bsp, BspLoader};
+use qs_bsp::{Bsp, BspLoader, BspVersion};
 pub use qs_map_bsp::Dialect;
 
 use crate::entities::Entities;
+pub use crate::face::FaceId;
 use crate::face::Scene;
 use crate::lump::Colour;
 use crate::trace::Tree;
@@ -33,6 +34,8 @@ pub use crate::entities::{
 };
 pub use crate::lump::LIGHT_MAX_MAP_LIGHTING;
 
+/// The style of an unused lightmap slot (LIGHT-5.1).
+pub(crate) const NO_STYLE: u8 = 255;
 /// The axes of a point, and the channels of a colour.
 pub(crate) const AXES: usize = 3;
 /// A point or direction, or a colour's red, green and blue.
@@ -104,12 +107,12 @@ pub enum LightError {
     /// `Texture axis perpendicular to face` (LIGHT-3.6).
     TextureAxis {
         /// The face.
-        face: usize,
+        face: FaceId,
     },
     /// `Bad surface extents` (LIGHT-3.2).
     Extents {
         /// The face.
-        face: usize,
+        face: FaceId,
     },
     /// `GetFileSpace: overrun` in the id dialect; in the extended one, a lightmap whose offset
     /// does not fit `lightofs` (LIGHT-1.5, LIGHT-1.7).
@@ -142,9 +145,15 @@ impl fmt::Display for LightError {
             Self::BadStyle { style } => write!(f, "Bad light style {style} (must be 0-254)"),
             Self::TooManySwitched => f.write_str("more than 32 switchable light styles"),
             Self::TextureAxis { face } => {
-                write!(f, "Texture axis perpendicular to face (face {face})")
+                write!(
+                    f,
+                    "Texture axis perpendicular to face (face {})",
+                    face.index()
+                )
             }
-            Self::Extents { face } => write!(f, "Bad surface extents (face {face})"),
+            Self::Extents { face } => {
+                write!(f, "Bad surface extents (face {})", face.index())
+            }
             Self::Overrun => f.write_str("GetFileSpace: overrun"),
             Self::EntityTextTooLong => f.write_str("Entity text too long"),
             Self::PairTooLong { key } => {
@@ -238,9 +247,19 @@ impl Light {
     /// The [`LightError`] `light` stops with, or [`LightError::Format`] for a BSP that cannot
     /// be read.
     pub fn run(&self, bsp: &[u8]) -> Result<Lighted, LightError> {
-        let read = Bsp::read(bsp, BspLoader::FitzQuake).map_err(|_| LightError::Format)?;
+        // The faces' old lighting is not read: `light` overwrites it (LIGHT-1.1).
+        let unlit = lump::without_lighting(bsp)?;
+        let read = Bsp::read(&unlit, BspLoader::FitzQuake).map_err(|_| LightError::Format)?;
+        if read.version == BspVersion::Valve {
+            return Err(LightError::Format);
+        }
         let mut warnings = Vec::new();
         let entities = Entities::read(read.entity_lump, self.dialect, &mut warnings)?;
+        let colour = if entities.all.iter().any(|e| e.is_light() && e.is_coloured()) {
+            Colour::Coloured
+        } else {
+            Colour::White
+        };
         let tree = Tree::new(&read);
         let scene = Scene {
             bsp: &read,
@@ -248,6 +267,7 @@ impl Light {
             entities: &entities,
             sampling: self.sampling,
             scale: self.scale,
+            colour,
         };
         let faces = scene.lit_faces()?;
         let mut lit = Vec::with_capacity(faces.len());
@@ -255,11 +275,6 @@ impl Light {
             warnings.extend(face_warnings);
             lit.push(face);
         }
-        let colour = if entities.all.iter().any(|e| e.is_light() && e.is_coloured()) {
-            Colour::Coloured
-        } else {
-            Colour::White
-        };
         let text = entities.written(self.dialect)?;
         let out = lump::written(bsp, &read, &lit, &text, colour, self.dialect)?;
         Ok(Lighted {

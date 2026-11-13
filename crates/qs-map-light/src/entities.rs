@@ -4,6 +4,8 @@
 //! light value, style, cone and colour, switchable styles for named lights and the targets
 //! spotlights aim at.
 
+use std::collections::HashMap;
+
 use qs_map::cnum::{c_atof, c_strtod};
 use qs_map_bsp::Dialect;
 
@@ -33,6 +35,17 @@ const LINE_EXTRA: usize = 7;
 /// Full colour on a channel (LIGHT-6.1).
 pub(crate) const FULL: f32 = 255.0;
 
+/// An entity's place in the entity lump.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct EntityId(usize);
+
+impl EntityId {
+    /// Its place.
+    pub(crate) const fn index(self) -> usize {
+        self.0
+    }
+}
+
 /// One entity: its keys in the order read, and what light makes of them.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Entity {
@@ -48,7 +61,7 @@ pub(crate) struct Entity {
     /// `_color`, scaled to 0 to 255 (LIGHT-6.1); none for white.
     pub(crate) colour: Option<Vec3>,
     /// The entity a spotlight aims at (LIGHT-2.6).
-    pub(crate) target_entity: Option<usize>,
+    pub(crate) target_entity: Option<EntityId>,
 }
 
 /// `COM_Parse`: the next token of `text` from `*at`, a quoted string's bytes without its quotes,
@@ -112,7 +125,7 @@ fn atoi_of_atof(value: &[u8]) -> i32 {
 }
 
 /// `atof` into a `float`.
-fn float_of(value: &[u8]) -> f32 {
+fn atof_float(value: &[u8]) -> f32 {
     crate::to_f32(c_atof(value))
 }
 
@@ -160,7 +173,7 @@ impl Entity {
                     return Err(LightError::BadStyle { style: self.style });
                 }
             }
-            b"angle" => self.angle = float_of(&value),
+            b"angle" => self.angle = atof_float(&value),
             b"_color" => self.colour = three(&value).map(colour_of),
             _ if key.starts_with(LIGHT_PREFIX) || key == b"_light" => {
                 self.light = atoi_of_atof(&value);
@@ -263,6 +276,11 @@ impl Entities {
     /// `MatchTargets`: each entity's target is the first entity of that name; a target with a
     /// style gives its style to the entity (LIGHT-2.5).
     fn match_targets(&mut self, warnings: &mut Vec<LightWarning>) {
+        // The first entity of each name; names do not change here.
+        let mut named: HashMap<Vec<u8>, usize> = HashMap::new();
+        for (i, entity) in self.all.iter().enumerate() {
+            named.entry(entity.targetname.clone()).or_insert(i);
+        }
         for i in 0..self.all.len() {
             let Some(entity) = self.all.get(i) else {
                 continue;
@@ -270,10 +288,7 @@ impl Entities {
             if entity.target.is_empty() {
                 continue;
             }
-            let found = self
-                .all
-                .iter()
-                .position(|other| other.targetname == entity.target);
+            let found = named.get(&entity.target).copied();
             let Some(j) = found else {
                 warnings.push(LightWarning::UnmatchedTarget {
                     origin: entity.origin.map(truncated),
@@ -283,7 +298,7 @@ impl Entities {
             };
             let style = self.all.get(j).map_or(0, |target| target.style);
             if let Some(entity) = self.all.get_mut(i) {
-                entity.target_entity = Some(j);
+                entity.target_entity = Some(EntityId(j));
                 if style != 0 {
                     entity.style = style;
                     entity.set(b"style", style.to_string().into_bytes());

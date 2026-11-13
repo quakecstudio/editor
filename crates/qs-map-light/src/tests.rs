@@ -15,6 +15,8 @@ use qs_wad::write::WadBuilder;
 use sha2::{Digest as _, Sha256};
 
 use crate::entities::Entities;
+use crate::face::{FaceId, Lit};
+use crate::lump::{Colour, written};
 use crate::trace::Tree;
 use crate::{Dialect, Light, LightError, LightWarning, Lighted, Sampling, Scale};
 
@@ -307,8 +309,8 @@ fn switchable_styles_and_targets() {
     let styles: Vec<i32> = read.all.iter().map(|e| e.style).collect();
     assert_eq!(styles, [32, 33, 32, 3, 0, 33, 0, 3]);
     assert_eq!(read.switched(), 2);
-    assert_eq!(read.all[5].target_entity, Some(1));
-    assert_eq!(read.all[7].target_entity, Some(3));
+    assert_eq!(read.all[5].target_entity.map(|t| t.index()), Some(1));
+    assert_eq!(read.all[7].target_entity.map(|t| t.index()), Some(3));
     assert_eq!(
         warnings,
         [LightWarning::UnmatchedTarget {
@@ -618,11 +620,15 @@ fn errors_and_warnings_read_as_light_writes_them() {
             "more than 32 switchable light styles",
         ),
         (
-            LightError::TextureAxis { face: 3 },
+            LightError::TextureAxis {
+                face: FaceId::new(3),
+            },
             "Texture axis perpendicular to face (face 3)",
         ),
         (
-            LightError::Extents { face: 4 },
+            LightError::Extents {
+                face: FaceId::new(4),
+            },
             "Bad surface extents (face 4)",
         ),
         (LightError::Overrun, "GetFileSpace: overrun"),
@@ -655,4 +661,180 @@ fn errors_and_warnings_read_as_light_writes_them() {
         Light::default().run(b"not a bsp"),
         Err::<Lighted, _>(LightError::Format)
     );
+}
+
+// spec LIGHT-1.1: the faces' old lightofs and styles are not read, so a BSP whose old lighting
+// does not fit its lump is lit as any other
+#[test]
+fn old_lighting_is_not_read() {
+    let bsp = room(&light_at("128 128 64", ""));
+    let lit = Light::default().run(&bsp).unwrap();
+    let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
+    let entry = read.lumps[LumpId::Faces.index()];
+    let start = usize::try_from(entry.fileofs).unwrap();
+    let mut stale = bsp.clone();
+    for face in 0..read.faces.len() {
+        let at = start + face * 20;
+        stale[at + 12..at + 16].copy_from_slice(&[0, 1, 2, 3]);
+        stale[at + 16..at + 20].copy_from_slice(&1_000_000_i32.to_le_bytes());
+    }
+    assert!(
+        Bsp::read(&stale, BspLoader::FitzQuake).is_err(),
+        "the engine refuses it"
+    );
+    assert_eq!(Light::default().run(&stale).unwrap().bsp, lit.bsp);
+    let mut valve = bsp;
+    valve[..4].copy_from_slice(&30_i32.to_le_bytes());
+    assert_eq!(Light::default().run(&valve), Err(LightError::Format));
+}
+
+// spec LIGHT-1.5, LIGHT-1.7: a lighting lump past MAX_MAP_LIGHTING stops the run in the id
+// dialect only; a lump of exactly it does not
+#[test]
+fn lighting_has_light_s_limit_in_the_id_dialect() {
+    let bsp = room("");
+    let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
+    let face = |len: usize| {
+        Some(Lit {
+            styles: vec![0],
+            grey: vec![7; len],
+            rgb: Vec::new(),
+        })
+    };
+    let faces = |last: usize| {
+        let mut faces: Vec<Option<Lit>> = (0..read.faces.len() - 1).map(|_| face(4096)).collect();
+        faces.push(face(last));
+        faces
+    };
+    let used = (read.faces.len() - 1) * 4096;
+    let exact = faces(crate::LIGHT_MAX_MAP_LIGHTING - used);
+    assert!(written(&bsp, &read, &exact, b"\0", Colour::White, Dialect::Id).is_ok());
+    let over = faces(crate::LIGHT_MAX_MAP_LIGHTING - used + 1);
+    assert_eq!(
+        written(&bsp, &read, &over, b"\0", Colour::White, Dialect::Id).err(),
+        Some(LightError::Overrun)
+    );
+    assert!(written(&bsp, &read, &over, b"\0", Colour::White, Dialect::Extended).is_ok());
+}
+
+/// The BSP29 file `bytes` written again as `BSP2` by qs-bsp's writer.
+fn to_bsp2(bytes: &[u8]) -> Vec<u8> {
+    use qs_bsp::write::{
+        BspFile, BspFormat, DiskClipNode, DiskFace, DiskLeaf, DiskModel, DiskNode, DiskPlane,
+        DiskTexinfo,
+    };
+    let read = Bsp::read(bytes, BspLoader::FitzQuake).unwrap();
+    let int = |v: usize| i32::try_from(v).unwrap();
+    let file = BspFile {
+        entities: lump(bytes, LumpId::Entities).to_vec(),
+        planes: read
+            .planes
+            .iter()
+            .map(|p| DiskPlane {
+                normal: p.normal,
+                dist: p.dist,
+                plane_type: p.plane_type,
+            })
+            .collect(),
+        textures: lump(bytes, LumpId::Textures).to_vec(),
+        vertexes: read.vertexes.clone(),
+        visibility: read.visibility.to_vec(),
+        nodes: read
+            .nodes
+            .iter()
+            .map(|n| DiskNode {
+                planenum: int(n.planenum),
+                children: n.children,
+                mins: n.mins,
+                maxs: n.maxs,
+                firstface: u32::try_from(n.firstface).unwrap(),
+                numfaces: u32::try_from(n.numfaces).unwrap(),
+            })
+            .collect(),
+        texinfo: read
+            .texinfo
+            .iter()
+            .map(|t| DiskTexinfo {
+                vecs: t.vecs,
+                miptex: t.miptex,
+                flags: t.flags,
+            })
+            .collect(),
+        faces: read
+            .faces
+            .iter()
+            .map(|f| DiskFace {
+                planenum: int(f.planenum),
+                side: f.side,
+                firstedge: int(f.firstedge),
+                numedges: int(f.numedges),
+                texinfo: int(f.texinfo),
+                styles: f.styles,
+                lightofs: f.lightofs,
+            })
+            .collect(),
+        lighting: read.lighting.to_vec(),
+        clipnodes: read
+            .clipnodes
+            .iter()
+            .map(|c| DiskClipNode {
+                planenum: c.planenum,
+                children: c.children,
+            })
+            .collect(),
+        leafs: read
+            .leafs
+            .iter()
+            .map(|l| DiskLeaf {
+                contents: l.contents,
+                visofs: l.visofs,
+                mins: l.mins,
+                maxs: l.maxs,
+                firstmarksurface: u32::try_from(l.firstmarksurface).unwrap(),
+                nummarksurfaces: u32::try_from(l.nummarksurfaces).unwrap(),
+                ambient_level: l.ambient_level,
+            })
+            .collect(),
+        marksurfaces: read
+            .marksurfaces
+            .iter()
+            .map(|&m| u32::try_from(m).unwrap())
+            .collect(),
+        edges: read.edges.clone(),
+        surfedges: read.surfedges.clone(),
+        models: read
+            .models
+            .iter()
+            .map(|m| DiskModel {
+                mins: m.mins,
+                maxs: m.maxs,
+                origin: m.origin,
+                headnode: m.headnode,
+                visleafs: m.visleafs,
+                firstface: int(m.firstface),
+                numfaces: int(m.numfaces),
+            })
+            .collect(),
+    };
+    file.to_bytes(BspFormat::Bsp2).unwrap()
+}
+
+// spec LIGHT-1.1, LIGHT-5.1: a BSP2 file's faces get their styles and lightofs at BSP2's places,
+// and its lighting is the BSP29 file's
+#[test]
+fn bsp2_faces_are_lit() {
+    let bsp = room(&light_at("128 128 64", "\"style\" \"3\"\n"));
+    let wide = to_bsp2(&bsp);
+    assert_eq!(&wide[..4], b"BSP2");
+    let narrow = Light::default().run(&bsp).unwrap();
+    let lit = Light::default().run(&wide).unwrap();
+    let read = Bsp::read(&lit.bsp, BspLoader::FitzQuake).unwrap();
+    let expected = Bsp::read(&narrow.bsp, BspLoader::FitzQuake).unwrap();
+    assert_eq!(read.lighting, expected.lighting);
+    assert!(!read.lighting.is_empty());
+    for (face, want) in read.faces.iter().zip(&expected.faces) {
+        assert_eq!((face.styles, face.lightofs), (want.styles, want.lightofs));
+        assert_eq!(face.styles, [3, 255, 255, 255]);
+        assert_eq!((face.planenum, face.texinfo), (want.planenum, want.texinfo));
+    }
 }

@@ -21,6 +21,7 @@ fn qs_map_light::Light::new
 fn qs_map_light::Light::run
 fn qs_map_light::Light::with_dialect
 fn qs_map_light::Light::with_scale
+fn qs_map_light::face::FaceId::index
 impl qs_map_light::LightError: fmt::Display
 impl qs_map_light::LightError: std::error::Error
 impl qs_map_light::LightWarning: fmt::Display
@@ -28,7 +29,9 @@ impl qs_map_light::Scale: Default
 struct qs_map_light::Light
 struct qs_map_light::Lighted
 struct qs_map_light::Scale
+struct qs_map_light::face::FaceId
 use qs_map_light::Dialect = qs_map_bsp::Dialect
+use qs_map_light::FaceId = crate::face::FaceId
 use qs_map_light::LIGHT_DEFAULT_LEVEL = crate::entities::LIGHT_DEFAULT_LEVEL
 use qs_map_light::LIGHT_FIRST_SWITCHED_STYLE = crate::entities::LIGHT_FIRST_SWITCHED_STYLE
 use qs_map_light::LIGHT_MAX_MAP_ENTITIES = crate::entities::LIGHT_MAX_MAP_ENTITIES

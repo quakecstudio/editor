@@ -6,21 +6,20 @@
 //! LIGHT-6.4).
 
 use qs_bsp::{
-    BSP_BSP2_FACE_SIZE, BSP_FACE_SIZE, BSP_HEADER_LUMPS, BSP_HEADER_SIZE, BSP_MAXLIGHTMAPS, Bsp,
-    BspVersion, LumpId,
+    BSP_2PSB_VERSION, BSP_BSP2_FACE_SIZE, BSP_BSP2_VERSION, BSP_FACE_SIZE, BSP_HEADER_LUMPS,
+    BSP_HEADER_SIZE, BSP_MAXLIGHTMAPS, BSP_VERSION, Bsp, BspVersion, LumpId,
 };
 
 use qs_map_bsp::Dialect;
 
 use crate::face::Lit;
-use crate::{AXES, LightError, Rgb};
+use crate::{AXES, LightError, NO_STYLE, Rgb};
 
 /// `MAX_MAP_LIGHTING` (LIGHT-1.5).
 pub const LIGHT_MAX_MAP_LIGHTING: usize = 0x10_0000;
 /// Lightmaps and lumps start on four-byte boundaries (LIGHT-1.5).
 const ALIGN: usize = 4;
-/// The style of an unused slot, and the `lightofs` of an unlit face (LIGHT-5.1).
-const NO_STYLE: u8 = 255;
+/// The `lightofs` of an unlit face (LIGHT-5.1).
 const UNLIT: i32 = -1;
 /// Where a BSP29 face's styles start; its `lightofs` follows them.
 const STYLES_29: usize = 12;
@@ -208,4 +207,42 @@ pub(crate) fn written(
 /// where it writes nothing (LIGHT-1.8).
 fn stale(old: &[u8], at: usize) -> u8 {
     old.get(at).copied().unwrap_or(0)
+}
+
+/// `bytes` with every face's styles 255 and `lightofs` -1, so that reading it checks none of
+/// the old lighting `light` overwrites (LIGHT-1.1).
+pub(crate) fn without_lighting(bytes: &[u8]) -> Result<Vec<u8>, LightError> {
+    let word = |at: usize| -> Result<i32, LightError> {
+        let field = bytes
+            .get(at..at.saturating_add(ALIGN))
+            .ok_or(LightError::Format)?;
+        let [a, b, c, d] = <[u8; ALIGN]>::try_from(field).map_err(|_| LightError::Format)?;
+        Ok(i32::from_le_bytes([a, b, c, d]))
+    };
+    let (record, styles_at) = match word(0)? {
+        BSP_VERSION => (BSP_FACE_SIZE, STYLES_29),
+        BSP_2PSB_VERSION | BSP_BSP2_VERSION => (BSP_BSP2_FACE_SIZE, STYLES_BSP2),
+        _ => return Err(LightError::Format),
+    };
+    let entry = VERSION_SIZE.saturating_add(LumpId::Faces.index().saturating_mul(ENTRY_SIZE));
+    let start = usize::try_from(word(entry)?).map_err(|_| LightError::Format)?;
+    let len =
+        usize::try_from(word(entry.saturating_add(ALIGN))?).map_err(|_| LightError::Format)?;
+    let mut out = bytes.to_vec();
+    let faces = out
+        .get_mut(start..start.saturating_add(len))
+        .ok_or(LightError::Format)?;
+    for face in faces.chunks_exact_mut(record) {
+        let [a, b, c, d] = UNLIT.to_le_bytes();
+        let field = face
+            .get_mut(
+                styles_at
+                    ..styles_at
+                        .saturating_add(BSP_MAXLIGHTMAPS)
+                        .saturating_add(ALIGN),
+            )
+            .ok_or(LightError::Format)?;
+        field.copy_from_slice(&[NO_STYLE, NO_STYLE, NO_STYLE, NO_STYLE, a, b, c, d]);
+    }
+    Ok(out)
 }
