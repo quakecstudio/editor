@@ -326,7 +326,10 @@ impl MapDocument {
             .find(|path| path.is_file())
     }
 
-    fn entity_mut(&mut self, entity: EntityIndex) -> Result<&mut Entity, WorkbenchError> {
+    pub(crate) fn entity_mut(
+        &mut self,
+        entity: EntityIndex,
+    ) -> Result<&mut Entity, WorkbenchError> {
         self.file
             .entities
             .get_mut(entity.get())
@@ -715,7 +718,7 @@ fn ent_files(path: &Path, lump: &[u8]) -> [PathBuf; 2] {
 /// Runs `edit` on the open map of `context` and returns its answer and the step that undoes
 /// it, sending the change to the game when one runs on the map (P5-07); an edit that fails
 /// leaves the map as it was.
-fn edit_map<C: HasWorkbench, T>(
+pub(crate) fn edit_map<C: HasWorkbench, T>(
     context: &mut C,
     edit: impl FnOnce(&mut MapDocument) -> Result<T, WorkbenchError>,
 ) -> Result<(T, MapStep), WorkbenchError> {
@@ -767,7 +770,7 @@ fn send_changes<C: HasWorkbench>(context: &mut C, before: &MapFile) {
 }
 
 /// The open map's other state: what undo puts back, then what redo does.
-struct MapStep {
+pub(crate) struct MapStep {
     /// The map's [`MapDocument::edits`] before the edit, which undo gives back.
     before: MapRevision,
     /// Its edits after, which redo gives back. A map opened since has had neither.

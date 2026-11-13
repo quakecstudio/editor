@@ -3898,6 +3898,7 @@ dependencies = [
 name = "qs-workbench"
 version = "2026.11.1"
 dependencies = [
+ "image",
  "interprocess",
  "proptest",
  "qc-builtins",

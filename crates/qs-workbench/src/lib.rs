@@ -33,11 +33,14 @@ pub mod terminal;
 pub mod testing;
 #[cfg(test)]
 mod tests;
+pub mod texture_import;
 pub mod tools;
 pub mod vm_run;
 
 use qs_map::qbsp::QbspError;
 use qs_map::shapes::ShapeError;
+use qs_wad::texture::TextureError;
+use qs_wad::write::WadWriteError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
@@ -737,6 +740,34 @@ pub enum WorkbenchError {
     },
     /// The project's server QuakeC does not compile to a program to spawn a map with.
     NotBuilt,
+    /// An image could not be read (P6-16).
+    Image {
+        /// The image.
+        path: PathBuf,
+        /// Why.
+        error: image::ImageError,
+    },
+    /// A texture cannot be made: its name or size breaks Quake's rules (P6-16, WAD-6, WAD-7).
+    Texture {
+        /// Why.
+        error: TextureError,
+    },
+    /// A WAD could not be read (P6-16, WAD-2).
+    Wad {
+        /// The WAD.
+        path: PathBuf,
+        /// Why.
+        error: qs_wad::WadError,
+    },
+    /// A WAD could not be written (P6-16, WAD-5).
+    WadWrite {
+        /// The WAD.
+        path: PathBuf,
+        /// Why.
+        error: WadWriteError,
+    },
+    /// No palette was found in the project or the game to make a texture in (P6-16).
+    NoPalette,
     /// The open map's entity lump cannot be written as qbsp writes it.
     MapLump {
         /// The map.
@@ -836,6 +867,13 @@ impl fmt::Display for WorkbenchError {
             Self::Link { error } => write!(f, "{error}"),
             Self::NoRoom { name } => write!(f, "the map has no room named {name}"),
             Self::NotBuilt => f.write_str("the project's server QuakeC does not compile"),
+            Self::Image { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::Texture { error } => write!(f, "{error}"),
+            Self::Wad { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::WadWrite { path, error } => write!(f, "{}: {error}", path.display()),
+            Self::NoPalette => {
+                f.write_str("no gfx/palette.lmp in the project or the game to make a texture in")
+            }
             Self::MapLump { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Spawn { path, error } => write!(f, "{}: {error}", path.display()),
             Self::ChangedOnDisk { path } => write!(
@@ -904,7 +942,12 @@ impl Error for WorkbenchError {
             | Self::CannotMove { .. }
             | Self::NoRoom { .. }
             | Self::ChangedOnDisk { .. }
+            | Self::NoPalette
             | Self::NotBuilt => None,
+            Self::Image { error, .. } => Some(error),
+            Self::Texture { error } => Some(error),
+            Self::Wad { error, .. } => Some(error),
+            Self::WadWrite { error, .. } => Some(error),
             Self::MapLump { error, .. } => Some(error),
             Self::Spawn { error, .. } => Some(error),
         }
