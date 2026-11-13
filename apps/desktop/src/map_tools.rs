@@ -787,8 +787,14 @@ impl BrushTools {
             && let Some(at) = response.interact_pointer_pos()
         {
             let (start, direction) = ray(at);
-            let (shift, alt, command) =
-                ui.input(|i| (i.modifiers.shift, i.modifiers.alt, i.modifiers.command));
+            // Ctrl, or Cmd on macOS, as egui's `command` reads it, picks corners.
+            let (shift, alt, command) = ui.input(|i| {
+                (
+                    i.modifiers.shift,
+                    i.modifiers.alt,
+                    i.modifiers.command || i.modifiers.ctrl,
+                )
+            });
             if self.tool == MapTool::Vertex
                 && command
                 && let Some((brush, corner)) = self.corner_near(scene, projection, at)
@@ -892,7 +898,9 @@ impl BrushTools {
         {
             let finished = self.finish(drag, ray(at));
             if let Some(
-                BrushAction::Clip(entity, brush, ..) | BrushAction::Vertex(entity, brush, ..),
+                BrushAction::Clip(entity, brush, ..)
+                | BrushAction::Vertex(entity, brush, ..)
+                | BrushAction::Vertices(entity, brush, ..),
             ) = finished
             {
                 self.reshaped = Some((entity, brush));

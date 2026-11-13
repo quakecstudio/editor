@@ -1455,7 +1455,7 @@ impl Text {
             Self::MapBrushHint => "Drag on the ground to draw a box",
             Self::MapClipHint => "Select a brush, then drag the cut line",
             Self::MapVertexHint => {
-                "Select a brush, then drag a corner; Ctrl+click corners to move several, or pick two for an edge"
+                "Select a brush, then drag a corner; Ctrl+click (Cmd on macOS) corners to move several, or pick two for an edge"
             }
             Self::MapToolMove => "Move",
             Self::MapToolMeasure => "Measure",

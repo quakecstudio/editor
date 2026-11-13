@@ -183,8 +183,9 @@ impl BrushTools {
                 )
                 .clicked()
             {
+                // The path stays, so a refused sweep can be mended; Clear path starts again.
                 let mut path = vec![ORIGIN];
-                path.append(&mut fields.path);
+                path.extend_from_slice(&fields.path);
                 actions.push(BrushAction::Sweep(entity, first, path, lock));
             }
             if ui

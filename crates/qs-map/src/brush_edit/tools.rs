@@ -8,15 +8,15 @@
 
 use super::{BrushError, Surface, TextureLock, round, same_point};
 use crate::geometry::{
-    MAP_ON_EPSILON, MIN_CORNERS, ON_PLANE, Plane, Turn, cross, dot, normalize, plane as plane_of,
-    polygons_on, texvecs,
+    MAP_ON_EPSILON, MIN_CORNERS, ON_PLANE, Plane, Turn, centroid, cross, dot, normalize,
+    plane as plane_of, polygons_on, texvecs,
 };
 use crate::{Brush, Face, TexDef};
 
 /// A turn of a circle, in degrees.
 const TURN_DEGREES: f64 = 360.0;
-/// A rotation within this many degrees of a whole one is written whole.
-const WHOLE_DEGREES: f64 = 1e-6;
+/// A rotation within this many degrees of a whole one, 2^-20, is written whole.
+const WHOLE_DEGREES: f64 = 1.0 / 1_048_576.0;
 /// The rotation that turns a standard face's base s axis onto its base t axis, in degrees.
 const QUARTER: f64 = 90.0;
 /// The smallest determinant of a linear map that keeps a brush's volume.
@@ -25,6 +25,8 @@ const FLAT: f64 = 1e-12;
 const NO_LENGTH: f64 = 1e-12;
 /// The origin.
 const ORIGIN: [f64; 3] = [0.0, 0.0, 0.0];
+/// The linear map that changes nothing.
+const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 /// The most bevel faces a chamfer makes (MAP-15.9).
 pub const MAP_MAX_CHAMFER_FACES: u32 = 16;
 
@@ -90,7 +92,7 @@ impl Affine {
         if along == by {
             return None;
         }
-        let mut linear = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let mut linear = IDENTITY;
         if let Some(cell) = linear
             .get_mut(along.index())
             .and_then(|row| row.get_mut(by.index()))
@@ -98,6 +100,15 @@ impl Affine {
             *cell = factor;
         }
         Some(Self::about(about, linear))
+    }
+
+    /// The move by `by`.
+    #[must_use]
+    pub const fn translation(by: [f64; 3]) -> Self {
+        Self {
+            linear: IDENTITY,
+            offset: by,
+        }
     }
 
     /// The linear map `linear` with `about` kept where it is.
@@ -223,7 +234,7 @@ impl WorldTexture {
         let [s_axis, t_axis] = self.axes.map(flat);
         let (along, across) = (dot(s_axis, s0), dot(s_axis, s90));
         let length = along.hypot(across);
-        let rotate = tidied(across.atan2(along).to_degrees().rem_euclid(TURN_DEGREES));
+        let rotate = tidied(across.atan2(along).to_degrees()).rem_euclid(TURN_DEGREES);
         let [_, t_turned] = base(rotate);
         let t_length = dot(t_axis, t_turned);
         let scale = [
@@ -256,7 +267,7 @@ impl WorldTexture {
 fn tidied(value: f64) -> f64 {
     let whole = value.round();
     if (value - whole).abs() < WHOLE_DEGREES {
-        whole + 0.0
+        whole
     } else {
         value
     }
@@ -373,13 +384,10 @@ impl Brush {
     ) -> Result<Self, BrushError> {
         let moved = self.faces.get(face.get()).ok_or(BrushError::Degenerate)?;
         let normal = moved.plane().ok_or(BrushError::Degenerate)?.normal;
-        let shifted = moved.mapped(
-            &Affine {
-                linear: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
-                offset: normal.map(|c| c * by),
-            },
-            lock,
-        )?;
+        if by.is_nan() || by.abs() < ON_PLANE {
+            return Err(BrushError::Degenerate);
+        }
+        let shifted = moved.mapped(&Affine::translation(normal.map(|c| c * by)), lock)?;
         let mut faces = self.faces.clone();
         if let Some(slot) = faces.get_mut(face.get()) {
             *slot = shifted;
@@ -408,15 +416,18 @@ impl Brush {
             .ok_or(BrushError::Degenerate)?;
         let mut out = Vec::with_capacity(rest.len());
         let mut from = self.translated(offset(first), lock)?;
+        let mut from_corners = from.vertices();
         for &to in rest {
             let next = self.translated(offset(to), lock)?;
-            let mut points = from.vertices();
-            points.extend(next.vertices());
-            if from.vertices() == next.vertices() {
+            let next_corners = next.vertices();
+            if from_corners == next_corners {
                 return Err(BrushError::Degenerate);
             }
+            let mut points = from_corners;
+            points.extend_from_slice(&next_corners);
             out.push(Self::hull(&points, &[&from, &next], &surface)?);
             from = next;
+            from_corners = next_corners;
         }
         Ok(out)
     }
@@ -436,10 +447,7 @@ impl Brush {
         for face in &self.faces {
             let normal = face.plane().ok_or(BrushError::Degenerate)?.normal;
             inner.push(face.mapped(
-                &Affine {
-                    linear: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
-                    offset: normal.map(|c| -c * wall),
-                },
+                &Affine::translation(normal.map(|c| -c * wall)),
                 TextureLock::Locked,
             )?);
         }
@@ -487,15 +495,24 @@ impl Brush {
     /// that would not, and [`BrushError::Degenerate`] when the result has no volume.
     pub fn moved_vertices(&self, moves: &[([f64; 3], [f64; 3])]) -> Result<Self, BrushError> {
         let mut points = self.vertices();
-        let mut placed: Vec<[f64; 3]> = Vec::with_capacity(moves.len());
+        // Each vertex moves once, matched where it was before any move.
+        let before = points.clone();
+        let mut moved: Vec<usize> = Vec::with_capacity(moves.len());
         for &(from, to) in moves {
-            let moved = points
-                .iter_mut()
-                .find(|p| same_point(**p, from) && !placed.iter().any(|q| same_point(*q, **p)))
+            let index = before
+                .iter()
+                .enumerate()
+                .position(|(i, &p)| same_point(p, from) && !moved.contains(&i))
                 .ok_or(BrushError::NoVertex(from))?;
-            *moved = to.map(round);
-            placed.push(*moved);
+            if let Some(point) = points.get_mut(index) {
+                *point = to.map(round);
+            }
+            moved.push(index);
         }
+        let placed: Vec<[f64; 3]> = moved
+            .iter()
+            .filter_map(|&i| points.get(i).copied())
+            .collect();
         self.hull_keeping(&points, &placed)
     }
 
@@ -737,18 +754,6 @@ impl Brush {
         }
         Ok(brush)
     }
-}
-
-/// The mean of `points`.
-fn centroid(points: &[[f64; 3]]) -> [f64; 3] {
-    let mut sum = ORIGIN;
-    for p in points {
-        for (s, c) in sum.iter_mut().zip(p) {
-            *s += c;
-        }
-    }
-    let count = f64::from(u32::try_from(points.len()).unwrap_or(u32::MAX).max(1));
-    sum.map(|s| s / count)
 }
 
 #[cfg(test)]

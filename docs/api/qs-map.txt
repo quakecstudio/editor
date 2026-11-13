@@ -118,6 +118,7 @@ fn qs_map::brush_edit::Entity::brush_places
 fn qs_map::brush_edit::tools::Affine::apply
 fn qs_map::brush_edit::tools::Affine::scale
 fn qs_map::brush_edit::tools::Affine::shear
+fn qs_map::brush_edit::tools::Affine::translation
 fn qs_map::brush_edit::tools::Brush::chamfered
 fn qs_map::brush_edit::tools::Brush::edge_out
 fn qs_map::brush_edit::tools::Brush::extruded

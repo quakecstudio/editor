@@ -669,8 +669,8 @@ refuses and changes nothing.
   base s axis onto the new s axis as projected onto the base axes' plane, the scales that give
   the new axes' lengths along the turned base axes, and the offsets that put the texel of the
   plane's point nearest the origin where the new axes put it; that is exact unless the map
-  shears the texture on the face. A rotation within 0.000001 degrees of a whole one is written
-  whole. Without texture lock every face keeps its definition.
+  shears the texture on the face. A rotation within 2^-20 degrees of a whole one is written
+  whole, and taken from 0 to 360. Without texture lock every face keeps its definition.
 - **MAP-15.2** A scale by factors along x, y and z about a point, and a shear that moves points
   along one axis by a factor times their distance from a point along another, move every face's
   points; a map that mirrors writes each face's points in the other order, so the face still
@@ -678,8 +678,8 @@ refuses and changes nothing.
   by the same axis is not one.
 - **MAP-15.3** An extruded face moves along its outward normal, out for a positive distance and
   in for a negative one, its texture moved with it under texture lock. Every other face keeps its
-  plane and its text; a face the move leaves with no polygon goes, and a move that leaves no
-  volume is refused.
+  plane and its text; a face the move leaves with no polygon goes. A move of less than 0.01
+  (`ON_PLANE`), which changes nothing, and a move that leaves no volume are refused.
 - **MAP-15.4** A brush swept along a path of two or more points gives one brush for each step:
   the convex hull of the brush moved to the step's two ends, each relative to the path's first
   point, each face painted as the moved brush's nearest face under texture lock. A step of no

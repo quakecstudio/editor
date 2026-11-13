@@ -548,27 +548,7 @@ impl Brush {
     /// `to` would lie inside the brush, [`BrushError::CornerLost`] when another vertex would,
     /// and [`BrushError::Degenerate`] when the result has no volume.
     pub fn move_vertex(&self, from: [f64; 3], to: [f64; 3]) -> Result<Self, BrushError> {
-        let mut points = self.vertices();
-        let moved = points
-            .iter_mut()
-            .find(|p| same_point(**p, from))
-            .ok_or(BrushError::NoVertex(from))?;
-        *moved = to.map(round);
-        let surface = self
-            .faces
-            .first()
-            .map(Surface::of)
-            .ok_or(BrushError::Degenerate)?;
-        let brush = Self::hull(&points, &[self], &surface)?;
-        let corners = brush.vertices();
-        let kept = |point: [f64; 3]| corners.iter().any(|&v| same_point(v, point));
-        if !kept(to) {
-            return Err(BrushError::VertexInside(to));
-        }
-        if let Some(&lost) = points.iter().find(|&&p| !kept(p)) {
-            return Err(BrushError::CornerLost(lost));
-        }
-        Ok(brush)
+        self.moved_vertices(&[(from, to)])
     }
 }
 

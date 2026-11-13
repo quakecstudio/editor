@@ -283,7 +283,10 @@ impl MapDocument {
         map: &Affine,
         lock: Lock,
     ) -> Result<(), WorkbenchError> {
-        for &brush in brushes {
+        let mut brushes = brushes.to_vec();
+        brushes.sort();
+        brushes.dedup();
+        for brush in brushes {
             let moved = self.brush(entity, brush)?.transformed(map, lock.into())?;
             self.replace_brush(entity, brush, vec![moved])?;
         }

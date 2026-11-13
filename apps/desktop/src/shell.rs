@@ -2378,7 +2378,8 @@ impl Shell {
                     face,
                     by,
                     lock,
-                    grid: None,
+                    // The distance is the one typed in the panel.
+                    grid: Some(0.0),
                 },
             ),
             BrushAction::SplitFace(face, by) => self.attempt(

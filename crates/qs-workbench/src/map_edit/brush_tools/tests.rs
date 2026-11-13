@@ -122,6 +122,12 @@ fn brushes_scale_and_shear() {
                  "about": [0, 0, 0] }),
     );
     assert!(after[0].vertices().iter().any(|c| c == &[32.0, 0.0, 64.0]));
+    let twice = edits(
+        "scale-twice",
+        MAP_BRUSH_SCALE,
+        &json!({ "entity": 0, "brushes": [0, 0], "factors": [2, 2, 2], "about": [0, 0, 0] }),
+    );
+    assert!(twice[0].vertices().contains(&[128.0, 128.0, 128.0]), "scaled once");
     refused(
         "shear-self",
         MAP_BRUSH_SHEAR,

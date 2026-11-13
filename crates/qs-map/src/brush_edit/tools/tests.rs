@@ -604,6 +604,14 @@ fn chamfers_lie_on_their_arc() {
         );
     }
     assert!(brush.chamfered(a, b, 31.0, 1).is_ok());
+    // Wider than the edge's front face but not its top: the cut alone would succeed.
+    let low = cuboid([0.0, 0.0, 0.0], [64.0, 64.0, 32.0], &standard());
+    let edge = ([0.0, 0.0, 32.0], [64.0, 0.0, 32.0]);
+    assert!(low.chamfered(edge.0, edge.1, 24.0, 1).is_ok());
+    assert!(matches!(
+        low.chamfered(edge.0, edge.1, 40.0, 1),
+        Err(BrushError::Degenerate)
+    ));
     for too_far in [32.0, 40.0] {
         assert!(matches!(
             brush.chamfered(a, b, too_far, 1),
@@ -631,4 +639,71 @@ fn an_intersection_that_reaches_out_is_refused() {
         .find(|part| part.vertices().iter().any(|v| v[2] == 160.0))
         .unwrap();
     assert!(matches!(a.intersected(&[&b]), Err(BrushError::Degenerate)));
+}
+
+// spec MAP-15.1: a shear keeps a standard face's texture fixed exactly where the texture is not
+// sheared on it: the faces it tilts across the projection, and those it moves within their plane
+#[test]
+fn a_shear_keeps_standard_textures_it_does_not_shear() {
+    let brush = cuboid([0.0, 0.0, 0.0], [64.0, 32.0, 16.0], &standard());
+    let map = Affine::shear([0.0; 3], WorldAxis::X, WorldAxis::Z, 0.75).unwrap();
+    let sheared = brush.transformed(&map, TextureLock::Locked).unwrap();
+    let polygons = brush.face_polygons();
+    let mut exact = 0;
+    for (i, (old, new)) in brush.faces.iter().zip(&sheared.faces).enumerate() {
+        let normal = old.plane().unwrap().normal;
+        if normal[1] != 0.0 {
+            continue;
+        }
+        for &p in polygons[i].as_ref().unwrap() {
+            for k in 0..2 {
+                assert!(
+                    near(texel(old, k, p), texel(new, k, map.apply(p))),
+                    "face {i}"
+                );
+            }
+        }
+        exact += 1;
+    }
+    assert_eq!(exact, 4);
+}
+
+// spec MAP-15.1: a rotation is written whole within 2^-20 degrees of a whole one, not past it
+#[test]
+fn rotations_near_whole_are_whole() {
+    let tolerance = 1.0 / 1_048_576.0;
+    assert_eq!(super::tidied(30.0 + tolerance / 2.0), 30.0);
+    assert_eq!(super::tidied(30.0 + tolerance), 30.0 + tolerance);
+    assert_eq!(super::tidied(30.0 - tolerance / 2.0), 30.0);
+}
+
+// spec MAP-15.3, MAP-15.6: a brush 0.01 thick, ON_PLANE, has no volume, and one 0.02 thick has;
+// an extrusion of no distance is refused
+#[test]
+fn volume_and_no_extrusion() {
+    let thin = cuboid([0.0, 0.0, -0.01], [64.0, 64.0, 0.0], &standard());
+    assert!(!thin.has_volume());
+    let thick = cuboid([0.0, 0.0, -0.02], [64.0, 64.0, 0.0], &standard());
+    assert!(thick.has_volume());
+    let brush = cuboid([0.0, 0.0, 0.0], [64.0, 64.0, 64.0], &standard());
+    assert!(matches!(
+        brush.extruded(BrushFace::new(0), 0.0, TextureLock::Locked),
+        Err(BrushError::Degenerate)
+    ));
+}
+
+// spec MAP-15.7: a vertex moves onto where another was, as that one moves on: the group moves
+// as one
+#[test]
+fn vertices_move_through_each_others_places() {
+    let brush = cuboid([0.0, 0.0, 0.0], [64.0, 64.0, 64.0], &standard());
+    let moved = brush
+        .moved_vertices(&[
+            ([0.0, 64.0, 64.0], [64.0, 64.0, 64.0]),
+            ([64.0, 64.0, 64.0], [128.0, 64.0, 64.0]),
+        ])
+        .unwrap();
+    assert!(moved.vertices().contains(&[128.0, 64.0, 64.0]));
+    assert!(moved.vertices().contains(&[64.0, 64.0, 64.0]));
+    assert!(!moved.vertices().contains(&[0.0, 64.0, 64.0]));
 }
