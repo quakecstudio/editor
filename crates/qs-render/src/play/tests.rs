@@ -459,6 +459,51 @@ fn fog_fades_over_its_time() {
     assert_eq!(state.at(40.0).color, [128.0 / 255.0; 3]);
 }
 
+// spec REND-10.5: `fog <density>` sets the density at once, a negative one as 0, and keeps the
+// colour last set, each channel within 0 to 1, ending a fade in progress
+#[test]
+fn the_fog_command_sets_the_density_and_keeps_the_colour() {
+    let blue = Fog {
+        color: [0.5, 0.5, 0.7],
+        density: 0.03,
+    };
+    let mut state = FogState::new(blue);
+    state.command_density(0.0, 1.0);
+    assert_eq!(state.at(1.0).density, 0.0);
+    assert_eq!(state.at(1.0).color, FogState::new(blue).at(1.0).color);
+    state.command_density(-2.0, 1.0);
+    assert_eq!(state.at(1.0).density, 0.0);
+    // A worldspawn's colour out of range is clamped, so a fade after starts from the clamped one.
+    let mut wild = FogState::new(Fog {
+        color: [2.0, -1.0, 0.5],
+        density: 0.03,
+    });
+    wild.command_density(0.0, 1.0);
+    wild.update(
+        Fog {
+            color: [0.0; 3],
+            density: 0.0,
+        },
+        2.0,
+        1.0,
+    );
+    let [red, green, blue] = wild.at(2.0).color;
+    assert_eq!(
+        [red, green, blue],
+        [0.5, 0.0, 0.25].map(|c: f32| (c * 255.0).round() / 255.0)
+    );
+    state.update(Fog::default(), 4.0, 2.0);
+    state.command_density(0.5, 3.0);
+    let grey = FogState::new(Fog::default()).at(3.0).color;
+    assert_eq!(
+        state.at(3.0),
+        Fog {
+            color: grey,
+            density: 0.5
+        }
+    );
+}
+
 // spec REND-4.13: a player entity wearing colours is drawn with its slot's translated skin,
 // sent each frame and remade only when its model, skin or colours change; heads and
 // non-players keep theirs

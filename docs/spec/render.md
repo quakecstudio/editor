@@ -505,7 +505,7 @@ sky are REND-2.3.
 ## REND-10 Fog
 
 **Source:** `Quake/gl_fog.c`, `Fog_ParseWorldspawn`, `Fog_Update`, `Fog_ParseServerMessage`,
-`Fog_GetColor`, `Fog_GetDensity`, `Fog_SetupFrame`
+`Fog_GetColor`, `Fog_GetDensity`, `Fog_SetupFrame`, `Fog_FogCommand_f`
 (sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`).
 
 id's engine has no fog; the FitzQuake lineage's global fog is what the rerelease's and the
@@ -529,6 +529,14 @@ preview host draws it (ADR-0012).
 - **REND-10.4** The fog is `GL_EXP2` with `GL_FOG_DENSITY = density / 64`: a fragment's
   colour is mixed toward the fog colour by `1 - exp (-((density / 64) * z)^2)`, `z` its eye
   distance. The preview host computes the same in its shader.
+- **REND-10.5** The `fog` command with one argument, `fog <density>`, sets the density at once
+  and keeps the colour last set (`Fog_FogCommand_f`, `case 2:`): "`d = Q_atof(Cmd_Argv(1));`",
+  "`t = 0.0f;`", "`r = fog_red;`" and the same for green and blue. Then, on every path, the
+  density is raised to 0 and each channel kept within 0 to 1: "`if      (d < 0.0f) d = 0.0f;`",
+  "`if      (r < 0.0f) r = 0.0f;`", "`else if (r > 1.0f) r = 1.0f;`" and the same for green
+  and blue, before "`Fog_Update(d, r, g, b, t);`". `fog_red` and the others are the values a
+  fade ends at, so a fade in progress ends at once. The preview host's view script sends it
+  (VIEWDIFF-1.4); its other forms are not read.
 
 ### Constants
 

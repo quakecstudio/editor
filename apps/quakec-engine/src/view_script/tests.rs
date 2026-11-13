@@ -10,11 +10,11 @@ use std::path::PathBuf;
 use super::{Step, ViewScript};
 
 // spec VIEWDIFF-1.1: the first line names the map; blank lines and comments are skipped
-// spec VIEWDIFF-1.2: frames, place and shot, in order
+// spec VIEWDIFF-1.4: frames, place, fog and shot, in order
 #[test]
 fn a_script_reads_its_map_and_steps() {
     let script = ViewScript::parse(
-        "# e1m1's start\nmap e1m1\n\nframes 72\nplace 480 -352 88 0 90\nshot a.ppm\n",
+        "# e1m1's start\nmap e1m1\n\nframes 72\nplace 480 -352 88 0 90\nfog 0\nshot a.ppm\n",
     )
     .unwrap();
     assert_eq!(script.map, "e1m1");
@@ -26,14 +26,15 @@ fn a_script_reads_its_map_and_steps() {
                 origin: [480.0, -352.0, 88.0],
                 angles: [0.0, 90.0],
             },
+            Step::Fog(0.0),
             Step::Shot(PathBuf::from("a.ppm")),
         ]
     );
 }
 
 // spec VIEWDIFF-1.1: a script that does not start with `map <name>` is refused
-// spec VIEWDIFF-1.2: so is any other line, a count that is not a number, a place without five
-// finite numbers and a shot without a file
+// spec VIEWDIFF-1.4: so is any other line, a count that is not a number, a place without five
+// finite numbers, a fog without one finite number and a shot without a file
 #[test]
 fn a_malformed_script_is_refused() {
     for text in [
@@ -47,6 +48,10 @@ fn a_malformed_script_is_refused() {
         "map e1m1\nplace 1 2 3 4 5 6",
         "map e1m1\nplace 1 2 3 4 NaN",
         "map e1m1\nshot  ",
+        "map e1m1\nfog",
+        "map e1m1\nfog x",
+        "map e1m1\nfog inf",
+        "map e1m1\nfog 0 0.5 0.5 0.7",
         "map e1m1\ncmd god",
     ] {
         assert!(ViewScript::parse(text).is_err(), "{text:?}");

@@ -10,7 +10,7 @@
 )]
 
 use super::{
-    CONSOLE_TOLERANCE, Frames, MENU_TOLERANCE, PPM_HEADER, Sound, Tolerance, compare_frames,
+    CONSOLE_TOLERANCE, Frames, MENU_TOLERANCE, PPM_HEADER, Side, Sound, Tolerance, compare_frames,
     compare_sound, monster_near, parse_tolerances, route, shot_tolerance, start_of, tolerance_of,
 };
 
@@ -159,12 +159,12 @@ fn tolerances_are_read_per_map() {
     assert!(parse_tolerances(&doc.replace(" a sky |", "")).is_err());
 }
 
-// spec VIEWDIFF-5.4: a route settles, shoots the start's view and the one behind it, the main
-// menu and the console over the start's view each after a place, closes them, keeps a second
-// quiet, then holds for the sound
+// spec VIEWDIFF-5.6: the host turns its fog off; a route settles, shoots the start's view and
+// the one behind it, the main menu and the console over the start's view each after a place,
+// closes them, keeps a second quiet, then holds for the sound
 #[test]
 fn a_route_shoots_the_start_both_ways() {
-    let text = route("e1m1", ([480.0, -352.0, 88.0], 90.0), "id");
+    let text = route("e1m1", ([480.0, -352.0, 88.0], 90.0), Side::Id);
     let ahead = "place 480 -352 88 0 90\nframes 18\n";
     assert_eq!(
         text,
@@ -175,6 +175,12 @@ fn a_route_shoots_the_start_both_ways() {
              {ahead}toggleconsole\nframes 36\nshot id-console.ppm\ntoggleconsole\n\
              frames 72\nframes 216\n"
         )
+    );
+    let host = route("e1m1", ([480.0, -352.0, 88.0], 90.0), Side::Host);
+    assert_eq!(
+        host,
+        text.replace("map e1m1\n", "map e1m1\nfog 0\n")
+            .replace("id-", "qs-")
     );
     let entities = "{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"info_player_start\"\n\
                     \"origin\" \"480 -352 88\"\n\"angle\" \"90\"\n}\n";
@@ -190,6 +196,16 @@ fn a_route_shoots_the_start_both_ways() {
 fn harness() -> String {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     std::fs::read_to_string(root.join("oracles/engine/view_host.c")).unwrap()
+}
+
+// spec VIEWDIFF-1.4: the oracle reads no `fog` line: its harness passes only `toggleconsole`
+// and `togglemenu` to id's commands and refuses every line it does not read
+#[test]
+fn the_oracle_refuses_fog() {
+    let c = harness();
+    assert!(!c.contains("\"fog"), "view_host.c reads a fog line");
+    assert!(c.contains("!strcmp(text, \"toggleconsole\") || !strcmp(text, \"togglemenu\")"));
+    assert!(c.contains("view-oracle: refused: %s"));
 }
 
 // spec VIEWDIFF-1.3: the oracle copies out what the card played, by the clock, at 11025 Hz in

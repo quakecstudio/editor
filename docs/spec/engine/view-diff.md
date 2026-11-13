@@ -26,16 +26,20 @@ within tolerances recorded per map; it is not an exact match.
   load: the oracle through id's `map` command, on a line of its own (`Cmd_Exec_f` inserts a
   file as it is, and the rerelease's `quake.rc` ends without a newline, so a command after it
   would run on into its last `alias`), the host as its map.
-- **VIEWDIFF-1.2** Each line after it is one of `frames <n>`, n frames of 1/72 of a second, n a
-  number from 0; `place <x> <y> <z> <pitch> <yaw>`, five finite numbers, the player moved there
-  looking that way with no velocity and `fixangle` set, as the host's `player/spawn_at` does;
-  `shot <file>`, the view written to the file as a binary PPM (`P6`, 8 bits a channel); and
-  `toggleconsole` and `togglemenu`, the console and the main menu opened or closed as those
-  commands do (CON-4.8, MENU-1.1). Any other line refuses the script.
+- **VIEWDIFF-1.2** **Withdrawn** 2026-11-13: it gave the lines both engines read; the host's
+  also reads `fog <density>`. Replaced by VIEWDIFF-1.4.
 - **VIEWDIFF-1.3** The sound mixed while the script runs is written to the second file as
   16-bit little-endian samples, left and right interleaved, at 11025 Hz
   (`SND_ORACLE_SPEED`): the oracle's what a sound card would have played by each frame's
   clock, ours what our mixer painted.
+- **VIEWDIFF-1.4** Each line after it is one of `frames <n>`, n frames of 1/72 of a second, n a
+  number from 0; `place <x> <y> <z> <pitch> <yaw>`, five finite numbers, the player moved there
+  looking that way with no velocity and `fixangle` set, as the host's `player/spawn_at` does;
+  `shot <file>`, the view written to the file as a binary PPM (`P6`, 8 bits a channel); and
+  `toggleconsole` and `togglemenu`, the console and the main menu opened or closed as those
+  commands do (CON-4.8, MENU-1.1). The host also reads `fog <density>`, one finite number, as
+  QuakeSpasm's `fog` command with one argument (REND-10.5); the oracle refuses it, since id's
+  engine has no fog. Any other line refuses the script.
 
 ## VIEWDIFF-2 Drawing the view
 
@@ -132,15 +136,8 @@ reads the table between the `view-diff` markers.
   and ours with the player in at once, so a monster's random choice to idle falls at another
   time in each (on e1m8, e2m4, e3m3, e3m4, e4m5, e4m7 and `end` the sounds that differed were
   logged from the host: monsters' `idle` sounds), and no shift lines them up.
-- **VIEWDIFF-5.4** Each route is a map's start: three seconds of frames, so that the sounds
-  each client hears before the player's view is its listener are over, then the player placed
-  at the map's first `info_player_start` at its `angle`, a quarter of a second, a shot, the
-  player turned the other way, a quarter of a second, a shot; placed at the start again, the
-  main menu opened (`togglemenu`), a quarter of a second, a shot, the menu closed; placed again,
-  the console opened (`toggleconsole`), half a second for it to come down (CON-3.1), a shot,
-  the console closed; a second of frames so the menu's sounds are over; and three seconds of
-  frames for the sound. Each shot follows a `place`, after which alone the oracle draws
-  (VIEWDIFF-2.4), and the place leaves the console up in the oracle.
+- **VIEWDIFF-5.4** **Withdrawn** 2026-11-13: its route left the host drawing the fog a map's
+  worldspawn sets, which id's engine does not draw; replaced by VIEWDIFF-5.6.
 - **VIEWDIFF-5.5** The menu's and the console's shots are held to their own tolerances, not the
   map's: the host draws them in QuakeSpasm's look (REND-13.8), the view behind the menu faded by
   black at 0.5 and the console's background at `scr_conalpha` 0.5 with its text at the frame's
@@ -150,14 +147,23 @@ reads the table between the `view-diff` markers.
   of 20 to 28.5 at brightnesses of 1.18 to 1.56, and the console 7.8 to 19.3 at 0.75 to 1.05
   (Differential run 42690189343). They catch a menu or console not drawn, not a small fault in
   how either is drawn, which the menu's and the console's own tests pin (MENU, CON).
+- **VIEWDIFF-5.6** Each route is a map's start: on the host's side first `fog 0`, so that it
+  draws without the fog a map's worldspawn sets (REND-10), which id's engine does not have and
+  which QuakeSpasm's look also blends over the sky (REND-8.1); then three seconds of frames, so
+  that the sounds each client hears before the player's view is its listener are over, then the
+  player placed at the map's first `info_player_start` at its `angle`, a quarter of a second, a
+  shot, the player turned the other way, a quarter of a second, a shot; placed at the start
+  again, the main menu opened (`togglemenu`), a quarter of a second, a shot, the menu closed;
+  placed again, the console opened (`toggleconsole`), half a second for it to come down
+  (CON-3.1), a shot, the console closed; a second of frames so the menu's sounds are over; and
+  three seconds of frames for the sound. Each shot follows a `place`, after which alone the
+  oracle draws (VIEWDIFF-2.4), and the place leaves the console up in the oracle.
 
 <!-- view-diff -->
 | Map | Frame | Brightness | Sound | Why |
 | --- | --- | --- | --- | --- |
 | `*` | 6 | 0.15 | 0.35 | |
-| `lq_e0m1` | 25 | 0.3 | 0.35 | LibreQuake: the sky fills both shots, id's warped and point-sampled, ours QuakeSpasm's filtered sky (18.5 and 1.20 measured) |
-| `lq_e0m2` | 8 | 0.25 | 0.35 | LibreQuake: the sky fills the ahead shot (6.0 and 1.19 measured) |
-| `lq_e0m3` | 13 | 0.3 | 0.35 | LibreQuake: the sky fills the ahead shot (9.9 and 1.22 measured) |
+| `lq_e0m1` | 12 | 0.15 | 0.35 | LibreQuake: the sky fills both shots, id's point-sampled, ours filtered `GL_LINEAR` (REND-3.3) (9.2 and 0.93 measured) |
 | `start` | 6 | 0.2 | 0.35 | the rerelease's start shows its skybox through the ahead shot's ceiling, which id's engine does not read (REND-8; 1.16 measured; id1's start 1.02 to 1.04) |
 | `e3m1` | 6 | 0.85 | 0.35 | a flickering light fills the ahead shot, its style at another phase (1.79 measured) |
 | `e4m4` | 6 | 0.15 | 0.5 | an ambient sound near the start, 0.37 to 0.41 measured |
