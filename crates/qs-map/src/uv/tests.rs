@@ -5,6 +5,7 @@
     clippy::indexing_slicing,
     clippy::unreachable,
     clippy::float_cmp,
+    clippy::float_cmp_const,
     reason = "test code: a failed unwrap or index is a failed test; the normals, shifts and \
               rotations compared are exact"
 )]
@@ -391,6 +392,32 @@ fn no_seam(from: &Face, to: &Face, texdef: TexDef, [a, b]: [[f64; 3]; 2]) {
     }
 }
 
+/// A Valve 220 definition whose axes lie in the plane facing `normal`.
+fn in_plane(n: [f64; 3]) -> TexDef {
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    };
+    let up = if n[2].abs() < 0.9 {
+        [0.0, 0.0, 1.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
+    let u = cross(up, n);
+    let length = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
+    let u = u.map(|c| c / length);
+    let v = cross(n, u);
+    TexDef::Valve {
+        s: [u[0], u[1], u[2], 0.0],
+        t: [v[0], v[1], v[2], 0.0],
+        rotate: 0.0,
+        scale: [1.0, 1.0],
+    }
+}
+
 fn wedge(texdef: TexDef) -> Brush {
     let mut brush = cuboid(texdef);
     let cut = Face::new(
@@ -423,7 +450,7 @@ proptest! {
             let mut from = brush.faces[a].clone();
             let points = *from.points();
             let source_def = if valve_source {
-                VALVE.reset(from.plane().unwrap().normal).aligned(crate::Alignment {
+                in_plane(from.plane().unwrap().normal).aligned(crate::Alignment {
                     shift: Some(shift),
                     rotate: Some(rotate),
                     scale: Some(scale),
@@ -450,7 +477,7 @@ proptest! {
                     "the target keeps its form"
                 );
                 no_seam(&from, to, carried, edge);
-                if let (false, TexDef::Valve { s, t, .. }) = (slanted, carried) {
+                if let (true, TexDef::Valve { s, t, .. }) = (valve_source, carried) {
                     let n = to.plane().unwrap().normal;
                     for axis in [s, t] {
                         let into = axis[0] * n[0] + axis[1] * n[1] + axis[2] * n[2];
@@ -665,4 +692,16 @@ fn adjusting_adds_and_multiplies() {
     };
     assert_eq!((s[3], t[3], rotate, scale), (8.0, 4.0, 90.0, [0.5, 6.0]));
     assert!((s[0]).abs() < NEAR && (s[1] + 1.0).abs() < NEAR, "{s:?}");
+}
+
+// spec MAP-13.8: a rotation nearer a whole number of degrees than 0.000001 is that number; one
+// that far or farther is kept
+#[test]
+fn rotations_snap_within_a_millionth() {
+    use super::{WHOLE_DEGREES, tidied};
+    assert_eq!(tidied(90.0 - WHOLE_DEGREES / 2.0), 90.0);
+    assert_eq!(tidied(WHOLE_DEGREES / 2.0), 0.0);
+    assert_eq!(tidied(WHOLE_DEGREES), WHOLE_DEGREES);
+    assert_eq!(tidied(-WHOLE_DEGREES), -WHOLE_DEGREES);
+    assert_eq!(tidied(30.5), 30.5);
 }

@@ -317,11 +317,6 @@ impl Face {
     }
 }
 
-/// The index of the first non-zero component of an axis (MAP-4.3).
-fn first_nonzero(axis: [f64; 3]) -> usize {
-    axis.iter().position(|&value| value != 0.0).unwrap_or(2)
-}
-
 /// A line: a point on it and its unit direction.
 #[derive(Clone, Copy)]
 struct Line {
@@ -362,17 +357,12 @@ impl Line {
         scale: [f64; 2],
     ) -> TexDef {
         let [base_s, base_t] = paraxial_axes(to.normal);
-        let sv = first_nonzero(base_s);
-        let tv = first_nonzero(base_t);
-        let at = |v: [f64; 3], i: usize| v.get(i).copied().unwrap_or_default();
         let e = self.along;
-        let edge = [at(e, sv), at(e, tv)];
-        let [sign_s, sign_t] = [at(base_s, sv), at(base_t, tv)];
+        // In every row of MAP-4.2 the s axis's one component is 1 and the t axis's -1, so in
+        // the base axes' own coordinates MAP-4.3's rotation turns from t toward s.
+        let edge = [dot(e, base_s), dot(e, base_t)];
         let [scaled_s, scaled_t] = scaled;
-        let wanted = [
-            scale[0] * dot(e, scaled_s) * sign_s,
-            scale[1] * dot(e, scaled_t) * sign_t,
-        ];
+        let wanted = [scale[0] * dot(e, scaled_s), scale[1] * dot(e, scaled_t)];
         let wanted_length = wanted[0].hypot(wanted[1]);
         // The line lies in the plane, which its projection axis does not, so the line always
         // has a part along the plane's two base axes.
@@ -380,7 +370,7 @@ impl Line {
         let (rotate, scale) = if wanted_length <= NONE {
             (0.0, scale)
         } else {
-            let degrees = (edge[1].atan2(edge[0]) - wanted[1].atan2(wanted[0])).to_degrees();
+            let degrees = (wanted[1].atan2(wanted[0]) - edge[1].atan2(edge[0])).to_degrees();
             let k = edge_length / wanted_length;
             (
                 tidied(degrees).rem_euclid(TURN),
