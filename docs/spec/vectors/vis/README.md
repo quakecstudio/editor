@@ -5,7 +5,8 @@ Vectors for [`../../vis.md`](../../vis.md). Each map is a BSP and its portal fil
 the BSP as an `xxd` hex dump (`xxd -r` rebuilds it), `<map>.prt.txt` the portal file.
 [`results.tsv`](results.tsv) gives, for each map and each mode (`-fast`, and `-level 0` to
 `-level 4`), what id's vis wrote: the visibility lump in hex, each vis leaf's `visofs`, and each
-vis leaf's four ambient levels in hex.
+vis leaf's four ambient levels in hex, and the flow's counts as `vis -v` prints them: `c_chains`,
+`c_vistest`, `c_mighttest`, `portalcheck`, `portaltest` and `portalpass` (VIS-4.8).
 
 | Map | Leaves | Portals | What it holds |
 | --- | --- | --- | --- |

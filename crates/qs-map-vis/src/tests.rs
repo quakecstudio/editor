@@ -15,10 +15,10 @@ use qs_map_bsp::Compiler;
 use qs_wad::write::WadBuilder;
 
 use crate::flow::{Flow, Leaves};
-use crate::lump::compress;
+use crate::lump::{compress, written};
 use crate::portals::PortalFile;
 use crate::winding::{Plane, Winding};
-use crate::{Level, Mode, Vis, VisError};
+use crate::{Level, Mode, VIS_MAX_MAP_VISIBILITY, Vis, VisError};
 
 /// The side of one cell of the snake, in map units.
 const CELL: i32 = 128;
@@ -312,6 +312,8 @@ fn bad_portal_files_stop_the_run() {
         read(&prt(2, &[(&SQUARE, -1, 1)])),
         Err(VisError::Portal { number: 0 })
     );
+    let most = [[0.0_f32; 3]; 64];
+    assert_eq!(read(&prt(2, &[(&most, 0, 1)])), Ok(()));
     let many = [[0.0_f32; 3]; 65];
     assert_eq!(
         read(&prt(2, &[(&many, 0, 1)])),
@@ -409,7 +411,7 @@ fn might_see_floods_through_facing_portals() {
     assert_eq!(order, sorted);
 }
 
-// spec VIS-4.7: the full mode gives the same sets on one thread as on several
+// spec VIS-4.7, VIS-4.8: the full mode gives the same sets and counts on one thread as on several
 #[test]
 fn threads_do_not_change_the_result() {
     let (_, prt) = snake("*water");
@@ -447,15 +449,16 @@ fn vector(name: &str) -> String {
     std::fs::read_to_string(path).unwrap()
 }
 
-// spec VIS-4.2, VIS-4.4, VIS-4.7, VIS-5.2, VIS-6.2: every map of the vectors gives id's vis's
-// visibility lump, visofs and ambient levels, in the fast mode and at every level, on every
-// thread
+// spec VIS-4.2, VIS-4.4, VIS-4.7, VIS-4.8, VIS-5.2, VIS-6.2: every map of the vectors gives id's
+// vis's visibility lump, visofs, ambient levels and flow counts, in the fast mode and at every
+// level, on every thread
 #[test]
 fn every_vector_matches_id_vis() {
     let results = vector("results.tsv");
     let mut checked = 0;
     for line in results.lines().skip(1) {
-        let [map, mode, visibility, visofs, ambients] = line.split('\t').collect::<Vec<_>>()[..]
+        let [map, mode, visibility, visofs, ambients, counts] =
+            line.split('\t').collect::<Vec<_>>()[..]
         else {
             panic!("a bad row: {line}");
         };
@@ -479,7 +482,183 @@ fn every_vector_matches_id_vis() {
         assert_eq!(ours.join(","), visofs, "{map} {mode:?}");
         let levels: Vec<u8> = leaves.iter().flat_map(|l| l.ambient_level).collect();
         assert_eq!(hex(&levels), ambients, "{map} {mode:?}");
+        let c = Vis::new(mode).visible(&prt).unwrap().counts();
+        let ours = [
+            c.chains,
+            c.vis_tests,
+            c.might_tests,
+            c.checks,
+            c.tests,
+            c.passes,
+        ];
+        let ours: Vec<String> = ours.iter().map(ToString::to_string).collect();
+        assert_eq!(ours.join(","), counts, "{map} {mode:?}");
         checked += 1;
     }
     assert_eq!(checked, 18, "three maps, six modes each");
+}
+
+// spec VIS-2.1, VIS-2.2, VIS-2.4, VIS-4.5, VIS-4.6, VIS-5.2: each error reads as vis's message
+#[test]
+fn errors_read_as_vis_writes_them() {
+    let cases = [
+        (VisError::Header, "LoadPortals: failed to read header"),
+        (VisError::NotPortalFile, "LoadPortals: not a portal file"),
+        (
+            VisError::Portal { number: 3 },
+            "LoadPortals: reading portal 3",
+        ),
+        (
+            VisError::TooManyPoints { number: 4 },
+            "LoadPortals: portal 4 has too many points",
+        ),
+        (VisError::TooManyLeafPortals, "Leaf with too many portals"),
+        (VisError::LeafRecursion, "CheckStack: leaf recursion"),
+        (
+            VisError::SawIntoLeaf { leaf: 5 },
+            "Leaf portals saw into leaf 5",
+        ),
+        (VisError::VismapOverflow, "Vismap expansion overflow"),
+        (VisError::Format, "the BSP cannot be given visibility"),
+        (VisError::Thread, "a vis thread could not be run"),
+    ];
+    for (error, text) in cases {
+        assert_eq!(error.to_string(), text);
+    }
+}
+
+/// A winding of these points in the z = 0 plane.
+fn flat(points: &[[f32; 2]]) -> Winding {
+    Winding::new(points.iter().map(|&[x, y]| [x, y, 0.0]).collect())
+}
+
+/// The plane x = 0, facing +x.
+const X0: Plane = Plane {
+    normal: [1.0, 0.0, 0.0],
+    dist: 0.0,
+};
+
+// spec VIS-4.3: a point exactly ON_EPSILON in front or behind is on the plane, as is one
+// nearer; a split point on a plane facing -x is at minus its distance
+#[test]
+fn clip_epsilon_is_on_the_plane() {
+    let only_on = flat(&[[0.1, 0.0], [-10.0, 0.0], [-10.0, 64.0]]);
+    assert_eq!(
+        only_on.clipped(X0),
+        None,
+        "0.1 in front is on, not in front"
+    );
+    let back_on = flat(&[[-0.1, 0.0], [10.0, 0.0], [10.0, 64.0]]);
+    assert_eq!(
+        back_on.clipped(X0),
+        Some(back_on.clone()),
+        "0.1 behind is on"
+    );
+    let near = flat(&[[0.05, 0.0], [10.0, 0.0], [10.0, 64.0]]);
+    assert_eq!(near.clipped(X0), Some(near.clone()));
+    let wide = flat(&[[0.0, 0.0], [64.0, 0.0], [64.0, 64.0], [0.0, 64.0]]);
+    let below_32 = Plane {
+        normal: [-1.0, 0.0, 0.0],
+        dist: -32.0,
+    };
+    assert_eq!(
+        wide.clipped(below_32),
+        Some(flat(&[[0.0, 0.0], [32.0, 0.0], [32.0, 64.0], [0.0, 64.0]]))
+    );
+}
+
+/// A straight tube of `cells` leaves along x, each joined to the next by a 64-unit square.
+fn tube(cells: usize) -> String {
+    let squares: Vec<Vec<[f32; 3]>> = (1..cells)
+        .map(|i| {
+            SQUARE
+                .iter()
+                .map(|p| [64.0 * i as f32, p[1], p[2]])
+                .collect()
+        })
+        .collect();
+    let portals: Vec<(&[[f32; 3]], i64, i64)> = squares
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            (
+                s.as_slice(),
+                i64::try_from(i).unwrap(),
+                i64::try_from(i + 1).unwrap(),
+            )
+        })
+        .collect();
+    prt(cells, &portals)
+}
+
+// spec VIS-4.2, VIS-4.4: down a straight tube every leaf sees every other, however long the
+// path of leaves a flow walks
+#[test]
+fn a_long_tube_sees_end_to_end() {
+    const CELLS: usize = 300;
+    let visible = Vis::new(Mode::Full(Level::Four))
+        .visible(&tube(CELLS))
+        .unwrap();
+    assert_eq!(visible.leafs(), CELLS);
+    for from in [0, 1, CELLS.div_euclid(2), CELLS - 1] {
+        assert!((0..CELLS).all(|to| visible.sees(from, to)), "{from}");
+    }
+    assert_eq!(
+        visible.counts().chains,
+        CELLS * (CELLS - 1),
+        "each portal walks to the end"
+    );
+}
+
+// spec VIS-5.2: a lump of exactly MAX_MAP_VISIBILITY bytes is written; one byte more stops the
+// run
+#[test]
+fn the_lump_may_fill_max_map_visibility() {
+    const LEAFS: usize = 2900;
+    let width = LEAFS.div_ceil(8);
+    // A row whose first `bytes` bytes are full, the rest empty.
+    let row = |bytes: usize| {
+        let mut row = Leaves::none(LEAFS);
+        for leaf in 0..(bytes * 8).min(LEAFS) {
+            row.add(leaf);
+        }
+        row
+    };
+    let size = |bytes: usize| compress(&row(bytes).row(LEAFS)).len();
+    let rows_of = |target: usize| {
+        let empty = size(0);
+        let full = size(width);
+        let spare = target - empty * LEAFS;
+        let fulls = spare.div_euclid(full - empty);
+        let rest = spare.rem_euclid(full - empty);
+        let mut rows: Vec<Leaves> = (0..fulls).map(|_| row(width)).collect();
+        let partial = (0..width).find(|&k| size(k) == empty + rest).unwrap();
+        rows.push(row(partial));
+        rows.extend((rows.len()..LEAFS).map(|_| row(0)));
+        let total: usize = rows.iter().map(|r| compress(&r.row(LEAFS)).len()).sum();
+        assert_eq!(total, target);
+        rows
+    };
+    let (bsp, _) = snake("*water");
+    let read = Bsp::read(&bsp, BspLoader::FitzQuake).unwrap();
+    let at_most = written(&bsp, &read, &rows_of(VIS_MAX_MAP_VISIBILITY));
+    assert_ne!(at_most, Err(VisError::VismapOverflow));
+    let over = written(&bsp, &read, &rows_of(VIS_MAX_MAP_VISIBILITY + 1));
+    assert_eq!(over, Err(VisError::VismapOverflow));
+}
+
+// spec VIS-5.4: the lump is appended at the first four-byte boundary past the file
+#[test]
+fn the_lump_starts_on_four_bytes() {
+    let (bsp, prt) = snake("*water");
+    assert!(bsp.len().is_multiple_of(4));
+    let lump_at = |bytes: &[u8]| {
+        let written = Vis::default().run(bytes, &prt).unwrap();
+        let read = Bsp::read(&written, BspLoader::FitzQuake).unwrap();
+        usize::try_from(read.lumps[qs_bsp::LumpId::Visibility as usize].fileofs).unwrap()
+    };
+    assert_eq!(lump_at(&bsp), bsp.len());
+    let mut longer = bsp.clone();
+    longer.push(0);
+    assert_eq!(lump_at(&longer), bsp.len() + 4);
 }

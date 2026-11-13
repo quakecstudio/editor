@@ -24,7 +24,7 @@ use qs_bsp::{Bsp, BspLoader};
 use crate::flow::{BYTE_BITS, Flow, Leaves};
 use crate::portals::PortalFile;
 
-pub use crate::flow::VIS_FLOW_BATCH;
+pub use crate::flow::{VIS_FLOW_BATCH, VisCounts};
 pub use crate::lump::VIS_MAX_MAP_VISIBILITY;
 
 /// The full mode's test level: how many separating-plane clips each step of the flow makes
@@ -125,6 +125,7 @@ pub struct Vis {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Visible {
     rows: Vec<Vec<u8>>,
+    counts: VisCounts,
 }
 
 impl Visible {
@@ -145,6 +146,12 @@ impl Visible {
     pub fn leafs(&self) -> usize {
         self.rows.len()
     }
+
+    /// The flow's counts, as id's vis prints them; none in the fast mode (VIS-4.8).
+    #[must_use]
+    pub const fn counts(&self) -> VisCounts {
+        self.counts
+    }
 }
 
 impl Vis {
@@ -161,19 +168,20 @@ impl Vis {
     /// The [`VisError`] vis stops with.
     pub fn visible(&self, prt: &str) -> Result<Visible, VisError> {
         let file = PortalFile::read(prt)?;
-        let rows = self.rows(&file)?;
+        let (rows, counts) = self.rows(&file)?;
         Ok(Visible {
             rows: rows.iter().map(|row| row.row(file.leafs)).collect(),
+            counts,
         })
     }
 
-    fn rows(&self, file: &PortalFile) -> Result<Vec<Leaves>, VisError> {
+    fn rows(&self, file: &PortalFile) -> Result<(Vec<Leaves>, VisCounts), VisError> {
         let threads = std::thread::available_parallelism().map_or(1, usize::from);
-        let seen = match self.mode {
-            Mode::Fast => Flow::new(file, Level::Zero).fast(),
+        let (seen, counts) = match self.mode {
+            Mode::Fast => (Flow::new(file, Level::Zero).fast(), VisCounts::default()),
             Mode::Full(level) => Flow::new(file, level).full(threads)?,
         };
-        Flow::rows(file, &seen)
+        Ok((Flow::rows(file, &seen)?, counts))
     }
 
     /// The BSP `bsp` with the visibility its portal file `prt` gives: the compressed rows, each
@@ -189,7 +197,7 @@ impl Vis {
         if read.leafs.len() <= file.leafs {
             return Err(VisError::Format);
         }
-        let rows = self.rows(&file)?;
+        let (rows, _) = self.rows(&file)?;
         lump::written(bsp, &read, &rows)
     }
 }

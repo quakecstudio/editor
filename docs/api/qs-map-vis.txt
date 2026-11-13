@@ -3,9 +3,16 @@ const qs_map_vis::lump::VIS_MAX_MAP_VISIBILITY
 enum qs_map_vis::Level
 enum qs_map_vis::Mode
 enum qs_map_vis::VisError
+field qs_map_vis::flow::VisCounts.chains
+field qs_map_vis::flow::VisCounts.checks
+field qs_map_vis::flow::VisCounts.might_tests
+field qs_map_vis::flow::VisCounts.passes
+field qs_map_vis::flow::VisCounts.tests
+field qs_map_vis::flow::VisCounts.vis_tests
 fn qs_map_vis::Vis::new
 fn qs_map_vis::Vis::run
 fn qs_map_vis::Vis::visible
+fn qs_map_vis::Visible::counts
 fn qs_map_vis::Visible::leafs
 fn qs_map_vis::Visible::sees
 impl qs_map_vis::Mode: Default
@@ -13,8 +20,10 @@ impl qs_map_vis::VisError: fmt::Display
 impl qs_map_vis::VisError: std::error::Error
 struct qs_map_vis::Vis
 struct qs_map_vis::Visible
+struct qs_map_vis::flow::VisCounts
 use qs_map_vis::VIS_FLOW_BATCH = crate::flow::VIS_FLOW_BATCH
 use qs_map_vis::VIS_MAX_MAP_VISIBILITY = crate::lump::VIS_MAX_MAP_VISIBILITY
+use qs_map_vis::VisCounts = crate::flow::VisCounts
 variant qs_map_vis::Level::Four
 variant qs_map_vis::Level::One
 variant qs_map_vis::Level::Three

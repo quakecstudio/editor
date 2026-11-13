@@ -125,6 +125,14 @@ A first-order bound: the leaves a flood through portals that face each other can
   whose flow read the might-see set of a batch portal one thread would have flowed first is
   flowed again with that portal's exact set. A flow that read none of them is the one a single
   thread makes.
+- **VIS-4.8** vis counts its flow in `FLOW.C`, `RecursiveLeafFlow`, and prints the counts at its
+  end (`c_chains`) and with `-v` (the others). `c_chains` counts each walk into a leaf, before
+  the recursion check. Of the portals past the might-see check, `c_vistest` counts those tested
+  against a flowed portal's set and `c_mighttest` those tested against a might-see set.
+  `c_portalcheck` counts those past the coplanar check, `c_portaltest` those whose source
+  survives the clip to the back plane (none on the walk's first step), and `c_portalpass` those
+  past every separating clip. The fast mode flows nothing and counts nothing. Our `qs-map-vis`
+  sums the counts of the flow it keeps for each portal, so they are the single-thread ones.
 
 ## VIS-5 The visibility lump
 
