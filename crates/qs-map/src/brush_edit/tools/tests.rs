@@ -3,6 +3,7 @@
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
+    clippy::panic,
     clippy::float_cmp,
     clippy::arithmetic_side_effects,
     reason = "test code: a failed unwrap or index, is a failed test; the \
@@ -11,7 +12,7 @@
 
 use proptest::prelude::*;
 
-use super::{Affine, BrushFace, MAP_MAX_CHAMFER_FACES, WorldAxis, WorldTexture};
+use super::{Affine, BrushFace, MAP_MAX_CHAMFER_FACES, WorldAxis};
 use crate::brush_edit::{BrushError, Surface, TextureLock};
 use crate::geometry::{MAP_ON_EPSILON, plane};
 use crate::{Brush, TexDef};
@@ -71,6 +72,13 @@ fn near(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-3
 }
 
+/// The texel of `point` on `face` along axis `i`, from its texture vectors (MAP-4.2 to MAP-4.4,
+/// MAP-5.3).
+fn texel(face: &crate::Face, i: usize, point: [f64; 3]) -> f64 {
+    let v = face.texvecs().unwrap()[i];
+    v[0] * point[0] + v[1] * point[1] + v[2] * point[2] + v[3]
+}
+
 /// Whether every corner of each face of `before`, mapped by `map`, has on the matching face of
 /// `after` the texel it had.
 fn texture_fixed(before: &Brush, after: &Brush, map: &Affine) -> bool {
@@ -81,14 +89,18 @@ fn texture_fixed(before: &Brush, after: &Brush, map: &Affine) -> bool {
         .zip(before.face_polygons())
         .all(|((old, new), polygon)| {
             let polygon = polygon.unwrap_or_default();
-            let (Some(old), Some(new)) = (WorldTexture::of(old), WorldTexture::of(new)) else {
-                return false;
-            };
-            polygon.iter().all(|&p| {
-                let q = map.apply(p);
-                (0..2).all(|i| (old.texel(i, p) - new.texel(i, q)).abs() < 1e-3)
-            })
+            !polygon.is_empty()
+                && polygon.iter().all(|&p| {
+                    let q = map.apply(p);
+                    (0..2).all(|i| (texel(old, i, p) - texel(new, i, q)).abs() < 1e-3)
+                })
         })
+}
+
+/// Whether `a` and `b` hold the same points, each within a thousandth.
+fn same_points(a: &[[f64; 3]], b: &[[f64; 3]]) -> bool {
+    let close = |p: &[f64; 3], q: &[f64; 3]| (0..3).all(|k| (p[k] - q[k]).abs() < 1e-3);
+    a.len() == b.len() && a.iter().all(|p| b.iter().any(|q| close(p, q)))
 }
 
 const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
@@ -170,10 +182,11 @@ fn faces_extrude_out_and_in() {
         linear: IDENTITY,
         offset: [0.0, 0.0, 8.0],
     };
-    let old = WorldTexture::of(&brush.faces[top]).unwrap();
-    let new = WorldTexture::of(&out.faces[top]).unwrap();
     for p in brush.face_polygons()[top].as_ref().unwrap() {
-        assert!((0..2).all(|i| near(old.texel(i, *p), new.texel(i, lift.apply(*p)))));
+        assert!((0..2).all(|i| near(
+            texel(&brush.faces[top], i, *p),
+            texel(&out.faces[top], i, lift.apply(*p))
+        )));
     }
     let inward = brush
         .extruded(BrushFace::new(top), -8.0, TextureLock::Locked)
@@ -480,4 +493,142 @@ proptest! {
             }
         }
     }
+}
+
+// spec MAP-15.2: a scale maps every vertex by the map, the point it is about kept
+#[test]
+fn a_scale_maps_every_vertex() {
+    let brush = cuboid([0.0, 0.0, 0.0], [64.0, 32.0, 16.0], &standard());
+    let map = Affine::scale([16.0, 8.0, 4.0], [2.0, 0.5, 3.0]);
+    let scaled = brush.transformed(&map, TextureLock::Free).unwrap();
+    let mapped: Vec<[f64; 3]> = brush.vertices().iter().map(|&p| map.apply(p)).collect();
+    assert!(same_points(&scaled.vertices(), &mapped));
+    assert_eq!(map.apply([16.0, 8.0, 4.0]), [16.0, 8.0, 4.0]);
+    assert!(same_points(
+        &scaled.vertices(),
+        &[
+            [-16.0, 4.0, -8.0],
+            [112.0, 4.0, -8.0],
+            [112.0, 20.0, -8.0],
+            [-16.0, 20.0, -8.0],
+            [-16.0, 4.0, 40.0],
+            [112.0, 4.0, 40.0],
+            [112.0, 20.0, 40.0],
+            [-16.0, 20.0, 40.0],
+        ]
+    ));
+}
+
+// spec MAP-15.1: a standard face keeps a whole rotation whole through a lock that turns
+// nothing, and gives the fitted rotation and scales of a turned texture
+#[test]
+fn a_standard_lock_fits_rotation_and_scale() {
+    let turned = Surface {
+        texture: b"rock".to_vec(),
+        texdef: TexDef::Standard {
+            shift: [7.0, 2.0],
+            rotate: 30.0,
+            scale: [0.5, 2.0],
+        },
+    };
+    let brush = cuboid([0.0, 0.0, 0.0], [64.0, 64.0, 64.0], &turned);
+    let map = Affine::scale([0.0; 3], [2.0, 2.0, 2.0]);
+    let scaled = brush.transformed(&map, TextureLock::Locked).unwrap();
+    assert!(texture_fixed(&brush, &scaled, &map));
+    for face in &scaled.faces {
+        let TexDef::Standard { rotate, scale, .. } = *face.texdef() else {
+            panic!("standard");
+        };
+        assert_eq!(rotate, 30.0, "whole");
+        assert!(near(scale[0], 1.0) && near(scale[1], 4.0), "{scale:?}");
+    }
+}
+
+// spec MAP-15.4: a path that does not start at the origin sweeps the brush from where it is
+#[test]
+fn a_sweep_starts_where_the_brush_is() {
+    let brush = cuboid([0.0, 0.0, 0.0], [16.0, 16.0, 16.0], &standard());
+    let swept = brush
+        .swept(
+            &[[100.0, 50.0, 25.0], [164.0, 50.0, 25.0]],
+            TextureLock::Locked,
+        )
+        .unwrap();
+    assert!(same_points(
+        &swept[0].vertices(),
+        &[
+            [0.0, 0.0, 0.0],
+            [80.0, 0.0, 0.0],
+            [80.0, 16.0, 0.0],
+            [0.0, 16.0, 0.0],
+            [0.0, 0.0, 16.0],
+            [80.0, 0.0, 16.0],
+            [80.0, 16.0, 16.0],
+            [0.0, 16.0, 16.0],
+        ]
+    ));
+}
+
+// spec MAP-15.9: a chamfer's bevel lies where its distance and arc put it, on a brush away
+// from the origin; one as wide as a face, or wider than the narrower of the two, is refused
+#[test]
+fn chamfers_lie_on_their_arc() {
+    let brush = cuboid([100.0, 200.0, 300.0], [164.0, 232.0, 364.0], &standard());
+    let (a, b) = ([100.0, 200.0, 364.0], [164.0, 200.0, 364.0]);
+    let flat = brush.chamfered(a, b, 16.0, 1).unwrap();
+    assert!(same_points(
+        &flat.vertices(),
+        &[
+            [100.0, 200.0, 300.0],
+            [164.0, 200.0, 300.0],
+            [100.0, 232.0, 300.0],
+            [164.0, 232.0, 300.0],
+            [100.0, 232.0, 364.0],
+            [164.0, 232.0, 364.0],
+            [100.0, 200.0, 348.0],
+            [164.0, 200.0, 348.0],
+            [100.0, 216.0, 364.0],
+            [164.0, 216.0, 364.0],
+        ]
+    ));
+    let round = brush.chamfered(a, b, 16.0, 2).unwrap();
+    let r = 16.0 * (1.0 - core::f64::consts::FRAC_1_SQRT_2);
+    for x in [100.0, 164.0] {
+        let middle = [x, 200.0 + r, 364.0 - r];
+        assert!(
+            round
+                .vertices()
+                .iter()
+                .any(|v| (0..3).all(|k| (v[k] - middle[k]).abs() < 1e-3)),
+            "the arc's middle at {middle:?}"
+        );
+    }
+    assert!(brush.chamfered(a, b, 31.0, 1).is_ok());
+    for too_far in [32.0, 40.0] {
+        assert!(matches!(
+            brush.chamfered(a, b, too_far, 1),
+            Err(BrushError::Degenerate)
+        ));
+    }
+}
+
+// spec MAP-15.10: an intersection with a sliver the clips cannot place, which reaches out of
+// its brushes, is refused
+#[test]
+fn an_intersection_that_reaches_out_is_refused() {
+    let a = cuboid([0.0, -40.0, 48.0], [48.0, 8.0, 136.0], &valve());
+    let box_b = cuboid([0.0, -40.0, 100.0], [48.0, -8.0, 160.0], &valve());
+    let slant = plane([
+        [0.0, -40.0, 145.069_307],
+        [48.0, -40.0, 136.013_202],
+        [0.0, -8.0, 117.311_331],
+    ])
+    .unwrap();
+    let (back, front) = box_b.split(slant, &valve()).unwrap();
+    let b = [back, front]
+        .into_iter()
+        .flatten()
+        .find(|part| part.vertices().iter().any(|v| v[2] == 160.0))
+        .unwrap();
+    assert!(matches!(a.intersected(&[&b]), Err(BrushError::Degenerate)));
 }

@@ -184,13 +184,10 @@ impl WorldTexture {
     fn on(self, plane: &Plane<f64>, form: &TexDef) -> TexDef {
         match *form {
             TexDef::Valve { rotate, .. } => {
+                // A face's axes have length: MAP-5.4 refuses a scale of 0.
                 let [s, t] = self.axes.map(|axis| {
                     let length = dot(axis, axis).sqrt();
-                    if length <= NO_LENGTH {
-                        (axis, 1.0)
-                    } else {
-                        (axis.map(|c| c / length), 1.0 / length)
-                    }
+                    (axis.map(|c| c / length), 1.0 / length)
                 });
                 let ([sx, sy, sz], s_scale) = s;
                 let ([tx, ty, tz], t_scale) = t;
@@ -214,14 +211,11 @@ impl WorldTexture {
         };
         let [s0, _] = base(0.0);
         let [s90, _] = base(QUARTER);
-        // The axis the face is projected along: neither base axis has a part along it.
+        // The axis the face is projected along: neither base axis has a part along it, and
+        // the face's normal has, the base axes being those of the axis nearest it (MAP-4.2).
         let projection = normalize(cross(s0, s90));
         let flat = |axis: [f64; 3]| {
-            let into = dot(n, projection);
-            if into.abs() <= NO_LENGTH {
-                return axis;
-            }
-            let k = dot(axis, projection) / into;
+            let k = dot(axis, projection) / dot(n, projection);
             [0, 1, 2].map(|i| {
                 axis.get(i).copied().unwrap_or_default() - k * n.get(i).copied().unwrap_or_default()
             })
@@ -273,7 +267,7 @@ impl Face {
     /// and under texture lock its texture kept where it was in the world (MAP-15.1).
     fn mapped(&self, map: &Affine, lock: TextureLock) -> Result<Self, BrushError> {
         let mut points = self.points().map(|p| map.apply(p).map(round));
-        if map.determinant() < 0.0 {
+        if map.determinant().is_sign_negative() {
             points.reverse();
         }
         let plane = plane_of(points).ok_or(BrushError::Degenerate)?;
