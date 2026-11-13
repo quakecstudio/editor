@@ -253,8 +253,8 @@ impl MapDocument {
         entity: EntityIndex,
         brushes: &[BrushIndex],
     ) -> Result<[f64; 3], WorkbenchError> {
-        let mut low = [f64::INFINITY; 3];
-        let mut high = [f64::NEG_INFINITY; 3];
+        let mut low = [f64::INFINITY, f64::INFINITY, f64::INFINITY];
+        let mut high = [f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
         for &brush in brushes {
             for vertex in self.brush(entity, brush)?.vertices() {
                 for ((lo, hi), c) in low.iter_mut().zip(&mut high).zip(vertex) {

@@ -53,15 +53,25 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.status`](#gitstatus) | Lists the project repository's branch and changed files, staged and not, as git status does; none when the project is not in a git repository. |
 | [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
+| [`map.brush_chamfer`](#mapbrush_chamfer) | Chamfers an edge of a brush into one or more bevel faces, from a distance along each of its two faces (MAP-15.9). |
 | [`map.brush_clip`](#mapbrush_clip) | Clips a brush of the open map by the plane through three points, keeping the part behind it, in front of it, or both as two brushes. |
 | [`map.brush_create`](#mapbrush_create) | Adds a box brush from two corners, snapped to the grid (16 units unless given), to the world or an entity of the open map, with a texture. |
 | [`map.brush_delete`](#mapbrush_delete) | Deletes a brush of an entity of the open map. |
+| [`map.brush_extrude`](#mapbrush_extrude) | Moves a face of a brush along its normal by a distance snapped to the grid, out or in, its texture fixed in the world unless lock is free (MAP-15.3). |
+| [`map.brush_hollow`](#mapbrush_hollow) | Hollows a brush into walls of a thickness: the brush becomes itself with the brush its walls enclose taken out (MAP-15.5). |
+| [`map.brush_intersect`](#mapbrush_intersect) | Replaces two or more brushes of an entity with the solid all of them hold, which takes the first's place (MAP-15.6). |
 | [`map.brush_merge`](#mapbrush_merge) | Merges two or more brushes of an entity of the open map into their convex hull, which takes the first's place. |
 | [`map.brush_move`](#mapbrush_move) | Moves brushes of an entity by an offset snapped to the grid (16 units unless given), their textures fixed in the world unless lock is free. |
+| [`map.brush_scale`](#mapbrush_scale) | Scales brushes of an entity by factors along x, y and z about a point, the middle of their bounds unless given, their textures fixed in the world unless lock is free (MAP-15.2). |
 | [`map.brush_shape`](#mapbrush_shape) | Adds a shape of brushes filling a box, its corners snapped to the grid: a cylinder (solid or hollow), cone, arch, UV or icosahedron spheroid, rock, scalable curve of 12, 24, 48 or 96 sides, or straight or spiral stairs whose default step a player climbs; to the world or an entity of the open map, with a texture. |
+| [`map.brush_shear`](#mapbrush_shear) | Shears brushes of an entity: each point moves along one axis by a factor times its distance from a point along another, their textures fixed in the world unless lock is free (MAP-15.2). |
+| [`map.brush_split_edge`](#mapbrush_split_edge) | Splits an edge of a brush by a new vertex at a point snapped to the grid, or a distance out from the edge's middle (MAP-15.8). |
+| [`map.brush_split_face`](#mapbrush_split_face) | Splits a face of a brush by a new vertex in front of it, at a point snapped to the grid, or a distance out from the face's middle (MAP-15.8). |
 | [`map.brush_subtract`](#mapbrush_subtract) | Subtracts a brush of the open map from every other brush of its entity, then deletes it: the brushes it overlapped become the parts outside it. |
+| [`map.brush_sweep`](#mapbrush_sweep) | Sweeps a brush along a path of points snapped to the grid: the brush becomes one brush for each step, the hull of it at the step's two ends (MAP-15.4). |
 | [`map.brush_texture`](#mapbrush_texture) | Sets the texture, shift, rotation or scale of every face of brushes of an entity, keeping what is not given (MAP-12). |
 | [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
+| [`map.brush_vertices`](#mapbrush_vertices) | Moves several vertices of a brush at once, each to a point snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7). |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
 | [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
 | [`map.compile`](#mapcompile) | Compiles the open map, as it is in the editor, to a BSP beside it, with its portal and leak files, and reports whether it leaks and the textures its WADs lack. |
@@ -1566,6 +1576,79 @@ Parameters:
 }
 ```
 
+## `map.brush_chamfer`
+
+Chamfers an edge of a brush into one or more bevel faces, from a distance along each of its two faces (MAP-15.9).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_chamfer`.",
+  "properties": {
+    "brush": {
+      "$ref": "#/$defs/BrushIndex",
+      "description": "The brush."
+    },
+    "distance": {
+      "description": "How far along each of the edge's faces the bevel starts, in map units.",
+      "format": "double",
+      "type": "number"
+    },
+    "edge": {
+      "description": "The edge's two vertices.",
+      "items": {
+        "items": {
+          "format": "double",
+          "type": "number"
+        },
+        "maxItems": 3,
+        "minItems": 3,
+        "type": "array"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array"
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brush."
+    },
+    "faces": {
+      "default": 1,
+      "description": "How many bevel faces, 1 to 16; one when not given.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "entity",
+    "brush",
+    "edge",
+    "distance"
+  ],
+  "title": "BrushChamferParams",
+  "type": "object"
+}
+```
+
 ## `map.brush_clip`
 
 Clips a brush of the open map by the plane through three points, keeping the part behind it, in front of it, or both as two brushes.
@@ -1774,6 +1857,207 @@ Parameters:
 }
 ```
 
+## `map.brush_extrude`
+
+Moves a face of a brush along its normal by a distance snapped to the grid, out or in, its texture fixed in the world unless lock is free (MAP-15.3).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FaceIndex": {
+      "description": "A face's place among its brush's faces, from 0, in file order.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FaceRef": {
+      "additionalProperties": false,
+      "description": "A face of the open map: the entity, the brush and the face.",
+      "properties": {
+        "brush": {
+          "$ref": "#/$defs/BrushIndex",
+          "description": "The brush."
+        },
+        "entity": {
+          "$ref": "#/$defs/EntityIndex",
+          "description": "The entity holding the brush."
+        },
+        "face": {
+          "$ref": "#/$defs/FaceIndex",
+          "description": "The face."
+        }
+      },
+      "required": [
+        "entity",
+        "brush",
+        "face"
+      ],
+      "type": "object"
+    },
+    "Lock": {
+      "description": "Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).",
+      "oneOf": [
+        {
+          "const": "locked",
+          "description": "Texture lock on: the textures stay where they are in the world.",
+          "type": "string"
+        },
+        {
+          "const": "free",
+          "description": "Texture lock off: the textures move with the brush.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_extrude`.",
+  "properties": {
+    "by": {
+      "description": "How far it moves along its outward normal, snapped to the grid; in when negative.",
+      "format": "double",
+      "type": "number"
+    },
+    "face": {
+      "$ref": "#/$defs/FaceRef",
+      "description": "The face."
+    },
+    "grid": {
+      "default": null,
+      "description": "The grid `by` snaps to; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "lock": {
+      "$ref": "#/$defs/Lock",
+      "default": "locked",
+      "description": "Whether its texture stays fixed in the world; locked when not given."
+    }
+  },
+  "required": [
+    "face",
+    "by"
+  ],
+  "title": "BrushExtrudeParams",
+  "type": "object"
+}
+```
+
+## `map.brush_hollow`
+
+Hollows a brush into walls of a thickness: the brush becomes itself with the brush its walls enclose taken out (MAP-15.5).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_hollow`.",
+  "properties": {
+    "brush": {
+      "$ref": "#/$defs/BrushIndex",
+      "description": "The brush; it is replaced by its walls."
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brush."
+    },
+    "wall": {
+      "description": "The walls' thickness, in map units.",
+      "format": "double",
+      "type": "number"
+    }
+  },
+  "required": [
+    "entity",
+    "brush",
+    "wall"
+  ],
+  "title": "BrushHollowParams",
+  "type": "object"
+}
+```
+
+## `map.brush_intersect`
+
+Replaces two or more brushes of an entity with the solid all of them hold, which takes the first's place (MAP-15.6).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_intersect`.",
+  "properties": {
+    "brushes": {
+      "description": "The brushes, two or more; their intersection takes the first's place.",
+      "items": {
+        "$ref": "#/$defs/BrushIndex"
+      },
+      "type": "array"
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brushes."
+    }
+  },
+  "required": [
+    "entity",
+    "brushes"
+  ],
+  "title": "BrushIntersectParams",
+  "type": "object"
+}
+```
+
 ## `map.brush_merge`
 
 Merges two or more brushes of an entity of the open map into their convex hull, which takes the first's place.
@@ -1904,6 +2188,98 @@ Parameters:
     "by"
   ],
   "title": "BrushMoveParams",
+  "type": "object"
+}
+```
+
+## `map.brush_scale`
+
+Scales brushes of an entity by factors along x, y and z about a point, the middle of their bounds unless given, their textures fixed in the world unless lock is free (MAP-15.2).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Lock": {
+      "description": "Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).",
+      "oneOf": [
+        {
+          "const": "locked",
+          "description": "Texture lock on: the textures stay where they are in the world.",
+          "type": "string"
+        },
+        {
+          "const": "free",
+          "description": "Texture lock off: the textures move with the brush.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_scale`.",
+  "properties": {
+    "about": {
+      "default": null,
+      "description": "The point kept where it is; the middle of the brushes' bounds when not given.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "brushes": {
+      "description": "The brushes.",
+      "items": {
+        "$ref": "#/$defs/BrushIndex"
+      },
+      "type": "array"
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brushes."
+    },
+    "factors": {
+      "description": "The factors along x, y and z; a negative one mirrors.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "lock": {
+      "$ref": "#/$defs/Lock",
+      "default": "locked",
+      "description": "Whether their textures stay fixed in the world; locked when not given."
+    }
+  },
+  "required": [
+    "entity",
+    "brushes",
+    "factors"
+  ],
+  "title": "BrushScaleParams",
   "type": "object"
 }
 ```
@@ -2328,6 +2704,396 @@ Parameters:
 }
 ```
 
+## `map.brush_shear`
+
+Shears brushes of an entity: each point moves along one axis by a factor times its distance from a point along another, their textures fixed in the world unless lock is free (MAP-15.2).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "Axis": {
+      "description": "An axis of the world.",
+      "oneOf": [
+        {
+          "const": "x",
+          "description": "x.",
+          "type": "string"
+        },
+        {
+          "const": "y",
+          "description": "y.",
+          "type": "string"
+        },
+        {
+          "const": "z",
+          "description": "z.",
+          "type": "string"
+        }
+      ]
+    },
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Lock": {
+      "description": "Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).",
+      "oneOf": [
+        {
+          "const": "locked",
+          "description": "Texture lock on: the textures stay where they are in the world.",
+          "type": "string"
+        },
+        {
+          "const": "free",
+          "description": "Texture lock off: the textures move with the brush.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_shear`.",
+  "properties": {
+    "about": {
+      "default": null,
+      "description": "The point kept where it is; the middle of the brushes' bounds when not given.",
+      "items": {
+        "format": "double",
+        "type": "number"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "along": {
+      "$ref": "#/$defs/Axis",
+      "description": "The axis points move along."
+    },
+    "brushes": {
+      "description": "The brushes.",
+      "items": {
+        "$ref": "#/$defs/BrushIndex"
+      },
+      "type": "array"
+    },
+    "by": {
+      "$ref": "#/$defs/Axis",
+      "description": "The axis their distance from `about` is measured along; another than `along`."
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brushes."
+    },
+    "factor": {
+      "description": "How far a point moves along `along` for each unit of that distance.",
+      "format": "double",
+      "type": "number"
+    },
+    "lock": {
+      "$ref": "#/$defs/Lock",
+      "default": "locked",
+      "description": "Whether their textures stay fixed in the world; locked when not given."
+    }
+  },
+  "required": [
+    "entity",
+    "brushes",
+    "along",
+    "by",
+    "factor"
+  ],
+  "title": "BrushShearParams",
+  "type": "object"
+}
+```
+
+## `map.brush_split_edge`
+
+Splits an edge of a brush by a new vertex at a point snapped to the grid, or a distance out from the edge's middle (MAP-15.8).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "NewVertex": {
+      "description": "Where a split puts its new vertex.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "At a point, snapped to the grid, 16 units unless given, 0 for none.",
+          "properties": {
+            "point": {
+              "additionalProperties": false,
+              "properties": {
+                "grid": {
+                  "default": null,
+                  "description": "The grid.",
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "to": {
+                  "description": "The point.",
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "to"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "point"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A distance out from the middle of the edge or face, along its normal (MAP-15.8).",
+          "properties": {
+            "out": {
+              "additionalProperties": false,
+              "properties": {
+                "by": {
+                  "description": "The distance, in map units.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "by"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "out"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_split_edge`.",
+  "properties": {
+    "at": {
+      "$ref": "#/$defs/NewVertex",
+      "description": "The new vertex."
+    },
+    "brush": {
+      "$ref": "#/$defs/BrushIndex",
+      "description": "The brush."
+    },
+    "edge": {
+      "description": "The edge's two vertices.",
+      "items": {
+        "items": {
+          "format": "double",
+          "type": "number"
+        },
+        "maxItems": 3,
+        "minItems": 3,
+        "type": "array"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array"
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brush."
+    }
+  },
+  "required": [
+    "entity",
+    "brush",
+    "edge",
+    "at"
+  ],
+  "title": "BrushSplitEdgeParams",
+  "type": "object"
+}
+```
+
+## `map.brush_split_face`
+
+Splits a face of a brush by a new vertex in front of it, at a point snapped to the grid, or a distance out from the face's middle (MAP-15.8).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FaceIndex": {
+      "description": "A face's place among its brush's faces, from 0, in file order.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "FaceRef": {
+      "additionalProperties": false,
+      "description": "A face of the open map: the entity, the brush and the face.",
+      "properties": {
+        "brush": {
+          "$ref": "#/$defs/BrushIndex",
+          "description": "The brush."
+        },
+        "entity": {
+          "$ref": "#/$defs/EntityIndex",
+          "description": "The entity holding the brush."
+        },
+        "face": {
+          "$ref": "#/$defs/FaceIndex",
+          "description": "The face."
+        }
+      },
+      "required": [
+        "entity",
+        "brush",
+        "face"
+      ],
+      "type": "object"
+    },
+    "NewVertex": {
+      "description": "Where a split puts its new vertex.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "At a point, snapped to the grid, 16 units unless given, 0 for none.",
+          "properties": {
+            "point": {
+              "additionalProperties": false,
+              "properties": {
+                "grid": {
+                  "default": null,
+                  "description": "The grid.",
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "to": {
+                  "description": "The point.",
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "to"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "point"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A distance out from the middle of the edge or face, along its normal (MAP-15.8).",
+          "properties": {
+            "out": {
+              "additionalProperties": false,
+              "properties": {
+                "by": {
+                  "description": "The distance, in map units.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "by"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "out"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_split_face`.",
+  "properties": {
+    "at": {
+      "$ref": "#/$defs/NewVertex",
+      "description": "The new vertex, in front of the face."
+    },
+    "face": {
+      "$ref": "#/$defs/FaceRef",
+      "description": "The face."
+    }
+  },
+  "required": [
+    "face",
+    "at"
+  ],
+  "title": "BrushSplitFaceParams",
+  "type": "object"
+}
+```
+
 ## `map.brush_subtract`
 
 Subtracts a brush of the open map from every other brush of its entity, then deletes it: the brushes it overlapped become the parts outside it.
@@ -2368,6 +3134,93 @@ Parameters:
     "brush"
   ],
   "title": "BrushParams",
+  "type": "object"
+}
+```
+
+## `map.brush_sweep`
+
+Sweeps a brush along a path of points snapped to the grid: the brush becomes one brush for each step, the hull of it at the step's two ends (MAP-15.4).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Lock": {
+      "description": "Whether a moved brush's textures stay fixed in the world (P6-09, MAP-11.2).",
+      "oneOf": [
+        {
+          "const": "locked",
+          "description": "Texture lock on: the textures stay where they are in the world.",
+          "type": "string"
+        },
+        {
+          "const": "free",
+          "description": "Texture lock off: the textures move with the brush.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_sweep`.",
+  "properties": {
+    "brush": {
+      "$ref": "#/$defs/BrushIndex",
+      "description": "The brush; it is replaced by one brush for each step of the path."
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brush."
+    },
+    "grid": {
+      "default": null,
+      "description": "The grid the points snap to; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "lock": {
+      "$ref": "#/$defs/Lock",
+      "default": "locked",
+      "description": "Whether the textures stay fixed in the world; locked when not given."
+    },
+    "path": {
+      "description": "The path, two or more points, each snapped to the grid; the brush starts at the first.",
+      "items": {
+        "items": {
+          "format": "double",
+          "type": "number"
+        },
+        "maxItems": 3,
+        "minItems": 3,
+        "type": "array"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "entity",
+    "brush",
+    "path"
+  ],
+  "title": "BrushSweepParams",
   "type": "object"
 }
 ```
@@ -2535,6 +3388,98 @@ Parameters:
     "to"
   ],
   "title": "BrushVertexParams",
+  "type": "object"
+}
+```
+
+## `map.brush_vertices`
+
+Moves several vertices of a brush at once, each to a point snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7).
+
+Parameters:
+
+```json
+{
+  "$defs": {
+    "BrushIndex": {
+      "description": "A brush, by the entity holding it and its place among that entity's brushes, from 0.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "EntityIndex": {
+      "description": "An entity of a map, by its place in the file from 0, the world first.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "VertexMove": {
+      "additionalProperties": false,
+      "description": "A vertex moved.",
+      "properties": {
+        "from": {
+          "description": "The vertex.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "to": {
+          "description": "Where it goes, snapped to the grid.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.brush_vertices`.",
+  "properties": {
+    "brush": {
+      "$ref": "#/$defs/BrushIndex",
+      "description": "The brush."
+    },
+    "entity": {
+      "$ref": "#/$defs/EntityIndex",
+      "description": "The entity holding the brush."
+    },
+    "grid": {
+      "default": null,
+      "description": "The grid each `to` snaps to; 16 when not given, 0 for none.",
+      "format": "double",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "moves": {
+      "description": "The vertices moved, all at once.",
+      "items": {
+        "$ref": "#/$defs/VertexMove"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "entity",
+    "brush",
+    "moves"
+  ],
+  "title": "BrushVerticesParams",
   "type": "object"
 }
 ```

@@ -1,3 +1,4 @@
+const qs_map::brush_edit::tools::MAP_MAX_CHAMFER_FACES
 const qs_map::check::MAP_MAX_SOUNDS
 const qs_map::external::EXTERNAL_CLASSNAME_KEY
 const qs_map::external::EXTERNAL_MAP_CLASS
@@ -28,6 +29,7 @@ const qs_map::shapes::SHAPE_STEP_DEPTH
 const qs_map::shapes::SHAPE_STEP_HEIGHT
 enum qs_map::brush_edit::BrushError
 enum qs_map::brush_edit::TextureLock
+enum qs_map::brush_edit::tools::WorldAxis
 enum qs_map::check::DiagnosticKind
 enum qs_map::document::Compiler
 enum qs_map::document::Item
@@ -113,6 +115,22 @@ fn qs_map::brush_edit::Brush::subtract
 fn qs_map::brush_edit::Brush::translated
 fn qs_map::brush_edit::Brush::vertices
 fn qs_map::brush_edit::Entity::brush_places
+fn qs_map::brush_edit::tools::Affine::apply
+fn qs_map::brush_edit::tools::Affine::scale
+fn qs_map::brush_edit::tools::Affine::shear
+fn qs_map::brush_edit::tools::Brush::chamfered
+fn qs_map::brush_edit::tools::Brush::edge_out
+fn qs_map::brush_edit::tools::Brush::extruded
+fn qs_map::brush_edit::tools::Brush::face_out
+fn qs_map::brush_edit::tools::Brush::hollowed
+fn qs_map::brush_edit::tools::Brush::intersected
+fn qs_map::brush_edit::tools::Brush::moved_vertices
+fn qs_map::brush_edit::tools::Brush::split_edge
+fn qs_map::brush_edit::tools::Brush::split_face
+fn qs_map::brush_edit::tools::Brush::swept
+fn qs_map::brush_edit::tools::Brush::transformed
+fn qs_map::brush_edit::tools::BrushFace::get
+fn qs_map::brush_edit::tools::BrushFace::new
 fn qs_map::check::MapFile::check
 fn qs_map::cnum::c_atof
 fn qs_map::cnum::c_atoi
@@ -271,6 +289,8 @@ mod qs_map::qbsp
 mod qs_map::shapes
 struct qs_map::align::Alignment
 struct qs_map::brush_edit::Surface
+struct qs_map::brush_edit::tools::Affine
+struct qs_map::brush_edit::tools::BrushFace
 struct qs_map::check::Diagnostic
 struct qs_map::document::Brush
 struct qs_map::document::BrushModel
@@ -299,9 +319,11 @@ struct qs_map::uv::TextureSize
 trait qs_map::geometry::MapFloat
 trait qs_map::geometry::sealed::Sealed
 type qs_map::geometry::TexVecs
+use qs_map::Affine = brush_edit::Affine
 use qs_map::Alignment = align::Alignment
 use qs_map::Brush = document::Brush
 use qs_map::BrushError = brush_edit::BrushError
+use qs_map::BrushFace = brush_edit::BrushFace
 use qs_map::BrushModel = document::BrushModel
 use qs_map::Compiler = document::Compiler
 use qs_map::ContainerId = linked::ContainerId
@@ -321,6 +343,7 @@ use qs_map::LayerSettings = linked::LayerSettings
 use qs_map::LayerSwitch = linked::LayerSwitch
 use qs_map::LinkError = linked::LinkError
 use qs_map::LinkedGroup = linked::LinkedGroup
+use qs_map::MAP_MAX_CHAMFER_FACES = brush_edit::MAP_MAX_CHAMFER_FACES
 use qs_map::MAP_MAX_SOUNDS = check::MAP_MAX_SOUNDS
 use qs_map::MapError = document::MapError
 use qs_map::MapFile = document::MapFile
@@ -336,6 +359,11 @@ use qs_map::TextureLock = brush_edit::TextureLock
 use qs_map::TextureSize = uv::TextureSize
 use qs_map::Transform = linked::Transform
 use qs_map::UvEdit = uv::UvEdit
+use qs_map::WorldAxis = brush_edit::WorldAxis
+use qs_map::brush_edit::Affine = tools::Affine
+use qs_map::brush_edit::BrushFace = tools::BrushFace
+use qs_map::brush_edit::MAP_MAX_CHAMFER_FACES = tools::MAP_MAX_CHAMFER_FACES
+use qs_map::brush_edit::WorldAxis = tools::WorldAxis
 use qs_map::is_tool_key = document::is_tool_key
 variant qs_map::brush_edit::BrushError::CornerLost
 variant qs_map::brush_edit::BrushError::Degenerate
@@ -345,6 +373,9 @@ variant qs_map::brush_edit::BrushError::NoVertex
 variant qs_map::brush_edit::BrushError::VertexInside
 variant qs_map::brush_edit::TextureLock::Free
 variant qs_map::brush_edit::TextureLock::Locked
+variant qs_map::brush_edit::tools::WorldAxis::X
+variant qs_map::brush_edit::tools::WorldAxis::Y
+variant qs_map::brush_edit::tools::WorldAxis::Z
 variant qs_map::check::DiagnosticKind::DuplicateKey
 variant qs_map::check::DiagnosticKind::DuplicatePlane
 variant qs_map::check::DiagnosticKind::EricwComment
