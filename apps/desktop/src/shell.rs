@@ -1729,21 +1729,17 @@ impl Shell {
             if !ui.input_mut(|i| i.consume_shortcut(&binding.shortcut)) {
                 continue;
             }
-            let ran = self.session.execute(
+            // A profile run by its key shows its notice and reads the portals again, as the
+            // button's does.
+            if binding.command == MAP_RUN_PROFILE {
+                self.map_actions(vec![MapAction::Profile(ProfileAction::Run)]);
+                continue;
+            }
+            if let Err(error) = self.session.execute(
                 &binding.command,
                 serde_json::Value::Object(serde_json::Map::new()),
-            );
-            match ran {
-                // A profile run by its key shows its notice as the button's does.
-                Ok(output) if binding.command == MAP_RUN_PROFILE => {
-                    if let Ok(run) = serde_json::from_value::<ProfileRun>(output) {
-                        self.map_editor.profiles_mut().set_run(run);
-                    }
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    tracing::warn!(%error, command = %binding.command, "shortcut failed");
-                }
+            ) {
+                tracing::warn!(%error, command = %binding.command, "shortcut failed");
             }
         }
     }
@@ -1930,6 +1926,9 @@ impl Shell {
             .workbench
             .map()
             .map(|document| document.path().to_path_buf());
+        // The profile chosen from anywhere, the palette and the agent too, is the one shown.
+        let chosen = self.session.context().workbench.chosen_profile().to_owned();
+        self.map_editor.profiles_mut().set_chosen(chosen);
         if path == self.map_opened {
             // The world named other WADs, or another game was chosen (P6-10).
             let context = self.session.context();
@@ -1949,6 +1948,9 @@ impl Shell {
         }
         self.load_map_classes();
         self.load_map_textures();
+        // Another map's portals and last run are not this one's.
+        self.map_editor.profiles_mut().set_portals(None);
+        self.map_editor.profiles_mut().clear_run();
         self.load_profiles();
         self.backed_up.1 = self.map_edits();
         self.map_editor.set_disk(DiskNotice::None);
@@ -2235,7 +2237,6 @@ impl Shell {
         Ok(serde_json::Value::Null)
     }
 
-    /// The open map's edits, which a list of its issues or matches is good for.
     /// Runs a compile control's action (P6-20).
     fn profile_action(&mut self, action: ProfileAction) -> Result<serde_json::Value, ShellError> {
         match action {
@@ -2329,6 +2330,7 @@ impl Shell {
         }
     }
 
+    /// The open map's edits, which a list of its issues or matches is good for.
     fn map_edits(&self) -> MapRevision {
         self.session
             .context()

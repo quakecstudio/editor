@@ -556,7 +556,7 @@ pub struct SaveParams {
 pub struct MapSaved {
     /// The file written.
     pub path: PathBuf,
-    /// The backup taken of what was saved, for a `.map` (P6-20).
+    /// The backup taken of what was saved, for a `.map`; none when it could not be (P6-20).
     pub backup: Option<PathBuf>,
 }
 
@@ -1203,8 +1203,15 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSave {
     ) -> Result<Outcome<MapSaved, C>, WorkbenchError> {
         let workbench = context.workbench();
         let path = workbench.save_map(params.bsp)?;
+        // The map is saved whatever happens to its backup, which only logs why it failed.
         let backup = match workbench.map().map(MapDocument::source) {
-            Some(MapSource::Map) => Some(workbench.backup_map()?.path),
+            Some(MapSource::Map) => match workbench.backup_map() {
+                Ok(backup) => Some(backup.path),
+                Err(error) => {
+                    tracing::warn!(%error, "the saved map could not be backed up");
+                    None
+                }
+            },
             Some(MapSource::Bsp(_)) | None => None,
         };
         Ok(Outcome::outside_history(MapSaved { path, backup }))

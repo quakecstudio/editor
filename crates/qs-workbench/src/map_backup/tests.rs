@@ -119,3 +119,17 @@ fn a_backup_restores_the_map_after_a_crash() {
         .unwrap_err();
     assert!(error.to_string().contains("nothing"), "{error}");
 }
+
+// No spec statement: P6-20: the map is saved when its backup cannot be written; the save says
+// it took none
+#[test]
+fn a_save_whose_backup_fails_still_saves() {
+    let map = room("backup-blocked", "wall", Opening::Sealed);
+    std::fs::write(map.parent().unwrap().join(BACKUP_FOLDER), "not a folder").unwrap();
+    let mut session = open(&map);
+    set_message(&mut session, "kept");
+    let saved: MapSaved =
+        serde_json::from_value(session.execute(MAP_SAVE, json!({})).unwrap()).unwrap();
+    assert_eq!(saved.backup, None);
+    assert!(has_message(&map, "kept"));
+}

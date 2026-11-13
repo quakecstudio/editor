@@ -230,14 +230,21 @@ impl<C: HasPreview + 'static> Command<C> for MapCompile {
             ("pts", compiled.leak_file.as_ref()),
         ];
         for (extension, bytes) in files {
-            let Some(bytes) = bytes else {
-                continue;
-            };
             let file = path.with_extension(extension);
-            std::fs::write(&file, bytes).map_err(|error| WorkbenchError::Save {
+            let failed = |error| WorkbenchError::Save {
                 path: file.clone(),
                 error,
-            })?;
+            };
+            let Some(bytes) = bytes else {
+                // A file of an earlier compile would be read as this one's (P6-20).
+                match std::fs::remove_file(&file) {
+                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                        return Err(failed(error));
+                    }
+                    Ok(()) | Err(_) => continue,
+                }
+            };
+            std::fs::write(&file, bytes).map_err(failed)?;
             report.written.push(file);
         }
         Ok(Outcome::outside_history(report))
@@ -258,7 +265,8 @@ pub(crate) struct MapPortalsCommand;
 
 impl<C: HasPreview + 'static> Command<C> for MapPortalsCommand {
     const ID: &'static str = MAP_PORTALS;
-    const SUMMARY: &'static str = "Reads the portal file the open map's last compile wrote         beside it, each portal's points, to show where the map's leaves meet.";
+    const SUMMARY: &'static str = "Reads the portal file the open map's last compile wrote \
+        beside it, each portal's points, to show where the map's leaves meet.";
     type Params = NoParams;
     type Output = MapPortals;
     type Error = WorkbenchError;
@@ -342,7 +350,8 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         std::fs::create_dir_all(&maps).map_err(|error| PreviewError::Write(maps.clone(), error))?;
         let files = [("bsp", Some(&lit.bsp)), ("lit", lit.lit.as_ref())];
         for (extension, bytes) in files {
-            let file = maps.join(&name).with_extension(extension);
+            // A name with a dot of its own keeps it: `e1m1.v2` is `e1m1.v2.bsp`.
+            let file = maps.join(format!("{name}.{extension}"));
             match bytes {
                 Some(bytes) => std::fs::write(&file, bytes)
                     .map_err(|error| PreviewError::Write(file.clone(), error))?,

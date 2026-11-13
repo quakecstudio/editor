@@ -14,7 +14,7 @@ use qs_map::MapFile;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::map_edit::{MapSource, edit_map};
+use crate::map_edit::{MAP_EXTENSION, MapSource, edit_map};
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 
 /// The id of `map.backup`.
@@ -27,8 +27,6 @@ pub const MAP_RESTORE_BACKUP: &str = "map.restore_backup";
 pub const BACKUP_FOLDER: &str = "autosave";
 /// How many backups of a map are kept, the oldest removed past it.
 pub const BACKUPS_KEPT: usize = 20;
-/// The extension of a map and of its backups.
-const MAP_EXTENSION: &str = "map";
 
 /// One backup of the open map.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -39,18 +37,22 @@ pub struct Backup {
     pub number: u32,
 }
 
-/// The backups of the map at `map`, the newest first.
-fn backups_of(map: &Path) -> Vec<Backup> {
-    let Some(stem) = map
+/// The name of the map at `map` without its extension, and the folder its backups go in.
+fn stem_and_folder(map: &Path) -> (String, PathBuf) {
+    let stem = map
         .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
-    else {
-        return Vec::new();
-    };
+        .unwrap_or_default();
     let folder = map
         .parent()
         .map(|dir| dir.join(BACKUP_FOLDER))
         .unwrap_or_default();
+    (stem, folder)
+}
+
+/// The backups of the map at `map`, the newest first.
+fn backups_of(map: &Path) -> Vec<Backup> {
+    let (stem, folder) = stem_and_folder(map);
     let Ok(entries) = std::fs::read_dir(&folder) else {
         return Vec::new();
     };
@@ -96,14 +98,7 @@ impl<L: crate::Loader> Workbench<L> {
         let number = existing
             .first()
             .map_or(1, |newest| newest.number.saturating_add(1));
-        let stem = map
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let folder = map
-            .parent()
-            .map(|dir| dir.join(BACKUP_FOLDER))
-            .unwrap_or_default();
+        let (stem, folder) = stem_and_folder(&map);
         let failed = |path: &Path| {
             let path = path.to_path_buf();
             move |error| WorkbenchError::Save { path, error }

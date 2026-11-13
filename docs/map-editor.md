@@ -114,8 +114,9 @@ it too.
   `autosave/<name>.<n>.map` beside it, keeping the last 20; the window takes one each minute
   the map has unsaved edits, and `map.save` one of what it saved. Restore the newest backup
   puts it in the editor as an edit undo takes back (`map.backups`, `map.restore_backup`).
-- **Repeat (P6-20):** `edit.repeat` (Cmd+R, TrenchBroom's Repeat) makes the last change once
-  more: the same command with the same arguments.
+- **Repeat (P6-20):** `edit.repeat` (Cmd+R, TrenchBroom's Repeat) makes the last map edit once
+  more: the same `map.*` command with the same arguments. Other changes are not repeated: a text
+  edit made again at the same place would land in text that has moved.
 - **Saving:** `map.save` (Cmd+S in the view) writes a `.map` over itself, and changes only the
   text an edit touched. A BSP's entities go to a `.ent` file beside the BSP, which QuakeSpasm
   and its descendants read in place of the lump (MAP-22). `{"bsp": "lump"}` rewrites the BSP's

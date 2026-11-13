@@ -326,3 +326,20 @@ fn map_portals_reads_the_last_compiles_portals() {
     let error = session.execute(MAP_PORTALS, json!({})).unwrap_err();
     assert!(error.to_string().contains("not a portal file"), "{error}");
 }
+
+// No spec statement: P6-20: a compile that writes no portal file, as a leaking one does not,
+// removes the one an earlier compile left, so map.portals does not read it as this one's
+#[test]
+fn a_leaking_compile_removes_the_last_portal_file() {
+    let path = room("stale-portals", "wall", Opening::Sealed);
+    let mut session = open(&path);
+    report(&mut session, MAP_COMPILE);
+    assert!(path.with_extension("prt").exists());
+    let leaky = room("stale-portals-open", "wall", Opening::Open);
+    std::fs::copy(&leaky, &path).unwrap();
+    let mut session = open(&path);
+    let found = report(&mut session, MAP_COMPILE);
+    assert_eq!(found.seal, Seal::Leaks);
+    assert!(!path.with_extension("prt").exists());
+    assert!(session.execute(MAP_PORTALS, json!({})).is_err());
+}

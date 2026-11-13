@@ -95,7 +95,7 @@ pub enum CommandError {
     NothingToUndo,
     /// Redo was asked for with nothing left to redo.
     NothingToRedo,
-    /// Repeat was asked for before any command made a change.
+    /// Repeat was asked for before any map edit was made.
     NothingToRepeat,
     /// The undo step of this command failed; the context is as it was and the step can be
     /// tried again.

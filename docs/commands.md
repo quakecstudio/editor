@@ -17,7 +17,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`edit.apply`](#editapply) | Stages a change to several files as hunks to accept or reject one by one; the project is checked with them, and nothing is written to disk. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.reject`](#editreject) | Rejects staged hunks: the lines they replaced come back, byte for byte. |
-| [`edit.repeat`](#editrepeat) | Makes the last change once more: same command, same arguments. |
+| [`edit.repeat`](#editrepeat) | Makes the most recent map edit once more: same command, same arguments. |
 | [`edit.staged`](#editstaged) | Lists the staged hunks waiting to be accepted or rejected. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
 | [`editor.fold`](#editorfold) | Folds the innermost block or block comment at the caret. |
@@ -76,7 +76,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
 | [`map.brush_vertices`](#mapbrush_vertices) | Moves several vertices of a brush at once, each to a point snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7). |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
-| [`map.choose_profile`](#mapchoose_profile) | Chooses the compile profile map.run_profile runs when given         none; none given chooses Full again. |
+| [`map.choose_profile`](#mapchoose_profile) | Chooses the compile profile map.run_profile runs when given none; none given chooses Full again. |
 | [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
 | [`map.compile`](#mapcompile) | Compiles the open map, as it is in the editor, to a BSP beside it, with its portal and leak files, and reports whether it leaks and the textures its WADs lack. |
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
@@ -102,7 +102,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
 | [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player at a point, facing a way: the map view's camera (MAP-13). |
-| [`map.portals`](#mapportals) | Reads the portal file the open map's last compile wrote         beside it, each portal's points, to show where the map's leaves meet. |
+| [`map.portals`](#mapportals) | Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet. |
 | [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
 | [`map.profiles`](#mapprofiles) | Lists the compile profiles: the built-in Full and Fast, then the project's own from compile-profiles.toml, each its name and its tasks. |
 | [`map.remove_key`](#mapremove_key) | Removes every pair with a key from an entity of the open map. |
@@ -534,7 +534,7 @@ Parameters:
 
 ## `edit.repeat`
 
-Makes the last change once more: same command, same arguments.
+Makes the most recent map edit once more: same command, same arguments.
 
 Parameters:
 
@@ -3568,7 +3568,7 @@ Parameters:
 
 ## `map.choose_profile`
 
-Chooses the compile profile map.run_profile runs when given         none; none given chooses Full again.
+Chooses the compile profile map.run_profile runs when given none; none given chooses Full again.
 
 Parameters:
 
@@ -4813,7 +4813,7 @@ Parameters:
 
 ## `map.portals`
 
-Reads the portal file the open map's last compile wrote         beside it, each portal's points, to show where the map's leaves meet.
+Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet.
 
 Parameters:
 

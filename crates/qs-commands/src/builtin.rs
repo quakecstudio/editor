@@ -25,7 +25,7 @@ pub(crate) enum Builtin {
     List,
     /// `edit.redo`: makes the last undone change again.
     Redo,
-    /// `edit.repeat`: runs the command of the last change again with its parameters.
+    /// `edit.repeat`: runs the command of the last map edit again with its parameters.
     Repeat,
     /// `edit.undo`: takes the last change back.
     Undo,
@@ -47,7 +47,9 @@ impl Builtin {
         match self {
             Self::List => "Lists every command with its id, summary and parameter schema.",
             Self::Redo => "Makes the most recently undone change again.",
-            Self::Repeat => "Makes the last change once more: same command, same arguments.",
+            Self::Repeat => {
+                "Makes the most recent map edit once more: same command, same arguments."
+            }
             Self::Undo => "Takes back the most recent change that has not been undone.",
         }
     }

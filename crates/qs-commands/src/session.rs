@@ -43,7 +43,7 @@ pub struct Session<C> {
     registry: Registry<C>,
     undo: Vec<Change<C>>,
     redo: Vec<Change<C>>,
-    /// The command of the last change made and its parameters, for `edit.repeat`; undo and
+    /// The command of the last map edit made and its parameters, for `edit.repeat`; undo and
     /// redo leave it.
     last: Option<(CommandId, Value)>,
 }
@@ -111,7 +111,7 @@ impl<C: 'static> Session<C> {
             Handler::Builtin(builtin) => *builtin,
             Handler::Command(handler) => {
                 let context = &mut self.context;
-                let kept = params.clone();
+                let kept = repeatable(command.as_str()).then(|| params.clone());
                 let invoked = guard(|| handler.invoke(&command, context, params));
                 return self.record(command, kept, invoked);
             }
@@ -207,7 +207,7 @@ impl<C: 'static> Session<C> {
     fn record(
         &mut self,
         command: CommandId,
-        params: Value,
+        params: Option<Value>,
         invoked: Result<Result<Invoked<C>, CommandError>, String>,
     ) -> Result<Value, CommandError> {
         match invoked {
@@ -215,7 +215,9 @@ impl<C: 'static> Session<C> {
                 match effect {
                     Effect::Unchanged => {}
                     Effect::Undoable(step) => {
-                        self.last = Some((command.clone(), params));
+                        if let Some(params) = params {
+                            self.last = Some((command.clone(), params));
+                        }
                         discard(mem::take(&mut self.redo));
                         self.undo.push(Change {
                             command: command.clone(),
@@ -233,6 +235,16 @@ impl<C: 'static> Session<C> {
             }
         }
     }
+}
+
+/// The commands whose changes `edit.repeat` makes again: the map's, as TrenchBroom's Repeat
+/// repeats map edits. A text edit made again at the same place would land in text that has
+/// moved.
+const REPEATABLE_PREFIX: &str = "map.";
+
+/// Whether `edit.repeat` makes a change of the command `id` again.
+fn repeatable(id: &str) -> bool {
+    id.starts_with(REPEATABLE_PREFIX)
 }
 
 /// The error for a caught panic in `command`. The log line names the command but not the

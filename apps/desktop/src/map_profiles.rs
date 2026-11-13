@@ -51,6 +51,16 @@ impl ProfileView {
         self.chosen = chosen;
     }
 
+    /// Takes the profile chosen.
+    pub(crate) fn set_chosen(&mut self, chosen: String) {
+        self.chosen = chosen;
+    }
+
+    /// Forgets the last run, as another map opening does.
+    pub(crate) fn clear_run(&mut self) {
+        self.last = None;
+    }
+
     /// Takes how a run ended, for the notice.
     pub(crate) fn set_run(&mut self, run: ProfileRun) {
         self.last = Some(run);
@@ -64,6 +74,12 @@ impl ProfileView {
     /// Whether the portals are drawn.
     pub(crate) const fn shows_portals(&self) -> bool {
         self.portals.is_some()
+    }
+
+    /// The profile shown as chosen, for tests.
+    #[cfg(test)]
+    pub(crate) fn chosen(&self) -> &str {
+        &self.chosen
     }
 
     /// What the notice says of the last run, for tests.

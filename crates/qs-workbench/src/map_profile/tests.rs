@@ -14,8 +14,8 @@ use serde_json::json;
 
 use super::{
     ExpandError, Expansions, FAST_PROFILE, FULL_PROFILE, LightSpeed, MAP_CHOOSE_PROFILE,
-    MAP_PROFILES, MAP_RUN_PROFILE, PROFILES_FILE, Profile, ProfileRun, Task, TaskResult, Variable,
-    VisSpeed,
+    MAP_PROFILES, MAP_RUN_PROFILE, PROFILES_FILE, Profile, ProfileRun, Task, TaskError, TaskResult,
+    Variable, VisSpeed,
 };
 use crate::OPEN_PROJECT;
 use crate::map_compile::Seal;
@@ -263,4 +263,53 @@ fn the_built_in_profiles_compile_then_play() {
         );
     }
     assert!(Path::new(PROFILES_FILE).extension().is_some());
+}
+
+// No spec statement: P6-20: an expansion's errors and a task's say what went wrong, and a task's
+// keeps the error under it
+#[test]
+fn expansion_and_task_errors_say_why() {
+    let e = expansions();
+    let said = |text: &str| e.expand(text).unwrap_err().to_string();
+    assert_eq!(said("${MOD}"), "no variable is called ${MOD}");
+    assert_eq!(said("${GAME}"), "${GAME} has no value here");
+    assert_eq!(said("a ${MAP"), "a ${ has no } in \"a ${MAP\"");
+    let io = TaskError::Io {
+        path: PathBuf::from("/x/y.bsp"),
+        error: std::io::Error::from(std::io::ErrorKind::NotFound),
+    };
+    assert!(io.to_string().starts_with("/x/y.bsp: "), "{io}");
+    assert!(std::error::Error::source(&io).is_some());
+    let expand = TaskError::Expand(e.expand("${MOD}").unwrap_err());
+    assert_eq!(expand.to_string(), "no variable is called ${MOD}");
+    assert!(std::error::Error::source(&expand).is_some());
+}
+
+// No spec statement: P6-20: a profiles file that is there but cannot be read is an error, not
+// taken as no file
+#[test]
+fn an_unreadable_profiles_file_is_an_error() {
+    let (mut session, map) = project("profiles-unreadable", None);
+    std::fs::create_dir_all(map.parent().unwrap().join(PROFILES_FILE)).unwrap();
+    let error = session.execute(MAP_PROFILES, json!({})).unwrap_err();
+    assert!(error.to_string().contains("cannot read"), "{error}");
+}
+
+// No spec statement: P6-20: a file an earlier compile left that this one does not write is
+// removed, a .lit with no coloured light among them; one that cannot be removed stops the task
+#[test]
+fn files_of_an_earlier_compile_are_removed() {
+    let file = "[[profile]]\nname = \"Lit\"\ntasks = [{ task = \"bsp\" }, \
+                { task = \"light\", speed = \"fast\" }]\n";
+    let (mut session, map) = project("profile-stale", Some(file));
+    let stale = map.with_extension("lit");
+    std::fs::write(&stale, b"old").unwrap();
+    let done = run(&mut session, "Lit");
+    assert!(done.succeeded(), "{done:?}");
+    assert!(!stale.exists(), "a grey light leaves no .lit");
+    // A folder where the .lit would be cannot be removed: the light task stops.
+    std::fs::create_dir_all(&stale).unwrap();
+    let stopped = run(&mut session, "Lit");
+    assert_eq!(stopped.tasks.len(), 2, "{stopped:?}");
+    assert!(matches!(stopped.tasks[1].result, TaskResult::Failed { .. }));
 }

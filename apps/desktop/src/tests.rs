@@ -2578,6 +2578,16 @@ fn a_profile_compiles_from_the_map_view() {
         .execute("map.choose_profile", json!({ "profile": "Room" }))
         .unwrap();
     harness.run();
+    let chosen = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .map_editor()
+        .profiles()
+        .chosen()
+        .to_owned();
+    assert_eq!(chosen, "Room", "chosen by a command, shown in the picker");
     harness.get_by_label(Text::MapCompileProfile.get()).click();
     harness.run();
     let notice = |harness: &Harness<'static, Option<App>>| {
