@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, ColorImage, RichText, Sense, Stroke, TextureHandle, Ui, Vec2};
+#[cfg(test)]
+use qs_wad::texture::DecodedTexture;
 use qs_workbench::map_edit::{MapDocument, MapRevision};
 use qs_workbench::map_textures::{BrowserTexture, MapTextures, TextureOrigin, TextureSources};
 use qs_workbench::texture_import::DitherChoice;
@@ -166,6 +168,14 @@ impl TextureBrowser {
                 Some((path, name, dither))
             }
         }
+    }
+
+    /// The texture `name` as the browser decodes it, for tests.
+    #[cfg(test)]
+    pub(crate) fn decoded(&self, name: &str) -> Option<DecodedTexture> {
+        self.sources
+            .as_ref()
+            .and_then(|sources| sources.decode(name))
     }
 
     /// The image being imported, for tests.

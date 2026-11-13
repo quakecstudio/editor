@@ -2906,4 +2906,36 @@ fn a_dropped_png_is_imported_into_the_browser() {
     let wad = project_wad(&dir);
     assert!(wad.is_file());
     assert!(map_text(&harness).contains("\"wad\" \"gfx/keep.wad;textures/"));
+    // A changed image imported again replaces the texture, and the open map shows the new one.
+    let decoded = |harness: &Harness<'static, Option<App>>| {
+        let shell = harness.state().as_ref().unwrap().shell();
+        shell.map_editor().texture_browser().decoded("brick16")
+    };
+    let first = decoded(&harness).unwrap();
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image::RgbaImage::from_pixel(16, 16, image::Rgba([30, 40, 200, 255]))
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .unwrap();
+    fs::write(&image, bytes.into_inner()).unwrap();
+    harness.hover_at(over);
+    harness
+        .input_mut()
+        .dropped_files
+        .push(std::sync::Arc::new(Dropped(image.clone())));
+    harness.run();
+    harness.get_by_label(Text::MapImportSave.get()).click();
+    harness.run();
+    harness.run();
+    let second = decoded(&harness).unwrap();
+    assert_ne!(second.rgba, first.rgba, "the browser shows the new picture");
+    let shell = harness.state().as_ref().unwrap().shell();
+    let count = shell
+        .map_editor()
+        .texture_browser()
+        .listing()
+        .textures
+        .iter()
+        .filter(|t| t.name == "brick16")
+        .count();
+    assert_eq!(count, 1, "replaced, not added");
 }
