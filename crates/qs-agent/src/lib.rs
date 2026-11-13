@@ -1213,16 +1213,18 @@ fn call_tool<C: 'static>(
             ));
         }
     }
-    if call.name.starts_with(MAP_COMMANDS) && session.registry().get(STAGE_MAP).is_some() {
-        // The agent's map edits wait as hunks for review (P6-21); with no map open there is
-        // nothing to review yet, and the map command says why it cannot run.
+    let map_command = call.name.starts_with(MAP_COMMANDS);
+    if map_command {
+        // The agent's map edits wait as hunks for review (P6-21). With no map open, or no
+        // review commands in the registry, there is nothing to begin; the map command itself
+        // says why it cannot run.
         session.execute(STAGE_MAP, json!({})).ok();
     }
     let (content, is_error) = match session.execute(&call.name, arguments) {
         Ok(output) => (cut(output, config.output_limit), false),
         Err(error) => (json!(error.to_string()), true),
     };
-    if call.name.starts_with(MAP_COMMANDS) && session.registry().get(UNSTAGE_MAP).is_some() {
+    if map_command {
         // A map command that read the map, failed or changed nothing leaves no review open.
         session.execute(UNSTAGE_MAP, json!({})).ok();
     }
