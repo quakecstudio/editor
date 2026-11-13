@@ -2,7 +2,8 @@
 
 #![expect(
     clippy::unwrap_used,
-    reason = "test code: a failed unwrap is a failed test"
+    clippy::indexing_slicing,
+    reason = "test code: a failed unwrap or index is a failed test"
 )]
 
 use std::collections::{BTreeSet, HashMap};
