@@ -14,7 +14,7 @@ use proptest::prelude::*;
 
 use super::{Affine, BrushFace, MAP_MAX_CHAMFER_FACES, WorldAxis};
 use crate::brush_edit::{BrushError, Surface, TextureLock};
-use crate::geometry::{MAP_ON_EPSILON, plane};
+use crate::geometry::{MAP_ON_EPSILON, Turn, normalize, plane};
 use crate::{Brush, TexDef};
 
 fn standard() -> Surface {
@@ -677,17 +677,88 @@ fn rotations_near_whole_are_whole() {
     assert_eq!(super::tidied(30.0 - tolerance / 2.0), 30.0);
 }
 
+/// The box from `min` to `max` made of its six faces' planes, not as a hull.
+fn planed(min: [f64; 3], max: [f64; 3]) -> Brush {
+    let [x0, y0, z0] = min;
+    let [x1, y1, z1] = max;
+    let mut brush = Brush::new();
+    for points in [
+        [[x0, 0.0, 0.0], [x0, 1.0, 0.0], [x0, 0.0, 1.0]],
+        [[x1, 0.0, 0.0], [x1, 0.0, 1.0], [x1, 1.0, 0.0]],
+        [[0.0, y0, 0.0], [0.0, y0, 1.0], [1.0, y0, 0.0]],
+        [[0.0, y1, 0.0], [1.0, y1, 0.0], [0.0, y1, 1.0]],
+        [[0.0, 0.0, z0], [1.0, 0.0, z0], [0.0, 1.0, z0]],
+        [[0.0, 0.0, z1], [0.0, 1.0, z1], [1.0, 0.0, z1]],
+    ] {
+        brush
+            .faces
+            .push(crate::Face::new(points, b"rock", standard().texdef).unwrap());
+    }
+    brush
+}
+
 // spec MAP-15.3, MAP-15.6: a brush 0.01 thick, ON_PLANE, has no volume, and one 0.02 thick has;
-// an extrusion of no distance is refused
+// an extrusion of less than 0.01 is refused, and one of 0.01 is not
 #[test]
 fn volume_and_no_extrusion() {
-    let thin = cuboid([0.0, 0.0, -0.01], [64.0, 64.0, 0.0], &standard());
-    assert!(!thin.has_volume());
-    let thick = cuboid([0.0, 0.0, -0.02], [64.0, 64.0, 0.0], &standard());
-    assert!(thick.has_volume());
+    assert!(!planed([0.0, 0.0, -0.01], [64.0, 64.0, 0.0]).has_volume());
+    assert!(planed([0.0, 0.0, -0.02], [64.0, 64.0, 0.0]).has_volume());
     let brush = cuboid([0.0, 0.0, 0.0], [64.0, 64.0, 64.0], &standard());
+    for by in [0.0, 0.009] {
+        assert!(matches!(
+            brush.extruded(BrushFace::new(0), by, TextureLock::Locked),
+            Err(BrushError::Degenerate)
+        ));
+    }
+    assert!(
+        brush
+            .extruded(BrushFace::new(0), 0.01, TextureLock::Locked)
+            .is_ok()
+    );
+}
+
+/// The rotation by 50 degrees about the unit axis along (1, 2, 3), as an [`Affine`].
+fn turned() -> Affine {
+    let axis = normalize([1.0, 2.0, 3.0]);
+    let turn = Turn::about(axis, 50.0_f64.to_radians());
+    let columns = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]].map(|e| turn.of(e));
+    Affine {
+        linear: [0, 1, 2].map(|row| [0, 1, 2].map(|column| columns[column][row])),
+        offset: [10.0, -20.0, 30.0],
+    }
+}
+
+// spec MAP-15.9: a chamfer of a brush turned in space is the chamfer of the brush, turned: the
+// bevel does not depend on the edge lying along an axis
+#[test]
+fn chamfers_turn_with_the_brush() {
+    let map = turned();
+    let brush = cuboid([100.0, 200.0, 300.0], [164.0, 232.0, 364.0], &standard());
+    let turned_brush = brush.transformed(&map, TextureLock::Free).unwrap();
+    let (a, b) = ([100.0, 200.0, 364.0], [164.0, 200.0, 364.0]);
+    for (ends, faces) in [((a, b), 1), ((a, b), 3), ((b, a), 2)] {
+        let plain = brush.chamfered(ends.0, ends.1, 12.0, faces).unwrap();
+        let turned_ends = (map.apply(ends.0), map.apply(ends.1));
+        let chamfered = turned_brush
+            .chamfered(turned_ends.0, turned_ends.1, 12.0, faces)
+            .unwrap();
+        let expected: Vec<[f64; 3]> = plain.vertices().iter().map(|&v| map.apply(v)).collect();
+        assert!(
+            same_points(&chamfered.vertices(), &expected),
+            "{faces} faces"
+        );
+    }
+    let low = cuboid([0.0, 0.0, 0.0], [64.0, 64.0, 32.0], &standard())
+        .transformed(&map, TextureLock::Free)
+        .unwrap();
+    let edge = (map.apply([0.0, 0.0, 32.0]), map.apply([64.0, 0.0, 32.0]));
+    assert!(low.chamfered(edge.0, edge.1, 24.0, 1).is_ok());
     assert!(matches!(
-        brush.extruded(BrushFace::new(0), 0.0, TextureLock::Locked),
+        low.chamfered(edge.0, edge.1, 40.0, 1),
+        Err(BrushError::Degenerate)
+    ));
+    assert!(matches!(
+        low.chamfered(edge.0, edge.1, f64::NAN, 1),
         Err(BrushError::Degenerate)
     ));
 }

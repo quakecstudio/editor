@@ -642,7 +642,11 @@ impl Brush {
         distance: f64,
         faces: u32,
     ) -> Result<Self, BrushError> {
-        if distance.is_nan() || distance <= 0.0 || !(1..=MAP_MAX_CHAMFER_FACES).contains(&faces) {
+        if !(1..=MAP_MAX_CHAMFER_FACES).contains(&faces) {
+            return Err(BrushError::Degenerate);
+        }
+        // Positive, which NaN is not.
+        if distance.partial_cmp(&0.0) != Some(core::cmp::Ordering::Greater) {
             return Err(BrushError::Degenerate);
         }
         let sides = self.faces_of_edge(a, b);
