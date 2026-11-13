@@ -143,20 +143,11 @@ fn apply(m: &Matrix, v: [f64; 3]) -> [f64; 3] {
     m.map(|row| row[0] * v[0] + row[1] * v[1] + row[2] * v[2])
 }
 
-/// `a` times `b`.
-fn product(a: &Matrix, b: &Matrix) -> Matrix {
-    a.map(|row| {
-        [0, 1, 2].map(|j| {
-            let column = b.map(|r| r.get(j).copied().unwrap_or_default());
-            row[0] * column[0] + row[1] * column[1] + row[2] * column[2]
-        })
-    })
-}
-
 /// How an instance moves its brushes: scale, then turn, then move (MAP-14.6).
 struct Placement {
     scale: [f64; 3],
-    turn: Matrix,
+    /// The roll about x, the pitch about y and the yaw about z, applied in that order.
+    turns: [Matrix; 3],
     origin: [f64; 3],
 }
 
@@ -189,16 +180,21 @@ impl Placement {
         let about_x = [[1.0, 0.0, 0.0], [0.0, cr, -sr], [0.0, sr, cr]];
         Ok(Self {
             scale: scale.map(f64::from),
-            turn: product(&product(&about_z, &about_y), &about_x),
+            turns: [about_x, about_y, about_z],
             origin: origin.map(f64::from),
         })
+    }
+
+    /// `v` turned: `Rz(yaw) Ry(pitch) Rx(roll) v`.
+    fn turned(&self, v: [f64; 3]) -> [f64; 3] {
+        self.turns.iter().fold(v, |v, m| apply(m, v))
     }
 
     /// `point` placed.
     fn point(&self, point: [f64; 3]) -> [f64; 3] {
         let [x, y, z] = point;
         let [sx, sy, sz] = self.scale;
-        let [tx, ty, tz] = apply(&self.turn, [x * sx, y * sy, z * sz]);
+        let [tx, ty, tz] = self.turned([x * sx, y * sy, z * sz]);
         let [ox, oy, oz] = self.origin;
         [tx + ox, ty + oy, tz + oz]
     }
@@ -206,7 +202,7 @@ impl Placement {
     /// A texture axis and offset placed, so each point keeps its texel (MAP-14.6).
     fn axis(&self, [x, y, z, offset]: [f64; 4]) -> [f64; 4] {
         let unscaled = [x / self.scale[0], y / self.scale[1], z / self.scale[2]];
-        let [ax, ay, az] = apply(&self.turn, unscaled);
+        let [ax, ay, az] = self.turned(unscaled);
         let moved = ax * self.origin[0] + ay * self.origin[1] + az * self.origin[2];
         [ax, ay, az, offset - moved]
     }

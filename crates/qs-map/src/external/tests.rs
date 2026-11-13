@@ -319,3 +319,72 @@ proptest! {
         prop_assert!(keeps_texels(&keys, 1e-4));
     }
 }
+
+// spec MAP-14.6: the turn is the roll about x, then the pitch about y, then the yaw about z,
+// each right-handed, for any three angles
+#[test]
+fn the_turn_composes_roll_pitch_and_yaw() {
+    let (pitch, yaw, roll) = (30.0_f64, 50.0_f64, 20.0_f64);
+    let turn = |v: [f64; 3], axis: usize, degrees: f64| {
+        let (s, c) = degrees.to_radians().sin_cos();
+        let (i, j) = match axis {
+            0 => (1, 2),
+            1 => (2, 0),
+            _ => (0, 1),
+        };
+        let mut out = v;
+        out[i] = c * v[i] - s * v[j];
+        out[j] = s * v[i] + c * v[j];
+        out
+    };
+    let placed = placement(&format!(
+        "\"_external_map_angles\" \"{pitch} {yaw} {roll}\"\n\"origin\" \"1 2 3\"\n"
+    ));
+    for v in [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [3.0, -2.0, 5.0],
+    ] {
+        let want = turn(turn(turn(v, 0, roll), 1, pitch), 2, yaw);
+        let want = [want[0] + 1.0, want[1] + 2.0, want[2] + 3.0];
+        assert!(
+            near(placed.point(v), want),
+            "{v:?}: {:?} {want:?}",
+            placed.point(v)
+        );
+    }
+}
+
+// spec MAP-14.1, MAP-14.2: each error says what is wrong and names what it is about; only a map
+// error has a cause
+#[test]
+fn errors_say_what_and_where() {
+    let file = || "prefabs/box.map".to_owned();
+    let errors = [
+        (
+            ExternalMapError::MissingKey {
+                entity: 3,
+                key: "_external_map",
+            },
+            "3",
+        ),
+        (ExternalMapError::HasBrushes { entity: 4 }, "4"),
+        (ExternalMapError::Unreadable { file: file() }, "box.map"),
+        (ExternalMapError::NotWorld { file: file() }, "worldspawn"),
+        (ExternalMapError::NoBrushes { file: file() }, "box.map"),
+        (ExternalMapError::ZeroScale { entity: 5 }, "5"),
+    ];
+    for (error, names) in errors {
+        assert!(error.to_string().contains(names), "{error}");
+        assert!(std::error::Error::source(&error).is_none());
+    }
+    let parsed = instance("")
+        .with_external_maps(&mut |_| Some(b"{".to_vec()))
+        .unwrap_err();
+    assert!(
+        parsed.to_string().starts_with("prefabs/box.map: "),
+        "{parsed}"
+    );
+    assert!(std::error::Error::source(&parsed).is_some());
+}
