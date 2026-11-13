@@ -96,12 +96,12 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         let (start, monsters) = player_start(&engine, map)?;
         let dir = out.join(map);
         fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        let run = |side: &str| -> Result<(), String> {
+        let run = |side: Side| -> Result<(), String> {
             let script = dir.join(format!("{side}.view"));
             fs::write(&script, route(map, start, side))
                 .map_err(|e| format!("{}: {e}", script.display()))?;
             let audio = dir.join(format!("{side}.raw"));
-            let mut command = if side == "id" {
+            let mut command = if side == Side::Id {
                 let mut command = Command::new(&built.view);
                 command.arg(&script).arg(&audio).args(&engine);
                 command
@@ -130,16 +130,16 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
                 ))
             }
         };
-        run("id")?;
-        run("qs")?;
+        run(Side::Id)?;
+        run(Side::Host)?;
         let mut lines = Vec::new();
         let mut ok = true;
         for shot in SHOTS {
-            let read = |side: &str| {
+            let read = |side: Side| {
                 let path = dir.join(format!("{side}-{shot}.ppm"));
                 fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))
             };
-            let frames = compare_frames(&read("id")?, &read("qs")?);
+            let frames = compare_frames(&read(Side::Id)?, &read(Side::Host)?);
             let (verdict, text) = match frames {
                 Ok(frame) => {
                     let fits = frame.fits(shot_tolerance(shot, tolerance));
@@ -156,11 +156,11 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
             ok &= verdict;
             lines.push(text);
         }
-        let sound = |side: &str| {
+        let sound = |side: Side| {
             let path = dir.join(format!("{side}.raw"));
             fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))
         };
-        let heard = compare_sound(&sound("id")?, &sound("qs")?);
+        let heard = compare_sound(&sound(Side::Id)?, &sound(Side::Host)?);
         let (verdict, text) = match heard {
             // VIEWDIFF-5.3: a monster in earshot idles at random, at other times in each.
             _ if monsters => (true, "sound not compared: a monster in earshot".to_owned()),
@@ -245,17 +245,52 @@ const CONSOLE_TOLERANCE: Tolerance = Tolerance {
 /// menu's sounds are over: a second (VIEWDIFF-5.6).
 const QUIET_FRAMES: u32 = 72;
 
+/// The engine a script is for: id's, through the view oracle, or the preview host. Its name
+/// starts each of its files' names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Side {
+    /// id's engine, the view oracle.
+    Id,
+    /// The preview host.
+    Host,
+}
+
+impl Side {
+    /// The name its files start with.
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Id => "id",
+            Self::Host => "qs",
+        }
+    }
+
+    /// The line its script starts with after the map, to draw without the map's fog: the
+    /// host's `fog 0`, and nothing for id's engine, which has no fog (VIEWDIFF-5.6).
+    const fn fog_off(self) -> &'static str {
+        match self {
+            Self::Id => "",
+            Self::Host => NO_FOG,
+        }
+    }
+}
+
+impl std::fmt::Display for Side {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 /// The host's line that turns off the fog a map's worldspawn sets, which id's engine does not
 /// draw (VIEWDIFF-5.6, REND-10.5).
 const NO_FOG: &str = "fog 0\n";
 
-/// The script of `map`'s route for `side`, `id` or `qs` (VIEWDIFF-5.6): the host's fog off,
+/// The script of `map`'s route for `side` (VIEWDIFF-5.6): the host's fog off,
 /// settle, then a shot at the start's angle and one the other way, the main menu opened over
 /// the start's view and shot, the console brought down over it and shot, both closed, a second
 /// of quiet, then the frames for the sound. Each shot follows a `place`, after which alone the
 /// oracle draws (VIEWDIFF-2.4).
-fn route(map: &str, (origin, yaw): ([f32; 3], f32), side: &str) -> String {
-    let fog = if side == "qs" { NO_FOG } else { "" };
+fn route(map: &str, (origin, yaw): ([f32; 3], f32), side: Side) -> String {
+    let fog = side.fog_off();
     let [x, y, z] = origin;
     let behind = (yaw + 180.0).rem_euclid(360.0);
     let ahead = format!("place {x} {y} {z} 0 {yaw}\nframes {PLACE_FRAMES}\n");

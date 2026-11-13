@@ -973,10 +973,10 @@ impl FogState {
     }
 
     /// `Fog_FogCommand_f`'s `fog <density>` at `now`: the density at once, raised to 0 when
-    /// below it, and the colour last set (REND-10.5).
+    /// below it, and the colour last set, each channel kept within 0 to 1 (REND-10.5).
     pub fn command_density(&mut self, density: f32, now: f32) {
         let fog = Fog {
-            color: self.fog.color,
+            color: self.fog.color.map(|channel| channel.clamp(0.0, 1.0)),
             density: density.max(0.0),
         };
         self.update(fog, 0.0, now);
