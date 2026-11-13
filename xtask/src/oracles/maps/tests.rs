@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 
 use super::super::testing::{fresh_dir, root};
-use super::{Archive, MAPS, fetch_archive, members, read_pins, tree_digest, unpack};
+use super::{Archive, MAPS, WORK, fetch_archive, members, read_pins, tree_digest, unpack};
 use crate::corpus::archive::tests::tar_gz;
 use crate::download::Net;
 
@@ -140,4 +140,15 @@ fn archives_unpack_without_their_top_directory() {
     let changed = members(&tar_gz(&[("tool-abc/src/a.c", b"int b;")])).unwrap();
     let original = members(&tar_gz(&[("tool-abc/src/a.c", b"int a;")])).unwrap();
     assert_ne!(tree_digest(&changed), tree_digest(&original));
+}
+
+/// id's qbsp finds its directories in the map's path, so the room is compiled under a `quake`
+/// directory and a game directory below it, whatever the checkout's own path is called.
+#[test]
+fn the_room_is_compiled_under_quake_and_a_game_directory() {
+    let quake = WORK.iter().position(|part| *part == "quake").unwrap();
+    assert!(
+        WORK.get(quake.saturating_add(1))
+            .is_some_and(|game| !game.is_empty())
+    );
 }

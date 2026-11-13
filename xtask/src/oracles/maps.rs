@@ -34,6 +34,10 @@ const COMMON: [&str; 3] = ["common/cmdlib.c", "common/mathlib.c", "common/bspfil
 const TOOLS: [&str; 3] = ["qbsp", "vis", "light"];
 /// The version a BSP29 file starts with (BSP-1.2).
 const BSP29: i32 = 29;
+/// Where the room is compiled, under `target/oracles`. id's qbsp sets its directories from the
+/// map's absolute path, `SetQdirFromPath` in qutils' `COMMON/CMDLIB.C`, and stops with "no
+/// 'quake' in" a path without a `quake` directory followed by a game directory.
+const WORK: [&str; 3] = ["maps-work", "quake", "id1"];
 /// The length of a full commit hash in hexadecimal.
 const COMMIT_LEN: usize = 40;
 /// The length of a SHA-256 in hexadecimal.
@@ -106,7 +110,9 @@ pub(crate) fn check(root: &Path, exec: &dyn Exec, net: &dyn Net) -> Result<bool,
         return Err("the map tool oracles build on Linux and macOS only".to_owned());
     }
     let tools = build(root, exec, net)?;
-    let work = root.join(OUT).join("maps-work");
+    let work = WORK
+        .iter()
+        .fold(root.join(OUT), |path, part| path.join(part));
     let mut passed = true;
     for (name, set) in [("id", &tools.id), ("ericw-tools", &tools.ericw)] {
         let dir = work.join(name);
