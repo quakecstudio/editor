@@ -59,6 +59,15 @@ code is ported:
 - **VIS-2.5** Each leaf's row of visible leaves is `bitbytes` bytes in memory, the leaf count
   rounded up to a multiple of 64 and divided by 8; the row written to the BSP is
   `(leafs + 7) >> 3` bytes before compression (BSP-6.2).
+- **VIS-2.6** A leaf number equal to the number of leaves passes VIS-2.2's check but names a leaf
+  past the end of vis's array, which is undefined in C; this spec fixes the answer: it stops the
+  run as a greater one does. Both one-way portals share the file portal's winding, its points in
+  the file's order.
+- **VIS-2.7** `ON_EPSILON` (`VIS.H`) and `EQUAL_EPSILON` (`COMMON/MATHLIB.H`) are `double`
+  constants, so every `float` distance or difference compared with them is widened first: a
+  distance of exactly `0.1f`, which is a little over 0.1, is beyond `ON_EPSILON`. The sums of
+  squares in `VectorNormalize` and the `1/sqrt(length)` of `ClipToSeperators` are worked in
+  `double` too, and stored as `float`.
 
 ### Constants
 
@@ -114,6 +123,21 @@ A first-order bound: the leaves a flood through portals that face each other can
 - **VIS-4.5** A leaf already on the path stops the run with `CheckStack: leaf recursion`.
 - **VIS-4.6** A leaf sees every leaf one of its portals sees, and itself. A leaf whose portals
   see it already stops the run with `Leaf portals saw into leaf`.
+- **VIS-4.7** vis flows portals on one thread unless built for the Alpha's threads, so each
+  portal sees every earlier one as flowed. Our `qs-map-vis` gives that single-thread result on
+  as many threads as the machine has: it flows the portals of a batch of 32, in VIS-4.1's order,
+  at once, each seeing the others of its batch as not yet flowed; then, in order, any portal
+  whose flow read the might-see set of a batch portal one thread would have flowed first is
+  flowed again with that portal's exact set. A flow that read none of them is the one a single
+  thread makes.
+- **VIS-4.8** vis counts its flow in `FLOW.C`, `RecursiveLeafFlow`, and prints the counts at its
+  end (`c_chains`) and with `-v` (the others). `c_chains` counts each walk into a leaf, before
+  the recursion check. Of the portals past the might-see check, `c_vistest` counts those tested
+  against a flowed portal's set and `c_mighttest` those tested against a might-see set.
+  `c_portalcheck` counts those past the coplanar check, `c_portaltest` those whose source
+  survives the clip to the back plane (none on the walk's first step), and `c_portalpass` those
+  past every separating clip. The fast mode flows nothing and counts nothing. Our `qs-map-vis`
+  sums the counts of the flow it keeps for each portal, so they are the single-thread ones.
 
 ## VIS-5 The visibility lump
 
@@ -128,6 +152,11 @@ A first-order bound: the leaves a flood through portals that face each other can
   `n`'s `visofs` is its row's offset; the BSP's leaf is `n + 1`, leaf 0 being the shared solid
   leaf (QBSP-13.1). A lump past `MAX_MAP_VISIBILITY` stops the run with
   `Vismap expansion overflow`.
+- **VIS-5.4** vis writes the file as `COMMON/BSPFILE.C`, `WriteBSPFile`, does: the header, then
+  the lumps in the order planes, leafs, vertexes, nodes, texinfo, faces, clipnodes,
+  marksurfaces, surfedges, edges, models, lighting, visibility, entities and textures, each
+  padded with zeros to a multiple of four bytes (`(len+3)&~3`), its directory entry giving its
+  unpadded length. Every lump but the leaves and the visibility is the one read.
 - **VIS-5.3** The average printed, `average leafs visible`, counts a leaf's visible leaves with
   bit `i & 3` of byte `i >> 3` instead of bit `i & 7`, so it is not the true average; nothing
   else reads the count.
