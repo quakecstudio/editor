@@ -505,3 +505,49 @@ fn edits_round_trip_through_the_file() {
         }
     }
 }
+
+// spec MAP-13.11: adjusting adds to the shift and rotation and multiplies the scale, keeping
+// the form; a standard scale of 0 counts as 1
+#[test]
+fn adjusting_adds_and_multiplies() {
+    let brush = cuboid(STANDARD);
+    let (face, polygon) = &faces(&brush)[0];
+    let edit = UvEdit::Adjust {
+        shift: [1.5, -2.0],
+        rotate: 15.0,
+        scale: [2.0, 0.5],
+    };
+    let size = TextureSize::new(8, 8);
+    assert_eq!(
+        face.uv_edited(polygon, edit, size),
+        Some(TexDef::Standard {
+            shift: [6.5, -5.0],
+            rotate: 45.0,
+            scale: [1.0, -1.0],
+        })
+    );
+    let zero = TexDef::Standard {
+        shift: [0.0; 2],
+        rotate: 0.0,
+        scale: [0.0, 3.0],
+    };
+    assert_eq!(
+        zero.adjusted([0.0; 2], 0.0, [2.0, 2.0]),
+        TexDef::Standard {
+            shift: [0.0; 2],
+            rotate: 0.0,
+            scale: [2.0, 6.0],
+        }
+    );
+    let TexDef::Valve {
+        s,
+        t,
+        rotate,
+        scale,
+    } = VALVE.adjusted([1.0, 2.0], 90.0, [2.0, 4.0])
+    else {
+        unreachable!("the form is kept")
+    };
+    assert_eq!((s[3], t[3], rotate, scale), (8.0, 4.0, 90.0, [0.5, 6.0]));
+    assert!((s[0]).abs() < NEAR && (s[1] + 1.0).abs() < NEAR, "{s:?}");
+}

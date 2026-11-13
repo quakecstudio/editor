@@ -70,7 +70,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.entity`](#mapentity) | An entity of the open map: its pairs, the keys its class reads with their types and defaults, and the map's targetnames for its target keys. |
 | [`map.export`](#mapexport) | Writes the open map to another .map without the layers marked to be left out of exports and the entities in them (TrenchBroom's Export). |
 | [`map.face_align`](#mapface_align) | Carries one face's texture alignment onto other faces of the open map, so the texture continues across the line their planes share (MAP-13.8). |
-| [`map.face_uv`](#mapface_uv) | Fits, justifies, flips, resets or snaps the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
+| [`map.face_uv`](#mapface_uv) | Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13). |
 | [`map.filter`](#mapfilter) | The entities of the open map the game removes at a skill and in a kind of game (single, coop or deathmatch), found by spawning the map with the project's program: those the spawnflags rule out and those the QuakeC removes. |
 | [`map.hide`](#maphide) | Hides entities of the open map in the editor until map.show_all (TrenchBroom's Hide Selection); the map is not changed. |
 | [`map.inspect`](#mapinspect) | The open map's rooms (TrenchBroom's named layers and groups, with their bounds) and its entities: each one's place, classname, origin, targetname and room, filtered by room or classname. |
@@ -2793,7 +2793,7 @@ Parameters:
 
 ## `map.face_uv`
 
-Fits, justifies, flips, resets or snaps the texture of faces of the open map, at the size its WAD gives it (MAP-13).
+Fits, justifies, flips, resets, snaps or adjusts the texture of faces of the open map, at the size its WAD gives it (MAP-13).
 
 Parameters:
 
@@ -2963,6 +2963,54 @@ Parameters:
             "kind": {
               "const": "snap",
               "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Add to the shift and rotation and multiply the scale (MAP-13.11).",
+          "properties": {
+            "kind": {
+              "const": "adjust",
+              "type": "string"
+            },
+            "rotate": {
+              "default": 0.0,
+              "description": "Added to the rotation, in degrees; 0 when not given.",
+              "format": "double",
+              "type": "number"
+            },
+            "scale": {
+              "default": [
+                1.0,
+                1.0
+              ],
+              "description": "The s and t scale are multiplied by these; 1 when not given.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "shift": {
+              "default": [
+                0.0,
+                0.0
+              ],
+              "description": "Added to the s and t shift; 0 when not given.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
             }
           },
           "required": [

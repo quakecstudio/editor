@@ -84,7 +84,7 @@ pub enum Axis {
 }
 
 /// What `map.face_uv` does to each face.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum UvChoice {
     /// Stretch or shrink the texture so one copy spans the face (MAP-13.2).
@@ -103,6 +103,23 @@ pub enum UvChoice {
     Reset,
     /// Shift it so its nearest edge lands on the nearest corner (MAP-13.6).
     Snap,
+    /// Add to the shift and rotation and multiply the scale (MAP-13.11).
+    Adjust {
+        /// Added to the s and t shift; 0 when not given.
+        #[serde(default)]
+        shift: [f64; 2],
+        /// Added to the rotation, in degrees; 0 when not given.
+        #[serde(default)]
+        rotate: f64,
+        /// The s and t scale are multiplied by these; 1 when not given.
+        #[serde(default = "unscaled")]
+        scale: [f64; 2],
+    },
+}
+
+/// No scaling.
+const fn unscaled() -> [f64; 2] {
+    [1.0, 1.0]
 }
 
 impl UvChoice {
@@ -123,6 +140,15 @@ impl UvChoice {
             }),
             Self::Reset => UvEdit::Reset,
             Self::Snap => UvEdit::Snap,
+            Self::Adjust {
+                shift,
+                rotate,
+                scale,
+            } => UvEdit::Adjust {
+                shift,
+                rotate,
+                scale,
+            },
         }
     }
 
@@ -130,7 +156,7 @@ impl UvChoice {
     const fn sized(self) -> bool {
         match self {
             Self::Fit | Self::Justify { .. } | Self::Snap => true,
-            Self::Flip { .. } | Self::Reset => false,
+            Self::Flip { .. } | Self::Reset | Self::Adjust { .. } => false,
         }
     }
 }
@@ -211,7 +237,7 @@ pub(crate) struct FaceUv;
 
 impl<C: HasPreview + 'static> Command<C> for FaceUv {
     const ID: &'static str = MAP_FACE_UV;
-    const SUMMARY: &'static str = "Fits, justifies, flips, resets or snaps the texture of faces \
+    const SUMMARY: &'static str = "Fits, justifies, flips, resets, snaps or adjusts the texture of faces \
         of the open map, at the size its WAD gives it (MAP-13).";
     type Params = FaceUvParams;
     type Output = MapEdited;

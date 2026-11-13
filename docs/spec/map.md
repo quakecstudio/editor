@@ -600,3 +600,6 @@ shift.
 - **MAP-13.10** Every edit is written as MAP-7.3 writes numbers, so it is read back unchanged
   in either form. id's qbsp reads a standard face's shifts and rotation as whole numbers
   (MAP-4.1), so there a fraction is cut off; ericw-tools keeps it.
+- **MAP-13.11** Adjusting adds a given amount to each shift and to the rotation and multiplies
+  each scale by a given factor, as a drag in the UV view does; a standard scale of 0 counts as
+  1 (MAP-4.4), and a Valve 220 face's new rotation turns its axes (MAP-12.2).

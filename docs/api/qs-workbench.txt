@@ -1417,6 +1417,7 @@ variant qs_workbench::map_uv::JustifyTo::Centre
 variant qs_workbench::map_uv::JustifyTo::Left
 variant qs_workbench::map_uv::JustifyTo::Right
 variant qs_workbench::map_uv::JustifyTo::Top
+variant qs_workbench::map_uv::UvChoice::Adjust
 variant qs_workbench::map_uv::UvChoice::Fit
 variant qs_workbench::map_uv::UvChoice::Flip
 variant qs_workbench::map_uv::UvChoice::Justify

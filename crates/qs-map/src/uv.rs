@@ -42,7 +42,7 @@ pub enum Justify {
 }
 
 /// An edit of a face's texture alignment (MAP-13).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum UvEdit {
     /// Stretch or shrink the texture so one copy spans the face (MAP-13.2).
     Fit,
@@ -54,6 +54,16 @@ pub enum UvEdit {
     Reset,
     /// Shift the texture so its nearest edge lands on the nearest corner (MAP-13.6).
     Snap,
+    /// Add to the shift and the rotation and multiply the scale, as a drag in the UV view
+    /// does (MAP-13.11).
+    Adjust {
+        /// Added to the s and t shift.
+        shift: [f64; 2],
+        /// Added to the rotation, in degrees.
+        rotate: f64,
+        /// The s and t scale are multiplied by these.
+        scale: [f64; 2],
+    },
 }
 
 /// A texture's width and height in texels.
@@ -179,8 +189,14 @@ impl Face {
     ) -> Option<TexDef> {
         let normal = self.plane()?.normal;
         let texdef = *self.texdef();
-        if edit == UvEdit::Reset {
-            return Some(texdef.reset(normal));
+        match edit {
+            UvEdit::Reset => return Some(texdef.reset(normal)),
+            UvEdit::Adjust {
+                shift,
+                rotate,
+                scale,
+            } => return Some(texdef.adjusted(shift, rotate, scale)),
+            UvEdit::Fit | UvEdit::Justify(_) | UvEdit::Flip(_) | UvEdit::Snap => {}
         }
         let projection = Projection::of(&texdef, normal)?;
         let size = size.along();
@@ -238,7 +254,7 @@ impl Face {
                     }
                     *shift = wrapped(*shift + nearest.unwrap_or_default(), length);
                 }
-                UvEdit::Reset => {}
+                UvEdit::Reset | UvEdit::Adjust { .. } => {}
             }
         }
         Some(texdef.aligned(Alignment {
@@ -432,6 +448,42 @@ impl Turn {
 }
 
 impl TexDef {
+    /// The definition with `shift` added to its shift, `rotate` to its rotation and its scale
+    /// multiplied by `scale`, in the same form; a standard scale of 0 is taken as 1 (MAP-4.4),
+    /// and a Valve 220 rotation turns its axes (MAP-12.2).
+    #[must_use]
+    pub fn adjusted(self, shift: [f64; 2], rotate: f64, scale: [f64; 2]) -> Self {
+        let (now_shift, now_rotate, now_scale) = match self {
+            Self::Standard {
+                shift,
+                rotate,
+                scale,
+            } => (
+                shift,
+                rotate,
+                scale.map(|value| if value == 0.0 { 1.0 } else { value }),
+            ),
+            Self::Valve {
+                s,
+                t,
+                rotate,
+                scale,
+                ..
+            } => {
+                let [.., s_shift] = s;
+                let [.., t_shift] = t;
+                ([s_shift, t_shift], rotate, scale)
+            }
+        };
+        let [ss, ts] = now_shift;
+        let [sk, tk] = now_scale;
+        self.aligned(Alignment {
+            shift: Some([ss + shift[0], ts + shift[1]]),
+            rotate: Some(now_rotate + rotate),
+            scale: Some([sk * scale[0], tk * scale[1]]),
+        })
+    }
+
     /// The definition with no shift, rotation or scaling, in the same form: a Valve 220 face
     /// takes the paraxial axes of its plane, facing `normal` (MAP-13.5).
     #[must_use]

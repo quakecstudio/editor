@@ -231,6 +231,7 @@ fn qs_map::shapes::Shape::brushes
 fn qs_map::uv::Brush::face_polygons
 fn qs_map::uv::Face::aligned_from
 fn qs_map::uv::Face::uv_edited
+fn qs_map::uv::TexDef::adjusted
 fn qs_map::uv::TexDef::reset
 fn qs_map::uv::TextureSize::new
 impl qs_map::brush_edit::BrushError: From<MapError>
@@ -447,6 +448,7 @@ variant qs_map::uv::Justify::Right
 variant qs_map::uv::Justify::Top
 variant qs_map::uv::TexAxis::S
 variant qs_map::uv::TexAxis::T
+variant qs_map::uv::UvEdit::Adjust
 variant qs_map::uv::UvEdit::Fit
 variant qs_map::uv::UvEdit::Flip
 variant qs_map::uv::UvEdit::Justify

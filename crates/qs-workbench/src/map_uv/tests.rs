@@ -241,3 +241,31 @@ fn alignment_carries_across_the_corner() {
     session.execute("edit.undo", json!({})).unwrap();
     assert_eq!(first_brush(&session), before);
 }
+
+// spec MAP-13.11: map.face_uv adjusts by what is given, the rest left as it is, on a texture no
+// WAD holds
+#[test]
+fn adjust_needs_no_size() {
+    let mut session = session();
+    session
+        .execute(
+            MAP_BRUSH_TEXTURE,
+            json!({ "entity": 0, "brushes": [0], "texture": "nowhere", "shift": [1.0, 2.0],
+                    "rotate": 0.0, "scale": [1.0, 1.0] }),
+        )
+        .unwrap();
+    session
+        .execute(
+            MAP_FACE_UV,
+            json!({ "faces": [face_ref(3)], "edit": { "kind": "adjust", "shift": [4.0, 0.0] } }),
+        )
+        .unwrap();
+    assert_eq!(
+        *first_brush(&session).faces[3].texdef(),
+        qs_map::TexDef::Standard {
+            shift: [5.0, 2.0],
+            rotate: 0.0,
+            scale: [1.0, 1.0],
+        }
+    );
+}
