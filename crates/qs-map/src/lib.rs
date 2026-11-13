@@ -17,6 +17,7 @@
 //! Nothing is ported: id's qbsp is not a portable upstream (`docs/porting.md`), so the code
 //! is written from the spec, which was checked by running qbsp on its vectors.
 
+mod align;
 mod brush_edit;
 mod check;
 pub mod cnum;
@@ -28,7 +29,8 @@ pub mod qbsp;
 mod rooms;
 pub mod shapes;
 
-pub use brush_edit::{BrushError, Surface};
+pub use align::Alignment;
+pub use brush_edit::{BrushError, Surface, TextureLock};
 pub use check::{Diagnostic, DiagnosticKind, MAP_MAX_SOUNDS};
 pub use document::{
     Brush, BrushModel, Compiler, Entity, Face, Item, MapError, MapFile, Pair, TexDef, is_tool_key,

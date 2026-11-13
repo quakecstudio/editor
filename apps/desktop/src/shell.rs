@@ -28,8 +28,8 @@ use qs_editor_view::{
     Fixable, KeyMode, LineNote, NoteSeverity, Position, Selection, ViewStyle, Wrap,
 };
 use qs_layout::{
-    EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, Outline, Panel, RESIZE_PANEL,
-    ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams,
+    EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, MAP_PANES, MapPanesParams, Outline, Panel,
+    RESIZE_PANEL, ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams,
 };
 use qs_render::{Camera, MapMesh};
 use qs_settings::{Scope as SettingsScope, Setting, SettingsFile, SettingsStore};
@@ -56,9 +56,10 @@ use qs_workbench::map_edit::{
     ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_workbench::map_edit::{
-    BrushClipParams, BrushCreateParams, BrushMergeParams, BrushParams, BrushShapeParams,
-    BrushVertexParams, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE,
-    MAP_BRUSH_SHAPE, MAP_BRUSH_SUBTRACT, MAP_BRUSH_VERTEX,
+    BrushClipParams, BrushCreateParams, BrushMergeParams, BrushMoveParams, BrushParams,
+    BrushShapeParams, BrushTextureParams, BrushVertexParams, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE,
+    MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SHAPE, MAP_BRUSH_SUBTRACT,
+    MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
 };
 use qs_workbench::map_edit::{
     EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
@@ -2073,6 +2074,7 @@ impl Shell {
                 MapAction::MoveTo(entity, into) => {
                     self.attempt(MAP_MOVE_TO, &MoveToParams { entity, into })
                 }
+                MapAction::Panes(panes) => self.attempt(MAP_PANES, &MapPanesParams { panes }),
                 MapAction::RemoveKey(entity, key) => {
                     self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
                 }
@@ -2164,6 +2166,28 @@ impl Shell {
             BrushAction::Delete(entity, brush) => {
                 self.attempt(MAP_BRUSH_DELETE, &BrushParams { entity, brush })
             }
+            BrushAction::Move(entity, brushes, by, lock) => self.attempt(
+                MAP_BRUSH_MOVE,
+                &BrushMoveParams {
+                    entity,
+                    brushes,
+                    by,
+                    lock,
+                    // The view has snapped the move to the grid.
+                    grid: Some(0.0),
+                },
+            ),
+            BrushAction::Texture(entity, brushes, change) => self.attempt(
+                MAP_BRUSH_TEXTURE,
+                &BrushTextureParams {
+                    entity,
+                    brushes,
+                    texture: change.texture,
+                    shift: change.shift,
+                    rotate: change.rotate,
+                    scale: change.scale,
+                },
+            ),
             BrushAction::Shape(min, max, shape) => self.attempt(
                 MAP_BRUSH_SHAPE,
                 &BrushShapeParams {
@@ -2218,13 +2242,14 @@ impl Shell {
     /// Draws the map editor in the Map tab when a map is open, running what it asks for;
     /// whether it did.
     fn map_tab(&mut self, ui: &mut Ui) -> bool {
+        let panes = self.layout().map_panes;
         let Some(document) = self.session.context().workbench.map() else {
             return false;
         };
         if self.centre_tab != CentreTab::Map {
             return false;
         }
-        let actions = self.map_editor.ui(ui, &self.theme, document);
+        let actions = self.map_editor.ui(ui, &self.theme, document, panes);
         self.map_actions(actions);
         self.refresh_map_outline();
         if let Some(document) = self.session.context().workbench.map()

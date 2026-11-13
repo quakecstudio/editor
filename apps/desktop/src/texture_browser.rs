@@ -81,6 +81,11 @@ impl TextureBrowser {
             .unwrap_or_default()
     }
 
+    /// The texture chosen, which the Properties panel can put on the selected brushes.
+    pub(crate) fn selected(&self) -> Option<&str> {
+        self.selected.as_deref()
+    }
+
     /// How many textures were decoded since the sources were set.
     #[cfg(test)]
     pub(crate) const fn decodes(&self) -> usize {

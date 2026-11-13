@@ -24,6 +24,7 @@ const qs_map::shapes::SHAPE_MIN_SIDES
 const qs_map::shapes::SHAPE_STEP_DEPTH
 const qs_map::shapes::SHAPE_STEP_HEIGHT
 enum qs_map::brush_edit::BrushError
+enum qs_map::brush_edit::TextureLock
 enum qs_map::check::DiagnosticKind
 enum qs_map::document::Compiler
 enum qs_map::document::Item
@@ -46,6 +47,9 @@ enum qs_map::shapes::Shape
 enum qs_map::shapes::ShapeError
 enum qs_map::shapes::Spandrels
 enum qs_map::shapes::Wall
+field qs_map::align::Alignment.rotate
+field qs_map::align::Alignment.scale
+field qs_map::align::Alignment.shift
 field qs_map::brush_edit::Surface.texdef
 field qs_map::brush_edit::Surface.texture
 field qs_map::check::Diagnostic.kind
@@ -91,6 +95,7 @@ field qs_map::qbsp::TextureSlot.name
 field qs_map::rooms::Room.bounds
 field qs_map::rooms::Room.kind
 field qs_map::rooms::Room.name
+fn qs_map::align::TexDef::aligned
 fn qs_map::brush_edit::Brush::corners
 fn qs_map::brush_edit::Brush::cuboid
 fn qs_map::brush_edit::Brush::is_valid
@@ -98,6 +103,7 @@ fn qs_map::brush_edit::Brush::merge
 fn qs_map::brush_edit::Brush::move_vertex
 fn qs_map::brush_edit::Brush::split
 fn qs_map::brush_edit::Brush::subtract
+fn qs_map::brush_edit::Brush::translated
 fn qs_map::brush_edit::Brush::vertices
 fn qs_map::brush_edit::Entity::brush_places
 fn qs_map::check::MapFile::check
@@ -247,6 +253,7 @@ mod qs_map::geometry
 mod qs_map::lexer
 mod qs_map::qbsp
 mod qs_map::shapes
+struct qs_map::align::Alignment
 struct qs_map::brush_edit::Surface
 struct qs_map::check::Diagnostic
 struct qs_map::document::Brush
@@ -275,6 +282,7 @@ struct qs_map::rooms::Rooms
 trait qs_map::geometry::MapFloat
 trait qs_map::geometry::sealed::Sealed
 type qs_map::geometry::TexVecs
+use qs_map::Alignment = align::Alignment
 use qs_map::Brush = document::Brush
 use qs_map::BrushError = brush_edit::BrushError
 use qs_map::BrushModel = document::BrushModel
@@ -301,6 +309,7 @@ use qs_map::RoomKind = rooms::RoomKind
 use qs_map::Rooms = rooms::Rooms
 use qs_map::Surface = brush_edit::Surface
 use qs_map::TexDef = document::TexDef
+use qs_map::TextureLock = brush_edit::TextureLock
 use qs_map::Transform = linked::Transform
 use qs_map::is_tool_key = document::is_tool_key
 variant qs_map::brush_edit::BrushError::CornerLost
@@ -309,6 +318,8 @@ variant qs_map::brush_edit::BrushError::Map
 variant qs_map::brush_edit::BrushError::Missed
 variant qs_map::brush_edit::BrushError::NoVertex
 variant qs_map::brush_edit::BrushError::VertexInside
+variant qs_map::brush_edit::TextureLock::Free
+variant qs_map::brush_edit::TextureLock::Locked
 variant qs_map::check::DiagnosticKind::DuplicateKey
 variant qs_map::check::DiagnosticKind::DuplicatePlane
 variant qs_map::check::DiagnosticKind::EricwComment
