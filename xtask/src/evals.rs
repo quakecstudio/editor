@@ -147,8 +147,9 @@ impl SealedExpect {
 
 /// What a task's success is.
 enum Success<'t> {
-    /// Its scenario passes on the agent's work (`success.scenario`).
-    Scenario(String),
+    /// Its scenario passes on the agent's work (`success.scenario`), these maps compiled into
+    /// the project's build first (P6-13).
+    Scenario(String, &'t [String]),
     /// Its maps hold every one of these (P5-08) and compile sealed (P6-13).
     Map(&'t [MapExpect], &'t [SealedExpect]),
 }
@@ -176,6 +177,10 @@ struct Task {
     /// For a map task, the maps that must compile without a leak.
     #[serde(default)]
     sealed: Vec<SealedExpect>,
+    /// Maps compiled, as saved, into the project's build before its scenario plays, so the
+    /// scenario's `map` finds them on the game's search path (P6-13).
+    #[serde(default)]
+    compile: Vec<String>,
 }
 
 /// The name a task's scenario takes in the project, and the test filter that finds it.
@@ -270,7 +275,7 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
         let success = if task.map.is_empty() && task.sealed.is_empty() {
             let scenario = fs::read_to_string(dir.join("success.scenario"))
                 .map_err(|e| format!("{name}/success.scenario: {e}"))?;
-            Success::Scenario(scenario)
+            Success::Scenario(scenario, &task.compile)
         } else {
             Success::Map(&task.map, &task.sealed)
         };
@@ -384,6 +389,43 @@ fn session(dir: &Path, game: &Path) -> Result<Session<Context>, String> {
     Ok(session)
 }
 
+/// Compiles each map of `maps`, as saved in the project `dir`, into `maps/` of the build output
+/// of the project `session` has open, where the run root's mod finds it (ADR-0008); a build
+/// that writes no program leaves them out, and the scenario fails on its own.
+fn compile_maps(session: &mut Session<Context>, dir: &Path, maps: &[String]) -> Result<(), String> {
+    if maps.is_empty() {
+        return Ok(());
+    }
+    let built = session
+        .execute(qs_workbench::BUILD_PROJECT, json!({}))
+        .map_err(|e| e.to_string())?;
+    let built: Vec<qs_workbench::ModuleBuilt> =
+        serde_json::from_value(built).map_err(|e| e.to_string())?;
+    let Some(output) = built
+        .iter()
+        .find(|module| module.built)
+        .and_then(|module| module.output.parent())
+    else {
+        return Ok(());
+    };
+    let folder = output.join("maps");
+    fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
+    for map in maps {
+        let path = dir.join(map);
+        let text = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let compiled = Compiler::default()
+            .with_dialect(BspDialect::Extended)
+            .compile(&text, None)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        let name = Path::new(map)
+            .file_stem()
+            .ok_or_else(|| format!("{map}: no file name"))?;
+        let bsp = folder.join(name).with_extension("bsp");
+        fs::write(&bsp, compiled.bsp).map_err(|e| format!("{}: {e}", bsp.display()))?;
+    }
+    Ok(())
+}
+
 /// Whether the task's scenario passes on the project `session` has open, the agent's
 /// unsaved edits included: it is written into the project's tests and run alone.
 fn succeeds(
@@ -393,7 +435,10 @@ fn succeeds(
     game: &Path,
 ) -> Result<bool, String> {
     let scenario = match success {
-        Success::Scenario(scenario) => scenario,
+        Success::Scenario(scenario, maps) => {
+            compile_maps(session, dir, maps)?;
+            scenario
+        }
         Success::Map(expects, sealed) => {
             for expect in *expects {
                 if !expect.holds(&expect.read(dir)?) {
@@ -640,6 +685,9 @@ mod tests {
             }
             for expect in &task.sealed {
                 assert!(task.files.contains(&expect.file), "{}", dir.display());
+            }
+            for map in &task.compile {
+                assert!(task.files.contains(map), "{}: {map}", dir.display());
             }
             for expect in &task.map {
                 assert!(task.files.contains(&expect.file), "{}", dir.display());

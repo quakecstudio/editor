@@ -12,6 +12,7 @@ scenario that defines success, then read by a reviewer against a rubric.
 | `port-to-rerelease` | rerelease | Port the 150-health change to the rerelease, keeping its Nightmare rule |
 | `place-shamblers` | id1 | Place three Shamblers in the Armory of a map, a TrenchBroom group (P5-08) |
 | `fix-leak` | id1 | Find and seal the hole a map leaks through (P6-13) |
+| `open-door` | id1 | Make a door open that has a `targetname` and nothing to fire it, from the map and the QuakeC (P6-13) |
 
 ## A task
 
@@ -30,6 +31,8 @@ scenario that defines success, then read by a reviewer against a rubric.
   `file`, a `classname`, a `room` (a TrenchBroom layer or group, MAP-9) and the `count` of
   entities of that class the room, or a room inside it, must hold (MAP-9.4). The map is read
   from its file, as the agent saved it.
+- For a scenario on a map, `compile`, the maps the scenario plays, compiled as saved into the
+  project's build output, where the game finds them.
 - For a leak task, `[[sealed]]`, each a map `file` that must compile with no leak (QBSP-9.8), read
   from its file as saved; with `[[map]]` or alone.
 - `rubric.md`: what a reviewer reads a passing run against.

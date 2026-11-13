@@ -1,0 +1,7 @@
+# What success means for the open-door eval: the player walks north into the gate and it opens.
+map hall
+seed 1
+start 256 128 40 90
+move 0 90 0 200 0 0 0 0
+frames 288
+expect field classname=door origin != '0 0 0'

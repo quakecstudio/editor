@@ -1,0 +1,14 @@
+title = "Open a door that will not open"
+template = "id1"
+prompt = "In maps/hall.map, the gate in the wall between the two rooms does not open when the player walks into it. Find out why from the map and the QuakeC, make it open when the player walks into it, and save the map."
+turns = 30
+runs = 1
+threshold = 1
+files = ["maps/hall.map"]
+# P6-13: the saved map is compiled into the build, and the scenario walks the player into the gate.
+compile = ["maps/hall.map"]
+
+[[solution]]
+file = "maps/hall.map"
+find = "\"wait\" \"-1\"\n\"targetname\" \"gate\"\n"
+replace = "\"wait\" \"-1\"\n"
