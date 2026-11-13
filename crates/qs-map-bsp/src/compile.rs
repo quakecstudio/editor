@@ -48,6 +48,9 @@ struct FillFiles {
     leak_trail: Vec<[f32; 3]>,
 }
 
+/// How a compile reads a file an external map instance names, by that name (MAP-14).
+pub type Load<'a> = &'a mut dyn FnMut(&str) -> Option<Vec<u8>>;
+
 /// The map compiler and its options.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Compiler {
@@ -282,10 +285,22 @@ impl Compiler {
 
     /// The map as the dialect reads it (QBSP-14.1).
     fn read(&self, map: &[u8]) -> Result<QbspMap, CompileError> {
+        self.read_with(map, None)
+    }
+
+    /// The map as the dialect reads it, the extended dialect's external map instances
+    /// expanded with the files `load` reads, when given (QBSP-14.1, QBSP-14.7).
+    fn read_with(&self, map: &[u8], load: Option<Load<'_>>) -> Result<QbspMap, CompileError> {
         Ok(match self.dialect {
             Dialect::Id => load_map_file(map)?,
             Dialect::Extended => {
                 let file = MapFile::parse(map).map_err(CompileError::Document)?;
+                let file = match load {
+                    Some(load) => file
+                        .with_external_maps(load)
+                        .map_err(CompileError::ExternalMap)?,
+                    None => file,
+                };
                 QbspMap::from_map_file(&file)?
             }
         })
@@ -297,7 +312,29 @@ impl Compiler {
     ///
     /// The [`CompileError`] qbsp stops with.
     pub fn compile(&self, map: &[u8], wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
-        let mut qmap = self.read(map)?;
+        self.compile_read(self.read(map)?, wad)
+    }
+
+    /// Compiles `map` with the textures of `wad`, its external map instances expanded first
+    /// with the files `load` reads by the names the instances give, as ericw-tools' qbsp does
+    /// in the extended dialect; the id dialect reads no instance (QBSP-14.7, MAP-14).
+    ///
+    /// # Errors
+    ///
+    /// [`CompileError::ExternalMap`] for an instance that cannot be expanded, else the
+    /// [`CompileError`] qbsp stops with.
+    pub fn compile_with_externals(
+        &self,
+        map: &[u8],
+        wad: Option<&[u8]>,
+        load: Load<'_>,
+    ) -> Result<Compiled, CompileError> {
+        self.compile_read(self.read_with(map, Some(load))?, wad)
+    }
+
+    /// Compiles the map read, `qmap`, with the textures of `wad` (QBSP-1).
+    fn compile_read(&self, qmap: QbspMap, wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
+        let mut qmap = qmap;
         qmap.number_models();
         let limits = self.dialect.limits();
         let mut planes = Planes::new(limits.planes);

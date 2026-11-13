@@ -607,3 +607,44 @@ shift.
   each scale by a given factor, as a drag in the UV view does; a standard scale of 0 counts as
   1 (MAP-4.4), and a Valve 220 face's new rotation turns its axes (MAP-12.2). A factor of 0,
   or one that is not finite, would leave no texture and is refused.
+
+## MAP-14 External map instances
+
+**Source:** ericw-tools `qbsp/map.cc` at `36eec1da2a194467e6baac2f444c2dd04b57d266`,
+`ProcessExternalMapEntity`, `LoadExternalMap`, `ScaleMapFace`, `RotateMapFace`,
+`TranslateMapFace`; `common/mathlib.cc`, `RotateAboutX`, `RotateAboutY`, `RotateAboutZ`;
+`common/entdata.cc`, `entdict_t::get_vector`, `get_float`. Implemented by
+`qs_map::MapFile::with_external_maps`.
+
+ericw-tools' qbsp lets a point entity stand for another `.map`: before anything else is
+compiled, the entity takes that map's brushes, placed by its keys. id's qbsp has no such
+entity.
+
+### Behaviour
+
+- **MAP-14.1** An entity whose classname is `misc_external_map`, in any case, is an instance. It
+  names the file in `_external_map` and the classname it becomes in `_external_map_classname`;
+  ericw-tools asserts both are given and the entity has no brush. This spec fixes the answer: an
+  instance without either key, or with brushes, is an error.
+- **MAP-14.2** The file is read as a `.map`: its first entity must be `worldspawn`, in any case,
+  and every entity's brushes are taken, but for an entity whose `_omitbrushes` reads as a
+  non-zero integer, and a brush with no face. A file that cannot be read, does not start with
+  its world or gives no brush is an error.
+- **MAP-14.3** The instance's `origin`, `_external_map_angles` and `_external_map_scale` are
+  read as `sscanf`'s `"%f %f %f"` reads them: up to three floats, a missing one 0.
+- **MAP-14.4** The angles are pitch, yaw and roll in degrees. When all three are within 0.0001
+  of 0, the yaw is `_external_map_angle`, read as `atof`, 0 when not given.
+- **MAP-14.5** A scale of three numbers scales each axis by its own. Fewer than three gives one
+  scale for all: 1 when the first is 0 or missing, else the first. A scale of 0 along an axis
+  leaves no brush, an inverse of infinity in ericw-tools; this spec fixes the answer: it is an
+  error.
+- **MAP-14.6** Each point of each face is scaled, then turned by `Rz(yaw) Ry(pitch) Rx(roll)`,
+  each a right-handed rotation about its axis, then moved by the origin. Each texture axis
+  (MAP-4.4, MAP-5.3) is divided by the scale along each component, then turned the same way,
+  and its offset is less the dot product of the turned axis with the origin, so every point of
+  a face keeps its texel. ericw-tools keeps texture axes in single precision; this spec keeps
+  them in double, so the two can differ in the last bits.
+- **MAP-14.7** The instance's classname becomes `_external_map_classname` and its origin
+  `0 0 0`; its other keys are kept, and the placed brushes are added after its pairs. Each
+  placed face is written in the Valve 220 form (MAP-5.1) with the placed axes, no rotation and a
+  scale of 1; a face with no plane keeps its definition, as both compilers drop it (MAP-3.6).

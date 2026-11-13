@@ -603,6 +603,16 @@ pub enum Text {
     MapTextureRotate,
     /// The label of a texture's scale.
     MapTextureScale,
+    /// The map browser's tab listing the project's prefabs.
+    MapPrefabs,
+    /// What the prefab list says when the project has none.
+    MapNoPrefabs,
+    /// How a prefab is placed.
+    MapPrefabHint,
+    /// The field the name of a prefab of the selection is typed in.
+    MapPrefabName,
+    /// The button that saves the selected brushes as a prefab.
+    MapSavePrefab,
     /// The map browser's tab listing the map's issues.
     MapIssues,
     /// The button that lists the map's issues.
@@ -717,7 +727,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 351] = [
+    pub const ALL: [Self; 356] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -1014,6 +1024,11 @@ impl Text {
         Self::MapTextureShift,
         Self::MapTextureRotate,
         Self::MapTextureScale,
+        Self::MapPrefabs,
+        Self::MapNoPrefabs,
+        Self::MapPrefabHint,
+        Self::MapPrefabName,
+        Self::MapSavePrefab,
         Self::MapIssues,
         Self::MapCheckIssues,
         Self::MapIssuesHint,
@@ -1392,6 +1407,11 @@ impl Text {
             Self::MapTextureShift => "Shift",
             Self::MapTextureRotate => "Rotate",
             Self::MapTextureScale => "Scale",
+            Self::MapPrefabs => "Prefabs",
+            Self::MapNoPrefabs => "No prefabs in the project's prefabs folder",
+            Self::MapPrefabHint => "Drag a prefab into the view to copy it in",
+            Self::MapPrefabName => "Prefab name",
+            Self::MapSavePrefab => "Save as prefab",
             Self::MapIssues => "Issues",
             Self::MapCheckIssues => "Check map",
             Self::MapIssuesHint => "Check the map to list its issues",
@@ -1573,6 +1593,13 @@ pub fn measure_readout(distance: f64, along: [f64; 3]) -> String {
 #[must_use]
 pub fn selection_size([x, y, z]: [f64; 3]) -> String {
     format!("Size {x} x {y} x {z}")
+}
+
+/// How many prefabs the project has (P6-23).
+#[must_use]
+pub fn prefab_count(prefabs: usize) -> String {
+    let noun = if prefabs == 1 { "prefab" } else { "prefabs" };
+    format!("{prefabs} {noun}")
 }
 
 /// How many issues the map has and how many of them have a quick fix (P6-19).

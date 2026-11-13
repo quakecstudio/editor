@@ -482,6 +482,7 @@ groups:
     - P6-06
     deliverable:
     - 'tests/map-diff: compiles corpus maps with our tools and the oracles; compares leak detection, entity lumps, hull collision on sampled traces, face counts within tolerance and rendered views'
+    - 'Among the maps, one with misc_external_map instances (MAP-14, P6-23), compiled by ericw-tools qbsp and by qs-map-bsp in the extended dialect'
     acceptance:
     - No collision differences on sampled traces; leaks agree on every corpus map
     verify:
@@ -786,9 +787,9 @@ groups:
     - 'External map instances: an entity naming another .map drawn in place with its position, rotation and scale, and expanded by qs-map-bsp, following the external map entity of ericw-tools qbsp, described from its source at a pinned commit in docs/spec/'
     acceptance:
     - 'An instance draws its .map in place and follows edits to that file'
-    - 'A map with external instances compiles with qs-map-bsp to the same geometry as ericw-tools qbsp in the differential suite'
+    - 'A map with external instances compiles with qs-map-bsp as the map with each instance expanded as MAP-14 states ericw-tools qbsp does, in unit tests of the expansion and the compile; the comparison with ericw-tools qbsp itself is in the differential suite (P6-07)'
     verify:
-    - 'Differential compile; UI snapshot tests'
+    - 'Unit tests of the expansion and the compile; UI snapshot tests'
   - key: P6-24
     title: 'Bring qs-client to CONV-17'
     labels:

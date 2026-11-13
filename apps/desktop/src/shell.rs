@@ -74,6 +74,9 @@ use qs_workbench::map_edit::{
     MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssues, MapRevision,
 };
 use qs_workbench::map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
+use qs_workbench::map_edit::{
+    MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PlacePrefabParams, Prefabs, SavePrefabParams,
+};
 use qs_workbench::map_textures::TextureSources;
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
@@ -1932,6 +1935,13 @@ impl Shell {
             context.preview.game_folder(),
         );
         self.map_editor.set_texture_sources(sources);
+        let root = self
+            .session
+            .context()
+            .workbench
+            .root()
+            .map(Path::to_path_buf);
+        self.map_editor.set_project_root(root);
     }
 
     /// Gives the map editor the project's entity classes and their models.
@@ -1972,6 +1982,7 @@ impl Shell {
                 .unwrap_or_default(),
         );
         paths.extend(self.map_editor.texture_watched());
+        paths.extend(self.map_editor.external_watched());
         let changed = self.disk_watch.changed(now, paths);
         if !changed.is_empty() {
             self.files_changed(changed);
@@ -2004,6 +2015,11 @@ impl Shell {
         let map = self.session.context().workbench.map().is_some();
         let wads = self.map_editor.texture_watched();
         let wad_changed = changed.iter().any(|path| wads.contains(path));
+        let externals = self.map_editor.external_watched();
+        // An external map written by another program is drawn again (MAP-14).
+        if changed.iter().any(|path| externals.contains(path)) {
+            self.map_editor.externals_changed();
+        }
         let found: Result<FilesChanged, ShellError> =
             self.attempt(FILES_CHANGED, &FilesChangedParams { paths: changed });
         match found {
@@ -2099,6 +2115,15 @@ impl Shell {
                 MapAction::CheckLeaks => self
                     .execute(MAP_LEAKS, serde_json::json!({}))
                     .map_err(ShellError::from),
+                MapAction::ListPrefabs => self.list_prefabs(),
+                MapAction::PlacePrefab(path, origin) => self.attempt(
+                    MAP_PLACE_PREFAB,
+                    &PlacePrefabParams {
+                        path,
+                        origin,
+                        grid: None,
+                    },
+                ),
                 MapAction::CheckIssues => self.check_map_issues(),
                 MapAction::Fix(fix) => {
                     let fixed =
@@ -2187,6 +2212,18 @@ impl Shell {
         self.map_editor.select_faces(faces);
     }
 
+    /// Lists the project's prefabs in the map editor's prefab browser; none when no project
+    /// is open, so the browser does not ask again (P6-23).
+    fn list_prefabs(&mut self) -> Result<serde_json::Value, ShellError> {
+        let found: Result<Prefabs, ShellError> = self.attempt(MAP_PREFABS, &serde_json::json!({}));
+        let prefabs = found
+            .as_ref()
+            .map(|found| found.prefabs.clone())
+            .unwrap_or_default();
+        self.map_editor.set_prefabs(prefabs);
+        found.map(|_| serde_json::Value::Null)
+    }
+
     /// Runs a brush edit as its `map.brush_*` command, on the commands' grid.
     fn brush_action(&mut self, action: BrushAction) -> Result<serde_json::Value, ShellError> {
         match action {
@@ -2256,6 +2293,19 @@ impl Shell {
             }
             BrushAction::AlignFaces(from, to) => {
                 self.attempt(MAP_FACE_ALIGN, &FaceAlignParams { from, to })
+            }
+            BrushAction::SavePrefab(name, brushes, entities) => {
+                let saved = self.attempt::<_, serde_json::Value>(
+                    MAP_SAVE_PREFAB,
+                    &SavePrefabParams {
+                        name,
+                        brushes,
+                        entities,
+                        grid: None,
+                    },
+                );
+                // The browser lists the new prefab.
+                saved.and_then(|_| self.list_prefabs())
             }
             BrushAction::Shape(min, max, shape) => self.attempt(
                 MAP_BRUSH_SHAPE,

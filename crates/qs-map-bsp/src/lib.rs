@@ -30,7 +30,7 @@ use qs_bsp::{
 };
 use qs_map::qbsp::{QbspError, QbspWarning};
 
-pub use compile::{Compiled, Compiler};
+pub use compile::{Compiled, Compiler, Load};
 
 use crate::math::Vec3;
 use crate::planes::{PlaneId, Side};
@@ -324,6 +324,8 @@ pub enum CompileError {
     Limit(&'static str),
     /// The BSP could not be written (BSP-23.3).
     Write(BspWriteError),
+    /// An external map instance could not be expanded (QBSP-14.7, MAP-14).
+    ExternalMap(qs_map::ExternalMapError),
 }
 
 impl fmt::Display for Warning {
@@ -351,6 +353,7 @@ impl fmt::Display for CompileError {
         match self {
             Self::Map(error) => write!(f, "{error}"),
             Self::Document(error) => write!(f, "{error}"),
+            Self::ExternalMap(error) => write!(f, "{error}"),
             Self::Normalization => f.write_str("FindPlane: normalization error"),
             Self::TooManyPlanes => f.write_str("numbrushplanes == MAX_MAP_PLANES"),
             Self::TooManyPoints => f.write_str("a polygon has too many points"),

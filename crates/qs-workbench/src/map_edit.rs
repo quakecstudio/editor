@@ -42,6 +42,10 @@ pub use issues::{
 pub use links::{LinkParams, MAP_LINK};
 pub use live::LiveChange;
 pub use outline::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow, RowKind};
+pub use prefabs::{
+    MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PREFAB_FOLDER, PlacePrefabParams, Prefab,
+    PrefabSaved, Prefabs, SavePrefabParams,
+};
 pub use shapes::{ArchWall, BrushShapeParams, Circle, Climb, MAP_BRUSH_SHAPE, ShapeSpec};
 
 mod brushes;
@@ -54,6 +58,7 @@ mod issues;
 mod links;
 mod live;
 mod outline;
+mod prefabs;
 mod shapes;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1222,6 +1227,9 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(brushes::BrushMove)?;
     registry.register(brushes::BrushTexture)?;
     registry.register(shapes::BrushShape)?;
+    registry.register(prefabs::ListPrefabs)?;
+    registry.register(prefabs::PlacePrefab)?;
+    registry.register(prefabs::SavePrefab)?;
     registry.register(issues::MapFix)?;
     registry.register(issues::MapSearch)?;
     registry.register(MapSave)

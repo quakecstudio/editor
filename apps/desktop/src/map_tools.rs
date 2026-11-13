@@ -31,6 +31,8 @@ use crate::map_uv::UvEditor;
 use crate::strings::{Text, apply_texture, measure_readout, move_readout, selection_size};
 use crate::theme::{Theme, Token};
 
+/// The width of the field the prefab's name is typed in, in points.
+const PREFAB_NAME_WIDTH: f32 = 140.0;
 /// The height of a box the Brush tool draws, in map units: four grid steps.
 const BRUSH_HEIGHT: f32 = 64.0;
 /// The height of a box the Shape tool fills, in map units: eight grid steps.
@@ -159,6 +161,8 @@ pub enum BrushAction {
     Uv(Vec<FaceRef>, UvChoice),
     /// Carry one face's texture alignment onto others (MAP-13.8).
     AlignFaces(FaceRef, Vec<FaceRef>),
+    /// Save brushes, each by its entity, and whole entities as the prefab of the name (P6-23).
+    SavePrefab(String, Vec<BrushRef>, Vec<EntityIndex>),
 }
 
 /// What `map.brush_texture` sets; the parts not given are kept (MAP-12).
@@ -505,6 +509,8 @@ pub(crate) struct BrushTools {
     shape: ShapeOptions,
     /// The faces selected and the UV editor.
     uv: UvEditor,
+    /// The name typed for a prefab of the selection.
+    prefab_name: String,
 }
 
 /// A ray in map space: where it starts and its direction.
@@ -1062,6 +1068,7 @@ impl BrushTools {
         scene: &Scene,
         texture: Option<&str>,
         size_of: &dyn Fn(&str) -> Option<[u32; 2]>,
+        entities: &[EntityIndex],
     ) -> Vec<BrushAction> {
         if !self.uv.is_empty() {
             return self.uv.properties(ui, scene, size_of);
@@ -1169,6 +1176,24 @@ impl BrushTools {
         if !actions.is_empty() {
             self.chosen.clear();
         }
+        ui.horizontal_wrapped(|ui| {
+            let label = ui.label(Text::MapPrefabName.get());
+            ui.add(
+                egui::TextEdit::singleline(&mut self.prefab_name).desired_width(PREFAB_NAME_WIDTH),
+            )
+            .labelled_by(label.id);
+            let named = !self.prefab_name.trim().is_empty();
+            if ui
+                .add_enabled(named, egui::Button::new(Text::MapSavePrefab.get()))
+                .clicked()
+            {
+                actions.push(BrushAction::SavePrefab(
+                    self.prefab_name.trim().to_owned(),
+                    self.chosen.clone(),
+                    entities.to_vec(),
+                ));
+            }
+        });
         ui.separator();
         actions
     }

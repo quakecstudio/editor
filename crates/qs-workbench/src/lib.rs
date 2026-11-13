@@ -680,6 +680,13 @@ pub enum WorkbenchError {
     },
     /// No project is open.
     NoProject,
+    /// A prefab's name is not one its file can have: letters, digits, `-` and `_` (P6-23).
+    PrefabName {
+        /// The name.
+        name: String,
+    },
+    /// Nothing is selected to make a prefab of (P6-23).
+    NoSelection,
     /// There is no quick fix at the place.
     NoFix {
         /// The file.
@@ -972,6 +979,11 @@ impl fmt::Display for WorkbenchError {
                  it away before saving into the BSP",
                 path.display()
             ),
+            Self::PrefabName { name } => write!(
+                f,
+                "{name:?} is no prefab name: use letters, digits, - and _"
+            ),
+            Self::NoSelection => f.write_str("nothing is selected to make a prefab of"),
             Self::NoProject => f.write_str("no project is open"),
             Self::NoFix { path, offset } => {
                 write!(f, "{}: no quick fix at byte {offset}", path.display())
@@ -1011,6 +1023,8 @@ impl Error for WorkbenchError {
             Self::Shape { error } => Some(error),
             Self::NoFile { .. }
             | Self::NoProject
+            | Self::PrefabName { .. }
+            | Self::NoSelection
             | Self::NoFix { .. }
             | Self::NoHunk { .. }
             | Self::Pattern { .. }

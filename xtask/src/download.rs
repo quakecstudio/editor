@@ -23,17 +23,49 @@ pub(crate) trait Net {
 }
 
 /// [`Net`] through the system `curl`: redirects followed, an HTTP error status a failure, and
-/// `retries` retries on any error.
+/// `retries` retries on any error, curl's own and curl ending with no exit status of its own,
+/// as Windows' `curl.exe` sometimes ends with an access violation.
 pub(crate) struct Curl {
     pub(crate) retries: u32,
+    /// The program run, `curl` but in tests.
+    pub(crate) program: &'static str,
 }
 
 /// The `curl` every command fetches with: three retries.
-pub(crate) const CURL: Curl = Curl { retries: 3 };
+pub(crate) const CURL: Curl = Curl {
+    retries: 3,
+    program: "curl",
+};
+
+/// The exit statuses curl itself ends with: 0 and its error codes, all below 256.
+const CURL_STATUSES: core::ops::Range<i32> = 0..256;
+
+/// Whether a run ended other than with one of curl's own statuses: killed by a signal, or a
+/// Windows exception such as `0xC0000005`.
+fn crashed(status: std::process::ExitStatus) -> bool {
+    status
+        .code()
+        .is_none_or(|code| !CURL_STATUSES.contains(&code))
+}
 
 impl Curl {
+    /// Runs `make`'s command until it ends with one of curl's own statuses, at most `retries`
+    /// more times; its last output.
+    fn run(&self, make: impl Fn() -> Command) -> Result<std::process::Output, String> {
+        let mut tries = 0;
+        loop {
+            let output = make()
+                .output()
+                .map_err(|e| format!("cannot run {}: {e}", self.program))?;
+            if !crashed(output.status) || tries >= self.retries {
+                return Ok(output);
+            }
+            tries = tries.saturating_add(1);
+        }
+    }
+
     fn command(&self, url: &str) -> Command {
-        let mut command = Command::new("curl");
+        let mut command = Command::new(self.program);
         command
             .args(["-fsSL", "--retry"])
             .arg(self.retries.to_string())
@@ -45,10 +77,7 @@ impl Curl {
 
 impl Net for Curl {
     fn get(&self, url: &str) -> Result<Vec<u8>, String> {
-        let output = self
-            .command(url)
-            .output()
-            .map_err(|e| format!("cannot run curl: {e}"))?;
+        let output = self.run(|| self.command(url))?;
         if output.status.success() {
             return Ok(output.stdout);
         }
@@ -63,16 +92,15 @@ impl Net for Curl {
         if let Some(parent) = out.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
         }
-        let status = self
-            .command(url)
-            .arg("-o")
-            .arg(out)
-            .status()
-            .map_err(|e| format!("cannot run curl: {e}"))?;
-        if status.success() {
+        let output = self.run(|| {
+            let mut command = self.command(url);
+            command.arg("-o").arg(out);
+            command
+        })?;
+        if output.status.success() {
             Ok(())
         } else {
-            Err(format!("curl {url}: {status}"))
+            Err(format!("curl {url}: {}", output.status))
         }
     }
 }
@@ -115,12 +143,55 @@ mod tests {
         assert_eq!(fs::read(&out).unwrap(), b"body");
     }
 
+    // A curl that crashes is run again: a script that kills itself the first time it runs in a
+    // folder, then copies the file, stands in for curl.exe's access violation.
+    #[cfg(unix)]
+    #[test]
+    fn a_crashed_curl_is_run_again() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = dir("curl-crash");
+        let source = dir.join("source.txt");
+        fs::write(&source, b"body").unwrap();
+        let script = dir.join("crashy");
+        let marker = dir.join("ran");
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nif [ ! -f '{marker}' ]; then touch '{marker}'; kill -SEGV $$; fi\n\
+                 for last; do :; done\ncat \"${{last#file://}}\"\n",
+                marker = marker.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let program: &'static str =
+            Box::leak(script.to_string_lossy().into_owned().into_boxed_str());
+        let once = Curl {
+            retries: 1,
+            program,
+        };
+        assert_eq!(once.get(&file_url(&source)).unwrap(), b"body");
+        fs::remove_file(&marker).unwrap();
+        let never = Curl {
+            retries: 0,
+            program,
+        };
+        assert!(
+            never.get(&file_url(&source)).is_err(),
+            "no retries leaves the crash"
+        );
+    }
+
     #[test]
     fn a_missing_file_is_an_error() {
         let dir = dir("curl-missing");
         let url = file_url(&dir.join("nowhere.txt"));
         // No retries: a missing file is missing however often it is asked for.
-        let curl = Curl { retries: 0 };
+        let curl = Curl {
+            retries: 0,
+            program: "curl",
+        };
         assert!(curl.get(&url).unwrap_err().contains("curl"));
         assert!(curl.download(&url, &dir.join("out.txt")).is_err());
     }
