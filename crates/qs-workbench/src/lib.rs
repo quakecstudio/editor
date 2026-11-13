@@ -26,6 +26,7 @@ pub mod map_check;
 pub mod map_compile;
 pub mod map_edit;
 pub mod map_textures;
+pub mod map_uv;
 mod preview;
 mod recent;
 pub mod search;
@@ -776,6 +777,27 @@ pub enum WorkbenchError {
     },
     /// No palette was found in the project or the game to make a texture in (P6-16).
     NoPalette,
+    /// The brush has no face at this place (P6-22).
+    NoFace {
+        /// The entity.
+        entity: map_edit::EntityIndex,
+        /// The brush.
+        brush: map_edit::BrushIndex,
+        /// The face.
+        face: map_uv::FaceIndex,
+    },
+    /// No WAD or BSP of the map holds the texture, so its size, which the edit needs, is not
+    /// known (P6-22, MAP-13).
+    NoTextureSize {
+        /// The texture's name.
+        texture: String,
+    },
+    /// A scale factor of 0, infinite or not a number, which would leave no texture (P6-22,
+    /// MAP-13.11).
+    BadScale {
+        /// The factors given.
+        scale: [f64; 2],
+    },
     /// The open map is a BSP with no `.map` source, so there is nothing to compile (P6-13).
     NoMapSource {
         /// The BSP.
@@ -892,6 +914,28 @@ impl fmt::Display for WorkbenchError {
             Self::NoPalette => {
                 f.write_str("no gfx/palette.lmp in the project or the game to make a texture in")
             }
+            Self::NoFace {
+                entity,
+                brush,
+                face,
+            } => write!(
+                f,
+                "brush {} of entity {entity} has no face {}",
+                brush.get(),
+                face.get()
+            ),
+            Self::BadScale { scale } => {
+                write!(
+                    f,
+                    "a scale factor must be a number other than 0, not {scale:?}"
+                )
+            }
+            Self::NoTextureSize { texture } => {
+                write!(
+                    f,
+                    "no WAD of the map holds {texture}, so its size is not known"
+                )
+            }
             Self::NoMapSource { path } => {
                 write!(
                     f,
@@ -976,6 +1020,9 @@ impl Error for WorkbenchError {
             | Self::NoRoom { .. }
             | Self::ChangedOnDisk { .. }
             | Self::NoPalette
+            | Self::NoFace { .. }
+            | Self::NoTextureSize { .. }
+            | Self::BadScale { .. }
             | Self::NotBuilt => None,
             Self::Image { error, .. } => Some(error),
             Self::Texture { error } => Some(error),

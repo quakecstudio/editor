@@ -51,6 +51,9 @@ enum qs_map::shapes::Shape
 enum qs_map::shapes::ShapeError
 enum qs_map::shapes::Spandrels
 enum qs_map::shapes::Wall
+enum qs_map::uv::Justify
+enum qs_map::uv::TexAxis
+enum qs_map::uv::UvEdit
 field qs_map::align::Alignment.rotate
 field qs_map::align::Alignment.scale
 field qs_map::align::Alignment.shift
@@ -230,6 +233,12 @@ fn qs_map::rooms::Rooms::named_any
 fn qs_map::rooms::Rooms::of
 fn qs_map::shapes::CurveSides::count
 fn qs_map::shapes::Shape::brushes
+fn qs_map::uv::Brush::face_polygons
+fn qs_map::uv::Face::aligned_from
+fn qs_map::uv::Face::uv_edited
+fn qs_map::uv::TexDef::adjusted
+fn qs_map::uv::TexDef::reset
+fn qs_map::uv::TextureSize::new
 impl qs_map::brush_edit::BrushError: From<MapError>
 impl qs_map::brush_edit::BrushError: core::fmt::Display
 impl qs_map::brush_edit::BrushError: std::error::Error
@@ -286,6 +295,7 @@ struct qs_map::qbsp::QbspTexinfo
 struct qs_map::qbsp::TextureSlot
 struct qs_map::rooms::Room
 struct qs_map::rooms::Rooms
+struct qs_map::uv::TextureSize
 trait qs_map::geometry::MapFloat
 trait qs_map::geometry::sealed::Sealed
 type qs_map::geometry::TexVecs
@@ -305,6 +315,7 @@ use qs_map::EntityPlace = linked::EntityPlace
 use qs_map::ExternalMapError = external::ExternalMapError
 use qs_map::Face = document::Face
 use qs_map::Item = document::Item
+use qs_map::Justify = uv::Justify
 use qs_map::LayerSetting = linked::LayerSetting
 use qs_map::LayerSettings = linked::LayerSettings
 use qs_map::LayerSwitch = linked::LayerSwitch
@@ -319,9 +330,12 @@ use qs_map::Room = rooms::Room
 use qs_map::RoomKind = rooms::RoomKind
 use qs_map::Rooms = rooms::Rooms
 use qs_map::Surface = brush_edit::Surface
+use qs_map::TexAxis = uv::TexAxis
 use qs_map::TexDef = document::TexDef
 use qs_map::TextureLock = brush_edit::TextureLock
+use qs_map::TextureSize = uv::TextureSize
 use qs_map::Transform = linked::Transform
+use qs_map::UvEdit = uv::UvEdit
 use qs_map::is_tool_key = document::is_tool_key
 variant qs_map::brush_edit::BrushError::CornerLost
 variant qs_map::brush_edit::BrushError::Degenerate
@@ -445,3 +459,16 @@ variant qs_map::shapes::Spandrels::Filled
 variant qs_map::shapes::Spandrels::Open
 variant qs_map::shapes::Wall::Hollow
 variant qs_map::shapes::Wall::Solid
+variant qs_map::uv::Justify::Bottom
+variant qs_map::uv::Justify::Centre
+variant qs_map::uv::Justify::Left
+variant qs_map::uv::Justify::Right
+variant qs_map::uv::Justify::Top
+variant qs_map::uv::TexAxis::S
+variant qs_map::uv::TexAxis::T
+variant qs_map::uv::UvEdit::Adjust
+variant qs_map::uv::UvEdit::Fit
+variant qs_map::uv::UvEdit::Flip
+variant qs_map::uv::UvEdit::Justify
+variant qs_map::uv::UvEdit::Reset
+variant qs_map::uv::UvEdit::Snap

@@ -2321,18 +2321,61 @@ fn brush_count(harness: &Harness<'static, Option<App>>, entity: usize) -> usize 
 
 /// Clicks with the primary button at `at` in `harness`'s app.
 fn click_at(harness: &mut Harness<'static, Option<App>>, at: Pos2) {
+    click_with(harness, at, egui::Modifiers::NONE);
+}
+
+/// Clicks with the primary button at `at` in `harness`'s app, `modifiers` held.
+fn click_with(harness: &mut Harness<'static, Option<App>>, at: Pos2, modifiers: egui::Modifiers) {
     harness.hover_at(at);
+    harness.event(egui::Event::ModifiersChanged(modifiers));
     harness.run();
     for pressed in [true, false] {
         harness.event(egui::Event::PointerButton {
             pos: at,
             button: egui::PointerButton::Primary,
             pressed,
-            modifiers: egui::Modifiers::NONE,
+            modifiers,
         });
     }
     harness.run();
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
     harness.run();
+}
+
+// No spec statement: P6-22, MAP-13: with the Select tool an Alt-click picks the face in the way,
+// the UV editor flips its texture through a command that undoes, and a plain click lets the
+// face go
+#[test]
+fn alt_click_picks_a_face_for_the_uv_editor() {
+    let dir = keep_copy("uv-faces");
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    harness.run();
+    harness.run();
+    let before = map_text(&harness);
+    assert!(harness.query_by_label(Text::MapFaces.get()).is_none());
+    let at = drawn_at(&harness, 4);
+    click_with(&mut harness, at, egui::Modifiers::ALT);
+    assert!(
+        harness.query_by_label(Text::MapFaces.get()).is_some(),
+        "an Alt-click with the Select tool picks a face"
+    );
+    harness.get_by_label(Text::MapUvFlipS.get()).click();
+    harness.run();
+    harness.run();
+    assert_ne!(map_text(&harness), before, "Flip S changed the face");
+    click_at(&mut harness, at);
+    assert!(harness.query_by_label(Text::MapFaces.get()).is_none());
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert_eq!(map_text(&harness), before);
 }
 
 // No spec statement: P6-08, MAP-2: a click with a brush tool selects the first brush the ray

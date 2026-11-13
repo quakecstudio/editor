@@ -29,6 +29,7 @@ mod linked;
 pub mod qbsp;
 mod rooms;
 pub mod shapes;
+mod uv;
 
 pub use align::Alignment;
 pub use brush_edit::{BrushError, Surface, TextureLock};
@@ -44,3 +45,4 @@ pub use linked::{
     Moves, Transform,
 };
 pub use rooms::{Room, RoomKind, Rooms};
+pub use uv::{Justify, TexAxis, TextureSize, UvEdit};

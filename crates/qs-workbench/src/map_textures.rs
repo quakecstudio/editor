@@ -418,6 +418,13 @@ impl TextureSources {
         self.palette.as_ref()
     }
 
+    /// The width and height of the texture `name`, in texels; none when no source holds it.
+    #[must_use]
+    pub fn size(&self, name: &str) -> Option<[u32; 2]> {
+        let held = self.held.get(*self.by_name.get(&name.to_lowercase())?)?;
+        Some([held.width, held.height])
+    }
+
     /// The texture `name` in its colours: a WAD3 texture's own palette, else the game's
     /// (WAD-8); `None` with no palette, no such texture, or one that does not decode (WAD-8.3).
     #[must_use]
