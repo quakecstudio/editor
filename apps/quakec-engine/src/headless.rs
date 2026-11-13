@@ -225,6 +225,10 @@ pub(crate) fn view_script(
                     dest => overlay.menu.toggle(dest),
                 };
             }
+            Step::Fog(density) => {
+                let now = world.client.scene().time;
+                world.play.fog.command_density(*density, now);
+            }
             Step::Shot(path) => {
                 world.play.screen = screen;
                 let game = world.game.world();
@@ -302,7 +306,7 @@ impl Overlay {
     }
 }
 
-/// `frame` as a binary PPM, `P6`, its alpha dropped (VIEWDIFF-1.2).
+/// `frame` as a binary PPM, `P6`, its alpha dropped (VIEWDIFF-1.4).
 fn ppm(frame: &Frame) -> Vec<u8> {
     let mut bytes = format!("P6\n{} {}\n255\n", frame.width, frame.height).into_bytes();
     for &[r, g, b, _] in frame.rgba.as_chunks::<4>().0 {

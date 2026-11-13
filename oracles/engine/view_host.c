@@ -320,7 +320,7 @@ int main(int argc, char **argv) {
             scr_con_current = 0;
             block_drawing = false;
         } else if (!strcmp(text, "toggleconsole") || !strcmp(text, "togglemenu")) {
-            // VIEWDIFF-1.2: id's own commands, run at once.
+            // VIEWDIFF-1.4: id's own commands, run at once.
             Cbuf_AddText(text);
             Cbuf_AddText("\n");
             Cbuf_Execute();

@@ -7,7 +7,7 @@
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_draw.c, Draw_Init, Draw_Character, Draw_Pic, Draw_Fill, GL_Set2D
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_rmain.c, R_DrawViewModel, R_PolyBlend, R_DrawEntitiesOnList
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/sbar.c, Sbar_DrawPic, Sbar_DeathmatchOverlay
-// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/gl_fog.c, Fog_ParseWorldspawn, Fog_Update, Fog_GetColor, Fog_GetDensity
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/gl_fog.c, Fog_ParseWorldspawn, Fog_Update, Fog_GetColor, Fog_GetDensity, Fog_FogCommand_f
 
 //! A frame of play: the client's [`Scene`] and [`Hud`] turned into what the renderer draws,
 //! `R_RenderView` and the 2D layer over it (REND-4.11, REND-7, REND-10, REND-11, PART-3.2,
@@ -970,6 +970,16 @@ impl FogState {
         self.fog = fog;
         self.fade_time = time;
         self.fade_done = now + time;
+    }
+
+    /// `Fog_FogCommand_f`'s `fog <density>` at `now`: the density at once, raised to 0 when
+    /// below it, and the colour last set (REND-10.5).
+    pub fn command_density(&mut self, density: f32, now: f32) {
+        let fog = Fog {
+            color: self.fog.color,
+            density: density.max(0.0),
+        };
+        self.update(fog, 0.0, now);
     }
 
     /// The colour and density at `now`: while a fade is in progress, `f * old + (1 - f) *

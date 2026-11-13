@@ -159,9 +159,9 @@ fn tolerances_are_read_per_map() {
     assert!(parse_tolerances(&doc.replace(" a sky |", "")).is_err());
 }
 
-// spec VIEWDIFF-5.4: a route settles, shoots the start's view and the one behind it, the main
-// menu and the console over the start's view each after a place, closes them, keeps a second
-// quiet, then holds for the sound
+// spec VIEWDIFF-5.6: the host turns its fog off; a route settles, shoots the start's view and
+// the one behind it, the main menu and the console over the start's view each after a place,
+// closes them, keeps a second quiet, then holds for the sound
 #[test]
 fn a_route_shoots_the_start_both_ways() {
     let text = route("e1m1", ([480.0, -352.0, 88.0], 90.0), "id");
@@ -175,6 +175,12 @@ fn a_route_shoots_the_start_both_ways() {
              {ahead}toggleconsole\nframes 36\nshot id-console.ppm\ntoggleconsole\n\
              frames 72\nframes 216\n"
         )
+    );
+    let host = route("e1m1", ([480.0, -352.0, 88.0], 90.0), "qs");
+    assert_eq!(
+        host,
+        text.replace("map e1m1\n", "map e1m1\nfog 0\n")
+            .replace("id-", "qs-")
     );
     let entities = "{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"info_player_start\"\n\
                     \"origin\" \"480 -352 88\"\n\"angle\" \"90\"\n}\n";
