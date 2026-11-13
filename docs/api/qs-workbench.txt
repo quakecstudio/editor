@@ -37,11 +37,17 @@ const qs_workbench::git::GIT_STATUS
 const qs_workbench::git::GIT_SWITCH
 const qs_workbench::git::GIT_UNSTAGE
 const qs_workbench::git::LOG_LIMIT
+const qs_workbench::map_backup::BACKUPS_KEPT
+const qs_workbench::map_backup::BACKUP_FOLDER
+const qs_workbench::map_backup::MAP_BACKUP
+const qs_workbench::map_backup::MAP_BACKUPS
+const qs_workbench::map_backup::MAP_RESTORE_BACKUP
 const qs_workbench::map_check::MAP_CHECK
 const qs_workbench::map_check::MAP_RENAME_KEY
 const qs_workbench::map_compile::MAP_COMPILE
 const qs_workbench::map_compile::MAP_LEAKS
 const qs_workbench::map_compile::MAP_PLAY_FROM_HERE
+const qs_workbench::map_compile::MAP_PORTALS
 const qs_workbench::map_edit::BSP_EXTENSION
 const qs_workbench::map_edit::EntityIndex::WORLD
 const qs_workbench::map_edit::MAP_DELETE
@@ -99,6 +105,13 @@ const qs_workbench::map_edit::prefabs::MAP_PREFABS
 const qs_workbench::map_edit::prefabs::MAP_SAVE_PREFAB
 const qs_workbench::map_edit::prefabs::PREFAB_FOLDER
 const qs_workbench::map_edit::shapes::MAP_BRUSH_SHAPE
+const qs_workbench::map_profile::FAST_PROFILE
+const qs_workbench::map_profile::FULL_PROFILE
+const qs_workbench::map_profile::MAP_CHOOSE_PROFILE
+const qs_workbench::map_profile::MAP_PROFILES
+const qs_workbench::map_profile::MAP_RUN_PROFILE
+const qs_workbench::map_profile::PROFILES_FILE
+const qs_workbench::map_profile::Variable::ALL
 const qs_workbench::map_textures::MAP_TEXTURES
 const qs_workbench::map_uv::MAP_FACE_ALIGN
 const qs_workbench::map_uv::MAP_FACE_UV
@@ -187,6 +200,13 @@ enum qs_workbench::map_edit::shapes::ArchWall
 enum qs_workbench::map_edit::shapes::Circle
 enum qs_workbench::map_edit::shapes::Climb
 enum qs_workbench::map_edit::shapes::ShapeSpec
+enum qs_workbench::map_profile::ExpandError
+enum qs_workbench::map_profile::LightSpeed
+enum qs_workbench::map_profile::Task
+enum qs_workbench::map_profile::TaskError
+enum qs_workbench::map_profile::TaskResult
+enum qs_workbench::map_profile::Variable
+enum qs_workbench::map_profile::VisSpeed
 enum qs_workbench::map_textures::TextureOrigin
 enum qs_workbench::map_textures::WadState
 enum qs_workbench::map_uv::Axis
@@ -337,6 +357,9 @@ field qs_workbench::git::GitStageParams.hunk
 field qs_workbench::git::GitStageParams.path
 field qs_workbench::git::GitStatus.branch
 field qs_workbench::git::GitStatus.files
+field qs_workbench::map_backup::Backup.number
+field qs_workbench::map_backup::Backup.path
+field qs_workbench::map_backup::RestoreParams.path
 field qs_workbench::map_check::KeysRenamed.maps
 field qs_workbench::map_check::MapCheckParams.path
 field qs_workbench::map_check::MapChecked.diagnostics
@@ -347,6 +370,8 @@ field qs_workbench::map_check::RenameKeyParams.from
 field qs_workbench::map_check::RenameKeyParams.to
 field qs_workbench::map_check::RenamedIn.pairs
 field qs_workbench::map_check::RenamedIn.path
+field qs_workbench::map_compile::MapPortals.path
+field qs_workbench::map_compile::MapPortals.portals
 field qs_workbench::map_compile::MapReport.leak
 field qs_workbench::map_compile::MapReport.missing_textures
 field qs_workbench::map_compile::MapReport.missing_wads
@@ -368,6 +393,7 @@ field qs_workbench::map_edit::MapEdited.entity
 field qs_workbench::map_edit::MapOpenParams.path
 field qs_workbench::map_edit::MapOpened.entities
 field qs_workbench::map_edit::MapOpened.path
+field qs_workbench::map_edit::MapSaved.backup
 field qs_workbench::map_edit::MapSaved.path
 field qs_workbench::map_edit::MoveParams.by
 field qs_workbench::map_edit::MoveParams.entity
@@ -536,6 +562,16 @@ field qs_workbench::map_edit::shapes::BrushShapeParams.max
 field qs_workbench::map_edit::shapes::BrushShapeParams.min
 field qs_workbench::map_edit::shapes::BrushShapeParams.shape
 field qs_workbench::map_edit::shapes::BrushShapeParams.texture
+field qs_workbench::map_profile::Profile.name
+field qs_workbench::map_profile::Profile.tasks
+field qs_workbench::map_profile::ProfileRun.profile
+field qs_workbench::map_profile::ProfileRun.report
+field qs_workbench::map_profile::ProfileRun.seconds
+field qs_workbench::map_profile::ProfileRun.tasks
+field qs_workbench::map_profile::RunProfileParams.profile
+field qs_workbench::map_profile::TaskRun.result
+field qs_workbench::map_profile::TaskRun.seconds
+field qs_workbench::map_profile::TaskRun.task
 field qs_workbench::map_textures::BrowserTexture.height
 field qs_workbench::map_textures::BrowserTexture.name
 field qs_workbench::map_textures::BrowserTexture.origin
@@ -778,6 +814,8 @@ fn qs_workbench::entity_classes::Workbench::entity_classes
 fn qs_workbench::entity_classes::Workbench::targeting_keys
 fn qs_workbench::export::Workbench::export
 fn qs_workbench::git::register_git
+fn qs_workbench::map_backup::Workbench::backup_map
+fn qs_workbench::map_backup::Workbench::map_backups
 fn qs_workbench::map_check::Workbench::check_map
 fn qs_workbench::map_check::Workbench::entity_schema
 fn qs_workbench::map_check::Workbench::rename_map_key
@@ -809,6 +847,16 @@ fn qs_workbench::map_edit::outline::MapDocument::outline
 fn qs_workbench::map_edit::outline::OutlineRow::count
 fn qs_workbench::map_edit::outline::OutlineRow::holds
 fn qs_workbench::map_edit::prefabs::MapDocument::external_folders
+fn qs_workbench::map_profile::Expansions::bsp
+fn qs_workbench::map_profile::Expansions::expand
+fn qs_workbench::map_profile::Expansions::new
+fn qs_workbench::map_profile::Expansions::value
+fn qs_workbench::map_profile::Profile::built_in
+fn qs_workbench::map_profile::ProfileRun::succeeded
+fn qs_workbench::map_profile::Task::name
+fn qs_workbench::map_profile::Variable::name
+fn qs_workbench::map_profile::Workbench::chosen_profile
+fn qs_workbench::map_profile::Workbench::profiles
 fn qs_workbench::map_textures::MapDocument::texture_uses
 fn qs_workbench::map_textures::TextureSources::decode
 fn qs_workbench::map_textures::TextureSources::from_files
@@ -961,6 +1009,10 @@ impl qs_workbench::git::GitCommandError: fmt::Display
 impl qs_workbench::git::GitCommandError: std::error::Error
 impl qs_workbench::map_edit::EntityIndex: fmt::Display
 impl qs_workbench::map_edit::inspect::RoomShape: From<RoomKind>
+impl qs_workbench::map_profile::ExpandError: std::error::Error
+impl qs_workbench::map_profile::ExpandError: std::fmt::Display
+impl qs_workbench::map_profile::TaskError: std::error::Error
+impl qs_workbench::map_profile::TaskError: std::fmt::Display
 impl qs_workbench::preview::Preview: Drop
 impl qs_workbench::preview::Preview: core::fmt::Debug
 impl qs_workbench::preview::PreviewError: From<ClientError>
@@ -987,9 +1039,11 @@ mod qs_workbench::entity_classes
 mod qs_workbench::export
 mod qs_workbench::git
 mod qs_workbench::ids
+mod qs_workbench::map_backup
 mod qs_workbench::map_check
 mod qs_workbench::map_compile
 mod qs_workbench::map_edit
+mod qs_workbench::map_profile
 mod qs_workbench::map_textures
 mod qs_workbench::map_uv
 mod qs_workbench::preview::debug
@@ -1053,12 +1107,15 @@ struct qs_workbench::git::GitPathParams
 struct qs_workbench::git::GitResolveParams
 struct qs_workbench::git::GitStageParams
 struct qs_workbench::git::GitStatus
+struct qs_workbench::map_backup::Backup
+struct qs_workbench::map_backup::RestoreParams
 struct qs_workbench::map_check::KeysRenamed
 struct qs_workbench::map_check::MapCheckParams
 struct qs_workbench::map_check::MapChecked
 struct qs_workbench::map_check::MapProblem
 struct qs_workbench::map_check::RenameKeyParams
 struct qs_workbench::map_check::RenamedIn
+struct qs_workbench::map_compile::MapPortals
 struct qs_workbench::map_compile::MapReport
 struct qs_workbench::map_compile::PlayFromHereParams
 struct qs_workbench::map_compile::PlayedHere
@@ -1127,6 +1184,11 @@ struct qs_workbench::map_edit::prefabs::PrefabSaved
 struct qs_workbench::map_edit::prefabs::Prefabs
 struct qs_workbench::map_edit::prefabs::SavePrefabParams
 struct qs_workbench::map_edit::shapes::BrushShapeParams
+struct qs_workbench::map_profile::Expansions
+struct qs_workbench::map_profile::Profile
+struct qs_workbench::map_profile::ProfileRun
+struct qs_workbench::map_profile::RunProfileParams
+struct qs_workbench::map_profile::TaskRun
 struct qs_workbench::map_textures::BrowserTexture
 struct qs_workbench::map_textures::MapTextures
 struct qs_workbench::map_textures::TextureSources
@@ -1465,13 +1527,17 @@ variant qs_workbench::WorkbenchError::NotLayer
 variant qs_workbench::WorkbenchError::NotPointEntity
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Pattern
+variant qs_workbench::WorkbenchError::PortalFile
 variant qs_workbench::WorkbenchError::PrefabName
+variant qs_workbench::WorkbenchError::ProfilesParse
+variant qs_workbench::WorkbenchError::ProfilesRead
 variant qs_workbench::WorkbenchError::Project
 variant qs_workbench::WorkbenchError::Rename
 variant qs_workbench::WorkbenchError::Save
 variant qs_workbench::WorkbenchError::Shape
 variant qs_workbench::WorkbenchError::Spawn
 variant qs_workbench::WorkbenchError::Texture
+variant qs_workbench::WorkbenchError::UnknownProfile
 variant qs_workbench::WorkbenchError::Wad
 variant qs_workbench::WorkbenchError::WadWrite
 variant qs_workbench::build::Gravity::Error
@@ -1577,6 +1643,35 @@ variant qs_workbench::map_edit::shapes::ShapeSpec::Rock
 variant qs_workbench::map_edit::shapes::ShapeSpec::SpiralStairs
 variant qs_workbench::map_edit::shapes::ShapeSpec::Stairs
 variant qs_workbench::map_edit::shapes::ShapeSpec::UvSpheroid
+variant qs_workbench::map_profile::ExpandError::NoValue
+variant qs_workbench::map_profile::ExpandError::Unclosed
+variant qs_workbench::map_profile::ExpandError::Unknown
+variant qs_workbench::map_profile::LightSpeed::Fast
+variant qs_workbench::map_profile::LightSpeed::Full
+variant qs_workbench::map_profile::Task::Bsp
+variant qs_workbench::map_profile::Task::Copy
+variant qs_workbench::map_profile::Task::Launch
+variant qs_workbench::map_profile::Task::Light
+variant qs_workbench::map_profile::Task::Tool
+variant qs_workbench::map_profile::Task::Vis
+variant qs_workbench::map_profile::TaskError::Copy
+variant qs_workbench::map_profile::TaskError::Expand
+variant qs_workbench::map_profile::TaskError::Io
+variant qs_workbench::map_profile::TaskError::Light
+variant qs_workbench::map_profile::TaskError::Preview
+variant qs_workbench::map_profile::TaskError::Tool
+variant qs_workbench::map_profile::TaskError::Vis
+variant qs_workbench::map_profile::TaskError::Workbench
+variant qs_workbench::map_profile::TaskResult::Done
+variant qs_workbench::map_profile::TaskResult::Failed
+variant qs_workbench::map_profile::Variable::Bsp
+variant qs_workbench::map_profile::Variable::Game
+variant qs_workbench::map_profile::Variable::Map
+variant qs_workbench::map_profile::Variable::MapDir
+variant qs_workbench::map_profile::Variable::MapName
+variant qs_workbench::map_profile::Variable::Project
+variant qs_workbench::map_profile::VisSpeed::Fast
+variant qs_workbench::map_profile::VisSpeed::Full
 variant qs_workbench::map_textures::TextureOrigin::Bsp
 variant qs_workbench::map_textures::TextureOrigin::Missing
 variant qs_workbench::map_textures::TextureOrigin::Wad

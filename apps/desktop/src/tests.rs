@@ -2551,6 +2551,102 @@ fn play_from_here_writes_the_map_into_the_build() {
     assert!(bsp.visibility.is_empty(), "no vis");
 }
 
+// No spec statement: P6-20, MAP-28: Compile runs the chosen profile and says how it ended and
+// how long it took, Cmd+B as the button; Show portals draws the last compile's portals;
+// Restore the newest backup puts the backup in the editor
+#[test]
+fn a_profile_compiles_from_the_map_view() {
+    let dir = keep_copy("profile");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep/gfx/keep.wad");
+    fs::create_dir_all(dir.join("gfx")).unwrap();
+    fs::copy(fixture, dir.join("gfx/keep.wad")).unwrap();
+    fs::write(
+        dir.join("compile-profiles.toml"),
+        "[[profile]]\nname = \"Room\"\ntasks = [{ task = \"bsp\" }, \
+         { task = \"vis\", speed = \"fast\" }, { task = \"light\", speed = \"fast\" }]\n",
+    )
+    .unwrap();
+    let mut harness = accessible();
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    shell
+        .execute("map.open", json!({ "path": dir.join("maps/keep.map") }))
+        .unwrap();
+    shell
+        .execute("map.choose_profile", json!({ "profile": "Room" }))
+        .unwrap();
+    harness.run();
+    let chosen = harness
+        .state()
+        .as_ref()
+        .unwrap()
+        .shell()
+        .map_editor()
+        .profiles()
+        .chosen()
+        .to_owned();
+    assert_eq!(chosen, "Room", "chosen by a command, shown in the picker");
+    harness.get_by_label(Text::MapCompileProfile.get()).click();
+    harness.run();
+    let notice = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .profiles()
+            .notice()
+    };
+    let said = notice(&harness).unwrap();
+    assert!(said.starts_with("Room: done in "), "{said}");
+    assert!(dir.join("maps/keep.prt").exists());
+    harness.get_by_label(Text::MapShowPortals.get()).click();
+    harness.run();
+    let shown = |harness: &Harness<'static, Option<App>>| {
+        harness
+            .state()
+            .as_ref()
+            .unwrap()
+            .shell()
+            .map_editor()
+            .profiles()
+            .shows_portals()
+    };
+    // The keep is one room: one leaf, and no portal between leaves to draw.
+    assert!(shown(&harness), "the portals are shown");
+    harness.get_by_label(Text::MapShowPortals.get()).click();
+    harness.run();
+    assert!(!shown(&harness));
+    // A backup of an edit, then the edit taken back: restoring brings it back.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute(
+            "map.set_key",
+            json!({ "entity": 0, "key": "message", "value": "backed up" }),
+        )
+        .unwrap();
+    shell.execute("map.backup", json!({})).unwrap();
+    shell.execute("edit.undo", json!({})).unwrap();
+    harness.run();
+    assert!(!map_text(&harness).contains("backed up"));
+    harness.get_by_label(Text::MapRestoreBackup.get()).click();
+    harness.run();
+    assert!(map_text(&harness).contains("backed up"));
+    // A profile that stops says where and why.
+    let shell = &mut harness.state_mut().as_mut().unwrap().shell;
+    shell
+        .execute("map.choose_profile", json!({ "profile": "Full" }))
+        .unwrap();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::B);
+    harness.run();
+    let said = notice(&harness).unwrap();
+    assert!(said.starts_with("Full: stopped at launch after "), "{said}");
+}
+
 // No spec statement: P6-11, QBSP-9.8, MAP-6.8: with a wall gone, Check for leaks reports the leak and
 // draws its trail; Fly along the leak takes the camera from the entity the void reaches along
 // the trail to its end; an edit leaves the report out of date

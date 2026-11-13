@@ -14,13 +14,13 @@ use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_wad::write::WadBuilder;
 use serde_json::json;
 
-use super::{MAP_COMPILE, MAP_LEAKS, MapReport, Seal};
+use super::{MAP_COMPILE, MAP_LEAKS, MAP_PORTALS, MapPortals, MapReport, Seal};
 use crate::map_edit::MAP_OPEN;
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
 
 /// A workbench and a preview with no game.
-struct Context {
+pub(crate) struct Context {
     workbench: Workbench<FsLoader>,
     preview: Preview,
 }
@@ -57,7 +57,7 @@ fn miptex(name: &str) -> Vec<u8> {
 /// A room of six walls of `wall` around -128 to 128, its +y wall left out when `open`, the
 /// first wall's texture `first`, with a player start inside, naming `test.wad`; written with
 /// that WAD (holding only `wall`) into a folder of its own; the map's path.
-fn room(name: &str, first: &str, open: Opening) -> PathBuf {
+pub(crate) fn room(name: &str, first: &str, open: Opening) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("qs-wb-compile-{name}-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -103,13 +103,13 @@ fn room(name: &str, first: &str, open: Opening) -> PathBuf {
 
 /// Whether the room has its +y wall.
 #[derive(Clone, Copy)]
-enum Opening {
+pub(crate) enum Opening {
     Sealed,
     Open,
 }
 
 /// A session with the map at `path` open.
-fn open(path: &Path) -> Commands<Context> {
+pub(crate) fn open(path: &Path) -> Commands<Context> {
     let mut registry = Registry::new();
     register(&mut registry).unwrap();
     register_preview(&mut registry).unwrap();
@@ -304,4 +304,42 @@ fn external_maps_are_compiled_in_place() {
     let mut session = open(&path);
     let error = session.execute(MAP_COMPILE, json!({})).unwrap_err();
     assert!(error.to_string().contains("prefabs/pillar.map"), "{error}");
+}
+
+// No spec statement: P6-20: map.portals reads the portal file the last compile wrote beside the
+// map, each portal's points; before any compile there is none to read
+#[test]
+fn map_portals_reads_the_last_compiles_portals() {
+    let path = room("portals", "wall", Opening::Sealed);
+    let mut session = open(&path);
+    let error = session.execute(MAP_PORTALS, json!({})).unwrap_err();
+    assert!(error.to_string().contains("portals.prt"), "{error}");
+    report(&mut session, MAP_COMPILE);
+    let read: MapPortals =
+        serde_json::from_value(session.execute(MAP_PORTALS, json!({})).unwrap()).unwrap();
+    assert_eq!(read.path, path.with_extension("prt"));
+    let text = std::fs::read_to_string(&read.path).unwrap();
+    let count: usize = text.lines().nth(2).unwrap().trim().parse().unwrap();
+    assert_eq!(read.portals.len(), count);
+    assert!(read.portals.iter().all(|portal| portal.len() >= 3));
+    std::fs::write(&read.path, "PRT2\n1\n0\n").unwrap();
+    let error = session.execute(MAP_PORTALS, json!({})).unwrap_err();
+    assert!(error.to_string().contains("not a portal file"), "{error}");
+}
+
+// No spec statement: P6-20: a compile that writes no portal file, as a leaking one does not,
+// removes the one an earlier compile left, so map.portals does not read it as this one's
+#[test]
+fn a_leaking_compile_removes_the_last_portal_file() {
+    let path = room("stale-portals", "wall", Opening::Sealed);
+    let mut session = open(&path);
+    report(&mut session, MAP_COMPILE);
+    assert!(path.with_extension("prt").exists());
+    let leaky = room("stale-portals-open", "wall", Opening::Open);
+    std::fs::copy(&leaky, &path).unwrap();
+    let mut session = open(&path);
+    let found = report(&mut session, MAP_COMPILE);
+    assert_eq!(found.seal, Seal::Leaks);
+    assert!(!path.with_extension("prt").exists());
+    assert!(session.execute(MAP_PORTALS, json!({})).is_err());
 }

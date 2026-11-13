@@ -115,6 +115,24 @@ impl fmt::Display for VisError {
 
 impl std::error::Error for VisError {}
 
+/// The portals of the portal file `prt`, each its winding's points once, in the file's order:
+/// what an editor draws to show where the map's leaves meet (MAP-28). The file is read as vis
+/// reads it (VIS-2).
+///
+/// # Errors
+///
+/// The [`VisError`] vis stops with on reading it.
+pub fn portal_windings(prt: &str) -> Result<Vec<Vec<[f32; 3]>>, VisError> {
+    let file = PortalFile::read(prt)?;
+    // Each file portal is read as two one-way portals, forward then backward (VIS-2.2).
+    Ok(file
+        .portals
+        .iter()
+        .step_by(2)
+        .map(|portal| portal.winding.points().to_vec())
+        .collect())
+}
+
 /// The visibility compiler.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Vis {

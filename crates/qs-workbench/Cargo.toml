@@ -28,6 +28,8 @@ qs-install = { workspace = true }
 qs-map = { workspace = true }
 qs-map-bsp = { workspace = true }
 qs-map-light = { workspace = true }
+# map.run_profile: vis in a compile profile (P6-20).
+qs-map-vis = { workspace = true }
 # project.export: the assets packed into pak0.pak, and id's PAKs read to refuse their files
 # (P4-28).
 qs-pak = { workspace = true }
@@ -48,6 +50,8 @@ regex-lite = { workspace = true, features = ["std", "string"] }
 schemars = { workspace = true, features = ["derive", "std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
+# map.profiles: a project's compile-profiles.toml (P6-20).
+toml = { workspace = true, features = ["parse", "serde", "std"] }
 tracing = { workspace = true, features = ["std"] }
 
 [dev-dependencies]

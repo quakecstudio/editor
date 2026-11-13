@@ -4,6 +4,7 @@
 
 mod bridge_schema;
 mod builtins;
+mod compile_profile;
 mod deep_nesting;
 mod diagnostics_unified;
 mod inventory;

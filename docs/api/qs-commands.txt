@@ -108,6 +108,7 @@ use qs_commands::UndoStep = command::UndoStep
 variant qs_commands::error::CommandError::Failed
 variant qs_commands::error::CommandError::InvalidParams
 variant qs_commands::error::CommandError::NothingToRedo
+variant qs_commands::error::CommandError::NothingToRepeat
 variant qs_commands::error::CommandError::NothingToUndo
 variant qs_commands::error::CommandError::Output
 variant qs_commands::error::CommandError::Panicked

@@ -72,6 +72,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::entity_classes::{ClassInfo, FlagInfo, KeyInfo};
+use crate::map_backup::{MapBackup, MapBackups, MapRestoreBackup};
 use crate::map_compile::MapReport;
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 
@@ -332,6 +333,14 @@ impl MapDocument {
         &self.source
     }
 
+    /// Puts `file` in place of the map's entities, nothing selected and nothing hidden or
+    /// locked, as a backup restored is (P6-20).
+    pub(crate) fn replace_file(&mut self, file: MapFile) {
+        self.file = file;
+        self.selected = None;
+        self.view = groups::ViewState::default();
+    }
+
     /// The map as edited.
     #[must_use]
     pub const fn file(&self) -> &MapFile {
@@ -547,6 +556,8 @@ pub struct SaveParams {
 pub struct MapSaved {
     /// The file written.
     pub path: PathBuf,
+    /// The backup taken of what was saved, for a `.map`; none when it could not be (P6-20).
+    pub backup: Option<PathBuf>,
 }
 
 /// What an edit answers: the entity it placed or changed, when there is one.
@@ -1190,8 +1201,20 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSave {
         context: &mut C,
         params: SaveParams,
     ) -> Result<Outcome<MapSaved, C>, WorkbenchError> {
-        let path = context.workbench().save_map(params.bsp)?;
-        Ok(Outcome::outside_history(MapSaved { path }))
+        let workbench = context.workbench();
+        let path = workbench.save_map(params.bsp)?;
+        // The map is saved whatever happens to its backup, which only logs why it failed.
+        let backup = match workbench.map().map(MapDocument::source) {
+            Some(MapSource::Map) => match workbench.backup_map() {
+                Ok(backup) => Some(backup.path),
+                Err(error) => {
+                    tracing::warn!(%error, "the saved map could not be backed up");
+                    None
+                }
+            },
+            Some(MapSource::Bsp(_)) | None => None,
+        };
+        Ok(Outcome::outside_history(MapSaved { path, backup }))
     }
 }
 
@@ -1200,6 +1223,9 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry: &mut Registry<C>,
 ) -> Result<(), RegisterError> {
     registry.register(MapOpen)?;
+    registry.register(MapBackup)?;
+    registry.register(MapBackups)?;
+    registry.register(MapRestoreBackup)?;
     registry.register(MapSelect)?;
     registry.register(MapPlace)?;
     registry.register(MapMove)?;

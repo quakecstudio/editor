@@ -95,6 +95,8 @@ pub enum CommandError {
     NothingToUndo,
     /// Redo was asked for with nothing left to redo.
     NothingToRedo,
+    /// Repeat was asked for before any map edit was made.
+    NothingToRepeat,
     /// The undo step of this command failed; the context is as it was and the step can be
     /// tried again.
     UndoFailed {
@@ -132,6 +134,7 @@ impl fmt::Display for CommandError {
             }
             Self::NothingToUndo => f.write_str("nothing to undo"),
             Self::NothingToRedo => f.write_str("nothing to redo"),
+            Self::NothingToRepeat => f.write_str("nothing to repeat"),
             Self::UndoFailed { command, error } => {
                 write!(f, "cannot undo {command}: {error}")
             }
@@ -153,7 +156,8 @@ impl Error for CommandError {
             | Self::ParamsNotObject { .. }
             | Self::Panicked { .. }
             | Self::NothingToUndo
-            | Self::NothingToRedo => None,
+            | Self::NothingToRedo
+            | Self::NothingToRepeat => None,
         }
     }
 }

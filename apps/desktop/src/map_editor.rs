@@ -34,6 +34,7 @@ use crate::map_leaks::LeakView;
 use crate::map_outline::{OutlineAction, OutlineView};
 use crate::map_panes::{Pane, Plan, PlanCamera, Projection, panes};
 use crate::map_prefabs::{PrefabBrowser, PrefabDrag};
+use crate::map_profiles::{ProfileAction, ProfileView};
 use crate::map_scene::{ClassLook, Line, LinkView, SPAWNFLAGS, Scene, load_models, start_camera};
 use crate::map_tools::{BrushAction, BrushTools, MapTool, PickMode};
 use crate::strings::{Text, also_selected, panes_text};
@@ -138,6 +139,8 @@ pub enum MapAction {
     Fix(QuickFix),
     /// Search the map's entities and brushes (P6-19).
     Find(MapSearchParams),
+    /// Choose or run a compile profile, show the portals or restore a backup (P6-20).
+    Profile(ProfileAction),
 }
 
 /// The external maps the view draws (MAP-14): the project's folder they are looked for in after
@@ -323,6 +326,8 @@ pub struct MapEditor {
     prefabs: PrefabBrowser,
     /// The issue browser and search (P6-19).
     issues: IssueBrowser,
+    /// The compile profiles, the last run and the portals (P6-20).
+    profiles: ProfileView,
 }
 
 /// The browsers of the tab below the map view, as the mockup has them.
@@ -487,6 +492,16 @@ impl MapEditor {
     /// Takes the prefabs `map.prefabs` listed (P6-23).
     pub fn set_prefabs(&mut self, prefabs: Vec<Prefab>) {
         self.prefabs.set_prefabs(prefabs);
+    }
+
+    /// The compile profiles, the last run and the portals (P6-20).
+    pub(crate) const fn profiles(&self) -> &ProfileView {
+        &self.profiles
+    }
+
+    /// The compile profiles, to change.
+    pub(crate) const fn profiles_mut(&mut self) -> &mut ProfileView {
+        &mut self.profiles
     }
 
     /// Takes the open map's texture sources, read again when the map opens or a WAD changes.
@@ -991,6 +1006,7 @@ impl MapEditor {
         }
         self.leaks
             .draw(&painter, &projection, theme, &self.scene, report);
+        self.profiles.draw(&painter, &projection, theme);
         self.tools
             .draw(&painter, &projection, theme, &self.scene, pointer.map(ray));
         if let Pane::Plan(_) = pane {
@@ -1054,6 +1070,7 @@ impl MapEditor {
                 actions.push(MapAction::PlayFromHere);
             }
         });
+        actions.extend(self.profiles.controls(ui, theme));
         self.leaks.properties(ui, theme, report);
         if self.disk != DiskNotice::None {
             ui.label(

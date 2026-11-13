@@ -3873,11 +3873,13 @@ dependencies = [
  "qc-diag",
  "qc-edict",
  "qc-progs",
+ "qc-project",
  "qc-sema",
  "qc-syntax",
  "qc-types",
  "qc-vm",
  "qs-bsp",
+ "qs-commands",
  "qs-map",
  "qs-map-bsp",
  "qs-map-light",
@@ -3885,6 +3887,7 @@ dependencies = [
  "qs-paths",
  "qs-sim",
  "qs-vfs",
+ "qs-workbench",
  "serde_json",
 ]
 
@@ -3946,6 +3949,7 @@ dependencies = [
  "qs-map",
  "qs-map-bsp",
  "qs-map-light",
+ "qs-map-vis",
  "qs-pak",
  "qs-sim",
  "qs-vfs",
@@ -3954,6 +3958,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "toml",
  "tracing",
 ]
 

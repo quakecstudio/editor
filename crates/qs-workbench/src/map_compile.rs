@@ -31,6 +31,8 @@ pub const MAP_LEAKS: &str = "map.leaks";
 pub const MAP_COMPILE: &str = "map.compile";
 /// The id of `map.play_from_here`.
 pub const MAP_PLAY_FROM_HERE: &str = "map.play_from_here";
+/// The id of `map.portals`.
+pub const MAP_PORTALS: &str = "map.portals";
 
 /// Whether the outside of a map was filled (QBSP-9.2, QBSP-9.3).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -101,7 +103,7 @@ impl MapReport {
 impl<L: crate::Loader> Workbench<L> {
     /// The open map compiled in memory, its WADs found in the project, beside the map or in
     /// the game at `game`; its report, kept with the map; and the map's path.
-    fn compile_map(
+    pub(crate) fn compile_map(
         &mut self,
         game: Option<&Path>,
     ) -> Result<(Compiled, MapReport, PathBuf), WorkbenchError> {
@@ -228,17 +230,58 @@ impl<C: HasPreview + 'static> Command<C> for MapCompile {
             ("pts", compiled.leak_file.as_ref()),
         ];
         for (extension, bytes) in files {
-            let Some(bytes) = bytes else {
-                continue;
-            };
             let file = path.with_extension(extension);
-            std::fs::write(&file, bytes).map_err(|error| WorkbenchError::Save {
+            let failed = |error| WorkbenchError::Save {
                 path: file.clone(),
                 error,
-            })?;
+            };
+            let Some(bytes) = bytes else {
+                // A file of an earlier compile would be read as this one's (P6-20).
+                match std::fs::remove_file(&file) {
+                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                        return Err(failed(error));
+                    }
+                    Ok(()) | Err(_) => continue,
+                }
+            };
+            std::fs::write(&file, bytes).map_err(failed)?;
             report.written.push(file);
         }
         Ok(Outcome::outside_history(report))
+    }
+}
+
+/// The portals of the open map's last compile (P6-20, MAP-28).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct MapPortals {
+    /// The portal file read.
+    pub path: PathBuf,
+    /// Each portal's points, in order.
+    pub portals: Vec<Vec<[f32; 3]>>,
+}
+
+/// `map.portals`.
+pub(crate) struct MapPortalsCommand;
+
+impl<C: HasPreview + 'static> Command<C> for MapPortalsCommand {
+    const ID: &'static str = MAP_PORTALS;
+    const SUMMARY: &'static str = "Reads the portal file the open map's last compile wrote \
+        beside it, each portal's points, to show where the map's leaves meet.";
+    type Params = NoParams;
+    type Output = MapPortals;
+    type Error = WorkbenchError;
+
+    fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapPortals, C>, WorkbenchError> {
+        let document = context.workbench().map().ok_or(WorkbenchError::NoMap)?;
+        let path = document.path().with_extension("prt");
+        let text = std::fs::read_to_string(&path)
+            .map_err(|_| WorkbenchError::NoFile { path: path.clone() })?;
+        let portals =
+            qs_map_vis::portal_windings(&text).map_err(|error| WorkbenchError::PortalFile {
+                path: path.clone(),
+                error,
+            })?;
+        Ok(Outcome::unchanged(MapPortals { path, portals }))
     }
 }
 
@@ -307,7 +350,8 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         std::fs::create_dir_all(&maps).map_err(|error| PreviewError::Write(maps.clone(), error))?;
         let files = [("bsp", Some(&lit.bsp)), ("lit", lit.lit.as_ref())];
         for (extension, bytes) in files {
-            let file = maps.join(&name).with_extension(extension);
+            // A name with a dot of its own keeps it: `e1m1.v2` is `e1m1.v2.bsp`.
+            let file = maps.join(format!("{name}.{extension}"));
             match bytes {
                 Some(bytes) => std::fs::write(&file, bytes)
                     .map_err(|error| PreviewError::Write(file.clone(), error))?,
@@ -329,4 +373,4 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

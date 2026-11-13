@@ -19,7 +19,7 @@ use crate::flow::{Flow, Leaves};
 use crate::lump::{compress, written};
 use crate::portals::PortalFile;
 use crate::winding::{Plane, Winding};
-use crate::{Level, Mode, VIS_MAX_MAP_VISIBILITY, Vis, VisError};
+use crate::{Level, Mode, VIS_MAX_MAP_VISIBILITY, Vis, VisError, portal_windings};
 
 /// The side of one cell of the snake, in map units.
 const CELL: i32 = 128;
@@ -294,6 +294,23 @@ const SQUARE: [[f32; 3]; 4] = [
     [0.0, 64.0, 64.0],
     [0.0, 0.0, 64.0],
 ];
+
+// spec VIS-2.2: each portal of the file is drawn once, its points in order, though vis reads it
+// as two one-way portals; a file vis refuses is refused
+#[test]
+fn portal_windings_are_each_portal_once() {
+    let moved = SQUARE.map(|[x, y, z]| [x + 64.0, y, z]);
+    let text = prt(3, &[(&SQUARE, 0, 1), (&moved, 1, 2)]);
+    assert_eq!(
+        portal_windings(&text),
+        Ok(vec![SQUARE.to_vec(), moved.to_vec()])
+    );
+    assert_eq!(portal_windings(&prt(1, &[])), Ok(Vec::new()));
+    assert_eq!(
+        portal_windings("PRT2\n1\n0\n"),
+        Err(VisError::NotPortalFile)
+    );
+}
 
 // spec VIS-2.1, VIS-2.2, VIS-2.4, VIS-2.6: a bad header, another first word, a short or bad
 // portal, a leaf out of range, too many points and too many portals on a leaf stop the run

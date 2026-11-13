@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use eframe::egui::{Key, KeyboardShortcut, Modifiers};
+use qs_workbench::map_profile::MAP_RUN_PROFILE;
 use serde::Deserialize;
 
 /// Where a binding's keys are taken.
@@ -40,6 +41,14 @@ pub const OPEN_FILE_FINDER: KeyboardShortcut = KeyboardShortcut::new(Modifiers::
 pub const OPEN_PALETTE: KeyboardShortcut =
     KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P);
 
+/// Runs the map's chosen compile profile (P6-20): Cmd+B, the build key of Xcode and Sublime
+/// Text; TrenchBroom's "Compile Map..." has no key.
+pub const RUN_PROFILE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::B);
+
+/// Makes the last change once more (P6-20, MAP-28): TrenchBroom's "Repeat Last Commands",
+/// `KeySequence{"Ctrl+R"}` (`ActionManager.cpp` at TrenchBroom@8f329f11), Cmd on macOS.
+pub const REPEAT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::R);
+
 /// Every binding. The focus keys put the editor on Cmd+1 as VS Code does, then the left,
 /// right and bottom panels on Cmd+2 to Cmd+4; Cmd+0 stays egui's zoom reset. The editor's
 /// layout and navigation keys (P4-32) are Zed's default keymap's at zed-industries/zed@415d310
@@ -48,7 +57,7 @@ pub const OPEN_PALETTE: KeyboardShortcut =
 /// has no key, as in Zed (VS Code's Alt+Z types a character on macOS, and Cmd+Alt+Z is Cmd+Z
 /// with an extra Alt, which undoes); Cmd+\ splits right as VS Code does, Zed's being a
 /// sequence.
-pub const BINDINGS: [Binding; 14] = [
+pub const BINDINGS: [Binding; 16] = [
     Binding {
         command: "edit.undo",
         shortcut: KeyboardShortcut::new(Modifiers::COMMAND, Key::Z),
@@ -57,6 +66,16 @@ pub const BINDINGS: [Binding; 14] = [
     Binding {
         command: "edit.redo",
         shortcut: KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Z),
+        scope: Scope::Shell,
+    },
+    Binding {
+        command: "edit.repeat",
+        shortcut: REPEAT,
+        scope: Scope::Shell,
+    },
+    Binding {
+        command: MAP_RUN_PROFILE,
+        shortcut: RUN_PROFILE,
         scope: Scope::Shell,
     },
     Binding {

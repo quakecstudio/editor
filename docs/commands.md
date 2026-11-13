@@ -17,6 +17,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`edit.apply`](#editapply) | Stages a change to several files as hunks to accept or reject one by one; the project is checked with them, and nothing is written to disk. |
 | [`edit.redo`](#editredo) | Makes the most recently undone change again. |
 | [`edit.reject`](#editreject) | Rejects staged hunks: the lines they replaced come back, byte for byte. |
+| [`edit.repeat`](#editrepeat) | Makes the most recent map edit once more: same command, same arguments. |
 | [`edit.staged`](#editstaged) | Lists the staged hunks waiting to be accepted or rejected. |
 | [`edit.undo`](#editundo) | Takes back the most recent change that has not been undone. |
 | [`editor.fold`](#editorfold) | Folds the innermost block or block comment at the caret. |
@@ -53,6 +54,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`git.status`](#gitstatus) | Lists the project repository's branch and changed files, staged and not, as git status does; none when the project is not in a git repository. |
 | [`git.switch`](#gitswitch) | Checks out a branch, as git switch does, and reads the project's files again; refused while files have unsaved edits. |
 | [`git.unstage`](#gitunstage) | Unstages a file, or one hunk of its staged changes. |
+| [`map.backup`](#mapbackup) | Writes the open map, as it is in the editor, saved or not, as its next backup in the autosave folder beside it, keeping the last 20. |
+| [`map.backups`](#mapbackups) | Lists the open map's backups in the autosave folder beside it, the newest first. |
 | [`map.brush_chamfer`](#mapbrush_chamfer) | Chamfers an edge of a brush into one or more bevel faces, from a distance along each of its two faces (MAP-15.9). |
 | [`map.brush_clip`](#mapbrush_clip) | Clips a brush of the open map by the plane through three points, keeping the part behind it, in front of it, or both as two brushes. |
 | [`map.brush_create`](#mapbrush_create) | Adds a box brush from two corners, snapped to the grid (16 units unless given), to the world or an entity of the open map, with a texture. |
@@ -73,6 +76,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.brush_vertex`](#mapbrush_vertex) | Moves a vertex of a brush of the open map to a point snapped to the grid; the brush becomes the convex hull of its vertices so moved. |
 | [`map.brush_vertices`](#mapbrush_vertices) | Moves several vertices of a brush at once, each to a point snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7). |
 | [`map.check`](#mapcheck) | Checks a .map: what id's qbsp and ericw-tools read otherwise, and its entities against the project's server QuakeC as the engine reads them: unknown classnames and keys with the closest name, values their field cannot read, and targets and targetnames nothing matches. |
+| [`map.choose_profile`](#mapchoose_profile) | Chooses the compile profile map.run_profile runs when given none; none given chooses Full again. |
 | [`map.compare`](#mapcompare) | How the open map's file, changed by another program, differs from the map being edited, entity by entity. |
 | [`map.compile`](#mapcompile) | Compiles the open map, as it is in the editor, to a BSP beside it, with its portal and leak files, and reports whether it leaks and the textures its WADs lack. |
 | [`map.delete`](#mapdelete) | Deletes an entity of the open map; the world stays. |
@@ -98,11 +102,15 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
 | [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player at a point, facing a way: the map view's camera (MAP-13). |
+| [`map.portals`](#mapportals) | Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet. |
 | [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
+| [`map.profiles`](#mapprofiles) | Lists the compile profiles: the built-in Full and Fast, then the project's own from compile-profiles.toml, each its name and its tasks. |
 | [`map.remove_key`](#mapremove_key) | Removes every pair with a key from an entity of the open map. |
 | [`map.rename_key`](#maprename_key) | Renames a key in every open .map, keeping each value and its formatting: what to run once the person confirms, after symbol.rename renames a field a map may name. Nothing is saved. |
 | [`map.resolve`](#mapresolve) | After another program changed the open map's file while it had unsaved edits: keep disk to read the file again, or mine to keep the edits and save them over it. |
+| [`map.restore_backup`](#maprestore_backup) | Puts a backup of the open map in the editor in place of the map, unsaved, as an edit that undo takes back. |
 | [`map.rotate`](#maprotate) | Turns a point entity of the open map about the vertical: its angle, or its angles' yaw. |
+| [`map.run_profile`](#maprun_profile) | Runs a compile profile on the open map, the one chosen when none is named: its tasks in order, each timed, stopping at the first that fails; reports each task's time and result. |
 | [`map.save`](#mapsave) | Saves the open map: a .map over itself; a BSP's entities as a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump). |
 | [`map.save_prefab`](#mapsave_prefab) | Writes brushes of the world and whole entities of the open map as a prefab in the project's prefabs folder, around the middle of their floor. |
 | [`map.search`](#mapsearch) | Finds the open map's entities and brushes by classname, key, value, texture and a box, every part given; text matches in any case. |
@@ -520,6 +528,22 @@ Parameters:
     "hunks"
   ],
   "title": "HunksParams",
+  "type": "object"
+}
+```
+
+## `edit.repeat`
+
+Makes the most recent map edit once more: same command, same arguments.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```
@@ -1573,6 +1597,38 @@ Parameters:
     "path"
   ],
   "title": "GitStageParams",
+  "type": "object"
+}
+```
+
+## `map.backup`
+
+Writes the open map, as it is in the editor, saved or not, as its next backup in the autosave folder beside it, keeping the last 20.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.backups`
+
+Lists the open map's backups in the autosave folder beside it, the newest first.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
   "type": "object"
 }
 ```
@@ -3510,6 +3566,32 @@ Parameters:
 }
 ```
 
+## `map.choose_profile`
+
+Chooses the compile profile map.run_profile runs when given none; none given chooses Full again.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.run_profile` and `map.choose_profile`.",
+  "properties": {
+    "profile": {
+      "default": null,
+      "description": "The profile's name, as `map.profiles` lists it; for `map.run_profile`, the one chosen\nwhen not given.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "RunProfileParams",
+  "type": "object"
+}
+```
+
 ## `map.compare`
 
 How the open map's file, changed by another program, differs from the map being edited, entity by entity.
@@ -4729,9 +4811,41 @@ Parameters:
 }
 ```
 
+## `map.portals`
+
+Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
 ## `map.prefabs`
 
 Lists the .map files in the project's prefabs folder.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `map.profiles`
+
+Lists the compile profiles: the built-in Full and Fast, then the project's own from compile-profiles.toml, each its name and its tasks.
 
 Parameters:
 
@@ -4855,6 +4969,31 @@ Parameters:
 }
 ```
 
+## `map.restore_backup`
+
+Puts a backup of the open map in the editor in place of the map, unsaved, as an edit that undo takes back.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.restore_backup`.",
+  "properties": {
+    "path": {
+      "description": "The backup's file, as `map.backups` lists it.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "RestoreParams",
+  "type": "object"
+}
+```
+
 ## `map.rotate`
 
 Turns a point entity of the open map about the vertical: its angle, or its angles' yaw.
@@ -4890,6 +5029,32 @@ Parameters:
     "degrees"
   ],
   "title": "RotateParams",
+  "type": "object"
+}
+```
+
+## `map.run_profile`
+
+Runs a compile profile on the open map, the one chosen when none is named: its tasks in order, each timed, stopping at the first that fails; reports each task's time and result.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `map.run_profile` and `map.choose_profile`.",
+  "properties": {
+    "profile": {
+      "default": null,
+      "description": "The profile's name, as `map.profiles` lists it; for `map.run_profile`, the one chosen\nwhen not given.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "RunProfileParams",
   "type": "object"
 }
 ```

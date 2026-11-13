@@ -48,7 +48,12 @@ use qs_workbench::git::{
     GitResolveParams, GitSide, GitStageParams, GitStatus,
 };
 use qs_workbench::ids::{ActionIndex, CheckpointNumber, TerminalIndex, WatchIndex};
-use qs_workbench::map_compile::{MAP_LEAKS, MAP_PLAY_FROM_HERE, PlayFromHereParams};
+use qs_workbench::map_backup::{
+    Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams,
+};
+use qs_workbench::map_compile::{
+    MAP_LEAKS, MAP_PLAY_FROM_HERE, MAP_PORTALS, MapPortals, PlayFromHereParams,
+};
 use qs_workbench::map_edit::{
     BSP_EXTENSION, BspSave, EntityKeys, EntityParams, FILES_CHANGED, FilesChanged,
     FilesChangedParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_EXTENSION,
@@ -81,6 +86,9 @@ use qs_workbench::map_edit::{
 use qs_workbench::map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
 use qs_workbench::map_edit::{
     MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PlacePrefabParams, Prefabs, SavePrefabParams,
+};
+use qs_workbench::map_profile::{
+    MAP_CHOOSE_PROFILE, MAP_PROFILES, MAP_RUN_PROFILE, Profile, ProfileRun, RunProfileParams,
 };
 use qs_workbench::map_textures::TextureSources;
 use qs_workbench::search::{
@@ -123,6 +131,7 @@ use crate::icons::Icon;
 use crate::keymap::{self, Scope};
 use crate::map_editor::{DiskNotice, MapAction, MapEditor, ShowFilter};
 use crate::map_groups::GroupAction;
+use crate::map_profiles::ProfileAction;
 use crate::map_tools::BrushAction;
 use crate::map_view::{self, MapView};
 use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multibuffer_ui};
@@ -238,6 +247,9 @@ pub(crate) const EDITOR_AREA: Area = Area::Editor;
 /// `PutClientInServer`, so the eye is where the camera was (MAP-13).
 const PLAYER_EYE: f64 = 22.0;
 
+/// How often the open map is backed up while it has unsaved edits, in seconds (P6-20).
+const MAP_BACKUP_INTERVAL: f64 = 60.0;
+
 /// The window's state.
 pub struct Shell {
     session: Session<Workspace>,
@@ -264,6 +276,9 @@ pub struct Shell {
     map_editor: MapEditor,
     /// The map the map editor last showed, to notice one newly opened.
     map_opened: Option<PathBuf>,
+    /// When the open map was last backed up, in egui seconds, and at which of its edits
+    /// (P6-20).
+    backed_up: (f64, MapRevision),
     /// The modified times of the open map and the project's QuakeC, to notice another
     /// program's writes (P5-17).
     disk_watch: DiskWatch,
@@ -371,6 +386,7 @@ impl Shell {
             map: None,
             map_editor: MapEditor::default(),
             map_opened: None,
+            backed_up: (0.0, MapRevision::default()),
             disk_watch: DiskWatch::default(),
             covered: None,
             focus_applied: layout.focus_requests,
@@ -1710,12 +1726,19 @@ impl Shell {
             if editing && binding.scope == Scope::Shell {
                 continue;
             }
-            if ui.input_mut(|i| i.consume_shortcut(&binding.shortcut))
-                && let Err(error) = self.session.execute(
-                    &binding.command,
-                    serde_json::Value::Object(serde_json::Map::new()),
-                )
-            {
+            if !ui.input_mut(|i| i.consume_shortcut(&binding.shortcut)) {
+                continue;
+            }
+            // A profile run by its key shows its notice and reads the portals again, as the
+            // button's does.
+            if binding.command == MAP_RUN_PROFILE {
+                self.map_actions(vec![MapAction::Profile(ProfileAction::Run)]);
+                continue;
+            }
+            if let Err(error) = self.session.execute(
+                &binding.command,
+                serde_json::Value::Object(serde_json::Map::new()),
+            ) {
                 tracing::warn!(%error, command = %binding.command, "shortcut failed");
             }
         }
@@ -1903,6 +1926,9 @@ impl Shell {
             .workbench
             .map()
             .map(|document| document.path().to_path_buf());
+        // The profile chosen from anywhere, the palette and the agent too, is the one shown.
+        let chosen = self.session.context().workbench.chosen_profile().to_owned();
+        self.map_editor.profiles_mut().set_chosen(chosen);
         if path == self.map_opened {
             // The world named other WADs, or another game was chosen (P6-10).
             let context = self.session.context();
@@ -1922,6 +1948,11 @@ impl Shell {
         }
         self.load_map_classes();
         self.load_map_textures();
+        // Another map's portals and last run are not this one's.
+        self.map_editor.profiles_mut().set_portals(None);
+        self.map_editor.profiles_mut().clear_run();
+        self.load_profiles();
+        self.backed_up.1 = self.map_edits();
         self.map_editor.set_disk(DiskNotice::None);
         self.map_editor.reset_camera();
         self.map_editor.set_keys(None, None);
@@ -2140,6 +2171,7 @@ impl Shell {
                     // The list shows the map as it now is, the issue fixed gone.
                     fixed.and_then(|_| self.check_map_issues())
                 }
+                MapAction::Profile(action) => self.profile_action(action),
                 MapAction::Find(search) => {
                     let found: Result<MapFound, ShellError> = self.attempt(MAP_SEARCH, &search);
                     found.map(|found| {
@@ -2203,6 +2235,99 @@ impl Shell {
         let at = self.map_edits();
         self.map_editor.set_issues(found.issues, at);
         Ok(serde_json::Value::Null)
+    }
+
+    /// Runs a compile control's action (P6-20).
+    fn profile_action(&mut self, action: ProfileAction) -> Result<serde_json::Value, ShellError> {
+        match action {
+            ProfileAction::Choose(name) => {
+                let chosen = self.attempt::<_, String>(
+                    MAP_CHOOSE_PROFILE,
+                    &RunProfileParams {
+                        profile: Some(name),
+                    },
+                );
+                self.load_profiles();
+                chosen.map(|_| serde_json::Value::Null)
+            }
+            ProfileAction::Run => self.run_profile(),
+            ProfileAction::ShowPortals => {
+                let read: Result<MapPortals, ShellError> =
+                    self.attempt(MAP_PORTALS, &serde_json::json!({}));
+                read.map(|read| {
+                    self.map_editor
+                        .profiles_mut()
+                        .set_portals(Some(read.portals));
+                    serde_json::Value::Null
+                })
+            }
+            ProfileAction::HidePortals => {
+                self.map_editor.profiles_mut().set_portals(None);
+                Ok(serde_json::Value::Null)
+            }
+            ProfileAction::RestoreBackup => self.restore_backup(),
+        }
+    }
+
+    /// Gives the map editor the compile profiles and the one chosen (P6-20).
+    fn load_profiles(&mut self) {
+        let listed: Result<Vec<Profile>, ShellError> =
+            self.attempt(MAP_PROFILES, &serde_json::json!({}));
+        let names = listed
+            .map(|profiles| profiles.into_iter().map(|profile| profile.name).collect())
+            .unwrap_or_default();
+        let chosen = self.session.context().workbench.chosen_profile().to_owned();
+        self.map_editor.profiles_mut().set_profiles(names, chosen);
+    }
+
+    /// Runs the chosen compile profile and shows how it ended; the portals shown are read
+    /// again, from the compile just made (P6-20).
+    fn run_profile(&mut self) -> Result<serde_json::Value, ShellError> {
+        let ran: Result<ProfileRun, ShellError> =
+            self.attempt(MAP_RUN_PROFILE, &RunProfileParams::default());
+        let run = ran?;
+        self.map_editor.profiles_mut().set_run(run);
+        if self.map_editor.profiles().shows_portals() {
+            let read: Result<MapPortals, ShellError> =
+                self.attempt(MAP_PORTALS, &serde_json::json!({}));
+            if let Ok(read) = read {
+                self.map_editor
+                    .profiles_mut()
+                    .set_portals(Some(read.portals));
+            }
+        }
+        Ok(serde_json::Value::Null)
+    }
+
+    /// Puts the open map's newest backup in the editor (P6-20).
+    fn restore_backup(&mut self) -> Result<serde_json::Value, ShellError> {
+        let listed: Vec<Backup> = self.attempt(MAP_BACKUPS, &serde_json::json!({}))?;
+        let Some(newest) = listed.into_iter().next() else {
+            return Ok(serde_json::Value::Null);
+        };
+        self.attempt(MAP_RESTORE_BACKUP, &RestoreParams { path: newest.path })
+    }
+
+    /// Backs the open map up when it has edits not saved or backed up and the last backup
+    /// is [`MAP_BACKUP_INTERVAL`] seconds old (P6-20).
+    fn back_up_map(&mut self, ctx: &egui::Context) {
+        let now = ctx.input(|i| i.time);
+        let edits = self.map_edits();
+        let unsaved = self
+            .session
+            .context()
+            .workbench
+            .map()
+            .is_some_and(MapDocument::is_unsaved);
+        let (at, backed) = self.backed_up;
+        if !unsaved || edits == backed || now - at < MAP_BACKUP_INTERVAL {
+            return;
+        }
+        self.backed_up = (now, edits);
+        let taken: Result<Backup, ShellError> = self.attempt(MAP_BACKUP, &serde_json::json!({}));
+        if let Err(error) = taken {
+            tracing::warn!(%error, "the map could not be backed up");
+        }
     }
 
     /// The open map's edits, which a list of its issues or matches is good for.
@@ -3365,6 +3490,7 @@ impl Shell {
     fn centre(&mut self, ui: &mut Ui, focus: bool) {
         self.sync_editor();
         self.sync_map();
+        self.back_up_map(ui.ctx());
         self.watch_disk(ui.ctx());
         self.cover_characters(ui.ctx());
         let editor_shown = self.centre_tab == CentreTab::Editor && self.editor.is_some();
