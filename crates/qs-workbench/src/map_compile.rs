@@ -108,7 +108,25 @@ impl<L: crate::Loader> Workbench<L> {
                 path: document.path().to_path_buf(),
             });
         }
-        let file = document.file().without_omitted_layers();
+        // External maps are read beside the map, then in the project, as qbsp's working
+        // directory and the project's folder hold them (MAP-14).
+        let places: Vec<PathBuf> = document
+            .path()
+            .parent()
+            .into_iter()
+            .chain(self.root())
+            .map(Path::to_path_buf)
+            .collect();
+        let mut load = |name: &str| {
+            places
+                .iter()
+                .find_map(|dir| std::fs::read(dir.join(name)).ok())
+        };
+        let file = document
+            .file()
+            .without_omitted_layers()
+            .with_external_maps(&mut load)
+            .map_err(|error| WorkbenchError::ExternalMap { error })?;
         let text = file.to_bytes();
         let compiler = Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
         let failed = |error| WorkbenchError::MapCompile { error };

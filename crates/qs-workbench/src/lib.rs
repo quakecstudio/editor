@@ -774,6 +774,11 @@ pub enum WorkbenchError {
         /// The BSP.
         path: PathBuf,
     },
+    /// An external map instance cannot be expanded (P6-23, MAP-14).
+    ExternalMap {
+        /// Why.
+        error: qs_map::ExternalMapError,
+    },
     /// The map compiler stopped (P6-13, QBSP-1).
     MapCompile {
         /// Why.
@@ -893,6 +898,7 @@ impl fmt::Display for WorkbenchError {
                 )
             }
             Self::MapCompile { error } => write!(f, "the map does not compile: {error}"),
+            Self::ExternalMap { error } => write!(f, "the map does not compile: {error}"),
             Self::MapLump { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Spawn { path, error } => write!(f, "{}: {error}", path.display()),
             Self::ChangedOnDisk { path } => write!(
@@ -969,6 +975,7 @@ impl Error for WorkbenchError {
             Self::WadWrite { error, .. } => Some(error),
             Self::NoMapSource { .. } => None,
             Self::MapCompile { error } => Some(error),
+            Self::ExternalMap { error } => Some(error),
             Self::MapLump { error, .. } => Some(error),
             Self::Spawn { error, .. } => Some(error),
         }
