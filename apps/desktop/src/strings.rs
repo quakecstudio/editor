@@ -621,6 +621,34 @@ pub enum Text {
     MapSearchTexture,
     /// The search's box field.
     MapSearchWithin,
+    /// The heading of the selected faces' texture editing.
+    MapFaces,
+    /// How to select and edit faces' textures.
+    MapFacesHint,
+    /// Fit the texture to each selected face.
+    MapUvFit,
+    /// Justify the texture to each face's left edge.
+    MapUvLeft,
+    /// Justify the texture to each face's right edge.
+    MapUvRight,
+    /// Justify the texture to each face's top edge.
+    MapUvTop,
+    /// Justify the texture to each face's bottom edge.
+    MapUvBottom,
+    /// Centre the texture on each face.
+    MapUvCentre,
+    /// Flip the texture across.
+    MapUvFlipS,
+    /// Flip the texture down.
+    MapUvFlipT,
+    /// Reset each face's shift, rotation and scale.
+    MapUvReset,
+    /// Snap the texture's nearest edge to the nearest corner.
+    MapUvSnap,
+    /// Remember the first selected face's alignment.
+    MapCopyAlignment,
+    /// Carry the copied alignment onto the selected faces.
+    MapPasteAlignment,
     /// Keep the part of a clipped brush right of the cut line.
     MapKeepRight,
     /// Keep the part of a clipped brush left of the cut line.
@@ -689,7 +717,7 @@ pub enum Text {
 
 impl Text {
     /// Every string, in the order above.
-    pub const ALL: [Self; 337] = [
+    pub const ALL: [Self; 351] = [
         Self::AppName,
         Self::Play,
         Self::Pause,
@@ -995,6 +1023,20 @@ impl Text {
         Self::MapSearchValue,
         Self::MapSearchTexture,
         Self::MapSearchWithin,
+        Self::MapFaces,
+        Self::MapFacesHint,
+        Self::MapUvFit,
+        Self::MapUvLeft,
+        Self::MapUvRight,
+        Self::MapUvTop,
+        Self::MapUvBottom,
+        Self::MapUvCentre,
+        Self::MapUvFlipS,
+        Self::MapUvFlipT,
+        Self::MapUvReset,
+        Self::MapUvSnap,
+        Self::MapCopyAlignment,
+        Self::MapPasteAlignment,
         Self::MapKeepRight,
         Self::MapKeepLeft,
         Self::MapBrushes,
@@ -1359,6 +1401,22 @@ impl Text {
             Self::MapSearchValue => "Has value",
             Self::MapSearchTexture => "Has texture",
             Self::MapSearchWithin => "Within: x y z x y z",
+            Self::MapFaces => "Faces",
+            Self::MapFacesHint => {
+                "Alt-click faces to edit their textures. Drag the view to shift, Shift-drag to rotate, Cmd-drag (Ctrl-drag off macOS) to scale"
+            }
+            Self::MapUvFit => "Fit",
+            Self::MapUvLeft => "Justify left",
+            Self::MapUvRight => "Justify right",
+            Self::MapUvTop => "Justify top",
+            Self::MapUvBottom => "Justify bottom",
+            Self::MapUvCentre => "Centre",
+            Self::MapUvFlipS => "Flip S",
+            Self::MapUvFlipT => "Flip T",
+            Self::MapUvReset => "Reset",
+            Self::MapUvSnap => "Snap to corner",
+            Self::MapCopyAlignment => "Copy alignment",
+            Self::MapPasteAlignment => "Paste alignment",
             Self::MapKeepRight => "Keep right",
             Self::MapKeepLeft => "Keep left",
             Self::MapBrushes => "Brushes",

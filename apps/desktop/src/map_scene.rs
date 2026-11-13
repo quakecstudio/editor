@@ -8,12 +8,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 use qs_bsp::{Bsp, BspLoader};
+use qs_map::geometry::TexVecs;
 use qs_mdl::Mdl;
 use qs_mdl::mdl::MdlFrameEntry;
 use qs_render::Camera;
 use qs_vfs::{StdFs, Vfs};
 use qs_workbench::entity_classes::ClassInfo;
 use qs_workbench::map_edit::{BrushIndex, EntityIndex, MapDocument, MapSource};
+use qs_workbench::map_uv::{FaceIndex, FaceRef};
 
 /// A line in map space.
 pub(crate) type Line = [[f32; 3]; 2];
@@ -134,16 +136,64 @@ pub(crate) struct BrushShape {
     pub(crate) planes: Vec<([f32; 3], f32)>,
     /// The names of its faces' textures, each once.
     pub(crate) textures: Vec<String>,
+    /// Its faces that have a polygon on its solid, in file order.
+    pub(crate) faces: Vec<FaceShape>,
+}
+
+/// A face of a brush, as the UV editor shows it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct FaceShape {
+    /// Its place among the brush's faces.
+    pub(crate) index: FaceIndex,
+    /// Its plane: a normal pointing out and a distance.
+    pub(crate) plane: ([f32; 3], f32),
+    /// Its polygon's corners, going around it.
+    pub(crate) polygon: Vec<[f64; 3]>,
+    /// Its texture's name.
+    pub(crate) texture: String,
+    /// Its texture's axes and offsets; none for a Valve 220 scale of 0 (MAP-5.4).
+    pub(crate) texvecs: Option<TexVecs<f64>>,
+}
+
+impl FaceShape {
+    /// The texels of `point` on the face, by its texture's axes and offsets.
+    pub(crate) fn texels(&self, point: [f64; 3]) -> Option<[f64; 2]> {
+        let [s, t] = self.texvecs?;
+        let at = |[x, y, z, offset]: [f64; 4]| point[0] * x + point[1] * y + point[2] * z + offset;
+        Some([at(s), at(t)])
+    }
 }
 
 impl BrushShape {
     /// How far along the ray from `start` along `direction` it enters the brush's solid, 0
     /// when it starts inside; none when it misses.
     fn entered(&self, start: [f32; 3], direction: [f32; 3]) -> Option<f32> {
+        self.entered_by(start, direction, self.planes.iter().copied())
+            .map(|(t, _)| t)
+    }
+
+    /// The face the ray from `start` along `direction` enters the brush through, and how far
+    /// along; none when it misses or starts inside.
+    fn entered_face(&self, start: [f32; 3], direction: [f32; 3]) -> Option<(f32, FaceIndex)> {
+        let (t, through) =
+            self.entered_by(start, direction, self.faces.iter().map(|face| face.plane))?;
+        let face = self.faces.get(through?)?;
+        Some((t, face.index))
+    }
+
+    /// How far along the ray it enters the solid behind `planes`, 0 when it starts inside, and
+    /// the place among `planes` of the one it enters through, if it starts outside.
+    fn entered_by(
+        &self,
+        start: [f32; 3],
+        direction: [f32; 3],
+        planes: impl Iterator<Item = ([f32; 3], f32)>,
+    ) -> Option<(f32, Option<usize>)> {
         let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
         let mut near = 0.0_f32;
+        let mut through = None;
         let mut far = f32::INFINITY;
-        for &(normal, dist) in &self.planes {
+        for (place, (normal, dist)) in planes.enumerate() {
             let towards = dot(normal, direction);
             let ahead = dist - dot(normal, start);
             if towards.abs() < f32::EPSILON {
@@ -154,7 +204,10 @@ impl BrushShape {
             }
             let t = ahead / towards;
             if towards < 0.0 {
-                near = near.max(t);
+                if t > near {
+                    near = t;
+                    through = Some(place);
+                }
             } else {
                 far = far.min(t);
             }
@@ -162,7 +215,7 @@ impl BrushShape {
                 return None;
             }
         }
-        Some(near)
+        Some((near, through))
     }
 }
 
@@ -194,7 +247,9 @@ impl Scene {
             let mut bounds: Option<[[f32; 3]; 2]> = None;
             let mut lines = Vec::new();
             for (number, brush) in entity.brushes().enumerate() {
-                let polygons = brush.polygons();
+                let face_polygons = brush.face_polygons();
+                let polygons: Vec<Vec<[f64; 3]>> =
+                    face_polygons.iter().flatten().cloned().collect();
                 let mut shape = BrushShape {
                     entity: EntityIndex::new(index),
                     brush: BrushIndex::new(number),
@@ -207,7 +262,20 @@ impl Scene {
                         .map(|p| (p.normal.map(single), single(p.dist)))
                         .collect(),
                     textures: Vec::new(),
+                    faces: Vec::new(),
                 };
+                for (place, (face, polygon)) in brush.faces.iter().zip(face_polygons).enumerate() {
+                    let (Some(plane), Some(polygon)) = (face.plane(), polygon) else {
+                        continue;
+                    };
+                    shape.faces.push(FaceShape {
+                        index: FaceIndex::new(place),
+                        plane: (plane.normal.map(single), single(plane.dist)),
+                        polygon,
+                        texture: String::from_utf8_lossy(face.texture()).into_owned(),
+                        texvecs: face.texvecs(),
+                    });
+                }
                 for face in &brush.faces {
                     let name = String::from_utf8_lossy(face.texture()).into_owned();
                     if !shape.textures.contains(&name) {
@@ -340,6 +408,42 @@ impl Scene {
             .filter_map(|shape| shape.entered(start, direction).map(|t| (t, shape)))
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .map(|(_, shape)| (shape.entity, shape.brush))
+    }
+
+    /// The face the ray from `start` along `direction` enters first, of a brush none of whose
+    /// entities is in `hidden`.
+    #[must_use]
+    pub(crate) fn pick_face(
+        &self,
+        start: [f32; 3],
+        direction: [f32; 3],
+        hidden: &BTreeSet<EntityIndex>,
+    ) -> Option<FaceRef> {
+        self.brushes
+            .iter()
+            .filter(|shape| !hidden.contains(&shape.entity))
+            .filter_map(|shape| {
+                let (t, face) = shape.entered_face(start, direction)?;
+                Some((
+                    t,
+                    FaceRef {
+                        entity: shape.entity,
+                        brush: shape.brush,
+                        face,
+                    },
+                ))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, face)| face)
+    }
+
+    /// The face `at`, if its brush is in the scene and it has a polygon.
+    #[must_use]
+    pub(crate) fn face(&self, at: FaceRef) -> Option<&FaceShape> {
+        self.brush(at.entity, at.brush)?
+            .faces
+            .iter()
+            .find(|face| face.index == at.face)
     }
 
     /// The shape of `brush` of `entity`.

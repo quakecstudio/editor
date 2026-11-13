@@ -26,6 +26,8 @@ use std::sync::Arc;
 use eframe::egui::{self, Event, Key, Modifiers};
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, OsThreshold, SnapshotOptions};
+use qs_workbench::map_edit::{BrushIndex, EntityIndex};
+use qs_workbench::map_uv::{FaceIndex, FaceRef};
 use serde_json::{Value, json};
 
 use crate::App;
@@ -48,6 +50,9 @@ enum Step {
     Drop(fn() -> PathBuf, &'static str),
     /// Click the node with the label.
     Click(&'static str),
+    /// Select these faces of the open map, each an entity, a brush and a face, as Alt-clicks
+    /// would.
+    Faces(&'static [[usize; 3]]),
 }
 
 /// A named sequence of steps, whose final frame is the snapshot.
@@ -229,6 +234,31 @@ fn scripts() -> Vec<Script> {
             ],
         },
         Script {
+            name: "map-uv",
+            steps: vec![
+                Step::Run("project.open", json!({ "path": keep_fixture() })),
+                Step::Run(
+                    "map.open",
+                    json!({ "path": keep_fixture().join("maps/keep.map") }),
+                ),
+                Step::Run(
+                    "map.brush_texture",
+                    json!({ "entity": 0, "brushes": [2], "rotate": 30.0, "scale": [0.5, 0.5] }),
+                ),
+                Step::Faces(&[[0, 2, 3], [0, 2, 5]]),
+                Step::Run(
+                    "map.face_uv",
+                    json!({
+                        "faces": [
+                            { "entity": 0, "brush": 2, "face": 3 },
+                            { "entity": 0, "brush": 2, "face": 5 }
+                        ],
+                        "edit": { "kind": "fit" }
+                    }),
+                ),
+            ],
+        },
+        Script {
             name: "shell-resized",
             steps: vec![
                 Step::Run(
@@ -357,6 +387,18 @@ fn run(script: &Script) -> Harness<'static, Option<App>> {
                     .push(Arc::new(Dropped(make())));
             }
             Step::Click(label) => harness.get_by_label(label).click(),
+            Step::Faces(faces) => {
+                let faces: Vec<FaceRef> = faces
+                    .iter()
+                    .map(|&[entity, brush, face]| FaceRef {
+                        entity: EntityIndex::new(entity),
+                        brush: BrushIndex::new(brush),
+                        face: FaceIndex::new(face),
+                    })
+                    .collect();
+                let app = harness.state_mut().as_mut().unwrap();
+                app.shell.select_map_faces(&faces);
+            }
             Step::WaitTerminals => {
                 let running = |harness: &Harness<'static, Option<App>>| {
                     let shell = &harness.state().as_ref().unwrap().shell;

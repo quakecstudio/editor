@@ -124,6 +124,9 @@ use crate::project::{self, Jump, SymbolScope};
 use crate::strings::Text;
 use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
 use crate::theme::{Theme, Token, semibold};
+#[cfg(test)]
+use qs_workbench::map_uv::FaceRef;
+use qs_workbench::map_uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
 
 /// What the window's commands work on.
 #[derive(Debug)]
@@ -2178,6 +2181,12 @@ impl Shell {
             .unwrap_or_default()
     }
 
+    /// Selects these faces of the open map for the UV editor, as Alt-clicks would.
+    #[cfg(test)]
+    pub(crate) fn select_map_faces(&mut self, faces: &[FaceRef]) {
+        self.map_editor.select_faces(faces);
+    }
+
     /// Runs a brush edit as its `map.brush_*` command, on the commands' grid.
     fn brush_action(&mut self, action: BrushAction) -> Result<serde_json::Value, ShellError> {
         match action {
@@ -2242,6 +2251,12 @@ impl Shell {
                     scale: change.scale,
                 },
             ),
+            BrushAction::Uv(faces, edit) => {
+                self.attempt(MAP_FACE_UV, &FaceUvParams { faces, edit })
+            }
+            BrushAction::AlignFaces(from, to) => {
+                self.attempt(MAP_FACE_ALIGN, &FaceAlignParams { from, to })
+            }
             BrushAction::Shape(min, max, shape) => self.attempt(
                 MAP_BRUSH_SHAPE,
                 &BrushShapeParams {
