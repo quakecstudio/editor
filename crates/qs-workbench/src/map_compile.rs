@@ -122,11 +122,7 @@ impl<L: crate::Loader> Workbench<L> {
                 .iter()
                 .find_map(|dir| std::fs::read(dir.join(name)).ok())
         };
-        let file = document
-            .file()
-            .without_omitted_layers()
-            .with_external_maps(&mut load)
-            .map_err(|error| WorkbenchError::ExternalMap { error })?;
+        let file = document.file().without_omitted_layers();
         let text = file.to_bytes();
         let compiler = Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
         let failed = |error| WorkbenchError::MapCompile { error };
@@ -148,7 +144,9 @@ impl<L: crate::Loader> Workbench<L> {
             1 => found.pop().map(|(_, bytes)| bytes),
             _ => Some(merged(&found)?),
         };
-        let compiled = compiler.compile(&text, wad.as_deref()).map_err(failed)?;
+        let compiled = compiler
+            .compile_with_externals(&text, wad.as_deref(), &mut load)
+            .map_err(failed)?;
         let report = MapReport::of(&compiled, missing_wads);
         let path = document.path().to_path_buf();
         let edits = document.edits();

@@ -32,7 +32,7 @@ const EQUAL_EPSILON: f32 = 0.0001;
 const VECTOR_NUMBERS: usize = 3;
 
 /// Why an external map instance cannot be expanded.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ExternalMapError {
     /// The instance names no file or no classname (MAP-14.1).
     MissingKey {
