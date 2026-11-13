@@ -662,3 +662,29 @@ fn the_lump_starts_on_four_bytes() {
     longer.push(0);
     assert_eq!(lump_at(&longer), bsp.len() + 4);
 }
+
+// spec VIS-4.3: two normals are one when each component is within EQUAL_EPSILON, and not when
+// one differs by more
+#[test]
+fn normals_compare_within_equal_epsilon() {
+    let plane = |normal| Plane { normal, dist: 0.0 };
+    let tilted = plane([0.6, 0.8, 0.0]);
+    assert!(tilted.same_normal(tilted));
+    assert!(tilted.same_normal(plane([0.6005, 0.8, 0.0])));
+    assert!(!tilted.same_normal(plane([0.602, 0.8, 0.0])));
+    assert!(!plane([1.0, 0.0, 0.0]).same_normal(plane([0.0, 1.0, 0.0])));
+}
+
+// spec VIS-4.3: a split on a plane facing -x is put at minus its distance exactly, where the
+// interpolation between the points would round elsewhere
+#[test]
+fn a_split_on_a_negative_axial_plane_is_exact() {
+    let edge = flat(&[[0.1, 0.0], [10.0, 0.0], [10.0, 64.0], [0.1, 64.0]]);
+    let below = Plane {
+        normal: [-1.0, 0.0, 0.0],
+        dist: -3.3,
+    };
+    let kept = edge.clipped(below).unwrap();
+    let xs: Vec<f32> = kept.points().iter().map(|p| p[0]).collect();
+    assert_eq!(xs, [0.1, 3.3, 3.3, 0.1]);
+}
