@@ -106,7 +106,10 @@ impl BrushTools {
         let fields = &mut self.fields;
         ui.horizontal_wrapped(|ui| {
             if ui
-                .add_enabled(brushes.len() == 1, egui::Button::new(Text::MapShapeHollow.get()))
+                .add_enabled(
+                    brushes.len() == 1,
+                    egui::Button::new(Text::MapShapeHollow.get()),
+                )
                 .clicked()
             {
                 actions.push(BrushAction::Hollow(entity, first, fields.wall));
