@@ -59,6 +59,10 @@ code is ported:
 - **VIS-2.5** Each leaf's row of visible leaves is `bitbytes` bytes in memory, the leaf count
   rounded up to a multiple of 64 and divided by 8; the row written to the BSP is
   `(leafs + 7) >> 3` bytes before compression (BSP-6.2).
+- **VIS-2.6** A leaf number equal to the number of leaves passes VIS-2.2's check but names a leaf
+  past the end of vis's array, which is undefined in C; this spec fixes the answer: it stops the
+  run as a greater one does. Both one-way portals share the file portal's winding, its points in
+  the file's order.
 
 ### Constants
 
@@ -114,6 +118,12 @@ A first-order bound: the leaves a flood through portals that face each other can
 - **VIS-4.5** A leaf already on the path stops the run with `CheckStack: leaf recursion`.
 - **VIS-4.6** A leaf sees every leaf one of its portals sees, and itself. A leaf whose portals
   see it already stops the run with `Leaf portals saw into leaf`.
+- **VIS-4.7** vis flows portals on one thread unless built for the Alpha's threads, so each
+  portal sees every earlier one as flowed. Our `qs-map-vis` flows them in VIS-4.1's order in
+  batches of 32, on as many threads as the machine has; a portal of a batch sees the others of
+  its batch as not yet flowed (their might-see sets, VIS-4.2), so the result is the same on any
+  machine, and with a batch of one it is vis's single-thread run. A portal's exact set is a part
+  of its might-see set, so a batch only narrows less, never hiding a leaf vis shows.
 
 ## VIS-5 The visibility lump
 
@@ -128,6 +138,9 @@ A first-order bound: the leaves a flood through portals that face each other can
   `n`'s `visofs` is its row's offset; the BSP's leaf is `n + 1`, leaf 0 being the shared solid
   leaf (QBSP-13.1). A lump past `MAX_MAP_VISIBILITY` stops the run with
   `Vismap expansion overflow`.
+- **VIS-5.4** Our `qs-map-vis` writes the visibility lump after the BSP's other lumps, on a
+  four-byte boundary, and points the directory at it, setting each vis leaf's `visofs` and
+  `ambient_level` in place; every other byte of the file is kept.
 - **VIS-5.3** The average printed, `average leafs visible`, counts a leaf's visible leaves with
   bit `i & 3` of byte `i >> 3` instead of bit `i & 7`, so it is not the true average; nothing
   else reads the count.
