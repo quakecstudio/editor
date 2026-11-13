@@ -77,6 +77,9 @@ const qs_workbench::map_edit::groups::MAP_LOCK
 const qs_workbench::map_edit::groups::MAP_SET_LAYER
 const qs_workbench::map_edit::groups::MAP_SHOW_ALL
 const qs_workbench::map_edit::groups::MAP_UNLOCK_ALL
+const qs_workbench::map_edit::issues::MAP_FIX
+const qs_workbench::map_edit::issues::MAP_ISSUES
+const qs_workbench::map_edit::issues::MAP_SEARCH
 const qs_workbench::map_edit::links::MAP_LINK
 const qs_workbench::map_edit::outline::MAP_MOVE_TO
 const qs_workbench::map_edit::outline::MAP_OUTLINE
@@ -160,6 +163,7 @@ enum qs_workbench::map_edit::flags::FlagChange
 enum qs_workbench::map_edit::groups::LayerOption
 enum qs_workbench::map_edit::groups::Switch
 enum qs_workbench::map_edit::inspect::RoomShape
+enum qs_workbench::map_edit::issues::QuickFix
 enum qs_workbench::map_edit::live::LiveChange
 enum qs_workbench::map_edit::outline::RowKind
 enum qs_workbench::map_edit::shapes::ArchWall
@@ -425,6 +429,20 @@ field qs_workbench::map_edit::inspect::MapInspected.rooms
 field qs_workbench::map_edit::inspect::RoomInfo.bounds
 field qs_workbench::map_edit::inspect::RoomInfo.kind
 field qs_workbench::map_edit::inspect::RoomInfo.name
+field qs_workbench::map_edit::issues::MapFixParams.fix
+field qs_workbench::map_edit::issues::MapFound.brushes
+field qs_workbench::map_edit::issues::MapFound.entities
+field qs_workbench::map_edit::issues::MapIssue.brush
+field qs_workbench::map_edit::issues::MapIssue.entity
+field qs_workbench::map_edit::issues::MapIssue.fix
+field qs_workbench::map_edit::issues::MapIssue.line
+field qs_workbench::map_edit::issues::MapIssue.message
+field qs_workbench::map_edit::issues::MapIssues.issues
+field qs_workbench::map_edit::issues::MapSearchParams.classname
+field qs_workbench::map_edit::issues::MapSearchParams.key
+field qs_workbench::map_edit::issues::MapSearchParams.texture
+field qs_workbench::map_edit::issues::MapSearchParams.value
+field qs_workbench::map_edit::issues::MapSearchParams.within
 field qs_workbench::map_edit::links::LinkParams.entity
 field qs_workbench::map_edit::links::LinkParams.key
 field qs_workbench::map_edit::links::LinkParams.target
@@ -1005,6 +1023,11 @@ struct qs_workbench::map_edit::inspect::EntityInfo
 struct qs_workbench::map_edit::inspect::InspectParams
 struct qs_workbench::map_edit::inspect::MapInspected
 struct qs_workbench::map_edit::inspect::RoomInfo
+struct qs_workbench::map_edit::issues::MapFixParams
+struct qs_workbench::map_edit::issues::MapFound
+struct qs_workbench::map_edit::issues::MapIssue
+struct qs_workbench::map_edit::issues::MapIssues
+struct qs_workbench::map_edit::issues::MapSearchParams
 struct qs_workbench::map_edit::links::LinkParams
 struct qs_workbench::map_edit::outline::MoveToParams
 struct qs_workbench::map_edit::outline::OutlineParams
@@ -1233,25 +1256,34 @@ use qs_workbench::map_edit::MAP_BRUSH_VERTEX = brushes::MAP_BRUSH_VERTEX
 use qs_workbench::map_edit::MAP_COMPARE = disk::MAP_COMPARE
 use qs_workbench::map_edit::MAP_EXPORT = groups::MAP_EXPORT
 use qs_workbench::map_edit::MAP_FILTER = filter::MAP_FILTER
+use qs_workbench::map_edit::MAP_FIX = issues::MAP_FIX
 use qs_workbench::map_edit::MAP_HIDE = groups::MAP_HIDE
 use qs_workbench::map_edit::MAP_ISOLATE = groups::MAP_ISOLATE
+use qs_workbench::map_edit::MAP_ISSUES = issues::MAP_ISSUES
 use qs_workbench::map_edit::MAP_LAYERS = groups::MAP_LAYERS
 use qs_workbench::map_edit::MAP_LINK = links::MAP_LINK
 use qs_workbench::map_edit::MAP_LOCK = groups::MAP_LOCK
 use qs_workbench::map_edit::MAP_MOVE_TO = outline::MAP_MOVE_TO
 use qs_workbench::map_edit::MAP_OUTLINE = outline::MAP_OUTLINE
 use qs_workbench::map_edit::MAP_RESOLVE = disk::MAP_RESOLVE
+use qs_workbench::map_edit::MAP_SEARCH = issues::MAP_SEARCH
 use qs_workbench::map_edit::MAP_SET_FLAG = flags::MAP_SET_FLAG
 use qs_workbench::map_edit::MAP_SET_LAYER = groups::MAP_SET_LAYER
 use qs_workbench::map_edit::MAP_SHOW_ALL = groups::MAP_SHOW_ALL
 use qs_workbench::map_edit::MAP_UNLOCK_ALL = groups::MAP_UNLOCK_ALL
 use qs_workbench::map_edit::MapDifference = disk::MapDifference
 use qs_workbench::map_edit::MapFiltered = filter::MapFiltered
+use qs_workbench::map_edit::MapFixParams = issues::MapFixParams
+use qs_workbench::map_edit::MapFound = issues::MapFound
 use qs_workbench::map_edit::MapInspected = inspect::MapInspected
+use qs_workbench::map_edit::MapIssue = issues::MapIssue
+use qs_workbench::map_edit::MapIssues = issues::MapIssues
 use qs_workbench::map_edit::MapOnDisk = disk::MapOnDisk
+use qs_workbench::map_edit::MapSearchParams = issues::MapSearchParams
 use qs_workbench::map_edit::MoveToParams = outline::MoveToParams
 use qs_workbench::map_edit::OutlineParams = outline::OutlineParams
 use qs_workbench::map_edit::OutlineRow = outline::OutlineRow
+use qs_workbench::map_edit::QuickFix = issues::QuickFix
 use qs_workbench::map_edit::ResolveParams = disk::ResolveParams
 use qs_workbench::map_edit::RoomInfo = inspect::RoomInfo
 use qs_workbench::map_edit::RoomShape = inspect::RoomShape
@@ -1291,6 +1323,7 @@ variant qs_workbench::WorkbenchError::NoFace
 variant qs_workbench::WorkbenchError::NoFile
 variant qs_workbench::WorkbenchError::NoFix
 variant qs_workbench::WorkbenchError::NoHunk
+variant qs_workbench::WorkbenchError::NoKey
 variant qs_workbench::WorkbenchError::NoMap
 variant qs_workbench::WorkbenchError::NoMapSource
 variant qs_workbench::WorkbenchError::NoPalette
@@ -1299,6 +1332,7 @@ variant qs_workbench::WorkbenchError::NoRoom
 variant qs_workbench::WorkbenchError::NoTextureSize
 variant qs_workbench::WorkbenchError::NotBuilt
 variant qs_workbench::WorkbenchError::NotContainer
+variant qs_workbench::WorkbenchError::NotEmpty
 variant qs_workbench::WorkbenchError::NotLayer
 variant qs_workbench::WorkbenchError::NotPointEntity
 variant qs_workbench::WorkbenchError::Offset
@@ -1380,6 +1414,10 @@ variant qs_workbench::map_edit::groups::Switch::Off
 variant qs_workbench::map_edit::groups::Switch::On
 variant qs_workbench::map_edit::inspect::RoomShape::Group
 variant qs_workbench::map_edit::inspect::RoomShape::Layer
+variant qs_workbench::map_edit::issues::QuickFix::AddPlayerStart
+variant qs_workbench::map_edit::issues::QuickFix::RemoveBrush
+variant qs_workbench::map_edit::issues::QuickFix::RenameKey
+variant qs_workbench::map_edit::issues::QuickFix::SetClassname
 variant qs_workbench::map_edit::live::LiveChange::Edit
 variant qs_workbench::map_edit::live::LiveChange::NeedsCompile
 variant qs_workbench::map_edit::live::LiveChange::Remove

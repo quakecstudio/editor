@@ -70,6 +70,9 @@ use qs_workbench::map_edit::{
     FilterParams, LinkParams, MAP_FILTER, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, MapFiltered,
     PlaceParams, SetFlagParams,
 };
+use qs_workbench::map_edit::{
+    MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssues, MapRevision,
+};
 use qs_workbench::map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
 use qs_workbench::map_textures::TextureSources;
 use qs_workbench::search::{
@@ -2096,6 +2099,21 @@ impl Shell {
                 MapAction::CheckLeaks => self
                     .execute(MAP_LEAKS, serde_json::json!({}))
                     .map_err(ShellError::from),
+                MapAction::CheckIssues => self.check_map_issues(),
+                MapAction::Fix(fix) => {
+                    let fixed =
+                        self.attempt::<_, serde_json::Value>(MAP_FIX, &MapFixParams { fix });
+                    // The list shows the map as it now is, the issue fixed gone.
+                    fixed.and_then(|_| self.check_map_issues())
+                }
+                MapAction::Find(search) => {
+                    let found: Result<MapFound, ShellError> = self.attempt(MAP_SEARCH, &search);
+                    found.map(|found| {
+                        let at = self.map_edits();
+                        self.map_editor.set_found(found, at);
+                        serde_json::Value::Null
+                    })
+                }
                 MapAction::RemoveKey(entity, key) => {
                     self.attempt(MAP_REMOVE_KEY, &RemoveKeyParams { entity, key })
                 }
@@ -2143,6 +2161,24 @@ impl Shell {
             });
             self.map_editor.set_refused(refused);
         }
+    }
+
+    /// Lists the open map's issues in the map editor's issue browser (P6-19).
+    fn check_map_issues(&mut self) -> Result<serde_json::Value, ShellError> {
+        let found: MapIssues = self.attempt(MAP_ISSUES, &serde_json::json!({}))?;
+        let at = self.map_edits();
+        self.map_editor.set_issues(found.issues, at);
+        Ok(serde_json::Value::Null)
+    }
+
+    /// The open map's edits, which a list of its issues or matches is good for.
+    fn map_edits(&self) -> MapRevision {
+        self.session
+            .context()
+            .workbench
+            .map()
+            .map(MapDocument::edits)
+            .unwrap_or_default()
     }
 
     /// Selects these faces of the open map for the UV editor, as Alt-clicks would.
