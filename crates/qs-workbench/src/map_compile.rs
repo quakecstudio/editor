@@ -8,6 +8,7 @@
 //! exports (MAP-9), and its WADs from the project, the map's folder or the game, as the
 //! texture browser finds them. The last report is kept with the map, for the map view.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use qs_commands::{Command, NoParams, Outcome};
@@ -107,64 +108,27 @@ impl<L: crate::Loader> Workbench<L> {
                 path: document.path().to_path_buf(),
             });
         }
-        let text = document.file().without_omitted_layers().to_bytes();
+        let file = document.file().without_omitted_layers();
+        let text = file.to_bytes();
         let compiler = Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
         let failed = |error| WorkbenchError::MapCompile { error };
-        let listed = compiler
-            .wad_path(&text)
-            .map_err(failed)?
-            .map(|value| String::from_utf8_lossy(&value).into_owned())
-            .unwrap_or_default();
-        // The key lists its WADs split at `;`, as ericw-tools reads it (MAP-6.3); the compiler
-        // takes one, so the textures of every WAD found go into one, the first of a name kept.
+        // The world's `_wad` or `wad`, split at `;` as the texture browser and ericw-tools read
+        // it (MAP-6.3). The compiler takes one WAD: one found is passed as it is; several are
+        // merged, the first texture of a name kept.
         let game = game.map(Game::at);
-        let mut merged = WadBuilder::new();
-        let mut taken: Vec<Vec<u8>> = Vec::new();
-        let (mut found, mut missing_wads) = (false, Vec::new());
-        for name in listed
-            .split(';')
-            .map(str::trim)
-            .filter(|name| !name.is_empty())
-        {
-            let Some((path, bytes)) =
-                find_wad(name, self.root(), document.path().parent(), game.as_ref())
-            else {
-                missing_wads.push(name.to_owned());
-                continue;
-            };
-            found = true;
-            let where_ = path.unwrap_or_else(|| PathBuf::from(name));
-            let unreadable = |error| WorkbenchError::Wad {
-                path: where_.clone(),
-                error,
-            };
-            let wad = Wad::read(&bytes).map_err(unreadable)?;
-            for lump in wad.lumps() {
-                let lump_name = lump.name.as_bytes().to_ascii_lowercase();
-                if taken.contains(&lump_name) {
-                    continue;
-                }
-                let data = wad.data(lump).map_err(unreadable)?;
-                merged
-                    .add(lump.name.as_bytes(), lump.lump_type, data.to_vec())
-                    .map_err(|error| WorkbenchError::WadWrite {
-                        path: where_.clone(),
-                        error,
-                    })?;
-                taken.push(lump_name);
+        let mut found: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+        let mut missing_wads = Vec::new();
+        for raw in file.wad_paths(qs_map::Compiler::EricwTools) {
+            let name = String::from_utf8_lossy(&raw).into_owned();
+            match find_wad(&name, self.root(), document.path().parent(), game.as_ref()) {
+                Some((path, bytes)) => found.push((path.unwrap_or_else(|| name.into()), bytes)),
+                None => missing_wads.push(name),
             }
         }
-        let wad = if found {
-            Some(
-                merged
-                    .to_bytes()
-                    .map_err(|error| WorkbenchError::WadWrite {
-                        path: document.path().to_path_buf(),
-                        error,
-                    })?,
-            )
-        } else {
-            None
+        let wad = match found.len() {
+            0 => None,
+            1 => found.pop().map(|(_, bytes)| bytes),
+            _ => Some(merged(&found)?),
         };
         let compiled = compiler.compile(&text, wad.as_deref()).map_err(failed)?;
         let report = MapReport::of(&compiled, missing_wads);
@@ -173,6 +137,42 @@ impl<L: crate::Loader> Workbench<L> {
         self.map_mut()?.set_report(report.clone(), edits);
         Ok((compiled, report, path))
     }
+}
+
+/// One WAD of the texture lumps of `wads`, each a path and its bytes, in order, the first of
+/// a name kept.
+fn merged(wads: &[(PathBuf, Vec<u8>)]) -> Result<Vec<u8>, WorkbenchError> {
+    let mut builder = WadBuilder::new();
+    let mut taken: HashSet<Vec<u8>> = HashSet::new();
+    for (path, bytes) in wads {
+        let unreadable = |error| WorkbenchError::Wad {
+            path: path.clone(),
+            error,
+        };
+        let unwritable = |error| WorkbenchError::WadWrite {
+            path: path.clone(),
+            error,
+        };
+        let wad = Wad::read(bytes).map_err(unreadable)?;
+        for lump in wad.lumps() {
+            if !taken.insert(lump.name.as_bytes().to_ascii_lowercase()) {
+                continue;
+            }
+            let data = wad.data(lump).map_err(unreadable)?;
+            builder
+                .add(lump.name.as_bytes(), lump.lump_type, data.to_vec())
+                .map_err(unwritable)?;
+        }
+    }
+    builder
+        .to_bytes()
+        .map_err(|error| WorkbenchError::WadWrite {
+            path: wads
+                .first()
+                .map(|(path, _)| path.clone())
+                .unwrap_or_default(),
+            error,
+        })
 }
 
 /// `map.leaks`.

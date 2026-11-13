@@ -184,19 +184,18 @@ impl TextureBrowser {
         self.import.as_ref()
     }
 
-    /// The textures, laying out and decoding only the cells in view; a PNG dropped on them is
-    /// opened for import.
+    /// The textures, laying out and decoding only the cells in view; a PNG dropped on the window
+    /// while they show is opened for import.
     pub(crate) fn body(&mut self, ui: &mut Ui, theme: &Theme) {
-        let area = ui.available_rect_before_wrap();
+        // The pointer is not followed while a file is dragged in from another program, so a
+        // PNG dropped on the window while the browser shows is taken as dropped on it.
         let dropped = ui.input(|i| {
-            let over = i.pointer.hover_pos().is_some_and(|at| area.contains(at));
             i.raw
                 .dropped_files
                 .iter()
                 .map(|file| file.path().to_path_buf())
                 .find(|path| {
-                    over && path
-                        .extension()
+                    path.extension()
                         .is_some_and(|e| e.eq_ignore_ascii_case("png"))
                 })
         });

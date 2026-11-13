@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use eframe::egui::{self, ColorImage, RichText, TextureHandle, Vec2};
-use qs_wad::texture::Palette;
+use qs_wad::texture::{Palette, TextureName};
 use qs_workbench::texture_import::{DitherChoice, quantized};
 
 use crate::strings::Text;
@@ -29,14 +29,26 @@ pub(crate) enum ImportChoice {
     Cancel,
 }
 
+/// What an import preview's picture depends on: the dithering, and whether the name makes a
+/// fence texture, whose transparent pixels are kept (WAD-6.4); the rest of the name does not
+/// change the pixels, so typing it does not quantize the image again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Made {
+    dither: DitherChoice,
+    fence: bool,
+}
+
+/// The prefix of a fence texture's name (WAD-6.4).
+const FENCE: char = '{';
+
 /// The import preview of one image.
 pub(crate) struct ImportPreview {
     path: PathBuf,
     png: Vec<u8>,
     name: String,
     dither: DitherChoice,
-    /// The name and dithering the picture was made for, and the picture or why there is none.
-    shown: Option<((String, DitherChoice), Result<TextureHandle, String>)>,
+    /// What the picture was made for, and the picture or why there is none.
+    shown: Option<(Made, Result<TextureHandle, String>)>,
 }
 
 impl core::fmt::Debug for ImportPreview {
@@ -72,13 +84,20 @@ impl ImportPreview {
         &self.name
     }
 
-    /// The picture for the name and dithering now set, made again when either changes.
+    /// The picture for the name and dithering now set, made again when what it depends on
+    /// changes; the name is checked each time.
     fn picture(
         &mut self,
         ctx: &egui::Context,
         palette: Option<&Palette>,
     ) -> Result<TextureHandle, String> {
-        let wanted = (self.name.clone(), self.dither);
+        if let Err(error) = TextureName::parse(self.name.as_bytes()) {
+            return Err(error.to_string());
+        }
+        let wanted = Made {
+            dither: self.dither,
+            fence: self.name.starts_with(FENCE),
+        };
         if let Some((made, picture)) = &self.shown
             && *made == wanted
         {

@@ -412,13 +412,13 @@ impl TextureSources {
         }
     }
 
-    /// The texture `name` in its colours: a WAD3 texture's own palette, else the game's
     /// The game palette textures are shown in, when one was found.
     #[must_use]
     pub const fn palette(&self) -> Option<&Palette> {
         self.palette.as_ref()
     }
 
+    /// The texture `name` in its colours: a WAD3 texture's own palette, else the game's
     /// (WAD-8); `None` with no palette, no such texture, or one that does not decode (WAD-8.3).
     #[must_use]
     pub fn decode(&self, name: &str) -> Option<DecodedTexture> {

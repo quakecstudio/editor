@@ -278,3 +278,44 @@ fn an_imported_texture_compiles_into_the_bsp() {
     .unwrap();
     assert_eq!(compiled, shown);
 }
+
+// spec MAP-6.3: a map listing its WADs in `_wad`, which the compilers read first, gets the
+// project's WAD there, so the imported texture is found
+#[test]
+fn an_import_extends_the_key_the_map_uses() {
+    let dir = keep("underscore");
+    let map = dir.join("maps/keep.map");
+    let text = std::fs::read_to_string(&map).unwrap();
+    std::fs::write(
+        &map,
+        text.replace("\"wad\" \"gfx/keep.wad\"", "\"_wad\" \"gfx/keep.wad\""),
+    )
+    .unwrap();
+    let image = dir.join("brick16.png");
+    png(&image, 16, 16, [200, 40, 30, 255]);
+    let mut session = session(Some(&dir));
+    session.execute(MAP_OPEN, json!({ "path": map })).unwrap();
+    import(&mut session, json!({ "path": image }));
+    let document = session.context().workbench.map().unwrap();
+    let world = &document.file().entities[0];
+    assert_eq!(
+        world.value(b"_wad"),
+        Some(b"gfx/keep.wad;textures/underscore.wad".as_slice())
+    );
+    assert_eq!(world.value(b"wad"), None);
+    assert!(!project_wad(&dir).with_extension("wad.writing").exists());
+}
+
+// No spec statement: P6-16: the WAD is named after the project's folder, kept to letters,
+// digits, `-` and `_`, so the world's key can list it
+#[test]
+fn the_project_wad_has_a_name_the_key_can_list() {
+    assert_eq!(
+        project_wad(Path::new("/p/my;mod \"x\"")),
+        Path::new("/p/my;mod \"x\"/textures/my_mod__x_.wad")
+    );
+    assert_eq!(
+        project_wad(Path::new("/")),
+        Path::new("/textures/project.wad")
+    );
+}

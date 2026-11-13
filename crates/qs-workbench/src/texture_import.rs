@@ -28,10 +28,13 @@ pub const TEXTURE_IMPORT: &str = "texture.import";
 pub const TEXTURE_FOLDER: &str = "textures";
 /// The WAD's name when the project's folder has none to give it.
 const DEFAULT_WAD: &str = "project";
-/// The world's key that lists the map's WADs (MAP-6.3).
-const WAD_KEY: &[u8] = b"wad";
-/// The separator between the WADs the `wad` key lists, as ericw-tools reads it (MAP-6.3).
+/// The world's keys that list the map's WADs, in the order the compilers read them: `_wad`,
+/// else `wad` (MAP-6.3).
+const WAD_KEYS: [&[u8]; 2] = [b"_wad", b"wad"];
+/// The separator between the WADs the key lists, as ericw-tools reads it (MAP-6.3).
 const WAD_SEPARATOR: char = ';';
+/// The name the project's WAD is written under while it is written, then renamed from.
+const WRITING: &str = "wad.writing";
 
 /// How an imported image is matched to the palette (WAD-7).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -93,14 +96,28 @@ impl TextureImportParams {
     }
 }
 
-/// The project's own WAD in the project at `root`: `textures/<folder>.wad`.
+/// The project's own WAD in the project at `root`: `textures/<folder>.wad`, the folder's name
+/// kept to letters, digits, `-` and `_`, so the world's key can list it.
 #[must_use]
 pub fn project_wad(root: &Path) -> PathBuf {
-    let folder = root
+    let folder: String = root
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| DEFAULT_WAD.to_owned());
+        .unwrap_or_default()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let folder = if folder.is_empty() {
+        DEFAULT_WAD.to_owned()
+    } else {
+        folder
+    };
     root.join(TEXTURE_FOLDER).join(format!("{folder}.wad"))
 }
 
@@ -234,10 +251,14 @@ impl<C: HasPreview + 'static> Command<C> for TextureImport {
                 error,
             })?;
         }
-        std::fs::write(&wad, bytes).map_err(|error| WorkbenchError::Save {
-            path: wad.clone(),
-            error,
-        })?;
+        // Written beside it, then renamed over it, so a failed write leaves the WAD as it was.
+        let writing = wad.with_extension(WRITING);
+        std::fs::write(&writing, bytes)
+            .and_then(|()| std::fs::rename(&writing, &wad))
+            .map_err(|error| WorkbenchError::Save {
+                path: wad.clone(),
+                error,
+            })?;
         let file = wad.file_name().map(|n| n.to_string_lossy().into_owned());
         let named = format!("{TEXTURE_FOLDER}/{}", file.unwrap_or_default());
         let mut imported = TextureImported {
@@ -246,23 +267,35 @@ impl<C: HasPreview + 'static> Command<C> for TextureImport {
             replaced,
             map_names_wad: false,
         };
-        // The open map's world, when it is a `.map`, and the WADs it lists.
+        // The open map's world, when it is a `.map`: the key it lists its WADs in, the one the
+        // compilers read first, its value, and whether the WAD is among them.
         let listed = context.workbench().map().and_then(|document| {
             let MapSource::Map = document.source() else {
                 return None;
             };
             let world = document.file().entities.first()?;
-            let listed = world.value(WAD_KEY).unwrap_or_default();
+            let key = WAD_KEYS
+                .into_iter()
+                .find(|key| world.value(key).is_some_and(|value| !value.is_empty()))
+                .unwrap_or(b"wad");
+            let value = world.value(key).unwrap_or_default();
+            let named_already = document
+                .file()
+                .wad_paths(qs_map::Compiler::EricwTools)
+                .iter()
+                .any(|wad| wad.as_slice() == named.as_bytes());
             Some((
-                String::from_utf8_lossy(listed).into_owned(),
+                key,
+                String::from_utf8_lossy(value).into_owned(),
+                named_already,
                 document.path().to_path_buf(),
             ))
         });
-        let Some((listed, map)) = listed else {
+        let Some((key, listed, named_already, map)) = listed else {
             return Ok(Outcome::outside_history(imported));
         };
         imported.map_names_wad = true;
-        if listed.split(WAD_SEPARATOR).any(|wad| wad.trim() == named) {
+        if named_already {
             return Ok(Outcome::outside_history(imported));
         }
         let value = if listed.trim().is_empty() {
@@ -273,7 +306,7 @@ impl<C: HasPreview + 'static> Command<C> for TextureImport {
         let ((), step) = edit_map(context, |document| {
             document
                 .entity_mut(EntityIndex::WORLD)?
-                .set(WAD_KEY, value.as_bytes())
+                .set(key, value.as_bytes())
                 .map_err(|error| WorkbenchError::Map { path: map, error })
         })?;
         Ok(Outcome::undoable(imported, step))
