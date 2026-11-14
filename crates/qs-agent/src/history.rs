@@ -68,7 +68,7 @@ pub struct ThreadRecord {
     /// Every message, the brief first.
     pub transcript: Vec<Message>,
     /// The checkpoint it recorded before it changed anything.
-    pub checkpoint: Option<u32>,
+    pub checkpoint: Option<crate::CheckpointNumber>,
     /// The ids of the hunks it staged, as `edit.staged` numbers them.
     #[serde(default)]
     pub staged: Vec<u64>,

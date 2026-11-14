@@ -258,8 +258,11 @@ fn openai_speaks_chat_completions() {
             summary: "Done.".to_owned()
         }
     );
-    assert!(model.reply("s", &[], &transcript).is_err());
-    assert!(model.reply("s", &[], &transcript).is_err());
+    assert_eq!(
+        model.reply("s", &[], &transcript),
+        Err(ModelError::Filtered)
+    );
+    assert_eq!(model.reply("s", &[], &transcript), Err(ModelError::CutOff));
     let sent = transport.sent.borrow();
     let (url, headers, body) = &sent[0];
     assert_eq!(url, "https://example.test/v1/chat/completions");
@@ -695,5 +698,36 @@ fn an_image_is_sent_in_each_providers_form() {
     assert_eq!(
         body["messages"][2]["content"][0],
         json!({ "type": "image_url", "image_url": { "url": "data:image/png;base64,cG5n" } })
+    );
+}
+
+// No spec statement: P6-34, a configuration that names no reply limit takes
+// `DEFAULT_MAX_TOKENS`; an assistant message the API sent goes back as it came, and one it did
+// not (nothing kept, or not an object) is written from the transcript
+#[test]
+fn defaults_and_assistant_messages_sent_back() {
+    let mut settings = serde_json::to_value(ProviderConfig::anthropic()).unwrap();
+    settings.as_object_mut().unwrap().remove("max_tokens");
+    let config: ProviderConfig = serde_json::from_value(settings).unwrap();
+    assert_eq!(config.max_tokens, crate::DEFAULT_MAX_TOKENS);
+    assert_eq!(crate::DEFAULT_MAX_TOKENS, 16_000);
+    let config = ProviderConfig::new(ProviderKind::OpenAiCompatible, "m");
+    let transcript = [
+        Message::User {
+            text: "go".to_owned(),
+        },
+        Message::Assistant {
+            text: "said".to_owned(),
+            calls: Vec::new(),
+        },
+    ];
+    let raw = json!({ "role": "assistant", "content": "as sent" });
+    let (_, _, body) =
+        config.openai_request(None, "s", &[], &transcript, std::slice::from_ref(&raw));
+    assert_eq!(body["messages"][2], raw);
+    let (_, _, body) = config.openai_request(None, "s", &[], &transcript, &[Value::Null]);
+    assert_eq!(
+        body["messages"][2],
+        json!({ "role": "assistant", "content": "said" })
     );
 }

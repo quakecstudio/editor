@@ -68,7 +68,7 @@ mod tests {
     use serde_json::json;
 
     use super::{absolute_paths, collect_paths};
-    use crate::lexical;
+    use crate::{lexical, lies_under};
 
     // No spec statement: a path's `.` and `..` are worked out by its text, `..` at the root
     // staying there
@@ -76,6 +76,20 @@ mod tests {
     fn a_path_is_worked_out_by_its_text() {
         assert_eq!(lexical(Path::new("/p/./a/../b/c")), PathBuf::from("/p/b/c"));
         assert_eq!(lexical(Path::new("/../x")), PathBuf::from("/x"));
+        // A relative path keeps the `..` that leaves it, so it never seems to lie under `.`.
+        assert_eq!(lexical(Path::new("./../../x")), PathBuf::from("../../x"));
+        assert_eq!(lexical(Path::new("a/../../x")), PathBuf::from("../x"));
+    }
+
+    // No spec statement: a path lies under a root only when it stays inside it, a relative
+    // root included, whose `.` works out to no parts
+    #[test]
+    fn a_path_lies_under_a_root_only_inside_it() {
+        assert!(lies_under(Path::new("/p/a/../b.qc"), Path::new("/p")));
+        assert!(!lies_under(Path::new("/p/../q/b.qc"), Path::new("/p")));
+        assert!(lies_under(Path::new("./a.qc"), Path::new(".")));
+        assert!(!lies_under(Path::new("./../../etc/x"), Path::new(".")));
+        assert!(!lies_under(Path::new("/q"), Path::new("/p")));
     }
 
     // No spec statement: every string under `path` or a key ending in `_path` is found, at any
@@ -85,18 +99,22 @@ mod tests {
         let mut arguments = json!({
             "path": "a.qc",
             "nested": { "map_path": "maps/../maps/e1m1.map", "pathname": "no" },
-            "files": [{ "path": "/abs/b.qc" }],
+            "files": [{ "path": "/abs/b.qc" }, { "path": "c.qc" }],
             "path_count": 3,
         });
         let mut found = Vec::new();
         collect_paths(&arguments, &mut found);
         found.sort();
-        assert_eq!(found, ["/abs/b.qc", "a.qc", "maps/../maps/e1m1.map"]);
+        assert_eq!(
+            found,
+            ["/abs/b.qc", "a.qc", "c.qc", "maps/../maps/e1m1.map"]
+        );
         absolute_paths(&mut arguments, Path::new("/p"));
         assert_eq!(arguments["path"], json!("/p/a.qc"));
         assert_eq!(arguments["nested"]["map_path"], json!("/p/maps/e1m1.map"));
         assert_eq!(arguments["nested"]["pathname"], json!("no"));
         assert_eq!(arguments["files"][0]["path"], json!("/abs/b.qc"));
+        assert_eq!(arguments["files"][1]["path"], json!("/p/c.qc"));
         assert_eq!(arguments["path_count"], json!(3));
     }
 }

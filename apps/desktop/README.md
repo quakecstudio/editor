@@ -143,7 +143,7 @@ The right panel's Agent section (P4-09, UI-5, PRIN-4), modelled on Zed's agent p
   after the task (`qs_agent::expand_mentions`).
 - **Ask about this (P4-12, UI-9):** right-clicking an outliner row, or the button in the
   Properties panel, selects the edict and starts a thread that explains it. The thread holds
-  its classname, its current think function and every field (`qs_agent::ask_about`).
+  its classname, its current think function and every field (`qs_agent::EntityState::ask_about`).
 
 `src/agent/tests.rs` covers it. Two threads whose models are held wait while frames go on,
 and each ends when its model answers. A thread's hunk is rejected from the panel and its

@@ -14,6 +14,7 @@ fn qs_paths::arguments::collect_paths
 fn qs_paths::current
 fn qs_paths::fonts::current_font_dirs
 fn qs_paths::lexical
+fn qs_paths::lies_under
 fn qs_paths::stores::StoreDirs::gog_libraries
 fn qs_paths::stores::StoreDirs::heroic
 fn qs_paths::stores::StoreDirs::steam

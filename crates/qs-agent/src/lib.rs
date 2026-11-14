@@ -29,10 +29,11 @@
 //! recorded first, so the person can accept the hunks or undo everything (AGT-4, PRIN-4).
 
 pub use qc_edict::EdictNumber;
+pub use qs_checkpoint::CheckpointNumber;
 use std::path::{Path, PathBuf};
 
 use qs_paths::arguments::{absolute_paths, collect_paths};
-use qs_paths::lexical;
+use qs_paths::{lexical, lies_under};
 
 use qs_commands::Session;
 pub use qs_settings::{AgentProfile, Decision, ToolPermissions, ToolRule};
@@ -409,26 +410,32 @@ pub fn estimated_tokens(transcript: &[Message]) -> usize {
 #[must_use]
 pub fn base64(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    // RFC 4648, section 4: each group of three bytes is four symbols of six bits.
+    // RFC 4648, section 4: each group of three bytes, a 24-bit number, is four symbols of six
+    // bits, the first the highest.
     const GROUP_BYTES: usize = 3;
-    const GROUP_SYMBOLS: u32 = 4;
+    const GROUP_SYMBOLS: usize = 4;
     const BYTE_BITS: u32 = 8;
     const SYMBOL_BITS: u32 = 6;
     const SYMBOL_MASK: u32 = (1 << SYMBOL_BITS) - 1;
+    const SYMBOL_SHIFTS: [u32; GROUP_SYMBOLS] = [3 * SYMBOL_BITS, 2 * SYMBOL_BITS, SYMBOL_BITS, 0];
     let symbol = |index: u32| {
         let index = usize::try_from(index & SYMBOL_MASK).unwrap_or(0);
         char::from(ALPHABET.get(index).copied().unwrap_or(b'A'))
     };
-    let symbols = usize::try_from(GROUP_SYMBOLS).unwrap_or(usize::MAX);
-    let mut out = String::with_capacity(bytes.len().div_ceil(GROUP_BYTES).saturating_mul(symbols));
+    let mut out = String::with_capacity(
+        bytes
+            .len()
+            .div_ceil(GROUP_BYTES)
+            .saturating_mul(GROUP_SYMBOLS),
+    );
     for chunk in bytes.chunks(GROUP_BYTES) {
-        let group = (0..GROUP_BYTES).fold(0_u32, |group, i| {
-            (group << BYTE_BITS) | u32::from(chunk.get(i).copied().unwrap_or(0))
-        });
-        // A short last chunk of n bytes fills n + 1 symbols, the rest padding.
-        for (place, after) in (0..GROUP_SYMBOLS).rev().enumerate() {
-            out.push(if place <= chunk.len() {
-                symbol(group >> SYMBOL_BITS.saturating_mul(after))
+        let byte = |i: usize| u32::from(chunk.get(i).copied().unwrap_or(0));
+        let group = (byte(0) << (2 * BYTE_BITS)) | (byte(1) << BYTE_BITS) | byte(2);
+        // A last chunk of n bytes fills n + 1 symbols; the rest are padding.
+        let written = chunk.len().saturating_add(1);
+        for (place, shift) in SYMBOL_SHIFTS.into_iter().enumerate() {
+            out.push(if place < written {
+                symbol(group >> shift)
             } else {
                 '='
             });
@@ -464,7 +471,7 @@ pub enum ModelError {
     Declined,
     /// The provider's content filter withheld the reply.
     Filtered,
-    /// The reply was cut off at the token limit.
+    /// The reply was cut off at the token limit, the provider's `max_tokens`.
     CutOff,
     /// The answer was not what the API gives: what is missing, with the answer.
     Malformed(String),
@@ -483,7 +490,7 @@ impl std::fmt::Display for ModelError {
             | Self::Stopped(why) => f.write_str(why),
             Self::Declined => f.write_str("the model declined the request"),
             Self::Filtered => f.write_str("the provider's content filter withheld the reply"),
-            Self::CutOff => f.write_str("the reply was cut off at the token limit"),
+            Self::CutOff => f.write_str("the reply was cut off at max_tokens, its token limit"),
         }
     }
 }
@@ -570,9 +577,9 @@ pub const DEFAULT_CONTEXT_LIMIT: usize = 200_000;
 const PERCENT: usize = 100;
 
 impl RunConfig {
-    /// A run over the project at `project`, with [`DEFAULT_TURNS`] turns, the tests run with no parameters,
-    /// outputs cut at [`DEFAULT_OUTPUT_LIMIT`] characters, a context of [`DEFAULT_CONTEXT_LIMIT`]
-    /// tokens and the Write profile with no rules.
+    /// A run over the project at `project`, with [`DEFAULT_TURNS`] turns, the tests run with no
+    /// parameters, outputs cut at [`DEFAULT_OUTPUT_LIMIT`] characters, a context of
+    /// [`DEFAULT_CONTEXT_LIMIT`] tokens and the Write profile with no rules.
     #[must_use]
     pub fn new(project: impl Into<PathBuf>) -> Self {
         Self {
@@ -628,7 +635,7 @@ pub struct RunReport {
     /// How it ended.
     pub outcome: Outcome,
     /// The checkpoint recorded before it changed anything.
-    pub checkpoint: Option<u32>,
+    pub checkpoint: Option<CheckpointNumber>,
     /// The edits it proposes, staged for review: `edit.staged`'s answer.
     pub staged: Value,
     /// The last check of its work, if the model finished at least once.
@@ -699,7 +706,7 @@ pub struct Run {
     system: String,
     specs: Vec<ToolSpec>,
     transcript: Vec<Message>,
-    checkpoint: Option<u32>,
+    checkpoint: Option<CheckpointNumber>,
     turns_left: usize,
     verification: Option<Verification>,
     outcome: Option<Outcome>,
@@ -756,7 +763,8 @@ impl Run {
         let checkpoint = made
             .get("number")
             .and_then(Value::as_u64)
-            .and_then(|n| u32::try_from(n).ok());
+            .and_then(|n| u32::try_from(n).ok())
+            .map(CheckpointNumber::new);
         let specs = tools(session)
             .into_iter()
             .filter(|spec| config.permissions.offers(&spec.name))
@@ -1016,7 +1024,7 @@ impl Run {
 
     /// The checkpoint recorded before the run changed anything.
     #[must_use]
-    pub const fn checkpoint(&self) -> Option<u32> {
+    pub const fn checkpoint(&self) -> Option<CheckpointNumber> {
         self.checkpoint
     }
 
@@ -1268,7 +1276,10 @@ fn call_tool<C: 'static>(
         let mut paths = Vec::new();
         collect_paths(&arguments, &mut paths);
         let project = lexical(&config.project);
-        if let Some(outside) = paths.iter().find(|p| !Path::new(p).starts_with(&project)) {
+        if let Some(outside) = paths
+            .iter()
+            .find(|p| !lies_under(Path::new(p), &config.project))
+        {
             return refused(format!(
                 "{outside} is outside the project at {}; edits stay in the project",
                 project.display()

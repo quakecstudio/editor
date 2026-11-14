@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 # An entity's edict number.
 qc-edict = { workspace = true }
+# A run's checkpoint, by its number.
+qs-checkpoint = { workspace = true }
 qs-commands = { workspace = true }
 qs-map = { workspace = true }
 # The paths a call's arguments name, worked out by their text.

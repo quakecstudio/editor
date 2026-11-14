@@ -3544,6 +3544,7 @@ dependencies = [
  "qc-edict",
  "qc-project",
  "qc-types",
+ "qs-checkpoint",
  "qs-commands",
  "qs-map",
  "qs-pak",

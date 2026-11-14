@@ -904,7 +904,7 @@ pub enum AgentAction {
     /// Reject these hunks.
     Reject(Vec<HunkId>),
     /// Restore this checkpoint.
-    Restore(u32),
+    Restore(qs_agent::CheckpointNumber),
     /// Answer the call this thread asks about.
     Permit(usize, Permit),
     /// Use this profile from now on, kept in the project's settings.

@@ -165,7 +165,7 @@ fn a_failing_scenario_cannot_be_marked_done() {
         .filter(|m| matches!(m, Message::User { text } if text.starts_with("Not done")))
         .count();
     assert_eq!(told, 3, "told after each finish");
-    assert_eq!(report.checkpoint, Some(1));
+    assert_eq!(report.checkpoint, Some(super::CheckpointNumber::FIRST));
 }
 
 // No spec statement: P4-06, AGT-1, AGT-5, PRIN-4. Told its first finish is not done because
@@ -878,7 +878,7 @@ fn threads_are_kept_listed_and_searched() {
                 calls: Vec::new(),
             },
         ],
-        checkpoint: Some(3),
+        checkpoint: Some(super::CheckpointNumber::new(3)),
         staged: vec![7],
         summaries: Vec::new(),
         tokens: 42,
@@ -896,7 +896,7 @@ fn threads_are_kept_listed_and_searched() {
     let titles: Vec<&str> = threads.iter().map(|t| t.title.as_str()).collect();
     assert_eq!(titles, ["Add a rocket", "Fix the axe"]);
     assert_eq!(threads[1].staged, [7]);
-    assert_eq!(threads[1].checkpoint, Some(3));
+    assert_eq!(threads[1].checkpoint, Some(super::CheckpointNumber::new(3)));
     assert!(threads[1].matches("AXE raised"));
     assert!(!threads[1].matches("rocket"));
     assert!(threads[0].matches(""));
@@ -989,4 +989,57 @@ fn the_agent_cannot_decide_its_map_review() {
         )
         .unwrap();
     assert_eq!(session.execute("map.staged", json!({})).unwrap(), json!([]));
+}
+
+// No spec statement: P6-34, a model's failure reads as what went wrong, and a thread's number
+// as itself
+#[test]
+fn model_errors_and_thread_numbers_read_plainly() {
+    for (error, text) in [
+        (ModelError::Transport("refused".to_owned()), "refused"),
+        (ModelError::Declined, "the model declined the request"),
+        (
+            ModelError::Filtered,
+            "the provider's content filter withheld the reply",
+        ),
+        (
+            ModelError::CutOff,
+            "the reply was cut off at max_tokens, its token limit",
+        ),
+        (ModelError::Malformed("no content".to_owned()), "no content"),
+        (ModelError::Stream("Overloaded".to_owned()), "Overloaded"),
+        (
+            ModelError::Stopped("out of script".to_owned()),
+            "out of script",
+        ),
+    ] {
+        assert_eq!(error.to_string(), text);
+    }
+    let number = super::history::ThreadNumber::new(7);
+    assert_eq!((number.get(), number.to_string()), (7, "7".to_owned()));
+}
+
+// No spec statement: P4-30, a call to a tool the model was not offered is refused as not one
+// of its tools, whatever the rules say of it
+#[test]
+fn a_call_to_a_tool_not_offered_is_refused_as_such() {
+    let (root, mut session) = project("not-offered", FIXED);
+    let mut config = RunConfig::new(&root);
+    config.permissions = Permissions::of(AgentProfile::Ask);
+    config.permissions.rules.tools.insert(
+        "edit.apply".to_owned(),
+        ToolRule {
+            default: Some(Decision::Deny),
+            ..ToolRule::default()
+        },
+    );
+    let mut run = super::Run::start(&mut session, "Edit.", config).unwrap();
+    run.answer(
+        &mut session,
+        Ok(calls(vec![("edit.apply", json!({ "edits": [] }))])),
+    )
+    .unwrap();
+    let (refused, is_error) = result_of(run.transcript(), "c0").unwrap();
+    assert!(is_error);
+    assert_eq!(refused, json!("edit.apply is not one of your tools"));
 }

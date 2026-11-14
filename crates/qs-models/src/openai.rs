@@ -37,9 +37,9 @@ impl ProviderConfig {
         for message in transcript {
             messages.push(match message {
                 Message::User { text } => json!({ "role": "user", "content": text }),
-                // `ChatCompletionRequestMessageContentPartImage`: `type` `image_url`, whose `url` is
-                // "Either a URL of the image or the base64 encoded image data", sent as the data
-                // URL its example writes, `"url": "data:image/jpeg;base64,abcdefg..."`.
+                // `ChatCompletionRequestMessageContentPartImage`: `type` `image_url`, whose
+                // `url` is "Either a URL of the image or the base64 encoded image data", sent as
+                // the data URL its example writes, `"url": "data:image/jpeg;base64,abcdefg..."`.
                 Message::Image { media_type, data } => json!({
                     "role": "user",
                     "content": [{

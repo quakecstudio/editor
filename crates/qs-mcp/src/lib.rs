@@ -25,7 +25,7 @@
 use std::path::{Path, PathBuf};
 
 use qs_paths::arguments::{absolute_paths, collect_paths};
-use qs_paths::lexical;
+use qs_paths::{lexical, lies_under};
 use std::sync::Arc;
 use std::sync::mpsc;
 
@@ -399,7 +399,7 @@ impl Server {
         }
         for path in paths {
             let full = lexical(Path::new(&path));
-            if !roots.iter().any(|root| full.starts_with(lexical(root))) {
+            if !roots.iter().any(|root| lies_under(&full, root)) {
                 return Err(ToolError::OutsideRoots { path: full, tool });
             }
         }
@@ -465,10 +465,10 @@ fn runtime() -> Result<Runtime, McpError> {
         .map_err(McpError::Io)
 }
 
-/// What the server tells a client's model about using it.
 /// The bytes `serve_bytes`' in-memory pipe buffers each way.
 const DUPLEX_BUFFER: usize = 1 << 16;
 
+/// What the server tells a client's model about using it.
 const INSTRUCTIONS: &str = "QuakeC Studio's tools over the project this server was started on: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
     read files, stage edits as hunks and keep checkpoints. Paths are the project's, absolute or \

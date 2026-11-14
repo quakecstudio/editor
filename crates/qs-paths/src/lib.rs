@@ -265,20 +265,34 @@ fn join_all(base: &Path, parts: &[&str]) -> PathBuf {
 }
 
 /// `path` with `.` and `..` worked out by its text, as a check of where it points needs
-/// before the file exists.
+/// before the file exists: a `..` takes off the name before it, stays at a root, and is kept
+/// at the start of a relative path, which it leaves.
 #[must_use]
 pub fn lexical(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for part in path.components() {
         match part {
             Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
+            Component::ParentDir => match out.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    out.pop();
+                }
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                Some(Component::CurDir | Component::ParentDir) | None => out.push(part),
+            },
             other => out.push(other),
         }
     }
     out
+}
+
+/// Whether `path` lies under `root`, both worked out by their text ([`lexical`]): a path that
+/// still climbs out with `..` lies under nothing, so a relative root, which works out to no
+/// parts at all, holds only the paths that stay inside it.
+#[must_use]
+pub fn lies_under(path: &Path, root: &Path) -> bool {
+    let path = lexical(path);
+    !path.components().any(|part| part == Component::ParentDir) && path.starts_with(lexical(root))
 }
 
 #[cfg(test)]
