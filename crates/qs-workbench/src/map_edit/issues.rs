@@ -7,9 +7,6 @@
 //! quick fix where one exists; `map.fix` applies one as a step with undo. `map.search` finds
 //! entities and brushes by class, key, value, texture and bounds.
 
-use std::path::{Path, PathBuf};
-
-use qc_sema::MapDiagnosticKind;
 use qs_commands::{Command, NoParams, Outcome};
 use qs_map::{Brush, Entity, Face, Item, MapFile};
 use schemars::JsonSchema;
@@ -17,8 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{BrushIndex, EntityIndex, MapDocument, MapEdited, edit_map, origin_text};
 use crate::map_textures::{TextureOrigin, TextureSources};
-use crate::preview::HasPreview;
-use crate::{HasWorkbench, MapEditError};
+use crate::{EntityProblem, HasMap, MapEditError, MapProject};
 
 /// The id of `map.issues`.
 pub const MAP_ISSUES: &str = "map.issues";
@@ -424,51 +420,19 @@ const NO_VOLUME: &str = "a brush with no volume, which both compilers drop";
 /// The message of a map with no player start.
 const NO_START: &str = "no info_player_start: the game cannot put a player in the map";
 
-/// The issues of the project's entity check of `file` (MAP-8), each with its fix.
-fn entity_issues(
-    file: &MapFile,
-    places: &[LinePlace],
-    schema: &qc_sema::EntitySchema,
-) -> Vec<MapIssue> {
-    schema
-        .check(file)
+/// The issues that are the project's `problems` with a map's entities (MAP-8), each with its
+/// fix.
+fn entity_issues(places: &[LinePlace], problems: Vec<EntityProblem>) -> Vec<MapIssue> {
+    problems
         .into_iter()
-        .map(|d| {
-            let entity = EntityIndex::new(d.entity.get());
-            let (_, brush) = place_of(places, d.line);
-            let fix = match &d.kind {
-                MapDiagnosticKind::UnknownKey {
-                    key,
-                    suggestion: Some(to),
-                } => Some(QuickFix::RenameKey {
-                    entity,
-                    from: key.clone(),
-                    to: to.clone(),
-                }),
-                MapDiagnosticKind::UnknownClass {
-                    suggestion: Some(classname),
-                    ..
-                } => Some(QuickFix::SetClassname {
-                    entity,
-                    classname: classname.clone(),
-                }),
-                MapDiagnosticKind::UnknownKey {
-                    suggestion: None, ..
-                }
-                | MapDiagnosticKind::UnknownClass {
-                    suggestion: None, ..
-                }
-                | MapDiagnosticKind::NoClassname
-                | MapDiagnosticKind::BadValue { .. }
-                | MapDiagnosticKind::NoTarget { .. }
-                | MapDiagnosticKind::Untargeted { .. } => None,
-            };
+        .map(|problem| {
+            let (_, brush) = place_of(places, problem.line);
             MapIssue {
-                line: d.line,
-                message: d.kind.to_string(),
-                entity: Some(entity),
+                line: problem.line,
+                message: problem.message,
+                entity: Some(problem.entity),
                 brush,
-                fix,
+                fix: problem.fix,
             }
         })
         .collect()
@@ -496,7 +460,7 @@ impl MapDocument {
 /// `map.issues`.
 pub(crate) struct MapIssuesCommand;
 
-impl<C: HasPreview + 'static> Command<C> for MapIssuesCommand {
+impl<C: HasMap + 'static> Command<C> for MapIssuesCommand {
     const ID: &'static str = MAP_ISSUES;
     const SUMMARY: &'static str = "Lists every issue of the open map, each with the entity or \
         brush it is about and a quick fix where one exists: its format's, brushes with no \
@@ -507,22 +471,20 @@ impl<C: HasPreview + 'static> Command<C> for MapIssuesCommand {
     type Error = MapEditError;
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapIssues, C>, MapEditError> {
-        let schema = context.workbench().entity_schema().ok();
-        let (workbench, preview) = context.workbench_and_preview();
-        let game = preview.game_base_path();
-        let chosen = preview.game_folder().map(Path::to_path_buf);
-        let root: Option<PathBuf> = workbench.root().map(Path::to_path_buf);
-        let document = workbench.map().ok_or(MapEditError::NoMap)?;
+        let check = context.map_project().entity_check();
+        let game = context.game_files();
+        let root = context.map_project().project_root();
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         let places = line_places(document.file());
         let mut issues = document.own_issues(&places);
-        if let Some(schema) = &schema {
-            issues.extend(entity_issues(document.file(), &places, schema));
+        if let Some(check) = &check {
+            issues.extend(entity_issues(&places, check(document.file())));
         }
         let sources = TextureSources::load(
             document,
             root.as_deref(),
-            game.as_deref(),
-            chosen.as_deref(),
+            game.base.as_deref(),
+            game.chosen.as_deref(),
         );
         issues.extend(document.texture_issues(&sources));
         Ok(Outcome::outside_history(MapIssues { issues }))
@@ -532,7 +494,7 @@ impl<C: HasPreview + 'static> Command<C> for MapIssuesCommand {
 /// `map.fix`.
 pub(crate) struct MapFix;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapFix {
+impl<C: HasMap + 'static> Command<C> for MapFix {
     const ID: &'static str = MAP_FIX;
     const SUMMARY: &'static str = "Applies a quick fix `map.issues` gave, as one step with undo.";
     type Params = MapFixParams;
@@ -552,7 +514,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapFix {
 /// `map.search`.
 pub(crate) struct MapSearch;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapSearch {
+impl<C: HasMap + 'static> Command<C> for MapSearch {
     const ID: &'static str = MAP_SEARCH;
     const SUMMARY: &'static str = "Finds the open map's entities and brushes by classname, key, \
         value, texture and a box, every part given; text matches in any case.";
@@ -565,7 +527,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSearch {
         context: &mut C,
         params: MapSearchParams,
     ) -> Result<Outcome<MapFound, C>, MapEditError> {
-        let document = context.workbench().map_mut()?;
+        let document = context.map_store().map_mut()?;
         Ok(Outcome::outside_history(document.search(&params)))
     }
 }

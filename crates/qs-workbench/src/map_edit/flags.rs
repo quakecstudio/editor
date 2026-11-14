@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, MapDocument, MapEdited, edit_map};
-use crate::{HasWorkbench, MapEditError};
+use crate::{HasMap, MapEditError};
 
 /// The id of `map.set_flag`.
 pub const MAP_SET_FLAG: &str = "map.set_flag";
@@ -69,7 +69,7 @@ impl MapDocument {
 /// `map.set_flag`.
 pub(super) struct MapSetFlag;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapSetFlag {
+impl<C: HasMap + 'static> Command<C> for MapSetFlag {
     const ID: &'static str = MAP_SET_FLAG;
     const SUMMARY: &'static str = "Sets or clears one spawnflag of an entity of the open map, \
         and of the entities in also, in one step, keeping each entity's other flags.";

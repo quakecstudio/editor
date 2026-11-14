@@ -28,6 +28,7 @@ pub mod map_compile;
 pub mod map_edit;
 mod map_error;
 pub mod map_profile;
+mod map_store;
 pub mod map_textures;
 pub mod map_uv;
 mod preview;
@@ -61,6 +62,9 @@ pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
 pub use crate::map_error::MapEditError;
+pub use crate::map_store::{
+    EntityCheck, EntityProblem, GameFiles, HasMap, LiveMap, MapProject, MapStore,
+};
 pub use crate::preview::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
     ScenarioRunParams, StepBy, StepByParams, UNWATCH, UnwatchParams, WATCH, WatchParams, debug,
@@ -347,7 +351,7 @@ pub struct Workbench<L> {
     /// The terminal tabs (P4-36).
     terminals: terminal::Terminals,
     /// The map open in the map view (P5-06).
-    map: Option<map_edit::MapDocument>,
+    maps: MapStore,
     /// The compile profile chosen, which `map.run_profile` runs when given none (P6-20).
     profile: Option<String>,
 }
@@ -371,7 +375,7 @@ impl<L: Loader> Workbench<L> {
             sent: 0,
             staged: staged::Staged::default(),
             terminals: terminal::Terminals::default(),
-            map: None,
+            maps: MapStore::default(),
             profile: None,
         }
     }

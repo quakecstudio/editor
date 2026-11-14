@@ -206,6 +206,7 @@ enum qs_workbench::map_edit::shapes::ArchWall
 enum qs_workbench::map_edit::shapes::Circle
 enum qs_workbench::map_edit::shapes::Climb
 enum qs_workbench::map_edit::shapes::ShapeSpec
+enum qs_workbench::map_error::MapEditError
 enum qs_workbench::map_profile::ExpandError
 enum qs_workbench::map_profile::LightSpeed
 enum qs_workbench::map_profile::Task
@@ -587,6 +588,12 @@ field qs_workbench::map_profile::RunProfileParams.profile
 field qs_workbench::map_profile::TaskRun.result
 field qs_workbench::map_profile::TaskRun.seconds
 field qs_workbench::map_profile::TaskRun.task
+field qs_workbench::map_store::EntityProblem.entity
+field qs_workbench::map_store::EntityProblem.fix
+field qs_workbench::map_store::EntityProblem.line
+field qs_workbench::map_store::EntityProblem.message
+field qs_workbench::map_store::GameFiles.base
+field qs_workbench::map_store::GameFiles.chosen
 field qs_workbench::map_textures::BrowserTexture.height
 field qs_workbench::map_textures::BrowserTexture.name
 field qs_workbench::map_textures::BrowserTexture.origin
@@ -810,7 +817,6 @@ fn qs_workbench::checkpoints::Workbench::checkpoints
 fn qs_workbench::checkpoints::Workbench::create_checkpoint
 fn qs_workbench::checkpoints::Workbench::restore_checkpoint
 fn qs_workbench::checkpoints::register_checkpoints
-fn qs_workbench::commands::HasWorkbench::preview
 fn qs_workbench::commands::HasWorkbench::workbench
 fn qs_workbench::commands::register
 fn qs_workbench::editing::Workbench::apply_action
@@ -829,8 +835,8 @@ fn qs_workbench::entity_classes::Workbench::entity_classes
 fn qs_workbench::entity_classes::Workbench::targeting_keys
 fn qs_workbench::export::Workbench::export
 fn qs_workbench::git::register_git
-fn qs_workbench::map_backup::Workbench::backup_map
-fn qs_workbench::map_backup::Workbench::map_backups
+fn qs_workbench::map_backup::MapStore::backup_map
+fn qs_workbench::map_backup::MapStore::map_backups
 fn qs_workbench::map_check::Workbench::check_map
 fn qs_workbench::map_check::Workbench::entity_schema
 fn qs_workbench::map_check::Workbench::rename_map_key
@@ -847,13 +853,17 @@ fn qs_workbench::map_edit::MapDocument::selected
 fn qs_workbench::map_edit::MapDocument::source
 fn qs_workbench::map_edit::MapDocument::watched
 fn qs_workbench::map_edit::MapRevision::next
+fn qs_workbench::map_edit::MapStore::map
+fn qs_workbench::map_edit::MapStore::open_map
+fn qs_workbench::map_edit::MapStore::save_map
 fn qs_workbench::map_edit::Workbench::map
 fn qs_workbench::map_edit::Workbench::map_entity
-fn qs_workbench::map_edit::Workbench::open_map
-fn qs_workbench::map_edit::Workbench::save_map
+fn qs_workbench::map_edit::Workbench::maps
+fn qs_workbench::map_edit::Workbench::maps_mut
 fn qs_workbench::map_edit::brushes::BrushIndex::get
 fn qs_workbench::map_edit::brushes::BrushIndex::new
 fn qs_workbench::map_edit::disk::MapDocument::conflict
+fn qs_workbench::map_edit::entity_keys
 fn qs_workbench::map_edit::groups::MapDocument::hidden_entities
 fn qs_workbench::map_edit::groups::MapDocument::is_hidden
 fn qs_workbench::map_edit::groups::MapDocument::is_locked
@@ -862,9 +872,10 @@ fn qs_workbench::map_edit::outline::MapDocument::outline
 fn qs_workbench::map_edit::outline::OutlineRow::count
 fn qs_workbench::map_edit::outline::OutlineRow::holds
 fn qs_workbench::map_edit::prefabs::MapDocument::external_folders
+fn qs_workbench::map_edit::register_map_game
 fn qs_workbench::map_edit::review::MapHunkNumber::get
 fn qs_workbench::map_edit::review::MapHunkNumber::new
-fn qs_workbench::map_edit::review::Workbench::map_hunks
+fn qs_workbench::map_edit::review::MapStore::map_hunks
 fn qs_workbench::map_profile::Expansions::bsp
 fn qs_workbench::map_profile::Expansions::expand
 fn qs_workbench::map_profile::Expansions::new
@@ -875,6 +886,18 @@ fn qs_workbench::map_profile::Task::name
 fn qs_workbench::map_profile::Variable::name
 fn qs_workbench::map_profile::Workbench::chosen_profile
 fn qs_workbench::map_profile::Workbench::profiles
+fn qs_workbench::map_store::HasMap::game_files
+fn qs_workbench::map_store::HasMap::live_map
+fn qs_workbench::map_store::HasMap::map_project
+fn qs_workbench::map_store::HasMap::map_store
+fn qs_workbench::map_store::LiveMap::game_files
+fn qs_workbench::map_store::LiveMap::plays_in_step
+fn qs_workbench::map_store::LiveMap::read_again
+fn qs_workbench::map_store::LiveMap::send_changes
+fn qs_workbench::map_store::MapProject::entity_check
+fn qs_workbench::map_store::MapProject::entity_classes
+fn qs_workbench::map_store::MapProject::project_root
+fn qs_workbench::map_store::MapProject::targeting_keys
 fn qs_workbench::map_textures::MapDocument::texture_uses
 fn qs_workbench::map_textures::TextureSources::decode
 fn qs_workbench::map_textures::TextureSources::from_files
@@ -1015,6 +1038,7 @@ fn qs_workbench::tools::register_tools
 fn qs_workbench::vm_run::register_vm
 fn qs_workbench::vm_run::run
 impl qs_workbench::WorkbenchError: Error
+impl qs_workbench::WorkbenchError: From<MapEditError>
 impl qs_workbench::WorkbenchError: fmt::Display
 impl qs_workbench::checkpoints::CheckpointMade: From<Checkpoint>
 impl qs_workbench::commands::CandidateKind: From<DefKind>
@@ -1028,11 +1052,14 @@ impl qs_workbench::git::GitCommandError: std::error::Error
 impl qs_workbench::map_edit::EntityIndex: fmt::Display
 impl qs_workbench::map_edit::inspect::RoomShape: From<RoomKind>
 impl qs_workbench::map_edit::review::MapHunkNumber: std::fmt::Display
+impl qs_workbench::map_error::MapEditError: Error
+impl qs_workbench::map_error::MapEditError: fmt::Display
 impl qs_workbench::map_profile::ExpandError: std::error::Error
 impl qs_workbench::map_profile::ExpandError: std::fmt::Display
 impl qs_workbench::map_profile::TaskError: std::error::Error
 impl qs_workbench::map_profile::TaskError: std::fmt::Display
 impl qs_workbench::preview::Preview: Drop
+impl qs_workbench::preview::Preview: LiveMap
 impl qs_workbench::preview::Preview: core::fmt::Debug
 impl qs_workbench::preview::PreviewError: From<ClientError>
 impl qs_workbench::preview::PreviewError: core::fmt::Display
@@ -1212,6 +1239,9 @@ struct qs_workbench::map_profile::Profile
 struct qs_workbench::map_profile::ProfileRun
 struct qs_workbench::map_profile::RunProfileParams
 struct qs_workbench::map_profile::TaskRun
+struct qs_workbench::map_store::EntityProblem
+struct qs_workbench::map_store::GameFiles
+struct qs_workbench::map_store::MapStore
 struct qs_workbench::map_textures::BrowserTexture
 struct qs_workbench::map_textures::MapTextures
 struct qs_workbench::map_textures::TextureSources
@@ -1293,8 +1323,14 @@ struct qs_workbench::vm_run::VmChange
 struct qs_workbench::vm_run::VmRun
 struct qs_workbench::vm_run::VmRunParams
 trait qs_workbench::commands::HasWorkbench
+trait qs_workbench::map_store::HasMap
+trait qs_workbench::map_store::LiveMap
+trait qs_workbench::map_store::MapProject
 trait qs_workbench::preview::HasPreview
 type qs_workbench::commands::HasWorkbench::Loader
+type qs_workbench::map_store::EntityCheck
+type qs_workbench::map_store::HasMap::Live
+type qs_workbench::map_store::HasMap::Project
 use qs_workbench::* = crate::commands::*
 use qs_workbench::ACCEPT_HUNKS = crate::staged::ACCEPT_HUNKS
 use qs_workbench::APPLY_EDIT = crate::staged::APPLY_EDIT
@@ -1315,17 +1351,25 @@ use qs_workbench::Decision = crate::staged::Decision
 use qs_workbench::DefKind = qc_ide::DefKind
 use qs_workbench::Diagnostic = qc_ide::Diagnostic
 use qs_workbench::Dialect = qc_project::Dialect
+use qs_workbench::EntityCheck = crate::map_store::EntityCheck
+use qs_workbench::EntityProblem = crate::map_store::EntityProblem
 use qs_workbench::FileEdit = qc_ide::FileEdit
 use qs_workbench::FileRange = qc_ide::FileRange
 use qs_workbench::FsLoader = qc_project::FsLoader
 use qs_workbench::GAME = crate::preview::GAME
+use qs_workbench::GameFiles = crate::map_store::GameFiles
 use qs_workbench::Gravity = crate::build::Gravity
+use qs_workbench::HasMap = crate::map_store::HasMap
 use qs_workbench::HasPreview = crate::preview::HasPreview
 use qs_workbench::Highlight = qc_ide::Highlight
 use qs_workbench::HighlightKind = qc_ide::HighlightKind
 use qs_workbench::Hover = qc_ide::Hover
 use qs_workbench::HunkId = crate::staged::HunkId
+use qs_workbench::LiveMap = crate::map_store::LiveMap
 use qs_workbench::Loader = qc_project::Loader
+use qs_workbench::MapEditError = crate::map_error::MapEditError
+use qs_workbench::MapProject = crate::map_store::MapProject
+use qs_workbench::MapStore = crate::map_store::MapStore
 use qs_workbench::Modifier = qc_ide::Modifier
 use qs_workbench::Modifiers = qc_ide::Modifiers
 use qs_workbench::ModuleBuilt = crate::build::ModuleBuilt
@@ -1529,52 +1573,28 @@ variant qs_workbench::CheckAfterTyping::OffTheFrame
 variant qs_workbench::CheckAfterTyping::OnTheFrame
 variant qs_workbench::EntryKind::Directory
 variant qs_workbench::EntryKind::File
-variant qs_workbench::WorkbenchError::BadScale
-variant qs_workbench::WorkbenchError::Brush
-variant qs_workbench::WorkbenchError::Bsp
-variant qs_workbench::WorkbenchError::CannotMove
-variant qs_workbench::WorkbenchError::ChangedOnDisk
 variant qs_workbench::WorkbenchError::Checkpoint
-variant qs_workbench::WorkbenchError::EntOverride
-variant qs_workbench::WorkbenchError::Image
-variant qs_workbench::WorkbenchError::Link
-variant qs_workbench::WorkbenchError::Locked
 variant qs_workbench::WorkbenchError::Map
 variant qs_workbench::WorkbenchError::MapCompile
+variant qs_workbench::WorkbenchError::MapEdit
 variant qs_workbench::WorkbenchError::MapLight
 variant qs_workbench::WorkbenchError::MapLump
-variant qs_workbench::WorkbenchError::NoBrush
-variant qs_workbench::WorkbenchError::NoEntity
-variant qs_workbench::WorkbenchError::NoFace
 variant qs_workbench::WorkbenchError::NoFile
 variant qs_workbench::WorkbenchError::NoFix
 variant qs_workbench::WorkbenchError::NoHunk
-variant qs_workbench::WorkbenchError::NoKey
 variant qs_workbench::WorkbenchError::NoMap
-variant qs_workbench::WorkbenchError::NoMapHunk
 variant qs_workbench::WorkbenchError::NoMapSource
-variant qs_workbench::WorkbenchError::NoPalette
 variant qs_workbench::WorkbenchError::NoProject
-variant qs_workbench::WorkbenchError::NoRoom
-variant qs_workbench::WorkbenchError::NoSelection
-variant qs_workbench::WorkbenchError::NoTextureSize
 variant qs_workbench::WorkbenchError::NotBuilt
-variant qs_workbench::WorkbenchError::NotContainer
-variant qs_workbench::WorkbenchError::NotEmpty
-variant qs_workbench::WorkbenchError::NotLayer
-variant qs_workbench::WorkbenchError::NotPointEntity
 variant qs_workbench::WorkbenchError::Offset
 variant qs_workbench::WorkbenchError::Pattern
 variant qs_workbench::WorkbenchError::PortalFile
-variant qs_workbench::WorkbenchError::PrefabName
 variant qs_workbench::WorkbenchError::ProfilesParse
 variant qs_workbench::WorkbenchError::ProfilesRead
 variant qs_workbench::WorkbenchError::Project
 variant qs_workbench::WorkbenchError::Rename
 variant qs_workbench::WorkbenchError::Save
-variant qs_workbench::WorkbenchError::Shape
 variant qs_workbench::WorkbenchError::Spawn
-variant qs_workbench::WorkbenchError::Texture
 variant qs_workbench::WorkbenchError::UnknownProfile
 variant qs_workbench::WorkbenchError::Wad
 variant qs_workbench::WorkbenchError::WadWrite
@@ -1683,6 +1703,39 @@ variant qs_workbench::map_edit::shapes::ShapeSpec::Rock
 variant qs_workbench::map_edit::shapes::ShapeSpec::SpiralStairs
 variant qs_workbench::map_edit::shapes::ShapeSpec::Stairs
 variant qs_workbench::map_edit::shapes::ShapeSpec::UvSpheroid
+variant qs_workbench::map_error::MapEditError::BadScale
+variant qs_workbench::map_error::MapEditError::Brush
+variant qs_workbench::map_error::MapEditError::Bsp
+variant qs_workbench::map_error::MapEditError::CannotMove
+variant qs_workbench::map_error::MapEditError::ChangedOnDisk
+variant qs_workbench::map_error::MapEditError::EntOverride
+variant qs_workbench::map_error::MapEditError::Image
+variant qs_workbench::map_error::MapEditError::Link
+variant qs_workbench::map_error::MapEditError::Locked
+variant qs_workbench::map_error::MapEditError::Map
+variant qs_workbench::map_error::MapEditError::NoBrush
+variant qs_workbench::map_error::MapEditError::NoEntity
+variant qs_workbench::map_error::MapEditError::NoFace
+variant qs_workbench::map_error::MapEditError::NoFile
+variant qs_workbench::map_error::MapEditError::NoKey
+variant qs_workbench::map_error::MapEditError::NoMap
+variant qs_workbench::map_error::MapEditError::NoMapHunk
+variant qs_workbench::map_error::MapEditError::NoMapSource
+variant qs_workbench::map_error::MapEditError::NoPalette
+variant qs_workbench::map_error::MapEditError::NoProject
+variant qs_workbench::map_error::MapEditError::NoRoom
+variant qs_workbench::map_error::MapEditError::NoSelection
+variant qs_workbench::map_error::MapEditError::NoTextureSize
+variant qs_workbench::map_error::MapEditError::NotContainer
+variant qs_workbench::map_error::MapEditError::NotEmpty
+variant qs_workbench::map_error::MapEditError::NotLayer
+variant qs_workbench::map_error::MapEditError::NotPointEntity
+variant qs_workbench::map_error::MapEditError::PrefabName
+variant qs_workbench::map_error::MapEditError::Save
+variant qs_workbench::map_error::MapEditError::Shape
+variant qs_workbench::map_error::MapEditError::Texture
+variant qs_workbench::map_error::MapEditError::Wad
+variant qs_workbench::map_error::MapEditError::WadWrite
 variant qs_workbench::map_profile::ExpandError::NoValue
 variant qs_workbench::map_profile::ExpandError::Unclosed
 variant qs_workbench::map_profile::ExpandError::Unknown

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::brushes::snap;
 use super::{BrushIndex, EntityIndex, MapDocument, MapEdited, edit_map, origin_text};
-use crate::{HasWorkbench, MapEditError};
+use crate::{HasMap, MapEditError, MapProject};
 
 /// The id of `map.prefabs`.
 pub const MAP_PREFABS: &str = "map.prefabs";
@@ -272,19 +272,10 @@ impl MapDocument {
     }
 }
 
-impl<L: crate::Loader> crate::Workbench<L> {
-    /// The project's folder, or [`MapEditError::NoProject`].
-    fn project_root(&self) -> Result<PathBuf, MapEditError> {
-        self.root()
-            .map(Path::to_path_buf)
-            .ok_or(MapEditError::NoProject)
-    }
-}
-
 /// `map.prefabs`.
 pub(super) struct ListPrefabs;
 
-impl<C: HasWorkbench + 'static> Command<C> for ListPrefabs {
+impl<C: HasMap + 'static> Command<C> for ListPrefabs {
     const ID: &'static str = MAP_PREFABS;
     const SUMMARY: &'static str = "Lists the .map files in the project's prefabs folder.";
     type Params = NoParams;
@@ -292,7 +283,11 @@ impl<C: HasWorkbench + 'static> Command<C> for ListPrefabs {
     type Error = MapEditError;
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Prefabs, C>, MapEditError> {
-        let folder = context.workbench().project_root()?.join(PREFAB_FOLDER);
+        let folder = context
+            .map_project()
+            .project_root()
+            .ok_or(MapEditError::NoProject)?
+            .join(PREFAB_FOLDER);
         let mut prefabs: Vec<Prefab> = std::fs::read_dir(&folder)
             .into_iter()
             .flatten()
@@ -315,7 +310,7 @@ impl<C: HasWorkbench + 'static> Command<C> for ListPrefabs {
 /// `map.place_prefab`.
 pub(super) struct PlacePrefab;
 
-impl<C: HasWorkbench + 'static> Command<C> for PlacePrefab {
+impl<C: HasMap + 'static> Command<C> for PlacePrefab {
     const ID: &'static str = MAP_PLACE_PREFAB;
     const SUMMARY: &'static str = "Copies a prefab into the open map with its origin at a point \
         on the grid: its world's brushes into the world, its other entities after the map's.";
@@ -328,7 +323,7 @@ impl<C: HasWorkbench + 'static> Command<C> for PlacePrefab {
         context: &mut C,
         params: PlacePrefabParams,
     ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let path = match context.workbench().root() {
+        let path = match context.map_project().project_root() {
             Some(root) if params.path.is_relative() => root.join(&params.path),
             Some(_) | None => params.path.clone(),
         };
@@ -352,7 +347,7 @@ impl<C: HasWorkbench + 'static> Command<C> for PlacePrefab {
 /// `map.save_prefab`.
 pub(super) struct SavePrefab;
 
-impl<C: HasWorkbench + 'static> Command<C> for SavePrefab {
+impl<C: HasMap + 'static> Command<C> for SavePrefab {
     const ID: &'static str = MAP_SAVE_PREFAB;
     const SUMMARY: &'static str = "Writes brushes of the world and whole entities of the open map \
         as a prefab in the project's prefabs folder, around the middle of their floor.";
@@ -365,13 +360,16 @@ impl<C: HasWorkbench + 'static> Command<C> for SavePrefab {
         context: &mut C,
         params: SavePrefabParams,
     ) -> Result<Outcome<PrefabSaved, C>, MapEditError> {
-        let workbench = context.workbench();
-        let root = workbench.project_root()?;
+        let root = context
+            .map_project()
+            .project_root()
+            .ok_or(MapEditError::NoProject)?;
         let path = prefab_file(&root, &params.name)?;
-        let prefab =
-            workbench
-                .map_mut()?
-                .prefab_of(&params.brushes, &params.entities, params.grid)?;
+        let prefab = context.map_store().map_mut()?.prefab_of(
+            &params.brushes,
+            &params.entities,
+            params.grid,
+        )?;
         let save = |error| MapEditError::Save {
             path: path.clone(),
             error,

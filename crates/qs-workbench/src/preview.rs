@@ -24,11 +24,9 @@ use schemars::JsonSchema;
 
 use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere, MapPortalsCommand};
-use crate::map_edit::{LiveChange, MapIssuesCommand};
+use crate::map_edit::{LiveChange, register_map_game};
 use crate::map_profile::{MapChooseProfile, MapProfiles, MapRunProfile};
-use crate::map_uv::{FaceAlign, FaceUv};
-use crate::texture_import::TextureImport;
-use crate::{HasWorkbench, ModuleBuilt, Workbench, WorkbenchError};
+use crate::{GameFiles, HasWorkbench, LiveMap, ModuleBuilt, Workbench, WorkbenchError};
 use qs_map::Entity;
 
 pub mod debug;
@@ -1044,6 +1042,28 @@ fn socket_path() -> PathBuf {
     }
 }
 
+/// What the map editor asks of the game (`HasMap`): the play loop's.
+impl LiveMap for Preview {
+    fn plays_in_step(&self, map: &Path) -> bool {
+        Self::plays_in_step(self, map)
+    }
+
+    fn send_changes(&mut self, map: &Path, before: &[Entity], changes: &[LiveChange]) {
+        self.send_map_changes(map, before, changes);
+    }
+
+    fn read_again(&mut self, map: &Path) {
+        self.map_read_again(map);
+    }
+
+    fn game_files(&self) -> GameFiles {
+        GameFiles {
+            base: self.game_base_path(),
+            chosen: self.game_folder().map(Path::to_path_buf),
+        }
+    }
+}
+
 /// A context the `preview.*` commands work on: one with a [`Workbench`] and a [`Preview`].
 pub trait HasPreview: HasWorkbench {
     /// The workbench and the preview, together, for the commands that build and play.
@@ -1693,10 +1713,7 @@ pub fn register_preview<C: HasPreview + 'static>(
     registry.register(ChooseGameCommand)?;
     registry.register(SelectCommand)?;
     registry.register(PickCommand)?;
-    registry.register(TextureImport)?;
-    registry.register(MapIssuesCommand)?;
-    registry.register(FaceUv)?;
-    registry.register(FaceAlign)?;
+    register_map_game(registry)?;
     registry.register(MapLeaks)?;
     registry.register(MapCompile)?;
     registry.register(MapPlayFromHere)?;

@@ -18,7 +18,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::map_edit::{MapDocument, MapSource};
-use crate::{HasWorkbench, MapEditError};
+use crate::{HasMap, MapEditError, MapProject};
 
 /// The id of `map.textures`.
 pub const MAP_TEXTURES: &str = "map.textures";
@@ -458,7 +458,7 @@ impl MapDocument {
 /// `map.textures`.
 struct MapTexturesCommand;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapTexturesCommand {
+impl<C: HasMap + 'static> Command<C> for MapTexturesCommand {
     const ID: &'static str = MAP_TEXTURES;
     const SUMMARY: &'static str = "Lists the open map's textures: those of the WADs its world \
         names, found in the project, beside the map or in the game, and of the BSP it was \
@@ -469,26 +469,21 @@ impl<C: HasWorkbench + 'static> Command<C> for MapTexturesCommand {
     type Error = MapEditError;
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapTextures, C>, MapEditError> {
-        let (game, chosen) = context.preview().map_or((None, None), |preview| {
-            (
-                preview.game_base_path(),
-                preview.game_folder().map(Path::to_path_buf),
-            )
-        });
-        let workbench = context.workbench();
-        let document = workbench.map().ok_or(MapEditError::NoMap)?;
+        let game = context.game_files();
+        let root = context.map_project().project_root();
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         let sources = TextureSources::load(
             document,
-            workbench.root(),
-            game.as_deref(),
-            chosen.as_deref(),
+            root.as_deref(),
+            game.base.as_deref(),
+            game.chosen.as_deref(),
         );
         Ok(Outcome::unchanged(sources.listing(document)))
     }
 }
 
 /// Registers `map.textures`.
-pub(crate) fn register_map_textures<C: HasWorkbench + 'static>(
+pub(crate) fn register_map_textures<C: HasMap + 'static>(
     registry: &mut Registry<C>,
 ) -> Result<(), qs_commands::RegisterError> {
     registry.register(MapTexturesCommand)

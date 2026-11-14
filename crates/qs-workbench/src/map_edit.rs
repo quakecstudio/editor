@@ -30,10 +30,12 @@ pub use brushes::{
     MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT,
     MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
 };
+pub(crate) use disk::FilesChangedCommand;
 pub use disk::{
     FILES_CHANGED, FilesChanged, FilesChangedParams, Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference,
     MapOnDisk, ResolveParams,
 };
+pub(crate) use filter::MapFilter;
 pub use filter::{FilterParams, GameMode, MAP_FILTER, MapFiltered, Skill};
 pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
 pub use groups::{
@@ -41,7 +43,6 @@ pub use groups::{
     MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER, MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams, Switch,
 };
 pub use inspect::{EntityInfo, InspectParams, MapInspected, RoomInfo, RoomShape};
-pub(crate) use issues::MapIssuesCommand;
 pub use issues::{
     MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssue, MapIssues, MapSearchParams,
     QuickFix,
@@ -76,10 +77,12 @@ mod shapes;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::entity_classes::{ClassInfo, FlagInfo, KeyInfo};
+use crate::entity_classes::{FlagInfo, KeyInfo};
 use crate::map_backup::{MapBackup, MapBackups, MapRestoreBackup};
 use crate::map_compile::MapReport;
-use crate::{HasWorkbench, MapEditError, Workbench};
+use crate::map_uv::{FaceAlign, FaceUv};
+use crate::texture_import::TextureImport;
+use crate::{HasMap, LiveMap, MapEditError, MapProject, MapStore, Workbench};
 
 /// Degrees in a whole turn; a rotated yaw is kept below it.
 const FULL_TURN: f64 = 360.0;
@@ -612,7 +615,38 @@ impl<L: crate::Loader> Workbench<L> {
     /// The map open in the map view.
     #[must_use]
     pub const fn map(&self) -> Option<&MapDocument> {
-        self.map.as_ref()
+        self.maps.map()
+    }
+
+    /// The store of the map open in the map view.
+    #[must_use]
+    pub const fn maps(&self) -> &MapStore {
+        &self.maps
+    }
+
+    /// The store of the map open in the map view, to open, change or save it.
+    pub const fn maps_mut(&mut self) -> &mut MapStore {
+        &mut self.maps
+    }
+}
+
+impl<L: crate::Loader> Workbench<L> {
+    /// The keys of `entity` of the open map, typed by its class (MAP-4).
+    ///
+    /// # Errors
+    ///
+    /// [`MapEditError::NoMap`] with no map open and [`MapEditError::NoEntity`] for an
+    /// entity it does not have.
+    pub fn map_entity(&mut self, entity: EntityIndex) -> Result<EntityKeys, MapEditError> {
+        entity_keys(self, entity)
+    }
+}
+
+impl MapStore {
+    /// The map open in the map view.
+    #[must_use]
+    pub const fn map(&self) -> Option<&MapDocument> {
+        self.document.as_ref()
     }
 
     /// Opens the `.map` at `path`, or a `.bsp`'s entity lump, in the map view.
@@ -629,10 +663,10 @@ impl<L: crate::Loader> Workbench<L> {
             disk,
         } = MapRead::of(path)?;
         let stamped = self
-            .map
+            .document
             .as_ref()
             .map_or(MapRevision::default(), |old| old.stamped.next());
-        Ok(self.map.insert(MapDocument {
+        Ok(self.document.insert(MapDocument {
             path: path.to_path_buf(),
             source,
             file,
@@ -640,7 +674,7 @@ impl<L: crate::Loader> Workbench<L> {
             view: groups::ViewState::default(),
             unsaved: false,
             revision: self
-                .map
+                .document
                 .as_ref()
                 .map_or(MapRevision::default(), |old| old.revision.next()),
             edits: stamped,
@@ -654,17 +688,13 @@ impl<L: crate::Loader> Workbench<L> {
     }
 
     pub(crate) fn map_mut(&mut self) -> Result<&mut MapDocument, MapEditError> {
-        self.map.as_mut().ok_or(MapEditError::NoMap)
+        self.document.as_mut().ok_or(MapEditError::NoMap)
     }
 
-    /// The keys of `entity` of the open map, typed by its class (MAP-4).
-    ///
-    /// # Errors
-    ///
-    /// [`MapEditError::NoMap`] with no map open and [`MapEditError::NoEntity`] for an
-    /// entity it does not have.
-    pub fn map_entity(&mut self, entity: EntityIndex) -> Result<EntityKeys, MapEditError> {
-        let document = self.map.as_ref().ok_or(MapEditError::NoMap)?;
+    /// The keys of `entity` of the open map, with none of its class's ([`entity_keys`] adds
+    /// those).
+    fn map_entity(&self, entity: EntityIndex) -> Result<EntityKeys, MapEditError> {
+        let document = self.document.as_ref().ok_or(MapEditError::NoMap)?;
         let found = document
             .file
             .entities
@@ -687,25 +717,11 @@ impl<L: crate::Loader> Workbench<L> {
             .collect();
         targetnames.sort();
         targetnames.dedup();
-        let class = match (&classname, self.root().is_some()) {
-            // With a project open the classes are always read (`entity_classes` fails only
-            // with none).
-            (Some(name), true) => self.entity_classes().ok().and_then(|classes| {
-                classes
-                    .iter()
-                    .find(|class| &class.name == name)
-                    .map(ClassInfo::from)
-            }),
-            _ => None,
-        };
-        let (keys, spawnflags) = class
-            .map(|class| (class.keys, class.spawnflags))
-            .unwrap_or_default();
         Ok(EntityKeys {
             classname,
             pairs,
-            keys,
-            spawnflags,
+            keys: Vec::new(),
+            spawnflags: Vec::new(),
             targetnames,
             brush,
         })
@@ -783,6 +799,32 @@ impl<L: crate::Loader> Workbench<L> {
     }
 }
 
+/// The keys of `entity` of the open map of `context`, typed by its class when the project
+/// defines one of its classname (MAP-4).
+///
+/// # Errors
+///
+/// [`MapEditError::NoMap`] with no map open and [`MapEditError::NoEntity`] for an entity it
+/// does not have.
+pub fn entity_keys<C: HasMap>(
+    context: &mut C,
+    entity: EntityIndex,
+) -> Result<EntityKeys, MapEditError> {
+    let mut keys = context.map_store().map_entity(entity)?;
+    let class = keys.classname.as_ref().and_then(|name| {
+        context
+            .map_project()
+            .entity_classes()?
+            .into_iter()
+            .find(|class| &class.name == name)
+    });
+    if let Some(class) = class {
+        keys.keys = class.keys;
+        keys.spawnflags = class.spawnflags;
+    }
+    Ok(keys)
+}
+
 /// The `.ent` files the engine looks for, in order, beside the BSP at `path` whose entity
 /// lump is `lump` (BSP-19.1).
 fn ent_files(path: &Path, lump: &[u8]) -> [PathBuf; 2] {
@@ -792,11 +834,11 @@ fn ent_files(path: &Path, lump: &[u8]) -> [PathBuf; 2] {
 /// Runs `edit` on the open map of `context` and returns its answer and the step that undoes
 /// it, sending the change to the game when one runs on the map (P5-07); an edit that fails
 /// leaves the map as it was.
-pub(crate) fn edit_map<C: HasWorkbench, T>(
+pub(crate) fn edit_map<C: HasMap, T>(
     context: &mut C,
     edit: impl FnOnce(&mut MapDocument) -> Result<T, MapEditError>,
 ) -> Result<(T, MapStep), MapEditError> {
-    let document = context.workbench().map_mut()?;
+    let document = context.map_store().map_mut()?;
     let before = (
         document.file.clone(),
         document.selected,
@@ -828,24 +870,29 @@ pub(crate) fn edit_map<C: HasWorkbench, T>(
 
 /// Sends what changed from the entities of `before` to the open map's to the game of
 /// `context`, when it runs on that map (P5-07, MAP-12).
-fn send_changes<C: HasWorkbench>(context: &mut C, before: &MapFile) {
-    let Some(path) = context.workbench().map.as_ref().map(|d| d.path.clone()) else {
+fn send_changes<C: HasMap>(context: &mut C, before: &MapFile) {
+    let Some(path) = context
+        .map_store()
+        .document
+        .as_ref()
+        .map(|d| d.path.clone())
+    else {
         return;
     };
     if !context
-        .preview()
-        .is_some_and(|preview| preview.plays_in_step(&path))
+        .live_map()
+        .is_some_and(|live| live.plays_in_step(&path))
     {
         return;
     }
-    let Some(document) = context.workbench().map.as_ref() else {
+    let Some(document) = context.map_store().document.as_ref() else {
         return;
     };
     let changes = LiveChange::between(&before.entities, &document.file.entities);
-    if let Some(preview) = context.preview()
+    if let Some(live) = context.live_map()
         && !changes.is_empty()
     {
-        preview.send_map_changes(&path, &before.entities, &changes);
+        live.send_changes(&path, &before.entities, &changes);
     }
 }
 
@@ -862,15 +909,15 @@ pub(crate) struct MapStep {
 impl MapStep {
     /// Swaps the map and selection of the open map at `from` edits with the other state,
     /// leaving it at `to`.
-    fn apply<C: HasWorkbench>(
+    fn apply<C: HasMap>(
         &mut self,
         context: &mut C,
         from: MapRevision,
         to: MapRevision,
     ) -> Result<(), BoxError> {
         let document = context
-            .workbench()
-            .map
+            .map_store()
+            .document
             .as_mut()
             .filter(|document| document.edits == from)
             .ok_or(MapEditError::NoMap)?;
@@ -892,7 +939,7 @@ impl MapStep {
     }
 }
 
-impl<C: HasWorkbench + 'static> UndoStep<C> for MapStep {
+impl<C: HasMap + 'static> UndoStep<C> for MapStep {
     fn undo(&mut self, context: &mut C) -> Result<(), BoxError> {
         self.apply(context, self.after, self.before)
     }
@@ -916,7 +963,7 @@ fn origin_text(origin: [f64; 3]) -> String {
 /// `map.open`.
 struct MapOpen;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapOpen {
+impl<C: HasMap + 'static> Command<C> for MapOpen {
     const ID: &'static str = MAP_OPEN;
     const SUMMARY: &'static str = "Opens a .map in the map view, or a shipped .bsp's entities \
         when the map has no .map source; nothing is selected.";
@@ -929,7 +976,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapOpen {
         context: &mut C,
         params: MapOpenParams,
     ) -> Result<Outcome<MapOpened, C>, MapEditError> {
-        let document = context.workbench().open_map(&params.path)?;
+        let document = context.map_store().open_map(&params.path)?;
         Ok(Outcome::outside_history(MapOpened {
             path: document.path.clone(),
             entities: document.file.entities.len(),
@@ -940,7 +987,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapOpen {
 /// `map.select`.
 struct MapSelect;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapSelect {
+impl<C: HasMap + 'static> Command<C> for MapSelect {
     const ID: &'static str = MAP_SELECT;
     const SUMMARY: &'static str = "Selects an entity of the open map, or clears the selection.";
     type Params = SelectParams;
@@ -952,7 +999,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSelect {
         context: &mut C,
         params: SelectParams,
     ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let document = context.workbench().map_mut()?;
+        let document = context.map_store().map_mut()?;
         if let Some(entity) = params.entity {
             document.entity_mut(entity)?;
         }
@@ -967,7 +1014,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSelect {
 /// `map.place`.
 struct MapPlace;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapPlace {
+impl<C: HasMap + 'static> Command<C> for MapPlace {
     const ID: &'static str = MAP_PLACE;
     const SUMMARY: &'static str = "Places a point entity of a classname at an origin in the \
         open map, with the keys given, and selects it.";
@@ -1010,7 +1057,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapPlace {
 /// `map.move`.
 struct MapMove;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapMove {
+impl<C: HasMap + 'static> Command<C> for MapMove {
     const ID: &'static str = MAP_MOVE;
     const SUMMARY: &'static str = "Moves an entity of the open map: a point entity's origin, \
         a brush entity's brushes.";
@@ -1038,7 +1085,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapMove {
 /// `map.rotate`.
 struct MapRotate;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapRotate {
+impl<C: HasMap + 'static> Command<C> for MapRotate {
     const ID: &'static str = MAP_ROTATE;
     const SUMMARY: &'static str = "Turns a point entity of the open map about the vertical: \
         its angle, or its angles' yaw.";
@@ -1066,7 +1113,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapRotate {
 /// `map.delete`.
 struct MapDelete;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapDelete {
+impl<C: HasMap + 'static> Command<C> for MapDelete {
     const ID: &'static str = MAP_DELETE;
     const SUMMARY: &'static str = "Deletes an entity of the open map; the world stays.";
     type Params = EntityParams;
@@ -1101,7 +1148,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapDelete {
 /// `map.duplicate`.
 struct MapDuplicate;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapDuplicate {
+impl<C: HasMap + 'static> Command<C> for MapDuplicate {
     const ID: &'static str = MAP_DUPLICATE;
     const SUMMARY: &'static str = "Duplicates an entity of the open map, its keys and brushes, \
         in place at the end of the map, and selects the copy; the world is not duplicated. A \
@@ -1117,7 +1164,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapDuplicate {
         params: EntityParams,
     ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let entity = params.entity;
-        let targeting = context.workbench().targeting_keys();
+        let targeting = context.map_project().targeting_keys();
         let (copy, step) = edit_map(context, |document| {
             if entity.is_world() {
                 return Err(MapEditError::NotPointEntity { entity });
@@ -1137,7 +1184,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapDuplicate {
 /// `map.set_key`.
 struct MapSetKey;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapSetKey {
+impl<C: HasMap + 'static> Command<C> for MapSetKey {
     const ID: &'static str = MAP_SET_KEY;
     const SUMMARY: &'static str = "Sets a key of an entity of the open map, and of the \
         entities in also with it in one step: its last occurrence keeps its place and \
@@ -1172,7 +1219,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSetKey {
 /// `map.remove_key`.
 struct MapRemoveKey;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapRemoveKey {
+impl<C: HasMap + 'static> Command<C> for MapRemoveKey {
     const ID: &'static str = MAP_REMOVE_KEY;
     const SUMMARY: &'static str = "Removes every pair with a key from an entity of the open map.";
     type Params = RemoveKeyParams;
@@ -1202,7 +1249,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapRemoveKey {
 /// `map.entity`.
 struct MapEntity;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapEntity {
+impl<C: HasMap + 'static> Command<C> for MapEntity {
     const ID: &'static str = MAP_ENTITY;
     const SUMMARY: &'static str = "An entity of the open map: its pairs, the keys its class \
         reads with their types and defaults, and the map's targetnames for its target keys.";
@@ -1215,16 +1262,14 @@ impl<C: HasWorkbench + 'static> Command<C> for MapEntity {
         context: &mut C,
         params: EntityParams,
     ) -> Result<Outcome<EntityKeys, C>, MapEditError> {
-        Ok(Outcome::unchanged(
-            context.workbench().map_entity(params.entity)?,
-        ))
+        Ok(Outcome::unchanged(entity_keys(context, params.entity)?))
     }
 }
 
 /// `map.save`.
 struct MapSave;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapSave {
+impl<C: HasMap + 'static> Command<C> for MapSave {
     const ID: &'static str = MAP_SAVE;
     const SUMMARY: &'static str = "Saves the open map: a .map over itself; a BSP's entities as \
         a .ent beside it (bsp: ent, the default) or into the BSP's entity lump (bsp: lump).";
@@ -1237,7 +1282,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSave {
         context: &mut C,
         params: SaveParams,
     ) -> Result<Outcome<MapSaved, C>, MapEditError> {
-        let workbench = context.workbench();
+        let workbench = context.map_store();
         let path = workbench.save_map(params.bsp)?;
         // The map is saved whatever happens to its backup, which only logs why it failed.
         let backup = match workbench.map().map(MapDocument::source) {
@@ -1255,7 +1300,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSave {
 }
 
 /// Registers the `map.*` editing commands.
-pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
+pub(crate) fn register_map_edit<C: HasMap + 'static>(
     registry: &mut Registry<C>,
 ) -> Result<(), RegisterError> {
     registry.register(MapOpen)?;
@@ -1277,10 +1322,8 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(MapRemoveKey)?;
     registry.register(MapEntity)?;
     registry.register(inspect::MapInspect)?;
-    registry.register(disk::FilesChangedCommand)?;
     registry.register(disk::MapResolve)?;
     registry.register(disk::MapCompare)?;
-    registry.register(filter::MapFilter)?;
     registry.register(links::MapLink)?;
     registry.register(flags::MapSetFlag)?;
     registry.register(groups::MapView::<groups::Hide>::new())?;
@@ -1318,6 +1361,21 @@ pub(crate) fn register_map_edit<C: HasWorkbench + 'static>(
     registry.register(issues::MapFix)?;
     registry.register(issues::MapSearch)?;
     registry.register(MapSave)
+}
+
+/// Registers the map commands that read the game's files, for a context that can run a
+/// game: `texture.import`, `map.issues`, `map.face_uv` and `map.face_align`.
+///
+/// # Errors
+///
+/// [`RegisterError`] when one of their ids is taken.
+pub fn register_map_game<C: HasMap + 'static>(
+    registry: &mut Registry<C>,
+) -> Result<(), RegisterError> {
+    registry.register(TextureImport)?;
+    registry.register(issues::MapIssuesCommand)?;
+    registry.register(FaceUv)?;
+    registry.register(FaceAlign)
 }
 
 #[cfg(test)]

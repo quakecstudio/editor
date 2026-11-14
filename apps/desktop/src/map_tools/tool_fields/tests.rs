@@ -22,7 +22,7 @@ use crate::strings::Text;
 fn scene() -> Scene {
     let mut workbench = Workbench::new(FsLoader, Config::default());
     let map = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/keep/maps/keep.map");
-    workbench.open_map(&map).unwrap();
+    workbench.maps_mut().open_map(&map).unwrap();
     Scene::build(workbench.map().unwrap(), &HashMap::new(), &[], &mut |_| {
         None
     })

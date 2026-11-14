@@ -204,7 +204,7 @@ impl<L: crate::Loader> Workbench<L> {
 }
 
 /// `map.filter`.
-pub(super) struct MapFilter;
+pub(crate) struct MapFilter;
 
 impl<C: HasWorkbench + 'static> Command<C> for MapFilter {
     const ID: &'static str = MAP_FILTER;

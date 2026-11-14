@@ -6,7 +6,6 @@
 //! step with undo.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 
 use qs_commands::{Command, Outcome};
 use qs_map::{BrushError, Face, Justify, TexAxis, TextureSize, UvEdit};
@@ -15,8 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::map_edit::{BrushIndex, EntityIndex, MapDocument, MapEdited, edit_map};
 use crate::map_textures::TextureSources;
-use crate::preview::HasPreview;
-use crate::{HasWorkbench, MapEditError};
+use crate::{HasMap, MapEditError, MapProject};
 
 /// The id of `map.face_uv`.
 pub const MAP_FACE_UV: &str = "map.face_uv";
@@ -251,7 +249,7 @@ fn one_entity(faces: &[FaceRef]) -> Option<EntityIndex> {
 /// `map.face_uv`.
 pub(crate) struct FaceUv;
 
-impl<C: HasPreview + 'static> Command<C> for FaceUv {
+impl<C: HasMap + 'static> Command<C> for FaceUv {
     const ID: &'static str = MAP_FACE_UV;
     const SUMMARY: &'static str = "Fits, justifies, flips, resets, snaps or adjusts the texture of faces \
         of the open map, at the size its WAD gives it (MAP-13).";
@@ -296,24 +294,22 @@ impl<C: HasPreview + 'static> Command<C> for FaceUv {
 }
 
 /// The texture sources of the open map, found as the texture browser finds them.
-fn texture_sources<C: HasPreview>(context: &mut C) -> Result<TextureSources, MapEditError> {
-    let (workbench, preview) = context.workbench_and_preview();
-    let game = preview.game_base_path();
-    let chosen = preview.game_folder().map(Path::to_path_buf);
-    let root: Option<PathBuf> = workbench.root().map(Path::to_path_buf);
-    let document = workbench.map().ok_or(MapEditError::NoMap)?;
+fn texture_sources<C: HasMap>(context: &mut C) -> Result<TextureSources, MapEditError> {
+    let game = context.game_files();
+    let root = context.map_project().project_root();
+    let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
     Ok(TextureSources::load(
         document,
         root.as_deref(),
-        game.as_deref(),
-        chosen.as_deref(),
+        game.base.as_deref(),
+        game.chosen.as_deref(),
     ))
 }
 
 /// `map.face_align`.
 pub(crate) struct FaceAlign;
 
-impl<C: HasWorkbench + 'static> Command<C> for FaceAlign {
+impl<C: HasMap + 'static> Command<C> for FaceAlign {
     const ID: &'static str = MAP_FACE_ALIGN;
     const SUMMARY: &'static str = "Carries one face's texture alignment onto other faces of the \
         open map, so the texture continues across the line their planes share (MAP-13.8).";

@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, MapDocument, MapEdited, edit_map};
-use crate::{HasWorkbench, MapEditError};
+use crate::{HasMap, MapEditError};
 
 /// The id of `map.link`.
 pub const MAP_LINK: &str = "map.link";
@@ -160,7 +160,7 @@ impl MapDocument {
 /// `map.link`.
 pub(super) struct MapLink;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapLink {
+impl<C: HasMap + 'static> Command<C> for MapLink {
     const ID: &'static str = MAP_LINK;
     const SUMMARY: &'static str = "Points a key of an entity of the open map, one the code \
         fires entities by such as target or killtarget, at another entity: the key takes the \

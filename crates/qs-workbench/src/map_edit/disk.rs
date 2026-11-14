@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, LiveChange, MapDocument, MapRead};
-use crate::{HasWorkbench, MapEditError, Workbench, WorkbenchError};
+use crate::{HasMap, HasWorkbench, LiveMap, MapEditError, MapStore, WorkbenchError};
 
 /// The id of `files.changed`.
 pub const FILES_CHANGED: &str = "files.changed";
@@ -91,17 +91,17 @@ impl MapDocument {
     }
 }
 
-impl<L: crate::Loader> Workbench<L> {
+impl MapStore {
     /// Reads the open map's file again after another program wrote it: with no unsaved edits it
     /// replaces the map, keeping the selection where the map still has it; with unsaved edits
     /// it is kept aside as the conflict.
-    fn map_on_disk(&mut self) -> Result<MapOnDisk, MapEditError> {
-        let Some(document) = self.map.as_ref() else {
+    pub(crate) fn map_on_disk(&mut self) -> Result<MapOnDisk, MapEditError> {
+        let Some(document) = self.document.as_ref() else {
             return Ok(MapOnDisk::Same);
         };
         let path = document.path.clone();
         let read = MapRead::of(&path)?;
-        let Some(document) = self.map.as_mut() else {
+        let Some(document) = self.document.as_mut() else {
             return Ok(MapOnDisk::Same);
         };
         if read.origin == document.origin && read.disk == document.disk {
@@ -119,9 +119,12 @@ impl<L: crate::Loader> Workbench<L> {
 
     /// Reads the open map at `path` again, keeping its selection where the map still has it.
     fn reopen_map(&mut self, path: &Path) -> Result<(), MapEditError> {
-        let selected = self.map.as_ref().and_then(|document| document.selected);
+        let selected = self
+            .document
+            .as_ref()
+            .and_then(|document| document.selected);
         let count = self.open_map(path)?.file.entities.len();
-        if let Some(document) = self.map.as_mut() {
+        if let Some(document) = self.document.as_mut() {
             document.selected = selected.filter(|entity| entity.get() < count);
         }
         Ok(())
@@ -159,17 +162,17 @@ fn is_quakec(path: &Path) -> bool {
 
 /// Tells the game playing the open map that the map was read again from disk, so its edits
 /// wait for the next compile (P5-07, P5-17).
-fn out_of_step<C: HasWorkbench>(context: &mut C) {
-    let Some(path) = context.workbench().map().map(|d| d.path().to_path_buf()) else {
+fn out_of_step<C: HasMap>(context: &mut C) {
+    let Some(path) = context.map_store().map().map(|d| d.path().to_path_buf()) else {
         return;
     };
-    if let Some(preview) = context.preview() {
-        preview.map_read_again(&path);
+    if let Some(live) = context.live_map() {
+        live.read_again(&path);
     }
 }
 
 /// `files.changed`.
-pub(super) struct FilesChangedCommand;
+pub(crate) struct FilesChangedCommand;
 
 impl<C: HasWorkbench + 'static> Command<C> for FilesChangedCommand {
     const ID: &'static str = FILES_CHANGED;
@@ -207,7 +210,7 @@ impl<C: HasWorkbench + 'static> Command<C> for FilesChangedCommand {
             .iter()
             .any(|path| watched.iter().any(|open| same(path, open)))
         {
-            workbench.map_on_disk()?
+            workbench.maps_mut().map_on_disk()?
         } else {
             MapOnDisk::Same
         };
@@ -221,7 +224,7 @@ impl<C: HasWorkbench + 'static> Command<C> for FilesChangedCommand {
 /// `map.resolve`.
 pub(super) struct MapResolve;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapResolve {
+impl<C: HasMap + 'static> Command<C> for MapResolve {
     const ID: &'static str = MAP_RESOLVE;
     const SUMMARY: &'static str = "After another program changed the open map's file while \
         it had unsaved edits: keep disk to read the file again, or mine to keep the edits and \
@@ -231,7 +234,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapResolve {
     type Error = MapEditError;
 
     fn run(&self, context: &mut C, params: ResolveParams) -> Result<Outcome<(), C>, MapEditError> {
-        context.workbench().resolve_map(params.keep)?;
+        context.map_store().resolve_map(params.keep)?;
         if params.keep == Keep::Disk {
             out_of_step(context);
         }
@@ -242,7 +245,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapResolve {
 /// `map.compare`.
 pub(super) struct MapCompare;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapCompare {
+impl<C: HasMap + 'static> Command<C> for MapCompare {
     const ID: &'static str = MAP_COMPARE;
     const SUMMARY: &'static str = "How the open map's file, changed by another program, differs \
         from the map being edited, entity by entity.";
@@ -255,7 +258,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapCompare {
         context: &mut C,
         _params: qs_commands::NoParams,
     ) -> Result<Outcome<Vec<MapDifference>, C>, MapEditError> {
-        let document = context.workbench().map().ok_or(MapEditError::NoMap)?;
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         let Some(disk) = document.conflict() else {
             return Ok(Outcome::unchanged(Vec::new()));
         };

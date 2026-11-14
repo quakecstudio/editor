@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, MapDocument, MapEdited, edit_map};
-use crate::{HasWorkbench, MapEditError};
+use crate::{HasMap, MapEditError};
 
 /// The id of `map.brush_create`.
 pub const MAP_BRUSH_CREATE: &str = "map.brush_create";
@@ -285,7 +285,7 @@ impl From<BrushError> for MapEditError {
 /// `map.brush_create`.
 pub(super) struct BrushCreate;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushCreate {
+impl<C: HasMap + 'static> Command<C> for BrushCreate {
     const ID: &'static str = MAP_BRUSH_CREATE;
     const SUMMARY: &'static str = "Adds a box brush from two corners, snapped to the grid (16 \
         units unless given), to the world or an entity of the open map, with a texture.";
@@ -331,7 +331,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushCreate {
 /// `map.brush_move`.
 pub(super) struct BrushMove;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushMove {
+impl<C: HasMap + 'static> Command<C> for BrushMove {
     const ID: &'static str = MAP_BRUSH_MOVE;
     const SUMMARY: &'static str = "Moves brushes of an entity by an offset snapped to the grid \
         (16 units unless given), their textures fixed in the world unless lock is free.";
@@ -366,7 +366,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushMove {
 /// `map.brush_texture`.
 pub(super) struct BrushTexture;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushTexture {
+impl<C: HasMap + 'static> Command<C> for BrushTexture {
     const ID: &'static str = MAP_BRUSH_TEXTURE;
     const SUMMARY: &'static str = "Sets the texture, shift, rotation or scale of every face of \
         brushes of an entity, keeping what is not given (MAP-12).";
@@ -413,7 +413,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushTexture {
 /// `map.brush_clip`.
 pub(super) struct BrushClip;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushClip {
+impl<C: HasMap + 'static> Command<C> for BrushClip {
     const ID: &'static str = MAP_BRUSH_CLIP;
     const SUMMARY: &'static str = "Clips a brush of the open map by the plane through three \
         points, keeping the part behind it, in front of it, or both as two brushes.";
@@ -463,7 +463,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushClip {
 /// `map.brush_vertex`.
 pub(super) struct BrushVertex;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushVertex {
+impl<C: HasMap + 'static> Command<C> for BrushVertex {
     const ID: &'static str = MAP_BRUSH_VERTEX;
     const SUMMARY: &'static str = "Moves a vertex of a brush of the open map to a point snapped \
         to the grid; the brush becomes the convex hull of its vertices so moved.";
@@ -494,7 +494,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushVertex {
 /// `map.brush_subtract`.
 pub(super) struct BrushSubtract;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushSubtract {
+impl<C: HasMap + 'static> Command<C> for BrushSubtract {
     const ID: &'static str = MAP_BRUSH_SUBTRACT;
     const SUMMARY: &'static str = "Subtracts a brush of the open map from every other brush of \
         its entity, then deletes it: the brushes it overlapped become the parts outside it.";
@@ -545,7 +545,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSubtract {
 /// `map.brush_merge`.
 pub(super) struct BrushMerge;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushMerge {
+impl<C: HasMap + 'static> Command<C> for BrushMerge {
     const ID: &'static str = MAP_BRUSH_MERGE;
     const SUMMARY: &'static str = "Merges two or more brushes of an entity of the open map into \
         their convex hull, which takes the first's place.";
@@ -589,7 +589,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushMerge {
 /// `map.brush_delete`.
 pub(super) struct BrushDelete;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushDelete {
+impl<C: HasMap + 'static> Command<C> for BrushDelete {
     const ID: &'static str = MAP_BRUSH_DELETE;
     const SUMMARY: &'static str = "Deletes a brush of an entity of the open map.";
     type Params = BrushParams;

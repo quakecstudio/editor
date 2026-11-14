@@ -15,7 +15,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::map_edit::{MAP_EXTENSION, MapSource, edit_map};
-use crate::{HasWorkbench, MapEditError, Workbench};
+use crate::{HasMap, MapEditError, MapStore};
 
 /// The id of `map.backup`.
 pub const MAP_BACKUP: &str = "map.backup";
@@ -77,7 +77,7 @@ fn backups_of(map: &Path) -> Vec<Backup> {
     found
 }
 
-impl<L: crate::Loader> Workbench<L> {
+impl MapStore {
     /// Writes the open map, as it is in the editor, as its next backup, and removes the oldest
     /// past [`BACKUPS_KEPT`]; the backup's file.
     ///
@@ -127,7 +127,7 @@ impl<L: crate::Loader> Workbench<L> {
 /// `map.backup`.
 pub(crate) struct MapBackup;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapBackup {
+impl<C: HasMap + 'static> Command<C> for MapBackup {
     const ID: &'static str = MAP_BACKUP;
     const SUMMARY: &'static str = "Writes the open map, as it is in the editor, saved or not, as \
         its next backup in the autosave folder beside it, keeping the last 20.";
@@ -136,14 +136,14 @@ impl<C: HasWorkbench + 'static> Command<C> for MapBackup {
     type Error = MapEditError;
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Backup, C>, MapEditError> {
-        Ok(Outcome::outside_history(context.workbench().backup_map()?))
+        Ok(Outcome::outside_history(context.map_store().backup_map()?))
     }
 }
 
 /// `map.backups`.
 pub(crate) struct MapBackups;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapBackups {
+impl<C: HasMap + 'static> Command<C> for MapBackups {
     const ID: &'static str = MAP_BACKUPS;
     const SUMMARY: &'static str = "Lists the open map's backups in the autosave folder beside \
         it, the newest first.";
@@ -152,7 +152,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapBackups {
     type Error = MapEditError;
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Vec<Backup>, C>, MapEditError> {
-        Ok(Outcome::unchanged(context.workbench().map_backups()?))
+        Ok(Outcome::unchanged(context.map_store().map_backups()?))
     }
 }
 
@@ -167,7 +167,7 @@ pub struct RestoreParams {
 /// `map.restore_backup`.
 pub(crate) struct MapRestoreBackup;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapRestoreBackup {
+impl<C: HasMap + 'static> Command<C> for MapRestoreBackup {
     const ID: &'static str = MAP_RESTORE_BACKUP;
     const SUMMARY: &'static str = "Puts a backup of the open map in the editor in place of the \
         map, unsaved, as an edit that undo takes back.";

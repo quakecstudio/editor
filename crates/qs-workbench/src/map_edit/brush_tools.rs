@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::brushes::{BrushIndex, Lock, snap};
 use super::{EntityIndex, MapDocument, MapEdited, MapStep, edit_map};
 use crate::map_uv::FaceRef;
-use crate::{HasWorkbench, MapEditError};
+use crate::{HasMap, MapEditError};
 
 /// The id of `map.brush_scale`.
 pub const MAP_BRUSH_SCALE: &str = "map.brush_scale";
@@ -307,7 +307,7 @@ impl MapDocument {
 
 impl MapEdited {
     /// The undoable outcome of an edit to `entity`.
-    fn undoable<C: HasWorkbench + 'static>(entity: EntityIndex, step: MapStep) -> Outcome<Self, C> {
+    fn undoable<C: HasMap + 'static>(entity: EntityIndex, step: MapStep) -> Outcome<Self, C> {
         Outcome::undoable(
             Self {
                 entity: Some(entity),
@@ -320,7 +320,7 @@ impl MapEdited {
 /// `map.brush_scale`.
 pub(super) struct BrushScale;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushScale {
+impl<C: HasMap + 'static> Command<C> for BrushScale {
     const ID: &'static str = MAP_BRUSH_SCALE;
     const SUMMARY: &'static str = "Scales brushes of an entity by factors along x, y and z about \
         a point, the middle of their bounds unless given, their textures fixed in the world \
@@ -349,7 +349,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushScale {
 /// `map.brush_shear`.
 pub(super) struct BrushShear;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushShear {
+impl<C: HasMap + 'static> Command<C> for BrushShear {
     const ID: &'static str = MAP_BRUSH_SHEAR;
     const SUMMARY: &'static str = "Shears brushes of an entity: each point moves along one axis \
         by a factor times its distance from a point along another, their textures fixed in the \
@@ -379,7 +379,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushShear {
 /// `map.brush_extrude`.
 pub(super) struct BrushExtrude;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushExtrude {
+impl<C: HasMap + 'static> Command<C> for BrushExtrude {
     const ID: &'static str = MAP_BRUSH_EXTRUDE;
     const SUMMARY: &'static str = "Moves a face of a brush along its normal by a distance \
         snapped to the grid, out or in, its texture fixed in the world unless lock is free \
@@ -415,7 +415,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushExtrude {
 /// `map.brush_sweep`.
 pub(super) struct BrushSweep;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushSweep {
+impl<C: HasMap + 'static> Command<C> for BrushSweep {
     const ID: &'static str = MAP_BRUSH_SWEEP;
     const SUMMARY: &'static str = "Sweeps a brush along a path of points snapped to the grid: \
         the brush becomes one brush for each step, the hull of it at the step's two ends \
@@ -446,7 +446,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSweep {
 /// `map.brush_hollow`.
 pub(super) struct BrushHollow;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushHollow {
+impl<C: HasMap + 'static> Command<C> for BrushHollow {
     const ID: &'static str = MAP_BRUSH_HOLLOW;
     const SUMMARY: &'static str = "Hollows a brush into walls of a thickness: the brush becomes \
         itself with the brush its walls enclose taken out (MAP-15.5).";
@@ -471,7 +471,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushHollow {
 /// `map.brush_intersect`.
 pub(super) struct BrushIntersect;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushIntersect {
+impl<C: HasMap + 'static> Command<C> for BrushIntersect {
     const ID: &'static str = MAP_BRUSH_INTERSECT;
     const SUMMARY: &'static str = "Replaces two or more brushes of an entity with the solid all \
         of them hold, which takes the first's place (MAP-15.6).";
@@ -510,7 +510,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushIntersect {
 /// `map.brush_vertices`.
 pub(super) struct BrushVertices;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushVertices {
+impl<C: HasMap + 'static> Command<C> for BrushVertices {
     const ID: &'static str = MAP_BRUSH_VERTICES;
     const SUMMARY: &'static str = "Moves several vertices of a brush at once, each to a point \
         snapped to the grid; the brush becomes the hull of its vertices so moved (MAP-15.7).";
@@ -540,7 +540,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushVertices {
 /// `map.brush_split_edge`.
 pub(super) struct BrushSplitEdge;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushSplitEdge {
+impl<C: HasMap + 'static> Command<C> for BrushSplitEdge {
     const ID: &'static str = MAP_BRUSH_SPLIT_EDGE;
     const SUMMARY: &'static str = "Splits an edge of a brush by a new vertex at a point snapped \
         to the grid, or a distance out from the edge's middle (MAP-15.8).";
@@ -572,7 +572,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSplitEdge {
 /// `map.brush_split_face`.
 pub(super) struct BrushSplitFace;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushSplitFace {
+impl<C: HasMap + 'static> Command<C> for BrushSplitFace {
     const ID: &'static str = MAP_BRUSH_SPLIT_FACE;
     const SUMMARY: &'static str = "Splits a face of a brush by a new vertex in front of it, at a \
         point snapped to the grid, or a distance out from the face's middle (MAP-15.8).";
@@ -609,7 +609,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSplitFace {
 /// `map.brush_chamfer`.
 pub(super) struct BrushChamfer;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushChamfer {
+impl<C: HasMap + 'static> Command<C> for BrushChamfer {
     const ID: &'static str = MAP_BRUSH_CHAMFER;
     const SUMMARY: &'static str = "Chamfers an edge of a brush into one or more bevel faces, from \
         a distance along each of its two faces (MAP-15.9).";

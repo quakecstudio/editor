@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use super::brushes::{DEFAULT_GRID, snap};
 use super::{EntityIndex, MapEdited, edit_map};
-use crate::{HasWorkbench, MapEditError};
+use crate::{HasMap, MapEditError};
 
 /// The id of `map.brush_shape`.
 pub const MAP_BRUSH_SHAPE: &str = "map.brush_shape";
@@ -346,7 +346,7 @@ impl From<ShapeError> for MapEditError {
 /// `map.brush_shape`.
 pub(super) struct BrushShape;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushShape {
+impl<C: HasMap + 'static> Command<C> for BrushShape {
     const ID: &'static str = MAP_BRUSH_SHAPE;
     const SUMMARY: &'static str = "Adds a shape of brushes filling a box, its corners snapped to \
         the grid: a cylinder (solid or hollow), cone, arch, UV or icosahedron spheroid, rock, \

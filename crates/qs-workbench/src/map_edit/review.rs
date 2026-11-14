@@ -17,7 +17,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, MapDocument, edit_map};
-use crate::{HasWorkbench, MapEditError, Workbench};
+use crate::{HasMap, MapEditError, MapStore};
 
 /// The id of `map.stage`.
 pub const MAP_STAGE: &str = "map.stage";
@@ -301,7 +301,7 @@ impl<'a> Review<'a> {
     }
 }
 
-impl<L: crate::Loader> Workbench<L> {
+impl MapStore {
     /// The open map's hunks waiting for review, none when review has not begun.
     ///
     /// # Errors
@@ -327,7 +327,7 @@ impl MapDocument {
 /// `map.stage`.
 pub(crate) struct MapStage;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapStage {
+impl<C: HasMap + 'static> Command<C> for MapStage {
     const ID: &'static str = MAP_STAGE;
     const SUMMARY: &'static str = "Begins review of the open map's edits: the map as it is now is \
         kept, and each edit after it waits as a hunk to accept or reject. The agent's map edits \
@@ -337,7 +337,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapStage {
     type Error = MapEditError;
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<(), C>, MapEditError> {
-        let document = context.workbench().map_mut()?;
+        let document = context.map_store().map_mut()?;
         if document.staged.is_none() {
             document.staged = Some(document.file.clone());
             document.touch();
@@ -349,7 +349,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapStage {
 /// `map.unstage`.
 pub(crate) struct MapUnstage;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapUnstage {
+impl<C: HasMap + 'static> Command<C> for MapUnstage {
     const ID: &'static str = MAP_UNSTAGE;
     const SUMMARY: &'static str = "Ends the open map's review when nothing waits in it, as after \
         an agent's map command that changed nothing; a review with hunks is left open.";
@@ -358,7 +358,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapUnstage {
     type Error = MapEditError;
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<(), C>, MapEditError> {
-        context.workbench().map_mut()?.settle_review();
+        context.map_store().map_mut()?.settle_review();
         Ok(Outcome::outside_history(()))
     }
 }
@@ -366,7 +366,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapUnstage {
 /// `map.staged`.
 pub(crate) struct MapStaged;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapStaged {
+impl<C: HasMap + 'static> Command<C> for MapStaged {
     const ID: &'static str = MAP_STAGED;
     const SUMMARY: &'static str = "Lists the open map's hunks waiting for review: for each, the \
         entities it is in, and the keys and brushes it adds, changes or removes.";
@@ -375,7 +375,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapStaged {
     type Error = MapEditError;
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<Vec<MapHunk>, C>, MapEditError> {
-        Ok(Outcome::unchanged(context.workbench().map_hunks()?))
+        Ok(Outcome::unchanged(context.map_store().map_hunks()?))
     }
 }
 
@@ -391,7 +391,7 @@ pub struct MapHunksParams {
 /// `map.accept`.
 pub(crate) struct MapAccept;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapAccept {
+impl<C: HasMap + 'static> Command<C> for MapAccept {
     const ID: &'static str = MAP_ACCEPT;
     const SUMMARY: &'static str = "Accepts hunks of the open map's review, every one when none \
         are named: their change is kept and no longer waits.";
@@ -404,7 +404,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapAccept {
         context: &mut C,
         params: MapHunksParams,
     ) -> Result<Outcome<Vec<MapHunk>, C>, MapEditError> {
-        let workbench = context.workbench();
+        let workbench = context.map_store();
         let document = workbench.map_mut()?;
         let Some(review) = Review::of(document) else {
             return Ok(Outcome::outside_history(Vec::new()));
@@ -424,7 +424,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapAccept {
 /// `map.reject`.
 pub(crate) struct MapReject;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapReject {
+impl<C: HasMap + 'static> Command<C> for MapReject {
     const ID: &'static str = MAP_REJECT;
     const SUMMARY: &'static str = "Rejects hunks of the open map's review, every one when none \
         are named: the parts they replaced are put back, as an edit undo takes back.";
@@ -437,7 +437,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapReject {
         context: &mut C,
         params: MapHunksParams,
     ) -> Result<Outcome<Vec<MapHunk>, C>, MapEditError> {
-        let document = context.workbench().map().ok_or(MapEditError::NoMap)?;
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         if document.staged.is_none() {
             return Ok(Outcome::unchanged(Vec::new()));
         }
@@ -456,7 +456,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapReject {
             document.replace_entities(entities);
             Ok(())
         })?;
-        let hunks = context.workbench().map_hunks()?;
+        let hunks = context.map_store().map_hunks()?;
         Ok(Outcome::undoable(hunks, step))
     }
 }

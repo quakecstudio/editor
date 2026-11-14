@@ -16,10 +16,9 @@ use qs_wad::write::WadBuilder;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::MapEditError;
 use crate::map_edit::{EntityIndex, MapSource, edit_map};
 use crate::map_textures::{Game, game_palette};
-use crate::preview::HasPreview;
+use crate::{HasMap, MapEditError, MapProject};
 
 /// The id of `texture.import`.
 pub const TEXTURE_IMPORT: &str = "texture.import";
@@ -216,7 +215,7 @@ fn with_texture(
 /// `texture.import`.
 pub(crate) struct TextureImport;
 
-impl<C: HasPreview + 'static> Command<C> for TextureImport {
+impl<C: HasMap + 'static> Command<C> for TextureImport {
     const ID: &'static str = TEXTURE_IMPORT;
     const SUMMARY: &'static str = "Imports a PNG image as a texture: quantized to the game's \
         palette with its mip levels, written into the project's own WAD in textures/, in place \
@@ -231,12 +230,11 @@ impl<C: HasPreview + 'static> Command<C> for TextureImport {
         params: TextureImportParams,
     ) -> Result<Outcome<TextureImported, C>, MapEditError> {
         let name = params.texture_name()?;
-        let (workbench, preview) = context.workbench_and_preview();
-        let root = workbench
-            .root()
-            .ok_or(MapEditError::NoProject)?
-            .to_path_buf();
-        let game = preview.game_base_path();
+        let root = context
+            .map_project()
+            .project_root()
+            .ok_or(MapEditError::NoProject)?;
+        let game = context.game_files().base;
         let palette = game_palette(Some(&root), game.as_deref().map(Game::at).as_ref())
             .ok_or(MapEditError::NoPalette)?;
         let png = std::fs::read(&params.path).map_err(|_| MapEditError::NoFile {
@@ -269,7 +267,7 @@ impl<C: HasPreview + 'static> Command<C> for TextureImport {
         };
         // The open map's world, when it is a `.map`: the key it lists its WADs in, the one the
         // compilers read first, its value, and whether the WAD is among them.
-        let listed = context.workbench().map().and_then(|document| {
+        let listed = context.map_store().map().and_then(|document| {
             let MapSource::Map = document.source() else {
                 return None;
             };

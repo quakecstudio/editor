@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::groups::NAME_KEY;
 use super::links::TARGETNAME;
 use super::{EntityIndex, MapDocument, MapEdited, edit_map};
-use crate::{HasWorkbench, MapEditError};
+use crate::{HasMap, MapEditError};
 
 /// The id of `map.outline`.
 pub const MAP_OUTLINE: &str = "map.outline";
@@ -239,7 +239,7 @@ impl MapDocument {
 /// `map.outline`.
 pub(super) struct MapOutline;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapOutline {
+impl<C: HasMap + 'static> Command<C> for MapOutline {
     const ID: &'static str = MAP_OUTLINE;
     const SUMMARY: &'static str = "The open map's outline: the default layer and each layer, \
         their groups and linked groups, then their entities by classname and targetname, with \
@@ -253,7 +253,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapOutline {
         context: &mut C,
         params: OutlineParams,
     ) -> Result<Outcome<Vec<OutlineRow>, C>, MapEditError> {
-        let document = context.workbench().map().ok_or(MapEditError::NoMap)?;
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         Ok(Outcome::unchanged(
             document.outline(params.filter.as_deref()),
         ))
@@ -263,7 +263,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapOutline {
 /// `map.move_to`.
 pub(super) struct MapMoveTo;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapMoveTo {
+impl<C: HasMap + 'static> Command<C> for MapMoveTo {
     const ID: &'static str = MAP_MOVE_TO;
     const SUMMARY: &'static str = "Moves an entity or a group of the open map into a layer or \
         a group, or into the default layer given the world, as TrenchBroom writes it.";
@@ -276,7 +276,7 @@ impl<C: HasWorkbench + 'static> Command<C> for MapMoveTo {
         context: &mut C,
         params: MoveToParams,
     ) -> Result<Outcome<MapEdited, C>, MapEditError> {
-        let document = context.workbench().map().ok_or(MapEditError::NoMap)?;
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         let (_, there) = document.move_target(params.entity, params.into)?;
         if there {
             // Already there: nothing changes, and no undo step is made.
