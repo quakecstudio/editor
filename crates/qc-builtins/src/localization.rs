@@ -32,6 +32,11 @@ struct Entry {
     value: usize,
 }
 
+/// The UTF-8 byte order mark a file may start with, skipped (RRE-1.7).
+const UTF8_BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
+/// An argument number's base, `{0}` to `{9}` and on.
+const DECIMAL: i32 = 10;
+
 /// A loaded localization file, `localization_t` (RRE-1.2): the text as `LOC_LoadFile` left it,
 /// the entries in file order and the open-addressed table of their indices plus one.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -80,8 +85,8 @@ impl Localization {
         text.push(0);
         let at = |text: &[u8], i: usize| text.get(i).copied().unwrap_or(0);
         let mut cursor = 0;
-        if text.starts_with(&[0xEF, 0xBB, 0xBF]) {
-            cursor = 3;
+        if text.starts_with(&UTF8_BOM) {
+            cursor = UTF8_BOM.len();
         }
         let mut entries = Vec::new();
         while at(&text, cursor) != 0 {
@@ -122,9 +127,9 @@ impl Localization {
                         let unescaped = match c {
                             b'n' => b'\n',
                             b't' => b'\t',
-                            b'v' => 0x0b,
-                            b'b' => 0x08,
-                            b'f' => 0x0c,
+                            b'v' => b'\x0b',
+                            b'b' => b'\x08',
+                            b'f' => b'\x0c',
                             // `\"`, `\'` and, with "unrecognized escape sequence", any other.
                             other => other,
                         };
@@ -301,7 +306,7 @@ fn loc_parse_arg(text: &[u8], at: usize) -> Option<(i32, usize)> {
     let mut arg: i32 = 0;
     while byte(i).is_ascii_digit() {
         arg = arg
-            .wrapping_mul(10)
+            .wrapping_mul(DECIMAL)
             .wrapping_add(i32::from(byte(i).wrapping_sub(b'0')));
         i = i.saturating_add(1);
     }
