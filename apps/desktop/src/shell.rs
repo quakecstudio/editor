@@ -12,7 +12,6 @@
 //!
 //! Every string comes from [`crate::strings`]; a test fails on a string literal here.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::containers::panel::PanelState;
@@ -118,9 +117,11 @@ use crate::map_profiles::ProfileAction;
 use crate::map_review::ReviewAction;
 use crate::map_tools::BrushAction;
 use crate::map_view::{self, MapView};
-use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multibuffer_ui};
+use crate::multibuffer::{MultiAction, Source as MultiSource, multibuffer_ui};
+#[cfg(test)]
+use crate::multibuffer::Multibuffer;
 use crate::palette::Palette;
-use crate::picker::{Picker, PickerKind, PickerRow};
+use crate::picker::{PickerKind, PickerRow};
 use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::{Text, Truncation};
@@ -290,7 +291,6 @@ pub struct Shell {
     /// The file finder.
     pub(crate) finder: FileFinder,
     symbol_scope: SymbolScope,
-    editor: Option<Editor>,
     system_fonts: SystemFonts,
     /// The window's wgpu device and formats, which the map view draws with.
     render_state: Option<RenderState>,
@@ -305,8 +305,6 @@ pub struct Shell {
     /// The modified times of the open map and the project's QuakeC, to notice another
     /// program's writes (P5-17).
     disk_watch: DiskWatch,
-    /// The editor's file and text revision whose characters have fonts.
-    covered: Option<(PathBuf, u64)>,
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
     /// layout's when the window opens, so the keyboard moves only when a focus command runs.
     focus_applied: u64,
@@ -320,21 +318,6 @@ pub struct Shell {
     properties: Properties,
     /// Each feature's state (P6-41).
     features: Features,
-    /// The multibuffer the Search tab shows (P4-33).
-    multibuffer: Multibuffer,
-    /// The go to symbol picker and the tab switcher, and the place each row stands for (P4-32).
-    picker: (Picker, Vec<Jump>),
-    /// The count of editor actions the layout had asked for when last carried out.
-    editor_seen: u64,
-    /// The editor of the second pane while the editor is split, showing a file not being
-    /// edited, or the same one.
-    second: Option<Editor>,
-    /// Where the game last stopped that the editor was taken to.
-    shown_stop: Option<Location>,
-    /// The line, from 1, of the file to show once it is open in the editor.
-    pending_line: Option<(PathBuf, u32)>,
-    /// The editors of the tabs not shown, with their carets and undo histories.
-    parked: BTreeMap<PathBuf, Editor>,
     /// The key bindings in force, the user's keymap file over the defaults (P4-37).
     keymap: keymap::Keymap,
     /// How the code editor reads keys, from the user's settings (P4-37).
@@ -383,7 +366,6 @@ impl Shell {
             palette: Palette::default(),
             finder: FileFinder::default(),
             symbol_scope: SymbolScope::default(),
-            editor: None,
             system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
             render_state: None,
             map: None,
@@ -391,20 +373,12 @@ impl Shell {
             map_opened: None,
             backed_up: (0.0, MapRevision::default()),
             disk_watch: DiskWatch::default(),
-            covered: None,
             focus_applied: layout.focus_requests,
             preview_error: None,
             menu: MenuPlace::default(),
             outliner: Outliner::default(),
             properties: Properties::default(),
             features: Features::new(AgentPanel::new(Box::new(agent::provider_model))),
-            multibuffer: Multibuffer::default(),
-            picker: (Picker::default(), Vec::new()),
-            editor_seen: 0,
-            second: None,
-            shown_stop: None,
-            pending_line: None,
-            parked: BTreeMap::new(),
             keymap: keymap::Keymap::defaults(),
             key_mode: KeyMode::Standard,
             dock_frame: None,
@@ -453,7 +427,9 @@ impl Shell {
     /// The file in the editor and its primary caret, once the editor has drawn it.
     #[must_use]
     pub fn caret(&self) -> Option<(&Path, Position)> {
-        self.editor
+        self.features
+            .editors
+            .editor
             .as_ref()
             .map(|editor| (editor.path.as_path(), editor.view.state().primary().head))
     }
@@ -461,19 +437,19 @@ impl Shell {
     /// The editor of the second pane, while the editor is split (P4-32).
     #[cfg(test)]
     pub(crate) const fn second_pane_editor(&self) -> Option<&Editor> {
-        self.second.as_ref()
+        self.features.editors.second.as_ref()
     }
 
     /// The editor, once it has drawn a file.
     #[cfg(test)]
     pub(crate) const fn editor(&self) -> Option<&Editor> {
-        self.editor.as_ref()
+        self.features.editors.editor.as_ref()
     }
 
     /// The editor, once it has drawn a file, to change.
     #[cfg(test)]
     pub(crate) const fn editor_mut(&mut self) -> Option<&mut Editor> {
-        self.editor.as_mut()
+        self.features.editors.editor.as_mut()
     }
 
     /// Replaces the system font fallback, as a test does to choose what the "system" has.
@@ -491,7 +467,9 @@ impl Shell {
     /// The editor's text, edits included, once the editor has drawn a file.
     #[must_use]
     pub fn editor_text(&self) -> Option<String> {
-        self.editor
+        self.features
+            .editors
+            .editor
             .as_ref()
             .map(|editor| editor.view.state().buffer().text())
     }
@@ -600,6 +578,8 @@ impl Shell {
         instruction: &str,
     ) -> Result<(), String> {
         let file = self
+            .features
+            .editors
             .editor
             .as_ref()
             .map(|editor| editor.view.state().buffer().text())
@@ -612,7 +592,7 @@ impl Shell {
 
     /// Shows an inline edit's answer, or why there is none, in the editor.
     fn show_inline(&mut self, answer: Result<String, String>) {
-        if let Some(editor) = self.editor.as_mut() {
+        if let Some(editor) = self.features.editors.editor.as_mut() {
             match answer {
                 Ok(text) => editor.propose(&text),
                 Err(why) => editor.inline_failed(why),
@@ -834,10 +814,10 @@ impl Shell {
     /// Carries out the editor action the layout last asked for, once (P4-32).
     fn editor_request(&mut self) {
         let layout = *self.layout();
-        if layout.editor_requests == self.editor_seen {
+        if layout.editor_requests == self.features.editors.editor_seen {
             return;
         }
-        self.editor_seen = layout.editor_requests;
+        self.features.editors.editor_seen = layout.editor_requests;
         let Some(request) = layout.editor_request else {
             return;
         };
@@ -851,8 +831,8 @@ impl Shell {
             EditorRequest::GoToSymbol => return self.open_symbol_picker(),
             EditorRequest::TabSwitcher => return self.open_tab_switcher(),
             EditorRequest::ProjectSearch => {
-                self.multibuffer.source = MultiSource::Search;
-                self.multibuffer.form.focus = true;
+                self.features.editors.multibuffer.source = MultiSource::Search;
+                self.features.editors.multibuffer.form.focus = true;
                 self.centre_tab = CentreTab::Search;
                 return;
             }
@@ -862,7 +842,7 @@ impl Shell {
             | EditorRequest::UnfoldAll
             | EditorRequest::GoToLine(_) => {}
         }
-        let Some(editor) = self.editor.as_mut() else {
+        let Some(editor) = self.features.editors.editor.as_mut() else {
             return;
         };
         let line = editor.view.state().primary().head.line;
@@ -899,8 +879,15 @@ impl Shell {
         let Some(open) = self.session.context().workbench.open() else {
             return;
         };
-        let caret = self.editor.as_ref().map_or(0, Editor::caret_offset);
+        let caret = self
+            .features
+            .editors
+            .editor
+            .as_ref()
+            .map_or(0, Editor::caret_offset);
         let buffer = self
+            .features
+            .editors
             .editor
             .as_ref()
             .map(|editor| editor.view.state().buffer());
@@ -926,8 +913,12 @@ impl Shell {
         }
         self.palette.close();
         self.finder.close();
-        self.picker.0.open(PickerKind::Symbols, rows, selected);
-        self.picker.1 = places;
+        self.features
+            .editors
+            .picker
+            .0
+            .open(PickerKind::Symbols, rows, selected);
+        self.features.editors.picker.1 = places;
     }
 
     /// Opens the tab switcher: the open files, the one used most recently first and the one
@@ -939,9 +930,16 @@ impl Shell {
         let mut places = Vec::new();
         for path in workbench.history() {
             let offset = self
+                .features
+                .editors
                 .parked
                 .get(path)
-                .or(self.editor.as_ref().filter(|e| e.path == *path))
+                .or(self
+                    .features
+                    .editors
+                    .editor
+                    .as_ref()
+                    .filter(|e| e.path == *path))
                 .map_or(0, Editor::caret_offset);
             rows.push(PickerRow {
                 name: path
@@ -961,8 +959,12 @@ impl Shell {
         }
         self.palette.close();
         self.finder.close();
-        self.picker.0.open(PickerKind::Tabs, rows, 1);
-        self.picker.1 = places;
+        self.features
+            .editors
+            .picker
+            .0
+            .open(PickerKind::Tabs, rows, 1);
+        self.features.editors.picker.1 = places;
     }
 
     /// The editor's second pane (P4-32), while the layout splits the editor: made from the open
@@ -971,20 +973,21 @@ impl Shell {
     fn second_pane(&mut self, ui: &mut Ui) {
         let split = self.layout().split;
         if split == Split::None || self.centre_tab != CentreTab::Editor {
-            self.second = None;
+            self.features.editors.second = None;
             return;
         }
-        let Some(editor) = &self.editor else {
+        let Some(editor) = &self.features.editors.editor else {
             return;
         };
         let theme = &self.theme;
-        let second = match &mut self.second {
+        let second = match &mut self.features.editors.second {
             Some(second) => second,
             None => match self.session.context().workbench.open() {
-                Some(open) => {
-                    self.second
-                        .insert(Editor::new(Id::new(Area::SecondPane), open, theme))
-                }
+                Some(open) => self.features.editors.second.insert(Editor::new(
+                    Id::new(Area::SecondPane),
+                    open,
+                    theme,
+                )),
                 None => return,
             },
         };
@@ -1019,7 +1022,10 @@ impl Shell {
     /// Makes the second pane the one being edited and the first the second: its file is opened
     /// in the workbench, after the first pane's edits are sent.
     fn swap_panes(&mut self, ctx: &egui::Context) {
-        let (Some(mut first), Some(mut second)) = (self.editor.take(), self.second.take()) else {
+        let (Some(mut first), Some(mut second)) = (
+            self.features.editors.editor.take(),
+            self.features.editors.second.take(),
+        ) else {
             return;
         };
         if let Some(text) = first.unsent() {
@@ -1029,16 +1035,16 @@ impl Shell {
         first.view.set_id(Id::new(Area::SecondPane));
         second.view.set_id(Id::new(EDITOR_AREA));
         if first.path == second.path {
-            self.editor = Some(second);
-            self.second = Some(first);
+            self.features.editors.editor = Some(second);
+            self.features.editors.second = Some(first);
         } else {
             let (from, to) = (first.path.clone(), second.path.clone());
             let offset = second.caret_offset();
-            self.editor = Some(first);
-            self.parked.insert(to.clone(), second);
+            self.features.editors.editor = Some(first);
+            self.features.editors.parked.insert(to.clone(), second);
             self.jump(Jump { path: to, offset });
             self.sync_editor();
-            self.second = self.parked.remove(&from);
+            self.features.editors.second = self.features.editors.parked.remove(&from);
         }
         ctx.memory_mut(|m| m.request_focus(Id::new(EDITOR_AREA)));
     }
@@ -1049,7 +1055,7 @@ impl Shell {
         if self.layout().outline != Outline::Shown || self.centre_tab != CentreTab::Editor {
             return;
         }
-        let Some(editor) = &self.editor else {
+        let Some(editor) = &self.features.editors.editor else {
             return;
         };
         let Some(open) = self.session.context().workbench.open() else {
@@ -1100,7 +1106,7 @@ impl Shell {
         } else {
             Vec::new()
         };
-        self.picker.0.close();
+        self.features.editors.picker.0.close();
         self.palette.open(tasks);
     }
 
@@ -1117,6 +1123,8 @@ impl Shell {
             return;
         };
         let Some(path) = self
+            .features
+            .editors
             .editor
             .as_ref()
             .filter(|editor| editor.hints_at != Some(revision))
@@ -1127,7 +1135,7 @@ impl Shell {
         let hints: Vec<InlayHint> = self
             .run(INLAY_HINTS, &SaveFileParams { path })
             .unwrap_or_default();
-        if let Some(editor) = self.editor.as_mut() {
+        if let Some(editor) = self.features.editors.editor.as_mut() {
             let buffer = editor.view.state().buffer();
             let placed: Vec<(Position, String)> = hints
                 .into_iter()
@@ -1141,7 +1149,13 @@ impl Shell {
     /// Marks in the editor's gutter its file's changes against the text at `HEAD` (P4-35);
     /// none outside a repository or for a file `HEAD` does not have.
     fn mark_changes(&mut self) {
-        let Some(path) = self.editor.as_ref().map(|editor| editor.path.clone()) else {
+        let Some(path) = self
+            .features
+            .editors
+            .editor
+            .as_ref()
+            .map(|editor| editor.path.clone())
+        else {
             return;
         };
         let base = self
@@ -1153,7 +1167,7 @@ impl Shell {
             .ok()
             .and_then(|value| serde_json::from_value::<Option<String>>(value).ok())
             .flatten();
-        if let Some(editor) = self.editor.as_mut() {
+        if let Some(editor) = self.features.editors.editor.as_mut() {
             editor.view.set_gutter_base(base);
         }
     }
@@ -1293,16 +1307,21 @@ impl Shell {
         );
         match chosen {
             Some((path, Some(line))) => {
-                self.pending_line = Some((path.clone(), line));
+                self.features.editors.pending_line = Some((path.clone(), line));
                 self.jump(Jump { path, offset: 0 });
             }
             Some((path, None)) => {
-                let offset = self.parked.get(&path).map_or(0, Editor::caret_offset);
+                let offset = self
+                    .features
+                    .editors
+                    .parked
+                    .get(&path)
+                    .map_or(0, Editor::caret_offset);
                 self.jump(Jump { path, offset });
             }
             None => {}
         }
-        let (picker, places) = &mut self.picker;
+        let (picker, places) = &mut self.features.editors.picker;
         if let Some(index) = picker.show(ui, Id::new(Area::Picker), &self.theme)
             && let Some(place) = places.get(index).cloned()
         {
@@ -1330,7 +1349,7 @@ impl Shell {
         }
         if ui.input_mut(|i| i.consume_shortcut(&keymap::OPEN_FILE_FINDER)) {
             self.palette.close();
-            self.picker.0.close();
+            self.features.editors.picker.0.close();
             self.finder.open();
             return;
         }
@@ -2416,7 +2435,7 @@ impl Shell {
             return;
         };
         let path = root.join(file);
-        self.pending_line = Some((path.clone(), line));
+        self.features.editors.pending_line = Some((path.clone(), line));
         self.jump(Jump { path, offset: 0 });
     }
 
@@ -2429,7 +2448,7 @@ impl Shell {
             .debugger()
             .stopped()
             .map(|(_, at)| at.clone());
-        if stop == self.shown_stop {
+        if stop == self.features.editors.shown_stop {
             return;
         }
         if let Some(Location {
@@ -2440,7 +2459,7 @@ impl Shell {
         {
             self.show_line(file, *line);
         }
-        self.shown_stop = stop;
+        self.features.editors.shown_stop = stop;
     }
 
     /// Reloads the running game after a save, its error shown on the toolbar.
@@ -2769,7 +2788,7 @@ impl Shell {
         match request {
             ShellRequest::Jump(jump) => self.jump(jump),
             ShellRequest::ShowLine { path, line } => {
-                self.pending_line = Some((path.clone(), line));
+                self.features.editors.pending_line = Some((path.clone(), line));
                 self.jump(Jump { path, offset: 0 });
             }
             ShellRequest::ShowProjectLine { file, line } => self.show_line(&file, line),
@@ -2816,12 +2835,15 @@ impl Shell {
                 texts.push((path.clone(), read.text.into_bytes()));
             }
         }
-        self.multibuffer.show(source, &places, truncation, |path| {
-            texts
-                .iter()
-                .find(|(p, _)| p == path)
-                .map(|(_, text)| text.clone())
-        });
+        self.features
+            .editors
+            .multibuffer
+            .show(source, &places, truncation, |path| {
+                texts
+                    .iter()
+                    .find(|(p, _)| p == path)
+                    .map(|(_, text)| text.clone())
+            });
         self.centre_tab = CentreTab::Search;
     }
 
@@ -2830,7 +2852,7 @@ impl Shell {
         match action {
             MultiAction::Search => self.search_project(),
             MultiAction::ReplaceAll => {
-                let form = self.multibuffer.form.clone();
+                let form = self.features.editors.multibuffer.form.clone();
                 let files: Vec<PathBuf> = self
                     .run(PROJECT_FILES, &serde_json::json!({}))
                     .unwrap_or_default();
@@ -2846,14 +2868,15 @@ impl Shell {
                     };
                     if let Err(error) = self.attempt::<_, ReplacedInFile>(REPLACE_IN_FILE, &params)
                     {
-                        self.multibuffer.error = Some(error.to_string());
+                        self.features.editors.multibuffer.error = Some(error.to_string());
                         return;
                     }
                 }
                 self.search_project();
             }
             MultiAction::Edit(index, text) => {
-                let Some(excerpt) = self.multibuffer.excerpts.get(index.get()) else {
+                let Some(excerpt) = self.features.editors.multibuffer.excerpts.get(index.get())
+                else {
                     return;
                 };
                 let params = ReplaceRangeParams {
@@ -2863,21 +2886,21 @@ impl Shell {
                     text: text.clone(),
                 };
                 match self.attempt::<_, ()>(REPLACE_RANGE, &params) {
-                    Ok(()) => self.multibuffer.edited(index, text),
-                    Err(error) => self.multibuffer.error = Some(error.to_string()),
+                    Ok(()) => self.features.editors.multibuffer.edited(index, text),
+                    Err(error) => self.features.editors.multibuffer.error = Some(error.to_string()),
                 }
             }
             MultiAction::Open(path, offset) => {
                 self.jump(Jump { path, offset });
                 // The editor takes the keyboard, at the caret it went to, once it is drawn.
-                self.multibuffer.refocus = true;
+                self.features.editors.multibuffer.refocus = true;
             }
         }
     }
 
     /// Searches the project with the multibuffer's form and shows what it found.
     fn search_project(&mut self) {
-        let form = self.multibuffer.form.clone();
+        let form = self.features.editors.multibuffer.form.clone();
         let params = ProjectSearchParams {
             text: form.text,
             case_sensitive: form.case_sensitive,
@@ -2894,7 +2917,7 @@ impl Shell {
                 };
                 self.show_places(MultiSource::Search, places.collect(), truncation);
             }
-            Err(error) => self.multibuffer.error = Some(error.to_string()),
+            Err(error) => self.features.editors.multibuffer.error = Some(error.to_string()),
         }
     }
 
@@ -2927,7 +2950,7 @@ impl Shell {
     /// unsent text so every answer is about the text on screen.
     fn handle(&mut self, requests: Vec<Request>) {
         for request in requests {
-            let Some(editor) = self.editor.as_mut() else {
+            let Some(editor) = self.features.editors.editor.as_mut() else {
                 return;
             };
             let path = editor.path.clone();
@@ -3061,7 +3084,7 @@ impl Shell {
                     .map(Popup::InlineFailed),
             };
             if let Some(popup) = popup
-                && let Some(editor) = self.editor.as_mut()
+                && let Some(editor) = self.features.editors.editor.as_mut()
             {
                 editor.popup = Some(popup);
             }
@@ -3074,7 +3097,7 @@ impl Shell {
         // Another file's editor sends its edits before it goes: the workbench keeps them, so
         // the file shows them when it is opened again.
         let open_path = self.session.context().workbench.open().map(OpenFile::path);
-        if let Some(editor) = self.editor.as_mut()
+        if let Some(editor) = self.features.editors.editor.as_mut()
             && open_path != Some(editor.path.as_path())
             && let Some(text) = editor.unsent()
         {
@@ -3083,32 +3106,39 @@ impl Shell {
         }
         let workbench = &self.session.context().workbench;
         let tabs = workbench.tabs();
-        self.parked.retain(|path, _| tabs.contains(path));
+        self.features
+            .editors
+            .parked
+            .retain(|path, _| tabs.contains(path));
         let open = workbench.open();
-        match (open, &mut self.editor) {
-            (None, _) => self.editor = None,
+        match (open, &mut self.features.editors.editor) {
+            (None, _) => self.features.editors.editor = None,
             (Some(open), Some(editor)) if editor.path == open.path() => {
                 editor.sync(open, &self.theme);
             }
             (Some(open), _) => {
-                if let Some(old) = self.editor.take()
+                if let Some(old) = self.features.editors.editor.take()
                     && tabs.contains(&old.path)
                 {
-                    self.parked.insert(old.path.clone(), old);
+                    self.features.editors.parked.insert(old.path.clone(), old);
                 }
-                let editor = match self.parked.remove(open.path()) {
+                let editor = match self.features.editors.parked.remove(open.path()) {
                     Some(mut editor) => {
                         editor.sync(open, &self.theme);
                         editor
                     }
                     None => Editor::new(Id::new(EDITOR_AREA), open, &self.theme),
                 };
-                self.editor = Some(editor);
+                self.features.editors.editor = Some(editor);
                 self.mark_changes();
             }
         }
-        if let Some(editor) = self.editor.as_mut()
-            && let Some((_, line)) = self.pending_line.take_if(|(path, _)| *path == editor.path)
+        if let Some(editor) = self.features.editors.editor.as_mut()
+            && let Some((_, line)) = self
+                .features
+                .editors
+                .pending_line
+                .take_if(|(path, _)| *path == editor.path)
         {
             editor.go_to_line(line_index(line));
         }
@@ -3117,28 +3147,28 @@ impl Shell {
     /// Gives egui a system font for each character of the editor's text that the bundled fonts
     /// lack: the whole text of a file just opened, then the caret's line as it is edited.
     fn cover_characters(&mut self, ctx: &egui::Context) {
-        let Some(editor) = &self.editor else {
+        let Some(editor) = &self.features.editors.editor else {
             return;
         };
         let state = editor.view.state();
         let now = (editor.path.clone(), state.revision());
-        if self.covered.as_ref() == Some(&now) {
+        if self.features.editors.covered.as_ref() == Some(&now) {
             return;
         }
-        let text = match &self.covered {
+        let text = match &self.features.editors.covered {
             Some((path, _)) if *path == now.0 => {
                 state.buffer().line(state.primary().head.line).to_owned()
             }
             Some(_) | None => state.buffer().text(),
         };
         self.system_fonts.cover(ctx, &families(), &text);
-        self.covered = Some(now);
+        self.features.editors.covered = Some(now);
     }
 
     /// The multibuffer the Search tab shows (P4-33).
     #[cfg(test)]
     pub(crate) const fn multibuffer(&self) -> &Multibuffer {
-        &self.multibuffer
+        &self.features.editors.multibuffer
     }
 
     /// Draws the Search tab: the multibuffer, and does what it asked for (P4-33).
@@ -3154,7 +3184,12 @@ impl Shell {
             .fill(theme.color(Token::SurfaceEditor))
             .inner_margin(theme.space(2))
             .show(ui, |ui| {
-                multibuffer_ui(ui, theme, &mut self.multibuffer, root.as_deref())
+                multibuffer_ui(
+                    ui,
+                    theme,
+                    &mut self.features.editors.multibuffer,
+                    root.as_deref(),
+                )
             })
             .inner;
         if let Some(action) = asked {
@@ -3176,8 +3211,9 @@ impl Shell {
         self.back_up_map(ui.ctx());
         self.watch_disk(ui.ctx());
         self.cover_characters(ui.ctx());
-        let editor_shown = self.centre_tab == CentreTab::Editor && self.editor.is_some();
-        let refocus = std::mem::take(&mut self.multibuffer.refocus);
+        let editor_shown =
+            self.centre_tab == CentreTab::Editor && self.features.editors.editor.is_some();
+        let refocus = std::mem::take(&mut self.features.editors.multibuffer.refocus);
         if (focus == FocusNow::Take || refocus) && editor_shown {
             self.focus_editor(ui.ctx());
         }
@@ -3225,9 +3261,16 @@ impl Shell {
         match chosen {
             Some(TabAction::Show(path)) => {
                 let offset = self
+                    .features
+                    .editors
                     .parked
                     .get(&path)
-                    .or(self.editor.as_ref().filter(|e| e.path == path))
+                    .or(self
+                        .features
+                        .editors
+                        .editor
+                        .as_ref()
+                        .filter(|e| e.path == path))
                     .map_or(0, Editor::caret_offset);
                 self.jump(Jump { path, offset });
             }
@@ -3249,7 +3292,7 @@ impl Shell {
         };
         let theme = &self.theme;
         if self.centre_tab == CentreTab::Editor
-            && let Some(editor) = &mut self.editor
+            && let Some(editor) = &mut self.features.editors.editor
         {
             editor.view.set_wrap(wrap);
             let context = self.session.context();

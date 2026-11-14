@@ -19,6 +19,7 @@ mod code_style;
 mod debugger;
 mod disk_watch;
 mod editor;
+mod editors;
 mod entities;
 mod fallback;
 mod features;

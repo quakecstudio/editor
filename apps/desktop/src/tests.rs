@@ -297,6 +297,7 @@ fn the_ui_code_has_no_string_literals() {
         ("multibuffer.rs", include_str!("multibuffer.rs")),
         ("project.rs", include_str!("project.rs")),
         ("editor.rs", include_str!("editor.rs")),
+        ("editors.rs", include_str!("editors.rs")),
         ("code_style.rs", include_str!("code_style.rs")),
         ("menu.rs", include_str!("menu.rs")),
         ("map_editor.rs", include_str!("map_editor.rs")),
