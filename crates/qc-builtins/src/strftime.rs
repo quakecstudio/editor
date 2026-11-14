@@ -4,6 +4,8 @@
 //! C's `strftime` of the mock's one instant, 1970-01-01 00:00:00 UTC, a Thursday, for vkQuake's
 //! `strftime` builtin (BUILTIN-18.7).
 
+use crate::STRINGTEMP_LENGTH;
+
 /// The text each conversion gives at the mock's instant, as C's `strftime` writes it.
 const CONVERSIONS: [(u8, &str); 39] = [
     (b'a', "Thu"),
@@ -46,9 +48,6 @@ const CONVERSIONS: [(u8, &str); 39] = [
     (b'z', "+0000"),
     (b'Z', "GMT"),
 ];
-
-/// vkQuake's `STRINGTEMP_LENGTH`, the buffer `strftime` writes into.
-const STRINGTEMP_LENGTH: usize = 1024;
 
 /// `format` written as C's `strftime` writes it at the mock's instant (BUILTIN-18.7): each
 /// conversion its text, `%%` a `%`, any other `%` sequence as written; empty when the text does

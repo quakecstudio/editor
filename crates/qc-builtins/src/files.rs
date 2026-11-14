@@ -9,14 +9,14 @@
 //! directory starts empty, and a file QuakeC writes is kept in memory, under `data/`, for the
 //! rest of the run, so a later read finds it as vkQuake's would.
 
+use crate::STRINGTEMP_TEXT;
+
 use std::collections::BTreeMap;
 
 use qc_vm::convert::float_to_int;
 
 /// `QC_FILE_BASE`, the handle of the first open file.
 const QC_FILE_BASE: usize = 1;
-/// vkQuake's `STRINGTEMP_LENGTH`, the most bytes `fgets` returns, its zero among them.
-const STRINGTEMP_LENGTH: usize = 1024;
 
 /// How `fopen` opens a file: its `mode` argument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -187,7 +187,7 @@ impl Files {
             .to_vec();
         // `if (s == end) s--` keeps writing the last byte, which the terminator then overwrites,
         // so a longer line keeps its first 1023 bytes.
-        line.truncate(STRINGTEMP_LENGTH.saturating_sub(1));
+        line.truncate(STRINGTEMP_TEXT);
         if line.last() == Some(&b'\r') {
             line.pop();
         }

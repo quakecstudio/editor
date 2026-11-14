@@ -33,6 +33,7 @@ enum qc_builtins::mock::EngineProfile
 enum qc_builtins::mock::MessageDest
 enum qc_builtins::mock::Precache
 enum qc_builtins::mock::Unimplemented
+enum qc_builtins::strbuf::Placement
 enum qc_builtins::table::Class
 enum qc_builtins::userinfo::ClientCommand
 field qc_builtins::mock::Buffers.extra_signon_buffers
@@ -130,12 +131,20 @@ fn qc_builtins::mock::MockEngine::reserve_signon
 fn qc_builtins::mock::MockEngine::set_lightstyle
 fn qc_builtins::mock::Rng::new
 fn qc_builtins::mock::Rng::next_rand
+fn qc_builtins::strbuf::BufferSlot::get
+fn qc_builtins::strbuf::BufferSlot::new
 fn qc_builtins::strbuf::StringBuffers::add
 fn qc_builtins::strbuf::StringBuffers::create
 fn qc_builtins::strbuf::StringBuffers::delete
 fn qc_builtins::strbuf::StringBuffers::get
 fn qc_builtins::strbuf::StringBuffers::size
-fn qc_builtins::table::lookup
+fn qc_builtins::strbuf::StringIndex::get
+fn qc_builtins::strbuf::StringIndex::new
+fn qc_builtins::table::BuiltinNumber::builtin
+fn qc_builtins::table::BuiltinNumber::get
+fn qc_builtins::table::BuiltinNumber::new
+fn qc_builtins::tokenize::TokenIndex::get
+fn qc_builtins::tokenize::TokenIndex::new
 fn qc_builtins::tokenize::Tokens::argv
 fn qc_builtins::tokenize::Tokens::end
 fn qc_builtins::tokenize::Tokens::split
@@ -147,6 +156,8 @@ fn qc_builtins::userinfo::ClientInfo::colors
 fn qc_builtins::userinfo::ClientInfo::name
 fn qc_builtins::userinfo::ClientInfo::update
 fn qc_builtins::userinfo::ClientInfo::userinfo
+fn qc_builtins::userinfo::ClientSlot::get
+fn qc_builtins::userinfo::ClientSlot::new
 fn qc_builtins::userinfo::Clients::get
 fn qc_builtins::userinfo::Clients::get_mut
 fn qc_builtins::userinfo::info_get_key
@@ -193,15 +204,21 @@ struct qc_builtins::mock::MockEngine
 struct qc_builtins::mock::ModelBounds
 struct qc_builtins::mock::Overflow
 struct qc_builtins::mock::Rng
+struct qc_builtins::strbuf::BufferSlot
 struct qc_builtins::strbuf::StringBuffers
+struct qc_builtins::strbuf::StringIndex
 struct qc_builtins::table::Builtin
+struct qc_builtins::table::BuiltinNumber
+struct qc_builtins::tokenize::TokenIndex
 struct qc_builtins::tokenize::Tokens
 struct qc_builtins::userinfo::ClientInfo
+struct qc_builtins::userinfo::ClientSlot
 struct qc_builtins::userinfo::Clients
 struct qc_builtins::userinfo::Decoded
 use qc_builtins::BUILTIN_MAX_NUMBER = table::BUILTIN_MAX_NUMBER
 use qc_builtins::Builtin = table::Builtin
 use qc_builtins::BuiltinError = error::BuiltinError
+use qc_builtins::BuiltinNumber = table::BuiltinNumber
 use qc_builtins::Class = table::Class
 use qc_builtins::EngineProfile = mock::EngineProfile
 use qc_builtins::FatalError = error::FatalError
@@ -209,7 +226,6 @@ use qc_builtins::MockBuiltins = dispatch::MockBuiltins
 use qc_builtins::MockEngine = mock::MockEngine
 use qc_builtins::RuntimeError = error::RuntimeError
 use qc_builtins::Unimplemented = mock::Unimplemented
-use qc_builtins::lookup = table::lookup
 variant qc_builtins::error::BuiltinError::Fatal
 variant qc_builtins::error::BuiltinError::Host
 variant qc_builtins::error::BuiltinError::Nested
@@ -259,6 +275,8 @@ variant qc_builtins::mock::Precache::Model
 variant qc_builtins::mock::Precache::Sound
 variant qc_builtins::mock::Unimplemented::Error
 variant qc_builtins::mock::Unimplemented::ReturnsZero
+variant qc_builtins::strbuf::Placement::End
+variant qc_builtins::strbuf::Placement::FirstHole
 variant qc_builtins::table::Class::Output
 variant qc_builtins::table::Class::Pure
 variant qc_builtins::table::Class::State

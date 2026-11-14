@@ -13,6 +13,8 @@
 //! `tokenizebyseparator` fill and `argv`, `argv_start_index` and `argv_end_index` read
 //! (BUILTIN-18.23, BUILTIN-18.24).
 
+use crate::STRINGTEMP_TEXT;
+
 /// The most tokens the list holds, `MAXQCTOKENS`.
 pub const MAX_QC_TOKENS: usize = 64;
 
@@ -22,6 +24,8 @@ const COM_PARSE_MAX_TOKEN_SIZE: usize = 4096;
 
 /// The most separators `tokenizebyseparator` reads, `sep[7]`.
 pub const MAX_SEPARATORS: usize = 7;
+/// A space, the highest byte C's signed `char` reads as white space: `c <= ' '`.
+pub(crate) const SPACE: i8 = 32;
 
 /// One token: its text and the byte offsets in the tokenized string it starts and ends at.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,7 +115,8 @@ impl Tokens {
 
     /// The token `PF_ArgV` and its index builtins name by `index`: a negative one counts from
     /// the end; `None` outside the list.
-    fn get(&self, index: i32) -> Option<&Token> {
+    fn get(&self, index: TokenIndex) -> Option<&Token> {
+        let index = index.get();
         let count = i32::try_from(self.tokens.len()).unwrap_or(i32::MAX);
         let index = if index < 0 {
             index.wrapping_add(count)
@@ -126,10 +131,10 @@ impl Tokens {
     /// `PF_ArgV`'s text of token `index`, cut to the 1023 bytes `q_strlcpy` copies into a
     /// temporary string; `None` outside the list, the null string.
     #[must_use]
-    pub fn argv(&self, index: i32) -> Option<Vec<u8>> {
+    pub fn argv(&self, index: TokenIndex) -> Option<Vec<u8>> {
         self.get(index).map(|token| {
             let text = token.text.split(|&b| b == 0).next().unwrap_or_default();
-            text.get(..text.len().min(1023))
+            text.get(..text.len().min(STRINGTEMP_TEXT))
                 .unwrap_or_default()
                 .to_vec()
         })
@@ -137,16 +142,34 @@ impl Tokens {
 
     /// `PF_argv_start_index`: the byte token `index` starts at, or -1.
     #[must_use]
-    pub fn start(&self, index: i32) -> i64 {
+    pub fn start(&self, index: TokenIndex) -> i64 {
         self.get(index)
             .map_or(-1, |token| i64::try_from(token.start).unwrap_or(i64::MAX))
     }
 
     /// `PF_argv_end_index`: the byte after token `index`, or -1.
     #[must_use]
-    pub fn end(&self, index: i32) -> i64 {
+    pub fn end(&self, index: TokenIndex) -> i64 {
         self.get(index)
             .map_or(-1, |token| i64::try_from(token.end).unwrap_or(i64::MAX))
+    }
+}
+
+/// A token's index for `argv` and its edges: from 0, or from the end when negative.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TokenIndex(i32);
+
+impl TokenIndex {
+    /// Index `index`.
+    #[must_use]
+    pub const fn new(index: i32) -> Self {
+        Self(index)
+    }
+
+    /// The index.
+    #[must_use]
+    pub const fn get(self) -> i32 {
+        self.0
     }
 }
 
@@ -163,7 +186,7 @@ pub(crate) fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> 
     let byte = |at: usize| text.get(at).copied().unwrap_or(0);
     loop {
         // skipwhite: `while ((c = *data) <= ' ')`, the end of the text an end of file.
-        while signed(byte(at)) <= 32 {
+        while signed(byte(at)) <= SPACE {
             if byte(at) == 0 {
                 return None;
             }
@@ -219,7 +242,7 @@ pub(crate) fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> 
         at = at.saturating_add(1);
         let c = byte(at);
         // `':'` is no stop here, "so that ip:port works".
-        if matches!(c, b'{' | b'}' | b'(' | b')' | b'\'') || signed(c) <= 32 {
+        if matches!(c, b'{' | b'}' | b'(' | b')' | b'\'') || signed(c) <= SPACE {
             break;
         }
     }
@@ -233,13 +256,17 @@ mod tests {
         reason = "test code: a failed unwrap is a failed test"
     )]
 
-    use super::{MAX_QC_TOKENS, Tokens, com_parse};
+    use super::{MAX_QC_TOKENS, TokenIndex, Tokens, com_parse};
 
     fn words(text: &[u8]) -> Vec<Vec<u8>> {
         let mut tokens = Tokens::default();
         let count = tokens.tokenize(text);
         (0..count)
-            .map(|i| tokens.argv(i32::try_from(i).unwrap()).unwrap())
+            .map(|i| {
+                tokens
+                    .argv(TokenIndex::new(i32::try_from(i).unwrap()))
+                    .unwrap()
+            })
             .collect()
     }
 
@@ -290,13 +317,37 @@ mod tests {
     fn tokenize_records_where_each_word_is() {
         let mut tokens = Tokens::default();
         assert_eq!(tokens.tokenize(b" ab \"c d\" e"), 3);
-        assert_eq!((tokens.start(0), tokens.end(0)), (1, 3));
-        assert_eq!((tokens.start(1), tokens.end(1)), (4, 9));
-        assert_eq!((tokens.start(-1), tokens.end(-1)), (10, 11));
-        assert_eq!(tokens.argv(-3).unwrap(), b"ab");
-        assert_eq!(tokens.argv(3), None);
-        assert_eq!(tokens.argv(-4), None);
-        assert_eq!((tokens.start(3), tokens.end(-4)), (-1, -1));
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(0)),
+                tokens.end(TokenIndex::new(0))
+            ),
+            (1, 3)
+        );
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(1)),
+                tokens.end(TokenIndex::new(1))
+            ),
+            (4, 9)
+        );
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(-1)),
+                tokens.end(TokenIndex::new(-1))
+            ),
+            (10, 11)
+        );
+        assert_eq!(tokens.argv(TokenIndex::new(-3)).unwrap(), b"ab");
+        assert_eq!(tokens.argv(TokenIndex::new(3)), None);
+        assert_eq!(tokens.argv(TokenIndex::new(-4)), None);
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(3)),
+                tokens.end(TokenIndex::new(-4))
+            ),
+            (-1, -1)
+        );
     }
 
     // spec BUILTIN-18.23: the list holds 64 words; the rest are not read
@@ -325,7 +376,7 @@ mod tests {
         assert_eq!(tokens.tokenize(&text), 1);
         // argv copies at most 1023 bytes.
         assert_eq!(tokens.tokenize(&fits), 1);
-        assert_eq!(tokens.argv(0).unwrap().len(), 1023);
+        assert_eq!(tokens.argv(TokenIndex::new(0)).unwrap().len(), 1023);
     }
 
     // spec BUILTIN-18.24: tokenizebyseparator splits at each separator, the byte after one
@@ -338,7 +389,11 @@ mod tests {
             let mut tokens = Tokens::default();
             let count = tokens.split(text, &seps);
             (0..count)
-                .map(|i| tokens.argv(i32::try_from(i).unwrap()).unwrap())
+                .map(|i| {
+                    tokens
+                        .argv(TokenIndex::new(i32::try_from(i).unwrap()))
+                        .unwrap()
+                })
                 .collect::<Vec<_>>()
         };
         assert_eq!(
@@ -357,7 +412,13 @@ mod tests {
         assert_eq!(split(b"a,", &[b",,"]), [b"a,".to_vec()]);
         let mut tokens = Tokens::default();
         tokens.split(b"ab,cd", &[b",".to_vec()]);
-        assert_eq!((tokens.start(1), tokens.end(1)), (3, 5));
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(1)),
+                tokens.end(TokenIndex::new(1))
+            ),
+            (3, 5)
+        );
         let many = ",".repeat(200);
         let text = format!("x{many}");
         assert!(tokens.split(text.as_bytes(), &[b",".to_vec()]) <= MAX_QC_TOKENS);
@@ -370,13 +431,25 @@ mod tests {
     fn reviewer_a_high_byte_before_a_word_is_its_start() {
         let mut tokens = Tokens::default();
         assert_eq!(tokens.tokenize(b" \xe9ab"), 1);
-        assert_eq!((tokens.start(0), tokens.end(0)), (1, 4));
-        assert_eq!(tokens.argv(0).unwrap(), b"ab");
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(0)),
+                tokens.end(TokenIndex::new(0))
+            ),
+            (1, 4)
+        );
+        assert_eq!(tokens.argv(TokenIndex::new(0)).unwrap(), b"ab");
         assert_eq!(tokens.tokenize(b"\xe9\xff"), 0);
         // A quoted word's end is past its closing quote; an unclosed one's is the text's end.
         assert_eq!(tokens.tokenize(b"\"a b\"c \"d"), 3);
-        assert_eq!(tokens.argv(1).unwrap(), b"c");
-        assert_eq!((tokens.start(2), tokens.end(2)), (7, 9));
+        assert_eq!(tokens.argv(TokenIndex::new(1)).unwrap(), b"c");
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(2)),
+                tokens.end(TokenIndex::new(2))
+            ),
+            (7, 9)
+        );
     }
 
     // spec BUILTIN-18.24: an empty separator matches at every byte, so each byte is a token
@@ -387,7 +460,9 @@ mod tests {
     fn reviewer_split_with_an_empty_separator_and_at_the_cap() {
         let mut tokens = Tokens::default();
         assert_eq!(tokens.split(b"abc", &[Vec::new()]), 4);
-        let all: Vec<Vec<u8>> = (0..4).map(|i| tokens.argv(i).unwrap()).collect();
+        let all: Vec<Vec<u8>> = (0..4)
+            .map(|i| tokens.argv(TokenIndex::new(i)).unwrap())
+            .collect();
         assert_eq!(
             all,
             [b"".to_vec(), b"a".to_vec(), b"b".to_vec(), b"c".to_vec()]
@@ -397,10 +472,16 @@ mod tests {
             tokens.split(text.as_bytes(), &[b",".to_vec()]),
             MAX_QC_TOKENS
         );
-        assert_eq!(tokens.argv(-1).unwrap(), b"ab");
-        assert_eq!((tokens.start(-1), tokens.end(-1)), (189, 191));
+        assert_eq!(tokens.argv(TokenIndex::new(-1)).unwrap(), b"ab");
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(-1)),
+                tokens.end(TokenIndex::new(-1))
+            ),
+            (189, 191)
+        );
         assert_eq!(tokens.split(b"a::b", &[b":".to_vec(), b"::".to_vec()]), 2);
-        assert_eq!(tokens.argv(1).unwrap(), b":b");
+        assert_eq!(tokens.argv(TokenIndex::new(1)).unwrap(), b":b");
     }
 
     // spec BUILTIN-18.23: a comment is passed over by COM_Parse, not by tokenizeqc's own skip,
@@ -410,10 +491,22 @@ mod tests {
     fn rereview_a_comment_is_part_of_the_next_word() {
         let mut tokens = Tokens::default();
         assert_eq!(tokens.tokenize(b"a // c\nb"), 2);
-        assert_eq!(tokens.argv(1).unwrap(), b"b");
-        assert_eq!((tokens.start(1), tokens.end(1)), (2, 8));
+        assert_eq!(tokens.argv(TokenIndex::new(1)).unwrap(), b"b");
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(1)),
+                tokens.end(TokenIndex::new(1))
+            ),
+            (2, 8)
+        );
         assert_eq!(tokens.tokenize(b"x /**/y"), 2);
-        assert_eq!((tokens.start(1), tokens.end(1)), (2, 7));
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(1)),
+                tokens.end(TokenIndex::new(1))
+            ),
+            (2, 7)
+        );
         assert_eq!(tokens.tokenize(b"a /* x"), 1);
         assert_eq!(tokens.tokenize(b"a //"), 1);
     }
@@ -426,13 +519,22 @@ mod tests {
         let mut tokens = Tokens::default();
         let fits = format!("\"{}\" b", "q".repeat(4095));
         assert_eq!(tokens.tokenize(fits.as_bytes()), 2);
-        assert_eq!(tokens.argv(0).unwrap(), "q".repeat(1023).as_bytes());
-        assert_eq!((tokens.start(1), tokens.end(1)), (4098, 4099));
+        assert_eq!(
+            tokens.argv(TokenIndex::new(0)).unwrap(),
+            "q".repeat(1023).as_bytes()
+        );
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(1)),
+                tokens.end(TokenIndex::new(1))
+            ),
+            (4098, 4099)
+        );
         let over = format!("\"{}\" b", "q".repeat(4096));
         assert_eq!(tokens.tokenize(over.as_bytes()), 0);
         assert_eq!(tokens.tokenize(b"a \"bc"), 2);
-        assert_eq!(tokens.argv(1).unwrap(), b"bc");
-        assert_eq!(tokens.end(1), 5);
+        assert_eq!(tokens.argv(TokenIndex::new(1)).unwrap(), b"bc");
+        assert_eq!(tokens.end(TokenIndex::new(1)), 5);
     }
 
     // spec BUILTIN-18.24: a separator that is the whole text makes one empty token; one longer
@@ -441,11 +543,17 @@ mod tests {
     fn rereview_split_at_a_separator_as_long_as_the_text() {
         let mut tokens = Tokens::default();
         assert_eq!(tokens.split(b"ab", &[b"ab".to_vec()]), 1);
-        assert_eq!(tokens.argv(0).unwrap(), b"");
-        assert_eq!((tokens.start(0), tokens.end(0)), (0, 0));
+        assert_eq!(tokens.argv(TokenIndex::new(0)).unwrap(), b"");
+        assert_eq!(
+            (
+                tokens.start(TokenIndex::new(0)),
+                tokens.end(TokenIndex::new(0))
+            ),
+            (0, 0)
+        );
         assert_eq!(tokens.split(b"a,", &[b",,".to_vec()]), 1);
-        assert_eq!(tokens.argv(0).unwrap(), b"a,");
+        assert_eq!(tokens.argv(TokenIndex::new(0)).unwrap(), b"a,");
         assert_eq!(tokens.split(b"", &[b",".to_vec()]), 0);
-        assert_eq!(tokens.argv(0), None);
+        assert_eq!(tokens.argv(TokenIndex::new(0)), None);
     }
 }

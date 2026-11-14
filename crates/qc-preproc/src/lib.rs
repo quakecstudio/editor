@@ -648,12 +648,12 @@ impl TokenStream {
     /// ([`Relexed`]), so a file of many such uses is not lexed again whole for each.
     /// Returns how many bytes were lexed again.
     fn resume_at(&mut self, text: &[u8], offset: usize, lexing: Lexing<'_>) -> usize {
-        self.read_on = offset;
+        let lexed_from = core::mem::replace(&mut self.read_on, offset);
         let next = self.tokens.partition_point(|t| t.span.start < offset);
         // The tokens from `read` on are those not read yet, or read again from here.
         let read = self.pos.min(next);
         self.pos = next;
-        let Some(relexed) = Relexed::from(&self.tokens, text, offset, lexing) else {
+        let Some(relexed) = Relexed::from(&self.tokens, text, offset, lexed_from, lexing) else {
             return 0;
         };
         let Relexed {
@@ -705,12 +705,25 @@ impl Relexed {
     /// `offset` and `offset`, as then no token or comment of the first lexing stands across
     /// it. Otherwise only as far as a token of the first lexing that the new lexing reaches as
     /// that one did ([`Relexed::window`]), so a text of many such places is not lexed again
-    /// whole for each.
-    fn from(tokens: &[Token], text: &[u8], offset: usize, lexing: Lexing<'_>) -> Option<Self> {
+    /// whole for each. `lexed_from` is where reading last went on: the tokens after it were
+    /// lexed from there, so a token of an earlier lexing that stands across it ends no gap.
+    fn from(
+        tokens: &[Token],
+        text: &[u8],
+        offset: usize,
+        lexed_from: usize,
+        lexing: Lexing<'_>,
+    ) -> Option<Self> {
         let dialect = lexing.dialect;
         let next = tokens.partition_point(|t| t.span.start < offset);
         let before = next.checked_sub(1).and_then(|last| tokens.get(last));
-        let gap_start = before.map_or(0, |t| t.span.end);
+        let gap_start = before.map_or(0, |t| {
+            if t.span.start < lexed_from && lexed_from < t.span.end {
+                lexed_from
+            } else {
+                t.span.end
+            }
+        });
         // FTEF-13.18: under FTEQCC a line ending in the gap was read by `QCC_PR_LexComment`,
         // which reading on reads otherwise, so the text after it is lexed again.
         let clean = gap_start <= offset

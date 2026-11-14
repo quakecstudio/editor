@@ -16,8 +16,8 @@ mod tests;
 
 use std::fmt;
 
-pub use binary::{decode, encode, encode_header, encode_record};
-pub use json::{from_json, header_to_json, record_to_json, to_json};
+pub use binary::{decode, encode, encode_header};
+pub use json::{from_json, header_to_json, to_json};
 
 /// The trace format version.
 ///

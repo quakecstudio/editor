@@ -784,6 +784,42 @@ mod coverage {
         assert_eq!(trace.entityfields(), 110);
     }
 
+    // spec TRACE-4.10: a string record carries no change set; TRACE-4.6: an error record carries
+    // the changes since the previous record; dropping the records keeps the header
+    #[test]
+    fn trace_string_error_and_clear() {
+        let bytes = harness::ProgsBuilder::default()
+            .statements(&[Stmt::op("DONE", 0, 0, 0)])
+            .build();
+        let progs = read(&bytes);
+        let mut machine = Machine::new(&progs, 0).unwrap();
+        let mut trace = Trace::new(&machine, &progs).unwrap();
+        let header = trace.header();
+        let text = qc_trace::Text::new(b"hi".to_vec()).unwrap();
+        trace.push_string(7, text.clone());
+        assert_eq!(
+            trace.records(),
+            [qc_trace::Record::String { value: 7, text }]
+        );
+        machine.set_global_test(100, Slot::from_f32(2.0));
+        trace.error_record(&machine, 0, -1, b"bad".to_vec());
+        let Some(qc_trace::Record::Error {
+            function,
+            statement,
+            message,
+            changes,
+        }) = trace.records().last()
+        else {
+            panic!("no error record");
+        };
+        assert_eq!((*function, *statement), (0, -1));
+        assert_eq!(message.as_bytes(), b"bad");
+        assert!(!changes.globals().is_empty(), "the global written");
+        trace.clear();
+        assert!(trace.records().is_empty());
+        assert_eq!(trace.header(), header);
+    }
+
     // spec VM-9.1: OR and AND of two integer-valued floats are a bitwise OR and AND; with
     // operands that overlap in some bits, OR differs from XOR, pinning `a | b`.
     #[test]

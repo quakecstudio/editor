@@ -15,7 +15,7 @@
               the f64-to-f32 casts reproduce the engine's rounding"
 )]
 
-use crate::EdictNumber;
+use crate::{EdictNumber, Tracking};
 use qc_progs::limits::LIMIT_MAX_EDICTS;
 use qc_types::{EntityRef, Etype, PointerRef, Slot};
 
@@ -981,7 +981,7 @@ fn tracking_records_allocations_frees_and_writes() {
     store.set_field(n, 3, Slot::from_f32(1.0)).unwrap();
     assert!(store.take_events().is_empty());
 
-    store.track(true);
+    store.track(Tracking::On);
     let m = store.alloc(0.0).unwrap();
     store.set_field(m, 3, Slot::from_f32(1.0)).unwrap();
     store.set_field(m, 3, Slot::from_f32(1.0)).unwrap();
@@ -1006,7 +1006,7 @@ fn tracking_records_allocations_frees_and_writes() {
     let mut into = self::store(1);
     into.clone_from(&store);
     assert_eq!(into.take_events(), [EdictEvent::Written(m, 4)]);
-    store.track(false);
+    store.track(Tracking::Off);
     assert!(store.take_events().is_empty());
 }
 

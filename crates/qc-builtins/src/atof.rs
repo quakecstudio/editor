@@ -4,6 +4,8 @@
 //! C's `atof`, `strtod` of the longest prefix that is a number, which vkQuake's extension
 //! builtins call (BUILTIN-18.25).
 
+use crate::{DECIMAL, NIBBLE_BITS};
+
 /// `atof(text)`: leading white space skipped, then an optional sign and a decimal number with
 /// an optional exponent, a hexadecimal one (`0x`, an optional `p` exponent), `inf`, `infinity`
 /// or `nan` in any case; 0 when none is there.
@@ -26,7 +28,11 @@ pub(crate) fn atof(text: &[u8]) -> f64 {
 
 /// `inf`, `infinity` and `nan` in any case.
 fn special(text: &[u8]) -> Option<f64> {
-    let lower: Vec<u8> = text.iter().take(3).map(u8::to_ascii_lowercase).collect();
+    let lower: Vec<u8> = text
+        .iter()
+        .take(SPECIAL_LENGTH)
+        .map(u8::to_ascii_lowercase)
+        .collect();
     match lower.as_slice() {
         b"inf" => Some(f64::INFINITY),
         b"nan" => Some(f64::NAN),
@@ -82,14 +88,14 @@ fn hexadecimal(text: &[u8]) -> Option<f64> {
     let mut mantissa = Mantissa::default();
     let mut any = false;
     let mut at = 0;
-    while let Some(digit) = rest.get(at).and_then(|b| char::from(*b).to_digit(16)) {
+    while let Some(digit) = rest.get(at).and_then(|b| char::from(*b).to_digit(HEX)) {
         mantissa.push(digit, Place::Whole);
         any = true;
         at = at.saturating_add(1);
     }
     if rest.get(at) == Some(&b'.') {
         at = at.saturating_add(1);
-        while let Some(digit) = rest.get(at).and_then(|b| char::from(*b).to_digit(16)) {
+        while let Some(digit) = rest.get(at).and_then(|b| char::from(*b).to_digit(HEX)) {
             mantissa.push(digit, Place::Fraction);
             any = true;
             at = at.saturating_add(1);
@@ -113,7 +119,7 @@ fn hexadecimal(text: &[u8]) -> Option<f64> {
         let mut seen = false;
         while let Some(d) = rest.get(digit_at).filter(|b| b.is_ascii_digit()) {
             exp = exp
-                .saturating_mul(10)
+                .saturating_mul(i64::from(DECIMAL))
                 .saturating_add(i64::from(d.saturating_sub(b'0')));
             seen = true;
             digit_at = digit_at.saturating_add(1);
@@ -144,6 +150,21 @@ struct Mantissa {
 
 /// The bits kept: 60, so that one more digit still fits in the `u64`.
 const KEPT: u32 = 60;
+/// A hexadecimal digit's base and bits.
+const HEX: u32 = 16;
+/// The letters `inf` and `nan` have.
+const SPECIAL_LENGTH: usize = 3;
+/// An `f64`'s mantissa bits below the implicit one, its exponent bias, its largest
+/// exponent, the worth of its least subnormal bit, `2^-1074`, and its exponent field's
+/// infinity.
+const MANTISSA_BITS: i64 = 52;
+const EXPONENT_BIAS: i64 = 1023;
+const MAX_EXPONENT: i64 = 1023;
+const LEAST_BIT: i64 = -1074;
+const EXPONENT_INFINITE: i64 = 2047;
+/// The implicit bit of a normal `f64`'s 53, and a carry past it.
+const IMPLICIT: u64 = 1 << 52;
+const CARRIED: u64 = 1 << 53;
 
 impl Mantissa {
     /// Adds the next digit, at `place`.
@@ -151,15 +172,15 @@ impl Mantissa {
         if self.bits >> KEPT == 0 {
             self.bits = self
                 .bits
-                .saturating_mul(16)
+                .saturating_mul(u64::from(HEX))
                 .saturating_add(u64::from(digit));
             if place == Place::Fraction {
-                self.scale = self.scale.saturating_sub(4);
+                self.scale = self.scale.saturating_sub(i64::from(NIBBLE_BITS));
             }
         } else {
             self.sticky |= digit != 0;
             if place == Place::Whole {
-                self.scale = self.scale.saturating_add(4);
+                self.scale = self.scale.saturating_add(i64::from(NIBBLE_BITS));
             }
         }
     }
@@ -172,10 +193,10 @@ impl Mantissa {
         let length = i64::from(u64::BITS.saturating_sub(self.bits.leading_zeros()));
         // The value is 1.x times 2^exponent; its last kept bit is worth 2^last.
         let exponent = self.scale.saturating_add(length).saturating_sub(1);
-        if exponent > 1023 {
+        if exponent > MAX_EXPONENT {
             return f64::INFINITY;
         }
-        let last = exponent.saturating_sub(52).max(-1074);
+        let last = exponent.saturating_sub(MANTISSA_BITS).max(LEAST_BIT);
         let shift = self.scale.saturating_sub(last);
         let mut kept = if shift >= 0 {
             // Exact: the bits fit in the 53 the value keeps.
@@ -201,23 +222,25 @@ impl Mantissa {
         let mut last = last;
         // A round-up that carried into the next power of two: 2^53 units are 2^52 of twice the
         // worth.
-        if kept == 1 << 53 {
-            kept = 1 << 52;
+        if kept == CARRIED {
+            kept = IMPLICIT;
             last = last.saturating_add(1);
         }
         if kept == 0 {
             return 0.0;
         }
-        if kept < 1 << 52 {
+        if kept < IMPLICIT {
             // A subnormal: its bits are the mantissa, its exponent field 0.
             return f64::from_bits(kept);
         }
-        let biased = last.saturating_add(52).saturating_add(1023);
-        if biased >= 2047 {
+        let biased = last
+            .saturating_add(MANTISSA_BITS)
+            .saturating_add(EXPONENT_BIAS);
+        if biased >= EXPONENT_INFINITE {
             return f64::INFINITY;
         }
         let field = u64::try_from(biased).unwrap_or(0);
         // The exponent field and the mantissa's bits below the implicit one, which share no bit.
-        f64::from_bits((field << 52).saturating_add(kept & ((1 << 52) - 1)))
+        f64::from_bits((field << MANTISSA_BITS).saturating_add(kept & (IMPLICIT - 1)))
     }
 }

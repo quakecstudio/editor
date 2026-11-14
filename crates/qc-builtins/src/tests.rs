@@ -30,7 +30,7 @@ fn table_has_the_vanilla_numbers() {
     // The present numbers: 1 to 78 minus the gaps (BUILTIN-1.2).
     let gaps = [5u32, 33, 39, 42, 50, 60, 61, 62, 63, 64, 65, 66, 71];
     for number in 1..=BUILTIN_MAX_NUMBER {
-        let present = table::lookup(number).is_some();
+        let present = table::BuiltinNumber::new(number).builtin().is_some();
         if gaps.contains(&number) {
             assert!(!present, "number {number} should be a PF_Fixme gap");
             assert!(table::is_fixme(number), "{number} should be is_fixme");
@@ -44,17 +44,32 @@ fn table_has_the_vanilla_numbers() {
 // spec BUILTIN-5.2: three numbers share a C function under two names.
 #[test]
 fn precache_variants_share_a_c_function() {
-    assert_eq!(table::lookup(75).unwrap().c_function, "PF_precache_model");
-    assert_eq!(table::lookup(76).unwrap().c_function, "PF_precache_sound");
-    assert_eq!(table::lookup(77).unwrap().c_function, "PF_precache_file");
-    assert_eq!(table::lookup(75).unwrap().name, "precache_model2");
+    assert_eq!(
+        table::BuiltinNumber::new(75).builtin().unwrap().c_function,
+        "PF_precache_model"
+    );
+    assert_eq!(
+        table::BuiltinNumber::new(76).builtin().unwrap().c_function,
+        "PF_precache_sound"
+    );
+    assert_eq!(
+        table::BuiltinNumber::new(77).builtin().unwrap().c_function,
+        "PF_precache_file"
+    );
+    assert_eq!(
+        table::BuiltinNumber::new(75).builtin().unwrap().name,
+        "precache_model2"
+    );
 }
 
 // spec BUILTIN-4.4: the class world builtins are the ones a mock cannot reproduce.
 #[test]
 fn world_builtins_have_the_world_class() {
     for number in [16u32, 17, 32, 34, 40, 41, 44, 67] {
-        assert_eq!(table::lookup(number).unwrap().class, Class::World);
+        assert_eq!(
+            table::BuiltinNumber::new(number).builtin().unwrap().class,
+            Class::World
+        );
     }
 }
 
@@ -979,10 +994,10 @@ mod mock_engine {
     // is None for a PF_Fixme gap.
     #[test]
     fn lookup_present_and_gap() {
-        let makevectors = table::lookup(1).unwrap();
+        let makevectors = table::BuiltinNumber::new(1).builtin().unwrap();
         assert_eq!(makevectors.name, "makevectors");
         assert_eq!(makevectors.class, Class::Pure);
-        assert!(table::lookup(5).is_none());
+        assert!(table::BuiltinNumber::new(5).builtin().is_none());
     }
 }
 
@@ -1006,6 +1021,8 @@ mod bodies {
     )]
 
     use crate::mock::{EngineProfile, MessageDest, MockEngine, Precache, Unimplemented};
+    use crate::tokenize::TokenIndex;
+    use crate::userinfo::ClientSlot;
     use crate::{MockBuiltins, math};
     use qc_edict::system::{SYSTEM_GLOBALS, field_by_name, global_by_name};
     use qc_edict::{EDICT_SYS_GLOBALS_END, EdictNumber};
@@ -2778,18 +2795,18 @@ mod bodies {
         f.set_parm_i(2, offsets[1]);
         f.run(ServerState::Active).unwrap();
         assert_eq!(f.field_f(2, "team"), 7.0);
-        assert_eq!(f.engine().clients.get(1).colors(), 6);
+        assert_eq!(f.engine().clients.get(ClientSlot::new(1)).colors(), 6);
         f.set_parm_i(1, offsets[2]);
         f.set_parm_i(2, offsets[3]);
         f.run(ServerState::Active).unwrap();
         assert!(
             f.engine()
                 .clients
-                .get(1)
+                .get(ClientSlot::new(1))
                 .userinfo()
                 .ends_with(b"\\*spectator\\1"),
             "{:?}",
-            f.engine().clients.get(1)
+            f.engine().clients.get(ClientSlot::new(1))
         );
     }
 
@@ -2834,7 +2851,10 @@ mod bodies {
         f.set_parm_i(2, offsets[2]);
         f.run_ok(ServerState::Active);
         assert_eq!(f.return_f(), 3.0);
-        assert_eq!(f.builtins.engine().tokens.argv(2), Some(b"c".to_vec()));
+        assert_eq!(
+            f.builtins.engine().tokens.argv(TokenIndex::new(2)),
+            Some(b"c".to_vec())
+        );
     }
 
     // spec BUILTIN-18.24: tokenizebyseparator reads a separator from each of the seven
@@ -2851,7 +2871,10 @@ mod bodies {
         }
         f.run_ok(ServerState::Active);
         assert_eq!(f.return_f(), 8.0);
-        assert_eq!(f.builtins.engine().tokens.argv(7), Some(b"h8i".to_vec()));
+        assert_eq!(
+            f.builtins.engine().tokens.argv(TokenIndex::new(7)),
+            Some(b"h8i".to_vec())
+        );
         let mut f = Fixture::new(479, 1, strings, 0);
         f.builtins.engine_mut().profile = EngineProfile::VkQuake;
         f.set_parm_i(0, offsets[0]);
