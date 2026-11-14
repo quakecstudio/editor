@@ -255,6 +255,18 @@ point moving through the hull stops where the box would.
 - **QBSP-5.6** More than `MAX_HULL_POINTS` distinct vertices, `MAX_HULL_EDGES` distinct
   edges or `MAX_FACES` planes in one brush stops the run (`MAX_HULL_POINTS`, `MAX_HULL_EDGES`,
   `AddBrushPlane: numbrushfaces == MAX_FACES`).
+- **QBSP-5.7** qbsp's `AddHullPoint` (`BRUSH.C`) stores a new point and its eight corners
+  before it tests the limit: `VectorCopy (p, hull_points[num_hull_points]);`, then
+  `c = hull_corners[i*8];` and the eight corners, and only then
+  `if (num_hull_points == MAX_HULL_POINTS) Error ("MAX_HULL_POINTS");`. The 33rd distinct point
+  of a brush is written past `hull_points[MAX_HULL_POINTS]` and its corners past
+  `hull_corners[MAX_HULL_POINTS*8]`, into whatever the compiler placed after them, which is
+  undefined: on LibreQuake's `end.map` the oracle's build stops on Linux with
+  `numtexinfo == MAX_MAP_TEXINFO` (Differential run 43597129460) though the map has 1024
+  texinfos, which qbsp itself prints, and faults on macOS, where AddressSanitizer reports the
+  fault in `AddHullPoint` called from `ExpandBrush`, `LoadBrush` and `Brush_LoadEntity`. This spec
+  fixes the answer as QBSP-5.6's: the run stops with `MAX_HULL_POINTS`. The map differential
+  takes any stop of id's qbsp as alike when ours is this one.
 
 ### Constants
 
