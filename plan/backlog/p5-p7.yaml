@@ -1099,12 +1099,13 @@ groups:
     environment: |
       ubuntu-latest, Differential workflow run 43597129460, job Map tool oracles (132453984007), main at c702f4cc; reproduced locally on macOS at c702f4cc and 60330adc with Compiler::default().with_dialect(Dialect::Id)
     deliverable:
-    - 'qs-map-bsp''s id dialect stops on lq-end with the error id''s qbsp stops with, in the order of qbsp''s checks quoted from the pinned qutils source in docs/spec/qbsp.md, with a test citing that statement'
+    - 'docs/spec/qbsp.md: a statement, quoted from the pinned qutils source, of what id''s qbsp does when a grown brush passes MAX_HULL_POINTS (its AddHullPoint writes the point and its corners before it tests the limit, undefined), fixing the answer as QBSP-5.6''s stop'
+    - 'xtask/src/map_diff.rs: our MAX_HULL_POINTS stop taken as alike with any stop of id''s qbsp, citing that statement'
     acceptance:
-    - 'cargo xtask map-diff prints ok for every map, lq-end (qbsp) included, in the nightly Differential run on main'
-    - 'A unit test reaches both limits in one map and stops with the one qbsp names, and fails before the fix'
+    - 'cargo xtask map-diff prints ok for every map, lq-end (qbsp) included, in a Differential run on main'
+    - 'A unit test of map-diff takes our MAX_HULL_POINTS stop as alike with qbsp''s unrelated stop on lq-end and no other stop, and fails before the change'
     verify:
-    - 'cargo test -p qs-map-bsp; the Differential run''s map-tools job'
+    - 'cargo test -p xtask; the Differential run''s map-tools job'
   - key: P6-14
     title: Phase 6 gate review
     labels:
