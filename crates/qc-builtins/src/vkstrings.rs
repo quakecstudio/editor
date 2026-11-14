@@ -12,6 +12,24 @@ use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 
 /// vkQuake's `STRINGTEMP_LENGTH`, a temporary string's bytes, its zero among them.
 const STRINGTEMP_LENGTH: usize = 1024;
+/// 2^63's exponent: the first float past an `i64` (BUILTIN-18.32).
+const I64_LIMIT_EXPONENT: i32 = 63;
+/// `chr2str` stops 6 bytes short of a temporary string, room for one UTF-8 character and the
+/// terminator (BUILTIN-18.32).
+const CHR2STR_ROOM: usize = 6;
+/// The Quake characters' private-use codes, `0xe000` to `0xe0ff`, and the codes below them that
+/// are bytes (BUILTIN-18.32).
+const QUAKE_CHARS: core::ops::Range<u32> = 0xe000..0xe100;
+const BYTE_CODES: u32 = 0x100;
+/// `uri_escape` stops 4 bytes short of a temporary string, room for one `%XX` and the
+/// terminator; `uri_unescape` reads `%` and two digits (BUILTIN-18.32).
+const URI_ESCAPE_ROOM: usize = 4;
+const URI_ESCAPE_LENGTH: usize = 3;
+/// A hexadecimal digit's bits, and its low digit's mask.
+const NIBBLE_BITS: u32 = 4;
+const NIBBLE_MASK: u8 = 0xf;
+/// The value of the hexadecimal digit `A`.
+const HEX_TEN: u8 = 10;
 
 /// `PF_mod`: 0 for a zero divisor, else "a - (n * (int)(a / n))" in `float`.
 #[must_use]
@@ -55,7 +73,7 @@ pub fn str2chr(text: &[u8], ofs: i32) -> f32 {
 #[must_use]
 pub fn float_to_unsigned(value: f32) -> u32 {
     // 2^63, the first float past an i64.
-    let limit = 2.0_f32.powi(63);
+    let limit = 2.0_f32.powi(I64_LIMIT_EXPONENT);
     if value.is_nan() || value.abs() >= limit {
         return 0;
     }
@@ -75,11 +93,11 @@ pub fn float_to_unsigned(value: f32) -> u32 {
 pub fn chr2str(codes: &[u32]) -> Vec<u8> {
     let mut out = Vec::new();
     for &code in codes {
-        if out.len() >= STRINGTEMP_LENGTH.saturating_sub(6) {
+        if out.len() >= STRINGTEMP_LENGTH.saturating_sub(CHR2STR_ROOM) {
             break;
         }
         let [low, ..] = code.to_le_bytes();
-        let byte = if (0xe000..0xe100).contains(&code) || code < 256 {
+        let byte = if QUAKE_CHARS.contains(&code) || code < BYTE_CODES {
             low
         } else {
             b'?'
@@ -156,7 +174,7 @@ pub fn uri_escape(text: &[u8]) -> Vec<u8> {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut out = Vec::new();
     for &byte in text {
-        if out.len() >= STRINGTEMP_LENGTH.saturating_sub(4) {
+        if out.len() >= STRINGTEMP_LENGTH.saturating_sub(URI_ESCAPE_ROOM) {
             break;
         }
         if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_') {
@@ -164,7 +182,7 @@ pub fn uri_escape(text: &[u8]) -> Vec<u8> {
         } else {
             out.push(b'%');
             out.extend(
-                [byte >> 4, byte & 0xf]
+                [byte >> NIBBLE_BITS, byte & NIBBLE_MASK]
                     .iter()
                     .filter_map(|&n| HEX.get(usize::from(n))),
             );
@@ -176,8 +194,8 @@ pub fn uri_escape(text: &[u8]) -> Vec<u8> {
 /// The value of one hexadecimal digit.
 fn hex_digit(byte: u8) -> Option<u8> {
     match byte {
-        b'A'..=b'F' => Some(byte.wrapping_sub(b'A').wrapping_add(10)),
-        b'a'..=b'f' => Some(byte.wrapping_sub(b'a').wrapping_add(10)),
+        b'A'..=b'F' => Some(byte.wrapping_sub(b'A').wrapping_add(HEX_TEN)),
+        b'a'..=b'f' => Some(byte.wrapping_sub(b'a').wrapping_add(HEX_TEN)),
         b'0'..=b'9' => Some(byte.wrapping_sub(b'0')),
         _ => None,
     }
@@ -195,14 +213,14 @@ pub fn uri_unescape(text: &[u8]) -> Vec<u8> {
             .then(|| {
                 let high = hex_digit(byte(at.saturating_add(1)))?;
                 let low = hex_digit(byte(at.saturating_add(2)))?;
-                Some(high.wrapping_shl(4) | low)
+                Some(high.wrapping_shl(NIBBLE_BITS) | low)
             })
             .flatten();
         match pair {
             Some(0) => break,
             Some(value) => {
                 out.push(value);
-                at = at.saturating_add(3);
+                at = at.saturating_add(URI_ESCAPE_LENGTH);
             }
             None => {
                 out.push(byte(at));
