@@ -56,6 +56,9 @@
 //! `PR_ParseDefs` and `PR_GetDef` and FTEQCC's `QCC_PR_ParseDefs` and `QCC_PR_GetDef`
 //! (`docs/spec/inventory-l3.md`).
 
+/// `MAX_PARMS`: the parameters a call passes in the parameter globals, `OFS_PARM0` to
+/// `OFS_PARM7`.
+const MAX_PARMS: u8 = 8;
 /// The words of a vector, `type_vector->size` (`qc-types`' `PROGS_VECTOR_SLOTS`).
 const VECTOR_WORDS: u32 = 3;
 /// [`VECTOR_WORDS`] as the float a vector index is divided by.
@@ -92,3 +95,15 @@ pub use resolve::{
 };
 pub use symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 pub use ty::{FunctionType, SimpleType, Type};
+
+#[cfg(test)]
+mod constants {
+    // No spec statement: the checker's vector words are qc-types' vector slots, in each form
+    #[test]
+    fn a_vector_is_three_words_in_every_form() {
+        let slots = qc_types::PROGS_VECTOR_SLOTS;
+        assert_eq!(usize::try_from(super::VECTOR_WORDS).ok(), Some(slots));
+        assert_eq!(usize::try_from(super::VECTOR_WORDS_INT).ok(), Some(slots));
+        assert_eq!(super::VECTOR_WORDS_FLOAT.to_bits(), 3.0_f32.to_bits());
+    }
+}

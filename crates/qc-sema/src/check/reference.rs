@@ -12,6 +12,7 @@ use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op};
 use qc_syntax::SyntaxKind;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp, UnaryOp};
+use qc_types::c_int;
 
 use crate::cast::ConstType;
 use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT};
@@ -1248,7 +1249,7 @@ pub(super) fn eval_int(c: Constant) -> Option<i32> {
         ConstType::Float => Some(f32_index(c.f())),
         ConstType::Double => Some(f64_index(c.d())),
         ConstType::Integer | ConstType::Uint => Some(c.i()),
-        ConstType::Int64 | ConstType::Uint64 => Some(low_word(c.i64())),
+        ConstType::Int64 | ConstType::Uint64 => Some(c_int(c.i64())),
         ConstType::Vector | ConstType::String => None,
     }
 }
@@ -1269,13 +1270,7 @@ pub(crate) fn word_type(ty: &Type) -> Type {
     reason = "spec FTEF-31.8: QCC_Eval_Int of a double is C's double to 64-bit conversion"
 )]
 const fn f64_index(value: f64) -> i32 {
-    low_word(value as i64)
-}
-
-/// The low 32 bits of `value`, as C's truncation to `int` keeps them.
-const fn low_word(value: i64) -> i32 {
-    let [a, b, c, d, ..] = value.to_le_bytes();
-    i32::from_le_bytes([a, b, c, d])
+    c_int(value as i64)
 }
 
 /// `(unsigned)QCC_Eval_Int` of a float index: C's `(pint64_t)` of it, saturating on the arm64
@@ -1285,7 +1280,7 @@ const fn low_word(value: i64) -> i32 {
     reason = "spec FTEF-31.8: QCC_Eval_Int of a float is C's float to 64-bit conversion"
 )]
 const fn f32_index(value: f32) -> i32 {
-    low_word(value as i64)
+    c_int(value as i64)
 }
 
 /// C's `(float)` of a small `int`.

@@ -11,10 +11,8 @@ use qc_preproc::Op;
 
 use crate::check::etype::Etype;
 use crate::check::opcodes::{Assoc, row as opcode_row};
-use crate::{DefId, VECTOR_WORDS};
+use crate::{DefId, MAX_PARMS, VECTOR_WORDS};
 
-/// The parameter registers, `OFS_PARM0` to `OFS_PARM7` (QC-18.3).
-const MAX_PARMS: u8 = 8;
 /// A statement's operands, `a`, `b` and `c` (PROGS-7.1).
 const OPERANDS: usize = 3;
 
@@ -39,7 +37,6 @@ pub enum ImmediateKind {
     Integer,
 }
 
-/// What an operand of a whole body's statement names (`docs/design/back-end.md`).
 /// A generated statement's index in its body, from 0.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StatementIndex(u32);
@@ -76,6 +73,7 @@ impl StringIndex {
     }
 }
 
+/// What an operand of a whole body's statement names (`docs/design/back-end.md`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Name {
     /// A word of a definition: the definition and the word.

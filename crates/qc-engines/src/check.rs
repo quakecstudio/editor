@@ -42,7 +42,8 @@ impl BuiltinRef {
 }
 
 impl Engine {
-    /// The `W0311` warnings for a module of `kind` checked against `engine` (ENGT-4.1, ENGT-4.8).
+    /// The `W0311` warnings for a module of `kind` checked against the engine (ENGT-4.1,
+    /// ENGT-4.8).
     ///
     /// `files` are the module's files in compilation order, each with its parse in `dialect`, and
     /// `index` is the module resolved from them ([`qc_sema::resolve_module`]). Returns one

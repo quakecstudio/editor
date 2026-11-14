@@ -29,6 +29,15 @@ use crate::ty::{SimpleType, Type};
 /// `VMWORDSIZE`: the bytes of a word, by which `sizeof` counts a type of whole words.
 const WORD_BYTES: u32 = 4;
 
+/// Which way `++` or `--` steps its operand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Step {
+    /// `++`.
+    Increment,
+    /// `--`.
+    Decrement,
+}
+
 impl Checker<'_> {
     /// A prefix operator and its operand (FTEF-30.4, FTEF-30.5).
     pub(super) fn unary(&mut self, unary: &ast::UnaryExpr) -> Checked {
@@ -66,7 +75,8 @@ impl Checker<'_> {
                 }
                 self.fatal(Code::E0302, span, "type mismatch for +".to_owned())
             }
-            UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.prefix_step(&operand, op, span),
+            UnaryOp::PreIncrement => self.prefix_step(&operand, Step::Increment, span),
+            UnaryOp::PreDecrement => self.prefix_step(&operand, Step::Decrement, span),
             UnaryOp::Deref => self.dereference(operand, span),
             UnaryOp::AsString => {
                 if matches!(
@@ -127,8 +137,8 @@ impl Checker<'_> {
     /// read-only value" (or `--`); the operand plus or minus 1 of its type, a pointer by its
     /// pointee's size with `OP_ADD_PIW`, is emitted and stored; any other type is "++ operator
     /// on unsupported type". The value is the operand stored to, read-only.
-    fn prefix_step(&mut self, operand: &Value, op: UnaryOp, span: Span) -> Checked {
-        let increment = op == UnaryOp::PreIncrement;
+    fn prefix_step(&mut self, operand: &Value, step: Step, span: Span) -> Checked {
+        let increment = step == Step::Increment;
         let spelling = if increment { "++" } else { "--" };
         if operand.readonly {
             let message = format!("{spelling} operator on read-only value");

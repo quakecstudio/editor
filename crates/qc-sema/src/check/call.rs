@@ -24,10 +24,8 @@ use crate::check::term::string_immediate;
 use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Sym, Value};
 use crate::ir;
 use crate::ty::{FunctionType, SimpleType, Type};
-use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT, VECTOR_WORDS_INT};
+use crate::{MAX_PARMS, VECTOR_WORDS, VECTOR_WORDS_FLOAT, VECTOR_WORDS_INT};
 
-/// `MAX_PARMS`: the parameters a call passes in the parameter globals.
-const MAX_PARMS: usize = 8;
 /// `MAX_PARMS + MAX_EXTRA_PARMS`: the most arguments a call may pass.
 const MAX_ARGUMENTS: usize = 136;
 
@@ -178,7 +176,7 @@ impl Checker<'_> {
             }
             let reference = self.expr(arg)?;
             let extra = function.variadic;
-            if extra && at >= MAX_PARMS {
+            if extra && at >= usize::from(MAX_PARMS) {
                 let message = format!("More than {MAX_PARMS} parameters on varargs function");
                 self.env.report(Code::W0251, arg_span, message);
             } else if !extra && at >= function.params.len() {
@@ -1032,7 +1030,7 @@ impl FunctionType {
                     .map_or_else(ParamFacts::default, |label| ParamFacts {
                         name: label.name.clone(),
                         has_default: label.default.is_some(),
-                        // The code generator passes defaults only to a self it calls by name.
+                        // The code generator passes defaults only to a function it calls by name.
                         kept_default: false,
                         optional: label.optional,
                         out: label.out,
@@ -1041,8 +1039,8 @@ impl FunctionType {
             .collect()
     }
 
-    /// FTE-18.9: whether the function type's parameter `slot` is a variant or a field of one, which an
-    /// argument is stored to by three words, its `size`.
+    /// FTE-18.9: whether the function type's parameter `slot` is a variant or a field of one,
+    /// which an argument is stored to by three words, its `size`.
     fn is_variant_parameter(&self, slot: usize) -> bool {
         self.params.get(slot).is_some_and(|param| {
             let held = match param {

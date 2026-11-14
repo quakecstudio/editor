@@ -693,12 +693,12 @@ impl Arg {
     }
 }
 
-/// The literal a global's initialiser is, read from the source text after its name: `= 32`,
-/// `= '0 0 1'` or `= "text"`. Vanilla lowering keeps no literal (QCD-3.6), and a spawnflag's or
-/// a size's constant is one of these.
 /// The bytes after a global's name searched for its initialiser.
 const LITERAL_SCAN: usize = 256;
 
+/// The literal a global's initialiser is, read from the source text after its name: `= 32`,
+/// `= '0 0 1'` or `= "text"`. Vanilla lowering keeps no literal (QCD-3.6), and a spawnflag's or
+/// a size's constant is one of these.
 fn literal_after(text: &[u8]) -> Option<Arg> {
     let text = String::from_utf8_lossy(text.get(..text.len().min(LITERAL_SCAN))?);
     let value = text.trim_start().strip_prefix('=')?.trim_start();

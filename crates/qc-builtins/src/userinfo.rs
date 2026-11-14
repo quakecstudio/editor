@@ -356,8 +356,7 @@ fn atoi(text: &[u8]) -> i32 {
         i = i.saturating_add(1);
     }
     // `(int)` of a `long`: the low 32 bits, as x86-64 truncates.
-    let [a, b, c, d, ..] = value.to_le_bytes();
-    i32::from_le_bytes([a, b, c, d])
+    qc_types::c_int(value)
 }
 
 #[cfg(test)]
