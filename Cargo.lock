@@ -3902,6 +3902,7 @@ dependencies = [
  "qs-map-light",
  "qs-pak",
  "qs-paths",
+ "qs-render",
  "qs-sim",
  "qs-vfs",
  "qs-workbench",
