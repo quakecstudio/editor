@@ -29,6 +29,7 @@ use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, Criterion, criterion_group, criterion_main};
 use qc_codegen::compile_module;
 use qc_sema::{Db, FileId, ModuleInput};
+use qs_map_light::{Light, Sampling};
 
 /// The criterion group every budget benchmark belongs to.
 const GROUP: &str = "budgets";
@@ -208,6 +209,30 @@ fn id1_recompile(group: &mut BenchmarkGroup<'_, WallTime>) {
             let compiled =
                 compile_module(&mut db, &input, name).expect("the edited id 1.01 compiles");
             black_box(qc_progs::write(&compiled.progs).expect("the progs writes"))
+        });
+    });
+}
+
+/// The variable naming LibreQuake's `lq-e1m1.map`, which `cargo xtask bench` fetches into the
+/// asset cache and sets.
+const MAP_FILE: &str = "QS_BENCH_MAP";
+
+/// Play from here's compile of an id1-sized map (P6-12, P6-37): LibreQuake's lq-e1m1 through
+/// the extended qbsp with no WAD, as the workbench compiles it, then the fast light.
+fn play_from_here_e1m1(group: &mut BenchmarkGroup<'_, WallTime>) {
+    let path = std::env::var_os(MAP_FILE).unwrap_or_else(|| {
+        panic!("{MAP_FILE} is not set: run the benchmarks through cargo xtask bench")
+    });
+    let map = fs::read(path).expect("lq-e1m1.map reads");
+    let compiler = qs_map_bsp::Compiler::default().with_dialect(qs_map_bsp::Dialect::Extended);
+    group.bench_function("play_from_here_e1m1", |bencher| {
+        bencher.iter(|| {
+            let compiled = compiler.compile(&map, None).expect("lq-e1m1 compiles");
+            black_box(
+                Light::new(Sampling::Fast)
+                    .run(&compiled.bsp)
+                    .expect("lq-e1m1 lights"),
+            )
         });
     });
 }
@@ -520,6 +545,7 @@ fn budgets(criterion: &mut Criterion) {
     id1_recompile(&mut group);
     save_to_game(&mut group);
     routes(&mut group);
+    play_from_here_e1m1(&mut group);
     group.finish();
 }
 

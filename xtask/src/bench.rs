@@ -30,6 +30,9 @@ const DEFAULT_HISTORY: &str = "target/bench/history.json";
 /// The corpus codebase `id1_recompile` edits and rebuilds (P2-11), fetched into the asset cache
 /// and named to the benchmark by `QS_BENCH_ID1`.
 const ID1: &str = "id-1.01";
+/// The corpus map `play_from_here_e1m1` compiles and lights (P6-37), fetched into the asset
+/// cache and named to the benchmark by `QS_BENCH_MAP`.
+const E1M1: &str = "lq-e1m1";
 const CRITERION_HOME: &str = "target/xtask/bench/criterion";
 /// A run more than this much slower than the baseline is a regression.
 const REGRESSION_RATIO: f64 = 1.10;
@@ -181,7 +184,8 @@ pub(crate) fn main(root: &Path, options: &Args) -> Result<bool, String> {
     let budgets = parse_budgets(&repo::read(root, BUDGETS_DOC)?)?;
     let criterion_home = root.join(CRITERION_HOME);
     let id1 = fetch_id1(root)?;
-    run_benchmarks(root, &criterion_home, &id1)?;
+    let map = fetch_e1m1(root)?;
+    run_benchmarks(root, &criterion_home, &id1, &map)?;
     let set = |variable: &str| std::env::var_os(variable).is_some();
     let mut results = Vec::new();
     for budget in &budgets {
@@ -311,7 +315,22 @@ fn fetch_id1(root: &Path) -> Result<PathBuf, String> {
     Ok(cache.join("codebase").join(ID1))
 }
 
-fn run_benchmarks(root: &Path, criterion_home: &Path, id1: &Path) -> Result<(), String> {
+/// Fetches lq-e1m1's source into the asset cache and returns its path.
+fn fetch_e1m1(root: &Path) -> Result<PathBuf, String> {
+    if !corpus::main(root, &corpus::Args::fetch(vec![E1M1.to_owned()]))? {
+        return Err(format!("cannot fetch {E1M1} for play_from_here_e1m1"));
+    }
+    Ok(corpus::cache_dest(root, None)?
+        .join("map")
+        .join(format!("{E1M1}.map")))
+}
+
+fn run_benchmarks(
+    root: &Path,
+    criterion_home: &Path,
+    id1: &Path,
+    map: &Path,
+) -> Result<(), String> {
     if criterion_home.exists() {
         fs::remove_dir_all(criterion_home)
             .map_err(|error| format!("cannot clear {}: {error}", criterion_home.display()))?;
@@ -329,6 +348,7 @@ fn run_benchmarks(root: &Path, criterion_home: &Path, id1: &Path) -> Result<(), 
         ])
         .env("CRITERION_HOME", criterion_home)
         .env("QS_BENCH_ID1", id1)
+        .env("QS_BENCH_MAP", map)
         .current_dir(root);
     // save_to_game and the routes play in the preview host when QS_BENCH_GAME or
     // QS_BENCH_RERELEASE names a game: the host is built as the app ships it and named to the

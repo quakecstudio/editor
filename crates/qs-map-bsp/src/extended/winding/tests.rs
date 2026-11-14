@@ -5,7 +5,7 @@
     reason = "test code: a failed unwrap is a failed test"
 )]
 
-use super::{KeepOn, ON_EPSILON, Side, Winding};
+use super::{KeepOn, ON_EPSILON, Part, Winding};
 use crate::extended::vec::{Plane, normalize};
 
 fn square(z: f64) -> Winding {
@@ -86,11 +86,15 @@ fn clipping_cuts_at_the_plane() {
     assert!(back.points().iter().all(|p| p[0] <= 2.0));
     assert_eq!(front.area() + back.area(), 16.0);
     assert!(front.points().contains(&[2.0, 0.0, 0.0]));
-    let (dists, sides, counts) = w.calc_sides(x2, ON_EPSILON);
+    let counts = w.counts(x2, ON_EPSILON);
     assert_eq!((counts.front, counts.back, counts.on), (2, 2, 0));
     assert_eq!(
-        (dists.len(), sides.last(), sides.first()),
-        (5, Some(&Side::Back), Some(&Side::Back))
+        w.clone().clipped(x2, ON_EPSILON, KeepOn::No, Part::Front),
+        Some(front)
+    );
+    assert_eq!(
+        w.clone().clipped(x2, ON_EPSILON, KeepOn::No, Part::Back),
+        Some(back)
     );
     let far = Plane {
         normal: [1.0, 0.0, 0.0],
@@ -117,4 +121,42 @@ fn clipping_cuts_at_the_plane() {
     };
     let (front, back) = w.clip(diagonal, ON_EPSILON, KeepOn::No);
     assert_eq!((front.unwrap().len(), back.unwrap().len()), (3, 3));
+}
+
+// spec QBSP-15.8: a point exactly `on_epsilon` from the plane, in front or behind, is on it
+#[test]
+fn a_point_at_the_epsilon_is_on_the_plane() {
+    let w = Winding::new(vec![[2.5, 0.0, 0.0], [1.5, 0.0, 0.0], [2.0, 1.0, 0.0]]);
+    let x2 = Plane {
+        normal: [1.0, 0.0, 0.0],
+        dist: 2.0,
+    };
+    let counts = w.counts(x2, 0.5);
+    assert_eq!((counts.front, counts.back, counts.on), (0, 0, 3));
+}
+
+// spec QBSP-15.8: the edge from the last point back to the first is cut too, its crossing point
+// in both parts after the last point
+#[test]
+fn the_closing_edge_is_cut() {
+    let w = Winding::new(vec![[0.0, 0.0, 0.0], [0.0, 4.0, 0.0], [4.0, 0.0, 0.0]]);
+    let x2 = Plane {
+        normal: [1.0, 0.0, 0.0],
+        dist: 2.0,
+    };
+    let (front, back) = w.clip(x2, ON_EPSILON, KeepOn::No);
+    let (front, back) = (front.unwrap(), back.unwrap());
+    assert_eq!(
+        front.points(),
+        [[2.0, 2.0, 0.0], [4.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
+    );
+    assert_eq!(
+        back.points(),
+        [
+            [0.0, 0.0, 0.0],
+            [0.0, 4.0, 0.0],
+            [2.0, 2.0, 0.0],
+            [2.0, 0.0, 0.0]
+        ]
+    );
 }

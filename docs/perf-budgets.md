@@ -30,6 +30,7 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
 | `server_frame_mg1` | ENG-17 | 1 ms | p99 | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
 | `quakec_mg1` | ENG-17 | 500 us | p99 | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
 | `map_load_mg1` | ENG-17 | 1 s | median | [#444](https://github.com/quakecstudio/editor/issues/444) P3-29 | active |
+| `play_from_here_e1m1` | MAP-13 | 6 s | median | [#928](https://github.com/quakecstudio/editor/issues/928) P6-37 | active |
 <!-- /perf-budgets -->
 
 - **`open_project_and_type`:** open a 50,000-line QuakeC project in the editor and type the first
@@ -82,6 +83,11 @@ one row per budget, the benchmark name in backticks, the budget as a number and 
   measurements' own, not averages. With a route's variable unset its benchmarks are
   placeholders and the rows are judged as pending; on a reference machine they refuse to run.
   The eyes: e1m1 `480 -352 110`, the hub `0 -1920 46`.
+- **`play_from_here_e1m1`:** Play from here's compile of an id1-sized map (MAP-13, P6-12):
+  LibreQuake's `lq-e1m1.map`, which `cargo xtask bench` fetches from the corpus and names in
+  `QS_BENCH_MAP`, through the extended qbsp with no WAD, as the workbench compiles it, then the
+  fast light. Median within 6 s, which leaves 4 s of P6-12's 10 s from click to playing for
+  the preview host to start and load it.
 
 ### QuakeSpasm's numbers
 

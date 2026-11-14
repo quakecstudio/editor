@@ -10,7 +10,9 @@
 
 use qs_map::MapFile;
 
-use super::{BspInput, Builder, Cutter, NodeId, NodeKind, PlaneSides, Tree, TreeSplit};
+use super::{
+    BspInput, Builder, Cutter, NodeId, NodeKind, PARALLEL_DEPTH, PlaneSides, Tree, TreeSplit,
+};
 use crate::Hull;
 use crate::extended::brush::{HullBrushes, Loader, SideMarks, VisibleFaces};
 use crate::extended::game::{Contents, Game};
@@ -283,4 +285,49 @@ fn children_bounds_follow_the_plane() {
         .filter(|n| matches!(n.kind, NodeKind::Leaf(_)))
         .count();
     assert_eq!(leaves, 7, "the cube and an empty leaf beyond each side");
+}
+
+/// A world of `side` by `side` cubes in two layers, each a little larger than the last, apart
+/// enough that its tree is deeper than [`PARALLEL_DEPTH`].
+pub(crate) fn grid_brushes(side: i32) -> (LoadedMap, HullBrushes, VisibleFaces) {
+    let mut cubes = Vec::new();
+    for x in 0..side {
+        for y in 0..side {
+            for z in 0..2 {
+                let at = [x, y, z].map(|c| c.saturating_mul(48));
+                cubes.push(cube(at, at.map(|c| c.saturating_add(16).saturating_add(x))));
+            }
+        }
+    }
+    world_brushes(cubes, Hull::Draw)
+}
+
+// spec QBSP-15.29: the children built on threads of their own give the tree built front first
+// on one thread, node for node and in the same order
+#[test]
+fn a_tree_built_on_threads_is_the_tree_built_on_one() {
+    let (mut map, loaded, visible) = grid_brushes(8);
+    let extent = map.world_extent;
+    let mut build = |depth| {
+        BspInput {
+            planes: &mut map.planes,
+            texinfos: &map.texinfos,
+            visible: &visible,
+            extent,
+        }
+        .brush_bsp_from(loaded.bounds, &loaded.brushes, TreeSplit::Auto, depth)
+    };
+    let threaded = build(0);
+    let alone = build(PARALLEL_DEPTH);
+    let deepest = threaded
+        .leaves_below(Tree::HEAD)
+        .into_iter()
+        .map(|leaf| {
+            std::iter::successors(Some(leaf), |&n| threaded.node(n).unwrap().parent).count()
+        })
+        .max()
+        .unwrap();
+    assert!(deepest > PARALLEL_DEPTH + 2, "{deepest}");
+    assert!(loaded.brushes.len() >= 2 * super::PARALLEL_BRUSHES);
+    assert_eq!(threaded, alone);
 }

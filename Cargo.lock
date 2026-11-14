@@ -3567,6 +3567,8 @@ dependencies = [
  "qc-progs",
  "qc-project",
  "qc-sema",
+ "qs-map-bsp",
+ "qs-map-light",
  "qs-workbench",
  "quakec-studio",
  "serde",
