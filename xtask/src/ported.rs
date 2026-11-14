@@ -393,6 +393,7 @@ mod tests {
                 "andrei-drexler/ironwail",
                 "Novum/vkQuake",
                 "zed-industries/zed",
+                "ericwa/ericw-tools",
             ]
         );
         let firsts: Vec<&str> = upstreams.iter().map(|u| u.copyrights[0].as_str()).collect();
@@ -406,11 +407,12 @@ mod tests {
                 QS_ID,
                 QS_ID,
                 ZED_COPYRIGHT,
+                "Copyright (C) 1996-1997 Id Software, Inc.",
             ]
         );
         let counts: Vec<usize> = upstreams.iter().map(|u| u.copyrights.len()).collect();
         // QuakeSpasm's row lists its three common lines and bgmusic.c's two (docs/porting.md).
-        assert_eq!(counts, [1, 1, 1, 5, 5, 6, 1]);
+        assert_eq!(counts, [1, 1, 1, 5, 5, 6, 1, 2]);
         assert!(upstreams[4].copyrights.contains(&SPIKE.to_owned()));
         assert!(super::upstreams("## Upstreams\n| `a/b` | `not a copyright` |\n").is_err());
         assert!(super::upstreams("# no table\n").is_err());

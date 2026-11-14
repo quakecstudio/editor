@@ -2737,11 +2737,11 @@ fn a_leak_is_found_and_flown_along() {
     let trail = editor(&harness).unwrap().leak;
     assert!(trail.len() >= 2, "{trail:?}");
     harness.get_by_label(Text::MapFlyLeak.get()).click();
-    // A frame at a time: run() would go on while the flight asks for the next frame.
-    harness.step();
+    // A frame at a time: run() would go on while the flight asks for the next frame. The
+    // trail may be short (QBSP-15.36: ericw-tools' fill starts beside the hole), so one frame.
     harness.step();
     let shell = harness.state().as_ref().unwrap().shell();
-    assert!(shell.map_editor().leaks().flying());
+    assert!(shell.map_editor().leaks().flying(), "{trail:?}");
     let first = shell.map_editor().camera().unwrap().origin;
     assert!(
         first

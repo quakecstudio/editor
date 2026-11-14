@@ -481,7 +481,7 @@ groups:
     - P6-05
     - P6-06
     deliverable:
-    - 'tests/map-diff: compiles corpus maps with our tools and the oracles; compares leak detection, entity lumps, hull collision on sampled traces, face counts within tolerance and rendered views'
+    - 'xtask/src/map_diff.rs (cargo xtask map-diff, nightly in the Differential workflow): compiles each corpus map with qs-map-bsp and the oracles, id''s qbsp in the id dialect where it reads the map and ericw-tools'' qbsp in the extended dialect; compares leak detection, entity lumps, hull collision on sampled traces and face counts within tolerance'
     - 'Among the maps, one with misc_external_map instances (MAP-14, P6-23), compiled by ericw-tools qbsp and by qs-map-bsp in the extended dialect'
     acceptance:
     - No collision differences on sampled traces; leaks agree on every corpus map

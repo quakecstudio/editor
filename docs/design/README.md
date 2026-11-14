@@ -7,6 +7,7 @@
 | [`visual.md`](visual.md) | The visual design: colour, type, spacing, icons, motion and window chrome ([ADR-0010](../adr/0010-visual-design.md)) |
 | [`semantic-model.md`](semantic-model.md) | How `qc-sema` turns source into definitions, types and diagnostics: the stages, the dialect rules and the module map |
 | [`back-end.md`](back-end.md) | How `qc-codegen` turns the checked program into a progs: the typed body it reads, the intermediate layer, its passes, and the steps from today's design ([ADR-0020](../adr/0020-compiler-compatibility-tiers.md)) |
+| [`extended-qbsp.md`](extended-qbsp.md) | How `qs-map-bsp`'s extended dialect is ported from ericw-tools' qbsp: the pipeline, the modules by concept, and the order and proof ([ADR-0023](../adr/0023-ericw-tools-porting-upstream.md)) |
 | [`tokens.toml`](tokens.toml) | The theme tokens for dark and light, the single source the UI layer reads; `cargo xtask contrast` checks them against WCAG AA |
 
 The plan in [`../../plan/`](../../plan/README.md) turns the design document into requirements and issues. When the two disagree, fix one of them in the same PR; `plan/check.py` only checks that every requirement is covered, not that the prose still matches.

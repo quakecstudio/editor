@@ -45,7 +45,7 @@ mod extract;
 mod fuzz;
 mod grammar;
 pub(crate) mod id101;
-mod maps;
+pub(crate) mod maps;
 mod numbers;
 mod probes;
 pub(crate) mod rerelease;
@@ -71,7 +71,7 @@ const SOURCES: &str = "oracles/sources.toml";
 const VM_UPSTREAM: &str = "quake";
 /// The upstream of id's files the engine oracle compiles, quakedef.h among them.
 const ENGINE_UPSTREAM: &str = "quake-engine";
-const OUT: &str = "target/oracles";
+pub(crate) const OUT: &str = "target/oracles";
 
 /// When this environment variable is set and not empty, our harness files are built with
 /// clang's source-based coverage (`compile::COVERAGE_FLAGS`), and every run of the VM oracle

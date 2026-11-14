@@ -135,12 +135,13 @@ jobs:
 
   # P6-03: the map tool oracles, id's qbsp, vis and light from qutils and a pinned ericw-tools,
   # fetched by checksum and built here only, each compiling a sealed room (oracles/README.md,
-  # "The map tool oracles"). ericw-tools needs CMake, TBB and Embree 4.
+  # "The map tool oracles"). ericw-tools needs CMake, TBB and Embree 4. P6-07: then the map
+  # compiler differential, qs-map-bsp against both on every corpus map (MAP-11, MAP-19).
   map-tools:
     name: Map tool oracles
     needs: night
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
@@ -159,6 +160,13 @@ jobs:
           sudo apt-get install -y --no-install-recommends cmake libtbb-dev libembree-dev
       - name: Build the map tool oracles and compile the room
         run: cargo xtask oracles maps
+      - name: Point QS_TEST_ASSETS outside the source tree
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
+      # Release: the extended dialect's brush BSP is too slow unoptimized for the corpus.
+      - name: Compare qs-map-bsp with the oracles on every corpus map
+        run: cargo run --locked --release -p xtask -- map-diff
 
   # P3-25 (DIFF-16.5): the server simulation differential on every map of LibreQuake's lite
   # asset, on each OS.

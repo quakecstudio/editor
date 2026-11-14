@@ -11,7 +11,7 @@ use crate::math::{
 use crate::planes::{Plane, PlaneId, Planes, Side};
 use crate::portals::PortalId;
 use crate::winding::{ON_EPSILON, split_face};
-use crate::{CompileError, Contents, Face, Faults, Surface, Warning};
+use crate::{CompileError, Contents, Face, Surface};
 
 /// What the head node's bounds add to the entity's on each side (QBSP-7.1).
 pub(crate) const SIDESPACE: f32 = 24.0;
@@ -91,11 +91,8 @@ pub(crate) struct Builder<'a> {
     pub(crate) texinfo: &'a [QbspTexinfo],
     pub(crate) choice: Choice,
     pub(crate) subdivide: f32,
-    pub(crate) faults: Faults,
     /// The most points a split face may have on a side (QBSP-3.5).
-    pub(crate) face_points: Option<usize>,
-    /// The warnings building gives (QBSP-14.3).
-    pub(crate) warnings: core::cell::RefCell<Vec<Warning>>,
+    pub(crate) face_points: usize,
 }
 
 impl Face {
@@ -349,7 +346,7 @@ impl Builder<'_> {
         node: usize,
     ) -> Result<Vec<(Vec<Surface>, usize)>, CompileError> {
         let Some(split_index) = self.select(&surfaces) else {
-            tree.link_leaf(node, surfaces, self.faults, &mut self.warnings.borrow_mut())?;
+            tree.link_leaf(node, surfaces)?;
             return Ok(Vec::new());
         };
         let Some(split) = surfaces.get_mut(split_index) else {
@@ -501,33 +498,22 @@ impl Tree {
 
     /// `LinkConvexFaces`: the leaf's contents from its faces' fronts, and the node faces they
     /// came from (QBSP-7.6, QBSP-7.7).
-    fn link_leaf(
-        &mut self,
-        node: usize,
-        surfaces: Vec<Surface>,
-        faults: Faults,
-        warnings: &mut Vec<Warning>,
-    ) -> Result<(), CompileError> {
-        let mut mixed = false;
+    fn link_leaf(&mut self, node: usize, surfaces: Vec<Surface>) -> Result<(), CompileError> {
         let mut contents = None;
         let mut marks = Vec::new();
         for surface in surfaces {
             for face in surface.faces {
                 match contents {
                     None => contents = Some(face.contents[0]),
-                    Some(known) if known != face.contents[0] => match faults {
-                        Faults::Stop => return Err(CompileError::MixedContents),
-                        Faults::Warn => mixed = true,
-                    },
+                    Some(known) if known != face.contents[0] => {
+                        return Err(CompileError::MixedContents);
+                    }
                     Some(_) => {}
                 }
                 if let Some(original) = face.original {
                     marks.push(original);
                 }
             }
-        }
-        if mixed {
-            warnings.push(Warning::MixedContents);
         }
         if let Some(n) = self.nodes.get_mut(node) {
             n.kind = NodeKind::Leaf {
@@ -536,13 +522,6 @@ impl Tree {
             };
         }
         Ok(())
-    }
-
-    /// A tree of one solid leaf: the model of an entity with no valid brush (QBSP-14.3).
-    pub(crate) fn empty(mins: Vec3, maxs: Vec3) -> Self {
-        let mut tree = Self::default();
-        tree.leaf_node(mins, maxs);
-        tree
     }
 
     /// The head node.
