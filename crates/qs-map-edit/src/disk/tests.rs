@@ -101,8 +101,8 @@ fn compare(session: &mut Session<MapContext>) -> Vec<MapDifference> {
     serde_json::from_value(session.execute(MAP_COMPARE, json!({})).unwrap()).unwrap()
 }
 
-// No spec statement: P5-17, MAP-32: with no unsaved edits, the open map's file changed by another program is read
-// again, its selection kept, and the game told; another file changes nothing
+// No spec statement: P5-17, MAP-32: with no unsaved edits, the open map's file changed by another
+// program is read again, its selection kept, and the game told; another file changes nothing
 #[test]
 fn a_map_with_no_edits_is_read_again() {
     let (map, mut session) = opened("reload");
@@ -123,9 +123,9 @@ fn a_map_with_no_edits_is_read_again() {
     assert_eq!(reread(&session), [map]);
 }
 
-// No spec statement: P5-17, MAP-32: with unsaved edits, the changed file is kept aside: map.compare lists how it
-// differs, map.resolve keeps mine (the edits stay, the conflict goes) or disk (the file is read
-// again, the edits dropped, the game told)
+// No spec statement: P5-17, MAP-32: with unsaved edits, the changed file is kept aside: map.compare
+// lists how it differs, map.resolve keeps mine (the edits stay, the conflict goes) or disk (the
+// file is read again, the edits dropped, the game told)
 #[test]
 fn a_map_with_edits_waits_for_resolve() {
     let (map, mut session) = opened("conflict");

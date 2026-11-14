@@ -149,6 +149,15 @@ fn check_dependencies(root: &Path) -> Result<Report, String> {
     let forbidden = forbidden(root)?;
     let members = members(root)?;
     let mut report = Report::default();
+    // A key that names no crate would turn its rule off unseen.
+    for name in forbidden
+        .keys()
+        .filter(|name| !crates.contains_key(name.as_str()))
+    {
+        report.problems.push(format!(
+            "{FILE}: [forbidden] names {name}, which is not in [crates]"
+        ));
+    }
 
     let mut assigned = BTreeMap::new();
     for (name, layer) in &crates {
@@ -568,7 +577,8 @@ mod tests {
 
     // P6-40: the map editor reads no QuakeC, so layers.toml bars qs-map-edit from every qc-
     // crate, qs-workbench and qs-engine, whatever their layers; a crate it does not bar
-    // passes
+    // passes; a rule for a crate that is not in [crates] is a problem, not a rule that never
+    // applies
     #[test]
     fn a_forbidden_dependency_fails_whatever_its_layer() {
         let specs = [
@@ -597,6 +607,12 @@ mod tests {
             "{found:?}"
         );
         assert!(problems("forbidden-none", &specs[..2]).is_empty());
+        let misspelled = "\n[forbidden]\nqs-mapedit = [\"qc-\"]\n";
+        let found = check_dependencies(&workspace("forbidden-misspelled", &specs, misspelled))
+            .unwrap()
+            .problems;
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].contains("qs-mapedit"), "{found:?}");
         let bad = "\n[forbidden]\nqs-map-edit = \"qc-\"\n";
         assert!(check_dependencies(&workspace("forbidden-bad", &specs, bad)).is_err());
     }

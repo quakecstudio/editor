@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The open map and its entity edits (P5-06, MAP-4, MAP-22): `map.open` reads a `.map`, or a
-//! shipped `.bsp`'s entity lump when the map has no source; `map.select`, `map.place`,
-//! `map.move`, `map.rotate`, `map.delete`, `map.set_key` and `map.remove_key` change it, each
-//! with undo; `map.entity` gives an entity's keys typed by its class, with what a target key
-//! may name; and `map.save` writes the `.map`, or for a BSP a `.ent` override beside it or the
-//! BSP with its entity lump rewritten.
+//! Map editing (P6-40): the open map and the map commands that need no QuakeC.
 //!
+//! `map.open` reads a `.map`, or a shipped `.bsp`'s entity lump when the map has no source,
+//! into a `MapStore`; the entity commands (`map.select`, `map.place`, `map.move`,
+//! `map.rotate`, `map.delete`, `map.set_key`, `map.remove_key`), the brush tools, shapes,
+//! layers, links, prefabs, the issues list, staged review, face UVs and textures edit it, each
+//! with undo where it changes the map; and `map.save` writes the `.map`, or for a BSP a `.ent`
+//! override beside it or the BSP with its entity lump rewritten (P5-06, MAP-4, MAP-22).
 //! Edits go through `qs-map`'s lossless document, so a saved `.map` differs from the one read
 //! only where an edit changed it (MAP-7).
+//!
+//! The crate reads no QuakeC: a context gives it the project's entity classes and the running
+//! game through the `HasMap` seam, which `qs-workbench` answers.
 
 use core::fmt;
 use std::path::{Path, PathBuf};
@@ -307,7 +311,7 @@ impl MapDocument {
     }
 
     /// Keeps `report`, made of the map at `edits`.
-    pub fn set_report(&mut self, report: MapReport, edits: MapRevision) {
+    pub(crate) fn set_report(&mut self, report: MapReport, edits: MapRevision) {
         self.report = Some((report, edits));
     }
 
@@ -660,8 +664,23 @@ impl MapStore {
         }))
     }
 
-    pub fn map_mut(&mut self) -> Result<&mut MapDocument, MapEditError> {
+    pub(crate) fn map_mut(&mut self) -> Result<&mut MapDocument, MapEditError> {
         self.document.as_mut().ok_or(MapEditError::NoMap)
+    }
+
+    /// Keeps a compile's `report` on the open map, made of it at `edits`: shown until the
+    /// map is edited again (P6-11).
+    ///
+    /// # Errors
+    ///
+    /// [`MapEditError::NoMap`] when no map is open.
+    pub fn keep_report(
+        &mut self,
+        report: MapReport,
+        edits: MapRevision,
+    ) -> Result<(), MapEditError> {
+        self.map_mut()?.set_report(report, edits);
+        Ok(())
     }
 
     /// The keys of `entity` of the open map, with none of its class's ([`entity_keys`] adds

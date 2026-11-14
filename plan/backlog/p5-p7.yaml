@@ -1024,7 +1024,7 @@ groups:
     depends:
     - P6-12
     summary: |
-      The Phase 6 gate review (docs/gates/p6.md) compiled a new map built from brushes with qs-map-bsp, qs-map-vis and qs-map-light and no WAD, put it in a game's maps folder and ran `quakec-engine -basedir <game> --timerefresh -300 0 46 <map>`. The host stops with `buffer slice can not be empty` from wgpu-30.0.1 `src/api/buffer.rs:683`, exit 101, in `qs_render::gpu::MapRenderer::draw_world` (`crates/qs-render/src/gpu.rs:971`, `self.vertices.slice(..)`): no face has a texture, so the world's vertex buffer is empty. The same map compiled with a WAD holding its six textures draws, exit 0. New brushes take `__TB_empty` when no texture is chosen (`crates/qs-workbench/src/map_edit/brushes.rs:38`), which no WAD holds, so Play from here on a new map with no WAD reaches this panic. The CI tests of Play from here and of the compile profiles play the map in qs-sim only and never draw it.
+      The Phase 6 gate review (docs/gates/p6.md) compiled a new map built from brushes with qs-map-bsp, qs-map-vis and qs-map-light and no WAD, put it in a game's maps folder and ran `quakec-engine -basedir <game> --timerefresh -300 0 46 <map>`. The host stops with `buffer slice can not be empty` from wgpu-30.0.1 `src/api/buffer.rs:683`, exit 101, in `qs_render::gpu::MapRenderer::draw_world` (`crates/qs-render/src/gpu.rs:971`, `self.vertices.slice(..)`): no face has a texture, so the world's vertex buffer is empty. The same map compiled with a WAD holding its six textures draws, exit 0. New brushes take `__TB_empty` when no texture is chosen (`crates/qs-map-edit/src/brushes.rs:38`), which no WAD holds, so Play from here on a new map with no WAD reaches this panic. The CI tests of Play from here and of the compile profiles play the map in qs-sim only and never draw it.
     environment: |
       macOS (Apple M5), main at c702f4cc, release build; LibreQuake lite as the game; the map is the gate review's two rooms, a corridor with a func_door, a func_button, stairs and three lights, written with no WAD key
     deliverable:
@@ -1148,7 +1148,7 @@ groups:
     - 'layers.toml and xtask/src/layers.rs: a rule that qs-map-edit depends directly on no qc-* crate, qs-workbench or qs-engine, checked by cargo xtask layers'
     - 'A test in crates/qs-tests/tests/it pinning the command ids of the CLI''s registry and of MCP''s, written before any command moves'
     acceptance:
-    - 'Behaviour is unchanged: the command ids of the CLI and of MCP are what they were, docs/commands.md does not change, and every test passes with no change but moved paths, the HasMap implementation each command context gains, and the error variants three assertions name'
+    - 'Behaviour is unchanged: the command ids of the CLI and of MCP are what they were, docs/commands.md does not change, and every test passes. The map editor''s tests run on qs-map-edit''s own map context, whose project answers what each test gives it, in place of a Workbench; the workbench keeps tests that run map.issues and map.fix and the map check through its own QuakeC, so the seam is tested end to end'
     - 'cargo xtask layers fails when a qc-* crate is added to qs-map-edit''s dependencies, shown by a test; docs/api/qs-map-edit.txt names no qc_ path'
     - 'The text of every error a map command returns is what it was (WorkbenchError carries MapEditError and shows it unchanged)'
     - 'No ratchet is lowered, cargo xtask conventions passes with no new CONV-17 baseline line, and a baseline line changes only to follow moved code'

@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 use qs_map::MapFile;
 
 use super::{MAP_CHECK, MAP_RENAME_KEY};
+use crate::map_compile::tests::{Context, open};
 use crate::{Config, MapProject, OPEN_FILE, OPEN_PROJECT, READ_FILE, RENAME, Workbench, register};
 use qs_map_edit::{EntityIndex, QuickFix};
 
@@ -221,4 +222,90 @@ fn the_entity_check_gives_problems_with_their_fixes() {
         "{problems:?}"
     );
     assert!(problems.iter().all(|problem| !problem.message.is_empty()));
+}
+
+/// The keep project open with a map of a floor, a player start and `entity`, through
+/// `map.open`; the map's issues as `map.issues` lists them, from the keep's real QuakeC.
+fn keep_issues(name: &str, entity: &str) -> (Session<Context>, Vec<qs_map_edit::MapIssue>) {
+    let keep =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/desktop/fixtures/keep");
+    let dir = std::env::temp_dir().join(format!("qs-wb-keep-issues-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("fixture.map");
+    let floor = "{\n( -128 0 0 ) ( -128 1 0 ) ( -128 0 1 ) wall 0 0 0 1 1\n\
+        ( 128 0 0 ) ( 128 0 1 ) ( 128 1 0 ) wall 0 0 0 1 1\n\
+        ( 0 -128 0 ) ( 0 -128 1 ) ( 1 -128 0 ) wall 0 0 0 1 1\n\
+        ( 0 128 0 ) ( 1 128 0 ) ( 0 128 1 ) wall 0 0 0 1 1\n\
+        ( 0 0 -16 ) ( 1 0 -16 ) ( 0 1 -16 ) wall 0 0 0 1 1\n\
+        ( 0 0 0 ) ( 0 1 0 ) ( 1 0 0 ) wall 0 0 0 1 1\n}\n";
+    let text = format!(
+        "{{\n\"classname\" \"worldspawn\"\n\"wad\" \"gfx/keep.wad\"\n{floor}}}\n\
+         {{\n\"classname\" \"info_player_start\"\n\"origin\" \"0 0 24\"\n}}\n{entity}"
+    );
+    std::fs::write(&path, text).unwrap();
+    // With a game, as the window has, which map.issues needs; the project opens after the map,
+    // which it leaves open.
+    let mut session = open(&path);
+    session
+        .execute(OPEN_PROJECT, json!({ "path": keep }))
+        .unwrap();
+    let issues = map_issues(&mut session);
+    (session, issues)
+}
+
+fn map_issues(session: &mut Session<Context>) -> Vec<qs_map_edit::MapIssue> {
+    let found: qs_map_edit::MapIssues =
+        serde_json::from_value(session.execute(qs_map_edit::MAP_ISSUES, json!({})).unwrap())
+            .unwrap();
+    found.issues
+}
+
+/// The fix `map.issues` gives for the issue naming `name`, applied through `map.fix`: the
+/// issue is gone after it.
+fn fixed(session: &mut Session<Context>, issues: &[qs_map_edit::MapIssue], name: &str) -> QuickFix {
+    let fix = issues
+        .iter()
+        .find(|issue| issue.message.contains(name))
+        .and_then(|issue| issue.fix.clone())
+        .unwrap();
+    session
+        .execute(qs_map_edit::MAP_FIX, json!({ "fix": fix }))
+        .unwrap();
+    assert!(
+        !map_issues(session)
+            .iter()
+            .any(|issue| issue.message.contains(name))
+    );
+    fix
+}
+
+// spec MAP-8.2: through the workbench, map.issues finds a misspelled key from the project's
+// QuakeC, and map.fix renames it to the field it is closest to
+#[test]
+fn the_workbench_s_check_reaches_map_issues_for_a_key() {
+    let ogre = "{\n\"classname\" \"monster_ogre\"\n\"origin\" \"0 0 24\"\n\"sped\" \"200\"\n}\n";
+    let (mut session, issues) = keep_issues("key", ogre);
+    assert_eq!(
+        fixed(&mut session, &issues, "sped"),
+        QuickFix::RenameKey {
+            entity: EntityIndex::new(2),
+            from: "sped".to_owned(),
+            to: "speed".to_owned(),
+        }
+    );
+}
+
+// spec MAP-8.1: through the workbench, map.issues finds a misspelled classname from the
+// project's QuakeC, and map.fix sets the class it is closest to
+#[test]
+fn the_workbench_s_check_reaches_map_issues_for_a_class() {
+    let ogre = "{\n\"classname\" \"monster_orge\"\n\"origin\" \"0 0 24\"\n}\n";
+    let (mut session, issues) = keep_issues("class", ogre);
+    assert_eq!(
+        fixed(&mut session, &issues, "monster_orge"),
+        QuickFix::SetClassname {
+            entity: EntityIndex::new(2),
+            classname: "monster_ogre".to_owned(),
+        }
+    );
 }

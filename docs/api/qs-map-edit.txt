@@ -342,12 +342,11 @@ fn qs_map_edit::MapDocument::path
 fn qs_map_edit::MapDocument::report
 fn qs_map_edit::MapDocument::revision
 fn qs_map_edit::MapDocument::selected
-fn qs_map_edit::MapDocument::set_report
 fn qs_map_edit::MapDocument::source
 fn qs_map_edit::MapDocument::watched
 fn qs_map_edit::MapRevision::next
+fn qs_map_edit::MapStore::keep_report
 fn qs_map_edit::MapStore::map
-fn qs_map_edit::MapStore::map_mut
 fn qs_map_edit::MapStore::open_map
 fn qs_map_edit::MapStore::save_map
 fn qs_map_edit::backup::MapStore::backup_map
@@ -396,7 +395,6 @@ fn qs_map_edit::textures::TextureSources::palette
 fn qs_map_edit::textures::TextureSources::size
 fn qs_map_edit::textures::TextureSources::watched
 fn qs_map_edit::textures::find_wad
-fn qs_map_edit::textures::game_palette
 fn qs_map_edit::uv::FaceIndex::get
 fn qs_map_edit::uv::FaceIndex::new
 impl qs_map_edit::EntityIndex: fmt::Display

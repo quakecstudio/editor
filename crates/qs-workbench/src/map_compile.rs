@@ -83,7 +83,7 @@ impl<L: crate::Loader> Workbench<L> {
         let report = MapReport::of(&compiled, missing_wads);
         let path = document.path().to_path_buf();
         let edits = document.edits();
-        self.maps.map_mut()?.set_report(report.clone(), edits);
+        self.maps.keep_report(report.clone(), edits)?;
         Ok((compiled, report, path))
     }
 }

@@ -9,8 +9,8 @@ Map editing (P6-40): the open map and the map commands that need no QuakeC, move
   keeps it from depending directly on any `qc-` crate, `qs-workbench` or `qs-engine`, and
   `cargo xtask layers` checks it.
 - **Decision:** plan requirement ARCH-1 and the P6-40 refactor (#941); not engine behaviour.
-- **Spec sections:** its tests cite MAP-6 and MAP-9 to MAP-15 ([`map.md`](../../docs/spec/map.md)),
-  WAD-6 to WAD-8 and BSP-19.
+- **Spec sections:** its tests cite MAP-6, MAP-9 to MAP-13 and MAP-15
+  ([`map.md`](../../docs/spec/map.md)), WAD-6 to WAD-8 and BSP-19.
 - **Shipped:** yes.
 
 ## Prior art

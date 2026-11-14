@@ -125,7 +125,7 @@ pub struct TextureSources {
 
 /// The palette textures are shown and made in: the project's own `gfx/palette.lmp`, first on
 /// the engine's search path as a mod's is, else the game's; none when neither reads.
-pub fn game_palette(project: Option<&Path>, game: Option<&Game<'_>>) -> Option<Palette> {
+pub(crate) fn game_palette(project: Option<&Path>, game: Option<&Game<'_>>) -> Option<Palette> {
     project
         .and_then(|root| std::fs::read(root.join(PALETTE_LMP)).ok())
         .or_else(|| {
@@ -143,6 +143,8 @@ pub struct Game<'a> {
 }
 
 impl<'a> Game<'a> {
+    /// The game whose base folder is `base`, its search path read as the engine reads it.
+    #[must_use]
     pub fn at(base: &'a Path) -> Self {
         let args = base.to_string_lossy().into_owned();
         let vfs = Vfs::new(StdFs, &["-basedir", args.as_str()], ".").ok();
