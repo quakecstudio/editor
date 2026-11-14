@@ -53,6 +53,7 @@ jobs:
       contents: read
     outputs:
       run: ${{ github.event_name == 'workflow_dispatch' || steps.passed.outputs.cache-hit != 'true' }}
+      passed: ${{ steps.passed.outputs.cache-hit == 'true' }}
       key: ${{ steps.key.outputs.key }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,7 +62,7 @@ jobs:
       - name: Name the compiler differentials' inputs
         id: key
         env:
-          INPUTS: ${{ hashFiles('crates/qc-*/**', 'crates/qs-differential/**', 'crates/qs-sim/**', 'crates/qs-bsp/**', 'crates/qs-map/**', 'crates/qs-mdl/**', 'crates/qs-pak/**', 'crates/qs-vfs/**', 'crates/qs-wad/**', 'crates/qs-paths/**', 'crates/qs-porting-example/**', 'xtask/**', 'oracles/**', 'corpus/**', 'Cargo.lock', 'rust-toolchain.toml', '.github/workflows/differential.yml') }}
+          INPUTS: ${{ hashFiles('crates/qc-*/**', 'crates/qs-differential/**', 'crates/qs-sim/**', 'crates/qs-bsp/**', 'crates/qs-map/**', 'crates/qs-mdl/**', 'crates/qs-pak/**', 'crates/qs-vfs/**', 'crates/qs-wad/**', 'crates/qs-paths/**', 'crates/qs-porting-example/**', 'xtask/**', 'oracles/**', 'corpus/**', 'Cargo.toml', 'Cargo.lock', '.cargo/**', 'rust-toolchain.toml', '.github/workflows/differential.yml') }}
         run: echo "key=compiler-diff-passed-$INPUTS" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: passed
@@ -69,6 +70,18 @@ jobs:
           path: compiler-diff-passed
           key: ${{ steps.key.outputs.key }}
           lookup-only: true
+      # A green run whose compiler differentials were skipped says so, and on which inputs.
+      - name: Say whether the compiler differentials run
+        env:
+          KEY: ${{ steps.key.outputs.key }}
+          FOUND: ${{ steps.passed.outputs.cache-hit }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$FOUND" = true ] && [ "$EVENT" != workflow_dispatch ]; then
+            echo "Compiler differentials skipped: every one passed on main on these inputs ($KEY)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Compiler differentials run on these inputs ($KEY)." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   differential:
     name: Differential
@@ -558,11 +571,14 @@ jobs:
           EXECUTED: ${{ runner.temp }}/executed
         run: cargo xtask compiler-diff --functions "$CODEBASE" --merge "$EXECUTED"/*/executed.tsv
 
-  # Every compiler differential passed on these inputs: the marker `changes` looks for.
+  # Every compiler differential passed on these inputs, with the oracles' own check in the
+  # Differential job: the marker `changes` looks for, saved once per inputs.
   compiler-passed:
     name: Compiler differentials passed
-    needs: [changes, generated, compiler-diff, functions, functions-merge]
-    if: needs.changes.outputs.run == 'true' && github.ref == 'refs/heads/main'
+    needs: [changes, differential, generated, compiler-diff, functions, functions-merge]
+    if: >-
+      needs.changes.outputs.run == 'true' && needs.changes.outputs.passed != 'true'
+      && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
