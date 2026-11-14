@@ -386,7 +386,7 @@ impl Vanilla<'_> {
                     let bytes = lexed_string(token.text())?;
                     let index = u32::try_from(self.strings.len()).ok()?;
                     self.strings.push(bytes);
-                    ir::Name::String(index)
+                    ir::Name::String(ir::StringIndex::new(index))
                 }
                 _ => return None,
             },

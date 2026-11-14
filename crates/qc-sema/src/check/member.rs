@@ -23,6 +23,18 @@ use crate::check::{Bitfield, Constness, ElementRef, FieldRef, MemberArray, Refer
 use crate::ir;
 use crate::ty::{SimpleType, Type};
 
+/// A word's 32 bits as a shift: a member's offset in bits, `>> 5`, is its word.
+const WORD_BITS_SHIFT: u32 = 5;
+
+/// How a vector component's base is written: `e.fv.y` or `(e.fv).y`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BaseForm {
+    /// Named bare.
+    Bare,
+    /// In parentheses.
+    Parenthesized,
+}
+
 impl Checker<'_> {
     /// The value of the member access `field` (FTEF-24).
     pub(super) fn member(&mut self, field: &ast::FieldExpr) -> Checked {
@@ -114,8 +126,12 @@ impl Checker<'_> {
                 value
             }
             Etype::Vector => {
-                let bare = !matches!(field.base(), Some(ast::Expr::Paren(_)));
-                self.vector_component(&base, &selector, bare)?
+                let base_form = if matches!(field.base(), Some(ast::Expr::Paren(_))) {
+                    BaseForm::Parenthesized
+                } else {
+                    BaseForm::Bare
+                };
+                self.vector_component(&base, &selector, base_form)?
             }
             Etype::Field if shape.holds == Some(Etype::Vector) => self.swizzle(
                 &selector,
@@ -302,7 +318,13 @@ impl Checker<'_> {
     /// A vector's component, `v.x` (FTEF-24.2): of a constant vector, a constant, its float
     /// (FTEF-26.13; `QCC_SRef_EvalConst` reads the word the reference names), read through the
     /// vector at the component's index (`REF_ARRAY`, FTEF-32.17).
-    fn vector_component(&mut self, base: &Value, selector: &ast::Expr, bare: bool) -> Checked {
+    fn vector_component(
+        &mut self,
+        base: &Value,
+        selector: &ast::Expr,
+        base_form: BaseForm,
+    ) -> Checked {
+        let bare = base_form == BaseForm::Bare;
         let component = self.swizzle(selector, Type::Simple(SimpleType::Float))?;
         let word = selector_name(selector).and_then(|(name, _)| match name.as_str() {
             "x" | "r" => Some(0),
@@ -502,7 +524,11 @@ impl Checker<'_> {
         }
         let (member, offset) = self.struct_member(&base.ty, selector);
         let word = member.bitfield.map_or_else(
-            || offset.map_or(0, |(units, align)| units.saturating_mul(align) >> 5),
+            || {
+                offset.map_or(0, |(units, align)| {
+                    units.saturating_mul(align) >> WORD_BITS_SHIFT
+                })
+            },
             |bitfield| bitfield.word,
         );
         Ok(match &base.reference {

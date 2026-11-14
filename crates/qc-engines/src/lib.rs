@@ -29,7 +29,7 @@
 pub mod check;
 mod tables;
 
-pub use check::{BuiltinRef, declared_builtins, missing_builtins};
+pub use check::{BuiltinRef, declared_builtins};
 pub use tables::SOURCES;
 
 use qc_builtins::table::BUILTINS;

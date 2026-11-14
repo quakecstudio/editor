@@ -9,6 +9,7 @@
 //! words that each opcode reads as its own type, and the type the constant was made with.
 
 use qc_lexer::{LexFlags, atof};
+use qc_types::c_int;
 
 use crate::cast::{ConstType, Literal};
 use crate::ir;
@@ -241,19 +242,13 @@ impl Constant {
             }
             ConstType::Float => Self::float(i64_to_f32(signed)),
             ConstType::Double => Self::double(i64_to_f64(signed)),
-            ConstType::Integer => Self::int(low_word(signed)),
-            ConstType::Uint => Self::uint(u32::from_le_bytes(low_word(signed).to_le_bytes())),
+            ConstType::Integer => Self::int(c_int(signed)),
+            ConstType::Uint => Self::uint(u32::from_le_bytes(c_int(signed).to_le_bytes())),
             ConstType::Int64 => Self::int64(signed),
             ConstType::Uint64 => Self::uint64(u64::from_le_bytes(signed.to_le_bytes())),
             ConstType::Vector | ConstType::String => Self::float(0.0),
         }
     }
-}
-
-/// The low 32 bits of `value`, C's `(int)` of a `long long`.
-fn low_word(value: i64) -> i32 {
-    let [a, b, c, d, ..] = value.to_le_bytes();
-    i32::from_le_bytes([a, b, c, d])
 }
 
 /// C's `(float)` of a `long long`, rounding to nearest.

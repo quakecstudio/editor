@@ -19,7 +19,7 @@ pub(crate) use decl::{
     ArrayDim, BuiltinFunction, ExternBase, RawAggregate, RawBraces, RawDecl, RawElement,
     RawParamInfo, RawValue,
 };
-pub use decl::{LiteralValue, Qualifier, ValueKind, declares};
+pub use decl::{Binum, LiteralValue, Qualifier, ValueKind, declares};
 pub(crate) use expr::{MemberBase, RawUse, UseKind};
 pub(crate) use types::{
     EnumItem, IntConst, MemberKind, MemberStorage, Qualification, RawClass, RawMember, RawStruct,

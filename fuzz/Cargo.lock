@@ -368,6 +368,7 @@ dependencies = [
  "qc-preproc",
  "qc-project",
  "qc-syntax",
+ "qc-types",
  "qs-map",
 ]
 

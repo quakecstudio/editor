@@ -182,4 +182,4 @@ computed only for literals.
   [`docs/spec/vectors/sema/`](../../docs/spec/vectors/sema/), and every global definition
   with the progs.dat id's `qcc` and FTEQCC built from the same source (TEST-6).
 - The `qc-sema` fuzz target ([`fuzz/`](../../fuzz/README.md)) puts arbitrary bytes, as one to
-  three files, through `Db` and `qc_engines::missing_builtins` under both profiles.
+  three files, through `Db` and `qc_engines::Engine::missing_builtins` under both profiles.

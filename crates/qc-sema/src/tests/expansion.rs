@@ -715,7 +715,7 @@ fn rules_on_touching_tokens_read_a_macro_s_tokens_as_written() {
             .find(|decl| decl.name == "f")
             .and_then(|decl| decl.literal().cloned())
             .and_then(|literal| literal.builtin_function("f"))
-            .map(|function| (function.number, function.name));
+            .map(|function| (function.number.get(), function.name));
         (errors, function)
     };
     let bound = |number: i32, name: &str| (vec![], Some((number, name.to_owned())));

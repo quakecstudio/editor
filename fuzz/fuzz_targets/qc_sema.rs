@@ -5,7 +5,7 @@
 //! profile, bit 1 autoprototyping, bit 2 `-Fcaseinsens` (FTEF-19.33) and bit 3 `-Fno-qcfuncs`
 //! (FTEF-19.28), the last two as the command line and as the resolver's options. The module is resolved as written (`Db::module_index`) and
 //! through the preprocessor (`Db::analyze_module`), and checked against every engine for
-//! missing builtins (`qc_engines::missing_builtins`). Fails on a panic, on a definition,
+//! missing builtins (`qc_engines::Engine::missing_builtins`). Fails on a panic, on a definition,
 //! reference or diagnostic outside the bytes of its file, and when editing each file in turn
 //! and re-resolving gives another index than resolving the edited files from scratch.
 
@@ -14,7 +14,7 @@
 use std::path::PathBuf;
 
 use libfuzzer_sys::fuzz_target;
-use qc_engines::{Engine, missing_builtins};
+use qc_engines::Engine;
 use qc_preproc::CommandLine;
 use qc_project::ModuleKind;
 use qc_sema::lower::lower_file;
@@ -100,7 +100,7 @@ fuzz_target!(|data: &[u8]| {
         .collect();
     for engine in Engine::ALL {
         for kind in [ModuleKind::Ssqc, ModuleKind::Csqc, ModuleKind::Menuqc] {
-            for d in missing_builtins(engine, kind, &parsed, &resolved, dialect) {
+            for d in engine.missing_builtins(kind, &parsed, &resolved, dialect) {
                 let at = Location { file: d.file, span: d.diagnostic.span };
                 assert!(inside(&files, at), "{d:?}");
             }

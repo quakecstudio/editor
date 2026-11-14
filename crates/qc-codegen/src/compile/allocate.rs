@@ -9,28 +9,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use qc_sema::ir::{BodyStatement, Effect, Name};
+use qc_sema::ir::{BodyStatement, Effect, Name, StatementIndex};
 
 use super::body::call_count;
 
 use crate::Internal;
 use crate::program::Program;
-
-/// A statement's index in the body being generated, from 0.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) struct BodyIndex(u32);
-
-impl BodyIndex {
-    /// Statement `index` of the body.
-    pub(super) const fn new(index: u32) -> Self {
-        Self(index)
-    }
-
-    /// Its index.
-    pub(super) const fn get(self) -> u32 {
-        self.0
-    }
-}
 
 /// The allocation pass of one body, as the profile chooses it.
 #[derive(Debug)]
@@ -47,11 +31,11 @@ impl Slots {
         &mut self,
         program: &mut Program,
         statement: &BodyStatement,
-        index: BodyIndex,
+        index: StatementIndex,
     ) -> Result<(), Internal> {
         match self {
             Self::CreationOrder(order) => order.statement(program, statement, index),
-            Self::Overlapping(overlapping) => match statement.temp_words(index.get()) {
+            Self::Overlapping(overlapping) => match statement.temp_words(index) {
                 Some(words) => overlapping.take(program, index.get(), words),
                 None => Ok(()),
             },
@@ -62,7 +46,7 @@ impl Slots {
     pub(super) fn block(
         &mut self,
         program: &mut Program,
-        index: BodyIndex,
+        index: StatementIndex,
         words: u32,
     ) -> Result<(), Internal> {
         match self {
@@ -77,7 +61,7 @@ impl Slots {
     pub(super) fn dropped(
         &mut self,
         program: &mut Program,
-        index: BodyIndex,
+        index: StatementIndex,
         words: u32,
     ) -> Result<(), Internal> {
         match self {
@@ -120,9 +104,9 @@ impl CreationOrder {
         &mut self,
         program: &mut Program,
         statement: &BodyStatement,
-        index: BodyIndex,
+        index: StatementIndex,
     ) -> Result<(), Internal> {
-        if let Some(words) = statement.temp_words(index.get()) {
+        if let Some(words) = statement.temp_words(index) {
             let slot = program.allocate(words)?;
             self.slots.insert(index.get(), slot);
         }
@@ -133,7 +117,7 @@ impl CreationOrder {
     pub(super) fn block(
         &mut self,
         program: &mut Program,
-        index: BodyIndex,
+        index: StatementIndex,
         words: u32,
     ) -> Result<(), Internal> {
         let slot = program.allocate(words)?;
@@ -177,7 +161,7 @@ impl Overlapping {
     pub(super) fn new(generated: &[BodyStatement], effects: &[(u32, Effect)]) -> Self {
         let mut last: HashMap<u32, u32> = HashMap::new();
         for (index, statement) in (0_u32..).zip(generated) {
-            if statement.temp_words(index).is_some() {
+            if statement.temp_words(StatementIndex::new(index)).is_some() {
                 last.entry(index).or_insert(index);
             }
         }
@@ -192,7 +176,7 @@ impl Overlapping {
         for statement in generated {
             for name in [statement.b, statement.c].into_iter().flatten() {
                 if let Name::Made(made) = name
-                    && let Some(words) = statement.made_words(made)
+                    && let Some(words) = statement.made_words(StatementIndex::new(made))
                 {
                     let wide = widest.entry(made).or_insert(words);
                     *wide = (*wide).max(words);
@@ -317,9 +301,9 @@ mod tests {
     )]
 
     use qc_preproc::Op;
-    use qc_sema::ir::{BodyStatement, Effect, Name};
+    use qc_sema::ir::{BodyStatement, Effect, Name, StatementIndex};
 
-    use super::{BodyIndex, CreationOrder, Overlapping, Slots};
+    use super::{CreationOrder, Overlapping, Slots};
     use crate::program::Program;
 
     /// `op` making the value of the statement at `index` from `a` and `b`.
@@ -350,11 +334,13 @@ mod tests {
         for (index, statement) in (0_u32..).zip(body) {
             for &(at, effect) in effects {
                 if let (true, Effect::Block(words)) = (at == index, effect) {
-                    slots.block(program, BodyIndex::new(index), words).unwrap();
+                    slots
+                        .block(program, StatementIndex::new(index), words)
+                        .unwrap();
                 }
             }
             slots
-                .statement(program, statement, BodyIndex::new(index))
+                .statement(program, statement, StatementIndex::new(index))
                 .unwrap();
         }
         (0_u32..).take(body.len()).map(|i| slots.slot(i)).collect()
@@ -514,13 +500,13 @@ mod tests {
         let first = program.allocate(0).unwrap();
         let mut overlapping = Slots::Overlapping(Overlapping::new(&[], &[]));
         overlapping
-            .dropped(&mut program, BodyIndex::new(0), 3)
+            .dropped(&mut program, StatementIndex::new(0), 3)
             .unwrap();
         assert_eq!(program.allocate(0).unwrap(), first, "no global of its own");
         let shared: Vec<u32> = program.shared_temps().iter().map(|&(_, w)| w).collect();
         assert_eq!(shared, [3], "a shared slot of its size");
         overlapping
-            .dropped(&mut program, BodyIndex::new(0), 3)
+            .dropped(&mut program, StatementIndex::new(0), 3)
             .unwrap();
         assert_eq!(
             program.shared_temps().len(),
@@ -528,7 +514,9 @@ mod tests {
             "freed: the next takes it again"
         );
         let mut order = Slots::CreationOrder(CreationOrder::default());
-        order.dropped(&mut program, BodyIndex::new(0), 3).unwrap();
+        order
+            .dropped(&mut program, StatementIndex::new(0), 3)
+            .unwrap();
         assert_eq!(program.allocate(0).unwrap(), first + 3);
     }
 
@@ -545,18 +533,20 @@ mod tests {
         let first = program.allocate(0).unwrap();
         let mut order = CreationOrder::default();
         order
-            .statement(&mut program, &made(Op::MulVf, 0), BodyIndex::new(0))
+            .statement(&mut program, &made(Op::MulVf, 0), StatementIndex::new(0))
             .unwrap();
-        order.block(&mut program, BodyIndex::new(1), 2).unwrap();
+        order
+            .block(&mut program, StatementIndex::new(1), 2)
+            .unwrap();
         let store = BodyStatement {
             b: Some(Name::MadeWord(1, 0)),
             ..BodyStatement::bare(Op::StoreF)
         };
         order
-            .statement(&mut program, &store, BodyIndex::new(1))
+            .statement(&mut program, &store, StatementIndex::new(1))
             .unwrap();
         order
-            .statement(&mut program, &made(Op::AddF, 2), BodyIndex::new(2))
+            .statement(&mut program, &made(Op::AddF, 2), StatementIndex::new(2))
             .unwrap();
         assert_eq!(
             [order.slot(0), order.slot(1), order.slot(2)],
@@ -567,7 +557,7 @@ mod tests {
             .statement(
                 &mut program,
                 &BodyStatement::bare(Op::Goto),
-                BodyIndex::new(3),
+                StatementIndex::new(3),
             )
             .unwrap();
         assert_eq!(order.slot(3), None);

@@ -9,6 +9,7 @@ use qc_syntax::ast;
 use qc_syntax::{Dialect, QC_MAX_NESTING};
 
 use crate::db::Db;
+use crate::ir::{StatementIndex, StringIndex};
 use crate::symbol::{DefId, FileId};
 use crate::ty::{FROM_AST_CALLS, FunctionType, ParamLabels, SimpleType, Type, TypeContext};
 use qc_diag::Span;
@@ -869,8 +870,9 @@ fn a_generated_body_records_each_statements_origin() {
     let body = &index.bodies[&t];
     let first = source.find("k = 1").unwrap();
     let second = source.find("k = k * 2").unwrap();
-    let origins: Vec<_> = (0..body.generated().len())
-        .map(|i| body.origin(i))
+    let origins: Vec<_> = (0_u32..)
+        .take(body.generated().len())
+        .map(|i| body.origin(StatementIndex::new(i)))
         .collect();
     assert_eq!(origins, [None, Some(first), Some(second), Some(second)]);
 }
@@ -904,7 +906,11 @@ fn a_generated_body_lists_its_locals_and_returns_its_ret_local() {
     let locals: Vec<_> = body.locals().iter().map(|&(at, _)| at).collect();
     assert_eq!(locals, [0, 3]);
     assert_eq!(generated[0].uses(), [true, true, true]);
-    assert_eq!(generated[0].made_words(0), None, "the product folds into a");
+    assert_eq!(
+        generated[0].made_words(StatementIndex::new(0)),
+        None,
+        "the product folds into a"
+    );
     assert_eq!(generated[1].uses(), [true, true, false]);
     assert_eq!(generated[2].uses(), [false; 3]);
 }
@@ -1330,7 +1336,10 @@ fn a_generated_body_names_states_locals_strings_and_random() {
         panic!("the string is unnamed: {string:?}");
     };
     assert_eq!(body.string(index), Some(&b"\xff"[..]));
-    assert_eq!(body.string(index.wrapping_add(9)), None);
+    assert_eq!(
+        body.string(StringIndex::new(index.get().wrapping_add(9))),
+        None
+    );
     let call = at(Op::Call0);
     assert_eq!(generated[call].a, named("random"));
     let made = |offset: usize| {

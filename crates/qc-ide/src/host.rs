@@ -146,13 +146,9 @@ impl ModuleState {
                 .enumerate()
                 .map(|(index, parse)| (FileId::new(index), parse))
                 .collect();
-            let missing = qc_engines::missing_builtins(
-                self.engine,
-                self.kind,
-                &files,
-                &analysis.index,
-                self.dialect,
-            );
+            let missing =
+                self.engine
+                    .missing_builtins(self.kind, &files, &analysis.index, self.dialect);
             let editor = editor_diagnostics(&analysis.index, &parses);
             ModuleData {
                 analysis,

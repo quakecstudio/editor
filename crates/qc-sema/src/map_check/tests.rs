@@ -38,7 +38,7 @@ fn check(map: &str) -> Vec<(usize, u32, MapDiagnosticKind)> {
     schema()
         .check(&file)
         .into_iter()
-        .map(|d| (d.entity, d.line, d.kind))
+        .map(|d| (d.entity.get(), d.line, d.kind))
         .collect()
 }
 

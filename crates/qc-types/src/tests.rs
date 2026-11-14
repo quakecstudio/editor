@@ -12,7 +12,7 @@ use proptest::sample::select;
 use super::{
     DefType, EntityRef, Etype, FieldRef, FunctionRef, LIMIT_MAX_PARMS, PROGS_OFS_NULL,
     PROGS_OFS_PARM0, PROGS_OFS_RETURN, PROGS_PARM_SLOTS, PROGS_RESERVED_OFS, PROGS_TYPE_COUNT,
-    PROGS_VECTOR_SLOTS, PointerRef, Slot, StringRef, TooFewSlots, Value, ofs_parm,
+    PROGS_VECTOR_SLOTS, PointerRef, Slot, StringRef, TooFewSlots, Value, c_int, ofs_parm,
 };
 
 fn any_etype() -> impl Strategy<Value = Etype> {
@@ -319,4 +319,13 @@ proptest! {
         let entity = EntityRef::from_number(number, edict_size).unwrap();
         prop_assert_eq!(entity.number(edict_size), Some(number));
     }
+}
+
+// No spec statement: C's `int` of a 64-bit integer keeps its low 32 bits, as x86-64 truncates
+#[test]
+fn c_int_keeps_the_low_32_bits() {
+    assert_eq!(c_int(0x1_2345_6789), 0x2345_6789);
+    assert_eq!(c_int(-1), -1);
+    assert_eq!(c_int(i64::from(i32::MAX) + 1), i32::MIN);
+    assert_eq!(c_int(0x1_0000_0002), 2);
 }

@@ -16,7 +16,7 @@ use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
-use crate::check::{Constness, Value};
+use crate::check::{Constness, Value, ValueUse};
 use crate::ty::{SimpleType, Type};
 
 /// `VMWORDSIZE`: the bytes of a word, by which `OP_ADD_PIW` scales its offset.
@@ -134,7 +134,7 @@ impl Checker<'_> {
     }
 
     /// FTEF-29.5: a postfix's step of a pointer: for a narrow type (`aux_type->bits`) the step
-    /// in bytes added by `OP_ADD_I`, first, for a value not `discarded` (`QCC_RefToDef`), under
+    /// in bytes added by `OP_ADD_I`, first, for a value read (`QCC_RefToDef`), under
     /// `undefwordsize` the fatal error "not allowed to make assumptions about pointer sizes.
     /// sorry."; else the step in words, `inc * aux_type->size` (a word for `void`), added by
     /// `OP_ADD_PIW`. The value keeps the pointer's type.
@@ -142,7 +142,7 @@ impl Checker<'_> {
         &mut self,
         pointer: &Value,
         step: i8,
-        discarded: bool,
+        value_use: ValueUse,
         span: Span,
     ) -> Result<Value, Fatal> {
         let typed = |value: Value| Value {
@@ -162,7 +162,8 @@ impl Checker<'_> {
                 return self.emit(Op::AddPiw, pointer, &step, span).map(typed);
             }
         };
-        if !discarded && self.env.flags_at(span.start).has(FteFlag::Undefwordsize) {
+        if value_use == ValueUse::Read && self.env.flags_at(span.start).has(FteFlag::Undefwordsize)
+        {
             let message = "not allowed to make assumptions about pointer sizes. sorry.";
             return self.fatal(Code::E0322, span, message.to_owned());
         }

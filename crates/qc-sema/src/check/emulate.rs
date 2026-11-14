@@ -14,6 +14,7 @@ use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op, OpcodeTarget, TargetFormat};
 
 use crate::DefId;
+use crate::VECTOR_WORDS;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checker, Fatal};
@@ -315,7 +316,11 @@ impl Checker<'_> {
             self.generated.push(ir::BodyStatement {
                 a: Some(ir::Name::Return),
                 b: copy.map(ir::Name::Made),
-                ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+                ..ir::BodyStatement::bare(if words == VECTOR_WORDS {
+                    Op::StoreV
+                } else {
+                    Op::StoreF
+                })
             });
             if let (Some(call), Some(copy)) = (self.live_call.take(), copy) {
                 self.copies.push((call, copy));
@@ -641,7 +646,7 @@ impl Checker<'_> {
     /// immediate the lowering made.
     fn complement(&mut self, sub: Op, lhs: &Value, span: Span) -> Value {
         let minus_one = if sub == Op::SubV {
-            Constant::vector([-1.0; 3])
+            Constant::vector([-1.0; qc_types::PROGS_VECTOR_SLOTS])
         } else {
             Constant::float(-1.0)
         };
@@ -653,19 +658,19 @@ impl Checker<'_> {
     /// The vector operator whose float one of each word is `word_op` (`Emulation::ByWord`):
     /// `result`, a vector temporary, its three words written in turn.
     fn by_word(&mut self, word_op: Op, (lhs, rhs): (&Value, &Value), result: Value) -> Value {
-        let temp = self.env.temps().take(3);
+        let temp = self.env.temps().take(VECTOR_WORDS);
         // A call's vector read word by word is freed not (`QCC_PR_SimpleStatement`), so the
         // next statement copies it out of the return global (FTE-18.13).
         if lhs.returned || rhs.returned {
-            self.unfreed = Some(3);
+            self.unfreed = Some(VECTOR_WORDS);
         }
         // In a function, the vector is taken, then each word's statement writes its word.
         let first = self.next_made();
         let made = (!self.global).then_some(first);
         if made.is_some() {
             let operands = [self.name_of(lhs), self.name_of(rhs)];
-            self.effects.push((first, ir::Effect::Block(3)));
-            for word in 0..3 {
+            self.effects.push((first, ir::Effect::Block(VECTOR_WORDS)));
+            for word in 0..VECTOR_WORDS {
                 let [a, b] = operands.map(|name| name.and_then(|name| name.word(word)));
                 self.generated.push(ir::BodyStatement {
                     op: word_op,
