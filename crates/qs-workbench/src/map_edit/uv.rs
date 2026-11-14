@@ -295,7 +295,7 @@ impl<C: HasMap + 'static> Command<C> for FaceUv {
 
 /// The texture sources of the open map, found as the texture browser finds them.
 fn texture_sources<C: HasMap>(context: &mut C) -> Result<TextureSources, MapEditError> {
-    let game = context.game_files();
+    let game = context.game_folders();
     let root = context.map_project().project_root();
     let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
     Ok(TextureSources::load(

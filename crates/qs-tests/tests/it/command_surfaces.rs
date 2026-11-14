@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The commands each surface offers (P6-40): the command line registers the workbench's
-//! commands, and the MCP server and the window those and the preview's. Moving a command
-//! between crates must not move it between the two, which `docs/commands.md` cannot show: it
-//! is written from a registry that has both.
+//! The commands of the workbench's two registration functions (P6-40): the command line calls
+//! `register`, and the MCP server and the window call `register_preview` as well. Moving a
+//! command between crates must not move it between the two, which `docs/commands.md` cannot
+//! show: it is written from a registry that has both. What a surface adds of its own (the
+//! templates, the layout) is not pinned here.
 
 #![expect(
     clippy::unwrap_used,
@@ -59,9 +60,10 @@ fn ids<C: 'static>(registry: &Registry<C>) -> String {
         .collect()
 }
 
-// No spec statement: P6-40: the command line offers exactly the workbench's commands
+// No spec statement: P6-40: register offers the same commands as before, to the command line
+// among others
 #[test]
-fn the_command_line_offers_the_workbench_commands() {
+fn register_offers_the_workbench_commands() {
     let mut registry = Registry::<Workbench<MemoryLoader>>::new();
     register(&mut registry).unwrap();
     assert_eq!(
@@ -70,9 +72,10 @@ fn the_command_line_offers_the_workbench_commands() {
     );
 }
 
-// No spec statement: P6-40: MCP and the window offer the workbench's and the preview's commands
+// No spec statement: P6-40: register and register_preview together offer the same commands as
+// before, to MCP and the window
 #[test]
-fn mcp_and_the_window_offer_the_preview_commands_too() {
+fn register_preview_adds_the_preview_commands() {
     let mut registry = Registry::<Context>::new();
     register(&mut registry).unwrap();
     register_preview(&mut registry).unwrap();

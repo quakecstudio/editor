@@ -58,7 +58,7 @@ pub use review::{
     MapHunkNumber, MapHunksParams,
 };
 pub use shapes::{ArchWall, BrushShapeParams, Circle, Climb, MAP_BRUSH_SHAPE, ShapeSpec};
-pub use store::{EntityCheck, EntityProblem, GameFiles, HasMap, LiveMap, MapProject, MapStore};
+pub use store::{EntityCheck, EntityProblem, GameFolders, HasMap, LiveMap, MapProject, MapStore};
 
 pub mod backup;
 mod brush_tools;
@@ -784,13 +784,10 @@ pub fn entity_keys<C: HasMap>(
     entity: EntityIndex,
 ) -> Result<EntityKeys, MapEditError> {
     let mut keys = context.map_store().map_entity(entity)?;
-    let class = keys.classname.as_ref().and_then(|name| {
-        context
-            .map_project()
-            .entity_classes()?
-            .into_iter()
-            .find(|class| &class.name == name)
-    });
+    let class = keys
+        .classname
+        .as_ref()
+        .and_then(|name| context.map_project().entity_class(name));
     if let Some(class) = class {
         keys.keys = class.keys;
         keys.spawnflags = class.spawnflags;
@@ -1255,11 +1252,11 @@ impl<C: HasMap + 'static> Command<C> for MapSave {
         context: &mut C,
         params: SaveParams,
     ) -> Result<Outcome<MapSaved, C>, MapEditError> {
-        let workbench = context.map_store();
-        let path = workbench.save_map(params.bsp)?;
+        let store = context.map_store();
+        let path = store.save_map(params.bsp)?;
         // The map is saved whatever happens to its backup, which only logs why it failed.
-        let backup = match workbench.map().map(MapDocument::source) {
-            Some(MapSource::Map) => match workbench.backup_map() {
+        let backup = match store.map().map(MapDocument::source) {
+            Some(MapSource::Map) => match store.backup_map() {
                 Ok(backup) => Some(backup.path),
                 Err(error) => {
                     tracing::warn!(%error, "the saved map could not be backed up");
@@ -1336,8 +1333,9 @@ pub(crate) fn register_map_edit<C: HasMap + 'static>(
     registry.register(MapSave)
 }
 
-/// Registers the map commands that read the game's files, for a context that can run a
-/// game: `texture.import`, `map.issues`, `map.face_uv` and `map.face_align`.
+/// Registers the map commands only a context that can run a game offers: `texture.import`,
+/// `map.issues` and `map.face_uv`, which read the game's files beside the project's, and
+/// `map.face_align`. A context with no game finds no game folder to read (`GameFolders`).
 ///
 /// # Errors
 ///

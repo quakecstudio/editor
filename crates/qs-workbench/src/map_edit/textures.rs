@@ -469,7 +469,7 @@ impl<C: HasMap + 'static> Command<C> for MapTexturesCommand {
     type Error = MapEditError;
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapTextures, C>, MapEditError> {
-        let game = context.game_files();
+        let game = context.game_folders();
         let root = context.map_project().project_root();
         let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         let sources = TextureSources::load(

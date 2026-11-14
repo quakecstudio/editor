@@ -26,7 +26,7 @@ use crate::ids::{BreakpointId, Edict, WatchIndex};
 use crate::map_compile::{MapCompile, MapLeaks, MapPlayFromHere, MapPortalsCommand};
 use crate::map_edit::{LiveChange, register_map_game};
 use crate::map_profile::{MapChooseProfile, MapProfiles, MapRunProfile};
-use crate::{GameFiles, HasWorkbench, LiveMap, ModuleBuilt, Workbench, WorkbenchError};
+use crate::{GameFolders, HasWorkbench, LiveMap, ModuleBuilt, Workbench, WorkbenchError};
 use qs_map::Entity;
 
 pub mod debug;
@@ -1094,8 +1094,8 @@ impl LiveMap for Preview {
         self.map_read_again(map);
     }
 
-    fn game_files(&self) -> GameFiles {
-        GameFiles {
+    fn game_folders(&self) -> GameFolders {
+        GameFolders {
             base: self.game_base_path(),
             chosen: self.game_folder().map(Path::to_path_buf),
         }

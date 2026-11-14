@@ -84,9 +84,12 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
         self.root().map(Path::to_path_buf)
     }
 
-    fn entity_classes(&mut self) -> Option<Vec<ClassInfo>> {
-        let classes = Self::entity_classes(self).ok()?;
-        Some(classes.iter().map(class_info).collect())
+    fn entity_class(&mut self, classname: &str) -> Option<ClassInfo> {
+        let classes = self.entity_classes().ok()?;
+        classes
+            .iter()
+            .find(|class| class.name == classname)
+            .map(class_info)
     }
 
     fn targeting_keys(&mut self) -> Vec<String> {

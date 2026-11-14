@@ -234,7 +234,7 @@ impl<C: HasMap + 'static> Command<C> for TextureImport {
             .map_project()
             .project_root()
             .ok_or(MapEditError::NoProject)?;
-        let game = context.game_files().base;
+        let game = context.game_folders().base;
         let palette = game_palette(Some(&root), game.as_deref().map(Game::at).as_ref())
             .ok_or(MapEditError::NoPalette)?;
         let png = std::fs::read(&params.path).map_err(|_| MapEditError::NoFile {

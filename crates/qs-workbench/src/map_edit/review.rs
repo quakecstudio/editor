@@ -404,8 +404,8 @@ impl<C: HasMap + 'static> Command<C> for MapAccept {
         context: &mut C,
         params: MapHunksParams,
     ) -> Result<Outcome<Vec<MapHunk>, C>, MapEditError> {
-        let workbench = context.map_store();
-        let document = workbench.map_mut()?;
+        let store = context.map_store();
+        let document = store.map_mut()?;
         let Some(review) = Review::of(document) else {
             return Ok(Outcome::outside_history(Vec::new()));
         };
@@ -417,7 +417,7 @@ impl<C: HasMap + 'static> Command<C> for MapAccept {
         document.staged = Some(staged);
         document.settle_review();
         document.touch();
-        Ok(Outcome::outside_history(workbench.map_hunks()?))
+        Ok(Outcome::outside_history(store.map_hunks()?))
     }
 }
 

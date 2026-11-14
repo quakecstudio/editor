@@ -58,7 +58,7 @@ pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
 pub use crate::map_edit::{
-    EntityCheck, EntityProblem, GameFiles, HasMap, LiveMap, MapEditError, MapProject, MapStore,
+    EntityCheck, EntityProblem, GameFolders, HasMap, LiveMap, MapEditError, MapProject, MapStore,
 };
 pub use crate::preview::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
@@ -668,30 +668,9 @@ impl<L: Loader> Workbench<L> {
         self.maps.map()
     }
 
-    /// The store of the map open in the map view.
-    #[must_use]
-    pub const fn maps(&self) -> &MapStore {
-        &self.maps
-    }
-
     /// The store of the map open in the map view, to open, change or save it.
     pub const fn maps_mut(&mut self) -> &mut MapStore {
         &mut self.maps
-    }
-}
-
-impl<L: Loader> Workbench<L> {
-    /// The keys of `entity` of the open map, typed by its class (MAP-4).
-    ///
-    /// # Errors
-    ///
-    /// [`MapEditError::NoMap`] with no map open and [`MapEditError::NoEntity`] for an
-    /// entity it does not have.
-    pub fn map_entity(
-        &mut self,
-        entity: map_edit::EntityIndex,
-    ) -> Result<map_edit::EntityKeys, MapEditError> {
-        map_edit::entity_keys(self, entity)
     }
 }
 

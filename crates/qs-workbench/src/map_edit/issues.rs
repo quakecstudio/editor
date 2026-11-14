@@ -472,7 +472,7 @@ impl<C: HasMap + 'static> Command<C> for MapIssuesCommand {
 
     fn run(&self, context: &mut C, _: NoParams) -> Result<Outcome<MapIssues, C>, MapEditError> {
         let check = context.map_project().entity_check();
-        let game = context.game_files();
+        let game = context.game_folders();
         let root = context.map_project().project_root();
         let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         let places = line_places(document.file());

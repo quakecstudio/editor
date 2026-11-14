@@ -579,8 +579,8 @@ field qs_workbench::map_edit::store::EntityProblem.entity
 field qs_workbench::map_edit::store::EntityProblem.fix
 field qs_workbench::map_edit::store::EntityProblem.line
 field qs_workbench::map_edit::store::EntityProblem.message
-field qs_workbench::map_edit::store::GameFiles.base
-field qs_workbench::map_edit::store::GameFiles.chosen
+field qs_workbench::map_edit::store::GameFolders.base
+field qs_workbench::map_edit::store::GameFolders.chosen
 field qs_workbench::map_edit::texture_import::TextureImportParams.dither
 field qs_workbench::map_edit::texture_import::TextureImportParams.name
 field qs_workbench::map_edit::texture_import::TextureImportParams.path
@@ -797,8 +797,6 @@ fn qs_workbench::Workbench::engine
 fn qs_workbench::Workbench::history
 fn qs_workbench::Workbench::is_unsaved
 fn qs_workbench::Workbench::map
-fn qs_workbench::Workbench::map_entity
-fn qs_workbench::Workbench::maps
 fn qs_workbench::Workbench::maps_mut
 fn qs_workbench::Workbench::new
 fn qs_workbench::Workbench::open
@@ -877,16 +875,16 @@ fn qs_workbench::map_edit::report::MapReport::of
 fn qs_workbench::map_edit::review::MapHunkNumber::get
 fn qs_workbench::map_edit::review::MapHunkNumber::new
 fn qs_workbench::map_edit::review::MapStore::map_hunks
-fn qs_workbench::map_edit::store::HasMap::game_files
+fn qs_workbench::map_edit::store::HasMap::game_folders
 fn qs_workbench::map_edit::store::HasMap::live_map
 fn qs_workbench::map_edit::store::HasMap::map_project
 fn qs_workbench::map_edit::store::HasMap::map_store
-fn qs_workbench::map_edit::store::LiveMap::game_files
+fn qs_workbench::map_edit::store::LiveMap::game_folders
 fn qs_workbench::map_edit::store::LiveMap::plays_in_step
 fn qs_workbench::map_edit::store::LiveMap::read_again
 fn qs_workbench::map_edit::store::LiveMap::send_changes
 fn qs_workbench::map_edit::store::MapProject::entity_check
-fn qs_workbench::map_edit::store::MapProject::entity_classes
+fn qs_workbench::map_edit::store::MapProject::entity_class
 fn qs_workbench::map_edit::store::MapProject::project_root
 fn qs_workbench::map_edit::store::MapProject::targeting_keys
 fn qs_workbench::map_edit::texture_import::project_wad
@@ -1236,7 +1234,7 @@ struct qs_workbench::map_edit::review::MapHunkNumber
 struct qs_workbench::map_edit::review::MapHunksParams
 struct qs_workbench::map_edit::shapes::BrushShapeParams
 struct qs_workbench::map_edit::store::EntityProblem
-struct qs_workbench::map_edit::store::GameFiles
+struct qs_workbench::map_edit::store::GameFolders
 struct qs_workbench::map_edit::store::MapStore
 struct qs_workbench::map_edit::texture_import::TextureImportParams
 struct qs_workbench::map_edit::texture_import::TextureImported
@@ -1361,7 +1359,7 @@ use qs_workbench::FileEdit = qc_ide::FileEdit
 use qs_workbench::FileRange = qc_ide::FileRange
 use qs_workbench::FsLoader = qc_project::FsLoader
 use qs_workbench::GAME = crate::preview::GAME
-use qs_workbench::GameFiles = crate::map_edit::GameFiles
+use qs_workbench::GameFolders = crate::map_edit::GameFolders
 use qs_workbench::Gravity = crate::build::Gravity
 use qs_workbench::HasMap = crate::map_edit::HasMap
 use qs_workbench::HasPreview = crate::preview::HasPreview
@@ -1478,7 +1476,7 @@ use qs_workbench::map_edit::EntityProblem = store::EntityProblem
 use qs_workbench::map_edit::ExportParams = groups::ExportParams
 use qs_workbench::map_edit::FlagChange = flags::FlagChange
 use qs_workbench::map_edit::FlagInfo = classes::FlagInfo
-use qs_workbench::map_edit::GameFiles = store::GameFiles
+use qs_workbench::map_edit::GameFolders = store::GameFolders
 use qs_workbench::map_edit::HasMap = store::HasMap
 use qs_workbench::map_edit::HunkEntity = review::HunkEntity
 use qs_workbench::map_edit::HunkSide = review::HunkSide

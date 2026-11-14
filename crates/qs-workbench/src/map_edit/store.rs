@@ -6,7 +6,7 @@
 //! Map editing knows nothing of QuakeC or of the engine. A context that has a map
 //! ([`HasMap`]) hands it the three things it asks of them: the project's folder and what its
 //! code says of entities ([`MapProject`]), the running game its edits are sent to
-//! ([`LiveMap`]), and the folders the game's files are read from ([`GameFiles`]).
+//! ([`LiveMap`]), and the folders the game's files are read from ([`GameFolders`]).
 
 use std::path::{Path, PathBuf};
 
@@ -38,9 +38,9 @@ pub trait HasMap {
     fn live_map(&mut self) -> Option<&mut Self::Live>;
 
     /// Where the game's files are read from; nowhere for a context with no game.
-    fn game_files(&mut self) -> GameFiles {
+    fn game_folders(&mut self) -> GameFolders {
         self.live_map()
-            .map(|live| live.game_files())
+            .map(|live| live.game_folders())
             .unwrap_or_default()
     }
 }
@@ -51,8 +51,9 @@ pub trait MapProject {
     /// The project's folder; `None` with no project open.
     fn project_root(&self) -> Option<PathBuf>;
 
-    /// The entity classes the project's code defines; `None` with no project open.
-    fn entity_classes(&mut self) -> Option<Vec<ClassInfo>>;
+    /// The entity class of the name `classname` that the project's code defines; `None` when
+    /// it defines none, or with no project open.
+    fn entity_class(&mut self, classname: &str) -> Option<ClassInfo>;
 
     /// The keys by which the project's code fires other entities, beside `target` and
     /// `killtarget`.
@@ -92,12 +93,12 @@ pub trait LiveMap {
     fn read_again(&mut self, map: &Path);
 
     /// Where the game's files are read from.
-    fn game_files(&self) -> GameFiles;
+    fn game_folders(&self) -> GameFolders;
 }
 
 /// The folders a game's files are read from.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct GameFiles {
+pub struct GameFolders {
     /// The original game's base directory, when an install is found.
     pub base: Option<PathBuf>,
     /// The game folder the user chose, when one is.
