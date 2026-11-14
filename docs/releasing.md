@@ -54,6 +54,14 @@ code and the non-affiliation notice). On macOS the preview host is signed as its
 executable before the app is, and the app's own notarization covers both. An MSI's version
 is three numbers whose first is at most 255, so 2026.11.1 is the MSI's 26.11.1.
 
+The macOS app's `Info.plist` names its icon (`packaging/macos/QuakeCStudio.icns`, the Linux
+SVG rendered at 16 to 1024 pixels), gives the text macOS shows when the app first reads a
+project or game folder on the Desktop, in Documents or Downloads, or on a network or
+removable volume, and declares the QuakeC source type (`.qc`, `.qh`) and the map (`.map`) and
+BSP (`.bsp`) types so Finder names them. It claims no document type: the app cannot yet take
+a file Finder opens with it (eframe 0.36 does not pass on the open-document event), so Finder
+does not offer it under Open With.
+
 The Flatpak's sandbox reaches the home directory (projects, and Steam, GOG and Heroic's
 folders, their Flatpak clients' under `~/.var/app` included), `/mnt` and `/media` read only,
 the GPU, the display, sound, the network for the agent's providers, and the Secret Service
