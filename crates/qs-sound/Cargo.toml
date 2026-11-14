@@ -10,6 +10,8 @@ publish.workspace = true
 
 [dependencies]
 qc-builtins = { workspace = true }
+# A sound's entity, as the client parses it.
+qc-edict = { workspace = true }
 qc-vm = { workspace = true }
 qs-wav = { workspace = true }
 symphonia = { workspace = true, features = ["ogg", "vorbis"] }

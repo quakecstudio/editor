@@ -3606,6 +3606,7 @@ name = "qs-client"
 version = "2026.11.1"
 dependencies = [
  "qc-builtins",
+ "qc-edict",
  "qc-vm",
  "qs-mdl",
  "qs-sim",
@@ -3666,9 +3667,12 @@ version = "2026.11.1"
 dependencies = [
  "interprocess",
  "proptest",
+ "qc-edict",
  "qs-bridge",
  "qs-install",
  "qs-vfs",
+ "schemars",
+ "serde",
  "serde_json",
  "tracing",
 ]
@@ -3859,6 +3863,7 @@ name = "qs-sound"
 version = "2026.11.1"
 dependencies = [
  "qc-builtins",
+ "qc-edict",
  "qc-vm",
  "qs-wav",
  "symphonia",

@@ -12,6 +12,13 @@ use std::fmt;
 
 use qc_vm::convert::{double_to_int, int_to_float};
 
+/// The fraction bits of the resampler's fixed-point step: `stepscale * 256`, `>> 8` (SND-1.6).
+const FRAC_BITS: u32 = 8;
+/// A step of one in that fixed point, `1 << FRAC_BITS`.
+const FRAC_ONE: f32 = 256.0;
+/// A 16-bit sample's high byte, the 8-bit sample it makes (SND-1.6).
+const HIGH_BYTE_SHIFT: u32 = 8;
+
 /// The most sounds the table knows (SND-1.3).
 pub const SND_MAX_SFX: usize = 512;
 
@@ -69,14 +76,14 @@ impl SoundData {
             Some(count(wav.info.loopstart))
         };
         // SND-1.6: `fracstep = stepscale * 256`, stored in an int.
-        let fracstep = double_to_int(f64::from(stepscale * 256.0));
+        let fracstep = double_to_int(f64::from(stepscale * FRAC_ONE));
         // Reserve no more than the file holds: a low rate makes `length` many times it.
         let held = usize::try_from(wav.info.samples).unwrap_or(0);
         let mut samplefrac = 0_i32;
         let source = |samplefrac: i32| {
             // `srcsample = samplefrac >> 8`; a negative one (a rate too high for an int)
             // reads nothing, as the sample is silence past the data.
-            usize::try_from(samplefrac >> 8).unwrap_or(usize::MAX)
+            usize::try_from(samplefrac >> FRAC_BITS).unwrap_or(usize::MAX)
         };
         let samples = match wav.info.width {
             1 => {
@@ -85,7 +92,7 @@ impl SoundData {
                     let sample = wav.sample(source(samplefrac));
                     samplefrac = samplefrac.wrapping_add(fracstep);
                     // SND-1.6: `((signed char *) sc->data)[i] = sample >> 8`.
-                    let [high, _] = (sample >> 8).to_le_bytes();
+                    let [high, _] = (sample >> HIGH_BYTE_SHIFT).to_le_bytes();
                     out.push(i8::from_le_bytes([high]));
                 }
                 Samples::Eight(out)
@@ -127,22 +134,40 @@ impl SoundData {
         }
     }
 
-    /// The 8-bit sample at `index`, 0 past the end; `None` for a 16-bit sound.
+    /// The 8-bit sample at `at`, 0 past the end; `None` for a 16-bit sound.
     #[must_use]
-    pub fn sample_8(&self, index: usize) -> Option<i8> {
+    pub fn sample_8(&self, at: SamplePos) -> Option<i8> {
         match &self.samples {
-            Samples::Eight(samples) => Some(samples.get(index).copied().unwrap_or(0)),
+            Samples::Eight(samples) => Some(samples.get(at.0).copied().unwrap_or(0)),
             Samples::Sixteen(_) => None,
         }
     }
 
-    /// The 16-bit sample at `index`, 0 past the end; `None` for an 8-bit sound.
+    /// The 16-bit sample at `at`, 0 past the end; `None` for an 8-bit sound.
     #[must_use]
-    pub fn sample_16(&self, index: usize) -> Option<i16> {
+    pub fn sample_16(&self, at: SamplePos) -> Option<i16> {
         match &self.samples {
-            Samples::Sixteen(samples) => Some(samples.get(index).copied().unwrap_or(0)),
+            Samples::Sixteen(samples) => Some(samples.get(at.0).copied().unwrap_or(0)),
             Samples::Eight(_) => None,
         }
+    }
+}
+
+/// A sample's place in a sound, from 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SamplePos(usize);
+
+impl SamplePos {
+    /// Sample `index`.
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Its index.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
     }
 }
 
@@ -328,4 +353,10 @@ impl SoundTable {
     pub const fn is_empty(&self) -> bool {
         self.sfx.is_empty()
     }
+}
+
+/// The resampler's fixed-point step agrees with its shift.
+#[cfg(test)]
+pub(crate) fn check_scales() {
+    assert_eq!(FRAC_ONE.to_bits(), f32::from(1_u16 << FRAC_BITS).to_bits());
 }

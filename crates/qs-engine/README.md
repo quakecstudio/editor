@@ -20,12 +20,13 @@ protocol, [`bridge-protocol.md`](../../docs/spec/bridge-protocol.md), spoken to 
   written inside the install. A `RunRoot` whose `game` is `None` plays `id1` alone.
 - `locate_host(configured, app)`: the host at the path the user set, else beside the app;
   never downloaded.
-- `host_command(spec)` and `launch(spec, name)`: the host started with `-basedir`, `-game`,
+- `LaunchSpec::command()` and `LaunchSpec::launch(name)`: the host started with `-basedir`, `-game`,
   `-kpf`, `-bridge`, the extra words and the map, and its bridge connected and initialized; a
   host that stops as it starts is `LaunchError::Exited`.
 - `Client`: `initialize`, `offers`, and a method per command (`pause`, `resume`, `step`,
   `inspect`, `console`, `screenshot`, `set_field`, `pick`, `spawn`, `remove`,
-  `edit_entity`, `spawn_player_at`, `reload`, `set_breakpoint`, `shutdown`); a command the
+  `edit_entity`, `spawn_player_at`, `reload`, `set_breakpoint`, `clear_breakpoint`, `evaluate`,
+  `shutdown`); a command the
   host's capabilities leave out is refused before it is sent (BRIDGE-2.6). Events are kept
   in order for `take_events` and `wait_event`.
 

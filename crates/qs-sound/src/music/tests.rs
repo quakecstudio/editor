@@ -11,7 +11,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use super::{CueSheet, CueTrack, Music, MusicStream, Read, SND_CD_SECTOR};
+use super::{CueSheet, CueTrack, Music, MusicStream, Read, Repeat, SND_CD_SECTOR};
 use crate::sfx::SoundTable;
 use crate::{
     Listener, ListenerLeaf, Mixer, MixerSpec, Output, SND_MAX_RAW_SAMPLES, SND_PAINTBUFFER_SIZE,
@@ -153,17 +153,17 @@ fn the_raw_buffer_wraps_and_follows_the_paint() {
 fn the_stream_fills_the_raw_buffer() {
     let mut mix = mixer(11025);
     let mut music = Music::new();
-    music.play(&mut mix, Box::new(counting(11025, 100_000)), true);
+    music.play(&mut mix, Box::new(counting(11025, 100_000)), Repeat::Loop);
     assert!(music.update(&mut mix, 0.0).is_empty());
     assert_eq!(
         mix.raw_room(),
         SND_MAX_RAW_SAMPLES,
         "volume 0 plays nothing"
     );
-    music.set_paused(true);
+    music.pause();
     music.update(&mut mix, 1.0);
     assert_eq!(mix.raw_room(), SND_MAX_RAW_SAMPLES, "paused");
-    music.set_paused(false);
+    music.resume();
     music.update(&mut mix, 1.0);
     assert_eq!(mix.raw_room(), 0);
     let painted = paint(&mut mix, 1);
@@ -171,7 +171,7 @@ fn the_stream_fills_the_raw_buffer() {
     // A CD's rate: 44100 into 11025 reads four times the frames it stores.
     let mut cd = mixer(11025);
     let stream = counting(44100, 100_000);
-    music.play(&mut cd, Box::new(stream), true);
+    music.play(&mut cd, Box::new(stream), Repeat::Loop);
     music.update(&mut cd, 1.0);
     assert_eq!(cd.raw_room(), 0);
     assert!(music.playing());
@@ -185,26 +185,26 @@ fn the_stream_loops_and_stops() {
     let mut music = Music::new();
     let short = counting(11025, 1000);
     let rewinds = Rc::clone(&short.rewinds);
-    music.play(&mut mix, Box::new(short), true);
+    music.play(&mut mix, Box::new(short), Repeat::Loop);
     assert!(music.update(&mut mix, 1.0).is_empty());
     assert_eq!(mix.raw_room(), 0, "looped to fill the buffer");
     assert!(*rewinds.borrow() >= 8);
     let mut mix = mixer(11025);
     let mut empty = Music::new();
-    empty.play(&mut mix, Box::new(counting(11025, 0)), true);
+    empty.play(&mut mix, Box::new(counting(11025, 0)), Repeat::Loop);
     assert_eq!(empty.update(&mut mix, 1.0), ["Stream keeps returning EOF."]);
     assert!(!empty.playing());
     let mut stuck = counting(11025, 0);
     stuck.rewind_ok = false;
     let mut music = Music::new();
-    music.play(&mut mix, Box::new(stuck), true);
+    music.play(&mut mix, Box::new(stuck), Repeat::Loop);
     assert_eq!(
         music.update(&mut mix, 1.0),
         ["Stream seek error (-1), stopping."]
     );
     let mut once = Music::new();
     let mut fresh = mixer(11025);
-    once.play(&mut fresh, Box::new(counting(11025, 10)), false);
+    once.play(&mut fresh, Box::new(counting(11025, 10)), Repeat::Once);
     assert!(once.update(&mut fresh, 1.0).is_empty());
     assert!(!once.playing());
     assert_eq!(
@@ -221,7 +221,7 @@ fn a_read_error_stops_the_stream() {
     let mut music = Music::new();
     let mut broken = counting(11025, 10);
     broken.fail = true;
-    music.play(&mut mix, Box::new(broken), true);
+    music.play(&mut mix, Box::new(broken), Repeat::Loop);
     assert_eq!(
         music.update(&mut mix, 1.0),
         ["Stream read error (-3), stopping."]

@@ -11,10 +11,15 @@ publish.workspace = true
 [dependencies]
 # The bridge's socket or named pipe (BRIDGE-1.1), as the host serves it.
 interprocess = { workspace = true }
+# An entity's number, as `field/set` names it.
+qc-edict = { workspace = true }
 qs-bridge = { workspace = true }
 qs-install = { workspace = true }
 # FS_GAMENAME, the run root's own `id1`.
 qs-vfs = { workspace = true }
+# A breakpoint's id is a command's parameter and answer in JSON.
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 tracing = { workspace = true }
 

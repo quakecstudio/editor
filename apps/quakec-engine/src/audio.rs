@@ -16,7 +16,7 @@ use qs_bsp::Bsp;
 use qs_client::{Event, SoundRef, SoundStart};
 use qs_sound::{
     CueSheet, CueTrack, Listener, ListenerLeaf, Mixer, MixerSpec, Music, MusicStream, NullOutput,
-    OggStream, Output, Random, Read, SND_CD_RATE, SfxId, SoundTable, Start, track_files,
+    OggStream, Output, Random, Read, Repeat, SND_CD_RATE, SfxId, SoundTable, Start, track_files,
 };
 
 /// A 16-bit sample's scale to a float from -1 to 1.
@@ -257,9 +257,7 @@ impl Audio {
                         .collect();
                 }
                 Event::Sound(start) => self.start(start, rand),
-                Event::StopSound { entity, channel } => {
-                    self.mixer.stop_sound(entity.get(), *channel)
-                }
+                Event::StopSound { entity, channel } => self.mixer.stop_sound(*entity, *channel),
                 // `BGM_PlayCDtrack ((byte)cl.cdtrack, true)` (RRE-3.5).
                 Event::CdTrack { track, .. } => self.play_track(*track),
                 Event::LocalSound(index) => {
@@ -342,11 +340,12 @@ impl Audio {
         let number = track.to_le_bytes()[0];
         if let Some(stream) = self.cd.as_ref().and_then(|cd| cd.stream(number)) {
             tracing::info!(track = number, "music: the CD image's track");
-            self.music.play(&mut self.mixer, Box::new(stream), true);
+            self.music
+                .play(&mut self.mixer, Box::new(stream), Repeat::Loop);
             return;
         }
         match self.track_file(number) {
-            TrackFile::Found(stream) => self.music.play(&mut self.mixer, stream, true),
+            TrackFile::Found(stream) => self.music.play(&mut self.mixer, stream, Repeat::Loop),
             TrackFile::Missing => {
                 tracing::info!(track = number, "Couldn't find a cdrip for track {number}");
             }
@@ -426,7 +425,7 @@ impl Audio {
             &mut self.table,
             rand,
             Start {
-                entnum: start.entity.get(),
+                entnum: start.entity,
                 entchannel: start.channel,
                 sfx,
                 origin: start.origin,

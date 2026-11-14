@@ -99,44 +99,45 @@ pub fn locate_host(configured: Option<&Path>, app: &Path) -> Result<PathBuf, Lau
     }
 }
 
-/// The command that starts the host for `spec` (ADR-0008): `-basedir`, `-game` when there is a
-/// mod, `-kpf` when
-/// the run root passes the file, `-bridge`, then the extra words and the map.
-#[must_use]
-pub fn host_command(spec: &LaunchSpec) -> Command {
-    let mut command = Command::new(&spec.host);
-    command.arg("-basedir").arg(&spec.run_root.path);
-    if let Some(game) = &spec.run_root.game {
-        command.arg("-game").arg(game);
+impl LaunchSpec {
+    /// The command that starts the host (ADR-0008): `-basedir`, `-game` when there is a mod,
+    /// `-kpf` when the run root passes the file, `-bridge`, then the extra words and the map.
+    #[must_use]
+    pub fn command(&self) -> Command {
+        let mut command = Command::new(&self.host);
+        command.arg("-basedir").arg(&self.run_root.path);
+        if let Some(game) = &self.run_root.game {
+            command.arg("-game").arg(game);
+        }
+        if let Some(kpf) = &self.run_root.kpf {
+            command.arg("-kpf").arg(kpf);
+        }
+        command.arg("-bridge").arg(&self.socket);
+        command.args(&self.extra);
+        if let Some(map) = &self.map {
+            command.arg(map);
+        }
+        command
     }
-    if let Some(kpf) = &spec.run_root.kpf {
-        command.arg("-kpf").arg(kpf);
-    }
-    command.arg("-bridge").arg(&spec.socket);
-    command.args(&spec.extra);
-    if let Some(map) = &spec.map {
-        command.arg(map);
-    }
-    command
-}
 
-/// Starts the host for `spec` and connects to its bridge, initialized as `client_name`.
-///
-/// # Errors
-///
-/// [`LaunchError`] when the process does not start or the bridge does not connect; a host
-/// that started is stopped again.
-pub fn launch(spec: &LaunchSpec, client_name: &str) -> Result<Running, LaunchError> {
-    let mut child = host_command(spec).spawn().map_err(LaunchError::Spawn)?;
-    match connect(&mut child, &spec.socket, client_name) {
-        Ok(client) => Ok(Running { child, client }),
-        Err(error) => {
-            // The host is of no use without its bridge; it is waited for, so it leaves no
-            // process behind.
-            if let Err(kill) = child.kill().and_then(|()| child.wait().map(drop)) {
-                tracing::warn!(%kill, "the preview host could not be stopped");
+    /// Starts the host and connects to its bridge, initialized as `client_name`.
+    ///
+    /// # Errors
+    ///
+    /// [`LaunchError`] when the process does not start or the bridge does not connect; a host
+    /// that started is stopped again.
+    pub fn launch(&self, client_name: &str) -> Result<Running, LaunchError> {
+        let mut child = self.command().spawn().map_err(LaunchError::Spawn)?;
+        match connect(&mut child, &self.socket, client_name) {
+            Ok(client) => Ok(Running { child, client }),
+            Err(error) => {
+                // The host is of no use without its bridge; it is waited for, so it leaves no
+                // process behind.
+                if let Err(kill) = child.kill().and_then(|()| child.wait().map(drop)) {
+                    tracing::warn!(%kill, "the preview host could not be stopped");
+                }
+                Err(error)
             }
-            Err(error)
         }
     }
 }
