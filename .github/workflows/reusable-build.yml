@@ -160,43 +160,65 @@ jobs:
       - name: Lay out the app
         run: packaging/macos/package.sh app dist/bin "$VERSION" dist
       # Both Developer ID identities, from the PEM certificates and keys smoketurner-infra's
-      # apple root makes (docs/releasing.md), into a keychain the job makes and deletes. The
-      # system's /usr/bin/openssl (LibreSSL) bundles each into a PKCS#12 file `security` reads.
+      # apple root makes (docs/releasing.md), into a keychain the job makes and deletes, with
+      # Apple's Developer ID G2 intermediate so each identity's chain validates. The system's
+      # /usr/bin/openssl (LibreSSL) bundles each into a PKCS#12 file `security` reads. The key
+      # files are removed however the step ends.
       - name: Import the Developer ID identities
         env:
           APPLE_APPLICATION_CERTIFICATE_PEM: ${{ secrets.APPLE_APPLICATION_CERTIFICATE_PEM }}
           APPLE_APPLICATION_KEY_PEM: ${{ secrets.APPLE_APPLICATION_KEY_PEM }}
+          APPLE_APPLICATION_IDENTITY: ${{ secrets.APPLE_APPLICATION_IDENTITY }}
           APPLE_INSTALLER_CERTIFICATE_PEM: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PEM }}
           APPLE_INSTALLER_KEY_PEM: ${{ secrets.APPLE_INSTALLER_KEY_PEM }}
+          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
           APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
           RUNNER_TEMP_DIR: ${{ runner.temp }}
+          # https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer, valid to 2031-09-17.
+          INTERMEDIATE_SHA256: f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a
         run: |
+          set -o pipefail
           work="$RUNNER_TEMP_DIR/identities"
           mkdir -p "$work"
           chmod 700 "$work"
+          trap 'rm -rf "$work"' EXIT
           security create-keychain -p "$APPLE_KEYCHAIN_PASSWORD" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "$APPLE_KEYCHAIN_PASSWORD" build.keychain
+          curl -fsSL -o "$work/DeveloperIDG2CA.cer" \
+            https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          echo "$INTERMEDIATE_SHA256  $work/DeveloperIDG2CA.cer" | shasum -a 256 -c -
+          security import "$work/DeveloperIDG2CA.cer" -k build.keychain
           for kind in APPLICATION INSTALLER; do
             certificate="APPLE_${kind}_CERTIFICATE_PEM"
             key="APPLE_${kind}_KEY_PEM"
             printf '%s\n' "${!certificate}" >"$work/$kind.crt"
             printf '%s\n' "${!key}" >"$work/$kind.key"
             /usr/bin/openssl pkcs12 -export -inkey "$work/$kind.key" -in "$work/$kind.crt" \
-              -out "$work/$kind.p12" -passout "pass:$APPLE_KEYCHAIN_PASSWORD"
+              -out "$work/$kind.p12" -passout env:APPLE_KEYCHAIN_PASSWORD
             security import "$work/$kind.p12" -k build.keychain -P "$APPLE_KEYCHAIN_PASSWORD" \
               -T /usr/bin/codesign -T /usr/bin/productsign
           done
-          rm -rf "$work"
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$APPLE_KEYCHAIN_PASSWORD" build.keychain
-          security find-identity -v build.keychain | grep -c "Developer ID"
+          # Each identity must be there and valid, named by its fingerprint.
+          valid=$(security find-identity -v build.keychain)
+          for kind in APPLICATION INSTALLER; do
+            identity="APPLE_${kind}_IDENTITY"
+            fingerprint=$(printf '%s' "${!identity}" | tr -d ' :\n' | tr 'a-f' 'A-F')
+            if ! grep -q "$fingerprint" <<<"$valid"; then
+              echo "::error::the Developer ID $kind identity is not a valid identity in build.keychain"
+              exit 1
+            fi
+            echo "ok    the Developer ID $kind identity is valid"
+          done
       # Each executable is signed on its own, the preview host among them, then the app. The
       # identity is the certificate's SHA-1 fingerprint, which codesign accepts.
       - name: Code sign the app
         env:
           APPLE_APPLICATION_IDENTITY: ${{ secrets.APPLE_APPLICATION_IDENTITY }}
         run: |
+          APPLE_APPLICATION_IDENTITY=$(printf '%s' "$APPLE_APPLICATION_IDENTITY" | tr -d ' :\n' | tr 'a-f' 'A-F')
           app="dist/QuakeC Studio.app"
           for name in quakec-engine quakec-ide quakec-lsp quakec-studio; do
             /usr/bin/codesign --force --sign "$APPLE_APPLICATION_IDENTITY" \
@@ -214,11 +236,10 @@ jobs:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
           key="$RUNNER_TEMP_DIR/notary.p8"
-          printf '%s\n' "$APPLE_NOTARY_KEY" >"$key"
-          chmod 600 "$key"
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && printf '%s\n' "$APPLE_NOTARY_KEY" >"$key")
           xcrun notarytool store-credentials "notarytool-profile" \
             --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER_ID"
-          rm -f "$key"
       # The app is notarized and stapled itself, so it carries its ticket once installed and
       # opens on a Mac that is offline the first time.
       - name: Notarize and staple the app
@@ -236,13 +257,11 @@ jobs:
           APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
         run: |
           pkg="dist/quakec-studio-$VERSION-macos-arm64.pkg"
+          set -o pipefail
           packaging/macos/package.sh pkg "dist/QuakeC Studio.app" "$VERSION" dist/unsigned.pkg
-          if pkgutil --payload-files dist/unsigned.pkg | grep -q '/\._'; then
-            echo "::error::the package's payload holds AppleDouble ._ files"
-            exit 1
-          fi
+          fingerprint=$(printf '%s' "$APPLE_INSTALLER_IDENTITY" | tr -d ' :\n' | tr 'a-f' 'A-F')
           name=$(security find-identity -v build.keychain \
-            | sed -n "s/.*$APPLE_INSTALLER_IDENTITY \"\(.*\)\"/\1/p" | head -n 1)
+            | sed -n "s/.*$fingerprint \"\(.*\)\"/\1/p" | head -n 1)
           if [ -z "$name" ]; then
             echo "::error::the Developer ID Installer identity is not in build.keychain"
             exit 1

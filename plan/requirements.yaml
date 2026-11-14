@@ -10,7 +10,7 @@
 # design_doc_sha256 is the SHA-256 of docs/design/design-doc.md (LF line endings) that these
 # requirements were last reviewed against. plan/check.py fails when the design doc changes until
 # the requirements are reviewed and the new hash, which the failure prints, is recorded here.
-design_doc_sha256: d660c795397a448bcbd9c979beafb89a5a2d5feb80a9d66ffe8e269dd5f0d6ec
+design_doc_sha256: 07866535279ec3b27306b0ed45325ad4eb31a9672604c95c93a47503a91eb5db
 
 sections:
   - id: GOAL
@@ -213,7 +213,7 @@ sections:
       - {id: QA-3, kind: stated, text: "UI snapshot tests through an offscreen harness; docs screenshots from the same harness"}
       - {id: QA-4, kind: stated, text: "Engine integration tests: headless preview host runs scripted scenarios in CI on all three OSes with open test assets (license checked)"}
       - {id: QA-5, kind: stated, text: "Agent evals: fixed modding tasks scored on compile success, test pass and reviewer acceptance"}
-      - {id: QA-6, kind: stated, text: "Release: signed notarized macOS DMG for Apple silicon (arm64); signed MSI and portable zip for Windows x64/arm64; AppImage, Flatpak, deb, rpm for Linux x86_64/aarch64; checksums"}
+      - {id: QA-6, kind: stated, text: "Release: signed notarized macOS installer package (.pkg) for Apple silicon (arm64); signed MSI and portable zip for Windows x64/arm64; AppImage, Flatpak, deb, rpm for Linux x86_64/aarch64; checksums"}
       - {id: QA-7, kind: stated, text: "Crash-safe logging to a per-OS log directory; source text never logged"}
       - {id: QA-8, kind: implied, text: "User documentation: getting started, play loop, agent, map editor; rustdoc and a README per crate"}
       - {id: QA-9, kind: implied, text: "Accessibility: screen-reader names and roles, full keyboard navigation, WCAG AA contrast (part of the Crafting Apps quality bar)"}

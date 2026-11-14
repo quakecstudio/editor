@@ -27,7 +27,7 @@ artifact.
 
 | Platform | Package | Made by |
 | --- | --- | --- |
-| macOS, Apple silicon (arm64) | `quakec-studio-<version>-macos-arm64.pkg`: an installer package, signed with the Developer ID Installer identity, notarized and stapled, that puts `QuakeC Studio.app` in `/Applications` and links to its `quakec-ide` and `quakec-lsp` in `/usr/local/bin`; each executable and the app inside signed with the hardened runtime, the app notarized and stapled | `packaging/macos/package.sh`, with `packaging/macos/Info.plist`, `components.plist` (for `pkgbuild`) and `distribution.xml` (for `productbuild`) |
+| macOS, Apple silicon (arm64) | `quakec-studio-<version>-macos-arm64.pkg`: an installer package, signed with the Developer ID Installer identity, notarized and stapled, that puts `QuakeC Studio.app` in `/Applications`, replacing whatever version is there, and whose `postinstall` script links to its `quakec-ide` and `quakec-lsp` in `/usr/local/bin`; each executable and the app inside signed with the hardened runtime, the app notarized and stapled | `packaging/macos/package.sh`, with `packaging/macos/Info.plist`, `components.plist` and `scripts/postinstall` (for `pkgbuild`) and `distribution.xml` (for `productbuild`) |
 | Windows x64 and arm64 | `quakec-studio-<version>-windows-<arch>.msi`, installing for every user under Program Files with a Start menu shortcut and the folder on `PATH`; and a portable `.zip`; on a tag, the executables in both are signed | `packaging/windows/package.sh`, with WiX 5 and `packaging/windows/quakec-studio.wxs` |
 | Linux x86_64 and aarch64 | `.deb`, `.rpm`, `.AppImage` and `.flatpak` | `packaging/linux/package.sh`, with the desktop entry and icon, `deb/control`, `quakec-studio.spec`, `AppRun.sh` and the Flatpak manifest `com.quakecstudio.QuakeCStudio.yml` beside it |
 | All | `SHA256SUMS`, every package's SHA-256 | the workflow's last job |
@@ -85,8 +85,7 @@ The game is LibreQuake (`cargo xtask assets fetch`); Quake's data is never used 
 
 ## The signing secrets
 
-Justin entered these twelve secrets on 2026-10-16, following vouch and quack. They are
-**repository-level**, by his choice, so only a workflow that signs may reference them:
+The five Azure secrets and the ten `APPLE_*` ones are **repository-level**, by Justin's choice, so only a workflow that signs may reference them:
 `.github/workflows/release.yml` passes each, by name, to the reusable
 `.github/workflows/reusable-build.yml`, the one workflow that reads them. Agents never handle
 their values; the reusable workflow's first job checks each is set and prints no value.
@@ -115,8 +114,10 @@ their values; the reusable workflow's first job checks each is set and prints no
   Account Holder create a Developer ID certificate, so the root makes each certificate's private
   key and CSR, the Account Holder uploads each CSR in Certificates, Identifiers & Profiles, and
   the issued certificates go back in as Terraform variables. Both Developer ID certificates last
-  five years and are renewed the same way. The notary key is an App Store Connect team API key
-  with the Developer role; it stays valid until revoked.
+  five years and are renewed the same way. The workflow imports Apple's Developer ID G2
+  intermediate beside them, fetched from apple.com and checked against its SHA-256; it is valid
+  to 2031-09-17. The notary key is an App Store Connect team API key with the Developer role; it
+  stays valid until revoked.
 - **Entra app registration:** `github-actions-release-signing`, which signs every Smoke Turner project as Smoke Turner, LLC through the `vouch-azure-prod` account's `vouch-prod` certificate profile. It uses federated credentials, not a secret, so nothing expires. `smoketurner/smoketurner-infra` manages this repository's credential (`environments/azure/code_signing.tf`) and copies the five Azure values into its secrets (`environments/github/main.tf`). The credential trusts exactly `repo:quakecstudio@343029298/editor@1420764495:workflow:release:ref_type:tag`, the subject GitHub issues under the organization's customized OIDC claims: `workflow` is the calling workflow's name, `release`, not the reusable one's, and `ref_type:tag` confines signing to tag runs. Renaming `release.yml`'s workflow, or signing from a branch, fails Azure's login with AADSTS700213, as the first run of the workflow then named Sign did from a branch ([#23](https://github.com/quakecstudio/editor/issues/23)). Such a failure goes to Justin; it is not worked around.
 
 ## Signing
@@ -129,8 +130,8 @@ each executable and then the app with `/usr/bin/codesign --options runtime --tim
 identity named by its SHA-1 fingerprint, and verifies it; stores the notary API key as the
 `notarytool-profile` keychain profile; and notarizes and staples the app itself, so it carries
 its ticket once installed and opens offline. It then makes the package with `package.sh pkg`,
-fails if its payload holds AppleDouble `._` files, signs it with `productsign` as the Developer
-ID Installer identity, and notarizes and staples it. It always deletes the keychain. On Windows, a tag's run signs the four executables with `skeeto/aas-sign`, which exchanges
+which refuses a payload holding AppleDouble `._` files, signs it with `productsign` as the
+Developer ID Installer identity, and notarizes and staples it. It always deletes the keychain. On Windows, a tag's run signs the four executables with `skeeto/aas-sign`, which exchanges
 the job's OIDC token for an Azure token itself, then checks each Authenticode signature before
 the zip and the MSI are made. `aas-sign` signs PE files only, so the MSI itself is not signed;
 the executables it installs are.

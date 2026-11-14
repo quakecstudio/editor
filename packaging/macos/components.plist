@@ -2,7 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- pkgbuild's component list for QuakeC Studio.app: always installed to /Applications, never
-     to wherever another copy of the bundle is found, and an older copy replaced. -->
+     to wherever another copy of the bundle is found, and whatever copy is there replaced, an
+     older or a newer one, so installing an older release rolls back. -->
 <plist version="1.0">
 <array>
 	<dict>
@@ -11,7 +12,7 @@
 		<key>BundleIsRelocatable</key>
 		<false/>
 		<key>BundleIsVersionChecked</key>
-		<true/>
+		<false/>
 		<key>BundleOverwriteAction</key>
 		<string>upgrade</string>
 		<key>RootRelativeBundlePath</key>
