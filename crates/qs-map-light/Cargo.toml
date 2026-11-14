@@ -11,7 +11,7 @@ publish.workspace = true
 [dependencies]
 qs-bsp = { workspace = true }
 qs-map = { workspace = true }
-# Its Dialect: the same choice of id's fixed tables or the format's (LIGHT-1.7, QBSP-14).
+# Its Dialect: the same choice of id's fixed tables or the format's (LIGHT-1.9, QBSP-14).
 qs-map-bsp = { workspace = true }
 
 [dev-dependencies]

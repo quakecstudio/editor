@@ -146,6 +146,8 @@ pub enum PreviewError {
     },
     /// A file the command writes could not be written.
     Write(PathBuf, std::io::Error),
+    /// The player's box fits nowhere near the eye given: in or beside solid, or off the map.
+    NoRoom([f64; 3]),
 }
 
 impl core::fmt::Display for PreviewError {
@@ -174,6 +176,11 @@ impl core::fmt::Display for PreviewError {
             Self::NoField(field) => write!(f, "the selected entity has no field {field}"),
             Self::BadValue { field, kind } => write!(f, "{field} takes a {kind}"),
             Self::Write(path, error) => write!(f, "{}: {error}", path.display()),
+            Self::NoRoom([x, y, z]) => write!(
+                f,
+                "there is no room for the player at ({x} {y} {z}) or above or below it: move \
+                 the camera out of the wall or floor"
+            ),
         }
     }
 }
@@ -551,6 +558,11 @@ impl Preview {
         self.status.as_deref()
     }
 
+    /// Replaces the line [`Preview::status`] shows.
+    pub(crate) fn set_status(&mut self, status: String) {
+        self.status = Some(status);
+    }
+
     /// The console's lines, oldest first.
     pub fn console(&self) -> impl Iterator<Item = &ConsoleLine> {
         self.console.iter()
@@ -624,7 +636,7 @@ impl Preview {
 
     /// The original game's base directory: the configured folder's, else the first install
     /// found with one.
-    fn game_base(&self) -> Result<qs_install::GameBase, PreviewError> {
+    pub(crate) fn game_base(&self) -> Result<qs_install::GameBase, PreviewError> {
         game_base(self.config.game.as_deref())
     }
 

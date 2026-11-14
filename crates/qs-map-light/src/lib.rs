@@ -89,7 +89,7 @@ pub enum LightError {
         /// The token found.
         found: Vec<u8>,
     },
-    /// `LoadEntities: MAX_MAP_ENTITIES`, in the id dialect (LIGHT-2.7, LIGHT-1.7).
+    /// `LoadEntities: MAX_MAP_ENTITIES`, in the id dialect (LIGHT-2.7, LIGHT-1.9).
     TooManyEntities,
     /// `LoadEntities: EOF without closing brace` (LIGHT-2.7).
     Unclosed,
@@ -115,9 +115,9 @@ pub enum LightError {
         face: FaceId,
     },
     /// `GetFileSpace: overrun` in the id dialect; in the extended one, a lightmap whose offset
-    /// does not fit `lightofs` (LIGHT-1.5, LIGHT-1.7).
+    /// does not fit `lightofs` (LIGHT-1.5, LIGHT-1.9).
     Overrun,
-    /// `Entity text too long`, in the id dialect (LIGHT-1.6, LIGHT-1.7).
+    /// `Entity text too long`, in the id dialect (LIGHT-1.6, LIGHT-1.9).
     EntityTextTooLong,
     /// A key and value too long for `light`'s 128-byte line, in the id dialect (LIGHT-2.8).
     PairTooLong {
@@ -179,7 +179,7 @@ pub enum LightWarning {
     },
     /// `WARNING: Too many light styles on a face` (LIGHT-4.5).
     TooManyStyles,
-    /// In the extended dialect, a face `light` would stop on, left unlit (LIGHT-1.7).
+    /// In the extended dialect, a face `light` would stop on, left unlit (LIGHT-1.10).
     Unlit {
         /// What `light` would have stopped with.
         error: LightError,
@@ -240,7 +240,7 @@ impl Light {
         Self { scale, ..self }
     }
 
-    /// The compiler in `dialect`: id's fixed tables, or only the format's limits (LIGHT-1.7).
+    /// The compiler in `dialect`: id's fixed tables, or only the format's limits (LIGHT-1.9).
     #[must_use]
     pub const fn with_dialect(self, dialect: Dialect) -> Self {
         Self { dialect, ..self }
