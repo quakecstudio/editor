@@ -453,7 +453,7 @@ impl MapRenderer {
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     buffers: &[Some(layout_of.clone())],
                 },
-                primitive: primitive(pass),
+                primitive: pass.primitive(),
                 depth_stencil: Some(depth_stencil(depth, pass)),
                 multisample: wgpu::MultisampleState::default(),
                 fragment: Some(wgpu::FragmentState {
@@ -462,7 +462,7 @@ impl MapRenderer {
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format,
-                        blend: blend_of(pass),
+                        blend: pass.blend(),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -530,7 +530,7 @@ impl MapRenderer {
             mapped_at_creation: false,
         });
         // Textures keep Quake's sharp texels; the lightmap is smoothed, as GLQuake draws it.
-        let mipmapped = device.create_sampler(&world_sampler(mesh.look));
+        let mipmapped = device.create_sampler(&mesh.look.world_sampler());
         let linear_repeat = sampler(device, wgpu::FilterMode::Linear, wgpu::AddressMode::Repeat);
         let linear = sampler(
             device,
@@ -1100,48 +1100,52 @@ fn depth_stencil(format: TextureFormat, pass: Pass) -> wgpu::DepthStencilState {
     }
 }
 
-/// `glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)` where a pass blends.
-const fn blend_of(pass: Pass) -> Option<wgpu::BlendState> {
-    match pass {
-        Pass::Opaque | Pass::Decal => None,
-        Pass::Blended | Pass::BlendedNoDepthWrite | Pass::Flat => {
-            Some(wgpu::BlendState::ALPHA_BLENDING)
+impl Pass {
+    /// `glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)` where a pass blends.
+    const fn blend(self) -> Option<wgpu::BlendState> {
+        match self {
+            Pass::Opaque | Pass::Decal => None,
+            Pass::Blended | Pass::BlendedNoDepthWrite | Pass::Flat => {
+                Some(wgpu::BlendState::ALPHA_BLENDING)
+            }
+        }
+    }
+
+    /// REND-1.10: GLQuake's `glCullFace (GL_FRONT)` with `GL_CULL_FACE` on and GL's
+    /// counter-clockwise front face: only the side a face is seen from the front is drawn. The
+    /// 2D layer is not culled (`glDisable (GL_CULL_FACE)` in `GL_Set2D`), nor are sprites and
+    /// particles, which face the eye either way.
+    fn primitive(self) -> wgpu::PrimitiveState {
+        let cull = match self {
+            Pass::Opaque | Pass::Blended => Some(wgpu::Face::Front),
+            Pass::BlendedNoDepthWrite | Pass::Flat | Pass::Decal => None,
+        };
+        wgpu::PrimitiveState {
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: cull,
+            ..wgpu::PrimitiveState::default()
         }
     }
 }
 
-/// REND-1.10: GLQuake's `glCullFace (GL_FRONT)` with `GL_CULL_FACE` on and GL's
-/// counter-clockwise front face: only the side a face is seen from the front is drawn. The
-/// 2D layer is not culled (`glDisable (GL_CULL_FACE)` in `GL_Set2D`), nor are sprites and
-/// particles, which face the eye either way.
-fn primitive(pass: Pass) -> wgpu::PrimitiveState {
-    let cull = match pass {
-        Pass::Opaque | Pass::Blended => Some(wgpu::Face::Front),
-        Pass::BlendedNoDepthWrite | Pass::Flat | Pass::Decal => None,
-    };
-    wgpu::PrimitiveState {
-        front_face: wgpu::FrontFace::Ccw,
-        cull_mode: cull,
-        ..wgpu::PrimitiveState::default()
-    }
-}
-
-/// REND-3.3: world textures are filtered `GL_LINEAR_MIPMAP_NEAREST` when smaller and
-/// `GL_LINEAR` when larger, and repeat.
-fn world_sampler(look: Look) -> wgpu::SamplerDescriptor<'static> {
-    wgpu::SamplerDescriptor {
-        label: Some("qs-render world texture"),
-        address_mode_u: wgpu::AddressMode::Repeat,
-        address_mode_v: wgpu::AddressMode::Repeat,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        // REND-3.3: GLQuake's nearest level; REND-13.3: QuakeSpasm's blend of the two nearest.
-        mipmap_filter: if look.trilinear() {
-            wgpu::MipmapFilterMode::Linear
-        } else {
-            wgpu::MipmapFilterMode::Nearest
-        },
-        ..wgpu::SamplerDescriptor::default()
+impl Look {
+    /// REND-3.3: world textures are filtered `GL_LINEAR_MIPMAP_NEAREST` when smaller and
+    /// `GL_LINEAR` when larger, and repeat.
+    fn world_sampler(self) -> wgpu::SamplerDescriptor<'static> {
+        wgpu::SamplerDescriptor {
+            label: Some("qs-render world texture"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            // REND-3.3: GLQuake's nearest level; REND-13.3: QuakeSpasm's blend of the two nearest.
+            mipmap_filter: if self.trilinear() {
+                wgpu::MipmapFilterMode::Linear
+            } else {
+                wgpu::MipmapFilterMode::Nearest
+            },
+            ..wgpu::SamplerDescriptor::default()
+        }
     }
 }
 
@@ -1410,7 +1414,7 @@ mod tests {
     use super::{
         ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, FlatDraw, FlatFrame, FlatVertex, Fog,
         MapCallback, MapRenderer, ModelFrame, Pass, SpriteDraw, SpriteFrame, View, alias_bytes,
-        grown, primitive,
+        grown,
     };
     use crate::alias::AliasVertex;
     use crate::camera::Camera;
@@ -2106,13 +2110,13 @@ mod tests {
     // spec REND-1.10: only a face's front is drawn: GL's counter-clockwise front, front culled
     #[test]
     fn faces_are_culled_as_glquake_culls_them() {
-        let state = primitive(Pass::Opaque);
+        let state = Pass::Opaque.primitive();
         assert_eq!(state.front_face, wgpu::FrontFace::Ccw);
         assert_eq!(state.cull_mode, Some(wgpu::Face::Front));
         assert_eq!(state.topology, wgpu::PrimitiveTopology::TriangleList);
         // `GL_Set2D` turns culling off; sprites and particles face the eye either way.
         for pass in [Pass::Flat, Pass::Decal, Pass::BlendedNoDepthWrite] {
-            assert_eq!(primitive(pass).cull_mode, None);
+            assert_eq!(pass.primitive().cull_mode, None);
         }
     }
     #[test]
@@ -2233,7 +2237,7 @@ mod tests {
     #[test]
     fn quakespasm_s_world_textures_filter_trilinearly() {
         use egui_wgpu::wgpu::{FilterMode, MipmapFilterMode};
-        let world = super::world_sampler(Look::QuakeSpasm);
+        let world = Look::QuakeSpasm.world_sampler();
         assert_eq!(
             (world.min_filter, world.mag_filter, world.mipmap_filter),
             (
@@ -2248,7 +2252,7 @@ mod tests {
     #[test]
     fn world_textures_filter_as_gl_linear_mipmap_nearest() {
         use egui_wgpu::wgpu::{AddressMode, FilterMode, MipmapFilterMode};
-        let world = super::world_sampler(Look::GlQuake);
+        let world = Look::GlQuake.world_sampler();
         assert_eq!(
             (world.min_filter, world.mag_filter, world.mipmap_filter),
             (
