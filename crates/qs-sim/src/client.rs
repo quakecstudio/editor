@@ -115,6 +115,10 @@ fn calc_roll(angles: [f32; 3], velocity: [f32; 3]) -> f32 {
     lean * sign
 }
 
+/// `SV_WalkMove`: less than this far along x and y after stepping up is no progress
+/// (PHYS-8.3).
+const STEP_PROGRESS: f32 = 0.031_25;
+
 /// Whether the player is on the ground, `FL_ONGROUND`, which picks `SV_AirMove`'s friction
 /// and acceleration (PHYS-9.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -592,7 +596,8 @@ impl SimCall<'_, '_, '_> {
         let mut clip = self.fly_move(ent, frametime, &mut steptrace)?;
         if clip != 0 {
             let origin = self.vector(ent, "origin");
-            if (oldorg[1] - origin[1]).abs() < 0.031_25 && (oldorg[0] - origin[0]).abs() < 0.031_25
+            if (oldorg[1] - origin[1]).abs() < STEP_PROGRESS
+                && (oldorg[0] - origin[0]).abs() < STEP_PROGRESS
             {
                 // "stepping up didn't make any progress"
                 clip = self.try_unstick(ent, oldvel)?;

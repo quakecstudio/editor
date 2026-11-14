@@ -110,6 +110,14 @@ pub(crate) fn tokenize(text: &[u8]) -> Words {
     }
 }
 
+/// A player colour's bits, `& 15`, the highest colour a player may wear, 13, and a colours
+/// byte's rows, `top * 16 + bottom` (PHYS-11.7, PHYS-13.4).
+pub(crate) const COLOR_MASK: i32 = 15;
+pub(crate) const MAX_COLOR: i32 = 13;
+pub(crate) const COLOR_ROW: i32 = 16;
+/// `atoi`'s base.
+const DECIMAL: i32 = 10;
+
 /// C's `atoi`: leading whitespace, a sign, then decimal digits, stopping at anything else.
 pub(crate) fn atoi(text: &[u8]) -> i32 {
     let mut bytes = text
@@ -133,7 +141,7 @@ pub(crate) fn atoi(text: &[u8]) -> i32 {
             break;
         }
         value = value
-            .wrapping_mul(10)
+            .wrapping_mul(DECIMAL)
             .wrapping_add(i32::from(c.wrapping_sub(b'0')));
     }
     if negative {
@@ -291,13 +299,13 @@ impl SimCall<'_, '_, '_> {
                 words.argv.get(2).map_or(0, |w| atoi(w)),
             ),
         };
-        let top = (top & 15).min(13);
-        let bottom = (bottom & 15).min(13);
+        let top = (top & COLOR_MASK).min(MAX_COLOR);
+        let bottom = (bottom & COLOR_MASK).min(MAX_COLOR);
         self.set_float(ent, "team", int_to_float(bottom.wrapping_add(1)));
         let message = &mut self.sim.messages.reliable_datagram;
         message.write_byte(SVC_UPDATECOLORS);
         message.write_byte(0);
-        message.write_byte(top.wrapping_mul(16).wrapping_add(bottom));
+        message.write_byte(top.wrapping_mul(COLOR_ROW).wrapping_add(bottom));
     }
 
     /// PHYS-11.8: `Host_Pause_f`: with `pausable` set, the game pauses or unpauses, saying so to
