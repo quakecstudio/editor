@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/map.swap.params.json",
+  "title": "map/swap request params (BRIDGE-4)",
+  "type": "object",
+  "properties": {
+    "bsp": {
+      "type": "string",
+      "description": "The new build of the running map's BSP: a host path, or a name on the game's search path (BRIDGE-4.14)"
+    },
+    "models": {
+      "type": "array",
+      "description": "Each brush entity of the map and its brush model in the new BSP (BRIDGE-4.16)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "map_entity": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "model": {
+            "type": "string",
+            "pattern": "^\\*[1-9][0-9]*$"
+          }
+        },
+        "required": [
+          "map_entity",
+          "model"
+        ]
+      }
+    }
+  },
+  "required": [
+    "bsp",
+    "models"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quakecstudio.com/spec/bridge-schema/map.swap.result.json",
+  "title": "map/swap response result (BRIDGE-4)",
+  "type": "object",
+  "properties": {
+    "swapped": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The edicts given a brush model of the new BSP (BRIDGE-4.16)"
+    }
+  },
+  "required": [
+    "swapped"
+  ]
+}

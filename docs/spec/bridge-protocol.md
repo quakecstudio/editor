@@ -71,21 +71,25 @@ is required."
 - **BRIDGE-2.5** `shutdown` (no parameters, result `null`) asks the host to stop its game and
   answer; the client then closes the connection, which ends the host (BRIDGE-1.1). A client
   that closes without `shutdown` ends it too.
-- **BRIDGE-2.6** The capabilities are one boolean per capability-flagged command (BRIDGE-4.9):
+- **BRIDGE-2.6** **Withdrawn** 2026-11-14: the capability-flagged commands gained `map/swap`;
+  replaced by BRIDGE-2.10.
+- **BRIDGE-2.7** **Withdrawn** 2026-11-11: the version this document describes is `1.2`;
+  replaced by BRIDGE-2.8.
+- **BRIDGE-2.8** **Withdrawn** 2026-11-14: the version this document describes is `1.3`;
+  replaced by BRIDGE-2.9.
+- **BRIDGE-2.9** A protocol version is `major.minor` in decimal. The host accepts a client
+  whose `major` is its own and answers with its own version; a different `major` is answered
+  with `-32001` (incompatible version) and the host closes the connection. A client reading a
+  higher `minor` than it knows proceeds; it ignores what it does not know (BRIDGE-6). This
+  document describes version `1.3`: `1.1` added `window/place` (BRIDGE-6.3), `1.2` spawns an
+  entity in play as at the map's load (BRIDGE-4.12) and `1.3` added `map/swap` (BRIDGE-4.14).
+- **BRIDGE-2.10** The capabilities are one boolean per capability-flagged command (BRIDGE-4.9):
   every command but `initialize`, `shutdown` and `inspect`, so a host built without reload
   (P3-03), debugging (P3-04) or an ENG-14 command says so: `reload`, `breakpoint/set`,
   `breakpoint/clear`, `step`, `console`, `pause`, `resume`, `field/set`, `pick`,
   `entity/spawn`, `entity/remove`, `entity/edit`, `player/spawn_at`, `screenshot`,
-  `evaluate` and `window/place`. A command whose flag is absent or `false` is answered with `-32005`
-  (unsupported); the client shows it disabled.
-- **BRIDGE-2.7** **Withdrawn** 2026-11-11: the version this document describes is `1.2`;
-  replaced by BRIDGE-2.8.
-- **BRIDGE-2.8** A protocol version is `major.minor` in decimal. The host accepts a client
-  whose `major` is its own and answers with its own version; a different `major` is answered
-  with `-32001` (incompatible version) and the host closes the connection. A client reading a
-  higher `minor` than it knows proceeds; it ignores what it does not know (BRIDGE-6). This
-  document describes version `1.2`: `1.1` added `window/place` (BRIDGE-6.3) and `1.2` spawns
-  an entity in play as at the map's load (BRIDGE-4.12).
+  `evaluate`, `window/place` and `map/swap`. A command whose flag is absent or `false` is
+  answered with `-32005` (unsupported); the client shows it disabled.
 
 ## BRIDGE-3 Events
 
@@ -194,6 +198,7 @@ A command is a request from the client, answered with a result on success or an 
   | edit entity | `entity/edit` | yes | sets key-values on an edict as its spawn would parse them (EDICT-8) |
   | spawn player at | `player/spawn_at` | yes | moves the player to an origin and angles, as a teleporter would |
   | dock | `window/place` | yes | places the host's window at a rectangle of the desktop and keeps it above other windows or not (BRIDGE-4.10), so it stays beside the IDE (ENG-9) |
+  | swap map | `map/swap` | yes | puts a new build of the running map's BSP in place of the old, keeping every edict and global, each brush entity of the map given its model in the new build (BRIDGE-4.14 to BRIDGE-4.17, MAP-14) |
 
 - **BRIDGE-4.10** `window/place` takes the window's outer frame as `x`, `y`, `width` and
   `height` in the desktop's logical points, from the top left of the main display, and
@@ -236,6 +241,36 @@ A command is a request from the client, answered with a result on success or an 
   answering `{}` when it is in none. `entity/edit` of an entity in no edict is answered with
   `-32004` (no such edict). A saved game loaded starts the list empty. Not id's: the engine
   keeps no entity's place in the lump.
+- **BRIDGE-4.14** `map/swap` reads its `bsp`, a host path when absolute and otherwise a name
+  on the game's search path, and takes `models`, a list of `map_entity` (BRIDGE-4.13) and
+  `model`, the brush model `*n` that entity has in the new BSP. It is answered with `-32602`
+  (invalid params), and nothing changes, when the BSP does not load, when a `model` is not
+  `*n` with `n` from 1 to the new BSP's last brush model, or when a `model` is not in the
+  map's model precache list: the client read that list when it joined, so a brush entity
+  added since the map loaded waits for the map to load again (BRIDGE-4.12). While a frame is
+  stopped at a statement it is answered with `-32008` (stopped in frame), as `reload` is
+  (BRIDGE-4.7). It runs between two server frames. Not id's: the engine has no command that
+  changes a running map's BSP.
+- **BRIDGE-4.15** The swap keeps every edict, field and global as it is, runs no QuakeC and
+  sends no message to the player: the player stays where they stand and keeps their health,
+  items and view, and each entity keeps its think, its velocity and its state. In their place
+  it makes the world's collision from the new BSP as `SV_ClearWorld` does at a map's load
+  (WORLD-5.1): the world as model index 1, brush model `*n` as index `1 + n`, and each other
+  BSP the map precached (an item's `maps/b_bh25.bsp`) at its own index again. The PVS and the
+  brush models' bounds `setmodel` reads (WORLD-8.2) are the new BSP's too.
+- **BRIDGE-4.16** Each entity of `models` that is in an edict (BRIDGE-4.13) takes its `model`:
+  its `model` field that name, its `modelindex` that name's place in the precache list, and its
+  `mins`, `maxs` and `size` the new brush model's bounds, as `setmodel` sets them. An entity in
+  no edict is passed over. Then every edict in use but the world is linked again
+  (`SV_LinkEdict` without touching, WORLD-6), in edict order, since the new collision starts
+  with none linked; an edict with no solid stays unlinked as before. The result is `swapped`,
+  the number of edicts given a model.
+- **BRIDGE-4.17** After a swap the host draws the new BSP: its faces, lightmaps and `.lit`
+  beside it, and the brush entities' models by their new `modelindex`. The editor matches its
+  map's entities to the new BSP by place, not by `*n`: a brush entity's `*n` is its place among
+  the map's brush entities, so deleting one renumbers those after it, and an entity the
+  editor removed or added has already left or entered the game (BRIDGE-4.13), so the game
+  follows the map.
 
 ## BRIDGE-5 Values
 

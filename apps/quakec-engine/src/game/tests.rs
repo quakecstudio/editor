@@ -280,7 +280,7 @@ fn float_field(game: &mut Game, session: &mut Session, edict: usize, name: &str)
         .map_or(Value::Null, |f| f["value"]["value"].clone())
 }
 
-// spec BRIDGE-2.6: the game offers every command it implements, and no other
+// spec BRIDGE-2.10: the game offers every command it implements, and no other
 #[test]
 fn the_game_offers_its_commands() {
     let (mut game, mut session) = game();
@@ -905,7 +905,7 @@ fn the_next_level_carries_what_the_last_one_owed() {
     assert_eq!(responses[0].0, Id::Number(7));
 }
 
-// spec BRIDGE-2.6: a headless host with a GPU device draws offscreen, so it offers screenshot
+// spec BRIDGE-2.10: a headless host with a GPU device draws offscreen, so it offers screenshot
 // as the window does; a frame it could not draw answers each waiting screenshot with an error
 #[test]
 fn an_offscreen_host_offers_screenshot_and_reports_a_failed_frame() {
@@ -940,7 +940,7 @@ fn an_offscreen_host_offers_screenshot_and_reports_a_failed_frame() {
     }
 }
 
-// spec BRIDGE-2.6: a headless host with no GPU device draws nothing, so it leaves screenshot
+// spec BRIDGE-2.10: a headless host with no GPU device draws nothing, so it leaves screenshot
 // out of its capabilities and the session refuses one as unsupported; the rest are as the
 // window's
 #[test]

@@ -30,11 +30,12 @@ use crate::collision::{
 };
 use crate::debug::{Debugger, Watch};
 use crate::messages::{BIT_MASK, BYTE_SHIFT};
-use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages, WRITE_BYTE, WRITE_ENTITY};
+use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages, Vis, WRITE_BYTE, WRITE_ENTITY};
 use crate::physics::MoveType;
 use crate::physics::{Sound, dot};
 use crate::rerelease::{BuiltinTable, RRE_NUM_BUILTINS};
 use crate::settings::Setting;
+use crate::world::BrushModel;
 use crate::{HALF, POINT, ZERO};
 
 /// `setorigin`.
@@ -144,21 +145,9 @@ impl SimBuiltins {
         table: BuiltinTable,
     ) -> Self {
         let mut mock = MockBuiltins::with_engine(engine);
-        let bounds = &mut mock.engine_mut().model_bounds;
-        for (n, model) in map.models.iter().enumerate() {
-            let key = if n == 0 {
-                format!("maps/{name}.bsp")
-            } else {
-                format!("*{n}")
-            };
-            bounds.push((
-                key,
-                ModelBounds {
-                    mins: model.mins,
-                    maxs: model.maxs,
-                },
-            ));
-        }
+        mock.engine_mut()
+            .model_bounds
+            .extend(brush_model_bounds(name, map));
         Self {
             mock,
             collision: Collision::new(map),
@@ -173,6 +162,35 @@ impl SimBuiltins {
             checkpvs: Vec::new(),
             files,
         }
+    }
+
+    /// The map `name`'s collision, PVS and brush model bounds made again from `bsp`, a new
+    /// build of it (BRIDGE-4.15): the world model index 1 and `*n` index `1 + n`, each other
+    /// BSP of the precache list at its own index again; no edict is linked.
+    pub(crate) fn swap_map(&mut self, name: &str, bsp: &Bsp<'_>) {
+        self.collision = Collision::new(bsp);
+        let world = format!("maps/{name}.bsp");
+        let others: Vec<(usize, String)> = self
+            .mock
+            .engine()
+            .model_precache
+            .iter()
+            .enumerate()
+            .filter(|(_, model)| model.ends_with(".bsp") && **model != world)
+            .map(|(index, model)| (index, model.clone()))
+            .collect();
+        for (index, model) in others {
+            if let Some(bytes) = (self.files)(&model)
+                && let Ok(other) = Bsp::read(&bytes, BspLoader::default())
+            {
+                self.collision.add_brush(index, &other);
+            }
+        }
+        self.messages.vis = Vis::new(bsp);
+        self.checkpvs.clear();
+        let bounds = &mut self.mock.engine_mut().model_bounds;
+        bounds.retain(|(key, _)| *key != world && BrushModel::parse(key).is_none());
+        bounds.extend(brush_model_bounds(name, bsp));
     }
 
     /// The model just precached as model index `index`, `name`: a BSP is loaded for its hulls
@@ -201,6 +219,27 @@ impl SimBuiltins {
                 .push((name.to_owned(), ModelBounds { mins, maxs }));
         }
     }
+}
+
+/// The bounds `setmodel` reads for the map `name`'s models in `bsp` (WORLD-8.2): the world as
+/// `maps/<name>.bsp`, then each brush model as `*n`.
+fn brush_model_bounds(name: &str, bsp: &Bsp<'_>) -> Vec<(String, ModelBounds)> {
+    bsp.models
+        .iter()
+        .enumerate()
+        .map(|(n, model)| {
+            let key = if n == 0 {
+                format!("maps/{name}.bsp")
+            } else {
+                format!("*{n}")
+            };
+            let bounds = ModelBounds {
+                mins: model.mins,
+                maxs: model.maxs,
+            };
+            (key, bounds)
+        })
+        .collect()
 }
 
 /// An `i32` bound as the float the model stores.
