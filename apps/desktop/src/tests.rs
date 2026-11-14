@@ -293,6 +293,7 @@ fn the_ui_code_has_no_string_literals() {
         ("git_panel.rs", include_str!("git_panel.rs")),
         ("features.rs", include_str!("features.rs")),
         ("agent/feature.rs", include_str!("agent/feature.rs")),
+        ("project/feature.rs", include_str!("project/feature.rs")),
         ("multibuffer.rs", include_str!("multibuffer.rs")),
         ("project.rs", include_str!("project.rs")),
         ("editor.rs", include_str!("editor.rs")),

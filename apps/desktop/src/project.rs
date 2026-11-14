@@ -248,5 +248,9 @@ pub(crate) fn root_name(root: &Path) -> String {
     )
 }
 
+mod feature;
+
+pub(crate) use feature::ProjectFeature;
+
 #[cfg(test)]
 mod tests;

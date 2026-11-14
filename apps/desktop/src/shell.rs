@@ -64,13 +64,12 @@ use qs_map_edit::{
     MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PlacePrefabParams, Prefabs, SavePrefabParams,
 };
 use qs_render::{Camera, MapMesh};
-use qs_settings::{Scope as SettingsScope, Setting, SettingsFile, SettingsStore};
-use qs_templates::{GitHub, NEW_PROJECT, NewProjectParams, Template};
+use qs_settings::SettingsFile;
+use qs_templates::{GitHub, Template};
 use qs_workbench::TASK_LIST;
 use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
 use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITIES};
-use qs_workbench::export::{ExportParams, Exported, PROJECT_EXPORT};
 use qs_workbench::files_changed::{FILES_CHANGED, FilesChanged, FilesChangedParams};
 use qs_workbench::game_files::GameFiles;
 use qs_workbench::git::{GIT_HEAD_TEXT, GitPathParams};
@@ -93,12 +92,11 @@ use qs_workbench::{
 };
 use qs_workbench::{
     AtParams, CHOOSE_GAME, CLOSE_FILE, COMPLETE, Candidate, CheckAfterTyping, ChooseGameParams,
-    CloseFileParams, Config, DEFINITION, DOCK, EntryKind, FileText, FsLoader, GAME, HOVER,
-    HasPreview, HasWorkbench, HoverInfo, OPEN_FILE, OPEN_PROJECT, OnLoss, OpenFile, OpenFileParams,
-    OpenProjectParams, PAUSE, PLAY, POLL, Place, PlayParams, PlayState, Preview, PreviewConfig,
-    PreviewStatus, READ_FILE, REFERENCES, RELOAD, RENAME, RESTART, RESUME, RecentProjects,
-    ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams, TAKE_CHECKED, UPDATE_FILE,
-    UpdateFileParams, Workbench,
+    CloseFileParams, Config, DEFINITION, DOCK, EntryKind, FileText, FsLoader, HOVER, HasPreview,
+    HasWorkbench, HoverInfo, OPEN_FILE, OnLoss, OpenFile, OpenFileParams, PAUSE, PLAY, POLL, Place,
+    PlayParams, PlayState, Preview, PreviewConfig, PreviewStatus, READ_FILE, REFERENCES, RELOAD,
+    RENAME, RESTART, RESUME, ReloadParams, RenameParams, SAVE_FILE, STEP, STOP, SaveFileParams,
+    TAKE_CHECKED, UPDATE_FILE, UpdateFileParams, Workbench,
 };
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 
@@ -110,7 +108,6 @@ use crate::entities::{self, EntityAction, Outliner, Properties};
 use crate::fallback::{SystemFonts, families};
 use crate::features::{Commands, Features, ShellRequest};
 use crate::finder::FileFinder;
-use crate::game_guide::{self, Guide, GuideAction};
 use crate::git_panel::TabShown;
 use crate::git_panel::{GitAction, GitView, git_ui};
 use crate::icons::Icon;
@@ -124,6 +121,7 @@ use crate::map_view::{self, MapView};
 use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
 use crate::picker::{Picker, PickerKind, PickerRow};
+use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::{Text, Truncation};
 use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
@@ -314,12 +312,6 @@ pub struct Shell {
     focus_applied: u64,
     /// The last play-loop command's error, shown on the toolbar until the next one.
     preview_error: Option<String>,
-    /// What the last export did: the zip's path, or why it failed (P4-28).
-    export_note: Option<Result<PathBuf, String>>,
-    /// Whether the guide to the game's files is shown (P3-21), and what it last found.
-    guide: (Guide, Option<GameFiles>),
-    /// The user's settings file, which keeps the game folder chosen (P3-44).
-    settings_file: Option<PathBuf>,
     /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
     menu: MenuPlace,
     /// The Entities outliner's filter.
@@ -343,18 +335,12 @@ pub struct Shell {
     pending_line: Option<(PathBuf, u32)>,
     /// The editors of the tabs not shown, with their carets and undo histories.
     parked: BTreeMap<PathBuf, Editor>,
-    /// The projects opened most recently, and the file they are kept in.
-    recent: (RecentProjects, Option<PathBuf>),
     /// The key bindings in force, the user's keymap file over the defaults (P4-37).
     keymap: keymap::Keymap,
     /// How the code editor reads keys, from the user's settings (P4-37).
     key_mode: KeyMode,
     /// The IDE's window as last given to `preview.dock`.
     dock_frame: Option<DockFrame>,
-    /// The project open in the last frame, to see when another opens.
-    seen_root: Option<PathBuf>,
-    /// Why the last project asked for did not open.
-    project_error: Option<String>,
     /// The socket other processes run the window's commands on (AGT-7), once it is served.
     host: Option<Host>,
     /// The window's egui context, to ask for a frame from another thread.
@@ -408,9 +394,6 @@ impl Shell {
             covered: None,
             focus_applied: layout.focus_requests,
             preview_error: None,
-            export_note: None,
-            guide: (Guide::Hidden, None),
-            settings_file: None,
             menu: MenuPlace::default(),
             outliner: Outliner::default(),
             properties: Properties::default(),
@@ -422,12 +405,9 @@ impl Shell {
             shown_stop: None,
             pending_line: None,
             parked: BTreeMap::new(),
-            recent: (RecentProjects::default(), None),
             keymap: keymap::Keymap::defaults(),
             key_mode: KeyMode::Standard,
-            seen_root: None,
             dock_frame: None,
-            project_error: None,
             host: None,
             ctx: None,
         })
@@ -539,7 +519,7 @@ impl Shell {
 
     /// Reads the recent projects from `file`, and keeps them there.
     pub fn set_recent_file(&mut self, file: PathBuf) {
-        self.recent = (RecentProjects::load(&file), Some(file));
+        self.features.project.set_recent_file(file);
     }
 
     /// Reads and keeps the user's settings in `file` (P3-44): the game folder chosen before is
@@ -554,7 +534,7 @@ impl Shell {
             Some(qs_settings::KeyMode::Standard) | None => KeyMode::Standard,
         };
         let saved = settings.and_then(|settings| settings.game.folder);
-        self.settings_file = Some(file);
+        self.features.project.settings_file = Some(file);
         if let Some(path) = saved {
             let chosen: Option<GameFiles> = self.run(CHOOSE_GAME, &ChooseGameParams { path });
             if chosen.is_some_and(|files| !files.state.plays()) {
@@ -572,27 +552,16 @@ impl Shell {
     /// Chooses `path` as the game folder, read in place (`preview.choose_game`), and keeps it
     /// in the settings file when it plays, so the next start finds it (P3-44).
     pub fn choose_game_folder(&mut self, path: PathBuf) -> Option<GameFiles> {
-        let chosen: Option<GameFiles> =
-            self.run(CHOOSE_GAME, &ChooseGameParams { path: path.clone() });
-        if chosen.as_ref().is_some_and(|files| files.state.plays()) {
-            self.preview_error = None;
-            if let Some(file) = &self.settings_file {
-                let value = serde_json::to_value(&path).ok();
-                let saved = SettingsStore::open(file.clone(), None).and_then(|mut store| {
-                    store.put(SettingsScope::User, Setting::GameFolder, value)
-                });
-                if let Err(error) = saved {
-                    tracing::warn!(%error, "the game folder was not saved");
-                }
-            }
-        }
-        chosen
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features
+            .project
+            .choose_game_folder(&mut commands, path)
     }
 
     /// The projects opened most recently, the latest first.
     #[must_use]
     pub fn recent_projects(&self) -> &[PathBuf] {
-        self.recent.0.projects()
+        self.features.project.recent_projects()
     }
 
     /// Asks for a project folder with the system's dialog, as Zed's Open does by default
@@ -676,7 +645,7 @@ impl Shell {
     ///
     /// No project open, no provider set up, no model or no checkpoint.
     pub fn start_agent(&mut self, task: &str, ctx: &egui::Context) -> Result<(), String> {
-        let settings = self.settings_file.clone();
+        let settings = self.features.project.settings_file.clone();
         self.features
             .agent
             .start(&mut self.session, task, settings.as_deref(), ctx)
@@ -693,7 +662,7 @@ impl Shell {
         entity: &qs_agent::EntityState,
         ctx: &egui::Context,
     ) -> Result<(), String> {
-        let settings = self.settings_file.clone();
+        let settings = self.features.project.settings_file.clone();
         self.features
             .agent
             .ask_about(&mut self.session, entity, settings.as_deref(), ctx)
@@ -708,7 +677,7 @@ impl Shell {
 
     /// Does what the agent panel asked for.
     pub(crate) fn agent_action(&mut self, action: AgentAction, ctx: &egui::Context) {
-        let settings = self.settings_file.clone();
+        let settings = self.features.project.settings_file.clone();
         let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
         self.features
             .agent
@@ -718,78 +687,27 @@ impl Shell {
     /// Asks for a new folder with the system's dialog, makes a project of `template` there
     /// (`project.new`, P4-17) and opens it, saying why when it could not.
     pub fn new_project(&mut self, template: Template) {
-        let picked = rfd::FileDialog::new()
-            .set_title(Text::NewProjectTitle.get())
-            .save_file();
-        let Some(folder) = picked else {
-            return;
-        };
-        let params = NewProjectParams {
-            template,
-            path: folder.clone(),
-        };
-        let made = serde_json::to_value(params)
-            .map_err(|error| error.to_string())
-            .and_then(|params| {
-                self.execute(NEW_PROJECT, params)
-                    .map_err(|error| error.to_string())
-            });
-        match made {
-            Ok(_) => self.open_asked(&folder),
-            Err(error) => self.project_error = Some(error),
-        }
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.new_project(&mut commands, template);
     }
 
-    /// Exports the open project for players (`project.export`, P4-28), checked against the game
-    /// folder Play reads (the first install found when none was chosen); the status bar says
+    /// Exports the open project for players (`project.export`, P4-28); the status bar says
     /// where the zip is or why there is none.
     pub fn export_mod(&mut self) {
-        let game = self
-            .session
-            .context()
-            .preview
-            .game_folder()
-            .map(Path::to_path_buf);
-        let params = ExportParams {
-            game,
-            ..ExportParams::default()
-        };
-        let exported = serde_json::to_value(params)
-            .map_err(|error| error.to_string())
-            .and_then(|params| {
-                self.execute(PROJECT_EXPORT, params)
-                    .map_err(|error| error.to_string())
-            })
-            .and_then(|answer| {
-                serde_json::from_value::<Exported>(answer).map_err(|error| error.to_string())
-            });
-        self.export_note = Some(exported.map(|exported| exported.path));
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.export(&mut commands);
     }
 
     /// What the last export did, for tests.
     #[cfg(test)]
     pub(crate) const fn export_note(&self) -> Option<&Result<PathBuf, String>> {
-        self.export_note.as_ref()
+        self.features.project.export_note.as_ref()
     }
 
-    /// Opens the project in `folder`, saying why when it does not open; a recent project that
-    /// no longer opens comes off the list.
+    /// Opens the project in `folder`, saying why when it does not open.
     fn open_asked(&mut self, folder: &Path) {
-        // A folder with no project file opens empty, as Zed opens any folder; one that is not
-        // there any more, as a recent project may be, does not.
-        let opened = if folder.is_dir() {
-            self.open_project(folder).map_err(|error| error.to_string())
-        } else {
-            Err(format!("{} {}", Text::FolderGone.get(), folder.display()))
-        };
-        match opened {
-            Ok(()) => self.project_error = None,
-            Err(error) => {
-                self.project_error = Some(error.to_string());
-                self.recent.0.forget(folder);
-                self.save_recent();
-            }
-        }
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.open(&mut commands, folder);
     }
 
     /// Tells the preview where the IDE's window is and whether it has the focus, through
@@ -818,30 +736,7 @@ impl Shell {
 
     /// Puts the project just opened first in the recent projects.
     fn note_project(&mut self) {
-        let root = self
-            .session
-            .context()
-            .workbench
-            .root()
-            .map(Path::to_path_buf);
-        if root == self.seen_root {
-            return;
-        }
-        if let Some(root) = &root
-            && self.recent.0.opened(root)
-        {
-            self.save_recent();
-        }
-        self.seen_root = root;
-    }
-
-    /// Writes the recent projects to their file, if they have one.
-    fn save_recent(&self) {
-        if let Some(file) = &self.recent.1
-            && let Err(error) = self.recent.0.save(file)
-        {
-            tracing::warn!(%error, "recent projects not written");
-        }
+        self.features.project.note_project(self.session.context());
     }
 
     /// Gives the shell the window's wgpu device and formats, which the map view draws with.
@@ -879,11 +774,7 @@ impl Shell {
     ///
     /// [`ShellError`] when the command fails.
     pub fn open_project(&mut self, path: &Path) -> Result<(), ShellError> {
-        let params = serde_json::to_value(OpenProjectParams {
-            path: path.to_path_buf(),
-        })?;
-        self.session.execute(OPEN_PROJECT, params)?;
-        Ok(())
+        ProjectFeature::open_project(&mut self.commands(), path)
     }
 
     /// Opens what macOS or the command line hands the app, through `paths.open`: folders as
@@ -1603,43 +1494,27 @@ impl Shell {
         }
     }
 
-    /// P3-21: Play that failed for want of the game opens the guide to its files; the guide
-    /// stays hidden when the files are all there.
+    /// P3-21: Play that failed for want of the game opens the guide to its files.
     fn open_guide_to_missing_files(&mut self) {
-        let files: Option<GameFiles> = self.run(GAME, &serde_json::json!({}));
-        if let Some(files) = files {
-            self.guide = (Guide::for_files(&files), Some(files));
-        }
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features
+            .project
+            .open_guide_to_missing_files(&mut commands);
     }
 
-    /// Opens the guide to the game's files (P3-21), from the File menu: what the game folder,
-    /// or the first install found, holds and lacks, and the folder picker.
+    /// Opens the guide to the game's files (P3-21), from the File menu.
     pub fn show_game_guide(&mut self) {
-        let files: Option<GameFiles> = self.run(GAME, &serde_json::json!({}));
-        self.guide = (Guide::Shown, files);
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features.project.show_game_guide(&mut commands);
     }
 
-    /// The guide to the game's files while it is shown: a chosen folder is read in place and
-    /// kept for Play when it plays (`preview.choose_game`), so Play works without a restart.
+    /// The guide to the game's files while it is shown (P3-21).
     fn game_guide(&mut self, ui: &mut Ui) {
-        let (shown, Some(files)) = &self.guide else {
-            return;
-        };
-        match game_guide::window(ui.ctx(), &self.theme, *shown, files) {
-            Some(GuideAction::Close) => self.guide.0 = Guide::Hidden,
-            Some(GuideAction::ChooseFolder) => {
-                let picked = rfd::FileDialog::new()
-                    .set_title(Text::ChooseGameTitle.get())
-                    .pick_folder();
-                if let Some(path) = picked {
-                    let chosen = self.choose_game_folder(path);
-                    if chosen.is_some() {
-                        self.guide.1 = chosen;
-                    }
-                }
-            }
-            None => {}
-        }
+        let ctx = ui.ctx().clone();
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features
+            .project
+            .game_guide(&mut commands, &ctx, &self.theme);
     }
 
     /// Opens the map at `path` in the map editor; [`Shell::sync_map`] shows it.
@@ -2663,7 +2538,7 @@ impl Shell {
                         PlayState::Paused => Text::PreviewPaused,
                     };
                     ui.label(RichText::new(running.get()).small().color(muted));
-                    match &self.export_note {
+                    match &self.features.project.export_note {
                         Some(Ok(path)) => {
                             let text = format!("{} {}", Text::ExportedTo.get(), path.display());
                             ui.label(RichText::new(text).small().color(muted));
@@ -2710,8 +2585,8 @@ impl Shell {
         let map_editor = (self.centre_tab == CentreTab::Map && workbench.map().is_some())
             .then_some(&mut self.map_editor);
         let mut map_actions = Vec::new();
-        let recent_projects = self.recent.0.projects();
-        let project_error = self.project_error.as_deref();
+        let recent_projects = self.features.project.recent_projects();
+        let project_error = self.features.project.error.as_deref();
         let mut open: Option<LeftAction> = None;
         let mut entity_action = None;
         let mut tab_action = None;

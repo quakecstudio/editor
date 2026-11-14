@@ -13,7 +13,7 @@ use qs_commands::{CommandError, Session};
 use crate::agent::{AgentFeature, AgentPanel};
 use crate::debugger::DebuggerFeature;
 use crate::git_panel::GitFeature;
-use crate::project::Jump;
+use crate::project::{Jump, ProjectFeature};
 use crate::shell::{BottomTab, ShellError, Workspace};
 use crate::strings::Text;
 use crate::terminal::TerminalFeature;
@@ -22,6 +22,8 @@ use crate::terminal::TerminalFeature;
 pub(crate) struct Features {
     /// The agent panel and an inline edit's answer (P4-09, P4-10).
     pub(crate) agent: AgentFeature,
+    /// The project: recent projects, a new project, export, settings and the game guide.
+    pub(crate) project: ProjectFeature,
     /// The Git tab (P4-35).
     pub(crate) git: GitFeature,
     /// The Terminal tab (P4-36).
@@ -35,6 +37,7 @@ impl Features {
     pub(crate) fn new(agent: AgentPanel) -> Self {
         Self {
             agent: AgentFeature::new(agent),
+            project: ProjectFeature::default(),
             git: GitFeature::default(),
             terminal: TerminalFeature::default(),
             debugger: DebuggerFeature::default(),
@@ -128,6 +131,11 @@ impl<'a> Commands<'a> {
         params: serde_json::Value,
     ) -> Result<serde_json::Value, CommandError> {
         self.session.execute(id, params)
+    }
+
+    /// Clears the toolbar's notice.
+    pub(crate) fn clear_notice(&mut self) {
+        *self.notice = None;
     }
 
     /// Says on the toolbar that an edit failed.
