@@ -3,7 +3,7 @@
 // Copyright (C) 1997       Greg Lewis
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bspfile_common.cc, is_any_detail, is_detail_solid, is_detail_wall, is_detail_fence, is_detail_illusionary, is_empty, is_any_solid, is_solid, is_sky, is_liquid, is_clip, is_origin, is_opaque, cluster_contents, combine_contents, portal_can_see_through, portal_visible_contents, is_two_sided, portal_generates_face
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bspfile_common.cc, set_mirrored, set_clips_same_type, is_any_detail, is_detail_solid, is_detail_wall, is_detail_fence, is_detail_illusionary, is_empty, is_any_solid, is_solid, is_sky, is_liquid, is_clip, is_origin, is_opaque, cluster_contents, combine_contents, portal_can_see_through, portal_visible_contents, is_two_sided, portal_generates_face
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bspfile.cc, create_contents_from_native, contents_to_native, contents_remap_for_export, get_hull_sizes, face_get_contents
 
 //! Contents and the game a map is compiled for, ericw-tools' `contentflags_t` and `gamedef_t`
@@ -98,6 +98,31 @@ impl Contents {
         (Self::MONSTERCLIP, 11),
         (Self::PROJECTILECLIP, 14),
     ];
+
+    /// The contents with the mirror-inside flag `mirror` says, `set_mirrored` (QBSP-15.15).
+    pub(crate) const fn with_mirrored(self, mirror: MirrorInside) -> Self {
+        let both = Self::MIRROR_INSIDE_SET | Self::MIRROR_INSIDE;
+        Self(match mirror {
+            MirrorInside::Unset => self.0 & !both,
+            MirrorInside::On => self.0 | both,
+            MirrorInside::Off => (self.0 | Self::MIRROR_INSIDE_SET) & !Self::MIRROR_INSIDE,
+        })
+    }
+
+    /// The contents not clipping faces of their own type, `set_clips_same_type(false)`
+    /// (QBSP-15.15).
+    pub(crate) const fn without_clipping_same_type(self) -> Self {
+        Self(self.0 | Self::SUPPRESS_CLIPPING_SAME_TYPE)
+    }
+
+    /// The contents of a `func_illusionary_visblocker`'s brush (QBSP-15.15): no visible
+    /// contents, detail or translucency, but the visblocker's.
+    pub(crate) const fn as_visblocker(self) -> Self {
+        Self(
+            (self.0 & !(Self::ALL_VISIBLE | Self::DETAIL | Self::TRANSLUCENT))
+                | Self::ILLUSIONARY_VISBLOCKER,
+        )
+    }
 
     /// The contents of `flags`, `contentflags_t::make`.
     pub(crate) const fn new(flags: u64) -> Self {
@@ -355,6 +380,17 @@ const CONTENTS_SLIME: i32 = -4;
 const CONTENTS_LAVA: i32 = -5;
 /// `CONTENTS_SKY`.
 const CONTENTS_SKY: i32 = -6;
+
+/// What an entity's `_mirrorinside` key says of its brushes' insides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MirrorInside {
+    /// No key: the contents' own default.
+    Unset,
+    /// Nonzero: the faces are mirrored inside.
+    On,
+    /// Zero: they are not.
+    Off,
+}
 
 /// Quake's native contents, `CONTENTS_EMPTY` to `CONTENTS_SKY` (`bspfile_q1.hh`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

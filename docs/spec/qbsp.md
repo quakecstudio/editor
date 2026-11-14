@@ -683,3 +683,64 @@ point on a plane (`mathlib.hh`).
   case: `origin` origin; `hint` or `hintskip` empty; `clip` player clip; a name starting `*` lava
   ("`*lava`"), slime ("`*slime`") or else water, detail and translucent while `-transwater`, its
   default, is on; a name starting `sky` sky; anything else solid.
+- **QBSP-15.14** A face's plane is its three points' (`mapface_t::set_planepts`): the normal of
+  "`qv::cross(ab, cb)`" with `ab = p0 - p1` and `cb = p2 - p1`, normalized, a zero vector left
+  as it is (`qv::normalize`), and "`double dist = qv::dot(planepts[1], normal)`"; the plane is
+  added to the table even when "`length >= NORMAL_EPSILON`" fails, and the face is then dropped
+  ("Brush plane with no normal"). A face whose plane is `qv::epsilonEqual` to an earlier face's
+  in the brush is dropped (`ParseBrush`, "Brush with duplicate plane"); one on the opposite
+  plane is kept. Two planes are `epsilonEqual` when both are axial, of one type and with the
+  same normal component on it, and their distances within `DIST_EPSILON`; otherwise when their
+  distances are within `DIST_EPSILON` and each normal component within `NORMAL_EPSILON`
+  (`qbsp.cc`).
+- **QBSP-15.15** A brush's contents (`Brush_GetContents`) are those of its first face whose
+  texture's contents (QBSP-15.13) are not empty, "`contentflags_t::make(EWT_VISCONTENTS_EMPTY)`"
+  when none is; a later face of another type ends the search ("the former will be used"). The
+  entity's `_mirrorinside`, when present, sets mirror inside on when nonzero and off when zero
+  (`set_mirrored`), and with no key both flags are cleared; a nonzero `_noclipfaces` sets
+  "`EWT_CFLAG_SUPPRESS_CLIPPING_SAME_TYPE`" (`set_clips_same_type(false)`). A
+  `func_illusionary_visblocker`'s contents lose every visible contents, detail and translucency
+  and become "`EWT_VISCONTENTS_ILLUSIONARY_VISBLOCKER`".
+- **QBSP-15.16** A face's texture (`FindMiptex`, Quake) is the name after its last `/`, found
+  among the map's textures in any case (`Q_strcasecmp`) or added; it is found while the texture
+  definition is read, before the face can be dropped (QBSP-15.14). Its surface flags
+  (`SurfFlagsForEntity`): nodraw for `skip`, `*waterskip`, `*slimeskip`, `*lavaskip`, `bevel` or
+  `null` (`IsSkipName`); hint for `hint` or `hintskip` (`IsHintName`); `TEX_SPECIAL` for a name
+  starting `*` unless the entity's `_litwater`, or else `_splitturb`, is above 0, or one starting
+  `sky` (`IsSpecialName`), each in any case. A face nodraw, hint or hintskip gets the standard
+  axes of its plane with no shift, rotation or scale, "to save on texinfo". The texinfo is found
+  (`FindTexinfo`) by exact comparison or added; its axes are `float`.
+- **QBSP-15.17** In a brush with a hint face, every face that is not hint is marked hintskip
+  (`ParseBrush`: "any face in a hint brush that isn't HINT are treated as \"hintskip\""); when
+  every face is hintskip, none is ("which is invalid; ignoring this"). A brush with no face left
+  is not kept (`ParseEntity`), nor any brush of an entity whose `_omitbrushes` is nonzero.
+- **QBSP-15.18** A brush's bounds (`CalculateBrushBounds`) are around its sides' polygons: each
+  side's plane's square of the world's extent (QBSP-15.7) clipped to the front of the opposite
+  of each other side's plane but the bevels' with no epsilon (`clip_front(..., 0)`), until
+  nothing is left; a side clipped away keeps the polygon it had.
+- **QBSP-15.19** The world's extent (`CalculateWorldExtent`) is "`ceil((extents +
+  hull_extents) * 2) + SIDESPACE`", `SIDESPACE` 24: `extents` the largest absolute coordinate of
+  any brush corner, each point where three of a brush's planes meet (`GetIntersection`, none
+  when "`denom == 0.f`") that no plane has more than `NORMAL_EPSILON` in front
+  (`GetBrushExtents`); `hull_extents` the largest absolute coordinate of the hull sizes
+  (QBSP-15.12). It is measured after every map is read and before any brush's bounds.
+- **QBSP-15.20** Each brush gets bevels (`AddBrushBevels`, `QBSP3`): for each axis and each
+  direction, -1 then 1, a side whose normal on the axis "`== dir`" exactly, or a new one at the
+  bounds' maximum or minus minimum with the first side's texture; the side found is swapped into
+  place so the six come first in the order -x, +x, -y, +y, -z, +z. A brush of six sides is done.
+  Otherwise each edge of each side from the seventh on that is at least 0.5 long and, its
+  direction snapped (`qv::Snap`, a component within `NORMAL_EPSILON` of 1 or -1 making it that
+  axis alone), not along an axis, gives for each axis and direction the plane of "`qv::cross(vec,
+  plane.normal)`" through the edge's first point, when that cross product's length is at least
+  `ANGLEEPSILON` (`NORMAL_EPSILON`), no side's plane is `epsilonEqual` to it and every side's
+  polygon has no point more than `-epsilon` (0.0001) in front of it. Bevels are never drawn and
+  never clip the bounds.
+- **QBSP-15.21** An origin brush (contents origin, QBSP-15.13) is removed from its entity
+  (`ProcessMapBrushes`); in an entity that is not the world and has no `origin` yet, its bounds'
+  centre becomes the origin and the `origin` key. An entity whose classname starts `rotate_`, in
+  any case, with no origin brush takes the origin of the entity whose `targetname` is its
+  `target`, in any case, read into a `qvec3f`, or 0 0 0 with none (`FixRotateOrigin`). An entity
+  with either has each face's texture offsets increased by the origin along their axes and each
+  plane's distance decreased by "`qv::dot(plane.normal, entity.origin)`", and its bounds found
+  again. A brush's chop order is the entity's `_chop_order`, else 1 when `_chop` is 0, else 0;
+  the brushes are chopped in the order of chop order then line (`sort_key`).

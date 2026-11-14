@@ -3,8 +3,9 @@
 // Copyright (C) 1997       Greg Lewis
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/map.cc, add_plane, find_plane_nonfatal, add_or_find_plane
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/qbsp.cc, normalize
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/map.cc, add_plane, find_plane_nonfatal, add_or_find_plane, GetIntersection
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/qbsp.cc, normalize, epsilonEqual
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/qvec.hh, normalizeInPlace
 
 //! Double-precision vectors, planes, bounds and the plane table, as ericw-tools' qbsp keeps
 //! them in `qvec3d`, `qplane3d`, `aabb3d` and `mapdata_t::planes` (QBSP-15.1 to QBSP-15.4).
@@ -57,11 +58,23 @@ pub(crate) fn length(v: Vec3) -> f64 {
     dot(v, v).sqrt()
 }
 
-/// `v` scaled to length 1, `qv::normalize`: divided by its length.
+/// `v` scaled to length 1, `qv::normalize`: divided by its length, or itself when that is 0.
 pub(crate) fn normalize(v: Vec3) -> Vec3 {
-    let l = length(v);
-    [v[0] / l, v[1] / l, v[2] / l]
+    normalize_with_length(v).0
 }
+
+/// `v` scaled to length 1 and its length before, `qv::normalizeInPlace`.
+pub(crate) fn normalize_with_length(v: Vec3) -> (Vec3, f64) {
+    let l = length(v);
+    let zero = l == 0.0;
+    if zero {
+        return (v, l);
+    }
+    ([v[0] / l, v[1] / l, v[2] / l], l)
+}
+
+/// How near a plane a point is on it in the brush checks, qbsp's `-epsilon` option's default.
+pub(crate) const POINT_EPSILON: f64 = 0.0001;
 
 /// A plane: its normal and its distance from the origin along it, `qplane3d`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -120,6 +133,25 @@ pub(crate) enum Facing {
     AsGiven,
     /// Turned to face its axis's positive side.
     Positive,
+}
+
+impl Plane {
+    /// The point where it meets `p2` and `p3`, `GetIntersection` (QBSP-15.19); `None` when the
+    /// three normals' triple product is exactly 0.
+    pub(crate) fn intersection(self, p2: Self, p3: Self) -> Option<Vec3> {
+        let denom = dot(self.normal, cross(p2.normal, p3.normal));
+        if denom == 0.0 {
+            return None;
+        }
+        let sum = sub(
+            sub(
+                scale(cross(p2.normal, p3.normal), self.dist),
+                scale(cross(p3.normal, self.normal), -p2.dist),
+            ),
+            scale(cross(self.normal, p2.normal), -p3.dist),
+        );
+        Some(sum.map(|c| c / denom))
+    }
 }
 
 /// The axial types, each with its unit normal.
@@ -202,6 +234,28 @@ impl BspPlane {
             kind: self.kind,
         }
     }
+
+    /// Whether `other` is the same plane within [`NORMAL_EPSILON`] and [`DIST_EPSILON`],
+    /// `qv::epsilonEqual` (QBSP-15.14): two axial planes only when of one type and facing one
+    /// way, their distances within epsilon; any other pair when the distances and each normal
+    /// component are.
+    pub(crate) fn epsilon_equal(&self, other: &Self) -> bool {
+        let near = |a: f64, b: f64, epsilon: f64| (a - b).abs() <= epsilon;
+        if self.kind.is_axial() && other.kind.is_axial() {
+            let axis = self.kind.axis();
+            let same_way = self.plane.normal.get(axis) == other.plane.normal.get(axis);
+            return self.kind == other.kind
+                && same_way
+                && near(self.plane.dist, other.plane.dist, DIST_EPSILON);
+        }
+        near(self.plane.dist, other.plane.dist, DIST_EPSILON)
+            && self
+                .plane
+                .normal
+                .iter()
+                .zip(other.plane.normal)
+                .all(|(a, b)| near(*a, b, NORMAL_EPSILON))
+    }
 }
 
 /// An axis-aligned box, `aabb3d`; empty until a point is added.
@@ -229,6 +283,11 @@ impl Bounds {
             *lo = lo.min(c);
             *hi = hi.max(c);
         }
+    }
+
+    /// Its middle, `aabb3d::centroid`.
+    pub(crate) fn centroid(&self) -> Vec3 {
+        scale(add(self.mins, self.maxs), HALF)
     }
 
     /// Whether any point was added.
