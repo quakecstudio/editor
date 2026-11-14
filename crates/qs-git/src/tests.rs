@@ -189,6 +189,10 @@ fn unstaging_a_hunk_or_a_file() {
         repo.unstage_hunk(&file, HunkIndex::new(5)),
         Err(crate::GitError::NoHunk(index)) if index == HunkIndex::new(5)
     ));
+    assert_eq!(
+        crate::GitError::NoHunk(HunkIndex::new(5)).to_string(),
+        "the file has no hunk 5"
+    );
     repo.unstage(&file).unwrap();
     assert_eq!(porcelain(&dir), [" M a.qc"]);
 

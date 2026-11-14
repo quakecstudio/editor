@@ -169,6 +169,10 @@ fn checkpoints_are_listed_and_errors_reported() {
     assert_eq!(listed.len(), 2);
     assert_eq!(listed[1], second);
     assert_eq!(
+        (second.number.get(), second.number.to_string()),
+        (2, "2".to_owned())
+    );
+    assert_eq!(
         (
             listed[0].number.get(),
             listed[0].label.as_str(),

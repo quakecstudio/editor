@@ -288,6 +288,15 @@ mod tests {
         parts.iter().collect()
     }
 
+    // No spec statement: the running platform's font folders are its own, read from the
+    // process environment, and every platform has a system folder of fonts
+    #[test]
+    fn the_running_platforms_font_folders_are_read_from_the_environment() {
+        let dirs = current_font_dirs();
+        assert_eq!(dirs, Platform::current().font_dirs(std::env::var_os));
+        assert!(dirs.iter().any(|dir| dir.is_absolute()), "{dirs:?}");
+    }
+
     #[test]
     fn macos_uses_library_folders() {
         let dirs = Platform::MacOs
