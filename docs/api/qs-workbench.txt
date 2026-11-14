@@ -120,6 +120,8 @@ const qs_workbench::map_profile::Variable::ALL
 const qs_workbench::map_textures::MAP_TEXTURES
 const qs_workbench::map_uv::MAP_FACE_ALIGN
 const qs_workbench::map_uv::MAP_FACE_UV
+const qs_workbench::open_paths::OPEN_PATHS
+const qs_workbench::open_paths::TAKE_OPENED_PATHS
 const qs_workbench::preview::BREAKPOINT
 const qs_workbench::preview::CHOOSE_GAME
 const qs_workbench::preview::CONSOLE
@@ -604,6 +606,13 @@ field qs_workbench::map_uv::FaceRef.entity
 field qs_workbench::map_uv::FaceRef.face
 field qs_workbench::map_uv::FaceUvParams.edit
 field qs_workbench::map_uv::FaceUvParams.faces
+field qs_workbench::open_paths::NotOpened.path
+field qs_workbench::open_paths::NotOpened.reason
+field qs_workbench::open_paths::OpenPathsParams.paths
+field qs_workbench::open_paths::PathsOpened.file
+field qs_workbench::open_paths::PathsOpened.map
+field qs_workbench::open_paths::PathsOpened.not_opened
+field qs_workbench::open_paths::PathsOpened.project
 field qs_workbench::preview::BreakpointParams.file
 field qs_workbench::preview::BreakpointParams.line
 field qs_workbench::preview::ChooseGameParams.path
@@ -887,6 +896,7 @@ fn qs_workbench::map_textures::TextureSources::size
 fn qs_workbench::map_textures::TextureSources::watched
 fn qs_workbench::map_uv::FaceIndex::get
 fn qs_workbench::map_uv::FaceIndex::new
+fn qs_workbench::open_paths::Workbench::open_paths
 fn qs_workbench::preview::ConsoleLine::is_error
 fn qs_workbench::preview::ConsoleLine::matches
 fn qs_workbench::preview::HasPreview::workbench_and_preview
@@ -1065,6 +1075,7 @@ mod qs_workbench::map_edit
 mod qs_workbench::map_profile
 mod qs_workbench::map_textures
 mod qs_workbench::map_uv
+mod qs_workbench::open_paths
 mod qs_workbench::preview::debug
 mod qs_workbench::preview::dock
 mod qs_workbench::preview::engine
@@ -1220,6 +1231,9 @@ struct qs_workbench::map_uv::FaceAlignParams
 struct qs_workbench::map_uv::FaceIndex
 struct qs_workbench::map_uv::FaceRef
 struct qs_workbench::map_uv::FaceUvParams
+struct qs_workbench::open_paths::NotOpened
+struct qs_workbench::open_paths::OpenPathsParams
+struct qs_workbench::open_paths::PathsOpened
 struct qs_workbench::preview::BreakpointParams
 struct qs_workbench::preview::ChooseGameParams
 struct qs_workbench::preview::ConsoleLine
@@ -1391,7 +1405,6 @@ use qs_workbench::WATCH = crate::preview::WATCH
 use qs_workbench::WatchParams = crate::preview::WatchParams
 use qs_workbench::debug = crate::preview::debug
 use qs_workbench::dock = crate::preview::dock
-use qs_workbench::enclosing = qc_project::enclosing
 use qs_workbench::engine = crate::preview::engine
 use qs_workbench::entities = crate::preview::entities
 use qs_workbench::game_files = crate::preview::game_files

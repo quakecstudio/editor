@@ -6,5 +6,6 @@ Exec=quakec-studio %F
 Icon=com.quakecstudio.QuakeCStudio
 Terminal=false
 Categories=Development;IDE;
-MimeType=text/x-quakec;text/x-quake-map;application/x-quake-bsp;inode/directory;
+# No inode/directory, as Zed leaves it out: some desktops then make the app the folder browser.
+MimeType=text/x-quakec;text/x-quake-map;application/x-quake-bsp;
 StartupWMClass=quakec-studio

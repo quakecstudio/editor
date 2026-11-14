@@ -91,6 +91,7 @@ use qs_workbench::map_profile::{
     MAP_CHOOSE_PROFILE, MAP_PROFILES, MAP_RUN_PROFILE, Profile, ProfileRun, RunProfileParams,
 };
 use qs_workbench::map_textures::TextureSources;
+use qs_workbench::open_paths::{OPEN_PATHS, OpenPathsParams, PathsOpened, TAKE_OPENED_PATHS};
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
@@ -1093,38 +1094,31 @@ impl Shell {
         Ok(())
     }
 
-    /// Opens what macOS or the command line hands the app: a folder as a project, and a file in
-    /// its project (PRJ-1.6), opening that first unless it is the one open; a `.map` or `.bsp`
-    /// then opens in the map editor and any other file in the editor. A file with no project
-    /// above it opens in the open project, or opens its folder, as Open Folder does, when none
-    /// is open; a map needs none.
+    /// Opens what macOS or the command line hands the app, through `paths.open`: folders as
+    /// projects and files in their projects (PRJ-1.6). The next frame shows them.
     pub fn open_paths(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
-        for path in paths {
-            let path = std::path::absolute(&path).unwrap_or(path);
-            if path.is_dir() {
-                if let Err(error) = self.open_project(&path) {
-                    tracing::warn!(%error, "project not opened");
-                }
-                continue;
-            }
-            let is_map = path.extension().is_some_and(|extension| {
-                extension.eq_ignore_ascii_case(MAP_EXTENSION)
-                    || extension.eq_ignore_ascii_case(BSP_EXTENSION)
-            });
-            let open = self.workbench().root().map(Path::to_path_buf);
-            let project = match qs_workbench::enclosing(&mut FsLoader, &path) {
-                Some(dir) if open.as_ref() != Some(&dir) => Some(dir),
-                Some(_) => None,
-                None if open.is_none() && !is_map => path.parent().map(Path::to_path_buf),
-                None => None,
-            };
-            if let Some(project) = project
-                && let Err(error) = self.open_project(&project)
-            {
-                tracing::warn!(%error, "project not opened");
-            }
-            self.jump(Jump { path, offset: 0 });
+        let params = OpenPathsParams {
+            paths: paths.into_iter().collect(),
+        };
+        let _: Option<PathsOpened> = self.run(OPEN_PATHS, &params);
+    }
+
+    /// Shows what `paths.open` opened since the last frame, from this window or another launch
+    /// of the app over its socket: the editor for a file (the map editor shows a map by
+    /// itself), and the window comes to the front, as Zed's does.
+    fn follow_opened_paths(&mut self, ctx: &egui::Context) {
+        let taken: Option<Option<PathsOpened>> =
+            self.run(TAKE_OPENED_PATHS, &serde_json::json!({}));
+        let Some(Some(opened)) = taken else {
+            return;
+        };
+        for not_opened in &opened.not_opened {
+            tracing::warn!(path = %not_opened.path.display(), reason = %not_opened.reason, "not opened");
         }
+        if opened.file.is_some() && opened.map.is_none() {
+            self.centre_tab = CentreTab::Editor;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
 
     /// Opens the file a panel's row asks for, through its command, and shows the editor; a
@@ -1669,6 +1663,7 @@ impl Shell {
         {
             ui.ctx().request_repaint();
         }
+        self.follow_opened_paths(ui.ctx());
         if self.session.context().preview.state() != PlayState::Stopped {
             let polled: Option<PreviewStatus> = self.run(POLL, &serde_json::json!({}));
             // BRIDGE-3.5: a click in the paused game picked an edict; open its spawn function.

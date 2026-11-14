@@ -33,7 +33,7 @@ use crate::icons::Icon;
 use crate::keymap;
 use crate::map_tools::Readout;
 use crate::palette::highlighted;
-use crate::shell::{EDITOR_AREA, PointerHeld, commanded_size, dragged_size};
+use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, commanded_size, dragged_size};
 use crate::strings::{Text, command_count, exit_status, match_count, missing_textures};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -3364,4 +3364,55 @@ fn opened_files_open_in_their_project() {
     assert_eq!(shell.workbench().root(), Some(root.join("loose").as_path()));
     shell.open_paths([root.join("mod/qc")]);
     assert_eq!(shell.workbench().root(), Some(project.as_path()));
+}
+
+// spec PRJ-1.6: a second launch with paths hands them to the window already running, over the
+// app's socket, which opens them in their project and shows them; with no paths, or no window
+// answering, the launch opens its own
+#[test]
+fn a_second_launch_hands_its_paths_to_the_running_window() {
+    let dir = TempDir::new("forward");
+    let project = dir.path().join("mod");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("progs.src"), "progs.dat\nworld.qc\n").unwrap();
+    fs::write(project.join("world.qc"), "void() worldspawn = {};\n").unwrap();
+    let socket = if cfg!(windows) {
+        PathBuf::from(format!(
+            r"\\.\pipe\quakec-studio-forward-{}",
+            std::process::id()
+        ))
+    } else {
+        dir.path().join("app.sock")
+    };
+    let world = project.join("world.qc");
+    assert!(!crate::forward_paths(&socket, std::slice::from_ref(&world)));
+
+    let ctx = egui::Context::default();
+    let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
+    let (woken, wake) = std::sync::mpsc::channel();
+    let host = Host::listen(&socket, move || {
+        let _sent = woken.send(());
+    })
+    .unwrap();
+    app.shell_mut().set_host(host);
+    assert!(!crate::forward_paths(&socket, &[]));
+    let start = project.join("start.map");
+    fs::write(&start, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    app.shell_mut().open_paths([start]);
+    frame(&ctx, &mut app);
+    assert_eq!(app.shell().centre_tab(), CentreTab::Map);
+    let forwarded = std::thread::spawn({
+        let world = world.clone();
+        move || crate::forward_paths(&socket, &[world])
+    });
+    wake.recv().unwrap();
+    frame(&ctx, &mut app);
+    assert!(forwarded.join().unwrap());
+    let workbench = app.shell().workbench();
+    assert_eq!(workbench.root(), Some(project.as_path()));
+    assert_eq!(
+        workbench.open().map(|open| open.path().to_path_buf()),
+        Some(world)
+    );
+    assert_eq!(app.shell().centre_tab(), CentreTab::Editor);
 }

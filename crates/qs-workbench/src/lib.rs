@@ -29,6 +29,7 @@ pub mod map_edit;
 pub mod map_profile;
 pub mod map_textures;
 pub mod map_uv;
+pub mod open_paths;
 mod preview;
 mod recent;
 pub mod search;
@@ -56,7 +57,7 @@ pub use qc_ide::{
     Code, Completion, Config, DefKind, Diagnostic, FileEdit, FileRange, Highlight, HighlightKind,
     Hover, Modifier, Modifiers, RenameError, Severity, Span, Symbol, SymbolKind, SyntaxClass,
 };
-pub use qc_project::{Dialect, FsLoader, Loader, Target, enclosing};
+pub use qc_project::{Dialect, FsLoader, Loader, Target};
 
 pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
@@ -350,6 +351,8 @@ pub struct Workbench<L> {
     map: Option<map_edit::MapDocument>,
     /// The compile profile chosen, which `map.run_profile` runs when given none (P6-20).
     profile: Option<String>,
+    /// What the last `paths.open` opened, until the window takes it.
+    opened_paths: Option<open_paths::PathsOpened>,
 }
 
 impl<L: Loader> Workbench<L> {
@@ -373,6 +376,7 @@ impl<L: Loader> Workbench<L> {
             terminals: terminal::Terminals::default(),
             map: None,
             profile: None,
+            opened_paths: None,
         }
     }
 

@@ -53,6 +53,12 @@ fn main() -> ExitCode {
         .as_ref()
         .ok()
         .map(|dirs| dirs.app_socket().to_path_buf());
+    // A file opened from Explorer or a file manager while the app runs goes to that copy.
+    if let Some(socket) = &app_socket
+        && quakec_studio::forward_paths(socket, &paths)
+    {
+        return ExitCode::SUCCESS;
+    }
     let agent_file = dirs
         .as_ref()
         .ok()

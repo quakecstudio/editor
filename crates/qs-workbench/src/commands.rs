@@ -21,6 +21,7 @@ use crate::export::ExportProject;
 use crate::map_check::register_map;
 use crate::map_edit::register_map_edit;
 use crate::map_textures::register_map_textures;
+use crate::open_paths::register_open_paths;
 use crate::search::register_search;
 use crate::staged::register_staged;
 use crate::testing::register_tests;
@@ -145,6 +146,7 @@ pub fn register<C: HasWorkbench + 'static>(
     register_map(registry)?;
     register_map_edit(registry)?;
     register_map_textures(registry)?;
+    register_open_paths(registry)?;
     register_search(registry)?;
     register_tests(registry)?;
     register_checkpoints(registry)?;

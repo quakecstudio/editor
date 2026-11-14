@@ -60,14 +60,18 @@ project or game folder on the Desktop, in Documents or Downloads, or on a networ
 removable volume, and declares the QuakeC source type (`.qc`, `.qh`) and the map (`.map`) and
 BSP (`.bsp`) types so Finder names them.
 
-Every package registers those four file types and folders, so the system offers the app
-under Open With, and the app opens each in its project (PRJ-1.6): `CFBundleDocumentTypes` in
-the Info.plist, the owner of QuakeC source and an alternative for maps, BSPs and folders; on
-Linux the MIME types of `packaging/linux/com.quakecstudio.QuakeCStudio.xml`, which the desktop
-entry lists and passes as `%F`; and in the MSI a ProgID for each kind, with the app under each
-extension's Open With and the default for none. macOS hands the files to a running app
-through the app delegate, which `apps/desktop/src/open_documents.rs` adds to winit's, the
-app's one use of `unsafe`; Windows and Linux start the app with them as its arguments. The
+Every package registers those four file types, so the system offers the app under Open With,
+and the app opens each in its project (`paths.open`, PRJ-1.6), as Zed does:
+`CFBundleDocumentTypes` in the Info.plist, the owner of QuakeC source and an alternative for
+maps, BSPs and folders; on Linux the MIME types of
+`packaging/linux/com.quakecstudio.QuakeCStudio.xml`, which the desktop entry lists and passes
+as `%F`, without `inode/directory`, which can make some desktops use the app as their folder
+browser; and in the MSI a ProgID for each kind, with the app under each extension's Open With
+and the default for none. macOS hands the files to the running app through the app delegate,
+which `apps/desktop/src/open_documents.rs` adds to winit's, the app's one use of `unsafe`.
+Windows and Linux start the app with them as its arguments, and a launch with paths first
+hands them to the copy already running over the app's socket and exits when it takes them,
+as Zed's launches do over a named pipe and a Unix socket. The
 Windows `quakec-studio.exe` carries the icon (`packaging/windows/quakec-studio.ico`, the SVG
 again) and its version information, which `apps/desktop/build.rs` embeds with winresource.
 

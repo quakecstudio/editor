@@ -126,6 +126,8 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.textures`](#maptextures) | Lists the open map's textures: those of the WADs its world names, found in the project, beside the map or in the game, and of the BSP it was opened from, each with its size and how many faces use it, and the names its faces use that nothing holds. |
 | [`map.unlock_all`](#mapunlock_all) | Unlocks every entity of the open map locked in the editor; a locked layer stays locked. |
 | [`map.unstage`](#mapunstage) | Ends the open map's review when nothing waits in it, as after an agent's map command that changed nothing; a review with hunks is left open. |
+| [`paths.open`](#pathsopen) | Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open. |
+| [`paths.take_opened`](#pathstake_opened) | Takes what the last paths.open opened, once, or null: the desktop app shows it and comes to the front when another launch sent the paths. |
 | [`preview.breakpoint`](#previewbreakpoint) | Adds a breakpoint at a line of a file, or takes it away when there is one; set in the running game too and in each game that starts. |
 | [`preview.choose_game`](#previewchoose_game) | Chooses the folder the preview reads the game from, in place, and says what it holds; a folder that cannot be played is not kept. |
 | [`preview.console`](#previewconsole) | Runs a command in the running game's console. |
@@ -5656,6 +5658,50 @@ Parameters:
 ## `map.unstage`
 
 Ends the open map's review when nothing waits in it, as after an agent's map command that changed nothing; a review with hunks is left open.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The command takes no parameters: pass the empty object {}.",
+  "title": "No parameters",
+  "type": "object"
+}
+```
+
+## `paths.open`
+
+Opens folders as projects, and files in the nearest project above each (a folder holding quakec.toml or progs.src): a .map or .bsp in the map editor, any other file in the editor. A file outside every project opens in the open project, or opens its folder when none is open.
+
+Parameters:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The parameters of `paths.open`.",
+  "properties": {
+    "paths": {
+      "description": "Folders to open as projects, and files to open in the nearest project above each, in\norder; a path relative to the app's working directory is made absolute.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "paths"
+  ],
+  "title": "OpenPathsParams",
+  "type": "object"
+}
+```
+
+## `paths.take_opened`
+
+Takes what the last paths.open opened, once, or null: the desktop app shows it and comes to the front when another launch sent the paths.
 
 Parameters:
 
