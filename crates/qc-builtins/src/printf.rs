@@ -47,6 +47,16 @@ struct Flags {
     plus: bool,
 }
 
+/// Whether a conversion may pad with zeros under the `0` flag: not a character or a string, not
+/// an integer with a precision, not an infinity or a NaN.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ZeroPad {
+    /// Zeros between the sign and the digits.
+    Allowed,
+    /// Spaces.
+    Never,
+}
+
 /// Whether a numeric argument is read as a float or an integer (`isfloat`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -122,7 +132,7 @@ pub(crate) fn sprintf(
                 let Some(directive) = reader.directive(args) else {
                     break;
                 };
-                if out.has_room() && !convert(&directive, &reader, args, &mut out)? {
+                if out.has_room() && !directive.convert(&reader, args, &mut out)? {
                     break;
                 }
                 reader.at = reader.at.saturating_add(1);
@@ -366,133 +376,281 @@ fn float_to_i32(value: f32) -> i32 {
     i32::try_from(to_i64(f64::from(value))).unwrap_or(i32::MIN)
 }
 
-/// `GETARG_SNUMERIC (int64_t, a)`.
-fn signed_arg(d: &Directive, args: &dyn Args, first: usize) -> i64 {
-    match (d.wide, d.kind) {
-        (true, Kind::Float) => to_i64(f64::from_bits(wide_bits(args, first, d.arg))),
-        (true, Kind::Integer) => i64::from_ne_bytes(wide_bits(args, first, d.arg).to_ne_bytes()),
-        (false, Kind::Float) => to_i64(f64::from(float_arg(args, first, d.arg))),
-        (false, Kind::Integer) => i64::from(int_arg(args, first, d.arg)),
-    }
-}
-
-/// `GETARG_UNUMERIC (uint64_t, a)`.
-fn unsigned_arg(d: &Directive, args: &dyn Args, first: usize) -> u64 {
-    match (d.wide, d.kind) {
-        (true, Kind::Float) => to_u64(f64::from_bits(wide_bits(args, first, d.arg))),
-        (true, Kind::Integer) => wide_bits(args, first, d.arg),
-        (false, Kind::Float) => to_u64(f64::from(float_arg(args, first, d.arg))),
-        (false, Kind::Integer) => u64::from(u32::from_ne_bytes(
-            int_arg(args, first, d.arg).to_ne_bytes(),
-        )),
-    }
-}
-
-/// `GETARG_SNUMERIC (double, a)`.
-fn double_arg(d: &Directive, args: &dyn Args, first: usize) -> f64 {
-    match (d.wide, d.kind) {
-        (true, Kind::Float) => f64::from_bits(wide_bits(args, first, d.arg)),
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "BUILTIN-18.8: C's (double) of an int64_t rounds to nearest as this does"
-        )]
-        (true, Kind::Integer) => {
-            i64::from_ne_bytes(wide_bits(args, first, d.arg).to_ne_bytes()) as f64
-        }
-        (false, Kind::Float) => f64::from(float_arg(args, first, d.arg)),
-        (false, Kind::Integer) => f64::from(int_arg(args, first, d.arg)),
-    }
-}
-
-/// Writes directive `d`; `false` for a conversion letter vkQuake does not know, which ends
-/// the output.
-fn convert(
-    d: &Directive,
-    reader: &Reader<'_>,
-    args: &mut dyn Args,
-    out: &mut Out,
-) -> Result<bool, BuiltinError> {
-    let first = reader.first;
-    let text = match d.conversion {
-        b'd' | b'i' => {
-            let value = signed_arg(d, &*args, first);
-            let sign = if value < 0 {
-                "-"
-            } else if d.flags.plus {
-                "+"
-            } else if d.flags.space {
-                " "
-            } else {
-                ""
-            };
-            integer(d, sign, value.unsigned_abs().to_string(), "", value == 0)
-        }
-        b'o' | b'u' | b'x' | b'X' | b'p' | b'P' => {
-            let value = unsigned_arg(d, &*args, first);
-            let (digits, prefix) = match d.conversion {
-                b'o' => (format!("{value:o}"), ""),
-                b'u' => (value.to_string(), ""),
-                b'x' | b'p' => (format!("{value:x}"), if value == 0 { "" } else { "0x" }),
-                _ => (format!("{value:X}"), if value == 0 { "" } else { "0X" }),
-            };
-            let prefix = if d.flags.alternate { prefix } else { "" };
-            integer(d, "", digits, prefix, value == 0)
-        }
-        b'e' | b'E' | b'f' | b'F' | b'g' | b'G' => {
-            floating(d, d.conversion, double_arg(d, &*args, first))
-        }
-        b'v' | b'V' => {
-            let conversion = if d.conversion == b'v' { b'g' } else { b'G' };
-            let mut parts = Vec::new();
-            for offset in 0..3 {
-                let value = if present(&*args, first, d.arg) {
-                    let word = args.word(d.arg, offset);
-                    match d.kind {
-                        Kind::Float => f64::from(f32::from_bits(word)),
-                        Kind::Integer => f64::from(i32::from_ne_bytes(word.to_ne_bytes())),
-                    }
-                } else {
-                    0.0
-                };
-                parts.push(floating(d, conversion, value));
+impl Directive {
+    /// `GETARG_SNUMERIC (int64_t, a)`.
+    fn signed_arg(&self, args: &dyn Args, first: usize) -> i64 {
+        match (self.wide, self.kind) {
+            (true, Kind::Float) => to_i64(f64::from_bits(wide_bits(args, first, self.arg))),
+            (true, Kind::Integer) => {
+                i64::from_ne_bytes(wide_bits(args, first, self.arg).to_ne_bytes())
             }
-            parts.join(&b' ')
+            (false, Kind::Float) => to_i64(f64::from(float_arg(args, first, self.arg))),
+            (false, Kind::Integer) => i64::from(int_arg(args, first, self.arg)),
         }
-        b'c' => {
-            let value = match d.kind {
-                Kind::Float => to_i64(f64::from(float_arg(&*args, first, d.arg))),
-                Kind::Integer => i64::from(int_arg(&*args, first, d.arg)),
+    }
+
+    /// `GETARG_UNUMERIC (uint64_t, a)`.
+    fn unsigned_arg(&self, args: &dyn Args, first: usize) -> u64 {
+        match (self.wide, self.kind) {
+            (true, Kind::Float) => to_u64(f64::from_bits(wide_bits(args, first, self.arg))),
+            (true, Kind::Integer) => wide_bits(args, first, self.arg),
+            (false, Kind::Float) => to_u64(f64::from(float_arg(args, first, self.arg))),
+            (false, Kind::Integer) => u64::from(u32::from_ne_bytes(
+                int_arg(args, first, self.arg).to_ne_bytes(),
+            )),
+        }
+    }
+
+    /// `GETARG_SNUMERIC (double, a)`.
+    fn double_arg(&self, args: &dyn Args, first: usize) -> f64 {
+        match (self.wide, self.kind) {
+            (true, Kind::Float) => f64::from_bits(wide_bits(args, first, self.arg)),
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "BUILTIN-18.8: C's (double) of an int64_t rounds to nearest as this does"
+            )]
+            (true, Kind::Integer) => {
+                i64::from_ne_bytes(wide_bits(args, first, self.arg).to_ne_bytes()) as f64
+            }
+            (false, Kind::Float) => f64::from(float_arg(args, first, self.arg)),
+            (false, Kind::Integer) => f64::from(int_arg(args, first, self.arg)),
+        }
+    }
+
+    /// Writes the directive; `false` for a conversion letter vkQuake does not know, which ends
+    /// the output.
+    fn convert(
+        &self,
+        reader: &Reader<'_>,
+        args: &mut dyn Args,
+        out: &mut Out,
+    ) -> Result<bool, BuiltinError> {
+        let first = reader.first;
+        let text = match self.conversion {
+            b'd' | b'i' => {
+                let value = self.signed_arg(&*args, first);
+                let sign = if value < 0 {
+                    "-"
+                } else if self.flags.plus {
+                    "+"
+                } else if self.flags.space {
+                    " "
+                } else {
+                    ""
+                };
+                self.integer(sign, value.unsigned_abs().to_string(), "")
+            }
+            b'o' | b'u' | b'x' | b'X' | b'p' | b'P' => {
+                let value = self.unsigned_arg(&*args, first);
+                let (digits, prefix) = match self.conversion {
+                    b'o' => (format!("{value:o}"), ""),
+                    b'u' => (value.to_string(), ""),
+                    b'x' | b'p' => (format!("{value:x}"), if value == 0 { "" } else { "0x" }),
+                    _ => (format!("{value:X}"), if value == 0 { "" } else { "0X" }),
+                };
+                let prefix = if self.flags.alternate { prefix } else { "" };
+                self.integer("", digits, prefix)
+            }
+            b'e' | b'E' | b'f' | b'F' | b'g' | b'G' => {
+                self.floating(self.conversion, self.double_arg(&*args, first))
+            }
+            b'v' | b'V' => {
+                let conversion = if self.conversion == b'v' { b'g' } else { b'G' };
+                let mut parts = Vec::new();
+                for offset in 0..3 {
+                    let value = if present(&*args, first, self.arg) {
+                        let word = args.word(self.arg, offset);
+                        match self.kind {
+                            Kind::Float => f64::from(f32::from_bits(word)),
+                            Kind::Integer => f64::from(i32::from_ne_bytes(word.to_ne_bytes())),
+                        }
+                    } else {
+                        0.0
+                    };
+                    parts.push(self.floating(conversion, value));
+                }
+                parts.join(&b' ')
+            }
+            b'c' => {
+                let value = match self.kind {
+                    Kind::Float => to_i64(f64::from(float_arg(&*args, first, self.arg))),
+                    Kind::Integer => i64::from(int_arg(&*args, first, self.arg)),
+                };
+                let byte = value.to_le_bytes().first().copied().unwrap_or(0);
+                self.flags
+                    .pad(self.width, Vec::new(), vec![byte], ZeroPad::Never)
+            }
+            b's' => {
+                let text = self.string_arg(args, first)?;
+                let kept = cut(&text, self.precision);
+                self.flags.pad(self.width, Vec::new(), kept, ZeroPad::Never)
+            }
+            b'S' => {
+                let text = self.string_arg(args, first)?;
+                self.flags.pad(
+                    self.width,
+                    Vec::new(),
+                    cut(&quoted(&text), self.precision),
+                    ZeroPad::Never,
+                )
+            }
+            _ => return Ok(false),
+        };
+        out.write(&text);
+        Ok(true)
+    }
+
+    /// `GETARG_STRING`: the directive's argument's text, empty when it was not passed.
+    fn string_arg(&self, args: &mut dyn Args, first: usize) -> Result<Vec<u8>, BuiltinError> {
+        if present(&*args, first, self.arg) {
+            args.string(self.arg)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// An integer conversion: `digits` of the magnitude, at least `precision` of them and none for
+    /// a zero with precision 0, after `sign` and `prefix`, padded to the width.
+    fn integer(&self, sign: &str, digits: String, prefix: &str) -> Vec<u8> {
+        // Every base writes a zero as `0`.
+        let zero = digits == "0";
+        let mut digits = digits.into_bytes();
+        if let Some(precision) = self.precision {
+            if precision == 0 && zero {
+                digits.clear();
+            }
+            if digits.len() < precision {
+                let mut padded = vec![b'0'; precision.saturating_sub(digits.len())];
+                padded.append(&mut digits);
+                digits = padded;
+            }
+        }
+        if self.conversion == b'o' && self.flags.alternate && digits.first() != Some(&b'0') {
+            digits.insert(0, b'0');
+        }
+        let mut head = sign.as_bytes().to_vec();
+        head.extend_from_slice(prefix.as_bytes());
+        let zeros = if self.precision.is_none() {
+            ZeroPad::Allowed
+        } else {
+            ZeroPad::Never
+        };
+        self.flags.pad(self.width, head, digits, zeros)
+    }
+
+    /// A floating conversion `e`, `E`, `f`, `F`, `g` or `G` of `value`, as glibc writes it.
+    fn floating(&self, conversion: u8, value: f64) -> Vec<u8> {
+        let upper = conversion.is_ascii_uppercase();
+        let sign = if value.is_sign_negative() {
+            "-"
+        } else if self.flags.plus {
+            "+"
+        } else if self.flags.space {
+            " "
+        } else {
+            ""
+        };
+        let magnitude = value.abs();
+        let body = if magnitude.is_nan() {
+            String::from(if upper { "NAN" } else { "nan" })
+        } else if magnitude.is_infinite() {
+            String::from(if upper { "INF" } else { "inf" })
+        } else {
+            let precision = self.precision.unwrap_or(6);
+            let text = match conversion.to_ascii_lowercase() {
+                b'f' => self.flags.fixed(magnitude, precision),
+                b'e' => self.flags.exponent(magnitude, precision),
+                _ => self.flags.general(magnitude, precision),
             };
-            let byte = value.to_le_bytes().first().copied().unwrap_or(0);
-            pad(&d.flags, d.width, Vec::new(), vec![byte], false)
-        }
-        b's' => {
-            let text = string_arg(d, args, first)?;
-            let kept = cut(&text, d.precision);
-            pad(&d.flags, d.width, Vec::new(), kept, false)
-        }
-        b'S' => {
-            let text = string_arg(d, args, first)?;
-            pad(
-                &d.flags,
-                d.width,
-                Vec::new(),
-                cut(&quoted(&text), d.precision),
-                false,
-            )
-        }
-        _ => return Ok(false),
-    };
-    out.write(&text);
-    Ok(true)
+            if upper {
+                text.to_ascii_uppercase()
+            } else {
+                text
+            }
+        };
+        self.flags.pad(
+            self.width,
+            sign.as_bytes().to_vec(),
+            body.into_bytes(),
+            if value.is_finite() {
+                ZeroPad::Allowed
+            } else {
+                ZeroPad::Never
+            },
+        )
+    }
 }
 
-/// `GETARG_STRING`: argument `d.arg`'s text, empty when it was not passed.
-fn string_arg(d: &Directive, args: &mut dyn Args, first: usize) -> Result<Vec<u8>, BuiltinError> {
-    if present(&*args, first, d.arg) {
-        args.string(d.arg)
-    } else {
-        Ok(Vec::new())
+impl Flags {
+    /// `head` and `body` padded to `width`: on the right with `-`, with zeros between them when
+    /// the conversion and the `0` flag allow, else with spaces before.
+    fn pad(&self, width: i64, head: Vec<u8>, body: Vec<u8>, zeros: ZeroPad) -> Vec<u8> {
+        let len = head.len().saturating_add(body.len());
+        let width = usize::try_from(width).unwrap_or(0).min(STRINGTEMP_LENGTH);
+        let fill = width.saturating_sub(len);
+        let mut out = Vec::with_capacity(len.saturating_add(fill));
+        if self.left {
+            out.extend(head);
+            out.extend(body);
+            out.resize(out.len().saturating_add(fill), b' ');
+        } else if self.zero_pad && zeros == ZeroPad::Allowed {
+            out.extend(head);
+            out.resize(out.len().saturating_add(fill), b'0');
+            out.extend(body);
+        } else {
+            out.resize(fill, b' ');
+            out.extend(head);
+            out.extend(body);
+        }
+        out
+    }
+    /// `%f`: the value rounded to `precision` places, a point kept with `#`.
+    fn fixed(&self, value: f64, precision: usize) -> String {
+        let mut text = format!("{value:.precision$}");
+        if precision == 0 && self.alternate {
+            text.push('.');
+        }
+        text
+    }
+    /// `%e`: one digit, `precision` places and an exponent of at least two digits with its sign.
+    fn exponent(&self, value: f64, precision: usize) -> String {
+        let (mantissa, exp) = split_exponent(value, precision);
+        let mut text = mantissa;
+        if precision == 0 && self.alternate {
+            text.push('.');
+        }
+        let sign = if exp < 0 { '-' } else { '+' };
+        text.push('e');
+        text.push(sign);
+        text.push_str(&format!("{:02}", exp.unsigned_abs()));
+        text
+    }
+    /// `%g`: `%e` or `%f` by the exponent `%e` would show, `P` significant digits, and trailing
+    /// zeros and a trailing point removed unless `#`.
+    fn general(&self, value: f64, precision: usize) -> String {
+        let p = precision.max(1);
+        let (_, x) = split_exponent(value, p.saturating_sub(1));
+        let p_i = i64::try_from(p).unwrap_or(i64::MAX);
+        let x = i64::from(x);
+        let text = if p_i > x && x >= -4 {
+            let places = usize::try_from(p_i.saturating_sub(1).saturating_sub(x)).unwrap_or(0);
+            self.fixed(value, places)
+        } else {
+            self.exponent(value, p.saturating_sub(1))
+        };
+        if self.alternate {
+            return text;
+        }
+        let (number, tail) = match text.find('e') {
+            Some(at) => text.split_at(at),
+            None => (text.as_str(), ""),
+        };
+        let number = if number.contains('.') {
+            number.trim_end_matches('0').trim_end_matches('.')
+        } else {
+            number
+        };
+        format!("{number}{tail}")
     }
 }
 
@@ -538,113 +696,6 @@ fn cut(text: &[u8], precision: Option<usize>) -> Vec<u8> {
     text.get(..end).unwrap_or(text).to_vec()
 }
 
-/// An integer conversion: `digits` of the magnitude, at least `precision` of them and none for
-/// a zero with precision 0, after `sign` and `prefix`, padded to the width.
-fn integer(d: &Directive, sign: &str, digits: String, prefix: &str, zero: bool) -> Vec<u8> {
-    let mut digits = digits.into_bytes();
-    if let Some(precision) = d.precision {
-        if precision == 0 && zero {
-            digits.clear();
-        }
-        if digits.len() < precision {
-            let mut padded = vec![b'0'; precision.saturating_sub(digits.len())];
-            padded.append(&mut digits);
-            digits = padded;
-        }
-    }
-    if d.conversion == b'o' && d.flags.alternate && digits.first() != Some(&b'0') {
-        digits.insert(0, b'0');
-    }
-    let mut head = sign.as_bytes().to_vec();
-    head.extend_from_slice(prefix.as_bytes());
-    pad(&d.flags, d.width, head, digits, d.precision.is_none())
-}
-
-/// `head` and `body` padded to `width`: on the right with `-`, with zeros between them when
-/// `zeros` and the `0` flag allow, else with spaces before.
-fn pad(flags: &Flags, width: i64, head: Vec<u8>, body: Vec<u8>, zeros: bool) -> Vec<u8> {
-    let len = head.len().saturating_add(body.len());
-    let width = usize::try_from(width).unwrap_or(0).min(STRINGTEMP_LENGTH);
-    let fill = width.saturating_sub(len);
-    let mut out = Vec::with_capacity(len.saturating_add(fill));
-    if flags.left {
-        out.extend(head);
-        out.extend(body);
-        out.resize(out.len().saturating_add(fill), b' ');
-    } else if flags.zero_pad && zeros {
-        out.extend(head);
-        out.resize(out.len().saturating_add(fill), b'0');
-        out.extend(body);
-    } else {
-        out.resize(fill, b' ');
-        out.extend(head);
-        out.extend(body);
-    }
-    out
-}
-
-/// A floating conversion `e`, `E`, `f`, `F`, `g` or `G` of `value`, as glibc writes it.
-fn floating(d: &Directive, conversion: u8, value: f64) -> Vec<u8> {
-    let upper = conversion.is_ascii_uppercase();
-    let sign = if value.is_sign_negative() {
-        "-"
-    } else if d.flags.plus {
-        "+"
-    } else if d.flags.space {
-        " "
-    } else {
-        ""
-    };
-    let magnitude = value.abs();
-    let body = if magnitude.is_nan() {
-        String::from(if upper { "NAN" } else { "nan" })
-    } else if magnitude.is_infinite() {
-        String::from(if upper { "INF" } else { "inf" })
-    } else {
-        let precision = d.precision.unwrap_or(6);
-        let text = match conversion.to_ascii_lowercase() {
-            b'f' => fixed(magnitude, precision, d.flags.alternate),
-            b'e' => exponent(magnitude, precision, d.flags.alternate),
-            _ => general(magnitude, precision, d.flags.alternate),
-        };
-        if upper {
-            text.to_ascii_uppercase()
-        } else {
-            text
-        }
-    };
-    pad(
-        &d.flags,
-        d.width,
-        sign.as_bytes().to_vec(),
-        body.into_bytes(),
-        value.is_finite(),
-    )
-}
-
-/// `%f`: the value rounded to `precision` places, a point kept with `#`.
-fn fixed(value: f64, precision: usize, alternate: bool) -> String {
-    let mut text = format!("{value:.precision$}");
-    if precision == 0 && alternate {
-        text.push('.');
-    }
-    text
-}
-
-/// `%e`: one digit, `precision` places and an exponent of at least two digits with its sign.
-fn exponent(value: f64, precision: usize, alternate: bool) -> String {
-    let (mantissa, exp) = split_exponent(value, precision);
-    let mut text = mantissa;
-    if precision == 0 && alternate {
-        text.push('.');
-    }
-    let sign = if exp < 0 { '-' } else { '+' };
-    text.push('e');
-    text.push(sign);
-    text.push_str(&format!("{:02}", exp.unsigned_abs()));
-    text
-}
-
 /// Rust's `{:.precision$e}` of `value` as its mantissa and its exponent.
 fn split_exponent(value: f64, precision: usize) -> (String, i32) {
     let text = format!("{value:.precision$e}");
@@ -652,34 +703,6 @@ fn split_exponent(value: f64, precision: usize) -> (String, i32) {
         Some((mantissa, exp)) => (mantissa.to_owned(), exp.parse().unwrap_or(0)),
         None => (text, 0),
     }
-}
-
-/// `%g`: `%e` or `%f` by the exponent `%e` would show, `P` significant digits, and trailing
-/// zeros and a trailing point removed unless `#`.
-fn general(value: f64, precision: usize, alternate: bool) -> String {
-    let p = precision.max(1);
-    let (_, x) = split_exponent(value, p.saturating_sub(1));
-    let p_i = i64::try_from(p).unwrap_or(i64::MAX);
-    let x = i64::from(x);
-    let text = if p_i > x && x >= -4 {
-        let places = usize::try_from(p_i.saturating_sub(1).saturating_sub(x)).unwrap_or(0);
-        fixed(value, places, alternate)
-    } else {
-        exponent(value, p.saturating_sub(1), alternate)
-    };
-    if alternate {
-        return text;
-    }
-    let (number, tail) = match text.find('e') {
-        Some(at) => text.split_at(at),
-        None => (text.as_str(), ""),
-    };
-    let number = if number.contains('.') {
-        number.trim_end_matches('0').trim_end_matches('.')
-    } else {
-        number
-    };
-    format!("{number}{tail}")
 }
 
 #[cfg(test)]
