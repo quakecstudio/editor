@@ -21,8 +21,10 @@ use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::convert::float_to_int;
 
-use crate::host_commands::{Words, atoi, tokenize};
+use crate::host_commands::{COLOR_MASK, COLOR_ROW, MAX_COLOR, Words, atoi, tokenize};
 use crate::input::Button;
+use crate::offsets::FieldOffset;
+use crate::physics::MoveType;
 use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
 use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
@@ -79,9 +81,6 @@ const COMMANDS: [&str; 37] = [
     "wait",
 ];
 
-/// `MOVETYPE_STEP` (`WinQuake/server.h`), which `edictcount` counts.
-const MOVETYPE_STEP: f32 = 4.0;
-
 /// A count one more, as `ED_Count`'s `++`, which an edict count cannot overflow.
 const fn add_one(count: usize) -> usize {
     count.saturating_add(1)
@@ -136,6 +135,23 @@ fn client_command(name: &str, words: &Words) -> Option<ClientCommand> {
         }
         _ => None,
     }
+}
+
+/// `newName[15] = 0`: a name's most characters (PHYS-11.7).
+const NAME_LENGTH: usize = 15;
+/// `ED_Print`'s column for a field's value (PHYS-13.7).
+const EDICT_NAME_COLUMN: usize = 15;
+/// `PR_Profile_f`'s lines: the ten functions run most (PHYS-13.7).
+const PROFILE_LINES: usize = 10;
+
+/// What `Cmd_ForwardToServer` sends: the command's name and its arguments, or for `cmd` the
+/// arguments alone (PHYS-13.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Forward {
+    /// The name, a space and the arguments.
+    Named,
+    /// The arguments alone.
+    Args,
 }
 
 /// What a line of the buffer leaves the rest of the buffer to do.
@@ -306,7 +322,7 @@ impl World {
                 self.print("stuffcmds : execute command line parameters\n");
             }
             "stuffcmds" => {}
-            "cmd" => self.forward(&words, false),
+            "cmd" => self.forward(&words, Forward::Args),
             "name" => self.name(&words),
             "color" => self.color(&words),
             "status" => self.status(),
@@ -349,7 +365,7 @@ impl World {
             "edictcount" => self.edict_count(),
             "profile" => self.profile(progs),
             "path" => self.path(),
-            forwarded if FORWARDED.contains(&forwarded) => self.forward(&words, true),
+            forwarded if FORWARDED.contains(&forwarded) => self.forward(&words, Forward::Named),
             _ => self.alias_or_setting(&words, &first),
         }
         Flow::Next
@@ -451,13 +467,13 @@ impl World {
 
     /// `Cmd_ForwardToServer` (PHYS-13.4): the command's name unless it is `cmd`, a space, and
     /// the rest of the line or a line feed, sent as the client's string command.
-    fn forward(&mut self, words: &Words, named: bool) {
+    fn forward(&mut self, words: &Words, form: Forward) {
         let args = (words.argv.len() > 1).then_some(words.args.as_slice());
-        self.forward_args(words, named, args);
+        self.forward_args(words, form, args);
     }
 
     /// [`World::forward`] with `args` as `Cmd_Args`, `None` for a command alone.
-    fn forward_args(&mut self, words: &Words, named: bool, args: Option<&[u8]>) {
+    fn forward_args(&mut self, words: &Words, form: Forward, args: Option<&[u8]>) {
         let name = words.argv.first().cloned().unwrap_or_default();
         if !self.builtins.messages.client.active {
             self.print(format!(
@@ -467,7 +483,7 @@ impl World {
             return;
         }
         let mut text = Vec::new();
-        if named {
+        if form == Forward::Named {
             text.extend_from_slice(&name);
             text.push(b' ');
         }
@@ -494,7 +510,9 @@ impl World {
         };
         // `newName[15] = 0`, which writes into `Cmd_Args` when the name is the rest of the
         // line, so only then does the server get the cut name.
-        let cut = new.get(..15).map_or_else(|| new.clone(), <[u8]>::to_vec);
+        let cut = new
+            .get(..NAME_LENGTH)
+            .map_or_else(|| new.clone(), <[u8]>::to_vec);
         let cut_text = String::from_utf8_lossy(&cut).into_owned();
         if cut_text == current {
             return;
@@ -509,7 +527,7 @@ impl World {
             _ => cut,
         };
         if self.builtins.messages.client.active {
-            self.forward_args(words, true, Some(&args));
+            self.forward_args(words, Forward::Named, Some(&args));
         }
     }
 
@@ -518,8 +536,8 @@ impl World {
     /// `top * 16 + bottom` becomes `_cl_color`, which goes on to the server when connected.
     fn color(&mut self, words: &Words) {
         let colour = |word: Option<&Vec<u8>>| {
-            let value = word.map_or(0, |w| atoi(w)) & 15;
-            value.min(13)
+            let value = word.map_or(0, |w| atoi(w)) & COLOR_MASK;
+            value.min(MAX_COLOR)
         };
         let (top, bottom) = match words.argv.as_slice() {
             [_] => {
@@ -542,7 +560,7 @@ impl World {
             [_, top, bottom, ..] => (colour(Some(top)), colour(Some(bottom))),
             [] => return,
         };
-        let player_colour = top.wrapping_mul(16).wrapping_add(bottom);
+        let player_colour = top.wrapping_mul(COLOR_ROW).wrapping_add(bottom);
         // `Cvar_SetValue`: the value printed with `%f`.
         self.builtins
             .mock
@@ -550,7 +568,7 @@ impl World {
             .cvars
             .set("_cl_color", &format!("{player_colour}.000000"));
         if self.builtins.messages.client.active {
-            self.forward(words, true);
+            self.forward(words, Forward::Named);
         }
     }
 
@@ -606,18 +624,18 @@ impl World {
                 continue;
             }
             let size = match def.def_type() {
-                DefType::Known(Etype::Vector) => 3,
+                DefType::Known(Etype::Vector) => Etype::Vector.slot_count(),
                 _ => 1,
             };
             let first = usize::try_from(def.ofs).unwrap_or(usize::MAX);
             let slots: Vec<Slot> = (0..size)
-                .map(|i| self.slot_of(n, first.saturating_add(i)))
+                .map(|i| self.slot_of(n, FieldOffset::new(first.saturating_add(i))))
                 .collect();
             if slots.iter().all(|s| s.as_i32() == 0) {
                 continue;
             }
             let mut line = name.clone();
-            while line.len() < 15 {
+            while line.len() < EDICT_NAME_COLUMN {
                 line.push(b' ');
             }
             line.extend_from_slice(&self.value_string(progs, def.def_type(), &slots));
@@ -679,11 +697,8 @@ impl World {
             if self.field(n, "model").as_i32() != 0 {
                 models = add_one(models);
             }
-            #[expect(
-                clippy::float_cmp_const,
-                reason = "spec PHYS-13.7: id's exact movetype comparison"
-            )]
-            if self.field(n, "movetype").as_f32() == MOVETYPE_STEP {
+            // PHYS-13.7: id's exact movetype comparison.
+            if MoveType::from_float(self.field(n, "movetype").as_f32()) == MoveType::Step {
                 step = add_one(step);
             }
         }
@@ -711,7 +726,7 @@ impl World {
             .collect();
         // id picks the greatest each time, the first of equals by index.
         counts.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-        for &(count, index) in counts.iter().take(10) {
+        for &(count, index) in counts.iter().take(PROFILE_LINES) {
             let name = progs
                 .functions()
                 .get(index)

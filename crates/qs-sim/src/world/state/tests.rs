@@ -6,6 +6,9 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
+use qc_edict::EdictNumber;
+
+use crate::offsets::{FieldOffset, GlobalOffset};
 use qc_progs::Progs;
 use qc_types::Slot;
 
@@ -20,11 +23,11 @@ struct Fixed {
 }
 
 impl RawState for Fixed {
-    fn global(&self, _slot: usize) -> Slot {
+    fn global(&self, _slot: GlobalOffset) -> Slot {
         Slot::ZERO
     }
 
-    fn field(&self, _edict: usize, _slot: usize) -> Slot {
+    fn field(&self, _edict: EdictNumber, _slot: FieldOffset) -> Slot {
         Slot::ZERO
     }
 

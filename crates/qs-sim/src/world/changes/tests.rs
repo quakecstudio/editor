@@ -5,6 +5,7 @@
     reason = "test code: a failed unwrap is a failed test"
 )]
 
+use crate::world::Tracking;
 use qc_progs::Progs;
 
 use super::EdictChange;
@@ -46,7 +47,7 @@ fn a_frame_reports_spawns_removals_and_written_fields() {
     let progs = Progs::read(&progs_bytes).unwrap();
     assert!(run.world.take_changes(&progs).is_empty());
 
-    run.world.track_changes(true);
+    run.world.track_changes(Tracking::On);
     run.frames(1, 0.1).unwrap();
     let changes = run.world.take_changes(&progs);
     // The box's edict, freed at time 0, is taken again at once (EDICT-6.3), and its writes
@@ -75,7 +76,7 @@ fn a_frame_reports_spawns_removals_and_written_fields() {
     );
     assert!(run.world.take_changes(&progs).is_empty());
 
-    run.world.track_changes(false);
+    run.world.track_changes(Tracking::Off);
     run.frames(1, 0.1).unwrap();
     assert!(run.world.take_changes(&progs).is_empty());
 }

@@ -14,8 +14,11 @@ use qc_progs::Progs;
 use qc_trace::{Record, Trace};
 use qc_types::Slot;
 use qs_bsp::{Bsp, BspLoader};
-use qs_sim::scenario::{Moment, Scenario, play};
-use qs_sim::{LoadOptions, NamedValue, QcValue, RawState, State, World, read_state};
+use qs_sim::scenario::{Moment, Scenario};
+use qs_sim::{
+    EdictNumber, FieldOffset, GlobalOffset, LoadOptions, NamedValue, QcValue, RawState, State,
+    World, read_state,
+};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 use crate::oracles;
@@ -186,16 +189,12 @@ impl Game {
         world.settle(progs).map_err(|e| e.to_string())?;
         // A route's frames are all it has: its assertions and screenshots, if any, are a
         // scenario's (SCN-1.5, SCN-1.6) and the oracle's harness has none.
-        play(
-            &mut world,
-            progs,
-            route,
-            |moment, frame, world| match moment {
+        route
+            .play(&mut world, progs, |moment, frame, world| match moment {
                 Moment::Frame => visit(frame, &world.state(progs)),
                 Moment::Expect(_) | Moment::Screenshot(_) => Ok(true),
-            },
-        )
-        .map_err(|error| error.to_string())
+            })
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -209,14 +208,17 @@ struct Replayed<'p> {
 }
 
 impl RawState for Replayed<'_> {
-    fn global(&self, slot: usize) -> Slot {
-        self.globals.get(slot).copied().unwrap_or(Slot::ZERO)
+    fn global(&self, slot: GlobalOffset) -> Slot {
+        self.globals
+            .get(slot.index())
+            .copied()
+            .unwrap_or(Slot::ZERO)
     }
 
-    fn field(&self, edict: usize, slot: usize) -> Slot {
+    fn field(&self, edict: EdictNumber, slot: FieldOffset) -> Slot {
         self.fields
-            .get(edict)
-            .and_then(|row| row.get(slot))
+            .get(edict.index())
+            .and_then(|row| row.get(slot.index()))
             .copied()
             .unwrap_or(Slot::ZERO)
     }

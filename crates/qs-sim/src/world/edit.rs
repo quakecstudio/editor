@@ -4,6 +4,7 @@
 //! a typed value, an entity spawned or edited as the map spawns them (EDICT-8), freed, or the
 //! player moved.
 
+use qc_edict::EdictNumber;
 use qc_progs::Progs;
 use qc_types::{DefType, Etype, Slot};
 use qc_vm::ServerState;
@@ -11,8 +12,9 @@ use qc_vm::ServerState;
 use super::{CLIENT, Spawner, World};
 use crate::builtins::SimCall;
 use crate::collision::MoveKind;
-use crate::spawn::{SpawnHost, apply_key};
+use crate::spawn::{EdictPlace, SpawnHost, apply_key};
 use crate::world::QcValue;
+use crate::{POINT, ZERO};
 
 /// Why an edit was not made.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -191,9 +193,9 @@ impl World {
             state: ServerState::Loading,
         };
         let n = spawner
-            .allocate(false)
+            .allocate(EdictPlace::Allocated)
             .map_err(|e| EditError::Spawn(e.to_string()))?;
-        let spawned = spawn_pairs(&mut spawner, n, pairs);
+        let spawned = spawner.spawn_pairs(n, pairs);
         let engine = self.builtins.mock.engine_mut();
         let added = engine
             .model_precache
@@ -205,7 +207,7 @@ impl World {
         let result = match (spawned, added) {
             (Err(error), _) => Err(error),
             (Ok(()), Some(name)) => Err(EditError::NotPrecached(name)),
-            (Ok(()), None) => return Ok(n),
+            (Ok(()), None) => return Ok(n.index()),
         };
         Spawner {
             world: self,
@@ -236,8 +238,13 @@ impl World {
             state: ServerState::Active,
         };
         for (key, value) in pairs {
-            apply_key(&mut spawner, n, key.as_bytes(), value.as_bytes())
-                .map_err(|e| EditError::BadValue(e.to_string()))?;
+            apply_key(
+                &mut spawner,
+                EdictNumber::new(n),
+                key.as_bytes(),
+                value.as_bytes(),
+            )
+            .map_err(|e| EditError::BadValue(e.to_string()))?;
         }
         self.relink(progs, n)
     }
@@ -259,7 +266,7 @@ impl World {
             progs,
             state: ServerState::Active,
         }
-        .free(n);
+        .free(EdictNumber::new(n));
         Ok(())
     }
 
@@ -282,41 +289,38 @@ impl World {
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         call.set_vector(CLIENT, "origin", origin);
         call.set_vector(CLIENT, "angles", angles);
-        call.set_vector(CLIENT, "velocity", [0.0; 3]);
+        call.set_vector(CLIENT, "velocity", ZERO);
         call.set_float(CLIENT, "fixangle", 1.0);
         call.link(CLIENT, false)
             .map_err(|e| EditError::Spawn(e.to_string()))
     }
 }
 
-/// Applies `pairs` to edict `n` and runs the function its `classname` names (EDICT-8.6).
-fn spawn_pairs(
-    spawner: &mut Spawner<'_, '_>,
-    n: usize,
-    pairs: &[(String, String)],
-) -> Result<(), EditError> {
-    for (key, value) in pairs {
-        apply_key(spawner, n, key.as_bytes(), value.as_bytes())
-            .map_err(|e| EditError::Spawn(e.to_string()))?;
+impl Spawner<'_, '_> {
+    /// Applies `pairs` to edict `n` and runs the function its `classname` names (EDICT-8.6).
+    fn spawn_pairs(&mut self, n: EdictNumber, pairs: &[(String, String)]) -> Result<(), EditError> {
+        for (key, value) in pairs {
+            apply_key(self, n, key.as_bytes(), value.as_bytes())
+                .map_err(|e| EditError::Spawn(e.to_string()))?;
+        }
+        let classname = pairs
+            .iter()
+            .find(|(key, _)| key == "classname")
+            .map(|(_, value)| value.as_str())
+            .unwrap_or_default();
+        let function = self
+            .find_function(classname.as_bytes())
+            .ok_or_else(|| EditError::Spawn(format!("no spawn function {classname:?}")))?;
+        self.spawn(n, function)
+            .map_err(|e| EditError::Spawn(e.to_string()))
     }
-    let classname = pairs
-        .iter()
-        .find(|(key, _)| key == "classname")
-        .map(|(_, value)| value.as_str())
-        .unwrap_or_default();
-    let function = spawner
-        .find_function(classname.as_bytes())
-        .ok_or_else(|| EditError::Spawn(format!("no spawn function {classname:?}")))?;
-    spawner
-        .spawn(n, function)
-        .map_err(|e| EditError::Spawn(e.to_string()))
 }
 
 /// What a line traced through the world hits, for the bridge's `pick` (BRIDGE-4.9).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LineHit {
     /// The edict hit, `None` for the world or nothing.
-    pub edict: Option<usize>,
+    pub edict: Option<EdictNumber>,
     /// Where the line stopped, `None` when it met nothing.
     pub point: Option<[f32; 3]>,
 }
@@ -336,10 +340,10 @@ impl World {
     ) -> Result<LineHit, super::WorldError> {
         let call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         let trace = call
-            .trace((start, [0.0; 3], [0.0; 3], end), MoveKind::Normal, CLIENT)
+            .trace((start, POINT, POINT, end), MoveKind::Normal, CLIENT)
             .map_err(super::WorldError::Frame)?;
         Ok(LineHit {
-            edict: trace.ent.filter(|&n| n != 0),
+            edict: trace.ent.filter(|&n| n != 0).map(EdictNumber::new),
             point: (trace.fraction < 1.0).then_some(trace.endpos),
         })
     }

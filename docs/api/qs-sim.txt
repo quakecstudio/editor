@@ -60,8 +60,11 @@ enum qs_sim::collision::CollisionError
 enum qs_sim::collision::Solid
 enum qs_sim::collision::area::MoveKind
 enum qs_sim::collision::hull::EntityHull
+enum qs_sim::debug::BreakpointEdit
 enum qs_sim::debug::StepKind
 enum qs_sim::input::Button
+enum qs_sim::messages::GameKind
+enum qs_sim::messages::Overflow
 enum qs_sim::rerelease::BuiltinTable
 enum qs_sim::scenario::Edict
 enum qs_sim::scenario::Expected
@@ -70,6 +73,8 @@ enum qs_sim::scenario::Op
 enum qs_sim::scenario::PlayError
 enum qs_sim::scenario::Step
 enum qs_sim::scenario::Target
+enum qs_sim::spawn::Deathmatch
+enum qs_sim::spawn::EdictPlace
 enum qs_sim::spawn::LoadError
 enum qs_sim::spawn::SpawnError
 enum qs_sim::spawn::Token
@@ -315,10 +320,19 @@ fn qs_sim::messages::Message::write_float
 fn qs_sim::messages::Message::write_long
 fn qs_sim::messages::Message::write_short
 fn qs_sim::messages::Message::write_string
+fn qs_sim::offsets::FieldOffset::index
+fn qs_sim::offsets::FieldOffset::new
+fn qs_sim::offsets::GlobalOffset::index
+fn qs_sim::offsets::GlobalOffset::new
 fn qs_sim::rerelease::patch_builtins
+fn qs_sim::scenario::Degrees::get
+fn qs_sim::scenario::Degrees::new
 fn qs_sim::scenario::Scenario::parse
-fn qs_sim::scenario::play
-fn qs_sim::scenario::run
+fn qs_sim::scenario::Scenario::play
+fn qs_sim::scenario::Scenario::run
+fn qs_sim::scenario::Seconds::get
+fn qs_sim::scenario::Seconds::new
+fn qs_sim::spawn::Deathmatch::from_setting
 fn qs_sim::spawn::Parser::new
 fn qs_sim::spawn::Parser::next_token
 fn qs_sim::spawn::SpawnHost::allocate
@@ -360,8 +374,8 @@ fn qs_sim::world::World::save_spawn_parms
 fn qs_sim::world::World::set_command
 fn qs_sim::world::World::set_debugger
 fn qs_sim::world::World::set_focus
+fn qs_sim::world::World::set_game
 fn qs_sim::world::World::set_setting
-fn qs_sim::world::World::set_standard_quake
 fn qs_sim::world::World::setting
 fn qs_sim::world::World::settle
 fn qs_sim::world::World::signon
@@ -452,12 +466,16 @@ struct qs_sim::input::MoveSettings
 struct qs_sim::keys::Bindings
 struct qs_sim::messages::ClientMessages
 struct qs_sim::messages::Message
+struct qs_sim::offsets::FieldOffset
+struct qs_sim::offsets::GlobalOffset
 struct qs_sim::physics::Sound
 struct qs_sim::scenario::Check
+struct qs_sim::scenario::Degrees
 struct qs_sim::scenario::Expectation
 struct qs_sim::scenario::Report
 struct qs_sim::scenario::Scenario
 struct qs_sim::scenario::ScenarioError
+struct qs_sim::scenario::Seconds
 struct qs_sim::scenario::Shot
 struct qs_sim::scenario::Start
 struct qs_sim::spawn::FieldDef
@@ -485,9 +503,13 @@ use qs_sim::ChangeKind = world::ChangeKind
 use qs_sim::ClientCommand = world::ClientCommand
 use qs_sim::ClientMessages = messages::ClientMessages
 use qs_sim::EdictChange = world::EdictChange
+use qs_sim::EdictNumber = qc_edict::EdictNumber
 use qs_sim::EditError = world::EditError
 use qs_sim::Entity = world::Entity
 use qs_sim::EvalError = world::EvalError
+use qs_sim::FieldOffset = offsets::FieldOffset
+use qs_sim::GameKind = messages::GameKind
+use qs_sim::GlobalOffset = offsets::GlobalOffset
 use qs_sim::HostCommand = world::HostCommand
 use qs_sim::HostState = world::HostState
 use qs_sim::KeyFocus = world::KeyFocus
@@ -508,6 +530,7 @@ use qs_sim::NET_PROTOCOL_VERSION = messages::NET_PROTOCOL_VERSION
 use qs_sim::NET_SIGNON_SIZE = messages::NET_SIGNON_SIZE
 use qs_sim::NET_VERSION = messages::NET_VERSION
 use qs_sim::NamedValue = world::NamedValue
+use qs_sim::Overflow = messages::Overflow
 use qs_sim::QcValue = world::QcValue
 use qs_sim::RawState = world::RawState
 use qs_sim::Reason = world::Reason
@@ -519,6 +542,7 @@ use qs_sim::SimBuiltins = builtins::SimBuiltins
 use qs_sim::Sound = physics::Sound
 use qs_sim::SpawnParms = world::SpawnParms
 use qs_sim::State = world::State
+use qs_sim::Tracking = world::Tracking
 use qs_sim::UserCmd = client::UserCmd
 use qs_sim::World = world::World
 use qs_sim::WorldError = world::WorldError
@@ -572,6 +596,7 @@ use qs_sim::world::SAVEGAME_VERSION = save::SAVEGAME_VERSION
 use qs_sim::world::SaveError = save::SaveError
 use qs_sim::world::SaveGame = save::SaveGame
 use qs_sim::world::State = state::State
+use qs_sim::world::Tracking = qc_edict::Tracking
 use qs_sim::world::read_state = state::read_state
 variant qs_sim::collision::CollisionError::BadNode
 variant qs_sim::collision::CollisionError::PushWithoutBsp
@@ -589,6 +614,8 @@ variant qs_sim::collision::area::MoveKind::NoMonsters
 variant qs_sim::collision::area::MoveKind::Normal
 variant qs_sim::collision::hull::EntityHull::Box
 variant qs_sim::collision::hull::EntityHull::Brush
+variant qs_sim::debug::BreakpointEdit::Clear
+variant qs_sim::debug::BreakpointEdit::Set
 variant qs_sim::debug::StepKind::In
 variant qs_sim::debug::StepKind::Out
 variant qs_sim::debug::StepKind::Over
@@ -610,6 +637,10 @@ variant qs_sim::input::Button::Speed
 variant qs_sim::input::Button::Strafe
 variant qs_sim::input::Button::Up
 variant qs_sim::input::Button::Use
+variant qs_sim::messages::GameKind::MissionPack
+variant qs_sim::messages::GameKind::Standard
+variant qs_sim::messages::Overflow::Allowed
+variant qs_sim::messages::Overflow::Fatal
 variant qs_sim::rerelease::BuiltinTable::Id
 variant qs_sim::rerelease::BuiltinTable::Rerelease
 variant qs_sim::scenario::Edict::Classname
@@ -639,6 +670,10 @@ variant qs_sim::scenario::Step::Move
 variant qs_sim::scenario::Step::Screenshot
 variant qs_sim::scenario::Target::Field
 variant qs_sim::scenario::Target::Global
+variant qs_sim::spawn::Deathmatch::Off
+variant qs_sim::spawn::Deathmatch::On
+variant qs_sim::spawn::EdictPlace::Allocated
+variant qs_sim::spawn::EdictPlace::World
 variant qs_sim::spawn::LoadError::Run
 variant qs_sim::spawn::LoadError::Spawn
 variant qs_sim::spawn::SpawnError::BadEdictNumber
