@@ -124,6 +124,103 @@ pub const CLIENT_LERP_RESET_GAP: f32 = 0.2;
 pub const CLIENT_LERP_SINGLE_POSE: f32 = 0.1;
 /// A step's move lerp time (CLIENT-7.4).
 pub const CLIENT_LERP_MOVE_TIME: f32 = 0.1;
+/// A vector's components, `vec3_t`'s three (`mathlib.h`: "`typedef vec_t vec3_t[3];`").
+const AXES: usize = 3;
+/// The items whose pickup time is kept, `client.h`'s "`float item_gettime[32];`".
+const ITEM_TIMES: usize = 32;
+/// The screen's size until the window gives one: id's lowest video mode, 320 by 200.
+const DEFAULT_SCREEN: (i32, i32) = (320, 200);
+/// The bits of a palette index.
+const PALETTE_MASK: i32 = 255;
+/// `protocol.h`'s "`#define U_SIGNAL (1<<7)`": a message byte with it set is an entity update,
+/// its other bits the update's first bits (`CL_ParseUpdate (cmd&127)`, `cl_parse.c`).
+const U_SIGNAL: i32 = 1 << 7;
+/// The bits of an update's first byte below [`U_SIGNAL`].
+const U_SIGNAL_BITS: i32 = U_SIGNAL - 1;
+/// How far a sound's entity is shifted above its channel, `S_StopSound(i>>3, i&7)`.
+const SOUND_CHANNEL_SHIFT: i32 = 3;
+/// A sound's channel bits, below its entity.
+const SOUND_CHANNEL_MASK: i32 = (1 << SOUND_CHANNEL_SHIFT) - 1;
+/// A particle effect's direction step, `MSG_ReadChar ()*(1.0/16)` (`R_ParseParticleEffect`).
+const PARTICLE_DIRECTION_STEP: f64 = 1.0 / 16.0;
+/// The count byte that means an explosion, `if (msgcount == 255) count = 1024;`.
+const PARTICLE_EXPLOSION_MARKER: i32 = 255;
+/// The particles of an explosion sent as an effect.
+const PARTICLE_EXPLOSION_COUNT: i32 = 1024;
+/// The divider's middle character, `\36` in `CL_ParseServerInfo`'s `Con_Printf`.
+const DIVIDER_MIDDLE: u8 = 0x1e;
+/// How many middle characters the divider has.
+const DIVIDER_LENGTH: usize = 35;
+/// The bits of a byte, by which an update's second bits byte is shifted (`i<<8`).
+const BYTE_BITS: i32 = 8;
+/// `rand()&0x7fff`, divided by the same for a random sync base (`CL_ParseUpdate`).
+const SYNC_RANGE: i32 = 0x7fff;
+/// The ammo stats after `STAT_SHELLS`, read in order (`for (i=0 ; i<4 ; i++)`).
+const AMMO_STATS: usize = 4;
+/// `MSG_ReadChar ()*16`: a velocity byte's step.
+const VELOCITY_STEP: i32 = 16;
+/// `MSG_ReadByte () / 64.0`: a sound's attenuation step.
+const SOUND_ATTENUATION_STEP: f64 = 64.0;
+/// `volume/255.0`: a sound's volume byte at full.
+const SOUND_VOLUME_FULL: f64 = 255.0;
+/// `R_RunParticleEffect (pos, vec3_origin, 20, 30)` for `TE_WIZSPIKE`.
+const WIZSPIKE_EFFECT: (i32, i32) = (20, 30);
+/// `R_RunParticleEffect (pos, vec3_origin, 226, 20)` for `TE_KNIGHTSPIKE`.
+const KNIGHTSPIKE_EFFECT: (i32, i32) = (226, 20);
+/// `R_RunParticleEffect (pos, vec3_origin, 0, 10)` for `TE_SPIKE`.
+const SPIKE_EFFECT: (i32, i32) = (0, 10);
+/// `R_RunParticleEffect (pos, vec3_origin, 0, 20)` for `TE_SUPERSPIKE` and `TE_GUNSHOT`.
+const GUNSHOT_EFFECT: (i32, i32) = (0, 20);
+/// `if ( rand() % 5 )`: one spike in five ricochets, the rest tink.
+const RICOCHET_ODDS: i32 = 5;
+/// `rnd = rand() & 3`: which ricochet sound.
+const RICOCHET_MASK: i32 = 3;
+/// An explosion's light: `dl->radius = 350; dl->die = cl.time + 0.5; dl->decay = 300;`.
+const EXPLOSION_LIGHT_RADIUS: f32 = 350.0;
+/// How long an explosion's light lasts.
+const EXPLOSION_LIGHT_TIME: f32 = 0.5;
+/// How fast an explosion's light fades.
+const EXPLOSION_LIGHT_DECAY: f32 = 300.0;
+/// The beam models `CL_ParseBeam` is given for `TE_LIGHTNING3` and `TE_BEAM`.
+const LIGHTNING3_MODEL: usize = 3;
+/// See [`LIGHTNING3_MODEL`].
+const BEAM_MODEL: usize = 4;
+/// `if (frac < -0.01)`: how far before the last message the time may fall before it is moved.
+const LERP_BEHIND: f32 = -0.01;
+/// `if (frac > 1.01)`: how far past the latest message the time may run.
+const LERP_AHEAD: f32 = 1.01;
+/// Half a turn in degrees: an angle's lerp takes the shorter way (`if (d > 180)`).
+const HALF_TURN: f32 = 180.0;
+/// A turn in degrees.
+const FULL_TURN: f32 = 360.0;
+/// `dl->radius = 200 + (rand()&31)`: a muzzle flash's and a dim light's base radius.
+const FLASH_RADIUS: f32 = 200.0;
+/// `rand()&31`: what a light's radius may add.
+const LIGHT_JITTER: i32 = 31;
+/// `VectorMA (dl->origin, 18, fv, dl->origin)`: how far ahead a muzzle flash is.
+const FLASH_AHEAD: f32 = 18.0;
+/// `dl->origin[2] += 16`: how far up a muzzle flash is.
+const FLASH_UP: f32 = 16.0;
+/// `dl->minlight = 32`.
+const FLASH_MINLIGHT: f32 = 32.0;
+/// `dl->die = cl.time + 0.1`: how long a muzzle flash lasts.
+const FLASH_TIME: f32 = 0.1;
+/// `dl->radius = 400 + (rand()&31)`: a bright light's base radius.
+const BRIGHT_RADIUS: f32 = 400.0;
+/// `dl->die = cl.time + 0.001`: a light that lasts one frame.
+const ONE_FRAME: f32 = 0.001;
+/// `dl->radius = 200; dl->die = cl.time + 0.01;`: a rocket's light.
+const ROCKET_LIGHT_RADIUS: f32 = 200.0;
+/// See [`ROCKET_LIGHT_RADIUS`].
+const ROCKET_LIGHT_TIME: f32 = 0.01;
+/// A beam's segment pitch straight up and straight down (`CL_UpdateTEnts`).
+const PITCH_UP: f32 = 90.0;
+/// See [`PITCH_UP`].
+const PITCH_DOWN: f32 = 270.0;
+/// `rand()%360`: a beam segment's roll.
+const FULL_TURN_DEGREES: i32 = 360;
+/// Half a turn in degrees, in double precision, `atan2 (...) * 180 / M_PI`.
+const HALF_TURN_F64: f64 = 180.0;
 
 /// `STAT_HEALTH` to `STAT_MONSTERS`: the indices into the stats (CLIENT-3).
 pub mod stat {
@@ -595,14 +692,14 @@ impl Client {
             time: 0.0,
             oldtime: 0.0,
             mtime: [0.0; 2],
-            mvelocity: [[0.0; 3]; 2],
-            velocity: [0.0; 3],
-            viewangles: [0.0; 3],
+            mvelocity: [[0.0; AXES]; 2],
+            velocity: [0.0; AXES],
+            viewangles: [0.0; AXES],
             viewheight: CLIENT_DEFAULT_VIEWHEIGHT,
             idealpitch: 0.0,
-            punchangle: [0.0; 3],
+            punchangle: [0.0; AXES],
             items: 0,
-            item_gettime: [0.0; 32],
+            item_gettime: [0.0; ITEM_TIMES],
             onground: false,
             inwater: false,
             stats: [0; CLIENT_MAX_STATS],
@@ -635,7 +732,7 @@ impl Client {
             forwardmove: 0.0,
             center: CenterPrint::default(),
             center_items: Vec::new(),
-            screen: (320, 200),
+            screen: DEFAULT_SCREEN,
             showscores: false,
             bar_lines: HUD_DEFAULT_LINES,
         }
@@ -1020,7 +1117,7 @@ impl Client {
                 .iter()
                 .map(|p| SceneParticle {
                     origin: p.origin,
-                    color: u8::try_from(p.color & 255).unwrap_or(0),
+                    color: u8::try_from(p.color & PALETTE_MASK).unwrap_or(0),
                 })
                 .collect(),
             lightstyles: self.lightstyles.clone(),
@@ -1096,8 +1193,8 @@ impl Client {
                 return Ok(());
             }
             let cmd = r.byte();
-            if cmd & 128 != 0 {
-                self.parse_update(&mut r, cmd & 127, rand)?;
+            if cmd & U_SIGNAL != 0 {
+                self.parse_update(&mut r, cmd & U_SIGNAL_BITS, rand)?;
                 continue;
             }
             match cmd {
@@ -1157,8 +1254,8 @@ impl Client {
                 SVC_STOPSOUND => {
                     let i = r.short();
                     events.push(Event::StopSound {
-                        entity: i >> 3,
-                        channel: i & 7,
+                        entity: i >> SOUND_CHANNEL_SHIFT,
+                        channel: i & SOUND_CHANNEL_MASK,
                     });
                 }
                 SVC_UPDATENAME => {
@@ -1179,10 +1276,14 @@ impl Client {
                 SVC_PARTICLE => {
                     let org = [r.coord(), r.coord(), r.coord()];
                     let dir = [r.char(), r.char(), r.char()]
-                        .map(|c| double_to_float(f64::from(c) * (1.0 / 16.0)));
+                        .map(|c| double_to_float(f64::from(c) * PARTICLE_DIRECTION_STEP));
                     let msgcount = r.byte();
                     let color = r.byte();
-                    let count = if msgcount == 255 { 1024 } else { msgcount };
+                    let count = if msgcount == PARTICLE_EXPLOSION_MARKER {
+                        PARTICLE_EXPLOSION_COUNT
+                    } else {
+                        msgcount
+                    };
                     self.particles
                         .run_effect(rand, self.time, org, dir, color, count);
                 }
@@ -1303,7 +1404,7 @@ impl Client {
         // CLIENT-1.7: "separate the printfs so the server message can have a color": the
         // divider, then the level's name after the colour byte 2.
         let mut divider = b"\n\n\x1d".to_vec();
-        divider.extend([0x1e; 35]);
+        divider.extend([DIVIDER_MIDDLE; DIVIDER_LENGTH]);
         divider.extend(b"\x1f\n\n");
         events.push(Event::Print(divider));
         let mut name = vec![2];
@@ -1368,7 +1469,7 @@ impl Client {
         }
         let mut bits = bits;
         if bits & U_MOREBITS != 0 {
-            bits |= r.byte() << 8;
+            bits |= r.byte() << BYTE_BITS;
         }
         let num = if bits & U_LONGENTITY != 0 {
             r.short()
@@ -1406,7 +1507,7 @@ impl Client {
             match model {
                 Some(info) => {
                     ent.syncbase = if info.random_sync {
-                        double_to_float(f64::from(rand.rand() & 0x7fff) / f64::from(0x7fff))
+                        double_to_float(f64::from(rand.rand() & SYNC_RANGE) / f64::from(SYNC_RANGE))
                     } else {
                         0.0
                     };
@@ -1493,14 +1594,14 @@ impl Client {
             0.0
         };
         self.mvelocity[1] = self.mvelocity[0];
-        for i in 0..3 {
+        for i in 0..AXES {
             let punch = if bits & (SU_PUNCH1 << i) != 0 {
                 int_to_float(r.char())
             } else {
                 0.0
             };
             let velocity = if bits & (SU_VELOCITY1 << i) != 0 {
-                int_to_float(r.char().wrapping_mul(16))
+                int_to_float(r.char().wrapping_mul(VELOCITY_STEP))
             } else {
                 0.0
             };
@@ -1532,7 +1633,7 @@ impl Client {
         self.stats[stat::WEAPON] = if bits & SU_WEAPON != 0 { r.byte() } else { 0 };
         self.stats[stat::HEALTH] = r.short();
         self.stats[stat::AMMO] = r.byte();
-        for i in 0..4 {
+        for i in 0..AMMO_STATS {
             let value = r.byte();
             if let Some(slot) = self.stats.get_mut(stat::SHELLS.saturating_add(i)) {
                 *slot = value;
@@ -1573,14 +1674,14 @@ impl Client {
             SND_PACKET_VOLUME
         };
         let attenuation = if field_mask & SND_ATTENUATION != 0 {
-            double_to_float(f64::from(r.byte()) / 64.0)
+            double_to_float(f64::from(r.byte()) / SOUND_ATTENUATION_STEP)
         } else {
             SND_PACKET_ATTENUATION
         };
         let channel = r.short();
         let sound_num = r.byte();
-        let ent = channel >> 3;
-        let channel = channel & 7;
+        let ent = channel >> SOUND_CHANNEL_SHIFT;
+        let channel = channel & SOUND_CHANNEL_MASK;
         if usize::try_from(ent).unwrap_or(usize::MAX) > CLIENT_MAX_EDICTS {
             return Err(ParseError::SoundEntity(ent));
         }
@@ -1590,7 +1691,7 @@ impl Client {
             channel,
             sound: SoundRef::Index(usize::try_from(sound_num).unwrap_or(0)),
             origin,
-            volume: double_to_float(f64::from(volume) / 255.0),
+            volume: double_to_float(f64::from(volume) / SOUND_VOLUME_FULL),
             attenuation,
         })
     }
@@ -1618,10 +1719,10 @@ impl Client {
             TE_WIZSPIKE | TE_KNIGHTSPIKE | TE_SPIKE | TE_SUPERSPIKE | TE_GUNSHOT => {
                 let pos = [r.coord(), r.coord(), r.coord()];
                 let (color, count) = match kind {
-                    TE_WIZSPIKE => (20, 30),
-                    TE_KNIGHTSPIKE => (226, 20),
-                    TE_SPIKE => (0, 10),
-                    _ => (0, 20),
+                    TE_WIZSPIKE => WIZSPIKE_EFFECT,
+                    TE_KNIGHTSPIKE => KNIGHTSPIKE_EFFECT,
+                    TE_SPIKE => SPIKE_EFFECT,
+                    _ => GUNSHOT_EFFECT,
                 };
                 self.particles
                     .run_effect(rand, time, pos, [0.0; 3], color, count);
@@ -1629,10 +1730,10 @@ impl Client {
                     TE_WIZSPIKE => events.push(sound("wizard/hit.wav", pos)),
                     TE_KNIGHTSPIKE => events.push(sound("hknight/hit.wav", pos)),
                     TE_SPIKE | TE_SUPERSPIKE => {
-                        if rand.rand().checked_rem(5).unwrap_or(0) != 0 {
+                        if rand.rand().checked_rem(RICOCHET_ODDS).unwrap_or(0) != 0 {
                             events.push(sound("weapons/tink1.wav", pos));
                         } else {
-                            let name = match rand.rand() & 3 {
+                            let name = match rand.rand() & RICOCHET_MASK {
                                 1 => "weapons/ric1.wav",
                                 2 => "weapons/ric2.wav",
                                 _ => "weapons/ric3.wav",
@@ -1655,9 +1756,9 @@ impl Client {
                 }
                 let dl = self.alloc_dlight(0);
                 dl.origin = pos;
-                dl.radius = 350.0;
-                dl.die = time + 0.5;
-                dl.decay = 300.0;
+                dl.radius = EXPLOSION_LIGHT_RADIUS;
+                dl.die = time + EXPLOSION_LIGHT_TIME;
+                dl.decay = EXPLOSION_LIGHT_DECAY;
                 events.push(sound("weapons/r_exp3.wav", pos));
             }
             TE_TAREXPLOSION => {
@@ -1669,8 +1770,8 @@ impl Client {
                 let model = match kind {
                     TE_LIGHTNING1 => 1,
                     TE_LIGHTNING2 => 2,
-                    TE_LIGHTNING3 => 3,
-                    _ => 4,
+                    TE_LIGHTNING3 => LIGHTNING3_MODEL,
+                    _ => BEAM_MODEL,
                 };
                 self.parse_beam(r, model);
             }
@@ -1765,12 +1866,12 @@ impl Client {
         }
         let mut frac = (self.time - self.mtime[1]) / f;
         if frac < 0.0 {
-            if frac < -0.01 {
+            if frac < LERP_BEHIND {
                 self.time = self.mtime[1];
             }
             frac = 0.0;
         } else if frac > 1.0 {
-            if frac > 1.01 {
+            if frac > LERP_AHEAD {
                 self.time = self.mtime[0];
             }
             frac = 1.0;
