@@ -24,6 +24,7 @@ use crate::check::term::string_immediate;
 use crate::check::{Constness, CvarValue, ParamFacts, PathList, Reference, Sym, Value};
 use crate::ir;
 use crate::ty::{FunctionType, SimpleType, Type};
+use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT, VECTOR_WORDS_INT};
 
 /// `MAX_PARMS`: the parameters a call passes in the parameter globals.
 const MAX_PARMS: usize = 8;
@@ -427,7 +428,7 @@ impl Checker<'_> {
                     continue;
                 }
                 let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
-                let vector = words == 3 || variant_parameter(function, slot);
+                let vector = words == VECTOR_WORDS || variant_parameter(function, slot);
                 let folded = first && value.temp.is_some() && value.temp == self.last_temp;
                 first = false;
                 if folded {
@@ -458,7 +459,7 @@ impl Checker<'_> {
                     .get(slot)
                     .and_then(|param| self.env.layout(param))
                     .map_or(1, |l| l.words);
-                let vector = words == 3 || variant_parameter(function, slot);
+                let vector = words == VECTOR_WORDS || variant_parameter(function, slot);
                 let slot = u8::try_from(slot).ok();
                 self.generated.push(ir::BodyStatement {
                     a: slot.map(ir::Name::Default),
@@ -606,7 +607,8 @@ impl Checker<'_> {
             // for what is left of them, each three a parameter of its own.
             let mut at: u32 = 0;
             while at < words {
-                let left_in_parm = 3_u32.saturating_sub(at.checked_rem(3).unwrap_or(0));
+                let left_in_parm =
+                    VECTOR_WORDS.saturating_sub(at.checked_rem(VECTOR_WORDS).unwrap_or(0));
                 let mut size = left_in_parm.min(words.saturating_sub(at));
                 if size == 2 && !target.valid(Op::StoreI64) {
                     size = 1;
@@ -616,7 +618,7 @@ impl Checker<'_> {
                     2 => Op::StoreI64,
                     _ => Op::StoreF,
                 };
-                if at.is_multiple_of(3) {
+                if at.is_multiple_of(VECTOR_WORDS) {
                     parms = parms.saturating_add(1);
                 }
                 self.generate(store, span);
@@ -744,7 +746,7 @@ impl Checker<'_> {
                 if let Some(arg) = args.first() {
                     let size = self.value(Some(arg.clone()))?;
                     let size = self.supplied(&size, &Type::Named("__int32".into()), span)?;
-                    let three = Value::constant(Constant::int(3));
+                    let three = Value::constant(Constant::int(VECTOR_WORDS_INT));
                     let four = Value::constant(Constant::int(4));
                     let rounded = self.emit(qc_preproc::Op::AddI, &size, &three, span)?;
                     self.emit(qc_preproc::Op::DivI, &rounded, &four, span)?;
@@ -760,12 +762,12 @@ impl Checker<'_> {
                 let arg_span = args.first().map_or(span, |a| a.syntax().span());
                 if index.ty != Type::Unknown {
                     if self.etype_of(&index.ty) == Some(Etype::Float) {
-                        let three = Value::constant(Constant::float(3.0));
+                        let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
                         self.emit(qc_preproc::Op::MulF, &index, &three, arg_span)?;
                     } else {
                         let int = Type::Named("__int32".into());
                         let index = self.supplied(&index, &int, arg_span)?;
-                        let three = Value::constant(Constant::int(3));
+                        let three = Value::constant(Constant::int(VECTOR_WORDS_INT));
                         self.emit(qc_preproc::Op::MulI, &index, &three, arg_span)?;
                     }
                 }

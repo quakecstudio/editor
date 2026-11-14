@@ -12,6 +12,7 @@ use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op, TargetFormat};
 use qc_syntax::ast::{self, AstNode as _, Negation};
 
+use crate::VECTOR_WORDS;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
@@ -22,9 +23,6 @@ use crate::check::truth::{Jump, Test, is_truth};
 use crate::check::{Constness, Reference, Value};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
-
-/// The words of a vector, `type_vector->size`.
-const VECTOR_WORDS: u32 = 3;
 
 /// A `case` of a `switch`: its value, the end of its range, where it is and the statement it
 /// jumps to (`pr_casesref`, `pr_casesref2`, `pr_cases`).
@@ -63,7 +61,7 @@ impl Checker<'_> {
         for i in 0..VA_COUNT {
             self.generated.push(ir::BodyStatement {
                 a: named.checked_add(i).map(ir::Name::Parameter),
-                b: Some(ir::Name::VaList(u32::from(i).saturating_mul(3))),
+                b: Some(ir::Name::VaList(u32::from(i).saturating_mul(VECTOR_WORDS))),
                 ..ir::BodyStatement::bare(Op::StoreV)
             });
         }
@@ -192,7 +190,11 @@ impl Checker<'_> {
             self.generated.push(ir::BodyStatement {
                 a: Some(ir::Name::Return),
                 b: Some(ir::Name::Made(copy)),
-                ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+                ..ir::BodyStatement::bare(if words == VECTOR_WORDS {
+                    Op::StoreV
+                } else {
+                    Op::StoreF
+                })
             });
             self.last_temp = None;
         }

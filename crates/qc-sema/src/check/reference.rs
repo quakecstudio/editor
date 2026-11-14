@@ -14,6 +14,7 @@ use qc_syntax::SyntaxKind;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp, UnaryOp};
 
 use crate::cast::ConstType;
+use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT};
 use qc_syntax::c_scalar::CScalar;
 
 use crate::check::constant::Constant;
@@ -284,7 +285,7 @@ impl Checker<'_> {
         constant: Option<i32>,
         span: Span,
     ) -> Checked {
-        if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
+        if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= VECTOR_WORDS) {
             let message = "(.vector) array index out of bounds".to_owned();
             return self.fatal(Code::E0333, span, message);
         }
@@ -356,14 +357,14 @@ impl Checker<'_> {
         }
         let float = self.converted(index, Etype::Float, span)?;
         if vector {
-            let three = Value::constant(Constant::float(3.0));
+            let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
             self.emit(Op::DivF, &float, &three, span)?;
             return Ok(false);
         }
         // A vector array's getter takes the element's index, its words' divided by 3.
         let divided = self.etype_of(&element.ty) == Some(Etype::Vector) && !self.global;
         let float = if divided {
-            let three = Value::constant(Constant::float(3.0));
+            let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
             self.emit(Op::DivF, &float, &three, span)?
         } else {
             float
@@ -616,7 +617,7 @@ impl Checker<'_> {
                 self.emit(Op::AddI, index, &offset, span)?;
             }
             let (op, step) = if vector {
-                (Op::LoadpV, 3)
+                (Op::LoadpV, VECTOR_WORDS)
             } else {
                 (Op::LoadpI, 1)
             };
@@ -724,7 +725,7 @@ impl Checker<'_> {
                 self.field_vector_index(&base, label, at, constant, span)
             }
             (Some(Etype::Vector), _) => {
-                if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
+                if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= VECTOR_WORDS) {
                     let message = "(vector) array index out of bounds".to_owned();
                     return self.fatal(Code::E0333, span, message);
                 }
@@ -755,7 +756,7 @@ impl Checker<'_> {
             (Some(Etype::Field), Type::Field(held))
                 if self.etype_of(held) == Some(Etype::Vector) =>
             {
-                if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
+                if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= VECTOR_WORDS) {
                     let message = "(.vector) array index out of bounds".to_owned();
                     return self.fatal(Code::E0333, span, message);
                 }
@@ -1067,7 +1068,7 @@ impl Checker<'_> {
                 }
                 let float = self.converted(index, Etype::Float, span)?;
                 if *vector {
-                    let three = Value::constant(Constant::float(3.0));
+                    let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
                     self.emit(Op::DivF, &float, &three, span)?;
                 }
                 Ok(())

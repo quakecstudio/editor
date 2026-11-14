@@ -23,6 +23,9 @@ use crate::check::{Bitfield, Constness, ElementRef, FieldRef, MemberArray, Refer
 use crate::ir;
 use crate::ty::{SimpleType, Type};
 
+/// A word's 32 bits as a shift: a member's offset in bits, `>> 5`, is its word.
+const WORD_BITS_SHIFT: u32 = 5;
+
 impl Checker<'_> {
     /// The value of the member access `field` (FTEF-24).
     pub(super) fn member(&mut self, field: &ast::FieldExpr) -> Checked {
@@ -502,7 +505,11 @@ impl Checker<'_> {
         }
         let (member, offset) = self.struct_member(&base.ty, selector);
         let word = member.bitfield.map_or_else(
-            || offset.map_or(0, |(units, align)| units.saturating_mul(align) >> 5),
+            || {
+                offset.map_or(0, |(units, align)| {
+                    units.saturating_mul(align) >> WORD_BITS_SHIFT
+                })
+            },
             |bitfield| bitfield.word,
         );
         Ok(match &base.reference {

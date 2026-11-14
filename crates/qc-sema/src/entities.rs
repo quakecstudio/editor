@@ -697,8 +697,11 @@ impl Arg {
 /// The literal a global's initialiser is, read from the source text after its name: `= 32`,
 /// `= '0 0 1'` or `= "text"`. Vanilla lowering keeps no literal (QCD-3.6), and a spawnflag's or
 /// a size's constant is one of these.
+/// The bytes after a global's name searched for its initialiser.
+const LITERAL_SCAN: usize = 256;
+
 fn literal_after(text: &[u8]) -> Option<Arg> {
-    let text = String::from_utf8_lossy(text.get(..text.len().min(256))?);
+    let text = String::from_utf8_lossy(text.get(..text.len().min(LITERAL_SCAN))?);
     let value = text.trim_start().strip_prefix('=')?.trim_start();
     let end = value.find([';', ',']).unwrap_or(value.len());
     let value = value.get(..end)?.trim();
@@ -782,7 +785,7 @@ const fn is_call(op: Op) -> bool {
 
 /// The flag a float holds, when it is one power of two.
 fn flag_value(value: f32) -> Option<u32> {
-    (0..32_u32)
+    (0..u32::BITS)
         .filter_map(|bit| 1_u32.checked_shl(bit))
         .find(|flag| {
             #[expect(
@@ -948,7 +951,7 @@ impl fmt::Display for Fgd<'_> {
 
 /// A colour component from 0 to 1 as a byte.
 fn byte(component: f32) -> u8 {
-    let scaled = (component.clamp(0.0, 1.0) * 255.0).round();
+    let scaled = (component.clamp(0.0, 1.0) * f32::from(u8::MAX)).round();
     (0..=u8::MAX)
         .find(|b| f32::from(*b) >= scaled)
         .unwrap_or(u8::MAX)

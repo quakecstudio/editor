@@ -9,9 +9,14 @@
 
 use qc_preproc::Op;
 
-use crate::DefId;
 use crate::check::etype::Etype;
 use crate::check::opcodes::{Assoc, row as opcode_row};
+use crate::{DefId, VECTOR_WORDS};
+
+/// The parameter registers, `OFS_PARM0` to `OFS_PARM7` (QC-18.3).
+const MAX_PARMS: u8 = 8;
+/// A statement's operands, `a`, `b` and `c` (PROGS-7.1).
+const OPERANDS: usize = 3;
 
 /// A constant a statement names: the words of its value and the kind of immediate that holds
 /// them.
@@ -146,7 +151,7 @@ impl Name {
             | Self::ArraySet(_)
             | Self::Nested(_)
             | Self::RetLocal => true,
-            Self::Parameter(slot) => *slot >= 8,
+            Self::Parameter(slot) => *slot >= MAX_PARMS,
             Self::Made(_)
             | Self::MadeWord(..)
             | Self::Return
@@ -193,7 +198,7 @@ impl BodyStatement {
     #[must_use]
     pub fn uses(&self) -> [bool; 3] {
         let Some(row) = opcode_row(self.op) else {
-            return [false; 3];
+            return [false; OPERANDS];
         };
         let [a, b, _] = row.types.map(|ty| ty.etype() != Etype::Void);
         let c = row.makes_value();
@@ -232,7 +237,7 @@ impl BodyStatement {
             return None;
         };
         Some(match etype {
-            Etype::Vector => 3,
+            Etype::Vector => VECTOR_WORDS,
             Etype::Int64 | Etype::Uint64 | Etype::Double => 2,
             _ => 1,
         })
@@ -245,7 +250,7 @@ impl BodyStatement {
         // The first word of a block an `Effect::Block` took, which is the block, written as a
         // result or stored.
         if self.c == Some(Name::MadeWord(index, 0)) || self.b == Some(Name::MadeWord(index, 0)) {
-            return Some(3);
+            return Some(VECTOR_WORDS);
         }
         let made = Some(Name::Made(index));
         let row = opcode_row(self.op)?;
@@ -259,7 +264,7 @@ impl BodyStatement {
             return None;
         };
         Some(match etype {
-            Etype::Vector => 3,
+            Etype::Vector => VECTOR_WORDS,
             Etype::Int64 | Etype::Uint64 | Etype::Double => 2,
             _ => 1,
         })

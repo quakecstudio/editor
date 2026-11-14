@@ -343,7 +343,8 @@ impl EntitySchema {
             FieldValue::Float => is_number(value),
             FieldValue::Vector => {
                 let parts: Vec<&str> = value.split(' ').collect();
-                parts.len() == 3 && parts.iter().all(|part| is_number(part))
+                parts.len() == qc_types::PROGS_VECTOR_SLOTS
+                    && parts.iter().all(|part| is_number(part))
             }
             FieldValue::Entity => !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()),
             FieldValue::Function => self.functions.contains(value),

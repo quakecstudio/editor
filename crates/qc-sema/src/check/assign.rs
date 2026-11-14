@@ -27,6 +27,7 @@ use crate::check::{Constness, Reference, Value};
 use crate::ir;
 use crate::lower::{Qualifier, declares};
 use crate::ty::{SimpleType, Type};
+use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT};
 
 /// What an assignment operator stores (FTEF-29.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -851,7 +852,8 @@ impl Checker<'_> {
         if array && !vector && !nested && !self.env.local_static(start) {
             return self.array_aggregate(declarator, local, &elements);
         }
-        if !vector || self.env.local_static(start) || elements.len() != 3 {
+        if !vector || self.env.local_static(start) || elements.len() != qc_types::PROGS_VECTOR_SLOTS
+        {
             self.followed = false;
             return Ok(());
         }
@@ -1023,8 +1025,8 @@ impl Checker<'_> {
         let size = self.env.layout(target).map_or(0, |l| l.words);
         let mut word = 0;
         while word < size {
-            let (op, step) = if size.saturating_sub(word) >= 3 {
-                (Op::StoreV, 3)
+            let (op, step) = if size.saturating_sub(word) >= VECTOR_WORDS {
+                (Op::StoreV, VECTOR_WORDS)
             } else {
                 (Op::StoreF, 1)
             };
@@ -1132,7 +1134,7 @@ impl Checker<'_> {
         let parameter = |slot| Some(ir::Name::Parameter(slot));
         // A vector array's setter takes the element's index, its words' divided by 3.
         let index = if self.etype(target) == Some(Etype::Vector) {
-            let three = Value::constant(Constant::float(3.0));
+            let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
             self.emit(Op::DivF, &element.index, &three, span)?
         } else {
             element.index.clone()
@@ -1151,7 +1153,11 @@ impl Checker<'_> {
         self.generated.push(ir::BodyStatement {
             a: self.name_of(stored),
             b: parameter(1),
-            ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+            ..ir::BodyStatement::bare(if words == VECTOR_WORDS {
+                Op::StoreV
+            } else {
+                Op::StoreF
+            })
         });
         self.clobber_return();
         self.generated.push(ir::BodyStatement {

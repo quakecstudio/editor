@@ -56,6 +56,13 @@
 //! `PR_ParseDefs` and `PR_GetDef` and FTEQCC's `QCC_PR_ParseDefs` and `QCC_PR_GetDef`
 //! (`docs/spec/inventory-l3.md`).
 
+/// The words of a vector, `type_vector->size` (`qc-types`' `PROGS_VECTOR_SLOTS`).
+const VECTOR_WORDS: u32 = 3;
+/// [`VECTOR_WORDS`] as the float a vector index is divided by.
+const VECTOR_WORDS_FLOAT: f32 = 3.0;
+/// [`VECTOR_WORDS`] as the `int` a vector index is divided by.
+const VECTOR_WORDS_INT: i32 = 3;
+
 pub mod cast;
 mod check;
 pub mod db;
