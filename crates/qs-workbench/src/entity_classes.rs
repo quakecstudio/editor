@@ -12,6 +12,7 @@ use qs_commands::{Command, Outcome, RegisterError, Registry};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::map_edit::{ClassInfo, FlagInfo, KeyInfo};
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 
 /// The id of `project.entities`.
@@ -37,94 +38,49 @@ pub struct EntitiesFound {
     pub targeting: Vec<String>,
 }
 
-/// One entity class.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct ClassInfo {
-    /// The classname, its spawn function's name.
-    pub name: String,
-    /// Whether a `/*QUAKED*/` comment documents it ("documented") or only the engine calls
-    /// it ("unreferenced").
-    pub found: String,
-    /// "point" or "brush".
-    pub shape: String,
-    /// Its colour, each component 0 to 1.
-    pub color: Option<[f32; 3]>,
-    /// Its box, the smallest corner first.
-    pub size: Option<[[f32; 3]; 2]>,
-    /// Its model.
-    pub model: Option<String>,
-    /// Its comment's text, by line.
-    pub doc: Vec<String>,
-    /// The keys it reads.
-    pub keys: Vec<KeyInfo>,
-    /// Its spawnflags, by value.
-    pub spawnflags: Vec<FlagInfo>,
-}
-
-/// A key a class reads.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct KeyInfo {
-    /// The key, a field's name.
-    pub name: String,
-    /// Its type: float, vector, string, entity, function or other.
-    pub ty: String,
-    /// The value the class gives it when the map does not.
-    pub default: Option<String>,
-}
-
-/// A spawnflag.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct FlagInfo {
-    /// Its value.
-    pub value: u32,
-    /// Its name, when the code or the comment gives one.
-    pub name: Option<String>,
-}
-
-impl From<&EntityClass> for ClassInfo {
-    fn from(class: &EntityClass) -> Self {
-        Self {
-            name: class.name.clone(),
-            found: match class.found {
-                Found::Documented => "documented",
-                Found::Unreferenced => "unreferenced",
-            }
-            .to_owned(),
-            shape: match class.shape {
-                Shape::Point => "point",
-                Shape::Brush => "brush",
-            }
-            .to_owned(),
-            color: class.color,
-            size: class.size,
-            model: class.model.clone(),
-            doc: class.doc.clone(),
-            keys: class
-                .keys
-                .iter()
-                .map(|key| KeyInfo {
-                    name: key.name.clone(),
-                    ty: match key.ty {
-                        KeyType::Float => "float",
-                        KeyType::Vector => "vector",
-                        KeyType::String => "string",
-                        KeyType::Entity => "entity",
-                        KeyType::Function => "function",
-                        KeyType::Other => "other",
-                    }
-                    .to_owned(),
-                    default: key.default.clone(),
-                })
-                .collect(),
-            spawnflags: class
-                .spawnflags
-                .iter()
-                .map(|flag| FlagInfo {
-                    value: flag.value,
-                    name: flag.name.clone(),
-                })
-                .collect(),
+/// `class` as the map editor and `project.entities` give it.
+pub(crate) fn class_info(class: &EntityClass) -> ClassInfo {
+    ClassInfo {
+        name: class.name.clone(),
+        found: match class.found {
+            Found::Documented => "documented",
+            Found::Unreferenced => "unreferenced",
         }
+        .to_owned(),
+        shape: match class.shape {
+            Shape::Point => "point",
+            Shape::Brush => "brush",
+        }
+        .to_owned(),
+        color: class.color,
+        size: class.size,
+        model: class.model.clone(),
+        doc: class.doc.clone(),
+        keys: class
+            .keys
+            .iter()
+            .map(|key| KeyInfo {
+                name: key.name.clone(),
+                ty: match key.ty {
+                    KeyType::Float => "float",
+                    KeyType::Vector => "vector",
+                    KeyType::String => "string",
+                    KeyType::Entity => "entity",
+                    KeyType::Function => "function",
+                    KeyType::Other => "other",
+                }
+                .to_owned(),
+                default: key.default.clone(),
+            })
+            .collect(),
+        spawnflags: class
+            .spawnflags
+            .iter()
+            .map(|flag| FlagInfo {
+                value: flag.value,
+                name: flag.name.clone(),
+            })
+            .collect(),
     }
 }
 
@@ -191,7 +147,7 @@ impl<C: HasWorkbench + 'static> Command<C> for ProjectEntities {
         }
         let targeting = context.workbench().targeting_keys();
         Ok(Outcome::outside_history(EntitiesFound {
-            classes: classes.iter().map(ClassInfo::from).collect(),
+            classes: classes.iter().map(class_info).collect(),
             fgd: params.fgd,
             targeting,
         }))

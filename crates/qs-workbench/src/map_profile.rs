@@ -18,7 +18,7 @@ use qs_map_vis::{Mode, Vis, VisError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::map_compile::MapReport;
+use crate::map_edit::MapReport;
 use crate::preview::{HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 

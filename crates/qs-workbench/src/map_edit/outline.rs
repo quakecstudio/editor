@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::groups::NAME_KEY;
 use super::links::TARGETNAME;
 use super::{EntityIndex, MapDocument, MapEdited, edit_map};
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasMap, MapEditError};
 
 /// The id of `map.outline`.
 pub const MAP_OUTLINE: &str = "map.outline";
@@ -190,24 +190,24 @@ impl MapDocument {
         &self,
         entity: EntityIndex,
         into: EntityIndex,
-    ) -> Result<(Option<(RoomKind, qs_map::ContainerId)>, bool), WorkbenchError> {
+    ) -> Result<(Option<(RoomKind, qs_map::ContainerId)>, bool), MapEditError> {
         let moved = self
             .file
             .entities
             .get(entity.get())
-            .ok_or(WorkbenchError::NoEntity { entity })?;
+            .ok_or(MapEditError::NoEntity { entity })?;
         // The world and a layer's own entity stand in no container.
         if entity.is_world() || matches!(moved.container(), Some((RoomKind::Layer, _))) {
-            return Err(WorkbenchError::CannotMove { entity });
+            return Err(MapEditError::CannotMove { entity });
         }
         let target = self
             .file
             .entities
             .get(into.get())
-            .ok_or(WorkbenchError::NoEntity { entity: into })?
+            .ok_or(MapEditError::NoEntity { entity: into })?
             .container();
         if target.is_none() && !into.is_world() {
-            return Err(WorkbenchError::NotContainer { entity: into });
+            return Err(MapEditError::NotContainer { entity: into });
         }
         // A group cannot go into itself or a group inside it.
         let parents = self.file.parents();
@@ -215,7 +215,7 @@ impl MapDocument {
         for _ in 0..parents.len() {
             match at {
                 Some(place) if place.get() == entity.get() => {
-                    return Err(WorkbenchError::NotContainer { entity: into });
+                    return Err(MapEditError::NotContainer { entity: into });
                 }
                 Some(place) => at = parents.get(place.get()).copied().flatten(),
                 None => break,
@@ -228,7 +228,7 @@ impl MapDocument {
 
     /// Moves the entity or group at `entity` into the layer or group at `into`, the world for
     /// the default layer.
-    fn move_to(&mut self, entity: EntityIndex, into: EntityIndex) -> Result<(), WorkbenchError> {
+    fn move_to(&mut self, entity: EntityIndex, into: EntityIndex) -> Result<(), MapEditError> {
         let (target, _) = self.move_target(entity, into)?;
         let moved = self.entity_mut(entity)?;
         let set = moved.put_in(target);
@@ -239,21 +239,21 @@ impl MapDocument {
 /// `map.outline`.
 pub(super) struct MapOutline;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapOutline {
+impl<C: HasMap + 'static> Command<C> for MapOutline {
     const ID: &'static str = MAP_OUTLINE;
     const SUMMARY: &'static str = "The open map's outline: the default layer and each layer, \
         their groups and linked groups, then their entities by classname and targetname, with \
         brush counts; with filter, only what holds the text and what is around it.";
     type Params = OutlineParams;
     type Output = Vec<OutlineRow>;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: OutlineParams,
-    ) -> Result<Outcome<Vec<OutlineRow>, C>, WorkbenchError> {
-        let document = context.workbench().map().ok_or(WorkbenchError::NoMap)?;
+    ) -> Result<Outcome<Vec<OutlineRow>, C>, MapEditError> {
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         Ok(Outcome::unchanged(
             document.outline(params.filter.as_deref()),
         ))
@@ -263,20 +263,20 @@ impl<C: HasWorkbench + 'static> Command<C> for MapOutline {
 /// `map.move_to`.
 pub(super) struct MapMoveTo;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapMoveTo {
+impl<C: HasMap + 'static> Command<C> for MapMoveTo {
     const ID: &'static str = MAP_MOVE_TO;
     const SUMMARY: &'static str = "Moves an entity or a group of the open map into a layer or \
         a group, or into the default layer given the world, as TrenchBroom writes it.";
     type Params = MoveToParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: MoveToParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
-        let document = context.workbench().map().ok_or(WorkbenchError::NoMap)?;
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         let (_, there) = document.move_target(params.entity, params.into)?;
         if there {
             // Already there: nothing changes, and no undo step is made.

@@ -39,6 +39,7 @@ use qs_workbench::dock::DockFrame;
 use qs_workbench::engine::{ENGINE_SCREENSHOT, EngineScreenshotParams, Screenshot};
 use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITIES};
 use qs_workbench::export::{ExportParams, Exported, PROJECT_EXPORT};
+use qs_workbench::files_changed::{FILES_CHANGED, FilesChanged, FilesChangedParams};
 use qs_workbench::game_files::GameFiles;
 use qs_workbench::git::{
     GIT_BLAME, GIT_BRANCHES, GIT_COMMIT, GIT_CONFLICTS, GIT_CREATE_BRANCH, GIT_DIFF, GIT_HEAD_TEXT,
@@ -47,18 +48,20 @@ use qs_workbench::git::{
     GitResolveParams, GitSide, GitStageParams, GitStatus,
 };
 use qs_workbench::ids::{ActionIndex, TerminalIndex, WatchIndex};
-use qs_workbench::map_backup::{
-    Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams,
-};
 use qs_workbench::map_compile::{
     MAP_LEAKS, MAP_PLAY_FROM_HERE, MAP_PORTALS, MapPortals, PlayFromHereParams,
 };
+use qs_workbench::map_edit::backup::{
+    Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams,
+};
+use qs_workbench::map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
+use qs_workbench::map_edit::textures::TextureSources;
 use qs_workbench::map_edit::{
-    BSP_EXTENSION, BspSave, EntityKeys, EntityParams, FILES_CHANGED, FilesChanged,
-    FilesChangedParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_EXTENSION,
-    MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
-    MapDifference, MapDocument, MapOnDisk, MapOpenParams, MapSaved, MoveParams, RemoveKeyParams,
-    ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
+    BSP_EXTENSION, BspSave, EntityKeys, EntityParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE,
+    MAP_ENTITY, MAP_EXTENSION, MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE,
+    MAP_SAVE, MAP_SELECT, MAP_SET_KEY, MapDifference, MapDocument, MapOnDisk, MapOpenParams,
+    MapSaved, MoveParams, RemoveKeyParams, ResolveParams, RotateParams, SaveParams,
+    SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_workbench::map_edit::{
     BrushChamferParams, BrushClipParams, BrushCreateParams, BrushExtrudeParams, BrushHollowParams,
@@ -76,8 +79,7 @@ use qs_workbench::map_edit::{
     MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams,
 };
 use qs_workbench::map_edit::{
-    FilterParams, LinkParams, MAP_FILTER, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, MapFiltered,
-    PlaceParams, SetFlagParams,
+    LinkParams, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, PlaceParams, SetFlagParams,
 };
 use qs_workbench::map_edit::{MAP_ACCEPT, MAP_REJECT, MAP_STAGED, MapHunk, MapHunksParams};
 use qs_workbench::map_edit::{
@@ -87,16 +89,15 @@ use qs_workbench::map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlinePara
 use qs_workbench::map_edit::{
     MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PlacePrefabParams, Prefabs, SavePrefabParams,
 };
+use qs_workbench::map_filter::{FilterParams, MAP_FILTER, MapFiltered};
 use qs_workbench::map_profile::{
     MAP_CHOOSE_PROFILE, MAP_PROFILES, MAP_RUN_PROFILE, Profile, ProfileRun, RunProfileParams,
 };
-use qs_workbench::map_textures::TextureSources;
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
 use qs_workbench::staged::HunksParams;
 use qs_workbench::terminal::{CloseParams, Opened, SendParams, TaskInfo};
-use qs_workbench::texture_import::{TEXTURE_IMPORT, TextureImportParams};
 use qs_workbench::tools::{PROJECT_FILES, PROJECT_SEARCH, ProjectSearchParams, SearchFound};
 use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
 use qs_workbench::{
@@ -143,8 +144,8 @@ use crate::strings::{Text, Truncation};
 use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
 use crate::theme::{SECTION_GAP, Theme, Token, semibold};
 #[cfg(test)]
-use qs_workbench::map_uv::FaceRef;
-use qs_workbench::map_uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
+use qs_workbench::map_edit::uv::FaceRef;
+use qs_workbench::map_edit::uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
 
 /// What the window's commands work on.
 #[derive(Debug)]
@@ -163,15 +164,28 @@ impl HasPreview for Workspace {
     }
 }
 
+impl qs_workbench::HasMap for Workspace {
+    type Project = Workbench<FsLoader>;
+    type Live = Preview;
+
+    fn map_store(&mut self) -> &mut qs_workbench::MapStore {
+        self.workbench.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Workbench<FsLoader> {
+        &mut self.workbench
+    }
+
+    fn live_map(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
+}
+
 impl HasWorkbench for Workspace {
     type Loader = FsLoader;
 
     fn workbench(&mut self) -> &mut Workbench<FsLoader> {
         &mut self.workbench
-    }
-
-    fn preview(&mut self) -> Option<&mut Preview> {
-        Some(&mut self.preview)
     }
 }
 

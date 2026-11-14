@@ -15,10 +15,10 @@ use serde_json::{Value, json};
 
 use super::{FaceIndex, MAP_FACE_ALIGN, MAP_FACE_UV};
 use crate::map_edit::MapEdited;
+use crate::map_edit::textures::TextureSources;
 use crate::map_edit::{BrushIndex, EntityIndex, MAP_BRUSH_TEXTURE, MAP_OPEN};
-use crate::map_textures::TextureSources;
 use crate::preview::{HasPreview, Preview, PreviewConfig};
-use crate::{Config, HasWorkbench, Workbench, WorkbenchError, register, register_preview};
+use crate::{Config, HasWorkbench, MapEditError, Workbench, register, register_preview};
 
 const NEAR: f64 = 1e-6;
 /// The keep map's door, the fifth entity.
@@ -29,15 +29,28 @@ struct Context {
     preview: Preview,
 }
 
+impl crate::HasMap for Context {
+    type Project = Workbench<FsLoader>;
+    type Live = Preview;
+
+    fn map_store(&mut self) -> &mut crate::MapStore {
+        self.workbench.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Workbench<FsLoader> {
+        &mut self.workbench
+    }
+
+    fn live_map(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
+}
+
 impl HasWorkbench for Context {
     type Loader = FsLoader;
 
     fn workbench(&mut self) -> &mut Workbench<FsLoader> {
         &mut self.workbench
-    }
-
-    fn preview(&mut self) -> Option<&mut Preview> {
-        Some(&mut self.preview)
     }
 }
 
@@ -156,7 +169,7 @@ fn missing_textures_and_faces_are_refused() {
         .unwrap_err();
     assert!(
         error.to_string().contains(
-            &WorkbenchError::NoTextureSize {
+            &MapEditError::NoTextureSize {
                 texture: "nowhere".to_owned()
             }
             .to_string()
@@ -178,7 +191,7 @@ fn missing_textures_and_faces_are_refused() {
             json!({ "faces": [face_ref(1), face_ref(99)], "edit": { "kind": "reset" } }),
         )
         .unwrap_err();
-    let wanted = WorkbenchError::NoFace {
+    let wanted = MapEditError::NoFace {
         entity: EntityIndex::new(0),
         brush: BrushIndex::new(0),
         face: FaceIndex::new(99),

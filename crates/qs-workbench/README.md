@@ -122,6 +122,15 @@ an edit, so both commands run outside the edit history
   project as git objects on a private ref (`qs-checkpoint`), `checkpoint.list` lists them, and
   `checkpoint.restore` puts every file back, deletions included, dropping the editor's
   unsaved text and staged hunks so the IDE shows the checkpoint.
-- `HasWorkbench` and `register`: the commands for any context with a `Workbench`.
+- `HasWorkbench` and `register`: the commands for any context with a `Workbench`. Such a
+  context also has the open map (`HasMap`): its `MapStore` is the workbench's
+  (`Workbench::maps_mut`), which opens, saves and backs up the map.
+- The map editor's seam (`map_edit`, P6-40): the map commands work on any `HasMap` context
+  and know nothing of QuakeC or the engine. They ask the project for its folder, an entity
+  class, its targeting keys and a check of a map's entities (`MapProject`, answered by the
+  workbench from the server QuakeC) and the game for whether it plays the map, to take a
+  change, and for its folders (`LiveMap`, answered by `Preview`). `register_map_game` adds
+  the map commands only a context with a game offers; `SendLive` sends a `LiveChange` over
+  the bridge.
 - `OPEN_PROJECT`, `OPEN_FILE` and their parameter types, so the app runs them without
   spelling their ids.

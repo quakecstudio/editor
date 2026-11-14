@@ -83,7 +83,10 @@ fn outline_once(path: &Path, count: usize) -> Result<(), String> {
         }
     }
     let mut workbench = Workbench::new(FsLoader, Config::default());
-    let document = workbench.open_map(path).map_err(|e| e.to_string())?;
+    let document = workbench
+        .maps_mut()
+        .open_map(path)
+        .map_err(|e| e.to_string())?;
     let mut seen = Vec::new();
     walk(&document.outline(None), &mut seen);
     seen.sort_unstable();

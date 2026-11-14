@@ -16,10 +16,9 @@ use qs_wad::write::WadBuilder;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::WorkbenchError;
+use crate::map_edit::textures::{Game, game_palette};
 use crate::map_edit::{EntityIndex, MapSource, edit_map};
-use crate::map_textures::{Game, game_palette};
-use crate::preview::HasPreview;
+use crate::{HasMap, MapEditError, MapProject};
 
 /// The id of `texture.import`.
 pub const TEXTURE_IMPORT: &str = "texture.import";
@@ -85,14 +84,14 @@ pub struct TextureImported {
 
 impl TextureImportParams {
     /// The texture's name: the one given, else the image's file name without its extension.
-    fn texture_name(&self) -> Result<TextureName, WorkbenchError> {
+    fn texture_name(&self) -> Result<TextureName, MapEditError> {
         let name = self.name.clone().unwrap_or_else(|| {
             self.path
                 .file_stem()
                 .map(|stem| stem.to_string_lossy().into_owned())
                 .unwrap_or_default()
         });
-        TextureName::parse(name.as_bytes()).map_err(|error| WorkbenchError::Texture { error })
+        TextureName::parse(name.as_bytes()).map_err(|error| MapEditError::Texture { error })
     }
 }
 
@@ -128,14 +127,14 @@ fn encode(
     name: &TextureName,
     palette: &Palette,
     dither: DitherChoice,
-) -> Result<Vec<u8>, WorkbenchError> {
+) -> Result<Vec<u8>, MapEditError> {
     let image = image::load_from_memory_with_format(png, image::ImageFormat::Png)
-        .map_err(|error| WorkbenchError::Image {
+        .map_err(|error| MapEditError::Image {
             path: path.to_path_buf(),
             error,
         })?
         .to_rgba8();
-    let texture = |error| WorkbenchError::Texture { error };
+    let texture = |error| MapEditError::Texture { error };
     let rgba = RgbaImage::new(image.width(), image.height(), image.as_raw()).map_err(texture)?;
     rgba.encode(name, palette, dither.into(), None)
         .map_err(texture)
@@ -146,20 +145,20 @@ fn encode(
 ///
 /// # Errors
 ///
-/// [`WorkbenchError::Image`] when `png` is not a PNG, and [`WorkbenchError::Texture`] for a
+/// [`MapEditError::Image`] when `png` is not a PNG, and [`MapEditError::Texture`] for a
 /// name or size Quake's textures cannot take (WAD-6, WAD-7).
 pub fn quantized(
     png: &[u8],
     name: &str,
     palette: &Palette,
     dither: DitherChoice,
-) -> Result<DecodedTexture, WorkbenchError> {
+) -> Result<DecodedTexture, MapEditError> {
     let name =
-        TextureName::parse(name.as_bytes()).map_err(|error| WorkbenchError::Texture { error })?;
+        TextureName::parse(name.as_bytes()).map_err(|error| MapEditError::Texture { error })?;
     let lump = encode(png, Path::new(""), &name, palette, dither)?;
     palette
         .decode_miptex(&lump)
-        .map_err(|error| WorkbenchError::Texture { error })
+        .map_err(|error| MapEditError::Texture { error })
 }
 
 /// The WAD at `path` with the texture `lump` named `name` in it: in the place of one of the
@@ -168,22 +167,22 @@ fn with_texture(
     path: &Path,
     name: &TextureName,
     lump: Vec<u8>,
-) -> Result<(Vec<u8>, bool), WorkbenchError> {
+) -> Result<(Vec<u8>, bool), MapEditError> {
     let old = match std::fs::read(path) {
         Ok(bytes) => Some(bytes),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => {
-            return Err(WorkbenchError::Save {
+            return Err(MapEditError::Save {
                 path: path.to_path_buf(),
                 error,
             });
         }
     };
-    let unreadable = |error| WorkbenchError::Wad {
+    let unreadable = |error| MapEditError::Wad {
         path: path.to_path_buf(),
         error,
     };
-    let unwritable = |error| WorkbenchError::WadWrite {
+    let unwritable = |error| MapEditError::WadWrite {
         path: path.to_path_buf(),
         error,
     };
@@ -216,37 +215,36 @@ fn with_texture(
 /// `texture.import`.
 pub(crate) struct TextureImport;
 
-impl<C: HasPreview + 'static> Command<C> for TextureImport {
+impl<C: HasMap + 'static> Command<C> for TextureImport {
     const ID: &'static str = TEXTURE_IMPORT;
     const SUMMARY: &'static str = "Imports a PNG image as a texture: quantized to the game's \
         palette with its mip levels, written into the project's own WAD in textures/, in place \
         of a texture of the same name, and that WAD named in the open map's world.";
     type Params = TextureImportParams;
     type Output = TextureImported;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: TextureImportParams,
-    ) -> Result<Outcome<TextureImported, C>, WorkbenchError> {
+    ) -> Result<Outcome<TextureImported, C>, MapEditError> {
         let name = params.texture_name()?;
-        let (workbench, preview) = context.workbench_and_preview();
-        let root = workbench
-            .root()
-            .ok_or(WorkbenchError::NoProject)?
-            .to_path_buf();
-        let game = preview.game_base_path();
+        let root = context
+            .map_project()
+            .project_root()
+            .ok_or(MapEditError::NoProject)?;
+        let game = context.game_folders().base;
         let palette = game_palette(Some(&root), game.as_deref().map(Game::at).as_ref())
-            .ok_or(WorkbenchError::NoPalette)?;
-        let png = std::fs::read(&params.path).map_err(|_| WorkbenchError::NoFile {
+            .ok_or(MapEditError::NoPalette)?;
+        let png = std::fs::read(&params.path).map_err(|_| MapEditError::NoFile {
             path: params.path.clone(),
         })?;
         let lump = encode(&png, &params.path, &name, &palette, params.dither)?;
         let wad = project_wad(&root);
         let (bytes, replaced) = with_texture(&wad, &name, lump)?;
         if let Some(folder) = wad.parent() {
-            std::fs::create_dir_all(folder).map_err(|error| WorkbenchError::Save {
+            std::fs::create_dir_all(folder).map_err(|error| MapEditError::Save {
                 path: folder.to_path_buf(),
                 error,
             })?;
@@ -255,7 +253,7 @@ impl<C: HasPreview + 'static> Command<C> for TextureImport {
         let writing = wad.with_extension(WRITING);
         std::fs::write(&writing, bytes)
             .and_then(|()| std::fs::rename(&writing, &wad))
-            .map_err(|error| WorkbenchError::Save {
+            .map_err(|error| MapEditError::Save {
                 path: wad.clone(),
                 error,
             })?;
@@ -269,7 +267,7 @@ impl<C: HasPreview + 'static> Command<C> for TextureImport {
         };
         // The open map's world, when it is a `.map`: the key it lists its WADs in, the one the
         // compilers read first, its value, and whether the WAD is among them.
-        let listed = context.workbench().map().and_then(|document| {
+        let listed = context.map_store().map().and_then(|document| {
             let MapSource::Map = document.source() else {
                 return None;
             };
@@ -307,7 +305,7 @@ impl<C: HasPreview + 'static> Command<C> for TextureImport {
             document
                 .entity_mut(EntityIndex::WORLD)?
                 .set(key, value.as_bytes())
-                .map_err(|error| WorkbenchError::Map { path: map, error })
+                .map_err(|error| MapEditError::Map { path: map, error })
         })?;
         Ok(Outcome::undoable(imported, step))
     }

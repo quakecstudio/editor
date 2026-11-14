@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, MapDocument, MapEdited, edit_map};
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasMap, MapEditError};
 
 /// The id of `map.link`.
 pub const MAP_LINK: &str = "map.link";
@@ -88,7 +88,7 @@ impl MapDocument {
         &self,
         copy: &mut Entity,
         targeting: &[String],
-    ) -> Result<(), WorkbenchError> {
+    ) -> Result<(), MapEditError> {
         let Some(name) = copy.value(TARGETNAME).and_then(Numbered::of) else {
             return Ok(());
         };
@@ -139,7 +139,7 @@ impl MapDocument {
         entity: EntityIndex,
         key: &str,
         target: EntityIndex,
-    ) -> Result<(), WorkbenchError> {
+    ) -> Result<(), MapEditError> {
         self.entity_mut(entity)?;
         let found = self.entity_mut(target)?;
         let name = match found.value(TARGETNAME).filter(|name| !name.is_empty()) {
@@ -160,7 +160,7 @@ impl MapDocument {
 /// `map.link`.
 pub(super) struct MapLink;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapLink {
+impl<C: HasMap + 'static> Command<C> for MapLink {
     const ID: &'static str = MAP_LINK;
     const SUMMARY: &'static str = "Points a key of an entity of the open map, one the code \
         fires entities by such as target or killtarget, at another entity: the key takes the \
@@ -168,13 +168,13 @@ impl<C: HasWorkbench + 'static> Command<C> for MapLink {
         it has none.";
     type Params = LinkParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: LinkParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             document.link(params.entity, &params.key, params.target)
         })?;

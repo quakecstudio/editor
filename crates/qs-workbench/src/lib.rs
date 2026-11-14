@@ -20,15 +20,14 @@ mod commands;
 mod editing;
 pub mod entity_classes;
 pub mod export;
+pub mod files_changed;
 pub mod git;
 pub mod ids;
-pub mod map_backup;
 pub mod map_check;
 pub mod map_compile;
 pub mod map_edit;
+pub mod map_filter;
 pub mod map_profile;
-pub mod map_textures;
-pub mod map_uv;
 mod preview;
 mod recent;
 pub mod search;
@@ -37,13 +36,10 @@ pub mod terminal;
 pub mod testing;
 #[cfg(test)]
 mod tests;
-pub mod texture_import;
 pub mod tools;
 pub mod vm_run;
 
 use qs_map::qbsp::QbspError;
-use qs_map::shapes::ShapeError;
-use qs_wad::texture::TextureError;
 use qs_wad::write::WadWriteError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -61,6 +57,9 @@ pub use qc_project::{Dialect, FsLoader, Loader, Target};
 pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
+pub use crate::map_edit::{
+    EntityCheck, EntityProblem, GameFolders, HasMap, LiveMap, MapEditError, MapProject, MapStore,
+};
 pub use crate::preview::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
     ScenarioRunParams, StepBy, StepByParams, UNWATCH, UnwatchParams, WATCH, WatchParams, debug,
@@ -70,7 +69,7 @@ pub use crate::preview::{
     CHOOSE_GAME, ChooseGameParams, ConsoleLine, GAME, HasPreview, OnLoss, PAUSE, PICK, PLAY, POLL,
     PickParams, PlayParams, PlayState, Preview, PreviewConfig, PreviewError, PreviewStatus, RELOAD,
     RESTART, RESUME, ReloadParams, SELECT, SET_FIELD, STEP, STOP, SelectParams, SelectedEntity,
-    SetFieldParams, entities, register_preview,
+    SendLive, SetFieldParams, entities, register_preview,
 };
 pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
 pub use crate::staged::{
@@ -347,7 +346,7 @@ pub struct Workbench<L> {
     /// The terminal tabs (P4-36).
     terminals: terminal::Terminals,
     /// The map open in the map view (P5-06).
-    map: Option<map_edit::MapDocument>,
+    maps: MapStore,
     /// The compile profile chosen, which `map.run_profile` runs when given none (P6-20).
     profile: Option<String>,
 }
@@ -371,7 +370,7 @@ impl<L: Loader> Workbench<L> {
             sent: 0,
             staged: staged::Staged::default(),
             terminals: terminal::Terminals::default(),
-            map: None,
+            maps: MapStore::default(),
             profile: None,
         }
     }
@@ -662,6 +661,19 @@ pub(crate) fn problems<L: Loader>(host: &mut AnalysisHost<L>) -> Vec<Problem> {
     out
 }
 
+impl<L: Loader> Workbench<L> {
+    /// The map open in the map view.
+    #[must_use]
+    pub const fn map(&self) -> Option<&map_edit::MapDocument> {
+        self.maps.map()
+    }
+
+    /// The store of the map open in the map view, to open, change or save it.
+    pub const fn maps_mut(&mut self) -> &mut MapStore {
+        &mut self.maps
+    }
+}
+
 /// Why the workbench could not open, change or save a project or a file.
 #[derive(Debug)]
 pub enum WorkbenchError {
@@ -685,13 +697,6 @@ pub enum WorkbenchError {
     },
     /// No project is open.
     NoProject,
-    /// A prefab's name is not one its file can have: letters, digits, `-` and `_` (P6-23).
-    PrefabName {
-        /// The name.
-        name: String,
-    },
-    /// Nothing is selected to make a prefab of (P6-23).
-    NoSelection,
     /// There is no quick fix at the place.
     NoFix {
         /// The file.
@@ -722,23 +727,6 @@ pub enum WorkbenchError {
     },
     /// No map is open in the map view.
     NoMap,
-    /// The open map has no entity at that place.
-    NoEntity {
-        /// The entity asked for.
-        entity: map_edit::EntityIndex,
-    },
-    /// The world, or a brush entity, where only a point entity can be rotated or deleted.
-    NotPointEntity {
-        /// The entity.
-        entity: map_edit::EntityIndex,
-    },
-    /// A BSP that does not load or cannot take a new entity lump.
-    Bsp {
-        /// The file.
-        path: PathBuf,
-        /// Why.
-        error: qs_bsp::BspError,
-    },
     /// A `.map` that does not parse, or a key it cannot hold.
     Map {
         /// The file.
@@ -746,26 +734,8 @@ pub enum WorkbenchError {
         /// Why.
         error: qs_map::MapError,
     },
-    /// Another program changed the map's file since the editor read or saved it (P5-17):
-    /// saving would overwrite that, so the map is reloaded or kept first (`map.resolve`).
-    ChangedOnDisk {
-        /// The file.
-        path: PathBuf,
-    },
     /// The project's server QuakeC does not compile to a program to spawn a map with.
     NotBuilt,
-    /// An image could not be read (P6-16).
-    Image {
-        /// The image.
-        path: PathBuf,
-        /// Why.
-        error: image::ImageError,
-    },
-    /// A texture cannot be made: its name or size breaks Quake's rules (P6-16, WAD-6, WAD-7).
-    Texture {
-        /// Why.
-        error: TextureError,
-    },
     /// A WAD could not be read (P6-16, WAD-2).
     Wad {
         /// The WAD.
@@ -779,44 +749,6 @@ pub enum WorkbenchError {
         path: PathBuf,
         /// Why.
         error: WadWriteError,
-    },
-    /// No palette was found in the project or the game to make a texture in (P6-16).
-    NoPalette,
-    /// A quick fix would remove a brush that has volume: the map changed since its issue was
-    /// found (P6-19).
-    NotEmpty {
-        /// The entity.
-        entity: map_edit::EntityIndex,
-        /// The brush.
-        brush: map_edit::BrushIndex,
-    },
-    /// The entity has no such key (P6-19).
-    NoKey {
-        /// The entity.
-        entity: map_edit::EntityIndex,
-        /// The key.
-        key: String,
-    },
-    /// The brush has no face at this place (P6-22).
-    NoFace {
-        /// The entity.
-        entity: map_edit::EntityIndex,
-        /// The brush.
-        brush: map_edit::BrushIndex,
-        /// The face.
-        face: map_uv::FaceIndex,
-    },
-    /// No WAD or BSP of the map holds the texture, so its size, which the edit needs, is not
-    /// known (P6-22, MAP-13).
-    NoTextureSize {
-        /// The texture's name.
-        texture: String,
-    },
-    /// A scale factor of 0, infinite or not a number, which would leave no texture (P6-22,
-    /// MAP-13.11).
-    BadScale {
-        /// The factors given.
-        scale: [f64; 2],
     },
     /// The open map is a BSP with no `.map` source, so there is nothing to compile (P6-13).
     NoMapSource {
@@ -843,11 +775,6 @@ pub enum WorkbenchError {
         path: PathBuf,
         /// Why.
         error: qs_map_vis::VisError,
-    },
-    /// The open map's review has no hunk of this number (P6-21).
-    NoMapHunk {
-        /// The number asked for.
-        hunk: map_edit::MapHunkNumber,
     },
     /// No compile profile has this name (P6-20).
     UnknownProfile {
@@ -878,126 +805,38 @@ pub enum WorkbenchError {
         /// Why.
         error: qs_sim::WorldError,
     },
-    /// The open map has no room of this name (MAP-9).
-    NoRoom {
-        /// The name asked for.
-        name: String,
-    },
-    /// A `.ent` beside the BSP, which the engine reads in place of the entity lump
-    /// (BSP-19.1), so a rewritten lump would not be seen.
-    EntOverride {
-        /// The `.ent`.
-        path: PathBuf,
-    },
-    /// The entity is locked, by `map.lock` or in a locked layer (P5-14).
-    Locked {
-        /// The entity.
-        entity: map_edit::EntityIndex,
-    },
-    /// The entity cannot be moved into a layer or group: it is the world or a layer (P5-16).
-    CannotMove {
-        /// The entity.
-        entity: map_edit::EntityIndex,
-    },
-    /// The entity is no layer or group to move into, or is the one being moved or one inside
-    /// it (P5-16).
-    NotContainer {
-        /// The entity.
-        entity: map_edit::EntityIndex,
-    },
-    /// The entity has no brush at this place (P6-08).
-    NoBrush {
-        /// The entity.
-        entity: map_edit::EntityIndex,
-        /// The brush.
-        brush: map_edit::BrushIndex,
-    },
-    /// A brush edit would leave no valid brush (P6-08, MAP-3.4).
-    Brush {
-        /// Why.
-        error: qs_map::BrushError,
-    },
-    /// A shape's settings are out of range, or a brush of it would not be valid (P6-18,
-    /// MAP-10).
-    Shape {
-        /// Why.
-        error: ShapeError,
-    },
-    /// The entity is no TrenchBroom layer (MAP-9.1).
-    NotLayer {
-        /// The entity.
-        entity: map_edit::EntityIndex,
-    },
-    /// A linked group's copies could not be updated (MAP-9.7).
-    Link {
-        /// Why.
-        error: qs_map::LinkError,
-    },
+    /// A map command could not open, change or save the open map.
+    MapEdit(MapEditError),
 }
 
 impl fmt::Display for WorkbenchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Project(error) => error.fmt(f),
+            Self::Checkpoint(error) => error.fmt(f),
             Self::Rename(error) => error.fmt(f),
             Self::Save { path, error } => {
                 write!(f, "{}: cannot be written: {error}", path.display())
             }
+            Self::Project(error) => error.fmt(f),
             Self::NoFile { path } => write!(f, "{}: cannot be read", path.display()),
-            Self::Locked { entity } => write!(f, "entity {entity} is locked"),
-            Self::NotLayer { entity } => write!(f, "entity {entity} is no layer"),
-            Self::NoBrush { entity, brush } => {
-                write!(f, "entity {entity} has no brush {}", brush.get())
+            Self::NoProject => f.write_str("no project is open"),
+            Self::NoFix { path, offset } => {
+                write!(f, "{}: no quick fix at byte {offset}", path.display())
             }
-            Self::Brush { error } => write!(f, "{error}"),
-            Self::Shape { error } => write!(f, "{error}"),
-            Self::CannotMove { entity } => {
-                write!(
-                    f,
-                    "entity {entity} is the world or a layer, which go in nothing"
-                )
+            Self::NoHunk { id } => write!(f, "{id} is not staged"),
+            Self::Pattern { pattern, reason } => {
+                write!(f, "{pattern}: not a regular expression: {reason}")
             }
-            Self::NotContainer { entity } => {
-                write!(f, "entity {entity} is no layer or group it can go into")
-            }
-            Self::Link { error } => write!(f, "{error}"),
-            Self::NoRoom { name } => write!(f, "the map has no room named {name}"),
+            Self::Offset { path, offset, len } => write!(
+                f,
+                "{}: offset {offset} is past the end of the file, {len} bytes",
+                path.display()
+            ),
+            Self::NoMap => f.write_str("no map is open"),
+            Self::Map { path, error } => write!(f, "{}: {error}", path.display()),
             Self::NotBuilt => f.write_str("the project's server QuakeC does not compile"),
-            Self::Image { path, error } => write!(f, "{}: {error}", path.display()),
-            Self::Texture { error } => write!(f, "{error}"),
             Self::Wad { path, error } => write!(f, "{}: {error}", path.display()),
             Self::WadWrite { path, error } => write!(f, "{}: {error}", path.display()),
-            Self::NoPalette => {
-                f.write_str("no gfx/palette.lmp in the project or the game to make a texture in")
-            }
-            Self::NoKey { entity, key } => write!(f, "entity {entity} has no key {key}"),
-            Self::NotEmpty { entity, brush } => write!(
-                f,
-                "brush {} of entity {entity} has volume, so it is not removed",
-                brush.get()
-            ),
-            Self::NoFace {
-                entity,
-                brush,
-                face,
-            } => write!(
-                f,
-                "brush {} of entity {entity} has no face {}",
-                brush.get(),
-                face.get()
-            ),
-            Self::BadScale { scale } => {
-                write!(
-                    f,
-                    "a scale factor must be a number other than 0, not {scale:?}"
-                )
-            }
-            Self::NoTextureSize { texture } => {
-                write!(
-                    f,
-                    "no WAD of the map holds {texture}, so its size is not known"
-                )
-            }
             Self::NoMapSource { path } => {
                 write!(
                     f,
@@ -1016,50 +855,12 @@ impl fmt::Display for WorkbenchError {
                 )
             }
             Self::PortalFile { path, error } => write!(f, "{}: {error}", path.display()),
-            Self::NoMapHunk { hunk } => write!(f, "the map's review has no hunk {hunk}"),
             Self::UnknownProfile { name } => write!(f, "no compile profile is called {name:?}"),
             Self::MapCompile { error } => write!(f, "the map does not compile: {error}"),
             Self::MapLight { error } => write!(f, "the map does not light: {error}"),
             Self::MapLump { path, error } => write!(f, "{}: {error}", path.display()),
             Self::Spawn { path, error } => write!(f, "{}: {error}", path.display()),
-            Self::ChangedOnDisk { path } => write!(
-                f,
-                "{}: another program changed it since it was opened; reload it or keep yours \
-                 first",
-                path.display()
-            ),
-            Self::EntOverride { path } => write!(
-                f,
-                "{}: the engine reads this in place of the BSP's entities; save to it, or move \
-                 it away before saving into the BSP",
-                path.display()
-            ),
-            Self::PrefabName { name } => write!(
-                f,
-                "{name:?} is no prefab name: use letters, digits, - and _"
-            ),
-            Self::NoSelection => f.write_str("nothing is selected to make a prefab of"),
-            Self::NoProject => f.write_str("no project is open"),
-            Self::NoFix { path, offset } => {
-                write!(f, "{}: no quick fix at byte {offset}", path.display())
-            }
-            Self::NoHunk { id } => write!(f, "{id} is not staged"),
-            Self::Checkpoint(error) => error.fmt(f),
-            Self::Pattern { pattern, reason } => {
-                write!(f, "{pattern}: not a regular expression: {reason}")
-            }
-            Self::Offset { path, offset, len } => write!(
-                f,
-                "{}: offset {offset} is past the end of the file, {len} bytes",
-                path.display()
-            ),
-            Self::Map { path, error } => write!(f, "{}: {error}", path.display()),
-            Self::Bsp { path, error } => write!(f, "{}: {error}", path.display()),
-            Self::NoMap => f.write_str("no map is open"),
-            Self::NoEntity { entity } => write!(f, "the map has no entity {entity}"),
-            Self::NotPointEntity { entity } => {
-                write!(f, "entity {entity} is the world or a brush entity")
-            }
+            Self::MapEdit(error) => error.fmt(f),
         }
     }
 }
@@ -1068,53 +869,36 @@ impl Error for WorkbenchError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Project(error) => Some(error),
+            Self::MapEdit(error) => error.source(),
             Self::Rename(error) => Some(error),
             Self::Save { error, .. } => Some(error),
             Self::Checkpoint(error) => Some(error),
             Self::Map { error, .. } => Some(error),
-            Self::Bsp { error, .. } => Some(error),
-            Self::Link { error } => Some(error),
-            Self::Brush { error } => Some(error),
-            Self::Shape { error } => Some(error),
             Self::NoFile { .. }
             | Self::NoProject
-            | Self::PrefabName { .. }
-            | Self::NoSelection
             | Self::NoFix { .. }
             | Self::NoHunk { .. }
             | Self::Pattern { .. }
             | Self::Offset { .. }
             | Self::NoMap
-            | Self::NoEntity { .. }
-            | Self::NotPointEntity { .. }
-            | Self::EntOverride { .. }
-            | Self::Locked { .. }
-            | Self::NotLayer { .. }
-            | Self::NoBrush { .. }
-            | Self::NotContainer { .. }
-            | Self::CannotMove { .. }
-            | Self::NoRoom { .. }
-            | Self::ChangedOnDisk { .. }
-            | Self::NoPalette
-            | Self::NoKey { .. }
-            | Self::NotEmpty { .. }
-            | Self::NoFace { .. }
-            | Self::NoTextureSize { .. }
-            | Self::BadScale { .. }
             | Self::NotBuilt => None,
-            Self::Image { error, .. } => Some(error),
-            Self::Texture { error } => Some(error),
             Self::Wad { error, .. } => Some(error),
             Self::WadWrite { error, .. } => Some(error),
             Self::NoMapSource { .. } => None,
             Self::ProfilesRead { error, .. } => Some(error),
             Self::ProfilesParse { error, .. } => Some(error),
             Self::PortalFile { error, .. } => Some(error),
-            Self::NoMapHunk { .. } | Self::UnknownProfile { .. } => None,
+            Self::UnknownProfile { .. } => None,
             Self::MapCompile { error } => Some(error),
             Self::MapLight { error } => Some(error),
             Self::MapLump { error, .. } => Some(error),
             Self::Spawn { error, .. } => Some(error),
         }
+    }
+}
+
+impl From<MapEditError> for WorkbenchError {
+    fn from(error: MapEditError) -> Self {
+        Self::MapEdit(error)
     }
 }

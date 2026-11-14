@@ -24,7 +24,7 @@ use qs_layout::{Focus, Layout, Panel};
 use qs_wad::write::WadBuilder;
 use qs_workbench::debug::Location;
 use qs_workbench::map_edit::EntityIndex;
-use qs_workbench::texture_import::project_wad;
+use qs_workbench::map_edit::texture_import::project_wad;
 use serde_json::json;
 
 use crate::debugger::place;
@@ -2161,7 +2161,8 @@ fn entities_are_placed_and_linked_without_typing() {
 #[test]
 fn the_map_filter_is_found_again_after_an_edit() {
     use crate::map_editor::{MapEditor, ShowFilter};
-    use qs_workbench::map_edit::{GameMode, MapRevision, Skill};
+    use qs_workbench::map_edit::MapRevision;
+    use qs_workbench::map_filter::{GameMode, Skill};
 
     let mut editor = MapEditor::default();
     let read = MapRevision::default();

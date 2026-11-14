@@ -18,30 +18,46 @@ use crate::editing::Source;
 use crate::editing::{Saved, TextStep};
 use crate::entity_classes::register_entities;
 use crate::export::ExportProject;
+use crate::files_changed::FilesChangedCommand;
 use crate::map_check::register_map;
 use crate::map_edit::register_map_edit;
-use crate::map_textures::register_map_textures;
+use crate::map_edit::textures::register_map_textures;
+use crate::map_filter::MapFilter;
 use crate::search::register_search;
 use crate::staged::register_staged;
 use crate::testing::register_tests;
 use crate::tools::register_tools;
 use crate::vm_run::register_vm;
 use crate::{
-    Caution, DefKind, EntryKind, FileRange, Location, ModuleBuilt, Reported, Workbench,
-    WorkbenchError,
+    Caution, DefKind, EntryKind, FileRange, HasMap, Location, MapStore, ModuleBuilt, Reported,
+    Workbench, WorkbenchError,
 };
 
-/// A context the workbench commands work on: one that has a [`Workbench`].
-pub trait HasWorkbench {
+/// A context the workbench commands work on: one that has a [`Workbench`], and so the map
+/// open in it.
+pub trait HasWorkbench: HasMap {
     /// How its workbench reads files.
     type Loader: Loader;
 
     /// The workbench.
     fn workbench(&mut self) -> &mut Workbench<Self::Loader>;
+}
 
-    /// The play loop, for a context that has one: the map editor's edits reach its game
-    /// (P5-07). `None` for one with no preview, such as the command line's.
-    fn preview(&mut self) -> Option<&mut crate::Preview>;
+impl<L: Loader> HasMap for Workbench<L> {
+    type Project = Self;
+    type Live = crate::Preview;
+
+    fn map_store(&mut self) -> &mut MapStore {
+        self.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Self {
+        self
+    }
+
+    fn live_map(&mut self) -> Option<&mut crate::Preview> {
+        None
+    }
 }
 
 impl<L: Loader> HasWorkbench for Workbench<L> {
@@ -49,10 +65,6 @@ impl<L: Loader> HasWorkbench for Workbench<L> {
 
     fn workbench(&mut self) -> &mut Self {
         self
-    }
-
-    fn preview(&mut self) -> Option<&mut crate::Preview> {
-        None
     }
 }
 
@@ -144,6 +156,8 @@ pub fn register<C: HasWorkbench + 'static>(
     register_entities(registry)?;
     register_map(registry)?;
     register_map_edit(registry)?;
+    registry.register(FilesChangedCommand)?;
+    registry.register(MapFilter)?;
     register_map_textures(registry)?;
     register_search(registry)?;
     register_tests(registry)?;

@@ -34,15 +34,28 @@ struct Context {
     preview: Preview,
 }
 
+impl qs_workbench::HasMap for Context {
+    type Project = Workbench<FsLoader>;
+    type Live = Preview;
+
+    fn map_store(&mut self) -> &mut qs_workbench::MapStore {
+        self.workbench.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Workbench<FsLoader> {
+        &mut self.workbench
+    }
+
+    fn live_map(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
+}
+
 impl HasWorkbench for Context {
     type Loader = FsLoader;
 
     fn workbench(&mut self) -> &mut Workbench<FsLoader> {
         &mut self.workbench
-    }
-
-    fn preview(&mut self) -> Option<&mut Preview> {
-        Some(&mut self.preview)
     }
 }
 

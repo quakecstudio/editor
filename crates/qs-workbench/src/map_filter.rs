@@ -21,7 +21,7 @@ use qs_sim::{LoadOptions, MapPlace, World};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{BSP_EXTENSION, EntityIndex, MapSource};
+use crate::map_edit::{BSP_EXTENSION, EntityIndex, MapSource};
 use crate::{HasWorkbench, Workbench, WorkbenchError};
 
 /// The id of `map.filter`.
@@ -161,12 +161,12 @@ impl<L: crate::Loader> Workbench<L> {
             }
         };
         let mut bsp = match &compiled {
-            Some(bytes) => {
-                Bsp::read(bytes, BspLoader::default()).map_err(|error| WorkbenchError::Bsp {
+            Some(bytes) => Bsp::read(bytes, BspLoader::default()).map_err(|error| {
+                crate::MapEditError::Bsp {
                     path: path.clone(),
                     error,
-                })?
-            }
+                }
+            })?,
             None => Bsp::empty(&entities),
         };
         bsp.entity_lump = &entities;
@@ -204,7 +204,7 @@ impl<L: crate::Loader> Workbench<L> {
 }
 
 /// `map.filter`.
-pub(super) struct MapFilter;
+pub(crate) struct MapFilter;
 
 impl<C: HasWorkbench + 'static> Command<C> for MapFilter {
     const ID: &'static str = MAP_FILTER;
