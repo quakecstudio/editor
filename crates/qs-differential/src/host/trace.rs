@@ -5,22 +5,19 @@
 //!
 //! This is a format of this project, not a port (`trace.md`). [`TraceBuilder`] is a
 //! [`qc_vm::Observer`]: the VM calls it for each run, statement, exit and error (TRACE-4.1 to
-//! TRACE-4.8), and it records the globals and entity fields that changed since the previous
-//! change-carrying record (TRACE-3). It differs from `qc-vm`'s own
-//! [`Trace`](qc_vm::trace::Trace) only in also emitting string records (TRACE-4.10) for the
-//! engine strings the host makes (`mapname`, the world's `model`, each client's `netname`)
-//! and for the `ftos`/`vtos` buffer when a builtin changes its text (DIFF-3.9), and error records for a host error the frame loop raises outside a run (DIFF-8.1). The
-//! change-set algorithm is the same: snapshot the globals and every in-use edict's fields, and
-//! list what differs.
+//! TRACE-4.8), and `qc-vm`'s own [`Trace`](qc_vm::trace::Trace) records the globals and entity
+//! fields that changed since the previous change-carrying record (TRACE-3). The builder adds
+//! string records (TRACE-4.10) for the engine strings the host makes (`mapname`, the world's
+//! `model`, each client's `netname`) and for the `ftos`/`vtos` buffer when a builtin changes its
+//! text (DIFF-3.9), and error records for a host error the frame loop raises outside a run
+//! (DIFF-8.1).
 
-use qc_edict::EdictNumber;
 use std::cell::Cell;
 
 use qc_builtins::MockBuiltins;
-use qc_edict::EDICT_HEADER_SIZE;
 use qc_progs::Progs;
-use qc_trace::{Changes, FieldChange, GlobalChange, Header, Record, Step, Text, Trace, TraceError};
-use qc_types::Slot;
+use qc_trace::{Header, Record, Text, Trace, TraceError};
+use qc_vm::trace::Trace as VmTrace;
 use qc_vm::{Builtins, Context, Machine, Observer, RunError};
 
 /// Builds a [`qc_trace::Trace`] from a whole scenario (TRACE-1.1).
@@ -33,15 +30,11 @@ use qc_vm::{Builtins, Context, Machine, Observer, RunError};
 /// returns the header and records.
 #[derive(Clone, Debug)]
 pub struct TraceBuilder {
-    header: Header,
-    records: Vec<Record>,
-    /// The globals as of the last change-carrying record (TRACE-3.1).
-    last_globals: Vec<Slot>,
-    /// The fields of every edict in use as of the last change-carrying record (TRACE-3.1,
-    /// TRACE-3.4).
-    last_fields: Vec<Vec<Slot>>,
-    /// String records waiting to be flushed before the next change-carrying record (TRACE-4.10).
-    pending_strings: Vec<Record>,
+    /// The VM's trace, which writes every change-carrying record (TRACE-3, TRACE-4).
+    trace: VmTrace,
+    /// String records, each a value and its text, waiting to be flushed before the next
+    /// change-carrying record (TRACE-4.10).
+    pending_strings: Vec<(u32, Text)>,
 }
 
 /// The `ftos`/`vtos` buffer's new value and text after a builtin call, waiting for the observer
@@ -137,22 +130,8 @@ impl TraceBuilder {
     /// A [`TraceError`] when the header numbers break TRACE-2.3 (they cannot for a progs the VM
     /// loaded).
     pub fn new(machine: &Machine, progs: &Progs<'_>) -> Result<Self, TraceError> {
-        let edict_size = u32::try_from(machine.edicts().layout().edict_size()).unwrap_or(0);
-        let field_offset = u32::try_from(EDICT_HEADER_SIZE).unwrap_or(0);
-        let entityfields = u32::try_from(machine.edicts().layout().entityfields()).unwrap_or(0);
-        let numstrings = u32::try_from(progs.strings().len()).unwrap_or(0);
-        let header = Header::new(
-            progs.file_crc(),
-            edict_size,
-            field_offset,
-            entityfields,
-            numstrings,
-        )?;
         Ok(Self {
-            header,
-            records: Vec::new(),
-            last_globals: machine.globals().to_vec(),
-            last_fields: snapshot_fields(machine),
+            trace: VmTrace::new(machine, progs)?,
             pending_strings: Vec::new(),
         })
     }
@@ -163,31 +142,27 @@ impl TraceBuilder {
     /// ones are harmless (TRACE-4.10).
     #[must_use]
     pub fn finish(mut self) -> Trace {
-        let mut records = self.records;
-        records.append(&mut self.pending_strings);
-        Trace {
-            header: self.header,
-            records,
-        }
+        self.flush_strings();
+        self.trace.finish()
     }
 
     /// Drops the records so far, pending strings included, for a run whose records are not
     /// kept (DIFF-12.7).
     pub(crate) fn clear(&mut self) {
-        self.records.clear();
+        self.trace.clear();
         self.pending_strings.clear();
     }
 
     /// The records so far, for a test to inspect (TRACE-4).
     #[must_use]
     pub fn records(&self) -> &[Record] {
-        &self.records
+        self.trace.records()
     }
 
     /// The trace's header (TRACE-2).
     #[must_use]
     pub const fn header(&self) -> Header {
-        self.header
+        self.trace.header()
     }
 
     /// Records that engine string `value` now holds `text` (TRACE-4.10): the host made it, or a
@@ -198,10 +173,7 @@ impl TraceBuilder {
     /// `begin_change_record`).
     pub fn string_set(&mut self, value: i32, text: Vec<u8>) {
         if let Ok(text) = Text::new(text) {
-            self.pending_strings.push(Record::String {
-                value: value.cast_unsigned(),
-                text,
-            });
+            self.pending_strings.push((value.cast_unsigned(), text));
         }
     }
 
@@ -213,82 +185,23 @@ impl TraceBuilder {
     /// oracle's `qs_trace_error` does with `put_changes`: while spawning, the world's fields,
     /// the globals and the keys already applied.
     pub fn host_error(&mut self, machine: &Machine, function: i32, statement: i32, message: &str) {
-        let changes = self.changes(machine);
-        let message = Text::new(message.as_bytes().to_vec()).unwrap_or_default();
-        self.records.push(Record::Error {
-            function,
-            statement,
-            message,
-            changes,
-        });
+        self.flush_strings();
+        self.trace
+            .error_record(machine, function, statement, message.as_bytes().to_vec());
     }
 
     /// Flushes the pending string records before a change-carrying record (TRACE-4.10).
     fn flush_strings(&mut self) {
-        self.records.append(&mut self.pending_strings);
-    }
-
-    /// The change set since the last change-carrying record, resetting the baseline
-    /// (TRACE-3.1, TRACE-3.2), after flushing any pending string records (TRACE-4.10).
-    fn changes(&mut self, machine: &Machine) -> Changes {
-        self.flush_strings();
-        let mut globals = Vec::new();
-        for (slot, (now, before)) in machine
-            .globals()
-            .iter()
-            .zip(self.last_globals.iter())
-            .enumerate()
-        {
-            if now.bits() != before.bits() {
-                globals.push(GlobalChange {
-                    slot: u32::try_from(slot).unwrap_or(u32::MAX),
-                    bits: now.bits(),
-                });
-            }
+        for (value, text) in self.pending_strings.drain(..) {
+            self.trace.push_string(value, text);
         }
-        let mut fields = Vec::new();
-        let current = snapshot_fields(machine);
-        for (edict, slots) in current.iter().enumerate() {
-            let previous = self.last_fields.get(edict);
-            for (field, now) in slots.iter().enumerate() {
-                let before = previous
-                    .and_then(|p| p.get(field))
-                    .copied()
-                    .unwrap_or(Slot::ZERO);
-                if now.bits() != before.bits() {
-                    fields.push(FieldChange {
-                        edict: u32::try_from(edict).unwrap_or(u32::MAX),
-                        field: u32::try_from(field).unwrap_or(u32::MAX),
-                        bits: now.bits(),
-                    });
-                }
-            }
-        }
-        self.last_globals = machine.globals().to_vec();
-        self.last_fields = current;
-        // A VM never produces a duplicate; fall back to an empty change set rather than panic.
-        Changes::new(globals, fields).unwrap_or_default()
     }
-}
-
-/// A snapshot of the fields of every edict in use (TRACE-3.4): edicts 0 to num_edicts - 1.
-fn snapshot_fields(machine: &Machine) -> Vec<Vec<Slot>> {
-    (0..machine.edicts().num_edicts())
-        .map(|number| {
-            machine
-                .edicts()
-                .fields(EdictNumber::new(number))
-                .unwrap_or(&[])
-                .to_vec()
-        })
-        .collect()
 }
 
 impl Observer for TraceBuilder {
     fn run(&mut self, machine: &Machine, function: i32) {
-        // TRACE-4.1: a run record with the changes since the previous record.
-        let changes = self.changes(machine);
-        self.records.push(Record::Run { function, changes });
+        self.flush_strings();
+        self.trace.run(machine, function);
     }
 
     fn step(
@@ -299,33 +212,18 @@ impl Observer for TraceBuilder {
         opcode: u16,
         builtin: Option<u32>,
     ) {
-        // TRACE-4.2: a step record with the function, statement, opcode, builtin and changes.
-        let changes = self.changes(machine);
-        self.records.push(Record::Step(Step {
-            function,
-            statement,
-            opcode,
-            builtin,
-            changes,
-        }));
+        self.flush_strings();
+        self.trace
+            .step(machine, function, statement, opcode, builtin);
     }
 
     fn exit(&mut self, machine: &Machine) {
-        // TRACE-4.5: an exit record, normally with no changes.
-        let changes = self.changes(machine);
-        self.records.push(Record::Exit { changes });
+        self.flush_strings();
+        self.trace.exit(machine);
     }
 
     fn error(&mut self, machine: &Machine, error: &RunError) {
-        // TRACE-4.6 to TRACE-4.8: an error record with PR_RunError's function and statement and
-        // the message, without a trailing newline.
-        let changes = self.changes(machine);
-        let message = Text::new(error.message().into_bytes()).unwrap_or_default();
-        self.records.push(Record::Error {
-            function: error.function,
-            statement: error.statement,
-            message,
-            changes,
-        });
+        self.flush_strings();
+        self.trace.error(machine, error);
     }
 }

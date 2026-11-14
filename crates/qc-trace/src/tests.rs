@@ -14,8 +14,7 @@ use super::{
     Changes, FieldChange, GlobalChange, Header, JsonFault, Record, Step, StringValue,
     TRACE_HEADER_SIZE, TRACE_MAGIC, TRACE_TAG_ERROR, TRACE_TAG_EXIT, TRACE_TAG_FRAME,
     TRACE_TAG_RUN, TRACE_TAG_STEP, TRACE_TAG_STRING, TRACE_UVAR_MAX_BYTES, TRACE_VERSION, Text,
-    Trace, TraceError, decode, encode, encode_header, encode_record, from_json, header_to_json,
-    record_to_json, to_json,
+    Trace, TraceError, decode, encode, encode_header, from_json, header_to_json, to_json,
 };
 
 const SAMPLE_JSONL: &str = include_str!("../../../docs/spec/vectors/trace/sample.jsonl");
@@ -158,7 +157,7 @@ fn with_records(records: &[u8]) -> Vec<u8> {
 
 fn record_bytes(record: &Record) -> Vec<u8> {
     let mut out = Vec::new();
-    encode_record(record, &mut out);
+    record.encode(&mut out);
     out
 }
 
@@ -278,7 +277,7 @@ fn values_keep_every_bit() {
 #[test]
 fn changes_name_slots_by_number() {
     let changes = fields(&[(599, 104, 1)]);
-    let line = record_to_json(&Record::Exit { changes });
+    let line = Record::to_json(&Record::Exit { changes });
     assert_eq!(
         line,
         "{\"t\":\"exit\",\"globals\":[],\"fields\":[[599,104,\"00000001\"]]}\n"
@@ -987,11 +986,11 @@ fn json_header_line() {
 #[test]
 fn json_record_lines() {
     assert_eq!(
-        record_to_json(&step(1, 2, 3, None, Changes::default())),
+        Record::to_json(&step(1, 2, 3, None, Changes::default())),
         "{\"t\":\"step\",\"function\":1,\"statement\":2,\"opcode\":3,\"globals\":[],\"fields\":[]}\n"
     );
     assert_eq!(
-        record_to_json(&step(1, 2, 51, Some(0), Changes::default())),
+        Record::to_json(&step(1, 2, 51, Some(0), Changes::default())),
         "{\"t\":\"step\",\"function\":1,\"statement\":2,\"opcode\":51,\"builtin\":0,\"globals\":[],\"fields\":[]}\n"
     );
     let err = json_line_error(&["{\"t\":\"jump\",\"globals\":[],\"fields\":[]}"]);
@@ -1006,7 +1005,7 @@ fn json_record_lines() {
 // spec TRACE-6.4: bits are exactly 8 lowercase hex digits
 #[test]
 fn json_bits() {
-    let line = record_to_json(&Record::String {
+    let line = Record::to_json(&Record::String {
         value: 0xabc,
         text: text(b""),
     });
@@ -1037,7 +1036,7 @@ fn json_bits() {
 #[test]
 fn json_text_escapes() {
     let all: Vec<u8> = (1..=255).collect();
-    let line = record_to_json(&Record::String {
+    let line = Record::to_json(&Record::String {
         value: 0,
         text: text(&all),
     });
@@ -1054,7 +1053,7 @@ fn json_text_escapes() {
         }]
     );
     assert!(
-        record_to_json(&Record::String {
+        Record::to_json(&Record::String {
             value: 0,
             text: text(b"a\\b\n")
         })
@@ -1083,7 +1082,7 @@ fn json_reader_is_lenient_about_layout() {
         }]
     );
     assert_eq!(
-        record_to_json(&trace.records[0]),
+        trace.records[0].to_json(),
         "{\"t\":\"exit\",\"globals\":[[7,\"00000001\"]],\"fields\":[]}\n"
     );
 }
@@ -1444,7 +1443,7 @@ fn a_frame_record_in_json() {
         frame: 2,
         changes: fields(&[(1, 10, 0x4000_0000)]),
     };
-    let line = record_to_json(&record);
+    let line = record.to_json();
     assert_eq!(
         line,
         "{\"t\":\"frame\",\"frame\":2,\"globals\":[],\"fields\":[[1,10,\"40000000\"]]}\n"

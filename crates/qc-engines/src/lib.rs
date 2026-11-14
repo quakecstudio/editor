@@ -142,7 +142,7 @@ enum Layer {
 impl From<&qc_builtins::Builtin> for Builtin {
     fn from(b: &qc_builtins::Builtin) -> Self {
         Self {
-            key: BuiltinKey::Number(b.number),
+            key: BuiltinKey::Number(b.number.get()),
             name: b.name,
             signature: b.prototype,
             extensions: &[],
@@ -198,7 +198,9 @@ impl Layer {
     /// The layer's entry for `key`.
     fn find(self, key: BuiltinKey) -> Option<Builtin> {
         match (self, key) {
-            (Self::Vanilla, BuiltinKey::Number(n)) => qc_builtins::lookup(n).map(Builtin::from),
+            (Self::Vanilla, BuiltinKey::Number(n)) => qc_builtins::BuiltinNumber::new(n)
+                .builtin()
+                .map(Builtin::from),
             (Self::Vanilla, BuiltinKey::Name(_)) => None,
             (
                 Self::Rerelease

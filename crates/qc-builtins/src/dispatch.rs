@@ -31,8 +31,12 @@ use crate::mock::{
     BUILTIN_FL_SWIM, EngineProfile, LIMIT_MAX_DATAGRAM, LIMIT_MAX_LIGHTSTYLES, MessageDest,
     MockEngine, Overflow, Precache, Unimplemented, VKQUAKE_MAX_DATAGRAM,
 };
+use crate::strbuf::{BufferSlot, Placement, StringIndex};
 use crate::tokenize::MAX_SEPARATORS;
+use crate::tokenize::TokenIndex;
 use crate::userinfo::ClientCommand;
+use crate::userinfo::ClientSlot;
+use crate::{STRINGTEMP_LENGTH, STRINGTEMP_TEXT};
 use crate::{atof, cstring, printf, strconv, strftime, vkstrings};
 
 /// The builtin dispatch over a mock engine (DIFF-6, DIFF-7).
@@ -168,7 +172,7 @@ impl MockBuiltins {
             11 => self.b_objerror(context),
             // coredump, eprint: console only; eprint's e goes through NUM_FOR_EDICT (BUILTIN-16.5).
             28 => Ok(()),
-            31 => read_parm_edictnum(context, 0).map(|_| ()),
+            31 => read_parm_edictnum(context, PARM0).map(|_| ()),
             29 => self.b_traceon(context),
             30 => self.b_traceoff(context),
             // 49 ChangeYaw is a pure movement builtin handled with movement.
@@ -196,7 +200,7 @@ impl MockBuiltins {
 
 impl MockBuiltins {
     fn b_makevectors(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let ang = read_parm_vector(context, 0)?;
+        let ang = read_parm_vector(context, PARM0)?;
         let (forward, right, up) = math::makevectors(ang);
         write_system_vector(context, SysGlobal::VForward, forward)?;
         write_system_vector(context, SysGlobal::VRight, right)?;
@@ -210,55 +214,55 @@ impl MockBuiltins {
     }
 
     fn b_normalize(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let v = read_parm_vector(context, 0)?;
+        let v = read_parm_vector(context, PARM0)?;
         write_return_vector(context, math::normalize(v))
     }
 
     fn b_vlen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let v = read_parm_vector(context, 0)?;
+        let v = read_parm_vector(context, PARM0)?;
         write_return_float(context, math::vlen(v))
     }
 
     fn b_vectoyaw(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let v = read_parm_vector(context, 0)?;
+        let v = read_parm_vector(context, PARM0)?;
         write_return_float(context, math::vectoyaw(v))
     }
 
     fn b_vectoangles(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let v = read_parm_vector(context, 0)?;
+        let v = read_parm_vector(context, PARM0)?;
         write_return_vector(context, math::vectoangles(v))
     }
 
     fn b_rint(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let f = read_parm_float(context, 0)?;
+        let f = read_parm_float(context, PARM0)?;
         write_return_float(context, math::rint(f))
     }
 
     fn b_floor(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let f = read_parm_float(context, 0)?;
+        let f = read_parm_float(context, PARM0)?;
         write_return_float(context, math::floor(f))
     }
 
     fn b_ceil(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let f = read_parm_float(context, 0)?;
+        let f = read_parm_float(context, PARM0)?;
         write_return_float(context, math::ceil(f))
     }
 
     fn b_fabs(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let f = read_parm_float(context, 0)?;
+        let f = read_parm_float(context, PARM0)?;
         write_return_float(context, math::fabs(f))
     }
 
     /// `ftos(f)` (BUILTIN-7.1): the text goes in the one engine buffer, whose value is returned.
     fn b_ftos(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let f = read_parm_float(context, 0)?;
+        let f = read_parm_float(context, PARM0)?;
         let value = self.engine.strings.set_temp(math::ftos(f).into_bytes());
         write_return_string(context, value)
     }
 
     /// `vtos(v)` (BUILTIN-7.2): the text goes in the one engine buffer, whose value is returned.
     fn b_vtos(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let v = read_parm_vector(context, 0)?;
+        let v = read_parm_vector(context, PARM0)?;
         let value = self.engine.strings.set_temp(math::vtos(v).into_bytes());
         write_return_string(context, value)
     }
@@ -749,7 +753,7 @@ impl MockBuiltins {
     /// `remove(e)` (BUILTIN-8.2): id's `ED_Free`; it refuses nothing (EDICT-7.4). `e` is read
     /// with `G_EDICT` (BUILTIN-2.7), not `G_EDICTNUM`, so a free edict passes.
     fn b_remove(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let number = read_parm_edict(context, 0)?;
+        let number = read_parm_edict(context, PARM0)?;
         let now = self.engine.clock;
         context.machine().edicts_mut().free(number, now);
         Ok(())
@@ -760,10 +764,10 @@ impl MockBuiltins {
     fn b_find(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         // BUILTIN-8.8: read start (G_EDICTNUM), then match, then, per examined edict, the field
         // (checking fld and the value). An examined-nothing find checks neither.
-        let start = read_parm_edictnum(context, 0)?;
-        let wanted = read_parm_string(context, &self.engine, 2)?;
+        let start = read_parm_edictnum(context, PARM0)?;
+        let wanted = read_parm_string(context, &self.engine, PARM2)?;
         // The raw field value is read now, but checked only when an edict is examined.
-        let field_value = read_parm_raw(context, 1)?;
+        let field_value = read_parm_raw(context, PARM1)?;
         let num_edicts = context.machine().edicts().num_edicts();
         for number in (start.index().saturating_add(1)..num_edicts).map(EdictNumber::new) {
             let is_free = context.machine().edicts().is_free(number).unwrap_or(true);
@@ -790,7 +794,7 @@ impl MockBuiltins {
     /// `nextent(e)` (BUILTIN-8.4): the first non-free edict after `e`, or the world. `e` is
     /// read with `G_EDICTNUM` (BUILTIN-2.4).
     fn b_nextent(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let e = read_parm_edictnum(context, 0)?;
+        let e = read_parm_edictnum(context, PARM0)?;
         let num_edicts = context.machine().edicts().num_edicts();
         for number in (e.index().saturating_add(1)..num_edicts).map(EdictNumber::new) {
             let is_free = context.machine().edicts().is_free(number).unwrap_or(true);
@@ -805,8 +809,8 @@ impl MockBuiltins {
     /// `findradius(org, rad)` (BUILTIN-8.5, BUILTIN-8.6): links the solid edicts within `rad`
     /// through their `chain` field, newest first, and returns the head.
     fn b_findradius(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let org = read_parm_vector(context, 0)?;
-        let rad = read_parm_float(context, 1)?;
+        let org = read_parm_vector(context, PARM0)?;
+        let rad = read_parm_float(context, PARM1)?;
         let num_edicts = context.machine().edicts().num_edicts();
         let mut chain = 0_i32; // the world
         for number in (1..num_edicts).map(EdictNumber::new) {
@@ -839,7 +843,7 @@ impl MockBuiltins {
     /// globals to themselves: the check is what QuakeC observes, and that is the client-slot
     /// range error.
     fn b_setspawnparms(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let number = read_parm_edictnum(context, 0)?;
+        let number = read_parm_edictnum(context, PARM0)?;
         if !context.machine().edicts().is_client(number) {
             return Err(BuiltinError::from(RuntimeError::EntityNotClient));
         }
@@ -908,8 +912,8 @@ impl MockBuiltins {
 
     /// `setorigin(e, o)` (BUILTIN-9.1): set `e`'s `origin` to `o` and link it.
     fn b_setorigin(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let number = read_parm_edict(context, 0)?;
-        let origin = read_parm_vector(context, 1)?;
+        let number = read_parm_edict(context, PARM0)?;
+        let origin = read_parm_vector(context, PARM1)?;
         write_field_vector(context, number, SysField::Origin, origin)?;
         self.link_edict(context, number)
     }
@@ -917,9 +921,9 @@ impl MockBuiltins {
     /// `setsize(e, min, max)` (BUILTIN-9.2): checks `min <= max` per axis, then sets `mins`,
     /// `maxs`, `size` and links.
     fn b_setsize(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let number = read_parm_edict(context, 0)?;
-        let min = read_parm_vector(context, 1)?;
-        let max = read_parm_vector(context, 2)?;
+        let number = read_parm_edict(context, PARM0)?;
+        let min = read_parm_vector(context, PARM1)?;
+        let max = read_parm_vector(context, PARM2)?;
         // BUILTIN-9.2: fail before writing anything when min > max on any axis; NaN passes.
         if min.iter().zip(&max).any(|(a, b)| a > b) {
             return Err(BuiltinError::from(RuntimeError::BackwardsBounds));
@@ -932,8 +936,8 @@ impl MockBuiltins {
     /// `model`, `modelindex` and the size from the model's bounds.
     fn b_setmodel(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         // BUILTIN-2.9: e is read before m.
-        let number = read_parm_edict(context, 0)?;
-        let model_value = read_parm_raw(context, 1)?;
+        let number = read_parm_edict(context, PARM0)?;
+        let model_value = read_parm_raw(context, PARM1)?;
         let model_text = resolve_string(context, &self.engine, model_value)?;
         let name = String::from_utf8_lossy(&model_text).into_owned();
         let Some(index) = self.engine.precache_index(Precache::Model, &name) else {
@@ -972,7 +976,7 @@ impl MockBuiltins {
         if !matches!(context.server(), qc_vm::ServerState::Loading) {
             return Err(BuiltinError::from(RuntimeError::PrecacheOutsideSpawn));
         }
-        let value = read_parm_raw(context, 0)?;
+        let value = read_parm_raw(context, PARM0)?;
         let text = resolve_string(context, &self.engine, value)?;
         write_return_string(context, value)?;
         if Self::bad_precache_string(&text) {
@@ -990,7 +994,7 @@ impl MockBuiltins {
     /// `precache_file(s)` (BUILTIN-10.5): returns `s` and does nothing else, at any time.
     fn b_precache_file(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         // BUILTIN-2.9: precache_file reads no string, so a bad value returns without an error.
-        let value = read_parm_raw(context, 0)?;
+        let value = read_parm_raw(context, PARM0)?;
         write_return_string(context, value)
     }
 }
@@ -1019,7 +1023,7 @@ impl MockBuiltins {
 
     /// The shared body of `sprint` and `centerprint` (BUILTIN-11.2).
     fn print_to_client(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let client = read_parm_edictnum(context, 0)?;
+        let client = read_parm_edictnum(context, PARM0)?;
         if !context.machine().edicts().is_client(client) {
             // BUILTIN-11.2: a console message, then return; not an error.
             return Ok(());
@@ -1039,18 +1043,18 @@ impl MockBuiltins {
     /// `stuffcmd(client, s)` (BUILTIN-11.4): a non-client is the runtime error `Parm 0 not a
     /// client`; otherwise the reliable message gets `svc_stufftext` and `s`, not kept.
     fn b_stuffcmd(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let client = read_parm_edictnum(context, 0)?;
+        let client = read_parm_edictnum(context, PARM0)?;
         if !context.machine().edicts().is_client(client) {
             return Err(BuiltinError::from(RuntimeError::ParmNotClient));
         }
-        let _text = read_parm_string(context, &self.engine, 1)?;
+        let _text = read_parm_string(context, &self.engine, PARM1)?;
         Ok(())
     }
 
     /// `localcmd(s)` (BUILTIN-11.5): append `s` (no NUL) to the command buffer; an overflow is
     /// a console message and `s` is dropped, no error.
     fn b_localcmd(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let text = read_parm_string(context, &self.engine, 0)?;
+        let text = read_parm_string(context, &self.engine, PARM0)?;
         // The overflow is silent (BUILTIN-11.5): the text is dropped and the call succeeds.
         self.engine.append_command(&text).or(Ok(()))
     }
@@ -1062,7 +1066,7 @@ impl MockBuiltins {
         if self.engine.changelevel_issued {
             return Ok(());
         }
-        let text = read_parm_string(context, &self.engine, 0)?;
+        let text = read_parm_string(context, &self.engine, PARM0)?;
         self.engine.changelevel_issued = true;
         let mut command = b"changelevel ".to_vec();
         command.extend_from_slice(&text);
@@ -1073,7 +1077,7 @@ impl MockBuiltins {
 
     /// `cvar(s)` (BUILTIN-11.7): the value of setting `s`, or 0 when there is none.
     fn b_cvar(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let name_bytes = read_parm_string(context, &self.engine, 0)?;
+        let name_bytes = read_parm_string(context, &self.engine, PARM0)?;
         let name = String::from_utf8_lossy(&name_bytes).into_owned();
         let value = self.engine.cvars.text(&name).map_or(0.0, math::q_atof);
         write_return_float(context, value)
@@ -1082,8 +1086,8 @@ impl MockBuiltins {
     /// `cvar_set(var, val)` (BUILTIN-11.8): set the setting; an unknown name is a console
     /// message and changes nothing.
     fn b_cvar_set(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let var_bytes = read_parm_string(context, &self.engine, 0)?;
-        let val_bytes = read_parm_string(context, &self.engine, 1)?;
+        let var_bytes = read_parm_string(context, &self.engine, PARM0)?;
+        let val_bytes = read_parm_string(context, &self.engine, PARM1)?;
         let var = String::from_utf8_lossy(&var_bytes).into_owned();
         let val = String::from_utf8_lossy(&val_bytes).into_owned();
         // An unknown name is a console message, not an error (BUILTIN-11.8).
@@ -1140,7 +1144,7 @@ impl printf::Args for ParmArgs<'_, '_, '_, '_> {
 
     fn word(&self, arg: usize, offset: usize) -> u32 {
         let slot = arg
-            .checked_mul(3)
+            .checked_mul(qc_types::PROGS_VECTOR_SLOTS)
             .and_then(|n| n.checked_add(usize::from(qc_types::PROGS_OFS_PARM0)))
             .and_then(|n| n.checked_add(offset))
             .and_then(|n| i32::try_from(n).ok())
@@ -1158,8 +1162,21 @@ impl printf::Args for ParmArgs<'_, '_, '_, '_> {
     }
 }
 
-/// vkQuake's `STRINGTEMP_LENGTH`, a temporary string's buffer, its terminator included.
-const VKQUAKE_STRINGTEMP_LENGTH: usize = 1024;
+/// [`STRINGTEMP_TEXT`] for `substring`'s `int` arithmetic.
+const STRINGTEMP_TEXT_I32: i32 = 1023;
+/// `clienttype`'s value for an edict that is no client slot (BUILTIN-18.20).
+const CLIENTTYPE_NONE: f32 = 3.0;
+/// `sound`'s volume, `volume * 255`, its attenuation's most and its channels (BUILTIN-12.3).
+const VOLUME_SCALE: f32 = 255.0;
+const MAX_ATTENUATION: f32 = 4.0;
+const MAX_CHANNEL: i32 = 255;
+/// A builtin's parameters, `OFS_PARM0` to `OFS_PARM5`, by number (PROGS-18.1).
+const PARM0: u16 = 0;
+const PARM1: u16 = 1;
+const PARM2: u16 = 2;
+const PARM3: u16 = 3;
+const PARM4: u16 = 4;
+const PARM5: u16 = 5;
 
 /// vkQuake's `qcextensions`, every one supported by its server's default protocol (RMQ with
 /// `PEXT2_REPLACEMENTDELTAS`) and `r_fteparticles` 1 (BUILTIN-18.14).
@@ -1280,7 +1297,10 @@ impl MockBuiltins {
             213 => Some(self.b_forceinfokey(context)),
             440 => Some(self.b_clientcommand(context)),
             453 => Some(self.b_dropclient(context)),
-            513 => Some(write_return_vector(context, [0.0; 3])),
+            513 => Some(write_return_vector(
+                context,
+                [0.0; qc_types::PROGS_VECTOR_SLOTS],
+            )),
             221 => Some(self.b_strstrofs(context)),
             222 => Some(self.b_str2chr(context)),
             223 => Some(self.b_chr2str(context)),
@@ -1288,7 +1308,7 @@ impl MockBuiltins {
             224 => Some(self.b_strconv(context)),
             228 => Some(self.b_strncmp(context, Case::Upper)),
             229 | 230 => Some(self.b_strncmp(context, Case::Lower)),
-            339 => Some(joined_string(context, &self.engine, 0).map(|_| ())),
+            339 => Some(joined_string(context, &self.engine, PARM0).map(|_| ())),
             441 | 514 => Some(self.b_tokenize(context)),
             442 => Some(self.b_argv(context)),
             448 => Some(self.b_cvar_string(context)),
@@ -1313,7 +1333,7 @@ impl MockBuiltins {
             503 => Some(self.b_whichpack(context)),
             510 => Some(self.b_string_map(context, vkstrings::uri_escape)),
             511 => Some(self.b_string_map(context, vkstrings::uri_unescape)),
-            233 => Some(read_parm_string(context, &self.engine, 2).map(|_| ())),
+            233 => Some(read_parm_string(context, &self.engine, PARM2).map(|_| ())),
             _ => None,
         }
     }
@@ -1322,9 +1342,9 @@ impl MockBuiltins {
     /// gives a new setting is `name` again when the call has a second argument, as its
     /// `G_STRING (OFS_PARM0)` reads it, and empty when it has none.
     fn b_registercvar(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let name = read_parm_string(context, &self.engine, 0)?;
+        let name = read_parm_string(context, &self.engine, PARM0)?;
         let value = if context.machine().argc() > 1 {
-            read_parm_string(context, &self.engine, 0)?
+            read_parm_string(context, &self.engine, PARM0)?
         } else {
             Vec::new()
         };
@@ -1338,7 +1358,7 @@ impl MockBuiltins {
     /// `strftime(uselocaltime, format, ...)`, vkQuake's `PF_strftime` at the mock's instant
     /// (BUILTIN-18.7): a new engine string holding `format` written out.
     fn b_strftime(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let format = read_parm_string(context, &self.engine, 1)?;
+        let format = read_parm_string(context, &self.engine, PARM1)?;
         let value = self.engine.strings.make(strftime::strftime(&format));
         write_return_string(context, value)
     }
@@ -1346,7 +1366,7 @@ impl MockBuiltins {
     /// `sprintf(format, ...)`, vkQuake's `PF_sprintf` (BUILTIN-18.8): a new engine string
     /// holding `format` written out with the arguments after it.
     fn b_sprintf(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let format = read_parm_string(context, &self.engine, 0)?;
+        let format = read_parm_string(context, &self.engine, PARM0)?;
         let text = {
             let mut args = ParmArgs {
                 context: &mut *context,
@@ -1361,12 +1381,15 @@ impl MockBuiltins {
     /// `infokey(e, key)`, vkQuake's `PF_infokey_s` (BUILTIN-18.30): the world's `*version`, an
     /// active client's fixed keys, and 0 for any other.
     fn b_infokey(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let ent = read_parm_edictnum(context, 0)?.index();
-        let key = read_parm_string(context, &self.engine, 1)?;
+        let ent = read_parm_edictnum(context, PARM0)?.index();
+        let key = read_parm_string(context, &self.engine, PARM1)?;
         let active = ent
             .checked_sub(1)
             .is_some_and(|slot| self.engine.clients_active.get(slot) == Some(&true));
-        let client = self.engine.clients.get(ent.saturating_sub(1));
+        let client = self
+            .engine
+            .clients
+            .get(ClientSlot::new(ent.saturating_sub(1)));
         let colors = client.colors();
         let text: Option<Vec<u8>> = if ent == 0 {
             (cstr(&key) == b"*version").then(|| b"vkQuake 1.37.1".to_vec())
@@ -1396,7 +1419,7 @@ impl MockBuiltins {
     /// `cvar_string(name)`, vkQuake's `PF_cvar_string` (BUILTIN-18.11): a new string holding
     /// the setting's text, the game's directory for `game`, and 0 for any other name.
     fn b_cvar_string(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let name = read_parm_string(context, &self.engine, 0)?;
+        let name = read_parm_string(context, &self.engine, PARM0)?;
         let name = String::from_utf8_lossy(&name);
         let text = match self.engine.cvars.text(&name) {
             Some(text) => Some(text.as_bytes().to_vec()),
@@ -1405,7 +1428,7 @@ impl MockBuiltins {
         };
         let value = match text {
             Some(mut text) => {
-                text.truncate(VKQUAKE_STRINGTEMP_LENGTH.saturating_sub(1));
+                text.truncate(STRINGTEMP_TEXT);
                 self.engine.strings.make(text)
             }
             None => 0,
@@ -1417,7 +1440,7 @@ impl MockBuiltins {
     /// the first argument, replaced by each later one the call passed that is below it (above
     /// it), so a NaN is replaced only when it comes first.
     fn b_extreme(context: &mut Context<'_, '_>, extreme: Extreme) -> Result<(), BuiltinError> {
-        let mut r = read_parm_float(context, 0)?;
+        let mut r = read_parm_float(context, PARM0)?;
         let argc = u16::try_from(context.machine().argc()).unwrap_or(u16::MAX);
         for n in 1..argc {
             let v = read_parm_float(context, n)?;
@@ -1435,9 +1458,9 @@ impl MockBuiltins {
     /// `bound(min, value, max)`, vkQuake's `PF_bound` (BUILTIN-18.15): `value` lowered to
     /// `max`, then raised to `min`.
     fn b_bound(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let low = read_parm_float(context, 0)?;
-        let mut value = read_parm_float(context, 1)?;
-        let high = read_parm_float(context, 2)?;
+        let low = read_parm_float(context, PARM0)?;
+        let mut value = read_parm_float(context, PARM1)?;
+        let high = read_parm_float(context, PARM2)?;
         if value > high {
             value = high;
         }
@@ -1451,8 +1474,8 @@ impl MockBuiltins {
     /// (BUILTIN-18.16): a new string of `s` with its ASCII letters in that case, cut to 1023
     /// bytes.
     fn b_strcase(&mut self, context: &mut Context<'_, '_>, case: Case) -> Result<(), BuiltinError> {
-        let mut text = read_parm_string(context, &self.engine, 0)?;
-        text.truncate(VKQUAKE_STRINGTEMP_LENGTH.saturating_sub(1));
+        let mut text = read_parm_string(context, &self.engine, PARM0)?;
+        text.truncate(STRINGTEMP_TEXT);
         match case {
             Case::Lower => text.make_ascii_lowercase(),
             Case::Upper => text.make_ascii_uppercase(),
@@ -1464,10 +1487,10 @@ impl MockBuiltins {
     /// `strconv(ccase, redalpha, rednum, s, ...)`, vkQuake's `PF_strconv` (BUILTIN-18.17): a new
     /// string of the strings from the fourth argument on, joined, converted byte by byte.
     fn b_strconv(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let ccase = read_parm_int(context, 0)?;
-        let redalpha = read_parm_int(context, 1)?;
-        let rednum = read_parm_int(context, 2)?;
-        let text = joined_string(context, &self.engine, 3)?;
+        let ccase = read_parm_int(context, PARM0)?;
+        let redalpha = read_parm_int(context, PARM1)?;
+        let rednum = read_parm_int(context, PARM2)?;
+        let text = joined_string(context, &self.engine, PARM3)?;
         let value = self
             .engine
             .strings
@@ -1478,7 +1501,7 @@ impl MockBuiltins {
     /// `clienttype(e)`, vkQuake's `PF_clienttype` (BUILTIN-18.20): 3 for no client slot, 1 for
     /// an active client, every one of the mock's being a real one, 0 for an empty slot.
     fn b_clienttype(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let number = read_parm_edictnum(context, 0)?.index();
+        let number = read_parm_edictnum(context, PARM0)?.index();
         let value = match number.checked_sub(1) {
             Some(slot) if slot < self.engine.clients_active.len() => {
                 if self.engine.clients_active.get(slot) == Some(&true) {
@@ -1487,14 +1510,14 @@ impl MockBuiltins {
                     0.0
                 }
             }
-            Some(_) | None => 3.0,
+            Some(_) | None => CLIENTTYPE_NONE,
         };
         write_return_float(context, value)
     }
 
     /// `strlen(s)`, vkQuake's `PF_strlen` (BUILTIN-18.21): `s`'s length in bytes.
     fn b_strlen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let text = read_parm_string(context, &self.engine, 0)?;
+        let text = read_parm_string(context, &self.engine, PARM0)?;
         let len = text.iter().position(|&b| b == 0).unwrap_or(text.len());
         #[expect(
             clippy::cast_precision_loss,
@@ -1513,8 +1536,8 @@ impl MockBuiltins {
             let part = read_parm_string(context, &self.engine, n)?;
             let part = part.split(|&b| b == 0).next().unwrap_or_default();
             out.extend_from_slice(part);
-            if out.len() >= VKQUAKE_STRINGTEMP_LENGTH {
-                out.truncate(VKQUAKE_STRINGTEMP_LENGTH.saturating_sub(1));
+            if out.len() >= STRINGTEMP_LENGTH {
+                out.truncate(STRINGTEMP_TEXT);
                 break;
             }
         }
@@ -1524,10 +1547,10 @@ impl MockBuiltins {
 
     /// `substring(s, start, length)`, vkQuake's `PF_substring` (BUILTIN-18.21).
     fn b_substring(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let text = read_parm_string(context, &self.engine, 0)?;
+        let text = read_parm_string(context, &self.engine, PARM0)?;
         let text = text.split(|&b| b == 0).next().unwrap_or_default().to_vec();
-        let mut start = read_parm_int(context, 1)?;
-        let mut length = read_parm_int(context, 2)?;
+        let mut start = read_parm_int(context, PARM1)?;
+        let mut length = read_parm_int(context, PARM2)?;
         let slen = i32::try_from(text.len()).unwrap_or(i32::MAX);
         if start < 0 {
             start = slen.wrapping_add(start);
@@ -1542,7 +1565,7 @@ impl MockBuiltins {
             Vec::new()
         } else {
             let rest = slen.wrapping_sub(start);
-            let take = length.min(rest).min(1023);
+            let take = length.min(rest).min(STRINGTEMP_TEXT_I32);
             let from = usize::try_from(start).unwrap_or(0);
             let to = from.saturating_add(usize::try_from(take).unwrap_or(0));
             text.get(from..to).unwrap_or_default().to_vec()
@@ -1554,15 +1577,15 @@ impl MockBuiltins {
     /// `strncmp(a, b, len, aofs, bofs)`, vkQuake's `PF_strncmp`, and with `Case::Lower`
     /// `strcasecmp` and `strncasecmp`, its `PF_strncasecmp` (BUILTIN-18.22).
     fn b_strncmp(&mut self, context: &mut Context<'_, '_>, case: Case) -> Result<(), BuiltinError> {
-        let a = read_parm_string(context, &self.engine, 0)?;
-        let b = read_parm_string(context, &self.engine, 1)?;
+        let a = read_parm_string(context, &self.engine, PARM0)?;
+        let b = read_parm_string(context, &self.engine, PARM1)?;
         let a = c_str(&a);
         let b = c_str(&b);
         let argc = context.machine().argc();
         let (a, n) = if argc > 2 {
-            let len = read_parm_int(context, 2)?;
-            let aofs = if argc > 3 {
-                read_parm_int(context, 3)?
+            let len = read_parm_int(context, PARM2)?;
+            let aofs = if argc > usize::from(PARM3) {
+                read_parm_int(context, PARM3)?
             } else {
                 0
             };
@@ -1592,11 +1615,11 @@ impl MockBuiltins {
 
     /// `strstrofs(s, sub, firstofs)`, vkQuake's `PF_strstrofs` (BUILTIN-18.22).
     fn b_strstrofs(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let text = read_parm_string(context, &self.engine, 0)?;
-        let needle = read_parm_string(context, &self.engine, 1)?;
+        let text = read_parm_string(context, &self.engine, PARM0)?;
+        let needle = read_parm_string(context, &self.engine, PARM1)?;
         let (text, needle) = (c_str(&text), c_str(&needle));
         let first = if context.machine().argc() > 2 {
-            read_parm_int(context, 2)?
+            read_parm_int(context, PARM2)?
         } else {
             0
         };
@@ -1616,14 +1639,14 @@ impl MockBuiltins {
 
     /// `num_for_edict(e)`, vkQuake's `PF_num_for_edict` (BUILTIN-18.18): `e`'s number.
     fn b_num_for_edict(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let number = read_parm_edictnum(context, 0)?;
+        let number = read_parm_edictnum(context, PARM0)?;
         let value = u16::try_from(number.index()).map_or(f32::MAX, f32::from);
         write_return_float(context, value)
     }
 
     /// `stof(s)`, vkQuake's `PF_stof` (BUILTIN-18.25): C's `atof` of `s`, as a float.
     fn b_stof(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let text = read_parm_string(context, &self.engine, 0)?;
+        let text = read_parm_string(context, &self.engine, PARM0)?;
         #[expect(
             clippy::cast_possible_truncation,
             reason = "BUILTIN-18.25: G_FLOAT of a double rounds it to the nearest float, as this does"
@@ -1635,7 +1658,7 @@ impl MockBuiltins {
     /// `checkextension(name)`, vkQuake's `PF_checkextension` (BUILTIN-18.14): 1 for a name of
     /// [`VKQUAKE_EXTENSIONS`] whose `pr_ext_NAME` setting, made with 1 if missing, is not 0.
     fn b_checkextension(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let name = read_parm_string(context, &self.engine, 0)?;
+        let name = read_parm_string(context, &self.engine, PARM0)?;
         let name = String::from_utf8_lossy(&name);
         let found = if VKQUAKE_EXTENSIONS.contains(&name.as_ref()) {
             let setting = format!("pr_ext_{}", name.to_ascii_lowercase());
@@ -1650,7 +1673,7 @@ impl MockBuiltins {
     /// `tokenize(s)` (#441) and `tokenize_console(s)` (#514), vkQuake's `PF_Tokenize` and
     /// `PF_tokenize_console`, both `tokenizeqc` (BUILTIN-18.23): the word count.
     fn b_tokenize(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let text = read_parm_string(context, &self.engine, 0)?;
+        let text = read_parm_string(context, &self.engine, PARM0)?;
         let count = self.engine.tokens.tokenize(&text);
         write_return_float(context, f32_of_count(count))
     }
@@ -1658,7 +1681,7 @@ impl MockBuiltins {
     /// `tokenizebyseparator(s, separator, ...)` (#479), vkQuake's `PF_tokenizebyseparator`
     /// (BUILTIN-18.24): the separators are the arguments after `s`, at most seven.
     fn b_tokenizebyseparator(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let text = read_parm_string(context, &self.engine, 0)?;
+        let text = read_parm_string(context, &self.engine, PARM0)?;
         let given = context.machine().argc().saturating_sub(1);
         let mut separators = Vec::new();
         for n in 1..=given.min(MAX_SEPARATORS) {
@@ -1673,7 +1696,7 @@ impl MockBuiltins {
     /// `argv(n)` (#442), vkQuake's `PF_ArgV` (BUILTIN-18.23): a temporary string of token
     /// `n`, or the null string 0.
     fn b_argv(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let index = read_parm_int(context, 0)?;
+        let index = TokenIndex::new(read_parm_int(context, PARM0)?);
         match self.engine.tokens.argv(index) {
             Some(text) => {
                 let value = self.engine.strings.make(text);
@@ -1690,7 +1713,7 @@ impl MockBuiltins {
         context: &mut Context<'_, '_>,
         edge: Edge,
     ) -> Result<(), BuiltinError> {
-        let index = read_parm_int(context, 0)?;
+        let index = TokenIndex::new(read_parm_int(context, PARM0)?);
         let at = match edge {
             Edge::Start => self.engine.tokens.start(index),
             Edge::End => self.engine.tokens.end(index),
@@ -1702,8 +1725,8 @@ impl MockBuiltins {
     /// `fopen(name, mode)`, vkQuake's `PF_fopen` (BUILTIN-18.36): `name` through `G_STRING`
     /// and the mode through `(int)`, then the handle, or -1.
     fn b_fopen(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let name = read_parm_string(context, &self.engine, 0)?;
-        let mode = read_parm_int(context, 1)?;
+        let name = read_parm_string(context, &self.engine, PARM0)?;
+        let mode = read_parm_int(context, PARM1)?;
         let handle = self.engine.files.open(cstr(&name), mode);
         write_return_float(context, handle)
     }
@@ -1711,7 +1734,7 @@ impl MockBuiltins {
     /// `fgets(handle)`, vkQuake's `PF_fgets` (BUILTIN-18.37): the next line as a new string, or
     /// 0.
     fn b_fgets(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let handle = read_parm_float(context, 0)?;
+        let handle = read_parm_float(context, PARM0)?;
         let value = match self.engine.files.gets(handle) {
             Some(line) => self.engine.strings.make(line),
             None => 0,
@@ -1722,15 +1745,15 @@ impl MockBuiltins {
     /// `fputs(handle, s, ...)`, vkQuake's `PF_fputs` (BUILTIN-18.37): the strings from the
     /// second joined (`PF_VarString (1)`), each checked, then written.
     fn b_fputs(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let handle = read_parm_float(context, 0)?;
-        let text = joined_string(context, &self.engine, 1)?;
+        let handle = read_parm_float(context, PARM0)?;
+        let text = joined_string(context, &self.engine, PARM1)?;
         self.engine.files.puts(handle, cstr(&text));
         Ok(())
     }
 
     /// `fclose(handle)`, vkQuake's `PF_fclose` (BUILTIN-18.37).
     fn b_fclose(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let handle = read_parm_float(context, 0)?;
+        let handle = read_parm_float(context, PARM0)?;
         self.engine.files.close(handle);
         Ok(())
     }
@@ -1738,7 +1761,7 @@ impl MockBuiltins {
     /// `whichpack(name)`, vkQuake's `PF_whichpack` (BUILTIN-18.38): the game directory of a
     /// file that exists, as a new string, or 0.
     fn b_whichpack(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let name = read_parm_string(context, &self.engine, 0)?;
+        let name = read_parm_string(context, &self.engine, PARM0)?;
         let value = match self.engine.files.which_pack(cstr(&name)) {
             Some(dir) => self.engine.strings.make(dir.to_vec()),
             None => 0,
@@ -1761,8 +1784,8 @@ impl MockBuiltins {
     /// `strunzone(s)`, vkQuake's `PF_strunzone` (BUILTIN-18.9): `s` is read as a string, then
     /// freed when `strzone` made it; 0 and any other string change nothing.
     fn b_strunzone(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _text = read_parm_string(context, &self.engine, 0)?;
-        let value = read_parm_raw(context, 0)?;
+        let _text = read_parm_string(context, &self.engine, PARM0)?;
+        let value = read_parm_raw(context, PARM0)?;
         if value != 0 {
             let _freed = self.engine.strings.unzone(value);
         }
@@ -1773,9 +1796,9 @@ impl MockBuiltins {
     /// (BUILTIN-18.29): the player through `G_EDICTNUM`, then the two strings; on the world a
     /// serverinfo cvar is set as `cvar_set` sets it.
     fn b_forceinfokey(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let edict = read_parm_edictnum(context, 0)?;
-        let key = read_parm_string(context, &self.engine, 1)?;
-        let value = read_parm_string(context, &self.engine, 2)?;
+        let edict = read_parm_edictnum(context, PARM0)?;
+        let key = read_parm_string(context, &self.engine, PARM1)?;
+        let value = read_parm_string(context, &self.engine, PARM2)?;
         let key = cstr(&key);
         let value = cstr(&value);
         let maxclients = self.engine.clients_active.len();
@@ -1797,7 +1820,7 @@ impl MockBuiltins {
 
     /// A float builtin of one argument: `sin` (BUILTIN-18.31).
     fn b_unary(context: &mut Context<'_, '_>, f: impl Fn(f32) -> f32) -> Result<(), BuiltinError> {
-        let value = read_parm_float(context, 0)?;
+        let value = read_parm_float(context, PARM0)?;
         write_return_float(context, f(value))
     }
 
@@ -1806,17 +1829,17 @@ impl MockBuiltins {
         context: &mut Context<'_, '_>,
         f: impl Fn(f32, f32) -> f32,
     ) -> Result<(), BuiltinError> {
-        let a = read_parm_float(context, 0)?;
-        let b = read_parm_float(context, 1)?;
+        let a = read_parm_float(context, PARM0)?;
+        let b = read_parm_float(context, PARM1)?;
         write_return_float(context, f(a, b))
     }
 
     /// `str2chr(s, ofs)`, vkQuake's `PF_str2chr` (BUILTIN-18.32): `ofs` is read only when the
     /// call passed it, else 0.
     fn b_str2chr(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let text = read_parm_string(context, &self.engine, 0)?;
+        let text = read_parm_string(context, &self.engine, PARM0)?;
         let ofs = if context.machine().argc() > 1 {
-            read_parm_int(context, 1)?
+            read_parm_int(context, PARM1)?
         } else {
             0
         };
@@ -1838,8 +1861,8 @@ impl MockBuiltins {
     /// `strpad(pad, s, ...)`, vkQuake's `PF_strpad` (BUILTIN-18.33): the strings from the
     /// second joined, as `PF_VarString (1)` joins them.
     fn b_strpad(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let pad = read_parm_int(context, 0)?;
-        let text = joined_string(context, &self.engine, 1)?;
+        let pad = read_parm_int(context, PARM0)?;
+        let text = joined_string(context, &self.engine, PARM1)?;
         let value = self
             .engine
             .strings
@@ -1849,9 +1872,9 @@ impl MockBuiltins {
 
     /// `strreplace(search, replace, subject)`, vkQuake's `PF_strreplace` (BUILTIN-18.33).
     fn b_strreplace(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let search = read_parm_string(context, &self.engine, 0)?;
-        let replace = read_parm_string(context, &self.engine, 1)?;
-        let subject = read_parm_string(context, &self.engine, 2)?;
+        let search = read_parm_string(context, &self.engine, PARM0)?;
+        let replace = read_parm_string(context, &self.engine, PARM1)?;
+        let subject = read_parm_string(context, &self.engine, PARM2)?;
         let text = vkstrings::strreplace(cstr(&search), cstr(&replace), cstr(&subject));
         let value = self.engine.strings.make(text);
         write_return_string(context, value)
@@ -1864,7 +1887,7 @@ impl MockBuiltins {
         context: &mut Context<'_, '_>,
         f: impl Fn(&[u8]) -> Vec<u8>,
     ) -> Result<(), BuiltinError> {
-        let text = read_parm_string(context, &self.engine, 0)?;
+        let text = read_parm_string(context, &self.engine, PARM0)?;
         let value = self.engine.strings.make(f(cstr(&text)));
         write_return_string(context, value)
     }
@@ -1873,7 +1896,7 @@ impl MockBuiltins {
     /// the call passed none.
     fn b_buf_create(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let string_type = if context.machine().argc() > 0 {
-            read_parm_string(context, &self.engine, 0)?
+            read_parm_string(context, &self.engine, PARM0)?
         } else {
             b"string".to_vec()
         };
@@ -1883,7 +1906,9 @@ impl MockBuiltins {
 
     /// `buf_del(handle)`, vkQuake's `PF_buf_del` (BUILTIN-18.39).
     fn b_buf_del(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let slot = vkstrings::float_to_unsigned(read_parm_float(context, 0)? - 1.0);
+        let slot = BufferSlot::new(vkstrings::float_to_unsigned(
+            read_parm_float(context, PARM0)? - 1.0,
+        ));
         self.engine.string_buffers.delete(slot);
         Ok(())
     }
@@ -1891,8 +1916,8 @@ impl MockBuiltins {
     /// `buf_getsize(handle)`, vkQuake's `PF_buf_getsize` (BUILTIN-18.39): the slot through
     /// `(int)`; a buffer not in use leaves the return value as it was.
     fn b_buf_getsize(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let slot = float_to_int(read_parm_float(context, 0)? - 1.0);
-        let slot = u32::from_ne_bytes(slot.to_ne_bytes());
+        let slot = float_to_int(read_parm_float(context, PARM0)? - 1.0);
+        let slot = BufferSlot::new(u32::from_ne_bytes(slot.to_ne_bytes()));
         match self.engine.string_buffers.size(slot) {
             Some(size) => write_return_float(
                 context,
@@ -1905,8 +1930,12 @@ impl MockBuiltins {
     /// `bufstr_get(handle, index)`, vkQuake's `PF_bufstr_get` (BUILTIN-18.39): the string as a
     /// new temporary string, or 0.
     fn b_bufstr_get(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let slot = vkstrings::float_to_unsigned(read_parm_float(context, 0)? - 1.0);
-        let index = vkstrings::float_to_unsigned(read_parm_float(context, 1)?);
+        let slot = BufferSlot::new(vkstrings::float_to_unsigned(
+            read_parm_float(context, PARM0)? - 1.0,
+        ));
+        let index = StringIndex::new(vkstrings::float_to_unsigned(read_parm_float(
+            context, PARM1,
+        )?));
         let value = match self.engine.string_buffers.get(slot, index) {
             Some(text) => self.engine.strings.make(text),
             None => 0,
@@ -1918,10 +1947,16 @@ impl MockBuiltins {
     /// first, `order` through `(int)`, true when not 0; a buffer not in use leaves the return
     /// value as it was.
     fn b_bufstr_add(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let slot = vkstrings::float_to_unsigned(read_parm_float(context, 0)? - 1.0);
-        let text = read_parm_string(context, &self.engine, 1)?;
-        let at_end = float_to_int(read_parm_float(context, 2)?) != 0;
-        match self.engine.string_buffers.add(slot, cstr(&text), at_end) {
+        let slot = BufferSlot::new(vkstrings::float_to_unsigned(
+            read_parm_float(context, PARM0)? - 1.0,
+        ));
+        let text = read_parm_string(context, &self.engine, PARM1)?;
+        let placement = if float_to_int(read_parm_float(context, PARM2)?) == 0 {
+            Placement::FirstHole
+        } else {
+            Placement::End
+        };
+        match self.engine.string_buffers.add(slot, cstr(&text), placement) {
             Some(index) => write_return_float(
                 context,
                 int_to_float(i32::try_from(index).unwrap_or(i32::MAX)),
@@ -1937,11 +1972,11 @@ impl MockBuiltins {
     /// `NUM_FOR_EDICT`. The message goes to each client's datagram, which the mock does not
     /// keep.
     fn b_vk_sound(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let entity = read_parm_edict(context, 0)?;
-        let channel = read_parm_int(context, 1)?;
-        let sample = read_parm_string(context, &self.engine, 2)?;
-        let volume = float_to_int(read_parm_float(context, 3)? * 255.0);
-        let atten = read_parm_float(context, 4)?;
+        let entity = read_parm_edict(context, PARM0)?;
+        let channel = read_parm_int(context, PARM1)?;
+        let sample = read_parm_string(context, &self.engine, PARM2)?;
+        let volume = float_to_int(read_parm_float(context, PARM3)? * VOLUME_SCALE);
+        let atten = read_parm_float(context, PARM4)?;
         let sample = cstr(&sample);
         if sample.is_empty() {
             return Ok(());
@@ -1949,10 +1984,10 @@ impl MockBuiltins {
         if volume < 0 {
             return Err(BuiltinError::from(FatalError::SoundVolume { volume }));
         }
-        if atten < 0.0 || atten > 4.0 {
+        if atten < 0.0 || atten > MAX_ATTENUATION {
             return Err(BuiltinError::from(FatalError::SoundAttenuation { atten }));
         }
-        if !(0..=255).contains(&channel) {
+        if !(0..=MAX_CHANNEL).contains(&channel) {
             return Err(BuiltinError::from(FatalError::SoundChannel { channel }));
         }
         let name = String::from_utf8_lossy(sample).into_owned();
@@ -1974,10 +2009,10 @@ impl MockBuiltins {
     /// (BUILTIN-18.41): dropped when the datagram holds more than its size less 18, else 18
     /// bytes, its coordinates four each.
     fn b_vk_particle(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _o = read_parm_vector(context, 0)?;
-        let _d = read_parm_vector(context, 1)?;
-        let _color = read_parm_float(context, 2)?;
-        let _count = read_parm_float(context, 3)?;
+        let _o = read_parm_vector(context, PARM0)?;
+        let _d = read_parm_vector(context, PARM1)?;
+        let _color = read_parm_float(context, PARM2)?;
+        let _count = read_parm_float(context, PARM3)?;
         if self.engine.buffers.unreliable
             > VKQUAKE_MAX_DATAGRAM.saturating_sub(VKQUAKE_PARTICLE_BYTES)
         {
@@ -1990,17 +2025,17 @@ impl MockBuiltins {
     /// a sample not precached, from entry 0, is a console message; any other is kept for the
     /// clients that connect, not written to a signon buffer.
     fn b_vk_ambientsound(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _pos = read_parm_vector(context, 0)?;
-        let _samp = read_parm_string(context, &self.engine, 1)?;
-        let _vol = read_parm_float(context, 2)?;
-        let _atten = read_parm_float(context, 3)?;
+        let _pos = read_parm_vector(context, PARM0)?;
+        let _samp = read_parm_string(context, &self.engine, PARM1)?;
+        let _vol = read_parm_float(context, PARM2)?;
+        let _atten = read_parm_float(context, PARM3)?;
         Ok(())
     }
 
     /// `makestatic(e)`, vkQuake's `PF_sv_makestatic` (BUILTIN-18.41): `e` through `G_EDICT`,
     /// its state kept from its fields, then freed; no signon buffer is written.
     fn b_vk_makestatic(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let number = read_parm_edict(context, 0)?;
+        let number = read_parm_edict(context, PARM0)?;
         let now = self.engine.clock;
         context.machine().edicts_mut().free(number, now);
         Ok(())
@@ -2011,8 +2046,8 @@ impl MockBuiltins {
     /// the signon buffers, a new one when it does not fit; every kind then empties the
     /// multicast buffer.
     fn b_multicast(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _org = read_parm_vector(context, 0)?;
-        let to = read_parm_int(context, 1)?;
+        let _org = read_parm_vector(context, PARM0)?;
+        let to = read_parm_int(context, PARM1)?;
         let value = read_system_global_entity(context, SysGlobal::MsgEntity)?;
         let _number = entity_num_for(context, value)?;
         if to == MULTICAST_INIT {
@@ -2030,14 +2065,17 @@ impl MockBuiltins {
     /// (BUILTIN-18.42): a start or end holding a NaN is set to 0 0 0 in its parameter, then the
     /// mock's trace, which hits nothing (DIFF-7.1).
     fn b_tracebox(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let mut ends = [read_parm_vector(context, 0)?, read_parm_vector(context, 3)?];
-        let _mins = read_parm_vector(context, 1)?;
-        let _maxs = read_parm_vector(context, 2)?;
-        let _nomonsters = read_parm_float(context, 4)?;
-        let _ent = read_parm_edict(context, 5)?;
-        for (end, parm) in ends.iter_mut().zip([0_u16, 3]) {
+        let mut ends = [
+            read_parm_vector(context, PARM0)?,
+            read_parm_vector(context, PARM3)?,
+        ];
+        let _mins = read_parm_vector(context, PARM1)?;
+        let _maxs = read_parm_vector(context, PARM2)?;
+        let _nomonsters = read_parm_float(context, PARM4)?;
+        let _ent = read_parm_edict(context, PARM5)?;
+        for (end, parm) in ends.iter_mut().zip([PARM0, PARM3]) {
             if end.iter().any(|c| c.is_nan()) {
-                *end = [0.0; 3];
+                *end = [0.0; qc_types::PROGS_VECTOR_SLOTS];
                 write_parm_vector(context, parm, *end)?;
             }
         }
@@ -2062,7 +2100,7 @@ impl MockBuiltins {
     /// for an active client, `ClientDisconnect` runs with `self` the client, `self` is put back,
     /// and the slot is no longer active, its name emptied.
     fn b_dropclient(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let edict = read_parm_edictnum(context, 0)?;
+        let edict = read_parm_edictnum(context, PARM0)?;
         if !self.engine.client_active(edict.index()) {
             return Ok(());
         }
@@ -2082,14 +2120,17 @@ impl MockBuiltins {
         if let Some(active) = self.engine.clients_active.get_mut(slot) {
             *active = false;
         }
-        self.engine.clients.get_mut(slot).clear_name();
+        self.engine
+            .clients
+            .get_mut(ClientSlot::new(slot))
+            .clear_name();
         Ok(())
     }
 
     /// `wasfreed(e)`, vkQuake's `PF_WasFreed` (BUILTIN-18.35): `e` through `G_EDICT`, then 1
     /// when it is free and 0 when not.
     fn b_wasfreed(context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let edict = read_parm_edict(context, 0)?;
+        let edict = read_parm_edict(context, PARM0)?;
         let free = context.machine().edicts().is_free(edict) == Some(true);
         write_return_float(context, if free { 1.0 } else { 0.0 })
     }
@@ -2104,7 +2145,12 @@ impl MockBuiltins {
         value: &[u8],
     ) -> Result<(), BuiltinError> {
         let slot = edict.index().saturating_sub(1);
-        let Some(decoded) = self.engine.clients.get_mut(slot).update(key, value) else {
+        let Some(decoded) = self
+            .engine
+            .clients
+            .get_mut(ClientSlot::new(slot))
+            .update(key, value)
+        else {
             return Ok(());
         };
         write_field_float(context, edict, SysField::Team, decoded.team)?;
@@ -2119,8 +2165,8 @@ impl MockBuiltins {
     /// `G_EDICT` and `NUM_FOR_EDICT`, then `s` run as an active client's command by
     /// `Cmd_ExecuteString (s, src_client)`; nothing for an edict that is no active client.
     fn b_clientcommand(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let edict = read_parm_edictnum(context, 0)?;
-        let text = read_parm_string(context, &self.engine, 1)?;
+        let edict = read_parm_edictnum(context, PARM0)?;
+        let text = read_parm_string(context, &self.engine, PARM1)?;
         if !self.engine.client_active(edict.index()) {
             return Ok(());
         }
@@ -2159,15 +2205,15 @@ const BUILTIN_DEFAULT_SOUND_VOLUME: i32 = 255;
 impl MockBuiltins {
     /// `sound(e, chan, samp, vol, atten)` (BUILTIN-12.1 to BUILTIN-12.3).
     fn b_sound(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let chan = read_parm_int(context, 1)?;
-        let vol_f = read_parm_float(context, 3)?;
-        let atten = read_parm_float(context, 4)?;
-        let volume = float_to_int(vol_f * 255.0);
+        let chan = read_parm_int(context, PARM1)?;
+        let vol_f = read_parm_float(context, PARM3)?;
+        let atten = read_parm_float(context, PARM4)?;
+        let volume = float_to_int(vol_f * VOLUME_SCALE);
         // BUILTIN-12.1: volume, attenuation, channel checked in that order; NaN atten passes.
         if !(0..=255).contains(&volume) {
             return Err(BuiltinError::from(FatalError::SoundVolume { volume }));
         }
-        if atten < 0.0 || atten > 4.0 {
+        if atten < 0.0 || atten > MAX_ATTENUATION {
             return Err(BuiltinError::from(FatalError::SoundAttenuation { atten }));
         }
         if !(0..=7).contains(&chan) {
@@ -2181,7 +2227,7 @@ impl MockBuiltins {
         {
             return Ok(());
         }
-        let samp = read_parm_string(context, &self.engine, 2)?;
+        let samp = read_parm_string(context, &self.engine, PARM2)?;
         let name = String::from_utf8_lossy(&samp).into_owned();
         // BUILTIN-12.2: not precached (from entry 1) is a console message, then return.
         if self
@@ -2193,7 +2239,7 @@ impl MockBuiltins {
             return Ok(());
         }
         // BUILTIN-12.2: e goes through NUM_FOR_EDICT after these checks.
-        let _e = read_parm_edictnum(context, 0)?;
+        let _e = read_parm_edictnum(context, PARM0)?;
         // BUILTIN-12.3: the message size varies with the flags; use the maximum, since a flag
         // is set only when the value differs from the default, which does not change the
         // overflow behaviour QuakeC observes for a buffer this far from full.
@@ -2204,10 +2250,10 @@ impl MockBuiltins {
     /// `ambientsound(pos, samp, vol, atten)` (BUILTIN-12.4): to the signon buffer; a name not
     /// precached is a console message.
     fn b_ambientsound(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _pos = read_parm_vector(context, 0)?;
-        let samp = read_parm_string(context, &self.engine, 1)?;
-        let _vol = read_parm_float(context, 2)?;
-        let _atten = read_parm_float(context, 3)?;
+        let _pos = read_parm_vector(context, PARM0)?;
+        let samp = read_parm_string(context, &self.engine, PARM1)?;
+        let _vol = read_parm_float(context, PARM2)?;
+        let _atten = read_parm_float(context, PARM3)?;
         let name = String::from_utf8_lossy(&samp).into_owned();
         if self.engine.precache_index(Precache::Sound, &name).is_none() {
             return Ok(());
@@ -2218,10 +2264,10 @@ impl MockBuiltins {
     /// `particle(o, d, color, count)` (BUILTIN-12.5): to the unreliable datagram; dropped when
     /// nearly full.
     fn b_particle(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _o = read_parm_vector(context, 0)?;
-        let _d = read_parm_vector(context, 1)?;
-        let _color = read_parm_int(context, 2)?;
-        let _count = read_parm_int(context, 3)?;
+        let _o = read_parm_vector(context, PARM0)?;
+        let _d = read_parm_vector(context, PARM1)?;
+        let _color = read_parm_int(context, PARM2)?;
+        let _count = read_parm_int(context, PARM3)?;
         if self.engine.buffers.unreliable
             > LIMIT_MAX_DATAGRAM.saturating_sub(BUILTIN_DATAGRAM_SLACK)
         {
@@ -2233,8 +2279,8 @@ impl MockBuiltins {
     /// `lightstyle(style, value)` (BUILTIN-12.6, BUILTIN-12.7): store the style; a number
     /// outside 0 to 63 is `invalid lightstyle`.
     fn b_lightstyle(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let style = read_parm_int(context, 0)?;
-        let value = read_parm_string(context, &self.engine, 1)?;
+        let style = read_parm_int(context, PARM0)?;
+        let value = read_parm_string(context, &self.engine, PARM1)?;
         // BUILTIN-12.6: fail before storing anything for a style outside the array.
         let index = usize::try_from(style)
             .ok()
@@ -2247,7 +2293,7 @@ impl MockBuiltins {
 
     /// `makestatic(e)` (BUILTIN-12.8): append to the signon buffer, then free `e`.
     fn b_makestatic(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let number = read_parm_edictnum(context, 0)?;
+        let number = read_parm_edictnum(context, PARM0)?;
         // BUILTIN-12.8, BUILTIN-2.9: the model text is read here (invalid string if bad);
         // 0 for an empty model, the fatal error when not precached.
         let model_value = read_field_int(context, number, SysField::Model)?;
@@ -2291,7 +2337,7 @@ impl MockBuiltins {
     /// Resolves the `Write*` destination `to` (BUILTIN-13.1): a bad destination or a non-client
     /// `MSG_ONE` is a runtime error.
     fn write_dest(&mut self, context: &mut Context<'_, '_>) -> Result<MessageDest, BuiltinError> {
-        let to = read_parm_int(context, 0)?;
+        let to = read_parm_int(context, PARM0)?;
         match to {
             0 => Ok(MessageDest::Broadcast),
             1 => {
@@ -2328,7 +2374,7 @@ impl MockBuiltins {
     /// string, so a bad destination and a bad string give the destination's error.
     fn b_write_string(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let dest = self.write_dest(context)?;
-        let text = read_parm_string(context, &self.engine, 1)?;
+        let text = read_parm_string(context, &self.engine, PARM1)?;
         // RRE-1.9: `MSG_WriteString (WriteDest(), LOC_GetString (G_STRING (OFS_PARM1)))`.
         let text = if self.engine.localization.is_empty() {
             text
@@ -2342,7 +2388,7 @@ impl MockBuiltins {
     /// through `NUM_FOR_EDICT`.
     fn b_write_entity(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
         let dest = self.write_dest(context)?;
-        let value = read_parm_raw(context, 1)?;
+        let value = read_parm_raw(context, PARM1)?;
         let _number = entity_num_for(context, value)?;
         self.write_bytes(dest, 2)
     }
@@ -2354,11 +2400,11 @@ impl MockBuiltins {
     /// `traceline(v1, v2, nomonsters, forent)` (DIFF-7.1): hits nothing; writes the nine trace
     /// globals with `trace_endpos` a copy of PARM1.
     fn b_traceline(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _v1 = read_parm_vector(context, 0)?;
-        let v2 = read_parm_vector(context, 1)?;
-        let _nomonsters = read_parm_float(context, 2)?;
+        let _v1 = read_parm_vector(context, PARM0)?;
+        let v2 = read_parm_vector(context, PARM1)?;
+        let _nomonsters = read_parm_float(context, PARM2)?;
         // forent is read with the G_EDICT check (BUILTIN-2.9), though the mock ignores it.
-        let _forent = read_parm_edict(context, 3)?;
+        let _forent = read_parm_edict(context, PARM3)?;
         write_system_global_float(context, SysGlobal::TraceAllsolid, 0.0)?;
         write_system_global_float(context, SysGlobal::TraceStartsolid, 0.0)?;
         write_system_global_float(context, SysGlobal::TraceFraction, 1.0)?;
@@ -2377,20 +2423,20 @@ impl MockBuiltins {
 
     /// `pointcontents(v)` (DIFF-7.2): returns -1 (`CONTENTS_EMPTY`).
     fn b_pointcontents(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _v = read_parm_vector(context, 0)?;
+        let _v = read_parm_vector(context, PARM0)?;
         write_return_float(context, -1.0)
     }
 
     /// `checkbottom(e)` (DIFF-7.4): returns 1.
     fn b_checkbottom(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _e = read_parm_edictnum(context, 0)?;
+        let _e = read_parm_edictnum(context, PARM0)?;
         write_return_float(context, 1.0)
     }
 
     /// `aim(e, speed)` (DIFF-7.4): returns a copy of `v_forward`.
     fn b_aim(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let _e = read_parm_edictnum(context, 0)?;
-        let _speed = read_parm_float(context, 1)?;
+        let _e = read_parm_edictnum(context, PARM0)?;
+        let _speed = read_parm_float(context, PARM1)?;
         let v_forward = read_system_vector(context, SysGlobal::VForward)?;
         write_return_vector(context, v_forward)
     }
@@ -2466,8 +2512,8 @@ impl MockBuiltins {
 
     /// `walkmove(yaw, dist)` (DIFF-7.6, DIFF-7.7).
     fn b_walkmove(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let yaw = read_parm_float(context, 0)?;
-        let dist = read_parm_float(context, 1)?;
+        let yaw = read_parm_float(context, PARM0)?;
+        let dist = read_parm_float(context, PARM1)?;
         let self_num = checked_self(context)?;
         if !can_move(context, self_num)? {
             return write_return_float(context, 0.0);
@@ -2487,7 +2533,7 @@ impl MockBuiltins {
     /// `movetogoal(step)` (DIFF-7.8): turns `self` as `ChangeYaw`, steps when within 45 degrees
     /// of `ideal_yaw`, links; writes 0 to RETURN only when `self` cannot move.
     fn b_movetogoal(&mut self, context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        let step = read_parm_float(context, 0)?;
+        let step = read_parm_float(context, PARM0)?;
         let self_num = checked_self(context)?;
         if !can_move(context, self_num)? {
             return write_return_float(context, 0.0);

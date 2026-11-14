@@ -51,9 +51,13 @@ fn qc_vm::machine::Machine::set_global3
 fn qc_vm::machine::Machine::set_runaway
 fn qc_vm::machine::Machine::set_tracing
 fn qc_vm::machine::Machine::tracing
+fn qc_vm::trace::Trace::clear
 fn qc_vm::trace::Trace::entityfields
+fn qc_vm::trace::Trace::error_record
 fn qc_vm::trace::Trace::finish
+fn qc_vm::trace::Trace::header
 fn qc_vm::trace::Trace::new
+fn qc_vm::trace::Trace::push_string
 fn qc_vm::trace::Trace::records
 impl qc_vm::error::Divergence: fmt::Display
 impl qc_vm::error::ErrorKind: fmt::Display

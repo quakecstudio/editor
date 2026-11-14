@@ -26,6 +26,14 @@
 //! L1 VM. It depends on [`qc_vm`], [`qc_edict`] (both L1) and [`qc_progs`], [`qc_types`] (both
 //! L0), and nothing higher.
 
+/// vkQuake's `STRINGTEMP_LENGTH`: a temporary string's bytes, its terminator among them.
+const STRINGTEMP_LENGTH: usize = 1024;
+/// A temporary string's most text, less its terminator.
+const STRINGTEMP_TEXT: usize = STRINGTEMP_LENGTH - 1;
+/// A decimal number's base, as `atoi`, `atof` and `strtol` read it.
+const DECIMAL: u8 = 10;
+/// A hexadecimal digit's bits.
+const NIBBLE_BITS: u32 = 4;
 mod atof;
 mod cstring;
 mod dispatch;
@@ -51,4 +59,4 @@ mod tests;
 pub use dispatch::MockBuiltins;
 pub use error::{BuiltinError, FatalError, RuntimeError};
 pub use mock::{EngineProfile, MockEngine, Unimplemented};
-pub use table::{BUILTIN_MAX_NUMBER, Builtin, Class, lookup};
+pub use table::{BUILTIN_MAX_NUMBER, Builtin, BuiltinNumber, Class};
