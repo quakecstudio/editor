@@ -21,7 +21,7 @@ fn clip_inside(
     outside_side: Side,
     precedence: Precedence,
     planes: &Planes,
-    face_points: Option<usize>,
+    face_points: usize,
 ) -> Result<Vec<Face>, CompileError> {
     let mut kept = Vec::new();
     let plane = planes.get(split);
@@ -68,7 +68,7 @@ impl BrushSet {
     pub(crate) fn csg_faces(
         &self,
         planes: &Planes,
-        face_points: Option<usize>,
+        face_points: usize,
     ) -> Result<Vec<Surface>, CompileError> {
         let mut valid: BTreeMap<PlaneId, Vec<Face>> = BTreeMap::new();
         for (index, b1) in self.brushes.iter().enumerate() {

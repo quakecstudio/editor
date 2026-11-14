@@ -98,6 +98,11 @@ fn miptex(name: &str) -> Vec<u8> {
 
 /// The snake compiled: its BSP and its portal file; the last cell's floor is `floor`.
 fn snake(floor: &str) -> (Vec<u8>, String) {
+    snake_in(floor, qs_map_bsp::Dialect::Extended)
+}
+
+/// [`snake`] compiled in `dialect`.
+fn snake_in(floor: &str, dialect: qs_map_bsp::Dialect) -> (Vec<u8>, String) {
     let mut world = String::from("{\n\"classname\" \"worldspawn\"\n\"wad\" \"test.wad\"\n");
     for (min, max) in solids() {
         world.push_str(&cuboid(min, max, "wall"));
@@ -114,6 +119,7 @@ fn snake(floor: &str) -> (Vec<u8>, String) {
             .unwrap();
     }
     let compiled = Compiler::default()
+        .with_dialect(dialect)
         .compile(world.as_bytes(), Some(&wad.to_bytes().unwrap()))
         .unwrap();
     let prt = String::from_utf8(compiled.portal_file.unwrap()).unwrap();
@@ -762,7 +768,8 @@ fn a_split_on_a_negative_axial_plane_is_exact() {
 #[test]
 fn padding_keeps_the_input_visibility() {
     use qs_bsp::LumpId;
-    let (bsp, prt) = snake("*water");
+    // id's qbsp's tree for the snake gives a lump that ends off a 4-byte boundary.
+    let (bsp, prt) = snake_in("*water", qs_map_bsp::Dialect::Id);
     let mut old = bsp.clone();
     let at = i32::try_from(old.len()).unwrap();
     old.extend_from_slice(&[0xab; 12]);

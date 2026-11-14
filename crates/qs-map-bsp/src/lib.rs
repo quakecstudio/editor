@@ -8,6 +8,7 @@
 mod brush;
 mod compile;
 mod csg;
+mod extended;
 #[cfg(test)]
 mod fixtures;
 mod math;
@@ -181,80 +182,30 @@ pub enum Dialect {
     Extended,
 }
 
-/// The limits a dialect compiles within (QBSP-2.5, QBSP-5.6, QBSP-14.2).
+/// The limits id's qbsp compiles within (QBSP-2.5, QBSP-3.5, QBSP-5.6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Limits {
     /// The face count at which adding a plane to a brush fails, compared with `==`.
-    pub(crate) brush_faces: Option<usize>,
+    pub(crate) brush_faces: usize,
     /// The most planes a brush may have.
     pub(crate) brush_planes: usize,
     pub(crate) hull_points: usize,
     pub(crate) hull_edges: usize,
     /// The most planes in the table and the output.
     pub(crate) planes: usize,
-    /// What a fault qbsp stops on does (QBSP-14.3).
-    pub(crate) faults: Faults,
-    /// Which limits bound the output's lumps (QBSP-14.4).
-    pub(crate) tables: Tables,
-    /// The most points a split face may have on a side, `MAXEDGES` (QBSP-3.5, QBSP-14.2).
-    pub(crate) face_points: Option<usize>,
+    /// The most points a split face may have on a side, `MAXEDGES` (QBSP-3.5).
+    pub(crate) face_points: usize,
 }
 
-/// Which limits bound the output's lumps (QBSP-14.4).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Tables {
-    /// qbsp's `MAX_MAP_` arrays, each refusing the compile when full.
-    Qbsp,
-    /// Only the file's fields: BSP29 when every value fits it, else `BSP2`.
-    Format,
-}
-
-impl Tables {
-    /// Whether a lump of `len` entries is full under qbsp's `max`.
-    pub(crate) const fn full(self, len: usize, max: usize) -> bool {
-        match self {
-            Self::Qbsp => len >= max,
-            Self::Format => false,
-        }
-    }
-}
-
-/// What a fault qbsp stops on does: a bad face, a leaf of mixed contents, an entity with no
-/// valid brush (QBSP-14.3).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Faults {
-    /// It stops the compile, as in qbsp.
-    Stop,
-    /// It is a warning, and the compile goes on.
-    Warn,
-}
-
-impl Dialect {
-    pub(crate) const fn limits(self) -> Limits {
-        match self {
-            Self::Id => Limits {
-                brush_faces: Some(MAX_FACES),
-                brush_planes: MAX_BRUSH_PLANES,
-                hull_points: MAX_HULL_POINTS,
-                hull_edges: MAX_HULL_EDGES,
-                planes: MAX_MAP_PLANES,
-                faults: Faults::Stop,
-                tables: Tables::Qbsp,
-                face_points: Some(MAXEDGES),
-            },
-            Self::Extended => Limits {
-                brush_faces: None,
-                brush_planes: usize::MAX,
-                hull_points: usize::MAX,
-                hull_edges: usize::MAX,
-                planes: usize::MAX,
-                faults: Faults::Warn,
-                tables: Tables::Format,
-                face_points: None,
-            },
-        }
-    }
-}
+/// qbsp's fixed-size limits.
+pub(crate) const QBSP_LIMITS: Limits = Limits {
+    brush_faces: MAX_FACES,
+    brush_planes: MAX_BRUSH_PLANES,
+    hull_points: MAX_HULL_POINTS,
+    hull_edges: MAX_HULL_EDGES,
+    planes: MAX_MAP_PLANES,
+    face_points: MAXEDGES,
+};
 
 /// What qbsp prints and goes on after.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -267,12 +218,6 @@ pub enum Warning {
     NoOccupant,
     /// The outside reaches an entity: the map leaks (QBSP-9.3).
     Leak,
-    /// A face qbsp's `CheckFace` refuses, kept (QBSP-14.3).
-    BadFace(String),
-    /// A leaf whose faces disagree on its contents, given the first's (QBSP-14.3).
-    MixedContents,
-    /// An entity with brushes none of which is valid, given an empty model (QBSP-14.3).
-    NoValidBrushes,
     /// A value too wide for BSP29, so the file is written as `BSP2` (QBSP-14.4).
     Bsp2(LumpId),
     /// What qbsp prints while reading the map or its textures (MAP-3.5, MAP-6.8).
@@ -339,9 +284,6 @@ impl fmt::Display for Warning {
                 f.write_str("no entity is in empty space, so the outside was not filled")
             }
             Self::Leak => f.write_str("the map leaks: the outside reaches an entity"),
-            Self::BadFace(why) => write!(f, "a face qbsp would refuse was kept: {why}"),
-            Self::MixedContents => f.write_str("a leaf's faces disagree on its contents"),
-            Self::NoValidBrushes => f.write_str("an entity has no valid brush"),
             Self::Bsp2(lump) => write!(f, "{lump:?} is too wide for BSP29; written as BSP2"),
             Self::Map(printed) => write!(f, "{printed}"),
         }

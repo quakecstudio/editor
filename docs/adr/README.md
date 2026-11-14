@@ -35,6 +35,7 @@ index below lists every ADR, in order, with the title and status its file states
 | [0020](0020-compiler-compatibility-tiers.md) | Hold the compiler to the oracles in compatibility tiers and generate code through an intermediate layer | Accepted |
 | [0021](0021-zed-porting-upstream.md) | Make Zed a porting upstream for the IDE | Accepted |
 | [0022](0022-distinct-warnings-at-one-span.md) | Give a directive's two different warnings at one place both | Accepted |
+| [0023](0023-ericw-tools-porting-upstream.md) | Make ericw-tools' qbsp the extended dialect's porting upstream | Accepted |
 <!-- /adr:index -->
 
 A `type:decision` issue reserves the ADR number its deliverable names in `plan/backlog/`;

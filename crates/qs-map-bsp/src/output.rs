@@ -8,10 +8,10 @@ use std::collections::{BTreeMap, HashMap};
 use qs_bsp::write::{BspFile, DiskClipNode, DiskFace, DiskLeaf, DiskModel, DiskNode, DiskPlane};
 use qs_bsp::{BSP_MAXLIGHTMAPS, BSP_NUM_AMBIENTS};
 
-use crate::math::{Axis, ORIGIN, Vec3, all, cyclic, rint, within};
+use crate::math::{ORIGIN, Vec3, all, cyclic, rint, within};
 use crate::planes::{PlaneId, PlaneType, Planes};
 use crate::tree::{NodeKind, SIDESPACE, Tree};
-use crate::{CompileError, Contents, Hull, Limits, Tables};
+use crate::{CompileError, Contents, Hull, Limits};
 
 /// How near two vertices are one (QBSP-13.3).
 const POINT_EPSILON: f64 = 0.01;
@@ -48,10 +48,8 @@ pub(crate) struct Output {
     edge_index: HashMap<(usize, usize), Vec<usize>>,
     first_model_edge: usize,
     first_face: usize,
-    /// The most output planes (QBSP-2.5, QBSP-14.2).
+    /// The most output planes (QBSP-2.5).
     plane_limit: usize,
-    /// Which limits bound the lumps (QBSP-14.4).
-    tables: Tables,
 }
 
 /// What a node writes its faces as.
@@ -83,7 +81,6 @@ impl Output {
             first_model_edge: 1,
             first_face: 0,
             plane_limit: limits.planes,
-            tables: limits.tables,
         }
     }
 
@@ -157,8 +154,8 @@ impl Output {
                     else {
                         continue;
                     };
-                    let v1 = vertexes.get(a, &mut self.file, self.tables)?;
-                    let v2 = vertexes.get(b, &mut self.file, self.tables)?;
+                    let v1 = vertexes.get(a, &mut self.file)?;
+                    let v2 = vertexes.get(b, &mut self.file)?;
                     edges.push(self.edge(v1, v2, face.contents[0])?);
                 }
                 if let Some(node_face) = tree.faces.get_mut(id) {
@@ -179,7 +176,7 @@ impl Output {
                 let Some(node_face) = tree.faces.get_mut(id) else {
                     continue;
                 };
-                if self.tables.full(self.file.faces.len(), MAX_MAP_FACES) {
+                if self.file.faces.len() >= MAX_MAP_FACES {
                     return Err(CompileError::Limit("MAX_MAP_FACES"));
                 }
                 node_face.output = Some(self.file.faces.len());
@@ -188,10 +185,9 @@ impl Output {
                     "numsurfedges == MAX_MAP_SURFEDGES",
                 )?;
                 let surfedges = self.file.surfedges.len();
-                if self.tables.full(
-                    surfedges.saturating_add(node_face.edges.len()),
-                    MAX_MAP_SURFEDGES.saturating_add(1),
-                ) {
+                if surfedges.saturating_add(node_face.edges.len())
+                    >= MAX_MAP_SURFEDGES.saturating_add(1)
+                {
                     return Err(CompileError::Limit("numsurfedges == MAX_MAP_SURFEDGES"));
                 }
                 self.file.surfedges.extend(node_face.edges.iter().copied());
@@ -234,7 +230,7 @@ impl Output {
                 }
             }
         }
-        if self.tables.full(self.file.edges.len(), MAX_MAP_EDGES) {
+        if self.file.edges.len() >= MAX_MAP_EDGES {
             return Err(CompileError::Limit("numedges == MAX_MAP_EDGES"));
         }
         let i = self.file.edges.len();
@@ -255,7 +251,7 @@ impl Output {
     ) -> Result<(), CompileError> {
         let mapping = self.node_planes(tree, planes)?;
         let ranges = self.face_edges(tree, &mapping)?;
-        if self.tables.full(self.file.models.len(), MAX_MAP_MODELS) {
+        if self.file.models.len() >= MAX_MAP_MODELS {
             return Err(CompileError::Limit("nummodels == MAX_MAP_MODELS"));
         }
         let headnode = index::<i32>(self.file.nodes.len(), "MAX_MAP_NODES")?;
@@ -264,11 +260,8 @@ impl Output {
         let start = self.file.leafs.len();
         let head = tree.head();
         if tree.contents(head).is_some() {
-            match self.tables {
-                // qbsp writes the leaf alone, and the head names the next node (QBSP-13.5).
-                Tables::Qbsp => self.leaf(tree, head)?,
-                Tables::Format => self.leaf_node(tree, head)?,
-            }
+            // qbsp writes the leaf alone, and the head names the next node (QBSP-13.5).
+            self.leaf(tree, head)?;
         } else {
             self.draw_node(tree, head, &mapping, &ranges)?;
         }
@@ -308,7 +301,7 @@ impl Output {
         else {
             return Ok(());
         };
-        if self.tables.full(self.file.nodes.len(), MAX_MAP_NODES) {
+        if self.file.nodes.len() >= MAX_MAP_NODES {
             return Err(CompileError::Limit("numnodes == MAX_MAP_NODES"));
         }
         let at = self.file.nodes.len();
@@ -347,31 +340,6 @@ impl Output {
         Ok(())
     }
 
-    /// A node over a head that is a leaf, so the model's head names a node: on the plane
-    /// z = 0, both children the leaf (QBSP-14.3).
-    fn leaf_node(&mut self, tree: &Tree, head: usize) -> Result<(), CompileError> {
-        let (mins, maxs) = tree
-            .nodes
-            .get(head)
-            .map_or((ORIGIN, ORIGIN), |n| (n.mins, n.maxs));
-        let planenum = self.final_plane(Axis::Z.along(1.0), 0.0, PlaneType::Z.number())?;
-        let at = self.file.nodes.len();
-        self.file.nodes.push(DiskNode {
-            planenum: index(planenum, "MAX_MAP_PLANES")?,
-            children: [0, 0],
-            mins,
-            maxs,
-            firstface: 0,
-            numfaces: 0,
-        });
-        let leaf = index::<i32>(self.file.leafs.len().saturating_add(1), "MAX_MAP_LEAFS")?;
-        self.leaf(tree, head)?;
-        if let Some(node) = self.file.nodes.get_mut(at) {
-            node.children = [leaf.wrapping_neg(); 2];
-        }
-        Ok(())
-    }
-
     /// `WriteLeaf`: its contents, bounds and marked faces with the pieces cut from them
     /// (QBSP-13.5).
     fn leaf(&mut self, tree: &Tree, node: usize) -> Result<(), CompileError> {
@@ -381,7 +349,7 @@ impl Output {
         let NodeKind::Leaf { contents, marks } = &n.kind else {
             return Ok(());
         };
-        if self.tables.full(self.file.leafs.len(), MAX_MAP_LEAFS) {
+        if self.file.leafs.len() >= MAX_MAP_LEAFS {
             return Err(CompileError::Limit("MAX_MAP_LEAFS"));
         }
         let first = self.file.marksurfaces.len();
@@ -395,10 +363,7 @@ impl Output {
                     .get(id)
                     .and_then(|f| f.output)
                     .unwrap_or_default();
-                if self
-                    .tables
-                    .full(self.file.marksurfaces.len(), MAX_MAP_MARKSURFACES)
-                {
+                if self.file.marksurfaces.len() >= MAX_MAP_MARKSURFACES {
                     return Err(CompileError::Limit(
                         "nummarksurfaces == MAX_MAP_MARKSURFACES",
                     ));
@@ -449,12 +414,7 @@ impl VertexHash {
     }
 
     /// The vertex for `point`, written when new.
-    fn get(
-        &mut self,
-        point: Vec3,
-        file: &mut BspFile,
-        tables: Tables,
-    ) -> Result<usize, CompileError> {
+    fn get(&mut self, point: Vec3, file: &mut BspFile) -> Result<usize, CompileError> {
         let vert = point.map(|c| {
             let whole = rint(c);
             if within(c, whole, WHOLE_EPSILON) {
@@ -471,7 +431,7 @@ impl VertexHash {
         }) {
             return Ok(found.1);
         }
-        if tables.full(file.vertexes.len(), MAX_MAP_VERTS) {
+        if file.vertexes.len() >= MAX_MAP_VERTS {
             return Err(CompileError::Limit("numvertexes == MAX_MAP_VERTS"));
         }
         let id = file.vertexes.len();
@@ -489,30 +449,23 @@ impl VertexHash {
 pub(crate) struct ClipHull {
     pub(crate) heads: Vec<i32>,
     pub(crate) nodes: Vec<(Vec3, f32, [i32; 2])>,
-    /// Which limits bound the clip nodes (QBSP-14.4).
-    pub(crate) tables: Tables,
 }
 
 impl ClipHull {
-    /// No model yet, bounded by `tables`.
-    pub(crate) const fn new(tables: Tables) -> Self {
+    /// No model yet.
+    pub(crate) const fn new() -> Self {
         Self {
             heads: Vec::new(),
             nodes: Vec::new(),
-            tables,
         }
     }
 
     /// `WriteClipNodes` for one model's tree: its head clip node (QBSP-13.6).
     pub(crate) fn add_model(&mut self, tree: &Tree, planes: &Planes) -> Result<(), CompileError> {
         let next = index(self.nodes.len(), "MAX_MAP_CLIPNODES")?;
-        let head = self.clip_node(tree, tree.head(), planes)?;
-        // qbsp names the next clip node even when the head is a leaf (QBSP-13.6); the
-        // extended dialect names the leaf's contents (QBSP-14.3).
-        self.heads.push(match self.tables {
-            Tables::Format if head < 0 => head,
-            _ => next,
-        });
+        // qbsp names the next clip node even when the head is a leaf (QBSP-13.6).
+        self.clip_node(tree, tree.head(), planes)?;
+        self.heads.push(next);
         Ok(())
     }
 
@@ -530,7 +483,7 @@ impl ClipHull {
             NodeKind::Decision {
                 plane, children, ..
             } => {
-                if self.tables.full(self.nodes.len(), MAX_MAP_CLIPNODES) {
+                if self.nodes.len() >= MAX_MAP_CLIPNODES {
                     return Err(CompileError::Limit("MAX_MAP_CLIPNODES"));
                 }
                 let at = self.nodes.len();
@@ -578,10 +531,7 @@ impl Output {
             }
         }
         for &(normal, dist, children) in &clip.nodes {
-            if self
-                .tables
-                .full(self.file.clipnodes.len(), MAX_MAP_CLIPNODES)
-            {
+            if self.file.clipnodes.len() >= MAX_MAP_CLIPNODES {
                 return Err(CompileError::Limit("ReadClipHull: MAX_MAP_CLIPNODES"));
             }
             let normal = normal.map(through_text);
