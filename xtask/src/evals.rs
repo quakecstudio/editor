@@ -19,7 +19,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use qc_project::FsLoader;
-use qs_agent::{Message, Model, Reply, RunConfig, ToolSpec};
+use qs_agent::{Message, Model, ModelError, Reply, RunConfig, ToolSpec};
 use qs_commands::{Registry, Session};
 use qs_map::MapFile;
 use qs_map_bsp::{Compiler, Dialect as BspDialect, Warning};
@@ -550,12 +550,12 @@ impl Model for Capped {
         system: &str,
         tools: &[ToolSpec],
         transcript: &[Message],
-    ) -> Result<Reply, String> {
+    ) -> Result<Reply, ModelError> {
         if self.cost() >= self.max_usd {
-            return Err(format!(
+            return Err(ModelError::Stopped(format!(
                 "the run reached its cost cap of {:.2} USD",
                 self.max_usd
-            ));
+            )));
         }
         self.model.reply(system, tools, transcript)
     }

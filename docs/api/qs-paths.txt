@@ -9,8 +9,12 @@ fn qs_paths::AppDirs::data
 fn qs_paths::AppDirs::logs
 fn qs_paths::Platform::current
 fn qs_paths::Platform::dirs
+fn qs_paths::arguments::absolute_paths
+fn qs_paths::arguments::collect_paths
 fn qs_paths::current
 fn qs_paths::fonts::current_font_dirs
+fn qs_paths::lexical
+fn qs_paths::lies_under
 fn qs_paths::stores::StoreDirs::gog_libraries
 fn qs_paths::stores::StoreDirs::heroic
 fn qs_paths::stores::StoreDirs::steam
@@ -18,6 +22,7 @@ fn qs_paths::stores::current_store_dirs
 fn qs_paths::stores::store_dirs
 impl qs_paths::PathsError: fmt::Display
 impl qs_paths::PathsError: std::error::Error
+mod qs_paths::arguments
 struct qs_paths::AppDirs
 struct qs_paths::stores::StoreDirs
 use qs_paths::StoreDirs = stores::StoreDirs

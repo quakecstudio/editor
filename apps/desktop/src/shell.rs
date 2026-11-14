@@ -47,7 +47,7 @@ use qs_workbench::git::{
     GitChange, GitCommitParams, GitConflict, GitDiffParams, GitHunk, GitLogParams, GitPathParams,
     GitResolveParams, GitSide, GitStageParams, GitStatus,
 };
-use qs_workbench::ids::{ActionIndex, CheckpointNumber, TerminalIndex, WatchIndex};
+use qs_workbench::ids::{ActionIndex, TerminalIndex, WatchIndex};
 use qs_workbench::map_backup::{
     Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams,
 };
@@ -706,7 +706,7 @@ impl Shell {
         ctx: &egui::Context,
     ) -> Result<(), String> {
         let root = self.agent_root()?;
-        self.start_thread(&root, &qs_agent::ask_about(entity), ctx)
+        self.start_thread(&root, &entity.ask_about(), ctx)
     }
 
     /// The open project's folder, which an agent thread works in.
@@ -734,7 +734,7 @@ impl Shell {
         let preview = &self.session.context().preview;
         let entities = preview.entities();
         let entity = entities.selected().map(|selected| qs_agent::EntityState {
-            edict: selected.edict.get(),
+            edict: selected.edict.into(),
             classname: selected.classname.clone(),
             fields: selected
                 .fields
@@ -832,12 +832,8 @@ impl Shell {
                 self.agent.set_permissions(permissions);
             }
             AgentAction::Restore(number) => {
-                let _restored: Option<serde_json::Value> = self.run(
-                    RESTORE_CHECKPOINT,
-                    &RestoreCheckpointParams {
-                        number: CheckpointNumber::new(number),
-                    },
-                );
+                let _restored: Option<serde_json::Value> =
+                    self.run(RESTORE_CHECKPOINT, &RestoreCheckpointParams { number });
             }
             AgentAction::OpenHistory => {
                 let threads = self
