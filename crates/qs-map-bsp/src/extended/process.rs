@@ -17,7 +17,6 @@ use qs_map::{Entity, MapFile};
 use qs_wad::Wad;
 
 use super::brush::{HullBrushes, Loader, VisibleFaces, is_world_brush_entity};
-use super::chop::Fragmentation;
 use super::faces::FaceMaker;
 use super::game::Game;
 use super::map::{EntityNum, LoadedMap, Rotation, load};
@@ -105,6 +104,8 @@ impl Compile<'_> {
                 if self.leak.is_none() {
                     self.warnings.push(Warning::Leak);
                     self.leak = Some((*origin, tree.leak_points(*origin, line)));
+                    // "Get rid of the .prt file since the map has a leak", whichever hull leaks.
+                    self.portal_file = None;
                 }
             }
             Fill::NoOccupant => self.warnings.push(Warning::NoOccupant),
@@ -156,7 +157,7 @@ impl Compile<'_> {
                 planes: &self.map.planes,
                 extent: self.map.world_extent,
             }
-            .chop(brushes, Fragmentation::Avoided)
+            .chop(brushes)
         };
         if brushes.is_empty() && bounds == Bounds::default() {
             return Ok(());

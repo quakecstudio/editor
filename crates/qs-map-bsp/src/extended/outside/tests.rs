@@ -204,7 +204,8 @@ fn enclosed_pockets_are_detail_filled() {
         &b.loaded.brushes,
         &mut b.visible,
     );
-    assert!(contents_at(&b, pocket).is_detail_solid());
+    let filled = contents_at(&b, pocket);
+    assert!(filled.is_any_detail() && filled.is_any_solid());
     assert!(contents_at(&b, INSIDE).is_empty(), "occupied");
 }
 

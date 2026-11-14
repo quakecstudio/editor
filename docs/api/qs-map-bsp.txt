@@ -8,7 +8,7 @@ field qs_map_bsp::compile::Compiled.portal_file
 field qs_map_bsp::compile::Compiled.warnings
 fn qs_map_bsp::compile::Compiler::compile
 fn qs_map_bsp::compile::Compiler::compile_with_externals
-fn qs_map_bsp::compile::Compiler::wad_path
+fn qs_map_bsp::compile::Compiler::wad_paths
 fn qs_map_bsp::compile::Compiler::with_dialect
 fn qs_map_bsp::compile::Compiler::with_subdivide
 impl qs_map_bsp::CompileError: From<QbspError>

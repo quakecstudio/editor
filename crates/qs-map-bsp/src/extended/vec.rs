@@ -227,14 +227,6 @@ impl BspPlane {
         self.kind
     }
 
-    /// The plane facing the other way, its type the same.
-    pub(crate) fn flipped(self) -> Self {
-        Self {
-            plane: self.plane.flipped(),
-            kind: self.kind,
-        }
-    }
-
     /// Whether `other` is the same plane within [`NORMAL_EPSILON`] and [`DIST_EPSILON`],
     /// `qv::epsilonEqual` (QBSP-15.14): two axial planes only when of one type and facing one
     /// way, their distances within epsilon; any other pair when the distances and each normal
@@ -303,11 +295,6 @@ impl Bounds {
     pub(crate) fn centroid(&self) -> Vec3 {
         scale(add(self.mins, self.maxs), HALF)
     }
-
-    /// Whether any point was added.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.mins.iter().zip(self.maxs).any(|(lo, hi)| *lo > hi)
-    }
 }
 
 /// A plane's number in the [`Planes`] table; its opposite is the number with the lowest bit
@@ -352,16 +339,6 @@ impl Planes {
     /// The plane `num`.
     pub(crate) fn get(&self, num: PlaneNum) -> Option<&BspPlane> {
         self.planes.get(num.get())
-    }
-
-    /// How many planes the table holds.
-    pub(crate) fn len(&self) -> usize {
-        self.planes.len()
-    }
-
-    /// Whether the table is empty.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.planes.is_empty()
     }
 
     /// The cell of a distance.

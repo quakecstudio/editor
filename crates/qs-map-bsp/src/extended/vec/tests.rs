@@ -41,7 +41,6 @@ fn planes_are_normalized_and_typed() {
     assert_eq!(p.kind(), PlaneType::AnyZ);
     assert!(PlaneType::X.is_axial() && !PlaneType::AnyZ.is_axial());
     assert_eq!(PlaneType::AnyY.axis(), 1);
-    assert_eq!(p.flipped().plane(), p.plane().flipped());
 }
 
 // spec QBSP-15.2: each plane is added with its opposite, the one not negative along its axis
@@ -50,10 +49,10 @@ fn planes_are_normalized_and_typed() {
 #[test]
 fn the_table_holds_each_plane_with_its_opposite() {
     let mut planes = Planes::default();
-    assert!(planes.is_empty());
+    assert!(planes.get(PlaneNum::new(0)).is_none());
     let down = planes.add_or_find(plane([0.0, 0.0, -1.0], 16.0));
     assert_eq!(down, PlaneNum::new(1), "the positive plane goes first");
-    assert_eq!(planes.len(), 2);
+    assert!(planes.get(PlaneNum::new(1)).is_some() && planes.get(PlaneNum::new(2)).is_none());
     let up = down.opposite();
     assert_eq!(up, PlaneNum::new(0));
     assert_eq!(
@@ -80,9 +79,9 @@ fn the_table_holds_each_plane_with_its_opposite() {
 #[test]
 fn bounds_widen_to_each_point() {
     let mut b = Bounds::default();
-    assert!(b.is_empty());
+    assert!(b.mins[0] > b.maxs[0], "empty");
     b.add([1.0, -2.0, 3.0]);
-    assert!(!b.is_empty());
+    assert_eq!((b.mins, b.maxs), ([1.0, -2.0, 3.0], [1.0, -2.0, 3.0]));
     b.add([-1.0, 5.0, 0.0]);
     assert_eq!((b.mins, b.maxs), ([-1.0, -2.0, 0.0], [1.0, 5.0, 3.0]));
 }

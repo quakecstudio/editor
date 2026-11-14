@@ -3,9 +3,9 @@
 // Copyright (C) 1997       Greg Lewis
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bspfile_common.cc, set_mirrored, set_clips_same_type, is_any_detail, is_detail_solid, is_detail_wall, is_detail_fence, is_detail_illusionary, is_empty, is_any_solid, is_solid, is_sky, is_liquid, is_clip, is_origin, is_opaque, cluster_contents, combine_contents, portal_can_see_through, portal_visible_contents, is_two_sided, portal_generates_face
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bspfile_common.cc, set_mirrored, set_clips_same_type, is_any_detail, is_detail_wall, is_detail_fence, is_detail_illusionary, is_empty, is_any_solid, is_solid, is_sky, is_liquid, is_clip, is_origin, is_opaque, cluster_contents, combine_contents, portal_can_see_through, portal_visible_contents, portal_generates_face
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/bspfile_common.hh, mirror_inside, clips_same_type
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bspfile.cc, create_contents_from_native, contents_to_native, contents_remap_for_export, get_hull_sizes, face_get_contents
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bspfile.cc, contents_to_native, contents_remap_for_export, get_hull_sizes, face_get_contents
 
 //! Contents and the game a map is compiled for, ericw-tools' `contentflags_t` and `gamedef_t`
 //! (QBSP-15.9 to QBSP-15.13). The contents are a superset for every game ericw-tools compiles;
@@ -206,11 +206,6 @@ impl Contents {
         self.has(Self::DETAIL)
     }
 
-    /// `is_detail_solid`.
-    pub(crate) const fn is_detail_solid(self) -> bool {
-        self.has(Self::DETAIL) && self.has(Self::SOLID)
-    }
-
     /// `is_detail_wall`: never when solid.
     pub(crate) const fn is_detail_wall(self) -> bool {
         !self.has(Self::SOLID) && self.has(Self::DETAIL) && self.has(Self::DETAIL_WALL)
@@ -358,15 +353,6 @@ impl Contents {
         Self(result).visible()
     }
 
-    /// `is_two_sided`: a brush mirrored inside by its own setting, or a visblocker, liquid or
-    /// mist.
-    pub(crate) const fn is_two_sided(self) -> bool {
-        if self.has(Self::MIRROR_INSIDE_SET) {
-            return self.has(Self::MIRROR_INSIDE);
-        }
-        self.has(Self::ILLUSIONARY_VISBLOCKER | Self::LAVA | Self::SLIME | Self::WATER | Self::MIST)
-    }
-
     /// `portal_generates_face`: whether a brush of these contents gives a face on `side` of
     /// its side for a portal whose visible contents are `portal` (QBSP-15.11).
     pub(crate) fn portal_generates_face(portal: Self, brush: Self, side: Side) -> bool {
@@ -439,15 +425,6 @@ impl NativeContents {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Unrepresentable(pub(crate) Contents);
 
-/// Which of a liquid's contents ericw-tools' `-transwater` makes: detail and translucent, its
-/// default, or plain.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum TransWater {
-    #[default]
-    On,
-    Off,
-}
-
 /// The game a map is compiled for, `gamedef_t` (QBSP-15.12, QBSP-15.13).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Game {
@@ -464,18 +441,6 @@ const QUAKE_HULLS: [([f64; 3], [f64; 3]); 3] = [
 ];
 
 impl Game {
-    /// The contents of a BSP's native value, `create_contents_from_native`.
-    pub(crate) const fn contents_of(self, native: NativeContents) -> Contents {
-        match (self, native) {
-            (Self::Quake, NativeContents::Solid) => Contents(Contents::SOLID),
-            (Self::Quake, NativeContents::Sky) => Contents(Contents::SKY),
-            (Self::Quake, NativeContents::Lava) => Contents(Contents::LAVA),
-            (Self::Quake, NativeContents::Slime) => Contents(Contents::SLIME),
-            (Self::Quake, NativeContents::Water) => Contents(Contents::WATER),
-            (Self::Quake, NativeContents::Empty) => Contents::EMPTY,
-        }
-    }
-
     /// The native value of `contents`, `contents_to_native` (QBSP-15.12): solid, sky, lava,
     /// slime and water in that order; a detail wall, window, visblocker, aux or mist alone
     /// cannot be written; anything else is empty.
@@ -545,9 +510,9 @@ impl Game {
 
     /// A face's contents from its texture's name, `face_get_contents` (QBSP-15.13): `origin`,
     /// `hint` or `hintskip`, `clip`, a name starting `*` (lava, slime or water, detail and
-    /// translucent with `transwater`), a name starting `sky`, each in any case; anything else
+    /// translucent as `-transwater`, the default, makes them), a name starting `sky`, each in any case; anything else
     /// solid.
-    pub(crate) fn face_contents(self, texture: &[u8], transwater: TransWater) -> Contents {
+    pub(crate) fn face_contents(self, texture: &[u8]) -> Contents {
         let Self::Quake = self;
         let is = |name: &[u8]| texture.eq_ignore_ascii_case(name);
         let starts = |text: &[u8], prefix: &[u8]| {
@@ -564,10 +529,7 @@ impl Game {
             return Contents(Contents::PLAYERCLIP);
         }
         if let Some(rest) = texture.strip_prefix(b"*") {
-            let liquid = match transwater {
-                TransWater::On => Contents::DETAIL | Contents::TRANSLUCENT,
-                TransWater::Off => 0,
-            };
+            let liquid = Contents::DETAIL | Contents::TRANSLUCENT;
             let kind = if starts(rest, b"lava") {
                 Contents::LAVA
             } else if starts(rest, b"slime") {

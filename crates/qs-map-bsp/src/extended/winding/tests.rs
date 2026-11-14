@@ -29,23 +29,6 @@ fn area_and_centre() {
     assert_eq!((w.len(), w.is_empty()), (4, false));
 }
 
-// spec QBSP-15.6: a point on a line with its neighbours is dropped
-#[test]
-fn colinear_points_are_dropped() {
-    let mut w = Winding::new(vec![
-        [0.0, 0.0, 0.0],
-        [2.0, 0.0, 0.0],
-        [4.0, 0.0, 0.0],
-        [4.0, 4.0, 0.0],
-        [0.0, 4.0, 0.0],
-    ]);
-    w.remove_colinear();
-    assert_eq!(w, square(0.0));
-    let mut kept = square(0.0);
-    kept.remove_colinear();
-    assert_eq!(kept, square(0.0));
-}
-
 // spec QBSP-15.7: a plane's winding is a square of the extent each way, from the plane's point
 // nearest the origin, in the corners' order; a winding's plane is its first three points'
 #[test]

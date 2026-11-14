@@ -141,6 +141,9 @@ fn map_leaks_reports_the_trail_out() {
     assert_eq!(leaky.seal, Seal::Leaks);
     assert_eq!(leaky.leak.first(), Some(&[0.0, 0.0, 24.0]));
     assert!(leaky.leak.iter().any(|p| p[1] > 128.0), "{:?}", leaky.leak);
+    // The trail ends where the fill began, in the void beyond the room's walls.
+    let end = leaky.leak.last().unwrap();
+    assert!(end.iter().any(|c| c.abs() > 144.0), "{:?}", leaky.leak);
     assert!(
         leaky.missing_textures.is_empty(),
         "{:?}",

@@ -597,8 +597,8 @@ ericw-tools only where a map made in TrenchBroom relies on it (Justin, 2026-11-1
 **Source:** ericw-tools at `ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266`,
 ported under [ADR-0023](../adr/0023-ericw-tools-porting-upstream.md): `include/common/qvec.hh`,
 `include/common/polylib.hh`, `include/common/mathlib.hh`, `qbsp/map.cc`, `qbsp/qbsp.cc`. The
-plan is `docs/design/extended-qbsp.md`; until its pipeline is complete the extended dialect
-compiles as QBSP-14 says.
+plan is `docs/design/extended-qbsp.md`; the extended dialect compiles through it alone
+(QBSP-14.10).
 
 ericw-tools works in double precision (`qvec3d`, `qvec<double, 3>`) with its own epsilons:
 `NORMAL_EPSILON` 0.000001 and `DIST_EPSILON` 0.0001 for planes, `DEFAULT_ON_EPSILON` 0.1 for a
@@ -625,9 +625,8 @@ point on a plane (`mathlib.hh`).
 - **QBSP-15.4** A box (`aabb3d`) starts empty and widens to each point added.
 - **QBSP-15.5** A winding's area is "`total += 0.5 * qv::length(qv::cross(d1, d2))`" over the
   fan of triangles from its first point (`area`); its centre is the mean of its points.
-- **QBSP-15.6** A winding drops each point whose directions in and out are within
-  `DIST_EPSILON` of parallel: a point is kept when "`qv::dot(v1, v2) < 1.0 - DIST_EPSILON`"
-  (`remove_colinear`).
+- **QBSP-15.6** **Withdrawn** 2026-11-13: it described `remove_colinear`, which no part of
+  the ported pipeline calls.
 - **QBSP-15.7** The winding of a plane (`from_plane`) is a square reaching the world's extent
   each way from the plane's point nearest the origin: its up vector the z axis, or the x axis
   when the normal's largest component is z, with the normal's part taken out and normalized;

@@ -12,15 +12,6 @@
 use super::brush::BspBrush;
 use super::tree::Cutter;
 
-/// Whether a bite may leave more than one piece of each brush, `-chopfragment`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Fragmentation {
-    /// Only bites that leave one of the two whole or in one piece, the default.
-    Avoided,
-    /// Any bite.
-    Allowed,
-}
-
 /// What subtracting one brush from another leaves, `SubtractBrush`.
 #[derive(Clone, Debug, PartialEq)]
 enum Subtracted {
@@ -88,13 +79,9 @@ impl Cutter<'_> {
     /// against every one after it: where they may intersect, each that may bite the other is
     /// subtracted from it; a brush swallowed is removed; otherwise the bite leaving fewer pieces
     /// is taken, the second brush's on a tie, its pieces put where the brush was, unless both
-    /// leave several and [`Fragmentation::Avoided`]. After each change the test goes on from the
+    /// leave several (`-chopfragment` off, its default). After each change the test goes on from the
     /// first brush that has not been tested whole.
-    pub(crate) fn chop(
-        &self,
-        brushes: Vec<BspBrush>,
-        fragmentation: Fragmentation,
-    ) -> Vec<BspBrush> {
+    pub(crate) fn chop(&self, brushes: Vec<BspBrush>) -> Vec<BspBrush> {
         let mut list = brushes;
         let mut b1 = 0_usize;
         'newlist: loop {
@@ -139,7 +126,7 @@ impl Cutter<'_> {
                         b2 = b2.saturating_add(1);
                         continue;
                     }
-                    if fragmentation == Fragmentation::Avoided && c1 > 1 && c2 > 1 {
+                    if c1 > 1 && c2 > 1 {
                         b2 = b2.saturating_add(1);
                         continue;
                     }

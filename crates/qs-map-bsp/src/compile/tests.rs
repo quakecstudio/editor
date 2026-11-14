@@ -349,24 +349,36 @@ fn the_readers_warnings_are_kept() {
     );
 }
 
-// spec QBSP-14.10: the WAD path is read in the compiler's dialect, so a Valve 220 map names one
+// spec QBSP-14.10: the WAD paths are read in the compiler's dialect, so a Valve 220 map names
+// them, split at `;`
 #[test]
-fn wad_path_reads_the_dialects_map() {
+fn wad_paths_read_the_dialects_map() {
     let spec = MapSpec {
         form: Form::Valve,
-        world_pairs: vec![("wad".to_owned(), "gfx/base.wad".to_owned())],
+        world_pairs: vec![("wad".to_owned(), "gfx/base.wad;extra.wad".to_owned())],
         ..MapSpec::default()
     };
     let map = map_text(&spec);
     assert_eq!(
-        Compiler::default().wad_path(map.as_bytes()).unwrap(),
-        Some(b"gfx/base.wad".to_vec())
+        Compiler::default().wad_paths(map.as_bytes()).unwrap(),
+        [b"gfx/base.wad".to_vec(), b"extra.wad".to_vec()]
     );
     assert!(
         Compiler::default()
             .with_dialect(Dialect::Id)
-            .wad_path(map.as_bytes())
+            .wad_paths(map.as_bytes())
             .is_err()
+    );
+    let standard = map_text(&MapSpec {
+        world_pairs: vec![("wad".to_owned(), "a.wad;b.wad".to_owned())],
+        ..MapSpec::default()
+    });
+    assert_eq!(
+        Compiler::default()
+            .with_dialect(Dialect::Id)
+            .wad_paths(standard.as_bytes())
+            .unwrap(),
+        [b"a.wad;b.wad".to_vec()]
     );
 }
 

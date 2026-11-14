@@ -16,7 +16,7 @@ use qs_map::cnum::{c_atof, c_atoi, scan_vector};
 use qs_map::geometry::{TexVecs, texvecs};
 use qs_map::{Entity, Face, MapFile};
 
-use super::game::{Contents, Game, MirrorInside, TransWater};
+use super::game::{Contents, Game, MirrorInside};
 use super::vec::{
     AXES, Bounds, BspPlane, Facing, NORMAL_EPSILON, POINT_EPSILON, Plane, PlaneNum, Planes, Vec3,
     cross, dot, normalize_with_length, sub,
@@ -539,7 +539,7 @@ impl Reader<'_> {
     fn contents(&self, faces: &[MapFace], entity: &Entity) -> Contents {
         let mut base: Option<Contents> = None;
         for face in faces {
-            let contents = self.game.face_contents(&face.texture, TransWater::On);
+            let contents = self.game.face_contents(&face.texture);
             if contents.is_empty() {
                 continue;
             }

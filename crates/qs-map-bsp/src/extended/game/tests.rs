@@ -5,7 +5,7 @@
     reason = "test code: a failed index is a failed test"
 )]
 
-use super::{Contents, Game, NativeContents, TransWater, Unrepresentable};
+use super::{Contents, Game, NativeContents, Unrepresentable};
 use crate::extended::winding::Side;
 
 const fn c(flags: u64) -> Contents {
@@ -19,7 +19,7 @@ fn detail_contents_and_their_kinds() {
     let solid = c(Contents::SOLID);
     assert!(solid.is_solid() && solid.is_any_solid() && solid.seals_map());
     let detail = solid.detail_solid();
-    assert!(detail.is_detail_solid() && detail.is_any_detail() && !detail.is_solid());
+    assert!(detail.is_any_solid() && detail.is_any_detail() && !detail.is_solid());
     assert!(!detail.seals_map() && detail.is_any_solid());
     let wall = solid.detail_wall();
     assert!(wall.is_detail_wall() && !wall.is_any_solid() && !wall.is_fence());
@@ -123,8 +123,6 @@ fn portals_show_what_changes() {
         unmirrored,
         Side::Back
     ));
-    assert!(water.is_two_sided() && !solid.is_two_sided());
-    assert!(!unmirrored.is_two_sided() && mirrored.is_two_sided());
     assert!(!Contents::portal_can_see_through(solid, empty));
     assert!(Contents::portal_can_see_through(water, water));
     let detail_water = c(Contents::WATER | Contents::DETAIL);
@@ -141,15 +139,15 @@ fn portals_show_what_changes() {
 #[test]
 fn quake_writes_its_own_contents() {
     let quake = Game::Quake;
-    for native in [
-        NativeContents::Empty,
-        NativeContents::Solid,
-        NativeContents::Water,
-        NativeContents::Slime,
-        NativeContents::Lava,
-        NativeContents::Sky,
+    for (contents, native) in [
+        (Contents::EMPTY, NativeContents::Empty),
+        (c(Contents::SOLID), NativeContents::Solid),
+        (c(Contents::WATER), NativeContents::Water),
+        (c(Contents::SLIME), NativeContents::Slime),
+        (c(Contents::LAVA), NativeContents::Lava),
+        (c(Contents::SKY), NativeContents::Sky),
     ] {
-        assert_eq!(quake.to_native(quake.contents_of(native)), Ok(native));
+        assert_eq!(quake.to_native(contents), Ok(native));
     }
     assert_eq!(NativeContents::Sky.value(), -6);
     assert_eq!(NativeContents::Empty.value(), -1);
@@ -184,7 +182,7 @@ fn quake_writes_its_own_contents() {
 #[test]
 fn texture_names_give_contents() {
     let quake = Game::Quake;
-    let of = |name: &[u8]| quake.face_contents(name, TransWater::On);
+    let of = |name: &[u8]| quake.face_contents(name);
     assert_eq!(of(b"ORIGIN"), c(Contents::ORIGIN));
     assert_eq!(of(b"hint"), Contents::EMPTY);
     assert_eq!(of(b"HintSkip"), Contents::EMPTY);
@@ -193,10 +191,6 @@ fn texture_names_give_contents() {
     assert_eq!(of(b"*LAVA1"), c(Contents::LAVA | liquid));
     assert_eq!(of(b"*slime0"), c(Contents::SLIME | liquid));
     assert_eq!(of(b"*04water1"), c(Contents::WATER | liquid));
-    assert_eq!(
-        quake.face_contents(b"*water", TransWater::Off),
-        c(Contents::WATER)
-    );
     assert_eq!(of(b"sky4"), c(Contents::SKY));
     assert_eq!(of(b"wall"), c(Contents::SOLID));
     assert_eq!(of(b"clipper"), c(Contents::SOLID));

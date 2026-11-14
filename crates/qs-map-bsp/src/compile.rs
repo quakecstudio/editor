@@ -22,8 +22,6 @@ use crate::{CompileError, Dialect, Hull, Limits, ModelKind, QBSP_LIMITS, Surface
 
 /// The default largest texture extent of a face before it is cut (QBSP-1).
 const SUBDIVIDE_SIZE: f32 = 240.0;
-/// The world's keys a WAD path is read from, in order: `_wad`, then `wad` (MAP-6.3).
-const WAD_KEYS: [&[u8]; 2] = [b"_wad", b"wad"];
 /// The most bytes the textures lump may hold (QBSP-13.10).
 const MAX_MAP_MIPTEX: usize = 0x20_0000;
 
@@ -253,25 +251,23 @@ impl Compiler {
         Self { dialect, ..self }
     }
 
-    /// The WAD path the map's world names (MAP-6.3), relative to the game directory, which the
-    /// caller reads and passes to [`Compiler::compile`]; the map read as the dialect reads it.
+    /// The WAD paths the map's world names (MAP-6.3), relative to the game directory, which the
+    /// caller reads and passes to [`Compiler::compile`]; the map read as the dialect reads it:
+    /// one path for id's qbsp, the list split at `;` for ericw-tools' (QBSP-14.10).
     ///
     /// # Errors
     ///
     /// [`CompileError::Map`] or [`CompileError::Document`] when the map cannot be read.
-    pub fn wad_path(&self, map: &[u8]) -> Result<Option<Vec<u8>>, CompileError> {
+    pub fn wad_paths(&self, map: &[u8]) -> Result<Vec<Vec<u8>>, CompileError> {
         Ok(match self.dialect {
-            Dialect::Id => load_map_file(map)?.wad_path().map(<[u8]>::to_vec),
-            Dialect::Extended => {
-                let file = MapFile::parse(map).map_err(CompileError::Document)?;
-                file.entities.first().and_then(|world| {
-                    WAD_KEYS
-                        .into_iter()
-                        .filter_map(|key| world.value(key))
-                        .find(|value| !value.is_empty())
-                        .map(<[u8]>::to_vec)
-                })
-            }
+            Dialect::Id => load_map_file(map)?
+                .wad_path()
+                .map(<[u8]>::to_vec)
+                .into_iter()
+                .collect(),
+            Dialect::Extended => MapFile::parse(map)
+                .map_err(CompileError::Document)?
+                .wad_paths(qs_map::Compiler::EricwTools),
         })
     }
 

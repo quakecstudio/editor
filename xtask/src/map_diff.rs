@@ -214,8 +214,16 @@ pub(crate) fn main(
             .map_err(|e| format!("{}: {e}", path.display()))?;
         for (oracle, dialect) in Oracle::of(&text) {
             let dir = work.join("map-diff").join(oracle.name()).join(name(path));
-            let theirs = oracle_compile(exec, oracle.qbsp(&tools), path, &text, &dir)?;
-            let ours = our_compile(&text, dialect, path);
+            let (ours, externals) = our_compile(&text, dialect, path);
+            let theirs =
+                match oracle_compile(exec, oracle.qbsp(&tools), path, &text, &externals, &dir) {
+                    Ok(theirs) => theirs,
+                    Err(why) => {
+                        passed = false;
+                        println!("FAIL  {} ({}): {why}", name(path), oracle.name());
+                        continue;
+                    }
+                };
             // Ours beside the oracle's, to look at when they differ.
             if let Ok(compiled) = &ours {
                 let file = dir.join("ours.bsp");
@@ -226,7 +234,10 @@ pub(crate) fn main(
                     let comparison = compare(&ours, &theirs, args.traces)?;
                     (comparison.agrees(), comparison.to_string())
                 }
-                (Err(ours), Err(theirs)) => (true, format!("both stop: {ours}; {theirs}")),
+                (Err(ours), Err(theirs)) => (
+                    stop_alike(&ours, &theirs),
+                    format!("both stop: {ours}; {theirs}"),
+                ),
                 (Err(ours), Ok(_)) => (false, format!("only ours stops: {ours}")),
                 (Ok(_), Err(theirs)) => (false, format!("only the oracle stops: {theirs}")),
             };
@@ -238,13 +249,22 @@ pub(crate) fn main(
     Ok(passed)
 }
 
-/// The map `text` of `path` compiled by `qbsp` in `dir`, emptied first, with the files beside
-/// the map (its external maps) copied in; the oracle's last line when it stops.
+/// Whether two compiles that both stop stop alike: the oracle names the error ours names, or
+/// ours stops at one of qbsp's fixed-size limits where qbsp, writing past it, crashes.
+fn stop_alike(ours: &str, theirs: &str) -> bool {
+    let what = ours.rsplit(": ").next().unwrap_or(ours);
+    theirs.contains(what) || (what.contains("MAX_") && theirs.contains("signal"))
+}
+
+/// The map `text` of `path` compiled by `qbsp` in `dir`, emptied first, with the external maps
+/// our compile read, `externals`, copied in from beside the map at the same relative paths; the
+/// oracle's last line when it stops.
 fn oracle_compile(
     exec: &dyn Exec,
     qbsp: &Path,
     path: &Path,
     text: &[u8],
+    externals: &[String],
     dir: &Path,
 ) -> Result<Result<Compiled, String>, String> {
     if dir.exists() {
@@ -252,13 +272,12 @@ fn oracle_compile(
     }
     fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let from = path.parent().unwrap_or(Path::new("."));
-    let beside = fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))?;
-    for entry in beside.filter_map(Result::ok) {
-        let file = entry.path();
-        if file.extension().is_some_and(|ext| ext == "map") && file.is_file() {
-            let to = dir.join(entry.file_name());
-            fs::copy(&file, &to).map_err(|e| format!("{}: {e}", file.display()))?;
+    for external in externals {
+        let (file, to) = (from.join(external), dir.join(external));
+        if let Some(parent) = to.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
         }
+        fs::copy(&file, &to).map_err(|e| format!("{}: {e}", file.display()))?;
     }
     let map = dir.join(path.file_name().unwrap_or_default());
     fs::write(&map, text).map_err(|e| format!("{}: {e}", map.display()))?;
@@ -305,19 +324,28 @@ fn without_wads(text: &[u8]) -> Result<Vec<u8>, qs_map::MapError> {
 }
 
 /// The map `text` at `path` compiled by qs-map-bsp in `dialect`, its external maps read from
-/// beside it.
-fn our_compile(text: &[u8], dialect: Dialect, path: &Path) -> Result<Compiled, String> {
+/// beside it; the names of those it read.
+fn our_compile(
+    text: &[u8],
+    dialect: Dialect,
+    path: &Path,
+) -> (Result<Compiled, String>, Vec<String>) {
     let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
-    let mut load = |name: &str| fs::read(dir.join(name)).ok();
+    let mut read = Vec::new();
+    let mut load = |name: &str| {
+        let bytes = fs::read(dir.join(name)).ok()?;
+        read.push(name.to_owned());
+        Some(bytes)
+    };
     let compiled = Compiler::default()
         .with_dialect(dialect)
         .compile_with_externals(text, None, &mut load)
-        .map_err(|e| format!("{}: {e}", path.display()))?;
-    let leaks = compiled.warnings.iter().any(|w| matches!(w, Warning::Leak));
-    Ok(Compiled {
-        bsp: compiled.bsp,
-        leaks,
-    })
+        .map_err(|e| format!("{}: {e}", path.display()))
+        .map(|compiled| Compiled {
+            leaks: compiled.warnings.iter().any(|w| matches!(w, Warning::Leak)),
+            bsp: compiled.bsp,
+        });
+    (compiled, read)
 }
 
 /// A small generator of the traces' points, the same on every run and machine.
@@ -450,4 +478,22 @@ fn compare(ours: &Compiled, theirs: &Compiled, traces: usize) -> Result<Comparis
         faces: (a.faces.len(), b.faces.len()),
         traces: counts,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stop_alike;
+
+    #[test]
+    fn stops_compare_by_the_error_named() {
+        let ours = "maps/a.map: Entity with no valid brushes";
+        assert!(stop_alike(
+            ours,
+            "exit status: 1: Entity with no valid brushes"
+        ));
+        assert!(!stop_alike(ours, "exit status: 1: no such file"));
+        let limit = "maps/b.map: MAX_HULL_POINTS";
+        assert!(stop_alike(limit, "signal: 11 (SIGSEGV): no message"));
+        assert!(!stop_alike(ours, "signal: 11 (SIGSEGV): no message"));
+    }
 }

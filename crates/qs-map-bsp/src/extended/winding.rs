@@ -4,14 +4,12 @@
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/qbsp/brushbsp.hh, WindingIsTiny
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/polylib.hh, area, flip, center, bounds, remove_colinear, plane, from_plane, calc_sides, clip
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/polylib.hh, area, flip, center, bounds, plane, from_plane, calc_sides, clip
 
 //! Convex polygons in double precision, ericw-tools' `winding_t`
 //! (`winding_base_t<winding_storage_heap_t<double>>`, QBSP-15.5 to QBSP-15.8).
 
-use super::vec::{
-    AXES, Bounds, DIST_EPSILON, Plane, Vec3, add, cross, dot, length, normalize, scale, sub,
-};
+use super::vec::{AXES, Bounds, Plane, Vec3, add, cross, dot, length, normalize, scale, sub};
 
 /// `DEFAULT_ON_EPSILON`: how near a plane a point is on it (`mathlib.hh`).
 pub(crate) const ON_EPSILON: f64 = 0.1;
@@ -124,29 +122,6 @@ impl Winding {
             bounds.add(p);
         }
         bounds
-    }
-
-    /// The winding without the points that lie on a line with their neighbours,
-    /// `remove_colinear` (QBSP-15.6): a point is kept when the directions in and out of it have
-    /// a dot product below `1 - DIST_EPSILON`.
-    pub(crate) fn remove_colinear(&mut self) {
-        let n = self.0.len();
-        let kept: Vec<Vec3> = (0..n)
-            .filter_map(|i| {
-                let at = |k: usize| self.0.get(k.checked_rem(n)?).copied();
-                let (p, next, prev) = (
-                    at(i)?,
-                    at(i.saturating_add(1))?,
-                    at(i.saturating_add(n).saturating_sub(1))?,
-                );
-                let v1 = normalize(sub(next, p));
-                let v2 = normalize(sub(p, prev));
-                (dot(v1, v2) < 1.0 - DIST_EPSILON).then_some(p)
-            })
-            .collect();
-        if kept.len() != n {
-            self.0 = kept;
-        }
     }
 
     /// The plane of its first three points, `plane`: the normal of `(p0 - p1) x (p2 - p1)`.

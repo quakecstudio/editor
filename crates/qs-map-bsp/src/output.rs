@@ -463,9 +463,8 @@ impl ClipHull {
     /// `WriteClipNodes` for one model's tree: its head clip node (QBSP-13.6).
     pub(crate) fn add_model(&mut self, tree: &Tree, planes: &Planes) -> Result<(), CompileError> {
         let next = index(self.nodes.len(), "MAX_MAP_CLIPNODES")?;
-        let head = self.clip_node(tree, tree.head(), planes)?;
         // qbsp names the next clip node even when the head is a leaf (QBSP-13.6).
-        let _ = head;
+        self.clip_node(tree, tree.head(), planes)?;
         self.heads.push(next);
         Ok(())
     }

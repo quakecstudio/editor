@@ -316,7 +316,8 @@ fn slanted_brushes_get_bevels() {
         Facing::AsGiven,
     );
     assert!(p.epsilon_equal(&p));
-    assert!(!p.epsilon_equal(&p.flipped()));
+    let (turned, _) = BspPlane::new(p.plane().flipped(), Facing::AsGiven);
+    assert!(!p.epsilon_equal(&turned));
 }
 
 // spec QBSP-15.21: an origin brush goes, its centre becoming the entity's origin, and the

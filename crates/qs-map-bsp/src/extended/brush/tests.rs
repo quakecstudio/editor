@@ -195,7 +195,7 @@ fn each_hull_sees_its_contents() {
     assert_eq!(draw.bounds.mins[0], 0.0);
     assert_eq!(contents[0], Contents::EMPTY, "hint");
     assert!(contents[1].is_liquid());
-    assert!(contents[2].is_detail_solid());
+    assert!(contents[2].is_any_detail() && contents[2].is_any_solid());
     assert!(contents[3].is_detail_illusionary());
     let (player, _) = hull(&spec, 0, Hull::Player);
     let solid = Contents::new(Contents::SOLID);
