@@ -196,14 +196,8 @@ impl Context<'_, '_> {
         builtins: &mut dyn Builtins,
         function: i32,
     ) -> Result<(), RunError> {
-        run_inner(
-            self.machine,
-            self.progs,
-            self.server,
-            builtins,
-            self.observer,
-            function,
-        )
+        self.machine
+            .run_inner(self.progs, self.server, builtins, self.observer, function)
     }
 
     /// Builds a [`RunError`] for an error a builtin raises, with the current stack trace.
@@ -244,7 +238,7 @@ impl Machine {
     ) -> Result<(), RunError> {
         // The outermost run emits the one error record (TRACE-4.6); a nested run started by a
         // builtin calls run_inner directly, so the record is written once (TRACE-4.9).
-        let error = match run_inner(self, progs, server, builtins, observer, function) {
+        let error = match self.run_inner(progs, server, builtins, observer, function) {
             Ok(()) => return Ok(()),
             Err(error) => error,
         };
@@ -261,129 +255,119 @@ impl Machine {
     }
 }
 
-/// id's `PR_ExecuteProgram` body: one run, nested or not (VM-2, VM-3, VM-18). Returns the
-/// error as a value without observing it or resetting the depth;
-/// [`Machine::execute_program`] does that once.
-pub(crate) fn run_inner(
-    machine: &mut Machine,
-    progs: &Progs<'_>,
-    server: ServerState,
-    builtins: &mut dyn Builtins,
-    observer: &mut dyn Observer,
-    function: i32,
-) -> Result<(), RunError> {
-    observer.run(machine, function);
+impl Machine {
+    /// id's `PR_ExecuteProgram` body: one run, nested or not (VM-2, VM-3, VM-18). Returns the
+    /// error as a value without observing it or resetting the depth;
+    /// [`Machine::execute_program`] does that once.
+    pub(crate) fn run_inner(
+        &mut self,
+        progs: &Progs<'_>,
+        server: ServerState,
+        builtins: &mut dyn Builtins,
+        observer: &mut dyn Observer,
+        function: i32,
+    ) -> Result<(), RunError> {
+        observer.run(self, function);
 
-    // VM-2.1, VM-2.2: fnum of 0, negative, or >= numfunctions fails with NULL function,
-    // before any statement, with the run's function and statement -1 (TRACE-4.7).
-    let callee = function_at(progs, function).ok_or_else(|| {
-        before_first_statement(machine, progs, function, ErrorKind::NullRunFunction)
-    })?;
+        // VM-2.1, VM-2.2: fnum of 0, negative, or >= numfunctions fails with NULL function,
+        // before any statement, with the run's function and statement -1 (TRACE-4.7).
+        let callee = function_at(progs, function).ok_or_else(|| {
+            before_first_statement(self, progs, function, ErrorKind::NullRunFunction)
+        })?;
 
-    // VM-2.4: a builtin passed to PR_ExecuteProgram would start at a negative statement index,
-    // undefined in C; this spec fails before any statement runs.
-    if callee.first_statement < 0 {
-        return Err(before_first_statement(
-            machine,
-            progs,
-            function,
-            ErrorKind::Divergence(Divergence::RunBuiltin),
-        ));
-    }
-
-    // VM-2.3: the run's exit depth is the depth before entering, its own runaway counter and
-    // its own cleared trace flag.
-    let exit_depth = machine.stack.len();
-    let mut runaway = machine.runaway;
-    machine.trace_flag = false;
-
-    // VM-15: enter the function. An error entering the run's own function is before its first
-    // statement, so its function is the run's and its statement is -1 (TRACE-4.7).
-    enter_function(machine, progs, function, &callee).map_err(|mut error| {
-        error.function = function;
-        error.statement = -1;
-        error
-    })?;
-
-    loop {
-        // VM-3.1: move to the next statement, count against runaway; the statement that
-        // brings it to 0 fails without executing.
-        machine.xstatement = machine.xstatement.wrapping_add(1);
-        runaway = runaway.wrapping_sub(1);
-        if runaway == 0 {
-            return Err(machine.run_error(progs, ErrorKind::Runaway));
+        // VM-2.4: a builtin passed to PR_ExecuteProgram would start at a negative statement index,
+        // undefined in C; this spec fails before any statement runs.
+        if callee.first_statement < 0 {
+            return Err(before_first_statement(
+                self,
+                progs,
+                function,
+                ErrorKind::Divergence(Divergence::RunBuiltin),
+            ));
         }
 
-        // VM-3.3: a statement index outside 0..numstatements fails before it executes.
-        let statements = progs.statements();
-        let Some(statement) = statement_at(&statements, machine.xstatement) else {
-            return Err(machine.divergence(
-                progs,
-                Divergence::StatementOutOfRange {
-                    statement: machine.xstatement,
-                },
-            ));
-        };
+        // VM-2.3: the run's exit depth is the depth before entering, its own runaway counter and
+        // its own cleared trace flag.
+        let exit_depth = self.stack.len();
+        let mut runaway = self.runaway;
+        self.trace_flag = false;
 
-        let step_function = machine.xfunction;
-        let step_statement = machine.xstatement;
+        // VM-15: enter the function. An error entering the run's own function is before its first
+        // statement, so its function is the run's and its statement is -1 (TRACE-4.7).
+        enter_function(self, progs, function, &callee).map_err(|mut error| {
+            error.function = function;
+            error.statement = -1;
+            error
+        })?;
 
-        // VM-20.1: the host's observer may stop the run here, before the statement runs.
-        if observer.stop_before(machine, step_function, step_statement) {
-            return Err(machine.run_error(progs, ErrorKind::Interrupted));
-        }
-
-        // VM-3.4: an opcode above 65 fails with Bad opcode.
-        let Some(opcode) = Opcode::from_number(statement.op) else {
-            return Err(machine.run_error(
-                progs,
-                ErrorKind::BadOpcode {
-                    opcode: statement.op,
-                },
-            ));
-        };
-
-        let control = ops::execute_statement(
-            machine, progs, server, builtins, observer, opcode, &statement,
-        )?;
-        match control {
-            Control::Next { builtin } => {
-                observer.step(
-                    machine,
-                    step_function,
-                    step_statement,
-                    opcode.number(),
-                    builtin,
-                );
+        loop {
+            // VM-3.1: move to the next statement, count against runaway; the statement that
+            // brings it to 0 fails without executing.
+            self.xstatement = self.xstatement.wrapping_add(1);
+            runaway = runaway.wrapping_sub(1);
+            if runaway == 0 {
+                return Err(self.run_error(progs, ErrorKind::Runaway));
             }
-            Control::Jump(target) => {
-                observer.step(
-                    machine,
-                    step_function,
-                    step_statement,
-                    opcode.number(),
-                    None,
-                );
-                // VM-13: the jump sets the next statement to target - 1, so the loop's +1
-                // lands on it. A jump out of range is caught on the next iteration (VM-3.3,
-                // VM-13.5).
-                machine.xstatement = target.wrapping_sub(1);
+
+            // VM-3.3: a statement index outside 0..numstatements fails before it executes.
+            let statements = progs.statements();
+            let Some(statement) = statement_at(&statements, self.xstatement) else {
+                return Err(self.divergence(
+                    progs,
+                    Divergence::StatementOutOfRange {
+                        statement: self.xstatement,
+                    },
+                ));
+            };
+
+            let step_function = self.xfunction;
+            let step_statement = self.xstatement;
+
+            // VM-20.1: the host's observer may stop the run here, before the statement runs.
+            if observer.stop_before(self, step_function, step_statement) {
+                return Err(self.run_error(progs, ErrorKind::Interrupted));
             }
-            Control::Return => {
-                // VM-16: leave the function (copy the return value, restore the locals, pop
-                // the frame) before the step record, so the restore is in the RETURN step's
-                // change set (TRACE-3.1); id does the leave as part of OP_DONE.
-                leave_function(machine, progs);
-                observer.step(
-                    machine,
-                    step_function,
-                    step_statement,
-                    opcode.number(),
-                    None,
-                );
-                if machine.stack.len() == exit_depth {
-                    observer.exit(machine);
-                    return Ok(());
+
+            // VM-3.4: an opcode above 65 fails with Bad opcode.
+            let Some(opcode) = Opcode::from_number(statement.op) else {
+                return Err(self.run_error(
+                    progs,
+                    ErrorKind::BadOpcode {
+                        opcode: statement.op,
+                    },
+                ));
+            };
+
+            let control = ops::execute_statement(
+                self, progs, server, builtins, observer, opcode, &statement,
+            )?;
+            match control {
+                Control::Next { builtin } => {
+                    observer.step(
+                        self,
+                        step_function,
+                        step_statement,
+                        opcode.number(),
+                        builtin,
+                    );
+                }
+                Control::Jump(target) => {
+                    observer.step(self, step_function, step_statement, opcode.number(), None);
+                    // VM-13: the jump sets the next statement to target - 1, so the loop's +1
+                    // lands on it. A jump out of range is caught on the next iteration (VM-3.3,
+                    // VM-13.5).
+                    self.xstatement = target.wrapping_sub(1);
+                }
+                Control::Return => {
+                    // VM-16: leave the function (copy the return value, restore the locals, pop
+                    // the frame) before the step record, so the restore is in the RETURN step's
+                    // change set (TRACE-3.1); id does the leave as part of OP_DONE.
+                    leave_function(self, progs);
+                    observer.step(self, step_function, step_statement, opcode.number(), None);
+                    if self.stack.len() == exit_depth {
+                        observer.exit(self);
+                        return Ok(());
+                    }
                 }
             }
         }
