@@ -24,8 +24,8 @@ use qs_install::GameBase;
 use serde_json::{Value, json};
 
 use crate::{
-    Client, ClientError, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRoot, RunRootError,
-    StepKind, WindowPlacement, base64_decode, host_command, locate_host, prepare_run_root,
+    BreakpointId, Client, ClientError, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRoot,
+    RunRootError, StepKind, WindowPlacement, base64_decode, locate_host, prepare_run_root,
 };
 
 /// A folder removed when the test ends.
@@ -175,7 +175,7 @@ fn the_host_command_line() {
         socket: PathBuf::from("/tmp/b.sock"),
         extra: vec!["--nosound".to_owned()],
     };
-    let command = host_command(&spec);
+    let command = spec.command();
     let args: Vec<String> = command
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
@@ -205,7 +205,8 @@ fn the_host_command_line() {
         extra: Vec::new(),
         ..spec
     };
-    let args: Vec<String> = host_command(&plain)
+    let args: Vec<String> = plain
+        .command()
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
@@ -218,7 +219,8 @@ fn the_host_command_line() {
         },
         ..plain
     };
-    let args: Vec<String> = host_command(&id1)
+    let args: Vec<String> = id1
+        .command()
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
@@ -273,6 +275,7 @@ impl Host for Fake {
             "step",
             "breakpoint/clear",
             "evaluate",
+            "field/set",
             "window/place",
         ])
     }
@@ -346,11 +349,25 @@ fn the_client_speaks_the_bridge() {
     assert_eq!(paused["method"], "pause");
     let stepped = client.step(StepKind::Frame).unwrap();
     assert_eq!(stepped["params"]["kind"], "frame");
-    let cleared = client.clear_breakpoint(4).unwrap();
+    let cleared = client.clear_breakpoint(BreakpointId::new(4)).unwrap();
     assert_eq!(cleared["params"], json!({ "id": 4 }));
+    assert_eq!(BreakpointId::new(4).to_string(), "4");
+    let set = client
+        .set_field(
+            qc_edict::EdictNumber::new(5),
+            "health",
+            json!({ "type": "float", "value": 50.0 }),
+        )
+        .unwrap();
+    assert_eq!(
+        set["params"],
+        json!({ "edict": 5, "field": "health", "value": { "type": "float", "value": 50.0 } })
+    );
     let evaluated = client.evaluate("self.health").unwrap();
     assert_eq!(evaluated["params"], json!({ "expression": "self.health" }));
-    let inspected = client.inspect(InspectWhat::Edict(3)).unwrap();
+    let inspected = client
+        .inspect(InspectWhat::Edict(qc_edict::EdictNumber::new(3)))
+        .unwrap();
     assert_eq!(inspected["params"], json!({ "what": "edict", "edict": 3 }));
     assert!(matches!(
         client.screenshot(None),
@@ -372,7 +389,7 @@ fn the_client_speaks_the_bridge() {
     );
     // Each answer, initialize's too, came after an event, kept in order.
     let events = client.take_events();
-    assert_eq!(events.len(), 7);
+    assert_eq!(events.len(), 8);
     assert!(events.iter().all(|e| e.method == "console/line"));
     // The host answers a step with bad parameters with -32602 (BRIDGE-4.2).
     let bad = client.request("step", json!({ "kind": "sideways" }));

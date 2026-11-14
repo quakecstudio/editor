@@ -16,10 +16,11 @@
 //! 16-bit stereo frames.
 
 use qc_builtins::math::vector_normalize;
+use qc_edict::SoundEntity;
 use qc_vm::convert::{double_to_float, double_to_int, float_to_int, int_to_float};
 
 use crate::output::Output;
-use crate::sfx::{SfxId, SoundData, SoundTable, Width};
+use crate::sfx::{SamplePos, SfxId, SoundData, SoundTable, Width};
 
 /// The channels in the mixer (SND-1.1).
 pub const SND_MAX_CHANNELS: usize = 128;
@@ -27,6 +28,11 @@ pub const SND_MAX_CHANNELS: usize = 128;
 pub const SND_MAX_DYNAMIC_CHANNELS: usize = 8;
 /// The ambient channels, the first in the array (SND-1.1).
 pub const SND_NUM_AMBIENTS: usize = 4;
+/// The ambient channels' indices, `AMBIENT_WATER` to `AMBIENT_LAVA`, in [`Ambient::ALL`]'s order.
+const AMBIENT_WATER: usize = 0;
+const AMBIENT_SKY: usize = 1;
+const AMBIENT_SLIME: usize = 2;
+const AMBIENT_LAVA: usize = 3;
 /// The index of the first static channel (SND-1.1).
 pub const SND_FIRST_STATIC: usize = SND_NUM_AMBIENTS + SND_MAX_DYNAMIC_CHANNELS;
 /// Where a sound at attenuation 1 falls silent, in units (SND-2.3).
@@ -55,6 +61,23 @@ pub const SND_ORACLE_SPEED: u32 = 11025;
 pub const SND_BUFFER_FRAMES: usize = 16384;
 /// `MAX_RAW_SAMPLES`: the frames of streamed music the mixer holds (SND-6.1).
 pub const SND_MAX_RAW_SAMPLES: usize = 8192;
+/// The fraction bits of a fixed-point volume: `volume * 256`, a product `>> 8` (SND-5.4).
+const VOLUME_BITS: u32 = 8;
+/// A volume of one in fixed point, `1 << VOLUME_BITS`.
+const VOLUME_ONE: f32 = 256.0;
+/// A channel's loudest volume, which `fvol * 255` reaches and an 8-bit sound's painting clamps
+/// to.
+const CHANNEL_VOLUME_MAX: i32 = 255;
+/// [`CHANNEL_VOLUME_MAX`] as the float `fvol` is scaled by.
+const CHANNEL_VOLUME_SCALE: f32 = 255.0;
+/// `snd_scaletable`'s step: an 8-bit sound's volume in steps of 8, its high five bits.
+const SCALE_STEP_BITS: u32 = 3;
+/// [`SCALE_STEP_BITS`] as the step itself.
+const SCALE_STEP: i32 = 1 << SCALE_STEP_BITS;
+/// SND-2.5: an identical sound started in the frame is offset by up to a tenth of a second.
+const IDENTICAL_SKIP_SECONDS: f64 = 0.1;
+/// A position's axes.
+const AXES: usize = 3;
 
 /// The ambient channels, by index (SND-1.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,10 +100,10 @@ impl Ambient {
     #[must_use]
     pub const fn index(self) -> usize {
         match self {
-            Self::Water => 0,
-            Self::Sky => 1,
-            Self::Slime => 2,
-            Self::Lava => 3,
+            Self::Water => AMBIENT_WATER,
+            Self::Sky => AMBIENT_SKY,
+            Self::Slime => AMBIENT_SLIME,
+            Self::Lava => AMBIENT_LAVA,
         }
     }
 
@@ -99,7 +122,7 @@ impl Ambient {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Start {
     /// The entity the sound comes from.
-    pub entnum: i32,
+    pub entnum: SoundEntity,
     /// The entity channel, 0 to 7, or -1 for any (SND-2.2).
     pub entchannel: i32,
     /// The sound.
@@ -134,7 +157,7 @@ pub struct Listener {
 impl Default for Listener {
     fn default() -> Self {
         Self {
-            origin: [0.0; 3],
+            origin: [0.0; AXES],
             forward: [1.0, 0.0, 0.0],
             right: [0.0, -1.0, 0.0],
             up: [0.0, 0.0, 1.0],
@@ -178,7 +201,7 @@ pub struct Channel {
     /// The next sample of the sound to mix.
     pub pos: usize,
     /// The entity it was started on.
-    pub entnum: i32,
+    pub entnum: SoundEntity,
     /// The entity channel it was started on.
     pub entchannel: i32,
     /// Where the sound is.
@@ -238,7 +261,7 @@ pub struct Mixer {
     elapsed: f64,
     listener: Listener,
     /// `cl.viewentity`.
-    view_entity: i32,
+    view_entity: SoundEntity,
     ambient_sfx: [Option<SfxId>; SND_NUM_AMBIENTS],
     settings: Settings,
     /// What the mixer would print to the console.
@@ -259,7 +282,7 @@ pub struct MixerSpec {
     /// The output buffer's frames, which caps how far ahead the mixer paints (SND-5.6).
     pub buffer_frames: usize,
     /// The entity the listener is, `cl.viewentity`.
-    pub view_entity: i32,
+    pub view_entity: SoundEntity,
     /// The settings.
     pub settings: Settings,
 }
@@ -271,7 +294,7 @@ impl Default for MixerSpec {
             speed: SND_ORACLE_SPEED,
             stereo: true,
             buffer_frames: SND_BUFFER_FRAMES,
-            view_entity: 1,
+            view_entity: SoundEntity::new(1),
             settings: Settings::default(),
         }
     }
@@ -333,7 +356,7 @@ impl Mixer {
         // `scale = (float) rate / shm->speed`, `intVolume = (int) (256 * volume)`.
         let scale = int_to_float(i32::try_from(rate).unwrap_or(i32::MAX))
             / int_to_float(i32::try_from(self.speed).unwrap_or(i32::MAX));
-        let volume = float_to_int(256.0 * volume);
+        let volume = float_to_int(VOLUME_ONE * volume);
         let width = usize::from(channels.max(1));
         let mut i = 0_i32;
         loop {
@@ -437,7 +460,7 @@ impl Mixer {
     /// `SND_PickChannel`: the dynamic channel a sound of `entnum` on `entchannel` plays on,
     /// which loses its sound; `None` when every one plays a sound of the view entity and this
     /// one is not the view entity's (SND-2.2).
-    fn pick_channel(&mut self, entnum: i32, entchannel: i32) -> Option<usize> {
+    fn pick_channel(&mut self, entnum: SoundEntity, entchannel: i32) -> Option<usize> {
         let mut first_to_die = None;
         let mut life_left = i64::MAX;
         for index in SND_NUM_AMBIENTS..SND_FIRST_STATIC {
@@ -527,7 +550,7 @@ impl Mixer {
             fvol,
             attenuation,
         } = start;
-        let vol = float_to_int(fvol * 255.0);
+        let vol = float_to_int(fvol * CHANNEL_VOLUME_SCALE);
         let index = self.pick_channel(entnum, entchannel)?;
         let mut channel = Channel {
             origin,
@@ -562,7 +585,7 @@ impl Mixer {
                 break;
             };
             if check.sfx == Some(sfx) && check.pos == 0 {
-                let modulus = double_to_int(0.1 * f64::from(self.speed));
+                let modulus = double_to_int(IDENTICAL_SKIP_SECONDS * f64::from(self.speed));
                 let mut skip = i64::from(rand.rand().checked_rem(modulus).unwrap_or(0));
                 if skip >= channel.end {
                     skip = channel.end.saturating_sub(1);
@@ -580,7 +603,7 @@ impl Mixer {
 
     /// `S_StopSound (entnum, entchannel)`: the first of the channels 0 to
     /// `SND_MAX_DYNAMIC_CHANNELS - 1` started on that entity and channel stops (SND-2.6).
-    pub fn stop_sound(&mut self, entnum: i32, entchannel: i32) {
+    pub fn stop_sound(&mut self, entnum: SoundEntity, entchannel: i32) {
         for channel in self.channels.iter_mut().take(SND_MAX_DYNAMIC_CHANNELS) {
             if channel.entnum == entnum && channel.entchannel == entchannel {
                 channel.end = 0;
@@ -610,7 +633,7 @@ impl Mixer {
             entnum: self.view_entity,
             entchannel: -1,
             sfx: id,
-            origin: [0.0; 3],
+            origin: [0.0; AXES],
             fvol: 1.0,
             attenuation: 1.0,
         };
@@ -793,7 +816,7 @@ impl Mixer {
         output: &mut dyn Output,
     ) {
         // `snd_vol = volume.value * 256`, an int.
-        let snd_vol = float_to_int(self.settings.volume * 256.0);
+        let snd_vol = float_to_int(self.settings.volume * VOLUME_ONE);
         let mut paintbuffer = vec![(0_i32, 0_i32); SND_PAINTBUFFER_SIZE];
         while self.painted < endtime {
             let block = i64::try_from(SND_PAINTBUFFER_SIZE).unwrap_or(i64::MAX);
@@ -828,7 +851,7 @@ impl Mixer {
                             }
                             LoopPaint::Id => 0,
                         };
-                        paint_channel(channel, data, &mut paintbuffer, offset, count);
+                        channel.paint(data, &mut paintbuffer, offset, count);
                         ltime = ltime.saturating_add(i64::try_from(count).unwrap_or(0));
                     }
                     if ltime >= channel.end {
@@ -860,7 +883,7 @@ impl Mixer {
                     if let (Some(&(left, right)), Some(pair)) =
                         (self.raw.get(slot), music.get_mut(at))
                     {
-                        *pair = (left >> 8, right >> 8);
+                        *pair = (left >> VOLUME_BITS, right >> VOLUME_BITS);
                     }
                     i = i.saturating_add(1);
                 }
@@ -882,53 +905,75 @@ impl Mixer {
     }
 }
 
-/// `SND_PaintChannelFrom8` and `SND_PaintChannelFrom16`: `count` samples of `channel` from
-/// `channel.pos` added into `paintbuffer` from `offset` (SND-5.3).
-fn paint_channel(
-    channel: &mut Channel,
-    data: &SoundData,
-    paintbuffer: &mut [(i32, i32)],
-    offset: usize,
-    count: usize,
-) {
-    match data.width() {
-        Width::Eight => {
-            // The scale table: `snd_scaletable[i][j] = (signed char) j * i * 8` for the
-            // volume's high five bits.
-            channel.leftvol = channel.leftvol.min(255);
-            channel.rightvol = channel.rightvol.min(255);
-            let lscale = (channel.leftvol >> 3).wrapping_mul(8);
-            let rscale = (channel.rightvol >> 3).wrapping_mul(8);
-            for i in 0..count {
-                let sample = data.sample_8(channel.pos.saturating_add(i)).unwrap_or(0);
-                let Some(pair) = paintbuffer.get_mut(offset.saturating_add(i)) else {
-                    break;
-                };
-                pair.0 = pair.0.wrapping_add(i32::from(sample).wrapping_mul(lscale));
-                pair.1 = pair.1.wrapping_add(i32::from(sample).wrapping_mul(rscale));
+impl Channel {
+    /// `SND_PaintChannelFrom8` and `SND_PaintChannelFrom16`: `count` samples of the channel from
+    /// its `pos` added into `paintbuffer` from `offset` (SND-5.3).
+    fn paint(
+        &mut self,
+        data: &SoundData,
+        paintbuffer: &mut [(i32, i32)],
+        offset: usize,
+        count: usize,
+    ) {
+        match data.width() {
+            Width::Eight => {
+                // The scale table: `snd_scaletable[i][j] = (signed char) j * i * 8` for the
+                // volume's high five bits.
+                self.leftvol = self.leftvol.min(CHANNEL_VOLUME_MAX);
+                self.rightvol = self.rightvol.min(CHANNEL_VOLUME_MAX);
+                let lscale = (self.leftvol >> SCALE_STEP_BITS).wrapping_mul(SCALE_STEP);
+                let rscale = (self.rightvol >> SCALE_STEP_BITS).wrapping_mul(SCALE_STEP);
+                for i in 0..count {
+                    let sample = data
+                        .sample_8(SamplePos::new(self.pos.saturating_add(i)))
+                        .unwrap_or(0);
+                    let Some(pair) = paintbuffer.get_mut(offset.saturating_add(i)) else {
+                        break;
+                    };
+                    pair.0 = pair.0.wrapping_add(i32::from(sample).wrapping_mul(lscale));
+                    pair.1 = pair.1.wrapping_add(i32::from(sample).wrapping_mul(rscale));
+                }
+            }
+            Width::Sixteen => {
+                for i in 0..count {
+                    let sample = i32::from(
+                        data.sample_16(SamplePos::new(self.pos.saturating_add(i)))
+                            .unwrap_or(0),
+                    );
+                    let Some(pair) = paintbuffer.get_mut(offset.saturating_add(i)) else {
+                        break;
+                    };
+                    pair.0 = pair
+                        .0
+                        .wrapping_add(sample.wrapping_mul(self.leftvol) >> VOLUME_BITS);
+                    pair.1 = pair
+                        .1
+                        .wrapping_add(sample.wrapping_mul(self.rightvol) >> VOLUME_BITS);
+                }
             }
         }
-        Width::Sixteen => {
-            for i in 0..count {
-                let sample = i32::from(data.sample_16(channel.pos.saturating_add(i)).unwrap_or(0));
-                let Some(pair) = paintbuffer.get_mut(offset.saturating_add(i)) else {
-                    break;
-                };
-                pair.0 = pair
-                    .0
-                    .wrapping_add(sample.wrapping_mul(channel.leftvol) >> 8);
-                pair.1 = pair
-                    .1
-                    .wrapping_add(sample.wrapping_mul(channel.rightvol) >> 8);
-            }
-        }
+        self.pos = self.pos.saturating_add(count);
     }
-    channel.pos = channel.pos.saturating_add(count);
 }
 
 /// `Snd_WriteLinearBlastStereo16`'s sample: `(sum * snd_vol) >> 8`, plus the frame's
 /// `music` (SND-6.3), clamped to 16 bits (SND-5.4).
 fn transfer(sum: i32, snd_vol: i32, music: i32) -> i16 {
-    let val = (sum.wrapping_mul(snd_vol) >> 8).saturating_add(music);
+    let val = (sum.wrapping_mul(snd_vol) >> VOLUME_BITS).saturating_add(music);
     i16::try_from(val.clamp(i32::from(i16::MIN), i32::from(i16::MAX))).unwrap_or(0)
+}
+
+/// Each fixed-point scale of the mixer agrees with its shift or its integer form.
+#[cfg(test)]
+pub(crate) fn check_scales() {
+    assert_eq!(
+        VOLUME_ONE.to_bits(),
+        f32::from(1_u16 << VOLUME_BITS).to_bits()
+    );
+    assert_eq!(
+        Some(CHANNEL_VOLUME_SCALE.to_bits()),
+        u8::try_from(CHANNEL_VOLUME_MAX)
+            .ok()
+            .map(|max| f32::from(max).to_bits())
+    );
 }

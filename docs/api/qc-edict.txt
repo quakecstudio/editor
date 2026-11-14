@@ -1,6 +1,7 @@
 const qc_edict::EDICT_HEADER_SIZE
 const qc_edict::EDICT_SYS_GLOBALS_END
 const qc_edict::number::EdictNumber::WORLD
+const qc_edict::number::SoundEntity::TEMPORARY
 enum qc_edict::layout::LayoutError
 enum qc_edict::store::EdictError
 enum qc_edict::store::EdictEvent
@@ -20,6 +21,8 @@ fn qc_edict::number::EdictNumber::from_i32
 fn qc_edict::number::EdictNumber::index
 fn qc_edict::number::EdictNumber::new
 fn qc_edict::number::EdictNumber::to_i32
+fn qc_edict::number::SoundEntity::get
+fn qc_edict::number::SoundEntity::new
 fn qc_edict::store::EdictStore::alloc
 fn qc_edict::store::EdictStore::clear_edict
 fn qc_edict::store::EdictStore::edict_num
@@ -52,6 +55,7 @@ impl qc_edict::store::EdictStore: Clone
 mod qc_edict::system
 struct qc_edict::layout::EdictLayout
 struct qc_edict::number::EdictNumber
+struct qc_edict::number::SoundEntity
 struct qc_edict::store::EdictStore
 struct qc_edict::system::SysVar
 use qc_edict::EdictError = store::EdictError
@@ -60,6 +64,7 @@ use qc_edict::EdictLayout = layout::EdictLayout
 use qc_edict::EdictNumber = number::EdictNumber
 use qc_edict::EdictStore = store::EdictStore
 use qc_edict::LayoutError = layout::LayoutError
+use qc_edict::SoundEntity = number::SoundEntity
 use qc_edict::Tracking = store::Tracking
 variant qc_edict::layout::LayoutError::FieldsTooFew
 variant qc_edict::layout::LayoutError::FieldsTooMany

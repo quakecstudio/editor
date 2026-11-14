@@ -752,7 +752,11 @@ impl<'a> Compiler<'a> {
         }
         let made = self
             .program
-            .generated(&format!("$parm{u}"), ValueType::simple(Etype::Vector), 3)
+            .generated(
+                &format!("$parm{u}"),
+                ValueType::simple(Etype::Vector),
+                VECTOR_WORDS,
+            )
             .at(span)?;
         let slot = self.program.def(made).at(span)?.ofs;
         self.extra_parms.insert(u, slot);
@@ -762,16 +766,12 @@ impl<'a> Compiler<'a> {
     /// FTE-18.10: what a bare `return;` returns: under FTEQCC, in a function that returns a
     /// value, its local `ret*` of the return type, made at the first such `return`; else 0.
     fn bare_return(&mut self, span: Span) -> Lowered<u32> {
-        let Some(ty) = self
-            .body_return
-            .clone()
-            .filter(|_| self.dialect.has_fteqcc_extensions())
-        else {
-            return Ok(0);
-        };
-        if ty.etype() == Etype::Void {
+        if self.bare_return_kind() == body::BareReturn::Plain {
             return Ok(0);
         }
+        let Some(ty) = self.body_return.clone() else {
+            return Ok(0);
+        };
         if let Some(place) = self.ret_local {
             return Ok(self.program.def(place).at(span)?.ofs);
         }
@@ -1040,13 +1040,15 @@ enum FunctionInit<'t> {
 
 /// The elements of a variadic function's `__va_list` (FTE-18.6: `int maxvacount = 24;`).
 const VA_COUNT: u32 = 24;
+/// A vector's words, `qc-types`' `PROGS_VECTOR_SLOTS`, as a definition's size.
+const VECTOR_WORDS: u32 = 3;
 
 /// Parameter slot `i`'s global offset, `OFS_PARM0 + 3 * i` (QC-18.3). A ninth argument's slot
 /// is past the eight, as id's `qcc` writes `def_parms[8]`; its call is refused (QC-18.2).
 fn parm_slot(i: usize) -> Option<u32> {
     u32::try_from(i)
         .ok()?
-        .checked_mul(3)?
+        .checked_mul(VECTOR_WORDS)?
         .checked_add(OFS_PARM0)
 }
 

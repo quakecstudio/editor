@@ -51,6 +51,10 @@ pub const SND_CD_RATE: u32 = 44100;
 pub const SND_CD_SECTOR: u64 = 2352;
 /// A cue sheet's frames, sectors, a second (SND-6.4).
 const CUE_FRAMES_PER_SECOND: u64 = 75;
+/// A minute's seconds, in a cue sheet's `mm:ss:ff`.
+const SECONDS_PER_MINUTE: u64 = 60;
+/// The cue sheet command that names the image file.
+const CUE_FILE: &str = "FILE";
 
 /// What a stream gives on a read (SND-6.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,12 +79,22 @@ pub trait MusicStream {
     fn rewind(&mut self) -> bool;
 }
 
+/// What a stream does at its end (SND-6.2).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Repeat {
+    /// It stops.
+    #[default]
+    Once,
+    /// It rewinds and plays again.
+    Loop,
+}
+
 /// `bgmstream` and its state (SND-6.2): the stream playing, whether it loops and whether it
 /// is paused.
 #[derive(Default)]
 pub struct Music {
     stream: Option<Box<dyn MusicStream>>,
-    looping: bool,
+    repeat: Repeat,
     paused: bool,
 }
 
@@ -92,10 +106,10 @@ impl Music {
     }
 
     /// `stream` playing from its start, the one before it stopped (RRE-3.3, SND-6.2).
-    pub fn play(&mut self, mixer: &mut Mixer, stream: Box<dyn MusicStream>, looping: bool) {
+    pub fn play(&mut self, mixer: &mut Mixer, stream: Box<dyn MusicStream>, repeat: Repeat) {
         self.stop(mixer);
         self.stream = Some(stream);
-        self.looping = looping;
+        self.repeat = repeat;
     }
 
     /// `BGM_Stop`: the stream closed and `s_rawend = 0` (SND-6.2).
@@ -106,9 +120,14 @@ impl Music {
         self.paused = false;
     }
 
-    /// `BGM_Pause` and `BGM_Resume`.
-    pub const fn set_paused(&mut self, paused: bool) {
-        self.paused = paused;
+    /// `BGM_Pause`: the stream holds where it is.
+    pub const fn pause(&mut self) {
+        self.paused = true;
+    }
+
+    /// `BGM_Resume`: the stream goes on.
+    pub const fn resume(&mut self) {
+        self.paused = false;
     }
 
     /// Whether a stream is open.
@@ -161,7 +180,7 @@ impl Music {
                     mixer.raw_samples(frames, rate, channels, data, volume);
                     rewound = false;
                 }
-                Read::End if self.looping => {
+                Read::End if self.repeat == Repeat::Loop => {
                     if rewound {
                         printed.push("Stream keeps returning EOF.".to_owned());
                         self.stop(mixer);
@@ -220,8 +239,12 @@ impl CueSheet {
         for line in text.lines() {
             let mut words = line.split_whitespace();
             match words.next().map(str::to_ascii_uppercase).as_deref() {
-                Some("FILE") => {
-                    let rest = line.trim_start().get(4..).unwrap_or_default().trim();
+                Some(CUE_FILE) => {
+                    let rest = line
+                        .trim_start()
+                        .get(CUE_FILE.len()..)
+                        .unwrap_or_default()
+                        .trim();
                     let (name, kind) = match rest.strip_prefix('"') {
                         Some(quoted) => {
                             let (name, kind) = quoted.split_once('"')?;
@@ -290,12 +313,12 @@ fn msf(text: &str) -> Option<u64> {
     else {
         return None;
     };
-    if seconds >= 60 || frames >= CUE_FRAMES_PER_SECOND {
+    if seconds >= SECONDS_PER_MINUTE || frames >= CUE_FRAMES_PER_SECOND {
         return None;
     }
     Some(
         minutes
-            .saturating_mul(60)
+            .saturating_mul(SECONDS_PER_MINUTE)
             .saturating_add(seconds)
             .saturating_mul(CUE_FRAMES_PER_SECOND)
             .saturating_add(frames),

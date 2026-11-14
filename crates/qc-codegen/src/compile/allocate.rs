@@ -31,16 +31,14 @@ impl Slots {
         &mut self,
         program: &mut Program,
         statement: &BodyStatement,
-        index: u32,
+        index: StatementIndex,
     ) -> Result<(), Internal> {
         match self {
             Self::CreationOrder(order) => order.statement(program, statement, index),
-            Self::Overlapping(overlapping) => {
-                match statement.temp_words(StatementIndex::new(index)) {
-                    Some(words) => overlapping.take(program, index, words),
-                    None => Ok(()),
-                }
-            }
+            Self::Overlapping(overlapping) => match statement.temp_words(index) {
+                Some(words) => overlapping.take(program, index.get(), words),
+                None => Ok(()),
+            },
         }
     }
 
@@ -48,12 +46,12 @@ impl Slots {
     pub(super) fn block(
         &mut self,
         program: &mut Program,
-        index: u32,
+        index: StatementIndex,
         words: u32,
     ) -> Result<(), Internal> {
         match self {
             Self::CreationOrder(order) => order.block(program, index, words),
-            Self::Overlapping(overlapping) => overlapping.take(program, index, words),
+            Self::Overlapping(overlapping) => overlapping.take(program, index.get(), words),
         }
     }
 
@@ -63,13 +61,13 @@ impl Slots {
     pub(super) fn dropped(
         &mut self,
         program: &mut Program,
-        index: u32,
+        index: StatementIndex,
         words: u32,
     ) -> Result<(), Internal> {
         match self {
             Self::CreationOrder(_) => program.allocate(words).map(|_| ()),
             Self::Overlapping(overlapping) => overlapping
-                .shared_place(program, index, words, None)
+                .shared_place(program, index.get(), words, None)
                 .map(|_| ()),
         }
     }
@@ -106,11 +104,11 @@ impl CreationOrder {
         &mut self,
         program: &mut Program,
         statement: &BodyStatement,
-        index: u32,
+        index: StatementIndex,
     ) -> Result<(), Internal> {
-        if let Some(words) = statement.temp_words(StatementIndex::new(index)) {
+        if let Some(words) = statement.temp_words(index) {
             let slot = program.allocate(words)?;
-            self.slots.insert(index, slot);
+            self.slots.insert(index.get(), slot);
         }
         Ok(())
     }
@@ -119,11 +117,11 @@ impl CreationOrder {
     pub(super) fn block(
         &mut self,
         program: &mut Program,
-        index: u32,
+        index: StatementIndex,
         words: u32,
     ) -> Result<(), Internal> {
         let slot = program.allocate(words)?;
-        self.slots.insert(index, slot);
+        self.slots.insert(index.get(), slot);
         Ok(())
     }
 
@@ -303,7 +301,7 @@ mod tests {
     )]
 
     use qc_preproc::Op;
-    use qc_sema::ir::{BodyStatement, Effect, Name};
+    use qc_sema::ir::{BodyStatement, Effect, Name, StatementIndex};
 
     use super::{CreationOrder, Overlapping, Slots};
     use crate::program::Program;
@@ -336,10 +334,14 @@ mod tests {
         for (index, statement) in (0_u32..).zip(body) {
             for &(at, effect) in effects {
                 if let (true, Effect::Block(words)) = (at == index, effect) {
-                    slots.block(program, index, words).unwrap();
+                    slots
+                        .block(program, StatementIndex::new(index), words)
+                        .unwrap();
                 }
             }
-            slots.statement(program, statement, index).unwrap();
+            slots
+                .statement(program, statement, StatementIndex::new(index))
+                .unwrap();
         }
         (0_u32..).take(body.len()).map(|i| slots.slot(i)).collect()
     }
@@ -497,18 +499,24 @@ mod tests {
         let mut program = Program::new();
         let first = program.allocate(0).unwrap();
         let mut overlapping = Slots::Overlapping(Overlapping::new(&[], &[]));
-        overlapping.dropped(&mut program, 0, 3).unwrap();
+        overlapping
+            .dropped(&mut program, StatementIndex::new(0), 3)
+            .unwrap();
         assert_eq!(program.allocate(0).unwrap(), first, "no global of its own");
         let shared: Vec<u32> = program.shared_temps().iter().map(|&(_, w)| w).collect();
         assert_eq!(shared, [3], "a shared slot of its size");
-        overlapping.dropped(&mut program, 0, 3).unwrap();
+        overlapping
+            .dropped(&mut program, StatementIndex::new(0), 3)
+            .unwrap();
         assert_eq!(
             program.shared_temps().len(),
             1,
             "freed: the next takes it again"
         );
         let mut order = Slots::CreationOrder(CreationOrder::default());
-        order.dropped(&mut program, 0, 3).unwrap();
+        order
+            .dropped(&mut program, StatementIndex::new(0), 3)
+            .unwrap();
         assert_eq!(program.allocate(0).unwrap(), first + 3);
     }
 
@@ -525,16 +533,20 @@ mod tests {
         let first = program.allocate(0).unwrap();
         let mut order = CreationOrder::default();
         order
-            .statement(&mut program, &made(Op::MulVf, 0), 0)
+            .statement(&mut program, &made(Op::MulVf, 0), StatementIndex::new(0))
             .unwrap();
-        order.block(&mut program, 1, 2).unwrap();
+        order
+            .block(&mut program, StatementIndex::new(1), 2)
+            .unwrap();
         let store = BodyStatement {
             b: Some(Name::MadeWord(1, 0)),
             ..BodyStatement::bare(Op::StoreF)
         };
-        order.statement(&mut program, &store, 1).unwrap();
         order
-            .statement(&mut program, &made(Op::AddF, 2), 2)
+            .statement(&mut program, &store, StatementIndex::new(1))
+            .unwrap();
+        order
+            .statement(&mut program, &made(Op::AddF, 2), StatementIndex::new(2))
             .unwrap();
         assert_eq!(
             [order.slot(0), order.slot(1), order.slot(2)],
@@ -542,7 +554,11 @@ mod tests {
         );
         assert_eq!(program.allocate(0).unwrap(), first + 6, "no slot is reused");
         order
-            .statement(&mut program, &BodyStatement::bare(Op::Goto), 3)
+            .statement(
+                &mut program,
+                &BodyStatement::bare(Op::Goto),
+                StatementIndex::new(3),
+            )
             .unwrap();
         assert_eq!(order.slot(3), None);
     }
