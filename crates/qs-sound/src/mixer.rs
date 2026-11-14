@@ -19,7 +19,7 @@ use qc_builtins::math::vector_normalize;
 use qc_vm::convert::{double_to_float, double_to_int, float_to_int, int_to_float};
 
 use crate::output::Output;
-use crate::sfx::{SfxId, SoundData, SoundTable, Width};
+use crate::sfx::{SamplePos, SfxId, SoundData, SoundTable, Width};
 
 /// The channels in the mixer (SND-1.1).
 pub const SND_MAX_CHANNELS: usize = 128;
@@ -945,7 +945,9 @@ impl Channel {
                 let lscale = (self.leftvol >> SCALE_STEP_BITS).wrapping_mul(SCALE_STEP);
                 let rscale = (self.rightvol >> SCALE_STEP_BITS).wrapping_mul(SCALE_STEP);
                 for i in 0..count {
-                    let sample = data.sample_8(self.pos.saturating_add(i)).unwrap_or(0);
+                    let sample = data
+                        .sample_8(SamplePos::new(self.pos.saturating_add(i)))
+                        .unwrap_or(0);
                     let Some(pair) = paintbuffer.get_mut(offset.saturating_add(i)) else {
                         break;
                     };
@@ -955,7 +957,10 @@ impl Channel {
             }
             Width::Sixteen => {
                 for i in 0..count {
-                    let sample = i32::from(data.sample_16(self.pos.saturating_add(i)).unwrap_or(0));
+                    let sample = i32::from(
+                        data.sample_16(SamplePos::new(self.pos.saturating_add(i)))
+                            .unwrap_or(0),
+                    );
                     let Some(pair) = paintbuffer.get_mut(offset.saturating_add(i)) else {
                         break;
                     };

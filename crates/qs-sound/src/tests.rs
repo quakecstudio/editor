@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use crate::{
     Ambient, Listener, ListenerLeaf, Loaded, LoopPaint, Mixer, MixerSpec, Random, Reader,
     SND_FIRST_STATIC, SND_MAX_CHANNELS, SND_MAX_DYNAMIC_CHANNELS, SND_MAX_NAME, SND_MAX_SFX,
-    SND_NUM_AMBIENTS, SfxId, SoundData, SoundEntity, SoundError, SoundTable, Start, Width,
-    track_files,
+    SND_NUM_AMBIENTS, SamplePos, SfxId, SoundData, SoundEntity, SoundError, SoundTable, Start,
+    Width, track_files,
 };
 
 /// A RIFF WAVE file of one channel: PCM at `rate`, `bits` per sample, the raw sample bytes
@@ -264,7 +264,7 @@ fn resampling_decimates_and_repeats() {
     assert_eq!(data.width(), Width::Eight);
     assert_eq!(
         (0..5)
-            .map(|i| data.sample_8(i).unwrap())
+            .map(|i| data.sample_8(SamplePos::new(i)).unwrap())
             .collect::<Vec<_>>(),
         [0, 20, 40, 60, 0]
     );
@@ -275,16 +275,20 @@ fn resampling_decimates_and_repeats() {
     assert_eq!(data.loopstart(), None);
     assert_eq!(
         (0..6)
-            .map(|i| data.sample_8(i).unwrap())
+            .map(|i| data.sample_8(SamplePos::new(i)).unwrap())
             .collect::<Vec<_>>(),
         [0, 0, 0, 10, 10, 20]
     );
     let same = wav(11025, 16, 1, &sixteen_bit(), None);
     let data = SoundData::resample(&qs_wav::s_load_sound(&same).unwrap(), 11025);
     assert_eq!(data.width(), Width::Sixteen);
-    assert_eq!(data.sample_16(1), Some(-1000));
-    assert_eq!(data.sample_8(1), None);
-    assert_eq!(data.sample_16(8), Some(0), "past the end is silence");
+    assert_eq!(data.sample_16(SamplePos::new(1)), Some(-1000));
+    assert_eq!(data.sample_8(SamplePos::new(1)), None);
+    assert_eq!(
+        data.sample_16(SamplePos::new(8)),
+        Some(0),
+        "past the end is silence"
+    );
 }
 
 // spec SND-2.1: nothing starts under nosound, and the master volume is fvol * 255 truncated

@@ -16,7 +16,7 @@ use qs_bsp::Bsp;
 use qs_client::{Event, SoundRef, SoundStart};
 use qs_sound::{
     CueSheet, CueTrack, Listener, ListenerLeaf, Mixer, MixerSpec, Music, MusicStream, NullOutput,
-    OggStream, Output, Random, Read, SND_CD_RATE, SfxId, SoundTable, Start, track_files,
+    OggStream, Output, Random, Read, Repeat, SND_CD_RATE, SfxId, SoundTable, Start, track_files,
 };
 
 /// The music files' extensions this host decodes, of QuakeSpasm's `RRE_MUSIC_EXTENSIONS`
@@ -335,11 +335,12 @@ impl Audio {
         let number = track.to_le_bytes()[0];
         if let Some(stream) = self.cd.as_ref().and_then(|cd| cd.stream(number)) {
             tracing::info!(track = number, "music: the CD image's track");
-            self.music.play(&mut self.mixer, Box::new(stream), true);
+            self.music
+                .play(&mut self.mixer, Box::new(stream), Repeat::Loop);
             return;
         }
         match self.track_file(number) {
-            TrackFile::Found(stream) => self.music.play(&mut self.mixer, stream, true),
+            TrackFile::Found(stream) => self.music.play(&mut self.mixer, stream, Repeat::Loop),
             TrackFile::Missing => {
                 tracing::info!(track = number, "Couldn't find a cdrip for track {number}");
             }
