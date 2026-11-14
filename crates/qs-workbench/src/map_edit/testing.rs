@@ -5,13 +5,16 @@
 
 #![expect(
     clippy::unwrap_used,
-    reason = "test code: a failed unwrap is a failed test"
+    clippy::indexing_slicing,
+    reason = "test code: a failed unwrap or index is a failed test"
 )]
 
 use std::path::{Path, PathBuf};
 
 use qs_commands::{Registry, Session};
-use qs_map::{Entity, MapFile};
+use qs_map::{Brush, Entity, Item, MapFile, Surface, TexDef};
+use qs_wad::write::WadBuilder;
+use serde_json::json;
 
 use super::{
     ClassInfo, EntityCheck, EntityProblem, GameFolders, HasMap, LiveChange, LiveMap, MapDocument,
@@ -38,6 +41,15 @@ impl MapContext {
     /// A session over a context with no project and no game.
     pub(crate) fn session() -> Session<Self> {
         Self::default().into_session()
+    }
+
+    /// A session over a context with no project and no game, the map at `path` open.
+    pub(crate) fn opened(path: &Path) -> Session<Self> {
+        let mut session = Self::session();
+        session
+            .execute(super::MAP_OPEN, json!({ "path": path }))
+            .unwrap();
+        session
     }
 
     /// The open map.
@@ -124,4 +136,69 @@ impl LiveMap for TestGame {
     fn game_folders(&self) -> GameFolders {
         self.folders.clone()
     }
+}
+
+/// A texture lump `name`, 16 by 16, every pixel 1.
+fn miptex(name: &str) -> Vec<u8> {
+    let mut lump = name.as_bytes().to_vec();
+    lump.resize(16, 0);
+    for value in [16_u32, 16, 40, 40 + 256, 40 + 256 + 64, 40 + 256 + 64 + 16] {
+        lump.extend_from_slice(&value.to_le_bytes());
+    }
+    lump.resize(40 + 256 + 64 + 16 + 4, 1);
+    lump
+}
+
+/// A room of six walls of `wall` around -128 to 128, its +y wall left out when `open`, the
+/// first wall's texture `first`, with a player start inside, naming `test.wad`; written with
+/// that WAD (holding only `wall`) into a folder of its own; the map's path.
+pub(crate) fn room(name: &str, first: &str, open: Opening) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("qs-wb-compile-{name}-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut wad = WadBuilder::new();
+    wad.add(b"wall", qs_wad::WAD_TYP_MIPTEX, miptex("wall"))
+        .unwrap();
+    std::fs::write(dir.join("test.wad"), wad.to_bytes().unwrap()).unwrap();
+    let mut file = MapFile::parse(
+        b"{\n\"classname\" \"worldspawn\"\n\"wad\" \"test.wad\"\n}\n\
+          {\n\"classname\" \"info_player_start\"\n\"origin\" \"0 0 24\"\n}\n",
+    )
+    .unwrap();
+    let surface = |texture: &str| Surface {
+        texture: texture.as_bytes().to_vec(),
+        texdef: TexDef::Standard {
+            shift: [0.0; 2],
+            rotate: 0.0,
+            scale: [1.0; 2],
+        },
+    };
+    let (a, b) = (128.0, 144.0);
+    let walls = [
+        ([-b, -b, -b], [b, b, -a]),
+        ([-b, -b, a], [b, b, b]),
+        ([-b, -b, -a], [-a, b, a]),
+        ([a, -b, -a], [b, b, a]),
+        ([-a, -b, -a], [a, -a, a]),
+        ([-a, a, -a], [a, b, a]),
+    ];
+    let kept = match open {
+        Opening::Sealed => walls.len(),
+        Opening::Open => walls.len().saturating_sub(1),
+    };
+    for (i, (min, max)) in walls.into_iter().take(kept).enumerate() {
+        let texture = if i == 0 { first } else { "wall" };
+        let brush = Brush::cuboid(min, max, &surface(texture)).unwrap();
+        file.entities[0].items.push(Item::Brush(brush));
+    }
+    let path = dir.join(format!("{name}.map"));
+    std::fs::write(&path, file.to_bytes()).unwrap();
+    path
+}
+
+/// Whether the room has its +y wall.
+#[derive(Clone, Copy)]
+pub(crate) enum Opening {
+    Sealed,
+    Open,
 }

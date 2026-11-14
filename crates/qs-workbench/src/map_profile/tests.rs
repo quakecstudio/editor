@@ -18,9 +18,10 @@ use super::{
     Variable, VisSpeed,
 };
 use crate::OPEN_PROJECT;
-use crate::map_compile::tests::{Context, Opening, open, room};
+use crate::map_compile::tests::{Context, open};
 use crate::map_edit::MAP_OPEN;
 use crate::map_edit::Seal;
+use crate::map_edit::testing::{Opening, room};
 use qs_commands::Session;
 
 fn expansions() -> Expansions {

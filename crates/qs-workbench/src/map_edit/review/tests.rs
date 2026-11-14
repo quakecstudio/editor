@@ -10,7 +10,7 @@ use qs_commands::Session;
 use serde_json::{Value, json};
 
 use super::{HunkSide, MAP_ACCEPT, MAP_REJECT, MAP_STAGE, MAP_STAGED, MAP_UNSTAGE, MapHunk};
-use crate::map_compile::tests::{Context, Opening, open, room};
+use crate::map_edit::testing::{MapContext, Opening, room};
 use crate::map_edit::{
     EntityIndex, MAP_BRUSH_CREATE, MAP_DELETE, MAP_HIDE, MAP_PLACE, MAP_SAVE, MAP_SELECT,
 };
@@ -30,18 +30,18 @@ fn named(hunk: &MapHunk) -> Vec<String> {
         .collect()
 }
 
-fn staged(session: &mut Session<Context>) -> Vec<MapHunk> {
+fn staged(session: &mut Session<MapContext>) -> Vec<MapHunk> {
     serde_json::from_value(session.execute(MAP_STAGED, json!({})).unwrap()).unwrap()
 }
 
 /// The open map's text, saved.
-fn saved(session: &mut Session<Context>, path: &std::path::Path) -> String {
+fn saved(session: &mut Session<MapContext>, path: &std::path::Path) -> String {
     session.execute(MAP_SAVE, json!({})).unwrap();
     String::from_utf8(std::fs::read(path).unwrap()).unwrap()
 }
 
 /// Adds a pillar of two brushes to the world and a light, after review began.
-fn agent_edits(session: &mut Session<Context>) {
+fn agent_edits(session: &mut Session<MapContext>) {
     session.execute(MAP_STAGE, json!({})).unwrap();
     for (min, max) in [
         ([-32.0, -32.0, -128.0], [32.0, 32.0, 0.0]),
@@ -64,7 +64,7 @@ fn agent_edits(session: &mut Session<Context>) {
 #[test]
 fn edits_after_review_begins_wait_as_hunks() {
     let path = room("review-list", "wall", Opening::Sealed);
-    let mut session = open(&path);
+    let mut session = MapContext::opened(&path);
     session
         .execute(
             MAP_PLACE,
@@ -89,7 +89,7 @@ fn edits_after_review_begins_wait_as_hunks() {
 #[test]
 fn hunks_are_accepted_or_rejected() {
     let path = room("review-decide", "wall", Opening::Sealed);
-    let mut session = open(&path);
+    let mut session = MapContext::opened(&path);
     let before = saved(&mut session, &path);
     agent_edits(&mut session);
     let left: Vec<MapHunk> = serde_json::from_value(
@@ -135,7 +135,7 @@ fn hunks_are_accepted_or_rejected() {
 #[test]
 fn rejecting_everything_restores_the_map() {
     let path = room("review-all", "wall", Opening::Sealed);
-    let mut session = open(&path);
+    let mut session = MapContext::opened(&path);
     let before = saved(&mut session, &path);
     agent_edits(&mut session);
     let error = session
@@ -151,7 +151,7 @@ fn rejecting_everything_restores_the_map() {
 #[test]
 fn accepting_everything_ends_review() {
     let path = room("review-accept-all", "wall", Opening::Sealed);
-    let mut session = open(&path);
+    let mut session = MapContext::opened(&path);
     agent_edits(&mut session);
     assert_eq!(staged(&mut session).len(), 2);
     let left = session.execute(MAP_ACCEPT, json!({})).unwrap();
@@ -164,9 +164,9 @@ fn accepting_everything_ends_review() {
 #[test]
 fn a_rejection_keeps_the_view_while_it_can() {
     let path = room("review-view", "wall", Opening::Sealed);
-    let mut session = open(&path);
+    let mut session = MapContext::opened(&path);
     agent_edits(&mut session);
-    let document = |session: &Session<Context>| session.context().workbench.map().unwrap().clone();
+    let document = |session: &Session<MapContext>| session.context().map().unwrap().clone();
     let start = EntityIndex::new(1);
     session
         .execute(MAP_HIDE, json!({ "entities": [1] }))
@@ -190,7 +190,7 @@ fn a_rejection_keeps_the_view_while_it_can() {
 #[test]
 fn undoing_a_rejection_reopens_review() {
     let path = room("review-undo", "wall", Opening::Sealed);
-    let mut session = open(&path);
+    let mut session = MapContext::opened(&path);
     agent_edits(&mut session);
     session.execute(MAP_REJECT, json!({})).unwrap();
     assert!(staged(&mut session).is_empty());
@@ -211,7 +211,7 @@ fn undoing_a_rejection_reopens_review() {
 #[test]
 fn review_ends_when_nothing_differs() {
     let path = room("review-settle", "wall", Opening::Sealed);
-    let mut session = open(&path);
+    let mut session = MapContext::opened(&path);
     session.execute(MAP_STAGE, json!({})).unwrap();
     session
         .execute(

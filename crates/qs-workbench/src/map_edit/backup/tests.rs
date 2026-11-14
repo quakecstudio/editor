@@ -12,19 +12,19 @@ use qs_commands::Session;
 use serde_json::{Value, json};
 
 use super::{BACKUP_FOLDER, BACKUPS_KEPT, Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP};
-use crate::map_compile::tests::{Context, Opening, open, room};
+use crate::map_edit::testing::{MapContext, Opening, room};
 use crate::map_edit::{MAP_SAVE, MAP_SET_KEY, MapSaved};
 
-fn backups(session: &mut Session<Context>) -> Vec<Backup> {
+fn backups(session: &mut Session<MapContext>) -> Vec<Backup> {
     serde_json::from_value(session.execute(MAP_BACKUPS, json!({})).unwrap()).unwrap()
 }
 
-fn backup(session: &mut Session<Context>) -> Backup {
+fn backup(session: &mut Session<MapContext>) -> Backup {
     serde_json::from_value(session.execute(MAP_BACKUP, json!({})).unwrap()).unwrap()
 }
 
 /// Sets the world's `message` to `text`.
-fn set_message(session: &mut Session<Context>, text: &str) -> Value {
+fn set_message(session: &mut Session<MapContext>, text: &str) -> Value {
     session
         .execute(
             MAP_SET_KEY,
@@ -43,7 +43,7 @@ fn has_message(path: &Path, text: &str) -> bool {
 #[test]
 fn backups_are_numbered_and_the_oldest_removed() {
     let map = room("backup-numbers", "wall", Opening::Sealed);
-    let mut session = open(&map);
+    let mut session = MapContext::opened(&map);
     assert!(backups(&mut session).is_empty());
     set_message(&mut session, "unsaved");
     let first = backup(&mut session);
@@ -80,7 +80,7 @@ fn backups_are_numbered_and_the_oldest_removed() {
 #[test]
 fn saving_takes_a_backup() {
     let map = room("backup-save", "wall", Opening::Sealed);
-    let mut session = open(&map);
+    let mut session = MapContext::opened(&map);
     set_message(&mut session, "saved");
     let saved: MapSaved =
         serde_json::from_value(session.execute(MAP_SAVE, json!({})).unwrap()).unwrap();
@@ -94,12 +94,12 @@ fn saving_takes_a_backup() {
 #[test]
 fn a_backup_restores_the_map_after_a_crash() {
     let map = room("backup-crash", "wall", Opening::Sealed);
-    let mut session = open(&map);
+    let mut session = MapContext::opened(&map);
     set_message(&mut session, "lost in the crash");
     backup(&mut session);
     // The crash: the session ends with nothing saved.
     drop(session);
-    let mut session = open(&map);
+    let mut session = MapContext::opened(&map);
     assert!(!has_message(&map, "lost in the crash"));
     let found = backups(&mut session);
     assert_eq!(found.len(), 1);
@@ -126,7 +126,7 @@ fn a_backup_restores_the_map_after_a_crash() {
 fn a_save_whose_backup_fails_still_saves() {
     let map = room("backup-blocked", "wall", Opening::Sealed);
     std::fs::write(map.parent().unwrap().join(BACKUP_FOLDER), "not a folder").unwrap();
-    let mut session = open(&map);
+    let mut session = MapContext::opened(&map);
     set_message(&mut session, "kept");
     let saved: MapSaved =
         serde_json::from_value(session.execute(MAP_SAVE, json!({})).unwrap()).unwrap();
