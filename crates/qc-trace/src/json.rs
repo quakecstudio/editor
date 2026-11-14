@@ -19,7 +19,7 @@ const FORMAT_NAME: &str = "qc-trace";
 pub fn to_json(trace: &Trace) -> String {
     let mut out = header_to_json(&trace.header);
     for record in &trace.records {
-        out.push_str(&record_to_json(record));
+        out.push_str(&record.to_json());
     }
     out
 }
@@ -38,61 +38,63 @@ pub fn header_to_json(header: &Header) -> String {
     )
 }
 
-/// One record's JSON line, ending in a line feed (TRACE-6.3 to TRACE-6.6).
-#[must_use]
-pub fn record_to_json(record: &Record) -> String {
-    let mut out = String::new();
-    match record {
-        Record::Run { function, changes } => {
-            out.push_str(&format!("{{\"t\":\"run\",\"function\":{function}"));
-            push_changes(&mut out, changes);
-        }
-        Record::Step(Step {
-            function,
-            statement,
-            opcode,
-            builtin,
-            changes,
-        }) => {
-            out.push_str(&format!(
-                "{{\"t\":\"step\",\"function\":{function},\"statement\":{statement},\
-                 \"opcode\":{opcode}"
-            ));
-            if let Some(number) = builtin {
-                out.push_str(&format!(",\"builtin\":{number}"));
+impl Record {
+    /// One self's JSON line, ending in a line feed (TRACE-6.3 to TRACE-6.6).
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        let mut out = String::new();
+        match self {
+            Record::Run { function, changes } => {
+                out.push_str(&format!("{{\"t\":\"run\",\"function\":{function}"));
+                push_changes(&mut out, changes);
             }
-            push_changes(&mut out, changes);
+            Record::Step(Step {
+                function,
+                statement,
+                opcode,
+                builtin,
+                changes,
+            }) => {
+                out.push_str(&format!(
+                    "{{\"t\":\"step\",\"function\":{function},\"statement\":{statement},\
+                     \"opcode\":{opcode}"
+                ));
+                if let Some(number) = builtin {
+                    out.push_str(&format!(",\"builtin\":{number}"));
+                }
+                push_changes(&mut out, changes);
+            }
+            Record::Exit { changes } => {
+                out.push_str("{\"t\":\"exit\"");
+                push_changes(&mut out, changes);
+            }
+            Record::Error {
+                function,
+                statement,
+                message,
+                changes,
+            } => {
+                out.push_str(&format!(
+                    "{{\"t\":\"error\",\"function\":{function},\"statement\":{statement},\
+                     \"message\":{}",
+                    json_text(message)
+                ));
+                push_changes(&mut out, changes);
+            }
+            Record::Frame { frame, changes } => {
+                out.push_str(&format!("{{\"t\":\"frame\",\"frame\":{frame}"));
+                push_changes(&mut out, changes);
+            }
+            Record::String { value, text } => {
+                out.push_str(&format!(
+                    "{{\"t\":\"string\",\"value\":\"{value:08x}\",\"text\":{}",
+                    json_text(text)
+                ));
+            }
         }
-        Record::Exit { changes } => {
-            out.push_str("{\"t\":\"exit\"");
-            push_changes(&mut out, changes);
-        }
-        Record::Error {
-            function,
-            statement,
-            message,
-            changes,
-        } => {
-            out.push_str(&format!(
-                "{{\"t\":\"error\",\"function\":{function},\"statement\":{statement},\
-                 \"message\":{}",
-                json_text(message)
-            ));
-            push_changes(&mut out, changes);
-        }
-        Record::Frame { frame, changes } => {
-            out.push_str(&format!("{{\"t\":\"frame\",\"frame\":{frame}"));
-            push_changes(&mut out, changes);
-        }
-        Record::String { value, text } => {
-            out.push_str(&format!(
-                "{{\"t\":\"string\",\"value\":\"{value:08x}\",\"text\":{}",
-                json_text(text)
-            ));
-        }
+        out.push_str("}\n");
+        out
     }
-    out.push_str("}\n");
-    out
 }
 
 fn push_changes(out: &mut String, changes: &Changes) {

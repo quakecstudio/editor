@@ -201,7 +201,7 @@ fn describe(ours: Option<&Record>, recorded: Option<&Record>) -> String {
         (ours, recorded)
     else {
         let json = |record: Option<&Record>| {
-            record.map_or_else(|| "no record".to_owned(), qc_trace::record_to_json)
+            record.map_or_else(|| "no record".to_owned(), qc_trace::Record::to_json)
         };
         return format!(
             "ours {} recorded {}",

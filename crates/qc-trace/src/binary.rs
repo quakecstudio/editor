@@ -21,7 +21,7 @@ pub fn encode(trace: &Trace) -> Vec<u8> {
     let mut out = Vec::new();
     encode_header(&trace.header, &mut out);
     for record in &trace.records {
-        encode_record(record, &mut out);
+        record.encode(&mut out);
     }
     out
 }
@@ -41,59 +41,61 @@ pub fn encode_header(header: &Header, out: &mut Vec<u8>) {
     }
 }
 
-/// Appends one binary record to `out` (TRACE-5.6), for an emitter that streams its trace.
-pub fn encode_record(record: &Record, out: &mut Vec<u8>) {
-    match record {
-        Record::Run { function, changes } => {
-            out.push(TRACE_TAG_RUN);
-            put_svar(out, *function);
-            put_changes(out, changes);
-        }
-        Record::Step(Step {
-            function,
-            statement,
-            opcode,
-            builtin,
-            changes,
-        }) => {
-            out.push(TRACE_TAG_STEP);
-            put_svar(out, *function);
-            put_svar(out, *statement);
-            put_uvar(out, u32::from(*opcode));
-            match builtin {
-                None => out.push(NO_BUILTIN),
-                Some(number) => {
-                    out.push(HAS_BUILTIN);
-                    put_uvar(out, *number);
-                }
+impl Record {
+    /// Appends one binary self to `out` (TRACE-5.6), for an emitter that streams its trace.
+    pub fn encode(&self, out: &mut Vec<u8>) {
+        match self {
+            Record::Run { function, changes } => {
+                out.push(TRACE_TAG_RUN);
+                put_svar(out, *function);
+                put_changes(out, changes);
             }
-            put_changes(out, changes);
-        }
-        Record::Exit { changes } => {
-            out.push(TRACE_TAG_EXIT);
-            put_changes(out, changes);
-        }
-        Record::Error {
-            function,
-            statement,
-            message,
-            changes,
-        } => {
-            out.push(TRACE_TAG_ERROR);
-            put_svar(out, *function);
-            put_svar(out, *statement);
-            put_text(out, message);
-            put_changes(out, changes);
-        }
-        Record::Frame { frame, changes } => {
-            out.push(TRACE_TAG_FRAME);
-            put_uvar(out, *frame);
-            put_changes(out, changes);
-        }
-        Record::String { value, text } => {
-            out.push(TRACE_TAG_STRING);
-            put_word(out, *value);
-            put_text(out, text);
+            Record::Step(Step {
+                function,
+                statement,
+                opcode,
+                builtin,
+                changes,
+            }) => {
+                out.push(TRACE_TAG_STEP);
+                put_svar(out, *function);
+                put_svar(out, *statement);
+                put_uvar(out, u32::from(*opcode));
+                match builtin {
+                    None => out.push(NO_BUILTIN),
+                    Some(number) => {
+                        out.push(HAS_BUILTIN);
+                        put_uvar(out, *number);
+                    }
+                }
+                put_changes(out, changes);
+            }
+            Record::Exit { changes } => {
+                out.push(TRACE_TAG_EXIT);
+                put_changes(out, changes);
+            }
+            Record::Error {
+                function,
+                statement,
+                message,
+                changes,
+            } => {
+                out.push(TRACE_TAG_ERROR);
+                put_svar(out, *function);
+                put_svar(out, *statement);
+                put_text(out, message);
+                put_changes(out, changes);
+            }
+            Record::Frame { frame, changes } => {
+                out.push(TRACE_TAG_FRAME);
+                put_uvar(out, *frame);
+                put_changes(out, changes);
+            }
+            Record::String { value, text } => {
+                out.push(TRACE_TAG_STRING);
+                put_word(out, *value);
+                put_text(out, text);
+            }
         }
     }
 }
