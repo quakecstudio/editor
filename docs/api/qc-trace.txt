@@ -40,13 +40,13 @@ fn qc_trace::Record::changes
 fn qc_trace::Text::as_bytes
 fn qc_trace::Text::new
 fn qc_trace::Trace::string_value
+fn qc_trace::binary::Record::encode
 fn qc_trace::binary::decode
 fn qc_trace::binary::encode
 fn qc_trace::binary::encode_header
-fn qc_trace::binary::encode_record
+fn qc_trace::json::Record::to_json
 fn qc_trace::json::from_json
 fn qc_trace::json::header_to_json
-fn qc_trace::json::record_to_json
 fn qc_trace::json::to_json
 impl qc_trace::JsonFault: fmt::Display
 impl qc_trace::TraceError: fmt::Display
@@ -61,10 +61,8 @@ struct qc_trace::Trace
 use qc_trace::decode = binary::decode
 use qc_trace::encode = binary::encode
 use qc_trace::encode_header = binary::encode_header
-use qc_trace::encode_record = binary::encode_record
 use qc_trace::from_json = json::from_json
 use qc_trace::header_to_json = json::header_to_json
-use qc_trace::record_to_json = json::record_to_json
 use qc_trace::to_json = json::to_json
 variant qc_trace::JsonFault::BlankLine
 variant qc_trace::JsonFault::EdictOutOfRange

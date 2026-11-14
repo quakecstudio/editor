@@ -1269,10 +1269,10 @@ Items that left the root (32): `const qc_syntax::parser::FTEQCC_MAX_NAME`, `enum
 | `fn qc_trace::binary::decode` | `qc-preproc`, `qs-wad`, `qs-vfs`, `qc-lno`, `qs-differential`, `qc-progs`, `xtask`, `fuzz` | kept public: used by `qc-preproc`, `qs-wad`, `qs-vfs`, `qc-lno`, `qs-differential`, `qc-progs`, `xtask`, `fuzz` |
 | `fn qc_trace::binary::encode` | `qc-preproc`, `qs-differential`, `qc-progs`, `lsp`, `xtask` | kept public: used by `qc-preproc`, `qs-differential`, `qc-progs`, `lsp`, `xtask` |
 | `fn qc_trace::binary::encode_header` | none | kept public: the trace format's codec (TRACE-*) the oracles and the differential exchange |
-| `fn qc_trace::binary::encode_record` | none | kept public: the trace format's codec (TRACE-*) the oracles and the differential exchange |
+| `fn qc_trace::binary::Record::encode` | none | kept public: the trace format's codec (TRACE-*) the oracles and the differential exchange |
 | `fn qc_trace::json::from_json` | none | kept public: the trace format's codec (TRACE-*) the oracles and the differential exchange |
 | `fn qc_trace::json::header_to_json` | none | kept public: the trace format's codec (TRACE-*) the oracles and the differential exchange |
-| `fn qc_trace::json::record_to_json` | none | kept public: the trace format's codec (TRACE-*) the oracles and the differential exchange |
+| `fn qc_trace::json::Record::to_json` | `xtask` | kept public: used by `xtask` |
 | `fn qc_trace::json::to_json` | `xtask` | kept public: used by `xtask` |
 | `struct qc_trace::Changes` | `qs-workbench`, `qs-differential`, `qs-editor-view`, `qs-commands`, `qc-vm`, `xtask` | kept public: used by `qs-workbench`, `qs-differential`, `qs-editor-view`, `qs-commands`, `qc-vm`, `xtask` |
 | `struct qc_trace::FieldChange` | `qs-differential`, `qc-vm`, `xtask` | kept public: used by `qs-differential`, `qc-vm`, `xtask` |
@@ -1284,10 +1284,8 @@ Items that left the root (32): `const qc_syntax::parser::FTEQCC_MAX_NAME`, `enum
 | `use qc_trace::decode = binary::decode` | `qc-preproc`, `qs-wad`, `qs-vfs`, `qc-lno`, `qs-differential`, `qc-progs`, `xtask`, `fuzz` | kept public: used by `qc-preproc`, `qs-wad`, `qs-vfs`, `qc-lno`, `qs-differential`, `qc-progs`, `xtask`, `fuzz` |
 | `use qc_trace::encode = binary::encode` | `qc-preproc`, `qs-differential`, `qc-progs`, `lsp`, `xtask` | kept public: used by `qc-preproc`, `qs-differential`, `qc-progs`, `lsp`, `xtask` |
 | `use qc_trace::encode_header = binary::encode_header` | none | kept public: the trace format's codec (TRACE-*) the oracles and the differential exchange |
-| `use qc_trace::encode_record = binary::encode_record` | none | kept public: the trace format's codec (TRACE-*) the oracles and the differential exchange |
 | `use qc_trace::from_json = json::from_json` | none | kept public: the trace format's codec (TRACE-*) the oracles and the differential exchange |
 | `use qc_trace::header_to_json = json::header_to_json` | none | kept public: the trace format's codec (TRACE-*) the oracles and the differential exchange |
-| `use qc_trace::record_to_json = json::record_to_json` | none | kept public: the trace format's codec (TRACE-*) the oracles and the differential exchange |
 | `use qc_trace::to_json = json::to_json` | `xtask` | kept public: used by `xtask` |
 
 ## `qc-types` (L0)

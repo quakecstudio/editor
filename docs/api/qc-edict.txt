@@ -4,6 +4,7 @@ const qc_edict::number::EdictNumber::WORLD
 enum qc_edict::layout::LayoutError
 enum qc_edict::store::EdictError
 enum qc_edict::store::EdictEvent
+enum qc_edict::store::Tracking
 field qc_edict::system::SysVar.etype
 field qc_edict::system::SysVar.name
 field qc_edict::system::SysVar.slot
@@ -59,6 +60,7 @@ use qc_edict::EdictLayout = layout::EdictLayout
 use qc_edict::EdictNumber = number::EdictNumber
 use qc_edict::EdictStore = store::EdictStore
 use qc_edict::LayoutError = layout::LayoutError
+use qc_edict::Tracking = store::Tracking
 variant qc_edict::layout::LayoutError::FieldsTooFew
 variant qc_edict::layout::LayoutError::FieldsTooMany
 variant qc_edict::layout::LayoutError::GlobalsTooFew
@@ -70,3 +72,5 @@ variant qc_edict::store::EdictError::NoFreeEdicts
 variant qc_edict::store::EdictEvent::Allocated
 variant qc_edict::store::EdictEvent::Freed
 variant qc_edict::store::EdictEvent::Written
+variant qc_edict::store::Tracking::Off
+variant qc_edict::store::Tracking::On
