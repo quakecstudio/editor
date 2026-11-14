@@ -367,8 +367,8 @@ impl AgentPanel {
 
     /// Queues `text` for thread `index`'s next turn, as its box does. For tests.
     #[cfg(test)]
-    pub(crate) fn queue_for_test(&mut self, index: usize, text: &str) {
-        if let Some(thread) = self.threads.get_mut(index) {
+    pub(crate) fn queue_for_test(&mut self, index: ThreadIndex, text: &str) {
+        if let Some(thread) = self.threads.get_mut(index.get()) {
             thread.queued.push(text.to_owned());
         }
     }
@@ -387,7 +387,7 @@ impl AgentPanel {
     /// Gives a PNG as context: to the selected thread while it runs, else to the next thread
     /// started (P4-31).
     pub fn attach_png(&mut self, bytes: &[u8]) {
-        let data = qs_agent::base64(bytes);
+        let data = qs_bridge::base64(bytes);
         let running = self
             .selected
             .and_then(|index| self.threads.get_mut(index))
@@ -648,8 +648,12 @@ impl AgentPanel {
     /// and the reply come one after the other from the model's thread, so waiting for the text
     /// alone would leave the reply to a race with the next frame.
     #[cfg(test)]
-    pub(crate) fn wait<C: 'static>(&mut self, session: &mut Session<C>, index: usize) -> bool {
-        let Some(thread) = self.threads.get_mut(index) else {
+    pub(crate) fn wait<C: 'static>(
+        &mut self,
+        session: &mut Session<C>,
+        index: ThreadIndex,
+    ) -> bool {
+        let Some(thread) = self.threads.get_mut(index.get()) else {
             return false;
         };
         let mut followed = Vec::new();

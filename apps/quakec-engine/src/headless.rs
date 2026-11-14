@@ -102,7 +102,7 @@ const SETTLE_FRAMES: u16 = 72;
 const PASSES: u16 = 16;
 
 impl Loaded {
-    /// `--timerefresh <x> <y> <z>` (P3-29, ENG-17): the map of `loaded`, which took `load` to load,
+    /// `--timerefresh <x> <y> <z>` (P3-29, ENG-17): the loaded map, which took `load` to load,
     /// run for a second with each server frame and its QuakeC timed, then id's `timerefresh` from
     /// `eye`, the 128 frames drawn offscreen at the window's first size with no server frame
     /// between them and finished on the GPU, [`PASSES`] times; then id's line for the first pass
@@ -174,7 +174,7 @@ impl Loaded {
         Ok(format!("{first:.6} seconds ({fps:.6} fps)\n{json}"))
     }
 
-    /// `--view-script <script> <audio>` (P3-28): the map of `loaded` played as `script` says, its
+    /// `--view-script <script> <audio>` (P3-28): the loaded map played as `script` says, its
     /// shots written as binary PPMs and the sound mixed meanwhile written to `audio` as 16-bit
     /// little-endian stereo at 11025 Hz, as the view oracle writes them (VIEWDIFF-1, VIEWDIFF-2).
     ///
@@ -288,7 +288,7 @@ impl Overlay {
     }
 
     /// The console and the menu as the window draws them on `screen`, in QuakeSpasm's layout
-    /// when `native` (CON-5), the options showing `settings`.
+    /// under `look`'s native 2D layer (CON-5), the options showing `settings`.
     fn hud(&mut self, screen: [i32; 2], look: Look, settings: MenuSettings) -> Hud {
         let native = look.native_2d();
         let [_, height] = screen;
@@ -328,7 +328,7 @@ impl Overlay {
 }
 
 impl Frame {
-    /// `frame` as a binary PPM, `P6`, its alpha dropped (VIEWDIFF-1.4).
+    /// The frame as a binary PPM, `P6`, its alpha dropped (VIEWDIFF-1.4).
     fn ppm(&self) -> Vec<u8> {
         let mut bytes = format!("P6\n{} {}\n255\n", self.width, self.height).into_bytes();
         for &[r, g, b, _] in self.rgba.as_chunks::<RGBA_BYTES>().0 {

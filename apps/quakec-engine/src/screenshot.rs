@@ -102,7 +102,7 @@ pub(crate) struct Frame {
 }
 
 impl Frame {
-    /// `frame` as `screenshot`'s result: scaled to `size` when one is asked, encoded as a PNG in
+    /// The frame as `screenshot`'s result: scaled to `size` when one is asked, encoded as a PNG in
     /// base64, with its size.
     ///
     /// # Errors

@@ -6,25 +6,7 @@
     reason = "test code: a failed unwrap is a failed test"
 )]
 
-use super::{Frame, base64};
-
-// RFC 4648, section 10, "Test Vectors"
-#[test]
-fn base64_matches_the_rfc_vectors() {
-    let vectors = [
-        ("", ""),
-        ("f", "Zg=="),
-        ("fo", "Zm8="),
-        ("foo", "Zm9v"),
-        ("foob", "Zm9vYg=="),
-        ("fooba", "Zm9vYmE="),
-        ("foobar", "Zm9vYmFy"),
-    ];
-    for (input, output) in vectors {
-        assert_eq!(base64(input.as_bytes()), output, "{input:?}");
-    }
-    assert_eq!(base64(&[0xFF, 0xEF, 0xBE]), "/+++");
-}
+use super::Frame;
 
 fn frame(width: u32, height: u32) -> Frame {
     let pixels = usize::try_from(width * height).unwrap();

@@ -29,7 +29,6 @@
 //! recorded first, so the person can accept the hunks or undo everything (AGT-4, PRIN-4).
 
 pub use qc_edict::EdictNumber;
-pub use qs_bridge::base64;
 pub use qs_checkpoint::CheckpointNumber;
 use std::path::{Path, PathBuf};
 

@@ -3544,7 +3544,6 @@ dependencies = [
  "qc-edict",
  "qc-project",
  "qc-types",
- "qs-bridge",
  "qs-checkpoint",
  "qs-commands",
  "qs-map",
@@ -3578,6 +3577,7 @@ name = "qs-bridge"
 version = "2026.11.1"
 dependencies = [
  "jsonschema",
+ "proptest",
  "serde_json",
 ]
 
@@ -3666,7 +3666,6 @@ name = "qs-engine"
 version = "2026.11.1"
 dependencies = [
  "interprocess",
- "proptest",
  "qc-edict",
  "qs-bridge",
  "qs-install",
@@ -4056,6 +4055,7 @@ dependencies = [
  "image",
  "muda",
  "qs-agent",
+ "qs-bridge",
  "qs-bsp",
  "qs-commands",
  "qs-editor-view",

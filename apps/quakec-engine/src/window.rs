@@ -9,6 +9,7 @@
 //! has captured it; Escape frees it. `--fly` gives a free camera instead, Space and C rising
 //! and sinking.
 
+use qc_vm::convert::int_to_float;
 use std::io::Write as _;
 use std::time::Instant;
 
@@ -82,8 +83,7 @@ impl Args {
     /// Opens the window on the map `loaded` holds and runs the game until it closes or the
     /// bridge's client stops it.
     pub(crate) fn run_window(&self, loaded: Loaded, bridge: Option<Bridge>) -> Result<(), String> {
-        let args = self;
-        let args = args.clone();
+        let args = self.clone();
         let benchmark = args.benchmark;
         if benchmark.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
             return Err("--benchmark needs a positive number of seconds".to_owned());
@@ -1150,7 +1150,7 @@ pub(crate) const CONWIDTH: i32 = 640;
     reason = "a rounded height of a few hundred units"
 )]
 pub(crate) fn screen_height(aspect: f32) -> i32 {
-    (f32::from(u16::try_from(CONWIDTH).unwrap_or(u16::MAX)) / aspect.max(MIN_ASPECT)).round() as i32
+    (int_to_float(CONWIDTH) / aspect.max(MIN_ASPECT)).round() as i32
 }
 
 /// The server's frame as the client's `host_frametime`, in seconds.

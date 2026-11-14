@@ -52,7 +52,6 @@ fn qs_engine::client::Client::spawn_player_at
 fn qs_engine::client::Client::step
 fn qs_engine::client::Client::take_events
 fn qs_engine::client::Client::wait_event
-fn qs_engine::client::base64_decode
 fn qs_engine::launch::LaunchSpec::command
 fn qs_engine::launch::LaunchSpec::launch
 fn qs_engine::launch::locate_host
@@ -88,7 +87,7 @@ use qs_engine::RunRootError = run_root::RunRootError
 use qs_engine::Running = launch::Running
 use qs_engine::StepKind = client::StepKind
 use qs_engine::WindowPlacement = client::WindowPlacement
-use qs_engine::base64_decode = client::base64_decode
+use qs_engine::base64_decode = qs_bridge::base64_decode
 use qs_engine::locate_host = launch::locate_host
 use qs_engine::prepare_run_root = run_root::prepare_run_root
 variant qs_engine::client::ClientError::Closed

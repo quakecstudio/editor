@@ -178,3 +178,14 @@ fn boxes_and_barrels_are_external_brush_models() {
     assert!(!is_external_brush_model("progs/player.mdl", world));
     assert!(!is_external_brush_model("*1", world));
 }
+
+// No spec statement: the client's `rand ()` is C's linear congruential generator, its value
+// the 31 bits below the top one of each step
+#[test]
+fn rand_steps_as_cs_does() {
+    let mut rand = super::Rand(1);
+    assert_eq!(
+        [rand.next(), rand.next(), rand.next()],
+        [551_763_795, 1_262_442_611, 331_412_042]
+    );
+}

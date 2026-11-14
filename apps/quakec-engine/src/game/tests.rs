@@ -1562,3 +1562,9 @@ fn window_place_refuses_a_bad_frame() {
     }
     assert_eq!(game.take_placement(), None);
 }
+
+// No spec statement: a breakpoint's id reads back as the number it was given
+#[test]
+fn a_breakpoint_id_reads_back() {
+    assert_eq!(super::debug::BreakpointId::new(7).get(), 7);
+}

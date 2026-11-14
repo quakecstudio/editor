@@ -431,7 +431,7 @@ impl Client {
         answer
             .get("png")
             .and_then(Value::as_str)
-            .and_then(base64_decode)
+            .and_then(qs_bridge::base64_decode)
             .ok_or_else(|| ClientError::Unsupported("screenshot".to_owned()))
     }
 
@@ -686,53 +686,4 @@ impl std::fmt::Display for BreakpointId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
-}
-
-/// `text` decoded from base64 (RFC 4648, section 4, with `=` padding), as the host writes a
-/// screenshot's PNG; `None` for text that is not base64.
-#[must_use]
-pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
-    // The alphabet's runs and the value each starts at (RFC 4648, section 4, Table 1).
-    const UPPER: u8 = 0;
-    const LOWER: u8 = 26;
-    const DIGITS: u8 = 52;
-    const PLUS: u8 = 62;
-    const SLASH: u8 = 63;
-    // Each four symbols of six bits are three bytes; padding stands for the bytes not there.
-    const GROUP_BYTES: usize = 3;
-    const GROUP_SYMBOLS: usize = 4;
-    const SYMBOL_BITS: u32 = 6;
-    const MAX_PADDING: usize = 2;
-    let value = |c: u8| -> Option<u32> {
-        let index = match c {
-            b'A'..=b'Z' => c.checked_sub(b'A')?.checked_add(UPPER)?,
-            b'a'..=b'z' => c.checked_sub(b'a')?.checked_add(LOWER)?,
-            b'0'..=b'9' => c.checked_sub(b'0')?.checked_add(DIGITS)?,
-            b'+' => PLUS,
-            b'/' => SLASH,
-            _ => return None,
-        };
-        Some(u32::from(index))
-    };
-    let bytes = text.trim().as_bytes();
-    if !bytes.len().is_multiple_of(GROUP_SYMBOLS) {
-        return None;
-    }
-    let mut out = Vec::with_capacity(bytes.len());
-    let (quads, _) = bytes.as_chunks::<GROUP_SYMBOLS>();
-    let last = quads.len().saturating_sub(1);
-    for (n, quad) in quads.iter().enumerate() {
-        let pad = quad.iter().rev().take_while(|&&c| c == b'=').count();
-        if pad > MAX_PADDING || (pad > 0 && n != last) {
-            return None;
-        }
-        let mut word = 0_u32;
-        for &c in quad.iter().take(GROUP_SYMBOLS.saturating_sub(pad)) {
-            word = (word << SYMBOL_BITS) | value(c)?;
-        }
-        word <<= SYMBOL_BITS.checked_mul(u32::try_from(pad).ok()?)?;
-        let [_, a, b, c] = word.to_be_bytes();
-        out.extend([a, b, c].into_iter().take(GROUP_BYTES.saturating_sub(pad)));
-    }
-    Some(out)
 }

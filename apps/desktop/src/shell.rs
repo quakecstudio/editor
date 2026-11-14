@@ -829,7 +829,7 @@ impl Shell {
     /// Waits for the next thing agent thread `index`'s model sends and takes it; `false` when
     /// its model has ended. For tests.
     #[cfg(test)]
-    pub(crate) fn wait_agent(&mut self, index: usize) -> bool {
+    pub(crate) fn wait_agent(&mut self, index: ThreadIndex) -> bool {
         self.agent.wait(&mut self.session, index)
     }
 

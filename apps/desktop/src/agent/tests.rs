@@ -92,7 +92,10 @@ fn frame(ctx: &egui::Context, app: &mut App) {
 /// Takes what thread `index` sends until it has a report.
 fn finish(app: &mut App, index: usize) {
     while app.shell().agent_report(ThreadIndex::new(index)).is_none() {
-        assert!(app.shell_mut().wait_agent(index), "the model ended early");
+        assert!(
+            app.shell_mut().wait_agent(ThreadIndex::new(index)),
+            "the model ended early"
+        );
     }
 }
 
@@ -275,7 +278,10 @@ fn a_call_that_asks_waits_in_the_thread_for_the_modder() {
         .asking(ThreadIndex::new(0))
         .is_none()
     {
-        assert!(shell(&mut harness).wait_agent(0), "the model ended early");
+        assert!(
+            shell(&mut harness).wait_agent(ThreadIndex::new(0)),
+            "the model ended early"
+        );
     }
     harness.run_steps(5);
     assert_eq!(
@@ -464,7 +470,10 @@ fn a_thread_reopened_from_history_shows_messages_hunks_and_checkpoint() {
         .agent_report(ThreadIndex::new(0))
         .is_none()
     {
-        assert!(shell(&mut harness).wait_agent(0), "the model ended early");
+        assert!(
+            shell(&mut harness).wait_agent(ThreadIndex::new(0)),
+            "the model ended early"
+        );
     }
     let kept = history::load(&history::threads_dir(&root)).unwrap();
     assert_eq!(kept.len(), 1, "the thread was kept when it ended");
@@ -494,7 +503,7 @@ fn following_queueing_and_the_finished_count() {
         .unwrap();
     app.shell_mut()
         .agent_mut()
-        .queue_for_test(0, "Also say hello.");
+        .queue_for_test(ThreadIndex::new(0), "Also say hello.");
     gates[0]
         .send(Reply::Calls {
             text: String::new(),
@@ -505,7 +514,7 @@ fn following_queueing_and_the_finished_count() {
             }],
         })
         .unwrap();
-    assert!(app.shell_mut().wait_agent(0));
+    assert!(app.shell_mut().wait_agent(ThreadIndex::new(0)));
     frame(&ctx, &mut app);
     let (open, _) = app.shell().caret().unwrap();
     assert!(open.ends_with("world.qc"), "{open:?}");
