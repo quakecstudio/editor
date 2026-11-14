@@ -58,6 +58,14 @@ pub const K_MWHEELDOWN: u8 = 240;
 /// `K_PAUSE`.
 pub const K_PAUSE: u8 = 255;
 
+/// `bind <key> <command>`'s words (INPUT-1.2).
+const BIND_WORDS: usize = 3;
+
+/// The numbered keys: `F1` to `F12`, `JOY1` to `JOY4` and `AUX1` to `AUX32`, each a prefix,
+/// its first key and its count (INPUT-1.1).
+const NUMBERED_KEYS: [(&str, u8, u8); 3] =
+    [("F", K_F1, 12), ("JOY", K_JOY1, 4), ("AUX", K_AUX1, 32)];
+
 /// `keynames`' names that are not runs of numbered keys, in its order (INPUT-1.1).
 const NAMED: [(&str, u8); 25] = [
     ("TAB", K_TAB),
@@ -107,7 +115,7 @@ pub fn key_from_name(name: &[u8]) -> Option<u8> {
 
 /// `F1` to `F12`, `JOY1` to `JOY4` and `AUX1` to `AUX32`, any case.
 fn numbered(name: &str) -> Option<u8> {
-    let runs: [(&str, u8, u8); 3] = [("F", K_F1, 12), ("JOY", K_JOY1, 4), ("AUX", K_AUX1, 32)];
+    let runs = NUMBERED_KEYS;
     for (prefix, first, count) in runs {
         let Some(head) = name.get(..prefix.len()) else {
             continue;
@@ -133,13 +141,13 @@ fn numbered(name: &str) -> Option<u8> {
 /// name, else `<UNKNOWN KEYNUM>`.
 #[must_use]
 pub fn key_name(key: u8) -> String {
-    if key > 32 && key < 127 {
+    if key > K_SPACE && key < K_BACKSPACE {
         return char::from(key).to_string();
     }
     if let Some((name, _)) = NAMED.iter().find(|(_, k)| *k == key) {
         return (*name).to_owned();
     }
-    let runs: [(&str, u8, u8); 3] = [("F", K_F1, 12), ("JOY", K_JOY1, 4), ("AUX", K_AUX1, 32)];
+    let runs = NUMBERED_KEYS;
     for (prefix, first, count) in runs {
         let n = key.wrapping_sub(first);
         if key >= first && n < count {
@@ -253,7 +261,7 @@ impl Bindings {
     /// `Key_Bind_f` with the command's words `argv` (INPUT-1.2): two words print the binding,
     /// three or more set it to the rest joined by spaces; what it prints.
     pub fn bind(&mut self, argv: &[Vec<u8>]) -> Option<String> {
-        if argv.len() != 2 && argv.len() != 3 {
+        if argv.len() != 2 && argv.len() != BIND_WORDS {
             return Some("bind <key> [command] : attach a command to a key\n".to_owned());
         }
         let name = argv.get(1).map(Vec::as_slice).unwrap_or_default();
@@ -325,7 +333,7 @@ impl Bindings {
     /// when it goes down (INPUT-1.3).
     #[must_use]
     pub fn unbound_notice(&self, key: u8) -> Option<String> {
-        (key >= 200 && self.binding(key).is_none())
+        (key >= K_MOUSE1 && self.binding(key).is_none())
             .then(|| format!("{} is unbound, hit F4 to set.\n", key_name(key)))
     }
 }
