@@ -544,7 +544,7 @@ fn players_wear_their_slots_translated_skins() {
     assert_eq!(drawn, [skins + 1, 0, 0]);
     assert_eq!(first.player_skins.len(), 1);
     let worn = &first.player_skins[0];
-    assert_eq!(worn.slot, 1);
+    assert_eq!(worn.slot.get(), 1);
     assert_eq!(
         (worn.key.model, worn.key.skin, worn.key.colors),
         (1, 0, 0x40)

@@ -189,12 +189,31 @@ pub struct SkinKey {
     pub colors: i32,
 }
 
+/// A client's slot among the player skins, 0 to 15, a player entity's number less 1
+/// (REND-4.13).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayerSlot(usize);
+
+impl PlayerSlot {
+    /// Slot `slot`.
+    #[must_use]
+    pub const fn new(slot: usize) -> Self {
+        Self(slot)
+    }
+
+    /// The slot.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// A player slot's translated skin, sent with every frame that draws the player; the
 /// renderer uploads it when its key is not the one the slot holds (REND-4.13).
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlayerSkin {
-    /// The client slot, 0 to 15.
-    pub slot: usize,
+    /// The client slot.
+    pub slot: PlayerSlot,
     /// What the image was made from.
     pub key: SkinKey,
     /// The skin in the slot's colours.
@@ -771,7 +790,7 @@ impl MapRenderer {
     /// image, mipmapped and filtered as any skin is (REND-4.3), unless the slot already holds
     /// its key. The skin a draw names is the models' skins' count plus the slot.
     pub fn set_player_skin(&mut self, device: &Device, queue: &Queue, skin: &PlayerSkin) {
-        let Some(held) = self.player_keys.get_mut(skin.slot) else {
+        let Some(held) = self.player_keys.get_mut(skin.slot.get()) else {
             return;
         };
         if *held == Some(skin.key) {
@@ -783,7 +802,7 @@ impl MapRenderer {
             .skins
             .len()
             .saturating_sub(PLAYER_SKINS)
-            .saturating_add(skin.slot);
+            .saturating_add(skin.slot.get());
         let texture = upload_levels(device, queue, &mip_levels(&skin.image));
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("qs-render player skin"),
@@ -1670,7 +1689,7 @@ mod tests {
             rgba: vec![9; 4],
         });
         let skin = |slot, colors| super::PlayerSkin {
-            slot,
+            slot: super::PlayerSlot::new(slot),
             key: super::SkinKey {
                 model: 1,
                 skin: 0,

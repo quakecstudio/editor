@@ -24,7 +24,7 @@ use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, Shading, enti
 use crate::camera::Camera;
 use crate::gpu::{
     AliasDraw, Assets, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame,
-    PLAYER_SKINS, PlayerSkin, SkinKey, SpriteDraw, SpriteFrame, View,
+    PLAYER_SKINS, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw, SpriteFrame, View,
 };
 use crate::light::light_point;
 use crate::look::Look;
@@ -313,7 +313,7 @@ impl PlayerSkins {
         if held.as_ref().is_none_or(|skin| skin.key != key) {
             let image = model.translated(key.skin, key.colors, palette)?;
             *held = Some(PlayerSkin {
-                slot,
+                slot: PlayerSlot::new(slot),
                 key,
                 image: Arc::new(image),
             });
