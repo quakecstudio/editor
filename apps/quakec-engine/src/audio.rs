@@ -457,7 +457,7 @@ fn device() -> Result<(u32, Sink), String> {
             device.build_output_stream(
                 config.config(),
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    fill(&queue, data, channels, |s| f32::from(s) / SAMPLE_SCALE);
+                    queue.fill(data, channels, |s| f32::from(s) / SAMPLE_SCALE);
                 },
                 errors,
                 None,
@@ -468,7 +468,7 @@ fn device() -> Result<(u32, Sink), String> {
             device.build_output_stream(
                 config.config(),
                 move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                    fill(&queue, data, channels, |s| s);
+                    queue.fill(data, channels, |s| s);
                 },
                 errors,
                 None,
@@ -487,26 +487,24 @@ fn device() -> Result<(u32, Sink), String> {
     ))
 }
 
-/// Fills the device's `data`, `channels` samples a frame, from the queue's stereo frames: left
-/// to the first channel, right to the second, silence to the rest and when the queue is empty.
-fn fill<T: Copy + Default>(
-    queue: &Queue,
-    data: &mut [T],
-    channels: usize,
-    convert: impl Fn(i16) -> T,
-) {
-    let mut samples = queue.samples.lock().unwrap_or_else(PoisonError::into_inner);
-    for frame in data.chunks_mut(channels.max(1)) {
-        let left = samples.pop_front();
-        let right = samples.pop_front();
-        for (i, out) in frame.iter_mut().enumerate() {
-            *out = match i {
-                0 => left.map_or_else(T::default, &convert),
-                1 => right.map_or_else(T::default, &convert),
-                _ => T::default(),
-            };
+impl Queue {
+    /// Fills the device's `data`, `channels` samples a frame, from the queue's stereo frames: left
+    /// to the first channel, right to the second, silence to the rest and when the queue is empty.
+    fn fill<T: Copy + Default>(&self, data: &mut [T], channels: usize, convert: impl Fn(i16) -> T) {
+        let queue = self;
+        let mut samples = queue.samples.lock().unwrap_or_else(PoisonError::into_inner);
+        for frame in data.chunks_mut(channels.max(1)) {
+            let left = samples.pop_front();
+            let right = samples.pop_front();
+            for (i, out) in frame.iter_mut().enumerate() {
+                *out = match i {
+                    0 => left.map_or_else(T::default, &convert),
+                    1 => right.map_or_else(T::default, &convert),
+                    _ => T::default(),
+                };
+            }
+            // A mono device hears the left channel.
         }
-        // A mono device hears the left channel.
     }
 }
 

@@ -44,7 +44,7 @@ fn main() -> ExitCode {
     if let Err(error) = logging {
         eprintln!("quakec-engine: logging is off: {error}");
     }
-    match run(&args) {
+    match args.run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(%error, "the preview host stopped");
@@ -54,56 +54,59 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(args: &args::Args) -> Result<(), String> {
-    if let Some(eye) = args
-        .timerefresh
-        .as_deref()
-        .and_then(|values| <[f32; 3]>::try_from(values).ok())
-    {
-        let args = args::Args {
-            nosound: true,
-            ..args.clone()
-        };
-        let start = std::time::Instant::now();
-        let loaded = load::load(&args, &args.map, None, None, None)?;
-        let line = headless::timerefresh(loaded, start.elapsed(), eye)?;
-        let mut out = std::io::stdout().lock();
-        std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes())
-            .map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-    if let Some([script, audio]) = args
-        .view_script
-        .as_deref()
-        .and_then(|values| <[std::path::PathBuf; 2]>::try_from(values.to_vec()).ok())
-    {
-        let text = std::fs::read_to_string(&script)
-            .map_err(|error| format!("{}: {error}", script.display()))?;
-        let script = view_script::ViewScript::parse(&text)?;
-        // `load` keeps the sound for a view script (VIEWDIFF-1.3).
-        let loaded = load::load(args, &script.map, None, None, None)?;
-        let size = args
-            .view_size
+impl args::Args {
+    fn run(&self) -> Result<(), String> {
+        let args = self;
+        if let Some(eye) = args
+            .timerefresh
             .as_deref()
-            .and_then(|values| <[u32; 2]>::try_from(values).ok())
-            .unwrap_or(headless::VIEW_SIZE);
-        return headless::view_script(loaded, &script, &audio, size);
-    }
-    if args.headless {
-        let args = args::Args {
-            nosound: true,
-            ..args.clone()
+            .and_then(|values| <[f32; 3]>::try_from(values).ok())
+        {
+            let args = args::Args {
+                nosound: true,
+                ..args.clone()
+            };
+            let start = std::time::Instant::now();
+            let loaded = args.load_map(&args.map, None, None, None)?;
+            let line = loaded.timerefresh(start.elapsed(), eye)?;
+            let mut out = std::io::stdout().lock();
+            std::io::Write::write_all(&mut out, format!("{line}\n").as_bytes())
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        if let Some([script, audio]) = args
+            .view_script
+            .as_deref()
+            .and_then(|values| <[std::path::PathBuf; 2]>::try_from(values.to_vec()).ok())
+        {
+            let text = std::fs::read_to_string(&script)
+                .map_err(|error| format!("{}: {error}", script.display()))?;
+            let script = view_script::ViewScript::parse(&text)?;
+            // `load` keeps the sound for a view script (VIEWDIFF-1.3).
+            let loaded = args.load_map(&script.map, None, None, None)?;
+            let size = args
+                .view_size
+                .as_deref()
+                .and_then(|values| <[u32; 2]>::try_from(values).ok())
+                .unwrap_or(headless::VIEW_SIZE);
+            return loaded.view_script(&script, &audio, size);
+        }
+        if args.headless {
+            let args = args::Args {
+                nosound: true,
+                ..args.clone()
+            };
+            let loaded = args.load_map(&args.map, None, None, None)?;
+            let path = args.bridge.as_deref().ok_or("--headless needs -bridge")?;
+            return args.run_headless(loaded, listen(path)?);
+        }
+        let loaded = args.load_map(&args.map, None, None, None)?;
+        let bridge = match &args.bridge {
+            Some(path) => Some(listen(path)?),
+            None => None,
         };
-        let loaded = load::load(&args, &args.map, None, None, None)?;
-        let path = args.bridge.as_deref().ok_or("--headless needs -bridge")?;
-        return headless::run(&args, loaded, listen(path)?);
+        args.run_window(loaded, bridge)
     }
-    let loaded = load::load(args, &args.map, None, None, None)?;
-    let bridge = match &args.bridge {
-        Some(path) => Some(listen(path)?),
-        None => None,
-    };
-    window::run(args, loaded, bridge)
 }
 
 /// Waits for the IDE at the bridge's socket or named pipe (BRIDGE-1.1).

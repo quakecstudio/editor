@@ -344,7 +344,7 @@ fn run_on<L: Loader + Send + 'static>(
         ..Config::default()
     };
     if let Request::Doctor(doctor) = &request {
-        return match doctor::run(doctor, out) {
+        return match doctor.run(out) {
             Ok(true) => Exit::Success,
             Ok(false) => Exit::Problems,
             Err(error) => {
@@ -354,7 +354,7 @@ fn run_on<L: Loader + Send + 'static>(
         };
     }
     if let Request::Mcp(mcp) = &request {
-        return match serve_mcp(mcp, loader, config, input, out) {
+        return match mcp.serve(loader, config, input, out) {
             Ok(()) => Exit::Success,
             Err(error) => {
                 writeln!(err, "quakec-ide: {error}").unwrap_or(());
@@ -621,64 +621,67 @@ enum McpInput {
     Bytes(Vec<u8>),
 }
 
-/// Serves the agent's tools on `input` until it ends: in a session of the server's own with
-/// `mcp`'s project open, or with `--connect` in the running app's.
-fn serve_mcp<L: Loader + Send + 'static>(
-    mcp: &McpRequest,
-    loader: L,
-    config: Config,
-    input: McpInput,
-    out: &mut impl Write,
-) -> Result<(), Stopped> {
-    let project = std::path::absolute(&mcp.project.path)
-        .map_err(|_| Stopped::NoProject(mcp.project.path.clone()))?;
-    let path = project
-        .to_str()
-        .ok_or_else(|| Stopped::NotUnicode(project.clone()))?
-        .to_owned();
-    let mut read = vec![project.clone()];
-    read.extend(mcp.read.iter().cloned());
-    let mut write = mcp.write.clone();
-    if !mcp.read_only {
-        write.push(project.clone());
-    }
-    let settings = ServerSettings {
-        project: project.clone(),
-        read,
-        write,
-        name: "quakec-ide".to_owned(),
-        version: env!("CARGO_PKG_VERSION").to_owned(),
-    };
-    let server = match &mcp.session {
-        McpSession::Own { game } => {
-            let make = own_session(loader, config, game.clone(), project, path);
-            Server::start(make, settings, &AGENT_TOOLS)
+impl McpRequest {
+    /// Serves the agent's tools on `input` until it ends: in a session of the server's own with
+    /// `mcp`'s project open, or with `--connect` in the running app's.
+    fn serve<L: Loader + Send + 'static>(
+        &self,
+        loader: L,
+        config: Config,
+        input: McpInput,
+        out: &mut impl Write,
+    ) -> Result<(), Stopped> {
+        let mcp = self;
+        let project = std::path::absolute(&mcp.project.path)
+            .map_err(|_| Stopped::NoProject(mcp.project.path.clone()))?;
+        let path = project
+            .to_str()
+            .ok_or_else(|| Stopped::NotUnicode(project.clone()))?
+            .to_owned();
+        let mut read = vec![project.clone()];
+        read.extend(mcp.read.iter().cloned());
+        let mut write = mcp.write.clone();
+        if !mcp.read_only {
+            write.push(project.clone());
         }
-        McpSession::App { socket } => {
-            let socket = match socket {
-                Some(socket) => socket.clone(),
-                None => qs_paths::current()
-                    .map_err(Stopped::NoAppDirs)?
-                    .app_socket()
-                    .to_path_buf(),
-            };
-            let make = move || {
-                Connected::connect(&socket).map_err(|error| {
-                    format!(
-                        "no QuakeC Studio answers on {}; open the app first: {error}",
-                        socket.display()
-                    )
-                })
-            };
-            Server::start(make, settings, &AGENT_TOOLS)
+        let settings = ServerSettings {
+            project: project.clone(),
+            read,
+            write,
+            name: "quakec-ide".to_owned(),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+        };
+        let server = match &mcp.session {
+            McpSession::Own { game } => {
+                let make = own_session(loader, config, game.clone(), project, path);
+                Server::start(make, settings, &AGENT_TOOLS)
+            }
+            McpSession::App { socket } => {
+                let socket = match socket {
+                    Some(socket) => socket.clone(),
+                    None => qs_paths::current()
+                        .map_err(Stopped::NoAppDirs)?
+                        .app_socket()
+                        .to_path_buf(),
+                };
+                let make = move || {
+                    Connected::connect(&socket).map_err(|error| {
+                        format!(
+                            "no QuakeC Studio answers on {}; open the app first: {error}",
+                            socket.display()
+                        )
+                    })
+                };
+                Server::start(make, settings, &AGENT_TOOLS)
+            }
         }
-    }
-    .map_err(Stopped::Mcp)?;
-    match input {
-        McpInput::Stdio => server.serve_stdio().map_err(Stopped::Mcp),
-        McpInput::Bytes(bytes) => {
-            let answers = server.serve_bytes(bytes).map_err(Stopped::Mcp)?;
-            out.write_all(&answers).map_err(Stopped::Write)
+        .map_err(Stopped::Mcp)?;
+        match input {
+            McpInput::Stdio => server.serve_stdio().map_err(Stopped::Mcp),
+            McpInput::Bytes(bytes) => {
+                let answers = server.serve_bytes(bytes).map_err(Stopped::Mcp)?;
+                out.write_all(&answers).map_err(Stopped::Write)
+            }
         }
     }
 }

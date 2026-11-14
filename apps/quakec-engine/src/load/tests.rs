@@ -158,15 +158,12 @@ fn the_mod_and_the_kpf_come_from_the_command_line() {
 #[test]
 fn a_save_stays_in_the_game_directory() {
     let args = args(&["-basedir", "/q", "-game", "mod"]);
-    assert_eq!(super::save_path(&args, "s1"), Path::new("/q/mod/s1.sav"));
-    assert_eq!(
-        super::save_path(&args, "s1.txt"),
-        Path::new("/q/mod/s1.txt")
-    );
-    let absolute = super::save_path(&args, "/etc/x");
+    assert_eq!(args.save_path("s1"), Path::new("/q/mod/s1.sav"));
+    assert_eq!(args.save_path("s1.txt"), Path::new("/q/mod/s1.txt"));
+    let absolute = args.save_path("/etc/x");
     assert!(absolute.starts_with("/q/mod"), "{absolute:?}");
     assert_eq!(absolute, Path::new("/q/mod//etc/x.sav"));
-    let plain = super::save_path(&self::args(&["-basedir", "/q"]), "s1");
+    let plain = self::args(&["-basedir", "/q"]).save_path("s1");
     assert_eq!(plain, Path::new("/q/id1/s1.sav"));
 }
 

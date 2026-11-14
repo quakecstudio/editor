@@ -51,36 +51,40 @@ pub(crate) struct Doctor {
 /// One check's outcome: what it found, or why it failed.
 type Outcome = Result<String, String>;
 
-/// Runs `doctor`, writing a line per check to `out`; whether every check passed.
-pub(crate) fn run(doctor: &Doctor, out: &mut impl Write) -> std::io::Result<bool> {
-    let installs = find_installs();
-    let mut passed = true;
-    for check in Check::ALL {
-        if !doctor.checks.contains(&check) {
-            continue;
-        }
-        let outcome = match check {
-            Check::Games => games(&installs, doctor.require_game),
-            Check::Host => host(doctor.game.as_deref(), &installs),
-            Check::Keychain => keychain(&Keychain),
-        };
-        match outcome {
-            Ok(found) => writeln!(out, "ok    {}: {found}", name(check))?,
-            Err(why) => {
-                passed = false;
-                writeln!(out, "FAIL  {}: {why}", name(check))?;
+impl Doctor {
+    /// Runs `doctor`, writing a line per check to `out`; whether every check passed.
+    pub(crate) fn run(&self, out: &mut impl Write) -> std::io::Result<bool> {
+        let installs = find_installs();
+        let mut passed = true;
+        for check in Check::ALL {
+            if !self.checks.contains(&check) {
+                continue;
+            }
+            let outcome = match check {
+                Check::Games => games(&installs, self.require_game),
+                Check::Host => host(self.game.as_deref(), &installs),
+                Check::Keychain => keychain(&Keychain),
+            };
+            match outcome {
+                Ok(found) => writeln!(out, "ok    {}: {found}", check.name())?,
+                Err(why) => {
+                    passed = false;
+                    writeln!(out, "FAIL  {}: {why}", check.name())?;
+                }
             }
         }
+        Ok(passed)
     }
-    Ok(passed)
 }
 
-/// The word a check's line starts with.
-const fn name(check: Check) -> &'static str {
-    match check {
-        Check::Games => "games",
-        Check::Host => "preview host",
-        Check::Keychain => "keychain",
+impl Check {
+    /// The word a check's line starts with.
+    const fn name(self) -> &'static str {
+        match self {
+            Check::Games => "games",
+            Check::Host => "preview host",
+            Check::Keychain => "keychain",
+        }
     }
 }
 
@@ -196,7 +200,7 @@ mod tests {
 
     use qs_models::{KeyStore as _, MemoryKeys};
 
-    use super::{Check, Doctor, games, keychain, run};
+    use super::{Check, Doctor, games, keychain};
 
     // No spec statement: P4-18: the keychain check writes, reads back and deletes its entry,
     // leaving the store as it found it
@@ -223,7 +227,7 @@ mod tests {
             game: None,
             require_game: false,
         };
-        assert!(run(&doctor, &mut out).unwrap());
+        assert!(doctor.run(&mut out).unwrap());
         let text = String::from_utf8(out).unwrap();
         assert_eq!(text.lines().count(), 1, "{text}");
         assert!(text.starts_with("ok    games: "), "{text}");

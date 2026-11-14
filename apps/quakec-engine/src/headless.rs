@@ -22,11 +22,11 @@ use qs_render::{MapMesh, MapRenderer, Offscreen, Play};
 
 use crate::args::Args;
 use crate::audio::Audio;
-use crate::bridge::{Bridge, serve};
+use crate::bridge::Bridge;
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Screen};
 use crate::keys::focus;
-use crate::load::{Acted, Describer, Loaded, Rand, act};
+use crate::load::{Acted, Describer, Loaded, Rand};
 use crate::screenshot::{Drawer, Frame};
 use crate::view_script::{Step, ViewScript};
 use crate::window::{CONWIDTH, FRAME, frametime_f32, screen_height};
@@ -43,47 +43,49 @@ const SIZE: [u32; 2] = [1280, 800];
 /// The depth buffer the map's renderer draws with, as the window's (`depth_buffer: 32`).
 const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-/// Runs the game of `loaded` until the bridge's client stops the host or goes away.
-pub(crate) fn run(args: &Args, loaded: Loaded, mut bridge: Bridge) -> Result<(), String> {
-    let mut offscreen = match Offscreen::new(DEPTH) {
-        Ok(offscreen) => Some(Drawer::new(offscreen)),
-        Err(error) => {
-            tracing::warn!(%error, "no screenshots");
-            None
-        }
-    };
-    let mut world = Headless::new(loaded, offscreen.as_ref());
-    let frame = Duration::from_secs_f64(FRAME);
-    let mut next = Instant::now();
-    loop {
-        if !serve(&mut bridge, &mut world.game) {
-            return Ok(());
-        }
-        let ran = world.game.frame(FRAME);
-        if let Some(action) = world.game.host_action() {
-            match act(args, &mut world.game, action) {
-                Acted::Load(loaded) => {
-                    let next = Headless::new(*loaded, offscreen.as_ref());
-                    let old = core::mem::replace(&mut world, next);
-                    world.game.carry_from(old.game);
-                    continue;
+impl Args {
+    /// Runs the game of `loaded` until the bridge's client stops the host or goes away.
+    pub(crate) fn run_headless(&self, loaded: Loaded, mut bridge: Bridge) -> Result<(), String> {
+        let mut offscreen = match Offscreen::new(DEPTH) {
+            Ok(offscreen) => Some(Drawer::new(offscreen)),
+            Err(error) => {
+                tracing::warn!(%error, "no screenshots");
+                None
+            }
+        };
+        let mut world = Headless::new(loaded, offscreen.as_ref());
+        let frame = Duration::from_secs_f64(FRAME);
+        let mut next = Instant::now();
+        loop {
+            if !bridge.serve(&mut world.game) {
+                return Ok(());
+            }
+            let ran = world.game.frame(FRAME);
+            if let Some(action) = world.game.host_action() {
+                match self.act(&mut world.game, action) {
+                    Acted::Load(loaded) => {
+                        let next = Headless::new(*loaded, offscreen.as_ref());
+                        let old = core::mem::replace(&mut world, next);
+                        world.game.carry_from(old.game);
+                        continue;
+                    }
+                    Acted::Quit => return Ok(()),
+                    Acted::Stay => {}
                 }
-                Acted::Quit => return Ok(()),
-                Acted::Stay => {}
             }
-        }
-        // The client's clock stands while the server's does, as the window's.
-        world.read_messages(if ran { FRAME } else { 0.0 });
-        if world.game.wants_screenshot() {
-            match offscreen.as_mut().map(|drawer| world.draw(drawer)) {
-                Some(Ok(frame)) => world.game.screenshot_taken(&frame),
-                Some(Err(why)) => world.game.screenshot_failed(&why),
-                None => world.game.screenshot_failed("no GPU device"),
+            // The client's clock stands while the server's does, as the window's.
+            world.read_messages(if ran { FRAME } else { 0.0 });
+            if world.game.wants_screenshot() {
+                match offscreen.as_mut().map(|drawer| world.draw(drawer)) {
+                    Some(Ok(frame)) => world.game.screenshot_taken(&frame),
+                    Some(Err(why)) => world.game.screenshot_failed(&why),
+                    None => world.game.screenshot_failed("no GPU device"),
+                }
             }
-        }
-        next = next.checked_add(frame).unwrap_or(next);
-        if let Some(wait) = next.checked_duration_since(Instant::now()) {
-            std::thread::sleep(wait);
+            next = next.checked_add(frame).unwrap_or(next);
+            if let Some(wait) = next.checked_duration_since(Instant::now()) {
+                std::thread::sleep(wait);
+            }
         }
     }
 }
@@ -99,161 +101,167 @@ const SETTLE_FRAMES: u16 = 72;
 /// How many times the 128 frames of a `timerefresh` are drawn back to back.
 const PASSES: u16 = 16;
 
-/// `--timerefresh <x> <y> <z>` (P3-29, ENG-17): the map of `loaded`, which took `load` to load,
-/// run for a second with each server frame and its QuakeC timed, then id's `timerefresh` from
-/// `eye`, the 128 frames drawn offscreen at the window's first size with no server frame
-/// between them and finished on the GPU, [`PASSES`] times; then id's line for the first pass
-/// and a JSON line of every measurement, in seconds, for `cargo xtask bench`, on stdout. A
-/// pass's frame time is its mean, as QuakeSpasm's `timerefresh` reports it: offscreen nothing
-/// holds the CPU back to the GPU, so a frame's own submit time leaves the GPU's work out.
-///
-/// # Errors
-///
-/// Why the GPU device or a frame failed, or that the map asked the host to change level, start
-/// a game or quit in its first second, which would leave the frames measured on a server the
-/// host would not have kept.
-pub(crate) fn timerefresh(
-    loaded: Loaded,
-    load: std::time::Duration,
-    eye: [f32; 3],
-) -> Result<String, String> {
-    let offscreen = Offscreen::new(DEPTH).map_err(|error| error.to_string())?;
-    let mut drawer = Drawer::new(offscreen);
-    let mut world = Headless::new(loaded, Some(&drawer));
-    let mut server = Vec::with_capacity(usize::from(SETTLE_FRAMES));
-    let mut quakec = Vec::with_capacity(usize::from(SETTLE_FRAMES));
-    for _ in 0..SETTLE_FRAMES {
-        let before = world.game.world().qc_time();
-        let start = std::time::Instant::now();
-        let ran = world.game.frame(FRAME);
-        server.push(start.elapsed().as_secs_f64());
-        quakec.push(
-            world
-                .game
-                .world()
-                .qc_time()
-                .saturating_sub(before)
-                .as_secs_f64(),
-        );
-        if world.game.host_action().is_some() {
-            return Err("the map changed level, started a game or quit in its first second".into());
+impl Loaded {
+    /// `--timerefresh <x> <y> <z>` (P3-29, ENG-17): the map of `loaded`, which took `load` to load,
+    /// run for a second with each server frame and its QuakeC timed, then id's `timerefresh` from
+    /// `eye`, the 128 frames drawn offscreen at the window's first size with no server frame
+    /// between them and finished on the GPU, [`PASSES`] times; then id's line for the first pass
+    /// and a JSON line of every measurement, in seconds, for `cargo xtask bench`, on stdout. A
+    /// pass's frame time is its mean, as QuakeSpasm's `timerefresh` reports it: offscreen nothing
+    /// holds the CPU back to the GPU, so a frame's own submit time leaves the GPU's work out.
+    ///
+    /// # Errors
+    ///
+    /// Why the GPU device or a frame failed, or that the map asked the host to change level, start
+    /// a game or quit in its first second, which would leave the frames measured on a server the
+    /// host would not have kept.
+    pub(crate) fn timerefresh(
+        self,
+        load: std::time::Duration,
+        eye: [f32; 3],
+    ) -> Result<String, String> {
+        let offscreen = Offscreen::new(DEPTH).map_err(|error| error.to_string())?;
+        let mut drawer = Drawer::new(offscreen);
+        let mut world = Headless::new(self, Some(&drawer));
+        let mut server = Vec::with_capacity(usize::from(SETTLE_FRAMES));
+        let mut quakec = Vec::with_capacity(usize::from(SETTLE_FRAMES));
+        for _ in 0..SETTLE_FRAMES {
+            let before = world.game.world().qc_time();
+            let start = std::time::Instant::now();
+            let ran = world.game.frame(FRAME);
+            server.push(start.elapsed().as_secs_f64());
+            quakec.push(
+                world
+                    .game
+                    .world()
+                    .qc_time()
+                    .saturating_sub(before)
+                    .as_secs_f64(),
+            );
+            if world.game.host_action().is_some() {
+                return Err(
+                    "the map changed level, started a game or quit in its first second".into(),
+                );
+            }
+            world.read_messages(if ran { FRAME } else { 0.0 });
         }
-        world.read_messages(if ran { FRAME } else { 0.0 });
-    }
-    let map = world.game.world().map().to_owned();
-    let yaw = |i: u16| f32::from(i) / f32::from(TIMEREFRESH_FRAMES) * FULL_TURN;
-    let count = f64::from(TIMEREFRESH_FRAMES);
-    let mut passes = Vec::with_capacity(usize::from(PASSES));
-    for _ in 0..PASSES {
-        // As `R_TimeRefresh_f` runs in QuakeSpasm (Quake/gl_rmisc.c at
-        // sezero/quakespasm@c9c8ee98): the frames drawn back to back, then `glFinish ();`
-        // before the clock stops.
-        let start = std::time::Instant::now();
-        for i in 0..TIMEREFRESH_FRAMES {
-            let callback = world.callback(Some((eye, yaw(i))));
-            drawer.submit(callback, SIZE);
+        let map = world.game.world().map().to_owned();
+        let yaw = |i: u16| f32::from(i) / f32::from(TIMEREFRESH_FRAMES) * FULL_TURN;
+        let count = f64::from(TIMEREFRESH_FRAMES);
+        let mut passes = Vec::with_capacity(usize::from(PASSES));
+        for _ in 0..PASSES {
+            // As `R_TimeRefresh_f` runs in QuakeSpasm (Quake/gl_rmisc.c at
+            // sezero/quakespasm@c9c8ee98): the frames drawn back to back, then `glFinish ();`
+            // before the clock stops.
+            let start = std::time::Instant::now();
+            for i in 0..TIMEREFRESH_FRAMES {
+                let callback = world.callback(Some((eye, yaw(i))));
+                drawer.submit(callback, SIZE);
+            }
+            drawer.finish()?;
+            passes.push(start.elapsed().as_secs_f64());
         }
-        drawer.finish()?;
-        passes.push(start.elapsed().as_secs_f64());
+        let first = passes.first().copied().unwrap_or_default();
+        let frames: Vec<f64> = passes.iter().map(|pass| pass / count).collect();
+        let json = serde_json::json!({
+            "map": map,
+            "load": load.as_secs_f64(),
+            "server_frame": server,
+            "quakec": quakec,
+            "frame": frames,
+        });
+        let fps = count / first.max(f64::MIN_POSITIVE);
+        Ok(format!("{first:.6} seconds ({fps:.6} fps)\n{json}"))
     }
-    let first = passes.first().copied().unwrap_or_default();
-    let frames: Vec<f64> = passes.iter().map(|pass| pass / count).collect();
-    let json = serde_json::json!({
-        "map": map,
-        "load": load.as_secs_f64(),
-        "server_frame": server,
-        "quakec": quakec,
-        "frame": frames,
-    });
-    let fps = count / first.max(f64::MIN_POSITIVE);
-    Ok(format!("{first:.6} seconds ({fps:.6} fps)\n{json}"))
+
+    /// `--view-script <script> <audio>` (P3-28): the map of `loaded` played as `script` says, its
+    /// shots written as binary PPMs and the sound mixed meanwhile written to `audio` as 16-bit
+    /// little-endian stereo at 11025 Hz, as the view oracle writes them (VIEWDIFF-1, VIEWDIFF-2).
+    ///
+    /// # Errors
+    ///
+    /// Why the GPU device, a frame, the player's place or a file failed, or that the map asked
+    /// the host to change level, start a game or quit.
+    pub(crate) fn view_script(
+        self,
+        script: &ViewScript,
+        audio: &Path,
+        size: [u32; 2],
+    ) -> Result<(), String> {
+        let offscreen = Offscreen::new(DEPTH).map_err(|error| error.to_string())?;
+        let mut drawer = Drawer::new(offscreen);
+        let mut world = Headless::new(self, Some(&drawer));
+        let mut sound = world.audio.take_captured();
+        let [width, height] = size;
+        let aspect = f32::from(u16::try_from(width).unwrap_or(1))
+            / f32::from(u16::try_from(height).unwrap_or(1).max(1));
+        // REND-13.7: QuakeSpasm's 2D layer is the image's own size, GLQuake's 640 wide.
+        let screen = if world.mesh.look.native_2d() {
+            [
+                i32::try_from(width).unwrap_or(0),
+                i32::try_from(height).unwrap_or(0),
+            ]
+        } else {
+            [CONWIDTH, screen_height(aspect)]
+        };
+        let mut overlay = Overlay::default();
+        for text in core::mem::take(&mut world.printed) {
+            overlay.console.print(&text, 0.0);
+        }
+        for step in &script.steps {
+            match step {
+                Step::Frames(count) => {
+                    for _ in 0..*count {
+                        // PHYS-11.9: the menu or the console up pauses the game.
+                        world.game.world_mut().set_focus(focus(overlay.dest));
+                        let ran = world.game.frame(FRAME);
+                        if world.game.host_action().is_some() {
+                            return Err("the map changed level, started a game or quit".into());
+                        }
+                        world.read_messages(if ran { FRAME } else { 0.0 });
+                        overlay.frame(screen);
+                    }
+                }
+                Step::Place { origin, angles } => {
+                    world
+                        .game
+                        .place_player(*origin, [angles[0], angles[1], 0.0])?;
+                }
+                Step::ToggleConsole => {
+                    overlay.dest = overlay.console.toggle(overlay.dest, Connection::Connected)
+                }
+                Step::ToggleMenu => {
+                    overlay.dest = match overlay.dest {
+                        KeyDest::Console => {
+                            overlay.console.toggle(overlay.dest, Connection::Connected)
+                        }
+                        dest => overlay.menu.toggle(dest),
+                    };
+                }
+                Step::Fog(density) => {
+                    let now = world.client.scene().time;
+                    world.play.fog.command_density(*density, now);
+                }
+                Step::Shot(path) => {
+                    world.play.screen = screen;
+                    let game = world.game.world();
+                    let settings = MenuSettings::read(&|name| game.setting(name).unwrap_or(0.0));
+                    let hud = overlay.hud(screen, world.mesh.look.native_2d(), settings);
+                    let callback = world.view_callback(aspect, hud);
+                    let frame = drawer.draw(callback, size)?;
+                    std::fs::write(path, frame.ppm())
+                        .map_err(|error| format!("{}: {error}", path.display()))?;
+                }
+            }
+            sound.extend(world.audio.take_captured());
+        }
+        let bytes: Vec<u8> = sound.iter().flat_map(|s| s.to_le_bytes()).collect();
+        std::fs::write(audio, bytes).map_err(|error| format!("{}: {error}", audio.display()))
+    }
 }
 
 /// The size the view oracle draws at: 320 by 240, square pixels at 4:3 (VIEWDIFF-2.1).
 pub(crate) const VIEW_SIZE: [u32; 2] = [320, 240];
-
-/// `--view-script <script> <audio>` (P3-28): the map of `loaded` played as `script` says, its
-/// shots written as binary PPMs and the sound mixed meanwhile written to `audio` as 16-bit
-/// little-endian stereo at 11025 Hz, as the view oracle writes them (VIEWDIFF-1, VIEWDIFF-2).
-///
-/// # Errors
-///
-/// Why the GPU device, a frame, the player's place or a file failed, or that the map asked
-/// the host to change level, start a game or quit.
-pub(crate) fn view_script(
-    loaded: Loaded,
-    script: &ViewScript,
-    audio: &Path,
-    size: [u32; 2],
-) -> Result<(), String> {
-    let offscreen = Offscreen::new(DEPTH).map_err(|error| error.to_string())?;
-    let mut drawer = Drawer::new(offscreen);
-    let mut world = Headless::new(loaded, Some(&drawer));
-    let mut sound = world.audio.take_captured();
-    let [width, height] = size;
-    let aspect = f32::from(u16::try_from(width).unwrap_or(1))
-        / f32::from(u16::try_from(height).unwrap_or(1).max(1));
-    // REND-13.7: QuakeSpasm's 2D layer is the image's own size, GLQuake's 640 wide.
-    let screen = if world.mesh.look.native_2d() {
-        [
-            i32::try_from(width).unwrap_or(0),
-            i32::try_from(height).unwrap_or(0),
-        ]
-    } else {
-        [CONWIDTH, screen_height(aspect)]
-    };
-    let mut overlay = Overlay::default();
-    for text in core::mem::take(&mut world.printed) {
-        overlay.console.print(&text, 0.0);
-    }
-    for step in &script.steps {
-        match step {
-            Step::Frames(count) => {
-                for _ in 0..*count {
-                    // PHYS-11.9: the menu or the console up pauses the game.
-                    world.game.world_mut().set_focus(focus(overlay.dest));
-                    let ran = world.game.frame(FRAME);
-                    if world.game.host_action().is_some() {
-                        return Err("the map changed level, started a game or quit".into());
-                    }
-                    world.read_messages(if ran { FRAME } else { 0.0 });
-                    overlay.frame(screen);
-                }
-            }
-            Step::Place { origin, angles } => {
-                world
-                    .game
-                    .place_player(*origin, [angles[0], angles[1], 0.0])?;
-            }
-            Step::ToggleConsole => {
-                overlay.dest = overlay.console.toggle(overlay.dest, Connection::Connected)
-            }
-            Step::ToggleMenu => {
-                overlay.dest = match overlay.dest {
-                    KeyDest::Console => overlay.console.toggle(overlay.dest, Connection::Connected),
-                    dest => overlay.menu.toggle(dest),
-                };
-            }
-            Step::Fog(density) => {
-                let now = world.client.scene().time;
-                world.play.fog.command_density(*density, now);
-            }
-            Step::Shot(path) => {
-                world.play.screen = screen;
-                let game = world.game.world();
-                let settings = MenuSettings::read(&|name| game.setting(name).unwrap_or(0.0));
-                let hud = overlay.hud(screen, world.mesh.look.native_2d(), settings);
-                let callback = world.view_callback(aspect, hud);
-                let frame = drawer.draw(callback, size)?;
-                std::fs::write(path, ppm(&frame))
-                    .map_err(|error| format!("{}: {error}", path.display()))?;
-            }
-        }
-        sound.extend(world.audio.take_captured());
-    }
-    let bytes: Vec<u8> = sound.iter().flat_map(|s| s.to_le_bytes()).collect();
-    std::fs::write(audio, bytes).map_err(|error| format!("{}: {error}", audio.display()))
-}
 
 /// The console and the menu a view script opens over the view (CON, MENU), and the time and
 /// height the console has slid to.
@@ -318,13 +326,15 @@ impl Overlay {
     }
 }
 
-/// `frame` as a binary PPM, `P6`, its alpha dropped (VIEWDIFF-1.4).
-fn ppm(frame: &Frame) -> Vec<u8> {
-    let mut bytes = format!("P6\n{} {}\n255\n", frame.width, frame.height).into_bytes();
-    for &[r, g, b, _] in frame.rgba.as_chunks::<RGBA_BYTES>().0 {
-        bytes.extend([r, g, b]);
+impl Frame {
+    /// `frame` as a binary PPM, `P6`, its alpha dropped (VIEWDIFF-1.4).
+    fn ppm(&self) -> Vec<u8> {
+        let mut bytes = format!("P6\n{} {}\n255\n", self.width, self.height).into_bytes();
+        for &[r, g, b, _] in self.rgba.as_chunks::<RGBA_BYTES>().0 {
+            bytes.extend([r, g, b]);
+        }
+        bytes
     }
-    bytes
 }
 
 /// What a headless host keeps of a loaded map.

@@ -15,7 +15,7 @@ use qs_sim::{
 use serde_json::{Map, Value, json};
 
 use crate::AXES;
-use crate::screenshot::{Frame, encode};
+use crate::screenshot::Frame;
 use crate::values::{from_json, named_json, to_json};
 
 mod debug;
@@ -390,7 +390,7 @@ impl Game {
                 height: frame.height,
                 rgba: frame.rgba.clone(),
             };
-            let outcome = encode(copy, shot.size)
+            let outcome = copy.encode(shot.size)
                 .map(|(png, width, height)| {
                     json!({ "png": png, "width": width, "height": height, "time": time })
                 })

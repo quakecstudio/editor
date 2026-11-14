@@ -1255,7 +1255,7 @@ impl Shell {
         }
         let wrap = editor.view.wrap();
         second.view.set_wrap(wrap);
-        let style = view_style(theme);
+        let style = theme.view_style();
         let panel = match split {
             Split::Down => egui::Panel::bottom(Id::new(Area::SecondPane))
                 .exact_size((ui.available_height() / 2.0).floor()),
@@ -3630,7 +3630,7 @@ impl Shell {
             editor
                 .view
                 .set_notes(line_notes(&context.workbench, editor));
-            let requests = editor.show(ui, theme, &view_style(theme));
+            let requests = editor.show(ui, theme, &theme.view_style());
             let mut requests = requests;
             if let Some(line) = editor.view.take_note_click() {
                 let offset = editor.view.state().buffer().offset(Position::new(line, 0));
@@ -4018,30 +4018,32 @@ fn no_project(
     action
 }
 
-/// The editor's colours and font, from the theme's tokens.
-pub(crate) fn view_style(theme: &Theme) -> ViewStyle {
-    ViewStyle {
-        font: egui::FontId::monospace(theme.type_scale.code.size),
-        background: theme.color(Token::SurfaceEditor),
-        current_line: theme.color(Token::SurfaceCurrentLine),
-        selection: theme.color(Token::SelectFocus),
-        text: theme.color(Token::TextCode),
-        line_number: theme.color(Token::TextFaint),
-        caret: theme.color(Token::Accent),
-        added: theme.color(Token::DiffAdded),
-        removed: theme.color(Token::StatusErrorBg),
-        removed_text: theme.color(Token::TextOnError),
-        paused_line: theme.color(Token::DebugPausedLine),
-        paused_mark: theme.color(Token::StatusWarn),
-        breakpoint: theme.color(Token::StatusError),
-        indent_guide: theme.color(Token::Border),
-        added_mark: theme.color(Token::StatusOk),
-        modified_mark: theme.color(Token::StatusWarn),
-        removed_mark: theme.color(Token::StatusError),
-        inlay: theme.color(Token::TextFaint),
-        note_error: theme.color(Token::StatusError),
-        note_warning: theme.color(Token::StatusWarn),
-        lightbulb: theme.color(Token::Accent),
+impl Theme {
+    /// The editor's colours and font, from the theme's tokens.
+    pub(crate) fn view_style(&self) -> ViewStyle {
+        ViewStyle {
+            font: egui::FontId::monospace(self.type_scale.code.size),
+            background: self.color(Token::SurfaceEditor),
+            current_line: self.color(Token::SurfaceCurrentLine),
+            selection: self.color(Token::SelectFocus),
+            text: self.color(Token::TextCode),
+            line_number: self.color(Token::TextFaint),
+            caret: self.color(Token::Accent),
+            added: self.color(Token::DiffAdded),
+            removed: self.color(Token::StatusErrorBg),
+            removed_text: self.color(Token::TextOnError),
+            paused_line: self.color(Token::DebugPausedLine),
+            paused_mark: self.color(Token::StatusWarn),
+            breakpoint: self.color(Token::StatusError),
+            indent_guide: self.color(Token::Border),
+            added_mark: self.color(Token::StatusOk),
+            modified_mark: self.color(Token::StatusWarn),
+            removed_mark: self.color(Token::StatusError),
+            inlay: self.color(Token::TextFaint),
+            note_error: self.color(Token::StatusError),
+            note_warning: self.color(Token::StatusWarn),
+            lightbulb: self.color(Token::Accent),
+        }
     }
 }
 

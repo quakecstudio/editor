@@ -28,14 +28,14 @@ use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
 use crate::args::Args;
 use crate::audio::Audio;
-use crate::bridge::{Bridge, serve};
+use crate::bridge::Bridge;
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
 use crate::keys::{
     STARTUP, config_path, configuration, focus, keynum, modifier_keys, mouse_key, mouse_motion,
     runs_binding, wheel_key,
 };
-use crate::load::{Acted, Describer, Loaded, Rand, act, saves};
+use crate::load::{Acted, Describer, Loaded, Rand};
 use crate::screenshot::Drawer;
 use crate::settings::HostSettings;
 
@@ -69,143 +69,146 @@ const BENCHMARK_TURN: f32 = 30.0;
 /// The narrowest aspect the 2D layer's height is reckoned for.
 const MIN_ASPECT: f32 = 0.1;
 
-/// Opens the window on the map `loaded` holds and runs the game until it closes or the
-/// bridge's client stops it.
-pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result<(), String> {
-    let args = args.clone();
-    let benchmark = args.benchmark;
-    if benchmark.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
-        return Err("--benchmark needs a positive number of seconds".to_owned());
+impl Args {
+    /// Opens the window on the map `loaded` holds and runs the game until it closes or the
+    /// bridge's client stops it.
+    pub(crate) fn run_window(&self, loaded: Loaded, bridge: Option<Bridge>) -> Result<(), String> {
+        let args = self;
+        let args = args.clone();
+        let benchmark = args.benchmark;
+        if benchmark.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
+            return Err("--benchmark needs a positive number of seconds".to_owned());
+        }
+        let fly = args.fly || benchmark.is_some();
+        let position = args
+            .position
+            .as_deref()
+            .and_then(|values| <[f32; 2]>::try_from(values).ok());
+        let Loaded {
+            map,
+            mesh,
+            play,
+            camera,
+            game,
+            audio,
+            client,
+            bsp,
+            describer,
+            rand,
+            printed,
+        } = loaded;
+        // The console's first lines: the host's, as `Host_Init` prints the engine's, then what the
+        // map's first frame printed (CLIENT-1.7).
+        // CON-5.6: QuakeSpasm's text size in its look, whose console is as wide as the window.
+        let mut console = Console::with_text_size(if mesh.look.native_2d() {
+            CON_TEXTSIZE_QUAKESPASM
+        } else {
+            CON_TEXTSIZE
+        });
+        let banner = format!("QuakeC Studio preview host {}\n", env!("CARGO_PKG_VERSION"));
+        console.print(banner.as_bytes(), 0.0);
+        for text in &printed {
+            console.print(text, 0.0);
+        }
+        let size = args
+            .size
+            .as_deref()
+            .and_then(|values| <[f32; 2]>::try_from(values).ok())
+            .unwrap_or(DEFAULT_SIZE);
+        let mut viewport = egui::ViewportBuilder::default()
+            .with_title(format!("QuakeC Studio preview: {map}"))
+            .with_inner_size(size);
+        if let Some(at) = position {
+            viewport = viewport.with_position(at);
+        }
+        let mut wgpu_options = egui_wgpu::WgpuConfiguration::default();
+        if benchmark.is_some() {
+            wgpu_options.surface.present_mode = wgpu::PresentMode::AutoNoVsync;
+        }
+        let options = eframe::NativeOptions {
+            viewport,
+            renderer: eframe::Renderer::Wgpu,
+            depth_buffer: DEPTH_BITS,
+            wgpu_options,
+            ..eframe::NativeOptions::default()
+        };
+        let triangles = mesh
+            .indices
+            .len()
+            .checked_div(TRIANGLE_CORNERS)
+            .unwrap_or(0);
+        let camera_origin = camera.origin;
+        eframe::run_native(
+            "quakec-engine",
+            options,
+            Box::new(move |cc| {
+                let state = cc
+                    .wgpu_render_state
+                    .as_ref()
+                    .ok_or("eframe started without wgpu")?;
+                let renderer = MapRenderer::new(
+                    &state.device,
+                    &state.queue,
+                    (state.target_format, wgpu::TextureFormat::Depth32Float),
+                    &mesh,
+                    &play.assets(),
+                );
+                state.renderer.write().callback_resources.insert(renderer);
+                let mut game = game;
+                // BRIDGE-4.10: Wayland lets a client neither move nor raise its window.
+                let wayland = cc
+                    .display_handle()
+                    .is_ok_and(|handle| matches!(handle.as_raw(), RawDisplayHandle::Wayland(_)));
+                if wayland {
+                    game.set_screen(Screen::FixedWindow);
+                }
+                // Screenshots are drawn offscreen on the window's own device (BRIDGE-4.9).
+                let drawer = Some(Drawer::new(Offscreen::from_state(
+                    state.clone(),
+                    wgpu::TextureFormat::Depth32Float,
+                )));
+                Ok(Box::new(Viewer {
+                    drawer,
+                    args,
+                    map,
+                    mesh,
+                    camera,
+                    triangles,
+                    play,
+                    game,
+                    audio,
+                    bridge,
+                    client,
+                    bsp,
+                    describer,
+                    rand,
+                    fly,
+                    pointer: Pointer::Free,
+                    placed: None,
+                    eye: camera_origin,
+                    last_set: [f32::NAN; 2],
+                    behind: 0.0,
+                    started: Instant::now(),
+                    last: Instant::now(),
+                    benchmark,
+                    frames: 0,
+                    slowest: 0.0,
+                    worked: 0.0,
+                    longest_work: 0.0,
+                    console,
+                    dest: KeyDest::Game,
+                    menu: Menu::new(),
+                    bindings: Bindings::new(),
+                    input: Input::new(),
+                    motion: [0.0; 2],
+                    modifiers: egui::Modifiers::NONE,
+                    configured: false,
+                    config_file: config_path(),
+                }))
+            }),
+        )
+        .map_err(|e| e.to_string())
     }
-    let fly = args.fly || benchmark.is_some();
-    let position = args
-        .position
-        .as_deref()
-        .and_then(|values| <[f32; 2]>::try_from(values).ok());
-    let Loaded {
-        map,
-        mesh,
-        play,
-        camera,
-        game,
-        audio,
-        client,
-        bsp,
-        describer,
-        rand,
-        printed,
-    } = loaded;
-    // The console's first lines: the host's, as `Host_Init` prints the engine's, then what the
-    // map's first frame printed (CLIENT-1.7).
-    // CON-5.6: QuakeSpasm's text size in its look, whose console is as wide as the window.
-    let mut console = Console::with_text_size(if mesh.look.native_2d() {
-        CON_TEXTSIZE_QUAKESPASM
-    } else {
-        CON_TEXTSIZE
-    });
-    let banner = format!("QuakeC Studio preview host {}\n", env!("CARGO_PKG_VERSION"));
-    console.print(banner.as_bytes(), 0.0);
-    for text in &printed {
-        console.print(text, 0.0);
-    }
-    let size = args
-        .size
-        .as_deref()
-        .and_then(|values| <[f32; 2]>::try_from(values).ok())
-        .unwrap_or(DEFAULT_SIZE);
-    let mut viewport = egui::ViewportBuilder::default()
-        .with_title(format!("QuakeC Studio preview: {map}"))
-        .with_inner_size(size);
-    if let Some(at) = position {
-        viewport = viewport.with_position(at);
-    }
-    let mut wgpu_options = egui_wgpu::WgpuConfiguration::default();
-    if benchmark.is_some() {
-        wgpu_options.surface.present_mode = wgpu::PresentMode::AutoNoVsync;
-    }
-    let options = eframe::NativeOptions {
-        viewport,
-        renderer: eframe::Renderer::Wgpu,
-        depth_buffer: DEPTH_BITS,
-        wgpu_options,
-        ..eframe::NativeOptions::default()
-    };
-    let triangles = mesh
-        .indices
-        .len()
-        .checked_div(TRIANGLE_CORNERS)
-        .unwrap_or(0);
-    let camera_origin = camera.origin;
-    eframe::run_native(
-        "quakec-engine",
-        options,
-        Box::new(move |cc| {
-            let state = cc
-                .wgpu_render_state
-                .as_ref()
-                .ok_or("eframe started without wgpu")?;
-            let renderer = MapRenderer::new(
-                &state.device,
-                &state.queue,
-                (state.target_format, wgpu::TextureFormat::Depth32Float),
-                &mesh,
-                &play.assets(),
-            );
-            state.renderer.write().callback_resources.insert(renderer);
-            let mut game = game;
-            // BRIDGE-4.10: Wayland lets a client neither move nor raise its window.
-            let wayland = cc
-                .display_handle()
-                .is_ok_and(|handle| matches!(handle.as_raw(), RawDisplayHandle::Wayland(_)));
-            if wayland {
-                game.set_screen(Screen::FixedWindow);
-            }
-            // Screenshots are drawn offscreen on the window's own device (BRIDGE-4.9).
-            let drawer = Some(Drawer::new(Offscreen::from_state(
-                state.clone(),
-                wgpu::TextureFormat::Depth32Float,
-            )));
-            Ok(Box::new(Viewer {
-                drawer,
-                args,
-                map,
-                mesh,
-                camera,
-                triangles,
-                play,
-                game,
-                audio,
-                bridge,
-                client,
-                bsp,
-                describer,
-                rand,
-                fly,
-                pointer: Pointer::Free,
-                placed: None,
-                eye: camera_origin,
-                last_set: [f32::NAN; 2],
-                behind: 0.0,
-                started: Instant::now(),
-                last: Instant::now(),
-                benchmark,
-                frames: 0,
-                slowest: 0.0,
-                worked: 0.0,
-                longest_work: 0.0,
-                console,
-                dest: KeyDest::Game,
-                menu: Menu::new(),
-                bindings: Bindings::new(),
-                input: Input::new(),
-                motion: [0.0; 2],
-                modifiers: egui::Modifiers::NONE,
-                configured: false,
-                config_file: config_path(),
-            }))
-        }),
-    )
-    .map_err(|e| e.to_string())
 }
 
 struct Viewer {
@@ -333,7 +336,7 @@ impl eframe::App for Viewer {
         self.apply_settings();
         // PHYS-13.6: a level with what the player carries, a save, a load or quit.
         if let Some(action) = self.game.host_action() {
-            match act(&self.args, &mut self.game, action) {
+            match self.args.act(&mut self.game, action) {
                 Acted::Load(loaded) => {
                     self.change_level(window, *loaded);
                     return;
@@ -593,7 +596,7 @@ impl Viewer {
             drop(self.game.take_events());
             return;
         };
-        let running = serve(bridge, &mut self.game);
+        let running = bridge.serve(&mut self.game);
         if let Some(asked) = self.placed.take() {
             // The frame the windowing system gave, a frame after it was asked for.
             let outer = ui.input(|input| input.viewport().outer_rect);
@@ -835,7 +838,7 @@ impl Viewer {
         let random = self.rand.rand();
         let world = self.game.world();
         let args = &self.args;
-        let slots = || saves(args);
+        let slots = || args.saves();
         let game = MenuGame {
             random,
             server_active: true,

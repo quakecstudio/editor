@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use qs_sound::{MusicStream, Output, Read};
 
-use super::{Audio, CdImage, Device, Queue, TrackFile, fill, seconds_of_samples};
+use super::{Audio, CdImage, Device, Queue, TrackFile, seconds_of_samples};
 
 fn queue(most: usize) -> Queue {
     Queue {
@@ -38,10 +38,10 @@ fn the_device_takes_stereo_frames_and_silence() {
     let mut q = queue(16);
     q.write(&[1, 2, 3, 4, 5]);
     let mut data = [9_i16; 9];
-    fill(&q, &mut data, 3, |s| s);
+    q.fill(&mut data, 3, |s| s);
     assert_eq!(data, [1, 2, 0, 3, 4, 0, 5, 0, 0]);
     let mut more = [9.0_f32; 2];
-    fill(&q, &mut more, 2, |s| f32::from(s) / 32768.0);
+    q.fill(&mut more, 2, |s| f32::from(s) / 32768.0);
     assert_eq!(more, [0.0, 0.0]);
 }
 

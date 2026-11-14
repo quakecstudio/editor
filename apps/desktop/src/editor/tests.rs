@@ -24,7 +24,7 @@ use crate::fallback::SystemFonts;
 use crate::icons::Icon;
 use crate::multibuffer::Source;
 use crate::shell::CentreTab;
-use crate::shell::{EDITOR_AREA, view_style};
+use crate::shell::EDITOR_AREA;
 use crate::strings::{Text, file_count, match_count};
 use crate::theme::{Mode, Theme, Token};
 
@@ -606,7 +606,7 @@ fn a_file_opened_with_such_a_character_gets_a_system_font() {
 #[test]
 fn the_editors_colours_are_the_themes() {
     let light = Theme::load(Mode::Light).unwrap();
-    let style = view_style(&light);
+    let style = light.view_style();
     assert_eq!(style.background, light.color(Token::SurfaceEditor));
     assert_eq!(style.text, light.color(Token::TextCode));
     assert_eq!(style.removed_text, light.color(Token::TextOnError));

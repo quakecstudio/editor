@@ -101,27 +101,29 @@ pub(crate) struct Frame {
     pub(crate) rgba: Vec<u8>,
 }
 
-/// `frame` as `screenshot`'s result: scaled to `size` when one is asked, encoded as a PNG in
-/// base64, with its size.
-///
-/// # Errors
-///
-/// Why the frame did not encode.
-pub(crate) fn encode(frame: Frame, size: Option<(u32, u32)>) -> Result<(String, u32, u32), String> {
-    let image = RgbaImage::from_raw(frame.width, frame.height, frame.rgba)
-        .ok_or("the frame is not its size")?;
-    let image = match size {
-        Some((width, height)) if (width, height) != image.dimensions() => {
-            resize(&image, width, height, FilterType::Triangle)
-        }
-        _ => image,
-    };
-    let (width, height) = image.dimensions();
-    let mut png = Vec::new();
-    PngEncoder::new(&mut png)
-        .write_image(image.as_raw(), width, height, ExtendedColorType::Rgba8)
-        .map_err(|e| e.to_string())?;
-    Ok((base64(&png), width, height))
+impl Frame {
+    /// `frame` as `screenshot`'s result: scaled to `size` when one is asked, encoded as a PNG in
+    /// base64, with its size.
+    ///
+    /// # Errors
+    ///
+    /// Why the frame did not encode.
+    pub(crate) fn encode(self, size: Option<(u32, u32)>) -> Result<(String, u32, u32), String> {
+        let image = RgbaImage::from_raw(self.width, self.height, self.rgba)
+            .ok_or("the frame is not its size")?;
+        let image = match size {
+            Some((width, height)) if (width, height) != image.dimensions() => {
+                resize(&image, width, height, FilterType::Triangle)
+            }
+            _ => image,
+        };
+        let (width, height) = image.dimensions();
+        let mut png = Vec::new();
+        PngEncoder::new(&mut png)
+            .write_image(image.as_raw(), width, height, ExtendedColorType::Rgba8)
+            .map_err(|e| e.to_string())?;
+        Ok((base64(&png), width, height))
+    }
 }
 
 #[cfg(test)]

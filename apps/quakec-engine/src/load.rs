@@ -172,276 +172,6 @@ impl qs_sound::Random for Rand {
     }
 }
 
-/// Reads `map` from the install `-basedir` and `-game` name, with the engine options after
-/// `--` passed on to the game filesystem; starts its server with what the level before it
-/// `carried` (PHYS-10.4), connects its client and reads the models the server precached.
-#[expect(
-    clippy::too_many_lines,
-    reason = "one pass from the command line to a loaded map reads best in the order it runs"
-)]
-pub(crate) fn load(
-    args: &Args,
-    map: &str,
-    carried: Option<SpawnParms>,
-    host: Option<HostState>,
-    save: Option<&SaveGame>,
-) -> Result<Loaded, String> {
-    let map = map.to_owned();
-    let engine = args.engine();
-    let show = args.show.map(|show| match show {
-        Show::Water => Surface::Turbulent,
-        Show::Sky => Surface::Sky,
-    });
-    let at: Option<[f32; 4]> = args
-        .at
-        .as_deref()
-        .and_then(|values| <[f32; 4]>::try_from(values).ok());
-    let zfix = !args.nozfix;
-    let look = args.look.look();
-    let gamma = args.gamma.unwrap_or(look.gamma());
-    let vfs = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
-    let read = |name: &str| -> Result<Vec<u8>, String> {
-        vfs.load(name.as_bytes())
-            .map_err(|e| format!("{name}: {e:?}"))?
-            .map(LoadedFile::into_bytes)
-            .ok_or_else(|| format!("{name} is not on the search path; is --basedir the game root?"))
-    };
-    let palette = Palette::read(&read("gfx/palette.lmp")?)
-        .map_err(|e| e.to_string())?
-        .with_gamma(gamma);
-    let name = format!("maps/{map}.bsp");
-    let bytes = read(&name)?;
-    let bsp = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
-    let mut progs_bytes = read("progs.dat")?;
-    // RRE-4.1: QuakeSpasm gives the rerelease's named functions their builtins as it loads the
-    // progs, and RRE-4.2 its table then runs to 92.
-    let builtins = patch_builtins(&mut progs_bytes);
-    let progs = Progs::read(&progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
-    // The world reads the other models the progs precaches, such as the health boxes, from the
-    // same search path; so do the client and the renderer.
-    let reader = || -> Result<Reader, String> {
-        let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
-        Ok(Rc::new(move |name: &str| {
-            files
-                .load(name.as_bytes())
-                .ok()
-                .flatten()
-                .map(LoadedFile::into_bytes)
-        }))
-    };
-    // INPUT-3.5: in QuakeSpasm's look the host's own `default.cfg` covers id1's.
-    let files = || -> Result<Reader, String> {
-        let config = config_path();
-        Ok(host_files(reader()?, look.native_2d(), move || {
-            config.as_ref().and_then(|path| std::fs::read(path).ok())
-        }))
-    };
-    // The search-path element a file is found in, which decides whether an MD5 model
-    // replaces its `.mdl` (REND-12.1).
-    let ranker = || -> Result<Ranker, String> {
-        let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
-        Ok(Box::new(move |name: &str| {
-            files.find(name.as_bytes()).map(|file| file.element())
-        }))
-    };
-    // RRE-1.6, RRE-1.10: the rerelease's strings, read before the map as QuakeSpasm's
-    // `LOC_Init` reads them, from the search path, the base directory or `QuakeEX.kpf`.
-    let text = localization(&vfs, args)?;
-    let options = LoadOptions {
-        localization: text
-            .map(|text| Localization::loc_load_file(&text))
-            .unwrap_or_default(),
-        builtins,
-        carried,
-        registration: vfs.registration(),
-        host,
-        // PHYS-13.7: `COM_Path_f`'s lines, an archive with its count of files.
-        search_path: vfs
-            .elements()
-            .iter()
-            .map(|element| match element {
-                Element::Archive(archive) => {
-                    format!("{} ({} files)", archive.name(), archive.file_count())
-                }
-                Element::Directory(directory) => directory.name().to_owned(),
-            })
-            .collect(),
-        seed: None,
-        settings: Vec::new(),
-    };
-    let mut world =
-        World::load(&progs, &map, &bsp, files()?, options).map_err(|e| e.to_string())?;
-    world.settle(&progs).map_err(|e| e.to_string())?;
-    // PHYS-10.5: a saved game is read over the settled map before the client enters.
-    if let Some(save) = save {
-        world.restore(&progs, save).map_err(|e| e.to_string())?;
-    }
-    world.connect(&progs).map_err(|e| e.to_string())?;
-    let reporting = if args.bridge.is_some() {
-        Reporting::Bridge
-    } else {
-        Reporting::Off
-    };
-    let mut game = Game::new(world, progs_bytes.to_vec(), reporting);
-    // BRIDGE-3.4, WORLD-9.4: the line of each statement, from the `.lno` beside the progs when
-    // it is one for this progs (LNO-4.1).
-    let lines = read("progs.lno")
-        .ok()
-        .and_then(|bytes| LnoFile::read(&bytes).ok())
-        .filter(|lno| lno.matches_header(progs.header()).is_ok())
-        .map(|lno| lno.lines)
-        .unwrap_or_default();
-    game.set_lines(lines);
-    game.set_files(files()?);
-    game.announce("progs.dat", &map);
-    // The client reads the serverinfo and the spawn messages the connection wrote.
-    let mut client = Client::new(qs_client::Game::Standard);
-    let mut describer = Describer { read: reader()? };
-    let mut rand = Rand(1);
-    let packets = game.world_mut().take_messages().packets;
-    let events = client
-        .frame(0.0, &packets, &mut describer, &mut rand)
-        .map_err(|e| format!("client: {e}"))?;
-    let sounds = reader()?;
-    let output = if args.view_script.is_some() {
-        Device::Capture
-    } else if args.nosound {
-        Device::None
-    } else {
-        Device::Default
-    };
-    let printed = events
-        .iter()
-        .filter_map(|event| match event {
-            Event::Print(text) => Some(text.clone()),
-            _ => None,
-        })
-        .collect();
-    // SND-6.4, SND-6.5: the CD's music, the mission pack's own CD for its game, never in a capture, which id's engine has none of to compare.
-    let cd = match output {
-        Device::Capture => None,
-        Device::Default | Device::None if args.nocdaudio => None,
-        Device::Default | Device::None => args
-            .cd_image
-            .clone()
-            .or_else(|| {
-                let base = args.basedir.clone().unwrap_or_else(|| PathBuf::from("."));
-                Some(base.join(args.cd_sheet())).filter(|cue| cue.is_file())
-            })
-            .and_then(|cue| CdImage::open(&cue)),
-    };
-    // RRE-3.5: the music files, from the same search path, and never in a capture, as the CD.
-    let music: qs_sound::Reader = match output {
-        Device::Capture => Box::new(|_: &str| None),
-        Device::Default | Device::None => {
-            let music = Rc::clone(&sounds);
-            Box::new(move |name: &str| music(name))
-        }
-    };
-    let mut audio = Audio::open(Box::new(move |name: &str| sounds(name)), output, cd, music);
-    audio.handle(&events, &mut rand);
-    let mut pics = Pics::new();
-    pics.add_wad(&read("gfx.wad")?, &palette)
-        .map_err(|e| e.to_string())?;
-    for lmp in LMPS {
-        if let Ok(bytes) = read(lmp) {
-            pics.add_lmp(lmp, &bytes, &palette)
-                .map_err(|e| e.to_string())?;
-        }
-    }
-    let mut play = Play::new(palette.clone(), pics, bsp.entities());
-    play.zfix = zfix;
-    play.look = look;
-    play.load_models(client.model_names(), &*reader()?, &ranker()?)
-        .map_err(|e| e.to_string())?;
-    play.load_sky(&*reader()?);
-    // The world, then every brush submodel `*n` at the origin, so the mesh's model `n` is the
-    // submodel `n`; then each entity showing a BSP of its own, such as a health box.
-    let placements: Vec<Placement> = (0..bsp.models.len())
-        .map(|model| Placement {
-            model,
-            ..Placement::WORLD
-        })
-        .collect();
-    let mut others: Vec<(String, Vec<(Placement, usize)>)> = Vec::new();
-    for entity in game.world().entities().into_iter().skip(1) {
-        if is_external_brush_model(&entity.model, &name) {
-            let placement = Placement {
-                model: 0,
-                origin: entity.origin,
-                angles: entity.angles,
-            };
-            let placed = (placement, entity.number.index());
-            match others.iter_mut().find(|(name, _)| *name == entity.model) {
-                Some((_, list)) => list.push(placed),
-                None => others.push((entity.model, vec![placed])),
-            }
-        }
-    }
-    // A `.lit` beside the map lights it in colour (REND-6, BSP-18); one that is not usable is
-    // reported and left out, as QuakeSpasm does. BSP-18.4's game-directory priority is not
-    // checked here.
-    let lit_bytes = read(&format!("maps/{map}.lit")).ok();
-    let lit = lit_bytes.as_deref().and_then(|bytes| {
-        Lit::read(bytes, bsp.lighting.len())
-            .map_err(|error| tracing::warn!(%error, "maps/{map}.lit"))
-            .ok()
-    });
-    let mut builder = MeshBuilder::new(&palette, look);
-    let extras = Extras {
-        lit: lit.as_ref(),
-        ..Extras::default()
-    };
-    builder
-        .add_with(&bsp, &extras, &placements)
-        .map_err(|e| e.to_string())?;
-    let mut next = placements.len();
-    for (name, list) in &others {
-        let bytes = read(name)?;
-        let other = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(name))?;
-        let list: Vec<Placement> = list.iter().map(|(p, _)| *p).collect();
-        builder.add(&other, &list).map_err(|e| e.to_string())?;
-    }
-    for (_, list) in &others {
-        for (_, entity) in list {
-            play.add_instance(qs_client::EntitySlot::new(*entity), next);
-            next = next.saturating_add(1);
-        }
-    }
-    let mesh = builder.finish();
-    let placed = at.map(|[x, y, z, yaw]| {
-        let mut camera = Camera::new([x, y, z], Degrees::new(yaw));
-        camera.turn(Degrees::new(0.0), Degrees::new(PLACED_PITCH));
-        camera
-    });
-    let camera = placed
-        .or_else(|| show.and_then(|surface| facing(&mesh, surface)))
-        .or_else(|| start(bsp.entities()))
-        .unwrap_or_else(|| {
-            let [a, b, c] = mesh.mins;
-            let [x, y, z] = mesh.maxs;
-            Camera::new(
-                [(a + x) / 2.0, (b + y) / 2.0, (c + z) / 2.0],
-                Degrees::new(0.0),
-            )
-        });
-    let bsp_bytes: &'static [u8] = Vec::leak(bytes.clone());
-    let bsp = Bsp::read(bsp_bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
-    Ok(Loaded {
-        map,
-        mesh,
-        play,
-        game,
-        audio,
-        client,
-        bsp,
-        describer,
-        rand,
-        camera,
-        printed,
-    })
-}
-
 /// Whether an entity's `model` is a brush model of a BSP of its own, drawn from that file:
 /// any `.bsp`, the health and ammo boxes and the barrels of `maps/b_*.bsp` among them, but the
 /// map's own, `world`, whose models are the mesh's.
@@ -547,79 +277,354 @@ pub(crate) enum Acted {
     Stay,
 }
 
-/// The game directory, id's `com_gamedir`: the base directory's `-game` folder, else `id1`.
-fn game_dir(args: &Args) -> PathBuf {
-    let base = args.basedir.clone().unwrap_or_else(|| PathBuf::from("."));
-    base.join(args.game.as_deref().unwrap_or("id1"))
-}
-
-/// `M_ScanSaves`' files (MENU-6.1): the text of `s0.sav` to `s11.sav` in the game directory,
-/// `None` for each that does not open.
-pub(crate) fn saves(args: &Args) -> [Option<Vec<u8>>; MENU_SAVEGAMES] {
-    let dir = game_dir(args);
-    core::array::from_fn(|n| std::fs::read(dir.join(format!("s{n}.sav"))).ok())
-}
-
-/// `<name>.sav` in the game directory, `COM_DefaultExtension (name, ".sav")`.
-fn save_path(args: &Args, name: &str) -> PathBuf {
-    let mut file = name.to_owned();
-    if Path::new(name).extension().is_none() {
-        file.push_str(".sav");
-    }
-    // `sprintf ("%s/%s", com_gamedir, name)`: the name stays under the game directory, even
-    // one that is absolute on its own.
-    let mut path = game_dir(args).into_os_string();
-    path.push("/");
-    path.push(file);
-    PathBuf::from(path)
-}
-
-/// Carries out `action` (PHYS-13.6): a level loaded, the game saved or loaded as
-/// `Host_Savegame_f` and `Host_Loadgame_f` do, or the host stopped.
-pub(crate) fn act(args: &Args, game: &mut Game, action: HostAction) -> Acted {
-    match action {
-        HostAction::Level(next) => match load(args, &next.map, next.carried, Some(next.host), None)
-        {
-            Ok(loaded) => Acted::Load(Box::new(loaded)),
-            Err(error) => {
-                tracing::warn!(%error, map = next.map, "the next level did not load");
+impl Args {
+    /// Carries out `action` (PHYS-13.6): a level loaded, the game saved or loaded as
+    /// `Host_Savegame_f` and `Host_Loadgame_f` do, or the host stopped.
+    pub(crate) fn act(&self, game: &mut Game, action: HostAction) -> Acted {
+        match action {
+            HostAction::Level(next) => {
+                match self.load_map(&next.map, next.carried, Some(next.host), None) {
+                    Ok(loaded) => Acted::Load(Box::new(loaded)),
+                    Err(error) => {
+                        tracing::warn!(%error, map = next.map, "the next level did not load");
+                        Acted::Stay
+                    }
+                }
+            }
+            HostAction::Save(name) => {
+                let path = self.save_path(&name);
+                game.console_line(&format!("Saving game to {}...\n", path.display()));
+                if let Some(text) = game.save() {
+                    match std::fs::write(&path, text) {
+                        Ok(()) => game.console_line("done.\n"),
+                        Err(_) => game.console_line("ERROR: couldn't open.\n"),
+                    }
+                }
                 Acted::Stay
             }
-        },
-        HostAction::Save(name) => {
-            let path = save_path(args, &name);
-            game.console_line(&format!("Saving game to {}...\n", path.display()));
-            if let Some(text) = game.save() {
-                match std::fs::write(&path, text) {
-                    Ok(()) => game.console_line("done.\n"),
-                    Err(_) => game.console_line("ERROR: couldn't open.\n"),
-                }
-            }
-            Acted::Stay
-        }
-        HostAction::Load(name) => {
-            let path = save_path(args, &name);
-            game.console_line(&format!("Loading game from {}...\n", path.display()));
-            let Ok(text) = std::fs::read(&path) else {
-                game.console_line("ERROR: couldn't open.\n");
-                return Acted::Stay;
-            };
-            let save = match SaveGame::read(&text) {
-                Ok(save) => save,
-                Err(error) => {
-                    game.console_line(&format!("{error}\n"));
+            HostAction::Load(name) => {
+                let path = self.save_path(&name);
+                game.console_line(&format!("Loading game from {}...\n", path.display()));
+                let Ok(text) = std::fs::read(&path) else {
+                    game.console_line("ERROR: couldn't open.\n");
                     return Acted::Stay;
+                };
+                let save = match SaveGame::read(&text) {
+                    Ok(save) => save,
+                    Err(error) => {
+                        game.console_line(&format!("{error}\n"));
+                        return Acted::Stay;
+                    }
+                };
+                let host = game.world().host_state();
+                match self.load_map(&save.map, None, Some(host), Some(&save)) {
+                    Ok(loaded) => Acted::Load(Box::new(loaded)),
+                    Err(error) => {
+                        game.console_line(&format!("{error}\n"));
+                        Acted::Stay
+                    }
                 }
-            };
-            let host = game.world().host_state();
-            match load(args, &save.map, None, Some(host), Some(&save)) {
-                Ok(loaded) => Acted::Load(Box::new(loaded)),
-                Err(error) => {
-                    game.console_line(&format!("{error}\n"));
-                    Acted::Stay
+            }
+            HostAction::Quit => Acted::Quit,
+        }
+    }
+
+    /// The game directory, id's `com_gamedir`: the base directory's `-game` folder, else `id1`.
+    fn game_dir(&self) -> PathBuf {
+        let base = self.basedir.clone().unwrap_or_else(|| PathBuf::from("."));
+        base.join(self.game.as_deref().unwrap_or("id1"))
+    }
+
+    /// Reads `map` from the install `-basedir` and `-game` name, with the engine options after
+    /// `--` passed on to the game filesystem; starts its server with what the level before it
+    /// `carried` (PHYS-10.4), connects its client and reads the models the server precached.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one pass from the command line to a loaded map reads best in the order it runs"
+    )]
+    pub(crate) fn load_map(
+        &self,
+        map: &str,
+        carried: Option<SpawnParms>,
+        host: Option<HostState>,
+        save: Option<&SaveGame>,
+    ) -> Result<Loaded, String> {
+        let map = map.to_owned();
+        let engine = self.engine();
+        let show = self.show.map(|show| match show {
+            Show::Water => Surface::Turbulent,
+            Show::Sky => Surface::Sky,
+        });
+        let at: Option<[f32; 4]> = self
+            .at
+            .as_deref()
+            .and_then(|values| <[f32; 4]>::try_from(values).ok());
+        let zfix = !self.nozfix;
+        let look = self.look.look();
+        let gamma = self.gamma.unwrap_or(look.gamma());
+        let vfs = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
+        let read = |name: &str| -> Result<Vec<u8>, String> {
+            vfs.load(name.as_bytes())
+                .map_err(|e| format!("{name}: {e:?}"))?
+                .map(LoadedFile::into_bytes)
+                .ok_or_else(|| {
+                    format!("{name} is not on the search path; is --basedir the game root?")
+                })
+        };
+        let palette = Palette::read(&read("gfx/palette.lmp")?)
+            .map_err(|e| e.to_string())?
+            .with_gamma(gamma);
+        let name = format!("maps/{map}.bsp");
+        let bytes = read(&name)?;
+        let bsp = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
+        let mut progs_bytes = read("progs.dat")?;
+        // RRE-4.1: QuakeSpasm gives the rerelease's named functions their builtins as it loads the
+        // progs, and RRE-4.2 its table then runs to 92.
+        let builtins = patch_builtins(&mut progs_bytes);
+        let progs = Progs::read(&progs_bytes).map_err(|e| format!("progs.dat: {e}"))?;
+        // The world reads the other models the progs precaches, such as the health boxes, from the
+        // same search path; so do the client and the renderer.
+        let reader = || -> Result<Reader, String> {
+            let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
+            Ok(Rc::new(move |name: &str| {
+                files
+                    .load(name.as_bytes())
+                    .ok()
+                    .flatten()
+                    .map(LoadedFile::into_bytes)
+            }))
+        };
+        // INPUT-3.5: in QuakeSpasm's look the host's own `default.cfg` covers id1's.
+        let files = || -> Result<Reader, String> {
+            let config = config_path();
+            Ok(host_files(reader()?, look.native_2d(), move || {
+                config.as_ref().and_then(|path| std::fs::read(path).ok())
+            }))
+        };
+        // The search-path element a file is found in, which decides whether an MD5 model
+        // replaces its `.mdl` (REND-12.1).
+        let ranker = || -> Result<Ranker, String> {
+            let files = Vfs::new(StdFs, &engine, ".").map_err(|e| format!("{e:?}"))?;
+            Ok(Box::new(move |name: &str| {
+                files.find(name.as_bytes()).map(|file| file.element())
+            }))
+        };
+        // RRE-1.6, RRE-1.10: the rerelease's strings, read before the map as QuakeSpasm's
+        // `LOC_Init` reads them, from the search path, the base directory or `QuakeEX.kpf`.
+        let text = localization(&vfs, self)?;
+        let options = LoadOptions {
+            localization: text
+                .map(|text| Localization::loc_load_file(&text))
+                .unwrap_or_default(),
+            builtins,
+            carried,
+            registration: vfs.registration(),
+            host,
+            // PHYS-13.7: `COM_Path_f`'s lines, an archive with its count of files.
+            search_path: vfs
+                .elements()
+                .iter()
+                .map(|element| match element {
+                    Element::Archive(archive) => {
+                        format!("{} ({} files)", archive.name(), archive.file_count())
+                    }
+                    Element::Directory(directory) => directory.name().to_owned(),
+                })
+                .collect(),
+            seed: None,
+            settings: Vec::new(),
+        };
+        let mut world =
+            World::load(&progs, &map, &bsp, files()?, options).map_err(|e| e.to_string())?;
+        world.settle(&progs).map_err(|e| e.to_string())?;
+        // PHYS-10.5: a saved game is read over the settled map before the client enters.
+        if let Some(save) = save {
+            world.restore(&progs, save).map_err(|e| e.to_string())?;
+        }
+        world.connect(&progs).map_err(|e| e.to_string())?;
+        let reporting = if self.bridge.is_some() {
+            Reporting::Bridge
+        } else {
+            Reporting::Off
+        };
+        let mut game = Game::new(world, progs_bytes.to_vec(), reporting);
+        // BRIDGE-3.4, WORLD-9.4: the line of each statement, from the `.lno` beside the progs when
+        // it is one for this progs (LNO-4.1).
+        let lines = read("progs.lno")
+            .ok()
+            .and_then(|bytes| LnoFile::read(&bytes).ok())
+            .filter(|lno| lno.matches_header(progs.header()).is_ok())
+            .map(|lno| lno.lines)
+            .unwrap_or_default();
+        game.set_lines(lines);
+        game.set_files(files()?);
+        game.announce("progs.dat", &map);
+        // The client reads the serverinfo and the spawn messages the connection wrote.
+        let mut client = Client::new(qs_client::Game::Standard);
+        let mut describer = Describer { read: reader()? };
+        let mut rand = Rand(1);
+        let packets = game.world_mut().take_messages().packets;
+        let events = client
+            .frame(0.0, &packets, &mut describer, &mut rand)
+            .map_err(|e| format!("client: {e}"))?;
+        let sounds = reader()?;
+        let output = if self.view_script.is_some() {
+            Device::Capture
+        } else if self.nosound {
+            Device::None
+        } else {
+            Device::Default
+        };
+        let printed = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Print(text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        // SND-6.4, SND-6.5: the CD's music, the mission pack's own CD for its game, never in a capture, which id's engine has none of to compare.
+        let cd = match output {
+            Device::Capture => None,
+            Device::Default | Device::None if self.nocdaudio => None,
+            Device::Default | Device::None => self
+                .cd_image
+                .clone()
+                .or_else(|| {
+                    let base = self.basedir.clone().unwrap_or_else(|| PathBuf::from("."));
+                    Some(base.join(self.cd_sheet())).filter(|cue| cue.is_file())
+                })
+                .and_then(|cue| CdImage::open(&cue)),
+        };
+        // RRE-3.5: the music files, from the same search path, and never in a capture, as the CD.
+        let music: qs_sound::Reader = match output {
+            Device::Capture => Box::new(|_: &str| None),
+            Device::Default | Device::None => {
+                let music = Rc::clone(&sounds);
+                Box::new(move |name: &str| music(name))
+            }
+        };
+        let mut audio = Audio::open(Box::new(move |name: &str| sounds(name)), output, cd, music);
+        audio.handle(&events, &mut rand);
+        let mut pics = Pics::new();
+        pics.add_wad(&read("gfx.wad")?, &palette)
+            .map_err(|e| e.to_string())?;
+        for lmp in LMPS {
+            if let Ok(bytes) = read(lmp) {
+                pics.add_lmp(lmp, &bytes, &palette)
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        let mut play = Play::new(palette.clone(), pics, bsp.entities());
+        play.zfix = zfix;
+        play.look = look;
+        play.load_models(client.model_names(), &*reader()?, &ranker()?)
+            .map_err(|e| e.to_string())?;
+        play.load_sky(&*reader()?);
+        // The world, then every brush submodel `*n` at the origin, so the mesh's model `n` is the
+        // submodel `n`; then each entity showing a BSP of its own, such as a health box.
+        let placements: Vec<Placement> = (0..bsp.models.len())
+            .map(|model| Placement {
+                model,
+                ..Placement::WORLD
+            })
+            .collect();
+        let mut others: Vec<(String, Vec<(Placement, usize)>)> = Vec::new();
+        for entity in game.world().entities().into_iter().skip(1) {
+            if is_external_brush_model(&entity.model, &name) {
+                let placement = Placement {
+                    model: 0,
+                    origin: entity.origin,
+                    angles: entity.angles,
+                };
+                let placed = (placement, entity.number.index());
+                match others.iter_mut().find(|(name, _)| *name == entity.model) {
+                    Some((_, list)) => list.push(placed),
+                    None => others.push((entity.model, vec![placed])),
                 }
             }
         }
-        HostAction::Quit => Acted::Quit,
+        // A `.lit` beside the map lights it in colour (REND-6, BSP-18); one that is not usable is
+        // reported and left out, as QuakeSpasm does. BSP-18.4's game-directory priority is not
+        // checked here.
+        let lit_bytes = read(&format!("maps/{map}.lit")).ok();
+        let lit = lit_bytes.as_deref().and_then(|bytes| {
+            Lit::read(bytes, bsp.lighting.len())
+                .map_err(|error| tracing::warn!(%error, "maps/{map}.lit"))
+                .ok()
+        });
+        let mut builder = MeshBuilder::new(&palette, look);
+        let extras = Extras {
+            lit: lit.as_ref(),
+            ..Extras::default()
+        };
+        builder
+            .add_with(&bsp, &extras, &placements)
+            .map_err(|e| e.to_string())?;
+        let mut next = placements.len();
+        for (name, list) in &others {
+            let bytes = read(name)?;
+            let other = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(name))?;
+            let list: Vec<Placement> = list.iter().map(|(p, _)| *p).collect();
+            builder.add(&other, &list).map_err(|e| e.to_string())?;
+        }
+        for (_, list) in &others {
+            for (_, entity) in list {
+                play.add_instance(qs_client::EntitySlot::new(*entity), next);
+                next = next.saturating_add(1);
+            }
+        }
+        let mesh = builder.finish();
+        let placed = at.map(|[x, y, z, yaw]| {
+            let mut camera = Camera::new([x, y, z], Degrees::new(yaw));
+            camera.turn(Degrees::new(0.0), Degrees::new(PLACED_PITCH));
+            camera
+        });
+        let camera = placed
+            .or_else(|| show.and_then(|surface| facing(&mesh, surface)))
+            .or_else(|| start(bsp.entities()))
+            .unwrap_or_else(|| {
+                let [a, b, c] = mesh.mins;
+                let [x, y, z] = mesh.maxs;
+                Camera::new(
+                    [(a + x) / 2.0, (b + y) / 2.0, (c + z) / 2.0],
+                    Degrees::new(0.0),
+                )
+            });
+        let bsp_bytes: &'static [u8] = Vec::leak(bytes.clone());
+        let bsp = Bsp::read(bsp_bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
+        Ok(Loaded {
+            map,
+            mesh,
+            play,
+            game,
+            audio,
+            client,
+            bsp,
+            describer,
+            rand,
+            camera,
+            printed,
+        })
+    }
+
+    /// `<name>.sav` in the game directory, `COM_DefaultExtension (name, ".sav")`.
+    fn save_path(&self, name: &str) -> PathBuf {
+        let mut file = name.to_owned();
+        if Path::new(name).extension().is_none() {
+            file.push_str(".sav");
+        }
+        // `sprintf ("%s/%s", com_gamedir, name)`: the name stays under the game directory, even
+        // one that is absolute on its own.
+        let mut path = self.game_dir().into_os_string();
+        path.push("/");
+        path.push(file);
+        PathBuf::from(path)
+    }
+
+    /// `M_ScanSaves`' files (MENU-6.1): the text of `s0.sav` to `s11.sav` in the game directory,
+    /// `None` for each that does not open.
+    pub(crate) fn saves(&self) -> [Option<Vec<u8>>; MENU_SAVEGAMES] {
+        let dir = self.game_dir();
+        core::array::from_fn(|n| std::fs::read(dir.join(format!("s{n}.sav"))).ok())
     }
 }
