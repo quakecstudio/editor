@@ -2520,10 +2520,7 @@ fn colour_shifts_and_the_blend() {
     );
 }
 
-use crate::{
-    Anchor, CenterPrint, HudInput, HudItem, Placed, Score, intermission_overlay, sort_frags,
-    status_bar,
-};
+use crate::{Anchor, CenterMode, CenterPrint, HudInput, HudItem, Placed, Score, sort_frags};
 
 fn hud_input<'a>(
     stats: &'a [i32; 32],
@@ -2588,9 +2585,9 @@ fn the_status_bar_shows_the_player() {
     let mut input = hud_input(&stats, &gettime, &scores);
     input.items = 8192 | 256;
     input.lines = 0;
-    assert!(status_bar(&input, 200).is_empty());
+    assert!(input.status_bar(200).is_empty());
     input.lines = 24;
-    let bar = status_bar(&input, 200);
+    let bar = input.status_bar(200);
     let p = pics(&bar);
     assert_eq!(p[0], ("sbar".to_owned(), 0, 0));
     assert!(
@@ -2619,7 +2616,7 @@ fn the_status_bar_shows_the_player() {
         stats: &stats2,
         ..input.clone()
     };
-    let p = pics(&status_bar(&input2, 200));
+    let p = pics(&input2.status_bar(200));
     assert!(p.iter().any(|(n, _, _)| n == "ibar"));
     assert!(
         p.contains(&("anum_6".to_owned(), 24, 0)) && p.contains(&("disc".to_owned(), 0, 0)),
@@ -2634,7 +2631,7 @@ fn the_status_bar_shows_the_player() {
         items: 32768 | 16384,
         ..input2.clone()
     };
-    let p = pics(&status_bar(&input4, 200));
+    let p = pics(&input4.status_bar(200));
     assert!(
         p.contains(&("sb_armor3".to_owned(), 0, 0)),
         "the armour picture by the first bit set"
@@ -2643,7 +2640,7 @@ fn the_status_bar_shows_the_player() {
         items: 16384,
         ..input2.clone()
     };
-    let p = pics(&status_bar(&input3, 200));
+    let p = pics(&input3.status_bar(200));
     assert!(p.contains(&("sb_armor2".to_owned(), 0, 0)));
     assert!(
         p.contains(&("anum_minus".to_owned(), 24 + 24, 0))
@@ -2656,7 +2653,7 @@ fn the_status_bar_shows_the_player() {
         stats: &stats3,
         ..input.clone()
     };
-    let p = pics(&status_bar(&dead, 200));
+    let p = pics(&dead.status_bar(200));
     assert!(p.contains(&("scorebar".to_owned(), 0, 0)));
     assert!(!p.iter().any(|(n, _, _)| n == "sbar"));
     stats3[stat::HEALTH] = 50;
@@ -2666,7 +2663,7 @@ fn the_status_bar_shows_the_player() {
         ..input.clone()
     };
     assert!(
-        pics(&status_bar(&shown, 200))
+        pics(&shown.status_bar(200))
             .iter()
             .any(|(n, _, _)| n == "scorebar")
     );
@@ -2684,7 +2681,7 @@ fn the_face_follows_health_and_powerups() {
         let mut input = hud_input(&stats, &gettime, &scores);
         input.items = items;
         input.faceanimtime = if pain { 11.0 } else { 0.0 };
-        pics(&status_bar(&input, 200))
+        pics(&input.status_bar(200))
             .into_iter()
             .find(|(n, x, _)| n.starts_with("face") && *x == 112)
             .unwrap()
@@ -2717,7 +2714,7 @@ fn the_inventory_lists_weapons_ammo_and_items() {
     let scores = [];
     let mut input = hud_input(&stats, &gettime, &scores);
     input.items = 1 | 4 | 64 | (1 << 17) | (1 << 22) | (1 << 28) | (1 << 31);
-    let bar = status_bar(&input, 200);
+    let bar = input.status_bar(200);
     let p = pics(&bar);
     assert!(p.contains(&("ibar".to_owned(), 0, -24)));
     assert!(
@@ -2749,13 +2746,13 @@ fn the_inventory_lists_weapons_ammo_and_items() {
         "a leading space is not drawn"
     );
     input.time = 10.35;
-    let p = pics(&status_bar(&input, 200));
+    let p = pics(&input.status_bar(200));
     assert!(
         p.contains(&("inva4_shotgun".to_owned(), 0, -16)),
         "frame (3 % 5) + 2: {p:?}"
     );
     input.time = 10.72;
-    let p = pics(&status_bar(&input, 200));
+    let p = pics(&input.status_bar(200));
     assert!(
         p.contains(&("inva3_shotgun".to_owned(), 0, -16)),
         "frame (7 % 5) + 2"
@@ -2798,7 +2795,7 @@ fn the_frag_list_ranks_the_clients() {
     let mut input = hud_input(&stats, &gettime, &scores);
     input.maxclients = 4;
     input.viewentity = 1;
-    let bar = status_bar(&input, 400);
+    let bar = input.status_bar(400);
     let fills: Vec<_> = bar
         .iter()
         .filter_map(|p| match p.item {
@@ -2849,7 +2846,7 @@ fn the_scoreboards() {
     input.showscores = true;
     input.time = 65.0;
     input.levelname = b"the Slipgate";
-    let bar = status_bar(&input, 200);
+    let bar = input.status_bar(200);
     let c = chars(&bar);
     let text = |y: i32, x0: i32| -> String {
         let mut s: Vec<(i32, u8)> = c
@@ -2876,7 +2873,7 @@ fn the_scoreboards() {
     input.gametype = 1;
     input.maxclients = 2;
     input.viewentity = 2;
-    let bar = status_bar(&input, 200);
+    let bar = input.status_bar(200);
     let lmp = bar
         .iter()
         .find(|p| matches!(p.item, HudItem::Lmp { .. }))
@@ -2976,7 +2973,7 @@ fn the_intermission_overlay() {
     let mut input = hud_input(&stats, &gettime, &scores);
     input.intermission = 1;
     input.completed_time = 125.0;
-    let overlay = intermission_overlay(&input);
+    let overlay = input.intermission_overlay();
     assert!(overlay.iter().all(|p| p.anchor == Anchor::Screen));
     let lmps: Vec<_> = overlay
         .iter()
@@ -3014,10 +3011,10 @@ fn the_intermission_overlay() {
         p.contains(&("num_1".to_owned(), 240, 144)) && p.contains(&("num_0".to_owned(), 264, 144))
     );
     input.gametype = 1;
-    let overlay = intermission_overlay(&input);
+    let overlay = input.intermission_overlay();
     assert!(matches!(&overlay[0].item, HudItem::Lmp { path, .. } if path == "gfx/ranking.lmp"));
     input.intermission = 2;
-    let overlay = intermission_overlay(&input);
+    let overlay = input.intermission_overlay();
     assert_eq!(overlay.len(), 1);
     assert!(
         matches!(&overlay[0].item, HudItem::Lmp { path, x: None, y: 16 } if path == "gfx/finale.lmp")
@@ -3033,12 +3030,14 @@ fn the_intermission_overlay() {
 fn the_centre_print() {
     let mut center = CenterPrint::default();
     assert!(
-        center.draw(0.1, 1.0, false, 640, 480).is_empty(),
+        center
+            .draw(0.1, 1.0, CenterMode::Timed, 640, 480)
+            .is_empty(),
         "nothing set"
     );
     center.set(b"hello\nworld", 1.0);
     assert_eq!(center.lines(), 2);
-    let items = center.draw(0.1, 1.1, false, 640, 480);
+    let items = center.draw(0.1, 1.1, CenterMode::Timed, 640, 480);
     assert_eq!(items.len(), 10);
     assert_eq!(
         items[0],
@@ -3056,14 +3055,16 @@ fn the_centre_print() {
             ch: b'w'
         }
     );
-    center.draw(1.0, 2.1, false, 640, 480);
+    center.draw(1.0, 2.1, CenterMode::Timed, 640, 480);
     assert!(
-        center.draw(1.0, 3.1, false, 640, 480).is_empty(),
+        center
+            .draw(1.0, 3.1, CenterMode::Timed, 640, 480)
+            .is_empty(),
         "two seconds are up"
     );
     center.set(b"a\nb\nc\nd\ne", 3.1);
     assert_eq!(
-        center.draw(0.0, 3.1, false, 640, 480)[0],
+        center.draw(0.0, 3.1, CenterMode::Timed, 640, 480)[0],
         HudItem::Char {
             x: 316,
             y: 48,
@@ -3074,26 +3075,32 @@ fn the_centre_print() {
     let long = [b'x'; 50];
     center.set(&long, 4.0);
     assert_eq!(
-        center.draw(0.0, 4.0, false, 640, 480).len(),
+        center.draw(0.0, 4.0, CenterMode::Timed, 640, 480).len(),
         40,
         "cut at 40"
     );
     let huge = vec![b'y'; 2000];
     center.set(&huge, 5.0);
-    assert_eq!(center.draw(0.0, 5.0, false, 640, 480).len(), 40);
+    assert_eq!(center.draw(0.0, 5.0, CenterMode::Timed, 640, 480).len(), 40);
     center.set(b"the end", 10.0);
     assert_eq!(
-        center.draw(0.0, 10.0, true, 320, 200).len(),
+        center
+            .draw(0.0, 10.0, CenterMode::Intermission, 320, 200)
+            .len(),
         1,
         "the first character at once"
     );
     assert_eq!(
-        center.draw(0.0, 10.5, true, 320, 200).len(),
+        center
+            .draw(0.0, 10.5, CenterMode::Intermission, 320, 200)
+            .len(),
         5,
         "8 a second: 4 more"
     );
     assert_eq!(
-        center.draw(5.0, 20.0, true, 320, 200).len(),
+        center
+            .draw(5.0, 20.0, CenterMode::Intermission, 320, 200)
+            .len(),
         7,
         "all of it, and the time no longer matters"
     );

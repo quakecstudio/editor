@@ -38,10 +38,10 @@ pub use console::{
 };
 pub use entity::{Baseline, Entity, Lerp, LerpFlags};
 pub use hud::{
-    Anchor, CenterPrint, HUD_CENTER_LINE_LENGTH, HUD_CENTER_MAX, HUD_CENTERTIME, HUD_FLASH_FRAMES,
-    HUD_GAME_DEATHMATCH, HUD_ITEMS, HUD_LOW_AMMO, HUD_LOW_ARMOR, HUD_LOW_HEALTH, HUD_NUM_WIDTH,
-    HUD_PRINTSPEED, HUD_SBAR_HEIGHT, HUD_WEAPONS, HudInput, HudItem, Placed, color_for_map,
-    intermission_overlay, sort_frags, status_bar,
+    Anchor, CenterMode, CenterPrint, HUD_CENTER_LINE_LENGTH, HUD_CENTER_MAX, HUD_CENTERTIME,
+    HUD_FLASH_FRAMES, HUD_GAME_DEATHMATCH, HUD_ITEMS, HUD_LOW_AMMO, HUD_LOW_ARMOR, HUD_LOW_HEALTH,
+    HUD_NUM_WIDTH, HUD_PRINTSPEED, HUD_SBAR_HEIGHT, HUD_WEAPONS, HudInput, HudItem, Placed,
+    color_for_map, sort_frags,
 };
 pub use menu::{
     Grabbed, MENU_BINDINGS, MENU_HELP_PAGES, MENU_SAVEGAMES, Menu, MenuEvent, MenuFrame, MenuGame,

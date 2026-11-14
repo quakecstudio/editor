@@ -22,9 +22,7 @@ use qc_builtins::math::{anglemod, makevectors, vector_normalize};
 use qc_vm::convert::{double_to_float, double_to_int, int_to_float};
 
 use crate::entity::{Baseline, Entity};
-use crate::hud::{
-    CenterPrint, HUD_GAME_DEATHMATCH, HudInput, HudItem, Placed, intermission_overlay, status_bar,
-};
+use crate::hud::{CenterMode, CenterPrint, HUD_GAME_DEATHMATCH, HudInput, HudItem, Placed};
 use crate::message::Reader;
 use crate::models::{FrameInfo, ModelInfo, ModelKind, Models, Random, flags};
 use crate::particles::{PART_GRAVITY, Particles, Trail, TrailSpacing};
@@ -868,9 +866,9 @@ impl Client {
             lines: self.bar_lines,
         };
         let (bar, overlay) = if self.intermission == 0 {
-            (status_bar(&input, self.screen.1), Vec::new())
+            (input.status_bar(self.screen.1), Vec::new())
         } else {
-            (Vec::new(), intermission_overlay(&input))
+            (Vec::new(), input.intermission_overlay())
         };
         Hud {
             bar,
@@ -1102,9 +1100,12 @@ impl Client {
             }
         }
         let (width, height) = self.screen;
-        self.center_items =
-            self.center
-                .draw(frametime, self.time, self.intermission != 0, width, height);
+        let mode = if self.intermission == 0 {
+            CenterMode::Timed
+        } else {
+            CenterMode::Intermission
+        };
+        self.center_items = self.center.draw(frametime, self.time, mode, width, height);
         Ok(events)
     }
 
