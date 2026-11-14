@@ -3,7 +3,7 @@
 //! The run: each hull's entities processed in order, the clipping hulls passed to the drawing
 //! hull, and the BSP, portal file and leak file written (QBSP-1).
 
-use qs_bsp::write::{BspFormat, BspWriteError, DiskTexinfo};
+use qs_bsp::write::{BspFormat, DiskTexinfo};
 use qs_map::MapFile;
 use qs_map::qbsp::{QbspMap, load_map_file};
 use qs_wad::Wad;
@@ -11,17 +11,19 @@ use qs_wad::Wad;
 use crate::brush::BrushSet;
 use crate::extended::process as extended;
 
-use crate::math::{ORIGIN, Vec3, each};
+use crate::math::{Vec3, each};
 use crate::merge::merge_all;
 use crate::output::{ClipHull, Output};
 use crate::outside::Fill;
 use crate::planes::Planes;
 
 use crate::tree::{Builder, Choice, SIDESPACE, Tree};
-use crate::{CompileError, Dialect, Faults, Hull, Limits, ModelKind, Surface, Tables, Warning};
+use crate::{CompileError, Dialect, Hull, Limits, ModelKind, QBSP_LIMITS, Surface, Warning};
 
 /// The default largest texture extent of a face before it is cut (QBSP-1).
 const SUBDIVIDE_SIZE: f32 = 240.0;
+/// The world's keys a WAD path is read from, in order: `_wad`, then `wad` (MAP-6.3).
+const WAD_KEYS: [&[u8]; 2] = [b"_wad", b"wad"];
 /// The most bytes the textures lump may hold (QBSP-13.10).
 const MAX_MAP_MIPTEX: usize = 0x20_0000;
 
@@ -93,25 +95,19 @@ impl Run<'_> {
             texinfo: &self.map.texinfo,
             choice,
             subdivide: self.subdivide,
-            faults: self.limits.faults,
             face_points: self.limits.face_points,
-            warnings: core::cell::RefCell::new(Vec::new()),
         }
     }
 
-    /// The tree of `surfaces`, the builder's warnings kept.
+    /// The tree of `surfaces`.
     fn build(
-        &mut self,
+        &self,
         choice: Choice,
         surfaces: Vec<Surface>,
         mins: Vec3,
         maxs: Vec3,
     ) -> Result<Tree, CompileError> {
-        let builder = self.builder(choice);
-        let tree = builder.build(surfaces, mins, maxs)?;
-        let warnings = builder.warnings.into_inner();
-        self.warnings.extend(warnings);
-        Ok(tree)
+        self.builder(choice).build(surfaces, mins, maxs)
     }
 
     /// An entity's brushes for `hull`, CSG and a first tree (QBSP-1.7).
@@ -142,24 +138,7 @@ impl Run<'_> {
             self.limits,
         )?;
         if set.brushes.is_empty() {
-            return match self.limits.faults {
-                Faults::Stop => Err(CompileError::NoValidBrushes),
-                Faults::Warn => {
-                    self.warnings.push(Warning::NoValidBrushes);
-                    let origin = source.origin;
-                    Ok(Some(Built {
-                        // The head is padded as a built tree's is, so the model's bounds,
-                        // which draw_model unpads, are the origin.
-                        tree: Tree::empty(
-                            origin.map(|c| c - SIDESPACE - 1.0),
-                            origin.map(|c| c + SIDESPACE + 1.0),
-                        ),
-                        mins: origin,
-                        maxs: origin,
-                        reach: ORIGIN,
-                    }))
-                }
-            };
+            return Err(CompileError::NoValidBrushes);
         }
         let surfaces = set.csg_faces(self.planes, self.limits.face_points)?;
         let mins = set.mins.map(|c| c - SIDESPACE);
@@ -181,7 +160,7 @@ impl Run<'_> {
 
     /// A clipping hull: each entity's tree, the world's outside filled (QBSP-1.7).
     fn clip_hull(&mut self, hull: Hull) -> Result<ClipHull, CompileError> {
-        let mut clip = ClipHull::new(self.limits.tables);
+        let mut clip = ClipHull::new();
         for entity in 0..self.map.entities.len() {
             let Some(mut built) = self.first_tree(entity, hull, Choice::MidSplit)? else {
                 continue;
@@ -281,22 +260,17 @@ impl Compiler {
     ///
     /// [`CompileError::Map`] or [`CompileError::Document`] when the map cannot be read.
     pub fn wad_path(&self, map: &[u8]) -> Result<Option<Vec<u8>>, CompileError> {
-        Ok(self.read(map)?.wad_path().map(<[u8]>::to_vec))
-    }
-
-    /// The map as the dialect reads it (QBSP-14.1).
-    fn read(&self, map: &[u8]) -> Result<QbspMap, CompileError> {
-        self.read_with(map, None)
-    }
-
-    /// The map as the dialect reads it, the extended dialect's external map instances
-    /// expanded with the files `load` reads, when given, and its world brush entities taken
-    /// into the world (QBSP-14.1, QBSP-14.7, QBSP-14.8).
-    fn read_with(&self, map: &[u8], load: Option<Load<'_>>) -> Result<QbspMap, CompileError> {
         Ok(match self.dialect {
-            Dialect::Id => load_map_file(map)?,
+            Dialect::Id => load_map_file(map)?.wad_path().map(<[u8]>::to_vec),
             Dialect::Extended => {
-                QbspMap::from_map_file(&with_world_brush_entities(extended_file(map, load)?))?
+                let file = MapFile::parse(map).map_err(CompileError::Document)?;
+                file.entities.first().and_then(|world| {
+                    WAD_KEYS
+                        .into_iter()
+                        .filter_map(|key| world.value(key))
+                        .find(|value| !value.is_empty())
+                        .map(<[u8]>::to_vec)
+                })
             }
         })
     }
@@ -308,7 +282,7 @@ impl Compiler {
     /// The [`CompileError`] qbsp stops with.
     pub fn compile(&self, map: &[u8], wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
         match self.dialect {
-            Dialect::Id => self.compile_read(self.read(map)?, wad),
+            Dialect::Id => self.compile_read(load_map_file(map)?, wad),
             Dialect::Extended => extended::compile(&extended_file(map, None)?, wad),
         }
     }
@@ -328,7 +302,7 @@ impl Compiler {
         load: Load<'_>,
     ) -> Result<Compiled, CompileError> {
         match self.dialect {
-            Dialect::Id => self.compile_read(self.read_with(map, Some(load))?, wad),
+            Dialect::Id => self.compile_read(load_map_file(map)?, wad),
             Dialect::Extended => extended::compile(&extended_file(map, Some(load))?, wad),
         }
     }
@@ -337,7 +311,7 @@ impl Compiler {
     fn compile_read(&self, qmap: QbspMap, wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
         let mut qmap = qmap;
         qmap.number_models();
-        let limits = self.dialect.limits();
+        let limits = QBSP_LIMITS;
         let mut planes = Planes::new(limits.planes);
         let mut warnings: Vec<Warning> = qmap.warnings.iter().cloned().map(Warning::Map).collect();
         let mut run = Run {
@@ -370,15 +344,11 @@ impl Compiler {
             })
             .collect::<Result<_, _>>()?;
         out.file.entities = qmap.entity_lump()?;
-        out.file.textures = textures(&qmap, wad, limits.tables, &mut warnings)?;
-        let bsp = match out.file.to_bytes(BspFormat::Bsp29) {
-            Err(BspWriteError::TooWide(lump)) if limits.tables == Tables::Format => {
-                warnings.push(Warning::Bsp2(lump));
-                out.file.to_bytes(BspFormat::Bsp2)
-            }
-            written => written,
-        }
-        .map_err(CompileError::Write)?;
+        out.file.textures = textures(&qmap, wad, &mut warnings)?;
+        let bsp = out
+            .file
+            .to_bytes(BspFormat::Bsp29)
+            .map_err(CompileError::Write)?;
         Ok(Compiled {
             bsp,
             portal_file,
@@ -389,11 +359,8 @@ impl Compiler {
     }
 }
 
-/// The textures lump, `WriteMiptex`: a slot per texture the map uses and each animation frame
-/// the WAD holds, each lump copied from the WAD, -1 for one it lacks; empty with no WAD
-/// (MAP-6.3, MAP-6.8).
 /// The map as the extended dialect reads it, its external map instances expanded with the
-/// files `load` reads, when given (QBSP-14.1, QBSP-14.7).
+/// files `load` reads, when given (QBSP-14.7, QBSP-14.10).
 fn extended_file(map: &[u8], load: Option<Load<'_>>) -> Result<MapFile, CompileError> {
     let file = MapFile::parse(map).map_err(CompileError::Document)?;
     match load {
@@ -404,10 +371,12 @@ fn extended_file(map: &[u8], load: Option<Load<'_>>) -> Result<MapFile, CompileE
     }
 }
 
+/// The textures lump, `WriteMiptex`: a slot per texture the map uses and each animation frame
+/// the WAD holds, each lump copied from the WAD, -1 for one it lacks; empty with no WAD
+/// (MAP-6.3, MAP-6.8).
 fn textures(
     map: &QbspMap,
     wad: Option<&[u8]>,
-    tables: Tables,
     warnings: &mut Vec<Warning>,
 ) -> Result<Vec<u8>, CompileError> {
     let Some(bytes) = wad else {
@@ -442,7 +411,7 @@ fn textures(
             }
             _ => offsets.push(-1),
         }
-        if tables.full(header.saturating_add(data.len()), MAX_MAP_MIPTEX) {
+        if header.saturating_add(data.len()) >= MAX_MAP_MIPTEX {
             return Err(CompileError::Limit("Textures exceeded MAX_MAP_MIPTEX"));
         }
     }
@@ -455,58 +424,3 @@ fn textures(
 
 #[cfg(test)]
 mod tests;
-
-/// The world brush entities ericw-tools' qbsp takes into the world (`IsWorldBrushEntity`,
-/// `qbsp/map.cc`), solid in every hull (QBSP-14.8).
-const WORLD_BRUSH_ENTITIES: [&[u8]; 4] = [
-    b"func_group",
-    b"func_detail",
-    b"func_detail_wall",
-    b"func_detail_fence",
-];
-/// The world brush entity no hull collides with, which the game draws as id's own
-/// `func_illusionary` (QBSP-14.8).
-const DETAIL_ILLUSIONARY: &[u8] = b"func_detail_illusionary";
-/// What a `func_detail_illusionary` becomes.
-const ILLUSIONARY: &[u8] = b"func_illusionary";
-/// The world brush entity neither drawn nor solid, whose brushes go (QBSP-14.8).
-const ILLUSIONARY_VISBLOCKER: &[u8] = b"func_illusionary_visblocker";
-
-/// `file` with its world brush entities taken in, as the extended dialect reads a map
-/// (QBSP-14.8): each entity after the world whose classname, in any case, is one of
-/// [`WORLD_BRUSH_ENTITIES`] gives its brushes to the world, after the world's own, and leaves
-/// the entity lump; a [`DETAIL_ILLUSIONARY`] becomes an [`ILLUSIONARY`] of its own; an
-/// [`ILLUSIONARY_VISBLOCKER`] goes with its brushes.
-fn with_world_brush_entities(mut file: MapFile) -> MapFile {
-    let is = |entity: &qs_map::Entity, name: &[u8]| {
-        entity
-            .classname()
-            .is_some_and(|classname| classname.eq_ignore_ascii_case(name))
-    };
-    let mut taken = Vec::new();
-    let mut kept = Vec::with_capacity(file.entities.len());
-    for (place, mut entity) in file.entities.drain(..).enumerate() {
-        if place == 0 {
-            kept.push(entity);
-        } else if WORLD_BRUSH_ENTITIES.iter().any(|name| is(&entity, name)) {
-            taken.extend(
-                entity
-                    .items
-                    .into_iter()
-                    .filter(|item| matches!(item, qs_map::Item::Brush(_))),
-            );
-        } else if is(&entity, ILLUSIONARY_VISBLOCKER) {
-        } else {
-            if is(&entity, DETAIL_ILLUSIONARY) {
-                // The classname is a key the entity already has, so setting it cannot fail.
-                entity.set(b"classname", ILLUSIONARY).ok();
-            }
-            kept.push(entity);
-        }
-    }
-    if let Some(world) = kept.first_mut() {
-        world.items.extend(taken);
-    }
-    file.entities = kept;
-    file
-}

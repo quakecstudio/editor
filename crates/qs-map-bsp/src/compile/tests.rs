@@ -37,17 +37,13 @@ fn crate_box(n: i32) -> BrushSpec {
     BrushSpec::cube([x, y, z], [x + 4, y + 4, z + 4], "crate")
 }
 
-// spec QBSP-14.9: a map the id dialect compiles, with no world brush entity, gives the same
-// BSP, portal file and leak file in both dialects
 // spec QBSP-1.7: the world's hulls are built, filled and written
 // spec QBSP-9.4: a sealed room is filled from outside without a leak
 // spec QBSP-12.2: the portal file starts with `PRT1`, the leaf count and the portal count
 #[test]
-fn a_sealed_room_compiles_the_same_in_both_dialects() {
+fn a_sealed_room_compiles() {
     let spec = MapSpec::default();
     let id = compile(&spec, Dialect::Id).unwrap();
-    let extended = compile(&spec, Dialect::Extended).unwrap();
-    assert_eq!(id, extended);
     assert!(!id.warnings.contains(&Warning::Leak), "{:?}", id.warnings);
     let prt = String::from_utf8(id.portal_file.clone().unwrap()).unwrap();
     let mut lines = prt.lines();
@@ -166,7 +162,7 @@ fn water_makes_water_leaves() {
     assert!(bsp.leafs.iter().any(|leaf| leaf.contents == -3));
 }
 
-// spec QBSP-14.1: the extended dialect reads Valve 220 faces, which id's parser refuses
+// spec QBSP-14.10: the extended dialect reads Valve 220 faces, which id's parser refuses
 #[test]
 fn extended_reads_valve_220() {
     let spec = MapSpec {
@@ -178,7 +174,7 @@ fn extended_reads_valve_220() {
     assert!(compiled.portal_file.is_some());
 }
 
-// spec QBSP-14.1: a texture name longer than 15 bytes is cut to 15 in the extended dialect
+// spec QBSP-14.10: a texture name longer than 15 bytes does not stop the extended dialect
 #[test]
 fn extended_cuts_long_texture_names() {
     let mut spec = MapSpec::default();
@@ -227,7 +223,8 @@ fn extended_lifts_brush_limits() {
     assert!(compiled.portal_file.is_some());
 }
 
-// spec QBSP-14.3: an entity none of whose brushes is loaded gets an empty model, where qbsp stops
+// spec QBSP-15.29: an entity whose drawing hull has no brush gets a tree of one node on plane 0
+// over two empty leaves, where qbsp stops
 // spec QBSP-1.6: in the id dialect it stops the run with `Entity with no valid brushes`
 #[test]
 fn extended_gives_an_empty_model_where_qbsp_stops() {
@@ -241,13 +238,13 @@ fn extended_gives_an_empty_model_where_qbsp_stops() {
         Err(CompileError::NoValidBrushes)
     );
     let compiled = compile(&spec, Dialect::Extended).unwrap();
-    assert!(compiled.warnings.contains(&Warning::NoValidBrushes));
     let bsp = read(&compiled);
     assert_eq!(bsp.models.len(), 2);
-    // The empty model's bounds are its origin, which the loader widens by a unit: never
-    // backwards.
-    let model = &bsp.models[1];
-    assert_eq!((model.mins, model.maxs), ([-1.0; 3], [1.0; 3]));
+    let head = &bsp.nodes[usize::try_from(bsp.models[1].headnode[0]).unwrap()];
+    assert!(head.children.iter().all(|c| *c < 0), "two leaves");
+    assert!(head.children.iter().all(|&c| {
+        bsp.leafs[usize::try_from(-1 - c).unwrap()].contents == qs_bsp::BSP_CONTENTS_EMPTY
+    }));
 }
 
 // spec QBSP-14.4: no MAX_MAP_ limit applies in the extended dialect, and a file whose values fit
@@ -276,7 +273,7 @@ fn extended_drops_the_model_limit() {
     );
 }
 
-// spec QBSP-14.5: the extended dialect writes a key and value longer than qbsp's line
+// spec QBSP-15.50: the extended dialect writes a key and value longer than qbsp's line
 #[test]
 fn extended_writes_long_entity_lines() {
     let message = "x".repeat(200);
@@ -331,7 +328,7 @@ fn a_bad_wad_stops_the_compile() {
     assert!(result.unwrap_err().to_string().contains("isn't a wadfile"));
 }
 
-// spec QBSP-14.1: what the map reader prints reaches the compile's warnings
+// spec QBSP-15.50: a texture the WAD lacks is a warning
 #[test]
 fn the_readers_warnings_are_kept() {
     let mut spec = MapSpec::default();
@@ -352,7 +349,7 @@ fn the_readers_warnings_are_kept() {
     );
 }
 
-// spec QBSP-14.1: the WAD path is read in the compiler's dialect, so a Valve 220 map names one
+// spec QBSP-14.10: the WAD path is read in the compiler's dialect, so a Valve 220 map names one
 #[test]
 fn wad_path_reads_the_dialects_map() {
     let spec = MapSpec {
@@ -421,10 +418,9 @@ fn external_maps_are_expanded_in_the_extended_dialect() {
     ));
 }
 
-// spec QBSP-14.8: in the extended dialect func_group and the detail kinds give their brushes to
-// the world and leave the entity lump, in any case; func_detail_illusionary becomes a
-// func_illusionary of its own and func_illusionary_visblocker goes; the id dialect keeps each
-// a brush model of its own
+// spec QBSP-15.24: in the extended dialect the world brush entities give their brushes to the
+// world, in any case, solid in the clipping hulls but the illusionary and visblocker
+// spec QBSP-15.50: and leave the entity lump; the id dialect keeps each a brush model of its own
 #[test]
 fn world_brush_entities_join_the_world_in_the_extended_dialect() {
     let pillar = |x: i32| BrushSpec::cube([x, -8, ROOM_MINS[2]], [x + 16, 8, 64], "pillar");
@@ -446,18 +442,18 @@ fn world_brush_entities_join_the_world_in_the_extended_dialect() {
     }
     let extended = compile(&spec, Dialect::Extended).unwrap();
     let bsp = read(&extended);
-    assert_eq!(bsp.models.len(), 2, "the world and the illusionary");
+    assert_eq!(bsp.models.len(), 1, "the world alone");
     let lump = String::from_utf8_lossy(bsp.entities()).to_lowercase();
     for gone in [
         "func_group",
         "func_detail\"",
         "func_detail_wall",
         "func_detail_fence",
+        "illusionary",
         "visblocker",
     ] {
         assert!(!lump.contains(gone), "{gone} left the lump: {lump}");
     }
-    assert!(lump.contains("\"func_illusionary\""), "{lump}");
     // The four solid pillars are in the world's player hull, the other two not.
     let contents = |point: [f32; 3]| {
         let mut num = bsp.models[0].headnode[1];

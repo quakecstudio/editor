@@ -150,12 +150,11 @@ fn a_split_face_past_its_limit_stops() {
     ];
     let cut = plane([1.0, 0.0, 0.0], 3.0);
     assert_eq!(
-        split_face(&octagon, cut, Some(6)).unwrap(),
+        split_face(&octagon, cut, 6).unwrap(),
         divide(&octagon, cut).unwrap()
     );
     assert_eq!(
-        split_face(&octagon, cut, Some(5)),
+        split_face(&octagon, cut, 5),
         Err(CompileError::SplitFacePoints)
     );
-    assert!(split_face(&octagon, cut, None).is_ok());
 }

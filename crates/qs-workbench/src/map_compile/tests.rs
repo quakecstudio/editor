@@ -131,7 +131,7 @@ fn report(session: &mut Commands<Context>, id: &str) -> MapReport {
     serde_json::from_value(session.execute(id, json!({})).unwrap()).unwrap()
 }
 
-// spec QBSP-9.8: map.leaks reports a leak's trail from the player start out through the hole,
+// spec QBSP-15.36: map.leaks reports a leak's trail from the player start out through the hole,
 // and none for the sealed room; neither writes a file
 #[test]
 fn map_leaks_reports_the_trail_out() {
@@ -140,7 +140,7 @@ fn map_leaks_reports_the_trail_out() {
     let leaky = report(&mut session, MAP_LEAKS);
     assert_eq!(leaky.seal, Seal::Leaks);
     assert_eq!(leaky.leak.first(), Some(&[0.0, 0.0, 24.0]));
-    assert!(leaky.leak.last().unwrap()[1] > 128.0, "{:?}", leaky.leak);
+    assert!(leaky.leak.iter().any(|p| p[1] > 128.0), "{:?}", leaky.leak);
     assert!(
         leaky.missing_textures.is_empty(),
         "{:?}",
@@ -213,7 +213,7 @@ fn an_omitted_layer_is_not_compiled() {
     assert_eq!(report(&mut session, MAP_LEAKS).seal, Seal::NoOccupant);
 }
 
-// spec MAP-6.8: a texture the map's WAD lacks is listed once, by name
+// spec QBSP-15.50: a texture the map's WAD lacks is listed once, by name
 #[test]
 fn map_leaks_lists_the_missing_textures() {
     let path = room("missing", "nowhere", Opening::Sealed);
@@ -228,19 +228,20 @@ fn map_leaks_lists_the_missing_textures() {
     );
 }
 
-// spec QBSP-1.7: map.compile writes the BSP, portal and leak files beside the map
+// spec QBSP-15.49: map.compile writes the BSP and portal file beside a sealed map, and no leak
+// file
 #[test]
 fn map_compile_writes_the_bsp_beside_the_map() {
     let path = room("written", "wall", Opening::Sealed);
     let mut session = open(&path);
     let made = report(&mut session, MAP_COMPILE);
-    let names: Vec<PathBuf> = ["bsp", "prt", "pts"]
+    let names: Vec<PathBuf> = ["bsp", "prt"]
         .map(|extension| path.with_extension(extension))
         .to_vec();
     assert_eq!(made.written, names);
     let bsp = std::fs::read(&names[0]).unwrap();
     assert_eq!(bsp.get(..4), Some(&29_u32.to_le_bytes()[..]));
-    assert_eq!(std::fs::read(&names[2]).unwrap(), Vec::<u8>::new());
+    assert!(!path.with_extension("pts").exists());
 }
 
 // No spec statement: P6-13: with no map open, or a BSP open with no source, nothing compiles

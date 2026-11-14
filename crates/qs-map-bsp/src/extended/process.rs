@@ -336,10 +336,12 @@ impl Compile<'_> {
 }
 
 /// The textures lump, `LoadTextureData` (QBSP-15.50): each of the map's textures in order, its
-/// WAD lump when the WAD has it, else an offset of -1 and a warning ("unable to find texture").
+/// WAD lump when the WAD has it, else an offset of -1 and a warning ("unable to find texture"),
+/// but for the skip texture the compile made itself when no face names it.
 fn textures(
     miptex: &[Vec<u8>],
     wad: Option<&[u8]>,
+    skip_use: SkipUse,
     warnings: &mut Vec<Warning>,
 ) -> Result<Vec<u8>, CompileError> {
     let wad = wad.map(Wad::read).transpose().map_err(CompileError::Wad)?;
@@ -352,7 +354,7 @@ fn textures(
         .saturating_mul(size_of::<i32>());
     let mut offsets = Vec::with_capacity(miptex.len());
     let mut data = Vec::new();
-    for name in miptex {
+    for (index, name) in miptex.iter().enumerate() {
         let lump = wad
             .as_ref()
             .and_then(|w| w.find(name).ok().and_then(|l| w.data(l).ok()));
@@ -363,9 +365,11 @@ fn textures(
             }
             _ => {
                 offsets.push(-1);
-                warnings.push(Warning::Map(QbspWarning::TextureNotFound {
-                    name: name.clone(),
-                }));
+                if index != SKIP_MIPTEX || skip_use == SkipUse::Named {
+                    warnings.push(Warning::Map(QbspWarning::TextureNotFound {
+                        name: name.clone(),
+                    }));
+                }
             }
         }
     }
@@ -376,6 +380,37 @@ fn textures(
     }
     out.extend_from_slice(&data);
     Ok(out)
+}
+
+/// The skip texture's place among the map's textures, made before any face's.
+const SKIP_MIPTEX: usize = 0;
+
+/// Whether a face of the map names the skip texture, which the compile makes for its own sides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SkipUse {
+    Named,
+    Unnamed,
+}
+
+impl LoadedMap {
+    /// Whether a face of the map names the skip texture.
+    fn skip_use(&self) -> SkipUse {
+        let named = self
+            .entities
+            .iter()
+            .flat_map(|e| &e.brushes)
+            .flat_map(|b| &b.faces)
+            .any(|f| {
+                self.texinfos
+                    .get(f.texinfo)
+                    .is_some_and(|t| t.miptex == SKIP_MIPTEX)
+            });
+        if named {
+            SkipUse::Named
+        } else {
+            SkipUse::Unnamed
+        }
+    }
 }
 
 /// `file` compiled as ericw-tools' qbsp compiles it for Quake, `ProcessFile` (QBSP-15.48 to
@@ -420,7 +455,9 @@ pub(crate) fn compile(file: &MapFile, wad: Option<&[u8]>) -> Result<Compiled, Co
     run.writer.finish();
     run.writer.file.models = run.models.clone();
     run.writer.file.entities = run.entity_lump(&model_of);
-    run.writer.file.textures = textures(run.map.texinfos.miptex(), wad, &mut run.warnings)?;
+    let skip_use = run.map.skip_use();
+    run.writer.file.textures =
+        textures(run.map.texinfos.miptex(), wad, skip_use, &mut run.warnings)?;
     let bsp = match run.writer.file.to_bytes(BspFormat::Bsp29) {
         Err(BspWriteError::TooWide(lump)) => {
             run.warnings.push(Warning::Bsp2(lump));

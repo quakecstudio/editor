@@ -56,6 +56,7 @@ const EMPTY: i32 = -1;
 
 // spec QBSP-15.48: each hull is made for the world and each brush entity, the world filled from
 // the void
+// spec QBSP-15.49: the drawing hull's world is filled from the inside and built again
 // spec QBSP-15.46: the drawing hull's leaves and nodes are written with leaf 0 the shared solid
 // leaf, each clipping hull's clip nodes, and the model's bounds without the side space, shrunk
 // by a unit
@@ -83,6 +84,7 @@ fn a_sealed_room() {
 // spec QBSP-15.45: each face's edges are written, one the reverse of an edge of a face of the
 // same contents used again once, and every face written has at least three
 // spec QBSP-15.39: a face is made for each visible side of the room's inside
+// spec QBSP-15.42: and listed in the leaf it touches
 #[test]
 fn faces_and_edges() {
     let c = compiled(&MapSpec::default());
@@ -146,12 +148,14 @@ fn entities_and_textures() {
     wad.add(b"wall", b'D', vec![7; 8]).unwrap();
     let wad = wad.to_bytes().unwrap();
     let mut warnings = Vec::new();
-    let lump = textures(
-        &[b"skip".to_vec(), b"wall".to_vec()],
-        Some(&wad),
-        &mut warnings,
-    )
-    .unwrap();
+    let names = [b"skip".to_vec(), b"wall".to_vec()];
+    let quiet = textures(&names, Some(&wad), super::SkipUse::Unnamed, &mut warnings).unwrap();
+    assert!(
+        warnings.is_empty(),
+        "the compile's own skip texture is not reported"
+    );
+    let lump = textures(&names, Some(&wad), super::SkipUse::Named, &mut warnings).unwrap();
+    assert_eq!(quiet, lump);
     assert_eq!(&lump[..4], 2_i32.to_le_bytes());
     assert_eq!(&lump[4..8], (-1_i32).to_le_bytes());
     assert_eq!(&lump[8..12], 12_i32.to_le_bytes());

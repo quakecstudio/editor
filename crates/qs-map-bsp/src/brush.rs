@@ -11,7 +11,7 @@ use crate::math::{
 };
 use crate::planes::{ANGLE_EPSILON, Plane, Planes};
 use crate::winding::{KeepOn, ON_EPSILON, clip};
-use crate::{CompileError, Contents, Face, Faults, Hull, Limits, ModelKind};
+use crate::{CompileError, Contents, Face, Hull, Limits, ModelKind};
 
 /// How near a whole number a coordinate is set to it (QBSP-4.4).
 const ZERO_EPSILON: f64 = 0.001;
@@ -104,7 +104,6 @@ impl Brush {
         model: ModelKind,
         planes: &mut Planes,
         limits: Limits,
-        warnings: &mut Vec<crate::Warning>,
     ) -> Result<Loaded, CompileError> {
         // qbsp keeps a brush's faces with the last in the file first (QBSP-4.1).
         let mut stored: Vec<BrushPlane> = faces
@@ -126,12 +125,12 @@ impl Brush {
         let Some(contents) = contents_of(name, hull, model) else {
             return Ok(Loaded::LeftOut);
         };
-        let Some(mut made) = create_faces(&stored, planes, limits, warnings)? else {
+        let Some(mut made) = create_faces(&stored, planes)? else {
             return Ok(Loaded::NoFaces);
         };
         if let Some(size) = hull.size() {
             expand(&mut stored, &made, size, limits)?;
-            match create_faces(&stored, planes, limits, warnings)? {
+            match create_faces(&stored, planes)? {
                 Some(grown) => made = grown,
                 None => return Ok(Loaded::NoFaces),
             }
@@ -157,8 +156,6 @@ impl Brush {
 fn create_faces(
     stored: &[BrushPlane],
     planes: &mut Planes,
-    limits: Limits,
-    warnings: &mut Vec<crate::Warning>,
 ) -> Result<Option<(Vec<Face>, Vec3, Vec3)>, CompileError> {
     let mut mins = CLEAR_MINS;
     let mut maxs = CLEAR_MAXS;
@@ -204,11 +201,7 @@ fn create_faces(
             points,
             original: None,
         };
-        match (made.check(planes), limits.faults) {
-            (Ok(()), _) => {}
-            (Err(error), Faults::Stop) => return Err(error),
-            (Err(error), Faults::Warn) => warnings.push(crate::Warning::BadFace(error.to_string())),
-        }
+        made.check(planes)?;
         // qbsp adds each face to the front of the brush's list.
         faces.insert(0, made);
     }
@@ -279,7 +272,7 @@ struct Growth<'a> {
 impl Growth<'_> {
     /// `AddBrushPlane` (QBSP-5.3, QBSP-5.6).
     fn add_plane(&mut self, plane: Plane) -> Result<(), CompileError> {
-        if Some(self.stored.len()) == self.limits.brush_faces
+        if self.stored.len() == self.limits.brush_faces
             || self.stored.len() >= self.limits.brush_planes
         {
             return Err(CompileError::TooManyBrushFaces);
@@ -466,7 +459,7 @@ impl BrushSet {
         let mut solid = Vec::new();
         // qbsp keeps an entity's brushes with the last in the file first.
         for faces in entity.brushes.iter().rev() {
-            match Brush::load(faces, map, hull, model, planes, limits, warnings)? {
+            match Brush::load(faces, map, hull, model, planes, limits)? {
                 Loaded::Brush(brush) => {
                     mins = min(mins, brush.mins);
                     maxs = max(maxs, brush.maxs);

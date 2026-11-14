@@ -554,35 +554,27 @@ to the neighbour's edge.
 
 ## QBSP-14 The extended dialect
 
-**Source:** ours, but for QBSP-14.7 and QBSP-14.8, which follow ericw-tools' qbsp at
-`36eec1da2a194467e6baac2f444c2dd04b57d266` (`qbsp/map.cc`, `qbsp/brush.cc`). id's qbsp is
+**Source:** ours, but for QBSP-14.7 and QBSP-14.10, which follow ericw-tools' qbsp at
+`36eec1da2a194467e6baac2f444c2dd04b57d266` (QBSP-15). id's qbsp is
 `Dialect::Id`, which follows QBSP-1 to QBSP-13 exactly; `Dialect::Extended`, the default of
 `crates/qs-map-bsp`, is what a map made for a later engine and editor needs, and each difference
 is stated here. Later compilers lift the same limits; we follow BSP-17's file format, and
 ericw-tools only where a map made in TrenchBroom relies on it (Justin, 2026-11-13).
 
-- **QBSP-14.1** The extended dialect reads the map as `qs-map`'s `MapFile` reads it (MAP-1 to
-  MAP-7): a face's points are its numbers as written, in single precision, and its texture axes
-  the standard form's (MAP-4) or the Valve 220 form's (MAP-5). Duplicate planes, faces with no
-  normal, texture slots and texinfo are then found as `ParseBrush`, `FindMiptex` and
-  `FindTexinfo` find them, a texture name kept to its first 15 bytes, with no limit on entities
-  and up to 32767 texinfo, BSP29's signed 16-bit field.
+- **QBSP-14.1** **Withdrawn** 2026-11-13: it read the map into id's model in single precision; the
+  extended dialect now reads it as ericw-tools' qbsp does, in double precision. Replaced by
+  QBSP-14.10, QBSP-15.14 and QBSP-15.16.
 - **QBSP-14.2** A brush may have any number of faces and planes, and a grown brush any number
   of vertices and edges: QBSP-5.6's `MAX_FACES`, `MAX_HULL_POINTS` and `MAX_HULL_EDGES` do not
   apply, nor does QBSP-2.5's `MAX_MAP_PLANES`, nor QBSP-3.5's `MAXEDGES` on a split face.
-- **QBSP-14.3** A fault qbsp stops on is a warning, and the compile goes on: a face
-  `CheckFace` refuses (QBSP-4.5) is kept as it is; a leaf whose faces disagree on their front
-  contents (QBSP-7.6) takes the first face's; an entity with brushes none of which is loaded in
-  a hull (QBSP-1.6) gets an empty model: in hull 0 one leaf at its origin under one node on the
-  plane z = 0, both of whose children are that leaf, and in hulls 1 and 2 the leaf's contents as
-  the head. Where any tree's head is a leaf, the extended dialect writes the same node over it
-  and names its contents as each clipping hull's head; qbsp names the next node and clip node
-  (QBSP-13.5, QBSP-13.6), which may not exist.
+- **QBSP-14.3** **Withdrawn** 2026-11-13: it kept faults qbsp stops on as warnings in id's pipeline;
+  the extended dialect now drops a bad face or brush and builds an empty tree as ericw-tools does.
+  Replaced by QBSP-15.22, QBSP-15.23 and QBSP-15.29.
 - **QBSP-14.4** No `MAX_MAP_` limit (QBSP-13.10) applies. The file is written as BSP29 when
   every value fits BSP29's fields (BSP-23.5), else as `BSP2` (BSP-23.4), with a warning naming
   the first lump that did not fit.
-- **QBSP-14.5** The entity lump is written as QBSP-1.8 writes it, but with no limit on the
-  length of a key and value's line.
+- **QBSP-14.5** **Withdrawn** 2026-11-13: it wrote the entity lump through id's writer. Replaced by
+  QBSP-15.50.
 - **QBSP-14.6** **Withdrawn** 2026-11-13: it promised the same BSP from both dialects for any
   map the id dialect compiles; a map with a world brush entity (QBSP-14.8) now differs.
   Replaced by QBSP-14.9.
@@ -591,21 +583,14 @@ ericw-tools only where a map made in TrenchBroom relies on it (Justin, 2026-11-1
   the map, with the files its caller reads by the names the instances give, as ericw-tools'
   qbsp does; an instance that cannot be expanded stops the compile. id's dialect reads no
   instance: to id's qbsp a `misc_external_map` is a point entity like any other.
-- **QBSP-14.8** The extended dialect takes ericw-tools' world brush entities into the world, as
-  `IsWorldBrushEntity` (`qbsp/map.cc`) names them: an entity after the world whose classname,
-  in any case (`Q_strcasecmp`), is `func_group`, `func_detail`, `func_detail_wall` or
-  `func_detail_fence` gives its brushes to the world, after the world's own, solid in every
-  hull, and leaves the entity lump ("If this is the world entity, find all func_group and
-  func_detail entities and add their brushes", `qbsp/brush.cc`). ericw-tools gives the detail
-  kinds detail contents in hull 0, which change how the world is split and seen but not what is
-  solid; this dialect makes them plain solid. A `func_detail_illusionary`, which ericw-tools
-  leaves out of the clipping hulls ("func_detail_illusionary don't exist in the collision
-  hull"), becomes id's `func_illusionary`, an entity of its own the game draws and nothing
-  collides with; a `func_illusionary_visblocker` is left out with its brushes.
-- **QBSP-14.9** Everything QBSP-1 to QBSP-13 state that QBSP-14.1 to QBSP-14.5, QBSP-14.7 and
-  QBSP-14.8 do not change holds in the extended dialect: the same map compiled by both dialects,
-  when the id dialect compiles it and no entity of it is a world brush entity (QBSP-14.8), gives
-  the same BSP, portal file and leak file.
+- **QBSP-14.8** **Withdrawn** 2026-11-13: it merged the world brush entities into id's pipeline as
+  solid. Replaced by QBSP-15.24.
+- **QBSP-14.9** **Withdrawn** 2026-11-13: it promised id's output for a map both dialects compile;
+  the extended dialect now builds ericw-tools' tree. Replaced by QBSP-14.10.
+- **QBSP-14.10** The extended dialect compiles a map as ericw-tools' qbsp compiles it for
+  Quake (QBSP-15), from `qs-map`'s `MapFile` (MAP-1 to MAP-7, the Valve 220 form included) with
+  its external map instances expanded (QBSP-14.7), sharing none of the id dialect's pipeline;
+  its WAD path is the world's `_wad`, or `wad` when that is missing or empty (MAP-6.3).
 
 ## QBSP-15 The extended dialect from ericw-tools
 
@@ -905,3 +890,76 @@ point on a plane (`mathlib.hh`).
   solid nor sky (`DetailFill_Passable`), makes each leaf no step reaches and neither any solid nor
   sky detail solid (`FillDetailEnclosedLeafsToDetailSolid_R`), and marks the sides again; nothing
   without an occupant.
+- **QBSP-15.39** The drawing hull's faces (`MakeFaces`) are made by each leaf that is not any
+  solid for its side of each of its portals that has a side found there (`FaceFromPortal`): of
+  that side's texinfo and map face, on its positive plane turned to the leaf's side
+  ("`(side->planenum & ~1) | (pside ? 1 : 0)`"), the portal's polygon reversed on the back, the
+  leaf's contents in front and the other's behind; each is put on the portal's node.
+- **QBSP-15.40** Once a node's children have made their faces, its faces are merged
+  (`MergeFaceList`): each tried in turn against those kept, a merge replacing the one it merged
+  with and being tried again from the first. Two faces merge (`TryMerge`) when both have points,
+  the same plane, texinfo and lightmap shift, both or neither front liquid and both or neither
+  front sky, an edge of one is the reverse of an edge of the other within `QBSP_EQUAL_EPSILON`,
+  and at both ends of that edge the polygon stays convex within `CONTINUOUS_EPSILON` (0.0005), a
+  point where the edges continue in a line dropped.
+- **QBSP-15.41** Then each node face is subdivided (`SubdivideFace`, `-subdivide` 240): a face
+  not drawn, a hint or `TEX_SPECIAL` is left whole; otherwise along the texture's s axis and then
+  its t axis, a piece whose texture extent "`ceil(maxs) - floor(mins)`" exceeds the smaller of 240
+  and `255 << lmshift`, the shift from `_lmscale` (`16 * _lmscale`, 16 when 0, halved to 1) and at
+  most 4, is cut at "`(mins + subdiv - 16) / v`" along the axis's direction (`SplitFace`: whole on
+  a side its bounding sphere is wholly on, else clipped within `-epsilon`, kept in front when on
+  the plane), the low piece kept and the rest cut again.
+- **QBSP-15.42** After pruning, each node face is listed in the leaves it touches
+  (`MakeMarkFaces`): a copy cut down the child its plane faces into, each piece listing the face
+  in the leaf it reaches. A face is left out of the BSP (`ShouldOmitFace`) when nodraw, a hint,
+  in front of sky ("don't output the interior faces of sky brushes") or listed only in detail
+  wall leaves. A detail wall leaf is made solid when pruning (`PruneNodes`), which makes each node
+  whose two children are any solid leaves one leaf of their combined contents, its faces dropped.
+- **QBSP-15.43** The BSP starts (`BeginBSPFile`) with edge 0 unused and leaf 0 the shared solid
+  leaf. A plane is written the first time a node, clip node or face uses it (`ExportMapPlane`)
+  with its type; a texinfo the first time a face uses it (`ExportMapTexinfo`), -1 for one not
+  drawn, with `TEX_SPECIAL` its only flag.
+- **QBSP-15.44** Each face not left out has its vertices written (`EmitVertices`), the faces of
+  each node before its children's, the front first: a vertex within half of
+  `POINT_EQUAL_EPSILON` (0.05) of one written on every axis is that one, else it is written as a
+  `float`. With no vertex written, vertex 0 is (`FinishBSPFile`).
+- **QBSP-15.45** The faces are written (`EmitFaces`) in the same order, each node's first face and
+  count kept: each edge of a face is the reverse of an edge already written for a face of exactly
+  the same front contents, used so once ("only reusing an edge once"), or else written; a face of
+  fewer than three points has its edges written but is not itself.
+- **QBSP-15.46** A clipping hull's tree is written (`ExportClipNodes`) each node before its
+  children, a leaf as its native contents. The drawing hull's (`ExportDrawNodes`) is written each
+  node before its children, its bounds rounded out, a child leaf that is any solid the shared leaf
+  0, any other written when reached (`ExportLeaf`): its contents remapped for export and made
+  native, its bounds rounded out, and when not solid each drawn face it lists. The model's bounds
+  are the head's without `SIDESPACE`, shrunk by 1 for Quake.
+- **QBSP-15.48** The compile (`ProcessFile`, `CreateHulls`) loads the map once; the world and each
+  later entity with brushes but a world brush entity is a model, in order; each hull, the drawing
+  hull first, is made for each model in turn (`ProcessEntity`). Its brushes are loaded and sorted;
+  a clipping hull chops them. An entity with no brush and no bounds is skipped. One whose
+  `_hulls` is present and not 0 and lacks the hull's bit gets an empty tree
+  (`ShouldGenerateClipnodes`). A clipping hull's tree is built fast; the world's is portalized
+  and filled from the void and, when filled, built again precisely, filled again and pruned; its
+  clip nodes are written.
+- **QBSP-15.49** The drawing hull's tree is built automatically for the world and fast for a brush
+  model and portalized. The world is filled from the inside and, when filled, detail filled,
+  built again precisely, portalized, and filled and detail filled again; a brush model has its
+  sides marked and is built again precisely. The tree is then portalized, its visible sides
+  marked, its faces made, and pruned; the world's portal file written when nothing leaked; the
+  mark faces made, the vertices, faces and nodes written. The first leak's line is the leak file.
+- **QBSP-15.50** The entity lump (`WriteEntitiesToString`) has each entity with pairs but the
+  world brush entities, its pairs in order but those starting `_tb_`, each brush model after the
+  world given `model` `*N` and each origin the compile set given `origin`, as `{fmt}` writes the
+  numbers; no line is too long. The textures lump (`LoadTextureData`) has each of the map's
+  textures in order, its WAD lump when the WAD has it, else -1 and a warning ("unable to find
+  texture"), but for the skip texture the compile makes itself when no face of the map names it:
+  ericw-tools warns for that one too, though it is no texture of the map's (a deliberate
+  divergence in what is reported, not in what is written).
+- **QBSP-15.51** The portal file (`WritePortalFile`) is made from the pruned tree's vis portals,
+  begun from no portal around the head and stopping at detail separators. Leaves that are not any
+  solid are numbered in order, each in the cluster of the detail separator above it or a cluster
+  of its own (`NumberLeafs_r`). Each leaf or cluster not any solid writes each portal it is in
+  front of that vis sees through, with its two numbers, swapped when the polygon's own plane faces
+  away from the portal's by more than `ANGLEEPSILON`, and its points as `{fmt}` writes them. With no
+  detail it is `PRT1`, the leaf count and the portal count; with detail `PRT2`, the leaf count,
+  the cluster count and the portal count, then each cluster's leaves and -1.
