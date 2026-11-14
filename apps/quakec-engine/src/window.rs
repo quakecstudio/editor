@@ -20,8 +20,7 @@ use qs_client::{
     Event, Grabbed, KeyDest, MENU_BINDINGS, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey,
     MenuSettings, Random as _, Typed,
 };
-use qs_render::Degrees;
-use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
+use qs_render::{Camera, Degrees, MapMesh, MapRenderer, Offscreen, Play, View};
 use qs_sim::ClientCommand;
 use qs_sim::input::{Button, Input, MoveSettings};
 use qs_sim::keys::{Bindings, K_ESCAPE, key_name};
@@ -347,7 +346,8 @@ impl eframe::App for Viewer {
         if self.benchmark.is_some() {
             // A slow turn, so the whole view around the start is drawn. The first frame
             // starts the clock: the window's own appearance is not the renderer's.
-            self.camera.turn(seconds * 30.0, 0.0);
+            self.camera
+                .turn(Degrees::new(seconds * 30.0), Degrees::new(0.0));
             if self.frames == 0 {
                 self.started = now;
             } else {
@@ -625,7 +625,7 @@ impl Viewer {
             let sensitivity = setting("sensitivity");
             let yaw = -motion[0] * sensitivity * setting("m_yaw");
             let pitch = motion[1] * sensitivity * setting("m_pitch");
-            self.camera.turn(yaw, pitch);
+            self.camera.turn(Degrees::new(yaw), Degrees::new(pitch));
         } else if self.pointer == Pointer::Captured {
             self.motion[0] += motion[0];
             self.motion[1] += motion[1];

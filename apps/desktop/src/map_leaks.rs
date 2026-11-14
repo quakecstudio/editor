@@ -193,7 +193,7 @@ impl LeakView {
 
 #[cfg(test)]
 mod tests {
-    use qs_render::Camera;
+    use qs_render::{Camera, Degrees};
 
     use super::Flight;
 
@@ -205,7 +205,7 @@ mod tests {
             trail: vec![[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [100.0, 0.0, -50.0]],
             travelled: 0.0,
         };
-        let mut camera = Camera::new([9.0; 3], 45.0);
+        let mut camera = Camera::new([9.0; 3], Degrees::new(45.0));
         assert!(flight.advance(&mut camera, 40.0));
         assert_eq!(camera.origin, [40.0, 0.0, 0.0]);
         assert_eq!((camera.yaw.get(), camera.pitch.get()), (0.0, 0.0));

@@ -12,7 +12,9 @@ use qs_bsp::{Bsp, BspLoader, Lit};
 use qs_client::{Client, Event, MENU_SAVEGAMES, ModelInfo, Models, Random};
 use qs_mdl::mdl::Mdl;
 use qs_mdl::spr::Sprite;
-use qs_render::{Camera, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface};
+use qs_render::{
+    Camera, Degrees, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
+};
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::patch_builtins;
 use qs_sim::{HostState, LoadOptions, SaveGame, SpawnParms, World};
@@ -389,8 +391,8 @@ pub(crate) fn load(
     }
     let mesh = builder.finish();
     let placed = at.map(|[x, y, z, yaw]| {
-        let mut camera = Camera::new([x, y, z], yaw);
-        camera.turn(0.0, 30.0);
+        let mut camera = Camera::new([x, y, z], Degrees::new(yaw));
+        camera.turn(Degrees::new(0.0), Degrees::new(30.0));
         camera
     });
     let camera = placed
@@ -399,7 +401,10 @@ pub(crate) fn load(
         .unwrap_or_else(|| {
             let [a, b, c] = mesh.mins;
             let [x, y, z] = mesh.maxs;
-            Camera::new([(a + x) / 2.0, (b + y) / 2.0, (c + z) / 2.0], 0.0)
+            Camera::new(
+                [(a + x) / 2.0, (b + y) / 2.0, (c + z) / 2.0],
+                Degrees::new(0.0),
+            )
         });
     let bsp_bytes: &'static [u8] = Vec::leak(bytes.clone());
     let bsp = Bsp::read(bsp_bytes, BspLoader::default()).map_err(|e| e.message(&name))?;
@@ -449,8 +454,11 @@ fn facing(mesh: &MapMesh, surface: Surface) -> Option<Camera> {
         Surface::Sky => (-160.0, -55.0),
         Surface::Turbulent | Surface::Lit => (96.0, 55.0),
     };
-    let mut camera = Camera::new([middle[0] - 96.0, middle[1], middle[2] + rise], 0.0);
-    camera.turn(0.0, pitch);
+    let mut camera = Camera::new(
+        [middle[0] - 96.0, middle[1], middle[2] + rise],
+        Degrees::new(0.0),
+    );
+    camera.turn(Degrees::new(0.0), Degrees::new(pitch));
     Some(camera)
 }
 
@@ -481,7 +489,7 @@ fn start(entities: &[u8]) -> Option<Camera> {
         if classname.as_deref() == Some("info_player_start")
             && let Some(origin) = origin
         {
-            return Some(Camera::new(origin, angle));
+            return Some(Camera::new(origin, Degrees::new(angle)));
         }
     }
     None

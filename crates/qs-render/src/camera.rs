@@ -7,7 +7,8 @@ use crate::FULL_TURN;
 use crate::sprite::angle_vectors;
 use crate::vector::{cross, dot};
 
-/// An angle in degrees, the editor camera's: it has no C declaration to follow.
+/// An angle in degrees, a camera's: the editor's free camera, or the engine's view handed to
+/// it, as `r_refdef.viewangles` and `fov` are in degrees.
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct Degrees(f32);
 
@@ -56,10 +57,10 @@ const PITCH_LIMIT: f32 = 89.0;
 impl Camera {
     /// A camera at `origin` looking along `yaw`, level, with GLQuake's `fov 90` (REND-3.4).
     #[must_use]
-    pub const fn new(origin: [f32; 3], yaw: f32) -> Self {
+    pub const fn new(origin: [f32; 3], yaw: Degrees) -> Self {
         Self {
             origin,
-            yaw: Degrees::new(yaw),
+            yaw,
             pitch: Degrees::new(0.0),
             fov_x: Degrees::new(FOV_X),
         }
@@ -106,9 +107,10 @@ impl Camera {
     }
 
     /// Turns it by `yaw` and `pitch` degrees, the pitch kept within ±89.
-    pub fn turn(&mut self, yaw: f32, pitch: f32) {
-        self.yaw = Degrees::new((self.yaw.get() + yaw).rem_euclid(FULL_TURN));
-        self.pitch = Degrees::new((self.pitch.get() + pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT));
+    pub fn turn(&mut self, yaw: Degrees, pitch: Degrees) {
+        self.yaw = Degrees::new((self.yaw.get() + yaw.get()).rem_euclid(FULL_TURN));
+        self.pitch =
+            Degrees::new((self.pitch.get() + pitch.get()).clamp(-PITCH_LIMIT, PITCH_LIMIT));
     }
 
     /// The ray from the eye through the point `(x, y)` of an image `aspect` wide per unit of
@@ -199,6 +201,7 @@ mod tests {
     )]
 
     use super::Camera;
+    use super::Degrees;
 
     /// `m * v` of a column-major matrix and a point, divided by w.
     fn project(m: &[[f32; 4]; 4], v: [f32; 3]) -> [f32; 3] {
@@ -214,7 +217,7 @@ mod tests {
 
     #[test]
     fn a_point_ahead_is_in_the_middle_and_one_to_the_right_is_right() {
-        let camera = Camera::new([0.0, 0.0, 0.0], 0.0);
+        let camera = Camera::new([0.0, 0.0, 0.0], Degrees::new(0.0));
         let m = camera.clip_from_world(1.0);
         let ahead = project(&m, [100.0, 0.0, 0.0]);
         assert!(ahead[0].abs() < 1e-5 && ahead[1].abs() < 1e-5, "{ahead:?}");
@@ -229,7 +232,7 @@ mod tests {
     // spec REND-3.4: fov 90 across, the height's from CalcFov, drawn from 4 to 4096 units
     #[test]
     fn the_view_is_glquakes_fov_90() {
-        let camera = Camera::new([0.0, 0.0, 0.0], 0.0);
+        let camera = Camera::new([0.0, 0.0, 0.0], Degrees::new(0.0));
         // At 2:1 a point 45 degrees to the right is at the edge, and one 1/4 as far up as it is
         // ahead is at the top: tan(fov_y/2) = tan(45)/2.
         let m = camera.clip_from_world(2.0);
@@ -244,17 +247,17 @@ mod tests {
 
     #[test]
     fn turning_and_travelling_follow_the_axes() {
-        let mut camera = Camera::new([0.0, 0.0, 0.0], 0.0);
-        camera.turn(90.0, 0.0);
+        let mut camera = Camera::new([0.0, 0.0, 0.0], Degrees::new(0.0));
+        camera.turn(Degrees::new(90.0), Degrees::new(0.0));
         camera.travel(10.0, 0.0, 0.0);
         assert!(
             (camera.origin[1] - 10.0).abs() < 1e-4,
             "{:?}",
             camera.origin
         );
-        camera.turn(0.0, 200.0);
+        camera.turn(Degrees::new(0.0), Degrees::new(200.0));
         assert!((camera.pitch.get() - 89.0).abs() < f32::EPSILON);
-        camera.turn(-450.0, 0.0);
+        camera.turn(Degrees::new(-450.0), Degrees::new(0.0));
         assert!(camera.yaw.get().abs() < f32::EPSILON);
     }
 
@@ -262,7 +265,7 @@ mod tests {
     // box in view, its corners inside both half fields of view, in a wide image too
     #[test]
     fn a_framed_box_is_wholly_in_view() {
-        let mut camera = Camera::new([0.0, 0.0, 0.0], 30.0);
+        let mut camera = Camera::new([0.0, 0.0, 0.0], Degrees::new(30.0));
         camera.pitch = super::Degrees::new(20.0);
         let bounds = [[1000.0, 2000.0, -50.0], [1100.0, 2032.0, 400.0]];
         let aspect = 16.0 / 9.0;

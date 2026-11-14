@@ -8,6 +8,7 @@
 //! once. Every edit is a [`MapAction`] the shell runs as a `map.*` command, so each has undo.
 //! `docs/map-editor.md` maps TrenchBroom's bindings to these.
 
+use qs_render::Degrees;
 use std::collections::{BTreeSet, HashMap};
 
 use eframe::egui::{
@@ -810,7 +811,7 @@ impl MapEditor {
                 let camera = self.camera.get_or_insert(start);
                 if response.dragged_by(egui::PointerButton::Secondary) {
                     let drag = response.drag_delta();
-                    camera.turn(-drag.x * TURN, -drag.y * TURN);
+                    camera.turn(Degrees::new(-drag.x * TURN), Degrees::new(-drag.y * TURN));
                 }
                 if response.dragged_by(egui::PointerButton::Middle) {
                     let drag = response.drag_delta();

@@ -808,7 +808,7 @@ impl Buffer {
                 None => return pos,
             }
             let here = self.class_at(pos);
-            if here == CharClass::EmptyLine || here != CharClass::Blank {
+            if here != CharClass::Blank {
                 break;
             }
         }

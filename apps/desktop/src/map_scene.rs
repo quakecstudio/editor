@@ -532,7 +532,7 @@ pub(crate) fn start_camera(document: &MapDocument) -> Camera {
         .entities
         .iter()
         .find(|entity| entity.classname() == Some(PLAYER_START));
-    let mut camera = Camera::new(MAP_ORIGIN, NO_START_YAW);
+    let mut camera = Camera::new(MAP_ORIGIN, Degrees::new(NO_START_YAW));
     if let Some(start) = start {
         let origin = start.origin().map(single);
         camera.yaw = Degrees::new(single(start.yaw()));
