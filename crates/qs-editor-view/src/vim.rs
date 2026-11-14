@@ -576,15 +576,31 @@ fn first_non_blank(line: &str) -> usize {
         .map_or(line.len(), |(at, _)| at)
 }
 
-/// A character's word class: 0 white space, 1 a letter, digit or underscore (or a letter of
-/// another script), 2 any other non-blank character.
-fn class(c: char) -> u8 {
-    if c.is_whitespace() {
-        0
-    } else if c.is_alphanumeric() || c == '_' {
-        1
-    } else {
-        2
+/// A character's word class, as `w`, `b` and `e` move by it: white space, a word's (a
+/// letter, digit or underscore, or a letter of another script), any other non-blank one, and
+/// an empty line, which is a word of its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CharClass {
+    /// White space, or a line's end.
+    Blank,
+    /// A letter, a digit or an underscore.
+    Word,
+    /// Any other non-blank character.
+    Punctuation,
+    /// An empty line.
+    EmptyLine,
+}
+
+impl CharClass {
+    /// The class of `c`.
+    fn of(c: char) -> Self {
+        if c.is_whitespace() {
+            Self::Blank
+        } else if c.is_alphanumeric() || c == '_' {
+            Self::Word
+        } else {
+            Self::Punctuation
+        }
     }
 }
 
@@ -743,12 +759,12 @@ impl Buffer {
     }
 
     /// The class at `at`, the end of a line counting as white space; an empty line is its own
-    /// word, class 3.
-    fn class_at(&self, at: Position) -> u8 {
+    /// word.
+    fn class_at(&self, at: Position) -> CharClass {
         if self.line(at.line).is_empty() {
-            return 3;
+            return CharClass::EmptyLine;
         }
-        self.char_at(at).map_or(0, class)
+        self.char_at(at).map_or(CharClass::Blank, CharClass::of)
     }
 
     /// `w`: the start of the next word, or the end of the text.
@@ -756,7 +772,7 @@ impl Buffer {
         let start = self.class_at(at);
         let mut pos = at;
         // Leave the word the caret is on.
-        if start != 0 {
+        if start != CharClass::Blank {
             while let Some(next) = self.forward(pos) {
                 pos = next;
                 if next.line != at.line || self.class_at(next) != start {
@@ -767,7 +783,9 @@ impl Buffer {
         // Skip white space, stopping at an empty line or a word.
         loop {
             let here = self.class_at(pos);
-            if (here != 0 && pos != at) || (here == 3 && pos.line != at.line) {
+            if (here != CharClass::Blank && pos != at)
+                || (here == CharClass::EmptyLine && pos.line != at.line)
+            {
                 return pos;
             }
             match self.forward(pos) {
@@ -787,11 +805,11 @@ impl Buffer {
                 None => return pos,
             }
             let here = self.class_at(pos);
-            if here == 3 || here != 0 {
+            if here == CharClass::EmptyLine || here != CharClass::Blank {
                 break;
             }
         }
-        if self.class_at(pos) == 3 {
+        if self.class_at(pos) == CharClass::EmptyLine {
             return pos;
         }
         let word = self.class_at(pos);
@@ -814,7 +832,7 @@ impl Buffer {
                 None => return self.normal_clamp(pos),
             }
             let here = self.class_at(pos);
-            if here != 0 && here != 3 {
+            if here != CharClass::Blank && here != CharClass::EmptyLine {
                 break;
             }
         }
