@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::editing::{Change, Source};
 use crate::editing::{Saved, TextStep};
-use crate::entity_classes::ClassInfo;
-use crate::map_edit::{EntityIndex, QuickFix};
+use crate::entity_classes::class_info;
+use crate::map_edit::{ClassInfo, EntityIndex, QuickFix};
 use crate::{EntityCheck, EntityProblem, HasWorkbench, MapProject, Workbench, WorkbenchError};
 
 /// The id of `map.check`.
@@ -86,7 +86,7 @@ impl<L: crate::Loader> MapProject for Workbench<L> {
 
     fn entity_classes(&mut self) -> Option<Vec<ClassInfo>> {
         let classes = Self::entity_classes(self).ok()?;
-        Some(classes.iter().map(ClassInfo::from).collect())
+        Some(classes.iter().map(class_info).collect())
     }
 
     fn targeting_keys(&mut self) -> Vec<String> {

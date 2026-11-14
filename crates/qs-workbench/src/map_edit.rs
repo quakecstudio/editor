@@ -30,11 +30,11 @@ pub use brushes::{
     MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SUBTRACT,
     MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX,
 };
-pub(crate) use disk::FilesChangedCommand;
+pub use classes::{ClassInfo, FlagInfo, KeyInfo};
 pub use disk::{
-    FILES_CHANGED, FilesChanged, FilesChangedParams, Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference,
-    MapOnDisk, ResolveParams,
+    Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference, MapOnDisk, ResolveParams, map_files_changed,
 };
+pub use error::MapEditError;
 pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
 pub use groups::{
     EntityListParams, ExportParams, LayerInfo, LayerOption, MAP_EXPORT, MAP_HIDE, MAP_ISOLATE,
@@ -52,17 +52,20 @@ pub use prefabs::{
     MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PREFAB_FOLDER, PlacePrefabParams, Prefab,
     PrefabSaved, Prefabs, SavePrefabParams,
 };
+pub use report::{MapReport, Seal};
 pub use review::{
     HunkEntity, HunkSide, MAP_ACCEPT, MAP_REJECT, MAP_STAGE, MAP_STAGED, MAP_UNSTAGE, MapHunk,
     MapHunkNumber, MapHunksParams,
 };
 pub use shapes::{ArchWall, BrushShapeParams, Circle, Climb, MAP_BRUSH_SHAPE, ShapeSpec};
+pub use store::{EntityCheck, EntityProblem, GameFiles, HasMap, LiveMap, MapProject, MapStore};
 
 pub mod backup;
 mod brush_tools;
 mod brushes;
+mod classes;
 mod disk;
-pub(crate) mod error;
+mod error;
 mod flags;
 mod groups;
 mod inspect;
@@ -71,21 +74,19 @@ mod links;
 mod live;
 mod outline;
 mod prefabs;
+mod report;
 mod review;
 mod shapes;
-pub(crate) mod store;
+mod store;
 pub mod texture_import;
 pub mod textures;
 pub mod uv;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::entity_classes::{FlagInfo, KeyInfo};
-use crate::map_compile::MapReport;
 use crate::map_edit::backup::{MapBackup, MapBackups, MapRestoreBackup};
 use crate::map_edit::texture_import::TextureImport;
 use crate::map_edit::uv::{FaceAlign, FaceUv};
-use crate::{HasMap, LiveMap, MapEditError, MapProject, MapStore, Workbench};
 
 /// Degrees in a whole turn; a rotated yaw is kept below it.
 const FULL_TURN: f64 = 360.0;
@@ -612,37 +613,6 @@ pub struct EntityKeys {
     pub targetnames: Vec<String>,
     /// Whether it has brushes.
     pub brush: bool,
-}
-
-impl<L: crate::Loader> Workbench<L> {
-    /// The map open in the map view.
-    #[must_use]
-    pub const fn map(&self) -> Option<&MapDocument> {
-        self.maps.map()
-    }
-
-    /// The store of the map open in the map view.
-    #[must_use]
-    pub const fn maps(&self) -> &MapStore {
-        &self.maps
-    }
-
-    /// The store of the map open in the map view, to open, change or save it.
-    pub const fn maps_mut(&mut self) -> &mut MapStore {
-        &mut self.maps
-    }
-}
-
-impl<L: crate::Loader> Workbench<L> {
-    /// The keys of `entity` of the open map, typed by its class (MAP-4).
-    ///
-    /// # Errors
-    ///
-    /// [`MapEditError::NoMap`] with no map open and [`MapEditError::NoEntity`] for an
-    /// entity it does not have.
-    pub fn map_entity(&mut self, entity: EntityIndex) -> Result<EntityKeys, MapEditError> {
-        entity_keys(self, entity)
-    }
 }
 
 impl MapStore {

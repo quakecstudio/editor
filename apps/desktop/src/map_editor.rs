@@ -16,8 +16,8 @@ use eframe::egui::{
 };
 use qs_layout::MapPanes;
 use qs_render::Camera;
-use qs_workbench::entity_classes::ClassInfo;
-use qs_workbench::map_compile::MapReport;
+use qs_workbench::map_edit::ClassInfo;
+use qs_workbench::map_edit::MapReport;
 use qs_workbench::map_edit::texture_import::DitherChoice;
 use qs_workbench::map_edit::textures::TextureSources;
 #[cfg(test)]

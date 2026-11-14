@@ -25,8 +25,8 @@ use qs_map::MapFile;
 use qs_map_bsp::{Compiler, Dialect as BspDialect, Warning};
 use qs_models::{MemoryKeys, ProviderConfig, ProviderKind, ProviderModel, Secret, Usage};
 use qs_templates::{Folder, Template};
-use qs_workbench::map_compile::{MAP_COMPILE, MapReport};
-use qs_workbench::map_edit::MAP_OPEN;
+use qs_workbench::map_compile::MAP_COMPILE;
+use qs_workbench::map_edit::{MAP_OPEN, MapReport};
 use qs_workbench::{
     Config, HasPreview, HasWorkbench, OPEN_PROJECT, Preview, PreviewConfig, Workbench,
 };

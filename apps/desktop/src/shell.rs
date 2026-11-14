@@ -39,6 +39,7 @@ use qs_workbench::dock::DockFrame;
 use qs_workbench::engine::{ENGINE_SCREENSHOT, EngineScreenshotParams, Screenshot};
 use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITIES};
 use qs_workbench::export::{ExportParams, Exported, PROJECT_EXPORT};
+use qs_workbench::files_changed::{FILES_CHANGED, FilesChanged, FilesChangedParams};
 use qs_workbench::game_files::GameFiles;
 use qs_workbench::git::{
     GIT_BLAME, GIT_BRANCHES, GIT_COMMIT, GIT_CONFLICTS, GIT_CREATE_BRANCH, GIT_DIFF, GIT_HEAD_TEXT,
@@ -56,11 +57,11 @@ use qs_workbench::map_edit::backup::{
 use qs_workbench::map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
 use qs_workbench::map_edit::textures::TextureSources;
 use qs_workbench::map_edit::{
-    BSP_EXTENSION, BspSave, EntityKeys, EntityParams, FILES_CHANGED, FilesChanged,
-    FilesChangedParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY, MAP_EXTENSION,
-    MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
-    MapDifference, MapDocument, MapOnDisk, MapOpenParams, MapSaved, MoveParams, RemoveKeyParams,
-    ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
+    BSP_EXTENSION, BspSave, EntityKeys, EntityParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE,
+    MAP_ENTITY, MAP_EXTENSION, MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE,
+    MAP_SAVE, MAP_SELECT, MAP_SET_KEY, MapDifference, MapDocument, MapOnDisk, MapOpenParams,
+    MapSaved, MoveParams, RemoveKeyParams, ResolveParams, RotateParams, SaveParams,
+    SelectParams as MapSelectParams, SetKeyParams,
 };
 use qs_workbench::map_edit::{
     BrushChamferParams, BrushClipParams, BrushCreateParams, BrushExtrudeParams, BrushHollowParams,

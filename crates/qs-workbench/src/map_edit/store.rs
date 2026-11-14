@@ -12,8 +12,7 @@ use std::path::{Path, PathBuf};
 
 use qs_map::{Entity, MapFile};
 
-use crate::entity_classes::ClassInfo;
-use crate::map_edit::{EntityIndex, LiveChange, MapDocument, QuickFix};
+use crate::map_edit::{ClassInfo, EntityIndex, LiveChange, MapDocument, QuickFix};
 
 /// The map open in the map view, if one is.
 #[derive(Debug, Default)]

@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use qc_project::Loader;
 use qs_engine::{
-    Client, ClientError, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRootError, Running,
-    StepKind, WindowPlacement, locate_host, prepare_run_root,
+    Client, ClientError, EntityTarget, Flavour, InspectWhat, LaunchError, LaunchSpec, RunRootError,
+    Running, StepKind, WindowPlacement, locate_host, prepare_run_root,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -1040,6 +1040,44 @@ fn socket_path() -> PathBuf {
     } else {
         std::env::temp_dir().join(format!("{name}.sock"))
     }
+}
+
+/// Sends a change of the map's entities to a game.
+pub trait SendLive {
+    /// Sends the change over the bridge (BRIDGE-4.13): `entity/spawn` at its place,
+    /// `entity/remove` or `entity/edit` of the entity there; nothing for
+    /// [`LiveChange::NeedsCompile`], answered with `null`.
+    ///
+    /// # Errors
+    ///
+    /// The request's [`ClientError`]: the game refused it, as for a model the map has not
+    /// precached (BRIDGE-4.12) or an entity in no edict.
+    fn send(&self, client: &mut Client) -> Result<Value, ClientError>;
+}
+
+impl SendLive for LiveChange {
+    fn send(&self, client: &mut Client) -> Result<Value, ClientError> {
+        match self {
+            LiveChange::Spawn {
+                place,
+                classname,
+                pairs,
+            } => client.spawn(classname, &as_strs(pairs), Some(place.get())),
+            LiveChange::Remove { place } => client.remove(EntityTarget::MapEntity(place.get())),
+            LiveChange::NeedsCompile { .. } => Ok(Value::Null),
+            LiveChange::Edit { place, pairs } => {
+                client.edit_entity(EntityTarget::MapEntity(place.get()), &as_strs(pairs))
+            }
+        }
+    }
+}
+
+/// Key-values as the client takes them.
+fn as_strs(pairs: &[(String, String)]) -> Vec<(&str, &str)> {
+    pairs
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect()
 }
 
 /// What the map editor asks of the game (`HasMap`): the play loop's.

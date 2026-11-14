@@ -14,8 +14,8 @@ use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_wad::write::WadBuilder;
 use serde_json::json;
 
-use super::{MAP_COMPILE, MAP_LEAKS, MAP_PORTALS, MapPortals, MapReport, Seal};
-use crate::map_edit::MAP_OPEN;
+use super::{MAP_COMPILE, MAP_LEAKS, MAP_PORTALS, MapPortals};
+use crate::map_edit::{MAP_OPEN, MapReport, Seal};
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
 

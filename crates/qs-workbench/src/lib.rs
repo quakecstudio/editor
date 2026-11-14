@@ -20,6 +20,7 @@ mod commands;
 mod editing;
 pub mod entity_classes;
 pub mod export;
+pub mod files_changed;
 pub mod git;
 pub mod ids;
 pub mod map_check;
@@ -56,9 +57,8 @@ pub use qc_project::{Dialect, FsLoader, Loader, Target};
 pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
-pub use crate::map_edit::error::MapEditError;
-pub use crate::map_edit::store::{
-    EntityCheck, EntityProblem, GameFiles, HasMap, LiveMap, MapProject, MapStore,
+pub use crate::map_edit::{
+    EntityCheck, EntityProblem, GameFiles, HasMap, LiveMap, MapEditError, MapProject, MapStore,
 };
 pub use crate::preview::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
@@ -69,7 +69,7 @@ pub use crate::preview::{
     CHOOSE_GAME, ChooseGameParams, ConsoleLine, GAME, HasPreview, OnLoss, PAUSE, PICK, PLAY, POLL,
     PickParams, PlayParams, PlayState, Preview, PreviewConfig, PreviewError, PreviewStatus, RELOAD,
     RESTART, RESUME, ReloadParams, SELECT, SET_FIELD, STEP, STOP, SelectParams, SelectedEntity,
-    SetFieldParams, entities, register_preview,
+    SendLive, SetFieldParams, entities, register_preview,
 };
 pub use crate::recent::{RECENT_LIMIT, RecentProjects, recent_path};
 pub use crate::staged::{
@@ -659,6 +659,40 @@ pub(crate) fn problems<L: Loader>(host: &mut AnalysisHost<L>) -> Vec<Problem> {
         }
     }
     out
+}
+
+impl<L: Loader> Workbench<L> {
+    /// The map open in the map view.
+    #[must_use]
+    pub const fn map(&self) -> Option<&map_edit::MapDocument> {
+        self.maps.map()
+    }
+
+    /// The store of the map open in the map view.
+    #[must_use]
+    pub const fn maps(&self) -> &MapStore {
+        &self.maps
+    }
+
+    /// The store of the map open in the map view, to open, change or save it.
+    pub const fn maps_mut(&mut self) -> &mut MapStore {
+        &mut self.maps
+    }
+}
+
+impl<L: Loader> Workbench<L> {
+    /// The keys of `entity` of the open map, typed by its class (MAP-4).
+    ///
+    /// # Errors
+    ///
+    /// [`MapEditError::NoMap`] with no map open and [`MapEditError::NoEntity`] for an
+    /// entity it does not have.
+    pub fn map_entity(
+        &mut self,
+        entity: map_edit::EntityIndex,
+    ) -> Result<map_edit::EntityKeys, MapEditError> {
+        map_edit::entity_keys(self, entity)
+    }
 }
 
 /// Why the workbench could not open, change or save a project or a file.

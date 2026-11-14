@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Maps and QuakeC changed by another program (P5-17, MAP-32). A file watcher, or a test in its
-//! place, tells `files.changed` which files changed; the open map with no unsaved edits is read
-//! again with its selection kept, one with unsaved edits keeps them and waits for
-//! `map.resolve`, and changed QuakeC is read again, so the entity definitions derived from it
-//! follow. `map.compare` lists how the map on disk differs from the one being edited.
+//! The open map changed by another program (P5-17, MAP-32). When its file is among those
+//! `files.changed` is told of, the map with no unsaved edits is read again with its selection
+//! kept, and one with unsaved edits keeps them and waits for `map.resolve`. `map.compare`
+//! lists how the map on disk differs from the one being edited.
 
 use std::path::{Path, PathBuf};
 
@@ -14,17 +13,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, LiveChange, MapDocument, MapRead};
-use crate::{HasMap, HasWorkbench, LiveMap, MapEditError, MapStore, WorkbenchError};
+use crate::{HasMap, LiveMap, MapEditError, MapStore};
 
-/// The id of `files.changed`.
-pub const FILES_CHANGED: &str = "files.changed";
 /// The id of `map.resolve`.
 pub const MAP_RESOLVE: &str = "map.resolve";
 /// The id of `map.compare`.
 pub const MAP_COMPARE: &str = "map.compare";
-
-/// The extensions of the files that make up a project's QuakeC.
-const QUAKEC_EXTENSIONS: [&str; 4] = ["qc", "src", "qh", "toml"];
 
 /// What happened to the open map when its file changed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -37,23 +31,6 @@ pub enum MapOnDisk {
     Reloaded,
     /// It has unsaved edits, kept until `map.resolve` says which to take.
     Conflict,
-}
-
-/// The parameters of `files.changed`.
-#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct FilesChangedParams {
-    /// The files another program wrote.
-    pub paths: Vec<PathBuf>,
-}
-
-/// What `files.changed` did.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct FilesChanged {
-    /// What happened to the open map.
-    pub map: MapOnDisk,
-    /// Whether the project's QuakeC was read again, and with it the entity definitions.
-    pub quakec: bool,
 }
 
 /// Which map `map.resolve` keeps.
@@ -95,7 +72,7 @@ impl MapStore {
     /// Reads the open map's file again after another program wrote it: with no unsaved edits it
     /// replaces the map, keeping the selection where the map still has it; with unsaved edits
     /// it is kept aside as the conflict.
-    pub(crate) fn map_on_disk(&mut self) -> Result<MapOnDisk, MapEditError> {
+    fn map_on_disk(&mut self) -> Result<MapOnDisk, MapEditError> {
         let Some(document) = self.document.as_ref() else {
             return Ok(MapOnDisk::Same);
         };
@@ -149,15 +126,38 @@ impl MapStore {
     }
 }
 
-/// Whether `path` is part of a project's QuakeC.
-fn is_quakec(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            QUAKEC_EXTENSIONS
-                .iter()
-                .any(|known| extension.eq_ignore_ascii_case(known))
-        })
+/// Reads the open map of `context` again when one of `paths`, the files another program
+/// wrote, is its file: with no unsaved edits it is read again and its game told, with unsaved
+/// edits they are kept for `map.resolve` (P5-17).
+///
+/// # Errors
+///
+/// [`MapEditError`] when the map's file no longer reads.
+pub fn map_files_changed<C: HasMap>(
+    context: &mut C,
+    paths: &[PathBuf],
+) -> Result<MapOnDisk, MapEditError> {
+    let store = context.map_store();
+    let watched = store.map().map(MapDocument::watched).unwrap_or_default();
+    let same = |a: &Path, b: &Path| {
+        a == b
+            || std::fs::canonicalize(a)
+                .ok()
+                .zip(std::fs::canonicalize(b).ok())
+                .is_some_and(|(a, b)| a == b)
+    };
+    let map = if paths
+        .iter()
+        .any(|path| watched.iter().any(|open| same(path, open)))
+    {
+        store.map_on_disk()?
+    } else {
+        MapOnDisk::Same
+    };
+    if map == MapOnDisk::Reloaded {
+        out_of_step(context);
+    }
+    Ok(map)
 }
 
 /// Tells the game playing the open map that the map was read again from disk, so its edits
@@ -168,56 +168,6 @@ fn out_of_step<C: HasMap>(context: &mut C) {
     };
     if let Some(live) = context.live_map() {
         live.read_again(&path);
-    }
-}
-
-/// `files.changed`.
-pub(crate) struct FilesChangedCommand;
-
-impl<C: HasWorkbench + 'static> Command<C> for FilesChangedCommand {
-    const ID: &'static str = FILES_CHANGED;
-    const SUMMARY: &'static str = "Takes files another program changed: the open map is read \
-        again when it has no unsaved edits, else kept for map.resolve; changed QuakeC is read \
-        again with the entity definitions derived from it.";
-    type Params = FilesChangedParams;
-    type Output = FilesChanged;
-    type Error = WorkbenchError;
-
-    fn run(
-        &self,
-        context: &mut C,
-        params: FilesChangedParams,
-    ) -> Result<Outcome<FilesChanged, C>, WorkbenchError> {
-        let workbench = context.workbench();
-        let watched = workbench
-            .map()
-            .map(MapDocument::watched)
-            .unwrap_or_default();
-        let same = |a: &Path, b: &Path| {
-            a == b
-                || std::fs::canonicalize(a)
-                    .ok()
-                    .zip(std::fs::canonicalize(b).ok())
-                    .is_some_and(|(a, b)| a == b)
-        };
-        // The QuakeC first, so a map that no longer reads still leaves it read again.
-        let quakec = workbench.root().is_some() && params.paths.iter().any(|path| is_quakec(path));
-        if quakec {
-            workbench.disk_changed()?;
-        }
-        let map = if params
-            .paths
-            .iter()
-            .any(|path| watched.iter().any(|open| same(path, open)))
-        {
-            workbench.maps_mut().map_on_disk()?
-        } else {
-            MapOnDisk::Same
-        };
-        if map == MapOnDisk::Reloaded {
-            out_of_step(context);
-        }
-        Ok(Outcome::outside_history(FilesChanged { map, quakec }))
     }
 }
 
@@ -269,6 +219,3 @@ impl<C: HasMap + 'static> Command<C> for MapCompare {
         Ok(Outcome::unchanged(differences))
     }
 }
-
-#[cfg(test)]
-mod tests;

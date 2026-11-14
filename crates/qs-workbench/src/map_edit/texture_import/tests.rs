@@ -15,8 +15,8 @@ use qs_wad::texture::Palette;
 use serde_json::json;
 
 use super::{DitherChoice, TEXTURE_IMPORT, TextureImported, project_wad, quantized};
-use crate::map_compile::MapReport;
 use crate::map_edit::MAP_OPEN;
+use crate::map_edit::MapReport;
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
 
