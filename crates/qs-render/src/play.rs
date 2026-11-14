@@ -451,6 +451,17 @@ impl Play {
         Some((md5, bytes))
     }
 
+    /// The palette its skins and pictures are read through.
+    #[must_use]
+    pub const fn palette(&self) -> &Palette {
+        &self.palette
+    }
+
+    /// No external brush model placed, for a mesh made again (BRIDGE-4.17).
+    pub fn clear_instances(&mut self) {
+        self.instances.clear();
+    }
+
     /// Records that entity `entity`'s external brush model is the mesh's model `mesh_model`.
     pub fn add_instance(&mut self, entity: EntitySlot, mesh_model: usize) {
         self.instances.push((entity, mesh_model));

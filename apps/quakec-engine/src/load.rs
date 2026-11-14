@@ -13,7 +13,7 @@ use qs_client::{Client, Event, MENU_SAVEGAMES, ModelInfo, Models, Random};
 use qs_mdl::mdl::Mdl;
 use qs_mdl::spr::Sprite;
 use qs_render::{
-    Camera, Degrees, Extras, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
+    Camera, Degrees, Extras, Look, MapMesh, MeshBuilder, Palette, Pics, Placement, Play, Surface,
 };
 use qs_sim::localization::{Localization, RRE_LOC_FILE};
 use qs_sim::rerelease::patch_builtins;
@@ -262,6 +262,72 @@ fn localization(vfs: &Vfs<StdFs>, args: &Args) -> Result<Option<Vec<u8>>, String
     Zip::open(file)
         .and_then(|mut archive| archive.read(RRE_LOC_FILE))
         .map_err(|e| format!("{}: {e}", kpf.display()))
+}
+
+/// The mesh of the map `map`'s `bsp`, read through `palette` in `look`: the world, then every
+/// brush submodel `*n` at the origin, so the mesh's model `n` is the submodel `n`; then each of
+/// `world`'s entities showing a BSP of its own, such as a health box, placed for `play`. A
+/// `.lit` beside the map lights it in colour (REND-6, BSP-18); one that is not usable is
+/// reported and left out, as QuakeSpasm does. BSP-18.4's game-directory priority is not
+/// checked here. A swap draws its new BSP with it too (BRIDGE-4.17).
+pub(crate) fn map_mesh(
+    (map, bsp): (&str, &Bsp<'_>),
+    world: &World,
+    read: &dyn Fn(&str) -> Option<Vec<u8>>,
+    (palette, look): (&Palette, Look),
+    play: &mut Play,
+) -> Result<MapMesh, String> {
+    let name = format!("maps/{map}.bsp");
+    let placements: Vec<Placement> = (0..bsp.models.len())
+        .map(|model| Placement {
+            model,
+            ..Placement::WORLD
+        })
+        .collect();
+    let mut others: Vec<(String, Vec<(Placement, usize)>)> = Vec::new();
+    for entity in world.entities().into_iter().skip(1) {
+        if is_external_brush_model(&entity.model, &name) {
+            let placement = Placement {
+                model: 0,
+                origin: entity.origin,
+                angles: entity.angles,
+            };
+            let placed = (placement, entity.number.index());
+            match others.iter_mut().find(|(name, _)| *name == entity.model) {
+                Some((_, list)) => list.push(placed),
+                None => others.push((entity.model, vec![placed])),
+            }
+        }
+    }
+    let lit_bytes = read(&format!("maps/{map}.lit"));
+    let lit = lit_bytes.as_deref().and_then(|bytes| {
+        Lit::read(bytes, bsp.lighting.len())
+            .map_err(|error| tracing::warn!(%error, "maps/{map}.lit"))
+            .ok()
+    });
+    let mut builder = MeshBuilder::new(palette, look);
+    let extras = Extras {
+        lit: lit.as_ref(),
+        ..Extras::default()
+    };
+    builder
+        .add_with(bsp, &extras, &placements)
+        .map_err(|e| e.to_string())?;
+    let mut next = placements.len();
+    for (name, list) in &others {
+        let bytes = read(name).ok_or_else(|| format!("{name} is not on the search path"))?;
+        let other = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(name))?;
+        let list: Vec<Placement> = list.iter().map(|(p, _)| *p).collect();
+        builder.add(&other, &list).map_err(|e| e.to_string())?;
+    }
+    play.clear_instances();
+    for (_, list) in &others {
+        for (_, entity) in list {
+            play.add_instance(qs_client::EntitySlot::new(*entity), next);
+            next = next.saturating_add(1);
+        }
+    }
+    Ok(builder.finish())
 }
 
 #[cfg(test)]
@@ -520,60 +586,14 @@ impl Args {
         play.load_models(client.model_names(), &*reader()?, &ranker()?)
             .map_err(|e| e.to_string())?;
         play.load_sky(&*reader()?);
-        // The world, then every brush submodel `*n` at the origin, so the mesh's model `n` is the
-        // submodel `n`; then each entity showing a BSP of its own, such as a health box.
-        let placements: Vec<Placement> = (0..bsp.models.len())
-            .map(|model| Placement {
-                model,
-                ..Placement::WORLD
-            })
-            .collect();
-        let mut others: Vec<(String, Vec<(Placement, usize)>)> = Vec::new();
-        for entity in game.world().entities().into_iter().skip(1) {
-            if is_external_brush_model(&entity.model, &name) {
-                let placement = Placement {
-                    model: 0,
-                    origin: entity.origin,
-                    angles: entity.angles,
-                };
-                let placed = (placement, entity.number.index());
-                match others.iter_mut().find(|(name, _)| *name == entity.model) {
-                    Some((_, list)) => list.push(placed),
-                    None => others.push((entity.model, vec![placed])),
-                }
-            }
-        }
-        // A `.lit` beside the map lights it in colour (REND-6, BSP-18); one that is not usable is
-        // reported and left out, as QuakeSpasm does. BSP-18.4's game-directory priority is not
-        // checked here.
-        let lit_bytes = read(&format!("maps/{map}.lit")).ok();
-        let lit = lit_bytes.as_deref().and_then(|bytes| {
-            Lit::read(bytes, bsp.lighting.len())
-                .map_err(|error| tracing::warn!(%error, "maps/{map}.lit"))
-                .ok()
-        });
-        let mut builder = MeshBuilder::new(&palette, look);
-        let extras = Extras {
-            lit: lit.as_ref(),
-            ..Extras::default()
-        };
-        builder
-            .add_with(&bsp, &extras, &placements)
-            .map_err(|e| e.to_string())?;
-        let mut next = placements.len();
-        for (name, list) in &others {
-            let bytes = read(name)?;
-            let other = Bsp::read(&bytes, BspLoader::default()).map_err(|e| e.message(name))?;
-            let list: Vec<Placement> = list.iter().map(|(p, _)| *p).collect();
-            builder.add(&other, &list).map_err(|e| e.to_string())?;
-        }
-        for (_, list) in &others {
-            for (_, entity) in list {
-                play.add_instance(qs_client::EntitySlot::new(*entity), next);
-                next = next.saturating_add(1);
-            }
-        }
-        let mesh = builder.finish();
+        let found = |name: &str| read(name).ok();
+        let mesh = map_mesh(
+            (&map, &bsp),
+            game.world(),
+            &found,
+            (&palette, look),
+            &mut play,
+        )?;
         let placed = at.map(|[x, y, z, yaw]| {
             let mut camera = Camera::new([x, y, z], Degrees::new(yaw));
             camera.turn(Degrees::new(0.0), Degrees::new(PLACED_PITCH));
