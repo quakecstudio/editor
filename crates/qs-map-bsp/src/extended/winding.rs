@@ -165,90 +165,76 @@ impl Winding {
         ]))
     }
 
-    /// Each point's distance from `plane` and its side within `on_epsilon`, `calc_sides`
-    /// (QBSP-15.8), the first point's repeated after the last, and how many are on each side.
-    pub(crate) fn calc_sides(
-        &self,
-        plane: Plane,
-        on_epsilon: f64,
-    ) -> (Vec<f64>, Vec<Side>, SideCounts) {
-        let mut dists = Vec::with_capacity(self.0.len().saturating_add(1));
-        let mut sides = Vec::with_capacity(self.0.len().saturating_add(1));
+    /// How many of its points are on each side of `plane` within `on_epsilon`, `calc_sides`'s
+    /// counts (QBSP-15.8).
+    pub(crate) fn counts(&self, plane: Plane, on_epsilon: f64) -> SideCounts {
         let mut counts = SideCounts::default();
         for &p in &self.0 {
-            let d = plane.distance_to(p);
-            let side = if d > on_epsilon {
-                counts.front = counts.front.saturating_add(1);
-                Side::Front
-            } else if d < -on_epsilon {
-                counts.back = counts.back.saturating_add(1);
-                Side::Back
-            } else {
-                counts.on = counts.on.saturating_add(1);
-                Side::On
-            };
-            dists.push(d);
-            sides.push(side);
+            match Side::of(plane.distance_to(p), on_epsilon) {
+                Side::Front => counts.front = counts.front.saturating_add(1),
+                Side::Back => counts.back = counts.back.saturating_add(1),
+                Side::On => counts.on = counts.on.saturating_add(1),
+            }
         }
-        if let (Some(&d), Some(&s)) = (dists.first(), sides.first()) {
-            dists.push(d);
-            sides.push(s);
-        }
-        (dists, sides, counts)
+        counts
     }
 
-    /// The winding cut by `plane` into its parts in front and behind, `clip` (QBSP-15.8): with
-    /// no point in front all of it is behind, with none behind all of it in front, and a winding
-    /// wholly on the plane is in front only with [`KeepOn::Front`]. Points on the plane go to
-    /// both parts; each edge crossing it gives both a point where it crosses, a component of an
-    /// axial normal taken as the plane's distance to avoid rounding.
-    pub(crate) fn clip(
-        &self,
-        plane: Plane,
-        on_epsilon: f64,
-        keep_on: KeepOn,
-    ) -> (Option<Self>, Option<Self>) {
-        let (dists, sides, counts) = self.calc_sides(plane, on_epsilon);
+    /// Where the winding lies against `plane`, by `clip`'s first tests (QBSP-15.8): wholly in
+    /// front or behind, or across it.
+    fn lie(&self, plane: Plane, on_epsilon: f64, keep_on: KeepOn) -> Lie {
+        let counts = self.counts(plane, on_epsilon);
         if keep_on == KeepOn::Front && counts.front == 0 && counts.back == 0 {
-            return (Some(self.clone()), None);
+            return Lie::Whole(Side::Front);
         }
         if counts.front == 0 {
-            return (None, Some(self.clone()));
+            return Lie::Whole(Side::Back);
         }
         if counts.back == 0 {
-            return (Some(self.clone()), None);
+            return Lie::Whole(Side::Front);
         }
+        Lie::Across
+    }
+
+    /// The points of its parts in front of and behind `plane`, into those of `parts` given, as
+    /// `clip` cuts it (QBSP-15.8): each point's side within `on_epsilon`, the first point's
+    /// after the last.
+    fn cut_into(&self, plane: Plane, on_epsilon: f64, parts: [Option<&mut Vec<Vec3>>; 2]) {
+        let [mut front, mut back] = parts;
         let n = self.0.len();
-        let mut front = Vec::with_capacity(n.saturating_add(CLIP_RESERVE));
-        let mut back = Vec::with_capacity(n.saturating_add(CLIP_RESERVE));
+        let Some(&first) = self.0.first() else {
+            return;
+        };
+        // Each point's distance is computed once: an edge's far end is the next edge's near
+        // one, and the first point is the last edge's far end.
+        let d_first = plane.distance_to(first);
+        let mut far = d_first;
         for (i, &p1) in self.0.iter().enumerate() {
-            let (Some(&side), Some(&next_side), Some(&d1), Some(&d2)) = (
-                sides.get(i),
-                sides.get(i.saturating_add(1)),
-                dists.get(i),
-                dists.get(i.saturating_add(1)),
-            ) else {
-                continue;
+            let next = i.saturating_add(1);
+            let (p2, d2) = if next == n {
+                (first, d_first)
+            } else {
+                let Some(&p2) = self.0.get(next) else {
+                    continue;
+                };
+                (p2, plane.distance_to(p2))
             };
+            let d1 = far;
+            far = d2;
+            let (side, next_side) = (Side::of(d1, on_epsilon), Side::of(d2, on_epsilon));
             match side {
                 Side::On => {
-                    front.push(p1);
-                    back.push(p1);
+                    front
+                        .iter_mut()
+                        .chain(back.iter_mut())
+                        .for_each(|v| v.push(p1));
                     continue;
                 }
-                Side::Front => front.push(p1),
-                Side::Back => back.push(p1),
+                Side::Front => front.iter_mut().for_each(|v| v.push(p1)),
+                Side::Back => back.iter_mut().for_each(|v| v.push(p1)),
             }
             if next_side == Side::On || next_side == side {
                 continue;
             }
-            let Some(&p2) = i
-                .saturating_add(1)
-                .checked_rem(n)
-                .and_then(|k| self.0.get(k))
-            else {
-                continue;
-            };
             let t = d1 / (d1 - d2);
             let mut mid = [0.0; AXES];
             for (((m, &a), &b), &c) in mid.iter_mut().zip(&p1).zip(&p2).zip(&plane.normal) {
@@ -265,10 +251,89 @@ impl Winding {
                     a + t * (b - a)
                 };
             }
-            front.push(mid);
-            back.push(mid);
+            front
+                .iter_mut()
+                .chain(back.iter_mut())
+                .for_each(|v| v.push(mid));
         }
-        (Some(Self(front)), Some(Self(back)))
+    }
+
+    /// The winding cut by `plane` into its parts in front and behind, `clip` (QBSP-15.8): with
+    /// no point in front all of it is behind, with none behind all of it in front, and a winding
+    /// wholly on the plane is in front only with [`KeepOn::Front`]. Points on the plane go to
+    /// both parts; each edge crossing it gives both a point where it crosses, a component of an
+    /// axial normal taken as the plane's distance to avoid rounding.
+    pub(crate) fn clip(
+        &self,
+        plane: Plane,
+        on_epsilon: f64,
+        keep_on: KeepOn,
+    ) -> (Option<Self>, Option<Self>) {
+        match self.lie(plane, on_epsilon, keep_on) {
+            Lie::Whole(Side::Back) => (None, Some(self.clone())),
+            Lie::Whole(_) => (Some(self.clone()), None),
+            Lie::Across => {
+                let room = self.0.len().saturating_add(CLIP_RESERVE);
+                let (mut front, mut back) = (Vec::with_capacity(room), Vec::with_capacity(room));
+                self.cut_into(plane, on_epsilon, [Some(&mut front), Some(&mut back)]);
+                (Some(Self(front)), Some(Self(back)))
+            }
+        }
+    }
+
+    /// The `part` of the winding `plane` cuts, as [`Winding::clip`] gives it, without
+    /// making the other part or copying a winding wholly on that side.
+    pub(crate) fn clipped(
+        self,
+        plane: Plane,
+        on_epsilon: f64,
+        keep_on: KeepOn,
+        part: Part,
+    ) -> Option<Self> {
+        match self.lie(plane, on_epsilon, keep_on) {
+            Lie::Whole(Side::Back) => (part == Part::Back).then_some(self),
+            Lie::Whole(_) => (part == Part::Front).then_some(self),
+            Lie::Across => {
+                let mut points = Vec::with_capacity(self.0.len().saturating_add(CLIP_RESERVE));
+                let parts = match part {
+                    Part::Front => [Some(&mut points), None],
+                    Part::Back => [None, Some(&mut points)],
+                };
+                self.cut_into(plane, on_epsilon, parts);
+                Some(Self(points))
+            }
+        }
+    }
+}
+
+/// Which part of a cut winding [`Winding::clipped`] gives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Part {
+    /// The part in front of the plane.
+    Front,
+    /// The part behind it.
+    Back,
+}
+
+/// Where a winding lies against a plane.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Lie {
+    /// Wholly on this side.
+    Whole(Side),
+    /// Across it.
+    Across,
+}
+
+impl Side {
+    /// The side a point `d` from a plane is on, within `on_epsilon` of it on it.
+    fn of(d: f64, on_epsilon: f64) -> Self {
+        if d > on_epsilon {
+            Self::Front
+        } else if d < -on_epsilon {
+            Self::Back
+        } else {
+            Self::On
+        }
     }
 }
 

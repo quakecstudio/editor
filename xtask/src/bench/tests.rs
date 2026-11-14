@@ -89,6 +89,7 @@ fn the_repository_budget_table_names_every_budget() {
             ("server_frame_mg1", 1e6, Statistic::P99),
             ("quakec_mg1", 5e5, Statistic::P99),
             ("map_load_mg1", 1e9, Statistic::Median),
+            ("play_from_here_e1m1", 6e9, Statistic::Median),
         ]
     );
 }
@@ -460,7 +461,8 @@ fn problems_are_reported_with_annotations_in_github_actions() {
 #[test]
 fn a_failing_cargo_bench_is_an_error() {
     let missing = scratch("failing-cargo-bench").join("no-such-root");
-    let error = run_benchmarks(&missing, &missing.join("criterion"), &missing).unwrap_err();
+    let error =
+        run_benchmarks(&missing, &missing.join("criterion"), &missing, &missing).unwrap_err();
     assert!(error.contains("cannot run cargo bench"), "{error}");
 }
 

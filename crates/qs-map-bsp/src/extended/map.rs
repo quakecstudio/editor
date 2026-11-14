@@ -21,7 +21,7 @@ use super::vec::{
     AXES, Bounds, BspPlane, Facing, NORMAL_EPSILON, POINT_EPSILON, Plane, PlaneNum, Planes, Vec3,
     cross, dot, normalize_with_length, sub,
 };
-use super::winding::{KeepOn, Winding};
+use super::winding::{self, KeepOn, Winding};
 
 /// `SIDESPACE`: the room the world's extent leaves beyond the brushes and hulls (`qbsp.hh`).
 pub(crate) const SIDESPACE: f64 = 24.0;
@@ -599,7 +599,7 @@ impl Reader<'_> {
                 let (Some(current), Some(behind)) = (w.take(), behind) else {
                     break;
                 };
-                w = current.clip(*behind, 0.0, KeepOn::No).0;
+                w = current.clipped(*behind, 0.0, KeepOn::No, winding::Part::Front);
             }
             if let Some(w) = w {
                 for &p in w.points() {

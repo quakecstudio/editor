@@ -22,7 +22,7 @@ use super::map::{
 use super::vec::{
     AXES, Bounds, POINT_EPSILON, Plane, PlaneNum, Planes, cross, dot, length, normalize, sub,
 };
-use super::winding::{KeepOn, Winding};
+use super::winding::{self, KeepOn, Winding};
 use crate::Hull;
 
 /// The fewest points a side's polygon has.
@@ -234,7 +234,7 @@ impl BspBrush {
                 let (Some(current), Some(plane)) = (w.take(), plane) else {
                     break;
                 };
-                w = current.clip(*plane, POINT_EPSILON, KeepOn::No).0;
+                w = current.clipped(*plane, POINT_EPSILON, KeepOn::No, winding::Part::Front);
             }
             let w = w.filter(|w| w.points().iter().flatten().all(|c| c.abs() <= extent));
             match (w, side.source) {

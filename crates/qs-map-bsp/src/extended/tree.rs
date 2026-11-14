@@ -524,23 +524,30 @@ impl Cutter<'_> {
             let (Some(current), Some(plane)) = (w.take(), self.plane(side.planenum)) else {
                 break;
             };
-            w = current.clip(plane, ON_EPSILON, KeepOn::No).1;
+            w = current.clipped(plane, ON_EPSILON, KeepOn::No, winding::Part::Back);
         }
         let Some(mid) = w.filter(|w| !w.is_tiny(TINY_SPLIT)) else {
             return Cut::Whole(Self::mostly_on_side(brush, split));
         };
-        let mut parts = [brush.clone(), brush.clone()];
-        for part in &mut parts {
-            part.sides.clear();
-        }
+        let mut parts = [(); 2].map(|()| BspBrush {
+            sides: Vec::with_capacity(brush.sides.len().saturating_add(1)),
+            contents: brush.contents,
+            bounds: brush.bounds,
+            source: brush.source,
+            sort_key: brush.sort_key,
+            original: brush.original,
+        });
         for side in &brush.sides {
             let (front, back) = side.winding.clip(split, 0.0, KeepOn::No);
             for (part, piece) in parts.iter_mut().zip([front, back]) {
                 if let Some(piece) = piece {
                     part.sides.push(Side {
+                        planenum: side.planenum,
+                        texinfo: side.texinfo,
+                        kind: side.kind,
+                        source: side.source,
                         winding: piece,
                         marks: side.marks.without(SideMarks::TESTED),
-                        ..side.clone()
                     });
                 }
             }
@@ -935,32 +942,25 @@ impl Builder<'_> {
         }
     }
 
-    /// The tree below `id` from `brushes`, `BuildTree_r` (QBSP-15.29): a leaf when no plane is
-    /// chosen; else the node split by it, its children's bounds cut at an axial plane facing
-    /// along its axis, its volume cut between them, the front child built first.
-    fn build_node(
+    /// The tree below `node` from `brushes`, `BuildTree_r` (QBSP-15.29): a leaf when no plane
+    /// is chosen; else the node split by it, its children's bounds cut at an axial plane facing
+    /// along its axis, its volume cut between them. The two children are built at once down to
+    /// [`PARALLEL_DEPTH`] while they hold [`PARALLEL_BRUSHES`] between them: each reads only the planes and its own brushes, and
+    /// [`Grown::place`] numbers the nodes as building the front child first would.
+    fn grow(
         &self,
-        tree: &mut Tree,
-        id: NodeId,
+        mut node: Node,
         mut brushes: Vec<BspBrush>,
         split: TreeSplit,
-    ) {
-        let Some(node) = tree.node(id) else {
-            return;
+        depth: usize,
+    ) -> Grown {
+        let Some((planenum, sides, separator)) = self.select(&mut brushes, &node, split) else {
+            node.kind = NodeKind::Leaf(Self::leaf(&brushes));
+            node.volume = None;
+            return Grown::Leaf(node);
         };
-        let Some((planenum, sides, separator)) = self.select(&mut brushes, node, split) else {
-            if let Some(node) = tree.node_mut(id) {
-                node.kind = NodeKind::Leaf(Self::leaf(&brushes));
-                node.volume = None;
-            }
-            return;
-        };
-        let children = self.split_list(brushes, &sides, planenum);
-        let (bounds, volume) = match tree.node_mut(id) {
-            Some(node) => (node.bounds, node.volume.take()),
-            None => return,
-        };
-        let mut child_bounds = [bounds, bounds];
+        let [front_brushes, back_brushes] = self.split_list(brushes, &sides, planenum);
+        let mut child_bounds = [node.bounds, node.bounds];
         if let Some(plane) = self.cutter.planes.get(planenum).map(BspPlane::plane)
             && let Some(axis) = plane.normal.iter().position(|n| {
                 #[expect(
@@ -977,23 +977,99 @@ impl Builder<'_> {
                 *b = plane.dist;
             }
         }
-        let volumes = volume.map_or([None, None], |v| self.cutter.split(v, planenum));
-        let mut ids = [Tree::HEAD; 2];
-        for ((slot, bounds), volume) in ids.iter_mut().zip(child_bounds).zip(volumes) {
-            *slot = tree.push(Node {
-                volume,
-                ..Tree::leaf(Some(id), bounds, Leaf::default())
-            });
+        let volumes = node
+            .volume
+            .take()
+            .map_or([None, None], |v| self.cutter.split(v, planenum));
+        let child = |bounds: Bounds, volume: Option<BspBrush>| Node {
+            volume,
+            ..Tree::leaf(None, bounds, Leaf::default())
+        };
+        let ([front_bounds, back_bounds], [front_volume, back_volume]) = (child_bounds, volumes);
+        let (front, back) = (
+            child(front_bounds, front_volume),
+            child(back_bounds, back_volume),
+        );
+        let next = depth.saturating_add(1);
+        let brushes = front_brushes.len().saturating_add(back_brushes.len());
+        let children = if depth < PARALLEL_DEPTH && brushes >= PARALLEL_BRUSHES {
+            std::thread::scope(|scope| {
+                let front = scope.spawn(|| self.grow(front, front_brushes, split, next));
+                let back = self.grow(back, back_brushes, split, next);
+                // A panic on the front child's thread is raised here, as building it on this
+                // thread would have raised it.
+                let front = front
+                    .join()
+                    .unwrap_or_else(|payload| std::panic::resume_unwind(payload));
+                [front, back]
+            })
+        } else {
+            [
+                self.grow(front, front_brushes, split, next),
+                self.grow(back, back_brushes, split, next),
+            ]
+        };
+        node.kind = NodeKind::Split {
+            planenum,
+            children: [Tree::HEAD; 2],
+            separator,
+        };
+        Grown::Split {
+            node,
+            children: Box::new(children),
         }
-        if let Some(node) = tree.node_mut(id) {
-            node.kind = NodeKind::Split {
-                planenum,
-                children: ids,
-                separator,
-            };
+    }
+}
+
+/// How deep the brush BSP and the portals build a node's two children at once: up to 2^4
+/// threads.
+pub(crate) const PARALLEL_DEPTH: usize = 4;
+/// The fewest brushes a node's children hold for the brush BSP to build them at once: fewer
+/// build faster than a thread starts.
+const PARALLEL_BRUSHES: usize = 64;
+
+/// A node built with its children, before it has a number.
+enum Grown {
+    Leaf(Node),
+    Split {
+        /// The node, its children not yet numbered.
+        node: Node,
+        /// Its front child, then its back.
+        children: Box<[Grown; 2]>,
+    },
+}
+
+impl Grown {
+    /// The node put in `tree` at `id` below `parent`, numbered as `BuildTree_r` numbers them:
+    /// a split node's two children pushed together, then the front's nodes, then the back's.
+    fn place(self, tree: &mut Tree, id: NodeId, parent: Option<NodeId>) {
+        let (mut node, children) = match self {
+            Self::Leaf(node) => (node, None),
+            Self::Split { node, children } => (node, Some(children)),
+        };
+        node.parent = parent;
+        let Some(children) = children else {
+            if let Some(slot) = tree.node_mut(id) {
+                *slot = node;
+            }
+            return;
+        };
+        let bounds = children.each_ref().map(Self::bounds);
+        let ids = bounds.map(|b| tree.push(Tree::leaf(Some(id), b, Leaf::default())));
+        if let NodeKind::Split { children, .. } = &mut node.kind {
+            *children = ids;
         }
-        for (child, brushes) in ids.into_iter().zip(children) {
-            self.build_node(tree, child, brushes, split);
+        if let Some(slot) = tree.node_mut(id) {
+            *slot = node;
+        }
+        for (child, child_id) in (*children).into_iter().zip(ids) {
+            child.place(tree, child_id, Some(id));
+        }
+    }
+
+    const fn bounds(&self) -> Bounds {
+        match self {
+            Self::Leaf(node) | Self::Split { node, .. } => node.bounds,
         }
     }
 }
@@ -1058,6 +1134,18 @@ impl BspInput<'_> {
     /// no brush a node on plane 0 with two empty leaves; else the head covering every brush and
     /// [`SIDESPACE`] around, its volume the brush of that box, each side's node mark cleared.
     pub(crate) fn brush_bsp(self, bounds: Bounds, brushes: &[BspBrush], split: TreeSplit) -> Tree {
+        self.brush_bsp_from(bounds, brushes, split, 0)
+    }
+
+    /// [`BspInput::brush_bsp`] with the head built at `depth`: from [`PARALLEL_DEPTH`] on, on
+    /// this thread alone.
+    fn brush_bsp_from(
+        self,
+        bounds: Bounds,
+        brushes: &[BspBrush],
+        split: TreeSplit,
+        depth: usize,
+    ) -> Tree {
         let mut tree = Tree {
             nodes: Vec::new(),
             bounds,
@@ -1092,10 +1180,7 @@ impl BspInput<'_> {
             maxs: tree.bounds.maxs.map(|c| c + SIDESPACE),
         };
         let volume = Cutter::from_bounds(self.planes, head_bounds, self.extent);
-        let head = tree.push(Node {
-            volume: Some(volume),
-            ..Tree::leaf(None, head_bounds, Leaf::default())
-        });
+        let head = tree.push(Tree::leaf(None, head_bounds, Leaf::default()));
         let builder = Builder {
             cutter: Cutter {
                 planes: self.planes,
@@ -1104,7 +1189,13 @@ impl BspInput<'_> {
             texinfos: self.texinfos,
             visible: self.visible,
         };
-        builder.build_node(&mut tree, head, brushes, split);
+        let node = Node {
+            volume: Some(volume),
+            ..Tree::leaf(None, head_bounds, Leaf::default())
+        };
+        builder
+            .grow(node, brushes, split, depth)
+            .place(&mut tree, head, None);
         tree
     }
 }
