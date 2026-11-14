@@ -12,8 +12,8 @@ use std::sync::mpsc;
 
 use eframe::egui::{self, RichText, Ui};
 use qs_agent::{
-    AgentProfile, Asking, Message, Model, Outcome, Permissions, Permit, Reply, Request, Run,
-    RunConfig, RunReport, history,
+    AgentProfile, Asking, Message, Model, ModelError, Outcome, Permissions, Permit, Reply, Request,
+    Run, RunConfig, RunReport, history,
 };
 use qs_commands::Session;
 use qs_models::{KeyStore, Keychain, ProviderConfig, ProviderKind, ProviderModel, Secret};
@@ -58,7 +58,7 @@ enum Event {
     /// A piece of the reply's text, as it is written.
     Text(String),
     /// The whole reply.
-    Reply(Result<Reply, String>),
+    Reply(Result<Reply, ModelError>),
 }
 
 /// One task the agent works on.
@@ -232,7 +232,7 @@ fn keep_thread<C: 'static>(_session: &mut Session<C>, thread: &Thread) {
         Outcome::NotDone { reasons } => reasons.join("; "),
     };
     let record = history::ThreadRecord {
-        number: 0,
+        number: history::ThreadNumber::UNKEPT,
         title: history::title_of(&thread.task),
         tokens: qs_agent::estimated_tokens(&report.transcript),
         transcript: report.transcript.clone(),
@@ -588,7 +588,8 @@ impl AgentPanel {
                     &[],
                     &[Message::User { text: prompt }],
                 )
-                .map(|reply| qs_agent::inline_answer(&reply));
+                .map(|reply| reply.inline_answer())
+                .map_err(|error| error.to_string());
             // The editor that asked may have gone; then nothing waits for the answer.
             let _sent = answer.send(reply);
             wake();
@@ -903,7 +904,7 @@ pub enum AgentAction {
     /// Reject these hunks.
     Reject(Vec<HunkId>),
     /// Restore this checkpoint.
-    Restore(u32),
+    Restore(qs_agent::CheckpointNumber),
     /// Answer the call this thread asks about.
     Permit(usize, Permit),
     /// Use this profile from now on, kept in the project's settings.

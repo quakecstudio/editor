@@ -2045,14 +2045,19 @@ Items that left the root (3): `const qs_layout::LAYOUT_FILE`, `struct qs_layout:
 | `fn qs_paths::AppDirs::data` | `qc-ide`, `qs-wad`, `qs-layout`, `qs-tests`, `desktop`, `fuzz` | kept public: used by `qc-ide`, `qs-wad`, `qs-layout`, `qs-tests`, `desktop`, `fuzz` |
 | `fn qs_paths::AppDirs::logs` | `qs-log`, `qs-tests`, `lsp` | kept public: used by `qs-log`, `qs-tests`, `lsp` |
 | `fn qs_paths::Platform::current` | `qc-codegen`, `qc-syntax`, `qs-install`, `qs-tests` | kept public: used by `qc-codegen`, `qc-syntax`, `qs-install`, `qs-tests` |
+| `fn qs_paths::arguments::absolute_paths` | `qs-agent`, `qs-mcp` | kept public: used by `qs-agent`, `qs-mcp` |
+| `fn qs_paths::arguments::collect_paths` | `qs-agent`, `qs-mcp` | kept public: used by `qs-agent`, `qs-mcp` |
 | `fn qs_paths::current` | `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-trace`, `qc-sema`, `qs-mdl`, `qs-workbench`, `qc-syntax`, `qs-bsp`, `qc-diag`, `qc-lexer`, `qs-log`, `qs-differential`, `qs-render`, `qs-install`, `qc-builtins`, `qs-map`, `qs-editor-view`, `qs-tests`, `qs-sim`, `qc-vm`, `desktop`, `lsp`, `xtask` | kept public: used by `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-trace`, `qc-sema`, `qs-mdl`, `qs-workbench`, `qc-syntax`, `qs-bsp`, `qc-diag`, `qc-lexer`, `qs-log`, `qs-differential`, `qs-render`, `qs-install`, `qc-builtins`, `qs-map`, `qs-editor-view`, `qs-tests`, `qs-sim`, `qc-vm`, `desktop`, `lsp`, `xtask` |
 | `fn qs_paths::fonts::current_font_dirs` | `desktop` | kept public: used by `desktop` |
 | `fn qs_paths::Platform::dirs` | `qc-ide`, `qc-codegen`, `qc-sema`, `qs-vfs`, `qs-log`, `qs-differential`, `qs-install`, `qc-builtins`, `qc-progs`, `qs-tests`, `qs-commands`, `qc-project`, `qc-vm`, `lsp`, `xtask` | kept public: used by `qc-ide`, `qc-codegen`, `qc-sema`, `qs-vfs`, `qs-log`, `qs-differential`, `qs-install`, `qc-builtins`, `qc-progs`, `qs-tests`, `qs-commands`, `qc-project`, `qc-vm`, `lsp`, `xtask` |
+| `fn qs_paths::lexical` | `qs-agent`, `qs-mcp` | kept public: used by `qs-agent`, `qs-mcp` |
+| `fn qs_paths::lies_under` | `qs-agent`, `qs-mcp` | kept public: used by `qs-agent`, `qs-mcp` |
 | `fn qs_paths::stores::StoreDirs::gog_libraries` | `qs-install` | kept public: used by `qs-install` |
 | `fn qs_paths::stores::StoreDirs::heroic` | `qs-install` | kept public: used by `qs-install` |
 | `fn qs_paths::stores::StoreDirs::steam` | `qs-install` | kept public: used by `qs-install` |
 | `fn qs_paths::stores::current_store_dirs` | `qs-install` | kept public: used by `qs-install` |
 | `fn qs_paths::stores::store_dirs` | `qs-install` | kept public: used by `qs-install` |
+| `mod qs_paths::arguments` | `qs-agent`, `qs-mcp` | kept public: used by `qs-agent`, `qs-mcp` |
 | `struct qs_paths::AppDirs` | `qs-settings`, `qs-log`, `qs-layout`, `lsp` | kept public: used by `qs-settings`, `qs-log`, `qs-layout`, `lsp` |
 | `struct qs_paths::stores::StoreDirs` | `qs-install` | kept public: used by `qs-install` |
 | `use qs_paths::StoreDirs = stores::StoreDirs` | `qs-install` | kept public: used by `qs-install` |

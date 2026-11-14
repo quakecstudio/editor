@@ -3,6 +3,7 @@
 //! Streamed replies put back together: each provider's server-sent events gathered into the
 //! answer its non-streamed request gives, so the same code reads both.
 
+use qs_agent::ModelError;
 use serde_json::{Map, Value, json};
 
 /// Anthropic's events (Messages API, streaming): `message_start`, then for each content block
@@ -120,9 +121,9 @@ impl AnthropicStream {
     }
 
     /// The answer a non-streamed request gives, or the stream's error.
-    pub(crate) fn answer(self) -> Result<Value, String> {
+    pub(crate) fn answer(self) -> Result<Value, ModelError> {
         if let Some(error) = self.error {
-            return Err(error);
+            return Err(ModelError::Stream(error));
         }
         let content: Vec<Value> = self.content.into_iter().filter(|b| !b.is_null()).collect();
         Ok(json!({ "content": content, "stop_reason": self.stop, "usage": self.usage }))

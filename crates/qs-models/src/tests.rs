@@ -13,14 +13,13 @@ use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 
-use qs_agent::{Message, Model as _, Reply, ToolCall, ToolSpec};
+use qs_agent::{Message, Model as _, ModelError, Reply, ToolCall, ToolSpec};
 use serde_json::{Value, json};
 
 use crate::{
     Header, Http, KeyError, KeyStore as _, Keychain, MemoryKeys, ProviderConfig, ProviderError,
     ProviderKind, ProviderModel, Secret, Transport, TransportError,
 };
-use crate::{anthropic, openai};
 
 const KEY: &str = "sk-test-0123456789-very-secret";
 
@@ -197,9 +196,10 @@ fn anthropic_failures_and_joined_results() {
         },
     ];
     let refused = model.reply("s", &[], &transcript).unwrap_err();
-    assert!(refused.contains("declined"), "{refused}");
+    assert_eq!(refused, ModelError::Declined);
+    assert_eq!(refused.to_string(), "the model declined the request");
     let cut = model.reply("s", &[], &transcript).unwrap_err();
-    assert!(cut.contains("max_tokens"), "{cut}");
+    assert_eq!(cut, ModelError::CutOff);
     assert!(model.reply("s", &[], &transcript).is_err());
     let sent = transport.sent.borrow();
     let body = &sent[0].2;
@@ -258,8 +258,11 @@ fn openai_speaks_chat_completions() {
             summary: "Done.".to_owned()
         }
     );
-    assert!(model.reply("s", &[], &transcript).is_err());
-    assert!(model.reply("s", &[], &transcript).is_err());
+    assert_eq!(
+        model.reply("s", &[], &transcript),
+        Err(ModelError::Filtered)
+    );
+    assert_eq!(model.reply("s", &[], &transcript), Err(ModelError::CutOff));
     let sent = transport.sent.borrow();
     let (url, headers, body) = &sent[0];
     assert_eq!(url, "https://example.test/v1/chat/completions");
@@ -424,6 +427,7 @@ fn keys_never_appear_in_logs_settings_or_errors() {
         requests[0].contains(KEY),
         "the request itself carries the key"
     );
+    let error = error.to_string();
     assert!(error.contains("401") && !error.contains(KEY), "{error}");
     let written = String::from_utf8(log.0.lock().unwrap().clone()).unwrap();
     assert!(
@@ -537,7 +541,7 @@ fn anthropic_streams_text_thinking_and_calls() {
     let error = model
         .reply_streaming("s", &tools(), &transcript, &mut |_| {})
         .unwrap_err();
-    assert_eq!(error, "Overloaded");
+    assert_eq!(error, ModelError::Stream("Overloaded".to_owned()));
     let sent = transport.sent.borrow();
     assert_eq!(sent[0].2["stream"], true);
     let back = &sent[1].2["messages"][1]["content"][0];
@@ -676,14 +680,8 @@ fn an_image_is_sent_in_each_providers_form() {
             data: "cG5n".to_owned(),
         },
     ];
-    let (_, _, body) = anthropic::request(
-        &ProviderConfig::anthropic(),
-        None,
-        "s",
-        &tools(),
-        &transcript,
-        &[],
-    );
+    let (_, _, body) =
+        ProviderConfig::anthropic().anthropic_request(None, "s", &tools(), &transcript, &[]);
     let content = &body["messages"][0]["content"];
     assert_eq!(
         body["messages"].as_array().unwrap().len(),
@@ -696,9 +694,40 @@ fn an_image_is_sent_in_each_providers_form() {
         json!({ "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "cG5n" } })
     );
     let config = ProviderConfig::new(ProviderKind::OpenAiCompatible, "m");
-    let (_, _, body) = openai::request(&config, None, "s", &tools(), &transcript, &[]);
+    let (_, _, body) = config.openai_request(None, "s", &tools(), &transcript, &[]);
     assert_eq!(
         body["messages"][2]["content"][0],
         json!({ "type": "image_url", "image_url": { "url": "data:image/png;base64,cG5n" } })
+    );
+}
+
+// No spec statement: P6-34, a configuration that names no reply limit takes
+// `DEFAULT_MAX_TOKENS`; an assistant message the API sent goes back as it came, and one it did
+// not (nothing kept, or not an object) is written from the transcript
+#[test]
+fn defaults_and_assistant_messages_sent_back() {
+    let mut settings = serde_json::to_value(ProviderConfig::anthropic()).unwrap();
+    settings.as_object_mut().unwrap().remove("max_tokens");
+    let config: ProviderConfig = serde_json::from_value(settings).unwrap();
+    assert_eq!(config.max_tokens, crate::DEFAULT_MAX_TOKENS);
+    assert_eq!(crate::DEFAULT_MAX_TOKENS, 16_000);
+    let config = ProviderConfig::new(ProviderKind::OpenAiCompatible, "m");
+    let transcript = [
+        Message::User {
+            text: "go".to_owned(),
+        },
+        Message::Assistant {
+            text: "said".to_owned(),
+            calls: Vec::new(),
+        },
+    ];
+    let raw = json!({ "role": "assistant", "content": "as sent" });
+    let (_, _, body) =
+        config.openai_request(None, "s", &[], &transcript, std::slice::from_ref(&raw));
+    assert_eq!(body["messages"][2], raw);
+    let (_, _, body) = config.openai_request(None, "s", &[], &transcript, &[Value::Null]);
+    assert_eq!(
+        body["messages"][2],
+        json!({ "role": "assistant", "content": "said" })
     );
 }

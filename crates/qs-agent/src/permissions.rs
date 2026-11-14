@@ -15,7 +15,10 @@ use std::path::Path;
 use qs_settings::{AgentProfile, Decision, ToolPermissions};
 use serde_json::Value;
 
-use crate::{ToolCall, collect_paths, lexical};
+use qs_paths::arguments::collect_paths;
+use qs_paths::lexical;
+
+use crate::ToolCall;
 
 /// The tools that only read the project, the game or the settings: the Ask profile's, and
 /// allowed in every profile.
@@ -99,10 +102,10 @@ impl Permissions {
     }
 
     /// What happens to `call` in the project at `project`: each of its subjects decided on
-    /// its own ([`subjects`]), the strictest winning.
+    /// its own ([`ToolCall::subjects`]), the strictest winning.
     #[must_use]
     pub fn decide(&self, call: &ToolCall, project: &Path) -> Verdict {
-        subjects(call, project)
+        call.subjects(project)
             .iter()
             .map(|subject| self.decide_one(&call.name, subject))
             .max_by_key(|verdict| verdict.decision)
@@ -191,36 +194,38 @@ const fn profile_word(profile: AgentProfile) -> &'static str {
     }
 }
 
-/// What the patterns of `call` are matched against: each path it names, relative to
-/// `project` with `/` between its parts (absolute when it is outside), or, when it names none,
-/// its arguments as JSON.
-#[must_use]
-pub fn subjects(call: &ToolCall, project: &Path) -> Vec<String> {
-    let mut paths = Vec::new();
-    collect_paths(&call.arguments, &mut paths);
-    if paths.is_empty() {
-        return vec![match &call.arguments {
-            Value::Object(object) if object.is_empty() => String::new(),
-            other => other.to_string(),
-        }];
+impl ToolCall {
+    /// What the patterns of the call are matched against: each path it names, relative to
+    /// `project` with `/` between its parts (absolute when it is outside), or, when it names
+    /// none, its arguments as JSON.
+    #[must_use]
+    pub fn subjects(&self, project: &Path) -> Vec<String> {
+        let mut paths = Vec::new();
+        collect_paths(&self.arguments, &mut paths);
+        if paths.is_empty() {
+            return vec![match &self.arguments {
+                Value::Object(object) if object.is_empty() => String::new(),
+                other => other.to_string(),
+            }];
+        }
+        let project = lexical(project);
+        paths
+            .iter()
+            .map(|path| {
+                let full = lexical(&project.join(path));
+                full.strip_prefix(&project).map_or_else(
+                    |_| full.to_string_lossy().replace('\\', "/"),
+                    |inside| {
+                        inside
+                            .components()
+                            .map(|part| part.as_os_str().to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .join("/")
+                    },
+                )
+            })
+            .collect()
     }
-    let project = lexical(project);
-    paths
-        .iter()
-        .map(|path| {
-            let full = lexical(&project.join(path));
-            full.strip_prefix(&project).map_or_else(
-                |_| full.to_string_lossy().replace('\\', "/"),
-                |inside| {
-                    inside
-                        .components()
-                        .map(|part| part.as_os_str().to_string_lossy())
-                        .collect::<Vec<_>>()
-                        .join("/")
-                },
-            )
-        })
-        .collect()
 }
 
 /// Whether `text` matches `pattern`, without regard to case: `*` is any run of characters,
@@ -311,7 +316,7 @@ mod tests {
     use qs_settings::{AgentProfile, Decision, ToolRule};
     use serde_json::json;
 
-    use super::{Permissions, glob, subjects};
+    use super::{Permissions, glob};
     use crate::ToolCall;
 
     /// A call of `name` with `arguments`.
@@ -424,16 +429,16 @@ mod tests {
             "file.read",
             json!({ "edits": [{ "path": "/p/world.qc" }, { "path": "progs.src" }] }),
         );
-        assert_eq!(subjects(&both, Path::new("/p")), ["world.qc", "progs.src"]);
+        assert_eq!(both.subjects(Path::new("/p")), ["world.qc", "progs.src"]);
         assert_eq!(
             permissions.decide(&both, Path::new("/p")).decision,
             Decision::Deny
         );
         let outside = call("file.read", json!({ "path": "../elsewhere/x.qc" }));
-        assert_eq!(subjects(&outside, Path::new("/p")), ["/elsewhere/x.qc"]);
+        assert_eq!(outside.subjects(Path::new("/p")), ["/elsewhere/x.qc"]);
         let console = call("engine.console", json!({ "command": "map e1m1" }));
         assert_eq!(
-            subjects(&console, Path::new("/p")),
+            console.subjects(Path::new("/p")),
             [r#"{"command":"map e1m1"}"#]
         );
     }

@@ -19,8 +19,8 @@ use qs_workbench::{Config, Workbench, register};
 use serde_json::{Value, json};
 
 use super::{
-    AgentError, AgentProfile, Decision, Message, Model, Outcome, Permissions, Permit, READ_TOOLS,
-    Reply, RunConfig, ToolCall, ToolRule, ToolSpec, run, system_prompt, tools,
+    AgentError, AgentProfile, Decision, Message, Model, ModelError, Outcome, Permissions, Permit,
+    READ_TOOLS, Reply, RunConfig, ToolCall, ToolRule, ToolSpec, run, system_prompt, tools,
 };
 
 /// A model that answers with its script, in order, and then fails.
@@ -44,13 +44,13 @@ impl Model for Scripted {
         system: &str,
         tools: &[ToolSpec],
         transcript: &[Message],
-    ) -> Result<Reply, String> {
+    ) -> Result<Reply, ModelError> {
         assert_eq!(system, system_prompt());
         assert!(tools.iter().any(|t| t.name == "compile"));
         self.seen.push(transcript.len());
         self.replies
             .pop_front()
-            .ok_or_else(|| "out of script".to_owned())
+            .ok_or_else(|| ModelError::Stopped("out of script".to_owned()))
     }
 }
 
@@ -165,7 +165,7 @@ fn a_failing_scenario_cannot_be_marked_done() {
         .filter(|m| matches!(m, Message::User { text } if text.starts_with("Not done")))
         .count();
     assert_eq!(told, 3, "told after each finish");
-    assert_eq!(report.checkpoint, Some(1));
+    assert_eq!(report.checkpoint, Some(super::CheckpointNumber::FIRST));
 }
 
 // No spec statement: P4-06, AGT-1, AGT-5, PRIN-4. Told its first finish is not done because
@@ -306,7 +306,7 @@ fn turns_run_out_and_models_fail() {
     let mut silent = Scripted::new(Vec::new());
     assert!(matches!(
         run(&mut session, &mut silent, "anything", &limits),
-        Err(AgentError::Model(why)) if why == "out of script"
+        Err(AgentError::Model(ModelError::Stopped(why))) if why == "out of script"
     ));
 }
 
@@ -391,7 +391,7 @@ impl Model for Recording {
         system: &str,
         _tools: &[ToolSpec],
         transcript: &[Message],
-    ) -> Result<Reply, String> {
+    ) -> Result<Reply, ModelError> {
         self.system = system.to_owned();
         if let Some(Message::User { text }) = transcript.first() {
             self.brief.clone_from(text);
@@ -475,8 +475,8 @@ fn a_run_steps_one_reply_at_a_time() {
     assert!(matches!(report.outcome, Outcome::Done { .. }));
     let mut failing = super::Run::start(&mut session, "x", RunConfig::new(&root)).unwrap();
     assert!(matches!(
-        failing.answer(&mut session, Err("overloaded".to_owned())),
-        Err(AgentError::Model(why)) if why == "overloaded"
+        failing.answer(&mut session, Err(ModelError::Transport("overloaded".to_owned()))),
+        Err(AgentError::Model(ModelError::Transport(why))) if why == "overloaded"
     ));
     let mut pieces = Vec::new();
     let mut model = Scripted::new(vec![finish()]);
@@ -658,7 +658,7 @@ fn profiles_switch_the_tools_offered() {
 #[test]
 fn asking_about_an_entity_carries_its_state() {
     let ogre = super::EntityState {
-        edict: 12,
+        edict: qc_edict::EdictNumber::new(12),
         classname: "monster_ogre".to_owned(),
         fields: vec![
             ("health".to_owned(), "200".to_owned()),
@@ -666,12 +666,12 @@ fn asking_about_an_entity_carries_its_state() {
             ("nextthink".to_owned(), "3.1".to_owned()),
         ],
     };
-    let task = super::ask_about(&ogre);
+    let task = ogre.ask_about();
     assert!(task.contains("classname monster_ogre"), "{task}");
     assert!(task.contains("current think function is ogre_stand1, due at time 3.1"));
     assert!(task.contains("- health = 200"));
     let still = super::EntityState {
-        edict: 1,
+        edict: qc_edict::EdictNumber::new(1),
         classname: "worldspawn".to_owned(),
         fields: Vec::new(),
     };
@@ -686,7 +686,7 @@ fn mentions_attach_what_they_name() {
     let (root, mut session) = project("mentions", FIXED);
     let live = super::Live {
         entity: Some(super::EntityState {
-            edict: 3,
+            edict: qc_edict::EdictNumber::new(3),
             classname: "player".to_owned(),
             fields: vec![("health".to_owned(), "100".to_owned())],
         }),
@@ -731,11 +731,11 @@ fn an_inline_edit_asks_and_answers_plainly() {
     let plain = Reply::Finish {
         summary: "x = 2;".to_owned(),
     };
-    assert_eq!(super::inline_answer(&plain), "x = 2;");
+    assert_eq!(plain.inline_answer(), "x = 2;");
     let fenced = Reply::Finish {
         summary: "```quakec\nx = 2;\ny = 3;\n```".to_owned(),
     };
-    assert_eq!(super::inline_answer(&fenced), "x = 2;\ny = 3;");
+    assert_eq!(fenced.inline_answer(), "x = 2;\ny = 3;");
 }
 
 // No spec statement: P4-31, the acceptance criterion: a thread near the model's context limit
@@ -861,13 +861,13 @@ fn base64_is_rfc_4648s() {
 // kept, searched by title and messages, and read back as they were
 #[test]
 fn threads_are_kept_listed_and_searched() {
-    use super::history::{ThreadRecord, keep, load, threads_dir, title_of};
+    use super::history::{ThreadNumber, ThreadRecord, keep, load, threads_dir, title_of};
     let root = std::env::temp_dir().join(format!("qs-agent-history-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&root);
     let dir = threads_dir(&root);
     assert!(load(&dir).unwrap().is_empty());
     let record = |task: &str, said: &str| ThreadRecord {
-        number: 0,
+        number: ThreadNumber::UNKEPT,
         title: title_of(task),
         transcript: vec![
             Message::User {
@@ -878,7 +878,7 @@ fn threads_are_kept_listed_and_searched() {
                 calls: Vec::new(),
             },
         ],
-        checkpoint: Some(3),
+        checkpoint: Some(super::CheckpointNumber::new(3)),
         staged: vec![7],
         summaries: Vec::new(),
         tokens: 42,
@@ -886,14 +886,17 @@ fn threads_are_kept_listed_and_searched() {
     };
     assert_eq!(
         keep(&dir, record("Fix the axe\nIt is weak", "Raised it")).unwrap(),
-        1
+        ThreadNumber::FIRST
     );
-    assert_eq!(keep(&dir, record("Add a rocket", "Added")).unwrap(), 2);
+    assert_eq!(
+        keep(&dir, record("Add a rocket", "Added")).unwrap(),
+        ThreadNumber::new(2)
+    );
     let threads = load(&dir).unwrap();
     let titles: Vec<&str> = threads.iter().map(|t| t.title.as_str()).collect();
     assert_eq!(titles, ["Add a rocket", "Fix the axe"]);
     assert_eq!(threads[1].staged, [7]);
-    assert_eq!(threads[1].checkpoint, Some(3));
+    assert_eq!(threads[1].checkpoint, Some(super::CheckpointNumber::new(3)));
     assert!(threads[1].matches("AXE raised"));
     assert!(!threads[1].matches("rocket"));
     assert!(threads[0].matches(""));
@@ -986,4 +989,57 @@ fn the_agent_cannot_decide_its_map_review() {
         )
         .unwrap();
     assert_eq!(session.execute("map.staged", json!({})).unwrap(), json!([]));
+}
+
+// No spec statement: P6-34, a model's failure reads as what went wrong, and a thread's number
+// as itself
+#[test]
+fn model_errors_and_thread_numbers_read_plainly() {
+    for (error, text) in [
+        (ModelError::Transport("refused".to_owned()), "refused"),
+        (ModelError::Declined, "the model declined the request"),
+        (
+            ModelError::Filtered,
+            "the provider's content filter withheld the reply",
+        ),
+        (
+            ModelError::CutOff,
+            "the reply was cut off at max_tokens, its token limit",
+        ),
+        (ModelError::Malformed("no content".to_owned()), "no content"),
+        (ModelError::Stream("Overloaded".to_owned()), "Overloaded"),
+        (
+            ModelError::Stopped("out of script".to_owned()),
+            "out of script",
+        ),
+    ] {
+        assert_eq!(error.to_string(), text);
+    }
+    let number = super::history::ThreadNumber::new(7);
+    assert_eq!((number.get(), number.to_string()), (7, "7".to_owned()));
+}
+
+// No spec statement: P4-30, a call to a tool the model was not offered is refused as not one
+// of its tools, whatever the rules say of it
+#[test]
+fn a_call_to_a_tool_not_offered_is_refused_as_such() {
+    let (root, mut session) = project("not-offered", FIXED);
+    let mut config = RunConfig::new(&root);
+    config.permissions = Permissions::of(AgentProfile::Ask);
+    config.permissions.rules.tools.insert(
+        "edit.apply".to_owned(),
+        ToolRule {
+            default: Some(Decision::Deny),
+            ..ToolRule::default()
+        },
+    );
+    let mut run = super::Run::start(&mut session, "Edit.", config).unwrap();
+    run.answer(
+        &mut session,
+        Ok(calls(vec![("edit.apply", json!({ "edits": [] }))])),
+    )
+    .unwrap();
+    let (refused, is_error) = result_of(run.transcript(), "c0").unwrap();
+    assert!(is_error);
+    assert_eq!(refused, json!("edit.apply is not one of your tools"));
 }

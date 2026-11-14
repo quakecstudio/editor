@@ -9,15 +9,19 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# An entity's edict number.
+qc-edict = { workspace = true }
+# A run's checkpoint, by its number.
+qs-checkpoint = { workspace = true }
 qs-commands = { workspace = true }
 qs-map = { workspace = true }
+# The paths a call's arguments name, worked out by their text.
+qs-paths = { workspace = true }
 qs-settings = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
-# A project the VM takes: id's system globals and fields.
-qc-edict = { workspace = true }
 qc-types = { workspace = true }
 qc-project = { workspace = true }
 qs-pak = { workspace = true }
