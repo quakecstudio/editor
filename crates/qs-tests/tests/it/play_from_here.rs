@@ -112,3 +112,35 @@ fn a_new_map_plays_from_the_camera() {
     }
     assert!(through.is_some(), "walked into the east room");
 }
+
+// spec REND-1.14: a new map whose textures no WAD holds is drawn: each face of the map
+// qs-map-bsp compiles from brushes takes the stand-in for a missing texture, so the world has
+// vertices to draw (an empty world was the preview host's panic, #926)
+#[test]
+fn a_map_with_no_wad_draws_with_the_stand_in() {
+    let compiled = qs_map_bsp::Compiler::default()
+        .compile(&map(), None)
+        .unwrap();
+    let lit = Light::new(Sampling::Fast).run(&compiled.bsp).unwrap();
+    let bsp = Bsp::read(&lit.bsp, BspLoader::default()).unwrap();
+    assert!(
+        bsp.textures.iter().all(Option::is_none),
+        "no texture has data"
+    );
+    let colours: Vec<u8> = (0..=255_u8).flat_map(|i| [i, i, i]).collect();
+    let palette = qs_render::Palette::read(&colours).unwrap();
+    let mut builder = qs_render::MeshBuilder::new(&palette, qs_render::Look::QuakeSpasm);
+    builder.add(&bsp, &[qs_render::Placement::WORLD]).unwrap();
+    let mesh = builder.finish();
+    let stand_in = mesh.textures.len() - 1;
+    assert!(!mesh.vertices.is_empty() && !mesh.indices.is_empty());
+    assert!(!mesh.batches.is_empty());
+    assert!(mesh.batches.iter().all(|batch| batch.texture == stand_in));
+    let image = &mesh.textures[stand_in];
+    assert_eq!((image.width, image.height), (32, 32));
+    assert_eq!(
+        &image.rgba[..4],
+        &[159, 91, 83, 255],
+        "pink at the top left"
+    );
+}
