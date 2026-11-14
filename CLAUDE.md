@@ -32,8 +32,8 @@ editor/
 
 **Layers.** A crate may depend only on crates in its own layer or a lower one;
 `layers.toml` maps every crate and `cargo xtask layers` enforces it.
-[`docs/layers.md`](docs/layers.md) explains the model and
-[`.claude/rules/layering.md`](.claude/rules/layering.md) has the table.
+[`docs/layers.md`](docs/layers.md) explains the model and lists every crate by layer (a
+generated table); [`.claude/rules/layering.md`](.claude/rules/layering.md) has the rules.
 
 | Layer | Holds |
 | --- | --- |
@@ -41,11 +41,11 @@ editor/
 | L1 VM | qc-vm, qc-edict, qc-builtins: what the engine executes |
 | L2 syntax | Preprocessor, lossless CST, progs.src project graph |
 | L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions |
-| L4 bridges | Our QuakeC and map compilers; the engine bridge |
+| L4 bridges | Our QuakeC and map compilers; the engine bridge, game client, simulation and sound |
 | L5 commands | Command engine, session, undo: one registry for UI, CLI, agent and MCP |
 | L6 agent | Agent loop, model providers, checkpoints, MCP and ACP |
 | L7 UI | The app on the chosen framework |
-| apps | Desktop app, CLI, LSP server |
+| apps | Desktop app, CLI, LSP server, preview host |
 
 **Separate processes.** The oracles (id's VM and qcc, a pinned FTEQCC, later id's map tools
 and ericw-tools, and id's engine as the engine oracle) are C programs in
@@ -108,7 +108,7 @@ cargo xtask conv17-baseline               # remove fixed entries from that basel
 cargo xtask adr                           # ADRs follow the template and are indexed
 cargo xtask clippy-fixtures               # the lints reject what they target
 cargo xtask deny-fixtures                 # deny.toml rejects bad licenses and wildcards (needs network)
-cargo xtask layers                        # no crate depends on a higher layer (layers.toml)
+cargo xtask layers [--write]              # no crate depends on a higher layer (layers.toml); check (or write) the crate table of docs/layers.md
 cargo xtask licenses                      # SPDX lines and ported-file headers; skips cached specs
 cargo xtask attribution                   # every asset is listed in ATTRIBUTION.md
 cargo xtask oracles                       # build the oracles from id's sources, run the VM vectors and the builtin and grammar differentials (network, C compiler)
