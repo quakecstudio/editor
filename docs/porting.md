@@ -28,6 +28,7 @@ a ported file must keep.
 | [`andrei-drexler/ironwail`](https://github.com/andrei-drexler/ironwail), for the preview host ([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)) | `08d578136ff43d7d1ef38e636dfbfd3e844be7cd` | GPL-2.0-or-later: a file's own header must say "either version 2 of the License, or (at your option) any later version"; `LICENSE.txt` is the GPL-2.0 text | `Copyright (C) 1996-2001 Id Software, Inc.`, `Copyright (C) 2002-2009 John Fitzgibbons and others`, `Copyright (C) 2010-2014 QuakeSpasm developers`, `Copyright (C) 2016 Spike`, `Copyright (C) 2022 A. Drexler` |
 | [`Novum/vkQuake`](https://github.com/Novum/vkQuake), for the preview host ([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)) | `27789d7333a46674474d871137bb71e056719628` | GPL-2.0-or-later: a file's own header must say "either version 2 of the License, or (at your option) any later version"; `LICENSE.txt` is the GPL-2.0 text | `Copyright (C) 1996-2001 Id Software, Inc.`, `Copyright (C) 2002-2009 John Fitzgibbons and others`, `Copyright (C) 2010-2014 QuakeSpasm developers`, `Copyright (C) 2016 Spike`, `Copyright (C) 2016 Axel Gneiting`, `Copyright (C) 1996-1997 Id Software, Inc.` |
 | [`zed-industries/zed`](https://github.com/zed-industries/zed), for the IDE, its GPL-3.0-or-later crates only ([ADR-0021](adr/0021-zed-porting-upstream.md)) | `4a6121bb0f10c6e8037b741b7dc0a4cd639ae289` | GPL-3.0-or-later: a crate's `Cargo.toml` must say `license = "GPL-3.0-or-later"`; its Apache-2.0 crates (`gpui` among them) and crates with no stated licence are not portable; `LICENSE-GPL` is the GPL-3.0 text. Its source files carry no header, so a port keeps the line of `LICENSE-APACHE` | `Copyright 2022 - 2025 Zed Industries, Inc.` |
+| [`ericwa/ericw-tools`](https://github.com/ericwa/ericw-tools), its `qbsp/` for `qs-map-bsp`'s extended dialect ([ADR-0023](adr/0023-ericw-tools-porting-upstream.md)) | `36eec1da2a194467e6baac2f444c2dd04b57d266` | GPL-2.0-or-later: each file's notice grants "either version 2 of the License, or (at your option) any later version", `COPYING` is the GPL-2.0 text; bundled third-party code and `common/qvec.cc`'s Silicon Graphics function are not portable | `Copyright (C) 1996-1997  Id Software, Inc.`, `Copyright (C) 1997       Greg Lewis` |
 
 The QuakeSpasm lineage's files carry different sets of copyright lines, so their rows list the
 lines most of them carry. A file ported from one of them keeps every `Copyright` line of the
@@ -46,7 +47,7 @@ review ([#133](https://github.com/quakecstudio/editor/issues/133), P4-22) rules 
 Phase 6 ports the map tools. Until then the map tools may be read and used as oracles, not
 ported.
 
-Adding an upstream (ericw-tools, GMQCC, ...) is a PR that adds a row here after
+Adding an upstream (GMQCC, ...) is a PR that adds a row here after
 checking that its license allows use under GPL-3.0-or-later, and records the copyright lines its
 files carry. FTEQW was added by Justin Plock's decision of 2026-10-20 (ADR-0017); the licence
 compliance review (P4-22) confirms how its version 2 terms combine with ours. QuakeSpasm,
@@ -55,7 +56,10 @@ for the preview host; id's engine stays its oracle ([ADR-0005](adr/0005-default-
 and none of the three is built or run in CI. Zed was added by his decision of 2026-11-06
 (ADR-0021), as a porting source for the IDE layers (L5 to L7 and `apps/`) under the same
 clean-port policy; it has no oracle, so a port from it is proved by tests that cite the Zed
-setting, function or test they pin.
+setting, function or test they pin. ericw-tools was added by his decision of 2026-11-13 (ADR-0023), as
+the porting source for `qs-map-bsp`'s extended dialect under the same clean-port policy; its
+qbsp stays the extended dialect's oracle in the map compiler differential, and the id dialect
+stays id's.
 
 ### Porting FTEQCC and the QuakeSpasm lineage: behaviour, not structure
 
