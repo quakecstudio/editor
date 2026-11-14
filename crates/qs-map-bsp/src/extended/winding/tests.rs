@@ -122,3 +122,15 @@ fn clipping_cuts_at_the_plane() {
     let (front, back) = w.clip(diagonal, ON_EPSILON, KeepOn::No);
     assert_eq!((front.unwrap().len(), back.unwrap().len()), (3, 3));
 }
+
+// spec QBSP-15.8: a point exactly `on_epsilon` from the plane, in front or behind, is on it
+#[test]
+fn a_point_at_the_epsilon_is_on_the_plane() {
+    let w = Winding::new(vec![[2.5, 0.0, 0.0], [1.5, 0.0, 0.0], [2.0, 1.0, 0.0]]);
+    let x2 = Plane {
+        normal: [1.0, 0.0, 0.0],
+        dist: 2.0,
+    };
+    let counts = w.counts(x2, 0.5);
+    assert_eq!((counts.front, counts.back, counts.on), (0, 0, 3));
+}
