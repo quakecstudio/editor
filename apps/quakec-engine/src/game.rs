@@ -14,13 +14,17 @@ use qs_sim::{
 };
 use serde_json::{Map, Value, json};
 
-use crate::screenshot::{Frame, encode};
+use crate::AXES;
+use crate::screenshot::Frame;
 use crate::values::{from_json, named_json, to_json};
 
 mod debug;
 mod reload;
 
 use debug::{Breakpoint, Snapshot, Step, Stopped};
+
+/// A screen fraction's default, the middle.
+const SCREEN_CENTRE: f32 = 0.5;
 
 /// The commands the game accepts.
 const COMMANDS: [&str; 16] = [
@@ -386,7 +390,7 @@ impl Game {
                 height: frame.height,
                 rgba: frame.rgba.clone(),
             };
-            let outcome = encode(copy, shot.size)
+            let outcome = copy.encode(shot.size)
                 .map(|(png, width, height)| {
                     json!({ "png": png, "width": width, "height": height, "time": time })
                 })
@@ -1059,7 +1063,7 @@ impl Game {
             params
                 .get(name)
                 .and_then(Value::as_f64)
-                .map_or(0.5, f64_to_f32)
+                .map_or(SCREEN_CENTRE, f64_to_f32)
         };
         let camera = Camera {
             origin: eye.origin,
@@ -1133,12 +1137,12 @@ fn map_entity_param(params: &Value) -> Result<Option<MapPlace>, RpcError> {
 }
 
 /// The vector parameter `name`, zero when it is absent (BRIDGE-5.2).
-fn vector_param(params: &Value, name: &str) -> [f32; 3] {
+fn vector_param(params: &Value, name: &str) -> [f32; AXES] {
     let value =
         json!({ "type": "vector", "value": params.get(name).cloned().unwrap_or(json!([0, 0, 0])) });
     match from_json(&value) {
         Some(qs_sim::QcValue::Vector(v)) => v,
-        _ => [0.0; 3],
+        _ => [0.0; AXES],
     }
 }
 

@@ -811,7 +811,7 @@ fn queued_messages_images_and_a_resumed_thread() {
     let (root, mut session) = project("queue", FIXED);
     let mut run = super::Run::start(&mut session, "Look", RunConfig::new(&root)).unwrap();
     run.push_user("Also check the axe.");
-    run.push_image("image/png", super::base64(b"png"));
+    run.push_image("image/png", "cG5n".to_owned());
     let request = run.request().unwrap();
     assert_eq!(
         &request.transcript[1..],
@@ -833,20 +833,9 @@ fn queued_messages_images_and_a_resumed_thread() {
     assert!(resumed.checkpoint().is_some(), "a new checkpoint");
 }
 
-// No spec statement: P4-31: base64 as RFC 4648 section 10's test vectors give it
+// No spec statement: P4-31: an image is estimated at a fixed count of tokens
 #[test]
-fn base64_is_rfc_4648s() {
-    for (bytes, encoded) in [
-        ("", ""),
-        ("f", "Zg=="),
-        ("fo", "Zm8="),
-        ("foo", "Zm9v"),
-        ("foob", "Zm9vYg=="),
-        ("fooba", "Zm9vYmE="),
-        ("foobar", "Zm9vYmFy"),
-    ] {
-        assert_eq!(super::base64(bytes.as_bytes()), encoded);
-    }
+fn an_image_is_estimated_at_a_fixed_count() {
     assert_eq!(
         Message::Image {
             media_type: "image/png".to_owned(),

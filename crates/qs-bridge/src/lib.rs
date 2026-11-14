@@ -6,11 +6,13 @@
 //! and the errors (BRIDGE-7), each checked against the schemas of `docs/spec/bridge-schema/`.
 //! The preview host serves it; the IDE's client (`qs-engine`) speaks it.
 
+mod base64;
 mod framing;
 mod message;
 mod schemas;
 mod session;
 
+pub use base64::{base64, base64_decode};
 pub use framing::{BRIDGE_CONTENT_TYPE, BRIDGE_MAX_CONTENT, FrameError, read_frame, write_frame};
 pub use message::{ErrorCode, Id, Message, RpcError};
 pub use session::{

@@ -16,11 +16,13 @@ use std::path::{Path, PathBuf};
 use eframe::egui::{self, RichText, Ui};
 
 use crate::shell::name_field;
-use crate::strings::{Text, search_count};
+use crate::strings::{Text, Truncation, search_count};
 use crate::theme::{Theme, Token};
 
 /// How many lines of context an excerpt shows above and below its place.
 const CONTEXT: usize = 1;
+/// The search and replace fields' width.
+const FIELD_WIDTH: f32 = 280.0;
 
 /// What the multibuffer shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -91,13 +93,29 @@ pub(crate) struct Multibuffer {
     /// The excerpts, by file in the order found, then by place.
     pub(crate) excerpts: Vec<Excerpt>,
     /// How many places the excerpts show, and whether the search found more than these.
-    pub(crate) found: (usize, bool),
+    pub(crate) found: (usize, Truncation),
     /// The search form.
     pub(crate) form: SearchForm,
     /// Why the last search or replace failed, if it did.
     pub(crate) error: Option<String>,
     /// Whether the editor takes the keyboard on the next frame, after Open.
     pub(crate) refocus: bool,
+}
+
+/// An excerpt of the multibuffer, by its place in the list from 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ExcerptIndex(usize);
+
+impl ExcerptIndex {
+    /// The excerpt at `index`.
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Its place.
+    pub(crate) const fn get(self) -> usize {
+        self.0
+    }
 }
 
 /// What a frame of the multibuffer asks for.
@@ -108,7 +126,7 @@ pub(crate) enum MultiAction {
     /// Replace every match of the form's search in each file, file by file.
     ReplaceAll,
     /// Excerpt `.0`'s text was edited: its old range of its file becomes `.1`.
-    Edit(usize, String),
+    Edit(ExcerptIndex, String),
     /// Open a file at a byte.
     Open(PathBuf, usize),
 }
@@ -188,18 +206,18 @@ fn line_end(text: &[u8], at: usize) -> usize {
 
 impl Multibuffer {
     /// Shows `places`, each a file's byte range, read through `text`; the excerpts of one file
-    /// that touch are joined. `more` says the places were cut short.
+    /// that touch are joined. `truncation` says whether the places were cut short.
     pub(crate) fn show(
         &mut self,
         source: Source,
         places: &[(PathBuf, usize, usize)],
-        more: bool,
+        truncation: Truncation,
         mut text: impl FnMut(&Path) -> Option<Vec<u8>>,
     ) {
         self.source = source;
         self.error = None;
         self.excerpts.clear();
-        self.found = (places.len(), more);
+        self.found = (places.len(), truncation);
         let mut files: Vec<&PathBuf> = Vec::new();
         for (path, _, _) in places {
             if !files.contains(&path) {
@@ -236,8 +254,8 @@ impl Multibuffer {
 
     /// Takes the edit of excerpt `index` to `text`, done in its file: the excerpt ends where
     /// its new text does, and the excerpts after it in the file move by the difference.
-    pub(crate) fn edited(&mut self, index: usize, text: String) {
-        let Some(excerpt) = self.excerpts.get_mut(index) else {
+    pub(crate) fn edited(&mut self, index: ExcerptIndex, text: String) {
+        let Some(excerpt) = self.excerpts.get_mut(index.get()) else {
             return;
         };
         let old = excerpt.end.saturating_sub(excerpt.start);
@@ -284,9 +302,9 @@ pub(crate) fn multibuffer_ui(
     if let Some(error) = &buffer.error {
         ui.label(RichText::new(error).color(theme.color(Token::StatusError)));
     }
-    let (count, more) = buffer.found;
+    let (count, truncation) = buffer.found;
     ui.label(
-        RichText::new(search_count(count, buffer.files().len(), more))
+        RichText::new(search_count(count, buffer.files().len(), truncation))
             .color(theme.color(Token::TextMuted)),
     );
     ui.separator();
@@ -340,7 +358,7 @@ fn form_ui(ui: &mut Ui, form: &mut SearchForm) -> Option<MultiAction> {
         let typed = ui.add(
             egui::TextEdit::singleline(&mut form.text)
                 .hint_text(Text::SearchProject.get())
-                .desired_width(280.0),
+                .desired_width(FIELD_WIDTH),
         );
         name_field(ui, &typed, Text::SearchProject);
         if form.focus {
@@ -361,7 +379,7 @@ fn form_ui(ui: &mut Ui, form: &mut SearchForm) -> Option<MultiAction> {
         let typed = ui.add(
             egui::TextEdit::singleline(&mut form.replacement)
                 .hint_text(Text::Replace.get())
-                .desired_width(280.0),
+                .desired_width(FIELD_WIDTH),
         );
         name_field(ui, &typed, Text::Replace);
         if ui
@@ -407,7 +425,7 @@ fn excerpt_ui(
         excerpt.caret = Some(byte_of(&text, range.primary.index.into()));
     }
     if output.response.changed() && text != excerpt.text {
-        action = Some(MultiAction::Edit(index, text));
+        action = Some(MultiAction::Edit(ExcerptIndex::new(index), text));
     }
     action
 }

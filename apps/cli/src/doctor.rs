@@ -51,41 +51,62 @@ pub(crate) struct Doctor {
 /// One check's outcome: what it found, or why it failed.
 type Outcome = Result<String, String>;
 
-/// Runs `doctor`, writing a line per check to `out`; whether every check passed.
-pub(crate) fn run(doctor: &Doctor, out: &mut impl Write) -> std::io::Result<bool> {
-    let installs = find_installs();
-    let mut passed = true;
-    for check in Check::ALL {
-        if !doctor.checks.contains(&check) {
-            continue;
-        }
-        let outcome = match check {
-            Check::Games => games(&installs, doctor.require_game),
-            Check::Host => host(doctor.game.as_deref(), &installs),
-            Check::Keychain => keychain(&Keychain),
-        };
-        match outcome {
-            Ok(found) => writeln!(out, "ok    {}: {found}", name(check))?,
-            Err(why) => {
-                passed = false;
-                writeln!(out, "FAIL  {}: {why}", name(check))?;
+impl Doctor {
+    /// Runs `doctor`, writing a line per check to `out`; whether every check passed.
+    pub(crate) fn run(&self, out: &mut impl Write) -> std::io::Result<bool> {
+        let installs = find_installs();
+        let mut passed = true;
+        for check in Check::ALL {
+            if !self.checks.contains(&check) {
+                continue;
+            }
+            let outcome = match check {
+                Check::Games => {
+                    let requirement = if self.require_game {
+                        Requirement::Required
+                    } else {
+                        Requirement::Optional
+                    };
+                    games(&installs, requirement)
+                }
+                Check::Host => host(self.game.as_deref(), &installs),
+                Check::Keychain => keychain(&Keychain),
+            };
+            match outcome {
+                Ok(found) => writeln!(out, "ok    {}: {found}", check.name())?,
+                Err(why) => {
+                    passed = false;
+                    writeln!(out, "FAIL  {}: {why}", check.name())?;
+                }
             }
         }
+        Ok(passed)
     }
-    Ok(passed)
 }
 
-/// The word a check's line starts with.
-const fn name(check: Check) -> &'static str {
-    match check {
-        Check::Games => "games",
-        Check::Host => "preview host",
-        Check::Keychain => "keychain",
+impl Check {
+    /// The word a check's line starts with.
+    const fn name(self) -> &'static str {
+        match self {
+            Check::Games => "games",
+            Check::Host => "preview host",
+            Check::Keychain => "keychain",
+        }
     }
+}
+
+/// Whether `doctor` fails when no game is found (`--require-game`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Requirement {
+    /// It fails.
+    Required,
+    /// It only reports it.
+    Optional,
 }
 
 /// The installs found, by store and folder.
-fn games(installs: &[Install], require: bool) -> Outcome {
+fn games(installs: &[Install], requirement: Requirement) -> Outcome {
+    let require = requirement == Requirement::Required;
     if installs.is_empty() {
         return if require {
             Err("none found in the stores' usual places".to_owned())
@@ -198,7 +219,7 @@ mod tests {
 
     use qs_models::{KeyStore as _, MemoryKeys};
 
-    use super::{Check, Doctor, games, keychain, run};
+    use super::{Check, Doctor, Requirement, games, keychain};
 
     // No spec statement: P4-18: the keychain check writes, reads back and deletes its entry,
     // leaving the store as it found it
@@ -212,8 +233,8 @@ mod tests {
     // No spec statement: P4-18: finding no game passes unless one is required
     #[test]
     fn no_game_fails_only_when_one_is_required() {
-        assert!(games(&[], false).is_ok());
-        assert!(games(&[], true).is_err());
+        assert!(games(&[], Requirement::Optional).is_ok());
+        assert!(games(&[], Requirement::Required).is_err());
     }
 
     // No spec statement: P4-18: only the checks asked for run, each a line
@@ -225,7 +246,7 @@ mod tests {
             game: None,
             require_game: false,
         };
-        assert!(run(&doctor, &mut out).unwrap());
+        assert!(doctor.run(&mut out).unwrap());
         let text = String::from_utf8(out).unwrap();
         assert_eq!(text.lines().count(), 1, "{text}");
         assert!(text.starts_with("ok    games: "), "{text}");

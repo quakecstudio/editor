@@ -158,15 +158,12 @@ fn the_mod_and_the_kpf_come_from_the_command_line() {
 #[test]
 fn a_save_stays_in_the_game_directory() {
     let args = args(&["-basedir", "/q", "-game", "mod"]);
-    assert_eq!(super::save_path(&args, "s1"), Path::new("/q/mod/s1.sav"));
-    assert_eq!(
-        super::save_path(&args, "s1.txt"),
-        Path::new("/q/mod/s1.txt")
-    );
-    let absolute = super::save_path(&args, "/etc/x");
+    assert_eq!(args.save_path("s1"), Path::new("/q/mod/s1.sav"));
+    assert_eq!(args.save_path("s1.txt"), Path::new("/q/mod/s1.txt"));
+    let absolute = args.save_path("/etc/x");
     assert!(absolute.starts_with("/q/mod"), "{absolute:?}");
     assert_eq!(absolute, Path::new("/q/mod//etc/x.sav"));
-    let plain = super::save_path(&self::args(&["-basedir", "/q"]), "s1");
+    let plain = self::args(&["-basedir", "/q"]).save_path("s1");
     assert_eq!(plain, Path::new("/q/id1/s1.sav"));
 }
 
@@ -180,4 +177,15 @@ fn boxes_and_barrels_are_external_brush_models() {
     assert!(!is_external_brush_model(world, world));
     assert!(!is_external_brush_model("progs/player.mdl", world));
     assert!(!is_external_brush_model("*1", world));
+}
+
+// No spec statement: the client's `rand ()` is C's linear congruential generator, its value
+// the 31 bits below the top one of each step
+#[test]
+fn rand_steps_as_cs_does() {
+    let mut rand = super::Rand(1);
+    assert_eq!(
+        [rand.next(), rand.next(), rand.next()],
+        [551_763_795, 1_262_442_611, 331_412_042]
+    );
 }

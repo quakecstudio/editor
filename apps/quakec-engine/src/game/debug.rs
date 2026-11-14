@@ -15,10 +15,26 @@ use serde_json::{Map, Value, json};
 use super::{FrameEnd, Game, Reason, State};
 use crate::values::to_json;
 
+/// The host's id for a breakpoint it took, which `breakpoint/set` answers (BRIDGE-4.9).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct BreakpointId(u64);
+
+impl BreakpointId {
+    /// The breakpoint numbered `id`.
+    pub(crate) const fn new(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// Its number.
+    pub(crate) const fn get(self) -> u64 {
+        self.0
+    }
+}
+
 /// A breakpoint the client set: its id and the statement it stops before.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Breakpoint {
-    pub(crate) id: u64,
+    pub(crate) id: BreakpointId,
     pub(crate) statement: i32,
     /// The file and line it was set at, resolved again when the progs is reloaded.
     pub(crate) file: String,
@@ -120,7 +136,7 @@ impl Game {
         let id = self.next_breakpoint;
         self.next_breakpoint = id.saturating_add(1);
         self.breakpoints.push(Breakpoint {
-            id,
+            id: BreakpointId::new(id),
             statement,
             file: file.to_owned(),
             line,
@@ -137,7 +153,7 @@ impl Game {
         let at = self
             .breakpoints
             .iter()
-            .position(|b| Some(b.id) == id)
+            .position(|b| Some(b.id.get()) == id)
             .ok_or_else(|| RpcError::new(ErrorCode::NoSuchBreakpoint, "no such breakpoint"))?;
         let removed = self.breakpoints.remove(at);
         if !self
@@ -223,7 +239,7 @@ impl Game {
         let reason = if let Some(breakpoint) = breakpoint {
             let me = self.world.evaluate(progs, None, "self");
             let mut params = Map::new();
-            params.insert("breakpoint".to_owned(), json!(breakpoint.id));
+            params.insert("breakpoint".to_owned(), json!(breakpoint.id.get()));
             params.insert("location".to_owned(), location.clone());
             if let Ok(qs_sim::QcValue::Entity(edict)) = me {
                 params.insert("self".to_owned(), json!(edict));

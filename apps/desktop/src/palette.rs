@@ -212,9 +212,13 @@ impl Palette {
             .max_height(theme.size.row * ROWS)
             .show(ui, |ui| {
                 for (index, task) in tasks.iter().enumerate() {
-                    let selected = index == self.selected;
+                    let selected = if index == self.selected {
+                        Selection::Selected
+                    } else {
+                        Selection::Unselected
+                    };
                     let response = task_row(ui, theme, task, selected);
-                    if selected && (up || down) {
+                    if selected == Selection::Selected && (up || down) {
                         response.scroll_to_me(None);
                     }
                     if response.clicked() {
@@ -229,9 +233,13 @@ impl Palette {
                 }
                 for (index, item) in found.iter().enumerate() {
                     let index = index.saturating_add(tasks.len());
-                    let selected = index == self.selected;
+                    let selected = if index == self.selected {
+                        Selection::Selected
+                    } else {
+                        Selection::Unselected
+                    };
                     let response = row(ui, theme, item, selected, keymap);
-                    if selected && (up || down) {
+                    if selected == Selection::Selected && (up || down) {
                         response.scroll_to_me(None);
                     }
                     if response.clicked() {
@@ -331,9 +339,10 @@ fn row(
     ui: &mut Ui,
     theme: &Theme,
     item: &PaletteMatch<'_>,
-    selected: bool,
+    selection: Selection,
     keymap: &keymap::Keymap,
 ) -> egui::Response {
+    let selected = selection == Selection::Selected;
     let height = theme.size.row;
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
@@ -400,8 +409,18 @@ fn task_matches(task: &TaskInfo, query: &str) -> bool {
         .all(|word| row.contains(word))
 }
 
+/// Whether a palette row is the one selected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Selection {
+    /// It is.
+    Selected,
+    /// Another is.
+    Unselected,
+}
+
 /// One task's row: Run task and its name, then its command line on the right.
-fn task_row(ui: &mut Ui, theme: &Theme, task: &TaskInfo, selected: bool) -> egui::Response {
+fn task_row(ui: &mut Ui, theme: &Theme, task: &TaskInfo, selection: Selection) -> egui::Response {
+    let selected = selection == Selection::Selected;
     let height = theme.size.row;
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());

@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{Excerpt, Multibuffer, Source};
+use crate::strings::Truncation;
 
 const FILE: &[u8] = b"one\ntwo\nthree health\nfour\nfive\nsix health\nseven\n";
 
@@ -42,7 +43,7 @@ fn excerpts_join_and_move_with_edits() {
             (a.clone(), 35, 41),
             (b.clone(), 0, 3),
         ],
-        false,
+        Truncation::All,
         |_| Some(FILE.to_vec()),
     );
     assert_eq!(buffer.excerpts.len(), 3, "{:?}", buffer.excerpts);
@@ -50,7 +51,7 @@ fn excerpts_join_and_move_with_edits() {
     assert_eq!(buffer.excerpts[1].text, "five\nsix health\nseven");
     assert_eq!(buffer.files(), [a.clone(), b]);
     let second = buffer.excerpts[1].start;
-    buffer.edited(0, "1\n2\n3".to_owned());
+    buffer.edited(super::ExcerptIndex::new(0), "1\n2\n3".to_owned());
     assert_eq!(buffer.excerpts[0].end, 5);
     assert_eq!(buffer.excerpts[1].start, second - 15);
     assert_eq!(buffer.excerpts[2].start, 0, "another file's excerpt stays");

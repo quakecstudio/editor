@@ -15,6 +15,8 @@ field qs_bridge::session::HostInfo.name
 field qs_bridge::session::HostInfo.version
 field qs_bridge::session::Reply.close
 field qs_bridge::session::Reply.response
+fn qs_bridge::base64::base64
+fn qs_bridge::base64::base64_decode
 fn qs_bridge::framing::read_frame
 fn qs_bridge::framing::write_frame
 fn qs_bridge::message::ErrorCode::code
@@ -58,6 +60,8 @@ use qs_bridge::Message = message::Message
 use qs_bridge::Reply = session::Reply
 use qs_bridge::RpcError = message::RpcError
 use qs_bridge::Session = session::Session
+use qs_bridge::base64 = base64::base64
+use qs_bridge::base64_decode = base64::base64_decode
 use qs_bridge::check_schema = session::check_schema
 use qs_bridge::event = session::event
 use qs_bridge::is_flagged = session::is_flagged

@@ -79,8 +79,8 @@ pub(crate) struct EntityShape {
     pub(crate) bounds: [[f32; 3]; 2],
     /// Its origin.
     pub(crate) origin: [f32; 3],
-    /// Its yaw in degrees.
-    pub(crate) yaw: f32,
+    /// Its yaw.
+    pub(crate) yaw: Degrees,
     /// Its class's colour.
     pub(crate) color: Option<[f32; 3]>,
     /// Its class's model.
@@ -360,7 +360,7 @@ impl Scene {
                 index: EntityIndex::new(index),
                 bounds,
                 origin,
-                yaw: single(entity.yaw()),
+                yaw: Degrees::new(single(entity.yaw())),
                 color: class.and_then(|c| c.color),
                 model: class.and_then(|c| c.model.clone()),
                 brush: entity.is_brush_entity(),

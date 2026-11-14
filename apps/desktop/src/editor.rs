@@ -30,7 +30,7 @@ use qs_workbench::{Candidate, OpenFile};
 use crate::code_style::CodeStyler;
 use crate::shell::name_field;
 use crate::strings::{Text, match_count};
-use crate::theme::{Theme, Token};
+use crate::theme::{SECTION_GAP, Theme, Token};
 
 /// How long typing pauses, in seconds, before the project is checked again.
 pub(crate) const SETTLE: f64 = 0.3;
@@ -515,7 +515,7 @@ impl Editor {
             .caret_rect()
             .map_or_else(|| ui.max_rect().left_top(), |rect| rect.left_bottom());
         let at = match &popup {
-            Popup::Hover { at, .. } => Pos2::new(at.x, at.y + theme.space(3)),
+            Popup::Hover { at, .. } => Pos2::new(at.x, at.y + theme.space(SECTION_GAP)),
             Popup::Complete { .. }
             | Popup::Fixes(..)
             | Popup::Rename { .. }

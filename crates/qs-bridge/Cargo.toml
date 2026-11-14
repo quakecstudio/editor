@@ -13,5 +13,9 @@ publish.workspace = true
 jsonschema = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
 
+[dev-dependencies]
+# The base64 encoder and decoder's round trip.
+proptest = { workspace = true, features = ["std"] }
+
 [lints]
 workspace = true

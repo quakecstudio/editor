@@ -15,6 +15,7 @@ use super::{
     STARTUP, console_key, focus, keynum, menu_bound, modifier_keys, mouse_key, mouse_motion,
     runs_binding, wheel_key,
 };
+use qs_render::Look;
 
 // spec INPUT-3.1: letters in lower case, digits and punctuation as typed, the named keys by
 // keys.h, the modifiers from egui's state, the mouse's buttons and the wheel
@@ -87,7 +88,7 @@ fn the_console_reads_the_hosts_default_and_config() {
     let game: qs_sim::ModelFiles = std::rc::Rc::new(|name: &str| {
         (name == "default.cfg" || name == "config.cfg").then(|| b"bind a +lookup\n".to_vec())
     });
-    let files = super::host_files(game.clone(), true, || None);
+    let files = super::host_files(game.clone(), Look::QuakeSpasm, || None);
     let text = String::from_utf8(files("default.cfg").unwrap()).unwrap();
     assert_eq!(files("DEFAULT.CFG").map(|t| t.len()), Some(text.len()));
     for line in [
@@ -103,7 +104,7 @@ fn the_console_reads_the_hosts_default_and_config() {
     }
     assert_eq!(files("config.cfg").unwrap(), b"", "the game's is not read");
     assert_eq!(files("autoexec.cfg"), None);
-    let saved = super::host_files(game, false, || Some(b"bind q +jump\n".to_vec()));
+    let saved = super::host_files(game, Look::GlQuake, || Some(b"bind q +jump\n".to_vec()));
     assert_eq!(saved("config.cfg").unwrap(), b"bind q +jump\n");
     assert_eq!(
         saved("default.cfg").unwrap(),
@@ -117,10 +118,17 @@ fn the_console_reads_the_hosts_default_and_config() {
 #[test]
 fn the_configuration_is_written_as_host_writeconfiguration_writes_it() {
     assert_eq!(
-        super::configuration("bind \"w\" \"+forward\"\n", "volume \"0.7\"\n", true),
+        super::configuration(
+            "bind \"w\" \"+forward\"\n",
+            "volume \"0.7\"\n",
+            super::MouseLook::Held,
+        ),
         "unbindall\nbind \"w\" \"+forward\"\nvolume \"0.7\"\n+mlook\n"
     );
-    assert_eq!(super::configuration("", "", false), "unbindall\n");
+    assert_eq!(
+        super::configuration("", "", super::MouseLook::Released),
+        "unbindall\n"
+    );
     assert_eq!(super::CONFIG_FILE, "quakec-engine.cfg");
 }
 

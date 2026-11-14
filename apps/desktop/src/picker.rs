@@ -26,6 +26,8 @@ const WIDTH: f32 = 640.0;
 const TOP: f32 = 96.0;
 /// The most rows shown before the list scrolls.
 const ROWS: f32 = 10.0;
+/// The room beside the query field, for its icon.
+const QUERY_MARGIN: f32 = 40.0;
 
 /// What a picker lists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -154,7 +156,7 @@ impl Picker {
             let field = TextEdit::singleline(&mut self.query)
                 .hint_text(kind.text().get())
                 .frame(egui::Frame::NONE)
-                .desired_width(WIDTH - 40.0);
+                .desired_width(WIDTH - QUERY_MARGIN);
             let response = ui.add(field);
             name_field(ui, &response, kind.text());
             if self.focus {

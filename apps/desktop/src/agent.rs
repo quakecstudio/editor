@@ -37,6 +37,17 @@ const FAILED: char = '\u{2717}';
 const RAN: char = '\u{2713}';
 use crate::theme::{Theme, Token};
 
+/// The characters of a thread's task its list row shows.
+const TITLE_CHARS: usize = 24;
+/// The lines of a change's text a report shows.
+const CHANGE_LINES: usize = 8;
+/// The characters of a message's first line its edit row shows.
+const MESSAGE_CHARS: usize = 48;
+/// The queued-message box's width.
+const QUEUE_BOX_WIDTH: f32 = 200.0;
+/// The tallest a thread's transcript grows before it scrolls.
+const THREAD_MAX_HEIGHT: f32 = 320.0;
+
 /// Makes the model a thread runs on, from the configuration; the window's makes a provider's
 /// with its key from the keychain, a test's a scripted one.
 pub type MakeModel = Box<dyn Fn(&ProviderConfig) -> Result<Box<dyn Model + Send>, String>>;
@@ -320,7 +331,7 @@ pub struct AgentPanel {
     /// The thread history, while it is shown.
     history: Option<HistoryView>,
     /// A message being edited to run again from: the thread, the message's index and its text.
-    editing: Option<(usize, usize, String)>,
+    editing: Option<(ThreadIndex, usize, String)>,
     /// The message being typed to queue in the selected thread while it runs.
     queue_text: String,
 }
@@ -356,8 +367,8 @@ impl AgentPanel {
 
     /// Queues `text` for thread `index`'s next turn, as its box does. For tests.
     #[cfg(test)]
-    pub(crate) fn queue_for_test(&mut self, index: usize, text: &str) {
-        if let Some(thread) = self.threads.get_mut(index) {
+    pub(crate) fn queue_for_test(&mut self, index: ThreadIndex, text: &str) {
+        if let Some(thread) = self.threads.get_mut(index.get()) {
             thread.queued.push(text.to_owned());
         }
     }
@@ -376,7 +387,7 @@ impl AgentPanel {
     /// Gives a PNG as context: to the selected thread while it runs, else to the next thread
     /// started (P4-31).
     pub fn attach_png(&mut self, bytes: &[u8]) {
-        let data = qs_agent::base64(bytes);
+        let data = qs_bridge::base64(bytes);
         let running = self
             .selected
             .and_then(|index| self.threads.get_mut(index))
@@ -405,7 +416,7 @@ impl AgentPanel {
     pub fn run_again<C: 'static>(
         &mut self,
         session: &mut Session<C>,
-        (index, at, text): (usize, usize, String),
+        (index, at, text): (ThreadIndex, usize, String),
         wake: impl Fn() + Send + 'static,
     ) -> Result<(), String> {
         let config = self
@@ -414,7 +425,7 @@ impl AgentPanel {
             .ok_or_else(|| Text::NoAgent.get().to_owned())?;
         let thread = self
             .threads
-            .get_mut(index)
+            .get_mut(index.get())
             .ok_or_else(|| Text::AgentNoThread.get().to_owned())?;
         let before = thread
             .report
@@ -456,18 +467,18 @@ impl AgentPanel {
     pub fn permit<C: 'static>(
         &mut self,
         session: &mut Session<C>,
-        index: usize,
+        index: ThreadIndex,
         permit: Permit,
     ) -> Option<Permissions> {
-        let kept = self.threads.get_mut(index)?.permit(session, permit)?;
+        let kept = self.threads.get_mut(index.get())?.permit(session, permit)?;
         self.permissions.rules = kept.rules.clone();
         Some(kept)
     }
 
     /// The call thread `index` waits for the modder's answer on, if one is.
     #[must_use]
-    pub fn asking(&self, index: usize) -> Option<&Asking> {
-        self.threads.get(index)?.run.as_ref()?.asking()
+    pub fn asking(&self, index: ThreadIndex) -> Option<&Asking> {
+        self.threads.get(index.get())?.run.as_ref()?.asking()
     }
 
     /// Keeps the provider configuration in `file`, reading the one there.
@@ -515,8 +526,8 @@ impl AgentPanel {
 
     /// The report of thread `index`, once it has ended.
     #[must_use]
-    pub fn report(&self, index: usize) -> Option<&RunReport> {
-        self.threads.get(index)?.report.as_ref()
+    pub fn report(&self, index: ThreadIndex) -> Option<&RunReport> {
+        self.threads.get(index.get())?.report.as_ref()
     }
 
     /// Starts a thread on `task` over `session`, whose project is at `project`, its model on a
@@ -637,8 +648,12 @@ impl AgentPanel {
     /// and the reply come one after the other from the model's thread, so waiting for the text
     /// alone would leave the reply to a race with the next frame.
     #[cfg(test)]
-    pub(crate) fn wait<C: 'static>(&mut self, session: &mut Session<C>, index: usize) -> bool {
-        let Some(thread) = self.threads.get_mut(index) else {
+    pub(crate) fn wait<C: 'static>(
+        &mut self,
+        session: &mut Session<C>,
+        index: ThreadIndex,
+    ) -> bool {
+        let Some(thread) = self.threads.get_mut(index.get()) else {
             return false;
         };
         let mut followed = Vec::new();
@@ -692,7 +707,7 @@ impl AgentPanel {
         }
         ui.horizontal_wrapped(|ui| {
             for (index, thread) in self.threads.iter().enumerate() {
-                let title: String = thread.task.chars().take(24).collect();
+                let title: String = thread.task.chars().take(TITLE_CHARS).collect();
                 let label = if thread.running() {
                     format!("{RUNNING} {title}")
                 } else {
@@ -709,7 +724,13 @@ impl AgentPanel {
         if let Some(index) = self.selected
             && let Some(thread) = self.threads.get_mut(index)
         {
-            let mut asked = thread_view(ui, theme, index, thread, &mut self.editing);
+            let mut asked = thread_view(
+                ui,
+                theme,
+                ThreadIndex::new(index),
+                thread,
+                &mut self.editing,
+            );
             if thread.running() {
                 queue_box(ui, theme, thread, &mut self.queue_text);
             }
@@ -841,10 +862,15 @@ impl AgentPanel {
                 }
             }
         });
-        field(ui, Text::AgentModel, &mut setup.model, false);
-        field(ui, Text::AgentBaseUrl, &mut setup.base_url, false);
+        field(ui, Text::AgentModel, &mut setup.model, FieldKind::Plain);
+        field(
+            ui,
+            Text::AgentBaseUrl,
+            &mut setup.base_url,
+            FieldKind::Plain,
+        );
         if setup.kind.needs_key() {
-            field(ui, Text::AgentKey, &mut setup.key, true);
+            field(ui, Text::AgentKey, &mut setup.key, FieldKind::Secret);
             muted(ui, theme, Text::AgentKeyKept.get());
         }
         if let Some(error) = &setup.error {
@@ -875,13 +901,22 @@ impl AgentPanel {
     }
 }
 
-/// A labelled text field, named by its label for a screen reader; `secret` hides what is
+/// What a setup field holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FieldKind {
+    /// Text shown as typed.
+    Plain,
+    /// A key, hidden as it is typed.
+    Secret,
+}
+
+/// A labelled text field, named by its label for a screen reader; a secret one hides what is
 /// typed.
-fn field(ui: &mut Ui, label: Text, value: &mut String, secret: bool) {
+fn field(ui: &mut Ui, label: Text, value: &mut String, kind: FieldKind) {
     ui.label(label.get());
     let response = ui.add(
         egui::TextEdit::singleline(value)
-            .password(secret)
+            .password(kind == FieldKind::Secret)
             .desired_width(f32::INFINITY),
     );
     name_field(ui, &response, label);
@@ -890,6 +925,24 @@ fn field(ui: &mut Ui, label: Text, value: &mut String, secret: bool) {
 /// A line of muted, wrapped text.
 fn muted(ui: &mut Ui, theme: &Theme, text: &str) {
     ui.add(egui::Label::new(RichText::new(text).color(theme.color(Token::TextMuted))).wrap());
+}
+
+/// A thread of the panel, by its place in the list from 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ThreadIndex(usize);
+
+impl ThreadIndex {
+    /// The thread at `index`.
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Its place.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
 }
 
 /// What the panel asks the window to do.
@@ -906,7 +959,7 @@ pub enum AgentAction {
     /// Restore this checkpoint.
     Restore(qs_agent::CheckpointNumber),
     /// Answer the call this thread asks about.
-    Permit(usize, Permit),
+    Permit(ThreadIndex, Permit),
     /// Use this profile from now on, kept in the project's settings.
     Profile(AgentProfile),
     /// List the threads kept in the project (P4-31).
@@ -914,7 +967,7 @@ pub enum AgentAction {
     /// Give the running game's frame as context.
     AttachScreenshot,
     /// Run a thread again from a message, edited: the thread, the message's index, its text.
-    RunAgain(usize, usize, String),
+    RunAgain(ThreadIndex, usize, String),
 }
 
 /// What the panel calls `profile`.
@@ -931,7 +984,7 @@ const fn profile_text(profile: AgentProfile) -> Text {
 fn permission_request(
     ui: &mut Ui,
     theme: &Theme,
-    index: usize,
+    index: ThreadIndex,
     asking: &Asking,
 ) -> Option<AgentAction> {
     let mut action = None;
@@ -1012,7 +1065,7 @@ fn queue_box(ui: &mut Ui, theme: &Theme, thread: &mut Thread, text: &mut String)
         let typed = ui.add(
             egui::TextEdit::singleline(text)
                 .hint_text(Text::AgentQueueHint.get())
-                .desired_width(200.0),
+                .desired_width(QUEUE_BOX_WIDTH),
         );
         name_field(ui, &typed, Text::AgentQueueHint);
         if ui.button(Text::AgentQueue.get()).clicked() && !text.trim().is_empty() {
@@ -1029,9 +1082,9 @@ fn queue_box(ui: &mut Ui, theme: &Theme, thread: &mut Thread, text: &mut String)
 fn thread_view(
     ui: &mut Ui,
     theme: &Theme,
-    index: usize,
+    index: ThreadIndex,
     thread: &Thread,
-    editing: &mut Option<(usize, usize, String)>,
+    editing: &mut Option<(ThreadIndex, usize, String)>,
 ) -> Option<AgentAction> {
     let mut action = None;
     let transcript = thread
@@ -1051,7 +1104,7 @@ fn thread_view(
         &tokens_used(qs_agent::estimated_tokens(transcript)),
     );
     egui::ScrollArea::vertical()
-        .max_height(320.0)
+        .max_height(THREAD_MAX_HEIGHT)
         .stick_to_bottom(true)
         .show(ui, |ui| {
             transcript_view(ui, theme, transcript);
@@ -1097,9 +1150,9 @@ fn thread_view(
 /// its text and Run again from here (P4-31).
 fn edit_messages(
     ui: &mut Ui,
-    index: usize,
+    index: ThreadIndex,
     transcript: &[Message],
-    editing: &mut Option<(usize, usize, String)>,
+    editing: &mut Option<(ThreadIndex, usize, String)>,
 ) -> Option<AgentAction> {
     let mut action = None;
     for (at, message) in transcript.iter().enumerate() {
@@ -1119,7 +1172,7 @@ fn edit_messages(
                     .next()
                     .unwrap_or_default()
                     .chars()
-                    .take(48)
+                    .take(MESSAGE_CHARS)
                     .collect();
                 ui.horizontal(|ui| {
                     ui.label(first);
@@ -1165,7 +1218,7 @@ fn changes(ui: &mut Ui, theme: &Theme, staged: &[StagedHunk]) -> Option<AgentAct
             (&hunk.removed, Token::StatusError),
             (&hunk.added, Token::StatusOk),
         ] {
-            for line in lines.lines().take(8) {
+            for line in lines.lines().take(CHANGE_LINES) {
                 ui.label(
                     RichText::new(line)
                         .monospace()

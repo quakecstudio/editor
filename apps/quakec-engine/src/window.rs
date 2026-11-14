@@ -9,6 +9,7 @@
 //! has captured it; Escape frees it. `--fly` gives a free camera instead, Space and C rising
 //! and sinking.
 
+use qc_vm::convert::int_to_float;
 use std::io::Write as _;
 use std::time::Instant;
 
@@ -28,14 +29,14 @@ use raw_window_handle::{HasDisplayHandle as _, RawDisplayHandle};
 
 use crate::args::Args;
 use crate::audio::Audio;
-use crate::bridge::{Bridge, serve};
+use crate::bridge::Bridge;
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
 use crate::keys::{
-    STARTUP, config_path, configuration, focus, keynum, modifier_keys, mouse_key, mouse_motion,
-    runs_binding, wheel_key,
+    MouseLook, STARTUP, config_path, configuration, focus, keynum, modifier_keys, mouse_key,
+    mouse_motion, runs_binding, wheel_key,
 };
-use crate::load::{Acted, Describer, Loaded, Rand, act, saves};
+use crate::load::{Acted, Describer, Loaded, Rand};
 use crate::screenshot::Drawer;
 use crate::settings::HostSettings;
 
@@ -56,140 +57,167 @@ enum Pointer {
 pub(crate) const FRAME: f64 = 1.0 / 72.0;
 /// `Host_FilterTime`'s longest frame.
 const LONGEST: f64 = 0.1;
+/// Whether a click in the game view captures the pointer for mouse look.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Click {
+    /// It does: the game was clicked, not an entity picked while paused.
+    Capture,
+    /// It does not.
+    None,
+}
 
-/// Opens the window on the map `loaded` holds and runs the game until it closes or the
-/// bridge's client stops it.
-pub(crate) fn run(args: &Args, loaded: Loaded, bridge: Option<Bridge>) -> Result<(), String> {
-    let args = args.clone();
-    let benchmark = args.benchmark;
-    if benchmark.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
-        return Err("--benchmark needs a positive number of seconds".to_owned());
+/// The window's size when none is asked for.
+const DEFAULT_SIZE: [f32; 2] = [1280.0, 800.0];
+/// The depth buffer's bits.
+const DEPTH_BITS: u8 = 32;
+/// A triangle's corners, the indices a mesh gives each.
+const TRIANGLE_CORNERS: usize = 3;
+/// The longest frame the view steps by, in seconds, as [`LONGEST`].
+const LONGEST_VIEW_FRAME: f32 = 0.1;
+/// The benchmark's turn, in degrees a second.
+const BENCHMARK_TURN: f32 = 30.0;
+/// The narrowest aspect the 2D layer's height is reckoned for.
+const MIN_ASPECT: f32 = 0.1;
+
+impl Args {
+    /// Opens the window on the map `loaded` holds and runs the game until it closes or the
+    /// bridge's client stops it.
+    pub(crate) fn run_window(&self, loaded: Loaded, bridge: Option<Bridge>) -> Result<(), String> {
+        let args = self.clone();
+        let benchmark = args.benchmark;
+        if benchmark.is_some_and(|seconds| !seconds.is_finite() || seconds <= 0.0) {
+            return Err("--benchmark needs a positive number of seconds".to_owned());
+        }
+        let fly = args.fly || benchmark.is_some();
+        let position = args
+            .position
+            .as_deref()
+            .and_then(|values| <[f32; 2]>::try_from(values).ok());
+        let Loaded {
+            map,
+            mesh,
+            play,
+            camera,
+            game,
+            audio,
+            client,
+            bsp,
+            describer,
+            rand,
+            printed,
+        } = loaded;
+        // The console's first lines: the host's, as `Host_Init` prints the engine's, then what the
+        // map's first frame printed (CLIENT-1.7).
+        // CON-5.6: QuakeSpasm's text size in its look, whose console is as wide as the window.
+        let mut console = Console::with_text_size(if mesh.look.native_2d() {
+            CON_TEXTSIZE_QUAKESPASM
+        } else {
+            CON_TEXTSIZE
+        });
+        let banner = format!("QuakeC Studio preview host {}\n", env!("CARGO_PKG_VERSION"));
+        console.print(banner.as_bytes(), 0.0);
+        for text in &printed {
+            console.print(text, 0.0);
+        }
+        let size = args
+            .size
+            .as_deref()
+            .and_then(|values| <[f32; 2]>::try_from(values).ok())
+            .unwrap_or(DEFAULT_SIZE);
+        let mut viewport = egui::ViewportBuilder::default()
+            .with_title(format!("QuakeC Studio preview: {map}"))
+            .with_inner_size(size);
+        if let Some(at) = position {
+            viewport = viewport.with_position(at);
+        }
+        let mut wgpu_options = egui_wgpu::WgpuConfiguration::default();
+        if benchmark.is_some() {
+            wgpu_options.surface.present_mode = wgpu::PresentMode::AutoNoVsync;
+        }
+        let options = eframe::NativeOptions {
+            viewport,
+            renderer: eframe::Renderer::Wgpu,
+            depth_buffer: DEPTH_BITS,
+            wgpu_options,
+            ..eframe::NativeOptions::default()
+        };
+        let triangles = mesh
+            .indices
+            .len()
+            .checked_div(TRIANGLE_CORNERS)
+            .unwrap_or(0);
+        let camera_origin = camera.origin;
+        eframe::run_native(
+            "quakec-engine",
+            options,
+            Box::new(move |cc| {
+                let state = cc
+                    .wgpu_render_state
+                    .as_ref()
+                    .ok_or("eframe started without wgpu")?;
+                let renderer = MapRenderer::new(
+                    &state.device,
+                    &state.queue,
+                    (state.target_format, wgpu::TextureFormat::Depth32Float),
+                    &mesh,
+                    &play.assets(),
+                );
+                state.renderer.write().callback_resources.insert(renderer);
+                let mut game = game;
+                // BRIDGE-4.10: Wayland lets a client neither move nor raise its window.
+                let wayland = cc
+                    .display_handle()
+                    .is_ok_and(|handle| matches!(handle.as_raw(), RawDisplayHandle::Wayland(_)));
+                if wayland {
+                    game.set_screen(Screen::FixedWindow);
+                }
+                // Screenshots are drawn offscreen on the window's own device (BRIDGE-4.9).
+                let drawer = Some(Drawer::new(Offscreen::from_state(
+                    state.clone(),
+                    wgpu::TextureFormat::Depth32Float,
+                )));
+                Ok(Box::new(Viewer {
+                    drawer,
+                    args,
+                    map,
+                    mesh,
+                    camera,
+                    triangles,
+                    play,
+                    game,
+                    audio,
+                    bridge,
+                    client,
+                    bsp,
+                    describer,
+                    rand,
+                    fly,
+                    pointer: Pointer::Free,
+                    placed: None,
+                    eye: camera_origin,
+                    last_set: [f32::NAN; 2],
+                    behind: 0.0,
+                    started: Instant::now(),
+                    last: Instant::now(),
+                    benchmark,
+                    frames: 0,
+                    slowest: 0.0,
+                    worked: 0.0,
+                    longest_work: 0.0,
+                    console,
+                    dest: KeyDest::Game,
+                    menu: Menu::new(),
+                    bindings: Bindings::new(),
+                    input: Input::new(),
+                    motion: [0.0; 2],
+                    modifiers: egui::Modifiers::NONE,
+                    configured: false,
+                    config_file: config_path(),
+                }))
+            }),
+        )
+        .map_err(|e| e.to_string())
     }
-    let fly = args.fly || benchmark.is_some();
-    let position = args
-        .position
-        .as_deref()
-        .and_then(|values| <[f32; 2]>::try_from(values).ok());
-    let Loaded {
-        map,
-        mesh,
-        play,
-        camera,
-        game,
-        audio,
-        client,
-        bsp,
-        describer,
-        rand,
-        printed,
-    } = loaded;
-    // The console's first lines: the host's, as `Host_Init` prints the engine's, then what the
-    // map's first frame printed (CLIENT-1.7).
-    // CON-5.6: QuakeSpasm's text size in its look, whose console is as wide as the window.
-    let mut console = Console::with_text_size(if mesh.look.native_2d() {
-        CON_TEXTSIZE_QUAKESPASM
-    } else {
-        CON_TEXTSIZE
-    });
-    let banner = format!("QuakeC Studio preview host {}\n", env!("CARGO_PKG_VERSION"));
-    console.print(banner.as_bytes(), 0.0);
-    for text in &printed {
-        console.print(text, 0.0);
-    }
-    let size = args
-        .size
-        .as_deref()
-        .and_then(|values| <[f32; 2]>::try_from(values).ok())
-        .unwrap_or([1280.0, 800.0]);
-    let mut viewport = egui::ViewportBuilder::default()
-        .with_title(format!("QuakeC Studio preview: {map}"))
-        .with_inner_size(size);
-    if let Some(at) = position {
-        viewport = viewport.with_position(at);
-    }
-    let mut wgpu_options = egui_wgpu::WgpuConfiguration::default();
-    if benchmark.is_some() {
-        wgpu_options.surface.present_mode = wgpu::PresentMode::AutoNoVsync;
-    }
-    let options = eframe::NativeOptions {
-        viewport,
-        renderer: eframe::Renderer::Wgpu,
-        depth_buffer: 32,
-        wgpu_options,
-        ..eframe::NativeOptions::default()
-    };
-    let triangles = mesh.indices.len().checked_div(3).unwrap_or(0);
-    let camera_origin = camera.origin;
-    eframe::run_native(
-        "quakec-engine",
-        options,
-        Box::new(move |cc| {
-            let state = cc
-                .wgpu_render_state
-                .as_ref()
-                .ok_or("eframe started without wgpu")?;
-            let renderer = MapRenderer::new(
-                &state.device,
-                &state.queue,
-                (state.target_format, wgpu::TextureFormat::Depth32Float),
-                &mesh,
-                &play.assets(),
-            );
-            state.renderer.write().callback_resources.insert(renderer);
-            let mut game = game;
-            // BRIDGE-4.10: Wayland lets a client neither move nor raise its window.
-            let wayland = cc
-                .display_handle()
-                .is_ok_and(|handle| matches!(handle.as_raw(), RawDisplayHandle::Wayland(_)));
-            if wayland {
-                game.set_screen(Screen::FixedWindow);
-            }
-            // Screenshots are drawn offscreen on the window's own device (BRIDGE-4.9).
-            let drawer = Some(Drawer::new(Offscreen::from_state(
-                state.clone(),
-                wgpu::TextureFormat::Depth32Float,
-            )));
-            Ok(Box::new(Viewer {
-                drawer,
-                args,
-                map,
-                mesh,
-                camera,
-                triangles,
-                play,
-                game,
-                audio,
-                bridge,
-                client,
-                bsp,
-                describer,
-                rand,
-                fly,
-                pointer: Pointer::Free,
-                placed: None,
-                eye: camera_origin,
-                last_set: [f32::NAN; 2],
-                behind: 0.0,
-                started: Instant::now(),
-                last: Instant::now(),
-                benchmark,
-                frames: 0,
-                slowest: 0.0,
-                worked: 0.0,
-                longest_work: 0.0,
-                console,
-                dest: KeyDest::Game,
-                menu: Menu::new(),
-                bindings: Bindings::new(),
-                input: Input::new(),
-                motion: [0.0; 2],
-                modifiers: egui::Modifiers::NONE,
-                configured: false,
-                config_file: config_path(),
-            }))
-        }),
-    )
-    .map_err(|e| e.to_string())
 }
 
 struct Viewer {
@@ -258,10 +286,15 @@ impl eframe::App for Viewer {
         let Some(path) = &self.config_file else {
             return;
         };
+        let mlook = if self.input.held(Button::MLook) {
+            MouseLook::Held
+        } else {
+            MouseLook::Released
+        };
         let text = configuration(
             &self.bindings.write(),
             &self.game.world().archived_settings(),
-            self.input.held(Button::MLook),
+            mlook,
         );
         let written = path
             .parent()
@@ -279,7 +312,7 @@ impl eframe::App for Viewer {
     fn ui(&mut self, ui: &mut egui::Ui, window: &mut eframe::Frame) {
         let now = Instant::now();
         let frame = now.duration_since(self.last).as_secs_f32();
-        let seconds = frame.min(0.1);
+        let seconds = frame.min(LONGEST_VIEW_FRAME);
         self.last = now;
         let rect = ui.max_rect();
         let response = ui.allocate_rect(rect, egui::Sense::click());
@@ -303,7 +336,12 @@ impl eframe::App for Viewer {
                 (at.y - rect.top()) / rect.height(),
             );
         }
-        self.hold_pointer(ui, clicked && !picked);
+        let click = if clicked && !picked {
+            Click::Capture
+        } else {
+            Click::None
+        };
+        self.hold_pointer(ui, click);
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
         if self.fly {
@@ -317,7 +355,7 @@ impl eframe::App for Viewer {
         self.apply_settings();
         // PHYS-13.6: a level with what the player carries, a save, a load or quit.
         if let Some(action) = self.game.host_action() {
-            match act(&self.args, &mut self.game, action) {
+            match self.args.act(&mut self.game, action) {
                 Acted::Load(loaded) => {
                     self.change_level(window, *loaded);
                     return;
@@ -347,7 +385,7 @@ impl eframe::App for Viewer {
             // A slow turn, so the whole view around the start is drawn. The first frame
             // starts the clock: the window's own appearance is not the renderer's.
             self.camera
-                .turn(Degrees::new(seconds * 30.0), Degrees::new(0.0));
+                .turn(Degrees::new(seconds * BENCHMARK_TURN), Degrees::new(0.0));
             if self.frames == 0 {
                 self.started = now;
             } else {
@@ -530,7 +568,11 @@ impl Viewer {
             );
             state.renderer.write().callback_resources.insert(renderer);
         }
-        self.triangles = mesh.indices.len().checked_div(3).unwrap_or(0);
+        self.triangles = mesh
+            .indices
+            .len()
+            .checked_div(TRIANGLE_CORNERS)
+            .unwrap_or(0);
         self.map = map;
         self.mesh = mesh;
         self.play = play;
@@ -573,7 +615,7 @@ impl Viewer {
             drop(self.game.take_events());
             return;
         };
-        let running = serve(bridge, &mut self.game);
+        let running = bridge.serve(&mut self.game);
         if let Some(asked) = self.placed.take() {
             // The frame the windowing system gave, a frame after it was asked for.
             let outer = ui.input(|input| input.viewport().outer_rect);
@@ -590,7 +632,8 @@ impl Viewer {
 
     /// Captures the mouse on a click and frees it on Escape or when the window loses focus;
     /// while it is held, its motion turns the view (`IN_MouseMove`).
-    fn hold_pointer(&mut self, ui: &egui::Ui, clicked: bool) {
+    fn hold_pointer(&mut self, ui: &egui::Ui, click: Click) {
+        let clicked = click == Click::Capture;
         let (escape, focused, motion) = ui.input(|input| {
             let mut motion = [0.0_f32; 2];
             for event in &input.events {
@@ -815,7 +858,7 @@ impl Viewer {
         let random = self.rand.rand();
         let world = self.game.world();
         let args = &self.args;
-        let slots = || saves(args);
+        let slots = || args.saves();
         let game = MenuGame {
             random,
             server_active: true,
@@ -1107,7 +1150,7 @@ pub(crate) const CONWIDTH: i32 = 640;
     reason = "a rounded height of a few hundred units"
 )]
 pub(crate) fn screen_height(aspect: f32) -> i32 {
-    (f32::from(u16::try_from(CONWIDTH).unwrap_or(640)) / aspect.max(0.1)).round() as i32
+    (int_to_float(CONWIDTH) / aspect.max(MIN_ASPECT)).round() as i32
 }
 
 /// The server's frame as the client's `host_frametime`, in seconds.

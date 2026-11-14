@@ -13,6 +13,9 @@ use eframe::egui::{
 };
 use serde::Deserialize;
 
+/// The spacing step between a panel's sections, and before an indented line.
+pub(crate) const SECTION_GAP: usize = 3;
+
 /// The design tokens, built into the app.
 const TOKENS: &str = include_str!("../../../docs/design/tokens.toml");
 

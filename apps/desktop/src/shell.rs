@@ -119,7 +119,7 @@ use qs_workbench::{
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 use qs_workbench::{TASK_LIST, TERMINAL_CLOSE, TERMINAL_NEW, TERMINAL_POLL, TERMINAL_SEND};
 
-use crate::agent::{self, AgentAction, AgentPanel};
+use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
 use crate::debugger::{self, DebugAction, DebugInput};
 use crate::disk_watch::DiskWatch;
 use crate::editor::{Editor, Popup, Request};
@@ -140,9 +140,9 @@ use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multib
 use crate::palette::Palette;
 use crate::picker::{Picker, PickerKind, PickerRow};
 use crate::project::{self, Jump, SymbolScope};
-use crate::strings::Text;
+use crate::strings::{Text, Truncation};
 use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
-use crate::theme::{Theme, Token, semibold};
+use crate::theme::{SECTION_GAP, Theme, Token, semibold};
 #[cfg(test)]
 use qs_workbench::map_uv::FaceRef;
 use qs_workbench::map_uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
@@ -241,6 +241,35 @@ pub enum CentreTab {
     Map,
     /// The multibuffer: the project search, a name's references or the problems (P4-33).
     Search,
+}
+
+/// Whether a pointer button is held, as one is during a drag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PointerHeld {
+    /// A button is down.
+    Down,
+    /// None is.
+    Up,
+}
+
+/// Whether an area takes the keyboard focus this frame, as a focus request asked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FocusNow {
+    /// It takes it.
+    Take,
+    /// It leaves it where it is.
+    Leave,
+}
+
+impl FocusNow {
+    /// `area`'s, for the focus request `pending`.
+    fn of(pending: Option<Focus>, area: Focus) -> Self {
+        if pending == Some(area) {
+            Self::Take
+        } else {
+            Self::Leave
+        }
+    }
 }
 
 /// The editor's area, whose egui id is the editor view's.
@@ -603,7 +632,7 @@ impl Shell {
 
     /// The report of agent thread `index`, once it has ended.
     #[must_use]
-    pub fn agent_report(&self, index: usize) -> Option<&qs_agent::RunReport> {
+    pub fn agent_report(&self, index: ThreadIndex) -> Option<&qs_agent::RunReport> {
         self.agent.report(index)
     }
 
@@ -800,7 +829,7 @@ impl Shell {
     /// Waits for the next thing agent thread `index`'s model sends and takes it; `false` when
     /// its model has ended. For tests.
     #[cfg(test)]
-    pub(crate) fn wait_agent(&mut self, index: usize) -> bool {
+    pub(crate) fn wait_agent(&mut self, index: ThreadIndex) -> bool {
         self.agent.wait(&mut self.session, index)
     }
 
@@ -1255,7 +1284,7 @@ impl Shell {
         }
         let wrap = editor.view.wrap();
         second.view.set_wrap(wrap);
-        let style = view_style(theme);
+        let style = theme.view_style();
         let panel = match split {
             Split::Down => egui::Panel::bottom(Id::new(Area::SecondPane))
                 .exact_size((ui.available_height() / 2.0).floor()),
@@ -1576,9 +1605,9 @@ impl Shell {
 
     /// Writes the layout when it has changed since it was last written, and no drag is under
     /// way.
-    pub(crate) fn save_if_changed(&mut self, dragging: bool) {
+    pub(crate) fn save_if_changed(&mut self, pointer: PointerHeld) {
         let layout = self.layout().as_written();
-        if dragging || layout == self.saved {
+        if pointer == PointerHeld::Down || layout == self.saved {
             return;
         }
         self.saved = layout;
@@ -1634,13 +1663,13 @@ impl Shell {
         self.game_guide(ui);
         self.status_bar(ui);
         for panel in [Panel::Left, Panel::Right, Panel::Bottom] {
-            self.panel(ui, panel, pending == Some(Focus::Panel(panel)));
+            self.panel(ui, panel, FocusNow::of(pending, Focus::Panel(panel)));
         }
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(self.theme.color(Token::SurfaceEditor)))
             .show(ui, |ui| {
                 name_area(ui, accesskit::Role::Pane, Text::Centre);
-                self.centre(ui, pending == Some(Focus::Editor));
+                self.centre(ui, FocusNow::of(pending, Focus::Editor));
             });
         if let Some((id, params)) = self.palette.show(
             ui,
@@ -1689,8 +1718,12 @@ impl Shell {
         {
             self.jump(place);
         }
-        let dragging = ui.input(|input| input.pointer.any_down());
-        self.save_if_changed(dragging);
+        let pointer = if ui.input(|input| input.pointer.any_down()) {
+            PointerHeld::Down
+        } else {
+            PointerHeld::Up
+        };
+        self.save_if_changed(pointer);
     }
 
     /// The shortcuts pressed this frame: the palette's, and while it is closed each binding's
@@ -2975,7 +3008,7 @@ impl Shell {
         clippy::too_many_lines,
         reason = "one pass lays out each panel's contents and runs what they asked for, in order"
     )]
-    fn panel(&mut self, ui: &mut Ui, panel: Panel, focus: bool) {
+    fn panel(&mut self, ui: &mut Ui, panel: Panel, focus: FocusNow) {
         let state = *self.layout().panel(panel);
         let theme = &self.theme;
         let builder = match panel {
@@ -3055,7 +3088,7 @@ impl Shell {
                             Some(LeftAction::Jump(to)) => jump = Some(to),
                             asked => open = asked,
                         }
-                        ui.add_space(theme.space(3));
+                        ui.add_space(theme.space(SECTION_GAP));
                         if preview.state() == PlayState::Stopped {
                             section(ui, theme, Text::Entities, Text::NotPlaying);
                         } else {
@@ -3063,7 +3096,7 @@ impl Shell {
                             entity_action = entities::outliner(ui, theme, preview.entities(), tree);
                         }
                         if let Some(editor) = map_editor {
-                            ui.add_space(theme.space(3));
+                            ui.add_space(theme.space(SECTION_GAP));
                             heading(ui, theme, Text::Map);
                             let selected = workbench.map().and_then(MapDocument::selected);
                             map_actions = editor.outline_ui(ui, theme, selected);
@@ -3176,12 +3209,12 @@ impl Shell {
     }
 
     /// Shows `places`, each a file's byte range, as the multibuffer's excerpts from `source`,
-    /// in the Search tab (P4-33). `more` says the places were cut short.
+    /// in the Search tab (P4-33). `truncation` says whether the places were cut short.
     fn show_places(
         &mut self,
         source: MultiSource,
         places: Vec<(PathBuf, usize, usize)>,
-        more: bool,
+        truncation: Truncation,
     ) {
         let mut texts: Vec<(PathBuf, Vec<u8>)> = Vec::new();
         for (path, _, _) in &places {
@@ -3194,7 +3227,7 @@ impl Shell {
                 texts.push((path.clone(), read.text.into_bytes()));
             }
         }
-        self.multibuffer.show(source, &places, more, |path| {
+        self.multibuffer.show(source, &places, truncation, |path| {
             texts
                 .iter()
                 .find(|(p, _)| p == path)
@@ -3231,7 +3264,7 @@ impl Shell {
                 self.search_project();
             }
             MultiAction::Edit(index, text) => {
-                let Some(excerpt) = self.multibuffer.excerpts.get(index) else {
+                let Some(excerpt) = self.multibuffer.excerpts.get(index.get()) else {
                     return;
                 };
                 let params = ReplaceRangeParams {
@@ -3265,7 +3298,12 @@ impl Shell {
         match self.attempt::<_, SearchFound>(PROJECT_SEARCH, &params) {
             Ok(found) => {
                 let places = found.matches.into_iter().map(|m| (m.path, m.start, m.end));
-                self.show_places(MultiSource::Search, places.collect(), found.truncated);
+                let truncation = if found.truncated {
+                    Truncation::Cut
+                } else {
+                    Truncation::All
+                };
+                self.show_places(MultiSource::Search, places.collect(), truncation);
             }
             Err(error) => self.multibuffer.error = Some(error.to_string()),
         }
@@ -3287,7 +3325,7 @@ impl Shell {
                 )
             })
             .collect();
-        self.show_places(MultiSource::Problems, places, false);
+        self.show_places(MultiSource::Problems, places, Truncation::All);
     }
 
     /// Runs what the editor asked for, as a frame would after the editor drew.
@@ -3354,7 +3392,11 @@ impl Shell {
                         Some(Popup::Note(Text::NoReferences))
                     } else {
                         let places = places.into_iter().map(|p| (p.path, p.start, p.end));
-                        self.show_places(MultiSource::References, places.collect(), false);
+                        self.show_places(
+                            MultiSource::References,
+                            places.collect(),
+                            Truncation::All,
+                        );
                         None
                     }
                 }
@@ -3532,9 +3574,14 @@ impl Shell {
         }
     }
 
-    /// Draws the centre: its tabs and the one shown. When `focus`, the editor takes the
-    /// keyboard, or the shown tab when no file is open or another tab is shown.
-    fn centre(&mut self, ui: &mut Ui, focus: bool) {
+    /// Draws the centre: its tabs and the one shown. When `focus` says to take it, the editor
+    /// takes the keyboard, or the shown tab when no file is open or another tab is shown.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the centre's tab bar and the tab it shows, drawn in one pass in the order they \
+                  appear"
+    )]
+    fn centre(&mut self, ui: &mut Ui, focus: FocusNow) {
         self.sync_editor();
         self.sync_map();
         self.back_up_map(ui.ctx());
@@ -3542,7 +3589,7 @@ impl Shell {
         self.cover_characters(ui.ctx());
         let editor_shown = self.centre_tab == CentreTab::Editor && self.editor.is_some();
         let refocus = std::mem::take(&mut self.multibuffer.refocus);
-        if (focus || refocus) && editor_shown {
+        if (focus == FocusNow::Take || refocus) && editor_shown {
             self.focus_editor(ui.ctx());
         }
         let theme = &self.theme;
@@ -3557,17 +3604,29 @@ impl Shell {
                 ui.horizontal_centered(|ui| {
                     let editing = self.centre_tab == CentreTab::Editor;
                     for path in workbench.tabs() {
-                        let shown = editing && open == Some(path.as_path());
-                        if let Some(action) =
-                            file_tab(ui, theme, path, workbench.is_unsaved(path), shown)
-                        {
+                        let shown = if editing && open == Some(path.as_path()) {
+                            Shown::Shown
+                        } else {
+                            Shown::Hidden
+                        };
+                        let saved = if workbench.is_unsaved(path) {
+                            Saved::Unsaved
+                        } else {
+                            Saved::Saved
+                        };
+                        if let Some(action) = file_tab(ui, theme, path, saved, shown) {
                             chosen = Some(action);
                         }
                     }
-                    let centre = centre_tabs(workbench.tabs().is_empty());
+                    let files = if workbench.tabs().is_empty() {
+                        OpenFiles::None
+                    } else {
+                        OpenFiles::Some
+                    };
+                    let centre = files.centre_tabs();
                     for &(tab, text) in centre {
                         let response = ui.selectable_value(&mut self.centre_tab, tab, text.get());
-                        if focus && !editor_shown && self.centre_tab == tab {
+                        if focus == FocusNow::Take && !editor_shown && self.centre_tab == tab {
                             response.request_focus();
                         }
                     }
@@ -3630,7 +3689,7 @@ impl Shell {
             editor
                 .view
                 .set_notes(line_notes(&context.workbench, editor));
-            let requests = editor.show(ui, theme, &view_style(theme));
+            let requests = editor.show(ui, theme, &theme.view_style());
             let mut requests = requests;
             if let Some(line) = editor.view.take_note_click() {
                 let offset = editor.view.state().buffer().offset(Position::new(line, 0));
@@ -3690,21 +3749,32 @@ impl Shell {
     }
 }
 
-/// The centre's own tabs after the files' tabs: the Editor tab too when no file is open.
-const fn centre_tabs(no_file: bool) -> &'static [(CentreTab, Text)] {
-    if no_file {
-        &[
-            (CentreTab::Editor, Text::Editor),
-            (CentreTab::Search, Text::ProjectSearch),
-            (CentreTab::Game, Text::Game),
-            (CentreTab::Map, Text::Map),
-        ]
-    } else {
-        &[
-            (CentreTab::Search, Text::ProjectSearch),
-            (CentreTab::Game, Text::Game),
-            (CentreTab::Map, Text::Map),
-        ]
+/// Whether any file is open in the centre.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OpenFiles {
+    /// None is.
+    None,
+    /// At least one is.
+    Some,
+}
+
+impl OpenFiles {
+    /// The centre's tabs beside the files': the editor's own tab only when no file is open.
+    const fn centre_tabs(self) -> &'static [(CentreTab, Text)] {
+        if let Self::None = self {
+            &[
+                (CentreTab::Editor, Text::Editor),
+                (CentreTab::Search, Text::ProjectSearch),
+                (CentreTab::Game, Text::Game),
+                (CentreTab::Map, Text::Map),
+            ]
+        } else {
+            &[
+                (CentreTab::Search, Text::ProjectSearch),
+                (CentreTab::Game, Text::Game),
+                (CentreTab::Map, Text::Map),
+            ]
+        }
     }
 }
 
@@ -3722,7 +3792,10 @@ fn breadcrumb(
         .unwrap_or(&editor.path);
     let muted = theme.color(Token::TextMuted);
     let separator = Text::PathSeparator.get();
-    let frame = egui::Frame::NONE.inner_margin(egui::Margin::symmetric(BREADCRUMB_INDENT, 4));
+    let frame = egui::Frame::NONE.inner_margin(egui::Margin::symmetric(
+        BREADCRUMB_INDENT,
+        BREADCRUMB_MARGIN,
+    ));
     frame.show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
@@ -3755,6 +3828,8 @@ fn breadcrumb(
 /// The breadcrumb's indent, in points: the gutter's padding, so it lines up with the line
 /// numbers below it.
 const BREADCRUMB_INDENT: i8 = 12;
+/// The breadcrumb bar's margin above and below.
+const BREADCRUMB_MARGIN: i8 = 4;
 
 /// What a click on a file's tab asks for.
 enum TabAction {
@@ -3764,25 +3839,43 @@ enum TabAction {
     Close(PathBuf),
 }
 
+/// Whether a file's text is saved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Saved {
+    /// It is.
+    Saved,
+    /// It has unsaved changes.
+    Unsaved,
+}
+
+/// Whether a file's tab is the one shown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shown {
+    /// It is.
+    Shown,
+    /// Another is, or a centre tab.
+    Hidden,
+}
+
 /// A file's tab: its name, a dot when it is unsaved, and a button that closes it.
 fn file_tab(
     ui: &mut Ui,
     theme: &Theme,
     path: &Path,
-    unsaved: bool,
-    shown: bool,
+    saved: Saved,
+    shown: Shown,
 ) -> Option<TabAction> {
     let name = path
         .file_name()
         .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy());
-    let label = if unsaved {
+    let label = if saved == Saved::Unsaved {
         format!("{name} {}", Text::UnsavedMark.get())
     } else {
         name.into_owned()
     };
     let mut action = None;
     let tab = ui
-        .selectable_label(shown, label)
+        .selectable_label(shown == Shown::Shown, label)
         .on_hover_text(path.to_string_lossy());
     // A screen reader says it is a tab, not one more button; the tree's row is the button.
     ui.ctx().accesskit_node_builder(tab.id, |node| {
@@ -3845,8 +3938,9 @@ fn right(
     theme: &Theme,
     (workbench, preview): (&Workbench<FsLoader>, &Preview),
     (properties, agent, map_editor): (&mut Properties, &mut AgentPanel, Option<&mut MapEditor>),
-    focus: bool,
+    focus: FocusNow,
 ) -> (Option<EntityAction>, Option<AgentAction>, Vec<MapAction>) {
+    let focus = focus == FocusNow::Take;
     let mut entity_action = None;
     let mut map_actions = Vec::new();
     let first = if let Some(map_editor) = map_editor {
@@ -3864,7 +3958,7 @@ fn right(
     if focus {
         first.request_focus();
     }
-    ui.add_space(theme.space(3));
+    ui.add_space(theme.space(SECTION_GAP));
     heading(ui, theme, Text::Agent);
     let agent_action = agent.ui(ui, theme, &workbench.staged_hunks());
     (entity_action, agent_action, map_actions)
@@ -3908,8 +4002,9 @@ fn left(
     theme: &Theme,
     (workbench, (recent, error)): (&Workbench<FsLoader>, (&[PathBuf], Option<&str>)),
     scope: &mut SymbolScope,
-    focus: bool,
+    focus: FocusNow,
 ) -> Option<LeftAction> {
+    let focus = focus == FocusNow::Take;
     let height = ui.available_height();
     let mut jump = None;
     let project = heading(ui, theme, Text::Project);
@@ -3939,7 +4034,7 @@ fn left(
                 });
         }
     }
-    ui.add_space(theme.space(3));
+    ui.add_space(theme.space(SECTION_GAP));
     heading(ui, theme, Text::Symbols);
     let symbols = project::symbols_ui(
         ui,
@@ -4013,30 +4108,32 @@ fn no_project(
     action
 }
 
-/// The editor's colours and font, from the theme's tokens.
-pub(crate) fn view_style(theme: &Theme) -> ViewStyle {
-    ViewStyle {
-        font: egui::FontId::monospace(theme.type_scale.code.size),
-        background: theme.color(Token::SurfaceEditor),
-        current_line: theme.color(Token::SurfaceCurrentLine),
-        selection: theme.color(Token::SelectFocus),
-        text: theme.color(Token::TextCode),
-        line_number: theme.color(Token::TextFaint),
-        caret: theme.color(Token::Accent),
-        added: theme.color(Token::DiffAdded),
-        removed: theme.color(Token::StatusErrorBg),
-        removed_text: theme.color(Token::TextOnError),
-        paused_line: theme.color(Token::DebugPausedLine),
-        paused_mark: theme.color(Token::StatusWarn),
-        breakpoint: theme.color(Token::StatusError),
-        indent_guide: theme.color(Token::Border),
-        added_mark: theme.color(Token::StatusOk),
-        modified_mark: theme.color(Token::StatusWarn),
-        removed_mark: theme.color(Token::StatusError),
-        inlay: theme.color(Token::TextFaint),
-        note_error: theme.color(Token::StatusError),
-        note_warning: theme.color(Token::StatusWarn),
-        lightbulb: theme.color(Token::Accent),
+impl Theme {
+    /// The editor's colours and font, from the theme's tokens.
+    pub(crate) fn view_style(&self) -> ViewStyle {
+        ViewStyle {
+            font: egui::FontId::monospace(self.type_scale.code.size),
+            background: self.color(Token::SurfaceEditor),
+            current_line: self.color(Token::SurfaceCurrentLine),
+            selection: self.color(Token::SelectFocus),
+            text: self.color(Token::TextCode),
+            line_number: self.color(Token::TextFaint),
+            caret: self.color(Token::Accent),
+            added: self.color(Token::DiffAdded),
+            removed: self.color(Token::StatusErrorBg),
+            removed_text: self.color(Token::TextOnError),
+            paused_line: self.color(Token::DebugPausedLine),
+            paused_mark: self.color(Token::StatusWarn),
+            breakpoint: self.color(Token::StatusError),
+            indent_guide: self.color(Token::Border),
+            added_mark: self.color(Token::StatusOk),
+            modified_mark: self.color(Token::StatusWarn),
+            removed_mark: self.color(Token::StatusError),
+            inlay: self.color(Token::TextFaint),
+            note_error: self.color(Token::StatusError),
+            note_warning: self.color(Token::StatusWarn),
+            lightbulb: self.color(Token::Accent),
+        }
     }
 }
 
@@ -4067,8 +4164,9 @@ fn bottom(
     tab: &mut BottomTab,
     (workbench, preview, input): (&Workbench<FsLoader>, &Preview, &mut DebugInput),
     (terminal_view, git_view): (&mut TerminalView, &mut GitView),
-    focus: bool,
+    focus: FocusNow,
 ) -> Option<BottomAction> {
+    let focus = focus == FocusNow::Take;
     let problems = workbench.problems();
     ui.horizontal(|ui| {
         for (value, text) in [
@@ -4299,11 +4397,13 @@ fn status_dot(ui: &mut Ui, colour: egui::Color32) {
     let size = ui.text_style_height(&egui::TextStyle::Small);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
     ui.painter()
-        .circle_filled(rect.center(), size / 4.0, colour);
+        .circle_filled(rect.center(), size / STATUS_DOT_PARTS, colour);
 }
 
 /// How many of the open file's commits the Git tab lists.
 const HISTORY: usize = 50;
+/// A status dot's radius as a part of the line's height: a quarter.
+const STATUS_DOT_PARTS: f32 = 4.0;
 
 /// The outline panel's width, in points, as the left panel's Symbols are wide.
 const OUTLINE_WIDTH: f32 = 220.0;

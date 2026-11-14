@@ -54,7 +54,7 @@ fn the_scene_holds_the_brushes_and_the_entities_boxes() {
             .unwrap()
     };
     assert_eq!(shape(2).bounds, [[64.0, 32.0, 0.0], [128.0, 96.0, 88.0]]);
-    assert!((shape(2).yaw - 180.0).abs() < f32::EPSILON);
+    assert!((shape(2).yaw.get() - 180.0).abs() < f32::EPSILON);
     assert_eq!(shape(3).bounds, [[-8.0, -8.0, 184.0], [8.0, 8.0, 200.0]]);
     assert!(shape(4).brush);
     assert_eq!(shape(4).bounds, [[224.0, -64.0, 0.0], [240.0, 64.0, 128.0]]);
