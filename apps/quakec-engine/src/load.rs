@@ -383,7 +383,7 @@ pub(crate) fn load(
     }
     for (_, list) in &others {
         for (_, entity) in list {
-            play.add_instance(*entity, next);
+            play.add_instance(qs_client::EntitySlot::new(*entity), next);
             next = next.saturating_add(1);
         }
     }

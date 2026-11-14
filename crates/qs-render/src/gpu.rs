@@ -236,6 +236,25 @@ pub struct FlatVertex {
     pub color: [f32; 4],
 }
 
+/// How a 2D draw meets the screen: alpha tested, or blended with no alpha test.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlatBlend {
+    /// A picture, a character or a fill: its transparent texels cut.
+    AlphaTest,
+    /// The view blend or `Draw_FadeScreen`: blended over the screen.
+    Blended,
+}
+
+impl FlatBlend {
+    /// The 2D pipeline it is drawn with, the alpha-tested one first.
+    const fn pipeline(self) -> usize {
+        match self {
+            Self::AlphaTest => 0,
+            Self::Blended => 1,
+        }
+    }
+}
+
 /// One run of the 2D layer's vertices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FlatDraw {
@@ -243,8 +262,8 @@ pub struct FlatDraw {
     /// `None` for the white texel, a fill or a blend.
     pub pic: Option<usize>,
     /// Whether it is blended over the screen with no alpha test (the view blend,
-    /// `Draw_FadeScreen`) instead of alpha tested (a picture, a character, a fill).
-    pub blend: bool,
+    /// `Draw_FadeScreen`) or alpha tested (a picture, a character, a fill).
+    pub blend: FlatBlend,
     /// Its first vertex.
     pub first: u32,
     /// Its vertices, six a quad.
@@ -1001,7 +1020,7 @@ impl MapRenderer {
                 Some(index) => self.pics.get(index),
                 None => Some(&self.white),
             };
-            let pipeline = self.flat_pipelines.get(usize::from(draw.blend));
+            let pipeline = self.flat_pipelines.get(draw.blend.pipeline());
             if let (Some(pic), Some(pipeline)) = (pic, pipeline) {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(1, pic, &[]);
@@ -1412,9 +1431,9 @@ mod tests {
     use qs_bsp::{SURF_DRAWSKY, SURF_DRAWTURB};
 
     use super::{
-        ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, FlatDraw, FlatFrame, FlatVertex, Fog,
-        MapCallback, MapRenderer, ModelFrame, Pass, SpriteDraw, SpriteFrame, View, alias_bytes,
-        grown,
+        ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, FlatBlend, FlatDraw, FlatFrame,
+        FlatVertex, Fog, MapCallback, MapRenderer, ModelFrame, Pass, SpriteDraw, SpriteFrame, View,
+        alias_bytes, grown,
     };
     use crate::alias::AliasVertex;
     use crate::camera::Camera;
@@ -1966,13 +1985,13 @@ mod tests {
             draws: vec![
                 FlatDraw {
                     pic: None,
-                    blend: false,
+                    blend: FlatBlend::AlphaTest,
                     first: 0,
                     count: 6,
                 },
                 FlatDraw {
                     pic: None,
-                    blend: true,
+                    blend: FlatBlend::Blended,
                     first: 6,
                     count: 6,
                 },

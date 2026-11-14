@@ -16,7 +16,7 @@ use qs_wad::{WAD_MAGIC, WAD_TYP_QPIC};
 
 use super::{FogState, Model, Pics, Play, PlayError, fog_parse_worldspawn};
 use crate::alias::tests::{MdlSpec, SkinSpec, mdl};
-use crate::gpu::{FlatDraw, Fog};
+use crate::gpu::{FlatBlend, FlatDraw, Fog};
 use crate::md5::tests::{Md5Spec, md5mesh};
 use crate::mesh::tests::{MapSpec, bsp, palette, samples};
 use crate::mesh::{Image, MapMesh};
@@ -197,7 +197,7 @@ fn bar_items_are_centred_at_the_bottom() {
     assert_eq!(bar.len(), 2, "two pictures, two draws");
     assert_eq!(bar[0].1, [([160.0, 456.0], [320.0, 24.0])]);
     assert_eq!(bar[0].0.pic, Some(0));
-    assert!(!bar[0].0.blend);
+    assert_eq!(bar[0].0.blend, FlatBlend::AlphaTest);
     assert_eq!(bar[1].1, [([184.0, 432.0], [24.0, 24.0])]);
     let deathmatch = Hud {
         deathmatch: true,
@@ -307,7 +307,7 @@ fn fills_are_palette_colours() {
         ),
     );
     assert_eq!(out[0].0.pic, None);
-    assert!(!out[0].0.blend);
+    assert_eq!(out[0].0.blend, FlatBlend::AlphaTest);
     assert_eq!(out[0].1, [([10.0, 20.0], [28.0, 4.0])]);
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
@@ -356,7 +356,7 @@ fn the_view_blend_comes_first_when_it_has_alpha() {
     let callback = play.frame(&scene, &hud, &bsp, &mut mesh, 1.0);
     assert_eq!(callback.flat.draws.len(), 2);
     assert_eq!(callback.flat.draws[0].pic, None);
-    assert!(callback.flat.draws[0].blend);
+    assert_eq!(callback.flat.draws[0].blend, FlatBlend::Blended);
     let [x, y] = callback.flat.vertices[2].position;
     assert_eq!([x, y], [640.0, 480.0]);
     assert_eq!(callback.flat.vertices[0].color, [1.0, 0.5, 0.0, 0.3]);
@@ -698,7 +698,7 @@ fn the_console_background_shows_while_it_slides() {
     };
     let half = layer(&mut play, &back(240));
     let (draw, quads) = half.last().unwrap();
-    assert!(draw.blend, "translucent while sliding");
+    assert_eq!(draw.blend, FlatBlend::Blended, "translucent while sliding");
     assert_eq!(quads[0], ([0.0, -240.0], [640.0, 480.0]));
     let lighting = samples(&[50]);
     let bsp = bsp(&MapSpec::default(), &lighting);
@@ -709,7 +709,11 @@ fn the_console_background_shows_while_it_slides() {
     let alpha = callback.flat.vertices[first].color[3];
     assert!((alpha - 1.2 * 120.0 / 360.0).abs() < 1e-6, "{alpha}");
     let full = layer(&mut play, &back(400));
-    assert!(!full.last().unwrap().0.blend, "opaque past three quarters");
+    assert_eq!(
+        full.last().unwrap().0.blend,
+        FlatBlend::AlphaTest,
+        "opaque past three quarters"
+    );
 }
 
 // spec REND-13.8: in QuakeSpasm's look the menus' 320 by 200 canvas is centred both ways and

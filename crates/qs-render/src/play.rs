@@ -16,14 +16,14 @@
 use std::sync::Arc;
 
 use qs_bsp::Bsp;
-use qs_client::{Anchor, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
+use qs_client::{Anchor, EntitySlot, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
 use qs_wad::{Conchars, QPic, WAD_CONCHARS_TRANSPARENT, Wad};
 
 use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, TORCHES, entity_light};
 use crate::camera::Camera;
 use crate::gpu::{
-    AliasDraw, Assets, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame, PLAYER_SKINS,
-    PlayerSkin, SkinKey, SpriteDraw, SpriteFrame, View,
+    AliasDraw, Assets, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame,
+    PLAYER_SKINS, PlayerSkin, SkinKey, SpriteDraw, SpriteFrame, View,
 };
 use crate::light::light_point;
 use crate::look::Look;
@@ -257,7 +257,7 @@ pub struct Play {
     skin_glows: Vec<Option<Image>>,
     frames: Vec<Image>,
     /// Each external brush model instance: its entity number and the mesh's model index.
-    instances: Vec<(usize, usize)>,
+    instances: Vec<(EntitySlot, usize)>,
     /// The map's fog, and its fades (REND-10.1 to REND-10.3).
     pub fog: FogState,
     /// `r_wateralpha` (REND-9.1).
@@ -446,7 +446,7 @@ impl Play {
     }
 
     /// Records that entity `entity`'s external brush model is the mesh's model `mesh_model`.
-    pub fn add_instance(&mut self, entity: usize, mesh_model: usize) {
+    pub fn add_instance(&mut self, entity: EntitySlot, mesh_model: usize) {
         self.instances.push((entity, mesh_model));
     }
 
@@ -570,10 +570,7 @@ impl Play {
                     self.place(&mut placements, *n, entity);
                 }
                 Some(Model::External) => {
-                    if let Some(&(_, n)) = self
-                        .instances
-                        .iter()
-                        .find(|(e, _)| *e == entity.entity.get())
+                    if let Some(&(_, n)) = self.instances.iter().find(|(e, _)| *e == entity.entity)
                     {
                         self.place(&mut placements, n, entity);
                     }
@@ -607,10 +604,9 @@ impl Play {
         let mut flat = FlatFrame::default();
         // R_PolyBlend: `if (!v_blend[3]) return`.
         if scene.blend[3] != 0.0 {
-            quad(
-                &mut flat,
+            flat.quad(
                 None,
-                true,
+                FlatBlend::Blended,
                 [0.0, 0.0],
                 screen,
                 [[0.0, 0.0], [1.0, 1.0]],
@@ -677,7 +673,7 @@ impl Play {
                     .map(|placed| (placed.anchor, &placed.item)),
             );
         for (anchor, item) in items {
-            let canvas = self.canvas(anchor, hud.deathmatch);
+            let canvas = self.canvas(anchor, hud);
             let first = flat.vertices.len();
             self.draw_item(item, canvas.width, flat);
             canvas.place(flat.vertices.get_mut(first..).unwrap_or_default());
@@ -689,7 +685,7 @@ impl Play {
     /// area centred across it; or QuakeSpasm's `GL_SetCanvas`, the window's own size, with the
     /// bar's canvas at its bottom centre and the menus' 320 by 200 centred both ways, each at
     /// scale 1.
-    fn canvas(&self, anchor: Anchor, deathmatch: bool) -> Canvas {
+    fn canvas(&self, anchor: Anchor, hud: &Hud) -> Canvas {
         let [width, height] = self.screen;
         let centring = width.saturating_sub(BAR_WIDTH) >> 1;
         let at = |x: i32, y: i32, w: i32| Canvas {
@@ -698,7 +694,9 @@ impl Play {
             width: w,
         };
         match (anchor, self.look) {
-            (Anchor::Bar, _) if deathmatch => at(0, height.saturating_sub(HUD_SBAR_HEIGHT), width),
+            (Anchor::Bar, _) if hud.deathmatch => {
+                at(0, height.saturating_sub(HUD_SBAR_HEIGHT), width)
+            }
             (Anchor::Bar, _) => at(centring, height.saturating_sub(HUD_SBAR_HEIGHT), BAR_WIDTH),
             (Anchor::Centered, Look::GlQuake) => at(centring, 0, BAR_WIDTH),
             (Anchor::Centered, Look::QuakeSpasm) => {
@@ -715,10 +713,9 @@ impl Play {
                 if let Some((pic, image)) = self.pics.get(name) {
                     let at = [*x, *y].map(f32_of_i32);
                     let size = [f32_of_u32(image.width), f32_of_u32(image.height)];
-                    quad(
-                        flat,
+                    flat.quad(
                         Some(pic),
-                        false,
+                        FlatBlend::AlphaTest,
                         at,
                         size,
                         [[0.0, 0.0], [1.0, 1.0]],
@@ -732,10 +729,9 @@ impl Play {
                     let x = x.unwrap_or_else(|| centred(width, image.width));
                     let at = [x, *y].map(f32_of_i32);
                     let size = [f32_of_u32(image.width), f32_of_u32(image.height)];
-                    quad(
-                        flat,
+                    flat.quad(
                         Some(pic),
-                        false,
+                        FlatBlend::AlphaTest,
                         at,
                         size,
                         [[0.0, 0.0], [1.0, 1.0]],
@@ -756,7 +752,14 @@ impl Play {
                 let column = f32::from(ch & 15) * CHAR_CELL;
                 let at = [f32_of_i32(*x), f32_of_i32(y)];
                 let texture = [[column, row], [column + CHAR_CELL, row + CHAR_CELL]];
-                quad(flat, Some(pic), false, at, [CHAR_SIDE; 2], texture, WHITE);
+                flat.quad(
+                    Some(pic),
+                    FlatBlend::AlphaTest,
+                    at,
+                    [CHAR_SIDE; 2],
+                    texture,
+                    WHITE,
+                );
             }
             HudItem::ConsoleBack {
                 lines,
@@ -770,9 +773,12 @@ impl Play {
                     let at = [0.0, f32_of_i32(lines.saturating_sub(*height))];
                     let size = [f32_of_i32(width), f32_of_i32(*height)];
                     // `Draw_AlphaPic` blends with the alpha test off; `Draw_Pic` tests it.
-                    let translucent = alpha < 1.0;
-                    quad(
-                        flat,
+                    let translucent = if alpha < 1.0 {
+                        FlatBlend::Blended
+                    } else {
+                        FlatBlend::AlphaTest
+                    };
+                    flat.quad(
                         Some(pic),
                         translucent,
                         at,
@@ -785,10 +791,9 @@ impl Play {
             HudItem::Fade => {
                 // `Draw_FadeScreen`: black over the whole screen, blended (REND-13.7).
                 let size = [self.screen[0], self.screen[1]].map(f32_of_i32);
-                quad(
-                    flat,
+                flat.quad(
                     None,
-                    true,
+                    FlatBlend::Blended,
                     [0.0, 0.0],
                     size,
                     [[0.0, 0.0], [1.0, 1.0]],
@@ -805,10 +810,9 @@ impl Play {
                     1.0,
                 ];
                 let at = [*x, *y].map(f32_of_i32);
-                quad(
-                    flat,
+                flat.quad(
                     None,
-                    false,
+                    FlatBlend::AlphaTest,
                     at,
                     [*w, *h].map(f32_of_i32),
                     [[0.0, 0.0], [1.0, 1.0]],
@@ -824,7 +828,7 @@ impl Model {
     /// (REND-4, REND-13); nothing for another model.
     fn draw_alias(&self, entity: &AliasEntity, time: f32, out: &mut ModelFrame) {
         match self {
-            Self::Alias(model, first) => draw_alias(model, *first, entity, time, out),
+            Self::Alias(model, first) => model.draw_skinned(*first, entity, time, out),
             Self::Md5(model, first) => {
                 let mut start = out.vertices.len();
                 for (count, image) in model.draw(entity, f64::from(time), &mut out.vertices) {
@@ -841,21 +845,23 @@ impl Model {
     }
 }
 
-/// An entity's alias triangles into `out`, drawn with its skin (REND-4).
-fn draw_alias(
-    model: &AliasModel,
-    first_skin: usize,
-    entity: &AliasEntity,
-    time: f32,
-    out: &mut ModelFrame,
-) {
-    let start = out.vertices.len();
-    let image = model.draw(entity, f64::from(time), &mut out.vertices);
-    out.draws.push(AliasDraw {
-        skin: first_skin.saturating_add(image),
-        first: u32_of(start),
-        count: u32_of(out.vertices.len().saturating_sub(start)),
-    });
+impl AliasModel {
+    /// An entity's alias triangles into `out`, drawn with its skin (REND-4).
+    fn draw_skinned(
+        &self,
+        first_skin: usize,
+        entity: &AliasEntity,
+        time: f32,
+        out: &mut ModelFrame,
+    ) {
+        let start = out.vertices.len();
+        let image = self.draw(entity, f64::from(time), &mut out.vertices);
+        out.draws.push(AliasDraw {
+            skin: first_skin.saturating_add(image),
+            first: u32_of(start),
+            count: u32_of(out.vertices.len().saturating_sub(start)),
+        });
+    }
 }
 
 /// Where a 2D item's canvas sits on the screen: its top left and its scale, and how wide it is
@@ -888,45 +894,47 @@ fn centred(width: i32, image_width: u32) -> i32 {
         .wrapping_div(2)
 }
 
-/// A quad of the 2D layer at `at` of `size`, its texture from `texture[0]` to `texture[1]`,
-/// joined to the last draw when it uses the same picture and blending.
-fn quad(
-    flat: &mut FlatFrame,
-    pic: Option<usize>,
-    blend: bool,
-    at: [f32; 2],
-    size: [f32; 2],
-    texture: [[f32; 2]; 2],
-    color: [f32; 4],
-) {
-    let [x, y] = at;
-    let [w, h] = size;
-    let [[s0, t0], [s1, t1]] = texture;
-    let corner = |position, texture| FlatVertex {
-        position,
-        texture,
-        color,
-    };
-    let corners = [
-        corner([x, y], [s0, t0]),
-        corner([x + w, y], [s1, t0]),
-        corner([x + w, y + h], [s1, t1]),
-        corner([x, y + h], [s0, t1]),
-    ];
-    let first = u32_of(flat.vertices.len());
-    flat.vertices.extend([
-        corners[0], corners[1], corners[2], corners[0], corners[2], corners[3],
-    ]);
-    match flat.draws.last_mut() {
-        Some(last) if last.pic == pic && last.blend == blend => {
-            last.count = last.count.saturating_add(6);
+impl FlatFrame {
+    /// A quad of the 2D layer at `at` of `size`, its texture from `texture[0]` to `texture[1]`,
+    /// joined to the last draw when it uses the same picture and blending.
+    fn quad(
+        &mut self,
+        pic: Option<usize>,
+        blend: FlatBlend,
+        at: [f32; 2],
+        size: [f32; 2],
+        texture: [[f32; 2]; 2],
+        color: [f32; 4],
+    ) {
+        let [x, y] = at;
+        let [w, h] = size;
+        let [[s0, t0], [s1, t1]] = texture;
+        let corner = |position, texture| FlatVertex {
+            position,
+            texture,
+            color,
+        };
+        let corners = [
+            corner([x, y], [s0, t0]),
+            corner([x + w, y], [s1, t0]),
+            corner([x + w, y + h], [s1, t1]),
+            corner([x, y + h], [s0, t1]),
+        ];
+        let first = u32_of(self.vertices.len());
+        self.vertices.extend([
+            corners[0], corners[1], corners[2], corners[0], corners[2], corners[3],
+        ]);
+        match self.draws.last_mut() {
+            Some(last) if last.pic == pic && last.blend == blend => {
+                last.count = last.count.saturating_add(6);
+            }
+            _ => self.draws.push(FlatDraw {
+                pic,
+                blend,
+                first,
+                count: 6,
+            }),
         }
-        _ => flat.draws.push(FlatDraw {
-            pic,
-            blend,
-            first,
-            count: 6,
-        }),
     }
 }
 
