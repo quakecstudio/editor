@@ -15,5 +15,6 @@
     )
 )]
 
+pub(crate) mod game;
 pub(crate) mod vec;
 pub(crate) mod winding;

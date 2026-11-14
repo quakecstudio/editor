@@ -654,3 +654,32 @@ point on a plane (`mathlib.hh`).
   parts; an edge crossing gives both the point where it crosses, "`avoid round off error when
   possible`": a component of an axial normal is the plane's distance, 1 giving `dist` and -1
   `-dist`.
+- **QBSP-15.9** Contents are ericw-tools' `contentflags_t`, a superset for every game: the
+  visible contents solid, sky, detail wall, window, visblocker, aux, lava, slime, water and mist
+  (bits 0 to 9, strongest first), the invisible contents origin, player clip, monster clip, area
+  portal and projectile clip, and flags among them mirror inside, translucent and detail
+  (`bspfile_common.hh`). Detail contents are made as `create_detail_*_contents` makes them: solid
+  "`flags |= (EWT_VISCONTENTS_SOLID | EWT_CFLAG_DETAIL)`"; a wall not solid, a detail wall,
+  detail; a fence not solid, a window, translucent, detail; illusionary not solid, mist,
+  translucent, detail. "Solid" is structural solid: "`(flags & EWT_VISCONTENTS_SOLID) && !(flags
+  & EWT_CFLAG_DETAIL)`"; a leaf "`seals_map`" when solid or sky.
+- **QBSP-15.10** Two contents in one place combine (`combine_contents`) as both, but structural
+  solid, sky or a visblocker on either takes away both's detail and translucency; a cluster
+  (`cluster_contents`) is both, solid only when both are.
+- **QBSP-15.11** A portal between two contents shows the strongest visible contents that change
+  across it (`portal_visible_contents`): none between solid or sky on both sides, else of the
+  two's exclusive or, or of both when either suppresses clipping of its own type. A brush's side
+  gives a face for it (`portal_generates_face`) when the brush has those contents; on the side's
+  back only when the brush mirrors inside, and by default not for a window, aux or detail wall.
+  A portal can be seen through (`portal_can_see_through`) unless either side is solid, when both
+  have the same visible contents, or would once translucent or detail sides count as empty.
+- **QBSP-15.12** Quake's native contents are `CONTENTS_EMPTY` -1 to `CONTENTS_SKY` -6. Contents
+  are written (`contents_to_native`) as the first of solid, sky, lava, slime and water they
+  have, empty with none; a detail wall, window, visblocker, aux or mist met first cannot be
+  written ("not representable in Q1"). Before writing (`contents_remap_for_export`) a window or
+  detail wall becomes solid, and mist, aux and a visblocker are cleared. The clipping hulls are
+  the point, -16 -16 -32 to 16 16 24, and -32 -32 -64 to 32 32 24 (`get_hull_sizes`).
+- **QBSP-15.13** A face's contents come from its texture's name (`face_get_contents`), in any
+  case: `origin` origin; `hint` or `hintskip` empty; `clip` player clip; a name starting `*` lava
+  ("`*lava`"), slime ("`*slime`") or else water, detail and translucent while `-transwater`, its
+  default, is on; a name starting `sky` sky; anything else solid.
