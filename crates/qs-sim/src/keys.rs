@@ -115,8 +115,7 @@ pub fn key_from_name(name: &[u8]) -> Option<u8> {
 
 /// `F1` to `F12`, `JOY1` to `JOY4` and `AUX1` to `AUX32`, any case.
 fn numbered(name: &str) -> Option<u8> {
-    let runs = NUMBERED_KEYS;
-    for (prefix, first, count) in runs {
+    for (prefix, first, count) in NUMBERED_KEYS {
         let Some(head) = name.get(..prefix.len()) else {
             continue;
         };
@@ -147,8 +146,7 @@ pub fn key_name(key: u8) -> String {
     if let Some((name, _)) = NAMED.iter().find(|(_, k)| *k == key) {
         return (*name).to_owned();
     }
-    let runs = NUMBERED_KEYS;
-    for (prefix, first, count) in runs {
+    for (prefix, first, count) in NUMBERED_KEYS {
         let n = key.wrapping_sub(first);
         if key >= first && n < count {
             return format!("{prefix}{}", n.saturating_add(1));

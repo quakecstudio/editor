@@ -7,7 +7,7 @@
 use qc_progs::Progs;
 use qc_vm::{ErrorKind, StackEntry};
 use qs_bridge::{ErrorCode, RpcError};
-use qs_sim::debug::Breakpoint as Toggle;
+use qs_sim::debug::BreakpointEdit;
 use qs_sim::debug::{Debugger, StepKind, Stop, locate, resolve};
 use qs_sim::{World, WorldError};
 use serde_json::{Map, Value, json};
@@ -125,7 +125,8 @@ impl Game {
             file: file.to_owned(),
             line,
         });
-        self.debugger().set_breakpoint(statement, Toggle::Set);
+        self.debugger()
+            .set_breakpoint(statement, BreakpointEdit::Set);
         let function = function_of(progs, statement);
         Ok(json!({ "id": id, "location": self.location_json(progs, function, statement) }))
     }
@@ -145,7 +146,7 @@ impl Game {
             .any(|b| b.statement == removed.statement)
         {
             self.debugger()
-                .set_breakpoint(removed.statement, Toggle::Clear);
+                .set_breakpoint(removed.statement, BreakpointEdit::Clear);
         }
         Ok(json!({}))
     }

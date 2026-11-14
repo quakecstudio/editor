@@ -60,7 +60,7 @@ enum qs_sim::collision::CollisionError
 enum qs_sim::collision::Solid
 enum qs_sim::collision::area::MoveKind
 enum qs_sim::collision::hull::EntityHull
-enum qs_sim::debug::Breakpoint
+enum qs_sim::debug::BreakpointEdit
 enum qs_sim::debug::StepKind
 enum qs_sim::input::Button
 enum qs_sim::messages::GameKind
@@ -333,6 +333,7 @@ fn qs_sim::scenario::Scenario::play
 fn qs_sim::scenario::Scenario::run
 fn qs_sim::scenario::Seconds::get
 fn qs_sim::scenario::Seconds::new
+fn qs_sim::spawn::Deathmatch::from_setting
 fn qs_sim::spawn::Parser::new
 fn qs_sim::spawn::Parser::next_token
 fn qs_sim::spawn::SpawnHost::allocate
@@ -614,8 +615,8 @@ variant qs_sim::collision::area::MoveKind::NoMonsters
 variant qs_sim::collision::area::MoveKind::Normal
 variant qs_sim::collision::hull::EntityHull::Box
 variant qs_sim::collision::hull::EntityHull::Brush
-variant qs_sim::debug::Breakpoint::Clear
-variant qs_sim::debug::Breakpoint::Set
+variant qs_sim::debug::BreakpointEdit::Clear
+variant qs_sim::debug::BreakpointEdit::Set
 variant qs_sim::debug::StepKind::In
 variant qs_sim::debug::StepKind::Out
 variant qs_sim::debug::StepKind::Over

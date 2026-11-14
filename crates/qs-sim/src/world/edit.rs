@@ -10,11 +10,11 @@ use qc_types::{DefType, Etype, Slot};
 use qc_vm::ServerState;
 
 use super::{CLIENT, Spawner, World};
-use crate::POINT;
 use crate::builtins::SimCall;
 use crate::collision::MoveKind;
 use crate::spawn::{EdictPlace, SpawnHost, apply_key};
 use crate::world::QcValue;
+use crate::{POINT, ZERO};
 
 /// Why an edit was not made.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -289,7 +289,7 @@ impl World {
         let mut call = SimCall::frame(&mut self.machine, progs, &mut self.builtins);
         call.set_vector(CLIENT, "origin", origin);
         call.set_vector(CLIENT, "angles", angles);
-        call.set_vector(CLIENT, "velocity", POINT);
+        call.set_vector(CLIENT, "velocity", ZERO);
         call.set_float(CLIENT, "fixangle", 1.0);
         call.link(CLIENT, false)
             .map_err(|e| EditError::Spawn(e.to_string()))

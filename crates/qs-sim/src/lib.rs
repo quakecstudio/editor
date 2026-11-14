@@ -25,8 +25,12 @@ mod settings;
 pub mod spawn;
 mod world;
 
-/// A point's extent: a trace with no mins or maxs (WORLD-4), and a vector of zeros.
+/// A point's extent: a trace with no mins or maxs (WORLD-4).
 const POINT: [f32; 3] = [0.0; 3];
+/// A vector of zeros: no velocity, or a vector not found.
+const ZERO: [f32; 3] = [0.0; 3];
+/// Half: an edict's centre is its origin plus half its mins and maxs (BUILTIN-12.3, WORLD-8.8).
+const HALF: f32 = 0.5;
 
 pub use builtins::{ModelFiles, SimBuiltins};
 pub use client::UserCmd;

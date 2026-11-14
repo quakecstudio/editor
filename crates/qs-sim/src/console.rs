@@ -24,7 +24,7 @@ use qc_vm::convert::float_to_int;
 use crate::host_commands::{COLOR_MASK, COLOR_ROW, MAX_COLOR, Words, atoi, tokenize};
 use crate::input::Button;
 use crate::offsets::FieldOffset;
-use crate::physics::MOVETYPE_STEP;
+use crate::physics::MoveType;
 use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
 use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
@@ -697,11 +697,8 @@ impl World {
             if self.field(n, "model").as_i32() != 0 {
                 models = add_one(models);
             }
-            #[expect(
-                clippy::float_cmp_const,
-                reason = "spec PHYS-13.7: id's exact movetype comparison"
-            )]
-            if self.field(n, "movetype").as_f32() == MOVETYPE_STEP {
+            // PHYS-13.7: id's exact movetype comparison.
+            if MoveType::from_float(self.field(n, "movetype").as_f32()) == MoveType::Step {
                 step = add_one(step);
             }
         }

@@ -61,10 +61,10 @@ pub(crate) enum MoveType {
 /// The `movetype` values (EDICT-4.1).
 const MOVETYPE_NONE: f32 = 0.0;
 const MOVETYPE_WALK: f32 = 3.0;
-pub(crate) const MOVETYPE_STEP: f32 = 4.0;
+const MOVETYPE_STEP: f32 = 4.0;
 const MOVETYPE_FLY: f32 = 5.0;
 const MOVETYPE_TOSS: f32 = 6.0;
-pub(crate) const MOVETYPE_PUSH: f32 = 7.0;
+const MOVETYPE_PUSH: f32 = 7.0;
 const MOVETYPE_NOCLIP: f32 = 8.0;
 const MOVETYPE_FLYMISSILE: f32 = 9.0;
 const MOVETYPE_BOUNCE: f32 = 10.0;

@@ -11,16 +11,16 @@ use std::collections::BTreeSet;
 use qc_progs::Progs;
 use qc_vm::{Machine, Observer, RunError};
 
-/// How far a step goes from where the run stopped (BRIDGE-4.9, WORLD-9.3).
 /// Whether [`Debugger::set_breakpoint`] sets the breakpoint or clears it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Breakpoint {
+pub enum BreakpointEdit {
     /// Stop before the statement.
     Set,
     /// Stop there no more.
     Clear,
 }
 
+/// How far a step goes from where the run stopped (BRIDGE-4.9, WORLD-9.3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StepKind {
     /// One statement.
@@ -98,12 +98,12 @@ impl Debugger {
     }
 
     /// Sets or clears a breakpoint before `statement`.
-    pub fn set_breakpoint(&mut self, statement: i32, breakpoint: Breakpoint) {
-        match breakpoint {
-            Breakpoint::Set => {
+    pub fn set_breakpoint(&mut self, statement: i32, edit: BreakpointEdit) {
+        match edit {
+            BreakpointEdit::Set => {
                 self.breakpoints.insert(statement);
             }
-            Breakpoint::Clear => {
+            BreakpointEdit::Clear => {
                 self.breakpoints.remove(&statement);
             }
         }

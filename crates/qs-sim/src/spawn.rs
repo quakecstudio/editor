@@ -524,6 +524,14 @@ pub enum Deathmatch {
     Off,
 }
 
+impl Deathmatch {
+    /// The `deathmatch` setting's value read as on when it is not 0 (EDICT-8.4).
+    #[must_use]
+    pub fn from_setting(value: f32) -> Self {
+        if value == 0.0 { Self::Off } else { Self::On }
+    }
+}
+
 /// Where [`SpawnHost::allocate`] puts the next entity (EDICT-8.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EdictPlace {

@@ -8,7 +8,7 @@ use qc_edict::EdictNumber;
 use qc_progs::Progs;
 use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::Camera;
-use qs_sim::debug::Breakpoint as Toggle;
+use qs_sim::debug::BreakpointEdit;
 use qs_sim::{
     EdictChange, EditError, HostCommand, HostState, MapPlace, SpawnParms, World, WorldError,
 };
@@ -342,7 +342,7 @@ impl Game {
         self.next_breakpoint = old.next_breakpoint;
         for breakpoint in old.breakpoints {
             self.debugger()
-                .set_breakpoint(breakpoint.statement, Toggle::Set);
+                .set_breakpoint(breakpoint.statement, BreakpointEdit::Set);
             self.breakpoints.push(breakpoint);
         }
     }

@@ -34,7 +34,7 @@ use crate::input::Button;
 use crate::messages::ServerMessages;
 use crate::messages::{ClientMessages, GameKind};
 use crate::offsets::{FieldOffset, GlobalOffset};
-use crate::physics::MOVETYPE_PUSH;
+use crate::physics::MoveType;
 use crate::physics::Sound;
 use crate::rerelease::BuiltinTable;
 use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
@@ -404,7 +404,11 @@ impl World {
         world.set_field(0, field_slot("model"), Slot::from_i32(model));
         world.set_field(0, field_slot("modelindex"), Slot::from_f32(1.0));
         world.set_field(0, field_slot("solid"), Slot::from_f32(SOLID_BSP));
-        world.set_field(0, field_slot("movetype"), Slot::from_f32(MOVETYPE_PUSH));
+        world.set_field(
+            0,
+            field_slot("movetype"),
+            Slot::from_f32(MoveType::Push.to_float()),
+        );
         // EDICT-11.4: the globals.
         let mapname = world.make_string(map.as_bytes().to_vec());
         world.set_global("mapname", Slot::from_i32(mapname));
@@ -426,11 +430,7 @@ impl World {
         let spawned = spawn::load_from_file(
             &mut spawner,
             entities,
-            if deathmatch == 0.0 {
-                Deathmatch::Off
-            } else {
-                Deathmatch::On
-            },
+            Deathmatch::from_setting(deathmatch),
             skill,
         )
         .map_err(WorldError::Spawn)?;

@@ -25,17 +25,17 @@ use qc_vm::{Builtins, Context, ErrorKind, Machine, RunError, ServerState};
 use qs_bsp::{Bsp, BspLoader};
 use qs_mdl::Sprite;
 
-use crate::POINT;
 use crate::collision::{
     Body, Collision, CollisionError, Host, MoveKind, Solid, Trace, link_edict, sv_move,
 };
 use crate::debug::{Debugger, Watch};
 use crate::messages::{BIT_MASK, BYTE_SHIFT};
 use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages, WRITE_BYTE, WRITE_ENTITY};
-use crate::physics::MOVETYPE_PUSH;
+use crate::physics::MoveType;
 use crate::physics::{Sound, dot};
 use crate::rerelease::{BuiltinTable, RRE_NUM_BUILTINS};
 use crate::settings::Setting;
+use crate::{HALF, POINT, ZERO};
 
 /// `setorigin`.
 const SETORIGIN: u32 = 2;
@@ -79,11 +79,15 @@ const SPRINT: u32 = 24;
 const LIGHTSTYLE: u32 = 35;
 /// `particle` (BUILTIN-12.5).
 const PARTICLE: u32 = 48;
-/// `PF_aim`: the start's height above the origin, the straight trace's length, and the half of
-/// `mins + maxs` that is a target's centre (WORLD-8.8).
+/// `PF_aim`: the start's height above the origin and the straight trace's length (WORLD-8.8).
 const AIM_EYE: f32 = 20.0;
 const AIM_RANGE: f32 = 2048.0;
-const AIM_HALF: f64 = 0.5;
+/// A builtin's parameters, `OFS_PARM0` to `OFS_PARM4`, by number.
+pub(crate) const PARM0: u16 = 0;
+pub(crate) const PARM1: u16 = 1;
+pub(crate) const PARM2: u16 = 2;
+pub(crate) const PARM3: u16 = 3;
+pub(crate) const PARM4: u16 = 4;
 /// `centerprint` (BUILTIN-11.2).
 const CENTERPRINT: u32 = 73;
 /// `ambientsound` (BUILTIN-12.4).
@@ -253,13 +257,13 @@ impl Builtins for SimBuiltins {
             // WORLD-8.1: the mock sets the fields; the world links.
             SETORIGIN | SETMODEL | SETSIZE => {
                 self.mock.call(number, context)?;
-                let ent = parm_edict(&Vm::Builtin(context), 0)?;
+                let ent = Vm::Builtin(context).parm_edict(PARM0)?;
                 SimCall::new(context, self).link(ent, false)
             }
             // WORLD-8.3: ED_Free unlinks.
             REMOVE => {
                 self.mock.call(number, context)?;
-                let ent = parm_edict(&Vm::Builtin(context), 0)?;
+                let ent = Vm::Builtin(context).parm_edict(PARM0)?;
                 self.collision.unlink(ent);
                 Ok(())
             }
@@ -271,7 +275,7 @@ impl Builtins for SimBuiltins {
                 if self.mock.engine().buffers.signon > before {
                     self.messages.signon.write_bytes(&bytes);
                 }
-                let ent = parm_edict(&Vm::Builtin(context), 0)?;
+                let ent = Vm::Builtin(context).parm_edict(PARM0)?;
                 self.collision.unlink(ent);
                 Ok(())
             }
@@ -339,7 +343,7 @@ impl Builtins for SimBuiltins {
                 let before = self.mock.engine().buffers;
                 self.mock.call(number, context)?;
                 // A MSG_ONE write is not counted by the mock: mirror it on success.
-                let to = float_to_int(parm_float(&Vm::Builtin(context), 0));
+                let to = float_to_int(Vm::Builtin(context).parm_float(PARM0));
                 if to == 1 || self.mock.engine().buffers != before {
                     SimCall::new(context, self).mirror_write(number);
                 }
@@ -352,13 +356,13 @@ impl Builtins for SimBuiltins {
             WALKMOVE => SimCall::new(context, self).walkmove(),
             MOVETOGOAL => SimCall::new(context, self).move_to_goal(),
             CHECKBOTTOM => {
-                let ent = parm_edict(&Vm::Builtin(context), 0)?;
+                let ent = Vm::Builtin(context).parm_edict(PARM0)?;
                 let mut call = SimCall::new(context, self);
                 let bottom = call.bottom(ent)?;
                 call.set_return(if bottom { 1.0 } else { 0.0 })
             }
             POINTCONTENTS => {
-                let p = parm_vector(&Vm::Builtin(context), 0);
+                let p = Vm::Builtin(context).parm_vector(PARM0);
                 let mut call = SimCall::new(context, self);
                 let contents = call
                     .sim
@@ -663,10 +667,10 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
 
     /// `PF_traceline` (WORLD-8.4, BUILTIN-14.1, BUILTIN-14.2).
     fn traceline(&mut self) -> Result<(), RunError> {
-        let v1 = parm_vector(&self.context, 0);
-        let v2 = parm_vector(&self.context, 1);
-        let kind = float_to_int(parm_float(&self.context, 2));
-        let pass = parm_edict(&self.context, 3)?;
+        let v1 = self.context.parm_vector(PARM0);
+        let v2 = self.context.parm_vector(PARM1);
+        let kind = float_to_int(self.context.parm_float(PARM2));
+        let pass = self.context.parm_edict(PARM3)?;
         let trace = self.trace((v1, [0.0; 3], [0.0; 3], v2), MoveKind::from_int(kind), pass)?;
         let truth = |b: bool| Slot::from_f32(if b { 1.0 } else { 0.0 });
         self.set_global("trace_allsolid", truth(trace.allsolid));
@@ -724,7 +728,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
         reason = "spec WORLD-8.8: id compares takedamage and team exactly as floats"
     )]
     fn aim(&mut self) -> Result<(), RunError> {
-        let ent = parm_edict(&self.context, 0)?;
+        let ent = self.context.parm_edict(PARM0)?;
         let mut start = self.vector(ent, "origin");
         start[2] += AIM_EYE;
         let forward = self.global_vector("v_forward");
@@ -759,9 +763,9 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
             let mins = self.vector(check, "mins");
             let maxs = self.vector(check, "maxs");
             // `origin[j] + 0.5*(mins[j] + maxs[j])`, in double (PHYS-9.7's rule).
-            let mut end = POINT;
+            let mut end = ZERO;
             for (((e, o), lo), hi) in end.iter_mut().zip(origin).zip(mins).zip(maxs) {
-                *e = double_to_float(f64::from(o) + AIM_HALF * f64::from(lo + hi));
+                *e = double_to_float(f64::from(o) + f64::from(HALF) * f64::from(lo + hi));
             }
             let (dir, _) =
                 vector_normalize([end[0] - start[0], end[1] - start[1], end[2] - start[2]]);
@@ -792,7 +796,7 @@ impl<'c, 'a, 'p> SimCall<'c, 'a, 'p> {
     /// The system global vector `name`.
     fn global_vector(&self, name: &str) -> [f32; 3] {
         let Some(first) = global_by_name(name).and_then(|v| i32::try_from(v.slot).ok()) else {
-            return POINT;
+            return ZERO;
         };
         core::array::from_fn(|i| {
             let slot = first.saturating_add(i32::try_from(i).unwrap_or(0));
@@ -944,11 +948,8 @@ impl Host for SimCall<'_, '_, '_> {
     fn body(&self, n: usize) -> Option<Body> {
         let edicts = self.context.machine_view().edicts();
         let free = edicts.is_free(EdictNumber::new(n))?;
-        #[expect(
-            clippy::float_cmp_const,
-            reason = "spec WORLD-1.4: id tests movetype == MOVETYPE_PUSH"
-        )]
-        let pusher = self.float(n, "movetype") == MOVETYPE_PUSH;
+        // WORLD-1.4: id tests `movetype == MOVETYPE_PUSH`.
+        let pusher = self.movetype(n) == MoveType::Push;
         Some(Body {
             free,
             solid: Solid::from_float(self.float(n, "solid")),
@@ -1000,44 +1001,45 @@ fn field(vm: &Vm<'_, '_, '_>, n: usize, name: &str) -> Option<Slot> {
 }
 
 impl Vm<'_, '_, '_> {
+    /// Parameter `n`, `G_INT (OFS_PARMn)`'s slot.
+    fn parm(&self, n: u16) -> Slot {
+        ofs_parm(n)
+            .and_then(|slot| self.machine_view().global(i32::from(slot)).ok())
+            .unwrap_or(Slot::from_i32(0))
+    }
+
     /// Parameter `n`'s raw bits.
     pub(crate) fn parm_raw(&self, n: u16) -> i32 {
-        parm(self, n).as_i32()
+        self.parm(n).as_i32()
     }
-}
 
-fn parm(context: &Vm<'_, '_, '_>, n: u16) -> Slot {
-    ofs_parm(n)
-        .and_then(|slot| context.machine_view().global(i32::from(slot)).ok())
-        .unwrap_or(Slot::from_i32(0))
-}
+    /// Parameter `n` as a float, `G_FLOAT`.
+    pub(crate) fn parm_float(&self, n: u16) -> f32 {
+        self.parm(n).as_f32()
+    }
 
-pub(crate) fn parm_float(context: &Vm<'_, '_, '_>, n: u16) -> f32 {
-    parm(context, n).as_f32()
-}
-
-pub(crate) fn parm_vector(context: &Vm<'_, '_, '_>, n: u16) -> [f32; 3] {
-    let first = ofs_parm(n).map_or(0, i32::from);
-    [0, 1, 2].map(|i| {
-        context
-            .machine_view()
-            .global(first.saturating_add(i))
-            .map_or(0.0, Slot::as_f32)
-    })
-}
-
-/// Parameter `n` as an edict, `G_EDICT`: an error for a value that is not one.
-fn parm_edict(context: &Vm<'_, '_, '_>, n: u16) -> Result<usize, RunError> {
-    let value = parm(context, n).as_i32();
-    context
-        .machine_view()
-        .edicts()
-        .layout()
-        .edict_number(EntityRef::from_bits(value))
-        .map(EdictNumber::index)
-        .ok_or_else(|| {
-            context.run_error(ErrorKind::Builtin {
-                message: "invalid entity".to_owned(),
-            })
+    /// Parameter `n` as a vector, `G_VECTOR`.
+    pub(crate) fn parm_vector(&self, n: u16) -> [f32; 3] {
+        let first = ofs_parm(n).map_or(0, i32::from);
+        [0, 1, 2].map(|i| {
+            self.machine_view()
+                .global(first.saturating_add(i))
+                .map_or(0.0, Slot::as_f32)
         })
+    }
+
+    /// Parameter `n` as an edict, `G_EDICT`: an error for a value that is not one.
+    fn parm_edict(&self, n: u16) -> Result<usize, RunError> {
+        let value = self.parm(n).as_i32();
+        self.machine_view()
+            .edicts()
+            .layout()
+            .edict_number(EntityRef::from_bits(value))
+            .map(EdictNumber::index)
+            .ok_or_else(|| {
+                self.run_error(ErrorKind::Builtin {
+                    message: "invalid entity".to_owned(),
+                })
+            })
+    }
 }

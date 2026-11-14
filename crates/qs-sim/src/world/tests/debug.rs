@@ -3,7 +3,7 @@
 //! The debugger (WORLD-9): breakpoints by line, stopping before a statement, stepping by
 //! replaying the frame from a snapshot, and where a statement is.
 
-use crate::debug::Breakpoint;
+use crate::debug::BreakpointEdit;
 use qc_progs::Progs;
 use qc_vm::ErrorKind;
 
@@ -113,7 +113,7 @@ fn a_breakpoint_stops_the_think_before_its_line() {
     run.world
         .debugger_mut()
         .unwrap()
-        .set_breakpoint(health, Breakpoint::Set);
+        .set_breakpoint(health, BreakpointEdit::Set);
     let (_, stop) = until_stopped(&mut run);
     assert_eq!(stop.statement, health);
     assert_eq!(stop.breakpoint, Some(health));
@@ -144,7 +144,7 @@ fn stepping_replays_the_frame() {
     run.world
         .debugger_mut()
         .unwrap()
-        .set_breakpoint(call, Breakpoint::Set);
+        .set_breakpoint(call, BreakpointEdit::Set);
     let (snapshot, stop) = until_stopped(&mut run);
     assert_eq!(run.world.float(2, "health"), 2.0);
 
@@ -201,7 +201,7 @@ fn stepping_replays_the_frame() {
     run.world
         .debugger_mut()
         .unwrap()
-        .set_breakpoint(call, Breakpoint::Clear);
+        .set_breakpoint(call, BreakpointEdit::Clear);
     assert!(
         replay(&mut run, &snapshot).is_none(),
         "the frame runs to its end"
@@ -227,9 +227,9 @@ fn a_debugger_without_breakpoints_changes_nothing() {
 fn a_debugger_may_stop_only_with_a_breakpoint_or_a_step() {
     let mut debugger = Debugger::new(Vec::new());
     assert!(!debugger.may_stop());
-    debugger.set_breakpoint(3, Breakpoint::Set);
+    debugger.set_breakpoint(3, BreakpointEdit::Set);
     assert!(debugger.may_stop());
-    debugger.set_breakpoint(3, Breakpoint::Clear);
+    debugger.set_breakpoint(3, BreakpointEdit::Clear);
     assert!(!debugger.may_stop(), "cleared");
     debugger.stop_at_first();
     assert!(debugger.may_stop(), "a step");
@@ -267,12 +267,12 @@ fn over_and_out_stop_only_in_their_own_run() {
     run.world
         .debugger_mut()
         .unwrap()
-        .set_breakpoint(last, Breakpoint::Set);
+        .set_breakpoint(last, BreakpointEdit::Set);
     let (snapshot, stop) = until_stopped(&mut run);
     run.world
         .debugger_mut()
         .unwrap()
-        .set_breakpoint(last, Breakpoint::Clear);
+        .set_breakpoint(last, BreakpointEdit::Clear);
     for kind in [StepKind::Over, StepKind::Out] {
         run.world.debugger_mut().unwrap().step_from(kind, &stop);
         assert_eq!(
@@ -305,7 +305,7 @@ fn watch_expressions_read_the_stopped_state() {
     run.world
         .debugger_mut()
         .unwrap()
-        .set_breakpoint(health, Breakpoint::Set);
+        .set_breakpoint(health, BreakpointEdit::Set);
     let (_, stop) = until_stopped(&mut run);
     let at = Some(stop.function);
     let eval = |text: &str| run.world.evaluate(&progs, at, text);
