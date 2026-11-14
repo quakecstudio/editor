@@ -2,28 +2,9 @@
 # (P5-18): rule, file, item. Only shrinks: cargo xtask conv17-baseline removes a
 # line when its item is fixed (P5-19) and never adds one. A line added by hand is a
 # reviewed exception, such as listed code moved or renamed; say why in a comment above it.
-bool-argument	apps/cli/src/doctor.rs	games
-bool-argument	apps/desktop/src/agent.rs	field
-bool-argument	apps/desktop/src/multibuffer.rs	Multibuffer::show
 bool-argument	apps/desktop/src/palette.rs	field_ui
-bool-argument	apps/desktop/src/palette.rs	row
-bool-argument	apps/desktop/src/palette.rs	task_row
-bool-argument	apps/desktop/src/shell.rs	Shell::centre
-bool-argument	apps/desktop/src/shell.rs	Shell::panel
-bool-argument	apps/desktop/src/shell.rs	Shell::save_if_changed
-bool-argument	apps/desktop/src/shell.rs	Shell::show_places
-bool-argument	apps/desktop/src/shell.rs	bottom
-bool-argument	apps/desktop/src/shell.rs	centre_tabs
 bool-argument	apps/desktop/src/shell.rs	commanded_size
 bool-argument	apps/desktop/src/shell.rs	dragged_size
-bool-argument	apps/desktop/src/shell.rs	file_tab
-bool-argument	apps/desktop/src/shell.rs	left
-bool-argument	apps/desktop/src/shell.rs	right
-bool-argument	apps/desktop/src/strings.rs	search_count
-bool-argument	apps/quakec-engine/src/headless.rs	Overlay::hud
-bool-argument	apps/quakec-engine/src/keys.rs	configuration
-bool-argument	apps/quakec-engine/src/keys.rs	host_files
-bool-argument	apps/quakec-engine/src/window.rs	Viewer::hold_pointer
 bool-argument	crates/qc-codegen/src/compile/arrays.rs	Compiler::array_accessor
 bool-argument	crates/qc-codegen/src/compile/body.rs	bare_return
 bool-argument	crates/qc-codegen/src/compile/body.rs	writable

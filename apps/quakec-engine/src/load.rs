@@ -397,7 +397,7 @@ impl Args {
         // INPUT-3.5: in QuakeSpasm's look the host's own `default.cfg` covers id1's.
         let files = || -> Result<Reader, String> {
             let config = config_path();
-            Ok(host_files(reader()?, look.native_2d(), move || {
+            Ok(host_files(reader()?, look, move || {
                 config.as_ref().and_then(|path| std::fs::read(path).ok())
             }))
         };

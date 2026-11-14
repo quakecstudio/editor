@@ -33,7 +33,7 @@ use crate::icons::Icon;
 use crate::keymap;
 use crate::map_tools::Readout;
 use crate::palette::highlighted;
-use crate::shell::{EDITOR_AREA, commanded_size, dragged_size};
+use crate::shell::{EDITOR_AREA, PointerHeld, commanded_size, dragged_size};
 use crate::strings::{Text, command_count, exit_status, match_count, missing_textures};
 use crate::theme::{Mode, Theme, ThemeError, Token, semibold};
 use crate::{App, AppError};
@@ -423,12 +423,12 @@ fn the_layout_is_written_after_a_drag_not_during_it() {
     let ctx = egui::Context::default();
     let mut app = App::checked_on_the_frame(&ctx, Some(file.clone())).unwrap();
     app.shell.resize(Panel::Left, 300.0).unwrap();
-    app.shell.save_if_changed(true);
+    app.shell.save_if_changed(PointerHeld::Down);
     assert!(!file.exists(), "written during the drag");
-    app.shell.save_if_changed(false);
+    app.shell.save_if_changed(PointerHeld::Up);
     assert_eq!(Layout::read(&file).unwrap().left.size, 300.0);
     fs::remove_file(&file).unwrap();
-    app.shell.save_if_changed(false);
+    app.shell.save_if_changed(PointerHeld::Up);
     assert!(!file.exists(), "written again with nothing changed");
 }
 

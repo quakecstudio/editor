@@ -852,10 +852,15 @@ impl AgentPanel {
                 }
             }
         });
-        field(ui, Text::AgentModel, &mut setup.model, false);
-        field(ui, Text::AgentBaseUrl, &mut setup.base_url, false);
+        field(ui, Text::AgentModel, &mut setup.model, FieldKind::Plain);
+        field(
+            ui,
+            Text::AgentBaseUrl,
+            &mut setup.base_url,
+            FieldKind::Plain,
+        );
         if setup.kind.needs_key() {
-            field(ui, Text::AgentKey, &mut setup.key, true);
+            field(ui, Text::AgentKey, &mut setup.key, FieldKind::Secret);
             muted(ui, theme, Text::AgentKeyKept.get());
         }
         if let Some(error) = &setup.error {
@@ -888,11 +893,20 @@ impl AgentPanel {
 
 /// A labelled text field, named by its label for a screen reader; `secret` hides what is
 /// typed.
-fn field(ui: &mut Ui, label: Text, value: &mut String, secret: bool) {
+/// What a setup field holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FieldKind {
+    /// Text shown as typed.
+    Plain,
+    /// A key, hidden as it is typed.
+    Secret,
+}
+
+fn field(ui: &mut Ui, label: Text, value: &mut String, kind: FieldKind) {
     ui.label(label.get());
     let response = ui.add(
         egui::TextEdit::singleline(value)
-            .password(secret)
+            .password(kind == FieldKind::Secret)
             .desired_width(f32::INFINITY),
     );
     name_field(ui, &response, label);

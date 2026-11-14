@@ -244,6 +244,15 @@ pub enum CentreTab {
 }
 
 /// The editor's area, whose egui id is the editor view's.
+/// Whether a pointer button is held, as one is during a drag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PointerHeld {
+    /// A button is down.
+    Down,
+    /// None is.
+    Up,
+}
+
 /// Whether an area takes the keyboard focus this frame, as a focus request asked.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FocusNow {
@@ -1596,9 +1605,9 @@ impl Shell {
 
     /// Writes the layout when it has changed since it was last written, and no drag is under
     /// way.
-    pub(crate) fn save_if_changed(&mut self, dragging: bool) {
+    pub(crate) fn save_if_changed(&mut self, pointer: PointerHeld) {
         let layout = self.layout().as_written();
-        if dragging || layout == self.saved {
+        if pointer == PointerHeld::Down || layout == self.saved {
             return;
         }
         self.saved = layout;
@@ -1709,8 +1718,12 @@ impl Shell {
         {
             self.jump(place);
         }
-        let dragging = ui.input(|input| input.pointer.any_down());
-        self.save_if_changed(dragging);
+        let pointer = if ui.input(|input| input.pointer.any_down()) {
+            PointerHeld::Down
+        } else {
+            PointerHeld::Up
+        };
+        self.save_if_changed(pointer);
     }
 
     /// The shortcuts pressed this frame: the palette's, and while it is closed each binding's
@@ -3561,8 +3574,13 @@ impl Shell {
         }
     }
 
-    /// Draws the centre: its tabs and the one shown. When `focus`, the editor takes the
-    /// keyboard, or the shown tab when no file is open or another tab is shown.
+    /// Draws the centre: its tabs and the one shown. When `focus` says to take it, the editor
+    /// takes the keyboard, or the shown tab when no file is open or another tab is shown.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the centre's tab bar and the tab it shows, drawn in one pass in the order they \
+                  appear"
+    )]
     fn centre(&mut self, ui: &mut Ui, focus: FocusNow) {
         self.sync_editor();
         self.sync_map();
@@ -3586,14 +3604,26 @@ impl Shell {
                 ui.horizontal_centered(|ui| {
                     let editing = self.centre_tab == CentreTab::Editor;
                     for path in workbench.tabs() {
-                        let shown = editing && open == Some(path.as_path());
-                        if let Some(action) =
-                            file_tab(ui, theme, path, workbench.is_unsaved(path), shown)
-                        {
+                        let shown = if editing && open == Some(path.as_path()) {
+                            Shown::Shown
+                        } else {
+                            Shown::Hidden
+                        };
+                        let saved = if workbench.is_unsaved(path) {
+                            Saved::Unsaved
+                        } else {
+                            Saved::Saved
+                        };
+                        if let Some(action) = file_tab(ui, theme, path, saved, shown) {
                             chosen = Some(action);
                         }
                     }
-                    let centre = centre_tabs(workbench.tabs().is_empty());
+                    let files = if workbench.tabs().is_empty() {
+                        OpenFiles::None
+                    } else {
+                        OpenFiles::Some
+                    };
+                    let centre = files.centre_tabs();
                     for &(tab, text) in centre {
                         let response = ui.selectable_value(&mut self.centre_tab, tab, text.get());
                         if focus == FocusNow::Take && !editor_shown && self.centre_tab == tab {
@@ -3720,20 +3750,32 @@ impl Shell {
 }
 
 /// The centre's own tabs after the files' tabs: the Editor tab too when no file is open.
-const fn centre_tabs(no_file: bool) -> &'static [(CentreTab, Text)] {
-    if no_file {
-        &[
-            (CentreTab::Editor, Text::Editor),
-            (CentreTab::Search, Text::ProjectSearch),
-            (CentreTab::Game, Text::Game),
-            (CentreTab::Map, Text::Map),
-        ]
-    } else {
-        &[
-            (CentreTab::Search, Text::ProjectSearch),
-            (CentreTab::Game, Text::Game),
-            (CentreTab::Map, Text::Map),
-        ]
+/// Whether any file is open in the centre.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OpenFiles {
+    /// None is.
+    None,
+    /// At least one is.
+    Some,
+}
+
+impl OpenFiles {
+    /// The centre's tabs beside the files': the editor's own tab only when no file is open.
+    const fn centre_tabs(self) -> &'static [(CentreTab, Text)] {
+        if let Self::None = self {
+            &[
+                (CentreTab::Editor, Text::Editor),
+                (CentreTab::Search, Text::ProjectSearch),
+                (CentreTab::Game, Text::Game),
+                (CentreTab::Map, Text::Map),
+            ]
+        } else {
+            &[
+                (CentreTab::Search, Text::ProjectSearch),
+                (CentreTab::Game, Text::Game),
+                (CentreTab::Map, Text::Map),
+            ]
+        }
     }
 }
 
@@ -3798,25 +3840,43 @@ enum TabAction {
     Close(PathBuf),
 }
 
+/// Whether a file's text is saved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Saved {
+    /// It is.
+    Saved,
+    /// It has unsaved changes.
+    Unsaved,
+}
+
+/// Whether a file's tab is the one shown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Shown {
+    /// It is.
+    Shown,
+    /// Another is, or a centre tab.
+    Hidden,
+}
+
 /// A file's tab: its name, a dot when it is unsaved, and a button that closes it.
 fn file_tab(
     ui: &mut Ui,
     theme: &Theme,
     path: &Path,
-    unsaved: bool,
-    shown: bool,
+    saved: Saved,
+    shown: Shown,
 ) -> Option<TabAction> {
     let name = path
         .file_name()
         .map_or_else(|| path.to_string_lossy(), |name| name.to_string_lossy());
-    let label = if unsaved {
+    let label = if saved == Saved::Unsaved {
         format!("{name} {}", Text::UnsavedMark.get())
     } else {
         name.into_owned()
     };
     let mut action = None;
     let tab = ui
-        .selectable_label(shown, label)
+        .selectable_label(shown == Shown::Shown, label)
         .on_hover_text(path.to_string_lossy());
     // A screen reader says it is a tab, not one more button; the tree's row is the button.
     ui.ctx().accesskit_node_builder(tab.id, |node| {

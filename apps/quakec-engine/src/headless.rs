@@ -18,7 +18,7 @@ use std::path::Path;
 use qs_client::{
     Client, Connection, Console, ConsoleHold, Hud, KeyDest, Menu, MenuFrame, MenuSettings,
 };
-use qs_render::{MapMesh, MapRenderer, Offscreen, Play};
+use qs_render::{Look, MapMesh, MapRenderer, Offscreen, Play};
 
 use crate::args::Args;
 use crate::audio::Audio;
@@ -246,7 +246,7 @@ impl Loaded {
                     world.play.screen = screen;
                     let game = world.game.world();
                     let settings = MenuSettings::read(&|name| game.setting(name).unwrap_or(0.0));
-                    let hud = overlay.hud(screen, world.mesh.look.native_2d(), settings);
+                    let hud = overlay.hud(screen, world.mesh.look, settings);
                     let callback = world.view_callback(aspect, hud);
                     let frame = drawer.draw(callback, size)?;
                     std::fs::write(path, frame.ppm())
@@ -289,7 +289,8 @@ impl Overlay {
 
     /// The console and the menu as the window draws them on `screen`, in QuakeSpasm's layout
     /// when `native` (CON-5), the options showing `settings`.
-    fn hud(&mut self, screen: [i32; 2], native: bool, settings: MenuSettings) -> Hud {
+    fn hud(&mut self, screen: [i32; 2], look: Look, settings: MenuSettings) -> Hud {
+        let native = look.native_2d();
         let [_, height] = screen;
         let console = if self.lines > 0 && native {
             let version = format!("QuakeC Studio {}", env!("CARGO_PKG_VERSION"));

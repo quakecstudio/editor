@@ -9,6 +9,7 @@
 
 use eframe::egui;
 use qs_client::KeyDest;
+use qs_render::Look;
 use qs_sim::keys::{
     K_ALT, K_BACKSPACE, K_CTRL, K_DEL, K_DOWNARROW, K_END, K_ENTER, K_ESCAPE, K_F1, K_HOME, K_INS,
     K_LEFTARROW, K_MOUSE1, K_MWHEELDOWN, K_MWHEELUP, K_PGDN, K_PGUP, K_RIGHTARROW, K_SHIFT,
@@ -226,16 +227,17 @@ pub(crate) fn config_path() -> Option<std::path::PathBuf> {
 
 /// `files` as the host's console reads them (INPUT-3.5, INPUT-4.4): `config.cfg` is the
 /// host's own configuration, the text `config` gives, or nothing before the host has written
-/// one; with `own_default`, `default.cfg` is [`DEFAULT_CFG`]; every other file is the game's.
+/// one; under a look with a native 2D layer, `default.cfg` is [`DEFAULT_CFG`]; every other file
+/// is the game's.
 pub(crate) fn host_files(
     files: qs_sim::ModelFiles,
-    own_default: bool,
+    look: Look,
     config: impl Fn() -> Option<Vec<u8>> + 'static,
 ) -> qs_sim::ModelFiles {
     std::rc::Rc::new(move |name: &str| {
         if name.eq_ignore_ascii_case("config.cfg") {
             Some(config().unwrap_or_default())
-        } else if own_default && name.eq_ignore_ascii_case("default.cfg") {
+        } else if look.native_2d() && name.eq_ignore_ascii_case("default.cfg") {
             Some(DEFAULT_CFG.to_vec())
         } else {
             files(name)
@@ -243,14 +245,23 @@ pub(crate) fn host_files(
     })
 }
 
+/// Whether mouse look is held, which the configuration keeps as `+mlook`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MouseLook {
+    /// It is held.
+    Held,
+    /// It is not.
+    Released,
+}
+
 /// The configuration the host writes as `Host_WriteConfiguration` writes `config.cfg`
 /// (INPUT-4.1): `unbindall`, every binding, the archived settings, and `+mlook` when mouse
 /// look is held, as QuakeSpasm adds it.
-pub(crate) fn configuration(bindings: &str, settings: &str, mlook: bool) -> String {
+pub(crate) fn configuration(bindings: &str, settings: &str, mlook: MouseLook) -> String {
     let mut text = String::from("unbindall\n");
     text.push_str(bindings);
     text.push_str(settings);
-    if mlook {
+    if mlook == MouseLook::Held {
         text.push_str("+mlook\n");
     }
     text

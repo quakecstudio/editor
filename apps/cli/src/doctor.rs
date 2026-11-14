@@ -61,7 +61,14 @@ impl Doctor {
                 continue;
             }
             let outcome = match check {
-                Check::Games => games(&installs, self.require_game),
+                Check::Games => {
+                    let requirement = if self.require_game {
+                        Requirement::Required
+                    } else {
+                        Requirement::Optional
+                    };
+                    games(&installs, requirement)
+                }
                 Check::Host => host(self.game.as_deref(), &installs),
                 Check::Keychain => keychain(&Keychain),
             };
@@ -89,7 +96,17 @@ impl Check {
 }
 
 /// The installs found, by store and folder.
-fn games(installs: &[Install], require: bool) -> Outcome {
+/// Whether `doctor` fails when no game is found (`--require-game`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Requirement {
+    /// It fails.
+    Required,
+    /// It only reports it.
+    Optional,
+}
+
+fn games(installs: &[Install], requirement: Requirement) -> Outcome {
+    let require = requirement == Requirement::Required;
     if installs.is_empty() {
         return if require {
             Err("none found in the stores' usual places".to_owned())
@@ -200,7 +217,7 @@ mod tests {
 
     use qs_models::{KeyStore as _, MemoryKeys};
 
-    use super::{Check, Doctor, games, keychain};
+    use super::{Check, Doctor, Requirement, games, keychain};
 
     // No spec statement: P4-18: the keychain check writes, reads back and deletes its entry,
     // leaving the store as it found it
@@ -214,8 +231,8 @@ mod tests {
     // No spec statement: P4-18: finding no game passes unless one is required
     #[test]
     fn no_game_fails_only_when_one_is_required() {
-        assert!(games(&[], false).is_ok());
-        assert!(games(&[], true).is_err());
+        assert!(games(&[], Requirement::Optional).is_ok());
+        assert!(games(&[], Requirement::Required).is_err());
     }
 
     // No spec statement: P4-18: only the checks asked for run, each a line

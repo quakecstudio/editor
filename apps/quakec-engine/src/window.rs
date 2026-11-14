@@ -32,8 +32,8 @@ use crate::bridge::Bridge;
 use crate::contents::contents_at;
 use crate::game::{Eye, Game, Placement, Screen};
 use crate::keys::{
-    STARTUP, config_path, configuration, focus, keynum, modifier_keys, mouse_key, mouse_motion,
-    runs_binding, wheel_key,
+    MouseLook, STARTUP, config_path, configuration, focus, keynum, modifier_keys, mouse_key,
+    mouse_motion, runs_binding, wheel_key,
 };
 use crate::load::{Acted, Describer, Loaded, Rand};
 use crate::screenshot::Drawer;
@@ -56,6 +56,15 @@ enum Pointer {
 pub(crate) const FRAME: f64 = 1.0 / 72.0;
 /// `Host_FilterTime`'s longest frame.
 const LONGEST: f64 = 0.1;
+/// Whether a click in the game view captures the pointer for mouse look.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Click {
+    /// It does: the game was clicked, not an entity picked while paused.
+    Capture,
+    /// It does not.
+    None,
+}
+
 /// The window's size when none is asked for.
 const DEFAULT_SIZE: [f32; 2] = [1280.0, 800.0];
 /// The depth buffer's bits.
@@ -277,10 +286,15 @@ impl eframe::App for Viewer {
         let Some(path) = &self.config_file else {
             return;
         };
+        let mlook = if self.input.held(Button::MLook) {
+            MouseLook::Held
+        } else {
+            MouseLook::Released
+        };
         let text = configuration(
             &self.bindings.write(),
             &self.game.world().archived_settings(),
-            self.input.held(Button::MLook),
+            mlook,
         );
         let written = path
             .parent()
@@ -322,7 +336,12 @@ impl eframe::App for Viewer {
                 (at.y - rect.top()) / rect.height(),
             );
         }
-        self.hold_pointer(ui, clicked && !picked);
+        let click = if clicked && !picked {
+            Click::Capture
+        } else {
+            Click::None
+        };
+        self.hold_pointer(ui, click);
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
         if self.fly {
@@ -613,7 +632,8 @@ impl Viewer {
 
     /// Captures the mouse on a click and frees it on Escape or when the window loses focus;
     /// while it is held, its motion turns the view (`IN_MouseMove`).
-    fn hold_pointer(&mut self, ui: &egui::Ui, clicked: bool) {
+    fn hold_pointer(&mut self, ui: &egui::Ui, click: Click) {
+        let clicked = click == Click::Capture;
         let (escape, focused, motion) = ui.input(|input| {
             let mut motion = [0.0_f32; 2];
             for event in &input.events {
