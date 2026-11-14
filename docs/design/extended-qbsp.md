@@ -29,15 +29,17 @@ tests; the `Ported from` header names the ericw-tools file and functions.
 | `vec` | Double-precision vectors, planes, bounds and the plane table with its hash and opposite planes | `include/common/qvec.hh`; `qbsp/map.cc` `mapdata_t::add_or_find_plane` |
 | `game` | The game seam: contents and their kinds, the clipping hulls' sizes; Quake's definition | `include/common/bspfile.hh` `gamedef_t`, `common/bspfile.cc` `gamedef_q1_like_t` |
 | `winding` | Convex polygons: from a plane, clipped, split, area, centre, bounds | `include/common/polylib.hh` (`winding_base_t`) |
-| `map` | Map brushes from `qs-map`'s `MapFile`: faces, planes, texinfo, contents from texture names (skip, hint, clip, liquids, sky), bevels, bounds; world brush entities (QBSP-14.8) | `qbsp/map.cc` `ParseBrush`, `ParseBrushFace`, `Brush_GetContents`, `AddBrushBevels`, `FindTexinfo` |
-| `brush` | BSP brushes for a hull: windings, the clipping hulls' expansion, per-entity contents | `qbsp/brush.cc` `LoadBrush`, `CreateBrushWindings`, `ExpandBrush`, `Brush_LoadEntity` |
+| `map` | Map brushes from `qs-map`'s `MapFile`: faces, planes, texinfo, contents from texture names (skip, hint, clip, liquids, sky), bevels, bounds, origin brushes, the world's extent | `qbsp/map.cc` `ParseBrush`, `ParseBrushFace`, `Brush_GetContents`, `AddBrushBevels`, `FindTexinfo`, `ProcessMapBrushes` |
+| `brush` | BSP brushes for a hull: windings, the clipping hulls' expansion, per-entity contents, the world brush entities | `qbsp/brush.cc` `LoadBrush`, `CreateBrushWindings`, `Brush_LoadEntity` |
 | `chop` | Removing what brushes overlap | `qbsp/brushbsp.cc` `ChopBrushes`, `SubtractBrush` |
-| `tree` | The brush BSP: split planes, splitting brushes, leaves | `qbsp/brushbsp.cc` `BrushBSP`, `BuildTree_r`, `SelectSplitPlane`, `SplitBrush` |
-| `portals` | Tree portals | `qbsp/portals.cc` `MakeTreePortals`, `MarkVisibleSides` |
-| `outside` | The fill from the void, leaks and their trail | `qbsp/outside.cc` `FillOutside` |
-| `faces` | Faces from visible sides, merged and subdivided; pruning | `qbsp/faces.cc`, `qbsp/merge.cc`, `qbsp/tree.cc` |
-| `tjunc` | T-junction fixing | `qbsp/tjunc.cc` |
-| `output` | Nodes, clip nodes, leaves, faces and the portal file into BSP29 or BSP2 lumps, through the writer the id dialect uses | `qbsp/writebsp.cc`, `qbsp/prtfile.cc` |
+| `tree` | The brush BSP: split planes, splitting brushes, leaves; pruning | `qbsp/brushbsp.cc` `BrushBSP`, `BuildTree_r`, `SelectSplitPlane`, `SplitBrush`; `qbsp/tree.cc` `PruneNodes` |
+| `portals` | Tree portals and the sides each shows | `qbsp/portals.cc` `MakeTreePortals`, `MarkVisibleSides` |
+| `outside` | The fill from the void, leaks and their line, the detail fill | `qbsp/outside.cc` `FillOutside`, `FillDetail` |
+| `faces` | Faces from visible sides, merged and subdivided, listed in leaves | `qbsp/faces.cc`, `qbsp/merge.cc`, `qbsp/csg.cc` `SplitFace` |
+| `tjunc` | T-junction fixing by minimum-weight triangulation | `qbsp/tjunc.cc` |
+| `output` | Planes, texinfo, vertices, edges, faces, nodes, leaves and clip nodes into `qs-bsp`'s `BspFile` | `qbsp/writebsp.cc`, `qbsp/faces.cc` `EmitFaces` |
+| `prt` | The portal file | `qbsp/prtfile.cc`, `common/prtfile.cc` |
+| `process` | The compile: each hull for each model, the entity and texture lumps | `qbsp/qbsp.cc` `ProcessFile`, `ProcessEntity`; `qbsp/map.cc` `WriteEntitiesToString` |
 
 ## A game seam for Quake II
 
@@ -52,9 +54,10 @@ ported.
 
 ## Order and proof
 
-The modules are ported in the order above, each with its spec statements (QBSP-15, a section
-of `docs/spec/qbsp.md`) and the tests that cite them. Until the last lands, the extended
-dialect keeps today's pipeline; the switch is one change in `Compiler::compile_read`, made when
-`cargo xtask map-diff` agrees with ericw-tools on the room and the instance map. Then each map
-of the corpus that still differs is a defect worked to agreement, the list in `map_diff.rs`
-shrinking to none.
+The modules were ported in the order above, each with its spec statements (QBSP-15, a section
+of `docs/spec/qbsp.md`) and the tests that cite them. `Compiler` compiles the extended dialect
+through `process` alone (QBSP-14.10); the id dialect's pipeline keeps none of it. `cargo xtask
+map-diff` compares every corpus map with ericw-tools' qbsp and, where id's qbsp reads it, the id
+dialect with id's: leaks, entities, faces within tolerance and sampled traces in every hull.
+Not ported: the `-tjunc` levels below `mwt` and the other options' non-default values, regions,
+`-notriggermodels`, super detail, Quake II's areas and the debug writers.

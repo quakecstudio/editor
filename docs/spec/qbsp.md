@@ -915,6 +915,12 @@ point on a plane (`mathlib.hh`).
   in front of sky ("don't output the interior faces of sky brushes") or listed only in detail
   wall leaves. A detail wall leaf is made solid when pruning (`PruneNodes`), which makes each node
   whose two children are any solid leaves one leaf of their combined contents, its faces dropped.
+  Once the portal file's vis portals are made, each cluster (a detail separator, or a leaf under
+  none) with a leaf whose strongest visible contents include a detail fence's window has the
+  faces listed by its leaves whose strongest visible contents are exactly that listed too in the
+  first usable leaf (empty, lava, slime or water) of each cluster reached breadth first through
+  the portals vis sees through, stopping at a cluster with one, whose bounds and its parents' are
+  widened to hold them (`FixupDetailFence`): Quake draws no face listed only by a solid leaf.
 - **QBSP-15.43** The BSP starts (`BeginBSPFile`) with edge 0 unused and leaf 0 the shared solid
   leaf. A plane is written the first time a node, clip node or face uses it (`ExportMapPlane`)
   with its type; a texinfo the first time a face uses it (`ExportMapTexinfo`), -1 for one not

@@ -3,7 +3,7 @@
 // Copyright (C) 1997       Greg Lewis
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/faces.cc, ShouldOmitFace, MergeNodeFaces, AddMarksurfaces_r, MakeMarkFaces, SubdivideFace, SubdivideNodeFaces, FaceFromPortal, MakeFaces_r, MakeFaces
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/faces.cc, FixupDetailFence_FindDetailFenceFaces, FixupMarkFaces_ProcessCluster_HasDetailFence, FixupMarkFaces_IsUsableLeaf, FixupMarkFaces_ProcessCluster_FindStorageLeaf, BoundFaces, AddBoundsToNode, FixupMarkFaces_AddFacesToLeaf, FixupMarkFaces_ProcessCluster, FixupDetailFenceMarkFaces_R, FixupDetailFence, ShouldOmitFace, MergeNodeFaces, AddMarksurfaces_r, MakeMarkFaces, SubdivideFace, SubdivideNodeFaces, FaceFromPortal, MakeFaces_r, MakeFaces
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/merge.cc, TryMerge, MergeFaceToList, MergeFaceList
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/csg.cc, NewFaceFromFace, CopyFace, UpdateFaceSphere, SplitFace
 
@@ -15,9 +15,12 @@ use super::brush::{BspBrush, FaceRef};
 use super::game::Contents;
 use super::map::{LoadedMap, SurfFlags, TexinfoNum};
 use super::portals::SideRef;
-use super::tree::{NodeId, Tree};
+use super::tree::{NodeId, Separator, Tree};
+use std::collections::BTreeSet;
+
 use super::vec::{
-    AXES, POINT_EPSILON, Plane, PlaneNum, Vec3, cross, dot, normalize, normalize_with_length, sub,
+    AXES, Bounds, POINT_EPSILON, Plane, PlaneNum, Vec3, cross, dot, normalize,
+    normalize_with_length, sub,
 };
 use super::winding::{KeepOn, Winding};
 
@@ -25,8 +28,6 @@ use super::winding::{KeepOn, Winding};
 const CONTINUOUS_EPSILON: f64 = 0.0005;
 /// `QBSP_EQUAL_EPSILON`: two points this near are one in a merge.
 const EQUAL_EPSILON: f64 = 0.0001;
-/// `-subdivide`'s default: the most texels a face spans before it is cut.
-const SUBDIVIDE: f64 = 240.0;
 /// The most lightmap blocks of 16 texels a legacy engine allows, `255 << lmshift`.
 const LIGHTMAP_BLOCKS: f64 = 255.0;
 /// The largest lightmap shift subdivision allows for, "no bugging out with legacy lighting".
@@ -122,10 +123,117 @@ impl Tree {
     }
 }
 
+impl Tree {
+    /// Whether a leaf below `id` has a detail fence's window as its strongest visible contents,
+    /// `FixupMarkFaces_ProcessCluster_HasDetailFence`.
+    fn has_detail_fence(&self, id: NodeId) -> bool {
+        self.leaves_below(id).into_iter().any(|leaf| {
+            self.leaf_data(leaf)
+                .is_some_and(|l| l.contents.visible().flags() & Contents::WINDOW != 0)
+        })
+    }
+
+    /// The first leaf below `id` whose strongest visible contents are empty or a liquid,
+    /// `FixupMarkFaces_ProcessCluster_FindStorageLeaf`.
+    fn storage_leaf(&self, id: NodeId) -> Option<NodeId> {
+        let usable = [
+            Contents::EMPTY.flags(),
+            Contents::LAVA,
+            Contents::SLIME,
+            Contents::WATER,
+        ];
+        self.leaves_below(id).into_iter().find(|&leaf| {
+            self.leaf_data(leaf)
+                .is_some_and(|l| usable.contains(&l.contents.visible().flags()))
+        })
+    }
+
+    /// The fence faces of cluster `id` listed in the nearest leaves a viewer can be in,
+    /// `FixupMarkFaces_ProcessCluster` (QBSP-15.42): every face listed in a leaf below whose
+    /// strongest visible contents are a detail fence's; breadth first through the vis portals
+    /// vis sees through to the first clusters with a usable leaf, each such leaf listing them
+    /// too and its bounds and its parents' widened to hold them.
+    fn fixup_cluster(&mut self, id: NodeId) {
+        if !self.has_detail_fence(id) {
+            return;
+        }
+        let mut faces: BTreeSet<FaceId> = BTreeSet::new();
+        for leaf in self.leaves_below(id) {
+            if let Some(l) = self.leaf_data(leaf)
+                && l.contents.visible().flags() == Contents::WINDOW
+            {
+                faces.extend(l.markfaces.iter().copied());
+            }
+        }
+        if faces.is_empty() {
+            return;
+        }
+        let mut queue = vec![id];
+        let mut front = 0_usize;
+        let mut visited = BTreeSet::new();
+        let mut storage = Vec::new();
+        while let Some(&current) = queue.get(front) {
+            front = front.saturating_add(1);
+            visited.insert(current);
+            if let Some(leaf) = self.storage_leaf(current) {
+                storage.push(leaf);
+                continue;
+            }
+            for portal in self.portals_of(current) {
+                let Some(other) = self.across(portal, current) else {
+                    continue;
+                };
+                if visited.contains(&other) || !self.vis_floods(portal) {
+                    continue;
+                }
+                queue.push(other);
+            }
+        }
+        let mut bounds = Bounds::default();
+        for &face in &faces {
+            if let Some(f) = self.face(face) {
+                for &p in f.winding.points() {
+                    bounds.add(p);
+                }
+            }
+        }
+        for leaf in storage {
+            if let Some(l) = self.leaf_data_mut(leaf) {
+                let mut listed: BTreeSet<FaceId> = l.markfaces.iter().copied().collect();
+                listed.extend(faces.iter().copied());
+                l.markfaces = listed.into_iter().collect();
+            }
+            let mut at = Some(leaf);
+            while let Some(node) = at.and_then(|n| self.node_mut(n)) {
+                node.bounds.union(&bounds);
+                at = node.parent;
+            }
+        }
+    }
+
+    /// The detail fences' faces made visible from outside them, `FixupDetailFence`
+    /// (QBSP-15.42): each cluster processed, a detail separator or a leaf not under one, once
+    /// the tree has its vis portals.
+    pub(crate) fn fixup_detail_fence(&mut self) {
+        let mut stack = vec![Self::HEAD];
+        while let Some(id) = stack.pop() {
+            match self.split_of(id) {
+                Some((_, [front, back], Separator::Structural)) => {
+                    stack.push(back);
+                    stack.push(front);
+                }
+                _ => self.fixup_cluster(id),
+            }
+        }
+    }
+}
+
 /// What making faces needs at hand.
 pub(crate) struct FaceMaker<'a> {
     pub(crate) map: &'a LoadedMap,
     pub(crate) originals: &'a [BspBrush],
+    /// `-subdivide`: the most texels a face spans before it is cut, 240 by default.
+    pub(crate) subdivide: f64,
 }
 
 impl FaceMaker<'_> {
@@ -348,7 +456,7 @@ impl FaceMaker<'_> {
         };
         let lmshift = self.lmshift(face.original_side).min(MAX_LMSHIFT);
         let blocks = 1_u32.checked_shl(lmshift).unwrap_or(1);
-        let subdiv = SUBDIVIDE.min(LIGHTMAP_BLOCKS * f64::from(blocks));
+        let subdiv = self.subdivide.min(LIGHTMAP_BLOCKS * f64::from(blocks));
         let mut surfaces = vec![face];
         for axis in texinfo.vecs.iter().take(TEXTURE_AXES) {
             let [x, y, z, _] = axis.map(f64::from);

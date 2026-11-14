@@ -79,6 +79,7 @@ fn faces_merge_across_shared_edges() {
     let maker = FaceMaker {
         map: &map,
         originals: &[],
+        subdivide: 240.0,
     };
     let a = face(&map, floor, 0, square(0.0, 32.0));
     let b = face(&map, floor, 0, square(32.0, 32.0));
@@ -105,6 +106,7 @@ fn faces_are_subdivided() {
     let maker = FaceMaker {
         map: &map,
         originals: &[],
+        subdivide: 240.0,
     };
     let long = face(&map, floor, 0, square(0.0, 1000.0));
     let pieces = maker.subdivide(long);
@@ -145,6 +147,7 @@ fn some_faces_are_left_out() {
     let maker = FaceMaker {
         map: &map,
         originals: &[],
+        subdivide: 240.0,
     };
     let tree = Tree {
         nodes: Vec::new(),

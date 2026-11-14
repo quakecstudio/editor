@@ -17,7 +17,12 @@ use crate::fixtures::{BrushSpec, EntitySpec, MapSpec, map_text, room};
 use crate::{Compiled, Hull, Warning};
 
 fn compiled(spec: &MapSpec) -> Compiled {
-    compile(&MapFile::parse(map_text(spec).as_bytes()).unwrap(), None).unwrap()
+    compile(
+        &MapFile::parse(map_text(spec).as_bytes()).unwrap(),
+        None,
+        240.0,
+    )
+    .unwrap()
 }
 
 fn read(c: &Compiled) -> Bsp<'_> {
@@ -183,7 +188,7 @@ fn hulls_by_key() {
     assert!(generates_clip_nodes(entity, Hull::Player));
     assert!(!generates_clip_nodes(entity, Hull::Large));
     assert!(generates_clip_nodes(&file.entities[1], Hull::Large));
-    let c = compile(&file, None).unwrap();
+    let c = compile(&file, None, 240.0).unwrap();
     let bsp = read(&c);
     let head = bsp.models[1].headnode[2];
     assert!(head >= 0, "an empty tree's node for hull 2");
@@ -224,4 +229,38 @@ fn portal_files() {
         .map(|l| l.split_whitespace().count() - 1)
         .sum();
     assert_eq!(listed, leaves);
+}
+
+// spec QBSP-15.42: the faces only a detail fence's leaves list, written solid, are also listed in
+// the open leaves around it, so the game draws every face
+#[test]
+fn detail_fences_are_seen_from_outside() {
+    let mut spec = MapSpec::default();
+    spec.entities.push(EntitySpec::brushes(
+        "func_detail_fence",
+        vec![BrushSpec::cube([-32, -32, -64], [32, 32, 32], "fence")],
+    ));
+    spec.world
+        .push(BrushSpec::cube([-8, -8, -64], [8, 8, 16], "pillar"));
+    let c = compiled(&spec);
+    let bsp = read(&c);
+    let listed: std::collections::HashSet<usize> = bsp
+        .leafs
+        .iter()
+        .flat_map(|leaf| {
+            bsp.marksurfaces[leaf.firstmarksurface..leaf.firstmarksurface + leaf.nummarksurfaces]
+                .iter()
+                .copied()
+        })
+        .collect();
+    assert!(
+        bsp.leafs
+            .iter()
+            .any(|leaf| leaf.contents == SOLID && leaf.nummarksurfaces == 0)
+    );
+    assert_eq!(
+        listed.len(),
+        bsp.faces.len(),
+        "every face is listed in a leaf"
+    );
 }

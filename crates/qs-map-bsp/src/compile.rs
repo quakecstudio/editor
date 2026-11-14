@@ -283,7 +283,7 @@ impl Compiler {
     pub fn compile(&self, map: &[u8], wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
         match self.dialect {
             Dialect::Id => self.compile_read(load_map_file(map)?, wad),
-            Dialect::Extended => extended::compile(&extended_file(map, None)?, wad),
+            Dialect::Extended => extended::compile(&extended_file(map, None)?, wad, self.subdivide),
         }
     }
 
@@ -303,7 +303,9 @@ impl Compiler {
     ) -> Result<Compiled, CompileError> {
         match self.dialect {
             Dialect::Id => self.compile_read(load_map_file(map)?, wad),
-            Dialect::Extended => extended::compile(&extended_file(map, Some(load))?, wad),
+            Dialect::Extended => {
+                extended::compile(&extended_file(map, Some(load))?, wad, self.subdivide)
+            }
         }
     }
 

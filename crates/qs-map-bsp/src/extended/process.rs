@@ -46,6 +46,7 @@ struct Compile<'a> {
     leak: Option<(Vec3, Vec<Vec3>)>,
     portal_file: Option<Vec<u8>>,
     warnings: Vec<Warning>,
+    subdivide: f64,
 }
 
 /// Whether `entity` has a clip tree for `hull`, `ShouldGenerateClipnodes` (QBSP-15.48): always
@@ -225,6 +226,7 @@ impl Compile<'_> {
         let maker = FaceMaker {
             map: &self.map,
             originals: &originals,
+            subdivide: self.subdivide,
         };
         maker.make_faces(&mut tree);
         tree.prune();
@@ -238,8 +240,12 @@ impl Compile<'_> {
         let maker = FaceMaker {
             map: &self.map,
             originals: &originals,
+            subdivide: self.subdivide,
         };
         maker.make_mark_faces(&mut tree);
+        if world && self.leak.is_none() {
+            tree.fixup_detail_fence();
+        }
         self.write_draw(&tree, &originals, &mut disk)?;
         self.store(model, disk)
     }
@@ -255,6 +261,7 @@ impl Compile<'_> {
         let maker = FaceMaker {
             map: &self.map,
             originals,
+            subdivide: self.subdivide,
         };
         let originals_out = self.writer.emit_vertices(tree, &maker)?;
         let mut fragments = TJuncs {
@@ -423,12 +430,17 @@ impl LoadedMap {
 /// `file` compiled as ericw-tools' qbsp compiles it for Quake, `ProcessFile` (QBSP-15.48 to
 /// QBSP-15.50): the brushes loaded; a model for the world and each other entity with brushes but
 /// the world brush entities; each hull in turn made for each of them; then the entities and
-/// textures written, as BSP29 or, when a value does not fit, `BSP2`.
+/// textures written, as BSP29 or, when a value does not fit, `BSP2`; faces cut past `subdivide`
+/// texels.
 ///
 /// # Errors
 ///
 /// A [`CompileError`] when a lump passes its limit.
-pub(crate) fn compile(file: &MapFile, wad: Option<&[u8]>) -> Result<Compiled, CompileError> {
+pub(crate) fn compile(
+    file: &MapFile,
+    wad: Option<&[u8]>,
+    subdivide: f32,
+) -> Result<Compiled, CompileError> {
     let map = load(file, Game::Quake);
     let occupants = Occupant::of(map.entities.iter().map(|e| e.origin).zip(&file.entities));
     let mut model_of: Vec<Option<usize>> = Vec::with_capacity(map.entities.len());
@@ -451,6 +463,7 @@ pub(crate) fn compile(file: &MapFile, wad: Option<&[u8]>) -> Result<Compiled, Co
         leak: None,
         portal_file: None,
         warnings: Vec::new(),
+        subdivide: f64::from(subdivide),
     };
     for hull in HULLS {
         for (index, model) in model_of.iter().enumerate() {
