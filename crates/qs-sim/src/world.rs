@@ -28,7 +28,7 @@ use qs_vfs::Registration;
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
 use crate::debug::Debugger;
-use crate::host_commands::SignonCommand;
+use crate::host_commands::{ClientStage, SignonCommand};
 use crate::input::Button;
 #[cfg(test)]
 use crate::messages::ServerMessages;
@@ -39,7 +39,8 @@ use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
 use qc_builtins::localization::Localization;
 
 use crate::spawn::{
-    self, FieldDef, LoadError, Parser, SPAWNFLAGS_SLOT, SpawnError, SpawnHost, Token,
+    self, Deathmatch, EdictPlace, FieldDef, LoadError, Parser, SPAWNFLAGS_SLOT, SpawnError,
+    SpawnHost, Token,
 };
 
 /// `MAP_START_TIME` (EDICT-8.1): the server's clock while the map's entities spawn.
@@ -421,8 +422,17 @@ impl World {
             progs,
             state: ServerState::Loading,
         };
-        let spawned = spawn::load_from_file(&mut spawner, entities, deathmatch != 0.0, skill)
-            .map_err(WorldError::Spawn)?;
+        let spawned = spawn::load_from_file(
+            &mut spawner,
+            entities,
+            if deathmatch == 0.0 {
+                Deathmatch::Off
+            } else {
+                Deathmatch::On
+            },
+            skill,
+        )
+        .map_err(WorldError::Spawn)?;
         world.map_entities = map_entities::MapEntities::loaded(&world, &spawned);
         world.builtins.mock.engine_mut().server_active = true;
         Ok(world)
@@ -512,9 +522,13 @@ impl World {
         }
         if self.builtins.messages.client.active {
             for text in core::mem::take(&mut self.commands) {
-                let spawned = self.player.is_some();
+                let stage = if self.player.is_some() {
+                    ClientStage::Spawned
+                } else {
+                    ClientStage::Connecting
+                };
                 let stage = SimCall::frame(&mut self.machine, progs, &mut self.builtins)
-                    .client_command(CLIENT, &text, spawned)
+                    .client_command(CLIENT, &text, stage)
                     .map_err(WorldError::Frame)?;
                 match stage {
                     Some(SignonCommand::Prespawn) => self.signon(progs, Signon::Prespawn)?,
@@ -941,8 +955,8 @@ struct Spawner<'a, 'p> {
 }
 
 impl SpawnHost for Spawner<'_, '_> {
-    fn allocate(&mut self, first: bool) -> Result<usize, SpawnError> {
-        if first {
+    fn allocate(&mut self, place: EdictPlace) -> Result<usize, SpawnError> {
+        if place == EdictPlace::World {
             // EDICT-4.2: the map's first entity goes into edict 0 without clearing it.
             return Ok(0);
         }

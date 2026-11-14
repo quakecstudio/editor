@@ -115,6 +115,16 @@ fn calc_roll(angles: [f32; 3], velocity: [f32; 3]) -> f32 {
     lean * sign
 }
 
+/// Whether the player is on the ground, `FL_ONGROUND`, which picks `SV_AirMove`'s friction
+/// and acceleration (PHYS-9.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ground {
+    /// On the ground.
+    On,
+    /// In the air.
+    Off,
+}
+
 impl SimCall<'_, '_, '_> {
     /// `SV_ReadClientMove`: the command as it arrives, its angles through `MSG_WriteAngle`
     /// and its moves through `MSG_WriteShort`, then `v_angle`, the buttons and the impulse
@@ -146,7 +156,11 @@ impl SimCall<'_, '_, '_> {
         if self.movetype(ent) == MoveType::None {
             return Ok(());
         }
-        let onground = self.flags(ent) & FL_ONGROUND != 0;
+        let ground = if self.flags(ent) & FL_ONGROUND != 0 {
+            Ground::On
+        } else {
+            Ground::Off
+        };
         // DropPunchAngle
         let (punch, len) = vector_normalize(self.vector(ent, "punchangle"));
         // PHYS-9.7: `len -= 10*host_frametime`, in double.
@@ -171,7 +185,7 @@ impl SimCall<'_, '_, '_> {
             self.water_move(ent, cmd, frametime);
             return Ok(());
         }
-        self.air_move(ent, cmd, onground, frametime)
+        self.air_move(ent, cmd, ground, frametime)
     }
 
     /// `SV_WaterJump` (PHYS-9.5).
@@ -192,7 +206,7 @@ impl SimCall<'_, '_, '_> {
         &mut self,
         ent: usize,
         cmd: &UserCmd,
-        onground: bool,
+        ground: Ground,
         frametime: f64,
     ) -> Result<(), RunError> {
         let (forward, right, _) = angle_vectors(self.vector(ent, "angles"));
@@ -219,7 +233,7 @@ impl SimCall<'_, '_, '_> {
         }
         if movetype == MoveType::Noclip {
             self.set_vector(ent, "velocity", wishvel);
-        } else if onground {
+        } else if ground == Ground::On {
             self.user_friction(ent, frametime)?;
             self.accelerate(ent, wishdir, wishspeed, frametime);
         } else {

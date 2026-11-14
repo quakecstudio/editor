@@ -247,15 +247,15 @@ impl<'a> Parser<'a> {
 /// entity. The spawn function runs through `self`, which the host sets to the entity
 /// (EDICT-8.6).
 pub trait SpawnHost {
-    /// Allocates the edict for the next entity (EDICT-8.2). `first` is true for the map's first
-    /// entity, which goes into edict 0 without clearing it (EDICT-4.2); a later one comes from
-    /// `ED_Alloc` (EDICT-6), which clears it. Returns the edict number.
+    /// Allocates the edict for the next entity at `place` (EDICT-8.2): the map's first entity
+    /// goes into edict 0 without clearing it (EDICT-4.2); a later one comes from `ED_Alloc`
+    /// (EDICT-6), which clears it. Returns the edict number.
     ///
     /// # Errors
     ///
     /// [`SpawnError::NoFreeEdicts`], id's fatal `ED_Alloc: no free edicts` (EDICT-6.2), when
     /// the array is full.
-    fn allocate(&mut self, first: bool) -> Result<usize, SpawnError>;
+    fn allocate(&mut self, place: EdictPlace) -> Result<usize, SpawnError>;
 
     /// The entity value of edict `number`, id's `EDICT_TO_PROG(EDICT_NUM(number))`, for an
     /// entity key (EDICT-8.2, EDICT-1.5).
@@ -511,14 +511,33 @@ fn trim_trailing_spaces(key: &[u8]) -> &[u8] {
     key
 }
 
+/// Whether the `deathmatch` setting is on, which inhibits other entities than the skill
+/// settings do (EDICT-8.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Deathmatch {
+    /// `deathmatch` is not 0.
+    On,
+    /// `deathmatch` is 0.
+    Off,
+}
+
+/// Where [`SpawnHost::allocate`] puts the next entity (EDICT-8.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdictPlace {
+    /// The map's first entity: edict 0, not cleared (EDICT-4.2).
+    World,
+    /// A later one: `ED_Alloc`, which clears it (EDICT-6).
+    Allocated,
+}
+
 /// Whether an entity is inhibited by the skill or deathmatch settings (EDICT-8.4).
 ///
-/// `deathmatch` is the value of the setting; `skill` is `(int)(skill + 0.5)` clamped to 0 to 3
+/// `deathmatch` is the setting; `skill` is `(int)(skill + 0.5)` clamped to 0 to 3
 /// (DIFF-3.2). `spawnflags` is truncated to an integer for the test.
 #[must_use]
-pub fn inhibited(spawnflags: f32, deathmatch: bool, skill: i32) -> bool {
+pub fn inhibited(spawnflags: f32, deathmatch: Deathmatch, skill: i32) -> bool {
     let flags = ftoi(spawnflags);
-    if deathmatch {
+    if deathmatch == Deathmatch::On {
         return flags & EDICT_SPAWNFLAG_NOT_DEATHMATCH != 0;
     }
     match skill {
@@ -551,11 +570,11 @@ pub fn inhibited(spawnflags: f32, deathmatch: bool, skill: i32) -> bool {
 pub fn load_from_file<H: SpawnHost>(
     host: &mut H,
     data: &[u8],
-    deathmatch: bool,
+    deathmatch: Deathmatch,
     skill: i32,
 ) -> Result<Vec<LoadedEntity>, LoadError> {
     let mut parser = Parser::new(data);
-    let mut first = true;
+    let mut place = EdictPlace::World;
     let mut spawned = Vec::new();
     loop {
         // parse the opening brace
@@ -568,8 +587,8 @@ pub fn load_from_file<H: SpawnHost>(
         }
 
         // The first entity goes into edict 0 (EDICT-4.2); each later one from allocation.
-        let edict = host.allocate(first).map_err(LoadError::Spawn)?;
-        first = false;
+        let edict = host.allocate(place).map_err(LoadError::Spawn)?;
+        place = EdictPlace::Allocated;
 
         let (parsed, classname) =
             parse_edict(host, &mut parser, edict).map_err(LoadError::Spawn)?;

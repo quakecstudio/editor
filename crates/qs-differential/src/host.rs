@@ -279,7 +279,11 @@ impl Host<'_> {
 
         // DIFF-3.5: spawn the map's entities (EDICT-8), with the deathmatch and skill values
         // for the inhibition test (EDICT-8.4).
-        let deathmatch = self.setting("deathmatch") != 0.0;
+        let deathmatch = if self.setting("deathmatch") == 0.0 {
+            spawn::Deathmatch::Off
+        } else {
+            spawn::Deathmatch::On
+        };
         let mut spawner = Spawner::new(self, progs);
         spawn::load_from_file(&mut spawner, entities, deathmatch, skill)?;
 

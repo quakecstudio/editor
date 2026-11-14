@@ -11,7 +11,7 @@ use qc_vm::ServerState;
 use super::{CLIENT, Spawner, World};
 use crate::builtins::SimCall;
 use crate::collision::MoveKind;
-use crate::spawn::{SpawnHost, apply_key};
+use crate::spawn::{EdictPlace, SpawnHost, apply_key};
 use crate::world::QcValue;
 
 /// Why an edit was not made.
@@ -191,7 +191,7 @@ impl World {
             state: ServerState::Loading,
         };
         let n = spawner
-            .allocate(false)
+            .allocate(EdictPlace::Allocated)
             .map_err(|e| EditError::Spawn(e.to_string()))?;
         let spawned = spawn_pairs(&mut spawner, n, pairs);
         let engine = self.builtins.mock.engine_mut();

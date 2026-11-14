@@ -143,6 +143,16 @@ pub(crate) fn atoi(text: &[u8]) -> i32 {
     }
 }
 
+/// Whether the client has spawned, `host_client->spawned`, which refuses a second
+/// `prespawn` or `spawn` (PHYS-10.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ClientStage {
+    /// Not yet spawned.
+    Connecting,
+    /// Spawned.
+    Spawned,
+}
+
 impl SimCall<'_, '_, '_> {
     /// A string command client edict `ent` sent, as `SV_ReadClientMessage` filters it and
     /// `Cmd_ExecuteString` runs it (PHYS-11); a signon stage is left for the world to run.
@@ -150,7 +160,7 @@ impl SimCall<'_, '_, '_> {
         &mut self,
         ent: usize,
         text: &[u8],
-        spawned: bool,
+        stage: ClientStage,
     ) -> Result<Option<SignonCommand>, RunError> {
         // PHYS-11.1: a command none of the prefixes match is not run.
         let allowed = ALLOWED.iter().any(|prefix| {
@@ -177,8 +187,10 @@ impl SimCall<'_, '_, '_> {
             b"color" => self.color(ent, &words),
             b"pause" => self.pause(ent),
             // PHYS-10.7: "prespawn not valid -- allready spawned", and the same for spawn.
-            b"prespawn" if !spawned => return Ok(Some(SignonCommand::Prespawn)),
-            b"spawn" if !spawned => return Ok(Some(SignonCommand::Spawn)),
+            b"prespawn" if stage == ClientStage::Connecting => {
+                return Ok(Some(SignonCommand::Prespawn));
+            }
+            b"spawn" if stage == ClientStage::Connecting => return Ok(Some(SignonCommand::Spawn)),
             b"begin" => return Ok(Some(SignonCommand::Begin)),
             _ => {}
         }

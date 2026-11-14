@@ -138,6 +138,16 @@ fn client_command(name: &str, words: &Words) -> Option<ClientCommand> {
     }
 }
 
+/// What `Cmd_ForwardToServer` sends: the command's name and its arguments, or for `cmd` the
+/// arguments alone (PHYS-13.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Forward {
+    /// The name, a space and the arguments.
+    Named,
+    /// The arguments alone.
+    Args,
+}
+
 /// What a line of the buffer leaves the rest of the buffer to do.
 enum Flow {
     /// Go on with the next line.
@@ -306,7 +316,7 @@ impl World {
                 self.print("stuffcmds : execute command line parameters\n");
             }
             "stuffcmds" => {}
-            "cmd" => self.forward(&words, false),
+            "cmd" => self.forward(&words, Forward::Args),
             "name" => self.name(&words),
             "color" => self.color(&words),
             "status" => self.status(),
@@ -349,7 +359,7 @@ impl World {
             "edictcount" => self.edict_count(),
             "profile" => self.profile(progs),
             "path" => self.path(),
-            forwarded if FORWARDED.contains(&forwarded) => self.forward(&words, true),
+            forwarded if FORWARDED.contains(&forwarded) => self.forward(&words, Forward::Named),
             _ => self.alias_or_setting(&words, &first),
         }
         Flow::Next
@@ -451,13 +461,13 @@ impl World {
 
     /// `Cmd_ForwardToServer` (PHYS-13.4): the command's name unless it is `cmd`, a space, and
     /// the rest of the line or a line feed, sent as the client's string command.
-    fn forward(&mut self, words: &Words, named: bool) {
+    fn forward(&mut self, words: &Words, form: Forward) {
         let args = (words.argv.len() > 1).then_some(words.args.as_slice());
-        self.forward_args(words, named, args);
+        self.forward_args(words, form, args);
     }
 
     /// [`World::forward`] with `args` as `Cmd_Args`, `None` for a command alone.
-    fn forward_args(&mut self, words: &Words, named: bool, args: Option<&[u8]>) {
+    fn forward_args(&mut self, words: &Words, form: Forward, args: Option<&[u8]>) {
         let name = words.argv.first().cloned().unwrap_or_default();
         if !self.builtins.messages.client.active {
             self.print(format!(
@@ -467,7 +477,7 @@ impl World {
             return;
         }
         let mut text = Vec::new();
-        if named {
+        if form == Forward::Named {
             text.extend_from_slice(&name);
             text.push(b' ');
         }
@@ -509,7 +519,7 @@ impl World {
             _ => cut,
         };
         if self.builtins.messages.client.active {
-            self.forward_args(words, true, Some(&args));
+            self.forward_args(words, Forward::Named, Some(&args));
         }
     }
 
@@ -550,7 +560,7 @@ impl World {
             .cvars
             .set("_cl_color", &format!("{player_colour}.000000"));
         if self.builtins.messages.client.active {
-            self.forward(words, true);
+            self.forward(words, Forward::Named);
         }
     }
 

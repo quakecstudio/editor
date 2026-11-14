@@ -17,7 +17,7 @@ use qc_edict::EdictNumber;
 use qc_progs::Progs;
 use qc_types::{DefType, Slot};
 
-use qs_sim::spawn::{FieldDef, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
+use qs_sim::spawn::{EdictPlace, FieldDef, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
 
 use super::Host;
 
@@ -35,8 +35,8 @@ impl<'a, 'h, 'p> Spawner<'a, 'h, 'p> {
 }
 
 impl SpawnHost for Spawner<'_, '_, '_> {
-    fn allocate(&mut self, first: bool) -> Result<usize, SpawnError> {
-        if first {
+    fn allocate(&mut self, place: EdictPlace) -> Result<usize, SpawnError> {
+        if place == EdictPlace::World {
             // EDICT-4.2: the map's first entity goes into edict 0 without clearing it.
             Ok(0)
         } else {
