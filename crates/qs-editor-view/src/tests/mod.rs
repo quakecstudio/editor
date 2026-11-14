@@ -17,7 +17,7 @@ mod editing;
 mod layout;
 mod paint;
 
-use crate::layout::{Plain, StyledSpan, Styler};
+use crate::layout::{Plain, StyleRevision, StyledSpan, Styler};
 use crate::{Buffer, EditState, EditorView, Extend, Motion, Position, Selection, ViewStyle};
 
 const FONT: &[u8] =
@@ -278,8 +278,8 @@ fn overlapping_selections_merge() {
 struct FirstChar(u64);
 
 impl Styler for FirstChar {
-    fn revision(&self) -> u64 {
-        self.0
+    fn revision(&self) -> StyleRevision {
+        StyleRevision::new(self.0)
     }
 
     fn spans(&self, _line: usize, text: &str) -> Vec<StyledSpan> {

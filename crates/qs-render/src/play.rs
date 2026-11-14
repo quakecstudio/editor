@@ -679,8 +679,14 @@ impl Play {
                     .chain(&hud.menu)
                     .map(|placed| (placed.anchor, &placed.item)),
             );
+        // HUD-1: the bar is centred on a screen wider than it, but across it in deathmatch.
+        let bar = if hud.deathmatch {
+            BarWidth::Screen
+        } else {
+            BarWidth::Centred
+        };
         for (anchor, item) in items {
-            let canvas = self.canvas(anchor, hud);
+            let canvas = self.canvas(anchor, bar);
             let first = flat.vertices.len();
             self.draw_item(item, canvas.width, flat);
             canvas.place(flat.vertices.get_mut(first..).unwrap_or_default());
@@ -692,7 +698,7 @@ impl Play {
     /// area centred across it; or QuakeSpasm's `GL_SetCanvas`, the window's own size, with the
     /// bar's canvas at its bottom centre and the menus' 320 by 200 centred both ways, each at
     /// scale 1.
-    fn canvas(&self, anchor: Anchor, hud: &Hud) -> Canvas {
+    fn canvas(&self, anchor: Anchor, bar: BarWidth) -> Canvas {
         let [width, height] = self.screen;
         let centring = width.saturating_sub(BAR_WIDTH) >> 1;
         let at = |x: i32, y: i32, w: i32| Canvas {
@@ -701,7 +707,7 @@ impl Play {
             width: w,
         };
         match (anchor, self.look) {
-            (Anchor::Bar, _) if hud.deathmatch => {
+            (Anchor::Bar, _) if bar == BarWidth::Screen => {
                 at(0, height.saturating_sub(HUD_SBAR_HEIGHT), width)
             }
             (Anchor::Bar, _) => at(centring, height.saturating_sub(HUD_SBAR_HEIGHT), BAR_WIDTH),
@@ -899,6 +905,16 @@ fn centred(width: i32, image_width: u32) -> i32 {
     width
         .saturating_sub(i32::try_from(image_width).unwrap_or(0))
         .wrapping_div(2)
+}
+
+/// How wide the status bar's canvas is: centred at the bar's own width, or the screen's
+/// (HUD-1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BarWidth {
+    /// Centred, 320 wide.
+    Centred,
+    /// Across the screen, as in deathmatch.
+    Screen,
 }
 
 impl FlatFrame {

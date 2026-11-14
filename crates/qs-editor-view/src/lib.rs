@@ -28,7 +28,7 @@ pub mod view;
 pub mod vim;
 
 pub use buffer::{Buffer, LineId, Position};
-pub use layout::{LayoutCache, Plain, StyledSpan, Styler};
+pub use layout::{LayoutCache, Plain, StyleRevision, StyledSpan, Styler};
 pub use selection::{EditState, Extend, Motion, Selection};
 pub use view::{EditorView, Fixable, KeyMode, LineNote, NoteSeverity, ViewStyle, Wrap};
 

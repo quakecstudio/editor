@@ -15,7 +15,7 @@ use egui::{
 use crate::buffer::Position;
 use crate::diff::Diff;
 use crate::fold::{Fold, Folds};
-use crate::layout::{LayoutCache, Preedit, StyleRevision, Styler, inlay_job, line_job};
+use crate::layout::{LayoutCache, Preedit, Styler, inlay_job, line_job};
 use crate::selection::{EditState, Extend, Motion, Selection};
 use crate::vim::{Mode, Vim, VimKey};
 
@@ -519,7 +519,7 @@ impl EditorView {
                 .max(char_width),
         };
         self.cache.begin(
-            StyleRevision::new(styler.revision()),
+            styler.revision(),
             &style.font,
             pixels_per_point,
             (self.wrap_width, self.inlay_revision),
