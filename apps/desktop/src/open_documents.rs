@@ -7,7 +7,7 @@
 //! winit's delegate class, as `bevy_macos_open_files` does for Bevy; the files wait in a queue
 //! that [`take`] empties each frame. winit 0.31 lets an app set its own delegate instead.
 //!
-//! This module is the app's one use of `unsafe` (Justin, 2026-11-14): adding a method to a
+//! This module is the app's one use of `unsafe` (ADR-0024): adding a method to a
 //! class is the Objective-C runtime's C API, and no crate does it for an eframe app.
 
 use std::ffi::CStr;

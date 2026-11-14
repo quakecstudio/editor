@@ -220,6 +220,7 @@ enum qs_workbench::map_textures::WadState
 enum qs_workbench::map_uv::Axis
 enum qs_workbench::map_uv::JustifyTo
 enum qs_workbench::map_uv::UvChoice
+enum qs_workbench::open_paths::NotOpenedWhy
 enum qs_workbench::preview::OnLoss
 enum qs_workbench::preview::PlayState
 enum qs_workbench::preview::PreviewError
@@ -606,12 +607,14 @@ field qs_workbench::map_uv::FaceRef.entity
 field qs_workbench::map_uv::FaceRef.face
 field qs_workbench::map_uv::FaceUvParams.edit
 field qs_workbench::map_uv::FaceUvParams.faces
+field qs_workbench::open_paths::NotOpened.detail
 field qs_workbench::open_paths::NotOpened.path
-field qs_workbench::open_paths::NotOpened.reason
+field qs_workbench::open_paths::NotOpened.why
 field qs_workbench::open_paths::OpenPathsParams.paths
 field qs_workbench::open_paths::PathsOpened.file
 field qs_workbench::open_paths::PathsOpened.map
 field qs_workbench::open_paths::PathsOpened.not_opened
+field qs_workbench::open_paths::PathsOpened.opened
 field qs_workbench::open_paths::PathsOpened.project
 field qs_workbench::preview::BreakpointParams.file
 field qs_workbench::preview::BreakpointParams.line
@@ -867,6 +870,7 @@ fn qs_workbench::map_edit::groups::MapDocument::hidden_entities
 fn qs_workbench::map_edit::groups::MapDocument::is_hidden
 fn qs_workbench::map_edit::groups::MapDocument::is_locked
 fn qs_workbench::map_edit::live::LiveChange::send
+fn qs_workbench::map_edit::opens_in_map_editor
 fn qs_workbench::map_edit::outline::MapDocument::outline
 fn qs_workbench::map_edit::outline::OutlineRow::count
 fn qs_workbench::map_edit::outline::OutlineRow::holds
@@ -1745,6 +1749,9 @@ variant qs_workbench::map_uv::UvChoice::Flip
 variant qs_workbench::map_uv::UvChoice::Justify
 variant qs_workbench::map_uv::UvChoice::Reset
 variant qs_workbench::map_uv::UvChoice::Snap
+variant qs_workbench::open_paths::NotOpenedWhy::Missing
+variant qs_workbench::open_paths::NotOpenedWhy::Unreadable
+variant qs_workbench::open_paths::NotOpenedWhy::UnsavedChanges
 variant qs_workbench::preview::OnLoss::Ask
 variant qs_workbench::preview::OnLoss::Reload
 variant qs_workbench::preview::PlayState::Paused

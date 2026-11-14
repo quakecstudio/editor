@@ -12,6 +12,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use eframe::egui::accesskit::{Role, Toggled};
 use eframe::egui::{self, FontId, Pos2, RawInput, Rect, Vec2};
@@ -31,6 +32,7 @@ use crate::debugger::place;
 use crate::editor::Request;
 use crate::icons::Icon;
 use crate::keymap;
+use crate::launch::{Launch, forward_paths};
 use crate::map_tools::Readout;
 use crate::palette::highlighted;
 use crate::shell::{CentreTab, EDITOR_AREA, PointerHeld, commanded_size, dragged_size};
@@ -3368,7 +3370,8 @@ fn opened_files_open_in_their_project() {
 
 // spec PRJ-1.6: a second launch with paths hands them to the window already running, over the
 // app's socket, which opens them in their project and shows them; with no paths, or no window
-// answering, the launch opens its own
+// answering, the launch opens its own; of launches that start together, the one holding the
+// app's lock file opens the window
 #[test]
 fn a_second_launch_hands_its_paths_to_the_running_window() {
     let dir = TempDir::new("forward");
@@ -3385,7 +3388,24 @@ fn a_second_launch_hands_its_paths_to_the_running_window() {
         dir.path().join("app.sock")
     };
     let world = project.join("world.qc");
-    assert!(!crate::forward_paths(&socket, std::slice::from_ref(&world)));
+    let lock = dir.path().join("cache/app.lock");
+    assert!(!forward_paths(&socket, std::slice::from_ref(&world)));
+    // The first launch takes the lock and opens the window; another that starts while no
+    // window answers yet opens its own once it has waited.
+    let first = Launch::claim(
+        Some(&lock),
+        &socket,
+        std::slice::from_ref(&world),
+        Duration::ZERO,
+    );
+    assert!(matches!(first, Launch::Window(Some(_))), "{first:?}");
+    let second = Launch::claim(
+        Some(&lock),
+        &socket,
+        std::slice::from_ref(&world),
+        Duration::ZERO,
+    );
+    assert!(matches!(second, Launch::Window(None)), "{second:?}");
 
     let ctx = egui::Context::default();
     let mut app = App::checked_on_the_frame(&ctx, None).unwrap();
@@ -3395,19 +3415,21 @@ fn a_second_launch_hands_its_paths_to_the_running_window() {
     })
     .unwrap();
     app.shell_mut().set_host(host);
-    assert!(!crate::forward_paths(&socket, &[]));
+    assert!(!forward_paths(&socket, &[]));
     let start = project.join("start.map");
     fs::write(&start, "{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
     app.shell_mut().open_paths([start]);
     frame(&ctx, &mut app);
     assert_eq!(app.shell().centre_tab(), CentreTab::Map);
+    // With the window answering, a launch that cannot take the lock hands it its paths.
     let forwarded = std::thread::spawn({
         let world = world.clone();
-        move || crate::forward_paths(&socket, &[world])
+        move || Launch::claim(Some(&lock), &socket, &[world], Duration::ZERO)
     });
     wake.recv().unwrap();
     frame(&ctx, &mut app);
-    assert!(forwarded.join().unwrap());
+    assert!(matches!(forwarded.join().unwrap(), Launch::Forwarded));
+    drop(first);
     let workbench = app.shell().workbench();
     assert_eq!(workbench.root(), Some(project.as_path()));
     assert_eq!(

@@ -26,6 +26,7 @@ mod game_guide;
 mod git_panel;
 pub mod icons;
 pub mod keymap;
+pub mod launch;
 mod map_browser;
 pub mod map_editor;
 mod map_fields;
@@ -61,49 +62,14 @@ mod snapshots;
 #[cfg(test)]
 mod tests;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use eframe::egui;
-use qs_commands::remote::Client;
 use qs_layout::Layout;
-use qs_workbench::open_paths::{OPEN_PATHS, OpenPathsParams};
 use qs_workbench::{CheckAfterTyping, Config};
 
 use crate::shell::Shell;
 use crate::theme::{Mode, Theme};
-
-/// Hands `paths` to the copy of the app already running, through `paths.open` over the app's
-/// socket at `socket`, as Zed's launches do on Windows and Linux: true when that copy took
-/// them, so this launch opens no window of its own. With no paths, no copy answering, or a copy
-/// that refuses the request, this launch opens its own window.
-#[must_use]
-pub fn forward_paths(socket: &Path, paths: &[PathBuf]) -> bool {
-    if paths.is_empty() {
-        return false;
-    }
-    let Ok(mut client) = Client::connect(socket) else {
-        return false;
-    };
-    // The running copy has its own working directory.
-    let paths = paths
-        .iter()
-        .map(|path| std::path::absolute(path).unwrap_or_else(|_| path.clone()))
-        .collect();
-    let answer = serde_json::to_value(OpenPathsParams { paths })
-        .map_err(|error| error.to_string())
-        .and_then(|params| {
-            client
-                .execute(OPEN_PATHS, params)
-                .map_err(|error| error.to_string())?
-        });
-    match answer {
-        Ok(_) => true,
-        Err(error) => {
-            tracing::warn!(%error, "the running app did not take the paths; opening a window");
-            false
-        }
-    }
-}
 
 /// The app: the window's state and, on macOS, the menu bar.
 pub struct App {

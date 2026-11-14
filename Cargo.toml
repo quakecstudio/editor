@@ -151,6 +151,7 @@ regex-lite = { version = "=0.1.9", default-features = false }
 rfd = { version = "=0.17.2", default-features = false }
 # The desktop app on macOS builds eframe's event loop itself, to add the open-documents
 # method to winit's delegate between building it and running it; eframe does not re-export it.
+# An upgrade has to keep winit's WinitApplicationDelegate class or replace that (ADR-0024).
 winit = { version = "=0.30.13", default-features = false }
 # The desktop app's build script embeds its icon and version information in the Windows .exe,
 # as vouch does; without `toml`, it needs only version_check.

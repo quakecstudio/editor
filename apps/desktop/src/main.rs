@@ -7,6 +7,7 @@ use std::process::ExitCode;
 
 use eframe::egui;
 use qs_commands::remote::Host;
+use quakec_studio::launch::{Launch, STARTING_WAIT};
 #[cfg(target_os = "macos")]
 use quakec_studio::open_documents;
 use quakec_studio::strings::Text;
@@ -53,12 +54,16 @@ fn main() -> ExitCode {
         .as_ref()
         .ok()
         .map(|dirs| dirs.app_socket().to_path_buf());
-    // A file opened from Explorer or a file manager while the app runs goes to that copy.
-    if let Some(socket) = &app_socket
-        && quakec_studio::forward_paths(socket, &paths)
-    {
-        return ExitCode::SUCCESS;
-    }
+    // A file opened from Explorer or a file manager while the app runs goes to that copy, and
+    // of launches that start together one opens the window; its lock is held until it closes.
+    let lock = dirs.as_ref().ok().map(qs_paths::AppDirs::app_lock);
+    let _window = match &app_socket {
+        Some(socket) => match Launch::claim(lock.as_deref(), socket, &paths, STARTING_WAIT) {
+            Launch::Forwarded => return ExitCode::SUCCESS,
+            Launch::Window(held) => held,
+        },
+        None => None,
+    };
     let agent_file = dirs
         .as_ref()
         .ok()
