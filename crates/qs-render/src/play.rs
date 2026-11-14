@@ -210,7 +210,6 @@ pub(crate) fn pic_image(pic: &QPic<'_>, palette: &Palette) -> Image {
 /// `conchars` through `palette`, index 0 transparent: `Draw_Init` sets every 0 to 255,
 /// "proper transparent color" (WAD-4.2).
 fn conchars_image(chars: &Conchars<'_>, palette: &Palette) -> Image {
-    let side = u32::try_from(qs_wad::WAD_CONCHARS_SIZE).unwrap_or(u32::MAX);
     let mut rgba = Vec::new();
     // The glyphs row by row of the 16 by 16 grid, each 8 rows of 8 pixels.
     let glyphs: Vec<[u8; 64]> = (0..=u8::MAX).map(|n| chars.glyph(n)).collect();
@@ -232,11 +231,7 @@ fn conchars_image(chars: &Conchars<'_>, palette: &Palette) -> Image {
             }
         }
     }
-    Image {
-        width: side,
-        height: side,
-        rgba,
-    }
+    Image::square(qs_wad::WAD_CONCHARS_SIZE, rgba)
 }
 
 /// A precached model as the renderer draws it.

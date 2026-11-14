@@ -151,6 +151,25 @@ pub struct Image {
     pub rgba: Vec<u8>,
 }
 
+impl Image {
+    /// A square image `side` pixels a side of `rgba`; one transparent texel for a side too wide
+    /// for the texture's size, which never comes from the fixed sizes it is made with.
+    pub(crate) fn square(side: usize, rgba: Vec<u8>) -> Self {
+        match u32::try_from(side) {
+            Ok(side) => Self {
+                width: side,
+                height: side,
+                rgba,
+            },
+            Err(_) => Self {
+                width: 1,
+                height: 1,
+                rgba: vec![0; RGBA_BYTES],
+            },
+        }
+    }
+}
+
 /// A rectangle of the lightmap atlas a relight made again, and where it sits (REND-5.7).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LightmapPatch {

@@ -3,6 +3,7 @@
 //! A free camera in Quake's axes: x forward at yaw 0, y left, z up; yaw turns about z and
 //! pitch looks down when positive, as Quake's `angles` do.
 
+use crate::FULL_TURN;
 use crate::sprite::angle_vectors;
 use crate::vector::{cross, dot};
 
@@ -49,8 +50,7 @@ const NEAR: f32 = 4.0;
 const FAR: f32 = 4096.0;
 /// `fov`, the field of view across, in degrees: `scr_fov = {"fov","90"}` (REND-3.4).
 const FOV_X: f32 = 90.0;
-/// A turn, which the yaw wraps at, and the pitch's furthest up or down.
-const FULL_TURN: f32 = 360.0;
+/// The pitch's furthest up or down.
 const PITCH_LIMIT: f32 = 89.0;
 
 impl Camera {

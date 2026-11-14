@@ -13,7 +13,7 @@ use qs_wad::QPic;
 
 use crate::mesh::{Image, Palette};
 use crate::play::pic_image;
-use crate::{AXES, CHANNEL_MAX};
+use crate::{CHANNEL_MAX, RGB};
 
 /// A picture file's decoder.
 type Decoder = fn(&[u8]) -> Option<Image>;
@@ -153,8 +153,8 @@ pub(crate) fn read_pcx(bytes: &[u8]) -> Option<Image> {
             row.extend(core::iter::repeat_n(value, usize::from(run)));
         }
         for &index in row.iter().take(usize::from(width)) {
-            let at = usize::from(index).checked_mul(AXES)?;
-            let colour = palette.get(at..at.checked_add(AXES)?)?;
+            let at = usize::from(index).checked_mul(RGB)?;
+            let colour = palette.get(at..at.checked_add(RGB)?)?;
             rgba.extend(colour);
             rgba.push(CHANNEL_MAX);
         }

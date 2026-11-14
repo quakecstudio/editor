@@ -15,7 +15,7 @@ use qs_mdl::spr::{
 };
 
 use crate::mesh::{Image, Palette};
-use crate::vector::{cross, dot};
+use crate::vector::{add, cross, dot, scale, sub};
 
 /// The palette index a sprite does not draw, `GL_LoadTexture (..., alpha)` with
 /// `TEXPREF_ALPHA` (REND-11.2).
@@ -318,18 +318,6 @@ pub(crate) fn angle_vectors([pitch, yaw, roll]: [f32; 3]) -> ([f32; 3], [f32; 3]
     let right = [-sr * sp * cy + cr * sy, -sr * sp * sy - cr * cy, -sr * cp];
     let up = [cr * sp * cy + sr * sy, cr * sp * sy - sr * cy, cr * cp];
     (forward, right, up)
-}
-
-pub(crate) fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-pub(crate) fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-pub(crate) fn scale(v: [f32; 3], by: f32) -> [f32; 3] {
-    [v[0] * by, v[1] * by, v[2] * by]
 }
 
 /// `VectorNormalizeFast`'s direction; a zero vector stays zero.

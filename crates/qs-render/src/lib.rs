@@ -17,6 +17,10 @@ const AXES: usize = 3;
 const RGBA_BYTES: usize = 4;
 /// A colour channel's most, an opaque alpha.
 const CHANNEL_MAX: u8 = 255;
+/// A colour's channels, red, green and blue.
+const RGB: usize = 3;
+/// A turn in degrees.
+const FULL_TURN: f32 = 360.0;
 
 mod alias;
 mod anorm_dots;

@@ -8,6 +8,7 @@
 //! is placed by its current matrix, so a door is picked where it is drawn.
 
 use crate::mesh::{MapMesh, Vertex};
+use crate::vector::{add, cross, dot, scale, sub};
 
 /// What a ray hit first.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -87,14 +88,6 @@ fn transform(&[c0, c1, c2, c3]: &[[f32; 4]; 4], [x, y, z]: [f32; 3]) -> [f32; 3]
     [row(0), row(1), row(2)]
 }
 
-fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-fn scale(a: [f32; 3], by: f32) -> [f32; 3] {
-    a.map(|v| v * by)
-}
-
 /// The Möller–Trumbore ray and triangle test: how far along the ray it meets the triangle,
 /// in front of the origin, from either side.
 fn intersect(origin: [f32; 3], direction: [f32; 3], [a, b, c]: [[f32; 3]; 3]) -> Option<f32> {
@@ -118,22 +111,6 @@ fn intersect(origin: [f32; 3], direction: [f32; 3], [a, b, c]: [[f32; 3]; 3]) ->
     }
     let t = dot(e2, q) * inverse;
     (t > 0.0).then_some(t)
-}
-
-fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 #[cfg(test)]

@@ -21,13 +21,12 @@ use crate::mesh::{
 use crate::particles::{ParticleVertex, particle_texture};
 use crate::skybox::Skybox;
 use crate::sprite::SpriteVertex;
-use crate::{AXES, CHANNEL_MAX, RGBA_BYTES};
+use crate::{CHANNEL_MAX, RGB, RGBA_BYTES};
 
 /// The world bind group's skybox binding, the shader's `@binding(3)` (REND-8.2).
 const SKYBOX_BINDING: u32 = 3;
-/// A texel's bytes, as the texture copies count them.
-const RGBA_BYTES_U32: u32 = 4;
-const RGBA_BYTES_U64: u64 = 4;
+/// The sky uniform with no skybox: its flag, width and height 0, and its pad (REND-8.2).
+const NO_SKYBOX: [f32; 4] = [0.0; 4];
 /// The console's height over its width, 4:3, when no screen size is given.
 const CONSOLE_ASPECT: f32 = 0.75;
 /// The bytes of a [`crate::mesh::Vertex`] on the GPU: position, texture and light coordinates.
@@ -882,7 +881,7 @@ impl MapRenderer {
         let [x, y] = patch.at;
         let texels = u64::from(image.width)
             .checked_mul(u64::from(image.height))
-            .and_then(|n| n.checked_mul(RGBA_BYTES_U64))
+            .and_then(|n| n.checked_mul(u64::try_from(RGBA_BYTES).ok()?))
             .and_then(|n| usize::try_from(n).ok());
         if x.saturating_add(image.width) > size.width
             || y.saturating_add(image.height) > size.height
@@ -898,7 +897,9 @@ impl MapRenderer {
             &image.rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(image.width.saturating_mul(RGBA_BYTES_U32)),
+                bytes_per_row: u32::try_from(RGBA_BYTES)
+                    .ok()
+                    .map(|bytes| image.width.saturating_mul(bytes)),
                 rows_per_image: Some(image.height),
             },
             wgpu::Extent3d {
@@ -924,9 +925,9 @@ impl MapRenderer {
         };
         let params = [view.water_alpha, skyfog, view.screen[0], view.screen[1]];
         // REND-8.2: whether the sky is the box, and its faces' size.
-        let sky = self.skybox.map_or([0.0; RGBA_BYTES], |[w, h]| {
-            [1.0, f32_of_u32(w), f32_of_u32(h), 0.0]
-        });
+        let sky = self
+            .skybox
+            .map_or(NO_SKYBOX, |[w, h]| [1.0, f32_of_u32(w), f32_of_u32(h), 0.0]);
         // REND-13.5: what a lightmap texel is multiplied by, the mesh's look's.
         // REND-13.9: the gamma every fragment is raised to.
         let look = [self.light_scale, view.gamma, 0.0, 0.0];
@@ -1295,7 +1296,7 @@ impl Default for Fog {
     /// REND-10.1: no fog, grey.
     fn default() -> Self {
         Self {
-            color: [REND_FOG_DEFAULT_GRAY; AXES],
+            color: [REND_FOG_DEFAULT_GRAY; RGB],
             density: 0.0,
         }
     }

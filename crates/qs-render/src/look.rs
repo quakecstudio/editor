@@ -10,6 +10,7 @@
 //! Which engine's look a frame takes (REND-13): QuakeSpasm's by default, GLQuake's as a mode a
 //! caller chooses, as ADR-0012 keeps the loaders' modes.
 
+use crate::FULL_TURN;
 use crate::mesh::GAMMA;
 use qs_client::ConsoleHold;
 
@@ -26,9 +27,8 @@ const CONSOLE_ALPHA_RISE: f32 = 1.2;
 /// `R_BuildLightMap`'s shift: 8 with `gl_overbright`, 7 in GLQuake (REND-13.5, REND-5.4).
 const OVERBRIGHT_SHIFT: u32 = 8;
 const GLQUAKE_SHIFT: u32 = 7;
-/// `AdaptFovx`'s 4:3 screen, `height / width == 0.75`, and its degrees in a turn (REND-13.6).
+/// `AdaptFovx`'s 4:3 screen, `height / width == 0.75` (REND-13.6).
 const FOUR_BY_THREE: f32 = 0.75;
-const FULL_TURN: f64 = 360.0;
 
 /// The look of a frame: how the palette is corrected, how textures are filtered, whether
 /// fullbright texels glow, how bright light can be and how wide the view is (REND-13).
@@ -179,13 +179,13 @@ fn adapt_fov_x(fov_x: f32, aspect: f32) -> f32 {
         return fov_x;
     }
     let a = (f64::from(FOUR_BY_THREE) / f64::from(x)
-        * (f64::from(fov_x) / FULL_TURN * core::f64::consts::PI).tan())
+        * (f64::from(fov_x) / f64::from(FULL_TURN) * core::f64::consts::PI).tan())
     .atan();
     #[expect(
         clippy::cast_possible_truncation,
         reason = "spec REND-13.6: the double stored in AdaptFovx's float a"
     )]
-    let a = (a * FULL_TURN / core::f64::consts::PI) as f32;
+    let a = (a * f64::from(FULL_TURN) / core::f64::consts::PI) as f32;
     a
 }
 

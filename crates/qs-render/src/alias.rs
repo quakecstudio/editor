@@ -18,9 +18,9 @@
 use qs_client::{DynamicLight, PoseBlend};
 use qs_mdl::mdl::{MDL_EF_ROTATE, MDL_HEADER_SIZE, Mdl, MdlFrameEntry};
 
-use crate::CHANNEL_MAX;
 use crate::anorm_dots::{R_AVERTEXNORMAL_DOTS, SHADEDOT_QUANT};
 use crate::mesh::{Image, Palette};
+use crate::{CHANNEL_MAX, FULL_TURN};
 
 /// `ambientlight > 128` in `R_DrawAliasModel` (REND-4.7).
 const AMBIENT_CAP: f32 = 128.0;
@@ -45,8 +45,6 @@ pub(crate) const SKIN_SLOTS: usize = 4;
 const ROTATE_RATE: f64 = 100.0;
 /// `anglemod`'s steps in a turn, `65536/360.0` (REND-4.9).
 const ANGLE_STEPS: f64 = 65536.0;
-/// A turn in degrees.
-const TURN: f64 = 360.0;
 /// `FLOODFILL_FIFO_SIZE` (REND-4.1).
 const FLOODFILL_FIFO_SIZE: usize = 0x1000;
 /// The palette index `Mod_FloodFillSkin` uses as its visited marker (REND-4.1).
@@ -413,7 +411,7 @@ pub fn entity_light(light: i32, kind: AliasKind, origin: [f32; 3], lights: &[Dyn
 /// `((int)(yaw * (SHADEDOT_QUANT / 360.0))) & (SHADEDOT_QUANT - 1)` (REND-4.8).
 fn shade_dots(yaw: f32) -> &'static [f32; 256] {
     let quant = u32::try_from(SHADEDOT_QUANT).map_or(f64::MAX, f64::from);
-    let step = f64::from(yaw) * (quant / TURN);
+    let step = f64::from(yaw) * (quant / f64::from(FULL_TURN));
     let row = truncate(step) & i64::try_from(SHADEDOT_QUANT.saturating_sub(1)).unwrap_or(i64::MAX);
     let row = usize::try_from(row).unwrap_or(0);
     R_AVERTEXNORMAL_DOTS
@@ -427,8 +425,8 @@ fn shade_dots(yaw: f32) -> &'static [f32; 256] {
 pub fn bob_rotate(time: f64) -> f32 {
     // anglemod takes a float.
     let angle = f64::from(f32_of_f64(ROTATE_RATE * time));
-    let steps = truncate(angle * (ANGLE_STEPS / TURN)) & 0xffff;
-    f32_of_f64(TURN / ANGLE_STEPS * f64_of_i64(steps))
+    let steps = truncate(angle * (ANGLE_STEPS / f64::from(FULL_TURN))) & 0xffff;
+    f32_of_f64(f64::from(FULL_TURN) / ANGLE_STEPS * f64_of_i64(steps))
 }
 
 /// `R_RotateForEntity`: `position` turned by `turn[2]` about x, `turn[0]` about y and

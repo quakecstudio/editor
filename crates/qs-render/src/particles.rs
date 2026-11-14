@@ -12,7 +12,8 @@
 use qs_client::SceneParticle;
 
 use crate::mesh::{Image, Palette};
-use crate::sprite::{Eye, add, scale, sub};
+use crate::sprite::Eye;
+use crate::vector::{add, scale, sub};
 use crate::{CHANNEL_MAX, RGBA_BYTES};
 
 /// `VectorScale (vup, 1.5, up)`: the triangle's side along each axis (PART-3.2).
@@ -69,11 +70,7 @@ pub fn particle_texture() -> Image {
             ]);
         }
     }
-    Image {
-        width: u32::try_from(DOT_SIDE).unwrap_or(u32::MAX),
-        height: u32::try_from(DOT_SIDE).unwrap_or(u32::MAX),
-        rgba,
-    }
+    Image::square(DOT_SIDE, rgba)
 }
 
 /// `R_DrawParticles`' triangles for `particles` seen from `eye`, each in its palette colour

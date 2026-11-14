@@ -19,10 +19,9 @@ use crate::alias::{
 use crate::anorm_dots::SHADEDOT_QUANT;
 use crate::mesh::{Image, Palette};
 use crate::picture::load_image;
-use crate::{AXES, CHANNEL_MAX, RGBA_BYTES};
+use crate::vector::{add, cross, sub};
+use crate::{AXES, CHANNEL_MAX, FULL_TURN, RGBA_BYTES};
 
-/// Degrees in a turn, as `quantise` divides a yaw.
-const FULL_TURN: f64 = 360.0;
 /// `MAX_SKINS` in QuakeSpasm-Spiked's `gl_model.h`: the most skins a surface looks for.
 const MAX_SKINS: u32 = 32;
 /// `r_avertexnormal_dot`'s slope for a normal facing away from the light, "reproduces
@@ -381,7 +380,7 @@ fn shade_vector(yaw: f32) -> [f32; 3] {
     reason = "spec REND-12.5: C's (int) cast of the yaw's steps, then 0 to 15 as a float"
 )]
 fn quantise(yaw: f32) -> f32 {
-    let steps = f64::from(yaw) * (f64::from(SHADE_STEPS) / FULL_TURN);
+    let steps = f64::from(yaw) * (f64::from(SHADE_STEPS) / f64::from(FULL_TURN));
     let mask = i64::try_from(SHADEDOT_QUANT.saturating_sub(1)).unwrap_or(0);
     ((steps as i64) & mask) as f32
 }
@@ -395,18 +394,6 @@ fn normal_dot(normal: [f32; 3], light: [f32; 3]) -> f32 {
     } else {
         1.0 + dot
     }
-}
-
-fn add([ax, ay, az]: [f32; 3], [bx, by, bz]: [f32; 3]) -> [f32; 3] {
-    [ax + bx, ay + by, az + bz]
-}
-
-fn sub([ax, ay, az]: [f32; 3], [bx, by, bz]: [f32; 3]) -> [f32; 3] {
-    [ax - bx, ay - by, az - bz]
-}
-
-fn cross([ax, ay, az]: [f32; 3], [bx, by, bz]: [f32; 3]) -> [f32; 3] {
-    [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx]
 }
 
 /// `VectorNormalize`: `v` over its length, a zero vector left zero.

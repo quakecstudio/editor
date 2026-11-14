@@ -10,9 +10,6 @@ use epaint::textures::TexturesDelta;
 
 use crate::RGBA_BYTES;
 
-/// A texel's bytes in a row the copy counts.
-const TEXEL_BYTES: u32 = 4;
-
 /// Why a frame could not be drawn offscreen.
 #[derive(Debug)]
 pub enum OffscreenError {
@@ -292,7 +289,10 @@ impl Offscreen {
     ) -> Result<Pixels, OffscreenError> {
         let state = &self.state;
         let size_error = || OffscreenError::ReadBack(format!("a frame of {width} by {height}"));
-        let unpadded = width.checked_mul(TEXEL_BYTES).ok_or_else(size_error)?;
+        let unpadded = u32::try_from(RGBA_BYTES)
+            .ok()
+            .and_then(|bytes| width.checked_mul(bytes))
+            .ok_or_else(size_error)?;
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let padded = unpadded
             .div_ceil(align)
