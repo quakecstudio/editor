@@ -301,6 +301,7 @@ fn the_ui_code_has_no_string_literals() {
         ("code_style.rs", include_str!("code_style.rs")),
         ("menu.rs", include_str!("menu.rs")),
         ("map_editor.rs", include_str!("map_editor.rs")),
+        ("map_feature.rs", include_str!("map_feature.rs")),
         ("map_browser.rs", include_str!("map_browser.rs")),
         ("map_fields.rs", include_str!("map_fields.rs")),
         ("map_groups.rs", include_str!("map_groups.rs")),

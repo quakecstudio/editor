@@ -103,7 +103,7 @@ use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
 use crate::debugger::{self, DebugAction, DebugInput};
 use crate::disk_watch::DiskWatch;
 use crate::editor::{Editor, Popup, Request};
-use crate::entities::{self, EntityAction, Outliner, Properties};
+use crate::entities::{self, EntityAction, Properties};
 use crate::fallback::{SystemFonts, families};
 use crate::features::{Commands, Features, ShellRequest};
 use crate::finder::FileFinder;
@@ -117,9 +117,9 @@ use crate::map_profiles::ProfileAction;
 use crate::map_review::ReviewAction;
 use crate::map_tools::BrushAction;
 use crate::map_view::{self, MapView};
-use crate::multibuffer::{MultiAction, Source as MultiSource, multibuffer_ui};
 #[cfg(test)]
 use crate::multibuffer::Multibuffer;
+use crate::multibuffer::{MultiAction, Source as MultiSource, multibuffer_ui};
 use crate::palette::Palette;
 use crate::picker::{PickerKind, PickerRow};
 use crate::project::ProjectFeature;
@@ -294,17 +294,6 @@ pub struct Shell {
     system_fonts: SystemFonts,
     /// The window's wgpu device and formats, which the map view draws with.
     render_state: Option<RenderState>,
-    map: Option<MapView>,
-    /// The map editor's view and key editor (P5-06).
-    map_editor: MapEditor,
-    /// The map the map editor last showed, to notice one newly opened.
-    map_opened: Option<PathBuf>,
-    /// When the open map was last backed up, in egui seconds, and at which of its edits
-    /// (P6-20).
-    backed_up: (f64, MapRevision),
-    /// The modified times of the open map and the project's QuakeC, to notice another
-    /// program's writes (P5-17).
-    disk_watch: DiskWatch,
     /// The count of focus commands the shell has applied (`Layout::focus_requests`): the
     /// layout's when the window opens, so the keyboard moves only when a focus command runs.
     focus_applied: u64,
@@ -312,10 +301,6 @@ pub struct Shell {
     preview_error: Option<String>,
     /// Where the app's menu is: the system's menu bar, or the toolbar in the window (P3-44).
     menu: MenuPlace,
-    /// The Entities outliner's filter.
-    outliner: Outliner,
-    /// The Properties panel's edits.
-    properties: Properties,
     /// Each feature's state (P6-41).
     features: Features,
     /// The key bindings in force, the user's keymap file over the defaults (P4-37).
@@ -368,16 +353,9 @@ impl Shell {
             symbol_scope: SymbolScope::default(),
             system_fonts: SystemFonts::new(&Theme::bundled_fonts()),
             render_state: None,
-            map: None,
-            map_editor: MapEditor::default(),
-            map_opened: None,
-            backed_up: (0.0, MapRevision::default()),
-            disk_watch: DiskWatch::default(),
             focus_applied: layout.focus_requests,
             preview_error: None,
             menu: MenuPlace::default(),
-            outliner: Outliner::default(),
-            properties: Properties::default(),
             features: Features::new(AgentPanel::new(Box::new(agent::provider_model))),
             keymap: keymap::Keymap::defaults(),
             key_mode: KeyMode::Standard,
@@ -731,7 +709,7 @@ impl Shell {
             return false;
         };
         map_view::install(state, mesh);
-        self.map = Some(MapView::new(camera));
+        self.features.map.map = Some(MapView::new(camera));
         self.centre_tab = CentreTab::Map;
         true
     }
@@ -745,7 +723,7 @@ impl Shell {
     /// The map view, once a map is shown.
     #[must_use]
     pub const fn map_view(&self) -> Option<&MapView> {
-        self.map.as_ref()
+        self.features.map.map.as_ref()
     }
 
     /// Opens the project in `path`, through its command.
@@ -1557,34 +1535,43 @@ impl Shell {
             .map(|document| document.path().to_path_buf());
         // The profile chosen from anywhere, the palette and the agent too, is the one shown.
         let chosen = self.session.context().workbench.chosen_profile().to_owned();
-        self.map_editor.profiles_mut().set_chosen(chosen);
-        if path == self.map_opened {
+        self.features
+            .map
+            .map_editor
+            .profiles_mut()
+            .set_chosen(chosen);
+        if path == self.features.map.map_opened {
             // The world named other WADs, or another game was chosen (P6-10).
             let context = self.session.context();
             let chosen = context.preview.game_folder();
-            if context
-                .workbench
-                .map()
-                .is_some_and(|document| self.map_editor.textures_stale(document, chosen))
-            {
+            if context.workbench.map().is_some_and(|document| {
+                self.features
+                    .map
+                    .map_editor
+                    .textures_stale(document, chosen)
+            }) {
                 self.load_map_textures();
             }
             return;
         }
-        self.map_opened.clone_from(&path);
+        self.features.map.map_opened.clone_from(&path);
         if path.is_none() {
             return;
         }
         self.load_map_classes();
         self.load_map_textures();
         // Another map's portals and last run are not this one's.
-        self.map_editor.profiles_mut().set_portals(None);
-        self.map_editor.profiles_mut().clear_run();
+        self.features
+            .map
+            .map_editor
+            .profiles_mut()
+            .set_portals(None);
+        self.features.map.map_editor.profiles_mut().clear_run();
         self.load_profiles();
-        self.backed_up.1 = self.map_edits();
-        self.map_editor.set_disk(DiskNotice::None);
-        self.map_editor.reset_camera();
-        self.map_editor.set_keys(None, None);
+        self.features.map.backed_up.1 = self.map_edits();
+        self.features.map.map_editor.set_disk(DiskNotice::None);
+        self.features.map.map_editor.reset_camera();
+        self.features.map.map_editor.set_keys(None, None);
         self.centre_tab = CentreTab::Map;
     }
 
@@ -1602,14 +1589,14 @@ impl Shell {
             game.as_deref(),
             context.preview.game_folder(),
         );
-        self.map_editor.set_texture_sources(sources);
+        self.features.map.map_editor.set_texture_sources(sources);
         let root = self
             .session
             .context()
             .workbench
             .root()
             .map(Path::to_path_buf);
-        self.map_editor.set_project_root(root);
+        self.features.map.map_editor.set_project_root(root);
     }
 
     /// Gives the map editor the project's entity classes and their models.
@@ -1621,12 +1608,12 @@ impl Shell {
         let game = context.preview.game_base_path();
         match classes {
             Ok(found) => {
-                self.map_editor.set_classes(
+                self.features.map.map_editor.set_classes(
                     found.classes.iter(),
                     project.as_deref(),
                     game.as_deref(),
                 );
-                self.map_editor.set_targeting(found.targeting);
+                self.features.map.map_editor.set_targeting(found.targeting);
             }
             Err(error) => tracing::warn!(%error, "no entity classes for the map"),
         }
@@ -1638,7 +1625,7 @@ impl Shell {
     fn watch_disk(&mut self, ctx: &egui::Context) {
         ctx.request_repaint_after(DiskWatch::every());
         let now = std::time::Instant::now();
-        if !self.disk_watch.due(now) {
+        if !self.features.map.disk_watch.due(now) {
             return;
         }
         let workbench = &self.session.context().workbench;
@@ -1649,9 +1636,9 @@ impl Shell {
                 .map(MapDocument::watched)
                 .unwrap_or_default(),
         );
-        paths.extend(self.map_editor.texture_watched());
-        paths.extend(self.map_editor.external_watched());
-        let changed = self.disk_watch.changed(now, paths);
+        paths.extend(self.features.map.map_editor.texture_watched());
+        paths.extend(self.features.map.map_editor.external_watched());
+        let changed = self.features.map.disk_watch.changed(now, paths);
         if !changed.is_empty() {
             self.files_changed(changed);
         }
@@ -1681,12 +1668,12 @@ impl Shell {
     /// Gives `changed` to `files.changed` and shows what it did.
     fn files_changed(&mut self, changed: Vec<PathBuf>) {
         let map = self.session.context().workbench.map().is_some();
-        let wads = self.map_editor.texture_watched();
+        let wads = self.features.map.map_editor.texture_watched();
         let wad_changed = changed.iter().any(|path| wads.contains(path));
-        let externals = self.map_editor.external_watched();
+        let externals = self.features.map.map_editor.external_watched();
         // An external map written by another program is drawn again (MAP-14).
         if changed.iter().any(|path| externals.contains(path)) {
-            self.map_editor.externals_changed();
+            self.features.map.map_editor.externals_changed();
         }
         let found: Result<FilesChanged, ShellError> =
             self.attempt(FILES_CHANGED, &FilesChangedParams { paths: changed });
@@ -1697,8 +1684,10 @@ impl Shell {
                 }
                 match found.map {
                     MapOnDisk::Same => {}
-                    MapOnDisk::Reloaded => self.map_editor.set_disk(DiskNotice::None),
-                    MapOnDisk::Conflict => self.map_editor.set_disk(DiskNotice::Changed),
+                    MapOnDisk::Reloaded => self.features.map.map_editor.set_disk(DiskNotice::None),
+                    MapOnDisk::Conflict => {
+                        self.features.map.map_editor.set_disk(DiskNotice::Changed)
+                    }
                 }
                 // A WAD written by another program, or a map read again whose world may name
                 // other WADs, gives the browser its textures again (MAP-32).
@@ -1806,7 +1795,7 @@ impl Shell {
                     let found: Result<MapFound, ShellError> = self.attempt(MAP_SEARCH, &search);
                     found.map(|found| {
                         let at = self.map_edits();
-                        self.map_editor.set_found(found, at);
+                        self.features.map.map_editor.set_found(found, at);
                         serde_json::Value::Null
                     })
                 }
@@ -1818,7 +1807,7 @@ impl Shell {
                         self.attempt(MAP_SAVE, &SaveParams { bsp: BspSave::Ent });
                     match saved {
                         Ok(saved) => {
-                            self.disk_watch.wrote(saved.path);
+                            self.features.map.disk_watch.wrote(saved.path);
                             Ok(serde_json::Value::Null)
                         }
                         Err(error) => {
@@ -1833,7 +1822,7 @@ impl Shell {
                     let resolved: Result<serde_json::Value, ShellError> =
                         self.attempt(MAP_RESOLVE, &ResolveParams { keep });
                     if resolved.is_ok() {
-                        self.map_editor.set_disk(DiskNotice::None);
+                        self.features.map.map_editor.set_disk(DiskNotice::None);
                     }
                     resolved
                 }
@@ -1846,7 +1835,10 @@ impl Shell {
                             .into_iter()
                             .map(|d| format!("{}: {}", d.entity, d.text))
                             .collect();
-                        self.map_editor.set_disk(DiskNotice::Compared(lines));
+                        self.features
+                            .map
+                            .map_editor
+                            .set_disk(DiskNotice::Compared(lines));
                         serde_json::Value::Null
                     })
                 }
@@ -1855,7 +1847,7 @@ impl Shell {
                 tracing::warn!(%error, "map edit refused");
                 error.to_string()
             });
-            self.map_editor.set_refused(refused);
+            self.features.map.map_editor.set_refused(refused);
         }
     }
 
@@ -1863,7 +1855,7 @@ impl Shell {
     fn check_map_issues(&mut self) -> Result<serde_json::Value, ShellError> {
         let found: MapIssues = self.attempt(MAP_ISSUES, &serde_json::json!({}))?;
         let at = self.map_edits();
-        self.map_editor.set_issues(found.issues, at);
+        self.features.map.map_editor.set_issues(found.issues, at);
         Ok(serde_json::Value::Null)
     }
 
@@ -1880,7 +1872,11 @@ impl Shell {
             .workbench
             .map()
             .map(MapDocument::revision);
-        self.map_editor.review_mut().set_hunks(left, revision);
+        self.features
+            .map
+            .map_editor
+            .review_mut()
+            .set_hunks(left, revision);
         Ok(serde_json::Value::Null)
     }
 
@@ -1896,12 +1892,14 @@ impl Shell {
         else {
             return false;
         };
-        if !self.map_editor.review().stale(revision) {
+        if !self.features.map.map_editor.review().stale(revision) {
             return false;
         }
         let read: Result<Vec<MapHunk>, ShellError> =
             self.attempt(MAP_STAGED, &serde_json::json!({}));
-        self.map_editor
+        self.features
+            .map
+            .map_editor
             .review_mut()
             .set_hunks(read.unwrap_or_default(), Some(revision));
         true
@@ -1925,14 +1923,20 @@ impl Shell {
                 let read: Result<MapPortals, ShellError> =
                     self.attempt(MAP_PORTALS, &serde_json::json!({}));
                 read.map(|read| {
-                    self.map_editor
+                    self.features
+                        .map
+                        .map_editor
                         .profiles_mut()
                         .set_portals(Some(read.portals));
                     serde_json::Value::Null
                 })
             }
             ProfileAction::HidePortals => {
-                self.map_editor.profiles_mut().set_portals(None);
+                self.features
+                    .map
+                    .map_editor
+                    .profiles_mut()
+                    .set_portals(None);
                 Ok(serde_json::Value::Null)
             }
             ProfileAction::RestoreBackup => self.restore_backup(),
@@ -1947,7 +1951,11 @@ impl Shell {
             .map(|profiles| profiles.into_iter().map(|profile| profile.name).collect())
             .unwrap_or_default();
         let chosen = self.session.context().workbench.chosen_profile().to_owned();
-        self.map_editor.profiles_mut().set_profiles(names, chosen);
+        self.features
+            .map
+            .map_editor
+            .profiles_mut()
+            .set_profiles(names, chosen);
     }
 
     /// Runs the chosen compile profile and shows how it ended; the portals shown are read
@@ -1956,12 +1964,14 @@ impl Shell {
         let ran: Result<ProfileRun, ShellError> =
             self.attempt(MAP_RUN_PROFILE, &RunProfileParams::default());
         let run = ran?;
-        self.map_editor.profiles_mut().set_run(run);
-        if self.map_editor.profiles().shows_portals() {
+        self.features.map.map_editor.profiles_mut().set_run(run);
+        if self.features.map.map_editor.profiles().shows_portals() {
             let read: Result<MapPortals, ShellError> =
                 self.attempt(MAP_PORTALS, &serde_json::json!({}));
             if let Ok(read) = read {
-                self.map_editor
+                self.features
+                    .map
+                    .map_editor
                     .profiles_mut()
                     .set_portals(Some(read.portals));
             }
@@ -1989,11 +1999,11 @@ impl Shell {
             .workbench
             .map()
             .is_some_and(MapDocument::is_unsaved);
-        let (at, backed) = self.backed_up;
+        let (at, backed) = self.features.map.backed_up;
         if !unsaved || edits == backed || now - at < MAP_BACKUP_INTERVAL {
             return;
         }
-        self.backed_up = (now, edits);
+        self.features.map.backed_up = (now, edits);
         let taken: Result<Backup, ShellError> = self.attempt(MAP_BACKUP, &serde_json::json!({}));
         if let Err(error) = taken {
             tracing::warn!(%error, "the map could not be backed up");
@@ -2013,7 +2023,7 @@ impl Shell {
     /// Selects these faces of the open map for the UV editor, as Alt-clicks would.
     #[cfg(test)]
     pub(crate) fn select_map_faces(&mut self, faces: &[FaceRef]) {
-        self.map_editor.select_faces(faces);
+        self.features.map.map_editor.select_faces(faces);
     }
 
     /// Lists the project's prefabs in the map editor's prefab browser; none when no project
@@ -2024,14 +2034,14 @@ impl Shell {
             .as_ref()
             .map(|found| found.prefabs.clone())
             .unwrap_or_default();
-        self.map_editor.set_prefabs(prefabs);
+        self.features.map.map_editor.set_prefabs(prefabs);
         found.map(|_| serde_json::Value::Null)
     }
 
     /// Compiles the open map fast and plays it with the player's eye at the 3D view's camera,
     /// facing its way (P6-12, MAP-13).
     fn play_from_here(&mut self) -> Result<serde_json::Value, ShellError> {
-        let Some(camera) = self.map_editor.camera().copied() else {
+        let Some(camera) = self.features.map.map_editor.camera().copied() else {
             return Ok(serde_json::Value::Null);
         };
         let played = self.attempt(
@@ -2252,7 +2262,7 @@ impl Shell {
     /// The map editor, for tests to find where it drew the map's entities.
     #[cfg(test)]
     pub(crate) const fn map_editor(&self) -> &MapEditor {
-        &self.map_editor
+        &self.features.map.map_editor
     }
 
     /// Finds the entities the game does not spawn under `show` with `map.filter`, for the map
@@ -2268,19 +2278,24 @@ impl Shell {
             return Ok(());
         };
         let Some((skill, mode)) = show.game() else {
-            self.map_editor.set_hidden(show, Some(Vec::new()), edits);
+            self.features
+                .map
+                .map_editor
+                .set_hidden(show, Some(Vec::new()), edits);
             return Ok(());
         };
         let filtered: Result<MapFiltered, ShellError> =
             self.attempt(MAP_FILTER, &FilterParams { skill, mode });
         match filtered {
             Ok(filtered) => {
-                self.map_editor
+                self.features
+                    .map
+                    .map_editor
                     .set_hidden(show, Some(filtered.removed), edits);
                 Ok(())
             }
             Err(error) => {
-                self.map_editor.set_hidden(show, None, edits);
+                self.features.map.map_editor.set_hidden(show, None, edits);
                 Err(error)
             }
         }
@@ -2296,7 +2311,11 @@ impl Shell {
         if self.centre_tab != CentreTab::Map {
             return false;
         }
-        let actions = self.map_editor.ui(ui, &self.theme, document, panes);
+        let actions = self
+            .features
+            .map
+            .map_editor
+            .ui(ui, &self.theme, document, panes);
         self.map_actions(actions);
         self.refresh_map_outline();
         if self.refresh_map_review() {
@@ -2304,14 +2323,17 @@ impl Shell {
             ui.ctx().request_repaint();
         }
         if let Some(document) = self.session.context().workbench.map()
-            && let Some(show) = self.map_editor.filter_stale(document.edits())
+            && let Some(show) = self.features.map.map_editor.filter_stale(document.edits())
             && let Err(error) = self.filter_map(show)
         {
             tracing::warn!(%error, "the map filter was not found again");
-            self.map_editor.set_refused(Some(error.to_string()));
+            self.features
+                .map
+                .map_editor
+                .set_refused(Some(error.to_string()));
         }
         if let Some(document) = self.session.context().workbench.map()
-            && self.map_editor.keys_stale(document.revision())
+            && self.features.map.map_editor.keys_stale(document.revision())
         {
             self.refresh_map_keys();
             // The Properties panel, drawn before the map this frame, shows them on the next.
@@ -2333,14 +2355,16 @@ impl Shell {
         else {
             return;
         };
-        let Some(filter) = self.map_editor.outline_stale(revision) else {
+        let Some(filter) = self.features.map.map_editor.outline_stale(revision) else {
             return;
         };
         let params = OutlineParams {
             filter: Some(filter.clone()),
         };
         let rows: Result<Vec<OutlineRow>, ShellError> = self.attempt(MAP_OUTLINE, &params);
-        self.map_editor
+        self.features
+            .map
+            .map_editor
             .set_outline(rows.unwrap_or_default(), revision, filter);
     }
 
@@ -2354,10 +2378,13 @@ impl Shell {
                 self.attempt(MAP_ENTITY, &EntityParams { entity });
             keys.ok().map(|keys| (entity, keys))
         });
-        self.map_editor.set_keys(keys, revision);
+        self.features.map.map_editor.set_keys(keys, revision);
         let layers: Result<Vec<LayerInfo>, ShellError> =
             self.attempt(MAP_LAYERS, &serde_json::json!({}));
-        self.map_editor.set_layers(layers.unwrap_or_default());
+        self.features
+            .map
+            .map_editor
+            .set_layers(layers.unwrap_or_default());
     }
 
     /// Runs a hide, isolate, lock or layer change from the map editor as its `map.*` command
@@ -2594,15 +2621,15 @@ impl Shell {
         let scope = &mut self.symbol_scope;
         let workbench = &self.session.context().workbench;
         let preview = &self.session.context().preview;
-        let tree = &mut self.outliner;
-        let properties = &mut self.properties;
+        let tree = &mut self.features.map.outliner;
+        let properties = &mut self.features.map.properties;
         let debug_input = &mut self.features.debugger.input;
         let terminal_view = &mut self.features.terminal.view;
         let git_view = &mut self.features.git.view;
         let agent = &mut self.features.agent.panel;
         let mut agent_action = None;
         let map_editor = (self.centre_tab == CentreTab::Map && workbench.map().is_some())
-            .then_some(&mut self.map_editor);
+            .then_some(&mut self.features.map.map_editor);
         let mut map_actions = Vec::new();
         let recent_projects = self.features.project.recent_projects();
         let project_error = self.features.project.error.as_deref();
@@ -2978,7 +3005,7 @@ impl Shell {
                         self.run(SAVE_FILE, &SaveFileParams { path: path.clone() });
                     if saved.is_some() {
                         // The editor's own write is no other program's (P5-17).
-                        self.disk_watch.wrote(path);
+                        self.features.map.disk_watch.wrote(path);
                         self.reload_after_save();
                     }
                     None
@@ -3354,7 +3381,7 @@ impl Shell {
             return;
         }
         if self.centre_tab == CentreTab::Map
-            && let Some(map) = &mut self.map
+            && let Some(map) = &mut self.features.map.map
         {
             map.ui(ui);
             return;

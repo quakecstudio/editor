@@ -14,6 +14,7 @@ use crate::agent::{AgentFeature, AgentPanel};
 use crate::debugger::DebuggerFeature;
 use crate::editors::EditorsFeature;
 use crate::git_panel::GitFeature;
+use crate::map_feature::MapFeature;
 use crate::project::{Jump, ProjectFeature};
 use crate::shell::{BottomTab, ShellError, Workspace};
 use crate::strings::Text;
@@ -27,6 +28,8 @@ pub(crate) struct Features {
     pub(crate) project: ProjectFeature,
     /// The editors, the picker and the multibuffer.
     pub(crate) editors: EditorsFeature,
+    /// The map view and editor, the outliner and the Properties panel.
+    pub(crate) map: MapFeature,
     /// The Git tab (P4-35).
     pub(crate) git: GitFeature,
     /// The Terminal tab (P4-36).
@@ -42,6 +45,7 @@ impl Features {
             agent: AgentFeature::new(agent),
             project: ProjectFeature::default(),
             editors: EditorsFeature::default(),
+            map: MapFeature::default(),
             git: GitFeature::default(),
             terminal: TerminalFeature::default(),
             debugger: DebuggerFeature::default(),
