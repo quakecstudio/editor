@@ -8,11 +8,8 @@ use qc_edict::EdictNumber;
 use qc_progs::Progs;
 use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::Camera;
-<<<<<<< HEAD
 use qs_render::Degrees;
-=======
 use qs_sim::debug::BreakpointEdit;
->>>>>>> origin/main
 use qs_sim::{
     EdictChange, EditError, HostCommand, HostState, MapPlace, SpawnParms, World, WorldError,
 };
