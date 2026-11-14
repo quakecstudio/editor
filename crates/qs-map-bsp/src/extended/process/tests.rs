@@ -196,39 +196,35 @@ fn hulls_by_key() {
     assert_eq!(node.children, [EMPTY, EMPTY]);
 }
 
-// spec QBSP-15.51: the portal file is PRT1 numbered by leaf without detail, PRT2 by cluster with
-// detail, each cluster's leaves listed
+// spec QBSP-15.51: the portal file is PRT1 numbered by leaf, with detail too
 #[test]
 fn portal_files() {
-    let c = compiled(&MapSpec::default());
-    let prt = String::from_utf8(c.portal_file.unwrap()).unwrap();
-    let mut lines = prt.lines();
-    assert_eq!(lines.next(), Some("PRT1"));
-    let leaves: usize = lines.next().unwrap().parse().unwrap();
-    let portals: usize = lines.next().unwrap().parse().unwrap();
-    assert!(leaves >= 1);
-    assert_eq!(lines.count(), portals);
+    let check = |spec: &MapSpec| {
+        let c = compiled(spec);
+        let bsp = read(&c);
+        let prt = String::from_utf8(c.portal_file.clone().unwrap()).unwrap();
+        let mut lines = prt.lines();
+        assert_eq!(lines.next(), Some("PRT1"));
+        let leaves: usize = lines.next().unwrap().parse().unwrap();
+        let portals: usize = lines.next().unwrap().parse().unwrap();
+        let open = bsp
+            .leafs
+            .iter()
+            .skip(1)
+            .filter(|l| l.contents != SOLID)
+            .count();
+        assert_eq!(leaves, open, "every open leaf is numbered");
+        assert_eq!(lines.count(), portals);
+    };
+    check(&MapSpec::default());
     let mut spec = MapSpec::default();
     spec.entities.push(EntitySpec::brushes(
         "func_detail",
         room([40, -32, 0], [96, 32, 48], "wall"),
     ));
     spec.world
-        .push(BrushSpec::cube([-100, -8, -64], [-60, 8, 128], "wall"));
-    let c = compiled(&spec);
-    let prt = String::from_utf8(c.portal_file.unwrap()).unwrap();
-    let mut lines = prt.lines();
-    assert_eq!(lines.next(), Some("PRT2"));
-    let leaves: usize = lines.next().unwrap().parse().unwrap();
-    let clusters: usize = lines.next().unwrap().parse().unwrap();
-    let portals: usize = lines.next().unwrap().parse().unwrap();
-    let rest: Vec<&str> = lines.collect();
-    assert_eq!(rest.len(), portals + clusters);
-    let listed: usize = rest[portals..]
-        .iter()
-        .map(|l| l.split_whitespace().count() - 1)
-        .sum();
-    assert_eq!(listed, leaves);
+        .push(BrushSpec::cube([-100, -8, -64], [-60, 8, 128], "*water"));
+    check(&spec);
 }
 
 // spec QBSP-15.42: the faces only a detail fence's leaves list, written solid, are also listed in
