@@ -243,6 +243,13 @@ fn qs_map::qbsp::QbspMap::texture_slots
 fn qs_map::qbsp::QbspMap::wad_path
 fn qs_map::qbsp::is_special
 fn qs_map::qbsp::load_map_file
+fn qs_map::region::Region::cut
+fn qs_map::region::Region::has
+fn qs_map::region::Region::holds
+fn qs_map::region::Region::max
+fn qs_map::region::Region::min
+fn qs_map::region::Region::new
+fn qs_map::region::Region::of_rooms
 fn qs_map::rooms::MapFile::rooms
 fn qs_map::rooms::Room::holds
 fn qs_map::rooms::Rooms::holds
@@ -313,6 +320,7 @@ struct qs_map::qbsp::QbspFace
 struct qs_map::qbsp::QbspMap
 struct qs_map::qbsp::QbspTexinfo
 struct qs_map::qbsp::TextureSlot
+struct qs_map::region::Region
 struct qs_map::rooms::Room
 struct qs_map::rooms::Rooms
 struct qs_map::uv::TextureSize
@@ -349,6 +357,7 @@ use qs_map::MapError = document::MapError
 use qs_map::MapFile = document::MapFile
 use qs_map::Moves = linked::Moves
 use qs_map::Pair = document::Pair
+use qs_map::Region = region::Region
 use qs_map::Room = rooms::Room
 use qs_map::RoomKind = rooms::RoomKind
 use qs_map::Rooms = rooms::Rooms

@@ -714,3 +714,26 @@ refuses and changes nothing.
 | Name | Value | Source |
 | --- | --- | --- |
 | `MAP_MAX_CHAMFER_FACES` | 16 | our design |
+
+## MAP-16 Region compile
+
+**Source:** our design (MAP-15 in `plan/requirements.yaml`, "Region compile of the rooms being
+worked on"), after the trick the design doc cites from id's 1996 qbsp README: compile only the
+part of the map being worked on, sealed. Implemented by `qs_map::Region`.
+
+### Behaviour
+
+- **MAP-16.1** A region is a box with its least corner below its greatest on every axis. The
+  region of some rooms (MAP-9) is the box around their bounds; a room with no bounds adds
+  nothing, and rooms with none have no region.
+- **MAP-16.2** A brush is in a region when the box around its corners (MAP-15) overlaps the
+  region's, a brush that only touches its faces included. The map cut to a region keeps the
+  world's key-values and its brushes in the region, and every other entity that has a brush in
+  the region, or that has no brush and whose origin (MAP-2.7) lies in the region, edges
+  included; each entity is kept whole, with its key-values and brushes, and in its order, so the
+  world stays the first.
+- **MAP-16.3** The cut map is sealed by six world brushes, each 16 units thick, against the
+  region's six faces from outside, each reaching 16 units past the region on the other two axes
+  so the corners close, painted with the surface given. Nothing inside the region reaches the
+  void, so a region compile cannot leak through the cut.
+

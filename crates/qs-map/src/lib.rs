@@ -27,6 +27,7 @@ pub mod geometry;
 pub mod lexer;
 mod linked;
 pub mod qbsp;
+mod region;
 mod rooms;
 pub mod shapes;
 mod uv;
@@ -46,5 +47,6 @@ pub use linked::{
     ContainerId, EntityPlace, LayerSetting, LayerSettings, LayerSwitch, LinkError, LinkedGroup,
     Moves, Transform,
 };
+pub use region::Region;
 pub use rooms::{Room, RoomKind, Rooms};
 pub use uv::{Justify, TexAxis, TextureSize, UvEdit};
