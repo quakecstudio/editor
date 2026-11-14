@@ -32,6 +32,7 @@ use crate::strings::Text;
 use crate::terminal::TerminalFeature;
 use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
 use crate::theme::{SECTION_GAP, Theme, Token};
+use qs_layout::Panel;
 
 /// The features, each with its state.
 pub(crate) struct Features {
@@ -63,6 +64,112 @@ impl Features {
             terminal: TerminalFeature::default(),
             debugger: DebuggerFeature::default(),
         }
+    }
+}
+
+/// Whether the map tab is shown in the centre, which puts the map's outline and keys in the
+/// dock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MapShown {
+    /// The centre shows the map.
+    Shown,
+    /// The centre shows another tab.
+    Hidden,
+}
+
+/// What a dock region's panel asked for, carried out by the shell after the frame drew it.
+pub(crate) enum FeatureAction {
+    /// Open a file at a place.
+    Jump(Jump),
+    /// Edits of the open map.
+    Map(Vec<MapAction>),
+    /// What the Entities outliner or the Properties panel asked for.
+    Entity(EntityAction),
+    /// What a bottom tab asked for.
+    Bottom(BottomAction),
+    /// What the agent panel asked for.
+    Agent(AgentAction),
+    /// What the Project panel asked for.
+    Left(LeftAction),
+}
+
+impl Features {
+    /// Draws the panels of the dock region `panel` from the workspace as the frame began, and
+    /// returns what they asked for, in the order the shell carries it out.
+    pub(crate) fn region_ui(
+        &mut self,
+        ui: &mut Ui,
+        theme: &Theme,
+        panel: Panel,
+        (workspace, (bottom_tab, scope), map_shown): (
+            &Workspace,
+            (&mut BottomTab, &mut SymbolScope),
+            MapShown,
+        ),
+        focus: FocusNow,
+    ) -> Vec<FeatureAction> {
+        let workbench = &workspace.workbench;
+        let preview = &workspace.preview;
+        let map_editor = (map_shown == MapShown::Shown && workbench.map().is_some())
+            .then_some(&mut self.map.map_editor);
+        let mut jump = None;
+        let mut map_actions = Vec::new();
+        let mut entity_action = None;
+        let mut tab_action = None;
+        let mut agent_action = None;
+        let mut open: Option<LeftAction> = None;
+        match panel {
+            Panel::Left => {
+                let recent = (
+                    self.project.recent_projects(),
+                    self.project.error.as_deref(),
+                );
+                match left(ui, theme, (workbench, recent), scope, focus) {
+                    Some(LeftAction::Jump(to)) => jump = Some(to),
+                    asked => open = asked,
+                }
+                ui.add_space(theme.space(SECTION_GAP));
+                if preview.state() == PlayState::Stopped {
+                    section(ui, theme, Text::Entities, Text::NotPlaying);
+                } else {
+                    heading(ui, theme, Text::Entities);
+                    entity_action =
+                        entities::outliner(ui, theme, preview.entities(), &mut self.map.outliner);
+                }
+                if let Some(editor) = map_editor {
+                    ui.add_space(theme.space(SECTION_GAP));
+                    heading(ui, theme, Text::Map);
+                    let selected = workbench.map().and_then(MapDocument::selected);
+                    map_actions = editor.outline_ui(ui, theme, selected);
+                }
+            }
+            Panel::Right => {
+                let panels = (&mut self.map.properties, &mut self.agent.panel, map_editor);
+                let asked = right(ui, theme, (workbench, preview), panels, focus);
+                (entity_action, agent_action, map_actions) = asked;
+            }
+            Panel::Bottom => {
+                match bottom(
+                    ui,
+                    theme,
+                    bottom_tab,
+                    (workbench, preview, &mut self.debugger.input),
+                    (&mut self.terminal.view, &mut self.git.view),
+                    focus,
+                ) {
+                    Some(BottomAction::Jump(to)) => jump = Some(to),
+                    Some(asked) => tab_action = Some(asked),
+                    None => {}
+                }
+            }
+        }
+        let mut actions: Vec<FeatureAction> = jump.map(FeatureAction::Jump).into_iter().collect();
+        actions.push(FeatureAction::Map(map_actions));
+        actions.extend(entity_action.map(FeatureAction::Entity));
+        actions.extend(tab_action.map(FeatureAction::Bottom));
+        actions.extend(agent_action.map(FeatureAction::Agent));
+        actions.extend(open.map(FeatureAction::Left));
+        actions
     }
 }
 

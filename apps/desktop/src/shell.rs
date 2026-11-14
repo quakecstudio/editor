@@ -28,7 +28,7 @@ use qs_layout::{
     EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, Outline, Panel, RESIZE_PANEL,
     ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams,
 };
-use qs_map_edit::{MapDocument, opens_in_map_editor};
+use qs_map_edit::opens_in_map_editor;
 use qs_render::{Camera, MapMesh};
 use qs_settings::SettingsFile;
 use qs_templates::{GitHub, Template};
@@ -58,10 +58,10 @@ use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
 use crate::debugger::DebugAction;
 use crate::editor::{Editor, Popup, Request};
 use crate::editors::EditorsFeature;
-use crate::entities::{self, EntityAction};
+use crate::entities::EntityAction;
 use crate::fallback::SystemFonts;
 use crate::features::{
-    BottomAction, Commands, Features, LeftAction, ShellRequest, bottom, left, right,
+    BottomAction, Commands, FeatureAction, Features, LeftAction, MapShown, ShellRequest,
 };
 use crate::finder::FileFinder;
 use crate::git_panel::TabShown;
@@ -81,7 +81,7 @@ use crate::picker::{PickerKind, PickerRow};
 use crate::project::ProjectFeature;
 use crate::project::{self, Jump, SymbolScope};
 use crate::strings::{Text, Truncation};
-use crate::theme::{SECTION_GAP, Theme, Token, semibold};
+use crate::theme::{Theme, Token, semibold};
 #[cfg(test)]
 use qs_map_edit::uv::FaceRef;
 
@@ -1620,10 +1620,6 @@ impl Shell {
 
     /// Draws `panel`, giving it the keyboard when `focus`: its first heading, or the bottom
     /// panel's selected tab, takes it.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one pass lays out each panel's contents and runs what they asked for, in order"
-    )]
     fn panel(&mut self, ui: &mut Ui, panel: Panel, focus: FocusNow) {
         let state = *self.layout().panel(panel);
         let theme = &self.theme;
@@ -1638,24 +1634,14 @@ impl Shell {
             .stroke(egui::Stroke::new(1.0, theme.color(Token::Border)));
         let bottom_tab = &mut self.bottom_tab;
         let scope = &mut self.symbol_scope;
-        let workbench = &self.session.context().workbench;
-        let preview = &self.session.context().preview;
-        let tree = &mut self.features.map.outliner;
-        let properties = &mut self.features.map.properties;
-        let debug_input = &mut self.features.debugger.input;
-        let terminal_view = &mut self.features.terminal.view;
-        let git_view = &mut self.features.git.view;
-        let agent = &mut self.features.agent.panel;
-        let mut agent_action = None;
-        let map_editor = (self.centre_tab == CentreTab::Map && workbench.map().is_some())
-            .then_some(&mut self.features.map.map_editor);
-        let mut map_actions = Vec::new();
-        let recent_projects = self.features.project.recent_projects();
-        let project_error = self.features.project.error.as_deref();
-        let mut open: Option<LeftAction> = None;
-        let mut entity_action = None;
-        let mut tab_action = None;
-        let mut jump = None;
+        let workspace = self.session.context();
+        let map_shown = if self.centre_tab == CentreTab::Map {
+            MapShown::Shown
+        } else {
+            MapShown::Hidden
+        };
+        let features = &mut self.features;
+        let mut actions = Vec::new();
         let mut expanded = state.visible;
         // A size the layout was given by a command, not by a drag of the panel's edge, is
         // drawn: egui keeps the size it last drew and reads `default_size` only the first time.
@@ -1697,79 +1683,11 @@ impl Shell {
                     Panel::Bottom => Text::BottomPanel,
                 };
                 name_area(ui, accesskit::Role::Pane, name);
-                match panel {
-                    Panel::Left => {
-                        let recent = (recent_projects, project_error);
-                        match left(ui, theme, (workbench, recent), scope, focus) {
-                            Some(LeftAction::Jump(to)) => jump = Some(to),
-                            asked => open = asked,
-                        }
-                        ui.add_space(theme.space(SECTION_GAP));
-                        if preview.state() == PlayState::Stopped {
-                            section(ui, theme, Text::Entities, Text::NotPlaying);
-                        } else {
-                            heading(ui, theme, Text::Entities);
-                            entity_action = entities::outliner(ui, theme, preview.entities(), tree);
-                        }
-                        if let Some(editor) = map_editor {
-                            ui.add_space(theme.space(SECTION_GAP));
-                            heading(ui, theme, Text::Map);
-                            let selected = workbench.map().and_then(MapDocument::selected);
-                            map_actions = editor.outline_ui(ui, theme, selected);
-                        }
-                    }
-                    Panel::Right => {
-                        let panels = (properties, agent, map_editor);
-                        let asked = right(ui, theme, (workbench, preview), panels, focus);
-                        (entity_action, agent_action, map_actions) = asked;
-                    }
-                    Panel::Bottom => {
-                        match bottom(
-                            ui,
-                            theme,
-                            bottom_tab,
-                            (workbench, preview, debug_input),
-                            (terminal_view, git_view),
-                            focus,
-                        ) {
-                            Some(BottomAction::Jump(to)) => jump = Some(to),
-                            Some(asked) => tab_action = Some(asked),
-                            None => {}
-                        }
-                    }
-                }
+                let tabs = (bottom_tab, scope);
+                actions = features.region_ui(ui, theme, panel, (workspace, tabs, map_shown), focus);
             });
-        if let Some(jump) = jump {
-            self.jump(jump);
-        }
-        self.with_map(|map, commands| map.map_actions(commands, map_actions));
-        if let Some(action) = entity_action {
-            self.entity_action(action, ui.ctx());
-        }
-        match tab_action {
-            Some(BottomAction::Terminal(action)) => action.run(&mut self.commands()),
-            Some(BottomAction::Git(action)) => {
-                let shown = self.git_shown();
-                let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
-                let request = self.features.git.apply(action, &mut commands, shown);
-                self.request(request);
-            }
-            Some(BottomAction::Debug(action)) => {
-                if let Some(request) = action.run(&mut self.commands()) {
-                    self.request(request);
-                }
-            }
-            Some(BottomAction::ProblemsAsExcerpts) => self.problems_as_excerpts(),
-            Some(BottomAction::Jump(_)) | None => {}
-        }
-        if let Some(action) = agent_action {
-            self.agent_action(action, ui.ctx());
-        }
-        match open {
-            Some(LeftAction::Open(folder)) => self.open_asked(&folder),
-            Some(LeftAction::OpenFolder) => self.open_folder(),
-            Some(LeftAction::New(template)) => self.new_project(template),
-            Some(LeftAction::Jump(_)) | None => {}
+        for action in actions {
+            self.apply(action, ui.ctx());
         }
         // A panel dragged shut is hidden through its command too.
         if expanded != state.visible
@@ -1846,6 +1764,38 @@ impl Shell {
     #[cfg(test)]
     pub(crate) const fn map_editor(&self) -> &MapEditor {
         &self.features.map.map_editor
+    }
+
+    /// Carries out what a dock region's panel asked for, after the frame drew it.
+    fn apply(&mut self, action: FeatureAction, ctx: &egui::Context) {
+        match action {
+            FeatureAction::Jump(jump) => self.jump(jump),
+            FeatureAction::Map(map_actions) => {
+                self.with_map(|map, commands| map.map_actions(commands, map_actions));
+            }
+            FeatureAction::Entity(action) => self.entity_action(action, ctx),
+            FeatureAction::Bottom(BottomAction::Terminal(action)) => {
+                action.run(&mut self.commands());
+            }
+            FeatureAction::Bottom(BottomAction::Git(action)) => {
+                let shown = self.git_shown();
+                let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+                let request = self.features.git.apply(action, &mut commands, shown);
+                self.request(request);
+            }
+            FeatureAction::Bottom(BottomAction::Debug(action)) => {
+                if let Some(request) = action.run(&mut self.commands()) {
+                    self.request(request);
+                }
+            }
+            FeatureAction::Bottom(BottomAction::ProblemsAsExcerpts) => self.problems_as_excerpts(),
+            FeatureAction::Bottom(BottomAction::Jump(_)) => {}
+            FeatureAction::Agent(action) => self.agent_action(action, ctx),
+            FeatureAction::Left(LeftAction::Open(folder)) => self.open_asked(&folder),
+            FeatureAction::Left(LeftAction::OpenFolder) => self.open_folder(),
+            FeatureAction::Left(LeftAction::New(template)) => self.new_project(template),
+            FeatureAction::Left(LeftAction::Jump(_)) => {}
+        }
     }
 
     /// Runs `call` on the editors' feature with the commands, then carries out what it asked
