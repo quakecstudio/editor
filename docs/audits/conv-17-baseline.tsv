@@ -30,9 +30,6 @@ bool-argument	crates/qc-builtins/src/printf.rs	general
 bool-argument	crates/qc-builtins/src/printf.rs	integer
 bool-argument	crates/qc-builtins/src/printf.rs	pad
 bool-argument	crates/qc-builtins/src/strbuf.rs	StringBuffers::add
-bool-argument	crates/qc-codegen/src/compile/arrays.rs	Compiler::array_accessor
-bool-argument	crates/qc-codegen/src/compile/body.rs	bare_return
-bool-argument	crates/qc-codegen/src/compile/body.rs	writable
 bool-argument	crates/qc-edict/src/store.rs	EdictStore::track
 bool-argument	crates/qc-ide/src/highlight.rs	modifiers
 bool-argument	crates/qc-ide/src/navigation.rs	AnalysisHost::references
@@ -120,8 +117,6 @@ bool-argument	crates/qs-sim/src/collision/area.rs	Area::insert_at
 bool-argument	crates/qs-sim/src/collision/area.rs	Area::listed
 bool-argument	crates/qs-sim/src/collision/area.rs	link_edict
 bool-argument	crates/qs-sim/src/movement.rs	SimCall::movestep
-bool-argument	crates/qs-sound/src/music.rs	Music::play
-bool-argument	crates/qs-sound/src/music.rs	Music::set_paused
 string-error	crates/qs-agent/src/lib.rs	Model::reply
 string-error	crates/qs-agent/src/lib.rs	Model::reply_streaming
 string-error	crates/qs-commands/src/session.rs	guard
@@ -321,11 +316,6 @@ bare-id	crates/qc-builtins/src/tokenize.rs	Tokens::end(index)
 bare-id	crates/qc-builtins/src/tokenize.rs	Tokens::start(index)
 bare-id	crates/qc-builtins/src/userinfo.rs	Clients::get(slot)
 bare-id	crates/qc-builtins/src/userinfo.rs	Clients::get_mut(slot)
-bare-id	crates/qc-codegen/src/compile/allocate.rs	CreationOrder::block(index)
-bare-id	crates/qc-codegen/src/compile/allocate.rs	CreationOrder::statement(index)
-bare-id	crates/qc-codegen/src/compile/allocate.rs	Slots::block(index)
-bare-id	crates/qc-codegen/src/compile/allocate.rs	Slots::dropped(index)
-bare-id	crates/qc-codegen/src/compile/allocate.rs	Slots::statement(index)
 bare-id	crates/qc-edict/src/system.rs	SysVar.slot
 bare-id	crates/qc-ide/src/host.rs	AnalysisHost::module(index)
 bare-id	crates/qc-preproc/src/fte_opcodes.rs	OpcodeTarget::new(revision)
@@ -368,8 +358,6 @@ bare-id	crates/qs-sim/src/collision/area.rs	Area::unlink(entity)
 bare-id	crates/qs-sim/src/collision/hull.rs	HullSet::hull(index)
 bare-id	crates/qs-sim/src/physics.rs	Sound.entity
 bare-id	crates/qs-sim/src/spawn.rs	FieldDef.slot
-bare-id	crates/qs-sound/src/sfx.rs	SoundData::sample_16(index)
-bare-id	crates/qs-sound/src/sfx.rs	SoundData::sample_8(index)
 bare-id	crates/qs-wad/src/lib.rs	Wad::lump(index)
 bare-id	crates/qs-wav/src/lib.rs	Sound::sample(index)
 magic-number	apps/desktop/src/agent.rs	AgentPanel::ui:24
@@ -567,7 +555,6 @@ magic-number	crates/qc-builtins/src/vkstrings.rs	uri_unescape:3
 magic-number	crates/qc-builtins/src/vkstrings.rs	uri_unescape:4
 magic-number	crates/qc-codegen/src/compile.rs	Compiler::function:3
 magic-number	crates/qc-codegen/src/compile.rs	Compiler::function:8
-magic-number	crates/qc-codegen/src/compile.rs	Compiler::parameter_slot:3
 magic-number	crates/qc-codegen/src/compile.rs	parm_slot:3
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::bounds_error:3
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::emit_getter:3
@@ -575,13 +562,6 @@ magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::emit_setter:3
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::ladder:4
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::set_ladder:3
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::set_ladder:4
-magic-number	crates/qc-codegen/src/compile/body.rs	Compiler::write_statements:3
-magic-number	crates/qc-codegen/src/compile/body.rs	call_count:3
-magic-number	crates/qc-codegen/src/compile/body.rs	call_count:4
-magic-number	crates/qc-codegen/src/compile/body.rs	call_count:5
-magic-number	crates/qc-codegen/src/compile/body.rs	call_count:6
-magic-number	crates/qc-codegen/src/compile/body.rs	call_count:7
-magic-number	crates/qc-codegen/src/compile/body.rs	call_count:8
 magic-number	crates/qc-codegen/src/precache.rs	Precaches::record:13
 magic-number	crates/qc-codegen/src/precache.rs	Precaches::record:14
 magic-number	crates/qc-codegen/src/program.rs	Program::emit_result:3
@@ -1347,10 +1327,6 @@ magic-number	crates/qs-sim/src/spawn.rs	ftoi:2147483648.0
 magic-number	crates/qs-sim/src/spawn.rs	ftoi:2147483649.0
 magic-number	crates/qs-sim/src/spawn.rs	parse_vector:3
 magic-number	crates/qs-sim/src/world.rs	World::signon_spawn:16
-magic-number	crates/qs-sound/src/music.rs	CueSheet::read:4
-magic-number	crates/qs-sound/src/music.rs	msf:60
-magic-number	crates/qs-sound/src/sfx.rs	SoundData::resample:256.0
-magic-number	crates/qs-sound/src/sfx.rs	SoundData::resample:8
 magic-number	crates/qs-vfs/src/lib.rs	com_file_extension:7
 magic-number	crates/qs-wad/src/lib.rs	Conchars::glyph:15
 magic-number	crates/qs-wad/src/lib.rs	Conchars::glyph:4

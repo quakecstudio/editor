@@ -44,7 +44,7 @@ pub(super) struct Array {
 
 /// What a generated array function does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Access {
+pub(super) enum Access {
     /// `ArrayGet*NAME`, which returns the word an index names (FTE-13.8).
     Get,
     /// `ArraySet*NAME`, which stores a value to the word an index names (FTE-13.11).
@@ -78,9 +78,14 @@ impl Compiler<'_> {
         Ok(self.program.def(place).at(span)?.ofs)
     }
 
-    /// The getter of the array definition `id`, or with `set` its setter, which a body the
+    /// The getter or setter of the array definition `id`, as `access` says, which a body the
     /// semantic model wrote calls (`ir::Name::ArrayGet`, `ir::Name::ArraySet`).
-    pub(super) fn array_accessor(&mut self, id: DefId, set: bool, span: Span) -> Lowered<usize> {
+    pub(super) fn array_accessor(
+        &mut self,
+        id: DefId,
+        access: Access,
+        span: Span,
+    ) -> Lowered<usize> {
         let place = self.program.get_def(self.index, id).at(span)?;
         let def = self.program.def(place).at(span)?;
         let array = Array {
@@ -91,7 +96,6 @@ impl Compiler<'_> {
             words: type_words(self.index, &def.ty),
             location: self.index.def(id).at(span)?.location,
         };
-        let access = if set { Access::Set } else { Access::Get };
         self.array_function(&array, access, span)
     }
 

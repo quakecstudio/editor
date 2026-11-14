@@ -16,6 +16,7 @@ const qs_sound::mixer::SND_PACKET_ATTENUATION
 const qs_sound::mixer::SND_PACKET_VOLUME
 const qs_sound::mixer::SND_PAINTBUFFER_SIZE
 const qs_sound::mixer::SND_STATIC_ATTENUATION_DIVISOR
+const qs_sound::mixer::SoundEntity::TEMPORARY
 const qs_sound::music::RRE_MUSIC_DIR
 const qs_sound::music::RRE_MUSIC_EXTENSIONS
 const qs_sound::music::SND_CD_RATE
@@ -26,6 +27,7 @@ enum qs_sound::mixer::Ambient
 enum qs_sound::mixer::ListenerLeaf
 enum qs_sound::mixer::LoopPaint
 enum qs_sound::music::Read
+enum qs_sound::music::Repeat
 enum qs_sound::ogg::OggError
 enum qs_sound::sfx::Loaded
 enum qs_sound::sfx::SoundError
@@ -92,12 +94,15 @@ fn qs_sound::mixer::Mixer::take_messages
 fn qs_sound::mixer::Mixer::total_channels
 fn qs_sound::mixer::Mixer::update
 fn qs_sound::mixer::Random::rand
+fn qs_sound::mixer::SoundEntity::get
+fn qs_sound::mixer::SoundEntity::new
 fn qs_sound::music::CueSheet::read
 fn qs_sound::music::CueSheet::track
 fn qs_sound::music::Music::new
+fn qs_sound::music::Music::pause
 fn qs_sound::music::Music::play
 fn qs_sound::music::Music::playing
-fn qs_sound::music::Music::set_paused
+fn qs_sound::music::Music::resume
 fn qs_sound::music::Music::stop
 fn qs_sound::music::Music::update
 fn qs_sound::music::MusicStream::channels
@@ -108,6 +113,8 @@ fn qs_sound::music::track_files
 fn qs_sound::ogg::OggStream::new
 fn qs_sound::output::NullOutput::frames
 fn qs_sound::output::Output::write
+fn qs_sound::sfx::SamplePos::get
+fn qs_sound::sfx::SamplePos::new
 fn qs_sound::sfx::SfxId::index
 fn qs_sound::sfx::SoundData::length
 fn qs_sound::sfx::SoundData::loopstart
@@ -141,6 +148,7 @@ struct qs_sound::mixer::Listener
 struct qs_sound::mixer::Mixer
 struct qs_sound::mixer::MixerSpec
 struct qs_sound::mixer::Settings
+struct qs_sound::mixer::SoundEntity
 struct qs_sound::mixer::Start
 struct qs_sound::music::CueSheet
 struct qs_sound::music::CueTrack
@@ -148,6 +156,7 @@ struct qs_sound::music::Music
 struct qs_sound::music::Track
 struct qs_sound::ogg::OggStream
 struct qs_sound::output::NullOutput
+struct qs_sound::sfx::SamplePos
 struct qs_sound::sfx::SfxId
 struct qs_sound::sfx::SoundData
 struct qs_sound::sfx::SoundTable
@@ -176,6 +185,7 @@ use qs_sound::RRE_MUSIC_EXTENSIONS = music::RRE_MUSIC_EXTENSIONS
 use qs_sound::Random = mixer::Random
 use qs_sound::Read = music::Read
 use qs_sound::Reader = sfx::Reader
+use qs_sound::Repeat = music::Repeat
 use qs_sound::SND_AMBIENT_FADE = mixer::SND_AMBIENT_FADE
 use qs_sound::SND_AMBIENT_LEVEL = mixer::SND_AMBIENT_LEVEL
 use qs_sound::SND_AMBIENT_MIN_VOLUME = mixer::SND_AMBIENT_MIN_VOLUME
@@ -197,9 +207,11 @@ use qs_sound::SND_PACKET_ATTENUATION = mixer::SND_PACKET_ATTENUATION
 use qs_sound::SND_PACKET_VOLUME = mixer::SND_PACKET_VOLUME
 use qs_sound::SND_PAINTBUFFER_SIZE = mixer::SND_PAINTBUFFER_SIZE
 use qs_sound::SND_STATIC_ATTENUATION_DIVISOR = mixer::SND_STATIC_ATTENUATION_DIVISOR
+use qs_sound::SamplePos = sfx::SamplePos
 use qs_sound::Settings = mixer::Settings
 use qs_sound::SfxId = sfx::SfxId
 use qs_sound::SoundData = sfx::SoundData
+use qs_sound::SoundEntity = mixer::SoundEntity
 use qs_sound::SoundError = sfx::SoundError
 use qs_sound::SoundTable = sfx::SoundTable
 use qs_sound::Start = mixer::Start
@@ -218,6 +230,8 @@ variant qs_sound::mixer::LoopPaint::Id
 variant qs_sound::music::Read::End
 variant qs_sound::music::Read::Failed
 variant qs_sound::music::Read::Samples
+variant qs_sound::music::Repeat::Loop
+variant qs_sound::music::Repeat::Once
 variant qs_sound::ogg::OggError::Channels
 variant qs_sound::ogg::OggError::Decode
 variant qs_sound::ogg::OggError::NoAudio

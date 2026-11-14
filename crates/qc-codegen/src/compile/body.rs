@@ -18,7 +18,8 @@ use qc_syntax::ast::{self, AstNode as _};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::allocate::{CreationOrder, Overlapping, Slots};
+use super::allocate::{BodyIndex, CreationOrder, Overlapping, Slots};
+use super::arrays::Access;
 use super::{At, Compiler, Lowered, Written, literal_of};
 use crate::Internal;
 use crate::back_end::Allocation;
@@ -39,8 +40,12 @@ impl Compiler<'_> {
     ) -> Lowered<()> {
         // A bare `return` names the `ret*` local under FTEQCC (FTE-18.10); id's `qcc` writes
         // `RETURN` of nothing whatever the function returns (QC-13.8).
-        let ret_local = self.returns_value() && self.dialect.has_fteqcc_extensions();
-        if !writable(body, ret_local) {
+        let bare = if self.returns_value() && self.dialect.has_fteqcc_extensions() {
+            BareReturn::RetLocal
+        } else {
+            BareReturn::Plain
+        };
+        if !writable(body, bare) {
             return Err(Internal::Unfollowed).at(named);
         }
         if !self.defaults_kept(body) {
@@ -92,13 +97,13 @@ impl Compiler<'_> {
             let origin = body.origin(at).unwrap_or(named.start);
             self.program.origin = Some((self.file, origin));
             slots
-                .statement(&mut self.program, statement, index)
+                .statement(&mut self.program, statement, BodyIndex::new(index))
                 .at(named)?;
             let op = u32::try_from(statement.op.number())
                 .ok()
                 .and_then(Opcode::from_number)
                 .at(named)?;
-            let mut operands = [0_i32; 3];
+            let mut operands = [0_i32; STATEMENT_OPERANDS];
             for (word, name) in operands
                 .iter_mut()
                 .zip([statement.a, statement.b, statement.c])
@@ -221,11 +226,17 @@ impl Compiler<'_> {
         let name = match effect {
             Effect::Make(name) => name,
             Effect::Temp(words) => {
-                return slots.dropped(&mut self.program, index, words).at(span);
+                return slots
+                    .dropped(&mut self.program, BodyIndex::new(index), words)
+                    .at(span);
             }
             // A block taken before its words are written, the value of this statement; one
             // whose statements were dropped is still taken (QC-21.5).
-            Effect::Block(words) => return slots.block(&mut self.program, index, words).at(span),
+            Effect::Block(words) => {
+                return slots
+                    .block(&mut self.program, BodyIndex::new(index), words)
+                    .at(span);
+            }
             Effect::ForBegin => {
                 loops.push(self.array_functions.len());
                 return Ok(());
@@ -429,7 +440,12 @@ impl Compiler<'_> {
                 self.program.def(prior).at(span)?.ofs
             }
             Name::ArrayGet(id) | Name::ArraySet(id) => {
-                let place = self.array_accessor(id, matches!(name, Name::ArraySet(_)), span)?;
+                let access = if matches!(name, Name::ArraySet(_)) {
+                    Access::Set
+                } else {
+                    Access::Get
+                };
+                let place = self.array_accessor(id, access, span)?;
                 self.program.def(place).at(span)?.ofs
             }
             Name::Jump(target) => {
@@ -458,11 +474,32 @@ impl Compiler<'_> {
     }
 }
 
+/// A statement's operands, `a`, `b` and `c` (PROGS-7.1).
+const STATEMENT_OPERANDS: usize = 3;
+
+/// What a bare `return` of the function being written is: FTEQCC's names the `ret*` local of
+/// a function that returns a value (FTE-18.10); id's `qcc` writes `RETURN` of nothing whatever
+/// the function returns (QC-13.8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BareReturn {
+    /// `RETURN` of nothing.
+    Plain,
+    /// `RETURN` of the `ret*` local.
+    RetLocal,
+}
+
+impl BareReturn {
+    /// Whether `statement` is a `RETURN` of nothing where a bare `return` names the `ret*`
+    /// local.
+    fn misses_local(self, statement: &BodyStatement) -> bool {
+        statement.op == qc_preproc::Op::Return && statement.a.is_none() && self == Self::RetLocal
+    }
+}
+
 /// Whether the writer can write `body`: the checker followed every statement it generates,
 /// each statement names every operand its opcode uses, each value read is one a statement
-/// makes, and a bare `return` of a function that
-/// `returns_value` names its `ret*` local.
-fn writable(body: &TypedBody, returns_value: bool) -> bool {
+/// makes, and a bare `return` names the `ret*` local where `bare` says it does.
+fn writable(body: &TypedBody, bare: BareReturn) -> bool {
     if !body.followed() {
         return false;
     }
@@ -489,7 +526,7 @@ fn writable(body: &TypedBody, returns_value: bool) -> bool {
             Name::Made(made) | Name::MadeWord(made, _) => makes(made),
             _ => true,
         });
-        used && reads && !bare_return(statement, returns_value)
+        used && reads && !bare.misses_local(statement)
     })
 }
 
@@ -497,18 +534,19 @@ fn writable(body: &TypedBody, returns_value: bool) -> bool {
 /// any other opcode.
 pub(super) fn call_count(op: qc_preproc::Op) -> Option<usize> {
     use qc_preproc::Op;
-    Some(match op {
-        Op::Call0 => 0,
-        Op::Call1 => 1,
-        Op::Call2 => 2,
-        Op::Call3 => 3,
-        Op::Call4 => 4,
-        Op::Call5 => 5,
-        Op::Call6 => 6,
-        Op::Call7 => 7,
-        Op::Call8 => 8,
-        _ => return None,
-    })
+    /// The calls by the arguments they pass: `CALL0` passes none.
+    const CALLS: [Op; 9] = [
+        Op::Call0,
+        Op::Call1,
+        Op::Call2,
+        Op::Call3,
+        Op::Call4,
+        Op::Call5,
+        Op::Call6,
+        Op::Call7,
+        Op::Call8,
+    ];
+    CALLS.iter().position(|&call| call == op)
 }
 
 /// Whether `op` is a call, `CALL0` to `CALL8`.
@@ -525,11 +563,6 @@ fn is_call(op: Opcode) -> bool {
             | Opcode::Call7
             | Opcode::Call8
     )
-}
-
-/// Whether `statement` is a `RETURN` of nothing in a function that `returns_value`.
-fn bare_return(statement: &BodyStatement, returns_value: bool) -> bool {
-    statement.op == qc_preproc::Op::Return && statement.a.is_none() && returns_value
 }
 
 /// What the writer looks up in a body's syntax, read in one pass over it: each declarator by

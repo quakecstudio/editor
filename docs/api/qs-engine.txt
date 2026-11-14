@@ -22,6 +22,8 @@ field qs_engine::launch::Running.client
 field qs_engine::run_root::RunRoot.game
 field qs_engine::run_root::RunRoot.kpf
 field qs_engine::run_root::RunRoot.path
+fn qs_engine::client::BreakpointId::get
+fn qs_engine::client::BreakpointId::new
 fn qs_engine::client::Client::clear_breakpoint
 fn qs_engine::client::Client::connect
 fn qs_engine::client::Client::console
@@ -51,11 +53,12 @@ fn qs_engine::client::Client::step
 fn qs_engine::client::Client::take_events
 fn qs_engine::client::Client::wait_event
 fn qs_engine::client::base64_decode
-fn qs_engine::launch::host_command
-fn qs_engine::launch::launch
+fn qs_engine::launch::LaunchSpec::command
+fn qs_engine::launch::LaunchSpec::launch
 fn qs_engine::launch::locate_host
 fn qs_engine::run_root::Flavour::dir_name
 fn qs_engine::run_root::prepare_run_root
+impl qs_engine::client::BreakpointId: std::fmt::Display
 impl qs_engine::client::ClientError: fmt::Display
 impl qs_engine::client::ClientError: std::error::Error
 impl qs_engine::launch::LaunchError: fmt::Display
@@ -63,12 +66,14 @@ impl qs_engine::launch::LaunchError: std::error::Error
 impl qs_engine::run_root::RunRootError: From<LinkError>
 impl qs_engine::run_root::RunRootError: fmt::Display
 impl qs_engine::run_root::RunRootError: std::error::Error
+struct qs_engine::client::BreakpointId
 struct qs_engine::client::BridgeEvent
 struct qs_engine::client::Client
 struct qs_engine::client::WindowPlacement
 struct qs_engine::launch::LaunchSpec
 struct qs_engine::launch::Running
 struct qs_engine::run_root::RunRoot
+use qs_engine::BreakpointId = client::BreakpointId
 use qs_engine::BridgeEvent = client::BridgeEvent
 use qs_engine::Client = client::Client
 use qs_engine::ClientError = client::ClientError
@@ -83,8 +88,6 @@ use qs_engine::Running = launch::Running
 use qs_engine::StepKind = client::StepKind
 use qs_engine::WindowPlacement = client::WindowPlacement
 use qs_engine::base64_decode = client::base64_decode
-use qs_engine::host_command = launch::host_command
-use qs_engine::launch = launch::launch
 use qs_engine::locate_host = launch::locate_host
 use qs_engine::prepare_run_root = run_root::prepare_run_root
 variant qs_engine::client::ClientError::Closed

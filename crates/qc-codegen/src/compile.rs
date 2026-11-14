@@ -752,7 +752,11 @@ impl<'a> Compiler<'a> {
         }
         let made = self
             .program
-            .generated(&format!("$parm{u}"), ValueType::simple(Etype::Vector), 3)
+            .generated(
+                &format!("$parm{u}"),
+                ValueType::simple(Etype::Vector),
+                VECTOR_WORDS,
+            )
             .at(span)?;
         let slot = self.program.def(made).at(span)?.ofs;
         self.extra_parms.insert(u, slot);
@@ -1040,6 +1044,8 @@ enum FunctionInit<'t> {
 
 /// The elements of a variadic function's `__va_list` (FTE-18.6: `int maxvacount = 24;`).
 const VA_COUNT: u32 = 24;
+/// A vector's words, `qc-types`' `PROGS_VECTOR_SLOTS`, as a definition's size.
+const VECTOR_WORDS: u32 = 3;
 
 /// Parameter slot `i`'s global offset, `OFS_PARM0 + 3 * i` (QC-18.3). A ninth argument's slot
 /// is past the eight, as id's `qcc` writes `def_parms[8]`; its call is refused (QC-18.2).
