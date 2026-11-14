@@ -6,7 +6,7 @@
 //! sight; a row dragged onto a layer or group moves into it.
 
 use eframe::egui::{self, RichText, Sense, Ui};
-use qs_workbench::map_edit::{EntityIndex, MapRevision, OutlineRow, RowKind};
+use qs_map_edit::{EntityIndex, MapRevision, OutlineRow, RowKind};
 
 use crate::strings::{Text, brush_count};
 use crate::theme::{Theme, Token};

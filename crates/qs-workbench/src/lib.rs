@@ -25,7 +25,6 @@ pub mod git;
 pub mod ids;
 pub mod map_check;
 pub mod map_compile;
-pub mod map_edit;
 pub mod map_filter;
 pub mod map_profile;
 pub mod open_paths;
@@ -54,13 +53,15 @@ pub use qc_ide::{
     Hover, Modifier, Modifiers, RenameError, Severity, Span, Symbol, SymbolKind, SyntaxClass,
 };
 pub use qc_project::{Dialect, FsLoader, Loader, Target};
+// The map seam's types, for the workbench's own modules; dependants import them from
+// qs_map_edit.
+use qs_map_edit::{
+    EntityCheck, EntityProblem, GameFolders, HasMap, LiveMap, MapEditError, MapProject, MapStore,
+};
 
 pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
-pub use crate::map_edit::{
-    EntityCheck, EntityProblem, GameFolders, HasMap, LiveMap, MapEditError, MapProject, MapStore,
-};
 pub use crate::preview::{
     BREAKPOINT, BreakpointParams, CONSOLE, ConsoleParams, DOCK, SCENARIO_RUN, STEP_BY,
     ScenarioRunParams, StepBy, StepByParams, UNWATCH, UnwatchParams, WATCH, WatchParams, debug,
@@ -668,7 +669,7 @@ pub(crate) fn problems<L: Loader>(host: &mut AnalysisHost<L>) -> Vec<Problem> {
 impl<L: Loader> Workbench<L> {
     /// The map open in the map view.
     #[must_use]
-    pub const fn map(&self) -> Option<&map_edit::MapDocument> {
+    pub const fn map(&self) -> Option<&qs_map_edit::MapDocument> {
         self.maps.map()
     }
 

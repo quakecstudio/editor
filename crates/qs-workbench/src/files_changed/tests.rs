@@ -14,9 +14,9 @@ use serde_json::json;
 
 use super::{FILES_CHANGED, FilesChanged};
 use crate::entity_classes::PROJECT_ENTITIES;
-use crate::map_edit::{EntityIndex, MAP_MOVE, MAP_OPEN, MAP_SAVE, MAP_SELECT, MAP_SET_KEY};
-use crate::map_edit::{MAP_COMPARE, MAP_RESOLVE, MapDifference, MapOnDisk};
 use crate::{Config, OPEN_PROJECT, Workbench, register};
+use qs_map_edit::{EntityIndex, MAP_MOVE, MAP_OPEN, MAP_SAVE, MAP_SELECT, MAP_SET_KEY};
+use qs_map_edit::{MAP_COMPARE, MAP_RESOLVE, MapDifference, MapOnDisk};
 
 const CODE: &str = "entity self; .string classname; .vector origin;\nvoid() worldspawn = {};\n\
     /*QUAKED monster_thing (1 0 0) (-16 -16 -24) (16 16 40)\n*/\nvoid() monster_thing = {};\n";

@@ -271,11 +271,11 @@ struct Cli<L> {
     workbench: Workbench<L>,
 }
 
-impl<L: Loader> qs_workbench::HasMap for Cli<L> {
+impl<L: Loader> qs_map_edit::HasMap for Cli<L> {
     type Project = Workbench<L>;
     type Live = Preview;
 
-    fn map_store(&mut self) -> &mut qs_workbench::MapStore {
+    fn map_store(&mut self) -> &mut qs_map_edit::MapStore {
         self.workbench.maps_mut()
     }
 
@@ -608,11 +608,11 @@ struct McpContext<L> {
     preview: Preview,
 }
 
-impl<L: Loader> qs_workbench::HasMap for McpContext<L> {
+impl<L: Loader> qs_map_edit::HasMap for McpContext<L> {
     type Project = Workbench<L>;
     type Live = Preview;
 
-    fn map_store(&mut self) -> &mut qs_workbench::MapStore {
+    fn map_store(&mut self) -> &mut qs_map_edit::MapStore {
         self.workbench.maps_mut()
     }
 

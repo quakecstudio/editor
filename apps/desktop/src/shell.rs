@@ -30,6 +30,40 @@ use qs_layout::{
     EditorRequest, Focus, GO_TO_LINE, HasLayout, Layout, MAP_PANES, MapPanesParams, Outline, Panel,
     RESIZE_PANEL, ResizePanelParams, SoftWrap, Split, TOGGLE_PANEL, TogglePanelParams,
 };
+use qs_map_edit::backup::{Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams};
+use qs_map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
+use qs_map_edit::textures::TextureSources;
+use qs_map_edit::{
+    BrushChamferParams, BrushClipParams, BrushCreateParams, BrushExtrudeParams, BrushHollowParams,
+    BrushIntersectParams, BrushMergeParams, BrushMoveParams, BrushParams, BrushScaleParams,
+    BrushShapeParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
+    BrushSweepParams, BrushTextureParams, BrushVertexParams, BrushVerticesParams,
+    MAP_BRUSH_CHAMFER, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_EXTRUDE,
+    MAP_BRUSH_HOLLOW, MAP_BRUSH_INTERSECT, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SCALE,
+    MAP_BRUSH_SHAPE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE, MAP_BRUSH_SPLIT_FACE,
+    MAP_BRUSH_SUBTRACT, MAP_BRUSH_SWEEP, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX, MAP_BRUSH_VERTICES,
+    NewVertex, VertexMove,
+};
+use qs_map_edit::{
+    BspSave, EntityKeys, EntityParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY,
+    MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
+    MapDifference, MapDocument, MapOnDisk, MapOpenParams, MapSaved, MoveParams, RemoveKeyParams,
+    ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
+    opens_in_map_editor,
+};
+use qs_map_edit::{
+    EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
+    MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams,
+};
+use qs_map_edit::{LinkParams, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, PlaceParams, SetFlagParams};
+use qs_map_edit::{MAP_ACCEPT, MAP_REJECT, MAP_STAGED, MapHunk, MapHunksParams};
+use qs_map_edit::{
+    MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssues, MapRevision,
+};
+use qs_map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
+use qs_map_edit::{
+    MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PlacePrefabParams, Prefabs, SavePrefabParams,
+};
 use qs_render::{Camera, MapMesh};
 use qs_settings::{Scope as SettingsScope, Setting, SettingsFile, SettingsStore};
 use qs_templates::{GitHub, NEW_PROJECT, NewProjectParams, Template};
@@ -50,44 +84,6 @@ use qs_workbench::git::{
 use qs_workbench::ids::{ActionIndex, TerminalIndex, WatchIndex};
 use qs_workbench::map_compile::{
     MAP_LEAKS, MAP_PLAY_FROM_HERE, MAP_PORTALS, MapPortals, PlayFromHereParams,
-};
-use qs_workbench::map_edit::backup::{
-    Backup, MAP_BACKUP, MAP_BACKUPS, MAP_RESTORE_BACKUP, RestoreParams,
-};
-use qs_workbench::map_edit::texture_import::{TEXTURE_IMPORT, TextureImportParams};
-use qs_workbench::map_edit::textures::TextureSources;
-use qs_workbench::map_edit::{
-    BrushChamferParams, BrushClipParams, BrushCreateParams, BrushExtrudeParams, BrushHollowParams,
-    BrushIntersectParams, BrushMergeParams, BrushMoveParams, BrushParams, BrushScaleParams,
-    BrushShapeParams, BrushShearParams, BrushSplitEdgeParams, BrushSplitFaceParams,
-    BrushSweepParams, BrushTextureParams, BrushVertexParams, BrushVerticesParams,
-    MAP_BRUSH_CHAMFER, MAP_BRUSH_CLIP, MAP_BRUSH_CREATE, MAP_BRUSH_DELETE, MAP_BRUSH_EXTRUDE,
-    MAP_BRUSH_HOLLOW, MAP_BRUSH_INTERSECT, MAP_BRUSH_MERGE, MAP_BRUSH_MOVE, MAP_BRUSH_SCALE,
-    MAP_BRUSH_SHAPE, MAP_BRUSH_SHEAR, MAP_BRUSH_SPLIT_EDGE, MAP_BRUSH_SPLIT_FACE,
-    MAP_BRUSH_SUBTRACT, MAP_BRUSH_SWEEP, MAP_BRUSH_TEXTURE, MAP_BRUSH_VERTEX, MAP_BRUSH_VERTICES,
-    NewVertex, VertexMove,
-};
-use qs_workbench::map_edit::{
-    BspSave, EntityKeys, EntityParams, MAP_COMPARE, MAP_DELETE, MAP_DUPLICATE, MAP_ENTITY,
-    MAP_MOVE, MAP_OPEN, MAP_REMOVE_KEY, MAP_RESOLVE, MAP_ROTATE, MAP_SAVE, MAP_SELECT, MAP_SET_KEY,
-    MapDifference, MapDocument, MapOnDisk, MapOpenParams, MapSaved, MoveParams, RemoveKeyParams,
-    ResolveParams, RotateParams, SaveParams, SelectParams as MapSelectParams, SetKeyParams,
-    opens_in_map_editor,
-};
-use qs_workbench::map_edit::{
-    EntityListParams, LayerInfo, MAP_HIDE, MAP_ISOLATE, MAP_LAYERS, MAP_LOCK, MAP_SET_LAYER,
-    MAP_SHOW_ALL, MAP_UNLOCK_ALL, SetLayerParams,
-};
-use qs_workbench::map_edit::{
-    LinkParams, MAP_LINK, MAP_PLACE, MAP_SET_FLAG, PlaceParams, SetFlagParams,
-};
-use qs_workbench::map_edit::{MAP_ACCEPT, MAP_REJECT, MAP_STAGED, MapHunk, MapHunksParams};
-use qs_workbench::map_edit::{
-    MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFixParams, MapFound, MapIssues, MapRevision,
-};
-use qs_workbench::map_edit::{MAP_MOVE_TO, MAP_OUTLINE, MoveToParams, OutlineParams, OutlineRow};
-use qs_workbench::map_edit::{
-    MAP_PLACE_PREFAB, MAP_PREFABS, MAP_SAVE_PREFAB, PlacePrefabParams, Prefabs, SavePrefabParams,
 };
 use qs_workbench::map_filter::{FilterParams, MAP_FILTER, MapFiltered};
 use qs_workbench::map_profile::{
@@ -145,8 +141,8 @@ use crate::strings::{Text, Truncation};
 use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
 use crate::theme::{SECTION_GAP, Theme, Token, semibold};
 #[cfg(test)]
-use qs_workbench::map_edit::uv::FaceRef;
-use qs_workbench::map_edit::uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
+use qs_map_edit::uv::FaceRef;
+use qs_map_edit::uv::{FaceAlignParams, FaceUvParams, MAP_FACE_ALIGN, MAP_FACE_UV};
 
 /// What the window's commands work on.
 #[derive(Debug)]
@@ -165,11 +161,11 @@ impl HasPreview for Workspace {
     }
 }
 
-impl qs_workbench::HasMap for Workspace {
+impl qs_map_edit::HasMap for Workspace {
     type Project = Workbench<FsLoader>;
     type Live = Preview;
 
-    fn map_store(&mut self) -> &mut qs_workbench::MapStore {
+    fn map_store(&mut self) -> &mut qs_map_edit::MapStore {
         self.workbench.maps_mut()
     }
 

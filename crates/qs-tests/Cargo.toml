@@ -36,6 +36,7 @@ qs-render = { workspace = true }
 qs-sim = { workspace = true }
 qs-vfs = { workspace = true }
 qs-workbench = { workspace = true }
+qs-map-edit = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

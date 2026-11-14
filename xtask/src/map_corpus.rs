@@ -13,7 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use qs_map::{MapFile, TexDef, qbsp};
-use qs_workbench::map_edit::OutlineRow;
+use qs_map_edit::OutlineRow;
 use qs_workbench::{Config, FsLoader, Workbench};
 
 /// Every `.map` file under `dir`, sorted.

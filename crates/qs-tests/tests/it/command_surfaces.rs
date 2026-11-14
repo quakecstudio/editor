@@ -21,11 +21,11 @@ struct Context {
     preview: Preview,
 }
 
-impl qs_workbench::HasMap for Context {
+impl qs_map_edit::HasMap for Context {
     type Project = Workbench<MemoryLoader>;
     type Live = Preview;
 
-    fn map_store(&mut self) -> &mut qs_workbench::MapStore {
+    fn map_store(&mut self) -> &mut qs_map_edit::MapStore {
         self.workbench.maps_mut()
     }
 

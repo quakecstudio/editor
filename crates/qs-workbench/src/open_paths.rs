@@ -12,8 +12,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::HasWorkbench;
-use crate::map_edit::opens_in_map_editor;
 use crate::{Workbench, WorkbenchError};
+use qs_map_edit::opens_in_map_editor;
 
 /// The id of the command that opens folders and files as the system's file manager does.
 pub const OPEN_PATHS: &str = "paths.open";

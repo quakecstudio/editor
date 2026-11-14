@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use eframe::egui::{self, Pos2, RichText, Sense, Ui, WidgetInfo, WidgetType};
-use qs_workbench::map_edit::Prefab;
+use qs_map_edit::Prefab;
 
 use crate::map_editor::MapAction;
 use crate::strings::{Text, prefab_count};

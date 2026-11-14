@@ -22,10 +22,10 @@ use qs_wad::write::WadBuilder;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::map_edit::textures::{Game, find_wad};
-use crate::map_edit::{MapEditError, MapReport, MapSource};
 use crate::preview::{HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
+use qs_map_edit::textures::{Game, find_wad};
+use qs_map_edit::{MapEditError, MapReport, MapSource};
 
 /// The id of `map.leaks`.
 pub const MAP_LEAKS: &str = "map.leaks";
@@ -83,7 +83,7 @@ impl<L: crate::Loader> Workbench<L> {
         let report = MapReport::of(&compiled, missing_wads);
         let path = document.path().to_path_buf();
         let edits = document.edits();
-        self.maps.map_mut()?.set_report(report.clone(), edits);
+        self.maps.keep_report(report.clone(), edits)?;
         Ok((compiled, report, path))
     }
 }

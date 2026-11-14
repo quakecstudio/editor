@@ -9,7 +9,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
-use qs_workbench::map_edit::EntityIndex;
+use qs_map_edit::EntityIndex;
 use qs_workbench::{Config, FsLoader, Workbench};
 
 use super::{ClassLook, LinkView, Scene, start_camera};

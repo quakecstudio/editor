@@ -355,11 +355,11 @@ struct MapContext {
     preview: Preview,
 }
 
-impl qs_workbench::HasMap for MapContext {
+impl qs_map_edit::HasMap for MapContext {
     type Project = Workbench<FsLoader>;
     type Live = Preview;
 
-    fn map_store(&mut self) -> &mut qs_workbench::MapStore {
+    fn map_store(&mut self) -> &mut qs_map_edit::MapStore {
         self.workbench.maps_mut()
     }
 
