@@ -432,7 +432,6 @@ bare-id	crates/qc-vm/src/ops.rs	read_slot(slot)
 bare-id	crates/qc-vm/src/ops.rs	write_slot(slot)
 bare-id	crates/qs-agent/src/lib.rs	EntityState.edict
 bare-id	crates/qs-bsp/src/lit.rs	Lit::sample(index)
-bare-id	crates/qs-client/src/scene.rs	SceneEntity.entity
 bare-id	crates/qs-editor-view/src/buffer.rs	Buffer::line(index)
 bare-id	crates/qs-editor-view/src/buffer.rs	Buffer::line_id(index)
 bare-id	crates/qs-editor-view/src/layout.rs	LayoutCache::begin(revision)
@@ -1403,11 +1402,6 @@ magic-number	crates/qs-client/src/menu.rs	slider:220
 magic-number	crates/qs-client/src/menu.rs	slider:8
 magic-number	crates/qs-client/src/menu.rs	text_box:16
 magic-number	crates/qs-client/src/menu.rs	text_box:8
-magic-number	crates/qs-client/src/message.rs	Reader::angle:256.0
-magic-number	crates/qs-client/src/message.rs	Reader::angle:360.0
-magic-number	crates/qs-client/src/message.rs	Reader::coord:8.0
-magic-number	crates/qs-client/src/message.rs	Reader::float:4
-magic-number	crates/qs-client/src/message.rs	Reader::long:4
 magic-number	crates/qs-client/src/particles.rs	Particle::at:3
 magic-number	crates/qs-client/src/particles.rs	Particles::blob_explosion:0.05
 magic-number	crates/qs-client/src/particles.rs	Particles::blob_explosion:1024

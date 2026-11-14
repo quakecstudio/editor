@@ -8,7 +8,9 @@
 )]
 
 use crate::look::Look;
-use qs_client::{Anchor, DynamicLight, Hud, HudItem, Placed, Scene, SceneEntity, SceneParticle};
+use qs_client::{
+    Anchor, DynamicLight, EntitySlot, Hud, HudItem, Placed, Scene, SceneEntity, SceneParticle,
+};
 use qs_wad::{WAD_MAGIC, WAD_TYP_QPIC};
 
 use super::{FogState, Model, Pics, Play, PlayError, fog_parse_worldspawn};
@@ -524,7 +526,7 @@ fn players_wear_their_slots_translated_skins() {
     let bsp = bsp(&MapSpec::default(), &lighting);
     let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let entity = |entity, colormap| SceneEntity {
-        entity,
+        entity: EntitySlot::new(entity),
         model: 1,
         colormap,
         ..SceneEntity::default()
@@ -641,7 +643,7 @@ fn md5_entities_are_drawn_with_their_skins() {
     let mut mesh = MapMesh::build(&bsp, &palette(), Look::GlQuake).unwrap();
     let scene = Scene {
         entities: vec![SceneEntity {
-            entity: 5,
+            entity: EntitySlot::new(5),
             model: 1,
             ..SceneEntity::default()
         }],

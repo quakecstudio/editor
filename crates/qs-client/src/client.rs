@@ -28,7 +28,7 @@ use crate::hud::{
 use crate::message::Reader;
 use crate::models::{FrameInfo, ModelInfo, ModelKind, Models, Random, flags};
 use crate::particles::{PART_GRAVITY, Particles, Trail, TrailSpacing};
-use crate::scene::{DynamicLight, PoseBlend, Scene, SceneEntity, SceneParticle};
+use crate::scene::{DynamicLight, EntitySlot, PoseBlend, Scene, SceneEntity, SceneParticle};
 use crate::view::{Contents, Refdef, ViewInput, ViewSettings, ViewState};
 
 /// `IT_INVISIBILITY`, which hides the view model (REND-4.11).
@@ -1127,7 +1127,7 @@ impl Client {
             .statics
             .iter()
             .map(|e| SceneEntity {
-                entity: 0,
+                entity: EntitySlot::NONE,
                 model: e.model,
                 origin: e.origin,
                 angles: e.angles,
@@ -2156,7 +2156,7 @@ impl Client {
             .filter(|m| matches!(m.kind, ModelKind::Alias { .. }))
             .map(|m| ent.setup_alias_frame(m, time, lerp));
         SceneEntity {
-            entity: i,
+            entity: EntitySlot::new(i),
             model: ent.model,
             origin,
             angles,
@@ -2233,7 +2233,7 @@ impl Client {
                 count = count.saturating_add(1);
                 let roll = int_to_float(rand.rand().checked_rem(FULL_TURN_DEGREES).unwrap_or(0));
                 self.visedicts.push(SceneEntity {
-                    entity: 0,
+                    entity: EntitySlot::NONE,
                     model,
                     origin: org,
                     angles: [pitch, yaw, roll],

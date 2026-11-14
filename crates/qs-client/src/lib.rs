@@ -53,7 +53,7 @@ pub use particles::{
     PART_MAX_PARTICLES, PART_RAMP1, PART_RAMP2, PART_RAMP3, Particle, ParticleType, Particles,
     Trail, TrailSpacing,
 };
-pub use scene::{DynamicLight, PoseBlend, Scene, SceneEntity, SceneParticle};
+pub use scene::{DynamicLight, EntitySlot, PoseBlend, Scene, SceneEntity, SceneParticle};
 pub use view::{
     Contents, Refdef, Shift, VIEW_BOB, VIEW_BOBCYCLE, VIEW_BOBUP, VIEW_CENTERMOVE,
     VIEW_CENTERSPEED, VIEW_CSHIFTPERCENT, VIEW_FORWARDSPEED, VIEW_IDLE_CYCLES, VIEW_IDLE_LEVELS,
