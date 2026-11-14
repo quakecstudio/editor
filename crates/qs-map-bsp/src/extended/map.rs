@@ -3,7 +3,7 @@
 // Copyright (C) 1997       Greg Lewis
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/map.cc, set_planepts, ParseBrushFace, ParseBrush, ParseEntity, Brush_GetContents, IsSkipName, IsSpecialName, IsHintName, SurfFlagsForEntity, FindMiptex, FindTexinfo, CalculateBrushBounds, AddBrushBevels, GetBrushExtents, CalculateWorldExtent, ProcessMapBrushes
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/map.cc, set_planepts, ParseBrushFace, ParseBrush, ParseEntity, Brush_GetContents, IsSkipName, IsNoExpandName, IsSpecialName, IsHintName, SurfFlagsForEntity, FindMiptex, FindTexinfo, CalculateBrushBounds, AddBrushBevels, GetBrushExtents, CalculateWorldExtent, ProcessMapBrushes
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: qbsp/brush.cc, FindTargetEntity, FixRotateOrigin
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/qvec.hh, Snap
 
@@ -41,6 +41,8 @@ const SKIP_NAMES: [&[u8]; 6] = [
     b"bevel",
     b"null",
 ];
+/// The texture name that is not grown for the clipping hulls, `IsNoExpandName`.
+const NO_EXPAND_NAME: &[u8] = b"bevel";
 /// The texture names that are hint, in any case, `IsHintName`.
 const HINT_NAMES: [&[u8]; 2] = [b"hint", b"hintskip"];
 /// The texture axes of a face that has none.
@@ -67,6 +69,8 @@ impl SurfFlags {
     pub(crate) const HINTSKIP: u8 = 0b0100;
     /// `TEX_SPECIAL`: not lightmapped and not subdivided.
     pub(crate) const SPECIAL: u8 = 0b1000;
+    /// Not grown for the clipping hulls: a `bevel` texture.
+    pub(crate) const NO_EXPAND: u8 = 0b1_0000;
 
     /// Whether any of `bits` is set.
     pub(crate) const fn has(self, bits: u8) -> bool {
@@ -130,7 +134,8 @@ impl Texinfos {
         self.texinfo.get(num.0)
     }
 
-    fn flags(&self, num: TexinfoNum) -> SurfFlags {
+    /// The flags of texinfo `num`, none when there is no such texinfo.
+    pub(crate) fn flags(&self, num: TexinfoNum) -> SurfFlags {
         self.get(num).map(|t| t.flags).unwrap_or_default()
     }
 
@@ -240,6 +245,25 @@ impl MapBrush {
     }
 }
 
+/// An entity's place in the map, the world first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct EntityNum(usize);
+
+impl EntityNum {
+    /// The world, the map's first entity.
+    pub(crate) const WORLD: Self = Self(0);
+
+    /// The entity at `index`.
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Its place in the map.
+    pub(crate) const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// How an entity's brushes are placed about its origin, `rotation_t`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Rotation {
@@ -341,6 +365,9 @@ fn surf_flags(name: &[u8], entity: &Entity) -> SurfFlags {
     }
     if is_special_name(name, LitWater::of(entity)) {
         flags = flags.with(SurfFlags::SPECIAL);
+    }
+    if name.eq_ignore_ascii_case(NO_EXPAND_NAME) {
+        flags = flags.with(SurfFlags::NO_EXPAND);
     }
     flags
 }
@@ -769,8 +796,8 @@ fn rotate_origin(file: &MapFile, rotating: &Entity) -> Vec3 {
 }
 
 /// `file`'s brushes as ericw-tools' qbsp loads them for `game`, `LoadMapFile` and
-/// `ProcessMapBrushes` (QBSP-15.14 to QBSP-15.21). `file` has its world brush entities taken in
-/// (QBSP-14.8).
+/// `ProcessMapBrushes` (QBSP-15.14 to QBSP-15.21). The world brush entities keep their own
+/// entities here; the world takes their brushes for each hull (QBSP-15.24).
 pub(crate) fn load(file: &MapFile, game: Game) -> LoadedMap {
     let mut planes = Planes::default();
     let mut texinfos = Texinfos::default();

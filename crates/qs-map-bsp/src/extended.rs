@@ -15,6 +15,7 @@
     )
 )]
 
+pub(crate) mod brush;
 pub(crate) mod game;
 pub(crate) mod map;
 pub(crate) mod vec;

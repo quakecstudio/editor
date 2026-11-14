@@ -4,6 +4,7 @@
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bspfile_common.cc, set_mirrored, set_clips_same_type, is_any_detail, is_detail_solid, is_detail_wall, is_detail_fence, is_detail_illusionary, is_empty, is_any_solid, is_solid, is_sky, is_liquid, is_clip, is_origin, is_opaque, cluster_contents, combine_contents, portal_can_see_through, portal_visible_contents, is_two_sided, portal_generates_face
+// Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: include/common/bspfile_common.hh, mirror_inside, clips_same_type
 // Ported from ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266: common/bspfile.cc, create_contents_from_native, contents_to_native, contents_remap_for_export, get_hull_sizes, face_get_contents
 
 //! Contents and the game a map is compiled for, ericw-tools' `contentflags_t` and `gamedef_t`
@@ -107,6 +108,23 @@ impl Contents {
             MirrorInside::On => self.0 | both,
             MirrorInside::Off => (self.0 | Self::MIRROR_INSIDE_SET) & !Self::MIRROR_INSIDE,
         })
+    }
+
+    /// What its mirror-inside flags say, `mirror_inside` (QBSP-15.22).
+    pub(crate) const fn mirror_inside(self) -> MirrorInside {
+        if !self.has(Self::MIRROR_INSIDE_SET) {
+            MirrorInside::Unset
+        } else if self.has(Self::MIRROR_INSIDE) {
+            MirrorInside::On
+        } else {
+            MirrorInside::Off
+        }
+    }
+
+    /// Whether it does not clip faces of its own type, `clips_same_type() == false`
+    /// (QBSP-15.22).
+    pub(crate) const fn suppresses_clipping_same_type(self) -> bool {
+        self.has(Self::SUPPRESS_CLIPPING_SAME_TYPE)
     }
 
     /// The contents not clipping faces of their own type, `set_clips_same_type(false)`
@@ -504,6 +522,25 @@ impl Game {
             .iter()
             .map(|&(mins, maxs): &(Vec3, Vec3)| Bounds { mins, maxs })
             .collect()
+    }
+
+    /// The box hull `hull`'s brushes are grown by, `get_hull_sizes()[hullnum]`.
+    pub(crate) fn hull_size(self, hull: crate::Hull) -> Bounds {
+        let index = match hull {
+            crate::Hull::Draw => 0,
+            crate::Hull::Player => 1,
+            crate::Hull::Large => 2,
+        };
+        let Self::Quake = self;
+        let (mins, maxs) = QUAKE_HULLS.get(index).copied().unwrap_or_default();
+        Bounds { mins, maxs }
+    }
+
+    /// Whether a brush entity keeps its brushes' contents, `allow_contented_bmodels`: not in
+    /// Quake, where they become solid.
+    pub(crate) const fn bmodels_keep_contents(self) -> bool {
+        let Self::Quake = self;
+        false
     }
 
     /// A face's contents from its texture's name, `face_get_contents` (QBSP-15.13): `origin`,

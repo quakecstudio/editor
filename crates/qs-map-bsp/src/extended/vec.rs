@@ -285,6 +285,20 @@ impl Bounds {
         }
     }
 
+    /// The box widened to hold `other`, `aabb3d::unionWith_in_place`.
+    pub(crate) fn union(&mut self, other: &Self) {
+        for (((lo, hi), olo), ohi) in self
+            .mins
+            .iter_mut()
+            .zip(self.maxs.iter_mut())
+            .zip(other.mins)
+            .zip(other.maxs)
+        {
+            *lo = lo.min(olo);
+            *hi = hi.max(ohi);
+        }
+    }
+
     /// Its middle, `aabb3d::centroid`.
     pub(crate) fn centroid(&self) -> Vec3 {
         scale(add(self.mins, self.maxs), HALF)

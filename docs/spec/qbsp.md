@@ -744,3 +744,37 @@ point on a plane (`mathlib.hh`).
   plane's distance decreased by "`qv::dot(plane.normal, entity.origin)`", and its bounds found
   again. A brush's chop order is the entity's `_chop_order`, else 1 when `_chop` is 0, else 0;
   the brushes are chopped in the order of chop order then line (`sort_key`).
+- **QBSP-15.22** A map brush becomes a brush for a hull (`LoadBrush`, `QBSP3`) with each of its
+  sides but, in the drawing hull, the bevels ("don't add bevels for the point hull"). For a
+  clipping hull each side not of a `bevel` texture (`no_expand`) has its plane's distance
+  increased by "`qv::dot(corner, plane.normal)`", the corner taking on each axis the hull box's
+  maximum where the normal is positive, its minimum where negative and 0 where 0, and is no
+  longer a bevel. Its polygons (`CreateBrushWindings`) are each side's plane's square clipped to
+  the front of the opposite of each other side's plane but the bevels' within `-epsilon`; a side
+  with a polygon left marks its map face visible, one without unmarks it, and a polygon with a
+  coordinate beyond the world's extent is none. The brush is dropped when its bounds
+  (`update_bounds`, around the sides' polygons) reach the extent on an axis, "brush bounds out
+  of range", or lie wholly beyond it, "no visible sides on brush". A brush of a Hipnotic
+  rotating entity with an origin not 0 0 0 gets the bounds `-delta` to `delta` on every axis,
+  `delta` the largest absolute coordinate of its bounds.
+- **QBSP-15.23** Each side's polygon is then checked (`CheckFace`): fewer than three points is
+  none ("completely clipped away"); a point closer than `-epsilon` to the next is removed
+  ("Healing degenerate edge") and the check begins again; a point more than `-epsilon` outside
+  the plane through an edge along the side's normal makes the polygon none ("Found a non-convex
+  face"). A side can be seen (`side_t::is_visible`) when its map face is visible, and a nodraw
+  side only when it is also a hint.
+- **QBSP-15.24** An entity's brushes for a hull (`Brush_LoadEntity`) are its own and, for the
+  world, those of every later entity whose classname is `func_detail`, `func_group`,
+  `func_detail_illusionary`, `func_detail_wall`, `func_detail_fence`,
+  `func_illusionary_visblocker` (`IsWorldBrushEntity`) or `func_areaportal`
+  (`IsNonRemoveWorldBrushEntity`), in any case, in entity order. For each map brush: in the
+  drawing hull an entity with `_super_detail` nonzero gives none, and solid contents are made
+  detail illusionary, fence, wall or solid by a `func_detail_illusionary`, `func_detail_fence`,
+  `func_detail_wall` or `func_detail` classname; a `func_detail_illusionary` brush is in no
+  clipping hull; a clip brush only widens the drawing hull's bounds and is solid in the others;
+  a hint brush is empty in the drawing hull and in no other; a brush of an entity other than the
+  world is "`create_detail_fence_contents(contentflags_t::make(EWT_VISCONTENTS_SOLID))`", Quake
+  not allowing contents in brush models; in a clipping hull a brush neither solid, sky nor a
+  fence is left out and every other is solid; the map brush's mirror-inside flags, when set,
+  and its suppressed clipping of its own type are put back. The hull's bounds are around every
+  brush it loads.
