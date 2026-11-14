@@ -16,8 +16,9 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use qs_bsp::Bsp;
 use qs_client::{
-    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Client, Console, ConsoleKey, Event, Grabbed, KeyDest,
-    MENU_BINDINGS, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey, MenuSettings, Random as _, Typed,
+    CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Client, Connection, Console, ConsoleHold, ConsoleKey,
+    Event, Grabbed, KeyDest, MENU_BINDINGS, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey,
+    MenuSettings, Random as _, Typed,
 };
 use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
 use qs_sim::ClientCommand;
@@ -406,7 +407,7 @@ impl eframe::App for Viewer {
             host_time: realtime,
             realtime,
             console_down,
-            console_forced: false,
+            console_forced: ConsoleHold::Sliding,
             screen_height: self.play.screen[1],
             settings: MenuSettings::read(&|name| world.setting(name).unwrap_or(0.0)),
             bound: self
@@ -761,7 +762,7 @@ impl Viewer {
                     key: egui::Key::Backtick,
                     pressed: true,
                     ..
-                } => self.dest = self.console.backquote(self.dest, true),
+                } => self.dest = self.console.backquote(self.dest, Connection::Connected),
                 egui::Event::Key {
                     key: egui::Key::Escape,
                     pressed: true,
@@ -770,7 +771,9 @@ impl Viewer {
                     // `Key_Event`'s Escape: the menu's own key in the menu, else
                     // `M_ToggleMenu_f`, which from the console toggles the console (MENU-1.1).
                     match self.dest {
-                        KeyDest::Console => self.dest = self.console.toggle(self.dest, true),
+                        KeyDest::Console => {
+                            self.dest = self.console.toggle(self.dest, Connection::Connected)
+                        }
                         KeyDest::Menu => self.menu_key(MenuKey::Escape),
                         KeyDest::Game => self.dest = self.menu.toggle(self.dest),
                     }
@@ -880,9 +883,10 @@ impl Viewer {
         let realtime = self.started.elapsed().as_secs_f64();
         let [width, height] = self.play.screen;
         self.console.resize(width);
-        let lines = self.console.slide(height, false, self.dest, seconds);
-        // CON-3.4: `Con_DrawInput` draws only while the keys are the console's.
-        let typing = self.dest == KeyDest::Console;
+        let lines = self
+            .console
+            .slide(height, ConsoleHold::Sliding, self.dest, seconds);
+        let typing = self.dest.input_line();
         if lines > 0 && self.mesh.look.native_2d() {
             // CON-5: QuakeSpasm's layout, with this host's name for the version.
             let version = format!("QuakeC Studio {}", env!("CARGO_PKG_VERSION"));
@@ -927,14 +931,16 @@ impl Viewer {
     fn client_commands(&mut self) {
         for command in self.game.world_mut().take_client_commands() {
             self.dest = match command {
-                ClientCommand::ToggleConsole => self.console.toggle(self.dest, true),
+                ClientCommand::ToggleConsole => {
+                    self.console.toggle(self.dest, Connection::Connected)
+                }
                 ClientCommand::Clear => {
                     self.console.clear();
                     self.dest
                 }
                 // `M_ToggleMenu_f`: from the console, the console's toggle (MENU-1.1).
                 ClientCommand::ToggleMenu if self.dest == KeyDest::Console => {
-                    self.console.toggle(self.dest, true)
+                    self.console.toggle(self.dest, Connection::Connected)
                 }
                 ClientCommand::ToggleMenu => self.menu.toggle(self.dest),
                 ClientCommand::MenuMain => self.menu.main(),

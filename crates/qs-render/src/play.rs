@@ -507,9 +507,10 @@ impl Play {
         let light = |origin| light_point(bsp, &styles, origin);
         // R_DrawEntitiesOnList: the alias and brush models, then the sprites.
         for entity in scene.entities.iter().chain(&scene.statics) {
-            match self.models.get(entity.model) {
+            match self.models.get(entity.model.get()) {
                 Some(drawn @ (Model::Alias(..) | Model::Md5(..))) => {
-                    let kind = if entity.entity >= 1 && entity.entity <= scene.maxclients {
+                    let player = entity.entity.player(scene.maxclients);
+                    let kind = if player.is_some() {
                         AliasKind::Player
                     } else {
                         AliasKind::Other
@@ -530,12 +531,10 @@ impl Play {
                         continue;
                     };
                     // REND-4.13: a player wearing colours is drawn with its slot's skin.
-                    let slot = entity.entity.checked_sub(1).filter(|&s| {
-                        kind == AliasKind::Player && entity.colormap != 0 && s < PLAYER_SKINS
-                    });
+                    let slot = player.filter(|&s| entity.colormap != 0 && s < PLAYER_SKINS);
                     if let (Some(slot), Some(draw)) = (slot, models.draws.last_mut()) {
                         let key = SkinKey {
-                            model: entity.model,
+                            model: entity.model.get(),
                             skin: alias.skin,
                             colors: scene.colors.get(slot).copied().unwrap_or(0),
                         };
@@ -571,7 +570,10 @@ impl Play {
                     self.place(&mut placements, *n, entity);
                 }
                 Some(Model::External) => {
-                    if let Some(&(_, n)) = self.instances.iter().find(|(e, _)| *e == entity.entity)
+                    if let Some(&(_, n)) = self
+                        .instances
+                        .iter()
+                        .find(|(e, _)| *e == entity.entity.get())
                     {
                         self.place(&mut placements, n, entity);
                     }
@@ -582,7 +584,7 @@ impl Play {
         // R_DrawViewModel (REND-4.11).
         let mut weapon = ModelFrame::default();
         if let Some(drawn @ (Model::Alias(..) | Model::Md5(..))) =
-            self.models.get(refdef.weapon.model)
+            self.models.get(refdef.weapon.model.get())
         {
             let lit = entity_light(
                 light(refdef.weapon.origin),

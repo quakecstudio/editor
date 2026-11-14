@@ -4,6 +4,7 @@
 //! interpolation, the dynamic lights, the particles, the eye and the weapon, and the blend
 //! over the view.
 
+use crate::client::ModelIndex;
 use crate::view::Refdef;
 
 /// How an alias model's poses blend this frame (CLIENT-7.3).
@@ -17,13 +18,42 @@ pub struct PoseBlend {
     pub blend: f32,
 }
 
+/// An entity's slot, `cl_entities`' index; 0 for a temporary or a static entity.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EntitySlot(usize);
+
+impl EntitySlot {
+    /// The slot of a temporary or a static entity.
+    pub const NONE: Self = Self(0);
+
+    /// Slot `index`.
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// The slot's index.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+
+    /// The player's index, 0 for slot 1, when the slot is a client's of `maxclients`.
+    #[must_use]
+    pub fn player(self, maxclients: usize) -> Option<usize> {
+        (1..=maxclients)
+            .contains(&self.0)
+            .then(|| self.0.saturating_sub(1))
+    }
+}
+
 /// One entity to draw.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SceneEntity {
-    /// Its slot, `cl_entities`' index; 0 for a temporary or a static entity.
-    pub entity: usize,
+    /// Its slot.
+    pub entity: EntitySlot,
     /// Its model precache index.
-    pub model: usize,
+    pub model: ModelIndex,
     /// Where it is drawn, interpolated (CLIENT-5.4, CLIENT-7.4).
     pub origin: [f32; 3],
     /// Its angles, interpolated.
