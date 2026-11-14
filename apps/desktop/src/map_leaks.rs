@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 
 use eframe::egui::{Painter, RichText, Stroke, Ui};
 use qs_render::{Camera, Degrees};
-use qs_workbench::map_compile::{MapReport, Seal};
+use qs_workbench::map_edit::{MapReport, Seal};
 
 use crate::map_panes::Projection;
 use crate::map_scene::{BrushShape, Scene};

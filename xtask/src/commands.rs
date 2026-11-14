@@ -72,15 +72,28 @@ impl HasLayout for Everything {
     }
 }
 
+impl qs_workbench::HasMap for Everything {
+    type Project = Workbench<qc_project::MemoryLoader>;
+    type Live = qs_workbench::Preview;
+
+    fn map_store(&mut self) -> &mut qs_workbench::MapStore {
+        self.workbench.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Workbench<qc_project::MemoryLoader> {
+        &mut self.workbench
+    }
+
+    fn live_map(&mut self) -> Option<&mut qs_workbench::Preview> {
+        Some(&mut self.preview)
+    }
+}
+
 impl HasWorkbench for Everything {
     type Loader = qc_project::MemoryLoader;
 
     fn workbench(&mut self) -> &mut Workbench<qc_project::MemoryLoader> {
         &mut self.workbench
-    }
-
-    fn preview(&mut self) -> Option<&mut qs_workbench::Preview> {
-        Some(&mut self.preview)
     }
 }
 

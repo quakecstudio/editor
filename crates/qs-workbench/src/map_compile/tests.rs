@@ -14,8 +14,8 @@ use qs_map::{Brush, Item, MapFile, Surface, TexDef};
 use qs_wad::write::WadBuilder;
 use serde_json::json;
 
-use super::{MAP_COMPILE, MAP_LEAKS, MAP_PORTALS, MapPortals, MapReport, Seal};
-use crate::map_edit::MAP_OPEN;
+use super::{MAP_COMPILE, MAP_LEAKS, MAP_PORTALS, MapPortals};
+use crate::map_edit::{MAP_OPEN, MapReport, Seal};
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
 
@@ -25,15 +25,28 @@ pub(crate) struct Context {
     preview: Preview,
 }
 
+impl crate::HasMap for Context {
+    type Project = Workbench<FsLoader>;
+    type Live = Preview;
+
+    fn map_store(&mut self) -> &mut crate::MapStore {
+        self.workbench.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Workbench<FsLoader> {
+        &mut self.workbench
+    }
+
+    fn live_map(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
+}
+
 impl HasWorkbench for Context {
     type Loader = FsLoader;
 
     fn workbench(&mut self) -> &mut Workbench<FsLoader> {
         &mut self.workbench
-    }
-
-    fn preview(&mut self) -> Option<&mut Preview> {
-        Some(&mut self.preview)
     }
 }
 

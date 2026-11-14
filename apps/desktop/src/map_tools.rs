@@ -21,10 +21,10 @@ use qs_map::shapes::{
     SHAPE_MAX_RINGS, SHAPE_MAX_ROCK_POINTS, SHAPE_MAX_SIDES, SHAPE_MAX_SPHEROID_FACES,
     SHAPE_MIN_RINGS, SHAPE_MIN_ROCK_POINTS, SHAPE_MIN_SIDES, SHAPE_STEP_DEPTH, SHAPE_STEP_HEIGHT,
 };
+use qs_workbench::map_edit::uv::{FaceRef, UvChoice};
 use qs_workbench::map_edit::{
     ArchWall, Axis, BrushIndex, Circle, Climb, EntityIndex, KeepPart, Lock, ShapeSpec,
 };
-use qs_workbench::map_uv::{FaceRef, UvChoice};
 
 use crate::map_editor::{GRID, box_lines};
 use crate::map_panes::{Pane, Projection};

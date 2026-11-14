@@ -150,7 +150,7 @@ impl Opens {
 
 impl NotOpened {
     /// `path` not opened because `error` stopped it.
-    fn unreadable(path: &Path, error: &WorkbenchError) -> Self {
+    fn unreadable(path: &Path, error: &impl std::fmt::Display) -> Self {
         Self {
             path: path.to_path_buf(),
             why: NotOpenedWhy::Unreadable,
@@ -228,7 +228,8 @@ impl<L: qc_project::Loader> Workbench<L> {
         // A map needs no project, so it opens first: one that does not read leaves the open
         // project as it was.
         if opens == Opens::MapEditor {
-            self.open_map(path)
+            self.maps_mut()
+                .open_map(path)
                 .map_err(|error| NotOpened::unreadable(path, &error))?;
             opened.map = Some(path.to_path_buf());
         }

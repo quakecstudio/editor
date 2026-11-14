@@ -17,7 +17,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, MapDocument, MapEdited, edit_map};
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasMap, MapEditError};
 
 /// The id of `map.hide`.
 pub const MAP_HIDE: &str = "map.hide";
@@ -231,9 +231,9 @@ impl MapDocument {
     }
 
     /// Refuses an edit of `entity` when it is locked.
-    pub(super) fn editable(&self, entity: EntityIndex) -> Result<(), WorkbenchError> {
+    pub(super) fn editable(&self, entity: EntityIndex) -> Result<(), MapEditError> {
         if self.is_locked(entity) {
-            return Err(WorkbenchError::Locked { entity });
+            return Err(MapEditError::Locked { entity });
         }
         Ok(())
     }
@@ -272,19 +272,19 @@ impl MapDocument {
     /// copies each change inside a linked group into the groups linked to it (MAP-9.7), the
     /// selection and the hidden and locked entities following the entities they were; refused
     /// too when a copy would change a locked entity.
-    pub(super) fn after_edit(&mut self, before: &MapFile) -> Result<(), WorkbenchError> {
+    pub(super) fn after_edit(&mut self, before: &MapFile) -> Result<(), MapEditError> {
         // An edit that removes entities is checked by the command that removes them.
         if self.file.entities.len() >= before.entities.len() {
             let locked = self.locked_in(before);
             if let Some(entity) = Self::changed_locked(&locked, before, &self.file, Some) {
-                return Err(WorkbenchError::Locked { entity });
+                return Err(MapEditError::Locked { entity });
             }
         }
         let edited = self.file.clone();
         let moves = self
             .file
             .update_changed(before)
-            .map_err(|error| WorkbenchError::Link { error })?;
+            .map_err(|error| MapEditError::Link { error })?;
         let follow = |entity: EntityIndex| {
             moves
                 .of(EntityPlace::new(entity.get()))
@@ -292,7 +292,7 @@ impl MapDocument {
         };
         let locked = self.locked_in(&edited);
         if let Some(entity) = Self::changed_locked(&locked, &edited, &self.file, follow) {
-            return Err(WorkbenchError::Locked { entity });
+            return Err(MapEditError::Locked { entity });
         }
         self.selected = self.selected.and_then(follow);
         self.view.follow(&moves);
@@ -305,7 +305,7 @@ impl MapDocument {
         &mut self,
         entity: EntityIndex,
         by: [f64; 3],
-    ) -> Result<(), WorkbenchError> {
+    ) -> Result<(), MapEditError> {
         let group = self
             .file
             .entities
@@ -383,7 +383,7 @@ impl ViewChange {
         self,
         document: &mut MapDocument,
         entities: Vec<EntityIndex>,
-    ) -> Result<(), WorkbenchError> {
+    ) -> Result<(), MapEditError> {
         for &entity in &entities {
             document.entity_mut(entity)?;
         }
@@ -453,19 +453,19 @@ impl<V> MapView<V> {
     }
 }
 
-impl<C: HasWorkbench + 'static, V: ViewKind + 'static> Command<C> for MapView<V> {
+impl<C: HasMap + 'static, V: ViewKind + 'static> Command<C> for MapView<V> {
     const ID: &'static str = V::ID;
     const SUMMARY: &'static str = V::SUMMARY;
     type Params = EntityListParams;
     type Output = ();
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: EntityListParams,
-    ) -> Result<Outcome<(), C>, WorkbenchError> {
-        let document = context.workbench().map_mut()?;
+    ) -> Result<Outcome<(), C>, MapEditError> {
+        let document = context.map_store().map_mut()?;
         V::CHANGE.apply(document, params.entities)?;
         Ok(Outcome::outside_history(()))
     }
@@ -483,17 +483,17 @@ pub(super) enum ViewReset {
 /// `map.show_all`.
 pub(super) struct ShowAll;
 
-impl<C: HasWorkbench + 'static> Command<C> for ShowAll {
+impl<C: HasMap + 'static> Command<C> for ShowAll {
     const ID: &'static str = MAP_SHOW_ALL;
     const SUMMARY: &'static str = "Shows every entity of the open map hidden in the editor \
         (TrenchBroom's Show All); a hidden layer stays hidden.";
     type Params = NoParams;
     type Output = ();
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(&self, context: &mut C, _params: NoParams) -> Result<Outcome<(), C>, WorkbenchError> {
+    fn run(&self, context: &mut C, _params: NoParams) -> Result<Outcome<(), C>, MapEditError> {
         context
-            .workbench()
+            .map_store()
             .map_mut()?
             .reset_view(ViewReset::ShowAll);
         Ok(Outcome::outside_history(()))
@@ -503,17 +503,17 @@ impl<C: HasWorkbench + 'static> Command<C> for ShowAll {
 /// `map.unlock_all`.
 pub(super) struct UnlockAll;
 
-impl<C: HasWorkbench + 'static> Command<C> for UnlockAll {
+impl<C: HasMap + 'static> Command<C> for UnlockAll {
     const ID: &'static str = MAP_UNLOCK_ALL;
     const SUMMARY: &'static str = "Unlocks every entity of the open map locked in the editor; \
         a locked layer stays locked.";
     type Params = NoParams;
     type Output = ();
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(&self, context: &mut C, _params: NoParams) -> Result<Outcome<(), C>, WorkbenchError> {
+    fn run(&self, context: &mut C, _params: NoParams) -> Result<Outcome<(), C>, MapEditError> {
         context
-            .workbench()
+            .map_store()
             .map_mut()?
             .reset_view(ViewReset::UnlockAll);
         Ok(Outcome::outside_history(()))
@@ -534,23 +534,23 @@ impl MapDocument {
 /// `map.set_layer`.
 pub(super) struct MapSetLayer;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapSetLayer {
+impl<C: HasMap + 'static> Command<C> for MapSetLayer {
     const ID: &'static str = MAP_SET_LAYER;
     const SUMMARY: &'static str = "Turns a layer of the open map hidden, locked or left out of \
         exports on or off, written as TrenchBroom writes it.";
     type Params = SetLayerParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: SetLayerParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             let layer = document.entity_mut(params.layer)?;
             if !matches!(layer.container(), Some((RoomKind::Layer, _))) {
-                return Err(WorkbenchError::NotLayer {
+                return Err(MapEditError::NotLayer {
                     entity: params.layer,
                 });
             }
@@ -569,20 +569,20 @@ impl<C: HasWorkbench + 'static> Command<C> for MapSetLayer {
 /// `map.layers`.
 pub(super) struct MapLayers;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapLayers {
+impl<C: HasMap + 'static> Command<C> for MapLayers {
     const ID: &'static str = MAP_LAYERS;
     const SUMMARY: &'static str = "The open map's TrenchBroom layers: each one's name, whether \
         it is hidden, locked or left out of exports, and how many entities are in it.";
     type Params = NoParams;
     type Output = Vec<LayerInfo>;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         _params: NoParams,
-    ) -> Result<Outcome<Vec<LayerInfo>, C>, WorkbenchError> {
-        let document = context.workbench().map().ok_or(WorkbenchError::NoMap)?;
+    ) -> Result<Outcome<Vec<LayerInfo>, C>, MapEditError> {
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         Ok(Outcome::unchanged(document.layers()))
     }
 }
@@ -590,18 +590,18 @@ impl<C: HasWorkbench + 'static> Command<C> for MapLayers {
 /// `map.export`.
 pub(super) struct MapExport;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapExport {
+impl<C: HasMap + 'static> Command<C> for MapExport {
     const ID: &'static str = MAP_EXPORT;
     const SUMMARY: &'static str = "Writes the open map to another .map without the layers \
         marked to be left out of exports and the entities in them (TrenchBroom's Export).";
     type Params = ExportParams;
     type Output = ();
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
-    fn run(&self, context: &mut C, params: ExportParams) -> Result<Outcome<(), C>, WorkbenchError> {
-        let document = context.workbench().map().ok_or(WorkbenchError::NoMap)?;
+    fn run(&self, context: &mut C, params: ExportParams) -> Result<Outcome<(), C>, MapEditError> {
+        let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
         let text = document.file.without_omitted_layers().to_bytes();
-        std::fs::write(&params.path, text).map_err(|error| WorkbenchError::Save {
+        std::fs::write(&params.path, text).map_err(|error| MapEditError::Save {
             path: params.path.clone(),
             error,
         })?;

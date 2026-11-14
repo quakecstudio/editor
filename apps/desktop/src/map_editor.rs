@@ -16,16 +16,17 @@ use eframe::egui::{
 };
 use qs_layout::MapPanes;
 use qs_render::Camera;
-use qs_workbench::entity_classes::ClassInfo;
-use qs_workbench::map_compile::MapReport;
-use qs_workbench::map_edit::{
-    EntityIndex, EntityKeys, FlagChange, GameMode, Keep, LayerInfo, MapDocument, MapFound,
-    MapIssue, MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix, Skill,
-};
-use qs_workbench::map_textures::TextureSources;
+use qs_workbench::map_edit::ClassInfo;
+use qs_workbench::map_edit::MapReport;
+use qs_workbench::map_edit::texture_import::DitherChoice;
+use qs_workbench::map_edit::textures::TextureSources;
 #[cfg(test)]
-use qs_workbench::map_uv::FaceRef;
-use qs_workbench::texture_import::DitherChoice;
+use qs_workbench::map_edit::uv::FaceRef;
+use qs_workbench::map_edit::{
+    EntityIndex, EntityKeys, FlagChange, Keep, LayerInfo, MapDocument, MapFound, MapIssue,
+    MapRevision, MapSearchParams, OutlineRow, Prefab, QuickFix,
+};
+use qs_workbench::map_filter::{GameMode, Skill};
 
 use crate::map_browser::{ClassDrag, EntityBrowser};
 use crate::map_fields::{Field, spawnflags};

@@ -12,9 +12,10 @@ use qc_project::FsLoader;
 use qs_commands::{Registry, Session};
 use serde_json::json;
 
-use super::{FILES_CHANGED, FilesChanged, MAP_COMPARE, MAP_RESOLVE, MapDifference, MapOnDisk};
+use super::{FILES_CHANGED, FilesChanged};
 use crate::entity_classes::PROJECT_ENTITIES;
 use crate::map_edit::{EntityIndex, MAP_MOVE, MAP_OPEN, MAP_SAVE, MAP_SELECT, MAP_SET_KEY};
+use crate::map_edit::{MAP_COMPARE, MAP_RESOLVE, MapDifference, MapOnDisk};
 use crate::{Config, OPEN_PROJECT, Workbench, register};
 
 const CODE: &str = "entity self; .string classname; .vector origin;\nvoid() worldspawn = {};\n\

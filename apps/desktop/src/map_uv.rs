@@ -8,7 +8,7 @@
 //! [`BrushAction`] the shell runs as one `map.face_uv` or `map.face_align` step.
 
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Sense, Stroke, Ui, Vec2};
-use qs_workbench::map_uv::{Axis, FaceRef, JustifyTo, UvChoice};
+use qs_workbench::map_edit::uv::{Axis, FaceRef, JustifyTo, UvChoice};
 
 use crate::map_panes::Projection;
 use crate::map_scene::{FaceShape, Scene, single};

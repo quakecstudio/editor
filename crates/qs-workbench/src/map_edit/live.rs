@@ -6,9 +6,7 @@
 //! recompile. A brush's faces are not entities' keys: moving a brush reaches the game at the
 //! next compile.
 
-use qs_engine::{Client, ClientError, EntityTarget};
 use qs_map::Entity;
-use serde_json::Value;
 
 use super::EntityIndex;
 
@@ -103,29 +101,6 @@ impl LiveChange {
         out
     }
 
-    /// Sends the change over the bridge (BRIDGE-4.13): `entity/spawn` at its place,
-    /// `entity/remove` or `entity/edit` of the entity there; nothing for
-    /// [`LiveChange::NeedsCompile`], answered with `null`.
-    ///
-    /// # Errors
-    ///
-    /// The request's [`ClientError`]: the game refused it, as for a model the map has not
-    /// precached (BRIDGE-4.12) or an entity in no edict.
-    pub fn send(&self, client: &mut Client) -> Result<Value, ClientError> {
-        match self {
-            Self::Spawn {
-                place,
-                classname,
-                pairs,
-            } => client.spawn(classname, &as_strs(pairs), Some(place.get())),
-            Self::Remove { place } => client.remove(EntityTarget::MapEntity(place.get())),
-            Self::NeedsCompile { .. } => Ok(Value::Null),
-            Self::Edit { place, pairs } => {
-                client.edit_entity(EntityTarget::MapEntity(place.get()), &as_strs(pairs))
-            }
-        }
-    }
-
     /// The change as the map editor says it, `after` the entities it leaves (P5-17).
     pub(crate) fn describe(&self, after: &[Entity]) -> super::disk::MapDifference {
         let class = |place: EntityIndex| {
@@ -201,14 +176,6 @@ fn changed_pairs(before: &Entity, after: &Entity) -> Vec<(String, String)> {
         }
     }
     out
-}
-
-/// Key-values as the client takes them.
-fn as_strs(pairs: &[(String, String)]) -> Vec<(&str, &str)> {
-    pairs
-        .iter()
-        .map(|(key, value)| (key.as_str(), value.as_str()))
-        .collect()
 }
 
 /// Bytes as text, a byte that is not UTF-8 replaced.

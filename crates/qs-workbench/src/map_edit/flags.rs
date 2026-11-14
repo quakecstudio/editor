@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, MapDocument, MapEdited, edit_map};
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasMap, MapEditError};
 
 /// The id of `map.set_flag`.
 pub const MAP_SET_FLAG: &str = "map.set_flag";
@@ -49,7 +49,7 @@ impl MapDocument {
         entity: EntityIndex,
         flag: u32,
         change: FlagChange,
-    ) -> Result<(), WorkbenchError> {
+    ) -> Result<(), MapEditError> {
         let found = self.entity_mut(entity)?;
         let bits: u32 = found
             .value(SPAWNFLAGS)
@@ -69,19 +69,19 @@ impl MapDocument {
 /// `map.set_flag`.
 pub(super) struct MapSetFlag;
 
-impl<C: HasWorkbench + 'static> Command<C> for MapSetFlag {
+impl<C: HasMap + 'static> Command<C> for MapSetFlag {
     const ID: &'static str = MAP_SET_FLAG;
     const SUMMARY: &'static str = "Sets or clears one spawnflag of an entity of the open map, \
         and of the entities in also, in one step, keeping each entity's other flags.";
     type Params = SetFlagParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: SetFlagParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             for entity in core::iter::once(params.entity).chain(params.also.iter().copied()) {
                 document.change_flag(entity, params.flag, params.change)?;

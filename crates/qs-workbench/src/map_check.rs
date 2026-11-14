@@ -16,7 +16,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::editing::{Change, Source};
 use crate::editing::{Saved, TextStep};
-use crate::{HasWorkbench, Workbench, WorkbenchError};
+use crate::entity_classes::class_info;
+use crate::map_edit::{ClassInfo, EntityIndex, QuickFix};
+use crate::{EntityCheck, EntityProblem, HasWorkbench, MapProject, Workbench, WorkbenchError};
 
 /// The id of `map.check`.
 pub const MAP_CHECK: &str = "map.check";
@@ -74,6 +76,75 @@ pub struct RenamedIn {
     pub path: PathBuf,
     /// The pairs renamed.
     pub pairs: usize,
+}
+
+/// What the map editor asks of the project (`HasMap`), answered from its server QuakeC.
+impl<L: crate::Loader> MapProject for Workbench<L> {
+    fn project_root(&self) -> Option<PathBuf> {
+        self.root().map(Path::to_path_buf)
+    }
+
+    fn entity_class(&mut self, classname: &str) -> Option<ClassInfo> {
+        let classes = self.entity_classes().ok()?;
+        classes
+            .iter()
+            .find(|class| class.name == classname)
+            .map(class_info)
+    }
+
+    fn targeting_keys(&mut self) -> Vec<String> {
+        Self::targeting_keys(self)
+    }
+
+    fn entity_check(&mut self) -> Option<EntityCheck> {
+        let schema = self.entity_schema().ok()?;
+        Some(Box::new(move |map| entity_problems(&schema, map)))
+    }
+}
+
+/// The problems `schema` finds with the entities of `map` (MAP-8), each with the edit that
+/// puts it right where the schema suggests one.
+fn entity_problems(schema: &EntitySchema, map: &MapFile) -> Vec<EntityProblem> {
+    schema
+        .check(map)
+        .into_iter()
+        .map(|d| {
+            let entity = EntityIndex::new(d.entity.get());
+            let fix = match &d.kind {
+                MapDiagnosticKind::UnknownKey {
+                    key,
+                    suggestion: Some(to),
+                } => Some(QuickFix::RenameKey {
+                    entity,
+                    from: key.clone(),
+                    to: to.clone(),
+                }),
+                MapDiagnosticKind::UnknownClass {
+                    suggestion: Some(classname),
+                    ..
+                } => Some(QuickFix::SetClassname {
+                    entity,
+                    classname: classname.clone(),
+                }),
+                MapDiagnosticKind::UnknownKey {
+                    suggestion: None, ..
+                }
+                | MapDiagnosticKind::UnknownClass {
+                    suggestion: None, ..
+                }
+                | MapDiagnosticKind::NoClassname
+                | MapDiagnosticKind::BadValue { .. }
+                | MapDiagnosticKind::NoTarget { .. }
+                | MapDiagnosticKind::Untargeted { .. } => None,
+            };
+            EntityProblem {
+                entity,
+                line: d.line,
+                message: d.kind.to_string(),
+                fix,
+            }
+        })
+        .collect()
 }
 
 impl<L: crate::Loader> Workbench<L> {

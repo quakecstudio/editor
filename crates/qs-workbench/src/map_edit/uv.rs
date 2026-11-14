@@ -6,17 +6,15 @@
 //! step with undo.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 
 use qs_commands::{Command, Outcome};
 use qs_map::{BrushError, Face, Justify, TexAxis, TextureSize, UvEdit};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::map_edit::textures::TextureSources;
 use crate::map_edit::{BrushIndex, EntityIndex, MapDocument, MapEdited, edit_map};
-use crate::map_textures::TextureSources;
-use crate::preview::HasPreview;
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasMap, MapEditError, MapProject};
 
 /// The id of `map.face_uv`.
 pub const MAP_FACE_UV: &str = "map.face_uv";
@@ -184,13 +182,13 @@ pub struct FaceAlignParams {
 
 impl MapDocument {
     /// The face `at` of the open map.
-    fn face(&mut self, at: FaceRef) -> Result<Face, WorkbenchError> {
+    fn face(&mut self, at: FaceRef) -> Result<Face, MapEditError> {
         let brush = self.brush(at.entity, at.brush)?;
         brush
             .faces
             .get(at.face.get())
             .cloned()
-            .ok_or(WorkbenchError::NoFace {
+            .ok_or(MapEditError::NoFace {
                 entity: at.entity,
                 brush: at.brush,
                 face: at.face,
@@ -202,8 +200,8 @@ impl MapDocument {
     fn edit_faces(
         &mut self,
         faces: &[FaceRef],
-        mut edit: impl FnMut(&Face, &[[f64; 3]]) -> Result<Option<qs_map::TexDef>, WorkbenchError>,
-    ) -> Result<(), WorkbenchError> {
+        mut edit: impl FnMut(&Face, &[[f64; 3]]) -> Result<Option<qs_map::TexDef>, MapEditError>,
+    ) -> Result<(), MapEditError> {
         let mut by_brush: BTreeMap<(EntityIndex, BrushIndex), Vec<FaceIndex>> = BTreeMap::new();
         for at in faces {
             by_brush
@@ -223,7 +221,7 @@ impl MapDocument {
                 let face = brush
                     .faces
                     .get_mut(place.get())
-                    .ok_or(WorkbenchError::NoFace {
+                    .ok_or(MapEditError::NoFace {
                         entity,
                         brush: brush_index,
                         face: place,
@@ -231,7 +229,7 @@ impl MapDocument {
                 if let Some(texdef) = edit(face, &polygon)? {
                     let (points, texture) = (*face.points(), face.texture().to_vec());
                     face.set(points, &texture, texdef)
-                        .map_err(|error| WorkbenchError::Brush {
+                        .map_err(|error| MapEditError::Brush {
                             error: BrushError::Map(error),
                         })?;
                 }
@@ -251,19 +249,19 @@ fn one_entity(faces: &[FaceRef]) -> Option<EntityIndex> {
 /// `map.face_uv`.
 pub(crate) struct FaceUv;
 
-impl<C: HasPreview + 'static> Command<C> for FaceUv {
+impl<C: HasMap + 'static> Command<C> for FaceUv {
     const ID: &'static str = MAP_FACE_UV;
     const SUMMARY: &'static str = "Fits, justifies, flips, resets, snaps or adjusts the texture of faces \
         of the open map, at the size its WAD gives it (MAP-13).";
     type Params = FaceUvParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: FaceUvParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let sources = params
             .edit
             .sized()
@@ -274,7 +272,7 @@ impl<C: HasPreview + 'static> Command<C> for FaceUv {
                 .iter()
                 .any(|&factor| factor == 0.0 || !factor.is_finite())
         {
-            return Err(WorkbenchError::BadScale { scale });
+            return Err(MapEditError::BadScale { scale });
         }
         let edit = params.edit.edit();
         let entity = one_entity(&params.faces);
@@ -284,7 +282,7 @@ impl<C: HasPreview + 'static> Command<C> for FaceUv {
                 let size = match &sources {
                     Some(sources) => sources
                         .size(&name)
-                        .ok_or(WorkbenchError::NoTextureSize { texture: name })?,
+                        .ok_or(MapEditError::NoTextureSize { texture: name })?,
                     None => [0, 0],
                 };
                 let [width, height] = size;
@@ -296,36 +294,34 @@ impl<C: HasPreview + 'static> Command<C> for FaceUv {
 }
 
 /// The texture sources of the open map, found as the texture browser finds them.
-fn texture_sources<C: HasPreview>(context: &mut C) -> Result<TextureSources, WorkbenchError> {
-    let (workbench, preview) = context.workbench_and_preview();
-    let game = preview.game_base_path();
-    let chosen = preview.game_folder().map(Path::to_path_buf);
-    let root: Option<PathBuf> = workbench.root().map(Path::to_path_buf);
-    let document = workbench.map().ok_or(WorkbenchError::NoMap)?;
+fn texture_sources<C: HasMap>(context: &mut C) -> Result<TextureSources, MapEditError> {
+    let game = context.game_folders();
+    let root = context.map_project().project_root();
+    let document = context.map_store().map().ok_or(MapEditError::NoMap)?;
     Ok(TextureSources::load(
         document,
         root.as_deref(),
-        game.as_deref(),
-        chosen.as_deref(),
+        game.base.as_deref(),
+        game.chosen.as_deref(),
     ))
 }
 
 /// `map.face_align`.
 pub(crate) struct FaceAlign;
 
-impl<C: HasWorkbench + 'static> Command<C> for FaceAlign {
+impl<C: HasMap + 'static> Command<C> for FaceAlign {
     const ID: &'static str = MAP_FACE_ALIGN;
     const SUMMARY: &'static str = "Carries one face's texture alignment onto other faces of the \
         open map, so the texture continues across the line their planes share (MAP-13.8).";
     type Params = FaceAlignParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: FaceAlignParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let entity = one_entity(&params.to);
         let ((), step) = edit_map(context, |document| {
             let source = document.face(params.from)?;

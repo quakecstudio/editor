@@ -15,8 +15,8 @@ use qs_wad::texture::Palette;
 use serde_json::json;
 
 use super::{DitherChoice, TEXTURE_IMPORT, TextureImported, project_wad, quantized};
-use crate::map_compile::MapReport;
 use crate::map_edit::MAP_OPEN;
+use crate::map_edit::MapReport;
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
 
@@ -26,15 +26,28 @@ struct Context {
     preview: Preview,
 }
 
+impl crate::HasMap for Context {
+    type Project = Workbench<FsLoader>;
+    type Live = Preview;
+
+    fn map_store(&mut self) -> &mut crate::MapStore {
+        self.workbench.maps_mut()
+    }
+
+    fn map_project(&mut self) -> &mut Workbench<FsLoader> {
+        &mut self.workbench
+    }
+
+    fn live_map(&mut self) -> Option<&mut Preview> {
+        Some(&mut self.preview)
+    }
+}
+
 impl HasWorkbench for Context {
     type Loader = FsLoader;
 
     fn workbench(&mut self) -> &mut Workbench<FsLoader> {
         &mut self.workbench
-    }
-
-    fn preview(&mut self) -> Option<&mut Preview> {
-        Some(&mut self.preview)
     }
 }
 

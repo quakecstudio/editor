@@ -4,9 +4,9 @@
 //! wording is reviewed in one place and can be translated later. A test fails on a string
 //! literal in the UI modules.
 
+use qs_workbench::map_edit::textures::{WadFound, WadState};
 use qs_workbench::map_edit::{BrushIndex, EntityIndex, QuickFix};
 use qs_workbench::map_edit::{HunkSide, MapHunk};
-use qs_workbench::map_textures::{WadFound, WadState};
 
 /// One string the app shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

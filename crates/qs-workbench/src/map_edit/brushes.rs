@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{EntityIndex, MapDocument, MapEdited, edit_map};
-use crate::{HasWorkbench, WorkbenchError};
+use crate::{HasMap, MapEditError};
 
 /// The id of `map.brush_create`.
 pub const MAP_BRUSH_CREATE: &str = "map.brush_create";
@@ -219,16 +219,16 @@ impl MapDocument {
         &mut self,
         entity: EntityIndex,
         brush: BrushIndex,
-    ) -> Result<Brush, WorkbenchError> {
+    ) -> Result<Brush, MapEditError> {
         let found = self.entity_mut(entity)?;
         let place = found
             .brush_places()
             .get(brush.get())
             .copied()
-            .ok_or(WorkbenchError::NoBrush { entity, brush })?;
+            .ok_or(MapEditError::NoBrush { entity, brush })?;
         match found.items.get(place) {
             Some(Item::Brush(found)) => Ok(found.clone()),
-            Some(Item::Pair(_)) | None => Err(WorkbenchError::NoBrush { entity, brush }),
+            Some(Item::Pair(_)) | None => Err(MapEditError::NoBrush { entity, brush }),
         }
     }
 
@@ -238,13 +238,13 @@ impl MapDocument {
         entity: EntityIndex,
         brush: BrushIndex,
         with: Vec<Brush>,
-    ) -> Result<(), WorkbenchError> {
+    ) -> Result<(), MapEditError> {
         let found = self.entity_mut(entity)?;
         let place = found
             .brush_places()
             .get(brush.get())
             .copied()
-            .ok_or(WorkbenchError::NoBrush { entity, brush })?;
+            .ok_or(MapEditError::NoBrush { entity, brush })?;
         let tail = found.items.split_off(place);
         found.items.extend(with.into_iter().map(Item::Brush));
         found.items.extend(tail.into_iter().skip(1));
@@ -276,7 +276,7 @@ impl MapDocument {
     }
 }
 
-impl From<BrushError> for WorkbenchError {
+impl From<BrushError> for MapEditError {
     fn from(error: BrushError) -> Self {
         Self::Brush { error }
     }
@@ -285,19 +285,19 @@ impl From<BrushError> for WorkbenchError {
 /// `map.brush_create`.
 pub(super) struct BrushCreate;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushCreate {
+impl<C: HasMap + 'static> Command<C> for BrushCreate {
     const ID: &'static str = MAP_BRUSH_CREATE;
     const SUMMARY: &'static str = "Adds a box brush from two corners, snapped to the grid (16 \
         units unless given), to the world or an entity of the open map, with a texture.";
     type Params = BrushCreateParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushCreateParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let entity = params.entity.unwrap_or(EntityIndex::WORLD);
         let ((), step) = edit_map(context, |document| {
             let corners = [params.min, params.max].map(|p| p.map(|c| snap(c, params.grid)));
@@ -331,19 +331,19 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushCreate {
 /// `map.brush_move`.
 pub(super) struct BrushMove;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushMove {
+impl<C: HasMap + 'static> Command<C> for BrushMove {
     const ID: &'static str = MAP_BRUSH_MOVE;
     const SUMMARY: &'static str = "Moves brushes of an entity by an offset snapped to the grid \
         (16 units unless given), their textures fixed in the world unless lock is free.";
     type Params = BrushMoveParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushMoveParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let by = params.by.map(|c| snap(c, params.grid));
         let ((), step) = edit_map(context, |document| {
             for &brush in &params.brushes {
@@ -366,19 +366,19 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushMove {
 /// `map.brush_texture`.
 pub(super) struct BrushTexture;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushTexture {
+impl<C: HasMap + 'static> Command<C> for BrushTexture {
     const ID: &'static str = MAP_BRUSH_TEXTURE;
     const SUMMARY: &'static str = "Sets the texture, shift, rotation or scale of every face of \
         brushes of an entity, keeping what is not given (MAP-12).";
     type Params = BrushTextureParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushTextureParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let alignment = Alignment {
             shift: params.shift,
             rotate: params.rotate,
@@ -413,19 +413,19 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushTexture {
 /// `map.brush_clip`.
 pub(super) struct BrushClip;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushClip {
+impl<C: HasMap + 'static> Command<C> for BrushClip {
     const ID: &'static str = MAP_BRUSH_CLIP;
     const SUMMARY: &'static str = "Clips a brush of the open map by the plane through three \
         points, keeping the part behind it, in front of it, or both as two brushes.";
     type Params = BrushClipParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushClipParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             let brush = document.brush(params.entity, params.brush)?;
             let plane = plane_of(params.points).ok_or(BrushError::Degenerate)?;
@@ -463,19 +463,19 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushClip {
 /// `map.brush_vertex`.
 pub(super) struct BrushVertex;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushVertex {
+impl<C: HasMap + 'static> Command<C> for BrushVertex {
     const ID: &'static str = MAP_BRUSH_VERTEX;
     const SUMMARY: &'static str = "Moves a vertex of a brush of the open map to a point snapped \
         to the grid; the brush becomes the convex hull of its vertices so moved.";
     type Params = BrushVertexParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushVertexParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             let brush = document.brush(params.entity, params.brush)?;
             let to = params.to.map(|c| snap(c, params.grid));
@@ -494,19 +494,19 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushVertex {
 /// `map.brush_subtract`.
 pub(super) struct BrushSubtract;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushSubtract {
+impl<C: HasMap + 'static> Command<C> for BrushSubtract {
     const ID: &'static str = MAP_BRUSH_SUBTRACT;
     const SUMMARY: &'static str = "Subtracts a brush of the open map from every other brush of \
         its entity, then deletes it: the brushes it overlapped become the parts outside it.";
     type Params = BrushParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             let cutter = document.brush(params.entity, params.brush)?;
             let found = document.entity_mut(params.entity)?;
@@ -514,7 +514,7 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSubtract {
                 .brush_places()
                 .get(params.brush.get())
                 .copied()
-                .ok_or(WorkbenchError::NoBrush {
+                .ok_or(MapEditError::NoBrush {
                     entity: params.entity,
                     brush: params.brush,
                 })?;
@@ -545,19 +545,19 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushSubtract {
 /// `map.brush_merge`.
 pub(super) struct BrushMerge;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushMerge {
+impl<C: HasMap + 'static> Command<C> for BrushMerge {
     const ID: &'static str = MAP_BRUSH_MERGE;
     const SUMMARY: &'static str = "Merges two or more brushes of an entity of the open map into \
         their convex hull, which takes the first's place.";
     type Params = BrushMergeParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushMergeParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             let mut indices = params.brushes.clone();
             indices.sort();
@@ -589,18 +589,18 @@ impl<C: HasWorkbench + 'static> Command<C> for BrushMerge {
 /// `map.brush_delete`.
 pub(super) struct BrushDelete;
 
-impl<C: HasWorkbench + 'static> Command<C> for BrushDelete {
+impl<C: HasMap + 'static> Command<C> for BrushDelete {
     const ID: &'static str = MAP_BRUSH_DELETE;
     const SUMMARY: &'static str = "Deletes a brush of an entity of the open map.";
     type Params = BrushParams;
     type Output = MapEdited;
-    type Error = WorkbenchError;
+    type Error = MapEditError;
 
     fn run(
         &self,
         context: &mut C,
         params: BrushParams,
-    ) -> Result<Outcome<MapEdited, C>, WorkbenchError> {
+    ) -> Result<Outcome<MapEdited, C>, MapEditError> {
         let ((), step) = edit_map(context, |document| {
             document.replace_brush(params.entity, params.brush, Vec::new())
         })?;
