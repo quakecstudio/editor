@@ -12,7 +12,7 @@ including why crates in one layer may build on each other.
 | L1 VM | What the engine executes: the VM, edicts, builtins |
 | L2 syntax | Preprocessor, lossless CST, `progs.src` project graph |
 | L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions |
-| L4 compilers and engine runtime | Our QuakeC and map compilers (bsp, vis, light); the engine bridge and its client; the preview host's game client, simulation and sound |
+| L4 bridges | Our QuakeC and map compilers (bsp, vis, light); the engine bridge and its client; the preview host's game client, simulation and sound |
 | L5 commands | Command engine, session, undo: one registry for the UI, CLI, agent and MCP; the workbench, layout, settings and templates |
 | L6 agent | Agent loop, model providers, checkpoints, MCP and ACP |
 | L7 UI | The app on the chosen framework (ADR-0003): the code editor view and the wgpu renderer |
@@ -37,8 +37,8 @@ project prefix from ADR-0006 (`docs/conventions.md`, Repository layout).
   unmapped dependency, and when the crate table in `docs/layers.md` is stale. A new crate is
   added to `layers.toml`, and the table rewritten with `cargo xtask layers --write`, in the
   same PR.
-- Test-only crates (`qs-tests`, `qs-bench` and `qs-differential`, layer `tests`) and tooling (`xtask`, layer `tooling`) may depend
-  on anything; nothing may depend on them.
+- Test-only crates (layer `tests`) and tooling (layer `tooling`) may depend on anything;
+  nothing may depend on them.
 
 ## What follows from it
 

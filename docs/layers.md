@@ -46,7 +46,7 @@ binary that runs as its own process.*
 | L1 VM | qc-vm, qc-edict, qc-builtins: what the engine executes |
 | L2 syntax | Preprocessor, lossless CST, progs.src project graph |
 | L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions |
-| L4 compilers and engine runtime | Our QuakeC compiler and our map compilers (bsp, vis, light); the engine bridge and its client; the preview host's game client, simulation and sound |
+| L4 bridges | Our QuakeC compiler and our map compilers (bsp, vis, light); the engine bridge and its client; the preview host's game client, simulation and sound |
 | L5 commands | Command engine, session, undo: one registry for UI, CLI, agent and MCP; the workbench, layout, settings and templates the commands act on |
 | L6 agent | Agent loop, model providers, checkpoints, MCP and ACP |
 | L7 UI | The app on the chosen framework: the code editor view and the wgpu renderer |
@@ -142,10 +142,10 @@ higher layer". Cargo already rejects cycles between crates.
 **Outside the ranking.** Two kinds of crate are not part of the product's stack and take the
 layer names `tests` and `tooling` instead of L0 to L7 or `apps`:
 
-| Layer | Crates | Rule |
+| Layer | Holds | Rule |
 | --- | --- | --- |
-| `tests` | `qs-tests`, the single cross-crate integration test binary; `qs-bench`, the performance-budget benchmarks; `qs-differential`, the differential VM harness | may depend on any crate |
-| `tooling` | `xtask` | may depend on any crate |
+| `tests` | The single cross-crate integration test binary, the performance-budget benchmarks and the differential VM harness | may depend on any crate |
+| `tooling` | Build automation | may depend on any crate |
 
 No crate may depend on a `tests` or `tooling` crate.
 

@@ -1119,12 +1119,12 @@ groups:
     - P5-19
     deliverable:
     - 'xtask/src/layers.rs: cargo xtask layers --write writes the crate table of docs/layers.md from layers.toml and each crate''s package description, and cargo xtask layers fails when the table is not what they render'
-    - 'docs/layers.md with that table and L4 described as compilers and engine runtime; .claude/rules/layering.md and CLAUDE.md with no crate table of their own, linking to it'
+    - 'docs/layers.md with that table and L4's row saying what the layer holds now; .claude/rules/layering.md and CLAUDE.md with no crate table of their own, linking to it'
     - 'docs/roadmap.md, "Where we are": the gates as they stand, pointing at python3 plan/status.py for the live state'
     - 'apps/desktop/src/shell.rs: its header no longer calls built panels placeholders'
     acceptance:
     - 'cargo xtask layers passes on main, and a test shows it fails on a table edited by hand, on a document without the table''s lines and on a crate with no description'
-    - 'Every crate in layers.toml has a row in docs/layers.md, and no other document lists crates by layer'
+    - 'Every crate in layers.toml has a row in docs/layers.md, and no other document lists crates by layer (docs/architecture.md''s diagram and the tests and tooling rows included)'
     verify:
     - 'cargo test -p xtask; cargo xtask layers'
   - key: P6-40

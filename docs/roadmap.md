@@ -36,11 +36,11 @@ Each layer may depend only on layers below it; `cargo xtask layers` enforces thi
 | L1 VM | qc-vm, qc-edict, qc-builtins: what the engine executes |
 | L2 syntax | Preprocessor, lossless CST, progs.src project graph |
 | L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions |
-| L4 bridges | Our QuakeC and map compilers; the engine bridge |
+| L4 bridges | Our QuakeC and map compilers; the engine bridge, game client, simulation and sound |
 | L5 commands | Command engine, session, undo: one registry for UI, CLI, agent and MCP |
 | L6 agent | Agent loop, model providers, checkpoints, MCP and ACP |
 | L7 UI | The app on the chosen framework |
-| apps | Desktop app, CLI, LSP server |
+| apps | Desktop app, CLI, LSP server, preview host |
 
 The only C programs are the oracles in `oracles/` (id's VM trace harness, id's qcc, a pinned FTEQCC, id's engine as the engine oracle, later id's map tools and ericw-tools; built by `cargo xtask oracles`, CI only). The preview host is the Rust binary `apps/quakec-engine`, which runs as its own process beside the IDE ([ADR-0004](adr/0004-preview-host-base.md)).
 

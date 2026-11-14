@@ -85,21 +85,25 @@ pub(crate) fn main(root: &Path, args: &Args) -> Result<bool, String> {
 /// `layers.toml` and the crates' descriptions render.
 pub(crate) fn check(root: &Path) -> Result<Report, String> {
     let mut report = check_dependencies(root)?;
-    let doc = fs::read_to_string(root.join(DOC)).map_err(|error| format!("{DOC}: {error}"))?;
-    let current = with_table(&doc, &table(root)?)? == doc;
-    report.record(
-        current,
-        if current {
-            format!("{DOC} lists the crates of {FILE}")
-        } else {
-            format!("{DOC}'s crate table differs from {FILE}; run cargo xtask layers --write")
-        },
-    );
+    // A document or a description that is missing is one more problem beside the layering's,
+    // not a reason to drop them.
+    let rendered = fs::read_to_string(root.join(DOC))
+        .map_err(|error| format!("{DOC}: {error}"))
+        .and_then(|doc| Ok(with_table(&doc, &table(root)?)? == doc));
+    match rendered {
+        Ok(true) => report
+            .passed
+            .push(format!("{DOC} lists the crates of {FILE}")),
+        Ok(false) => report.problems.push(format!(
+            "{DOC}'s crate table differs from {FILE}; run cargo xtask layers --write"
+        )),
+        Err(error) => report.problems.push(error),
+    }
     Ok(report)
 }
 
 /// The crate table: a row for each member in `layers.toml`, by layer and then by name, with
-/// its package description.
+/// its package description on one line, a `|` in it escaped so it stays in its cell.
 fn table(root: &Path) -> Result<String, String> {
     let crates = crates_table(root)?;
     let members = members(root)?;
@@ -113,7 +117,12 @@ fn table(root: &Path) -> Result<String, String> {
                 .description
                 .as_deref()
                 .ok_or_else(|| format!("{}: the package has no description", member.manifest))?;
-            table.push_str(&format!("| {layer} | `{name}` | {description} |\n"));
+            let cell = description
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .replace('|', "\\|");
+            table.push_str(&format!("| {layer} | `{name}` | {cell} |\n"));
         }
     }
     Ok(table)
@@ -580,17 +589,39 @@ mod tests {
             ),
         ] {
             let root = documented(name, doc);
-            assert!(check(&root).is_err(), "{name}");
+            assert_eq!(check(&root).unwrap().problems.len(), 1, "{name}");
             assert!(main(&root, &Args { write: true }).is_err(), "{name}");
         }
         let root = documented("no-doc", EMPTY_DOC);
         fs::remove_file(root.join(DOC)).unwrap();
-        assert!(check(&root).is_err());
+        assert_eq!(check(&root).unwrap().problems.len(), 1);
         assert!(main(&root, &Args { write: true }).is_err());
-        let root = workspace("undescribed", &[krate("a", "L0", "")], "");
+        // The layering's own problem is still reported beside the missing description.
+        let specs = [krate("vm", "L1", ON_C), krate("c", "L3", "")];
+        let root = workspace("undescribed", &specs, "");
         fs::create_dir_all(root.join("docs")).unwrap();
         fs::write(root.join(DOC), EMPTY_DOC).unwrap();
-        assert!(check(&root).unwrap_err().contains("no description"));
+        let found = check(&root).unwrap().problems;
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert!(
+            found[0].starts_with("vm (L1) depends on c (L3)"),
+            "{found:?}"
+        );
+        assert!(found[1].contains("no description"), "{found:?}");
+    }
+
+    #[test]
+    fn a_description_stays_in_its_cell() {
+        let specs = [krate(
+            "a",
+            "L0",
+            "description = \"\"\"Reads BSP29 | BSP2,\nand more\"\"\"\n",
+        )];
+        let root = workspace("cell", &specs, "");
+        assert_eq!(
+            table(&root).unwrap().lines().last(),
+            Some("| L0 | `a` | Reads BSP29 \\| BSP2, and more |")
+        );
     }
 
     #[test]

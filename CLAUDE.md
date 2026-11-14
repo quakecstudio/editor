@@ -41,11 +41,11 @@ generated table); [`.claude/rules/layering.md`](.claude/rules/layering.md) has t
 | L1 VM | qc-vm, qc-edict, qc-builtins: what the engine executes |
 | L2 syntax | Preprocessor, lossless CST, progs.src project graph |
 | L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions |
-| L4 compilers and engine runtime | Our QuakeC and map compilers; the engine bridge, game client, simulation and sound |
+| L4 bridges | Our QuakeC and map compilers; the engine bridge, game client, simulation and sound |
 | L5 commands | Command engine, session, undo: one registry for UI, CLI, agent and MCP |
 | L6 agent | Agent loop, model providers, checkpoints, MCP and ACP |
 | L7 UI | The app on the chosen framework |
-| apps | Desktop app, CLI, LSP server |
+| apps | Desktop app, CLI, LSP server, preview host |
 
 **Separate processes.** The oracles (id's VM and qcc, a pinned FTEQCC, later id's map tools
 and ericw-tools, and id's engine as the engine oracle) are C programs in
