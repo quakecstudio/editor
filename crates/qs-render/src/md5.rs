@@ -19,7 +19,10 @@ use crate::alias::{
 use crate::anorm_dots::SHADEDOT_QUANT;
 use crate::mesh::{Image, Palette};
 use crate::picture::load_image;
+use crate::{AXES, CHANNEL_MAX, RGBA_BYTES};
 
+/// Degrees in a turn, as `quantise` divides a yaw.
+const FULL_TURN: f64 = 360.0;
 /// `MAX_SKINS` in QuakeSpasm-Spiked's `gl_model.h`: the most skins a surface looks for.
 const MAX_SKINS: u32 = 32;
 /// `r_avertexnormal_dot`'s slope for a normal facing away from the light, "reproduces
@@ -247,7 +250,7 @@ fn frame_joints(mesh: &Md5Mesh, anim: &Md5Anim, frame: u64) -> Vec<Joint> {
     let mut joints: Vec<Joint> = Vec::with_capacity(mesh.joints.len());
     for (index, joint) in mesh.joints.iter().enumerate() {
         let pose = anim.pose(frame, index).unwrap_or(Md5Pose {
-            position: [0.0; 3],
+            position: [0.0; AXES],
             orientation: [0.0, 0.0, 0.0, -1.0],
         });
         let local = Joint {
@@ -272,7 +275,7 @@ fn surface_vertices(surface: &Md5Surface, joints: &[Joint]) -> Vec<Vertex> {
     let positions: Vec<[f32; 3]> = (0..surface.num_verts)
         .map(|v| {
             let Some(vert) = surface.vert(v) else {
-                return [0.0; 3];
+                return [0.0; AXES];
             };
             (0..vert.weight_count)
                 .filter_map(|i| surface.weight(vert.first_weight.checked_add(i)?))
@@ -280,10 +283,10 @@ fn surface_vertices(surface: &Md5Surface, joints: &[Joint]) -> Vec<Vertex> {
                     let joint = joints.get(usize::try_from(weight.joint).ok()?)?;
                     Some(joint.transform(weight.position).map(|c| c * weight.bias))
                 })
-                .fold([0.0; 3], add)
+                .fold([0.0; AXES], add)
         })
         .collect();
-    let mut normals = vec![[0.0_f32; 3]; positions.len()];
+    let mut normals = vec![[0.0_f32; AXES]; positions.len()];
     for triangle in (0..surface.num_tris).filter_map(|t| surface.tri(t)) {
         let [Ok(a), Ok(b), Ok(c)] = triangle.map(usize::try_from) else {
             continue;
@@ -341,14 +344,14 @@ fn surface_skins(
         } else {
             slot(1).unwrap_or(first)
         };
-        skins.push(if found.len() < 4 {
+        skins.push(if found.len() < SKIN_SLOTS {
             [first, second, first, second]
         } else {
             [
                 first,
                 second,
                 slot(2).unwrap_or(first),
-                slot(3).unwrap_or(second),
+                slot(SKIN_SLOTS - 1).unwrap_or(second),
             ]
         });
     }
@@ -357,7 +360,7 @@ fn surface_skins(
         images.push(Image {
             width: 1,
             height: 1,
-            rgba: vec![255; 4],
+            rgba: vec![CHANNEL_MAX; RGBA_BYTES],
         });
     }
     skins
@@ -378,7 +381,7 @@ fn shade_vector(yaw: f32) -> [f32; 3] {
     reason = "spec REND-12.5: C's (int) cast of the yaw's steps, then 0 to 15 as a float"
 )]
 fn quantise(yaw: f32) -> f32 {
-    let steps = f64::from(yaw) * (f64::from(SHADE_STEPS) / 360.0);
+    let steps = f64::from(yaw) * (f64::from(SHADE_STEPS) / FULL_TURN);
     let mask = i64::try_from(SHADEDOT_QUANT.saturating_sub(1)).unwrap_or(0);
     ((steps as i64) & mask) as f32
 }

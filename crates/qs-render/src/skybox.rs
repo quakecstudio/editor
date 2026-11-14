@@ -12,6 +12,7 @@
 use crate::gpu::REND_SKYFOG;
 use crate::mesh::Image;
 use crate::picture::{read_pcx, read_tga};
+use crate::{CHANNEL_MAX, RGBA_BYTES};
 
 /// `suf` in `Sky_LoadSkyBox`: the six faces' suffixes, in the order they are loaded.
 pub const SKY_SIDES: [&str; 6] = ["rt", "bk", "lf", "ft", "up", "dn"];
@@ -115,7 +116,7 @@ impl Skybox {
                     let texel = face
                         .as_ref()
                         .and_then(|face| face.nearest([x, y], [width, height]));
-                    out.extend(texel.unwrap_or([0, 0, 0, 255]));
+                    out.extend(texel.unwrap_or([0, 0, 0, CHANNEL_MAX]));
                 }
             }
         }
@@ -136,9 +137,9 @@ impl Image {
         let index = sy
             .checked_mul(u64::from(self.width))?
             .checked_add(sx)?
-            .checked_mul(4)?;
+            .checked_mul(u64::try_from(RGBA_BYTES).ok()?)?;
         let index = usize::try_from(index).ok()?;
-        let texel = self.rgba.get(index..index.checked_add(4)?)?;
+        let texel = self.rgba.get(index..index.checked_add(RGBA_BYTES)?)?;
         texel.try_into().ok()
     }
 }

@@ -202,13 +202,13 @@ impl SpriteModel {
             texture,
         };
         // `glBegin (GL_TRIANGLE_FAN)` over the four corners: two triangles from the first.
-        let quad = [
+        let [a, b, c, d] = [
             corner(frame.down, frame.left, [0.0, 1.0]),
             corner(frame.up, frame.left, [0.0, 0.0]),
             corner(frame.up, frame.right, [1.0, 0.0]),
             corner(frame.down, frame.right, [1.0, 1.0]),
         ];
-        out.extend([quad[0], quad[1], quad[2], quad[0], quad[2], quad[3]]);
+        out.extend([a, b, c, a, c, d]);
         Some(frame.image)
     }
 
