@@ -13,6 +13,9 @@
     reason = "test code: a failed unwrap, index, panic or overflow is a failed test"
 )]
 
+use qc_edict::EdictNumber;
+
+use crate::offsets::{FieldOffset, GlobalOffset};
 use qc_types::{Etype, Slot};
 
 use super::{
@@ -147,12 +150,12 @@ struct RecordingHost {
 }
 
 impl SpawnHost for RecordingHost {
-    fn allocate(&mut self, place: EdictPlace) -> Result<usize, SpawnError> {
+    fn allocate(&mut self, place: EdictPlace) -> Result<EdictNumber, SpawnError> {
         if place == EdictPlace::World {
-            Ok(0)
+            Ok(EdictNumber::WORLD)
         } else {
             self.allocated += 1;
-            Ok(self.allocated)
+            Ok(EdictNumber::new(self.allocated))
         }
     }
     fn edict_value(&self, number: i32) -> Result<i32, SpawnError> {
@@ -175,17 +178,17 @@ impl SpawnHost for RecordingHost {
             .find(|(n, _)| *n == name)
             .map(|&(_, index)| index)
     }
-    fn global(&self, _slot: usize) -> Option<Slot> {
+    fn global(&self, _slot: GlobalOffset) -> Option<Slot> {
         Some(Slot::ZERO)
     }
-    fn set_field(&mut self, edict: usize, field: usize, value: Slot) {
-        self.writes.push((edict, field, value));
+    fn set_field(&mut self, edict: EdictNumber, field: FieldOffset, value: Slot) {
+        self.writes.push((edict.index(), field.index(), value));
     }
     fn make_string(&mut self, _text: Vec<u8>) -> i32 {
         self.next_string -= 1;
         self.next_string + 1
     }
-    fn spawnflags(&self, _edict: usize) -> f32 {
+    fn spawnflags(&self, _edict: EdictNumber) -> f32 {
         // Read the spawnflags from the recorded writes (slot SPAWNFLAGS_SLOT).
         self.writes
             .iter()
@@ -193,12 +196,12 @@ impl SpawnHost for RecordingHost {
             .find(|(_, field, _)| *field == SPAWNFLAGS_SLOT)
             .map_or(0.0, |(_, _, value)| value.as_f32())
     }
-    fn spawn(&mut self, edict: usize, _function: i32) -> Result<(), qc_vm::RunError> {
-        self.spawned.push(edict);
+    fn spawn(&mut self, edict: EdictNumber, _function: i32) -> Result<(), qc_vm::RunError> {
+        self.spawned.push(edict.index());
         Ok(())
     }
-    fn free(&mut self, edict: usize) {
-        self.freed.push(edict);
+    fn free(&mut self, edict: EdictNumber) {
+        self.freed.push(edict.index());
     }
 }
 

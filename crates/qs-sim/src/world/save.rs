@@ -9,6 +9,7 @@
 //! (PHYS-10.5): the header, the light styles, the globals the progs marks to save and every
 //! edict's fields that are not zero.
 
+use crate::offsets::FieldOffset;
 use qc_edict::EdictNumber;
 use qc_edict::system::global_by_name;
 use qc_progs::{PROGS_DEF_SAVEGLOBAL, Progs};
@@ -232,7 +233,8 @@ impl World {
                 progs,
                 state: ServerState::Loading,
             };
-            let init = parse_saved_edict(&mut spawner, &mut parser, n).map_err(SaveError::Parse)?;
+            let init = parse_saved_edict(&mut spawner, &mut parser, EdictNumber::new(n))
+                .map_err(SaveError::Parse)?;
             if init {
                 linked.push(n);
             } else {
@@ -363,7 +365,7 @@ impl World {
                     DefType::Unknown(_) => (None, 1),
                 };
                 let values: Vec<Slot> = (0..slots)
-                    .map(|i| self.slot_of(n, first.saturating_add(i)))
+                    .map(|i| self.slot_of(n, FieldOffset::new(first.saturating_add(i))))
                     .collect();
                 if values.iter().all(|v| v.bits() == 0) {
                     continue;
@@ -384,16 +386,16 @@ impl World {
 
 impl World {
     /// Field slot `slot` of edict `n`, 0 past the fields.
-    pub(crate) fn slot_of(&self, n: usize, slot: usize) -> Slot {
+    pub(crate) fn slot_of(&self, n: usize, slot: FieldOffset) -> Slot {
         self.machine
             .edicts()
-            .field(EdictNumber::new(n), slot)
+            .field(EdictNumber::new(n), slot.index())
             .unwrap_or(Slot::ZERO)
     }
 
     /// The system field `name` of edict `n`.
     pub(crate) fn field(&self, n: usize, name: &str) -> Slot {
-        self.slot_of(n, field_slot(name))
+        self.slot_of(n, FieldOffset::new(field_slot(name)))
     }
 
     /// The system float field `name` of edict `n`.

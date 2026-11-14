@@ -23,6 +23,7 @@ use qc_vm::convert::float_to_int;
 
 use crate::host_commands::{Words, atoi, tokenize};
 use crate::input::Button;
+use crate::offsets::FieldOffset;
 use crate::settings::{CLIENT_SETTINGS, SERVER_SETTINGS};
 use crate::world::{ClientCommand, HostCommand, RawState as _, World};
 
@@ -621,7 +622,7 @@ impl World {
             };
             let first = usize::try_from(def.ofs).unwrap_or(usize::MAX);
             let slots: Vec<Slot> = (0..size)
-                .map(|i| self.slot_of(n, first.saturating_add(i)))
+                .map(|i| self.slot_of(n, FieldOffset::new(first.saturating_add(i))))
                 .collect();
             if slots.iter().all(|s| s.as_i32() == 0) {
                 continue;

@@ -1080,7 +1080,7 @@ impl Game {
             .map_err(|e| RpcError::new(ErrorCode::InternalError, e.to_string()))?;
         let mut result = Map::new();
         if let Some(edict) = hit.edict {
-            result.insert("edict".to_owned(), json!(edict));
+            result.insert("edict".to_owned(), json!(edict.index()));
         }
         if let Some(point) = hit.point {
             result.insert("point".to_owned(), json!(point));

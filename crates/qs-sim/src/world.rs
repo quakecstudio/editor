@@ -33,6 +33,7 @@ use crate::input::Button;
 #[cfg(test)]
 use crate::messages::ServerMessages;
 use crate::messages::{ClientMessages, GameKind};
+use crate::offsets::{FieldOffset, GlobalOffset};
 use crate::physics::Sound;
 use crate::rerelease::BuiltinTable;
 use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
@@ -955,17 +956,16 @@ struct Spawner<'a, 'p> {
 }
 
 impl SpawnHost for Spawner<'_, '_> {
-    fn allocate(&mut self, place: EdictPlace) -> Result<usize, SpawnError> {
+    fn allocate(&mut self, place: EdictPlace) -> Result<EdictNumber, SpawnError> {
         if place == EdictPlace::World {
             // EDICT-4.2: the map's first entity goes into edict 0 without clearing it.
-            return Ok(0);
+            return Ok(EdictNumber::WORLD);
         }
         let clock = self.world.builtins.mock.engine().clock;
         self.world
             .machine
             .edicts_mut()
             .alloc(clock)
-            .map(EdictNumber::index)
             .map_err(|_| SpawnError::NoFreeEdicts)
     }
 
@@ -997,29 +997,32 @@ impl SpawnHost for Spawner<'_, '_> {
             .and_then(|i| i32::try_from(i).ok())
     }
 
-    fn global(&self, slot: usize) -> Option<Slot> {
-        self.world.machine.global(i32::try_from(slot).ok()?).ok()
+    fn global(&self, slot: GlobalOffset) -> Option<Slot> {
+        self.world
+            .machine
+            .global(i32::try_from(slot.index()).ok()?)
+            .ok()
     }
 
-    fn set_field(&mut self, edict: usize, field: usize, value: Slot) {
-        self.world.set_field(edict, field, value);
+    fn set_field(&mut self, edict: EdictNumber, field: FieldOffset, value: Slot) {
+        self.world.set_field(edict.index(), field.index(), value);
     }
 
     fn make_string(&mut self, text: Vec<u8>) -> i32 {
         self.world.make_string(text)
     }
 
-    fn spawnflags(&self, edict: usize) -> f32 {
+    fn spawnflags(&self, edict: EdictNumber) -> f32 {
         self.world
             .machine
             .edicts()
-            .field(EdictNumber::new(edict), SPAWNFLAGS_SLOT)
+            .field(edict, SPAWNFLAGS_SLOT)
             .map_or(0.0, Slot::as_f32)
     }
 
-    fn spawn(&mut self, edict: usize, function: i32) -> Result<(), RunError> {
+    fn spawn(&mut self, edict: EdictNumber, function: i32) -> Result<(), RunError> {
         // EDICT-8.6: set self to the entity and call the function.
-        let value = self.world.entity_value(edict);
+        let value = self.world.entity_value(edict.index());
         self.world.set_global("self", Slot::from_i32(value));
         self.world.machine.execute_program(
             self.progs,
@@ -1030,14 +1033,11 @@ impl SpawnHost for Spawner<'_, '_> {
         )
     }
 
-    fn free(&mut self, edict: usize) {
+    fn free(&mut self, edict: EdictNumber) {
         let clock = self.world.builtins.mock.engine().clock;
         // WORLD-8.3: ED_Free unlinks.
-        self.world.builtins.collision.unlink(edict);
-        self.world
-            .machine
-            .edicts_mut()
-            .free(EdictNumber::new(edict), clock);
+        self.world.builtins.collision.unlink(edict.index());
+        self.world.machine.edicts_mut().free(edict, clock);
     }
 }
 

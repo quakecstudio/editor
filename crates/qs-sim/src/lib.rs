@@ -17,6 +17,7 @@ pub mod input;
 pub mod keys;
 mod messages;
 mod movement;
+mod offsets;
 mod physics;
 pub mod rerelease;
 pub mod scenario;
@@ -31,8 +32,10 @@ pub use messages::{
     NET_MAX_DATAGRAM, NET_MAX_FORWARD, NET_MAX_MSGLEN, NET_PACKET_SLACK, NET_PROTOCOL_VERSION,
     NET_SIGNON_SIZE, NET_VERSION, Overflow,
 };
+pub use offsets::{FieldOffset, GlobalOffset};
 pub use physics::Sound;
 pub use qc_builtins::localization;
+pub use qc_edict::EdictNumber;
 pub use world::{
     CLIENT_EDICT, Change, ChangeKind, ClientCommand, EdictChange, EditError, Entity, EvalError,
     HostCommand, HostState, KeyFocus, LineHit, LoadOptions, MapPlace, Migration, NamedValue,

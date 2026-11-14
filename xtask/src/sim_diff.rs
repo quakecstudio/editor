@@ -15,7 +15,10 @@ use qc_trace::{Record, Trace};
 use qc_types::Slot;
 use qs_bsp::{Bsp, BspLoader};
 use qs_sim::scenario::{Moment, Scenario, play};
-use qs_sim::{LoadOptions, NamedValue, QcValue, RawState, State, World, read_state};
+use qs_sim::{
+    EdictNumber, FieldOffset, GlobalOffset, LoadOptions, NamedValue, QcValue, RawState, State,
+    World, read_state,
+};
 use qs_vfs::{LoadedFile, StdFs, Vfs};
 
 use crate::oracles;
@@ -209,14 +212,17 @@ struct Replayed<'p> {
 }
 
 impl RawState for Replayed<'_> {
-    fn global(&self, slot: usize) -> Slot {
-        self.globals.get(slot).copied().unwrap_or(Slot::ZERO)
+    fn global(&self, slot: GlobalOffset) -> Slot {
+        self.globals
+            .get(slot.index())
+            .copied()
+            .unwrap_or(Slot::ZERO)
     }
 
-    fn field(&self, edict: usize, slot: usize) -> Slot {
+    fn field(&self, edict: EdictNumber, slot: FieldOffset) -> Slot {
         self.fields
-            .get(edict)
-            .and_then(|row| row.get(slot))
+            .get(edict.index())
+            .and_then(|row| row.get(slot.index()))
             .copied()
             .unwrap_or(Slot::ZERO)
     }

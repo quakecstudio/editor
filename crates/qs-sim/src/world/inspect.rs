@@ -10,6 +10,7 @@ use qc_types::{DefType, EntityRef, Etype, Slot};
 use super::World;
 use super::save::known;
 use super::state::{RawState, State, read_globals, read_state, typed_value};
+use crate::offsets::{FieldOffset, GlobalOffset};
 
 /// A QuakeC value with its type (BRIDGE-5.1).
 #[derive(Clone, Debug, PartialEq)]
@@ -75,7 +76,7 @@ impl World {
     pub(super) fn field_value(&self, progs: &Progs<'_>, n: usize, def: Def) -> Option<NamedValue> {
         let (name, etype, first) = named(progs, def)?;
         let slots: Vec<Slot> = (0..etype.slot_count())
-            .map(|i| self.slot_of(n, first.saturating_add(i)))
+            .map(|i| self.slot_of(n, FieldOffset::new(first.saturating_add(i))))
             .collect();
         Some(NamedValue {
             name,
@@ -110,15 +111,15 @@ impl World {
 }
 
 impl RawState for World {
-    fn global(&self, slot: usize) -> Slot {
-        i32::try_from(slot)
+    fn global(&self, slot: GlobalOffset) -> Slot {
+        i32::try_from(slot.index())
             .ok()
             .and_then(|slot| self.machine.global(slot).ok())
             .unwrap_or(Slot::ZERO)
     }
 
-    fn field(&self, edict: usize, slot: usize) -> Slot {
-        self.slot_of(edict, slot)
+    fn field(&self, edict: EdictNumber, slot: FieldOffset) -> Slot {
+        self.slot_of(edict.index(), slot)
     }
 
     fn num_edicts(&self) -> usize {

@@ -379,7 +379,6 @@ free-fn-on-type	crates/qs-sim/src/scenario.rs	read
 free-fn-on-type	crates/qs-sim/src/scenario.rs	run
 free-fn-on-type	crates/qs-sim/src/scenario.rs	shot
 free-fn-on-type	crates/qs-sim/src/scenario.rs	shown
-free-fn-on-type	crates/qs-sim/src/world/edit.rs	spawn_pairs
 free-fn-on-type	crates/qs-sim/src/world/reload.rs	change
 free-fn-on-type	crates/qs-sound/src/mixer.rs	paint_channel
 bare-id	apps/desktop/src/agent.rs	AgentPanel::asking(index)
@@ -458,18 +457,6 @@ bare-id	crates/qs-sim/src/collision/area.rs	Area::unlink(entity)
 bare-id	crates/qs-sim/src/collision/hull.rs	HullSet::hull(index)
 bare-id	crates/qs-sim/src/physics.rs	Sound.entity
 bare-id	crates/qs-sim/src/spawn.rs	FieldDef.slot
-bare-id	crates/qs-sim/src/spawn.rs	SpawnHost::free(edict)
-bare-id	crates/qs-sim/src/spawn.rs	SpawnHost::global(slot)
-bare-id	crates/qs-sim/src/spawn.rs	SpawnHost::set_field(edict)
-bare-id	crates/qs-sim/src/spawn.rs	SpawnHost::spawn(edict)
-bare-id	crates/qs-sim/src/spawn.rs	SpawnHost::spawnflags(edict)
-bare-id	crates/qs-sim/src/spawn.rs	apply_key(edict)
-bare-id	crates/qs-sim/src/spawn.rs	parse_saved_edict(edict)
-bare-id	crates/qs-sim/src/world/edit.rs	LineHit.edict
-bare-id	crates/qs-sim/src/world/save.rs	World::slot_of(slot)
-bare-id	crates/qs-sim/src/world/state.rs	RawState::field(edict)
-bare-id	crates/qs-sim/src/world/state.rs	RawState::field(slot)
-bare-id	crates/qs-sim/src/world/state.rs	RawState::global(slot)
 bare-id	crates/qs-sound/src/sfx.rs	SoundData::sample_16(index)
 bare-id	crates/qs-sound/src/sfx.rs	SoundData::sample_8(index)
 bare-id	crates/qs-wad/src/lib.rs	Wad::lump(index)

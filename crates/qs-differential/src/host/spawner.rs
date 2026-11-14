@@ -18,6 +18,7 @@ use qc_progs::Progs;
 use qc_types::{DefType, Slot};
 
 use qs_sim::spawn::{EdictPlace, FieldDef, SPAWNFLAGS_SLOT, SpawnError, SpawnHost};
+use qs_sim::{FieldOffset, GlobalOffset};
 
 use super::Host;
 
@@ -35,10 +36,10 @@ impl<'a, 'h, 'p> Spawner<'a, 'h, 'p> {
 }
 
 impl SpawnHost for Spawner<'_, '_, '_> {
-    fn allocate(&mut self, place: EdictPlace) -> Result<usize, SpawnError> {
+    fn allocate(&mut self, place: EdictPlace) -> Result<EdictNumber, SpawnError> {
         if place == EdictPlace::World {
             // EDICT-4.2: the map's first entity goes into edict 0 without clearing it.
-            Ok(0)
+            Ok(EdictNumber::WORLD)
         } else {
             // EDICT-6: ED_Alloc at the map-start clock (1.0, EDICT-8.1); a full array is the
             // fatal ED_Alloc: no free edicts (EDICT-6.2), the store's only alloc error.
@@ -47,7 +48,6 @@ impl SpawnHost for Spawner<'_, '_, '_> {
                 .machine
                 .edicts_mut()
                 .alloc(clock)
-                .map(EdictNumber::index)
                 .map_err(|_| SpawnError::NoFreeEdicts)
         }
     }
@@ -84,35 +84,32 @@ impl SpawnHost for Spawner<'_, '_, '_> {
             .and_then(|i| i32::try_from(i).ok())
     }
 
-    fn global(&self, slot: usize) -> Option<Slot> {
-        let index = i32::try_from(slot).ok()?;
+    fn global(&self, slot: GlobalOffset) -> Option<Slot> {
+        let index = i32::try_from(slot.index()).ok()?;
         self.host.machine.global(index).ok()
     }
 
-    fn set_field(&mut self, edict: usize, field: usize, value: Slot) {
-        self.host.set_field(edict, field, value);
+    fn set_field(&mut self, edict: EdictNumber, field: FieldOffset, value: Slot) {
+        self.host.set_field(edict.index(), field.index(), value);
     }
 
     fn make_string(&mut self, text: Vec<u8>) -> i32 {
         self.host.make_string(text)
     }
 
-    fn spawnflags(&self, edict: usize) -> f32 {
-        self.host.field(edict, SPAWNFLAGS_SLOT).as_f32()
+    fn spawnflags(&self, edict: EdictNumber) -> f32 {
+        self.host.field(edict.index(), SPAWNFLAGS_SLOT).as_f32()
     }
 
-    fn spawn(&mut self, edict: usize, function: i32) -> Result<(), qc_vm::RunError> {
+    fn spawn(&mut self, edict: EdictNumber, function: i32) -> Result<(), qc_vm::RunError> {
         // EDICT-8.6: set self to the entity and call the function; nothing else is set.
-        self.host.set_self(edict);
+        self.host.set_self(edict.index());
         self.host.run_function(self.progs, function)
     }
 
-    fn free(&mut self, edict: usize) {
+    fn free(&mut self, edict: EdictNumber) {
         // EDICT-7: ED_Free at the map-start clock.
         let clock = self.host.builtins.engine().clock;
-        self.host
-            .machine
-            .edicts_mut()
-            .free(EdictNumber::new(edict), clock);
+        self.host.machine.edicts_mut().free(edict, clock);
     }
 }
