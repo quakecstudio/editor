@@ -29,7 +29,7 @@ use crate::collision::{
     Body, Collision, CollisionError, Host, MoveKind, Solid, Trace, link_edict, sv_move,
 };
 use crate::debug::{Debugger, Watch};
-use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages};
+use crate::messages::{SVC_CENTERPRINT, SVC_PRINT, ServerMessages, WRITE_BYTE, WRITE_ENTITY};
 use crate::physics::{Sound, dot};
 use crate::rerelease::{BuiltinTable, RRE_NUM_BUILTINS};
 use crate::settings::Setting;
@@ -76,10 +76,6 @@ const SPRINT: u32 = 24;
 const LIGHTSTYLE: u32 = 35;
 /// `particle` (BUILTIN-12.5).
 const PARTICLE: u32 = 48;
-/// `WriteByte`, the first of the `Write*` builtins (BUILTIN-13).
-const WRITEBYTE: u32 = 52;
-/// `WriteEntity`, the last of them.
-const WRITEENTITY: u32 = 59;
 /// `centerprint` (BUILTIN-11.2).
 const CENTERPRINT: u32 = 73;
 /// `ambientsound` (BUILTIN-12.4).
@@ -333,7 +329,7 @@ impl Builtins for SimBuiltins {
                 SimCall::new(context, self).mirror_stuffcmd();
                 Ok(())
             }
-            WRITEBYTE..=WRITEENTITY => {
+            WRITE_BYTE..=WRITE_ENTITY => {
                 let before = self.mock.engine().buffers;
                 self.mock.call(number, context)?;
                 // A MSG_ONE write is not counted by the mock: mirror it on success.

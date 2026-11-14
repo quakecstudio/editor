@@ -25,6 +25,9 @@ mod settings;
 pub mod spawn;
 mod world;
 
+/// A point's extent: a trace with no mins or maxs (WORLD-4), and a vector of zeros.
+const POINT: [f32; 3] = [0.0; 3];
+
 pub use builtins::{ModelFiles, SimBuiltins};
 pub use client::UserCmd;
 pub use messages::{
