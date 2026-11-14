@@ -10,8 +10,8 @@ use super::{PortalType, Portalizer, SideMarker};
 use crate::Hull;
 use crate::extended::brush::{HullBrushes, VisibleFaces};
 use crate::extended::map::LoadedMap;
-use crate::extended::tree::tests::{cube, world_brushes};
-use crate::extended::tree::{BspInput, NodeId, Tree, TreeSplit};
+use crate::extended::tree::tests::{cube, grid_brushes, world_brushes};
+use crate::extended::tree::{BspInput, NodeId, PARALLEL_DEPTH, Tree, TreeSplit};
 use crate::extended::vec::Plane;
 use crate::extended::winding::Winding;
 
@@ -156,4 +156,30 @@ fn vis_portals_and_distances() {
         dist: 0.0,
     };
     assert_eq!(w.max_dist_off_plane(floor), 2.0);
+}
+
+// spec QBSP-15.32: the children portalized on threads of their own give the portals made front
+// first on one thread, in the same order
+#[test]
+fn portals_made_on_threads_are_those_made_on_one() {
+    let (mut map, loaded, visible) = grid_brushes(5);
+    let extent = map.world_extent;
+    let mut tree = BspInput {
+        planes: &mut map.planes,
+        texinfos: &map.texinfos,
+        visible: &visible,
+        extent,
+    }
+    .brush_bsp(loaded.bounds, &loaded.brushes, TreeSplit::Auto);
+    let portalizer = Portalizer {
+        planes: &map.planes,
+        extent,
+    };
+    let around = portalizer.head_portals(&mut tree);
+    let make = |depth| {
+        portalizer.tree_portals(&tree, (Tree::HEAD, depth), PortalType::Tree, around.clone())
+    };
+    let threaded = make(0);
+    assert!(threaded.len() > 100, "{}", threaded.len());
+    assert_eq!(threaded, make(PARALLEL_DEPTH));
 }

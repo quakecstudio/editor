@@ -86,11 +86,15 @@ fn clipping_cuts_at_the_plane() {
     assert!(back.points().iter().all(|p| p[0] <= 2.0));
     assert_eq!(front.area() + back.area(), 16.0);
     assert!(front.points().contains(&[2.0, 0.0, 0.0]));
-    let (dists, sides, counts) = w.calc_sides(x2, ON_EPSILON);
+    let counts = w.counts(x2, ON_EPSILON);
     assert_eq!((counts.front, counts.back, counts.on), (2, 2, 0));
     assert_eq!(
-        (dists.len(), sides.last(), sides.first()),
-        (5, Some(&Side::Back), Some(&Side::Back))
+        w.clone().clipped(x2, ON_EPSILON, KeepOn::No, Side::Front),
+        Some(front)
+    );
+    assert_eq!(
+        w.clone().clipped(x2, ON_EPSILON, KeepOn::No, Side::Back),
+        Some(back)
     );
     let far = Plane {
         normal: [1.0, 0.0, 0.0],
