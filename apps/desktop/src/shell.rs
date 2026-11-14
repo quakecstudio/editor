@@ -119,7 +119,7 @@ use qs_workbench::{
 use qs_workbench::{SELECT, SET_FIELD, SelectParams, SelectedEntity, SetFieldParams};
 use qs_workbench::{TASK_LIST, TERMINAL_CLOSE, TERMINAL_NEW, TERMINAL_POLL, TERMINAL_SEND};
 
-use crate::agent::{self, AgentAction, AgentPanel};
+use crate::agent::{self, AgentAction, AgentPanel, ThreadIndex};
 use crate::debugger::{self, DebugAction, DebugInput};
 use crate::disk_watch::DiskWatch;
 use crate::editor::{Editor, Popup, Request};
@@ -632,7 +632,7 @@ impl Shell {
 
     /// The report of agent thread `index`, once it has ended.
     #[must_use]
-    pub fn agent_report(&self, index: usize) -> Option<&qs_agent::RunReport> {
+    pub fn agent_report(&self, index: ThreadIndex) -> Option<&qs_agent::RunReport> {
         self.agent.report(index)
     }
 
@@ -3264,7 +3264,7 @@ impl Shell {
                 self.search_project();
             }
             MultiAction::Edit(index, text) => {
-                let Some(excerpt) = self.multibuffer.excerpts.get(index) else {
+                let Some(excerpt) = self.multibuffer.excerpts.get(index.get()) else {
                     return;
                 };
                 let params = ReplaceRangeParams {

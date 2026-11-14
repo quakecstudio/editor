@@ -102,6 +102,22 @@ pub(crate) struct Multibuffer {
     pub(crate) refocus: bool,
 }
 
+/// An excerpt of the multibuffer, by its place in the list from 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ExcerptIndex(usize);
+
+impl ExcerptIndex {
+    /// The excerpt at `index`.
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Its place.
+    pub(crate) const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// What a frame of the multibuffer asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum MultiAction {
@@ -110,7 +126,7 @@ pub(crate) enum MultiAction {
     /// Replace every match of the form's search in each file, file by file.
     ReplaceAll,
     /// Excerpt `.0`'s text was edited: its old range of its file becomes `.1`.
-    Edit(usize, String),
+    Edit(ExcerptIndex, String),
     /// Open a file at a byte.
     Open(PathBuf, usize),
 }
@@ -238,8 +254,8 @@ impl Multibuffer {
 
     /// Takes the edit of excerpt `index` to `text`, done in its file: the excerpt ends where
     /// its new text does, and the excerpts after it in the file move by the difference.
-    pub(crate) fn edited(&mut self, index: usize, text: String) {
-        let Some(excerpt) = self.excerpts.get_mut(index) else {
+    pub(crate) fn edited(&mut self, index: ExcerptIndex, text: String) {
+        let Some(excerpt) = self.excerpts.get_mut(index.get()) else {
             return;
         };
         let old = excerpt.end.saturating_sub(excerpt.start);
@@ -409,7 +425,7 @@ fn excerpt_ui(
         excerpt.caret = Some(byte_of(&text, range.primary.index.into()));
     }
     if output.response.changed() && text != excerpt.text {
-        action = Some(MultiAction::Edit(index, text));
+        action = Some(MultiAction::Edit(ExcerptIndex::new(index), text));
     }
     action
 }

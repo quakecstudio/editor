@@ -331,7 +331,7 @@ pub struct AgentPanel {
     /// The thread history, while it is shown.
     history: Option<HistoryView>,
     /// A message being edited to run again from: the thread, the message's index and its text.
-    editing: Option<(usize, usize, String)>,
+    editing: Option<(ThreadIndex, usize, String)>,
     /// The message being typed to queue in the selected thread while it runs.
     queue_text: String,
 }
@@ -416,7 +416,7 @@ impl AgentPanel {
     pub fn run_again<C: 'static>(
         &mut self,
         session: &mut Session<C>,
-        (index, at, text): (usize, usize, String),
+        (index, at, text): (ThreadIndex, usize, String),
         wake: impl Fn() + Send + 'static,
     ) -> Result<(), String> {
         let config = self
@@ -425,7 +425,7 @@ impl AgentPanel {
             .ok_or_else(|| Text::NoAgent.get().to_owned())?;
         let thread = self
             .threads
-            .get_mut(index)
+            .get_mut(index.get())
             .ok_or_else(|| Text::AgentNoThread.get().to_owned())?;
         let before = thread
             .report
@@ -467,18 +467,18 @@ impl AgentPanel {
     pub fn permit<C: 'static>(
         &mut self,
         session: &mut Session<C>,
-        index: usize,
+        index: ThreadIndex,
         permit: Permit,
     ) -> Option<Permissions> {
-        let kept = self.threads.get_mut(index)?.permit(session, permit)?;
+        let kept = self.threads.get_mut(index.get())?.permit(session, permit)?;
         self.permissions.rules = kept.rules.clone();
         Some(kept)
     }
 
     /// The call thread `index` waits for the modder's answer on, if one is.
     #[must_use]
-    pub fn asking(&self, index: usize) -> Option<&Asking> {
-        self.threads.get(index)?.run.as_ref()?.asking()
+    pub fn asking(&self, index: ThreadIndex) -> Option<&Asking> {
+        self.threads.get(index.get())?.run.as_ref()?.asking()
     }
 
     /// Keeps the provider configuration in `file`, reading the one there.
@@ -526,8 +526,8 @@ impl AgentPanel {
 
     /// The report of thread `index`, once it has ended.
     #[must_use]
-    pub fn report(&self, index: usize) -> Option<&RunReport> {
-        self.threads.get(index)?.report.as_ref()
+    pub fn report(&self, index: ThreadIndex) -> Option<&RunReport> {
+        self.threads.get(index.get())?.report.as_ref()
     }
 
     /// Starts a thread on `task` over `session`, whose project is at `project`, its model on a
@@ -720,7 +720,13 @@ impl AgentPanel {
         if let Some(index) = self.selected
             && let Some(thread) = self.threads.get_mut(index)
         {
-            let mut asked = thread_view(ui, theme, index, thread, &mut self.editing);
+            let mut asked = thread_view(
+                ui,
+                theme,
+                ThreadIndex::new(index),
+                thread,
+                &mut self.editing,
+            );
             if thread.running() {
                 queue_box(ui, theme, thread, &mut self.queue_text);
             }
@@ -891,8 +897,6 @@ impl AgentPanel {
     }
 }
 
-/// A labelled text field, named by its label for a screen reader; `secret` hides what is
-/// typed.
 /// What a setup field holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FieldKind {
@@ -902,6 +906,8 @@ enum FieldKind {
     Secret,
 }
 
+/// A labelled text field, named by its label for a screen reader; a secret one hides what is
+/// typed.
 fn field(ui: &mut Ui, label: Text, value: &mut String, kind: FieldKind) {
     ui.label(label.get());
     let response = ui.add(
@@ -915,6 +921,24 @@ fn field(ui: &mut Ui, label: Text, value: &mut String, kind: FieldKind) {
 /// A line of muted, wrapped text.
 fn muted(ui: &mut Ui, theme: &Theme, text: &str) {
     ui.add(egui::Label::new(RichText::new(text).color(theme.color(Token::TextMuted))).wrap());
+}
+
+/// A thread of the panel, by its place in the list from 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ThreadIndex(usize);
+
+impl ThreadIndex {
+    /// The thread at `index`.
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Its place.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
 }
 
 /// What the panel asks the window to do.
@@ -931,7 +955,7 @@ pub enum AgentAction {
     /// Restore this checkpoint.
     Restore(qs_agent::CheckpointNumber),
     /// Answer the call this thread asks about.
-    Permit(usize, Permit),
+    Permit(ThreadIndex, Permit),
     /// Use this profile from now on, kept in the project's settings.
     Profile(AgentProfile),
     /// List the threads kept in the project (P4-31).
@@ -939,7 +963,7 @@ pub enum AgentAction {
     /// Give the running game's frame as context.
     AttachScreenshot,
     /// Run a thread again from a message, edited: the thread, the message's index, its text.
-    RunAgain(usize, usize, String),
+    RunAgain(ThreadIndex, usize, String),
 }
 
 /// What the panel calls `profile`.
@@ -956,7 +980,7 @@ const fn profile_text(profile: AgentProfile) -> Text {
 fn permission_request(
     ui: &mut Ui,
     theme: &Theme,
-    index: usize,
+    index: ThreadIndex,
     asking: &Asking,
 ) -> Option<AgentAction> {
     let mut action = None;
@@ -1054,9 +1078,9 @@ fn queue_box(ui: &mut Ui, theme: &Theme, thread: &mut Thread, text: &mut String)
 fn thread_view(
     ui: &mut Ui,
     theme: &Theme,
-    index: usize,
+    index: ThreadIndex,
     thread: &Thread,
-    editing: &mut Option<(usize, usize, String)>,
+    editing: &mut Option<(ThreadIndex, usize, String)>,
 ) -> Option<AgentAction> {
     let mut action = None;
     let transcript = thread
@@ -1122,9 +1146,9 @@ fn thread_view(
 /// its text and Run again from here (P4-31).
 fn edit_messages(
     ui: &mut Ui,
-    index: usize,
+    index: ThreadIndex,
     transcript: &[Message],
-    editing: &mut Option<(usize, usize, String)>,
+    editing: &mut Option<(ThreadIndex, usize, String)>,
 ) -> Option<AgentAction> {
     let mut action = None;
     for (at, message) in transcript.iter().enumerate() {

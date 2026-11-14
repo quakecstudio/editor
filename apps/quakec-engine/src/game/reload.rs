@@ -94,7 +94,7 @@ impl Game {
             .breakpoints
             .iter()
             .filter(|b| resolve(new, &lines, &b.file, b.line).is_none())
-            .map(|b| b.id)
+            .map(|b| b.id.get())
             .collect();
         Ok(result_json(&migration, &cleared, self.world.time()))
     }
@@ -125,7 +125,7 @@ impl Game {
                     breakpoint.statement = statement;
                     kept.push(breakpoint);
                 }
-                None => cleared.push(breakpoint.id),
+                None => cleared.push(breakpoint.id.get()),
             }
         }
         if !kept.is_empty() {

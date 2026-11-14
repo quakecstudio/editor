@@ -95,7 +95,6 @@ impl Check {
     }
 }
 
-/// The installs found, by store and folder.
 /// Whether `doctor` fails when no game is found (`--require-game`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Requirement {
@@ -105,6 +104,7 @@ enum Requirement {
     Optional,
 }
 
+/// The installs found, by store and folder.
 fn games(installs: &[Install], requirement: Requirement) -> Outcome {
     let require = requirement == Requirement::Required;
     if installs.is_empty() {

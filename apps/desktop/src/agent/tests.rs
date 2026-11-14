@@ -15,7 +15,7 @@ use qs_agent::{Message, Model, ModelError, Outcome, Reply, ToolCall, ToolSpec, h
 use qs_models::{MemoryKeys, ProviderConfig, ProviderKind};
 use serde_json::json;
 
-use super::{AgentAction, AgentPanel};
+use super::{AgentAction, AgentPanel, ThreadIndex};
 use crate::App;
 use crate::shell::Shell;
 use crate::strings::Text;
@@ -91,7 +91,7 @@ fn frame(ctx: &egui::Context, app: &mut App) {
 
 /// Takes what thread `index` sends until it has a report.
 fn finish(app: &mut App, index: usize) {
-    while app.shell().agent_report(index).is_none() {
+    while app.shell().agent_report(ThreadIndex::new(index)).is_none() {
         assert!(app.shell_mut().wait_agent(index), "the model ended early");
     }
 }
@@ -131,7 +131,7 @@ fn two_threads_run_at_once_without_blocking_frames() {
         .unwrap();
     finish(&mut app, 0);
     assert_eq!(app.shell().agent().running(), 0);
-    let report = app.shell().agent_report(0).unwrap();
+    let report = app.shell().agent_report(ThreadIndex::new(0)).unwrap();
     assert!(
         report.checkpoint.is_some(),
         "a checkpoint was recorded first"
@@ -174,7 +174,12 @@ fn hunks_are_reviewed_and_checkpoints_restored() {
         .agent_action(AgentAction::Reject(vec![staged[0].id]), &ctx);
     assert!(app.shell().workbench().staged_hunks().is_empty());
     std::fs::write(root.join("world.qc"), "// changed by hand\n").unwrap();
-    let number = app.shell().agent_report(0).unwrap().checkpoint.unwrap();
+    let number = app
+        .shell()
+        .agent_report(ThreadIndex::new(0))
+        .unwrap()
+        .checkpoint
+        .unwrap();
     app.shell_mut()
         .agent_action(AgentAction::Restore(number), &ctx);
     assert_eq!(
@@ -265,7 +270,11 @@ fn a_call_that_asks_waits_in_the_thread_for_the_modder() {
         }],
     })
     .unwrap();
-    while shell(&mut harness).agent().asking(0).is_none() {
+    while shell(&mut harness)
+        .agent()
+        .asking(ThreadIndex::new(0))
+        .is_none()
+    {
         assert!(shell(&mut harness).wait_agent(0), "the model ended early");
     }
     harness.run_steps(5);
@@ -293,7 +302,13 @@ fn a_call_that_asks_waits_in_the_thread_for_the_modder() {
     harness.get_by_label("Always allow").click();
     // The model's thread wakes the window as the run goes on, so step rather than settle.
     harness.run_steps(2);
-    assert!(shell(&mut harness).agent().asking(0).is_none(), "answered");
+    assert!(
+        shell(&mut harness)
+            .agent()
+            .asking(ThreadIndex::new(0))
+            .is_none(),
+        "answered"
+    );
     let kept = std::fs::read_to_string(root.join(".quakec-studio/settings.toml")).unwrap();
     assert!(kept.contains("world.qc"), "{kept}");
     assert_eq!(
@@ -302,7 +317,7 @@ fn a_call_that_asks_waits_in_the_thread_for_the_modder() {
     );
     let app = harness.state_mut().as_mut().unwrap();
     finish(app, 0);
-    let report = app.shell().agent_report(0).unwrap();
+    let report = app.shell().agent_report(ThreadIndex::new(0)).unwrap();
     assert!(
         report.transcript.iter().any(|message| matches!(
             message,
@@ -445,7 +460,10 @@ fn a_thread_reopened_from_history_shows_messages_hunks_and_checkpoint() {
         summary: "Added it.".to_owned(),
     })
     .unwrap();
-    while shell(&mut harness).agent_report(0).is_none() {
+    while shell(&mut harness)
+        .agent_report(ThreadIndex::new(0))
+        .is_none()
+    {
         assert!(shell(&mut harness).wait_agent(0), "the model ended early");
     }
     let kept = history::load(&history::threads_dir(&root)).unwrap();
@@ -497,7 +515,11 @@ fn following_queueing_and_the_finished_count() {
         })
         .unwrap();
     finish(&mut app, 0);
-    let transcript = &app.shell().agent_report(0).unwrap().transcript;
+    let transcript = &app
+        .shell()
+        .agent_report(ThreadIndex::new(0))
+        .unwrap()
+        .transcript;
     assert!(transcript.contains(&Message::User {
         text: "Also say hello.".to_owned()
     }));

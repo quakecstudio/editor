@@ -409,7 +409,6 @@ fn task_matches(task: &TaskInfo, query: &str) -> bool {
         .all(|word| row.contains(word))
 }
 
-/// One task's row: Run task and its name, then its command line on the right.
 /// Whether a palette row is the one selected.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Selection {
@@ -419,6 +418,7 @@ enum Selection {
     Unselected,
 }
 
+/// One task's row: Run task and its name, then its command line on the right.
 fn task_row(ui: &mut Ui, theme: &Theme, task: &TaskInfo, selection: Selection) -> egui::Response {
     let selected = selection == Selection::Selected;
     let height = theme.size.row;
