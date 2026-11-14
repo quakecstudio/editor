@@ -968,6 +968,10 @@ impl MapRenderer {
 
     /// The batches of `kind` (REND-1.11).
     fn draw_world(&self, pass: &mut wgpu::RenderPass<'_>, time: f32, kind: Surface) {
+        // A world with no face to draw has empty buffers, which wgpu refuses to bind.
+        if self.vertices.size() == 0 || self.indices.size() == 0 {
+            return;
+        }
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
         for batch in self.batches.iter().filter(|b| b.surface == kind) {
