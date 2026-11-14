@@ -1787,4 +1787,6 @@ impl Preview {
 }
 
 #[cfg(test)]
+mod live_tests;
+#[cfg(test)]
 mod tests;
