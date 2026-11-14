@@ -20,6 +20,7 @@ use qs_mdl::mdl::{MDL_EF_ROTATE, MDL_HEADER_SIZE, Mdl, MdlFrameEntry};
 
 use crate::anorm_dots::{R_AVERTEXNORMAL_DOTS, SHADEDOT_QUANT};
 use crate::mesh::{Image, Palette};
+use crate::{CHANNEL_MAX, FULL_TURN};
 
 /// `ambientlight > 128` in `R_DrawAliasModel` (REND-4.7).
 const AMBIENT_CAP: f32 = 128.0;
@@ -44,8 +45,6 @@ pub(crate) const SKIN_SLOTS: usize = 4;
 const ROTATE_RATE: f64 = 100.0;
 /// `anglemod`'s steps in a turn, `65536/360.0` (REND-4.9).
 const ANGLE_STEPS: f64 = 65536.0;
-/// A turn in degrees.
-const TURN: f64 = 360.0;
 /// `FLOODFILL_FIFO_SIZE` (REND-4.1).
 const FLOODFILL_FIFO_SIZE: usize = 0x1000;
 /// The palette index `Mod_FloodFillSkin` uses as its visited marker (REND-4.1).
@@ -165,7 +164,7 @@ pub struct AliasModel {
     frames: Vec<Frame>,
     corners: Vec<Corner>,
     rotates: bool,
-    torch: bool,
+    shading: Shading,
 }
 
 impl AliasModel {
@@ -231,7 +230,7 @@ impl AliasModel {
             frames,
             corners,
             rotates: header.flags & MDL_EF_ROTATE != 0,
-            torch: TORCHES.contains(&name),
+            shading: Shading::of(name),
         })
     }
 
@@ -278,7 +277,7 @@ impl AliasModel {
     /// Appends `entity`'s triangles at `time` seconds to `out`, and returns the index into
     /// [`Self::images`] they are drawn with (REND-4.2 to REND-4.8).
     pub fn draw(&self, entity: &AliasEntity, time: f64, out: &mut Vec<AliasVertex>) -> usize {
-        let shadelight = shade_light(entity.light, self.torch);
+        let shadelight = self.shading.light(entity.light);
         let dots = shade_dots(entity.angles[1]);
         // REND-4.4 or, blending, CLIENT-7.3: the two poses and how far between them.
         let (from, to, blend) = match entity.blend {
@@ -346,24 +345,45 @@ impl AliasModel {
     }
 }
 
-/// `R_DrawAliasModel`'s `shadelight`: the light at the entity, capped as GLQuake caps it, the
-/// torches full light, over 200 (REND-4.7).
-#[must_use]
-pub fn shade_light(light: f32, torch: bool) -> f32 {
-    let ambient = light.min(AMBIENT_CAP);
-    // "if (ambientlight + shadelight > 192) shadelight = 192 - ambientlight"
-    let shade = if torch {
-        TORCH_LIGHT
-    } else {
-        light.min(SHADE_CAP - ambient)
-    };
-    shade / SHADE_SCALE
+/// Whether a model is lit by the light at it or is a torch, which GLQuake gives full light
+/// (REND-4.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shading {
+    /// Lit by the light at the entity.
+    Lit,
+    /// A torch: "make torches full light".
+    Torch,
+}
+
+impl Shading {
+    /// The shading of the model `name`: a torch when it is one of [`TORCHES`].
+    #[must_use]
+    pub fn of(name: &str) -> Self {
+        if TORCHES.contains(&name) {
+            Self::Torch
+        } else {
+            Self::Lit
+        }
+    }
+
+    /// `R_DrawAliasModel`'s `shadelight`: the light at the entity, capped as GLQuake caps it,
+    /// the torches full light, over 200 (REND-4.7).
+    #[must_use]
+    pub fn light(self, light: f32) -> f32 {
+        let ambient = light.min(AMBIENT_CAP);
+        // "if (ambientlight + shadelight > 192) shadelight = 192 - ambientlight"
+        let shade = match self {
+            Self::Torch => TORCH_LIGHT,
+            Self::Lit => light.min(SHADE_CAP - ambient),
+        };
+        shade / SHADE_SCALE
+    }
 }
 
 /// `R_DrawAliasModel`'s light before the caps: `R_LightPoint` at `origin`, `light`, raised
 /// to the view model's floor of 24, then each dynamic light's `radius - distance` when above
 /// 0 added, then a player's floor of 8, all in the float `ambientlight` (REND-4.11). The
-/// caps and the torches are [`shade_light`].
+/// caps and the torches are [`Shading::light`].
 #[must_use]
 pub fn entity_light(light: i32, kind: AliasKind, origin: [f32; 3], lights: &[DynamicLight]) -> f32 {
     let mut light = f32_of_i32(light);
@@ -390,8 +410,9 @@ pub fn entity_light(light: i32, kind: AliasKind, origin: [f32; 3], lights: &[Dyn
 /// The row of `r_avertexnormal_dots` for a yaw of `yaw` degrees,
 /// `((int)(yaw * (SHADEDOT_QUANT / 360.0))) & (SHADEDOT_QUANT - 1)` (REND-4.8).
 fn shade_dots(yaw: f32) -> &'static [f32; 256] {
-    let step = f64::from(yaw) * (f64_of(SHADEDOT_QUANT) / TURN);
-    let row = truncate(step) & i64_of(SHADEDOT_QUANT.saturating_sub(1));
+    let quant = u32::try_from(SHADEDOT_QUANT).map_or(f64::MAX, f64::from);
+    let step = f64::from(yaw) * (quant / f64::from(FULL_TURN));
+    let row = truncate(step) & i64::try_from(SHADEDOT_QUANT.saturating_sub(1)).unwrap_or(i64::MAX);
     let row = usize::try_from(row).unwrap_or(0);
     R_AVERTEXNORMAL_DOTS
         .get(row)
@@ -404,8 +425,8 @@ fn shade_dots(yaw: f32) -> &'static [f32; 256] {
 pub fn bob_rotate(time: f64) -> f32 {
     // anglemod takes a float.
     let angle = f64::from(f32_of_f64(ROTATE_RATE * time));
-    let steps = truncate(angle * (ANGLE_STEPS / TURN)) & 0xffff;
-    f32_of_f64(TURN / ANGLE_STEPS * f64_of_i64(steps))
+    let steps = truncate(angle * (ANGLE_STEPS / f64::from(FULL_TURN))) & 0xffff;
+    f32_of_f64(f64::from(FULL_TURN) / ANGLE_STEPS * f64_of_i64(steps))
 }
 
 /// `R_RotateForEntity`: `position` turned by `turn[2]` about x, `turn[0]` about y and
@@ -433,23 +454,33 @@ pub(crate) fn rotate_for_entity(origin: [f32; 3], turn: [f32; 3], position: [f32
 /// shirt's sixteen colours and of the trousers'.
 const TOP_RANGE: usize = 16;
 const BOTTOM_RANGE: usize = 96;
+/// The palette's colours.
+const PALETTE_SIZE: usize = 256;
+/// A player's colours: the shirt in the high nibble, the trousers in the low, each naming a
+/// row of 16 (REND-4.13, CLIENT-1.6).
+const TOP_COLOR_MASK: i32 = 0xf0;
+const BOTTOM_COLOR_MASK: i32 = 0x0f;
+const COLOR_ROW_SHIFT: i32 = 4;
+const COLOR_ROW_LENGTH: u8 = 16;
+/// The rows from 128 on run backwards ("the artists made some backwards ranges").
+const BACKWARDS_ROWS: u8 = 128;
 
 /// `R_TranslatePlayerSkin`'s table for the colours `colors`: every index itself, but the
 /// shirt's and trousers' rows, each moved to its chosen row, a row from 128 on reversed ("the
 /// artists made some backwards ranges.  sigh.") (REND-4.13).
-fn translation(colors: i32) -> [u8; 256] {
-    let mut table = [0_u8; 256];
-    for (i, entry) in (0..=255_u8).zip(table.iter_mut()) {
+fn translation(colors: i32) -> [u8; PALETTE_SIZE] {
+    let mut table = [0_u8; PALETTE_SIZE];
+    for (i, entry) in (0..=CHANNEL_MAX).zip(table.iter_mut()) {
         *entry = i;
     }
-    let top = u8::try_from(colors & 0xf0).unwrap_or(0);
-    let bottom = u8::try_from((colors & 15) << 4).unwrap_or(0);
-    for i in 0..16_u8 {
+    let top = u8::try_from(colors & TOP_COLOR_MASK).unwrap_or(0);
+    let bottom = u8::try_from((colors & BOTTOM_COLOR_MASK) << COLOR_ROW_SHIFT).unwrap_or(0);
+    for i in 0..COLOR_ROW_LENGTH {
         let row = |start: u8| {
-            if start < 128 {
+            if start < BACKWARDS_ROWS {
                 start.saturating_add(i)
             } else {
-                start.saturating_add(15).saturating_sub(i)
+                start.saturating_add(COLOR_ROW_LENGTH - 1).saturating_sub(i)
             }
         };
         let i = usize::from(i);
@@ -626,14 +657,6 @@ const fn f32_of_f64(value: f64) -> f32 {
 )]
 const fn f64_of_i64(value: i64) -> f64 {
     value as f64
-}
-
-fn f64_of(value: usize) -> f64 {
-    u32::try_from(value).map_or(f64::MAX, f64::from)
-}
-
-fn i64_of(value: usize) -> i64 {
-    i64::try_from(value).unwrap_or(i64::MAX)
 }
 
 #[cfg(test)]

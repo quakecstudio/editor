@@ -9,7 +9,7 @@
 //! as a language server's semantic tokens do.
 
 use eframe::egui::Color32;
-use qs_editor_view::{StyledSpan, Styler};
+use qs_editor_view::{StyleRevision, StyledSpan, Styler};
 use qs_workbench::{Highlight, HighlightKind, Modifier, OpenFile, SyntaxClass};
 
 use crate::theme::{Theme, Token};
@@ -83,8 +83,8 @@ impl CodeStyler {
 }
 
 impl Styler for CodeStyler {
-    fn revision(&self) -> u64 {
-        self.revision
+    fn revision(&self) -> StyleRevision {
+        StyleRevision::new(self.revision)
     }
 
     fn spans(&self, line: usize, _text: &str) -> Vec<StyledSpan> {

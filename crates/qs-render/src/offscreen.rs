@@ -8,6 +8,8 @@ use egui_wgpu::{RenderState, RendererOptions, ScreenDescriptor, wgpu};
 use epaint::ClippedPrimitive;
 use epaint::textures::TexturesDelta;
 
+use crate::RGBA_BYTES;
+
 /// Why a frame could not be drawn offscreen.
 #[derive(Debug)]
 pub enum OffscreenError {
@@ -287,7 +289,10 @@ impl Offscreen {
     ) -> Result<Pixels, OffscreenError> {
         let state = &self.state;
         let size_error = || OffscreenError::ReadBack(format!("a frame of {width} by {height}"));
-        let unpadded = width.checked_mul(4).ok_or_else(size_error)?;
+        let unpadded = u32::try_from(RGBA_BYTES)
+            .ok()
+            .and_then(|bytes| width.checked_mul(bytes))
+            .ok_or_else(size_error)?;
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let padded = unpadded
             .div_ceil(align)
@@ -344,7 +349,7 @@ fn to_rgba(format: wgpu::TextureFormat, bytes: &mut [u8]) {
         format,
         wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
     ) {
-        for pixel in bytes.as_chunks_mut::<4>().0 {
+        for pixel in bytes.as_chunks_mut::<RGBA_BYTES>().0 {
             pixel.swap(0, 2);
         }
     }

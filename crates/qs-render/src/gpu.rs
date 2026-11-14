@@ -21,7 +21,14 @@ use crate::mesh::{
 use crate::particles::{ParticleVertex, particle_texture};
 use crate::skybox::Skybox;
 use crate::sprite::SpriteVertex;
+use crate::{CHANNEL_MAX, RGB, RGBA_BYTES};
 
+/// The world bind group's skybox binding, the shader's `@binding(3)` (REND-8.2).
+const SKYBOX_BINDING: u32 = 3;
+/// The sky uniform with no skybox: its flag, width and height 0, and its pad (REND-8.2).
+const NO_SKYBOX: [f32; 4] = [0.0; 4];
+/// The console's height over its width, 4:3, when no screen size is given.
+const CONSOLE_ASPECT: f32 = 0.75;
 /// The bytes of a [`crate::mesh::Vertex`] on the GPU: position, texture and light coordinates.
 const VERTEX_BYTES: u64 = 7 * 4;
 /// The bytes of an [`AliasVertex`] on the GPU: position, skin coordinates and shade.
@@ -181,12 +188,31 @@ pub struct SkinKey {
     pub colors: i32,
 }
 
+/// A client's slot among the player skins, 0 to 15, a player entity's number less 1
+/// (REND-4.13).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayerSlot(usize);
+
+impl PlayerSlot {
+    /// Slot `slot`.
+    #[must_use]
+    pub const fn new(slot: usize) -> Self {
+        Self(slot)
+    }
+
+    /// The slot.
+    #[must_use]
+    pub const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// A player slot's translated skin, sent with every frame that draws the player; the
 /// renderer uploads it when its key is not the one the slot holds (REND-4.13).
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlayerSkin {
-    /// The client slot, 0 to 15.
-    pub slot: usize,
+    /// The client slot.
+    pub slot: PlayerSlot,
     /// What the image was made from.
     pub key: SkinKey,
     /// The skin in the slot's colours.
@@ -236,6 +262,25 @@ pub struct FlatVertex {
     pub color: [f32; 4],
 }
 
+/// How a 2D draw meets the screen: alpha tested, or blended with no alpha test.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlatBlend {
+    /// A picture, a character or a fill: its transparent texels cut.
+    AlphaTest,
+    /// The view blend or `Draw_FadeScreen`: blended over the screen.
+    Blended,
+}
+
+impl FlatBlend {
+    /// The 2D pipeline it is drawn with, the alpha-tested one first.
+    const fn pipeline(self) -> usize {
+        match self {
+            Self::AlphaTest => 0,
+            Self::Blended => 1,
+        }
+    }
+}
+
 /// One run of the 2D layer's vertices.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FlatDraw {
@@ -243,8 +288,8 @@ pub struct FlatDraw {
     /// `None` for the white texel, a fill or a blend.
     pub pic: Option<usize>,
     /// Whether it is blended over the screen with no alpha test (the view blend,
-    /// `Draw_FadeScreen`) instead of alpha tested (a picture, a character, a fill).
-    pub blend: bool,
+    /// `Draw_FadeScreen`) or alpha tested (a picture, a character, a fill).
+    pub blend: FlatBlend,
     /// Its first vertex.
     pub first: u32,
     /// Its vertices, six a quad.
@@ -356,7 +401,7 @@ impl MapRenderer {
                 sampler_entry(2),
                 // The skybox's six faces (REND-8.2).
                 wgpu::BindGroupLayoutEntry {
-                    binding: 3,
+                    binding: SKYBOX_BINDING,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -453,7 +498,7 @@ impl MapRenderer {
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     buffers: &[Some(layout_of.clone())],
                 },
-                primitive: primitive(pass),
+                primitive: pass.primitive(),
                 depth_stencil: Some(depth_stencil(depth, pass)),
                 multisample: wgpu::MultisampleState::default(),
                 fragment: Some(wgpu::FragmentState {
@@ -462,7 +507,7 @@ impl MapRenderer {
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     targets: &[Some(wgpu::ColorTargetState {
                         format,
-                        blend: blend_of(pass),
+                        blend: pass.blend(),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -530,7 +575,7 @@ impl MapRenderer {
             mapped_at_creation: false,
         });
         // Textures keep Quake's sharp texels; the lightmap is smoothed, as GLQuake draws it.
-        let mipmapped = device.create_sampler(&world_sampler(mesh.look));
+        let mipmapped = device.create_sampler(&mesh.look.world_sampler());
         let linear_repeat = sampler(device, wgpu::FilterMode::Linear, wgpu::AddressMode::Repeat);
         let linear = sampler(
             device,
@@ -571,7 +616,7 @@ impl MapRenderer {
                     resource: wgpu::BindingResource::Sampler(&linear),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 3,
+                    binding: SKYBOX_BINDING,
                     resource: wgpu::BindingResource::TextureView(&skybox),
                 },
             ],
@@ -744,7 +789,7 @@ impl MapRenderer {
     /// image, mipmapped and filtered as any skin is (REND-4.3), unless the slot already holds
     /// its key. The skin a draw names is the models' skins' count plus the slot.
     pub fn set_player_skin(&mut self, device: &Device, queue: &Queue, skin: &PlayerSkin) {
-        let Some(held) = self.player_keys.get_mut(skin.slot) else {
+        let Some(held) = self.player_keys.get_mut(skin.slot.get()) else {
             return;
         };
         if *held == Some(skin.key) {
@@ -756,7 +801,7 @@ impl MapRenderer {
             .skins
             .len()
             .saturating_sub(PLAYER_SKINS)
-            .saturating_add(skin.slot);
+            .saturating_add(skin.slot.get());
         let texture = upload_levels(device, queue, &mip_levels(&skin.image));
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("qs-render player skin"),
@@ -836,7 +881,7 @@ impl MapRenderer {
         let [x, y] = patch.at;
         let texels = u64::from(image.width)
             .checked_mul(u64::from(image.height))
-            .and_then(|n| n.checked_mul(4))
+            .and_then(|n| n.checked_mul(u64::try_from(RGBA_BYTES).ok()?))
             .and_then(|n| usize::try_from(n).ok());
         if x.saturating_add(image.width) > size.width
             || y.saturating_add(image.height) > size.height
@@ -852,7 +897,9 @@ impl MapRenderer {
             &image.rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(image.width.saturating_mul(4)),
+                bytes_per_row: u32::try_from(RGBA_BYTES)
+                    .ok()
+                    .map(|bytes| image.width.saturating_mul(bytes)),
                 rows_per_image: Some(image.height),
             },
             wgpu::Extent3d {
@@ -880,7 +927,7 @@ impl MapRenderer {
         // REND-8.2: whether the sky is the box, and its faces' size.
         let sky = self
             .skybox
-            .map_or([0.0; 4], |[w, h]| [1.0, f32_of_u32(w), f32_of_u32(h), 0.0]);
+            .map_or(NO_SKYBOX, |[w, h]| [1.0, f32_of_u32(w), f32_of_u32(h), 0.0]);
         // REND-13.5: what a lightmap texel is multiplied by, the mesh's look's.
         // REND-13.9: the gamma every fragment is raised to.
         let look = [self.light_scale, view.gamma, 0.0, 0.0];
@@ -1001,7 +1048,7 @@ impl MapRenderer {
                 Some(index) => self.pics.get(index),
                 None => Some(&self.white),
             };
-            let pipeline = self.flat_pipelines.get(usize::from(draw.blend));
+            let pipeline = self.flat_pipelines.get(draw.blend.pipeline());
             if let (Some(pic), Some(pipeline)) = (pic, pipeline) {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(1, pic, &[]);
@@ -1100,48 +1147,52 @@ fn depth_stencil(format: TextureFormat, pass: Pass) -> wgpu::DepthStencilState {
     }
 }
 
-/// `glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)` where a pass blends.
-const fn blend_of(pass: Pass) -> Option<wgpu::BlendState> {
-    match pass {
-        Pass::Opaque | Pass::Decal => None,
-        Pass::Blended | Pass::BlendedNoDepthWrite | Pass::Flat => {
-            Some(wgpu::BlendState::ALPHA_BLENDING)
+impl Pass {
+    /// `glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)` where a pass blends.
+    const fn blend(self) -> Option<wgpu::BlendState> {
+        match self {
+            Pass::Opaque | Pass::Decal => None,
+            Pass::Blended | Pass::BlendedNoDepthWrite | Pass::Flat => {
+                Some(wgpu::BlendState::ALPHA_BLENDING)
+            }
+        }
+    }
+
+    /// REND-1.10: GLQuake's `glCullFace (GL_FRONT)` with `GL_CULL_FACE` on and GL's
+    /// counter-clockwise front face: only the side a face is seen from the front is drawn. The
+    /// 2D layer is not culled (`glDisable (GL_CULL_FACE)` in `GL_Set2D`), nor are sprites and
+    /// particles, which face the eye either way.
+    fn primitive(self) -> wgpu::PrimitiveState {
+        let cull = match self {
+            Pass::Opaque | Pass::Blended => Some(wgpu::Face::Front),
+            Pass::BlendedNoDepthWrite | Pass::Flat | Pass::Decal => None,
+        };
+        wgpu::PrimitiveState {
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: cull,
+            ..wgpu::PrimitiveState::default()
         }
     }
 }
 
-/// REND-1.10: GLQuake's `glCullFace (GL_FRONT)` with `GL_CULL_FACE` on and GL's
-/// counter-clockwise front face: only the side a face is seen from the front is drawn. The
-/// 2D layer is not culled (`glDisable (GL_CULL_FACE)` in `GL_Set2D`), nor are sprites and
-/// particles, which face the eye either way.
-fn primitive(pass: Pass) -> wgpu::PrimitiveState {
-    let cull = match pass {
-        Pass::Opaque | Pass::Blended => Some(wgpu::Face::Front),
-        Pass::BlendedNoDepthWrite | Pass::Flat | Pass::Decal => None,
-    };
-    wgpu::PrimitiveState {
-        front_face: wgpu::FrontFace::Ccw,
-        cull_mode: cull,
-        ..wgpu::PrimitiveState::default()
-    }
-}
-
-/// REND-3.3: world textures are filtered `GL_LINEAR_MIPMAP_NEAREST` when smaller and
-/// `GL_LINEAR` when larger, and repeat.
-fn world_sampler(look: Look) -> wgpu::SamplerDescriptor<'static> {
-    wgpu::SamplerDescriptor {
-        label: Some("qs-render world texture"),
-        address_mode_u: wgpu::AddressMode::Repeat,
-        address_mode_v: wgpu::AddressMode::Repeat,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        // REND-3.3: GLQuake's nearest level; REND-13.3: QuakeSpasm's blend of the two nearest.
-        mipmap_filter: if look.trilinear() {
-            wgpu::MipmapFilterMode::Linear
-        } else {
-            wgpu::MipmapFilterMode::Nearest
-        },
-        ..wgpu::SamplerDescriptor::default()
+impl Look {
+    /// REND-3.3: world textures are filtered `GL_LINEAR_MIPMAP_NEAREST` when smaller and
+    /// `GL_LINEAR` when larger, and repeat.
+    fn world_sampler(self) -> wgpu::SamplerDescriptor<'static> {
+        wgpu::SamplerDescriptor {
+            label: Some("qs-render world texture"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            // REND-3.3: GLQuake's nearest level; REND-13.3: QuakeSpasm's blend of the two nearest.
+            mipmap_filter: if self.trilinear() {
+                wgpu::MipmapFilterMode::Linear
+            } else {
+                wgpu::MipmapFilterMode::Nearest
+            },
+            ..wgpu::SamplerDescriptor::default()
+        }
     }
 }
 
@@ -1162,7 +1213,7 @@ fn sampler(device: &Device, filter: wgpu::FilterMode, address: wgpu::AddressMode
 fn upload_skybox(device: &Device, queue: &Queue, skybox: Option<&Skybox>) -> wgpu::TextureView {
     let [width, height] = skybox.map_or([1, 1], Skybox::size);
     let data = skybox.map_or_else(
-        || [0, 0, 0, 255].repeat(usize::try_from(SKY_FACES).unwrap_or(0)),
+        || [0, 0, 0, CHANNEL_MAX].repeat(usize::try_from(SKY_FACES).unwrap_or(0)),
         Skybox::layers,
     );
     device
@@ -1245,7 +1296,7 @@ impl Default for Fog {
     /// REND-10.1: no fog, grey.
     fn default() -> Self {
         Self {
-            color: [REND_FOG_DEFAULT_GRAY; 3],
+            color: [REND_FOG_DEFAULT_GRAY; RGB],
             density: 0.0,
         }
     }
@@ -1287,7 +1338,7 @@ impl View {
             fog: Fog::default(),
             water_alpha: REND_WATERALPHA,
             skyfog: REND_SKYFOG,
-            screen: [CONWIDTH, CONWIDTH * 3.0 / 4.0],
+            screen: [CONWIDTH, CONWIDTH * CONSOLE_ASPECT],
             gamma: 1.0,
         }
     }
@@ -1369,7 +1420,8 @@ impl CallbackTrait for MapCallback {
                 viewport.height_px,
             ]
             .map(|v| f32_of_i32(v.max(0)));
-            let viewport = (viewport[2] > 0.0 && viewport[3] > 0.0).then_some(viewport);
+            let [_, _, width, height] = viewport;
+            let viewport = (width > 0.0 && height > 0.0).then_some(viewport);
             renderer.draw(pass, self.view.time, viewport);
         }
     }
@@ -1408,9 +1460,9 @@ mod tests {
     use qs_bsp::{SURF_DRAWSKY, SURF_DRAWTURB};
 
     use super::{
-        ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, FlatDraw, FlatFrame, FlatVertex, Fog,
-        MapCallback, MapRenderer, ModelFrame, Pass, SpriteDraw, SpriteFrame, View, alias_bytes,
-        grown, primitive,
+        ALIAS_VERTEX_BYTES, AliasDraw, Assets, DEPTH_COMPARE, FlatBlend, FlatDraw, FlatFrame,
+        FlatVertex, Fog, MapCallback, MapRenderer, ModelFrame, Pass, SpriteDraw, SpriteFrame, View,
+        alias_bytes, grown,
     };
     use crate::alias::AliasVertex;
     use crate::camera::Camera;
@@ -1638,7 +1690,7 @@ mod tests {
             rgba: vec![9; 4],
         });
         let skin = |slot, colors| super::PlayerSkin {
-            slot,
+            slot: super::PlayerSlot::new(slot),
             key: super::SkinKey {
                 model: 1,
                 skin: 0,
@@ -1962,13 +2014,13 @@ mod tests {
             draws: vec![
                 FlatDraw {
                     pic: None,
-                    blend: false,
+                    blend: FlatBlend::AlphaTest,
                     first: 0,
                     count: 6,
                 },
                 FlatDraw {
                     pic: None,
-                    blend: true,
+                    blend: FlatBlend::Blended,
                     first: 6,
                     count: 6,
                 },
@@ -2106,13 +2158,13 @@ mod tests {
     // spec REND-1.10: only a face's front is drawn: GL's counter-clockwise front, front culled
     #[test]
     fn faces_are_culled_as_glquake_culls_them() {
-        let state = primitive(Pass::Opaque);
+        let state = Pass::Opaque.primitive();
         assert_eq!(state.front_face, wgpu::FrontFace::Ccw);
         assert_eq!(state.cull_mode, Some(wgpu::Face::Front));
         assert_eq!(state.topology, wgpu::PrimitiveTopology::TriangleList);
         // `GL_Set2D` turns culling off; sprites and particles face the eye either way.
         for pass in [Pass::Flat, Pass::Decal, Pass::BlendedNoDepthWrite] {
-            assert_eq!(primitive(pass).cull_mode, None);
+            assert_eq!(pass.primitive().cull_mode, None);
         }
     }
     #[test]
@@ -2233,7 +2285,7 @@ mod tests {
     #[test]
     fn quakespasm_s_world_textures_filter_trilinearly() {
         use egui_wgpu::wgpu::{FilterMode, MipmapFilterMode};
-        let world = super::world_sampler(Look::QuakeSpasm);
+        let world = Look::QuakeSpasm.world_sampler();
         assert_eq!(
             (world.min_filter, world.mag_filter, world.mipmap_filter),
             (
@@ -2248,7 +2300,7 @@ mod tests {
     #[test]
     fn world_textures_filter_as_gl_linear_mipmap_nearest() {
         use egui_wgpu::wgpu::{AddressMode, FilterMode, MipmapFilterMode};
-        let world = super::world_sampler(Look::GlQuake);
+        let world = Look::GlQuake.world_sampler();
         assert_eq!(
             (world.min_filter, world.mag_filter, world.mipmap_filter),
             (

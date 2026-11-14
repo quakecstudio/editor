@@ -375,7 +375,7 @@ impl Headless {
             client,
             describer,
             rand,
-            fov_x: camera.fov_x,
+            fov_x: camera.fov_x.get(),
             mesh,
             play,
             bsp,

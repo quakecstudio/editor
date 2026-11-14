@@ -20,7 +20,7 @@ use qs_client::{
     Event, Grabbed, KeyDest, MENU_BINDINGS, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey,
     MenuSettings, Random as _, Typed,
 };
-use qs_render::{Camera, MapMesh, MapRenderer, Offscreen, Play, View};
+use qs_render::{Camera, Degrees, MapMesh, MapRenderer, Offscreen, Play, View};
 use qs_sim::ClientCommand;
 use qs_sim::input::{Button, Input, MoveSettings};
 use qs_sim::keys::{Bindings, K_ESCAPE, key_name};
@@ -346,7 +346,8 @@ impl eframe::App for Viewer {
         if self.benchmark.is_some() {
             // A slow turn, so the whole view around the start is drawn. The first frame
             // starts the clock: the window's own appearance is not the renderer's.
-            self.camera.turn(seconds * 30.0, 0.0);
+            self.camera
+                .turn(Degrees::new(seconds * 30.0), Degrees::new(0.0));
             if self.frames == 0 {
                 self.started = now;
             } else {
@@ -363,7 +364,7 @@ impl eframe::App for Viewer {
         let (origin, angles) = if self.fly {
             (
                 self.camera.origin,
-                [self.camera.pitch, self.camera.yaw, 0.0],
+                [self.camera.pitch.get(), self.camera.yaw.get(), 0.0],
             )
         } else {
             (scene.view.origin, scene.view.angles)
@@ -375,9 +376,9 @@ impl eframe::App for Viewer {
             // The view's width as it is drawn: the free camera's own, else widened by the look
             // (REND-13.6).
             fov_x: if self.fly {
-                self.camera.fov_x
+                self.camera.fov_x.get()
             } else {
-                self.mesh.look.fov_x(self.camera.fov_x, aspect)
+                self.mesh.look.fov_x(self.camera.fov_x.get(), aspect)
             },
             aspect,
         });
@@ -624,7 +625,7 @@ impl Viewer {
             let sensitivity = setting("sensitivity");
             let yaw = -motion[0] * sensitivity * setting("m_yaw");
             let pitch = motion[1] * sensitivity * setting("m_pitch");
-            self.camera.turn(yaw, pitch);
+            self.camera.turn(Degrees::new(yaw), Degrees::new(pitch));
         } else if self.pointer == Pointer::Captured {
             self.motion[0] += motion[0];
             self.motion[1] += motion[1];
@@ -723,18 +724,18 @@ impl Viewer {
         if pitch.to_bits() != self.last_set[0].to_bits()
             || yaw.to_bits() != self.last_set[1].to_bits()
         {
-            self.camera.pitch = pitch;
-            self.camera.yaw = yaw;
+            self.camera.pitch = Degrees::new(pitch);
+            self.camera.yaw = Degrees::new(yaw);
         }
         let world = self.game.world();
         let settings = MoveSettings::read(&|name| world.setting(name).unwrap_or(0.0));
         let motion = mouse_motion(self.dest, core::mem::take(&mut self.motion));
-        let mut angles = [self.camera.pitch, self.camera.yaw, 0.0];
+        let mut angles = [self.camera.pitch.get(), self.camera.yaw.get(), 0.0];
         let (cmd, drift) = self.input.frame(&settings, seconds, &mut angles, motion);
-        self.camera.pitch = angles[0];
-        self.camera.yaw = angles[1];
+        self.camera.pitch = Degrees::new(angles[0]);
+        self.camera.yaw = Degrees::new(angles[1]);
         self.client.set_viewangles(angles);
-        self.last_set = [self.camera.pitch, self.camera.yaw];
+        self.last_set = [self.camera.pitch.get(), self.camera.yaw.get()];
         if drift.stop {
             self.client.stop_pitch_drift();
         }

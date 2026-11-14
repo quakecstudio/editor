@@ -23,7 +23,8 @@ use eframe::egui::{self, TexturesDelta};
 use eframe::egui_wgpu::{self, ScreenDescriptor};
 use egui_kittest::{Harness, OsThreshold, SnapshotOptions, TestRenderer};
 use qs_render::{
-    Batch, Camera, Image, Look, MeshBuilder, Offscreen, Palette, Placement, Surface, Vertex,
+    Batch, Camera, Degrees, Image, Look, MeshBuilder, Offscreen, Palette, Placement, Surface,
+    Vertex,
 };
 
 use super::DEPTH_FORMAT;
@@ -146,8 +147,8 @@ fn the_map_view_draws_in_the_window() {
         );
     let mut app = App::checked_on_the_frame(&harness.ctx, None).unwrap();
     let mesh = checker_floor();
-    let mut camera = Camera::new([-300.0, 0.0, 200.0], 0.0);
-    camera.turn(0.0, 30.0);
+    let mut camera = Camera::new([-300.0, 0.0, 200.0], Degrees::new(0.0));
+    camera.turn(Degrees::new(0.0), Degrees::new(30.0));
     assert!(
         !app.shell_mut().show_map(&mesh, camera),
         "no device until the window gives one"
@@ -195,7 +196,7 @@ fn frame(view: &mut super::MapView, ctx: &egui::Context, time: f64, events: Vec<
 #[test]
 fn dragging_turns_and_the_wheel_moves_the_view() {
     let ctx = egui::Context::default();
-    let mut view = super::MapView::new(Camera::new([0.0; 3], 90.0));
+    let mut view = super::MapView::new(Camera::new([0.0; 3], Degrees::new(90.0)));
     let at = egui::pos2(400.0, 300.0);
     let button = |pressed| egui::Event::PointerButton {
         pos: at,
@@ -228,11 +229,11 @@ fn dragging_turns_and_the_wheel_moves_the_view() {
     frame(&mut view, &ctx, 1.2, vec![button(false)]);
     let camera = view.camera();
     assert!(
-        (camera.yaw - (start.yaw - 10.0)).abs() < 1e-3,
+        (camera.yaw.get() - (start.yaw.get() - 10.0)).abs() < 1e-3,
         "40 points right turns 10 degrees right: {start:?} to {camera:?}"
     );
     assert!(
-        (camera.pitch - (start.pitch + 5.0)).abs() < 1e-3,
+        (camera.pitch.get() - (start.pitch.get() + 5.0)).abs() < 1e-3,
         "20 points down looks 5 degrees down"
     );
     let before = camera.origin;

@@ -142,7 +142,7 @@ fn composition_text_is_spliced_in_underlined() {
 
 #[test]
 fn the_plain_styler_colours_nothing() {
-    assert_eq!(Plain.revision(), 0);
+    assert_eq!(Plain.revision().get(), 0);
     assert!(Plain.spans(0, "float x;").is_empty());
 }
 

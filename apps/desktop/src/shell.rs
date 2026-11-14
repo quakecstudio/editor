@@ -2412,7 +2412,11 @@ impl Shell {
             MAP_PLAY_FROM_HERE,
             &PlayFromHereParams {
                 at: [x, y, z - PLAYER_EYE],
-                angles: Some([f64::from(camera.pitch), f64::from(camera.yaw), 0.0]),
+                angles: Some([
+                    f64::from(camera.pitch.get()),
+                    f64::from(camera.yaw.get()),
+                    0.0,
+                ]),
             },
         )
     }
