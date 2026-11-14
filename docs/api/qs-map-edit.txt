@@ -359,6 +359,7 @@ fn qs_map_edit::entity_keys
 fn qs_map_edit::groups::MapDocument::hidden_entities
 fn qs_map_edit::groups::MapDocument::is_hidden
 fn qs_map_edit::groups::MapDocument::is_locked
+fn qs_map_edit::opens_in_map_editor
 fn qs_map_edit::outline::MapDocument::outline
 fn qs_map_edit::outline::OutlineRow::count
 fn qs_map_edit::outline::OutlineRow::holds

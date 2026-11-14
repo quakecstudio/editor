@@ -27,6 +27,7 @@ pub mod map_check;
 pub mod map_compile;
 pub mod map_filter;
 pub mod map_profile;
+pub mod open_paths;
 mod preview;
 mod recent;
 pub mod search;
@@ -350,6 +351,8 @@ pub struct Workbench<L> {
     maps: MapStore,
     /// The compile profile chosen, which `map.run_profile` runs when given none (P6-20).
     profile: Option<String>,
+    /// What the last `paths.open` opened, until the window takes it.
+    opened_paths: Option<open_paths::PathsOpened>,
 }
 
 impl<L: Loader> Workbench<L> {
@@ -373,6 +376,7 @@ impl<L: Loader> Workbench<L> {
             terminals: terminal::Terminals::default(),
             maps: MapStore::default(),
             profile: None,
+            opened_paths: None,
         }
     }
 

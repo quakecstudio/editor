@@ -111,6 +111,8 @@ map.staged
 map.textures
 map.unlock_all
 map.unstage
+paths.open
+paths.take_opened
 preview.breakpoint
 preview.choose_game
 preview.console

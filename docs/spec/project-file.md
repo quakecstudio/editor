@@ -53,6 +53,10 @@ compiles `progs.src` in its source directory when given no file (`QCC_main`).
 - **PRJ-1.5** In a bare project, a file in source form (PRJ-4.1) that compiles no file but
   itself, declares no output and registers at least one source file is a list of programs,
   as FreeCS's top-level `progs.src` is: it is not a module, and the files it registers are.
+- **PRJ-1.6** A file's project directory is the nearest directory, from the file's own up to
+  the root, that holds `quakec.toml` or `progs.src`; a file with no such directory above it
+  has none. Opening a file from outside the app (Finder) opens that project, as Cargo finds
+  the `Cargo.toml` above the current directory.
 
 ## PRJ-2 quakec.toml
 

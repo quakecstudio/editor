@@ -98,6 +98,8 @@ map.staged
 map.textures
 map.unlock_all
 map.unstage
+paths.open
+paths.take_opened
 project.build
 project.check
 project.entities
