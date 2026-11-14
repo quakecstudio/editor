@@ -13,6 +13,8 @@
 //! float and an integer argument, and FTE's `%S` and `%v`. Each conversion is then written as
 //! glibc's `printf` writes it, into vkQuake's 1024-byte temporary string.
 
+use qc_types::PROGS_VECTOR_SLOTS;
+
 use crate::BuiltinError;
 
 /// vkQuake's `STRINGTEMP_LENGTH`, the buffer `sprintf` writes into, its terminator included.
@@ -22,6 +24,20 @@ const STRINGTEMP_LENGTH: usize = 1024;
 /// zeros that `%g` strips, since a double's exact decimal has fewer than 1100 digits after
 /// its point.
 const MAX_PRECISION: usize = 2000;
+/// `%p`'s width when none is given, eight hexadecimal digits (BUILTIN-18.8).
+const POINTER_WIDTH: i64 = 8;
+/// `strtol`'s base.
+const DECIMAL: i64 = 10;
+/// A wide argument's high word's shift.
+const WORD_BITS: u32 = 32;
+/// `uint64_t`'s top bit, set back after the value less 2^63 is converted.
+const TOP_BIT: u64 = 1 << 63;
+/// A floating conversion's precision when none is given (BUILTIN-18.8).
+const DEFAULT_PRECISION: usize = 6;
+/// `%g` writes `%f` while the exponent is from -4 to below the precision (BUILTIN-18.8).
+const GENERAL_LOWEST_EXPONENT: i64 = -4;
+/// What `quotedbuf` keeps for the closing quote and its terminator past the text.
+const QUOTED_ROOM: usize = 4;
 
 /// The arguments `sprintf` reads, `OFS_PARM0 + 3 * n` and the slots after it.
 pub(crate) trait Args {
@@ -173,7 +189,7 @@ impl Reader<'_> {
         let mut value = 0_i64;
         while self.peek().is_ascii_digit() {
             value = value
-                .saturating_mul(10)
+                .saturating_mul(DECIMAL)
                 .saturating_add(i64::from(self.peek().saturating_sub(b'0')));
             self.at = self.at.saturating_add(1);
         }
@@ -274,7 +290,7 @@ impl Reader<'_> {
         if matches!(conversion, b'p' | b'P') {
             flags.zero_pad = true;
             if width < 0 {
-                width = 8;
+                width = POINTER_WIDTH;
             }
             kind = kind.or(Some(Kind::Integer));
         } else if conversion == b'i' {
@@ -328,7 +344,7 @@ fn float_arg(args: &dyn Args, first: usize, arg: usize) -> f32 {
 /// The 64 bits of argument `arg`'s first two slots, `G_DOUBLE` and `G_INT64`.
 fn wide_bits(args: &dyn Args, first: usize, arg: usize) -> u64 {
     if present(args, first, arg) {
-        u64::from(args.word(arg, 0)) | (u64::from(args.word(arg, 1)) << 32)
+        u64::from(args.word(arg, 0)) | (u64::from(args.word(arg, 1)) << WORD_BITS)
     } else {
         0
     }
@@ -367,7 +383,7 @@ fn to_u64(value: f64) -> u64 {
     if value < TWO_63 {
         u64::from_ne_bytes(to_i64(value).to_ne_bytes())
     } else {
-        u64::from_ne_bytes(to_i64(value - TWO_63).to_ne_bytes()) ^ (1 << 63)
+        u64::from_ne_bytes(to_i64(value - TWO_63).to_ne_bytes()) ^ TOP_BIT
     }
 }
 
@@ -457,7 +473,7 @@ impl Directive {
             b'v' | b'V' => {
                 let conversion = if self.conversion == b'v' { b'g' } else { b'G' };
                 let mut parts = Vec::new();
-                for offset in 0..3 {
+                for offset in 0..PROGS_VECTOR_SLOTS {
                     let value = if present(&*args, first, self.arg) {
                         let word = args.word(self.arg, offset);
                         match self.kind {
@@ -556,7 +572,7 @@ impl Directive {
         } else if magnitude.is_infinite() {
             String::from(if upper { "INF" } else { "inf" })
         } else {
-            let precision = self.precision.unwrap_or(6);
+            let precision = self.precision.unwrap_or(DEFAULT_PRECISION);
             let text = match conversion.to_ascii_lowercase() {
                 b'f' => self.flags.fixed(magnitude, precision),
                 b'e' => self.flags.exponent(magnitude, precision),
@@ -632,7 +648,7 @@ impl Flags {
         let (_, x) = split_exponent(value, p.saturating_sub(1));
         let p_i = i64::try_from(p).unwrap_or(i64::MAX);
         let x = i64::from(x);
-        let text = if p_i > x && x >= -4 {
+        let text = if p_i > x && x >= GENERAL_LOWEST_EXPONENT {
             let places = usize::try_from(p_i.saturating_sub(1).saturating_sub(x)).unwrap_or(0);
             self.fixed(value, places)
         } else {
@@ -662,7 +678,7 @@ fn quoted(text: &[u8]) -> Vec<u8> {
     let mut warn = false;
     let mut leftover = false;
     for &byte in text {
-        if buf.len() >= QUOTED_LEN.saturating_sub(4) {
+        if buf.len() >= QUOTED_LEN.saturating_sub(QUOTED_ROOM) {
             leftover = true;
             break;
         }
