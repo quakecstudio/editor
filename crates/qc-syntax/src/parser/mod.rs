@@ -25,8 +25,8 @@ use qc_preproc::{CompilerFlags, Enabled, FteFlag, Keyword, KeywordEdit, Keywords
 
 mod fte;
 
-use crate::flags::{Block, Linkage};
-use crate::input::{Input, Piece, Tok};
+use crate::flags::{self, Block, Linkage};
+use crate::input::{Input, Piece, Text, Tok};
 use crate::kind::SyntaxKind as K;
 use crate::tree::{Builder, Checkpoint, GreenNode};
 
@@ -57,15 +57,6 @@ pub(crate) const FTEQCC_MAX_NAME: usize = 256;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Precedence(Priorities);
 
-/// A declarator's place in its declaration's list: the first, whose head a `qcfuncs` type's
-/// parameter list may belong to (FTEF-18.36), or a later one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Declarator {
-    /// The first declarator.
-    First,
-    /// One after a `,`.
-    Later,
-}
 impl Precedence {
     /// `TOP_PRIORITY`: the loosest binary operator priority, `priority_class[MAX_PRIORITY_CLASSES]`.
     const fn top(self) -> u8 {
@@ -159,6 +150,16 @@ impl Precedence {
             },
         }
     }
+}
+
+/// A declarator's place in its declaration's list: the first, whose head a `qcfuncs` type's
+/// parameter list may belong to (FTEF-18.36), or a later one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DeclaratorPlace {
+    /// The first declarator.
+    First,
+    /// One after a `,`.
+    Later,
 }
 
 /// A clause of a `for` header (FTE-2.1), which FTEQCC discards or keeps (FTEF-18.25).
@@ -1787,10 +1788,10 @@ impl<'a> Parser<'a> {
             self.bump();
             return;
         }
-        let mut order = Declarator::First;
+        let mut order = DeclaratorPlace::First;
         let function = loop {
             let function = self.declarator(ty, site, order);
-            order = Declarator::Later;
+            order = DeclaratorPlace::Later;
             if !self.at(K::Comma) {
                 break function;
             }
@@ -1828,7 +1829,7 @@ impl<'a> Parser<'a> {
     /// Parses one declarator; returns whether its type is a function type, whose `;` an
     /// FTEQCC declaration may leave out (FTE-17.3). A definition's name is
     /// `QCC_PR_DummyDef`'s, once its type is known (FTEF-20.4).
-    fn declarator(&mut self, ty: TypeShape, site: Site, order: Declarator) -> bool {
+    fn declarator(&mut self, ty: TypeShape, site: Site, order: DeclaratorPlace) -> bool {
         self.start_node(K::Declarator);
         let mut ty = ty;
         let pointer = self.declarator_head(&mut ty, order);
@@ -1920,7 +1921,7 @@ impl<'a> Parser<'a> {
     /// the first declarator's of a type `QCC_PR_ParseType` read with `qcfuncs` on, the type took
     /// any parameter list, and its `ParseFunctionType` finds no list at `(*`, which this leaves
     /// for the name to refuse.
-    fn declarator_head(&mut self, ty: &mut TypeShape, order: Declarator) -> bool {
+    fn declarator_head(&mut self, ty: &mut TypeShape, order: DeclaratorPlace) -> bool {
         let mut levels = 0_usize;
         while self.fteqcc() && self.at(K::Star) {
             levels = levels.saturating_add(1);
@@ -1942,7 +1943,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             if self.nth(1).is_some_and(|t| t.kind == K::Star) {
-                if order == Declarator::First && ty.qcfuncs && !ty.function {
+                if order == DeclaratorPlace::First && ty.qcfuncs && !ty.function {
                     break;
                 }
                 // `else { //c-style function pointer while (QCC_PR_CheckToken("*")) isptr++;`
@@ -2644,10 +2645,10 @@ impl<'a> Parser<'a> {
             self.bump_as(K::LocalKw);
         }
         if let Some(ty) = self.type_or_user_type() {
-            let mut order = Declarator::First;
+            let mut order = DeclaratorPlace::First;
             loop {
                 self.declarator(ty, Site::Body, order);
-                order = Declarator::Later;
+                order = DeclaratorPlace::Later;
                 if !self.at(K::Comma) {
                     break;
                 }
@@ -3386,5 +3387,39 @@ impl<'a> Parser<'a> {
             span: Span::new(start, self.last_end),
             tail,
         })
+    }
+}
+
+impl Parser<'_> {
+    /// The parse of a text's last pass, this parser's, which read it with the `extern` blocks
+    /// `blocks`.
+    pub(crate) fn into_parse(
+        mut self,
+        text: Text,
+        edits: &[(usize, qc_preproc::FlagEdit)],
+        blocks: &[Block],
+        marks: Vec<(usize, CompilerFlags)>,
+        lex: Vec<(usize, qc_lexer::LexFlags)>,
+    ) -> crate::Parse {
+        let relexed = if text == Text::Preprocessed && !blocks.is_empty() {
+            self.relexed(&flags::marks(edits, &[], flags::Reading::Lexed))
+        } else {
+            Vec::new()
+        };
+        let Finished {
+            green,
+            diagnostics,
+            keywords,
+            types,
+        } = self.finish();
+        crate::Parse {
+            green,
+            diagnostics,
+            flags: marks,
+            lex,
+            keywords,
+            types,
+            relexed,
+        }
     }
 }
