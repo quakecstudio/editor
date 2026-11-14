@@ -200,6 +200,13 @@ pub(crate) struct BspBrush {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct OriginalNum(usize);
 
+impl OriginalNum {
+    /// Its place in the list.
+    pub(crate) const fn get(self) -> usize {
+        self.0
+    }
+}
+
 impl BspBrush {
     /// Its sides' polygons, `CreateBrushWindings` (QBSP-15.22): each side's plane's square
     /// clipped to the front of each other side's opposite plane but the bevels' within

@@ -12,7 +12,8 @@
 
 use super::brush::{BspBrush, OriginalNum, Side, SideMarks, VisibleFaces};
 use super::game::Contents;
-use super::map::{SIDESPACE, SideKind, SurfFlags, Texinfos};
+use super::map::{EntityNum, SIDESPACE, SideKind, SurfFlags, Texinfos};
+use super::portals::{Portal, PortalId};
 use super::vec::{AXES, Bounds, BspPlane, NORMAL_EPSILON, POINT_EPSILON, Plane, PlaneNum, Planes};
 use super::winding::{self, KeepOn, ON_EPSILON, Winding};
 
@@ -103,6 +104,13 @@ pub(crate) enum TreeSplit {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct NodeId(usize);
 
+impl NodeId {
+    /// Its place in the tree's nodes.
+    pub(crate) const fn get(self) -> usize {
+        self.0
+    }
+}
+
 /// Whether a node's plane is a detail side's, which vis need not know.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Separator {
@@ -118,6 +126,13 @@ pub(crate) struct Leaf {
     pub(crate) contents: Contents,
     /// The hull brushes the pieces in it were cut from.
     pub(crate) original_brushes: Vec<OriginalNum>,
+    /// The fill's steps from the void to it, `outside_distance`; `None` when not reached.
+    pub(crate) outside_distance: Option<u32>,
+    /// The fill's steps from an occupied leaf to it, 1 for the leaf itself, `occupied`; 0 when
+    /// not reached.
+    pub(crate) occupied: u32,
+    /// The entity in it, `occupant`.
+    pub(crate) occupant: Option<EntityNum>,
 }
 
 /// What a node is.
@@ -144,6 +159,8 @@ pub(crate) struct Node {
     pub(crate) volume: Option<BspBrush>,
     /// What it is.
     pub(crate) kind: NodeKind,
+    /// The portals on it, in the order they were added; `node_t::portals` is the reverse.
+    pub(crate) portals: Vec<PortalId>,
 }
 
 /// A tree, `tree_t`.
@@ -153,6 +170,10 @@ pub(crate) struct Tree {
     pub(crate) nodes: Vec<Node>,
     /// The box around its brushes.
     pub(crate) bounds: Bounds,
+    /// Its portals, `tree_t::portals`.
+    pub(crate) portals: Vec<Portal>,
+    /// The solid leaf beyond the head's portals, `outside_node`, once portals are made.
+    pub(crate) outside: Option<NodeId>,
 }
 
 impl Tree {
@@ -164,22 +185,67 @@ impl Tree {
         self.nodes.get(id.0)
     }
 
-    fn node_mut(&mut self, id: NodeId) -> Option<&mut Node> {
+    pub(crate) fn node_mut(&mut self, id: NodeId) -> Option<&mut Node> {
         self.nodes.get_mut(id.0)
     }
 
-    fn push(&mut self, node: Node) -> NodeId {
+    pub(crate) fn push(&mut self, node: Node) -> NodeId {
         self.nodes.push(node);
         NodeId(self.nodes.len().saturating_sub(1))
     }
 
-    fn leaf(parent: Option<NodeId>, bounds: Bounds, leaf: Leaf) -> Node {
+    pub(crate) fn leaf(parent: Option<NodeId>, bounds: Bounds, leaf: Leaf) -> Node {
         Node {
             bounds,
             parent,
             volume: None,
             kind: NodeKind::Leaf(leaf),
+            portals: Vec::new(),
         }
+    }
+
+    /// Leaf `id`'s data.
+    pub(crate) fn leaf_data(&self, id: NodeId) -> Option<&Leaf> {
+        match &self.node(id)?.kind {
+            NodeKind::Leaf(leaf) => Some(leaf),
+            NodeKind::Split { .. } => None,
+        }
+    }
+
+    /// Leaf `id`'s data, to change.
+    pub(crate) fn leaf_data_mut(&mut self, id: NodeId) -> Option<&mut Leaf> {
+        match &mut self.node_mut(id)?.kind {
+            NodeKind::Leaf(leaf) => Some(leaf),
+            NodeKind::Split { .. } => None,
+        }
+    }
+
+    /// Node `id`'s plane and children, `None` for a leaf.
+    pub(crate) fn split_of(&self, id: NodeId) -> Option<(PlaneNum, [NodeId; 2], Separator)> {
+        match self.node(id)?.kind {
+            NodeKind::Split {
+                planenum,
+                children,
+                separator,
+            } => Some((planenum, children, separator)),
+            NodeKind::Leaf(_) => None,
+        }
+    }
+
+    /// Every leaf below `id`, front first, the order `_r` walks take.
+    pub(crate) fn leaves_below(&self, id: NodeId) -> Vec<NodeId> {
+        let mut out = Vec::new();
+        let mut stack = vec![id];
+        while let Some(at) = stack.pop() {
+            match self.split_of(at) {
+                Some((_, [front, back], _)) => {
+                    stack.push(back);
+                    stack.push(front);
+                }
+                None => out.push(at),
+            }
+        }
+        out
     }
 }
 
@@ -856,6 +922,7 @@ impl Builder<'_> {
                 .iter()
                 .fold(Contents::EMPTY, |c, b| Contents::combine(c, b.contents)),
             original_brushes: brushes.iter().map(|b| b.original).collect(),
+            ..Leaf::default()
         }
     }
 
@@ -938,6 +1005,8 @@ impl BspInput<'_> {
         let mut tree = Tree {
             nodes: Vec::new(),
             bounds,
+            portals: Vec::new(),
+            outside: None,
         };
         if brushes.is_empty() {
             let head = tree.push(Tree::leaf(None, bounds, Leaf::default()));

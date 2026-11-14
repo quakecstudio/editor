@@ -846,3 +846,62 @@ point on a plane (`mathlib.hh`).
   `-chopfragment`, the pair is left; otherwise the bite leaving fewer pieces replaces its brush
   with its pieces, the second's on a tie, and the test goes on from the brush after those pieces
   or from the first.
+- **QBSP-15.31** A tree's portals (`MakeTreePortals`) start from six around the head
+  (`MakeHeadnodePortals`): on the planes of the tree's bounds grown by `SIDESPACE`, `+axis` at the
+  minimum and `-axis` at the maximum, each stored turned to face its axis's positive side, with
+  the head in front unless turned, and a solid outside leaf on the other side; each one's square
+  is clipped to the front of the other five within `-epsilon`, kept when on them.
+- **QBSP-15.32** Each node's portal (`MakeNodePortal`) is its plane's square clipped to its side
+  of each parent's plane within 0.001 (`BaseWindingForNode`), then to the inside of each portal
+  around the node within 0.1, none when tiny (`WindingIsTiny`, edges longer than 0.2). The
+  portals around a node are cut by its plane within 0.001, one on the plane kept in front
+  (`SplitNodePortals`), a tiny part dropped, and each part given the child it is on. The node's
+  portal is made, those around it cut onto its children, each child portalized front first
+  (`MakeTreePortals_r`), and the node's portal then cut down the front child's subtree and the
+  results down the back's (`ClipNodePortalsToTree_r`). For vis, portals stop at a detail
+  separator as at a leaf.
+- **QBSP-15.33** Each portal is put on its two nodes (`AddPortalToNodes`), the last first. Then
+  each leaf's bounds are around its portals' points and each node's around its children's
+  (`CalcTreeBounds_r`); one with no extent on the first axis takes its parent's minimum as both
+  corners. A cluster's contents (`ClusterContents`) are its leaves' clustered; vis sees through a
+  portal (`Portal_VisFlood`) that is not the head's when `portal_can_see_through` its sides.
+- **QBSP-15.34** The sides a portal shows (`FindPortalSide`) are found when the contents of its
+  two leaves make `portal_visible_contents` not empty: for each of its nodes, the leaf's
+  original brushes from the last, each for which `portal_generates_face` holds outside (its front)
+  or inside (its back), each side not a bevel whose plane is within 0.1 of every point of the
+  portal; a side on the portal's node plane, either way, is taken for the far side when outside
+  and the near side when inside, the first found kept, and ends that brush; otherwise the side
+  whose positive plane's normal has the largest absolute dot product with the node plane's, kept
+  in a `float`, is taken likewise; exact sides win. `MarkVisibleSides` first marks every map face
+  of the hull's brushes unseen, a hint seen (`MarkBrushSidesInvisible`), then for each leaf not
+  empty and each of its portals but the head's, finds the portal's sides once and marks each one's
+  map face seen.
+- **QBSP-15.35** The fill (`FillOutside`) clears each leaf's fill state, then puts each entity
+  after the world whose origin is not within `QBSP_EQUAL_EPSILON` of 0 0 0 and whose `_nofill` and
+  `_lightgrid_hint` are 0 (`IsNofillEntity`) in the leaf of its origin, unless the leaf seals the
+  map, the first one in a leaf kept (`MarkOccupiedLeafs`). The leaf of a point (`PointInLeaf`) goes
+  front when it is in front of a node's plane, back when behind, and when exactly on it to the
+  front leaf if that seals the map as preferred, sealing in the drawing hull and not in the
+  clipping hulls, else the back. With no occupied leaf nothing is filled ("No entities in empty
+  space").
+- **QBSP-15.36** The drawing hull fills from the inside (`-filltype auto`): breadth first from
+  the occupied leaves, each 1 step, through portals not of the head and between leaves neither of
+  which seals the map (`BFSFloodFillFromOccupiedLeafs`, `OutsideFill_Passable`); it leaks when the
+  leaf across the outside leaf's first portal is reached, the line from there down the steps to an
+  occupied leaf, reversed (`MakeLeakLine`). The clipping hulls fill from the void: breadth first
+  from that leaf, 0 steps (`FloodFillLeafsFromVoid`), leaking at the occupied leaf reached with the
+  fewest steps, the first on a tie, the line from it down to the void (`FindPortalsToVoid`). On a
+  leak nothing is filled; the leak file has, from the occupant's origin to each line portal's
+  centre in turn, each segment's two ends (`WriteLeakLine`, `-leakdist 0`).
+- **QBSP-15.37** Without a leak each leaf the fill leaves out, no step from an occupant inside or
+  any step from the void outside, is made solid unless it seals the map (`OutLeafsToSolid_R`); the
+  map faces of the hull's brushes are marked unseen but hints, and for each leaf neither any solid
+  nor sky, each side with a map face of an original brush in a leaf across one of its portals,
+  whose positive plane is `epsilonEqual` to the portal's, is marked seen
+  (`MarkVisibleBrushSides_R`). A brush model is not filled; its fill state is cleared and its sides
+  marked likewise (`FillBrushEntity`).
+- **QBSP-15.38** The detail fill (`FillDetail`, `-filldetail` on by default, the drawing hull
+  only) finds the occupants again, floods from them through portals between leaves neither any
+  solid nor sky (`DetailFill_Passable`), makes each leaf no step reaches and neither any solid nor
+  sky detail solid (`FillDetailEnclosedLeafsToDetailSolid_R`), and marks the sides again; nothing
+  without an occupant.
