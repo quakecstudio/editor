@@ -142,7 +142,7 @@ enum Layer {
 impl From<&qc_builtins::Builtin> for Builtin {
     fn from(b: &qc_builtins::Builtin) -> Self {
         Self {
-            key: BuiltinKey::Number(b.number),
+            key: BuiltinKey::Number(b.number.get()),
             name: b.name,
             signature: b.prototype,
             extensions: &[],

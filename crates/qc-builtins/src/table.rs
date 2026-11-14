@@ -29,11 +29,29 @@ pub enum Class {
     World,
 }
 
+/// A builtin's number, what a function's negative `first_statement` names (BUILTIN-1.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BuiltinNumber(u32);
+
+impl BuiltinNumber {
+    /// Number `number`.
+    #[must_use]
+    pub const fn new(number: u32) -> Self {
+        Self(number)
+    }
+
+    /// The number.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// One entry of the vanilla builtin table (BUILTIN-5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Builtin {
     /// The builtin number, 1 to 78.
-    pub number: u32,
+    pub number: BuiltinNumber,
     /// The name id's 1.01 `defs.qc` gives (BUILTIN-5.1); two numbers share a C function under
     /// two names (BUILTIN-5.2), but each entry keeps its own `defs.qc` name.
     pub name: &'static str,
@@ -341,7 +359,7 @@ const fn b(
     class: Class,
 ) -> Builtin {
     Builtin {
-        number,
+        number: BuiltinNumber::new(number),
         name,
         prototype,
         c_function,
@@ -355,7 +373,7 @@ const fn b(
 /// is outside the table (the VM rejects those before dispatch, VM-14.7, LIMIT-5).
 #[must_use]
 pub fn lookup(number: u32) -> Option<&'static Builtin> {
-    BUILTINS.iter().find(|entry| entry.number == number)
+    BUILTINS.iter().find(|entry| entry.number.get() == number)
 }
 
 /// Whether `number` is a `PF_Fixme` gap in 1 to 78 (BUILTIN-1.2); the tests read it.

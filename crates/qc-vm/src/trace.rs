@@ -81,6 +81,44 @@ impl Trace {
         &self.records
     }
 
+    /// The trace's header (TRACE-2).
+    #[must_use]
+    pub const fn header(&self) -> Header {
+        self.header
+    }
+
+    /// Appends a record that carries no change set, such as a string record (TRACE-4.10),
+    /// which a host writes before the next change-carrying record.
+    pub fn push(&mut self, record: Record) {
+        self.records.push(record);
+    }
+
+    /// Drops the records so far, for a run whose records are not kept; the change baseline
+    /// stays where it is.
+    pub fn clear(&mut self) {
+        self.records.clear();
+    }
+
+    /// An error record for `function` and `statement` with `message`, without a trailing
+    /// newline, and the changes since the previous record (TRACE-4.6 to TRACE-4.8): a run's
+    /// error, or one a host raises outside a run.
+    pub fn error_record(
+        &mut self,
+        machine: &Machine,
+        function: i32,
+        statement: i32,
+        message: Vec<u8>,
+    ) {
+        let changes = self.changes(machine);
+        let message = Text::new(message).unwrap_or_default();
+        self.records.push(Record::Error {
+            function,
+            statement,
+            message,
+            changes,
+        });
+    }
+
     /// Computes the change set since the last change-carrying record and resets the baseline
     /// (TRACE-3.1, TRACE-3.2).
     fn changes(&mut self, machine: &Machine) -> Changes {
@@ -171,16 +209,13 @@ impl Observer for Trace {
     }
 
     fn error(&mut self, machine: &Machine, error: &RunError) {
-        // TRACE-4.6 to TRACE-4.8: an error record with the function and statement PR_RunError
-        // prints and the message, without a trailing newline.
-        let changes = self.changes(machine);
-        let message = Text::new(error.message().into_bytes()).unwrap_or_default();
-        self.records.push(Record::Error {
-            function: error.function,
-            statement: error.statement,
-            message,
-            changes,
-        });
+        // TRACE-4.6 to TRACE-4.8: the function and statement PR_RunError prints.
+        self.error_record(
+            machine,
+            error.function,
+            error.statement,
+            error.message().into_bytes(),
+        );
     }
 }
 
