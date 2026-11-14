@@ -178,6 +178,15 @@ pub struct Db {
     counts: Cell<QueryCounts>,
 }
 
+/// Which pass of FTEQCC's two-pass compile a file is read for (FTEF-12.18).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pass {
+    /// The first of two, read with its own flags.
+    First,
+    /// The second, or the only one.
+    Second,
+}
+
 impl Db {
     /// A new, empty database.
     #[must_use]
@@ -442,7 +451,7 @@ impl Db {
         // FTEF-16.2: a file is parsed knowing the types the files before it declared.
         let mut types: Vec<qc_syntax::DeclaredTypeName> = Vec::new();
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.files) {
-            let file = self.expanded_file(id, rendered, false, &types);
+            let file = self.expanded_file(id, rendered, Pass::Second, &types);
             types = file.parse.types().to_vec();
             keywords.push(file.parse.keywords().to_vec());
             // FTEF-21.17: the tokens an `extern` block lexed with other flags have the parser's
@@ -575,7 +584,7 @@ impl Db {
         };
         let mut types: Vec<qc_syntax::DeclaredTypeName> = Vec::new();
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.first) {
-            let file = self.expanded_file(id, rendered, true, &types);
+            let file = self.expanded_file(id, rendered, Pass::First, &types);
             types = file.parse.types().to_vec();
             read.keywords.push(file.parse.keywords().to_vec());
             read.relexed.extend(
@@ -632,9 +641,10 @@ impl Db {
         &mut self,
         file: FileId,
         rendered: &Rendered,
-        first: bool,
+        pass: Pass,
         types: &[qc_syntax::DeclaredTypeName],
     ) -> ExpandedFile {
+        let first = pass == Pass::First;
         let text = rendered.text.as_slice();
         // The first pass read as the second was, with the same text, flags, keywords and
         // types, is that parse again.

@@ -48,6 +48,8 @@ enum LineKind {
 
 /// The ranges no line break may be reindented in: every token, and every comment between two.
 fn protected(text: &[u8], tokens: &[Token]) -> Vec<(usize, usize)> {
+    const OPEN: &[u8] = b"/*";
+    const CLOSE: &[u8] = b"*/";
     let mut out: Vec<(usize, usize)> = tokens.iter().map(|t| (t.span.start, t.span.end)).collect();
     let mut gaps = Vec::with_capacity(tokens.len().saturating_add(1));
     let mut at = 0_usize;
@@ -60,16 +62,21 @@ fn protected(text: &[u8], tokens: &[Token]) -> Vec<(usize, usize)> {
         let gap = text.get(start..end).unwrap_or_default();
         let mut offset = 0_usize;
         while let Some(rest) = gap.get(offset..) {
-            let block = find(rest, b"/*").map(|i| (i, true));
+            let block = find(rest, OPEN).map(|i| (i, true));
             let line = find(rest, b"//").map(|i| (i, false));
             let Some((index, is_block)) = block.into_iter().chain(line).min() else {
                 break;
             };
             let begin = offset.saturating_add(index);
             let close = if is_block {
-                rest.get(index.saturating_add(2)..)
-                    .and_then(|after| find(after, b"*/"))
-                    .map_or(gap.len(), |i| begin.saturating_add(i).saturating_add(4))
+                rest.get(index.saturating_add(OPEN.len())..)
+                    .and_then(|after| find(after, CLOSE))
+                    .map_or(gap.len(), |i| {
+                        begin
+                            .saturating_add(i)
+                            .saturating_add(OPEN.len())
+                            .saturating_add(CLOSE.len())
+                    })
             } else {
                 rest.get(index..)
                     .and_then(|after| after.iter().position(|b| *b == b'\n'))

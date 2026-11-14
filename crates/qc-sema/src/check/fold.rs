@@ -12,6 +12,7 @@
 
 use qc_diag::Code;
 use qc_preproc::Op;
+use qc_types::c_int;
 
 use crate::cast::ConstType;
 use crate::check::constant::Constant;
@@ -457,7 +458,7 @@ fn unary(op: Op, a: Constant, notices: &mut Vec<Notice>) -> Option<Folded> {
         Op::ConvUi64 => Constant::uint64(ua.into()),
         Op::ConvI64i => {
             let wide = a.i64();
-            let narrow = low(wide);
+            let narrow = c_int(wide);
             if i64::from(narrow) != wide {
                 let message = format!(
                     "Numerical truncation of {:x} to {}.",
@@ -648,12 +649,6 @@ fn shift(count: i32) -> u32 {
 /// `QCC_MakeDoubleConst` of a 64-bit integer, C's `(double)` of it.
 fn double_of(value: i64) -> Constant {
     Constant::double(i64_to_real(value, Op::ConvI64d))
-}
-
-/// The low 32 bits of `value`, C's `(int)` of a 64-bit integer.
-fn low(value: i64) -> i32 {
-    let [a, b, c, d, ..] = value.to_le_bytes();
-    i32::from_le_bytes([a, b, c, d])
 }
 
 /// Each component of two vectors through `f` as `int`s, `QCC_MakeVectorConst` of the results.

@@ -41,62 +41,65 @@ impl BuiltinRef {
     }
 }
 
-/// The `W0311` warnings for a module of `kind` checked against `engine` (ENGT-4.1, ENGT-4.8).
-///
-/// `files` are the module's files in compilation order, each with its parse in `dialect`, and
-/// `index` is the module resolved from them ([`qc_sema::resolve_module`]). Returns one
-/// warning per call of a builtin the engine's table for `kind` lacks, in file and then source
-/// order; none when the engine has no table for `kind` ([`Engine::has_table`]).
-///
-/// Only the references to a builtin the engine lacks are looked up in their file's tree, so a
-/// module that declares none costs one pass over its declarations, not over every call.
-#[must_use]
-pub fn missing_builtins(
-    engine: Engine,
-    kind: ModuleKind,
-    files: &[(FileId, &Parse)],
-    index: &ModuleIndex,
-    dialect: Dialect,
-) -> Vec<FileDiagnostic> {
-    if !engine.has_table(kind) {
-        return Vec::new();
-    }
-    let keys = declared_builtins(files.iter().map(|&(_, parse)| parse), dialect);
-    let missing: HashMap<&str, &BuiltinRef> = keys
-        .iter()
-        .filter(|(_, key)| key.lookup(engine, kind).is_none())
-        .map(|(name, key)| (name.as_str(), key))
-        .collect();
-    if missing.is_empty() {
-        return Vec::new();
-    }
-    let parses: HashMap<FileId, &Parse> = files.iter().copied().collect();
-    let mut out = Vec::new();
-    for reference in index.refs() {
-        let location = reference.location;
-        let Some(def) = index.def(reference.def) else {
-            continue;
-        };
-        if def.kind != DefKind::Function {
-            continue;
+impl Engine {
+    /// The `W0311` warnings for a module of `kind` checked against the engine (ENGT-4.1,
+    /// ENGT-4.8).
+    ///
+    /// `files` are the module's files in compilation order, each with its parse in `dialect`, and
+    /// `index` is the module resolved from them ([`qc_sema::resolve_module`]). Returns one
+    /// warning per call of a builtin the engine's table for `kind` lacks, in file and then source
+    /// order; none when the engine has no table for `kind` ([`Engine::has_table`]).
+    ///
+    /// Only the references to a builtin the engine lacks are looked up in their file's tree, so a
+    /// module that declares none costs one pass over its declarations, not over every call.
+    #[must_use]
+    pub fn missing_builtins(
+        self,
+        kind: ModuleKind,
+        files: &[(FileId, &Parse)],
+        index: &ModuleIndex,
+        dialect: Dialect,
+    ) -> Vec<FileDiagnostic> {
+        if !self.has_table(kind) {
+            return Vec::new();
         }
-        let Some(&key) = missing.get(def.name.as_str()) else {
-            continue;
-        };
-        let called = parses
-            .get(&location.file)
-            .is_some_and(|parse| names_a_callee(parse, location.span));
-        if !called {
-            continue;
+        let keys = declared_builtins(files.iter().map(|&(_, parse)| parse), dialect);
+        let missing: HashMap<&str, &BuiltinRef> = keys
+            .iter()
+            .filter(|(_, key)| key.lookup(self, kind).is_none())
+            .map(|(name, key)| (name.as_str(), key))
+            .collect();
+        if missing.is_empty() {
+            return Vec::new();
         }
-        out.push(FileDiagnostic::new(
-            Code::W0311,
-            location,
-            message(&def.name, key, engine, kind),
-        ));
+        let parses: HashMap<FileId, &Parse> = files.iter().copied().collect();
+        let mut out = Vec::new();
+        for reference in index.refs() {
+            let location = reference.location;
+            let Some(def) = index.def(reference.def) else {
+                continue;
+            };
+            if def.kind != DefKind::Function {
+                continue;
+            }
+            let Some(&key) = missing.get(def.name.as_str()) else {
+                continue;
+            };
+            let called = parses
+                .get(&location.file)
+                .is_some_and(|parse| names_a_callee(parse, location.span));
+            if !called {
+                continue;
+            }
+            out.push(FileDiagnostic::new(
+                Code::W0311,
+                location,
+                message(&def.name, key, self, kind),
+            ));
+        }
+        out.sort_by_key(|d| (d.file, d.diagnostic.span));
+        out
     }
-    out.sort_by_key(|d| (d.file, d.diagnostic.span));
-    out
 }
 
 /// `NAME is builtin #N, which ENGINE does not have` (ENGT-4.1), or `#0:ENGINE_NAME` for a

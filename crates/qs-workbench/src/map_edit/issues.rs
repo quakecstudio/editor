@@ -434,7 +434,7 @@ fn entity_issues(
         .check(file)
         .into_iter()
         .map(|d| {
-            let entity = EntityIndex::new(d.entity);
+            let entity = EntityIndex::new(d.entity.get());
             let (_, brush) = place_of(places, d.line);
             let fix = match &d.kind {
                 MapDiagnosticKind::UnknownKey {

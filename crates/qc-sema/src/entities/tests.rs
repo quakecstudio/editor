@@ -331,3 +331,26 @@ fn targeting_keys_are_read_from_the_code() {
     );
     assert!(targeting(&[""]).is_empty());
 }
+
+// No spec statement: P5-03, a field's key type is its value's: an entity by number, a
+// function by name, anything else other
+#[test]
+fn a_field_s_key_type_is_its_value_s() {
+    use std::rc::Rc;
+
+    use crate::ty::{SimpleType, Type};
+    let field = |inner: Type| Type::Field(Rc::new(inner));
+    assert_eq!(
+        field(Type::Simple(SimpleType::Entity)).key_type(),
+        KeyType::Entity
+    );
+    assert_eq!(
+        field(Type::function(Type::Simple(SimpleType::Void), Vec::new())).key_type(),
+        KeyType::Function
+    );
+    assert_eq!(
+        field(Type::Simple(SimpleType::Float)).key_type(),
+        KeyType::Float
+    );
+    assert_eq!(Type::Simple(SimpleType::Float).key_type(), KeyType::Other);
+}

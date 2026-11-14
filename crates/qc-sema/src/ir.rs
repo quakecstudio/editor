@@ -9,9 +9,12 @@
 
 use qc_preproc::Op;
 
-use crate::DefId;
 use crate::check::etype::Etype;
 use crate::check::opcodes::{Assoc, row as opcode_row};
+use crate::{DefId, MAX_PARMS, VECTOR_WORDS};
+
+/// A statement's operands, `a`, `b` and `c` (PROGS-7.1).
+const OPERANDS: usize = 3;
 
 /// A constant a statement names: the words of its value and the kind of immediate that holds
 /// them.
@@ -32,6 +35,42 @@ pub enum ImmediateKind {
     Vector,
     /// An integer (FTEF-26.3).
     Integer,
+}
+
+/// A generated statement's index in its body, from 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StatementIndex(u32);
+
+impl StatementIndex {
+    /// Statement `index` of the body.
+    #[must_use]
+    pub const fn new(index: u32) -> Self {
+        Self(index)
+    }
+
+    /// Its index.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// A string literal's index among its body's, [`Name::String`]'s (`TypedBody::string`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StringIndex(u32);
+
+impl StringIndex {
+    /// String literal `index` of the body.
+    #[must_use]
+    pub const fn new(index: u32) -> Self {
+        Self(index)
+    }
+
+    /// Its index.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
 }
 
 /// What an operand of a whole body's statement names (`docs/design/back-end.md`).
@@ -67,7 +106,7 @@ pub enum Name {
     Jump(u32),
     /// The string immediate of the body's string literal at this index
     /// (`TypedBody::string`).
-    String(u32),
+    String(StringIndex),
     /// The array definition's getter, `ArrayGet*NAME` (FTE-13.8).
     ArrayGet(DefId),
     /// The array definition's setter, `ArraySet*NAME` (FTE-13.11).
@@ -146,7 +185,7 @@ impl Name {
             | Self::ArraySet(_)
             | Self::Nested(_)
             | Self::RetLocal => true,
-            Self::Parameter(slot) => *slot >= 8,
+            Self::Parameter(slot) => *slot >= MAX_PARMS,
             Self::Made(_)
             | Self::MadeWord(..)
             | Self::Return
@@ -193,23 +232,24 @@ impl BodyStatement {
     #[must_use]
     pub fn uses(&self) -> [bool; 3] {
         let Some(row) = opcode_row(self.op) else {
-            return [false; 3];
+            return [false; OPERANDS];
         };
         let [a, b, _] = row.types.map(|ty| ty.etype() != Etype::Void);
         let c = row.makes_value();
         match self.op {
             Op::Goto => [true, false, false],
             Op::IfI | Op::IfnotI | Op::IfS | Op::IfnotS | Op::IfF | Op::IfnotF => [a, true, c],
-            Op::Return | Op::Done => [false; 3],
+            Op::Return | Op::Done => [false; OPERANDS],
             _ => [a, b, c],
         }
     }
 
-    /// The words of the temporary this statement, at `index`, takes as it is generated, used or
+    /// The words of the temporary this statement, at `at`, takes as it is generated, used or
     /// not (QC-21.5): its result's when its opcode makes a value, whatever a fold then makes `c`,
     /// and a copy's for a store into a value of its own, `b`.
     #[must_use]
-    pub fn temp_words(&self, index: u32) -> Option<u32> {
+    pub fn temp_words(&self, at: StatementIndex) -> Option<u32> {
+        let index = at.get();
         let row = opcode_row(self.op)?;
         // A word of a block an `Effect::Block` took takes none of its own.
         if matches!(self.c, Some(Name::MadeWord(..))) {
@@ -231,21 +271,18 @@ impl BodyStatement {
         } else {
             return None;
         };
-        Some(match etype {
-            Etype::Vector => 3,
-            Etype::Int64 | Etype::Uint64 | Etype::Double => 2,
-            _ => 1,
-        })
+        Some(etype.words())
     }
 
-    /// The words of the value this statement, at `index`, makes: its result's for a value of
+    /// The words of the value this statement, at `at`, makes: its result's for a value of
     /// its own, `c`, and a copy's for a store into a value of its own, `b`.
     #[must_use]
-    pub fn made_words(&self, index: u32) -> Option<u32> {
+    pub fn made_words(&self, at: StatementIndex) -> Option<u32> {
+        let index = at.get();
         // The first word of a block an `Effect::Block` took, which is the block, written as a
         // result or stored.
         if self.c == Some(Name::MadeWord(index, 0)) || self.b == Some(Name::MadeWord(index, 0)) {
-            return Some(3);
+            return Some(VECTOR_WORDS);
         }
         let made = Some(Name::Made(index));
         let row = opcode_row(self.op)?;
@@ -258,11 +295,7 @@ impl BodyStatement {
         } else {
             return None;
         };
-        Some(match etype {
-            Etype::Vector => 3,
-            Etype::Int64 | Etype::Uint64 | Etype::Double => 2,
-            _ => 1,
-        })
+        Some(etype.words())
     }
 
     /// Moves each value this statement names that a statement from `from` on made `by`
@@ -285,7 +318,7 @@ impl BodyStatement {
 mod tests {
     use qc_preproc::Op;
 
-    use super::{BodyStatement, Immediate, ImmediateKind, Name};
+    use super::{BodyStatement, Immediate, ImmediateKind, Name, StatementIndex};
     use crate::DefId;
 
     // spec FTE-18.11, QC-21.5: a field argument loaded straight into its parameter slot takes no
@@ -297,17 +330,46 @@ mod tests {
             c: Some(c),
             ..BodyStatement::bare(Op::LoadV)
         };
-        assert_eq!(load(Name::Parameter(0)).temp_words(4), None);
-        assert_eq!(load(Name::Made(4)).temp_words(4), Some(3));
+        assert_eq!(
+            load(Name::Parameter(0)).temp_words(StatementIndex::new(4)),
+            None
+        );
+        assert_eq!(
+            load(Name::Made(4)).temp_words(StatementIndex::new(4)),
+            Some(3)
+        );
         let folded = BodyStatement {
             c: Some(Name::Parameter(1)),
             ..BodyStatement::bare(Op::AddF)
         };
-        assert_eq!(folded.temp_words(5), Some(1));
+        assert_eq!(folded.temp_words(StatementIndex::new(5)), Some(1));
     }
 
     // spec FTE-21.8: a value takes the words a statement writes into it, its result's or a
     // store's, and none from a statement that only reads it
+    // No spec statement: a block's first word written as a result or stored is the block's
+    // vector, and a parameter past the eight registers, an extra slot, is made once, as a
+    // definition is
+    #[test]
+    fn blocks_and_parameters() {
+        let block = Some(Name::MadeWord(2, 0));
+        let at = StatementIndex::new(2);
+        let result = BodyStatement {
+            c: block,
+            ..BodyStatement::bare(Op::MulFv)
+        };
+        let stored = BodyStatement {
+            b: block,
+            ..BodyStatement::bare(Op::StoreV)
+        };
+        assert_eq!(result.made_words(at), Some(3));
+        assert_eq!(stored.made_words(at), Some(3));
+        assert!(!Name::Parameter(7).is_made_once());
+        assert!(Name::Parameter(8).is_made_once());
+        assert!(!Name::Made(2).is_made_once());
+        assert!(Name::Def(DefId::new(1), 0).is_made_once());
+    }
+
     #[test]
     fn made_words_counts_only_writes() {
         let with = |op, b, c| BodyStatement {
@@ -317,22 +379,29 @@ mod tests {
         };
         let made = Some(Name::Made(2));
         assert_eq!(
-            with(Op::MulFv, None, made).made_words(2),
+            with(Op::MulFv, None, made).made_words(StatementIndex::new(2)),
             Some(3),
             "a result"
         );
         assert_eq!(
-            with(Op::StoreV, made, None).made_words(2),
+            with(Op::StoreV, made, None).made_words(StatementIndex::new(2)),
             Some(3),
             "a store's copy"
         );
-        assert_eq!(with(Op::MulVf, made, None).made_words(2), None, "read as b");
         assert_eq!(
-            with(Op::StoreV, None, made).made_words(2),
+            with(Op::MulVf, made, None).made_words(StatementIndex::new(2)),
+            None,
+            "read as b"
+        );
+        assert_eq!(
+            with(Op::StoreV, None, made).made_words(StatementIndex::new(2)),
             None,
             "not b of a store"
         );
-        assert_eq!(with(Op::AddF, None, None).made_words(2), None);
+        assert_eq!(
+            with(Op::AddF, None, None).made_words(StatementIndex::new(2)),
+            None
+        );
     }
 
     // A word of a definition, a value, an immediate or the return global is named, offset from

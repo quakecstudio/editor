@@ -24,6 +24,15 @@ use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
 use crate::ty::{SimpleType, Type};
 
+/// Whether a function's name is its own or empty (FTEF-18.39).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::resolve) enum FunctionName {
+    /// Its own name.
+    Named,
+    /// Empty: a nested function's that is not static.
+    Nameless,
+}
+
 /// One body being checked.
 pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) resolver: &'r mut Resolver<'a>,
@@ -48,9 +57,9 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) written: &'r [(usize, Type)],
     /// The body's locals.
     pub(in crate::resolve) locals: &'r [RawLocal],
-    /// Whether it is a nested function's that is not static, whose name is empty
-    /// (FTEF-18.39).
-    pub(in crate::resolve) nameless: bool,
+    /// Whether its function's name is its own, or empty as a nested function's that is not
+    /// static (FTEF-18.39).
+    pub(in crate::resolve) naming: FunctionName,
 }
 
 impl BodyEnv<'_, '_> {
@@ -306,7 +315,7 @@ impl Env for BodyEnv<'_, '_> {
             // `pr_scope->name`, a member function's `CLASS::NAME` (FTEF-21.23), and a nested
             // function's `def?def->name:""` (FTEF-18.39).
             name: def
-                .filter(|_| !self.nameless)
+                .filter(|_| self.naming == FunctionName::Named)
                 .map_or_else(String::new, |d| {
                     match d.member_of.and_then(|class| self.resolver.index.def(class)) {
                         Some(class) => format!("{}::{}", class.name, d.name),

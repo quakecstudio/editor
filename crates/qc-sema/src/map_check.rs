@@ -5,6 +5,7 @@
 //! each value something its field's type reads, and each `target` an entity's `targetname`
 //! (EDICT-8.2).
 
+use qs_map::EntityPlace;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -71,7 +72,7 @@ pub struct EntitySchema {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapDiagnostic {
     /// The entity, by its place in the file from 0, the world first.
-    pub entity: usize,
+    pub entity: EntityPlace,
     /// The 1-based line of the key, or of the entity when it has no such key.
     pub line: u32,
     /// What it is.
@@ -246,7 +247,7 @@ impl EntitySchema {
                 }
                 let push = |out: &mut Vec<MapDiagnostic>, kind| {
                     out.push(MapDiagnostic {
-                        entity: index,
+                        entity: EntityPlace::new(index),
                         line: pair.line(),
                         kind,
                     });
@@ -260,7 +261,7 @@ impl EntitySchema {
         for (entity, line, key, name) in targets {
             if !name.is_empty() && !names.contains(name.as_str()) {
                 out.push(MapDiagnostic {
-                    entity,
+                    entity: EntityPlace::new(entity),
                     line,
                     kind: MapDiagnosticKind::NoTarget { key, name },
                 });
@@ -269,7 +270,7 @@ impl EntitySchema {
         for (entity, line, name) in targetnames {
             if !name.is_empty() && !targeted.contains(&name) {
                 out.push(MapDiagnostic {
-                    entity,
+                    entity: EntityPlace::new(entity),
                     line,
                     kind: MapDiagnosticKind::Untargeted { name },
                 });
@@ -282,7 +283,7 @@ impl EntitySchema {
     fn check_class(&self, index: usize, entity: &Entity, out: &mut Vec<MapDiagnostic>) {
         let Some(classname) = entity.classname() else {
             out.push(MapDiagnostic {
-                entity: index,
+                entity: EntityPlace::new(index),
                 line: entity.line(),
                 kind: MapDiagnosticKind::NoClassname,
             });
@@ -298,7 +299,7 @@ impl EntitySchema {
             .map_or_else(|| entity.line(), qs_map::Pair::line);
         let suggestion = closest(&classname, self.functions.iter(), |_| false);
         out.push(MapDiagnostic {
-            entity: index,
+            entity: EntityPlace::new(index),
             line,
             kind: MapDiagnosticKind::UnknownClass {
                 classname,
@@ -343,7 +344,8 @@ impl EntitySchema {
             FieldValue::Float => is_number(value),
             FieldValue::Vector => {
                 let parts: Vec<&str> = value.split(' ').collect();
-                parts.len() == 3 && parts.iter().all(|part| is_number(part))
+                parts.len() == qc_types::PROGS_VECTOR_SLOTS
+                    && parts.iter().all(|part| is_number(part))
             }
             FieldValue::Entity => !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()),
             FieldValue::Function => self.functions.contains(value),

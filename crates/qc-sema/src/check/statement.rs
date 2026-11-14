@@ -12,19 +12,17 @@ use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op, TargetFormat};
 use qc_syntax::ast::{self, AstNode as _, Negation};
 
+use crate::VECTOR_WORDS;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
-use crate::check::flow::{Finding, Mark, Step};
+use crate::check::flow::{Finding, Mark, PendingReturn, Returns, Step};
 use crate::check::member;
 use crate::check::reference::eval_int;
 use crate::check::truth::{Jump, Test, is_truth};
 use crate::check::{Constness, Reference, Value};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
-
-/// The words of a vector, `type_vector->size`.
-const VECTOR_WORDS: u32 = 3;
 
 /// A `case` of a `switch`: its value, the end of its range, where it is and the statement it
 /// jumps to (`pr_casesref`, `pr_casesref2`, `pr_cases`).
@@ -63,7 +61,7 @@ impl Checker<'_> {
         for i in 0..VA_COUNT {
             self.generated.push(ir::BodyStatement {
                 a: named.checked_add(i).map(ir::Name::Parameter),
-                b: Some(ir::Name::VaList(u32::from(i).saturating_mul(3))),
+                b: Some(ir::Name::VaList(u32::from(i).saturating_mul(VECTOR_WORDS))),
                 ..ir::BodyStatement::bare(Op::StoreV)
             });
         }
@@ -100,7 +98,11 @@ impl Checker<'_> {
         let mut effects = Vec::new();
         effects.extend(make(statement.a));
         effects.extend(make(statement.b));
-        effects.extend(statement.temp_words(index).map(ir::Effect::Temp));
+        effects.extend(
+            statement
+                .temp_words(ir::StatementIndex::new(index))
+                .map(ir::Effect::Temp),
+        );
         effects.extend(make(statement.c));
         effects
     }
@@ -136,11 +138,11 @@ impl Checker<'_> {
         let mut dropped = Vec::new();
         for (index, statement) in (first..).zip(statements) {
             while let Some((_, effect)) = between.next_if(|&(at, _)| at <= index) {
-                dropped.push(dropped_block(effect));
+                dropped.push(effect.dropped());
             }
             dropped.extend(Self::statement_effects(statement, index));
         }
-        dropped.extend(between.map(|(_, effect)| dropped_block(effect)));
+        dropped.extend(between.map(|(_, effect)| effect.dropped()));
         self.generated.truncate(from);
         let kept = self.next_made();
         self.effects
@@ -192,7 +194,11 @@ impl Checker<'_> {
             self.generated.push(ir::BodyStatement {
                 a: Some(ir::Name::Return),
                 b: Some(ir::Name::Made(copy)),
-                ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+                ..ir::BodyStatement::bare(if words == VECTOR_WORDS {
+                    Op::StoreV
+                } else {
+                    Op::StoreF
+                })
             });
             self.last_temp = None;
         }
@@ -1106,11 +1112,20 @@ impl Checker<'_> {
             );
             self.env.report(Code::W0262, span, message);
         }
-        let void = self.etype_of(&self.function.ret) == Some(Etype::Void);
+        let returns = if self.etype_of(&self.function.ret) == Some(Etype::Void) {
+            Returns::Void
+        } else {
+            Returns::Value
+        };
+        let pending = if self.returned {
+            PendingReturn::Set
+        } else {
+            PendingReturn::Unset
+        };
         let line = self.env.line(span);
         let layout = std::mem::take(&mut self.layout);
         let name = self.function.name.clone();
-        for finding in layout.finish(self.returned, void, line) {
+        for finding in layout.finish(pending, returns, line) {
             match finding {
                 Finding::MissingReturn => {
                     let message = format!("{name}: not all control paths return a value");
@@ -1196,12 +1211,14 @@ impl Checker<'_> {
     }
 }
 
-/// A dropped statement's effect as it is made before the statement after the drop: a block it
-/// took is a temporary nothing reads, since the value it was is gone and the next statement's
-/// value has that statement's index.
-const fn dropped_block(effect: ir::Effect) -> ir::Effect {
-    match effect {
-        ir::Effect::Block(words) => ir::Effect::Temp(words),
-        other => other,
+impl ir::Effect {
+    /// A dropped statement's effect as it is made before the statement after the drop: a block it
+    /// took is a temporary nothing reads, since the value it was is gone and the next statement's
+    /// value has that statement's index.
+    const fn dropped(self) -> ir::Effect {
+        match self {
+            ir::Effect::Block(words) => ir::Effect::Temp(words),
+            other => other,
+        }
     }
 }

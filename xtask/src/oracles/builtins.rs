@@ -1686,7 +1686,7 @@ fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
     if case.dialect.has_fteqcc_extensions() {
         let function = expanded_literal(db, name)?.builtin_function(name)?;
         return Some(Outcome::Bound {
-            number: function.number,
+            number: function.number.get(),
             name: function.name,
         });
     }

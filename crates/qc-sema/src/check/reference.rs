@@ -12,8 +12,10 @@ use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op};
 use qc_syntax::SyntaxKind;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp, UnaryOp};
+use qc_types::c_int;
 
 use crate::cast::ConstType;
+use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT};
 use qc_syntax::c_scalar::CScalar;
 
 use crate::check::constant::Constant;
@@ -23,6 +25,16 @@ use crate::check::pointer::{Pointee, int};
 use crate::check::{Bitfield, ElementRef, FieldRef, MemberArray, Reference, Sym, Value};
 use crate::ir;
 use crate::ty::{SimpleType, Type};
+
+/// What an array index reads: an element, or a vector's component (whose getter takes the
+/// element's index, its words' divided by 3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ElementKind {
+    /// An element of the array.
+    Element,
+    /// A component of a vector element.
+    VectorComponent,
+}
 
 impl Checker<'_> {
     /// The value of `expr`, read (`QCC_PR_Expression`, `QCC_RefToDef`).
@@ -284,7 +296,7 @@ impl Checker<'_> {
         constant: Option<i32>,
         span: Span,
     ) -> Checked {
-        if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
+        if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= VECTOR_WORDS) {
             let message = "(.vector) array index out of bounds".to_owned();
             return self.fatal(Code::E0333, span, message);
         }
@@ -318,9 +330,10 @@ impl Checker<'_> {
         &mut self,
         element: &Value,
         index: &Value,
-        vector: bool,
+        kind: ElementKind,
         span: Span,
     ) -> Result<bool, Fatal> {
+        let vector = kind == ElementKind::VectorComponent;
         let target = self.env.target_at(span.start);
         let index_etype = self.etype_of(&index.ty);
         // `def->arraylengthprefix = !rootsymbol && !def->localscope && ...` reads `localscope`
@@ -356,14 +369,14 @@ impl Checker<'_> {
         }
         let float = self.converted(index, Etype::Float, span)?;
         if vector {
-            let three = Value::constant(Constant::float(3.0));
+            let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
             self.emit(Op::DivF, &float, &three, span)?;
             return Ok(false);
         }
         // A vector array's getter takes the element's index, its words' divided by 3.
         let divided = self.etype_of(&element.ty) == Some(Etype::Vector) && !self.global;
         let float = if divided {
-            let three = Value::constant(Constant::float(3.0));
+            let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
             self.emit(Op::DivF, &float, &three, span)?
         } else {
             float
@@ -431,8 +444,13 @@ impl Checker<'_> {
         if let Some(bits) = narrow_bits(&value.ty) {
             return self.narrow_element(value, &element.index, bits, span);
         }
+        let kind = if element.vector {
+            ElementKind::VectorComponent
+        } else {
+            ElementKind::Element
+        };
         let called = element.index.known().is_none()
-            && self.load_from_array(&value, &element.index, element.vector, span)?;
+            && self.load_from_array(&value, &element.index, kind, span)?;
         // A struct read word by word is the block its words were stored to.
         if let Some(block) = self.block_read.take() {
             return Ok(Value {
@@ -616,7 +634,7 @@ impl Checker<'_> {
                 self.emit(Op::AddI, index, &offset, span)?;
             }
             let (op, step) = if vector {
-                (Op::LoadpV, 3)
+                (Op::LoadpV, VECTOR_WORDS)
             } else {
                 (Op::LoadpI, 1)
             };
@@ -681,7 +699,7 @@ impl Checker<'_> {
                     sym: Sym::Def(def, false, 0),
                     ..Value::of(base.ty.clone())
                 };
-                self.load_from_array(&field, &at, false, span)?;
+                self.load_from_array(&field, &at, ElementKind::Element, span)?;
             }
             return Ok(base);
         }
@@ -724,7 +742,7 @@ impl Checker<'_> {
                 self.field_vector_index(&base, label, at, constant, span)
             }
             (Some(Etype::Vector), _) => {
-                if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
+                if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= VECTOR_WORDS) {
                     let message = "(vector) array index out of bounds".to_owned();
                     return self.fatal(Code::E0333, span, message);
                 }
@@ -755,7 +773,7 @@ impl Checker<'_> {
             (Some(Etype::Field), Type::Field(held))
                 if self.etype_of(held) == Some(Etype::Vector) =>
             {
-                if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
+                if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= VECTOR_WORDS) {
                     let message = "(.vector) array index out of bounds".to_owned();
                     return self.fatal(Code::E0333, span, message);
                 }
@@ -1067,7 +1085,7 @@ impl Checker<'_> {
                 }
                 let float = self.converted(index, Etype::Float, span)?;
                 if *vector {
-                    let three = Value::constant(Constant::float(3.0));
+                    let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
                     self.emit(Op::DivF, &float, &three, span)?;
                 }
                 Ok(())
@@ -1231,7 +1249,7 @@ pub(super) fn eval_int(c: Constant) -> Option<i32> {
         ConstType::Float => Some(f32_index(c.f())),
         ConstType::Double => Some(f64_index(c.d())),
         ConstType::Integer | ConstType::Uint => Some(c.i()),
-        ConstType::Int64 | ConstType::Uint64 => Some(low_word(c.i64())),
+        ConstType::Int64 | ConstType::Uint64 => Some(c_int(c.i64())),
         ConstType::Vector | ConstType::String => None,
     }
 }
@@ -1252,13 +1270,7 @@ pub(crate) fn word_type(ty: &Type) -> Type {
     reason = "spec FTEF-31.8: QCC_Eval_Int of a double is C's double to 64-bit conversion"
 )]
 const fn f64_index(value: f64) -> i32 {
-    low_word(value as i64)
-}
-
-/// The low 32 bits of `value`, as C's truncation to `int` keeps them.
-const fn low_word(value: i64) -> i32 {
-    let [a, b, c, d, ..] = value.to_le_bytes();
-    i32::from_le_bytes([a, b, c, d])
+    c_int(value as i64)
 }
 
 /// `(unsigned)QCC_Eval_Int` of a float index: C's `(pint64_t)` of it, saturating on the arm64
@@ -1268,7 +1280,7 @@ const fn low_word(value: i64) -> i32 {
     reason = "spec FTEF-31.8: QCC_Eval_Int of a float is C's float to 64-bit conversion"
 )]
 const fn f32_index(value: f32) -> i32 {
-    low_word(value as i64)
+    c_int(value as i64)
 }
 
 /// C's `(float)` of a small `int`.

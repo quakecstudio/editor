@@ -256,7 +256,7 @@ fn misspelling_missed(schema: &EntitySchema, map: &MapFile) -> Option<String> {
                 key.len() >= 4
                     && !key.starts_with('_')
                     && !clean.iter().any(|d| {
-                        d.entity == index
+                        d.entity.get() == index
                             && matches!(&d.kind, MapDiagnosticKind::UnknownKey { key: k, .. } if k == key)
                     })
                     && schema.has_field(key)
@@ -275,7 +275,7 @@ fn misspelling_missed(schema: &EntitySchema, map: &MapFile) -> Option<String> {
         .into_iter()
         .find_map(|d| match d.kind {
             MapDiagnosticKind::UnknownKey { key: k, suggestion }
-                if d.entity == index && k == misspelt =>
+                if d.entity.get() == index && k == misspelt =>
             {
                 Some(suggestion)
             }

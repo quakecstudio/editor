@@ -21,7 +21,7 @@ use crate::lower::{
     ValueKind,
 };
 use crate::resolve::aggregate::{AggregateSite, Initialised};
-use crate::resolve::check_env::BodyEnv;
+use crate::resolve::check_env::{BodyEnv, FunctionName};
 use crate::resolve::init::string_of_chars;
 use crate::resolve::{
     COMPONENTS, DeclFacts, Enclosing, Found, Holder, Origin, Pending, Redeclaration, Resolver,
@@ -135,7 +135,7 @@ impl<'a> Resolver<'a> {
         // A body is read in its own unit (FTEF-19.12).
         self.unit = file;
         self.body_typedefs.clone_from(&body.typedefs);
-        self.resolve_body(file, def, class, body, decl, false);
+        self.resolve_body(file, def, class, body, decl, FunctionName::Named);
         self.body_typedefs.clear();
     }
 
@@ -155,7 +155,7 @@ impl<'a> Resolver<'a> {
         class: Option<DefId>,
         body: &RawBody,
         decl: Option<&RawDecl>,
-        nameless: bool,
+        naming: FunctionName,
     ) {
         // Record where this function's locals start, so lookups in it see only its own.
         let scope = Scope {
@@ -307,7 +307,12 @@ impl<'a> Resolver<'a> {
             {
                 let end = self.index.defs.len();
                 self.enclosing.insert(def, Enclosing { scope: at, end });
-                nested.push((def, &**inner, !local.is_static()));
+                let naming = if local.is_static() {
+                    FunctionName::Named
+                } else {
+                    FunctionName::Nameless
+                };
+                nested.push((def, &**inner, naming));
             }
             // FTEF-19.19: what the declaration made new leaves scope with its `for`; a local
             // it found again stays.
@@ -336,7 +341,7 @@ impl<'a> Resolver<'a> {
                 lex: &body.lex_flags,
                 written: &body.written_types,
                 locals: &body.locals,
-                nameless,
+                naming,
             };
             let typed = check_body(&mut env, syntax);
             if let Some(earlier) = self.index.bodies.insert(owner, typed) {
@@ -356,9 +361,9 @@ impl<'a> Resolver<'a> {
         &mut self,
         file: FileId,
         reported: usize,
-        nested: Vec<(DefId, &RawBody, bool)>,
+        nested: Vec<(DefId, &RawBody, FunctionName)>,
     ) {
-        for (def, inner, nameless) in nested {
+        for (def, inner, naming) in nested {
             let end = inner.syntax.as_ref().map(|b| b.syntax().span().end);
             let unfinished = end.is_some_and(|end| {
                 self.index.diagnostics.get(reported..).is_some_and(|found| {
@@ -372,7 +377,7 @@ impl<'a> Resolver<'a> {
             });
             if !unfinished {
                 let class = self.enclosing.get(&def).and_then(|e| e.scope.class);
-                self.resolve_body(file, def, class, inner, None, nameless);
+                self.resolve_body(file, def, class, inner, None, naming);
             }
         }
     }
@@ -414,7 +419,7 @@ impl<'a> Resolver<'a> {
             lex: &[],
             written: &[],
             locals: &[],
-            nameless: false,
+            naming: FunctionName::Named,
         };
         (array_length(&mut env, &expr), rest)
     }
@@ -460,7 +465,7 @@ impl<'a> Resolver<'a> {
             lex: &[],
             written: &written,
             locals: &[],
-            nameless: false,
+            naming: FunctionName::Named,
         };
         if let Some(value) = check_initialiser(&mut env, &expr, &ty, &decl.name) {
             self.index.initial_values.insert(owner, value);

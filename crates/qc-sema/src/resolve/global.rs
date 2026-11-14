@@ -17,6 +17,7 @@ use qc_syntax::c_scalar::CScalar;
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use crate::lower::Binum;
 use crate::lower::{
     ArrayDim, ExternBase, LiteralValue, Qualifier, RawAggregate, RawDecl, RawParamInfo,
 };
@@ -608,10 +609,10 @@ impl<'a> Resolver<'a> {
         let Some(LiteralValue::Builtin { number, .. }) = self.literals.get_mut(&existing) else {
             return false;
         };
-        if !matches!(*number, 608 | 613) {
+        if !matches!(number.get(), 608 | 613) {
             return false;
         }
-        *number = 613;
+        *number = Binum::new(613);
         true
     }
 

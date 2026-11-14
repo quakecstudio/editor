@@ -170,7 +170,7 @@ impl Db {
             .index
             .defs()
             .iter()
-            .filter(|def| key_type(&def.ty) == KeyType::Vector)
+            .filter(|def| def.ty.key_type() == KeyType::Vector)
             .map(|def| def.name.clone())
             .collect();
         Classes {
@@ -283,7 +283,7 @@ impl Classes<'_> {
         let mut classes = Vec::new();
         let mut seen = HashSet::new();
         for (id, def) in self.index.definitions() {
-            if def.kind != DefKind::Function || !is_spawn_type(&def.ty) || !seen.insert(&def.name) {
+            if def.kind != DefKind::Function || !def.ty.is_spawn() || !seen.insert(&def.name) {
                 continue;
             }
             let Some(body) = self.index.body(id) else {
@@ -347,7 +347,7 @@ impl Classes<'_> {
                     written_spawning.extend(builtin.clone());
                 }
                 written.extend(builtin);
-                let Some(field) = self.self_field(statement, true) else {
+                let Some(field) = self.self_field(statement) else {
                     continue;
                 };
                 let (name, ty) = self.key_of(field);
@@ -476,15 +476,12 @@ impl Classes<'_> {
     fn touches_self(&self, body: &TypedBody) -> bool {
         body.generated().iter().any(|statement| {
             (is_load(statement.op) || statement.op == Op::Address)
-                && self.self_field(statement, true).is_some()
+                && self.self_field(statement).is_some()
         })
     }
 
-    /// The field of `self` the statement names as `b`, when `applies` and its `a` is `self`.
-    fn self_field(&self, statement: &BodyStatement, applies: bool) -> Option<&crate::Definition> {
-        if !applies {
-            return None;
-        }
+    /// The field of `self` the statement names as `b`, when its `a` is `self`.
+    fn self_field(&self, statement: &BodyStatement) -> Option<&crate::Definition> {
         let (Some(Name::Def(entity, 0)), Some(Name::Def(field, 0))) = (statement.a, statement.b)
         else {
             return None;
@@ -498,7 +495,9 @@ impl Classes<'_> {
     fn field_at(&self, code: &[BodyStatement], index: u32) -> Option<String> {
         let statement = code.get(usize::try_from(index).ok()?)?;
         let applies = is_load(statement.op) || statement.op == Op::Address;
-        self.self_field(statement, applies)
+        applies
+            .then(|| self.self_field(statement))
+            .flatten()
             .map(|def| def.name.clone())
     }
 
@@ -523,7 +522,7 @@ impl Classes<'_> {
             .filter(|parent| self.vectors.contains(*parent));
         match parent {
             Some(parent) => (parent.to_owned(), KeyType::Vector),
-            None => (field.name.clone(), key_type(&field.ty)),
+            None => (field.name.clone(), field.ty.key_type()),
         }
     }
 
@@ -571,7 +570,7 @@ impl Classes<'_> {
         let mut found = Vec::new();
         for statement in code {
             if is_load(statement.op) {
-                if let Some(field) = self.self_field(statement, true) {
+                if let Some(field) = self.self_field(statement) {
                     loaded.insert(field.name.clone());
                 }
                 continue;
@@ -694,11 +693,14 @@ impl Arg {
     }
 }
 
+/// The bytes after a global's name searched for its initialiser.
+const LITERAL_SCAN: usize = 256;
+
 /// The literal a global's initialiser is, read from the source text after its name: `= 32`,
 /// `= '0 0 1'` or `= "text"`. Vanilla lowering keeps no literal (QCD-3.6), and a spawnflag's or
 /// a size's constant is one of these.
 fn literal_after(text: &[u8]) -> Option<Arg> {
-    let text = String::from_utf8_lossy(text.get(..text.len().min(256))?);
+    let text = String::from_utf8_lossy(text.get(..text.len().min(LITERAL_SCAN))?);
     let value = text.trim_start().strip_prefix('=')?.trim_start();
     let end = value.find([';', ',']).unwrap_or(value.len());
     let value = value.get(..end)?.trim();
@@ -719,24 +721,26 @@ fn literal_after(text: &[u8]) -> Option<Arg> {
     value.parse().ok().map(Arg::Float)
 }
 
-/// Whether `ty` is `void()`, the type the engine calls a spawn function as (EDICT-8.6).
-fn is_spawn_type(ty: &Type) -> bool {
-    matches!(ty, Type::Function(f)
-        if f.params.is_empty() && !f.variadic && f.ret == Type::Simple(SimpleType::Void))
-}
+impl Type {
+    /// Whether `ty` is `void()`, the type the engine calls a spawn function as (EDICT-8.6).
+    fn is_spawn(&self) -> bool {
+        matches!(self, Type::Function(f)
+            if f.params.is_empty() && !f.variadic && f.ret == Type::Simple(SimpleType::Void))
+    }
 
-/// A field's key type.
-fn key_type(ty: &Type) -> KeyType {
-    let Type::Field(inner) = ty else {
-        return KeyType::Other;
-    };
-    match &**inner {
-        Type::Simple(SimpleType::Float) => KeyType::Float,
-        Type::Simple(SimpleType::Vector) => KeyType::Vector,
-        Type::Simple(SimpleType::String) => KeyType::String,
-        Type::Simple(SimpleType::Entity) => KeyType::Entity,
-        Type::Function(_) => KeyType::Function,
-        _ => KeyType::Other,
+    /// A field's key type.
+    fn key_type(&self) -> KeyType {
+        let Type::Field(inner) = self else {
+            return KeyType::Other;
+        };
+        match &**inner {
+            Type::Simple(SimpleType::Float) => KeyType::Float,
+            Type::Simple(SimpleType::Vector) => KeyType::Vector,
+            Type::Simple(SimpleType::String) => KeyType::String,
+            Type::Simple(SimpleType::Entity) => KeyType::Entity,
+            Type::Function(_) => KeyType::Function,
+            _ => KeyType::Other,
+        }
     }
 }
 
@@ -782,7 +786,7 @@ const fn is_call(op: Op) -> bool {
 
 /// The flag a float holds, when it is one power of two.
 fn flag_value(value: f32) -> Option<u32> {
-    (0..32_u32)
+    (0..u32::BITS)
         .filter_map(|bit| 1_u32.checked_shl(bit))
         .find(|flag| {
             #[expect(
@@ -948,7 +952,7 @@ impl fmt::Display for Fgd<'_> {
 
 /// A colour component from 0 to 1 as a byte.
 fn byte(component: f32) -> u8 {
-    let scaled = (component.clamp(0.0, 1.0) * 255.0).round();
+    let scaled = (component.clamp(0.0, 1.0) * f32::from(u8::MAX)).round();
     (0..=u8::MAX)
         .find(|b| f32::from(*b) >= scaled)
         .unwrap_or(u8::MAX)

@@ -22,11 +22,11 @@ use crate::check::opcodes;
 use crate::check::opcodes::row;
 use crate::check::reference::{eval_int, word_type};
 use crate::check::truth::Test;
-use crate::check::truth::words;
-use crate::check::{Constness, Reference, Value};
+use crate::check::{Constness, Fold, Reference, Value, ValueUse};
 use crate::ir;
 use crate::lower::{Qualifier, declares};
 use crate::ty::{SimpleType, Type};
+use crate::{VECTOR_WORDS, VECTOR_WORDS_FLOAT};
 
 /// What an assignment operator stores (FTEF-29.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -307,7 +307,7 @@ impl Checker<'_> {
         let wider = self.generated.last().is_some_and(|last| {
             let made = opcodes::row(last.op).map(|row| row.types[2].etype());
             let stored = self.etype(&target);
-            made.map_or(1, words) > stored.map_or(1, words)
+            made.map_or(1, Etype::words) > stored.map_or(1, Etype::words)
         });
         let folded = stored.temp.is_some() && stored.temp == self.last_temp && !wider;
         let structured = matches!(self.etype(&target), Some(Etype::Struct | Etype::Union));
@@ -332,7 +332,7 @@ impl Checker<'_> {
                 }
                 // An assignment whose value is read is still the call's, in the return global
                 // (FTE-18.13).
-                if stored.returned && !self.global && !discarded(binary.syntax()) {
+                if stored.returned && !self.global && value_use(binary.syntax()) == ValueUse::Read {
                     self.live_return = Some(self.env.layout(&stored.ty).map_or(1, |l| l.words));
                     self.live_call = stored.call;
                 }
@@ -345,7 +345,8 @@ impl Checker<'_> {
             self.definition_store(&lhs, &stored, &target, span)?;
         }
         if matches!(kind, Assign::Store | Assign::Compound(..)) {
-            self.element_store(&lhs, &stored, &target, folded);
+            let fold = if folded { Fold::Folded } else { Fold::Stored };
+            self.element_store(&lhs, &stored, &target, fold);
         }
         // FTEF-19.78: an element at an index that is no constant is stored by the array's
         // `ArraySet*` function: the index and the value stored to its parameters, then `CALL2`.
@@ -703,7 +704,7 @@ impl Checker<'_> {
         let mut copy = None;
         if let Some(etype) = etype {
             let step = if increment { 1 } else { -1 };
-            copy = self.step(&operand, etype, step, discarded(postfix.syntax()), span)?;
+            copy = self.step(&operand, etype, step, value_use(postfix.syntax()), span)?;
         }
         // The value before the update, a temporary, named by its type (`QCC_GetSRefName`); an
         // array's head is the pointer it reads as.
@@ -731,9 +732,10 @@ impl Checker<'_> {
         operand: &Value,
         etype: Etype,
         step: i8,
-        discarded: bool,
+        value_use: ValueUse,
         span: Span,
     ) -> Result<Option<u32>, Fatal> {
+        let discarded = value_use == ValueUse::Discarded;
         if operand
             .bitfield
             .is_some_and(|bitfield| bitfield.offset != 0)
@@ -794,7 +796,7 @@ impl Checker<'_> {
             Etype::Uint64 => {
                 self.emit(Op::AddU64, &old, &by(Constant::int64(step.into())), span)?
             }
-            Etype::Pointer => self.pointer_step(&old, step, discarded, span)?,
+            Etype::Pointer => self.pointer_step(&old, step, value_use, span)?,
             Etype::Void
             | Etype::Vector
             | Etype::Entity
@@ -851,7 +853,8 @@ impl Checker<'_> {
         if array && !vector && !nested && !self.env.local_static(start) {
             return self.array_aggregate(declarator, local, &elements);
         }
-        if !vector || self.env.local_static(start) || elements.len() != 3 {
+        if !vector || self.env.local_static(start) || elements.len() != qc_types::PROGS_VECTOR_SLOTS
+        {
             self.followed = false;
             return Ok(());
         }
@@ -910,7 +913,8 @@ impl Checker<'_> {
         self.field_store(operand, updated, target);
         let folded = updated.temp.is_some() && updated.temp == self.last_temp;
         self.definition_store(operand, updated, target, span)?;
-        self.element_store(operand, updated, target, folded);
+        let fold = if folded { Fold::Folded } else { Fold::Stored };
+        self.element_store(operand, updated, target, fold);
         Ok(())
     }
 
@@ -940,7 +944,8 @@ impl Checker<'_> {
     /// FTEF-31.10: the store of `stored` to the element `lhs` at a constant index, a word of
     /// the array's definition, stored as a definition is unless the value folds into the
     /// statement that made it (`folded`).
-    fn element_store(&mut self, lhs: &Value, stored: &Value, target: &Type, folded: bool) {
+    fn element_store(&mut self, lhs: &Value, stored: &Value, target: &Type, fold: Fold) {
+        let folded = fold == Fold::Folded;
         let Reference::Element(element) = &lhs.reference else {
             return;
         };
@@ -1023,8 +1028,8 @@ impl Checker<'_> {
         let size = self.env.layout(target).map_or(0, |l| l.words);
         let mut word = 0;
         while word < size {
-            let (op, step) = if size.saturating_sub(word) >= 3 {
-                (Op::StoreV, 3)
+            let (op, step) = if size.saturating_sub(word) >= VECTOR_WORDS {
+                (Op::StoreV, VECTOR_WORDS)
             } else {
                 (Op::StoreF, 1)
             };
@@ -1084,7 +1089,7 @@ impl Checker<'_> {
             let to = local.map(|def| ir::Name::Def(def, at.saturating_mul(width)));
             let wider = self.generated.last().is_some_and(|last| {
                 let made = opcodes::row(last.op).map(|row| row.types[2].etype());
-                made.map_or(1, words) > self.etype(&ty).map_or(1, words)
+                made.map_or(1, Etype::words) > self.etype(&ty).map_or(1, Etype::words)
             });
             if value.temp.is_some() && value.temp == self.last_temp && !wider {
                 self.fold_into(&value, to);
@@ -1132,7 +1137,7 @@ impl Checker<'_> {
         let parameter = |slot| Some(ir::Name::Parameter(slot));
         // A vector array's setter takes the element's index, its words' divided by 3.
         let index = if self.etype(target) == Some(Etype::Vector) {
-            let three = Value::constant(Constant::float(3.0));
+            let three = Value::constant(Constant::float(VECTOR_WORDS_FLOAT));
             self.emit(Op::DivF, &element.index, &three, span)?
         } else {
             element.index.clone()
@@ -1151,7 +1156,11 @@ impl Checker<'_> {
         self.generated.push(ir::BodyStatement {
             a: self.name_of(stored),
             b: parameter(1),
-            ..ir::BodyStatement::bare(if words == 3 { Op::StoreV } else { Op::StoreF })
+            ..ir::BodyStatement::bare(if words == VECTOR_WORDS {
+                Op::StoreV
+            } else {
+                Op::StoreF
+            })
         });
         self.clobber_return();
         self.generated.push(ir::BodyStatement {
@@ -1400,38 +1409,43 @@ impl Checker<'_> {
     }
 }
 
-/// Whether the value of the postfix `node` is discarded (`QCC_PR_DiscardExpression`,
-/// `QCC_PR_DiscardRef`): it is a statement's expression, a `for` header's first or last clause,
-/// or a comma's left side, through parentheses and a comma's right side.
-fn discarded(node: &SyntaxNode) -> bool {
+/// Whether the value of the postfix `node` is read or discarded (`QCC_PR_DiscardExpression`,
+/// `QCC_PR_DiscardRef`): discarded as a statement's expression, a `for` header's first or last
+/// clause, or a comma's left side, through parentheses and a comma's right side.
+fn value_use(node: &SyntaxNode) -> ValueUse {
     let mut node = node.clone();
     while let Some(parent) = node.parent() {
         match parent.kind() {
             SyntaxKind::ParenExpr => {}
             SyntaxKind::BinaryExpr => {
                 let Some(binary) = ast::BinaryExpr::cast(parent.clone()) else {
-                    return false;
+                    return ValueUse::Read;
                 };
                 if binary.op() != Some(BinaryOp::Comma) {
-                    return false;
+                    return ValueUse::Read;
                 }
                 if binary.lhs().is_some_and(|lhs| *lhs.syntax() == node) {
-                    return true;
+                    return ValueUse::Discarded;
                 }
             }
-            SyntaxKind::ExprStmt => return true,
+            SyntaxKind::ExprStmt => return ValueUse::Discarded,
             SyntaxKind::ForClause => {
                 let Some(header) = parent.parent().and_then(ast::ForStmt::cast) else {
-                    return false;
+                    return ValueUse::Read;
                 };
-                return header.init().as_ref() == Some(&parent)
+                let clause = header.init().as_ref() == Some(&parent)
                     || header.step().as_ref() == Some(&parent);
+                return if clause {
+                    ValueUse::Discarded
+                } else {
+                    ValueUse::Read
+                };
             }
-            _ => return false,
+            _ => return ValueUse::Read,
         }
         node = parent;
     }
-    false
+    ValueUse::Read
 }
 
 /// The bytes of the string literal `expr` as FTEQCC's lexer reads them, `pr_immediate_string`.

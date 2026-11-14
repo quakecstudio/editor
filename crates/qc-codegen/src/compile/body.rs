@@ -10,7 +10,7 @@
 
 use qc_diag::Span;
 use qc_progs::opcode::Opcode;
-use qc_sema::ir::{BodyStatement, Effect, Name};
+use qc_sema::ir::{BodyStatement, Effect, Name, StatementIndex};
 use qc_sema::lower::{Qualifier, declares};
 use qc_sema::{DefId, FileId, TypedBody};
 use qc_syntax::ast::{self, AstNode as _};
@@ -18,7 +18,7 @@ use qc_syntax::ast::{self, AstNode as _};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::allocate::{BodyIndex, CreationOrder, Overlapping, Slots};
+use super::allocate::{CreationOrder, Overlapping, Slots};
 use super::arrays::Access;
 use super::{At, Compiler, Lowered, Written, literal_of};
 use crate::Internal;
@@ -86,13 +86,12 @@ impl Compiler<'_> {
                 )?;
                 effects.next();
             }
-            let at = usize::try_from(index)
-                .map_err(|_| Internal::TooLarge)
-                .at(named)?;
-            let origin = body.origin(at).unwrap_or(named.start);
+            let origin = body
+                .origin(StatementIndex::new(index))
+                .unwrap_or(named.start);
             self.program.origin = Some((self.file, origin));
             slots
-                .statement(&mut self.program, statement, BodyIndex::new(index))
+                .statement(&mut self.program, statement, StatementIndex::new(index))
                 .at(named)?;
             let op = u32::try_from(statement.op.number())
                 .ok()
@@ -222,14 +221,14 @@ impl Compiler<'_> {
             Effect::Make(name) => name,
             Effect::Temp(words) => {
                 return slots
-                    .dropped(&mut self.program, BodyIndex::new(index), words)
+                    .dropped(&mut self.program, StatementIndex::new(index), words)
                     .at(span);
             }
             // A block taken before its words are written, the value of this statement; one
             // whose statements were dropped is still taken (QC-21.5).
             Effect::Block(words) => {
                 return slots
-                    .block(&mut self.program, BodyIndex::new(index), words)
+                    .block(&mut self.program, StatementIndex::new(index), words)
                     .at(span);
             }
             Effect::ForBegin => {
@@ -509,7 +508,7 @@ fn writable(body: &TypedBody, bare: BareReturn) -> bool {
         usize::try_from(made)
             .ok()
             .and_then(|at| generated.get(at))
-            .and_then(|statement| statement.made_words(made))
+            .and_then(|statement| statement.made_words(StatementIndex::new(made)))
             .is_some()
             || body
                 .effects()

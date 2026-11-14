@@ -28,6 +28,9 @@ use qc_syntax::ast::{self, AstNode as _};
 use crate::host::AnalysisHost;
 use crate::rename::FileEdit;
 
+/// The words of a declaration of one local alone: `local`, its type and its name.
+const LOCAL_WORDS: usize = 3;
+
 /// The calls that precache a model, and those that precache a sound.
 const PRECACHE_MODEL: [&str; 2] = ["precache_model", "precache_model2"];
 /// As [`PRECACHE_MODEL`], for sounds.
@@ -359,7 +362,8 @@ fn remove_local(path: &Path, text: &[u8], diagnostic: &Diagnostic) -> Option<Cod
         .split(|c: char| c.is_whitespace() || c == ';')
         .filter(|w| !w.is_empty())
         .collect();
-    let alone = words.first() == Some(&"local") && !line.contains(',') && words.len() == 3;
+    let alone =
+        words.first() == Some(&"local") && !line.contains(',') && words.len() == LOCAL_WORDS;
     let cut = if alone {
         Span::new(line_start, line_end)
     } else {

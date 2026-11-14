@@ -14,6 +14,7 @@
 //! glibc's `printf` writes it, into vkQuake's 1024-byte temporary string.
 
 use qc_types::PROGS_VECTOR_SLOTS;
+use qc_types::c_int;
 
 use crate::BuiltinError;
 use crate::{DECIMAL, STRINGTEMP_LENGTH, STRINGTEMP_TEXT};
@@ -307,12 +308,6 @@ impl Reader<'_> {
             conversion,
         })
     }
-}
-
-/// A C `long` stored in an `int`: its low 32 bits, as x86-64 truncates it.
-fn c_int(value: i64) -> i32 {
-    let [a, b, c, d, ..] = value.to_le_bytes();
-    i32::from_le_bytes([a, b, c, d])
 }
 
 /// The argument `N$` names: `N + (firstarg - 1)`.

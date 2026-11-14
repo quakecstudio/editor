@@ -27,6 +27,14 @@ pub const PROGS_TYPE_COUNT: u16 = 8;
 /// `PROGS_VECTOR_SLOTS` in PROGS-16, from `type_size[ev_vector]` in `WinQuake/pr_edict.c`.
 pub const PROGS_VECTOR_SLOTS: usize = 3;
 
+/// A 64-bit integer stored in C's `int`: its low 32 bits, as x86-64 truncates a `long` or a
+/// `long long`, which the compiler's constant folding and the printf builtins share.
+#[must_use]
+pub const fn c_int(value: i64) -> i32 {
+    let [a, b, c, d, ..] = value.to_le_bytes();
+    i32::from_le_bytes([a, b, c, d])
+}
+
 /// Global slot 0, which nothing defines.
 ///
 /// `PROGS_OFS_NULL` in PROGS-18, from `OFS_NULL` in `WinQuake/pr_comp.h`.
