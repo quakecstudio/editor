@@ -13,8 +13,8 @@
 //! The menus a local player uses (MENU): main, single player, load and save, options, help and
 //! the quit prompt, drawn over a faded view and driven by keys.
 
-use crate::console::KeyDest;
-use crate::hud::{Anchor, HudItem, Placed};
+use crate::console::{ConsoleHold, KeyDest};
+use crate::hud::{Anchor, CHAR_SIZE, HudItem, Placed};
 
 /// `MAIN_ITEMS` (MENU-2.1).
 const MAIN_ITEMS: usize = 5;
@@ -30,6 +30,101 @@ const OPTIONS_ITEMS: usize = 13;
 const OPTIONS_VIDEO: usize = 12;
 /// `SLIDER_RANGE` (MENU-7.3).
 const SLIDER_RANGE: i32 = 10;
+/// `%79s`: the most `fscanf` reads of a save's comment (MENU-6.1).
+const SAVEGAME_SCAN_LENGTH: usize = 79;
+/// The menu's width, which its layout is in.
+const MENU_WIDTH: i32 = 320;
+/// The top of every menu's title picture.
+const TITLE_Y: i32 = 4;
+/// The plaque's left edge (MENU-2.1, MENU-7.3).
+const PLAQUE_X: i32 = 16;
+/// The main and single player menus' items picture's left edge (MENU-2.1, MENU-3.1).
+const ITEMS_X: i32 = 72;
+/// The first item's row: the items picture's top and the lists' first line (MENU-2.1,
+/// MENU-6.1, MENU-7.3).
+const MENU_TOP: i32 = 32;
+/// The spinning cursor: frames a second, its left edge and its rows' spacing (MENU-2.1).
+const DOT_RATE: f64 = 10.0;
+const DOT_X: i32 = 54;
+const DOT_SPACING: i32 = 20;
+/// The line cursor's blinks a second, twice over, and its first character: 12 and 13
+/// (MENU-6.1, MENU-7.3, MENU-8.1).
+const BLINK_RATE: f64 = 4.0;
+const LINE_CURSOR: u8 = 12;
+/// The load and save menus' slot names' left edge and the line cursor's (MENU-6.1).
+const SLOTS_X: i32 = 16;
+const SLOTS_CURSOR_X: i32 = 8;
+/// The options' labels' left edge, the line cursor's, and the sliders' and checkboxes'
+/// (MENU-7.3).
+const OPTIONS_LABEL_X: i32 = 16;
+const OPTIONS_CURSOR_X: i32 = 200;
+const OPTIONS_VALUE_X: i32 = 220;
+/// The slider's characters: its left end, its track, its right end and its knob (MENU-7.3).
+const SLIDER_LEFT: u8 = 128;
+const SLIDER_TRACK: u8 = 129;
+const SLIDER_RIGHT: u8 = 130;
+const SLIDER_KNOB: u8 = 131;
+/// The options' rows: screen size, brightness, mouse speed, the two volumes, always run,
+/// invert mouse, lookspring and lookstrafe (MENU-7.3, MENU-7.4).
+const ROW_SCREEN_SIZE: usize = 3;
+const ROW_BRIGHTNESS: usize = 4;
+const ROW_MOUSE_SPEED: usize = 5;
+const ROW_MUSIC_VOLUME: usize = 6;
+const ROW_SOUND_VOLUME: usize = 7;
+const ROW_ALWAYS_RUN: usize = 8;
+const ROW_INVERT_MOUSE: usize = 9;
+const ROW_LOOKSPRING: usize = 10;
+const ROW_LOOKSTRAFE: usize = 11;
+/// `scr_viewsize`'s step and range (MENU-7.4).
+const VIEWSIZE_STEP: f64 = 10.0;
+const VIEWSIZE_MIN: f32 = 30.0;
+const VIEWSIZE_MAX: f32 = 120.0;
+/// `v_gamma`'s step and least (MENU-7.4).
+const GAMMA_STEP: f64 = 0.05;
+const GAMMA_MIN: f32 = 0.5;
+/// `sensitivity`'s step and range (MENU-7.4).
+const SENSITIVITY_STEP: f64 = 0.5;
+const SENSITIVITY_MIN: f32 = 1.0;
+const SENSITIVITY_MAX: f32 = 11.0;
+/// The volumes' step (MENU-7.4).
+const VOLUME_STEP: f64 = 0.1;
+/// `cl_forwardspeed` walking and running: always run is a speed above walking (MENU-7.4).
+const WALK_SPEED: f32 = 200.0;
+const RUN_SPEED: f32 = 400.0;
+/// `M_Print`'s red: each character `+128`.
+const RED: u8 = 128;
+/// `SCR_DrawNotifyString`: its top, `200 * 0.35`, and its lines' most characters
+/// (MENU-3.2).
+const NOTIFY_Y: i32 = 70;
+const NOTIFY_LINE: usize = 40;
+/// `random & 7`: the quit prompt's messages (MENU-5.1).
+const QUIT_MESSAGE_MASK: i32 = 7;
+/// The quit prompt's box: its left edge, top, width and lines, and its text's left edge
+/// (MENU-5.1).
+const QUIT_BOX_X: i32 = 56;
+const QUIT_BOX_Y: i32 = 76;
+const QUIT_BOX_WIDTH: i32 = 24;
+const QUIT_BOX_LINES: i32 = 4;
+const QUIT_TEXT_X: i32 = 64;
+/// The keys menu: the prompt's left edge while grabbing and else, the first binding's row, the
+/// labels' and bindings' left edges, and the cursor's (MENU-8.1).
+const KEYS_GRAB_X: i32 = 12;
+const KEYS_HINT_X: i32 = 18;
+const KEYS_TOP: i32 = 48;
+const KEYS_LABEL_X: i32 = 16;
+const KEYS_BOUND_X: i32 = 140;
+const KEYS_CURSOR_X: i32 = 130;
+/// The columns from a first binding's end to the second: a space, `or` and a space.
+const KEYS_OR_COLUMNS: i32 = 4;
+
+/// `M_Print`'s red characters or `M_PrintWhite`'s white.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Ink {
+    /// `M_Print`.
+    Red,
+    /// `M_PrintWhite`.
+    White,
+}
 /// `NUM_HELP_PAGES` (MENU-4.1).
 pub const MENU_HELP_PAGES: usize = 6;
 /// The cursor's six frames, `gfx/menudot1.lmp` to `gfx/menudot6.lmp` (MENU-2.1).
@@ -274,7 +369,7 @@ pub struct MenuFrame {
     /// Whether the console is down, its background under the menu instead of the fade.
     pub console_down: bool,
     /// `con_forcedup`, which makes that background opaque in QuakeSpasm's look (REND-13.8).
-    pub console_forced: bool,
+    pub console_forced: ConsoleHold,
     /// The screen's height.
     pub screen_height: i32,
     /// The settings the options menu shows.
@@ -298,7 +393,7 @@ pub fn save_comment(text: &[u8]) -> Vec<u8> {
     let rest = rest.get(digits..).unwrap_or_default().trim_ascii_start();
     rest.iter()
         .take_while(|c| !c.is_ascii_whitespace())
-        .take(79)
+        .take(SAVEGAME_SCAN_LENGTH)
         .take(SAVEGAME_COMMENT_LENGTH)
         .map(|&c| if c == b'_' { b' ' } else { c })
         .collect()
@@ -385,7 +480,7 @@ impl Menu {
             return dest;
         }
         self.quit_from = (dest == KeyDest::Menu).then_some(self.state);
-        self.message = usize::try_from(random & 7).unwrap_or(0);
+        self.message = usize::try_from(random & QUIT_MESSAGE_MASK).unwrap_or(0);
         self.open(MenuState::Quit)
     }
 
@@ -499,7 +594,7 @@ impl Menu {
                         self.state = MenuState::NewGame;
                         KeyDest::Menu
                     }
-                    0 => new_game(&mut self.state, events),
+                    0 => self.state.new_game(events),
                     1 => self.load(game),
                     _ => self.save(KeyDest::Menu, game),
                 }
@@ -512,7 +607,7 @@ impl Menu {
     /// the single player menu, any other key waits (MENU-3.2).
     fn new_game_key(&mut self, key: MenuKey, events: &mut Vec<MenuEvent>) -> KeyDest {
         match key {
-            MenuKey::Char(b'y' | b'Y') => new_game(&mut self.state, events),
+            MenuKey::Char(b'y' | b'Y') => self.state.new_game(events),
             MenuKey::Escape | MenuKey::Char(b'n' | b'N') => {
                 self.state = MenuState::SinglePlayer;
                 KeyDest::Menu
@@ -679,43 +774,43 @@ impl Menu {
 
     /// `M_Keys_Draw` (MENU-8.1).
     fn draw_keys(&self, out: &mut Vec<Placed>, frame: &MenuFrame) {
-        pic(out, "gfx/ttl_cstm.lmp", None, 4);
+        pic(out, "gfx/ttl_cstm.lmp", None, TITLE_Y);
         if self.grab {
-            print(out, 12, 32, b"Press a key or button for this action", true);
+            let prompt = b"Press a key or button for this action";
+            print(out, KEYS_GRAB_X, MENU_TOP, prompt, Ink::Red);
         } else {
-            print(out, 18, 32, b"Enter to change, backspace to clear", true);
+            let hint = b"Enter to change, backspace to clear";
+            print(out, KEYS_HINT_X, MENU_TOP, hint, Ink::Red);
         }
-        let mut y = 48;
+        let mut y = KEYS_TOP;
         for (i, (_, label)) in MENU_BINDINGS.iter().enumerate() {
-            print(out, 16, y, label.as_bytes(), true);
+            print(out, KEYS_LABEL_X, y, label.as_bytes(), Ink::Red);
             match frame.bound.get(i) {
                 Some([Some(first), second]) => {
-                    print(out, 140, y, first.as_bytes(), true);
+                    print(out, KEYS_BOUND_X, y, first.as_bytes(), Ink::Red);
                     if let Some(second) = second {
-                        let x = 140_i32.saturating_add(
-                            i32::try_from(first.len()).unwrap_or(0).saturating_mul(8),
+                        let x = KEYS_BOUND_X.saturating_add(
+                            i32::try_from(first.len())
+                                .unwrap_or(0)
+                                .saturating_mul(CHAR_SIZE),
                         );
-                        print(out, x.saturating_add(8), y, b"or", true);
-                        print(out, x.saturating_add(32), y, second.as_bytes(), true);
+                        print(out, x.saturating_add(CHAR_SIZE), y, b"or", Ink::Red);
+                        let x = x.saturating_add(KEYS_OR_COLUMNS.saturating_mul(CHAR_SIZE));
+                        print(out, x, y, second.as_bytes(), Ink::Red);
                     }
                 }
-                _ => print(out, 140, y, b"???", true),
+                _ => print(out, KEYS_BOUND_X, y, b"???", Ink::Red),
             }
-            y = y.saturating_add(8);
+            y = y.saturating_add(CHAR_SIZE);
         }
         let row = i32::try_from(self.keys_cursor)
             .unwrap_or(0)
-            .saturating_mul(8)
-            .saturating_add(48);
+            .saturating_mul(CHAR_SIZE)
+            .saturating_add(KEYS_TOP);
         if self.grab {
-            character(out, 130, row, b'=');
+            character(out, KEYS_CURSOR_X, row, b'=');
         } else {
-            #[expect(
-                clippy::cast_possible_truncation,
-                reason = "spec MENU-8.1: `(int)(realtime*4)`, toward zero"
-            )]
-            let blink = ((frame.realtime * 4.0) as i64 & 1) != 0;
-            character(out, 130, row, 12_u8.saturating_add(u8::from(blink)));
+            character(out, KEYS_CURSOR_X, row, blinking(frame.realtime));
         }
     }
 
@@ -810,17 +905,17 @@ impl Menu {
                 } else {
                     "gfx/p_save.lmp"
                 };
-                pic(out, title, None, 4);
-                let mut y = 32;
+                pic(out, title, None, TITLE_Y);
+                let mut y = MENU_TOP;
                 for n in 0..MENU_SAVEGAMES {
                     let name = match self.slots.get(n) {
                         Some(Some(name)) => name.as_slice(),
                         _ => b"--- UNUSED SLOT ---",
                     };
-                    print(out, 16, y, name, true);
-                    y = y.saturating_add(8);
+                    print(out, SLOTS_X, y, name, Ink::Red);
+                    y = y.saturating_add(CHAR_SIZE);
                 }
-                line_cursor(out, 8, self.load_cursor, frame.realtime);
+                line_cursor(out, SLOTS_CURSOR_X, self.load_cursor, frame.realtime);
             }
             MenuState::Options => draw_options(out, &frame.settings, self.options_cursor, frame),
             MenuState::Keys => self.draw_keys(out, frame),
@@ -834,21 +929,25 @@ impl Menu {
                 if let Some(from) = self.quit_from {
                     self.draw_state(from, frame, out);
                 }
-                text_box(out, 56, 76, 24, 4);
+                text_box(out, QUIT_BOX_X, QUIT_BOX_Y, QUIT_BOX_WIDTH, QUIT_BOX_LINES);
                 let lines = QUIT_MESSAGES.get(self.message).or(QUIT_MESSAGES.first());
-                for (line, y) in lines.into_iter().flatten().zip([84, 92, 100, 108]) {
-                    print(out, 64, y, line.as_bytes(), true);
+                let mut y = QUIT_BOX_Y;
+                for line in lines.into_iter().flatten() {
+                    y = y.saturating_add(CHAR_SIZE);
+                    print(out, QUIT_TEXT_X, y, line.as_bytes(), Ink::Red);
                 }
             }
         }
     }
 }
 
-/// A new game (MENU-3.2): the menus closed and `map start` run.
-fn new_game(state: &mut MenuState, events: &mut Vec<MenuEvent>) -> KeyDest {
-    *state = MenuState::None;
-    events.push(MenuEvent::Run("map start".to_owned()));
-    KeyDest::Game
+impl MenuState {
+    /// A new game (MENU-3.2): the menus closed and `map start` run.
+    fn new_game(&mut self, events: &mut Vec<MenuEvent>) -> KeyDest {
+        *self = Self::None;
+        events.push(MenuEvent::Run("map start".to_owned()));
+        KeyDest::Game
+    }
 }
 
 /// C's `value += dir * step` of a `float` setting and a `double` step, kept within `low` and
@@ -873,29 +972,53 @@ fn adjust(cursor: usize, dir: i32, settings: &MenuSettings, events: &mut Vec<Men
     events.push(MenuEvent::Sound("misc/menu3.wav"));
     let mut set = |name: &'static str, value: f32| events.push(MenuEvent::Set { name, value });
     match cursor {
-        3 => set("viewsize", step(settings.viewsize, dir, 10.0, 30.0, 120.0)),
-        4 => set(
+        ROW_SCREEN_SIZE => set(
+            "viewsize",
+            step(
+                settings.viewsize,
+                dir,
+                VIEWSIZE_STEP,
+                VIEWSIZE_MIN,
+                VIEWSIZE_MAX,
+            ),
+        ),
+        ROW_BRIGHTNESS => set(
             "gamma",
-            step(settings.gamma, dir.saturating_neg(), 0.05, 0.5, 1.0),
+            step(
+                settings.gamma,
+                dir.saturating_neg(),
+                GAMMA_STEP,
+                GAMMA_MIN,
+                1.0,
+            ),
         ),
-        5 => set(
+        ROW_MOUSE_SPEED => set(
             "sensitivity",
-            step(settings.sensitivity, dir, 0.5, 1.0, 11.0),
+            step(
+                settings.sensitivity,
+                dir,
+                SENSITIVITY_STEP,
+                SENSITIVITY_MIN,
+                SENSITIVITY_MAX,
+            ),
         ),
-        6 => set("bgmvolume", step(settings.bgmvolume, dir, 0.1, 0.0, 1.0)),
-        7 => set("volume", step(settings.volume, dir, 0.1, 0.0, 1.0)),
-        8 => {
-            let speed = if settings.forwardspeed > 200.0 {
-                200.0
+        ROW_MUSIC_VOLUME => set(
+            "bgmvolume",
+            step(settings.bgmvolume, dir, VOLUME_STEP, 0.0, 1.0),
+        ),
+        ROW_SOUND_VOLUME => set("volume", step(settings.volume, dir, VOLUME_STEP, 0.0, 1.0)),
+        ROW_ALWAYS_RUN => {
+            let speed = if settings.forwardspeed > WALK_SPEED {
+                WALK_SPEED
             } else {
-                400.0
+                RUN_SPEED
             };
             set("cl_forwardspeed", speed);
             set("cl_backspeed", speed);
         }
-        9 => set("m_pitch", -settings.m_pitch),
-        10 => set("lookspring", not(settings.lookspring)),
-        11 => set("lookstrafe", not(settings.lookstrafe)),
+        ROW_INVERT_MOUSE => set("m_pitch", -settings.m_pitch),
+        ROW_LOOKSPRING => set("lookspring", not(settings.lookspring)),
+        ROW_LOOKSTRAFE => set("lookstrafe", not(settings.lookstrafe)),
         _ => {}
     }
 }
@@ -922,64 +1045,91 @@ const OPTIONS_LABELS: [&str; 12] = [
 /// `M_Options_Draw` (MENU-7.3): the plaque and title, the labels, the five sliders and the
 /// four checkboxes at x 220, and the blinking cursor at x 200.
 fn draw_options(out: &mut Vec<Placed>, settings: &MenuSettings, at: usize, frame: &MenuFrame) {
-    pic(out, "gfx/qplaque.lmp", Some(16), 4);
-    pic(out, "gfx/p_option.lmp", None, 4);
-    let mut y = 32;
+    pic(out, "gfx/qplaque.lmp", Some(PLAQUE_X), TITLE_Y);
+    pic(out, "gfx/p_option.lmp", None, TITLE_Y);
+    let mut y = MENU_TOP;
     for label in OPTIONS_LABELS {
-        print(out, 16, y, label.as_bytes(), true);
-        y = y.saturating_add(8);
+        print(out, OPTIONS_LABEL_X, y, label.as_bytes(), Ink::Red);
+        y = y.saturating_add(CHAR_SIZE);
     }
     let v = |value: f32| f64::from(value);
-    slider(out, 56, (v(settings.viewsize) - 30.0) / (120.0 - 30.0));
-    slider(out, 64, (1.0 - v(settings.gamma)) / 0.5);
-    slider(out, 72, (v(settings.sensitivity) - 1.0) / 10.0);
-    slider(out, 80, v(settings.bgmvolume));
-    slider(out, 88, v(settings.volume));
-    checkbox(out, 96, settings.forwardspeed > 200.0);
-    checkbox(out, 104, settings.m_pitch < 0.0);
-    checkbox(out, 112, settings.lookspring != 0.0);
-    checkbox(out, 120, settings.lookstrafe != 0.0);
-    line_cursor(out, 200, at, frame.realtime);
+    let span = |low: f32, high: f32| v(high) - v(low);
+    let sliders = [
+        (
+            ROW_SCREEN_SIZE,
+            (v(settings.viewsize) - v(VIEWSIZE_MIN)) / span(VIEWSIZE_MIN, VIEWSIZE_MAX),
+        ),
+        (
+            ROW_BRIGHTNESS,
+            (1.0 - v(settings.gamma)) / span(GAMMA_MIN, 1.0),
+        ),
+        (
+            ROW_MOUSE_SPEED,
+            (v(settings.sensitivity) - v(SENSITIVITY_MIN)) / span(SENSITIVITY_MIN, SENSITIVITY_MAX),
+        ),
+        (ROW_MUSIC_VOLUME, v(settings.bgmvolume)),
+        (ROW_SOUND_VOLUME, v(settings.volume)),
+    ];
+    for (row, range) in sliders {
+        slider(out, row_y(row), range);
+    }
+    // `M_DrawCheckbox (220, y, on)`: `on` or `off` in red.
+    let checkboxes = [
+        (ROW_ALWAYS_RUN, settings.forwardspeed > WALK_SPEED),
+        (ROW_INVERT_MOUSE, settings.m_pitch < 0.0),
+        (ROW_LOOKSPRING, settings.lookspring != 0.0),
+        (ROW_LOOKSTRAFE, settings.lookstrafe != 0.0),
+    ];
+    for (row, on) in checkboxes {
+        let text: &[u8] = if on { b"on" } else { b"off" };
+        print(out, OPTIONS_VALUE_X, row_y(row), text, Ink::Red);
+    }
+    line_cursor(out, OPTIONS_CURSOR_X, at, frame.realtime);
 }
 
 /// `M_DrawSlider (220, y, range)`: the range kept within 0 and 1, the ends 128 and 130 around
 /// ten 129s, and 131 at `x + (SLIDER_RANGE-1)*8 * range` (MENU-7.3).
 fn slider(out: &mut Vec<Placed>, y: i32, range: f64) {
-    let x = 220;
+    let x = OPTIONS_VALUE_X;
     let range = range.clamp(0.0, 1.0);
-    character(out, x - 8, y, 128);
+    character(out, x - CHAR_SIZE, y, SLIDER_LEFT);
     let mut cx = x;
     for _ in 0..SLIDER_RANGE {
-        character(out, cx, y, 129);
-        cx = cx.saturating_add(8);
+        character(out, cx, y, SLIDER_TRACK);
+        cx = cx.saturating_add(CHAR_SIZE);
     }
-    character(out, cx, y, 130);
+    character(out, cx, y, SLIDER_RIGHT);
     #[expect(
         clippy::cast_possible_truncation,
         reason = "spec MENU-7.3: C's float argument to M_DrawCharacter's int, toward zero"
     )]
-    let knob = (f64::from(x) + f64::from((SLIDER_RANGE - 1) * 8) * range) as i32;
-    character(out, knob, y, 131);
+    let knob = (f64::from(x) + f64::from((SLIDER_RANGE - 1) * CHAR_SIZE) * range) as i32;
+    character(out, knob, y, SLIDER_KNOB);
 }
 
-/// `M_DrawCheckbox (220, y, on)`: `on` or `off` in red (MENU-7.3).
-fn checkbox(out: &mut Vec<Placed>, y: i32, on: bool) {
-    print(out, 220, y, if on { b"on" } else { b"off" }, true);
+/// Row `row`'s top, `32 + row*8`, of the lists the load, save and options menus draw.
+fn row_y(row: usize) -> i32 {
+    i32::try_from(row)
+        .unwrap_or(0)
+        .saturating_mul(CHAR_SIZE)
+        .saturating_add(MENU_TOP)
+}
+
+/// The line cursor's character at `realtime`: `12+((int)(realtime*4)&1)` (MENU-6.1,
+/// MENU-7.3, MENU-8.1).
+fn blinking(realtime: f64) -> u8 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "spec MENU-6.1: `(int)(realtime*4)`, toward zero"
+    )]
+    let blink = ((realtime * BLINK_RATE) as i64 & 1) != 0;
+    LINE_CURSOR.saturating_add(u8::from(blink))
 }
 
 /// The line cursor at `x`, `32 + cursor*8`: character `12+((int)(realtime*4)&1)`, as the
 /// load, save and options menus draw it (MENU-6.1, MENU-7.3).
 fn line_cursor(out: &mut Vec<Placed>, x: i32, cursor: usize, realtime: f64) {
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "spec MENU-6.1: `(int)(realtime*4)`, toward zero"
-    )]
-    let blink = ((realtime * 4.0) as i64 & 1) != 0;
-    let y = i32::try_from(cursor)
-        .unwrap_or(0)
-        .saturating_mul(8)
-        .saturating_add(32);
-    character(out, x, y, 12_u8.saturating_add(u8::from(blink)));
+    character(out, x, row_y(cursor), blinking(realtime));
 }
 
 /// `M_DrawCharacter`: `num` at `x`, `y` of the centred menu.
@@ -993,17 +1143,25 @@ fn character(out: &mut Vec<Placed>, x: i32, y: i32, num: u8) {
 /// `SCR_DrawNotifyString` as QuakeSpasm places it (MENU-3.2): each line of `text`, up to 40
 /// characters, centred in the 320 wide menu, from y `200 * 0.35`, 8 apart.
 fn notify_string(out: &mut Vec<Placed>, text: &[u8]) {
-    let mut y = 70;
+    let mut y = NOTIFY_Y;
     let mut lines = text.split(|&c| c == b'\n').peekable();
     while let Some(line) = lines.next() {
         if line.is_empty() && lines.peek().is_none() {
             break;
         }
-        let line = line.get(..line.len().min(40)).unwrap_or_default();
-        let width = i32::try_from(line.len()).unwrap_or(0).saturating_mul(8);
+        let line = line.get(..line.len().min(NOTIFY_LINE)).unwrap_or_default();
+        let width = i32::try_from(line.len())
+            .unwrap_or(0)
+            .saturating_mul(CHAR_SIZE);
         // `(320 - l*8)/2` of a line of at most 40 characters, never below 0.
-        print(out, 320_i32.saturating_sub(width) >> 1, y, line, false);
-        y = y.saturating_add(8);
+        print(
+            out,
+            MENU_WIDTH.saturating_sub(width) >> 1,
+            y,
+            line,
+            Ink::White,
+        );
+        y = y.saturating_add(CHAR_SIZE);
     }
 }
 
@@ -1034,9 +1192,9 @@ fn pic(out: &mut Vec<Placed>, path: &str, x: Option<i32>, y: i32) {
 /// The plaque, the title centred and the menu's items, as the main and single player menus
 /// draw them (MENU-2.1, MENU-3.1).
 fn plaque(out: &mut Vec<Placed>, title: &str, items: &str) {
-    pic(out, "gfx/qplaque.lmp", Some(16), 4);
-    pic(out, title, None, 4);
-    pic(out, items, Some(72), 32);
+    pic(out, "gfx/qplaque.lmp", Some(PLAQUE_X), TITLE_Y);
+    pic(out, title, None, TITLE_Y);
+    pic(out, items, Some(ITEMS_X), MENU_TOP);
 }
 
 /// The spinning cursor at item `cursor`: `menudot` `(int)(host_time * 10) % 6 + 1`, at
@@ -1047,20 +1205,20 @@ fn cursor(out: &mut Vec<Placed>, cursor: usize, host_time: f64) {
         clippy::cast_sign_loss,
         reason = "spec MENU-2.1: `(int)(host_time * 10)`, toward zero, of a time from 0"
     )]
-    let frame = ((host_time.max(0.0) * 10.0) as usize)
+    let frame = ((host_time.max(0.0) * DOT_RATE) as usize)
         .checked_rem(DOTS.len())
         .unwrap_or(0);
     let y = i32::try_from(cursor)
         .unwrap_or(0)
-        .saturating_mul(20)
-        .saturating_add(32);
+        .saturating_mul(DOT_SPACING)
+        .saturating_add(MENU_TOP);
     if let Some(dot) = DOTS.get(frame) {
-        pic(out, dot, Some(54), y);
+        pic(out, dot, Some(DOT_X), y);
     }
 }
 
-/// `M_Print` (`red`, each character `+128`) or `M_PrintWhite` of `text` at `x`, `y`.
-fn print(out: &mut Vec<Placed>, x: i32, y: i32, text: &[u8], red: bool) {
+/// `M_Print` ([`Ink::Red`], each character `+128`) or `M_PrintWhite` of `text` at `x`, `y`.
+fn print(out: &mut Vec<Placed>, x: i32, y: i32, text: &[u8], ink: Ink) {
     let mut x = x;
     for &c in text {
         out.push(Placed {
@@ -1068,10 +1226,13 @@ fn print(out: &mut Vec<Placed>, x: i32, y: i32, text: &[u8], red: bool) {
             item: HudItem::Char {
                 x,
                 y,
-                ch: if red { c.wrapping_add(128) } else { c },
+                ch: match ink {
+                    Ink::Red => c.wrapping_add(RED),
+                    Ink::White => c,
+                },
             },
         });
-        x = x.saturating_add(8);
+        x = x.saturating_add(CHAR_SIZE);
     }
 }
 
@@ -1086,10 +1247,10 @@ fn text_box(out: &mut Vec<Placed>, x: i32, y: i32, width: i32, lines: i32) {
         pic(out, top, Some(cx), y);
         let mut cy = y;
         for n in 0..lines {
-            cy = cy.saturating_add(8);
+            cy = cy.saturating_add(CHAR_SIZE);
             pic(out, middle(n), Some(cx), cy);
         }
-        pic(out, bottom, Some(cx), cy.saturating_add(8));
+        pic(out, bottom, Some(cx), cy.saturating_add(CHAR_SIZE));
     };
     column(
         out,
@@ -1098,7 +1259,7 @@ fn text_box(out: &mut Vec<Placed>, x: i32, y: i32, width: i32, lines: i32) {
         &|_| "gfx/box_ml.lmp",
         "gfx/box_bl.lmp",
     );
-    let mut cx = x.saturating_add(8);
+    let mut cx = x.saturating_add(CHAR_SIZE);
     let mut left = width;
     while left > 0 {
         // "if (n == 1) p = Draw_CachePic ("gfx/box_mm2.lmp");", kept for the rest.
@@ -1116,7 +1277,7 @@ fn text_box(out: &mut Vec<Placed>, x: i32, y: i32, width: i32, lines: i32) {
             "gfx/box_bm.lmp",
         );
         left = left.saturating_sub(2);
-        cx = cx.saturating_add(16);
+        cx = cx.saturating_add(CHAR_SIZE.saturating_mul(2));
     }
     column(
         out,

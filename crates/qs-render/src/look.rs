@@ -11,6 +11,7 @@
 //! caller chooses, as ADR-0012 keeps the loaders' modes.
 
 use crate::mesh::GAMMA;
+use qs_client::ConsoleHold;
 
 /// The look of a frame: how the palette is corrected, how textures are filtered, whether
 /// fullbright texels glow, how bright light can be and how wide the view is (REND-13).
@@ -87,9 +88,9 @@ impl Look {
     /// `scr_conalpha` "0.5"; GLQuake's opaque past three quarters of the screen, else
     /// `1.2 * lines` over that (CON-3.2, REND-13.7).
     #[must_use]
-    pub fn console_alpha(self, lines: i32, height: i32, forced: bool) -> f32 {
+    pub fn console_alpha(self, lines: i32, height: i32, forced: ConsoleHold) -> f32 {
         match self {
-            Self::QuakeSpasm if forced => 1.0,
+            Self::QuakeSpasm if forced == ConsoleHold::Forced => 1.0,
             Self::QuakeSpasm => 0.5,
             Self::GlQuake => {
                 let three_quarters = height.saturating_mul(3) >> 2;
