@@ -189,20 +189,36 @@ fn a_face_is_a_fan_over_its_edges_vertices() {
     assert_eq!(mesh.indices.len(), 3 * 3);
 }
 
-// spec REND-1.2: texture coordinates are the texinfo's s and t over the texture's size; a face
-// with no texture is not drawn
+// spec REND-1.2: texture coordinates are the texinfo's s and t over the texture's size
 #[test]
 fn texture_coordinates_divide_by_the_textures_size() {
     let mesh = build(&MapSpec::default(), &samples(&[64]));
     assert_eq!(mesh.vertices[2].texture, [4.0, 2.0]);
     assert_eq!(mesh.batches.len(), 1);
     assert_eq!(mesh.batches[0].count, 6);
+}
+
+// spec REND-1.14: a face with no texture is drawn with the stand-in after the BSP's textures,
+// its coordinates over `r_notexture_mip`'s 32, its image QuakeSpasm's checker in squares of 16
+#[test]
+fn a_face_with_no_texture_is_drawn_with_the_stand_in() {
     let untextured = MapSpec {
         textured: false,
         ..MapSpec::default()
     };
     let mesh = build(&untextured, &samples(&[64]));
-    assert!(mesh.vertices.is_empty() && mesh.batches.is_empty());
+    let stand_in = mesh.textures.len() - 1;
+    assert_eq!(mesh.batches.len(), 1);
+    assert_eq!(mesh.batches[0].texture, stand_in);
+    assert_eq!(mesh.batches[0].count, 6);
+    assert_eq!(mesh.vertices[2].texture, [2.0, 1.0]);
+    let image = &mesh.textures[stand_in];
+    assert_eq!((image.width, image.height), (32, 32));
+    let texel = |x: usize, y: usize| &image.rgba[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4];
+    let (pink, black) = ([159, 91, 83, 255], [0, 0, 0, 255]);
+    assert_eq!((texel(0, 0), texel(15, 15)), (&pink[..], &pink[..]));
+    assert_eq!((texel(16, 0), texel(0, 16)), (&black[..], &black[..]));
+    assert_eq!(texel(31, 31), &pink[..]);
 }
 
 // spec REND-1.3: lightmap coordinates are (s - texturemins + light_s*16 + 8) over the atlas's
@@ -513,11 +529,12 @@ fn a_second_bsps_textures_follow_the_firsts() {
     builder.add(&world, &[Placement::WORLD]).unwrap();
     builder.add(&other, &[Placement::WORLD]).unwrap();
     let mesh = builder.finish();
-    assert_eq!(mesh.textures.len(), 2);
-    assert_eq!(mesh.animations[1].unwrap().next, 1);
+    // REND-1.14: each BSP's textures, then its stand-in for a missing one.
+    assert_eq!(mesh.textures.len(), 4);
+    assert_eq!(mesh.animations[2].unwrap().next, 2);
     assert_eq!(
         mesh.batches.iter().map(|b| b.texture).collect::<Vec<_>>(),
-        [0, 1]
+        [0, 2]
     );
 }
 
@@ -552,7 +569,8 @@ fn an_empty_cycle_is_not_animated() {
         MapMesh::build(&map, &palette(), Look::GlQuake)
             .unwrap()
             .animations,
-        [None]
+        [None, None],
+        "the texture's and the stand-in's (REND-1.14)"
     );
     map.textures[0].as_mut().unwrap().animation = Some(cycle(1));
     assert!(
@@ -781,7 +799,7 @@ fn only_quakespasm_s_regular_textures_glow() {
         Look::GlQuake,
     )
     .unwrap();
-    assert_eq!(glq.glows, [None]);
+    assert_eq!(glq.glows, [None, None]);
     assert_eq!(glq.textures[0].rgba[4..8], [230, 204, 178, 255]);
     let plain = MapMesh::build(
         &bsp(&MapSpec::default(), &lighting),
@@ -789,7 +807,7 @@ fn only_quakespasm_s_regular_textures_glow() {
         Look::QuakeSpasm,
     )
     .unwrap();
-    assert_eq!(plain.glows, [None]);
+    assert_eq!(plain.glows, [None, None]);
     let water = MapSpec {
         flags: SURF_DRAWTURB,
         ..MapSpec::default()
@@ -800,7 +818,7 @@ fn only_quakespasm_s_regular_textures_glow() {
         Look::QuakeSpasm,
     )
     .unwrap();
-    assert_eq!(liquid.glows, [None]);
+    assert_eq!(liquid.glows, [None, None]);
 }
 
 // spec REND-13.5: with overbright a texel's sum is shifted by 8, so 50's sum of 12800 is 50,
@@ -885,7 +903,7 @@ fn a_texture_may_carry_its_own_palette() {
     let mesh = builder.finish();
     // The texture's pixels are all index 7.
     assert_eq!(&mesh.textures[0].rgba[..4], own.rgba(7).as_slice());
-    assert_eq!(&mesh.textures[1].rgba[..4], shared.rgba(7).as_slice());
+    assert_eq!(&mesh.textures[2].rgba[..4], shared.rgba(7).as_slice());
     assert_ne!(own.rgba(7), shared.rgba(7));
 }
 

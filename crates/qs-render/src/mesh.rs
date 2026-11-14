@@ -449,8 +449,10 @@ impl<'p> MeshBuilder<'p> {
     ) -> Result<(), MeshError> {
         let lit = extras.lit;
         let base = self.textures.len();
-        let mut surfaces = vec![Surface::Lit; bsp.textures.len()];
-        let mut by_texture: Vec<Vec<Polygon>> = vec![Vec::new(); bsp.textures.len()];
+        // REND-1.14: the stand-in for a missing texture takes the slot after the BSP's own.
+        let notexture = bsp.textures.len();
+        let mut surfaces = vec![Surface::Lit; notexture.saturating_add(1)];
+        let mut by_texture: Vec<Vec<Polygon>> = vec![Vec::new(); notexture.saturating_add(1)];
         // A surface has one lightmap, shared by every entity drawing its model.
         let mut placed = vec![None; bsp.faces.len()];
         // Each face's slot in the atlas, for the lights to mark (REND-7.1).
@@ -477,11 +479,14 @@ impl<'p> MeshBuilder<'p> {
                 let Some(texinfo) = bsp.texinfo.get(face.texinfo) else {
                     continue;
                 };
-                let Some(slot) = texinfo.texture else {
-                    continue;
-                };
-                let Some(Some(texture)) = bsp.textures.get(slot) else {
-                    continue;
+                let found = texinfo
+                    .texture
+                    .and_then(|slot| Some((slot, bsp.textures.get(slot)?.as_ref()?)));
+                let (slot, size) = match found {
+                    Some((slot, texture)) => {
+                        (slot, [f32_of(texture.width), f32_of(texture.height)])
+                    }
+                    None => (notexture, [NOTEXTURE_SIZE; 2]),
                 };
                 let surface = if face.flags & SURF_DRAWSKY != 0 {
                     Surface::Sky
@@ -512,7 +517,7 @@ impl<'p> MeshBuilder<'p> {
                         corners: corners(face, bsp),
                         model: index,
                         texinfo: *texinfo,
-                        size: [f32_of(texture.width), f32_of(texture.height)],
+                        size,
                         texturemins: face.texturemins,
                         place,
                         surface,
@@ -548,6 +553,8 @@ impl<'p> MeshBuilder<'p> {
                 }
             }
         }
+        self.textures.push(notexture_image());
+        self.glows.push(None);
         self.skies
             .extend(bsp.textures.iter().zip(&surfaces).enumerate().map(
                 |(slot, (texture, &surface))| {
@@ -556,6 +563,7 @@ impl<'p> MeshBuilder<'p> {
                         .flatten()
                 },
             ));
+        self.skies.push(None);
         self.animations.extend(bsp.textures.iter().map(|texture| {
             let animation = texture.as_ref()?.animation?;
             Some(Animation {
@@ -565,6 +573,7 @@ impl<'p> MeshBuilder<'p> {
                 next: animation.next.saturating_add(base),
             })
         }));
+        self.animations.push(None);
         self.surfaces.extend(surfaces);
         self.by_texture.extend(by_texture);
         Ok(())
@@ -1516,6 +1525,41 @@ fn mip_map(scaled: &mut [u8], width: u32, height: u32) {
             j = j.saturating_add(8);
         }
         input = input.saturating_add(row);
+    }
+}
+
+/// REND-1.14: the size `r_notexture_mip` has, by which a missing texture's coordinates are
+/// divided.
+const NOTEXTURE_SIZE: f32 = 32.0;
+/// The stand-in image's side, in texels: [`NOTEXTURE_SIZE`], one texel a unit.
+const NOTEXTURE_SIDE: usize = 32;
+/// The side of one square of the stand-in's checker: half the image, as QuakeSpasm's 2 by 2
+/// image stretched over it.
+const NOTEXTURE_SQUARE: usize = 16;
+/// QuakeSpasm's checker's pink, `{159,91,83,255}`.
+const NOTEXTURE_PINK: [u8; 4] = [159, 91, 83, 255];
+/// Its black.
+const NOTEXTURE_BLACK: [u8; 4] = [0, 0, 0, 255];
+
+/// REND-1.14: `r_notexture_mip`'s image, the black and pink checker, pink at the top left and
+/// bottom right.
+fn notexture_image() -> Image {
+    let rgba = (0..NOTEXTURE_SIDE)
+        .flat_map(|row| {
+            (0..NOTEXTURE_SIDE).flat_map(move |column| {
+                let pink = (row < NOTEXTURE_SQUARE) == (column < NOTEXTURE_SQUARE);
+                if pink {
+                    NOTEXTURE_PINK
+                } else {
+                    NOTEXTURE_BLACK
+                }
+            })
+        })
+        .collect();
+    Image {
+        width: u32::try_from(NOTEXTURE_SIDE).unwrap_or(u32::MAX),
+        height: u32::try_from(NOTEXTURE_SIDE).unwrap_or(u32::MAX),
+        rgba,
     }
 }
 

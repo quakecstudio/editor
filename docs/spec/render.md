@@ -82,6 +82,15 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
 - **REND-1.13** A lightmap texel is `t = (sum of sample * scale) >> 7`, capped at 255, summed
   over the face's styles until one is 255, at most four, `scale` being the style's value at
   the time (`R_BuildLightMap`; REND-5 gives the values and the arithmetic).
+- **REND-1.14** A face whose texinfo names no texture, or a texture with no data, is drawn
+  with QuakeSpasm's stand-in (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`,
+  BSP-20.7): `Quake/gl_model.c`, `Mod_Init`, makes `r_notexture_mip` with
+  `r_notexture_mip->height = r_notexture_mip->width = 32;`, so its texture coordinates are
+  REND-1.2's divided by 32, and `Quake/gl_texmgr.c`, `TexMgr_Init`, draws it with the 2 by 2
+  image `notexture_data[16] = {159,91,83,255,0,0,0,255,0,0,0,255,159,91,83,255}; //black and
+  pink checker` loaded `TEXPREF_NEAREST`. The renderer gives the stand-in a slot after the
+  BSP's own textures and draws it as a 32 by 32 image of that checker in squares of 16 texels,
+  which is the same pattern however the image is filtered; such a face is lit as any other.
 
 ## REND-2 Moving textures
 
