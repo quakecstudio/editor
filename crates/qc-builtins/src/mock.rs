@@ -225,8 +225,8 @@ impl EngineProfile {
     #[must_use]
     pub const fn coord_bytes(self) -> usize {
         match self {
-            Self::Id => 2,
-            Self::VkQuake => 4,
+            Self::Id => core::mem::size_of::<i16>(),
+            Self::VkQuake => core::mem::size_of::<f32>(),
         }
     }
 

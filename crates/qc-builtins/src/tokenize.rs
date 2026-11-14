@@ -22,6 +22,10 @@ const COM_PARSE_MAX_TOKEN_SIZE: usize = 4096;
 
 /// The most separators `tokenizebyseparator` reads, `sep[7]`.
 pub const MAX_SEPARATORS: usize = 7;
+/// A space, the highest byte C's signed `char` reads as white space: `c <= ' '`.
+pub(crate) const SPACE: i8 = 32;
+/// A temporary string's most bytes before its terminator, which `q_strlcpy` copies.
+const TEMP_STRING_LENGTH: usize = 1023;
 
 /// One token: its text and the byte offsets in the tokenized string it starts and ends at.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -130,7 +134,7 @@ impl Tokens {
     pub fn argv(&self, index: TokenIndex) -> Option<Vec<u8>> {
         self.get(index).map(|token| {
             let text = token.text.split(|&b| b == 0).next().unwrap_or_default();
-            text.get(..text.len().min(1023))
+            text.get(..text.len().min(TEMP_STRING_LENGTH))
                 .unwrap_or_default()
                 .to_vec()
         })
@@ -182,7 +186,7 @@ pub(crate) fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> 
     let byte = |at: usize| text.get(at).copied().unwrap_or(0);
     loop {
         // skipwhite: `while ((c = *data) <= ' ')`, the end of the text an end of file.
-        while signed(byte(at)) <= 32 {
+        while signed(byte(at)) <= SPACE {
             if byte(at) == 0 {
                 return None;
             }
@@ -238,7 +242,7 @@ pub(crate) fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> 
         at = at.saturating_add(1);
         let c = byte(at);
         // `':'` is no stop here, "so that ip:port works".
-        if matches!(c, b'{' | b'}' | b'(' | b')' | b'\'') || signed(c) <= 32 {
+        if matches!(c, b'{' | b'}' | b'(' | b')' | b'\'') || signed(c) <= SPACE {
             break;
         }
     }
