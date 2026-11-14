@@ -1623,10 +1623,20 @@ pub fn match_count(count: usize) -> String {
     }
 }
 
-/// The multibuffer's count of the places it shows and their files; `more` when the search
-/// found more than it shows (P4-33).
+/// Whether a search's places are all it found, or the first of more (P4-33).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Truncation {
+    /// Every place found.
+    #[default]
+    All,
+    /// The first places only: the search found more.
+    Cut,
+}
+
+/// The multibuffer's count of the places it shows and their files, as `truncation` says the
+/// search found them (P4-33).
 #[must_use]
-pub fn search_count(places: usize, files: usize, more: bool) -> String {
+pub fn search_count(places: usize, files: usize, truncation: Truncation) -> String {
     let places = match places {
         1 => "1 result".to_owned(),
         n => format!("{n} results"),
@@ -1635,7 +1645,7 @@ pub fn search_count(places: usize, files: usize, more: bool) -> String {
         1 => "1 file".to_owned(),
         n => format!("{n} files"),
     };
-    if more {
+    if truncation == Truncation::Cut {
         format!("{places} in {files}, the first only")
     } else {
         format!("{places} in {files}")

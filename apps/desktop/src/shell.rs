@@ -140,7 +140,7 @@ use crate::multibuffer::{MultiAction, Multibuffer, Source as MultiSource, multib
 use crate::palette::Palette;
 use crate::picker::{Picker, PickerKind, PickerRow};
 use crate::project::{self, Jump, SymbolScope};
-use crate::strings::Text;
+use crate::strings::{Text, Truncation};
 use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
 use crate::theme::{SECTION_GAP, Theme, Token, semibold};
 #[cfg(test)]
@@ -244,6 +244,26 @@ pub enum CentreTab {
 }
 
 /// The editor's area, whose egui id is the editor view's.
+/// Whether an area takes the keyboard focus this frame, as a focus request asked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FocusNow {
+    /// It takes it.
+    Take,
+    /// It leaves it where it is.
+    Leave,
+}
+
+impl FocusNow {
+    /// `area`'s, for the focus request `pending`.
+    fn of(pending: Option<Focus>, area: Focus) -> Self {
+        if pending == Some(area) {
+            Self::Take
+        } else {
+            Self::Leave
+        }
+    }
+}
+
 pub(crate) const EDITOR_AREA: Area = Area::Editor;
 /// How far the player's eye is above its origin: id's `self.view_ofs = '0 0 22'` in
 /// `PutClientInServer`, so the eye is where the camera was (MAP-13).
@@ -1634,13 +1654,13 @@ impl Shell {
         self.game_guide(ui);
         self.status_bar(ui);
         for panel in [Panel::Left, Panel::Right, Panel::Bottom] {
-            self.panel(ui, panel, pending == Some(Focus::Panel(panel)));
+            self.panel(ui, panel, FocusNow::of(pending, Focus::Panel(panel)));
         }
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(self.theme.color(Token::SurfaceEditor)))
             .show(ui, |ui| {
                 name_area(ui, accesskit::Role::Pane, Text::Centre);
-                self.centre(ui, pending == Some(Focus::Editor));
+                self.centre(ui, FocusNow::of(pending, Focus::Editor));
             });
         if let Some((id, params)) = self.palette.show(
             ui,
@@ -2975,7 +2995,7 @@ impl Shell {
         clippy::too_many_lines,
         reason = "one pass lays out each panel's contents and runs what they asked for, in order"
     )]
-    fn panel(&mut self, ui: &mut Ui, panel: Panel, focus: bool) {
+    fn panel(&mut self, ui: &mut Ui, panel: Panel, focus: FocusNow) {
         let state = *self.layout().panel(panel);
         let theme = &self.theme;
         let builder = match panel {
@@ -3176,12 +3196,12 @@ impl Shell {
     }
 
     /// Shows `places`, each a file's byte range, as the multibuffer's excerpts from `source`,
-    /// in the Search tab (P4-33). `more` says the places were cut short.
+    /// in the Search tab (P4-33). `truncation` says whether the places were cut short.
     fn show_places(
         &mut self,
         source: MultiSource,
         places: Vec<(PathBuf, usize, usize)>,
-        more: bool,
+        truncation: Truncation,
     ) {
         let mut texts: Vec<(PathBuf, Vec<u8>)> = Vec::new();
         for (path, _, _) in &places {
@@ -3194,7 +3214,7 @@ impl Shell {
                 texts.push((path.clone(), read.text.into_bytes()));
             }
         }
-        self.multibuffer.show(source, &places, more, |path| {
+        self.multibuffer.show(source, &places, truncation, |path| {
             texts
                 .iter()
                 .find(|(p, _)| p == path)
@@ -3265,7 +3285,12 @@ impl Shell {
         match self.attempt::<_, SearchFound>(PROJECT_SEARCH, &params) {
             Ok(found) => {
                 let places = found.matches.into_iter().map(|m| (m.path, m.start, m.end));
-                self.show_places(MultiSource::Search, places.collect(), found.truncated);
+                let truncation = if found.truncated {
+                    Truncation::Cut
+                } else {
+                    Truncation::All
+                };
+                self.show_places(MultiSource::Search, places.collect(), truncation);
             }
             Err(error) => self.multibuffer.error = Some(error.to_string()),
         }
@@ -3287,7 +3312,7 @@ impl Shell {
                 )
             })
             .collect();
-        self.show_places(MultiSource::Problems, places, false);
+        self.show_places(MultiSource::Problems, places, Truncation::All);
     }
 
     /// Runs what the editor asked for, as a frame would after the editor drew.
@@ -3354,7 +3379,11 @@ impl Shell {
                         Some(Popup::Note(Text::NoReferences))
                     } else {
                         let places = places.into_iter().map(|p| (p.path, p.start, p.end));
-                        self.show_places(MultiSource::References, places.collect(), false);
+                        self.show_places(
+                            MultiSource::References,
+                            places.collect(),
+                            Truncation::All,
+                        );
                         None
                     }
                 }
@@ -3534,7 +3563,7 @@ impl Shell {
 
     /// Draws the centre: its tabs and the one shown. When `focus`, the editor takes the
     /// keyboard, or the shown tab when no file is open or another tab is shown.
-    fn centre(&mut self, ui: &mut Ui, focus: bool) {
+    fn centre(&mut self, ui: &mut Ui, focus: FocusNow) {
         self.sync_editor();
         self.sync_map();
         self.back_up_map(ui.ctx());
@@ -3542,7 +3571,7 @@ impl Shell {
         self.cover_characters(ui.ctx());
         let editor_shown = self.centre_tab == CentreTab::Editor && self.editor.is_some();
         let refocus = std::mem::take(&mut self.multibuffer.refocus);
-        if (focus || refocus) && editor_shown {
+        if (focus == FocusNow::Take || refocus) && editor_shown {
             self.focus_editor(ui.ctx());
         }
         let theme = &self.theme;
@@ -3567,7 +3596,7 @@ impl Shell {
                     let centre = centre_tabs(workbench.tabs().is_empty());
                     for &(tab, text) in centre {
                         let response = ui.selectable_value(&mut self.centre_tab, tab, text.get());
-                        if focus && !editor_shown && self.centre_tab == tab {
+                        if focus == FocusNow::Take && !editor_shown && self.centre_tab == tab {
                             response.request_focus();
                         }
                     }
@@ -3850,8 +3879,9 @@ fn right(
     theme: &Theme,
     (workbench, preview): (&Workbench<FsLoader>, &Preview),
     (properties, agent, map_editor): (&mut Properties, &mut AgentPanel, Option<&mut MapEditor>),
-    focus: bool,
+    focus: FocusNow,
 ) -> (Option<EntityAction>, Option<AgentAction>, Vec<MapAction>) {
+    let focus = focus == FocusNow::Take;
     let mut entity_action = None;
     let mut map_actions = Vec::new();
     let first = if let Some(map_editor) = map_editor {
@@ -3913,8 +3943,9 @@ fn left(
     theme: &Theme,
     (workbench, (recent, error)): (&Workbench<FsLoader>, (&[PathBuf], Option<&str>)),
     scope: &mut SymbolScope,
-    focus: bool,
+    focus: FocusNow,
 ) -> Option<LeftAction> {
+    let focus = focus == FocusNow::Take;
     let height = ui.available_height();
     let mut jump = None;
     let project = heading(ui, theme, Text::Project);
@@ -4074,8 +4105,9 @@ fn bottom(
     tab: &mut BottomTab,
     (workbench, preview, input): (&Workbench<FsLoader>, &Preview, &mut DebugInput),
     (terminal_view, git_view): (&mut TerminalView, &mut GitView),
-    focus: bool,
+    focus: FocusNow,
 ) -> Option<BottomAction> {
+    let focus = focus == FocusNow::Take;
     let problems = workbench.problems();
     ui.horizontal(|ui| {
         for (value, text) in [

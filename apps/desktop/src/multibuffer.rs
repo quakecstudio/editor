@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use eframe::egui::{self, RichText, Ui};
 
 use crate::shell::name_field;
-use crate::strings::{Text, search_count};
+use crate::strings::{Text, Truncation, search_count};
 use crate::theme::{Theme, Token};
 
 /// How many lines of context an excerpt shows above and below its place.
@@ -93,7 +93,7 @@ pub(crate) struct Multibuffer {
     /// The excerpts, by file in the order found, then by place.
     pub(crate) excerpts: Vec<Excerpt>,
     /// How many places the excerpts show, and whether the search found more than these.
-    pub(crate) found: (usize, bool),
+    pub(crate) found: (usize, Truncation),
     /// The search form.
     pub(crate) form: SearchForm,
     /// Why the last search or replace failed, if it did.
@@ -190,18 +190,18 @@ fn line_end(text: &[u8], at: usize) -> usize {
 
 impl Multibuffer {
     /// Shows `places`, each a file's byte range, read through `text`; the excerpts of one file
-    /// that touch are joined. `more` says the places were cut short.
+    /// that touch are joined. `truncation` says whether the places were cut short.
     pub(crate) fn show(
         &mut self,
         source: Source,
         places: &[(PathBuf, usize, usize)],
-        more: bool,
+        truncation: Truncation,
         mut text: impl FnMut(&Path) -> Option<Vec<u8>>,
     ) {
         self.source = source;
         self.error = None;
         self.excerpts.clear();
-        self.found = (places.len(), more);
+        self.found = (places.len(), truncation);
         let mut files: Vec<&PathBuf> = Vec::new();
         for (path, _, _) in places {
             if !files.contains(&path) {
@@ -286,9 +286,9 @@ pub(crate) fn multibuffer_ui(
     if let Some(error) = &buffer.error {
         ui.label(RichText::new(error).color(theme.color(Token::StatusError)));
     }
-    let (count, more) = buffer.found;
+    let (count, truncation) = buffer.found;
     ui.label(
-        RichText::new(search_count(count, buffer.files().len(), more))
+        RichText::new(search_count(count, buffer.files().len(), truncation))
             .color(theme.color(Token::TextMuted)),
     );
     ui.separator();
