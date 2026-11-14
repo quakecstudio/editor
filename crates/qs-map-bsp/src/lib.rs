@@ -8,6 +8,7 @@
 mod brush;
 mod compile;
 mod csg;
+mod extended;
 #[cfg(test)]
 mod fixtures;
 mod math;

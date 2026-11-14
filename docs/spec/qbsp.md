@@ -606,3 +606,51 @@ ericw-tools only where a map made in TrenchBroom relies on it (Justin, 2026-11-1
   QBSP-14.8 do not change holds in the extended dialect: the same map compiled by both dialects,
   when the id dialect compiles it and no entity of it is a world brush entity (QBSP-14.8), gives
   the same BSP, portal file and leak file.
+
+## QBSP-15 The extended dialect from ericw-tools
+
+**Source:** ericw-tools at `ericwa/ericw-tools@36eec1da2a194467e6baac2f444c2dd04b57d266`,
+ported under [ADR-0023](../adr/0023-ericw-tools-porting-upstream.md): `include/common/qvec.hh`,
+`include/common/polylib.hh`, `include/common/mathlib.hh`, `qbsp/map.cc`, `qbsp/qbsp.cc`. The
+plan is `docs/design/extended-qbsp.md`; until its pipeline is complete the extended dialect
+compiles as QBSP-14 says.
+
+ericw-tools works in double precision (`qvec3d`, `qvec<double, 3>`) with its own epsilons:
+`NORMAL_EPSILON` 0.000001 and `DIST_EPSILON` 0.0001 for planes, `DEFAULT_ON_EPSILON` 0.1 for a
+point on a plane (`mathlib.hh`).
+
+### Behaviour
+
+- **QBSP-15.1** A plane is normalized as `qbsp_plane_t::normalize` does: a normal with a
+  component exactly 1.0 or -1.0 is that axis alone, "`plane.normal[(i + 1) % 3] = 0;
+  plane.normal[(i + 2) % 3] = 0;`", its type `PLANE_X`, `PLANE_Y` or `PLANE_Z`; any other
+  normal's type is `PLANE_ANYX` when "`ax >= ay && ax >= az`", else `PLANE_ANYY` when "`ay >= ax
+  && ay >= az`", else `PLANE_ANYZ`. Asked to flip, a plane is turned to face its axis's positive
+  side and says it was.
+- **QBSP-15.2** The plane table (`mapdata_t::add_plane`) adds each new plane with its opposite
+  ("`planes.emplace_back(plane); planes.emplace_back(-plane);`"), the one whose normal is not
+  negative along its type's axis first ("`if (positive.get_normal()[static_cast<int32_t>
+  (positive.get_type()) % 3] < 0.0) { std::swap(positive, negative);`"), so plane `n ^ 1` is
+  plane `n`'s opposite, and gives the number of the plane it was asked for.
+- **QBSP-15.3** A plane is found in the table (`find_plane_nonfatal`) when a plane of it lies
+  within half `NORMAL_EPSILON` of it in each normal component and half `DIST_EPSILON` in
+  distance ("`HALF_NORMAL_EPSILON = NORMAL_EPSILON * 0.5`", "`HALF_DIST_EPSILON = DIST_EPSILON *
+  0.5`"); `add_or_find_plane` gives that plane's number, else adds the plane. Where several
+  qualify, ericw-tools takes the one its spatial hash finds; the port takes the first added.
+- **QBSP-15.4** A box (`aabb3d`) starts empty and widens to each point added.
+- **QBSP-15.5** A winding's area is "`total += 0.5 * qv::length(qv::cross(d1, d2))`" over the
+  fan of triangles from its first point (`area`); its centre is the mean of its points.
+- **QBSP-15.6** A winding drops each point whose directions in and out are within
+  `DIST_EPSILON` of parallel: a point is kept when "`qv::dot(v1, v2) < 1.0 - DIST_EPSILON`"
+  (`remove_colinear`).
+- **QBSP-15.7** The winding of a plane (`from_plane`) is a square reaching the world's extent
+  each way from the plane's point nearest the origin: its up vector the z axis, or the x axis
+  when the normal's largest component is z, with the normal's part taken out and normalized;
+  its right vector "`qv::cross(vup, plane.normal)`"; its corners "`org - vright + vup`", "`org +
+  vright + vup`", "`org + vright - vup`", "`org - vright - vup`".
+- **QBSP-15.8** A winding is clipped by a plane (`calc_sides`, `clip`) by each point's side
+  within the epsilon given: with none in front all of it is behind, with none behind all of it in
+  front, and, kept on, one wholly on the plane is in front. A point on the plane goes to both
+  parts; an edge crossing gives both the point where it crosses, "`avoid round off error when
+  possible`": a component of an axial normal is the plane's distance, 1 giving `dist` and -1
+  `-dist`.

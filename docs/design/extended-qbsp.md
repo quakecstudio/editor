@@ -27,6 +27,7 @@ tests; the `Ported from` header names the ericw-tools file and functions.
 | Module | Concept | ericw-tools |
 | --- | --- | --- |
 | `vec` | Double-precision vectors, planes, bounds and the plane table with its hash and opposite planes | `include/common/qvec.hh`; `qbsp/map.cc` `mapdata_t::add_or_find_plane` |
+| `game` | The game seam: contents and their kinds, the clipping hulls' sizes; Quake's definition | `include/common/bspfile.hh` `gamedef_t`, `common/bspfile.cc` `gamedef_q1_like_t` |
 | `winding` | Convex polygons: from a plane, clipped, split, area, centre, bounds | `include/common/polylib.hh` (`winding_base_t`) |
 | `map` | Map brushes from `qs-map`'s `MapFile`: faces, planes, texinfo, contents from texture names (skip, hint, clip, liquids, sky), bevels, bounds; world brush entities (QBSP-14.8) | `qbsp/map.cc` `ParseBrush`, `ParseBrushFace`, `Brush_GetContents`, `AddBrushBevels`, `FindTexinfo` |
 | `brush` | BSP brushes for a hull: windings, the clipping hulls' expansion, per-entity contents | `qbsp/brush.cc` `LoadBrush`, `CreateBrushWindings`, `ExpandBrush`, `Brush_LoadEntity` |
@@ -38,8 +39,16 @@ tests; the `Ported from` header names the ericw-tools file and functions.
 | `tjunc` | T-junction fixing | `qbsp/tjunc.cc` |
 | `output` | Nodes, clip nodes, leaves, faces and the portal file into BSP29 or BSP2 lumps, through the writer the id dialect uses | `qbsp/writebsp.cc`, `qbsp/prtfile.cc` |
 
-Quake II's areas and area portals, `-notriggermodels`, regions and the debug writers are not
-ported: none is used by a Quake map's compile.
+## A game seam for Quake II
+
+Quake II support is a later goal (Justin, 2026-11-13). ericw-tools' qbsp compiles both games
+through a game definition (`target_game`, `gamedef_t`): contents (`contentflags_t`), which
+contents are solid, detail or liquid, the clipping hulls' sizes, and the BSP format. The port
+keeps that seam: a `Game` with what the pipeline asks of a game, Quake its only implementation
+for now. Quake II's own parts, areas and area portals (`EmitAreaPortals`), its brush and
+surface flags and its BSP format, are not ported yet but have their place: a second `Game`
+and the modules that only it calls. `-notriggermodels`, regions and the debug writers are not
+ported.
 
 ## Order and proof
 
