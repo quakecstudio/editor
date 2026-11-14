@@ -9,6 +9,7 @@
 use qs_bsp::{Bsp, SURF_DRAWTILED};
 
 use crate::styles::LightStyles;
+use crate::vector::dot;
 
 /// `end[2] = p[2] - 2048`: how far below the point the light is looked for (REND-4.10).
 const LIGHT_DEPTH: f32 = 2048.0;
@@ -112,10 +113,6 @@ fn recursive_light_point(
         return Some(r.cast_signed() >> LIGHT_SHIFT);
     }
     recursive_light_point(bsp, styles, far, mid, end, depth)
-}
-
-fn dot([a, b, c]: [f32; 3], [x, y, z]: [f32; 3]) -> f32 {
-    a * x + b * y + c * z
 }
 
 /// A texinfo vector's direction, without its offset.

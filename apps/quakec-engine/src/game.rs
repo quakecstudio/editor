@@ -7,7 +7,7 @@
 use qc_edict::EdictNumber;
 use qc_progs::Progs;
 use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
-use qs_render::Camera;
+use qs_render::{Camera, Degrees};
 use qs_sim::debug::BreakpointEdit;
 use qs_sim::{
     EdictChange, EditError, HostCommand, HostState, MapPlace, SpawnParms, World, WorldError,
@@ -1063,9 +1063,9 @@ impl Game {
         };
         let camera = Camera {
             origin: eye.origin,
-            pitch: eye.angles[0],
-            yaw: eye.angles[1],
-            fov_x: eye.fov_x,
+            pitch: Degrees::new(eye.angles[0]),
+            yaw: Degrees::new(eye.angles[1]),
+            fov_x: Degrees::new(eye.fov_x),
         };
         // Clip space runs from -1 at the left and bottom to 1 at the right and top.
         let at = [fraction("x") * 2.0 - 1.0, 1.0 - fraction("y") * 2.0];

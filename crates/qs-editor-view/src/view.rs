@@ -14,7 +14,7 @@ use egui::{
 
 use crate::buffer::Position;
 use crate::diff::Diff;
-use crate::fold::Folds;
+use crate::fold::{Fold, Folds};
 use crate::layout::{LayoutCache, Preedit, Styler, inlay_job, line_job};
 use crate::selection::{EditState, Extend, Motion, Selection};
 use crate::vim::{Mode, Vim, VimKey};
@@ -98,6 +98,14 @@ impl Default for ViewStyle {
 
 /// The space between the line numbers and the text, and before the numbers, in points.
 const GUTTER_PAD: f32 = 12.0;
+/// The fold mark's half width is at most a row over this: a quarter.
+const FOLD_MARK_PARTS: f32 = 4.0;
+/// A breakpoint's radius is at most a row over this: a third.
+const BREAKPOINT_PARTS: f32 = 3.0;
+/// A fixable note's dot's radius is a row over this: a quarter.
+const FIX_DOT_PARTS: f32 = 4.0;
+/// A character's most UTF-8 bytes.
+const MAX_UTF8_BYTES: u8 = 4;
 /// The caret's width in points.
 const CARET_WIDTH: f32 = 2.0;
 /// The gutter's mark on a removed line's row.
@@ -484,8 +492,12 @@ impl EditorView {
         if response.clicked() || response.drag_started() {
             ui.memory_mut(|m| m.request_focus(self.id));
         }
-        let focused = ui.memory(|m| m.has_focus(self.id));
-        if focused {
+        let focus = if ui.memory(|m| m.has_focus(self.id)) {
+            Focus::Focused
+        } else {
+            Focus::Unfocused
+        };
+        if focus == Focus::Focused {
             ui.memory_mut(|m| {
                 m.set_focus_lock_filter(
                     self.id,
@@ -563,11 +575,11 @@ impl EditorView {
             let at = self.position_at(ui, style, styler, pos, rect.top(), text_left, row_height);
             self.extend_to(at);
         }
-        if focused {
+        if focus == Focus::Focused {
             self.input(ui);
         }
 
-        self.paint(ui, style, styler, rect, gutter, row_height, focused);
+        self.paint(ui, style, styler, rect, gutter, row_height, focus);
         self.cache.end();
         response
     }
@@ -960,7 +972,7 @@ impl EditorView {
         rect: Rect,
         gutter: f32,
         row_height: f32,
-        focused: bool,
+        focus: Focus,
     ) {
         let painter = ui.painter_at(rect);
         let mut note_rects = Vec::new();
@@ -1047,15 +1059,8 @@ impl EditorView {
                     note_rects.push((clickable, line));
                 }
             }
-            if let Some(folded) = self.folds.start_at(line) {
-                fold_mark(
-                    &painter,
-                    style,
-                    &galley,
-                    folded,
-                    (text_left, top),
-                    row_height,
-                );
+            if let Some(fold) = self.folds.start_at(line) {
+                fold_mark(&painter, style, &galley, fold, (text_left, top), row_height);
             }
             let marks = Marks {
                 breakpoint: self.breakpoints.contains(&line),
@@ -1083,7 +1088,7 @@ impl EditorView {
                     Pos2::new(text_left + at.min.x, caret_top + 1.0),
                     Vec2::new(CARET_WIDTH, row_height - 2.0),
                 );
-                if focused {
+                if focus == Focus::Focused {
                     painter.rect_filled(caret, CornerRadius::ZERO, style.caret);
                 }
                 if *selection == primary {
@@ -1094,14 +1099,16 @@ impl EditorView {
             value.push('\n');
             let lengths = value
                 .chars()
-                .map(|c| u8::try_from(c.len_utf8()).unwrap_or(4))
+                .map(|c| u8::try_from(c.len_utf8()).unwrap_or(MAX_UTF8_BYTES))
                 .collect();
             runs.push((row_rect, value, lengths));
             top += height;
         }
         self.caret_rect = ime_caret;
         self.note_rects = note_rects;
-        if focused && let Some(cursor_rect) = ime_caret {
+        if focus == Focus::Focused
+            && let Some(cursor_rect) = ime_caret
+        {
             ui.output_mut(|o| {
                 o.ime = Some(IMEOutput {
                     purpose: egui::IMEPurpose::Normal,
@@ -1225,7 +1232,7 @@ impl Marks {
     /// `corner`.
     fn paint(self, painter: &egui::Painter, style: &ViewStyle, corner: Pos2, row_height: f32) {
         let mark = Pos2::new(corner.x + GUTTER_PAD / 2.0, corner.y + row_height / 2.0);
-        let radius = (GUTTER_PAD / 2.0 - 1.0).min(row_height / 3.0);
+        let radius = (GUTTER_PAD / 2.0 - 1.0).min(row_height / BREAKPOINT_PARTS);
         if self.breakpoint {
             painter.circle_filled(mark, radius, style.breakpoint);
         }
@@ -1348,7 +1355,7 @@ fn paint_note(
     };
     let mut x = at.x;
     if note.fixable == Fixable::Yes {
-        let radius = row_height / 4.0;
+        let radius = row_height / FIX_DOT_PARTS;
         painter.circle_filled(
             Pos2::new(x + radius, at.y + row_height / 2.0),
             radius,
@@ -1494,6 +1501,15 @@ fn indent_guides(
     }
 }
 
+/// Whether the view has the keyboard focus, which draws its caret and takes its keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Focus {
+    /// Focused.
+    Focused,
+    /// Not focused.
+    Unfocused,
+}
+
 /// Paints a fold region's mark in the gutter before the text at `origin`: a right-pointing
 /// triangle when folded, a down-pointing one when open; a folded line also gets an ellipsis
 /// after its text.
@@ -1501,14 +1517,14 @@ fn fold_mark(
     painter: &egui::Painter,
     style: &ViewStyle,
     galley: &Galley,
-    folded: bool,
+    fold: Fold,
     origin: (f32, f32),
     row_height: f32,
 ) {
     let (text_left, top) = origin;
     let centre = Pos2::new(text_left - GUTTER_PAD / 2.0, top + row_height / 2.0);
-    let r = (GUTTER_PAD / 2.0 - 2.0).min(row_height / 4.0);
-    let points = if folded {
+    let r = (GUTTER_PAD / 2.0 - 2.0).min(row_height / FOLD_MARK_PARTS);
+    let points = if fold == Fold::Folded {
         vec![
             Pos2::new(centre.x - r / 2.0, centre.y - r),
             Pos2::new(centre.x + r / 2.0, centre.y),
@@ -1526,7 +1542,7 @@ fn fold_mark(
         style.line_number,
         egui::Stroke::NONE,
     ));
-    if folded {
+    if fold == Fold::Folded {
         let end = galley.rows.last().map_or(0.0, |row| row.rect().right());
         let at = Pos2::new(text_left + end + GUTTER_PAD / 2.0, top);
         painter.text(

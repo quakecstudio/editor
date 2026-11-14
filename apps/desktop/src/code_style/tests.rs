@@ -31,7 +31,7 @@ fn styler(name: &str, text: &str) -> (CodeStyler, Theme) {
     let styler = CodeStyler::new(workbench.open().unwrap(), &theme);
     let open = workbench.open().unwrap();
     assert!(styler.is_current(open));
-    assert_eq!(styler.revision(), open.revision());
+    assert_eq!(styler.revision().get(), open.revision());
     workbench
         .update(&dir.join("a.qc"), format!("{text}\n").into_bytes())
         .unwrap();
@@ -93,7 +93,7 @@ fn keywords_literals_comments_and_names_take_their_syntax_colours() {
         "plain names: {body:?}"
     );
     assert!(styler.spans(99, "").is_empty(), "past the end");
-    assert_ne!(styler.revision(), u64::MAX);
+    assert_ne!(styler.revision().get(), u64::MAX);
 }
 
 #[test]

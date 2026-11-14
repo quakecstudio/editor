@@ -12,7 +12,9 @@
 use qs_client::SceneParticle;
 
 use crate::mesh::{Image, Palette};
-use crate::sprite::{Eye, add, scale, sub};
+use crate::sprite::Eye;
+use crate::vector::{add, scale, sub};
+use crate::{CHANNEL_MAX, RGBA_BYTES};
 
 /// `VectorScale (vup, 1.5, up)`: the triangle's side along each axis (PART-3.2).
 const SIDE: f32 = 1.5;
@@ -45,11 +47,14 @@ pub struct ParticleVertex {
     pub color: [f32; 4],
 }
 
+/// A particle's triangle's corners.
+const TRIANGLE_CORNERS: usize = 3;
+
 /// `R_InitParticleTexture`: the 8 by 8 texture, white with `dottexture` as its alpha; the
 /// table is read `dottexture[x][y]` into `data[y][x]`, so it is transposed.
 #[must_use]
 pub fn particle_texture() -> Image {
-    let mut rgba = Vec::with_capacity(DOT_SIDE * DOT_SIDE * 4);
+    let mut rgba = Vec::with_capacity(DOT_SIDE * DOT_SIDE * RGBA_BYTES);
     for y in 0..DOT_SIDE {
         for x in 0..DOT_SIDE {
             let alpha = DOT_TEXTURE
@@ -57,14 +62,15 @@ pub fn particle_texture() -> Image {
                 .and_then(|row| row.get(y))
                 .copied()
                 .unwrap_or(0);
-            rgba.extend([255, 255, 255, alpha.saturating_mul(255)]);
+            rgba.extend([
+                CHANNEL_MAX,
+                CHANNEL_MAX,
+                CHANNEL_MAX,
+                alpha.saturating_mul(CHANNEL_MAX),
+            ]);
         }
     }
-    Image {
-        width: u32::try_from(DOT_SIDE).unwrap_or(8),
-        height: u32::try_from(DOT_SIDE).unwrap_or(8),
-        rgba,
-    }
+    Image::square(DOT_SIDE, rgba)
 }
 
 /// `R_DrawParticles`' triangles for `particles` seen from `eye`, each in its palette colour
@@ -77,7 +83,7 @@ pub fn particle_triangles(
 ) -> Vec<ParticleVertex> {
     let up = scale(eye.up, SIDE);
     let right = scale(eye.right, SIDE);
-    let mut out = Vec::with_capacity(particles.len().saturating_mul(3));
+    let mut out = Vec::with_capacity(particles.len().saturating_mul(TRIANGLE_CORNERS));
     for particle in particles {
         // "hack a scale up to keep particles from disapearing"
         let distance = {
@@ -90,7 +96,7 @@ pub fn particle_triangles(
             1.0 + distance * GROWTH
         };
         let [r, g, b, a] = palette.rgba(particle.color);
-        let color = [r, g, b, a].map(|c| f32::from(c) / 255.0);
+        let color = [r, g, b, a].map(|c| f32::from(c) / f32::from(CHANNEL_MAX));
         let corner = |position, texture| ParticleVertex {
             position,
             texture,

@@ -11,6 +11,15 @@
 
 use std::collections::BTreeSet;
 
+/// Whether a fold region is folded or open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fold {
+    /// Folded: its lines after the first are hidden.
+    Folded,
+    /// Open.
+    Open,
+}
+
 /// One foldable region: the lines from `start` to `end`, both from 0. Folded, it hides the
 /// lines after `start` and before `end`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -135,11 +144,14 @@ impl Folds {
 
     /// Whether a region starts on `line`, and if so whether it is folded.
     #[must_use]
-    pub fn start_at(&self, line: usize) -> Option<bool> {
-        self.regions
-            .iter()
-            .find(|r| r.start == line)
-            .map(|r| self.folded.contains(r))
+    pub fn start_at(&self, line: usize) -> Option<Fold> {
+        self.regions.iter().find(|r| r.start == line).map(|r| {
+            if self.folded.contains(r) {
+                Fold::Folded
+            } else {
+                Fold::Open
+            }
+        })
     }
 
     /// The first line at or after `line` that no fold hides: the end of the widest folded
@@ -169,7 +181,7 @@ impl Folds {
 
 #[cfg(test)]
 mod tests {
-    use super::{FoldRegion, Folds};
+    use super::{Fold, FoldRegion, Folds};
 
     fn region(start: usize, end: usize) -> FoldRegion {
         FoldRegion { start, end }
@@ -191,8 +203,8 @@ mod tests {
         assert!(folds.fold_at(4));
         assert!(!folds.is_hidden(3) && folds.is_hidden(4) && folds.is_hidden(5));
         assert!(!folds.is_hidden(6));
-        assert_eq!(folds.start_at(3), Some(true));
-        assert_eq!(folds.start_at(1), Some(false));
+        assert_eq!(folds.start_at(3), Some(Fold::Folded));
+        assert_eq!(folds.start_at(1), Some(Fold::Open));
         assert_eq!(folds.start_at(2), None);
         assert!(folds.fold_at(4), "then the region around it");
         assert!(folds.is_hidden(2) && folds.is_hidden(8) && !folds.is_hidden(9));

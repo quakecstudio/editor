@@ -16,14 +16,15 @@
 use std::sync::Arc;
 
 use qs_bsp::Bsp;
-use qs_client::{Anchor, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
+use qs_client::{Anchor, EntitySlot, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
 use qs_wad::{Conchars, QPic, WAD_CONCHARS_TRANSPARENT, Wad};
 
-use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, TORCHES, entity_light};
+use crate::CHANNEL_MAX;
+use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, Shading, entity_light};
 use crate::camera::Camera;
 use crate::gpu::{
-    AliasDraw, Assets, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame, PLAYER_SKINS,
-    PlayerSkin, SkinKey, SpriteDraw, SpriteFrame, View,
+    AliasDraw, Assets, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame,
+    PLAYER_SKINS, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw, SpriteFrame, View,
 };
 use crate::light::light_point;
 use crate::look::Look;
@@ -41,6 +42,16 @@ const BAR_WIDTH: i32 = 320;
 const MENU_HEIGHT: i32 = 200;
 /// A console character's side on the screen, `Draw_Character`'s 8 (HUD-3).
 const CHAR_SIDE: f32 = 8.0;
+/// `conchars`' 16 by 16 grid of glyphs, each 8 pixels a side: a character's row is its high
+/// nibble, its column its low (WAD-4.2).
+const GLYPHS_ACROSS: usize = 16;
+const GLYPH_SIDE: usize = 8;
+const GLYPH_ROW_SHIFT: u8 = 4;
+const GLYPH_COLUMN_MASK: u8 = 0x0f;
+/// A 2D quad's vertices, two triangles.
+const QUAD_VERTICES: u32 = 6;
+/// The screen before the window says its size, 640 by 480.
+const DEFAULT_SCREEN: [i32; 2] = [640, 480];
 /// `frow = row*0.0625`: a character's share of the 16 by 16 `conchars` grid.
 const CHAR_CELL: f32 = 0.0625;
 /// The character `Draw_Character` does not draw, the space.
@@ -199,17 +210,16 @@ pub(crate) fn pic_image(pic: &QPic<'_>, palette: &Palette) -> Image {
 /// `conchars` through `palette`, index 0 transparent: `Draw_Init` sets every 0 to 255,
 /// "proper transparent color" (WAD-4.2).
 fn conchars_image(chars: &Conchars<'_>, palette: &Palette) -> Image {
-    let side = u32::try_from(qs_wad::WAD_CONCHARS_SIZE).unwrap_or(128);
     let mut rgba = Vec::new();
     // The glyphs row by row of the 16 by 16 grid, each 8 rows of 8 pixels.
     let glyphs: Vec<[u8; 64]> = (0..=u8::MAX).map(|n| chars.glyph(n)).collect();
-    for row in 0..16_usize {
-        for line in 0..8_usize {
-            for column in 0..16_usize {
-                let glyph = glyphs.get(row.saturating_mul(16).saturating_add(column));
-                for x in 0..8_usize {
+    for row in 0..GLYPHS_ACROSS {
+        for line in 0..GLYPH_SIDE {
+            for column in 0..GLYPHS_ACROSS {
+                let glyph = glyphs.get(row.saturating_mul(GLYPHS_ACROSS).saturating_add(column));
+                for x in 0..GLYPH_SIDE {
                     let p = glyph
-                        .and_then(|g| g.get(line.saturating_mul(8).saturating_add(x)))
+                        .and_then(|g| g.get(line.saturating_mul(GLYPH_SIDE).saturating_add(x)))
                         .copied()
                         .unwrap_or(WAD_CONCHARS_TRANSPARENT);
                     if p == WAD_CONCHARS_TRANSPARENT {
@@ -221,11 +231,7 @@ fn conchars_image(chars: &Conchars<'_>, palette: &Palette) -> Image {
             }
         }
     }
-    Image {
-        width: side,
-        height: side,
-        rgba,
-    }
+    Image::square(qs_wad::WAD_CONCHARS_SIZE, rgba)
 }
 
 /// A precached model as the renderer draws it.
@@ -257,7 +263,7 @@ pub struct Play {
     skin_glows: Vec<Option<Image>>,
     frames: Vec<Image>,
     /// Each external brush model instance: its entity number and the mesh's model index.
-    instances: Vec<(usize, usize)>,
+    instances: Vec<(EntitySlot, usize)>,
     /// The map's fog, and its fades (REND-10.1 to REND-10.3).
     pub fog: FogState,
     /// `r_wateralpha` (REND-9.1).
@@ -302,7 +308,7 @@ impl PlayerSkins {
         if held.as_ref().is_none_or(|skin| skin.key != key) {
             let image = model.translated(key.skin, key.colors, palette)?;
             *held = Some(PlayerSkin {
-                slot,
+                slot: PlayerSlot::new(slot),
                 key,
                 image: Arc::new(image),
             });
@@ -328,7 +334,7 @@ impl Play {
             fog: FogState::new(fog_parse_worldspawn(entities)),
             water_alpha: 1.0,
             skyfog: sky.skyfog,
-            screen: [640, 480],
+            screen: DEFAULT_SCREEN,
             zfix: true,
             md5_models: true,
             look: Look::default(),
@@ -357,10 +363,10 @@ impl Play {
     ) -> Result<(), PlayError> {
         self.models.clear();
         for name in names {
-            let torch = TORCHES.contains(&name.as_str());
+            let shading = Shading::of(name.as_str());
             let replacement = match self.md5_replacement(name, read, rank) {
                 Some((md5, bytes)) => {
-                    match Md5Model::read(&md5, &bytes, read, &self.palette, torch) {
+                    match Md5Model::read(&md5, &bytes, read, &self.palette, shading) {
                         Ok(model) => Some(model),
                         // REND-12.1: an MD5 model that does not read leaves its `.mdl`.
                         Err(_) if read(name).is_some() => None,
@@ -446,7 +452,7 @@ impl Play {
     }
 
     /// Records that entity `entity`'s external brush model is the mesh's model `mesh_model`.
-    pub fn add_instance(&mut self, entity: usize, mesh_model: usize) {
+    pub fn add_instance(&mut self, entity: EntitySlot, mesh_model: usize) {
         self.instances.push((entity, mesh_model));
     }
 
@@ -570,10 +576,7 @@ impl Play {
                     self.place(&mut placements, *n, entity);
                 }
                 Some(Model::External) => {
-                    if let Some(&(_, n)) = self
-                        .instances
-                        .iter()
-                        .find(|(e, _)| *e == entity.entity.get())
+                    if let Some(&(_, n)) = self.instances.iter().find(|(e, _)| *e == entity.entity)
                     {
                         self.place(&mut placements, n, entity);
                     }
@@ -606,11 +609,11 @@ impl Play {
         let screen = self.screen.map(f32_of_i32);
         let mut flat = FlatFrame::default();
         // R_PolyBlend: `if (!v_blend[3]) return`.
-        if scene.blend[3] != 0.0 {
-            quad(
-                &mut flat,
+        let [_, _, _, blend_alpha] = scene.blend;
+        if blend_alpha != 0.0 {
+            flat.quad(
                 None,
-                true,
+                FlatBlend::Blended,
                 [0.0, 0.0],
                 screen,
                 [[0.0, 0.0], [1.0, 1.0]],
@@ -676,8 +679,14 @@ impl Play {
                     .chain(&hud.menu)
                     .map(|placed| (placed.anchor, &placed.item)),
             );
+        // HUD-1: the bar is centred on a screen wider than it, but across it in deathmatch.
+        let bar = if hud.deathmatch {
+            BarWidth::Screen
+        } else {
+            BarWidth::Centred
+        };
         for (anchor, item) in items {
-            let canvas = self.canvas(anchor, hud.deathmatch);
+            let canvas = self.canvas(anchor, bar);
             let first = flat.vertices.len();
             self.draw_item(item, canvas.width, flat);
             canvas.place(flat.vertices.get_mut(first..).unwrap_or_default());
@@ -689,7 +698,7 @@ impl Play {
     /// area centred across it; or QuakeSpasm's `GL_SetCanvas`, the window's own size, with the
     /// bar's canvas at its bottom centre and the menus' 320 by 200 centred both ways, each at
     /// scale 1.
-    fn canvas(&self, anchor: Anchor, deathmatch: bool) -> Canvas {
+    fn canvas(&self, anchor: Anchor, bar: BarWidth) -> Canvas {
         let [width, height] = self.screen;
         let centring = width.saturating_sub(BAR_WIDTH) >> 1;
         let at = |x: i32, y: i32, w: i32| Canvas {
@@ -698,7 +707,9 @@ impl Play {
             width: w,
         };
         match (anchor, self.look) {
-            (Anchor::Bar, _) if deathmatch => at(0, height.saturating_sub(HUD_SBAR_HEIGHT), width),
+            (Anchor::Bar, _) if bar == BarWidth::Screen => {
+                at(0, height.saturating_sub(HUD_SBAR_HEIGHT), width)
+            }
             (Anchor::Bar, _) => at(centring, height.saturating_sub(HUD_SBAR_HEIGHT), BAR_WIDTH),
             (Anchor::Centered, Look::GlQuake) => at(centring, 0, BAR_WIDTH),
             (Anchor::Centered, Look::QuakeSpasm) => {
@@ -715,10 +726,9 @@ impl Play {
                 if let Some((pic, image)) = self.pics.get(name) {
                     let at = [*x, *y].map(f32_of_i32);
                     let size = [f32_of_u32(image.width), f32_of_u32(image.height)];
-                    quad(
-                        flat,
+                    flat.quad(
                         Some(pic),
-                        false,
+                        FlatBlend::AlphaTest,
                         at,
                         size,
                         [[0.0, 0.0], [1.0, 1.0]],
@@ -732,10 +742,9 @@ impl Play {
                     let x = x.unwrap_or_else(|| centred(width, image.width));
                     let at = [x, *y].map(f32_of_i32);
                     let size = [f32_of_u32(image.width), f32_of_u32(image.height)];
-                    quad(
-                        flat,
+                    flat.quad(
                         Some(pic),
-                        false,
+                        FlatBlend::AlphaTest,
                         at,
                         size,
                         [[0.0, 0.0], [1.0, 1.0]],
@@ -752,11 +761,18 @@ impl Play {
                 let Some((pic, _)) = self.pics.get(CONCHARS) else {
                     return;
                 };
-                let row = f32::from(ch >> 4) * CHAR_CELL;
-                let column = f32::from(ch & 15) * CHAR_CELL;
+                let row = f32::from(ch >> GLYPH_ROW_SHIFT) * CHAR_CELL;
+                let column = f32::from(ch & GLYPH_COLUMN_MASK) * CHAR_CELL;
                 let at = [f32_of_i32(*x), f32_of_i32(y)];
                 let texture = [[column, row], [column + CHAR_CELL, row + CHAR_CELL]];
-                quad(flat, Some(pic), false, at, [CHAR_SIDE; 2], texture, WHITE);
+                flat.quad(
+                    Some(pic),
+                    FlatBlend::AlphaTest,
+                    at,
+                    [CHAR_SIDE; 2],
+                    texture,
+                    WHITE,
+                );
             }
             HudItem::ConsoleBack {
                 lines,
@@ -770,9 +786,12 @@ impl Play {
                     let at = [0.0, f32_of_i32(lines.saturating_sub(*height))];
                     let size = [f32_of_i32(width), f32_of_i32(*height)];
                     // `Draw_AlphaPic` blends with the alpha test off; `Draw_Pic` tests it.
-                    let translucent = alpha < 1.0;
-                    quad(
-                        flat,
+                    let translucent = if alpha < 1.0 {
+                        FlatBlend::Blended
+                    } else {
+                        FlatBlend::AlphaTest
+                    };
+                    flat.quad(
                         Some(pic),
                         translucent,
                         at,
@@ -785,10 +804,9 @@ impl Play {
             HudItem::Fade => {
                 // `Draw_FadeScreen`: black over the whole screen, blended (REND-13.7).
                 let size = [self.screen[0], self.screen[1]].map(f32_of_i32);
-                quad(
-                    flat,
+                flat.quad(
                     None,
-                    true,
+                    FlatBlend::Blended,
                     [0.0, 0.0],
                     size,
                     [[0.0, 0.0], [1.0, 1.0]],
@@ -799,16 +817,15 @@ impl Play {
                 // `Draw_Fill`: `host_basepal[c*3]/255.0`, the colour before the gamma.
                 let [r, g, b, _] = self.palette.rgba(u8::try_from(*color).unwrap_or(0));
                 let color = [
-                    f32::from(r) / 255.0,
-                    f32::from(g) / 255.0,
-                    f32::from(b) / 255.0,
+                    f32::from(r) / f32::from(CHANNEL_MAX),
+                    f32::from(g) / f32::from(CHANNEL_MAX),
+                    f32::from(b) / f32::from(CHANNEL_MAX),
                     1.0,
                 ];
                 let at = [*x, *y].map(f32_of_i32);
-                quad(
-                    flat,
+                flat.quad(
                     None,
-                    false,
+                    FlatBlend::AlphaTest,
                     at,
                     [*w, *h].map(f32_of_i32),
                     [[0.0, 0.0], [1.0, 1.0]],
@@ -824,7 +841,7 @@ impl Model {
     /// (REND-4, REND-13); nothing for another model.
     fn draw_alias(&self, entity: &AliasEntity, time: f32, out: &mut ModelFrame) {
         match self {
-            Self::Alias(model, first) => draw_alias(model, *first, entity, time, out),
+            Self::Alias(model, first) => model.draw_skinned(*first, entity, time, out),
             Self::Md5(model, first) => {
                 let mut start = out.vertices.len();
                 for (count, image) in model.draw(entity, f64::from(time), &mut out.vertices) {
@@ -841,21 +858,23 @@ impl Model {
     }
 }
 
-/// An entity's alias triangles into `out`, drawn with its skin (REND-4).
-fn draw_alias(
-    model: &AliasModel,
-    first_skin: usize,
-    entity: &AliasEntity,
-    time: f32,
-    out: &mut ModelFrame,
-) {
-    let start = out.vertices.len();
-    let image = model.draw(entity, f64::from(time), &mut out.vertices);
-    out.draws.push(AliasDraw {
-        skin: first_skin.saturating_add(image),
-        first: u32_of(start),
-        count: u32_of(out.vertices.len().saturating_sub(start)),
-    });
+impl AliasModel {
+    /// An entity's alias triangles into `out`, drawn with its skin (REND-4).
+    fn draw_skinned(
+        &self,
+        first_skin: usize,
+        entity: &AliasEntity,
+        time: f32,
+        out: &mut ModelFrame,
+    ) {
+        let start = out.vertices.len();
+        let image = self.draw(entity, f64::from(time), &mut out.vertices);
+        out.draws.push(AliasDraw {
+            skin: first_skin.saturating_add(image),
+            first: u32_of(start),
+            count: u32_of(out.vertices.len().saturating_sub(start)),
+        });
+    }
 }
 
 /// Where a 2D item's canvas sits on the screen: its top left and its scale, and how wide it is
@@ -888,45 +907,55 @@ fn centred(width: i32, image_width: u32) -> i32 {
         .wrapping_div(2)
 }
 
-/// A quad of the 2D layer at `at` of `size`, its texture from `texture[0]` to `texture[1]`,
-/// joined to the last draw when it uses the same picture and blending.
-fn quad(
-    flat: &mut FlatFrame,
-    pic: Option<usize>,
-    blend: bool,
-    at: [f32; 2],
-    size: [f32; 2],
-    texture: [[f32; 2]; 2],
-    color: [f32; 4],
-) {
-    let [x, y] = at;
-    let [w, h] = size;
-    let [[s0, t0], [s1, t1]] = texture;
-    let corner = |position, texture| FlatVertex {
-        position,
-        texture,
-        color,
-    };
-    let corners = [
-        corner([x, y], [s0, t0]),
-        corner([x + w, y], [s1, t0]),
-        corner([x + w, y + h], [s1, t1]),
-        corner([x, y + h], [s0, t1]),
-    ];
-    let first = u32_of(flat.vertices.len());
-    flat.vertices.extend([
-        corners[0], corners[1], corners[2], corners[0], corners[2], corners[3],
-    ]);
-    match flat.draws.last_mut() {
-        Some(last) if last.pic == pic && last.blend == blend => {
-            last.count = last.count.saturating_add(6);
+/// How wide the status bar's canvas is: centred at the bar's own width, or the screen's
+/// (HUD-1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BarWidth {
+    /// Centred, 320 wide.
+    Centred,
+    /// Across the screen, as in deathmatch.
+    Screen,
+}
+
+impl FlatFrame {
+    /// A quad of the 2D layer at `at` of `size`, its texture from `texture[0]` to `texture[1]`,
+    /// joined to the last draw when it uses the same picture and blending.
+    fn quad(
+        &mut self,
+        pic: Option<usize>,
+        blend: FlatBlend,
+        at: [f32; 2],
+        size: [f32; 2],
+        texture: [[f32; 2]; 2],
+        color: [f32; 4],
+    ) {
+        let [x, y] = at;
+        let [w, h] = size;
+        let [[s0, t0], [s1, t1]] = texture;
+        let corner = |position, texture| FlatVertex {
+            position,
+            texture,
+            color,
+        };
+        let [a, b, c, d] = [
+            corner([x, y], [s0, t0]),
+            corner([x + w, y], [s1, t0]),
+            corner([x + w, y + h], [s1, t1]),
+            corner([x, y + h], [s0, t1]),
+        ];
+        let first = u32_of(self.vertices.len());
+        self.vertices.extend([a, b, c, a, c, d]);
+        match self.draws.last_mut() {
+            Some(last) if last.pic == pic && last.blend == blend => {
+                last.count = last.count.saturating_add(QUAD_VERTICES);
+            }
+            _ => self.draws.push(FlatDraw {
+                pic,
+                blend,
+                first,
+                count: QUAD_VERTICES,
+            }),
         }
-        _ => flat.draws.push(FlatDraw {
-            pic,
-            blend,
-            first,
-            count: 6,
-        }),
     }
 }
 
@@ -992,7 +1021,8 @@ impl FogState {
         let mut fog = self.at_raw(now);
         for channel in &mut fog.color {
             // "find closest 24-bit RGB value, so solid-colored sky can match the fog perfectly"
-            *channel = (channel.clamp(0.0, 1.0) * 255.0).round() / 255.0;
+            let most = f32::from(CHANNEL_MAX);
+            *channel = (channel.clamp(0.0, 1.0) * most).round() / most;
         }
         fog
     }

@@ -11,8 +11,8 @@ use qs_mdl::mdl::{MDL_EF_ROTATE, MDL_MAGIC, MDL_VERSION};
 use qs_client::{DynamicLight, PoseBlend};
 
 use super::{
-    AliasEntity, AliasKind, AliasModel, AliasVertex, bob_rotate, entity_light, flood_fill_skin,
-    rotate_for_entity, shade_dots, shade_light,
+    AliasEntity, AliasKind, AliasModel, AliasVertex, Shading, bob_rotate, entity_light,
+    flood_fill_skin, rotate_for_entity, shade_dots,
 };
 use crate::mesh::Palette;
 
@@ -391,12 +391,12 @@ fn vertices_are_scaled_turned_and_moved() {
 // the shade is over 200
 #[test]
 fn shade_light_caps_as_r_draw_alias_model() {
-    assert_eq!(shade_light(50.0, false), 0.25);
-    assert_eq!(shade_light(100.0, false), 0.46);
-    assert_eq!(shade_light(300.0, false), 0.32);
-    assert_eq!(shade_light(96.0, false), 0.48);
-    assert_eq!(shade_light(97.0, false), 0.475);
-    assert_eq!(shade_light(0.0, true), 1.28);
+    assert_eq!(Shading::Lit.light(50.0), 0.25);
+    assert_eq!(Shading::Lit.light(100.0), 0.46);
+    assert_eq!(Shading::Lit.light(300.0), 0.32);
+    assert_eq!(Shading::Lit.light(96.0), 0.48);
+    assert_eq!(Shading::Lit.light(97.0), 0.475);
+    assert_eq!(Shading::Torch.light(0.0), 1.28);
     let torch = read(&MdlSpec::default(), "progs/flame2.mdl");
     let plain = read(&MdlSpec::default(), "progs/flame3.mdl");
     let shade = |m: &AliasModel| {

@@ -10,7 +10,7 @@
 use std::collections::BTreeSet;
 
 use eframe::egui::{Painter, RichText, Stroke, Ui};
-use qs_render::Camera;
+use qs_render::{Camera, Degrees};
 use qs_workbench::map_compile::{MapReport, Seal};
 
 use crate::map_panes::Projection;
@@ -62,12 +62,15 @@ impl Flight {
             ];
             // Straight up or down has no heading: the camera keeps the one it had.
             if along[0].abs() > 0.0 || along[1].abs() > 0.0 {
-                camera.yaw = along[1].atan2(along[0]).to_degrees().rem_euclid(FULL_TURN);
+                camera.yaw =
+                    Degrees::new(along[1].atan2(along[0]).to_degrees().rem_euclid(FULL_TURN));
             }
-            camera.pitch = (-along[2] / length)
-                .asin()
-                .to_degrees()
-                .clamp(-MAX_PITCH, MAX_PITCH);
+            camera.pitch = Degrees::new(
+                (-along[2] / length)
+                    .asin()
+                    .to_degrees()
+                    .clamp(-MAX_PITCH, MAX_PITCH),
+            );
             if ahead {
                 return true;
             }
@@ -190,7 +193,7 @@ impl LeakView {
 
 #[cfg(test)]
 mod tests {
-    use qs_render::Camera;
+    use qs_render::{Camera, Degrees};
 
     use super::Flight;
 
@@ -202,20 +205,24 @@ mod tests {
             trail: vec![[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [100.0, 0.0, -50.0]],
             travelled: 0.0,
         };
-        let mut camera = Camera::new([9.0; 3], 45.0);
+        let mut camera = Camera::new([9.0; 3], Degrees::new(45.0));
         assert!(flight.advance(&mut camera, 40.0));
         assert_eq!(camera.origin, [40.0, 0.0, 0.0]);
-        assert_eq!((camera.yaw, camera.pitch), (0.0, 0.0));
+        assert_eq!((camera.yaw.get(), camera.pitch.get()), (0.0, 0.0));
         assert!(flight.advance(&mut camera, 85.0));
         assert_eq!(camera.origin, [100.0, 0.0, -25.0]);
-        assert_eq!(camera.pitch, 89.0, "looking as far down as the camera goes");
-        assert_eq!(camera.yaw, 0.0, "straight down keeps the heading");
+        assert_eq!(
+            camera.pitch.get(),
+            89.0,
+            "looking as far down as the camera goes"
+        );
+        assert_eq!(camera.yaw.get(), 0.0, "straight down keeps the heading");
         let mut back = Flight {
             trail: vec![[0.0; 3], [-10.0, -10.0, 0.0]],
             travelled: 0.0,
         };
         assert!(back.advance(&mut camera, 1.0));
-        assert_eq!(camera.yaw, 225.0, "kept within a turn");
+        assert_eq!(camera.yaw.get(), 225.0, "kept within a turn");
         assert!(!flight.advance(&mut camera, 100.0));
         assert_eq!(camera.origin, [100.0, 0.0, -50.0]);
         let mut still = Flight {

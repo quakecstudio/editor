@@ -9,7 +9,7 @@
 
 use eframe::egui::{Sense, Ui, WidgetInfo, WidgetType};
 use eframe::egui_wgpu::{self, RenderState, wgpu};
-use qs_render::{Camera, MapCallback, MapMesh, MapRenderer, View};
+use qs_render::{Camera, Degrees, MapCallback, MapMesh, MapRenderer, View};
 
 use crate::strings::Text;
 
@@ -50,7 +50,8 @@ impl MapView {
         let response = ui.allocate_rect(rect, Sense::drag());
         response.widget_info(|| WidgetInfo::labeled(WidgetType::Other, true, Text::MapView.get()));
         let drag = response.drag_delta();
-        self.camera.turn(-drag.x * TURN, drag.y * TURN);
+        self.camera
+            .turn(Degrees::new(-drag.x * TURN), Degrees::new(drag.y * TURN));
         if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
             self.camera.travel(scroll * TRAVEL, 0.0, 0.0);
