@@ -12,7 +12,6 @@
 //!
 //! Every string comes from [`crate::strings`]; a test fails on a string literal here.
 
-use qs_agent::history;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -68,10 +67,8 @@ use qs_render::{Camera, MapMesh};
 use qs_settings::{Scope as SettingsScope, Setting, SettingsFile, SettingsStore};
 use qs_templates::{GitHub, NEW_PROJECT, NewProjectParams, Template};
 use qs_workbench::TASK_LIST;
-use qs_workbench::checkpoints::{RESTORE_CHECKPOINT, RestoreCheckpointParams};
 use qs_workbench::debug::Location;
 use qs_workbench::dock::DockFrame;
-use qs_workbench::engine::{ENGINE_SCREENSHOT, EngineScreenshotParams, Screenshot};
 use qs_workbench::entity_classes::{EntitiesFound, EntitiesParams, PROJECT_ENTITIES};
 use qs_workbench::export::{ExportParams, Exported, PROJECT_EXPORT};
 use qs_workbench::files_changed::{FILES_CHANGED, FilesChanged, FilesChangedParams};
@@ -89,10 +86,8 @@ use qs_workbench::open_paths::{OPEN_PATHS, OpenPathsParams, PathsOpened, TAKE_OP
 use qs_workbench::search::{
     REPLACE_IN_FILE, REPLACE_RANGE, ReplaceInFileParams, ReplaceRangeParams, ReplacedInFile,
 };
-use qs_workbench::staged::HunksParams;
 use qs_workbench::terminal::TaskInfo;
 use qs_workbench::tools::{PROJECT_FILES, PROJECT_SEARCH, ProjectSearchParams, SearchFound};
-use qs_workbench::{ACCEPT_HUNKS, REJECT_HUNKS};
 use qs_workbench::{
     ActionInfo, CODE_ACTIONS, CODE_FIX, Code, CodeActionParams, FORMAT_FILE, INLAY_HINTS, InlayHint,
 };
@@ -362,10 +357,6 @@ pub struct Shell {
     project_error: Option<String>,
     /// The socket other processes run the window's commands on (AGT-7), once it is served.
     host: Option<Host>,
-    /// The agent panel's threads and provider (P4-09).
-    agent: AgentPanel,
-    /// An inline edit's answer, while the model writes it (P4-10).
-    inline: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// The window's egui context, to ask for a frame from another thread.
     ctx: Option<egui::Context>,
 }
@@ -423,7 +414,7 @@ impl Shell {
             menu: MenuPlace::default(),
             outliner: Outliner::default(),
             properties: Properties::default(),
-            features: Features::default(),
+            features: Features::new(AgentPanel::new(Box::new(agent::provider_model))),
             multibuffer: Multibuffer::default(),
             picker: (Picker::default(), Vec::new()),
             editor_seen: 0,
@@ -438,8 +429,6 @@ impl Shell {
             dock_frame: None,
             project_error: None,
             host: None,
-            agent: AgentPanel::new(Box::new(agent::provider_model)),
-            inline: None,
             ctx: None,
         })
     }
@@ -620,13 +609,13 @@ impl Shell {
     /// The agent panel.
     #[must_use]
     pub const fn agent(&self) -> &AgentPanel {
-        &self.agent
+        &self.features.agent.panel
     }
 
     /// The report of agent thread `index`, once it has ended.
     #[must_use]
     pub fn agent_report(&self, index: ThreadIndex) -> Option<&qs_agent::RunReport> {
-        self.agent.report(index)
+        self.features.agent.panel.report(index)
     }
 
     /// Asks the agent's model for an inline edit of `selection` in the editor's file at `path`
@@ -646,33 +635,14 @@ impl Shell {
             .as_ref()
             .map(|editor| editor.view.state().buffer().text())
             .unwrap_or_default();
-        let prompt = qs_agent::inline_prompt(path, &file, selection, instruction);
         let ctx = self.ctx.clone();
-        let answered = self.agent.ask_once(prompt, move || {
-            if let Some(ctx) = &ctx {
-                ctx.request_repaint();
-            }
-        })?;
-        self.inline = Some(answered);
-        Ok(())
-    }
-
-    /// Shows an inline edit's answer in the editor once it has come; whether it has.
-    fn take_inline(&mut self) -> bool {
-        let Some(answer) = self
-            .inline
-            .as_ref()
-            .and_then(|answered| answered.try_recv().ok())
-        else {
-            return false;
-        };
-        self.show_inline(answer);
-        true
+        self.features
+            .agent
+            .start_inline((path, &file), selection, instruction, ctx)
     }
 
     /// Shows an inline edit's answer, or why there is none, in the editor.
     fn show_inline(&mut self, answer: Result<String, String>) {
-        self.inline = None;
         if let Some(editor) = self.editor.as_mut() {
             match answer {
                 Ok(text) => editor.propose(&text),
@@ -684,23 +654,19 @@ impl Shell {
     /// Waits for an inline edit's answer and shows it. For tests.
     #[cfg(test)]
     pub(crate) fn wait_inline(&mut self) {
-        if let Some(answer) = self
-            .inline
-            .as_ref()
-            .and_then(|answered| answered.recv().ok())
-        {
+        if let Some(answer) = self.features.agent.wait_inline() {
             self.show_inline(answer);
         }
     }
 
     /// The agent panel, to drive its threads.
     pub const fn agent_mut(&mut self) -> &mut AgentPanel {
-        &mut self.agent
+        &mut self.features.agent.panel
     }
 
     /// Keeps the agent's provider configuration in `file` (P4-07).
     pub fn set_agent_file(&mut self, file: PathBuf) {
-        self.agent.set_config_file(file);
+        self.features.agent.panel.set_config_file(file);
     }
 
     /// Starts an agent thread on `task` over the open project (P4-09), each `@` mention it
@@ -710,10 +676,10 @@ impl Shell {
     ///
     /// No project open, no provider set up, no model or no checkpoint.
     pub fn start_agent(&mut self, task: &str, ctx: &egui::Context) -> Result<(), String> {
-        let root = self.agent_root()?;
-        let live = self.live();
-        let task = qs_agent::expand_mentions(&mut self.session, &root, task, &live);
-        self.start_thread(&root, &task, ctx)
+        let settings = self.settings_file.clone();
+        self.features
+            .agent
+            .start(&mut self.session, task, settings.as_deref(), ctx)
     }
 
     /// Starts an agent thread about `entity`, its state attached (Ask about this, UI-9); why
@@ -727,193 +693,26 @@ impl Shell {
         entity: &qs_agent::EntityState,
         ctx: &egui::Context,
     ) -> Result<(), String> {
-        let root = self.agent_root()?;
-        self.start_thread(&root, &entity.ask_about(), ctx)
-    }
-
-    /// The open project's folder, which an agent thread works in.
-    fn agent_root(&self) -> Result<PathBuf, String> {
-        self.workbench()
-            .root()
-            .map(Path::to_path_buf)
-            .ok_or_else(|| Text::NoProject.get().to_owned())
-    }
-
-    /// Starts a thread on `task` as given, over the project in `root`, its calls decided by the
-    /// profile and tool rules the project's settings hold now (P4-30).
-    fn start_thread(&mut self, root: &Path, task: &str, ctx: &egui::Context) -> Result<(), String> {
-        if let Some(permissions) = self.agent_permissions(root) {
-            self.agent.set_permissions(permissions);
-        }
-        let ctx = ctx.clone();
-        self.agent
-            .start(&mut self.session, root, task, move || ctx.request_repaint())
-    }
-
-    /// What the running game shows now, for `@entity` and `@error` (PRIN-2): the selected
-    /// edict with its fields as the Properties panel writes them, and the console's last error.
-    fn live(&self) -> qs_agent::Live {
-        let preview = &self.session.context().preview;
-        let entities = preview.entities();
-        let entity = entities.selected().map(|selected| qs_agent::EntityState {
-            edict: selected.edict.into(),
-            classname: selected.classname.clone(),
-            fields: selected
-                .fields
-                .iter()
-                .map(|field| (field.name.clone(), entities.show(&field.value)))
-                .collect(),
-        });
-        let error = preview
-            .console()
-            .filter(|line| line.is_error())
-            .last()
-            .map(|line| line.text.clone());
-        qs_agent::Live { entity, error }
-    }
-
-    /// The user's and the project at `root`'s settings, when the window keeps a settings file.
-    fn settings_store(&self, root: &Path) -> Option<SettingsStore> {
-        let user = self.settings_file.clone()?;
-        SettingsStore::open(user, Some(qs_settings::project_settings_path(root)))
-            .map_err(|error| tracing::warn!(%error, "settings not read"))
-            .ok()
-    }
-
-    /// The agent's profile and tool rules as the settings set them (P4-30).
-    fn agent_permissions(&self, root: &Path) -> Option<qs_agent::Permissions> {
-        let store = self.settings_store(root)?;
-        let value = |setting| store.value(setting).0;
-        Some(qs_agent::Permissions {
-            profile: serde_json::from_value(value(Setting::AgentProfile)).unwrap_or_default(),
-            rules: serde_json::from_value(value(Setting::ToolPermissions)).unwrap_or_default(),
-        })
-    }
-
-    /// Keeps `permissions` in the open project's settings, the profile and the rules.
-    fn keep_agent_permissions(&self, permissions: &qs_agent::Permissions) {
-        let Some(root) = self.workbench().root().map(Path::to_path_buf) else {
-            return;
-        };
-        let Some(mut store) = self.settings_store(&root) else {
-            return;
-        };
-        for (setting, value) in [
-            (
-                Setting::AgentProfile,
-                serde_json::to_value(permissions.profile),
-            ),
-            (
-                Setting::ToolPermissions,
-                serde_json::to_value(&permissions.rules),
-            ),
-        ] {
-            let kept = value.map_err(|error| error.to_string()).and_then(|value| {
-                store
-                    .put(SettingsScope::Project, setting, Some(value))
-                    .map_err(|error| error.to_string())
-            });
-            if let Err(error) = kept {
-                tracing::warn!(%error, "the agent's permissions were not kept");
-            }
-        }
+        let settings = self.settings_file.clone();
+        self.features
+            .agent
+            .ask_about(&mut self.session, entity, settings.as_deref(), ctx)
     }
 
     /// Waits for the next thing agent thread `index`'s model sends and takes it; `false` when
     /// its model has ended. For tests.
     #[cfg(test)]
     pub(crate) fn wait_agent(&mut self, index: ThreadIndex) -> bool {
-        self.agent.wait(&mut self.session, index)
+        self.features.agent.panel.wait(&mut self.session, index)
     }
 
     /// Does what the agent panel asked for.
     pub(crate) fn agent_action(&mut self, action: AgentAction, ctx: &egui::Context) {
-        match action {
-            AgentAction::Start(task) => {
-                let started = self.start_agent(&task, ctx);
-                self.agent.set_error(started.err());
-            }
-            AgentAction::SaveSetup => self.agent.save_setup_to_keychain(),
-            AgentAction::Accept(hunks) => {
-                let _accepted: Option<serde_json::Value> =
-                    self.run(ACCEPT_HUNKS, &HunksParams { hunks });
-            }
-            AgentAction::Reject(hunks) => {
-                let _rejected: Option<serde_json::Value> =
-                    self.run(REJECT_HUNKS, &HunksParams { hunks });
-            }
-            AgentAction::Permit(index, permit) => {
-                if let Some(kept) = self.agent.permit(&mut self.session, index, permit) {
-                    self.keep_agent_permissions(&kept);
-                }
-            }
-            AgentAction::Profile(profile) => {
-                let mut permissions = self.agent.permissions().clone();
-                permissions.profile = profile;
-                self.keep_agent_permissions(&permissions);
-                self.agent.set_permissions(permissions);
-            }
-            AgentAction::Restore(number) => {
-                let _restored: Option<serde_json::Value> =
-                    self.run(RESTORE_CHECKPOINT, &RestoreCheckpointParams { number });
-            }
-            AgentAction::OpenHistory => {
-                let threads = self
-                    .agent_root()
-                    .ok()
-                    .and_then(|root| history::load(&history::threads_dir(&root)).ok())
-                    .unwrap_or_default();
-                self.agent.show_history(threads);
-            }
-            AgentAction::AttachScreenshot => {
-                let shot: Option<Screenshot> = self.run(
-                    ENGINE_SCREENSHOT,
-                    &EngineScreenshotParams {
-                        path: None,
-                        size: None,
-                    },
-                );
-                match shot.map(|shot| std::fs::read(&shot.path)) {
-                    Some(Ok(bytes)) => self.agent.attach_png(&bytes),
-                    Some(Err(error)) => self.agent.set_error(Some(error.to_string())),
-                    None => self
-                        .agent
-                        .set_error(Some(Text::GameStopped.get().to_owned())),
-                }
-            }
-            AgentAction::RunAgain(index, at, text) => {
-                let ctx = ctx.clone();
-                let ran = self
-                    .agent
-                    .run_again(&mut self.session, (index, at, text), move || {
-                        ctx.request_repaint()
-                    });
-                self.agent.set_error(ran.err());
-            }
-        }
-    }
-
-    /// After the agent's threads took their models' events (P4-31): the editor opens the last
-    /// file a call named while it follows the agent, and a thread that finished asks for the
-    /// modder's attention, as the system shows it (the dock or the taskbar).
-    fn after_agent(&mut self, ctx: &egui::Context) {
-        if let Some(path) = self.agent.take_followed().pop() {
-            let path = if path.is_absolute() {
-                path
-            } else {
-                self.agent_root()
-                    .map(|root| root.join(&path))
-                    .unwrap_or(path)
-            };
-            if path.is_file() {
-                self.jump(Jump { path, offset: 0 });
-            }
-        }
-        if self.agent.take_finished() > 0 {
-            ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
-                egui::UserAttentionType::Informational,
-            ));
-        }
+        let settings = self.settings_file.clone();
+        let mut commands = Commands::new(&mut self.session, &mut self.preview_error);
+        self.features
+            .agent
+            .apply(action, &mut commands, settings.as_deref(), ctx);
     }
 
     /// Asks for a new folder with the system's dialog, makes a project of `template` there
@@ -1511,13 +1310,16 @@ impl Shell {
     /// Draws the window for one frame.
     pub fn ui(&mut self, ui: &mut Ui) {
         // P4-09: what the agent's models sent since the last frame; their calls run here.
-        if self.agent.pump(&mut self.session) {
+        if self.features.agent.panel.pump(&mut self.session) {
             ui.ctx().request_repaint();
         }
         // A test drives the models by hand, outside a frame: what they named is taken here.
-        self.after_agent(ui.ctx());
+        if let Some(request) = self.features.agent.after(self.session.context(), ui.ctx()) {
+            self.request(request);
+        }
         self.ctx = Some(ui.ctx().clone());
-        if self.take_inline() {
+        if let Some(answer) = self.features.agent.take_inline() {
+            self.show_inline(answer);
             ui.ctx().request_repaint();
         }
         // AGT-7: commands sent over the socket run first, so the frame draws what they did.
@@ -2698,9 +2500,9 @@ impl Shell {
                 {
                     return;
                 }
-                if let Some(entity) = self.live().entity {
+                if let Some(entity) = self.session.context().live().entity {
                     let started = self.ask_about(&entity, ctx);
-                    self.agent.set_error(started.err());
+                    self.features.agent.panel.set_error(started.err());
                 }
                 return;
             }
@@ -2903,7 +2705,7 @@ impl Shell {
         let debug_input = &mut self.features.debugger.input;
         let terminal_view = &mut self.features.terminal.view;
         let git_view = &mut self.features.git.view;
-        let agent = &mut self.agent;
+        let agent = &mut self.features.agent.panel;
         let mut agent_action = None;
         let map_editor = (self.centre_tab == CentreTab::Map && workbench.map().is_some())
             .then_some(&mut self.map_editor);
@@ -3090,6 +2892,7 @@ impl Shell {
     /// Carries out what a feature asked of the window or another feature, at once.
     fn request(&mut self, request: ShellRequest) {
         match request {
+            ShellRequest::Jump(jump) => self.jump(jump),
             ShellRequest::ShowLine { path, line } => {
                 self.pending_line = Some((path.clone(), line));
                 self.jump(Jump { path, offset: 0 });

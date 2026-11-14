@@ -10,15 +10,18 @@ use std::path::PathBuf;
 
 use qs_commands::{CommandError, Session};
 
+use crate::agent::{AgentFeature, AgentPanel};
 use crate::debugger::DebuggerFeature;
 use crate::git_panel::GitFeature;
+use crate::project::Jump;
 use crate::shell::{BottomTab, ShellError, Workspace};
 use crate::strings::Text;
 use crate::terminal::TerminalFeature;
 
 /// The features, each with its state.
-#[derive(Default)]
 pub(crate) struct Features {
+    /// The agent panel and an inline edit's answer (P4-09, P4-10).
+    pub(crate) agent: AgentFeature,
     /// The Git tab (P4-35).
     pub(crate) git: GitFeature,
     /// The Terminal tab (P4-36).
@@ -27,9 +30,23 @@ pub(crate) struct Features {
     pub(crate) debugger: DebuggerFeature,
 }
 
+impl Features {
+    /// The features, the agent's over `agent`.
+    pub(crate) fn new(agent: AgentPanel) -> Self {
+        Self {
+            agent: AgentFeature::new(agent),
+            git: GitFeature::default(),
+            terminal: TerminalFeature::default(),
+            debugger: DebuggerFeature::default(),
+        }
+    }
+}
+
 /// What a feature asks of the window or of another feature.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ShellRequest {
+    /// Open a file at a place, as a panel's row does.
+    Jump(Jump),
     /// Open `path` in the editor with its caret at `line`, from 1.
     ShowLine {
         /// The file.
@@ -68,6 +85,11 @@ impl<'a> Commands<'a> {
 
     /// The session, to read the workspace.
     pub(crate) const fn session(&self) -> &Session<Workspace> {
+        self.session
+    }
+
+    /// The session, for a feature that runs commands through its own model, as the agent does.
+    pub(crate) const fn session_mut(&mut self) -> &mut Session<Workspace> {
         self.session
     }
 
