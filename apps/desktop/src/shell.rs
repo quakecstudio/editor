@@ -283,10 +283,6 @@ impl FocusNow {
 
 /// The editor's area, whose egui id is the editor view's.
 pub(crate) const EDITOR_AREA: Area = Area::Editor;
-/// How far the player's eye is above its origin: id's `self.view_ofs = '0 0 22'` in
-/// `PutClientInServer`, so the eye is where the camera was (MAP-13).
-const PLAYER_EYE: f64 = 22.0;
-
 /// How often the open map is backed up while it has unsaved edits, in seconds (P6-20).
 const MAP_BACKUP_INTERVAL: f64 = 60.0;
 
@@ -1908,12 +1904,17 @@ impl Shell {
         };
         let failed = result.is_err();
         self.preview_error = result.err().map(|error| error.to_string());
-        // P3-21: Play that failed for want of the game opens the guide to its files.
         if failed && id == PLAY {
-            let files: Option<GameFiles> = self.run(GAME, &serde_json::json!({}));
-            if let Some(files) = files {
-                self.guide = (Guide::for_files(&files), Some(files));
-            }
+            self.open_guide_to_missing_files();
+        }
+    }
+
+    /// P3-21: Play that failed for want of the game opens the guide to its files; the guide
+    /// stays hidden when the files are all there.
+    fn open_guide_to_missing_files(&mut self) {
+        let files: Option<GameFiles> = self.run(GAME, &serde_json::json!({}));
+        if let Some(files) = files {
+            self.guide = (Guide::for_files(&files), Some(files));
         }
     }
 
@@ -2445,18 +2446,24 @@ impl Shell {
         let Some(camera) = self.map_editor.camera().copied() else {
             return Ok(serde_json::Value::Null);
         };
-        let [x, y, z] = camera.origin.map(f64::from);
-        self.attempt(
+        let played = self.attempt(
             MAP_PLAY_FROM_HERE,
             &PlayFromHereParams {
-                at: [x, y, z - PLAYER_EYE],
+                eye: camera.origin.map(f64::from),
                 angles: Some([
                     f64::from(camera.pitch.get()),
                     f64::from(camera.yaw.get()),
                     0.0,
                 ]),
             },
-        )
+        );
+        // As Play from the toolbar: the error on the toolbar, and the guide when no game was
+        // found (P3-21).
+        self.preview_error = played.as_ref().err().map(ToString::to_string);
+        if played.is_err() {
+            self.open_guide_to_missing_files();
+        }
+        played
     }
 
     /// Runs a brush edit as its `map.brush_*` command, on the commands' grid.

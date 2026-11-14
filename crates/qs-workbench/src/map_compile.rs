@@ -11,9 +11,12 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use qs_bsp::{Bsp, BspLoader};
 use qs_commands::{Command, NoParams, Outcome};
 use qs_map_bsp::{Compiled, Compiler};
 use qs_map_light::{Light, Sampling};
+use qs_sim::DEFAULT_VIEWHEIGHT;
+use qs_sim::collision::{CONTENTS_SOLID, HullSet};
 use qs_wad::Wad;
 use qs_wad::write::WadBuilder;
 use schemars::JsonSchema;
@@ -22,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::preview::{HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 use qs_map_edit::textures::{Game, find_wad};
-use qs_map_edit::{MapReport, MapSource};
+use qs_map_edit::{MapEditError, MapReport, MapSource};
 
 /// The id of `map.leaks`.
 pub const MAP_LEAKS: &str = "map.leaks";
@@ -222,12 +225,56 @@ impl<C: HasPreview + 'static> Command<C> for MapPortalsCommand {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PlayFromHereParams {
-    /// Where the player starts: the map view's camera.
-    pub at: [f64; 3],
+    /// Where the player's eye goes: the map view's camera. The player's origin is
+    /// `view_ofs` below it, moved up or down to the nearest place its box fits.
+    pub eye: [f64; 3],
     /// Which way the player faces, pitch, yaw and roll in degrees; ahead along x when not
     /// given.
     #[serde(default)]
     pub angles: Option<[f64; 3]>,
+}
+
+/// How far, in whole units up or down, [`PlayFromHereParams::origin_in`] looks for room for
+/// the player's box: as far as the box is tall above its origin and then some, so a camera
+/// near a floor or a ceiling still finds the room beside it.
+const PLAYER_ROOM_SEARCH: u8 = 64;
+
+/// Hull 1, the clipping hull of the player's box, (-16, -16, -24) to (16, 16, 32) (BSP-11.3).
+const PLAYER_HULL: usize = 1;
+
+impl PlayFromHereParams {
+    /// Where the player's origin goes in `bsp`: `view_ofs` (id's `'0 0 22'`, NET-4.4) below
+    /// the eye, at the nearest height within [`PLAYER_ROOM_SEARCH`] units where hull 1, the
+    /// player's box, is not in solid; looked for first above, then below, a unit at a time.
+    ///
+    /// # Errors
+    ///
+    /// [`PreviewError::NoRoom`] when the box fits nowhere along that line, or the eye is not a
+    /// point the game can hold.
+    pub fn origin_in(&self, bsp: &Bsp<'_>) -> Result<[f32; 3], PreviewError> {
+        let no_room = || PreviewError::NoRoom(self.eye);
+        let [x, y, eye] = self.eye.map(single);
+        let z = eye - DEFAULT_VIEWHEIGHT;
+        if ![x, y, z].iter().all(|c| c.is_finite()) {
+            return Err(no_room());
+        }
+        let [h0, h1, h2, _] = bsp
+            .models
+            .first()
+            .map(|model| model.headnode)
+            .unwrap_or_default();
+        let hulls = HullSet::new(bsp);
+        let hull = hulls.hull(PLAYER_HULL, [h0, h1, h2]);
+        let fits = |p: [f32; 3]| {
+            hull.point_contents(hull.first, p)
+                .is_ok_and(|contents| contents != CONTENTS_SOLID)
+        };
+        (0..=PLAYER_ROOM_SEARCH)
+            .flat_map(|step| [f32::from(step), -f32::from(step)])
+            .map(|lift| [x, y, z + lift])
+            .find(|&p| fits(p))
+            .ok_or_else(no_room)
+    }
 }
 
 /// What `map.play_from_here` played.
@@ -235,8 +282,12 @@ pub struct PlayFromHereParams {
 pub struct PlayedHere {
     /// The map's name, as the game's `map` command takes it.
     pub map: String,
+    /// Where the player was put: its origin, in the map's units.
+    pub origin: [f32; 3],
     /// What compiling it found.
     pub report: MapReport,
+    /// What lighting it warned of, as `light` prints each.
+    pub light_warnings: Vec<String>,
 }
 
 /// A float of a map, as the game's single precision holds it.
@@ -254,8 +305,8 @@ pub(crate) struct MapPlayFromHere;
 impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
     const ID: &'static str = MAP_PLAY_FROM_HERE;
     const SUMMARY: &'static str = "Compiles the open map fast, with no vis and fast light, into \
-        the project's build, starts the game on it and puts the player at a point, facing a \
-        way: the map view's camera (MAP-13).";
+        the project's build, starts the game on it and puts the player's eye at a point, facing \
+        a way: the map view's camera (MAP-13).";
     type Params = PlayFromHereParams;
     type Output = PlayedHere;
     type Error = PreviewError;
@@ -273,6 +324,12 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
         let lit = Light::new(Sampling::Fast)
             .run(&compiled.bsp)
             .map_err(|error| PreviewError::Build(WorkbenchError::MapLight { error }))?;
+        let bsp = Bsp::read(&lit.bsp, BspLoader::default()).map_err(|error| {
+            PreviewError::Build(WorkbenchError::MapEdit(MapEditError::Bsp {
+                path: path.clone(),
+                error,
+            }))
+        })?;
         let built = workbench.built_program()?;
         let (project, _, mod_name) = &built;
         let name = path
@@ -297,11 +354,26 @@ impl<C: HasPreview + 'static> Command<C> for MapPlayFromHere {
                 }
             }
         }
+        // The map is written first, as a compile writes it; a camera with no room for the
+        // player then plays nothing.
+        let origin = params.origin_in(&bsp)?;
         preview.play_built(built, Some(name.clone()))?;
         let client = preview.client().ok_or(PreviewError::NotRunning)?;
         let angles = params.angles.unwrap_or_default().map(single);
-        client.spawn_player_at(params.at.map(single), angles)?;
-        Ok(Outcome::outside_history(PlayedHere { map: name, report }))
+        client.spawn_player_at(origin, angles)?;
+        let light_warnings: Vec<String> = lit.warnings.iter().map(ToString::to_string).collect();
+        if let Some(first) = light_warnings.first() {
+            preview.set_status(format!(
+                "Playing {name}: {} light warnings, the first {first}",
+                light_warnings.len()
+            ));
+        }
+        Ok(Outcome::outside_history(PlayedHere {
+            map: name,
+            origin,
+            report,
+            light_warnings,
+        }))
     }
 }
 

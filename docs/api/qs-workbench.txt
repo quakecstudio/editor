@@ -268,8 +268,10 @@ field qs_workbench::map_check::RenamedIn.path
 field qs_workbench::map_compile::MapPortals.path
 field qs_workbench::map_compile::MapPortals.portals
 field qs_workbench::map_compile::PlayFromHereParams.angles
-field qs_workbench::map_compile::PlayFromHereParams.at
+field qs_workbench::map_compile::PlayFromHereParams.eye
+field qs_workbench::map_compile::PlayedHere.light_warnings
 field qs_workbench::map_compile::PlayedHere.map
+field qs_workbench::map_compile::PlayedHere.origin
 field qs_workbench::map_compile::PlayedHere.report
 field qs_workbench::map_filter::FilterParams.mode
 field qs_workbench::map_filter::FilterParams.skill
@@ -506,6 +508,7 @@ fn qs_workbench::git::register_git
 fn qs_workbench::map_check::Workbench::check_map
 fn qs_workbench::map_check::Workbench::entity_schema
 fn qs_workbench::map_check::Workbench::rename_map_key
+fn qs_workbench::map_compile::PlayFromHereParams::origin_in
 fn qs_workbench::map_profile::Expansions::bsp
 fn qs_workbench::map_profile::Expansions::expand
 fn qs_workbench::map_profile::Expansions::new
@@ -1061,6 +1064,7 @@ variant qs_workbench::preview::PreviewError::Build
 variant qs_workbench::preview::PreviewError::Launch
 variant qs_workbench::preview::PreviewError::NoField
 variant qs_workbench::preview::PreviewError::NoGame
+variant qs_workbench::preview::PreviewError::NoRoom
 variant qs_workbench::preview::PreviewError::NotPaused
 variant qs_workbench::preview::PreviewError::NotRunning
 variant qs_workbench::preview::PreviewError::NothingBuilt
