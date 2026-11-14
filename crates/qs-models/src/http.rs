@@ -144,7 +144,7 @@ impl Http {
             .send(body.to_string())
             .map_err(|error| TransportError::Connect(error.to_string()))?;
         let code = response.status().as_u16();
-        if (200..300).contains(&code) {
+        if response.status().is_success() {
             return Ok(response);
         }
         let text = response

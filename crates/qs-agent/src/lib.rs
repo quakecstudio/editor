@@ -125,16 +125,18 @@ impl EntityState {
     }
 }
 
-/// The task of "Ask about this" on `entity` (P4-12, UI-9): what it is doing and why, with its
-/// state attached.
-#[must_use]
-pub fn ask_about(entity: &EntityState) -> String {
-    format!(
-        "Explain what this entity is doing in the running game and why, from the project's \
-         QuakeC: what spawned it, what its think function does next, and anything in its state \
-         that looks wrong. Do not change any code unless asked.\n\n{}",
-        entity.brief()
-    )
+impl EntityState {
+    /// The task of "Ask about this" on the entity (P4-12, UI-9): what it is doing and why, with
+    /// its state attached.
+    #[must_use]
+    pub fn ask_about(&self) -> String {
+        format!(
+            "Explain what this entity is doing in the running game and why, from the project's \
+             QuakeC: what spawned it, what its think function does next, and anything in its \
+             state that looks wrong. Do not change any code unless asked.\n\n{}",
+            self.brief()
+        )
+    }
 }
 
 /// What the running game offers the agent's `@entity` and `@error` mentions.
@@ -275,22 +277,24 @@ pub fn inline_prompt(path: &Path, file: &str, selection: &str, instruction: &str
     )
 }
 
-/// The new text in an inline edit's answer: its text, without the code fences a model may put
-/// around it.
-#[must_use]
-pub fn inline_answer(reply: &Reply) -> String {
-    let text = match reply {
-        Reply::Calls { text, .. } | Reply::Finish { summary: text } => text.as_str(),
-    };
-    let trimmed = text.trim_matches('\n');
-    let Some(body) = trimmed.strip_prefix("```") else {
-        return text.to_owned();
-    };
-    let body = body.split_once('\n').map_or("", |(_, rest)| rest);
-    body.strip_suffix("```")
-        .unwrap_or(body)
-        .trim_end_matches('\n')
-        .to_owned()
+impl Reply {
+    /// The new text in an inline edit's answer: the reply's text, without the code fences a
+    /// model may put around it.
+    #[must_use]
+    pub fn inline_answer(&self) -> String {
+        let text = match self {
+            Self::Calls { text, .. } | Self::Finish { summary: text } => text.as_str(),
+        };
+        let trimmed = text.trim_matches('\n');
+        let Some(body) = trimmed.strip_prefix("```") else {
+            return text.to_owned();
+        };
+        let body = body.split_once('\n').map_or("", |(_, rest)| rest);
+        body.strip_suffix("```")
+            .unwrap_or(body)
+            .trim_end_matches('\n')
+            .to_owned()
+    }
 }
 
 /// The QuakeC reference written for the agent (`docs/agent-reference/quakec.md`).
@@ -401,22 +405,30 @@ pub fn estimated_tokens(transcript: &[Message]) -> usize {
 #[must_use]
 pub fn base64(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    // RFC 4648, section 4: each group of three bytes is four symbols of six bits.
+    const GROUP_BYTES: usize = 3;
+    const GROUP_SYMBOLS: u32 = 4;
+    const BYTE_BITS: u32 = 8;
+    const SYMBOL_BITS: u32 = 6;
+    const SYMBOL_MASK: u32 = (1 << SYMBOL_BITS) - 1;
     let symbol = |index: u32| {
-        let index = usize::try_from(index & 63).unwrap_or(0);
+        let index = usize::try_from(index & SYMBOL_MASK).unwrap_or(0);
         char::from(ALPHABET.get(index).copied().unwrap_or(b'A'))
     };
-    let mut out = String::with_capacity(bytes.len().div_ceil(3).saturating_mul(4));
-    for chunk in bytes.chunks(3) {
-        let b = |i: usize| u32::from(chunk.get(i).copied().unwrap_or(0));
-        let group = (b(0) << 16) | (b(1) << 8) | b(2);
-        out.push(symbol(group >> 18));
-        out.push(symbol(group >> 12));
-        out.push(if chunk.len() > 1 {
-            symbol(group >> 6)
-        } else {
-            '='
+    let symbols = usize::try_from(GROUP_SYMBOLS).unwrap_or(usize::MAX);
+    let mut out = String::with_capacity(bytes.len().div_ceil(GROUP_BYTES).saturating_mul(symbols));
+    for chunk in bytes.chunks(GROUP_BYTES) {
+        let group = (0..GROUP_BYTES).fold(0_u32, |group, i| {
+            (group << BYTE_BITS) | u32::from(chunk.get(i).copied().unwrap_or(0))
         });
-        out.push(if chunk.len() > 2 { symbol(group) } else { '=' });
+        // A short last chunk of n bytes fills n + 1 symbols, the rest padding.
+        for (place, after) in (0..GROUP_SYMBOLS).rev().enumerate() {
+            out.push(if place <= chunk.len() {
+                symbol(group >> SYMBOL_BITS.saturating_mul(after))
+            } else {
+                '='
+            });
+        }
     }
     out
 }
@@ -508,18 +520,28 @@ pub const COMPACT_PROMPT: &str = "The conversation is near the model's context l
 /// What the compacted transcript says before the summary.
 pub const SUMMARY_HEADING: &str = "Summary of the earlier turns, which were compacted:";
 
+/// The turns a run has unless configured otherwise.
+pub const DEFAULT_TURNS: usize = 40;
+/// The characters a tool's output is cut at unless configured otherwise.
+pub const DEFAULT_OUTPUT_LIMIT: usize = 20_000;
+/// The context window, in tokens, assumed unless configured otherwise.
+pub const DEFAULT_CONTEXT_LIMIT: usize = 200_000;
+/// What a percentage is out of.
+const PERCENT: usize = 100;
+
 impl RunConfig {
-    /// A run over the project at `project`, with 40 turns, the tests run with no parameters,
-    /// outputs cut at 20 000 characters and the Write profile with no rules.
+    /// A run over the project at `project`, with [`DEFAULT_TURNS`] turns, the tests run with no parameters,
+    /// outputs cut at [`DEFAULT_OUTPUT_LIMIT`] characters, a context of [`DEFAULT_CONTEXT_LIMIT`]
+    /// tokens and the Write profile with no rules.
     #[must_use]
     pub fn new(project: impl Into<PathBuf>) -> Self {
         Self {
             project: project.into(),
-            turns: 40,
+            turns: DEFAULT_TURNS,
             test_params: json!({}),
-            output_limit: 20_000,
+            output_limit: DEFAULT_OUTPUT_LIMIT,
             permissions: Permissions::default(),
-            context_limit: 200_000,
+            context_limit: DEFAULT_CONTEXT_LIMIT,
             map: None,
         }
     }
@@ -777,7 +799,7 @@ impl Run {
             .config
             .context_limit
             .saturating_mul(COMPACT_AT_PERCENT)
-            .checked_div(100)
+            .checked_div(PERCENT)
             .unwrap_or(0);
         self.transcript.len() > 2 && self.tokens() > at
     }
@@ -886,17 +908,15 @@ impl Run {
             match verdict.decision {
                 Decision::Ask if offered => {
                     self.asking = Some(Asking {
-                        subjects: subjects(&call, &self.config.project),
+                        subjects: call.subjects(&self.config.project),
                         call,
                         why: verdict.why,
                     });
                     return;
                 }
                 Decision::Deny if offered => {
-                    self.transcript.push(refusal(
-                        &call,
-                        &format!("it is not allowed: {}", verdict.why),
-                    ));
+                    self.transcript
+                        .push(call.refusal(&format!("it is not allowed: {}", verdict.why)));
                 }
                 _ => {
                     let result = call_tool(session, &self.specs, &call, &self.config);
@@ -922,7 +942,7 @@ impl Run {
         match permit {
             Permit::Deny => {
                 self.transcript
-                    .push(refusal(&asking.call, "the modder did not allow it"));
+                    .push(asking.call.refusal("the modder did not allow it"));
             }
             Permit::Once | Permit::Always => {
                 if permit == Permit::Always {
@@ -1168,12 +1188,14 @@ fn module_brief<C: 'static>(session: &mut Session<C>, module: &Value) -> String 
     text
 }
 
-/// The result that tells the model `call` was not run, and why.
-fn refusal(call: &ToolCall, why: &str) -> Message {
-    Message::Tool {
-        call_id: call.id.clone(),
-        content: json!(format!("{} was not run: {why}", call.name)),
-        is_error: true,
+impl ToolCall {
+    /// The result that tells the model the call was not run, and why.
+    fn refusal(&self, why: &str) -> Message {
+        Message::Tool {
+            call_id: self.id.clone(),
+            content: json!(format!("{} was not run: {why}", self.name)),
+            is_error: true,
+        }
     }
 }
 
@@ -1378,7 +1400,7 @@ fn lexical(path: &Path) -> PathBuf {
 pub mod history;
 mod permissions;
 
-pub use permissions::{EDIT_TOOLS, Permissions, READ_TOOLS, Verdict, glob, subjects};
+pub use permissions::{EDIT_TOOLS, Permissions, READ_TOOLS, Verdict, glob};
 
 #[cfg(test)]
 mod tests;

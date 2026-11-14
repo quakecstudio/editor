@@ -706,7 +706,7 @@ impl Shell {
         ctx: &egui::Context,
     ) -> Result<(), String> {
         let root = self.agent_root()?;
-        self.start_thread(&root, &qs_agent::ask_about(entity), ctx)
+        self.start_thread(&root, &entity.ask_about(), ctx)
     }
 
     /// The open project's folder, which an agent thread works in.

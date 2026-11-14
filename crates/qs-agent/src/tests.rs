@@ -666,7 +666,7 @@ fn asking_about_an_entity_carries_its_state() {
             ("nextthink".to_owned(), "3.1".to_owned()),
         ],
     };
-    let task = super::ask_about(&ogre);
+    let task = ogre.ask_about();
     assert!(task.contains("classname monster_ogre"), "{task}");
     assert!(task.contains("current think function is ogre_stand1, due at time 3.1"));
     assert!(task.contains("- health = 200"));
@@ -731,11 +731,11 @@ fn an_inline_edit_asks_and_answers_plainly() {
     let plain = Reply::Finish {
         summary: "x = 2;".to_owned(),
     };
-    assert_eq!(super::inline_answer(&plain), "x = 2;");
+    assert_eq!(plain.inline_answer(), "x = 2;");
     let fenced = Reply::Finish {
         summary: "```quakec\nx = 2;\ny = 3;\n```".to_owned(),
     };
-    assert_eq!(super::inline_answer(&fenced), "x = 2;\ny = 3;");
+    assert_eq!(fenced.inline_answer(), "x = 2;\ny = 3;");
 }
 
 // No spec statement: P4-31, the acceptance criterion: a thread near the model's context limit

@@ -315,7 +315,7 @@ impl Server {
     /// As [`Server::serve_on`].
     pub fn serve_bytes(self, input: Vec<u8>) -> Result<Vec<u8>, McpError> {
         runtime()?.block_on(async move {
-            let (client, server) = tokio::io::duplex(1 << 16);
+            let (client, server) = tokio::io::duplex(DUPLEX_BUFFER);
             let (server_read, server_write) = tokio::io::split(server);
             let (mut client_read, mut client_write) = tokio::io::split(client);
             let serving = tokio::spawn(async move {
@@ -429,6 +429,9 @@ fn runtime() -> Result<Runtime, McpError> {
 }
 
 /// What the server tells a client's model about using it.
+/// The bytes `serve_bytes`' in-memory pipe buffers each way.
+const DUPLEX_BUFFER: usize = 1 << 16;
+
 const INSTRUCTIONS: &str = "QuakeC Studio's tools over the project this server was started on: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
     read files, stage edits as hunks and keep checkpoints. Paths are the project's, absolute or \

@@ -15,71 +15,73 @@ use qs_agent::{Message, Reply, ToolCall, ToolSpec};
 
 use crate::{Header, ProviderConfig, Secret, command_of, result_text, tool_name};
 
-/// The request for the next reply: its URL, headers and body.
-pub(crate) fn request(
-    config: &ProviderConfig,
-    key: Option<&Secret>,
-    system: &str,
-    tools: &[ToolSpec],
-    transcript: &[Message],
-    sent: &[Value],
-) -> (String, Vec<Header>, Value) {
-    let mut headers = Vec::new();
-    if let Some(key) = key {
-        headers.push(Header::Secret(
-            "authorization",
-            crate::Secret::new(format!("Bearer {}", key.expose())),
-        ));
-    }
-    let mut messages = vec![json!({ "role": "system", "content": system })];
-    let mut replies = sent.iter();
-    for message in transcript {
-        messages.push(match message {
-            Message::User { text } => json!({ "role": "user", "content": text }),
-            // `ChatCompletionRequestMessageContentPartImage`: `type` `image_url`, whose `url` is
-            // "Either a URL of the image or the base64 encoded image data", sent as the data
-            // URL its example writes, `"url": "data:image/jpeg;base64,abcdefg..."`.
-            Message::Image { media_type, data } => json!({
-                "role": "user",
-                "content": [{
-                    "type": "image_url",
-                    "image_url": { "url": format!("data:{media_type};base64,{data}") },
-                }],
-            }),
-            Message::Assistant { text, calls } => match replies.next() {
-                Some(raw) if raw.is_object() => raw.clone(),
-                _ => assistant(text, calls),
-            },
-            Message::Tool {
-                call_id, content, ..
-            } => json!({
-                "role": "tool",
-                "tool_call_id": call_id,
-                "content": result_text(content),
-            }),
-        });
-    }
-    let mut body = json!({ "model": config.model, "messages": messages });
-    if !tools.is_empty()
-        && let Some(object) = body.as_object_mut()
-    {
-        let tools: Vec<Value> = tools
-            .iter()
-            .map(|tool| {
-                json!({
-                    "type": "function",
-                    "function": {
-                        "name": tool_name(&tool.name),
-                        "description": tool.description,
-                        "parameters": tool.input_schema,
-                    },
+impl ProviderConfig {
+    /// The request for the next reply: its URL, headers and body.
+    pub(crate) fn openai_request(
+        &self,
+        key: Option<&Secret>,
+        system: &str,
+        tools: &[ToolSpec],
+        transcript: &[Message],
+        sent: &[Value],
+    ) -> (String, Vec<Header>, Value) {
+        let mut headers = Vec::new();
+        if let Some(key) = key {
+            headers.push(Header::Secret(
+                "authorization",
+                crate::Secret::new(format!("Bearer {}", key.expose())),
+            ));
+        }
+        let mut messages = vec![json!({ "role": "system", "content": system })];
+        let mut replies = sent.iter();
+        for message in transcript {
+            messages.push(match message {
+                Message::User { text } => json!({ "role": "user", "content": text }),
+                // `ChatCompletionRequestMessageContentPartImage`: `type` `image_url`, whose `url` is
+                // "Either a URL of the image or the base64 encoded image data", sent as the data
+                // URL its example writes, `"url": "data:image/jpeg;base64,abcdefg..."`.
+                Message::Image { media_type, data } => json!({
+                    "role": "user",
+                    "content": [{
+                        "type": "image_url",
+                        "image_url": { "url": format!("data:{media_type};base64,{data}") },
+                    }],
+                }),
+                Message::Assistant { text, calls } => match replies.next() {
+                    Some(raw) if raw.is_object() => raw.clone(),
+                    _ => assistant(text, calls),
+                },
+                Message::Tool {
+                    call_id, content, ..
+                } => json!({
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": result_text(content),
+                }),
+            });
+        }
+        let mut body = json!({ "model": self.model, "messages": messages });
+        if !tools.is_empty()
+            && let Some(object) = body.as_object_mut()
+        {
+            let tools: Vec<Value> = tools
+                .iter()
+                .map(|tool| {
+                    json!({
+                        "type": "function",
+                        "function": {
+                            "name": tool_name(&tool.name),
+                            "description": tool.description,
+                            "parameters": tool.input_schema,
+                        },
+                    })
                 })
-            })
-            .collect();
-        object.insert("tools".to_owned(), Value::Array(tools));
+                .collect();
+            object.insert("tools".to_owned(), Value::Array(tools));
+        }
+        let url = format!("{}/chat/completions", self.base_url());
+        (url, headers, body)
     }
-    let url = format!("{}/chat/completions", config.base_url());
-    (url, headers, body)
 }
 
 /// An assistant message built from the transcript, for one the provider did not send.

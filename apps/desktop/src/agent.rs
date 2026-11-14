@@ -588,7 +588,7 @@ impl AgentPanel {
                     &[],
                     &[Message::User { text: prompt }],
                 )
-                .map(|reply| qs_agent::inline_answer(&reply));
+                .map(|reply| reply.inline_answer());
             // The editor that asked may have gone; then nothing waits for the answer.
             let _sent = answer.send(reply);
             wake();

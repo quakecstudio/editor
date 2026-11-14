@@ -20,7 +20,6 @@ use crate::{
     Header, Http, KeyError, KeyStore as _, Keychain, MemoryKeys, ProviderConfig, ProviderError,
     ProviderKind, ProviderModel, Secret, Transport, TransportError,
 };
-use crate::{anthropic, openai};
 
 const KEY: &str = "sk-test-0123456789-very-secret";
 
@@ -676,14 +675,8 @@ fn an_image_is_sent_in_each_providers_form() {
             data: "cG5n".to_owned(),
         },
     ];
-    let (_, _, body) = anthropic::request(
-        &ProviderConfig::anthropic(),
-        None,
-        "s",
-        &tools(),
-        &transcript,
-        &[],
-    );
+    let (_, _, body) =
+        ProviderConfig::anthropic().anthropic_request(None, "s", &tools(), &transcript, &[]);
     let content = &body["messages"][0]["content"];
     assert_eq!(
         body["messages"].as_array().unwrap().len(),
@@ -696,7 +689,7 @@ fn an_image_is_sent_in_each_providers_form() {
         json!({ "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "cG5n" } })
     );
     let config = ProviderConfig::new(ProviderKind::OpenAiCompatible, "m");
-    let (_, _, body) = openai::request(&config, None, "s", &tools(), &transcript, &[]);
+    let (_, _, body) = config.openai_request(None, "s", &tools(), &transcript, &[]);
     assert_eq!(
         body["messages"][2]["content"][0],
         json!({ "type": "image_url", "image_url": { "url": "data:image/png;base64,cG5n" } })

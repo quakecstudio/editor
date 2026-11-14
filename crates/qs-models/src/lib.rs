@@ -123,8 +123,13 @@ pub struct ProviderConfig {
 }
 
 /// The reply limit when the configuration names none.
+pub const DEFAULT_MAX_TOKENS: u32 = 16_000;
+/// The tokens a price is given per.
+const PRICED_TOKENS: f64 = 1_000_000.0;
+
+/// [`DEFAULT_MAX_TOKENS`], for serde's default.
 const fn default_max_tokens() -> u32 {
-    16_000
+    DEFAULT_MAX_TOKENS
 }
 
 impl ProviderConfig {
@@ -234,7 +239,7 @@ impl Usage {
         let tokens = |count: u64| f64::from(u32::try_from(count).unwrap_or(u32::MAX));
         (tokens(self.input_tokens) * input_per_million
             + tokens(self.output_tokens) * output_per_million)
-            / 1_000_000.0
+            / PRICED_TOKENS
     }
 }
 
@@ -299,22 +304,17 @@ impl<T: Transport> ProviderModel<T> {
         transcript: &[Message],
     ) -> (String, Vec<Header>, Value) {
         match self.config.kind {
-            ProviderKind::Anthropic => anthropic::request(
-                &self.config,
+            ProviderKind::Anthropic => self.config.anthropic_request(
                 self.key.as_ref(),
                 system,
                 tools,
                 transcript,
                 &self.sent,
             ),
-            ProviderKind::OpenAiCompatible | ProviderKind::Ollama => openai::request(
-                &self.config,
-                self.key.as_ref(),
-                system,
-                tools,
-                transcript,
-                &self.sent,
-            ),
+            ProviderKind::OpenAiCompatible | ProviderKind::Ollama => {
+                self.config
+                    .openai_request(self.key.as_ref(), system, tools, transcript, &self.sent)
+            }
         }
     }
 
