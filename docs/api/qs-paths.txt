@@ -8,9 +8,9 @@ fn qs_paths::AppDirs::config
 fn qs_paths::AppDirs::data
 fn qs_paths::AppDirs::logs
 fn qs_paths::Platform::current
+fn qs_paths::Platform::dirs
 fn qs_paths::current
 fn qs_paths::fonts::current_font_dirs
-fn qs_paths::resolve
 fn qs_paths::stores::StoreDirs::gog_libraries
 fn qs_paths::stores::StoreDirs::heroic
 fn qs_paths::stores::StoreDirs::steam

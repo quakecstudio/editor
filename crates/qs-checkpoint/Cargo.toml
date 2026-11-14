@@ -13,6 +13,9 @@ publish.workspace = true
 sha1_smol = { workspace = true }
 # Git's loose objects are zlib streams.
 miniz_oxide = { workspace = true, features = ["with-alloc"] }
+# A checkpoint's number is a command's parameter and answer in JSON.
+schemars = { workspace = true, features = ["derive", "std"] }
+serde = { workspace = true, features = ["derive", "std"] }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }

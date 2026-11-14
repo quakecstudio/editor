@@ -17,62 +17,64 @@ use crate::{Platform, absolute_var, join_all};
 /// The font folders of the running platform, from the process environment.
 #[must_use]
 pub fn current_font_dirs() -> Vec<PathBuf> {
-    font_dirs(Platform::current(), std::env::var_os)
+    Platform::current().font_dirs(std::env::var_os)
 }
 
-/// The font folders of `platform`, reading variables through `env`, in the order to search:
-/// the user's own fonts last. A folder whose variable is unset, empty or relative is left out.
-#[must_use]
-pub(crate) fn font_dirs<F>(platform: Platform, env: F) -> Vec<PathBuf>
-where
-    F: Fn(&'static str) -> Option<OsString>,
-{
-    let var = |name: &'static str| absolute_var(platform, &env, name);
-    let under = |base: Option<PathBuf>, parts: &[&str]| base.map(|base| join_all(&base, parts));
-    match platform {
-        Platform::MacOs => [
-            Some(PathBuf::from("/System/Library/Fonts")),
-            Some(PathBuf::from("/Library/Fonts")),
-            under(var("HOME"), &["Library", "Fonts"]),
-        ]
-        .into_iter()
-        .flatten()
-        .collect(),
-        Platform::Windows => [
-            under(var("SystemRoot"), &["Fonts"]),
-            under(var("LOCALAPPDATA"), &["Microsoft", "Windows", "Fonts"]),
-        ]
-        .into_iter()
-        .flatten()
-        .collect(),
-        Platform::Linux => {
-            let home = var("HOME");
-            // XDG_DATA_DIRS is a list; its default is /usr/local/share and /usr/share.
-            let system: Vec<PathBuf> = env("XDG_DATA_DIRS")
-                .filter(|dirs| !dirs.is_empty())
-                .map_or_else(
-                    || {
-                        vec![
-                            PathBuf::from("/usr/local/share"),
-                            PathBuf::from("/usr/share"),
-                        ]
-                    },
-                    |dirs| {
-                        dirs.to_string_lossy()
-                            .split(':')
-                            .filter(|dir| platform.is_absolute(OsStr::new(dir)))
-                            .map(PathBuf::from)
-                            .collect()
-                    },
-                );
-            let data_home =
-                var("XDG_DATA_HOME").or_else(|| under(home.clone(), &[".local", "share"]));
-            system
-                .into_iter()
-                .map(|dir| join_all(&dir, &["fonts"]))
-                .chain(under(data_home, &["fonts"]))
-                .chain(under(home, &[".fonts"]))
-                .collect()
+impl Platform {
+    /// The font folders of the platform, reading variables through `env`, in the order to search:
+    /// the user's own fonts last. A folder whose variable is unset, empty or relative is left out.
+    #[must_use]
+    pub(crate) fn font_dirs<F>(self, env: F) -> Vec<PathBuf>
+    where
+        F: Fn(&'static str) -> Option<OsString>,
+    {
+        let var = |name: &'static str| absolute_var(self, &env, name);
+        let under = |base: Option<PathBuf>, parts: &[&str]| base.map(|base| join_all(&base, parts));
+        match self {
+            Platform::MacOs => [
+                Some(PathBuf::from("/System/Library/Fonts")),
+                Some(PathBuf::from("/Library/Fonts")),
+                under(var("HOME"), &["Library", "Fonts"]),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+            Platform::Windows => [
+                under(var("SystemRoot"), &["Fonts"]),
+                under(var("LOCALAPPDATA"), &["Microsoft", "Windows", "Fonts"]),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+            Platform::Linux => {
+                let home = var("HOME");
+                // XDG_DATA_DIRS is a list; its default is /usr/local/share and /usr/share.
+                let system: Vec<PathBuf> = env("XDG_DATA_DIRS")
+                    .filter(|dirs| !dirs.is_empty())
+                    .map_or_else(
+                        || {
+                            vec![
+                                PathBuf::from("/usr/local/share"),
+                                PathBuf::from("/usr/share"),
+                            ]
+                        },
+                        |dirs| {
+                            dirs.to_string_lossy()
+                                .split(':')
+                                .filter(|dir| self.is_absolute(OsStr::new(dir)))
+                                .map(PathBuf::from)
+                                .collect()
+                        },
+                    );
+                let data_home =
+                    var("XDG_DATA_HOME").or_else(|| under(home.clone(), &[".local", "share"]));
+                system
+                    .into_iter()
+                    .map(|dir| join_all(&dir, &["fonts"]))
+                    .chain(under(data_home, &["fonts"]))
+                    .chain(under(home, &[".fonts"]))
+                    .collect()
+            }
         }
     }
 }
@@ -82,7 +84,6 @@ mod tests {
     use std::ffi::OsString;
     use std::path::PathBuf;
 
-    use super::font_dirs;
     use crate::Platform;
 
     fn env(
@@ -104,7 +105,7 @@ mod tests {
     #[test]
     fn macos_searches_the_system_local_and_user_folders() {
         assert_eq!(
-            font_dirs(Platform::MacOs, env(&[("HOME", "/Users/q")])),
+            Platform::MacOs.font_dirs(env(&[("HOME", "/Users/q")])),
             paths(&[
                 &["/System/Library/Fonts"],
                 &["/Library/Fonts"],
@@ -112,7 +113,7 @@ mod tests {
             ])
         );
         assert_eq!(
-            font_dirs(Platform::MacOs, env(&[("HOME", "relative")])),
+            Platform::MacOs.font_dirs(env(&[("HOME", "relative")])),
             paths(&[&["/System/Library/Fonts"], &["/Library/Fonts"]]),
             "a relative home is left out"
         );
@@ -121,13 +122,10 @@ mod tests {
     #[test]
     fn windows_searches_the_fonts_folder_and_the_users() {
         assert_eq!(
-            font_dirs(
-                Platform::Windows,
-                env(&[
-                    ("SystemRoot", "C:\\Windows"),
-                    ("LOCALAPPDATA", "C:\\Users\\q\\AppData\\Local"),
-                ]),
-            ),
+            Platform::Windows.font_dirs(env(&[
+                ("SystemRoot", "C:\\Windows"),
+                ("LOCALAPPDATA", "C:\\Users\\q\\AppData\\Local"),
+            ]),),
             paths(&[
                 &["C:\\Windows", "Fonts"],
                 &[
@@ -138,13 +136,13 @@ mod tests {
                 ],
             ])
         );
-        assert!(font_dirs(Platform::Windows, env(&[])).is_empty());
+        assert!(Platform::Windows.font_dirs(env(&[])).is_empty());
     }
 
     #[test]
     fn linux_searches_each_xdg_data_folder_then_the_users() {
         assert_eq!(
-            font_dirs(Platform::Linux, env(&[("HOME", "/home/q")])),
+            Platform::Linux.font_dirs(env(&[("HOME", "/home/q")])),
             paths(&[
                 &["/usr/local/share", "fonts"],
                 &["/usr/share", "fonts"],
@@ -153,14 +151,11 @@ mod tests {
             ])
         );
         assert_eq!(
-            font_dirs(
-                Platform::Linux,
-                env(&[
-                    ("HOME", "/home/q"),
-                    ("XDG_DATA_DIRS", "/opt/share:relative"),
-                    ("XDG_DATA_HOME", "/data"),
-                ])
-            ),
+            Platform::Linux.font_dirs(env(&[
+                ("HOME", "/home/q"),
+                ("XDG_DATA_DIRS", "/opt/share:relative"),
+                ("XDG_DATA_HOME", "/data"),
+            ])),
             paths(&[
                 &["/opt/share", "fonts"],
                 &["/data", "fonts"],
@@ -168,7 +163,7 @@ mod tests {
             ])
         );
         assert_eq!(
-            font_dirs(Platform::Linux, env(&[("XDG_DATA_DIRS", "")])),
+            Platform::Linux.font_dirs(env(&[("XDG_DATA_DIRS", "")])),
             paths(&[&["/usr/local/share", "fonts"], &["/usr/share", "fonts"]]),
             "an empty list is the default"
         );

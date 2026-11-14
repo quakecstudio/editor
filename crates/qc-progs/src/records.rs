@@ -11,6 +11,8 @@
 
 use qc_types::{DefType, Slot};
 
+use crate::bytes::read_array;
+
 /// The format version id's engine loads, `PROG_VERSION`.
 ///
 /// `PROGS_VERSION` in PROGS-3.
@@ -535,10 +537,6 @@ impl Record for i32 {
         out.extend(self.to_le_bytes());
         Some(())
     }
-}
-
-fn read_array<const N: usize>(bytes: &[u8], at: usize) -> Option<[u8; N]> {
-    bytes.get(at..at.checked_add(N)?)?.try_into().ok()
 }
 
 pub(crate) fn read_i32(bytes: &[u8], at: usize) -> Option<i32> {

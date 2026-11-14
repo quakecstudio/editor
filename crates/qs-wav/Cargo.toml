@@ -8,6 +8,10 @@ rust-version.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[dependencies]
+# The shared fixed-size reads of id's little-endian formats.
+qc-progs = { workspace = true }
+
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }
 

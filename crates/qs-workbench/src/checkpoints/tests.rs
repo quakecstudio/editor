@@ -14,6 +14,7 @@ use serde_json::json;
 use super::{
     CREATE_CHECKPOINT, CheckpointMade, CheckpointRestored, LIST_CHECKPOINTS, RESTORE_CHECKPOINT,
 };
+use crate::ids::CheckpointNumber;
 use crate::{Config, Workbench, WorkbenchError, register};
 
 const WORLD: &str = "void() worldspawn = {};\n";
@@ -64,7 +65,9 @@ fn restoring_undoes_an_agent_run() {
         )
         .unwrap();
     assert!(!workbench.problems().is_empty());
-    let restored = workbench.restore_checkpoint(1).unwrap();
+    let restored = workbench
+        .restore_checkpoint(CheckpointNumber::FIRST)
+        .unwrap();
     assert_eq!(
         std::fs::read_to_string(root.join("world.qc")).unwrap(),
         WORLD
@@ -139,7 +142,7 @@ fn the_checkpoint_commands() {
     assert_eq!(session.undo_depth(), 0);
     let mut none = Workbench::new(FsLoader, Config::default());
     assert!(matches!(
-        none.restore_checkpoint(1),
+        none.restore_checkpoint(CheckpointNumber::FIRST),
         Err(WorkbenchError::NoProject)
     ));
 }

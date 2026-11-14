@@ -57,6 +57,63 @@ impl Platform {
             Self::Linux
         }
     }
+
+    /// Resolves the directories for the platform, reading variables through `env`.
+    ///
+    /// An empty variable counts as unset. On Linux an unset or relative `XDG_*`
+    /// variable falls back to its default under `HOME`, as the XDG Base Directory
+    /// specification requires.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PathsError`] when `HOME` (macOS, Linux) or `APPDATA` and
+    /// `LOCALAPPDATA` (Windows) are unset, empty or relative.
+    pub fn dirs<F>(self, env: F) -> Result<AppDirs, PathsError>
+    where
+        F: Fn(&'static str) -> Option<OsString>,
+    {
+        match self {
+            Platform::MacOs => {
+                let library = required(self, &env, "HOME")?.join("Library");
+                let support = library.join("Application Support").join(APP_DIR_NAME);
+                let cache = library.join("Caches").join(APP_DIR_NAME);
+                Ok(AppDirs {
+                    config: support.clone(),
+                    data: support,
+                    app_socket: cache.join(APP_SOCKET),
+                    cache,
+                    logs: library.join("Logs").join(APP_DIR_NAME),
+                })
+            }
+            Platform::Windows => {
+                let roaming = required(self, &env, "APPDATA")?.join(APP_DIR_NAME);
+                let local = required(self, &env, "LOCALAPPDATA")?.join(APP_DIR_NAME);
+                Ok(AppDirs {
+                    config: roaming,
+                    data: local.join("data"),
+                    app_socket: pipe_named_after(&local.join("cache")),
+                    cache: local.join("cache"),
+                    logs: local.join("logs"),
+                })
+            }
+            Platform::Linux => {
+                let home = required(self, &env, "HOME")?;
+                let xdg = |name: &'static str, default: &[&str]| -> PathBuf {
+                    let base =
+                        absolute_var(self, &env, name).unwrap_or_else(|| join_all(&home, default));
+                    base.join(APP_DIR_NAME_UNIX)
+                };
+                let cache = xdg("XDG_CACHE_HOME", &[".cache"]);
+                Ok(AppDirs {
+                    config: xdg("XDG_CONFIG_HOME", &[".config"]),
+                    data: xdg("XDG_DATA_HOME", &[".local", "share"]),
+                    app_socket: cache.join(APP_SOCKET),
+                    cache,
+                    logs: xdg("XDG_STATE_HOME", &[".local", "state"]).join("logs"),
+                })
+            }
+        }
+    }
 }
 
 /// Why the application directories could not be resolved.
@@ -144,64 +201,7 @@ impl AppDirs {
 /// Returns [`PathsError`] when a variable the platform needs is unset, empty
 /// or relative.
 pub fn current() -> Result<AppDirs, PathsError> {
-    resolve(Platform::current(), std::env::var_os)
-}
-
-/// Resolves the directories for `platform`, reading variables through `env`.
-///
-/// An empty variable counts as unset. On Linux an unset or relative `XDG_*`
-/// variable falls back to its default under `HOME`, as the XDG Base Directory
-/// specification requires.
-///
-/// # Errors
-///
-/// Returns [`PathsError`] when `HOME` (macOS, Linux) or `APPDATA` and
-/// `LOCALAPPDATA` (Windows) are unset, empty or relative.
-pub fn resolve<F>(platform: Platform, env: F) -> Result<AppDirs, PathsError>
-where
-    F: Fn(&'static str) -> Option<OsString>,
-{
-    match platform {
-        Platform::MacOs => {
-            let library = required(platform, &env, "HOME")?.join("Library");
-            let support = library.join("Application Support").join(APP_DIR_NAME);
-            let cache = library.join("Caches").join(APP_DIR_NAME);
-            Ok(AppDirs {
-                config: support.clone(),
-                data: support,
-                app_socket: cache.join(APP_SOCKET),
-                cache,
-                logs: library.join("Logs").join(APP_DIR_NAME),
-            })
-        }
-        Platform::Windows => {
-            let roaming = required(platform, &env, "APPDATA")?.join(APP_DIR_NAME);
-            let local = required(platform, &env, "LOCALAPPDATA")?.join(APP_DIR_NAME);
-            Ok(AppDirs {
-                config: roaming,
-                data: local.join("data"),
-                app_socket: pipe_named_after(&local.join("cache")),
-                cache: local.join("cache"),
-                logs: local.join("logs"),
-            })
-        }
-        Platform::Linux => {
-            let home = required(platform, &env, "HOME")?;
-            let xdg = |name: &'static str, default: &[&str]| -> PathBuf {
-                let base =
-                    absolute_var(platform, &env, name).unwrap_or_else(|| join_all(&home, default));
-                base.join(APP_DIR_NAME_UNIX)
-            };
-            let cache = xdg("XDG_CACHE_HOME", &[".cache"]);
-            Ok(AppDirs {
-                config: xdg("XDG_CONFIG_HOME", &[".config"]),
-                data: xdg("XDG_DATA_HOME", &[".local", "share"]),
-                app_socket: cache.join(APP_SOCKET),
-                cache,
-                logs: xdg("XDG_STATE_HOME", &[".local", "state"]).join("logs"),
-            })
-        }
-    }
+    Platform::current().dirs(std::env::var_os)
 }
 
 fn required<F>(platform: Platform, env: &F, name: &'static str) -> Result<PathBuf, PathsError>
@@ -288,9 +288,20 @@ mod tests {
         parts.iter().collect()
     }
 
+    // No spec statement: the running platform's font folders are its own, read from the
+    // process environment, and every platform has a system folder of fonts
+    #[test]
+    fn the_running_platforms_font_folders_are_read_from_the_environment() {
+        let dirs = current_font_dirs();
+        assert_eq!(dirs, Platform::current().font_dirs(std::env::var_os));
+        assert!(dirs.iter().any(|dir| dir.is_absolute()), "{dirs:?}");
+    }
+
     #[test]
     fn macos_uses_library_folders() {
-        let dirs = resolve(Platform::MacOs, env_of(&[("HOME", "/Users/q")])).unwrap();
+        let dirs = Platform::MacOs
+            .dirs(env_of(&[("HOME", "/Users/q")]))
+            .unwrap();
         let support = path(&["/Users/q", "Library", "Application Support", APP_DIR_NAME]);
         assert_eq!(dirs.config(), support);
         assert_eq!(dirs.data(), support);
@@ -307,7 +318,7 @@ mod tests {
     #[test]
     fn macos_ignores_xdg_variables() {
         let env = env_of(&[("HOME", "/Users/q"), ("XDG_CONFIG_HOME", "/x")]);
-        let dirs = resolve(Platform::MacOs, env).unwrap();
+        let dirs = Platform::MacOs.dirs(env).unwrap();
         assert_eq!(
             dirs.config(),
             path(&["/Users/q", "Library", "Application Support", APP_DIR_NAME])
@@ -320,7 +331,7 @@ mod tests {
             ("APPDATA", r"C:\Users\q\AppData\Roaming"),
             ("LOCALAPPDATA", r"C:\Users\q\AppData\Local"),
         ]);
-        let dirs = resolve(Platform::Windows, env).unwrap();
+        let dirs = Platform::Windows.dirs(env).unwrap();
         let local = path(&[r"C:\Users\q\AppData\Local", APP_DIR_NAME]);
         assert_eq!(
             dirs.config(),
@@ -337,7 +348,7 @@ mod tests {
             ("APPDATA", r"\\server\share\Roaming"),
             ("LOCALAPPDATA", "D:/Local"),
         ]);
-        let dirs = resolve(Platform::Windows, env).unwrap();
+        let dirs = Platform::Windows.dirs(env).unwrap();
         assert_eq!(
             dirs.config(),
             path(&[r"\\server\share\Roaming", APP_DIR_NAME])
@@ -348,7 +359,7 @@ mod tests {
     fn windows_requires_both_appdata_variables() {
         let env = env_of(&[("APPDATA", r"C:\Roaming")]);
         assert_eq!(
-            resolve(Platform::Windows, env),
+            Platform::Windows.dirs(env),
             Err(PathsError::MissingVar {
                 name: "LOCALAPPDATA"
             })
@@ -360,7 +371,7 @@ mod tests {
         for value in ["Roaming", "/home/q", "C:Roaming", "1:\\x"] {
             let env = env_of(&[("APPDATA", value), ("LOCALAPPDATA", r"C:\Local")]);
             assert_eq!(
-                resolve(Platform::Windows, env),
+                Platform::Windows.dirs(env),
                 Err(PathsError::RelativeVar {
                     name: "APPDATA",
                     value: OsString::from(value)
@@ -372,7 +383,9 @@ mod tests {
 
     #[test]
     fn linux_defaults_under_home() {
-        let dirs = resolve(Platform::Linux, env_of(&[("HOME", "/home/q")])).unwrap();
+        let dirs = Platform::Linux
+            .dirs(env_of(&[("HOME", "/home/q")]))
+            .unwrap();
         assert_eq!(
             dirs.config(),
             path(&["/home/q", ".config", APP_DIR_NAME_UNIX])
@@ -400,7 +413,7 @@ mod tests {
             ("XDG_CACHE_HOME", "/cache"),
             ("XDG_STATE_HOME", "/state"),
         ]);
-        let dirs = resolve(Platform::Linux, env).unwrap();
+        let dirs = Platform::Linux.dirs(env).unwrap();
         assert_eq!(dirs.config(), path(&["/cfg", APP_DIR_NAME_UNIX]));
         assert_eq!(dirs.data(), path(&["/data", APP_DIR_NAME_UNIX]));
         assert_eq!(dirs.cache(), path(&["/cache", APP_DIR_NAME_UNIX]));
@@ -414,7 +427,7 @@ mod tests {
             ("XDG_CONFIG_HOME", ""),
             ("XDG_CACHE_HOME", "relative/cache"),
         ]);
-        let dirs = resolve(Platform::Linux, env).unwrap();
+        let dirs = Platform::Linux.dirs(env).unwrap();
         assert_eq!(
             dirs.config(),
             path(&["/home/q", ".config", APP_DIR_NAME_UNIX])
@@ -429,15 +442,15 @@ mod tests {
     fn home_must_be_set_absolute_and_non_empty() {
         for platform in [Platform::MacOs, Platform::Linux] {
             assert_eq!(
-                resolve(platform, env_of(&[])),
+                platform.dirs(env_of(&[])),
                 Err(PathsError::MissingVar { name: "HOME" })
             );
             assert_eq!(
-                resolve(platform, env_of(&[("HOME", "")])),
+                platform.dirs(env_of(&[("HOME", "")])),
                 Err(PathsError::MissingVar { name: "HOME" })
             );
             assert_eq!(
-                resolve(platform, env_of(&[("HOME", "q")])),
+                platform.dirs(env_of(&[("HOME", "q")])),
                 Err(PathsError::RelativeVar {
                     name: "HOME",
                     value: OsString::from("q")
@@ -450,9 +463,13 @@ mod tests {
     // Linux, and on Windows a pipe whose name is the user's cache directory, made one word
     #[test]
     fn the_app_socket_is_one_per_user() {
-        let mac = resolve(Platform::MacOs, env_of(&[("HOME", "/Users/q")])).unwrap();
+        let mac = Platform::MacOs
+            .dirs(env_of(&[("HOME", "/Users/q")]))
+            .unwrap();
         assert_eq!(mac.app_socket(), mac.cache().join("app.sock"));
-        let linux = resolve(Platform::Linux, env_of(&[("HOME", "/home/q")])).unwrap();
+        let linux = Platform::Linux
+            .dirs(env_of(&[("HOME", "/home/q")]))
+            .unwrap();
         assert_eq!(linux.app_socket(), linux.cache().join("app.sock"));
         let env = |user: &str| {
             env_of(&[
@@ -460,12 +477,12 @@ mod tests {
                 ("LOCALAPPDATA", &format!(r"C:\Users\{user}\AppData\Local")),
             ])
         };
-        let windows = resolve(Platform::Windows, env("q")).unwrap();
+        let windows = Platform::Windows.dirs(env("q")).unwrap();
         let pipe = windows.app_socket().to_str().unwrap();
         let word = pipe.strip_prefix(r"\\.\pipe\quakec-studio-").unwrap();
         assert!(word.contains("Users-q-AppData-Local"), "{pipe}");
         assert!(word.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
-        let other = resolve(Platform::Windows, env("r")).unwrap();
+        let other = Platform::Windows.dirs(env("r")).unwrap();
         assert_ne!(windows.app_socket(), other.app_socket());
     }
 

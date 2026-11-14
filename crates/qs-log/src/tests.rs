@@ -16,7 +16,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use tracing::subscriber::with_default;
 use tracing::{debug, error, info, info_span, trace, warn};
 
-use qs_paths::{Platform, resolve};
+use qs_paths::Platform;
 
 use super::*;
 use crate::test_dir::TestDir;
@@ -295,10 +295,9 @@ fn rust_log_falls_back_to_info() {
 
 #[test]
 fn app_config_uses_the_per_os_log_directory() {
-    let dirs = resolve(Platform::Linux, |name| {
-        (name == "HOME").then(|| OsString::from("/home/q"))
-    })
-    .unwrap();
+    let dirs = Platform::Linux
+        .dirs(|name| (name == "HOME").then(|| OsString::from("/home/q")))
+        .unwrap();
     let config = LogConfig::for_app(&dirs);
     assert_eq!(config.dir, dirs.logs());
     assert_eq!(config.max_file_bytes, 5_242_880);

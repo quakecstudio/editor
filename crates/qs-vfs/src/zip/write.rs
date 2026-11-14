@@ -14,7 +14,7 @@ use std::fmt;
 
 use miniz_oxide::deflate::compress_to_vec;
 
-use super::crc32;
+use super::{CENTRAL, DEFLATED, EOCD, LOCAL, STORED, crc32};
 
 /// The deflate level every member is written at.
 const LEVEL: u8 = 9;
@@ -92,9 +92,9 @@ pub fn write_zip(members: &[NewMember]) -> Result<Vec<u8>, ZipWriteError> {
         }
         let deflated = compress_to_vec(&member.data, LEVEL);
         let (method, version, body) = if deflated.len() < member.data.len() {
-            (8, DEFLATED_VERSION, deflated)
+            (DEFLATED, DEFLATED_VERSION, deflated)
         } else {
-            (0, STORED_VERSION, member.data.clone())
+            (STORED, STORED_VERSION, member.data.clone())
         };
         let flags = if member.name.is_ascii() { 0 } else { UTF8_NAME };
         let entry = Written {
@@ -108,7 +108,7 @@ pub fn write_zip(members: &[NewMember]) -> Result<Vec<u8>, ZipWriteError> {
             offset: u32::try_from(out.len()).map_err(too_large)?,
         };
         // 4.3.7: the local file header, then the name and the data.
-        put32(&mut out, 0x0403_4b50);
+        put32(&mut out, LOCAL);
         put16(&mut out, entry.version);
         put_common(&mut out, &entry)?;
         out.extend_from_slice(entry.name.as_bytes());
@@ -118,7 +118,7 @@ pub fn write_zip(members: &[NewMember]) -> Result<Vec<u8>, ZipWriteError> {
     let central_start = u32::try_from(out.len()).map_err(too_large)?;
     for entry in &written {
         // 4.3.12: the central directory header of each member.
-        put32(&mut out, 0x0201_4b50);
+        put32(&mut out, CENTRAL);
         put16(&mut out, MADE_BY);
         put16(&mut out, entry.version);
         put_common(&mut out, entry)?;
@@ -134,7 +134,7 @@ pub fn write_zip(members: &[NewMember]) -> Result<Vec<u8>, ZipWriteError> {
         .checked_sub(central_start)
         .ok_or(ZipWriteError::TooLarge)?;
     // 4.3.16: the end of central directory record, on disk 0, with no comment.
-    put32(&mut out, 0x0605_4b50);
+    put32(&mut out, EOCD);
     put16(&mut out, 0);
     put16(&mut out, 0);
     put16(&mut out, count);

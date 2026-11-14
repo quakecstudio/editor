@@ -10,12 +10,13 @@ publish.workspace = true
 
 [dependencies]
 miniz_oxide = { workspace = true, features = ["with-alloc"] }
+# The shared fixed-size reads of id's little-endian formats.
+qc-progs = { workspace = true }
 qs-pak = { workspace = true }
 qs-wad = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }
-qc-progs = { workspace = true }
 qs-bsp = { workspace = true }
 qs-map = { workspace = true }
 qs-mdl = { workspace = true }
