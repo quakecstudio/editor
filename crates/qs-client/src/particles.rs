@@ -36,6 +36,80 @@ pub const PART_ENTITY_PARTICLES: usize = 162;
 const BEAM_LENGTH: f32 = 16.0;
 /// `dist` of the entity field (PART-2.8).
 const FIELD_DIST: f32 = 64.0;
+/// The entity field's colour, its life in seconds, and its angular speeds' range: `(rand() &
+/// 255) * 0.01` (PART-2.8).
+const FIELD_COLOR: i32 = 0x6f;
+const FIELD_LIFE: f32 = 0.01;
+const FIELD_SPIN_MASK: i32 = 255;
+const FIELD_SPIN_SCALE: f32 = 0.01;
+/// No position or velocity yet.
+const NOWHERE: [f32; 3] = [0.0; 3];
+
+/// `R_ParticleExplosion`'s and `R_BlobExplosion`'s particles, and the count
+/// `R_RunParticleEffect` takes as an explosion (PART-2.1, PART-2.3, PART-2.4).
+const EXPLOSION_PARTICLES: i32 = 1024;
+/// An explosion particle's life in seconds, and its starting ramp's mask (PART-2.1).
+const EXPLOSION_LIFE: f32 = 5.0;
+const EXPLOSION_RAMP_MASK: i32 = 3;
+/// `R_ParticleExplosion2`'s particles and their life in seconds (PART-2.2).
+const EXPLOSION2_PARTICLES: i32 = 512;
+const EXPLOSION2_LIFE: f32 = 0.3;
+/// A blob particle's extra life: `(rand() & 8) * 0.05` seconds (PART-2.3).
+const BLOB_LIFE_MASK: i32 = 8;
+const BLOB_LIFE_STEP: f32 = 0.05;
+/// The blob explosion's two base colours and the spread above each (PART-2.3).
+const BLOB_COLOR: i32 = 66;
+const BLOB2_COLOR: i32 = 150;
+const BLOB_COLORS: i32 = 6;
+/// `R_RunParticleEffect`: life in tenths of a second below 5, the colour's low bits, the
+/// jitter `(rand() & 15) - 8`, and the speed along `dir` (PART-2.4).
+const EFFECT_LIFE_STEPS: i32 = 5;
+const EFFECT_LIFE_STEP: f32 = 0.1;
+const COLOR_SPREAD: i32 = 7;
+const JITTER_MASK: i32 = 15;
+const JITTER_CENTRE: i32 = 8;
+const EFFECT_SPEED: f32 = 15.0;
+/// `R_LavaSplash` and `R_TeleportSplash`'s grid: -16 to 16 across, with the teleport's
+/// height -24 to 32, a cell every 4 for the teleport, and each cell 8 units of direction
+/// (PART-2.5, PART-2.6).
+const SPLASH_HALF: i32 = 16;
+const TELEPORT_LOW: i32 = -24;
+const TELEPORT_HIGH: i32 = 32;
+const TELEPORT_STEP: usize = 4;
+const SPLASH_CELL: i32 = 8;
+/// The lava splash's life, `2 + (rand() & 31) * 0.02`, its colour, its upward direction,
+/// and its height's spread (PART-2.5).
+const LAVA_LIFE: f32 = 2.0;
+const LAVA_LIFE_MASK: i32 = 31;
+const SPLASH_LIFE_STEP: f32 = 0.02;
+const LAVA_COLOR: i32 = 224;
+const LAVA_UP: f32 = 256.0;
+const LAVA_HEIGHT_MASK: i32 = 63;
+/// A splash particle's speed, `50 + (rand() & 63)` (PART-2.5, PART-2.6).
+const SPLASH_SPEED: i32 = 50;
+const SPLASH_SPEED_MASK: i32 = 63;
+/// The teleport splash's life, `0.2 + (rand() & 7) * 0.02`, its colour and its position's
+/// spread (PART-2.6).
+const TELEPORT_LIFE: f32 = 0.2;
+const TELEPORT_COLOR: i32 = 7;
+const TELEPORT_SPREAD_MASK: i32 = 3;
+/// An explosion particle's origin `(rand() % 32) - 16` and velocity `(rand() % 512) - 256`
+/// from the explosion (PART-2.1).
+const SCATTER_ORIGIN: i32 = 32;
+const SCATTER_ORIGIN_CENTRE: i32 = 16;
+const SCATTER_SPEED: i32 = 512;
+const SCATTER_SPEED_CENTRE: i32 = 256;
+/// `R_DrawParticles`' rates per second: the fire ramp, the two explosion ramps and the
+/// explosion's growth (PART-3.1).
+const FIRE_RAMP_RATE: f32 = 5.0;
+const EXPLODE_RAMP_RATE: f32 = 10.0;
+const EXPLODE2_RAMP_RATE: f32 = 15.0;
+const EXPLODE_GROWTH: f32 = 4.0;
+/// Where a particle dies off the end of the fire ramp and the explosion ramps (PART-3.1).
+const FIRE_RAMP_END: f32 = 6.0;
+const EXPLODE_RAMP_END: f32 = 8.0;
+/// A time before any clock, which frees the particle on the next frame.
+const DEAD: f32 = -1.0;
 
 /// `ptype_t`: how a particle moves and recolours each frame (PART-3.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,10 +150,11 @@ pub struct Particle {
 }
 
 impl Particle {
+    /// A particle at `origin`, still, of `color`, dying at `die`, moving as `kind`.
     const fn at(origin: [f32; 3], color: i32, die: f32, kind: ParticleType) -> Self {
         Self {
             origin,
-            velocity: [0.0; 3],
+            velocity: NOWHERE,
             color,
             ramp: 0.0,
             die,
@@ -136,6 +211,15 @@ const TRACER_SPEED: f32 = 30.0;
 const VOOR_COLOR: i32 = 152;
 /// A vore trail particle's life in seconds.
 const VOOR_LIFE: f32 = 0.3;
+/// A trail particle's life in seconds, but a tracer's or a vore trail's.
+const TRAIL_LIFE: f32 = 2.0;
+/// A trail's jitter, `(rand() % 6) - 3`.
+const TRAIL_JITTER: i32 = 6;
+const TRAIL_JITTER_CENTRE: i32 = 3;
+/// The ramp and blood colour spread of a trail, `rand() & 3`.
+const TRAIL_SPREAD_MASK: i32 = 3;
+/// The bit of `tracercount` that picks a tracer's brighter colour.
+const TRACER_BRIGHT: i32 = 4;
 
 /// The particle pool: the active particles, newest first as id's list keeps them, and how
 /// many may be active (PART-1.1).
@@ -195,9 +279,14 @@ impl Particles {
 
     /// `R_ParticleExplosion (org)` (PART-2.1).
     pub fn explosion(&mut self, rand: &mut dyn Random, time: f32, org: [f32; 3]) {
-        for i in 0..1024 {
-            let mut p = Particle::at([0.0; 3], PART_RAMP1[0], time + 5.0, ParticleType::Explode);
-            p.ramp = int_to_float(rand.rand() & 3);
+        for i in 0..EXPLOSION_PARTICLES {
+            let mut p = Particle::at(
+                NOWHERE,
+                PART_RAMP1[0],
+                time + EXPLOSION_LIFE,
+                ParticleType::Explode,
+            );
+            p.ramp = int_to_float(rand.rand() & EXPLOSION_RAMP_MASK);
             if i & 1 == 0 {
                 p.kind = ParticleType::Explode2;
             }
@@ -217,9 +306,9 @@ impl Particles {
         color_start: i32,
         color_length: i32,
     ) {
-        for i in 0..512_i32 {
+        for i in 0..EXPLOSION2_PARTICLES {
             let color = color_start.wrapping_add(i.checked_rem(color_length).unwrap_or(0));
-            let mut p = Particle::at([0.0; 3], color, time + 0.3, ParticleType::Blob);
+            let mut p = Particle::at(NOWHERE, color, time + EXPLOSION2_LIFE, ParticleType::Blob);
             scatter(rand, &mut p, org);
             if !self.alloc(p) {
                 return;
@@ -229,15 +318,15 @@ impl Particles {
 
     /// `R_BlobExplosion (org)` (PART-2.3).
     pub fn blob_explosion(&mut self, rand: &mut dyn Random, time: f32, org: [f32; 3]) {
-        for i in 0..1024 {
-            let die = time + 1.0 + int_to_float(rand.rand() & 8) * 0.05;
+        for i in 0..EXPLOSION_PARTICLES {
+            let die = time + 1.0 + int_to_float(rand.rand() & BLOB_LIFE_MASK) * BLOB_LIFE_STEP;
             let (kind, base): (ParticleType, i32) = if i & 1 == 1 {
-                (ParticleType::Blob, 66)
+                (ParticleType::Blob, BLOB_COLOR)
             } else {
-                (ParticleType::Blob2, 150)
+                (ParticleType::Blob2, BLOB2_COLOR)
             };
-            let color = base.wrapping_add(rand.rand().checked_rem(6).unwrap_or(0));
-            let mut p = Particle::at([0.0; 3], color, die, kind);
+            let color = base.wrapping_add(rand.rand().checked_rem(BLOB_COLORS).unwrap_or(0));
+            let mut p = Particle::at(NOWHERE, color, die, kind);
             scatter(rand, &mut p, org);
             if !self.alloc(p) {
                 return;
@@ -255,21 +344,21 @@ impl Particles {
         color: i32,
         count: i32,
     ) {
-        if count == 1024 {
+        if count == EXPLOSION_PARTICLES {
             self.explosion(rand, time, org);
             return;
         }
         for _ in 0..count.max(0) {
-            let die = time + 0.1 * int_to_float(rand.rand().checked_rem(5).unwrap_or(0));
-            let c = (color & !7).wrapping_add(rand.rand() & 7);
-            let mut p = Particle::at([0.0; 3], c, die, ParticleType::SlowGrav);
+            let steps = rand.rand().checked_rem(EFFECT_LIFE_STEPS).unwrap_or(0);
+            let die = time + EFFECT_LIFE_STEP * int_to_float(steps);
+            let c = (color & !COLOR_SPREAD).wrapping_add(rand.rand() & COLOR_SPREAD);
+            let mut p = Particle::at(NOWHERE, c, die, ParticleType::SlowGrav);
             let [ox, oy, oz] = org;
-            let jitter = |rand: &mut dyn Random| int_to_float((rand.rand() & 15).wrapping_sub(8));
             let jx = jitter(rand);
             let jy = jitter(rand);
             let jz = jitter(rand);
             p.origin = [ox + jx, oy + jy, oz + jz];
-            p.velocity = dir.map(|d| d * 15.0);
+            p.velocity = dir.map(|d| d * EFFECT_SPEED);
             if !self.alloc(p) {
                 return;
             }
@@ -278,17 +367,23 @@ impl Particles {
 
     /// `R_LavaSplash (org)` (PART-2.5).
     pub fn lava_splash(&mut self, rand: &mut dyn Random, time: f32, org: [f32; 3]) {
-        for i in -16_i32..16 {
-            for j in -16_i32..16 {
-                let die = time + 2.0 + int_to_float(rand.rand() & 31) * 0.02;
-                let color = 224_i32.wrapping_add(rand.rand() & 7);
-                let dx = int_to_float(j.wrapping_mul(8).wrapping_add(rand.rand() & 7));
-                let dy = int_to_float(i.wrapping_mul(8).wrapping_add(rand.rand() & 7));
-                let dir = [dx, dy, 256.0];
+        for i in -SPLASH_HALF..SPLASH_HALF {
+            for j in -SPLASH_HALF..SPLASH_HALF {
+                let life = int_to_float(rand.rand() & LAVA_LIFE_MASK) * SPLASH_LIFE_STEP;
+                let die = time + LAVA_LIFE + life;
+                let color = LAVA_COLOR.wrapping_add(rand.rand() & COLOR_SPREAD);
+                let cell = |n: i32, r: i32| n.wrapping_mul(SPLASH_CELL).wrapping_add(r);
+                let dx = int_to_float(cell(j, rand.rand() & COLOR_SPREAD));
+                let dy = int_to_float(cell(i, rand.rand() & COLOR_SPREAD));
+                let dir = [dx, dy, LAVA_UP];
                 let [ox, oy, oz] = org;
-                let origin = [ox + dx, oy + dy, oz + int_to_float(rand.rand() & 63)];
+                let origin = [
+                    ox + dx,
+                    oy + dy,
+                    oz + int_to_float(rand.rand() & LAVA_HEIGHT_MASK),
+                ];
                 let (unit, _) = vector_normalize(dir);
-                let vel = int_to_float(50_i32.wrapping_add(rand.rand() & 63));
+                let vel = splash_speed(rand);
                 let mut p = Particle::at(origin, color, die, ParticleType::SlowGrav);
                 p.velocity = unit.map(|d| d * vel);
                 if !self.alloc(p) {
@@ -300,24 +395,26 @@ impl Particles {
 
     /// `R_TeleportSplash (org)` (PART-2.6).
     pub fn teleport_splash(&mut self, rand: &mut dyn Random, time: f32, org: [f32; 3]) {
-        for i in (-16_i32..16).step_by(4) {
-            for j in (-16_i32..16).step_by(4) {
-                for k in (-24_i32..32).step_by(4) {
-                    let die = time + 0.2 + int_to_float(rand.rand() & 7) * 0.02;
-                    let color = 7_i32.wrapping_add(rand.rand() & 7);
+        for i in (-SPLASH_HALF..SPLASH_HALF).step_by(TELEPORT_STEP) {
+            for j in (-SPLASH_HALF..SPLASH_HALF).step_by(TELEPORT_STEP) {
+                for k in (TELEPORT_LOW..TELEPORT_HIGH).step_by(TELEPORT_STEP) {
+                    let life = int_to_float(rand.rand() & COLOR_SPREAD) * SPLASH_LIFE_STEP;
+                    let die = time + TELEPORT_LIFE + life;
+                    let color = TELEPORT_COLOR.wrapping_add(rand.rand() & COLOR_SPREAD);
                     let dir = [
-                        int_to_float(j.wrapping_mul(8)),
-                        int_to_float(i.wrapping_mul(8)),
-                        int_to_float(k.wrapping_mul(8)),
+                        int_to_float(j.wrapping_mul(SPLASH_CELL)),
+                        int_to_float(i.wrapping_mul(SPLASH_CELL)),
+                        int_to_float(k.wrapping_mul(SPLASH_CELL)),
                     ];
                     let [ox, oy, oz] = org;
+                    let spread = |n: i32, r: i32| int_to_float(n.wrapping_add(r));
                     let origin = [
-                        ox + int_to_float(i.wrapping_add(rand.rand() & 3)),
-                        oy + int_to_float(j.wrapping_add(rand.rand() & 3)),
-                        oz + int_to_float(k.wrapping_add(rand.rand() & 3)),
+                        ox + spread(i, rand.rand() & TELEPORT_SPREAD_MASK),
+                        oy + spread(j, rand.rand() & TELEPORT_SPREAD_MASK),
+                        oz + spread(k, rand.rand() & TELEPORT_SPREAD_MASK),
                     ];
                     let (unit, _) = vector_normalize(dir);
-                    let vel = int_to_float(50_i32.wrapping_add(rand.rand() & 63));
+                    let vel = splash_speed(rand);
                     let mut p = Particle::at(origin, color, die, ParticleType::SlowGrav);
                     p.velocity = unit.map(|d| d * vel);
                     if !self.alloc(p) {
@@ -348,10 +445,11 @@ impl Particles {
         let mut at = start;
         while len > 0.0 {
             len -= dec;
-            let mut p = Particle::at(at, 0, time + 2.0, ParticleType::Static);
+            let mut p = Particle::at(at, 0, time + TRAIL_LIFE, ParticleType::Static);
             let [ax, ay, az] = at;
             let near = |rand: &mut dyn Random| {
-                int_to_float(rand.rand().checked_rem(6).unwrap_or(0).wrapping_sub(3))
+                let r = rand.rand().checked_rem(TRAIL_JITTER).unwrap_or(0);
+                int_to_float(r.wrapping_sub(TRAIL_JITTER_CENTRE))
             };
             match trail {
                 Trail::Rocket | Trail::Smoke => {
@@ -360,7 +458,7 @@ impl Particles {
                     } else {
                         0.0
                     };
-                    p.ramp = int_to_float(rand.rand() & 3) + start;
+                    p.ramp = int_to_float(rand.rand() & TRAIL_SPREAD_MASK) + start;
                     p.color = ramp3(p.ramp);
                     p.kind = ParticleType::Fire;
                     let (jx, jy, jz) = (near(rand), near(rand), near(rand));
@@ -368,7 +466,7 @@ impl Particles {
                 }
                 Trail::Blood | Trail::SlightBlood => {
                     p.kind = ParticleType::Grav;
-                    p.color = BLOOD_COLOR.wrapping_add(rand.rand() & 3);
+                    p.color = BLOOD_COLOR.wrapping_add(rand.rand() & TRAIL_SPREAD_MASK);
                     let (jx, jy, jz) = (near(rand), near(rand), near(rand));
                     p.origin = [ax + jx, ay + jy, az + jz];
                     if trail == Trail::SlightBlood {
@@ -383,7 +481,7 @@ impl Particles {
                     } else {
                         TRACER2_COLOR
                     };
-                    p.color = base.wrapping_add((self.tracercount & 4) << 1);
+                    p.color = base.wrapping_add((self.tracercount & TRACER_BRIGHT) << 1);
                     self.tracercount = self.tracercount.wrapping_add(1);
                     let [vx, vy, _] = vec;
                     p.velocity = if self.tracercount & 1 != 0 {
@@ -393,12 +491,10 @@ impl Particles {
                     };
                 }
                 Trail::Voor => {
-                    p.color = VOOR_COLOR.wrapping_add(rand.rand() & 3);
+                    p.color = VOOR_COLOR.wrapping_add(rand.rand() & TRAIL_SPREAD_MASK);
                     p.kind = ParticleType::Static;
                     p.die = time + VOOR_LIFE;
-                    let wide =
-                        |rand: &mut dyn Random| int_to_float((rand.rand() & 15).wrapping_sub(8));
-                    let (jx, jy, jz) = (wide(rand), wide(rand), wide(rand));
+                    let (jx, jy, jz) = (jitter(rand), jitter(rand), jitter(rand));
                     p.origin = [ax + jx, ay + jy, az + jz];
                 }
             }
@@ -416,9 +512,11 @@ impl Particles {
         if self.avelocities.is_none() {
             let drawn = (0..PART_ENTITY_PARTICLES)
                 .map(|_| {
-                    let a = int_to_float(rand.rand() & 255) * 0.01;
-                    let b = int_to_float(rand.rand() & 255) * 0.01;
-                    let c = int_to_float(rand.rand() & 255) * 0.01;
+                    let mut spin =
+                        || int_to_float(rand.rand() & FIELD_SPIN_MASK) * FIELD_SPIN_SCALE;
+                    let a = spin();
+                    let b = spin();
+                    let c = spin();
                     [a, b, c]
                 })
                 .collect();
@@ -441,8 +539,8 @@ impl Particles {
                     oy + ny * FIELD_DIST + forward[1] * BEAM_LENGTH,
                     oz + nz * FIELD_DIST + forward[2] * BEAM_LENGTH,
                 ],
-                0x6f,
-                time + 0.01,
+                FIELD_COLOR,
+                time + FIELD_LIFE,
                 ParticleType::Explode,
             );
             if !self.alloc(p) {
@@ -456,11 +554,11 @@ impl Particles {
     /// `gravity` the server's.
     pub fn update(&mut self, time: f32, frametime: f32, gravity: f32) {
         self.active.retain(|p| p.die >= time);
-        let time1 = frametime * 5.0;
-        let time2 = frametime * 10.0;
-        let time3 = frametime * 15.0;
+        let time1 = frametime * FIRE_RAMP_RATE;
+        let time2 = frametime * EXPLODE_RAMP_RATE;
+        let time3 = frametime * EXPLODE2_RAMP_RATE;
         let grav = frametime * gravity * PART_GRAVITY_SCALE;
-        let dvel = 4.0 * frametime;
+        let dvel = EXPLODE_GROWTH * frametime;
         for p in &mut self.active {
             let [vx, vy, vz] = p.velocity;
             let [ox, oy, oz] = p.origin;
@@ -473,8 +571,8 @@ impl Particles {
                 ParticleType::Static => {}
                 ParticleType::Fire => {
                     p.ramp += time1;
-                    if p.ramp >= 6.0 {
-                        p.die = -1.0;
+                    if p.ramp >= FIRE_RAMP_END {
+                        p.die = DEAD;
                     } else {
                         p.color = ramp3(p.ramp);
                     }
@@ -482,8 +580,8 @@ impl Particles {
                 }
                 ParticleType::Explode => {
                     p.ramp += time2;
-                    if p.ramp >= 8.0 {
-                        p.die = -1.0;
+                    if p.ramp >= EXPLODE_RAMP_END {
+                        p.die = DEAD;
                     } else {
                         p.color = ramp(&PART_RAMP1, p.ramp);
                     }
@@ -492,8 +590,8 @@ impl Particles {
                 }
                 ParticleType::Explode2 => {
                     p.ramp += time3;
-                    if p.ramp >= 8.0 {
-                        p.die = -1.0;
+                    if p.ramp >= EXPLODE_RAMP_END {
+                        p.die = DEAD;
                     } else {
                         p.color = ramp(&PART_RAMP2, p.ramp);
                     }
@@ -516,6 +614,16 @@ impl Particles {
     }
 }
 
+/// `(rand() & 15) - 8`: a particle's jitter about its point (PART-2.4, PART-2.7).
+fn jitter(rand: &mut dyn Random) -> f32 {
+    int_to_float((rand.rand() & JITTER_MASK).wrapping_sub(JITTER_CENTRE))
+}
+
+/// `50 + (rand() & 63)`: a splash particle's speed (PART-2.5, PART-2.6).
+fn splash_speed(rand: &mut dyn Random) -> f32 {
+    int_to_float(SPLASH_SPEED.wrapping_add(rand.rand() & SPLASH_SPEED_MASK))
+}
+
 /// `(int) ramp` into a table, as C indexes it.
 fn ramp(table: &[i32; 8], ramp: f32) -> i32 {
     usize::try_from(float_to_int(ramp))
@@ -532,11 +640,19 @@ fn ramp3(value: f32) -> i32 {
 /// The origin and velocity of an explosion's particle (PART-2.1): each component of the
 /// origin `org + (r % 32) - 16` and of the velocity `(r % 512) - 256`.
 fn scatter(rand: &mut dyn Random, p: &mut Particle, org: [f32; 3]) {
-    let mut origin = [0.0; 3];
-    let mut velocity = [0.0; 3];
+    let mut origin = NOWHERE;
+    let mut velocity = NOWHERE;
+    let mut spread = |range: i32, centre: i32| {
+        int_to_float(
+            rand.rand()
+                .checked_rem(range)
+                .unwrap_or(0)
+                .wrapping_sub(centre),
+        )
+    };
     for (o, (v, base)) in origin.iter_mut().zip(velocity.iter_mut().zip(org)) {
-        *o = base + int_to_float(rand.rand().checked_rem(32).unwrap_or(0).wrapping_sub(16));
-        *v = int_to_float(rand.rand().checked_rem(512).unwrap_or(0).wrapping_sub(256));
+        *o = base + spread(SCATTER_ORIGIN, SCATTER_ORIGIN_CENTRE);
+        *v = spread(SCATTER_SPEED, SCATTER_SPEED_CENTRE);
     }
     p.origin = origin;
     p.velocity = velocity;
