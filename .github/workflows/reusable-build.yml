@@ -2,7 +2,7 @@ name: Reusable build
 
 # The release's build (P4-18, #129) and its signing (P0-23, #23), called by
 # .github/workflows/release.yml. It builds every package, signs and notarizes the macOS app
-# and its disk image the way vouch-sh/vouch's reusable-build.yml does, and attests each
+# and its installer package (#850), and attests each
 # package in the job that made it. The attestations are made here, in a reusable workflow,
 # so each names this file as its signer whatever workflow calls it, and a check holds the
 # build to this file:
@@ -19,19 +19,25 @@ on:
         description: The workspace version the packages carry
         value: ${{ jobs.version.outputs.version }}
     secrets:
-      APPLE_CERTIFICATE_P12_BASE64:
+      APPLE_APPLICATION_CERTIFICATE_PEM:
         required: true
-      APPLE_CERTIFICATE_PASSWORD:
+      APPLE_APPLICATION_KEY_PEM:
         required: true
-      APPLE_CERTIFICATE_NAME:
+      APPLE_APPLICATION_IDENTITY:
         required: true
-      MACOS_KEYCHAIN_PASSWORD:
+      APPLE_INSTALLER_CERTIFICATE_PEM:
         required: true
-      APPLE_ID:
+      APPLE_INSTALLER_KEY_PEM:
         required: true
-      APPLE_ID_PASSWORD:
+      APPLE_INSTALLER_IDENTITY:
         required: true
-      APPLE_TEAM_ID:
+      APPLE_KEYCHAIN_PASSWORD:
+        required: true
+      APPLE_NOTARY_KEY_ID:
+        required: true
+      APPLE_NOTARY_ISSUER_ID:
+        required: true
+      APPLE_NOTARY_KEY:
         required: true
       AZURE_CLIENT_ID:
         required: true
@@ -58,13 +64,16 @@ jobs:
     steps:
       - name: Check each secret docs/releasing.md lists is set, printing no value
         env:
-          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_CERTIFICATE_NAME: ${{ secrets.APPLE_CERTIFICATE_NAME }}
-          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APPLICATION_CERTIFICATE_PEM: ${{ secrets.APPLE_APPLICATION_CERTIFICATE_PEM }}
+          APPLE_APPLICATION_KEY_PEM: ${{ secrets.APPLE_APPLICATION_KEY_PEM }}
+          APPLE_APPLICATION_IDENTITY: ${{ secrets.APPLE_APPLICATION_IDENTITY }}
+          APPLE_INSTALLER_CERTIFICATE_PEM: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PEM }}
+          APPLE_INSTALLER_KEY_PEM: ${{ secrets.APPLE_INSTALLER_KEY_PEM }}
+          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
@@ -72,9 +81,10 @@ jobs:
           CERTIFICATE_PROFILE: ${{ secrets.CERTIFICATE_PROFILE }}
         run: |
           missing=0
-          for name in APPLE_CERTIFICATE_P12_BASE64 APPLE_CERTIFICATE_PASSWORD \
-            APPLE_CERTIFICATE_NAME MACOS_KEYCHAIN_PASSWORD APPLE_ID APPLE_ID_PASSWORD \
-            APPLE_TEAM_ID AZURE_CLIENT_ID AZURE_TENANT_ID TRUSTED_SIGNING_ENDPOINT \
+          for name in APPLE_APPLICATION_CERTIFICATE_PEM APPLE_APPLICATION_KEY_PEM \
+            APPLE_APPLICATION_IDENTITY APPLE_INSTALLER_CERTIFICATE_PEM APPLE_INSTALLER_KEY_PEM \
+            APPLE_INSTALLER_IDENTITY APPLE_KEYCHAIN_PASSWORD APPLE_NOTARY_KEY_ID \
+            APPLE_NOTARY_ISSUER_ID APPLE_NOTARY_KEY AZURE_CLIENT_ID AZURE_TENANT_ID TRUSTED_SIGNING_ENDPOINT \
             TRUSTED_SIGNING_ACCOUNT CERTIFICATE_PROFILE; do
             if [ -z "${!name}" ]; then
               echo "::error::the secret $name is not set"
@@ -149,47 +159,68 @@ jobs:
           done
       - name: Lay out the app
         run: packaging/macos/package.sh app dist/bin "$VERSION" dist
-      - name: Import Apple Developer Certificate
+      # Both Developer ID identities, from the PEM certificates and keys smoketurner-infra's
+      # apple root makes (docs/releasing.md), into a keychain the job makes and deletes. The
+      # system's /usr/bin/openssl (LibreSSL) bundles each into a PKCS#12 file `security` reads.
+      - name: Import the Developer ID identities
         env:
-          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          APPLE_APPLICATION_CERTIFICATE_PEM: ${{ secrets.APPLE_APPLICATION_CERTIFICATE_PEM }}
+          APPLE_APPLICATION_KEY_PEM: ${{ secrets.APPLE_APPLICATION_KEY_PEM }}
+          APPLE_INSTALLER_CERTIFICATE_PEM: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PEM }}
+          APPLE_INSTALLER_KEY_PEM: ${{ secrets.APPLE_INSTALLER_KEY_PEM }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
-          echo "$APPLE_CERTIFICATE_P12_BASE64" | base64 --decode > certificate.p12
-          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" build.keychain
+          work="$RUNNER_TEMP_DIR/identities"
+          mkdir -p "$work"
+          chmod 700 "$work"
+          security create-keychain -p "$APPLE_KEYCHAIN_PASSWORD" build.keychain
           security default-keychain -s build.keychain
-          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" build.keychain
-          security import certificate.p12 -k build.keychain \
-            -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -T /usr/bin/codesign
+          security unlock-keychain -p "$APPLE_KEYCHAIN_PASSWORD" build.keychain
+          for kind in APPLICATION INSTALLER; do
+            certificate="APPLE_${kind}_CERTIFICATE_PEM"
+            key="APPLE_${kind}_KEY_PEM"
+            printf '%s\n' "${!certificate}" >"$work/$kind.crt"
+            printf '%s\n' "${!key}" >"$work/$kind.key"
+            /usr/bin/openssl pkcs12 -export -inkey "$work/$kind.key" -in "$work/$kind.crt" \
+              -out "$work/$kind.p12" -passout "pass:$APPLE_KEYCHAIN_PASSWORD"
+            security import "$work/$kind.p12" -k build.keychain -P "$APPLE_KEYCHAIN_PASSWORD" \
+              -T /usr/bin/codesign -T /usr/bin/productsign
+          done
+          rm -rf "$work"
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
-            -s -k "$MACOS_KEYCHAIN_PASSWORD" build.keychain
-          rm certificate.p12
-      # Each executable is signed on its own, the preview host among them, then the app.
+            -s -k "$APPLE_KEYCHAIN_PASSWORD" build.keychain
+          security find-identity -v build.keychain | grep -c "Developer ID"
+      # Each executable is signed on its own, the preview host among them, then the app. The
+      # identity is the certificate's SHA-1 fingerprint, which codesign accepts.
       - name: Code sign the app
         env:
-          APPLE_CERTIFICATE_NAME: ${{ secrets.APPLE_CERTIFICATE_NAME }}
+          APPLE_APPLICATION_IDENTITY: ${{ secrets.APPLE_APPLICATION_IDENTITY }}
         run: |
           app="dist/QuakeC Studio.app"
           for name in quakec-engine quakec-ide quakec-lsp quakec-studio; do
-            /usr/bin/codesign --force --sign "$APPLE_CERTIFICATE_NAME" \
+            /usr/bin/codesign --force --sign "$APPLE_APPLICATION_IDENTITY" \
               --options runtime --timestamp "$app/Contents/MacOS/$name"
           done
-          /usr/bin/codesign --force --sign "$APPLE_CERTIFICATE_NAME" \
+          /usr/bin/codesign --force --sign "$APPLE_APPLICATION_IDENTITY" \
             --options runtime --timestamp "$app"
           /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
+      # notarytool signs in with an App Store Connect API key, not an Apple ID.
       - name: Store the notarization credentials
         env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: |
+          key="$RUNNER_TEMP_DIR/notary.p8"
+          printf '%s\n' "$APPLE_NOTARY_KEY" >"$key"
+          chmod 600 "$key"
           xcrun notarytool store-credentials "notarytool-profile" \
-            --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_ID_PASSWORD"
-      # The app is notarized and stapled itself, so it carries its ticket once dragged out of
-      # the disk image and opens on a Mac that is offline the first time.
+            --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER_ID"
+          rm -f "$key"
+      # The app is notarized and stapled itself, so it carries its ticket once installed and
+      # opens on a Mac that is offline the first time.
       - name: Notarize and staple the app
         run: |
           app="dist/QuakeC Studio.app"
@@ -198,24 +229,38 @@ jobs:
           rm dist/app-notarize.zip
           xcrun stapler staple "$app"
           xcrun stapler validate "$app"
-      - name: Make, sign, notarize and staple the disk image
+      # productsign takes the Installer identity by its name, read from the keychain by the
+      # certificate's SHA-1 fingerprint.
+      - name: Make, sign, notarize and staple the installer package
         env:
-          APPLE_CERTIFICATE_NAME: ${{ secrets.APPLE_CERTIFICATE_NAME }}
+          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
         run: |
-          dmg="dist/quakec-studio-$VERSION-macos-arm64.dmg"
-          packaging/macos/package.sh dmg "dist/QuakeC Studio.app" "$dmg"
-          /usr/bin/codesign --force --sign "$APPLE_CERTIFICATE_NAME" --timestamp "$dmg"
-          xcrun notarytool submit "$dmg" --keychain-profile "notarytool-profile" --wait
-          xcrun stapler staple "$dmg"
-          xcrun stapler validate "$dmg"
-      - name: Attest the disk image
+          pkg="dist/quakec-studio-$VERSION-macos-arm64.pkg"
+          packaging/macos/package.sh pkg "dist/QuakeC Studio.app" "$VERSION" dist/unsigned.pkg
+          if pkgutil --payload-files dist/unsigned.pkg | grep -q '/\._'; then
+            echo "::error::the package's payload holds AppleDouble ._ files"
+            exit 1
+          fi
+          name=$(security find-identity -v build.keychain \
+            | sed -n "s/.*$APPLE_INSTALLER_IDENTITY \"\(.*\)\"/\1/p" | head -n 1)
+          if [ -z "$name" ]; then
+            echo "::error::the Developer ID Installer identity is not in build.keychain"
+            exit 1
+          fi
+          productsign --sign "$name" --timestamp --keychain build.keychain dist/unsigned.pkg "$pkg"
+          rm dist/unsigned.pkg
+          pkgutil --check-signature "$pkg"
+          xcrun notarytool submit "$pkg" --keychain-profile "notarytool-profile" --wait
+          xcrun stapler staple "$pkg"
+          xcrun stapler validate "$pkg"
+      - name: Attest the installer package
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: dist/*.dmg
+          subject-path: dist/*.pkg
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-macos
-          path: dist/*.dmg
+          path: dist/*.pkg
           if-no-files-found: error
       - name: Cleanup macOS keychain
         if: ${{ always() }}
