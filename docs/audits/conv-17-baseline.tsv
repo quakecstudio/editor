@@ -1228,7 +1228,6 @@ magic-number	crates/qs-checkpoint/src/lib.rs	Store::write_object:6
 magic-number	crates/qs-checkpoint/src/lib.rs	parse_hex:16
 magic-number	crates/qs-checkpoint/src/lib.rs	parse_hex:20
 magic-number	crates/qs-checkpoint/src/lib.rs	parse_hex:40
-magic-number	crates/qs-client/src/client.rs	Client::relink_entities:3
 magic-number	crates/qs-client/src/console.rs	Console::draw:16
 magic-number	crates/qs-client/src/console.rs	Console::draw:3
 magic-number	crates/qs-client/src/console.rs	Console::draw:8

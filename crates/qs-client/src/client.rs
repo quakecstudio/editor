@@ -1992,7 +1992,7 @@ impl Client {
                 if f == 1.0 && delta.iter().any(|&d| d.abs() > CLIENT_TELEPORT_DISTANCE) {
                     ent.lerpflags.reset_move = true;
                 }
-                for j in 0..3 {
+                for j in 0..AXES {
                     let (Some(o), Some(d), Some(old)) = (
                         ent.origin.get_mut(j),
                         delta.get(j),
