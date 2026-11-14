@@ -371,7 +371,7 @@ fn fte_binding(defines: &str, use_: &str) -> (Vec<qc_diag::Code>, Option<(i32, S
         .and_then(|decls| decls.decls.iter().find(|decl| decl.name == "f"))
         .and_then(|decl| decl.literal())
         .and_then(|literal| literal.builtin_function("f"))
-        .map(|function| (function.number, function.name));
+        .map(|function| (function.number.get(), function.name));
     (errors, function)
 }
 

@@ -298,14 +298,13 @@ Items that left the root (9): `const qc_edict::EDICT_FREED_NEXTTHINK`, `const qc
 | `fn qc_engines::Engine::name` | `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-types`, `qc-sema`, `qs-mdl`, `qs-vfs`, `qs-pak`, `qc-syntax`, `qs-bsp`, `qc-edict`, `qc-lexer`, `qs-log`, `qs-differential`, `qc-builtins`, `qs-editor-view`, `qc-vm`, `lsp`, `xtask`, `fuzz` | kept public: used by `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-types`, `qc-sema`, `qs-mdl`, `qs-vfs`, `qs-pak`, `qc-syntax`, `qs-bsp`, `qc-edict`, `qc-lexer`, `qs-log`, `qs-differential`, `qc-builtins`, `qs-editor-view`, `qc-vm`, `lsp`, `xtask`, `fuzz` |
 | `fn qc_engines::check::BuiltinRef::lookup` | `qc-ide`, `qc-sema` | kept public: used by `qc-ide`, `qc-sema` |
 | `fn qc_engines::check::declared_builtins` | `qc-ide` | kept public: used by `qc-ide` |
-| `fn qc_engines::check::missing_builtins` | `qc-ide`, `fuzz` | kept public: used by `qc-ide`, `fuzz` |
+| `fn qc_engines::check::Engine::missing_builtins` | `qc-ide`, `fuzz` | kept public: used by `qc-ide`, `fuzz` |
 | `mod qc_engines::check` | `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-sema`, `qs-mdl`, `qs-vfs`, `qs-pak`, `qs-workbench`, `qc-syntax`, `qs-bsp`, `qc-lno`, `qc-edict`, `qc-diag`, `qc-lexer`, `qs-differential`, `qs-install`, `qc-builtins`, `qs-map`, `qc-progs`, `qs-tests`, `qs-commands`, `qs-sim`, `qc-vm`, `desktop`, `xtask`, `fuzz` | kept public: used by `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-sema`, `qs-mdl`, `qs-vfs`, `qs-pak`, `qs-workbench`, `qc-syntax`, `qs-bsp`, `qc-lno`, `qc-edict`, `qc-diag`, `qc-lexer`, `qs-differential`, `qs-install`, `qc-builtins`, `qs-map`, `qc-progs`, `qs-tests`, `qs-commands`, `qs-sim`, `qc-vm`, `desktop`, `xtask`, `fuzz` |
 | `struct qc_engines::Builtin` | `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-trace`, `qc-sema`, `qc-syntax`, `qc-builtins`, `qs-commands`, `qs-sim`, `qc-vm`, `lsp`, `xtask` | kept public: used by `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-trace`, `qc-sema`, `qc-syntax`, `qc-builtins`, `qs-commands`, `qs-sim`, `qc-vm`, `lsp`, `xtask` |
 | `struct qc_engines::Source` | `qc-preproc`, `qc-sema`, `qs-settings`, `qs-workbench`, `qc-syntax`, `qs-log`, `qs-install`, `qc-builtins`, `qc-project`, `desktop`, `xtask` | kept public: used by `qc-preproc`, `qc-sema`, `qs-settings`, `qs-workbench`, `qc-syntax`, `qs-log`, `qs-install`, `qc-builtins`, `qc-project`, `desktop`, `xtask` |
 | `use qc_engines::BuiltinRef = check::BuiltinRef` | `qc-ide`, `lsp` | kept public: used by `qc-ide`, `lsp` |
 | `use qc_engines::SOURCES = tables::SOURCES` | `xtask` | kept public: used by `xtask` |
 | `use qc_engines::declared_builtins = check::declared_builtins` | `qc-ide` | kept public: used by `qc-ide` |
-| `use qc_engines::missing_builtins = check::missing_builtins` | `qc-ide`, `fuzz` | kept public: used by `qc-ide`, `fuzz` |
 
 Items that left the root (3): `fn qc_engines::Engine::builtin_named`, `fn qc_engines::Engine::builtins`, `fn qc_engines::Engine::from_id`. Each is `pub(crate)` now, under `#[cfg(test)]` where only the crate's tests read it; `qc_sema::nav::ModuleIndex::references_at` is removed.
 

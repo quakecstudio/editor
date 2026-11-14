@@ -39,6 +39,7 @@ fn qc_types::Slot::to_le_bytes
 fn qc_types::Value::etype
 fn qc_types::Value::read
 fn qc_types::Value::write
+fn qc_types::c_int
 fn qc_types::ofs_parm
 impl qc_types::TooFewSlots: core::error::Error
 impl qc_types::TooFewSlots: core::fmt::Display

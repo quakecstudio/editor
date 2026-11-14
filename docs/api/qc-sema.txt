@@ -1,3 +1,4 @@
+const qc_sema::lower::decl::Binum::BY_NAME
 enum qc_sema::cast::Cast
 enum qc_sema::cast::Kind
 enum qc_sema::cast::Source
@@ -158,6 +159,12 @@ fn qc_sema::ir::BodyStatement::temp_words
 fn qc_sema::ir::BodyStatement::uses
 fn qc_sema::ir::Name::is_made_once
 fn qc_sema::ir::Name::word
+fn qc_sema::ir::StatementIndex::get
+fn qc_sema::ir::StatementIndex::new
+fn qc_sema::ir::StringIndex::get
+fn qc_sema::ir::StringIndex::new
+fn qc_sema::lower::decl::Binum::get
+fn qc_sema::lower::decl::Binum::new
 fn qc_sema::lower::decl::LiteralValue::builtin_function
 fn qc_sema::lower::decl::RawDecl::literal
 fn qc_sema::lower::decl::declares
@@ -223,7 +230,10 @@ struct qc_sema::expand::ModuleInput
 struct qc_sema::expand::OriginMap
 struct qc_sema::ir::BodyStatement
 struct qc_sema::ir::Immediate
+struct qc_sema::ir::StatementIndex
+struct qc_sema::ir::StringIndex
 struct qc_sema::lower::FileDecls
+struct qc_sema::lower::decl::Binum
 struct qc_sema::lower::decl::BuiltinFunction
 struct qc_sema::lower::decl::RawDecl
 struct qc_sema::map_check::EntitySchema
@@ -242,6 +252,7 @@ struct qc_sema::symbol::Reference
 struct qc_sema::ty::FunctionType
 struct qc_sema::ty::ParamLabel
 struct qc_sema::ty::ParamLabels
+use qc_sema::Binum = lower::Binum
 use qc_sema::Db = db::Db
 use qc_sema::DefId = symbol::DefId
 use qc_sema::DefKind = symbol::DefKind
@@ -278,6 +289,7 @@ use qc_sema::Type = ty::Type
 use qc_sema::TypedBody = check::TypedBody
 use qc_sema::fold_builtin_call = check::fold::fold_builtin_call
 use qc_sema::fold_floats = check::fold::fold_floats
+use qc_sema::lower::Binum = decl::Binum
 use qc_sema::lower::LiteralValue = decl::LiteralValue
 use qc_sema::lower::Qualifier = decl::Qualifier
 use qc_sema::lower::ValueKind = decl::ValueKind

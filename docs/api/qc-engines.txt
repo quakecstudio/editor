@@ -25,8 +25,8 @@ fn qc_engines::Engine::id
 fn qc_engines::Engine::name
 fn qc_engines::Engine::unloadable
 fn qc_engines::check::BuiltinRef::lookup
+fn qc_engines::check::Engine::missing_builtins
 fn qc_engines::check::declared_builtins
-fn qc_engines::check::missing_builtins
 impl qc_engines::Builtin: From<qc_builtins::Builtin>
 impl qc_engines::Unloadable: core::fmt::Display
 mod qc_engines::check
@@ -35,7 +35,6 @@ struct qc_engines::Source
 use qc_engines::BuiltinRef = check::BuiltinRef
 use qc_engines::SOURCES = tables::SOURCES
 use qc_engines::declared_builtins = check::declared_builtins
-use qc_engines::missing_builtins = check::missing_builtins
 variant qc_engines::BuiltinKey::Name
 variant qc_engines::BuiltinKey::Number
 variant qc_engines::Engine::DarkPlaces

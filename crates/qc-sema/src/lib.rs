@@ -84,7 +84,7 @@ pub use check::fold::{fold_builtin_call, fold_floats};
 pub use db::{Db, ModuleAnalysis, QueryCounts};
 pub use entities::{EntityClass, Fgd, Found, Key, KeyType, Shape, SpawnFlag};
 pub use expand::{ModuleInput, OriginMap};
-pub use lower::{FileDecls, LiteralValue};
+pub use lower::{Binum, FileDecls, LiteralValue};
 pub use map_check::{EntitySchema, FieldValue, MapDiagnostic, MapDiagnosticKind};
 pub use resolve::InitialValue;
 pub use resolve::{

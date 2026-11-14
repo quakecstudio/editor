@@ -11,7 +11,7 @@ use qc_syntax::Dialect;
 use super::{fte_index_of, index_of};
 use crate::db::Db;
 use crate::expand::ModuleInput;
-use crate::lower::{LiteralValue, lower_file};
+use crate::lower::{Binum, LiteralValue, lower_file};
 use crate::symbol::FileId;
 
 /// The error codes of `source` resolved under the FTEQCC dialect.
@@ -193,14 +193,14 @@ fn unbound_builtins_and_vanilla_compare_as_before() {
         (
             "void() f = #\"\";\n",
             Some(LiteralValue::Builtin {
-                number: 0,
+                number: Binum::BY_NAME,
                 name: None,
             }),
         ),
         (
             "void() f = :ex_a;\n",
             Some(LiteralValue::Builtin {
-                number: 0,
+                number: Binum::BY_NAME,
                 name: Some("ex_a".to_owned()),
             }),
         ),

@@ -873,7 +873,7 @@ pub enum LiteralValue {
     /// reads, `None` when it reads none and names the builtin after the definition (FTE-23.17).
     Builtin {
         /// The builtin number (FTE-17.6), 0 for a builtin bound by name alone (FTE-17.5).
-        number: i32,
+        number: Binum,
         /// The engine name (`ast::Builtin::engine_name`).
         name: Option<String>,
     },
@@ -882,12 +882,34 @@ pub enum LiteralValue {
     Text(String),
 }
 
+/// A builtin initialiser's number, FTEQCC's `binum` (FTE-17.6): from -2^31 to 2^31 - 1, so
+/// unlike a progs.dat's builtin number it may be negative.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Binum(i32);
+
+impl Binum {
+    /// A builtin bound by name alone, which FTEQCC numbers 0 (FTE-17.5).
+    pub const BY_NAME: Self = Self(0);
+
+    /// The binum `number`.
+    #[must_use]
+    pub const fn new(number: i32) -> Self {
+        Self(number)
+    }
+
+    /// The number.
+    #[must_use]
+    pub const fn get(self) -> i32 {
+        self.0
+    }
+}
+
 /// The number and engine name of a builtin function FTEQCC makes (FTE-23.17): it reuses a
 /// function only for a builtin with both the same.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BuiltinFunction {
     /// The `binum`.
-    pub number: i32,
+    pub number: Binum,
     /// The engine name, or the definition's own name when the initialiser gives none.
     pub name: String,
 }
@@ -923,8 +945,8 @@ impl LiteralValue {
                     builtin
                         .binding(qc_syntax::Dialect::Fteqcc)
                         .map(|binding| match binding {
-                            ast::Binding::Number(number) => number,
-                            ast::Binding::Name => 0,
+                            ast::Binding::Number(number) => Binum::new(number),
+                            ast::Binding::Name => Binum::BY_NAME,
                         });
                 Some(number.map_or_else(
                     || Self::Text(token_text(init.syntax())),
