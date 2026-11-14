@@ -314,3 +314,42 @@ fn a_screenshot_keeps_the_players_eye() {
         .collect();
     assert_eq!(shot.eye, [origin[0], origin[1], origin[2] + 22.0]);
 }
+
+// spec SCN-1.2: `frametime <seconds>` is the server frame's length
+#[test]
+fn a_frametime_line_sets_the_frame_length() {
+    let scenario = Scenario::parse("map a\nframetime 0.05\n").unwrap();
+    assert_eq!(scenario.frametime.get().to_bits(), 0.05_f64.to_bits());
+    assert_eq!(SCN_FRAMETIME.get().to_bits(), (1.0_f64 / 72.0).to_bits());
+}
+
+// spec SCN-1.5: an expect line that does not parse says what an assertion is
+#[test]
+fn a_bad_expect_line_says_why() {
+    for (line, why) in [
+        ("expect global x", "expect global <name> <op> <value>"),
+        ("expect field 1", "expect field <edict> <name> <op> <value>"),
+        (
+            "expect field classname= health == 1",
+            "classname= names a classname",
+        ),
+        (
+            "expect field e health == 1",
+            "an edict is a number, player or classname=<name>",
+        ),
+        (
+            "expect local x == 1",
+            "expect global ... or expect field ...",
+        ),
+        ("expect global x ==", "expect ... <op> <value>"),
+        ("expect global x =~ 1", "an op is ==, !=, <, <=, > or >="),
+        (
+            "expect global x == ?",
+            "a value is a number, a vector 'x y z', a string in double quotes or an edict #n",
+        ),
+        ("expect global x < \"a\"", "<, <=, > and >= compare floats"),
+    ] {
+        let error = Scenario::parse(&format!("map a\n{line}\n")).unwrap_err();
+        assert_eq!(error.to_string(), format!("line 2: {why}"), "{line:?}");
+    }
+}
