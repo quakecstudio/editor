@@ -8,52 +8,15 @@
 
 use std::path::{Path, PathBuf};
 
-use qc_project::FsLoader;
-use qs_commands::{Registry, Session};
+use qs_commands::Session;
+use qs_map::MapFile;
 use serde_json::json;
 
 use super::{
     MAP_FIX, MAP_ISSUES, MAP_SEARCH, MapFound, MapIssue, MapIssues, NO_START, NO_VOLUME, QuickFix,
 };
-use crate::map_edit::{BrushIndex, EntityIndex, MAP_OPEN};
-use crate::preview::{HasPreview, Preview, PreviewConfig};
-use crate::{Config, HasWorkbench, Workbench, register, register_preview};
-
-struct Context {
-    workbench: Workbench<FsLoader>,
-    preview: Preview,
-}
-
-impl crate::HasMap for Context {
-    type Project = Workbench<FsLoader>;
-    type Live = Preview;
-
-    fn map_store(&mut self) -> &mut crate::MapStore {
-        self.workbench.maps_mut()
-    }
-
-    fn map_project(&mut self) -> &mut Workbench<FsLoader> {
-        &mut self.workbench
-    }
-
-    fn live_map(&mut self) -> Option<&mut Preview> {
-        Some(&mut self.preview)
-    }
-}
-
-impl HasWorkbench for Context {
-    type Loader = FsLoader;
-
-    fn workbench(&mut self) -> &mut Workbench<FsLoader> {
-        &mut self.workbench
-    }
-}
-
-impl HasPreview for Context {
-    fn workbench_and_preview(&mut self) -> (&mut Workbench<FsLoader>, &mut Preview) {
-        (&mut self.workbench, &mut self.preview)
-    }
-}
+use crate::map_edit::testing::{MapContext, TestProject};
+use crate::map_edit::{BrushIndex, EntityIndex, EntityProblem, MAP_OPEN};
 
 /// The desktop's keep project: its QuakeC defines the ogre, the light, the door and the
 /// player start.
@@ -88,24 +51,27 @@ fn map(world_brushes: &str, rest: &str) -> String {
 /// A player start, an entity every fixture but the start's has.
 const START: &str = "{\n\"classname\" \"info_player_start\"\n\"origin\" \"0 0 24\"\n}\n";
 
-/// A session with the keep project and the map `text` open, written to its own folder `name`.
-fn session(name: &str, text: &str) -> Session<Context> {
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    register_preview(&mut registry).unwrap();
-    let context = Context {
-        workbench: Workbench::new(FsLoader, Config::default()),
-        preview: Preview::new(PreviewConfig {
-            host: None,
-            app: Path::new("/nowhere/app").to_path_buf(),
-            game: None,
-            extra: Vec::new(),
-        }),
+/// A session whose project's folder is the keep's, with no entity check, and the map `text`
+/// open, written to its own folder `name`.
+fn session(name: &str, text: &str) -> Session<MapContext> {
+    session_with(name, text, None)
+}
+
+/// [`session`] with `check` for the project's check of a map's entities.
+fn session_with(
+    name: &str,
+    text: &str,
+    check: Option<fn(&MapFile) -> Vec<EntityProblem>>,
+) -> Session<MapContext> {
+    let context = MapContext {
+        project: TestProject {
+            root: Some(keep()),
+            check,
+            ..TestProject::default()
+        },
+        ..MapContext::default()
     };
-    let mut session = Session::new(context, registry);
-    session
-        .execute("project.open", json!({ "path": keep() }))
-        .unwrap();
+    let mut session = context.into_session();
     let dir = std::env::temp_dir()
         .join(format!("qs-wb-issues-{}", std::process::id()))
         .join(name);
@@ -116,7 +82,41 @@ fn session(name: &str, text: &str) -> Session<Context> {
     session
 }
 
-fn issues(session: &mut Session<Context>) -> Vec<MapIssue> {
+/// A project's check that knows the field `speed` and the class `monster_ogre`: a key `sped`,
+/// at its line, and a classname `monster_orge` are problems, each with the edit that puts it
+/// right.
+fn ogre_check(map: &MapFile) -> Vec<EntityProblem> {
+    let mut problems = Vec::new();
+    for (place, entity) in map.entities.iter().enumerate() {
+        let entity_index = EntityIndex::new(place);
+        if let Some(pair) = entity.pairs().find(|pair| pair.key() == b"sped") {
+            problems.push(EntityProblem {
+                entity: entity_index,
+                line: pair.line(),
+                message: "sped is not a field; did you mean speed?".to_owned(),
+                fix: Some(QuickFix::RenameKey {
+                    entity: entity_index,
+                    from: "sped".to_owned(),
+                    to: "speed".to_owned(),
+                }),
+            });
+        }
+        if entity.classname() == Some(b"monster_orge".as_slice()) {
+            problems.push(EntityProblem {
+                entity: entity_index,
+                line: entity.line(),
+                message: "no spawn function monster_orge; did you mean monster_ogre?".to_owned(),
+                fix: Some(QuickFix::SetClassname {
+                    entity: entity_index,
+                    classname: "monster_ogre".to_owned(),
+                }),
+            });
+        }
+    }
+    problems
+}
+
+fn issues(session: &mut Session<MapContext>) -> Vec<MapIssue> {
     let found: MapIssues =
         serde_json::from_value(session.execute(MAP_ISSUES, json!({})).unwrap()).unwrap();
     found.issues
@@ -124,7 +124,7 @@ fn issues(session: &mut Session<Context>) -> Vec<MapIssue> {
 
 /// Applies the fix of the one issue whose message holds `message`, checks it is gone, undoes
 /// it in one step and checks it is back; the fix.
-fn fixes_and_undoes(session: &mut Session<Context>, message: &str) -> QuickFix {
+fn fixes_and_undoes(session: &mut Session<MapContext>, message: &str) -> QuickFix {
     let before = issues(session);
     let issue = before
         .iter()
@@ -168,12 +168,13 @@ fn an_empty_brush_is_removed() {
     );
 }
 
-// spec MAP-8.2: a misspelled key's fix renames it to the field it is closest to, in one step
-// that undoes
+// No spec statement: P6-19, MAP-8.2: a problem the project's check finds with a key is listed
+// with its fix, which renames the key in one step that undoes
 #[test]
 fn a_misspelled_key_is_renamed() {
     let ogre = "{\n\"classname\" \"monster_ogre\"\n\"origin\" \"0 0 24\"\n\"sped\" \"200\"\n}\n";
-    let mut session = session("key", &map(&room(), &(START.to_owned() + ogre)));
+    let text = map(&room(), &(START.to_owned() + ogre));
+    let mut session = session_with("key", &text, Some(ogre_check));
     let fix = fixes_and_undoes(&mut session, "sped");
     assert_eq!(
         fix,
@@ -185,12 +186,13 @@ fn a_misspelled_key_is_renamed() {
     );
 }
 
-// spec MAP-8.1: a misspelled classname's fix sets the class it is closest to, in one step that
-// undoes
+// No spec statement: P6-19, MAP-8.1: a problem the project's check finds with a classname is
+// listed with its fix, which sets the class in one step that undoes
 #[test]
 fn a_misspelled_class_is_set() {
     let ogre = "{\n\"classname\" \"monster_orge\"\n\"origin\" \"0 0 24\"\n}\n";
-    let mut session = session("class", &map(&room(), &(START.to_owned() + ogre)));
+    let text = map(&room(), &(START.to_owned() + ogre));
+    let mut session = session_with("class", &text, Some(ogre_check));
     let fix = fixes_and_undoes(&mut session, "monster_orge");
     assert_eq!(
         fix,
@@ -251,7 +253,7 @@ fn format_and_texture_issues_are_placed() {
     );
 }
 
-fn search(session: &mut Session<Context>, params: serde_json::Value) -> MapFound {
+fn search(session: &mut Session<MapContext>, params: serde_json::Value) -> MapFound {
     serde_json::from_value(session.execute(MAP_SEARCH, params).unwrap()).unwrap()
 }
 
@@ -306,7 +308,7 @@ fn search_by_class_key_texture_and_box() {
 }
 
 /// Runs `fix` and gives its error's text, checking the map is unchanged.
-fn refused(session: &mut Session<Context>, fix: &QuickFix) -> String {
+fn refused(session: &mut Session<MapContext>, fix: &QuickFix) -> String {
     let before = issues(session);
     let error = session
         .execute(MAP_FIX, json!({ "fix": fix }))
@@ -354,7 +356,8 @@ fn pairs_after_brushes_and_empty_brushes() {
         "{{\n\"classname\" \"func_door\"\n{}\"sped\" \"100\"\n}}\n",
         cuboid([96, -16, 0], [112, 16, 96])
     );
-    let mut doors = session("pairs", &map(&room(), &(START.to_owned() + &door)));
+    let text = map(&room(), &(START.to_owned() + &door));
+    let mut doors = session_with("pairs", &text, Some(ogre_check));
     let found = issues(&mut doors);
     let sped = found
         .iter()

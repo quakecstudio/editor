@@ -88,13 +88,13 @@ impl HasMap for MapContext {
 }
 
 /// A project that is what a test says: its folder, its classes, the keys its code fires
-/// entities by and the problems its check finds with any map.
+/// entities by and its check of a map's entities.
 #[derive(Default)]
 pub(crate) struct TestProject {
     pub(crate) root: Option<PathBuf>,
     pub(crate) classes: Vec<ClassInfo>,
     pub(crate) targeting: Vec<String>,
-    pub(crate) problems: Option<Vec<EntityProblem>>,
+    pub(crate) check: Option<fn(&MapFile) -> Vec<EntityProblem>>,
 }
 
 impl MapProject for TestProject {
@@ -114,8 +114,8 @@ impl MapProject for TestProject {
     }
 
     fn entity_check(&mut self) -> Option<EntityCheck> {
-        let problems = self.problems.clone()?;
-        Some(Box::new(move |_: &MapFile| problems.clone()))
+        let check = self.check?;
+        Some(Box::new(check))
     }
 }
 
