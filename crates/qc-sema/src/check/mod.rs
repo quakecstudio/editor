@@ -688,6 +688,26 @@ impl Reference {
     }
 }
 
+/// Whether an expression's value is read or thrown away (`QCC_PR_DiscardExpression`,
+/// `QCC_PR_DiscardRef` against `QCC_RefToDef`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ValueUse {
+    /// The value is read.
+    Read,
+    /// The value is discarded: a statement's expression, a `for` clause, a comma's left side.
+    Discarded,
+}
+
+/// Whether a stored value folds into the statement that made it or is stored as a
+/// definition is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Fold {
+    /// It folds into the statement that made it.
+    Folded,
+    /// It is stored.
+    Stored,
+}
+
 /// Whether a value is a constant (`QCC_SRef_EvalConst`, FTEF-26.13).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Constness {

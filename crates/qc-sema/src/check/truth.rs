@@ -235,7 +235,7 @@ impl Checker<'_> {
         // each is a function of its own, so that a nested ternary's frame stays small (QC-27.15).
         let span = ternary.syntax().span();
         let (middle, last) = ternary.arms();
-        let test = match self.ternary_condition(ternary, middle.is_some(), span) {
+        let test = match self.ternary_condition(ternary, span) {
             Ok(Tested::Jump(test)) => test,
             Ok(Tested::Kept(kept, test)) => return self.ternary_last(*kept, test, last, span),
             Ok(Tested::Constant(condition, constant)) => {
@@ -262,9 +262,9 @@ impl Checker<'_> {
     fn ternary_condition(
         &mut self,
         ternary: &ast::TernaryExpr,
-        middle: bool,
         span: Span,
     ) -> Result<Tested, Fatal> {
+        let middle = ternary.arms().0.is_some();
         let condition = self.value(ternary.condition())?;
         if self.global
             && let Some(constant) = condition.known()

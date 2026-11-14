@@ -347,7 +347,7 @@ impl Classes<'_> {
                     written_spawning.extend(builtin.clone());
                 }
                 written.extend(builtin);
-                let Some(field) = self.self_field(statement, true) else {
+                let Some(field) = self.self_field(statement) else {
                     continue;
                 };
                 let (name, ty) = self.key_of(field);
@@ -476,15 +476,12 @@ impl Classes<'_> {
     fn touches_self(&self, body: &TypedBody) -> bool {
         body.generated().iter().any(|statement| {
             (is_load(statement.op) || statement.op == Op::Address)
-                && self.self_field(statement, true).is_some()
+                && self.self_field(statement).is_some()
         })
     }
 
-    /// The field of `self` the statement names as `b`, when `applies` and its `a` is `self`.
-    fn self_field(&self, statement: &BodyStatement, applies: bool) -> Option<&crate::Definition> {
-        if !applies {
-            return None;
-        }
+    /// The field of `self` the statement names as `b`, when its `a` is `self`.
+    fn self_field(&self, statement: &BodyStatement) -> Option<&crate::Definition> {
         let (Some(Name::Def(entity, 0)), Some(Name::Def(field, 0))) = (statement.a, statement.b)
         else {
             return None;
@@ -498,7 +495,9 @@ impl Classes<'_> {
     fn field_at(&self, code: &[BodyStatement], index: u32) -> Option<String> {
         let statement = code.get(usize::try_from(index).ok()?)?;
         let applies = is_load(statement.op) || statement.op == Op::Address;
-        self.self_field(statement, applies)
+        applies
+            .then(|| self.self_field(statement))
+            .flatten()
             .map(|def| def.name.clone())
     }
 
@@ -571,7 +570,7 @@ impl Classes<'_> {
         let mut found = Vec::new();
         for statement in code {
             if is_load(statement.op) {
-                if let Some(field) = self.self_field(statement, true) {
+                if let Some(field) = self.self_field(statement) {
                     loaded.insert(field.name.clone());
                 }
                 continue;

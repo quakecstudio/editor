@@ -66,9 +66,7 @@ impl Checker<'_> {
                 }
                 self.fatal(Code::E0302, span, "type mismatch for +".to_owned())
             }
-            UnaryOp::PreIncrement | UnaryOp::PreDecrement => {
-                self.prefix_step(&operand, op == UnaryOp::PreIncrement, span)
-            }
+            UnaryOp::PreIncrement | UnaryOp::PreDecrement => self.prefix_step(&operand, op, span),
             UnaryOp::Deref => self.dereference(operand, span),
             UnaryOp::AsString => {
                 if matches!(
@@ -129,7 +127,8 @@ impl Checker<'_> {
     /// read-only value" (or `--`); the operand plus or minus 1 of its type, a pointer by its
     /// pointee's size with `OP_ADD_PIW`, is emitted and stored; any other type is "++ operator
     /// on unsupported type". The value is the operand stored to, read-only.
-    fn prefix_step(&mut self, operand: &Value, increment: bool, span: Span) -> Checked {
+    fn prefix_step(&mut self, operand: &Value, op: UnaryOp, span: Span) -> Checked {
+        let increment = op == UnaryOp::PreIncrement;
         let spelling = if increment { "++" } else { "--" };
         if operand.readonly {
             let message = format!("{spelling} operator on read-only value");

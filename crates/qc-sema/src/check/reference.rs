@@ -25,6 +25,16 @@ use crate::check::{Bitfield, ElementRef, FieldRef, MemberArray, Reference, Sym, 
 use crate::ir;
 use crate::ty::{SimpleType, Type};
 
+/// What an array index reads: an element, or a vector's component (whose getter takes the
+/// element's index, its words' divided by 3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ElementKind {
+    /// An element of the array.
+    Element,
+    /// A component of a vector element.
+    VectorComponent,
+}
+
 impl Checker<'_> {
     /// The value of `expr`, read (`QCC_PR_Expression`, `QCC_RefToDef`).
     pub(super) fn value(&mut self, expr: Option<ast::Expr>) -> Checked {
@@ -319,9 +329,10 @@ impl Checker<'_> {
         &mut self,
         element: &Value,
         index: &Value,
-        vector: bool,
+        kind: ElementKind,
         span: Span,
     ) -> Result<bool, Fatal> {
+        let vector = kind == ElementKind::VectorComponent;
         let target = self.env.target_at(span.start);
         let index_etype = self.etype_of(&index.ty);
         // `def->arraylengthprefix = !rootsymbol && !def->localscope && ...` reads `localscope`
@@ -432,8 +443,13 @@ impl Checker<'_> {
         if let Some(bits) = narrow_bits(&value.ty) {
             return self.narrow_element(value, &element.index, bits, span);
         }
+        let kind = if element.vector {
+            ElementKind::VectorComponent
+        } else {
+            ElementKind::Element
+        };
         let called = element.index.known().is_none()
-            && self.load_from_array(&value, &element.index, element.vector, span)?;
+            && self.load_from_array(&value, &element.index, kind, span)?;
         // A struct read word by word is the block its words were stored to.
         if let Some(block) = self.block_read.take() {
             return Ok(Value {
@@ -682,7 +698,7 @@ impl Checker<'_> {
                     sym: Sym::Def(def, false, 0),
                     ..Value::of(base.ty.clone())
                 };
-                self.load_from_array(&field, &at, false, span)?;
+                self.load_from_array(&field, &at, ElementKind::Element, span)?;
             }
             return Ok(base);
         }

@@ -76,6 +76,24 @@ pub(super) struct Layout {
     gotos: Vec<(String, usize)>,
 }
 
+/// Whether a `return =` set a value the function's end returns (FTEF-18).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PendingReturn {
+    /// One was set.
+    Set,
+    /// None was.
+    Unset,
+}
+
+/// What the function's value is, for its missing returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Returns {
+    /// `void`: nothing to miss.
+    Void,
+    /// A value.
+    Value,
+}
+
 impl Layout {
     /// The index the next statement takes, `numstatements`.
     pub(super) fn here(&self) -> usize {
@@ -239,29 +257,35 @@ impl Layout {
         self.labels.clear();
     }
 
-    /// `QCC_PR_FinaliseFunction`: the `return` of a value `return =` set, when `returned`; then
+    /// `QCC_PR_FinaliseFunction`: the `return` of a value `return =` set, when `pending`; then
     /// `OP_DONE` unless the last statement returns; then `QCC_CheckForDeadAndMissingReturns`
     /// for a function whose value is `void` or not.
-    pub(super) fn finish(mut self, returned: bool, void: bool, line: u32) -> Vec<Finding> {
+    pub(super) fn finish(
+        mut self,
+        pending: PendingReturn,
+        returns: Returns,
+        line: u32,
+    ) -> Vec<Finding> {
         for (name, at) in std::mem::take(&mut self.gotos) {
             if let Some(&(_, target)) = self.labels.iter().find(|(label, _)| *label == name) {
                 self.patch(at, target);
             }
         }
-        if returned {
+        if pending == PendingReturn::Set {
             self.push(Step::Return, None, line, None);
         }
         if !matches!(self.last(), Some(Step::Return | Step::Done)) {
             self.push(Step::Done, None, line, None);
         }
-        self.dead_and_missing_returns(void)
+        self.dead_and_missing_returns(returns)
     }
 
     /// `QCC_CheckForDeadAndMissingReturns` at the default optimisation level: a function that
     /// returns a value whose last statement is no `return` or backward `goto`, or that jumps on a
     /// condition to its end, misses a return; a statement after a `return` or `goto` that is no
     /// `return`, `goto` or `done` and that no jump reaches is unreachable.
-    fn dead_and_missing_returns(&self, void: bool) -> Vec<Finding> {
+    fn dead_and_missing_returns(&self, returns: Returns) -> Vec<Finding> {
+        let void = returns == Returns::Void;
         let mut last = self.code.len();
         if self.last() == Some(Step::Done) {
             last = last.saturating_sub(1);

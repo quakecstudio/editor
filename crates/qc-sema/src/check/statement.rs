@@ -16,7 +16,7 @@ use crate::VECTOR_WORDS;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
-use crate::check::flow::{Finding, Mark, Step};
+use crate::check::flow::{Finding, Mark, PendingReturn, Returns, Step};
 use crate::check::member;
 use crate::check::reference::eval_int;
 use crate::check::truth::{Jump, Test, is_truth};
@@ -1108,11 +1108,20 @@ impl Checker<'_> {
             );
             self.env.report(Code::W0262, span, message);
         }
-        let void = self.etype_of(&self.function.ret) == Some(Etype::Void);
+        let returns = if self.etype_of(&self.function.ret) == Some(Etype::Void) {
+            Returns::Void
+        } else {
+            Returns::Value
+        };
+        let pending = if self.returned {
+            PendingReturn::Set
+        } else {
+            PendingReturn::Unset
+        };
         let line = self.env.line(span);
         let layout = std::mem::take(&mut self.layout);
         let name = self.function.name.clone();
-        for finding in layout.finish(self.returned, void, line) {
+        for finding in layout.finish(pending, returns, line) {
             match finding {
                 Finding::MissingReturn => {
                     let message = format!("{name}: not all control paths return a value");
