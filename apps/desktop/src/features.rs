@@ -16,7 +16,7 @@ use crate::editors::EditorsFeature;
 use crate::git_panel::GitFeature;
 use crate::map_feature::MapFeature;
 use crate::project::{Jump, ProjectFeature};
-use crate::shell::{BottomTab, ShellError, Workspace};
+use crate::shell::{BottomTab, CentreTab, ShellError, Workspace};
 use crate::strings::Text;
 use crate::terminal::TerminalFeature;
 
@@ -77,6 +77,10 @@ pub(crate) enum ShellRequest {
     RefreshEditor,
     /// Show the bottom panel's `tab`, opening the panel.
     ShowBottom(BottomTab),
+    /// Show the centre's `tab`.
+    ShowCentre(CentreTab),
+    /// Open the guide to the game's files when some are missing (P3-21).
+    OpenGameGuide,
 }
 
 /// The commands a feature runs, and the toolbar's notice it may set.
@@ -139,6 +143,11 @@ impl<'a> Commands<'a> {
         params: serde_json::Value,
     ) -> Result<serde_json::Value, CommandError> {
         self.session.execute(id, params)
+    }
+
+    /// Puts `notice` on the toolbar, or clears it.
+    pub(crate) fn set_notice(&mut self, notice: Option<String>) {
+        *self.notice = notice;
     }
 
     /// Clears the toolbar's notice.
