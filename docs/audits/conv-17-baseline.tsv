@@ -365,12 +365,9 @@ free-fn-on-type	crates/qs-sim/src/builtins.rs	field
 free-fn-on-type	crates/qs-sim/src/builtins.rs	parm
 free-fn-on-type	crates/qs-sim/src/builtins.rs	parm_edict
 free-fn-on-type	crates/qs-sim/src/builtins.rs	parm_float
-free-fn-on-type	crates/qs-sim/src/builtins.rs	parm_raw
 free-fn-on-type	crates/qs-sim/src/builtins.rs	parm_vector
 free-fn-on-type	crates/qs-sim/src/collision/hull.rs	hull_for_entity
-free-fn-on-type	crates/qs-sim/src/collision/trace.rs	check
 free-fn-on-type	crates/qs-sim/src/collision/trace.rs	recursive_hull_check
-free-fn-on-type	crates/qs-sim/src/world/reload.rs	change
 free-fn-on-type	crates/qs-sound/src/mixer.rs	paint_channel
 bare-id	apps/desktop/src/agent.rs	AgentPanel::asking(index)
 bare-id	apps/desktop/src/agent.rs	AgentPanel::permit(index)

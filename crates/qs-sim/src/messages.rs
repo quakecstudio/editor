@@ -26,7 +26,7 @@ use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 use qc_vm::{Builtins as _, RunError};
 use qs_bsp::Bsp;
 
-use crate::builtins::{FL_ONGROUND, SimCall, parm_float, parm_raw, parm_vector};
+use crate::builtins::{FL_ONGROUND, SimCall, parm_float, parm_vector};
 use crate::client::wire_angle;
 use crate::collision::{CONTENTS_SOLID, MoveKind};
 use crate::settings::Setting;
@@ -463,7 +463,7 @@ impl SimCall<'_, '_, '_> {
     fn joined_text(&self, first: u16) -> Vec<u8> {
         let argc = u16::try_from(self.context.machine_view().argc()).unwrap_or(u16::MAX);
         let parms: Vec<Vec<u8>> = (first..argc)
-            .map(|n| self.string_text(parm_raw(&self.context, n)))
+            .map(|n| self.string_text(self.context.parm_raw(n)))
             .collect();
         let localization = &self.sim.mock.engine().localization;
         if localization.is_empty() {
@@ -541,7 +541,7 @@ impl SimCall<'_, '_, '_> {
     /// `sprint` and `centerprint`: `svc` and the joined text from PARM1 to the client slot
     /// PARM0 names, when it is one (BUILTIN-11.2).
     pub(crate) fn mirror_client_print(&mut self, svc: i32) {
-        let value = parm_raw(&self.context, 0);
+        let value = self.context.parm_raw(0);
         let n = self.edict_of(value);
         if n != 1 || !self.is_client_slot(n) {
             return;
@@ -562,8 +562,8 @@ impl SimCall<'_, '_, '_> {
     /// The host error `NUM_FOR_EDICT: bad pointer` for an entity outside the edicts in use
     /// (RRE-2.4).
     pub(crate) fn local_sound(&mut self) -> Result<(), RunError> {
-        let n = self.num_for_edict(parm_raw(&self.context, 0))?;
-        let sample = self.string_text(parm_raw(&self.context, 1));
+        let n = self.num_for_edict(self.context.parm_raw(0))?;
+        let sample = self.string_text(self.context.parm_raw(1));
         if !self.is_client_slot(n) {
             // "tried to localsound to a non-client"
             return Ok(());
@@ -611,11 +611,11 @@ impl SimCall<'_, '_, '_> {
 
     /// `stuffcmd`: `svc_stufftext` and PARM1 to the client (BUILTIN-11.4).
     pub(crate) fn mirror_stuffcmd(&mut self) {
-        let value = parm_raw(&self.context, 0);
+        let value = self.context.parm_raw(0);
         if self.edict_of(value) != 1 {
             return;
         }
-        let text = self.string_text(parm_raw(&self.context, 1));
+        let text = self.string_text(self.context.parm_raw(1));
         let message = &mut self.sim.messages.client.message;
         message.write_byte(SVC_STUFFTEXT);
         message.write_string(&text);
@@ -624,9 +624,9 @@ impl SimCall<'_, '_, '_> {
     /// `sound`'s bytes to the unreliable datagram (BUILTIN-12.3), once the mock has
     /// accepted the call.
     pub(crate) fn mirror_sound(&mut self) {
-        let ent = self.edict_of(parm_raw(&self.context, 0));
+        let ent = self.edict_of(self.context.parm_raw(0));
         let channel = float_to_int(parm_float(&self.context, 1));
-        let sample = self.string_text(parm_raw(&self.context, 2));
+        let sample = self.string_text(self.context.parm_raw(2));
         let volume = float_to_int(parm_float(&self.context, 3) * 255.0);
         let attenuation = parm_float(&self.context, 4);
         let name = String::from_utf8_lossy(&sample).into_owned();
@@ -672,7 +672,7 @@ impl SimCall<'_, '_, '_> {
     /// `ambientsound`'s bytes to the signon buffer (BUILTIN-12.4).
     pub(crate) fn mirror_ambientsound(&mut self) {
         let pos = parm_vector(&self.context, 0);
-        let sample = self.string_text(parm_raw(&self.context, 1));
+        let sample = self.string_text(self.context.parm_raw(1));
         let vol = parm_float(&self.context, 2);
         let atten = parm_float(&self.context, 3);
         let name = String::from_utf8_lossy(&sample).into_owned();
@@ -720,7 +720,7 @@ impl SimCall<'_, '_, '_> {
             return;
         }
         let style = float_to_int(parm_float(&self.context, 0));
-        let value = self.string_text(parm_raw(&self.context, 1));
+        let value = self.string_text(self.context.parm_raw(1));
         let client = &mut self.sim.messages.client;
         if client.active || client.spawned {
             client.message.write_byte(SVC_LIGHTSTYLE);
@@ -732,7 +732,7 @@ impl SimCall<'_, '_, '_> {
     /// `makestatic`'s bytes to the signon buffer (BUILTIN-12.8), read from the edict before
     /// the mock frees it.
     pub(crate) fn static_bytes(&self) -> Result<Vec<u8>, RunError> {
-        let ent = self.edict_of(parm_raw(&self.context, 0));
+        let ent = self.edict_of(self.context.parm_raw(0));
         let model = self.string_text(self.entity_raw(ent, "model"));
         let mut out = Message::new(NET_SIGNON_SIZE, Overflow::Fatal);
         out.write_byte(SVC_SPAWNSTATIC);
@@ -767,7 +767,7 @@ impl SimCall<'_, '_, '_> {
     /// A `Write*` builtin's bytes (BUILTIN-13.2), `number` its builtin number.
     pub(crate) fn mirror_write(&mut self, number: u32) {
         let value = parm_float(&self.context, 1);
-        let raw = parm_raw(&self.context, 1);
+        let raw = self.context.parm_raw(1);
         let text = (number == 58).then(|| self.written_text(raw));
         let entity = (number == 59).then(|| i32::try_from(self.edict_of(raw)).unwrap_or(0));
         let Some(message) = self.write_dest() else {

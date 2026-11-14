@@ -997,9 +997,11 @@ fn field(vm: &Vm<'_, '_, '_>, n: usize, name: &str) -> Option<Slot> {
         .field(EdictNumber::new(n), field_slot(name))
 }
 
-/// Parameter `n`'s raw bits.
-pub(crate) fn parm_raw(context: &Vm<'_, '_, '_>, n: u16) -> i32 {
-    parm(context, n).as_i32()
+impl Vm<'_, '_, '_> {
+    /// Parameter `n`'s raw bits.
+    pub(crate) fn parm_raw(&self, n: u16) -> i32 {
+        parm(self, n).as_i32()
+    }
 }
 
 fn parm(context: &Vm<'_, '_, '_>, n: u16) -> Slot {

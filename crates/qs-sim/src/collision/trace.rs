@@ -106,105 +106,107 @@ pub fn recursive_hull_check(
         p1,
         p2,
     };
-    check(hull, num, stretch, trace, hull.size())
+    hull.check(num, stretch, trace, hull.size())
 }
 
-fn check(
-    hull: &Hull<'_>,
-    num: i32,
-    s: Stretch,
-    trace: &mut Trace,
-    depth: usize,
-) -> Result<bool, CollisionError> {
-    // WORLD-3.1: a contents value.
-    if num < 0 {
-        if num == CONTENTS_SOLID {
-            trace.startsolid = true;
-        } else {
-            trace.allsolid = false;
-            if num == CONTENTS_EMPTY {
-                trace.inopen = true;
+impl Hull<'_> {
+    fn check(
+        &self,
+        num: i32,
+        s: Stretch,
+        trace: &mut Trace,
+        depth: usize,
+    ) -> Result<bool, CollisionError> {
+        // WORLD-3.1: a contents value.
+        if num < 0 {
+            if num == CONTENTS_SOLID {
+                trace.startsolid = true;
             } else {
-                trace.inwater = true;
+                trace.allsolid = false;
+                if num == CONTENTS_EMPTY {
+                    trace.inopen = true;
+                } else {
+                    trace.inwater = true;
+                }
             }
+            return Ok(true);
         }
-        return Ok(true);
-    }
-    let depth = depth
-        .checked_sub(1)
-        .ok_or(CollisionError::BadNode(BAD_NODE))?;
-    let (node, plane) = hull.node(num, BAD_NODE)?;
-    let [front, back] = node.children;
-    // WORLD-3.3
-    let t1 = plane.distance(s.p1);
-    let t2 = plane.distance(s.p2);
-    if t1 >= 0.0 && t2 >= 0.0 {
-        return check(hull, front, s, trace, depth);
-    }
-    if t1 < 0.0 && t2 < 0.0 {
-        return check(hull, back, s, trace, depth);
-    }
-    // WORLD-3.4: the crossing, DIST_EPSILON on the near side.
-    let epsilon = if t1 < 0.0 {
-        DIST_EPSILON
-    } else {
-        -DIST_EPSILON
-    };
-    let mut frac = narrow((f64::from(t1) + epsilon) / f64::from(t1 - t2)).clamp(0.0, 1.0);
-    let (mut midf, mut mid) = s.at(frac);
-    let (near, far) = if t1 < 0.0 {
-        (back, front)
-    } else {
-        (front, back)
-    };
-    // WORLD-3.5: up to the node, then past it when the far side is not solid there.
-    let to_mid = Stretch {
-        p2f: midf,
-        p2: mid,
-        ..s
-    };
-    if !check(hull, near, to_mid, trace, depth)? {
-        return Ok(false);
-    }
-    if hull.point_contents(far, mid)? != CONTENTS_SOLID {
-        let past = Stretch {
-            p1f: midf,
-            p1: mid,
+        let depth = depth
+            .checked_sub(1)
+            .ok_or(CollisionError::BadNode(BAD_NODE))?;
+        let (node, plane) = self.node(num, BAD_NODE)?;
+        let [front, back] = node.children;
+        // WORLD-3.3
+        let t1 = plane.distance(s.p1);
+        let t2 = plane.distance(s.p2);
+        if t1 >= 0.0 && t2 >= 0.0 {
+            return self.check(front, s, trace, depth);
+        }
+        if t1 < 0.0 && t2 < 0.0 {
+            return self.check(back, s, trace, depth);
+        }
+        // WORLD-3.4: the crossing, DIST_EPSILON on the near side.
+        let epsilon = if t1 < 0.0 {
+            DIST_EPSILON
+        } else {
+            -DIST_EPSILON
+        };
+        let mut frac = narrow((f64::from(t1) + epsilon) / f64::from(t1 - t2)).clamp(0.0, 1.0);
+        let (mut midf, mut mid) = s.at(frac);
+        let (near, far) = if t1 < 0.0 {
+            (back, front)
+        } else {
+            (front, back)
+        };
+        // WORLD-3.5: up to the node, then past it when the far side is not solid there.
+        let to_mid = Stretch {
+            p2f: midf,
+            p2: mid,
             ..s
         };
-        return check(hull, far, past, trace, depth);
-    }
-    // WORLD-3.6: the impact.
-    if trace.allsolid {
-        return Ok(false);
-    }
-    trace.plane = if t1 < 0.0 {
-        // WORLD-3.7: `VectorSubtract (vec3_origin, plane->normal, ...)`, so a zero component
-        // is +0, and `-plane->dist`.
-        let [a, b, c] = plane.normal;
-        TracePlane {
-            normal: [0.0 - a, 0.0 - b, 0.0 - c],
-            dist: -plane.dist,
-        }
-    } else {
-        TracePlane {
-            normal: plane.normal,
-            dist: plane.dist,
-        }
-    };
-    while hull.point_contents(hull.first, mid)? == CONTENTS_SOLID {
-        frac = narrow(f64::from(frac) - BACKUP);
-        if frac < 0.0 {
-            // "backup past 0"
-            trace.fraction = midf;
-            trace.endpos = mid;
+        if !self.check(near, to_mid, trace, depth)? {
             return Ok(false);
         }
-        (midf, mid) = s.at(frac);
+        if self.point_contents(far, mid)? != CONTENTS_SOLID {
+            let past = Stretch {
+                p1f: midf,
+                p1: mid,
+                ..s
+            };
+            return self.check(far, past, trace, depth);
+        }
+        // WORLD-3.6: the impact.
+        if trace.allsolid {
+            return Ok(false);
+        }
+        trace.plane = if t1 < 0.0 {
+            // WORLD-3.7: `VectorSubtract (vec3_origin, plane->normal, ...)`, so a zero component
+            // is +0, and `-plane->dist`.
+            let [a, b, c] = plane.normal;
+            TracePlane {
+                normal: [0.0 - a, 0.0 - b, 0.0 - c],
+                dist: -plane.dist,
+            }
+        } else {
+            TracePlane {
+                normal: plane.normal,
+                dist: plane.dist,
+            }
+        };
+        while self.point_contents(self.first, mid)? == CONTENTS_SOLID {
+            frac = narrow(f64::from(frac) - BACKUP);
+            if frac < 0.0 {
+                // "backup past 0"
+                trace.fraction = midf;
+                trace.endpos = mid;
+                return Ok(false);
+            }
+            (midf, mid) = s.at(frac);
+        }
+        trace.fraction = midf;
+        trace.endpos = mid;
+        Ok(false)
     }
-    trace.fraction = midf;
-    trace.endpos = mid;
-    Ok(false)
 }
 
 /// A `double` stored in a `float`.
