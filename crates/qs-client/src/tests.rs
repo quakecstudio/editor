@@ -3280,3 +3280,17 @@ fn a_new_server_prints_its_level_name() {
     assert_eq!(printed[divider + 1][0], 2);
     assert!(printed[divider + 1].ends_with(b"\n"));
 }
+
+// spec CLIENT-1.6: entities 1 to maxclients are the clients, each drawn through its own slot's
+// colours; the world and every later entity are not a client
+#[test]
+fn an_entity_slot_names_its_client() {
+    use crate::EntitySlot;
+    assert_eq!(EntitySlot::new(1).player(4), Some(0));
+    assert_eq!(EntitySlot::new(4).player(4), Some(3));
+    assert_eq!(EntitySlot::new(5).player(4), None);
+    assert_eq!(EntitySlot::NONE.player(4), None);
+    assert_eq!(EntitySlot::new(1).player(0), None);
+    assert_eq!(EntitySlot::new(7).get(), 7);
+    assert_eq!(EntitySlot::default(), EntitySlot::NONE);
+}
