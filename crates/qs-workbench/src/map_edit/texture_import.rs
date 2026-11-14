@@ -16,8 +16,8 @@ use qs_wad::write::WadBuilder;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::map_edit::textures::{Game, game_palette};
 use crate::map_edit::{EntityIndex, MapSource, edit_map};
-use crate::map_textures::{Game, game_palette};
 use crate::{HasMap, MapEditError, MapProject};
 
 /// The id of `texture.import`.

@@ -21,7 +21,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::map_edit::MapSource;
-use crate::map_textures::{Game, find_wad};
+use crate::map_edit::textures::{Game, find_wad};
 use crate::preview::{HasPreview, PreviewError};
 use crate::{Workbench, WorkbenchError};
 

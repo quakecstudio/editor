@@ -10,8 +10,8 @@ use std::path::Path;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use qs_workbench::map_edit::uv::{FaceIndex, FaceRef};
 use qs_workbench::map_edit::{Axis, BrushIndex, EntityIndex, Lock};
-use qs_workbench::map_uv::{FaceIndex, FaceRef};
 use qs_workbench::{Config, FsLoader, Workbench};
 
 use crate::map_scene::Scene;

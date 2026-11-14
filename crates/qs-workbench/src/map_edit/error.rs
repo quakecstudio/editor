@@ -10,8 +10,8 @@ use qs_map::shapes::ShapeError;
 use qs_wad::texture::TextureError;
 use qs_wad::write::WadWriteError;
 
+use crate::map_edit::uv::FaceIndex;
 use crate::map_edit::{BrushIndex, EntityIndex, MapHunkNumber};
-use crate::map_uv::FaceIndex;
 
 /// Why a map command could not open, change or save the open map.
 #[derive(Debug)]

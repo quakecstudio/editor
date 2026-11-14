@@ -15,8 +15,8 @@ use serde_json::{Value, json};
 
 use super::{FaceIndex, MAP_FACE_ALIGN, MAP_FACE_UV};
 use crate::map_edit::MapEdited;
+use crate::map_edit::textures::TextureSources;
 use crate::map_edit::{BrushIndex, EntityIndex, MAP_BRUSH_TEXTURE, MAP_OPEN};
-use crate::map_textures::TextureSources;
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, MapEditError, Workbench, register, register_preview};
 

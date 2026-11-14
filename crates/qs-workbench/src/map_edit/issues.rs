@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{BrushIndex, EntityIndex, MapDocument, MapEdited, edit_map, origin_text};
-use crate::map_textures::{TextureOrigin, TextureSources};
+use crate::map_edit::textures::{TextureOrigin, TextureSources};
 use crate::{EntityProblem, HasMap, MapEditError, MapProject};
 
 /// The id of `map.issues`.

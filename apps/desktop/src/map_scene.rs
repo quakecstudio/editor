@@ -14,8 +14,8 @@ use qs_mdl::mdl::MdlFrameEntry;
 use qs_render::{Camera, Degrees};
 use qs_vfs::{StdFs, Vfs};
 use qs_workbench::entity_classes::ClassInfo;
+use qs_workbench::map_edit::uv::{FaceIndex, FaceRef};
 use qs_workbench::map_edit::{BrushIndex, EntityIndex, MapDocument, MapSource};
-use qs_workbench::map_uv::{FaceIndex, FaceRef};
 
 /// A line in map space.
 pub(crate) type Line = [[f32; 3]; 2];

@@ -22,15 +22,11 @@ pub mod entity_classes;
 pub mod export;
 pub mod git;
 pub mod ids;
-pub mod map_backup;
 pub mod map_check;
 pub mod map_compile;
 pub mod map_edit;
-mod map_error;
+pub mod map_filter;
 pub mod map_profile;
-mod map_store;
-pub mod map_textures;
-pub mod map_uv;
 mod preview;
 mod recent;
 pub mod search;
@@ -39,7 +35,6 @@ pub mod terminal;
 pub mod testing;
 #[cfg(test)]
 mod tests;
-pub mod texture_import;
 pub mod tools;
 pub mod vm_run;
 
@@ -61,8 +56,8 @@ pub use qc_project::{Dialect, FsLoader, Loader, Target};
 pub use crate::build::{Gravity, ModuleBuilt, Reported};
 pub use crate::commands::*;
 pub use crate::editing::{Change, Renamed};
-pub use crate::map_error::MapEditError;
-pub use crate::map_store::{
+pub use crate::map_edit::error::MapEditError;
+pub use crate::map_edit::store::{
     EntityCheck, EntityProblem, GameFiles, HasMap, LiveMap, MapProject, MapStore,
 };
 pub use crate::preview::{

@@ -35,8 +35,6 @@ pub use disk::{
     FILES_CHANGED, FilesChanged, FilesChangedParams, Keep, MAP_COMPARE, MAP_RESOLVE, MapDifference,
     MapOnDisk, ResolveParams,
 };
-pub(crate) use filter::MapFilter;
-pub use filter::{FilterParams, GameMode, MAP_FILTER, MapFiltered, Skill};
 pub use flags::{FlagChange, MAP_SET_FLAG, SetFlagParams};
 pub use groups::{
     EntityListParams, ExportParams, LayerInfo, LayerOption, MAP_EXPORT, MAP_HIDE, MAP_ISOLATE,
@@ -60,10 +58,11 @@ pub use review::{
 };
 pub use shapes::{ArchWall, BrushShapeParams, Circle, Climb, MAP_BRUSH_SHAPE, ShapeSpec};
 
+pub mod backup;
 mod brush_tools;
 mod brushes;
 mod disk;
-mod filter;
+pub(crate) mod error;
 mod flags;
 mod groups;
 mod inspect;
@@ -74,14 +73,18 @@ mod outline;
 mod prefabs;
 mod review;
 mod shapes;
+pub(crate) mod store;
+pub mod texture_import;
+pub mod textures;
+pub mod uv;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::entity_classes::{FlagInfo, KeyInfo};
-use crate::map_backup::{MapBackup, MapBackups, MapRestoreBackup};
 use crate::map_compile::MapReport;
-use crate::map_uv::{FaceAlign, FaceUv};
-use crate::texture_import::TextureImport;
+use crate::map_edit::backup::{MapBackup, MapBackups, MapRestoreBackup};
+use crate::map_edit::texture_import::TextureImport;
+use crate::map_edit::uv::{FaceAlign, FaceUv};
 use crate::{HasMap, LiveMap, MapEditError, MapProject, MapStore, Workbench};
 
 /// Degrees in a whole turn; a rotated yaw is kept below it.

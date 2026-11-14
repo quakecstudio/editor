@@ -12,8 +12,8 @@ use qs_map::{BrushError, Face, Justify, TexAxis, TextureSize, UvEdit};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::map_edit::textures::TextureSources;
 use crate::map_edit::{BrushIndex, EntityIndex, MapDocument, MapEdited, edit_map};
-use crate::map_textures::TextureSources;
 use crate::{HasMap, MapEditError, MapProject};
 
 /// The id of `map.face_uv`.

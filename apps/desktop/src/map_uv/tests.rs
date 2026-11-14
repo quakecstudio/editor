@@ -9,8 +9,8 @@
 use eframe::egui::{Pos2, Rect, Vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use qs_workbench::map_edit::uv::{Axis, FaceIndex, FaceRef, JustifyTo, UvChoice};
 use qs_workbench::map_edit::{BrushIndex, EntityIndex};
-use qs_workbench::map_uv::{Axis, FaceIndex, FaceRef, JustifyTo, UvChoice};
 
 use super::{Frame, PickMode, UvEditor, edges, snapped};
 use crate::map_scene::{BrushShape, FaceShape, Scene};

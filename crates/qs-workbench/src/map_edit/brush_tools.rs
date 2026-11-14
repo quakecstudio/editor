@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use super::brushes::{BrushIndex, Lock, snap};
 use super::{EntityIndex, MapDocument, MapEdited, MapStep, edit_map};
-use crate::map_uv::FaceRef;
+use crate::map_edit::uv::FaceRef;
 use crate::{HasMap, MapEditError};
 
 /// The id of `map.brush_scale`.
