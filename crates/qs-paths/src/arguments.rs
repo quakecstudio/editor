@@ -110,11 +110,13 @@ mod tests {
             ["/abs/b.qc", "a.qc", "c.qc", "maps/../maps/e1m1.map"]
         );
         absolute_paths(&mut arguments, Path::new("/p"));
-        assert_eq!(arguments["path"], json!("/p/a.qc"));
-        assert_eq!(arguments["nested"]["map_path"], json!("/p/maps/e1m1.map"));
+        // The path as this OS writes it, `\` between its parts on Windows.
+        let native = |path: &str| json!(lexical(Path::new(path)).to_string_lossy());
+        assert_eq!(arguments["path"], native("/p/a.qc"));
+        assert_eq!(arguments["nested"]["map_path"], native("/p/maps/e1m1.map"));
         assert_eq!(arguments["nested"]["pathname"], json!("no"));
-        assert_eq!(arguments["files"][0]["path"], json!("/abs/b.qc"));
-        assert_eq!(arguments["files"][1]["path"], json!("/p/c.qc"));
+        assert_eq!(arguments["files"][0]["path"], native("/abs/b.qc"));
+        assert_eq!(arguments["files"][1]["path"], native("/p/c.qc"));
         assert_eq!(arguments["path_count"], json!(3));
     }
 }
