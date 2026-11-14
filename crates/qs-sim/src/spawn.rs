@@ -24,6 +24,7 @@
 //! conversions are PROGS-17; the string escapes are `qs_porting_example::ed_new_string`
 //! (EXAMPLE-1), as EDICT-8.2 requires.
 
+use crate::offsets::{FieldOffset, GlobalOffset};
 use qc_edict::EdictNumber;
 use qc_types::{Etype, Slot};
 
@@ -247,15 +248,15 @@ impl<'a> Parser<'a> {
 /// entity. The spawn function runs through `self`, which the host sets to the entity
 /// (EDICT-8.6).
 pub trait SpawnHost {
-    /// Allocates the edict for the next entity (EDICT-8.2). `first` is true for the map's first
-    /// entity, which goes into edict 0 without clearing it (EDICT-4.2); a later one comes from
-    /// `ED_Alloc` (EDICT-6), which clears it. Returns the edict number.
+    /// Allocates the edict for the next entity at `place` (EDICT-8.2): the map's first entity
+    /// goes into edict 0 without clearing it (EDICT-4.2); a later one comes from `ED_Alloc`
+    /// (EDICT-6), which clears it. Returns the edict number.
     ///
     /// # Errors
     ///
     /// [`SpawnError::NoFreeEdicts`], id's fatal `ED_Alloc: no free edicts` (EDICT-6.2), when
     /// the array is full.
-    fn allocate(&mut self, first: bool) -> Result<usize, SpawnError>;
+    fn allocate(&mut self, place: EdictPlace) -> Result<EdictNumber, SpawnError>;
 
     /// The entity value of edict `number`, id's `EDICT_TO_PROG(EDICT_NUM(number))`, for an
     /// entity key (EDICT-8.2, EDICT-1.5).
@@ -275,27 +276,27 @@ pub trait SpawnHost {
     fn find_function(&self, name: &[u8]) -> Option<i32>;
 
     /// The global at slot `slot`, for the `field` key type (EDICT-8.2). `None` out of range.
-    fn global(&self, slot: usize) -> Option<Slot>;
+    fn global(&self, slot: GlobalOffset) -> Option<Slot>;
 
     /// Writes field slot `field` of edict `edict` (EDICT-8.2).
-    fn set_field(&mut self, edict: usize, field: usize, value: Slot);
+    fn set_field(&mut self, edict: EdictNumber, field: FieldOffset, value: Slot);
 
     /// Makes an engine string holding `text` and returns its value (EDICT-13.1).
     fn make_string(&mut self, text: Vec<u8>) -> i32;
 
     /// The `spawnflags` field of edict `edict`, read for the inhibition test (EDICT-8.4).
-    fn spawnflags(&self, edict: usize) -> f32;
+    fn spawnflags(&self, edict: EdictNumber) -> f32;
 
     /// Spawns edict `edict` by calling function `function` with `self` set to it (EDICT-8.6).
     ///
     /// # Errors
     ///
     /// Whatever the spawn function raises (DIFF-8.1).
-    fn spawn(&mut self, edict: usize, function: i32) -> Result<(), qc_vm::RunError>;
+    fn spawn(&mut self, edict: EdictNumber, function: i32) -> Result<(), qc_vm::RunError>;
 
     /// Frees edict `edict`, id's `ED_Free` (EDICT-7), for an inhibited or classless entity
     /// (EDICT-8.4, EDICT-8.5).
-    fn free(&mut self, edict: usize);
+    fn free(&mut self, edict: EdictNumber);
 }
 
 /// Converts one `"key" "value"` pair's value by the field's type and writes it, id's
@@ -307,12 +308,12 @@ pub trait SpawnHost {
 /// [`SpawnError::BadEdictNumber`] for an entity number out of range.
 fn parse_epair<H: SpawnHost>(
     host: &mut H,
-    edict: usize,
+    edict: EdictNumber,
     field: FieldDef,
     value: &[u8],
 ) -> Result<(), SpawnError> {
     parse_value(host, field, value, &mut |host, slot, value| {
-        host.set_field(edict, slot, value);
+        host.set_field(edict, FieldOffset::new(slot), value);
     })
 }
 
@@ -363,7 +364,9 @@ pub(crate) fn parse_value<H: SpawnHost>(
         Etype::Field => {
             let name = c_string(value);
             let named = host.find_field(name).ok_or(SpawnError::ParseError)?;
-            let global = host.global(named.slot).unwrap_or(Slot::ZERO);
+            let global = host
+                .global(GlobalOffset::new(named.slot))
+                .unwrap_or(Slot::ZERO);
             write(host, field.slot, global);
         }
         // ev_void and ev_pointer are never a field's declared type a map key names.
@@ -377,7 +380,7 @@ pub(crate) fn parse_value<H: SpawnHost>(
 /// unknown-field skip.
 pub(crate) fn apply_key<H: SpawnHost>(
     host: &mut H,
-    edict: usize,
+    edict: EdictNumber,
     key: &[u8],
     value: &[u8],
 ) -> Result<(), SpawnError> {
@@ -430,7 +433,7 @@ enum Parsed {
 fn parse_edict<H: SpawnHost>(
     host: &mut H,
     parser: &mut Parser<'_>,
-    edict: usize,
+    edict: EdictNumber,
 ) -> Result<(Parsed, Vec<u8>), SpawnError> {
     let (classname, _init) = parse_pairs(host, parser, edict)?;
     // EDICT-8.5: no classname, or a classname that names no function, frees the entity.
@@ -462,7 +465,7 @@ pub struct LoadedEntity {
 pub(crate) fn parse_saved_edict<H: SpawnHost>(
     host: &mut H,
     parser: &mut Parser<'_>,
-    edict: usize,
+    edict: EdictNumber,
 ) -> Result<bool, SpawnError> {
     parse_pairs(host, parser, edict).map(|(_, init)| init)
 }
@@ -472,7 +475,7 @@ pub(crate) fn parse_saved_edict<H: SpawnHost>(
 fn parse_pairs<H: SpawnHost>(
     host: &mut H,
     parser: &mut Parser<'_>,
-    edict: usize,
+    edict: EdictNumber,
 ) -> Result<(Option<Vec<u8>>, bool), SpawnError> {
     let mut classname: Option<Vec<u8>> = None;
     let mut init = false;
@@ -511,14 +514,41 @@ fn trim_trailing_spaces(key: &[u8]) -> &[u8] {
     key
 }
 
+/// Whether the `deathmatch` setting is on, which inhibits other entities than the skill
+/// settings do (EDICT-8.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Deathmatch {
+    /// `deathmatch` is not 0.
+    On,
+    /// `deathmatch` is 0.
+    Off,
+}
+
+impl Deathmatch {
+    /// The `deathmatch` setting's value read as on when it is not 0 (EDICT-8.4).
+    #[must_use]
+    pub fn from_setting(value: f32) -> Self {
+        if value == 0.0 { Self::Off } else { Self::On }
+    }
+}
+
+/// Where [`SpawnHost::allocate`] puts the next entity (EDICT-8.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdictPlace {
+    /// The map's first entity: edict 0, not cleared (EDICT-4.2).
+    World,
+    /// A later one: `ED_Alloc`, which clears it (EDICT-6).
+    Allocated,
+}
+
 /// Whether an entity is inhibited by the skill or deathmatch settings (EDICT-8.4).
 ///
-/// `deathmatch` is the value of the setting; `skill` is `(int)(skill + 0.5)` clamped to 0 to 3
+/// `deathmatch` is the setting; `skill` is `(int)(skill + 0.5)` clamped to 0 to 3
 /// (DIFF-3.2). `spawnflags` is truncated to an integer for the test.
 #[must_use]
-pub fn inhibited(spawnflags: f32, deathmatch: bool, skill: i32) -> bool {
+pub fn inhibited(spawnflags: f32, deathmatch: Deathmatch, skill: i32) -> bool {
     let flags = ftoi(spawnflags);
-    if deathmatch {
+    if deathmatch == Deathmatch::On {
         return flags & EDICT_SPAWNFLAG_NOT_DEATHMATCH != 0;
     }
     match skill {
@@ -551,11 +581,11 @@ pub fn inhibited(spawnflags: f32, deathmatch: bool, skill: i32) -> bool {
 pub fn load_from_file<H: SpawnHost>(
     host: &mut H,
     data: &[u8],
-    deathmatch: bool,
+    deathmatch: Deathmatch,
     skill: i32,
 ) -> Result<Vec<LoadedEntity>, LoadError> {
     let mut parser = Parser::new(data);
-    let mut first = true;
+    let mut place = EdictPlace::World;
     let mut spawned = Vec::new();
     loop {
         // parse the opening brace
@@ -568,8 +598,8 @@ pub fn load_from_file<H: SpawnHost>(
         }
 
         // The first entity goes into edict 0 (EDICT-4.2); each later one from allocation.
-        let edict = host.allocate(first).map_err(LoadError::Spawn)?;
-        first = false;
+        let edict = host.allocate(place).map_err(LoadError::Spawn)?;
+        place = EdictPlace::Allocated;
 
         let (parsed, classname) =
             parse_edict(host, &mut parser, edict).map_err(LoadError::Spawn)?;
@@ -583,7 +613,7 @@ pub fn load_from_file<H: SpawnHost>(
                     None
                 } else {
                     host.spawn(edict, function).map_err(LoadError::Run)?;
-                    Some(EdictNumber::new(edict))
+                    Some(edict)
                 };
                 spawned.push(LoadedEntity { classname, edict });
             }

@@ -325,12 +325,12 @@ impl Reload<'_, '_> {
         for name in old.iter().filter(|n| !new_set.contains(n)) {
             migration
                 .lost
-                .push(change(ChangeKind::Function, name, Reason::Removed));
+                .push(Change::new(ChangeKind::Function, name, Reason::Removed));
         }
         for name in new.iter().filter(|n| !old_set.contains(n)) {
             migration
                 .added
-                .push(change(ChangeKind::Function, name, Reason::Added));
+                .push(Change::new(ChangeKind::Function, name, Reason::Added));
         }
     }
 
@@ -483,16 +483,19 @@ impl Reload<'_, '_> {
         }
         let name = String::from_utf8_lossy(&name).into_owned();
         self.lost
-            .push(change(kind, &name, Reason::Referenced(at.to_owned())));
+            .push(Change::new(kind, &name, Reason::Referenced(at.to_owned())));
         Slot::ZERO
     }
 }
 
-fn change(kind: ChangeKind, name: &str, reason: Reason) -> Change {
-    Change {
-        kind,
-        name: name.to_owned(),
-        reason,
+impl Change {
+    /// A change of `kind` to the definition `name`, for `reason`.
+    fn new(kind: ChangeKind, name: &str, reason: Reason) -> Self {
+        Self {
+            kind,
+            name: name.to_owned(),
+            reason,
+        }
     }
 }
 
@@ -513,13 +516,17 @@ fn pairs(
     let mut pairs = Vec::new();
     for (name, etype, first) in old {
         match by_name.get(name.as_str()) {
-            None if reported(*etype) => migration.lost.push(change(kind, name, Reason::Removed)),
-            None => {}
-            Some(&(to, _)) if to != *etype => {
+            None if reported(*etype) => {
                 migration
                     .lost
-                    .push(change(kind, name, Reason::TypeChanged { from: *etype, to }))
+                    .push(Change::new(kind, name, Reason::Removed))
             }
+            None => {}
+            Some(&(to, _)) if to != *etype => migration.lost.push(Change::new(
+                kind,
+                name,
+                Reason::TypeChanged { from: *etype, to },
+            )),
             Some(&(to, at)) => pairs.push(Pair {
                 name: name.clone(),
                 old: (*etype, *first),
@@ -529,7 +536,7 @@ fn pairs(
     }
     for (name, etype, _) in new {
         if !old_names.contains(name.as_str()) && reported(*etype) {
-            migration.added.push(change(kind, name, Reason::Added));
+            migration.added.push(Change::new(kind, name, Reason::Added));
         }
     }
     pairs

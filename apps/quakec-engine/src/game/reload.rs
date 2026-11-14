@@ -3,6 +3,7 @@
 //! The bridge's `reload` (BRIDGE-4.9, P3-03): the progs read again, or another one, and loaded
 //! over the running map by [`World::reload`], which migrates its globals and fields (WORLD-10).
 
+use qs_sim::debug::BreakpointEdit;
 use std::path::Path;
 
 use qc_lno::LnoFile;
@@ -130,7 +131,7 @@ impl Game {
         if !kept.is_empty() {
             let debugger = self.world.debugger_or_new(&lines);
             for breakpoint in &kept {
-                debugger.set_breakpoint(breakpoint.statement, true);
+                debugger.set_breakpoint(breakpoint.statement, BreakpointEdit::Set);
             }
         }
         self.breakpoints = kept;

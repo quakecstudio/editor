@@ -58,19 +58,30 @@ pub(crate) enum MoveType {
     Other(f32),
 }
 
+/// The `movetype` values (EDICT-4.1).
+const MOVETYPE_NONE: f32 = 0.0;
+const MOVETYPE_WALK: f32 = 3.0;
+const MOVETYPE_STEP: f32 = 4.0;
+const MOVETYPE_FLY: f32 = 5.0;
+const MOVETYPE_TOSS: f32 = 6.0;
+const MOVETYPE_PUSH: f32 = 7.0;
+const MOVETYPE_NOCLIP: f32 = 8.0;
+const MOVETYPE_FLYMISSILE: f32 = 9.0;
+const MOVETYPE_BOUNCE: f32 = 10.0;
+
 impl MoveType {
     pub(crate) fn from_float(value: f32) -> Self {
-        let whole = |n: u8| value.to_bits() == f32::from(n).to_bits();
+        let whole = |n: f32| value.to_bits() == n.to_bits();
         match () {
-            () if whole(0) || value.to_bits() == (-0.0_f32).to_bits() => Self::None,
-            () if whole(3) => Self::Walk,
-            () if whole(4) => Self::Step,
-            () if whole(5) => Self::Fly,
-            () if whole(6) => Self::Toss,
-            () if whole(7) => Self::Push,
-            () if whole(8) => Self::Noclip,
-            () if whole(9) => Self::FlyMissile,
-            () if whole(10) => Self::Bounce,
+            () if whole(MOVETYPE_NONE) || whole(-MOVETYPE_NONE) => Self::None,
+            () if whole(MOVETYPE_WALK) => Self::Walk,
+            () if whole(MOVETYPE_STEP) => Self::Step,
+            () if whole(MOVETYPE_FLY) => Self::Fly,
+            () if whole(MOVETYPE_TOSS) => Self::Toss,
+            () if whole(MOVETYPE_PUSH) => Self::Push,
+            () if whole(MOVETYPE_NOCLIP) => Self::Noclip,
+            () if whole(MOVETYPE_FLYMISSILE) => Self::FlyMissile,
+            () if whole(MOVETYPE_BOUNCE) => Self::Bounce,
             () => Self::Other(value),
         }
     }
@@ -78,15 +89,15 @@ impl MoveType {
     /// The `movetype` value that is this one.
     pub(crate) const fn to_float(self) -> f32 {
         match self {
-            Self::None => 0.0,
-            Self::Walk => 3.0,
-            Self::Step => 4.0,
-            Self::Fly => 5.0,
-            Self::Toss => 6.0,
-            Self::Push => 7.0,
-            Self::Noclip => 8.0,
-            Self::FlyMissile => 9.0,
-            Self::Bounce => 10.0,
+            Self::None => MOVETYPE_NONE,
+            Self::Walk => MOVETYPE_WALK,
+            Self::Step => MOVETYPE_STEP,
+            Self::Fly => MOVETYPE_FLY,
+            Self::Toss => MOVETYPE_TOSS,
+            Self::Push => MOVETYPE_PUSH,
+            Self::Noclip => MOVETYPE_NOCLIP,
+            Self::FlyMissile => MOVETYPE_FLYMISSILE,
+            Self::Bounce => MOVETYPE_BOUNCE,
             Self::Other(value) => value,
         }
     }

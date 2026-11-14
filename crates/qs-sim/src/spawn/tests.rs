@@ -13,12 +13,15 @@
     reason = "test code: a failed unwrap, index, panic or overflow is a failed test"
 )]
 
+use qc_edict::EdictNumber;
+
+use crate::offsets::{FieldOffset, GlobalOffset};
 use qc_types::{Etype, Slot};
 
 use super::{
-    EDICT_SPAWNFLAG_NOT_DEATHMATCH, EDICT_SPAWNFLAG_NOT_EASY, EDICT_SPAWNFLAG_NOT_HARD,
-    EDICT_SPAWNFLAG_NOT_MEDIUM, FieldDef, LoadError, Parser, SPAWNFLAGS_SLOT, SpawnError,
-    SpawnHost, Token, c_atof, c_atoi, inhibited, load_from_file,
+    Deathmatch, EDICT_SPAWNFLAG_NOT_DEATHMATCH, EDICT_SPAWNFLAG_NOT_EASY, EDICT_SPAWNFLAG_NOT_HARD,
+    EDICT_SPAWNFLAG_NOT_MEDIUM, EdictPlace, FieldDef, LoadError, Parser, SPAWNFLAGS_SLOT,
+    SpawnError, SpawnHost, Token, c_atof, c_atoi, inhibited, load_from_file,
 };
 
 /// Collects every token id's `COM_Parse` yields from `data`, up to `End`.
@@ -98,14 +101,34 @@ fn c_atoi_reads_an_integer() {
 #[test]
 fn inhibition_follows_the_skill_and_deathmatch_flags() {
     let dm = EDICT_SPAWNFLAG_NOT_DEATHMATCH as f32;
-    assert!(inhibited(dm, true, 0));
-    assert!(!inhibited(dm, false, 0));
-    assert!(inhibited(EDICT_SPAWNFLAG_NOT_EASY as f32, false, 0));
-    assert!(inhibited(EDICT_SPAWNFLAG_NOT_MEDIUM as f32, false, 1));
-    assert!(inhibited(EDICT_SPAWNFLAG_NOT_HARD as f32, false, 2));
-    assert!(inhibited(EDICT_SPAWNFLAG_NOT_HARD as f32, false, 3));
+    assert!(inhibited(dm, Deathmatch::On, 0));
+    assert!(!inhibited(dm, Deathmatch::Off, 0));
+    assert!(inhibited(
+        EDICT_SPAWNFLAG_NOT_EASY as f32,
+        Deathmatch::Off,
+        0
+    ));
+    assert!(inhibited(
+        EDICT_SPAWNFLAG_NOT_MEDIUM as f32,
+        Deathmatch::Off,
+        1
+    ));
+    assert!(inhibited(
+        EDICT_SPAWNFLAG_NOT_HARD as f32,
+        Deathmatch::Off,
+        2
+    ));
+    assert!(inhibited(
+        EDICT_SPAWNFLAG_NOT_HARD as f32,
+        Deathmatch::Off,
+        3
+    ));
     // Easy skill does not inhibit a NOT_HARD-only entity.
-    assert!(!inhibited(EDICT_SPAWNFLAG_NOT_HARD as f32, false, 0));
+    assert!(!inhibited(
+        EDICT_SPAWNFLAG_NOT_HARD as f32,
+        Deathmatch::Off,
+        0
+    ));
 }
 
 /// A tiny host that records the fields it was told to write, for the pure loader tests.
@@ -127,12 +150,12 @@ struct RecordingHost {
 }
 
 impl SpawnHost for RecordingHost {
-    fn allocate(&mut self, first: bool) -> Result<usize, SpawnError> {
-        if first {
-            Ok(0)
+    fn allocate(&mut self, place: EdictPlace) -> Result<EdictNumber, SpawnError> {
+        if place == EdictPlace::World {
+            Ok(EdictNumber::WORLD)
         } else {
             self.allocated += 1;
-            Ok(self.allocated)
+            Ok(EdictNumber::new(self.allocated))
         }
     }
     fn edict_value(&self, number: i32) -> Result<i32, SpawnError> {
@@ -155,17 +178,17 @@ impl SpawnHost for RecordingHost {
             .find(|(n, _)| *n == name)
             .map(|&(_, index)| index)
     }
-    fn global(&self, _slot: usize) -> Option<Slot> {
+    fn global(&self, _slot: GlobalOffset) -> Option<Slot> {
         Some(Slot::ZERO)
     }
-    fn set_field(&mut self, edict: usize, field: usize, value: Slot) {
-        self.writes.push((edict, field, value));
+    fn set_field(&mut self, edict: EdictNumber, field: FieldOffset, value: Slot) {
+        self.writes.push((edict.index(), field.index(), value));
     }
     fn make_string(&mut self, _text: Vec<u8>) -> i32 {
         self.next_string -= 1;
         self.next_string + 1
     }
-    fn spawnflags(&self, _edict: usize) -> f32 {
+    fn spawnflags(&self, _edict: EdictNumber) -> f32 {
         // Read the spawnflags from the recorded writes (slot SPAWNFLAGS_SLOT).
         self.writes
             .iter()
@@ -173,12 +196,12 @@ impl SpawnHost for RecordingHost {
             .find(|(_, field, _)| *field == SPAWNFLAGS_SLOT)
             .map_or(0.0, |(_, _, value)| value.as_f32())
     }
-    fn spawn(&mut self, edict: usize, _function: i32) -> Result<(), qc_vm::RunError> {
-        self.spawned.push(edict);
+    fn spawn(&mut self, edict: EdictNumber, _function: i32) -> Result<(), qc_vm::RunError> {
+        self.spawned.push(edict.index());
         Ok(())
     }
-    fn free(&mut self, edict: usize) {
-        self.freed.push(edict);
+    fn free(&mut self, edict: EdictNumber) {
+        self.freed.push(edict.index());
     }
 }
 
@@ -194,7 +217,7 @@ fn angle_key_is_renamed_and_expanded() {
         ..RecordingHost::default()
     };
     let data = b"{\n\"classname\" \"worldspawn\"\n\"angle\" \"90\"\n}\n";
-    load_from_file(&mut host, data, false, 0).expect("loads");
+    load_from_file(&mut host, data, Deathmatch::Off, 0).expect("loads");
     // angles is a vector field at slot 19; the value "0 90 0" writes 0, 90, 0.
     let angles: Vec<f32> = host
         .writes
@@ -214,7 +237,7 @@ fn classless_entity_is_freed() {
         ..RecordingHost::default()
     };
     let data = b"{\n\"targetname\" \"x\"\n}\n";
-    load_from_file(&mut host, data, false, 0).expect("loads");
+    load_from_file(&mut host, data, Deathmatch::Off, 0).expect("loads");
     assert!(host.spawned.is_empty());
     assert_eq!(host.freed, vec![0]);
 }
@@ -223,7 +246,7 @@ fn classless_entity_is_freed() {
 #[test]
 fn non_brace_start_is_an_error() {
     let mut host = RecordingHost::default();
-    let err = load_from_file(&mut host, b"oops", false, 0).unwrap_err();
+    let err = load_from_file(&mut host, b"oops", Deathmatch::Off, 0).unwrap_err();
     match err {
         LoadError::Spawn(SpawnError::ExpectedBrace { token }) => assert_eq!(token, b"oops"),
         other => panic!("expected ExpectedBrace, got {other:?}"),
@@ -234,7 +257,7 @@ fn non_brace_start_is_an_error() {
 #[test]
 fn eof_in_entity_is_an_error() {
     let mut host = RecordingHost::default();
-    let err = load_from_file(&mut host, b"{\n\"classname\"", false, 0).unwrap_err();
+    let err = load_from_file(&mut host, b"{\n\"classname\"", Deathmatch::Off, 0).unwrap_err();
     assert!(matches!(err, LoadError::Spawn(SpawnError::EofInEntity)));
 }
 
@@ -245,7 +268,7 @@ fn brace_without_data_is_an_error() {
         fields: vec![(b"classname", 28, Etype::String)],
         ..RecordingHost::default()
     };
-    let err = load_from_file(&mut host, b"{\n\"classname\" }\n", false, 0).unwrap_err();
+    let err = load_from_file(&mut host, b"{\n\"classname\" }\n", Deathmatch::Off, 0).unwrap_err();
     assert!(matches!(
         err,
         LoadError::Spawn(SpawnError::BraceWithoutData)
@@ -260,7 +283,8 @@ fn unknown_function_key_is_a_parse_error() {
         fields: vec![(b"touch", 42, Etype::Function)],
         ..RecordingHost::default()
     };
-    let err = load_from_file(&mut host, b"{\n\"touch\" \"nope\"\n}\n", false, 0).unwrap_err();
+    let err =
+        load_from_file(&mut host, b"{\n\"touch\" \"nope\"\n}\n", Deathmatch::Off, 0).unwrap_err();
     assert!(matches!(err, LoadError::Spawn(SpawnError::ParseError)));
 }
 
@@ -273,7 +297,7 @@ fn underscore_key_is_ignored() {
         ..RecordingHost::default()
     };
     let data = b"{\n\"classname\" \"worldspawn\"\n\"_comment\" \"ignored\"\n}\n";
-    load_from_file(&mut host, data, false, 0).expect("loads");
+    load_from_file(&mut host, data, Deathmatch::Off, 0).expect("loads");
     // No field write for the `_comment` key; only the classname string was written.
     assert!(host.writes.iter().all(|(_, field, _)| *field == 28));
 }
@@ -292,7 +316,7 @@ fn an_inhibited_entity_is_freed() {
     };
     // deathmatch on; the item_key has SPAWNFLAG_NOT_DEATHMATCH, so it is freed (EDICT-8.4).
     let data = b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"item_key\"\n\"spawnflags\" \"2048\"\n}\n";
-    load_from_file(&mut host, data, true, 0).expect("loads");
+    load_from_file(&mut host, data, Deathmatch::On, 0).expect("loads");
     assert_eq!(host.spawned, vec![0]);
     assert_eq!(host.freed, vec![1]);
 }
@@ -304,7 +328,7 @@ fn loaded(data: &[u8], fields: Vec<(&'static [u8], usize, Etype)>) -> RecordingH
         fields,
         ..RecordingHost::default()
     };
-    load_from_file(&mut host, data, false, 0).expect("loads");
+    load_from_file(&mut host, data, Deathmatch::Off, 0).expect("loads");
     host
 }
 

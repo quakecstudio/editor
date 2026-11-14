@@ -160,7 +160,7 @@ fn a_line_finds_the_entity_it_hits() {
         .world
         .trace_line(&progs, [50.0, -100.0, 40.0], [50.0, 100.0, 40.0])
         .unwrap();
-    assert_eq!(hit.edict, Some(n));
+    assert_eq!(hit.edict, Some(qc_edict::EdictNumber::new(n)));
     assert!((hit.point.unwrap()[1] + 8.0).abs() < 0.1, "{:?}", hit.point);
     let over = run
         .world
