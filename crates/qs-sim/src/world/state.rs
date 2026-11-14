@@ -4,7 +4,10 @@
 //! source of id's raw slots, such as the engine oracle's trace (P3-25): every named global and
 //! every field of every edict below `num_edicts`, each by its definition's type (DIFF-16.2).
 
+use crate::offsets::{FieldOffset, GlobalOffset};
+use qc_edict::EdictNumber;
 use qc_progs::Progs;
+use qc_types::PROGS_VECTOR_SLOTS;
 use qc_types::{Etype, Slot};
 
 use super::inspect::{NamedValue, QcValue, named};
@@ -13,9 +16,9 @@ use super::inspect::{NamedValue, QcValue, named};
 /// on where they live, an entity value's edict and a string value's text.
 pub trait RawState {
     /// Global slot `slot`'s bits.
-    fn global(&self, slot: usize) -> Slot;
+    fn global(&self, slot: GlobalOffset) -> Slot;
     /// Field slot `slot` of edict `edict`.
-    fn field(&self, edict: usize, slot: usize) -> Slot;
+    fn field(&self, edict: EdictNumber, slot: FieldOffset) -> Slot;
     /// The edicts below `sv.num_edicts`.
     fn num_edicts(&self) -> usize;
     /// The edict an entity value names, 0 (the world) when it names none.
@@ -55,7 +58,7 @@ pub(super) fn read_globals(progs: &Progs<'_>, raw: &impl RawState) -> Vec<NamedV
                 return None;
             }
             let slots: Vec<Slot> = (0..etype.slot_count())
-                .map(|i| raw.global(first.saturating_add(i)))
+                .map(|i| raw.global(GlobalOffset::new(first.saturating_add(i))))
                 .collect();
             Some(NamedValue {
                 name,
@@ -74,7 +77,12 @@ fn read_fields(progs: &Progs<'_>, raw: &impl RawState, n: usize) -> Vec<NamedVal
         .filter_map(|def| {
             let (name, etype, first) = named(progs, def)?;
             let slots: Vec<Slot> = (0..etype.slot_count())
-                .map(|i| raw.field(n, first.saturating_add(i)))
+                .map(|i| {
+                    raw.field(
+                        EdictNumber::new(n),
+                        FieldOffset::new(first.saturating_add(i)),
+                    )
+                })
                 .collect();
             Some(NamedValue {
                 name,
@@ -101,7 +109,7 @@ pub(super) fn typed_value(
     match etype {
         Etype::Float => QcValue::Float(first.as_f32()),
         Etype::Vector => {
-            let mut vector = [0.0; 3];
+            let mut vector = [0.0; PROGS_VECTOR_SLOTS];
             for (out, slot) in vector.iter_mut().zip(slots) {
                 *out = slot.as_f32();
             }

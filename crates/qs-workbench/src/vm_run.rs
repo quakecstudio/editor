@@ -12,7 +12,7 @@ use qc_builtins::{MockBuiltins, MockEngine};
 use qc_progs::Progs;
 use qc_types::{DefType, EntityRef, Etype, Slot};
 use qc_vm::{Machine, NoObserver, ServerState};
-use qs_sim::{NamedValue, QcValue, RawState, State, read_state};
+use qs_sim::{FieldOffset, GlobalOffset, NamedValue, QcValue, RawState, State, read_state};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -317,17 +317,17 @@ impl<'a> Raw<'a> {
 }
 
 impl RawState for Raw<'_> {
-    fn global(&self, slot: usize) -> Slot {
-        i32::try_from(slot)
+    fn global(&self, slot: GlobalOffset) -> Slot {
+        i32::try_from(slot.index())
             .ok()
             .and_then(|slot| self.machine.global(slot).ok())
             .unwrap_or(Slot::ZERO)
     }
 
-    fn field(&self, edict: usize, slot: usize) -> Slot {
+    fn field(&self, edict: EdictNumber, slot: FieldOffset) -> Slot {
         self.machine
             .edicts()
-            .field(EdictNumber::new(edict), slot)
+            .field(edict, slot.index())
             .unwrap_or(Slot::ZERO)
     }
 

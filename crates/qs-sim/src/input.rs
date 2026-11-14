@@ -83,6 +83,25 @@ impl Button {
     }
 }
 
+/// A button's state bits: held down, pressed this frame, released this frame (INPUT-2.1).
+const DOWN: u8 = 1;
+const PRESSED: u8 = 2;
+const RELEASED: u8 = 4;
+/// `CL_KeyState`'s values: pressed and released this frame, pressed and held, and released
+/// and pressed again (INPUT-2.2).
+const TAPPED: f32 = 0.25;
+const PRESSED_HELD: f32 = 0.5;
+const REPRESSED: f32 = 0.75;
+/// `CL_AdjustAngles`' and `IN_MouseMove`'s pitch limits, up and down, and the roll's
+/// (INPUT-2.3, INPUT-2.4).
+const PITCH_UP: f32 = -70.0;
+const PITCH_DOWN: f32 = 80.0;
+const ROLL_LIMIT: f32 = 50.0;
+/// `anglemod`'s steps in a turn of 360 degrees, kept below 65536 (INPUT-2.3).
+const ANGLE_UNITS: f64 = 65536.0;
+const ANGLE_MASK: i32 = 0xffff;
+const FULL_TURN: f64 = 360.0;
+
 /// `kbutton_t`: the two keys holding it and its state, bit 0 down, bit 1 pressed and bit 2
 /// released since the last frame took them (INPUT-2.1).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -178,7 +197,7 @@ impl Input {
     /// Whether `button` is down, its state's bit 0.
     #[must_use]
     pub fn held(&self, button: Button) -> bool {
-        self.state(button) & 1 != 0
+        self.state(button) & DOWN != 0
     }
 
     fn state(&self, button: Button) -> u8 {
@@ -204,8 +223,8 @@ impl Input {
         } else {
             return Some("Three keys down for a button!\n");
         }
-        if b.state & 1 == 0 {
-            b.state |= 1 | 2;
+        if b.state & DOWN == 0 {
+            b.state |= DOWN | PRESSED;
         }
         None
     }
@@ -220,7 +239,7 @@ impl Input {
         match key {
             None => {
                 b.down = [0, 0];
-                b.state = 4;
+                b.state = RELEASED;
             }
             Some(k) => {
                 if b.down[0] == k {
@@ -230,14 +249,14 @@ impl Input {
                 } else {
                     return Drift::default();
                 }
-                if b.down != [0, 0] || b.state & 1 == 0 {
+                if b.down != [0, 0] || b.state & DOWN == 0 {
                     return Drift::default();
                 }
-                b.state &= !1;
-                b.state |= 4;
+                b.state &= !DOWN;
+                b.state |= RELEASED;
             }
         }
-        let up = b.state & 1 == 0;
+        let up = b.state & DOWN == 0;
         Drift {
             start: button == Button::MLook && up && lookspring != 0.0,
             stop: false,
@@ -256,17 +275,17 @@ impl Input {
         let Some(b) = self.button_mut(button) else {
             return 0.0;
         };
-        let pressed = b.state & 2 != 0;
-        let released = b.state & 4 != 0;
-        let down = b.state & 1 != 0;
+        let pressed = b.state & PRESSED != 0;
+        let released = b.state & RELEASED != 0;
+        let down = b.state & DOWN != 0;
         let val = match (pressed, released, down) {
-            (true, false, true) => 0.5,
+            (true, false, true) => PRESSED_HELD,
             (false, false, true) => 1.0,
-            (true, true, true) => 0.75,
-            (true, true, false) => 0.25,
+            (true, true, true) => REPRESSED,
+            (true, true, false) => TAPPED,
             (true | false, _, _) => 0.0,
         };
-        b.state &= 1;
+        b.state &= DOWN;
         val
     }
 
@@ -305,11 +324,11 @@ impl Input {
         // `CL_SendMove`: "`if ( in_attack.state & 3 ) bits |= 1;`", then the press is cleared.
         let mut bits = 0;
         for (button, bit) in [(Button::Attack, 1), (Button::Jump, 2)] {
-            if self.state(button) & 3 != 0 {
+            if self.state(button) & (DOWN | PRESSED) != 0 {
                 bits |= bit;
             }
             if let Some(b) = self.button_mut(button) {
-                b.state &= !2;
+                b.state &= !PRESSED;
             }
         }
         cmd.buttons = bits;
@@ -347,8 +366,8 @@ impl Input {
         if up != 0.0 || down != 0.0 {
             drift.stop = true;
         }
-        angles[0] = angles[0].clamp(-70.0, 80.0);
-        angles[2] = angles[2].clamp(-50.0, 50.0);
+        angles[0] = angles[0].clamp(PITCH_UP, PITCH_DOWN);
+        angles[2] = angles[2].clamp(-ROLL_LIMIT, ROLL_LIMIT);
     }
 
     /// `IN_MouseMove`'s use of the motion (INPUT-2.4): `mouse_x *= sensitivity.value`, then
@@ -374,7 +393,7 @@ impl Input {
             drift.stop = true;
         }
         if mlook && !strafe {
-            angles[0] = (angles[0] + settings.m_pitch * y).clamp(-70.0, 80.0);
+            angles[0] = (angles[0] + settings.m_pitch * y).clamp(PITCH_UP, PITCH_DOWN);
         } else {
             // `noclip_anglehack` is a server's view of its own client and is off here.
             cmd.forward -= settings.m_forward * y;
@@ -388,12 +407,12 @@ fn anglemod(a: f32) -> f32 {
         clippy::cast_possible_truncation,
         reason = "spec INPUT-2.3: anglemod's `(int)`, toward zero"
     )]
-    let steps = (f64::from(a) * (65536.0 / 360.0)) as i32 & 65535;
+    let steps = (f64::from(a) * (ANGLE_UNITS / FULL_TURN)) as i32 & ANGLE_MASK;
     #[expect(
         clippy::cast_possible_truncation,
         reason = "spec INPUT-2.3: the double product stored in the float angle"
     )]
-    let angle = ((360.0 / 65536.0) * f64::from(steps)) as f32;
+    let angle = ((FULL_TURN / ANGLE_UNITS) * f64::from(steps)) as f32;
     angle
 }
 

@@ -26,11 +26,14 @@ use qc_vm::convert::{double_to_float, float_to_int, int_to_float};
 use qc_vm::{Builtins as _, RunError};
 use qs_bsp::Bsp;
 
-use crate::builtins::{FL_ONGROUND, SimCall, parm_float, parm_raw, parm_vector};
+use crate::builtins::{FL_ONGROUND, SimCall};
+use crate::builtins::{PARM0, PARM1, PARM2, PARM3, PARM4};
 use crate::client::wire_angle;
 use crate::collision::{CONTENTS_SOLID, MoveKind};
+use crate::physics::MoveType;
 use crate::settings::Setting;
 use crate::spawn::c_atof;
+use crate::{HALF, POINT};
 
 /// `MAX_DATAGRAM`: the unreliable and reliable datagrams' size (NET-1.2).
 pub const NET_MAX_DATAGRAM: usize = 1024;
@@ -54,10 +57,61 @@ pub const NET_PACKET_SLACK: usize = 16;
 pub const NET_MAX_FORWARD: usize = 6;
 /// `MAX_LIGHTSTYLES`, the styles the spawn message lists (NET-2.4).
 const MAX_LIGHTSTYLES: usize = 64;
+/// `MSG_WriteCoord`'s eighths of a unit (NET-1.1).
+const COORD_SCALE: f32 = 8.0;
+/// `MSG_WriteAngle`: a turn of 360 degrees in 256 steps, and the byte kept (NET-1.1).
+const ANGLE_STEPS: i32 = 256;
+const FULL_TURN_DEGREES: i32 = 360;
+const BYTE_MASK: i32 = 0xff;
+/// A PVS row's bytes: `(numleafs + 31) >> 3`, a leaf a bit (NET-3.1).
+const ROW_ROUND_UP: usize = 31;
+/// A leaf's byte in a PVS row, `leaf >> 3`, and its bit, `1 << (leaf & 7)` (NET-3.2).
+pub(crate) const BYTE_SHIFT: usize = 3;
+pub(crate) const BIT_MASK: usize = 7;
+/// The bytes `SV_LocalSound` writes, which must fit (RRE-2.4).
+const LOCALSOUND_BYTES: usize = 4;
+/// `sound`'s and `ambientsound`'s volume, `volume * 255`, and attenuation, `attenuation * 64`
+/// (BUILTIN-12.3, BUILTIN-12.4).
+const VOLUME_SCALE: f32 = 255.0;
+const ATTENUATION_SCALE: f32 = 64.0;
+/// How far a sound's entity is shifted above its channel, `(ent << 3) | channel`
+/// (BUILTIN-12.3).
+const SOUND_CHANNEL_SHIFT: i32 = 3;
+/// `particle`'s direction, `dir * 16` as a signed byte (BUILTIN-12.5).
+const PARTICLE_DIR_SCALE: f32 = 16.0;
+/// The `Write*` builtins by number (BUILTIN-13.2).
+pub(crate) const WRITE_BYTE: u32 = 52;
+const WRITE_CHAR: u32 = 53;
+const WRITE_SHORT: u32 = 54;
+const WRITE_LONG: u32 = 55;
+const WRITE_COORD: u32 = 56;
+const WRITE_ANGLE: u32 = 57;
+const WRITE_STRING: u32 = 58;
+pub(crate) const WRITE_ENTITY: u32 = 59;
+/// `svc_signonnum`'s last stage, sent with the spawn message (NET-2.4).
+const SIGNON_BEGIN: i32 = 3;
+/// `SV_WriteEntitiesToClient`: an origin within a tenth of a unit of the baseline is not sent
+/// (NET-3.3).
+const ORIGIN_TOLERANCE: f64 = 0.1;
+/// From entity 256 the number is a short, and from bit 8 the update bits take a second byte
+/// (NET-3.3).
+const LONG_ENTITY: usize = 256;
+const MORE_BITS: i32 = 256;
+const SECOND_BYTE_SHIFT: i32 = 8;
+/// `SV_WriteClientdataToMessage`: velocity in sixteenths, `items2` above bit 23, the
+/// `serverflags` above bit 28, and the item bits a mission pack's weapon is found in
+/// (NET-4.4, NET-4.5).
+const VELOCITY_SCALE: f32 = 16.0;
+const ITEMS2_SHIFT: i32 = 23;
+const SERVERFLAGS_SHIFT: i32 = 28;
+const ITEM_BITS: i32 = 32;
+/// `SV_SetIdealPitch`: the probes' spacing and first step, and how far down each looks
+/// (NET-4.2).
+const PROBE_SPACING: f32 = 12.0;
+const PROBE_FIRST: i32 = 3;
+const PROBE_DEPTH: f32 = 160.0;
 /// `DEFAULT_VIEWHEIGHT` (NET-4.4).
 const DEFAULT_VIEWHEIGHT: f32 = 22.0;
-/// `MOVETYPE_STEP` (NET-3.3).
-const MOVETYPE_STEP: f32 = 4.0;
 /// `EF_MUZZLEFLASH` (NET-1.3).
 const EF_MUZZLEFLASH: i32 = 2;
 
@@ -119,12 +173,33 @@ const SND_VOLUME: i32 = 1;
 const SND_ATTENUATION: i32 = 2;
 const DEFAULT_SOUND_PACKET_VOLUME: i32 = 255;
 
+/// What a [`Message`] does with a write that does not fit: `allowoverflow` (BUILTIN-13.3,
+/// BUILTIN-13.4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Overflow {
+    /// The buffer is emptied and marked overflowed.
+    Allowed,
+    /// The write is dropped, the fatal error the mock engine reports first.
+    #[default]
+    Fatal,
+}
+
+/// Which game the server runs, which changes how the weapon is sent (NET-4.4).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum GameKind {
+    /// Standard Quake: the weapon's item bits.
+    #[default]
+    Standard,
+    /// `-rogue` or `-hipnotic`: the weapon's bit number.
+    MissionPack,
+}
+
 /// A `sizebuf_t`: bytes written with id's `MSG_Write*` (NET-1.1), up to a size (NET-1.2).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Message {
     bytes: Vec<u8>,
     max: usize,
-    allow_overflow: bool,
+    overflow: Overflow,
     overflowed: bool,
 }
 
@@ -133,11 +208,11 @@ impl Message {
     /// write does not fit (BUILTIN-13.4), one that may not drops the write, which the mock
     /// engine reports as the fatal error first (BUILTIN-13.3).
     #[must_use]
-    pub const fn new(max: usize, allow_overflow: bool) -> Self {
+    pub const fn new(max: usize, overflow: Overflow) -> Self {
         Self {
             bytes: Vec::new(),
             max,
-            allow_overflow,
+            overflow,
             overflowed: false,
         }
     }
@@ -197,7 +272,7 @@ impl Message {
             .checked_add(data.len())
             .is_some_and(|total| total <= self.max);
         if !fits {
-            if !self.allow_overflow || data.len() > self.max {
+            if self.overflow == Overflow::Fatal || data.len() > self.max {
                 return;
             }
             self.overflowed = true;
@@ -238,12 +313,17 @@ impl Message {
 
     /// `MSG_WriteCoord`: the short `(int) (f * 8)` (NET-1.1).
     pub fn write_coord(&mut self, f: f32) {
-        self.write_short(float_to_int(f * 8.0));
+        self.write_short(float_to_int(f * COORD_SCALE));
     }
 
     /// `MSG_WriteAngle`: the byte `((int) f * 256 / 360) & 255` (NET-1.1).
     pub fn write_angle(&mut self, f: f32) {
-        self.write_byte(float_to_int(f).wrapping_mul(256).wrapping_div(360) & 255);
+        self.write_byte(
+            float_to_int(f)
+                .wrapping_mul(ANGLE_STEPS)
+                .wrapping_div(FULL_TURN_DEGREES)
+                & BYTE_MASK,
+        );
     }
 }
 
@@ -264,7 +344,7 @@ pub(crate) struct Vis {
 impl Vis {
     pub(crate) fn new(bsp: &Bsp<'_>) -> Self {
         // `fatbytes = (numleafs + 31) >> 3`; a map without visibility sees everything.
-        let row = bsp.leafs.len().saturating_add(31) >> 3;
+        let row = bsp.leafs.len().saturating_add(ROW_ROUND_UP) >> BYTE_SHIFT;
         let pvs = (0..bsp.leafs.len())
             .map(|i| {
                 let mut found = bsp.leaf_pvs(i).unwrap_or_default();
@@ -378,7 +458,7 @@ impl Default for ClientSlot {
             name: b"player".to_vec(),
             colors: 0,
             old_frags: 0,
-            message: Message::new(NET_MAX_MSGLEN, true),
+            message: Message::new(NET_MAX_MSGLEN, Overflow::Allowed),
         }
     }
 }
@@ -394,7 +474,7 @@ pub(crate) struct ServerMessages {
     pub(crate) baselines: Vec<Baseline>,
     pub(crate) vis: Vis,
     /// `standard_quake`: not `-rogue` or `-hipnotic` (NET-4.4).
-    pub(crate) standard_quake: bool,
+    pub(crate) game: GameKind,
     /// The progs CRC the serverinfo names (NET-2.2).
     pub(crate) crc: i32,
     /// The messages sent, oldest first, each one packet.
@@ -406,13 +486,13 @@ pub(crate) struct ServerMessages {
 impl ServerMessages {
     pub(crate) fn new(bsp: &Bsp<'_>, crc: i32) -> Self {
         Self {
-            datagram: Message::new(NET_MAX_DATAGRAM, false),
-            reliable_datagram: Message::new(NET_MAX_DATAGRAM, false),
-            signon: Message::new(NET_SIGNON_SIZE, false),
+            datagram: Message::new(NET_MAX_DATAGRAM, Overflow::Fatal),
+            reliable_datagram: Message::new(NET_MAX_DATAGRAM, Overflow::Fatal),
+            signon: Message::new(NET_SIGNON_SIZE, Overflow::Fatal),
             client: ClientSlot::default(),
             baselines: Vec::new(),
             vis: Vis::new(bsp),
-            standard_quake: true,
+            game: GameKind::Standard,
             crc,
             outbox: Vec::new(),
             set_angle: None,
@@ -442,7 +522,7 @@ impl SimCall<'_, '_, '_> {
     fn joined_text(&self, first: u16) -> Vec<u8> {
         let argc = u16::try_from(self.context.machine_view().argc()).unwrap_or(u16::MAX);
         let parms: Vec<Vec<u8>> = (first..argc)
-            .map(|n| self.string_text(parm_raw(&self.context, n)))
+            .map(|n| self.string_text(self.context.parm_raw(n)))
             .collect();
         let localization = &self.sim.mock.engine().localization;
         if localization.is_empty() {
@@ -489,9 +569,9 @@ impl SimCall<'_, '_, '_> {
         let [ax, ay, az] = mins;
         let [bx, by, bz] = maxs;
         [
-            ox + 0.5 * (ax + bx),
-            oy + 0.5 * (ay + by),
-            oz + 0.5 * (az + bz),
+            ox + HALF * (ax + bx),
+            oy + HALF * (ay + by),
+            oz + HALF * (az + bz),
         ]
     }
 
@@ -520,7 +600,7 @@ impl SimCall<'_, '_, '_> {
     /// `sprint` and `centerprint`: `svc` and the joined text from PARM1 to the client slot
     /// PARM0 names, when it is one (BUILTIN-11.2).
     pub(crate) fn mirror_client_print(&mut self, svc: i32) {
-        let value = parm_raw(&self.context, 0);
+        let value = self.context.parm_raw(PARM0);
         let n = self.edict_of(value);
         if n != 1 || !self.is_client_slot(n) {
             return;
@@ -541,8 +621,8 @@ impl SimCall<'_, '_, '_> {
     /// The host error `NUM_FOR_EDICT: bad pointer` for an entity outside the edicts in use
     /// (RRE-2.4).
     pub(crate) fn local_sound(&mut self) -> Result<(), RunError> {
-        let n = self.num_for_edict(parm_raw(&self.context, 0))?;
-        let sample = self.string_text(parm_raw(&self.context, 1));
+        let n = self.num_for_edict(self.context.parm_raw(PARM0))?;
+        let sample = self.string_text(self.context.parm_raw(PARM1));
         if !self.is_client_slot(n) {
             // "tried to localsound to a non-client"
             return Ok(());
@@ -563,7 +643,7 @@ impl SimCall<'_, '_, '_> {
             return Ok(());
         };
         let message = &mut self.sim.messages.client.message;
-        if message.len() > message.max().saturating_sub(4) {
+        if message.len() > message.max().saturating_sub(LOCALSOUND_BYTES) {
             return Ok(());
         }
         message.write_byte(SVC_LOCALSOUND);
@@ -590,11 +670,11 @@ impl SimCall<'_, '_, '_> {
 
     /// `stuffcmd`: `svc_stufftext` and PARM1 to the client (BUILTIN-11.4).
     pub(crate) fn mirror_stuffcmd(&mut self) {
-        let value = parm_raw(&self.context, 0);
+        let value = self.context.parm_raw(PARM0);
         if self.edict_of(value) != 1 {
             return;
         }
-        let text = self.string_text(parm_raw(&self.context, 1));
+        let text = self.string_text(self.context.parm_raw(PARM1));
         let message = &mut self.sim.messages.client.message;
         message.write_byte(SVC_STUFFTEXT);
         message.write_string(&text);
@@ -603,11 +683,11 @@ impl SimCall<'_, '_, '_> {
     /// `sound`'s bytes to the unreliable datagram (BUILTIN-12.3), once the mock has
     /// accepted the call.
     pub(crate) fn mirror_sound(&mut self) {
-        let ent = self.edict_of(parm_raw(&self.context, 0));
-        let channel = float_to_int(parm_float(&self.context, 1));
-        let sample = self.string_text(parm_raw(&self.context, 2));
-        let volume = float_to_int(parm_float(&self.context, 3) * 255.0);
-        let attenuation = parm_float(&self.context, 4);
+        let ent = self.edict_of(self.context.parm_raw(PARM0));
+        let channel = float_to_int(self.context.parm_float(PARM1));
+        let sample = self.string_text(self.context.parm_raw(PARM2));
+        let volume = float_to_int(self.context.parm_float(PARM3) * VOLUME_SCALE);
+        let attenuation = self.context.parm_float(PARM4);
         let name = String::from_utf8_lossy(&sample).into_owned();
         let Some(sound_num) = self
             .sim
@@ -639,9 +719,9 @@ impl SimCall<'_, '_, '_> {
             datagram.write_byte(volume);
         }
         if field_mask & SND_ATTENUATION != 0 {
-            datagram.write_byte(float_to_int(attenuation * 64.0));
+            datagram.write_byte(float_to_int(attenuation * ATTENUATION_SCALE));
         }
-        datagram.write_short((number << 3) | channel);
+        datagram.write_short((number << SOUND_CHANNEL_SHIFT) | channel);
         datagram.write_byte(sound_num);
         for c in centre {
             datagram.write_coord(c);
@@ -650,10 +730,10 @@ impl SimCall<'_, '_, '_> {
 
     /// `ambientsound`'s bytes to the signon buffer (BUILTIN-12.4).
     pub(crate) fn mirror_ambientsound(&mut self) {
-        let pos = parm_vector(&self.context, 0);
-        let sample = self.string_text(parm_raw(&self.context, 1));
-        let vol = parm_float(&self.context, 2);
-        let atten = parm_float(&self.context, 3);
+        let pos = self.context.parm_vector(PARM0);
+        let sample = self.string_text(self.context.parm_raw(PARM1));
+        let vol = self.context.parm_float(PARM2);
+        let atten = self.context.parm_float(PARM3);
         let name = String::from_utf8_lossy(&sample).into_owned();
         let Some(sound_num) = self
             .sim
@@ -670,23 +750,25 @@ impl SimCall<'_, '_, '_> {
             signon.write_coord(c);
         }
         signon.write_byte(sound_num);
-        signon.write_byte(float_to_int(vol * 255.0));
-        signon.write_byte(float_to_int(atten * 64.0));
+        signon.write_byte(float_to_int(vol * VOLUME_SCALE));
+        signon.write_byte(float_to_int(atten * ATTENUATION_SCALE));
     }
 
     /// `particle`'s bytes to the unreliable datagram (BUILTIN-12.5).
     pub(crate) fn mirror_particle(&mut self) {
-        let org = parm_vector(&self.context, 0);
-        let dir = parm_vector(&self.context, 1);
-        let color = float_to_int(parm_float(&self.context, 2));
-        let count = float_to_int(parm_float(&self.context, 3));
+        let org = self.context.parm_vector(PARM0);
+        let dir = self.context.parm_vector(PARM1);
+        let color = float_to_int(self.context.parm_float(PARM2));
+        let count = float_to_int(self.context.parm_float(PARM3));
         let datagram = &mut self.sim.messages.datagram;
         datagram.write_byte(SVC_PARTICLE);
         for c in org {
             datagram.write_coord(c);
         }
         for d in dir {
-            datagram.write_byte(float_to_int(d * 16.0).clamp(-128, 127));
+            datagram.write_byte(
+                float_to_int(d * PARTICLE_DIR_SCALE).clamp(i32::from(i8::MIN), i32::from(i8::MAX)),
+            );
         }
         datagram.write_byte(count);
         datagram.write_byte(color);
@@ -698,8 +780,8 @@ impl SimCall<'_, '_, '_> {
         if !self.sim.mock.engine().server_active {
             return;
         }
-        let style = float_to_int(parm_float(&self.context, 0));
-        let value = self.string_text(parm_raw(&self.context, 1));
+        let style = float_to_int(self.context.parm_float(PARM0));
+        let value = self.string_text(self.context.parm_raw(PARM1));
         let client = &mut self.sim.messages.client;
         if client.active || client.spawned {
             client.message.write_byte(SVC_LIGHTSTYLE);
@@ -711,9 +793,9 @@ impl SimCall<'_, '_, '_> {
     /// `makestatic`'s bytes to the signon buffer (BUILTIN-12.8), read from the edict before
     /// the mock frees it.
     pub(crate) fn static_bytes(&self) -> Result<Vec<u8>, RunError> {
-        let ent = self.edict_of(parm_raw(&self.context, 0));
+        let ent = self.edict_of(self.context.parm_raw(PARM0));
         let model = self.string_text(self.entity_raw(ent, "model"));
-        let mut out = Message::new(NET_SIGNON_SIZE, false);
+        let mut out = Message::new(NET_SIGNON_SIZE, Overflow::Fatal);
         out.write_byte(SVC_SPAWNSTATIC);
         out.write_byte(self.model_index(&model)?);
         out.write_byte(float_to_int(self.float(ent, "frame")));
@@ -731,7 +813,7 @@ impl SimCall<'_, '_, '_> {
     /// The buffer a `Write*` builtin's PARM0 names (BUILTIN-13.1), `None` for a client
     /// other than ours.
     fn write_dest(&mut self) -> Option<&mut Message> {
-        let to = float_to_int(parm_float(&self.context, 0));
+        let to = float_to_int(self.context.parm_float(PARM0));
         let msg_entity = self.edict_of(self.global("msg_entity").as_i32());
         let messages = &mut self.sim.messages;
         match to {
@@ -745,21 +827,22 @@ impl SimCall<'_, '_, '_> {
 
     /// A `Write*` builtin's bytes (BUILTIN-13.2), `number` its builtin number.
     pub(crate) fn mirror_write(&mut self, number: u32) {
-        let value = parm_float(&self.context, 1);
-        let raw = parm_raw(&self.context, 1);
-        let text = (number == 58).then(|| self.written_text(raw));
-        let entity = (number == 59).then(|| i32::try_from(self.edict_of(raw)).unwrap_or(0));
+        let value = self.context.parm_float(PARM1);
+        let raw = self.context.parm_raw(PARM1);
+        let text = (number == WRITE_STRING).then(|| self.written_text(raw));
+        let entity =
+            (number == WRITE_ENTITY).then(|| i32::try_from(self.edict_of(raw)).unwrap_or(0));
         let Some(message) = self.write_dest() else {
             return;
         };
         match number {
-            52 | 53 => message.write_byte(float_to_int(value)),
-            54 => message.write_short(float_to_int(value)),
-            55 => message.write_long(float_to_int(value)),
-            56 => message.write_coord(value),
-            57 => message.write_angle(value),
-            58 => message.write_string(&text.unwrap_or_default()),
-            59 => message.write_short(entity.unwrap_or(0)),
+            WRITE_BYTE | WRITE_CHAR => message.write_byte(float_to_int(value)),
+            WRITE_SHORT => message.write_short(float_to_int(value)),
+            WRITE_LONG => message.write_long(float_to_int(value)),
+            WRITE_COORD => message.write_coord(value),
+            WRITE_ANGLE => message.write_angle(value),
+            WRITE_STRING => message.write_string(&text.unwrap_or_default()),
+            WRITE_ENTITY => message.write_short(entity.unwrap_or(0)),
             _ => {}
         }
     }
@@ -963,12 +1046,12 @@ impl SimCall<'_, '_, '_> {
             message.write_angle(angles[1]);
             message.write_angle(0.0);
         }
-        let mut data = Message::new(NET_MAX_MSGLEN, true);
+        let mut data = Message::new(NET_MAX_MSGLEN, Overflow::Allowed);
         self.write_clientdata(client, &mut data)?;
         let slot = &mut self.sim.messages.client;
         slot.message.write_bytes(data.bytes());
         slot.message.write_byte(SVC_SIGNONNUM);
-        slot.message.write_byte(3);
+        slot.message.write_byte(SIGNON_BEGIN);
         slot.sendsignon = true;
         Ok(())
     }
@@ -1045,7 +1128,7 @@ impl SimCall<'_, '_, '_> {
 
     /// `SV_SendClientDatagram` (NET-1.5): the datagram for the client of edict `client`.
     fn client_datagram(&mut self, client: usize) -> Result<Vec<u8>, RunError> {
-        let mut msg = Message::new(NET_MAX_DATAGRAM, false);
+        let mut msg = Message::new(NET_MAX_DATAGRAM, Overflow::Fatal);
         msg.write_byte(SVC_TIME);
         msg.write_float(double_to_float(self.clock()));
         self.write_clientdata(client, &mut msg)?;
@@ -1075,8 +1158,8 @@ impl SimCall<'_, '_, '_> {
                 }
                 let visible = self.sim.collision.leafs_of(e).iter().any(|&leaf| {
                     usize::try_from(leaf).ok().is_some_and(|leaf| {
-                        pvs.get(leaf >> 3)
-                            .is_some_and(|byte| byte & (1 << (leaf & 7)) != 0)
+                        pvs.get(leaf >> BYTE_SHIFT)
+                            .is_some_and(|byte| byte & (1 << (leaf & BIT_MASK)) != 0)
                     })
                 });
                 if !visible {
@@ -1098,14 +1181,13 @@ impl SimCall<'_, '_, '_> {
             let mut bits = 0;
             for (i, (o, b)) in origin.into_iter().zip(baseline.origin).enumerate() {
                 let miss = o - b;
-                if f64::from(miss) < -0.1 || f64::from(miss) > 0.1 {
+                if f64::from(miss) < -ORIGIN_TOLERANCE || f64::from(miss) > ORIGIN_TOLERANCE {
                     bits |= U_ORIGIN1 << i;
                 }
             }
             #[expect(
                 clippy::float_cmp,
-                clippy::float_cmp_const,
-                reason = "spec NET-3.3: an angle and a field are sent when they differ from the baseline exactly, and MOVETYPE_STEP is compared as the float it is stored as"
+                reason = "spec NET-3.3: an angle and a field are sent when they differ from the baseline exactly"
             )]
             {
                 if angles[0] != baseline.angles[0] {
@@ -1117,7 +1199,7 @@ impl SimCall<'_, '_, '_> {
                 if angles[2] != baseline.angles[2] {
                     bits |= U_ANGLE3;
                 }
-                if self.float(e, "movetype") == MOVETYPE_STEP {
+                if self.movetype(e) == MoveType::Step {
                     bits |= U_NOLERP;
                 }
                 if int_to_float(baseline.colormap) != self.float(e, "colormap") {
@@ -1136,15 +1218,15 @@ impl SimCall<'_, '_, '_> {
                     bits |= U_MODEL;
                 }
             }
-            if e >= 256 {
+            if e >= LONG_ENTITY {
                 bits |= U_LONGENTITY;
             }
-            if bits >= 256 {
+            if bits >= MORE_BITS {
                 bits |= U_MOREBITS;
             }
             msg.write_byte(bits | U_SIGNAL);
             if bits & U_MOREBITS != 0 {
-                msg.write_byte(bits >> 8);
+                msg.write_byte(bits >> SECOND_BYTE_SHIFT);
             }
             let number = i32::try_from(e).unwrap_or(0);
             if bits & U_LONGENTITY != 0 {
@@ -1233,8 +1315,10 @@ impl SimCall<'_, '_, '_> {
         // NET-4.5: the items.
         let items = float_to_int(self.float(ent, "items"));
         let items = match self.progs_field(ent, "items2") {
-            Some(items2) => items | (float_to_int(items2.as_f32()) << 23),
-            None => items | (float_to_int(self.global("serverflags").as_f32()) << 28),
+            Some(items2) => items | (float_to_int(items2.as_f32()) << ITEMS2_SHIFT),
+            None => {
+                items | (float_to_int(self.global("serverflags").as_f32()) << SERVERFLAGS_SHIFT)
+            }
         };
         bits |= SU_ITEMS;
         if self.flags(ent) & FL_ONGROUND != 0 {
@@ -1271,7 +1355,7 @@ impl SimCall<'_, '_, '_> {
                 msg.write_byte(float_to_int(p));
             }
             if bits & (SU_VELOCITY1 << i) != 0 {
-                msg.write_byte(float_to_int(v / 16.0));
+                msg.write_byte(float_to_int(v / VELOCITY_SCALE));
             }
         }
         msg.write_long(items);
@@ -1296,9 +1380,9 @@ impl SimCall<'_, '_, '_> {
             msg.write_byte(float_to_int(self.float(ent, field)));
         }
         let weapon = float_to_int(self.float(ent, "weapon"));
-        if self.sim.messages.standard_quake {
+        if self.sim.messages.game == GameKind::Standard {
             msg.write_byte(weapon);
-        } else if let Some(bit) = (0..32).find(|&i| weapon & (1 << i) != 0) {
+        } else if let Some(bit) = (0..ITEM_BITS).find(|&i| weapon & (1 << i) != 0) {
             msg.write_byte(bit);
         }
         Ok(())
@@ -1312,26 +1396,28 @@ impl SimCall<'_, '_, '_> {
         let [ox, oy, oz] = self.vector(ent, "origin");
         let [_, _, view_z] = self.vector(ent, "view_ofs");
         let [_, yaw, _] = self.vector(ent, "angles");
-        let angleval = double_to_float(f64::from(yaw) * core::f64::consts::PI * 2.0 / 360.0);
+        let angleval = double_to_float(
+            f64::from(yaw) * core::f64::consts::PI * 2.0 / f64::from(FULL_TURN_DEGREES),
+        );
         let sinval = double_to_float(f64::from(angleval).sin());
         let cosval = double_to_float(f64::from(angleval).cos());
         let mut z = [0.0_f32; NET_MAX_FORWARD];
         for (i, zi) in z.iter_mut().enumerate() {
             // `cosval*(i+3)*12`: the float times the int, then times 12, left to right.
-            let steps = int_to_float(i32::try_from(i).unwrap_or(0).saturating_add(3));
+            let steps = int_to_float(i32::try_from(i).unwrap_or(0).saturating_add(PROBE_FIRST));
             let top_z = oz + view_z;
             let top = [
-                ox + cosval * steps * 12.0,
-                oy + sinval * steps * 12.0,
+                ox + cosval * steps * PROBE_SPACING,
+                oy + sinval * steps * PROBE_SPACING,
                 top_z,
             ];
-            let bottom_z = top_z - 160.0;
+            let bottom_z = top_z - PROBE_DEPTH;
             let bottom = [
-                ox + cosval * steps * 12.0,
-                oy + sinval * steps * 12.0,
+                ox + cosval * steps * PROBE_SPACING,
+                oy + sinval * steps * PROBE_SPACING,
                 bottom_z,
             ];
-            let trace = self.trace((top, [0.0; 3], [0.0; 3], bottom), MoveKind::NoMonsters, ent)?;
+            let trace = self.trace((top, POINT, POINT, bottom), MoveKind::NoMonsters, ent)?;
             if trace.allsolid {
                 return Ok(());
             }

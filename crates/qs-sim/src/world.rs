@@ -28,26 +28,28 @@ use qs_vfs::Registration;
 use crate::builtins::{ModelFiles, SimBuiltins, SimCall};
 use crate::client::UserCmd;
 use crate::debug::Debugger;
-use crate::host_commands::SignonCommand;
+use crate::host_commands::{ClientStage, SignonCommand};
 use crate::input::Button;
-use crate::messages::ClientMessages;
 #[cfg(test)]
 use crate::messages::ServerMessages;
+use crate::messages::{ClientMessages, GameKind};
+use crate::offsets::{FieldOffset, GlobalOffset};
+use crate::physics::MoveType;
 use crate::physics::Sound;
 use crate::rerelease::BuiltinTable;
 use crate::settings::{ARCHIVED, CLIENT_SETTINGS, SERVER_SETTINGS};
 use qc_builtins::localization::Localization;
+use save::NUM_SPAWN_PARMS;
 
 use crate::spawn::{
-    self, FieldDef, LoadError, Parser, SPAWNFLAGS_SLOT, SpawnError, SpawnHost, Token,
+    self, Deathmatch, EdictPlace, FieldDef, LoadError, Parser, SPAWNFLAGS_SLOT, SpawnError,
+    SpawnHost, Token,
 };
 
 /// `MAP_START_TIME` (EDICT-8.1): the server's clock while the map's entities spawn.
 const MAP_START_TIME: f64 = 1.0;
 /// `SOLID_BSP` (EDICT-10.3): the world is solid.
 const SOLID_BSP: f32 = 4.0;
-/// `MOVETYPE_PUSH` (EDICT-10.2): the world moves as a pusher.
-const MOVETYPE_PUSH: f32 = 7.0;
 /// The client slots a single-player world has.
 const MAXCLIENTS: usize = 1;
 /// The single player's edict.
@@ -90,7 +92,7 @@ impl core::error::Error for WorldError {}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entity {
     /// The edict's number.
-    pub number: usize,
+    pub number: EdictNumber,
     /// The model `modelindex` names in the model list, `maps/<map>.bsp`, `*n` for a brush
     /// submodel, or a file such as `progs/soldier.mdl`.
     pub model: String,
@@ -144,7 +146,7 @@ pub struct World {
     /// The spawn parms the level the player left kept, used in place of `SetNewParms`'.
     carried: Option<SpawnParms>,
     /// The client's spawn parms, `host_client->spawn_parms`, which a saved game keeps.
-    spawn_parms: [Slot; 16],
+    spawn_parms: [Slot; NUM_SPAWN_PARMS],
     /// Whether a saved game was read into this world, `sv.loadgame` (PHYS-10.5).
     loaded: bool,
     /// The map's name, `sv.name`.
@@ -391,7 +393,7 @@ impl World {
             aliases,
             search_path: options.search_path,
             carried: options.carried,
-            spawn_parms: [Slot::ZERO; 16],
+            spawn_parms: [Slot::ZERO; NUM_SPAWN_PARMS],
             loaded: false,
             map: map.to_owned(),
             map_entities: map_entities::MapEntities::default(),
@@ -402,7 +404,11 @@ impl World {
         world.set_field(0, field_slot("model"), Slot::from_i32(model));
         world.set_field(0, field_slot("modelindex"), Slot::from_f32(1.0));
         world.set_field(0, field_slot("solid"), Slot::from_f32(SOLID_BSP));
-        world.set_field(0, field_slot("movetype"), Slot::from_f32(MOVETYPE_PUSH));
+        world.set_field(
+            0,
+            field_slot("movetype"),
+            Slot::from_f32(MoveType::Push.to_float()),
+        );
         // EDICT-11.4: the globals.
         let mapname = world.make_string(map.as_bytes().to_vec());
         world.set_global("mapname", Slot::from_i32(mapname));
@@ -421,8 +427,13 @@ impl World {
             progs,
             state: ServerState::Loading,
         };
-        let spawned = spawn::load_from_file(&mut spawner, entities, deathmatch != 0.0, skill)
-            .map_err(WorldError::Spawn)?;
+        let spawned = spawn::load_from_file(
+            &mut spawner,
+            entities,
+            Deathmatch::from_setting(deathmatch),
+            skill,
+        )
+        .map_err(WorldError::Spawn)?;
         world.map_entities = map_entities::MapEntities::loaded(&world, &spawned);
         world.builtins.mock.engine_mut().server_active = true;
         Ok(world)
@@ -452,10 +463,10 @@ impl World {
         self.builtins.messages.set_angle.take()
     }
 
-    /// Whether the game is standard Quake, not `-rogue` or `-hipnotic`, which changes how the
-    /// weapon is sent (NET-4.4); standard by default.
-    pub fn set_standard_quake(&mut self, standard: bool) {
-        self.builtins.messages.standard_quake = standard;
+    /// Which game the server runs, standard Quake or `-rogue` or `-hipnotic`, which changes how
+    /// the weapon is sent (NET-4.4); standard by default.
+    pub fn set_game(&mut self, game: GameKind) {
+        self.builtins.messages.game = game;
     }
 
     /// The messages sent to the client since the last call (NET-1.3): each packet a reliable
@@ -512,9 +523,13 @@ impl World {
         }
         if self.builtins.messages.client.active {
             for text in core::mem::take(&mut self.commands) {
-                let spawned = self.player.is_some();
+                let stage = if self.player.is_some() {
+                    ClientStage::Spawned
+                } else {
+                    ClientStage::Connecting
+                };
                 let stage = SimCall::frame(&mut self.machine, progs, &mut self.builtins)
-                    .client_command(CLIENT, &text, spawned)
+                    .client_command(CLIENT, &text, stage)
                     .map_err(WorldError::Frame)?;
                 match stage {
                     Some(SignonCommand::Prespawn) => self.signon(progs, Signon::Prespawn)?,
@@ -868,7 +883,7 @@ impl World {
                 let index = whole(float(n, "modelindex"))?;
                 let model = precache.get(index).filter(|m| !m.is_empty())?.clone();
                 Some(Entity {
-                    number: n,
+                    number: EdictNumber::new(n),
                     model,
                     origin: vector(n, "origin"),
                     angles: vector(n, "angles"),
@@ -941,17 +956,16 @@ struct Spawner<'a, 'p> {
 }
 
 impl SpawnHost for Spawner<'_, '_> {
-    fn allocate(&mut self, first: bool) -> Result<usize, SpawnError> {
-        if first {
+    fn allocate(&mut self, place: EdictPlace) -> Result<EdictNumber, SpawnError> {
+        if place == EdictPlace::World {
             // EDICT-4.2: the map's first entity goes into edict 0 without clearing it.
-            return Ok(0);
+            return Ok(EdictNumber::WORLD);
         }
         let clock = self.world.builtins.mock.engine().clock;
         self.world
             .machine
             .edicts_mut()
             .alloc(clock)
-            .map(EdictNumber::index)
             .map_err(|_| SpawnError::NoFreeEdicts)
     }
 
@@ -983,29 +997,32 @@ impl SpawnHost for Spawner<'_, '_> {
             .and_then(|i| i32::try_from(i).ok())
     }
 
-    fn global(&self, slot: usize) -> Option<Slot> {
-        self.world.machine.global(i32::try_from(slot).ok()?).ok()
+    fn global(&self, slot: GlobalOffset) -> Option<Slot> {
+        self.world
+            .machine
+            .global(i32::try_from(slot.index()).ok()?)
+            .ok()
     }
 
-    fn set_field(&mut self, edict: usize, field: usize, value: Slot) {
-        self.world.set_field(edict, field, value);
+    fn set_field(&mut self, edict: EdictNumber, field: FieldOffset, value: Slot) {
+        self.world.set_field(edict.index(), field.index(), value);
     }
 
     fn make_string(&mut self, text: Vec<u8>) -> i32 {
         self.world.make_string(text)
     }
 
-    fn spawnflags(&self, edict: usize) -> f32 {
+    fn spawnflags(&self, edict: EdictNumber) -> f32 {
         self.world
             .machine
             .edicts()
-            .field(EdictNumber::new(edict), SPAWNFLAGS_SLOT)
+            .field(edict, SPAWNFLAGS_SLOT)
             .map_or(0.0, Slot::as_f32)
     }
 
-    fn spawn(&mut self, edict: usize, function: i32) -> Result<(), RunError> {
+    fn spawn(&mut self, edict: EdictNumber, function: i32) -> Result<(), RunError> {
         // EDICT-8.6: set self to the entity and call the function.
-        let value = self.world.entity_value(edict);
+        let value = self.world.entity_value(edict.index());
         self.world.set_global("self", Slot::from_i32(value));
         self.world.machine.execute_program(
             self.progs,
@@ -1016,14 +1033,11 @@ impl SpawnHost for Spawner<'_, '_> {
         )
     }
 
-    fn free(&mut self, edict: usize) {
+    fn free(&mut self, edict: EdictNumber) {
         let clock = self.world.builtins.mock.engine().clock;
         // WORLD-8.3: ED_Free unlinks.
-        self.world.builtins.collision.unlink(edict);
-        self.world
-            .machine
-            .edicts_mut()
-            .free(EdictNumber::new(edict), clock);
+        self.world.builtins.collision.unlink(edict.index());
+        self.world.machine.edicts_mut().free(edict, clock);
     }
 }
 
@@ -1078,7 +1092,7 @@ mod state;
 #[cfg(test)]
 pub(crate) mod tests;
 
-pub use changes::EdictChange;
+pub use changes::{EdictChange, Tracking};
 pub use edit::{EditError, LineHit};
 pub use evaluate::EvalError;
 pub use inspect::{NamedValue, QcValue};

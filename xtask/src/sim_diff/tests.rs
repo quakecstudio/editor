@@ -30,7 +30,7 @@ fn a_route_reads_as_the_oracle_reads_it() {
     .unwrap();
     assert_eq!(route.engine, ["-nosound"]);
     assert_eq!(route.map, "start");
-    assert!((route.frametime - 0.02).abs() < f64::EPSILON);
+    assert!((route.frametime.get() - 0.02).abs() < f64::EPSILON);
     assert_eq!(
         route.steps,
         [

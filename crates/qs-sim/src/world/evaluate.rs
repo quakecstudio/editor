@@ -3,6 +3,7 @@
 //! A watch expression's value (WORLD-9.5, BRIDGE-4.9 "watch"): a constant, a global or a local
 //! of the frame's function, or a field path such as `self.owner.health`.
 
+use crate::offsets::GlobalOffset;
 use std::fmt;
 
 use qc_progs::Progs;
@@ -119,7 +120,7 @@ impl World {
 
     fn global_value(&self, progs: &Progs<'_>, etype: Etype, first: usize) -> QcValue {
         let slots: Vec<Slot> = (0..etype.slot_count())
-            .map(|i| RawState::global(self, first.saturating_add(i)))
+            .map(|i| RawState::global(self, GlobalOffset::new(first.saturating_add(i))))
             .collect();
         typed_value(progs, self, etype, &slots)
     }

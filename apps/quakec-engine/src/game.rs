@@ -8,7 +8,11 @@ use qc_edict::EdictNumber;
 use qc_progs::Progs;
 use qs_bridge::{Answer, Capabilities, ErrorCode, Host, HostInfo, Id, RpcError};
 use qs_render::Camera;
+<<<<<<< HEAD
 use qs_render::Degrees;
+=======
+use qs_sim::debug::BreakpointEdit;
+>>>>>>> origin/main
 use qs_sim::{
     EdictChange, EditError, HostCommand, HostState, MapPlace, SpawnParms, World, WorldError,
 };
@@ -288,7 +292,11 @@ impl Game {
     /// The game of `world`, loaded from `progs`, running.
     pub(crate) fn new(mut world: World, progs: Vec<u8>, reporting: Reporting) -> Self {
         // The edicts' events cost a record of every field write; only a client reads them.
-        world.track_changes(reporting == Reporting::Bridge);
+        world.track_changes(if reporting == Reporting::Bridge {
+            qs_sim::Tracking::On
+        } else {
+            qs_sim::Tracking::Off
+        });
         Self {
             world,
             progs,
@@ -337,7 +345,8 @@ impl Game {
         self.lines = old.lines;
         self.next_breakpoint = old.next_breakpoint;
         for breakpoint in old.breakpoints {
-            self.debugger().set_breakpoint(breakpoint.statement, true);
+            self.debugger()
+                .set_breakpoint(breakpoint.statement, BreakpointEdit::Set);
             self.breakpoints.push(breakpoint);
         }
     }
@@ -1075,7 +1084,7 @@ impl Game {
             .map_err(|e| RpcError::new(ErrorCode::InternalError, e.to_string()))?;
         let mut result = Map::new();
         if let Some(edict) = hit.edict {
-            result.insert("edict".to_owned(), json!(edict));
+            result.insert("edict".to_owned(), json!(edict.index()));
         }
         if let Some(point) = hit.point {
             result.insert("point".to_owned(), json!(point));

@@ -350,7 +350,7 @@ pub(crate) fn load(
                 origin: entity.origin,
                 angles: entity.angles,
             };
-            let placed = (placement, entity.number);
+            let placed = (placement, entity.number.index());
             match others.iter_mut().find(|(name, _)| *name == entity.model) {
                 Some((_, list)) => list.push(placed),
                 None => others.push((entity.model, vec![placed])),

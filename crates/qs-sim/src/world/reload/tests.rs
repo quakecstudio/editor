@@ -5,6 +5,7 @@
     reason = "test code: a failed unwrap is a failed test"
 )]
 
+use crate::world::Tracking;
 use qc_progs::Progs;
 use qc_types::{Etype, Slot};
 
@@ -292,7 +293,7 @@ fn plain_float(run: &Running, name: &str) -> f32 {
 #[test]
 fn a_reload_takes_the_new_table_and_records_no_changes() {
     let mut run = running(&ticker("1", ""));
-    run.world.track_changes(true);
+    run.world.track_changes(Tracking::On);
     let new = compile(&ticker("2", ""));
     let old_bytes = core::mem::replace(&mut run.progs, new);
     let old = Progs::read(&old_bytes).unwrap();
