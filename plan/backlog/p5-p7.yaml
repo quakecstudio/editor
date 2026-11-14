@@ -1011,6 +1011,100 @@ groups:
     - 'P5-18''s baseline only shrinks: cargo xtask conv17-baseline removes the 33 lines and adds none, and cargo xtask conventions passes'
     verify:
     - 'cargo xtask ci; the audit''s P6-34 section checked off against the diff'
+  - key: P6-35
+    title: The preview host panics drawing a map with no textured face
+    labels:
+    - L7-ui
+    - area:preview
+    - type:bug
+    size: S
+    reqs:
+    - MAP-13
+    - MAP-17
+    depends:
+    - P6-12
+    summary: |
+      The Phase 6 gate review (docs/gates/p6.md) compiled a new map built from brushes with qs-map-bsp, qs-map-vis and qs-map-light and no WAD, put it in a game's maps folder and ran `quakec-engine -basedir <game> --timerefresh -300 0 46 <map>`. The host stops with `buffer slice can not be empty` from wgpu-30.0.1 `src/api/buffer.rs:683`, exit 101, in `qs_render::gpu::MapRenderer::draw_world` (`crates/qs-render/src/gpu.rs:971`, `self.vertices.slice(..)`): no face has a texture, so the world's vertex buffer is empty. The same map compiled with a WAD holding its six textures draws, exit 0. New brushes take `__TB_empty` when no texture is chosen (`crates/qs-workbench/src/map_edit/brushes.rs:38`), which no WAD holds, so Play from here on a new map with no WAD reaches this panic. The CI tests of Play from here and of the compile profiles play the map in qs-sim only and never draw it.
+    environment: |
+      macOS (Apple M5), main at c702f4cc, release build; LibreQuake lite as the game; the map is the gate review's two rooms, a corridor with a func_door, a func_button, stairs and three lights, written with no WAD key
+    deliverable:
+    - 'qs-render draws a map in which no face, or only some faces, have texture data without a panic, as a spec statement it cites says such faces are drawn, and never binds an empty world buffer'
+    acceptance:
+    - 'A test draws offscreen a BSP compiled by qs-map-bsp from brushes whose textures no WAD holds, and fails before the fix'
+    - 'quakec-engine --timerefresh on that map exits 0, recorded in the PR'
+    verify:
+    - 'cargo test -p qs-render; the timerefresh run recorded in the PR'
+  - key: P6-36
+    title: Offer the map tools over MCP
+    labels:
+    - L6-agent
+    - area:agent
+    - type:bug
+    size: S
+    reqs:
+    - MAP-29
+    - MAP-16
+    depends:
+    - P6-21
+    summary: |
+      P6-21's deliverable is the map's brush, shape and CSG commands "offered to the agent and MCP so they build level geometry", and its PR (#913) says they are "offered to the agent and MCP with their schemas". The built-in agent has them, but the MCP server has none: `quakec-ide mcp <project>` answers `tools/list` with the 26 tools of `qs_mcp::AGENT_TOOLS` (`crates/qs-mcp/src/lib.rs:65`), and no `map.*` tool among them, so an MCP client cannot open, inspect, edit, compile or check a map for leaks. `docs/mcp.md`'s tool table lists no map tool either.
+    environment: |
+      macOS (Apple M5), main at c702f4cc, release build of quakec-ide; a one-file project; MCP 2025-06-18 initialize, then tools/list
+    deliverable:
+    - 'crates/qs-mcp: the map commands the built-in agent may call (map.open, map.inspect, map.place, map.set_key, the brush, shape and CSG commands of P6-21, map.compile and map.leaks) served as tools with their schemas and the access each needs, map edits staged for review as the agent''s are'
+    - 'docs/mcp.md: the map tools in its tool table'
+    acceptance:
+    - 'A test lists the tools and finds each map tool above with its schema'
+    - 'A test builds a sealed room through MCP tool calls alone and compiles it with no leak'
+    - 'A read-only server refuses the map tools that write'
+    verify:
+    - 'cargo test -p qs-mcp'
+  - key: P6-37
+    title: Play from here takes over 10 s on lq-e1m1 since the extended qbsp port
+    labels:
+    - L4-bridges
+    - area:map
+    - type:bug
+    size: M
+    reqs:
+    - MAP-13
+    depends:
+    - P6-12
+    - P6-07
+    summary: |
+      P6-12's acceptance is "Under 10 s from click to playing on an id1-sized map", met in PR #909 with lq-e1m1 "compiled in 1.05 s, 1.38 s with the light". PR #914 replaced the extended dialect, which Play from here and every workbench compile use (`crates/qs-workbench/src/map_compile.rs:121`), with the port of ericw-tools' qbsp. On main the same map takes 12.40 s to compile and 12.64 s with the fast light, before the host starts. The gate review measured both with the same program, release builds, on the same machine: at 80a05032 (#909) lq-e1m1 1.11 s and 1.45 s with the light, lq-e3m4 4.12 s and 4.25 s, lq-e1m2 0.32 s and 0.38 s; at c702f4cc (main) lq-e1m1 12.40 s and 12.64 s, lq-e3m4 15.75 s and 16.02 s, lq-e1m2 4.55 s and 4.60 s. lq-e2m5 compiles in 35.9 s.
+    environment: |
+      macOS, Apple M5 (10 cores), main at c702f4cc and 80a05032; LibreQuake's map sources from the pinned corpus; qs_map_bsp::Compiler in Dialect::Extended with no WAD, then qs_map_light::Light in Sampling::Fast
+    deliverable:
+    - 'qs-map-bsp''s extended dialect compiles lq-e1m1 fast enough that Play from here is again under 10 s from click to playing, with the map differential still agreeing on every corpus map'
+    - 'A benchmark or test that times the Play from here compile of an id1-sized corpus map, so a change that takes it over budget is seen'
+    acceptance:
+    - 'Under 10 s from click to playing on lq-e1m1 on the reference Mac, recorded in the PR with the compile, light and host start times'
+    - 'cargo xtask map-diff agrees on every corpus map after the change'
+    verify:
+    - 'The recorded run; the nightly Differential run''s map-tools job'
+  - key: P6-38
+    title: The map differential fails on lq-end in the id dialect
+    labels:
+    - L4-bridges
+    - area:map
+    - type:bug
+    size: S
+    reqs:
+    - MAP-11
+    depends:
+    - P6-07
+    summary: |
+      The first run of `cargo xtask map-diff` on main, the Map tool oracles job of Differential run 43597129460 at c702f4cc (dispatched by the Phase 6 gate review), fails: `FAIL  lq-end (qbsp): both stop: .../lq-end.map: MAX_HULL_POINTS; exit status: 1: numtexinfo == MAX_MAP_TEXINFO`. id's qbsp stops on the texinfo limit and qs-map-bsp's id dialect on the hull-points limit, so `stop_alike` (`xtask/src/map_diff.rs`) does not match them. The same id-dialect compile of the map, with its WAD keys taken out as map-diff does, stops with `MAX_HULL_POINTS` at 60330adc (#914) too, though PR #914 records every map ok. Every other map agrees, among them the 26 ericw-tools comparisons.
+    environment: |
+      ubuntu-latest, Differential workflow run 43597129460, job Map tool oracles (132453984007), main at c702f4cc; reproduced locally on macOS at c702f4cc and 60330adc with Compiler::default().with_dialect(Dialect::Id)
+    deliverable:
+    - 'qs-map-bsp''s id dialect stops on lq-end with the error id''s qbsp stops with, in the order of qbsp''s checks quoted from the pinned qutils source in docs/spec/qbsp.md, with a test citing that statement'
+    acceptance:
+    - 'cargo xtask map-diff prints ok for every map, lq-end (qbsp) included, in the nightly Differential run on main'
+    - 'A unit test reaches both limits in one map and stops with the one qbsp names, and fails before the fix'
+    verify:
+    - 'cargo test -p qs-map-bsp; the Differential run''s map-tools job'
   - key: P6-14
     title: Phase 6 gate review
     labels:
@@ -1056,6 +1150,10 @@ groups:
     - P6-32
     - P6-33
     - P6-34
+    - P6-35
+    - P6-36
+    - P6-37
+    - P6-38
     deliverable:
     - docs/gates/p6.md
     acceptance:
