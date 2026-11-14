@@ -6,8 +6,7 @@
 //!
 //! The left panel lists the open project's files and symbols and the bottom panel its problems
 //! (`qs-workbench`, [`crate::project`]); choosing one opens its file in the editor at that place.
-//! The game, Entities, Properties and the agent are placeholders until the preview host and the
-//! agent land. Showing, hiding and resizing a panel and opening a project or a file run a
+//! Showing, hiding and resizing a panel and opening a project or a file run a
 //! command (`qs-layout`, `qs-workbench`), so a menu, a keybinding, the CLI and the agent do it
 //! the same way, and the layout is written back when it changes.
 //!
