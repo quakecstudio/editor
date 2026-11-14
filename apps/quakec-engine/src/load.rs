@@ -131,6 +131,13 @@ pub(crate) struct Describer {
     read: Reader,
 }
 
+impl Describer {
+    /// The file `name` of the game's search path, `None` when it is not on it.
+    pub(crate) fn read(&self, name: &str) -> Option<Vec<u8>> {
+        (self.read)(name)
+    }
+}
+
 impl Models for Describer {
     fn describe(&mut self, name: &str) -> Option<ModelInfo> {
         if name.starts_with('*') || name.ends_with(".bsp") {

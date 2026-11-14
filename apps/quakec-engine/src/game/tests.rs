@@ -1568,3 +1568,111 @@ fn window_place_refuses_a_bad_frame() {
 fn a_breakpoint_id_reads_back() {
     assert_eq!(super::debug::BreakpointId::new(7).get(), 7);
 }
+
+/// A BSP file of a floor at z = `height`, solid below; for the player's hull, 24 higher.
+fn floor_file(height: f32) -> Vec<u8> {
+    use qs_bsp::write::{
+        BspFile, BspFormat, DiskClipNode, DiskLeaf, DiskModel, DiskNode, DiskPlane,
+    };
+    let plane = |dist| DiskPlane {
+        normal: [0.0, 0.0, 1.0],
+        dist,
+        plane_type: 2,
+    };
+    let leaf = |contents| DiskLeaf {
+        contents,
+        visofs: -1,
+        mins: [0.0; 3],
+        maxs: [0.0; 3],
+        firstmarksurface: 0,
+        nummarksurfaces: 0,
+        ambient_level: [0; BSP_NUM_AMBIENTS],
+    };
+    BspFile {
+        entities: b"{\n\"classname\" \"worldspawn\"\n}\n\0".to_vec(),
+        planes: vec![plane(height), plane(height + 24.0)],
+        textures: Vec::new(),
+        vertexes: Vec::new(),
+        visibility: Vec::new(),
+        nodes: vec![DiskNode {
+            planenum: 0,
+            children: [-2, -1],
+            mins: [0.0; 3],
+            maxs: [0.0; 3],
+            firstface: 0,
+            numfaces: 0,
+        }],
+        texinfo: Vec::new(),
+        faces: Vec::new(),
+        lighting: Vec::new(),
+        clipnodes: vec![DiskClipNode {
+            planenum: 1,
+            children: [-1, -2],
+        }],
+        leafs: vec![leaf(-2), leaf(-1)],
+        marksurfaces: Vec::new(),
+        edges: Vec::new(),
+        surfedges: Vec::new(),
+        models: vec![DiskModel {
+            mins: [-1000.0; 3],
+            maxs: [1000.0; 3],
+            origin: [0.0; 3],
+            headnode: [0; 4],
+            visleafs: 0,
+            firstface: 0,
+            numfaces: 0,
+        }],
+    }
+    .to_bytes(BspFormat::Bsp29)
+    .unwrap()
+}
+
+/// The game, with `maps/new.bsp` on its search path: the floor 30 lower.
+fn game_to_swap() -> (Game, Session) {
+    let (mut game, session) = game();
+    let bytes = floor_file(-30.0);
+    game.set_files(Rc::new(move |name: &str| {
+        (name == "maps/new.bsp").then(|| bytes.clone())
+    }));
+    (game, session)
+}
+
+// spec BRIDGE-4.14: map/swap reads its bsp from the game's search path and runs between frames
+// spec BRIDGE-4.15: the swap keeps the player and every edict as they are
+// spec BRIDGE-4.17: the host keeps the swapped BSP for its window to draw
+#[test]
+fn a_swap_keeps_the_game_and_gives_the_window_the_new_map() {
+    let (mut game, mut session) = game_to_swap();
+    let health = float_field(&mut game, &mut session, 1, "health");
+    let count = float_field(&mut game, &mut session, 2, "count");
+    let result = call(
+        &mut game,
+        &mut session,
+        "map/swap",
+        &json!({ "bsp": "maps/new.bsp", "models": [] }),
+    )
+    .unwrap();
+    assert_eq!(result, json!({ "swapped": 0 }));
+    assert_eq!(float_field(&mut game, &mut session, 1, "health"), health);
+    assert_eq!(float_field(&mut game, &mut session, 2, "count"), count);
+    assert_eq!(game.take_swapped(), Some(floor_file(-30.0)));
+    assert_eq!(game.take_swapped(), None, "the window takes it once");
+}
+
+// spec BRIDGE-4.14: a model the new BSP does not have, or a bsp that is not there, is -32602
+// and nothing changes
+#[test]
+fn a_swap_that_cannot_be_made_is_refused() {
+    let (mut game, mut session) = game_to_swap();
+    let star = json!({ "bsp": "maps/new.bsp", "models": [{ "map_entity": 1, "model": "*1" }] });
+    assert_eq!(
+        code(call(&mut game, &mut session, "map/swap", &star)),
+        ErrorCode::InvalidParams
+    );
+    let gone = json!({ "bsp": "maps/gone.bsp", "models": [] });
+    assert_eq!(
+        code(call(&mut game, &mut session, "map/swap", &gone)),
+        ErrorCode::InvalidParams
+    );
+    assert_eq!(game.take_swapped(), None);
+}

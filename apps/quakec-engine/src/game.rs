@@ -20,6 +20,7 @@ use crate::values::{from_json, named_json, to_json};
 
 mod debug;
 mod reload;
+mod swap;
 
 use debug::{Breakpoint, Snapshot, Step, Stopped};
 
@@ -27,7 +28,7 @@ use debug::{Breakpoint, Snapshot, Step, Stopped};
 const SCREEN_CENTRE: f32 = 0.5;
 
 /// The commands the game accepts.
-const COMMANDS: [&str; 16] = [
+const COMMANDS: [&str; 17] = [
     "reload",
     "breakpoint/set",
     "breakpoint/clear",
@@ -44,6 +45,7 @@ const COMMANDS: [&str; 16] = [
     "pick",
     "screenshot",
     "window/place",
+    "map/swap",
 ];
 
 /// How far `pick`'s ray reaches, in map units.
@@ -286,6 +288,9 @@ pub(crate) struct Game {
     files: Option<qs_sim::ModelFiles>,
     /// The name the progs was read by, which `reload` reads again by default.
     progs_path: String,
+    /// The BSP the last `map/swap` put in place, until the window takes it to draw
+    /// (BRIDGE-4.17).
+    swapped: Option<Vec<u8>>,
 }
 
 impl Game {
@@ -317,6 +322,7 @@ impl Game {
             halted: None,
             files: None,
             progs_path: "progs.dat".to_owned(),
+            swapped: None,
         }
     }
 
@@ -1018,6 +1024,7 @@ impl Game {
                 Ok(self.console(progs, params))
             }
             "pick" => self.pick(progs, params),
+            "map/swap" => self.map_swap(progs, params),
             _ => Err(RpcError::new(
                 ErrorCode::MethodNotFound,
                 format!("{method} is not a command"),

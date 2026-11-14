@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
-use qs_bsp::Bsp;
+use qs_bsp::{Bsp, BspLoader};
 use qs_client::{
     CON_TEXTSIZE, CON_TEXTSIZE_QUAKESPASM, Client, Connection, Console, ConsoleHold, ConsoleKey,
     Event, Grabbed, KeyDest, MENU_BINDINGS, Menu, MenuEvent, MenuFrame, MenuGame, MenuKey,
@@ -36,7 +36,7 @@ use crate::keys::{
     MouseLook, STARTUP, config_path, configuration, focus, keynum, modifier_keys, mouse_key,
     mouse_motion, runs_binding, wheel_key,
 };
-use crate::load::{Acted, Describer, Loaded, Rand};
+use crate::load::{Acted, Describer, Loaded, Rand, map_mesh};
 use crate::screenshot::Drawer;
 use crate::settings::HostSettings;
 
@@ -344,6 +344,9 @@ impl eframe::App for Viewer {
         self.hold_pointer(ui, click);
         // The bridge's commands run between two server frames (BRIDGE-4.3).
         self.serve_bridge(ui);
+        if let Some(bytes) = self.game.take_swapped() {
+            self.draw_swapped(window, bytes);
+        }
         if self.fly {
             self.fly_around(ui, seconds);
         } else {
@@ -587,6 +590,54 @@ impl Viewer {
         self.rand = rand;
         self.last_set = [f32::NAN; 2];
         self.behind = 0.0;
+    }
+
+    /// The swapped BSP drawn (BRIDGE-4.17): the mesh, the renderer and the BSP the view reads
+    /// made again from it, the brush entities placed by their new models; a BSP that does not
+    /// draw leaves the old one drawn, and says why.
+    fn draw_swapped(&mut self, window: &eframe::Frame, bytes: Vec<u8>) {
+        // The view reads the BSP for as long as the map runs, as the map's load keeps it.
+        let bytes: &'static [u8] = Vec::leak(bytes);
+        let bsp = match Bsp::read(bytes, BspLoader::default()) {
+            Ok(bsp) => bsp,
+            Err(error) => {
+                tracing::warn!(error = %error.message(&self.map), "the swapped map is not drawn");
+                return;
+            }
+        };
+        let palette = self.play.palette().clone();
+        let describer = &self.describer;
+        let read = |name: &str| describer.read(name);
+        let mesh = match map_mesh(
+            (&self.map, &bsp),
+            self.game.world(),
+            &read,
+            (&palette, self.mesh.look),
+            &mut self.play,
+        ) {
+            Ok(mesh) => mesh,
+            Err(error) => {
+                tracing::warn!(%error, "the swapped map is not drawn");
+                return;
+            }
+        };
+        if let Some(state) = window.wgpu_render_state() {
+            let renderer = MapRenderer::new(
+                &state.device,
+                &state.queue,
+                (state.target_format, wgpu::TextureFormat::Depth32Float),
+                &mesh,
+                &self.play.assets(),
+            );
+            state.renderer.write().callback_resources.insert(renderer);
+        }
+        self.triangles = mesh
+            .indices
+            .len()
+            .checked_div(TRIANGLE_CORNERS)
+            .unwrap_or(0);
+        self.mesh = mesh;
+        self.bsp = bsp;
     }
 
     /// `Host_FilterTime`: when 1/72 of a second has passed since the last frame, one server
