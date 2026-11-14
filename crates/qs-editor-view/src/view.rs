@@ -98,6 +98,14 @@ impl Default for ViewStyle {
 
 /// The space between the line numbers and the text, and before the numbers, in points.
 const GUTTER_PAD: f32 = 12.0;
+/// The fold mark's half width is at most a row over this: a quarter.
+const FOLD_MARK_PARTS: f32 = 4.0;
+/// A breakpoint's radius is at most a row over this: a third.
+const BREAKPOINT_PARTS: f32 = 3.0;
+/// A fixable note's dot's radius is a row over this: a quarter.
+const FIX_DOT_PARTS: f32 = 4.0;
+/// A character's most UTF-8 bytes.
+const MAX_UTF8_BYTES: u8 = 4;
 /// The caret's width in points.
 const CARET_WIDTH: f32 = 2.0;
 /// The gutter's mark on a removed line's row.
@@ -1091,7 +1099,7 @@ impl EditorView {
             value.push('\n');
             let lengths = value
                 .chars()
-                .map(|c| u8::try_from(c.len_utf8()).unwrap_or(4))
+                .map(|c| u8::try_from(c.len_utf8()).unwrap_or(MAX_UTF8_BYTES))
                 .collect();
             runs.push((row_rect, value, lengths));
             top += height;
@@ -1224,7 +1232,7 @@ impl Marks {
     /// `corner`.
     fn paint(self, painter: &egui::Painter, style: &ViewStyle, corner: Pos2, row_height: f32) {
         let mark = Pos2::new(corner.x + GUTTER_PAD / 2.0, corner.y + row_height / 2.0);
-        let radius = (GUTTER_PAD / 2.0 - 1.0).min(row_height / 3.0);
+        let radius = (GUTTER_PAD / 2.0 - 1.0).min(row_height / BREAKPOINT_PARTS);
         if self.breakpoint {
             painter.circle_filled(mark, radius, style.breakpoint);
         }
@@ -1347,7 +1355,7 @@ fn paint_note(
     };
     let mut x = at.x;
     if note.fixable == Fixable::Yes {
-        let radius = row_height / 4.0;
+        let radius = row_height / FIX_DOT_PARTS;
         painter.circle_filled(
             Pos2::new(x + radius, at.y + row_height / 2.0),
             radius,
@@ -1515,7 +1523,7 @@ fn fold_mark(
 ) {
     let (text_left, top) = origin;
     let centre = Pos2::new(text_left - GUTTER_PAD / 2.0, top + row_height / 2.0);
-    let r = (GUTTER_PAD / 2.0 - 2.0).min(row_height / 4.0);
+    let r = (GUTTER_PAD / 2.0 - 2.0).min(row_height / FOLD_MARK_PARTS);
     let points = if fold == Fold::Folded {
         vec![
             Pos2::new(centre.x - r / 2.0, centre.y - r),

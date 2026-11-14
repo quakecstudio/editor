@@ -205,7 +205,7 @@ impl Vim {
             self.count = Some(
                 self.count
                     .unwrap_or(0)
-                    .saturating_mul(10)
+                    .saturating_mul(DECIMAL)
                     .saturating_add(digit),
             );
             return Effect::Done;
@@ -575,6 +575,9 @@ fn first_non_blank(line: &str) -> usize {
         .find(|(_, c)| !c.is_whitespace())
         .map_or(line.len(), |(at, _)| at)
 }
+
+/// A count's base, as `3x` types it.
+const DECIMAL: usize = 10;
 
 /// A character's word class, as `w`, `b` and `e` move by it: white space, a word's (a
 /// letter, digit or underscore, or a letter of another script), any other non-blank one, and

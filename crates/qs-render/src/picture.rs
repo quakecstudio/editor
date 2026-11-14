@@ -13,6 +13,7 @@ use qs_wad::QPic;
 
 use crate::mesh::{Image, Palette};
 use crate::play::pic_image;
+use crate::{AXES, CHANNEL_MAX};
 
 /// A picture file's decoder.
 type Decoder = fn(&[u8]) -> Option<Image>;
@@ -80,6 +81,24 @@ const PCX_PALETTE: usize = 768;
 const PCX_RUN: u8 = 0xc0;
 const PCX_RUN_LENGTH: u8 = 0x3f;
 
+/// `pcx_t`'s fields read, by offset: `manufacturer`, `version`, `encoding`,
+/// `bits_per_pixel`, `xmin`, `ymin`, `xmax`, `ymax`, `color_planes` and `bytes_per_line`
+/// (REND-8.2).
+const PCX_MANUFACTURER: usize = 0;
+const PCX_VERSION_AT: usize = 1;
+const PCX_ENCODING: usize = 2;
+const PCX_BITS_AT: usize = 3;
+const PCX_XMIN: usize = 4;
+const PCX_YMIN: usize = 6;
+const PCX_XMAX: usize = 8;
+const PCX_YMAX: usize = 10;
+const PCX_PLANES: usize = 65;
+const PCX_BYTES_PER_LINE: usize = 66;
+/// The PCX a skybox face may be: ZSoft's, version 5, 8 bits a pixel (REND-8.2).
+const PCX_SIGNATURE: u8 = 0x0a;
+const PCX_VERSION: u8 = 5;
+const PCX_BITS: u8 = 8;
+
 /// `Image_LoadPCX`: an 8-bit, one-plane, run-length PCX of version 5 through the palette at
 /// its end. Each row decodes `bytes_per_line` pixels and keeps its first `xmax - xmin + 1`,
 /// as the next row's start overwrites the rest in QuakeSpasm. `None` for any other file, or
@@ -92,14 +111,28 @@ pub(crate) fn read_pcx(bytes: &[u8]) -> Option<Image> {
         let pair = header.get(at..at.checked_add(2)?)?;
         Some(u16::from_le_bytes(pair.try_into().ok()?))
     };
-    let (signature, version, encoding, bits, planes) =
-        (byte(0)?, byte(1)?, byte(2)?, byte(3)?, byte(65)?);
-    if signature != 0x0a || version != 5 || encoding != 1 || bits != 8 || planes != 1 {
+    let (signature, version, encoding, bits, planes) = (
+        byte(PCX_MANUFACTURER)?,
+        byte(PCX_VERSION_AT)?,
+        byte(PCX_ENCODING)?,
+        byte(PCX_BITS_AT)?,
+        byte(PCX_PLANES)?,
+    );
+    if signature != PCX_SIGNATURE
+        || version != PCX_VERSION
+        || encoding != 1
+        || bits != PCX_BITS
+        || planes != 1
+    {
         return None;
     }
-    let width = short(8)?.checked_sub(short(4)?)?.checked_add(1)?;
-    let height = short(10)?.checked_sub(short(6)?)?.checked_add(1)?;
-    let line = usize::from(short(66)?);
+    let width = short(PCX_XMAX)?
+        .checked_sub(short(PCX_XMIN)?)?
+        .checked_add(1)?;
+    let height = short(PCX_YMAX)?
+        .checked_sub(short(PCX_YMIN)?)?
+        .checked_add(1)?;
+    let line = usize::from(short(PCX_BYTES_PER_LINE)?);
     // A line shorter than the picture would make it from no data at all; QuakeSpasm leaves
     // the hunk's zeroes there, and the preview host refuses it (REND-8.2).
     if line < usize::from(width) {
@@ -120,10 +153,10 @@ pub(crate) fn read_pcx(bytes: &[u8]) -> Option<Image> {
             row.extend(core::iter::repeat_n(value, usize::from(run)));
         }
         for &index in row.iter().take(usize::from(width)) {
-            let at = usize::from(index).checked_mul(3)?;
-            let colour = palette.get(at..at.checked_add(3)?)?;
+            let at = usize::from(index).checked_mul(AXES)?;
+            let colour = palette.get(at..at.checked_add(AXES)?)?;
             rgba.extend(colour);
-            rgba.push(255);
+            rgba.push(CHANNEL_MAX);
         }
     }
     Some(Image {

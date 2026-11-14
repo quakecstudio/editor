@@ -26,7 +26,12 @@ use qs_client::DynamicLight;
 use crate::alias::rotate_for_entity;
 use crate::look::Look;
 use crate::styles::LightStyles;
+use crate::{AXES, CHANNEL_MAX, RGBA_BYTES};
 
+/// A face with no texinfo's `vecs`.
+const NO_VECS: [[f32; 4]; 2] = [[0.0; 4]; 2];
+/// `l+0.5`: a light's nearest texel (REND-5.3).
+const HALF: f32 = 0.5;
 /// GLQuake's `vid_gamma` on any card but a 3Dfx, "default to 0.7 on non-3dfx hardware"
 /// (REND-3.1).
 pub const GAMMA: f32 = 0.7;
@@ -768,11 +773,11 @@ impl Changes {
                 let start = row
                     .saturating_mul(width)
                     .saturating_add(left)
-                    .saturating_mul(4);
+                    .saturating_mul(RGBA_BYTES);
                 let end = row
                     .saturating_mul(width)
                     .saturating_add(right)
-                    .saturating_mul(4);
+                    .saturating_mul(RGBA_BYTES);
                 if let Some(texels) = atlas.rgba.get(start..end) {
                     rgba.extend_from_slice(texels);
                 }
@@ -815,7 +820,7 @@ impl Tree {
                 let plane = bsp
                     .planes
                     .get(node.planenum)
-                    .map_or(([0.0; 3], 0.0), |p| (p.normal, p.dist));
+                    .map_or(([0.0; AXES], 0.0), |p| (p.normal, p.dist));
                 let faces = (node.firstface..node.firstface.saturating_add(node.numfaces))
                     .filter_map(|n| slots.get(n).copied().flatten())
                     .collect();
@@ -965,11 +970,8 @@ impl Lightmaps {
         let plane = bsp
             .planes
             .get(face.planenum)
-            .map_or(([0.0; 3], 0.0), |p| (p.normal, p.dist));
-        let vecs = bsp
-            .texinfo
-            .get(face.texinfo)
-            .map_or([[0.0; 4]; 2], |t| t.vecs);
+            .map_or(([0.0; AXES], 0.0), |p| (p.normal, p.dist));
+        let vecs = bsp.texinfo.get(face.texinfo).map_or(NO_VECS, |t| t.vecs);
         self.faces.push(PlacedLight {
             at: [column, top],
             size: [smax, tmax],
@@ -1036,9 +1038,9 @@ impl PlacedLight {
                     .saturating_mul(ATLAS_WIDTH)
                     .saturating_add(self.at[0])
                     .saturating_add(s)
-                    .saturating_mul(4);
-                if let Some(texel) = rgba.get_mut(at..at.saturating_add(4)) {
-                    texel.copy_from_slice(&[r, g, b, 255]);
+                    .saturating_mul(RGBA_BYTES);
+                if let Some(texel) = rgba.get_mut(at..at.saturating_add(RGBA_BYTES)) {
+                    texel.copy_from_slice(&[r, g, b, CHANNEL_MAX]);
                 }
             }
         }
@@ -1086,8 +1088,9 @@ impl PlacedLight {
         // s = l - s;": each float assigned to the int `s`, toward zero.
         let off = |vec: [f32; 4], size: usize, min: i16| -> f64 {
             let extent = truncate_i32(f32_of_usize(size.saturating_sub(1)) * TEXEL_UNITS);
-            let l = dot3(impact, [vec[0], vec[1], vec[2]]) + vec[3] - f32::from(min);
-            let nearest = truncate_i32(l + 0.5).clamp(0, extent.max(0));
+            let [x, y, z, offset] = vec;
+            let l = dot3(impact, [x, y, z]) + offset - f32::from(min);
+            let nearest = truncate_i32(l + HALF).clamp(0, extent.max(0));
             f64::from(truncate_i32(l - f32_of_i32(nearest)))
         };
         let [svec, tvec] = self.vecs;
@@ -1114,10 +1117,10 @@ impl PlacedLight {
             light.origin[1] - normal[1] * dist,
             light.origin[2] - normal[2] * dist,
         ];
-        let [svec, tvec] = self.vecs;
+        let [[sx, sy, sz, s_offset], [tx, ty, tz, t_offset]] = self.vecs;
         let local = [
-            dot3(impact, [svec[0], svec[1], svec[2]]) + svec[3] - f32::from(self.texturemins[0]),
-            dot3(impact, [tvec[0], tvec[1], tvec[2]]) + tvec[3] - f32::from(self.texturemins[1]),
+            dot3(impact, [sx, sy, sz]) + s_offset - f32::from(self.texturemins[0]),
+            dot3(impact, [tx, ty, tz]) + t_offset - f32::from(self.texturemins[1]),
         ];
         let [smax, tmax] = self.size;
         for t in 0..tmax {
@@ -1304,9 +1307,9 @@ pub(crate) fn fullbright_split(
     if !pixels.iter().any(|&p| p >= FULLBRIGHT_FIRST) {
         return None;
     }
-    let black = [0, 0, 0, 255];
-    let mut lit = Vec::with_capacity(pixels.len().saturating_mul(4));
-    let mut glow = Vec::with_capacity(pixels.len().saturating_mul(4));
+    let black = [0, 0, 0, CHANNEL_MAX];
+    let mut lit = Vec::with_capacity(pixels.len().saturating_mul(RGBA_BYTES));
+    let mut glow = Vec::with_capacity(pixels.len().saturating_mul(RGBA_BYTES));
     for &p in pixels {
         if p >= FULLBRIGHT_FIRST {
             lit.extend(black);

@@ -19,6 +19,7 @@ use qs_bsp::Bsp;
 use qs_client::{Anchor, EntitySlot, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
 use qs_wad::{Conchars, QPic, WAD_CONCHARS_TRANSPARENT, Wad};
 
+use crate::CHANNEL_MAX;
 use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, Shading, entity_light};
 use crate::camera::Camera;
 use crate::gpu::{
@@ -41,6 +42,16 @@ const BAR_WIDTH: i32 = 320;
 const MENU_HEIGHT: i32 = 200;
 /// A console character's side on the screen, `Draw_Character`'s 8 (HUD-3).
 const CHAR_SIDE: f32 = 8.0;
+/// `conchars`' 16 by 16 grid of glyphs, each 8 pixels a side: a character's row is its high
+/// nibble, its column its low (WAD-4.2).
+const GLYPHS_ACROSS: usize = 16;
+const GLYPH_SIDE: usize = 8;
+const GLYPH_ROW_SHIFT: u8 = 4;
+const GLYPH_COLUMN_MASK: u8 = 0x0f;
+/// A 2D quad's vertices, two triangles.
+const QUAD_VERTICES: u32 = 6;
+/// The screen before the window says its size, 640 by 480.
+const DEFAULT_SCREEN: [i32; 2] = [640, 480];
 /// `frow = row*0.0625`: a character's share of the 16 by 16 `conchars` grid.
 const CHAR_CELL: f32 = 0.0625;
 /// The character `Draw_Character` does not draw, the space.
@@ -199,17 +210,17 @@ pub(crate) fn pic_image(pic: &QPic<'_>, palette: &Palette) -> Image {
 /// `conchars` through `palette`, index 0 transparent: `Draw_Init` sets every 0 to 255,
 /// "proper transparent color" (WAD-4.2).
 fn conchars_image(chars: &Conchars<'_>, palette: &Palette) -> Image {
-    let side = u32::try_from(qs_wad::WAD_CONCHARS_SIZE).unwrap_or(128);
+    let side = u32::try_from(qs_wad::WAD_CONCHARS_SIZE).unwrap_or(u32::MAX);
     let mut rgba = Vec::new();
     // The glyphs row by row of the 16 by 16 grid, each 8 rows of 8 pixels.
     let glyphs: Vec<[u8; 64]> = (0..=u8::MAX).map(|n| chars.glyph(n)).collect();
-    for row in 0..16_usize {
-        for line in 0..8_usize {
-            for column in 0..16_usize {
-                let glyph = glyphs.get(row.saturating_mul(16).saturating_add(column));
-                for x in 0..8_usize {
+    for row in 0..GLYPHS_ACROSS {
+        for line in 0..GLYPH_SIDE {
+            for column in 0..GLYPHS_ACROSS {
+                let glyph = glyphs.get(row.saturating_mul(GLYPHS_ACROSS).saturating_add(column));
+                for x in 0..GLYPH_SIDE {
                     let p = glyph
-                        .and_then(|g| g.get(line.saturating_mul(8).saturating_add(x)))
+                        .and_then(|g| g.get(line.saturating_mul(GLYPH_SIDE).saturating_add(x)))
                         .copied()
                         .unwrap_or(WAD_CONCHARS_TRANSPARENT);
                     if p == WAD_CONCHARS_TRANSPARENT {
@@ -328,7 +339,7 @@ impl Play {
             fog: FogState::new(fog_parse_worldspawn(entities)),
             water_alpha: 1.0,
             skyfog: sky.skyfog,
-            screen: [640, 480],
+            screen: DEFAULT_SCREEN,
             zfix: true,
             md5_models: true,
             look: Look::default(),
@@ -603,7 +614,8 @@ impl Play {
         let screen = self.screen.map(f32_of_i32);
         let mut flat = FlatFrame::default();
         // R_PolyBlend: `if (!v_blend[3]) return`.
-        if scene.blend[3] != 0.0 {
+        let [_, _, _, blend_alpha] = scene.blend;
+        if blend_alpha != 0.0 {
             flat.quad(
                 None,
                 FlatBlend::Blended,
@@ -748,8 +760,8 @@ impl Play {
                 let Some((pic, _)) = self.pics.get(CONCHARS) else {
                     return;
                 };
-                let row = f32::from(ch >> 4) * CHAR_CELL;
-                let column = f32::from(ch & 15) * CHAR_CELL;
+                let row = f32::from(ch >> GLYPH_ROW_SHIFT) * CHAR_CELL;
+                let column = f32::from(ch & GLYPH_COLUMN_MASK) * CHAR_CELL;
                 let at = [f32_of_i32(*x), f32_of_i32(y)];
                 let texture = [[column, row], [column + CHAR_CELL, row + CHAR_CELL]];
                 flat.quad(
@@ -804,9 +816,9 @@ impl Play {
                 // `Draw_Fill`: `host_basepal[c*3]/255.0`, the colour before the gamma.
                 let [r, g, b, _] = self.palette.rgba(u8::try_from(*color).unwrap_or(0));
                 let color = [
-                    f32::from(r) / 255.0,
-                    f32::from(g) / 255.0,
-                    f32::from(b) / 255.0,
+                    f32::from(r) / f32::from(CHANNEL_MAX),
+                    f32::from(g) / f32::from(CHANNEL_MAX),
+                    f32::from(b) / f32::from(CHANNEL_MAX),
                     1.0,
                 ];
                 let at = [*x, *y].map(f32_of_i32);
@@ -914,25 +926,23 @@ impl FlatFrame {
             texture,
             color,
         };
-        let corners = [
+        let [a, b, c, d] = [
             corner([x, y], [s0, t0]),
             corner([x + w, y], [s1, t0]),
             corner([x + w, y + h], [s1, t1]),
             corner([x, y + h], [s0, t1]),
         ];
         let first = u32_of(self.vertices.len());
-        self.vertices.extend([
-            corners[0], corners[1], corners[2], corners[0], corners[2], corners[3],
-        ]);
+        self.vertices.extend([a, b, c, a, c, d]);
         match self.draws.last_mut() {
             Some(last) if last.pic == pic && last.blend == blend => {
-                last.count = last.count.saturating_add(6);
+                last.count = last.count.saturating_add(QUAD_VERTICES);
             }
             _ => self.draws.push(FlatDraw {
                 pic,
                 blend,
                 first,
-                count: 6,
+                count: QUAD_VERTICES,
             }),
         }
     }
@@ -1000,7 +1010,8 @@ impl FogState {
         let mut fog = self.at_raw(now);
         for channel in &mut fog.color {
             // "find closest 24-bit RGB value, so solid-colored sky can match the fog perfectly"
-            *channel = (channel.clamp(0.0, 1.0) * 255.0).round() / 255.0;
+            let most = f32::from(CHANNEL_MAX);
+            *channel = (channel.clamp(0.0, 1.0) * most).round() / most;
         }
         fog
     }
