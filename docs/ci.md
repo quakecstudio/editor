@@ -239,20 +239,21 @@ control step (`new` from GitHub) must fail and show its request in the trace.
 
 ### Nightly runs
 
-`Fuzz` and `Differential` take most of the runners for hours, so they run at night, Eastern
-time. GitHub starts scheduled runs late under load: through November 2026 they started six to
-nine hours after their cron times. So both are scheduled in the afternoon (`timezone:
-"America/New_York"`), `Fuzz` at 15:43 and `Differential` at 16:47, to start in the evening, and
-the [`night-window`](../.github/actions/night-window/action.yml) action holds them to the night:
+`Fuzz` and `Differential` run on a schedule (`timezone: "America/New_York"`), `Fuzz` at 15:43
+and `Differential` at 16:47; GitHub starts scheduled runs late under load, through November
+2026 six to nine hours after their cron times, so they run in the evening. Every job has its
+own `timeout-minutes`.
 
-- the `Night window` job cancels a scheduled run that starts outside 19:00 to 03:00, so the run
-  ends `cancelled` and the nightly check in `run-phase` lists it;
-- the `Morning deadline` job waits for the run's other jobs and cancels the run if any is still
-  queued or running at 07:00, so queueing or a long chain of jobs cannot hold runners into the
-  day.
-
-A run started by hand (`workflow_dispatch`) is never cancelled. If GitHub's delay changes and
-the runs keep being cancelled for starting outside the window, move the cron times.
+Most of `Differential`'s runner time is the compiler differentials: generated programs, each
+codebase's 128 rounds, and each codebase's functions on their own. They prove the compiler and
+the VM against the oracles, so the same inputs give the same result. The `Compiler changes` job
+hashes those inputs (the `qc-*` crates, the VM side's simulation and format crates,
+`qs-differential`, xtask, the oracles, the corpus pins, `Cargo.lock`, the toolchain and the
+workflow) and looks for the marker `Compiler differentials passed` saves on `main` once every
+one of them has passed on those inputs. With the marker found, the compiler differentials are
+skipped; a run started by hand (`workflow_dispatch`) runs them anyway. The jobs that only need
+the oracles' programs run `cargo xtask oracles build`; the oracles' own vectors and
+differentials run once, in the `Differential` job.
 
 [`.github/workflows/fuzz.yml`](../.github/workflows/fuzz.yml) runs nightly and on demand
 (`workflow_dispatch`), never on pull requests or in the merge queue, and is **not** a required
