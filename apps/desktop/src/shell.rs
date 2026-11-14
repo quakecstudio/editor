@@ -243,7 +243,6 @@ pub enum CentreTab {
     Search,
 }
 
-/// The editor's area, whose egui id is the editor view's.
 /// Whether a pointer button is held, as one is during a drag.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PointerHeld {
@@ -273,6 +272,7 @@ impl FocusNow {
     }
 }
 
+/// The editor's area, whose egui id is the editor view's.
 pub(crate) const EDITOR_AREA: Area = Area::Editor;
 /// How far the player's eye is above its origin: id's `self.view_ofs = '0 0 22'` in
 /// `PutClientInServer`, so the eye is where the camera was (MAP-13).
@@ -3749,7 +3749,6 @@ impl Shell {
     }
 }
 
-/// The centre's own tabs after the files' tabs: the Editor tab too when no file is open.
 /// Whether any file is open in the centre.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OpenFiles {
