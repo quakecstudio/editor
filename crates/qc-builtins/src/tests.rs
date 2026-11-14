@@ -13,8 +13,6 @@
 
 use crate::math;
 use crate::table::{self, BUILTIN_MAX_NUMBER, Class};
-use crate::tokenize::TokenIndex;
-use crate::userinfo::ClientSlot;
 use qc_vm::convert::float_to_int;
 
 /// Compares two f32 by bits, so NaNs and signed zeros are distinguished (DIFF-9.4).
@@ -1008,6 +1006,8 @@ mod bodies {
     )]
 
     use crate::mock::{EngineProfile, MessageDest, MockEngine, Precache, Unimplemented};
+    use crate::tokenize::TokenIndex;
+    use crate::userinfo::ClientSlot;
     use crate::{MockBuiltins, math};
     use qc_edict::system::{SYSTEM_GLOBALS, field_by_name, global_by_name};
     use qc_edict::{EDICT_SYS_GLOBALS_END, EdictNumber};
