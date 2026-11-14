@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use qs_agent::{Message, Reply, ToolCall, ToolSpec};
+use qs_agent::{Message, ModelError, Reply, ToolCall, ToolSpec};
 
 use crate::{Effort, Header, ProviderConfig, Secret, command_of, result_text, tool_name};
 
@@ -162,15 +162,15 @@ fn text_block(text: &str) -> Vec<Value> {
 }
 
 /// The reply in `answer`, and the content to send back for it.
-pub(crate) fn reply(answer: &Value, tools: &[ToolSpec]) -> Result<(Reply, Value), String> {
+pub(crate) fn reply(answer: &Value, tools: &[ToolSpec]) -> Result<(Reply, Value), ModelError> {
     let stop = answer.get("stop_reason").and_then(Value::as_str);
     if stop == Some("refusal") {
-        return Err("the model declined the request".to_owned());
+        return Err(ModelError::Declined);
     }
     let content = answer
         .get("content")
         .and_then(Value::as_array)
-        .ok_or_else(|| format!("the answer has no content: {answer}"))?;
+        .ok_or_else(|| ModelError::Malformed(format!("the answer has no content: {answer}")))?;
     let mut text = String::new();
     let mut calls = Vec::new();
     for block in content {
@@ -204,7 +204,7 @@ pub(crate) fn reply(answer: &Value, tools: &[ToolSpec]) -> Result<(Reply, Value)
         return Ok((Reply::Calls { text, calls }, raw));
     }
     if stop == Some("max_tokens") {
-        return Err("the reply was cut off at max_tokens".to_owned());
+        return Err(ModelError::CutOff);
     }
     Ok((Reply::Finish { summary: text }, raw))
 }

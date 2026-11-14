@@ -11,7 +11,7 @@
 
 use serde_json::{Value, json};
 
-use qs_agent::{Message, Reply, ToolCall, ToolSpec};
+use qs_agent::{Message, ModelError, Reply, ToolCall, ToolSpec};
 
 use crate::{Header, ProviderConfig, Secret, command_of, result_text, tool_name};
 
@@ -109,19 +109,19 @@ fn assistant(text: &str, calls: &[ToolCall]) -> Value {
 }
 
 /// The reply in `answer`, and the message to send back for it.
-pub(crate) fn reply(answer: &Value, tools: &[ToolSpec]) -> Result<(Reply, Value), String> {
+pub(crate) fn reply(answer: &Value, tools: &[ToolSpec]) -> Result<(Reply, Value), ModelError> {
     let choice = answer
         .get("choices")
         .and_then(Value::as_array)
         .and_then(|choices| choices.first())
-        .ok_or_else(|| format!("the answer has no choices: {answer}"))?;
+        .ok_or_else(|| ModelError::Malformed(format!("the answer has no choices: {answer}")))?;
     let finish = choice.get("finish_reason").and_then(Value::as_str);
     if finish == Some("content_filter") {
-        return Err("the provider's content filter withheld the reply".to_owned());
+        return Err(ModelError::Filtered);
     }
     let message = choice
         .get("message")
-        .ok_or_else(|| format!("the choice has no message: {choice}"))?;
+        .ok_or_else(|| ModelError::Malformed(format!("the choice has no message: {choice}")))?;
     let text = message
         .get("content")
         .and_then(Value::as_str)
@@ -137,7 +137,7 @@ pub(crate) fn reply(answer: &Value, tools: &[ToolSpec]) -> Result<(Reply, Value)
         return Ok((Reply::Calls { text, calls }, raw));
     }
     if finish == Some("length") {
-        return Err("the reply was cut off at the provider's token limit".to_owned());
+        return Err(ModelError::CutOff);
     }
     Ok((Reply::Finish { summary: text }, raw))
 }

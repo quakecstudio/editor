@@ -13,7 +13,7 @@ use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 
-use qs_agent::{Message, Model as _, Reply, ToolCall, ToolSpec};
+use qs_agent::{Message, Model as _, ModelError, Reply, ToolCall, ToolSpec};
 use serde_json::{Value, json};
 
 use crate::{
@@ -196,9 +196,10 @@ fn anthropic_failures_and_joined_results() {
         },
     ];
     let refused = model.reply("s", &[], &transcript).unwrap_err();
-    assert!(refused.contains("declined"), "{refused}");
+    assert_eq!(refused, ModelError::Declined);
+    assert_eq!(refused.to_string(), "the model declined the request");
     let cut = model.reply("s", &[], &transcript).unwrap_err();
-    assert!(cut.contains("max_tokens"), "{cut}");
+    assert_eq!(cut, ModelError::CutOff);
     assert!(model.reply("s", &[], &transcript).is_err());
     let sent = transport.sent.borrow();
     let body = &sent[0].2;
@@ -423,6 +424,7 @@ fn keys_never_appear_in_logs_settings_or_errors() {
         requests[0].contains(KEY),
         "the request itself carries the key"
     );
+    let error = error.to_string();
     assert!(error.contains("401") && !error.contains(KEY), "{error}");
     let written = String::from_utf8(log.0.lock().unwrap().clone()).unwrap();
     assert!(
@@ -536,7 +538,7 @@ fn anthropic_streams_text_thinking_and_calls() {
     let error = model
         .reply_streaming("s", &tools(), &transcript, &mut |_| {})
         .unwrap_err();
-    assert_eq!(error, "Overloaded");
+    assert_eq!(error, ModelError::Stream("Overloaded".to_owned()));
     let sent = transport.sent.borrow();
     assert_eq!(sent[0].2["stream"], true);
     let back = &sent[1].2["messages"][1]["content"][0];

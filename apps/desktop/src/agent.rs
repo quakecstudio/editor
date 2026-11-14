@@ -12,8 +12,8 @@ use std::sync::mpsc;
 
 use eframe::egui::{self, RichText, Ui};
 use qs_agent::{
-    AgentProfile, Asking, Message, Model, Outcome, Permissions, Permit, Reply, Request, Run,
-    RunConfig, RunReport, history,
+    AgentProfile, Asking, Message, Model, ModelError, Outcome, Permissions, Permit, Reply, Request,
+    Run, RunConfig, RunReport, history,
 };
 use qs_commands::Session;
 use qs_models::{KeyStore, Keychain, ProviderConfig, ProviderKind, ProviderModel, Secret};
@@ -58,7 +58,7 @@ enum Event {
     /// A piece of the reply's text, as it is written.
     Text(String),
     /// The whole reply.
-    Reply(Result<Reply, String>),
+    Reply(Result<Reply, ModelError>),
 }
 
 /// One task the agent works on.
@@ -588,7 +588,8 @@ impl AgentPanel {
                     &[],
                     &[Message::User { text: prompt }],
                 )
-                .map(|reply| reply.inline_answer());
+                .map(|reply| reply.inline_answer())
+                .map_err(|error| error.to_string());
             // The editor that asked may have gone; then nothing waits for the answer.
             let _sent = answer.send(reply);
             wake();

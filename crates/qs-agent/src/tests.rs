@@ -19,8 +19,8 @@ use qs_workbench::{Config, Workbench, register};
 use serde_json::{Value, json};
 
 use super::{
-    AgentError, AgentProfile, Decision, Message, Model, Outcome, Permissions, Permit, READ_TOOLS,
-    Reply, RunConfig, ToolCall, ToolRule, ToolSpec, run, system_prompt, tools,
+    AgentError, AgentProfile, Decision, Message, Model, ModelError, Outcome, Permissions, Permit,
+    READ_TOOLS, Reply, RunConfig, ToolCall, ToolRule, ToolSpec, run, system_prompt, tools,
 };
 
 /// A model that answers with its script, in order, and then fails.
@@ -44,13 +44,13 @@ impl Model for Scripted {
         system: &str,
         tools: &[ToolSpec],
         transcript: &[Message],
-    ) -> Result<Reply, String> {
+    ) -> Result<Reply, ModelError> {
         assert_eq!(system, system_prompt());
         assert!(tools.iter().any(|t| t.name == "compile"));
         self.seen.push(transcript.len());
         self.replies
             .pop_front()
-            .ok_or_else(|| "out of script".to_owned())
+            .ok_or_else(|| ModelError::Stopped("out of script".to_owned()))
     }
 }
 
@@ -306,7 +306,7 @@ fn turns_run_out_and_models_fail() {
     let mut silent = Scripted::new(Vec::new());
     assert!(matches!(
         run(&mut session, &mut silent, "anything", &limits),
-        Err(AgentError::Model(why)) if why == "out of script"
+        Err(AgentError::Model(ModelError::Stopped(why))) if why == "out of script"
     ));
 }
 
@@ -391,7 +391,7 @@ impl Model for Recording {
         system: &str,
         _tools: &[ToolSpec],
         transcript: &[Message],
-    ) -> Result<Reply, String> {
+    ) -> Result<Reply, ModelError> {
         self.system = system.to_owned();
         if let Some(Message::User { text }) = transcript.first() {
             self.brief.clone_from(text);
@@ -475,8 +475,8 @@ fn a_run_steps_one_reply_at_a_time() {
     assert!(matches!(report.outcome, Outcome::Done { .. }));
     let mut failing = super::Run::start(&mut session, "x", RunConfig::new(&root)).unwrap();
     assert!(matches!(
-        failing.answer(&mut session, Err("overloaded".to_owned())),
-        Err(AgentError::Model(why)) if why == "overloaded"
+        failing.answer(&mut session, Err(ModelError::Transport("overloaded".to_owned()))),
+        Err(AgentError::Model(ModelError::Transport(why))) if why == "overloaded"
     ));
     let mut pieces = Vec::new();
     let mut model = Scripted::new(vec![finish()]);

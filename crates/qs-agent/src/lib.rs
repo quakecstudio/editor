@@ -450,6 +450,42 @@ pub enum Reply {
     },
 }
 
+/// Why a model gave no reply, which ends the run.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ModelError {
+    /// The request did not reach the model, or the provider answered with an error status:
+    /// what the transport says.
+    Transport(String),
+    /// The model declined the request.
+    Declined,
+    /// The provider's content filter withheld the reply.
+    Filtered,
+    /// The reply was cut off at the token limit.
+    CutOff,
+    /// The answer was not what the API gives: what is missing, with the answer.
+    Malformed(String),
+    /// The streamed answer ended with an error event: its message.
+    Stream(String),
+    /// The model stopped answering before it was asked: why (a cost cap, a script at its end).
+    Stopped(String),
+}
+
+impl std::fmt::Display for ModelError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transport(why)
+            | Self::Malformed(why)
+            | Self::Stream(why)
+            | Self::Stopped(why) => f.write_str(why),
+            Self::Declined => f.write_str("the model declined the request"),
+            Self::Filtered => f.write_str("the provider's content filter withheld the reply"),
+            Self::CutOff => f.write_str("the reply was cut off at the token limit"),
+        }
+    }
+}
+
+impl std::error::Error for ModelError {}
+
 /// A model: anything that answers a transcript with its next step.
 pub trait Model {
     /// The next step for `transcript`, under the rules of `system`, `tools` being the tools
@@ -457,13 +493,13 @@ pub trait Model {
     ///
     /// # Errors
     ///
-    /// The model's own error, as text, which ends the run.
+    /// The model's [`ModelError`], which ends the run.
     fn reply(
         &mut self,
         system: &str,
         tools: &[ToolSpec],
         transcript: &[Message],
-    ) -> Result<Reply, String>;
+    ) -> Result<Reply, ModelError>;
 
     /// As [`Model::reply`], calling `on_text` with each piece of the reply's text as it
     /// arrives, for a window that shows the model writing. A model that cannot stream gives
@@ -478,7 +514,7 @@ pub trait Model {
         tools: &[ToolSpec],
         transcript: &[Message],
         on_text: &mut dyn FnMut(&str),
-    ) -> Result<Reply, String> {
+    ) -> Result<Reply, ModelError> {
         let reply = self.reply(system, tools, transcript)?;
         match &reply {
             Reply::Calls { text, .. } | Reply::Finish { summary: text } => on_text(text),
@@ -601,7 +637,7 @@ pub struct RunReport {
 #[derive(Debug)]
 pub enum AgentError {
     /// The model failed.
-    Model(String),
+    Model(ModelError),
     /// The checkpoint before the run could not be recorded.
     Checkpoint(String),
 }
@@ -858,7 +894,7 @@ impl Run {
     pub fn answer<C: 'static>(
         &mut self,
         session: &mut Session<C>,
-        reply: Result<Reply, String>,
+        reply: Result<Reply, ModelError>,
     ) -> Result<(), AgentError> {
         if std::mem::take(&mut self.compacting) {
             let summary = match reply.map_err(AgentError::Model)? {
