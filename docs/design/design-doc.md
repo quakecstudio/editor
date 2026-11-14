@@ -285,7 +285,7 @@ One command, `cargo xtask ci`, must pass before any merge: fmt, clippy with pani
 - **Engine integration tests.** Headless preview host runs scripted scenarios in CI on all three OSes, using open test assets (LibreQuake or our own; check the license) since id's data can't be redistributed.
 - **Agent evals.** A fixed set of modding tasks (add a weapon, fix a crash, port a mod to the rerelease) scored on compile success, test pass and reviewer acceptance.
 
-**Release.** Signed and notarized macOS DMG for Apple silicon (arm64); signed MSI and portable zip for Windows x64 and arm64; AppImage, Flatpak, deb and rpm for Linux x86\_64 and aarch64. Checksums on every release. Crash-safe logging to a per-OS log directory, with source text never logged.
+**Release.** Signed and notarized macOS installer package for Apple silicon (arm64); signed MSI and portable zip for Windows x64 and arm64; AppImage, Flatpak, deb and rpm for Linux x86\_64 and aarch64. Checksums on every release. Crash-safe logging to a per-OS log directory, with source text never logged.
 
 ## MVP scope
 

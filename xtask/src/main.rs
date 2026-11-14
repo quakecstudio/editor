@@ -11,7 +11,8 @@
 //! - `deny-fixtures`: proves `deny.toml` rejects incompatible licenses and
 //!   wildcard versions (needs network access to the crates.io index).
 //! - `layers`: checks every crate's layer in `layers.toml` and that it depends
-//!   only on its own layer or lower (`docs/layers.md`).
+//!   only on its own layer or lower (`docs/layers.md`), and that the document's
+//!   crate table is the one `layers.toml` renders; `layers --write` writes it.
 //! - `licenses`: checks the SPDX header of every file and the ported-file
 //!   header rule in `docs/porting.md`.
 //! - `attribution`: checks every asset file is listed in `ATTRIBUTION.md`.
@@ -216,8 +217,8 @@ enum Task {
     FteqccProfile(fteqcc_profile::Args),
     /// Run the fuzz targets.
     Fuzz(fuzz::Args),
-    /// No crate depends on a higher layer.
-    Layers,
+    /// No crate depends on a higher layer; write or check the crate table of docs/layers.md.
+    Layers(layers::Args),
     /// Every corpus file lexes.
     LexCorpus(lex_corpus::Args),
     /// SPDX lines and ported-file headers.
@@ -275,6 +276,7 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::CodegenCorpus(args) => ("codegen-corpus", codegen_corpus::main(root, args)),
         Task::FormatCorpus(args) => ("format-corpus", format_corpus::main(root, args)),
         Task::Commands(args) => ("commands", commands::main(root, args)),
+        Task::Layers(args) => ("layers", layers::main(root, args)),
         Task::CompilerDiff(args) => ("compiler-diff", compiler_diff::main(root, args)),
         Task::Corpus(args) => ("corpus", corpus::main(root, args)),
         Task::Differential(args) => ("differential", differential::main(root, args)),
@@ -331,7 +333,6 @@ fn run(root: &Path, task: &Task, ci_steps: &[ci::Step]) -> bool {
         Task::DenyFixtures => {
             return print_outcome("deny-fixtures", fixtures::deny(root, &exec::System));
         }
-        Task::Layers => return print_outcome("layers", layers::check(root)),
         Task::Licenses => return print_outcome("licenses", licenses::run(root)),
     };
     match result {
@@ -493,7 +494,7 @@ mod tests {
     #[test]
     fn ci_runs_the_steps_it_is_given() {
         let root = workspace_root();
-        let ci = |list: &[&str]| task(list).unwrap_or(Task::Layers);
+        let ci = |list: &[&str]| task(list).unwrap_or(Task::Adr);
         assert!(run(&root, &ci(&["ci"]), &PASSING));
         assert!(!run(&root, &ci(&["ci"]), &FAILING));
         let skip = ci(&["ci", "--skip", "no-such-command-xtask-main"]);
@@ -508,7 +509,11 @@ mod tests {
 
     #[test]
     fn an_in_process_check_runs_without_the_ci_steps() {
-        assert!(run(&workspace_root(), &Task::Layers, &FAILING));
+        assert!(run(
+            &workspace_root(),
+            &Task::Layers(layers::Args::default()),
+            &FAILING
+        ));
     }
 
     #[test]

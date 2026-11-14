@@ -36,11 +36,11 @@ Each layer may depend only on layers below it; `cargo xtask layers` enforces thi
 | L1 VM | qc-vm, qc-edict, qc-builtins: what the engine executes |
 | L2 syntax | Preprocessor, lossless CST, progs.src project graph |
 | L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions |
-| L4 bridges | Our QuakeC and map compilers; the engine bridge |
+| L4 bridges | Our QuakeC and map compilers; the engine bridge, game client, simulation and sound |
 | L5 commands | Command engine, session, undo: one registry for UI, CLI, agent and MCP |
 | L6 agent | Agent loop, model providers, checkpoints, MCP and ACP |
 | L7 UI | The app on the chosen framework |
-| apps | Desktop app, CLI, LSP server |
+| apps | Desktop app, CLI, LSP server, preview host |
 
 The only C programs are the oracles in `oracles/` (id's VM trace harness, id's qcc, a pinned FTEQCC, id's engine as the engine oracle, later id's map tools and ericw-tools; built by `cargo xtask oracles`, CI only). The preview host is the Rust binary `apps/quakec-engine`, which runs as its own process beside the IDE ([ADR-0004](adr/0004-preview-host-base.md)).
 
@@ -98,11 +98,28 @@ Each phase starts when the previous gate closes, so a slip in one phase moves ev
 
 ## Where we are
 
-Phase 0 is closed ([gate report](gates/p0.md)): the repo, `cargo xtask ci`, CI on three OSes with a protected `main`, the plan and board, and the ADR, porting and readiness processes, with every Phase 0 decision an accepted ADR (0001 to 0011).
+`python3 plan/status.py` has the live state, phase by phase; this section records only the
+gates, and is brought up to date by each gate review.
 
-Phase 1 is closed ([gate report](gates/p1.md)): specs and Rust ports of id's formats and VM, the oracles and the differential runner, proved against id's code.
+Closed, each with its gate report:
 
-Phase 2, the language core and editor, is in progress: the lexer, preprocessor, parser, project graph, semantic model and engine-target database are built, with FTEQCC's dialect ported under ADR-0017, and the L2 and L3 readiness reviews are under way ([`readiness/`](readiness/)). `python3 plan/status.py --phase P2` lists what is ready.
+- Phase 0, decisions and spikes ([report](gates/p0.md)).
+- Phase 1, foundations ([report](gates/p1.md)).
+- Phase 2, language core and editor ([report](gates/p2.md)).
+- Phase 3, live preview ([report](gates/p3.md)).
+- Phase 5, map entity editing ([report](gates/p5.md)).
+
+Open:
+
+- Phase 4, agent and MVP release: every issue an agent can do is closed. The gate
+  ([#136](https://github.com/quakecstudio/editor/issues/136)) is the MVP release and waits for
+  the steps only a person can take: the license review, the MVP acceptance on macOS, the
+  Windows and Linux checks and the release itself.
+- Phase 6, brushes and map compiler: the gate review of 2026-11-14 found the gate not met
+  ([report](gates/p6.md)) and filed the defects it found, which are closed; the gate
+  ([#171](https://github.com/quakecstudio/editor/issues/171)) stays open until it is reviewed
+  again and the foundation refactors P6-39 to P6-41 have landed.
+- Phase 7, lighting and performance: waits on the Phase 6 gate.
 
 The largest risk on the way to the MVP is the Rust preview host (R-11).
 

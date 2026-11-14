@@ -43,15 +43,15 @@ picture:
 ```mermaid
 flowchart TB
   apps["Apps: quakec-studio, quakec-ide CLI, quakec-lsp, preview host"]
-  ui["L7 UI: editor widget, panels, wgpu renderer (qs-render, qs-editor-view)"]
+  ui["L7 UI: editor widget, panels, wgpu renderer"]
   agent["L6 Agent + MCP: agent loop, model providers, checkpoints, tools"]
-  cmd["L5 Command engine: session, undo, one registry (qs-commands, qs-workbench)"]
-  eb["L4 Engine bridge + sim: qs-bridge, qs-sim, qs-sound, qs-client, qs-engine"]
-  cb["L4 Compilers (ours): QuakeC (qc-codegen); map bsp, vis, light"]
-  sema["L3 Semantics: resolution, types, dialects, engine-target DB, LSP (qc-sema, qc-engines, qc-ide)"]
-  syn["L2 Syntax + project: preprocessor, lossless CST, progs.src graph (qc-lexer, qc-preproc, qc-syntax, qc-project)"]
-  vm["L1 VM: qc-vm, qc-edict, qc-builtins, what the engine executes"]
-  fmt["L0 Formats: progs.dat, .lno, .map, BSP, WAD2, MDL, PAK, VFS (qc-progs, qc-types, qs-bsp, qs-map, qs-vfs, ...)"]
+  cmd["L5 Command engine: session, undo, one registry; the workbench the commands act on"]
+  eb["L4 Engine bridge + sim: the bridge and its client, the game client, simulation, sound"]
+  cb["L4 Compilers (ours): QuakeC; map bsp, vis, light"]
+  sema["L3 Semantics: resolution, types, dialects, engine-target DB, LSP"]
+  syn["L2 Syntax + project: preprocessor, lossless CST, progs.src graph"]
+  vm["L1 VM: the VM, edicts and builtins, what the engine executes"]
+  fmt["L0 Formats: progs.dat, .lno, .map, BSP, WAD2, MDL, PAK, VFS"]
   apps --> ui --> agent --> cmd
   cmd --> eb
   cmd --> cb

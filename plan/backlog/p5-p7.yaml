@@ -1106,6 +1106,78 @@ groups:
     - 'A unit test of map-diff takes our MAX_HULL_POINTS stop as alike with qbsp''s unrelated stop on lq-end and no other stop, and fails before the change'
     verify:
     - 'cargo test -p xtask; the Differential run''s map-tools job'
+  - key: P6-39
+    title: 'Generate the crate table of docs/layers.md and bring the roadmap up to date'
+    labels:
+    - repo
+    - area:docs
+    - type:chore
+    size: S
+    reqs:
+    - ARCH-1
+    depends:
+    - P5-19
+    deliverable:
+    - 'xtask/src/layers.rs: cargo xtask layers --write writes the crate table of docs/layers.md from layers.toml and each crate''s package description, and cargo xtask layers fails when the table is not what they render'
+    - 'docs/layers.md with that table and the L4 row saying what the layer holds now; .claude/rules/layering.md and CLAUDE.md with no crate table of their own, linking to it'
+    - 'docs/roadmap.md, "Where we are": the gates as they stand, pointing at python3 plan/status.py for the live state'
+    - 'apps/desktop/src/shell.rs: its header no longer calls built panels placeholders'
+    acceptance:
+    - 'cargo xtask layers passes on main, and a test shows it fails on a table edited by hand, on a document without the table''s lines and on a crate with no description'
+    - 'Every crate in layers.toml has a row in docs/layers.md, and no other document lists crates by layer (docs/architecture.md''s diagram and the tests and tooling rows included)'
+    verify:
+    - 'cargo test -p xtask; cargo xtask layers'
+  - key: P6-40
+    title: 'Move map editing into qs-map-edit, with no dependency on QuakeC'
+    labels:
+    - L5-commands
+    - area:map
+    - type:chore
+    size: L
+    reqs:
+    - ARCH-1
+    - MAP-4
+    - MAP-12
+    depends:
+    - P6-39
+    - P6-21
+    deliverable:
+    - 'crates/qs-map-edit (L5): the map document, its state (MapStore) and the map commands that need no QuakeC (crates/qs-workbench/src/map_edit and its modules but the spawn filter, map_backup, map_uv, map_textures, texture_import, and the compile report), with MapEditError, a README and docs/api/qs-map-edit.txt'
+    - 'The seam it is given what it needs through: HasMap, with the project (root, entity classes, targeting keys, entity problems), the running game (LiveMap) and the game''s folders, implemented by qs-workbench from QuakeC and the preview; the entity schema and its checker stay in qc-sema'
+    - 'crates/qs-workbench depending on qs-map-edit and keeping what needs QuakeC or the preview: entity_classes, map_check, the spawn filter, map_compile, map_profile, and sending a live change to the engine'
+    - 'layers.toml and xtask/src/layers.rs: a rule that qs-map-edit depends directly on no qc-* crate, qs-workbench or qs-engine, checked by cargo xtask layers'
+    - 'A test in crates/qs-tests/tests/it pinning the command ids of the CLI''s registry and of MCP''s, written before any command moves'
+    acceptance:
+    - 'Behaviour is unchanged: the command ids of the CLI and of MCP are what they were, docs/commands.md does not change, and every test passes with no change but moved paths, the HasMap implementation each command context gains, and the error variants three assertions name'
+    - 'cargo xtask layers fails when a qc-* crate is added to qs-map-edit''s dependencies, shown by a test; docs/api/qs-map-edit.txt names no qc_ path'
+    - 'The text of every error a map command returns is what it was (WorkbenchError carries MapEditError and shows it unchanged)'
+    - 'No ratchet is lowered, cargo xtask conventions passes with no new CONV-17 baseline line, and a baseline line changes only to follow moved code'
+    verify:
+    - 'cargo xtask ci; cargo xtask commands --check; cargo xtask api --check; cargo xtask bridge-client on LibreQuake, which sends live map edits to the game'
+  - key: P6-41
+    title: 'Move each feature''s state and glue out of the desktop Shell'
+    labels:
+    - apps
+    - area:editor
+    - type:chore
+    size: L
+    reqs:
+    - UI-2
+    - ARCH-1
+    depends:
+    - P6-39
+    - P6-40
+    deliverable:
+    - 'apps/desktop/src/features.rs: one Features struct owning a struct per feature (editors, project, agent, map, entities, git, terminal, debugger), each in its own module with the fields and methods that leave Shell; a closed FeatureAction enum the draw methods return and a closed ShellRequest enum by which one feature asks another, or the window, for something'
+    - 'apps/desktop/src/shell.rs: the window only (session, theme, layout, tabs, palette, finder, keymap, menu, host, toolbar, status bar), naming no feature but Features, at about 1,200 lines'
+    - 'A method found to be logic rather than drawing or dispatch moved to a command where that is small, and listed in the PR where it is not'
+    acceptance:
+    - 'Behaviour is unchanged: panels are drawn from the state the frame began with and their actions carried out after, each request handled at once and in order, as now; the desktop tests and snapshot tests pass with no change but moved paths'
+    - 'The no-string-literal test covers every file that received UI code from shell.rs'
+    - 'No ratchet is lowered, cargo xtask conventions passes with no new CONV-17 baseline line, and a baseline line changes only to follow moved code'
+    - 'A recorded run of the app: a project, a map and the agent panel opened, the Git and Terminal tabs used, an entity edited while the game plays, and the editor following a breakpoint stop'
+    verify:
+    - 'cargo xtask ci; the recorded run in the PR'
   - key: P6-14
     title: Phase 6 gate review
     labels:
@@ -1155,6 +1227,9 @@ groups:
     - P6-36
     - P6-37
     - P6-38
+    - P6-39
+    - P6-40
+    - P6-41
     deliverable:
     - docs/gates/p6.md
     acceptance:

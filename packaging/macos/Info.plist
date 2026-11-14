@@ -8,6 +8,8 @@
 	<string>QuakeC Studio</string>
 	<key>CFBundleExecutable</key>
 	<string>quakec-studio</string>
+	<key>CFBundleIconFile</key>
+	<string>QuakeCStudio</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.quakecstudio.QuakeCStudio</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -28,5 +30,74 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright (C) 2026 QuakeC Studio contributors. GPL-3.0-or-later.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>QuakeC Studio opens, compiles and runs the QuakeC projects, maps and Quake game folders you choose on your Desktop.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>QuakeC Studio opens, compiles and runs the QuakeC projects, maps and Quake game folders you choose in your Documents folder.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>QuakeC Studio opens, compiles and runs the QuakeC projects, maps and Quake game folders you choose in your Downloads folder.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>QuakeC Studio opens, compiles and runs the QuakeC projects, maps and Quake game folders you choose on a network volume.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>QuakeC Studio opens, compiles and runs the QuakeC projects, maps and Quake game folders you choose on a removable volume.</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.quakecstudio.quakec-source</string>
+			<key>UTTypeDescription</key>
+			<string>QuakeC source</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.source-code</string>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>qc</string>
+					<string>qh</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.quakecstudio.quake-map</string>
+			<key>UTTypeDescription</key>
+			<string>Quake map source</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>map</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.quakecstudio.quake-bsp</string>
+			<key>UTTypeDescription</key>
+			<string>Quake BSP level</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>bsp</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

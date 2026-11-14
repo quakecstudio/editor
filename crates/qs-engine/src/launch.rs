@@ -79,7 +79,9 @@ impl std::error::Error for LaunchError {
 }
 
 /// The preview host's executable: `configured` when given, else the one beside `app`, the
-/// running app's executable (inside the macOS bundle, `Contents/MacOS`, P4-18).
+/// running app's executable (inside the macOS bundle, `Contents/MacOS`, P4-18). A link to the
+/// app, as the macOS package puts in `/usr/local/bin`, is followed first, so the host is the
+/// one beside the real executable.
 ///
 /// # Errors
 ///
@@ -87,7 +89,8 @@ impl std::error::Error for LaunchError {
 pub fn locate_host(configured: Option<&Path>, app: &Path) -> Result<PathBuf, LaunchError> {
     let path = match configured {
         Some(path) => path.to_path_buf(),
-        None => app
+        None => std::fs::canonicalize(app)
+            .unwrap_or_else(|_| app.to_path_buf())
             .parent()
             .unwrap_or_else(|| Path::new("."))
             .join(format!("{HOST_NAME}{}", std::env::consts::EXE_SUFFIX)),
