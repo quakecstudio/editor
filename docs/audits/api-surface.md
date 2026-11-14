@@ -164,7 +164,7 @@ keeps, and no public constructor that forges an ID the crate hands out.
 | `fn qc_builtins::mock::MockEngine::set_lightstyle` | none | kept public: the builtins and the mock engine the differentials drive (BUILTIN-*) |
 | `fn qc_builtins::mock::Rng::new` | `qs-differential`, `qs-sim`, `fuzz` | kept public: used by `qs-differential`, `qs-sim`, `fuzz` |
 | `fn qc_builtins::mock::Rng::next_rand` | `qs-sim` | kept public: used by `qs-sim` |
-| `fn qc_builtins::table::lookup` | `qc-ide`, `qc-preproc`, `qs-wad`, `qc-codegen`, `qc-sema`, `qs-vfs`, `qs-pak`, `qc-edict`, `qc-lexer`, `qc-progs`, `qs-editor-view`, `qc-engines`, `qs-paths`, `qs-sim`, `xtask` | kept public: used by `qc-ide`, `qc-preproc`, `qs-wad`, `qc-codegen`, `qc-sema`, `qs-vfs`, `qs-pak`, `qc-edict`, `qc-lexer`, `qc-progs`, `qs-editor-view`, `qc-engines`, `qs-paths`, `qs-sim`, `xtask` |
+| `fn qc_builtins::table::BuiltinNumber::builtin` | `qc-engines`, `qs-differential` | kept public: used by `qc-engines`, `qs-differential` |
 | `mod qc_builtins::math` | `qc-preproc`, `qc-sema`, `qs-sim`, `qc-vm` | kept public: used by `qc-preproc`, `qc-sema`, `qs-sim`, `qc-vm` |
 | `mod qc_builtins::mock` | `qs-differential`, `qs-sim`, `qc-vm`, `xtask` | kept public: used by `qs-differential`, `qs-sim`, `qc-vm`, `xtask` |
 | `mod qc_builtins::table` | `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-trace`, `qc-types`, `qc-sema`, `qs-settings`, `qs-mdl`, `qs-vfs`, `qs-bsp`, `qc-lno`, `qc-edict`, `qc-lexer`, `qs-differential`, `qs-render`, `qs-bench`, `qs-install`, `qs-map`, `qc-progs`, `qc-engines`, `qs-tests`, `qs-commands`, `qc-project`, `qc-vm`, `xtask` | kept public: used by `qc-ide`, `qc-preproc`, `qc-codegen`, `qc-trace`, `qc-types`, `qc-sema`, `qs-settings`, `qs-mdl`, `qs-vfs`, `qs-bsp`, `qc-lno`, `qc-edict`, `qc-lexer`, `qs-differential`, `qs-render`, `qs-bench`, `qs-install`, `qs-map`, `qc-progs`, `qc-engines`, `qs-tests`, `qs-commands`, `qc-project`, `qc-vm`, `xtask` |
@@ -187,7 +187,6 @@ keeps, and no public constructor that forges an ID the crate hands out.
 | `use qc_builtins::MockBuiltins = dispatch::MockBuiltins` | `qs-differential`, `qs-tests`, `qs-sim` | kept public: used by `qs-differential`, `qs-tests`, `qs-sim` |
 | `use qc_builtins::MockEngine = mock::MockEngine` | `qs-differential`, `qs-sim` | kept public: used by `qs-differential`, `qs-sim` |
 | `use qc_builtins::RuntimeError = error::RuntimeError` | none | kept public: the builtins and the mock engine the differentials drive (BUILTIN-*) |
-| `use qc_builtins::lookup = table::lookup` | `qc-ide`, `qc-preproc`, `qs-wad`, `qc-codegen`, `qc-sema`, `qs-vfs`, `qs-pak`, `qc-edict`, `qc-lexer`, `qc-progs`, `qs-editor-view`, `qc-engines`, `qs-paths`, `qs-sim`, `xtask` | kept public: used by `qc-ide`, `qc-preproc`, `qs-wad`, `qc-codegen`, `qc-sema`, `qs-vfs`, `qs-pak`, `qc-edict`, `qc-lexer`, `qc-progs`, `qs-editor-view`, `qc-engines`, `qs-paths`, `qs-sim`, `xtask` |
 
 Items that left the root (4): `const qc_builtins::math::BUILTIN_RANDOM_MASK`, `const qc_builtins::table::BUILTIN_FIXME_MESSAGE`, `fn qc_builtins::math::q_atof`, `fn qc_builtins::table::is_fixme`. Each is `pub(crate)` now, under `#[cfg(test)]` where only the crate's tests read it; `qc_sema::nav::ModuleIndex::references_at` is removed.
 

@@ -198,9 +198,9 @@ impl Layer {
     /// The layer's entry for `key`.
     fn find(self, key: BuiltinKey) -> Option<Builtin> {
         match (self, key) {
-            (Self::Vanilla, BuiltinKey::Number(n)) => {
-                qc_builtins::lookup(qc_builtins::BuiltinNumber::new(n)).map(Builtin::from)
-            }
+            (Self::Vanilla, BuiltinKey::Number(n)) => qc_builtins::BuiltinNumber::new(n)
+                .builtin()
+                .map(Builtin::from),
             (Self::Vanilla, BuiltinKey::Name(_)) => None,
             (
                 Self::Rerelease

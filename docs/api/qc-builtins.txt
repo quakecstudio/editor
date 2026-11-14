@@ -140,9 +140,9 @@ fn qc_builtins::strbuf::StringBuffers::get
 fn qc_builtins::strbuf::StringBuffers::size
 fn qc_builtins::strbuf::StringIndex::get
 fn qc_builtins::strbuf::StringIndex::new
+fn qc_builtins::table::BuiltinNumber::builtin
 fn qc_builtins::table::BuiltinNumber::get
 fn qc_builtins::table::BuiltinNumber::new
-fn qc_builtins::table::lookup
 fn qc_builtins::tokenize::TokenIndex::get
 fn qc_builtins::tokenize::TokenIndex::new
 fn qc_builtins::tokenize::Tokens::argv
@@ -226,7 +226,6 @@ use qc_builtins::MockBuiltins = dispatch::MockBuiltins
 use qc_builtins::MockEngine = mock::MockEngine
 use qc_builtins::RuntimeError = error::RuntimeError
 use qc_builtins::Unimplemented = mock::Unimplemented
-use qc_builtins::lookup = table::lookup
 variant qc_builtins::error::BuiltinError::Fatal
 variant qc_builtins::error::BuiltinError::Host
 variant qc_builtins::error::BuiltinError::Nested

@@ -45,6 +45,15 @@ impl BuiltinNumber {
     pub const fn get(self) -> u32 {
         self.0
     }
+
+    /// The table entry for the number, or `None` for a number with no builtin (BUILTIN-1.2).
+    ///
+    /// A `None` for a number from 1 to 78 is a `PF_Fixme` gap; a `None` for 0 or a number above
+    /// 78 is outside the table (the VM rejects those before dispatch, VM-14.7, LIMIT-5).
+    #[must_use]
+    pub fn builtin(self) -> Option<&'static Builtin> {
+        BUILTINS.iter().find(|entry| entry.number == self)
+    }
 }
 
 /// One entry of the vanilla builtin table (BUILTIN-5).
@@ -76,7 +85,7 @@ use Class::{Output, Pure, State, World};
 
 /// The 78 vanilla builtins, numbers 1 to 78, in number order (BUILTIN-5.1).
 ///
-/// The numbers with no builtin (5, 33, 39, 42, 50, 60 to 66, 71) are absent; [`lookup`] returns
+/// The numbers with no builtin (5, 33, 39, 42, 50, 60 to 66, 71) are absent; [`BuiltinNumber::builtin`] returns
 /// `None` for them, which the dispatcher turns into the `PF_Fixme` error (BUILTIN-1.2).
 pub const BUILTINS: &[Builtin] = &[
     b(1, "makevectors", "void(vector ang)", "PF_makevectors", Pure),
@@ -367,18 +376,9 @@ const fn b(
     }
 }
 
-/// The table entry for `number`, or `None` for a number with no builtin (BUILTIN-1.2).
-///
-/// A `None` for a number from 1 to 78 is a `PF_Fixme` gap; a `None` for 0 or a number above 78
-/// is outside the table (the VM rejects those before dispatch, VM-14.7, LIMIT-5).
-#[must_use]
-pub fn lookup(number: BuiltinNumber) -> Option<&'static Builtin> {
-    BUILTINS.iter().find(|entry| entry.number == number)
-}
-
 /// Whether `number` is a `PF_Fixme` gap in 1 to 78 (BUILTIN-1.2); the tests read it.
 #[cfg(test)]
 #[must_use]
 pub(crate) fn is_fixme(number: u32) -> bool {
-    (1..=BUILTIN_MAX_NUMBER).contains(&number) && lookup(BuiltinNumber::new(number)).is_none()
+    (1..=BUILTIN_MAX_NUMBER).contains(&number) && BuiltinNumber::new(number).builtin().is_none()
 }
