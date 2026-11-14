@@ -960,7 +960,9 @@ fn state(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Con
     Ok(NEXT)
 }
 
-/// `(float)((double)time + 0.1)`, 0.1 the double nearest to 0.1 (VM-17.1).
+/// `(float)((double)time + 0.1)`, 0.1 the double nearest to 0.1 (VM-17.1): the next think's
+/// time `OP_STATE` stores, named so the `#[expect]` for its rounding to `f32` stands on this one
+/// conversion rather than on the whole of the opcode.
 #[expect(
     clippy::cast_possible_truncation,
     reason = "spec VM-17.1: id's C (float)((double)time + 0.1); the double sum is rounded to f32 as the field stores a float"

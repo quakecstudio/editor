@@ -141,6 +141,9 @@ fn zigzag(n: i32) -> u32 {
     (n.wrapping_shl(1) ^ n.wrapping_shr(31)).cast_unsigned()
 }
 
+/// The inverse of [`zigzag`]: an unsigned varint's value back to the signed one it stands for,
+/// the low bit the sign (TRACE-5.2); named as its pair is, for the decoder to read as the
+/// encoder does.
 fn unzigzag(u: u32) -> i32 {
     u.wrapping_shr(1).cast_signed() ^ (u & 1).cast_signed().wrapping_neg()
 }
