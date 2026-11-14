@@ -102,7 +102,7 @@ Every command in QuakeC Studio's command registry (PRIN-3): the one list behind 
 | [`map.outline`](#mapoutline) | The open map's outline: the default layer and each layer, their groups and linked groups, then their entities by classname and targetname, with brush counts; with filter, only what holds the text and what is around it. |
 | [`map.place`](#mapplace) | Places a point entity of a classname at an origin in the open map, with the keys given, and selects it. |
 | [`map.place_prefab`](#mapplace_prefab) | Copies a prefab into the open map with its origin at a point on the grid: its world's brushes into the world, its other entities after the map's. |
-| [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player at a point, facing a way: the map view's camera (MAP-13). |
+| [`map.play_from_here`](#mapplay_from_here) | Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13). |
 | [`map.portals`](#mapportals) | Reads the portal file the open map's last compile wrote beside it, each portal's points, to show where the map's leaves meet. |
 | [`map.prefabs`](#mapprefabs) | Lists the .map files in the project's prefabs folder. |
 | [`map.profiles`](#mapprofiles) | Lists the compile profiles: the built-in Full and Fast, then the project's own from compile-profiles.toml, each its name and its tasks. |
@@ -4831,7 +4831,7 @@ Parameters:
 
 ## `map.play_from_here`
 
-Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player at a point, facing a way: the map view's camera (MAP-13).
+Compiles the open map fast, with no vis and fast light, into the project's build, starts the game on it and puts the player's eye at a point, facing a way: the map view's camera (MAP-13).
 
 Parameters:
 
@@ -4855,8 +4855,8 @@ Parameters:
         "null"
       ]
     },
-    "at": {
-      "description": "Where the player starts: the map view's camera.",
+    "eye": {
+      "description": "Where the player's eye goes: the map view's camera. The player's origin is\n`view_ofs` below it, moved up or down to the nearest place its box fits.",
       "items": {
         "format": "double",
         "type": "number"
@@ -4867,7 +4867,7 @@ Parameters:
     }
   },
   "required": [
-    "at"
+    "eye"
   ],
   "title": "PlayFromHereParams",
   "type": "object"

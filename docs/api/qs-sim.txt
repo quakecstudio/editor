@@ -36,6 +36,7 @@ const qs_sim::keys::K_SHIFT
 const qs_sim::keys::K_SPACE
 const qs_sim::keys::K_TAB
 const qs_sim::keys::K_UPARROW
+const qs_sim::messages::DEFAULT_VIEWHEIGHT
 const qs_sim::messages::NET_FAT_PVS_DISTANCE
 const qs_sim::messages::NET_GAME_COOP
 const qs_sim::messages::NET_GAME_DEATHMATCH
@@ -502,6 +503,7 @@ use qs_sim::Change = world::Change
 use qs_sim::ChangeKind = world::ChangeKind
 use qs_sim::ClientCommand = world::ClientCommand
 use qs_sim::ClientMessages = messages::ClientMessages
+use qs_sim::DEFAULT_VIEWHEIGHT = messages::DEFAULT_VIEWHEIGHT
 use qs_sim::EdictChange = world::EdictChange
 use qs_sim::EdictNumber = qc_edict::EdictNumber
 use qs_sim::EditError = world::EditError
