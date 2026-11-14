@@ -8,54 +8,14 @@
 
 use std::path::{Path, PathBuf};
 
-use qc_project::FsLoader;
-use qs_commands::{Registry, Session};
+use qs_commands::Session;
 use qs_wad::Wad;
 use qs_wad::texture::Palette;
 use serde_json::json;
 
 use super::{DitherChoice, TEXTURE_IMPORT, TextureImported, project_wad, quantized};
 use crate::map_edit::MAP_OPEN;
-use crate::map_edit::MapReport;
-use crate::preview::{HasPreview, Preview, PreviewConfig};
-use crate::{Config, HasWorkbench, Workbench, register, register_preview};
-
-/// A workbench and a preview with no game.
-struct Context {
-    workbench: Workbench<FsLoader>,
-    preview: Preview,
-}
-
-impl crate::HasMap for Context {
-    type Project = Workbench<FsLoader>;
-    type Live = Preview;
-
-    fn map_store(&mut self) -> &mut crate::MapStore {
-        self.workbench.maps_mut()
-    }
-
-    fn map_project(&mut self) -> &mut Workbench<FsLoader> {
-        &mut self.workbench
-    }
-
-    fn live_map(&mut self) -> Option<&mut Preview> {
-        Some(&mut self.preview)
-    }
-}
-
-impl HasWorkbench for Context {
-    type Loader = FsLoader;
-
-    fn workbench(&mut self) -> &mut Workbench<FsLoader> {
-        &mut self.workbench
-    }
-}
-
-impl HasPreview for Context {
-    fn workbench_and_preview(&mut self) -> (&mut Workbench<FsLoader>, &mut Preview) {
-        (&mut self.workbench, &mut self.preview)
-    }
-}
+use crate::map_edit::testing::MapContext;
 
 /// The desktop's keep project, with its palette, WAD and map.
 fn fixture() -> PathBuf {
@@ -91,35 +51,17 @@ fn png(path: &Path, width: u32, height: u32, colour: [u8; 4]) {
     std::fs::write(path, bytes.into_inner()).unwrap();
 }
 
-fn session(project: Option<&Path>) -> Session<Context> {
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    register_preview(&mut registry).unwrap();
-    let context = Context {
-        workbench: Workbench::new(FsLoader, Config::default()),
-        preview: Preview::new(PreviewConfig {
-            host: None,
-            app: Path::new("/nowhere/app").to_path_buf(),
-            game: None,
-            extra: Vec::new(),
-        }),
-    };
-    let mut session = Session::new(context, registry);
-    if let Some(project) = project {
-        session
-            .execute("project.open", json!({ "path": project }))
-            .unwrap();
-    }
-    session
+fn session(project: Option<&Path>) -> Session<MapContext> {
+    project.map_or_else(MapContext::session, MapContext::in_project)
 }
 
-fn import(session: &mut Session<Context>, params: serde_json::Value) -> TextureImported {
+fn import(session: &mut Session<MapContext>, params: serde_json::Value) -> TextureImported {
     serde_json::from_value(session.execute(TEXTURE_IMPORT, params).unwrap()).unwrap()
 }
 
 /// The world's `wad` key in the open map.
-fn wad_key(session: &Session<Context>) -> String {
-    let map = session.context().workbench.map().unwrap();
+fn wad_key(session: &Session<MapContext>) -> String {
+    let map = session.context().map().unwrap();
     String::from_utf8_lossy(map.file().entities[0].value(b"wad").unwrap()).into_owned()
 }
 
@@ -245,51 +187,8 @@ fn what_cannot_be_a_texture_is_refused() {
 }
 
 /// A session with no project open.
-fn session_alone() -> Session<Context> {
+fn session_alone() -> Session<MapContext> {
     session(None)
-}
-
-// No spec statement: P6-16: an imported texture put on a brush compiles into the BSP with the
-// picture the preview showed, from the WAD the import named in the map's world
-#[test]
-fn an_imported_texture_compiles_into_the_bsp() {
-    let dir = keep("compiled");
-    let image = dir.join("brick16.png");
-    png(&image, 16, 16, [200, 40, 30, 255]);
-    let mut session = session(Some(&dir));
-    session
-        .execute(MAP_OPEN, json!({ "path": dir.join("maps/keep.map") }))
-        .unwrap();
-    import(&mut session, json!({ "path": image }));
-    session
-        .execute(
-            "map.brush_texture",
-            json!({ "entity": 4, "brushes": [0], "texture": "brick16" }),
-        )
-        .unwrap();
-    let report: MapReport =
-        serde_json::from_value(session.execute("map.compile", json!({})).unwrap()).unwrap();
-    assert!(report.missing_textures.is_empty(), "{report:?}");
-    let bsp_bytes = std::fs::read(dir.join("maps/keep.bsp")).unwrap();
-    let bsp = qs_bsp::Bsp::read(&bsp_bytes, qs_bsp::BspLoader::default()).unwrap();
-    let texture = bsp
-        .textures
-        .iter()
-        .flatten()
-        .find(|texture| texture.name == b"brick16")
-        .unwrap();
-    let palette = Palette::from_lmp(&std::fs::read(dir.join("gfx/palette.lmp")).unwrap()).unwrap();
-    let compiled = palette
-        .decode_pixels(b"brick16", texture.width, texture.height, texture.pixels)
-        .unwrap();
-    let shown = quantized(
-        &std::fs::read(&image).unwrap(),
-        "brick16",
-        &palette,
-        DitherChoice::None,
-    )
-    .unwrap();
-    assert_eq!(compiled, shown);
 }
 
 // spec MAP-6.3: a map listing its WADs in `_wad`, which the compilers read first, gets the
@@ -309,7 +208,7 @@ fn an_import_extends_the_key_the_map_uses() {
     let mut session = session(Some(&dir));
     session.execute(MAP_OPEN, json!({ "path": map })).unwrap();
     import(&mut session, json!({ "path": image }));
-    let document = session.context().workbench.map().unwrap();
+    let document = session.context().map().unwrap();
     let world = &document.file().entities[0];
     assert_eq!(
         world.value(b"_wad"),

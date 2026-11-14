@@ -11,10 +11,12 @@ use std::path::{Path, PathBuf};
 use qc_project::FsLoader;
 use qs_commands::{Registry, Session as Commands};
 use qs_map::{Brush, Item, MapFile, Surface, TexDef};
+use qs_wad::texture::Palette;
 use serde_json::json;
 
 use super::{MAP_COMPILE, MAP_LEAKS, MAP_PORTALS, MapPortals};
 use crate::map_edit::testing::{Opening, room};
+use crate::map_edit::texture_import::{DitherChoice, TEXTURE_IMPORT, quantized};
 use crate::map_edit::{MAP_OPEN, MapReport, Seal};
 use crate::preview::{HasPreview, Preview, PreviewConfig};
 use crate::{Config, HasWorkbench, Workbench, register, register_preview};
@@ -294,4 +296,66 @@ fn a_leaking_compile_removes_the_last_portal_file() {
     assert_eq!(found.seal, Seal::Leaks);
     assert!(!path.with_extension("prt").exists());
     assert!(session.execute(MAP_PORTALS, json!({})).is_err());
+}
+
+// No spec statement: P6-16: an imported texture put on a brush compiles into the BSP with the
+// picture the preview showed, from the WAD the import named in the map's world
+#[test]
+fn an_imported_texture_compiles_into_the_bsp() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/desktop/fixtures/keep");
+    let dir = std::env::temp_dir().join(format!("qs-wb-compile-import-{}", std::process::id()));
+    let _gone = std::fs::remove_dir_all(&dir);
+    for file in [
+        "progs.src",
+        "defs.qc",
+        "world.qc",
+        "maps/keep.map",
+        "gfx/keep.wad",
+        "gfx/palette.lmp",
+    ] {
+        let to = dir.join(file);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        std::fs::copy(fixture.join(file), to).unwrap();
+    }
+    let image = dir.join("brick16.png");
+    let picture = image::RgbaImage::from_pixel(16, 16, image::Rgba([200, 40, 30, 255]));
+    let mut png = std::io::Cursor::new(Vec::new());
+    picture.write_to(&mut png, image::ImageFormat::Png).unwrap();
+    std::fs::write(&image, png.into_inner()).unwrap();
+    let mut session = open(&dir.join("maps/keep.map"));
+    session
+        .execute("project.open", json!({ "path": dir }))
+        .unwrap();
+    session
+        .execute(TEXTURE_IMPORT, json!({ "path": image }))
+        .unwrap();
+    session
+        .execute(
+            "map.brush_texture",
+            json!({ "entity": 4, "brushes": [0], "texture": "brick16" }),
+        )
+        .unwrap();
+    let report: MapReport =
+        serde_json::from_value(session.execute("map.compile", json!({})).unwrap()).unwrap();
+    assert!(report.missing_textures.is_empty(), "{report:?}");
+    let bsp_bytes = std::fs::read(dir.join("maps/keep.bsp")).unwrap();
+    let bsp = qs_bsp::Bsp::read(&bsp_bytes, qs_bsp::BspLoader::default()).unwrap();
+    let texture = bsp
+        .textures
+        .iter()
+        .flatten()
+        .find(|texture| texture.name == b"brick16")
+        .unwrap();
+    let palette = Palette::from_lmp(&std::fs::read(dir.join("gfx/palette.lmp")).unwrap()).unwrap();
+    let compiled = palette
+        .decode_pixels(b"brick16", texture.width, texture.height, texture.pixels)
+        .unwrap();
+    let shown = quantized(
+        &std::fs::read(&image).unwrap(),
+        "brick16",
+        &palette,
+        DitherChoice::None,
+    )
+    .unwrap();
+    assert_eq!(compiled, shown);
 }
