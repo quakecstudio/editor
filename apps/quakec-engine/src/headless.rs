@@ -15,7 +15,9 @@ use eframe::egui_wgpu::wgpu;
 use qs_bsp::Bsp;
 use std::path::Path;
 
-use qs_client::{Client, Console, Hud, KeyDest, Menu, MenuFrame, MenuSettings};
+use qs_client::{
+    Client, Connection, Console, ConsoleHold, Hud, KeyDest, Menu, MenuFrame, MenuSettings,
+};
 use qs_render::{MapMesh, MapRenderer, Offscreen, Play};
 
 use crate::args::Args;
@@ -218,10 +220,12 @@ pub(crate) fn view_script(
                     .game
                     .place_player(*origin, [angles[0], angles[1], 0.0])?;
             }
-            Step::ToggleConsole => overlay.dest = overlay.console.toggle(overlay.dest, true),
+            Step::ToggleConsole => {
+                overlay.dest = overlay.console.toggle(overlay.dest, Connection::Connected)
+            }
             Step::ToggleMenu => {
                 overlay.dest = match overlay.dest {
-                    KeyDest::Console => overlay.console.toggle(overlay.dest, true),
+                    KeyDest::Console => overlay.console.toggle(overlay.dest, Connection::Connected),
                     dest => overlay.menu.toggle(dest),
                 };
             }
@@ -262,9 +266,12 @@ impl Overlay {
     fn frame(&mut self, screen: [i32; 2]) {
         self.realtime += FRAME;
         self.console.resize(screen[0]);
-        self.lines = self
-            .console
-            .slide(screen[1], false, self.dest, frametime_f32(FRAME));
+        self.lines = self.console.slide(
+            screen[1],
+            ConsoleHold::Sliding,
+            self.dest,
+            frametime_f32(FRAME),
+        );
     }
 
     /// The console and the menu as the window draws them on `screen`, in QuakeSpasm's layout
@@ -273,7 +280,7 @@ impl Overlay {
         let [_, height] = screen;
         let console = if self.lines > 0 && native {
             let version = format!("QuakeC Studio {}", env!("CARGO_PKG_VERSION"));
-            let typing = self.dest == KeyDest::Console;
+            let typing = self.dest.input_line();
             self.console.draw_quakespasm(
                 self.lines,
                 height,
@@ -282,7 +289,7 @@ impl Overlay {
                 version.as_bytes(),
             )
         } else if self.lines > 0 {
-            let typing = self.dest == KeyDest::Console;
+            let typing = self.dest.input_line();
             self.console.draw(self.lines, height, self.realtime, typing)
         } else {
             self.console.notify(self.realtime)

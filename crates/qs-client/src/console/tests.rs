@@ -7,7 +7,10 @@
     reason = "test code: a failed unwrap or index is a failed test; small counts"
 )]
 
-use super::{CON_HISTORY, CON_TEXTSIZE, Console, ConsoleKey, KeyDest, Typed};
+use super::{
+    CON_HISTORY, CON_TEXTSIZE, Connection, Console, ConsoleHold, ConsoleKey, InputLine, KeyDest,
+    Typed,
+};
 use crate::hud::{HudItem, Placed};
 
 /// A console for a 640-wide screen: lines of 78 characters (CON-1.1).
@@ -125,7 +128,7 @@ fn clear_and_scrollback() {
     console.print(b"text\n", 1.0);
     console.key(ConsoleKey::PageUp, 480, 1.0, &none);
     console.print(b"more\n", 1.0);
-    let lines = console.draw(240, 480, 1.0, false);
+    let lines = console.draw(240, 480, 1.0, InputLine::Hidden);
     assert!(
         lines
             .iter()
@@ -162,13 +165,25 @@ fn notify_lines_show_for_three_seconds() {
 fn toggling_the_console() {
     let mut console = wide();
     console.print(b"line\n", 1.0);
-    assert_eq!(console.toggle(KeyDest::Game, true), KeyDest::Console);
+    assert_eq!(
+        console.toggle(KeyDest::Game, Connection::Connected),
+        KeyDest::Console
+    );
     assert!(console.notify(1.5).is_empty());
     console.key(ConsoleKey::Char(b'x'), 480, 1.0, &none);
-    assert_eq!(console.toggle(KeyDest::Console, true), KeyDest::Game);
+    assert_eq!(
+        console.toggle(KeyDest::Console, Connection::Connected),
+        KeyDest::Game
+    );
     assert_eq!(console.typed(), b"");
-    assert_eq!(console.toggle(KeyDest::Console, false), KeyDest::Menu);
-    assert_eq!(console.toggle(KeyDest::Menu, false), KeyDest::Console);
+    assert_eq!(
+        console.toggle(KeyDest::Console, Connection::Disconnected),
+        KeyDest::Menu
+    );
+    assert_eq!(
+        console.toggle(KeyDest::Menu, Connection::Disconnected),
+        KeyDest::Console
+    );
 }
 
 // spec CON-3.1: forced up it fills the screen at once; else it slides to half the screen with
@@ -176,12 +191,30 @@ fn toggling_the_console() {
 #[test]
 fn the_console_slides() {
     let mut console = wide();
-    assert_eq!(console.slide(480, true, KeyDest::Game, 0.1), 480);
-    assert_eq!(console.slide(480, false, KeyDest::Game, 0.1), 450);
-    assert_eq!(console.slide(480, false, KeyDest::Game, 2.0), 0);
-    assert_eq!(console.slide(480, false, KeyDest::Console, 0.5), 150);
-    assert_eq!(console.slide(480, false, KeyDest::Console, 1.0), 240);
-    assert_eq!(console.slide(480, false, KeyDest::Menu, 0.0), 240);
+    assert_eq!(
+        console.slide(480, ConsoleHold::Forced, KeyDest::Game, 0.1),
+        480
+    );
+    assert_eq!(
+        console.slide(480, ConsoleHold::Sliding, KeyDest::Game, 0.1),
+        450
+    );
+    assert_eq!(
+        console.slide(480, ConsoleHold::Sliding, KeyDest::Game, 2.0),
+        0
+    );
+    assert_eq!(
+        console.slide(480, ConsoleHold::Sliding, KeyDest::Console, 0.5),
+        150
+    );
+    assert_eq!(
+        console.slide(480, ConsoleHold::Sliding, KeyDest::Console, 1.0),
+        240
+    );
+    assert_eq!(
+        console.slide(480, ConsoleHold::Sliding, KeyDest::Menu, 0.0),
+        240
+    );
 }
 
 // spec CON-3.2: the background first, with the console's height and the screen's
@@ -190,7 +223,7 @@ fn the_console_slides() {
 fn the_console_draws_its_rows() {
     let mut console = wide();
     console.print(b"alpha\nbeta\n", 1.0);
-    let items = console.draw(240, 480, 1.0, false);
+    let items = console.draw(240, 480, 1.0, InputLine::Hidden);
     assert_eq!(
         items[0].item,
         HudItem::ConsoleBack {
@@ -202,7 +235,7 @@ fn the_console_draws_its_rows() {
     // 28 rows from y 0: the newest, beta, at 27 * 8 = 216.
     assert_eq!(row_at(&items, 216), "beta");
     assert_eq!(row_at(&items, 208), "alpha");
-    assert!(console.draw(0, 480, 1.0, true).is_empty());
+    assert!(console.draw(0, 480, 1.0, InputLine::Shown).is_empty());
 }
 
 // spec CON-3.4: the input line 16 above the bottom, its cursor 10 or 11 by
@@ -213,7 +246,7 @@ fn the_input_line_blinks_its_cursor() {
     for c in b"map" {
         console.key(ConsoleKey::Char(*c), 480, 1.0, &none);
     }
-    let even = console.draw(240, 480, 1.0, true);
+    let even = console.draw(240, 480, 1.0, InputLine::Shown);
     let input: Vec<u8> = even
         .iter()
         .filter_map(|p| match p.item {
@@ -222,7 +255,7 @@ fn the_input_line_blinks_its_cursor() {
         })
         .collect();
     assert_eq!(&input[..5], b"]map\x0a");
-    let odd = console.draw(240, 480, 1.3, true);
+    let odd = console.draw(240, 480, 1.3, InputLine::Shown);
     assert!(odd.iter().any(|p| p.item
         == HudItem::Char {
             x: 40,
@@ -233,7 +266,7 @@ fn the_input_line_blinks_its_cursor() {
     for _ in 0..90 {
         long.key(ConsoleKey::Char(b'z'), 480, 1.0, &none);
     }
-    let shown = long.draw(240, 480, 1.0, true);
+    let shown = long.draw(240, 480, 1.0, InputLine::Shown);
     let first = shown
         .iter()
         .find_map(|p| match p.item {
@@ -292,7 +325,7 @@ fn back_moves_the_position() {
         console.key(ConsoleKey::Char(*c), 480, 1.0, &none);
     }
     console.key(ConsoleKey::Back, 480, 1.0, &none);
-    console.draw(240, 480, 1.0, true);
+    console.draw(240, 480, 1.0, InputLine::Shown);
     assert_eq!(
         console.typed(),
         b"a",
@@ -342,17 +375,26 @@ fn the_scrollback_moves_within_its_limits() {
     for n in 0..40 {
         console.print(format!("line {n}\n").as_bytes(), 1.0);
     }
-    let bottom = row_at(&console.draw(240, 480, 1.0, false), 216);
+    let bottom = row_at(&console.draw(240, 480, 1.0, InputLine::Hidden), 216);
     console.key(ConsoleKey::PageUp, 480, 1.0, &none);
-    assert_eq!(row_at(&console.draw(240, 480, 1.0, false), 216), "line 37");
+    assert_eq!(
+        row_at(&console.draw(240, 480, 1.0, InputLine::Hidden), 216),
+        "line 37"
+    );
     console.key(ConsoleKey::PageDown, 480, 1.0, &none);
     console.key(ConsoleKey::PageDown, 480, 1.0, &none);
-    assert_eq!(row_at(&console.draw(240, 480, 1.0, false), 216), bottom);
+    assert_eq!(
+        row_at(&console.draw(240, 480, 1.0, InputLine::Hidden), 216),
+        bottom
+    );
     console.key(ConsoleKey::Home, 480, 1.0, &none);
-    let top = console.draw(240, 480, 1.0, false);
+    let top = console.draw(240, 480, 1.0, InputLine::Hidden);
     assert_eq!(row_at(&top, 216), "", "back past every line printed");
     console.key(ConsoleKey::End, 480, 1.0, &none);
-    assert_eq!(row_at(&console.draw(240, 480, 1.0, false), 216), bottom);
+    assert_eq!(
+        row_at(&console.draw(240, 480, 1.0, InputLine::Hidden), 216),
+        bottom
+    );
 }
 
 // spec CON-4.7: printable keys are stored while the position is below 255; others do nothing
@@ -370,7 +412,7 @@ fn only_printable_keys_are_typed() {
 
 /// QuakeSpasm's console of `console` at half a 480-high screen, at `realtime`.
 fn quakespasm(console: &mut Console, realtime: f64) -> Vec<Placed> {
-    console.draw_quakespasm(240, 480, realtime, true, b"QuakeC Studio 1")
+    console.draw_quakespasm(240, 480, realtime, InputLine::Shown, b"QuakeC Studio 1")
 }
 
 // spec CON-5.1: laid out at the screen's height and moved up by what is not shown: the
@@ -395,7 +437,11 @@ fn quakespasm_lays_out_its_rows_from_the_bottom() {
     // 30 rows, 28 of text: moved up by 240, the newest at 480 - 16 - 8 - 240.
     assert_eq!(row_at(&items, 216), "line 39");
     assert_eq!(row_at(&items, 0), "line 12");
-    assert!(console.draw_quakespasm(0, 480, 1.0, true, b"v").is_empty());
+    assert!(
+        console
+            .draw_quakespasm(0, 480, 1.0, InputLine::Shown, b"v")
+            .is_empty()
+    );
     console.key(ConsoleKey::PageUp, 480, 1.0, &none);
     let back = quakespasm(&mut console, 1.0);
     assert_eq!(row_at(&back, 200), "line 35");
@@ -476,9 +522,18 @@ fn a_leading_slash_is_dropped() {
 #[test]
 fn the_backquote_is_the_menus_in_a_menu() {
     let mut console = wide();
-    assert_eq!(console.backquote(KeyDest::Menu, true), KeyDest::Menu);
-    assert_eq!(console.backquote(KeyDest::Game, true), KeyDest::Console);
-    assert_eq!(console.backquote(KeyDest::Console, true), KeyDest::Game);
+    assert_eq!(
+        console.backquote(KeyDest::Menu, Connection::Connected),
+        KeyDest::Menu
+    );
+    assert_eq!(
+        console.backquote(KeyDest::Game, Connection::Connected),
+        KeyDest::Console
+    );
+    assert_eq!(
+        console.backquote(KeyDest::Console, Connection::Connected),
+        KeyDest::Game
+    );
 }
 
 // spec CON-5.5: Backspace and the down arrow back to the edit line cut the line at the position
@@ -520,7 +575,7 @@ fn quakespasm_keeps_more_text_and_scrolls_back_from_zero() {
     small.print(b"one\ntwo\n", 1.0);
     assert_eq!(text(&small, small.current()), "two");
     small.key(ConsoleKey::Home, 1440, 1.0, &none);
-    let shown = small.draw(720, 1440, 1.0, false);
+    let shown = small.draw(720, 1440, 1.0, InputLine::Hidden);
     assert!(
         row_at(&shown, 720 - 16 - 8).contains("two"),
         "not scrolled past the text"
@@ -531,6 +586,6 @@ fn quakespasm_keeps_more_text_and_scrolls_back_from_zero() {
         large.print(format!("line {n}\n").as_bytes(), 1.0);
     }
     large.key(ConsoleKey::PageUp, 1440, 1.0, &none);
-    let back = large.draw(720, 1440, 1.0, false);
+    let back = large.draw(720, 1440, 1.0, InputLine::Hidden);
     assert_eq!(row_at(&back, 720 - 16 - 8), "line 297");
 }

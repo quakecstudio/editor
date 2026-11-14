@@ -36,6 +36,52 @@ pub const CON_HISTORY: usize = 32;
 const UNSET_WIDTH: usize = 38;
 /// The prompt each typed line starts with (CON-4.1).
 const PROMPT: u8 = b']';
+/// A console character's width and height in pixels (CON-2.2, CON-3.3).
+const CHAR_SIZE: i32 = 8;
+/// `>> 3`: pixels to characters.
+const CHAR_SHIFT: i32 = 3;
+/// How far above the console's bottom its input line is drawn, in pixels (CON-3.3, CON-3.4).
+const INPUT_ABOVE: i32 = 16;
+/// The high bit `Con_Print` sets on each character of a coloured print (CON-1.2).
+const COLOURED: u8 = 0x80;
+/// The cursor characters id's input line blinks between, `10 + (beat & 1)` (CON-3.4).
+const CURSOR_ON: u8 = 10;
+/// The cursor's other beat, and QuakeSpasm's block cursor (CON-5.3).
+const CURSOR_OFF: u8 = 11;
+/// Every `^` of QuakeSpasm's scrolled-back row is this many columns apart (CON-5).
+const ARROW_SPACING: usize = 4;
+/// The lowest and highest key a typed line takes (CON-4.7).
+const TYPED_KEYS: core::ops::RangeInclusive<u8> = 32..=127;
+/// What a completion leaves of the line: the prompt, the space after it and the end
+/// (CON-4.3).
+const COMPLETION_ROOM: usize = 3;
+
+/// Whether the client is connected, which decides where the console's toggle goes (CON-4.8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Connection {
+    /// Connected: the console closes to the game.
+    Connected,
+    /// Not connected: the console closes to the menu.
+    Disconnected,
+}
+
+/// Whether the console is forced up, `con_forcedup`, or slides to its destination (CON-3.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConsoleHold {
+    /// Forced up over the whole screen.
+    Forced,
+    /// Sliding toward half the screen or none.
+    Sliding,
+}
+
+/// Whether the console draws its input line (CON-3.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputLine {
+    /// Drawn, and ended at its position.
+    Shown,
+    /// Not drawn.
+    Hidden,
+}
 
 /// Where keys go: `key_dest` (CON-4.8).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -47,6 +93,17 @@ pub enum KeyDest {
     Console,
     /// The menu.
     Menu,
+}
+
+impl KeyDest {
+    /// The input line is drawn only while the keys are the console's (CON-3.4).
+    #[must_use]
+    pub const fn input_line(self) -> InputLine {
+        match self {
+            Self::Console => InputLine::Shown,
+            Self::Game | Self::Menu => InputLine::Hidden,
+        }
+    }
 }
 
 /// A key the console's input line reads (CON-4).
@@ -155,7 +212,7 @@ impl Console {
 
     /// `Con_CheckResize` for a screen `width` pixels wide (CON-1.1).
     pub fn resize(&mut self, width: i32) {
-        let width = usize::try_from((width >> 3).saturating_sub(2)).unwrap_or(0);
+        let width = usize::try_from((width >> CHAR_SHIFT).saturating_sub(2)).unwrap_or(0);
         if width == self.linewidth {
             return;
         }
@@ -202,8 +259,8 @@ impl Console {
     pub fn print(&mut self, text: &[u8], realtime: f64) -> bool {
         self.backscroll = 0;
         let (mask, talk, text) = match text.split_first() {
-            Some((1, rest)) => (128, true, rest),
-            Some((2, rest)) => (128, false, rest),
+            Some((1, rest)) => (COLOURED, true, rest),
+            Some((2, rest)) => (COLOURED, false, rest),
             _ => (0, false, text),
         };
         let mut rest = text;
@@ -292,11 +349,11 @@ impl Console {
         self.text.fill(b' ');
     }
 
-    /// `Con_ToggleConsole_f` from `dest`, the client `connected` or not: the destination
+    /// `Con_ToggleConsole_f` from `dest` with the client's `connection`: the destination
     /// after it (CON-4.8).
-    pub fn toggle(&mut self, dest: KeyDest, connected: bool) -> KeyDest {
+    pub fn toggle(&mut self, dest: KeyDest, connection: Connection) -> KeyDest {
         let next = match dest {
-            KeyDest::Console if connected => {
+            KeyDest::Console if connection == Connection::Connected => {
                 self.with_edit(|line| set(line, 1, 0));
                 self.pos = 1;
                 KeyDest::Game
@@ -310,10 +367,10 @@ impl Console {
 
     /// The backquote from `dest` (CON-4.8, CON-4.9): the console's toggle, but nothing in a
     /// menu, whose keys are its own.
-    pub fn backquote(&mut self, dest: KeyDest, connected: bool) -> KeyDest {
+    pub fn backquote(&mut self, dest: KeyDest, connection: Connection) -> KeyDest {
         match dest {
             KeyDest::Menu => KeyDest::Menu,
-            KeyDest::Game | KeyDest::Console => self.toggle(dest, connected),
+            KeyDest::Game | KeyDest::Console => self.toggle(dest, connection),
         }
     }
 
@@ -323,13 +380,13 @@ impl Console {
     pub fn slide(
         &mut self,
         screen_height: i32,
-        forced: bool,
+        hold: ConsoleHold,
         dest: KeyDest,
         frametime: f32,
     ) -> i32 {
         let screen = f32_of(screen_height);
-        self.forced = forced;
-        if forced {
+        self.forced = hold == ConsoleHold::Forced;
+        if self.forced {
             self.height = screen;
             return screen_height;
         }
@@ -369,21 +426,21 @@ impl Console {
             if unset || realtime - time > CON_NOTIFY_TIME {
                 continue;
             }
-            chars(&mut out, self.line(i), 8, v);
-            v = v.saturating_add(8);
+            chars(&mut out, self.line(i), v);
+            v = v.saturating_add(CHAR_SIZE);
         }
         out
     }
 
     /// `Con_DrawConsole`: the console `lines` pixels high on a screen `screen_height` high at
-    /// `realtime`, the input line with it when `input`, which then ends the line at its
-    /// position (CON-3.2 to CON-3.4).
+    /// `realtime`, with its `input` line, which when shown then ends the line at its position
+    /// (CON-3.2 to CON-3.4).
     pub fn draw(
         &mut self,
         lines: i32,
         screen_height: i32,
         realtime: f64,
-        input: bool,
+        input: InputLine,
     ) -> Vec<Placed> {
         if lines <= 0 {
             return Vec::new();
@@ -396,18 +453,20 @@ impl Console {
                 forced: self.forced,
             },
         }];
-        let rows = lines.saturating_sub(16) >> 3;
-        let mut y = lines.saturating_sub(16).saturating_sub(rows << 3);
+        let rows = lines.saturating_sub(INPUT_ABOVE) >> CHAR_SHIFT;
+        let mut y = lines
+            .saturating_sub(INPUT_ABOVE)
+            .saturating_sub(rows << CHAR_SHIFT);
         let first = self
             .current
             .saturating_sub(i64::from(rows))
             .saturating_add(1);
         for i in first..=self.current {
             let j = i.saturating_sub(self.backscroll).max(0);
-            chars(&mut out, self.line(j), 8, y);
-            y = y.saturating_add(8);
+            chars(&mut out, self.line(j), y);
+            y = y.saturating_add(CHAR_SIZE);
         }
-        if input {
+        if input == InputLine::Shown {
             self.draw_input(&mut out, lines, realtime);
         }
         out
@@ -423,7 +482,7 @@ impl Console {
         lines: i32,
         height: i32,
         realtime: f64,
-        input: bool,
+        input: InputLine,
         version: &[u8],
     ) -> Vec<Placed> {
         if lines <= 0 {
@@ -438,8 +497,8 @@ impl Console {
                 forced: self.forced,
             },
         }];
-        let all = lines.saturating_add(7) >> 3;
-        let mut y = height.saturating_sub(all.saturating_mul(8));
+        let all = lines.saturating_add(CHAR_SIZE - 1) >> CHAR_SHIFT;
+        let mut y = height.saturating_sub(all.saturating_mul(CHAR_SIZE));
         let rows = all.saturating_sub(2);
         let back = if self.backscroll > 0 { 2 } else { 0 };
         let first = self
@@ -448,19 +507,25 @@ impl Console {
             .saturating_add(1);
         for i in first..=self.current.saturating_sub(back) {
             let j = i.saturating_sub(self.backscroll).max(0);
-            chars(&mut out, self.line(j), 8, y.saturating_add(shift));
-            y = y.saturating_add(8);
+            chars(&mut out, self.line(j), y.saturating_add(shift));
+            y = y.saturating_add(CHAR_SIZE);
         }
         if self.backscroll > 0 {
-            y = y.saturating_add(8);
+            y = y.saturating_add(CHAR_SIZE);
             let arrows: Vec<u8> = (0..self.linewidth)
-                .map(|x| if x % 4 == 0 { b'^' } else { b' ' })
+                .map(|x| {
+                    if x.is_multiple_of(ARROW_SPACING) {
+                        b'^'
+                    } else {
+                        b' '
+                    }
+                })
                 .collect();
-            chars(&mut out, &arrows, 8, y.saturating_add(shift));
+            chars(&mut out, &arrows, y.saturating_add(shift));
         }
         // CON-3.4: the input line only while the keys are the console's.
-        if input {
-            let input_y = height.saturating_sub(16).saturating_add(shift);
+        if input == InputLine::Shown {
+            let input_y = height.saturating_sub(INPUT_ABOVE).saturating_add(shift);
             let start = if self.pos >= self.linewidth {
                 self.pos.saturating_add(1).saturating_sub(self.linewidth)
             } else {
@@ -474,7 +539,7 @@ impl Console {
                 .take(self.linewidth)
                 .copied()
                 .collect();
-            chars(&mut out, &typed, 8, input_y);
+            chars(&mut out, &typed, input_y);
             #[expect(
                 clippy::cast_possible_truncation,
                 reason = "spec CON-5.3: `(int)(realtime*con_cursorspeed)`, toward zero"
@@ -486,9 +551,9 @@ impl Console {
                 out.push(Placed {
                     anchor: Anchor::Screen,
                     item: HudItem::Char {
-                        x: column.saturating_mul(8),
+                        x: column.saturating_mul(CHAR_SIZE),
                         y: input_y,
-                        ch: 11,
+                        ch: CURSOR_OFF,
                     },
                 });
             }
@@ -498,18 +563,18 @@ impl Console {
         let x = width
             .saturating_sub(length)
             .saturating_add(2)
-            .saturating_mul(8);
+            .saturating_mul(CHAR_SIZE);
         let mut at = x;
         for &c in version {
             out.push(Placed {
                 anchor: Anchor::Screen,
                 item: HudItem::Char {
                     x: at,
-                    y: height.saturating_sub(8).saturating_add(shift),
+                    y: height.saturating_sub(CHAR_SIZE).saturating_add(shift),
                     ch: c,
                 },
             });
-            at = at.saturating_add(8);
+            at = at.saturating_add(CHAR_SIZE);
         }
         out
     }
@@ -524,7 +589,7 @@ impl Console {
         )]
         let blink = ((realtime * CON_CURSOR_SPEED) as i64) & 1;
         if let Some(cursor) = text.get_mut(self.pos) {
-            *cursor = if blink == 0 { 10 } else { 11 };
+            *cursor = if blink == 0 { CURSOR_ON } else { CURSOR_OFF };
         }
         for c in text
             .iter_mut()
@@ -541,7 +606,7 @@ impl Console {
         let shown = text
             .get(start..start.saturating_add(self.linewidth))
             .unwrap_or_default();
-        chars(out, shown, 8, lines.saturating_sub(16));
+        chars(out, shown, lines.saturating_sub(INPUT_ABOVE));
         let pos = self.pos;
         self.with_edit(|line| set(line, pos, 0));
     }
@@ -598,7 +663,7 @@ impl Console {
             }
             ConsoleKey::Tab => {
                 if let Some(name) = complete(self.typed()) {
-                    let end = name.len().min(CON_MAX_LINE.saturating_sub(3));
+                    let end = name.len().min(CON_MAX_LINE.saturating_sub(COMPLETION_ROOM));
                     let name = name.get(..end).unwrap_or_default();
                     let pos = name.len().saturating_add(1);
                     self.with_edit(|line| {
@@ -662,7 +727,7 @@ impl Console {
             ConsoleKey::Home => self.backscroll = self.most_back(screen_height),
             ConsoleKey::End => self.backscroll = 0,
             ConsoleKey::Char(c) => {
-                if (32..=127).contains(&c) && self.pos < CON_MAX_LINE.saturating_sub(1) {
+                if TYPED_KEYS.contains(&c) && self.pos < CON_MAX_LINE.saturating_sub(1) {
                     let pos = self.pos;
                     self.with_edit(|line| {
                         set(line, pos, c);
@@ -699,7 +764,7 @@ impl Console {
     fn most_back(&self, screen_height: i32) -> i64 {
         // CON-5.6: never below 0, which a console narrower than its screen is tall would go.
         i64_of(self.totallines)
-            .saturating_sub(i64::from(screen_height >> 3))
+            .saturating_sub(i64::from(screen_height >> CHAR_SHIFT))
             .saturating_sub(1)
             .max(0)
     }
@@ -713,14 +778,14 @@ fn set(line: &mut [u8; CON_MAX_LINE], at: usize, byte: u8) {
 }
 
 /// `line`'s characters drawn from x 8, each 8 to the right, at `y` (CON-2.2, CON-3.3).
-fn chars(out: &mut Vec<Placed>, line: &[u8], x0: i32, y: i32) {
-    let mut x = x0;
+fn chars(out: &mut Vec<Placed>, line: &[u8], y: i32) {
+    let mut x = CHAR_SIZE;
     for &ch in line {
         out.push(Placed {
             anchor: Anchor::Screen,
             item: HudItem::Char { x, y, ch },
         });
-        x = x.saturating_add(8);
+        x = x.saturating_add(CHAR_SIZE);
     }
 }
 
@@ -734,7 +799,9 @@ fn f32_of(n: i32) -> f32 {
     f32::from(i16::try_from(n).unwrap_or(i16::MAX))
 }
 
-/// `scr_con_current` as the int `Con_DrawConsole` takes, toward zero.
+/// `scr_con_current` as the int `Con_DrawConsole` takes: C's float-to-int conversion, toward
+/// zero, which is the one truncation the console's sliding has; named so the `#[expect]` for
+/// it stands on this one conversion rather than on the whole of `slide`.
 #[expect(
     clippy::cast_possible_truncation,
     reason = "spec CON-3.1: the float height passed as C's int, toward zero"
