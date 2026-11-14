@@ -914,6 +914,15 @@ fn reading_on_lexes_again_only_as_far_as_it_must() {
     assert_eq!(relexed(&long, 4), (0, 1, 1));
 }
 
+// spec FTEF-14.22: reading on at the end of a token that stood across where reading last went on
+// lexes again from there, as that token is not of the lexing after it: here `/*` at 40, inside
+// `$framea/*`, began a comment, which reading on at 42 leaves for the string `"*/a"`
+#[test]
+fn reading_on_past_a_token_read_across_lexes_again() {
+    let text = b")\"\n\n)\"warning\n\n\n\n\"x\"\n\n\nwarning\n\n\r$framea/*\r\"*/a\"";
+    assert_eq!(reading_on_differs(text, 40, 42), None);
+}
+
 // spec FTEF-14.22: reading on inside a comment before `warning` reads the name, not the raw text
 // a `#warning` would take, after it
 #[test]
