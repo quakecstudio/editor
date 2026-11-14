@@ -8,57 +8,20 @@
 
 use std::path::{Path, PathBuf};
 
-use qc_project::FsLoader;
-use qs_commands::{Registry, Session};
+use qs_commands::Session;
 use qs_map::{Brush, Face};
 use serde_json::{Value, json};
 
 use super::{FaceIndex, MAP_FACE_ALIGN, MAP_FACE_UV};
+use crate::MapEditError;
 use crate::map_edit::MapEdited;
+use crate::map_edit::testing::MapContext;
 use crate::map_edit::textures::TextureSources;
 use crate::map_edit::{BrushIndex, EntityIndex, MAP_BRUSH_TEXTURE, MAP_OPEN};
-use crate::preview::{HasPreview, Preview, PreviewConfig};
-use crate::{Config, HasWorkbench, MapEditError, Workbench, register, register_preview};
 
 const NEAR: f64 = 1e-6;
 /// The keep map's door, the fifth entity.
 const DOOR: usize = 4;
-
-struct Context {
-    workbench: Workbench<FsLoader>,
-    preview: Preview,
-}
-
-impl crate::HasMap for Context {
-    type Project = Workbench<FsLoader>;
-    type Live = Preview;
-
-    fn map_store(&mut self) -> &mut crate::MapStore {
-        self.workbench.maps_mut()
-    }
-
-    fn map_project(&mut self) -> &mut Workbench<FsLoader> {
-        &mut self.workbench
-    }
-
-    fn live_map(&mut self) -> Option<&mut Preview> {
-        Some(&mut self.preview)
-    }
-}
-
-impl HasWorkbench for Context {
-    type Loader = FsLoader;
-
-    fn workbench(&mut self) -> &mut Workbench<FsLoader> {
-        &mut self.workbench
-    }
-}
-
-impl HasPreview for Context {
-    fn workbench_and_preview(&mut self) -> (&mut Workbench<FsLoader>, &mut Preview) {
-        (&mut self.workbench, &mut self.preview)
-    }
-}
 
 /// The desktop's keep project, with its WAD and map.
 fn keep() -> PathBuf {
@@ -66,23 +29,8 @@ fn keep() -> PathBuf {
 }
 
 /// A session with the keep map open.
-fn session() -> Session<Context> {
-    let mut registry = Registry::new();
-    register(&mut registry).unwrap();
-    register_preview(&mut registry).unwrap();
-    let context = Context {
-        workbench: Workbench::new(FsLoader, Config::default()),
-        preview: Preview::new(PreviewConfig {
-            host: None,
-            app: Path::new("/nowhere/app").to_path_buf(),
-            game: None,
-            extra: Vec::new(),
-        }),
-    };
-    let mut session = Session::new(context, registry);
-    session
-        .execute("project.open", json!({ "path": keep() }))
-        .unwrap();
+fn session() -> Session<MapContext> {
+    let mut session = MapContext::in_project(&keep());
     session
         .execute(MAP_OPEN, json!({ "path": keep().join("maps/keep.map") }))
         .unwrap();
@@ -90,8 +38,8 @@ fn session() -> Session<Context> {
 }
 
 /// The world's first brush.
-fn first_brush(session: &Session<Context>) -> Brush {
-    let map = session.context().workbench.map().unwrap();
+fn first_brush(session: &Session<MapContext>) -> Brush {
+    let map = session.context().map().unwrap();
     map.file().entities[0].brushes().next().unwrap().clone()
 }
 
