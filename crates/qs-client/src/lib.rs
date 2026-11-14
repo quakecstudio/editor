@@ -56,7 +56,7 @@ pub use particles::{
 };
 pub use scene::{DynamicLight, EntitySlot, PoseBlend, Scene, SceneEntity, SceneParticle};
 pub use view::{
-    Contents, Refdef, Shift, VIEW_BOB, VIEW_BOBCYCLE, VIEW_BOBUP, VIEW_CENTERMOVE,
+    Contents, Footing, Refdef, Shift, VIEW_BOB, VIEW_BOBCYCLE, VIEW_BOBUP, VIEW_CENTERMOVE,
     VIEW_CENTERSPEED, VIEW_CSHIFTPERCENT, VIEW_FORWARDSPEED, VIEW_IDLE_CYCLES, VIEW_IDLE_LEVELS,
     VIEW_IDLESCALE, VIEW_KICKPITCH, VIEW_KICKROLL, VIEW_KICKTIME, VIEW_NUM_CSHIFTS, VIEW_ROLLANGLE,
     VIEW_ROLLSPEED, VIEW_VIEWSIZE, ViewInput, ViewSettings, ViewState, Weapon, angledelta,

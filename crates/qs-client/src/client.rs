@@ -29,7 +29,7 @@ use crate::message::Reader;
 use crate::models::{FrameInfo, ModelInfo, ModelKind, Models, Random, flags};
 use crate::particles::{PART_GRAVITY, Particles, Trail, TrailSpacing};
 use crate::scene::{DynamicLight, EntitySlot, PoseBlend, Scene, SceneEntity, SceneParticle};
-use crate::view::{Contents, Refdef, ViewInput, ViewSettings, ViewState};
+use crate::view::{Contents, Footing, Refdef, ViewInput, ViewSettings, ViewState};
 
 /// `IT_INVISIBILITY`, which hides the view model (REND-4.11).
 const IT_INVISIBILITY: i32 = 524_288;
@@ -1178,7 +1178,11 @@ impl Client {
         self.view.drift_pitch(
             self.time,
             self.time - self.oldtime,
-            self.onground,
+            if self.onground {
+                Footing::OnGround
+            } else {
+                Footing::InAir
+            },
             self.forwardmove,
             self.idealpitch,
             &mut self.viewangles,

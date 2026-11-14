@@ -17,11 +17,11 @@ use qs_sim::Message;
 
 use crate::{
     CLIENT_MAX_DLIGHTS, CLIENT_MAX_EDICTS, CLIENT_MAX_STATIC_ENTITIES, CLIENT_MAX_TEMP_ENTITIES,
-    CLIENT_MAX_VISEDICTS, CLIENT_SIGNONS, Client, ClientLimits, Contents, Event, FrameInfo, Game,
-    LerpSettings, ModelIndex, ModelInfo, ModelKind, Models, PART_ABSOLUTE_MIN_PARTICLES,
-    PART_RAMP1, PART_RAMP3, ParseError, ParticleType, Particles, Random, Reader, Scores,
-    SoundEntity, SoundRef, Trail, TrailSpacing, ViewInput, ViewSettings, ViewState, angledelta,
-    calc_bob, calc_roll, flags, gamma_table, stat,
+    CLIENT_MAX_VISEDICTS, CLIENT_SIGNONS, Client, ClientLimits, Contents, Event, Footing,
+    FrameInfo, Game, LerpSettings, ModelIndex, ModelInfo, ModelKind, Models,
+    PART_ABSOLUTE_MIN_PARTICLES, PART_RAMP1, PART_RAMP3, ParseError, ParticleType, Particles,
+    Random, Reader, Scores, SoundEntity, SoundRef, Trail, TrailSpacing, ViewInput, ViewSettings,
+    ViewState, angledelta, calc_bob, calc_roll, flags, gamma_table, stat,
 };
 
 /// `rand ()` returning the values given, then 0.
@@ -2225,49 +2225,49 @@ fn roll_and_bob() {
 fn pitch_drift() {
     let mut view = ViewState::default();
     let mut angles = [20.0, 0.0, 0.0];
-    view.drift_pitch(1.0, 0.1, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], 20.0, "nodrift by default");
-    view.drift_pitch(1.0, 0.1, true, 200.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::OnGround, 200.0, 0.0, &mut angles);
     assert!(view.nodrift, "0.1 of running is short of 0.15");
-    view.drift_pitch(1.0, 0.1, true, 200.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::OnGround, 200.0, 0.0, &mut angles);
     assert!(
         !view.nodrift,
         "0.2 of running is past 0.15: the drift starts"
     );
     assert_eq!(angles[0], 20.0, "nothing moves the frame it starts");
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert!(
         (angles[0] - 15.0).abs() < 1e-3,
         "move 0.01 * 500: {}",
         angles[0]
     );
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert!(
         (angles[0] - 9.95).abs() < 1e-3,
         "the velocity grew by 5 to 505: {}",
         angles[0]
     );
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert!((angles[0] - 4.85).abs() < 1e-3, "{}", angles[0]);
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert_eq!(
         angles[0], 0.0,
         "5.15 would overshoot: it lands on the ideal"
     );
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], 0.0);
     let mut angles = [-10.0, 0.0, 0.0];
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], -10.0, "the velocity starts from 0 again");
-    view.drift_pitch(1.0, 0.01, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.01, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert!(
         angles[0] > -10.0 && angles[0] <= 0.0,
         "upward too: {}",
         angles[0]
     );
-    view.drift_pitch(1.0, 0.1, false, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::InAir, 0.0, 0.0, &mut angles);
     let held = angles[0];
-    view.drift_pitch(1.0, 0.1, false, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::InAir, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], held, "not on the ground");
     view.stop_pitch_drift(5.0);
     assert!(view.nodrift);
@@ -2276,7 +2276,7 @@ fn pitch_drift() {
     view.start_pitch_drift(5.1);
     assert!(!view.nodrift);
     let mut angles = [0.0; 3];
-    view.drift_pitch(1.0, 0.1, true, 0.0, 0.0, &mut angles);
+    view.drift_pitch(1.0, 0.1, Footing::OnGround, 0.0, 0.0, &mut angles);
     assert_eq!(angles[0], 0.0, "no delta");
 }
 
@@ -3236,9 +3236,9 @@ fn the_drift_waits_for_a_frame_after_a_stop() {
     let mut view = ViewState::default();
     let mut angles = [20.0, 0.0, 0.0];
     view.stop_pitch_drift(5.0);
-    view.drift_pitch(5.0, 0.2, true, 200.0, 0.0, &mut angles);
+    view.drift_pitch(5.0, 0.2, Footing::OnGround, 200.0, 0.0, &mut angles);
     assert!(view.nodrift, "stopped at this very time");
-    view.drift_pitch(5.1, 0.2, true, 200.0, 0.0, &mut angles);
+    view.drift_pitch(5.1, 0.2, Footing::OnGround, 200.0, 0.0, &mut angles);
     assert!(!view.nodrift);
 }
 
