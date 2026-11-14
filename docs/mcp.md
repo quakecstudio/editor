@@ -142,8 +142,10 @@ refused as a tool error before the command runs.
 - the roots, and a read-only project;
 - a session that does not start;
 - a server connected to an app's session, its staged edit there;
-- the map tools listed with their schemas, a sealed room built and compiled through them alone,
-  and a read-only server refusing every map tool that writes.
+- the map tools listed with their schemas and the review's decisions not; a sealed room built
+  and compiled through them alone, its edits staged and a read opening no review; a read-only
+  server refusing every map tool that writes; and, connected to an app, an edit refused for a
+  map outside the write roots.
 
 `crates/qs-commands/src/tests/remote.rs` tests the socket's host and client,
 `apps/desktop/src/tests.rs` a command sent to the window over it, and `apps/cli/src/tests.rs`
