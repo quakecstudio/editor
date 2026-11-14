@@ -250,11 +250,18 @@ pub(crate) fn main(
 }
 
 /// Whether two compiles that both stop stop alike: the oracle names the error ours names, or
-/// ours stops at one of qbsp's fixed-size limits where qbsp, writing past it, crashes.
+/// ours stops at one of qbsp's fixed-size limits where qbsp, writing past it, crashes; and ours
+/// stopping at `MAX_HULL_POINTS` is alike with any stop of qbsp, whose `AddHullPoint` writes
+/// past its arrays before it tests that limit (QBSP-5.7).
 fn stop_alike(ours: &str, theirs: &str) -> bool {
     let what = ours.rsplit(": ").next().unwrap_or(ours);
-    theirs.contains(what) || (what.contains("MAX_") && theirs.contains("signal"))
+    theirs.contains(what)
+        || (what.contains("MAX_") && theirs.contains("signal"))
+        || what == HULL_POINTS_STOP
 }
+
+/// The stop of QBSP-5.6 whose oracle stop is undefined (QBSP-5.7).
+const HULL_POINTS_STOP: &str = "MAX_HULL_POINTS";
 
 /// The map `text` of `path` compiled by `qbsp` in `dir`, emptied first, with the external maps
 /// our compile read, `externals`, copied in from beside the map at the same relative paths; the
@@ -495,5 +502,22 @@ mod tests {
         let limit = "maps/b.map: MAX_HULL_POINTS";
         assert!(stop_alike(limit, "signal: 11 (SIGSEGV): no message"));
         assert!(!stop_alike(ours, "signal: 11 (SIGSEGV): no message"));
+    }
+
+    // spec QBSP-5.7: ours stopping at MAX_HULL_POINTS is alike with whatever qbsp stops with
+    // after writing past its hull arrays, an unrelated error included; another stop is not
+    #[test]
+    fn a_hull_points_stop_is_alike_with_any_qbsp_stop() {
+        let limit = "maps/lq-end.map: MAX_HULL_POINTS";
+        assert!(stop_alike(
+            limit,
+            "exit status: 1: numtexinfo == MAX_MAP_TEXINFO"
+        ));
+        assert!(stop_alike(limit, "exit status: 1: MAX_HULL_POINTS"));
+        let edges = "maps/lq-end.map: MAX_HULL_EDGES";
+        assert!(!stop_alike(
+            edges,
+            "exit status: 1: numtexinfo == MAX_MAP_TEXINFO"
+        ));
     }
 }
