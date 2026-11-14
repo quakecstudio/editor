@@ -66,8 +66,19 @@ pub fn conflicts(text: &str) -> Vec<Conflict> {
     out
 }
 
-/// A conflict's index among a file's conflicts, from 0.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// A conflict's index among a file's conflicts, from 0; written to JSON as the bare number.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(transparent)]
 pub struct ConflictIndex(usize);
 
 impl ConflictIndex {

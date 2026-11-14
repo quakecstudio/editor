@@ -22,6 +22,8 @@ mod tests;
 use core::cmp::Ordering;
 use core::fmt;
 
+use qc_progs::bytes::read_array;
+
 /// Bytes in a chunk's id and length (WAV-1.1).
 pub const WAV_CHUNK_HEADER_SIZE: usize = 8;
 
@@ -328,9 +330,4 @@ fn le_i16(bytes: &[u8], offset: usize) -> Option<i16> {
 /// The signed little-endian 32-bit integer at `offset`, or `None` past the end of `bytes`.
 fn le_i32(bytes: &[u8], offset: usize) -> Option<i32> {
     read_array(bytes, offset).map(i32::from_le_bytes)
-}
-
-/// The `N` bytes at `offset`, or `None` past the end of `bytes`.
-fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
-    bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
 }

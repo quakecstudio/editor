@@ -9,6 +9,7 @@ use std::fmt;
 use std::io::{self, Read, Seek, SeekFrom};
 
 use miniz_oxide::inflate::{TINFLStatus, decompress_to_vec_with_limit};
+use qc_progs::bytes::read_array;
 
 /// Why a zip, or a member of it, could not be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -328,17 +329,12 @@ pub fn crc32(bytes: &[u8]) -> u32 {
 
 /// The little-endian `u16` at `at`.
 fn u16_at(bytes: &[u8], at: usize) -> Option<u16> {
-    let b: [u8; 2] = bytes.get(at..at.checked_add(2)?)?.try_into().ok()?;
-    Some(u16::from_le_bytes(b))
+    read_array(bytes, at).map(u16::from_le_bytes)
 }
 
 /// The little-endian `u32` at `at`.
 fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
-    let b: [u8; 4] = bytes
-        .get(at..at.checked_add(size_of::<u32>())?)?
-        .try_into()
-        .ok()?;
-    Some(u32::from_le_bytes(b))
+    read_array(bytes, at).map(u32::from_le_bytes)
 }
 
 mod write;

@@ -6,6 +6,8 @@
 //! failure is reported, reading never panics for any input, and a file is read with its line
 //! table, optional column table and trailing bytes so the writer can reproduce it (LNO-6.2).
 
+use qc_progs::bytes::read_array;
+
 use crate::{LNO_HEADER_SIZE, LNO_MAGIC, LNO_VERSION, LnoFile};
 
 /// Why a `.lno` file could not be read. Each variant is one of the LNO-5 checks, in the order
@@ -55,11 +57,6 @@ impl core::error::Error for ReadError {}
 /// it ever did, which no caller relies on.
 fn read_u32(bytes: &[u8], offset: usize) -> u32 {
     read_array(bytes, offset).map_or(0, u32::from_le_bytes)
-}
-
-/// The `N` bytes at `offset`, or `None` past the end of `bytes`.
-fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Option<[u8; N]> {
-    bytes.get(offset..offset.checked_add(N)?)?.try_into().ok()
 }
 
 impl LnoFile {

@@ -3675,6 +3675,8 @@ name = "qs-git"
 version = "2026.11.1"
 dependencies = [
  "proptest",
+ "schemars",
+ "serde",
 ]
 
 [[package]]
@@ -3922,6 +3924,7 @@ name = "qs-wav"
 version = "2026.11.1"
 dependencies = [
  "proptest",
+ "qc-progs",
 ]
 
 [[package]]

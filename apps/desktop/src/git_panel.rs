@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, RichText, Ui};
 use qs_workbench::git::{
-    ConflictSide, GitBlameLine, GitBranch, GitChange, GitCommit, GitConflict, GitFile, GitHunk,
-    GitStatus,
+    ConflictIndex, ConflictSide, GitBlameLine, GitBranch, GitChange, GitCommit, GitConflict,
+    GitFile, GitHunk, GitStatus, HunkIndex,
 };
 
 use crate::shell::name_field;
@@ -72,9 +72,9 @@ pub(crate) enum GitAction {
     /// Read the repository again.
     Refresh,
     /// Stage a file, or one of its unstaged hunks.
-    Stage(PathBuf, Option<usize>),
+    Stage(PathBuf, Option<HunkIndex>),
     /// Unstage a file, or one of its staged hunks.
-    Unstage(PathBuf, Option<usize>),
+    Unstage(PathBuf, Option<HunkIndex>),
     /// Commit what is staged with this message.
     Commit(String),
     /// Check out this branch.
@@ -82,7 +82,7 @@ pub(crate) enum GitAction {
     /// Create this branch and check it out.
     CreateBranch(String),
     /// Resolve a file's conflict to a side.
-    Resolve(PathBuf, usize, ConflictSide),
+    Resolve(PathBuf, ConflictIndex, ConflictSide),
     /// Show or hide the open file's blame.
     ToggleBlame,
     /// Open a file at a line, from 1.
@@ -245,12 +245,15 @@ fn file_ui(ui: &mut Ui, theme: &Theme, data: &GitData, file: &GitFile) -> Option
     if let Some((_, unstaged, staged)) = hunks {
         for (index, hunk) in unstaged.iter().enumerate() {
             if hunk_ui(ui, theme, hunk, Text::StageHunk) {
-                action = Some(GitAction::Stage(path.clone(), Some(index)));
+                action = Some(GitAction::Stage(path.clone(), Some(HunkIndex::new(index))));
             }
         }
         for (index, hunk) in staged.iter().enumerate() {
             if hunk_ui(ui, theme, hunk, Text::UnstageHunk) {
-                action = Some(GitAction::Unstage(path.clone(), Some(index)));
+                action = Some(GitAction::Unstage(
+                    path.clone(),
+                    Some(HunkIndex::new(index)),
+                ));
             }
         }
     }
@@ -272,7 +275,11 @@ fn file_ui(ui: &mut Ui, theme: &Theme, data: &GitData, file: &GitFile) -> Option
                 (ConflictSide::Both, Text::KeepBoth),
             ] {
                 if ui.button(text.get()).clicked() {
-                    action = Some(GitAction::Resolve(path.clone(), index, side));
+                    action = Some(GitAction::Resolve(
+                        path.clone(),
+                        ConflictIndex::new(index),
+                        side,
+                    ));
                 }
             }
         });

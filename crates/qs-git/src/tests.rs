@@ -385,6 +385,7 @@ proptest! {
             kept,
             format!("{}{}{}{}", lines(&before), lines(&ours), lines(&theirs), lines(&after))
         );
-        prop_assert!(conflicts(&resolve(&text, ConflictIndex::new(0), Side::Ours).unwrap()).is_empty());
+        let resolved = resolve(&text, ConflictIndex::new(0), Side::Ours).unwrap();
+        prop_assert!(conflicts(&resolved).is_empty());
     }
 }

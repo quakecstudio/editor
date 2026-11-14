@@ -20,8 +20,19 @@ pub struct Hunk {
     pub text: String,
 }
 
-/// A hunk's index in a file's diff, from 0.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// A hunk's index in a file's diff, from 0; written to JSON as the bare number.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(transparent)]
 pub struct HunkIndex(usize);
 
 impl HunkIndex {
