@@ -3603,10 +3603,10 @@ name = "qs-client"
 version = "2026.11.1"
 dependencies = [
  "qc-builtins",
+ "qc-edict",
  "qc-vm",
  "qs-mdl",
  "qs-sim",
- "qs-sound",
 ]
 
 [[package]]
@@ -3856,6 +3856,7 @@ name = "qs-sound"
 version = "2026.11.1"
 dependencies = [
  "qc-builtins",
+ "qc-edict",
  "qc-vm",
  "qs-wav",
  "symphonia",

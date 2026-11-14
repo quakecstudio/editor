@@ -54,7 +54,7 @@ pub use particles::{
     PART_MAX_PARTICLES, PART_RAMP1, PART_RAMP2, PART_RAMP3, Particle, ParticleType, Particles,
     Trail, TrailSpacing,
 };
-pub use qs_sound::SoundEntity;
+pub use qc_edict::SoundEntity;
 pub use scene::{DynamicLight, EntitySlot, PoseBlend, Scene, SceneEntity, SceneParticle};
 pub use view::{
     Contents, Footing, Refdef, Shift, VIEW_BOB, VIEW_BOBCYCLE, VIEW_BOBUP, VIEW_CENTERMOVE,

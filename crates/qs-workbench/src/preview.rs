@@ -458,7 +458,7 @@ impl Preview {
     pub fn select(&mut self, edict: Edict) -> Result<(), PreviewError> {
         let answer = self
             .live_client()?
-            .inspect(InspectWhat::Edict(edict.get()))?;
+            .inspect(InspectWhat::Edict(edict.into()))?;
         self.entities.select(&answer);
         Ok(())
     }

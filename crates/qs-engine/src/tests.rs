@@ -275,6 +275,7 @@ impl Host for Fake {
             "step",
             "breakpoint/clear",
             "evaluate",
+            "field/set",
             "window/place",
         ])
     }
@@ -350,9 +351,23 @@ fn the_client_speaks_the_bridge() {
     assert_eq!(stepped["params"]["kind"], "frame");
     let cleared = client.clear_breakpoint(BreakpointId::new(4)).unwrap();
     assert_eq!(cleared["params"], json!({ "id": 4 }));
+    assert_eq!(BreakpointId::new(4).to_string(), "4");
+    let set = client
+        .set_field(
+            qc_edict::EdictNumber::new(5),
+            "health",
+            json!({ "type": "float", "value": 50.0 }),
+        )
+        .unwrap();
+    assert_eq!(
+        set["params"],
+        json!({ "edict": 5, "field": "health", "value": { "type": "float", "value": 50.0 } })
+    );
     let evaluated = client.evaluate("self.health").unwrap();
     assert_eq!(evaluated["params"], json!({ "expression": "self.health" }));
-    let inspected = client.inspect(InspectWhat::Edict(3)).unwrap();
+    let inspected = client
+        .inspect(InspectWhat::Edict(qc_edict::EdictNumber::new(3)))
+        .unwrap();
     assert_eq!(inspected["params"], json!({ "what": "edict", "edict": 3 }));
     assert!(matches!(
         client.screenshot(None),
@@ -374,7 +389,7 @@ fn the_client_speaks_the_bridge() {
     );
     // Each answer, initialize's too, came after an event, kept in order.
     let events = client.take_events();
-    assert_eq!(events.len(), 7);
+    assert_eq!(events.len(), 8);
     assert!(events.iter().all(|e| e.method == "console/line"));
     // The host answers a step with bad parameters with -32602 (BRIDGE-4.2).
     let bad = client.request("step", json!({ "kind": "sideways" }));

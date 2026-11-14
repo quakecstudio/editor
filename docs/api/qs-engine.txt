@@ -78,6 +78,7 @@ use qs_engine::BridgeEvent = client::BridgeEvent
 use qs_engine::Client = client::Client
 use qs_engine::ClientError = client::ClientError
 use qs_engine::EntityTarget = client::EntityTarget
+use qs_engine::ErrorCode = qs_bridge::ErrorCode
 use qs_engine::Flavour = run_root::Flavour
 use qs_engine::InspectWhat = client::InspectWhat
 use qs_engine::LaunchError = launch::LaunchError

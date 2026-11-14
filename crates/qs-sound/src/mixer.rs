@@ -16,6 +16,7 @@
 //! 16-bit stereo frames.
 
 use qc_builtins::math::vector_normalize;
+use qc_edict::SoundEntity;
 use qc_vm::convert::{double_to_float, double_to_int, float_to_int, int_to_float};
 
 use crate::output::Output;
@@ -114,28 +115,6 @@ impl Ambient {
             Self::Sky => Some("ambience/wind2.wav"),
             Self::Slime | Self::Lava => None,
         }
-    }
-}
-
-/// The entity a sound comes from, `S_StartSound`'s `entnum`: an edict, or -1 for a temporary
-/// entity's.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SoundEntity(i32);
-
-impl SoundEntity {
-    /// A temporary entity's sound.
-    pub const TEMPORARY: Self = Self(-1);
-
-    /// Edict `num`'s sound.
-    #[must_use]
-    pub const fn new(num: i32) -> Self {
-        Self(num)
-    }
-
-    /// The number `S_StartSound` is given.
-    #[must_use]
-    pub const fn get(self) -> i32 {
-        self.0
     }
 }
 
@@ -982,4 +961,19 @@ impl Channel {
 fn transfer(sum: i32, snd_vol: i32, music: i32) -> i16 {
     let val = (sum.wrapping_mul(snd_vol) >> VOLUME_BITS).saturating_add(music);
     i16::try_from(val.clamp(i32::from(i16::MIN), i32::from(i16::MAX))).unwrap_or(0)
+}
+
+/// Each fixed-point scale of the mixer agrees with its shift or its integer form.
+#[cfg(test)]
+pub(crate) fn check_scales() {
+    assert_eq!(
+        VOLUME_ONE.to_bits(),
+        f32::from(1_u16 << VOLUME_BITS).to_bits()
+    );
+    assert_eq!(
+        Some(CHANNEL_VOLUME_SCALE.to_bits()),
+        u8::try_from(CHANNEL_VOLUME_MAX)
+            .ok()
+            .map(|max| f32::from(max).to_bits())
+    );
 }

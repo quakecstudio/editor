@@ -16,7 +16,6 @@ const qs_sound::mixer::SND_PACKET_ATTENUATION
 const qs_sound::mixer::SND_PACKET_VOLUME
 const qs_sound::mixer::SND_PAINTBUFFER_SIZE
 const qs_sound::mixer::SND_STATIC_ATTENUATION_DIVISOR
-const qs_sound::mixer::SoundEntity::TEMPORARY
 const qs_sound::music::RRE_MUSIC_DIR
 const qs_sound::music::RRE_MUSIC_EXTENSIONS
 const qs_sound::music::SND_CD_RATE
@@ -94,8 +93,6 @@ fn qs_sound::mixer::Mixer::take_messages
 fn qs_sound::mixer::Mixer::total_channels
 fn qs_sound::mixer::Mixer::update
 fn qs_sound::mixer::Random::rand
-fn qs_sound::mixer::SoundEntity::get
-fn qs_sound::mixer::SoundEntity::new
 fn qs_sound::music::CueSheet::read
 fn qs_sound::music::CueSheet::track
 fn qs_sound::music::Music::new
@@ -148,7 +145,6 @@ struct qs_sound::mixer::Listener
 struct qs_sound::mixer::Mixer
 struct qs_sound::mixer::MixerSpec
 struct qs_sound::mixer::Settings
-struct qs_sound::mixer::SoundEntity
 struct qs_sound::mixer::Start
 struct qs_sound::music::CueSheet
 struct qs_sound::music::CueTrack
@@ -211,7 +207,7 @@ use qs_sound::SamplePos = sfx::SamplePos
 use qs_sound::Settings = mixer::Settings
 use qs_sound::SfxId = sfx::SfxId
 use qs_sound::SoundData = sfx::SoundData
-use qs_sound::SoundEntity = mixer::SoundEntity
+use qs_sound::SoundEntity = qc_edict::SoundEntity
 use qs_sound::SoundError = sfx::SoundError
 use qs_sound::SoundTable = sfx::SoundTable
 use qs_sound::Start = mixer::Start

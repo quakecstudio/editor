@@ -45,3 +45,25 @@ impl fmt::Display for EdictNumber {
         self.0.fmt(f)
     }
 }
+
+/// The entity a sound comes from, `S_StartSound`'s `entnum`: an edict, or -1 for a temporary
+/// entity's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SoundEntity(i32);
+
+impl SoundEntity {
+    /// A temporary entity's sound.
+    pub const TEMPORARY: Self = Self(-1);
+
+    /// Edict `num`'s sound.
+    #[must_use]
+    pub const fn new(num: i32) -> Self {
+        Self(num)
+    }
+
+    /// The number `S_StartSound` is given.
+    #[must_use]
+    pub const fn get(self) -> i32 {
+        self.0
+    }
+}

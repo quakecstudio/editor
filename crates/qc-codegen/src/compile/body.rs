@@ -40,12 +40,7 @@ impl Compiler<'_> {
     ) -> Lowered<()> {
         // A bare `return` names the `ret*` local under FTEQCC (FTE-18.10); id's `qcc` writes
         // `RETURN` of nothing whatever the function returns (QC-13.8).
-        let bare = if self.returns_value() && self.dialect.has_fteqcc_extensions() {
-            BareReturn::RetLocal
-        } else {
-            BareReturn::Plain
-        };
-        if !writable(body, bare) {
+        if !writable(body, self.bare_return_kind()) {
             return Err(Internal::Unfollowed).at(named);
         }
         if !self.defaults_kept(body) {
@@ -370,12 +365,18 @@ impl Compiler<'_> {
         matches!(default, ast::Expr::Literal(_) | ast::Expr::Name(_)).then_some((file, default))
     }
 
-    /// Whether the function being compiled returns a value, which a bare `return` of
-    /// [`Name::RetLocal`] needs.
-    fn returns_value(&self) -> bool {
-        self.body_return
+    /// What a bare `return` of the function being compiled is (FTE-18.10, QC-13.8): the
+    /// `ret*` local under FTEQCC in a function that returns a value, else `RETURN` of nothing.
+    pub(super) fn bare_return_kind(&self) -> BareReturn {
+        let returns_value = self
+            .body_return
             .as_ref()
-            .is_some_and(|ty| ty.etype() != qc_types::Etype::Void)
+            .is_some_and(|ty| ty.etype() != qc_types::Etype::Void);
+        if returns_value && self.dialect.has_fteqcc_extensions() {
+            BareReturn::RetLocal
+        } else {
+            BareReturn::Plain
+        }
     }
 
     /// The operand `name` is in the statement at `index`: a global, a slot the allocation
@@ -481,7 +482,7 @@ const STATEMENT_OPERANDS: usize = 3;
 /// a function that returns a value (FTE-18.10); id's `qcc` writes `RETURN` of nothing whatever
 /// the function returns (QC-13.8).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BareReturn {
+pub(super) enum BareReturn {
     /// `RETURN` of nothing.
     Plain,
     /// `RETURN` of the `ret*` local.
@@ -616,7 +617,30 @@ mod tests {
 
     use qc_progs::opcode::Opcode;
 
+    use qc_sema::ir::BodyStatement;
+
+    use super::BareReturn;
     use crate::tests::{body, fte_progs, global};
+
+    // spec QC-18.3: a vector's words, a parameter slot's stride, are qc-types' vector slots
+    #[test]
+    fn a_vector_is_three_words() {
+        assert_eq!(
+            usize::try_from(super::super::VECTOR_WORDS).ok(),
+            Some(qc_types::PROGS_VECTOR_SLOTS)
+        );
+    }
+
+    // spec FTE-18.10: a `RETURN` of nothing misses the `ret*` local only where a bare
+    // `return` names it; QC-13.8: id's form never does
+    #[test]
+    fn a_bare_return_misses_the_local_only_where_it_names_it() {
+        let bare = BodyStatement::bare(qc_preproc::Op::Return);
+        assert!(BareReturn::RetLocal.misses_local(&bare));
+        assert!(!BareReturn::Plain.misses_local(&bare));
+        let other = BodyStatement::bare(qc_preproc::Op::Goto);
+        assert!(!BareReturn::RetLocal.misses_local(&other));
+    }
 
     // spec QC-21.5: a body written from the semantic model gives each value a statement makes a
     // slot of its own in the order the statements make them, and a store folds into the last

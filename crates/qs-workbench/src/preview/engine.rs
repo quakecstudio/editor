@@ -121,7 +121,7 @@ pub fn inspect(client: &mut Client, params: &EngineInspectParams) -> Result<Valu
         (Inspected::Entities, _) => InspectWhat::Entities,
         (Inspected::Globals, _) => InspectWhat::Globals,
         (Inspected::Stack, _) => InspectWhat::Stack,
-        (Inspected::Edict, Some(edict)) => InspectWhat::Edict(edict.get()),
+        (Inspected::Edict, Some(edict)) => InspectWhat::Edict(edict.into()),
         (Inspected::Edict, None) => {
             return Err(PreviewError::BadValue {
                 field: "edict".to_owned(),

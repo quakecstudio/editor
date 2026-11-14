@@ -766,16 +766,12 @@ impl<'a> Compiler<'a> {
     /// FTE-18.10: what a bare `return;` returns: under FTEQCC, in a function that returns a
     /// value, its local `ret*` of the return type, made at the first such `return`; else 0.
     fn bare_return(&mut self, span: Span) -> Lowered<u32> {
-        let Some(ty) = self
-            .body_return
-            .clone()
-            .filter(|_| self.dialect.has_fteqcc_extensions())
-        else {
-            return Ok(0);
-        };
-        if ty.etype() == Etype::Void {
+        if self.bare_return_kind() == body::BareReturn::Plain {
             return Ok(0);
         }
+        let Some(ty) = self.body_return.clone() else {
+            return Ok(0);
+        };
         if let Some(place) = self.ret_local {
             return Ok(self.program.def(place).at(span)?.ofs);
         }
@@ -1052,7 +1048,7 @@ const VECTOR_WORDS: u32 = 3;
 fn parm_slot(i: usize) -> Option<u32> {
     u32::try_from(i)
         .ok()?
-        .checked_mul(3)?
+        .checked_mul(VECTOR_WORDS)?
         .checked_add(OFS_PARM0)
 }
 

@@ -15,6 +15,7 @@ use crate::{
     SND_NUM_AMBIENTS, SamplePos, SfxId, SoundData, SoundEntity, SoundError, SoundTable, Start,
     Width, track_files,
 };
+use crate::{mixer, sfx};
 
 /// A RIFF WAVE file of one channel: PCM at `rate`, `bits` per sample, the raw sample bytes
 /// `data`, and a `cue ` chunk at `loopstart` when given.
@@ -1297,4 +1298,15 @@ fn a_channel_silent_on_the_right_is_painted() {
     out.clear();
     mixer.paint_channels(&mut table, from + 1, &mut out);
     assert_eq!(out, [12485, 0]);
+}
+
+// No spec statement: P6-32, a sample's place reads as its index, a temporary entity's sound is
+// entity -1, and each fixed-point scale agrees with its shift (SND-5.4, SND-1.6)
+#[test]
+fn sample_places_sound_entities_and_scales() {
+    assert_eq!(SamplePos::new(7).get(), 7);
+    assert_eq!(SoundEntity::TEMPORARY.get(), -1);
+    assert_eq!(SoundEntity::new(3).get(), 3);
+    mixer::check_scales();
+    sfx::check_scales();
 }

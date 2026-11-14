@@ -23,7 +23,7 @@ pub use mixer::{
     SND_DEFAULT_VOLUME, SND_FIRST_STATIC, SND_MAX_CHANNELS, SND_MAX_DYNAMIC_CHANNELS,
     SND_MAX_RAW_SAMPLES, SND_MIXAHEAD, SND_NOMINAL_CLIP_DIST, SND_NUM_AMBIENTS, SND_ORACLE_SPEED,
     SND_PACKET_ATTENUATION, SND_PACKET_VOLUME, SND_PAINTBUFFER_SIZE,
-    SND_STATIC_ATTENUATION_DIVISOR, Settings, SoundEntity, Start,
+    SND_STATIC_ATTENUATION_DIVISOR, Settings, Start,
 };
 pub use music::{
     CueSheet, CueTrack, Music, MusicStream, RRE_MUSIC_DIR, RRE_MUSIC_EXTENSIONS, Read, Repeat,
@@ -31,6 +31,7 @@ pub use music::{
 };
 pub use ogg::{OggError, OggStream};
 pub use output::{NullOutput, Output};
+pub use qc_edict::SoundEntity;
 pub use sfx::{
     Loaded, Reader, SND_MAX_NAME, SND_MAX_SFX, SamplePos, SfxId, SoundData, SoundError, SoundTable,
     Width,

@@ -262,7 +262,7 @@ fn suite(
     // BRIDGE-6.2: a method the host does not know is answered with -32601 (method not found).
     let unknown = client.request("entity/teleport", json!({}));
     expect(
-        matches!(&unknown, Err(qs_engine::ClientError::Rpc { code, .. }) if code.code() == -32601),
+        matches!(&unknown, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::MethodNotFound),
         "an unknown method is answered as not found",
     )?;
     steps.push("an unknown method is refused".to_owned());
@@ -291,7 +291,7 @@ fn suite(
     // BRIDGE-4.5: a breakpoint at a line no statement is on is refused.
     let missing = client.request("breakpoint/set", json!({ "file": "nosuch.qc", "line": 1 }));
     expect(
-        matches!(&missing, Err(qs_engine::ClientError::Rpc { code, .. }) if code.code() == -32007),
+        matches!(&missing, Err(qs_engine::ClientError::Rpc { code, .. }) if *code == qs_engine::ErrorCode::NoSuchBreakpoint),
         "a breakpoint at no statement is refused",
     )?;
     steps.push("breakpoint/set".to_owned());
@@ -359,21 +359,24 @@ fn suite(
         .and_then(|n| u32::try_from(n).ok())
         .ok_or("entity/spawn gives an edict")?;
     let edit = client
-        .edit_entity(EntityTarget::Edict(edict), &[("origin", "8 16 24")])
+        .edit_entity(
+            EntityTarget::Edict(Edict::new(edict).into()),
+            &[("origin", "8 16 24")],
+        )
         .map_err(|e| format!("entity/edit: {e}"))?;
     expect(
         edit == json!({ "applied": "now" }),
         "running, entity/edit applies now",
     )?;
     let edited = client
-        .inspect(InspectWhat::Edict(edict))
+        .inspect(InspectWhat::Edict(Edict::new(edict).into()))
         .map_err(|e| e.to_string())?;
     expect(
         field(&edited, "origin") == Some(json!({ "type": "vector", "value": [8.0, 16.0, 24.0] })),
         "entity/edit moves the entity",
     )?;
     client
-        .remove(EntityTarget::Edict(edict))
+        .remove(EntityTarget::Edict(Edict::new(edict).into()))
         .map_err(|e| format!("entity/remove: {e}"))?;
     let entities = client
         .inspect(InspectWhat::Entities)
@@ -434,7 +437,7 @@ fn a_monster(client: &mut Client) -> Result<u32, String> {
 /// [`LiveChange::send`].
 fn map_entities(client: &mut Client, monster: u32) -> Result<(), String> {
     let classname = client
-        .inspect(InspectWhat::Edict(monster))
+        .inspect(InspectWhat::Edict(Edict::new(monster).into()))
         .map_err(|e| e.to_string())?
         .get("classname")
         .and_then(Value::as_str)
@@ -454,7 +457,7 @@ fn map_entities(client: &mut Client, monster: u32) -> Result<(), String> {
         .and_then(|n| u32::try_from(n).ok())
         .ok_or("entity/spawn gives an edict")?;
     let placed = client
-        .inspect(InspectWhat::Edict(edict))
+        .inspect(InspectWhat::Edict(Edict::new(edict).into()))
         .map_err(|e| e.to_string())?;
     expect(
         text(&placed, "classname") == classname,
@@ -467,7 +470,7 @@ fn map_entities(client: &mut Client, monster: u32) -> Result<(), String> {
     .send(client)
     .map_err(|e| format!("moving the placed {classname}: {e}"))?;
     let moved = client
-        .inspect(InspectWhat::Edict(edict))
+        .inspect(InspectWhat::Edict(Edict::new(edict).into()))
         .map_err(|e| e.to_string())?;
     expect(
         field(&moved, "origin") == Some(json!({ "type": "vector", "value": [4.0, 8.0, 64.0] })),
@@ -482,7 +485,7 @@ fn map_entities(client: &mut Client, monster: u32) -> Result<(), String> {
     LiveChange::Remove { place }
         .send(client)
         .map_err(|e| format!("removing the placed {classname}: {e}"))?;
-    let gone = client.inspect(InspectWhat::Edict(edict));
+    let gone = client.inspect(InspectWhat::Edict(Edict::new(edict).into()));
     expect(gone.is_err(), "the removed monster is freed")?;
     Ok(())
 }
@@ -499,7 +502,7 @@ fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
         "paused, field/set waits",
     )?;
     let waiting = client
-        .inspect(InspectWhat::Edict(monster))
+        .inspect(InspectWhat::Edict(Edict::new(monster).into()))
         .map_err(|e| e.to_string())?;
     expect(
         field(&waiting, "health") != Some(health.clone()),
@@ -515,7 +518,7 @@ fn paused_health(client: &mut Client, monster: u32) -> Result<(), String> {
         "resume says the game runs",
     )?;
     let edited = client
-        .inspect(InspectWhat::Edict(monster))
+        .inspect(InspectWhat::Edict(Edict::new(monster).into()))
         .map_err(|e| e.to_string())?;
     expect(
         field(&edited, "health") == Some(health),

@@ -354,3 +354,9 @@ impl SoundTable {
         self.sfx.is_empty()
     }
 }
+
+/// The resampler's fixed-point step agrees with its shift.
+#[cfg(test)]
+pub(crate) fn check_scales() {
+    assert_eq!(FRAC_ONE.to_bits(), f32::from(1_u16 << FRAC_BITS).to_bits());
+}

@@ -21,7 +21,7 @@
 use qc_builtins::math::{anglemod, makevectors, vector_normalize};
 use qc_vm::convert::{double_to_float, double_to_int, int_to_float};
 
-use qs_sound::SoundEntity;
+use qc_edict::SoundEntity;
 
 use crate::entity::{Baseline, Entity};
 use crate::hud::{CenterMode, CenterPrint, HUD_GAME_DEATHMATCH, HudInput, HudItem, Placed};

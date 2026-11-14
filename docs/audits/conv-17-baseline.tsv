@@ -555,7 +555,6 @@ magic-number	crates/qc-builtins/src/vkstrings.rs	uri_unescape:3
 magic-number	crates/qc-builtins/src/vkstrings.rs	uri_unescape:4
 magic-number	crates/qc-codegen/src/compile.rs	Compiler::function:3
 magic-number	crates/qc-codegen/src/compile.rs	Compiler::function:8
-magic-number	crates/qc-codegen/src/compile.rs	parm_slot:3
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::bounds_error:3
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::emit_getter:3
 magic-number	crates/qc-codegen/src/compile/arrays.rs	Compiler::emit_setter:3

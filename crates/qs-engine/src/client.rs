@@ -123,7 +123,7 @@ pub struct WindowPlacement {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InspectWhat {
     /// One edict's classname and fields.
-    Edict(u32),
+    Edict(EdictNumber),
     /// Every named global.
     Globals,
     /// The call stack, while paused.
@@ -139,7 +139,7 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntityTarget {
     /// An edict by its number (BRIDGE-5.2).
-    Edict(u32),
+    Edict(EdictNumber),
     /// An entity by its place in the map editor's list of the map's entities (BRIDGE-4.13).
     MapEntity(usize),
 }
@@ -148,7 +148,7 @@ impl EntityTarget {
     /// The parameter that names it.
     fn to_json(self) -> Value {
         match self {
-            Self::Edict(edict) => json!({ "edict": edict }),
+            Self::Edict(edict) => json!({ "edict": edict.index() }),
             Self::MapEntity(place) => json!({ "map_entity": place }),
         }
     }
@@ -390,7 +390,7 @@ impl Client {
     /// The request's [`ClientError`].
     pub fn inspect(&mut self, what: InspectWhat) -> Result<Value, ClientError> {
         let params = match what {
-            InspectWhat::Edict(edict) => json!({ "what": "edict", "edict": edict }),
+            InspectWhat::Edict(edict) => json!({ "what": "edict", "edict": edict.index() }),
             InspectWhat::Globals => json!({ "what": "globals" }),
             InspectWhat::Stack => json!({ "what": "stack" }),
             InspectWhat::Entities => json!({ "what": "entities" }),
@@ -692,15 +692,27 @@ impl std::fmt::Display for BreakpointId {
 /// screenshot's PNG; `None` for text that is not base64.
 #[must_use]
 pub fn base64_decode(text: &str) -> Option<Vec<u8>> {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    // The alphabet's runs and the value each starts at (RFC 4648, section 4, Table 1).
+    const UPPER: u8 = 0;
+    const LOWER: u8 = 26;
+    const DIGITS: u8 = 52;
+    const PLUS: u8 = 62;
+    const SLASH: u8 = 63;
     // Each four symbols of six bits are three bytes; padding stands for the bytes not there.
     const GROUP_BYTES: usize = 3;
     const GROUP_SYMBOLS: usize = 4;
     const SYMBOL_BITS: u32 = 6;
     const MAX_PADDING: usize = 2;
     let value = |c: u8| -> Option<u32> {
-        let index = ALPHABET.iter().position(|&symbol| symbol == c)?;
-        u32::try_from(index).ok()
+        let index = match c {
+            b'A'..=b'Z' => c.checked_sub(b'A')?.checked_add(UPPER)?,
+            b'a'..=b'z' => c.checked_sub(b'a')?.checked_add(LOWER)?,
+            b'0'..=b'9' => c.checked_sub(b'0')?.checked_add(DIGITS)?,
+            b'+' => PLUS,
+            b'/' => SLASH,
+            _ => return None,
+        };
+        Some(u32::from(index))
     };
     let bytes = text.trim().as_bytes();
     if !bytes.len().is_multiple_of(GROUP_SYMBOLS) {
