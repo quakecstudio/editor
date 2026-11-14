@@ -449,8 +449,10 @@ impl<'p> MeshBuilder<'p> {
     ) -> Result<(), MeshError> {
         let lit = extras.lit;
         let base = self.textures.len();
-        let mut surfaces = vec![Surface::Lit; bsp.textures.len()];
-        let mut by_texture: Vec<Vec<Polygon>> = vec![Vec::new(); bsp.textures.len()];
+        // REND-1.14: the stand-in for a missing texture takes the slot after the BSP's own.
+        let notexture = bsp.textures.len();
+        let mut surfaces = vec![Surface::Lit; notexture.saturating_add(1)];
+        let mut by_texture: Vec<Vec<Polygon>> = vec![Vec::new(); notexture.saturating_add(1)];
         // A surface has one lightmap, shared by every entity drawing its model.
         let mut placed = vec![None; bsp.faces.len()];
         // Each face's slot in the atlas, for the lights to mark (REND-7.1).
@@ -477,33 +479,40 @@ impl<'p> MeshBuilder<'p> {
                 let Some(texinfo) = bsp.texinfo.get(face.texinfo) else {
                     continue;
                 };
-                let Some(slot) = texinfo.texture else {
-                    continue;
+                let found = texinfo
+                    .texture
+                    .and_then(|slot| Some((slot, bsp.textures.get(slot)?.as_ref()?)));
+                let (slot, size) = match found {
+                    Some((slot, texture)) => {
+                        (slot, [f32_of(texture.width), f32_of(texture.height)])
+                    }
+                    None => (notexture, [f32_of(NOTEXTURE_SIDE); 2]),
                 };
-                let Some(Some(texture)) = bsp.textures.get(slot) else {
-                    continue;
-                };
-                let surface = if face.flags & SURF_DRAWSKY != 0 {
+                let surface = if found.is_none() {
+                    Surface::Lit
+                } else if face.flags & SURF_DRAWSKY != 0 {
                     Surface::Sky
                 } else if face.flags & SURF_DRAWTURB != 0 {
                     Surface::Turbulent
                 } else {
                     Surface::Lit
                 };
+                // REND-1.6 and REND-1.14: a sky, a liquid and a face with no texture have no
+                // lightmap.
                 let place = match placed.get(number).copied().flatten() {
-                    Some(place) => place,
-                    None if surface == Surface::Lit => {
+                    Some(place) => Some(place),
+                    None if surface == Surface::Lit && found.is_some() => {
                         let place = self.atlas.place(face, bsp, lit)?;
                         if let Some(slot) = slots.get_mut(number) {
                             *slot = Some(self.atlas.faces.len().saturating_sub(1));
                         }
-                        place
+                        if let Some(slot) = placed.get_mut(number) {
+                            *slot = Some(place);
+                        }
+                        Some(place)
                     }
-                    None => self.atlas.full_bright(),
+                    None => None,
                 };
-                if let Some(slot) = placed.get_mut(number) {
-                    *slot = Some(place);
-                }
                 if let Some(kind) = surfaces.get_mut(slot) {
                     *kind = surface;
                 }
@@ -512,7 +521,7 @@ impl<'p> MeshBuilder<'p> {
                         corners: corners(face, bsp),
                         model: index,
                         texinfo: *texinfo,
-                        size: [f32_of(texture.width), f32_of(texture.height)],
+                        size,
                         texturemins: face.texturemins,
                         place,
                         surface,
@@ -548,6 +557,8 @@ impl<'p> MeshBuilder<'p> {
                 }
             }
         }
+        self.textures.push(notexture_image());
+        self.glows.push(None);
         self.skies
             .extend(bsp.textures.iter().zip(&surfaces).enumerate().map(
                 |(slot, (texture, &surface))| {
@@ -556,6 +567,7 @@ impl<'p> MeshBuilder<'p> {
                         .flatten()
                 },
             ));
+        self.skies.push(None);
         self.animations.extend(bsp.textures.iter().map(|texture| {
             let animation = texture.as_ref()?.animation?;
             Some(Animation {
@@ -565,6 +577,7 @@ impl<'p> MeshBuilder<'p> {
                 next: animation.next.saturating_add(base),
             })
         }));
+        self.animations.push(None);
         self.surfaces.extend(surfaces);
         self.by_texture.extend(by_texture);
         Ok(())
@@ -622,9 +635,10 @@ struct Polygon {
     texinfo: Texinfo,
     size: [f32; 2],
     texturemins: [i16; 2],
-    /// The face's texel position in the atlas, `light_s` and `light_t`.
-    place: [usize; 2],
-    /// How it is drawn; only a lit face's light coordinates follow its surface (REND-1.6).
+    /// The face's texel position in the atlas, `light_s` and `light_t`; none for a face with
+    /// no lightmap, which takes the full-bright texel (REND-1.6, REND-1.14).
+    place: Option<[usize; 2]>,
+    /// How it is drawn.
     surface: Surface,
 }
 
@@ -642,20 +656,19 @@ impl Polygon {
                 // REND-2.3: the sky's coordinates come from the eye, in the shader.
                 Surface::Sky => [0.0, 0.0],
             };
-            let light = if self.surface == Surface::Lit {
-                [
+            let light = match self.place {
+                Some([column, row]) => [
                     (s - f32::from(self.texturemins[0])
-                        + f32_of_usize(self.place[0]) * LIGHTMAP_TEXEL
+                        + f32_of_usize(column) * LIGHTMAP_TEXEL
                         + LIGHTMAP_TEXEL / 2.0)
                         / (width * LIGHTMAP_TEXEL),
                     (t - f32::from(self.texturemins[1])
-                        + f32_of_usize(self.place[1]) * LIGHTMAP_TEXEL
+                        + f32_of_usize(row) * LIGHTMAP_TEXEL
                         + LIGHTMAP_TEXEL / 2.0)
                         / (height * LIGHTMAP_TEXEL),
-                ]
-            } else {
+                ],
                 // The full-bright texel's centre.
-                [0.5 / width, 0.5 / height]
+                None => [0.5 / width, 0.5 / height],
             };
             mesh.vertices.push(Vertex {
                 position: *corner,
@@ -954,11 +967,6 @@ impl Lightmaps {
             }
         }
         marks
-    }
-
-    /// The texel that is always 255 (REND-1.6).
-    const fn full_bright(&self) -> [usize; 2] {
-        [0, 0]
     }
 
     /// Places `face`'s lightmap, its samples from `bsp` or, coloured, from `lit`; returns its
@@ -1519,7 +1527,41 @@ fn mip_map(scaled: &mut [u8], width: u32, height: u32) {
     }
 }
 
-/// A missing texture's stand-in.
+/// REND-1.14: the side `r_notexture_mip` has, by which a missing texture's coordinates are
+/// divided, and the stand-in image's side in texels, one texel a unit.
+const NOTEXTURE_SIDE: u32 = 32;
+/// The side of one square of the stand-in's checker: half the image, as QuakeSpasm's 2 by 2
+/// image stretched over it.
+const NOTEXTURE_SQUARE: u32 = 16;
+/// QuakeSpasm's checker's pink, `{159,91,83,255}`.
+const NOTEXTURE_PINK: [u8; 4] = [159, 91, 83, 255];
+/// Its black.
+const NOTEXTURE_BLACK: [u8; 4] = [0, 0, 0, 255];
+
+/// REND-1.14: `r_notexture_mip`'s image, the black and pink checker, pink at the top left and
+/// bottom right.
+fn notexture_image() -> Image {
+    let rgba = (0..NOTEXTURE_SIDE)
+        .flat_map(|row| {
+            (0..NOTEXTURE_SIDE).flat_map(move |column| {
+                let pink = (row < NOTEXTURE_SQUARE) == (column < NOTEXTURE_SQUARE);
+                if pink {
+                    NOTEXTURE_PINK
+                } else {
+                    NOTEXTURE_BLACK
+                }
+            })
+        })
+        .collect();
+    Image {
+        width: NOTEXTURE_SIDE,
+        height: NOTEXTURE_SIDE,
+        rgba,
+    }
+}
+
+/// The image in the slot of a texture with no data, which no face draws: its faces draw with
+/// the stand-in (REND-1.14).
 fn black() -> Image {
     Image {
         width: 1,

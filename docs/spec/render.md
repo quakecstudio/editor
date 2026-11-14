@@ -82,6 +82,26 @@ texture darkened by the lightmap. The map view and the preview host draw the wor
 - **REND-1.13** A lightmap texel is `t = (sum of sample * scale) >> 7`, capped at 255, summed
   over the face's styles until one is 255, at most four, `scale` being the style's value at
   the time (`R_BuildLightMap`; REND-5 gives the values and the arithmetic).
+- **REND-1.14** A face whose texinfo names no texture, or a texture with no data, is drawn
+  with QuakeSpasm's stand-in (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`,
+  BSP-20.7). `Quake/gl_model.c`, `Mod_LoadTexinfo`, gives such a texinfo
+  `loadmodel->textures[loadmodel->numtextures-1]` when `out->flags & TEX_SPECIAL` and
+  `loadmodel->textures[loadmodel->numtextures-2]` otherwise, the slots `Mod_LoadTextures`
+  fills with `r_notexture_mip2` and `r_notexture_mip`; `Mod_Init` makes both with
+  `height = ... width = 32;` and `Mod_PolyForUnlitSurface` uses `texscale = (1.0f/32.0f); //to
+  match r_notexture_mip`, so the face's texture coordinates are REND-1.2's divided by 32
+  either way. `Quake/gl_texmgr.c`, `TexMgr_Init`, sets
+  `r_notexture_mip->gltexture = r_notexture_mip2->gltexture = notexture;`, the 2 by 2 image
+  `notexture_data[16] = {159,91,83,255,0,0,0,255,0,0,0,255,159,91,83,255}; //black and pink
+  checker` loaded `TEXPREF_NEAREST`. `Quake/r_world.c`, `R_DrawTextureChains_NoTexture`, draws
+  such faces with `GL_Bind (t->gltexture);` and `DrawGLPoly (s->polys);` alone, and the
+  lightmap passes skip `SURF_NOTEXTURE`, so the face has no lightmap: it is drawn at the
+  checker's colour, lit by neither its samples nor a dynamic light. The renderer gives the
+  stand-in a slot after the BSP's own textures and draws it as a 32 by 32 image of the checker
+  in squares of 16 texels, at full brightness as REND-1.6's faces are. It diverges in one way:
+  the image is drawn with the world's sampler and mipmaps, not `TEXPREF_NEAREST`, so with
+  linear filtering the squares' edges blend and at a distance the checker averages to one
+  colour.
 
 ## REND-2 Moving textures
 

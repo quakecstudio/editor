@@ -16,7 +16,7 @@ use qs_bsp::{
 
 use qs_client::DynamicLight;
 
-use super::{Changes, Extras, Image, MapMesh, MeshBuilder, MeshError, Palette, Placement};
+use super::{Changes, Extras, Image, MapMesh, MeshBuilder, MeshError, Palette, Placement, Surface};
 use crate::light::light_point;
 use crate::styles::LightStyles;
 
@@ -32,6 +32,8 @@ pub(crate) struct MapSpec {
     pub(crate) lightofs: i32,
     /// Whether the texinfo names a texture.
     pub(crate) textured: bool,
+    /// The face's smallest texture coordinates.
+    pub(crate) texturemins: [i16; 2],
 }
 
 impl Default for MapSpec {
@@ -42,6 +44,7 @@ impl Default for MapSpec {
             styles: [0, 255, 255, 255],
             lightofs: 0,
             textured: true,
+            texturemins: [0, 0],
         }
     }
 }
@@ -116,7 +119,7 @@ pub(crate) fn bsp<'a>(spec: &MapSpec, lighting: &'a [u8]) -> Bsp<'a> {
             texinfo: 0,
             styles: spec.styles,
             lightofs: spec.lightofs,
-            texturemins: [0, 0],
+            texturemins: spec.texturemins,
             extents: [64, 32],
             flags: spec.flags,
             lightmap_size: LIGHTMAP,
@@ -189,20 +192,56 @@ fn a_face_is_a_fan_over_its_edges_vertices() {
     assert_eq!(mesh.indices.len(), 3 * 3);
 }
 
-// spec REND-1.2: texture coordinates are the texinfo's s and t over the texture's size; a face
-// with no texture is not drawn
+// spec REND-1.2: texture coordinates are the texinfo's s and t over the texture's size
 #[test]
 fn texture_coordinates_divide_by_the_textures_size() {
     let mesh = build(&MapSpec::default(), &samples(&[64]));
     assert_eq!(mesh.vertices[2].texture, [4.0, 2.0]);
     assert_eq!(mesh.batches.len(), 1);
     assert_eq!(mesh.batches[0].count, 6);
+}
+
+// spec REND-1.14: a face with no texture is drawn with the stand-in after the BSP's textures,
+// its coordinates over `r_notexture_mip`'s 32, its image QuakeSpasm's checker in squares of 16
+#[test]
+fn a_face_with_no_texture_is_drawn_with_the_stand_in() {
     let untextured = MapSpec {
         textured: false,
         ..MapSpec::default()
     };
     let mesh = build(&untextured, &samples(&[64]));
-    assert!(mesh.vertices.is_empty() && mesh.batches.is_empty());
+    let stand_in = mesh.textures.len() - 1;
+    assert_eq!(mesh.batches.len(), 1);
+    assert_eq!(mesh.batches[0].texture, stand_in);
+    assert_eq!(mesh.batches[0].count, 6);
+    assert_eq!(mesh.vertices[2].texture, [2.0, 1.0]);
+    let image = &mesh.textures[stand_in];
+    assert_eq!((image.width, image.height), (32, 32));
+    let texel = |x: usize, y: usize| &image.rgba[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4];
+    let (pink, black) = ([159, 91, 83, 255], [0, 0, 0, 255]);
+    assert_eq!((texel(0, 0), texel(15, 15)), (&pink[..], &pink[..]));
+    assert_eq!((texel(16, 0), texel(0, 16)), (&black[..], &black[..]));
+    assert_eq!(texel(31, 31), &pink[..]);
+}
+
+// spec REND-1.14: a face with no texture has no lightmap, whatever its flags or samples: it
+// takes the full-bright texel and is drawn as a regular face with the stand-in
+#[test]
+fn a_face_with_no_texture_is_full_bright() {
+    for (flags, lightofs) in [(0, 0), (0, -1), (SURF_DRAWTURB, 0), (SURF_DRAWSKY, 0)] {
+        let spec = MapSpec {
+            textured: false,
+            flags,
+            lightofs,
+            ..MapSpec::default()
+        };
+        let mesh = build(&spec, &samples(&[64]));
+        assert_eq!(mesh.lightmap.height, 1, "no texels placed");
+        assert!(mesh.vertices.iter().all(|v| v.light == [0.5 / 1024.0, 0.5]));
+        assert_eq!(mesh.batches.len(), 1);
+        assert_eq!(mesh.batches[0].texture, mesh.textures.len() - 1);
+        assert_eq!(mesh.batches[0].surface, Surface::Lit);
+    }
 }
 
 // spec REND-1.3: lightmap coordinates are (s - texturemins + light_s*16 + 8) over the atlas's
@@ -227,6 +266,52 @@ fn lightmap_coordinates_map_texels_to_the_surface() {
             (64.0 + 16.0 + 8.0) / (width * 16.0),
             (32.0 + 8.0) / (height * 16.0)
         ]
+    );
+}
+
+// spec REND-1.3: a face's lightmap coordinates start at its texturemins and its place in the
+// atlas, on a later row once a row is full
+// spec REND-1.14: a face with no texture takes the full-bright texel however tall the atlas
+#[test]
+fn lightmap_coordinates_follow_texturemins_and_the_atlas_row() {
+    let lighting = samples(&[64]);
+    let world = bsp(
+        &MapSpec {
+            texturemins: [16, 16],
+            ..MapSpec::default()
+        },
+        &lighting,
+    );
+    let untextured = bsp(
+        &MapSpec {
+            textured: false,
+            ..MapSpec::default()
+        },
+        &lighting,
+    );
+    let palette = palette();
+    let mut builder = MeshBuilder::new(&palette, Look::GlQuake);
+    // After the full-bright texel, 204 faces 5 texels wide fill the 1024 texel row.
+    for _ in 0..205 {
+        builder.add(&world, &[Placement::WORLD]).unwrap();
+    }
+    builder.add(&untextured, &[Placement::WORLD]).unwrap();
+    let mesh = builder.finish();
+    assert_eq!((mesh.lightmap.width, mesh.lightmap.height), (1024, 6));
+    let wrapped = &mesh.vertices[204 * 4];
+    assert_eq!(
+        wrapped.light,
+        [
+            (-16.0 + 8.0) / (1024.0 * 16.0),
+            (-16.0 + 48.0 + 8.0) / (6.0 * 16.0)
+        ]
+    );
+    let stand_in = &mesh.vertices[205 * 4..];
+    assert_eq!(stand_in.len(), 4);
+    assert!(
+        stand_in
+            .iter()
+            .all(|v| v.light == [0.5 / 1024.0, 0.5 / 6.0])
     );
 }
 
@@ -513,11 +598,12 @@ fn a_second_bsps_textures_follow_the_firsts() {
     builder.add(&world, &[Placement::WORLD]).unwrap();
     builder.add(&other, &[Placement::WORLD]).unwrap();
     let mesh = builder.finish();
-    assert_eq!(mesh.textures.len(), 2);
-    assert_eq!(mesh.animations[1].unwrap().next, 1);
+    // REND-1.14: each BSP's textures, then its stand-in for a missing one.
+    assert_eq!(mesh.textures.len(), 4);
+    assert_eq!(mesh.animations[2].unwrap().next, 2);
     assert_eq!(
         mesh.batches.iter().map(|b| b.texture).collect::<Vec<_>>(),
-        [0, 1]
+        [0, 2]
     );
 }
 
@@ -552,7 +638,8 @@ fn an_empty_cycle_is_not_animated() {
         MapMesh::build(&map, &palette(), Look::GlQuake)
             .unwrap()
             .animations,
-        [None]
+        [None, None],
+        "the texture's and the stand-in's (REND-1.14)"
     );
     map.textures[0].as_mut().unwrap().animation = Some(cycle(1));
     assert!(
@@ -781,7 +868,7 @@ fn only_quakespasm_s_regular_textures_glow() {
         Look::GlQuake,
     )
     .unwrap();
-    assert_eq!(glq.glows, [None]);
+    assert_eq!(glq.glows, [None, None]);
     assert_eq!(glq.textures[0].rgba[4..8], [230, 204, 178, 255]);
     let plain = MapMesh::build(
         &bsp(&MapSpec::default(), &lighting),
@@ -789,7 +876,7 @@ fn only_quakespasm_s_regular_textures_glow() {
         Look::QuakeSpasm,
     )
     .unwrap();
-    assert_eq!(plain.glows, [None]);
+    assert_eq!(plain.glows, [None, None]);
     let water = MapSpec {
         flags: SURF_DRAWTURB,
         ..MapSpec::default()
@@ -800,7 +887,7 @@ fn only_quakespasm_s_regular_textures_glow() {
         Look::QuakeSpasm,
     )
     .unwrap();
-    assert_eq!(liquid.glows, [None]);
+    assert_eq!(liquid.glows, [None, None]);
 }
 
 // spec REND-13.5: with overbright a texel's sum is shifted by 8, so 50's sum of 12800 is 50,
@@ -885,7 +972,7 @@ fn a_texture_may_carry_its_own_palette() {
     let mesh = builder.finish();
     // The texture's pixels are all index 7.
     assert_eq!(&mesh.textures[0].rgba[..4], own.rgba(7).as_slice());
-    assert_eq!(&mesh.textures[1].rgba[..4], shared.rgba(7).as_slice());
+    assert_eq!(&mesh.textures[2].rgba[..4], shared.rgba(7).as_slice());
     assert_ne!(own.rgba(7), shared.rgba(7));
 }
 
