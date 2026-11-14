@@ -208,6 +208,22 @@ pub(crate) fn line_job(
     job
 }
 
+/// A styler's revision, [`Styler::revision`]: a layout made with another is laid out again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct StyleRevision(u64);
+
+impl StyleRevision {
+    /// Revision `revision`.
+    pub(crate) const fn new(revision: u64) -> Self {
+        Self(revision)
+    }
+
+    /// The revision.
+    pub(crate) const fn get(self) -> u64 {
+        self.0
+    }
+}
+
 /// What a cached layout was made for: the line's text, the styler's revision, the font, the
 /// screen's scale and the width lines wrap at.
 #[derive(Clone, Debug, PartialEq)]
@@ -236,13 +252,13 @@ impl LayoutCache {
     /// cache when any differs from the last frame's.
     pub(crate) fn begin(
         &mut self,
-        revision: u64,
+        revision: StyleRevision,
         font: &FontId,
         pixels_per_point: f32,
         (wrap_width, inlays): (f32, u64),
     ) {
         let key = Key {
-            revision,
+            revision: revision.get(),
             font: font.clone(),
             pixels_per_point,
             wrap_width,
