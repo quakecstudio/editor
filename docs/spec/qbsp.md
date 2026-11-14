@@ -554,10 +554,12 @@ to the neighbour's edge.
 
 ## QBSP-14 The extended dialect
 
-**Source:** ours. id's qbsp is `Dialect::Id`, which follows QBSP-1 to QBSP-13 exactly;
-`Dialect::Extended`, the default of `crates/qs-map-bsp`, is what a map made for a later engine
-needs, and each difference is stated here. Later compilers (ericw-tools' qbsp) lift the same
-limits; we follow none of them, only BSP-17's file format.
+**Source:** ours, but for QBSP-14.7 and QBSP-14.8, which follow ericw-tools' qbsp at
+`36eec1da2a194467e6baac2f444c2dd04b57d266` (`qbsp/map.cc`, `qbsp/brush.cc`). id's qbsp is
+`Dialect::Id`, which follows QBSP-1 to QBSP-13 exactly; `Dialect::Extended`, the default of
+`crates/qs-map-bsp`, is what a map made for a later engine and editor needs, and each difference
+is stated here. Later compilers lift the same limits; we follow BSP-17's file format, and
+ericw-tools only where a map made in TrenchBroom relies on it (Justin, 2026-11-13).
 
 - **QBSP-14.1** The extended dialect reads the map as `qs-map`'s `MapFile` reads it (MAP-1 to
   MAP-7): a face's points are its numbers as written, in single precision, and its texture axes
@@ -581,11 +583,26 @@ limits; we follow none of them, only BSP-17's file format.
   the first lump that did not fit.
 - **QBSP-14.5** The entity lump is written as QBSP-1.8 writes it, but with no limit on the
   length of a key and value's line.
-- **QBSP-14.6** Everything QBSP-1 to QBSP-13 state that QBSP-14.1 to QBSP-14.5 do not change
-  holds in the extended dialect: the same map compiled by both dialects, when the id dialect
-  compiles it, gives the same BSP, portal file and leak file.
+- **QBSP-14.6** **Withdrawn** 2026-11-13: it promised the same BSP from both dialects for any
+  map the id dialect compiles; a map with a world brush entity (QBSP-14.8) now differs.
+  Replaced by QBSP-14.9.
 
 - **QBSP-14.7** The extended dialect expands each external map instance (MAP-14) before it reads
   the map, with the files its caller reads by the names the instances give, as ericw-tools'
   qbsp does; an instance that cannot be expanded stops the compile. id's dialect reads no
   instance: to id's qbsp a `misc_external_map` is a point entity like any other.
+- **QBSP-14.8** The extended dialect takes ericw-tools' world brush entities into the world, as
+  `IsWorldBrushEntity` (`qbsp/map.cc`) names them: an entity after the world whose classname,
+  in any case (`Q_strcasecmp`), is `func_group`, `func_detail`, `func_detail_wall` or
+  `func_detail_fence` gives its brushes to the world, after the world's own, solid in every
+  hull, and leaves the entity lump ("If this is the world entity, find all func_group and
+  func_detail entities and add their brushes", `qbsp/brush.cc`). ericw-tools gives the detail
+  kinds detail contents in hull 0, which change how the world is split and seen but not what is
+  solid; this dialect makes them plain solid. A `func_detail_illusionary`, which ericw-tools
+  leaves out of the clipping hulls ("func_detail_illusionary don't exist in the collision
+  hull"), becomes id's `func_illusionary`, an entity of its own the game draws and nothing
+  collides with; a `func_illusionary_visblocker` is left out with its brushes.
+- **QBSP-14.9** Everything QBSP-1 to QBSP-13 state that QBSP-14.1 to QBSP-14.5, QBSP-14.7 and
+  QBSP-14.8 do not change holds in the extended dialect: the same map compiled by both dialects,
+  when the id dialect compiles it and no entity of it is a world brush entity (QBSP-14.8), gives
+  the same BSP, portal file and leak file.

@@ -7,8 +7,8 @@
 //! the two BSPs compared: whether the map leaks, the entity lump's entities, the faces' count
 //! within a tolerance, and traces through each clipping hull of the world, which must agree.
 //!
-//! The maps are the corpus's (`cargo xtask corpus fetch`, MAP-19) under `--maps`, by default
-//! `$QS_TEST_ASSETS/map`, and the fixtures in `oracles/maps/`. The oracles are built as
+//! The maps are the corpus's (MAP-19), fetched into the cache as `cargo xtask corpus fetch`
+//! does, or those under `--maps`, and the fixtures in `oracles/maps/`. The oracles are built as
 //! `cargo xtask oracles maps` builds them.
 
 use std::fs;
@@ -18,8 +18,9 @@ use std::time::Duration;
 use qs_bsp::{Bsp, BspLoader};
 use qs_map::qbsp;
 use qs_map_bsp::{Compiler, Dialect, Warning};
-use qs_sim::collision::{Collision, Trace, recursive_hull_check};
+use qs_sim::collision::{Collision, Hull, Trace, recursive_hull_check};
 
+use crate::corpus::{self, manifest::Manifest};
 use crate::download::Net;
 use crate::exec::Exec;
 use crate::oracles::OUT;
@@ -28,7 +29,8 @@ use crate::oracles::maps::{MapTools, WORK, build};
 /// `cargo xtask map-diff`.
 #[derive(clap::Args, Debug)]
 pub(crate) struct Args {
-    /// The folder of corpus maps; `$QS_TEST_ASSETS/map` when not given.
+    /// The folder of maps; when not given, the corpus's maps (MAP-19), fetched into the cache's
+    /// `map` folder.
     #[arg(long)]
     maps: Option<PathBuf>,
     /// Only the maps of these names, without `.map`; every one when none is given.
@@ -39,6 +41,8 @@ pub(crate) struct Args {
     traces: usize,
 }
 
+/// The corpus manifest, whose maps are compared (MAP-19).
+const MANIFEST: &str = "corpus/manifest.toml";
 /// The traces each hull takes unless `--traces` says otherwise.
 const DEFAULT_TRACES: usize = 2000;
 /// The fixtures compiled with the corpus: the oracles' room and the instance map (P6-23).
@@ -50,12 +54,29 @@ const FIXTURES: [&str; 2] = [
 const ORACLE_LIMIT: Duration = Duration::from_secs(600);
 /// The world's clipping hulls traced: point, player and shambler (BSP-7).
 const HULLS: usize = 3;
-/// How far two traces' fractions may differ and still agree: a hundredth of a unit over a
-/// trace 4096 units long, the most one sampled here can be.
-const FRACTION_EPSILON: f32 = 0.01 / 4096.0;
+/// How far apart two traces' ends may be and still agree, in units. ericw-tools reads a face's
+/// plane in double precision where id's qbsp, and so qs-map-bsp, reads it in single (QBSP-2),
+/// so a plane of an angled brush lies up to a fraction of a unit from the other's, and at a
+/// corner the two may stop on different planes a few hundredths apart.
+const END_TOLERANCE: f32 = 0.25;
+/// How far a disagreeing trace is moved, along each axis both ways, to tell a difference in
+/// what is solid from one at an edge: a trace that only grazes an edge agrees once moved, one
+/// through a brush only one map has disagrees however it is moved.
+const NUDGE: f32 = 0.25;
+/// The keys naming a world's WADs, which neither collision nor leaks read; id's qbsp stops on a
+/// WAD it cannot open, so both compilers are given the map without them.
+const WAD_KEYS: [&[u8]; 2] = [b"wad", b"_wad"];
 /// How far from the oracle's the faces' count may be, as a share of it: the two merge and
 /// split faces each their own way (QBSP-10), which neither collision nor leaks see.
 const FACE_TOLERANCE: f64 = 0.25;
+/// How many faces either way are within tolerance however small the map, where one brush cut
+/// another way is a large share.
+const FACE_SLACK: f64 = 8.0;
+/// What the extended dialect makes of a `func_detail_illusionary`, an entity ericw-tools leaves
+/// in the world (QBSP-14.8).
+const ILLUSIONARY: &str = "func_illusionary";
+/// The classname QBSP-14.8 turns into [`ILLUSIONARY`].
+const DETAIL_ILLUSIONARY: &str = "func_detail_illusionary";
 /// The classname of an instance of an external map (MAP-14).
 const EXTERNAL_MAP: &str = "misc_external_map";
 
@@ -141,14 +162,14 @@ impl std::fmt::Display for Comparison {
 
 impl Comparison {
     /// Whether the two agree: the same leak, the same entities, faces within
-    /// [`FACE_TOLERANCE`] and every trace the same.
+    /// [`FACE_TOLERANCE`] or [`FACE_SLACK`] and every trace the same.
     pub(crate) fn agrees(&self) -> bool {
         let (ours, theirs) = self.faces;
         let faces = f64::from(u32::try_from(ours).unwrap_or(u32::MAX));
-        let oracle = f64::from(u32::try_from(theirs).unwrap_or(u32::MAX)).max(1.0);
+        let oracle = f64::from(u32::try_from(theirs).unwrap_or(u32::MAX));
         self.leaks.0 == self.leaks.1
             && self.entities_agree
-            && ((faces - oracle) / oracle).abs() <= FACE_TOLERANCE
+            && (faces - oracle).abs() <= (oracle * FACE_TOLERANCE).max(FACE_SLACK)
             && self.traces.iter().all(|&(_, differ)| differ == 0)
     }
 }
@@ -162,9 +183,14 @@ pub(crate) fn main(
 ) -> Result<bool, String> {
     let corpus = match &args.maps {
         Some(dir) => dir.clone(),
-        None => std::env::var_os("QS_TEST_ASSETS")
-            .map(|dir| PathBuf::from(dir).join("map"))
-            .ok_or("give --maps, or set QS_TEST_ASSETS to the fetched corpus")?,
+        None => {
+            let manifest = Manifest::load(&root.join(MANIFEST))?;
+            let ids = manifest.map.into_iter().map(|entry| entry.id).collect();
+            if !corpus::main(root, &corpus::Args::fetch(ids))? {
+                return Err("the corpus's maps could not be fetched".to_owned());
+            }
+            corpus::cache_dest(root, None)?.join("map")
+        }
     };
     let mut maps: Vec<PathBuf> = FIXTURES.iter().map(|map| root.join(map)).collect();
     let mut found: Vec<PathBuf> = fs::read_dir(&corpus)
@@ -189,10 +215,11 @@ pub(crate) fn main(
         .fold(root.join(OUT), |path, part| path.join(part));
     let mut passed = true;
     for path in &maps {
-        let text = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let text = without_wads(&fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
         for (oracle, dialect) in Oracle::of(&text) {
             let dir = work.join("map-diff").join(oracle.name()).join(name(path));
-            let theirs = oracle_compile(exec, oracle.qbsp(&tools), path, &dir)?;
+            let theirs = oracle_compile(exec, oracle.qbsp(&tools), path, &text, &dir)?;
             let ours = our_compile(&text, dialect, path);
             // Ours beside the oracle's, to look at when they differ.
             if let Ok(compiled) = &ours {
@@ -201,7 +228,11 @@ pub(crate) fn main(
             }
             let (agrees, said) = match (ours, theirs) {
                 (Ok(ours), Ok(theirs)) => {
-                    let comparison = compare(&ours, &theirs, args.traces)?;
+                    let illusionaries = match dialect {
+                        Dialect::Id => 0,
+                        Dialect::Extended => count_classname(&text, DETAIL_ILLUSIONARY),
+                    };
+                    let comparison = compare(&ours, &theirs, args.traces, illusionaries)?;
                     (comparison.agrees(), comparison.to_string())
                 }
                 (Err(ours), Err(theirs)) => (true, format!("both stop: {ours}; {theirs}")),
@@ -216,12 +247,13 @@ pub(crate) fn main(
     Ok(passed)
 }
 
-/// The map at `path` compiled by `qbsp` in `dir`, emptied first, with the files beside the map
-/// (its external maps) copied in; the oracle's last line when it stops.
+/// The map `text` of `path` compiled by `qbsp` in `dir`, emptied first, with the files beside
+/// the map (its external maps) copied in; the oracle's last line when it stops.
 fn oracle_compile(
     exec: &dyn Exec,
     qbsp: &Path,
     path: &Path,
+    text: &[u8],
     dir: &Path,
 ) -> Result<Result<Compiled, String>, String> {
     if dir.exists() {
@@ -238,6 +270,7 @@ fn oracle_compile(
         }
     }
     let map = dir.join(path.file_name().unwrap_or_default());
+    fs::write(&map, text).map_err(|e| format!("{}: {e}", map.display()))?;
     let mut command = std::process::Command::new(qbsp);
     command.arg(&map).current_dir(dir);
     let output = exec
@@ -267,6 +300,17 @@ fn oracle_compile(
     // leak file with something in it.
     let leaks = fs::metadata(map.with_extension("pts")).is_ok_and(|file| file.len() > 0);
     Ok(Ok(Compiled { bsp, leaks }))
+}
+
+/// The map `text` with its world's WAD keys ([`WAD_KEYS`]) taken out.
+fn without_wads(text: &[u8]) -> Result<Vec<u8>, qs_map::MapError> {
+    let mut file = qs_map::MapFile::parse(text)?;
+    if let Some(world) = file.entities.first_mut() {
+        for key in WAD_KEYS {
+            world.remove(key);
+        }
+    }
+    Ok(file.to_bytes())
 }
 
 /// The map `text` at `path` compiled by qs-map-bsp in `dialect`, its external maps read from
@@ -313,11 +357,74 @@ impl Points {
     }
 }
 
+/// Whether the trace `line` through hulls `a` and `b` agrees: both start in solid, or neither
+/// does and both are all solid or not and end within [`END_TOLERANCE`]. A trace that starts in
+/// solid is `allsolid` by which leaves the tree's splits lead it through, not by the solids
+/// themselves (WORLD-2, id's `SV_RecursiveHullCheck`), so for it only `startsolid` is compared.
+fn agree(a: &Hull<'_>, b: &Hull<'_>, line: ([f32; 3], [f32; 3])) -> bool {
+    let run = |hull: &Hull<'_>| {
+        let mut trace = Trace::new(line.1);
+        recursive_hull_check(hull, hull.first, line, &mut trace).map(|_| trace)
+    };
+    match (run(a), run(b)) {
+        (Ok(x), Ok(y)) => {
+            let apart = x
+                .endpos
+                .iter()
+                .zip(y.endpos)
+                .map(|(p, q)| (p - q) * (p - q))
+                .sum::<f32>()
+                .sqrt();
+            x.startsolid == y.startsolid
+                && (x.startsolid || (x.allsolid == y.allsolid && apart <= END_TOLERANCE))
+        }
+        (Err(_), Err(_)) => true,
+        (Ok(_), Err(_)) | (Err(_), Ok(_)) => false,
+    }
+}
+
+/// `line` moved by [`NUDGE`] along each axis, both ways.
+fn nudged((from, to): ([f32; 3], [f32; 3])) -> Vec<([f32; 3], [f32; 3])> {
+    let mut out = Vec::with_capacity(6);
+    for axis in 0..3 {
+        for way in [NUDGE, -NUDGE] {
+            let moved = |mut p: [f32; 3]| {
+                if let Some(c) = p.get_mut(axis) {
+                    *c += way;
+                }
+                p
+            };
+            out.push((moved(from), moved(to)));
+        }
+    }
+    out
+}
+
 /// The seed of every map's traces.
 const SEED: u64 = 0x5155_414b;
 
-/// The two compiles compared.
-fn compare(ours: &Compiled, theirs: &Compiled, traces: usize) -> Result<Comparison, String> {
+/// How many entities of the map `text` have the classname `name`, in any case.
+fn count_classname(text: &[u8], name: &str) -> usize {
+    qs_map::MapFile::parse(text).map_or(0, |file| {
+        file.entities
+            .iter()
+            .filter(|entity| {
+                entity
+                    .classname()
+                    .is_some_and(|classname| classname.eq_ignore_ascii_case(name.as_bytes()))
+            })
+            .count()
+    })
+}
+
+/// The two compiles compared; ours has `illusionaries` more [`ILLUSIONARY`] entities, which the
+/// extended dialect makes where ericw-tools merges (QBSP-14.8).
+fn compare(
+    ours: &Compiled,
+    theirs: &Compiled,
+    traces: usize,
+    illusionaries: usize,
+) -> Result<Comparison, String> {
     let a = Bsp::read(&ours.bsp, BspLoader::FitzQuake).map_err(|e| format!("our BSP: {e}"))?;
     let b = Bsp::read(&theirs.bsp, BspLoader::FitzQuake)
         .map_err(|e| format!("the oracle's BSP: {e}"))?;
@@ -336,8 +443,14 @@ fn compare(ours: &Compiled, theirs: &Compiled, traces: usize) -> Result<Comparis
         a.models.first().ok_or("our BSP has no world")?,
         b.models.first().ok_or("the oracle's BSP has no world")?,
     );
-    let mins = [0, 1, 2].map(|i| world_a.mins[i].min(world_b.mins[i]));
-    let maxs = [0, 1, 2].map(|i| world_a.maxs[i].max(world_b.maxs[i]));
+    let mut mins = world_a.mins;
+    let mut maxs = world_a.maxs;
+    for (m, other) in mins.iter_mut().zip(world_b.mins) {
+        *m = m.min(other);
+    }
+    for (m, other) in maxs.iter_mut().zip(world_b.maxs) {
+        *m = m.max(other);
+    }
     let (ca, cb) = (Collision::new(&a), Collision::new(&b));
     let heads = |c: &Collision| c.model(1.0).map(|model| model.heads);
     let (ha, hb) = (
@@ -347,35 +460,30 @@ fn compare(ours: &Compiled, theirs: &Compiled, traces: usize) -> Result<Comparis
     let mut points = Points(SEED);
     let mut counts = [(0_usize, 0_usize); HULLS];
     for (hull, count) in counts.iter_mut().enumerate() {
-        let (hull_a, hull_b) = (ca.sets()[0].hull(hull, ha), cb.sets()[0].hull(hull, hb));
+        let (Some(set_a), Some(set_b)) = (ca.sets().first(), cb.sets().first()) else {
+            return Err("a BSP has no hulls".to_owned());
+        };
+        let (hull_a, hull_b) = (set_a.hull(hull, ha), set_b.hull(hull, hb));
         for _ in 0..traces {
             let line = (points.within(mins, maxs), points.within(mins, maxs));
-            let run = |hull: &qs_sim::collision::Hull<'_>| {
-                let mut trace = Trace::new(line.1);
-                recursive_hull_check(hull, hull.first, line, &mut trace).map(|_| trace)
-            };
-            let same = match (run(&hull_a), run(&hull_b)) {
-                // A trace that starts in solid is `allsolid` by which leaves the tree's
-                // splits lead it through, not by the solids themselves (WORLD-2, id's
-                // `SV_RecursiveHullCheck`), so for it only `startsolid` is compared.
-                (Ok(x), Ok(y)) => {
-                    x.startsolid == y.startsolid
-                        && (x.startsolid
-                            || (x.allsolid == y.allsolid
-                                && (x.fraction - y.fraction).abs() <= FRACTION_EPSILON))
-                }
-                (Err(_), Err(_)) => true,
-                _ => false,
-            };
             count.0 = count.0.saturating_add(1);
-            if !same {
+            let differs = |line: ([f32; 3], [f32; 3])| !agree(&hull_a, &hull_b, line);
+            if differs(line) && nudged(line).into_iter().all(differs) {
                 count.1 = count.1.saturating_add(1);
             }
         }
     }
     Ok(Comparison {
         leaks: (ours.leaks, theirs.leaks),
-        entities_agree: classnames(&a) == classnames(&b),
+        entities_agree: {
+            let (mine, oracle) = (classnames(&a), classnames(&b));
+            let count = |names: &[String]| names.iter().filter(|n| *n == ILLUSIONARY).count();
+            let others = |names: Vec<String>| -> Vec<String> {
+                names.into_iter().filter(|n| n != ILLUSIONARY).collect()
+            };
+            count(&mine) == count(&oracle).saturating_add(illusionaries)
+                && others(mine) == others(oracle)
+        },
         faces: (a.faces.len(), b.faces.len()),
         traces: counts,
     })

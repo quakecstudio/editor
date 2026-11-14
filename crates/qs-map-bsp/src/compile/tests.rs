@@ -37,8 +37,8 @@ fn crate_box(n: i32) -> BrushSpec {
     BrushSpec::cube([x, y, z], [x + 4, y + 4, z + 4], "crate")
 }
 
-// spec QBSP-14.6: a map the id dialect compiles gives the same BSP, portal file and leak file in
-// both dialects
+// spec QBSP-14.9: a map the id dialect compiles, with no world brush entity, gives the same
+// BSP, portal file and leak file in both dialects
 // spec QBSP-1.7: the world's hulls are built, filled and written
 // spec QBSP-9.4: a sealed room is filled from outside without a leak
 // spec QBSP-12.2: the portal file starts with `PRT1`, the leaf count and the portal count
@@ -419,4 +419,73 @@ fn external_maps_are_expanded_in_the_extended_dialect() {
             qs_map::ExternalMapError::Unreadable { .. }
         ))
     ));
+}
+
+// spec QBSP-14.8: in the extended dialect func_group and the detail kinds give their brushes to
+// the world and leave the entity lump, in any case; func_detail_illusionary becomes a
+// func_illusionary of its own and func_illusionary_visblocker goes; the id dialect keeps each
+// a brush model of its own
+#[test]
+fn world_brush_entities_join_the_world_in_the_extended_dialect() {
+    let pillar = |x: i32| BrushSpec::cube([x, -8, ROOM_MINS[2]], [x + 16, 8, 64], "pillar");
+    let mut spec = MapSpec::default();
+    for (n, classname) in [
+        "func_group",
+        "FUNC_DETAIL",
+        "func_detail_wall",
+        "func_detail_fence",
+        "func_detail_illusionary",
+        "func_illusionary_visblocker",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let x = -96 + 32 * i32::try_from(n).unwrap();
+        spec.entities
+            .push(EntitySpec::brushes(classname, vec![pillar(x)]));
+    }
+    let extended = compile(&spec, Dialect::Extended).unwrap();
+    let bsp = read(&extended);
+    assert_eq!(bsp.models.len(), 2, "the world and the illusionary");
+    let lump = String::from_utf8_lossy(bsp.entities()).to_lowercase();
+    for gone in [
+        "func_group",
+        "func_detail\"",
+        "func_detail_wall",
+        "func_detail_fence",
+        "visblocker",
+    ] {
+        assert!(!lump.contains(gone), "{gone} left the lump: {lump}");
+    }
+    assert!(lump.contains("\"func_illusionary\""), "{lump}");
+    // The four solid pillars are in the world's player hull, the other two not.
+    let contents = |point: [f32; 3]| {
+        let mut num = bsp.models[0].headnode[1];
+        while num >= 0 {
+            let node = &bsp.clipnodes[usize::try_from(num).unwrap()];
+            let plane = &bsp.planes[usize::try_from(node.planenum).unwrap()];
+            let d: f32 = plane
+                .normal
+                .iter()
+                .zip(point)
+                .map(|(n, p)| n * p)
+                .sum::<f32>()
+                - plane.dist;
+            num = node.children[usize::from(d < 0.0)];
+        }
+        num
+    };
+    let solid: Vec<bool> = (0..6)
+        .map(|n| {
+            contents([f32::from(i16::try_from(-88 + 32 * n).unwrap()), 0.0, 0.0])
+                == qs_bsp::BSP_CONTENTS_SOLID
+        })
+        .collect();
+    assert_eq!(solid, [true, true, true, true, false, false]);
+    let id = compile(&spec, Dialect::Id).unwrap();
+    assert_eq!(
+        read(&id).models.len(),
+        7,
+        "id's qbsp: each its own brush model"
+    );
 }

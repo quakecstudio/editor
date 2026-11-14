@@ -289,7 +289,8 @@ impl Compiler {
     }
 
     /// The map as the dialect reads it, the extended dialect's external map instances
-    /// expanded with the files `load` reads, when given (QBSP-14.1, QBSP-14.7).
+    /// expanded with the files `load` reads, when given, and its world brush entities taken
+    /// into the world (QBSP-14.1, QBSP-14.7, QBSP-14.8).
     fn read_with(&self, map: &[u8], load: Option<Load<'_>>) -> Result<QbspMap, CompileError> {
         Ok(match self.dialect {
             Dialect::Id => load_map_file(map)?,
@@ -301,7 +302,7 @@ impl Compiler {
                         .map_err(CompileError::ExternalMap)?,
                     None => file,
                 };
-                QbspMap::from_map_file(&file)?
+                QbspMap::from_map_file(&with_world_brush_entities(file))?
             }
         })
     }
@@ -442,3 +443,58 @@ fn textures(
 
 #[cfg(test)]
 mod tests;
+
+/// The world brush entities ericw-tools' qbsp takes into the world (`IsWorldBrushEntity`,
+/// `qbsp/map.cc`), solid in every hull (QBSP-14.8).
+const WORLD_BRUSH_ENTITIES: [&[u8]; 4] = [
+    b"func_group",
+    b"func_detail",
+    b"func_detail_wall",
+    b"func_detail_fence",
+];
+/// The world brush entity no hull collides with, which the game draws as id's own
+/// `func_illusionary` (QBSP-14.8).
+const DETAIL_ILLUSIONARY: &[u8] = b"func_detail_illusionary";
+/// What a `func_detail_illusionary` becomes.
+const ILLUSIONARY: &[u8] = b"func_illusionary";
+/// The world brush entity neither drawn nor solid, whose brushes go (QBSP-14.8).
+const ILLUSIONARY_VISBLOCKER: &[u8] = b"func_illusionary_visblocker";
+
+/// `file` with its world brush entities taken in, as the extended dialect reads a map
+/// (QBSP-14.8): each entity after the world whose classname, in any case, is one of
+/// [`WORLD_BRUSH_ENTITIES`] gives its brushes to the world, after the world's own, and leaves
+/// the entity lump; a [`DETAIL_ILLUSIONARY`] becomes an [`ILLUSIONARY`] of its own; an
+/// [`ILLUSIONARY_VISBLOCKER`] goes with its brushes.
+fn with_world_brush_entities(mut file: MapFile) -> MapFile {
+    let is = |entity: &qs_map::Entity, name: &[u8]| {
+        entity
+            .classname()
+            .is_some_and(|classname| classname.eq_ignore_ascii_case(name))
+    };
+    let mut taken = Vec::new();
+    let mut kept = Vec::with_capacity(file.entities.len());
+    for (place, mut entity) in file.entities.drain(..).enumerate() {
+        if place == 0 {
+            kept.push(entity);
+        } else if WORLD_BRUSH_ENTITIES.iter().any(|name| is(&entity, name)) {
+            taken.extend(
+                entity
+                    .items
+                    .into_iter()
+                    .filter(|item| matches!(item, qs_map::Item::Brush(_))),
+            );
+        } else if is(&entity, ILLUSIONARY_VISBLOCKER) {
+        } else {
+            if is(&entity, DETAIL_ILLUSIONARY) {
+                // The classname is a key the entity already has, so setting it cannot fail.
+                entity.set(b"classname", ILLUSIONARY).ok();
+            }
+            kept.push(entity);
+        }
+    }
+    if let Some(world) = kept.first_mut() {
+        world.items.extend(taken);
+    }
+    file.entities = kept;
+    file
+}
