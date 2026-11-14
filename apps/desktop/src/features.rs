@@ -8,17 +8,30 @@
 
 use std::path::PathBuf;
 
+use eframe::egui::{self, Button, RichText, Ui};
 use qs_commands::{CommandError, Session};
+use qs_map_edit::MapDocument;
+use qs_templates::Template;
+use qs_workbench::{FsLoader, OpenFile, PlayState, Preview, Workbench};
 
-use crate::agent::{AgentFeature, AgentPanel};
+use crate::agent::AgentFeature;
+use crate::agent::{AgentAction, AgentPanel};
 use crate::debugger::DebuggerFeature;
+use crate::debugger::{self, DebugAction, DebugInput};
 use crate::editors::EditorsFeature;
+use crate::entities::{self, EntityAction, Properties};
 use crate::git_panel::GitFeature;
+use crate::git_panel::{GitAction, GitView, git_ui};
+use crate::map_editor::{MapAction, MapEditor};
 use crate::map_feature::MapFeature;
-use crate::project::{Jump, ProjectFeature};
+use crate::project::ProjectFeature;
+use crate::project::{self, Jump, SymbolScope};
+use crate::shell::{Area, FocusNow, SYMBOLS_SHARE, TREE_SHARE, heading, note, section};
 use crate::shell::{BottomTab, CentreTab, ShellError, Workspace};
 use crate::strings::Text;
 use crate::terminal::TerminalFeature;
+use crate::terminal::{TerminalAction, TerminalView, terminal_ui};
+use crate::theme::{SECTION_GAP, Theme, Token};
 
 /// The features, each with its state.
 pub(crate) struct Features {
@@ -159,4 +172,222 @@ impl<'a> Commands<'a> {
     pub(crate) fn edit_failed(&mut self) {
         *self.notice = Some(Text::EditFailed.get().to_owned());
     }
+}
+
+/// The left panel's Project and Symbols sections; the row chosen, if any.
+pub(crate) fn left(
+    ui: &mut Ui,
+    theme: &Theme,
+    (workbench, (recent, error)): (&Workbench<FsLoader>, (&[PathBuf], Option<&str>)),
+    scope: &mut SymbolScope,
+    focus: FocusNow,
+) -> Option<LeftAction> {
+    let focus = focus == FocusNow::Take;
+    let height = ui.available_height();
+    let mut jump = None;
+    let project = heading(ui, theme, Text::Project);
+    if focus {
+        project.request_focus();
+    }
+    match workbench.root() {
+        None => {
+            if let Some(action) = no_project(ui, theme, recent, error) {
+                return Some(action);
+            }
+        }
+        Some(root) => {
+            ui.label(RichText::new(project::root_name(root)).strong());
+            let open = workbench.open().map(OpenFile::path);
+            egui::ScrollArea::vertical()
+                .id_salt(Area::Section(Text::Project))
+                .max_height(height * TREE_SHARE)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    let rows = project::Rows {
+                        open,
+                        unsaved: &|path| workbench.is_unsaved(path),
+                        mark: theme.color(Token::StatusWarn),
+                    };
+                    jump = project::tree_ui(ui, workbench.tree(), &rows);
+                });
+        }
+    }
+    ui.add_space(theme.space(SECTION_GAP));
+    heading(ui, theme, Text::Symbols);
+    let symbols = project::symbols_ui(
+        ui,
+        theme,
+        scope,
+        workbench.open(),
+        workbench.project_symbols(),
+        height * SYMBOLS_SHARE,
+    );
+    jump.or(symbols).map(LeftAction::Jump)
+}
+
+/// The right panel: the Properties of the selected entity while the game runs, or the key
+/// editor of the open map's while the Map tab shows it (P5-06), then the agent panel (P4-09);
+/// what each asked for. Its first heading takes the keyboard when `focus`.
+pub(crate) fn right(
+    ui: &mut Ui,
+    theme: &Theme,
+    (workbench, preview): (&Workbench<FsLoader>, &Preview),
+    (properties, agent, map_editor): (&mut Properties, &mut AgentPanel, Option<&mut MapEditor>),
+    focus: FocusNow,
+) -> (Option<EntityAction>, Option<AgentAction>, Vec<MapAction>) {
+    let focus = focus == FocusNow::Take;
+    let mut entity_action = None;
+    let mut map_actions = Vec::new();
+    let first = if let Some(map_editor) = map_editor {
+        let first = heading(ui, theme, Text::Properties);
+        let report = workbench.map().and_then(MapDocument::report);
+        map_actions = map_editor.properties(ui, theme, report);
+        first
+    } else if preview.state() == PlayState::Stopped {
+        section(ui, theme, Text::Properties, Text::NotPlaying)
+    } else {
+        let first = heading(ui, theme, Text::Properties);
+        entity_action = entities::properties(ui, theme, preview, properties);
+        first
+    };
+    if focus {
+        first.request_focus();
+    }
+    ui.add_space(theme.space(SECTION_GAP));
+    heading(ui, theme, Text::Agent);
+    let agent_action = agent.ui(ui, theme, &workbench.staged_hunks());
+    (entity_action, agent_action, map_actions)
+}
+
+/// The bottom panel: its tabs, and the Problems list, the console or the Debugger tab; what a
+/// click in it asked for, if anything.
+pub(crate) fn bottom(
+    ui: &mut Ui,
+    theme: &Theme,
+    tab: &mut BottomTab,
+    (workbench, preview, input): (&Workbench<FsLoader>, &Preview, &mut DebugInput),
+    (terminal_view, git_view): (&mut TerminalView, &mut GitView),
+    focus: FocusNow,
+) -> Option<BottomAction> {
+    let focus = focus == FocusNow::Take;
+    let problems = workbench.problems();
+    ui.horizontal(|ui| {
+        for (value, text) in [
+            (BottomTab::Problems, Text::Problems),
+            (BottomTab::Console, Text::Console),
+            (BottomTab::Debugger, Text::Debugger),
+            (BottomTab::Terminal, Text::Terminal),
+            (BottomTab::Git, Text::Git),
+        ] {
+            let label = match (value, problems.len()) {
+                (BottomTab::Problems, shown @ 1..) => format!("{} {shown}", text.get()),
+                _ => text.get().to_owned(),
+            };
+            let response = ui.selectable_value(tab, value, label);
+            if focus && *tab == value {
+                response.request_focus();
+            }
+        }
+    });
+    ui.separator();
+    match tab {
+        BottomTab::Problems => {
+            if !problems.is_empty() && ui.small_button(Text::OpenAsMultibuffer.get()).clicked() {
+                return Some(BottomAction::ProblemsAsExcerpts);
+            }
+            project::problems_ui(ui, theme, problems, workbench.root()).map(BottomAction::Jump)
+        }
+        BottomTab::Console if preview.state() != PlayState::Stopped => {
+            debugger::console(ui, theme, preview, input).map(BottomAction::Debug)
+        }
+        BottomTab::Console => {
+            note(ui, theme, Text::ConsoleIdle);
+            None
+        }
+        BottomTab::Debugger => {
+            debugger::debugger_ui(ui, theme, preview, input).map(BottomAction::Debug)
+        }
+        BottomTab::Terminal => {
+            terminal_ui(ui, theme, workbench.terminals(), terminal_view).map(BottomAction::Terminal)
+        }
+        BottomTab::Git => {
+            let open = workbench.open().map(|open| open.path().to_path_buf());
+            git_ui(ui, theme, git_view, open.as_ref()).map(BottomAction::Git)
+        }
+    }
+}
+
+/// The Project section with no project open: an Open Folder button, why the last one did not
+/// open, and the recent projects, each a row that opens it, as Zed's welcome page offers them.
+pub(crate) fn no_project(
+    ui: &mut Ui,
+    theme: &Theme,
+    recent: &[PathBuf],
+    error: Option<&str>,
+) -> Option<LeftAction> {
+    let mut action = None;
+    note(ui, theme, Text::NoProject);
+    ui.horizontal_wrapped(|ui| {
+        if ui.button(Text::OpenFolderButton.get()).clicked() {
+            action = Some(LeftAction::OpenFolder);
+        }
+        for (template, text) in [
+            (Template::Id1, Text::NewId1Menu),
+            (Template::Rerelease, Text::NewRereleaseMenu),
+        ] {
+            if ui.button(text.get()).clicked() {
+                action = Some(LeftAction::New(template));
+            }
+        }
+    });
+    if let Some(error) = error {
+        ui.add(
+            egui::Label::new(RichText::new(error).color(theme.color(Token::StatusError))).wrap(),
+        );
+    }
+    if recent.is_empty() {
+        return action;
+    }
+    ui.add_space(theme.space(2));
+    ui.label(
+        RichText::new(Text::RecentProjects.get())
+            .small()
+            .color(theme.color(Token::TextMuted)),
+    );
+    for folder in recent {
+        let name = project::root_name(folder);
+        let row = ui
+            .add(Button::new(name).frame_when_inactive(false))
+            .on_hover_text(folder.to_string_lossy());
+        if row.clicked() {
+            action = Some(LeftAction::Open(folder.clone()));
+        }
+    }
+    action
+}
+
+/// What a click in the left panel asks for.
+pub(crate) enum LeftAction {
+    /// Open a file at a place.
+    Jump(Jump),
+    /// Open this project folder.
+    Open(PathBuf),
+    /// Ask for a project folder with the system's dialog.
+    OpenFolder,
+    /// Make a new project from a template.
+    New(Template),
+}
+
+/// What a click or a typed line in the bottom panel asks for.
+pub(crate) enum BottomAction {
+    /// Open the problem's place.
+    Jump(Jump),
+    /// What the Debugger tab or the console's box asked for.
+    Debug(DebugAction),
+    /// What the Terminal tab asked for.
+    Terminal(TerminalAction),
+    /// What the Git tab asked for.
+    Git(GitAction),
+    /// Show every problem as excerpts in the multibuffer (P4-33).
+    ProblemsAsExcerpts,
 }
