@@ -22,11 +22,47 @@ pub fn threads_dir(project: &Path) -> PathBuf {
     project.join(".quakec-studio").join("threads")
 }
 
+/// A thread's number in the folder, its file `<number>.json`; written to JSON as the bare
+/// number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ThreadNumber(u32);
+
+impl ThreadNumber {
+    /// A record's number before [`keep`] gives it one.
+    pub const UNKEPT: Self = Self(0);
+    /// The first thread kept.
+    pub const FIRST: Self = Self(1);
+
+    /// Thread `number`.
+    #[must_use]
+    pub const fn new(number: u32) -> Self {
+        Self(number)
+    }
+
+    /// Its number.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    /// The number after it.
+    const fn next(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+}
+
+impl std::fmt::Display for ThreadNumber {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// A thread as kept.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ThreadRecord {
     /// Its number in the folder, from 1.
-    pub number: u32,
+    pub number: ThreadNumber,
     /// Its title: the task's first line.
     pub title: String,
     /// Every message, the brief first.
@@ -99,11 +135,11 @@ pub fn load(dir: &Path) -> io::Result<Vec<ThreadRecord>> {
 /// # Errors
 ///
 /// The folder cannot be made or the file written.
-pub fn keep(dir: &Path, mut record: ThreadRecord) -> io::Result<u32> {
+pub fn keep(dir: &Path, mut record: ThreadRecord) -> io::Result<ThreadNumber> {
     fs::create_dir_all(dir)?;
     let next = load(dir)?
         .first()
-        .map_or(1, |newest| newest.number.saturating_add(1));
+        .map_or(ThreadNumber::FIRST, |newest| newest.number.next());
     record.number = next;
     let text = serde_json::to_string_pretty(&record).map_err(io::Error::other)?;
     fs::write(dir.join(format!("{next}.json")), text)?;

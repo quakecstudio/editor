@@ -3547,6 +3547,7 @@ dependencies = [
  "qs-commands",
  "qs-map",
  "qs-pak",
+ "qs-paths",
  "qs-settings",
  "qs-vfs",
  "qs-workbench",
@@ -3753,6 +3754,7 @@ version = "2026.11.1"
 dependencies = [
  "qc-project",
  "qs-commands",
+ "qs-paths",
  "qs-workbench",
  "rmcp",
  "serde_json",
@@ -3790,6 +3792,9 @@ dependencies = [
 [[package]]
 name = "qs-paths"
 version = "2026.11.1"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "qs-porting-example"

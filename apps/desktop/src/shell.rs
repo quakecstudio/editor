@@ -734,7 +734,9 @@ impl Shell {
         let preview = &self.session.context().preview;
         let entities = preview.entities();
         let entity = entities.selected().map(|selected| qs_agent::EntityState {
-            edict: selected.edict.get(),
+            edict: qs_agent::EdictNumber::new(
+                usize::try_from(selected.edict.get()).unwrap_or(usize::MAX),
+            ),
             classname: selected.classname.clone(),
             fields: selected
                 .fields

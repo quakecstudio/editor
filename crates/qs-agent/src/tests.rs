@@ -658,7 +658,7 @@ fn profiles_switch_the_tools_offered() {
 #[test]
 fn asking_about_an_entity_carries_its_state() {
     let ogre = super::EntityState {
-        edict: 12,
+        edict: qc_edict::EdictNumber::new(12),
         classname: "monster_ogre".to_owned(),
         fields: vec![
             ("health".to_owned(), "200".to_owned()),
@@ -671,7 +671,7 @@ fn asking_about_an_entity_carries_its_state() {
     assert!(task.contains("current think function is ogre_stand1, due at time 3.1"));
     assert!(task.contains("- health = 200"));
     let still = super::EntityState {
-        edict: 1,
+        edict: qc_edict::EdictNumber::new(1),
         classname: "worldspawn".to_owned(),
         fields: Vec::new(),
     };
@@ -686,7 +686,7 @@ fn mentions_attach_what_they_name() {
     let (root, mut session) = project("mentions", FIXED);
     let live = super::Live {
         entity: Some(super::EntityState {
-            edict: 3,
+            edict: qc_edict::EdictNumber::new(3),
             classname: "player".to_owned(),
             fields: vec![("health".to_owned(), "100".to_owned())],
         }),
@@ -861,13 +861,13 @@ fn base64_is_rfc_4648s() {
 // kept, searched by title and messages, and read back as they were
 #[test]
 fn threads_are_kept_listed_and_searched() {
-    use super::history::{ThreadRecord, keep, load, threads_dir, title_of};
+    use super::history::{ThreadNumber, ThreadRecord, keep, load, threads_dir, title_of};
     let root = std::env::temp_dir().join(format!("qs-agent-history-{}", std::process::id()));
     let _gone = std::fs::remove_dir_all(&root);
     let dir = threads_dir(&root);
     assert!(load(&dir).unwrap().is_empty());
     let record = |task: &str, said: &str| ThreadRecord {
-        number: 0,
+        number: ThreadNumber::UNKEPT,
         title: title_of(task),
         transcript: vec![
             Message::User {
@@ -886,9 +886,12 @@ fn threads_are_kept_listed_and_searched() {
     };
     assert_eq!(
         keep(&dir, record("Fix the axe\nIt is weak", "Raised it")).unwrap(),
-        1
+        ThreadNumber::FIRST
     );
-    assert_eq!(keep(&dir, record("Add a rocket", "Added")).unwrap(), 2);
+    assert_eq!(
+        keep(&dir, record("Add a rocket", "Added")).unwrap(),
+        ThreadNumber::new(2)
+    );
     let threads = load(&dir).unwrap();
     let titles: Vec<&str> = threads.iter().map(|t| t.title.as_str()).collect();
     assert_eq!(titles, ["Add a rocket", "Fix the axe"]);

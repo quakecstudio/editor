@@ -374,7 +374,7 @@ fn a_thread_started_from_an_entity_holds_its_state() {
     let (_root, ctx, mut app, _gates) = window("ask", 0);
     let seen = recording(&mut app);
     let entity = qs_agent::EntityState {
-        edict: 12,
+        edict: qs_agent::EdictNumber::new(12),
         classname: "monster_army".to_owned(),
         fields: vec![
             ("health".to_owned(), "30".to_owned()),

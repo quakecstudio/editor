@@ -15,7 +15,10 @@ use std::path::Path;
 use qs_settings::{AgentProfile, Decision, ToolPermissions};
 use serde_json::Value;
 
-use crate::{ToolCall, collect_paths, lexical};
+use qs_paths::arguments::collect_paths;
+use qs_paths::lexical;
+
+use crate::ToolCall;
 
 /// The tools that only read the project, the game or the settings: the Ask profile's, and
 /// allowed in every profile.

@@ -28,7 +28,11 @@
 //! The run ends with its edits staged for review (`edit.staged`), and the checkpoint it
 //! recorded first, so the person can accept the hunks or undo everything (AGT-4, PRIN-4).
 
-use std::path::{Component, Path, PathBuf};
+pub use qc_edict::EdictNumber;
+use std::path::{Path, PathBuf};
+
+use qs_paths::arguments::{absolute_paths, collect_paths};
+use qs_paths::lexical;
 
 use qs_commands::Session;
 pub use qs_settings::{AgentProfile, Decision, ToolPermissions, ToolRule};
@@ -81,7 +85,7 @@ pub const SYSTEM: &str = "You are QuakeC Studio's agent. You change a QuakeC pro
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EntityState {
     /// The edict's number.
-    pub edict: u32,
+    pub edict: EdictNumber,
     /// Its classname.
     pub classname: String,
     /// Each field and its value, in the order the game gave them.
@@ -1370,67 +1374,6 @@ fn verify<C: 'static>(session: &mut Session<C>, test_params: &Value) -> Verifica
             .push(format!("the tests did not run: {error}")),
     }
     checked
-}
-
-/// Every string under a key named `path`, or ending in `_path`, anywhere in `value`.
-fn collect_paths(value: &Value, out: &mut Vec<String>) {
-    match value {
-        Value::Object(object) => {
-            for (key, inner) in object {
-                if is_path_key(key)
-                    && let Some(path) = inner.as_str()
-                {
-                    out.push(path.to_owned());
-                }
-                collect_paths(inner, out);
-            }
-        }
-        Value::Array(items) => items.iter().for_each(|item| collect_paths(item, out)),
-        _ => {}
-    }
-}
-
-/// Whether a parameter named `key` holds a path.
-fn is_path_key(key: &str) -> bool {
-    key == "path" || key.ends_with("_path")
-}
-
-/// Makes every path `arguments` names absolute, a relative one taken from `project`, with `.`
-/// and `..` worked out.
-fn absolute_paths(arguments: &mut Value, project: &Path) {
-    match arguments {
-        Value::Object(object) => {
-            for (key, inner) in object.iter_mut() {
-                if is_path_key(key)
-                    && let Some(path) = inner.as_str()
-                {
-                    let full = lexical(&project.join(path));
-                    *inner = Value::String(full.to_string_lossy().into_owned());
-                } else {
-                    absolute_paths(inner, project);
-                }
-            }
-        }
-        Value::Array(items) => items
-            .iter_mut()
-            .for_each(|item| absolute_paths(item, project)),
-        _ => {}
-    }
-}
-
-/// `path` with `.` and `..` worked out by its text.
-fn lexical(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for part in path.components() {
-        match part {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 pub mod history;

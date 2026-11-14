@@ -232,7 +232,7 @@ fn keep_thread<C: 'static>(_session: &mut Session<C>, thread: &Thread) {
         Outcome::NotDone { reasons } => reasons.join("; "),
     };
     let record = history::ThreadRecord {
-        number: 0,
+        number: history::ThreadNumber::UNKEPT,
         title: history::title_of(&thread.task),
         tokens: qs_agent::estimated_tokens(&report.transcript),
         transcript: report.transcript.clone(),

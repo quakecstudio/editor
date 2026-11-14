@@ -18,8 +18,9 @@
 
 use std::ffi::{OsStr, OsString};
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
+pub mod arguments;
 mod fonts;
 mod stores;
 
@@ -261,6 +262,23 @@ fn join_all(base: &Path, parts: &[&str]) -> PathBuf {
     parts
         .iter()
         .fold(base.to_path_buf(), |path, part| path.join(part))
+}
+
+/// `path` with `.` and `..` worked out by its text, as a check of where it points needs
+/// before the file exists.
+#[must_use]
+pub fn lexical(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
