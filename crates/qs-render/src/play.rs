@@ -19,7 +19,7 @@ use qs_bsp::Bsp;
 use qs_client::{Anchor, EntitySlot, HUD_SBAR_HEIGHT, Hud, HudItem, Scene, SceneEntity};
 use qs_wad::{Conchars, QPic, WAD_CONCHARS_TRANSPARENT, Wad};
 
-use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, TORCHES, entity_light};
+use crate::alias::{AliasEntity, AliasError, AliasKind, AliasModel, Shading, entity_light};
 use crate::camera::Camera;
 use crate::gpu::{
     AliasDraw, Assets, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, ModelFrame,
@@ -357,10 +357,10 @@ impl Play {
     ) -> Result<(), PlayError> {
         self.models.clear();
         for name in names {
-            let torch = TORCHES.contains(&name.as_str());
+            let shading = Shading::of(name.as_str());
             let replacement = match self.md5_replacement(name, read, rank) {
                 Some((md5, bytes)) => {
-                    match Md5Model::read(&md5, &bytes, read, &self.palette, torch) {
+                    match Md5Model::read(&md5, &bytes, read, &self.palette, shading) {
                         Ok(model) => Some(model),
                         // REND-12.1: an MD5 model that does not read leaves its `.mdl`.
                         Err(_) if read(name).is_some() => None,

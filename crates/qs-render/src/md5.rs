@@ -14,8 +14,7 @@ use qs_client::PoseBlend;
 use qs_mdl::md5::{Md5Anim, Md5Error, Md5Mesh, Md5Pose, Md5Surface, md5_anim_path, md5_skin_path};
 
 use crate::alias::{
-    AliasEntity, AliasError, AliasVertex, SKIN_RATE, SKIN_SLOTS, rotate_for_entity, shade_light,
-    whole,
+    AliasEntity, AliasError, AliasVertex, SKIN_RATE, SKIN_SLOTS, Shading, rotate_for_entity, whole,
 };
 use crate::anorm_dots::SHADEDOT_QUANT;
 use crate::mesh::{Image, Palette};
@@ -90,12 +89,12 @@ pub struct Md5Model {
     /// Each frame's vertices of each part.
     frames: Vec<Vec<Vec<Vertex>>>,
     images: Vec<Image>,
-    torch: bool,
+    shading: Shading,
 }
 
 impl Md5Model {
     /// The model `name` from its mesh file `bytes`, with its animation and skins read
-    /// through `read`; `torch` is whether the `.mdl` it replaces is a torch (REND-4.7,
+    /// through `read`; `shading` is the `.mdl`'s it replaces, full light for a torch (REND-4.7,
     /// REND-12.1 to REND-12.4).
     ///
     /// # Errors
@@ -107,7 +106,7 @@ impl Md5Model {
         bytes: &[u8],
         read: &dyn Fn(&str) -> Option<Vec<u8>>,
         palette: &Palette,
-        torch: bool,
+        shading: Shading,
     ) -> Result<Self, AliasError> {
         let error = |e: Md5Error| AliasError::Md5(format!("{name}: {e}"));
         let mesh = Md5Mesh::read(bytes).map_err(error)?;
@@ -158,7 +157,7 @@ impl Md5Model {
             parts,
             frames,
             images,
-            torch,
+            shading,
         })
     }
 
@@ -183,7 +182,7 @@ impl Md5Model {
         time: f64,
         out: &mut Vec<AliasVertex>,
     ) -> Vec<(usize, usize)> {
-        let shadelight = shade_light(entity.light, self.torch);
+        let shadelight = self.shading.light(entity.light);
         let light = shade_vector(entity.angles[1]);
         let (from, to, blend) = match entity.blend {
             Some(PoseBlend {

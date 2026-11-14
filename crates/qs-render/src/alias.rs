@@ -165,7 +165,7 @@ pub struct AliasModel {
     frames: Vec<Frame>,
     corners: Vec<Corner>,
     rotates: bool,
-    torch: bool,
+    shading: Shading,
 }
 
 impl AliasModel {
@@ -231,7 +231,7 @@ impl AliasModel {
             frames,
             corners,
             rotates: header.flags & MDL_EF_ROTATE != 0,
-            torch: TORCHES.contains(&name),
+            shading: Shading::of(name),
         })
     }
 
@@ -278,7 +278,7 @@ impl AliasModel {
     /// Appends `entity`'s triangles at `time` seconds to `out`, and returns the index into
     /// [`Self::images`] they are drawn with (REND-4.2 to REND-4.8).
     pub fn draw(&self, entity: &AliasEntity, time: f64, out: &mut Vec<AliasVertex>) -> usize {
-        let shadelight = shade_light(entity.light, self.torch);
+        let shadelight = self.shading.light(entity.light);
         let dots = shade_dots(entity.angles[1]);
         // REND-4.4 or, blending, CLIENT-7.3: the two poses and how far between them.
         let (from, to, blend) = match entity.blend {
@@ -346,24 +346,45 @@ impl AliasModel {
     }
 }
 
-/// `R_DrawAliasModel`'s `shadelight`: the light at the entity, capped as GLQuake caps it, the
-/// torches full light, over 200 (REND-4.7).
-#[must_use]
-pub fn shade_light(light: f32, torch: bool) -> f32 {
-    let ambient = light.min(AMBIENT_CAP);
-    // "if (ambientlight + shadelight > 192) shadelight = 192 - ambientlight"
-    let shade = if torch {
-        TORCH_LIGHT
-    } else {
-        light.min(SHADE_CAP - ambient)
-    };
-    shade / SHADE_SCALE
+/// Whether a model is lit by the light at it or is a torch, which GLQuake gives full light
+/// (REND-4.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shading {
+    /// Lit by the light at the entity.
+    Lit,
+    /// A torch: "make torches full light".
+    Torch,
+}
+
+impl Shading {
+    /// The shading of the model `name`: a torch when it is one of [`TORCHES`].
+    #[must_use]
+    pub fn of(name: &str) -> Self {
+        if TORCHES.contains(&name) {
+            Self::Torch
+        } else {
+            Self::Lit
+        }
+    }
+
+    /// `R_DrawAliasModel`'s `shadelight`: the light at the entity, capped as GLQuake caps it,
+    /// the torches full light, over 200 (REND-4.7).
+    #[must_use]
+    pub fn light(self, light: f32) -> f32 {
+        let ambient = light.min(AMBIENT_CAP);
+        // "if (ambientlight + shadelight > 192) shadelight = 192 - ambientlight"
+        let shade = match self {
+            Self::Torch => TORCH_LIGHT,
+            Self::Lit => light.min(SHADE_CAP - ambient),
+        };
+        shade / SHADE_SCALE
+    }
 }
 
 /// `R_DrawAliasModel`'s light before the caps: `R_LightPoint` at `origin`, `light`, raised
 /// to the view model's floor of 24, then each dynamic light's `radius - distance` when above
 /// 0 added, then a player's floor of 8, all in the float `ambientlight` (REND-4.11). The
-/// caps and the torches are [`shade_light`].
+/// caps and the torches are [`Shading::light`].
 #[must_use]
 pub fn entity_light(light: i32, kind: AliasKind, origin: [f32; 3], lights: &[DynamicLight]) -> f32 {
     let mut light = f32_of_i32(light);

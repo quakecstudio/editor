@@ -29,8 +29,7 @@ mod sprite;
 mod styles;
 
 pub use alias::{
-    AliasEntity, AliasError, AliasKind, AliasModel, AliasVertex, bob_rotate, entity_light,
-    shade_light,
+    AliasEntity, AliasError, AliasKind, AliasModel, AliasVertex, Shading, bob_rotate, entity_light,
 };
 pub use camera::Camera;
 pub use gpu::{
