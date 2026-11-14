@@ -21,7 +21,8 @@ installed fonts: macOS's system, local and user font folders, Windows' `Fonts` f
 per-user one, and on Linux the `fonts` folder of each XDG data directory and `~/.fonts`. The
 desktop app's font fallback reads them for a character its bundled fonts lack.
 
-`qs_paths::lexical()` works out a path's `.` and `..` by its text, and
+`qs_paths::lexical()` works out a path's `.` and `..` by its text, `qs_paths::lies_under()` says
+whether a path stays inside a root, and
 `qs_paths::arguments` finds and makes absolute the paths a command's JSON arguments name (any
 key `path` or ending in `_path`), for the agent's permissions and the MCP server's roots.
 

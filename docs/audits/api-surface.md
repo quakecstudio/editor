@@ -2055,6 +2055,7 @@ Items that left the root (3): `const qs_layout::LAYOUT_FILE`, `struct qs_layout:
 | `fn qs_paths::fonts::current_font_dirs` | `desktop` | kept public: used by `desktop` |
 | `fn qs_paths::Platform::dirs` | `qc-ide`, `qc-codegen`, `qc-sema`, `qs-vfs`, `qs-log`, `qs-differential`, `qs-install`, `qc-builtins`, `qc-progs`, `qs-tests`, `qs-commands`, `qc-project`, `qc-vm`, `lsp`, `xtask` | kept public: used by `qc-ide`, `qc-codegen`, `qc-sema`, `qs-vfs`, `qs-log`, `qs-differential`, `qs-install`, `qc-builtins`, `qc-progs`, `qs-tests`, `qs-commands`, `qc-project`, `qc-vm`, `lsp`, `xtask` |
 | `fn qs_paths::lexical` | `qs-agent`, `qs-mcp` | kept public: used by `qs-agent`, `qs-mcp` |
+| `fn qs_paths::lies_under` | `qs-agent`, `qs-mcp` | kept public: used by `qs-agent`, `qs-mcp` |
 | `fn qs_paths::stores::StoreDirs::gog_libraries` | `qs-install` | kept public: used by `qs-install` |
 | `fn qs_paths::stores::StoreDirs::heroic` | `qs-install` | kept public: used by `qs-install` |
 | `fn qs_paths::stores::StoreDirs::steam` | `qs-install` | kept public: used by `qs-install` |
