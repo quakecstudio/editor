@@ -28,7 +28,12 @@
 //! The run ends with its edits staged for review (`edit.staged`), and the checkpoint it
 //! recorded first, so the person can accept the hunks or undo everything (AGT-4, PRIN-4).
 
-use std::path::{Component, Path, PathBuf};
+pub use qc_edict::EdictNumber;
+pub use qs_checkpoint::CheckpointNumber;
+use std::path::{Path, PathBuf};
+
+use qs_paths::arguments::{absolute_paths, collect_paths};
+use qs_paths::{lexical, lies_under};
 
 use qs_commands::Session;
 pub use qs_settings::{AgentProfile, Decision, ToolPermissions, ToolRule};
@@ -81,7 +86,7 @@ pub const SYSTEM: &str = "You are QuakeC Studio's agent. You change a QuakeC pro
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EntityState {
     /// The edict's number.
-    pub edict: u32,
+    pub edict: EdictNumber,
     /// Its classname.
     pub classname: String,
     /// Each field and its value, in the order the game gave them.
@@ -125,16 +130,18 @@ impl EntityState {
     }
 }
 
-/// The task of "Ask about this" on `entity` (P4-12, UI-9): what it is doing and why, with its
-/// state attached.
-#[must_use]
-pub fn ask_about(entity: &EntityState) -> String {
-    format!(
-        "Explain what this entity is doing in the running game and why, from the project's \
-         QuakeC: what spawned it, what its think function does next, and anything in its state \
-         that looks wrong. Do not change any code unless asked.\n\n{}",
-        entity.brief()
-    )
+impl EntityState {
+    /// The task of "Ask about this" on the entity (P4-12, UI-9): what it is doing and why, with
+    /// its state attached.
+    #[must_use]
+    pub fn ask_about(&self) -> String {
+        format!(
+            "Explain what this entity is doing in the running game and why, from the project's \
+             QuakeC: what spawned it, what its think function does next, and anything in its \
+             state that looks wrong. Do not change any code unless asked.\n\n{}",
+            self.brief()
+        )
+    }
 }
 
 /// What the running game offers the agent's `@entity` and `@error` mentions.
@@ -275,22 +282,24 @@ pub fn inline_prompt(path: &Path, file: &str, selection: &str, instruction: &str
     )
 }
 
-/// The new text in an inline edit's answer: its text, without the code fences a model may put
-/// around it.
-#[must_use]
-pub fn inline_answer(reply: &Reply) -> String {
-    let text = match reply {
-        Reply::Calls { text, .. } | Reply::Finish { summary: text } => text.as_str(),
-    };
-    let trimmed = text.trim_matches('\n');
-    let Some(body) = trimmed.strip_prefix("```") else {
-        return text.to_owned();
-    };
-    let body = body.split_once('\n').map_or("", |(_, rest)| rest);
-    body.strip_suffix("```")
-        .unwrap_or(body)
-        .trim_end_matches('\n')
-        .to_owned()
+impl Reply {
+    /// The new text in an inline edit's answer: the reply's text, without the code fences a
+    /// model may put around it.
+    #[must_use]
+    pub fn inline_answer(&self) -> String {
+        let text = match self {
+            Self::Calls { text, .. } | Self::Finish { summary: text } => text.as_str(),
+        };
+        let trimmed = text.trim_matches('\n');
+        let Some(body) = trimmed.strip_prefix("```") else {
+            return text.to_owned();
+        };
+        let body = body.split_once('\n').map_or("", |(_, rest)| rest);
+        body.strip_suffix("```")
+            .unwrap_or(body)
+            .trim_end_matches('\n')
+            .to_owned()
+    }
 }
 
 /// The QuakeC reference written for the agent (`docs/agent-reference/quakec.md`).
@@ -401,22 +410,36 @@ pub fn estimated_tokens(transcript: &[Message]) -> usize {
 #[must_use]
 pub fn base64(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    // RFC 4648, section 4: each group of three bytes, a 24-bit number, is four symbols of six
+    // bits, the first the highest.
+    const GROUP_BYTES: usize = 3;
+    const GROUP_SYMBOLS: usize = 4;
+    const BYTE_BITS: u32 = 8;
+    const SYMBOL_BITS: u32 = 6;
+    const SYMBOL_MASK: u32 = (1 << SYMBOL_BITS) - 1;
+    const SYMBOL_SHIFTS: [u32; GROUP_SYMBOLS] = [3 * SYMBOL_BITS, 2 * SYMBOL_BITS, SYMBOL_BITS, 0];
     let symbol = |index: u32| {
-        let index = usize::try_from(index & 63).unwrap_or(0);
+        let index = usize::try_from(index & SYMBOL_MASK).unwrap_or(0);
         char::from(ALPHABET.get(index).copied().unwrap_or(b'A'))
     };
-    let mut out = String::with_capacity(bytes.len().div_ceil(3).saturating_mul(4));
-    for chunk in bytes.chunks(3) {
-        let b = |i: usize| u32::from(chunk.get(i).copied().unwrap_or(0));
-        let group = (b(0) << 16) | (b(1) << 8) | b(2);
-        out.push(symbol(group >> 18));
-        out.push(symbol(group >> 12));
-        out.push(if chunk.len() > 1 {
-            symbol(group >> 6)
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 { symbol(group) } else { '=' });
+    let mut out = String::with_capacity(
+        bytes
+            .len()
+            .div_ceil(GROUP_BYTES)
+            .saturating_mul(GROUP_SYMBOLS),
+    );
+    for chunk in bytes.chunks(GROUP_BYTES) {
+        let byte = |i: usize| u32::from(chunk.get(i).copied().unwrap_or(0));
+        let group = (byte(0) << (2 * BYTE_BITS)) | (byte(1) << BYTE_BITS) | byte(2);
+        // A last chunk of n bytes fills n + 1 symbols; the rest are padding.
+        let written = chunk.len().saturating_add(1);
+        for (place, shift) in SYMBOL_SHIFTS.into_iter().enumerate() {
+            out.push(if place < written {
+                symbol(group >> shift)
+            } else {
+                '='
+            });
+        }
     }
     out
 }
@@ -438,6 +461,42 @@ pub enum Reply {
     },
 }
 
+/// Why a model gave no reply, which ends the run.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ModelError {
+    /// The request did not reach the model, or the provider answered with an error status:
+    /// what the transport says.
+    Transport(String),
+    /// The model declined the request.
+    Declined,
+    /// The provider's content filter withheld the reply.
+    Filtered,
+    /// The reply was cut off at the token limit, the provider's `max_tokens`.
+    CutOff,
+    /// The answer was not what the API gives: what is missing, with the answer.
+    Malformed(String),
+    /// The streamed answer ended with an error event: its message.
+    Stream(String),
+    /// The model stopped answering before it was asked: why (a cost cap, a script at its end).
+    Stopped(String),
+}
+
+impl std::fmt::Display for ModelError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transport(why)
+            | Self::Malformed(why)
+            | Self::Stream(why)
+            | Self::Stopped(why) => f.write_str(why),
+            Self::Declined => f.write_str("the model declined the request"),
+            Self::Filtered => f.write_str("the provider's content filter withheld the reply"),
+            Self::CutOff => f.write_str("the reply was cut off at max_tokens, its token limit"),
+        }
+    }
+}
+
+impl std::error::Error for ModelError {}
+
 /// A model: anything that answers a transcript with its next step.
 pub trait Model {
     /// The next step for `transcript`, under the rules of `system`, `tools` being the tools
@@ -445,13 +504,13 @@ pub trait Model {
     ///
     /// # Errors
     ///
-    /// The model's own error, as text, which ends the run.
+    /// The model's [`ModelError`], which ends the run.
     fn reply(
         &mut self,
         system: &str,
         tools: &[ToolSpec],
         transcript: &[Message],
-    ) -> Result<Reply, String>;
+    ) -> Result<Reply, ModelError>;
 
     /// As [`Model::reply`], calling `on_text` with each piece of the reply's text as it
     /// arrives, for a window that shows the model writing. A model that cannot stream gives
@@ -466,7 +525,7 @@ pub trait Model {
         tools: &[ToolSpec],
         transcript: &[Message],
         on_text: &mut dyn FnMut(&str),
-    ) -> Result<Reply, String> {
+    ) -> Result<Reply, ModelError> {
         let reply = self.reply(system, tools, transcript)?;
         match &reply {
             Reply::Calls { text, .. } | Reply::Finish { summary: text } => on_text(text),
@@ -508,18 +567,28 @@ pub const COMPACT_PROMPT: &str = "The conversation is near the model's context l
 /// What the compacted transcript says before the summary.
 pub const SUMMARY_HEADING: &str = "Summary of the earlier turns, which were compacted:";
 
+/// The turns a run has unless configured otherwise.
+pub const DEFAULT_TURNS: usize = 40;
+/// The characters a tool's output is cut at unless configured otherwise.
+pub const DEFAULT_OUTPUT_LIMIT: usize = 20_000;
+/// The context window, in tokens, assumed unless configured otherwise.
+pub const DEFAULT_CONTEXT_LIMIT: usize = 200_000;
+/// What a percentage is out of.
+const PERCENT: usize = 100;
+
 impl RunConfig {
-    /// A run over the project at `project`, with 40 turns, the tests run with no parameters,
-    /// outputs cut at 20 000 characters and the Write profile with no rules.
+    /// A run over the project at `project`, with [`DEFAULT_TURNS`] turns, the tests run with no
+    /// parameters, outputs cut at [`DEFAULT_OUTPUT_LIMIT`] characters, a context of
+    /// [`DEFAULT_CONTEXT_LIMIT`] tokens and the Write profile with no rules.
     #[must_use]
     pub fn new(project: impl Into<PathBuf>) -> Self {
         Self {
             project: project.into(),
-            turns: 40,
+            turns: DEFAULT_TURNS,
             test_params: json!({}),
-            output_limit: 20_000,
+            output_limit: DEFAULT_OUTPUT_LIMIT,
             permissions: Permissions::default(),
-            context_limit: 200_000,
+            context_limit: DEFAULT_CONTEXT_LIMIT,
             map: None,
         }
     }
@@ -566,7 +635,7 @@ pub struct RunReport {
     /// How it ended.
     pub outcome: Outcome,
     /// The checkpoint recorded before it changed anything.
-    pub checkpoint: Option<u32>,
+    pub checkpoint: Option<CheckpointNumber>,
     /// The edits it proposes, staged for review: `edit.staged`'s answer.
     pub staged: Value,
     /// The last check of its work, if the model finished at least once.
@@ -579,7 +648,7 @@ pub struct RunReport {
 #[derive(Debug)]
 pub enum AgentError {
     /// The model failed.
-    Model(String),
+    Model(ModelError),
     /// The checkpoint before the run could not be recorded.
     Checkpoint(String),
 }
@@ -637,7 +706,7 @@ pub struct Run {
     system: String,
     specs: Vec<ToolSpec>,
     transcript: Vec<Message>,
-    checkpoint: Option<u32>,
+    checkpoint: Option<CheckpointNumber>,
     turns_left: usize,
     verification: Option<Verification>,
     outcome: Option<Outcome>,
@@ -694,7 +763,8 @@ impl Run {
         let checkpoint = made
             .get("number")
             .and_then(Value::as_u64)
-            .and_then(|n| u32::try_from(n).ok());
+            .and_then(|n| u32::try_from(n).ok())
+            .map(CheckpointNumber::new);
         let specs = tools(session)
             .into_iter()
             .filter(|spec| config.permissions.offers(&spec.name))
@@ -777,7 +847,7 @@ impl Run {
             .config
             .context_limit
             .saturating_mul(COMPACT_AT_PERCENT)
-            .checked_div(100)
+            .checked_div(PERCENT)
             .unwrap_or(0);
         self.transcript.len() > 2 && self.tokens() > at
     }
@@ -836,7 +906,7 @@ impl Run {
     pub fn answer<C: 'static>(
         &mut self,
         session: &mut Session<C>,
-        reply: Result<Reply, String>,
+        reply: Result<Reply, ModelError>,
     ) -> Result<(), AgentError> {
         if std::mem::take(&mut self.compacting) {
             let summary = match reply.map_err(AgentError::Model)? {
@@ -886,17 +956,15 @@ impl Run {
             match verdict.decision {
                 Decision::Ask if offered => {
                     self.asking = Some(Asking {
-                        subjects: subjects(&call, &self.config.project),
+                        subjects: call.subjects(&self.config.project),
                         call,
                         why: verdict.why,
                     });
                     return;
                 }
                 Decision::Deny if offered => {
-                    self.transcript.push(refusal(
-                        &call,
-                        &format!("it is not allowed: {}", verdict.why),
-                    ));
+                    self.transcript
+                        .push(call.refusal(&format!("it is not allowed: {}", verdict.why)));
                 }
                 _ => {
                     let result = call_tool(session, &self.specs, &call, &self.config);
@@ -922,7 +990,7 @@ impl Run {
         match permit {
             Permit::Deny => {
                 self.transcript
-                    .push(refusal(&asking.call, "the modder did not allow it"));
+                    .push(asking.call.refusal("the modder did not allow it"));
             }
             Permit::Once | Permit::Always => {
                 if permit == Permit::Always {
@@ -956,7 +1024,7 @@ impl Run {
 
     /// The checkpoint recorded before the run changed anything.
     #[must_use]
-    pub const fn checkpoint(&self) -> Option<u32> {
+    pub const fn checkpoint(&self) -> Option<CheckpointNumber> {
         self.checkpoint
     }
 
@@ -1168,12 +1236,14 @@ fn module_brief<C: 'static>(session: &mut Session<C>, module: &Value) -> String 
     text
 }
 
-/// The result that tells the model `call` was not run, and why.
-fn refusal(call: &ToolCall, why: &str) -> Message {
-    Message::Tool {
-        call_id: call.id.clone(),
-        content: json!(format!("{} was not run: {why}", call.name)),
-        is_error: true,
+impl ToolCall {
+    /// The result that tells the model the call was not run, and why.
+    fn refusal(&self, why: &str) -> Message {
+        Message::Tool {
+            call_id: self.id.clone(),
+            content: json!(format!("{} was not run: {why}", self.name)),
+            is_error: true,
+        }
     }
 }
 
@@ -1206,7 +1276,10 @@ fn call_tool<C: 'static>(
         let mut paths = Vec::new();
         collect_paths(&arguments, &mut paths);
         let project = lexical(&config.project);
-        if let Some(outside) = paths.iter().find(|p| !Path::new(p).starts_with(&project)) {
+        if let Some(outside) = paths
+            .iter()
+            .find(|p| !lies_under(Path::new(p), &config.project))
+        {
             return refused(format!(
                 "{outside} is outside the project at {}; edits stay in the project",
                 project.display()
@@ -1314,71 +1387,10 @@ fn verify<C: 'static>(session: &mut Session<C>, test_params: &Value) -> Verifica
     checked
 }
 
-/// Every string under a key named `path`, or ending in `_path`, anywhere in `value`.
-fn collect_paths(value: &Value, out: &mut Vec<String>) {
-    match value {
-        Value::Object(object) => {
-            for (key, inner) in object {
-                if is_path_key(key)
-                    && let Some(path) = inner.as_str()
-                {
-                    out.push(path.to_owned());
-                }
-                collect_paths(inner, out);
-            }
-        }
-        Value::Array(items) => items.iter().for_each(|item| collect_paths(item, out)),
-        _ => {}
-    }
-}
-
-/// Whether a parameter named `key` holds a path.
-fn is_path_key(key: &str) -> bool {
-    key == "path" || key.ends_with("_path")
-}
-
-/// Makes every path `arguments` names absolute, a relative one taken from `project`, with `.`
-/// and `..` worked out.
-fn absolute_paths(arguments: &mut Value, project: &Path) {
-    match arguments {
-        Value::Object(object) => {
-            for (key, inner) in object.iter_mut() {
-                if is_path_key(key)
-                    && let Some(path) = inner.as_str()
-                {
-                    let full = lexical(&project.join(path));
-                    *inner = Value::String(full.to_string_lossy().into_owned());
-                } else {
-                    absolute_paths(inner, project);
-                }
-            }
-        }
-        Value::Array(items) => items
-            .iter_mut()
-            .for_each(|item| absolute_paths(item, project)),
-        _ => {}
-    }
-}
-
-/// `path` with `.` and `..` worked out by its text.
-fn lexical(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for part in path.components() {
-        match part {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
-}
-
 pub mod history;
 mod permissions;
 
-pub use permissions::{EDIT_TOOLS, Permissions, READ_TOOLS, Verdict, glob, subjects};
+pub use permissions::{EDIT_TOOLS, Permissions, READ_TOOLS, Verdict, glob};
 
 #[cfg(test)]
 mod tests;

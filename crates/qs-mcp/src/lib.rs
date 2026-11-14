@@ -22,12 +22,15 @@
 //! [`Connected`], the running app's session over its socket (`--connect`), so that a game the
 //! agent plays or an edit it stages is the one the window shows.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
+
+use qs_paths::arguments::{absolute_paths, collect_paths};
+use qs_paths::{lexical, lies_under};
 use std::sync::Arc;
 use std::sync::mpsc;
 
-use qs_commands::Session;
 use qs_commands::remote::{Client, Described, RemoteError};
+use qs_commands::{CommandError, Session};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
     ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool as McpTool,
@@ -132,6 +135,48 @@ impl std::fmt::Display for McpError {
 
 impl std::error::Error for McpError {}
 
+/// Why a tool call was answered with an error instead of the command's output.
+#[derive(Debug)]
+pub enum ToolError {
+    /// The command failed in the session.
+    Command(CommandError),
+    /// The running app's command failed: its message.
+    Remote(String),
+    /// The running app could not be reached or read.
+    Connection(RemoteError),
+    /// A path the call names lies outside the roots its tool may use.
+    OutsideRoots {
+        /// The path, made absolute and lexical.
+        path: PathBuf,
+        /// The tool.
+        tool: Tool,
+    },
+}
+
+impl std::fmt::Display for ToolError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Command(error) => write!(f, "{error}"),
+            Self::Remote(why) => f.write_str(why),
+            Self::Connection(error) => write!(f, "{error}"),
+            Self::OutsideRoots { path, tool } => {
+                let kind = match tool.access {
+                    Access::Read => "read",
+                    Access::Write => "write",
+                };
+                write!(
+                    f,
+                    "{} is outside the roots {} may {kind} under",
+                    path.display(),
+                    tool.id
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ToolError {}
+
 /// What the server's tools run on.
 pub trait Commands {
     /// The summary and parameter schema of the command `id`, if there is one.
@@ -141,8 +186,8 @@ pub trait Commands {
     ///
     /// # Errors
     ///
-    /// The command's failure, or the connection's, as a message for the model.
-    fn run(&mut self, id: &str, arguments: Value) -> Result<Value, String>;
+    /// The command's failure, or the connection's ([`ToolError`]).
+    fn run(&mut self, id: &str, arguments: Value) -> Result<Value, ToolError>;
 }
 
 impl<C: 'static> Commands for Session<C> {
@@ -151,9 +196,8 @@ impl<C: 'static> Commands for Session<C> {
         Some((info.summary().to_owned(), info.params().clone()))
     }
 
-    fn run(&mut self, id: &str, arguments: Value) -> Result<Value, String> {
-        self.execute(id, arguments)
-            .map_err(|error| error.to_string())
+    fn run(&mut self, id: &str, arguments: Value) -> Result<Value, ToolError> {
+        self.execute(id, arguments).map_err(ToolError::Command)
     }
 }
 
@@ -182,10 +226,11 @@ impl Commands for Connected {
         Some((command.summary().to_owned(), command.params().clone()))
     }
 
-    fn run(&mut self, id: &str, arguments: Value) -> Result<Value, String> {
+    fn run(&mut self, id: &str, arguments: Value) -> Result<Value, ToolError> {
         self.client
             .execute(id, arguments)
-            .map_err(|error| error.to_string())?
+            .map_err(ToolError::Connection)?
+            .map_err(ToolError::Remote)
     }
 }
 
@@ -241,7 +286,7 @@ impl Server {
             while let Ok(job) = inbox.recv() {
                 let result = match session.run(&job.name, job.arguments) {
                     Ok(output) => tool_result(output),
-                    Err(why) => tool_error(&why),
+                    Err(why) => tool_error(&why.to_string()),
                 };
                 // A client that went away no longer waits for the result.
                 let _sent = job.reply.send(result);
@@ -315,7 +360,7 @@ impl Server {
     /// As [`Server::serve_on`].
     pub fn serve_bytes(self, input: Vec<u8>) -> Result<Vec<u8>, McpError> {
         runtime()?.block_on(async move {
-            let (client, server) = tokio::io::duplex(1 << 16);
+            let (client, server) = tokio::io::duplex(DUPLEX_BUFFER);
             let (server_read, server_write) = tokio::io::split(server);
             let (mut client_read, mut client_write) = tokio::io::split(client);
             let serving = tokio::spawn(async move {
@@ -341,15 +386,11 @@ impl Server {
 
     /// Whether every path `arguments` names lies under a root the tool may use, and, for a
     /// tool that writes, the project too.
-    fn check_roots(&self, tool: Tool, arguments: &Value) -> Result<(), String> {
+    fn check_roots(&self, tool: Tool, arguments: &Value) -> Result<(), ToolError> {
         let settings = &self.settings;
         let roots: Vec<&PathBuf> = match tool.access {
             Access::Read => settings.read.iter().chain(&settings.write).collect(),
             Access::Write => settings.write.iter().collect(),
-        };
-        let kind = match tool.access {
-            Access::Read => "read",
-            Access::Write => "write",
         };
         let mut paths = Vec::new();
         collect_paths(arguments, &mut paths);
@@ -358,12 +399,8 @@ impl Server {
         }
         for path in paths {
             let full = lexical(Path::new(&path));
-            if !roots.iter().any(|root| full.starts_with(lexical(root))) {
-                return Err(format!(
-                    "{} is outside the roots {} may {kind} under",
-                    full.display(),
-                    tool.id
-                ));
+            if !roots.iter().any(|root| lies_under(&full, root)) {
+                return Err(ToolError::OutsideRoots { path: full, tool });
             }
         }
         Ok(())
@@ -402,7 +439,7 @@ impl ServerHandler for Server {
         let mut arguments = Value::Object(request.arguments.unwrap_or_default());
         absolute_paths(&mut arguments, &self.settings.project);
         if let Err(why) = self.check_roots(tool, &arguments) {
-            return Ok(tool_error(&why).into());
+            return Ok(tool_error(&why.to_string()).into());
         }
         let (reply, answer) = oneshot::channel();
         let job = Job {
@@ -428,6 +465,9 @@ fn runtime() -> Result<Runtime, McpError> {
         .map_err(McpError::Io)
 }
 
+/// The bytes `serve_bytes`' in-memory pipe buffers each way.
+const DUPLEX_BUFFER: usize = 1 << 16;
+
 /// What the server tells a client's model about using it.
 const INSTRUCTIONS: &str = "QuakeC Studio's tools over the project this server was started on: \
     compile, test, run QuakeC in the VM, play scenarios, inspect and drive the running game, \
@@ -448,68 +488,6 @@ fn tool_result(output: Value) -> CallToolResult {
 /// A tool execution error saying `why` (2026-07-28, "Error Handling").
 fn tool_error(why: &str) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(why)])
-}
-
-/// Every string under a key named `path`, or ending in `_path`, anywhere in `value`.
-fn collect_paths(value: &Value, out: &mut Vec<String>) {
-    match value {
-        Value::Object(object) => {
-            for (key, inner) in object {
-                if is_path_key(key)
-                    && let Some(path) = inner.as_str()
-                {
-                    out.push(path.to_owned());
-                }
-                collect_paths(inner, out);
-            }
-        }
-        Value::Array(items) => items.iter().for_each(|item| collect_paths(item, out)),
-        _ => {}
-    }
-}
-
-/// Whether a parameter named `key` holds a path.
-fn is_path_key(key: &str) -> bool {
-    key == "path" || key.ends_with("_path")
-}
-
-/// Makes every path `arguments` names absolute, a relative one taken from `project`, with `.`
-/// and `..` worked out, so the commands, which name files by their full paths, find them.
-fn absolute_paths(arguments: &mut Value, project: &Path) {
-    match arguments {
-        Value::Object(object) => {
-            for (key, inner) in object.iter_mut() {
-                if is_path_key(key)
-                    && let Some(path) = inner.as_str()
-                {
-                    let full = lexical(&project.join(path));
-                    *inner = Value::String(full.to_string_lossy().into_owned());
-                } else {
-                    absolute_paths(inner, project);
-                }
-            }
-        }
-        Value::Array(items) => items
-            .iter_mut()
-            .for_each(|item| absolute_paths(item, project)),
-        _ => {}
-    }
-}
-
-/// `path` with `.` and `..` worked out by its text, as a check of where it points needs
-/// before the file exists.
-fn lexical(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for part in path.components() {
-        match part {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 #[cfg(test)]

@@ -11,7 +11,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{self, RawInput, Rect, Vec2};
-use qs_agent::{Message, Model, Outcome, Reply, ToolCall, ToolSpec, history};
+use qs_agent::{Message, Model, ModelError, Outcome, Reply, ToolCall, ToolSpec, history};
 use qs_models::{MemoryKeys, ProviderConfig, ProviderKind};
 use serde_json::json;
 
@@ -29,13 +29,13 @@ struct Gated {
 }
 
 impl Model for Gated {
-    fn reply(&mut self, _: &str, _: &[ToolSpec], _: &[Message]) -> Result<Reply, String> {
+    fn reply(&mut self, _: &str, _: &[ToolSpec], _: &[Message]) -> Result<Reply, ModelError> {
         let next = match &self.last {
             None => self.gate.recv().ok(),
             Some(last) => Some(self.gate.try_recv().unwrap_or_else(|_| last.clone())),
         };
         self.last.clone_from(&next);
-        next.ok_or_else(|| "the test hung up".to_owned())
+        next.ok_or_else(|| ModelError::Stopped("the test hung up".to_owned()))
     }
 }
 
@@ -333,11 +333,16 @@ struct Recorder {
 }
 
 impl Model for Recorder {
-    fn reply(&mut self, _: &str, _: &[ToolSpec], messages: &[Message]) -> Result<Reply, String> {
+    fn reply(
+        &mut self,
+        _: &str,
+        _: &[ToolSpec],
+        messages: &[Message],
+    ) -> Result<Reply, ModelError> {
         if let Some(Message::User { text }) = messages.first() {
             self.seen
                 .lock()
-                .map_err(|_| "the test panicked".to_owned())?
+                .map_err(|_| ModelError::Stopped("the test panicked".to_owned()))?
                 .push(text.clone());
         }
         Ok(Reply::Finish {
@@ -369,7 +374,7 @@ fn a_thread_started_from_an_entity_holds_its_state() {
     let (_root, ctx, mut app, _gates) = window("ask", 0);
     let seen = recording(&mut app);
     let entity = qs_agent::EntityState {
-        edict: 12,
+        edict: qs_agent::EdictNumber::new(12),
         classname: "monster_army".to_owned(),
         fields: vec![
             ("health".to_owned(), "30".to_owned()),

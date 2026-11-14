@@ -732,7 +732,7 @@ impl qs_agent::Model for Fixed {
         _: &str,
         _: &[qs_agent::ToolSpec],
         _: &[qs_agent::Message],
-    ) -> Result<qs_agent::Reply, String> {
+    ) -> Result<qs_agent::Reply, qs_agent::ModelError> {
         Ok(qs_agent::Reply::Finish {
             summary: self.0.to_owned(),
         })

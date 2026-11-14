@@ -9,6 +9,8 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The paths a call's arguments name, worked out by their text.
+qs-paths = { workspace = true }
 qs-commands = { workspace = true }
 # The protocol, both eras, from the protocol's own project; its stdio transport.
 rmcp = { workspace = true, features = ["server", "transport-io"] }
