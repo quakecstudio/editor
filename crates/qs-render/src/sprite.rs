@@ -151,7 +151,7 @@ impl SpriteModel {
         let sprite = Sprite::read(bytes).map_err(|e| SpriteError::Spr(format!("{name}: {e}")))?;
         let mut images = Vec::new();
         let mut frame = |f: &SpriteFrame<'_>| {
-            images.push(image(f, palette));
+            images.push(palette.sprite_image(f));
             Frame {
                 up: f32_of_i32(f.up()),
                 down: f32_of_i32(f.down()),
@@ -284,25 +284,27 @@ impl SpriteModel {
     }
 }
 
-/// A frame's pixels through `palette`, index 255 transparent (REND-11.2).
-fn image(frame: &SpriteFrame<'_>, palette: &Palette) -> Image {
-    let width = u32::try_from(frame.width).unwrap_or(0).max(1);
-    let height = u32::try_from(frame.height).unwrap_or(0).max(1);
-    let rgba = frame
-        .pixels
-        .iter()
-        .flat_map(|&p| {
-            if p == TRANSPARENT {
-                [0, 0, 0, 0]
-            } else {
-                palette.rgba(p)
-            }
-        })
-        .collect();
-    Image {
-        width,
-        height,
-        rgba,
+impl Palette {
+    /// A sprite frame's pixels through the palette, index 255 transparent (REND-11.2).
+    fn sprite_image(&self, frame: &SpriteFrame<'_>) -> Image {
+        let width = u32::try_from(frame.width).unwrap_or(0).max(1);
+        let height = u32::try_from(frame.height).unwrap_or(0).max(1);
+        let rgba = frame
+            .pixels
+            .iter()
+            .flat_map(|&p| {
+                if p == TRANSPARENT {
+                    [0, 0, 0, 0]
+                } else {
+                    self.rgba(p)
+                }
+            })
+            .collect();
+        Image {
+            width,
+            height,
+            rgba,
+        }
     }
 }
 

@@ -114,7 +114,7 @@ impl Skybox {
                 for x in 0..width {
                     let texel = face
                         .as_ref()
-                        .and_then(|face| nearest(face, [x, y], [width, height]));
+                        .and_then(|face| face.nearest([x, y], [width, height]));
                     out.extend(texel.unwrap_or([0, 0, 0, 255]));
                 }
             }
@@ -123,22 +123,24 @@ impl Skybox {
     }
 }
 
-/// The texel of `face` nearest to `at` on a picture of `size`.
-fn nearest(face: &Image, [x, y]: [u32; 2], [width, height]: [u32; 2]) -> Option<[u8; 4]> {
-    let scale = |at: u32, from: u32, to: u32| {
-        u64::from(at)
-            .checked_mul(u64::from(from))
-            .and_then(|n| n.checked_div(u64::from(to)))
-    };
-    let sx = scale(x, face.width, width)?;
-    let sy = scale(y, face.height, height)?;
-    let index = sy
-        .checked_mul(u64::from(face.width))?
-        .checked_add(sx)?
-        .checked_mul(4)?;
-    let index = usize::try_from(index).ok()?;
-    let texel = face.rgba.get(index..index.checked_add(4)?)?;
-    texel.try_into().ok()
+impl Image {
+    /// The texel of `face` nearest to `at` on a picture of `size`.
+    fn nearest(&self, [x, y]: [u32; 2], [width, height]: [u32; 2]) -> Option<[u8; 4]> {
+        let scale = |at: u32, from: u32, to: u32| {
+            u64::from(at)
+                .checked_mul(u64::from(from))
+                .and_then(|n| n.checked_div(u64::from(to)))
+        };
+        let sx = scale(x, self.width, width)?;
+        let sy = scale(y, self.height, height)?;
+        let index = sy
+            .checked_mul(u64::from(self.width))?
+            .checked_add(sx)?
+            .checked_mul(4)?;
+        let index = usize::try_from(index).ok()?;
+        let texel = self.rgba.get(index..index.checked_add(4)?)?;
+        texel.try_into().ok()
+    }
 }
 
 #[cfg(test)]
