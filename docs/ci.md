@@ -14,7 +14,7 @@ ruleset; with it on, every job also runs on each merge group.
 | --- | --- | --- | --- |
 | Pull request | `refs/pull/<n>/merge` | every job; `Test Assets (linux)` runs the deletion checks only when the parser chain changed | finds a problem on every platform before the change merges |
 | Merge group, only with the queue on | `refs/heads/gh-readonly-queue/main/...` | every job and every step except `Dependency Review` | checks exactly what lands on `main` |
-| Cache run on `main` (`ci.yml` only) | `refs/heads/main` | every job except `Format`, `cargo-deny` and `Dependency Review`, as on a pull request | fills the caches; see below |
+| Cache run on `main` (`ci.yml` only) | `refs/heads/main` | every job except `Format`, `cargo-deny` and `Dependency Review`, but only the steps that fill a cache: `Unit Tests` builds the tests without running them (`nextest --no-run`) and the oracles without their checks (`oracles build`), and `Test Assets` only fetches and builds what its caches hold; the tests passed on the pull request | fills the caches; see below |
 
 That is the full path. A pull request or merge group that changes only documentation, the
 plan or agent files takes the light path instead ([below](#light-changes)).
@@ -109,7 +109,8 @@ runs on a push to `main` only when a file a key depends on changes (`Cargo.lock`
 `Cargo.toml`, `.cargo/config.toml`, `rust-toolchain.toml`, `oracles/`, the xtask oracle code,
 `corpus/manifest.toml` or `ci.yml` itself, whose `env` is part of the Rust cache keys). It
 also runs weekly, so a cache evicted after seven days unused or one whose key changed with
-the runner image is refilled, and on demand (`workflow_dispatch`). The push paths must list
+the runner image is refilled, and on demand (`workflow_dispatch`); those two runs test in
+full. The push paths must list
 every input of every cache key.
 
 ### Stopping at the first failure
