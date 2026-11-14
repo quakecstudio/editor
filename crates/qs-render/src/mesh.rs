@@ -1183,7 +1183,8 @@ fn truncate_i32(value: f32) -> i32 {
 }
 
 /// C's float to unsigned conversion of a light's addition to `blocklights` (REND-7.2); the
-/// value is never negative, since `dist < minlight <= rad`.
+/// value is never negative, since `dist < minlight <= rad`. Named so the `#[expect]` for the
+/// cast stands on this one conversion rather than on the whole of `add_dynamic_light`.
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,

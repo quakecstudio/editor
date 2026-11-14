@@ -39,7 +39,7 @@ mod vector;
 pub use alias::{
     AliasEntity, AliasError, AliasKind, AliasModel, AliasVertex, Shading, bob_rotate, entity_light,
 };
-pub use camera::Camera;
+pub use camera::{Camera, Degrees};
 pub use gpu::{
     AliasDraw, Assets, FlatBlend, FlatDraw, FlatFrame, FlatVertex, Fog, MapCallback, MapRenderer,
     ModelFrame, PlayerSkin, PlayerSlot, SkinKey, SpriteDraw, SpriteFrame, View,

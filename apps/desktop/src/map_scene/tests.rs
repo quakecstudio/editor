@@ -187,8 +187,8 @@ fn the_camera_starts_behind_the_player_start() {
     let workbench = keep();
     let camera = start_camera(workbench.map().unwrap());
     assert_eq!(camera.origin, [-320.0, 0.0, 88.0]);
-    assert!(camera.yaw.abs() < f32::EPSILON);
-    assert!(camera.pitch > 0.0, "looking down at it");
+    assert!(camera.yaw.get().abs() < f32::EPSILON);
+    assert!(camera.pitch.get() > 0.0, "looking down at it");
 }
 
 // spec MAP-14.6: an external map instance draws the map it names in place, as its own lines,

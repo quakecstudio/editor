@@ -228,11 +228,11 @@ fn dragging_turns_and_the_wheel_moves_the_view() {
     frame(&mut view, &ctx, 1.2, vec![button(false)]);
     let camera = view.camera();
     assert!(
-        (camera.yaw - (start.yaw - 10.0)).abs() < 1e-3,
+        (camera.yaw.get() - (start.yaw.get() - 10.0)).abs() < 1e-3,
         "40 points right turns 10 degrees right: {start:?} to {camera:?}"
     );
     assert!(
-        (camera.pitch - (start.pitch + 5.0)).abs() < 1e-3,
+        (camera.pitch.get() - (start.pitch.get() + 5.0)).abs() < 1e-3,
         "20 points down looks 5 degrees down"
     );
     let before = camera.origin;

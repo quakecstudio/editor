@@ -6,18 +6,41 @@
 use crate::sprite::angle_vectors;
 use crate::vector::{cross, dot};
 
+/// An angle in degrees, the editor camera's: it has no C declaration to follow.
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+pub struct Degrees(f32);
+
+impl Degrees {
+    /// `degrees` degrees.
+    #[must_use]
+    pub const fn new(degrees: f32) -> Self {
+        Self(degrees)
+    }
+
+    /// The degrees.
+    #[must_use]
+    pub const fn get(self) -> f32 {
+        self.0
+    }
+
+    /// The angle in radians.
+    #[must_use]
+    pub fn to_radians(self) -> f32 {
+        self.0.to_radians()
+    }
+}
+
 /// Where the camera is and where it looks.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Camera {
     /// Its position in map units.
     pub origin: [f32; 3],
-    /// Its yaw in degrees, about z, 0 looking down +x.
-    pub yaw: f32,
-    /// Its pitch in degrees, positive looking down, kept within ±89.
-    pub pitch: f32,
-    /// Its field of view across, in degrees; the height's follows from the image's shape
-    /// (REND-3.4).
-    pub fov_x: f32,
+    /// Its yaw, about z, 0 looking down +x.
+    pub yaw: Degrees,
+    /// Its pitch, positive looking down, kept within ±89.
+    pub pitch: Degrees,
+    /// Its field of view across; the height's follows from the image's shape (REND-3.4).
+    pub fov_x: Degrees,
 }
 
 /// The nearest and farthest distances drawn, in map units: `MYgluPerspective (r_refdef.fov_y,
@@ -26,6 +49,9 @@ const NEAR: f32 = 4.0;
 const FAR: f32 = 4096.0;
 /// `fov`, the field of view across, in degrees: `scr_fov = {"fov","90"}` (REND-3.4).
 const FOV_X: f32 = 90.0;
+/// A turn, which the yaw wraps at, and the pitch's furthest up or down.
+const FULL_TURN: f32 = 360.0;
+const PITCH_LIMIT: f32 = 89.0;
 
 impl Camera {
     /// A camera at `origin` looking along `yaw`, level, with GLQuake's `fov 90` (REND-3.4).
@@ -33,9 +59,9 @@ impl Camera {
     pub const fn new(origin: [f32; 3], yaw: f32) -> Self {
         Self {
             origin,
-            yaw,
-            pitch: 0.0,
-            fov_x: FOV_X,
+            yaw: Degrees::new(yaw),
+            pitch: Degrees::new(0.0),
+            fov_x: Degrees::new(FOV_X),
         }
     }
 
@@ -81,8 +107,8 @@ impl Camera {
 
     /// Turns it by `yaw` and `pitch` degrees, the pitch kept within ±89.
     pub fn turn(&mut self, yaw: f32, pitch: f32) {
-        self.yaw = (self.yaw + yaw).rem_euclid(360.0);
-        self.pitch = (self.pitch + pitch).clamp(-89.0, 89.0);
+        self.yaw = Degrees::new((self.yaw.get() + yaw).rem_euclid(FULL_TURN));
+        self.pitch = Degrees::new((self.pitch.get() + pitch).clamp(-PITCH_LIMIT, PITCH_LIMIT));
     }
 
     /// The ray from the eye through the point `(x, y)` of an image `aspect` wide per unit of
@@ -108,7 +134,7 @@ impl Camera {
     /// `aspect` wide per unit of height, column-major as WGSL reads it.
     #[must_use]
     pub fn clip_from_world(&self, aspect: f32) -> [[f32; 4]; 4] {
-        clip_from_axes(self.origin, self.axes(), self.fov_x, aspect)
+        clip_from_axes(self.origin, self.axes(), self.fov_x.get(), aspect)
     }
 
     /// The matrix of a view from `origin` along `angles` (pitch, yaw and roll, as
@@ -227,9 +253,9 @@ mod tests {
             camera.origin
         );
         camera.turn(0.0, 200.0);
-        assert!((camera.pitch - 89.0).abs() < f32::EPSILON);
+        assert!((camera.pitch.get() - 89.0).abs() < f32::EPSILON);
         camera.turn(-450.0, 0.0);
-        assert!(camera.yaw.abs() < f32::EPSILON);
+        assert!(camera.yaw.get().abs() < f32::EPSILON);
     }
 
     // No spec statement: P5-16: framing a box keeps the camera's direction and puts the whole
@@ -237,12 +263,13 @@ mod tests {
     #[test]
     fn a_framed_box_is_wholly_in_view() {
         let mut camera = Camera::new([0.0, 0.0, 0.0], 30.0);
-        camera.pitch = 20.0;
+        camera.pitch = super::Degrees::new(20.0);
         let bounds = [[1000.0, 2000.0, -50.0], [1100.0, 2032.0, 400.0]];
         let aspect = 16.0 / 9.0;
         camera.frame(bounds, aspect, 8.0);
         assert!(
-            (camera.yaw - 30.0).abs() < f32::EPSILON && (camera.pitch - 20.0).abs() < f32::EPSILON
+            (camera.yaw.get() - 30.0).abs() < f32::EPSILON
+                && (camera.pitch.get() - 20.0).abs() < f32::EPSILON
         );
         let [forward, right, up] = camera.axes();
         let across = (camera.fov_x.to_radians() / 2.0).tan();

@@ -11,7 +11,7 @@ use qs_bsp::{Bsp, BspLoader};
 use qs_map::geometry::TexVecs;
 use qs_mdl::Mdl;
 use qs_mdl::mdl::MdlFrameEntry;
-use qs_render::Camera;
+use qs_render::{Camera, Degrees};
 use qs_vfs::{StdFs, Vfs};
 use qs_workbench::entity_classes::ClassInfo;
 use qs_workbench::map_edit::{BrushIndex, EntityIndex, MapDocument, MapSource};
@@ -535,14 +535,14 @@ pub(crate) fn start_camera(document: &MapDocument) -> Camera {
     let mut camera = Camera::new(MAP_ORIGIN, NO_START_YAW);
     if let Some(start) = start {
         let origin = start.origin().map(single);
-        camera.yaw = single(start.yaw());
+        camera.yaw = Degrees::new(single(start.yaw()));
         let (sin, cos) = camera.yaw.to_radians().sin_cos();
         camera.origin = [
             origin[0] - cos * START_BACK,
             origin[1] - sin * START_BACK,
             origin[2] + START_UP,
         ];
-        camera.pitch = START_PITCH;
+        camera.pitch = Degrees::new(START_PITCH);
     }
     camera
 }

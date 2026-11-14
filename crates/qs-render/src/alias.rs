@@ -412,8 +412,9 @@ pub fn entity_light(light: i32, kind: AliasKind, origin: [f32; 3], lights: &[Dyn
 /// The row of `r_avertexnormal_dots` for a yaw of `yaw` degrees,
 /// `((int)(yaw * (SHADEDOT_QUANT / 360.0))) & (SHADEDOT_QUANT - 1)` (REND-4.8).
 fn shade_dots(yaw: f32) -> &'static [f32; 256] {
-    let step = f64::from(yaw) * (f64_of(SHADEDOT_QUANT) / TURN);
-    let row = truncate(step) & i64_of(SHADEDOT_QUANT.saturating_sub(1));
+    let quant = u32::try_from(SHADEDOT_QUANT).map_or(f64::MAX, f64::from);
+    let step = f64::from(yaw) * (quant / TURN);
+    let row = truncate(step) & i64::try_from(SHADEDOT_QUANT.saturating_sub(1)).unwrap_or(i64::MAX);
     let row = usize::try_from(row).unwrap_or(0);
     R_AVERTEXNORMAL_DOTS
         .get(row)
@@ -658,14 +659,6 @@ const fn f32_of_f64(value: f64) -> f32 {
 )]
 const fn f64_of_i64(value: i64) -> f64 {
     value as f64
-}
-
-fn f64_of(value: usize) -> f64 {
-    u32::try_from(value).map_or(f64::MAX, f64::from)
-}
-
-fn i64_of(value: usize) -> i64 {
-    i64::try_from(value).unwrap_or(i64::MAX)
 }
 
 #[cfg(test)]
