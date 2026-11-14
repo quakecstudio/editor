@@ -18,9 +18,10 @@ use qs_sim::Message;
 use crate::{
     CLIENT_MAX_DLIGHTS, CLIENT_MAX_EDICTS, CLIENT_MAX_STATIC_ENTITIES, CLIENT_MAX_TEMP_ENTITIES,
     CLIENT_MAX_VISEDICTS, CLIENT_SIGNONS, Client, ClientLimits, Contents, Event, FrameInfo, Game,
-    LerpSettings, ModelInfo, ModelKind, Models, PART_ABSOLUTE_MIN_PARTICLES, PART_RAMP1,
-    PART_RAMP3, ParseError, ParticleType, Particles, Random, Reader, SoundRef, ViewInput,
-    ViewSettings, ViewState, angledelta, calc_bob, calc_roll, flags, gamma_table, stat,
+    LerpSettings, ModelIndex, ModelInfo, ModelKind, Models, PART_ABSOLUTE_MIN_PARTICLES,
+    PART_RAMP1, PART_RAMP3, ParseError, ParticleType, Particles, Random, Reader, Scores,
+    SoundEntity, SoundRef, Trail, TrailSpacing, ViewInput, ViewSettings, ViewState, angledelta,
+    calc_bob, calc_roll, flags, gamma_table, stat,
 };
 
 /// `rand ()` returning the values given, then 0.
@@ -323,14 +324,14 @@ fn the_serverinfo_starts_a_map() {
     assert_eq!(client.viewentity(), 1);
     assert_eq!(client.entities()[0].model, 1, "the world");
     assert!(matches!(
-        client.model(THING),
+        client.model(ModelIndex::new(THING)),
         Some(ModelInfo {
             kind: ModelKind::Alias { .. },
             ..
         })
     ));
-    assert!(client.model(0).is_none());
-    assert!(client.model(12).is_none());
+    assert!(client.model(ModelIndex::new(0)).is_none());
+    assert!(client.model(ModelIndex::new(12)).is_none());
     // The divider and the level's name come first (CLIENT-1.7).
     assert_eq!(
         events[2..],
@@ -938,7 +939,7 @@ fn sounds_are_read() {
     let Event::Sound(first) = &events[0] else {
         panic!("{events:?}");
     };
-    assert_eq!((first.entity, first.channel), (7, 5));
+    assert_eq!((first.entity, first.channel), (SoundEntity::new(7), 5));
     assert_eq!(first.sound, SoundRef::Index(2));
     assert_eq!(first.origin, [1.0, 2.0, 3.0]);
     assert!((first.volume - 128.0 / 255.0).abs() < 1e-6);
@@ -1374,7 +1375,7 @@ fn temporary_entities_and_beams() {
                 assert_eq!(s.sound, SoundRef::Name(name), "type {kind}");
                 assert_eq!(
                     (s.entity, s.channel, s.volume, s.attenuation),
-                    (-1, 0, 1.0, 1.0)
+                    (SoundEntity::TEMPORARY, 0, 1.0, 1.0)
                 );
             }
             None => assert!(events.is_empty(), "type {kind}: {events:?}"),
@@ -1980,7 +1981,13 @@ fn every_effect_fills_the_pool_its_way() {
     assert_eq!(last.color, 7);
     assert!((last.die - 1.2).abs() < 1e-6);
     let mut pool = Particles::default();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [9.0, 0.0, 0.0], 0);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [9.0, 0.0, 0.0]),
+        Trail::Rocket,
+        TrailSpacing::Normal,
+    );
     let p = pool.active();
     assert_eq!(p.len(), 3);
     assert_eq!(p[2].origin, [-3.0, -3.0, -3.0]);
@@ -1988,20 +1995,38 @@ fn every_effect_fills_the_pool_its_way() {
     assert_eq!(p[2].kind, ParticleType::Fire);
     assert_eq!(p[1].origin, [1.0 - 3.0, -3.0, -3.0]);
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 1);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Smoke,
+        TrailSpacing::Normal,
+    );
     assert_eq!(
         pool.active()[0].color,
         PART_RAMP3[2],
         "smoke starts two steps up the ramp"
     );
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 2);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Blood,
+        TrailSpacing::Normal,
+    );
     assert_eq!(
         (pool.active()[0].kind, pool.active()[0].color),
         (ParticleType::Grav, 67)
     );
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [6.0, 0.0, 0.0], 3);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [6.0, 0.0, 0.0]),
+        Trail::Tracer,
+        TrailSpacing::Normal,
+    );
     let p = pool.active();
     assert_eq!(p.len(), 2);
     assert_eq!(p[1].die, 1.5);
@@ -2013,21 +2038,45 @@ fn every_effect_fills_the_pool_its_way() {
     );
     assert_eq!(p[0].velocity, [0.0, 30.0, 0.0]);
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 5);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Tracer2,
+        TrailSpacing::Normal,
+    );
     assert_eq!(pool.active()[0].color, 230);
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [12.0, 0.0, 0.0], 4);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [12.0, 0.0, 0.0]),
+        Trail::SlightBlood,
+        TrailSpacing::Normal,
+    );
     assert_eq!(
         pool.active().len(),
         2,
         "slight blood takes 6 units a particle"
     );
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 6);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Voor,
+        TrailSpacing::Normal,
+    );
     assert_eq!((pool.active()[0].color, pool.active()[0].die), (152, 1.3));
     assert_eq!(pool.active()[0].origin, [-8.0; 3]);
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 128);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Rocket,
+        TrailSpacing::Dense,
+    );
     assert_eq!(pool.active().len(), 3, "128 and up step by 1");
     pool.clear();
     pool.entity_field(&mut Fixed(vec![]), 0.0, [1.0, 2.0, 3.0]);
@@ -2050,22 +2099,46 @@ fn every_effect_fills_the_pool_its_way() {
 #[test]
 fn particles_move_by_their_type() {
     let mut pool = Particles::default();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 0);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Rocket,
+        TrailSpacing::Normal,
+    );
     pool.explosion(&mut Fixed(vec![]), 1.0, [0.0; 3]);
     pool.blob_explosion(&mut Fixed(vec![]), 1.0, [0.0; 3]);
     pool.update(0.0, 0.0, 800.0);
     let blobs = pool.active().to_vec();
     pool.clear();
     for p in blobs.iter().take(4) {
-        pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [0.0; 3], 0);
+        pool.rocket_trail(
+            &mut Fixed(vec![]),
+            1.0,
+            ([0.0; 3], [0.0; 3]),
+            Trail::Rocket,
+            TrailSpacing::Normal,
+        );
         let _ = p;
     }
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 0);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Rocket,
+        TrailSpacing::Normal,
+    );
     pool.explosion(&mut Fixed(vec![]), 1.0, [0.0; 3]);
     pool.blob_explosion(&mut Fixed(vec![]), 1.0, [0.0; 3]);
     pool.clear();
-    pool.rocket_trail(&mut Fixed(vec![]), 1.0, [0.0; 3], [3.0, 0.0, 0.0], 0);
+    pool.rocket_trail(
+        &mut Fixed(vec![]),
+        1.0,
+        ([0.0; 3], [3.0, 0.0, 0.0]),
+        Trail::Rocket,
+        TrailSpacing::Normal,
+    );
     pool.explosion(&mut Fixed(vec![]), 1.0, [0.0; 3]);
     pool.explosion2(&mut Fixed(vec![]), 1.0, [0.0; 3], 66, 1);
     pool.teleport_splash(&mut Fixed(vec![]), 1.0, [0.0; 3]);
@@ -3040,7 +3113,7 @@ fn the_client_builds_its_hud() {
     frame(&mut client, 0.0, &[m.take()]);
     assert_eq!(client.hud().center.len(), 2);
     client.set_bar_lines(0);
-    client.set_showscores(true);
+    client.set_showscores(Scores::Shown);
     assert!(
         pics(&client.hud().bar)
             .iter()

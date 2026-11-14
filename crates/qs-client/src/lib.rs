@@ -28,8 +28,8 @@ pub use client::{
     CLIENT_MAX_MODELS, CLIENT_MAX_SCOREBOARD, CLIENT_MAX_SOUNDS, CLIENT_MAX_STATIC_ENTITIES,
     CLIENT_MAX_STATS, CLIENT_MAX_TEMP_ENTITIES, CLIENT_MAX_VISEDICTS, CLIENT_PROTOCOL_VERSION,
     CLIENT_ROTATE_SPEED, CLIENT_SIGNONS, CLIENT_TELEPORT_DISTANCE, CLIENT_TENT_SOUNDS, Client,
-    ClientLimits, Event, Game, HUD_DEFAULT_LINES, Hud, LerpSettings, ParseError, Score, SoundRef,
-    SoundStart, stat,
+    ClientLimits, Event, Game, HUD_DEFAULT_LINES, Hud, LerpSettings, ModelIndex, ParseError, Score,
+    Scores, SoundEntity, SoundRef, SoundStart, stat,
 };
 pub use console::{
     CON_CURSOR_SPEED, CON_HISTORY, CON_MAX_LINE, CON_NOTIFY_TIME, CON_NUM_TIMES, CON_SPEED,
@@ -51,6 +51,7 @@ pub use models::{FrameInfo, ModelInfo, ModelKind, Models, Random, SYNCTYPE_RAND,
 pub use particles::{
     PART_ABSOLUTE_MIN_PARTICLES, PART_ENTITY_PARTICLES, PART_GRAVITY, PART_GRAVITY_SCALE,
     PART_MAX_PARTICLES, PART_RAMP1, PART_RAMP2, PART_RAMP3, Particle, ParticleType, Particles,
+    Trail, TrailSpacing,
 };
 pub use scene::{DynamicLight, PoseBlend, Scene, SceneEntity, SceneParticle};
 pub use view::{

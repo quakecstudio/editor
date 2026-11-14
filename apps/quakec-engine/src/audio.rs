@@ -419,7 +419,7 @@ impl Audio {
             &mut self.table,
             rand,
             Start {
-                entnum: start.entity,
+                entnum: start.entity.get(),
                 entchannel: start.channel,
                 sfx,
                 origin: start.origin,

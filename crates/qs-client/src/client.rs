@@ -27,7 +27,7 @@ use crate::hud::{
 };
 use crate::message::Reader;
 use crate::models::{FrameInfo, ModelInfo, ModelKind, Models, Random, flags};
-use crate::particles::{PART_GRAVITY, Particles};
+use crate::particles::{PART_GRAVITY, Particles, Trail, TrailSpacing};
 use crate::scene::{DynamicLight, PoseBlend, Scene, SceneEntity, SceneParticle};
 use crate::view::{Contents, Refdef, ViewInput, ViewSettings, ViewState};
 
@@ -147,6 +147,10 @@ const PARTICLE_DIRECTION_STEP: f64 = 1.0 / 16.0;
 const PARTICLE_EXPLOSION_MARKER: i32 = 255;
 /// The particles of an explosion sent as an effect.
 const PARTICLE_EXPLOSION_COUNT: i32 = 1024;
+/// `cl.intermission` for `svc_finale` (CLIENT-1.4).
+const INTERMISSION_FINALE: i32 = 2;
+/// `cl.intermission` for `svc_cutscene`.
+const INTERMISSION_CUTSCENE: i32 = 3;
 /// The divider's middle character, `\36` in `CL_ParseServerInfo`'s `Con_Printf`.
 const DIVIDER_MIDDLE: u8 = 0x1e;
 /// How many middle characters the divider has.
@@ -432,11 +436,52 @@ impl core::fmt::Display for ParseError {
 
 impl core::error::Error for ParseError {}
 
+/// The entity a sound comes from, `S_StartSound`'s `entnum`: an edict, or -1 for a temporary
+/// entity's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SoundEntity(i32);
+
+impl SoundEntity {
+    /// A temporary entity's sound.
+    pub const TEMPORARY: Self = Self(-1);
+
+    /// Edict `num`'s sound.
+    #[must_use]
+    pub const fn new(num: i32) -> Self {
+        Self(num)
+    }
+
+    /// The number `S_StartSound` is given.
+    #[must_use]
+    pub const fn get(self) -> i32 {
+        self.0
+    }
+}
+
+/// A model's precache index, `cl.model_precache`'s (CLIENT-1.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModelIndex(usize);
+
+impl ModelIndex {
+    /// Precache index `index`.
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
+        Self(index)
+    }
+}
+
+/// Whether the scoreboard is shown, `+showscores` or `-showscores` (HUD-1.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scores {
+    Shown,
+    Hidden,
+}
+
 /// A sound the client wants started, as `S_StartSound` is called (CLIENT-4.1, CLIENT-6.1).
 #[derive(Clone, Debug, PartialEq)]
 pub struct SoundStart {
-    /// The entity, -1 for a temporary entity's sound.
-    pub entity: i32,
+    /// The entity, [`SoundEntity::TEMPORARY`] for a temporary entity's sound.
+    pub entity: SoundEntity,
     /// The entity channel.
     pub channel: i32,
     /// The sound: a precache index, or a name the client precaches itself (CLIENT-6.1).
@@ -794,8 +839,8 @@ impl Client {
     }
 
     /// `+showscores` and `-showscores` (HUD-1.1).
-    pub const fn set_showscores(&mut self, shown: bool) {
-        self.showscores = shown;
+    pub const fn set_showscores(&mut self, scores: Scores) {
+        self.showscores = matches!(scores, Scores::Shown);
     }
 
     /// `sb_lines`: 0 at a view size of 120, 24 at 110, else 48 (HUD-1.1).
@@ -974,14 +1019,14 @@ impl Client {
 
     /// The models the server named, by precache index; `None` for index 0 and past the list.
     #[must_use]
-    pub fn model(&self, index: usize) -> Option<&ModelInfo> {
-        self.models.get(index).and_then(Option::as_ref)
+    pub fn model(&self, index: ModelIndex) -> Option<&ModelInfo> {
+        self.models.get(index.0).and_then(Option::as_ref)
     }
 
     /// The name of precached model `index`, such as `progs/soldier.mdl` (CLIENT-1.5).
     #[must_use]
-    pub fn model_name(&self, index: usize) -> Option<&str> {
-        self.model_names.get(index).map(String::as_str)
+    pub fn model_name(&self, index: ModelIndex) -> Option<&str> {
+        self.model_names.get(index.0).map(String::as_str)
     }
 
     /// Every precached model's name, index 0 empty (CLIENT-1.5).
@@ -1290,7 +1335,7 @@ impl Client {
                 SVC_SPAWNBASELINE => {
                     let i = r.short();
                     let n = self.entity_num(i)?;
-                    let baseline = parse_baseline(&mut r);
+                    let baseline = r.baseline();
                     if let Some(entity) = self.entities.get_mut(n) {
                         entity.baseline = baseline;
                     }
@@ -1348,7 +1393,11 @@ impl Client {
                     self.completed_time = self.time;
                 }
                 SVC_FINALE | SVC_CUTSCENE => {
-                    self.intermission = if cmd == SVC_FINALE { 2 } else { 3 };
+                    self.intermission = if cmd == SVC_FINALE {
+                        INTERMISSION_FINALE
+                    } else {
+                        INTERMISSION_CUTSCENE
+                    };
                     self.completed_time = self.time;
                     events.push(Event::CenterPrint(r.string()));
                 }
@@ -1651,7 +1700,7 @@ impl Client {
         if self.statics.len() >= self.limits.statics {
             return Err(ParseError::TooManyStatics);
         }
-        let baseline = parse_baseline(r);
+        let baseline = r.baseline();
         let mut ent = Entity::new();
         ent.baseline = baseline;
         ent.model = baseline.modelindex;
@@ -1687,7 +1736,7 @@ impl Client {
         }
         let origin = [r.coord(), r.coord(), r.coord()];
         Ok(SoundStart {
-            entity: ent,
+            entity: SoundEntity::new(ent),
             channel,
             sound: SoundRef::Index(usize::try_from(sound_num).unwrap_or(0)),
             origin,
@@ -1707,7 +1756,7 @@ impl Client {
         let time = self.time;
         let sound = |name: &'static str, pos: [f32; 3]| {
             Event::Sound(SoundStart {
-                entity: -1,
+                entity: SoundEntity::TEMPORARY,
                 channel: 0,
                 sound: SoundRef::Name(name),
                 origin: pos,
@@ -1725,7 +1774,7 @@ impl Client {
                     _ => GUNSHOT_EFFECT,
                 };
                 self.particles
-                    .run_effect(rand, time, pos, [0.0; 3], color, count);
+                    .run_effect(rand, time, pos, [0.0; AXES], color, count);
                 match kind {
                     TE_WIZSPIKE => events.push(sound("wizard/hit.wav", pos)),
                     TE_KNIGHTSPIKE => events.push(sound("hknight/hit.wav", pos)),
@@ -1922,7 +1971,7 @@ impl Client {
                 ent.angles = ent.msg_angles[0];
             } else {
                 let mut f = frac;
-                let mut delta = [0.0_f32; 3];
+                let mut delta = [0.0_f32; AXES];
                 for (d, (new, old)) in delta
                     .iter_mut()
                     .zip(ent.msg_origins[0].iter().zip(ent.msg_origins[1].iter()))
@@ -1960,10 +2009,10 @@ impl Client {
                         break;
                     };
                     let mut d = new - old;
-                    if d > 180.0 {
-                        d -= 360.0;
-                    } else if d < -180.0 {
-                        d += 360.0;
+                    if d > HALF_TURN {
+                        d -= FULL_TURN;
+                    } else if d < -HALF_TURN {
+                        d += FULL_TURN;
                     }
                     *a = old + f * d;
                 }
@@ -1982,16 +2031,16 @@ impl Client {
             }
             if effects & EF_MUZZLEFLASH != 0 {
                 let (forward, _, _) = makevectors(angles);
-                let radius = 200.0 + int_to_float(rand.rand() & 31);
+                let radius = FLASH_RADIUS + int_to_float(rand.rand() & LIGHT_JITTER);
                 let dl = self.alloc_dlight(n);
                 dl.origin = [
-                    origin[0] + 18.0 * forward[0],
-                    origin[1] + 18.0 * forward[1],
-                    origin[2] + 16.0 + 18.0 * forward[2],
+                    origin[0] + FLASH_AHEAD * forward[0],
+                    origin[1] + FLASH_AHEAD * forward[1],
+                    origin[2] + FLASH_UP + FLASH_AHEAD * forward[2],
                 ];
                 dl.radius = radius;
-                dl.minlight = 32.0;
-                dl.die = time + 0.1;
+                dl.minlight = FLASH_MINLIGHT;
+                dl.die = time + FLASH_TIME;
                 if let Some(ent) = self.entities.get_mut(i) {
                     ent.lerpflags.reset_anim = true;
                     ent.lerpflags.reset_anim2 = true;
@@ -2002,37 +2051,79 @@ impl Client {
                 }
             }
             if effects & EF_BRIGHTLIGHT != 0 {
-                let radius = 400.0 + int_to_float(rand.rand() & 31);
+                let radius = BRIGHT_RADIUS + int_to_float(rand.rand() & LIGHT_JITTER);
                 let dl = self.alloc_dlight(n);
-                dl.origin = [origin[0], origin[1], origin[2] + 16.0];
+                dl.origin = [origin[0], origin[1], origin[2] + FLASH_UP];
                 dl.radius = radius;
-                dl.die = time + 0.001;
+                dl.die = time + ONE_FRAME;
             }
             if effects & EF_DIMLIGHT != 0 {
-                let radius = 200.0 + int_to_float(rand.rand() & 31);
+                let radius = FLASH_RADIUS + int_to_float(rand.rand() & LIGHT_JITTER);
                 let dl = self.alloc_dlight(n);
                 dl.origin = origin;
                 dl.radius = radius;
-                dl.die = time + 0.001;
+                dl.die = time + ONE_FRAME;
             }
             if model_flags & flags::GIB != 0 {
-                self.particles.rocket_trail(rand, time, oldorg, origin, 2);
+                self.particles.rocket_trail(
+                    rand,
+                    time,
+                    (oldorg, origin),
+                    Trail::Blood,
+                    TrailSpacing::Normal,
+                );
             } else if model_flags & flags::ZOMGIB != 0 {
-                self.particles.rocket_trail(rand, time, oldorg, origin, 4);
+                self.particles.rocket_trail(
+                    rand,
+                    time,
+                    (oldorg, origin),
+                    Trail::SlightBlood,
+                    TrailSpacing::Normal,
+                );
             } else if model_flags & flags::TRACER != 0 {
-                self.particles.rocket_trail(rand, time, oldorg, origin, 3);
+                self.particles.rocket_trail(
+                    rand,
+                    time,
+                    (oldorg, origin),
+                    Trail::Tracer,
+                    TrailSpacing::Normal,
+                );
             } else if model_flags & flags::TRACER2 != 0 {
-                self.particles.rocket_trail(rand, time, oldorg, origin, 5);
+                self.particles.rocket_trail(
+                    rand,
+                    time,
+                    (oldorg, origin),
+                    Trail::Tracer2,
+                    TrailSpacing::Normal,
+                );
             } else if model_flags & flags::ROCKET != 0 {
-                self.particles.rocket_trail(rand, time, oldorg, origin, 0);
+                self.particles.rocket_trail(
+                    rand,
+                    time,
+                    (oldorg, origin),
+                    Trail::Rocket,
+                    TrailSpacing::Normal,
+                );
                 let dl = self.alloc_dlight(n);
                 dl.origin = origin;
-                dl.radius = 200.0;
-                dl.die = time + 0.01;
+                dl.radius = ROCKET_LIGHT_RADIUS;
+                dl.die = time + ROCKET_LIGHT_TIME;
             } else if model_flags & flags::GRENADE != 0 {
-                self.particles.rocket_trail(rand, time, oldorg, origin, 1);
+                self.particles.rocket_trail(
+                    rand,
+                    time,
+                    (oldorg, origin),
+                    Trail::Smoke,
+                    TrailSpacing::Normal,
+                );
             } else if model_flags & flags::TRACER3 != 0 {
-                self.particles.rocket_trail(rand, time, oldorg, origin, 6);
+                self.particles.rocket_trail(
+                    rand,
+                    time,
+                    (oldorg, origin),
+                    Trail::Voor,
+                    TrailSpacing::Normal,
+                );
             }
             let _ = forcelink;
             if i == viewentity {
@@ -2059,11 +2150,11 @@ impl Client {
         let Some(ent) = self.entities.get_mut(i) else {
             return SceneEntity::default();
         };
-        let (origin, angles) = setup_entity_transform(ent, time, lerp.moves);
+        let (origin, angles) = ent.setup_transform(time, lerp);
         let poses = info
             .as_ref()
             .filter(|m| matches!(m.kind, ModelKind::Alias { .. }))
-            .map(|m| setup_alias_frame(ent, m, time, lerp.models));
+            .map(|m| ent.setup_alias_frame(m, time, lerp));
         SceneEntity {
             entity: i,
             model: ent.model,
@@ -2081,7 +2172,7 @@ impl Client {
     fn alias_poses_for_weapon(&mut self) -> Option<PoseBlend> {
         let info = self.models.get(self.weapon.model)?.as_ref()?.clone();
         matches!(info.kind, ModelKind::Alias { .. })
-            .then(|| setup_alias_frame(&mut self.weapon, &info, self.time, self.lerp.models))
+            .then(|| self.weapon.setup_alias_frame(&info, self.time, self.lerp))
     }
 
     /// `CL_UpdateTEnts` (CLIENT-6.4): a temporary entity every 30 units along each live
@@ -2109,21 +2200,21 @@ impl Client {
             let [ex, ey, ez] = b.end;
             let dist = [ex - sx, ey - sy, ez - sz];
             let (yaw, pitch) = if dist[1] == 0.0 && dist[0] == 0.0 {
-                (0.0, if dist[2] > 0.0 { 90.0 } else { 270.0 })
+                (0.0, if dist[2] > 0.0 { PITCH_UP } else { PITCH_DOWN })
             } else {
-                let yaw =
-                    f64::from(dist[1]).atan2(f64::from(dist[0])) * 180.0 / core::f64::consts::PI;
+                let yaw = f64::from(dist[1]).atan2(f64::from(dist[0])) * HALF_TURN_F64
+                    / core::f64::consts::PI;
                 let mut yaw = int_to_float(double_to_int(yaw));
                 if yaw < 0.0 {
-                    yaw += 360.0;
+                    yaw += FULL_TURN;
                 }
                 let forward =
                     double_to_float(f64::from(dist[0] * dist[0] + dist[1] * dist[1]).sqrt());
-                let pitch =
-                    f64::from(dist[2]).atan2(f64::from(forward)) * 180.0 / core::f64::consts::PI;
+                let pitch = f64::from(dist[2]).atan2(f64::from(forward)) * HALF_TURN_F64
+                    / core::f64::consts::PI;
                 let mut pitch = int_to_float(double_to_int(pitch));
                 if pitch < 0.0 {
-                    pitch += 360.0;
+                    pitch += FULL_TURN;
                 }
                 (yaw, pitch)
             };
@@ -2140,7 +2231,7 @@ impl Client {
                     return;
                 }
                 count = count.saturating_add(1);
-                let roll = int_to_float(rand.rand().checked_rem(360).unwrap_or(0));
+                let roll = int_to_float(rand.rand().checked_rem(FULL_TURN_DEGREES).unwrap_or(0));
                 self.visedicts.push(SceneEntity {
                     entity: 0,
                     model,
@@ -2176,144 +2267,153 @@ impl Client {
 }
 
 /// `CL_ParseBaseline` (CLIENT-1.3).
-fn parse_baseline(r: &mut Reader<'_>) -> Baseline {
-    let modelindex = usize::try_from(r.byte()).unwrap_or(0);
-    let frame = r.byte();
-    let colormap = r.byte();
-    let skin = r.byte();
-    let mut origin = [0.0; 3];
-    let mut angles = [0.0; 3];
-    for (o, a) in origin.iter_mut().zip(angles.iter_mut()) {
-        *o = r.coord();
-        *a = r.angle();
-    }
-    Baseline {
-        origin,
-        angles,
-        modelindex,
-        frame,
-        colormap,
-        skin,
-        effects: 0,
+impl Reader<'_> {
+    /// `CL_ParseBaseline`: a baseline's model, frame, colormap, skin, origin and angles.
+    fn baseline(&mut self) -> Baseline {
+        let r = self;
+        let modelindex = usize::try_from(r.byte()).unwrap_or(0);
+        let frame = r.byte();
+        let colormap = r.byte();
+        let skin = r.byte();
+        let mut origin = [0.0; AXES];
+        let mut angles = [0.0; AXES];
+        for (o, a) in origin.iter_mut().zip(angles.iter_mut()) {
+            *o = r.coord();
+            *a = r.angle();
+        }
+        Baseline {
+            origin,
+            angles,
+            modelindex,
+            frame,
+            colormap,
+            skin,
+            effects: 0,
+        }
     }
 }
 
 /// `R_SetupAliasFrame` (CLIENT-7.3): the poses an entity blends this frame.
-fn setup_alias_frame(
-    ent: &mut Entity,
-    model: &ModelInfo,
-    time: f32,
-    lerp_models: bool,
-) -> PoseBlend {
-    let frame = model
-        .frame(usize::try_from(ent.frame).unwrap_or(usize::MAX))
-        .unwrap_or(FrameInfo {
-            first_pose: 0,
-            poses: 1,
-            interval: 0.0,
-        });
-    let mut posenum = frame.first_pose;
-    let numposes = frame.poses;
-    if numposes > 1 {
-        ent.lerp.time = frame.interval;
-        let step = double_to_int(f64::from(time / ent.lerp.time));
-        let step = usize::try_from(step).unwrap_or(0);
-        posenum = posenum.saturating_add(step.checked_rem(numposes).unwrap_or(0));
-    } else {
-        ent.lerp.time = CLIENT_LERP_SINGLE_POSE;
-    }
-    if ent.lerpflags.reset_anim {
-        ent.lerp.start = 0.0;
-        ent.lerp.previous_pose = posenum;
-        ent.lerp.current_pose = posenum;
-        ent.lerpflags.reset_anim = false;
-    } else if ent.lerp.current_pose != posenum {
-        if ent.lerpflags.reset_anim2 {
+impl Entity {
+    /// `R_SetupAliasFrame`, `lerp.models` its `r_lerpmodels`.
+    fn setup_alias_frame(&mut self, model: &ModelInfo, time: f32, lerp: LerpSettings) -> PoseBlend {
+        let ent = self;
+        let lerp_models = lerp.models;
+        let frame = model
+            .frame(usize::try_from(ent.frame).unwrap_or(usize::MAX))
+            .unwrap_or(FrameInfo {
+                first_pose: 0,
+                poses: 1,
+                interval: 0.0,
+            });
+        let mut posenum = frame.first_pose;
+        let numposes = frame.poses;
+        if numposes > 1 {
+            ent.lerp.time = frame.interval;
+            let step = double_to_int(f64::from(time / ent.lerp.time));
+            let step = usize::try_from(step).unwrap_or(0);
+            posenum = posenum.saturating_add(step.checked_rem(numposes).unwrap_or(0));
+        } else {
+            ent.lerp.time = CLIENT_LERP_SINGLE_POSE;
+        }
+        if ent.lerpflags.reset_anim {
             ent.lerp.start = 0.0;
             ent.lerp.previous_pose = posenum;
             ent.lerp.current_pose = posenum;
-            ent.lerpflags.reset_anim2 = false;
+            ent.lerpflags.reset_anim = false;
+        } else if ent.lerp.current_pose != posenum {
+            if ent.lerpflags.reset_anim2 {
+                ent.lerp.start = 0.0;
+                ent.lerp.previous_pose = posenum;
+                ent.lerp.current_pose = posenum;
+                ent.lerpflags.reset_anim2 = false;
+            } else {
+                ent.lerp.start = f64::from(time);
+                ent.lerp.previous_pose = ent.lerp.current_pose;
+                ent.lerp.current_pose = posenum;
+            }
+        }
+        if lerp_models && !model.nolerp {
+            let blend =
+                double_to_float((f64::from(time) - ent.lerp.start) / f64::from(ent.lerp.time));
+            let blend = blend.clamp(0.0, 1.0);
+            #[expect(
+                clippy::float_cmp,
+                reason = "spec CLIENT-7.3: a blend of exactly 1 makes the previous pose the current"
+            )]
+            if blend == 1.0 {
+                ent.lerp.previous_pose = ent.lerp.current_pose;
+            }
+            PoseBlend {
+                previous: ent.lerp.previous_pose,
+                current: ent.lerp.current_pose,
+                blend,
+            }
         } else {
-            ent.lerp.start = f64::from(time);
-            ent.lerp.previous_pose = ent.lerp.current_pose;
-            ent.lerp.current_pose = posenum;
-        }
-    }
-    if lerp_models && !model.nolerp {
-        let blend = double_to_float((f64::from(time) - ent.lerp.start) / f64::from(ent.lerp.time));
-        let blend = blend.clamp(0.0, 1.0);
-        #[expect(
-            clippy::float_cmp,
-            reason = "spec CLIENT-7.3: a blend of exactly 1 makes the previous pose the current"
-        )]
-        if blend == 1.0 {
-            ent.lerp.previous_pose = ent.lerp.current_pose;
-        }
-        PoseBlend {
-            previous: ent.lerp.previous_pose,
-            current: ent.lerp.current_pose,
-            blend,
-        }
-    } else {
-        PoseBlend {
-            previous: posenum,
-            current: posenum,
-            blend: 1.0,
+            PoseBlend {
+                previous: posenum,
+                current: posenum,
+                blend: 1.0,
+            }
         }
     }
 }
 
-/// `R_SetupEntityTransform` (CLIENT-7.4): where an entity is drawn this frame.
-fn setup_entity_transform(ent: &mut Entity, time: f32, lerp_moves: bool) -> ([f32; 3], [f32; 3]) {
-    if ent.lerpflags.reset_move {
-        ent.lerp.move_start = 0.0;
-        ent.lerp.previous_origin = ent.origin;
-        ent.lerp.current_origin = ent.origin;
-        ent.lerp.previous_angles = ent.angles;
-        ent.lerp.current_angles = ent.angles;
-        ent.lerpflags.reset_move = false;
-    } else if moved(ent) {
-        ent.lerp.move_start = f64::from(time);
-        ent.lerp.previous_origin = ent.lerp.current_origin;
-        ent.lerp.current_origin = ent.origin;
-        ent.lerp.previous_angles = ent.lerp.current_angles;
-        ent.lerp.current_angles = ent.angles;
-    }
-    if lerp_moves && ent.lerpflags.movestep {
-        let blend = double_to_float(
-            (f64::from(time) - ent.lerp.move_start) / f64::from(CLIENT_LERP_MOVE_TIME),
-        )
-        .clamp(0.0, 1.0);
-        let mut origin = [0.0; 3];
-        let mut angles = [0.0; 3];
-        for i in 0..3 {
-            let (Some(o), Some(p), Some(c)) = (
-                origin.get_mut(i),
-                ent.lerp.previous_origin.get(i),
-                ent.lerp.current_origin.get(i),
-            ) else {
-                break;
-            };
-            *o = p + (c - p) * blend;
-            let (Some(a), Some(p), Some(c)) = (
-                angles.get_mut(i),
-                ent.lerp.previous_angles.get(i),
-                ent.lerp.current_angles.get(i),
-            ) else {
-                break;
-            };
-            let mut d = c - p;
-            if d > 180.0 {
-                d -= 360.0;
-            }
-            if d < -180.0 {
-                d += 360.0;
-            }
-            *a = p + d * blend;
+impl Entity {
+    /// `R_SetupEntityTransform` (CLIENT-7.4): where the entity is drawn this frame, `lerp.moves`
+    /// its `r_lerpmove`.
+    fn setup_transform(&mut self, time: f32, lerp: LerpSettings) -> ([f32; 3], [f32; 3]) {
+        let ent = self;
+        if ent.lerpflags.reset_move {
+            ent.lerp.move_start = 0.0;
+            ent.lerp.previous_origin = ent.origin;
+            ent.lerp.current_origin = ent.origin;
+            ent.lerp.previous_angles = ent.angles;
+            ent.lerp.current_angles = ent.angles;
+            ent.lerpflags.reset_move = false;
+        } else if ent.moved() {
+            ent.lerp.move_start = f64::from(time);
+            ent.lerp.previous_origin = ent.lerp.current_origin;
+            ent.lerp.current_origin = ent.origin;
+            ent.lerp.previous_angles = ent.lerp.current_angles;
+            ent.lerp.current_angles = ent.angles;
         }
-        (origin, angles)
-    } else {
-        (ent.origin, ent.angles)
+        if lerp.moves && ent.lerpflags.movestep {
+            let blend = double_to_float(
+                (f64::from(time) - ent.lerp.move_start) / f64::from(CLIENT_LERP_MOVE_TIME),
+            )
+            .clamp(0.0, 1.0);
+            let mut origin = [0.0; AXES];
+            let mut angles = [0.0; AXES];
+            for i in 0..AXES {
+                let (Some(o), Some(p), Some(c)) = (
+                    origin.get_mut(i),
+                    ent.lerp.previous_origin.get(i),
+                    ent.lerp.current_origin.get(i),
+                ) else {
+                    break;
+                };
+                *o = p + (c - p) * blend;
+                let (Some(a), Some(p), Some(c)) = (
+                    angles.get_mut(i),
+                    ent.lerp.previous_angles.get(i),
+                    ent.lerp.current_angles.get(i),
+                ) else {
+                    break;
+                };
+                let mut d = c - p;
+                if d > HALF_TURN {
+                    d -= FULL_TURN;
+                }
+                if d < -HALF_TURN {
+                    d += FULL_TURN;
+                }
+                *a = p + d * blend;
+            }
+            (origin, angles)
+        } else {
+            (ent.origin, ent.angles)
+        }
     }
 }
 
@@ -2323,6 +2423,8 @@ fn setup_entity_transform(ent: &mut Entity, time: f32, lerp_moves: bool) -> ([f3
     clippy::float_cmp,
     reason = "spec CLIENT-7.4: an origin or angles that differ at all start a new move lerp"
 )]
-fn moved(ent: &Entity) -> bool {
-    ent.origin != ent.lerp.current_origin || ent.angles != ent.lerp.current_angles
+impl Entity {
+    fn moved(&self) -> bool {
+        self.origin != self.lerp.current_origin || self.angles != self.lerp.current_angles
+    }
 }

@@ -88,6 +88,55 @@ impl Particle {
     }
 }
 
+/// A rocket trail's kind, `R_RocketTrail`'s `type` below 128 (PART-2.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Trail {
+    /// 0: a rocket's fire.
+    Rocket,
+    /// 1: a grenade's smoke, two steps up the fire ramp.
+    Smoke,
+    /// 2: a gib's blood.
+    Blood,
+    /// 3: a wizard's green tracer.
+    Tracer,
+    /// 4: a zombie gib's slight blood, every other step.
+    SlightBlood,
+    /// 5: a knight's orange tracer.
+    Tracer2,
+    /// 6: a vore ball's purple trail.
+    Voor,
+}
+
+/// How far apart a trail's particles are: `type` below 128, or 128 and up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TrailSpacing {
+    /// Three units apart.
+    Normal,
+    /// One unit apart.
+    Dense,
+}
+
+/// The units between a trail's particles (PART-2.7).
+const TRAIL_STEP: f32 = 3.0;
+/// The units between a dense trail's particles.
+const TRAIL_DENSE_STEP: f32 = 1.0;
+/// Where smoke starts on the fire ramp.
+const SMOKE_RAMP_START: f32 = 2.0;
+/// Blood's base colour.
+const BLOOD_COLOR: i32 = 67;
+/// A tracer's life in seconds.
+const TRACER_LIFE: f32 = 0.5;
+/// The wizard tracer's base colour.
+const TRACER_COLOR: i32 = 52;
+/// The knight tracer's base colour.
+const TRACER2_COLOR: i32 = 230;
+/// A tracer's sideways speed.
+const TRACER_SPEED: f32 = 30.0;
+/// The vore trail's base colour.
+const VOOR_COLOR: i32 = 152;
+/// A vore trail particle's life in seconds.
+const VOOR_LIFE: f32 = 0.3;
+
 /// The particle pool: the active particles, newest first as id's list keeps them, and how
 /// many may be active (PART-1.1).
 #[derive(Clone, Debug, PartialEq)]
@@ -279,22 +328,22 @@ impl Particles {
         }
     }
 
-    /// `R_RocketTrail (start, end, type)` (PART-2.7).
+    /// `R_RocketTrail (start, end, type)` (PART-2.7): `type` is `trail`, plus 128 for
+    /// [`TrailSpacing::Dense`].
     pub fn rocket_trail(
         &mut self,
         rand: &mut dyn Random,
         time: f32,
-        start: [f32; 3],
-        end: [f32; 3],
-        kind: i32,
+        (start, end): ([f32; 3], [f32; 3]),
+        trail: Trail,
+        spacing: TrailSpacing,
     ) {
         let [sx, sy, sz] = start;
         let [ex, ey, ez] = end;
         let (vec, mut len) = vector_normalize([ex - sx, ey - sy, ez - sz]);
-        let (dec, kind) = if kind < 128 {
-            (3.0, kind)
-        } else {
-            (1.0, kind.wrapping_sub(128))
+        let dec = match spacing {
+            TrailSpacing::Normal => TRAIL_STEP,
+            TrailSpacing::Dense => TRAIL_DENSE_STEP,
         };
         let mut at = start;
         while len > 0.0 {
@@ -304,46 +353,54 @@ impl Particles {
             let near = |rand: &mut dyn Random| {
                 int_to_float(rand.rand().checked_rem(6).unwrap_or(0).wrapping_sub(3))
             };
-            match kind {
-                0 | 1 => {
-                    p.ramp = int_to_float(rand.rand() & 3) + if kind == 1 { 2.0 } else { 0.0 };
+            match trail {
+                Trail::Rocket | Trail::Smoke => {
+                    let start = if trail == Trail::Smoke {
+                        SMOKE_RAMP_START
+                    } else {
+                        0.0
+                    };
+                    p.ramp = int_to_float(rand.rand() & 3) + start;
                     p.color = ramp3(p.ramp);
                     p.kind = ParticleType::Fire;
                     let (jx, jy, jz) = (near(rand), near(rand), near(rand));
                     p.origin = [ax + jx, ay + jy, az + jz];
                 }
-                2 | 4 => {
+                Trail::Blood | Trail::SlightBlood => {
                     p.kind = ParticleType::Grav;
-                    p.color = 67_i32.wrapping_add(rand.rand() & 3);
+                    p.color = BLOOD_COLOR.wrapping_add(rand.rand() & 3);
                     let (jx, jy, jz) = (near(rand), near(rand), near(rand));
                     p.origin = [ax + jx, ay + jy, az + jz];
-                    if kind == 4 {
-                        len -= 3.0;
+                    if trail == Trail::SlightBlood {
+                        len -= TRAIL_STEP;
                     }
                 }
-                3 | 5 => {
-                    p.die = time + 0.5;
+                Trail::Tracer | Trail::Tracer2 => {
+                    p.die = time + TRACER_LIFE;
                     p.kind = ParticleType::Static;
-                    let base: i32 = if kind == 3 { 52 } else { 230 };
+                    let base: i32 = if trail == Trail::Tracer {
+                        TRACER_COLOR
+                    } else {
+                        TRACER2_COLOR
+                    };
                     p.color = base.wrapping_add((self.tracercount & 4) << 1);
                     self.tracercount = self.tracercount.wrapping_add(1);
                     let [vx, vy, _] = vec;
                     p.velocity = if self.tracercount & 1 != 0 {
-                        [30.0 * vy, 30.0 * -vx, 0.0]
+                        [TRACER_SPEED * vy, TRACER_SPEED * -vx, 0.0]
                     } else {
-                        [30.0 * -vy, 30.0 * vx, 0.0]
+                        [TRACER_SPEED * -vy, TRACER_SPEED * vx, 0.0]
                     };
                 }
-                6 => {
-                    p.color = 152_i32.wrapping_add(rand.rand() & 3);
+                Trail::Voor => {
+                    p.color = VOOR_COLOR.wrapping_add(rand.rand() & 3);
                     p.kind = ParticleType::Static;
-                    p.die = time + 0.3;
+                    p.die = time + VOOR_LIFE;
                     let wide =
                         |rand: &mut dyn Random| int_to_float((rand.rand() & 15).wrapping_sub(8));
                     let (jx, jy, jz) = (wide(rand), wide(rand), wide(rand));
                     p.origin = [ax + jx, ay + jy, az + jz];
                 }
-                _ => {}
             }
             if !self.alloc(p) {
                 return;
